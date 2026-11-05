@@ -123,3 +123,10 @@ What Tether already does and Flint must not lose.
 | Signed macOS `.app`, Linux AppImage/tarball, Homebrew tap | `next` | A stable Developer ID signature also stops the Keychain prompt after every update (D-020) |
 | Bundle libssh, libsodium, SQLCipher and libcrypto into the `.app` (rpath fix-up) or link them statically | `next` | Today they are dynamic system packages (D-015); a release cannot rely on Homebrew being installed |
 | Public landing + docs site deployed | `next` | The site itself is built from milestone 01 |
+
+## 8. Docs site
+
+| Feature | Status | Notes |
+|---|---|---|
+| Interactive CLI demo on the landing: overlay terminal, guided tour, demo vault, fake Linux | `mvp` | Milestone 05 (D-026) |
+| The hero terminal plays the demo tour by itself (typing animation, termynal-style) before the visitor opens the demo | `idea` | Left out of M05; respect `prefers-reduced-motion` |

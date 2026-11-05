@@ -46,6 +46,9 @@ is `docs/build-log.md` plus `git log`.
 5. **Docs ship with the code.** Any user-visible change (CLI command, flag, screen,
    behaviour) updates `site/` (Astro + Starlight) in the same commit. A rework updates or
    deletes the pages it made stale.
+   **The landing's CLI demo ships with the CLI too:** any change to a CLI command, flag,
+   output or error updates the demo (`site/src/demo/`) in the same commit: the command, its
+   data and its tour step (D-026).
 6. **Nothing lives only in chat.** A new feature idea goes into `ROADMAP.md`. A decision that
    is expensive to reverse goes into `docs/decisions.md`.
 7. **Stay in scope.** Work outside the current milestone goes into the roadmap, not into the
