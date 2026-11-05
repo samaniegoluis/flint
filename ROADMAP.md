@@ -113,4 +113,3 @@ What Tether already does and Flint must not lose.
 | Signed macOS `.app`, Linux AppImage/tarball, Homebrew tap | `next` | A stable Developer ID signature also stops the Keychain prompt after every update (D-020) |
 | Bundle libssh, libsodium, SQLCipher and libcrypto into the `.app` (rpath fix-up) or link them statically | `next` | Today they are dynamic system packages (D-015); a release cannot rely on Homebrew being installed |
 | Public landing + docs site deployed | `next` | The site itself is built from milestone 01 |
-| Docs site and landing adopt Flint's visual identity (palette, type, logo) from the Claude Design screens (D-011) | `next` | Milestone 01 ships the stock Starlight theme on purpose |

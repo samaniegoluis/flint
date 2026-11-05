@@ -8,6 +8,34 @@ export default defineConfig({
 		starlight({
 			title: 'Flint',
 			description: 'An open-source SSH client with a GUI and a CLI over one encrypted vault.',
+			// Flint's visual identity (D-023): tokens from docs/design/tokens.css, the logo
+			// from docs/design/icons.svg, and a theme button that is always in the header.
+			logo: {
+				dark: './src/assets/flint-logo-dark.svg',
+				light: './src/assets/flint-logo-light.svg',
+				alt: '',
+			},
+			customCss: ['./src/styles/flint.css'],
+			components: {
+				Header: './src/components/Header.astro',
+				MobileMenuFooter: './src/components/MobileMenuFooter.astro',
+			},
+			expressiveCode: {
+				themes: ['github-dark-default', 'github-light-default'],
+				styleOverrides: {
+					borderRadius: '8px',
+					borderColor: 'var(--sl-color-hairline-light)',
+					codeBackground: 'var(--flint-term-bg)',
+					codeFontFamily: 'var(--__sl-font-mono)',
+					uiFontFamily: 'var(--__sl-font)',
+					frames: {
+						editorTabBarBackground: 'var(--sl-color-gray-6)',
+						terminalTitlebarBackground: 'var(--sl-color-gray-6)',
+						terminalBackground: 'var(--flint-term-bg)',
+						frameBoxShadowCssValue: 'none',
+					},
+				},
+			},
 			sidebar: [
 				{
 					label: 'Start here',

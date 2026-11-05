@@ -3,6 +3,20 @@ title: Flint
 description: An open-source SSH client with a GUI and a CLI over one encrypted vault.
 template: splash
 hero:
+  image:
+    html: |
+      <div class="flint-term" role="img" aria-label="A terminal: flint host list shows three hosts, flint exec runs uptime on web-01, and flint connect opens db">
+        <div class="flint-term-bar" aria-hidden="true"><i></i><i></i><i></i><span>~ — zsh</span></div>
+        <pre aria-hidden="true"><span class="p">❯</span> flint host list
+      <span class="d">ALIAS    TARGET                GROUP  TAGS</span>
+      <span class="a">bastion</span>  jump@bastion.example  -      -
+      <span class="a">db</span>       admin@10.0.0.12       prod   postgres
+      <span class="a">web-01</span>   deploy@10.0.0.5       prod   nginx
+      <span class="p">❯</span> flint exec web-01 -- uptime
+       10:42:07 up 41 days,  load average: 0.08
+      <span class="p">❯</span> flint connect db <span class="d"># via bastion</span>
+      <span class="ok">admin@db</span>:~$ <span class="cur"></span></pre>
+      </div>
   tagline: A light SSH client with a GUI and a CLI over one fully encrypted vault. Reach your servers by alias, from a window, a terminal or an AI agent, without exposing a credential.
   actions:
     - text: Read the introduction
