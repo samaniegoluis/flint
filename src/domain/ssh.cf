@@ -88,9 +88,36 @@ fn check_server_key(known: []KnownHost, addr: str, key: ServerKey) -> str {
     return HOST_KEY_NEW
 }
 
+// The host key algorithms to negotiate first for `addr`, in libssh's "^list" form
+// (prepend to the defaults), or "" when no key is recorded for it. A server with
+// several host keys then presents the type that was trusted, as OpenSSH does,
+// instead of whichever type the client library happens to prefer (D-022).
+fn preferred_host_key_algos(known: []KnownHost, addr: str) -> str {
+    for k in known {
+        if k.addr == addr && k.key_type.len() > 0 {
+            if k.key_type == "ssh-rsa" {
+                // An RSA key is negotiated with SHA-2 signatures; SHA-1 ssh-rsa stays off.
+                return "^rsa-sha2-512,rsa-sha2-256"
+            }
+            return "^" + k.key_type
+        }
+    }
+    return ""
+}
+
 test "known host addresses follow the OpenSSH form" {
     assert_eq(known_host_addr("Web.Example.org", 22), "web.example.org")
     assert_eq(known_host_addr("10.0.0.5", 2222), "[10.0.0.5]:2222")
+}
+
+test "a recorded key type is negotiated first" {
+    known: []KnownHost = [
+        KnownHost{ addr: "web", key_type: "ecdsa-sha2-nistp256", fingerprint: "SHA256:aaa", host_id: "", added_at: "" },
+        KnownHost{ addr: "[old]:2222", key_type: "ssh-rsa", fingerprint: "SHA256:bbb", host_id: "", added_at: "" },
+    ]
+    assert_eq(preferred_host_key_algos(known, "web"), "^ecdsa-sha2-nistp256")
+    assert_eq(preferred_host_key_algos(known, "[old]:2222"), "^rsa-sha2-512,rsa-sha2-256")
+    assert_eq(preferred_host_key_algos(known, "db"), "")
 }
 
 test "a server key is known, new or changed" {

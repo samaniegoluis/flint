@@ -459,14 +459,16 @@ type FakeLink struct {
     resized: str
     hung_up: bool
     fail_dial: bool
+    dial_algos: []str
 }
 
 fn new_fake_link() -> FakeLink {
-    return FakeLink{ good_key: "", good_password: "", agent_ok: false, server_fp: "SHA256:server", calls: [], chunks: [], read_pos: 0, written: "", resized: "", hung_up: false, fail_dial: false }
+    return FakeLink{ good_key: "", good_password: "", agent_ok: false, server_fp: "SHA256:server", calls: [], chunks: [], read_pos: 0, written: "", resized: "", hung_up: false, fail_dial: false, dial_algos: [] }
 }
 
-fn (mut self: FakeLink) link_dial(hostname: str, port: i64, user: str, timeout_secs: i64) -> void! {
+fn (mut self: FakeLink) link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void! {
     self.calls.push("dial {user}@{hostname}:{port}")
+    self.dial_algos.push(host_key_algos)
     if self.fail_dial {
         return error(coded(ERR_NETWORK, "connect to {hostname}:{port} failed"))
     }

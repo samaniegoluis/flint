@@ -132,6 +132,11 @@ flint known-host rm web-01      # by alias, or by address: flint known-host rm '
 
 Keys are recorded per address: `hostname` on port 22, `[hostname]:port` otherwise.
 
+Many servers have more than one host key (for example ed25519, ECDSA and RSA). Once a
+key is recorded, Flint asks the server for that same key type first, so the server keeps
+presenting the key you trusted. If the server no longer has a key of that type, the key
+counts as changed and is refused like any other changed key.
+
 ## Timeouts
 
 | Flag | Default | Bounds |

@@ -46,12 +46,15 @@ fn (self: SshConn) last_error() -> str {
 // Opens a TCP connection and completes the SSH handshake. The host key is NOT
 // verified here; call `host_key_sha256` and check it before authenticating.
 fn ssh_dial(host: str, port: i32, user: str, timeout_secs: i64) -> SshConn! {
-    return ssh_dial_over(host, port, user, timeout_secs, -1)
+    return ssh_dial_over(host, port, user, timeout_secs, -1, "")
 }
 
 // Like ssh_dial, but over an already connected socket `fd` (a jump-host tunnel)
-// when `fd` >= 0. `host` and `port` then only name the server.
-fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32) -> SshConn! {
+// when `fd` >= 0. `host` and `port` then only name the server. `host_key_algos`,
+// when not empty, is an SSH_OPTIONS_HOSTKEYS list such as "^ssh-ed25519": the "^"
+// prepend form needs libssh 0.11; an older libssh rejects it and keeps its
+// defaults, which only loses the preference, never the host key check.
+fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, host_key_algos: str) -> SshConn! {
     if timeout_secs <= 0 {
         return error(coded(ERR_INVALID, "ssh: a positive timeout is required"))
     }
@@ -73,6 +76,9 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32) ->
             ssh_options_set(s, SSH_OPTIONS_TIMEOUT, &t);
             // Flint resolves hosts from its vault, never from ~/.ssh/config.
             ssh_options_set(s, SSH_OPTIONS_PROCESS_CONFIG, &no_config);
+            if (!host_key_algos.empty()) {
+                ssh_options_set(s, SSH_OPTIONS_HOSTKEYS, host_key_algos.c_str());
+            }
             if (fd >= 0) {
                 socket_t sock = fd;
                 ssh_options_set(s, SSH_OPTIONS_FD, &sock);

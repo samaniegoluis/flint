@@ -44,7 +44,7 @@ test "SshLink satisfies the SshTransport port" {
 
 test "a link to a closed port fails with network" {
     mut link := new_ssh_link()
-    r := link.link_dial("127.0.0.1", 1, "nobody", 2)
+    r := link.link_dial("127.0.0.1", 1, "nobody", 2, "")
     assert_eq(error_code_of("{r.error().message()}"), "network")
     link.link_hangup()
 }
@@ -57,7 +57,7 @@ test "exec over a link returns stdout, stderr and the exit code" {
     }
     key_text := try fs.read_text(key_path)
     mut link := new_ssh_link()
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5)
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
     sk := try link.link_server_key()
     assert_eq(sk.key_type, "ssh-ed25519")
     assert(sk.fingerprint.starts_with("SHA256:"))
@@ -80,7 +80,7 @@ test "a signal is reported instead of an exit code" {
         return
     }
     mut link := new_ssh_link()
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5)
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
     try link.link_exec_start("kill -TERM $$")
     res := try read_all(mut link)
@@ -98,9 +98,9 @@ test "a second hop is reached through a tunnel over the first" {
     }
     key_text := try fs.read_text(key_path)
     mut link := new_ssh_link()
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5)
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
     try link.link_auth_key(key_text, "")
-    try link.link_dial("127.0.0.1", port2, os.getenv("USER"), 5)
+    try link.link_dial("127.0.0.1", port2, os.getenv("USER"), 5, "")
     outer_fp := try link.hops[0].host_key_sha256()
     inner := try link.link_server_key()
     assert(inner.fingerprint != outer_fp, "the second hop must present its own host key")
@@ -120,9 +120,9 @@ test "a jump to an unreachable port fails with network and cleans up" {
         return
     }
     mut link := new_ssh_link()
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5)
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
-    r := link.link_dial("127.0.0.1", 1, os.getenv("USER"), 5)
+    r := link.link_dial("127.0.0.1", 1, os.getenv("USER"), 5, "")
     assert_eq(error_code_of("{r.error().message()}"), "network")
     link.link_hangup()
 }
@@ -134,7 +134,7 @@ test "the agent authenticates when SSH_AUTH_SOCK holds the key" {
         return
     }
     mut link := new_ssh_link()
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5)
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
     try link.link_auth_agent()
     try link.link_exec_start("true")
     res := try read_all(mut link)
@@ -149,7 +149,7 @@ test "a PTY shell over a link follows a resize" {
         return
     }
     mut link := new_ssh_link()
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5)
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
     try link.link_shell_open("xterm-256color", 80, 24)
     try link.link_channel_resize(132, 43)
@@ -158,4 +158,31 @@ test "a PTY shell over a link follows a resize" {
     link.link_hangup()
     assert(res.stdout.contains("43 132"))
     assert_eq(res.exit_code, 5)
+}
+
+test "a recorded key type is negotiated first, and only when the server has it" {
+    (port, _) := test_target()
+    port2 := inner_port()
+    if port == 0 || port2 == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT2 not set")
+        return
+    }
+    // The first test sshd has an ed25519 and an ECDSA host key; libssh prefers
+    // ed25519 by default.
+    mut plain := new_ssh_link()
+    try plain.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    assert_eq((try plain.link_server_key()).key_type, "ssh-ed25519")
+    plain.link_hangup()
+    known: []KnownHost = [KnownHost{ addr: "[127.0.0.1]:{port}", key_type: "ecdsa-sha2-nistp256", fingerprint: "", host_id: "", added_at: "" }]
+    algos := preferred_host_key_algos(known, known_host_addr("127.0.0.1", i64(port)))
+    mut pinned := new_ssh_link()
+    try pinned.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, algos)
+    assert_eq((try pinned.link_server_key()).key_type, "ecdsa-sha2-nistp256")
+    pinned.link_hangup()
+    // The second sshd has only ed25519: the preference is not a requirement, so the
+    // handshake still completes and the domain check reports the key as changed.
+    mut fallback := new_ssh_link()
+    try fallback.link_dial("127.0.0.1", port2, os.getenv("USER"), 5, algos)
+    assert_eq((try fallback.link_server_key()).key_type, "ssh-ed25519")
+    fallback.link_hangup()
 }

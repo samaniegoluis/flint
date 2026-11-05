@@ -33,13 +33,13 @@ fn (self: SshLink) last_hop() -> SshConn! {
     return self.hops[self.hops.len() - 1]
 }
 
-fn (mut self: SshLink) link_dial(hostname: str, port: i64, user: str, timeout_secs: i64) -> void! {
+fn (mut self: SshLink) link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void! {
     if port <= 0 || port > 65535 {
         return error(coded(ERR_INVALID, "port {port} is out of range"))
     }
     self.timeout_secs = timeout_secs
     if self.hops.len() == 0 {
-        self.hops.push(try ssh_dial(hostname, i32(port), user, timeout_secs))
+        self.hops.push(try ssh_dial_over(hostname, i32(port), user, timeout_secs, -1, host_key_algos))
         return
     }
     outer := try self.last_hop()
@@ -60,7 +60,7 @@ fn (mut self: SshLink) link_dial(hostname: str, port: i64, user: str, timeout_se
     if fd < 0 {
         return error(coded(ERR_NETWORK, "the jump host could not reach {hostname}:{port}: {msg}"))
     }
-    self.hops.push(try ssh_dial_over(hostname, i32(port), user, timeout_secs, fd))
+    self.hops.push(try ssh_dial_over(hostname, i32(port), user, timeout_secs, fd, host_key_algos))
 }
 
 fn (self: SshLink) link_server_key() -> ServerKey! {

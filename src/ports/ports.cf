@@ -88,9 +88,11 @@ type EventSink interface {
 // directly and every later hop through a tunnel over the previous one; the other
 // calls act on the last hop. Each blocking call is bounded by the dial timeout
 // (Principle 8). Errors carry `network`, `auth` or `host_key` codes.
+// `host_key_algos` ("" for the library defaults) is the domain's
+// `preferred_host_key_algos` for the hop being dialled.
 // One channel at a time: a shell (PTY) or an exec.
 type SshTransport interface {
-    link_dial(hostname: str, port: i64, user: str, timeout_secs: i64) -> void!
+    link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void!
     link_server_key() -> ServerKey!
     link_auth_key(private_key: str, passphrase: str) -> void!
     link_auth_password(password: str) -> void!

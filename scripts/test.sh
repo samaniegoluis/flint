@@ -24,17 +24,19 @@ cleanup() {
 trap cleanup EXIT
 
 ssh-keygen -q -t ed25519 -N '' -f "$tmp/host_ed25519"
+# A second host key type on the first server, for the host key preference test.
+ssh-keygen -q -t ecdsa -b 256 -N '' -f "$tmp/host_ecdsa"
 ssh-keygen -q -t ed25519 -N '' -f "$tmp/user_ed25519"
 cp "$tmp/user_ed25519.pub" "$tmp/authorized_keys"
 chmod 600 "$tmp/authorized_keys"
 # Two servers: the second has its own host key and stands in for a host reached
 # through the first as a jump host.
 ssh-keygen -q -t ed25519 -N '' -f "$tmp/host2_ed25519"
-write_config() {  # <name> <port> <host key>
+write_config() {  # <name> <port> <host key> [<more host keys>...]
   cat > "$tmp/$1_config" <<CFG
 Port $2
 ListenAddress 127.0.0.1
-HostKey $3
+$(for k in "${@:3}"; do echo "HostKey $k"; done)
 AuthorizedKeysFile $tmp/authorized_keys
 PidFile $tmp/$1.pid
 PasswordAuthentication no
@@ -45,7 +47,7 @@ PermitTTY yes
 AllowTcpForwarding yes
 CFG
 }
-write_config sshd "$port" "$tmp/host_ed25519"
+write_config sshd "$port" "$tmp/host_ed25519" "$tmp/host_ecdsa"
 write_config sshd2 "$port2" "$tmp/host2_ed25519"
 
 for name in sshd sshd2; do

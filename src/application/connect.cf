@@ -264,7 +264,8 @@ fn open_link[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, 
 }
 
 fn open_hop[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, mut store: S, session: VaultSession, cat: Catalog, mut link: T, prompter: P, hop: Host, user: str, opts: ConnectOptions) -> void! {
-    try link.link_dial(hop.hostname, hop.port, user, opts.timeout_secs)
+    algos := preferred_host_key_algos(try store.known_hosts_all(), known_host_addr(hop.hostname, hop.port))
+    try link.link_dial(hop.hostname, hop.port, user, opts.timeout_secs, algos)
     key := try link.link_server_key()
     _ := try verify_host_key(mut store, prompter, hop, key, opts)
     try authenticate_hop(crypto, session, cat, mut link, prompter, hop, user)
