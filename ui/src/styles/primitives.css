@@ -167,7 +167,7 @@ body { margin: 0; background: var(--surface-desk); }
 .term .hl-head { background: var(--ansi-2); color: var(--term-bg); }
 .term .hl-sel { background: var(--term-selection); color: var(--term-fg); }
 .cur { display: inline-block; width: 0.6em; height: 1.25em; vertical-align: -0.28em; background: var(--term-cursor); }
-.pane-dim { position: absolute; inset: 0; background: var(--pane-dim); display: flex; align-items: center; justify-content: center; padding: var(--sp-6); }
+.pane-dim { position: absolute; inset: 0; z-index: 1; background: var(--pane-dim); display: flex; align-items: center; justify-content: center; padding: var(--sp-6); }
 
 /* Status bar */
 .statusbar { position: absolute; left: 0; right: 0; bottom: 0; height: var(--statusbar-h); display: flex; align-items: center; gap: var(--sp-4); padding: 0 var(--sp-3); background: var(--surface-chrome); border-top: 1px solid var(--border-subtle); font-size: var(--fs-xs); color: var(--text-tertiary); z-index: 2; }

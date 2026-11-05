@@ -394,6 +394,12 @@
       await sleep(200);
       // A real ↵ submits the form only when the focus is on it; a synthetic one never
       // does, so this checks the focus and leaves the submit to the click below.
+      // el.click() skips hit-testing; a mouse lands on whatever is on top. xterm's
+      // layers were above the card, so a real click selected terminal text instead.
+      const trustBtn = byText('button[type="submit"]', 'Trust and connect');
+      const r = trustBtn.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      await check(trustBtn.contains(hit), `a click on Trust and connect lands on it (${hit?.tagName} ${hit?.className})`);
       await check(document.activeElement?.textContent.includes('Trust and connect'), `the host key card puts the focus on Trust and connect (${document.activeElement?.tagName} ${document.activeElement?.textContent.slice(0, 30)})`);
       if (how === 'esc') {
         press('Escape', 'Escape');
