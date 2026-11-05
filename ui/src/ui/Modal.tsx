@@ -29,16 +29,23 @@ export function Modal({ label, onClose, children, width = 560, top = 72, classNa
   );
 }
 
-// Moves focus into `ref` on mount, keeps Tab inside it, and calls onClose on Esc.
+// The open dialogs, innermost last: only the top one handles keys and holds the focus.
+const stack: HTMLElement[] = [];
+
+// Moves focus into `ref` on mount, keeps it inside (Tab wraps, and focus that lands
+// behind the dialog, such as a terminal refocusing itself, is pulled back), and calls
+// onClose on Esc wherever the focus is.
 export function useTrapFocus(ref: React.RefObject<HTMLElement>, onClose: () => void) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    stack.push(el);
     const prev = document.activeElement as HTMLElement | null;
-    const first = el.querySelector<HTMLElement>('[data-autofocus]') ?? el.querySelector<HTMLElement>('input, textarea, button, [tabindex="0"]');
-    first?.focus();
+    const focusFirst = () => (el.querySelector<HTMLElement>('[data-autofocus]') ?? el.querySelector<HTMLElement>('input, textarea, button, [tabindex="0"]'))?.focus();
+    focusFirst();
+    const top = () => stack[stack.length - 1] === el;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -54,9 +61,23 @@ export function useTrapFocus(ref: React.RefObject<HTMLElement>, onClose: () => v
       if (e.shiftKey && (i <= 0)) { e.preventDefault(); items[items.length - 1].focus(); }
       else if (!e.shiftKey && i === items.length - 1) { e.preventDefault(); items[0].focus(); }
     };
+    // Keys aimed behind the dialog: caught before xterm, which swallows Esc.
+    const onKeyOutside = (e: KeyboardEvent) => {
+      if (top() && !el.contains(e.target as Node) && (e.key === 'Escape' || e.key === 'Tab')) {
+        if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); focusFirst(); } else onKey(e);
+      }
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      if (top() && !el.contains(e.target as Node)) focusFirst();
+    };
     el.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKeyOutside, true);
+    document.addEventListener('focusin', onFocusIn);
     return () => {
       el.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKeyOutside, true);
+      document.removeEventListener('focusin', onFocusIn);
+      stack.splice(stack.indexOf(el), 1);
       prev?.focus?.();
     };
   }, [ref]);

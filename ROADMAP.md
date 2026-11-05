@@ -113,6 +113,7 @@ What Tether already does and Flint must not lose.
 | "No open sessions" page lists recently used hosts (design screen 13b) | `next` | M04 lists hosts alphabetically; recency needs a per-machine history |
 | Unlock and create run off the UI thread (Argon2id holds it about a second) | `next` | CF-046; the page keeps painting, but the window does not respond meanwhile |
 | Opt out of caching the vault key at unlock ("Remember on this device" unchecked) | `idea` | Today every unlock caches it (D-005); Settings → Vault can forget it |
+| Command palette actions in context, as in design screen 09: "New host in <group>", "Reconnect <tab>", "Open Files on <host>", and the `⌘P hosts only` hint in its footer | `next` | Raised in the M04 owner walkthrough; M04 lists the same generic actions everywhere |
 | Drag a host between groups in the tree | `next` | M04 changes the folder in the host editor |
 | Remember the sidebar width per view and resize it by dragging | `next` | M04 uses the design's default widths |
 | gui-e2e on macOS sometimes ends with an empty `e2e:` line: the page stops with no failed step and no report (about 1 run in 6) | `next` | Seen in the M04 owner walkthrough, not diagnosed. Start by logging `window.onerror` and the WebContent process state before `run_webview_test` times out |

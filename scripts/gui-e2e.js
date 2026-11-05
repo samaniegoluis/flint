@@ -291,6 +291,43 @@
     q('[aria-label="Command palette"] input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(100);
 
+    // A real keyboard sends keys to whatever has the focus, so these do too: a dialog
+    // whose focus stayed behind it would ignore Esc.
+    const press = (key, code, mods = {}) => (document.activeElement ?? document.body).dispatchEvent(
+      new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, ...mods }));
+    const cmd = (key, code) => press(key, code, { metaKey: mac, ctrlKey: !mac, shiftKey: !mac });
+    const editorOpen = () => q('[role="dialog"][aria-label^="Edit host"]');
+    async function escClosesEditor(how) {
+      await waitFor(editorOpen, 'the host editor, ' + how);
+      await sleep(150);
+      await check(editorOpen().contains(document.activeElement), `the host editor opened ${how} has the focus`);
+      press('Escape', 'Escape');
+      await sleep(100);
+      await check(!editorOpen(), `Esc closes the host editor opened ${how}`);
+    }
+    cmd('k', 'KeyK');
+    await waitFor(() => q('[aria-label="Command palette"]'), 'the palette again');
+    await fill('[aria-label="Command palette"] input', 'pwh');
+    await waitFor(() => q('[role="option"].hot')?.textContent.includes('pwhost'), 'pwhost hot');
+    cmd('i', 'KeyI');
+    await escClosesEditor('from the palette');
+    if (qa('.tab').length) {
+      (await waitFor(() => qa('.pane > div').find((d) => d.style.display !== 'none')?.querySelector('textarea'), 'terminal textarea')).focus();
+      cmd('i', 'KeyI');
+      await escClosesEditor('from the terminal');
+      // In the real app the terminal took the focus back from the editor, and xterm
+      // swallowed Esc (owner walkthrough).
+      cmd('i', 'KeyI');
+      await waitFor(editorOpen, 'the host editor again');
+      const ta = qa('.pane > div').find((d) => d.style.display !== 'none').querySelector('textarea');
+      ta.focus();
+      await sleep(50);
+      await check(editorOpen().contains(document.activeElement), 'a dialog takes the focus back from the terminal behind it');
+      ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+      await sleep(100);
+      await check(!editorOpen(), 'Esc closes a dialog even when the key reaches the terminal behind it');
+    }
+
     await setStep('settings');
     const openTabs = qa('.tab').length;
     // The shell prints a mark on every SIGWINCH: coming back must not resize it.
