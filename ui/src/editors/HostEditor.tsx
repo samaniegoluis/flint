@@ -132,7 +132,7 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
               <div className="input"><input id="ha" className="mono" value={f.alias} onChange={(e) => set('alias', e.target.value)} placeholder="prod-api-01" data-autofocus autoFocus /></div>
               <span className="hint">What you type in <span className="mono">flint connect</span>.</span></div>
             <div className="field"><label className="flabel" htmlFor="hl">Label <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></label>
-              <div className="input"><input id="hl" value={f.label} onChange={(e) => set('label', e.target.value)} placeholder="API server 1" /></div></div>
+              <div className="input"><input id="hl" value={f.label} onChange={(e) => set('label', e.target.value)} placeholder="e.g. Home server" /></div></div>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 96px', gap: 'var(--sp-4)' }}>
               <div className="field"><label className="flabel" htmlFor="hh">Hostname</label>
                 <div className="input"><input id="hh" className="mono" value={f.hostname} onChange={(e) => set('hostname', e.target.value)} placeholder="10.0.4.21" /></div></div>
