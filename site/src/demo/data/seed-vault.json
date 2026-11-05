@@ -1,0 +1,41 @@
+{
+	"current": "Demo",
+	"vaults": [
+		{
+			"name": "Demo",
+			"path": "/home/you/Sync/demo.flint",
+			"cached": true,
+			"groups": ["prod", "homelab"],
+			"keys": [
+				{
+					"name": "laptop",
+					"type": "ssh-ed25519",
+					"fingerprint": "SHA256:qX3m9Vd2kLw7sTfB1yZpR8cN4hJ6uE0aGiO5vKtMnWs",
+					"public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH3kz8Wq1demoPublicKeyOnly7f2Lr9c you@laptop",
+					"has_passphrase": true
+				}
+			],
+			"creds": [{ "name": "deploy", "user": "deploy", "key": "laptop", "password": "" }],
+			"hosts": [
+				{ "alias": "bastion", "hostname": "bastion.example", "user": "jump", "key": "laptop", "notes": "Entry point to the private network" },
+				{ "alias": "db", "hostname": "10.0.0.12", "user": "admin", "group": "prod", "tags": ["postgres"], "jump": "bastion", "password": "set", "color": "#e8833a" },
+				{ "alias": "nas", "label": "Home NAS", "hostname": "192.168.1.20", "user": "pi", "group": "homelab", "tags": ["backup"], "key": "laptop" },
+				{ "alias": "web-01", "hostname": "10.0.0.5", "user": "deploy", "group": "prod", "tags": ["nginx"], "credential": "deploy" }
+			],
+			"known_hosts": [{ "addr": "bastion.example", "added_at": "2026-10-02 09:14" }]
+		},
+		{
+			"name": "Work",
+			"path": "/home/you/OneDrive/work.flint",
+			"cached": false,
+			"groups": ["ci"],
+			"keys": [],
+			"creds": [{ "name": "build", "user": "ci", "key": "", "password": "set" }],
+			"hosts": [
+				{ "alias": "runner-1", "hostname": "ci-runner-1.internal", "group": "ci", "tags": ["ci"], "credential": "build" },
+				{ "alias": "runner-2", "hostname": "ci-runner-2.internal", "group": "ci", "tags": ["ci"], "credential": "build" }
+			],
+			"known_hosts": []
+		}
+	]
+}

@@ -29,4 +29,7 @@ Flint is in early development. Here is what works today:
 | Desktop app: vaults, host tree, tabs, terminal, prompts, palette, settings | Works ([The desktop app](/guides/desktop-app/)) |
 | SFTP, tunnels, splits | Planned |
 
-To try it, [build it from source](/start/build-from-source/).
+To try the CLI without installing anything, open the [demo on the home page](/#try-the-cli):
+a simulated terminal with a demo vault and a short guided tour. It runs entirely in your
+browser and connects to nothing. To use Flint for real, [build it from
+source](/start/build-from-source/).

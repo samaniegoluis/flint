@@ -1,0 +1,62 @@
+{
+	"_comment": "The guided tour. `match` holds the words a command must contain to complete a step; `run` is the suggested command; `where` is the side it runs on. Each CLI change updates the steps it affects (CLAUDE.md rule 5).",
+	"intro": [
+		"# Welcome to Flint's demo. Nothing here is real: a demo vault lives in this page,",
+		"# nothing leaves your browser, and a reload resets everything."
+	],
+	"steps": [
+		{
+			"hint": ["Every command, on one screen:"],
+			"run": "flint help",
+			"match": "flint help",
+			"where": "local"
+		},
+		{
+			"hint": ["Your vault already holds a few hosts. List them:"],
+			"run": "flint host list",
+			"match": "flint host list",
+			"where": "local"
+		},
+		{
+			"hint": ["Look at one. db sits behind a jump host; its password is stored, never shown:"],
+			"run": "flint host show db",
+			"match": "flint host show",
+			"where": "local"
+		},
+		{
+			"hint": ["Run one command on a server. The first time, Flint asks you to trust its key:"],
+			"run": "flint exec web-01 -- uptime",
+			"match": "flint exec",
+			"where": "local"
+		},
+		{
+			"hint": ["Open a shell on db. Flint goes through bastion for you:"],
+			"run": "flint connect db",
+			"match": "flint connect",
+			"where": "local"
+		},
+		{
+			"hint": ["You are on the server now. Look around, then leave:"],
+			"run": "exit",
+			"match": "exit",
+			"where": "remote",
+			"chips": ["ls", "cat notes.txt", "uptime", "exit"]
+		},
+		{
+			"hint": ["Add your own server. Make up an address; the password is read with echo off:"],
+			"run": "flint host add my-server --hostname 203.0.113.10 --user me --password",
+			"match": "flint host add",
+			"where": "local"
+		},
+		{
+			"hint": ["Scripts and AI agents read the same vault as JSON:"],
+			"run": "flint host list --json",
+			"match": "flint host list --json",
+			"where": "local"
+		}
+	],
+	"done": [
+		"# That's the tour. Connect to the server you added, try --json on any command,",
+		"# or switch vaults with `flint vault use Work`. Type `tour` to start again."
+	]
+}

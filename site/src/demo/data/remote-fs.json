@@ -1,0 +1,28 @@
+{
+	"_comment": "The fake Linux every demo host opens. {home}, {user}, {hostname} and {alias} are filled in per host. Read-only.",
+	"dirs": [
+		"/",
+		"/etc",
+		"/home",
+		"{home}",
+		"{home}/app",
+		"{home}/app/releases",
+		"{home}/backups",
+		"/tmp",
+		"/var",
+		"/var/log"
+	],
+	"files": {
+		"{home}/.bashrc": "# ~/.bashrc\nexport EDITOR=vim\nalias ll='ls -l'\n",
+		"{home}/notes.txt": "Welcome to {hostname}.\n\nThis server is part of Flint's demo: nothing here is real, and\nevery demo host shows the same files. Things to try:\n\n  ls -l app        list a folder\n  cat app/README   read a file\n  uptime           a remote command\n  exit             back to your machine\n",
+		"{home}/app/README": "app: a small web service.\nDeployed with `flint exec {alias} -- app/deploy.sh` from a laptop,\nwithout anyone copying a password around.\n",
+		"{home}/app/deploy.sh": "#!/bin/sh\nset -e\necho \"deploying $(date +%F)\"\n",
+		"{home}/app/releases/2026-10-30.tar.gz": "(binary file)",
+		"{home}/app/releases/2026-11-04.tar.gz": "(binary file)",
+		"{home}/backups/db-2026-11-04.sql.gz": "(binary file)",
+		"/etc/hostname": "{hostname}\n",
+		"/etc/os-release": "PRETTY_NAME=\"Ubuntu 24.04.1 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nID=ubuntu\n",
+		"/etc/motd": "Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 6.8.0-45-generic x86_64)\n",
+		"/var/log/syslog": "Nov  5 10:41:58 {hostname} systemd[1]: Started session 4 of user {user}.\nNov  5 10:42:01 {hostname} sshd[2211]: Accepted publickey for {user} from 203.0.113.7\n"
+	}
+}
