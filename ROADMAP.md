@@ -104,6 +104,7 @@ What Tether already does and Flint must not lose.
 | Dual-pane SFTP, remote ↔ remote | `later` | |
 | Quick-edit remote files (CodeMirror) | `later` | |
 | Light theme polish, more accents | `next` | |
+| Terminal colour themes in Settings → Terminal, as in Tether: Default, Catppuccin, Tokyo Night, Aura, Dracula, Nord, each with a dark and a light palette | `next` | Raised in the M04 owner walkthrough (the owner uses Aura). Port the palettes from Tether's `frontend/src/theme/terminalThemes.js`; they replace only the 16 ANSI colours and the terminal background/foreground/cursor, so no new design pass is needed |
 | Passphrase prompt for a key whose passphrase is not stored (design screen 10b), and an encrypted on-disk key | `next` | M04 has no such prompt: keys added to the vault keep their passphrase |
 | Host key prompt: **Connect once** (trust without recording) | `idea` | Needs a third trust state in the core (D-025) |
 | Password prompt: **Save to vault** (create and link a credential from the typed password) | `next` | Left out of M04 |
