@@ -1,0 +1,184 @@
+package application
+
+import "../domain"
+
+fn host_patch(alias: str, hostname: str) -> HostPatch {
+    mut p := empty_host_patch()
+    p.alias = alias
+    p.set_alias = true
+    p.hostname = hostname
+    p.set_hostname = true
+    return p
+}
+
+fn err_code[T](r: T!) -> str {
+    if r.has_value() {
+        return "ok"
+    }
+    return error_code_of("{r.error().message()}")
+}
+
+test "groups nest, list by path and refuse removal while in use" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    g := try add_group(crypto, mut store, "homelab/proxmox")
+    assert_eq(g.path, "homelab/proxmox")
+    assert_eq(err_code(add_group(crypto, mut store, "HomeLab/Proxmox")), "conflict")
+    _ := try add_group(crypto, mut store, "homelab/nas")
+    views := try list_groups(store)
+    assert_eq(views.len(), 3)
+    assert_eq(views[0].path, "homelab")
+    assert_eq(views[0].subgroups, 2)
+    assert_eq(views[1].path, "homelab/nas")
+
+    mut p := host_patch("pve1", "10.0.0.2")
+    p.group = "homelab/proxmox"
+    p.set_group = true
+    _ := try add_host(crypto, mut store, s, p)
+    assert_eq(err_code(remove_group(mut store, "homelab/proxmox")), "conflict")
+    assert_eq(err_code(remove_group(mut store, "homelab")), "conflict")
+    _ := try remove_group(mut store, "homelab/nas")
+    renamed := try rename_group(mut store, "homelab", "lab")
+    assert_eq(renamed.path, "lab")
+    assert_eq((try show_host(store, "pve1")).group, "lab/proxmox")
+    assert_eq(err_code(remove_group(mut store, "nope")), "not_found")
+}
+
+test "hosts: add, edit, filter, references and removal" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+
+    mut bastion := host_patch("bastion", "bastion.example.org")
+    bastion.tags = ["edge", "prod", "edge"]
+    bastion.set_tags = true
+    b := try add_host(crypto, mut store, s, bastion)
+    assert_eq(b.port, 22)
+    assert_eq(b.tags.len(), 2)
+
+    mut web := host_patch("web", "10.0.0.5")
+    web.jump = "bastion"
+    web.set_jump = true
+    web.group = "prod/web"
+    web.set_group = true
+    web.password = "hunter2!"
+    web.set_password = true
+    w := try add_host(crypto, mut store, s, web)
+    assert_eq(w.jump, "bastion")
+    assert_eq(w.group, "prod/web")
+    assert(w.has_password)
+
+    // The password is sealed, not stored in clear.
+    hosts := try store.hosts_all()
+    for h in hosts {
+        if h.alias == "web" {
+            assert_eq(try open_secret(crypto, s, "hosts", h.id, "password", h.password), "hunter2!")
+        }
+    }
+
+    assert_eq(err_code(add_host(crypto, mut store, s, host_patch("WEB", "x"))), "conflict")
+    assert_eq(err_code(add_host(crypto, mut store, s, host_patch("bad alias", "x"))), "invalid")
+    mut no_host := empty_host_patch()
+    no_host.alias = "x"
+    no_host.set_alias = true
+    assert_eq(err_code(add_host(crypto, mut store, s, no_host)), "usage")
+    mut bad_ref := host_patch("x", "x")
+    bad_ref.credential = "nope"
+    bad_ref.set_credential = true
+    assert_eq(err_code(add_host(crypto, mut store, s, bad_ref)), "not_found")
+    assert_eq((try list_hosts(store, "", "")).len(), 2, "a failed add must leave nothing behind")
+
+    // Jump loops are refused.
+    mut loop := empty_host_patch()
+    loop.jump = "web"
+    loop.set_jump = true
+    assert_eq(err_code(edit_host(crypto, mut store, s, "bastion", loop)), "invalid")
+
+    // Edit changes only what is given.
+    mut e := empty_host_patch()
+    e.port = 2222
+    e.set_port = true
+    e.password = ""
+    e.set_password = true
+    edited := try edit_host(crypto, mut store, s, "web", e)
+    assert_eq(edited.port, 2222)
+    assert_eq(edited.hostname, "10.0.0.5")
+    assert(!edited.has_password)
+
+    assert_eq((try list_hosts(store, "prod", "")).len(), 1)
+    assert_eq((try list_hosts(store, "", "EDGE")).len(), 1)
+    assert_eq(err_code(list_hosts(store, "nope", "")), "not_found")
+
+    assert_eq(err_code(remove_host(mut store, "bastion")), "conflict")
+    _ := try remove_host(mut store, "web")
+    _ := try remove_host(mut store, "bastion")
+    assert_eq((try list_hosts(store, "", "")).len(), 0)
+}
+
+test "keys are stored by content and refused while in use" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    ins := FakeInspector{ strict: true }
+    k := try add_key(crypto, mut store, ins, s, "laptop", "PRIVATE laptop", "")
+    assert_eq(k.fingerprint, "SHA256:fake")
+    assert(!k.has_passphrase)
+    assert_eq(err_code(add_key(crypto, mut store, ins, s, "LAPTOP", "PRIVATE x", "")), "conflict")
+    assert_eq(err_code(add_key(crypto, mut store, ins, s, "enc", "PRIVATE ENCRYPTED", "")), "invalid")
+    enc := try add_key(crypto, mut store, ins, s, "enc", "PRIVATE ENCRYPTED", "pp")
+    assert(enc.has_passphrase)
+    keys := try store.keys_all()
+    assert_eq(try open_secret(crypto, s, "ssh_keys", keys[0].id, "private_key", keys[0].private_key), "PRIVATE laptop")
+
+    mut p := host_patch("web", "10.0.0.5")
+    p.key = "laptop"
+    p.set_key = true
+    _ := try add_host(crypto, mut store, s, p)
+    assert_eq(err_code(remove_key(mut store, "laptop")), "conflict")
+    renamed := try rename_key(mut store, "laptop", "work-laptop")
+    assert_eq(renamed.name, "work-laptop")
+    assert_eq((try show_host(store, "web")).key, "work-laptop")
+    _ := try remove_key(mut store, "enc")
+    assert_eq((try list_keys(store)).len(), 1)
+}
+
+test "credentials link a user, a password and a key" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    _ := try add_key(crypto, mut store, FakeInspector{ strict: true }, s, "deploy", "PRIVATE d", "")
+    mut c := empty_cred_patch()
+    c.name = "domain"
+    c.set_name = true
+    c.user = "CORP\\luis"
+    c.set_user = true
+    c.password = "p@ss"
+    c.set_password = true
+    c.key = "deploy"
+    c.set_key = true
+    v := try add_cred(crypto, mut store, s, c)
+    assert(v.has_password)
+    assert_eq(v.key, "deploy")
+    assert_eq(err_code(add_cred(crypto, mut store, s, c)), "conflict")
+
+    mut p := host_patch("dc1", "dc1.corp")
+    p.credential = "domain"
+    p.set_credential = true
+    _ := try add_host(crypto, mut store, s, p)
+    assert_eq((try show_host(store, "dc1")).credential, "domain")
+    assert_eq(err_code(remove_cred(mut store, "domain")), "conflict")
+    assert_eq(err_code(remove_key(mut store, "deploy")), "conflict")
+
+    mut e := empty_cred_patch()
+    e.name = "corp"
+    e.set_name = true
+    e.key = ""
+    e.set_key = true
+    edited := try edit_cred(crypto, mut store, s, "domain", e)
+    assert_eq(edited.name, "corp")
+    assert_eq(edited.key, "")
+    assert(edited.has_password)
+    assert_eq((try show_host(store, "dc1")).credential, "corp")
+    assert_eq((try list_creds(store)).len(), 1)
+}

@@ -1,0 +1,80 @@
+package domain
+
+// Stable error codes. Every error the core returns starts with one of these codes and
+// a colon ("not_found: host 'web'"). cfire errors carry only a message, so the code
+// travels as a prefix; drivers map it to an exit code and a JSON `code` field
+// (Principle 7). Messages never contain secret values (Principle 6).
+
+var ERR_USAGE: str = "usage"
+var ERR_INVALID: str = "invalid"
+var ERR_NOT_FOUND: str = "not_found"
+var ERR_CONFLICT: str = "conflict"
+var ERR_LOCKED: str = "locked"
+var ERR_WRONG_PASSWORD: str = "wrong_password"
+var ERR_UNSUPPORTED: str = "unsupported"
+var ERR_KEYCHAIN: str = "keychain"
+var ERR_IO: str = "io"
+var ERR_INTERNAL: str = "internal"
+
+// Builds an error message carrying a stable code.
+fn coded(code: str, msg: str) -> str {
+    return code + ": " + msg
+}
+
+// Every code a driver may see, in exit-code order (exit code = index + 1, except
+// that `internal` is 1).
+fn known_error_codes() -> []str {
+    return [ERR_INTERNAL, ERR_USAGE, ERR_NOT_FOUND, ERR_CONFLICT, ERR_LOCKED, ERR_WRONG_PASSWORD, ERR_INVALID, ERR_UNSUPPORTED, ERR_KEYCHAIN, ERR_IO]
+}
+
+// The code an error message starts with, or `internal` when it carries none.
+fn error_code_of(msg: str) -> str {
+    for code in known_error_codes() {
+        if msg.len() > code.len() + 1 && msg.starts_with(code + ": ") {
+            return code
+        }
+    }
+    return ERR_INTERNAL
+}
+
+// The message without its code prefix.
+fn error_text_of(msg: str) -> str {
+    code := error_code_of(msg)
+    prefix := code + ": "
+    if msg.starts_with(prefix) {
+        return msg.substr(prefix.len())
+    }
+    return msg
+}
+
+// The process exit code for an error code. Stable: scripts rely on it.
+fn exit_code_for(code: str) -> i32 {
+    codes := known_error_codes()
+    for i, c in codes {
+        if c == code {
+            return i32(i) + 1
+        }
+    }
+    return 1
+}
+
+test "error codes round-trip through a message" {
+    msg := coded(ERR_NOT_FOUND, "host 'web'")
+    assert_eq(error_code_of(msg), "not_found")
+    assert_eq(error_text_of(msg), "host 'web'")
+    assert_eq(error_code_of("vault: something odd"), "internal")
+    assert_eq(error_text_of("vault: something odd"), "vault: something odd")
+}
+
+test "exit codes are stable" {
+    assert_eq(exit_code_for(ERR_INTERNAL), 1)
+    assert_eq(exit_code_for(ERR_USAGE), 2)
+    assert_eq(exit_code_for(ERR_NOT_FOUND), 3)
+    assert_eq(exit_code_for(ERR_CONFLICT), 4)
+    assert_eq(exit_code_for(ERR_LOCKED), 5)
+    assert_eq(exit_code_for(ERR_WRONG_PASSWORD), 6)
+    assert_eq(exit_code_for(ERR_INVALID), 7)
+    assert_eq(exit_code_for(ERR_UNSUPPORTED), 8)
+    assert_eq(exit_code_for(ERR_KEYCHAIN), 9)
+    assert_eq(exit_code_for(ERR_IO), 10)
+}

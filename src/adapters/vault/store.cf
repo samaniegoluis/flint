@@ -1,0 +1,279 @@
+package vault
+
+// The `VaultStore` port over SQLCipher. It moves domain rows in and out and knows
+// nothing about the rules between them; secrets arrive and leave already sealed.
+
+import "core:fs"
+import "../../domain"
+
+// Holds the raw handle rather than a CipherDb: a struct field of another struct
+// type can be emitted before that type is complete (CF-033).
+type SqlVaultStore struct {
+    handle: *mut cpp::sqlite3
+}
+
+fn new_sql_vault_store() -> SqlVaultStore {
+    mut s := SqlVaultStore{}
+    // CFIRE-UPSTREAM: CF-019
+    cpp {
+        s.handle = nullptr;
+    }
+    return s
+}
+
+// A view of the open connection; it does not own the handle.
+fn (self: SqlVaultStore) conn() -> CipherDb {
+    return CipherDb{ handle: self.handle }
+}
+
+fn (mut self: SqlVaultStore) adopt(db: CipherDb) {
+    // CFIRE-UPSTREAM: CF-019
+    cpp {
+        self.handle = db.handle;
+    }
+}
+
+fn (self: SqlVaultStore) vault_file_exists(path: str) -> bool {
+    return fs.exists(path)
+}
+
+// The Argon2id salt: the first 16 bytes of the file, where SQLCipher keeps it.
+fn (self: SqlVaultStore) vault_read_salt(path: str) -> []byte! {
+    if !fs.exists(path) {
+        return error(coded(ERR_NOT_FOUND, "no vault file at {path}"))
+    }
+    // Read with std::ifstream: fs.File's `read` method is captured by SshConn.read
+    // once both are in one program (CF-017).
+    mut head := make([]byte, 16)
+    mut got: i64 = 0
+    // CFIRE-UPSTREAM: CF-017
+    cpp {
+        std::ifstream in(path, std::ios::binary);
+        if (in) {
+            in.read(reinterpret_cast<char*>(head.data()), 16);
+            got = static_cast<std::int64_t>(in.gcount());
+        } else {
+            got = -1;
+        }
+    }
+    if got < 0 {
+        return error(coded(ERR_IO, "cannot read {path}"))
+    }
+    if got != 16 {
+        return error(coded(ERR_INVALID, "{path} is not a Flint vault"))
+    }
+    return head
+}
+
+fn (mut self: SqlVaultStore) vault_create(path: str, page_key: []byte, salt: []byte) -> void! {
+    if fs.exists(path) {
+        return error(coded(ERR_CONFLICT, "a file already exists at {path}"))
+    }
+    dir := fs.dirname(path)
+    if dir.len() > 0 && !fs.exists(dir) {
+        return error(coded(ERR_NOT_FOUND, "the folder {dir} does not exist"))
+    }
+    self.vault_detach()
+    self.adopt(try open_cipher_db(path, page_key, salt, true))
+    migrated := self.conn().migrate()
+    if !migrated.has_value() {
+        self.vault_detach()
+        _ := fs.remove(path)
+        return error("{migrated.error().message()}")
+    }
+}
+
+fn (mut self: SqlVaultStore) vault_attach(path: str, page_key: []byte, salt: []byte) -> void! {
+    if !fs.exists(path) {
+        return error(coded(ERR_NOT_FOUND, "no vault file at {path}"))
+    }
+    self.vault_detach()
+    self.adopt(try open_cipher_db(path, page_key, salt, false))
+    migrated := self.conn().migrate()
+    if !migrated.has_value() {
+        self.vault_detach()
+        return error("{migrated.error().message()}")
+    }
+}
+
+fn (mut self: SqlVaultStore) vault_detach() {
+    mut db := self.conn()
+    if db.is_open() {
+        db.close_db()
+    }
+    // CFIRE-UPSTREAM: CF-019
+    cpp {
+        self.handle = nullptr;
+    }
+}
+
+fn (self: SqlVaultStore) require_open() -> void! {
+    if !self.conn().is_open() {
+        return error(coded(ERR_LOCKED, "no vault is unlocked"))
+    }
+}
+
+// The file format version recorded by the migrations (`meta.format`).
+fn (self: SqlVaultStore) vault_format() -> i64! {
+    v := try self.vault_get_meta("format")
+    if v == "1" {
+        return 1
+    }
+    return error(coded(ERR_UNSUPPORTED, "unknown vault format '{v}'"))
+}
+
+fn (self: SqlVaultStore) vault_get_meta(key: str) -> str! {
+    try self.require_open()
+    res := try self.conn().query_cells("SELECT value FROM meta WHERE key = ?1;", [sql_text(key)])
+    if res.rows.len() == 0 {
+        return ""
+    }
+    return cell_str(res.rows[0][0])
+}
+
+fn (self: SqlVaultStore) vault_set_meta(key: str, value: str) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("INSERT INTO meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value;", [sql_text(key), sql_text(value)])
+}
+
+fn (self: SqlVaultStore) vault_begin() -> void! {
+    try self.require_open()
+    try self.conn().exec("BEGIN IMMEDIATE;")
+}
+
+fn (self: SqlVaultStore) vault_commit() -> void! {
+    try self.conn().exec("COMMIT;")
+}
+
+fn (self: SqlVaultStore) vault_rollback() {
+    _ := self.conn().exec("ROLLBACK;")
+}
+
+// ---- Groups ------------------------------------------------------------------
+
+fn (self: SqlVaultStore) groups_all() -> []Group! {
+    try self.require_open()
+    res := try self.conn().query_cells("SELECT id, ifnull(parent_id, ''), name FROM groups ORDER BY name COLLATE NOCASE;", [])
+    mut list: []Group = []
+    for r in res.rows {
+        list.push(Group{ id: cell_str(r[0]), parent_id: cell_str(r[1]), name: cell_str(r[2]) })
+    }
+    return list
+}
+
+fn (self: SqlVaultStore) group_put(g: Group) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("INSERT INTO groups (id, parent_id, name) VALUES (?1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET parent_id = excluded.parent_id, name = excluded.name;", [sql_text(g.id), sql_ref(g.parent_id), sql_text(g.name)])
+}
+
+fn (self: SqlVaultStore) group_drop(id: str) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("DELETE FROM groups WHERE id = ?1;", [sql_text(id)])
+}
+
+// ---- Hosts -------------------------------------------------------------------
+
+fn (self: SqlVaultStore) hosts_all() -> []Host! {
+    try self.require_open()
+    res := try self.conn().query_cells("SELECT id, alias, label, hostname, port, username, ifnull(group_id, ''), color, notes, ifnull(jump_host_id, ''), ifnull(credential_id, ''), ifnull(key_id, ''), password FROM hosts ORDER BY alias COLLATE NOCASE;", [])
+    tag_res := try self.conn().query_cells("SELECT host_id, tag FROM host_tags ORDER BY host_id, position;", [])
+    mut tags_by_host: map[str][]str = {}
+    for t in tag_res.rows {
+        hid := cell_str(t[0])
+        if !tags_by_host.contains(hid) {
+            tags_by_host[hid] = []
+        }
+        tags_by_host[hid].push(cell_str(t[1]))
+    }
+    mut list: []Host = []
+    for r in res.rows {
+        id := cell_str(r[0])
+        mut tags: []str = []
+        if tags_by_host.contains(id) {
+            tags = tags_by_host[id]
+        }
+        list.push(Host{
+            id: id,
+            alias: cell_str(r[1]),
+            label: cell_str(r[2]),
+            hostname: cell_str(r[3]),
+            port: cell_i64(r[4]),
+            username: cell_str(r[5]),
+            group_id: cell_str(r[6]),
+            tags: tags,
+            color: cell_str(r[7]),
+            notes: cell_str(r[8]),
+            jump_host_id: cell_str(r[9]),
+            credential_id: cell_str(r[10]),
+            key_id: cell_str(r[11]),
+            password: cell_bytes(r[12]),
+        })
+    }
+    return list
+}
+
+fn (self: SqlVaultStore) host_put(h: Host) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("INSERT INTO hosts (id, alias, label, hostname, port, username, group_id, color, notes, jump_host_id, credential_id, key_id, password) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) ON CONFLICT(id) DO UPDATE SET alias = excluded.alias, label = excluded.label, hostname = excluded.hostname, port = excluded.port, username = excluded.username, group_id = excluded.group_id, color = excluded.color, notes = excluded.notes, jump_host_id = excluded.jump_host_id, credential_id = excluded.credential_id, key_id = excluded.key_id, password = excluded.password;", [
+        sql_text(h.id), sql_text(h.alias), sql_text(h.label), sql_text(h.hostname), sql_int(h.port),
+        sql_text(h.username), sql_ref(h.group_id), sql_text(h.color), sql_text(h.notes),
+        sql_ref(h.jump_host_id), sql_ref(h.credential_id), sql_ref(h.key_id), sql_blob(h.password),
+    ])
+    try self.conn().run_sql("DELETE FROM host_tags WHERE host_id = ?1;", [sql_text(h.id)])
+    for i, t in h.tags {
+        try self.conn().run_sql("INSERT INTO host_tags (host_id, position, tag) VALUES (?1, ?2, ?3);", [sql_text(h.id), sql_int(i64(i)), sql_text(t)])
+    }
+}
+
+fn (self: SqlVaultStore) host_drop(id: str) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("DELETE FROM hosts WHERE id = ?1;", [sql_text(id)])
+}
+
+// ---- SSH keys ----------------------------------------------------------------
+
+fn (self: SqlVaultStore) keys_all() -> []SshKey! {
+    try self.require_open()
+    res := try self.conn().query_cells("SELECT id, name, key_type, public_key, fingerprint, private_key, passphrase FROM ssh_keys ORDER BY name COLLATE NOCASE;", [])
+    mut list: []SshKey = []
+    for r in res.rows {
+        list.push(SshKey{ id: cell_str(r[0]), name: cell_str(r[1]), key_type: cell_str(r[2]), public_key: cell_str(r[3]), fingerprint: cell_str(r[4]), private_key: cell_bytes(r[5]), passphrase: cell_bytes(r[6]) })
+    }
+    return list
+}
+
+fn (self: SqlVaultStore) key_put(k: SshKey) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("INSERT INTO ssh_keys (id, name, key_type, public_key, fingerprint, private_key, passphrase) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET name = excluded.name, key_type = excluded.key_type, public_key = excluded.public_key, fingerprint = excluded.fingerprint, private_key = excluded.private_key, passphrase = excluded.passphrase;", [
+        sql_text(k.id), sql_text(k.name), sql_text(k.key_type), sql_text(k.public_key), sql_text(k.fingerprint), sql_blob(k.private_key), sql_blob(k.passphrase),
+    ])
+}
+
+fn (self: SqlVaultStore) key_drop(id: str) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("DELETE FROM ssh_keys WHERE id = ?1;", [sql_text(id)])
+}
+
+// ---- Credentials -------------------------------------------------------------
+
+fn (self: SqlVaultStore) creds_all() -> []Credential! {
+    try self.require_open()
+    res := try self.conn().query_cells("SELECT id, name, username, ifnull(key_id, ''), password FROM credentials ORDER BY name COLLATE NOCASE;", [])
+    mut list: []Credential = []
+    for r in res.rows {
+        list.push(Credential{ id: cell_str(r[0]), name: cell_str(r[1]), username: cell_str(r[2]), key_id: cell_str(r[3]), password: cell_bytes(r[4]) })
+    }
+    return list
+}
+
+fn (self: SqlVaultStore) cred_put(c: Credential) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("INSERT INTO credentials (id, name, username, key_id, password) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET name = excluded.name, username = excluded.username, key_id = excluded.key_id, password = excluded.password;", [
+        sql_text(c.id), sql_text(c.name), sql_text(c.username), sql_ref(c.key_id), sql_blob(c.password),
+    ])
+}
+
+fn (self: SqlVaultStore) cred_drop(id: str) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("DELETE FROM credentials WHERE id = ?1;", [sql_text(id)])
+}

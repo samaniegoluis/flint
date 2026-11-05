@@ -1,0 +1,51 @@
+package ssh
+
+import "core:fs"
+import "core:os"
+import "../../ports"
+
+fn inspector_port_check[I: KeyInspector](i: I) -> bool {
+    return !i.inspect_private_key("nope", "").has_value()
+}
+
+fn keygen(dir: str, name: str, passphrase: str) -> str! {
+    path := dir + "/" + name
+    _ := try os.command("ssh-keygen", ["-q", "-t", "ed25519", "-N", passphrase, "-C", "flint-test", "-f", path])
+    return path
+}
+
+test "inspects plain and passphrase-protected keys and rejects bad input" {
+    dir := "/tmp/flint-keys-" + os.getenv("USER", "test")
+    _ := fs.remove(dir)
+    try fs.mkdir_all(dir)
+    plain_path := try keygen(dir, "plain", "")
+    locked_path := try keygen(dir, "locked", "s3cret-pass")
+    plain := try fs.read_text(plain_path)
+    locked := try fs.read_text(locked_path)
+    plain_pub := try fs.read_text(plain_path + ".pub")
+    expected_fp := try os.command("ssh-keygen", ["-l", "-E", "sha256", "-f", plain_path])
+
+    ki := new_libssh_key_inspector()
+    info := try ki.inspect_private_key(plain, "")
+    assert_eq(info.key_type, "ssh-ed25519")
+    assert(plain_pub.starts_with(info.public_key), "public key must match ssh-keygen's")
+    assert(expected_fp.stdout_str.contains(info.fingerprint), "fingerprint must match ssh-keygen -l")
+
+    assert(!ki.inspect_private_key(locked, "").has_value())
+    wrong := ki.inspect_private_key(locked, "nope")
+    assert(!wrong.has_value())
+    msg := "{wrong.error().message()}"
+    assert(!msg.contains("s3cret"))
+    assert(!msg.contains("PRIVATE KEY"))
+    unlocked := try ki.inspect_private_key(locked, "s3cret-pass")
+    assert_eq(unlocked.key_type, "ssh-ed25519")
+
+    pub_only := ki.inspect_private_key(plain_pub, "")
+    assert(!pub_only.has_value())
+    assert(!ki.inspect_private_key("", "").has_value())
+    try fs.remove(dir)
+}
+
+test "LibsshKeyInspector satisfies the KeyInspector port" {
+    assert(inspector_port_check(new_libssh_key_inspector()))
+}

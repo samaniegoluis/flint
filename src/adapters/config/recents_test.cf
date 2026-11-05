@@ -1,0 +1,28 @@
+package config
+
+import "core:fs"
+import "core:crypto/sha256"
+import "../../ports"
+
+fn recents_port_check[R: RecentStore](r: R) -> bool {
+    list := r.recents_load() or err { return false }
+    return list.len() == 0
+}
+
+test "recent vaults round-trip through the JSON file" {
+    dir := "/tmp/flint-config-" + sha256.random_hex(8)
+    store := new_json_recent_store(dir)
+    assert(recents_port_check(store))
+    try store.recents_save([RecentVault{ path: "/a/b.flint", name: "Home" }, RecentVault{ path: "/c \"q\".flint", name: "Work" }])
+    list := try store.recents_load()
+    assert_eq(list.len(), 2)
+    assert_eq(list[0].name, "Home")
+    assert_eq(list[1].path, "/c \"q\".flint")
+    try fs.write_text(dir + "/vaults.json", "{not json")
+    assert(!store.recents_load().has_value())
+    try fs.remove(dir)
+}
+
+test "the config folder honours FLINT_CONFIG_DIR" {
+    assert(flint_config_dir().len() > 0)
+}

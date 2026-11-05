@@ -1,0 +1,74 @@
+package keychain
+
+// The `Keychain` port over the OS keychain: macOS Keychain Services or the Linux
+// Secret Service (libsecret). The native code is in native/flint_keychain.hpp.
+
+// CFIRE-UPSTREAM: CF-008, CF-031
+import cpp "flint_keychain.hpp" @pkg("flint-native")
+import "../../domain"
+
+var KEYCHAIN_SERVICE: str = "Flint"
+
+// `enabled: false` turns the keychain off (FLINT_KEYCHAIN=off): nothing is cached,
+// every unlock asks for the password.
+type OsKeychain struct {
+    enabled: bool
+}
+
+fn new_os_keychain(enabled: bool) -> OsKeychain {
+    return OsKeychain{ enabled: enabled }
+}
+
+fn keychain_status_error(rc: i32, action: str) -> str {
+    if rc == 2 {
+        return coded(ERR_KEYCHAIN, "the OS keychain is not available ({action})")
+    }
+    return coded(ERR_KEYCHAIN, "the OS keychain refused to {action}")
+}
+
+fn (self: OsKeychain) keychain_save(account: str, secret: []byte) -> void! {
+    if !self.enabled {
+        return error(coded(ERR_KEYCHAIN, "the keychain is turned off (FLINT_KEYCHAIN=off)"))
+    }
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-008
+    cpp {
+        rc = flint_kc::save(KEYCHAIN_SERVICE, account, secret);
+    }
+    if rc != 0 {
+        return error(keychain_status_error(rc, "store the vault key"))
+    }
+}
+
+fn (self: OsKeychain) keychain_load(account: str) -> []byte! {
+    if !self.enabled {
+        return []
+    }
+    mut rc: i32 = 0
+    mut found: []byte = []
+    // CFIRE-UPSTREAM: CF-008
+    cpp {
+        rc = flint_kc::load(KEYCHAIN_SERVICE, account, found);
+    }
+    if rc == 1 {
+        return []
+    }
+    if rc != 0 {
+        return error(keychain_status_error(rc, "read the vault key"))
+    }
+    return found
+}
+
+fn (self: OsKeychain) keychain_forget(account: str) -> void! {
+    if !self.enabled {
+        return
+    }
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-008
+    cpp {
+        rc = flint_kc::forget(KEYCHAIN_SERVICE, account);
+    }
+    if rc != 0 && rc != 1 {
+        return error(keychain_status_error(rc, "remove the vault key"))
+    }
+}

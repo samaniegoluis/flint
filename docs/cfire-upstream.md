@@ -181,6 +181,12 @@ The entries below were found while building milestone 01 against cfire `3963814`
   program then resolves to it, including `defer app.close()` on a `webui.App` and
   `ch.close()` on a `sync.Channel`, and fails with `no matching function for call to
   'cfire_method_close'`. Flint names these methods `disconnect` and `close_db`.
+- **Also free functions and stdlib methods (M02):** a user method `open(key, sealed, aad)`
+  captures the free function `fs.open(path)` (`call to 'open' expects 3 argument(s), got
+  1`), and `SshConn.read(timeout_ms)` captures `fs.File.read(mut buf)`
+  (`no matching function for call to 'cfire_method_read'`). Flint prefixes every port
+  method (`vault_*`, `keychain_*`, `recents_*`), renamed `Crypto.open` to `unseal`, and
+  reads the vault header with `std::ifstream` in `src/adapters/vault/store.cf`.
 - **Ideal:** one C++ namespace per package, and stdlib method calls that never route to
   user methods. This matters a lot for a hexagonal layout, where two adapters naturally
   both have `open`, `close` and `new`.
@@ -221,6 +227,12 @@ The entries below were found while building milestone 01 against cfire `3963814`
 - **Repro:** `raw := fs.read_all(p) or err { return }`, then pass `raw` to
   `fn f(b: []byte)` → clang `no matching function`. Annotating the binding
   (`raw: []byte = …`) converts it.
+- **Wider than `fs` (M02):** user `[]byte` is `std::vector<std::uint8_t>`, while
+  `hex.decode`, `sha256.random_bytes` and `rand.bytes` return `std::vector<std::byte>`.
+  For those the annotation does *not* convert
+  (`no viable conversion from 'vector<std::byte>' to 'vector<std::uint8_t>'`), and
+  `a == b` between the two fails to compile. Flint's tests rebuild byte slices by hand
+  (`random_key_bytes` in `src/adapters/keychain/keychain_test.cf`).
 - **Ideal:** one byte type across the stdlib and user code.
 
 ### CF-022 · missing · `confirmed`: no string-to-integer parsing in the stdlib
@@ -315,3 +327,81 @@ The entries below were found while building milestone 01 against cfire `3963814`
   that drops `-pthread`. glibc ≥ 2.34 has threads in libc.
 - **Ideal:** build the PCH with the same flags as the translation unit, or include those
   flags in the cache key; honour `CFIRE_CXX`.
+
+---
+
+The entries below were found while building milestone 02 against the same cfire build.
+
+### CF-031 · missing · `confirmed`: no way to link a framework, pick per-platform sources, or write top-level C++
+- **Needed:** the keychain adapter calls Security.framework on macOS and libsecret on
+  Linux; the CLI needs `_NSGetArgv` (macOS) or `/proc/self/cmdline` (Linux).
+- **Repro:** `import cpp "Security/Security.h"` and call `SecItemCopyMatching` →
+  `Undefined symbols for architecture arm64` (no `-framework Security`). There is no
+  `@framework(...)`, no `_darwin.cf`/`_linux.cf` file selection, no build-target query, and
+  a top-level `cpp { extern "C" { … } }` fails with `unexpected top-level token`.
+- **Workaround:** a project `.pc` file per OS (`src/adapters/pkgconfig/<os>/flint-native.pc`)
+  carries `-framework …` or `Requires: libsecret-1` plus `-I` to the adapters' native
+  headers (`src/adapters/keychain/native/`, `src/adapters/process/native/`), which branch on
+  `#if defined(__APPLE__)`. `scripts/env.sh` puts the folder on `PKG_CONFIG_PATH`, so a
+  plain `cfire build` without it fails.
+- **Ideal:** `@framework("Security")` on `import cpp`, platform-suffixed source files
+  (`keychain_darwin.cf`), and a `build.os()`/`#if os(...)`-style query.
+
+### CF-032 · bug · `confirmed`: `[][]T!` binds `!` to the element type
+- **Repro:** `fn rows() -> [][]Cell! { mut r: [][]Cell = []; return r }` → clang
+  `no viable conversion from 'vector<vector<Cell>>' to
+  'vector<vector<std::expected<Cell, cfire::Error>>>'`.
+- **Workaround:** wrap the matrix in a struct (`SqlRows` in
+  `src/adapters/vault/sqlcipher.cf`). `[]T!` works.
+- **Ideal:** `!` applies to the whole return type, as with `[]T!`; `([][]T)!` as an
+  explicit form.
+
+### CF-033 · bug · `confirmed`: structs are emitted in declaration order, not dependency order
+- **Repro (one file):** `type Outer struct { one: Inner }` declared before
+  `type Inner struct { id: i64 }` → clang `field has incomplete type 'Inner'`. With
+  `items: []Inner` the error is `arithmetic on a pointer to an incomplete type 'Inner'`.
+- **Across packages:** the importing package's structs are emitted before the imported
+  package's, so a field typed with another package's struct never compiles
+  (`RecentFile { vaults: []RecentVault }` in `adapters/config`, `Catalog { groups:
+  []Group }` in `application`).
+- **Workaround:** declare inner structs first; keep structs that hold another package's
+  types in that package (`Catalog` lives in `src/domain/vault.cf`); hold a raw handle
+  instead of a struct (`SqlVaultStore` in `src/adapters/vault/store.cf`); mirror types
+  locally (`RecentEntry` in `src/adapters/config/recents.cf`).
+- **Ideal:** emit struct definitions in topological order of their by-value and container
+  fields, across packages.
+
+### CF-034 · bug · `confirmed`: a string literal inside an interpolation breaks the string
+- **Repro:** `msg := "{f("x")}"` → `call to 'f' expects 1 argument(s), got 6`;
+  `dir := "/tmp/" + "{os.getenv("USER")}"` → clang `use of undeclared identifier 'USER'`.
+- **Workaround:** bind the inner call to a local first.
+- **Ideal:** lex `{…}` as a nested expression, quotes included (as Swift, Kotlin and
+  Python 3.12 do), or reject it in `cfire check` with a clear message.
+
+### CF-035 · bug · `confirmed`: `match` arms that yield a string literal and a `str` do not compile
+- **Repro:** `return match v { E::Text(s) => s, E::Int(n) => "{n}", _ => "" }` → clang
+  `std::visit requires the visitor to have a single return type` (`const char*` vs
+  `std::string`).
+- **Workaround:** assign to a `mut` local inside block arms.
+- **Ideal:** give every arm the match's declared or inferred type (`str`).
+
+### CF-036 · bug · `confirmed`: `if x != none` does not narrow an optional
+- **Repro:** `f := find(items, 2)` (`-> Item?`), then `if f != none { println("{f.id}") }`
+  → clang `no member named 'id' in 'std::optional<Item>'`.
+- **Workaround:** `f.value()` inside the branch, or `find(...) or fallback`.
+- **Ideal:** flow-narrow `T?` to `T` after a `!= none` check, as the null-safety rules for
+  pointers already do.
+
+### CF-037 · bug · `confirmed`: a `str?` field breaks `json.stringify`
+- **Repro:** ``type Item struct { note: str? `json:"note"` }``, then
+  `json.stringify(Item{ note: none })` → clang `no viable conversion from
+  'const std::optional<std::string>' to 'std::string_view'`.
+- **Workaround:** Flint's JSON views use `str` with `""` for "none".
+- **Ideal:** optional fields serialise as `null` (or are omitted) and parse back.
+
+### CF-038 · improvement · `confirmed`: `os.ExecResult` fields are undocumented, and `.stdout` hits a libc macro
+- **Repro:** `r := try os.command("ssh-keygen", [...])`, then `r.stdout` → clang
+  `no member named '__stdoutp' in 'cfire::os::ExecResult'` on macOS (`stdout` is a macro).
+  The real fields are `exit_code`, `stdout_str` and `stderr_str`, which `cfire doc --llm`
+  does not list.
+- **Ideal:** document the fields; mangle identifiers that collide with C macros.

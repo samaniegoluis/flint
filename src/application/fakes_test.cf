@@ -1,0 +1,415 @@
+package application
+
+// In-memory and temp-file fakes of the ports, so the use cases are tested without
+// any adapter (Principle 1). The fake crypto is NOT cryptography: it only has to be
+// deterministic, key-sensitive and AAD-sensitive.
+
+import "core:fs"
+import "core:rand"
+import "core:encoding/hex"
+import "core:crypto/sha256"
+import "../domain"
+import "../ports"
+
+// ---- Crypto --------------------------------------------------------------------
+
+type FakeCrypto struct {
+    derive_calls: i64
+}
+
+fn (self: FakeCrypto) random_bytes(n: usize) -> []byte {
+    mut b := make([]byte, n)
+    for i in 0..n {
+        b[i] = u8(rand.range_i64(0, 255))
+    }
+    return b
+}
+
+fn (self: FakeCrypto) derive_key(password: str, salt: []byte, ops: u64, mem_bytes: usize) -> []byte! {
+    mut k := make([]byte, 32)
+    pw := password.bytes()
+    for i in 0..32 {
+        mut v := u8(salt[i % salt.len()]) ^ u8(i)
+        if password.len() > 0 {
+            v = v ^ u8(pw[i % password.len()]) ^ u8(password.len())
+        }
+        k[i] = v
+    }
+    return k
+}
+
+fn (self: FakeCrypto) derive_subkey(master: []byte, id: u64, kdf_context: str) -> []byte! {
+    mut k := make([]byte, 32)
+    for i in 0..32 {
+        k[i] = master[i] ^ u8(id * 31 + 7)
+    }
+    return k
+}
+
+// sealed = [aad_len] aad [key0] (plaintext xor key0)
+fn (self: FakeCrypto) seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte! {
+    mut s: []byte = [u8(aad.len())]
+    for b in aad {
+        s.push(b)
+    }
+    s.push(key[0])
+    for b in plaintext {
+        s.push(b ^ key[0])
+    }
+    return s
+}
+
+fn (self: FakeCrypto) unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte! {
+    n := usize(sealed[0])
+    if n != aad.len() || sealed[n + 1] != key[0] {
+        return error("invalid: fake open failed")
+    }
+    for i in 0..n {
+        if sealed[i + 1] != aad[i] {
+            return error("invalid: fake open failed")
+        }
+    }
+    mut p: []byte = []
+    for i in (n + 2)..sealed.len() {
+        p.push(sealed[i] ^ key[0])
+    }
+    return p
+}
+
+// ---- Vault store ---------------------------------------------------------------
+
+type FakeStore struct {
+    file_path: str
+    file_salt: []byte
+    file_key: []byte
+    attached: bool
+    meta_keys: []str
+    meta_values: []str
+    groups: []Group
+    hosts: []Host
+    keys: []SshKey
+    creds: []Credential
+    snap_groups: []Group
+    snap_hosts: []Host
+    snap_keys: []SshKey
+    snap_creds: []Credential
+}
+
+fn new_fake_store() -> FakeStore {
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [] }
+}
+
+fn (self: FakeStore) vault_file_exists(path: str) -> bool {
+    return self.file_path.len() > 0 && path == self.file_path
+}
+
+fn (self: FakeStore) vault_read_salt(path: str) -> []byte! {
+    if !self.vault_file_exists(path) {
+        return error(coded(ERR_NOT_FOUND, "no vault file at {path}"))
+    }
+    return self.file_salt
+}
+
+fn (mut self: FakeStore) vault_create(path: str, page_key: []byte, salt: []byte) -> void! {
+    if self.file_path.len() > 0 {
+        return error(coded(ERR_CONFLICT, "fake holds one file"))
+    }
+    self.file_path = path
+    self.file_salt = salt
+    self.file_key = page_key
+    self.attached = true
+    self.meta_keys = ["format"]
+    self.meta_values = ["1"]
+}
+
+fn (mut self: FakeStore) vault_attach(path: str, page_key: []byte, salt: []byte) -> void! {
+    if !self.vault_file_exists(path) {
+        return error(coded(ERR_NOT_FOUND, "no vault file at {path}"))
+    }
+    if page_key != self.file_key || salt != self.file_salt {
+        return error(coded(ERR_WRONG_PASSWORD, "the password is wrong"))
+    }
+    self.attached = true
+}
+
+fn (mut self: FakeStore) vault_detach() {
+    self.attached = false
+}
+
+fn (self: FakeStore) need_attached() -> void! {
+    if !self.attached {
+        return error(coded(ERR_LOCKED, "no vault is unlocked"))
+    }
+}
+
+fn (self: FakeStore) vault_format() -> i64! {
+    try self.need_attached()
+    return 1
+}
+
+fn (self: FakeStore) vault_get_meta(key: str) -> str! {
+    try self.need_attached()
+    for i, k in self.meta_keys {
+        if k == key {
+            return self.meta_values[i]
+        }
+    }
+    return ""
+}
+
+fn (mut self: FakeStore) vault_set_meta(key: str, value: str) -> void! {
+    try self.need_attached()
+    for i, k in self.meta_keys {
+        if k == key {
+            self.meta_values[i] = value
+            return
+        }
+    }
+    self.meta_keys.push(key)
+    self.meta_values.push(value)
+}
+
+fn (mut self: FakeStore) vault_begin() -> void! {
+    try self.need_attached()
+    self.snap_groups = self.groups
+    self.snap_hosts = self.hosts
+    self.snap_keys = self.keys
+    self.snap_creds = self.creds
+}
+
+fn (mut self: FakeStore) vault_commit() -> void! {
+}
+
+fn (mut self: FakeStore) vault_rollback() {
+    self.groups = self.snap_groups
+    self.hosts = self.snap_hosts
+    self.keys = self.snap_keys
+    self.creds = self.snap_creds
+}
+
+fn (self: FakeStore) groups_all() -> []Group! {
+    try self.need_attached()
+    return self.groups
+}
+
+fn (mut self: FakeStore) group_put(g: Group) -> void! {
+    try self.need_attached()
+    for i, o in self.groups {
+        if o.id == g.id {
+            self.groups[i] = g
+            return
+        }
+    }
+    self.groups.push(g)
+}
+
+fn (mut self: FakeStore) group_drop(id: str) -> void! {
+    mut next: []Group = []
+    for g in self.groups {
+        if g.id != id {
+            next.push(g)
+        }
+    }
+    self.groups = next
+}
+
+fn (self: FakeStore) hosts_all() -> []Host! {
+    try self.need_attached()
+    return self.hosts
+}
+
+fn (mut self: FakeStore) host_put(h: Host) -> void! {
+    try self.need_attached()
+    for i, o in self.hosts {
+        if o.id == h.id {
+            self.hosts[i] = h
+            return
+        }
+    }
+    self.hosts.push(h)
+}
+
+fn (mut self: FakeStore) host_drop(id: str) -> void! {
+    mut next: []Host = []
+    for h in self.hosts {
+        if h.id != id {
+            next.push(h)
+        }
+    }
+    self.hosts = next
+}
+
+fn (self: FakeStore) keys_all() -> []SshKey! {
+    try self.need_attached()
+    return self.keys
+}
+
+fn (mut self: FakeStore) key_put(k: SshKey) -> void! {
+    try self.need_attached()
+    for i, o in self.keys {
+        if o.id == k.id {
+            self.keys[i] = k
+            return
+        }
+    }
+    self.keys.push(k)
+}
+
+fn (mut self: FakeStore) key_drop(id: str) -> void! {
+    mut next: []SshKey = []
+    for k in self.keys {
+        if k.id != id {
+            next.push(k)
+        }
+    }
+    self.keys = next
+}
+
+fn (self: FakeStore) creds_all() -> []Credential! {
+    try self.need_attached()
+    return self.creds
+}
+
+fn (mut self: FakeStore) cred_put(c: Credential) -> void! {
+    try self.need_attached()
+    for i, o in self.creds {
+        if o.id == c.id {
+            self.creds[i] = c
+            return
+        }
+    }
+    self.creds.push(c)
+}
+
+fn (mut self: FakeStore) cred_drop(id: str) -> void! {
+    mut next: []Credential = []
+    for c in self.creds {
+        if c.id != id {
+            next.push(c)
+        }
+    }
+    self.creds = next
+}
+
+// ---- Keychain and recents: temp files, since their methods are not `mut` -------
+
+type FakeKeychain struct {
+    dir: str
+    enabled: bool
+}
+
+fn new_fake_keychain() -> FakeKeychain {
+    dir := "/tmp/flint-fake-kc-" + sha256.random_hex(8)
+    _ := fs.mkdir_all(dir)
+    return FakeKeychain{ dir: dir, enabled: true }
+}
+
+fn (self: FakeKeychain) keychain_save(account: str, secret: []byte) -> void! {
+    if !self.enabled {
+        return error(coded(ERR_KEYCHAIN, "off"))
+    }
+    try fs.write_text(self.dir + "/" + account, hex.encode(secret))
+}
+
+fn (self: FakeKeychain) keychain_load(account: str) -> []byte! {
+    p := self.dir + "/" + account
+    if !self.enabled || !fs.exists(p) {
+        return []
+    }
+    text := try fs.read_text(p)
+    // hex.decode yields std::byte (CF-021); rebuild a []byte by hand.
+    mut out_key := make([]byte, text.len() / 2)
+    tb := text.bytes()
+    for i in 0..(text.len() / 2) {
+        out_key[i] = u8(hex_nibble(u8(tb[2 * i])) * 16 + hex_nibble(u8(tb[2 * i + 1])))
+    }
+    return out_key
+}
+
+fn hex_nibble(c: u8) -> u8 {
+    if c <= 57 {
+        return c - 48
+    }
+    return c - 87
+}
+
+fn (self: FakeKeychain) keychain_forget(account: str) -> void! {
+    p := self.dir + "/" + account
+    if fs.exists(p) {
+        try fs.remove(p)
+    }
+}
+
+type FakeRecents struct {
+    path: str
+}
+
+fn new_fake_recents() -> FakeRecents {
+    dir := "/tmp/flint-fake-recents-" + sha256.random_hex(8)
+    _ := fs.mkdir_all(dir)
+    return FakeRecents{ path: dir + "/list" }
+}
+
+fn (self: FakeRecents) recents_load() -> []RecentVault! {
+    mut list: []RecentVault = []
+    if !fs.exists(self.path) {
+        return list
+    }
+    text := try fs.read_text(self.path)
+    for line in str_split_lines(text) {
+        tab := line.find("\t")
+        if tab >= 0 {
+            list.push(RecentVault{ path: line.substr(0, usize(tab)), name: line.substr(usize(tab) + 1) })
+        }
+    }
+    return list
+}
+
+fn (self: FakeRecents) recents_save(list: []RecentVault) -> void! {
+    mut text := ""
+    for v in list {
+        text = text + v.path + "\t" + v.name + "\n"
+    }
+    try fs.write_text(self.path, text)
+}
+
+fn str_split_lines(s: str) -> []str {
+    mut lines: []str = []
+    mut cur := ""
+    for b in s.bytes() {
+        if u8(b) == 10 {
+            lines.push(cur)
+            cur = ""
+        } else {
+            cur = cur + byte_to_str(u8(b))
+        }
+    }
+    if cur.len() > 0 {
+        lines.push(cur)
+    }
+    return lines
+}
+
+// ---- Key inspector -------------------------------------------------------------
+
+// Accepts "PRIVATE <name>" and, when it also says "ENCRYPTED", only with
+// passphrase "pp".
+type FakeInspector struct {
+    strict: bool
+}
+
+fn (self: FakeInspector) inspect_private_key(private_key: str, passphrase: str) -> KeyInfo! {
+    if !private_key.starts_with("PRIVATE ") {
+        return error(coded(ERR_INVALID, "the private key could not be read"))
+    }
+    if private_key.contains("ENCRYPTED") && passphrase != "pp" {
+        return error(coded(ERR_INVALID, "wrong passphrase"))
+    }
+    return KeyInfo{ key_type: "ssh-ed25519", public_key: "ssh-ed25519 AAAAfake", fingerprint: "SHA256:fake" }
+}
+
+// ---- Fixture -------------------------------------------------------------------
+
+fn fresh_session(crypto: FakeCrypto, mut store: FakeStore) -> VaultSession {
+    return create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/test.flint", "", "correct horse") or VaultSession{ path: "", name: "", secrets_key: [], cached: false }
+}

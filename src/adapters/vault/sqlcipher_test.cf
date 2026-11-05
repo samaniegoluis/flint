@@ -2,58 +2,185 @@ package vault
 
 import "core:fs"
 import "core:encoding/hex"
-import "../crypto"
+import "core:crypto/sha256"
+import "../../ports"
+import "../../domain"
+
+// Migration 001 as shipped. An applied migration must never change (Principle 10);
+// if this test fails, revert the edit and append a new migration instead.
+var MIGRATION_001_SHA256: str = "9ed7d684e513f15455c31c2680407da618820c08eddb64d23796129919be5afd"
 
 fn temp_vault_path(name: str) -> str {
-    dir := "/tmp/flint-test-" + hex.encode(crypto_random(8))
+    dir := "/tmp/flint-test-" + hex.encode(sha256.random_bytes(8))
     _ := fs.mkdir_all(dir)
     return dir + "/" + name
 }
 
-fn crypto_random(n: usize) -> []byte {
-    c := crypto.new_sodium(KdfCost::Interactive) or err { return make([]byte, 0) }
-    return c.random_bytes(n)
+fn test_key(seed: u8) -> []byte {
+    mut k := make([]byte, 32)
+    for i in 0..32 {
+        k[i] = seed
+    }
+    return k
 }
 
-test "argon2id key opens a sqlcipher file that leaks no plaintext" {
-    c := try crypto.new_sodium(KdfCost::Interactive)
-    salt := c.random_bytes(crypto.SALT_LEN)
-    key := try c.derive_key("master password", salt)
-    path := temp_vault_path("spike.flint")
+fn test_salt_bytes() -> []byte {
+    mut s := make([]byte, 16)
+    for i in 0..16 {
+        s[i] = u8(160 + i)
+    }
+    return s
+}
 
-    mut db := try open_cipher_db(path, key)
-    ver := try db.cipher_version()
-    assert(ver.len() > 0, "SQLCipher must report a cipher version")
-    try db.exec("CREATE TABLE hosts (label TEXT, hostname TEXT, user TEXT);")
-    try db.exec_text("INSERT INTO hosts (label, hostname, user) VALUES ('flint-label-marker', ?1, 'flint-user-marker');", "db01.internal.example.org")
-    db.close_db()
+fn marker_host() -> Host {
+    return Host{ id: "h1", alias: "flint-alias-marker", label: "flint-label-marker", hostname: "db01.internal.example.org", port: 2201, username: "flint-user-marker", group_id: "", tags: ["flint-tag-marker", "prod"], color: "#112233", notes: "flint-notes-marker", jump_host_id: "", credential_id: "", key_id: "", password: [1, 2, 3] }
+}
 
-    // read_text returns the raw file bytes in a str, which gives us `contains`.
-    // (fs.read_all infers std::vector<std::byte>, not []byte: CF-021.)
+// Compiles only if SqlVaultStore satisfies the VaultStore port.
+fn store_port_check[S: VaultStore](mut s: S) -> bool {
+    hosts := s.hosts_all() or err { return false }
+    return hosts.len() >= 0
+}
+
+test "a v1 vault keeps its salt in the header and leaks no plaintext" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try store.group_put(Group{ id: "g1", parent_id: "", name: "flint-group-marker" })
+    mut h := marker_host()
+    h.group_id = "g1"
+    try store.host_put(h)
+    try store.vault_set_meta("name", "flint-vaultname-marker")
+    store.vault_detach()
+
+    salt := try store.vault_read_salt(path)
+    assert(salt == test_salt_bytes(), "the salt must be the file's first 16 bytes")
+
     raw := try fs.read_text(path)
     assert(raw.len() >= 4096)
-    assert(!raw.contains("SQLite format 3"), "file header must be encrypted")
-    assert(!raw.contains("db01.internal.example.org"), "hostname leaked")
-    assert(!raw.contains("flint-label-marker"), "label leaked")
-    assert(!raw.contains("flint-user-marker"), "user leaked")
-    assert(!raw.contains("CREATE TABLE"), "schema leaked")
-
-    wrong := try c.derive_key("wrong password", salt)
-    assert(!open_cipher_db(path, wrong).has_value(), "a wrong key must not open the vault")
-
-    mut again := try open_cipher_db(path, key)
-    host := try again.query_text("SELECT hostname FROM hosts;")
-    again.close_db()
-    assert_eq(host, "db01.internal.example.org")
+    for needle in ["SQLite format 3", "CREATE TABLE", "db01.internal.example.org", "flint-alias-marker", "flint-label-marker", "flint-user-marker", "flint-tag-marker", "flint-notes-marker", "flint-group-marker", "flint-vaultname-marker", "argon2id13"] {
+        assert(!raw.contains(needle), "leaked: {needle}")
+    }
     try fs.remove(fs.dirname(path))
 }
 
-test "open rejects a key of the wrong length" {
-    short_key := make([]byte, 16)
-    assert(!open_cipher_db("/tmp/never-created.flint", short_key).has_value())
+test "rows round-trip and migrations are idempotent" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try store.host_put(marker_host())
+    store.vault_detach()
+
+    try store.vault_attach(path, test_key(7), test_salt_bytes())
+    assert_eq(try store.vault_format(), 1)
+    hosts := try store.hosts_all()
+    assert_eq(hosts.len(), 1)
+    assert_eq(hosts[0].hostname, "db01.internal.example.org")
+    assert_eq(hosts[0].port, 2201)
+    assert_eq(hosts[0].tags.len(), 2)
+    assert_eq(hosts[0].tags[0], "flint-tag-marker")
+    assert(hosts[0].password == marker_host().password)
+    assert_eq(hosts[0].group_id, "")
+    applied := try store.conn().query_text("SELECT count(*) FROM schema_migrations;")
+    assert_eq(applied, "{vault_migrations().len()}")
+
+    // Update in place keeps one row and replaces the tags.
+    mut h := hosts[0]
+    h.tags = ["only"]
+    h.password = []
+    try store.host_put(h)
+    again := try store.hosts_all()
+    assert_eq(again.len(), 1)
+    assert_eq(again[0].tags.len(), 1)
+    assert_eq(again[0].password.len(), 0)
+
+    try store.host_drop(h.id)
+    assert_eq((try store.hosts_all()).len(), 0)
+    assert_eq(try store.conn().query_text("SELECT count(*) FROM host_tags;"), "0")
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
 }
 
-// Negative control: the same write without a key must leak, or the scan above proves
+test "the pinned SQLCipher parameters are in force and recorded" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    assert_eq(try store.conn().query_text("PRAGMA cipher_page_size;"), CIPHER_PAGE_SIZE)
+    assert_eq(try store.conn().query_text("PRAGMA cipher_hmac_algorithm;"), CIPHER_HMAC_ALGORITHM)
+    assert_eq(try store.conn().query_text("PRAGMA cipher_kdf_algorithm;"), CIPHER_KDF_ALGORITHM)
+    assert_eq(try store.vault_get_meta("cipher_compatibility"), CIPHER_COMPATIBILITY)
+    assert_eq(try store.vault_get_meta("cipher_page_size"), CIPHER_PAGE_SIZE)
+    assert_eq(try store.vault_get_meta("kdf_ops"), "{VAULT_ARGON2_OPS}")
+    assert_eq(try store.vault_get_meta("kdf_mem_bytes"), "{VAULT_ARGON2_MEM}")
+    assert_eq(try store.conn().query_text("PRAGMA foreign_keys;"), "1")
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "a wrong key or salt is reported as wrong_password" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    store.vault_detach()
+    bad := store.vault_attach(path, test_key(8), test_salt_bytes())
+    assert(!bad.has_value())
+    assert_eq(error_code_of("{bad.error().message()}"), "wrong_password")
+    mut other_salt := test_salt_bytes()
+    other_salt[0] = 1
+    assert(!store.vault_attach(path, test_key(7), other_salt).has_value())
+    try fs.remove(fs.dirname(path))
+}
+
+test "create refuses an existing file and attach a missing one" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    store.vault_detach()
+    dup := store.vault_create(path, test_key(7), test_salt_bytes())
+    assert_eq(error_code_of("{dup.error().message()}"), "conflict")
+    missing := store.vault_attach(path + ".nope", test_key(7), test_salt_bytes())
+    assert_eq(error_code_of("{missing.error().message()}"), "not_found")
+    try fs.remove(fs.dirname(path))
+}
+
+test "foreign keys and unique names are enforced" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    mut h := marker_host()
+    h.group_id = "missing"
+    dangling := store.host_put(h)
+    assert_eq(error_code_of("{dangling.error().message()}"), "conflict")
+    try store.host_put(marker_host())
+    mut twin := marker_host()
+    twin.id = "h2"
+    twin.alias = "FLINT-ALIAS-MARKER"
+    clash := store.host_put(twin)
+    assert_eq(error_code_of("{clash.error().message()}"), "conflict")
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "operations on a detached store report locked" {
+    store := new_sql_vault_store()
+    r := store.hosts_all()
+    assert_eq(error_code_of("{r.error().message()}"), "locked")
+}
+
+test "SqlVaultStore satisfies the VaultStore port" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    assert(store_port_check(mut store))
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "migration 001 is frozen" {
+    assert_eq(sha256.hash_hex(vault_migrations()[0].sql.bytes()), MIGRATION_001_SHA256)
+}
+
+// Negative control: the same write without a key must leak, or the scans above prove
 // nothing.
 test "control: an unkeyed sqlite file does expose the hostname" {
     path := temp_vault_path("plain.db")

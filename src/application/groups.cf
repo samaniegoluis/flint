@@ -1,0 +1,191 @@
+package application
+
+// Group use cases. Groups nest; a group is addressed by its path ("homelab/proxmox").
+// Names compare case-insensitively within one parent.
+
+import "../domain"
+import "../ports"
+
+type GroupView struct {
+    path: str `json:"path"`
+    name: str `json:"name"`
+    hosts: i64 `json:"hosts"`
+    subgroups: i64 `json:"subgroups"`
+}
+
+fn group_by_id(groups: []Group, id: str) -> i64 {
+    for i, g in groups {
+        if g.id == id {
+            return i64(i)
+        }
+    }
+    return -1
+}
+
+// "a/b/c" for a group id, or "" for none.
+fn group_path_of(groups: []Group, id: str) -> str {
+    mut parts: []str = []
+    mut cur := id
+    mut guard := 0
+    for cur.len() > 0 && guard < 64 {
+        idx := group_by_id(groups, cur)
+        if idx < 0 {
+            break
+        }
+        g := groups[usize(idx)]
+        parts.push(g.name)
+        cur = g.parent_id
+        guard += 1
+    }
+    mut path := ""
+    mut i := parts.len()
+    for i > 0 {
+        i -= 1
+        if path.len() > 0 {
+            path = path + "/"
+        }
+        path = path + parts[i]
+    }
+    return path
+}
+
+fn child_group(groups: []Group, parent_id: str, name: str) -> i64 {
+    for i, g in groups {
+        if g.parent_id == parent_id && lower_ascii(g.name) == lower_ascii(name) {
+            return i64(i)
+        }
+    }
+    return -1
+}
+
+// The id of the group at `path`, or "" when no such group exists.
+fn find_group_id(groups: []Group, path: str) -> str {
+    mut parent := ""
+    for seg in split_group_path(path) {
+        idx := child_group(groups, parent, seg)
+        if idx < 0 {
+            return ""
+        }
+        parent = groups[usize(idx)].id
+    }
+    return parent
+}
+
+fn require_group_id(groups: []Group, path: str) -> str! {
+    if split_group_path(path).len() == 0 {
+        return error(coded(ERR_INVALID, "group path must not be empty"))
+    }
+    id := find_group_id(groups, path)
+    if id.len() == 0 {
+        return error(coded(ERR_NOT_FOUND, "no group '{path}'"))
+    }
+    return id
+}
+
+// Creates every missing group along `path` and returns the last one's id. Runs
+// inside the caller's transaction.
+fn ensure_group_path[C: Crypto, S: VaultStore](crypto: C, mut store: S, path: str) -> str! {
+    segments := split_group_path(path)
+    if segments.len() == 0 {
+        return error(coded(ERR_INVALID, "group path must not be empty"))
+    }
+    if segments.len() > 16 {
+        return error(coded(ERR_INVALID, "groups nest at most 16 levels deep"))
+    }
+    mut groups := try store.groups_all()
+    mut parent := ""
+    for seg in segments {
+        try check_group_name(seg)
+        idx := child_group(groups, parent, seg)
+        if idx >= 0 {
+            parent = groups[usize(idx)].id
+        } else {
+            g := Group{ id: new_row_id(crypto), parent_id: parent, name: seg }
+            try store.group_put(g)
+            groups.push(g)
+            parent = g.id
+        }
+    }
+    return parent
+}
+
+fn group_view(groups: []Group, hosts: []Host, g: Group) -> GroupView {
+    mut n_hosts: i64 = 0
+    for h in hosts {
+        if h.group_id == g.id {
+            n_hosts += 1
+        }
+    }
+    mut n_sub: i64 = 0
+    for o in groups {
+        if o.parent_id == g.id {
+            n_sub += 1
+        }
+    }
+    return GroupView{ path: group_path_of(groups, g.id), name: g.name, hosts: n_hosts, subgroups: n_sub }
+}
+
+fn add_group[C: Crypto, S: VaultStore](crypto: C, mut store: S, path: str) -> GroupView! {
+    before := try store.groups_all()
+    if split_group_path(path).len() > 0 && find_group_id(before, path).len() > 0 {
+        return error(coded(ERR_CONFLICT, "group '{path}' already exists"))
+    }
+    try store.vault_begin()
+    id := ensure_group_path(crypto, mut store, path) or err {
+        store.vault_rollback()
+        return error("{err.message()}")
+    }
+    try store.vault_commit()
+    groups := try store.groups_all()
+    return group_view(groups, [], groups[usize(group_by_id(groups, id))])
+}
+
+// Every group, sorted by path.
+fn list_groups[S: VaultStore](store: S) -> []GroupView! {
+    groups := try store.groups_all()
+    hosts := try store.hosts_all()
+    mut views: []GroupView = []
+    for g in groups {
+        views.push(group_view(groups, hosts, g))
+    }
+    // Insertion sort by path: vaults hold tens of groups, not thousands.
+    for i in 1..views.len() {
+        mut j := i
+        for j > 0 && lower_ascii(views[j - 1].path) > lower_ascii(views[j].path) {
+            tmp := views[j - 1]
+            views[j - 1] = views[j]
+            views[j] = tmp
+            j -= 1
+        }
+    }
+    return views
+}
+
+fn rename_group[S: VaultStore](mut store: S, path: str, new_name: str) -> GroupView! {
+    try check_group_name(new_name)
+    groups := try store.groups_all()
+    id := try require_group_id(groups, path)
+    mut g := groups[usize(group_by_id(groups, id))]
+    clash := child_group(groups, g.parent_id, new_name)
+    if clash >= 0 && groups[usize(clash)].id != id {
+        return error(coded(ERR_CONFLICT, "a group named '{new_name}' already exists there"))
+    }
+    g.name = new_name
+    try store.group_put(g)
+    after := try store.groups_all()
+    return group_view(after, try store.hosts_all(), g)
+}
+
+// Removes an empty group. A group that still holds hosts or subgroups is refused.
+fn remove_group[S: VaultStore](mut store: S, path: str) -> GroupView! {
+    groups := try store.groups_all()
+    hosts := try store.hosts_all()
+    id := try require_group_id(groups, path)
+    g := groups[usize(group_by_id(groups, id))]
+    view := group_view(groups, hosts, g)
+    if view.hosts > 0 || view.subgroups > 0 {
+        return error(coded(ERR_CONFLICT, "group '{view.path}' is not empty ({view.hosts} hosts, {view.subgroups} subgroups)"))
+    }
+    try store.group_drop(id)
+    return view
+}

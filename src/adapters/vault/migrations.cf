@@ -1,0 +1,123 @@
+package vault
+
+// Vault schema and file-format migrations. APPEND ONLY (Principles 5 and 10): an
+// applied migration is never edited, reordered or removed. A change is a new entry
+// at the end with the next version number.
+
+type Migration struct {
+    version: i64
+    name: str
+    sql: str
+}
+
+fn vault_migrations() -> []Migration {
+    mut list: []Migration = []
+
+    // 001: vault file format v1. Records the pinned crypto and SQLCipher parameters
+    // (D-016, D-017) and creates the first schema.
+    list.push(Migration{ version: 1, name: "format v1 and base schema", sql: `
+CREATE TABLE meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+INSERT INTO meta (key, value) VALUES
+    ('format', '1'),
+    ('salt', 'file bytes 0-15'),
+    ('kdf', 'argon2id13'),
+    ('kdf_ops', '3'),
+    ('kdf_mem_bytes', '268435456'),
+    ('subkeys', 'crypto_kdf context flintvlt: 1 page key, 2 secrets key'),
+    ('secret_aead', 'xchacha20poly1305_ietf'),
+    ('cipher_compatibility', '4'),
+    ('cipher_page_size', '4096'),
+    ('cipher_hmac_algorithm', 'HMAC_SHA512'),
+    ('cipher_kdf_algorithm', 'PBKDF2_HMAC_SHA512'),
+    ('kdf_iter', '256000');
+
+CREATE TABLE groups (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT REFERENCES groups(id),
+    name TEXT NOT NULL
+);
+CREATE UNIQUE INDEX groups_unique_name ON groups (ifnull(parent_id, ''), name COLLATE NOCASE);
+
+CREATE TABLE ssh_keys (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    key_type TEXT NOT NULL,
+    public_key TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    private_key BLOB NOT NULL,
+    passphrase BLOB
+);
+
+CREATE TABLE credentials (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    username TEXT NOT NULL,
+    key_id TEXT REFERENCES ssh_keys(id),
+    password BLOB
+);
+
+CREATE TABLE hosts (
+    id TEXT PRIMARY KEY,
+    alias TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    label TEXT NOT NULL,
+    hostname TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    group_id TEXT REFERENCES groups(id),
+    color TEXT NOT NULL,
+    notes TEXT NOT NULL,
+    jump_host_id TEXT REFERENCES hosts(id),
+    credential_id TEXT REFERENCES credentials(id),
+    key_id TEXT REFERENCES ssh_keys(id),
+    password BLOB
+);
+
+CREATE TABLE host_tags (
+    host_id TEXT NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    tag TEXT NOT NULL,
+    PRIMARY KEY (host_id, position)
+);
+` })
+
+    return list
+}
+
+// Brings the open database up to the latest migration, one transaction per step.
+fn (self: CipherDb) migrate() -> void! {
+    // Bootstrap: the ledger itself is not a migration.
+    try self.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+    res := try self.query_cells("SELECT ifnull(max(version), 0) FROM schema_migrations;", [])
+    current := cell_i64(res.rows[0][0])
+    list := vault_migrations()
+    if current > list[list.len() - 1].version {
+        return error("unsupported: this vault was written by a newer Flint (schema {current})")
+    }
+    for m in list {
+        if m.version > current {
+            try self.exec("BEGIN IMMEDIATE;")
+            applied := self.apply_migration(m)
+            if !applied.has_value() {
+                _ := self.exec("ROLLBACK;")
+                return error("io: migration {m.version} failed: {applied.error().message()}")
+            }
+            try self.exec("COMMIT;")
+        }
+    }
+}
+
+fn (self: CipherDb) apply_migration(m: Migration) -> void! {
+    try self.exec(m.sql)
+    try self.run_sql("INSERT INTO schema_migrations (version, name) VALUES (?1, ?2);", [sql_int(m.version), sql_text(m.name)])
+}
+
+test "migrations are numbered 1..n with no gaps" {
+    list := vault_migrations()
+    for i, m in list {
+        assert_eq(m.version, i64(i) + 1)
+        assert(m.name.len() > 0)
+    }
+}

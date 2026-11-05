@@ -1,0 +1,83 @@
+package process
+
+// Process plumbing for the CLI driver: argv, stdout/stderr, exit codes and terminal
+// password prompts. The native code is in native/flint_process.hpp (CF-024).
+
+// CFIRE-UPSTREAM: CF-024, CF-031
+import cpp "flint_process.hpp" @pkg("flint-native")
+
+// Command-line arguments after the program name.
+fn process_args() -> []str {
+    mut list: []str = []
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        list = flint_proc::args();
+    }
+    return list
+}
+
+// Writes `s` to stderr as is (no newline added).
+fn write_stderr(s: str) {
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        flint_proc::write_err(s);
+    }
+}
+
+// Writes `s` to stdout as is (no newline added).
+fn write_stdout(s: str) {
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        flint_proc::write_out(s);
+    }
+}
+
+// Flushes stdout and stderr and ends the process with `code`.
+fn exit_process(code: i32) {
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        flint_proc::exit_with(code);
+    }
+}
+
+fn stdin_is_terminal() -> bool {
+    mut tty := false
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        tty = flint_proc::stdin_is_tty();
+    }
+    return tty
+}
+
+// True when the process has a controlling terminal to prompt on.
+fn has_terminal() -> bool {
+    mut tty := false
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        tty = flint_proc::has_tty();
+    }
+    return tty
+}
+
+fn read_stdin_text() -> str {
+    mut data := ""
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        data = flint_proc::read_stdin_all();
+    }
+    return data
+}
+
+// Prompts on the terminal and reads one line with echo off.
+fn read_secret_line(prompt: str) -> str! {
+    mut line := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        rc = flint_proc::read_secret_tty(prompt, line);
+    }
+    if rc != 0 {
+        return error("usage: no terminal to prompt on; pass the secret on stdin")
+    }
+    return line
+}

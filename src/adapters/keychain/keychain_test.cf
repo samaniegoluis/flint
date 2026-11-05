@@ -1,0 +1,52 @@
+package keychain
+
+import "core:crypto/sha256"
+import "core:os"
+import "core:rand"
+import "../../ports"
+
+fn keychain_port_check[K: Keychain](k: K) -> bool {
+    got := k.keychain_load("flint-test-absent-" + sha256.random_hex(8)) or err { return true }
+    return got.len() == 0
+}
+
+// stdlib byte helpers return std::byte vectors, not []byte (CF-021).
+fn random_key_bytes() -> []byte {
+    mut b := make([]byte, 32)
+    for i in 0..32 {
+        b[i] = u8(rand.range_i64(0, 255))
+    }
+    return b
+}
+
+// Talks to the real OS keychain. FLINT_TEST_KEYCHAIN=off skips it on a machine
+// without one (a headless Linux box with no Secret Service).
+test "save, load, overwrite and forget a vault key in the OS keychain" {
+    if os.getenv("FLINT_TEST_KEYCHAIN") == "off" {
+        println("skipped: FLINT_TEST_KEYCHAIN=off")
+        return
+    }
+    kc := new_os_keychain(true)
+    account := "flint-test-" + sha256.random_hex(8)
+    secret := random_key_bytes()
+    try kc.keychain_save(account, secret)
+    got := try kc.keychain_load(account)
+    assert(got == secret)
+    other := random_key_bytes()
+    try kc.keychain_save(account, other)
+    assert((try kc.keychain_load(account)) == other)
+    try kc.keychain_forget(account)
+    assert_eq((try kc.keychain_load(account)).len(), 0)
+    try kc.keychain_forget(account)
+}
+
+test "a disabled keychain stores nothing and finds nothing" {
+    kc := new_os_keychain(false)
+    assert(!kc.keychain_save("x", [1]).has_value())
+    assert_eq((try kc.keychain_load("x")).len(), 0)
+    assert(kc.keychain_forget("x").has_value())
+}
+
+test "OsKeychain satisfies the Keychain port" {
+    assert(keychain_port_check(new_os_keychain(false)))
+}
