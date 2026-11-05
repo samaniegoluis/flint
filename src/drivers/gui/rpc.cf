@@ -286,9 +286,9 @@ fn rpc_vault_forget(params: str, mut store: LockedVaultStore, kc: OsKeychain, re
     return json.stringify(try forget_recent(mut store, kc, recents, req.path))
 }
 
-fn rpc_vault_status(c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, st: GuiState) -> str! {
+fn rpc_vault_status(mut store: LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
-    return json.stringify(try vault_status(c, mut store, kc, recents, st.path, st.name))
+    return json.stringify(try open_vault_status(mut store, st.vault_session()))
 }
 
 // ---- Catalog ------------------------------------------------------------------------

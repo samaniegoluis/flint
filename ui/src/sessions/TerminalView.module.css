@@ -2,6 +2,9 @@
 .term {
   position: absolute;
   inset: 0;
+  /* xterm stacks its layers up to z-index 11; keep them inside the terminal, so
+     the prompt cards over it (.pane-dim) get the clicks. */
+  isolation: isolate;
   padding: var(--sp-3) var(--sp-5);
   background: var(--term-bg);
 }

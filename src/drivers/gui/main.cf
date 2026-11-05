@@ -90,7 +90,7 @@ fn main() {
     app.bind_raw("vault_close") |params| { return rpc_vault_close(mut store, mut st) }
     app.bind_raw("vault_forget_key") |params| { return rpc_vault_forget_key(params, mut store, kc, mut st) }
     app.bind_raw("vault_forget") |params| { return rpc_vault_forget(params, mut store, kc, recents, mut st) }
-    app.bind_raw("vault_status") |params| { return rpc_vault_status(c, mut store, kc, recents, st) }
+    app.bind_raw("vault_status") |params| { return rpc_vault_status(mut store, st) }
 
     app.bind_raw("catalog") |params| { return rpc_catalog(store, st) }
     app.bind_raw("group_add") |params| { return rpc_group_add(params, c, mut store, st) }

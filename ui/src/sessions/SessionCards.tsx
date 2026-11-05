@@ -65,9 +65,13 @@ export function SessionCard({ tab, active, onEditHost }: { tab: Tab; active: boo
       </div>
     );
   }
-  if (tab.status === 'prompt' && tab.prompt?.kind === 'password') return <PasswordPrompt tab={tab} />;
-  if (tab.status === 'prompt' && tab.prompt?.kind === 'host_key') return <HostKeyPrompt tab={tab} />;
-  if (tab.status === 'ended' && tab.end?.code === 'host_key' && tab.changedKey) return <HostKeyChanged tab={tab} />;
+  // The prompts live in their own components; this wrapper puts them inside `ref`,
+  // so the effect above gives them the focus too. Without it the focus stayed on the
+  // connecting card's Cancel, which is gone by then, and ↵ and esc did nothing.
+  const own = (card: React.ReactNode) => <div ref={ref} style={{ display: 'contents' }}>{card}</div>;
+  if (tab.status === 'prompt' && tab.prompt?.kind === 'password') return own(<PasswordPrompt tab={tab} />);
+  if (tab.status === 'prompt' && tab.prompt?.kind === 'host_key') return own(<HostKeyPrompt tab={tab} />);
+  if (tab.status === 'ended' && tab.end?.code === 'host_key' && tab.changedKey) return own(<HostKeyChanged tab={tab} />);
   if (tab.status === 'ended' && tab.end?.code === 'auth') {
     return (
       <div className="pane-dim" ref={ref}>

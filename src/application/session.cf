@@ -194,6 +194,18 @@ fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     return st
 }
 
+// Reports the vault that is already open in `session`, from the open store: no
+// keychain read (on macOS that read can show a Keychain dialog) and no second unlock.
+fn open_vault_status[S: VaultStore](mut store: S, session: VaultSession) -> VaultStatus! {
+    return VaultStatus{
+        path: session.path, name: session.name, exists: true, cached: session.cached,
+        groups: i64((try store.groups_all()).len()),
+        hosts: i64((try store.hosts_all()).len()),
+        keys: i64((try store.keys_all()).len()),
+        credentials: i64((try store.creds_all()).len()),
+    }
+}
+
 // ---- Recent vaults -------------------------------------------------------------
 
 // A recent vault as `vault list` shows it.

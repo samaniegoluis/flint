@@ -288,8 +288,68 @@
     await fill('[aria-label="Command palette"] input', 'pwh');
     await waitFor(() => byText('[role="option"]', 'pwhost'), 'pwhost in the palette');
     await check(q('[role="option"].hot')?.textContent.includes('pwhost'), 'the palette ranks the matching host first');
+    const footer = () => q('[data-palette-hints]')?.textContent ?? '';
+    await check(footer().includes('edit host'), 'the palette offers ⌘I while a host is hot');
+    await fill('[aria-label="Command palette"] input', 'reconnect');
+    await waitFor(() => q('[role="option"].hot')?.textContent.includes('Reconnect'), 'Reconnect hot');
+    await check(!footer().includes('edit host') && !footer().includes('new tab'), 'the palette does not offer ⌘I or ⌘↵ on an action');
     q('[aria-label="Command palette"] input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(100);
+
+    // A real keyboard sends keys to whatever has the focus, so these do too: a dialog
+    // whose focus stayed behind it would ignore Esc.
+    const press = (key, code, mods = {}) => (document.activeElement ?? document.body).dispatchEvent(
+      new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, ...mods }));
+    const cmd = (key, code) => press(key, code, { metaKey: mac, ctrlKey: !mac, shiftKey: !mac });
+    const editorOpen = () => q('[role="dialog"][aria-label^="Edit host"]');
+    async function escClosesEditor(how) {
+      await waitFor(editorOpen, 'the host editor, ' + how);
+      await sleep(150);
+      await check(editorOpen().contains(document.activeElement), `the host editor opened ${how} has the focus`);
+      press('Escape', 'Escape');
+      await sleep(100);
+      await check(!editorOpen(), `Esc closes the host editor opened ${how}`);
+    }
+    // ⌘T is "New session": ↵ opens another tab even for a host that already has one,
+    // where ⌘P would switch to it.
+    if (qa('.tab').length) {
+      const before = qa('.tab').length;
+      cmd('t', 'KeyT');
+      const opened = await waitFor(() => qa('[aria-label="Command palette"] [role="option"]').find((o) => o.textContent.includes('open in tab')), 'a host with an open tab in the ⌘T palette');
+      const alias = opened.querySelector('.mono').textContent;
+      await check(q('[aria-label="Command palette"] input').placeholder === 'New session on…', '⌘T opens the palette as "New session on…"');
+      await fill('[aria-label="Command palette"] input', alias);
+      await waitFor(() => q('[role="option"].hot')?.textContent.includes(alias), alias + ' hot');
+      await check(q('[role="option"].hot .hint')?.textContent === 'New tab', '⌘T offers a new tab for a host that has one open');
+      press('Enter', 'Enter');
+      await waitFor(() => qa('.tab').length === before + 1, 'a second tab of ' + alias);
+      await check(q('.tab.on')?.textContent.includes(alias), `↵ in the ⌘T palette opens another tab of ${alias}`);
+      q('.tab.on .tx').click();
+      await waitFor(() => qa('.tab').length === before, 'the extra tab to close');
+      await sleep(100);
+    }
+    cmd('k', 'KeyK');
+    await waitFor(() => q('[aria-label="Command palette"]'), 'the palette again');
+    await fill('[aria-label="Command palette"] input', 'pwh');
+    await waitFor(() => q('[role="option"].hot')?.textContent.includes('pwhost'), 'pwhost hot');
+    cmd('i', 'KeyI');
+    await escClosesEditor('from the palette');
+    if (qa('.tab').length) {
+      (await waitFor(() => qa('.pane > div').find((d) => d.style.display !== 'none')?.querySelector('textarea'), 'terminal textarea')).focus();
+      cmd('i', 'KeyI');
+      await escClosesEditor('from the terminal');
+      // In the real app the terminal took the focus back from the editor, and xterm
+      // swallowed Esc (owner walkthrough).
+      cmd('i', 'KeyI');
+      await waitFor(editorOpen, 'the host editor again');
+      const ta = qa('.pane > div').find((d) => d.style.display !== 'none').querySelector('textarea');
+      ta.focus();
+      await sleep(50);
+      await check(editorOpen().contains(document.activeElement), 'a dialog takes the focus back from the terminal behind it');
+      ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+      await sleep(100);
+      await check(!editorOpen(), 'Esc closes a dialog even when the key reaches the terminal behind it');
+    }
 
     await setStep('settings');
     const openTabs = qa('.tab').length;
@@ -312,6 +372,53 @@
     await click('.nav-i', 'Vault');
     await waitFor(() => hasText('Known hosts'), 'the vault settings');
     await check(byText('td', `[127.0.0.1]:${PORT}`), 'known hosts are listed');
+    // The open vault's counts, read from the open file, even with no cached key (the
+    // keychain is off here): before, the page unlocked the vault again through the
+    // keychain, which on macOS showed a Keychain dialog.
+    await waitFor(() => /\d+ hosts? · .*format v\d/.test(text()), 'the vault counts');
+    await check(hasText('4 hosts · 1 key · 0 credentials · '), `the vault page counts the open vault (${(text().match(/\d+ hosts?[^\n]*format v\d/) ?? ['none'])[0]})`);
+    // Forget a known host here, then connect to it: the owner's walkthrough found the
+    // host key card dead (no click, ↵ or esc) on this path.
+    await setStep('forget a known host and trust it again');
+    await click('button', 'Forget', byText('tr', `[127.0.0.1]:${PORT}`));
+    await click('.modal button', 'Forget');
+    await waitFor(() => !byText('td', `[127.0.0.1]:${PORT}`), 'the known host to be forgotten');
+    await click('.rail-btn', 'Hosts');
+    const tabsBefore = qa('.tab').length;
+    for (const how of ['esc', 'a click']) {
+      cmd('t', 'KeyT');
+      await fill('[aria-label="Command palette"] input', 'local');
+      await waitFor(() => q('[role="option"].hot')?.textContent.includes('local'), 'local hot');
+      press('Enter', 'Enter');
+      await waitFor(() => qa('.tab').length === tabsBefore + 1 && hasText('before connecting'), 'the host key prompt after a forget');
+      await sleep(200);
+      // A real ↵ submits the form only when the focus is on it; a synthetic one never
+      // does, so this checks the focus and leaves the submit to the click below.
+      // el.click() skips hit-testing; a mouse lands on whatever is on top. xterm's
+      // layers were above the card, so a real click selected terminal text instead.
+      const trustBtn = byText('button[type="submit"]', 'Trust and connect');
+      const r = trustBtn.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      await check(trustBtn.contains(hit), `a click on Trust and connect lands on it (${hit?.tagName} ${hit?.className})`);
+      await check(document.activeElement?.textContent.includes('Trust and connect'), `the host key card puts the focus on Trust and connect (${document.activeElement?.tagName} ${document.activeElement?.textContent.slice(0, 30)})`);
+      if (how === 'esc') {
+        press('Escape', 'Escape');
+        await waitFor(() => !hasText('before connecting'), 'esc to cancel the host key prompt');
+        await check(true, 'esc cancels the host key card after a forget');
+      } else {
+        await click('button[type="submit"]', 'Trust and connect');
+        await waitFor(() => toolbarIs('ready'), 'the session after a click on Trust', 30000);
+        await check(true, 'a click on Trust and connect trusts the key again after a forget');
+      }
+      q('.tab.on .tx').click();
+      await waitFor(() => qa('.tab').length === tabsBefore, 'the extra tab to close');
+    }
+    await click('.rail-btn', 'Settings');
+    await click('.nav-i', 'Vault');
+    await waitFor(() => hasText('Known hosts'), 'the vault settings');
+    await sleep(500);
+    await check(byText('td', `[127.0.0.1]:${PORT}`), 'a key trusted in a session shows up in Known hosts');
+
     if (openTabs) {
       await click('.rail-btn', 'Hosts');
       await waitFor(() => activeTerm(), 'the session view');

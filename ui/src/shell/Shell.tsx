@@ -32,7 +32,7 @@ export function Shell() {
   const [narrow, setNarrow] = useState(window.innerWidth < NARROW);
   const [collapsed, setCollapsed] = useState(window.innerWidth < NARROW);
   const [selected, setSelected] = useState<string | null>(null);
-  const [palette, setPalette] = useState<{ hostsOnly: boolean } | null>(null);
+  const [palette, setPalette] = useState<{ hostsOnly: boolean; newSession?: boolean } | null>(null);
   const [switcher, setSwitcher] = useState(false);
   const [manage, setManage] = useState(false);
   const [editor, setEditor] = useState<{ alias: string | null; group: string } | null>(null);
@@ -134,7 +134,8 @@ export function Shell() {
     }
     switch (a) {
       case 'palette': setPalette({ hostsOnly: false }); break;
-      case 'gotoHost': case 'newSession': setPalette({ hostsOnly: true }); break;
+      case 'gotoHost': setPalette({ hostsOnly: true }); break;
+      case 'newSession': setPalette({ hostsOnly: true, newSession: true }); break;
       case 'switchVault': setView('hosts'); setCollapsed(false); setSwitcher(true); break;
       case 'openVault': openVaultFile().catch(fail); break;
       case 'createVault': go('create'); break;
@@ -241,7 +242,7 @@ export function Shell() {
         </div>
       )}
 
-      <SessionArea shown={view === 'hosts'} fontSize={fontSize} onPalette={(h) => setPalette({ hostsOnly: h })} onEditHost={(alias) => setEditor({ alias, group: '' })} onConnect={connect} />
+      <SessionArea shown={view === 'hosts'} fontSize={fontSize} onPalette={(h) => setPalette(h ? { hostsOnly: true, newSession: true } : { hostsOnly: false })} onEditHost={(alias) => setEditor({ alias, group: '' })} onConnect={connect} />
       {view === 'keys' && <KeysPage adding={addingKey} setAdding={setAddingKey} onConfirm={setConfirm} />}
       {view === 'credentials' && <CredentialsPage editing={credEditing} setEditing={setCredEditing} onConfirm={setConfirm} />}
       {view === 'settings' && <SettingsPage section={section} setSection={setSection} onLock={() => lock().catch(fail)} onConfirm={setConfirm} />}
@@ -257,7 +258,7 @@ export function Shell() {
       </footer>
 
       {palette && (
-        <CommandPalette hostsOnly={palette.hostsOnly} onClose={() => setPalette(null)} onConnect={connect}
+        <CommandPalette hostsOnly={palette.hostsOnly} newSession={!!palette.newSession} onClose={() => setPalette(null)} onConnect={connect}
           onEdit={(alias) => setEditor({ alias, group: '' })} onAction={(a) => setTimeout(() => run(a), 0)} />
       )}
       {editor && (
