@@ -51,6 +51,7 @@ What Tether already does and Flint must not lose.
 | `flint ssh-config export` / `ProxyCommand flint proxy %h` so native `ssh` and `scp` resolve aliases | `later` | |
 | Shell completions (zsh, bash, fish) | `next` | |
 | Auto-detect an encrypted key in `flint key add` and prompt for its passphrase | `idea` | Today `--passphrase` must be given |
+| `flint vault status` says why a vault is locked: `locked (keychain access denied)` after a Keychain Deny | `next` | Today a denied read looks like no cached key (D-020) |
 
 ## 3. Agents & security (the differentiator)
 
@@ -107,7 +108,7 @@ What Tether already does and Flint must not lose.
 |---|---|---|
 | macOS + Linux | `mvp` | |
 | Windows | `later` | Blocked on CF-001 (WebView2) and CF-010 (POSIX runtime) |
-| Signed macOS `.app`, Linux AppImage/tarball, Homebrew tap | `next` | |
+| Signed macOS `.app`, Linux AppImage/tarball, Homebrew tap | `next` | A stable Developer ID signature also stops the Keychain prompt after every update (D-020) |
 | Bundle libssh, libsodium, SQLCipher and libcrypto into the `.app` (rpath fix-up) or link them statically | `next` | Today they are dynamic system packages (D-015); a release cannot rely on Homebrew being installed |
 | Public landing + docs site deployed | `next` | The site itself is built from milestone 01 |
 | Docs site and landing adopt Flint's visual identity (palette, type, logo) from the Claude Design screens (D-011) | `next` | Milestone 01 ships the stock Starlight theme on purpose |
