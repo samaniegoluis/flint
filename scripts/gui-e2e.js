@@ -415,6 +415,9 @@
     }
     await click('.rail-btn', 'Settings');
     await click('.nav-i', 'Vault');
+    await waitFor(() => hasText('Known hosts'), 'the vault settings');
+    await sleep(500);
+    await check(byText('td', `[127.0.0.1]:${PORT}`), 'a key trusted in a session shows up in Known hosts');
 
     if (openTabs) {
       await click('.rail-btn', 'Hosts');

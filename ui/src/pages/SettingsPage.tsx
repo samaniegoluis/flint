@@ -220,6 +220,9 @@ const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (c: Confirm) => void }) {
   const { vault, catalog, os, refreshCatalog, notify, closeVault } = useApp();
   const [st, setSt] = useState<VaultStatus | null>(null);
+  // Sessions record trusted keys on their worker, and the CLI can change the file:
+  // read the catalog again when the page opens, or Known hosts shows a stale list.
+  useEffect(() => { refreshCatalog().catch(() => {}); }, [refreshCatalog]);
   useEffect(() => { api.status().then(setSt).catch(() => {}); }, [catalog]);
   if (!vault) return null;
   const keychain = os === 'mac' ? 'macOS Keychain' : 'the Secret Service keyring';
