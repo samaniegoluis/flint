@@ -132,14 +132,22 @@ SSH agent), optional jump host, tags, colour, notes.
 13. **Empty states**: an empty vault, and no sessions open (recent hosts + palette call to
     action).
 
+**SFTP side panel**, high fidelity in both themes. It is the first post-MVP feature and
+something Tether already has, so the layout must already make room for it:
+- It docks to the right of the terminal inside a session tab, is resizable and toggles from
+  the session toolbar's "Files" button.
+- Contents: breadcrumb + `..` + "jump to the terminal's current folder" button, a file list
+  (name, size, modified) with a context menu (download, rename, delete, new folder), an
+  upload button, a drop-zone state for files dragged in from the OS, and a transfer queue
+  with per-file progress, cancel and "clear done".
+
 Wireframes only, to reserve layout space:
-- **SFTP side panel**: breadcrumb, file list, transfer queue.
 - **Agent activity panel**: live timeline of agent commands per host and a pending-approval
   card ("Agent X wants to run `systemctl restart nginx` on prod-web-1 — Approve / Deny").
 
 ### Deliverables
 
-- High-fidelity screens 1–13 in both themes, plus the wireframes.
+- High-fidelity screens 1–13 and the SFTP side panel in both themes, plus the wireframes.
 - **Design tokens**, to be implemented as CSS custom properties keyed by
   `html[data-theme]` in React + CSS Modules: colour, type scale, spacing, radius, shadow,
   motion, and the terminal ANSI 16-colour palette per theme.
