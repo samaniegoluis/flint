@@ -191,8 +191,35 @@ fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
 
 // ---- Recent vaults -------------------------------------------------------------
 
+// A recent vault as `vault list` shows it.
+type RecentView struct {
+    name: str `json:"name"`
+    path: str `json:"path"`
+    current: bool `json:"current"`
+    exists: bool `json:"exists"`
+}
+
 fn list_recents[R: RecentStore](recents: R) -> []RecentVault! {
     return recents.recents_load()
+}
+
+// The recent list, current vault first, with whether each file is still there.
+fn recent_vault_views[S: VaultStore, R: RecentStore](store: S, recents: R) -> []RecentView! {
+    mut views: []RecentView = []
+    for i, v in try recents.recents_load() {
+        views.push(RecentView{ name: v.name, path: v.path, current: i == 0, exists: store.vault_file_exists(v.path) })
+    }
+    return views
+}
+
+// Makes a recent vault (or a vault file) the current one, without unlocking it.
+fn use_vault[S: VaultStore, R: RecentStore](store: S, recents: R, selector: str) -> RecentView! {
+    target := try resolve_vault(recents, selector)
+    if !store.vault_file_exists(target.path) {
+        return error(coded(ERR_NOT_FOUND, "no vault file at {target.path}"))
+    }
+    try touch_recent(recents, target.path, target.name)
+    return RecentView{ name: target.name, path: target.path, current: true, exists: true }
 }
 
 // Moves (or adds) a vault to the front of the recent list.

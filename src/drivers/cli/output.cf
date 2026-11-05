@@ -22,13 +22,6 @@ type RemovedNote struct {
     name: str `json:"name"`
 }
 
-type RecentView struct {
-    name: str `json:"name"`
-    path: str `json:"path"`
-    current: bool `json:"current"`
-    exists: bool `json:"exists"`
-}
-
 fn say(line: str) {
     write_stdout(line + "\n")
 }

@@ -133,11 +133,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
     if verb == "list" {
         try p.allow_flags("vault list", [])
         try p.expect_args("vault list", 0, "")
-        list := try list_recents(recents)
-        mut views: []RecentView = []
-        for i, v in list {
-            views.push(RecentView{ name: v.name, path: v.path, current: i == 0, exists: store.vault_file_exists(v.path) })
-        }
+        views := try recent_vault_views(store, recents)
         if as_json {
             say(json.stringify(views))
         } else {
@@ -152,13 +148,9 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         if sel.contains("/") || sel.ends_with(".flint") {
             sel = absolute_path(sel)
         }
-        target := try resolve_vault(recents, sel)
-        if !store.vault_file_exists(target.path) {
-            return error(coded(ERR_NOT_FOUND, "no vault file at {target.path}"))
-        }
-        try touch_recent(recents, target.path, target.name)
+        target := try use_vault(store, recents, sel)
         if as_json {
-            say(json.stringify(RecentView{ name: target.name, path: target.path, current: true, exists: true }))
+            say(json.stringify(target))
         } else {
             say("Vault '{target.name}' is now the current vault.")
         }

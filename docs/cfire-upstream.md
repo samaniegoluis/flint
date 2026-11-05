@@ -89,10 +89,12 @@ The first entries below came from reading cfire at commit `feat(webui): add ext:
   meet in one binary. Untried: what happens if they did.
 - **Ideal:** `sqlite.open(path, key: bytes)` backed by a cipher build.
 
-### CF-008 · missing · `suspected`: OS keychain module
+### CF-008 · missing · `confirmed`: OS keychain module
 - **Needed:** cache the derived vault key per machine (macOS Keychain, Linux Secret Service,
   later Windows Credential Manager).
-- **Workaround (planned):** `adapters/keychain/` over Security.framework and libsecret.
+- **Workaround (M02):** `src/adapters/keychain/` over Security.framework (macOS) and
+  libsecret (Linux), in one native header (`native/flint_keychain.hpp`) because cfire
+  cannot select per-platform sources or link a framework (CF-031).
 - **Ideal:** `ext:keychain` with `set`, `get` and `delete(service, account)`.
 
 ### CF-009 · missing · `confirmed`: repository licence
@@ -259,8 +261,10 @@ The entries below were found while building milestone 01 against cfire `3963814`
   - It calls `std::stoi`, which throws on bad input.
   - There is no `os.args()`: `argc`/`argv` exist only as locals of `main`.
   - There is no `eprintln` or other stderr writer, and no `os.exit(code)`.
-- **Workaround (M01):** `flint --version [--json]` only. Milestone 02 needs an argv
-  adapter.
+- **Workaround (M02):** `src/adapters/process/` reads argv through `_NSGetArgv` (macOS)
+  or `/proc/self/cmdline` (Linux), writes stderr, exits with a code and reads passwords
+  from `/dev/tty` with echo off, in `native/flint_process.hpp`. The subcommand and flag
+  parser is plain cfire in `src/drivers/cli/args.cf`.
 - **Ideal:** `os.args() -> []str`, `eprintln`, `os.exit(code)`, and subcommand plus
   positional support in `core:cli`.
 
