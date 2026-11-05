@@ -58,7 +58,11 @@ What Tether already does and Flint must not lose.
 
 | Feature | Status | Notes |
 |---|---|---|
-| **`flint agent`**: SSH agent serving keys from the vault, so `ssh`, `git`, VS Code Remote and `scp` work with no key on disk | `next` | Like 1Password's SSH agent |
+| **`flint agent`**: SSH agent serving keys from the vault, so `ssh`, `git`, VS Code Remote and `scp` work with no key on disk | `next` | Like 1Password's SSH agent. Speaks the ssh-agent protocol on a socket of its own (e.g. `~/Library/Application Support/Flint/agent.sock`); signs challenges, never hands a key out. Nothing finds it on its own: `ssh` reads the socket path from `IdentityAgent` in `~/.ssh/config` (preferred: apps started from the Dock, such as VS Code, never see `.zshrc`) or from `SSH_AUTH_SOCK`. Everything built on OpenSSH (`git`, `scp`, `rsync`, Ansible, VS Code Remote-SSH) inherits it; JetBrains Gateway needs "OpenSSH config and authentication agent". Locked vault → the agent offers no keys and `ssh` moves on to its other methods |
+| **Use Flint as SSH agent** setup: a button in Settings and `flint agent setup` that show the `IdentityAgent` line, ask, and write it into `~/.ssh/config` inside a marked block that **Turn off** removes cleanly | `next` | Raised by the owner while reviewing `flint agent`: other tools must be told where the agent is, and Flint should do that in one click |
+| The agent starts on demand when its socket is touched (launchd on macOS, a systemd user socket on Linux), so `git push` works with the app closed; optionally offers the unlock dialog when a locked vault is asked for a key | `next` | Without it, a closed Flint means "could not open a connection to your authentication agent" |
+| Per-use confirmation in the GUI: "`git` wants to use key `github-personal`. Allow?" | `next` | Stops a script or an AI agent from using keys unnoticed |
+| The agent offers only the key that belongs to each host (`IdentityFile` with the public key, written by `flint ssh-config export`), to avoid "Too many authentication failures" after ~6 keys | `next` | Pairs with `flint ssh-config export` (section 2): the agent gives keys, the export gives host aliases |
 | **Scoped agent tokens**: `flint token create --hosts @homelab --allow exec,read --ttl 1h`. The agent never sees credentials | `next` | |
 | **Per-host policies**: read-only, command allowlist, "ask me in the GUI before running on prod" | `next` | |
 | **Audit log** of every command run through a token | `next` | |
