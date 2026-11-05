@@ -24,7 +24,7 @@ test "settings are validated on save and repaired field by field on load" {
     store.saved = edited
     fixed := try load_settings(store)
     assert_eq(fixed.theme, "light")
-    assert_eq(fixed.term_line_height, i64(150))
+    assert_eq(fixed.term_line_height, i64(100))
     assert(!fixed.reopen_last_vault)
 }
 

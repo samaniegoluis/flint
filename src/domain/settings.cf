@@ -19,12 +19,13 @@ type Settings struct {
 
 var TERM_FONT_SIZE_MIN: i64 = 8
 var TERM_FONT_SIZE_MAX: i64 = 32
-// Line height in hundredths: 150 is 1.50.
+// Line height in hundredths: 150 is 1.50. The default is 100 (xterm.js and most
+// terminals): taller rows cost TUIs rows and break box-drawing and powerline glyphs.
 var TERM_LINE_HEIGHT_MIN: i64 = 100
 var TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 150, term_cursor: "block", term_cursor_blink: true }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {
