@@ -1,0 +1,52 @@
+package application
+
+type FakeShell struct {
+    chunks: []str
+    pos: usize
+}
+
+fn (self: FakeShell) write(data: str) -> void! {}
+
+fn (mut self: FakeShell) read(timeout_ms: i32) -> str! {
+    if self.pos >= self.chunks.len() {
+        return error("channel closed")
+    }
+    c := self.chunks[self.pos]
+    self.pos += 1
+    return c
+}
+
+fn (self: FakeShell) resize(cols: i32, rows: i32) -> void! {}
+
+type RecordingSink struct {
+    output: str
+    closed_reason: str
+    events: i64
+}
+
+fn (mut self: RecordingSink) terminal_output(session_id: str, data: str) {
+    self.output = self.output + data
+    self.events += 1
+}
+
+fn (mut self: RecordingSink) terminal_closed(session_id: str, reason: str) {
+    self.closed_reason = reason
+}
+
+test "pump forwards every non-empty chunk and reports the close" {
+    mut shell := FakeShell{ chunks: ["he", "", "llo"], pos: 0 }
+    mut sink := RecordingSink{ output: "", closed_reason: "", events: 0 }
+    n := pump_shell_output(mut shell, mut sink, "s1", 10, 100)
+    assert_eq(n, 5)
+    assert_eq(sink.output, "hello")
+    assert_eq(sink.events, 2)
+    assert_eq(sink.closed_reason, "channel closed")
+}
+
+test "pump stops after max_reads while the shell stays open" {
+    mut shell := FakeShell{ chunks: ["a", "b", "c", "d"], pos: 0 }
+    mut sink := RecordingSink{ output: "", closed_reason: "", events: 0 }
+    n := pump_shell_output(mut shell, mut sink, "s1", 10, 2)
+    assert_eq(n, 2)
+    assert_eq(sink.closed_reason, "")
+}

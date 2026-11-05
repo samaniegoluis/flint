@@ -1,0 +1,37 @@
+---
+title: Flint
+description: An open-source SSH client with a GUI and a CLI over one encrypted vault.
+template: splash
+hero:
+  tagline: A light SSH client with a GUI and a CLI over one fully encrypted vault. Reach your servers by alias, from a window, a terminal or an AI agent, without exposing a credential.
+  actions:
+    - text: Read the introduction
+      link: /start/introduction/
+      icon: right-arrow
+    - text: Build from source
+      link: /start/build-from-source/
+      icon: setting
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+:::caution[Early development]
+Flint is not usable yet. Today it builds, links its native libraries and reports its
+version. The vault and the CLI commands arrive in the next milestones.
+:::
+
+<CardGrid>
+	<Card title="One encrypted vault" icon="seti:lock">
+		Hosts, keys and credentials live in a single SQLite file that is encrypted in full.
+		Put it in any cloud-synced folder; nothing about your servers is readable on disk.
+	</Card>
+	<Card title="GUI and CLI, same core" icon="laptop">
+		A desktop app with tabs and a modern terminal, and a `flint` command that drives the
+		same vault, with `--json` on every command.
+	</Card>
+	<Card title="Built in cfire" icon="open-book">
+		Flint is written in [cfire](https://github.com/gsandoval/cfire), a Go-flavoured
+		language that compiles to C++23.
+	</Card>
+</CardGrid>

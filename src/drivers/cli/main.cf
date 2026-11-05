@@ -1,0 +1,45 @@
+package main
+
+// The `flint` CLI driver and composition root. Milestone 01 only reports the
+// version and the native libraries linked into the binary; the vault, host, key and
+// credential commands arrive in milestone 02.
+
+import "core:cli"
+import "ext:json"
+import "../../adapters/crypto"
+import "../../adapters/ssh"
+import "../../adapters/vault"
+
+var FLINT_VERSION: str = "0.0.0-dev"
+
+type Flags struct {
+    version: bool `cli:"--version,-V" help:"Print the Flint version and linked libraries"`
+    as_json: bool `cli:"--json" help:"Write machine-readable JSON to stdout"`
+}
+
+type VersionInfo struct {
+    flint: str `json:"flint"`
+    libssh: str `json:"libssh"`
+    libsodium: str `json:"libsodium"`
+    sqlite: str `json:"sqlite"`
+}
+
+fn main() {
+    // cli.parse returns T, not T! as documented, and silently ignores unknown flags
+    // (CF-024). Stable error codes and stderr diagnostics arrive with milestone 02.
+    flags := cli.parse[Flags]()
+    info := VersionInfo{
+        flint: FLINT_VERSION,
+        libssh: libssh_version(),
+        libsodium: sodium_version(),
+        sqlite: sqlcipher_version(),
+    }
+    if flags.as_json {
+        println("{}", json.stringify(info))
+        return
+    }
+    println("flint {info.flint}")
+    println("  libssh     {info.libssh}")
+    println("  libsodium  {info.libsodium}")
+    println("  sqlite     {info.sqlite}")
+}

@@ -1,0 +1,28 @@
+package ports
+
+// Ports: what the core needs from the outside world. Adapters implement them;
+// the domain and application layers depend only on these interfaces.
+//
+// cfire interfaces lower to C++20 concepts (static dispatch), so use cases take
+// their dependencies as generic parameters constrained by these interfaces.
+
+// Key derivation and authenticated encryption (adapters/crypto, libsodium).
+type Crypto interface {
+    random_bytes(n: usize) -> []byte
+    derive_key(password: str, salt: []byte) -> []byte!
+    seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte!
+    open(key: []byte, sealed: []byte, aad: []byte) -> []byte!
+}
+
+// An interactive remote shell (adapters/ssh, libssh).
+type ShellSession interface {
+    write(data: str) -> void!
+    read(timeout_ms: i32) -> str!
+    resize(cols: i32, rows: i32) -> void!
+}
+
+// Out-of-band delivery of terminal bytes to a driver (webui events, stdio).
+type EventSink interface {
+    terminal_output(session_id: str, data: str)
+    terminal_closed(session_id: str, reason: str)
+}

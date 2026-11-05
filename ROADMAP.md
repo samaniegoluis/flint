@@ -100,4 +100,5 @@ What Tether already does and Flint must not lose.
 | macOS + Linux | `mvp` | |
 | Windows | `later` | Blocked on CF-001 (WebView2) and CF-010 (POSIX runtime) |
 | Signed macOS `.app`, Linux AppImage/tarball, Homebrew tap | `next` | |
+| Bundle libssh, libsodium, SQLCipher and libcrypto into the `.app` (rpath fix-up) or link them statically | `next` | Today they are dynamic system packages (D-015); a release cannot rely on Homebrew being installed |
 | Public landing + docs site deployed | `next` | The site itself is built from milestone 01 |

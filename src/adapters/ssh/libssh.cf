@@ -1,0 +1,213 @@
+package ssh
+
+// libssh-backed SSH transport: dial, public-key auth, PTY shell and exec channel.
+// Every blocking network call is bounded by an explicit timeout (Principle 8).
+
+// CFIRE-UPSTREAM: CF-005
+import cpp "libssh/libssh.h" @pkg("libssh")
+
+type SshConn struct {
+    // Owned by this value; released by close().
+    session: *mut cpp::ssh_session_struct
+    channel: *mut cpp::ssh_channel_struct
+}
+
+// Helpers are methods rather than functions taking the pointer: a `*mut T`
+// parameter lowers to `const T*&` and the C API rejects it (CF-019).
+fn (self: SshConn) last_error() -> str {
+    mut msg := ""
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        msg = self.session ? ssh_get_error(self.session) : "out of memory";
+    }
+    return msg
+}
+
+// Opens a TCP connection and completes the SSH handshake. The host key is NOT
+// verified here; call `host_key_sha256` and check it before authenticating.
+fn ssh_dial(host: str, port: i32, user: str, timeout_secs: i64) -> SshConn! {
+    if timeout_secs <= 0 {
+        return error("ssh: a positive timeout is required")
+    }
+    mut session: *mut cpp::ssh_session_struct
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        ssh_session s = ssh_new();
+        session = s;
+        if (!s) {
+            rc = -1;
+        } else {
+            unsigned int p = static_cast<unsigned int>(port);
+            long t = static_cast<long>(timeout_secs);
+            int no_config = 0;
+            ssh_options_set(s, SSH_OPTIONS_HOST, host.c_str());
+            ssh_options_set(s, SSH_OPTIONS_PORT, &p);
+            ssh_options_set(s, SSH_OPTIONS_USER, user.c_str());
+            ssh_options_set(s, SSH_OPTIONS_TIMEOUT, &t);
+            // Flint resolves hosts from its vault, never from ~/.ssh/config.
+            ssh_options_set(s, SSH_OPTIONS_PROCESS_CONFIG, &no_config);
+            rc = ssh_connect(s);
+        }
+    }
+    mut conn := SshConn{ session: session }
+    if rc != 0 {
+        msg := conn.last_error()
+        conn.close()
+        return error("ssh: connect to {host}:{port} failed: {msg}")
+    }
+    return conn
+}
+
+// SHA-256 fingerprint of the server host key, in OpenSSH "SHA256:..." form.
+fn (self: SshConn) host_key_sha256() -> str! {
+    mut fp := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        ssh_key key = nullptr;
+        rc = ssh_get_server_publickey(self.session, &key);
+        if (rc == SSH_OK) {
+            unsigned char* hash = nullptr;
+            size_t hlen = 0;
+            rc = ssh_get_publickey_hash(key, SSH_PUBLICKEY_HASH_SHA256, &hash, &hlen);
+            if (rc == SSH_OK) {
+                char* txt = ssh_get_fingerprint_hash(SSH_PUBLICKEY_HASH_SHA256, hash, hlen);
+                if (txt) { fp = txt; ssh_string_free_char(txt); }
+                ssh_clean_pubkey_hash(&hash);
+            }
+            ssh_key_free(key);
+        }
+    }
+    if rc != 0 || fp.len() == 0 {
+        return error("ssh: cannot read the server host key")
+    }
+    return fp
+}
+
+// Authenticates with a private key given by content (PEM/OpenSSH text), as stored
+// in the vault. `passphrase` may be empty.
+fn (self: SshConn) auth_key_content(private_key: str, passphrase: str) -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        ssh_key key = nullptr;
+        const char* pass = passphrase.empty() ? nullptr : passphrase.c_str();
+        rc = ssh_pki_import_privkey_base64(private_key.c_str(), pass, nullptr, nullptr, &key);
+        if (rc == SSH_OK) {
+            rc = ssh_userauth_publickey(self.session, nullptr, key);
+            ssh_key_free(key);
+        } else {
+            rc = -2;
+        }
+    }
+    if rc == -2 {
+        return error("ssh: the private key could not be read (wrong passphrase or format)")
+    }
+    if rc != 0 {
+        return error("ssh: public-key authentication was rejected")
+    }
+}
+
+// Requests a PTY of the given size and starts an interactive shell on it.
+fn (mut self: SshConn) open_pty_shell(term: str, cols: i32, rows: i32) -> void! {
+    mut channel: *mut cpp::ssh_channel_struct
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        ssh_channel ch = ssh_channel_new(self.session);
+        channel = ch;
+        rc = ch ? ssh_channel_open_session(ch) : -1;
+        if (rc == SSH_OK) rc = ssh_channel_request_pty_size(ch, term.c_str(), cols, rows);
+        if (rc == SSH_OK) rc = ssh_channel_request_shell(ch);
+        if (rc != SSH_OK && ch) { ssh_channel_free(ch); channel = nullptr; }
+    }
+    if rc != 0 {
+        return error("ssh: cannot open a PTY shell: " + self.last_error())
+    }
+    self.channel = channel
+}
+
+fn (self: SshConn) write(data: str) -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        auto ch = self.channel;
+        rc = ch ? ssh_channel_write(ch, data.data(), static_cast<uint32_t>(data.size())) : -1;
+    }
+    if rc < 0 {
+        return error("ssh: write failed")
+    }
+}
+
+// Reads whatever output is available within `timeout_ms`. Returns "" on timeout and
+// an error once the channel is closed.
+fn (self: SshConn) read(timeout_ms: i32) -> str! {
+    mut chunk := ""
+    mut n: i32 = 0
+    mut eof := false
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        auto ch = self.channel;
+        if (!ch) {
+            n = -1;
+        } else {
+            char buf[16384];
+            n = ssh_channel_read_timeout(ch, buf, sizeof buf, 0, timeout_ms);
+            if (n == SSH_AGAIN) n = 0;  // timed out with nothing to read
+            if (n > 0) chunk.assign(buf, static_cast<size_t>(n));
+            eof = (n == 0 && ssh_channel_is_eof(ch));
+        }
+    }
+    if n < 0 {
+        return error("ssh: read failed ({n}): " + self.last_error())
+    }
+    if eof {
+        return error("ssh: channel closed")
+    }
+    return chunk
+}
+
+fn (self: SshConn) resize(cols: i32, rows: i32) -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        auto ch = self.channel;
+        rc = ch ? ssh_channel_change_pty_size(ch, cols, rows) : -1;
+    }
+    if rc != 0 {
+        return error("ssh: resize failed")
+    }
+}
+
+fn (mut self: SshConn) close() {
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        if (self.channel) {
+            ssh_channel_close(self.channel);
+            ssh_channel_free(self.channel);
+        }
+    }
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        if (self.session) {
+            ssh_disconnect(self.session);
+            ssh_free(self.session);
+        }
+    }
+    // Assigning `none` to a raw pointer lowers to std::nullopt (CF-019).
+    // CFIRE-UPSTREAM: CF-019
+    cpp {
+        self.channel = nullptr;
+        self.session = nullptr;
+    }
+}
+
+fn libssh_version() -> str {
+    mut v := ""
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        v = ssh_version(0);
+    }
+    return v
+}

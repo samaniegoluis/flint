@@ -1,0 +1,73 @@
+package vault
+
+import "core:fs"
+import "core:encoding/hex"
+import "../crypto"
+
+fn temp_vault_path(name: str) -> str {
+    dir := "/tmp/flint-test-" + hex.encode(crypto_random(8))
+    _ := fs.mkdir_all(dir)
+    return dir + "/" + name
+}
+
+fn crypto_random(n: usize) -> []byte {
+    c := crypto.new_sodium(KdfCost::Interactive) or err { return make([]byte, 0) }
+    return c.random_bytes(n)
+}
+
+test "argon2id key opens a sqlcipher file that leaks no plaintext" {
+    c := try crypto.new_sodium(KdfCost::Interactive)
+    salt := c.random_bytes(crypto.SALT_LEN)
+    key := try c.derive_key("master password", salt)
+    path := temp_vault_path("spike.flint")
+
+    mut db := try open_cipher_db(path, key)
+    ver := try db.cipher_version()
+    assert(ver.len() > 0, "SQLCipher must report a cipher version")
+    try db.exec("CREATE TABLE hosts (label TEXT, hostname TEXT, user TEXT);")
+    try db.exec_text("INSERT INTO hosts (label, hostname, user) VALUES ('flint-label-marker', ?1, 'flint-user-marker');", "db01.internal.example.org")
+    db.close()
+
+    // read_text returns the raw file bytes in a str, which gives us `contains`.
+    // (fs.read_all infers std::vector<std::byte>, not []byte: CF-021.)
+    raw := try fs.read_text(path)
+    assert(raw.len() >= 4096)
+    assert(!raw.contains("SQLite format 3"), "file header must be encrypted")
+    assert(!raw.contains("db01.internal.example.org"), "hostname leaked")
+    assert(!raw.contains("flint-label-marker"), "label leaked")
+    assert(!raw.contains("flint-user-marker"), "user leaked")
+    assert(!raw.contains("CREATE TABLE"), "schema leaked")
+
+    wrong := try c.derive_key("wrong password", salt)
+    assert(!open_cipher_db(path, wrong).has_value(), "a wrong key must not open the vault")
+
+    mut again := try open_cipher_db(path, key)
+    host := try again.query_text("SELECT hostname FROM hosts;")
+    again.close()
+    assert_eq(host, "db01.internal.example.org")
+    try fs.remove(fs.dirname(path))
+}
+
+test "open rejects a key of the wrong length" {
+    short_key := make([]byte, 16)
+    assert(!open_cipher_db("/tmp/never-created.flint", short_key).has_value())
+}
+
+// Negative control: the same write without a key must leak, or the scan above proves
+// nothing.
+test "control: an unkeyed sqlite file does expose the hostname" {
+    path := temp_vault_path("plain.db")
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-007
+    cpp {
+        sqlite3* db = nullptr;
+        rc = sqlite3_open(path.c_str(), &db);
+        if (rc == SQLITE_OK) rc = sqlite3_exec(db, "CREATE TABLE hosts (hostname TEXT); INSERT INTO hosts VALUES ('db01.internal.example.org');", nullptr, nullptr, nullptr);
+        sqlite3_close(db);
+    }
+    assert_eq(rc, 0)
+    raw := try fs.read_text(path)
+    assert(raw.contains("SQLite format 3"))
+    assert(raw.contains("db01.internal.example.org"))
+    try fs.remove(fs.dirname(path))
+}

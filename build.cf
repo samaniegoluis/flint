@@ -1,0 +1,10 @@
+package build
+
+import "core:build"
+
+// The `flint` CLI. The GUI executable is added in milestone 04.
+var Flint = build.Executable("flint", {
+    Entry:     "src/drivers/cli/main.cf",
+    Subsystem: "console",
+    OutDir:    "build",
+})

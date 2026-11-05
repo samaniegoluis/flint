@@ -1,0 +1,80 @@
+package ssh
+
+import "core:os"
+import "core:fs"
+import "../../ports"
+
+// Compiles only if SshConn satisfies the ShellSession port.
+fn accepts_shell[S: ShellSession](s: S) -> bool {
+    return true
+}
+
+// These tests need a reachable sshd. `scripts/test-sshd.sh` starts a throwaway one on
+// 127.0.0.1 and exports FLINT_TEST_SSH_PORT and FLINT_TEST_SSH_KEY. Without them the
+// tests print SKIP and do nothing.
+fn test_target() -> (i32, str) {
+    port := os.getenv("FLINT_TEST_SSH_PORT")
+    key := os.getenv("FLINT_TEST_SSH_KEY")
+    if port.len() == 0 || key.len() == 0 {
+        return (0, "")
+    }
+    mut p: i32 = 0
+    // core:str has no integer parser (CF-022).
+    // CFIRE-UPSTREAM: CF-022
+    cpp {
+        p = std::atoi(port.c_str());
+    }
+    return (p, key)
+}
+
+test "dial refuses a non-positive timeout" {
+    assert(!ssh_dial("127.0.0.1", 22, "nobody", 0).has_value())
+}
+
+test "dial to a closed port fails within the timeout" {
+    assert(!ssh_dial("127.0.0.1", 1, "nobody", 2).has_value())
+}
+
+test "pty shell echoes a command over libssh" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    key_text := try fs.read_text(key_path)
+    mut conn := try ssh_dial("127.0.0.1", port, os.getenv("USER"), 5)
+    fp := try conn.host_key_sha256()
+    assert(fp.starts_with("SHA256:"))
+    try conn.auth_key_content(key_text, "")
+    try conn.open_pty_shell("xterm-256color", 80, 24)
+    try conn.resize(100, 30)
+    try conn.write("echo flint-$((40+2))-spike; stty size\n")
+    mut seen := ""
+    // Up to 30 s: a login shell with a heavy prompt can take seconds to start.
+    for _ in 0..100 {
+        seen = seen + (try conn.read(300))
+        if seen.contains("flint-42-spike") && seen.contains("30 100") {
+            break
+        }
+    }
+    conn.close()
+    assert(seen.contains("flint-42-spike"), "PTY output must contain the echoed marker")
+    assert(seen.contains("30 100"), "the resized PTY must report 30 rows x 100 cols")
+}
+
+test "auth with a wrong key is rejected" {
+    (port, _) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    mut conn := try ssh_dial("127.0.0.1", port, os.getenv("USER"), 5)
+    bogus := "-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-key\n-----END OPENSSH PRIVATE KEY-----\n"
+    assert(!conn.auth_key_content(bogus, "").has_value())
+    conn.close()
+}
+
+test "SshConn satisfies the ShellSession port" {
+    conn := SshConn{}
+    assert(accepts_shell(conn))
+}

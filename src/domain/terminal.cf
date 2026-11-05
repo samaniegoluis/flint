@@ -1,0 +1,23 @@
+package domain
+
+// The domain layer: plain types with no I/O. Milestone 02 adds Vault, Group, Host,
+// SSHKey and Credential here.
+
+type TerminalSize struct {
+    cols: i32
+    rows: i32
+}
+
+fn default_terminal_size() -> TerminalSize {
+    return TerminalSize{ cols: 80, rows: 24 }
+}
+
+fn (self: TerminalSize) is_valid() -> bool {
+    return self.cols > 0 && self.rows > 0 && self.cols <= 1000 && self.rows <= 1000
+}
+
+test "terminal size validation" {
+    assert(default_terminal_size().is_valid())
+    assert(!TerminalSize{ cols: 0, rows: 24 }.is_valid())
+    assert(!TerminalSize{ cols: 80, rows: 5000 }.is_valid())
+}

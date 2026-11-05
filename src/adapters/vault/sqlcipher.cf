@@ -1,0 +1,158 @@
+package vault
+
+// SQLCipher-backed store: the whole vault file (header, schema, rows, journal) is
+// encrypted on disk (Principle 5). The page key is a raw 32-byte key derived by the
+// caller with Argon2id (libsodium); SQLCipher's own PBKDF2 is bypassed (D-014).
+
+// CFIRE-UPSTREAM: CF-007
+import cpp "sqlite3.h" @pkg("sqlcipher")
+import "core:encoding/hex"
+
+type CipherDb struct {
+    // Owned by this value; closed by close().
+    handle: *mut cpp::sqlite3
+}
+
+// Helpers are methods rather than functions taking the pointer: a `*mut T`
+// parameter lowers to `const T*&` and the C API rejects it (CF-019).
+fn (self: CipherDb) last_error() -> str {
+    mut msg := ""
+    // CFIRE-UPSTREAM: CF-007
+    cpp {
+        msg = self.handle ? sqlite3_errmsg(self.handle) : "out of memory";
+    }
+    return msg
+}
+
+// Opens (or creates) an encrypted database at `path` with a raw 32-byte key.
+// Fails when the key does not match an existing file.
+fn open_cipher_db(path: str, key: []byte) -> CipherDb! {
+    if key.len() != 32 {
+        return error("vault: key must be 32 bytes")
+    }
+    // SQLCipher raw-key form: x'<64 hex>' skips its PBKDF2 step.
+    mut key_sql := "PRAGMA key = \"x'" + hex.encode(key) + "'\";"
+    mut handle: *mut cpp::sqlite3
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-007
+    cpp {
+        rc = sqlite3_open_v2(path.c_str(), &handle,
+                             SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
+                             nullptr);
+        if (rc == SQLITE_OK) {
+            rc = sqlite3_exec(handle, key_sql.c_str(), nullptr, nullptr, nullptr);
+        }
+        // Overwrite the hex key text before the string is freed.
+        std::fill(key_sql.begin(), key_sql.end(), '\0');
+        if (rc == SQLITE_OK) {
+            // Touch the schema: this is the first read that needs the key, so a wrong
+            // key surfaces here as SQLITE_NOTADB.
+            rc = sqlite3_exec(handle, "SELECT count(*) FROM sqlite_master;", nullptr, nullptr, nullptr);
+        }
+    }
+    mut db := CipherDb{ handle: handle }
+    if rc != 0 {
+        msg := db.last_error()
+        db.close()
+        if rc == 26 {
+            return error("vault: wrong key or not a vault file")
+        }
+        return error("vault: cannot open database: " + msg)
+    }
+    return db
+}
+
+fn (mut self: CipherDb) close() {
+    // CFIRE-UPSTREAM: CF-007
+    cpp {
+        if (self.handle) sqlite3_close_v2(self.handle);
+    }
+    // Assigning `none` to a raw pointer lowers to std::nullopt (CF-019).
+    // CFIRE-UPSTREAM: CF-019
+    cpp {
+        self.handle = nullptr;
+    }
+}
+
+// Runs one or more statements that return no rows.
+fn (self: CipherDb) exec(sql: str) -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-007
+    cpp {
+        rc = sqlite3_exec(self.handle, sql.c_str(), nullptr, nullptr, nullptr);
+    }
+    if rc != 0 {
+        return error("vault: statement failed: " + self.last_error())
+    }
+}
+
+// Runs a statement with one text parameter (?1) and no result rows.
+fn (self: CipherDb) exec_text(sql: str, arg: str) -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-007
+    cpp {
+        sqlite3_stmt* st = nullptr;
+        rc = sqlite3_prepare_v2(self.handle, sql.c_str(), -1, &st, nullptr);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, arg.data(), static_cast<int>(arg.size()), SQLITE_TRANSIENT);
+            rc = sqlite3_step(st);
+            if (rc == SQLITE_DONE) rc = SQLITE_OK;
+        }
+        sqlite3_finalize(st);
+    }
+    if rc != 0 {
+        return error("vault: statement failed: " + self.last_error())
+    }
+}
+
+// Returns the first column of the first row as text, or "" when there is no row.
+fn (self: CipherDb) query_text(sql: str) -> str! {
+    mut rc: i32 = 0
+    mut result := ""
+    // CFIRE-UPSTREAM: CF-007
+    cpp {
+        sqlite3_stmt* st = nullptr;
+        rc = sqlite3_prepare_v2(self.handle, sql.c_str(), -1, &st, nullptr);
+        if (rc == SQLITE_OK) {
+            int step = sqlite3_step(st);
+            if (step == SQLITE_ROW) {
+                const unsigned char* txt = sqlite3_column_text(st, 0);
+                if (txt) result = reinterpret_cast<const char*>(txt);
+            } else if (step != SQLITE_DONE) {
+                rc = step;
+            }
+        }
+        sqlite3_finalize(st);
+    }
+    if rc != 0 {
+        return error("vault: query failed: " + self.last_error())
+    }
+    return result
+}
+
+// The SQLCipher version string, e.g. "4.6.1 community".
+fn (self: CipherDb) cipher_version() -> str! {
+    return self.query_text("PRAGMA cipher_version;")
+}
+
+// "<sqlite version> (SQLCipher <cipher version>)", read from an in-memory database.
+fn sqlcipher_version() -> str {
+    mut v := ""
+    // CFIRE-UPSTREAM: CF-007
+    cpp {
+        sqlite3* db = nullptr;
+        std::string cipher = "unknown";
+        if (sqlite3_open(":memory:", &db) == SQLITE_OK) {
+            sqlite3_stmt* st = nullptr;
+            if (sqlite3_prepare_v2(db, "PRAGMA cipher_version;", -1, &st, nullptr) == SQLITE_OK &&
+                sqlite3_step(st) == SQLITE_ROW) {
+                const unsigned char* t = sqlite3_column_text(st, 0);
+                if (t) cipher = reinterpret_cast<const char*>(t);
+            }
+            sqlite3_finalize(st);
+        }
+        sqlite3_close(db);
+        v = std::string(sqlite3_libversion()) + " (SQLCipher " + cipher + ")";
+    }
+    return v
+}

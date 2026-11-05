@@ -53,24 +53,32 @@ The first entries below came from reading cfire at commit `feat(webui): add ext:
   files.
 - **Ideal:** an event such as `files:dropped` with absolute paths and the drop coordinates.
 
-### CF-005 · missing · `suspected`: SSH client module
+### CF-005 · missing · `confirmed`: SSH client module
 - **Needed:** the core of Flint: PTY, exec, SFTP, agent, port forwarding, known_hosts.
-- **Workaround (planned):** `adapters/ssh/` over libssh or libssh2 via `import cpp` plus
-  `build.CMake`.
+- **Confirmed (M01):** cfire has no SSH support.
+- **Workaround:** `src/adapters/ssh/libssh.cf` over the system libssh
+  (`import cpp "libssh/libssh.h" @pkg("libssh")`): dial with timeout, host-key
+  fingerprint, key-by-content auth, PTY shell, read with timeout, resize. No
+  `build.CMake` needed; `@pkg` resolves it through pkg-config (D-012).
 - **Ideal:** `ext:net/ssh`, so a 15-line SSH client is possible in cfire.
 
-### CF-006 · missing · `suspected`: vetted crypto: Argon2id, XChaCha20-Poly1305
+### CF-006 · missing · `confirmed`: vetted crypto: Argon2id, XChaCha20-Poly1305
 - **Needed:** master-password key derivation and secret AEAD.
 - **Source:** `core:crypto/aes` is a header-only AES-GCM implementation. Its constant-time
   properties are unaudited, and there is no password KDF.
-- **Workaround (planned):** `adapters/crypto/` over libsodium.
+- **Confirmed (M01):** nothing in cfire provides a password KDF or an XChaCha20 AEAD.
+- **Workaround:** `src/adapters/crypto/sodium.cf` over the system libsodium
+  (`@pkg("libsodium")`).
 - **Ideal:** `ext:crypto/sodium` (or a libsodium-backed `core:crypto/*`).
 
-### CF-007 · missing · `suspected`: encrypted SQLite in `ext:db/sqlite`
+### CF-007 · missing · `confirmed`: encrypted SQLite in `ext:db/sqlite`
 - **Needed:** the vault file must be encrypted in full.
 - **Source:** `ext:db/sqlite` links the system `sqlite3`.
-- **Workaround (planned):** build SQLite3MultipleCiphers or SQLCipher as a vendored
-  dependency.
+- **Confirmed (M01):** no key parameter or cipher build in `ext:db/sqlite`.
+- **Workaround:** `src/adapters/vault/sqlcipher.cf` over the system SQLCipher
+  (`import cpp "sqlite3.h" @pkg("sqlcipher")`), keyed with a raw 32-byte key (D-013,
+  D-014). Flint does not import `ext:db/sqlite` anywhere, so the two `sqlite3` builds never
+  meet in one binary. Untried: what happens if they did.
 - **Ideal:** `sqlite.open(path, key: bytes)` backed by a cipher build.
 
 ### CF-008 · missing · `suspected`: OS keychain module
@@ -102,3 +110,132 @@ The first entries below came from reading cfire at commit `feat(webui): add ext:
 - **Ideal:** embed the commit SHA and build date at compile time
   (`cfire 0.9.4 (3963814, 2026-11-05)`), print it in `cfire doctor`, and have the installer
   default to the latest tagged release rather than `main`.
+
+---
+
+The entries below were found while building milestone 01 against cfire `3963814`
+(2026-11-05). Each repro is a whole file; run it with `cfire run <file>.cf`.
+
+### CF-012 · bug · `confirmed`: `cfire new` templates write a `build.cf` that `cfire build` rejects
+- **Repro:** `cfire new --template webui app && cd app && cfire build` →
+  `error: no executables declared in …/build.cf`. Every template does the same.
+- **Source:** the templates in `src/main.cpp` emit `app := Executable{ name: …, entry: … }`,
+  but `parse_build_cf` (`src/buildsys.hpp`) only recognises
+  `var X = build.Executable("name", { Entry: … })` after `import "core:build"`.
+- **Workaround:** Flint's `build.cf` uses the `build.Executable` form from `docs/GUIDE.md`.
+- **Ideal:** templates emit the form the parser accepts, and a `cfire test` covers
+  `cfire new` + `cfire build` for every template.
+
+### CF-013 · bug · `confirmed`: the `as` cast is documented but does not parse
+- **Repro:** `package main` / `fn main() { x := 3; y := x as u8; println("{}", y) }` →
+  `unexpected token 'as' in expression`. `docs/GUIDE.md` (Chapter 4) and `cfire doc --llm`
+  both document `expr as T`. In the parser, `KwAs` is only used for import aliases.
+- **Workaround:** function-style conversion, `u8(x)`, which works.
+- **Ideal:** implement `as`, or document `T(x)` as the conversion syntax.
+
+### CF-014 · bug · `confirmed`: top-level `const` is documented but does not parse
+- **Repro:** `package main` / `const K: i64 = 3` / `fn main() { println("{}", K) }` →
+  `unexpected identifier 'const' at top-level`. Documented in GUIDE Chapter 4.
+- **Workaround:** `var K: i64 = 3`. These globals are mutable.
+- **Ideal:** `const` lowered to `constexpr`, as documented.
+
+### CF-015 · bug · `confirmed`: the `panic()` builtin lowers to an undeclared identifier
+- **Repro:** `fn f(x: i64) -> i64 { if x < 0 { panic("neg") } return x }` plus a `main`
+  that calls it → clang `use of undeclared identifier 'panic'`.
+- **Workaround:** return an error instead. That also blocks `or err { panic(…) }`, which
+  `cfire/NON-DIVERGING-OR-BLOCK` suggests.
+- **Ideal:** lower `panic` to the prelude's panic routine.
+
+### CF-016 · bug · `confirmed`: a sibling or test file that fails to parse is dropped silently
+- **Repro:** a package dir with `a.cf` (`package p` / `const K: i64 = 1` / `fn f() -> i64 { return K }`)
+  and `a_test.cf` (`package p` / `test "t" { assert_eq(f(), 1) }`). `cfire test dir` reports
+  `use of undeclared identifier 'f'` from clang, not the parse error in `a.cf`. If the
+  parse error is in the test file itself, `cfire test dir` prints
+  `✓ No test suites found` and exits 0.
+- **Source:** `src/buildsys.hpp` (`if (item.is_auto_sibling) continue;`) and the directory
+  walk in the `test` command (`if (!ast) continue;`).
+- **Ideal:** report every parse error, and fail `cfire test` when any `.cf` file in the
+  target cannot be parsed.
+
+### CF-017 · bug · `confirmed`: packages are not namespaced in the generated C++
+- **Repro:** `p/p.cf` (`package p` / `fn helper() -> i64 { return 7 }` /
+  `type Mode enum { A, B }`), `m/main.cf` (`package main` / `import "../p"` /
+  `fn helper() -> i64 { return 1 }` / `fn main() { println("{}", p.helper()) }`) → clang
+  `redefinition of 'helper'`. And `p.Mode::B` lowers to `p.Mode::B` →
+  `use of undeclared identifier 'p'`.
+- **Cause:** every package is emitted into one translation unit with no C++ namespace, so
+  `p.f` becomes `f`.
+- **Workaround:** Flint keeps every top-level name unique across the whole program
+  (`open_cipher_db`, `ssh_dial`, `new_sodium`), and refers to another package's enum
+  variants unqualified (`KdfCost::Interactive`).
+- **Ideal:** one C++ namespace per package. This matters a lot for a hexagonal layout,
+  where two adapters naturally both have `open`, `close` and `new`.
+
+### CF-018 · improvement · `confirmed`: the `cfire test` fd-leak canary has no opt-out
+- **Repro:** a test whose first call into libsodium runs `sodium_init()`. libsodium keeps
+  the system RNG fd open for the life of the process, and the canary fails the test with
+  `test leaked 1 open file descriptor(s)`.
+- **Workaround:** `src/adapters/crypto/sodium.cf` initialises libsodium in a global
+  (`var SODIUM_READY = init_sodium()`), before any test runs.
+- **Ideal:** a per-test opt-out (`test "x" @allow_fd_growth { … }`) or a documented
+  process-start hook.
+
+### CF-019 · bug · `confirmed`: raw foreign pointers: `none` and parameters lower wrongly
+- **Works:** a struct field `h: *mut cpp::sqlite3`, and `cpp { sqlite3_open(p, &h); }` on
+  a local `mut h: *mut cpp::sqlite3`.
+- **Repro 1:** `self.h = none` lowers to an assignment from `std::nullopt` → clang
+  `assigning to 'sqlite3 *' from incompatible type 'const nullopt_t'`.
+- **Repro 2:** `fn msg(h: *mut cpp::sqlite3) -> str { … sqlite3_errmsg(h) … }` lowers the
+  parameter to `const sqlite3*&`, so the C API rejects it (`no matching function`). `*T`
+  struct fields also lower to `const T*`.
+- **Workaround:** helpers that need the pointer are methods on the owning struct, and
+  pointers are nulled inside `cpp { … = nullptr; }`
+  (`src/adapters/vault/sqlcipher.cf`, `src/adapters/ssh/libssh.cf`).
+- **Ideal:** `none` → `nullptr` for raw pointers; a `*mut T` parameter → `T*`.
+
+### CF-020 · bug · `confirmed`: identifiers that are C++ keywords break the build
+- **Repro:** `fn main() { short := 3; println("{}", short) }` → clang
+  `expected unqualified-id`. The same happens for `short`, `long`, `class`, `template`,
+  and so on.
+- **Ideal:** mangle C++ reserved words in emitted identifiers, or reject them in `cfire check`.
+
+### CF-021 · improvement · `confirmed`: `fs.read_all` infers `std::vector<std::byte>`, not `[]byte`
+- **Repro:** `raw := fs.read_all(p) or err { return }`, then pass `raw` to
+  `fn f(b: []byte)` → clang `no matching function`. Annotating the binding
+  (`raw: []byte = …`) converts it.
+- **Ideal:** one byte type across the stdlib and user code.
+
+### CF-022 · missing · `confirmed`: no string-to-integer parsing in the stdlib
+- **Needed:** reading a port from an environment variable.
+- **Source:** nothing in `core:str` or `cfire doc --llm`. `cfire::detail::parse_int<T>`
+  exists in the prelude but is not exposed.
+- **Workaround:** `std::atoi` in a `cpp {}` block (`src/adapters/ssh/libssh_test.cf`).
+- **Ideal:** `str.parse_i64(s) -> i64!`, and the same for the other numeric types.
+
+### CF-023 · bug · `confirmed`: `Error.message()` does not convert to `str`
+- **Repro:** `fn take(s: str) -> i64 { return i64(s.len()) }`, then
+  `_ := f() or err { println("{}", take(err.message())); return }` → clang
+  `no matching function for call to 'take'` (`message()` is a `std::string_view`).
+- **Workaround:** interpolate: `"{err.message()}"` (`src/application/terminal.cf`).
+- **Ideal:** `message()` returns `str`, or `std::string_view` converts implicitly to a
+  `str` parameter.
+
+### CF-024 · missing · `confirmed`: CLI building blocks: argv, positional args, stderr
+- **Needed:** `flint vault|host|key|cred <verb> [args] [--json]` with diagnostics on
+  stderr and stable exit codes (Principle 7).
+- **Found:**
+  - `cli.parse[T]()` returns `T`, not `T!` as documented.
+  - It has no positional arguments or subcommands, and it ignores unknown flags.
+  - It calls `std::stoi`, which throws on bad input.
+  - There is no `os.args()`: `argc`/`argv` exist only as locals of `main`.
+  - There is no `eprintln` or other stderr writer, and no `os.exit(code)`.
+- **Workaround (M01):** `flint --version [--json]` only. Milestone 02 needs an argv
+  adapter.
+- **Ideal:** `os.args() -> []str`, `eprintln`, `os.exit(code)`, and subcommand plus
+  positional support in `core:cli`.
+
+### CF-025 · bug · `confirmed`: comma-separated struct fields, as documented, do not parse
+- **Repro:** `type U struct { id: i64, name: str }` (the form in `cfire doc --llm`) →
+  `expected 'IDENT', got ','`. The multi-line form with trailing commas fails the same way.
+- **Workaround:** one field per line, no commas.
+- **Ideal:** accept commas, or fix the reference sheet.
