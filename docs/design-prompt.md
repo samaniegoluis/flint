@@ -88,26 +88,54 @@ risks.
 
 ---
 
-## Message 2: build out (after choosing)
+## Message 2: build out (sent 2026-11-05, direction A + B + C pieces)
 
-Go with **direction {A | B | C | A + palette-first from B | …}**, plus these changes:
-{notes}. Now design the complete app in dark **and** light themes.
+Go with **direction A (Editor)** as the base, plus:
+- **B's quick switcher as the command palette** (⌘K): one fuzzy list grouped into Hosts,
+  Actions and Vaults, with Tab to cycle groups.
+- **B's unlock layout**: centred, no fake sidebar behind it.
+- **C's in-pane "Connection lost" card** for session states, overlaid on a dimmed terminal
+  inside the tab.
+
+Changes to A:
+- Remove the per-host latency figures and live status dots from the tree. The MVP shows
+  only whether a host has an open session. Latency appears only in the session toolbar and
+  status bar.
+- Remove "Agent tokens" from the rail. The rail is Hosts, Keys, Credentials, Settings.
+- The Split button stays visible but disabled, with a "coming soon" tooltip. The Files
+  button opens the SFTP side panel (below).
+- Fix the shortcut collisions:
+  - ⌘1–9 switch tabs only.
+  - Vaults switch through ⇧⌘O and the palette, never digit shortcuts.
+  - Rail items use ⇧⌘H, ⇧⌘K, ⇧⌘C and ⌘,.
+- Provide the Linux shortcut map alongside the macOS one: ⌘ becomes Ctrl+Shift, so plain
+  Ctrl combos always reach the terminal (Kitty keyboard protocol).
+- Provide a Linux title bar variant: window controls top-right, no traffic lights.
+- The "Remember on this device" hint names only the current OS's store (Keychain on
+  macOS, Secret Service on Linux), never both.
+- Show how the layout collapses at the 900×600 minimum: the sidebar collapses to the rail.
+- Nothing from the roadmap leaks in: no splits, saved workspaces, session restore,
+  per-host health or agent tokens in MVP screens.
+
+Now design the complete app in dark **and** light themes.
 
 ### Data shown in the UI
 
 A **host** has: label, hostname, port, auth (linked credential | stored key | password |
 SSH agent), optional jump host, tags, colour, notes.
 
-### Screens
+### Screens (high fidelity, both themes)
 
 1. **Welcome (no vault)**: create a vault or open an existing file. One line saying the
    vault can live in a cloud-synced folder.
 2. **Create vault**: name, location, master password with a strength meter, "Remember on
    this device" checked by default.
-3. **Unlock**, including the wrong-password state.
-4. **Main shell**: host tree or equivalent, tabs with state (connecting, connected,
-   disconnected), session toolbar (host · user · latency; reconnect, duplicate; split and
-   files shown as "coming soon"), status bar (lock state, session count, update hint).
+3. **Unlock**, plus its wrong-password state.
+4. **Main shell**:
+   - host tree;
+   - tabs with state (connecting, connected, disconnected);
+   - session toolbar: host · user · latency; reconnect, duplicate, Files, Split (disabled);
+   - status bar: lock state, session count, update hint.
 5. **Vault switcher popover** and a **Manage vaults** dialog (rename, reveal in folder,
    forget on this device, remove from list).
 6. **Host editor**. The auth section is a segmented control: *Credential* (pick, or
@@ -116,45 +144,57 @@ SSH agent), optional jump host, tags, colour, notes.
 7. **SSH keys manager**: name, type, fingerprint, "used by N hosts"; add by paste or file;
    optional passphrase; copy public key.
 8. **Credentials manager**: name, username, auth kind, "used by N hosts"; create and edit.
-9. **Command palette**: fuzzy search over hosts, actions and vaults, grouped, with
-   shortcut hints.
-10. **Connection prompts** over the terminal:
+9. **Command palette**: the B-style quick switcher with results from all three groups
+   (Hosts, Actions, Vaults) and shortcut hints.
+10. **Connection prompts**, each an overlay on the terminal:
     - password (with "save to vault");
     - key passphrase;
     - **unknown host key** (fingerprint, trust / cancel);
     - **host key changed** (serious warning).
-11. **Session states**: connecting, auth failed, disconnected with Reconnect.
+11. **Session states** inside the pane: connecting, auth failed, and the "Connection lost"
+    card with Reconnect.
 12. **Settings**:
     - Appearance: theme, accent, density.
     - Terminal: font from installed fonts with search, size, line height, cursor.
-    - Keyboard shortcuts: editable.
+    - Keyboard shortcuts: editable, showing the macOS and Linux maps.
     - Vault: path, lock now, change master password.
 13. **Empty states**: an empty vault, and no sessions open (recent hosts + palette call to
     action).
+14. **SFTP side panel**. It is the first post-MVP feature, and Tether already has it, so
+    the layout must make room for it now.
+    - Placement: docked to the right of the terminal inside a session tab, resizable,
+      toggled by the toolbar's Files button.
+    - Navigation: breadcrumb, `..`, and a "jump to the terminal's current folder" button.
+    - File list: name, size, modified, with a context menu (download, rename, delete, new
+      folder).
+    - An upload button, and a drop-zone state for files dragged in from the OS.
+    - A transfer queue with per-file progress, cancel and "clear done".
 
-**SFTP side panel**, high fidelity in both themes. It is the first post-MVP feature and
-something Tether already has, so the layout must already make room for it:
-- It docks to the right of the terminal inside a session tab, is resizable and toggles from
-  the session toolbar's "Files" button.
-- Contents: breadcrumb + `..` + "jump to the terminal's current folder" button, a file list
-  (name, size, modified) with a context menu (download, rename, delete, new folder), an
-  upload button, a drop-zone state for files dragged in from the OS, and a transfer queue
-  with per-file progress, cancel and "clear done".
+### Wireframe only (to reserve layout space)
 
-Wireframes only, to reserve layout space:
-- **Agent activity panel**: live timeline of agent commands per host and a pending-approval
-  card ("Agent X wants to run `systemctl restart nginx` on prod-web-1 — Approve / Deny").
+- **Agent activity panel**: a live timeline of agent commands per host and a
+  pending-approval card ("Agent X wants to run `systemctl restart nginx` on prod-web-1 —
+  Approve / Deny").
 
 ### Deliverables
 
-- High-fidelity screens 1–13 and the SFTP side panel in both themes, plus the wireframes.
-- **Design tokens**, to be implemented as CSS custom properties keyed by
-  `html[data-theme]` in React + CSS Modules: colour, type scale, spacing, radius, shadow,
-  motion, and the terminal ANSI 16-colour palette per theme.
-- **Component sheet**:
+- **Screens:**
+  - Screens 1–14 in high fidelity, both themes, plus the wireframe.
+  - **One HTML file per screen and theme**, named `NN-screen-name.{dark|light}.html`.
+- **A standalone `tokens.css`**, with CSS custom properties keyed by
+  `html[data-theme="dark"|"light"]`, to be implemented in React + CSS Modules:
+  - Colour, type scale, spacing, radius, shadow and motion.
+  - Consolidate the greys into a **named surface scale**. Screens use tokens only, no
+    ad-hoc hex.
+  - Use a **4 px spacing scale**.
+- **Terminal palette:** the full 16-colour ANSI set plus background, foreground, cursor and
+  selection, for each theme, both as a table and as CSS variables.
+- **Fonts:** list each one with its licence. They will be bundled locally, so no Google
+  Fonts link.
+- **Component sheet:**
   - buttons (primary, secondary, ghost, danger);
   - input, segmented control, searchable select, tag input, colour swatches;
   - tree item, tab, toast, modal, drawer, popover;
   - tooltip with shortcut, key chip, status dot, progress bar, empty state.
-- **Interaction notes**: focus order, hover, active and focus-visible states, sidebar
-  collapse, how prompts overlay the terminal.
+- **Interaction notes:** focus order; hover, active and focus-visible states; sidebar
+  collapse; how prompts overlay the terminal; how the SFTP panel resizes and toggles.
