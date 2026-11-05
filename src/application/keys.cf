@@ -1,0 +1,211 @@
+package application
+
+// SSH key and credential use cases. Keys are stored by content: the private key and
+// its passphrase are sealed; only the public half and fingerprint are shown.
+
+import "../domain"
+import "../ports"
+
+type KeyView struct {
+    name:           str  `json:"name"`
+    key_type:       str  `json:"type"`
+    public_key:     str  `json:"public_key"`
+    fingerprint:    str  `json:"fingerprint"`
+    has_passphrase: bool `json:"has_passphrase"`
+}
+
+type CredView struct {
+    name:         str  `json:"name"`
+    user:         str  `json:"user"`
+    key:          str  `json:"key"`
+    has_password: bool `json:"has_password"`
+}
+
+// Fields to set on a credential; see HostPatch for the `set_*` convention.
+type CredPatch struct {
+    name: str
+    set_name: bool
+    user: str
+    set_user: bool
+    key: str
+    set_key: bool
+    password: str
+    set_password: bool
+}
+
+fn empty_cred_patch() -> CredPatch {
+    return CredPatch{ name: "", set_name: false, user: "", set_user: false, key: "", set_key: false, password: "", set_password: false }
+}
+
+fn key_view(k: SshKey) -> KeyView {
+    return KeyView{ name: k.name, key_type: k.key_type, public_key: k.public_key, fingerprint: k.fingerprint, has_passphrase: k.passphrase.len() > 0 }
+}
+
+fn cred_view(cat: Catalog, c: Credential) -> CredView {
+    return CredView{ name: c.name, user: c.username, key: key_name_of(cat.keys, c.key_id), has_password: c.password.len() > 0 }
+}
+
+fn require_key(keys: []SshKey, name: str) -> SshKey! {
+    idx := key_index_by_name(keys, name)
+    if idx < 0 {
+        return error(coded(ERR_NOT_FOUND, "no key '{name}'"))
+    }
+    return keys[usize(idx)]
+}
+
+fn require_cred(creds: []Credential, name: str) -> Credential! {
+    idx := cred_index_by_name(creds, name)
+    if idx < 0 {
+        return error(coded(ERR_NOT_FOUND, "no credential '{name}'"))
+    }
+    return creds[usize(idx)]
+}
+
+// ---- Keys ----------------------------------------------------------------------
+
+// Stores a private key by content. It is parsed first, so a bad key or a wrong
+// passphrase is refused before anything is written.
+fn add_key[C: Crypto, S: VaultStore, I: KeyInspector](crypto: C, mut store: S, inspector: I, session: VaultSession, name: str, private_key: str, passphrase: str) -> KeyView! {
+    try check_name("key name", name)
+    keys := try store.keys_all()
+    if key_index_by_name(keys, name) >= 0 {
+        return error(coded(ERR_CONFLICT, "a key named '{name}' already exists"))
+    }
+    info := try inspector.inspect_private_key(private_key, passphrase)
+    id := new_row_id(crypto)
+    k := SshKey{
+        id: id,
+        name: name,
+        key_type: info.key_type,
+        public_key: info.public_key,
+        fingerprint: info.fingerprint,
+        private_key: try seal_secret(crypto, session, "ssh_keys", id, "private_key", private_key),
+        passphrase: try seal_secret(crypto, session, "ssh_keys", id, "passphrase", passphrase),
+    }
+    try store.key_put(k)
+    return key_view(k)
+}
+
+fn list_keys[S: VaultStore](store: S) -> []KeyView! {
+    mut views: []KeyView = []
+    for k in try store.keys_all() {
+        views.push(key_view(k))
+    }
+    return views
+}
+
+fn show_key[S: VaultStore](store: S, name: str) -> KeyView! {
+    return key_view(try require_key(try store.keys_all(), name))
+}
+
+fn rename_key[S: VaultStore](mut store: S, name: str, new_name: str) -> KeyView! {
+    try check_name("key name", new_name)
+    keys := try store.keys_all()
+    mut k := try require_key(keys, name)
+    other := key_index_by_name(keys, new_name)
+    if other >= 0 && keys[usize(other)].id != k.id {
+        return error(coded(ERR_CONFLICT, "a key named '{new_name}' already exists"))
+    }
+    k.name = new_name
+    try store.key_put(k)
+    return key_view(k)
+}
+
+// Removes a key that no host or credential uses.
+fn remove_key[S: VaultStore](mut store: S, name: str) -> KeyView! {
+    cat := try load_catalog(store)
+    k := try require_key(cat.keys, name)
+    for h in cat.hosts {
+        if h.key_id == k.id {
+            return error(coded(ERR_CONFLICT, "host '{h.alias}' uses key '{k.name}'"))
+        }
+    }
+    for c in cat.creds {
+        if c.key_id == k.id {
+            return error(coded(ERR_CONFLICT, "credential '{c.name}' uses key '{k.name}'"))
+        }
+    }
+    try store.key_drop(k.id)
+    return key_view(k)
+}
+
+// ---- Credentials ---------------------------------------------------------------
+
+fn apply_cred_patch[C: Crypto](crypto: C, session: VaultSession, cat: Catalog, base: Credential, p: CredPatch) -> Credential! {
+    mut c := base
+    if p.set_name {
+        try check_name("credential name", p.name)
+        other := cred_index_by_name(cat.creds, p.name)
+        if other >= 0 && cat.creds[usize(other)].id != c.id {
+            return error(coded(ERR_CONFLICT, "a credential named '{p.name}' already exists"))
+        }
+        c.name = p.name
+    }
+    if p.set_user {
+        if p.user.len() == 0 {
+            return error(coded(ERR_INVALID, "a credential needs a user"))
+        }
+        try check_text("user", p.user, 128, false)
+        c.username = p.user
+    }
+    if p.set_key {
+        if p.key.len() == 0 {
+            c.key_id = ""
+        } else {
+            c.key_id = (try require_key(cat.keys, p.key)).id
+        }
+    }
+    if p.set_password {
+        c.password = try seal_secret(crypto, session, "credentials", c.id, "password", p.password)
+    }
+    return c
+}
+
+fn add_cred[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, p: CredPatch) -> CredView! {
+    if !p.set_name {
+        return error(coded(ERR_USAGE, "a credential needs a name"))
+    }
+    if !p.set_user {
+        return error(coded(ERR_USAGE, "a credential needs a user (--user)"))
+    }
+    cat := try load_catalog(store)
+    base := Credential{ id: new_row_id(crypto), name: "", username: "", key_id: "", password: [] }
+    c := try apply_cred_patch(crypto, session, cat, base, p)
+    try store.cred_put(c)
+    return cred_view(cat, c)
+}
+
+fn edit_cred[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, name: str, p: CredPatch) -> CredView! {
+    cat := try load_catalog(store)
+    base := try require_cred(cat.creds, name)
+    c := try apply_cred_patch(crypto, session, cat, base, p)
+    try store.cred_put(c)
+    return cred_view(cat, c)
+}
+
+fn list_creds[S: VaultStore](store: S) -> []CredView! {
+    cat := try load_catalog(store)
+    mut views: []CredView = []
+    for c in cat.creds {
+        views.push(cred_view(cat, c))
+    }
+    return views
+}
+
+fn show_cred[S: VaultStore](store: S, name: str) -> CredView! {
+    cat := try load_catalog(store)
+    return cred_view(cat, try require_cred(cat.creds, name))
+}
+
+// Removes a credential that no host uses.
+fn remove_cred[S: VaultStore](mut store: S, name: str) -> CredView! {
+    cat := try load_catalog(store)
+    c := try require_cred(cat.creds, name)
+    for h in cat.hosts {
+        if h.credential_id == c.id {
+            return error(coded(ERR_CONFLICT, "host '{h.alias}' uses credential '{c.name}'"))
+        }
+    }
+    try store.cred_drop(c.id)
+    return cred_view(cat, c)
+}

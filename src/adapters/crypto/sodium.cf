@@ -11,12 +11,9 @@ var SALT_LEN: usize = 16
 var NONCE_LEN: usize = 24
 var TAG_LEN: usize = 16
 
-// Argon2id cost parameters. `Interactive` is libsodium's OPSLIMIT/MEMLIMIT_INTERACTIVE
-// (fast, for tests); `Moderate` is what a real vault uses.
-type KdfCost enum { Interactive, Moderate }
-
+// Stateless: the KDF cost is chosen by the caller (the vault format pins it, D-017).
 type Sodium struct {
-    cost: KdfCost
+    ready: bool
 }
 
 // libsodium is initialised once per process, at start-up. sodium_init() keeps the
@@ -33,11 +30,11 @@ fn init_sodium() -> bool {
 
 var SODIUM_READY: bool = init_sodium()
 
-fn new_sodium(cost: KdfCost) -> Sodium! {
+fn new_sodium() -> Sodium! {
     if !SODIUM_READY {
-        return error("crypto: libsodium failed to initialise")
+        return error("internal: libsodium failed to initialise")
     }
-    return Sodium{ cost: cost }
+    return Sodium{ ready: true }
 }
 
 fn (self: Sodium) random_bytes(n: usize) -> []byte {
@@ -49,34 +46,53 @@ fn (self: Sodium) random_bytes(n: usize) -> []byte {
     return buf
 }
 
-// Derives a KEY_LEN-byte key from a password with Argon2id.
-fn (self: Sodium) derive_key(password: str, salt: []byte) -> []byte! {
+// Derives a KEY_LEN-byte key from a password with Argon2id (v1.3), at the given
+// cost. `mem_bytes` is the memory limit in bytes.
+fn (self: Sodium) derive_key(password: str, salt: []byte, ops: u64, mem_bytes: usize) -> []byte! {
     if salt.len() != SALT_LEN {
-        return error("crypto: salt must be {SALT_LEN} bytes")
-    }
-    moderate := match self.cost {
-        KdfCost::Interactive => false,
-        KdfCost::Moderate => true,
+        return error("internal: salt must be {SALT_LEN} bytes")
     }
     mut key := make([]byte, KEY_LEN)
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-006
     cpp {
-        unsigned long long ops = moderate ? crypto_pwhash_OPSLIMIT_MODERATE : crypto_pwhash_OPSLIMIT_INTERACTIVE;
-        size_t mem = moderate ? crypto_pwhash_MEMLIMIT_MODERATE : crypto_pwhash_MEMLIMIT_INTERACTIVE;
         rc = crypto_pwhash(key.data(), key.size(), password.data(), password.size(),
-            salt.data(), ops, mem, crypto_pwhash_ALG_ARGON2ID13);
+            salt.data(), static_cast<unsigned long long>(ops), static_cast<size_t>(mem_bytes),
+            crypto_pwhash_ALG_ARGON2ID13);
     }
     if rc != 0 {
-        return error("crypto: key derivation failed (out of memory)")
+        return error("internal: key derivation failed (out of memory)")
     }
     return key
+}
+
+// Derives subkey number `id` of `master` for an 8-byte `kdf_context`, with libsodium
+// crypto_kdf (BLAKE2b). Different ids or contexts give independent keys.
+fn (self: Sodium) derive_subkey(master: []byte, id: u64, kdf_context: str) -> []byte! {
+    if master.len() != KEY_LEN {
+        return error("internal: master key must be {KEY_LEN} bytes")
+    }
+    if kdf_context.len() != 8 {
+        return error("internal: kdf context must be 8 bytes")
+    }
+    mut sub := make([]byte, KEY_LEN)
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-006
+    cpp {
+        static_assert(crypto_kdf_KEYBYTES == 32 && crypto_kdf_CONTEXTBYTES == 8);
+        rc = crypto_kdf_derive_from_key(sub.data(), sub.size(), static_cast<uint64_t>(id),
+            kdf_context.data(), master.data());
+    }
+    if rc != 0 {
+        return error("internal: subkey derivation failed")
+    }
+    return sub
 }
 
 // Encrypts `plaintext` and returns nonce || ciphertext || tag.
 fn (self: Sodium) seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte! {
     if key.len() != KEY_LEN {
-        return error("crypto: key must be {KEY_LEN} bytes")
+        return error("internal: key must be {KEY_LEN} bytes")
     }
     mut sealed := make([]byte, NONCE_LEN + plaintext.len() + TAG_LEN)
     mut rc: i32 = 0
@@ -90,18 +106,18 @@ fn (self: Sodium) seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte! {
             nullptr, sealed.data(), key.data());
     }
     if rc != 0 {
-        return error("crypto: encryption failed")
+        return error("internal: encryption failed")
     }
     return sealed
 }
 
-// Decrypts the output of `seal`. Fails if the key, the AAD or any byte is wrong.
-fn (self: Sodium) open(key: []byte, sealed: []byte, aad: []byte) -> []byte! {
+// Decrypts the output of `seal`. Not named `open`: that would capture `fs.open` (CF-017). Fails if the key, the AAD or any byte is wrong.
+fn (self: Sodium) unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte! {
     if key.len() != KEY_LEN {
-        return error("crypto: key must be {KEY_LEN} bytes")
+        return error("internal: key must be {KEY_LEN} bytes")
     }
     if sealed.len() < NONCE_LEN + TAG_LEN {
-        return error("crypto: ciphertext too short")
+        return error("invalid: sealed value is too short")
     }
     mut plain := make([]byte, sealed.len() - NONCE_LEN - TAG_LEN)
     mut rc: i32 = 0
@@ -115,7 +131,7 @@ fn (self: Sodium) open(key: []byte, sealed: []byte, aad: []byte) -> []byte! {
             aad.data(), aad.size(), sealed.data(), key.data());
     }
     if rc != 0 {
-        return error("crypto: decryption failed (wrong key or tampered data)")
+        return error("invalid: a sealed value failed to open (wrong key or tampered data)")
     }
     return plain
 }

@@ -1,0 +1,307 @@
+package application
+
+// Vault lifecycle use cases: create, unlock (from the keychain or a password), lock,
+// status, and the list of recent vaults.
+//
+// Key handling (D-017): Argon2id(password, salt) is the master key. It is what the
+// keychain caches (D-005). crypto_kdf derives the SQLCipher page key and the secrets
+// key from it; neither is ever stored.
+
+import "core:encoding/hex"
+import "core:str"
+import "../domain"
+import "../ports"
+
+var MIN_MASTER_PASSWORD_LEN: usize = 8
+
+// An unlocked vault. The store passed alongside it holds the open file.
+type VaultSession struct {
+    path: str
+    name: str
+    secrets_key: []byte
+    cached: bool
+}
+
+// What `vault create`, `vault open` and `vault unlock` report.
+type VaultInfo struct {
+    path:   str  `json:"path"`
+    name:   str  `json:"name"`
+    format: i64  `json:"format"`
+    cached: bool `json:"cached"`
+}
+
+type VaultStatus struct {
+    path:        str  `json:"path"`
+    name:        str  `json:"name"`
+    exists:      bool `json:"exists"`
+    cached:      bool `json:"cached"`
+    groups:      i64  `json:"groups"`
+    hosts:       i64  `json:"hosts"`
+    keys:        i64  `json:"keys"`
+    credentials: i64  `json:"credentials"`
+}
+
+// The keychain account of a vault: its salt, which is unique per vault and already
+// in clear text in the file header.
+fn vault_account(salt: []byte) -> str {
+    return "vault-" + hex.encode(salt)
+}
+
+fn session_info(s: VaultSession) -> VaultInfo {
+    return VaultInfo{ path: s.path, name: s.name, format: VAULT_FORMAT_V1, cached: s.cached }
+}
+
+// "/a/b/Home Lab.flint" -> "Home Lab". Pure string work, no filesystem access.
+fn vault_name_from_path(path: str) -> str {
+    mut base := path
+    slash := str.last_index_of(base, "/")
+    if slash >= 0 {
+        base = base.substr(usize(slash) + 1)
+    }
+    if base.ends_with(".flint") && base.len() > 6 {
+        base = base.substr(0, base.len() - 6)
+    }
+    return base
+}
+
+fn check_vault_name(name: str) -> void! {
+    if name.len() == 0 {
+        return error(coded(ERR_INVALID, "vault name must not be empty"))
+    }
+    try check_text("vault name", name, 64, false)
+}
+
+fn check_absolute(path: str) -> void! {
+    if !path.starts_with("/") {
+        return error(coded(ERR_INVALID, "vault path must be absolute"))
+    }
+}
+
+fn derive_vault_keys[C: Crypto](crypto: C, master: []byte) -> ([]byte, []byte)! {
+    page := try crypto.derive_subkey(master, VAULT_SUBKEY_PAGE, VAULT_KDF_CONTEXT)
+    secrets := try crypto.derive_subkey(master, VAULT_SUBKEY_SECRETS, VAULT_KDF_CONTEXT)
+    return (page, secrets)
+}
+
+// Creates a new vault file, caches its key in the keychain when possible, and puts
+// it first in the recent list.
+fn create_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C, mut store: S, keychain: K, recents: R, path: str, name: str, password: str) -> VaultSession! {
+    try check_absolute(path)
+    mut vault_name := name
+    if vault_name.len() == 0 {
+        vault_name = vault_name_from_path(path)
+    }
+    try check_vault_name(vault_name)
+    if password.len() < MIN_MASTER_PASSWORD_LEN {
+        return error(coded(ERR_INVALID, "the master password must be at least {MIN_MASTER_PASSWORD_LEN} characters"))
+    }
+    if store.vault_file_exists(path) {
+        return error(coded(ERR_CONFLICT, "a file already exists at {path}"))
+    }
+    salt := crypto.random_bytes(VAULT_SALT_LEN)
+    master := try crypto.derive_key(password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
+    (page, secrets) := try derive_vault_keys(crypto, master)
+    try store.vault_create(path, page, salt)
+    try store.vault_set_meta("name", vault_name)
+    cached := keychain.keychain_save(vault_account(salt), master).has_value()
+    try touch_recent(recents, path, vault_name)
+    return VaultSession{ path: path, name: vault_name, secrets_key: secrets, cached: cached }
+}
+
+// Unlocks a vault. With an empty `password`, only the key cached in the keychain is
+// tried, and a vault with no cached key fails with `locked`. With a password, the
+// key is derived, and cached on success.
+fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C, mut store: S, keychain: K, recents: R, path: str, password: str) -> VaultSession! {
+    try check_absolute(path)
+    salt := try store.vault_read_salt(path)
+    account := vault_account(salt)
+    mut master: []byte = []
+    mut from_cache := false
+    if password.len() == 0 {
+        // A keychain that cannot be reached is treated like one with no entry.
+        // `or []` lowers to value_or({}), which libstdc++ rejects (CF-040).
+        mut cached_key: []byte = []
+        loaded := keychain.keychain_load(account)
+        if loaded.has_value() {
+            cached_key = loaded.value()
+        }
+        if cached_key.len() != VAULT_KEY_LEN {
+            return error(coded(ERR_LOCKED, "the vault at {path} is locked; the master password is needed"))
+        }
+        master = cached_key
+        from_cache = true
+    } else {
+        master = try crypto.derive_key(password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
+    }
+    (page, secrets) := try derive_vault_keys(crypto, master)
+    attached := store.vault_attach(path, page, salt)
+    if !attached.has_value() {
+        msg := "{attached.error().message()}"
+        if from_cache && error_code_of(msg) == ERR_WRONG_PASSWORD {
+            // The cached key is stale (the file was replaced): drop it and ask.
+            _ := keychain.keychain_forget(account)
+            return error(coded(ERR_LOCKED, "the cached key no longer opens {path}; the master password is needed"))
+        }
+        return error(msg)
+    }
+    format := store.vault_format() or err {
+        store.vault_detach()
+        return error("{err.message()}")
+    }
+    if format != VAULT_FORMAT_V1 {
+        store.vault_detach()
+        return error(coded(ERR_UNSUPPORTED, "vault format {format} is not supported"))
+    }
+    mut cached := from_cache
+    if !from_cache {
+        cached = keychain.keychain_save(account, master).has_value()
+    }
+    mut name := try store.vault_get_meta("name")
+    if name.len() == 0 {
+        name = vault_name_from_path(path)
+    }
+    try touch_recent(recents, path, name)
+    return VaultSession{ path: path, name: name, secrets_key: secrets, cached: cached }
+}
+
+// Forgets the cached key, so the next use asks for the master password.
+fn lock_vault[S: VaultStore, K: Keychain](mut store: S, keychain: K, path: str) -> void! {
+    try check_absolute(path)
+    salt := try store.vault_read_salt(path)
+    store.vault_detach()
+    try keychain.keychain_forget(vault_account(salt))
+}
+
+// Reports a vault without asking for its password: counts appear only when the
+// keychain holds its key.
+fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C, mut store: S, keychain: K, recents: R, path: str, name: str) -> VaultStatus! {
+    mut st := VaultStatus{ path: path, name: name, exists: store.vault_file_exists(path), cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0 }
+    if !st.exists {
+        return st
+    }
+    session := unlock_vault(crypto, mut store, keychain, recents, path, "") or err {
+        if error_code_of("{err.message()}") == ERR_LOCKED {
+            return st
+        }
+        return error("{err.message()}")
+    }
+    st.cached = true
+    st.name = session.name
+    st.groups = i64((try store.groups_all()).len())
+    st.hosts = i64((try store.hosts_all()).len())
+    st.keys = i64((try store.keys_all()).len())
+    st.credentials = i64((try store.creds_all()).len())
+    return st
+}
+
+// ---- Recent vaults -------------------------------------------------------------
+
+// A recent vault as `vault list` shows it.
+type RecentView struct {
+    name:    str  `json:"name"`
+    path:    str  `json:"path"`
+    current: bool `json:"current"`
+    exists:  bool `json:"exists"`
+}
+
+fn list_recents[R: RecentStore](recents: R) -> []RecentVault! {
+    return recents.recents_load()
+}
+
+// The recent list, current vault first, with whether each file is still there.
+fn recent_vault_views[S: VaultStore, R: RecentStore](store: S, recents: R) -> []RecentView! {
+    mut views: []RecentView = []
+    for i, v in try recents.recents_load() {
+        views.push(RecentView{ name: v.name, path: v.path, current: i == 0, exists: store.vault_file_exists(v.path) })
+    }
+    return views
+}
+
+// Makes a recent vault (or a vault file) the current one, without unlocking it.
+fn use_vault[S: VaultStore, R: RecentStore](store: S, recents: R, selector: str) -> RecentView! {
+    target := try resolve_vault(recents, selector)
+    if !store.vault_file_exists(target.path) {
+        return error(coded(ERR_NOT_FOUND, "no vault file at {target.path}"))
+    }
+    try touch_recent(recents, target.path, target.name)
+    return RecentView{ name: target.name, path: target.path, current: true, exists: true }
+}
+
+// Moves (or adds) a vault to the front of the recent list.
+fn touch_recent[R: RecentStore](recents: R, path: str, name: str) -> void! {
+    list := try recents.recents_load()
+    mut next: []RecentVault = [RecentVault{ path: path, name: name }]
+    for v in list {
+        if v.path != path {
+            next.push(v)
+        }
+    }
+    try recents.recents_save(next)
+}
+
+// Finds a vault by selector: "" is the most recent one; otherwise a recent vault's
+// name (case-insensitive) or path. An absolute path not in the list is returned as
+// is, so a known file can be used without `vault open` first.
+fn resolve_vault[R: RecentStore](recents: R, selector: str) -> RecentVault! {
+    list := try recents.recents_load()
+    if selector.len() == 0 {
+        if list.len() == 0 {
+            return error(coded(ERR_NOT_FOUND, "no vault yet; create one with `flint vault create <path>`"))
+        }
+        return list[0]
+    }
+    for v in list {
+        if v.path == selector {
+            return v
+        }
+    }
+    for v in list {
+        if lower_ascii(v.name) == lower_ascii(selector) {
+            return v
+        }
+    }
+    if selector.starts_with("/") {
+        return RecentVault{ path: selector, name: vault_name_from_path(selector) }
+    }
+    return error(coded(ERR_NOT_FOUND, "no recent vault named '{selector}'"))
+}
+
+// Removes a vault from the recent list and forgets its cached key. The file is not
+// touched.
+fn forget_recent[S: VaultStore, K: Keychain, R: RecentStore](mut store: S, keychain: K, recents: R, selector: str) -> RecentVault! {
+    target := try resolve_vault(recents, selector)
+    list := try recents.recents_load()
+    mut next: []RecentVault = []
+    mut found := false
+    for v in list {
+        if v.path == target.path {
+            found = true
+        } else {
+            next.push(v)
+        }
+    }
+    if !found {
+        return error(coded(ERR_NOT_FOUND, "{target.path} is not in the recent list"))
+    }
+    if store.vault_file_exists(target.path) {
+        salt := store.vault_read_salt(target.path)
+        if salt.has_value() && salt.value().len() == VAULT_SALT_LEN {
+            _ := keychain.keychain_forget(vault_account(salt.value()))
+        }
+    }
+    try recents.recents_save(next)
+    return target
+}
+
+fn lower_ascii(s: str) -> str {
+    mut res := ""
+    for b in s.bytes() {
+        c := u8(b)
+        if c >= 65 && c <= 90 {
+            res = res + byte_to_str(c + 32)
+        } else {
+            res = res + byte_to_str(c)
+        }
+    }
+    return res
+}

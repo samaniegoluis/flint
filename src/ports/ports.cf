@@ -5,13 +5,67 @@ package ports
 //
 // cfire interfaces lower to C++20 concepts (static dispatch), so use cases take
 // their dependencies as generic parameters constrained by these interfaces.
+//
+// Method names are prefixed by their port (`vault_`, `keychain_`, ...): packages
+// share one C++ namespace, so a method called `open` or `get` would capture every
+// stdlib call of that name in the program (CF-017).
+
+import "../domain"
 
 // Key derivation and authenticated encryption (adapters/crypto, libsodium).
 type Crypto interface {
     random_bytes(n: usize) -> []byte
-    derive_key(password: str, salt: []byte) -> []byte!
+    derive_key(password: str, salt: []byte, ops: u64, mem_bytes: usize) -> []byte!
+    derive_subkey(master: []byte, id: u64, kdf_context: str) -> []byte!
     seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte!
-    open(key: []byte, sealed: []byte, aad: []byte) -> []byte!
+    unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte!
+}
+
+// The encrypted vault file (adapters/vault, SQLCipher). One vault is open at a time.
+// Rows go in and out as domain types; secret fields are already sealed.
+type VaultStore interface {
+    vault_file_exists(path: str) -> bool
+    vault_read_salt(path: str) -> []byte!
+    vault_create(path: str, page_key: []byte, salt: []byte) -> void!
+    vault_attach(path: str, page_key: []byte, salt: []byte) -> void!
+    vault_detach()
+    vault_format() -> i64!
+    vault_get_meta(key: str) -> str!
+    vault_set_meta(key: str, value: str) -> void!
+    vault_begin() -> void!
+    vault_commit() -> void!
+    vault_rollback()
+    groups_all() -> []Group!
+    group_put(g: Group) -> void!
+    group_drop(id: str) -> void!
+    hosts_all() -> []Host!
+    host_put(h: Host) -> void!
+    host_drop(id: str) -> void!
+    keys_all() -> []SshKey!
+    key_put(k: SshKey) -> void!
+    key_drop(id: str) -> void!
+    creds_all() -> []Credential!
+    cred_put(c: Credential) -> void!
+    cred_drop(id: str) -> void!
+}
+
+// The OS keychain (adapters/keychain). Holds one master key per vault, by account.
+// `keychain_load` returns an empty slice when there is no entry.
+type Keychain interface {
+    keychain_save(account: str, secret: []byte) -> void!
+    keychain_load(account: str) -> []byte!
+    keychain_forget(account: str) -> void!
+}
+
+// The local list of recent vaults (adapters/config), most recent first.
+type RecentStore interface {
+    recents_load() -> []RecentVault!
+    recents_save(list: []RecentVault) -> void!
+}
+
+// Parses a private key to validate it and read its public half (adapters/ssh).
+type KeyInspector interface {
+    inspect_private_key(private_key: str, passphrase: str) -> KeyInfo!
 }
 
 // An interactive remote shell (adapters/ssh, libssh).

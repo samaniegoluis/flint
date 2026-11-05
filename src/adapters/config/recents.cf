@@ -1,0 +1,89 @@
+package config
+
+// The `RecentStore` port: a small JSON file in the user's config folder listing the
+// vaults this machine has opened, most recent first. It holds file paths and vault
+// names only, never anything from inside a vault (Principle 5).
+
+import "core:fs"
+import "core:os"
+import "ext:json"
+import "../../domain"
+
+// File shape. Entries use a local struct: a field whose type comes from another
+// package is emitted before that type is complete (CF-033).
+type RecentEntry struct {
+    path: str `json:"path"`
+    name: str `json:"name"`
+}
+
+type RecentFile struct {
+    version: i64           `json:"version"`
+    vaults:  []RecentEntry `json:"vaults"`
+}
+
+type JsonRecentStore struct {
+    path: str
+}
+
+// Where Flint keeps per-machine settings: $FLINT_CONFIG_DIR when set, else
+// ~/Library/Application Support/Flint on macOS and $XDG_CONFIG_HOME/flint
+// (default ~/.config/flint) on Linux.
+fn flint_config_dir() -> str {
+    override := os.getenv("FLINT_CONFIG_DIR")
+    if override.len() > 0 {
+        return override
+    }
+    home := os.getenv("HOME")
+    mut apple := false
+    // cfire has no build-target query (CF-031).
+    // CFIRE-UPSTREAM: CF-031
+    cpp {
+        #if defined(__APPLE__)
+        apple = true;
+        #endif
+    }
+    if apple {
+        return home + "/Library/Application Support/Flint"
+    }
+    xdg := os.getenv("XDG_CONFIG_HOME")
+    if xdg.len() > 0 {
+        return xdg + "/flint"
+    }
+    return home + "/.config/flint"
+}
+
+fn new_json_recent_store(dir: str) -> JsonRecentStore {
+    return JsonRecentStore{ path: dir + "/vaults.json" }
+}
+
+fn (self: JsonRecentStore) recents_load() -> []RecentVault! {
+    if !fs.exists(self.path) {
+        return []
+    }
+    text := fs.read_text(self.path) or err {
+        return error(coded(ERR_IO, "cannot read {self.path}"))
+    }
+    parsed := json.parse[RecentFile](text) or err {
+        return error(coded(ERR_IO, "{self.path} is not a valid vault list; fix or delete it"))
+    }
+    mut list: []RecentVault = []
+    for e in parsed.vaults {
+        list.push(RecentVault{ path: e.path, name: e.name })
+    }
+    return list
+}
+
+fn (self: JsonRecentStore) recents_save(list: []RecentVault) -> void! {
+    dir := fs.dirname(self.path)
+    fs.mkdir_all(dir) or err {
+        return error(coded(ERR_IO, "cannot create {dir}"))
+    }
+    mut entries: []RecentEntry = []
+    for v in list {
+        entries.push(RecentEntry{ path: v.path, name: v.name })
+    }
+    body := json.stringify(RecentFile{ version: 1, vaults: entries })
+    fs.write_text(self.path, body + "\n") or err {
+        return error(coded(ERR_IO, "cannot write {self.path}"))
+    }
+}

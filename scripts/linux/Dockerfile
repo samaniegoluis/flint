@@ -8,9 +8,10 @@ ARG CFIRE_COMMIT=396381402699f8957bd9a304cb1092e3243be3bf
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         clang make git ca-certificates pkg-config \
-        libssh-dev libsodium-dev libsqlcipher-dev libsimdjson-dev \
+        libssh-dev libsodium-dev libsqlcipher-dev libsimdjson-dev libsecret-1-dev \
         libwebkit2gtk-4.1-dev libgtk-3-dev \
         openssh-server openssh-client xvfb xauth \
+        gnome-keyring dbus python3 perl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone https://github.com/gsandoval/cfire /opt/cfire-src \

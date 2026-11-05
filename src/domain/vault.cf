@@ -1,0 +1,309 @@
+package domain
+
+// The vault model: plain types and the rules they obey. No I/O here (Principle 1).
+
+// ---- Vault file format v1 (D-017) --------------------------------------------
+//
+// The first 16 bytes of a vault file are the Argon2id salt (SQLCipher stores the
+// salt it is given there). Everything after them is SQLCipher pages. The Argon2id
+// output is the vault's master key; two subkeys are derived from it with libsodium
+// crypto_kdf: one is the SQLCipher page key, the other seals secret values.
+// The numbers are pinned here, not taken from libsodium's *_MODERATE macros, so a
+// libsodium upgrade can never change how an existing vault is opened.
+
+var VAULT_FORMAT_V1: i64 = 1
+var VAULT_SALT_LEN: usize = 16
+var VAULT_KEY_LEN: usize = 32
+var VAULT_ARGON2_OPS: u64 = 3
+var VAULT_ARGON2_MEM: usize = 268435456
+var VAULT_KDF_CONTEXT: str = "flintvlt"
+var VAULT_SUBKEY_PAGE: u64 = 1
+var VAULT_SUBKEY_SECRETS: u64 = 2
+
+// ---- Entities ----------------------------------------------------------------
+//
+// Ids are random 128-bit hex strings minted by the application layer, so a secret's
+// AAD can name its row before the row is written. An empty id field means "none".
+// Secret fields (`password`, `private_key`, `passphrase`) hold sealed bytes
+// (nonce || ciphertext || tag), never plaintext; empty means "not set".
+
+type Group struct {
+    id: str
+    parent_id: str
+    name: str
+}
+
+type Host struct {
+    id: str
+    alias: str
+    label: str
+    hostname: str
+    port: i64
+    username: str
+    group_id: str
+    tags: []str
+    color: str
+    notes: str
+    jump_host_id: str
+    credential_id: str
+    key_id: str
+    password: []byte
+}
+
+type SshKey struct {
+    id: str
+    name: str
+    key_type: str
+    public_key: str
+    fingerprint: str
+    private_key: []byte
+    passphrase: []byte
+}
+
+type Credential struct {
+    id: str
+    name: str
+    username: str
+    key_id: str
+    password: []byte
+}
+
+// Every row of a vault, loaded together so ids resolve to names. Declared after
+// its element types: cfire emits structs in declaration order (CF-033).
+type Catalog struct {
+    groups: []Group
+    hosts: []Host
+    keys: []SshKey
+    creds: []Credential
+}
+
+// What a private key reveals once parsed: safe to show.
+type KeyInfo struct {
+    key_type: str
+    public_key: str
+    fingerprint: str
+}
+
+// A vault this machine has opened. Kept in a local config file, outside the vault.
+type RecentVault struct {
+    path: str `json:"path"`
+    name: str `json:"name"`
+}
+
+// ---- Rules -------------------------------------------------------------------
+
+fn is_name_byte(b: u8) -> bool {
+    return (b >= 97 && b <= 122) || (b >= 65 && b <= 90) || (b >= 48 && b <= 57) || b == 46 || b == 95 || b == 45
+}
+
+// Aliases, key names, credential names and tags: 1-64 of [A-Za-z0-9._-], not
+// starting with '-' or '.' (so they never look like a flag or a hidden file).
+fn check_name(kind: str, value: str) -> void! {
+    if value.len() == 0 || value.len() > 64 {
+        return error(coded(ERR_INVALID, "{kind} must be 1-64 characters"))
+    }
+    bytes := value.bytes()
+    first := u8(bytes[0])
+    if first == 45 || first == 46 {
+        return error(coded(ERR_INVALID, "{kind} '{value}' must not start with '-' or '.'"))
+    }
+    for b in bytes {
+        if !is_name_byte(u8(b)) {
+            return error(coded(ERR_INVALID, "{kind} '{value}' may use only letters, digits, '.', '_' and '-'"))
+        }
+    }
+}
+
+// One segment of a group path: 1-64 characters, no '/', no surrounding spaces.
+fn check_group_name(value: str) -> void! {
+    if value.len() == 0 || value.len() > 64 {
+        return error(coded(ERR_INVALID, "group name must be 1-64 characters"))
+    }
+    if value.contains("/") {
+        return error(coded(ERR_INVALID, "group name must not contain '/'"))
+    }
+    if str_trim_spaces(value) != value {
+        return error(coded(ERR_INVALID, "group name must not start or end with a space"))
+    }
+}
+
+// Splits "a/b/c" into segments, ignoring empty ones ("/a//b/" is "a/b").
+fn split_group_path(path: str) -> []str {
+    mut parts: []str = []
+    mut cur := ""
+    for b in path.bytes() {
+        if u8(b) == 47 {
+            if cur.len() > 0 {
+                parts.push(cur)
+            }
+            cur = ""
+        } else {
+            cur = cur + byte_to_str(u8(b))
+        }
+    }
+    if cur.len() > 0 {
+        parts.push(cur)
+    }
+    return parts
+}
+
+fn check_port(port: i64) -> void! {
+    if port < 1 || port > 65535 {
+        return error(coded(ERR_INVALID, "port must be 1-65535"))
+    }
+}
+
+// Hostnames and IPs: 1-253 characters with no whitespace or control bytes.
+fn check_hostname(value: str) -> void! {
+    if value.len() == 0 || value.len() > 253 {
+        return error(coded(ERR_INVALID, "hostname must be 1-253 characters"))
+    }
+    for b in value.bytes() {
+        if u8(b) <= 32 || u8(b) == 127 {
+            return error(coded(ERR_INVALID, "hostname must not contain spaces or control characters"))
+        }
+    }
+}
+
+// Colours are empty (none) or "#rrggbb".
+fn check_color(value: str) -> void! {
+    if value.len() == 0 {
+        return
+    }
+    bytes := value.bytes()
+    mut ok := value.len() == 7 && u8(bytes[0]) == 35
+    if ok {
+        for i in 1..7 {
+            b := u8(bytes[i])
+            if !((b >= 48 && b <= 57) || (b >= 97 && b <= 102) || (b >= 65 && b <= 70)) {
+                ok = false
+            }
+        }
+    }
+    if !ok {
+        return error(coded(ERR_INVALID, "color must be '#rrggbb'"))
+    }
+}
+
+// Free text (label, notes, username) must not carry control bytes other than
+// newlines and tabs in notes.
+fn check_text(kind: str, value: str, max_len: usize, multiline: bool) -> void! {
+    if value.len() > max_len {
+        return error(coded(ERR_INVALID, "{kind} must be at most {max_len} characters"))
+    }
+    for b in value.bytes() {
+        c := u8(b)
+        if c == 10 || c == 9 {
+            if !multiline {
+                return error(coded(ERR_INVALID, "{kind} must be a single line"))
+            }
+        } else if c < 32 || c == 127 {
+            return error(coded(ERR_INVALID, "{kind} must not contain control characters"))
+        }
+    }
+}
+
+// Checks every field rule of a host. References (group, jump, credential, key) are
+// checked by the application layer, which can see the other rows.
+fn check_host(h: Host) -> void! {
+    try check_name("alias", h.alias)
+    try check_hostname(h.hostname)
+    try check_port(h.port)
+    try check_text("label", h.label, 128, false)
+    try check_text("user", h.username, 128, false)
+    try check_text("notes", h.notes, 8192, true)
+    try check_color(h.color)
+    for t in h.tags {
+        try check_name("tag", t)
+    }
+    if h.jump_host_id.len() > 0 && h.jump_host_id == h.id {
+        return error(coded(ERR_INVALID, "a host cannot be its own jump host"))
+    }
+}
+
+// Removes duplicate tags, keeping first occurrences in order.
+fn dedup_tags(tags: []str) -> []str {
+    mut out_tags: []str = []
+    for t in tags {
+        mut seen := false
+        for o in out_tags {
+            if o == t {
+                seen = true
+            }
+        }
+        if !seen {
+            out_tags.push(t)
+        }
+    }
+    return out_tags
+}
+
+fn byte_to_str(b: u8) -> str {
+    mut s := ""
+    // A one-byte string; cfire has no char-to-str conversion in core:str.
+    s.push_back(char(b))
+    return s
+}
+
+fn str_trim_spaces(s: str) -> str {
+    bytes := s.bytes()
+    mut start: usize = 0
+    mut end := s.len()
+    for start < end && u8(bytes[start]) == 32 {
+        start += 1
+    }
+    for end > start && u8(bytes[end - 1]) == 32 {
+        end -= 1
+    }
+    return s.substr(start, end - start)
+}
+
+fn sample_host() -> Host {
+    return Host{ id: "h1", alias: "web-01", label: "Web", hostname: "10.0.0.5", port: 22, username: "root", group_id: "", tags: ["prod"], color: "#ff8800", notes: "line 1\nline 2", jump_host_id: "", credential_id: "", key_id: "", password: [] }
+}
+
+test "names accept the documented alphabet only" {
+    assert(check_name("alias", "web-01.prod_a").has_value())
+    assert(!check_name("alias", "").has_value())
+    assert(!check_name("alias", "-x").has_value())
+    assert(!check_name("alias", ".x").has_value())
+    assert(!check_name("alias", "web 01").has_value())
+    assert(!check_name("alias", "a/b").has_value())
+    bad := check_name("alias", "a b")
+    assert_eq(error_code_of("{bad.error().message()}"), "invalid")
+}
+
+test "group paths split and validate" {
+    parts := split_group_path("/homelab//proxmox/")
+    assert_eq(parts.len(), 2)
+    assert_eq(parts[0], "homelab")
+    assert_eq(parts[1], "proxmox")
+    assert_eq(split_group_path("").len(), 0)
+    assert(check_group_name("Home Lab").has_value())
+    assert(!check_group_name(" x").has_value())
+}
+
+test "host rules" {
+    assert(check_host(sample_host()).has_value())
+    mut h := sample_host()
+    h.port = 70000
+    assert(!check_host(h).has_value())
+    h = sample_host()
+    h.color = "#ff88"
+    assert(!check_host(h).has_value())
+    h = sample_host()
+    h.hostname = "bad host"
+    assert(!check_host(h).has_value())
+    h = sample_host()
+    h.label = "two\nlines"
+    assert(!check_host(h).has_value())
+    h = sample_host()
+    h.jump_host_id = h.id
+    assert(!check_host(h).has_value())
+}
+
+test "tags are deduplicated in order" {
+    t := dedup_tags(["b", "a", "b"])
+    assert_eq(t.len(), 2)
+    assert_eq(t[0], "b")
+}

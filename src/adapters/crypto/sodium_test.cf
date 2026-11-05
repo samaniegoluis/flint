@@ -1,15 +1,29 @@
 package crypto
 
 import "../../ports"
+import "core:encoding/hex"
+
+// Cross-checked against argon2-cffi (the reference C implementation):
+// hash_secret_raw(b"flint", bytes(range(16)), time_cost=2, memory_cost=65536,
+// parallelism=1, hash_len=32, type=ID).
+var ARGON2_VECTOR: str = "592d7ec75bb085ab5ba3ba0c81792c9aba96973ca244ed3442f8d12547212642"
+
+fn hex_of(b: []byte) -> str {
+    return hex.encode(b)
+}
 
 // Compiles only if Sodium satisfies the Crypto port.
 fn port_roundtrip[C: Crypto](c: C) -> bool {
     key := c.random_bytes(32)
     msg: []byte = [7, 7]
     sealed := c.seal(key, msg, []) or err { return false }
-    back := c.open(key, sealed, []) or err { return false }
+    back := c.unseal(key, sealed, []) or err { return false }
     return back == msg
 }
+
+// libsodium's OPSLIMIT/MEMLIMIT_INTERACTIVE: fast enough for tests.
+var TEST_OPS: u64 = 2
+var TEST_MEM: usize = 67108864
 
 fn test_salt() -> []byte {
     mut salt := make([]byte, SALT_LEN)
@@ -20,23 +34,23 @@ fn test_salt() -> []byte {
 }
 
 test "argon2id derivation is deterministic and password-sensitive" {
-    c := try new_sodium(KdfCost::Interactive)
-    a := try c.derive_key("correct horse", test_salt())
-    b := try c.derive_key("correct horse", test_salt())
-    d := try c.derive_key("correct horsf", test_salt())
+    c := try new_sodium()
+    a := try c.derive_key("correct horse", test_salt(), TEST_OPS, TEST_MEM)
+    b := try c.derive_key("correct horse", test_salt(), TEST_OPS, TEST_MEM)
+    d := try c.derive_key("correct horsf", test_salt(), TEST_OPS, TEST_MEM)
     assert_eq(a.len(), KEY_LEN)
     assert(a == b)
     assert(a != d)
 }
 
 test "derive_key rejects a short salt" {
-    c := try new_sodium(KdfCost::Interactive)
+    c := try new_sodium()
     short_salt := make([]byte, 4)
-    assert(!c.derive_key("pw", short_salt).has_value())
+    assert(!c.derive_key("pw", short_salt, TEST_OPS, TEST_MEM).has_value())
 }
 
 test "seal/open round-trips and fresh nonces differ" {
-    c := try new_sodium(KdfCost::Interactive)
+    c := try new_sodium()
     key := c.random_bytes(KEY_LEN)
     msg: []byte = [104, 111, 115, 116]
     aad: []byte = [1]
@@ -44,12 +58,12 @@ test "seal/open round-trips and fresh nonces differ" {
     s2 := try c.seal(key, msg, aad)
     assert_eq(s1.len(), NONCE_LEN + msg.len() + TAG_LEN)
     assert(s1 != s2)
-    back := try c.open(key, s1, aad)
+    back := try c.unseal(key, s1, aad)
     assert(back == msg)
 }
 
 test "open fails on tampered ciphertext, wrong key or wrong aad" {
-    c := try new_sodium(KdfCost::Interactive)
+    c := try new_sodium()
     key := c.random_bytes(KEY_LEN)
     msg: []byte = [1, 2, 3]
     aad: []byte = [9]
@@ -58,10 +72,10 @@ test "open fails on tampered ciphertext, wrong key or wrong aad" {
     mut tampered := sealed
     tampered[NONCE_LEN] = tampered[NONCE_LEN] ^ 1
     other: []byte = [8]
-    assert(!c.open(key, tampered, aad).has_value())
-    assert(!c.open(c.random_bytes(KEY_LEN), sealed, aad).has_value())
-    assert(!c.open(key, sealed, other).has_value())
-    assert(c.open(key, sealed, aad).has_value())
+    assert(!c.unseal(key, tampered, aad).has_value())
+    assert(!c.unseal(c.random_bytes(KEY_LEN), sealed, aad).has_value())
+    assert(!c.unseal(key, sealed, other).has_value())
+    assert(c.unseal(key, sealed, aad).has_value())
 }
 
 test "wipe zeroes the buffer" {
@@ -71,6 +85,30 @@ test "wipe zeroes the buffer" {
 }
 
 test "Sodium satisfies the Crypto port" {
-    c := try new_sodium(KdfCost::Interactive)
+    c := try new_sodium()
     assert(port_roundtrip(c))
+}
+
+test "argon2id matches a fixed vector" {
+    // Pins the algorithm and parameter handling: the same inputs must give the same
+    // key on every libsodium version and platform, or existing vaults stop opening.
+    c := try new_sodium()
+    key := try c.derive_key("flint", test_salt(), TEST_OPS, TEST_MEM)
+    other_cost := try c.derive_key("flint", test_salt(), 3, TEST_MEM)
+    assert(key != other_cost, "ops must change the output")
+    assert_eq(hex_of(key), ARGON2_VECTOR)
+}
+
+test "subkeys are independent and deterministic" {
+    c := try new_sodium()
+    master := c.random_bytes(KEY_LEN)
+    a := try c.derive_subkey(master, 1, "flintvlt")
+    b := try c.derive_subkey(master, 2, "flintvlt")
+    a2 := try c.derive_subkey(master, 1, "flintvlt")
+    d := try c.derive_subkey(master, 1, "flintxxx")
+    assert(a == a2)
+    assert(a != b)
+    assert(a != d)
+    assert(a != master)
+    assert(!c.derive_subkey(master, 1, "short").has_value())
 }

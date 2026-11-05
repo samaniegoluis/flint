@@ -1,0 +1,554 @@
+package main
+
+// Command handlers. Each one parses its input, calls one use case and formats the
+// result (Principle 2). `open_target` is shared plumbing: it picks the vault and
+// gathers the master password when the keychain has no key for it.
+
+import "core:fs"
+import "core:os"
+import "ext:json"
+import "../../adapters/config"
+import "../../adapters/crypto"
+import "../../adapters/keychain"
+import "../../adapters/ssh"
+import "../../adapters/vault"
+import "../../application"
+import "../../domain"
+
+// Makes a path absolute against the working directory. Shells expand `~`.
+fn absolute_path(path: str) -> str {
+    if path.len() == 0 || path.starts_with("/") {
+        return path
+    }
+    if path.starts_with("./") {
+        return os.cwd() + "/" + path.substr(2)
+    }
+    return os.cwd() + "/" + path
+}
+
+// A --vault selector: a path (anything with '/' or ending in .flint) is made
+// absolute; a name is kept as is.
+fn vault_selector(p: ParsedArgs) -> str {
+    sel := p.flag_value("--vault")
+    if sel.contains("/") || sel.ends_with(".flint") {
+        return absolute_path(sel)
+    }
+    return sel
+}
+
+fn open_target(p: ParsedArgs, sec: SecretInput, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> VaultSession! {
+    target := try resolve_vault(recents, vault_selector(p))
+    cached := unlock_vault(c, mut store, kc, recents, target.path, "")
+    if cached.has_value() {
+        return cached.value()
+    }
+    msg := "{cached.error().message()}"
+    if error_code_of(msg) != ERR_LOCKED {
+        return error(msg)
+    }
+    password := try master_password_for(sec, target.name)
+    return unlock_vault(c, mut store, kc, recents, target.path, password)
+}
+
+// ---- vault ---------------------------------------------------------------------
+
+fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+    verb := p.positional(1)
+    if verb == "create" {
+        try p.allow_flags("vault create", ["--name"])
+        try p.expect_args("vault create", 1, "<path> [--name <name>]")
+        mut password := sec.master
+        if !sec.has_master {
+            password = try prompt_new_secret("master password")
+        }
+        s := try create_vault(c, mut store, kc, recents, absolute_path(p.positional(2)), p.flag_value("--name"), password)
+        info := session_info(s)
+        if as_json {
+            say(json.stringify(info))
+        } else {
+            print_vault_info("Created", info)
+        }
+        return
+    }
+    if verb == "open" {
+        try p.allow_flags("vault open", [])
+        try p.expect_args("vault open", 1, "<path>")
+        path := absolute_path(p.positional(2))
+        mut s := VaultSession{ path: "", name: "", secrets_key: [], cached: false }
+        cached := unlock_vault(c, mut store, kc, recents, path, "")
+        if cached.has_value() {
+            s = cached.value()
+        } else {
+            msg := "{cached.error().message()}"
+            if error_code_of(msg) != ERR_LOCKED {
+                return error(msg)
+            }
+            password := try master_password_for(sec, vault_name_from_path(path))
+            s = try unlock_vault(c, mut store, kc, recents, path, password)
+        }
+        info := session_info(s)
+        if as_json {
+            say(json.stringify(info))
+        } else {
+            print_vault_info("Opened", info)
+        }
+        return
+    }
+    if verb == "unlock" {
+        try p.allow_flags("vault unlock", [])
+        try p.expect_args("vault unlock", 0, "[--vault <name|path>]")
+        s := try open_target(p, sec, c, mut store, kc, recents)
+        info := session_info(s)
+        if as_json {
+            say(json.stringify(info))
+        } else {
+            print_vault_info("Unlocked", info)
+        }
+        return
+    }
+    if verb == "lock" {
+        try p.allow_flags("vault lock", [])
+        try p.expect_args("vault lock", 0, "[--vault <name|path>]")
+        target := try resolve_vault(recents, vault_selector(p))
+        try lock_vault(mut store, kc, target.path)
+        if as_json {
+            say(json.stringify(VaultInfo{ path: target.path, name: target.name, format: VAULT_FORMAT_V1, cached: false }))
+        } else {
+            say("Locked vault '{target.name}': its key is no longer cached on this machine.")
+        }
+        return
+    }
+    if verb == "status" {
+        try p.allow_flags("vault status", [])
+        try p.expect_args("vault status", 0, "[--vault <name|path>]")
+        target := try resolve_vault(recents, vault_selector(p))
+        st := try vault_status(c, mut store, kc, recents, target.path, target.name)
+        if as_json {
+            say(json.stringify(st))
+        } else {
+            print_status(st)
+        }
+        return
+    }
+    if verb == "list" {
+        try p.allow_flags("vault list", [])
+        try p.expect_args("vault list", 0, "")
+        views := try recent_vault_views(store, recents)
+        if as_json {
+            say(json.stringify(views))
+        } else {
+            print_recents(views)
+        }
+        return
+    }
+    if verb == "use" {
+        try p.allow_flags("vault use", [])
+        try p.expect_args("vault use", 1, "<name|path>")
+        mut sel := p.positional(2)
+        if sel.contains("/") || sel.ends_with(".flint") {
+            sel = absolute_path(sel)
+        }
+        target := try use_vault(store, recents, sel)
+        if as_json {
+            say(json.stringify(target))
+        } else {
+            say("Vault '{target.name}' is now the current vault.")
+        }
+        return
+    }
+    if verb == "forget" {
+        try p.allow_flags("vault forget", [])
+        try p.expect_args("vault forget", 1, "<name|path>")
+        mut sel := p.positional(2)
+        if sel.contains("/") || sel.ends_with(".flint") {
+            sel = absolute_path(sel)
+        }
+        gone := try forget_recent(mut store, kc, recents, sel)
+        if as_json {
+            say(json.stringify(RemovedNote{ removed: "vault", name: gone.name }))
+        } else {
+            say("Forgot vault '{gone.name}'. The file at {gone.path} was not touched.")
+        }
+        return
+    }
+    return error(coded(ERR_USAGE, "unknown command `flint vault {verb}`; see `flint help`"))
+}
+
+// ---- group ---------------------------------------------------------------------
+
+fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+    verb := p.positional(1)
+    if verb != "add" && verb != "list" && verb != "rename" && verb != "rm" {
+        return error(coded(ERR_USAGE, "unknown command `flint group {verb}`; see `flint help`"))
+    }
+    try p.allow_flags("group " + verb, [])
+    if verb == "add" {
+        try p.expect_args("group add", 1, "<path>")
+    } else if verb == "list" {
+        try p.expect_args("group list", 0, "")
+    } else if verb == "rename" {
+        try p.expect_args("group rename", 2, "<path> <new-name>")
+    } else {
+        try p.expect_args("group rm", 1, "<path>")
+    }
+    _ := try open_target(p, sec, c, mut store, kc, recents)
+    if verb == "list" {
+        groups := try list_groups(store)
+        if as_json {
+            say(json.stringify(groups))
+        } else {
+            print_group_list(groups)
+        }
+        return
+    }
+    mut g := GroupView{ path: "", name: "", hosts: 0, subgroups: 0 }
+    mut done := ""
+    if verb == "add" {
+        g = try add_group(c, mut store, p.positional(2))
+        done = "Added"
+    } else if verb == "rename" {
+        g = try rename_group(mut store, p.positional(2), p.positional(3))
+        done = "Renamed to"
+    } else {
+        g = try remove_group(mut store, p.positional(2))
+        done = "Removed"
+    }
+    if as_json {
+        say(json.stringify(g))
+    } else {
+        say("{done} group '{g.path}'.")
+    }
+}
+
+// ---- host ----------------------------------------------------------------------
+
+fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> HostPatch! {
+    mut patch := empty_host_patch()
+    if p.has_flag("--alias") {
+        patch.alias = p.flag_value("--alias")
+        patch.set_alias = true
+    }
+    if p.has_flag("--label") {
+        patch.label = p.flag_value("--label")
+        patch.set_label = true
+    }
+    if p.has_flag("--hostname") {
+        patch.hostname = p.flag_value("--hostname")
+        patch.set_hostname = true
+    }
+    if p.has_flag("--port") {
+        patch.port = try parse_port_flag(p.flag_value("--port"))
+        patch.set_port = true
+    }
+    if p.has_flag("--user") {
+        patch.user = p.flag_value("--user")
+        patch.set_user = true
+    }
+    if p.has_flag("--group") {
+        patch.group = p.flag_value("--group")
+        patch.set_group = true
+    }
+    if p.has_flag("--tag") {
+        patch.tags = p.flag_values_of("--tag")
+        patch.set_tags = true
+    }
+    if p.has_flag("--no-tags") {
+        patch.tags = []
+        patch.set_tags = true
+    }
+    if p.has_flag("--color") {
+        patch.color = p.flag_value("--color")
+        patch.set_color = true
+    }
+    if p.has_flag("--notes") {
+        patch.notes = p.flag_value("--notes")
+        patch.set_notes = true
+    }
+    if p.has_flag("--jump") {
+        patch.jump = p.flag_value("--jump")
+        patch.set_jump = true
+    }
+    if p.has_flag("--cred") {
+        patch.credential = p.flag_value("--cred")
+        patch.set_credential = true
+    }
+    if p.has_flag("--key") {
+        patch.key = p.flag_value("--key")
+        patch.set_key = true
+    }
+    if sec.has_password {
+        patch.password = sec.password
+        patch.set_password = true
+    } else if p.has_flag("--password") {
+        patch.password = try prompt_secret("host password")
+        patch.set_password = true
+    } else if p.has_flag("--no-password") {
+        patch.password = ""
+        patch.set_password = true
+    }
+    return patch
+}
+
+fn host_field_flags() -> []str {
+    return ["--label", "--hostname", "--port", "--user", "--group", "--tag", "--no-tags", "--color", "--notes", "--jump", "--cred", "--key", "--password", "--password-stdin"]
+}
+
+fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+    verb := p.positional(1)
+    if verb == "add" {
+        try p.allow_flags("host add", host_field_flags())
+        try p.expect_args("host add", 1, "<alias> --hostname <host> [options]")
+        mut patch := try host_patch_from_flags(p, sec)
+        patch.alias = p.positional(2)
+        patch.set_alias = true
+        s := try open_target(p, sec, c, mut store, kc, recents)
+        h := try add_host(c, mut store, s, patch)
+        if as_json {
+            say(json.stringify(h))
+        } else {
+            say("Added host '{h.alias}' ({host_target(h)}).")
+        }
+        return
+    }
+    if verb == "edit" {
+        mut allowed := host_field_flags()
+        allowed.push("--alias")
+        allowed.push("--no-password")
+        try p.allow_flags("host edit", allowed)
+        try p.expect_args("host edit", 1, "<alias> [options]")
+        patch := try host_patch_from_flags(p, sec)
+        s := try open_target(p, sec, c, mut store, kc, recents)
+        h := try edit_host(c, mut store, s, p.positional(2), patch)
+        if as_json {
+            say(json.stringify(h))
+        } else {
+            say("Updated host '{h.alias}'.")
+        }
+        return
+    }
+    if verb == "list" {
+        try p.allow_flags("host list", ["--group", "--tag"])
+        try p.expect_args("host list", 0, "[--group <path>] [--tag <tag>]")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        hosts := try list_hosts(store, p.flag_value("--group"), p.flag_value("--tag"))
+        if as_json {
+            say(json.stringify(hosts))
+        } else {
+            print_host_list(hosts)
+        }
+        return
+    }
+    if verb == "show" {
+        try p.allow_flags("host show", [])
+        try p.expect_args("host show", 1, "<alias>")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        h := try show_host(store, p.positional(2))
+        if as_json {
+            say(json.stringify(h))
+        } else {
+            print_host(h)
+        }
+        return
+    }
+    if verb == "rm" {
+        try p.allow_flags("host rm", [])
+        try p.expect_args("host rm", 1, "<alias>")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        h := try remove_host(mut store, p.positional(2))
+        if as_json {
+            say(json.stringify(RemovedNote{ removed: "host", name: h.alias }))
+        } else {
+            say("Removed host '{h.alias}'.")
+        }
+        return
+    }
+    return error(coded(ERR_USAGE, "unknown command `flint host {verb}`; see `flint help`"))
+}
+
+// ---- key -----------------------------------------------------------------------
+
+fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore, inspector: LibsshKeyInspector) -> void! {
+    verb := p.positional(1)
+    if verb == "add" {
+        try p.allow_flags("key add", ["--file", "--key-stdin", "--passphrase", "--passphrase-stdin"])
+        try p.expect_args("key add", 1, "<name> (--file <path> | --key-stdin) [--passphrase | --passphrase-stdin]")
+        mut content := ""
+        if p.has_flag("--file") && sec.has_key {
+            return error(coded(ERR_USAGE, "give the private key with --file or --key-stdin, not both"))
+        }
+        if p.has_flag("--file") {
+            content = try read_key_file(p.flag_value("--file"))
+        } else if sec.has_key {
+            content = sec.key_text
+        } else {
+            return error(coded(ERR_USAGE, "give the private key with --file <path> or --key-stdin"))
+        }
+        mut passphrase := sec.passphrase
+        if !sec.has_passphrase && p.has_flag("--passphrase") {
+            passphrase = try prompt_secret("key passphrase")
+        }
+        s := try open_target(p, sec, c, mut store, kc, recents)
+        k := try add_key(c, mut store, inspector, s, p.positional(2), content, passphrase)
+        if as_json {
+            say(json.stringify(k))
+        } else {
+            say("Added key '{k.name}' ({k.key_type} {k.fingerprint}).")
+        }
+        return
+    }
+    if verb == "list" {
+        try p.allow_flags("key list", [])
+        try p.expect_args("key list", 0, "")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        keys := try list_keys(store)
+        if as_json {
+            say(json.stringify(keys))
+        } else {
+            print_key_list(keys)
+        }
+        return
+    }
+    if verb == "show" {
+        try p.allow_flags("key show", [])
+        try p.expect_args("key show", 1, "<name>")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        k := try show_key(store, p.positional(2))
+        if as_json {
+            say(json.stringify(k))
+        } else {
+            print_key(k)
+        }
+        return
+    }
+    if verb == "rename" {
+        try p.allow_flags("key rename", [])
+        try p.expect_args("key rename", 2, "<name> <new-name>")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        k := try rename_key(mut store, p.positional(2), p.positional(3))
+        if as_json {
+            say(json.stringify(k))
+        } else {
+            say("Renamed key to '{k.name}'.")
+        }
+        return
+    }
+    if verb == "rm" {
+        try p.allow_flags("key rm", [])
+        try p.expect_args("key rm", 1, "<name>")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        k := try remove_key(mut store, p.positional(2))
+        if as_json {
+            say(json.stringify(RemovedNote{ removed: "key", name: k.name }))
+        } else {
+            say("Removed key '{k.name}'.")
+        }
+        return
+    }
+    return error(coded(ERR_USAGE, "unknown command `flint key {verb}`; see `flint help`"))
+}
+
+fn read_key_file(path: str) -> str! {
+    full := absolute_path(path)
+    text := fs.read_text(full) or err {
+        return error(coded(ERR_NOT_FOUND, "cannot read the key file {full}"))
+    }
+    return text
+}
+
+// ---- cred ----------------------------------------------------------------------
+
+fn cred_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> CredPatch! {
+    mut patch := empty_cred_patch()
+    if p.has_flag("--name") {
+        patch.name = p.flag_value("--name")
+        patch.set_name = true
+    }
+    if p.has_flag("--user") {
+        patch.user = p.flag_value("--user")
+        patch.set_user = true
+    }
+    if p.has_flag("--key") {
+        patch.key = p.flag_value("--key")
+        patch.set_key = true
+    }
+    if sec.has_password {
+        patch.password = sec.password
+        patch.set_password = true
+    } else if p.has_flag("--password") {
+        patch.password = try prompt_secret("credential password")
+        patch.set_password = true
+    } else if p.has_flag("--no-password") {
+        patch.password = ""
+        patch.set_password = true
+    }
+    return patch
+}
+
+fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+    verb := p.positional(1)
+    if verb == "add" {
+        try p.allow_flags("cred add", ["--user", "--key", "--password", "--password-stdin"])
+        try p.expect_args("cred add", 1, "<name> --user <user> [--key <key>] [--password | --password-stdin]")
+        mut patch := try cred_patch_from_flags(p, sec)
+        patch.name = p.positional(2)
+        patch.set_name = true
+        s := try open_target(p, sec, c, mut store, kc, recents)
+        v := try add_cred(c, mut store, s, patch)
+        if as_json {
+            say(json.stringify(v))
+        } else {
+            say("Added credential '{v.name}' for user {v.user}.")
+        }
+        return
+    }
+    if verb == "edit" {
+        try p.allow_flags("cred edit", ["--name", "--user", "--key", "--password", "--password-stdin", "--no-password"])
+        try p.expect_args("cred edit", 1, "<name> [options]")
+        patch := try cred_patch_from_flags(p, sec)
+        s := try open_target(p, sec, c, mut store, kc, recents)
+        v := try edit_cred(c, mut store, s, p.positional(2), patch)
+        if as_json {
+            say(json.stringify(v))
+        } else {
+            say("Updated credential '{v.name}'.")
+        }
+        return
+    }
+    if verb == "list" {
+        try p.allow_flags("cred list", [])
+        try p.expect_args("cred list", 0, "")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        list := try list_creds(store)
+        if as_json {
+            say(json.stringify(list))
+        } else {
+            print_cred_list(list)
+        }
+        return
+    }
+    if verb == "show" {
+        try p.allow_flags("cred show", [])
+        try p.expect_args("cred show", 1, "<name>")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        v := try show_cred(store, p.positional(2))
+        if as_json {
+            say(json.stringify(v))
+        } else {
+            print_cred(v)
+        }
+        return
+    }
+    if verb == "rm" {
+        try p.allow_flags("cred rm", [])
+        try p.expect_args("cred rm", 1, "<name>")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        v := try remove_cred(mut store, p.positional(2))
+        if as_json {
+            say(json.stringify(RemovedNote{ removed: "credential", name: v.name }))
+        } else {
+            say("Removed credential '{v.name}'.")
+        }
+        return
+    }
+    return error(coded(ERR_USAGE, "unknown command `flint cred {verb}`; see `flint help`"))
+}

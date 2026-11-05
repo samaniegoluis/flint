@@ -89,10 +89,12 @@ The first entries below came from reading cfire at commit `feat(webui): add ext:
   meet in one binary. Untried: what happens if they did.
 - **Ideal:** `sqlite.open(path, key: bytes)` backed by a cipher build.
 
-### CF-008 · missing · `suspected`: OS keychain module
+### CF-008 · missing · `confirmed`: OS keychain module
 - **Needed:** cache the derived vault key per machine (macOS Keychain, Linux Secret Service,
   later Windows Credential Manager).
-- **Workaround (planned):** `adapters/keychain/` over Security.framework and libsecret.
+- **Workaround (M02):** `src/adapters/keychain/` over Security.framework (macOS) and
+  libsecret (Linux), in one native header (`native/flint_keychain.hpp`) because cfire
+  cannot select per-platform sources or link a framework (CF-031).
 - **Ideal:** `ext:keychain` with `set`, `get` and `delete(service, account)`.
 
 ### CF-009 · missing · `confirmed`: repository licence
@@ -181,6 +183,12 @@ The entries below were found while building milestone 01 against cfire `3963814`
   program then resolves to it, including `defer app.close()` on a `webui.App` and
   `ch.close()` on a `sync.Channel`, and fails with `no matching function for call to
   'cfire_method_close'`. Flint names these methods `disconnect` and `close_db`.
+- **Also free functions and stdlib methods (M02):** a user method `open(key, sealed, aad)`
+  captures the free function `fs.open(path)` (`call to 'open' expects 3 argument(s), got
+  1`), and `SshConn.read(timeout_ms)` captures `fs.File.read(mut buf)`
+  (`no matching function for call to 'cfire_method_read'`). Flint prefixes every port
+  method (`vault_*`, `keychain_*`, `recents_*`), renamed `Crypto.open` to `unseal`, and
+  reads the vault header with `std::ifstream` in `src/adapters/vault/store.cf`.
 - **Ideal:** one C++ namespace per package, and stdlib method calls that never route to
   user methods. This matters a lot for a hexagonal layout, where two adapters naturally
   both have `open`, `close` and `new`.
@@ -195,6 +203,11 @@ The entries below were found while building milestone 01 against cfire `3963814`
   `run_webview_test` (`stmts_reference_ident` in `src/codegen.hpp`). A test that runs the
   WebView through a helper fails on WebKit's fds. `spike/pty-webui/spike_test.cf` adds a
   dead `if false { … run_webview_test … }` to get past it.
+- **Also libsecret (M02, Linux):** glib keeps its D-Bus connection open, so the first test
+  that talks to the Secret Service "leaks 5 open file descriptors".
+  `src/adapters/keychain/keychain_test.cf` makes one lookup from a global initialiser on
+  Linux only: on macOS, calling Security.framework from a global initialiser makes the
+  test binary exit 1 with no output at all.
 - **Ideal:** a per-test opt-out (`test "x" @allow_fd_growth { … }`) or a documented
   process-start hook.
 
@@ -221,6 +234,12 @@ The entries below were found while building milestone 01 against cfire `3963814`
 - **Repro:** `raw := fs.read_all(p) or err { return }`, then pass `raw` to
   `fn f(b: []byte)` → clang `no matching function`. Annotating the binding
   (`raw: []byte = …`) converts it.
+- **Wider than `fs` (M02):** user `[]byte` is `std::vector<std::uint8_t>`, while
+  `hex.decode`, `sha256.random_bytes` and `rand.bytes` return `std::vector<std::byte>`.
+  For those the annotation does *not* convert
+  (`no viable conversion from 'vector<std::byte>' to 'vector<std::uint8_t>'`), and
+  `a == b` between the two fails to compile. Flint's tests rebuild byte slices by hand
+  (`random_key_bytes` in `src/adapters/keychain/keychain_test.cf`).
 - **Ideal:** one byte type across the stdlib and user code.
 
 ### CF-022 · missing · `confirmed`: no string-to-integer parsing in the stdlib
@@ -247,8 +266,10 @@ The entries below were found while building milestone 01 against cfire `3963814`
   - It calls `std::stoi`, which throws on bad input.
   - There is no `os.args()`: `argc`/`argv` exist only as locals of `main`.
   - There is no `eprintln` or other stderr writer, and no `os.exit(code)`.
-- **Workaround (M01):** `flint --version [--json]` only. Milestone 02 needs an argv
-  adapter.
+- **Workaround (M02):** `src/adapters/process/` reads argv through `_NSGetArgv` (macOS)
+  or `/proc/self/cmdline` (Linux), writes stderr, exits with a code and reads passwords
+  from `/dev/tty` with echo off, in `native/flint_process.hpp`. The subcommand and flag
+  parser is plain cfire in `src/drivers/cli/args.cf`.
 - **Ideal:** `os.args() -> []str`, `eprintln`, `os.exit(code)`, and subcommand plus
   positional support in `core:cli`.
 
@@ -315,3 +336,113 @@ The entries below were found while building milestone 01 against cfire `3963814`
   that drops `-pthread`. glibc ≥ 2.34 has threads in libc.
 - **Ideal:** build the PCH with the same flags as the translation unit, or include those
   flags in the cache key; honour `CFIRE_CXX`.
+
+---
+
+The entries below were found while building milestone 02 against the same cfire build.
+
+### CF-031 · missing · `confirmed`: no way to link a framework, pick per-platform sources, or write top-level C++
+- **Needed:** the keychain adapter calls Security.framework on macOS and libsecret on
+  Linux; the CLI needs `_NSGetArgv` (macOS) or `/proc/self/cmdline` (Linux).
+- **Repro:** `import cpp "Security/Security.h"` and call `SecItemCopyMatching` →
+  `Undefined symbols for architecture arm64` (no `-framework Security`). There is no
+  `@framework(...)`, no `_darwin.cf`/`_linux.cf` file selection, no build-target query, and
+  a top-level `cpp { extern "C" { … } }` fails with `unexpected top-level token`.
+- **Workaround:** a project `.pc` file per OS (`src/adapters/pkgconfig/<os>/flint-native.pc`)
+  carries `-framework …` or `Requires: libsecret-1` plus `-I` to the adapters' native
+  headers (`src/adapters/keychain/native/`, `src/adapters/process/native/`), which branch on
+  `#if defined(__APPLE__)`. `scripts/env.sh` puts the folder on `PKG_CONFIG_PATH`, so a
+  plain `cfire build` without it fails.
+- **Ideal:** `@framework("Security")` on `import cpp`, platform-suffixed source files
+  (`keychain_darwin.cf`), and a `build.os()`/`#if os(...)`-style query.
+
+### CF-032 · bug · `confirmed`: `[][]T!` binds `!` to the element type
+- **Repro:** `fn rows() -> [][]Cell! { mut r: [][]Cell = []; return r }` → clang
+  `no viable conversion from 'vector<vector<Cell>>' to
+  'vector<vector<std::expected<Cell, cfire::Error>>>'`.
+- **Workaround:** wrap the matrix in a struct (`SqlRows` in
+  `src/adapters/vault/sqlcipher.cf`). `[]T!` works.
+- **Ideal:** `!` applies to the whole return type, as with `[]T!`; `([][]T)!` as an
+  explicit form.
+
+### CF-033 · bug · `confirmed`: structs are emitted in declaration order, not dependency order
+- **Repro (one file):** `type Outer struct { one: Inner }` declared before
+  `type Inner struct { id: i64 }` → clang `field has incomplete type 'Inner'`. With
+  `items: []Inner` the error is `arithmetic on a pointer to an incomplete type 'Inner'`.
+- **Across packages:** the importing package's structs are emitted before the imported
+  package's, so a field typed with another package's struct never compiles
+  (`RecentFile { vaults: []RecentVault }` in `adapters/config`, `Catalog { groups:
+  []Group }` in `application`).
+- **Workaround:** declare inner structs first; keep structs that hold another package's
+  types in that package (`Catalog` lives in `src/domain/vault.cf`); hold a raw handle
+  instead of a struct (`SqlVaultStore` in `src/adapters/vault/store.cf`); mirror types
+  locally (`RecentEntry` in `src/adapters/config/recents.cf`).
+- **Ideal:** emit struct definitions in topological order of their by-value and container
+  fields, across packages.
+
+### CF-034 · bug · `confirmed`: a string literal inside an interpolation breaks the string
+- **Repro:** `msg := "{f("x")}"` → `call to 'f' expects 1 argument(s), got 6`;
+  `dir := "/tmp/" + "{os.getenv("USER")}"` → clang `use of undeclared identifier 'USER'`.
+- **Workaround:** bind the inner call to a local first.
+- **Ideal:** lex `{…}` as a nested expression, quotes included (as Swift, Kotlin and
+  Python 3.12 do), or reject it in `cfire check` with a clear message.
+
+### CF-035 · bug · `confirmed`: `match` arms that yield a string literal and a `str` do not compile
+- **Repro:** `return match v { E::Text(s) => s, E::Int(n) => "{n}", _ => "" }` → clang
+  `std::visit requires the visitor to have a single return type` (`const char*` vs
+  `std::string`).
+- **Workaround:** assign to a `mut` local inside block arms.
+- **Ideal:** give every arm the match's declared or inferred type (`str`).
+
+### CF-036 · bug · `confirmed`: `if x != none` does not narrow an optional
+- **Repro:** `f := find(items, 2)` (`-> Item?`), then `if f != none { println("{f.id}") }`
+  → clang `no member named 'id' in 'std::optional<Item>'`.
+- **Workaround:** `f.value()` inside the branch, or `find(...) or fallback`.
+- **Ideal:** flow-narrow `T?` to `T` after a `!= none` check, as the null-safety rules for
+  pointers already do.
+
+### CF-037 · bug · `confirmed`: a `str?` field breaks `json.stringify`
+- **Repro:** ``type Item struct { note: str? `json:"note"` }``, then
+  `json.stringify(Item{ note: none })` → clang `no viable conversion from
+  'const std::optional<std::string>' to 'std::string_view'`.
+- **Workaround:** Flint's JSON views use `str` with `""` for "none".
+- **Ideal:** optional fields serialise as `null` (or are omitted) and parse back.
+
+### CF-038 · improvement · `confirmed`: `os.ExecResult` fields are undocumented, and `.stdout` hits a libc macro
+- **Repro:** `r := try os.command("ssh-keygen", [...])`, then `r.stdout` → clang
+  `no member named '__stdoutp' in 'cfire::os::ExecResult'` on macOS (`stdout` is a macro).
+  The real fields are `exit_code`, `stdout_str` and `stderr_str`, which `cfire doc --llm`
+  does not list.
+- **Ideal:** document the fields; mangle identifiers that collide with C macros.
+
+### CF-039 · bug · `confirmed`: `cfire fmt` mis-indents everything after a multi-line raw string in a struct literal
+- **Repro:** `cfire fmt src/adapters/vault/migrations.cf`. The file pushes
+  `Migration{ version: 1, name: "…", sql: \`…multi-line SQL…\` }` into a list. After the
+  closing `` ` })``, every following line (the rest of the function and the next function)
+  is indented one or two extra levels. The SQL itself is untouched and the code still
+  compiles, but the layout is wrong.
+- **Workaround:** Flint does not run `cfire fmt` on `migrations.cf`.
+- **Ideal:** the formatter treats a raw string literal as opaque when it tracks nesting.
+
+### CF-040 · bug · `confirmed`: `x or []` does not compile with libstdc++
+- **Repro (Debian trixie, clang 19, libstdc++ 14):** `fn f() -> []byte! { … }`, then
+  `b := f() or []` → lowers to `f().value_or({})` → `no matching member function for call
+  to 'value_or'` (`couldn't infer template argument '_Up'`). libc++ (macOS) accepts it, so
+  the code builds on one platform only.
+- **Workaround:** `r := f()` then `if r.has_value() { … r.value() … }`
+  (`src/application/session.cf`).
+- **Ideal:** lower the fallback with the expected's value type:
+  `value_or(std::vector<std::uint8_t>{})`.
+
+### CF-041 · bug · `confirmed`: `os.command` does not link on Linux
+- **Repro (Debian trixie, clang 19):** any test that calls
+  `os.command("ssh-keygen", ["-l", "-f", p])` → `undefined reference to
+  'cfire::os::environ'`. It links on macOS.
+- **Cause:** `runtime/core/os.hpp` (`command`, ~line 109) declares
+  `extern char** environ;` at block scope inside `namespace cfire::os`, so it names
+  `cfire::os::environ`, not the global `::environ` that glibc defines. macOS takes the
+  `_NSGetEnviron()` branch instead.
+- **Workaround:** `os.exec_output` with fixed arguments in
+  `src/adapters/ssh/keys_test.cf`.
+- **Ideal:** declare `extern char** environ;` at global scope, or use `::environ`
+  from `<unistd.h>`.

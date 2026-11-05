@@ -1,0 +1,356 @@
+package application
+
+// Host use cases. A host is addressed by its alias. References (group, jump host,
+// credential, key) arrive as names and are resolved here.
+
+import "../domain"
+import "../ports"
+
+// What a driver sees of a host. Secrets appear only as `has_password`.
+type HostView struct {
+    alias:        str   `json:"alias"`
+    label:        str   `json:"label"`
+    hostname:     str   `json:"hostname"`
+    port:         i64   `json:"port"`
+    user:         str   `json:"user"`
+    group:        str   `json:"group"`
+    tags:         []str `json:"tags"`
+    color:        str   `json:"color"`
+    notes:        str   `json:"notes"`
+    jump:         str   `json:"jump"`
+    credential:   str   `json:"credential"`
+    key:          str   `json:"key"`
+    has_password: bool  `json:"has_password"`
+}
+
+// Fields to set on a host. A `set_*` flag says the field was given; on `add`, the
+// fields not given keep their defaults. Empty reference names (group, jump,
+// credential, key) clear the reference. An empty password clears it.
+type HostPatch struct {
+    alias: str
+    set_alias: bool
+    label: str
+    set_label: bool
+    hostname: str
+    set_hostname: bool
+    port: i64
+    set_port: bool
+    user: str
+    set_user: bool
+    group: str
+    set_group: bool
+    tags: []str
+    set_tags: bool
+    color: str
+    set_color: bool
+    notes: str
+    set_notes: bool
+    jump: str
+    set_jump: bool
+    credential: str
+    set_credential: bool
+    key: str
+    set_key: bool
+    password: str
+    set_password: bool
+}
+
+fn empty_host_patch() -> HostPatch {
+    return HostPatch{ alias: "", set_alias: false, label: "", set_label: false, hostname: "", set_hostname: false, port: 22, set_port: false, user: "", set_user: false, group: "", set_group: false, tags: [], set_tags: false, color: "", set_color: false, notes: "", set_notes: false, jump: "", set_jump: false, credential: "", set_credential: false, key: "", set_key: false, password: "", set_password: false }
+}
+
+fn load_catalog[S: VaultStore](store: S) -> Catalog! {
+    return Catalog{ groups: try store.groups_all(), hosts: try store.hosts_all(), keys: try store.keys_all(), creds: try store.creds_all() }
+}
+
+fn host_index_by_alias(hosts: []Host, alias: str) -> i64 {
+    for i, h in hosts {
+        if lower_ascii(h.alias) == lower_ascii(alias) {
+            return i64(i)
+        }
+    }
+    return -1
+}
+
+fn host_index_by_id(hosts: []Host, id: str) -> i64 {
+    for i, h in hosts {
+        if h.id == id {
+            return i64(i)
+        }
+    }
+    return -1
+}
+
+fn key_index_by_name(keys: []SshKey, name: str) -> i64 {
+    for i, k in keys {
+        if lower_ascii(k.name) == lower_ascii(name) {
+            return i64(i)
+        }
+    }
+    return -1
+}
+
+fn key_name_of(keys: []SshKey, id: str) -> str {
+    for k in keys {
+        if k.id == id {
+            return k.name
+        }
+    }
+    return ""
+}
+
+fn cred_index_by_name(creds: []Credential, name: str) -> i64 {
+    for i, c in creds {
+        if lower_ascii(c.name) == lower_ascii(name) {
+            return i64(i)
+        }
+    }
+    return -1
+}
+
+fn cred_name_of(creds: []Credential, id: str) -> str {
+    for c in creds {
+        if c.id == id {
+            return c.name
+        }
+    }
+    return ""
+}
+
+fn host_alias_of(hosts: []Host, id: str) -> str {
+    idx := host_index_by_id(hosts, id)
+    if idx < 0 {
+        return ""
+    }
+    return hosts[usize(idx)].alias
+}
+
+fn host_view(cat: Catalog, h: Host) -> HostView {
+    return HostView{
+        alias: h.alias,
+        label: h.label,
+        hostname: h.hostname,
+        port: h.port,
+        user: h.username,
+        group: group_path_of(cat.groups, h.group_id),
+        tags: h.tags,
+        color: h.color,
+        notes: h.notes,
+        jump: host_alias_of(cat.hosts, h.jump_host_id),
+        credential: cred_name_of(cat.creds, h.credential_id),
+        key: key_name_of(cat.keys, h.key_id),
+        has_password: h.password.len() > 0,
+    }
+}
+
+fn require_host(hosts: []Host, alias: str) -> Host! {
+    idx := host_index_by_alias(hosts, alias)
+    if idx < 0 {
+        return error(coded(ERR_NOT_FOUND, "no host '{alias}'"))
+    }
+    return hosts[usize(idx)]
+}
+
+// True if following jump hosts from `start` reaches `target`.
+fn jump_chain_reaches(hosts: []Host, start: str, target: str) -> bool {
+    mut cur := start
+    mut steps := 0
+    for cur.len() > 0 && steps <= hosts.len() {
+        if cur == target {
+            return true
+        }
+        idx := host_index_by_id(hosts, cur)
+        if idx < 0 {
+            return false
+        }
+        cur = hosts[usize(idx)].jump_host_id
+        steps += 1
+    }
+    return false
+}
+
+// Applies a patch to `h`, resolving names against the catalog. Group paths that do
+// not exist yet are created (inside the caller's transaction).
+fn apply_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, cat: Catalog, base: Host, p: HostPatch) -> Host! {
+    mut h := base
+    if p.set_alias {
+        h.alias = p.alias
+        other := host_index_by_alias(cat.hosts, p.alias)
+        if other >= 0 && cat.hosts[usize(other)].id != h.id {
+            return error(coded(ERR_CONFLICT, "a host with alias '{p.alias}' already exists"))
+        }
+    }
+    if p.set_label {
+        h.label = p.label
+    }
+    if p.set_hostname {
+        h.hostname = p.hostname
+    }
+    if p.set_port {
+        h.port = p.port
+    }
+    if p.set_user {
+        h.username = p.user
+    }
+    if p.set_tags {
+        h.tags = dedup_tags(p.tags)
+    }
+    if p.set_color {
+        h.color = p.color
+    }
+    if p.set_notes {
+        h.notes = p.notes
+    }
+    // Field rules first, so a bad value is reported before any group is created.
+    try check_host(h)
+    if p.set_group {
+        if split_group_path(p.group).len() == 0 {
+            h.group_id = ""
+        } else {
+            h.group_id = try ensure_group_path(crypto, mut store, p.group)
+        }
+    }
+    if p.set_jump {
+        if p.jump.len() == 0 {
+            h.jump_host_id = ""
+        } else {
+            target := try require_host(cat.hosts, p.jump)
+            if target.id == h.id {
+                return error(coded(ERR_INVALID, "a host cannot be its own jump host"))
+            }
+            if jump_chain_reaches(cat.hosts, target.id, h.id) {
+                return error(coded(ERR_INVALID, "jump host '{p.jump}' would make a loop"))
+            }
+            h.jump_host_id = target.id
+        }
+    }
+    if p.set_credential {
+        if p.credential.len() == 0 {
+            h.credential_id = ""
+        } else {
+            idx := cred_index_by_name(cat.creds, p.credential)
+            if idx < 0 {
+                return error(coded(ERR_NOT_FOUND, "no credential '{p.credential}'"))
+            }
+            h.credential_id = cat.creds[usize(idx)].id
+        }
+    }
+    if p.set_key {
+        if p.key.len() == 0 {
+            h.key_id = ""
+        } else {
+            idx := key_index_by_name(cat.keys, p.key)
+            if idx < 0 {
+                return error(coded(ERR_NOT_FOUND, "no key '{p.key}'"))
+            }
+            h.key_id = cat.keys[usize(idx)].id
+        }
+    }
+    if p.set_password {
+        h.password = try seal_secret(crypto, session, "hosts", h.id, "password", p.password)
+    }
+    return h
+}
+
+fn save_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, cat: Catalog, h: Host, p: HostPatch) -> HostView! {
+    try store.vault_begin()
+    patched := apply_host_patch(crypto, mut store, session, cat, h, p) or err {
+        store.vault_rollback()
+        return error("{err.message()}")
+    }
+    put := store.host_put(patched)
+    if !put.has_value() {
+        store.vault_rollback()
+        return error("{put.error().message()}")
+    }
+    try store.vault_commit()
+    after := try load_catalog(store)
+    return host_view(after, patched)
+}
+
+fn add_host[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, p: HostPatch) -> HostView! {
+    if !p.set_alias {
+        return error(coded(ERR_USAGE, "a host needs an alias"))
+    }
+    if !p.set_hostname {
+        return error(coded(ERR_USAGE, "a host needs a hostname (--hostname)"))
+    }
+    cat := try load_catalog(store)
+    h := Host{ id: new_row_id(crypto), alias: "", label: "", hostname: "", port: 22, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [] }
+    return save_host_patch(crypto, mut store, session, cat, h, p)
+}
+
+fn edit_host[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, alias: str, p: HostPatch) -> HostView! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    return save_host_patch(crypto, mut store, session, cat, h, p)
+}
+
+fn show_host[S: VaultStore](store: S, alias: str) -> HostView! {
+    cat := try load_catalog(store)
+    return host_view(cat, try require_host(cat.hosts, alias))
+}
+
+// True if group `id` is `ancestor` or nested under it.
+fn group_within(groups: []Group, id: str, ancestor: str) -> bool {
+    mut cur := id
+    mut steps := 0
+    for cur.len() > 0 && steps <= groups.len() {
+        if cur == ancestor {
+            return true
+        }
+        idx := group_by_id(groups, cur)
+        if idx < 0 {
+            return false
+        }
+        cur = groups[usize(idx)].parent_id
+        steps += 1
+    }
+    return false
+}
+
+// Hosts sorted by alias, optionally only those in `group` (and its subgroups) and
+// carrying `tag`.
+fn list_hosts[S: VaultStore](store: S, group: str, tag: str) -> []HostView! {
+    cat := try load_catalog(store)
+    mut group_id := ""
+    if group.len() > 0 {
+        group_id = try require_group_id(cat.groups, group)
+    }
+    mut views: []HostView = []
+    for h in cat.hosts {
+        mut keep := true
+        if group_id.len() > 0 && !group_within(cat.groups, h.group_id, group_id) {
+            keep = false
+        }
+        if tag.len() > 0 {
+            mut tagged := false
+            for t in h.tags {
+                if lower_ascii(t) == lower_ascii(tag) {
+                    tagged = true
+                }
+            }
+            if !tagged {
+                keep = false
+            }
+        }
+        if keep {
+            views.push(host_view(cat, h))
+        }
+    }
+    return views
+}
+
+// Removes a host. A host that another host uses as its jump host is refused.
+fn remove_host[S: VaultStore](mut store: S, alias: str) -> HostView! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    for o in cat.hosts {
+        if o.jump_host_id == h.id {
+            return error(coded(ERR_CONFLICT, "host '{o.alias}' uses '{h.alias}' as its jump host"))
+        }
+    }
+    view := host_view(cat, h)
+    try store.host_drop(h.id)
+    return view
+}

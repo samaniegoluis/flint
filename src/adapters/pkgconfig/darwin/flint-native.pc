@@ -1,0 +1,9 @@
+# CFIRE-UPSTREAM: CF-031
+# cfire cannot link an Apple framework, pick a per-platform source file, or take a
+# top-level cpp block, so the adapters' native headers and their link flags come
+# through pkg-config. scripts/env.sh puts this folder on PKG_CONFIG_PATH.
+Name: flint-native
+Description: Native shims for Flint's keychain and process adapters (macOS)
+Version: 1
+Cflags: -I${pcfiledir}/../../keychain/native -I${pcfiledir}/../../process/native
+Libs: -framework Security -framework CoreFoundation

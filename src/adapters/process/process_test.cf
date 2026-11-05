@@ -1,0 +1,12 @@
+package process
+
+test "argv is readable outside main" {
+    // The test runner is started with no extra arguments, or with the suite path.
+    args := process_args()
+    assert(args.len() < 16)
+}
+
+test "stdin terminal detection does not crash" {
+    _ := stdin_is_terminal()
+    _ := has_terminal()
+}

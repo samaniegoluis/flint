@@ -46,6 +46,7 @@ What Tether already does and Flint must not lose.
 | `flint tunnel up\|down\|ls <name>` | `next` | |
 | `flint ssh-config export` / `ProxyCommand flint proxy %h` so native `ssh` and `scp` resolve aliases | `later` | |
 | Shell completions (zsh, bash, fish) | `next` | |
+| Auto-detect an encrypted key in `flint key add` and prompt for its passphrase | `idea` | Today `--passphrase` must be given |
 
 ## 3. Agents & security (the differentiator)
 
@@ -70,6 +71,9 @@ What Tether already does and Flint must not lose.
 | Multi-recipient vaults: encrypt to teammates' public keys (age-style), revoke access | `later` | Replaces "share the master password" |
 | Short-lived SSH certificates: the vault acts as a CA, `flint share --host X --ttl 8h` | `idea` | Teleport/Smallstep, personal-sized |
 | Local change log + per-record merge for concurrent edits on two machines | `idea` | Only if conflicts become a real problem |
+| Change the master password (`flint vault passwd`): new salt, `sqlcipher_export` re-key, re-seal secrets | `next` | Not in M02. Changes the keychain account (salt-based, D-017) |
+| Auto-lock: forget the cached key after N idle days, or require Touch ID / the login password to read it | `idea` | Today the cache lasts until `flint vault lock` |
+| `flint vault check`: verify every sealed secret opens and every reference resolves | `idea` | Cheap integrity check before a sync |
 
 ## 5. Architecture
 
