@@ -102,6 +102,9 @@ Changes to A:
   only whether a host has an open session. Latency appears only in the session toolbar and
   status bar.
 - Remove "Agent tokens" from the rail. The rail is Hosts, Keys, Credentials, Settings.
+- Style the rail like C's: an icon with a small label under it, and the active item
+  tinted ember. Settings is pinned to the bottom. Leave room above Keys for workspace items,
+  which C shows as Deploy and Homelab and which arrive with splits after the MVP.
 - The Split button stays visible but disabled, with a "coming soon" tooltip. The Files
   button opens the SFTP side panel (below).
 - Fix the shortcut collisions:
