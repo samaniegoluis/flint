@@ -9,7 +9,7 @@ import "../../application"
 import "../../domain"
 
 type ErrorBody struct {
-    code: str `json:"code"`
+    code:    str `json:"code"`
     message: str `json:"message"`
 }
 
@@ -19,7 +19,7 @@ type ErrorEnvelope struct {
 
 type RemovedNote struct {
     removed: str `json:"removed"`
-    name: str `json:"name"`
+    name:    str `json:"name"`
 }
 
 fn say(line: str) {

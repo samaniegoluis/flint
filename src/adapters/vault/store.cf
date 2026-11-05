@@ -193,20 +193,20 @@ fn (self: SqlVaultStore) hosts_all() -> []Host! {
             tags = tags_by_host[id]
         }
         list.push(Host{
-            id: id,
-            alias: cell_str(r[1]),
-            label: cell_str(r[2]),
-            hostname: cell_str(r[3]),
-            port: cell_i64(r[4]),
-            username: cell_str(r[5]),
-            group_id: cell_str(r[6]),
-            tags: tags,
-            color: cell_str(r[7]),
-            notes: cell_str(r[8]),
-            jump_host_id: cell_str(r[9]),
-            credential_id: cell_str(r[10]),
-            key_id: cell_str(r[11]),
-            password: cell_bytes(r[12]),
+                id: id,
+                alias: cell_str(r[1]),
+                label: cell_str(r[2]),
+                hostname: cell_str(r[3]),
+                port: cell_i64(r[4]),
+                username: cell_str(r[5]),
+                group_id: cell_str(r[6]),
+                tags: tags,
+                color: cell_str(r[7]),
+                notes: cell_str(r[8]),
+                jump_host_id: cell_str(r[9]),
+                credential_id: cell_str(r[10]),
+                key_id: cell_str(r[11]),
+                password: cell_bytes(r[12]),
         })
     }
     return list
@@ -215,9 +215,9 @@ fn (self: SqlVaultStore) hosts_all() -> []Host! {
 fn (self: SqlVaultStore) host_put(h: Host) -> void! {
     try self.require_open()
     try self.conn().run_sql("INSERT INTO hosts (id, alias, label, hostname, port, username, group_id, color, notes, jump_host_id, credential_id, key_id, password) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) ON CONFLICT(id) DO UPDATE SET alias = excluded.alias, label = excluded.label, hostname = excluded.hostname, port = excluded.port, username = excluded.username, group_id = excluded.group_id, color = excluded.color, notes = excluded.notes, jump_host_id = excluded.jump_host_id, credential_id = excluded.credential_id, key_id = excluded.key_id, password = excluded.password;", [
-        sql_text(h.id), sql_text(h.alias), sql_text(h.label), sql_text(h.hostname), sql_int(h.port),
-        sql_text(h.username), sql_ref(h.group_id), sql_text(h.color), sql_text(h.notes),
-        sql_ref(h.jump_host_id), sql_ref(h.credential_id), sql_ref(h.key_id), sql_blob(h.password),
+            sql_text(h.id), sql_text(h.alias), sql_text(h.label), sql_text(h.hostname), sql_int(h.port),
+            sql_text(h.username), sql_ref(h.group_id), sql_text(h.color), sql_text(h.notes),
+            sql_ref(h.jump_host_id), sql_ref(h.credential_id), sql_ref(h.key_id), sql_blob(h.password),
     ])
     try self.conn().run_sql("DELETE FROM host_tags WHERE host_id = ?1;", [sql_text(h.id)])
     for i, t in h.tags {
@@ -245,7 +245,7 @@ fn (self: SqlVaultStore) keys_all() -> []SshKey! {
 fn (self: SqlVaultStore) key_put(k: SshKey) -> void! {
     try self.require_open()
     try self.conn().run_sql("INSERT INTO ssh_keys (id, name, key_type, public_key, fingerprint, private_key, passphrase) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET name = excluded.name, key_type = excluded.key_type, public_key = excluded.public_key, fingerprint = excluded.fingerprint, private_key = excluded.private_key, passphrase = excluded.passphrase;", [
-        sql_text(k.id), sql_text(k.name), sql_text(k.key_type), sql_text(k.public_key), sql_text(k.fingerprint), sql_blob(k.private_key), sql_blob(k.passphrase),
+            sql_text(k.id), sql_text(k.name), sql_text(k.key_type), sql_text(k.public_key), sql_text(k.fingerprint), sql_blob(k.private_key), sql_blob(k.passphrase),
     ])
 }
 
@@ -269,7 +269,7 @@ fn (self: SqlVaultStore) creds_all() -> []Credential! {
 fn (self: SqlVaultStore) cred_put(c: Credential) -> void! {
     try self.require_open()
     try self.conn().run_sql("INSERT INTO credentials (id, name, username, key_id, password) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET name = excluded.name, username = excluded.username, key_id = excluded.key_id, password = excluded.password;", [
-        sql_text(c.id), sql_text(c.name), sql_text(c.username), sql_ref(c.key_id), sql_blob(c.password),
+            sql_text(c.id), sql_text(c.name), sql_text(c.username), sql_ref(c.key_id), sql_blob(c.password),
     ])
 }
 

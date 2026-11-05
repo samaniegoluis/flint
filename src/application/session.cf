@@ -24,21 +24,21 @@ type VaultSession struct {
 
 // What `vault create`, `vault open` and `vault unlock` report.
 type VaultInfo struct {
-    path: str `json:"path"`
-    name: str `json:"name"`
-    format: i64 `json:"format"`
+    path:   str  `json:"path"`
+    name:   str  `json:"name"`
+    format: i64  `json:"format"`
     cached: bool `json:"cached"`
 }
 
 type VaultStatus struct {
-    path: str `json:"path"`
-    name: str `json:"name"`
-    exists: bool `json:"exists"`
-    cached: bool `json:"cached"`
-    groups: i64 `json:"groups"`
-    hosts: i64 `json:"hosts"`
-    keys: i64 `json:"keys"`
-    credentials: i64 `json:"credentials"`
+    path:        str  `json:"path"`
+    name:        str  `json:"name"`
+    exists:      bool `json:"exists"`
+    cached:      bool `json:"cached"`
+    groups:      i64  `json:"groups"`
+    hosts:       i64  `json:"hosts"`
+    keys:        i64  `json:"keys"`
+    credentials: i64  `json:"credentials"`
 }
 
 // The keychain account of a vault: its salt, which is unique per vault and already
@@ -193,10 +193,10 @@ fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
 
 // A recent vault as `vault list` shows it.
 type RecentView struct {
-    name: str `json:"name"`
-    path: str `json:"path"`
+    name:    str  `json:"name"`
+    path:    str  `json:"path"`
     current: bool `json:"current"`
-    exists: bool `json:"exists"`
+    exists:  bool `json:"exists"`
 }
 
 fn list_recents[R: RecentStore](recents: R) -> []RecentVault! {

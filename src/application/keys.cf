@@ -7,17 +7,17 @@ import "../domain"
 import "../ports"
 
 type KeyView struct {
-    name: str `json:"name"`
-    key_type: str `json:"type"`
-    public_key: str `json:"public_key"`
-    fingerprint: str `json:"fingerprint"`
+    name:           str  `json:"name"`
+    key_type:       str  `json:"type"`
+    public_key:     str  `json:"public_key"`
+    fingerprint:    str  `json:"fingerprint"`
     has_passphrase: bool `json:"has_passphrase"`
 }
 
 type CredView struct {
-    name: str `json:"name"`
-    user: str `json:"user"`
-    key: str `json:"key"`
+    name:         str  `json:"name"`
+    user:         str  `json:"user"`
+    key:          str  `json:"key"`
     has_password: bool `json:"has_password"`
 }
 

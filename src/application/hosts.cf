@@ -8,19 +8,19 @@ import "../ports"
 
 // What a driver sees of a host. Secrets appear only as `has_password`.
 type HostView struct {
-    alias: str `json:"alias"`
-    label: str `json:"label"`
-    hostname: str `json:"hostname"`
-    port: i64 `json:"port"`
-    user: str `json:"user"`
-    group: str `json:"group"`
-    tags: []str `json:"tags"`
-    color: str `json:"color"`
-    notes: str `json:"notes"`
-    jump: str `json:"jump"`
-    credential: str `json:"credential"`
-    key: str `json:"key"`
-    has_password: bool `json:"has_password"`
+    alias:        str   `json:"alias"`
+    label:        str   `json:"label"`
+    hostname:     str   `json:"hostname"`
+    port:         i64   `json:"port"`
+    user:         str   `json:"user"`
+    group:        str   `json:"group"`
+    tags:         []str `json:"tags"`
+    color:        str   `json:"color"`
+    notes:        str   `json:"notes"`
+    jump:         str   `json:"jump"`
+    credential:   str   `json:"credential"`
+    key:          str   `json:"key"`
+    has_password: bool  `json:"has_password"`
 }
 
 // Fields to set on a host. A `set_*` flag says the field was given; on `add`, the

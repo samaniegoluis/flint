@@ -7,9 +7,9 @@ import "../domain"
 import "../ports"
 
 type GroupView struct {
-    path: str `json:"path"`
-    name: str `json:"name"`
-    hosts: i64 `json:"hosts"`
+    path:      str `json:"path"`
+    name:      str `json:"name"`
+    hosts:     i64 `json:"hosts"`
     subgroups: i64 `json:"subgroups"`
 }
 

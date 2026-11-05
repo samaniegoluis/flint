@@ -102,10 +102,10 @@ fn open_cipher_db(path: str, key: []byte, salt: []byte, create: bool) -> CipherD
     // step and uses this salt instead of reading (or generating) one.
     mut key_sql := "PRAGMA key = \"x'" + hex.encode(key) + hex.encode(salt) + "'\";"
     pinned := "PRAGMA cipher_compatibility = " + CIPHER_COMPATIBILITY + "; " +
-        "PRAGMA cipher_page_size = " + CIPHER_PAGE_SIZE + "; " +
-        "PRAGMA cipher_hmac_algorithm = " + CIPHER_HMAC_ALGORITHM + "; " +
-        "PRAGMA cipher_kdf_algorithm = " + CIPHER_KDF_ALGORITHM + "; " +
-        "PRAGMA kdf_iter = " + CIPHER_KDF_ITER + ";"
+    "PRAGMA cipher_page_size = " + CIPHER_PAGE_SIZE + "; " +
+    "PRAGMA cipher_hmac_algorithm = " + CIPHER_HMAC_ALGORITHM + "; " +
+    "PRAGMA cipher_kdf_algorithm = " + CIPHER_KDF_ALGORITHM + "; " +
+    "PRAGMA kdf_iter = " + CIPHER_KDF_ITER + ";"
     mut handle: *mut cpp::sqlite3
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-007
@@ -207,9 +207,9 @@ fn (self: CipherDb) query_cells(sql: str, args: []SqlCell) -> SqlRows! {
                 SqlCell cell{};
                 switch (sqlite3_column_type(st, c)) {
                     case SQLITE_INTEGER:
-                        cell.kind = 1;
-                        cell.int_val = sqlite3_column_int64(st, c);
-                        break;
+                    cell.kind = 1;
+                    cell.int_val = sqlite3_column_int64(st, c);
+                    break;
                     case SQLITE_TEXT: {
                         cell.kind = 2;
                         const unsigned char* t = sqlite3_column_text(st, c);
@@ -224,8 +224,8 @@ fn (self: CipherDb) query_cells(sql: str, args: []SqlCell) -> SqlRows! {
                         break;
                     }
                     default:
-                        cell.kind = 0;
-                        break;
+                    cell.kind = 0;
+                    break;
                 }
                 row.push_back(std::move(cell));
             }

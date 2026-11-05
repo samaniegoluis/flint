@@ -17,8 +17,8 @@ type RecentEntry struct {
 }
 
 type RecentFile struct {
-    version: i64 `json:"version"`
-    vaults: []RecentEntry `json:"vaults"`
+    version: i64           `json:"version"`
+    vaults:  []RecentEntry `json:"vaults"`
 }
 
 type JsonRecentStore struct {
@@ -38,9 +38,9 @@ fn flint_config_dir() -> str {
     // cfire has no build-target query (CF-031).
     // CFIRE-UPSTREAM: CF-031
     cpp {
-#if defined(__APPLE__)
+        #if defined(__APPLE__)
         apple = true;
-#endif
+        #endif
     }
     if apple {
         return home + "/Library/Application Support/Flint"

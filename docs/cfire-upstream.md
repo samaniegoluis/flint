@@ -409,3 +409,12 @@ The entries below were found while building milestone 02 against the same cfire 
   The real fields are `exit_code`, `stdout_str` and `stderr_str`, which `cfire doc --llm`
   does not list.
 - **Ideal:** document the fields; mangle identifiers that collide with C macros.
+
+### CF-039 · bug · `confirmed`: `cfire fmt` mis-indents everything after a multi-line raw string in a struct literal
+- **Repro:** `cfire fmt src/adapters/vault/migrations.cf`. The file pushes
+  `Migration{ version: 1, name: "…", sql: \`…multi-line SQL…\` }` into a list. After the
+  closing `` ` })``, every following line (the rest of the function and the next function)
+  is indented one or two extra levels. The SQL itself is untouched and the code still
+  compiles, but the layout is wrong.
+- **Workaround:** Flint does not run `cfire fmt` on `migrations.cf`.
+- **Ideal:** the formatter treats a raw string literal as opaque when it tracks nesting.
