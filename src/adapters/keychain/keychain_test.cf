@@ -19,6 +19,28 @@ fn random_key_bytes() -> []byte {
     return b
 }
 
+// On Linux, glib and libsecret keep their D-Bus connection open for the life of the
+// process, which the `cfire test` fd-leak canary reports as a leak (CF-018). One
+// lookup at start-up, before any test runs, opens it up front. macOS needs no
+// warm-up, and calling Security.framework from a static initialiser kills the test
+// binary silently there.
+fn warm_up_keychain() -> bool {
+    mut apple := false
+    // CFIRE-UPSTREAM: CF-018, CF-031
+    cpp {
+        #if defined(__APPLE__)
+        apple = true;
+        #endif
+    }
+    if apple || os.getenv("FLINT_TEST_KEYCHAIN") == "off" {
+        return false
+    }
+    _ := new_os_keychain(true).keychain_load("flint-test-warm-up")
+    return true
+}
+
+var KEYCHAIN_WARM: bool = warm_up_keychain()
+
 // Talks to the real OS keychain. FLINT_TEST_KEYCHAIN=off skips it on a machine
 // without one (a headless Linux box with no Secret Service).
 test "save, load, overwrite and forget a vault key in the OS keychain" {

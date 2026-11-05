@@ -119,7 +119,12 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     mut from_cache := false
     if password.len() == 0 {
         // A keychain that cannot be reached is treated like one with no entry.
-        cached_key := keychain.keychain_load(account) or []
+        // `or []` lowers to value_or({}), which libstdc++ rejects (CF-040).
+        mut cached_key: []byte = []
+        loaded := keychain.keychain_load(account)
+        if loaded.has_value() {
+            cached_key = loaded.value()
+        }
         if cached_key.len() != VAULT_KEY_LEN {
             return error(coded(ERR_LOCKED, "the vault at {path} is locked; the master password is needed"))
         }
@@ -279,9 +284,9 @@ fn forget_recent[S: VaultStore, K: Keychain, R: RecentStore](mut store: S, keych
         return error(coded(ERR_NOT_FOUND, "{target.path} is not in the recent list"))
     }
     if store.vault_file_exists(target.path) {
-        salt := store.vault_read_salt(target.path) or []
-        if salt.len() == VAULT_SALT_LEN {
-            _ := keychain.keychain_forget(vault_account(salt))
+        salt := store.vault_read_salt(target.path)
+        if salt.has_value() && salt.value().len() == VAULT_SALT_LEN {
+            _ := keychain.keychain_forget(vault_account(salt.value()))
         }
     }
     try recents.recents_save(next)

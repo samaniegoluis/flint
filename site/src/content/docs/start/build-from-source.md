@@ -95,8 +95,11 @@ scripts/linux-check.sh
 ```
 
 It builds a Debian image with cfire pinned to the same commit and the apt packages
-above, builds `flint` and the terminal spike, runs the tests, and opens the spike's real
-GTK window under Xvfb to check that SSH output reaches the terminal.
+above, builds `flint` and the terminal spike, and runs the tests and the CLI end-to-end
+run twice: once against gnome-keyring on a private D-Bus session (keychain cache on), and
+once with no Secret Service at all (every command takes the master password). Then it
+opens the spike's real GTK window under Xvfb to check that SSH output reaches the
+terminal.
 
 :::note
 cfire's prelude PCH does not match `-pthread`, which WebKitGTK requires, so a WebView

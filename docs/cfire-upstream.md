@@ -203,6 +203,11 @@ The entries below were found while building milestone 01 against cfire `3963814`
   `run_webview_test` (`stmts_reference_ident` in `src/codegen.hpp`). A test that runs the
   WebView through a helper fails on WebKit's fds. `spike/pty-webui/spike_test.cf` adds a
   dead `if false { … run_webview_test … }` to get past it.
+- **Also libsecret (M02, Linux):** glib keeps its D-Bus connection open, so the first test
+  that talks to the Secret Service "leaks 5 open file descriptors".
+  `src/adapters/keychain/keychain_test.cf` makes one lookup from a global initialiser on
+  Linux only: on macOS, calling Security.framework from a global initialiser makes the
+  test binary exit 1 with no output at all.
 - **Ideal:** a per-test opt-out (`test "x" @allow_fd_growth { … }`) or a documented
   process-start hook.
 
@@ -418,3 +423,26 @@ The entries below were found while building milestone 02 against the same cfire 
   compiles, but the layout is wrong.
 - **Workaround:** Flint does not run `cfire fmt` on `migrations.cf`.
 - **Ideal:** the formatter treats a raw string literal as opaque when it tracks nesting.
+
+### CF-040 · bug · `confirmed`: `x or []` does not compile with libstdc++
+- **Repro (Debian trixie, clang 19, libstdc++ 14):** `fn f() -> []byte! { … }`, then
+  `b := f() or []` → lowers to `f().value_or({})` → `no matching member function for call
+  to 'value_or'` (`couldn't infer template argument '_Up'`). libc++ (macOS) accepts it, so
+  the code builds on one platform only.
+- **Workaround:** `r := f()` then `if r.has_value() { … r.value() … }`
+  (`src/application/session.cf`).
+- **Ideal:** lower the fallback with the expected's value type:
+  `value_or(std::vector<std::uint8_t>{})`.
+
+### CF-041 · bug · `confirmed`: `os.command` does not link on Linux
+- **Repro (Debian trixie, clang 19):** any test that calls
+  `os.command("ssh-keygen", ["-l", "-f", p])` → `undefined reference to
+  'cfire::os::environ'`. It links on macOS.
+- **Cause:** `runtime/core/os.hpp` (`command`, ~line 109) declares
+  `extern char** environ;` at block scope inside `namespace cfire::os`, so it names
+  `cfire::os::environ`, not the global `::environ` that glibc defines. macOS takes the
+  `_NSGetEnviron()` branch instead.
+- **Workaround:** `os.exec_output` with fixed arguments in
+  `src/adapters/ssh/keys_test.cf`.
+- **Ideal:** declare `extern char** environ;` at global scope, or use `::environ`
+  from `<unistd.h>`.

@@ -7,7 +7,11 @@ package keychain
 import cpp "flint_keychain.hpp" @pkg("flint-native")
 import "../../domain"
 
-var KEYCHAIN_SERVICE: str = "Flint"
+// A function, not a global: a global initialiser elsewhere (the test warm-up) may run
+// before a global str is constructed.
+fn keychain_service() -> str {
+    return "Flint"
+}
 
 // `enabled: false` turns the keychain off (FLINT_KEYCHAIN=off): nothing is cached,
 // every unlock asks for the password.
@@ -33,7 +37,7 @@ fn (self: OsKeychain) keychain_save(account: str, secret: []byte) -> void! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-008
     cpp {
-        rc = flint_kc::save(KEYCHAIN_SERVICE, account, secret);
+        rc = flint_kc::save(keychain_service(), account, secret);
     }
     if rc != 0 {
         return error(keychain_status_error(rc, "store the vault key"))
@@ -48,7 +52,7 @@ fn (self: OsKeychain) keychain_load(account: str) -> []byte! {
     mut found: []byte = []
     // CFIRE-UPSTREAM: CF-008
     cpp {
-        rc = flint_kc::load(KEYCHAIN_SERVICE, account, found);
+        rc = flint_kc::load(keychain_service(), account, found);
     }
     if rc == 1 {
         return []
@@ -66,9 +70,11 @@ fn (self: OsKeychain) keychain_forget(account: str) -> void! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-008
     cpp {
-        rc = flint_kc::forget(KEYCHAIN_SERVICE, account);
+        rc = flint_kc::forget(keychain_service(), account);
     }
-    if rc != 0 && rc != 1 {
+    // 1: no entry. 2: no keychain to reach, so no cached key Flint could use either
+    // (unlock treats an unreachable keychain the same way).
+    if rc != 0 && rc != 1 && rc != 2 {
         return error(keychain_status_error(rc, "remove the vault key"))
     }
 }
