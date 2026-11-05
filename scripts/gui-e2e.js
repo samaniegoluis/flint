@@ -204,11 +204,13 @@
     await waitFor(() => termText().includes('-- INSERT --'), 'vim in insert mode');
     await check(true, 'vim redraws after its start-up queries (DECRQM)');
     key('Escape', 'Escape', 27);
-    await sleep(100);
+    // Esc and the next key in one SSH packet read as an Alt chord: wait for vim to
+    // leave insert mode first, as a person typing would.
+    await waitFor(() => !termText().includes('-- INSERT --'), 'vim back in normal mode');
     await keys(':wq');
     key('Enter', 'Enter', 13);
-    await runInTerminal('cat /tmp/flint-e2e-vim.txt; echo vim-done', 'vim-done');
-    await check(/^hello$/m.test(termText()), 'keys typed in vim reach it (insert, Esc, :wq)');
+    await runInTerminal('cat /tmp/flint-e2e-vim.txt; echo vim-$((6*7))', 'vim-42');
+    await check(/^hello$/m.test(termText()), 'keys typed in vim reach it (insert, Esc, :wq)' + (/^hello$/m.test(termText()) ? '' : ' — terminal: ' + termText().split('\n').filter((l) => l.trim()).slice(-6).join(' | ')));
 
     await setStep('exit');
     await type('exit 7');
@@ -293,8 +295,13 @@
     await click('.rail-btn', 'Settings');
     await click('.swatches .sw[aria-label="moss"]');
     await waitFor(() => document.documentElement.dataset.accent === 'moss', 'the accent');
+    const accentNow = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim().toUpperCase();
+    await click('.theme-card', 'Dark');
+    await waitFor(() => document.documentElement.dataset.theme === 'dark', 'the dark theme');
+    await check(accentNow() === '#7BC98F', `the accent colour follows the setting in the dark theme (${accentNow()})`);
     await click('.theme-card', 'Light');
     await waitFor(() => document.documentElement.dataset.theme === 'light', 'the light theme');
+    await check(accentNow() === '#4FA068', `the accent colour follows the setting in the light theme (${accentNow()})`);
     const saved = await window.backend.settings_get({});
     await check(saved.accent === 'moss' && saved.theme === 'light', 'appearance settings are saved');
     await click('.nav-i', 'Terminal');
