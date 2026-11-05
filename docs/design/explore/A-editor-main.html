@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280">
+<title>Flint A — Editor shell</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#08090A}
+a{color:#F2A35E}a:hover{color:#FFB877}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+input{font:inherit;color:inherit;background:none;border:0;outline:none}
+.mono{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
+.ln{white-space:pre;height:20px}
+.kbd{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10.5px;line-height:16px;color:#A8A49C;border:1px solid #33363C;border-radius:4px;padding:0 5px;background:#1A1C20}
+.r{color:#EE7A66}.g{color:#A3D17F}.y{color:#F2C46D}.b{color:#78A9F2}.m{color:#C9A0EE}.c{color:#72CEC7}.w{color:#E8E4DC}.d{color:#8F8B84}.e{color:#F29A52}
+</style>
+</head>
+<body>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; background: #0E0F11; border: 1px solid #2A2D33; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; font-family: 'Geist', system-ui, sans-serif; color: #E8E4DC; font-size: 13px">
+
+<header style="height: 38px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 10px 0 14px; border-bottom: 1px solid #1F2125; background: #121316">
+<div style="display: flex; gap: 8px; width: 70px" aria-hidden="true"><span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57"></span><span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E"></span><span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840"></span></div>
+<div style="flex: 1; display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 12px; color: #8F8B84">
+<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3L17 7L19 15L12 21L5 16L4 8Z" fill="#2E3137"></path><path d="M9 3L12 11L17 7Z" fill="#454951"></path><path d="M12 11L19 15L12 21Z" fill="#24272C"></path><path d="M12 11L5 16L4 8L9 3Z" fill="#383C43"></path><path d="M20.5 1.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z" fill="#F29A52"></path></svg>
+<span>Work</span><span style="color: #4A4D53">/</span><span class="mono" style="color: #A8A49C">prod-api-01</span>
+</div>
+<button style="width: 250px; height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 8px; border: 1px solid #2A2D33; border-radius: 6px; background: #17181B; color: #8F8B84; font-size: 12px" aria-label="Command palette">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="M20 20l-4.5-4.5"></path></svg>
+<span style="flex: 1">Hosts, keys, commands…</span><span class="kbd">⌘K</span>
+</button>
+</header>
+
+<div style="flex: 1; display: flex; min-height: 0">
+
+<nav aria-label="Primary" style="width: 48px; flex-shrink: 0; border-right: 1px solid #1F2125; background: #111214; display: flex; flex-direction: column; align-items: center; padding: 8px 0; gap: 4px">
+<button aria-label="Hosts (⌘1)" style="position: relative; width: 36px; height: 36px; border-radius: 7px; background: #1E2024; color: #F29A52; display: flex; align-items: center; justify-content: center"><span style="position: absolute; left: -6px; top: 9px; width: 2px; height: 18px; border-radius: 2px; background: #F29A52"></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"></rect><rect x="3" y="13" width="18" height="7" rx="1.5"></rect><path d="M7 7.5h.01M7 16.5h.01"></path></svg></button>
+<button aria-label="SSH keys (⌘2)" style="width: 36px; height: 36px; border-radius: 7px; color: #8F8B84; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="M11 12l9-9M17 6l3 3M14.5 8.5l2 2"></path></svg></button>
+<button aria-label="Credentials (⌘3)" style="width: 36px; height: 36px; border-radius: 7px; color: #8F8B84; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><circle cx="9" cy="11" r="2"></circle><path d="M6 16c.6-1.5 1.8-2.2 3-2.2s2.4.7 3 2.2M14 10h4M14 13h3"></path></svg></button>
+<button aria-label="Agent tokens (⌘4)" style="width: 36px; height: 36px; border-radius: 7px; color: #8F8B84; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="2"></rect><path d="M12 4v4M9.5 13h.01M14.5 13h.01"></path></svg></button>
+<div style="flex: 1"></div>
+<button aria-label="Settings (⌘,)" style="width: 36px; height: 36px; border-radius: 7px; color: #8F8B84; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"></path></svg></button>
+</nav>
+
+<aside aria-label="Vault sidebar" style="position: relative; width: 264px; flex-shrink: 0; background: #131417; border-right: 1px solid #1F2125; display: flex; flex-direction: column">
+<div style="padding: 10px 10px 8px">
+<button aria-expanded="true" aria-label="Switch vault — Work" style="width: 100%; height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 1px solid #6A4428; border-radius: 7px; background: #1C1D21">
+<span style="width: 24px; height: 24px; border-radius: 6px; background: #3A2617; color: #F29A52; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center">W</span>
+<span style="flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0"><span style="font-weight: 600; font-size: 13px">Work</span><span class="mono" style="font-size: 11px; color: #8F8B84">~/vaults/work.flint</span></span>
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A8A49C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9l5-5 5 5M7 15l5 5 5-5"></path></svg>
+</button>
+</div>
+<div style="padding: 0 10px 8px">
+<label style="height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 8px; border: 1px solid #26292E; border-radius: 6px; background: #17181B; color: #8F8B84">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="M20 20l-4.5-4.5"></path></svg>
+<input aria-label="Filter hosts" placeholder="Filter hosts" style="flex: 1; min-width: 0; font-size: 12px">
+<span class="kbd">⌘P</span>
+</label>
+</div>
+<div style="display: flex; align-items: center; padding: 6px 12px 4px 14px; font-size: 11px; letter-spacing: 0.06em; color: #8F8B84"><span style="flex: 1">HOSTS · 24</span><button aria-label="New host (⌘N)" style="color: #8F8B84"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button></div>
+
+<div style="flex: 1; display: flex; flex-direction: column; padding: 2px 6px; font-size: 12.5px">
+<div style="height: 26px; display: flex; align-items: center; gap: 6px; padding-left: 6px; color: #C9C5BD"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8F8B84" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg><span style="width: 8px; height: 8px; border-radius: 2px; background: #F29A52"></span><span style="flex: 1">Production</span><span style="font-size: 11px; color: #8F8B84; padding-right: 8px">9</span></div>
+<div style="height: 26px; display: flex; align-items: center; gap: 6px; padding-left: 20px; color: #C9C5BD"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8F8B84" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg><span style="flex: 1">api</span></div>
+<div style="height: 26px; display: flex; align-items: center; gap: 8px; padding-left: 40px; border-radius: 5px; background: #24272C; color: #E8E4DC"><span style="width: 7px; height: 7px; border-radius: 50%; background: #7BC98F"></span><span class="mono" style="flex: 1; font-size: 12px">prod-api-01</span><span class="mono" style="font-size: 11px; color: #A8A49C; padding-right: 8px">18ms</span></div>
+<div style="height: 26px; display: flex; align-items: center; gap: 8px; padding-left: 40px; color: #C9C5BD"><span style="width: 7px; height: 7px; border-radius: 50%; background: #7BC98F"></span><span class="mono" style="flex: 1; font-size: 12px">prod-api-02</span><span class="mono" style="font-size: 11px; color: #8F8B84; padding-right: 8px">21ms</span></div>
+<div style="height: 26px; display: flex; align-items: center; gap: 8px; padding-left: 40px; color: #C9C5BD"><span style="width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #6E6B66; box-sizing: border-box"></span><span class="mono" style="flex: 1; font-size: 12px">prod-api-03</span></div>
+<div style="height: 26px; display: flex; align-items: center; gap: 8px; padding-left: 26px; color: #C9C5BD"><span style="width: 7px; height: 7px; border-radius: 50%; background: #7BC98F"></span><span class="mono" style="flex: 1; font-size: 12px">db-primary</span><span class="mono" style="font-size: 11px; color: #8F8B84; padding-right: 8px">24ms</span></div>
+<div style="height: 26px; display: flex; align-items: center; gap: 8px; padding-left: 26px; color: #C9C5BD"><span style="width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #6E6B66; box-sizing: border-box"></span><span class="mono" style="flex: 1; font-size: 12px">db-replica</span></div>
+<div style="height: 26px; display: flex; align-items: center; gap: 6px; padding-left: 6px; color: #C9C5BD"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8F8B84" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg><span style="width: 8px; height: 8px; border-radius: 2px; background: #78A9F2"></span><span style="flex: 1">Staging</span><span style="font-size: 11px; color: #8F8B84; padding-right: 8px">5</span></div>
+<div style="height: 26px; display: flex; align-items: center; gap: 8px; padding-left: 26px; color: #C9C5BD"><span style="width: 7px; height: 7px; border-radius: 50%; background: #EE7A66"></span><span class="mono" style="flex: 1; font-size: 12px">stg-web</span><span style="font-size: 11px; color: #EE7A66; padding-right: 8px">lost</span></div>
+<div style="height: 26px; display: flex; align-items: center; gap: 8px; padding-left: 26px; color: #C9C5BD"><span style="width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #6E6B66; box-sizing: border-box"></span><span class="mono" style="flex: 1; font-size: 12px">stg-worker</span></div>
+<div style="height: 26px; display: flex; align-items: center; gap: 6px; padding-left: 6px; color: #C9C5BD"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8F8B84" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg><span style="width: 8px; height: 8px; border-radius: 2px; background: #7BC98F"></span><span style="flex: 1">Homelab</span><span style="font-size: 11px; color: #8F8B84; padding-right: 8px">7</span></div>
+<div style="height: 26px; display: flex; align-items: center; gap: 6px; padding-left: 6px; color: #C9C5BD"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8F8B84" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg><span style="width: 8px; height: 8px; border-radius: 2px; background: #C9A0EE"></span><span style="flex: 1">Clients</span><span style="font-size: 11px; color: #8F8B84; padding-right: 8px">3</span></div>
+</div>
+
+<div style="border-top: 1px solid #1F2125; padding: 8px 12px; display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #8F8B84">
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7BC98F" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 7.5-2"></path></svg>
+<span style="flex: 1">Unlocked · Keychain</span><button style="display: flex; align-items: center; gap: 6px; color: #A8A49C">Lock <span class="kbd">⌘L</span></button>
+</div>
+
+<div role="dialog" aria-label="Switch vault" style="position: absolute; top: 58px; left: 10px; width: 312px; z-index: 5; background: #1B1D21; border: 1px solid #34373D; border-radius: 8px; box-shadow: 0 16px 40px rgba(0,0,0,0.55); padding: 6px; display: flex; flex-direction: column; gap: 2px">
+<div style="display: flex; align-items: center; padding: 6px 8px 6px; font-size: 11px; letter-spacing: 0.06em; color: #8F8B84"><span style="flex: 1">RECENT VAULTS</span><span class="kbd">⇧⌘O</span></div>
+<button style="display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; background: #272A30">
+<span style="width: 24px; height: 24px; border-radius: 6px; background: #3A2617; color: #F29A52; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center">W</span>
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">Work</span><span class="mono" style="font-size: 11px; color: #A8A49C">~/vaults/work.flint</span></span>
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F29A52" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Current vault" role="img"><path d="M5 12l5 5 9-10"></path></svg>
+</button>
+<button style="display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px">
+<span style="width: 24px; height: 24px; border-radius: 6px; background: #1E2A3D; color: #78A9F2; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center">P</span>
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500">Personal</span><span class="mono" style="font-size: 11px; color: #8F8B84">~/vaults/personal.flint</span></span>
+<span class="kbd">⌘2</span>
+</button>
+<button style="display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px">
+<span style="width: 24px; height: 24px; border-radius: 6px; background: #1F2E24; color: #7BC98F; font-weight: 600; font-size: 12px; display: flex; align-items: center; justify-content: center">H</span>
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0"><span style="font-weight: 500; display: flex; align-items: center; gap: 6px">Homelab <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#8F8B84" stroke-width="2" stroke-linecap="round" role="img" aria-label="No cached key"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg></span><span class="mono" style="font-size: 11px; color: #8F8B84">/mnt/nas/flint/homelab.flint</span></span>
+<span class="kbd">⌘3</span>
+</button>
+<div style="height: 1px; background: #2A2D33; margin: 4px 2px"></div>
+<button style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 6px; color: #C9C5BD"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg><span style="flex: 1">Open vault…</span><span class="kbd">⌘O</span></button>
+<button style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 6px; color: #C9C5BD"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span style="flex: 1">Create vault…</span><span class="kbd">⇧⌘N</span></button>
+<button style="display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 6px; color: #C9C5BD"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg><span style="flex: 1">Manage vaults…</span><span class="kbd">⌥⌘V</span></button>
+</div>
+</aside>
+
+<main style="flex: 1; min-width: 0; display: flex; flex-direction: column; background: #0B0C0E">
+<div role="tablist" aria-label="Sessions" style="height: 36px; flex-shrink: 0; display: flex; align-items: stretch; background: #111214; border-bottom: 1px solid #1F2125">
+<button role="tab" aria-selected="true" style="display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px; background: #0B0C0E; box-shadow: inset 0 2px 0 #F29A52; border-right: 1px solid #1F2125; color: #E8E4DC"><span style="width: 7px; height: 7px; border-radius: 50%; background: #7BC98F"></span><span class="mono" style="font-size: 12px">prod-api-01</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8F8B84" stroke-width="2" stroke-linecap="round" aria-label="Close tab (⌘W)" role="img"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+<button role="tab" aria-selected="false" style="display: flex; align-items: center; gap: 8px; padding: 0 12px; border-right: 1px solid #1F2125; color: #A8A49C"><span style="width: 7px; height: 7px; border-radius: 50%; background: #7BC98F"></span><span class="mono" style="font-size: 12px">db-primary</span><span class="kbd">⌘2</span></button>
+<button role="tab" aria-selected="false" style="display: flex; align-items: center; gap: 8px; padding: 0 12px; border-right: 1px solid #1F2125; color: #A8A49C"><span style="width: 7px; height: 7px; border-radius: 50%; background: #EE7A66"></span><span class="mono" style="font-size: 12px; text-decoration: line-through; text-decoration-color: #5A5D63">stg-web</span><span style="font-size: 11px; color: #EE7A66">disconnected</span><span class="kbd">⌘3</span></button>
+<button aria-label="New session (⌘T)" style="display: flex; align-items: center; gap: 6px; padding: 0 10px; color: #8F8B84"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span class="kbd">⌘T</span></button>
+<div style="flex: 1"></div>
+<button aria-label="Split right (⌘D)" style="display: flex; align-items: center; padding: 0 12px; color: #8F8B84"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M12 4v16"></path></svg></button>
+</div>
+
+<section aria-label="Terminal — prod-api-01" class="mono" style="flex: 1; min-height: 0; overflow: hidden; padding: 14px 20px; font-size: 13px; color: #D9D5CD">
+<div class="ln"><span class="g">luis</span><span class="d">@</span><span class="b">prod-api-01</span> <span class="c">~/srv/api</span> <span class="m">(main)</span> <span class="e">❯</span> git log --oneline --graph -7</div>
+<div class="ln"><span class="r">*</span> <span class="y">a41c9e2</span> <span class="y">(</span><span class="c">HEAD -&gt; </span><span class="g">main</span><span class="y">, </span><span class="r">origin/main</span><span class="y">)</span> fix(auth): rotate refresh tokens on reuse</div>
+<div class="ln"><span class="r">*</span>   <span class="y">7f03b18</span> Merge branch 'feature/rate-limit'</div>
+<div class="ln"><span class="r">|</span><span class="g">\</span></div>
+<div class="ln"><span class="r">|</span> <span class="g">*</span> <span class="y">2e9d4a0</span> <span class="y">(</span><span class="g">feature/rate-limit</span><span class="y">)</span> chore: tune bucket sizes per credential</div>
+<div class="ln"><span class="r">|</span> <span class="g">*</span> <span class="y">c18f7b3</span> feat: token-bucket limiter for /v2/sessions</div>
+<div class="ln"><span class="r">|</span><span class="g">/</span></div>
+<div class="ln"><span class="r">*</span> <span class="y">9b2e611</span> <span class="y">(tag: </span><span class="y">v2.14.0</span><span class="y">)</span> release: v2.14.0</div>
+<div class="ln"><span class="r">*</span> <span class="y">05da7cc</span> docs: document ssh agent forwarding</div>
+<div class="ln"> </div>
+<div class="ln"><span class="g">luis</span><span class="d">@</span><span class="b">prod-api-01</span> <span class="c">~/srv/api</span> <span class="m">(main)</span> <span class="e">❯</span> htop</div>
+<div class="ln">  <span class="c">1</span>  <span class="w">[</span><span class="g">||||||||||||||</span><span class="r">||</span><span class="b">|</span>                   <span class="d">38.2%</span><span class="w">]</span>   <span class="c">Tasks:</span> <span class="w">142</span>, <span class="g">311 thr</span>; <span class="g">2</span> running</div>
+<div class="ln">  <span class="c">2</span>  <span class="w">[</span><span class="g">||||||||||||||||||||||</span><span class="r">||||</span>            <span class="d">61.5%</span><span class="w">]</span>   <span class="c">Load average:</span> <span class="w">0.82</span> 0.71 <span class="d">0.64</span></div>
+<div class="ln">  <span class="c">3</span>  <span class="w">[</span><span class="g">||||||</span><span class="r">|</span>                             <span class="d">19.0%</span><span class="w">]</span>   <span class="c">Uptime:</span> <span class="w">41 days, 06:12:09</span></div>
+<div class="ln">  <span class="c">4</span>  <span class="w">[</span><span class="g">||||||||||||</span><span class="r">|</span><span class="b">|</span>                       <span class="d">33.7%</span><span class="w">]</span></div>
+<div class="ln">  <span class="c">Mem</span><span class="w">[</span><span class="g">||||||||||||||</span><span class="b">||</span><span class="y">|||||</span>           <span class="d">5.81G/15.6G</span><span class="w">]</span></div>
+<div class="ln">  <span class="c">Swp</span><span class="w">[</span><span class="r">|</span>                               <span class="d">128M/2.00G</span><span class="w">]</span></div>
+<div class="ln"> </div>
+<div class="ln" style="background: #A3D17F; color: #0B0C0E">    PID USER       PRI  NI  VIRT   RES   SHR S <span style="background: #72CEC7">CPU%</span> MEM%    TIME+  Command                                            </div>
+<div class="ln" style="background: #2A3A4F; color: #E8E4DC">   2214 api         20   0 1.21G  412M 18.2M S 24.1  2.6 98:12.44 node dist/server.js --cluster                       </div>
+<div class="ln">   1871 postgres     20   0  612M  188M  142M S  6.3  1.2 41:03.10 <span class="g">postgres: writer</span></div>
+<div class="ln">   3307 api          20   0  944M  201M 16.0M S  4.8  1.3 12:44.91 node dist/worker.js queue=mail</div>
+<div class="ln">    902 root         20   0 82.4M 12.1M  9.8M S  0.7  0.1  3:21.07 <span class="d">sshd: luis [priv]</span></div>
+<div class="ln">    611 <span class="d">root</span>         20   0  234M 18.4M 12.0M S  0.3  0.1  1:02.55 <span class="d">/usr/lib/systemd/systemd-journald</span></div>
+<div class="ln"> </div>
+<div class="ln"><span class="g">luis</span><span class="d">@</span><span class="b">prod-api-01</span> <span class="c">~/srv/api</span> <span class="m">(main)</span> <span class="e">❯</span> <span style="display: inline-block; width: 8px; height: 17px; vertical-align: -3px; background: #F29A52"></span></div>
+</section>
+
+<footer style="height: 26px; flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 0 12px; border-top: 1px solid #1F2125; background: #111214; font-size: 11.5px; color: #8F8B84">
+<span style="display: flex; align-items: center; gap: 6px; color: #7BC98F"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7BC98F"></span>Connected</span>
+<span class="mono" style="color: #A8A49C">luis@10.0.4.21:22</span>
+<span style="display: flex; align-items: center; gap: 5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#78A9F2" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="15" r="4"></circle><path d="M11 12l9-9M17 6l3 3"></path></svg>ed25519 · deploy-2026</span>
+<span style="display: flex; align-items: center; gap: 5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#78A9F2" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><circle cx="9" cy="11" r="2"></circle></svg>Domain login</span>
+<span style="flex: 1"></span>
+<span class="mono">18 ms</span><span>UTF-8</span><span class="mono">118×32</span>
+<span style="display: flex; align-items: center; gap: 6px"><span class="kbd">⌘K</span>Commands</span>
+</footer>
+</main>
+</div>
+</div>
+</body>
+</html>

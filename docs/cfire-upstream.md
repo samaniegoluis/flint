@@ -89,3 +89,16 @@ The first entries below came from reading cfire at commit `feat(webui): add ext:
   `runtime/core/sqlite.hpp` has `#if !defined(_WIN32)`, and the guide documents Windows only
   via WSL2.
 - **Ideal:** native Windows (MSVC or clang-cl) builds of `core:*`.
+
+### CF-011 · improvement · `confirmed`: `cfire --version` does not identify the build
+- **Needed:** every entry here must be reproducible against an exact cfire build.
+- **Repro:** `curl -fsSL https://cfire.memo.engineer/install.sh | sh` compiles whatever
+  `main` points to at that moment (`CFIRE_VERSION` defaults to `main`), and
+  `cfire --version` then prints only `cfire 0.9.4 (ISO C++23 systems toolchain)`. Two
+  installs a day apart report the same string with different code. Observed on 2026-11-05;
+  `main` was at `396381402699f8957bd9a304cb1092e3243be3bf` around the time of install.
+- **Workaround:** run `git ls-remote https://github.com/gsandoval/cfire refs/heads/main`
+  right before installing, then record that SHA.
+- **Ideal:** embed the commit SHA and build date at compile time
+  (`cfire 0.9.4 (3963814, 2026-11-05)`), print it in `cfire doctor`, and have the installer
+  default to the latest tagged release rather than `main`.

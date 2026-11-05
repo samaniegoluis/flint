@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280">
+<title>Flint C — Unlock vault</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#08090A}
+a{color:#F2A35E}a:hover{color:#FFB877}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+input{font:inherit;color:inherit;background:none;border:0;outline:none}
+.mono{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
+.kbd{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10.5px;line-height:16px;color:#A8A49C;border:1px solid #33363C;border-radius:4px;padding:0 5px;background:#1A1C20}
+</style>
+</head>
+<body>
+<div style="position: relative; width: 1280px; height: 800px; box-sizing: border-box; background: #0E0F11; border: 1px solid #2A2D33; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; font-family: 'Geist', system-ui, sans-serif; color: #E8E4DC; font-size: 13px">
+
+<header style="height: 40px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: #111214; border-bottom: 1px solid #1F2125">
+<div style="display: flex; gap: 8px; width: 62px" aria-hidden="true"><span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57"></span><span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E"></span><span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840"></span></div>
+<span style="display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px 0 4px; border-radius: 6px; border: 1px solid #2A2D33; color: #A8A49C; font-size: 12.5px"><span style="width: 18px; height: 18px; border-radius: 4px; background: #2A2D33; color: #A8A49C; font-weight: 600; font-size: 10.5px; display: flex; align-items: center; justify-content: center">W</span>Work · locked</span>
+</header>
+
+<div style="flex: 1; display: flex; min-height: 0">
+<nav aria-label="Primary (unavailable while locked)" style="width: 64px; flex-shrink: 0; background: #111214; border-right: 1px solid #1F2125; display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 6px; opacity: 0.4">
+<span style="width: 52px; height: 48px; border-radius: 8px; background: #1E2024"></span>
+<span style="width: 52px; height: 48px; border-radius: 8px"></span>
+<span style="width: 52px; height: 48px; border-radius: 8px"></span>
+</nav>
+
+<main style="position: relative; flex: 1; min-width: 0; padding: 28px 32px; box-sizing: border-box">
+<div aria-hidden="true" style="display: flex; flex-direction: column; gap: 14px; opacity: 0.22">
+<span style="width: 140px; height: 10px; border-radius: 4px; background: #2A2D33"></span>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+</div>
+<span style="width: 110px; height: 10px; border-radius: 4px; background: #2A2D33; margin-top: 12px"></span>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+</div>
+<span style="width: 120px; height: 10px; border-radius: 4px; background: #2A2D33; margin-top: 12px"></span>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+<span style="height: 108px; border-radius: 8px; border: 1px solid #2A2D33; background: #141518"></span>
+</div>
+</div>
+
+<div style="position: absolute; left: 0; right: 0; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center">
+<form aria-label="Unlock vault" style="width: 440px; display: flex; flex-direction: column; background: #16171A; border: 1px solid #34373D; border-radius: 10px; box-shadow: 0 24px 60px rgba(0,0,0,0.55); overflow: hidden">
+<div style="display: flex; align-items: center; gap: 14px; padding: 20px 22px; border-bottom: 1px solid #24272C">
+<span style="width: 40px; height: 40px; border-radius: 9px; background: #3A2617; color: #F29A52; font-weight: 600; font-size: 18px; display: flex; align-items: center; justify-content: center">W</span>
+<div style="flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0">
+<span style="font-size: 18px; font-weight: 600">Work</span>
+<span class="mono" style="font-size: 11.5px; color: #A8A49C">~/vaults/work.flint</span>
+</div>
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A8A49C" stroke-width="1.6" stroke-linecap="round" role="img" aria-label="Locked"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: #24272C; border-bottom: 1px solid #24272C">
+<div style="background: #16171A; padding: 10px 22px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #8F8B84">Hosts</span><span class="mono" style="font-size: 13px">24</span></div>
+<div style="background: #16171A; padding: 10px 16px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #8F8B84">Workspaces</span><span class="mono" style="font-size: 13px">2 saved</span></div>
+<div style="background: #16171A; padding: 10px 16px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #8F8B84">This device</span><span style="font-size: 13px; color: #F2C46D">No cached key</span></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 16px; padding: 20px 22px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="pw" style="font-size: 12px; color: #C9C5BD">Vault password</label>
+<div style="height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; border: 1px solid #F29A52; border-radius: 7px; background: #0F1012; box-shadow: 0 0 0 3px rgba(242,154,82,0.14)">
+<input id="pw" type="password" value="correct-horse-batt" style="flex: 1; min-width: 0; font-size: 14px; letter-spacing: 0.12em">
+<button type="button" aria-label="Show password (⌥⌘P)" style="color: #8F8B84; display: flex"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+</div>
+</div>
+<label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer">
+<input type="checkbox" checked style="width: 16px; height: 16px; margin: 1px 0 0; accent-color: #F29A52">
+<span style="display: flex; flex-direction: column; gap: 3px"><span>Remember on this device</span><span style="font-size: 12px; color: #8F8B84">Caches the key in the OS keychain and restores your last workspace on launch.</span></span>
+</label>
+</div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 12px 22px; background: #131417; border-top: 1px solid #24272C">
+<button type="button" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid #2E3137; border-radius: 7px; color: #C9C5BD; font-size: 12.5px">Switch vault <span class="kbd">⇧⌘O</span></button>
+<span style="flex: 1"></span>
+<button type="submit" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border-radius: 7px; background: #F29A52; color: #1A0F06; font-weight: 600; font-size: 12.5px">Unlock <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; opacity: 0.75">↵</span></button>
+</div>
+</form>
+</div>
+</main>
+</div>
+</div>
+</body>
+</html>

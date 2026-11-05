@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280">
+<title>Flint B — Terminal-first shell</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#08090A}
+a{color:#F2A35E}a:hover{color:#FFB877}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
+input{font:inherit;color:inherit;background:none;border:0;outline:none}
+.mono{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
+.ln{white-space:pre;height:20px}
+.kbd{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10.5px;line-height:16px;color:#A8A49C;border:1px solid #33363C;border-radius:4px;padding:0 5px;background:#1A1C20}
+.r{color:#EE7A66}.g{color:#A3D17F}.y{color:#F2C46D}.b{color:#78A9F2}.m{color:#C9A0EE}.c{color:#72CEC7}.w{color:#E8E4DC}.d{color:#8F8B84}.e{color:#F29A52}
+</style>
+</head>
+<body>
+<div style="position: relative; width: 1280px; height: 800px; box-sizing: border-box; background: #0B0C0E; border: 1px solid #2A2D33; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; font-family: 'Geist', system-ui, sans-serif; color: #E8E4DC; font-size: 13px">
+
+<header style="height: 34px; flex-shrink: 0; display: flex; align-items: center; gap: 4px; padding: 0 10px 0 14px; background: #0E0F11; border-bottom: 1px solid #1A1C20">
+<div style="display: flex; gap: 8px; width: 66px" aria-hidden="true"><span style="width: 12px; height: 12px; border-radius: 50%; background: #FF5F57"></span><span style="width: 12px; height: 12px; border-radius: 50%; background: #FEBC2E"></span><span style="width: 12px; height: 12px; border-radius: 50%; background: #28C840"></span></div>
+<div role="tablist" aria-label="Sessions" style="display: flex; align-items: center; gap: 2px">
+<button role="tab" aria-selected="true" style="height: 24px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 6px; background: #1C1E22; color: #E8E4DC"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7BC98F"></span><span class="mono" style="font-size: 11.5px">prod-api-01</span></button>
+<button role="tab" aria-selected="false" style="height: 24px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 6px; color: #A8A49C"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7BC98F"></span><span class="mono" style="font-size: 11.5px">db-primary</span></button>
+<button role="tab" aria-selected="false" style="height: 24px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 6px; color: #A8A49C"><span style="width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid #EE7A66; box-sizing: border-box"></span><span class="mono" style="font-size: 11.5px; color: #EE7A66">stg-web</span></button>
+<button aria-label="New session (⌘T)" style="height: 24px; width: 24px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: #8F8B84"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+</div>
+<div style="flex: 1"></div>
+<button aria-expanded="true" style="height: 24px; display: flex; align-items: center; gap: 7px; padding: 0 8px; border-radius: 6px; background: #241A12; color: #F2B07A; font-size: 12px; border: 1px solid #5A3A20">
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 7.5-2"></path></svg>Work<span class="kbd" style="background: #2D2015; border-color: #5A3A20; color: #F2B07A">⇧⌘O</span></button>
+<button aria-label="Command palette (⌘K)" style="height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 6px; border-radius: 6px; color: #8F8B84"><span class="kbd">⌘K</span></button>
+</header>
+
+<section aria-label="Terminal — prod-api-01" class="mono" style="flex: 1; min-height: 0; overflow: hidden; padding: 18px 28px; font-size: 13.5px; color: #D9D5CD">
+<div class="ln"><span class="d">Last login: Wed Nov  4 21:58:12 2026 from 10.0.0.12</span></div>
+<div class="ln"><span class="g">luis</span><span class="d">@</span><span class="b">prod-api-01</span> <span class="c">~/srv/api</span> <span class="m">(main)</span> <span class="e">❯</span> git status -sb</div>
+<div class="ln"><span class="g">## main</span>...<span class="r">origin/main</span> [ahead <span class="g">2</span>]</div>
+<div class="ln"> <span class="r">M</span> src/routes/sessions.ts</div>
+<div class="ln"> <span class="r">M</span> src/limiter/bucket.ts</div>
+<div class="ln"><span class="r">??</span> migrations/0042_rate_limits.sql</div>
+<div class="ln"> </div>
+<div class="ln"><span class="g">luis</span><span class="d">@</span><span class="b">prod-api-01</span> <span class="c">~/srv/api</span> <span class="m">(main)</span> <span class="e">❯</span> kubectl get pods -n api</div>
+<div class="ln"><span class="w">NAME                           READY   STATUS             RESTARTS   AGE</span></div>
+<div class="ln">api-7c9f6d5b8-2xkqp            1/1     <span class="g">Running</span>            0          3d4h</div>
+<div class="ln">api-7c9f6d5b8-h8m2n            1/1     <span class="g">Running</span>            0          3d4h</div>
+<div class="ln">worker-mail-5f8d9c7-q4zr1      0/1     <span class="r">CrashLoopBackOff</span>   <span class="y">7</span>          21m</div>
+<div class="ln">worker-mail-5f8d9c7-tt9wc      1/1     <span class="g">Running</span>            0          21m</div>
+<div class="ln"> </div>
+<div class="ln"><span class="g">luis</span><span class="d">@</span><span class="b">prod-api-01</span> <span class="c">~/srv/api</span> <span class="m">(main)</span> <span class="e">❯</span> kubectl logs worker-mail-5f8d9c7-q4zr1 --tail 4</div>
+<div class="ln"><span class="d">2026-11-04T21:59:01Z</span> <span class="b">INFO </span> connecting to smtp-relay:587</div>
+<div class="ln"><span class="d">2026-11-04T21:59:03Z</span> <span class="y">WARN </span> tls handshake slow (1.9s)</div>
+<div class="ln"><span class="d">2026-11-04T21:59:04Z</span> <span class="r">ERROR</span> auth failed: 535 5.7.8 credentials rejected</div>
+<div class="ln"><span class="d">2026-11-04T21:59:04Z</span> <span class="r">FATAL</span> exiting with code 1</div>
+<div class="ln"> </div>
+<div class="ln"><span class="g">luis</span><span class="d">@</span><span class="b">prod-api-01</span> <span class="c">~/srv/api</span> <span class="m">(main)</span> <span class="e">❯</span> <span style="display: inline-block; width: 8px; height: 17px; vertical-align: -3px; background: #F29A52"></span></div>
+</section>
+
+<div class="mono" style="position: absolute; right: 16px; bottom: 10px; display: flex; gap: 12px; font-size: 11px; color: #8F8B84">
+<span>luis@10.0.4.21</span><span>ed25519</span><span>18 ms</span>
+</div>
+<button aria-label="Show hosts sidebar (⌘B)" style="position: absolute; left: 0; top: 360px; width: 6px; height: 80px; border-radius: 0 4px 4px 0; background: #22252A"></button>
+
+<div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 34px; bottom: 0; background: rgba(5,6,7,0.62)"></div>
+
+<div role="dialog" aria-label="Quick switcher" style="position: absolute; left: 320px; top: 92px; width: 640px; background: #17181B; border: 1px solid #34373D; border-radius: 10px; box-shadow: 0 24px 60px rgba(0,0,0,0.6); overflow: hidden; display: flex; flex-direction: column">
+<label style="height: 50px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid #26292E">
+<span style="display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 5px; background: #2D2015; color: #F2B07A; font-size: 12px; font-weight: 500">Vaults<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></span>
+<input aria-label="Search vaults and hosts" placeholder="Switch vault, or type a host…" style="flex: 1; min-width: 0; font-size: 15px">
+<span class="kbd">esc</span>
+</label>
+
+<div style="padding: 6px; display: flex; flex-direction: column; gap: 1px">
+<div style="padding: 8px 10px 4px; font-size: 11px; letter-spacing: 0.06em; color: #8F8B84">RECENT VAULTS</div>
+<button style="display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 10px; border-radius: 6px; background: #26292E; box-shadow: inset 2px 0 0 #F29A52">
+<span style="width: 22px; height: 22px; border-radius: 5px; background: #3A2617; color: #F29A52; font-weight: 600; font-size: 11px; display: flex; align-items: center; justify-content: center">W</span>
+<span style="font-weight: 500; width: 90px">Work</span>
+<span class="mono" style="flex: 1; font-size: 11.5px; color: #A8A49C">~/vaults/work.flint</span>
+<span style="font-size: 11.5px; color: #F2B07A">current</span>
+</button>
+<button style="display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 10px; border-radius: 6px">
+<span style="width: 22px; height: 22px; border-radius: 5px; background: #1E2A3D; color: #78A9F2; font-weight: 600; font-size: 11px; display: flex; align-items: center; justify-content: center">P</span>
+<span style="font-weight: 500; width: 90px">Personal</span>
+<span class="mono" style="flex: 1; font-size: 11.5px; color: #8F8B84">~/vaults/personal.flint</span>
+<span class="kbd">⌘2</span>
+</button>
+<button style="display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 10px; border-radius: 6px">
+<span style="width: 22px; height: 22px; border-radius: 5px; background: #1F2E24; color: #7BC98F; font-weight: 600; font-size: 11px; display: flex; align-items: center; justify-content: center">H</span>
+<span style="font-weight: 500; width: 90px">Homelab</span>
+<span class="mono" style="flex: 1; font-size: 11.5px; color: #8F8B84">/mnt/nas/flint/homelab.flint</span>
+<span class="kbd">⌘3</span>
+</button>
+
+<div style="display: flex; gap: 6px; padding: 6px 4px 4px">
+<button style="flex: 1; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid #26292E; border-radius: 6px; color: #C9C5BD; font-size: 12.5px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg><span style="flex: 1">Open…</span><span class="kbd">⌘O</span></button>
+<button style="flex: 1; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid #26292E; border-radius: 6px; color: #C9C5BD; font-size: 12.5px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg><span style="flex: 1">Create…</span><span class="kbd">⇧⌘N</span></button>
+<button style="flex: 1; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid #26292E; border-radius: 6px; color: #C9C5BD; font-size: 12.5px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg><span style="flex: 1">Manage…</span><span class="kbd">⌥⌘V</span></button>
+</div>
+
+<div style="padding: 12px 10px 4px; font-size: 11px; letter-spacing: 0.06em; color: #8F8B84">RECENT HOSTS · WORK</div>
+<button style="display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 10px; border-radius: 6px">
+<span style="width: 7px; height: 7px; border-radius: 50%; background: #7BC98F; margin: 0 7px"></span>
+<span class="mono" style="font-size: 12.5px; width: 150px">prod-api-01</span>
+<span style="flex: 1; font-size: 12px; color: #8F8B84">Production / api · open in tab 1</span>
+<span class="mono" style="font-size: 11px; color: #A8A49C">18 ms</span>
+</button>
+<button style="display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 10px; border-radius: 6px">
+<span style="width: 7px; height: 7px; border-radius: 50%; background: #7BC98F; margin: 0 7px"></span>
+<span class="mono" style="font-size: 12.5px; width: 150px">db-primary</span>
+<span style="flex: 1; font-size: 12px; color: #8F8B84">Production · open in tab 2</span>
+<span class="mono" style="font-size: 11px; color: #A8A49C">24 ms</span>
+</button>
+<button style="display: flex; align-items: center; gap: 12px; height: 36px; padding: 0 10px; border-radius: 6px">
+<span style="width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #EE7A66; box-sizing: border-box; margin: 0 7px"></span>
+<span class="mono" style="font-size: 12.5px; width: 150px">stg-web</span>
+<span style="flex: 1; font-size: 12px; color: #EE7A66">Disconnected 4 min ago · tab 3</span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #A8A49C">Reconnect <span class="kbd">⌘R</span></span>
+</button>
+</div>
+
+<div style="display: flex; align-items: center; gap: 16px; height: 34px; padding: 0 14px; border-top: 1px solid #26292E; background: #141518; font-size: 11.5px; color: #8F8B84">
+<span style="display: flex; align-items: center; gap: 6px"><span class="kbd">↑↓</span>move</span>
+<span style="display: flex; align-items: center; gap: 6px"><span class="kbd">↵</span>open</span>
+<span style="display: flex; align-items: center; gap: 6px"><span class="kbd">⌘↵</span>new tab</span>
+<span style="display: flex; align-items: center; gap: 6px"><span class="kbd">tab</span>hosts · keys · commands</span>
+<span style="flex: 1"></span>
+<span style="display: flex; align-items: center; gap: 6px"><span class="kbd">⌘B</span>sidebar</span>
+</div>
+</div>
+</div>
+</body>
+</html>
