@@ -42,6 +42,15 @@ fn trim_webui_history(mut app: webui.App) {
     }
 }
 
+// Installs the macOS menu bar (Quit, Edit, Window) before the run loop starts; a
+// no-op on Linux, where GTK's text fields handle the clipboard keys themselves.
+fn install_app_menu(app_name: str) {
+    // CFIRE-UPSTREAM: CF-051
+    cpp {
+        flint_gui::install_app_menu(app_name);
+    }
+}
+
 fn (mut self: WebuiEventSink) terminal_output(session_id: str, data: str) {
     self.app.emit("terminal:output", TerminalChunk{ session: session_id, data: base64.encode_str(data) })
     trim_webui_history(mut self.app)

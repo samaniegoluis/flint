@@ -559,3 +559,14 @@ The entries below were found while building milestone 02 against the same cfire 
   throttled.
 - **Ideal:** `run_webview_test` sets `WKPreferences.inactiveSchedulingPolicy = .none`
   (macOS 14+) so the page runs as if visible.
+
+### CF-051 · missing · `confirmed`: a webui app on macOS has no menu bar
+- **Repro:** run any `ext:webui` app on macOS and press ⌘Q: nothing happens. ⌘C, ⌘V,
+  ⌘X, ⌘A and ⌘Z do nothing in the page's text fields either. `App.run()` creates the
+  `NSApplication` and the window but never sets `NSApp.mainMenu`, and AppKit delivers
+  those keys to a `WKWebView` only through menu items (`terminate:`/`copy:`/`paste:`…).
+- **Workaround:** `src/adapters/uievents/native/flint_gui.hpp` (`install_app_menu`)
+  sets the standard app / Edit / Window menus before `app.run()`; Quit sends
+  `performClose:` so webui's normal close path still runs.
+- **Ideal:** webui installs the standard menus itself (app name from `new_app`), and
+  takes an optional menu description so an app can add its own items and shortcuts.
