@@ -116,7 +116,7 @@ What Tether already does and Flint must not lose.
 | Command palette actions in context, as in design screen 09: "New host in <group>", "Reconnect <tab>", "Open Files on <host>", and the `⌘P hosts only` hint in its footer | `next` | Raised in the M04 owner walkthrough; M04 lists the same generic actions everywhere |
 | Drag a host between groups in the tree | `next` | M04 changes the folder in the host editor |
 | Remember the sidebar width per view and resize it by dragging | `next` | M04 uses the design's default widths |
-| gui-e2e on macOS sometimes ends with an empty `e2e:` line: the page stops with no failed step and no report (about 1 run in 6) | `next` | Seen in the M04 owner walkthrough, not diagnosed. Start by logging `window.onerror` and the WebContent process state before `run_webview_test` times out |
+| gui-e2e on macOS sometimes ends with an empty `e2e:` line: the page stops with no failed step and no report (about 1 run in 6) | `next` | Seen in the M04 owner walkthrough, not diagnosed. Start by logging `window.onerror` and the WebContent process state before `run_webview_test` times out. Later runs narrowed it: the report stops right after `vim redraws after its start-up queries (DECRQM)`, the step that types into vim, in 5 of 6 empty runs; one sat in a check waiting on a synthetic ↵, which never submits a form |
 | macOS: one title bar. The native traffic lights over the in-app bar (webui `set_frameless`: full-size content, transparent title bar), as in the design | `next` | Found in the M04 owner walkthrough: today the OS title bar ("Flint") sits above the app's bar (D-024). Needs a drag region and left padding for the traffic lights; Linux keeps the OS chrome |
 
 ## 7. Platforms & distribution

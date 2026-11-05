@@ -377,6 +377,39 @@
     // keychain, which on macOS showed a Keychain dialog.
     await waitFor(() => /\d+ hosts? · .*format v\d/.test(text()), 'the vault counts');
     await check(hasText('4 hosts · 1 key · 0 credentials · '), `the vault page counts the open vault (${(text().match(/\d+ hosts?[^\n]*format v\d/) ?? ['none'])[0]})`);
+    // Forget a known host here, then connect to it: the owner's walkthrough found the
+    // host key card dead (no click, ↵ or esc) on this path.
+    await setStep('forget a known host and trust it again');
+    await click('button', 'Forget', byText('tr', `[127.0.0.1]:${PORT}`));
+    await click('.modal button', 'Forget');
+    await waitFor(() => !byText('td', `[127.0.0.1]:${PORT}`), 'the known host to be forgotten');
+    await click('.rail-btn', 'Hosts');
+    const tabsBefore = qa('.tab').length;
+    for (const how of ['esc', 'a click']) {
+      cmd('t', 'KeyT');
+      await fill('[aria-label="Command palette"] input', 'local');
+      await waitFor(() => q('[role="option"].hot')?.textContent.includes('local'), 'local hot');
+      press('Enter', 'Enter');
+      await waitFor(() => qa('.tab').length === tabsBefore + 1 && hasText('before connecting'), 'the host key prompt after a forget');
+      await sleep(200);
+      // A real ↵ submits the form only when the focus is on it; a synthetic one never
+      // does, so this checks the focus and leaves the submit to the click below.
+      await check(document.activeElement?.textContent.includes('Trust and connect'), `the host key card puts the focus on Trust and connect (${document.activeElement?.tagName} ${document.activeElement?.textContent.slice(0, 30)})`);
+      if (how === 'esc') {
+        press('Escape', 'Escape');
+        await waitFor(() => !hasText('before connecting'), 'esc to cancel the host key prompt');
+        await check(true, 'esc cancels the host key card after a forget');
+      } else {
+        await click('button[type="submit"]', 'Trust and connect');
+        await waitFor(() => toolbarIs('ready'), 'the session after a click on Trust', 30000);
+        await check(true, 'a click on Trust and connect trusts the key again after a forget');
+      }
+      q('.tab.on .tx').click();
+      await waitFor(() => qa('.tab').length === tabsBefore, 'the extra tab to close');
+    }
+    await click('.rail-btn', 'Settings');
+    await click('.nav-i', 'Vault');
+
     if (openTabs) {
       await click('.rail-btn', 'Hosts');
       await waitFor(() => activeTerm(), 'the session view');
