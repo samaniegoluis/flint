@@ -130,13 +130,24 @@ fn host_target(h: HostView) -> str {
     return t
 }
 
+// "herdr (then a login shell)", "herdr (ends the session)" or "-".
+fn command_text(h: HostView) -> str {
+    if h.command.len() == 0 {
+        return "-"
+    }
+    if h.keep_shell {
+        return h.command + " (then a login shell)"
+    }
+    return h.command + " (ends the session)"
+}
+
 fn print_host(h: HostView) {
     mut pw := "not set"
     if h.has_password {
         pw = "set"
     }
-    print_fields(["alias", "label", "hostname", "port", "user", "group", "tags", "color", "jump", "credential", "key", "password", "notes"],
-        [h.alias, dash_if_empty(h.label), h.hostname, "{h.port}", dash_if_empty(h.user), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags)), dash_if_empty(h.color), dash_if_empty(h.jump), dash_if_empty(h.credential), dash_if_empty(h.key), pw, dash_if_empty(h.notes)])
+    print_fields(["alias", "label", "hostname", "port", "user", "group", "tags", "color", "jump", "credential", "key", "password", "command", "notes"],
+        [h.alias, dash_if_empty(h.label), h.hostname, "{h.port}", dash_if_empty(h.user), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags)), dash_if_empty(h.color), dash_if_empty(h.jump), dash_if_empty(h.credential), dash_if_empty(h.key), pw, command_text(h), dash_if_empty(h.notes)])
 }
 
 fn print_host_list(hosts: []HostView) {

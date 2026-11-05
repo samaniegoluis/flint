@@ -29,9 +29,41 @@ flint host add web-01 --hostname 10.20.30.40 --user root \
 | `--key <name>` | Log in with a stored [key](/guides/keys/) | none |
 | `--password` | Ask for a password for this host | none |
 | `--password-stdin` | Read that password from stdin | none |
+| `--command <cmd>` | Run this on every interactive connect, e.g. `herdr` or `tmux new -A -s main` | none |
+| `--no-keep-shell` | End the session when that command exits, instead of starting a login shell | keep the shell |
 
 The password is encrypted again inside the encrypted vault and is never printed. Output
-only says whether one is set.
+only says whether one is set. In the desktop app you can [reveal or copy
+it](/guides/desktop-app/#hosts-keys-and-credentials).
+
+## Run a command on connect
+
+A host can start a program every time you open a shell on it, the way you would type it
+yourself after logging in:
+
+```sh
+flint host edit codebox --command herdr                 # then a login shell
+flint host edit db-01 --command "tmux new -A -s main" --no-keep-shell
+flint host edit codebox --command ""                    # back to a plain shell
+```
+
+The command runs on the remote terminal through your interactive login shell, so your
+profile, rc files and `PATH` are loaded as in a shell you opened yourself. By default a
+login shell follows when the command exits; with `--no-keep-shell` the session ends
+with the command. `flint connect --no-command` and `flint exec` never run it.
+`host show` lists it.
+
+## Check that a host works
+
+```sh
+flint host test web-01
+# Connection to 'web-01' works: root@10.20.30.40:2222, host key verified, logged in (184 ms).
+```
+
+`host test` goes through the same steps as a connect: every jump host, the known-host
+check (an unknown key is asked about, a changed one refused) and the login. Then it
+hangs up without opening a shell or running anything. It never asks for a password:
+when no saved method is accepted it fails with `auth` (exit 12), naming what it tried.
 
 ## Find hosts
 

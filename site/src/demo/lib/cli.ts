@@ -55,9 +55,14 @@ Hosts
   host add <alias> --hostname <host> [--port N] [--user U] [--label L]
            [--group <path>] [--tag T]... [--color #rrggbb] [--notes N]
            [--jump <alias>] [--cred <name>] [--key <name>]
-           [--password | --password-stdin]
+           [--password | --password-stdin] [--command <cmd> [--no-keep-shell]]
+                                        --command runs on connect, then a login
+                                        shell (--no-keep-shell: ends the session)
   host edit <alias> [same flags] [--alias <new>] [--no-tags] [--no-password]
+           [--command ""] [--keep-shell]
   host list [--group <path>] [--tag <tag>] | host show <alias> | host rm <alias>
+  host test <alias> [--timeout <secs>] [--accept-new-host-key]
+                                        Connect, verify the host key, log in, hang up
 
 Keys
   key add <name> (--file <path> | --key-stdin) [--passphrase | --passphrase-stdin]
@@ -69,8 +74,9 @@ Credentials
   cred list | cred show <name> | cred rm <name>
 
 SSH
-  connect <alias> [--timeout <secs>] [--accept-new-host-key]
-                                        Interactive shell, through jump hosts
+  connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]
+                                        Interactive shell, through jump hosts; runs
+                                        the host's --command unless --no-command
   exec <alias> [--timeout <secs>] [--exec-timeout <secs>] [--accept-new-host-key]
        -- <command>                     Run one command; exits with its status
   known-host list | known-host rm <alias|address>
@@ -88,7 +94,7 @@ them from stdin with the --*-stdin flags.`;
 export const COMMANDS: Record<string, string[]> = {
 	vault: ['create', 'open', 'list', 'use', 'status', 'unlock', 'lock', 'forget'],
 	group: ['add', 'list', 'rename', 'rm'],
-	host: ['add', 'edit', 'list', 'show', 'rm'],
+	host: ['add', 'edit', 'list', 'show', 'test', 'rm'],
 	key: ['add', 'list', 'show', 'rename', 'rm'],
 	cred: ['add', 'edit', 'list', 'show', 'rm'],
 	'known-host': ['list', 'rm'],
@@ -96,6 +102,12 @@ export const COMMANDS: Record<string, string[]> = {
 	exec: [],
 	help: [],
 };
+
+/** `host show`'s command line: "herdr (then a login shell)", "… (ends the session)" or "-". */
+function commandText(h: Host): string {
+	if (!h.command) return '-';
+	return h.command + (h.keepShell ? ' (then a login shell)' : ' (ends the session)');
+}
 
 const STDIN_FLAGS = ['--master-stdin', '--password-stdin', '--passphrase-stdin', '--key-stdin'];
 const REFERENCE = '/reference/cli/';
@@ -371,6 +383,11 @@ class Cmd {
 		if (p.has('--jump')) patch.jump = p.value('--jump');
 		if (p.has('--cred')) patch.credential = p.value('--cred');
 		if (p.has('--key')) patch.key = p.value('--key');
+		if (p.has('--command')) patch.command = p.value('--command');
+		if (p.has('--keep-shell') && p.has('--no-keep-shell')) {
+			fail('usage', '--keep-shell and --no-keep-shell contradict each other');
+		}
+		if (p.has('--keep-shell') || p.has('--no-keep-shell')) patch.keepShell = p.has('--keep-shell');
 		if (p.has('--password')) {
 			const pw = yield* this.secret('host password');
 			patch.password = pw.length > 0;
@@ -382,7 +399,7 @@ class Cmd {
 
 	private static HOST_FLAGS = [
 		'--label', '--hostname', '--port', '--user', '--group', '--tag', '--no-tags', '--color', '--notes',
-		'--jump', '--cred', '--key', '--password', '--password-stdin',
+		'--jump', '--cred', '--key', '--password', '--password-stdin', '--command', '--keep-shell', '--no-keep-shell',
 	];
 
 	*host(): Run {
@@ -429,10 +446,24 @@ class Cmd {
 				const h = ops.findHost(p.positional(2));
 				this.emit(hostView(h), () =>
 					fields(
-						['alias', 'label', 'hostname', 'port', 'user', 'group', 'tags', 'color', 'jump', 'credential', 'key', 'password', 'notes'],
+						['alias', 'label', 'hostname', 'port', 'user', 'group', 'tags', 'color', 'jump', 'credential', 'key', 'password', 'command', 'notes'],
 						[h.alias, dash(h.label), h.hostname, `${h.port}`, dash(h.user), dash(h.group), dash(h.tags.join(', ')), dash(h.color),
-							dash(h.jump), dash(h.credential), dash(h.key), h.hasPassword ? 'set' : 'not set', dash(h.notes)],
+							dash(h.jump), dash(h.credential), dash(h.key), h.hasPassword ? 'set' : 'not set', commandText(h), dash(h.notes)],
 					).forEach((l) => this.say(l)),
+				);
+				return ok;
+			}
+			case 'test': {
+				p.allowFlags('host test', ['--timeout', '--accept-new-host-key']);
+				p.expectArgs('host test', 1, '<alias> [--timeout <secs>] [--accept-new-host-key]');
+				if (p.hasRest) fail('usage', '`flint host test` runs no command; use `flint exec <alias> -- <command>`');
+				const { host, user, hops } = yield* this.reach(p.positional(2), true);
+				let target = (user ? user + '@' : '') + host.hostname;
+				if (host.port !== 22) target += `:${host.port}`;
+				const ms = 120 + 64 * hops;
+				const via = hops === 2 ? ', through 1 jump host' : hops > 2 ? `, through ${hops - 1} jump hosts` : '';
+				this.emit({ host: host.alias, target, hops, duration_ms: ms }, () =>
+					this.say(`Connection to '${host.alias}' works: ${target}, host key verified, logged in (${ms} ms${via}).`),
 				);
 				return ok;
 			}
@@ -593,7 +624,7 @@ class Cmd {
 	// ---- connect / exec ----
 
 	/** Walks the jump chain, checks each server key and resolves the login (connect.cf). */
-	private *reach(alias: string): Generator<Ask, { host: Host; user: string }, string> {
+	private *reach(alias: string, testOnly = false): Generator<Ask, { host: Host; user: string; hops: number }, string> {
 		const p = this.p;
 		if (p.has('--timeout')) parseSeconds('--timeout', p.value('--timeout'));
 		const v = yield* this.openTarget();
@@ -609,12 +640,13 @@ class Cmd {
 		}
 		let user = '';
 		for (const h of chain) {
-			user = yield* this.login(ops, h);
+			user = yield* this.login(ops, h, testOnly);
 		}
-		return { host: target, user };
+		return { host: target, user, hops: chain.length };
 	}
 
-	private *login(ops: VaultOps, h: Host): Generator<Ask, string, string> {
+	/** `testOnly` never asks for a password (`host test`): no stored method fails with auth. */
+	private *login(ops: VaultOps, h: Host, testOnly: boolean): Generator<Ask, string, string> {
 		const cred = h.credential ? ops.findCred(h.credential) : undefined;
 		const user = h.user || cred?.user || '';
 		if (!user) {
@@ -640,6 +672,9 @@ class Cmd {
 			});
 		}
 		const hasStored = h.hasPassword || !!h.key || !!cred?.key || !!cred?.hasPassword;
+		if (!hasStored && testOnly) {
+			fail('auth', `${user}@${h.alias}: no auth method was accepted (tried: SSH agent)`);
+		}
 		if (!hasStored) {
 			const typed = yield { label: `${user}@${h.alias}'s password: `, secret: true };
 			if (typed.length === 0) fail('auth', `${user}@${h.alias}: no auth method was accepted (tried: SSH agent, typed password)`);
@@ -649,11 +684,17 @@ class Cmd {
 
 	*connect(): Run {
 		const p = this.p;
-		p.allowFlags('connect', ['--timeout', '--accept-new-host-key']);
+		p.allowFlags('connect', ['--timeout', '--accept-new-host-key', '--no-command']);
 		if (p.positionals.length !== 2 || p.hasRest) {
-			fail('usage', 'usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key]');
+			fail('usage', 'usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]');
 		}
 		const { host, user } = yield* this.reach(p.positional(1));
+		if (host.command && !p.has('--no-command')) {
+			this.io.note(
+				`The real flint runs \`${host.command}\` on ${host.alias} now${host.keepShell ? ', then your login shell' : ' and ends the session when it exits'}. The demo opens its shell instead.`,
+				'/guides/hosts/#run-a-command-on-connect',
+			);
+		}
 		return { code: 0, connect: { alias: host.alias, user, hostname: host.hostname, json: this.asJson } };
 	}
 

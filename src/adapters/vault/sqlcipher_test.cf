@@ -98,6 +98,14 @@ test "rows round-trip and migrations are idempotent" {
     assert_eq(again[0].tags.len(), 1)
     assert_eq(again[0].password.len(), 0)
 
+    // Credentials round-trip too, insert and update (the host columns of migration
+    // 003 are not theirs).
+    try store.cred_put(Credential{ id: "c1", name: "ops", username: "deploy", key_id: "", password: [4, 5] })
+    try store.cred_put(Credential{ id: "c1", name: "ops", username: "deploy2", key_id: "", password: [] })
+    creds := try store.creds_all()
+    assert_eq(creds.len(), 1)
+    assert_eq(creds[0].username, "deploy2")
+
     try store.host_drop(h.id)
     assert_eq((try store.hosts_all()).len(), 0)
     assert_eq(try store.conn().query_text("SELECT count(*) FROM host_tags;"), "0")

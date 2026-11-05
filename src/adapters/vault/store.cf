@@ -278,7 +278,7 @@ fn (self: SqlVaultStore) creds_all() -> []Credential! {
 
 fn (self: SqlVaultStore) cred_put(c: Credential) -> void! {
     try self.require_open()
-    try self.conn().run_sql("INSERT INTO credentials (id, name, username, key_id, password) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET name = excluded.name, username = excluded.username, key_id = excluded.key_id, password = excluded.password, initial_command = excluded.initial_command, keep_shell = excluded.keep_shell;", [
+    try self.conn().run_sql("INSERT INTO credentials (id, name, username, key_id, password) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET name = excluded.name, username = excluded.username, key_id = excluded.key_id, password = excluded.password;", [
             sql_text(c.id), sql_text(c.name), sql_text(c.username), sql_ref(c.key_id), sql_blob(c.password),
     ])
 }
