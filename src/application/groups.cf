@@ -6,13 +6,6 @@ package application
 import "../domain"
 import "../ports"
 
-type GroupView struct {
-    path:      str `json:"path"`
-    name:      str `json:"name"`
-    hosts:     i64 `json:"hosts"`
-    subgroups: i64 `json:"subgroups"`
-}
-
 fn group_by_id(groups: []Group, id: str) -> i64 {
     for i, g in groups {
         if g.id == id {

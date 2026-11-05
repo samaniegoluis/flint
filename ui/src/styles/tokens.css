@@ -1,0 +1,250 @@
+/* ==========================================================================
+   Flint — design tokens  v1.0
+   Theme:   <html data-theme="dark|light">   (default: dark)
+   Accent:  <html data-accent="ember|sapphire|moss|iris">   (default: ember)
+   Density: <html data-density="compact|default|comfortable">
+   The bare [data-theme] selectors also let a subtree preview the other theme
+   (component sheet, settings previews). Screens use these variables only.
+   ========================================================================== */
+
+/* ---------- Theme-independent ---------- */
+:root {
+  /* Type */
+  --font-ui: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --fs-2xs: 10.5px;  /* key chips, counters */
+  --fs-xs: 11px;     /* status bar, meta, section labels */
+  --fs-sm: 12px;     /* tree, tabs, tables, buttons */
+  --fs-md: 13px;     /* body, inputs */
+  --fs-lg: 15px;     /* palette input, dialog titles */
+  --fs-xl: 18px;     /* page titles */
+  --fs-2xl: 22px;    /* vault name on unlock */
+  --fs-3xl: 28px;    /* welcome */
+  --lh-tight: 1.25;
+  --lh-ui: 1.45;
+  --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600;
+  --tracking-label: 0.06em;
+
+  /* Terminal type (user-configurable) */
+  --fs-term: 13px;
+  --lh-term: 1.5;
+
+  /* Spacing — 4 px scale */
+  --sp-0: 0;
+  --sp-0-5: 2px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+
+  /* Radius */
+  --radius-xs: 4px;   /* key chips, tags */
+  --radius-sm: 6px;   /* buttons, inputs, rows */
+  --radius-md: 8px;   /* cards, menus, popovers */
+  --radius-lg: 10px;  /* modals, window */
+  --radius-full: 999px;
+
+  /* Motion — restrained */
+  --dur-instant: 60ms;
+  --dur-fast: 120ms;   /* hover, press */
+  --dur-base: 180ms;   /* popover, tooltip, toast */
+  --dur-slow: 240ms;   /* drawer, sidebar collapse, SFTP panel */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Layout */
+  --titlebar-h: 38px;
+  --rail-w: 68px;           /* activity bar: icon + label */
+  --sidebar-w: 264px;       /* Hosts view default */
+  --sidebar-min: 200px;
+  --sidebar-max: 400px;
+  --sidebar-files-w: 340px; /* Files view default */
+  --sidebar-files-min: 200px;
+  --sidebar-files-max: 480px;
+  --tabbar-h: 36px;
+  --toolbar-h: 34px;
+  --statusbar-h: 26px;
+  --agent-panel-w: 380px;   /* right side reserved for the future agent activity panel */
+  --row-h: 26px;
+  --control-h: 34px;
+  --z-popover: 20; --z-modal: 30; --z-toast: 40; --z-tooltip: 50;
+}
+:root[data-density="compact"], [data-density="compact"] { --row-h: 22px; --control-h: 30px; --tabbar-h: 32px; --toolbar-h: 30px; }
+:root[data-density="comfortable"], [data-density="comfortable"] { --row-h: 30px; --control-h: 38px; --tabbar-h: 40px; --toolbar-h: 38px; }
+
+/* ---------- Dark (default) ---------- */
+:root, html[data-theme="dark"], [data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surface scale — back to front */
+  --surface-desk:    #08090A;  /* behind the window */
+  --surface-sunken:  #0B0C0E;  /* terminal, inputs, wells */
+  --surface-base:    #0E0F11;  /* window body */
+  --surface-chrome:  #131417;  /* title bar, rail, sidebar, tab bar, status bar */
+  --surface-raised:  #17181B;  /* cards, toolbars, table heads, footers */
+  --surface-hover:   #1E2024;
+  --surface-active:  #26292E;  /* selected row, pressed segment */
+  --surface-overlay: #1B1D21;  /* popover, menu, modal, drawer */
+
+  --border-subtle:  #1F2125;
+  --border-default: #2A2D33;
+  --border-strong:  #3A3D44;
+
+  --text-primary:   #E8E4DC;
+  --text-secondary: #A8A49C;
+  --text-tertiary:  #9A968E;
+  --text-disabled:  #5E5B56;
+  --text-on-accent: #1A0F06;
+  --text-on-danger: #1A0806;
+  --text-inverse:   #0E0F11;
+
+  /* Ember accent */
+  --accent:        #F29A52;
+  --accent-hover:  #F7AC6C;
+  --accent-press:  #E0863D;
+  --accent-text:   #F2B07A;
+  --accent-subtle: #2A1D12;
+  --accent-border: #6A4428;
+
+  /* Sapphire info + status */
+  --info: #78A9F2;    --info-subtle: #17223A;    --info-border: #2C4470;
+  --success: #7BC98F; --success-subtle: #16261B; --success-border: #2B5236;
+  --warning: #F2C46D; --warning-subtle: #2A2414; --warning-border: #5C4A1E;
+  --danger: #EE7A66;  --danger-hover: #F38F7D;   --danger-subtle: #2C1714; --danger-border: #5E2A22;
+
+  --focus-ring: 0 0 0 2px var(--surface-base), 0 0 0 4px rgba(242, 154, 82, 0.75);
+  --focus-glow: 0 0 0 3px rgba(242, 154, 82, 0.16);
+  --danger-glow: 0 0 0 3px rgba(238, 122, 102, 0.16);
+  --scrim: rgba(5, 6, 7, 0.62);
+  --pane-dim: rgba(11, 12, 14, 0.80);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.50), 0 0 0 1px rgba(0, 0, 0, 0.20);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.60), 0 0 0 1px rgba(0, 0, 0, 0.25);
+
+  /* Platform chrome */
+  --mac-close: #FF5F57; --mac-min: #FEBC2E; --mac-zoom: #28C840;
+
+  /* Logo facets */
+  --logo-hi: #4A4E56; --logo-mid: #3A3E45; --logo-base: #2E3137; --logo-low: #24272C;
+
+  /* Host / folder colours */
+  --tag-ember: #F29A52; --tag-sapphire: #78A9F2; --tag-moss: #7BC98F; --tag-iris: #C9A0EE;
+  --tag-rose: #EE8AA6;  --tag-sand: #D9C27A;     --tag-slate: #8F98A6;
+
+  /* Terminal */
+  --term-bg: #0B0C0E;
+  --term-fg: #D9D5CD;
+  --term-cursor: #F29A52;
+  --term-cursor-text: #0B0C0E;
+  --term-selection: rgba(120, 169, 242, 0.30);
+  --ansi-0:  #1A1C20;  /* black */
+  --ansi-1:  #EE7A66;  /* red */
+  --ansi-2:  #A3D17F;  /* green */
+  --ansi-3:  #F2C46D;  /* yellow */
+  --ansi-4:  #78A9F2;  /* blue */
+  --ansi-5:  #C9A0EE;  /* magenta */
+  --ansi-6:  #72CEC7;  /* cyan */
+  --ansi-7:  #C9C5BD;  /* white */
+  --ansi-8:  #8F8B84;  /* bright black */
+  --ansi-9:  #F59A89;  /* bright red */
+  --ansi-10: #BEE29D;  /* bright green */
+  --ansi-11: #F7D68E;  /* bright yellow */
+  --ansi-12: #9CC1F7;  /* bright blue */
+  --ansi-13: #DBBDF4;  /* bright magenta */
+  --ansi-14: #96DED8;  /* bright cyan */
+  --ansi-15: #F2EFE9;  /* bright white */
+}
+
+/* ---------- Light ---------- */
+html[data-theme="light"], [data-theme="light"] {
+  color-scheme: light;
+
+  --surface-desk:    #E4E0D9;
+  --surface-sunken:  #FBFAF7;
+  --surface-base:    #F6F4F0;
+  --surface-chrome:  #EEEBE5;
+  --surface-raised:  #FFFFFF;
+  --surface-hover:   #E7E3DC;
+  --surface-active:  #DED9D0;
+  --surface-overlay: #FFFFFF;
+
+  --border-subtle:  #E2DED6;
+  --border-default: #D3CEC4;
+  --border-strong:  #BDB7AB;
+
+  --text-primary:   #1C1B19;
+  --text-secondary: #4F4C46;
+  --text-tertiary:  #625E57;
+  --text-disabled:  #A39E95;
+  --text-on-accent: #1A0F06;
+  --text-on-danger: #FFFFFF;
+  --text-inverse:   #FBFAF7;
+
+  --accent:        #E8853A;
+  --accent-hover:  #EE9450;
+  --accent-press:  #D47328;
+  --accent-text:   #8F4515;
+  --accent-subtle: #FBE8D6;
+  --accent-border: #EDBB8F;
+
+  --info: #285FB5;    --info-subtle: #E3ECFA;    --info-border: #A9C3EC;
+  --success: #296F3F; --success-subtle: #E2F1E6; --success-border: #A3D0B0;
+  --warning: #8F6508; --warning-subtle: #FBF0D4; --warning-border: #E3C77E;
+  --danger: #B5392A;  --danger-hover: #A03224;   --danger-subtle: #FBE4DF; --danger-border: #EBA99C;
+
+  --focus-ring: 0 0 0 2px var(--surface-base), 0 0 0 4px rgba(212, 115, 40, 0.80);
+  --focus-glow: 0 0 0 3px rgba(232, 133, 58, 0.20);
+  --danger-glow: 0 0 0 3px rgba(194, 65, 46, 0.14);
+  --scrim: rgba(28, 27, 25, 0.36);
+  --pane-dim: rgba(251, 250, 247, 0.84);
+
+  --shadow-1: 0 1px 2px rgba(40, 30, 20, 0.10);
+  --shadow-popover: 0 12px 32px rgba(40, 30, 20, 0.14), 0 0 0 1px rgba(40, 30, 20, 0.06);
+  --shadow-modal: 0 24px 64px rgba(40, 30, 20, 0.20), 0 0 0 1px rgba(40, 30, 20, 0.08);
+
+  --logo-hi: #8C8F96; --logo-mid: #6E727A; --logo-base: #5A5E66; --logo-low: #474B52;
+
+  --tag-ember: #D9752A; --tag-sapphire: #2F6BC9; --tag-moss: #2E8B4E; --tag-iris: #8A4FC4;
+  --tag-rose: #C2456E;  --tag-sand: #A8861E;     --tag-slate: #5E6773;
+
+  --term-bg: #FBFAF7;
+  --term-fg: #2A2824;
+  --term-cursor: #D9752A;
+  --term-cursor-text: #FBFAF7;
+  --term-selection: rgba(47, 107, 201, 0.20);
+  --ansi-0:  #2A2824;
+  --ansi-1:  #C2412E;
+  --ansi-2:  #3F7D2A;
+  --ansi-3:  #8F6508;
+  --ansi-4:  #2F6BC9;
+  --ansi-5:  #8A4FC4;
+  --ansi-6:  #1F7F79;
+  --ansi-7:  #D3CEC4;
+  --ansi-8:  #6B675F;
+  --ansi-9:  #D9553F;
+  --ansi-10: #4F9636;
+  --ansi-11: #A87A12;
+  --ansi-12: #4683E0;
+  --ansi-13: #A266DB;
+  --ansi-14: #2A9A92;
+  --ansi-15: #F6F4F0;
+}
+
+/* ---------- Accent options (Settings → Appearance) ---------- */
+[data-accent="sapphire"] { --accent: #78A9F2; --accent-hover: #93BBF5; --accent-press: #5E94E8; --accent-text: #9CC1F7; --accent-subtle: #17223A; --accent-border: #2C4470; --term-cursor: #78A9F2; }
+[data-accent="moss"]     { --accent: #7BC98F; --accent-hover: #93D5A4; --accent-press: #63B678; --accent-text: #9AD8A9; --accent-subtle: #16261B; --accent-border: #2B5236; --term-cursor: #7BC98F; }
+[data-accent="iris"]     { --accent: #C9A0EE; --accent-hover: #D6B6F2; --accent-press: #B686E6; --accent-text: #D6B6F2; --accent-subtle: #241B30; --accent-border: #4E3A68; --term-cursor: #C9A0EE; }
+[data-theme="light"][data-accent="sapphire"] { --accent: #4683E0; --accent-hover: #5A92E6; --accent-press: #2F6BC9; --accent-text: #2558A8; --accent-subtle: #E3ECFA; --accent-border: #A9C3EC; --term-cursor: #2F6BC9; }
+[data-theme="light"][data-accent="moss"]     { --accent: #4FA068; --accent-hover: #60AE78; --accent-press: #3E8A56; --accent-text: #24693A; --accent-subtle: #E2F1E6; --accent-border: #A3D0B0; --term-cursor: #2E8B4E; }
+[data-theme="light"][data-accent="iris"]     { --accent: #A77AD6; --accent-hover: #B38BDC; --accent-press: #9264C8; --accent-text: #6E3BA6; --accent-subtle: #F0E6FA; --accent-border: #CFB5EA; --term-cursor: #8A4FC4; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-instant: 0ms; --dur-fast: 0ms; --dur-base: 0ms; --dur-slow: 0ms; }
+}

@@ -58,17 +58,30 @@ flint 0.0.0-dev
   sqlite     3.54.1 (SQLCipher 4.20.0 community)
 ```
 
+### The desktop app
+
+The app's page is a React project in `ui/`, so it also needs **Node.js** (20 or later).
+
+```sh
+scripts/build-gui.sh
+open build/Flint.app                         # macOS
+./build/Flint                                # Linux (the page is in build/ui)
+```
+
+The script builds the page with Vite, builds the `Flint` executable, and puts the page
+where the executable looks for it: `Flint.app/Contents/Resources/ui` on macOS, `build/ui`
+on Linux. On macOS it signs the bundle again ad hoc, because adding the page invalidates
+cfire's signature. On Linux the app also needs WebKitGTK (`libwebkit2gtk-4.1-dev`).
+
 ## 4. Run the tests
 
 ```sh
 scripts/test.sh
 ```
 
-The script runs the suites in `src/` and `spike/`. It starts a throwaway `sshd` on
-`127.0.0.1:2222`, with its own host key, user key and config in a temporary directory, so
-the SSH tests can open a real PTY. On macOS the spike test also opens the PTY in a hidden
-WebView and checks that the output reaches the terminal. It does not
-touch your system `sshd` or `~/.ssh`. To use another port, set `FLINT_TEST_SSH_PORT`.
+The script runs the suites in `src/`. It starts a throwaway `sshd` on `127.0.0.1:2222`,
+with its own host key, user key and config in a temporary directory, so the SSH tests can
+open a real PTY. It does not touch your system `sshd` or `~/.ssh`. To use another port, set `FLINT_TEST_SSH_PORT`.
 
 To run only the tests that need no network, call `cfire test src` (after
 `. scripts/env.sh`). The SSH tests then print `SKIP`. One test stores, reads and deletes a
@@ -86,6 +99,26 @@ It also checks that no password, key or passphrase appears in any output, and th
 hostname, user, label or note appears in clear text in the vault files. It removes its
 keychain entries when it finishes.
 
+The page's own unit tests (keyboard map, host tree, fuzzy search) run with Vitest:
+
+```sh
+cd ui && npm test
+```
+
+### The desktop app end to end
+
+```sh
+scripts/gui-e2e.sh
+```
+
+It builds the app and drives its real UI in a hidden WebView against the throwaway
+`sshd`s: creates a vault, adds a key and hosts, trusts a host key, types in the terminal,
+checks the PTY size, reconnects, connects through a jump host, meets a changed host key
+behind a TCP forwarder and replaces it, uses the palette and settings, then locks and
+unlocks. It also checks that no password reaches the page and that nothing from the vault
+is readable in its file. It uses its own config folder and `FLINT_KEYCHAIN=off`, so your
+keychain is not touched.
+
 ## Check the Linux build from macOS
 
 With Docker running:
@@ -94,12 +127,12 @@ With Docker running:
 scripts/linux-check.sh
 ```
 
-It builds a Debian image with cfire pinned to the same commit and the apt packages
-above, builds `flint` and the terminal spike, and runs the tests and the CLI end-to-end
-run twice: once against gnome-keyring on a private D-Bus session (keychain cache on), and
-once with no Secret Service at all (every command takes the master password). Then it
-opens the spike's real GTK window under Xvfb to check that SSH output reaches the
-terminal.
+It builds the page on the host (the image has no Node), then builds a Debian image with
+cfire pinned to the same commit and the apt packages above. Inside, it builds `flint` and
+the desktop app, and runs the tests and the CLI end-to-end run twice: once against
+gnome-keyring on a private D-Bus session (keychain cache on), and once with no Secret
+Service at all (every command takes the master password). Then it runs the desktop app's
+end-to-end check in the real GTK window under Xvfb.
 
 :::note
 cfire's prelude PCH does not match `-pthread`, which WebKitGTK requires, so a WebView

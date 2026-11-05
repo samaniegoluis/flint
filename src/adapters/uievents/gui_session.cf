@@ -40,6 +40,14 @@ fn gui_session_close(session_id: str) -> bool {
     return ok
 }
 
+// Closes every open session.
+fn gui_session_close_all() {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_gui::close_all();
+    }
+}
+
 // Removes a session's mailbox; called by the worker when the session has ended.
 fn gui_session_drop(session_id: str) {
     // CFIRE-UPSTREAM: CF-026
@@ -117,13 +125,28 @@ type SessionState struct {
     exit_code: i64 `json:"exit_code"`
 }
 
+// A local mirror of the domain's HostKeyQuestion: a field typed with another
+// package's struct can be emitted before that struct is complete (CF-033).
+type HostKeyPayload struct {
+    alias:             str `json:"alias"`
+    addr:              str `json:"addr"`
+    key_type:          str `json:"key_type"`
+    fingerprint:       str `json:"fingerprint"`
+    known_key_type:    str `json:"known_key_type"`
+    known_fingerprint: str `json:"known_fingerprint"`
+}
+
+fn host_key_payload(q: HostKeyQuestion) -> HostKeyPayload {
+    return HostKeyPayload{ alias: q.alias, addr: q.addr, key_type: q.key_type, fingerprint: q.fingerprint, known_key_type: q.known_key_type, known_fingerprint: q.known_fingerprint }
+}
+
 type SessionPrompt struct {
     session:  str             `json:"session"`
     prompt:   str             `json:"prompt"`
     kind:     str             `json:"kind"`
     user:     str             `json:"user"`
     alias:    str             `json:"alias"`
-    host_key: HostKeyQuestion `json:"host_key"`
+    host_key: HostKeyPayload  `json:"host_key"`
 }
 
 fn emit_session_state(mut app: webui.App, session_id: str, state: str, code: str, message: str, exit_code: i64) {
@@ -238,7 +261,7 @@ fn (self: GuiPrompter) ask(kind: str, user: str, alias: str, q: HostKeyQuestion)
         return error(coded(ERR_IO, "the session was closed"))
     }
     mut app := self.app
-    app.emit("session:prompt", SessionPrompt{ session: sid, prompt: prompt_id, kind: kind, user: user, alias: alias, host_key: q })
+    app.emit("session:prompt", SessionPrompt{ session: sid, prompt: prompt_id, kind: kind, user: user, alias: alias, host_key: host_key_payload(q) })
     mut got := ""
     wait := self.timeout_ms
     // CFIRE-UPSTREAM: CF-026
@@ -261,7 +284,7 @@ fn (self: GuiPrompter) prompt_host_key(q: HostKeyQuestion) -> bool! {
 
 fn (self: GuiPrompter) host_key_changed(q: HostKeyQuestion) {
     mut app := self.app
-    app.emit("session:prompt", SessionPrompt{ session: self.session, prompt: "", kind: "host_key_changed", user: "", alias: q.alias, host_key: q })
+    app.emit("session:prompt", SessionPrompt{ session: self.session, prompt: "", kind: "host_key_changed", user: "", alias: q.alias, host_key: host_key_payload(q) })
 }
 
 fn (self: GuiPrompter) prompt_password(user: str, alias: str) -> str! {

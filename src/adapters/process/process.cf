@@ -20,6 +20,27 @@ fn process_args() -> []str {
 }
 
 // Writes `s` to stderr as is (no newline added).
+// The folder of the running executable ("" when unknown): the GUI finds its page
+// next to it, or in the app bundle's Resources.
+fn executable_dir() -> str {
+    mut dir := ""
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        dir = flint_proc::executable_dir();
+    }
+    return dir
+}
+
+// "mac" or "linux": the keyboard map and window chrome differ (CF-031).
+fn os_name() -> str {
+    mut name := ""
+    // CFIRE-UPSTREAM: CF-031
+    cpp {
+        name = flint_proc::os_name();
+    }
+    return name
+}
+
 fn write_stderr(s: str) {
     // CFIRE-UPSTREAM: CF-024
     cpp {

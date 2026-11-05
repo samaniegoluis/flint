@@ -1,0 +1,143 @@
+---
+title: The desktop app
+description: Open or create a vault, browse your hosts, connect in tabs, and answer the prompts a connection can raise.
+---
+
+The desktop app reads and writes the same vault as the CLI. A host added in one shows up
+in the other, and a server key trusted in one is trusted in both.
+
+## First launch
+
+With no vault yet, Flint shows the welcome screen:
+
+- **Create a new vault**: a name, where to save the file, and a master password (at
+  least 8 characters). Put the file in a synced folder (iCloud Drive, Dropbox,
+  Syncthing) to use it on several machines.
+- **Open a vault file…**: pick an existing `.flint` file.
+
+After that, Flint reopens the last vault on every launch. If the OS keychain holds its
+key, the vault opens without a prompt; otherwise Flint asks for the master password. You
+can turn the reopening off in **Settings → Appearance → Window**.
+
+## The main window
+
+| Area | What it holds |
+|---|---|
+| Title bar | The vault and the active session; the command palette button |
+| Activity bar (left) | **Hosts**, **Keys**, **Credentials**, and **Settings** at the bottom. **Files** (SFTP) is coming in a later version |
+| Sidebar | The vault button (switch vaults), a filter, and your hosts in their groups |
+| Main area | One tab per session, the session toolbar and the terminal |
+| Status bar | Lock state, the number of open sessions, **Lock** |
+
+Click **Hosts** again (or press <kbd>⌘B</kbd>) to hide the sidebar and give the terminal
+the whole width. Below about 1040 px of window width the sidebar starts hidden and opens
+over the terminal.
+
+### The host tree
+
+- Double-click a host, or select it and press <kbd>↵</kbd>, to connect. If the host
+  already has an open tab, Flint switches to it; <kbd>⌘↵</kbd> always opens a new tab.
+- <kbd>↑</kbd> <kbd>↓</kbd> move, <kbd>←</kbd> <kbd>→</kbd> collapse and expand groups,
+  <kbd>⌘I</kbd> edits the selected host, <kbd>⌫</kbd> deletes it after a confirmation.
+- Right-click a host to connect, edit or delete it. Right-click a group for **New host
+  here**, **New subgroup**, **Rename** and **Delete** (only an empty group can be
+  deleted).
+- The filter matches aliases, labels, hostnames and tags.
+
+## Hosts, keys and credentials
+
+**New host** (<kbd>⌘N</kbd>) opens the host editor: alias, label, hostname and port,
+folder, authentication, user, jump host, tags, colour and notes. Authentication is one
+of:
+
+- **Credential**: a saved login shared by many hosts. The host's **User** field, when
+  set, overrides the credential's user.
+- **Key**: a key stored in the vault.
+- **Password**: saved in the vault, sealed. The editor never shows it back; leave the
+  field empty to keep it.
+- **Agent**: the keys in your SSH agent (`SSH_AUTH_SOCK`).
+
+Whatever the choice, Flint tries the methods in the [order the CLI
+uses](/guides/connecting/#how-flint-logs-in), then the agent, then asks for a password.
+
+**Keys** lists the vault's SSH keys with their type, fingerprint and how many hosts or
+credentials use them. **Add key** takes a pasted private key or a file, plus its
+passphrase if it has one. **Copy** puts the public key on the clipboard. A key or a
+credential that is in use cannot be deleted.
+
+**Credentials** lists your shared logins. Each one is a username plus a password, a key,
+or the agent.
+
+## Connecting
+
+A session opens in its own tab. While it connects, the tab shows a card over the
+terminal; other tabs keep working. When a background tab needs you, a toast names it and
+its shortcut.
+
+### A host Flint has not seen before
+
+Flint shows the server's address, key type and SHA-256 fingerprint. Compare it with one
+from the server's admin or console, then **Trust and connect**. The key is stored in the
+vault, so the CLI trusts it too. **Cancel** (<kbd>esc</kbd>) stops the connection.
+
+### A host whose key changed
+
+Flint stops before logging in and shows both fingerprints: the trusted one and the one
+presented now. Someone may be intercepting the connection; it also happens when a
+server is rebuilt. **Close session** is the default. To accept the new key, type the
+host's alias, then **Replace key and connect**: Flint forgets the old key (as
+`flint known-host rm` does) and asks you to verify the new one.
+
+### A password prompt
+
+When no saved method is accepted, Flint asks for the password once. It is used for that
+connection only; save it in the host editor to skip the prompt next time.
+
+### When a session ends
+
+The terminal and its scrollback stay. A card says why the session ended (the shell's
+exit status, a failed login, a lost connection) with **Reconnect** (<kbd>⌘R</kbd>), which
+keeps the scrollback. **Duplicate** (<kbd>⌘D</kbd>) opens another session to the same
+host.
+
+### The terminal
+
+The terminal is xterm.js with the Kitty keyboard protocol. Plain <kbd>Ctrl</kbd> chords
+always reach the shell; on Linux, Flint's own shortcuts use <kbd>Ctrl+Shift</kbd>. Copy
+and paste with <kbd>⌘C</kbd> <kbd>⌘V</kbd> on macOS and <kbd>Ctrl+Shift+C</kbd>
+<kbd>Ctrl+Shift+V</kbd> on Linux. Right-click copies the selection, or pastes when
+nothing is selected. <kbd>⌘+</kbd> <kbd>⌘−</kbd> <kbd>⌘0</kbd> change the font size of
+open sessions.
+
+## The command palette
+
+<kbd>⌘K</kbd> searches hosts, actions and vaults. <kbd>⌘P</kbd> (or <kbd>⌘T</kbd>)
+searches hosts only. <kbd>↵</kbd> opens the result, <kbd>⌘↵</kbd> opens a host in a new
+tab, <kbd>⌘I</kbd> edits it, and <kbd>Tab</kbd> moves between result groups.
+
+## Vaults
+
+The vault button at the top of the sidebar (<kbd>⇧⌘O</kbd>) lists your recent vaults,
+with **Open vault…**, **Create vault…** and **Manage vaults…**. Switching vaults closes
+the sessions of the current one. **Manage vaults** can forget a vault's cached key on
+this machine, or remove it from the list; the file itself is never deleted.
+
+**Lock** (<kbd>⌘L</kbd>) closes every session and returns to the unlock screen. The
+keychain still holds the key, so to require the master password on this machine, use
+**Settings → Vault → Forget on this device** (the same as `flint vault lock`).
+
+## Settings
+
+Settings belong to this machine, not to the vault, and save as you change them.
+
+- **Appearance**: dark, light or matching the system; the accent colour; row density;
+  whether to follow the system's reduce-motion setting; reopening the last vault.
+- **Terminal**: the font (any monospaced font installed on this machine, or the bundled
+  JetBrains Mono), size, line height and cursor.
+- **Keyboard shortcuts**: the full map for macOS and Linux. Custom shortcuts are coming
+  in a later version.
+- **Vault**: the open vault's file and counts, whether this machine remembers its key,
+  **Lock now**, and the known hosts, each of which you can forget.
+
+They are kept in `settings.json` in Flint's config folder (`~/Library/Application
+Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults list.

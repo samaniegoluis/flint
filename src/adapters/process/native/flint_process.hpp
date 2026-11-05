@@ -21,10 +21,14 @@
 #include <unistd.h>
 
 #if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <climits>
 extern "C" {
 int* _NSGetArgc(void);
 char*** _NSGetArgv(void);
 }
+#else
+#include <climits>
 #endif
 
 namespace flint_proc {
@@ -229,6 +233,34 @@ inline void write_fd(int fd, const std::string& s) {
         d += w;
         len -= static_cast<size_t>(w);
     }
+}
+
+// The folder holding the running executable, with symlinks resolved; "" on failure.
+inline std::string executable_dir() {
+    char buf[PATH_MAX];
+    std::string path;
+#if defined(__APPLE__)
+    uint32_t size = sizeof buf;
+    if (_NSGetExecutablePath(buf, &size) != 0) return "";
+    path = buf;
+#else
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
+    if (n <= 0) return "";
+    buf[n] = 0;
+    path = buf;
+#endif
+    char real[PATH_MAX];
+    if (realpath(path.c_str(), real)) path = real;
+    auto slash = path.rfind('/');
+    return slash == std::string::npos ? "" : path.substr(0, slash);
+}
+
+inline const char* os_name() {
+#if defined(__APPLE__)
+    return "mac";
+#else
+    return "linux";
+#endif
 }
 
 }  // namespace flint_proc

@@ -309,7 +309,10 @@ The entries below were found while building milestone 01 against cfire `3963814`
   → clang `'auto' in return type deduced as 'std::string' here but deduced as
   'unexpected<cfire::Error>' in earlier return statement`. `try` inside the closure fails
   the same way. Example `17-webui-studio` uses this pattern too.
-- **Workaround:** handlers return a `{ ok, detail }` struct (`spike/pty-webui/main.cf`).
+- **Workaround:** handlers return a `{ ok, detail }` struct (the M01 spike). Since M04 the
+  GUI binds with `bind_raw` and each closure is a single `return rpc_x(…)` call to a
+  named function returning `str!` (`src/drivers/gui/rpc.cf`); `bind_raw` lambdas hit the
+  same deduction error as soon as they mix `try` with a value.
 - **Ideal:** infer `T!` for closures that return `error(…)`, so the JS promise rejects.
 
 ### CF-028 · bug · `confirmed`: a placeholder `/index.html` shadows `serve_dir`
@@ -319,15 +322,16 @@ The entries below were found while building milestone 01 against cfire `3963814`
 - **Source:** the `AppState()` constructor puts a default `/index.html` into
   `embedded_assets`, and `resolve_asset` checks `embedded_assets` before `serve_dirs`.
 - **Workaround:** read the page and `set_html()` it; other assets still come from
-  `serve_dir` (`spike/pty-webui/main.cf`).
+  `serve_dir` (`src/drivers/gui/main.cf`).
 - **Ideal:** fall back to the placeholder only when no served directory has the file.
 
 ### CF-029 · bug · `confirmed`: `run_webview_test` is a no-op that returns `true` on Linux
 - **Source:** `runtime/core/webui.hpp`, `run_webview_test`: the body is
   `#if defined(__APPLE__) …`, and every other platform runs `return true;`. A headless
   WebView test therefore passes on Linux without loading the page.
-- **Workaround:** the spike test prints SKIP off macOS. `scripts/linux-check.sh` runs the
-  real GTK window under `xvfb-run` in self-test mode and checks for `selftest: pass`.
+- **Workaround:** on Linux the GUI end-to-end run (`scripts/gui-e2e.sh`) opens the real
+  GTK window with `app.run()` under `xvfb-run` and checks for `e2e: pass`
+  (`scripts/linux/inside.sh`).
 - **Ideal:** a WebKitGTK implementation (it can run under `xvfb-run`), or fail with "not
   supported on this platform" instead of passing.
 
@@ -526,3 +530,32 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Workaround:** `r := f()` then branch on `r.has_value()`.
 - **Ideal:** reject it with a cfire diagnostic, or lower `void! or _` to "ignore the
   error".
+
+### CF-048 · bug · `confirmed`: `x = f() or err { … }` ignores the `or` block
+- **Repro:** `mut content := ""` then `content = fs.read_text(path) or err { return
+  error("…") }`. The assignment lowers to `content = cfire::fs::read_text(path);` with
+  no unwrap and no error branch, and clang rejects assigning a
+  `std::expected<std::string, cfire::Error>` to a `std::string` (cfire 0.9.4). The
+  declaration form `text := … or err { … }` works.
+- **Workaround:** bind to a new name, then assign (`rpc_key_add` in
+  `src/drivers/gui/rpc.cf`).
+- **Ideal:** lower `or` the same way in assignments and declarations.
+
+### CF-049 · bug · `confirmed`: `ext:json` skips struct fields without a `json` tag
+- **Repro:** `type P struct { alias: str }`, then `json.parse[P]("{\"alias\":\"web\"}")`
+  gives `alias == ""`, and `json.stringify(P{ alias: "x" })` gives `{}` (cfire 0.9.4).
+  No error either way, so a request decodes to zero values silently.
+- **Workaround:** tag every field that crosses JSON (`HostPatch`, `CredPatch` in
+  `src/application`, for the GUI's RPC requests).
+- **Ideal:** default to the field name when there is no tag, as Go does, or reject the
+  type at compile time.
+
+### CF-050 · improvement · `confirmed`: the headless WebView runner throttles timers
+- **Repro:** in `run_webview_test`, a page that waits with `setTimeout(…, 50)` in a
+  loop slows to about one wake-up every several seconds after a while, because the
+  window is never shown and WebKit throttles a hidden page's timers (and never runs
+  `requestAnimationFrame`). A UI test that polls the DOM then looks hung.
+- **Workaround:** `scripts/gui-e2e.js` waits on `MessageChannel` posts, which are not
+  throttled.
+- **Ideal:** `run_webview_test` sets `WKPreferences.inactiveSchedulingPolicy = .none`
+  (macOS 14+) so the page runs as if visible.

@@ -1,0 +1,108 @@
+// The bridge to the GUI driver. `window.backend.<name>(params)` is webui's RPC proxy;
+// a rejected call carries the core's "code: message" text, split here into a
+// FlintError so the UI can branch on stable codes (D-018, D-019).
+
+import type {
+  AppInfo, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
+  KnownHostView, RecentView, Settings, VaultInfo, VaultStatus,
+} from './types';
+
+type Rpc = (params?: unknown) => Promise<unknown>;
+
+declare global {
+  interface Window {
+    backend: Record<string, Rpc>;
+    runtime: {
+      EventsOn(event: string, cb: (data: never) => void): () => void;
+      Quit(): void;
+    };
+  }
+}
+
+const CODES = [
+  'internal', 'usage', 'not_found', 'conflict', 'locked', 'wrong_password', 'invalid',
+  'unsupported', 'keychain', 'io', 'host_key', 'auth', 'network', 'timeout',
+];
+
+export class FlintError extends Error {
+  constructor(public code: string, message: string) {
+    super(message);
+  }
+}
+
+export function toFlintError(err: unknown): FlintError {
+  if (err instanceof FlintError) return err;
+  const text = err instanceof Error ? err.message : String(err);
+  for (const code of CODES) {
+    if (text.startsWith(code + ': ')) return new FlintError(code, text.slice(code.length + 2));
+  }
+  return new FlintError('internal', text);
+}
+
+export async function call<T>(method: string, params: unknown = {}): Promise<T> {
+  try {
+    return (await window.backend[method](params)) as T;
+  } catch (err) {
+    throw toFlintError(err);
+  }
+}
+
+export function on<T>(event: string, cb: (data: T) => void): () => void {
+  return window.runtime.EventsOn(event, cb as (data: never) => void);
+}
+
+export const api = {
+  appInfo: () => call<AppInfo>('app_info'),
+  windowTheme: (dark: boolean) => call('window_theme', { dark }),
+  dialogOpen: (title: string) => call<{ path: string }>('dialog_open', { title, default_name: '' }),
+  dialogSave: (title: string, defaultName: string) => call<{ path: string }>('dialog_save', { title, default_name: defaultName }),
+  settingsGet: () => call<Settings>('settings_get'),
+  settingsSet: (s: Settings) => call<Settings>('settings_set', s),
+  fonts: () => call<{ fonts: string[] }>('fonts_mono'),
+
+  recents: () => call<RecentView[]>('vault_recents'),
+  unlock: (path: string, password: string) => call<VaultInfo>('vault_unlock', { path, password }),
+  create: (path: string, name: string, password: string) => call<VaultInfo>('vault_create', { path, name, password }),
+  close: () => call('vault_close'),
+  forgetKey: (path: string) => call('vault_forget_key', { path }),
+  forget: (path: string) => call('vault_forget', { path }),
+  status: () => call<VaultStatus>('vault_status'),
+
+  catalog: () => call<Catalog>('catalog'),
+  groupAdd: (path: string) => call<GroupView>('group_add', { path }),
+  groupRename: (name: string, newName: string) => call<GroupView>('group_rename', { name, new_name: newName }),
+  groupRm: (path: string) => call<GroupView>('group_rm', { path }),
+  hostAdd: (p: HostPatch) => call<HostView>('host_add', p),
+  hostEdit: (target: string, p: HostPatch) => call<HostView>('host_edit', { ...p, target }),
+  hostRm: (name: string) => call<HostView>('host_rm', { name }),
+  keyAdd: (name: string, privateKey: string, file: string, passphrase: string) =>
+    call<KeyView>('key_add', { name, private_key: privateKey, file, passphrase }),
+  keyRename: (name: string, newName: string) => call<KeyView>('key_rename', { name, new_name: newName }),
+  keyRm: (name: string) => call<KeyView>('key_rm', { name }),
+  credAdd: (p: CredPatch) => call<CredView>('cred_add', p),
+  credEdit: (target: string, p: CredPatch) => call<CredView>('cred_edit', { ...p, target }),
+  credRm: (name: string) => call<CredView>('cred_rm', { name }),
+  knownHostRm: (name: string) => call<KnownHostView>('known_host_rm', { name }),
+
+  sessionOpen: (session: string, alias: string, cols: number, rows: number) =>
+    call('session_open', { session, alias, cols, rows, accept_new_host_key: false }),
+  sessionInput: (session: string, data: string) => call('session_input', { session, data }),
+  sessionResize: (session: string, cols: number, rows: number) => call('session_resize', { session, cols, rows }),
+  sessionAnswer: (session: string, prompt: string, ok: boolean, value: string) =>
+    call('session_answer', { session, prompt, ok, value }),
+  sessionClose: (session: string) => call('session_close', { session }),
+};
+
+export function emptyHostPatch(): HostPatch {
+  return {
+    alias: '', set_alias: false, label: '', set_label: false, hostname: '', set_hostname: false,
+    port: 22, set_port: false, user: '', set_user: false, group: '', set_group: false,
+    tags: [], set_tags: false, color: '', set_color: false, notes: '', set_notes: false,
+    jump: '', set_jump: false, credential: '', set_credential: false, key: '', set_key: false,
+    password: '', set_password: false,
+  };
+}
+
+export function emptyCredPatch(): CredPatch {
+  return { name: '', set_name: false, user: '', set_user: false, key: '', set_key: false, password: '', set_password: false };
+}

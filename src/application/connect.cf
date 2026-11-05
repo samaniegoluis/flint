@@ -19,15 +19,6 @@ fn default_connect_options() -> ConnectOptions {
     return ConnectOptions{ timeout_secs: SSH_CONNECT_TIMEOUT_SECS, accept_new_host_key: false }
 }
 
-// A known host as `known-host list` shows it.
-type KnownHostView struct {
-    addr:        str `json:"addr"`
-    host:        str `json:"host"`
-    key_type:    str `json:"key_type"`
-    fingerprint: str `json:"fingerprint"`
-    added_at:    str `json:"added_at"`
-}
-
 fn key_index_by_id(keys: []SshKey, id: str) -> i64 {
     for i, k in keys {
         if k.id == id {

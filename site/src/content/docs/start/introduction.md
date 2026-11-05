@@ -26,6 +26,7 @@ Flint is in early development. Here is what works today:
 | Encrypted vaults, keychain unlock, recent vaults | Works ([Vaults](/guides/vaults/)) |
 | Hosts, groups, keys, credentials from the CLI | Works ([CLI reference](/reference/cli/)) |
 | `flint connect` / `flint exec`, jump hosts, known hosts | Works ([Connecting](/guides/connecting/)) |
-| Desktop GUI | Planned |
+| Desktop app: vaults, host tree, tabs, terminal, prompts, palette, settings | Works ([The desktop app](/guides/desktop-app/)) |
+| SFTP, tunnels, splits | Planned |
 
 To try it, [build it from source](/start/build-from-source/).

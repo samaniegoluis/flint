@@ -6,53 +6,37 @@ package application
 import "../domain"
 import "../ports"
 
-// What a driver sees of a host. Secrets appear only as `has_password`.
-type HostView struct {
-    alias:        str   `json:"alias"`
-    label:        str   `json:"label"`
-    hostname:     str   `json:"hostname"`
-    port:         i64   `json:"port"`
-    user:         str   `json:"user"`
-    group:        str   `json:"group"`
-    tags:         []str `json:"tags"`
-    color:        str   `json:"color"`
-    notes:        str   `json:"notes"`
-    jump:         str   `json:"jump"`
-    credential:   str   `json:"credential"`
-    key:          str   `json:"key"`
-    has_password: bool  `json:"has_password"`
-}
-
 // Fields to set on a host. A `set_*` flag says the field was given; on `add`, the
 // fields not given keep their defaults. Empty reference names (group, jump,
-// credential, key) clear the reference. An empty password clears it.
+// credential, key) clear the reference. An empty password clears it. The JSON tags
+// are for the GUI's requests: ext:json skips untagged fields (CF-049).
 type HostPatch struct {
-    alias: str
-    set_alias: bool
-    label: str
-    set_label: bool
-    hostname: str
-    set_hostname: bool
-    port: i64
-    set_port: bool
-    user: str
-    set_user: bool
-    group: str
-    set_group: bool
-    tags: []str
-    set_tags: bool
-    color: str
-    set_color: bool
-    notes: str
-    set_notes: bool
-    jump: str
-    set_jump: bool
-    credential: str
-    set_credential: bool
-    key: str
-    set_key: bool
-    password: str
-    set_password: bool
+    alias: str `json:"alias"`
+    set_alias: bool `json:"set_alias"`
+    label: str `json:"label"`
+    set_label: bool `json:"set_label"`
+    hostname: str `json:"hostname"`
+    set_hostname: bool `json:"set_hostname"`
+    port: i64 `json:"port"`
+    set_port: bool `json:"set_port"`
+    user: str `json:"user"`
+    set_user: bool `json:"set_user"`
+    group: str `json:"group"`
+    set_group: bool `json:"set_group"`
+    tags: []str `json:"tags"`
+    set_tags: bool `json:"set_tags"`
+    color: str `json:"color"`
+    set_color: bool `json:"set_color"`
+    notes: str `json:"notes"`
+    set_notes: bool `json:"set_notes"`
+    jump: str `json:"jump"`
+    set_jump: bool `json:"set_jump"`
+    credential: str `json:"credential"`
+    set_credential: bool `json:"set_credential"`
+    key: str `json:"key"`
+    set_key: bool `json:"set_key"`
+    password: str `json:"password"`
+    set_password: bool `json:"set_password"`
 }
 
 fn empty_host_patch() -> HostPatch {

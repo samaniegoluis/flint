@@ -21,6 +21,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace flint_gui {
 
@@ -94,6 +95,24 @@ inline void drop_box(const std::string& id) {
     auto& r = registry();
     std::lock_guard<std::mutex> lock(r.mtx);
     r.boxes.erase(id);
+}
+
+// Closes every session (the vault was locked or switched).
+inline void close_all() {
+    std::vector<std::shared_ptr<Mailbox>> all;
+    {
+        auto& r = registry();
+        std::lock_guard<std::mutex> lock(r.mtx);
+        for (auto& kv : r.boxes) all.push_back(kv.second);
+    }
+    for (auto& box : all) {
+        {
+            std::lock_guard<std::mutex> lock(box->mtx);
+            box->closed = true;
+            wipe(box->answer);
+        }
+        box->cv.notify_all();
+    }
 }
 
 inline int open_count() {
