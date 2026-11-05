@@ -83,6 +83,18 @@ CREATE TABLE host_tags (
 );
 ` })
 
+    // 002: known hosts. One host key per address ("host" for port 22, "[host]:port"
+    // otherwise), recorded on first use and checked on every connect (milestone 03).
+    list.push(Migration{ version: 2, name: "known hosts", sql: `
+CREATE TABLE known_hosts (
+    addr TEXT PRIMARY KEY COLLATE NOCASE,
+    key_type TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    host_id TEXT REFERENCES hosts(id) ON DELETE SET NULL,
+    added_at TEXT NOT NULL
+);
+` })
+
     return list
 }
 
@@ -90,8 +102,7 @@ CREATE TABLE host_tags (
 fn (self: CipherDb) migrate() -> void! {
     // Bootstrap: the ledger itself is not a migration.
     try self.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
-    res := try self.query_cells("SELECT ifnull(max(version), 0) FROM schema_migrations;", [])
-    current := cell_i64(res.rows[0][0])
+    current := try self.schema_version()
     list := vault_migrations()
     if current > list[list.len() - 1].version {
         return error("unsupported: this vault was written by a newer Flint (schema {current})")
@@ -99,6 +110,17 @@ fn (self: CipherDb) migrate() -> void! {
     for m in list {
         if m.version > current {
             try self.exec("BEGIN IMMEDIATE;")
+            // Read again under the write lock: another Flint process opening the same
+            // vault may have applied this step while this one waited for the lock.
+            now := self.schema_version()
+            if !now.has_value() {
+                _ := self.exec("ROLLBACK;")
+                return error("io: migration {m.version} failed: {now.error().message()}")
+            }
+            if now.value() >= m.version {
+                try self.exec("COMMIT;")
+                continue
+            }
             applied := self.apply_migration(m)
             if !applied.has_value() {
                 _ := self.exec("ROLLBACK;")
@@ -107,6 +129,12 @@ fn (self: CipherDb) migrate() -> void! {
             try self.exec("COMMIT;")
         }
     }
+}
+
+// The highest migration applied to the open vault (0 for a new file).
+fn (self: CipherDb) schema_version() -> i64! {
+    res := try self.query_cells("SELECT ifnull(max(version), 0) FROM schema_migrations;", [])
+    return cell_i64(res.rows[0][0])
 }
 
 fn (self: CipherDb) apply_migration(m: Migration) -> void! {

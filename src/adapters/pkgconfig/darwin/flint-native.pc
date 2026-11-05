@@ -3,7 +3,8 @@
 # top-level cpp block, so the adapters' native headers and their link flags come
 # through pkg-config. scripts/env.sh puts this folder on PKG_CONFIG_PATH.
 Name: flint-native
-Description: Native shims for Flint's keychain and process adapters (macOS)
+Description: Native shims for Flint's keychain and process adapters (macOS). libssh is required for the SSH shim
 Version: 1
-Cflags: -I${pcfiledir}/../../keychain/native -I${pcfiledir}/../../process/native
+Requires: libssh
+Cflags: -I${pcfiledir}/../../keychain/native -I${pcfiledir}/../../process/native -I${pcfiledir}/../../ssh/native
 Libs: -framework Security -framework CoreFoundation

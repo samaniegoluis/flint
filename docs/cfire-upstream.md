@@ -373,7 +373,13 @@ The entries below were found while building milestone 02 against the same cfire 
   package's, so a field typed with another package's struct never compiles
   (`RecentFile { vaults: []RecentVault }` in `adapters/config`, `Catalog { groups:
   []Group }` in `application`).
-- **Workaround:** declare inner structs first; keep structs that hold another package's
+- **Across files of one package:** the file order is not stable either. `SshLink { hops:
+  []SshConn }` in `adapters/ssh/link.cf` compiled in the package's own tests and on
+  macOS, but in the full `flint` build on Linux `SshLink` came before `SshConn`
+  (`adapters/ssh/libssh.cf`). libc++ tolerates the incomplete `std::vector` element in a
+  default member initialiser; libstdc++ does not, so the bug can hide on macOS.
+- **Workaround:** declare inner structs first; declare a struct in the same file as the
+  struct types it holds (`SshLink` lives in `src/adapters/ssh/libssh.cf`); keep structs that hold another package's
   types in that package (`Catalog` lives in `src/domain/vault.cf`); hold a raw handle
   instead of a struct (`SqlVaultStore` in `src/adapters/vault/store.cf`); mirror types
   locally (`RecentEntry` in `src/adapters/config/recents.cf`).
@@ -421,6 +427,10 @@ The entries below were found while building milestone 02 against the same cfire 
   closing `` ` })``, every following line (the rest of the function and the next function)
   is indented one or two extra levels. The SQL itself is untouched and the code still
   compiles, but the layout is wrong.
+  Smaller (cfire 0.9.4): no struct is needed. Two calls `list.push(\`` +
+  `CREATE TABLE a (` / `    id TEXT` / `);` + `` `)`` in one function are enough; from
+  the second call on, every line gains one level, so the formatter appears to count the
+  `(` inside the raw string.
 - **Workaround:** Flint does not run `cfire fmt` on `migrations.cf`.
 - **Ideal:** the formatter treats a raw string literal as opaque when it tracks nesting.
 
@@ -446,3 +456,36 @@ The entries below were found while building milestone 02 against the same cfire 
   `src/adapters/ssh/keys_test.cf`.
 - **Ideal:** declare `extern char** environ;` at global scope, or use `::environ`
   from `<unistd.h>`.
+
+### CF-042 · missing · `confirmed`: no terminal raw mode, window size or signal handlers
+- **Repro:** an interactive SSH client needs to put stdin in raw mode (`cfmakeraw`),
+  restore it on exit or on SIGTERM/SIGHUP, read the window size (`TIOCGWINSZ`), learn
+  about resizes (SIGWINCH), and poll stdin with a timeout. `core:os` and `core:cli` have
+  none of these, and there is no way to install a signal handler.
+- **Workaround:** `src/adapters/process/native/flint_process.hpp` (`raw_enter`,
+  `raw_restore`, `window_size`, `take_winch`, `read_input`, `write_fd`), reached from
+  `StdioTerminal` in `src/adapters/process/process.cf`.
+- **Ideal:** a `core:term` module: `make_raw(fd) -> RawGuard` (restores on drop),
+  `size(fd) -> (cols, rows)`, `on_resize(fn)`, and `os.on_signal(sig, fn)`; plus
+  `poll(fds, timeout)` for byte streams.
+
+### CF-043 · missing · `confirmed`: no socketpair, poll or threads for a byte-stream bridge
+- **Repro:** a jump host is a libssh channel that must look like a socket to the next
+  libssh session (`SSH_OPTIONS_FD`). That takes a `socketpair`, a thread that `poll`s one
+  end and copies bytes to and from the channel under the session's mutex, and a join on
+  shutdown. cfire has no socketpair, no poll over raw fds, and its threads cannot be
+  stored in a struct and joined later (see CF-026 for the mutex half).
+- **Workaround:** `flint_ssh::open_tunnel` / `close_tunnel` in
+  `src/adapters/ssh/native/flint_ssh.hpp`, owned by `SshLink.tunnels`.
+- **Ideal:** `net.socketpair()`, `os.poll([]Fd, timeout_ms)`, and a joinable
+  `Thread` value type.
+
+### CF-044 · bug · `confirmed`: `assert_eq` against a slice literal does not compile
+- **Repro:** in a test, `mut xs: []str = []`, `xs.push("a")`, `assert_eq(xs, ["a"])`.
+  The literal lowers to a bare braced list (`{"a"}`), which cannot deduce the template
+  parameter of `cfire::assert_binop_at`: `no matching function for call to
+  'assert_binop_at'` (cfire 0.9.4).
+- **Workaround:** compare the length and then each element
+  (`src/application/connect_test.cf`, the host key preference checks).
+- **Ideal:** lower a slice literal in `assert_eq`/`assert_ne` to the type of the other
+  operand.

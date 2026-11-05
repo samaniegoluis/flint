@@ -7,8 +7,8 @@ description: Every flint command, flag, exit code and JSON shape.
 flint [--json] [--vault <name|path>] <command> [args] [flags]
 ```
 
-Flags can go anywhere on the line. `flint help` prints a summary. `flint connect` and
-`flint exec` arrive in the next milestone.
+Flags can go anywhere on the line, up to a bare `--`: what follows it is the remote
+command of `flint exec`. `flint help` prints a summary.
 
 ## Global flags
 
@@ -85,6 +85,21 @@ See [SSH keys](/guides/keys/).
 
 See [Credentials](/guides/credentials/).
 
+### SSH
+
+| Command | What it does |
+|---|---|
+| `connect <alias>` | Interactive shell, through the host's jump hosts. Exits with the remote shell's status |
+| `exec <alias> -- <command>` | Run one command. Streams its stdout and stderr and exits with its status |
+| `known-host list` | Every recorded server key |
+| `known-host rm <alias\|address>` | Forget a server key, so the next connect asks again |
+
+`connect` and `exec` take `--timeout <secs>` (connect and login, default 15),
+`--accept-new-host-key` (trust an unknown key without asking; a changed key is still
+refused), and `exec` takes `--exec-timeout <secs>` (default 600). With `--json`, `exec`
+prints `{host, exit_code, signal, stdout, stderr, duration_ms}` and `connect` prints
+`{host, exit_code}` after the session. See [Connecting](/guides/connecting/).
+
 ## Secrets
 
 Flint never takes a secret from a command-line argument or an environment variable, where
@@ -143,8 +158,17 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 8 | `unsupported` | The vault was written by a newer Flint |
 | 9 | `keychain` | The OS keychain refused an operation |
 | 10 | `io` | The vault or config file could not be read or written |
+| 11 | `host_key` | A server key is unknown and could not be confirmed, or it changed |
+| 12 | `auth` | The server accepted none of the auth methods |
+| 13 | `network` | A host could not be reached, or the connection dropped |
+| 14 | `timeout` | `flint exec` ran past `--exec-timeout` |
 
 The codes are stable: scripts can rely on them.
+
+`connect` and `exec` exit with the **remote** status once the command has run (255 for
+a signal), so a remote `exit 3` and a `not_found` error both exit 3. Use `--json` to
+tell them apart: a remote status comes with a JSON object on stdout, a Flint error with
+nothing on stdout and a JSON error on stderr.
 
 ## Environment
 
@@ -152,6 +176,8 @@ The codes are stable: scripts can rely on them.
 |---|---|
 | `FLINT_CONFIG_DIR` | Folder for the recent-vault list (see [Vaults](/guides/vaults/)) |
 | `FLINT_KEYCHAIN=off` | Never cache vault keys; always ask for the master password |
+| `SSH_AUTH_SOCK` | The SSH agent to try after the vault's keys and passwords |
+| `TERM` | The terminal type `flint connect` asks the server for (default `xterm-256color`) |
 
 ## `flint --version`
 

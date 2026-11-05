@@ -1,5 +1,7 @@
 package process
 
+import "../../ports"
+
 test "argv is readable outside main" {
     // The test runner is started with no extra arguments, or with the suite path.
     args := process_args()
@@ -9,4 +11,28 @@ test "argv is readable outside main" {
 test "stdin terminal detection does not crash" {
     _ := stdin_is_terminal()
     _ := has_terminal()
+}
+
+fn accepts_session_ports[P: Prompter, M: Terminal, O: ExecSink, K: Clock](p: P, mut m: M, mut o: O, mut k: K) -> bool {
+    return true
+}
+
+test "the session adapters satisfy their ports" {
+    mut term := new_stdio_terminal()
+    mut sink := new_stdio_exec_sink()
+    mut clock := new_system_clock()
+    assert(accepts_session_ports(new_tty_prompter(), mut term, mut sink, mut clock))
+}
+
+test "the clock moves forward" {
+    mut clock := new_system_clock()
+    a := clock.clock_now_ms()
+    b := clock.clock_now_ms()
+    assert(b >= a)
+    assert(a > 0)
+}
+
+test "a fresh terminal reports no pending resize" {
+    mut term := new_stdio_terminal()
+    assert(!term.term_take_resize())
 }

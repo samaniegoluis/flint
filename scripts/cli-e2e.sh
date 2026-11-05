@@ -9,9 +9,15 @@
 #
 # It uses its own config folder and temp vaults, and removes its keychain entries
 # with `vault lock` at the end. FLINT_KEYCHAIN=off is exercised as well.
+#
+# The SSH checks need the throwaway sshds and agent of scripts/test.sh, so the
+# script re-runs itself under it when they are not there.
 set -o pipefail  # no -u: macOS bash 3.2 treats an empty array as unset
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ -z "${FLINT_TEST_SSH_PORT:-}" ]]; then
+  FLINT_TEST_CMD="$root/scripts/cli-e2e.sh" exec "$root/scripts/test.sh"
+fi
 cd "$root"
 . "$root/scripts/env.sh"
 cfire build >/dev/null || { echo "cli-e2e: build failed" >&2; exit 1; }
@@ -30,6 +36,7 @@ CRED_PW="e2e-cred-password-77ab"
 PASSPHRASE="e2e-key-passphrase-5c2d"
 
 cleanup() {
+  [[ -n "${fwd_pid:-}" ]] && kill "$fwd_pid" 2>/dev/null
   for v in "$tmp"/*.flint; do
     [[ -f "$v" ]] && "$flint" --vault "$v" vault lock >/dev/null 2>&1
   done
@@ -168,18 +175,180 @@ check "nothing cached with the keychain off" '[[ "$(echo "$out" | json_get "d[\"
 FLINT_KEYCHAIN=off expect 5 "keychain off and no password: locked" "" -- --vault "$off" host list
 FLINT_KEYCHAIN=off expect 0 "keychain off with --master-stdin works" "$MASTER"$'\n' -- --vault "$off" host list --master-stdin
 
+echo "== ssh: exec, jump hosts, known hosts"
+P="$FLINT_TEST_SSH_PORT"; P2="$FLINT_TEST_SSH_PORT2"; P3=$((P2 + 1))
+sv="$tmp/ssh.flint"
+test_key_body="$(sed -n 2p "$FLINT_TEST_SSH_KEY")"
+expect 0 "ssh vault" "$MASTER"$'\n' -- vault create "$sv" --master-stdin
+if [[ "$cached" == "True" ]]; then SM=(); SMI=""; else SM=(--master-stdin); SMI="$MASTER"$'\n'; fi
+expect 0 "key add (test key)" "$SMI" -- key add tkey --file "$FLINT_TEST_SSH_KEY" "${SM[@]}"
+expect 0 "host add local" "$SMI" -- host add local --hostname 127.0.0.1 --port "$P" --user "$USER" --key tkey "${SM[@]}"
+expect 0 "host add inner behind local" "$SMI" -- host add inner --hostname 127.0.0.1 --port "$P2" --user "$USER" --key tkey --jump local "${SM[@]}"
+expect 11 "an unknown host key with no terminal fails with host_key" "$SMI" -- --json exec local "${SM[@]}" -- echo hi
+check "the host_key error is JSON with its code" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "host_key" ]]'
+check "the host_key error shows the fingerprint" '[[ "$err" == *"SHA256:"* ]]'
+expect 0 "exec with --accept-new-host-key" "$SMI" -- exec local --accept-new-host-key "${SM[@]}" -- echo e2e-exec-ok
+check "exec streams stdout" '[[ "$out" == "e2e-exec-ok" ]]'
+expect 3 "exec exits with the remote status" "$SMI" -- exec local "${SM[@]}" -- exit 3
+expect 4 "exec --json captures both streams and the status" "$SMI" -- --json exec local "${SM[@]}" -- 'echo out-line; echo err-line >&2; exit 4'
+check "exec --json stdout" '[[ "$(echo "$out" | json_get "d[\"stdout\"]")" == "out-line" ]]'
+check "exec --json stderr" '[[ "$(echo "$out" | json_get "d[\"stderr\"]")" == "err-line" ]]'
+check "exec --json exit_code" '[[ "$(echo "$out" | json_get "d[\"exit_code\"]")" == "4" ]]'
+expect 0 "flags after -- go to the remote command" "$SMI" -- exec local "${SM[@]}" -- echo --json -x
+check "the remote saw --json" '[[ "$out" == "--json -x" ]]'
+expect 0 "exec through a jump host" "$SMI" -- --json exec inner --accept-new-host-key "${SM[@]}" -- echo via-jump
+check "the jump host output arrived" '[[ "$(echo "$out" | json_get "d[\"stdout\"]")" == "via-jump" ]]'
+expect 255 "a signal exits 255" "$SMI" -- exec local "${SM[@]}" -- 'kill -TERM $$'
+expect 14 "exec past --exec-timeout fails with timeout" "$SMI" -- exec local --exec-timeout 1 "${SM[@]}" -- sleep 5
+expect 0 "known-host list" "$SMI" -- --json known-host list "${SM[@]}"
+check "both hosts are known" '[[ "$(echo "$out" | json_get "len(d)")" == "2" ]]'
+check "known hosts name their host" '[[ "$(echo "$out" | json_get "d[0][\"host\"]")" == "local" ]]'
+
+echo "== ssh: auth and network failures"
+expect 0 "host add with no key" "$SMI" -- host add bare --hostname 127.0.0.1 --port "$P" --user "$USER" "${SM[@]}"
+expect 0 "the agent authenticates a host with no key" "$SMI" -- exec bare --accept-new-host-key "${SM[@]}" -- true
+SSH_AUTH_SOCK= expect 12 "no key and no agent fails with auth" "$SMI" -- --json exec bare "${SM[@]}" -- true
+check "the auth error names what was tried" '[[ "$err" == *"SSH agent"* ]]'
+expect 0 "host add on a closed port" "$SMI" -- host add dead --hostname 127.0.0.1 --port 1 --user "$USER" "${SM[@]}"
+expect 13 "a closed port fails with network" "$SMI" -- exec dead --timeout 3 "${SM[@]}" -- true
+expect 0 "host add with no user" "$SMI" -- host add nouser --hostname 127.0.0.1 --port "$P" "${SM[@]}"
+expect 7 "a host with no user is invalid" "$SMI" -- exec nouser "${SM[@]}" -- true
+expect 2 "exec without -- is a usage error" "$SMI" -- exec local "${SM[@]}"
+expect 2 "connect without an alias is a usage error" "" -- connect
+expect 7 "a bad --timeout is invalid" "$SMI" -- exec local --timeout 0 "${SM[@]}" -- true
+expect 3 "exec on an unknown alias is not_found" "$SMI" -- exec nope "${SM[@]}" -- true
+
+echo "== ssh: a changed host key is refused"
+# A TCP forwarder on P3 that reaches whichever sshd $tmp/fwd_target names, so
+# one address can present two different host keys.
+cat > "$tmp/fwd.py" <<'PY'
+import socket, sys, threading
+listen, target_file = int(sys.argv[1]), sys.argv[2]
+srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(("127.0.0.1", listen)); srv.listen(8)
+def pipe(a, b):
+    try:
+        while True:
+            d = a.recv(65536)
+            if not d: break
+            b.sendall(d)
+    except OSError: pass
+    for s in (a, b):
+        try: s.shutdown(socket.SHUT_RDWR)
+        except OSError: pass
+while True:
+    c, _ = srv.accept()
+    u = socket.create_connection(("127.0.0.1", int(open(target_file).read())))
+    threading.Thread(target=pipe, args=(c, u), daemon=True).start()
+    threading.Thread(target=pipe, args=(u, c), daemon=True).start()
+PY
+echo "$P" > "$tmp/fwd_target"
+python3 -I "$tmp/fwd.py" "$P3" "$tmp/fwd_target" & fwd_pid=$!
+sleep 0.5
+expect 0 "host add behind the forwarder" "$SMI" -- host add moved --hostname 127.0.0.1 --port "$P3" --user "$USER" --key tkey "${SM[@]}"
+expect 0 "first contact records the key" "$SMI" -- exec moved --accept-new-host-key "${SM[@]}" -- true
+echo "$P2" > "$tmp/fwd_target"
+expect 11 "a changed key is refused, even with --accept-new-host-key" "$SMI" -- exec moved --accept-new-host-key "${SM[@]}" -- echo must-not-run
+check "the command did not run" '[[ "$out" != *"must-not-run"* ]]'
+check "the error says CHANGED" '[[ "$err" == *"CHANGED"* ]]'
+expect 0 "known-host rm forgets it" "$SMI" -- known-host rm moved "${SM[@]}"
+expect 3 "known-host rm again is not_found" "$SMI" -- known-host rm moved "${SM[@]}"
+expect 0 "after rm the new key is accepted" "$SMI" -- exec moved --accept-new-host-key "${SM[@]}" -- true
+kill "$fwd_pid" 2>/dev/null; wait "$fwd_pid" 2>/dev/null; fwd_pid=""
+
+echo "== ssh: interactive connect on a pseudo-terminal"
+expect 0 "host add for connect" "$SMI" -- host add tty --hostname localhost --port "$P" --user "$USER" --key tkey --jump local "${SM[@]}"
+cat > "$tmp/connect_tty.py" <<'PY'
+import fcntl, json, os, pty, select, struct, sys, termios, time
+flint, master, args = sys.argv[1], sys.argv[2], sys.argv[3:]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv(flint, [flint] + args)
+def setsize(rows, cols):
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+setsize(24, 80)
+buf = b""
+def pump(until, secs=20):
+    global buf
+    end = time.time() + secs
+    while time.time() < end:
+        r, _, _ = select.select([fd], [], [], 0.1)
+        if r:
+            try:
+                d = os.read(fd, 4096)
+            except OSError:
+                return False
+            if not d:
+                return False
+            buf += d
+            if until and until in buf[-4096:]:
+                return True
+    return False
+# Answer the host key and master password prompts, then wait for the shell:
+# typed-ahead input is flushed when Flint enters raw mode, so the marker command
+# is resent until its output shows up.
+prompted = answered_master = ready = False
+deadline = time.time() + 40
+while time.time() < deadline and not ready:
+    pump(None, 0.5)
+    if b"(yes/no)?" in buf and not prompted:
+        prompted = True
+        os.write(fd, b"yes\n")
+    elif b"Master password" in buf and not answered_master:
+        answered_master = True
+        os.write(fd, master.encode() + b"\n")
+    elif prompted:
+        os.write(fd, b"echo READY$((40+2))\n")
+        ready = pump(b"READY42", 2)
+os.write(fd, b"stty size\n"); size1 = pump(b"24 80")
+setsize(40, 100); time.sleep(0.5)
+os.write(fd, b"stty size; exit 6\n"); size2 = pump(b"40 100")
+pump(None, 10)
+_, status = os.waitpid(pid, 0)
+print(json.dumps({"prompted": prompted, "size1": size1, "size2": size2,
+                  "code": os.waitstatus_to_exitcode(status), "out": buf.decode(errors="replace")}))
+PY
+checks=$((checks + 1))
+pty_out="$(python3 -I "$tmp/connect_tty.py" "$flint" "$MASTER" --vault "$sv" connect tty 2>&1)"
+echo "$pty_out" >> "$all_out"
+if echo "$pty_out" | is_json; then echo "ok    connect ran on a pty"; else failures=$((failures + 1)); echo "FAIL  connect on a pty: $pty_out"; fi
+check "connect asked to trust the new host key" '[[ "$(echo "$pty_out" | json_get "d[\"prompted\"]")" == "True" ]]'
+check "the remote PTY started at 24x80" '[[ "$(echo "$pty_out" | json_get "d[\"size1\"]")" == "True" ]]'
+check "a local resize reached the remote PTY (40x100)" '[[ "$(echo "$pty_out" | json_get "d[\"size2\"]")" == "True" ]]'
+check "connect exits with the remote shell status" '[[ "$(echo "$pty_out" | json_get "d[\"code\"]")" == "6" ]]'
+expect 0 "the confirmed key was recorded" "$SMI" -- --json known-host list "${SM[@]}"
+check "localhost is now a known host" '[[ "$out" == *"[localhost]:$P"* ]]'
+
+if [[ -n "${FLINT_TEST_PW_PORT:-}" ]]; then
+  echo "== ssh: password and keyboard-interactive logins (root sshds, Linux check)"
+  LOGIN_PW="$FLINT_TEST_LOGIN_PW"
+  expect 0 "host add with a password" "$SMI$LOGIN_PW"$'\n' -- host add pw --hostname 127.0.0.1 --port "$FLINT_TEST_PW_PORT" --user flint --password-stdin "${SM[@]}"
+  expect 0 "password auth from the vault" "$SMI" -- exec pw --accept-new-host-key "${SM[@]}" -- echo pw-ok
+  check "the password login ran the command" '[[ "$out" == "pw-ok" ]]'
+  expect 0 "credential with the password" "$SMI$LOGIN_PW"$'\n' -- cred add login --user flint --password-stdin "${SM[@]}"
+  expect 0 "host add with the credential, kbd-interactive only" "$SMI" -- host add kbd --hostname 127.0.0.1 --port "$FLINT_TEST_KBD_PORT" --cred login "${SM[@]}"
+  expect 0 "keyboard-interactive auth with the credential password" "$SMI" -- exec kbd --accept-new-host-key "${SM[@]}" -- echo kbd-ok
+  check "the kbd-interactive login ran the command" '[[ "$out" == "kbd-ok" ]]'
+  expect 0 "host edit to a wrong password" "${SMI}wrong-password"$'\n' -- host edit pw --password-stdin "${SM[@]}"
+  SSH_AUTH_SOCK= expect 12 "a wrong stored password fails with auth" "$SMI" -- exec pw "${SM[@]}" -- true
+  check "the auth error names the host password, not its value" '[[ "$err" == *"host password"* && "$err" != *"wrong-password"* ]]'
+fi
+
 echo "== every --json output parses"
 expect 0 "version --json" "" -- --version --json
 check "version is JSON" 'echo "$out" | is_json'
 
 echo "== nothing secret or identifying leaks"
-for secret in "$MASTER" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "PRIVATE KEY"; do
+for secret in "$MASTER" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "$test_key_body" "PRIVATE KEY" ${FLINT_TEST_LOGIN_PW:+"$FLINT_TEST_LOGIN_PW"}; do
   check "CLI output never shows '${secret:0:24}…'" '! grep -aqF -- "$secret" "$all_out"'
 done
 for f in "$vault" "$work" "$off"; do
   for needle in "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "e2e-hostname-marker" "e2e-user-marker" "e2e-label-marker" "e2e-notes-marker" "e2e-group-marker" "e2e-cred-user" "10.20.30.40" "web-01" "Home Lab" "SQLite format 3" "CREATE TABLE"; do
     check "$(basename "$f") has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$f"'
   done
+done
+for needle in "127.0.0.1" "localhost" "$test_key_body" "inner" "SQLite format 3"; do
+  check "ssh.flint has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$sv"'
 done
 check "no journal or WAL file is left next to the vault" '! ls "$tmp"/*.flint-* >/dev/null 2>&1'
 

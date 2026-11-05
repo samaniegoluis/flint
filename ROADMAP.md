@@ -39,14 +39,20 @@ What Tether already does and Flint must not lose.
 | Feature | Status | Notes |
 |---|---|---|
 | `flint vault\|host\|key\|cred` CRUD, `--json` everywhere | `mvp` | |
-| `flint connect <alias>` (fuzzy picker when no alias given) | `mvp` | Picker part can slip to `next` |
+| `flint connect <alias>` | `mvp` | |
+| Fuzzy host picker when `flint connect` has no alias | `next` | Slipped from the MVP (milestone 03) |
 | `flint exec <alias> -- cmd` | `mvp` | |
+| `flint exec` forwards local stdin to the remote command (`cat file \| flint exec web -- 'cat > x'`) | `next` | Today stdin is closed at start (milestone 03) |
+| `flint exec --tty` / `connect -- <cmd>`: a command on a PTY | `idea` | |
+| Keepalives (`ServerAliveInterval`) for idle `flint connect` sessions | `next` | |
 | `flint exec @group -- cmd`: parallel fan-out, structured JSON per host | `next` | Great for agents and scripts |
 | `flint cp a:/path b:/path` (remote ↔ local ↔ remote, by alias) | `next` | |
 | `flint tunnel up\|down\|ls <name>` | `next` | |
 | `flint ssh-config export` / `ProxyCommand flint proxy %h` so native `ssh` and `scp` resolve aliases | `later` | |
 | Shell completions (zsh, bash, fish) | `next` | |
 | Auto-detect an encrypted key in `flint key add` and prompt for its passphrase | `idea` | Today `--passphrase` must be given |
+| Known hosts behind different jump hosts with the same address (two `10.0.0.12`) share one record: key them by jump chain + address, like OpenSSH's `HostKeyAlias` | `later` | Found in the milestone 02/03 owner review; needs a migration |
+| `flint vault status` says why a vault is locked: `locked (keychain access denied)` after a Keychain Deny | `next` | Today a denied read looks like no cached key (D-020) |
 
 ## 3. Agents & security (the differentiator)
 
@@ -83,6 +89,7 @@ What Tether already does and Flint must not lose.
 | `flint serve`: daemon holding live sessions over a local socket. GUI, CLI and MCP become clients | `later` | Enables shared sessions, a persistent agent and tunnels |
 | `flint attach`: attach the CLI to a session open in the GUI, and vice versa | `later` | Needs the daemon |
 | Rewrite native shims in pure cfire as `CF-NNN` entries land | ongoing | See `docs/cfire-upstream.md` |
+| Wipe key material from memory: the master, page and secrets keys when a session ends, and decrypted secrets once libssh has them (`sodium_memzero`) | `next` | Found in the milestone 02/03 owner review; only the hex `PRAGMA key` text is zeroed today |
 
 ## 6. UI
 
@@ -103,7 +110,7 @@ What Tether already does and Flint must not lose.
 |---|---|---|
 | macOS + Linux | `mvp` | |
 | Windows | `later` | Blocked on CF-001 (WebView2) and CF-010 (POSIX runtime) |
-| Signed macOS `.app`, Linux AppImage/tarball, Homebrew tap | `next` | |
+| Signed macOS `.app`, Linux AppImage/tarball, Homebrew tap | `next` | A stable Developer ID signature also stops the Keychain prompt after every update (D-020) |
 | Bundle libssh, libsodium, SQLCipher and libcrypto into the `.app` (rpath fix-up) or link them statically | `next` | Today they are dynamic system packages (D-015); a release cannot rely on Homebrew being installed |
 | Public landing + docs site deployed | `next` | The site itself is built from milestone 01 |
 | Docs site and landing adopt Flint's visual identity (palette, type, logo) from the Claude Design screens (D-011) | `next` | Milestone 01 ships the stock Starlight theme on purpose |

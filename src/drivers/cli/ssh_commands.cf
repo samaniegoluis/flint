@@ -1,0 +1,128 @@
+package main
+
+// `flint connect`, `flint exec` and `flint known-host`. Each handler parses its
+// flags, calls one use case and formats the result (Principle 2). `connect` and
+// `exec` return the remote exit status, which becomes Flint's own (as with ssh).
+
+import "core:os"
+import "ext:json"
+import "../../adapters/config"
+import "../../adapters/crypto"
+import "../../adapters/keychain"
+import "../../adapters/process"
+import "../../adapters/ssh"
+import "../../adapters/vault"
+import "../../application"
+import "../../domain"
+
+type SessionEnd struct {
+    host:      str `json:"host"`
+    exit_code: i64 `json:"exit_code"`
+}
+
+type ForgottenKey struct {
+    removed:     str `json:"removed"`
+    addr:        str `json:"addr"`
+    fingerprint: str `json:"fingerprint"`
+}
+
+fn connect_options(p: ParsedArgs) -> ConnectOptions! {
+    mut opts := default_connect_options()
+    if p.has_flag("--timeout") {
+        opts.timeout_secs = try parse_seconds_flag("--timeout", p.flag_value("--timeout"))
+    }
+    opts.accept_new_host_key = p.has_flag("--accept-new-host-key")
+    return opts
+}
+
+// A remote exit status as a process exit code: 0-255 as is, a signal as 255.
+fn process_exit_code(code: i64) -> i32 {
+    if code < 0 || code > 255 {
+        return 255
+    }
+    return i32(code)
+}
+
+// The remote command: the words after `--`, joined by spaces, as ssh does. The
+// remote shell parses it.
+fn remote_command(p: ParsedArgs) -> str {
+    mut cmd := ""
+    for i, w in p.rest {
+        if i > 0 {
+            cmd = cmd + " "
+        }
+        cmd = cmd + w
+    }
+    return cmd
+}
+
+fn cmd_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> i32! {
+    try p.allow_flags("connect", ["--timeout", "--accept-new-host-key"])
+    if p.positionals.len() != 2 || p.has_rest {
+        return error(coded(ERR_USAGE, "usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key]"))
+    }
+    opts := try connect_options(p)
+    alias := p.positional(1)
+    mut term_name := os.getenv("TERM")
+    if term_name.len() == 0 {
+        term_name = "xterm-256color"
+    }
+    s := try open_target(p, sec, c, mut store, kc, recents)
+    mut link := new_ssh_link()
+    mut term := new_stdio_terminal()
+    code := try connect_host(c, mut store, s, mut link, new_tty_prompter(), mut term, alias, term_name, opts)
+    if as_json {
+        say(json.stringify(SessionEnd{ host: alias, exit_code: code }))
+    }
+    return process_exit_code(code)
+}
+
+fn cmd_exec(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> i32! {
+    try p.allow_flags("exec", ["--timeout", "--exec-timeout", "--accept-new-host-key"])
+    if p.positionals.len() != 2 || !p.has_rest || p.rest.len() == 0 {
+        return error(coded(ERR_USAGE, "usage: flint exec <alias> [--timeout <secs>] [--exec-timeout <secs>] -- <command>"))
+    }
+    opts := try connect_options(p)
+    mut exec_timeout := SSH_EXEC_TIMEOUT_SECS
+    if p.has_flag("--exec-timeout") {
+        exec_timeout = try parse_seconds_flag("--exec-timeout", p.flag_value("--exec-timeout"))
+    }
+    s := try open_target(p, sec, c, mut store, kc, recents)
+    mut link := new_ssh_link()
+    mut sink := new_stdio_exec_sink()
+    mut clock := new_system_clock()
+    res := try exec_on_host(c, mut store, s, mut link, new_tty_prompter(), mut sink, mut clock, p.positional(1), remote_command(p), opts, exec_timeout, as_json)
+    if as_json {
+        say(json.stringify(res))
+    }
+    return process_exit_code(res.exit_code)
+}
+
+fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+    verb := p.positional(1)
+    if verb == "list" {
+        try p.allow_flags("known-host list", [])
+        try p.expect_args("known-host list", 0, "")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        list := try list_known_hosts(store)
+        if as_json {
+            say(json.stringify(list))
+        } else {
+            print_known_hosts(list)
+        }
+        return
+    }
+    if verb == "rm" {
+        try p.allow_flags("known-host rm", [])
+        try p.expect_args("known-host rm", 1, "<alias|address>")
+        _ := try open_target(p, sec, c, mut store, kc, recents)
+        k := try remove_known_host(mut store, p.positional(2))
+        if as_json {
+            say(json.stringify(ForgottenKey{ removed: "known-host", addr: k.addr, fingerprint: k.fingerprint }))
+        } else {
+            say("Forgot the host key of {k.addr} ({k.key_type} {k.fingerprint}). The next connect will ask again.")
+        }
+        return
+    }
+    return error(coded(ERR_USAGE, "unknown command `flint known-host {verb}`; see `flint help`"))
+}

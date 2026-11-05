@@ -47,6 +47,9 @@ type VaultStore interface {
     creds_all() -> []Credential!
     cred_put(c: Credential) -> void!
     cred_drop(id: str) -> void!
+    known_hosts_all() -> []KnownHost!
+    known_host_put(k: KnownHost) -> void!
+    known_host_drop(addr: str) -> void!
 }
 
 // The OS keychain (adapters/keychain). Holds one master key per vault, by account.
@@ -79,4 +82,55 @@ type ShellSession interface {
 type EventSink interface {
     terminal_output(session_id: str, data: str)
     terminal_closed(session_id: str, reason: str)
+}
+
+// An SSH connection chain (adapters/ssh, libssh). `link_dial` opens the first hop
+// directly and every later hop through a tunnel over the previous one; the other
+// calls act on the last hop. Each blocking call is bounded by the dial timeout
+// (Principle 8). Errors carry `network`, `auth` or `host_key` codes.
+// `host_key_algos` ("" for the library defaults) is the domain's
+// `preferred_host_key_algos` for the hop being dialled.
+// One channel at a time: a shell (PTY) or an exec.
+type SshTransport interface {
+    link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void!
+    link_server_key() -> ServerKey!
+    link_auth_key(private_key: str, passphrase: str) -> void!
+    link_auth_password(password: str) -> void!
+    link_auth_agent() -> void!
+    link_shell_open(term: str, cols: i32, rows: i32) -> void!
+    link_exec_start(command: str) -> void!
+    link_channel_read(timeout_ms: i32) -> ExecChunk!
+    link_channel_write(data: str) -> void!
+    link_channel_resize(cols: i32, rows: i32) -> void!
+    link_hangup()
+}
+
+// Asking the person at the terminal (adapters/process). `prompt_available` is false
+// when there is no controlling terminal; the other calls then fail.
+type Prompter interface {
+    prompt_available() -> bool
+    prompt_confirm(question: str) -> bool!
+    prompt_password(label: str) -> str!
+}
+
+// The local terminal of an interactive session (adapters/process): raw mode,
+// keystrokes in, remote bytes out, and window resizes.
+type Terminal interface {
+    term_size() -> TerminalSize
+    term_raw_enter() -> void!
+    term_raw_leave()
+    term_input(timeout_ms: i32) -> str!
+    term_output(data: str)
+    term_take_resize() -> bool
+}
+
+// Where a streaming exec writes the remote stdout and stderr (adapters/process).
+type ExecSink interface {
+    exec_stdout(data: str)
+    exec_stderr(data: str)
+}
+
+// Monotonic milliseconds, for timeouts and durations (adapters/process).
+type Clock interface {
+    clock_now_ms() -> i64
 }

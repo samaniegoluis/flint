@@ -58,6 +58,13 @@ Credentials
   cred edit <name> [--name N] [--user U] [--key K] [--password | --password-stdin | --no-password]
   cred list | cred show <name> | cred rm <name>
 
+SSH
+  connect <alias> [--timeout <secs>] [--accept-new-host-key]
+                                        Interactive shell, through jump hosts
+  exec <alias> [--timeout <secs>] [--exec-timeout <secs>] [--accept-new-host-key]
+       -- <command>                     Run one command; exits with its status
+  known-host list | known-host rm <alias|address>
+
 Global flags
   --json            Write JSON to stdout (errors as JSON to stderr)
   --vault <v>       Use this vault instead of the current one
@@ -86,20 +93,26 @@ fn print_version(as_json: bool) {
     say("  sqlite     {info.sqlite}")
 }
 
-fn run_cli(p: ParsedArgs, as_json: bool) -> void! {
+// Runs one command. Returns the process exit status: 0, or the remote status of
+// `connect` and `exec`.
+fn run_cli(p: ParsedArgs, as_json: bool) -> i32! {
     if p.has_flag("--version") || p.has_flag("-V") {
         print_version(as_json)
-        return
+        return 0
     }
     noun := p.positional(0)
     if noun.len() == 0 || noun == "help" || p.has_flag("--help") || p.has_flag("-h") {
         write_stdout(usage_text())
-        return
+        return 0
     }
-    if noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" {
+    session_noun := noun == "connect" || noun == "exec"
+    if !session_noun && noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" && noun != "known-host" {
         return error(coded(ERR_USAGE, "unknown command '{noun}'; see `flint help`"))
     }
     if p.positional(1).len() == 0 {
+        if session_noun {
+            return error(coded(ERR_USAGE, "`flint {noun}` needs a host alias; see `flint help`"))
+        }
         return error(coded(ERR_USAGE, "`flint {noun}` needs a command; see `flint help`"))
     }
     sec := try read_stdin_secrets(p)
@@ -107,28 +120,45 @@ fn run_cli(p: ParsedArgs, as_json: bool) -> void! {
     mut store := new_sql_vault_store()
     kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
     recents := new_json_recent_store(flint_config_dir())
-    mut result: void! = {}
-    if noun == "vault" {
-        result = cmd_vault(p, sec, as_json, c, mut store, kc, recents)
-    } else if noun == "group" {
-        result = cmd_group(p, sec, as_json, c, mut store, kc, recents)
-    } else if noun == "host" {
-        result = cmd_host(p, sec, as_json, c, mut store, kc, recents)
-    } else if noun == "key" {
-        result = cmd_key(p, sec, as_json, c, mut store, kc, recents, new_libssh_key_inspector())
+    mut status: i32! = 0
+    if noun == "connect" {
+        status = cmd_connect(p, sec, as_json, c, mut store, kc, recents)
+    } else if noun == "exec" {
+        status = cmd_exec(p, sec, as_json, c, mut store, kc, recents)
     } else {
-        result = cmd_cred(p, sec, as_json, c, mut store, kc, recents)
+        mut result: void! = {}
+        if noun == "vault" {
+            result = cmd_vault(p, sec, as_json, c, mut store, kc, recents)
+        } else if noun == "group" {
+            result = cmd_group(p, sec, as_json, c, mut store, kc, recents)
+        } else if noun == "host" {
+            result = cmd_host(p, sec, as_json, c, mut store, kc, recents)
+        } else if noun == "key" {
+            result = cmd_key(p, sec, as_json, c, mut store, kc, recents, new_libssh_key_inspector())
+        } else if noun == "known-host" {
+            result = cmd_known_host(p, sec, as_json, c, mut store, kc, recents)
+        } else {
+            result = cmd_cred(p, sec, as_json, c, mut store, kc, recents)
+        }
+        if !result.has_value() {
+            status = error("{result.error().message()}")
+        }
     }
     store.vault_detach()
-    return result
+    return status
 }
 
 fn main() {
     args := process_args()
     // Decide the error format before parsing, so a parse error honours --json.
+    // Stop at `--`: what follows is a remote command, not Flint's flags.
     mut as_json := false
+    mut in_rest := false
     for a in args {
-        if a == "--json" {
+        if a == "--" {
+            in_rest = true
+        }
+        if a == "--json" && !in_rest {
             as_json = true
         }
     }
@@ -140,5 +170,9 @@ fn main() {
     done := run_cli(parsed.value(), as_json)
     if !done.has_value() {
         fail_with("{done.error().message()}", as_json)
+        return
+    }
+    if done.value() != 0 {
+        exit_process(done.value())
     }
 }

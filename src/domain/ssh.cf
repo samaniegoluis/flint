@@ -1,0 +1,130 @@
+package domain
+
+// SSH connection model: known host keys, the auth plan for one hop, and what an
+// exec returns. Plain types and rules, no I/O (Principle 1).
+
+// Default timeouts (Principle 8). Every dial, auth and exec is bounded.
+var SSH_CONNECT_TIMEOUT_SECS: i64 = 15
+var SSH_EXEC_TIMEOUT_SECS: i64 = 600
+
+// A recorded server host key. One per address: a key of another type at the same
+// address counts as a changed key.
+type KnownHost struct {
+    addr: str
+    key_type: str
+    fingerprint: str
+    host_id: str
+    added_at: str
+}
+
+// What a server presented during the handshake.
+type ServerKey struct {
+    key_type: str
+    fingerprint: str
+}
+
+// The outcome of checking a server key against the known hosts.
+var HOST_KEY_KNOWN: str = "known"
+var HOST_KEY_NEW: str = "new"
+var HOST_KEY_CHANGED: str = "changed"
+
+// One way to authenticate, tried in order. `kind` is "key", "password" or "agent".
+// `source` says where the secret lives ("host" or "credential") and `ref_id` the row
+// that holds it (a key id for "key", a host or credential id for "password").
+type AuthStep struct {
+    kind: str
+    source: str
+    ref_id: str
+}
+
+// The result of a remote command. `exit_code` is -1 when the command died by a
+// signal (then `signal` names it, e.g. "TERM").
+type ExecResult struct {
+    host:        str `json:"host"`
+    exit_code:   i64 `json:"exit_code"`
+    signal:      str `json:"signal"`
+    stdout:      str `json:"stdout"`
+    stderr:      str `json:"stderr"`
+    duration_ms: i64 `json:"duration_ms"`
+}
+
+// One read from a running exec channel.
+type ExecChunk struct {
+    stdout: str
+    stderr: str
+    done: bool
+    exit_code: i64
+    signal: str
+}
+
+// The known_hosts address of a host: "name" on port 22, "[name]:port" otherwise,
+// lower-cased (DNS names are case-insensitive).
+fn known_host_addr(hostname: str, port: i64) -> str {
+    mut name := ""
+    for b in hostname.bytes() {
+        c := u8(b)
+        if c >= 65 && c <= 90 {
+            name = name + byte_to_str(c + 32)
+        } else {
+            name = name + byte_to_str(c)
+        }
+    }
+    if port == 22 {
+        return name
+    }
+    return "[" + name + "]:" + "{port}"
+}
+
+// Compares a presented key with the record for its address (if any).
+fn check_server_key(known: []KnownHost, addr: str, key: ServerKey) -> str {
+    for k in known {
+        if k.addr == addr {
+            if k.key_type == key.key_type && k.fingerprint == key.fingerprint {
+                return HOST_KEY_KNOWN
+            }
+            return HOST_KEY_CHANGED
+        }
+    }
+    return HOST_KEY_NEW
+}
+
+// The host key algorithms to negotiate first for `addr`, in libssh's "^list" form
+// (prepend to the defaults), or "" when no key is recorded for it. A server with
+// several host keys then presents the type that was trusted, as OpenSSH does,
+// instead of whichever type the client library happens to prefer (D-022).
+fn preferred_host_key_algos(known: []KnownHost, addr: str) -> str {
+    for k in known {
+        if k.addr == addr && k.key_type.len() > 0 {
+            if k.key_type == "ssh-rsa" {
+                // An RSA key is negotiated with SHA-2 signatures; SHA-1 ssh-rsa stays off.
+                return "^rsa-sha2-512,rsa-sha2-256"
+            }
+            return "^" + k.key_type
+        }
+    }
+    return ""
+}
+
+test "known host addresses follow the OpenSSH form" {
+    assert_eq(known_host_addr("Web.Example.org", 22), "web.example.org")
+    assert_eq(known_host_addr("10.0.0.5", 2222), "[10.0.0.5]:2222")
+}
+
+test "a recorded key type is negotiated first" {
+    known: []KnownHost = [
+        KnownHost{ addr: "web", key_type: "ecdsa-sha2-nistp256", fingerprint: "SHA256:aaa", host_id: "", added_at: "" },
+        KnownHost{ addr: "[old]:2222", key_type: "ssh-rsa", fingerprint: "SHA256:bbb", host_id: "", added_at: "" },
+    ]
+    assert_eq(preferred_host_key_algos(known, "web"), "^ecdsa-sha2-nistp256")
+    assert_eq(preferred_host_key_algos(known, "[old]:2222"), "^rsa-sha2-512,rsa-sha2-256")
+    assert_eq(preferred_host_key_algos(known, "db"), "")
+}
+
+test "a server key is known, new or changed" {
+    rec := KnownHost{ addr: "web", key_type: "ssh-ed25519", fingerprint: "SHA256:aaa", host_id: "", added_at: "" }
+    known: []KnownHost = [rec]
+    assert_eq(check_server_key(known, "web", ServerKey{ key_type: "ssh-ed25519", fingerprint: "SHA256:aaa" }), "known")
+    assert_eq(check_server_key(known, "web", ServerKey{ key_type: "ssh-ed25519", fingerprint: "SHA256:bbb" }), "changed")
+    assert_eq(check_server_key(known, "web", ServerKey{ key_type: "ecdsa-sha2-nistp256", fingerprint: "SHA256:aaa" }), "changed")
+    assert_eq(check_server_key(known, "db", ServerKey{ key_type: "ssh-ed25519", fingerprint: "SHA256:aaa" }), "new")
+}

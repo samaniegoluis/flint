@@ -1,0 +1,422 @@
+package application
+
+// SSH use cases: resolve a host's jump chain and auth plan from the vault, verify
+// every server key against the known hosts, authenticate each hop, then run an
+// interactive shell or a command.
+//
+// Secrets are opened here, just before they are handed to the transport, and go
+// nowhere else (Principle 6). Every network step is bounded (Principle 8).
+
+import "../domain"
+import "../ports"
+
+type ConnectOptions struct {
+    timeout_secs: i64
+    accept_new_host_key: bool
+}
+
+fn default_connect_options() -> ConnectOptions {
+    return ConnectOptions{ timeout_secs: SSH_CONNECT_TIMEOUT_SECS, accept_new_host_key: false }
+}
+
+// A known host as `known-host list` shows it.
+type KnownHostView struct {
+    addr:        str `json:"addr"`
+    host:        str `json:"host"`
+    key_type:    str `json:"key_type"`
+    fingerprint: str `json:"fingerprint"`
+    added_at:    str `json:"added_at"`
+}
+
+fn key_index_by_id(keys: []SshKey, id: str) -> i64 {
+    for i, k in keys {
+        if k.id == id {
+            return i64(i)
+        }
+    }
+    return -1
+}
+
+fn cred_index_by_id(creds: []Credential, id: str) -> i64 {
+    for i, c in creds {
+        if c.id == id {
+            return i64(i)
+        }
+    }
+    return -1
+}
+
+// ---- Planning (pure) -------------------------------------------------------------
+
+// The hops to dial, outermost jump host first and `target` last.
+fn jump_chain(cat: Catalog, target: Host) -> []Host! {
+    mut rev: []Host = [target]
+    mut cur := target.jump_host_id
+    for cur.len() > 0 {
+        if rev.len() > cat.hosts.len() {
+            return error(coded(ERR_INVALID, "the jump hosts of '{target.alias}' make a loop"))
+        }
+        idx := host_index_by_id(cat.hosts, cur)
+        if idx < 0 {
+            return error(coded(ERR_NOT_FOUND, "a jump host of '{target.alias}' no longer exists"))
+        }
+        hop := cat.hosts[usize(idx)]
+        rev.push(hop)
+        cur = hop.jump_host_id
+    }
+    mut chain: []Host = []
+    mut i := rev.len()
+    for i > 0 {
+        i -= 1
+        chain.push(rev[i])
+    }
+    return chain
+}
+
+// The login user: the host's own, else its credential's.
+fn auth_user(cat: Catalog, h: Host) -> str! {
+    if h.username.len() > 0 {
+        return h.username
+    }
+    if h.credential_id.len() > 0 {
+        idx := cred_index_by_id(cat.creds, h.credential_id)
+        if idx >= 0 && cat.creds[usize(idx)].username.len() > 0 {
+            return cat.creds[usize(idx)].username
+        }
+    }
+    return error(coded(ERR_INVALID, "host '{h.alias}' has no user; set one with `flint host edit {h.alias} --user <user>` or link a credential"))
+}
+
+// The auth methods to try, in order: the host's key, the host's password, the
+// credential's key, the credential's password, then the SSH agent. The host's own
+// settings come first because they are the more specific ones.
+fn auth_steps(cat: Catalog, h: Host) -> []AuthStep {
+    mut steps: []AuthStep = []
+    if h.key_id.len() > 0 {
+        steps.push(AuthStep{ kind: "key", source: "host", ref_id: h.key_id })
+    }
+    if h.password.len() > 0 {
+        steps.push(AuthStep{ kind: "password", source: "host", ref_id: h.id })
+    }
+    if h.credential_id.len() > 0 {
+        idx := cred_index_by_id(cat.creds, h.credential_id)
+        if idx >= 0 {
+            c := cat.creds[usize(idx)]
+            if c.key_id.len() > 0 && c.key_id != h.key_id {
+                steps.push(AuthStep{ kind: "key", source: "credential", ref_id: c.key_id })
+            }
+            if c.password.len() > 0 {
+                steps.push(AuthStep{ kind: "password", source: "credential", ref_id: c.id })
+            }
+        }
+    }
+    steps.push(AuthStep{ kind: "agent", source: "", ref_id: "" })
+    return steps
+}
+
+// How a step is named in an error. Names only, never a secret.
+fn step_label(cat: Catalog, s: AuthStep) -> str {
+    if s.kind == "key" {
+        return "key '" + key_name_of(cat.keys, s.ref_id) + "'"
+    }
+    if s.kind == "password" {
+        if s.source == "host" {
+            return "host password"
+        }
+        return "credential '" + cred_name_of(cat.creds, s.ref_id) + "' password"
+    }
+    return "SSH agent"
+}
+
+fn join_labels(list: []str) -> str {
+    mut out_text := ""
+    for i, s in list {
+        if i > 0 {
+            out_text = out_text + ", "
+        }
+        out_text = out_text + s
+    }
+    return out_text
+}
+
+// ---- Host keys -------------------------------------------------------------------
+
+// Checks a server key against the known hosts. A new key is recorded when the
+// person confirms it (or `accept_new_host_key` is set); a changed key is always
+// refused. Returns "known" or "new".
+fn verify_host_key[S: VaultStore, P: Prompter](mut store: S, prompter: P, h: Host, key: ServerKey, opts: ConnectOptions) -> str! {
+    addr := known_host_addr(h.hostname, h.port)
+    known := try store.known_hosts_all()
+    status := check_server_key(known, addr, key)
+    if status == HOST_KEY_KNOWN {
+        return status
+    }
+    if status == HOST_KEY_CHANGED {
+        return error(coded(ERR_HOST_KEY, "the host key of '{h.alias}' ({addr}) has CHANGED; it is now {key.key_type} {key.fingerprint}. Someone may be intercepting the connection. If the server was reinstalled, run `flint known-host rm {h.alias}` and connect again"))
+    }
+    mut trusted := opts.accept_new_host_key
+    if !trusted {
+        if !prompter.prompt_available() {
+            return error(coded(ERR_HOST_KEY, "'{h.alias}' ({addr}) is not a known host and there is no terminal to confirm its key ({key.key_type} {key.fingerprint}); connect once from a terminal, or pass --accept-new-host-key"))
+        }
+        trusted = try prompter.prompt_confirm("The host '{h.alias}' ({addr}) is not known yet.\n{key.key_type} key fingerprint is {key.fingerprint}.\nTrust this key and continue connecting (yes/no)? ")
+    }
+    if !trusted {
+        return error(coded(ERR_HOST_KEY, "the host key of '{h.alias}' was not trusted"))
+    }
+    try store.known_host_put(KnownHost{ addr: addr, key_type: key.key_type, fingerprint: key.fingerprint, host_id: h.id, added_at: "" })
+    return status
+}
+
+// ---- Authentication --------------------------------------------------------------
+
+fn try_auth_step[C: Crypto, T: SshTransport](crypto: C, session: VaultSession, cat: Catalog, mut link: T, s: AuthStep) -> void! {
+    if s.kind == "key" {
+        idx := key_index_by_id(cat.keys, s.ref_id)
+        if idx < 0 {
+            return error(coded(ERR_NOT_FOUND, "a linked key no longer exists"))
+        }
+        k := cat.keys[usize(idx)]
+        private_key := try open_secret(crypto, session, "ssh_keys", k.id, "private_key", k.private_key)
+        passphrase := try open_secret(crypto, session, "ssh_keys", k.id, "passphrase", k.passphrase)
+        try link.link_auth_key(private_key, passphrase)
+        return
+    }
+    if s.kind == "password" {
+        mut table := "hosts"
+        mut sealed: []byte = []
+        if s.source == "host" {
+            idx := host_index_by_id(cat.hosts, s.ref_id)
+            if idx >= 0 {
+                sealed = cat.hosts[usize(idx)].password
+            }
+        } else {
+            table = "credentials"
+            idx := cred_index_by_id(cat.creds, s.ref_id)
+            if idx >= 0 {
+                sealed = cat.creds[usize(idx)].password
+            }
+        }
+        password := try open_secret(crypto, session, table, s.ref_id, "password", sealed)
+        try link.link_auth_password(password)
+        return
+    }
+    try link.link_auth_agent()
+}
+
+// Tries each auth step until one is accepted. A rejected step moves on; a network
+// failure stops at once. When every step fails and there is a terminal, the
+// password is asked for once.
+fn authenticate_hop[C: Crypto, T: SshTransport, P: Prompter](crypto: C, session: VaultSession, cat: Catalog, mut link: T, prompter: P, h: Host, user: str) -> void! {
+    mut tried: []str = []
+    for s in auth_steps(cat, h) {
+        r := try_auth_step(crypto, session, cat, mut link, s)
+        if r.has_value() {
+            return
+        }
+        msg := "{r.error().message()}"
+        if error_code_of(msg) != ERR_AUTH {
+            return error(msg)
+        }
+        tried.push(step_label(cat, s))
+    }
+    if prompter.prompt_available() {
+        typed := try prompter.prompt_password("{user}@{h.alias}'s password: ")
+        if typed.len() > 0 {
+            r := link.link_auth_password(typed)
+            if r.has_value() {
+                return
+            }
+            msg := "{r.error().message()}"
+            if error_code_of(msg) != ERR_AUTH {
+                return error(msg)
+            }
+            tried.push("typed password")
+        }
+    }
+    return error(coded(ERR_AUTH, "{user}@{h.alias}: no auth method was accepted (tried: {join_labels(tried)})"))
+}
+
+// ---- Connecting ------------------------------------------------------------------
+
+// Dials every hop of `alias`, verifying and authenticating each one. On failure the
+// link is hung up. Returns the target host.
+fn open_link[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, alias: str, opts: ConnectOptions) -> Host! {
+    if opts.timeout_secs <= 0 {
+        return error(coded(ERR_INVALID, "the connect timeout must be positive"))
+    }
+    cat := try load_catalog(store)
+    target := try require_host(cat.hosts, alias)
+    chain := try jump_chain(cat, target)
+    // Resolve every user before dialling anything.
+    mut users: []str = []
+    for hop in chain {
+        users.push(try auth_user(cat, hop))
+    }
+    for i, hop in chain {
+        done := open_hop(crypto, mut store, session, cat, mut link, prompter, hop, users[i], opts)
+        if !done.has_value() {
+            link.link_hangup()
+            return error("{done.error().message()}")
+        }
+    }
+    return target
+}
+
+fn open_hop[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, mut store: S, session: VaultSession, cat: Catalog, mut link: T, prompter: P, hop: Host, user: str, opts: ConnectOptions) -> void! {
+    algos := preferred_host_key_algos(try store.known_hosts_all(), known_host_addr(hop.hostname, hop.port))
+    try link.link_dial(hop.hostname, hop.port, user, opts.timeout_secs, algos)
+    key := try link.link_server_key()
+    _ := try verify_host_key(mut store, prompter, hop, key, opts)
+    try authenticate_hop(crypto, session, cat, mut link, prompter, hop, user)
+}
+
+// Runs an interactive shell until the remote side closes it or local input ends.
+// Returns the remote exit status (-1 when the shell died by a signal).
+fn run_shell[T: SshTransport, M: Terminal](mut link: T, mut term: M, term_name: str) -> i64! {
+    mut size := term.term_size()
+    if !size.is_valid() {
+        size = default_terminal_size()
+    }
+    try link.link_shell_open(term_name, size.cols, size.rows)
+    try term.term_raw_enter()
+    mut code: i64 = 0
+    mut failure := ""
+    mut running := true
+    for running {
+        got := link.link_channel_read(10)
+        if !got.has_value() {
+            failure = "{got.error().message()}"
+            running = false
+        } else {
+            chunk := got.value()
+            if chunk.stdout.len() > 0 {
+                term.term_output(chunk.stdout)
+            }
+            if chunk.stderr.len() > 0 {
+                term.term_output(chunk.stderr)
+            }
+            if chunk.done {
+                code = chunk.exit_code
+                running = false
+            }
+        }
+        if running {
+            typed := term.term_input(10)
+            if !typed.has_value() {
+                // Local input ended (stdin closed): end the session.
+                running = false
+            } else if typed.value().len() > 0 {
+                sent := link.link_channel_write(typed.value())
+                if !sent.has_value() {
+                    failure = "{sent.error().message()}"
+                    running = false
+                }
+            }
+        }
+        if running && term.term_take_resize() {
+            now := term.term_size()
+            if now.is_valid() {
+                _ := link.link_channel_resize(now.cols, now.rows)
+            }
+        }
+    }
+    term.term_raw_leave()
+    if failure.len() > 0 {
+        return error(failure)
+    }
+    return code
+}
+
+// Runs one command. With `capture`, stdout and stderr are collected into the
+// result (for --json); otherwise they stream to `sink` as they arrive.
+fn run_exec[T: SshTransport, O: ExecSink, K: Clock](mut link: T, mut sink: O, mut clock: K, alias: str, command: str, timeout_secs: i64, capture: bool) -> ExecResult! {
+    if command.len() == 0 {
+        return error(coded(ERR_USAGE, "no command given; use `flint exec <alias> -- <command>`"))
+    }
+    if timeout_secs <= 0 {
+        return error(coded(ERR_INVALID, "the exec timeout must be positive"))
+    }
+    start := clock.clock_now_ms()
+    deadline := start + timeout_secs * 1000
+    try link.link_exec_start(command)
+    mut res := ExecResult{ host: alias, exit_code: 0, signal: "", stdout: "", stderr: "", duration_ms: 0 }
+    mut running := true
+    for running {
+        if clock.clock_now_ms() > deadline {
+            return error(coded(ERR_TIMEOUT, "the command on '{alias}' did not finish within {timeout_secs}s"))
+        }
+        chunk := try link.link_channel_read(100)
+        if capture {
+            res.stdout = res.stdout + chunk.stdout
+            res.stderr = res.stderr + chunk.stderr
+        } else {
+            if chunk.stdout.len() > 0 {
+                sink.exec_stdout(chunk.stdout)
+            }
+            if chunk.stderr.len() > 0 {
+                sink.exec_stderr(chunk.stderr)
+            }
+        }
+        if chunk.done {
+            res.exit_code = chunk.exit_code
+            res.signal = chunk.signal
+            running = false
+        }
+    }
+    res.duration_ms = clock.clock_now_ms() - start
+    return res
+}
+
+// Connects to `alias` and runs one command on it.
+fn exec_on_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, O: ExecSink, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut sink: O, mut clock: K, alias: str, command: str, opts: ConnectOptions, exec_timeout_secs: i64, capture: bool) -> ExecResult! {
+    if command.len() == 0 {
+        return error(coded(ERR_USAGE, "no command given; use `flint exec <alias> -- <command>`"))
+    }
+    target := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
+    res := run_exec(mut link, mut sink, mut clock, target.alias, command, exec_timeout_secs, capture)
+    link.link_hangup()
+    return res
+}
+
+// Connects to `alias` and runs an interactive shell on the local terminal.
+fn connect_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Terminal](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut term: M, alias: str, term_name: str, opts: ConnectOptions) -> i64! {
+    _ := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
+    code := run_shell(mut link, mut term, term_name)
+    link.link_hangup()
+    return code
+}
+
+// ---- Known hosts -----------------------------------------------------------------
+
+fn known_host_view(cat: Catalog, k: KnownHost) -> KnownHostView {
+    return KnownHostView{ addr: k.addr, host: host_alias_of(cat.hosts, k.host_id), key_type: k.key_type, fingerprint: k.fingerprint, added_at: k.added_at }
+}
+
+fn list_known_hosts[S: VaultStore](store: S) -> []KnownHostView! {
+    cat := try load_catalog(store)
+    mut views: []KnownHostView = []
+    for k in try store.known_hosts_all() {
+        views.push(known_host_view(cat, k))
+    }
+    return views
+}
+
+// Forgets a recorded key, by host alias or by address, so the next connect asks
+// again.
+fn remove_known_host[S: VaultStore](mut store: S, selector: str) -> KnownHostView! {
+    cat := try load_catalog(store)
+    mut addr := selector
+    idx := host_index_by_alias(cat.hosts, selector)
+    if idx >= 0 {
+        h := cat.hosts[usize(idx)]
+        addr = known_host_addr(h.hostname, h.port)
+    }
+    for k in try store.known_hosts_all() {
+        if lower_ascii(k.addr) == lower_ascii(addr) {
+            try store.known_host_drop(k.addr)
+            return known_host_view(cat, k)
+        }
+    }
+    return error(coded(ERR_NOT_FOUND, "no known host key for '{selector}'"))
+}

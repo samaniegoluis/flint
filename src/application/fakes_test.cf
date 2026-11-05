@@ -90,6 +90,7 @@ type FakeStore struct {
     hosts: []Host
     keys: []SshKey
     creds: []Credential
+    known: []KnownHost
     snap_groups: []Group
     snap_hosts: []Host
     snap_keys: []SshKey
@@ -97,7 +98,7 @@ type FakeStore struct {
 }
 
 fn new_fake_store() -> FakeStore {
-    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [] }
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [] }
 }
 
 fn (self: FakeStore) vault_file_exists(path: str) -> bool {
@@ -292,6 +293,32 @@ fn (mut self: FakeStore) cred_drop(id: str) -> void! {
     self.creds = next
 }
 
+fn (self: FakeStore) known_hosts_all() -> []KnownHost! {
+    try self.need_attached()
+    return self.known
+}
+
+fn (mut self: FakeStore) known_host_put(k: KnownHost) -> void! {
+    try self.need_attached()
+    for i, o in self.known {
+        if o.addr == k.addr {
+            self.known[i] = k
+            return
+        }
+    }
+    self.known.push(k)
+}
+
+fn (mut self: FakeStore) known_host_drop(addr: str) -> void! {
+    mut next: []KnownHost = []
+    for k in self.known {
+        if k.addr != addr {
+            next.push(k)
+        }
+    }
+    self.known = next
+}
+
 // ---- Keychain and recents: temp files, since their methods are not `mut` -------
 
 type FakeKeychain struct {
@@ -413,4 +440,209 @@ fn (self: FakeInspector) inspect_private_key(private_key: str, passphrase: str) 
 
 fn fresh_session(crypto: FakeCrypto, mut store: FakeStore) -> VaultSession {
     return create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/test.flint", "", "correct horse") or VaultSession{ path: "", name: "", secrets_key: [], cached: false }
+}
+
+// ---- SSH transport, prompter, terminal, sink, clock -----------------------------
+
+// A scripted SSH link. It accepts the private key text `good_key`, the password
+// `good_password`, and the agent when `agent_ok`. Every auth attempt and dial is
+// recorded in `calls`; channel reads replay `chunks`, then report done.
+type FakeLink struct {
+    good_key: str
+    good_password: str
+    agent_ok: bool
+    server_fp: str
+    calls: []str
+    chunks: []ExecChunk
+    read_pos: usize
+    written: str
+    resized: str
+    hung_up: bool
+    fail_dial: bool
+    dial_algos: []str
+}
+
+fn new_fake_link() -> FakeLink {
+    return FakeLink{ good_key: "", good_password: "", agent_ok: false, server_fp: "SHA256:server", calls: [], chunks: [], read_pos: 0, written: "", resized: "", hung_up: false, fail_dial: false, dial_algos: [] }
+}
+
+fn (mut self: FakeLink) link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void! {
+    self.calls.push("dial {user}@{hostname}:{port}")
+    self.dial_algos.push(host_key_algos)
+    if self.fail_dial {
+        return error(coded(ERR_NETWORK, "connect to {hostname}:{port} failed"))
+    }
+}
+
+fn (self: FakeLink) link_server_key() -> ServerKey! {
+    return ServerKey{ key_type: "ssh-ed25519", fingerprint: self.server_fp }
+}
+
+fn (mut self: FakeLink) link_auth_key(private_key: str, passphrase: str) -> void! {
+    self.calls.push("key " + private_key + "/" + passphrase)
+    if self.good_key.len() == 0 || private_key != self.good_key {
+        return error(coded(ERR_AUTH, "public-key authentication was rejected"))
+    }
+}
+
+fn (mut self: FakeLink) link_auth_password(password: str) -> void! {
+    self.calls.push("password " + password)
+    if self.good_password.len() == 0 || password != self.good_password {
+        return error(coded(ERR_AUTH, "password authentication was rejected"))
+    }
+}
+
+fn (mut self: FakeLink) link_auth_agent() -> void! {
+    self.calls.push("agent")
+    if !self.agent_ok {
+        return error(coded(ERR_AUTH, "the SSH agent offered no accepted key"))
+    }
+}
+
+fn (mut self: FakeLink) link_shell_open(term: str, cols: i32, rows: i32) -> void! {
+    self.calls.push("shell {term} {cols}x{rows}")
+}
+
+fn (mut self: FakeLink) link_exec_start(command: str) -> void! {
+    self.calls.push("exec " + command)
+}
+
+fn (mut self: FakeLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
+    if self.read_pos < self.chunks.len() {
+        c := self.chunks[self.read_pos]
+        self.read_pos += 1
+        return c
+    }
+    return ExecChunk{ stdout: "", stderr: "", done: true, exit_code: 0, signal: "" }
+}
+
+fn (mut self: FakeLink) link_channel_write(data: str) -> void! {
+    self.written = self.written + data
+}
+
+fn (mut self: FakeLink) link_channel_resize(cols: i32, rows: i32) -> void! {
+    self.resized = "{cols}x{rows}"
+}
+
+fn (mut self: FakeLink) link_hangup() {
+    self.hung_up = true
+}
+
+fn out_chunk(text: str) -> ExecChunk {
+    return ExecChunk{ stdout: text, stderr: "", done: false, exit_code: 0, signal: "" }
+}
+
+fn err_chunk(text: str) -> ExecChunk {
+    return ExecChunk{ stdout: "", stderr: text, done: false, exit_code: 0, signal: "" }
+}
+
+fn done_chunk(code: i64) -> ExecChunk {
+    return ExecChunk{ stdout: "", stderr: "", done: true, exit_code: code, signal: "" }
+}
+
+// Answers prompts from fixed values. `available` false behaves like no terminal.
+type FakePrompter struct {
+    available: bool
+    confirm: bool
+    password: str
+}
+
+fn (self: FakePrompter) prompt_available() -> bool {
+    return self.available
+}
+
+fn (self: FakePrompter) prompt_confirm(question: str) -> bool! {
+    if !self.available {
+        return error(coded(ERR_USAGE, "no terminal"))
+    }
+    return self.confirm
+}
+
+fn (self: FakePrompter) prompt_password(label: str) -> str! {
+    if !self.available {
+        return error(coded(ERR_USAGE, "no terminal"))
+    }
+    return self.password
+}
+
+fn no_prompter() -> FakePrompter {
+    return FakePrompter{ available: false, confirm: false, password: "" }
+}
+
+// Replays `inputs` one per poll, then reports local EOF when `eof_at_end`.
+type FakeTerminal struct {
+    cols: i32
+    rows: i32
+    inputs: []str
+    input_pos: usize
+    resize_at: usize
+    output: str
+    raw: bool
+    raw_entered: i64
+}
+
+fn new_fake_terminal(inputs: []str) -> FakeTerminal {
+    return FakeTerminal{ cols: 120, rows: 40, inputs: inputs, input_pos: 0, resize_at: 999, output: "", raw: false, raw_entered: 0 }
+}
+
+fn (self: FakeTerminal) term_size() -> TerminalSize {
+    return TerminalSize{ cols: self.cols, rows: self.rows }
+}
+
+fn (mut self: FakeTerminal) term_raw_enter() -> void! {
+    self.raw = true
+    self.raw_entered += 1
+}
+
+fn (mut self: FakeTerminal) term_raw_leave() {
+    self.raw = false
+}
+
+fn (mut self: FakeTerminal) term_input(timeout_ms: i32) -> str! {
+    if self.input_pos < self.inputs.len() {
+        s := self.inputs[self.input_pos]
+        self.input_pos += 1
+        if self.input_pos == self.resize_at {
+            self.cols = 100
+            self.rows = 30
+        }
+        return s
+    }
+    return ""
+}
+
+fn (mut self: FakeTerminal) term_output(data: str) {
+    self.output = self.output + data
+}
+
+fn (mut self: FakeTerminal) term_take_resize() -> bool {
+    if self.input_pos == self.resize_at {
+        self.resize_at = 999
+        return true
+    }
+    return false
+}
+
+type FakeSink struct {
+    out_text: str
+    err_text: str
+}
+
+fn (mut self: FakeSink) exec_stdout(data: str) {
+    self.out_text = self.out_text + data
+}
+
+fn (mut self: FakeSink) exec_stderr(data: str) {
+    self.err_text = self.err_text + data
+}
+
+// Advances `step_ms` on every read.
+type FakeClock struct {
+    now_ms: i64
+    step_ms: i64
+}
+
+fn (mut self: FakeClock) clock_now_ms() -> i64 {
+    self.now_ms += self.step_ms
+    return self.now_ms
 }

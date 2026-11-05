@@ -12,12 +12,23 @@ import cpp "libssh/libssh.h" @pkg("libssh")
 // CFIRE-UPSTREAM: CF-026
 import cpp "mutex"
 
+import "../../domain"
+
 type SshConn struct {
     // Owned by this value; released by close().
     session: *mut cpp::ssh_session_struct
     channel: *mut cpp::ssh_channel_struct
     // Shared by every copy of this value. cfire has no mutex type (CF-026).
     lock: shared[cpp::std::mutex]
+}
+
+// A chain of sessions: the SshTransport adapter (link.cf). Declared here, after
+// SshConn, so its `[]SshConn` field is complete when emitted (CF-033).
+type SshLink struct {
+    hops: []SshConn
+    // Shared by every copy of this value; owns the tunnel threads (CF-026, CF-043).
+    tunnels: shared[cpp::flint_ssh::Tunnels]
+    timeout_secs: i64
 }
 
 // Helpers are methods rather than functions taking the pointer: a `*mut T`
@@ -35,8 +46,17 @@ fn (self: SshConn) last_error() -> str {
 // Opens a TCP connection and completes the SSH handshake. The host key is NOT
 // verified here; call `host_key_sha256` and check it before authenticating.
 fn ssh_dial(host: str, port: i32, user: str, timeout_secs: i64) -> SshConn! {
+    return ssh_dial_over(host, port, user, timeout_secs, -1, "")
+}
+
+// Like ssh_dial, but over an already connected socket `fd` (a jump-host tunnel)
+// when `fd` >= 0. `host` and `port` then only name the server. `host_key_algos`,
+// when not empty, is an SSH_OPTIONS_HOSTKEYS list such as "^ssh-ed25519": the "^"
+// prepend form needs libssh 0.11; an older libssh rejects it and keeps its
+// defaults, which only loses the preference, never the host key check.
+fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, host_key_algos: str) -> SshConn! {
     if timeout_secs <= 0 {
-        return error("ssh: a positive timeout is required")
+        return error(coded(ERR_INVALID, "ssh: a positive timeout is required"))
     }
     mut session: *mut cpp::ssh_session_struct
     mut rc: i32 = 0
@@ -56,6 +76,13 @@ fn ssh_dial(host: str, port: i32, user: str, timeout_secs: i64) -> SshConn! {
             ssh_options_set(s, SSH_OPTIONS_TIMEOUT, &t);
             // Flint resolves hosts from its vault, never from ~/.ssh/config.
             ssh_options_set(s, SSH_OPTIONS_PROCESS_CONFIG, &no_config);
+            if (!host_key_algos.empty()) {
+                ssh_options_set(s, SSH_OPTIONS_HOSTKEYS, host_key_algos.c_str());
+            }
+            if (fd >= 0) {
+                socket_t sock = fd;
+                ssh_options_set(s, SSH_OPTIONS_FD, &sock);
+            }
             rc = ssh_connect(s);
         }
     }
@@ -67,7 +94,7 @@ fn ssh_dial(host: str, port: i32, user: str, timeout_secs: i64) -> SshConn! {
     if rc != 0 {
         msg := conn.last_error()
         conn.disconnect()
-        return error("ssh: connect to {host}:{port} failed: {msg}")
+        return error(coded(ERR_NETWORK, "connect to {host}:{port} failed: {msg}"))
     }
     return conn
 }
