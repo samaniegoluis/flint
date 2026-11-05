@@ -372,6 +372,11 @@
     await click('.nav-i', 'Vault');
     await waitFor(() => hasText('Known hosts'), 'the vault settings');
     await check(byText('td', `[127.0.0.1]:${PORT}`), 'known hosts are listed');
+    // The open vault's counts, read from the open file, even with no cached key (the
+    // keychain is off here): before, the page unlocked the vault again through the
+    // keychain, which on macOS showed a Keychain dialog.
+    await waitFor(() => /\d+ hosts? · .*format v\d/.test(text()), 'the vault counts');
+    await check(hasText('4 hosts · 1 key · 0 credentials · '), `the vault page counts the open vault (${(text().match(/\d+ hosts?[^\n]*format v\d/) ?? ['none'])[0]})`);
     if (openTabs) {
       await click('.rail-btn', 'Hosts');
       await waitFor(() => activeTerm(), 'the session view');

@@ -215,6 +215,8 @@ function Shortcuts() {
   );
 }
 
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (c: Confirm) => void }) {
   const { vault, catalog, os, refreshCatalog, notify, closeVault } = useApp();
   const [st, setSt] = useState<VaultStatus | null>(null);
@@ -229,7 +231,7 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
         <div className="col grow" style={{ gap: 2, minWidth: 0 }}>
           <span className="strong" style={{ fontSize: 'var(--fs-lg)' }}>{vault.name}</span>
           <span className="mono muted trunc" style={{ fontSize: 'var(--fs-sm)' }} title={vault.path}>{shortPath(vault.path)}</span>
-          {st && <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>{st.hosts} hosts · {st.keys} keys · {st.credentials} credentials · {st.groups} groups · format v{vault.format}</span>}
+          {st && <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>{count(st.hosts, 'host')} · {count(st.keys, 'key')} · {count(st.credentials, 'credential')} · {count(st.groups, 'group')} · format v{vault.format}</span>}
         </div>
       </div>
       <Row title="On this device" desc={st?.cached ? `The vault key is in ${keychain}.` : 'This machine asks for the master password.'}>
