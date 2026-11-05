@@ -1,0 +1,20 @@
+# cfire build cache and outputs
+.cfire/
+build/
+bin/
+
+# Frontend / docs site
+node_modules/
+dist/
+site/.astro/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Never commit vaults or secrets
+*.flint
+*.db
+.env*
