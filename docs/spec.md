@@ -144,6 +144,7 @@ happen only where a human is required (see `CLAUDE.md`). Progress is recorded in
 | 02 | **Vault core + CLI** | Encrypted vault create/open/unlock/lock. Recent-vaults list. Keychain auto-unlock. Groups (nested), hosts, keys (by content), credentials. `flint vault\|host\|key\|cred` with `--json`. Docs pages for each |
 | 03 | **SSH from the CLI** | Auth resolution (credential → host → key/password/agent), known-hosts verification, jump host, `flint connect <alias>` (interactive, resize-aware) and `flint exec <alias> -- cmd` |
 | 04 | **GUI** | Welcome, unlock, vault switcher, sidebar tree, host/key/credential editors, tabs, xterm.js terminal (Kitty protocol, WebGL), connect/auth/host-key prompts, command palette, settings (theme, accent, font). Built from the Claude Design output |
+| 05 | **Interactive CLI demo** | A **Try the CLI** button on the landing opens a dimmed overlay with a simulated terminal, built by hand (`<pre>` log + `<input>`, no terminal library). A seeded demo vault in memory, the CLI's commands with their real output, errors and `--json`, a guided tour with a hint above each step, and a fake Linux shared by every host after `flint connect`. Hosts added in the demo live until reload. Tappable command chips on phones; the static hero stays as the no-JS fallback (D-026) |
 
 ## Open questions
 

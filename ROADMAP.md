@@ -128,3 +128,10 @@ What Tether already does and Flint must not lose.
 | Bundle libssh, libsodium, SQLCipher and libcrypto into the `.app` (rpath fix-up) or link them statically | `next` | Today they are dynamic system packages (D-015); a release cannot rely on Homebrew being installed |
 | App icon on Linux: the GTK window icon and a `.desktop` file with `assets/app-icon/flint-256.png`; Windows `.ico` when Windows lands | `next` | macOS has it since the M04 owner walkthrough (`assets/app-icon/`, CF-052); webui sets no GTK window icon |
 | Public landing + docs site deployed | `next` | The site itself is built from milestone 01 |
+
+## 8. Docs site
+
+| Feature | Status | Notes |
+|---|---|---|
+| Interactive CLI demo on the landing: overlay terminal, guided tour, demo vault, fake Linux | `mvp` | Milestone 05 (D-026) |
+| The hero terminal plays the demo tour by itself (typing animation, termynal-style) before the visitor opens the demo | `idea` | Left out of M05; respect `prefers-reduced-motion` |

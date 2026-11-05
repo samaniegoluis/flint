@@ -1,0 +1,508 @@
+---
+// The landing's interactive CLI demo (D-026). A dialog over a dimmed page holds a
+// hand-built terminal: an output log and one input line. The simulation itself is
+// src/demo/lib/ (no DOM) and loads only when the dialog opens. Without JavaScript the
+// "Try the CLI" button stays hidden and the static hero terminal is all there is.
+---
+
+<!-- not-content: keeps Starlight's Markdown spacing out of the terminal. -->
+<dialog class="cli-demo not-content" aria-labelledby="cli-demo-title">
+	<div class="cli-demo__window">
+		<div class="cli-demo__bar">
+			<!-- Window dots, as on macOS: a shortcut for the buttons on the right. -->
+			<span class="cli-demo__dots">
+				<button type="button" class="cli-demo__dot cli-demo__dot--close" data-close aria-label="Close the demo" tabindex="-1"></button>
+				<button type="button" class="cli-demo__dot cli-demo__dot--min" data-restore aria-label="Restore the window size" tabindex="-1"></button>
+				<button type="button" class="cli-demo__dot cli-demo__dot--max" data-maximize aria-label="Maximize" tabindex="-1"></button>
+			</span>
+			<h2 id="cli-demo-title" class="cli-demo__title">Flint CLI demo</h2>
+			<span class="cli-demo__step" data-step></span>
+			<button type="button" class="cli-demo__btn" data-tour>Skip tour</button>
+			<button type="button" class="cli-demo__btn cli-demo__icon-btn cli-demo__max-btn" data-max aria-pressed="false" aria-label="Maximize" title="Maximize">
+				<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="cli-demo__ico-max"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"></path></svg>
+				<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="cli-demo__ico-restore"><path d="M20 10h-6V4M4 14h6v6M14 10l7-7M10 14l-7 7"></path></svg>
+			</button>
+			<button type="button" class="cli-demo__btn cli-demo__icon-btn cli-demo__close" data-close aria-label="Close the demo">
+				<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+			</button>
+		</div>
+		<div class="cli-demo__screen" data-screen>
+			<div class="cli-demo__log" role="log" aria-live="polite" aria-label="Terminal output" data-log></div>
+			<div class="cli-demo__line">
+				<label for="cli-demo-input" class="cli-demo__prompt" data-prompt>❯ </label>
+				<input
+					id="cli-demo-input"
+					class="cli-demo__input"
+					type="text"
+					autocomplete="off"
+					autocapitalize="off"
+					autocorrect="off"
+					spellcheck="false"
+					enterkeyhint="send"
+					data-1p-ignore
+					data-lpignore="true"
+					data-input
+				/>
+			</div>
+		</div>
+		<p class="cli-demo__guide" data-guide></p>
+		<div class="cli-demo__chips" role="group" aria-label="Suggested commands" data-chips></div>
+		<p class="cli-demo__foot">
+			Simulated in your browser: nothing is sent anywhere. Tab completes, ↑ recalls, Ctrl-C cancels.
+		</p>
+	</div>
+</dialog>
+
+<script>
+	import type { DemoSession, Line } from '../demo/lib/session.ts';
+
+	const dialog = document.querySelector<HTMLDialogElement>('dialog.cli-demo');
+	if (dialog) {
+		document.documentElement.dataset.cliDemo = 'ready';
+		const $ = <T extends Element>(sel: string) => dialog.querySelector(sel) as T;
+		const log = $<HTMLDivElement>('[data-log]');
+		const screen = $<HTMLDivElement>('[data-screen]');
+		const input = $<HTMLInputElement>('[data-input]');
+		const prompt = $<HTMLLabelElement>('[data-prompt]');
+		const chips = $<HTMLDivElement>('[data-chips]');
+		const step = $<HTMLSpanElement>('[data-step]');
+		const guide = $<HTMLParagraphElement>('[data-guide]');
+		const tourBtn = $<HTMLButtonElement>('[data-tour]');
+		let session: DemoSession | null = null;
+		const history: string[] = [];
+		let historyAt = 0;
+		let opener: HTMLElement | null = null;
+
+		const render = (line: Line) => {
+			const row = document.createElement('div');
+			row.className = 'cli-demo__row cli-demo__row--' + line.kind;
+			if (line.kind === 'echo') {
+				const p = document.createElement('span');
+				p.className = 'cli-demo__p';
+				p.textContent = line.prompt ?? '';
+				row.append(p, document.createTextNode(line.text));
+			} else if (line.parts) {
+				for (const part of line.parts) {
+					const span = document.createElement('span');
+					if (part.cls) span.className = 'cli-demo__jq-' + part.cls;
+					span.textContent = part.text;
+					row.append(span);
+				}
+			} else if (line.href) {
+				const a = document.createElement('a');
+				a.href = line.href;
+				a.textContent = line.text;
+				row.append(a);
+			} else {
+				row.textContent = line.text || ' ';
+			}
+			log.append(row);
+		};
+
+		const refresh = () => {
+			if (!session) return;
+			const p = session.prompt();
+			prompt.textContent = p.text;
+			input.type = p.secret ? 'password' : 'text';
+			input.classList.toggle('cli-demo__input--secret', p.secret);
+			const label = session.tourLabel();
+			step.textContent = label ?? '';
+			tourBtn.textContent = label ? 'Skip tour' : 'Start tour';
+			// The guide is always on screen: what to do now, and the exact command first.
+			const g = session.guide();
+			guide.textContent = g.text;
+			const commands = g.command ? [g.command, ...session.chips().filter((c) => c !== g.command)] : session.chips();
+			chips.replaceChildren(
+				...commands.map((c) => {
+					const b = document.createElement('button');
+					b.type = 'button';
+					b.className = 'cli-demo__chip' + (c === g.command ? ' cli-demo__chip--next' : '');
+					b.textContent = c;
+					b.addEventListener('click', () => run(c));
+					return b;
+				}),
+			);
+			screen.scrollTop = screen.scrollHeight;
+		};
+
+		const run = (text: string) => {
+			if (!session) return;
+			const secret = session.prompt().secret;
+			session.submit(text);
+			if (!secret && text.trim()) {
+				history.push(text);
+			}
+			historyAt = history.length;
+			input.value = '';
+			refresh();
+			if (matchMedia('(pointer: fine)').matches) input.focus();
+		};
+
+		const open = async (from: HTMLElement | null) => {
+			opener = from;
+			if (!session) {
+				const { DemoSession } = await import('../demo/lib/session.ts');
+				session = new DemoSession({ onLine: render, onClear: () => log.replaceChildren() });
+				session.start();
+			}
+			dialog.showModal();
+			refresh();
+			// On a phone, wait for a tap: focusing would raise the keyboard over the tour.
+			if (matchMedia('(pointer: fine)').matches) input.focus();
+		};
+
+		dialog.addEventListener('close', () => opener?.focus());
+		dialog.addEventListener('click', (e) => {
+			if (e.target === dialog) dialog.close();
+		});
+		dialog.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dialog.close()));
+
+		// Maximize fills the page's viewport (not the browser's full screen). The choice
+		// is a per-viewer convenience, kept in localStorage when it is available.
+		const maxBtn = $<HTMLButtonElement>('[data-max]');
+		const setMax = (on: boolean) => {
+			dialog.classList.toggle('cli-demo--max', on);
+			maxBtn.setAttribute('aria-pressed', String(on));
+			const label = on ? 'Restore the window size' : 'Maximize';
+			maxBtn.setAttribute('aria-label', label);
+			maxBtn.title = label;
+			try {
+				localStorage.setItem('flint-cli-demo-max', on ? '1' : '');
+			} catch {}
+			screen.scrollTop = screen.scrollHeight;
+		};
+		try {
+			if (localStorage.getItem('flint-cli-demo-max') === '1') setMax(true);
+		} catch {}
+		maxBtn.addEventListener('click', () => setMax(!dialog.classList.contains('cli-demo--max')));
+		$<HTMLButtonElement>('[data-maximize]').addEventListener('click', () => setMax(true));
+		$<HTMLButtonElement>('[data-restore]').addEventListener('click', () => setMax(false));
+		$<HTMLDivElement>('.cli-demo__bar').addEventListener('dblclick', (e) => {
+			if ((e.target as Element).closest('button')) return;
+			setMax(!dialog.classList.contains('cli-demo--max'));
+		});
+		tourBtn.addEventListener('click', () => {
+			if (!session) return;
+			if (session.tourLabel()) session.stopTour();
+			else session.restartTour();
+			refresh();
+			input.focus();
+		});
+		screen.addEventListener('click', () => {
+			if (!getSelection()?.toString()) input.focus();
+		});
+
+		input.addEventListener('keydown', (e) => {
+			if (!session) return;
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				run(input.value);
+			} else if (e.key === 'Tab') {
+				e.preventDefault();
+				input.value = session.complete(input.value);
+				refresh();
+			} else if (e.ctrlKey && e.key === 'c' && input.selectionStart === input.selectionEnd) {
+				e.preventDefault();
+				session.interrupt(input.value);
+				input.value = '';
+				refresh();
+			} else if (e.ctrlKey && e.key === 'l') {
+				e.preventDefault();
+				log.replaceChildren();
+			} else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !session.prompt().secret) {
+				e.preventDefault();
+				historyAt = Math.max(0, Math.min(history.length, historyAt + (e.key === 'ArrowUp' ? -1 : 1)));
+				input.value = history[historyAt] ?? '';
+			}
+		});
+
+		const openers = document.querySelectorAll<HTMLElement>('a[href="#try-the-cli"]');
+		openers.forEach((a) =>
+			a.addEventListener('click', (e) => {
+				e.preventDefault();
+				open(a);
+			}),
+		);
+		const heroTerm = document.querySelector<HTMLElement>('.hero .flint-term');
+		if (heroTerm) {
+			heroTerm.classList.add('flint-term--opens-demo');
+			heroTerm.title = 'Try the CLI';
+			heroTerm.addEventListener('click', () => open(openers[0] ?? null));
+		}
+		if (location.hash === '#try-the-cli') open(openers[0] ?? null);
+	}
+</script>
+
+<style is:global>
+	/* The hero's "Try the CLI" action needs the script: hidden until it runs. */
+	:root:not([data-cli-demo]) .hero a[href='#try-the-cli'] {
+		display: none;
+	}
+	.flint-term--opens-demo {
+		cursor: pointer;
+	}
+</style>
+
+<!-- Global: the log rows and chips are created by the script, outside Astro's scoping. -->
+<style is:global>
+	.cli-demo {
+		width: min(100% - 2rem, 60rem);
+		height: min(100dvh - 4rem, 40rem);
+		max-width: none;
+		max-height: none;
+		margin: auto;
+		inset: 0;
+		padding: 0;
+		border: 1px solid var(--flint-border);
+		border-radius: 12px;
+		background: var(--flint-term-bg);
+		color: var(--flint-term-fg);
+		box-shadow: 0 32px 96px rgba(0, 0, 0, 0.5);
+		overflow: hidden;
+	}
+	.cli-demo.cli-demo--max {
+		width: 100%;
+		height: 100dvh;
+		border: 0;
+		border-radius: 0;
+	}
+	.cli-demo::backdrop {
+		background: var(--sl-color-backdrop-overlay);
+		backdrop-filter: blur(2px);
+	}
+	.cli-demo__window {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+	}
+
+	.cli-demo__bar {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 8px 8px 14px;
+		background: var(--sl-color-gray-6);
+		border-bottom: 1px solid var(--flint-border);
+		font: 500 12px/1 var(--__sl-font);
+		color: var(--sl-color-gray-3);
+	}
+	:root[data-theme='light'] .cli-demo__bar {
+		background: var(--sl-color-gray-7);
+	}
+	.cli-demo__dots {
+		display: flex;
+		gap: 6px;
+	}
+	.cli-demo__dot {
+		width: 12px;
+		height: 12px;
+		padding: 0;
+		border: 0;
+		border-radius: 50%;
+		background: var(--flint-border);
+		cursor: pointer;
+	}
+	/* Colour on hover, as macOS does: red closes, yellow restores, green maximizes. */
+	.cli-demo__dots:hover .cli-demo__dot--close {
+		background: #ff5f57;
+	}
+	.cli-demo__dots:hover .cli-demo__dot--min {
+		background: #febc2e;
+	}
+	.cli-demo__dots:hover .cli-demo__dot--max {
+		background: #28c840;
+	}
+	.cli-demo__title {
+		margin: 0 0 0 4px;
+		font: inherit;
+		color: var(--sl-color-gray-2);
+	}
+	.cli-demo__step {
+		margin-inline-start: auto;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+	.cli-demo__btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 28px;
+		padding: 0 10px;
+		border: 1px solid var(--flint-border);
+		border-radius: 6px;
+		background: transparent;
+		color: var(--sl-color-gray-2);
+		font: inherit;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.cli-demo__btn:hover {
+		background: var(--flint-surface-hover);
+	}
+	.cli-demo__btn:focus-visible,
+	.cli-demo__chip:focus-visible {
+		outline: none;
+		box-shadow: var(--flint-focus);
+	}
+	.cli-demo__icon-btn {
+		width: 28px;
+		padding: 0;
+		border-color: transparent;
+	}
+	.cli-demo__ico-restore,
+	.cli-demo--max .cli-demo__ico-max {
+		display: none;
+	}
+	.cli-demo--max .cli-demo__ico-restore {
+		display: block;
+	}
+	.cli-demo__icon-btn svg {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+	}
+
+	.cli-demo__screen {
+		flex: 1;
+		min-height: 0;
+		overflow-x: hidden;
+		overflow-y: auto;
+		padding: 14px 18px;
+		font: 400 13px/1.6 var(--__sl-font-mono);
+		cursor: text;
+	}
+	/* Long lines wrap, as in a terminal; JSON has no spaces, so break anywhere. */
+	.cli-demo__log {
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	.cli-demo__row--err {
+		color: var(--sl-color-red);
+	}
+	.cli-demo__row--hint {
+		color: var(--flint-term-ok);
+		white-space: pre-wrap;
+	}
+	.cli-demo__row:not(.cli-demo__row--hint) + .cli-demo__row--hint {
+		margin-top: 0.6em;
+	}
+	.cli-demo__row--note,
+	.cli-demo__row--note a {
+		color: var(--flint-term-dim);
+		white-space: pre-wrap;
+	}
+	.cli-demo__row--note a {
+		text-decoration: underline;
+	}
+	/* jq's colours: keys blue, strings green, null dim. */
+	.cli-demo__jq-key {
+		color: var(--flint-term-alias);
+	}
+	.cli-demo__jq-str {
+		color: var(--flint-term-ok);
+	}
+	.cli-demo__jq-null {
+		color: var(--flint-term-dim);
+	}
+	.cli-demo__p,
+	.cli-demo__prompt {
+		color: var(--flint-term-prompt);
+		white-space: pre;
+	}
+	.cli-demo__line {
+		display: flex;
+		align-items: baseline;
+	}
+	.cli-demo__input {
+		flex: 1;
+		min-width: 4ch;
+		padding: 0;
+		border: 0;
+		outline: none;
+		background: transparent;
+		color: var(--flint-term-fg);
+		font: inherit;
+		caret-color: var(--flint-term-prompt);
+	}
+	/* Echo off: the caret shows where you are, the characters do not. */
+	.cli-demo__input--secret {
+		color: transparent;
+	}
+
+	.cli-demo__guide {
+		margin: 0;
+		padding: 10px 14px 0;
+		border-top: 1px solid var(--flint-border);
+		font: 400 13px/1.45 var(--__sl-font-mono);
+		color: var(--flint-term-ok);
+	}
+	.cli-demo__guide::before {
+		content: '# ';
+	}
+	.cli-demo__chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 8px 14px 0;
+	}
+	.cli-demo__chips:empty {
+		display: none;
+	}
+	.cli-demo__chip {
+		max-width: 100%;
+		min-height: 32px;
+		padding: 4px 10px;
+		border: 1px solid var(--flint-border);
+		border-radius: 6px;
+		background: var(--flint-surface-raised);
+		color: var(--flint-term-fg);
+		font: 400 12px/1.4 var(--__sl-font-mono);
+		text-align: start;
+		overflow-wrap: anywhere;
+		cursor: pointer;
+	}
+	.cli-demo__chip:hover {
+		background: var(--flint-surface-hover);
+	}
+	/* The command the guide asks for: the one to type, or to tap. */
+	.cli-demo__chip--next {
+		border-color: var(--flint-term-prompt);
+		color: var(--flint-term-prompt);
+		font-weight: 600;
+	}
+	.cli-demo__chip--next::before {
+		content: '❯ ';
+	}
+	.cli-demo__foot {
+		margin: 0;
+		padding: 8px 14px 10px;
+		font: 400 12px/1.4 var(--__sl-font);
+		color: var(--sl-color-gray-3);
+	}
+
+	@media (max-width: 40rem) {
+		.cli-demo {
+			width: 100%;
+			height: 100dvh;
+			border-radius: 0;
+			border: 0;
+		}
+		.cli-demo__screen {
+			padding: 12px;
+			font-size: 12px;
+		}
+		.cli-demo__guide {
+			font-size: 12px;
+		}
+		.cli-demo__title,
+		.cli-demo__max-btn,
+		.cli-demo__dots {
+			display: none;
+		}
+		/* Inputs under 16px make iOS zoom the page on focus. */
+		.cli-demo__input {
+			font-size: 16px;
+		}
+	}
+</style>

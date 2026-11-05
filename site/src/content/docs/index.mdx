@@ -22,6 +22,10 @@ hero:
     - text: Read the introduction
       link: /start/introduction/
       icon: right-arrow
+    - text: Try the CLI
+      link: '#try-the-cli'
+      icon: seti:shell
+      variant: secondary
     - text: Build from source
       link: /start/build-from-source/
       icon: setting
@@ -29,6 +33,9 @@ hero:
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
+import CliDemo from '../../components/CliDemo.astro';
+
+<CliDemo />
 
 :::caution[Early development]
 Flint works today as a desktop app and as the `flint` CLI, over the same encrypted vault.
