@@ -1,62 +1,58 @@
-# Flint — MVP Technical Specification
+# Flint — v2 Technical Specification: Daily driver
 
-**Scope of this document:** the MVP only. Everything beyond it lives in
-[`ROADMAP.md`](../ROADMAP.md) and is pulled into the *next* spec when the MVP ships.
+**Scope of this document:** version 2 only. The MVP it builds on is archived in
+[`spec-v1.md`](./spec-v1.md); everything beyond v2 lives in [`ROADMAP.md`](../ROADMAP.md).
 This file is static: a decision that changes goes into [`decisions.md`](./decisions.md),
 which supersedes the line here.
 
 ## Problem
 
-The author runs a personal SSH client, **Tether** (Go + Wails), because the market
-alternatives are either paid (MobaXterm, Termius) or heavy. Tether works, but it was an
-early AI-era project. It is GUI-only, Go-only, and its vault keeps host metadata
-(hostnames, IPs, users) in plaintext inside a file that is synced to OneDrive.
+The MVP shipped (milestones 01-05, [`build-log.md`](./build-log.md)): an encrypted vault, a
+CLI and a desktop app over it. Using it every day showed the gaps that still keep the
+author on **Tether** for daily work:
 
-Flint is the rewrite, with three goals:
+- Creating or editing a host gives no way to **check it works** before saving it.
+- A stored password cannot be **seen or copied** to use somewhere else.
+- A host cannot **start a program on connect** (the author opens `herdr` on `codebox`).
+- The app **forgets its layout**: the sidebar, its width and which folders were collapsed
+  are reset on every launch, and there is no collapse all / expand all.
+- A vault cannot be **renamed**, so a test vault cannot become the real one.
+- The terminal has one colour scheme; the author uses Aura in Tether.
+- Copy from Neovim/tmux/Zellij (OSC 52), dead keys and IME, and the author's existing Tether
+  vault are still missing to retire Tether.
 
-1. **A better SSH client.** Light, fast and good-looking, with a modern terminal (Kitty
-   keyboard protocol, three-key chords). All state lives in a fully encrypted vault that
-   can be synced through any cloud folder.
-2. **A CLI as a first-class citizen.** The same encrypted vault drives a GUI, a CLI, and
-   later an MCP server and an SSH agent. People and AI agents can then reach the author's
-   servers by alias, without ever seeing a credential.
-3. **Dogfood cfire.** Flint is written in [cfire](https://github.com/gsandoval/cfire), a
-   Go/Odin-flavoured language that lowers to C++23, built by a friend of the author.
-   Every gap found becomes a concrete, reproducible request in
-   [`cfire-upstream.md`](./cfire-upstream.md). Flint is released as open source on top of
-   cfire.
-
-**Why "Flint":** a flint is the stone that strikes fire, a nod to cfire.
+v2 closes those gaps. Tether (`~/Personal/Proyectos/go/tether`) is
+the reference for behaviour, not for design: where a better way exists, Flint takes it and
+records why (D-030, D-031).
 
 ## Scope
 
-**In scope (MVP):**
-- **Vault:** a fully encrypted SQLite file, one master password per vault. It is created
-  or opened wherever the user chooses, for example inside a cloud-synced folder.
-- **Multi-vault:** a list of recent vaults. The app reopens the last one and lets you switch
-  from a vault switcher (Obsidian-style).
-- **Auto-unlock:** the key derived from the master password is cached per vault in the OS
-  keychain. A vault this machine has seen before opens without a prompt.
-- **Hosts:** grouped in nested folders. Each host has a label, hostname, port, tags, colour,
-  notes and an optional jump host.
-- **SSH keys:** stored *by content* (pasted or imported), encrypted in the vault, with an
-  optional passphrase.
-- **Credentials:** reusable login profiles (a user plus a password or a key) that many hosts
-  link to ("use the domain credential").
-- **Auth:** password, stored key, on-disk key, SSH agent. Known-hosts verification with a
-  prompt.
-- **CLI:** `flint vault|host|key|cred` for CRUD, `flint connect <alias>` for an interactive
-  shell, and `flint exec <alias> -- <cmd>`. Every command supports `--json`.
-- **GUI:** vault unlock and switcher, a sidebar tree, tabs, an xterm.js terminal with the
-  Kitty keyboard protocol, and a command palette.
-- **Documentation site:** Astro + Starlight, with a landing page and Docs. It grows with
-  every feature.
-- **Platforms:** macOS and Linux.
+**In scope (v2):**
+- **Test connection:** a button in the host editor that works on the unsaved draft, and
+  `flint host test <alias>`. It dials, verifies the host key exactly like a connect (an
+  unknown key prompts, a changed key is refused), authenticates and closes.
+- **Reveal and copy a password** in the host and credential editors (D-029): hidden by
+  default, only while unlocked, hidden again after a few seconds; copy is written by the
+  core and the clipboard is cleared after about 30 s. GUI only.
+- **Initial command per host** (D-031), with a per-host *return to shell when it exits*
+  option. Stored in the vault (migration 003), set from the host editor and
+  `flint host add|edit`, honoured by the GUI and `flint connect`; `--no-command` skips it.
+- **UI state per machine** (D-030): sidebar open or closed, sidebar width with
+  drag-to-resize, collapsed groups per vault, **Collapse all / Expand all** in the tree.
+- **Rename a vault:** `flint vault rename <name>` and **Rename** in Manage vaults and
+  Settings → Vault. Opening a vault whose file moved replaces its stale recent entry
+  (same salt, D-017).
+- **Terminal colour themes** in Settings → Terminal, ported from Tether: Default,
+  Catppuccin, Tokyo Night, Aura, Dracula, Nord, each dark and light.
+- **Leave Tether:** OSC 52 clipboard, dead-key / IME correctness with in-order input, and a
+  one-shot import of a Tether vault.
+- Docs site, the landing and the CLI demo follow every user-visible change (CLAUDE.md rules
+  5 and 6).
 
-**Out of scope (MVP), tracked in the roadmap:** SFTP, tunnels, Windows, auto-updater,
-SSH agent server, MCP, agent tokens and policies, fleet exec, vault sharing, split, import
-and export, short-lived certificates, a daemon and shared sessions, splits and broadcast
-input, Tether import.
+**Out of scope (v2), tracked in the roadmap:** `flint agent` and its setup, agent tokens,
+policies, audit log and MCP; SFTP; tunnels; vault sync backends, conflict detection and
+snapshots; master-password change; Touch ID; signed builds and packaging; Windows; split
+panes; snippets; restoring sessions.
 
 ## Stack
 
@@ -66,9 +62,9 @@ input, Tether import.
 | Desktop shell | **cfire `ext:webui`** (WKWebView / WebKitGTK) | Wails-like typed RPC + events, native webview, no bundled browser | Electron (heavy), raygui (no rich UI) |
 | Frontend | **React + Vite**, CSS Modules + design tokens | Proven in Tether; the frontend is largely portable | Svelte/Solid: no strong reason to switch while the backend is new |
 | Terminal | **xterm.js** (pinned beta + WebGL addon) | Kitty keyboard protocol; WebGL renderer fixes cell sizing | — |
-| SSH | **libssh** or **libssh2** via `import cpp` | cfire has no SSH. Both cover PTY, SFTP, agent, forwarding and known_hosts | Writing SSH ourselves |
+| SSH | **libssh** via `import cpp` (D-012) | cfire has no SSH. Covers PTY, SFTP, agent, forwarding and known_hosts | libssh2, writing SSH ourselves |
 | Crypto | **libsodium**: Argon2id + XChaCha20-Poly1305 | Vetted, constant-time, the same primitives as Tether | cfire `core:crypto/aes` (hand-rolled) |
-| Vault store | **SQLite, whole-file encrypted** (SQLite3MultipleCiphers or SQLCipher) | Queryable and transactional. No plaintext metadata on a synced disk | Per-field encryption (Tether: leaks metadata), a KeePass-style blob |
+| Vault store | **SQLite, whole-file encrypted** with SQLCipher (D-013) | Queryable and transactional. No plaintext metadata on a synced disk | Per-field encryption (Tether: leaks metadata), a KeePass-style blob |
 | Keychain | macOS Security.framework, Linux libsecret, via `import cpp` | cfire has no keychain module | Storing the key in a file |
 | Docs | **Astro + Starlight** | Landing and Docs in one site; Markdown docs written alongside code | Docusaurus, VitePress |
 
@@ -81,11 +77,12 @@ implement them, and thin drivers that expose the same use cases to every surface
  drivers        GUI (webui + React)   CLI   [later: MCP, ssh-agent, daemon API]
                         │              │
  application     use cases: OpenVault, UnlockVault, SwitchVault, Host/Key/Cred CRUD,
-                 Connect, Exec, ResolveAuth
+                 Connect, Exec, ResolveAuth, TestConnection, RevealSecret, RenameVault
                         │
  domain          Vault, Group, Host, SSHKey, Credential, KnownHost, AuthMethod
                         │  ports
  ports           VaultStore · Crypto · Keychain · SshTransport · Terminal · EventSink · Clock
+                 · SettingsStore · RecentStore · UiStateStore · Clipboard
                         │
  adapters        sqlite_vault · sodium_crypto · keychain_{macos,linux} · libssh_transport
                  · webui_events · stdio_terminal
@@ -98,6 +95,10 @@ Contracts:
   time. Drivers see derived flags such as `hasPassword`.
 - **Streaming is out-of-band.** Terminal bytes travel through `EventSink` and stdio, never as
   RPC return values. The caller mints the session id and subscribes before starting.
+- **Per-machine state lives in the config folder, never in the vault** (D-030):
+  `settings.json` (preferences), `vaults.json` (recent vaults, D-021) and `ui-state.json`
+  (sidebar and tree state). Per-vault entries are keyed by a hash of the vault's salt and
+  hold only opaque ids.
 - **Every native C++ shim is an adapter**, tagged with its `CF-NNN` entry, so it can be
   rewritten in cfire without touching the core.
 - **Vault lifecycle:**
@@ -124,8 +125,10 @@ Checkable rules. Every milestone is checked against them before it is closed. Ru
    from inside a vault is ever written in clear text, including in logs. (The recent-vaults
    list keeps each vault's file path and name in clear, D-021.) The vault schema and file
    format change only through an appended migration.
-6. Secret values never appear in RPC results, CLI output (`--json` included), logs or error
-   messages.
+6. **(owner review)** Secret values never appear in RPC results, CLI output (`--json` included), logs or error
+   messages. **One exception (D-029):** the GUI's explicit *reveal* action on a password,
+   while the vault is unlocked, returns that one value to the page. *Copy* never does: the
+   core writes it to the clipboard itself. The CLI has no reveal.
 7. Every CLI command supports `--json`, writes data to stdout and diagnostics to stderr, and
    exits non-zero with a stable error code on failure.
 8. Every network operation (dial, auth, exec) has an explicit timeout.
@@ -136,23 +139,23 @@ Checkable rules. Every milestone is checked against them before it is closed. Ru
 
 Each milestone is built **whole** with `lean-build` and verified by the agent. Owner checks
 happen only where a human is required (see `CLAUDE.md`). Progress is recorded in
-`docs/build-log.md`, not here.
+`docs/build-log.md`, not here. Numbering continues from v1.
+
+**Owner walkthroughs use a copy of a vault.** A build without a migration refuses a vault
+written by a newer Flint, and the demo build kept aside (`~/Applications/Flint Demo.app`,
+tag `demo-2026-11-05`) must keep opening the owner's vaults. Migration 003 lands in 06.
 
 | # | Milestone | Delivers |
 |---|---|---|
-| 01 | **Scaffold + risk spike** | Repo layout with the hexagonal packages. libssh, libsodium and encrypted SQLite compiling and linked via `import cpp` on macOS and Linux. A throwaway proof: open an SSH PTY and echo it in a webui window. Astro + Starlight site skeleton (landing + Docs). First `cfire-upstream.md` entries confirmed or discarded |
-| 02 | **Vault core + CLI** | Encrypted vault create/open/unlock/lock. Recent-vaults list. Keychain auto-unlock. Groups (nested), hosts, keys (by content), credentials. `flint vault\|host\|key\|cred` with `--json`. Docs pages for each |
-| 03 | **SSH from the CLI** | Auth resolution (credential → host → key/password/agent), known-hosts verification, jump host, `flint connect <alias>` (interactive, resize-aware) and `flint exec <alias> -- cmd` |
-| 04 | **GUI** | Welcome, unlock, vault switcher, sidebar tree, host/key/credential editors, tabs, xterm.js terminal (Kitty protocol, WebGL), connect/auth/host-key prompts, command palette, settings (theme, accent, font). Built from the Claude Design output |
-| 05 | **Interactive CLI demo** | A **Try the CLI** button on the landing opens a dimmed overlay with a simulated terminal, built by hand (`<pre>` log + `<input>`, no terminal library). A seeded demo vault in memory, the CLI's commands with their real output, errors and `--json`, a guided tour with a hint above each step, and a fake Linux shared by every host after `flint connect`. Hosts added in the demo live until reload. Tappable command chips on phones; the static hero stays as the no-JS fallback (D-026) |
+| 06 | **Host editor and connect** | **Test connection** (host editor button on the draft + `flint host test <alias>`, with the host-key prompt and the D-019 exit codes). **Reveal and copy** a host or credential password (D-029: one reveal RPC, a `Clipboard` port written by the core and cleared after ~30 s). **Initial command** per host with *return to shell* (D-031, migration 003): host editor fields, `flint host add\|edit --command/--keep-shell`, `flint host show` lists it, GUI tabs and `flint connect` run it, `--no-command` skips it. Docs and the CLI demo updated |
+| 07 | **App state and vaults** | `ui-state.json` in the config folder (D-030): sidebar open/closed and width (drag to resize), collapsed groups per vault (salt hash → group ids), **Collapse all / Expand all**; debounced, atomic writes; a damaged file falls back to defaults. **Rename a vault** (`flint vault rename`, Manage vaults, Settings → Vault) and a moved vault's recent entry replaced by salt. **Terminal colour themes** from Tether's `terminalThemes.js`. Docs and the CLI demo updated |
+| 08 | **Leave Tether** | **OSC 52** copy into the system clipboard (through the `Clipboard` port). **Dead keys / IME** composed correctly and input delivered in order (the Tether bugs). **`flint import tether <file>`** (and a GUI entry): reads a Tether vault with its master password and writes groups, hosts, keys and credentials into the open Flint vault, reporting what it could not carry over. Docs updated |
 
 ## Open questions
 
-- **libssh (LGPL-2.1) vs libssh2 (BSD-3).** The licence matters for a static single binary.
-  Decide in milestone 01 after the spike.
-- **SQLite3MultipleCiphers (MIT) vs SQLCipher (BSD).** Pick whichever is easier to compile
-  through cfire's `build.CMake`/`build.CC`.
 - **Flint's licence.** MIT or Apache-2.0. It also depends on cfire publishing a licence
   (CF-009).
 - **macOS packaging:** is `cfire build --subsystem=gui` enough for a distributable signed
-  `.app`?
+  `.app`? (Roadmap §7; not in v2.)
+- **Tether import (08):** which Tether vault versions to accept, and whether its plaintext
+  metadata file is read directly or through a Tether export. Settle at 08's plan.

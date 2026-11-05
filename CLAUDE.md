@@ -14,7 +14,7 @@ It is the rewrite of the author's Go/Wails client Tether
 | Build the next milestone | `lean-build` (no argument = the first milestone in `docs/spec.md` not in `docs/build-log.md`) |
 | Build it and chain into the next when nothing needs the owner | `lean-build --continue` |
 | Check or fix the spec | `lean-spec` (check mode) |
-| Plan the next version after the MVP ships | `lean-spec` (next-spec mode, drawn from `ROADMAP.md`) |
+| Plan the next version once the current spec ships | `lean-spec` (next-spec mode, drawn from `ROADMAP.md`) |
 
 There are no phase files, `progress.md`, `active-context.md` or `manual-tests.md`. State
 is `docs/build-log.md` plus `git log`.
@@ -23,8 +23,8 @@ is `docs/build-log.md` plus `git log`.
 
 | File | What it holds |
 |---|---|
-| [`docs/spec.md`](docs/spec.md) | The MVP: scope, stack, architecture, **Principles**, milestones |
-| [`ROADMAP.md`](ROADMAP.md) | Everything beyond the MVP. The backlog |
+| [`docs/spec.md`](docs/spec.md) | The current spec (v2): scope, stack, architecture, **Principles**, milestones. The MVP is [`docs/spec-v1.md`](docs/spec-v1.md) |
+| [`ROADMAP.md`](ROADMAP.md) | Everything beyond the current spec. The backlog |
 | [`docs/build-log.md`](docs/build-log.md) | One line per finished milestone. The only state |
 | [`docs/decisions.md`](docs/decisions.md) | One-line decision log |
 | [`docs/cfire-upstream.md`](docs/cfire-upstream.md) | Gaps in cfire, handed to its author |
