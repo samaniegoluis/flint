@@ -1,0 +1,79 @@
+package uievents
+
+// The Clipboard port for the desktop app: the system clipboard, through a native shim
+// (native/flint_clipboard.hpp, CF-053). Only the GUI driver imports this file's
+// package, so the CLI never links AppKit or GTK.
+
+import cpp "flint_clipboard.hpp" @pkg("flint-native-gui")
+import "../../domain"
+
+// `board` is "" for the system clipboard; the tests use a private named one on macOS.
+type OsClipboard struct {
+    board: str
+}
+
+fn new_os_clipboard() -> OsClipboard {
+    return OsClipboard{ board: "" }
+}
+
+// Puts a secret on the clipboard, marked for clipboard managers to skip, and clears
+// it after `clear_after_ms` unless something else was copied since (D-029).
+fn (mut self: OsClipboard) clipboard_copy_secret(text: str, clear_after_ms: i64) -> void! {
+    mut rc: i32 = 0
+    name := self.board
+    // CFIRE-UPSTREAM: CF-053
+    cpp {
+        rc = flint_clip::copy_secret(name, text, clear_after_ms);
+    }
+    if rc == 2 {
+        return error(coded(ERR_IO, "no clipboard is available"))
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "the clipboard refused the copy"))
+    }
+}
+
+// ---- For the tests -----------------------------------------------------------------
+
+fn clipboard_read_text(board: str) -> str {
+    mut s := ""
+    // CFIRE-UPSTREAM: CF-053
+    cpp {
+        s = flint_clip::read_text(board);
+    }
+    return s
+}
+
+fn clipboard_is_concealed(board: str) -> bool {
+    mut b := false
+    // CFIRE-UPSTREAM: CF-053
+    cpp {
+        b = flint_clip::is_concealed(board);
+    }
+    return b
+}
+
+fn clipboard_change_count(board: str) -> i64 {
+    mut n: i64 = 0
+    // CFIRE-UPSTREAM: CF-053
+    cpp {
+        n = flint_clip::change_count(board);
+    }
+    return n
+}
+
+fn clipboard_clear_if_unchanged(board: str, count: i64) -> bool {
+    mut b := false
+    // CFIRE-UPSTREAM: CF-053
+    cpp {
+        b = flint_clip::clear_if_unchanged(board, count);
+    }
+    return b
+}
+
+fn clipboard_release(board: str) {
+    // CFIRE-UPSTREAM: CF-053
+    cpp {
+        flint_clip::release_board(board);
+    }
+}

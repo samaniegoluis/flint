@@ -1,0 +1,8 @@
+# CFIRE-UPSTREAM: CF-031
+# The desktop app's own native shims (the clipboard, CF-053): AppKit is linked here and
+# not in flint-native, so the CLI never loads it. See flint-native.pc.
+Name: flint-native-gui
+Description: Native shims of Flint's desktop app (macOS)
+Version: 1
+Cflags: -I${pcfiledir}/../../uievents/native
+Libs: -framework AppKit

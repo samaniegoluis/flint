@@ -36,6 +36,8 @@ What Tether already does and Flint must not lose.
 | **Test connection** in the host editor (on the unsaved draft) and `flint host test <alias>`: dial, verify the host key like a real connect, authenticate, close | `mvp` | Milestone 06. Tether has it (`TestConnection`); raised by the owner while using the MVP |
 | **Reveal and copy a password** in the host and credential editors: hidden by default, only while unlocked, hides again after a few seconds; copy is written by the core straight to the clipboard and cleared after ~30 s. GUI only, no CLI `--reveal` | `mvp` | Milestone 06 (D-029, narrows P6). Tether has the eye button (`RevealHostPassword`) |
 | **Initial command per host** (e.g. `herdr` on codebox), with a per-host "return to shell when it exits" option. Run through the remote login shell, like `ssh -t host cmd`, not instead of it as Tether did; `flint connect` honours it, `--no-command` skips it | `mvp` | Milestone 06 (D-031, migration 003). Tether has `InitialCommand` |
+| GUI: open a session **without the initial command** (a palette action, e.g. "Connect to codebox without herdr"), like `flint connect --no-command` | `next` | Found while building milestone 06: in the app a broken initial command can only be cleared in the host editor |
+| `flint host test @group` / test every host in a folder from the GUI, with a summary | `idea` | Milestone 06 tests one host |
 | Sidebar open/closed remembered, and **Collapse all / Expand all** in the host tree, all remembered per machine | `mvp` | Milestone 07 (D-030). Tether has both (config file beside the app) |
 
 ## 2. CLI

@@ -105,6 +105,19 @@ type SessionReq struct {
     session: str `json:"session"`
 }
 
+// host_test sends the editor's patch fields plus these; parsed apart like TargetReq.
+type HostTestReq struct {
+    session:             str  `json:"session"`
+    target:              str  `json:"target"`
+    accept_new_host_key: bool `json:"accept_new_host_key"`
+}
+
+// A saved password, by owner: `kind` is "host" or "credential".
+type SecretReq struct {
+    kind: str `json:"kind"`
+    name: str `json:"name"`
+}
+
 type DarkReq struct {
     dark: bool `json:"dark"`
 }
@@ -135,6 +148,22 @@ type PathReply struct {
 
 type FontList struct {
     fonts: []str `json:"fonts"`
+}
+
+// The one RPC reply that carries a secret value (D-029).
+type RevealReply struct {
+    value: str `json:"value"`
+}
+
+// The end of a host test, emitted as "host:test". `code` is "" on success.
+type HostTestEvent struct {
+    session:     str `json:"session"`
+    code:        str `json:"code"`
+    message:     str `json:"message"`
+    host:        str `json:"host"`
+    target:      str `json:"target"`
+    hops:        i64 `json:"hops"`
+    duration_ms: i64 `json:"duration_ms"`
 }
 
 // ---- State ------------------------------------------------------------------------
@@ -382,6 +411,24 @@ fn rpc_cred_rm(params: str, mut store: LockedVaultStore, st: GuiState) -> str! {
     return json.stringify(try remove_cred(mut store, req.name))
 }
 
+// ---- Reveal and copy (D-029) ---------------------------------------------------------
+
+// The single exception to Principle 6: the page asked to see one saved password. The
+// value goes back to the page only, never to a log or an error.
+fn rpc_secret_reveal(params: str, c: Sodium, store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[SecretReq](params)
+    return json.stringify(RevealReply{ value: try reveal_password(c, store, st.vault_session(), req.kind, req.name) })
+}
+
+// Copies a saved password; the value never crosses RPC.
+fn rpc_secret_copy(params: str, c: Sodium, store: LockedVaultStore, mut clip: OsClipboard, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[SecretReq](params)
+    try copy_password(c, store, st.vault_session(), mut clip, req.kind, req.name)
+    return ok_json()
+}
+
 // Forgets a host's key: the explicit step before reconnecting to a host whose key
 // changed (D-019). The core never replaces a key by itself.
 fn rpc_known_host_rm(params: str, mut store: LockedVaultStore, st: GuiState) -> str! {
@@ -430,6 +477,46 @@ fn run_gui_session(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, v
     } else {
         msg := "{result.error().message()}"
         emit_session_state(mut app, req.session, "ended", error_code_of(msg), error_text_of(msg), -1)
+    }
+    gui_session_drop(req.session)
+}
+
+// ---- Testing a host ------------------------------------------------------------------
+
+// Checks a host test request and opens its mailbox, through which the host key
+// prompt is answered. The caller spawns the worker.
+fn host_test_check(params: str, st: GuiState) -> HostTestReq! {
+    try st.require_unlocked()
+    req := try parse_req[HostTestReq](params)
+    _ := try parse_req[HostPatch](params)
+    if req.session.len() == 0 {
+        return error(coded(ERR_INVALID, "a host test needs an id"))
+    }
+    if gui_session_count() >= MAX_SESSIONS {
+        return error(coded(ERR_CONFLICT, "{MAX_SESSIONS} sessions are open; close one first"))
+    }
+    if !gui_session_open(req.session, 80, 24) {
+        return error(coded(ERR_CONFLICT, "session '{req.session}' already exists"))
+    }
+    return req
+}
+
+// The test itself, on a worker thread: the editor's unsaved form (`target` "" for a
+// new host). It ends with a "host:test" event.
+fn run_gui_host_test(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, vs: VaultSession, req: HostTestReq, patch: HostPatch) {
+    mut opts := default_connect_options()
+    opts.accept_new_host_key = req.accept_new_host_key
+    mut link := new_ssh_link()
+    mut clock := new_system_clock()
+    prompter := new_gui_prompter(app, req.session)
+    result := test_host_draft(c, mut store, vs, mut link, prompter, mut clock, req.target, patch, opts)
+    link.link_hangup()
+    if result.has_value() {
+        r := result.value()
+        app.emit("host:test", HostTestEvent{ session: req.session, code: "", message: "", host: r.host, target: r.target, hops: r.hops, duration_ms: r.duration_ms })
+    } else {
+        msg := "{result.error().message()}"
+        app.emit("host:test", HostTestEvent{ session: req.session, code: error_code_of(msg), message: error_text_of(msg), host: "", target: "", hops: 0, duration_ms: 0 })
     }
     gui_session_drop(req.session)
 }

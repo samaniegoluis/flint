@@ -74,6 +74,12 @@ fn main() {
     mut settings_store := new_json_settings_store(config_dir)
     inspector := new_libssh_key_inspector()
     font_catalog := new_os_font_catalog()
+    mut clipboard := new_os_clipboard()
+    if e2e {
+        // The headless run copies a marker password: keep it off the real clipboard
+        // (macOS; on Linux the run has its own X display).
+        clipboard.board = "net.flint.gui-e2e"
+    }
     mut st := new_gui_state()
 
     app.bind_raw("app_info") |params| { return rpc_app_info(e2e) }
@@ -106,6 +112,8 @@ fn main() {
     app.bind_raw("cred_edit") |params| { return rpc_cred_edit(params, c, mut store, st) }
     app.bind_raw("cred_rm") |params| { return rpc_cred_rm(params, mut store, st) }
     app.bind_raw("known_host_rm") |params| { return rpc_known_host_rm(params, mut store, st) }
+    app.bind_raw("secret_reveal") |params| { return rpc_secret_reveal(params, c, store, st) }
+    app.bind_raw("secret_copy") |params| { return rpc_secret_copy(params, c, store, mut clipboard, st) }
 
     app.bind_raw("session_input") |params| { return rpc_session_input(params) }
     app.bind_raw("session_resize") |params| { return rpc_session_resize(params) }
@@ -131,6 +139,24 @@ fn main() {
                 }
             }
             return session_open_reply(req)
+        }
+        app.bind_raw("host_test") |params| {
+            req := host_test_check(params, st)
+            if !req.has_value() {
+                return error("{req.error().message()}")
+            }
+            patch := parse_req[HostPatch](params) or empty_host_patch()
+            worker_app := app
+            worker_store := store
+            vs := st.vault_session()
+            r := req.value()
+            scope.spawn || {
+                // spawn captures by const value (CF-026): take mutable copies.
+                mut a := worker_app
+                mut s := worker_store
+                run_gui_host_test(mut a, c, mut s, vs, r, patch)
+            }
+            return ok_json()
         }
         install_app_menu("Flint")
         // run_webview_test is a no-op on Linux (CF-029): there the end-to-end run

@@ -582,3 +582,17 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Ideal:** `build.Executable` takes `Icon` (an SVG or PNG it renders per platform:
   `.icns` on macOS, the GTK window icon and a `.desktop` icon on Linux, an `.ico` on
   Windows) and `BundleId`.
+
+### CF-053 · missing · `confirmed`: no clipboard API in `ext:webui` (or anywhere in cfire)
+- **Repro:** a desktop app that must put text on the system clipboard from the core,
+  not from the page (Flint copies a saved password without sending it to the page,
+  D-029), finds no clipboard call in `ext:webui` or `core:*` (cfire 0.9.4). The page's
+  `navigator.clipboard` would need the value in JavaScript, and has no way to mark it
+  concealed or clear it later.
+- **Workaround:** `src/adapters/uievents/native/flint_clipboard.hpp`: NSPasteboard
+  through the Objective-C runtime on macOS (`org.nspasteboard.ConcealedType`, cleared
+  with `dispatch_after` when `changeCount` is unchanged), GTK 3 `gtk_clipboard_set_with_data`
+  on Linux (with the `x-kde-passwordManagerHint` target). Linked through a separate
+  pkg-config file, `flint-native-gui`, so the CLI does not load AppKit or GTK (CF-031).
+- **Ideal:** `webui.App.clipboard_set(text, { concealed: true, clear_after_ms })` and
+  `clipboard_get()`, run on the UI thread, for macOS, GTK and WebView2.
