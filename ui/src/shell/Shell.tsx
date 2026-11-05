@@ -241,7 +241,7 @@ export function Shell() {
         </div>
       )}
 
-      {view === 'hosts' && <SessionArea fontSize={fontSize} onPalette={(h) => setPalette({ hostsOnly: h })} onEditHost={(alias) => setEditor({ alias, group: '' })} onConnect={connect} />}
+      <SessionArea shown={view === 'hosts'} fontSize={fontSize} onPalette={(h) => setPalette({ hostsOnly: h })} onEditHost={(alias) => setEditor({ alias, group: '' })} onConnect={connect} />
       {view === 'keys' && <KeysPage adding={addingKey} setAdding={setAddingKey} onConfirm={setConfirm} />}
       {view === 'credentials' && <CredentialsPage editing={credEditing} setEditing={setCredEditing} onConfirm={setConfirm} />}
       {view === 'settings' && <SettingsPage section={section} setSection={setSection} onLock={() => lock().catch(fail)} onConfirm={setConfirm} />}

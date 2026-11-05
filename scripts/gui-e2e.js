@@ -292,6 +292,8 @@
     await sleep(100);
 
     await setStep('settings');
+    const openTabs = qa('.tab').length;
+    if (openTabs) await runInTerminal('echo kept-$((20+3))', 'kept-23');
     await click('.rail-btn', 'Settings');
     await click('.swatches .sw[aria-label="moss"]');
     await waitFor(() => document.documentElement.dataset.accent === 'moss', 'the accent');
@@ -309,6 +311,11 @@
     await click('.nav-i', 'Vault');
     await waitFor(() => hasText('Known hosts'), 'the vault settings');
     await check(byText('td', `[127.0.0.1]:${PORT}`), 'known hosts are listed');
+    if (openTabs) {
+      await click('.rail-btn', 'Hosts');
+      await waitFor(() => activeTerm(), 'the session view');
+      await check(termText().includes('kept-23'), 'a terminal keeps its scrollback across a visit to Settings');
+    }
 
     await setStep('lock');
     await click('.statusbar .sb-btn', 'Lock');

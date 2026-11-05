@@ -11,7 +11,10 @@ import { sessions, statusLabel, useSessions } from './store';
 import { TerminalView } from './TerminalView';
 import { SessionCard } from './SessionCards';
 
-export function SessionArea({ fontSize, onPalette, onEditHost, onConnect }: {
+// Stays mounted while another view (Keys, Credentials, Settings) is shown, with
+// `shown` false: unmounting it disposed every xterm.js terminal and its scrollback.
+export function SessionArea({ shown, fontSize, onPalette, onEditHost, onConnect }: {
+  shown: boolean;
   fontSize: number;
   onPalette: (hostsOnly: boolean) => void;
   onEditHost: (alias: string) => void;
@@ -27,7 +30,7 @@ export function SessionArea({ fontSize, onPalette, onEditHost, onConnect }: {
 
   if (tabs.length === 0) {
     return (
-      <section className="main" aria-label="No open sessions" style={{ alignItems: 'center', justifyContent: 'center', background: 'var(--surface-base)' }}>
+      <section className="main" aria-label="No open sessions" hidden={!shown} style={{ alignItems: 'center', justifyContent: 'center', background: 'var(--surface-base)' }}>
         <div className="col" style={{ width: 520, gap: 'var(--sp-5)' }}>
           <div className="col" style={{ alignItems: 'center', gap: 'var(--sp-2)', textAlign: 'center' }}>
             <Logo size={32} />
@@ -78,7 +81,7 @@ export function SessionArea({ fontSize, onPalette, onEditHost, onConnect }: {
   const s = tab ? statusLabel(tab) : null;
   const ready = tab?.status === 'ready';
   return (
-    <section className="main" aria-label="Sessions">
+    <section className="main" aria-label="Sessions" hidden={!shown}>
       <div className="tabbar" role="tablist" aria-label="Open sessions" ref={tablist} onKeyDown={onTabKey}>
         {tabs.map((t, i) => {
           const st = statusLabel(t);
@@ -116,7 +119,7 @@ export function SessionArea({ fontSize, onPalette, onEditHost, onConnect }: {
       <div className="pane">
         {tabs.map((t) => (
           <div key={t.id} style={{ position: 'absolute', inset: 0, display: t.id === active ? 'block' : 'none' }} role="region" aria-label={`Terminal — ${t.alias}`}>
-            <TerminalView tabId={t.id} active={t.id === active} focus={t.id === active && t.status === 'ready'} fontSize={fontSize} />
+            <TerminalView tabId={t.id} active={shown && t.id === active} focus={shown && t.id === active && t.status === 'ready'} fontSize={fontSize} />
             <SessionCard tab={t} active={t.id === active} onEditHost={onEditHost} />
           </div>
         ))}

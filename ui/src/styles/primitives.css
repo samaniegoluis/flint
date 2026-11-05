@@ -122,6 +122,7 @@ body { margin: 0; background: var(--surface-desk); }
 
 /* Main area */
 .main { position: absolute; top: var(--titlebar-h); bottom: var(--statusbar-h); right: 0; left: calc(var(--rail-w) + var(--sidebar-w)); display: flex; flex-direction: column; background: var(--surface-sunken); }
+.main[hidden] { display: none; }
 .app[data-view="files"] .main { left: calc(var(--rail-w) + var(--sidebar-files-w)); }
 .app:not([data-view="hosts"]):not([data-view="files"]) .main, .app[data-collapsed="true"] .main { left: var(--rail-w); }
 .page { background: var(--surface-base); }
