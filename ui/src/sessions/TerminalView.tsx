@@ -199,8 +199,13 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
 
   useEffect(() => {
     if (!active) return;
-    refit();
+    // After the parent's effects: coming back from Settings, Shell restores the
+    // sidebar (root data-collapsed) in its own effect, which runs after this one.
+    // Fitting now measured the wider pane and sent the shell a resize too many,
+    // which zsh answered by drawing its prompt again.
+    const t = setTimeout(refit, 0);
     if (focus) termRef.current?.focus();
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, focus]);
 

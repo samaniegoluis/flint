@@ -293,7 +293,8 @@
 
     await setStep('settings');
     const openTabs = qa('.tab').length;
-    if (openTabs) await runInTerminal('echo kept-$((20+3))', 'kept-23');
+    // The shell prints a mark on every SIGWINCH: coming back must not resize it.
+    if (openTabs) await runInTerminal("trap 'echo winch-$((5+5))' WINCH; echo kept-$((20+3))", 'kept-23');
     await click('.rail-btn', 'Settings');
     await click('.swatches .sw[aria-label="moss"]');
     await waitFor(() => document.documentElement.dataset.accent === 'moss', 'the accent');
@@ -315,6 +316,8 @@
       await click('.rail-btn', 'Hosts');
       await waitFor(() => activeTerm(), 'the session view');
       await check(termText().includes('kept-23'), 'a terminal keeps its scrollback across a visit to Settings');
+      await sleep(600);
+      await check(!termText().includes('winch-10'), 'coming back from Settings sends the shell no resize');
     }
 
     await setStep('lock');
