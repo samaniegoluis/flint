@@ -28,6 +28,17 @@ var HOST_KEY_KNOWN: str = "known"
 var HOST_KEY_NEW: str = "new"
 var HOST_KEY_CHANGED: str = "changed"
 
+// A server key the person is asked about (a new key) or told about (a changed key,
+// which is always refused, D-019). `known_*` are empty for a new key.
+type HostKeyQuestion struct {
+    alias:             str `json:"alias"`
+    addr:              str `json:"addr"`
+    key_type:          str `json:"key_type"`
+    fingerprint:       str `json:"fingerprint"`
+    known_key_type:    str `json:"known_key_type"`
+    known_fingerprint: str `json:"known_fingerprint"`
+}
+
 // One way to authenticate, tried in order. `kind` is "key", "password" or "agent".
 // `source` says where the secret lives ("host" or "credential") and `ref_id` the row
 // that holds it (a key id for "key", a host or credential id for "password").

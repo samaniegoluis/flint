@@ -152,6 +152,14 @@ fn verify_host_key[S: VaultStore, P: Prompter](mut store: S, prompter: P, h: Hos
         return status
     }
     if status == HOST_KEY_CHANGED {
+        mut q := HostKeyQuestion{ alias: h.alias, addr: addr, key_type: key.key_type, fingerprint: key.fingerprint, known_key_type: "", known_fingerprint: "" }
+        for k in known {
+            if k.addr == addr {
+                q.known_key_type = k.key_type
+                q.known_fingerprint = k.fingerprint
+            }
+        }
+        prompter.host_key_changed(q)
         return error(coded(ERR_HOST_KEY, "the host key of '{h.alias}' ({addr}) has CHANGED; it is now {key.key_type} {key.fingerprint}. Someone may be intercepting the connection. If the server was reinstalled, run `flint known-host rm {h.alias}` and connect again"))
     }
     mut trusted := opts.accept_new_host_key
@@ -159,7 +167,7 @@ fn verify_host_key[S: VaultStore, P: Prompter](mut store: S, prompter: P, h: Hos
         if !prompter.prompt_available() {
             return error(coded(ERR_HOST_KEY, "'{h.alias}' ({addr}) is not a known host and there is no terminal to confirm its key ({key.key_type} {key.fingerprint}); connect once from a terminal, or pass --accept-new-host-key"))
         }
-        trusted = try prompter.prompt_confirm("The host '{h.alias}' ({addr}) is not known yet.\n{key.key_type} key fingerprint is {key.fingerprint}.\nTrust this key and continue connecting (yes/no)? ")
+        trusted = try prompter.prompt_host_key(HostKeyQuestion{ alias: h.alias, addr: addr, key_type: key.key_type, fingerprint: key.fingerprint, known_key_type: "", known_fingerprint: "" })
     }
     if !trusted {
         return error(coded(ERR_HOST_KEY, "the host key of '{h.alias}' was not trusted"))
@@ -221,7 +229,7 @@ fn authenticate_hop[C: Crypto, T: SshTransport, P: Prompter](crypto: C, session:
         tried.push(step_label(cat, s))
     }
     if prompter.prompt_available() {
-        typed := try prompter.prompt_password("{user}@{h.alias}'s password: ")
+        typed := try prompter.prompt_password(user, h.alias)
         if typed.len() > 0 {
             r := link.link_auth_password(typed)
             if r.has_value() {

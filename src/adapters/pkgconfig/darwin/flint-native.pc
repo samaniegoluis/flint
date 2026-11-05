@@ -6,5 +6,5 @@ Name: flint-native
 Description: Native shims for Flint's keychain and process adapters (macOS). libssh is required for the SSH shim
 Version: 1
 Requires: libssh
-Cflags: -I${pcfiledir}/../../keychain/native -I${pcfiledir}/../../process/native -I${pcfiledir}/../../ssh/native
-Libs: -framework Security -framework CoreFoundation
+Cflags: -I${pcfiledir}/../../keychain/native -I${pcfiledir}/../../process/native -I${pcfiledir}/../../ssh/native -I${pcfiledir}/../../uievents/native -I${pcfiledir}/../../vault/native -I${pcfiledir}/../../fonts/native
+Libs: -framework Security -framework CoreFoundation -framework CoreText

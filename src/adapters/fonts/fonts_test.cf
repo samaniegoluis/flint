@@ -1,0 +1,33 @@
+package fonts
+
+import "../../ports"
+
+fn fonts_port_check[F: FontCatalog](f: F) -> []str {
+    // Not `or []`: it does not compile with libstdc++ (CF-040).
+    r := f.mono_font_families()
+    if !r.has_value() {
+        return []
+    }
+    return r.value()
+}
+
+test "the OS font catalog lists monospaced families" {
+    names := fonts_port_check(new_os_font_catalog())
+    // Every macOS has Menlo; a Linux box without fontconfig lists none.
+    mut apple := false
+    // CFIRE-UPSTREAM: CF-031
+    cpp {
+        #if defined(__APPLE__)
+        apple = true;
+        #endif
+    }
+    if apple {
+        mut menlo := false
+        for n in names {
+            if n == "Menlo" {
+                menlo = true
+            }
+        }
+        assert(menlo, "Menlo should be listed as monospaced")
+    }
+}

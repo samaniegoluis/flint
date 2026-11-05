@@ -1,0 +1,42 @@
+package vault
+
+import "../../ports"
+import "../../domain"
+
+test "LockedVaultStore shares one connection between copies and threads" {
+    path := temp_vault_path("locked.flint")
+    mut store := new_locked_vault_store()
+    try store.vault_create(path, test_key(9), test_salt_bytes())
+    assert(store_port_check(mut store))
+    // A copy sees the connection the original opened.
+    worker_copy := store
+    assert_eq(try worker_copy.vault_format(), i64(1))
+
+    async.scope(workers: 2) |scope| {
+        scope.spawn || {
+            mut w := worker_copy
+            for i in 0..40 {
+                put := w.known_host_put(KnownHost{ addr: "w{i}", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" })
+                assert(put.has_value())
+            }
+        }
+        for i in 0..40 {
+            try store.vault_begin()
+            try store.group_put(Group{ id: "g{i}", parent_id: "", name: "group{i}" })
+            try store.vault_commit()
+        }
+    }
+    assert_eq((try store.groups_all()).len(), usize(40))
+    assert_eq((try store.known_hosts_all()).len(), usize(40))
+
+    // A rolled-back transaction leaves nothing and releases the lock.
+    try store.vault_begin()
+    try store.group_put(Group{ id: "gx", parent_id: "", name: "gone" })
+    store.vault_rollback()
+    assert_eq((try store.groups_all()).len(), usize(40))
+
+    // Detaching through one copy closes it for all.
+    store.vault_detach()
+    after := worker_copy.hosts_all()
+    assert(!after.has_value())
+}

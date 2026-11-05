@@ -1,0 +1,27 @@
+package config
+
+import "core:fs"
+import "core:crypto/sha256"
+import "../../ports"
+import "../../domain"
+
+fn settings_port_check[T: SettingsStore](mut t: T) -> bool {
+    s := t.settings_load() or err { return false }
+    return s.theme == "system"
+}
+
+test "settings round-trip through settings.json and default when missing or damaged" {
+    dir := "/tmp/flint-config-" + sha256.random_hex(8)
+    mut store := new_json_settings_store(dir)
+    assert(settings_port_check(mut store))
+    mut s := default_settings()
+    s.accent = "moss"
+    s.term_font = "JetBrainsMono Nerd Font"
+    try store.settings_save(s)
+    back := try store.settings_load()
+    assert_eq(back.accent, "moss")
+    assert_eq(back.term_font, "JetBrainsMono Nerd Font")
+    try fs.write_text(dir + "/settings.json", "{not json")
+    again := try store.settings_load()
+    assert_eq(again.accent, "ember")
+}

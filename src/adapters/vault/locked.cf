@@ -1,0 +1,240 @@
+package vault
+
+// LockedVaultStore: the VaultStore port for a program with several threads (the GUI).
+// Every copy shares one SQLCipher connection and one recursive mutex
+// (native/flint_vault_lock.hpp). Each call holds the mutex; a transaction holds it
+// from vault_begin to vault_commit or vault_rollback, so another thread never writes
+// in the middle of it. Attaching or detaching changes the connection for every copy;
+// a copy that runs after a detach gets the store's "no vault is open" error.
+
+import cpp "flint_vault_lock.hpp" @pkg("flint-native")
+import "../../domain"
+
+type LockedVaultStore struct {
+    cell: shared[cpp::flint_vault::VaultCell]
+}
+
+fn new_locked_vault_store() -> LockedVaultStore {
+    mut s := LockedVaultStore{}
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        s.cell = std::make_shared<flint_vault::VaultCell>();
+    }
+    return s
+}
+
+// Takes the mutex and returns a store over the shared connection.
+fn (self: LockedVaultStore) enter() -> SqlVaultStore {
+    mut inner := new_sql_vault_store()
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        self.cell->mtx.lock();
+        inner.handle = self.cell->handle;
+    }
+    return inner
+}
+
+fn (self: LockedVaultStore) leave() {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        self.cell->mtx.unlock();
+    }
+}
+
+// Publishes `inner`'s connection to every copy, then releases the mutex.
+fn (self: LockedVaultStore) leave_with(inner: SqlVaultStore) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        self.cell->handle = inner.handle;
+        self.cell->mtx.unlock();
+    }
+}
+
+fn (mut self: LockedVaultStore) vault_create(path: str, page_key: []byte, salt: []byte) -> void! {
+    mut inner := self.enter()
+    r := inner.vault_create(path, page_key, salt)
+    self.leave_with(inner)
+    return r
+}
+
+fn (mut self: LockedVaultStore) vault_attach(path: str, page_key: []byte, salt: []byte) -> void! {
+    mut inner := self.enter()
+    r := inner.vault_attach(path, page_key, salt)
+    self.leave_with(inner)
+    return r
+}
+
+fn (mut self: LockedVaultStore) vault_detach() {
+    mut inner := self.enter()
+    inner.vault_detach()
+    self.leave_with(inner)
+}
+
+// Keeps the mutex held until vault_commit or vault_rollback.
+fn (self: LockedVaultStore) vault_begin() -> void! {
+    inner := self.enter()
+    r := inner.vault_begin()
+    if !r.has_value() {
+        self.leave()
+    }
+    return r
+}
+
+// A failed COMMIT is rolled back here, so the transaction and the mutex both end.
+fn (self: LockedVaultStore) vault_commit() -> void! {
+    inner := self.enter()
+    r := inner.vault_commit()
+    if !r.has_value() {
+        inner.vault_rollback()
+    }
+    self.leave()
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) vault_rollback() {
+    inner := self.enter()
+    inner.vault_rollback()
+    self.leave()
+    self.leave()
+}
+
+fn (self: LockedVaultStore) vault_file_exists(path: str) -> bool {
+    inner := self.enter()
+    r := inner.vault_file_exists(path)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) vault_read_salt(path: str) -> []byte! {
+    inner := self.enter()
+    r := inner.vault_read_salt(path)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) vault_format() -> i64! {
+    inner := self.enter()
+    r := inner.vault_format()
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) vault_get_meta(key: str) -> str! {
+    inner := self.enter()
+    r := inner.vault_get_meta(key)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) vault_set_meta(key: str, value: str) -> void! {
+    inner := self.enter()
+    r := inner.vault_set_meta(key, value)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) groups_all() -> []Group! {
+    inner := self.enter()
+    r := inner.groups_all()
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) group_put(g: Group) -> void! {
+    inner := self.enter()
+    r := inner.group_put(g)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) group_drop(id: str) -> void! {
+    inner := self.enter()
+    r := inner.group_drop(id)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) hosts_all() -> []Host! {
+    inner := self.enter()
+    r := inner.hosts_all()
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) host_put(h: Host) -> void! {
+    inner := self.enter()
+    r := inner.host_put(h)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) host_drop(id: str) -> void! {
+    inner := self.enter()
+    r := inner.host_drop(id)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) keys_all() -> []SshKey! {
+    inner := self.enter()
+    r := inner.keys_all()
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) key_put(k: SshKey) -> void! {
+    inner := self.enter()
+    r := inner.key_put(k)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) key_drop(id: str) -> void! {
+    inner := self.enter()
+    r := inner.key_drop(id)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) creds_all() -> []Credential! {
+    inner := self.enter()
+    r := inner.creds_all()
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) cred_put(c: Credential) -> void! {
+    inner := self.enter()
+    r := inner.cred_put(c)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) cred_drop(id: str) -> void! {
+    inner := self.enter()
+    r := inner.cred_drop(id)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) known_hosts_all() -> []KnownHost! {
+    inner := self.enter()
+    r := inner.known_hosts_all()
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) known_host_put(k: KnownHost) -> void! {
+    inner := self.enter()
+    r := inner.known_host_put(k)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) known_host_drop(addr: str) -> void! {
+    inner := self.enter()
+    r := inner.known_host_drop(addr)
+    self.leave()
+    return r
+}

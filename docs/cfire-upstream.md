@@ -42,6 +42,11 @@ The first entries below came from reading cfire at commit `feat(webui): add ext:
   `emitted_history`, and `eval_js()` pushes every script into `eval_history`. Neither is
   bounded. The spike streams a terminal through `emit`, so a long session grows both
   forever.
+- **Workaround (M04):** the GUI clears both histories once every 512 terminal events
+  (`trim_webui_history` in `src/adapters/uievents/webui_sink.cf`). `App` keeps its
+  state private and has no API for it, so `native/flint_gui.hpp` reaches the member
+  through the explicit-instantiation access rule. Tests that count events still work
+  because they emit fewer than 512.
 - **Ideal:** record history only in test mode, or keep a bounded ring buffer.
 
 ### CF-003 · improvement · `confirmed`: high-throughput / binary event channel
@@ -291,7 +296,11 @@ The entries below were found while building milestone 01 against cfire `3963814`
   - `scope.spawn || { … }` captures by `[=]`, so every captured value is `const` inside the
     task. You have to write `mut copy := captured`.
 - **Workaround:** `SshConn` holds a `shared[cpp::std::mutex]` that every method locks
-  (`src/adapters/ssh/libssh.cf`).
+  (`src/adapters/ssh/libssh.cf`). In M04 the GUI adds two more: `LockedVaultStore`
+  (`src/adapters/vault/locked.cf`, a recursive mutex over the shared SQLCipher
+  handle) and the session mailboxes (`src/adapters/uievents/native/flint_gui.hpp`, a
+  mutex and condition variable per session for keystrokes, resizes and prompt
+  answers, waited on with a timeout).
 - **Ideal:** `sync.Mutex[T]` (a lock that owns its data), `try_recv`, and a `select` over
   channels and contexts.
 
@@ -489,3 +498,31 @@ The entries below were found while building milestone 02 against the same cfire 
   (`src/application/connect_test.cf`, the host key preference checks).
 - **Ideal:** lower a slice literal in `assert_eq`/`assert_ne` to the type of the other
   operand.
+
+### CF-045 · missing · `confirmed`: no way to list installed fonts
+- **Needed:** Settings → Terminal lists every installed monospaced font. A webview
+  cannot enumerate fonts (WKWebView and WebKitGTK have no Local Font Access API).
+- **Workaround:** `src/adapters/fonts/native/flint_fonts.hpp`: CoreText on macOS
+  (families with `kCTFontTraitMonoSpace`), `fc-list :spacing=mono family` on Linux.
+  CoreText is linked through `flint-native.pc` (CF-031).
+- **Ideal:** `ext:webui` (or an `os:fonts` module) returning font families with a
+  monospace flag.
+
+### CF-046 · improvement · `confirmed`: webui RPC handlers run on the UI thread
+- **Repro:** a `bind` handler that takes one second (Argon2id at 256 MiB, an SSH dial)
+  freezes the window for that second: `handle_ipc_message` calls the handler inline
+  from the WKWebView message callback.
+- **Workaround:** the GUI driver spawns long work on an `async.scope` worker and
+  answers through events (`src/drivers/gui/`). This works: `scope.spawn` from a
+  handler and `app.emit` from the worker are both safe. Session workers then need
+  their own mailbox for keystrokes and prompt answers (CF-026).
+- **Ideal:** document the threading model, and offer `bind_async` that runs the
+  handler on a pool and resolves the JS promise when it returns.
+
+### CF-047 · bug · `confirmed`: `x or <value>` does not compile when `x` is `void!`
+- **Repro:** `fn f() -> void! { }` then `_ := f() or false`. The lowering calls
+  `value_or(false)` on `std::expected<void, cfire::Error>`, which has no `value_or`
+  (cfire 0.9.4).
+- **Workaround:** `r := f()` then branch on `r.has_value()`.
+- **Ideal:** reject it with a cfire diagnostic, or lower `void! or _` to "ignore the
+  error".

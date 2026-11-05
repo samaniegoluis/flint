@@ -1,0 +1,273 @@
+package uievents
+
+// The GUI side of an SSH session. The session runs on a worker thread; the page talks
+// to it through a mailbox (native/flint_gui.hpp) that RPC handlers fill on the UI
+// thread: keystrokes, resizes and prompt answers. Output and prompts go back to the
+// page as events.
+//
+//   GuiTerminal  implements the Terminal port (keystrokes in, bytes out, resizes)
+//   GuiPrompter  implements the Prompter port (host key and password prompts)
+//
+// Secrets typed into a prompt travel page → RPC → mailbox → worker and are wiped
+// from the mailbox once taken. They are never emitted back (Principle 6).
+
+import "ext:webui"
+import cpp "flint_gui.hpp" @pkg("flint-native")
+import "../../domain"
+
+// How long a prompt waits for the person before the connection attempt gives up.
+var PROMPT_TIMEOUT_MS: i32 = 300000
+
+// ---- Mailboxes (called from RPC handlers and the worker) --------------------------
+
+// Opens the mailbox of a new session. False when the id is already in use.
+fn gui_session_open(session_id: str, cols: i32, rows: i32) -> bool {
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        ok = flint_gui::open_box(session_id, cols, rows);
+    }
+    return ok
+}
+
+// Marks a session closed: its input ends and a pending prompt is cancelled.
+fn gui_session_close(session_id: str) -> bool {
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        ok = flint_gui::close_box(session_id);
+    }
+    return ok
+}
+
+// Removes a session's mailbox; called by the worker when the session has ended.
+fn gui_session_drop(session_id: str) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_gui::drop_box(session_id);
+    }
+}
+
+fn gui_session_count() -> i64 {
+    mut n: i64 = 0
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        n = flint_gui::open_count();
+    }
+    return n
+}
+
+fn mailbox_error(rc: i32, session_id: str) -> str {
+    if rc == 1 {
+        return coded(ERR_NOT_FOUND, "no session '{session_id}'")
+    }
+    if rc == 3 {
+        return coded(ERR_INVALID, "that prompt is no longer waiting for an answer")
+    }
+    return coded(ERR_INVALID, "the session '{session_id}' is closed")
+}
+
+fn gui_session_input(session_id: str, data: str) -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        rc = flint_gui::push_input(session_id, data);
+    }
+    if rc != 0 {
+        return error(mailbox_error(rc, session_id))
+    }
+}
+
+fn gui_session_resize(session_id: str, cols: i32, rows: i32) -> void! {
+    size := TerminalSize{ cols: cols, rows: rows }
+    if !size.is_valid() {
+        return error(coded(ERR_INVALID, "terminal size {cols}x{rows} is out of range"))
+    }
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        rc = flint_gui::set_size(session_id, cols, rows);
+    }
+    if rc != 0 {
+        return error(mailbox_error(rc, session_id))
+    }
+}
+
+// Answers the prompt `prompt_id` of a session. `ok` false cancels it.
+fn gui_session_answer(session_id: str, prompt_id: str, ok: bool, value: str) -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        rc = flint_gui::answer_prompt(session_id, prompt_id, ok, value);
+    }
+    if rc != 0 {
+        return error(mailbox_error(rc, session_id))
+    }
+}
+
+// ---- Session events ---------------------------------------------------------------
+
+// `state` is "connecting", "ready" or "ended". On "ended", `code` is "" for a shell
+// that exited (then `exit_code` holds its status) or a stable error code.
+type SessionState struct {
+    session:   str `json:"session"`
+    state:     str `json:"state"`
+    code:      str `json:"code"`
+    message:   str `json:"message"`
+    exit_code: i64 `json:"exit_code"`
+}
+
+type SessionPrompt struct {
+    session:  str             `json:"session"`
+    prompt:   str             `json:"prompt"`
+    kind:     str             `json:"kind"`
+    user:     str             `json:"user"`
+    alias:    str             `json:"alias"`
+    host_key: HostKeyQuestion `json:"host_key"`
+}
+
+fn emit_session_state(mut app: webui.App, session_id: str, state: str, code: str, message: str, exit_code: i64) {
+    app.emit("session:state", SessionState{ session: session_id, state: state, code: code, message: message, exit_code: exit_code })
+}
+
+fn empty_host_key_question() -> HostKeyQuestion {
+    return HostKeyQuestion{ alias: "", addr: "", key_type: "", fingerprint: "", known_key_type: "", known_fingerprint: "" }
+}
+
+// ---- Terminal port ----------------------------------------------------------------
+
+type GuiTerminal struct {
+    app: webui.App
+    session: str
+}
+
+fn new_gui_terminal(app: webui.App, session_id: str) -> GuiTerminal {
+    return GuiTerminal{ app: app, session: session_id }
+}
+
+fn (self: GuiTerminal) term_size() -> TerminalSize {
+    mut cols: i32 = 0
+    mut rows: i32 = 0
+    sid := self.session
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        int c = 0, r = 0;
+        flint_gui::get_size(sid, c, r);
+        cols = c;
+        rows = r;
+    }
+    return TerminalSize{ cols: cols, rows: rows }
+}
+
+// The shell is open: tell the page the session is ready.
+fn (mut self: GuiTerminal) term_raw_enter() -> void! {
+    emit_session_state(mut self.app, self.session, "ready", "", "", 0)
+}
+
+fn (mut self: GuiTerminal) term_raw_leave() {
+}
+
+// Keystrokes typed since the last call, waiting up to `timeout_ms`. Fails once the
+// tab is closed, which ends the shell loop.
+fn (mut self: GuiTerminal) term_input(timeout_ms: i32) -> str! {
+    mut rc: i32 = 0
+    mut got := ""
+    sid := self.session
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        rc = flint_gui::take_input(sid, timeout_ms, got);
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "the session was closed"))
+    }
+    return got
+}
+
+fn (mut self: GuiTerminal) term_output(data: str) {
+    mut sink := new_webui_event_sink(self.app)
+    sink.terminal_output(self.session, data)
+}
+
+fn (mut self: GuiTerminal) term_take_resize() -> bool {
+    mut r := false
+    sid := self.session
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        r = flint_gui::take_resize(sid);
+    }
+    return r
+}
+
+// ---- Prompter port ----------------------------------------------------------------
+
+type PromptAnswer struct {
+    value: str
+    cancelled: bool
+}
+
+type GuiPrompter struct {
+    app: webui.App
+    session: str
+    timeout_ms: i32
+}
+
+fn new_gui_prompter(app: webui.App, session_id: str) -> GuiPrompter {
+    return GuiPrompter{ app: app, session: session_id, timeout_ms: PROMPT_TIMEOUT_MS }
+}
+
+fn (self: GuiPrompter) prompt_available() -> bool {
+    return true
+}
+
+// Emits a prompt and blocks this worker until the page answers it. Returns the
+// answer; "" with `cancelled` set when the person cancelled.
+fn (self: GuiPrompter) ask(kind: str, user: str, alias: str, q: HostKeyQuestion) -> PromptAnswer! {
+    mut seq: i64 = 0
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        seq = flint_gui::next_seq();
+    }
+    prompt_id := "{kind}-{seq}"
+    sid := self.session
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        rc = flint_gui::arm_prompt(sid, prompt_id);
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "the session was closed"))
+    }
+    mut app := self.app
+    app.emit("session:prompt", SessionPrompt{ session: sid, prompt: prompt_id, kind: kind, user: user, alias: alias, host_key: q })
+    mut got := ""
+    wait := self.timeout_ms
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        rc = flint_gui::await_answer(sid, wait, got);
+    }
+    if rc == 2 {
+        return error(coded(ERR_IO, "the session was closed"))
+    }
+    if rc == 4 {
+        return error(coded(ERR_TIMEOUT, "nobody answered the prompt"))
+    }
+    return PromptAnswer{ value: got, cancelled: rc == 1 }
+}
+
+fn (self: GuiPrompter) prompt_host_key(q: HostKeyQuestion) -> bool! {
+    a := try self.ask("host_key", "", q.alias, q)
+    return !a.cancelled
+}
+
+fn (self: GuiPrompter) host_key_changed(q: HostKeyQuestion) {
+    mut app := self.app
+    app.emit("session:prompt", SessionPrompt{ session: self.session, prompt: "", kind: "host_key_changed", user: "", alias: q.alias, host_key: q })
+}
+
+fn (self: GuiPrompter) prompt_password(user: str, alias: str) -> str! {
+    a := try self.ask("password", user, alias, empty_host_key_question())
+    if a.cancelled {
+        return ""
+    }
+    return a.value
+}

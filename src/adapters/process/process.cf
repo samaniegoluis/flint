@@ -115,20 +115,24 @@ fn (self: TtyPrompter) prompt_available() -> bool {
 }
 
 // Only "yes" or "y" (any case) confirms.
-fn (self: TtyPrompter) prompt_confirm(question: str) -> bool! {
+fn (self: TtyPrompter) prompt_host_key(q: HostKeyQuestion) -> bool! {
     if !self.enabled {
         return error(coded(ERR_USAGE, "no terminal to confirm on"))
     }
-    answer := try read_tty_line(question)
+    answer := try read_tty_line("The host '{q.alias}' ({q.addr}) is not known yet.\n{q.key_type} key fingerprint is {q.fingerprint}.\nTrust this key and continue connecting (yes/no)? ")
     a := str_trim_spaces(answer)
     return a == "yes" || a == "y" || a == "YES" || a == "Yes" || a == "Y"
 }
 
-fn (self: TtyPrompter) prompt_password(label: str) -> str! {
+// The CLI reports a changed key through the error that follows.
+fn (self: TtyPrompter) host_key_changed(q: HostKeyQuestion) {
+}
+
+fn (self: TtyPrompter) prompt_password(user: str, alias: str) -> str! {
     if !self.enabled {
         return error(coded(ERR_USAGE, "no terminal to prompt on"))
     }
-    return read_secret_line(label)
+    return read_secret_line("{user}@{alias}'s password: ")
 }
 
 // The `Terminal` port on stdin/stdout.

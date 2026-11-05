@@ -1,0 +1,37 @@
+package application
+
+import "../domain"
+
+test "settings are validated on save and repaired field by field on load" {
+    mut store := FakeSettingsStore{ saved: default_settings() }
+    mut s := default_settings()
+    s.theme = "dark"
+    s.term_font_size = 15
+    saved := try save_settings(mut store, s)
+    assert_eq(saved.theme, "dark")
+    assert_eq((try load_settings(store)).term_font_size, i64(15))
+
+    s.accent = "neon"
+    bad := save_settings(mut store, s)
+    assert(!bad.has_value())
+    assert_eq(store.saved.accent, "ember")
+
+    // A hand-edited file with one bad field keeps the good ones.
+    mut edited := default_settings()
+    edited.theme = "light"
+    edited.term_line_height = 999
+    edited.reopen_last_vault = false
+    store.saved = edited
+    fixed := try load_settings(store)
+    assert_eq(fixed.theme, "light")
+    assert_eq(fixed.term_line_height, i64(150))
+    assert(!fixed.reopen_last_vault)
+}
+
+test "installed mono fonts are deduplicated and sorted" {
+    fonts := FakeFonts{ names: ["SF Mono", "JetBrains Mono", "", "SF Mono", "Fira Mono"] }
+    list := try list_mono_fonts(fonts)
+    assert_eq(list.len(), usize(3))
+    assert_eq(list[0], "Fira Mono")
+    assert_eq(list[2], "SF Mono")
+}

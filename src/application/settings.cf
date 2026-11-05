@@ -1,0 +1,93 @@
+package application
+
+// Desktop app settings: per machine, validated before they are stored.
+
+import "../domain"
+import "../ports"
+
+// Stored settings that no longer validate (an edited file, a field from a newer
+// version) fall back to the defaults field by field rather than failing the app.
+fn load_settings[T: SettingsStore](store: T) -> Settings! {
+    s := try store.settings_load()
+    if check_settings(s).has_value() {
+        return s
+    }
+    d := default_settings()
+    mut fixed := d
+    fixed.follow_motion = s.follow_motion
+    fixed.reopen_last_vault = s.reopen_last_vault
+    fixed.term_cursor_blink = s.term_cursor_blink
+    mut probe := d
+    probe.theme = s.theme
+    if check_settings(probe).has_value() {
+        fixed.theme = s.theme
+    }
+    probe = d
+    probe.accent = s.accent
+    if check_settings(probe).has_value() {
+        fixed.accent = s.accent
+    }
+    probe = d
+    probe.density = s.density
+    if check_settings(probe).has_value() {
+        fixed.density = s.density
+    }
+    probe = d
+    probe.term_font = s.term_font
+    if check_settings(probe).has_value() {
+        fixed.term_font = s.term_font
+    }
+    probe = d
+    probe.term_font_size = s.term_font_size
+    if check_settings(probe).has_value() {
+        fixed.term_font_size = s.term_font_size
+    }
+    probe = d
+    probe.term_line_height = s.term_line_height
+    if check_settings(probe).has_value() {
+        fixed.term_line_height = s.term_line_height
+    }
+    probe = d
+    probe.term_cursor = s.term_cursor
+    if check_settings(probe).has_value() {
+        fixed.term_cursor = s.term_cursor
+    }
+    return fixed
+}
+
+fn save_settings[T: SettingsStore](mut store: T, s: Settings) -> Settings! {
+    try check_settings(s)
+    try store.settings_save(s)
+    return s
+}
+
+// Installed monospaced families, sorted and without duplicates.
+fn list_mono_fonts[F: FontCatalog](fonts: F) -> []str! {
+    raw := try fonts.mono_font_families()
+    mut names: []str = []
+    for name in raw {
+        if name.len() == 0 || !check_text("font", name, 128, false).has_value() {
+            continue
+        }
+        mut seen := false
+        for o in names {
+            if o == name {
+                seen = true
+            }
+        }
+        if !seen {
+            names.push(name)
+        }
+    }
+    // Insertion sort: the list is short.
+    for i in 1..names.len() {
+        mut j := i
+        for j > 0 && names[j - 1] > names[j] {
+            tmp := names[j - 1]
+            names[j - 1] = names[j]
+            names[j] = tmp
+            j -= 1
+        }
+    }
+    return names
+}
