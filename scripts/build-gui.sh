@@ -2,7 +2,10 @@
 # Builds the Flint desktop app: the page (ui/, React + Vite), then the executable,
 # then puts the page where the executable looks for it.
 #
-#   scripts/build-gui.sh          # → build/Flint.app on macOS, build/Flint + build/ui on Linux
+#   scripts/build-gui.sh          # → build/gui/Flint.app on macOS, build/gui/Flint + build/gui/ui on Linux
+#
+# The app lives in build/gui, not build/: macOS file systems ignore case, so
+# build/Flint and the CLI's build/flint would be the same file.
 #
 # On macOS the page goes into Flint.app/Contents/Resources/ui and the bundle is
 # signed again ad hoc, because adding files invalidates cfire's signature.
@@ -30,16 +33,20 @@ cfire build FlintGui
 
 case "$(uname -s)" in
   Darwin)
-    res="build/Flint.app/Contents/Resources"
+    res="build/gui/Flint.app/Contents/Resources"
     rm -rf "$res/ui"
     mkdir -p "$res"
     cp -R ui/dist "$res/ui"
-    codesign --force --deep -s - build/Flint.app >/dev/null 2>&1 || echo "build-gui: ad-hoc signing failed" >&2
-    echo "build-gui: build/Flint.app"
+    # cfire writes a fixed Info.plist with no icon (CF-052): add it before signing.
+    # CFIRE-UPSTREAM: CF-052
+    cp assets/app-icon/Flint.icns "$res/Flint.icns"
+    plutil -replace CFBundleIconFile -string Flint build/gui/Flint.app/Contents/Info.plist
+    codesign --force --deep -s - build/gui/Flint.app >/dev/null 2>&1 || echo "build-gui: ad-hoc signing failed" >&2
+    echo "build-gui: build/gui/Flint.app"
     ;;
   *)
-    rm -rf build/ui
-    cp -R ui/dist build/ui
-    echo "build-gui: build/Flint (page in build/ui)"
+    rm -rf build/gui/ui
+    cp -R ui/dist build/gui/ui
+    echo "build-gui: build/gui/Flint (page in build/gui/ui)"
     ;;
 esac

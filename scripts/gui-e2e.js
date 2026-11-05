@@ -169,8 +169,48 @@
 
     await setStep('resize');
     const term = activeTerm();
-    await runInTerminal('stty size; echo size-done', 'size-done');
-    await check(termText().includes(`${term.rows} ${term.cols}`), `the PTY has the terminal's size (${term.rows} ${term.cols})`);
+    // The page sends its size when the tab is laid out, which can land just after
+    // the shell started: ask again a few times before calling it a failure.
+    let sized = false;
+    for (let i = 0; i < 5 && !sized; i++) {
+      await runInTerminal(`stty size; echo size-done-${i}`, `size-done-${i}`);
+      sized = termText().includes(`${term.rows} ${term.cols}`);
+      if (!sized) await sleep(300);
+    }
+    await check(sized, `the PTY has the terminal's size (${term.rows} ${term.cols})`);
+    {
+      const box = term.element.parentElement.getBoundingClientRect();
+      const screen = term.element.querySelector('.xterm-screen').getBoundingClientRect();
+      await check(screen.bottom <= box.bottom + 0.5 && screen.right <= box.right + 0.5,
+        `the terminal's rows fit inside the pane (screen ${Math.round(screen.height)} px, box ${Math.round(box.height)} px)`);
+    }
+
+    await setStep('vim');
+    // A full-screen editor queries the terminal at start (DECRQM, XTGETTCAP, DA2…).
+    // A reply that throws inside xterm.js stops its write queue: the editor still
+    // gets every key but the screen never changes again (vite.config.ts, target).
+    const key = (k, code, keyCode) => {
+      const ta = qa('.pane > div').find((d) => d.style.display !== 'none').querySelector('textarea');
+      ta.dispatchEvent(new KeyboardEvent('keydown', { key: k, code, keyCode, bubbles: true, cancelable: true }));
+    };
+    const keys = async (text) => {
+      for (const ch of text) {
+        key(ch, ch === ':' ? 'Semicolon' : 'Key' + ch.toUpperCase(), ch.toUpperCase().charCodeAt(0));
+        await sleep(30);
+      }
+    };
+    await runInTerminal('rm -f /tmp/flint-e2e-vim.txt; vim -u DEFAULTS /tmp/flint-e2e-vim.txt', 'flint-e2e-vim.txt" [New]');
+    await keys('ihello');
+    await waitFor(() => termText().includes('-- INSERT --'), 'vim in insert mode');
+    await check(true, 'vim redraws after its start-up queries (DECRQM)');
+    key('Escape', 'Escape', 27);
+    // Esc and the next key in one SSH packet read as an Alt chord: wait for vim to
+    // leave insert mode first, as a person typing would.
+    await waitFor(() => !termText().includes('-- INSERT --'), 'vim back in normal mode');
+    await keys(':wq');
+    key('Enter', 'Enter', 13);
+    await runInTerminal('cat /tmp/flint-e2e-vim.txt; echo vim-$((6*7))', 'vim-42');
+    await check(/^hello$/m.test(termText()), 'keys typed in vim reach it (insert, Esc, :wq)' + (/^hello$/m.test(termText()) ? '' : ' — terminal: ' + termText().split('\n').filter((l) => l.trim()).slice(-6).join(' | ')));
 
     await setStep('exit');
     await type('exit 7');
@@ -252,11 +292,19 @@
     await sleep(100);
 
     await setStep('settings');
+    const openTabs = qa('.tab').length;
+    // The shell prints a mark on every SIGWINCH: coming back must not resize it.
+    if (openTabs) await runInTerminal("trap 'echo winch-$((5+5))' WINCH; echo kept-$((20+3))", 'kept-23');
     await click('.rail-btn', 'Settings');
     await click('.swatches .sw[aria-label="moss"]');
     await waitFor(() => document.documentElement.dataset.accent === 'moss', 'the accent');
+    const accentNow = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim().toUpperCase();
+    await click('.theme-card', 'Dark');
+    await waitFor(() => document.documentElement.dataset.theme === 'dark', 'the dark theme');
+    await check(accentNow() === '#7BC98F', `the accent colour follows the setting in the dark theme (${accentNow()})`);
     await click('.theme-card', 'Light');
     await waitFor(() => document.documentElement.dataset.theme === 'light', 'the light theme');
+    await check(accentNow() === '#4FA068', `the accent colour follows the setting in the light theme (${accentNow()})`);
     const saved = await window.backend.settings_get({});
     await check(saved.accent === 'moss' && saved.theme === 'light', 'appearance settings are saved');
     await click('.nav-i', 'Terminal');
@@ -264,6 +312,13 @@
     await click('.nav-i', 'Vault');
     await waitFor(() => hasText('Known hosts'), 'the vault settings');
     await check(byText('td', `[127.0.0.1]:${PORT}`), 'known hosts are listed');
+    if (openTabs) {
+      await click('.rail-btn', 'Hosts');
+      await waitFor(() => activeTerm(), 'the session view');
+      await check(termText().includes('kept-23'), 'a terminal keeps its scrollback across a visit to Settings');
+      await sleep(600);
+      await check(!termText().includes('winch-10'), 'coming back from Settings sends the shell no resize');
+    }
 
     await setStep('lock');
     await click('.statusbar .sb-btn', 'Lock');
@@ -273,6 +328,8 @@
     await click('button[type="submit"]', 'Unlock');
     await waitFor(() => hasText('Wrong password'), 'the wrong password message', 30000);
     await check(true, 'a wrong master password is refused');
+    await waitFor(() => { const pw = q('#pw'); return pw && !pw.disabled && pw.selectionEnd === pw.value.length && pw.selectionStart === 0 && pw.value.length > 0 ? pw : null; }, 'the attempt selected');
+    await check(q('#pw').value === 'wrong-password', 'the wrong attempt stays in the field, selected');
     await fill('#pw', MASTER);
     await click('button[type="submit"]', 'Unlock');
     await waitFor(() => byText('.tree .ti', 'local'), 'the unlocked tree', 30000);

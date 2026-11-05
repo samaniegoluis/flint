@@ -46,8 +46,10 @@ export function Unlock() {
         ? 'Wrong password.' + (caps ? ' Caps Lock is on — check it and your keyboard layout.' : '')
         : fe.message);
       setBusy(false);
-      setPw('');
-      input.current?.focus();
+      // The field keeps the attempt, selected, so retyping replaces it (design 03b).
+      // A timeout, not requestAnimationFrame: the field is enabled again only after
+      // this render, and a hidden headless page never runs animation frames (CF-050).
+      setTimeout(() => { input.current?.focus(); input.current?.select(); }, 0);
     }
   };
 
@@ -65,13 +67,15 @@ export function Unlock() {
             <span className="mono muted" style={{ fontSize: 'var(--fs-sm)' }}>{shortPath(target.path)}</span>
           </div>
           <div className="field">
-            <label className="flabel" htmlFor="pw">Master password — this machine has no saved key for this vault</label>
+            <label className="flabel" htmlFor="pw">Master password — this {os === 'mac' ? 'Mac' : 'machine'} has no saved key for this vault</label>
             <div className={'input lg mono' + (error ? ' err' : '')} style={{ paddingLeft: 'var(--sp-4)', gap: 'var(--sp-3)' }}>
               <span className="accent-t" aria-hidden="true">❯</span>
               <input id="pw" ref={input} type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} autoFocus
                 onChange={(e) => setPw(e.target.value)}
                 onKeyDown={(e) => setCaps(e.getModifierState?.('CapsLock') ?? false)}
+                onKeyUp={(e) => setCaps(e.getModifierState?.('CapsLock') ?? false)}
                 aria-describedby={error ? 'pwe' : undefined} aria-invalid={!!error} style={{ fontSize: 'var(--fs-lg)' }} disabled={busy} />
+              {caps && <span className="badge warn" style={{ fontFamily: 'var(--font-ui)' }}>⇪ Caps Lock</span>}
               <button type="button" className="icon-btn" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
               <button type="submit" className="btn btn-primary btn-sm" style={{ fontFamily: 'var(--font-ui)' }} disabled={!pw || busy}>{busy ? 'Unlocking…' : 'Unlock'}<span className="kbd-in">↵</span></button>
             </div>

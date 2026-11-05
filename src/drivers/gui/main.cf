@@ -29,7 +29,7 @@ fn find_ui_dir() -> str {
         return override
     }
     exe := executable_dir()
-    dirs: []str = [exe + "/../Resources/ui", exe + "/ui", exe + "/../ui/dist", "ui/dist"]
+    dirs: []str = [exe + "/../Resources/ui", exe + "/ui", exe + "/../../ui/dist", "ui/dist"]
     for dir in dirs {
         if fs.exists(dir + "/index.html") {
             return dir
@@ -132,6 +132,7 @@ fn main() {
             }
             return session_open_reply(req)
         }
+        install_app_menu("Flint")
         // run_webview_test is a no-op on Linux (CF-029): there the end-to-end run
         // opens the real window, under xvfb-run, and the page quits when done.
         if e2e && os_name() == "mac" {

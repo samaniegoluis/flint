@@ -1,4 +1,4 @@
-// CFIRE-UPSTREAM: CF-002, CF-026, CF-031
+// CFIRE-UPSTREAM: CF-002, CF-026, CF-031, CF-051
 //
 // Native helpers for the GUI's webui adapters (src/adapters/uievents):
 //
@@ -10,6 +10,9 @@
 //   memory forever (CF-002). A terminal emits for hours, so the history is cleared
 //   from time to time. `App` keeps its state private and has no API for this, so the
 //   pointer is reached through the standard explicit-instantiation access rule.
+// * The macOS menu bar. webui opens its window with no main menu (CF-051), and on
+//   macOS ⌘Q, ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z reach a WKWebView only through menu items, so
+//   the standard Flint / Edit / Window menus are installed here before the run loop.
 // * No top-level cpp block in a .cf file (CF-031), hence this header.
 #pragma once
 #include "core/webui.hpp"
@@ -266,6 +269,61 @@ inline void trim_history(cfire::webui::App& app) {
     std::lock_guard<std::recursive_mutex> lock(st->mtx);
     st->emitted_history.clear();
     st->eval_history.clear();
+}
+
+// ---- macOS menu bar (CF-051) ------------------------------------------------------
+
+// The standard menus, with no item on a key the page owns (⌘W, ⌘N, ⌘O, ⌘T…). Each
+// item has a nil target, so AppKit sends it along the responder chain: the WKWebView
+// answers cut:/copy:/paste:/selectAll:/undo:, the window answers performClose:.
+// Quit closes the window, which ends webui's run loop as the close button does, so
+// the GUI driver's shutdown (sessions closed, vault closed) still runs.
+inline void install_app_menu(const std::string& app_name) {
+#if defined(__APPLE__) && defined(__OBJC__)
+    @autoreleasepool {
+        [NSApplication sharedApplication];
+        NSString* name = [NSString stringWithUTF8String:app_name.c_str()];
+        NSMenu* bar = [[NSMenu alloc] init];
+
+        auto add = [](NSMenu* m, NSString* title, SEL action, NSString* key, NSEventModifierFlags mods) {
+            NSMenuItem* it = [m addItemWithTitle:title action:action keyEquivalent:key];
+            [it setKeyEquivalentModifierMask:mods];
+            return it;
+        };
+        auto submenu = [&](NSString* title) {
+            NSMenuItem* top = [bar addItemWithTitle:title action:nil keyEquivalent:@""];
+            NSMenu* m = [[NSMenu alloc] initWithTitle:title];
+            [top setSubmenu:m];
+            return m;
+        };
+        const auto cmd = NSEventModifierFlagCommand;
+
+        NSMenu* app = submenu(name);
+        add(app, [@"Hide " stringByAppendingString:name], @selector(hide:), @"h", cmd);
+        add(app, @"Hide Others", @selector(hideOtherApplications:), @"h", cmd | NSEventModifierFlagOption);
+        add(app, @"Show All", @selector(unhideAllApplications:), @"", 0);
+        [app addItem:[NSMenuItem separatorItem]];
+        add(app, [@"Quit " stringByAppendingString:name], @selector(performClose:), @"q", cmd);
+
+        NSMenu* edit = submenu(@"Edit");
+        add(edit, @"Undo", @selector(undo:), @"z", cmd);
+        add(edit, @"Redo", @selector(redo:), @"z", cmd | NSEventModifierFlagShift);
+        [edit addItem:[NSMenuItem separatorItem]];
+        add(edit, @"Cut", @selector(cut:), @"x", cmd);
+        add(edit, @"Copy", @selector(copy:), @"c", cmd);
+        add(edit, @"Paste", @selector(paste:), @"v", cmd);
+        add(edit, @"Select All", @selector(selectAll:), @"a", cmd);
+
+        NSMenu* window = submenu(@"Window");
+        add(window, @"Minimize", @selector(performMiniaturize:), @"m", cmd);
+        add(window, @"Zoom", @selector(performZoom:), @"", 0);
+        [NSApp setWindowsMenu:window];
+
+        [NSApp setMainMenu:bar];
+    }
+#else
+    (void)app_name;
+#endif
 }
 
 } // namespace flint_gui

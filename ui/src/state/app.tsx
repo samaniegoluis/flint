@@ -18,7 +18,7 @@ export interface Toast {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system', accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
-  term_font: '', term_font_size: 13, term_line_height: 150, term_cursor: 'block', term_cursor_blink: true,
+  term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: true,
 };
 
 const EMPTY_CATALOG: Catalog = { groups: [], hosts: [], keys: [], credentials: [], known_hosts: [] };

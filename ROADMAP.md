@@ -79,6 +79,7 @@ What Tether already does and Flint must not lose.
 | Local change log + per-record merge for concurrent edits on two machines | `idea` | Only if conflicts become a real problem |
 | Change the master password (`flint vault passwd`): new salt, `sqlcipher_export` re-key, re-seal secrets | `next` | Not in M02. Changes the keychain account (salt-based, D-017) |
 | Auto-lock: forget the cached key after N idle days, or require Touch ID / the login password to read it | `idea` | Today the cache lasts until `flint vault lock` |
+| **Touch ID to open a vault** (macOS): the cached key is released only after Touch ID, or the login password when there is no sensor; a per-machine setting, offered when the Mac has biometrics (`LAContext.canEvaluatePolicy`) | `next` | Raised in the M04 owner walkthrough. Today, once **Always Allow** is given, anyone using the logged-in Mac opens the vault with no prompt. Strongest form: a Keychain item with `SecAccessControl` `.userPresence`, which needs the data-protection keychain and so a Developer ID-signed build with a keychain-access-groups entitlement; until then an `LAContext` check before reading the item. Linux: polkit/fprintd, later |
 | `flint vault check`: verify every sealed secret opens and every reference resolves | `idea` | Cheap integrity check before a sync |
 
 ## 5. Architecture
@@ -103,6 +104,7 @@ What Tether already does and Flint must not lose.
 | Dual-pane SFTP, remote ↔ remote | `later` | |
 | Quick-edit remote files (CodeMirror) | `later` | |
 | Light theme polish, more accents | `next` | |
+| Terminal colour themes in Settings → Terminal, as in Tether: Default, Catppuccin, Tokyo Night, Aura, Dracula, Nord, each with a dark and a light palette | `next` | Raised in the M04 owner walkthrough (the owner uses Aura). Port the palettes from Tether's `frontend/src/theme/terminalThemes.js`; they replace only the 16 ANSI colours and the terminal background/foreground/cursor, so no new design pass is needed |
 | Passphrase prompt for a key whose passphrase is not stored (design screen 10b), and an encrypted on-disk key | `next` | M04 has no such prompt: keys added to the vault keep their passphrase |
 | Host key prompt: **Connect once** (trust without recording) | `idea` | Needs a third trust state in the core (D-025) |
 | Password prompt: **Save to vault** (create and link a credential from the typed password) | `next` | Left out of M04 |
@@ -113,6 +115,8 @@ What Tether already does and Flint must not lose.
 | Opt out of caching the vault key at unlock ("Remember on this device" unchecked) | `idea` | Today every unlock caches it (D-005); Settings → Vault can forget it |
 | Drag a host between groups in the tree | `next` | M04 changes the folder in the host editor |
 | Remember the sidebar width per view and resize it by dragging | `next` | M04 uses the design's default widths |
+| gui-e2e on macOS sometimes ends with an empty `e2e:` line: the page stops with no failed step and no report (about 1 run in 6) | `next` | Seen in the M04 owner walkthrough, not diagnosed. Start by logging `window.onerror` and the WebContent process state before `run_webview_test` times out |
+| macOS: one title bar. The native traffic lights over the in-app bar (webui `set_frameless`: full-size content, transparent title bar), as in the design | `next` | Found in the M04 owner walkthrough: today the OS title bar ("Flint") sits above the app's bar (D-024). Needs a drag region and left padding for the traffic lights; Linux keeps the OS chrome |
 
 ## 7. Platforms & distribution
 
@@ -122,4 +126,5 @@ What Tether already does and Flint must not lose.
 | Windows | `later` | Blocked on CF-001 (WebView2) and CF-010 (POSIX runtime) |
 | Signed macOS `.app`, Linux AppImage/tarball, Homebrew tap | `next` | A stable Developer ID signature also stops the Keychain prompt after every update (D-020) |
 | Bundle libssh, libsodium, SQLCipher and libcrypto into the `.app` (rpath fix-up) or link them statically | `next` | Today they are dynamic system packages (D-015); a release cannot rely on Homebrew being installed |
+| App icon on Linux: the GTK window icon and a `.desktop` file with `assets/app-icon/flint-256.png`; Windows `.ico` when Windows lands | `next` | macOS has it since the M04 owner walkthrough (`assets/app-icon/`, CF-052); webui sets no GTK window icon |
 | Public landing + docs site deployed | `next` | The site itself is built from milestone 01 |

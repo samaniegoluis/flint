@@ -16,7 +16,7 @@ echo "== libcrypto linked (expect one):"
 ldd ./build/flint | grep -E "crypto|ssh|sodium|sqlcipher" || true
 echo "== build the desktop app (page from ui/dist, built on the host)"
 scripts/build-gui.sh
-ldd ./build/Flint | grep -E "crypto|ssh|sodium|sqlcipher|webkit" || true
+ldd ./build/gui/Flint | grep -E "crypto|ssh|sodium|sqlcipher|webkit" || true
 # A Secret Service for the keychain adapter: gnome-keyring on a private D-Bus session.
 with_keyring() {
   dbus-run-session -- bash -c "printf flint-test | gnome-keyring-daemon --unlock --components=secrets >/dev/null && $1"
