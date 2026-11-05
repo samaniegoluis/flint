@@ -1,0 +1,27 @@
+/* The real window: the mockups' .app frame fills the viewport, without the frame's
+   border and radius. The OS draws the window chrome (D-024), so the mockups' fake
+   traffic lights and window buttons stay hidden. */
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--surface-base); }
+.app { position: fixed; inset: 0; border: 0; border-radius: 0; }
+.app .traffic, .app .wc { display: none !important; }
+.app[data-os="linux"] .tb-brand { display: flex; }
+:where(.app) :where(input, textarea) { outline: none; }
+.app ::selection { background: var(--accent-subtle); }
+.input:focus-within { border-color: var(--accent); box-shadow: var(--focus-glow); }
+.input.err, .input.err:focus-within { border-color: var(--danger); box-shadow: var(--danger-glow); }
+.tags:focus-within { border-color: var(--accent); box-shadow: var(--focus-glow); }
+.select:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-glow); }
+.check:focus-within input { box-shadow: var(--focus-ring); }
+.mi:focus-visible { outline: none; background: var(--surface-active); }
+.panel:hover { border-color: var(--border-strong); }
+button.panel:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.scroll { overflow: auto; min-height: 0; }
+.scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+.kbd:empty { display: none; }
+/* Settings → Appearance → Motion off: full motion even under "Reduce motion". */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-motion="full"] { --dur-instant: 60ms; --dur-fast: 120ms; --dur-base: 180ms; --dur-slow: 240ms; }
+}

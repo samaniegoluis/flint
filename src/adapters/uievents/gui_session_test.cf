@@ -1,0 +1,140 @@
+package uievents
+
+import "ext:webui"
+import "core:time"
+import "core:str"
+import "../../ports"
+import "../../domain"
+
+fn accepts_terminal[M: Terminal](mut m: M) -> TerminalSize {
+    return m.term_size()
+}
+
+fn accepts_prompter[P: Prompter](p: P) -> bool {
+    return p.prompt_available()
+}
+
+test "a GUI session mailbox carries input, resizes and close" {
+    mut app := webui.new_app("gui-session-test", 100, 100)
+    defer app.close()
+    assert(gui_session_open("t1", 100, 30))
+    assert(!gui_session_open("t1", 100, 30))
+    mut term := new_gui_terminal(app, "t1")
+    size := accepts_terminal(mut term)
+    assert_eq(size.cols, 100)
+    assert_eq(size.rows, 30)
+
+    // Nothing typed: the wait times out with no input.
+    empty := term.term_input(5) or "x"
+    assert_eq(empty, "")
+    assert(gui_session_input("t1", "ls\r").has_value())
+    assert(gui_session_input("t1", "pwd\r").has_value())
+    assert_eq(term.term_input(5) or "", "ls\rpwd\r")
+
+    assert(!term.term_take_resize())
+    assert(gui_session_resize("t1", 120, 40).has_value())
+    assert(term.term_take_resize())
+    assert(!term.term_take_resize())
+    assert_eq(term.term_size().cols, 120)
+    bad := gui_session_resize("t1", 0, 40)
+    assert(!bad.has_value())
+
+    term.term_output("hi")
+    assert(app.last_emitted_payload("terminal:output").contains("aGk="))
+    assert(term.term_raw_enter().has_value())
+    assert(app.last_emitted_payload("session:state").contains("\"ready\""))
+
+    assert(gui_session_close("t1"))
+    gone := term.term_input(5)
+    assert(!gone.has_value())
+    late := gui_session_input("t1", "x")
+    assert(!late.has_value())
+    gui_session_drop("t1")
+    missing := gui_session_input("t1", "x")
+    assert(!missing.has_value())
+    assert(error_code_of("{missing.error().message()}") == ERR_NOT_FOUND)
+}
+
+// The page's side of a prompt: wait for the event, then answer it.
+fn answer_when_asked(mut app: webui.App, session: str, ok: bool, value: str) {
+    for _ in 0..400 {
+        payload := app.last_emitted_payload("session:prompt")
+        if payload.contains(session) {
+            start := str.index_of(payload, "\"prompt\":\"")
+            if start >= 0 {
+                rest := payload.substr(usize(start) + 10)
+                end := str.index_of(rest, "\"")
+                id := rest.substr(0, usize(end))
+                if id.len() > 0 {
+                    // An earlier prompt's payload is refused; keep waiting.
+                    if gui_session_answer(session, id, ok, value).has_value() {
+                        return
+                    }
+                }
+            }
+        }
+        time.sleep_ms(5)
+    }
+}
+
+test "the GUI prompter blocks until the page answers or cancels" {
+    mut app := webui.new_app("gui-prompt-test", 100, 100)
+    defer app.close()
+    assert(gui_session_open("p1", 80, 24))
+    p := new_gui_prompter(app, "p1")
+    assert(accepts_prompter(p))
+    mut typed := ""
+    mut trusted := false
+    mut cancelled := "x"
+    async.scope(workers: 1) |scope| {
+        scope.spawn || {
+            mut a := app
+            answer_when_asked(mut a, "p1", true, "s3cret")
+        }
+        typed = p.prompt_password("luis", "web") or "failed"
+    }
+    assert_eq(typed, "s3cret")
+    // The emitted prompt names the user and host but carries no secret.
+    assert(app.last_emitted_payload("session:prompt").contains("\"user\":\"luis\""))
+    assert(!app.last_emitted_payload("session:prompt").contains("s3cret"))
+    q := HostKeyQuestion{ alias: "web", addr: "web.lan", key_type: "ssh-ed25519", fingerprint: "SHA256:abc", known_key_type: "", known_fingerprint: "" }
+    async.scope(workers: 1) |scope| {
+        scope.spawn || {
+            mut a := app
+            answer_when_asked(mut a, "p1", true, "")
+        }
+        trusted = p.prompt_host_key(q) or false
+    }
+    assert(trusted)
+    async.scope(workers: 1) |scope| {
+        scope.spawn || {
+            mut a := app
+            answer_when_asked(mut a, "p1", false, "")
+        }
+        cancelled = p.prompt_password("luis", "web") or "failed"
+    }
+    assert_eq(cancelled, "")
+    // An answer for a prompt that is not waiting is refused.
+    stale := gui_session_answer("p1", "password-0", true, "x")
+    assert(!stale.has_value())
+    gui_session_drop("p1")
+}
+
+test "a prompt fails at once when its session is closed" {
+    mut app := webui.new_app("gui-close-test", 100, 100)
+    defer app.close()
+    assert(gui_session_open("c1", 80, 24))
+    mut p := new_gui_prompter(app, "c1")
+    p.timeout_ms = 2000
+    mut failed := false
+    async.scope(workers: 1) |scope| {
+        scope.spawn || {
+            time.sleep_ms(50)
+            _ := gui_session_close("c1")
+        }
+        r := p.prompt_password("luis", "web")
+        failed = !r.has_value()
+    }
+    assert(failed)
+    gui_session_drop("c1")
+}

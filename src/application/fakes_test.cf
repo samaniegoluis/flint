@@ -551,14 +551,17 @@ fn (self: FakePrompter) prompt_available() -> bool {
     return self.available
 }
 
-fn (self: FakePrompter) prompt_confirm(question: str) -> bool! {
+fn (self: FakePrompter) prompt_host_key(q: HostKeyQuestion) -> bool! {
     if !self.available {
         return error(coded(ERR_USAGE, "no terminal"))
     }
     return self.confirm
 }
 
-fn (self: FakePrompter) prompt_password(label: str) -> str! {
+fn (self: FakePrompter) host_key_changed(q: HostKeyQuestion) {
+}
+
+fn (self: FakePrompter) prompt_password(user: str, alias: str) -> str! {
     if !self.available {
         return error(coded(ERR_USAGE, "no terminal"))
     }
@@ -645,4 +648,26 @@ type FakeClock struct {
 fn (mut self: FakeClock) clock_now_ms() -> i64 {
     self.now_ms += self.step_ms
     return self.now_ms
+}
+
+// ---- Settings and fonts -------------------------------------------------------------
+
+type FakeSettingsStore struct {
+    saved: Settings
+}
+
+fn (self: FakeSettingsStore) settings_load() -> Settings! {
+    return self.saved
+}
+
+fn (mut self: FakeSettingsStore) settings_save(s: Settings) -> void! {
+    self.saved = s
+}
+
+type FakeFonts struct {
+    names: []str
+}
+
+fn (self: FakeFonts) mono_font_families() -> []str! {
+    return self.names
 }

@@ -47,6 +47,7 @@ export default defineConfig({
 				{
 					label: 'Guides',
 					items: [
+						{ label: 'The desktop app', slug: 'guides/desktop-app' },
 						{ label: 'Vaults', slug: 'guides/vaults' },
 						{ label: 'Hosts and groups', slug: 'guides/hosts' },
 						{ label: 'SSH keys', slug: 'guides/keys' },
@@ -58,6 +59,7 @@ export default defineConfig({
 					label: 'Reference',
 					items: [
 						{ label: 'CLI', slug: 'reference/cli' },
+						{ label: 'Keyboard shortcuts', slug: 'reference/keyboard-shortcuts' },
 						{ label: 'Vault format', slug: 'reference/vault-format' },
 					],
 				},

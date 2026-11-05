@@ -3,6 +3,9 @@ title: Connecting
 description: Open a shell or run a command on a host, through jump hosts, with known-host checks.
 ---
 
+This page covers the CLI. In the desktop app, a session opens in a tab and the same
+checks appear as prompts over it; see [The desktop app](/guides/desktop-app/#connecting).
+
 Once a host is in the vault, you reach it by its alias. Flint reads the hostname, user,
 key, password and jump host from the vault, so nothing about the server has to be
 typed or kept in `~/.ssh`.

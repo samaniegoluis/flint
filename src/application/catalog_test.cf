@@ -1,6 +1,7 @@
 package application
 
 import "../domain"
+import "ext:json"
 
 fn host_patch(alias: str, hostname: str) -> HostPatch {
     mut p := empty_host_patch()
@@ -181,4 +182,28 @@ test "credentials link a user, a password and a key" {
     assert(edited.has_password)
     assert_eq((try show_host(store, "dc1")).credential, "corp")
     assert_eq((try list_creds(store)).len(), 1)
+}
+
+test "the catalog view gathers every list and shows no secret" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    _ := try add_group(crypto, mut store, "homelab")
+    mut p := empty_host_patch()
+    p.alias = "web"
+    p.set_alias = true
+    p.hostname = "10.0.0.5"
+    p.set_hostname = true
+    p.group = "homelab"
+    p.set_group = true
+    p.password = "hunter2-marker"
+    p.set_password = true
+    _ := try add_host(crypto, mut store, s, p)
+    view := try catalog_view(store)
+    assert_eq(view.groups.len(), usize(1))
+    assert_eq(view.hosts.len(), usize(1))
+    assert(view.hosts[0].has_password)
+    assert_eq(view.hosts[0].group, "homelab")
+    assert(!json.stringify(view).contains("hunter2-marker"))
+    close_vault(mut store)
 }

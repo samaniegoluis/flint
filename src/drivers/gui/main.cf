@@ -1,0 +1,153 @@
+package main
+
+// The Flint desktop app: composition root. It builds the adapters, opens the webui
+// window with the React page (ui/), and binds every RPC to its handler (rpc.cf).
+//
+// webui runs RPC handlers on the UI thread (CF-046), so a session runs on a worker:
+// `session_open` checks the request, spawns the connection and returns at once;
+// bytes, prompts and state changes come back as events (src/adapters/uievents). The
+// page mints the session id and subscribes before it asks.
+
+import "ext:webui"
+import "core:fs"
+import "core:os"
+import "../../adapters/config"
+import "../../adapters/crypto"
+import "../../adapters/fonts"
+import "../../adapters/keychain"
+import "../../adapters/process"
+import "../../adapters/ssh"
+import "../../adapters/uievents"
+import "../../adapters/vault"
+import "../../application"
+
+// Where the built page is: $FLINT_UI_DIR, then the app bundle's Resources/ui, then
+// ui/ next to the executable, then ui/dist in a source checkout.
+fn find_ui_dir() -> str {
+    override := os.getenv("FLINT_UI_DIR")
+    if override.len() > 0 {
+        return override
+    }
+    exe := executable_dir()
+    dirs: []str = [exe + "/../Resources/ui", exe + "/ui", exe + "/../ui/dist", "ui/dist"]
+    for dir in dirs {
+        if fs.exists(dir + "/index.html") {
+            return dir
+        }
+    }
+    return "ui/dist"
+}
+
+fn main() {
+    ui_dir := find_ui_dir()
+    e2e_script := os.getenv("FLINT_GUI_E2E")
+    e2e := e2e_script.len() > 0
+
+    mut app := webui.new_app("Flint", 1280, 800)
+    defer app.close()
+    app.set_min_size(900, 600)
+    app.serve_dir(ui_dir)
+    // The runtime's placeholder /index.html shadows serve_dir (CF-028).
+    page := fs.read_text(ui_dir + "/index.html") or ""
+    if page.len() == 0 {
+        write_stderr("flint-gui: no page at {ui_dir}/index.html; build it with scripts/build-gui.sh\n")
+        exit_process(1)
+        return
+    }
+    app.set_html(page)
+    if e2e {
+        script := fs.read_text(e2e_script) or ""
+        app.embed_asset("/e2e.js", script, "text/javascript")
+    }
+
+    sodium_ok := new_sodium()
+    if !sodium_ok.has_value() {
+        write_stderr("flint-gui: libsodium failed to start\n")
+        exit_process(1)
+        return
+    }
+    c := sodium_ok.value()
+    mut store := new_locked_vault_store()
+    kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
+    config_dir := flint_config_dir()
+    recents := new_json_recent_store(config_dir)
+    mut settings_store := new_json_settings_store(config_dir)
+    inspector := new_libssh_key_inspector()
+    font_catalog := new_os_font_catalog()
+    mut st := new_gui_state()
+
+    app.bind_raw("app_info") |params| { return rpc_app_info(e2e) }
+    app.bind_raw("window_theme") |params| { return rpc_window_theme(params, mut app) }
+    app.bind_raw("dialog_open") |params| { return rpc_dialog_open(params, app) }
+    app.bind_raw("dialog_save") |params| { return rpc_dialog_save(params, app) }
+    app.bind_raw("settings_get") |params| { return rpc_settings_get(settings_store) }
+    app.bind_raw("settings_set") |params| { return rpc_settings_set(params, mut settings_store) }
+    app.bind_raw("fonts_mono") |params| { return rpc_fonts_mono(font_catalog) }
+
+    app.bind_raw("vault_recents") |params| { return rpc_vault_recents(store, recents) }
+    app.bind_raw("vault_unlock") |params| { return rpc_vault_unlock(params, c, mut store, kc, recents, mut st) }
+    app.bind_raw("vault_create") |params| { return rpc_vault_create(params, c, mut store, kc, recents, mut st) }
+    app.bind_raw("vault_close") |params| { return rpc_vault_close(mut store, mut st) }
+    app.bind_raw("vault_forget_key") |params| { return rpc_vault_forget_key(params, mut store, kc, mut st) }
+    app.bind_raw("vault_forget") |params| { return rpc_vault_forget(params, mut store, kc, recents, mut st) }
+    app.bind_raw("vault_status") |params| { return rpc_vault_status(c, mut store, kc, recents, st) }
+
+    app.bind_raw("catalog") |params| { return rpc_catalog(store, st) }
+    app.bind_raw("group_add") |params| { return rpc_group_add(params, c, mut store, st) }
+    app.bind_raw("group_rename") |params| { return rpc_group_rename(params, mut store, st) }
+    app.bind_raw("group_rm") |params| { return rpc_group_rm(params, mut store, st) }
+    app.bind_raw("host_add") |params| { return rpc_host_add(params, c, mut store, st) }
+    app.bind_raw("host_edit") |params| { return rpc_host_edit(params, c, mut store, st) }
+    app.bind_raw("host_rm") |params| { return rpc_host_rm(params, mut store, st) }
+    app.bind_raw("key_add") |params| { return rpc_key_add(params, c, mut store, inspector, st) }
+    app.bind_raw("key_rename") |params| { return rpc_key_rename(params, mut store, st) }
+    app.bind_raw("key_rm") |params| { return rpc_key_rm(params, mut store, st) }
+    app.bind_raw("cred_add") |params| { return rpc_cred_add(params, c, mut store, st) }
+    app.bind_raw("cred_edit") |params| { return rpc_cred_edit(params, c, mut store, st) }
+    app.bind_raw("cred_rm") |params| { return rpc_cred_rm(params, mut store, st) }
+    app.bind_raw("known_host_rm") |params| { return rpc_known_host_rm(params, mut store, st) }
+
+    app.bind_raw("session_input") |params| { return rpc_session_input(params) }
+    app.bind_raw("session_resize") |params| { return rpc_session_resize(params) }
+    app.bind_raw("session_answer") |params| { return rpc_session_answer(params) }
+    app.bind_raw("session_close") |params| { return rpc_session_close(params) }
+    app.bind_raw("e2e_report") |params| { return rpc_e2e_report(params, mut app) }
+    app.bind_raw("e2e_log") |params| { return rpc_e2e_log(params) }
+
+    async.scope(workers: 64) |scope| {
+        app.bind_raw("session_open") |params| {
+            req := session_open_check(params, st)
+            if req.has_value() {
+                worker_app := app
+                worker_store := store
+                vs := st.vault_session()
+                r := req.value()
+                emit_session_state(mut app, r.session, "connecting", "", "", 0)
+                scope.spawn || {
+                    // spawn captures by const value (CF-026): take mutable copies.
+                    mut a := worker_app
+                    mut s := worker_store
+                    run_gui_session(mut a, c, mut s, vs, r)
+                }
+            }
+            return session_open_reply(req)
+        }
+        // run_webview_test is a no-op on Linux (CF-029): there the end-to-end run
+        // opens the real window, under xvfb-run, and the page quits when done.
+        if e2e && os_name() == "mac" {
+            _ := app.run_webview_test(E2E_TIMEOUT_MS) or false
+        } else {
+            app.run()
+        }
+        gui_session_close_all()
+    }
+    close_vault(mut store)
+
+    if e2e {
+        verdict := app.get_state("e2e")
+        write_stdout("e2e: {verdict}\n")
+        if verdict != "pass" {
+            exit_process(1)
+        }
+    }
+}

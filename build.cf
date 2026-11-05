@@ -2,9 +2,17 @@ package build
 
 import "core:build"
 
-// The `flint` CLI. The GUI executable is added in milestone 04.
+// The `flint` CLI.
 var Flint = build.Executable("flint", {
     Entry:     "src/drivers/cli/main.cf",
     Subsystem: "console",
+    OutDir:    "build",
+})
+
+// The desktop app. scripts/build-gui.sh builds the page (ui/) and copies it into the
+// app bundle; `cfire build` alone produces the executable only.
+var FlintGui = build.Executable("Flint", {
+    Entry:     "src/drivers/gui/main.cf",
+    Subsystem: "gui",
     OutDir:    "build",
 })

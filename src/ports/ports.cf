@@ -66,6 +66,18 @@ type RecentStore interface {
     recents_save(list: []RecentVault) -> void!
 }
 
+// The desktop app's per-machine settings (adapters/config). `settings_load`
+// returns the defaults when nothing has been saved yet.
+type SettingsStore interface {
+    settings_load() -> Settings!
+    settings_save(s: Settings) -> void!
+}
+
+// The monospaced font families installed on this machine (adapters/fonts).
+type FontCatalog interface {
+    mono_font_families() -> []str!
+}
+
 // Parses a private key to validate it and read its public half (adapters/ssh).
 type KeyInspector interface {
     inspect_private_key(private_key: str, passphrase: str) -> KeyInfo!
@@ -105,12 +117,16 @@ type SshTransport interface {
     link_hangup()
 }
 
-// Asking the person at the terminal (adapters/process). `prompt_available` is false
-// when there is no controlling terminal; the other calls then fail.
+// Asking the person (adapters/process on a terminal, adapters/gui in a window).
+// `prompt_available` is false when nobody can answer; the prompts then fail.
+// `prompt_host_key` asks whether to trust a new server key; `host_key_changed` only
+// tells the person about a changed key, which the core refuses either way (D-019).
+// `prompt_password` returns "" when the person cancels.
 type Prompter interface {
     prompt_available() -> bool
-    prompt_confirm(question: str) -> bool!
-    prompt_password(label: str) -> str!
+    prompt_host_key(q: HostKeyQuestion) -> bool!
+    host_key_changed(q: HostKeyQuestion)
+    prompt_password(user: str, alias: str) -> str!
 }
 
 // The local terminal of an interactive session (adapters/process): raw mode,

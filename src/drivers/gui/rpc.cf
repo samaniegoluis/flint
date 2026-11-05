@@ -1,0 +1,477 @@
+package main
+
+// RPC handlers of the desktop app. Each one parses its request, calls one use case
+// and returns the result as JSON (Principle 2); an error rejects the page's promise
+// with the core's "code: message" text.
+//
+// They are named functions rather than closures because a webui closure cannot
+// return both an error and a value (CF-027). Adapters are passed in one by one: a
+// struct in this package cannot hold another package's struct (CF-033).
+
+import "ext:webui"
+import "ext:json"
+import "core:fs"
+import "../../adapters/config"
+import "../../adapters/crypto"
+import "../../adapters/fonts"
+import "../../adapters/keychain"
+import "../../adapters/process"
+import "../../adapters/ssh"
+import "../../adapters/uievents"
+import "../../adapters/vault"
+import "../../application"
+import "../../domain"
+
+var FLINT_VERSION: str = "0.0.0-dev"
+
+// The most sessions open at once; each one holds a worker thread.
+var MAX_SESSIONS: i64 = 48
+
+// How long the headless end-to-end run (FLINT_GUI_E2E) may take.
+var E2E_TIMEOUT_MS: i32 = 120000
+
+// ---- Requests ---------------------------------------------------------------------
+
+type PathReq struct {
+    path: str `json:"path"`
+}
+
+type UnlockReq struct {
+    path:     str `json:"path"`
+    password: str `json:"password"`
+}
+
+type CreateReq struct {
+    path:     str `json:"path"`
+    name:     str `json:"name"`
+    password: str `json:"password"`
+}
+
+type DialogReq struct {
+    title:        str `json:"title"`
+    default_name: str `json:"default_name"`
+}
+
+type NameReq struct {
+    name: str `json:"name"`
+}
+
+type RenameReq struct {
+    name:     str `json:"name"`
+    new_name: str `json:"new_name"`
+}
+
+// host_edit and cred_edit send the patch's fields plus `target`, the alias or name
+// being edited; the request is parsed twice rather than nesting the patch in a local
+// struct (CF-033).
+type TargetReq struct {
+    target: str `json:"target"`
+}
+
+type KeyAddReq struct {
+    name:        str `json:"name"`
+    private_key: str `json:"private_key"`
+    file:        str `json:"file"`
+    passphrase:  str `json:"passphrase"`
+}
+
+type SessionOpenReq struct {
+    session:             str  `json:"session"`
+    alias:               str  `json:"alias"`
+    cols:                i32  `json:"cols"`
+    rows:                i32  `json:"rows"`
+    accept_new_host_key: bool `json:"accept_new_host_key"`
+}
+
+type SessionInputReq struct {
+    session: str `json:"session"`
+    data:    str `json:"data"`
+}
+
+type SessionResizeReq struct {
+    session: str `json:"session"`
+    cols:    i32 `json:"cols"`
+    rows:    i32 `json:"rows"`
+}
+
+type SessionAnswerReq struct {
+    session: str  `json:"session"`
+    prompt:  str  `json:"prompt"`
+    ok:      bool `json:"ok"`
+    value:   str  `json:"value"`
+}
+
+type SessionReq struct {
+    session: str `json:"session"`
+}
+
+type DarkReq struct {
+    dark: bool `json:"dark"`
+}
+
+type E2eReport struct {
+    ok:     bool `json:"ok"`
+    detail: str  `json:"detail"`
+}
+
+// ---- Replies ----------------------------------------------------------------------
+
+type AppInfo struct {
+    version:   str  `json:"version"`
+    os:        str  `json:"os"`
+    libssh:    str  `json:"libssh"`
+    libsodium: str  `json:"libsodium"`
+    sqlite:    str  `json:"sqlite"`
+    e2e:       bool `json:"e2e"`
+}
+
+type Ok struct {
+    ok: bool `json:"ok"`
+}
+
+type PathReply struct {
+    path: str `json:"path"`
+}
+
+type FontList struct {
+    fonts: []str `json:"fonts"`
+}
+
+// ---- State ------------------------------------------------------------------------
+
+// The unlocked vault, mirrored field by field from VaultSession (CF-033). Handlers
+// run on the UI thread one at a time; a session worker gets a copy when it starts.
+type GuiState struct {
+    path:        str
+    name:        str
+    secrets_key: []byte
+    cached:      bool
+    unlocked:    bool
+}
+
+fn new_gui_state() -> GuiState {
+    return GuiState{ path: "", name: "", secrets_key: [], cached: false, unlocked: false }
+}
+
+fn (self: GuiState) vault_session() -> VaultSession {
+    return VaultSession{ path: self.path, name: self.name, secrets_key: self.secrets_key, cached: self.cached }
+}
+
+fn (mut self: GuiState) adopt(s: VaultSession) {
+    self.path = s.path
+    self.name = s.name
+    self.secrets_key = s.secrets_key
+    self.cached = s.cached
+    self.unlocked = true
+}
+
+fn (mut self: GuiState) forget() {
+    self.path = ""
+    self.name = ""
+    self.secrets_key = []
+    self.cached = false
+    self.unlocked = false
+}
+
+fn (self: GuiState) require_unlocked() -> void! {
+    if !self.unlocked {
+        return error(coded(ERR_LOCKED, "no vault is unlocked"))
+    }
+}
+
+fn parse_req[T](params: str) -> T! {
+    return json.parse[T](params) or err {
+        return error(coded(ERR_INVALID, "malformed request"))
+    }
+}
+
+fn ok_json() -> str {
+    return json.stringify(Ok{ ok: true })
+}
+
+// Ends every session and closes the vault before another one is opened.
+fn close_current(mut store: LockedVaultStore, mut st: GuiState) {
+    if st.unlocked {
+        gui_session_close_all()
+        close_vault(mut store)
+        st.forget()
+    }
+}
+
+// ---- App and window -------------------------------------------------------------------
+
+fn rpc_app_info(e2e: bool) -> str! {
+    return json.stringify(AppInfo{ version: FLINT_VERSION, os: os_name(), libssh: libssh_version(), libsodium: sodium_version(), sqlite: sqlcipher_version(), e2e: e2e })
+}
+
+fn rpc_window_theme(params: str, mut app: webui.App) -> str! {
+    req := try parse_req[DarkReq](params)
+    app.set_dark_mode(req.dark)
+    return ok_json()
+}
+
+fn rpc_dialog_open(params: str, app: webui.App) -> str! {
+    req := try parse_req[DialogReq](params)
+    return json.stringify(PathReply{ path: app.open_file_dialog(req.title) })
+}
+
+fn rpc_dialog_save(params: str, app: webui.App) -> str! {
+    req := try parse_req[DialogReq](params)
+    return json.stringify(PathReply{ path: app.save_file_dialog(req.title, req.default_name) })
+}
+
+fn rpc_settings_get(store: JsonSettingsStore) -> str! {
+    return json.stringify(try load_settings(store))
+}
+
+fn rpc_settings_set(params: str, mut store: JsonSettingsStore) -> str! {
+    req := try parse_req[Settings](params)
+    return json.stringify(try save_settings(mut store, req))
+}
+
+fn rpc_fonts_mono(catalog: OsFontCatalog) -> str! {
+    return json.stringify(FontList{ fonts: try list_mono_fonts(catalog) })
+}
+
+// ---- Vaults -------------------------------------------------------------------------
+
+fn rpc_vault_recents(store: LockedVaultStore, recents: JsonRecentStore) -> str! {
+    return json.stringify(try recent_vault_views(store, recents))
+}
+
+// An empty password tries the keychain; the error code `locked` means it has no key.
+fn rpc_vault_unlock(params: str, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> str! {
+    req := try parse_req[UnlockReq](params)
+    close_current(mut store, mut st)
+    s := try unlock_vault(c, mut store, kc, recents, req.path, req.password)
+    st.adopt(s)
+    return json.stringify(session_info(s))
+}
+
+fn rpc_vault_create(params: str, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> str! {
+    req := try parse_req[CreateReq](params)
+    close_current(mut store, mut st)
+    s := try create_vault(c, mut store, kc, recents, req.path, req.name, req.password)
+    st.adopt(s)
+    return json.stringify(session_info(s))
+}
+
+// Closes the vault in this window: every session ends and its keys leave memory.
+// The keychain cache stays, so the vault reopens without a prompt.
+fn rpc_vault_close(mut store: LockedVaultStore, mut st: GuiState) -> str! {
+    gui_session_close_all()
+    close_vault(mut store)
+    st.forget()
+    return ok_json()
+}
+
+// Forgets the cached key on this machine (`flint vault lock`).
+fn rpc_vault_forget_key(params: str, mut store: LockedVaultStore, kc: OsKeychain, mut st: GuiState) -> str! {
+    req := try parse_req[PathReq](params)
+    if req.path == st.path {
+        gui_session_close_all()
+        st.forget()
+    }
+    try lock_vault(mut store, kc, req.path)
+    return ok_json()
+}
+
+// Drops a vault from the recent list (`flint vault forget`).
+fn rpc_vault_forget(params: str, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> str! {
+    req := try parse_req[PathReq](params)
+    if req.path == st.path {
+        gui_session_close_all()
+        st.forget()
+    }
+    return json.stringify(try forget_recent(mut store, kc, recents, req.path))
+}
+
+fn rpc_vault_status(c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    return json.stringify(try vault_status(c, mut store, kc, recents, st.path, st.name))
+}
+
+// ---- Catalog ------------------------------------------------------------------------
+
+fn rpc_catalog(store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    return json.stringify(try catalog_view(store))
+}
+
+fn rpc_group_add(params: str, c: Sodium, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[PathReq](params)
+    return json.stringify(try add_group(c, mut store, req.path))
+}
+
+fn rpc_group_rename(params: str, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[RenameReq](params)
+    return json.stringify(try rename_group(mut store, req.name, req.new_name))
+}
+
+fn rpc_group_rm(params: str, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[PathReq](params)
+    return json.stringify(try remove_group(mut store, req.path))
+}
+
+fn rpc_host_add(params: str, c: Sodium, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[HostPatch](params)
+    return json.stringify(try add_host(c, mut store, st.vault_session(), req))
+}
+
+fn rpc_host_edit(params: str, c: Sodium, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    target := try parse_req[TargetReq](params)
+    patch := try parse_req[HostPatch](params)
+    return json.stringify(try edit_host(c, mut store, st.vault_session(), target.target, patch))
+}
+
+fn rpc_host_rm(params: str, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[NameReq](params)
+    return json.stringify(try remove_host(mut store, req.name))
+}
+
+// The key comes pasted (`private_key`) or from a file the person picked (`file`).
+fn rpc_key_add(params: str, c: Sodium, mut store: LockedVaultStore, inspector: LibsshKeyInspector, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[KeyAddReq](params)
+    mut content := req.private_key
+    if req.file.len() > 0 {
+        // Assign through a new binding: `content = f() or err { }` drops the
+        // or-block (CF-048).
+        text := fs.read_text(req.file) or err {
+            return error(coded(ERR_NOT_FOUND, "cannot read the key file {req.file}"))
+        }
+        content = text
+    }
+    return json.stringify(try add_key(c, mut store, inspector, st.vault_session(), req.name, content, req.passphrase))
+}
+
+fn rpc_key_rename(params: str, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[RenameReq](params)
+    return json.stringify(try rename_key(mut store, req.name, req.new_name))
+}
+
+fn rpc_key_rm(params: str, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[NameReq](params)
+    return json.stringify(try remove_key(mut store, req.name))
+}
+
+fn rpc_cred_add(params: str, c: Sodium, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[CredPatch](params)
+    return json.stringify(try add_cred(c, mut store, st.vault_session(), req))
+}
+
+fn rpc_cred_edit(params: str, c: Sodium, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    target := try parse_req[TargetReq](params)
+    patch := try parse_req[CredPatch](params)
+    return json.stringify(try edit_cred(c, mut store, st.vault_session(), target.target, patch))
+}
+
+fn rpc_cred_rm(params: str, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[NameReq](params)
+    return json.stringify(try remove_cred(mut store, req.name))
+}
+
+// Forgets a host's key: the explicit step before reconnecting to a host whose key
+// changed (D-019). The core never replaces a key by itself.
+fn rpc_known_host_rm(params: str, mut store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[NameReq](params)
+    return json.stringify(try remove_known_host(mut store, req.name))
+}
+
+// ---- Sessions ---------------------------------------------------------------------------
+
+// Checks a session request and opens its mailbox. The caller spawns the worker.
+fn session_open_check(params: str, st: GuiState) -> SessionOpenReq! {
+    try st.require_unlocked()
+    req := try parse_req[SessionOpenReq](params)
+    if req.session.len() == 0 || req.alias.len() == 0 {
+        return error(coded(ERR_INVALID, "a session needs an id and a host alias"))
+    }
+    if gui_session_count() >= MAX_SESSIONS {
+        return error(coded(ERR_CONFLICT, "{MAX_SESSIONS} sessions are open; close one first"))
+    }
+    if !gui_session_open(req.session, req.cols, req.rows) {
+        return error(coded(ERR_CONFLICT, "session '{req.session}' already exists"))
+    }
+    return req
+}
+
+fn session_open_reply(req: SessionOpenReq!) -> str! {
+    if !req.has_value() {
+        return error("{req.error().message()}")
+    }
+    return ok_json()
+}
+
+// The connection itself, on a worker thread. It ends with a "session:state" event:
+// the shell's exit status, or an error code.
+fn run_gui_session(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, vs: VaultSession, req: SessionOpenReq) {
+    mut opts := default_connect_options()
+    opts.accept_new_host_key = req.accept_new_host_key
+    mut link := new_ssh_link()
+    mut term := new_gui_terminal(app, req.session)
+    prompter := new_gui_prompter(app, req.session)
+    result := connect_host(c, mut store, vs, mut link, prompter, mut term, req.alias, "xterm-256color", opts)
+    link.link_hangup()
+    if result.has_value() {
+        emit_session_state(mut app, req.session, "ended", "", "", result.value())
+    } else {
+        msg := "{result.error().message()}"
+        emit_session_state(mut app, req.session, "ended", error_code_of(msg), error_text_of(msg), -1)
+    }
+    gui_session_drop(req.session)
+}
+
+fn rpc_session_input(params: str) -> str! {
+    req := try parse_req[SessionInputReq](params)
+    try gui_session_input(req.session, req.data)
+    return ok_json()
+}
+
+fn rpc_session_resize(params: str) -> str! {
+    req := try parse_req[SessionResizeReq](params)
+    try gui_session_resize(req.session, req.cols, req.rows)
+    return ok_json()
+}
+
+fn rpc_session_answer(params: str) -> str! {
+    req := try parse_req[SessionAnswerReq](params)
+    try gui_session_answer(req.session, req.prompt, req.ok, req.value)
+    return ok_json()
+}
+
+fn rpc_session_close(params: str) -> str! {
+    req := try parse_req[SessionReq](params)
+    _ := gui_session_close(req.session)
+    return ok_json()
+}
+
+// ---- Headless end-to-end run (scripts/gui-e2e.sh) ---------------------------------------
+
+fn rpc_e2e_report(params: str, mut app: webui.App) -> str! {
+    req := try parse_req[E2eReport](params)
+    mut verdict := "fail: " + req.detail
+    if req.ok {
+        verdict = "pass"
+    }
+    app.set_state("e2e", verdict)
+    return ok_json()
+}
+
+fn rpc_e2e_log(params: str) -> str! {
+    req := try parse_req[NameReq](params)
+    write_stderr("[page] {req.name}\n")
+    return ok_json()
+}

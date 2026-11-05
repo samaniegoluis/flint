@@ -1,0 +1,81 @@
+package application
+
+// Whole-vault views for the desktop app: one call fills the sidebar tree, the keys
+// and credentials pages and the command palette. Secrets appear only as flags.
+//
+// Every view type lives in this file, inner types first: structs are emitted in
+// declaration order and the file order within a package is not stable (CF-033).
+
+import "../ports"
+
+type GroupView struct {
+    path:      str `json:"path"`
+    name:      str `json:"name"`
+    hosts:     i64 `json:"hosts"`
+    subgroups: i64 `json:"subgroups"`
+}
+
+// What a driver sees of a host. Secrets appear only as `has_password`.
+type HostView struct {
+    alias:        str   `json:"alias"`
+    label:        str   `json:"label"`
+    hostname:     str   `json:"hostname"`
+    port:         i64   `json:"port"`
+    user:         str   `json:"user"`
+    group:        str   `json:"group"`
+    tags:         []str `json:"tags"`
+    color:        str   `json:"color"`
+    notes:        str   `json:"notes"`
+    jump:         str   `json:"jump"`
+    credential:   str   `json:"credential"`
+    key:          str   `json:"key"`
+    has_password: bool  `json:"has_password"`
+}
+
+type KeyView struct {
+    name:           str  `json:"name"`
+    key_type:       str  `json:"type"`
+    public_key:     str  `json:"public_key"`
+    fingerprint:    str  `json:"fingerprint"`
+    has_passphrase: bool `json:"has_passphrase"`
+}
+
+type CredView struct {
+    name:         str  `json:"name"`
+    user:         str  `json:"user"`
+    key:          str  `json:"key"`
+    has_password: bool `json:"has_password"`
+}
+
+// A known host as `known-host list` shows it.
+type KnownHostView struct {
+    addr:        str `json:"addr"`
+    host:        str `json:"host"`
+    key_type:    str `json:"key_type"`
+    fingerprint: str `json:"fingerprint"`
+    added_at:    str `json:"added_at"`
+}
+
+type CatalogView struct {
+    groups:      []GroupView     `json:"groups"`
+    hosts:       []HostView      `json:"hosts"`
+    keys:        []KeyView       `json:"keys"`
+    credentials: []CredView      `json:"credentials"`
+    known_hosts: []KnownHostView `json:"known_hosts"`
+}
+
+fn catalog_view[S: VaultStore](store: S) -> CatalogView! {
+    return CatalogView{
+        groups: try list_groups(store),
+        hosts: try list_hosts(store, "", ""),
+        keys: try list_keys(store),
+        credentials: try list_creds(store),
+        known_hosts: try list_known_hosts(store),
+    }
+}
+
+// Closes the open vault: the file is detached and its keys leave memory with the
+// session the driver drops. The keychain cache is left alone (that is lock_vault).
+fn close_vault[S: VaultStore](mut store: S) {
+    store.vault_detach()
+}

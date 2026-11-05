@@ -36,3 +36,9 @@ test "a fresh terminal reports no pending resize" {
     mut term := new_stdio_terminal()
     assert(!term.term_take_resize())
 }
+
+test "the executable folder and OS name are known" {
+    assert(executable_dir().starts_with("/"))
+    os := os_name()
+    assert(os == "mac" || os == "linux")
+}

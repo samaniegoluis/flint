@@ -1,0 +1,23 @@
+package fonts
+
+// The `FontCatalog` port over the OS font list (native/flint_fonts.hpp).
+
+import cpp "flint_fonts.hpp" @pkg("flint-native")
+import "../../domain"
+
+type OsFontCatalog struct {
+    enabled: bool
+}
+
+fn new_os_font_catalog() -> OsFontCatalog {
+    return OsFontCatalog{ enabled: true }
+}
+
+fn (self: OsFontCatalog) mono_font_families() -> []str! {
+    mut names: []str = []
+    // CFIRE-UPSTREAM: CF-045
+    cpp {
+        for (auto& n : flint_fonts::mono_families()) names.push_back(n);
+    }
+    return names
+}

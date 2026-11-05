@@ -103,6 +103,16 @@ What Tether already does and Flint must not lose.
 | Dual-pane SFTP, remote ↔ remote | `later` | |
 | Quick-edit remote files (CodeMirror) | `later` | |
 | Light theme polish, more accents | `next` | |
+| Passphrase prompt for a key whose passphrase is not stored (design screen 10b), and an encrypted on-disk key | `next` | M04 has no such prompt: keys added to the vault keep their passphrase |
+| Host key prompt: **Connect once** (trust without recording) | `idea` | Needs a third trust state in the core (D-025) |
+| Password prompt: **Save to vault** (create and link a credential from the typed password) | `next` | Left out of M04 |
+| Connection lost: automatic retry with backoff and a countdown (design screen 11c) | `next` | M04 offers Reconnect only |
+| Connecting card with per-hop progress (jump host, TCP, key exchange, auth, shell — design screen 11a) | `idea` | Needs progress events from the connect use case |
+| "No open sessions" page lists recently used hosts (design screen 13b) | `next` | M04 lists hosts alphabetically; recency needs a per-machine history |
+| Unlock and create run off the UI thread (Argon2id holds it about a second) | `next` | CF-046; the page keeps painting, but the window does not respond meanwhile |
+| Opt out of caching the vault key at unlock ("Remember on this device" unchecked) | `idea` | Today every unlock caches it (D-005); Settings → Vault can forget it |
+| Drag a host between groups in the tree | `next` | M04 changes the folder in the host editor |
+| Remember the sidebar width per view and resize it by dragging | `next` | M04 uses the design's default widths |
 
 ## 7. Platforms & distribution
 

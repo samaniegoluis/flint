@@ -1,0 +1,47 @@
+package config
+
+// The `SettingsStore` port: settings.json in the user's config folder, beside the
+// recent-vaults list. It holds appearance and terminal preferences only.
+
+import "core:fs"
+import "ext:json"
+import "../../domain"
+
+// File shape: a local struct, as in recents.cf (CF-033).
+type SettingsFile struct {
+    version:  i64      `json:"version"`
+    settings: Settings `json:"settings"`
+}
+
+type JsonSettingsStore struct {
+    path: str
+}
+
+fn new_json_settings_store(dir: str) -> JsonSettingsStore {
+    return JsonSettingsStore{ path: dir + "/settings.json" }
+}
+
+fn (self: JsonSettingsStore) settings_load() -> Settings! {
+    if !fs.exists(self.path) {
+        return default_settings()
+    }
+    text := fs.read_text(self.path) or err {
+        return error(coded(ERR_IO, "cannot read {self.path}"))
+    }
+    parsed := json.parse[SettingsFile](text) or err {
+        // A damaged file must not keep the app from starting: use the defaults.
+        return default_settings()
+    }
+    return parsed.settings
+}
+
+fn (self: JsonSettingsStore) settings_save(s: Settings) -> void! {
+    dir := fs.dirname(self.path)
+    fs.mkdir_all(dir) or err {
+        return error(coded(ERR_IO, "cannot create {dir}"))
+    }
+    body := json.stringify(SettingsFile{ version: 1, settings: s })
+    fs.write_text(self.path, body + "\n") or err {
+        return error(coded(ERR_IO, "cannot write {self.path}"))
+    }
+}

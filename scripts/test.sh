@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs every cfire test suite in src/ against a throwaway sshd on 127.0.0.1.
 #
-#   scripts/test.sh            # all suites (src and spike)
+#   scripts/test.sh            # every suite in src/
 #   scripts/test.sh src/adapters/ssh
 #
 # The sshd uses its own host key, user key and config in a temp dir, listens only on
@@ -10,7 +10,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-if [[ $# -gt 0 ]]; then targets=("$@"); else targets=(src spike); fi
+if [[ $# -gt 0 ]]; then targets=("$@"); else targets=(src); fi
 port="${FLINT_TEST_SSH_PORT:-2222}"
 port2="${FLINT_TEST_SSH_PORT2:-2223}"
 sshd_bin="$(command -v sshd || echo /usr/sbin/sshd)"
