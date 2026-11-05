@@ -18,10 +18,10 @@ type Flags struct {
 }
 
 type VersionInfo struct {
-    flint: str `json:"flint"`
-    libssh: str `json:"libssh"`
+    flint:     str `json:"flint"`
+    libssh:    str `json:"libssh"`
     libsodium: str `json:"libsodium"`
-    sqlite: str `json:"sqlite"`
+    sqlite:    str `json:"sqlite"`
 }
 
 fn main() {

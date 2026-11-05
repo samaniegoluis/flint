@@ -9,12 +9,12 @@ import "core:encoding/base64"
 
 type TerminalChunk struct {
     session: str `json:"session"`
-    data: str `json:"data"`
+    data:    str `json:"data"`
 }
 
 type TerminalClosed struct {
     session: str `json:"session"`
-    reason: str `json:"reason"`
+    reason:  str `json:"reason"`
 }
 
 type WebuiEventSink struct {

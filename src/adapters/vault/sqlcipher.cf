@@ -37,8 +37,8 @@ fn open_cipher_db(path: str, key: []byte) -> CipherDb! {
     // CFIRE-UPSTREAM: CF-007
     cpp {
         rc = sqlite3_open_v2(path.c_str(), &handle,
-                             SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
-                             nullptr);
+            SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
+            nullptr);
         if (rc == SQLITE_OK) {
             // SQLCipher logs decryption failures to stderr; keep vault errors in our
             // own messages only.

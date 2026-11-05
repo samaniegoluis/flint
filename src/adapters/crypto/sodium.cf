@@ -65,7 +65,7 @@ fn (self: Sodium) derive_key(password: str, salt: []byte) -> []byte! {
         unsigned long long ops = moderate ? crypto_pwhash_OPSLIMIT_MODERATE : crypto_pwhash_OPSLIMIT_INTERACTIVE;
         size_t mem = moderate ? crypto_pwhash_MEMLIMIT_MODERATE : crypto_pwhash_MEMLIMIT_INTERACTIVE;
         rc = crypto_pwhash(key.data(), key.size(), password.data(), password.size(),
-                           salt.data(), ops, mem, crypto_pwhash_ALG_ARGON2ID13);
+            salt.data(), ops, mem, crypto_pwhash_ALG_ARGON2ID13);
     }
     if rc != 0 {
         return error("crypto: key derivation failed (out of memory)")

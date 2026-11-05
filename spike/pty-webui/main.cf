@@ -17,12 +17,12 @@ import "../../src/adapters/uievents"
 import "../../src/application"
 
 type ConnectReq struct {
-    host: str `json:"host"`
-    port: i32 `json:"port"`
-    user: str `json:"user"`
+    host:     str `json:"host"`
+    port:     i32 `json:"port"`
+    user:     str `json:"user"`
     key_path: str `json:"key_path"`
-    cols: i32 `json:"cols"`
-    rows: i32 `json:"rows"`
+    cols:     i32 `json:"cols"`
+    rows:     i32 `json:"rows"`
 }
 
 type InputReq struct {
@@ -30,21 +30,21 @@ type InputReq struct {
 }
 
 type ReportReq struct {
-    ok: bool `json:"ok"`
-    detail: str `json:"detail"`
+    ok:     bool `json:"ok"`
+    detail: str  `json:"detail"`
 }
 
 type CallResult struct {
-    ok: bool `json:"ok"`
-    detail: str `json:"detail"`
+    ok:     bool `json:"ok"`
+    detail: str  `json:"detail"`
 }
 
 type SpikeConfig struct {
     selftest: bool `json:"selftest"`
-    host: str `json:"host"`
-    port: i32 `json:"port"`
-    user: str `json:"user"`
-    key_path: str `json:"key_path"`
+    host:     str  `json:"host"`
+    port:     i32  `json:"port"`
+    user:     str  `json:"user"`
+    key_path: str  `json:"key_path"`
 }
 
 var SESSION_ID: str = "spike-1"
