@@ -79,6 +79,7 @@ What Tether already does and Flint must not lose.
 | Local change log + per-record merge for concurrent edits on two machines | `idea` | Only if conflicts become a real problem |
 | Change the master password (`flint vault passwd`): new salt, `sqlcipher_export` re-key, re-seal secrets | `next` | Not in M02. Changes the keychain account (salt-based, D-017) |
 | Auto-lock: forget the cached key after N idle days, or require Touch ID / the login password to read it | `idea` | Today the cache lasts until `flint vault lock` |
+| **Touch ID to open a vault** (macOS): the cached key is released only after Touch ID, or the login password when there is no sensor; a per-machine setting, offered when the Mac has biometrics (`LAContext.canEvaluatePolicy`) | `next` | Raised in the M04 owner walkthrough. Today, once **Always Allow** is given, anyone using the logged-in Mac opens the vault with no prompt. Strongest form: a Keychain item with `SecAccessControl` `.userPresence`, which needs the data-protection keychain and so a Developer ID-signed build with a keychain-access-groups entitlement; until then an `LAContext` check before reading the item. Linux: polkit/fprintd, later |
 | `flint vault check`: verify every sealed secret opens and every reference resolves | `idea` | Cheap integrity check before a sync |
 
 ## 5. Architecture
@@ -113,6 +114,7 @@ What Tether already does and Flint must not lose.
 | Opt out of caching the vault key at unlock ("Remember on this device" unchecked) | `idea` | Today every unlock caches it (D-005); Settings → Vault can forget it |
 | Drag a host between groups in the tree | `next` | M04 changes the folder in the host editor |
 | Remember the sidebar width per view and resize it by dragging | `next` | M04 uses the design's default widths |
+| macOS: one title bar. The native traffic lights over the in-app bar (webui `set_frameless`: full-size content, transparent title bar), as in the design | `next` | Found in the M04 owner walkthrough: today the OS title bar ("Flint") sits above the app's bar (D-024). Needs a drag region and left padding for the traffic lights; Linux keeps the OS chrome |
 
 ## 7. Platforms & distribution
 
