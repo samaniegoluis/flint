@@ -3,10 +3,11 @@ title: Build from source
 description: Install the toolchain and native libraries, then build and test Flint.
 ---
 
-Flint is written in [cfire](https://github.com/gsandoval/cfire) and links three native
-libraries: **libssh** (SSH), **libsodium** (key derivation and encryption) and
-**SQLCipher** (the encrypted vault file). They are found through `pkg-config` and linked
-dynamically.
+Flint is written in [cfire](https://github.com/gsandoval/cfire) and links these native
+libraries: **libssh** (SSH), **libsodium** (key derivation and encryption),
+**SQLCipher** (the encrypted vault file) and, on Linux, **libsecret** (the keychain). They
+are found through `pkg-config` and linked dynamically. On macOS the keychain is
+Security.framework.
 
 ## 1. Install cfire
 
@@ -30,7 +31,7 @@ brew install libssh libsodium sqlcipher pkg-config
 ### Debian and Ubuntu
 
 ```sh
-sudo apt install libssh-dev libsodium-dev libsqlcipher-dev pkg-config openssh-server
+sudo apt install libssh-dev libsodium-dev libsqlcipher-dev libsecret-1-dev pkg-config openssh-server
 ```
 
 ## 3. Build
@@ -38,9 +39,15 @@ sudo apt install libssh-dev libsodium-dev libsqlcipher-dev pkg-config openssh-se
 From the repository root:
 
 ```sh
+. scripts/env.sh
 cfire build
 ./build/flint --version
 ```
+
+`scripts/env.sh` adds Flint's own pkg-config folder (`src/adapters/pkgconfig/<os>/`) to
+`PKG_CONFIG_PATH`. The keychain and process adapters reach their native headers and link
+flags through it, because cfire cannot yet link an Apple framework or select a source file
+per platform. Without it, `cfire build` fails to find `flint-native`.
 
 The output lists the library versions that were linked:
 
@@ -63,8 +70,21 @@ the SSH tests can open a real PTY. On macOS the spike test also opens the PTY in
 WebView and checks that the output reaches the terminal. It does not
 touch your system `sshd` or `~/.ssh`. To use another port, set `FLINT_TEST_SSH_PORT`.
 
-To run only the tests that need no network, call `cfire test src`. The SSH tests then
-print `SKIP`.
+To run only the tests that need no network, call `cfire test src` (after
+`. scripts/env.sh`). The SSH tests then print `SKIP`. One test stores, reads and deletes a
+throwaway entry in your real OS keychain; set `FLINT_TEST_KEYCHAIN=off` to skip it.
+
+### The CLI end to end
+
+```sh
+scripts/cli-e2e.sh
+```
+
+It builds `flint` and drives it against throwaway vaults in a temporary folder: every
+command, every exit code, `--json` output, the keychain cache (and `FLINT_KEYCHAIN=off`).
+It also checks that no password, key or passphrase appears in any output, and that no
+hostname, user, label or note appears in clear text in the vault files. It removes its
+keychain entries when it finishes.
 
 ## Check the Linux build from macOS
 

@@ -1,0 +1,248 @@
+package main
+
+// Output formatting: data to stdout, diagnostics to stderr (Principle 7). Views come
+// from the application layer and carry no secret values (Principle 6).
+
+import "ext:json"
+import "../../adapters/process"
+import "../../application"
+import "../../domain"
+
+type ErrorBody struct {
+    code: str `json:"code"`
+    message: str `json:"message"`
+}
+
+type ErrorEnvelope struct {
+    err_body: ErrorBody `json:"error"`
+}
+
+type RemovedNote struct {
+    removed: str `json:"removed"`
+    name: str `json:"name"`
+}
+
+type RecentView struct {
+    name: str `json:"name"`
+    path: str `json:"path"`
+    current: bool `json:"current"`
+    exists: bool `json:"exists"`
+}
+
+fn say(line: str) {
+    write_stdout(line + "\n")
+}
+
+// Prints an error and ends the process with its stable exit code.
+fn fail_with(msg: str, as_json: bool) {
+    code := error_code_of(msg)
+    text := error_text_of(msg)
+    if as_json {
+        write_stderr(json.stringify(ErrorEnvelope{ err_body: ErrorBody{ code: code, message: text } }) + "\n")
+    } else {
+        write_stderr("flint: " + text + "\n")
+    }
+    exit_process(exit_code_for(code))
+}
+
+fn pad_right(s: str, width: usize) -> str {
+    mut res := s
+    for res.len() < width {
+        res = res + " "
+    }
+    return res
+}
+
+// Prints rows as left-aligned columns, two spaces apart.
+fn print_table(headers: []str, rows: [][]str) {
+    mut widths: []usize = []
+    for h in headers {
+        widths.push(h.len())
+    }
+    for r in rows {
+        for i, cell in r {
+            if cell.len() > widths[i] {
+                widths[i] = cell.len()
+            }
+        }
+    }
+    mut head := ""
+    for i, h in headers {
+        if i + 1 == headers.len() {
+            head = head + h
+        } else {
+            head = head + pad_right(h, widths[i] + 2)
+        }
+    }
+    say(head)
+    for r in rows {
+        mut line := ""
+        for i, cell in r {
+            if i + 1 == r.len() {
+                line = line + cell
+            } else {
+                line = line + pad_right(cell, widths[i] + 2)
+            }
+        }
+        say(line)
+    }
+}
+
+fn print_fields(names: []str, values: []str) {
+    mut width: usize = 0
+    for n in names {
+        if n.len() > width {
+            width = n.len()
+        }
+    }
+    for i, n in names {
+        say(pad_right(n, width + 2) + values[i])
+    }
+}
+
+fn dash_if_empty(s: str) -> str {
+    if s.len() == 0 {
+        return "-"
+    }
+    return s
+}
+
+fn yes_no(b: bool) -> str {
+    if b {
+        return "yes"
+    }
+    return "no"
+}
+
+fn join_tags(tags: []str) -> str {
+    mut s := ""
+    for i, t in tags {
+        if i > 0 {
+            s = s + ", "
+        }
+        s = s + t
+    }
+    return s
+}
+
+// "host:port", or the user@host:port target M03 will connect to.
+fn host_target(h: HostView) -> str {
+    mut t := h.hostname
+    if h.user.len() > 0 {
+        t = h.user + "@" + t
+    }
+    if h.port != 22 {
+        t = t + ":{h.port}"
+    }
+    return t
+}
+
+fn print_host(h: HostView) {
+    mut pw := "not set"
+    if h.has_password {
+        pw = "set"
+    }
+    print_fields(["alias", "label", "hostname", "port", "user", "group", "tags", "color", "jump", "credential", "key", "password", "notes"],
+        [h.alias, dash_if_empty(h.label), h.hostname, "{h.port}", dash_if_empty(h.user), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags)), dash_if_empty(h.color), dash_if_empty(h.jump), dash_if_empty(h.credential), dash_if_empty(h.key), pw, dash_if_empty(h.notes)])
+}
+
+fn print_host_list(hosts: []HostView) {
+    if hosts.len() == 0 {
+        say("No hosts.")
+        return
+    }
+    mut rows: [][]str = []
+    for h in hosts {
+        rows.push([h.alias, host_target(h), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags))])
+    }
+    print_table(["ALIAS", "TARGET", "GROUP", "TAGS"], rows)
+}
+
+fn print_key(k: KeyView) {
+    print_fields(["name", "type", "fingerprint", "passphrase", "public key"], [k.name, k.key_type, k.fingerprint, yes_no(k.has_passphrase), k.public_key])
+}
+
+fn print_key_list(keys: []KeyView) {
+    if keys.len() == 0 {
+        say("No keys.")
+        return
+    }
+    mut rows: [][]str = []
+    for k in keys {
+        rows.push([k.name, k.key_type, k.fingerprint, yes_no(k.has_passphrase)])
+    }
+    print_table(["NAME", "TYPE", "FINGERPRINT", "PASSPHRASE"], rows)
+}
+
+fn print_cred(c: CredView) {
+    mut pw := "not set"
+    if c.has_password {
+        pw = "set"
+    }
+    print_fields(["name", "user", "key", "password"], [c.name, c.user, dash_if_empty(c.key), pw])
+}
+
+fn print_cred_list(creds: []CredView) {
+    if creds.len() == 0 {
+        say("No credentials.")
+        return
+    }
+    mut rows: [][]str = []
+    for c in creds {
+        rows.push([c.name, c.user, dash_if_empty(c.key), yes_no(c.has_password)])
+    }
+    print_table(["NAME", "USER", "KEY", "PASSWORD"], rows)
+}
+
+fn print_group_list(groups: []GroupView) {
+    if groups.len() == 0 {
+        say("No groups.")
+        return
+    }
+    mut rows: [][]str = []
+    for g in groups {
+        rows.push([g.path, "{g.hosts}", "{g.subgroups}"])
+    }
+    print_table(["GROUP", "HOSTS", "SUBGROUPS"], rows)
+}
+
+fn print_vault_info(verb: str, v: VaultInfo) {
+    say("{verb} vault '{v.name}' at {v.path}")
+    if v.cached {
+        say("The key is cached in the OS keychain; this machine opens it without a prompt.")
+    } else {
+        say("The key is not cached; Flint will ask for the master password each time.")
+    }
+}
+
+fn print_status(st: VaultStatus) {
+    if !st.exists {
+        print_fields(["vault", "path", "state"], [st.name, st.path, "missing (no file at this path)"])
+        return
+    }
+    if !st.cached {
+        print_fields(["vault", "path", "state"], [st.name, st.path, "locked"])
+        return
+    }
+    print_fields(["vault", "path", "state", "groups", "hosts", "keys", "credentials"], [st.name, st.path, "unlocked (key cached in the OS keychain)", "{st.groups}", "{st.hosts}", "{st.keys}", "{st.credentials}"])
+}
+
+fn print_recents(list: []RecentView) {
+    if list.len() == 0 {
+        say("No vaults yet. Create one with `flint vault create <path>`.")
+        return
+    }
+    mut rows: [][]str = []
+    for v in list {
+        mut mark := " "
+        if v.current {
+            mark = "*"
+        }
+        mut path := v.path
+        if !v.exists {
+            path = path + " (missing)"
+        }
+        rows.push([mark, v.name, path])
+    }
+    print_table(["", "NAME", "PATH"], rows)
+}

@@ -1,0 +1,168 @@
+package main
+
+// Command-line parsing for `flint`. core:cli has no positional arguments or
+// subcommands and ignores unknown flags (CF-024), so this is a small parser of its
+// own: `flint [global flags] <noun> <verb> [args] [flags]`, with flags anywhere.
+
+import "core:str"
+import "../../domain"
+
+type ParsedArgs struct {
+    positionals: []str
+    flag_names: []str
+    flag_values: []str
+}
+
+// Flags that take a value. `--flag value` and `--flag=value` both work.
+fn value_flags() -> []str {
+    return ["--vault", "--name", "--hostname", "--label", "--port", "--user", "--group", "--tag", "--color", "--notes", "--jump", "--cred", "--key", "--file", "--alias"]
+}
+
+// Flags that take no value.
+fn bool_flags() -> []str {
+    return ["--json", "--help", "-h", "--version", "-V", "--master-stdin", "--password", "--password-stdin", "--no-password", "--passphrase", "--passphrase-stdin", "--key-stdin", "--no-tags"]
+}
+
+fn list_has(list: []str, item: str) -> bool {
+    for x in list {
+        if x == item {
+            return true
+        }
+    }
+    return false
+}
+
+fn parse_cli_args(args: []str) -> ParsedArgs! {
+    mut parsed := ParsedArgs{ positionals: [], flag_names: [], flag_values: [] }
+    values := value_flags()
+    bools := bool_flags()
+    mut i: usize = 0
+    for i < args.len() {
+        a := args[i]
+        i += 1
+        if a.len() > 1 && a.starts_with("-") {
+            mut name := a
+            mut value := ""
+            mut inline_value := false
+            eq := str.index_of(a, "=")
+            if a.starts_with("--") && eq > 0 {
+                name = a.substr(0, usize(eq))
+                value = a.substr(usize(eq) + 1)
+                inline_value = true
+            }
+            if list_has(values, name) {
+                if !inline_value {
+                    if i >= args.len() {
+                        return error(coded(ERR_USAGE, "{name} needs a value"))
+                    }
+                    value = args[i]
+                    i += 1
+                }
+            } else if list_has(bools, name) {
+                if inline_value {
+                    return error(coded(ERR_USAGE, "{name} takes no value"))
+                }
+            } else {
+                return error(coded(ERR_USAGE, "unknown flag {name}"))
+            }
+            parsed.flag_names.push(name)
+            parsed.flag_values.push(value)
+        } else {
+            parsed.positionals.push(a)
+        }
+    }
+    return parsed
+}
+
+fn (self: ParsedArgs) has_flag(name: str) -> bool {
+    return list_has(self.flag_names, name)
+}
+
+// The last value given for `name`, or "" when absent.
+fn (self: ParsedArgs) flag_value(name: str) -> str {
+    mut v := ""
+    for i, n in self.flag_names {
+        if n == name {
+            v = self.flag_values[i]
+        }
+    }
+    return v
+}
+
+// Every value given for a repeatable flag, in order.
+fn (self: ParsedArgs) flag_values_of(name: str) -> []str {
+    mut vs: []str = []
+    for i, n in self.flag_names {
+        if n == name {
+            vs.push(self.flag_values[i])
+        }
+    }
+    return vs
+}
+
+fn (self: ParsedArgs) positional(i: usize) -> str {
+    if i < self.positionals.len() {
+        return self.positionals[i]
+    }
+    return ""
+}
+
+// Fails on a flag the command does not take. Global flags are always allowed.
+fn (self: ParsedArgs) allow_flags(command: str, allowed: []str) -> void! {
+    globals: []str = ["--json", "--vault", "--help", "-h", "--master-stdin"]
+    for n in self.flag_names {
+        if !list_has(allowed, n) && !list_has(globals, n) {
+            return error(coded(ERR_USAGE, "`flint {command}` does not take {n}"))
+        }
+    }
+}
+
+// Fails unless exactly `n` positionals follow the noun and verb.
+fn (self: ParsedArgs) expect_args(command: str, n: usize, shape: str) -> void! {
+    if self.positionals.len() != n + 2 {
+        return error(coded(ERR_USAGE, "usage: flint {command} {shape}"))
+    }
+}
+
+// "22" -> 22. cfire has no string-to-integer parser in core:str (CF-022).
+fn parse_port_flag(text: str) -> i64! {
+    if text.len() == 0 || text.len() > 5 {
+        return error(coded(ERR_INVALID, "port must be a number 1-65535"))
+    }
+    mut n: i64 = 0
+    for b in text.bytes() {
+        c := u8(b)
+        if c < 48 || c > 57 {
+            return error(coded(ERR_INVALID, "port must be a number 1-65535"))
+        }
+        n = n * 10 + i64(c - 48)
+    }
+    return n
+}
+
+test "flags parse anywhere, with values inline or separate" {
+    p := try parse_cli_args(["host", "add", "web", "--hostname", "10.0.0.5", "--json", "--tag=a", "--tag", "b", "--group="])
+    assert_eq(p.positionals.len(), 3)
+    assert_eq(p.positional(2), "web")
+    assert_eq(p.flag_value("--hostname"), "10.0.0.5")
+    assert(p.has_flag("--json"))
+    assert_eq(p.flag_values_of("--tag").len(), 2)
+    assert(p.has_flag("--group"))
+    assert_eq(p.flag_value("--group"), "")
+}
+
+test "unknown flags and missing values are usage errors" {
+    bad := parse_cli_args(["host", "list", "--nope"])
+    assert_eq(error_code_of("{bad.error().message()}"), "usage")
+    missing := parse_cli_args(["host", "add", "--hostname"])
+    assert_eq(error_code_of("{missing.error().message()}"), "usage")
+    valued := parse_cli_args(["--json=1"])
+    assert_eq(error_code_of("{valued.error().message()}"), "usage")
+}
+
+test "ports parse strictly" {
+    assert_eq(try parse_port_flag("2222"), 2222)
+    assert(!parse_port_flag("22a").has_value())
+    assert(!parse_port_flag("").has_value())
+    assert(!parse_port_flag("-1").has_value())
+}

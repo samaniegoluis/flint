@@ -1,21 +1,19 @@
 package main
 
-// The `flint` CLI driver and composition root. Milestone 01 only reports the
-// version and the native libraries linked into the binary; the vault, host, key and
-// credential commands arrive in milestone 02.
+// The `flint` CLI driver and composition root: it builds the adapters, parses the
+// command line and hands each command to its handler (commands.cf).
 
-import "core:cli"
+import "core:os"
 import "ext:json"
+import "../../adapters/config"
 import "../../adapters/crypto"
+import "../../adapters/keychain"
+import "../../adapters/process"
 import "../../adapters/ssh"
 import "../../adapters/vault"
+import "../../domain"
 
 var FLINT_VERSION: str = "0.0.0-dev"
-
-type Flags struct {
-    version: bool `cli:"--version,-V" help:"Print the Flint version and linked libraries"`
-    as_json: bool `cli:"--json" help:"Write machine-readable JSON to stdout"`
-}
 
 type VersionInfo struct {
     flint:     str `json:"flint"`
@@ -24,22 +22,123 @@ type VersionInfo struct {
     sqlite:    str `json:"sqlite"`
 }
 
-fn main() {
-    // cli.parse returns T, not T! as documented, and silently ignores unknown flags
-    // (CF-024). Stable error codes and stderr diagnostics arrive with milestone 02.
-    flags := cli.parse[Flags]()
+fn usage_text() -> str {
+    return `flint - SSH client over one encrypted vault
+
+Usage: flint [--json] [--vault <name|path>] <command> [args] [flags]
+
+Vaults
+  vault create <path> [--name <name>]   Create a vault (asks for a master password)
+  vault open <path>                     Open an existing vault and make it current
+  vault list                            Recent vaults; * marks the current one
+  vault use <name|path>                 Make a recent vault the current one
+  vault status                          Path, lock state and counts
+  vault unlock                          Cache the vault key in the OS keychain
+  vault lock                            Remove the cached key from this machine
+  vault forget <name|path>              Drop a vault from the recent list
+
+Groups
+  group add <path>                      Create a group, e.g. homelab/proxmox
+  group list | group rename <path> <new-name> | group rm <path>
+
+Hosts
+  host add <alias> --hostname <host> [--port N] [--user U] [--label L]
+           [--group <path>] [--tag T]... [--color #rrggbb] [--notes N]
+           [--jump <alias>] [--cred <name>] [--key <name>]
+           [--password | --password-stdin]
+  host edit <alias> [same flags] [--alias <new>] [--no-tags] [--no-password]
+  host list [--group <path>] [--tag <tag>] | host show <alias> | host rm <alias>
+
+Keys
+  key add <name> (--file <path> | --key-stdin) [--passphrase | --passphrase-stdin]
+  key list | key show <name> | key rename <name> <new-name> | key rm <name>
+
+Credentials
+  cred add <name> --user <user> [--key <name>] [--password | --password-stdin]
+  cred edit <name> [--name N] [--user U] [--key K] [--password | --password-stdin | --no-password]
+  cred list | cred show <name> | cred rm <name>
+
+Global flags
+  --json            Write JSON to stdout (errors as JSON to stderr)
+  --vault <v>       Use this vault instead of the current one
+  --master-stdin    Read the master password from the first line of stdin
+  --version, -V     Print the version and linked libraries
+
+Secrets are never taken from arguments: Flint prompts on the terminal, or reads
+them from stdin with the --*-stdin flags.
+`
+}
+
+fn print_version(as_json: bool) {
     info := VersionInfo{
         flint: FLINT_VERSION,
         libssh: libssh_version(),
         libsodium: sodium_version(),
         sqlite: sqlcipher_version(),
     }
-    if flags.as_json {
-        println("{}", json.stringify(info))
+    if as_json {
+        say(json.stringify(info))
         return
     }
-    println("flint {info.flint}")
-    println("  libssh     {info.libssh}")
-    println("  libsodium  {info.libsodium}")
-    println("  sqlite     {info.sqlite}")
+    say("flint {info.flint}")
+    say("  libssh     {info.libssh}")
+    say("  libsodium  {info.libsodium}")
+    say("  sqlite     {info.sqlite}")
+}
+
+fn run_cli(p: ParsedArgs, as_json: bool) -> void! {
+    if p.has_flag("--version") || p.has_flag("-V") {
+        print_version(as_json)
+        return
+    }
+    noun := p.positional(0)
+    if noun.len() == 0 || noun == "help" || p.has_flag("--help") || p.has_flag("-h") {
+        write_stdout(usage_text())
+        return
+    }
+    if noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" {
+        return error(coded(ERR_USAGE, "unknown command '{noun}'; see `flint help`"))
+    }
+    if p.positional(1).len() == 0 {
+        return error(coded(ERR_USAGE, "`flint {noun}` needs a command; see `flint help`"))
+    }
+    sec := try read_stdin_secrets(p)
+    c := try new_sodium()
+    mut store := new_sql_vault_store()
+    kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
+    recents := new_json_recent_store(flint_config_dir())
+    mut result: void! = {}
+    if noun == "vault" {
+        result = cmd_vault(p, sec, as_json, c, mut store, kc, recents)
+    } else if noun == "group" {
+        result = cmd_group(p, sec, as_json, c, mut store, kc, recents)
+    } else if noun == "host" {
+        result = cmd_host(p, sec, as_json, c, mut store, kc, recents)
+    } else if noun == "key" {
+        result = cmd_key(p, sec, as_json, c, mut store, kc, recents, new_libssh_key_inspector())
+    } else {
+        result = cmd_cred(p, sec, as_json, c, mut store, kc, recents)
+    }
+    store.vault_detach()
+    return result
+}
+
+fn main() {
+    args := process_args()
+    // Decide the error format before parsing, so a parse error honours --json.
+    mut as_json := false
+    for a in args {
+        if a == "--json" {
+            as_json = true
+        }
+    }
+    parsed := parse_cli_args(args)
+    if !parsed.has_value() {
+        fail_with("{parsed.error().message()}", as_json)
+        return
+    }
+    done := run_cli(parsed.value(), as_json)
+    if !done.has_value() {
+        fail_with("{done.error().message()}", as_json)
+    }
 }

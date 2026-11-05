@@ -8,6 +8,7 @@ package application
 // key from it; neither is ever stored.
 
 import "core:encoding/hex"
+import "core:str"
 import "../domain"
 import "../ports"
 
@@ -53,7 +54,7 @@ fn session_info(s: VaultSession) -> VaultInfo {
 // "/a/b/Home Lab.flint" -> "Home Lab". Pure string work, no filesystem access.
 fn vault_name_from_path(path: str) -> str {
     mut base := path
-    slash := base.rfind("/")
+    slash := str.last_index_of(base, "/")
     if slash >= 0 {
         base = base.substr(usize(slash) + 1)
     }

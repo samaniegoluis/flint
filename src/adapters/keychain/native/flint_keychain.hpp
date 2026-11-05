@@ -53,7 +53,8 @@ inline int save(const std::string& service, const std::string& account, const st
         CFStringRef label = cf_str("Flint vault key");
         CFDictionarySetValue(q, kSecAttrLabel, label);
         CFRelease(label);
-        // Readable only while the Mac is unlocked, and never synced to iCloud.
+        // Honoured by the data-protection keychain; the file-based login keychain an
+        // unsigned CLI writes to ignores it. Kept so a signed build gets it for free.
         CFDictionarySetValue(q, kSecAttrAccessible, kSecAttrAccessibleWhenUnlockedThisDeviceOnly);
         st = SecItemAdd(q, nullptr);
     }

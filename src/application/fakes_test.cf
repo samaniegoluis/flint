@@ -4,6 +4,7 @@ package application
 // any adapter (Principle 1). The fake crypto is NOT cryptography: it only has to be
 // deterministic, key-sensitive and AAD-sensitive.
 
+import "core:str"
 import "core:fs"
 import "core:rand"
 import "core:encoding/hex"
@@ -357,7 +358,7 @@ fn (self: FakeRecents) recents_load() -> []RecentVault! {
     }
     text := try fs.read_text(self.path)
     for line in str_split_lines(text) {
-        tab := line.find("\t")
+        tab := str.index_of(line, "\t")
         if tab >= 0 {
             list.push(RecentVault{ path: line.substr(0, usize(tab)), name: line.substr(usize(tab) + 1) })
         }
