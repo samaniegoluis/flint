@@ -22,6 +22,15 @@ type SshConn struct {
     lock: shared[cpp::std::mutex]
 }
 
+// A chain of sessions: the SshTransport adapter (link.cf). Declared here, after
+// SshConn, so its `[]SshConn` field is complete when emitted (CF-033).
+type SshLink struct {
+    hops: []SshConn
+    // Shared by every copy of this value; owns the tunnel threads (CF-026, CF-043).
+    tunnels: shared[cpp::flint_ssh::Tunnels]
+    timeout_secs: i64
+}
+
 // Helpers are methods rather than functions taking the pointer: a `*mut T`
 // parameter lowers to `const T*&` and the C API rejects it (CF-019).
 fn (self: SshConn) last_error() -> str {

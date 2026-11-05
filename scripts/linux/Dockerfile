@@ -26,5 +26,8 @@ RUN printf '#!/bin/sh\nfor a do shift; [ "$a" = "-pthread" ] || set -- "$@" "$a"
     && chmod 755 /usr/local/bin/clang++
 
 RUN useradd --create-home --shell /bin/bash flint
+# A password for the password and keyboard-interactive auth checks (linux-check.sh
+# starts root sshds that accept it). Test-only: the image is never published.
+RUN echo 'flint:flint-e2e-login-pw' | chpasswd
 USER flint
 WORKDIR /home/flint

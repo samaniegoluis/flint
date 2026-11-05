@@ -373,7 +373,13 @@ The entries below were found while building milestone 02 against the same cfire 
   package's, so a field typed with another package's struct never compiles
   (`RecentFile { vaults: []RecentVault }` in `adapters/config`, `Catalog { groups:
   []Group }` in `application`).
-- **Workaround:** declare inner structs first; keep structs that hold another package's
+- **Across files of one package:** the file order is not stable either. `SshLink { hops:
+  []SshConn }` in `adapters/ssh/link.cf` compiled in the package's own tests and on
+  macOS, but in the full `flint` build on Linux `SshLink` came before `SshConn`
+  (`adapters/ssh/libssh.cf`). libc++ tolerates the incomplete `std::vector` element in a
+  default member initialiser; libstdc++ does not, so the bug can hide on macOS.
+- **Workaround:** declare inner structs first; declare a struct in the same file as the
+  struct types it holds (`SshLink` lives in `src/adapters/ssh/libssh.cf`); keep structs that hold another package's
   types in that package (`Catalog` lives in `src/domain/vault.cf`); hold a raw handle
   instead of a struct (`SqlVaultStore` in `src/adapters/vault/store.cf`); mirror types
   locally (`RecentEntry` in `src/adapters/config/recents.cf`).

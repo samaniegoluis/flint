@@ -319,12 +319,27 @@ check "connect exits with the remote shell status" '[[ "$(echo "$pty_out" | json
 expect 0 "the confirmed key was recorded" "$SMI" -- --json known-host list "${SM[@]}"
 check "localhost is now a known host" '[[ "$out" == *"[localhost]:$P"* ]]'
 
+if [[ -n "${FLINT_TEST_PW_PORT:-}" ]]; then
+  echo "== ssh: password and keyboard-interactive logins (root sshds, Linux check)"
+  LOGIN_PW="$FLINT_TEST_LOGIN_PW"
+  expect 0 "host add with a password" "$SMI$LOGIN_PW"$'\n' -- host add pw --hostname 127.0.0.1 --port "$FLINT_TEST_PW_PORT" --user flint --password-stdin "${SM[@]}"
+  expect 0 "password auth from the vault" "$SMI" -- exec pw --accept-new-host-key "${SM[@]}" -- echo pw-ok
+  check "the password login ran the command" '[[ "$out" == "pw-ok" ]]'
+  expect 0 "credential with the password" "$SMI$LOGIN_PW"$'\n' -- cred add login --user flint --password-stdin "${SM[@]}"
+  expect 0 "host add with the credential, kbd-interactive only" "$SMI" -- host add kbd --hostname 127.0.0.1 --port "$FLINT_TEST_KBD_PORT" --cred login "${SM[@]}"
+  expect 0 "keyboard-interactive auth with the credential password" "$SMI" -- exec kbd --accept-new-host-key "${SM[@]}" -- echo kbd-ok
+  check "the kbd-interactive login ran the command" '[[ "$out" == "kbd-ok" ]]'
+  expect 0 "host edit to a wrong password" "${SMI}wrong-password"$'\n' -- host edit pw --password-stdin "${SM[@]}"
+  SSH_AUTH_SOCK= expect 12 "a wrong stored password fails with auth" "$SMI" -- exec pw "${SM[@]}" -- true
+  check "the auth error names the host password, not its value" '[[ "$err" == *"host password"* && "$err" != *"wrong-password"* ]]'
+fi
+
 echo "== every --json output parses"
 expect 0 "version --json" "" -- --version --json
 check "version is JSON" 'echo "$out" | is_json'
 
 echo "== nothing secret or identifying leaks"
-for secret in "$MASTER" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "$test_key_body" "PRIVATE KEY"; do
+for secret in "$MASTER" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "$test_key_body" "PRIVATE KEY" ${FLINT_TEST_LOGIN_PW:+"$FLINT_TEST_LOGIN_PW"}; do
   check "CLI output never shows '${secret:0:24}…'" '! grep -aqF -- "$secret" "$all_out"'
 done
 for f in "$vault" "$work" "$off"; do
