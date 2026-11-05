@@ -9,11 +9,20 @@
 <dialog class="cli-demo not-content" aria-labelledby="cli-demo-title">
 	<div class="cli-demo__window">
 		<div class="cli-demo__bar">
-			<span class="cli-demo__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+			<!-- Window dots, as on macOS: a shortcut for the buttons on the right. -->
+			<span class="cli-demo__dots">
+				<button type="button" class="cli-demo__dot cli-demo__dot--close" data-close aria-label="Close the demo" tabindex="-1"></button>
+				<button type="button" class="cli-demo__dot cli-demo__dot--min" data-restore aria-label="Restore the window size" tabindex="-1"></button>
+				<button type="button" class="cli-demo__dot cli-demo__dot--max" data-maximize aria-label="Maximize" tabindex="-1"></button>
+			</span>
 			<h2 id="cli-demo-title" class="cli-demo__title">Flint CLI demo</h2>
 			<span class="cli-demo__step" data-step></span>
 			<button type="button" class="cli-demo__btn" data-tour>Skip tour</button>
-			<button type="button" class="cli-demo__btn cli-demo__close" data-close aria-label="Close the demo">
+			<button type="button" class="cli-demo__btn cli-demo__icon-btn cli-demo__max-btn" data-max aria-pressed="false" aria-label="Maximize" title="Maximize">
+				<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="cli-demo__ico-max"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"></path></svg>
+				<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" class="cli-demo__ico-restore"><path d="M20 10h-6V4M4 14h6v6M14 10l7-7M10 14l-7 7"></path></svg>
+			</button>
+			<button type="button" class="cli-demo__btn cli-demo__icon-btn cli-demo__close" data-close aria-label="Close the demo">
 				<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
 			</button>
 		</div>
@@ -139,7 +148,32 @@
 		dialog.addEventListener('click', (e) => {
 			if (e.target === dialog) dialog.close();
 		});
-		$<HTMLButtonElement>('[data-close]').addEventListener('click', () => dialog.close());
+		dialog.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => dialog.close()));
+
+		// Maximize fills the page's viewport (not the browser's full screen). The choice
+		// is a per-viewer convenience, kept in localStorage when it is available.
+		const maxBtn = $<HTMLButtonElement>('[data-max]');
+		const setMax = (on: boolean) => {
+			dialog.classList.toggle('cli-demo--max', on);
+			maxBtn.setAttribute('aria-pressed', String(on));
+			const label = on ? 'Restore the window size' : 'Maximize';
+			maxBtn.setAttribute('aria-label', label);
+			maxBtn.title = label;
+			try {
+				localStorage.setItem('flint-cli-demo-max', on ? '1' : '');
+			} catch {}
+			screen.scrollTop = screen.scrollHeight;
+		};
+		try {
+			if (localStorage.getItem('flint-cli-demo-max') === '1') setMax(true);
+		} catch {}
+		maxBtn.addEventListener('click', () => setMax(!dialog.classList.contains('cli-demo--max')));
+		$<HTMLButtonElement>('[data-maximize]').addEventListener('click', () => setMax(true));
+		$<HTMLButtonElement>('[data-restore]').addEventListener('click', () => setMax(false));
+		$<HTMLDivElement>('.cli-demo__bar').addEventListener('dblclick', (e) => {
+			if ((e.target as Element).closest('button')) return;
+			setMax(!dialog.classList.contains('cli-demo--max'));
+		});
 		tourBtn.addEventListener('click', () => {
 			if (!session) return;
 			if (session.tourLabel()) session.stopTour();
@@ -219,6 +253,12 @@
 		box-shadow: 0 32px 96px rgba(0, 0, 0, 0.5);
 		overflow: hidden;
 	}
+	.cli-demo.cli-demo--max {
+		width: 100%;
+		height: 100dvh;
+		border: 0;
+		border-radius: 0;
+	}
 	.cli-demo::backdrop {
 		background: var(--sl-color-backdrop-overlay);
 		backdrop-filter: blur(2px);
@@ -246,11 +286,24 @@
 		display: flex;
 		gap: 6px;
 	}
-	.cli-demo__dots i {
-		width: 10px;
-		height: 10px;
+	.cli-demo__dot {
+		width: 12px;
+		height: 12px;
+		padding: 0;
+		border: 0;
 		border-radius: 50%;
 		background: var(--flint-border);
+		cursor: pointer;
+	}
+	/* Colour on hover, as macOS does: red closes, yellow restores, green maximizes. */
+	.cli-demo__dots:hover .cli-demo__dot--close {
+		background: #ff5f57;
+	}
+	.cli-demo__dots:hover .cli-demo__dot--min {
+		background: #febc2e;
+	}
+	.cli-demo__dots:hover .cli-demo__dot--max {
+		background: #28c840;
 	}
 	.cli-demo__title {
 		margin: 0 0 0 4px;
@@ -284,12 +337,19 @@
 		outline: none;
 		box-shadow: var(--flint-focus);
 	}
-	.cli-demo__close {
+	.cli-demo__icon-btn {
 		width: 28px;
 		padding: 0;
 		border-color: transparent;
 	}
-	.cli-demo__close svg {
+	.cli-demo__ico-restore,
+	.cli-demo--max .cli-demo__ico-max {
+		display: none;
+	}
+	.cli-demo--max .cli-demo__ico-restore {
+		display: block;
+	}
+	.cli-demo__icon-btn svg {
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 2;
@@ -299,13 +359,16 @@
 	.cli-demo__screen {
 		flex: 1;
 		min-height: 0;
-		overflow: auto;
+		overflow-x: hidden;
+		overflow-y: auto;
 		padding: 14px 18px;
 		font: 400 13px/1.6 var(--__sl-font-mono);
 		cursor: text;
 	}
+	/* Long lines wrap, as in a terminal; JSON has no spaces, so break anywhere. */
 	.cli-demo__log {
-		white-space: pre;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 	.cli-demo__row--err {
 		color: var(--sl-color-red);
@@ -415,7 +478,9 @@
 		.cli-demo__guide {
 			font-size: 12px;
 		}
-		.cli-demo__title {
+		.cli-demo__title,
+		.cli-demo__max-btn,
+		.cli-demo__dots {
 			display: none;
 		}
 		/* Inputs under 16px make iOS zoom the page on focus. */

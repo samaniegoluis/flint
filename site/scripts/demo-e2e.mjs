@@ -115,10 +115,32 @@ try {
 		check(all.includes('"alias":"my-server"'), 'desktop: the added host is in --json');
 		await page.keyboard.press('ArrowUp');
 		check((await page.locator('#cli-demo-input').inputValue()) === 'flint host list --json', 'desktop: ↑ recalls the last command');
+		check(
+			await page.locator('[data-screen]').evaluate((el) => el.scrollWidth <= el.clientWidth),
+			'desktop: long lines (the --json output) wrap; no horizontal scroll',
+		);
 		if (shots) await page.screenshot({ path: join(shots, 'demo-desktop.png') });
+
+		const width = async () => (await dialog.boundingBox()).width;
+		const windowed = await width();
+		await page.locator('[data-max]').click();
+		check((await width()) === 1280, 'desktop: Maximize fills the page');
+		check((await page.locator('[data-max]').getAttribute('aria-pressed')) === 'true', 'desktop: the button says it is pressed');
+		if (shots) await page.screenshot({ path: join(shots, 'demo-max.png') });
+		await page.locator('[data-max]').click();
+		check((await width()) === windowed, 'desktop: Restore brings the window size back');
+		await page.locator('.cli-demo__bar').dblclick({ position: { x: 400, y: 10 } });
+		check((await width()) === 1280, 'desktop: a double click on the bar maximizes');
+		await page.locator('[data-restore]').click();
+		check((await width()) === windowed, 'desktop: the yellow dot restores');
+		await page.locator('[data-maximize]').click();
 		await page.keyboard.press('Escape');
-		check(!(await dialog.isVisible()), 'desktop: Esc closes the demo');
+		check(!(await dialog.isVisible()), 'desktop: Esc closes the demo, maximized or not');
 		check(await page.evaluate(() => document.activeElement?.textContent?.includes('Try the CLI')), 'desktop: focus returns to the button');
+		await btn.click();
+		check((await width()) === 1280, 'desktop: it reopens maximized, as it was left');
+		await page.locator('[data-close]').first().click();
+		check(!(await dialog.isVisible()), 'desktop: the red dot closes the demo');
 		check(errors.length === 0, `desktop: no page errors ${errors.join(' | ')}`);
 		await page.close();
 	}
