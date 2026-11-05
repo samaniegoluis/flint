@@ -296,7 +296,22 @@ The entries below were found while building milestone 01 against cfire `3963814`
 - **Source:** `runtime/core/webui.hpp`, `run_webview_test`: the body is
   `#if defined(__APPLE__) …`, and every other platform runs `return true;`. A headless
   WebView test therefore passes on Linux without loading the page.
-- **Workaround:** on Linux, Flint's milestone-01 check builds the spike and runs the
-  non-WebView tests. The WebView round-trip is verified on macOS only.
+- **Workaround:** the spike test prints SKIP off macOS. `scripts/linux-check.sh` runs the
+  real GTK window under `xvfb-run` in self-test mode and checks for `selftest: pass`.
 - **Ideal:** a WebKitGTK implementation (it can run under `xvfb-run`), or fail with "not
   supported on this platform" instead of passing.
+
+### CF-030 · bug · `confirmed`: Linux webui builds fail on a PCH `-pthread` mismatch; `CFIRE_CXX` is ignored
+- **Repro (Debian trixie, clang 19):** `cfire build` of any program that imports
+  `ext:webui` → `error: POSIX thread support was disabled in PCH file but is currently
+  enabled`.
+- **Cause:** `ensure_prelude_pch` (`src/buildsys.hpp`) always compiles the prelude PCH
+  without `-pthread`, and the PCH cache key covers only the runtime dir and
+  sanitize/opt. `pkg-config webkit2gtk-4.1` adds `-pthread`, so the compile no longer
+  matches the PCH. Every `ext:webui` program on Linux is affected, including the template.
+- **Also:** `docs/GUIDE.md` documents `CFIRE_CXX` to override the compiler, but nothing
+  in `src/` reads it. Commands hardcode `clang++`.
+- **Workaround:** `scripts/linux/Dockerfile` puts a `clang++` wrapper first on `PATH`
+  that drops `-pthread`. glibc ≥ 2.34 has threads in libc.
+- **Ideal:** build the PCH with the same flags as the translation unit, or include those
+  flags in the cache key; honour `CFIRE_CXX`.

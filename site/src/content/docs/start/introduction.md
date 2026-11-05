@@ -22,7 +22,7 @@ Flint is in early development. Here is what works today:
 
 | Area | Status |
 |---|---|
-| Build on macOS | Works |
+| Build on macOS and Linux | Works |
 | `flint --version` | Works |
 | Vault, hosts, keys, credentials | Planned (next milestone) |
 | `flint connect` / `flint exec` | Planned |

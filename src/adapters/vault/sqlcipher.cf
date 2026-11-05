@@ -40,6 +40,9 @@ fn open_cipher_db(path: str, key: []byte) -> CipherDb! {
                              SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
                              nullptr);
         if (rc == SQLITE_OK) {
+            // SQLCipher logs decryption failures to stderr; keep vault errors in our
+            // own messages only.
+            sqlite3_exec(handle, "PRAGMA cipher_log_level = NONE;", nullptr, nullptr, nullptr);
             rc = sqlite3_exec(handle, key_sql.c_str(), nullptr, nullptr, nullptr);
         }
         // Overwrite the hex key text before the string is freed.

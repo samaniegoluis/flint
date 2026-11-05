@@ -1,9 +1,16 @@
 package main
 
 import "core:os"
+import "core:fs"
 import "ext:webui"
 
 test "spike: SSH PTY output reaches xterm.js in a headless WebView" {
+    // run_webview_test only exists on macOS; elsewhere it returns true without loading
+    // the page (CF-029). scripts/linux-check.sh runs the real window under Xvfb instead.
+    if !fs.exists("/System/Library/Frameworks/WebKit.framework") {
+        println("SKIP: headless WebView runner is macOS-only (CF-029)")
+        return
+    }
     if os.getenv("FLINT_TEST_SSH_PORT").len() == 0 {
         println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
         return

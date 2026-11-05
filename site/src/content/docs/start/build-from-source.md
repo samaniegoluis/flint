@@ -65,3 +65,21 @@ touch your system `sshd` or `~/.ssh`. To use another port, set `FLINT_TEST_SSH_P
 
 To run only the tests that need no network, call `cfire test src`. The SSH tests then
 print `SKIP`.
+
+## Check the Linux build from macOS
+
+With Docker running:
+
+```sh
+scripts/linux-check.sh
+```
+
+It builds a Debian image with cfire pinned to the same commit and the apt packages
+above, builds `flint` and the terminal spike, runs the tests, and opens the spike's real
+GTK window under Xvfb to check that SSH output reaches the terminal.
+
+:::note
+cfire's prelude PCH does not match `-pthread`, which WebKitGTK requires, so a WebView
+build on Linux needs a `clang++` wrapper that drops `-pthread`. The image installs one.
+The plain `flint` CLI is not affected.
+:::

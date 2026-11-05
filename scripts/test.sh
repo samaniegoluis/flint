@@ -47,6 +47,11 @@ export FLINT_TEST_SSH_KEY="$tmp/user_ed25519"
 export USER="${USER:-$(id -un)}"
 
 cd "$root"
+# FLINT_TEST_CMD runs one command against the sshd instead of the cfire suites.
+if [[ -n "${FLINT_TEST_CMD:-}" ]]; then
+  bash -c "$FLINT_TEST_CMD"
+  exit $?
+fi
 status=0
 for t in "${targets[@]}"; do
   cfire test "$t" || status=1
