@@ -39,8 +39,12 @@ What Tether already does and Flint must not lose.
 | Feature | Status | Notes |
 |---|---|---|
 | `flint vault\|host\|key\|cred` CRUD, `--json` everywhere | `mvp` | |
-| `flint connect <alias>` (fuzzy picker when no alias given) | `mvp` | Picker part can slip to `next` |
+| `flint connect <alias>` | `mvp` | |
+| Fuzzy host picker when `flint connect` has no alias | `next` | Slipped from the MVP (milestone 03) |
 | `flint exec <alias> -- cmd` | `mvp` | |
+| `flint exec` forwards local stdin to the remote command (`cat file \| flint exec web -- 'cat > x'`) | `next` | Today stdin is closed at start (milestone 03) |
+| `flint exec --tty` / `connect -- <cmd>`: a command on a PTY | `idea` | |
+| Keepalives (`ServerAliveInterval`) for idle `flint connect` sessions | `next` | |
 | `flint exec @group -- cmd`: parallel fan-out, structured JSON per host | `next` | Great for agents and scripts |
 | `flint cp a:/path b:/path` (remote ↔ local ↔ remote, by alias) | `next` | |
 | `flint tunnel up\|down\|ls <name>` | `next` | |

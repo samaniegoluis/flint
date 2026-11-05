@@ -15,7 +15,7 @@ import "../../domain"
 
 type SshLink struct {
     hops: []SshConn
-    // Shared by every copy of this value; owns the tunnel threads (CF-026).
+    // Shared by every copy of this value; owns the tunnel threads (CF-026, CF-043).
     tunnels: shared[cpp::flint_ssh::Tunnels]
     timeout_secs: i64
 }
@@ -48,7 +48,7 @@ fn (mut self: SshLink) link_dial(hostname: str, port: i64, user: str, timeout_se
     outer := try self.last_hop()
     mut fd: i32 = -1
     mut msg := ""
-    // CFIRE-UPSTREAM: CF-005
+    // CFIRE-UPSTREAM: CF-043
     cpp {
         int inner = -1;
         std::string err;
@@ -221,7 +221,7 @@ fn (mut self: SshLink) link_hangup() {
     for i > 0 {
         i -= 1
         idx := i
-        // CFIRE-UPSTREAM: CF-026
+        // CFIRE-UPSTREAM: CF-043
         cpp {
             if (idx < self.tunnels->list.size()) flint_ssh::close_tunnel(self.tunnels->list[idx]);
         }

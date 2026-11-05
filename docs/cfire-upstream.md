@@ -446,3 +446,26 @@ The entries below were found while building milestone 02 against the same cfire 
   `src/adapters/ssh/keys_test.cf`.
 - **Ideal:** declare `extern char** environ;` at global scope, or use `::environ`
   from `<unistd.h>`.
+
+### CF-042 · missing · `confirmed`: no terminal raw mode, window size or signal handlers
+- **Repro:** an interactive SSH client needs to put stdin in raw mode (`cfmakeraw`),
+  restore it on exit or on SIGTERM/SIGHUP, read the window size (`TIOCGWINSZ`), learn
+  about resizes (SIGWINCH), and poll stdin with a timeout. `core:os` and `core:cli` have
+  none of these, and there is no way to install a signal handler.
+- **Workaround:** `src/adapters/process/native/flint_process.hpp` (`raw_enter`,
+  `raw_restore`, `window_size`, `take_winch`, `read_input`, `write_fd`), reached from
+  `StdioTerminal` in `src/adapters/process/process.cf`.
+- **Ideal:** a `core:term` module: `make_raw(fd) -> RawGuard` (restores on drop),
+  `size(fd) -> (cols, rows)`, `on_resize(fn)`, and `os.on_signal(sig, fn)`; plus
+  `poll(fds, timeout)` for byte streams.
+
+### CF-043 · missing · `confirmed`: no socketpair, poll or threads for a byte-stream bridge
+- **Repro:** a jump host is a libssh channel that must look like a socket to the next
+  libssh session (`SSH_OPTIONS_FD`). That takes a `socketpair`, a thread that `poll`s one
+  end and copies bytes to and from the channel under the session's mutex, and a join on
+  shutdown. cfire has no socketpair, no poll over raw fds, and its threads cannot be
+  stored in a struct and joined later (see CF-026 for the mutex half).
+- **Workaround:** `flint_ssh::open_tunnel` / `close_tunnel` in
+  `src/adapters/ssh/native/flint_ssh.hpp`, owned by `SshLink.tunnels`.
+- **Ideal:** `net.socketpair()`, `os.poll([]Fd, timeout_ms)`, and a joinable
+  `Thread` value type.

@@ -41,3 +41,9 @@ flint cred rm corp
 
 The password is encrypted and never printed; output shows only whether it is set. A
 credential that a host uses cannot be removed.
+
+## Credential or host settings?
+
+A host's own `--user`, `--key` and `--password` come before its credential's. Link a
+credential for the shared login and set a field on the host only where that host
+differs. [Connecting](/guides/connecting/#how-flint-logs-in) lists the full order.

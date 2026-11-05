@@ -239,3 +239,15 @@ fn print_recents(list: []RecentView) {
     }
     print_table(["", "NAME", "PATH"], rows)
 }
+
+fn print_known_hosts(list: []KnownHostView) {
+    if list.len() == 0 {
+        say("No known hosts yet. A host's key is recorded the first time you connect.")
+        return
+    }
+    mut rows: [][]str = []
+    for k in list {
+        rows.push([k.addr, dash_if_empty(k.host), k.key_type, k.fingerprint, k.added_at])
+    }
+    print_table(["ADDRESS", "HOST", "TYPE", "FINGERPRINT", "ADDED"], rows)
+}

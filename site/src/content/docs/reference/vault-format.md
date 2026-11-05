@@ -15,7 +15,8 @@ Flint opens the vault.
 | 16 onwards | SQLCipher pages: the schema, every row and every index, encrypted |
 
 Nothing else is written. There is no sidecar file and no plaintext header, so hostnames,
-users, labels, tags, notes, group names and the vault name are all encrypted. While a
+users, labels, tags, notes, group names, the vault name and the known host keys are all
+encrypted. While a
 change is being written, SQLite keeps a rollback journal next to the file, encrypted as
 well, and deletes it when the change commits.
 
@@ -36,6 +37,17 @@ secrets key = crypto_kdf(master key, 2, "flintvlt")
 - The **secrets key** encrypts passwords, private keys and passphrases a second time,
   with XChaCha20-Poly1305 (libsodium). Each sealed value is bound to its row and field,
   so it cannot be moved to another host or field. Secrets are only decrypted to connect.
+
+## Schema
+
+The tables inside the encrypted file change only through numbered migrations, which
+are never edited once released. Opening a vault applies the ones it lacks, each in its
+own transaction; a vault from a newer Flint is refused rather than downgraded.
+
+| Migration | Adds |
+|---|---|
+| 1 | The format parameters (`meta`), groups, SSH keys, credentials, hosts and host tags |
+| 2 | `known_hosts`: one server key per address (key type and SHA-256 fingerprint), recorded on first connect |
 
 ## The keychain
 

@@ -62,6 +62,8 @@ Flint refuses changes that would break the vault:
 - A host cannot jump through itself, and jump hosts cannot form a loop.
 - A host that another host uses as its jump host cannot be removed.
 
+To open a shell or run a command on a host, see [Connecting](/guides/connecting/).
+
 ## Groups
 
 Groups nest, and you address them by path. Names compare ignoring case within one parent.

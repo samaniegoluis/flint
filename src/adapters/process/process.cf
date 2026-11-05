@@ -1,10 +1,13 @@
 package process
 
-// Process plumbing for the CLI driver: argv, stdout/stderr, exit codes and terminal
-// password prompts. The native code is in native/flint_process.hpp (CF-024).
+// Process plumbing for the CLI driver: argv, stdout/stderr, exit codes, terminal
+// prompts, and the local side of an SSH session (raw mode, resizes, byte I/O). The native code is in native/flint_process.hpp (CF-024).
 
 // CFIRE-UPSTREAM: CF-024, CF-031
 import cpp "flint_process.hpp" @pkg("flint-native")
+
+import "core:time"
+import "../../domain"
 
 // Command-line arguments after the program name.
 fn process_args() -> []str {
@@ -80,4 +83,155 @@ fn read_secret_line(prompt: str) -> str! {
         return error("usage: no terminal to prompt on; pass the secret on stdin")
     }
     return line
+}
+
+// Prompts on the terminal and reads one line with echo on.
+fn read_tty_line(prompt: str) -> str! {
+    mut line := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        rc = flint_proc::read_line_tty(prompt, line);
+    }
+    if rc != 0 {
+        return error("usage: no terminal to prompt on")
+    }
+    return line
+}
+
+// ---- Ports for SSH sessions ----------------------------------------------------
+
+// The `Prompter` port on /dev/tty.
+type TtyPrompter struct {
+    enabled: bool
+}
+
+fn new_tty_prompter() -> TtyPrompter {
+    return TtyPrompter{ enabled: has_terminal() }
+}
+
+fn (self: TtyPrompter) prompt_available() -> bool {
+    return self.enabled
+}
+
+// Only "yes" or "y" (any case) confirms.
+fn (self: TtyPrompter) prompt_confirm(question: str) -> bool! {
+    if !self.enabled {
+        return error(coded(ERR_USAGE, "no terminal to confirm on"))
+    }
+    answer := try read_tty_line(question)
+    a := str_trim_spaces(answer)
+    return a == "yes" || a == "y" || a == "YES" || a == "Yes" || a == "Y"
+}
+
+fn (self: TtyPrompter) prompt_password(label: str) -> str! {
+    if !self.enabled {
+        return error(coded(ERR_USAGE, "no terminal to prompt on"))
+    }
+    return read_secret_line(label)
+}
+
+// The `Terminal` port on stdin/stdout.
+type StdioTerminal struct {
+    ready: bool
+}
+
+fn new_stdio_terminal() -> StdioTerminal {
+    return StdioTerminal{ ready: true }
+}
+
+fn (self: StdioTerminal) term_size() -> TerminalSize {
+    mut cols: i32 = 0
+    mut rows: i32 = 0
+    // CFIRE-UPSTREAM: CF-042
+    cpp {
+        int c = 0, r = 0;
+        flint_proc::window_size(c, r);
+        cols = c;
+        rows = r;
+    }
+    return TerminalSize{ cols: cols, rows: rows }
+}
+
+fn (mut self: StdioTerminal) term_raw_enter() -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-042
+    cpp {
+        rc = flint_proc::raw_enter();
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "cannot put the terminal in raw mode"))
+    }
+}
+
+fn (mut self: StdioTerminal) term_raw_leave() {
+    // CFIRE-UPSTREAM: CF-042
+    cpp {
+        flint_proc::raw_restore();
+    }
+}
+
+fn (mut self: StdioTerminal) term_input(timeout_ms: i32) -> str! {
+    mut data := ""
+    mut open_input := true
+    // CFIRE-UPSTREAM: CF-042
+    cpp {
+        open_input = flint_proc::read_input(timeout_ms, data);
+    }
+    if !open_input {
+        return error(coded(ERR_IO, "end of input"))
+    }
+    return data
+}
+
+fn (mut self: StdioTerminal) term_output(data: str) {
+    // CFIRE-UPSTREAM: CF-042
+    cpp {
+        flint_proc::write_fd(STDOUT_FILENO, data);
+    }
+}
+
+fn (mut self: StdioTerminal) term_take_resize() -> bool {
+    mut changed := false
+    // CFIRE-UPSTREAM: CF-042
+    cpp {
+        changed = flint_proc::take_winch();
+    }
+    return changed
+}
+
+// The `ExecSink` port: remote stdout to stdout, remote stderr to stderr, as is.
+type StdioExecSink struct {
+    ready: bool
+}
+
+fn new_stdio_exec_sink() -> StdioExecSink {
+    return StdioExecSink{ ready: true }
+}
+
+fn (mut self: StdioExecSink) exec_stdout(data: str) {
+    // CFIRE-UPSTREAM: CF-042
+    cpp {
+        flint_proc::write_fd(STDOUT_FILENO, data);
+    }
+}
+
+fn (mut self: StdioExecSink) exec_stderr(data: str) {
+    // CFIRE-UPSTREAM: CF-042
+    cpp {
+        flint_proc::write_fd(STDERR_FILENO, data);
+    }
+}
+
+// The `Clock` port.
+type SystemClock struct {
+    ready: bool
+}
+
+fn new_system_clock() -> SystemClock {
+    return SystemClock{ ready: true }
+}
+
+fn (mut self: SystemClock) clock_now_ms() -> i64 {
+    return time.now_ms()
 }

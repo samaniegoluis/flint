@@ -1,4 +1,4 @@
-// CFIRE-UPSTREAM: CF-005, CF-026, CF-031
+// CFIRE-UPSTREAM: CF-005, CF-026, CF-031, CF-043
 //
 // libssh shim for src/adapters/ssh/link.cf: password and keyboard-interactive auth,
 // agent auth, exec/shell channel reads with stderr and exit state, and the TCP

@@ -25,7 +25,7 @@ Flint is in early development. Here is what works today:
 | Build on macOS and Linux | Works |
 | Encrypted vaults, keychain unlock, recent vaults | Works ([Vaults](/guides/vaults/)) |
 | Hosts, groups, keys, credentials from the CLI | Works ([CLI reference](/reference/cli/)) |
-| `flint connect` / `flint exec` | Planned (next milestone) |
+| `flint connect` / `flint exec`, jump hosts, known hosts | Works ([Connecting](/guides/connecting/)) |
 | Desktop GUI | Planned |
 
 To try it, [build it from source](/start/build-from-source/).

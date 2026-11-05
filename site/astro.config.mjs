@@ -23,6 +23,7 @@ export default defineConfig({
 						{ label: 'Hosts and groups', slug: 'guides/hosts' },
 						{ label: 'SSH keys', slug: 'guides/keys' },
 						{ label: 'Credentials', slug: 'guides/credentials' },
+						{ label: 'Connecting', slug: 'guides/connecting' },
 					],
 				},
 				{
