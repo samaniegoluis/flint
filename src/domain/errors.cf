@@ -15,6 +15,11 @@ var ERR_UNSUPPORTED: str = "unsupported"
 var ERR_KEYCHAIN: str = "keychain"
 var ERR_IO: str = "io"
 var ERR_INTERNAL: str = "internal"
+// SSH codes (D-019), appended after the vault codes so exit codes 1-10 never move.
+var ERR_HOST_KEY: str = "host_key"
+var ERR_AUTH: str = "auth"
+var ERR_NETWORK: str = "network"
+var ERR_TIMEOUT: str = "timeout"
 
 // Builds an error message carrying a stable code.
 fn coded(code: str, msg: str) -> str {
@@ -24,7 +29,7 @@ fn coded(code: str, msg: str) -> str {
 // Every code a driver may see, in exit-code order (exit code = index + 1, except
 // that `internal` is 1).
 fn known_error_codes() -> []str {
-    return [ERR_INTERNAL, ERR_USAGE, ERR_NOT_FOUND, ERR_CONFLICT, ERR_LOCKED, ERR_WRONG_PASSWORD, ERR_INVALID, ERR_UNSUPPORTED, ERR_KEYCHAIN, ERR_IO]
+    return [ERR_INTERNAL, ERR_USAGE, ERR_NOT_FOUND, ERR_CONFLICT, ERR_LOCKED, ERR_WRONG_PASSWORD, ERR_INVALID, ERR_UNSUPPORTED, ERR_KEYCHAIN, ERR_IO, ERR_HOST_KEY, ERR_AUTH, ERR_NETWORK, ERR_TIMEOUT]
 }
 
 // The code an error message starts with, or `internal` when it carries none.
@@ -77,4 +82,8 @@ test "exit codes are stable" {
     assert_eq(exit_code_for(ERR_UNSUPPORTED), 8)
     assert_eq(exit_code_for(ERR_KEYCHAIN), 9)
     assert_eq(exit_code_for(ERR_IO), 10)
+    assert_eq(exit_code_for(ERR_HOST_KEY), 11)
+    assert_eq(exit_code_for(ERR_AUTH), 12)
+    assert_eq(exit_code_for(ERR_NETWORK), 13)
+    assert_eq(exit_code_for(ERR_TIMEOUT), 14)
 }

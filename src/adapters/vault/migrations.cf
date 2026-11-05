@@ -83,6 +83,18 @@ CREATE TABLE host_tags (
 );
 ` })
 
+    // 002: known hosts. One host key per address ("host" for port 22, "[host]:port"
+    // otherwise), recorded on first use and checked on every connect (milestone 03).
+    list.push(Migration{ version: 2, name: "known hosts", sql: `
+CREATE TABLE known_hosts (
+    addr TEXT PRIMARY KEY COLLATE NOCASE,
+    key_type TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    host_id TEXT REFERENCES hosts(id) ON DELETE SET NULL,
+    added_at TEXT NOT NULL
+);
+` })
+
     return list
 }
 

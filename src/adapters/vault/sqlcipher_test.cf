@@ -9,6 +9,7 @@ import "../../domain"
 // Migration 001 as shipped. An applied migration must never change (Principle 10);
 // if this test fails, revert the edit and append a new migration instead.
 var MIGRATION_001_SHA256: str = "9ed7d684e513f15455c31c2680407da618820c08eddb64d23796129919be5afd"
+var MIGRATION_002_SHA256: str = "9973529e84f0c738288de9b0187a5b48810ced2b269bda6d248571e1442beeb7"
 
 fn temp_vault_path(name: str) -> str {
     dir := "/tmp/flint-test-" + hex.encode(sha256.random_bytes(8))
@@ -178,6 +179,51 @@ test "SqlVaultStore satisfies the VaultStore port" {
 
 test "migration 001 is frozen" {
     assert_eq(sha256.hash_hex(vault_migrations()[0].sql.bytes()), MIGRATION_001_SHA256)
+}
+
+test "migration 002 is frozen" {
+    assert_eq(sha256.hash_hex(vault_migrations()[1].sql.bytes()), MIGRATION_002_SHA256)
+}
+
+test "a vault at schema 1 upgrades to the latest and keeps its rows" {
+    path := temp_vault_path("v.flint")
+    // Build a schema-1 vault the way milestone 02 wrote it.
+    mut db := try open_cipher_db(path, test_key(7), test_salt_bytes(), true)
+    try db.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+    try db.apply_migration(vault_migrations()[0])
+    try db.exec("INSERT INTO hosts (id, alias, label, hostname, port, username, color, notes) VALUES ('h1', 'web', '', 'web.example.org', 22, 'u', '', '');")
+    db.close_db()
+    mut store := new_sql_vault_store()
+    try store.vault_attach(path, test_key(7), test_salt_bytes())
+    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "{vault_migrations().len()}")
+    assert_eq((try store.hosts_all()).len(), 1)
+    assert_eq((try store.known_hosts_all()).len(), 0)
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "known hosts round-trip, replace by address and survive host removal" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try store.host_put(marker_host())
+    try store.known_host_put(KnownHost{ addr: "[db01.internal.example.org]:2201", key_type: "ssh-ed25519", fingerprint: "SHA256:one", host_id: "h1", added_at: "" })
+    try store.known_host_put(KnownHost{ addr: "[DB01.internal.example.org]:2201", key_type: "ssh-ed25519", fingerprint: "SHA256:two", host_id: "h1", added_at: "" })
+    list := try store.known_hosts_all()
+    assert_eq(list.len(), 1)
+    assert_eq(list[0].fingerprint, "SHA256:two")
+    assert_eq(list[0].host_id, "h1")
+    assert(list[0].added_at.ends_with("Z"))
+    try store.host_drop("h1")
+    after := try store.known_hosts_all()
+    assert_eq(after.len(), 1)
+    assert_eq(after[0].host_id, "")
+    try store.known_host_drop(after[0].addr)
+    assert_eq((try store.known_hosts_all()).len(), 0)
+    store.vault_detach()
+    raw := try fs.read_text(path)
+    assert(!raw.contains("db01.internal"), "known host addresses must not leak")
+    try fs.remove(fs.dirname(path))
 }
 
 // Negative control: the same write without a key must leak, or the scans above prove

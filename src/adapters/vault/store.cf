@@ -277,3 +277,29 @@ fn (self: SqlVaultStore) cred_drop(id: str) -> void! {
     try self.require_open()
     try self.conn().run_sql("DELETE FROM credentials WHERE id = ?1;", [sql_text(id)])
 }
+
+// ---- Known hosts ---------------------------------------------------------------
+
+fn (self: SqlVaultStore) known_hosts_all() -> []KnownHost! {
+    try self.require_open()
+    res := try self.conn().query_cells("SELECT addr, key_type, fingerprint, ifnull(host_id, ''), added_at FROM known_hosts ORDER BY addr COLLATE NOCASE;", [])
+    mut list: []KnownHost = []
+    for r in res.rows {
+        list.push(KnownHost{ addr: cell_str(r[0]), key_type: cell_str(r[1]), fingerprint: cell_str(r[2]), host_id: cell_str(r[3]), added_at: cell_str(r[4]) })
+    }
+    return list
+}
+
+// Records (or replaces) the key for an address. `added_at` is set by the store,
+// in UTC, when the row is written.
+fn (self: SqlVaultStore) known_host_put(k: KnownHost) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("INSERT INTO known_hosts (addr, key_type, fingerprint, host_id, added_at) VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(addr) DO UPDATE SET key_type = excluded.key_type, fingerprint = excluded.fingerprint, host_id = excluded.host_id, added_at = excluded.added_at;", [
+            sql_text(k.addr), sql_text(k.key_type), sql_text(k.fingerprint), sql_ref(k.host_id),
+    ])
+}
+
+fn (self: SqlVaultStore) known_host_drop(addr: str) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("DELETE FROM known_hosts WHERE addr = ?1;", [sql_text(addr)])
+}
