@@ -84,6 +84,10 @@ try {
 		check(await page.evaluate(() => document.activeElement?.id === 'cli-demo-input'), 'desktop: the input has focus on open');
 		check((await logText(page)).includes("Welcome to Flint's demo"), 'desktop: the welcome and first step are shown');
 		check((await page.locator('[data-step]').innerText()) === 'Step 1 of 8', 'desktop: the bar shows the tour step');
+		check((await page.locator('[data-guide]').innerText()).includes('Every command'), 'desktop: the guide shows the current step');
+		check((await page.locator('.cli-demo__chip--next').innerText()).includes('flint help'), 'desktop: the step command is the highlighted chip');
+		await type(page, 'flint list');
+		check((await page.locator('.cli-demo__chip--next').innerText()).includes('flint help'), 'desktop: a wrong command keeps the guide on the step');
 
 		await type(page, 'flint help');
 		await type(page, 'flint host list');

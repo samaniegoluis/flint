@@ -256,3 +256,25 @@ test('the shell tokenizer refuses pipes and keeps quotes', () => {
 	});
 	assert.ok('error' in tokenize('flint host list | grep db'));
 });
+
+test('the guide always says what to do, with the exact command', () => {
+	const { s, text } = session();
+	assert.deepEqual(s.guide(), { text: 'Step 1/8 · Every command, on one screen:', command: 'flint help' });
+	assert.ok(text().includes('#   flint help'), 'the step hint in the log carries its command');
+	s.submit('flint');
+	assert.equal(s.tourStep, 1, '`flint` alone shows the help, so it completes step 1');
+	s.submit('flint list');
+	assert.equal(s.tourStep, 1);
+	assert.deepEqual(text().slice(-2), ['# Not quite. For this step, type:', '#   flint host list']);
+	assert.equal(s.guide().command, 'flint host list');
+	s.submit('flint host add x --hostname 1.2.3.4 --password');
+	assert.match(s.guide().text, /^Type any password/);
+	s.submit('pw');
+	s.submit('flint connect nas');
+	assert.equal(s.guide().command, 'yes');
+	s.submit('yes');
+	assert.equal(s.guide().command, 'exit', 'on a server outside its tour step, the guide says how to leave');
+	s.submit('exit');
+	s.stopTour();
+	assert.equal(s.guide().command, 'flint help', 'with the tour off, the guide still points somewhere');
+});

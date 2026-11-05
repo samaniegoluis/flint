@@ -24,7 +24,7 @@ export interface Line {
 interface TourStep {
 	hint: string[];
 	run: string;
-	match: string;
+	accept: string[];
 	where: 'local' | 'remote';
 	chips?: string[];
 }
@@ -88,6 +88,27 @@ export class DemoSession {
 		}
 		if (step?.where === 'local') return [step.run];
 		return ['flint help', 'flint host list', 'flint connect db', 'flint vault list'];
+	}
+
+	/**
+	 * What to do now, always: the tour step and its exact command, or how to answer
+	 * the prompt that is open, or how to leave a server. The page keeps it on screen.
+	 */
+	guide(): { text: string; command: string | null } {
+		if (this.pending) {
+			if (this.pending.ask.secret) {
+				return { text: 'Type any password and press Enter. It stays hidden, as in a real terminal, and the demo keeps nothing.', command: null };
+			}
+			return { text: 'A server key Flint has not seen yet. Type yes to trust it (no refuses):', command: 'yes' };
+		}
+		const step = this.tourStep !== null ? TOUR.steps[this.tourStep] : undefined;
+		const label = this.tourStep !== null ? `Step ${this.tourStep + 1}/${TOUR.steps.length} · ` : '';
+		if (this.remote) {
+			if (step?.where === 'remote') return { text: label + step.hint.join(' '), command: step.run };
+			return { text: `You are on ${this.remote.shell.alias} (simulated). Look around, then type exit to come back:`, command: 'exit' };
+		}
+		if (step) return { text: label + step.hint.join(' '), command: step.run };
+		return { text: 'Explore freely: flint help lists every command, and tour starts the guide again.', command: 'flint help' };
 	}
 
 	/** "Step 2 of 8", or null with no tour running. */
@@ -197,7 +218,12 @@ export class DemoSession {
 		if (done.connect) {
 			this.enterRemote(done.connect);
 		}
-		if (done.code === 0 && typed) this.advanceTour(typed, 'local');
+		if (done.code === 0 && typed) {
+			this.advanceTour(typed, 'local');
+		} else if (done.code !== 0 && this.tourStep !== null && TOUR.steps[this.tourStep].where === 'local') {
+			this.hint('# Not quite. For this step, type:');
+			this.hint('#   ' + TOUR.steps[this.tourStep].run);
+		}
 	}
 
 	private pendingWords: string[] | undefined;
@@ -237,15 +263,25 @@ export class DemoSession {
 		const [first, ...more] = step.hint;
 		this.hint(`# Step ${this.tourStep + 1}/${TOUR.steps.length} · ${first}`);
 		more.forEach((h) => this.hint('# ' + h));
+		this.hint('#   ' + step.run);
+	}
+
+	/** Whether `words` is one of the step's accepted commands (flags may sit anywhere). */
+	private static accepts(step: TourStep, words: string[]): boolean {
+		const plain = words.filter((w) => !w.startsWith('-'));
+		return step.accept.some((alt) => {
+			const need = alt.split(' ');
+			const needPlain = need.filter((w) => !w.startsWith('-'));
+			if (needPlain.length === 1 && plain.length !== 1) return false;
+			return needPlain.every((w, i) => plain[i] === w) && need.filter((w) => w.startsWith('-')).every((f) => words.includes(f));
+		});
 	}
 
 	private advanceTour(words: string[], where: 'local' | 'remote'): void {
 		if (this.tourStep === null) return;
 		const step = TOUR.steps[this.tourStep];
 		if (step.where !== where) return;
-		const need = step.match.split(' ');
-		const matches = words[0] === need[0] && need.slice(1).every((w, i) => (i < 2 ? words[i + 1] === w : words.includes(w)));
-		if (!matches) return;
+		if (!DemoSession.accepts(step, words)) return;
 		this.tourStep += 1;
 		if (this.tourStep >= TOUR.steps.length) {
 			this.tourStep = null;

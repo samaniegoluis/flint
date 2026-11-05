@@ -36,6 +36,7 @@
 				/>
 			</div>
 		</div>
+		<p class="cli-demo__guide" data-guide></p>
 		<div class="cli-demo__chips" role="group" aria-label="Suggested commands" data-chips></div>
 		<p class="cli-demo__foot">
 			Simulated in your browser: nothing is sent anywhere. Tab completes, ↑ recalls, Ctrl-C cancels.
@@ -56,6 +57,7 @@
 		const prompt = $<HTMLLabelElement>('[data-prompt]');
 		const chips = $<HTMLDivElement>('[data-chips]');
 		const step = $<HTMLSpanElement>('[data-step]');
+		const guide = $<HTMLParagraphElement>('[data-guide]');
 		const tourBtn = $<HTMLButtonElement>('[data-tour]');
 		let session: DemoSession | null = null;
 		const history: string[] = [];
@@ -90,11 +92,15 @@
 			const label = session.tourLabel();
 			step.textContent = label ?? '';
 			tourBtn.textContent = label ? 'Skip tour' : 'Start tour';
+			// The guide is always on screen: what to do now, and the exact command first.
+			const g = session.guide();
+			guide.textContent = g.text;
+			const commands = g.command ? [g.command, ...session.chips().filter((c) => c !== g.command)] : session.chips();
 			chips.replaceChildren(
-				...session.chips().map((c) => {
+				...commands.map((c) => {
 					const b = document.createElement('button');
 					b.type = 'button';
-					b.className = 'cli-demo__chip';
+					b.className = 'cli-demo__chip' + (c === g.command ? ' cli-demo__chip--next' : '');
 					b.textContent = c;
 					b.addEventListener('click', () => run(c));
 					return b;
@@ -344,12 +350,21 @@
 		color: transparent;
 	}
 
+	.cli-demo__guide {
+		margin: 0;
+		padding: 10px 14px 0;
+		border-top: 1px solid var(--flint-border);
+		font: 400 13px/1.45 var(--__sl-font-mono);
+		color: var(--flint-term-ok);
+	}
+	.cli-demo__guide::before {
+		content: '# ';
+	}
 	.cli-demo__chips {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
-		padding: 10px 14px 0;
-		border-top: 1px solid var(--flint-border);
+		padding: 8px 14px 0;
 	}
 	.cli-demo__chips:empty {
 		display: none;
@@ -370,6 +385,15 @@
 	.cli-demo__chip:hover {
 		background: var(--flint-surface-hover);
 	}
+	/* The command the guide asks for: the one to type, or to tap. */
+	.cli-demo__chip--next {
+		border-color: var(--flint-term-prompt);
+		color: var(--flint-term-prompt);
+		font-weight: 600;
+	}
+	.cli-demo__chip--next::before {
+		content: '❯ ';
+	}
 	.cli-demo__foot {
 		margin: 0;
 		padding: 8px 14px 10px;
@@ -386,6 +410,9 @@
 		}
 		.cli-demo__screen {
 			padding: 12px;
+			font-size: 12px;
+		}
+		.cli-demo__guide {
 			font-size: 12px;
 		}
 		.cli-demo__title {
