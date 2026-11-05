@@ -169,8 +169,46 @@
 
     await setStep('resize');
     const term = activeTerm();
-    await runInTerminal('stty size; echo size-done', 'size-done');
-    await check(termText().includes(`${term.rows} ${term.cols}`), `the PTY has the terminal's size (${term.rows} ${term.cols})`);
+    // The page sends its size when the tab is laid out, which can land just after
+    // the shell started: ask again a few times before calling it a failure.
+    let sized = false;
+    for (let i = 0; i < 5 && !sized; i++) {
+      await runInTerminal(`stty size; echo size-done-${i}`, `size-done-${i}`);
+      sized = termText().includes(`${term.rows} ${term.cols}`);
+      if (!sized) await sleep(300);
+    }
+    await check(sized, `the PTY has the terminal's size (${term.rows} ${term.cols})`);
+    {
+      const box = term.element.parentElement.getBoundingClientRect();
+      const screen = term.element.querySelector('.xterm-screen').getBoundingClientRect();
+      await check(screen.bottom <= box.bottom + 0.5 && screen.right <= box.right + 0.5,
+        `the terminal's rows fit inside the pane (screen ${Math.round(screen.height)} px, box ${Math.round(box.height)} px)`);
+    }
+
+    await setStep('vim');
+    // A full-screen editor queries the terminal at start (DECRQM, XTGETTCAP, DA2…).
+    // A reply that throws inside xterm.js stops its write queue: the editor still
+    // gets every key but the screen never changes again (vite.config.ts, target).
+    const key = (k, code, keyCode) => {
+      const ta = qa('.pane > div').find((d) => d.style.display !== 'none').querySelector('textarea');
+      ta.dispatchEvent(new KeyboardEvent('keydown', { key: k, code, keyCode, bubbles: true, cancelable: true }));
+    };
+    const keys = async (text) => {
+      for (const ch of text) {
+        key(ch, ch === ':' ? 'Semicolon' : 'Key' + ch.toUpperCase(), ch.toUpperCase().charCodeAt(0));
+        await sleep(30);
+      }
+    };
+    await runInTerminal('rm -f /tmp/flint-e2e-vim.txt; vim -u DEFAULTS /tmp/flint-e2e-vim.txt', 'flint-e2e-vim.txt" [New]');
+    await keys('ihello');
+    await waitFor(() => termText().includes('-- INSERT --'), 'vim in insert mode');
+    await check(true, 'vim redraws after its start-up queries (DECRQM)');
+    key('Escape', 'Escape', 27);
+    await sleep(100);
+    await keys(':wq');
+    key('Enter', 'Enter', 13);
+    await runInTerminal('cat /tmp/flint-e2e-vim.txt; echo vim-done', 'vim-done');
+    await check(/^hello$/m.test(termText()), 'keys typed in vim reach it (insert, Esc, :wq)');
 
     await setStep('exit');
     await type('exit 7');

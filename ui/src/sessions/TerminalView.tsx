@@ -45,6 +45,10 @@ export function fontStack(family: string): string {
 export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string; active: boolean; focus: boolean; fontSize: number }) {
   const { os, settings, dark } = useApp();
   const hostRef = useRef<HTMLDivElement>(null);
+  // xterm mounts in an inner box with no padding: FitAddon sizes the terminal from
+  // its parent's computed height, which under border-box includes the padding, so a
+  // padded parent got one row too many and the last line was cut off.
+  const screenRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const activeRef = useRef(active);
@@ -77,7 +81,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     } as ConstructorParameters<typeof Terminal>[0]);
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.open(hostRef.current!);
+    term.open(screenRef.current!);
     let webgl: WebglAddon | undefined;
     try {
       webgl = new WebglAddon();
@@ -157,7 +161,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(refit);
     });
-    observer.observe(hostRef.current!);
+    observer.observe(screenRef.current!);
 
     return () => {
       cancelAnimationFrame(raf);
@@ -200,7 +204,11 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, focus]);
 
-  return <div ref={hostRef} className={styles.term} data-tab={tabId} hidden={!active} />;
+  return (
+    <div ref={hostRef} className={styles.term} data-tab={tabId} hidden={!active}>
+      <div ref={screenRef} className={styles.screen} />
+    </div>
+  );
 }
 
 // Focuses the active tab's terminal (after a prompt closes, or F6).
