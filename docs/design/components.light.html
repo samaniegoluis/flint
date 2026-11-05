@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Component sheet — light</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="flint.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="flint-logo" viewBox="0 0 24 24"><path d="M9 3L17 7L19 15L12 21L5 16L4 8Z" style="fill:var(--logo-base);stroke:none"/><path d="M9 3L12 11L17 7Z" style="fill:var(--logo-hi);stroke:none"/><path d="M12 11L19 15L12 21Z" style="fill:var(--logo-low);stroke:none"/><path d="M12 11L5 16L4 8L9 3Z" style="fill:var(--logo-mid);stroke:none"/><path d="M20.5 1.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z" style="fill:var(--accent);stroke:none"/></symbol>
+<symbol id="i-hosts" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14.5 8.5l2 2"/></symbol>
+<symbol id="i-cred" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.5 1.8-2.2 3-2.2s2.4.7 3 2.2M14 10h4M14 13h3"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="i-updown" viewBox="0 0 24 24"><path d="M7 9l5-5 5 5M7 15l5 5 5-5"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-reconnect" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+<symbol id="i-dup" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+<symbol id="i-files" viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h3l2 2h4a2 2 0 0 1 2 2v1M3 6v10a2 2 0 0 0 2 2h4"/><rect x="12" y="12" width="9" height="8" rx="1.5"/></symbol>
+<symbol id="i-split" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+<symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M12 8v5M12 16h.01"/></symbol>
+<symbol id="i-shield-ok" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
+<symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 9-2.6M9 15.5a5 5 0 0 1 4-1M12 19h.01M3 3l18 18"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 6 6v5"/></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" style="stroke-width:3"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+<symbol id="i-reveal" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2M3 7v10a2 2 0 0 0 2 2h6"/><path d="M15 19l6-6M16 13h5v5"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h4"/></symbol>
+<symbol id="i-min" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+<symbol id="i-max" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+<symbol id="i-enter" viewBox="0 0 24 24"><path d="M20 5v6a3 3 0 0 1-3 3H5M9 10l-4 4 4 4"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-bot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 4v4M9.5 13h.01M14.5 13h.01"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+<symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
+<symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1 0 1.5-.7 1.5-1.5 0-1.2-1-1.5-1-2.5s.8-1.5 2-1.5H17a4 4 0 0 0 4-4c0-4.7-4-8.5-9-8.5z"/><path d="M7.5 11h.01M10 7.5h.01M15 7.5h.01"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+<symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a5 5 0 0 1-.6-10A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z"/></symbol>
+<symbol id="i-jump" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 12c2-5 8-5 10 0"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+<symbol id="i-grip" viewBox="0 0 24 24"><path d="M10 6h.01M14 6h.01M10 12h.01M14 12h.01M10 18h.01M14 18h.01" style="stroke-width:2.6"/></symbol>
+<symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+<symbol id="i-arrow-r" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
+</svg>
+<div class="app spec" data-theme="light" data-view="hosts" style="width: 1280px; height: 2400px; border-radius: 0; gap: var(--sp-6)">
+<div class="col" style="gap: var(--sp-2)"><h1>Components</h1><p>Every state shown is a class in <code>flint.css</code> (<code>.is-hover</code>, <code>.is-active</code>, <code>.is-focus</code> mirror <code>:hover</code>, <code>:active</code>, <code>:focus-visible</code>). Colours come only from tokens.</p></div>
+
+<section class="panel col" style="padding: var(--sp-5); gap: var(--sp-4)">
+<h2>Buttons</h2>
+<div style="display: grid; grid-template-columns: 120px repeat(5, minmax(0, 1fr)); gap: var(--sp-3); align-items: center">
+<span></span><span class="label">Default</span><span class="label">Hover</span><span class="label">Active</span><span class="label">Focus-visible</span><span class="label">Disabled</span>
+<span class="muted">Primary</span><button class="btn btn-primary">Connect<span class="kbd-in">↵</span></button><button class="btn btn-primary is-hover">Connect</button><button class="btn btn-primary is-active">Connect</button><button class="btn btn-primary is-focus">Connect</button><button class="btn btn-primary is-disabled" aria-disabled="true">Connect</button>
+<span class="muted">Secondary</span><button class="btn btn-secondary">Choose…</button><button class="btn btn-secondary is-hover">Choose…</button><button class="btn btn-secondary is-active">Choose…</button><button class="btn btn-secondary is-focus">Choose…</button><button class="btn btn-secondary is-disabled" aria-disabled="true">Choose…</button>
+<span class="muted">Ghost</span><button class="btn btn-ghost">Cancel<span class="kbd">esc</span></button><button class="btn btn-ghost is-hover">Cancel</button><button class="btn btn-ghost is-active">Cancel</button><button class="btn btn-ghost is-focus">Cancel</button><button class="btn btn-ghost is-disabled" aria-disabled="true">Cancel</button>
+<span class="muted">Danger</span><button class="btn btn-danger">Replace key</button><button class="btn btn-danger is-hover">Replace key</button><button class="btn btn-danger-ghost">Delete host</button><button class="btn btn-danger is-focus">Replace key</button><button class="btn btn-danger is-disabled" aria-disabled="true">Replace key</button>
+<span class="muted">Sizes</span><button class="btn btn-primary btn-sm">Small 26</button><button class="btn btn-primary">Default 32</button><button class="btn btn-primary btn-lg">Large 40</button><button class="btn btn-secondary btn-icon" aria-label="Refresh"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-reconnect"></use></svg></button><span></span>
+</div>
+</section>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5)">
+<section class="panel col" style="padding: var(--sp-5); gap: var(--sp-4)">
+<h2>Inputs</h2>
+<div class="field"><label class="flabel" for="c1">Default</label><div class="input"><input id="c1" placeholder="10.0.4.21"></div></div>
+<div class="field"><label class="flabel" for="c2">Focus</label><div class="input focus"><input id="c2" class="mono" value="prod-api-01"></div></div>
+<div class="field"><label class="flabel" for="c3">Error</label><div class="input err"><input id="c3" value="prod api 01" aria-invalid="true"></div><span class="hint err">Labels can't contain spaces.</span></div>
+<div class="field"><span class="flabel">Segmented control</span><div class="seg full" role="group" aria-label="Authentication"><button aria-pressed="true">Credential</button><button aria-pressed="false">Key</button><button aria-pressed="false">Password</button><button aria-pressed="false">Agent</button></div></div>
+<div class="field"><span class="flabel">Tag input</span><div class="tags"><span class="tag">api<button aria-label="Remove api"><svg class="ic ic-xs" aria-hidden="true"><use href="#i-x"></use></svg></button></span><span class="tag">k8s<button aria-label="Remove k8s"><svg class="ic ic-xs" aria-hidden="true"><use href="#i-x"></use></svg></button></span><input aria-label="Add tag" placeholder="Add tag…"></div></div>
+<div class="field"><span class="flabel">Colour swatches</span><div class="swatches" role="radiogroup" aria-label="Colour"><button class="sw none" role="radio" aria-checked="false" aria-label="None"></button><button class="sw c-ember" role="radio" aria-checked="true" aria-label="Ember"></button><button class="sw c-sapphire" role="radio" aria-checked="false" aria-label="Sapphire"></button><button class="sw c-moss" role="radio" aria-checked="false" aria-label="Moss"></button><button class="sw c-iris" role="radio" aria-checked="false" aria-label="Iris"></button><button class="sw c-rose" role="radio" aria-checked="false" aria-label="Rose"></button><button class="sw c-sand" role="radio" aria-checked="false" aria-label="Sand"></button><button class="sw c-slate" role="radio" aria-checked="false" aria-label="Slate"></button></div></div>
+<div class="row" style="gap: var(--sp-5)"><label class="check"><input type="checkbox" checked><span>Checkbox</span></label><label class="row" style="gap: var(--sp-2)"><button class="toggle" role="switch" aria-checked="true" aria-label="Toggle on"></button>Toggle</label><label class="row" style="gap: var(--sp-2)"><button class="toggle" role="switch" aria-checked="false" aria-label="Toggle off"></button>Off</label></div>
+</section>
+
+<section class="panel col" style="padding: var(--sp-5); gap: var(--sp-4); position: relative">
+<h2>Searchable select · popover</h2>
+<button class="select open" aria-expanded="true"><svg class="ic ic-sm info-t" aria-hidden="true"><use href="#i-cred"></use></svg><span class="grow">Domain login <span class="faint mono">· luis</span></span><svg class="ic ic-sm faint" aria-hidden="true"><use href="#i-chev"></use></svg></button>
+<div class="menu" role="listbox" aria-label="Credentials">
+<label class="search" style="margin: var(--sp-1)"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-search"></use></svg><input aria-label="Search" value="dep"></label>
+<button class="mi hot" role="option" aria-selected="true"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-cred"></use></svg><span class="grow"><span class="match">Dep</span>loy <span class="faint mono">· deploy</span></span><span class="faint" style="font-size: var(--fs-xs)">6 hosts</span></button>
+<button class="mi" role="option"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-key"></use></svg><span class="grow mono"><span class="match">dep</span>loy-2026</span><span class="faint" style="font-size: var(--fs-xs)">key</span></button>
+<div class="menu-sep"></div>
+<button class="mi accent-t"><svg class="ic ic-sm" aria-hidden="true" style="color: var(--accent-text)"><use href="#i-plus"></use></svg>New credential…</button>
+</div>
+<h2 style="padding-top: var(--sp-2)">Menu · context</h2>
+<div class="menu" role="menu" aria-label="File actions" style="width: 240px">
+<button class="mi" role="menuitem"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-download"></use></svg>Download…<span class="kbd">⌘↓</span></button>
+<button class="mi hot" role="menuitem"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-edit"></use></svg>Rename<span class="kbd">↵</span></button>
+<div class="menu-sep"></div>
+<button class="mi danger" role="menuitem"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-trash"></use></svg>Delete…<span class="kbd">⌘⌫</span></button>
+</div>
+</section>
+</div>
+
+<section class="panel row" style="padding: var(--sp-5); gap: var(--sp-8); align-items: flex-start">
+<nav class="col" aria-label="Activity bar example" style="width: 68px; height: 300px; flex: none; align-items: center; gap: var(--sp-1); padding: var(--sp-2) 0; background: var(--surface-chrome); border: 1px solid var(--border-subtle); border-radius: var(--radius-md)">
+<button class="rail-btn is-on"><svg class="ic" aria-hidden="true"><use href="#i-hosts"></use></svg>Hosts</button>
+<button class="rail-btn"><svg class="ic" aria-hidden="true"><use href="#i-files"></use></svg>Files</button>
+<span class="rail-sep" role="separator"></span>
+<button class="rail-btn"><svg class="ic" aria-hidden="true"><use href="#i-key"></use></svg>Keys</button>
+<button class="rail-btn"><svg class="ic" aria-hidden="true"><use href="#i-cred"></use></svg>Credentials</button>
+<span class="rail-spacer"></span>
+<button class="rail-btn"><svg class="ic" aria-hidden="true"><use href="#i-settings"></use></svg>Settings</button>
+</nav>
+<div class="col grow" style="gap: var(--sp-4)">
+<h2>Rail · activity bar</h2>
+<div class="row" style="gap: var(--sp-6); align-items: flex-start">
+<div class="col" style="gap: var(--sp-2); align-items: center"><button class="rail-btn" style="background: var(--surface-chrome)"><svg class="ic" aria-hidden="true"><use href="#i-files"></use></svg>Files</button><span class="label">Default</span></div>
+<div class="col" style="gap: var(--sp-2); align-items: center"><button class="rail-btn is-hover"><svg class="ic" aria-hidden="true"><use href="#i-files"></use></svg>Files</button><span class="label">Hover</span></div>
+<div class="col" style="gap: var(--sp-2); align-items: center"><button class="rail-btn is-on"><svg class="ic" aria-hidden="true"><use href="#i-files"></use></svg>Files</button><span class="label">Active</span></div>
+<div class="col" style="gap: var(--sp-2); align-items: center"><button class="rail-btn is-on is-collapsed"><svg class="ic" aria-hidden="true"><use href="#i-files"></use></svg>Files</button><span class="label">Active · hidden</span></div>
+<div class="col" style="gap: var(--sp-2); align-items: center"><button class="rail-btn is-focus"><svg class="ic" aria-hidden="true"><use href="#i-files"></use></svg>Files</button><span class="label">Focus</span></div>
+</div>
+<ul style="margin: 0; padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-1); color: var(--text-secondary); font-size: var(--fs-sm)">
+<li>68 px wide. Each item is an 18 px icon over a 10.5 px label, 60 × 50 px with an 8 px radius. Active items get <code>--accent-subtle</code> behind <code>--accent-text</code>.</li>
+<li>The top group (Hosts, Files) switches the sidebar view. Clicking the active one hides the sidebar: the item keeps its ember tint but loses its fill. Clicking it again restores the sidebar. ⌘B does the same.</li>
+<li>Below the divider are full-page views (Keys, Credentials). Settings is pinned to the bottom.</li>
+<li>Keyboard: one Tab stop for the whole bar, then ↑↓ to move between items. Each item's tooltip shows its shortcut.</li>
+</ul>
+</div>
+</section>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5)">
+<section class="panel col" style="padding: var(--sp-5); gap: var(--sp-3)">
+<h2>Tree items</h2>
+<div class="col" style="width: 260px; background: var(--surface-chrome); border-radius: var(--radius-md); padding: var(--sp-1); border: 1px solid var(--border-subtle)">
+<button class="ti d0" aria-expanded="true"><svg class="ic chev" aria-hidden="true"><use href="#i-chev"></use></svg><span class="fsw c-ember"></span><span class="grow">Folder · open</span><span class="count">9</span></button>
+<button class="ti d0" aria-expanded="false"><svg class="ic chev" aria-hidden="true"><use href="#i-chev"></use></svg><span class="fsw c-moss"></span><span class="grow">Folder · closed</span><span class="count">3</span></button>
+<button class="ti d1"><span class="hmark c-ember"></span><span class="host-name grow">host · default</span></button>
+<button class="ti d1" style="background: var(--surface-hover); color: var(--text-primary)"><span class="hmark c-ember"></span><span class="host-name grow">host · hover</span></button>
+<button class="ti d1 sel"><span class="hmark c-ember"></span><span class="host-name grow">host · selected</span><span class="sess"><svg class="ic" aria-hidden="true"><use href="#i-term"></use></svg>2</span></button>
+<button class="ti d1 is-focus"><span class="hmark"></span><span class="host-name grow">host · focus</span></button>
+</div>
+<span class="hint">Session pill = host has open sessions (count). No live health or latency in the tree.</span>
+</section>
+
+<section class="panel col" style="padding: var(--sp-5); gap: var(--sp-3)">
+<h2>Tabs · session states</h2>
+<div class="tabbar" style="border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); overflow: hidden">
+<button class="tab on"><span class="st st-on" role="img" aria-label="Connected"></span>connected<span class="tx" aria-label="Close"><svg class="ic ic-xs" aria-hidden="true"><use href="#i-x"></use></svg></span></button>
+<button class="tab"><span class="st st-wait" role="img" aria-label="Connecting"></span>connecting<span class="kbd">⌘2</span></button>
+<button class="tab"><span class="st st-off" role="img" aria-label="Disconnected"></span>lost<span class="kbd">⌘3</span></button>
+<button class="tab"><span class="st st-fail" role="img" aria-label="Failed"></span>failed</button>
+</div>
+<div class="row" style="gap: var(--sp-5); font-size: var(--fs-sm)"><span class="row"><span class="st st-on"></span>Connected</span><span class="row"><span class="st st-wait"></span>Connecting</span><span class="row"><span class="st st-off"></span>Disconnected</span><span class="row"><span class="st st-fail"></span>Failed / blocked</span><span class="row"><span class="dot info"></span>Info</span></div>
+<h2 style="padding-top: var(--sp-2)">Key chips · tooltip</h2>
+<div class="row" style="gap: var(--sp-2); flex-wrap: wrap"><span class="kbd">⌘K</span><span class="kbd">⇧⌘O</span><span class="kbd">esc</span><span class="kbd">↵</span><span class="kbd">Ctrl+Shift+K</span><span class="kbd">Ctrl+Alt+Shift+O</span></div>
+<div class="row" style="gap: var(--sp-3)"><span class="tooltip">Reconnect<span class="kbd">⌘R</span></span><span class="tooltip">Split panes — coming soon</span></div>
+<h2 style="padding-top: var(--sp-2)">Progress · badges</h2>
+<div class="col" style="gap: var(--sp-2)"><div class="progress"><i style="width: 62%"></i></div><div class="progress ok"><i style="width: 100%"></i></div></div>
+<div class="row" style="gap: var(--sp-2); flex-wrap: wrap"><span class="badge">Neutral</span><span class="badge accent">open</span><span class="badge info">Nerd glyphs</span><span class="badge ok">Remembered</span><span class="badge warn">not found</span><span class="badge danger">auth failed</span></div>
+</section>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-5)">
+<section class="panel col" style="padding: var(--sp-5); gap: var(--sp-3)">
+<h2>Toast</h2>
+<div class="toast" role="status" style="position: static"><svg class="ic ic-sm ok-t" aria-hidden="true"><use href="#i-check"></use></svg><span class="grow">Public key copied</span><button class="btn btn-ghost btn-sm">Undo</button></div>
+<div class="toast" role="alert" style="position: static"><svg class="ic ic-sm danger-t" aria-hidden="true"><use href="#i-alert"></use></svg><span class="grow">Upload failed: permission denied</span><button class="btn btn-ghost btn-sm">Retry</button></div>
+<span class="hint">Bottom-left above the status bar, 4 s, pauses on hover; errors stay until dismissed.</span>
+</section>
+<section class="panel col" style="padding: var(--sp-5); gap: var(--sp-3)">
+<h2>Empty state</h2>
+<div class="empty" style="padding: var(--sp-4) 0"><span class="empty-ic"><svg class="ic ic-xl" aria-hidden="true"><use href="#i-key"></use></svg></span><span class="strong">No SSH keys yet</span><span style="font-size: var(--fs-sm)">Paste a private key or import a file.</span><button class="btn btn-secondary btn-sm"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-plus"></use></svg>Add key<span class="kbd-in">⌘N</span></button></div>
+</section>
+<section class="panel col" style="padding: var(--sp-5); gap: var(--sp-3)">
+<h2>Callouts</h2>
+<div class="callout info"><svg class="ic ic-sm info-t" aria-hidden="true"><use href="#i-info"></use></svg><span>Info — sapphire.</span></div>
+<div class="callout warn"><svg class="ic ic-sm warn-t" aria-hidden="true"><use href="#i-alert"></use></svg><span>Warning — verify before trusting.</span></div>
+<div class="callout danger"><svg class="ic ic-sm danger-t" aria-hidden="true"><use href="#i-shield"></use></svg><span>Danger — host key changed.</span></div>
+</section>
+</div>
+
+<section class="panel" style="position: relative; height: 420px; overflow: hidden; padding: 0">
+<div class="term" aria-hidden="true" style="position: absolute; inset: 0; padding: var(--sp-4)">
+<div class="l"><span class="g">luis</span><span class="d">@</span><span class="b">prod-api-01</span> <span class="c">~</span> <span class="pc">❯</span> <span class="cur"></span></div>
+</div>
+<div class="scrim" style="z-index: 1"></div>
+<div class="modal" role="dialog" aria-labelledby="mdt" style="left: 48px; top: 48px; width: 420px; z-index: 2">
+<div class="modal-h"><h2 id="mdt" class="grow">Modal</h2><button class="icon-btn" aria-label="Close"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-x"></use></svg></button></div>
+<div class="modal-b"><p class="muted" style="font-size: var(--fs-sm)">Scrim over the whole window, focus trapped, esc closes, focus returns to the trigger.</p><div class="field"><label class="flabel" for="mi1">Name</label><div class="input focus"><input id="mi1" value="Work"></div></div></div>
+<div class="modal-f"><span class="grow"></span><button class="btn btn-ghost">Cancel<span class="kbd">esc</span></button><button class="btn btn-primary">Save<span class="kbd-in">⌘↵</span></button></div>
+</div>
+<div class="drawer" role="dialog" aria-labelledby="drt" style="width: 340px; z-index: 2">
+<div class="modal-h"><h2 id="drt" class="grow">Drawer</h2><button class="icon-btn" aria-label="Close"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-x"></use></svg></button></div>
+<div class="modal-b"><p class="muted" style="font-size: var(--fs-sm)">Slides from the right over list pages (keys, credentials). No scrim: the list stays readable; esc or the × closes.</p><div class="field"><label class="flabel" for="mi2">Username</label><div class="input"><input id="mi2" class="mono" value="luis"></div></div></div>
+</div>
+</section>
+</div>
+</body>
+</html>

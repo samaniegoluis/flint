@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Fonts, shortcuts & interaction notes — dark</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="flint.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="flint-logo" viewBox="0 0 24 24"><path d="M9 3L17 7L19 15L12 21L5 16L4 8Z" style="fill:var(--logo-base);stroke:none"/><path d="M9 3L12 11L17 7Z" style="fill:var(--logo-hi);stroke:none"/><path d="M12 11L19 15L12 21Z" style="fill:var(--logo-low);stroke:none"/><path d="M12 11L5 16L4 8L9 3Z" style="fill:var(--logo-mid);stroke:none"/><path d="M20.5 1.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z" style="fill:var(--accent);stroke:none"/></symbol>
+<symbol id="i-hosts" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14.5 8.5l2 2"/></symbol>
+<symbol id="i-cred" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.5 1.8-2.2 3-2.2s2.4.7 3 2.2M14 10h4M14 13h3"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="i-updown" viewBox="0 0 24 24"><path d="M7 9l5-5 5 5M7 15l5 5 5-5"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-reconnect" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+<symbol id="i-dup" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+<symbol id="i-files" viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h3l2 2h4a2 2 0 0 1 2 2v1M3 6v10a2 2 0 0 0 2 2h4"/><rect x="12" y="12" width="9" height="8" rx="1.5"/></symbol>
+<symbol id="i-split" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+<symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M12 8v5M12 16h.01"/></symbol>
+<symbol id="i-shield-ok" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
+<symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 9-2.6M9 15.5a5 5 0 0 1 4-1M12 19h.01M3 3l18 18"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 6 6v5"/></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" style="stroke-width:3"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+<symbol id="i-reveal" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2M3 7v10a2 2 0 0 0 2 2h6"/><path d="M15 19l6-6M16 13h5v5"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h4"/></symbol>
+<symbol id="i-min" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+<symbol id="i-max" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+<symbol id="i-enter" viewBox="0 0 24 24"><path d="M20 5v6a3 3 0 0 1-3 3H5M9 10l-4 4 4 4"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-bot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 4v4M9.5 13h.01M14.5 13h.01"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+<symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
+<symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1 0 1.5-.7 1.5-1.5 0-1.2-1-1.5-1-2.5s.8-1.5 2-1.5H17a4 4 0 0 0 4-4c0-4.7-4-8.5-9-8.5z"/><path d="M7.5 11h.01M10 7.5h.01M15 7.5h.01"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+<symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a5 5 0 0 1-.6-10A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z"/></symbol>
+<symbol id="i-jump" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 12c2-5 8-5 10 0"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+<symbol id="i-grip" viewBox="0 0 24 24"><path d="M10 6h.01M14 6h.01M10 12h.01M14 12h.01M10 18h.01M14 18h.01" style="stroke-width:2.6"/></symbol>
+<symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+<symbol id="i-arrow-r" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
+</svg>
+<div class="app spec" data-theme="dark" style="width: 1280px; height: 1640px; border-radius: 0">
+<div class="col" style="gap: var(--sp-2)"><h1>Fonts, shortcuts &amp; interaction notes</h1><p>The same text, with the palette tables, is in the handoff zip's README.md.</p></div>
+
+<section class="col" style="gap: var(--sp-3)"><h2>Fonts — bundled locally</h2>
+<table class="table compact"><thead><tr><th>Font</th><th>Use</th><th>Licence</th><th>File</th></tr></thead><tbody>
+<tr><td class="primary" style="font-family: var(--font-ui); font-size: var(--fs-lg)">Geist</td><td>UI chrome</td><td>SIL OFL 1.1 · © 2023 Vercel, with basement.studio</td><td class="mono">Geist-Variable.woff2 · 100–900</td></tr>
+<tr><td class="primary mono" style="font-size: var(--fs-lg)">JetBrains Mono</td><td>Hostnames, paths, terminal</td><td>SIL OFL 1.1 · © 2020 The JetBrains Mono Project Authors</td><td class="mono">JetBrainsMono-Variable.woff2 · 100–800</td></tr>
+<tr><td class="primary mono">JetBrainsMono Nerd Font</td><td>Optional prompt glyphs</td><td>OFL 1.1 (Nerd Fonts patcher is MIT)</td><td class="faint">Not bundled; used first when installed</td></tr>
+</tbody></table>
+<p>Icons are an in-house stroke set (<code>icons.svg</code>) under no third-party licence. Bundle the full JetBrains Mono build for box drawing, Greek and Cyrillic; the zip carries the Latin subset.</p></section>
+
+<section class="col" style="gap: var(--sp-3)"><h2>Shortcut mapping</h2>
+<div class="callout warn"><svg class="ic ic-sm warn-t" aria-hidden="true"><use href="#i-alert"></use></svg><span>Mapping only ⌘ → Ctrl+Shift turns ⇧⌘K (Keys) and ⌘K (palette) into the same Linux chord, and likewise ⇧⌘C vs ⌘C. Proposed rule: <span class="mono strong">⌘ → Ctrl+Shift</span>, <span class="mono strong">⇧⌘ → Ctrl+Alt+Shift</span>. The alternative is to drop the rail shortcuts on Linux and use the palette.</span></div>
+<p>⌘1–9 switch tabs only. Vaults switch through ⇧⌘O and the palette, never digit shortcuts. Rail: ⇧⌘H, ⇧⌘K, ⇧⌘C, ⌘,. The full table is in screen 12c and in the README.</p></section>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-8)">
+<section class="col" style="gap: var(--sp-3)"><h2>Focus order</h2>
+<ol>
+<li>Title-bar palette button</li><li>Activity bar (one Tab stop; ↑↓ between Hosts, Files, Keys, Credentials, Settings)</li><li>Sidebar view — Hosts: vault button, filter, tree (↑↓ move, ←→ fold, ↵ connect, ⌘↵ new tab, ⌘I edit) · Files: path bar, file list, transfer queue</li><li>Tab bar (one Tab stop; ←→)</li><li>Session toolbar</li><li>Terminal (keeps Tab for the shell)</li><li>Status bar</li>
+</ol>
+<p><span class="kbd">F6</span> / <span class="kbd">⇧F6</span> cycles regions, so keyboard users can always leave the terminal.</p></section>
+
+<section class="col" style="gap: var(--sp-3)"><h2>Hover, active, focus-visible</h2>
+<ul>
+<li><strong>Hover:</strong> <code>--surface-hover</code>, text raised to primary, 120 ms ease-out.</li>
+<li><strong>Active:</strong> <code>--surface-active</code>; primary buttons use <code>--accent-press</code>.</li>
+<li><strong>Focus-visible:</strong> keyboard only — 2 px base gap and a 2 px accent ring (<code>--focus-ring</code>). Mouse focus shows nothing.</li>
+<li><strong>Inputs:</strong> accent border plus a 3 px glow on focus; danger border, glow and a linked message on error.</li>
+<li><strong>Disabled:</strong> 45 % opacity. Controls with a reason (Split, a credential in use) stay focusable with <code>aria-disabled</code> and show their tooltip.</li>
+</ul>
+<div class="row" style="gap: var(--sp-3)"><button class="btn btn-secondary">Default</button><button class="btn btn-secondary is-hover">Hover</button><button class="btn btn-secondary is-active">Active</button><button class="btn btn-secondary is-focus">Focus</button></div></section>
+
+<section class="col" style="gap: var(--sp-3)"><h2>Sidebar views &amp; collapse</h2>
+<ul>
+<li>The activity bar's top group switches one sidebar slot: <strong>Hosts</strong> (<span class="kbd">⇧⌘H</span>) or <strong>Files</strong> (<span class="kbd">⌘E</span>). Keys and Credentials open full-page views and hide the sidebar.</li>
+<li>Clicking the already-active view hides the sidebar, and clicking it again restores it. <span class="kbd">⌘B</span> does the same. While hidden, the item keeps its ember tint without the fill.</li>
+<li>Each view remembers its own width: Hosts is 264 px (200–400), Files is 340 px (200–480). Drag the right edge to resize; a double-click resets it.</li>
+<li>Below about 1040 px of window width, the sidebar starts hidden and opens as an overlay over the terminal; esc or clicking outside closes it (screen 04c, 900 × 600).</li>
+<li>Width changes animate over 240 ms (<code>--dur-slow</code>), instantly under reduced motion. The right side of the window stays free for the agent activity panel.</li>
+</ul></section>
+
+<section class="col" style="gap: var(--sp-3)"><h2>Prompts over the terminal</h2>
+<ul>
+<li>Password, passphrase and host-key prompts belong to their tab, not the window. They render inside the pane over <code>--pane-dim</code>, and other tabs keep working.</li>
+<li>The tab shows a short accent label (“needs input”, “verify host”). For a background tab, a toast says “prod-api-02 needs your input ⌘2”.</li>
+<li>Focus moves into the prompt when its tab is active. ↵ runs the primary action; esc cancels the attempt.</li>
+<li><strong>Host key changed</strong> has no ↵ default. Replace turns on only after the user types the host label; “Close session” gets initial focus.</li>
+<li>Session cards (connecting, auth failed, connection lost) use the same layer. The dimmed scrollback stays visible and survives a reconnect.</li>
+</ul></section>
+
+<section class="col" style="gap: var(--sp-3)"><h2>Files view (SFTP)</h2>
+<ul>
+<li>Files belongs to the active tab's session, and its header reads “Files · &lt;host label&gt;”. When you switch tabs it follows, keeping each session's last folder and scroll position.</li>
+<li>Without a connected session, it shows “Open a session to browse its files” with Reconnect or Go to host (screen 14c).</li>
+<li>Path bar: <code>..</code> (<span class="kbd">⌘↑</span>), a breadcrumb, and a crosshair that syncs to the terminal's folder (OSC 7). Below it: Upload and New folder.</li>
+<li>The context menu offers Download, Rename, Copy path, New folder and Delete.</li>
+<li>Dragging files from the OS turns the <strong>whole sidebar</strong> into the drop target and shows the remote path. Existing files ask before they're replaced.</li>
+<li>The transfer queue is docked at the bottom of the sidebar, with per-file progress and cancel. “Clear done” keeps failed items with Retry, and the queue collapses when empty.</li>
+</ul></section>
+
+<section class="col" style="gap: var(--sp-3)"><h2>Kept out of the MVP</h2>
+<ul><li>Splits — the Split button is visible but disabled, with a “coming soon” tooltip.</li><li>Saved workspaces and session restore.</li><li>Per-host health, status dots or latency in the tree. Latency appears only in the session toolbar and status bar.</li><li>Agent tokens and the rail item. The agent activity panel exists only as a wireframe (screen 15), on the right side, which stays free now that Files lives in the left sidebar.</li></ul></section>
+</div>
+</div>
+</body>
+</html>
