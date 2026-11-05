@@ -19,9 +19,9 @@ cd "$root"
 
 "$root/scripts/build-gui.sh" >/dev/null
 if [[ "$(uname -s)" == Darwin ]]; then
-  app=(build/Flint.app/Contents/MacOS/Flint)
+  app=(build/gui/Flint.app/Contents/MacOS/Flint)
 else
-  app=(timeout 300 xvfb-run -a build/Flint)
+  app=(timeout 300 xvfb-run -a build/gui/Flint)
 fi
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-gui-e2e.XXXXXX")"

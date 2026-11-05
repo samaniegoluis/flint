@@ -29,7 +29,7 @@ fn find_ui_dir() -> str {
         return override
     }
     exe := executable_dir()
-    dirs: []str = [exe + "/../Resources/ui", exe + "/ui", exe + "/../ui/dist", "ui/dist"]
+    dirs: []str = [exe + "/../Resources/ui", exe + "/ui", exe + "/../../ui/dist", "ui/dist"]
     for dir in dirs {
         if fs.exists(dir + "/index.html") {
             return dir

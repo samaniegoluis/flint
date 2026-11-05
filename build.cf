@@ -10,9 +10,10 @@ var Flint = build.Executable("flint", {
 })
 
 // The desktop app. scripts/build-gui.sh builds the page (ui/) and copies it into the
-// app bundle; `cfire build` alone produces the executable only.
+// app bundle; `cfire build` alone produces the executable only. It gets its own
+// folder: macOS file systems ignore case, so build/Flint would overwrite build/flint.
 var FlintGui = build.Executable("Flint", {
     Entry:     "src/drivers/gui/main.cf",
     Subsystem: "gui",
-    OutDir:    "build",
+    OutDir:    "build/gui",
 })

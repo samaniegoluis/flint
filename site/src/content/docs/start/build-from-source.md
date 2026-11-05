@@ -64,12 +64,12 @@ The app's page is a React project in `ui/`, so it also needs **Node.js** (20 or 
 
 ```sh
 scripts/build-gui.sh
-open build/Flint.app                         # macOS
-./build/Flint                                # Linux (the page is in build/ui)
+open build/gui/Flint.app                     # macOS
+./build/gui/Flint                            # Linux (the page is in build/gui/ui)
 ```
 
 The script builds the page with Vite, builds the `Flint` executable, and puts the page
-where the executable looks for it: `Flint.app/Contents/Resources/ui` on macOS, `build/ui`
+where the executable looks for it: `Flint.app/Contents/Resources/ui` on macOS, `build/gui/ui`
 on Linux. On macOS it signs the bundle again ad hoc, because adding the page invalidates
 cfire's signature. On Linux the app also needs WebKitGTK (`libwebkit2gtk-4.1-dev`).
 
