@@ -311,6 +311,8 @@
     await click('button[type="submit"]', 'Unlock');
     await waitFor(() => hasText('Wrong password'), 'the wrong password message', 30000);
     await check(true, 'a wrong master password is refused');
+    await waitFor(() => { const pw = q('#pw'); return pw && !pw.disabled && pw.selectionEnd === pw.value.length && pw.selectionStart === 0 && pw.value.length > 0 ? pw : null; }, 'the attempt selected');
+    await check(q('#pw').value === 'wrong-password', 'the wrong attempt stays in the field, selected');
     await fill('#pw', MASTER);
     await click('button[type="submit"]', 'Unlock');
     await waitFor(() => byText('.tree .ti', 'local'), 'the unlocked tree', 30000);

@@ -249,7 +249,7 @@ export function Shell() {
       <footer className="statusbar">
         <span className="sb-item"><Icon name="unlock" />Unlocked{vault?.cached ? (os === 'mac' ? ' · Keychain' : ' · Keyring') : ''}</span>
         <button className="sb-btn" onClick={() => lock().catch(fail)}>Lock<Kbd action="lock" /></button>
-        <span className="sb-item">{sessionsOpen} session{sessionsOpen === 1 ? '' : 's'}</span>
+        <span className="sb-item">{sessionsOpen === 0 ? 'No sessions' : `${sessionsOpen} session${sessionsOpen === 1 ? '' : 's'}`}</span>
         {tab && <span className="sb-item mono">{tab.alias}</span>}
         <span className="grow" />
         {zoom !== 0 && <button className="sb-btn" onClick={() => setZoom(0)} title="Reset terminal font size">{fontSize} px</button>}
