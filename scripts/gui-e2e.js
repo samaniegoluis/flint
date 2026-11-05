@@ -287,7 +287,10 @@
       new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
     await click('.side-head .icon-btn[aria-label^="New host"]');
     await fill('#ha', 'probe');
-    await fill('#hh', 'localhost');
+    // 127.0.0.1, not localhost: on Linux localhost resolves to ::1 first, where the
+    // test sshds do not listen. [127.0.0.1]:PORT2 is not known yet (inner went
+    // through localhost).
+    await fill('#hh', '127.0.0.1');
     await fill('#hp', '1');
     await click('.seg button', 'Key');
     await pick('SSH key', 'e2e-key');
@@ -295,13 +298,13 @@
     await click('.modal button', 'Test connection');
     await waitFor(() => hasText('Test failed'), 'the failed test', 30000);
     await check(true, 'a test of a closed port reports the failure in the editor');
-    await fill('#hp', PORT);
+    await fill('#hp', PORT2);
     await click('.modal button', 'Test connection');
     await waitFor(() => q('.modal [role="alertdialog"]'), 'the host key card in the editor', 30000);
     await check(q('.modal [role="alertdialog"] .fp')?.textContent.startsWith('SHA256:'), 'the test asks to verify a new host key in the editor');
     await click('.modal [role="alertdialog"] button', 'Trust and continue');
     await waitFor(() => hasText('Connection works'), 'the successful test', 30000);
-    await check(hasText(`${USER}@localhost:${PORT}`), 'the test names the target it reached');
+    await check(hasText(`${USER}@127.0.0.1:${PORT2}`), 'the test names the target it reached');
     await check(!(await window.backend.catalog({})).hosts.some((h) => h.alias === 'probe'), 'testing does not save the host');
 
     await setStep('initial command');
@@ -310,7 +313,7 @@
     await click('.modal button[type="submit"]', 'Add host');
     await waitFor(() => byText('.tree .ti', 'probe'), 'probe in the tree');
     const withProbe = await window.backend.catalog({});
-    await check(withProbe.known_hosts.find((k) => k.addr === `[localhost]:${PORT}`)?.host === 'probe', 'the key trusted in the test belongs to the saved host');
+    await check(withProbe.known_hosts.find((k) => k.addr === `[127.0.0.1]:${PORT2}`)?.host === 'probe', 'the key trusted in the test belongs to the saved host');
     await check(withProbe.hosts.find((h) => h.alias === 'probe').command === 'echo started-$((40+2))', 'the initial command is saved');
     byText('.tree .ti', 'probe').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     await waitFor(() => toolbarIs('ready'), 'the probe session', 30000);

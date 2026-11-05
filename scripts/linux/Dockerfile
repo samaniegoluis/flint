@@ -1,5 +1,6 @@
 # Linux build check for Flint: Debian trixie, cfire pinned to the commit Flint is
-# built against, and the native libraries from apt (D-015).
+# built against, and the native libraries from apt (D-015). vim is for gui-e2e's
+# full-screen editor step.
 #
 #   scripts/linux-check.sh
 FROM debian:trixie
@@ -12,6 +13,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         libwebkit2gtk-4.1-dev libgtk-3-dev \
         openssh-server openssh-client xvfb xauth \
         gnome-keyring dbus python3 perl \
+        vim \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone https://github.com/gsandoval/cfire /opt/cfire-src \
