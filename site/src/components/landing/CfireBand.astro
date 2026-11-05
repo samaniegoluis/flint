@@ -1,0 +1,42 @@
+---
+// "Built in cfire" on the landing (D-027). The code is read from Flint's own source at
+// build time, so the excerpt cannot drift from the code it shows. The emblem is cfire's
+// own (docs/assets/cfire_logo_emblem.png in github.com/gsandoval/cfire).
+import { Image } from 'astro:assets';
+import { Code } from '@astrojs/starlight/components';
+import emblem from '../../assets/cfire-emblem.png';
+import connect from '../../../../src/application/connect.cf?raw';
+
+const FILE = 'src/application/connect.cf';
+const lines = connect.split('\n');
+const start = lines.findIndex((l) => l.startsWith('fn verify_host_key'));
+const stop = lines.findIndex((l, i) => i > start && l.includes('if status == HOST_KEY_CHANGED'));
+if (start < 0 || stop < 0) throw new Error(`CfireBand: verify_host_key moved in ${FILE}; update the excerpt`);
+const excerpt = [...lines.slice(start, stop + 1), '        // … ask for a new key, refuse a changed one', '    }', '}'].join('\n');
+---
+
+<section class="flint-cfire not-content" aria-labelledby="flint-cfire-title">
+	<div class="flint-cfire__copy">
+		<div class="flint-cfire__head">
+			<Image src={emblem} alt="" width={72} class="flint-cfire__logo" />
+			<div>
+				<p class="flint-cfire__kicker">Written in</p>
+				<h2 id="flint-cfire-title">cfire</h2>
+			</div>
+		</div>
+		<p>
+			Flint is built in <a href="https://github.com/gsandoval/cfire">cfire</a>, a Go-flavoured
+			systems language that lowers 1:1 to readable ISO C++23, with no garbage collector. Flint is
+			also a test bench for it: every gap it hits goes back to cfire’s author with a repro.
+		</p>
+		<ul>
+			<li><strong>Native binaries.</strong> The CLI and the desktop app are compiled programs. The app draws in the system web view, not a bundled browser.</li>
+			<li><strong>C libraries, imported directly.</strong> libssh, libsodium and SQLCipher come in through <code>import cpp</code>, cfire’s C and C++ interop, with no hand-written bindings.</li>
+			<li><strong>Tests in the language.</strong> The core is tested with cfire’s <code>test "…"</code> blocks, against fakes of its ports, with no server to reach.</li>
+		</ul>
+		<a class="flint-cfire__link" href="https://github.com/gsandoval/cfire">cfire on GitHub <span aria-hidden="true">→</span></a>
+	</div>
+	<div class="flint-cfire__code">
+		<Code code={excerpt} lang="go" title={FILE} wrap />
+	</div>
+</section>

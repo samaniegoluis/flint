@@ -26,3 +26,10 @@ the same commit.
 
 `npm test` fails on its own when the CLI's usage text, flags, error codes or the CLI
 reference gain something the demo lacks.
+
+## Beyond the demo
+
+The seed vault also feeds the rest of the landing (D-027): the `host list` and `exec --json`
+blocks in `src/content/docs/index.mdx` must match what the demo prints (`npm test` checks
+it), and `npm run shots:gui` captures the desktop app over the same vault. After changing
+the seed, update those blocks and retake the screenshots.

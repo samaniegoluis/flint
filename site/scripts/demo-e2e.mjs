@@ -7,11 +7,11 @@
 // (`npx playwright install chromium-headless-shell` puts one there).
 // Screenshots go to $DEMO_SHOTS when it is set.
 import { createServer } from 'node:http';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { findChromium } from './chromium.mjs';
 
 const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 const shots = process.env.DEMO_SHOTS;
@@ -22,28 +22,6 @@ function check(ok, what) {
 	checks++;
 	if (!ok) failures++;
 	console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`);
-}
-
-function findChromium() {
-	if (process.env.FLINT_CHROMIUM) return process.env.FLINT_CHROMIUM;
-	if (existsSync(chromium.executablePath())) return undefined;
-	const roots = [join(homedir(), 'Library/Caches/ms-playwright'), join(homedir(), '.cache/ms-playwright')];
-	const found = [];
-	const walk = (dir, depth) => {
-		if (depth > 4 || !existsSync(dir)) return;
-		for (const name of readdirSync(dir)) {
-			const p = join(dir, name);
-			if (name === 'chrome-headless-shell' || name === 'chrome') {
-				if (statSync(p).isFile()) found.push(p);
-			} else if (!name.endsWith('.app') && statSync(p).isDirectory()) {
-				walk(p, depth + 1);
-			}
-		}
-	};
-	roots.forEach((r) => walk(r, 0));
-	found.sort();
-	if (found.length === 0) throw new Error('no Chromium found; set FLINT_CHROMIUM');
-	return found[found.length - 1];
 }
 
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.json': 'application/json' };

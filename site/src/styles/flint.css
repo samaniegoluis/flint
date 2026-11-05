@@ -293,3 +293,184 @@
 		animation: none;
 	}
 }
+
+/* ---- Landing sections (D-027) -------------------------------------------------------- */
+[data-has-hero] .sl-markdown-content > h2 {
+	margin-top: 3.5rem;
+	letter-spacing: -0.015em;
+}
+[data-has-hero] .sl-markdown-content > h2 + p {
+	color: var(--sl-color-gray-3);
+	max-width: 44rem;
+	text-wrap: pretty;
+}
+
+/* The desktop app screenshot, framed like a window. */
+.flint-shot {
+	margin: 1.75rem 0 0;
+}
+.flint-shot img {
+	/* No display here: Starlight's light:/dark:sl-hidden must win. */
+	vertical-align: top;
+	width: 100%;
+	height: auto;
+	border: 1px solid var(--flint-border);
+	border-radius: 10px;
+	box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+:root[data-theme='light'] .flint-shot img {
+	box-shadow: 0 24px 64px rgba(40, 30, 20, 0.16), 0 0 0 1px rgba(40, 30, 20, 0.06);
+}
+.flint-shot figcaption {
+	margin-top: 0.75rem;
+	font-size: var(--sl-text-sm);
+	color: var(--sl-color-gray-3);
+	text-align: center;
+}
+
+/* Two columns from 50rem, stacked on phones. */
+.flint-split {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1.5rem 2.5rem;
+	margin-top: 1.75rem;
+}
+.flint-split > div {
+	margin: 0;
+}
+@media (min-width: 50rem) {
+	.flint-split {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		align-items: start;
+	}
+}
+.flint-split > div > :first-child {
+	margin-top: 0;
+}
+.flint-split h3 {
+	font-size: var(--sl-text-lg);
+}
+
+/* What's next: a quiet list, the name in the accent colour. */
+.flint-next {
+	list-style: none;
+	padding: 0;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 0.75rem 2.5rem;
+}
+@media (min-width: 50rem) {
+	.flint-next {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+.flint-next li {
+	margin: 0;
+	padding: 0.85rem 1rem;
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: 8px;
+	color: var(--sl-color-gray-3);
+}
+.flint-next strong {
+	display: block;
+	color: var(--sl-color-text-accent);
+}
+/* Built in cfire: a panel lit in cfire's sapphire blue, the copy beside real code. */
+.flint-cfire {
+	--cfire-blue: #3d8fe0;
+	--cfire-glow: rgba(61, 143, 224, 0.14);
+	position: relative;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1.75rem 2.5rem;
+	margin-top: 3.5rem;
+	padding: clamp(1.25rem, 4vw, 2.25rem);
+	border: 1px solid var(--flint-border);
+	border-radius: 14px;
+	background:
+		radial-gradient(60% 80% at 0% 0%, var(--cfire-glow), transparent 70%),
+		var(--flint-surface-raised);
+	overflow: hidden;
+}
+:root[data-theme='light'] .flint-cfire {
+	--cfire-blue: #1f6fc2;
+	--cfire-glow: rgba(31, 111, 194, 0.1);
+}
+@media (min-width: 60rem) {
+	.flint-cfire {
+		grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+		align-items: center;
+	}
+}
+.flint-cfire__head {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+}
+.flint-cfire__logo {
+	width: 72px;
+	height: auto;
+	filter: drop-shadow(0 6px 18px rgba(61, 143, 224, 0.35));
+}
+.flint-cfire__kicker {
+	margin: 0;
+	font-size: var(--sl-text-xs);
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+}
+.flint-cfire h2 {
+	margin: 0;
+	font-size: var(--sl-text-4xl);
+	line-height: 1;
+	letter-spacing: -0.03em;
+	color: var(--cfire-blue);
+}
+.flint-cfire__copy > p {
+	margin: 1.25rem 0 0;
+	color: var(--sl-color-gray-2);
+	text-wrap: pretty;
+}
+.flint-cfire__copy a {
+	color: var(--cfire-blue);
+}
+.flint-cfire ul {
+	margin: 1rem 0 0;
+	padding: 0;
+	list-style: none;
+	display: grid;
+	gap: 0.6rem;
+}
+.flint-cfire li {
+	padding-inline-start: 1rem;
+	border-inline-start: 2px solid var(--cfire-blue);
+	color: var(--sl-color-gray-3);
+	font-size: var(--sl-text-sm);
+}
+.flint-cfire li strong {
+	color: var(--sl-color-white);
+}
+.flint-cfire code {
+	font-size: 0.9em;
+}
+.flint-cfire__link {
+	display: inline-block;
+	margin-top: 1.25rem;
+	font-weight: 600;
+	text-decoration: none;
+}
+.flint-cfire__link:hover {
+	text-decoration: underline;
+}
+.flint-cfire__code .expressive-code {
+	margin: 0;
+}
+
+.flint-footnote {
+	margin-top: 3rem;
+	padding-top: 1.25rem;
+	border-top: 1px solid var(--sl-color-hairline);
+	font-size: var(--sl-text-sm);
+	color: var(--sl-color-gray-3);
+}
