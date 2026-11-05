@@ -111,9 +111,12 @@ open sessions.
 
 ## The command palette
 
-<kbd>⌘K</kbd> searches hosts, actions and vaults. <kbd>⌘P</kbd> (or <kbd>⌘T</kbd>)
-searches hosts only. <kbd>↵</kbd> opens the result, <kbd>⌘↵</kbd> opens a host in a new
-tab, <kbd>⌘I</kbd> edits it, and <kbd>Tab</kbd> moves between result groups.
+<kbd>⌘K</kbd> searches hosts, actions and vaults. <kbd>⌘P</kbd> (**Go to host**)
+searches hosts only, and <kbd>↵</kbd> takes you to the host's open tab or connects it if it
+has none. <kbd>⌘T</kbd> (**New session**) searches hosts too, but <kbd>↵</kbd> always opens
+a new tab, so pressing it twice on the same host gives you two sessions. In the other
+palettes <kbd>⌘↵</kbd> opens a host in a new tab. <kbd>⌘I</kbd> edits the host, and
+<kbd>Tab</kbd> moves between result groups.
 
 ## Vaults
 

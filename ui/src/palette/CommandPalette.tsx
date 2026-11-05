@@ -1,6 +1,7 @@
 // The command palette (⌘K; ⌘P and ⌘T limit it to hosts). Hosts first, then actions,
-// then vaults. ↵ opens (a host with an open tab switches to it), ⌘↵ opens a host in
-// a new tab, ⌘I edits it, Tab moves between result groups.
+// then vaults. ↵ opens (with ⌘P a host with an open tab switches to it; with ⌘T,
+// "New session", it always opens a new tab), ⌘↵ opens a host in a new tab, ⌘I edits
+// it, Tab moves between result groups.
 
 import { useMemo, useRef, useState } from 'react';
 import { useApp, vaultInitial, vaultMarkClass, shortPath } from '../state/app';
@@ -43,8 +44,9 @@ function Hl({ text, positions }: { text: string; positions: number[] }) {
   return <>{highlight(text, positions).map((r, i) => (r.match ? <span key={i} className="match">{r.text}</span> : <span key={i}>{r.text}</span>))}</>;
 }
 
-export function CommandPalette({ hostsOnly, onClose, onConnect, onEdit, onAction }: {
+export function CommandPalette({ hostsOnly, newSession = false, onClose, onConnect, onEdit, onAction }: {
   hostsOnly: boolean;
+  newSession?: boolean;
   onClose: () => void;
   onConnect: (alias: string, newTab: boolean) => void;
   onEdit: (alias: string) => void;
@@ -73,10 +75,10 @@ export function CommandPalette({ hostsOnly, onClose, onConnect, onEdit, onAction
             <span className={'hmark ' + c.className} style={c.style} />
             <span className="mono" style={{ width: 160, flex: 'none' }}><Hl text={h.alias} positions={name?.positions ?? []} /></span>
             <span className="grow faint trunc" style={{ fontSize: 'var(--fs-xs)' }}>{where}{tabIdx >= 0 ? ` · open in tab ${tabIdx + 1}` : ''}</span>
-            <span className="hint">{tabIdx >= 0 ? 'Switch to tab' : 'Connect'}</span>
+            <span className="hint">{newSession ? 'New tab' : tabIdx >= 0 ? 'Switch to tab' : 'Connect'}</span>
           </>
         ),
-        run: (newTab) => onConnect(h.alias, newTab),
+        run: (newTab) => onConnect(h.alias, newTab || newSession),
         edit: () => onEdit(h.alias),
       });
     }
@@ -109,7 +111,7 @@ export function CommandPalette({ hostsOnly, onClose, onConnect, onEdit, onAction
       }
     }
     return out;
-  }, [catalog.hosts, tabs, q, hostsOnly, os, recents, vault, onConnect, onEdit, onAction, switchTo, fail]);
+  }, [catalog.hosts, tabs, q, hostsOnly, newSession, os, recents, vault, onConnect, onEdit, onAction, switchTo, fail]);
 
   const counts = { hosts: 0, actions: 0, vaults: 0 };
   for (const it of items) counts[it.group]++;
@@ -143,7 +145,7 @@ export function CommandPalette({ hostsOnly, onClose, onConnect, onEdit, onAction
       <div onKeyDown={onKey} style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
         <label className="row" style={{ height: 52, padding: '0 var(--sp-4)', gap: 'var(--sp-3)', borderBottom: '1px solid var(--border-subtle)' }}>
           <Icon name="search" className="faint" />
-          <input aria-label={hostsOnly ? 'Go to host' : 'Search hosts, actions and vaults'} placeholder={hostsOnly ? 'Go to host…' : 'Hosts, actions, vaults…'}
+          <input aria-label={newSession ? 'New session on' : hostsOnly ? 'Go to host' : 'Search hosts, actions and vaults'} placeholder={newSession ? 'New session on…' : hostsOnly ? 'Go to host…' : 'Hosts, actions, vaults…'}
             value={q} onChange={(e) => { setQ(e.target.value); setHot(0); }} className="grow" data-autofocus autoFocus
             role="combobox" aria-expanded="true" aria-controls="palette-results" aria-activedescendant={current ? 'pi-' + current.key : undefined}
             style={{ background: 'none', border: 0, outline: 'none', fontSize: 'var(--fs-lg)', color: 'var(--text-primary)' }} />
@@ -178,10 +180,10 @@ export function CommandPalette({ hostsOnly, onClose, onConnect, onEdit, onAction
         </div>
         <div className="row faint" data-palette-hints style={{ height: 36, padding: '0 var(--sp-4)', gap: 'var(--sp-4)', borderTop: '1px solid var(--border-subtle)', background: 'var(--surface-raised)', fontSize: 'var(--fs-xs)', flex: 'none' }}>
           <span className="row" style={{ gap: 6 }}><Key>↑↓</Key>move</span>
-          <span className="row" style={{ gap: 6 }}><Key>↵</Key>open</span>
+          <span className="row" style={{ gap: 6 }}><Key>↵</Key>{newSession ? 'open in new tab' : 'open'}</span>
           {/* ⌘↵ and ⌘I only act on a host, so they are offered only while one is hot. */}
           {current?.group === 'hosts' && <>
-            <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</Key>open in new tab</span>
+            {!newSession && <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</Key>open in new tab</span>}
             <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘I' : 'Ctrl+I'}</Key>edit host</span>
           </>}
         </div>

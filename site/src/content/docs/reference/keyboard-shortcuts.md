@@ -10,11 +10,11 @@ speaks the Kitty keyboard protocol.
 | Action | macOS | Linux |
 |---|---|---|
 | Command palette | ⌘K | Ctrl+Shift+K |
-| Go to host (palette, hosts only) | ⌘P | Ctrl+Shift+P |
+| Go to host (switches to its open tab, or connects) | ⌘P | Ctrl+Shift+P |
 | Switch vault | ⇧⌘O | Ctrl+Alt+Shift+O |
 | Open vault file | ⌘O | Ctrl+Shift+O |
 | Create vault | ⇧⌘N | Ctrl+Alt+Shift+N |
-| New session (pick a host) | ⌘T | Ctrl+Shift+T |
+| New session (pick a host; always a new tab) | ⌘T | Ctrl+Shift+T |
 | Close tab | ⌘W | Ctrl+Shift+W |
 | Go to tab 1–9 | ⌘1 … ⌘9 | Ctrl+Shift+1 … 9 |
 | Reconnect | ⌘R | Ctrl+Shift+R |

@@ -310,6 +310,24 @@
       await sleep(100);
       await check(!editorOpen(), `Esc closes the host editor opened ${how}`);
     }
+    // ⌘T is "New session": ↵ opens another tab even for a host that already has one,
+    // where ⌘P would switch to it.
+    if (qa('.tab').length) {
+      const before = qa('.tab').length;
+      cmd('t', 'KeyT');
+      const opened = await waitFor(() => qa('[aria-label="Command palette"] [role="option"]').find((o) => o.textContent.includes('open in tab')), 'a host with an open tab in the ⌘T palette');
+      const alias = opened.querySelector('.mono').textContent;
+      await check(q('[aria-label="Command palette"] input').placeholder === 'New session on…', '⌘T opens the palette as "New session on…"');
+      await fill('[aria-label="Command palette"] input', alias);
+      await waitFor(() => q('[role="option"].hot')?.textContent.includes(alias), alias + ' hot');
+      await check(q('[role="option"].hot .hint')?.textContent === 'New tab', '⌘T offers a new tab for a host that has one open');
+      press('Enter', 'Enter');
+      await waitFor(() => qa('.tab').length === before + 1, 'a second tab of ' + alias);
+      await check(q('.tab.on')?.textContent.includes(alias), `↵ in the ⌘T palette opens another tab of ${alias}`);
+      q('.tab.on .tx').click();
+      await waitFor(() => qa('.tab').length === before, 'the extra tab to close');
+      await sleep(100);
+    }
     cmd('k', 'KeyK');
     await waitFor(() => q('[aria-label="Command palette"]'), 'the palette again');
     await fill('[aria-label="Command palette"] input', 'pwh');
