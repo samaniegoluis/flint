@@ -570,3 +570,15 @@ The entries below were found while building milestone 02 against the same cfire 
   `performClose:` so webui's normal close path still runs.
 - **Ideal:** webui installs the standard menus itself (app name from `new_app`), and
   takes an optional menu description so an app can add its own items and shortcuts.
+
+### CF-052 · missing · `confirmed`: no app icon (or bundle id) for a GUI executable
+- **Repro:** `build.Executable("Flint", { Subsystem: "gui", … })` on macOS writes
+  `Flint.app/Contents/Info.plist` with no `CFBundleIconFile` and a fixed
+  `CFBundleIdentifier` (`com.cfire.Flint`); `build.Executable` takes no icon or
+  identifier. The Dock and ⌘Tab show a blank icon. On Linux webui's GTK window has no
+  icon either.
+- **Workaround:** `scripts/build-gui.sh` copies `assets/app-icon/Flint.icns` into
+  `Resources/` and sets `CFBundleIconFile` with `plutil` before signing again.
+- **Ideal:** `build.Executable` takes `Icon` (an SVG or PNG it renders per platform:
+  `.icns` on macOS, the GTK window icon and a `.desktop` icon on Linux, an `.ico` on
+  Windows) and `BundleId`.

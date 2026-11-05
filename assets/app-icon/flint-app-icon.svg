@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Flint's app icon: the logo's gem and spark (site/public/favicon.svg, dark
+       palette) on a tile of macOS's icon grid (824 px body, 100 px margin).
+       scripts/make-app-icon.sh renders it into Flint.icns and flint-256.png. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#23262D"/>
+      <stop offset="1" stop-color="#0F1115"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.03"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="url(#rim)" stroke-width="3"/>
+  <!-- The 24-unit logo, scaled 26x and centred on the tile. -->
+  <g transform="translate(200 210) scale(26)">
+    <path fill="#6A6E76" d="M9 3L17 7L19 15L12 21L5 16L4 8Z"/>
+    <path fill="#9A9EA6" d="M9 3L12 11L17 7Z"/>
+    <path fill="#575B62" d="M12 11L19 15L12 21Z"/>
+    <path fill="#7E828A" d="M12 11L5 16L4 8L9 3Z"/>
+    <path fill="#F29A52" d="M20.5 1.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/>
+  </g>
+</svg>
