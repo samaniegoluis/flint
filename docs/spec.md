@@ -121,8 +121,9 @@ Checkable rules. Every milestone is checked against them before it is closed. Ru
 4. **(owner review)** No hand-rolled cryptography. Key derivation and AEAD go through
    libsodium only.
 5. **(owner review)** The vault file on disk is encrypted in full. No hostname, user or label
-   is ever written in clear text, including in logs. The vault schema and file format change
-   only through an appended migration.
+   from inside a vault is ever written in clear text, including in logs. (The recent-vaults
+   list keeps each vault's file path and name in clear, D-021.) The vault schema and file
+   format change only through an appended migration.
 6. Secret values never appear in RPC results, CLI output (`--json` included), logs or error
    messages.
 7. Every CLI command supports `--json`, writes data to stdout and diagnostics to stderr, and

@@ -16,7 +16,11 @@ Flint opens the vault.
 
 Nothing else is written. There is no sidecar file and no plaintext header, so hostnames,
 users, labels, tags, notes, group names, the vault name and the known host keys are all
-encrypted. While a
+encrypted.
+
+Outside the vault file, the [list of recent vaults](/guides/vaults/#several-vaults) in
+your config folder holds each vault's path and name in clear text, so `flint vault list`
+works while every vault is locked. Nothing from inside a vault is ever written there. While a
 change is being written, SQLite keeps a rollback journal next to the file, encrypted as
 well, and deletes it when the change commits.
 

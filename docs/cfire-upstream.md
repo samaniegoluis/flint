@@ -427,6 +427,10 @@ The entries below were found while building milestone 02 against the same cfire 
   closing `` ` })``, every following line (the rest of the function and the next function)
   is indented one or two extra levels. The SQL itself is untouched and the code still
   compiles, but the layout is wrong.
+  Smaller (cfire 0.9.4): no struct is needed. Two calls `list.push(\`` +
+  `CREATE TABLE a (` / `    id TEXT` / `);` + `` `)`` in one function are enough; from
+  the second call on, every line gains one level, so the formatter appears to count the
+  `(` inside the raw string.
 - **Workaround:** Flint does not run `cfire fmt` on `migrations.cf`.
 - **Ideal:** the formatter treats a raw string literal as opaque when it tracks nesting.
 
@@ -475,3 +479,13 @@ The entries below were found while building milestone 02 against the same cfire 
   `src/adapters/ssh/native/flint_ssh.hpp`, owned by `SshLink.tunnels`.
 - **Ideal:** `net.socketpair()`, `os.poll([]Fd, timeout_ms)`, and a joinable
   `Thread` value type.
+
+### CF-044 · bug · `confirmed`: `assert_eq` against a slice literal does not compile
+- **Repro:** in a test, `mut xs: []str = []`, `xs.push("a")`, `assert_eq(xs, ["a"])`.
+  The literal lowers to a bare braced list (`{"a"}`), which cannot deduce the template
+  parameter of `cfire::assert_binop_at`: `no matching function for call to
+  'assert_binop_at'` (cfire 0.9.4).
+- **Workaround:** compare the length and then each element
+  (`src/application/connect_test.cf`, the host key preference checks).
+- **Ideal:** lower a slice literal in `assert_eq`/`assert_ne` to the type of the other
+  operand.
