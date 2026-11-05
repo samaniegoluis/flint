@@ -288,6 +288,11 @@
     await fill('[aria-label="Command palette"] input', 'pwh');
     await waitFor(() => byText('[role="option"]', 'pwhost'), 'pwhost in the palette');
     await check(q('[role="option"].hot')?.textContent.includes('pwhost'), 'the palette ranks the matching host first');
+    const footer = () => q('[data-palette-hints]')?.textContent ?? '';
+    await check(footer().includes('edit host'), 'the palette offers ⌘I while a host is hot');
+    await fill('[aria-label="Command palette"] input', 'reconnect');
+    await waitFor(() => q('[role="option"].hot')?.textContent.includes('Reconnect'), 'Reconnect hot');
+    await check(!footer().includes('edit host') && !footer().includes('new tab'), 'the palette does not offer ⌘I or ⌘↵ on an action');
     q('[aria-label="Command palette"] input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(100);
 

@@ -176,11 +176,14 @@ export function CommandPalette({ hostsOnly, onClose, onConnect, onEdit, onAction
             );
           })}
         </div>
-        <div className="row faint" style={{ height: 36, padding: '0 var(--sp-4)', gap: 'var(--sp-4)', borderTop: '1px solid var(--border-subtle)', background: 'var(--surface-raised)', fontSize: 'var(--fs-xs)', flex: 'none' }}>
+        <div className="row faint" data-palette-hints style={{ height: 36, padding: '0 var(--sp-4)', gap: 'var(--sp-4)', borderTop: '1px solid var(--border-subtle)', background: 'var(--surface-raised)', fontSize: 'var(--fs-xs)', flex: 'none' }}>
           <span className="row" style={{ gap: 6 }}><Key>↑↓</Key>move</span>
           <span className="row" style={{ gap: 6 }}><Key>↵</Key>open</span>
-          <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</Key>open in new tab</span>
-          <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘I' : 'Ctrl+I'}</Key>edit host</span>
+          {/* ⌘↵ and ⌘I only act on a host, so they are offered only while one is hot. */}
+          {current?.group === 'hosts' && <>
+            <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</Key>open in new tab</span>
+            <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘I' : 'Ctrl+I'}</Key>edit host</span>
+          </>}
         </div>
       </div>
     </Modal>
