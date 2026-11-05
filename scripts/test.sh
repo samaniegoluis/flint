@@ -12,11 +12,13 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 if [[ $# -gt 0 ]]; then targets=("$@"); else targets=(src spike); fi
 port="${FLINT_TEST_SSH_PORT:-2222}"
+port2="${FLINT_TEST_SSH_PORT2:-2223}"
 sshd_bin="$(command -v sshd || echo /usr/sbin/sshd)"
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-sshd.XXXXXX")"
 cleanup() {
-  if [[ -f "$tmp/sshd.pid" ]]; then kill "$(cat "$tmp/sshd.pid")" 2>/dev/null || true; fi
+  for f in "$tmp"/sshd*.pid; do [[ -f "$f" ]] && kill "$(cat "$f")" 2>/dev/null; done
+  [[ -n "${SSH_AGENT_PID:-}" ]] && kill "$SSH_AGENT_PID" 2>/dev/null
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -25,24 +27,40 @@ ssh-keygen -q -t ed25519 -N '' -f "$tmp/host_ed25519"
 ssh-keygen -q -t ed25519 -N '' -f "$tmp/user_ed25519"
 cp "$tmp/user_ed25519.pub" "$tmp/authorized_keys"
 chmod 600 "$tmp/authorized_keys"
-cat > "$tmp/sshd_config" <<CFG
-Port $port
+# Two servers: the second has its own host key and stands in for a host reached
+# through the first as a jump host.
+ssh-keygen -q -t ed25519 -N '' -f "$tmp/host2_ed25519"
+write_config() {  # <name> <port> <host key>
+  cat > "$tmp/$1_config" <<CFG
+Port $2
 ListenAddress 127.0.0.1
-HostKey $tmp/host_ed25519
+HostKey $3
 AuthorizedKeysFile $tmp/authorized_keys
-PidFile $tmp/sshd.pid
+PidFile $tmp/$1.pid
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 UsePAM no
 StrictModes no
 PermitTTY yes
+AllowTcpForwarding yes
 CFG
+}
+write_config sshd "$port" "$tmp/host_ed25519"
+write_config sshd2 "$port2" "$tmp/host2_ed25519"
 
-"$sshd_bin" -f "$tmp/sshd_config" -E "$tmp/sshd.log"
-for _ in $(seq 1 50); do [[ -s "$tmp/sshd.pid" ]] && break; sleep 0.1; done
-[[ -s "$tmp/sshd.pid" ]] || { echo "test.sh: sshd did not start" >&2; cat "$tmp/sshd.log" >&2; exit 1; }
+for name in sshd sshd2; do
+  "$sshd_bin" -f "$tmp/${name}_config" -E "$tmp/$name.log"
+  for _ in $(seq 1 50); do [[ -s "$tmp/$name.pid" ]] && break; sleep 0.1; done
+  [[ -s "$tmp/$name.pid" ]] || { echo "test.sh: $name did not start" >&2; cat "$tmp/$name.log" >&2; exit 1; }
+done
+
+# A throwaway agent holding the user key, for the agent auth tests.
+eval "$(ssh-agent -s -a "$tmp/agent.sock")" >/dev/null
+ssh-add -q "$tmp/user_ed25519" 2>/dev/null
+export FLINT_TEST_AGENT=1
 
 export FLINT_TEST_SSH_PORT="$port"
+export FLINT_TEST_SSH_PORT2="$port2"
 export FLINT_TEST_SSH_KEY="$tmp/user_ed25519"
 export USER="${USER:-$(id -un)}"
 

@@ -1,0 +1,236 @@
+package ssh
+
+// The `SshTransport` port over libssh. A link is a chain of sessions: the first
+// is dialled directly, every later one through a direct-tcpip tunnel over the
+// previous hop (native/flint_ssh.hpp). Auth and channels act on the last hop.
+//
+// Errors carry `network` (the session is unusable), `auth` (this method was
+// rejected; try the next) or `invalid` codes. No secret value is ever put in an
+// error (Principle 6).
+
+// CFIRE-UPSTREAM: CF-005, CF-031
+import cpp "flint_ssh.hpp" @pkg("flint-native")
+
+import "../../domain"
+
+type SshLink struct {
+    hops: []SshConn
+    // Shared by every copy of this value; owns the tunnel threads (CF-026).
+    tunnels: shared[cpp::flint_ssh::Tunnels]
+    timeout_secs: i64
+}
+
+fn new_ssh_link() -> SshLink {
+    mut link := SshLink{ hops: [], timeout_secs: 0 }
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        link.tunnels = std::make_shared<flint_ssh::Tunnels>();
+    }
+    return link
+}
+
+fn (self: SshLink) last_hop() -> SshConn! {
+    if self.hops.len() == 0 {
+        return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
+    }
+    return self.hops[self.hops.len() - 1]
+}
+
+fn (mut self: SshLink) link_dial(hostname: str, port: i64, user: str, timeout_secs: i64) -> void! {
+    if port <= 0 || port > 65535 {
+        return error(coded(ERR_INVALID, "port {port} is out of range"))
+    }
+    self.timeout_secs = timeout_secs
+    if self.hops.len() == 0 {
+        self.hops.push(try ssh_dial(hostname, i32(port), user, timeout_secs))
+        return
+    }
+    outer := try self.last_hop()
+    mut fd: i32 = -1
+    mut msg := ""
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        int inner = -1;
+        std::string err;
+        auto t = flint_ssh::open_tunnel(outer.session, outer.lock, hostname, static_cast<int>(port), inner, err);
+        if (t) {
+            self.tunnels->list.push_back(t);
+            fd = inner;
+        } else {
+            msg = err;
+        }
+    }
+    if fd < 0 {
+        return error(coded(ERR_NETWORK, "the jump host could not reach {hostname}:{port}: {msg}"))
+    }
+    self.hops.push(try ssh_dial_over(hostname, i32(port), user, timeout_secs, fd))
+}
+
+fn (self: SshLink) link_server_key() -> ServerKey! {
+    conn := try self.last_hop()
+    mut key_type := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        ssh_key key = nullptr;
+        rc = ssh_get_server_publickey(conn.session, &key);
+        if (rc == SSH_OK) {
+            const char* t = ssh_key_type_to_char(ssh_key_type(key));
+            if (t) key_type = t;
+            ssh_key_free(key);
+        }
+    }
+    if rc != 0 || key_type.len() == 0 {
+        return error(coded(ERR_NETWORK, "cannot read the server host key"))
+    }
+    fp := conn.host_key_sha256() or err {
+        return error(coded(ERR_NETWORK, "cannot read the server host key"))
+    }
+    return ServerKey{ key_type: key_type, fingerprint: fp }
+}
+
+fn auth_result(rc: i32, method: str, conn: SshConn) -> void! {
+    if rc == 0 {
+        return
+    }
+    if rc == 3 {
+        return error(coded(ERR_AUTH, "no SSH agent is running (SSH_AUTH_SOCK is not set)"))
+    }
+    if rc == 1 {
+        return error(coded(ERR_AUTH, "{method} authentication was rejected"))
+    }
+    return error(coded(ERR_NETWORK, "{method} authentication failed: {conn.last_error()}"))
+}
+
+fn (mut self: SshLink) link_auth_key(private_key: str, passphrase: str) -> void! {
+    conn := try self.last_hop()
+    mut rc: i32 = 0
+    mut unreadable := false
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = flint_ssh::auth_key(conn.session, private_key, passphrase, unreadable);
+    }
+    if unreadable {
+        return error(coded(ERR_AUTH, "a stored private key could not be read"))
+    }
+    try auth_result(rc, "public-key", conn)
+}
+
+fn (mut self: SshLink) link_auth_password(password: str) -> void! {
+    conn := try self.last_hop()
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = flint_ssh::auth_password(conn.session, password);
+    }
+    try auth_result(rc, "password", conn)
+}
+
+fn (mut self: SshLink) link_auth_agent() -> void! {
+    conn := try self.last_hop()
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = flint_ssh::auth_agent(conn.session);
+    }
+    try auth_result(rc, "agent", conn)
+}
+
+fn (mut self: SshLink) link_shell_open(term: str, cols: i32, rows: i32) -> void! {
+    if self.hops.len() == 0 {
+        return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
+    }
+    mut conn := self.hops[self.hops.len() - 1]
+    opened := conn.open_pty_shell(term, cols, rows)
+    if !opened.has_value() {
+        return error(coded(ERR_NETWORK, "{opened.error().message()}"))
+    }
+    self.hops[self.hops.len() - 1] = conn
+}
+
+// Starts `command` and closes its stdin at once: stdin is not forwarded yet, and
+// a command that reads it must see EOF rather than hang.
+fn (mut self: SshLink) link_exec_start(command: str) -> void! {
+    if self.hops.len() == 0 {
+        return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
+    }
+    mut conn := self.hops[self.hops.len() - 1]
+    mut channel: *mut cpp::ssh_channel_struct
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        ssh_channel ch = ssh_channel_new(conn.session);
+        channel = ch;
+        rc = ch ? ssh_channel_open_session(ch) : -1;
+        if (rc == SSH_OK) rc = ssh_channel_request_exec(ch, command.c_str());
+        if (rc == SSH_OK) rc = ssh_channel_send_eof(ch);
+        if (rc != SSH_OK && ch) { ssh_channel_free(ch); channel = nullptr; }
+    }
+    if rc != 0 {
+        return error(coded(ERR_NETWORK, "cannot start the command: {conn.last_error()}"))
+    }
+    conn.channel = channel
+    self.hops[self.hops.len() - 1] = conn
+}
+
+fn (mut self: SshLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
+    conn := try self.last_hop()
+    mut chunk := ExecChunk{ stdout: "", stderr: "", done: false, exit_code: 0, signal: "" }
+    mut ok := true
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        if (!conn.channel) {
+            ok = false;
+        } else {
+            ok = flint_ssh::read_chunk(conn.channel, timeout_ms, chunk.stdout, chunk.stderr, chunk.done, chunk.exit_code, chunk.signal);
+        }
+    }
+    if !ok {
+        return error(coded(ERR_NETWORK, "the connection was lost: {conn.last_error()}"))
+    }
+    return chunk
+}
+
+fn (mut self: SshLink) link_channel_write(data: str) -> void! {
+    conn := try self.last_hop()
+    w := conn.write(data)
+    if !w.has_value() {
+        return error(coded(ERR_NETWORK, "the connection was lost"))
+    }
+}
+
+fn (mut self: SshLink) link_channel_resize(cols: i32, rows: i32) -> void! {
+    conn := try self.last_hop()
+    r := conn.resize(cols, rows)
+    if !r.has_value() {
+        return error(coded(ERR_NETWORK, "resize failed"))
+    }
+}
+
+// Closes every hop, innermost first. Tunnel i runs over hop i and carries hop
+// i+1, so it is stopped after hop i+1 is gone and before hop i goes. A tunnel
+// whose next hop never connected is stopped the same way.
+fn (mut self: SshLink) link_hangup() {
+    mut i := self.hops.len()
+    for i > 0 {
+        i -= 1
+        idx := i
+        // CFIRE-UPSTREAM: CF-026
+        cpp {
+            if (idx < self.tunnels->list.size()) flint_ssh::close_tunnel(self.tunnels->list[idx]);
+        }
+        mut conn := self.hops[i]
+        conn.disconnect()
+    }
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        self.tunnels->list.clear();
+    }
+    self.hops = []
+}
