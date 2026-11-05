@@ -46,7 +46,7 @@ test "pty shell echoes a command over libssh" {
     fp := try conn.host_key_sha256()
     assert(fp.starts_with("SHA256:"))
     try conn.auth_key_content(key_text, "")
-    try conn.open_pty_shell("xterm-256color", 80, 24)
+    try conn.open_pty_shell("xterm-256color", 80, 24, "")
     try conn.resize(100, 30)
     try conn.write("echo flint-$((40+2))-spike; stty size\n")
     mut seen := ""

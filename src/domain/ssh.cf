@@ -116,6 +116,44 @@ fn preferred_host_key_algos(known: []KnownHost, addr: str) -> str {
     return ""
 }
 
+// Quotes `s` as one POSIX shell word: '…' with every ' written as '\''. fish reads
+// the same form (\' outside quotes is a literal quote).
+fn shell_single_quote(s: str) -> str {
+    mut q := "'"
+    for b in s.bytes() {
+        if u8(b) == 39 {
+            q = q + "'\\''"
+        } else {
+            q = q + byte_to_str(u8(b))
+        }
+    }
+    return q + "'"
+}
+
+// What a PTY session with an initial command asks the server to run (D-031, D-032).
+// sshd hands it to the user's shell with -c, which starts their shell again as an
+// interactive login shell (-il) on the command, so the profile and rc files that
+// set PATH load as in a typed session. With `keep_shell`, a login shell follows
+// when the command exits; without it, the session ends with the command. ""
+// means a plain login shell.
+fn initial_command_line(command: str, keep_shell: bool) -> str {
+    if command.len() == 0 {
+        return ""
+    }
+    run := "\"$SHELL\" -ilc " + shell_single_quote(command)
+    if keep_shell {
+        return run + "; exec \"$SHELL\" -l"
+    }
+    return "exec " + run
+}
+
+test "an initial command runs through the login shell, quoted" {
+    assert_eq(initial_command_line("", true), "")
+    assert_eq(initial_command_line("herdr", true), "\"$SHELL\" -ilc 'herdr'; exec \"$SHELL\" -l")
+    assert_eq(initial_command_line("herdr", false), "exec \"$SHELL\" -ilc 'herdr'")
+    assert_eq(initial_command_line("echo 'hi there'", false), "exec \"$SHELL\" -ilc 'echo '\\''hi there'\\'''")
+}
+
 test "known host addresses follow the OpenSSH form" {
     assert_eq(known_host_addr("Web.Example.org", 22), "web.example.org")
     assert_eq(known_host_addr("10.0.0.5", 2222), "[10.0.0.5]:2222")

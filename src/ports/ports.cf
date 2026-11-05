@@ -102,14 +102,15 @@ type EventSink interface {
 // (Principle 8). Errors carry `network`, `auth` or `host_key` codes.
 // `host_key_algos` ("" for the library defaults) is the domain's
 // `preferred_host_key_algos` for the hop being dialled.
-// One channel at a time: a shell (PTY) or an exec.
+// One channel at a time: a shell (PTY) or an exec. `link_shell_open` with a
+// `command` runs that command on the PTY instead of the login shell ("" for none).
 type SshTransport interface {
     link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void!
     link_server_key() -> ServerKey!
     link_auth_key(private_key: str, passphrase: str) -> void!
     link_auth_password(password: str) -> void!
     link_auth_agent() -> void!
-    link_shell_open(term: str, cols: i32, rows: i32) -> void!
+    link_shell_open(term: str, cols: i32, rows: i32, command: str) -> void!
     link_exec_start(command: str) -> void!
     link_channel_read(timeout_ms: i32) -> ExecChunk!
     link_channel_write(data: str) -> void!
@@ -144,6 +145,13 @@ type Terminal interface {
 type ExecSink interface {
     exec_stdout(data: str)
     exec_stderr(data: str)
+}
+
+// The system clipboard (adapters/uievents, the desktop app). `clipboard_copy_secret`
+// puts a secret on it, marked so clipboard managers skip it where the OS allows, and
+// clears it after `clear_after_ms` unless something else was copied since (D-029).
+type Clipboard interface {
+    clipboard_copy_secret(text: str, clear_after_ms: i64) -> void!
 }
 
 // Monotonic milliseconds, for timeouts and durations (adapters/process).

@@ -499,8 +499,12 @@ fn (mut self: FakeLink) link_auth_agent() -> void! {
     }
 }
 
-fn (mut self: FakeLink) link_shell_open(term: str, cols: i32, rows: i32) -> void! {
-    self.calls.push("shell {term} {cols}x{rows}")
+fn (mut self: FakeLink) link_shell_open(term: str, cols: i32, rows: i32, command: str) -> void! {
+    if command.len() > 0 {
+        self.calls.push("shell {term} {cols}x{rows} " + command)
+    } else {
+        self.calls.push("shell {term} {cols}x{rows}")
+    }
 }
 
 fn (mut self: FakeLink) link_exec_start(command: str) -> void! {
@@ -648,6 +652,19 @@ type FakeClock struct {
 fn (mut self: FakeClock) clock_now_ms() -> i64 {
     self.now_ms += self.step_ms
     return self.now_ms
+}
+
+// Records what was copied and the clear delay asked for.
+type FakeClipboard struct {
+    text: str
+    clear_after_ms: i64
+    copies: i64
+}
+
+fn (mut self: FakeClipboard) clipboard_copy_secret(text: str, clear_after_ms: i64) -> void! {
+    self.text = text
+    self.clear_after_ms = clear_after_ms
+    self.copies += 1
 }
 
 // ---- Settings and fonts -------------------------------------------------------------
