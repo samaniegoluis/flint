@@ -1,0 +1,18 @@
+---
+// The desktop app on the landing (D-027): one screenshot per theme, taken from the real
+// UI build over the CLI demo's vault by `npm run shots:gui`. Starlight's
+// light:/dark:sl-hidden classes show the one that matches the page.
+import { Image } from 'astro:assets';
+import dark from '../../assets/screens/app-dark.png';
+import light from '../../assets/screens/app-light.png';
+
+const alt =
+	'The Flint desktop app: the Demo vault’s host tree with the prod and homelab groups, two tabs open on web-01 and db, and a shell on db reached through bastion.';
+const sizes = '(min-width: 72rem) 68rem, 100vw';
+---
+
+<figure class="flint-shot not-content">
+	<Image src={dark} alt={alt} widths={[640, 1280, 2560]} sizes={sizes} class="light:sl-hidden" loading="lazy" />
+	<Image src={light} alt={alt} widths={[640, 1280, 2560]} sizes={sizes} class="dark:sl-hidden" loading="lazy" />
+	<figcaption>The desktop app, with two sessions open. <code>db</code> is reached through the jump host <code>bastion</code>.</figcaption>
+</figure>

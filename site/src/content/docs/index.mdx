@@ -34,26 +34,118 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 import CliDemo from '../../components/CliDemo.astro';
+import AppShot from '../../components/landing/AppShot.astro';
 
 <CliDemo />
 
 :::caution[Early development]
-Flint works today as a desktop app and as the `flint` CLI, over the same encrypted vault.
-SFTP, tunnels, an SSH agent and the MCP server are next. Build it [from
-source](/start/build-from-source/).
+Flint works today on macOS and Linux, as a desktop app and as the `flint` CLI. There are
+no release builds yet: [build it from source](/start/build-from-source/).
 :::
 
+## One vault, two ways in
+
+The desktop app and the `flint` command are two front ends over the same core and the
+same vault file. A host you add in one shows up in the other, with the same alias.
+
+<AppShot />
+
+<div class="flint-split">
+<div>
+
+### In a window
+
+Tabs and a modern terminal (xterm.js with the Kitty keyboard protocol), a host tree with
+nested groups, editors for hosts, keys and credentials, a command palette, and prompts
+for passwords and host keys. Read [The desktop app](/guides/desktop-app/).
+
+</div>
+<div>
+
+### In a terminal
+
+```sh
+❯ flint host list
+ALIAS    TARGET                GROUP    TAGS
+bastion  jump@bastion.example  -        -
+db       admin@10.0.0.12       prod     postgres
+nas      pi@192.168.1.20       homelab  backup
+web-01   deploy@10.0.0.5       prod     nginx
+❯ flint connect db
+```
+
+</div>
+</div>
+
+## Built for scripts and agents
+
+Every command takes `--json`, and its exit codes are stable. `flint exec` runs one command
+by alias and hands back its output and exit status. Keys and passwords never leave the
+vault, and are never printed.
+
+<div class="flint-split">
+<div>
+
+```sh
+❯ flint exec web-01 --json -- uptime | jq .
+{
+  "host": "web-01",
+  "exit_code": 0,
+  "signal": "",
+  "stdout": " 10:42:07 up 41 days,  2:17,  1 user,  load average: 0.08, 0.05, 0.01\n",
+  "stderr": "",
+  "duration_ms": 214
+}
+```
+
+</div>
+<div>
+
+- **Errors as data.** With `--json`, a Flint error is a JSON object on stderr with a
+  stable code; a remote exit status comes with its object on stdout.
+- **No secrets in arguments.** Flint reads a secret from the terminal, with echo off, or
+  from stdin. It never takes one from an argument or an environment variable, where it
+  would leak into `ps` and shell history.
+- **Jump hosts by alias.** `db` above is reached through `bastion`, a hop Flint verifies
+  like any other host.
+
+See the [CLI reference](/reference/cli/).
+
+</div>
+</div>
+
+## Secure by default
+
 <CardGrid>
-	<Card title="One encrypted vault" icon="seti:lock">
-		Hosts, keys and credentials live in a single SQLite file that is encrypted in full.
-		Put it in any cloud-synced folder; nothing about your servers is readable on disk.
+	<Card title="The whole file is encrypted" icon="seti:lock">
+		Hostnames, users, notes and known host keys are encrypted too, not only passwords
+		(SQLCipher, AES-256). Put the vault in any cloud-synced folder.
 	</Card>
-	<Card title="GUI and CLI, same core" icon="laptop">
-		A desktop app with tabs and a modern terminal, and a `flint` command that drives the
-		same vault, with `--json` on every command.
+	<Card title="Secrets sealed twice" icon="approve-check">
+		Passwords, private keys and passphrases are sealed again with XChaCha20-Poly1305,
+		each bound to its own field, and opened only to connect.
 	</Card>
-	<Card title="Built in cfire" icon="open-book">
-		Flint is written in [cfire](https://github.com/gsandoval/cfire), a Go-flavoured
-		language that compiles to C++23.
+	<Card title="One master password" icon="laptop">
+		The vault key comes from Argon2id. The OS keychain can keep that key, never the
+		password, so a machine you trust opens the vault without asking.
+	</Card>
+	<Card title="Host keys are checked" icon="warning">
+		Flint asks before it trusts a new server key, and always refuses a changed one
+		before any credential is sent.
 	</Card>
 </CardGrid>
+
+The details are in [Vault format](/reference/vault-format/) and
+[Connecting](/guides/connecting/#known-hosts).
+
+## What's next
+
+<ul class="flint-next">
+	<li><strong>SFTP</strong> A file browser over the same connection, with an upload and download queue.</li>
+	<li><strong>Tunnels</strong> Local port forwards saved per host, and <code>flint tunnel up</code>.</li>
+	<li><strong>SSH agent</strong> <code>flint agent</code> serves keys from the vault to <code>ssh</code>, <code>git</code> and your editor, with no key on disk.</li>
+	<li><strong>MCP server</strong> AI agents list hosts and run commands under scoped, expiring tokens and per-host policies, and never see a credential.</li>
+	<li><strong>Releases</strong> A signed macOS app, a Linux AppImage and a Homebrew tap.</li>
+</ul>
+
+<p class="flint-footnote">Flint is written in <a href="https://github.com/gsandoval/cfire">cfire</a>, a Go-flavoured language that compiles to C++23.</p>

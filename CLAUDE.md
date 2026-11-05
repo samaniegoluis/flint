@@ -49,9 +49,16 @@ is `docs/build-log.md` plus `git log`.
    **The landing's CLI demo ships with the CLI too:** any change to a CLI command, flag,
    output or error updates the demo (`site/src/demo/`) in the same commit: the command, its
    data and its tour step (D-026).
-6. **Nothing lives only in chat.** A new feature idea goes into `ROADMAP.md`. A decision that
+6. **The landing grows with the product** (`site/src/content/docs/index.mdx`, D-027). When
+   a change adds something a visitor would care about (a surface, a headline feature, a
+   screen worth showing, a security or scripting property), update the landing in the
+   same commit if its place is clear: an existing section it belongs to, a "What's next"
+   item that shipped and must leave the list. If it is not clear (a new section, replacing
+   something, whether it earns a place at all), ask the owner at plan time. A change to a
+   screen in the landing's app screenshots re-runs `npm run shots:gui` in `site/`.
+7. **Nothing lives only in chat.** A new feature idea goes into `ROADMAP.md`. A decision that
    is expensive to reverse goes into `docs/decisions.md`.
-7. **Stay in scope.** Work outside the current milestone goes into the roadmap, not into the
+8. **Stay in scope.** Work outside the current milestone goes into the roadmap, not into the
    diff.
 
 ## Language

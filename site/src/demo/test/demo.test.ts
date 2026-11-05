@@ -157,6 +157,15 @@ test('a locked vault asks for its master password once, then stays cached', () =
 	assert.equal(flint(w, 'vault lock').out[0], "Locked vault 'Work': its key is no longer cached on this machine.");
 });
 
+test('the landing shows what the demo CLI prints (D-027)', () => {
+	const landing = readFileSync(fileURLToPath(new URL('../../content/docs/index.mdx', import.meta.url)), 'utf8');
+	const w = worldFromSeed(seed);
+	for (const line of flint(w, 'host list').out) assert.ok(landing.includes(line), `landing lacks: ${line}`);
+	const r = flint(w, 'exec web-01 --accept-new-host-key --json -- uptime');
+	const pretty = runJq(['.'], r.out).lines.map((l) => l.map((p) => p.text).join(''));
+	for (const line of pretty) assert.ok(landing.includes(line), `landing lacks: ${line}`);
+});
+
 test('exec asks to trust an unknown server key, then runs the command', () => {
 	const w = worldFromSeed(seed);
 	const r = flint(w, 'exec web-01 -- uptime', ['yes']);

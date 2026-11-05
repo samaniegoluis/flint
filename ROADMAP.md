@@ -134,4 +134,8 @@ What Tether already does and Flint must not lose.
 | Feature | Status | Notes |
 |---|---|---|
 | Interactive CLI demo on the landing: overlay terminal, guided tour, demo vault, fake Linux | `mvp` | Milestone 05 (D-026) |
+| Landing sections: the desktop app beside the CLI, scripts and agents, security, what's next | `done` | D-027; screenshots from `npm run shots:gui` |
+| Landing section for AI agents (MCP server, scoped tokens, policies, the approval flow in the GUI) | `next` | Once the MCP server ships; today it is one line in "What's next" |
+| Comparison with other SSH clients on the landing (Termius, MobaXterm, Tether) | `later` | Only once SFTP and tunnels ship; today it would argue against Flint |
+| More app screenshots on the landing and the desktop-app guide (command palette, host editor, host-key prompt) | `idea` | `shots:gui` can drive them; one more `screens` entry each |
 | The hero terminal plays the demo tour by itself (typing animation, termynal-style) before the visitor opens the demo | `idea` | Left out of M05; respect `prefers-reduced-motion` |
