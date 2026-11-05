@@ -9,6 +9,7 @@ A simulated `flint` in the browser (D-026). It opens from **Try the CLI** on the
 | `lib/vault.ts` | The vault rules and messages of `src/application/` and `src/domain/vault.cf` |
 | `lib/args.ts`, `lib/errors.ts`, `lib/format.ts` | Flag parsing, error codes and table output, as in the CLI |
 | `lib/remote.ts` | The fake Linux every host opens after `flint connect` |
+| `lib/jq.ts` | The one pipe the demo allows, `flint … --json \| jq`, with a few filters (`.`, `.[].field`, `length`, `-r`, `-c`). jq is not part of Flint |
 | `lib/session.ts` | One terminal: prompts, remote shells, Tab completion, the tour. No DOM |
 | `data/seed-vault.json` | The demo vaults (`Demo`, unlocked; `Work`, locked) |
 | `data/remote-fs.json` | The read-only files of the fake Linux |

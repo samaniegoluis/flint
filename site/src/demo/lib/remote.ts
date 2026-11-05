@@ -94,6 +94,7 @@ export class RemoteShell {
 	run(line: string): RemoteResult {
 		const t = tokenize(line);
 		if ('error' in t) return { stdout: [], stderr: [`bash: ${t.error}`], code: 2 };
+		if (t.pipe) return { stdout: [], stderr: ['bash: pipes are not part of the demo server'], code: 2 };
 		const [cmd, ...args] = t.words;
 		if (!cmd) return { stdout: [], stderr: [], code: 0 };
 		const ok = (stdout: string[]): RemoteResult => ({ stdout, stderr: [], code: 0 });

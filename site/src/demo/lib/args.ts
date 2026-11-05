@@ -2,15 +2,19 @@
 // parser of src/drivers/cli/args.cf.
 import { fail } from './errors.ts';
 
-export type Tokens = { words: string[] } | { error: string };
+/** `pipe` holds the words after a single `|`, when there is one. */
+export type Tokens = { words: string[]; pipe?: string[] } | { error: string };
 
 /**
  * Splits a line as a POSIX shell would for plain words: whitespace separates,
  * single and double quotes group, a backslash escapes the next character.
- * Pipes, redirection and command lists are reported, not run.
+ * One `|` is kept apart (the demo pipes into jq); redirection and command lists are
+ * reported, not run.
  */
 export function tokenize(line: string): Tokens {
-	const words: string[] = [];
+	const first: string[] = [];
+	let pipe: string[] | undefined;
+	let words = first;
 	let cur = '';
 	let inWord = false;
 	let quote: '' | "'" | '"' = '';
@@ -36,6 +40,12 @@ export function tokenize(line: string): Tokens {
 			if (inWord) words.push(cur);
 			cur = '';
 			inWord = false;
+		} else if (ch === '|' && !pipe && line[i + 1] !== '|') {
+			if (inWord) words.push(cur);
+			cur = '';
+			inWord = false;
+			pipe = [];
+			words = pipe;
 		} else if ('|<>;&`$'.includes(ch)) {
 			return { error: `'${ch}' is not part of the demo shell: run one command at a time` };
 		} else {
@@ -45,7 +55,8 @@ export function tokenize(line: string): Tokens {
 	}
 	if (quote) return { error: 'unterminated quote' };
 	if (inWord) words.push(cur);
-	return { words };
+	if (pipe && (first.length === 0 || pipe.length === 0)) return { error: "a '|' needs a command on each side" };
+	return pipe ? { words: first, pipe } : { words: first };
 }
 
 const VALUE_FLAGS = [

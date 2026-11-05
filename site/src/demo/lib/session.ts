@@ -7,6 +7,7 @@ import { ALL_FLAGS, tokenize } from './args.ts';
 import { COMMANDS, runFlint, type Ask, type Io, type Outcome, type Run } from './cli.ts';
 import { FlintError } from './errors.ts';
 import { json } from './format.ts';
+import { runJq, type Span } from './jq.ts';
 import { REMOTE_COMMANDS, RemoteShell } from './remote.ts';
 import { worldFromSeed, type World } from './vault.ts';
 
@@ -19,6 +20,8 @@ export interface Line {
 	prompt?: string;
 	/** For `note`: a page the line links to. */
 	href?: string;
+	/** Coloured pieces (jq output); `text` holds the same characters. */
+	parts?: Span[];
 }
 
 interface TourStep {
@@ -86,8 +89,9 @@ export class DemoSession {
 			if (step?.where === 'remote' && step.chips) return step.chips;
 			return ['ls', 'cat notes.txt', 'uptime', 'exit'];
 		}
-		if (step?.where === 'local') return [step.run];
-		return ['flint help', 'flint host list', 'flint connect db', 'flint vault list'];
+		const jq = this.jqSuggestion ? [this.jqSuggestion] : [];
+		if (step?.where === 'local') return [step.run, ...jq];
+		return [...jq, 'flint help', 'flint host list', 'flint connect db', 'flint vault list'];
 	}
 
 	/**
@@ -163,6 +167,18 @@ export class DemoSession {
 		const words = t.words;
 		if (words.length === 0) return;
 		const [cmd, ...rest] = words;
+		if (t.pipe) {
+			if (t.pipe[0] !== 'jq' || cmd !== 'flint') {
+				this.err(t.pipe[0] === 'jq' ? `zsh: command not found: ${cmd}` : `zsh: command not found: ${t.pipe[0]}`);
+				this.hint('# The demo pipes one thing: flint … --json | jq');
+				return;
+			}
+			// The left side's stdout goes to jq; its stderr and prompts stay on the screen.
+			const captured: string[] = [];
+			const io = { ...this.io(), out: (l: string) => captured.push(l) };
+			this.drive(runFlint(rest, this.world, io), undefined, words, { jqArgs: t.pipe.slice(1), captured });
+			return;
+		}
 		switch (cmd) {
 			case 'flint':
 				this.drive(runFlint(rest, this.world, this.io()), undefined, words);
@@ -195,7 +211,7 @@ export class DemoSession {
 		}
 	}
 
-	private drive(gen: Run, answer?: string, words?: string[]): void {
+	private drive(gen: Run, answer?: string, words?: string[], pipe?: { jqArgs: string[]; captured: string[] }): void {
 		this.pending = null;
 		let r: IteratorResult<Ask, Outcome>;
 		try {
@@ -210,11 +226,25 @@ export class DemoSession {
 			lines.slice(0, -1).forEach((l) => this.out(l));
 			this.pending = { gen, ask: r.value };
 			this.pendingWords = words ?? this.pendingWords;
+			this.pendingPipe = pipe ?? this.pendingPipe;
 			return;
 		}
 		const done = r.value;
 		const typed = words ?? this.pendingWords;
+		const piped = pipe ?? this.pendingPipe;
 		this.pendingWords = undefined;
+		this.pendingPipe = undefined;
+		if (piped) {
+			const jq = runJq(piped.jqArgs, piped.captured);
+			for (const parts of jq.lines) this.emit({ kind: 'out', text: parts.map((p) => p.text).join(''), parts });
+			jq.stderr.forEach((l) => this.err(l));
+		} else if (done.code === 0 && typed?.includes('--json') && !this.toldAboutJq) {
+			// An optional hint: jq is a separate tool, and the CLI's JSON stays compact.
+			this.toldAboutJq = true;
+			this.hint('# Tip: JSON is compact for scripts. To read it, pipe it into jq:');
+			this.hint('#   ' + typed.join(' ') + ' | jq');
+			this.jqSuggestion = typed.join(' ') + ' | jq';
+		}
 		if (done.connect) {
 			this.enterRemote(done.connect);
 		}
@@ -227,6 +257,10 @@ export class DemoSession {
 	}
 
 	private pendingWords: string[] | undefined;
+	private pendingPipe: { jqArgs: string[]; captured: string[] } | undefined;
+	private toldAboutJq = false;
+	/** The jq command the tip offered, kept as a chip. */
+	private jqSuggestion: string | null = null;
 
 	// ---- remote side ----
 
@@ -320,6 +354,7 @@ export class DemoSession {
 			return this.remote.shell.complete(word);
 		}
 		if (before.length === 0) return LOCAL_BUILTINS;
+		if (before.includes('|')) return before[before.length - 1] === '|' ? ['jq'] : [];
 		if (before[0] !== 'flint') return [];
 		const args = before.slice(1).filter((w) => !w.startsWith('-'));
 		if (word.startsWith('-')) return ALL_FLAGS;

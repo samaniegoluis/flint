@@ -81,6 +81,13 @@
 				p.className = 'cli-demo__p';
 				p.textContent = line.prompt ?? '';
 				row.append(p, document.createTextNode(line.text));
+			} else if (line.parts) {
+				for (const part of line.parts) {
+					const span = document.createElement('span');
+					if (part.cls) span.className = 'cli-demo__jq-' + part.cls;
+					span.textContent = part.text;
+					row.append(span);
+				}
 			} else if (line.href) {
 				const a = document.createElement('a');
 				a.href = line.href;
@@ -387,6 +394,16 @@
 	}
 	.cli-demo__row--note a {
 		text-decoration: underline;
+	}
+	/* jq's colours: keys blue, strings green, null dim. */
+	.cli-demo__jq-key {
+		color: var(--flint-term-alias);
+	}
+	.cli-demo__jq-str {
+		color: var(--flint-term-ok);
+	}
+	.cli-demo__jq-null {
+		color: var(--flint-term-dim);
 	}
 	.cli-demo__p,
 	.cli-demo__prompt {

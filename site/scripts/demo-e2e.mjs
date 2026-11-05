@@ -115,6 +115,9 @@ try {
 		check(all.includes('"alias":"my-server"'), 'desktop: the added host is in --json');
 		await page.keyboard.press('ArrowUp');
 		check((await page.locator('#cli-demo-input').inputValue()) === 'flint host list --json', 'desktop: ↑ recalls the last command');
+		check(all.includes('#   flint host list --json | jq'), 'desktop: --json offers jq as a tip');
+		await page.locator('.cli-demo__chip', { hasText: '| jq' }).click();
+		check((await page.locator('.cli-demo__jq-key').count()) > 0, 'desktop: the jq chip runs and colours the JSON');
 		check(
 			await page.locator('[data-screen]').evaluate((el) => el.scrollWidth <= el.clientWidth),
 			'desktop: long lines (the --json output) wrap; no horizontal scroll',

@@ -97,7 +97,7 @@
 		}
 	],
 	"done": [
-		"# That's the tour. Connect to the server you added, try --json on any command,",
+		"# That's the tour. Connect to the server you added, try --json (and | jq) on any command,",
 		"# or switch vaults with `flint vault use Work`. Type `tour` to start again."
 	]
 }

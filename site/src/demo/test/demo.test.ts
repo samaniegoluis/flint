@@ -9,6 +9,7 @@ import seed from '../data/seed-vault.json' with { type: 'json' };
 import { tokenize } from '../lib/args.ts';
 import { COMMANDS, USAGE, runFlint, type Outcome } from '../lib/cli.ts';
 import { ERROR_CODES } from '../lib/errors.ts';
+import { runJq } from '../lib/jq.ts';
 import { DemoSession, TOUR_STEPS, type Line } from '../lib/session.ts';
 import { worldFromSeed, type World } from '../lib/vault.ts';
 
@@ -254,7 +255,12 @@ test('the shell tokenizer refuses pipes and keeps quotes', () => {
 	assert.deepEqual(tokenize(`flint host add a --notes "two words" --label 'x y'`), {
 		words: ['flint', 'host', 'add', 'a', '--notes', 'two words', '--label', 'x y'],
 	});
-	assert.ok('error' in tokenize('flint host list | grep db'));
+	assert.deepEqual(tokenize('flint host list --json | jq -r .[].alias'), {
+		words: ['flint', 'host', 'list', '--json'],
+		pipe: ['jq', '-r', '.[].alias'],
+	});
+	assert.ok('error' in tokenize('flint host list | jq | jq'));
+	assert.ok('error' in tokenize('flint host list > out.txt'));
 });
 
 test('the guide always says what to do, with the exact command', () => {
@@ -277,4 +283,45 @@ test('the guide always says what to do, with the exact command', () => {
 	s.submit('exit');
 	s.stopTour();
 	assert.equal(s.guide().command, 'flint help', 'with the tour off, the guide still points somewhere');
+});
+
+test('jq formats, picks fields and refuses what the demo lacks', () => {
+	const text = (r: ReturnType<typeof runJq>) => r.lines.map((l) => l.map((p) => p.text).join(''));
+	const input = ['[{"alias":"db","port":22,"tags":["pg"],"jump":null}]'];
+	assert.deepEqual(text(runJq([], input)), [
+		'[',
+		'  {',
+		'    "alias": "db",',
+		'    "port": 22,',
+		'    "tags": [',
+		'      "pg"',
+		'    ],',
+		'    "jump": null',
+		'  }',
+		']',
+	]);
+	assert.equal(runJq(['.'], input).lines[2][1].cls, 'key');
+	assert.deepEqual(text(runJq(['-r', '.[].alias'], input)), ['db']);
+	assert.deepEqual(text(runJq(['.[].alias'], input)), ['"db"']);
+	assert.deepEqual(text(runJq(['length'], input)), ['1']);
+	assert.deepEqual(text(runJq(['-c', '.[0].tags'], input)), ['["pg"]']);
+	assert.equal(runJq(['map(.alias)'], input).code, 3);
+	assert.equal(runJq(['.'], ['ALIAS  TARGET']).code, 2);
+});
+
+test('the session pipes flint into jq and offers it once as a tip', () => {
+	const { s, lines, text } = session();
+	s.stopTour();
+	s.submit('flint host list --json');
+	assert.ok(text().includes('#   flint host list --json | jq'), 'the tip names the exact command');
+	assert.ok(s.chips().includes('flint host list --json | jq'));
+	s.submit('flint host show db --json');
+	assert.equal(text().filter((t) => t.startsWith('# Tip: JSON')).length, 1, 'the tip shows once');
+	s.submit('flint host list --json | jq -r .[].alias');
+	assert.deepEqual(text().slice(-4), ['bastion', 'db', 'nas', 'web-01']);
+	s.submit('flint host show db --json | jq');
+	assert.ok(lines.some((l) => l.parts?.some((p) => p.cls === 'key' && p.text === '"alias"')));
+	s.submit('flint host list | grep db');
+	assert.ok(text().includes('zsh: command not found: grep'));
+	assert.equal(s.complete('flint host list --json | j'), 'flint host list --json | jq ');
 });
