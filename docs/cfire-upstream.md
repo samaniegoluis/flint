@@ -32,18 +32,26 @@ The first entries below came from reading cfire at commit `feat(webui): add ext:
 - **Workaround:** none. Windows is out of the MVP.
 - **Ideal:** a WebView2 backend with the same `webui.App` API.
 
-### CF-002 · bug · `suspected`: `App.emit()` retains every payload forever
+### CF-002 · bug · `confirmed`: `App.emit()` retains every payload forever
 - **Needed:** a terminal emits thousands of events per minute for hours.
 - **Source:** `runtime/core/webui.hpp`, `emit()` (~line 817). Every payload is pushed into
   `state_->emitted_history[event]` with no bound, and `set_state()` does the same. This is
   useful for `emitted_events_count` in tests, but it is unbounded memory growth in a running
   app.
+- **Confirmed (M01):** at `3963814`, `emit()` pushes every payload into
+  `emitted_history`, and `eval_js()` pushes every script into `eval_history`. Neither is
+  bounded. The spike streams a terminal through `emit`, so a long session grows both
+  forever.
 - **Ideal:** record history only in test mode, or keep a bounded ring buffer.
 
-### CF-003 · improvement · `suspected`: high-throughput / binary event channel
+### CF-003 · improvement · `confirmed`: high-throughput / binary event channel
 - **Needed:** terminal output is raw bytes at high rates.
 - **Source:** `emit()` JSON-stringifies the payload and calls `eval_js(...)` once per event.
   Bytes must be base64 or escaped strings, and each event is a separate JS evaluation.
+- **Confirmed (M01):** the PTY spike (`spike/pty-webui`) has to base64-encode each chunk
+  (`src/adapters/uievents/webui_sink.cf`), because PTY output is not guaranteed to be
+  valid UTF-8 inside a JSON string. Each chunk is one `evaluateJavaScript` call.
+  Throughput has not been measured yet.
 - **Ideal:** a binary streaming channel to the page (custom scheme, `postMessage` with
   `ArrayBuffer`, or a local websocket), plus optional batching.
 
@@ -168,8 +176,14 @@ The entries below were found while building milestone 01 against cfire `3963814`
 - **Workaround:** Flint keeps every top-level name unique across the whole program
   (`open_cipher_db`, `ssh_dial`, `new_sodium`), and refers to another package's enum
   variants unqualified (`KdfCost::Interactive`).
-- **Ideal:** one C++ namespace per package. This matters a lot for a hexagonal layout,
-  where two adapters naturally both have `open`, `close` and `new`.
+- **It also hits methods:** a user method `fn (mut self: SshConn) close()` lowers to a
+  free function `cfire_method_close(SshConn&)`. Every other `.close()` call in the
+  program then resolves to it, including `defer app.close()` on a `webui.App` and
+  `ch.close()` on a `sync.Channel`, and fails with `no matching function for call to
+  'cfire_method_close'`. Flint names these methods `disconnect` and `close_db`.
+- **Ideal:** one C++ namespace per package, and stdlib method calls that never route to
+  user methods. This matters a lot for a hexagonal layout, where two adapters naturally
+  both have `open`, `close` and `new`.
 
 ### CF-018 · improvement · `confirmed`: the `cfire test` fd-leak canary has no opt-out
 - **Repro:** a test whose first call into libsodium runs `sodium_init()`. libsodium keeps
@@ -177,6 +191,10 @@ The entries below were found while building milestone 01 against cfire `3963814`
   `test leaked 1 open file descriptor(s)`.
 - **Workaround:** `src/adapters/crypto/sodium.cf` initialises libsodium in a global
   (`var SODIUM_READY = init_sodium()`), before any test runs.
+- **Also:** the canary is skipped only when the test body itself contains the identifier
+  `run_webview_test` (`stmts_reference_ident` in `src/codegen.hpp`). A test that runs the
+  WebView through a helper fails on WebKit's fds. `spike/pty-webui/spike_test.cf` adds a
+  dead `if false { … run_webview_test … }` to get past it.
 - **Ideal:** a per-test opt-out (`test "x" @allow_fd_growth { … }`) or a documented
   process-start hook.
 
@@ -239,3 +257,46 @@ The entries below were found while building milestone 01 against cfire `3963814`
   `expected 'IDENT', got ','`. The multi-line form with trailing commas fails the same way.
 - **Workaround:** one field per line, no commas.
 - **Ideal:** accept commas, or fix the reference sheet.
+
+### CF-026 · missing · `confirmed`: concurrency primitives beyond `async.scope` and channels
+- **Needed:** the GUI reads a PTY on a worker thread while keystrokes arrive on the UI
+  thread. libssh requires calls on one session to be serialised.
+- **Found:**
+  - There is no mutex type.
+  - `Channel` has no `try_recv`, `len` or `select`. `recv()` returns `T?`, not `T!` as
+    documented.
+  - `context.with_timeout` starts one OS thread per call, and `recv_ctx` registers a
+    callback on the context on every call, so neither works inside a polling loop.
+  - `scope.spawn || { … }` captures by `[=]`, so every captured value is `const` inside the
+    task. You have to write `mut copy := captured`.
+- **Workaround:** `SshConn` holds a `shared[cpp::std::mutex]` that every method locks
+  (`src/adapters/ssh/libssh.cf`).
+- **Ideal:** `sync.Mutex[T]` (a lock that owns its data), `try_recv`, and a `select` over
+  channels and contexts.
+
+### CF-027 · bug · `confirmed`: a `bind` closure cannot return both `error(…)` and a value
+- **Repro:** `app.bind[Req]("x") |req| { if req.n < 0 { return error("neg") } return "ok" }`
+  → clang `'auto' in return type deduced as 'std::string' here but deduced as
+  'unexpected<cfire::Error>' in earlier return statement`. `try` inside the closure fails
+  the same way. Example `17-webui-studio` uses this pattern too.
+- **Workaround:** handlers return a `{ ok, detail }` struct (`spike/pty-webui/main.cf`).
+- **Ideal:** infer `T!` for closures that return `error(…)`, so the JS promise rejects.
+
+### CF-028 · bug · `confirmed`: a placeholder `/index.html` shadows `serve_dir`
+- **Repro:** the `webui` template (`app.serve_dir("./ui")` with a real `ui/index.html`)
+  shows "cfire WebUI Ready" instead of the page.
+  `app.resolve_asset_content("/index.html")` returns the 215-byte placeholder.
+- **Source:** the `AppState()` constructor puts a default `/index.html` into
+  `embedded_assets`, and `resolve_asset` checks `embedded_assets` before `serve_dirs`.
+- **Workaround:** read the page and `set_html()` it; other assets still come from
+  `serve_dir` (`spike/pty-webui/main.cf`).
+- **Ideal:** fall back to the placeholder only when no served directory has the file.
+
+### CF-029 · bug · `confirmed`: `run_webview_test` is a no-op that returns `true` on Linux
+- **Source:** `runtime/core/webui.hpp`, `run_webview_test`: the body is
+  `#if defined(__APPLE__) …`, and every other platform runs `return true;`. A headless
+  WebView test therefore passes on Linux without loading the page.
+- **Workaround:** on Linux, Flint's milestone-01 check builds the spike and runs the
+  non-WebView tests. The WebView round-trip is verified on macOS only.
+- **Ideal:** a WebKitGTK implementation (it can run under `xvfb-run`), or fail with "not
+  supported on this platform" instead of passing.

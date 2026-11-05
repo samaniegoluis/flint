@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Flint spike: SSH PTY</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; background: #0e1116; color: #d6dae0; font: 13px -apple-system, system-ui, sans-serif; }
+    form { display: flex; gap: 6px; padding: 8px; background: #161a21; border-bottom: 1px solid #262b34; }
+    input { background: #0e1116; color: inherit; border: 1px solid #2c323c; border-radius: 4px; padding: 4px 6px; }
+    button { background: #e4572e; color: #fff; border: 0; border-radius: 4px; padding: 4px 12px; cursor: pointer; }
+    #status { padding: 4px 8px; color: #8b93a0; }
+    #term { padding: 6px; }
+  </style>
+</head>
+<body>
+  <form id="connect">
+    <input id="host" value="127.0.0.1" size="12" aria-label="Host">
+    <input id="port" value="22" size="5" aria-label="Port">
+    <input id="user" placeholder="user" size="10" aria-label="User">
+    <input id="key" placeholder="/path/to/private_key" size="34" aria-label="Private key path">
+    <button>Connect</button>
+  </form>
+  <div id="status">Not connected.</div>
+  <div id="term"></div>
+  <script>
+    window.onerror = (m, src, line) => { window.backend && window.backend.log({ data: "error: " + m + " @" + src + ":" + line }); };
+  </script>
+  <script src="vendor/xterm.js"></script>
+  <script>
+    const COLS = 100, ROWS = 30, MARKER = "flint-42-webui";
+    const term = new Terminal({ cols: COLS, rows: ROWS, fontSize: 13, theme: { background: "#0e1116" } });
+    term.open(document.getElementById("term"));
+    const status = (t) => { document.getElementById("status").textContent = t; };
+    let seen = "";
+
+    function decode(b64) {
+      const bin = atob(b64);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+
+    window.runtime.EventsOn("terminal:output", (ev) => {
+      const bytes = decode(ev.data);
+      term.write(bytes);
+      seen += new TextDecoder().decode(bytes);
+    });
+    window.runtime.EventsOn("terminal:closed", (ev) => status("Closed: " + ev.reason));
+    term.onData((data) => window.backend.input({ data }));
+
+    async function connect(host, port, user, key_path) {
+      status("Connecting…");
+      const res = await window.backend.connect({ host, port, user, key_path, cols: COLS, rows: ROWS });
+      if (!res.ok) throw new Error(res.detail);
+      status("Connected (" + res.detail + ").");
+      term.focus();
+    }
+
+    document.getElementById("connect").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const v = (id) => document.getElementById(id).value;
+      connect(v("host"), parseInt(v("port"), 10), v("user"), v("key")).catch((err) => status("Error: " + err));
+    });
+
+    // Self-test: connect from env config, type a command, wait for its output, report.
+    (async () => {
+      window.backend.log({ data: "page loaded, Terminal=" + typeof Terminal });
+      const cfg = await window.backend.spike_config();
+      window.backend.log({ data: "config " + JSON.stringify(cfg) });
+      if (!cfg.selftest) return;
+      const report = async (ok, detail) => {
+        await window.backend.report({ ok, detail });
+        window.runtime.Quit();
+      };
+      try {
+        await connect(cfg.host, cfg.port, cfg.user, cfg.key_path);
+        window.backend.log({ data: "connected" });
+        await window.backend.input({ data: "echo flint-$((40+2))-webui\r" });
+        const start = Date.now();
+        const timer = setInterval(() => {
+          if (seen.includes(MARKER)) { clearInterval(timer); report(true, ""); }
+          else if (Date.now() - start > 25000) { clearInterval(timer); report(false, "marker not seen"); }
+        }, 100);
+      } catch (err) {
+        window.backend.log({ data: "caught " + err });
+        report(false, String(err));
+      }
+    })();
+  </script>
+</body>
+</html>

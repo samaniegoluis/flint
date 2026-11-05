@@ -2,14 +2,22 @@ package ssh
 
 // libssh-backed SSH transport: dial, public-key auth, PTY shell and exec channel.
 // Every blocking network call is bounded by an explicit timeout (Principle 8).
+//
+// libssh allows one session to be used from several threads only if calls are
+// serialised, so every method takes the connection's mutex. A GUI reads on a worker
+// thread and writes keystrokes from the UI thread.
 
 // CFIRE-UPSTREAM: CF-005
 import cpp "libssh/libssh.h" @pkg("libssh")
+// CFIRE-UPSTREAM: CF-026
+import cpp "mutex"
 
 type SshConn struct {
     // Owned by this value; released by close().
     session: *mut cpp::ssh_session_struct
     channel: *mut cpp::ssh_channel_struct
+    // Shared by every copy of this value. cfire has no mutex type (CF-026).
+    lock: shared[cpp::std::mutex]
 }
 
 // Helpers are methods rather than functions taking the pointer: a `*mut T`
@@ -18,6 +26,7 @@ fn (self: SshConn) last_error() -> str {
     mut msg := ""
     // CFIRE-UPSTREAM: CF-005
     cpp {
+        std::lock_guard<std::mutex> guard(*self.lock);
         msg = self.session ? ssh_get_error(self.session) : "out of memory";
     }
     return msg
@@ -51,9 +60,13 @@ fn ssh_dial(host: str, port: i32, user: str, timeout_secs: i64) -> SshConn! {
         }
     }
     mut conn := SshConn{ session: session }
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        conn.lock = std::make_shared<std::mutex>();
+    }
     if rc != 0 {
         msg := conn.last_error()
-        conn.close()
+        conn.disconnect()
         return error("ssh: connect to {host}:{port} failed: {msg}")
     }
     return conn
@@ -65,6 +78,7 @@ fn (self: SshConn) host_key_sha256() -> str! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005
     cpp {
+        std::lock_guard<std::mutex> guard(*self.lock);
         ssh_key key = nullptr;
         rc = ssh_get_server_publickey(self.session, &key);
         if (rc == SSH_OK) {
@@ -91,6 +105,7 @@ fn (self: SshConn) auth_key_content(private_key: str, passphrase: str) -> void! 
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005
     cpp {
+        std::lock_guard<std::mutex> guard(*self.lock);
         ssh_key key = nullptr;
         const char* pass = passphrase.empty() ? nullptr : passphrase.c_str();
         rc = ssh_pki_import_privkey_base64(private_key.c_str(), pass, nullptr, nullptr, &key);
@@ -115,6 +130,7 @@ fn (mut self: SshConn) open_pty_shell(term: str, cols: i32, rows: i32) -> void! 
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005
     cpp {
+        std::lock_guard<std::mutex> guard(*self.lock);
         ssh_channel ch = ssh_channel_new(self.session);
         channel = ch;
         rc = ch ? ssh_channel_open_session(ch) : -1;
@@ -132,6 +148,7 @@ fn (self: SshConn) write(data: str) -> void! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005
     cpp {
+        std::lock_guard<std::mutex> guard(*self.lock);
         auto ch = self.channel;
         rc = ch ? ssh_channel_write(ch, data.data(), static_cast<uint32_t>(data.size())) : -1;
     }
@@ -148,6 +165,7 @@ fn (self: SshConn) read(timeout_ms: i32) -> str! {
     mut eof := false
     // CFIRE-UPSTREAM: CF-005
     cpp {
+        std::lock_guard<std::mutex> guard(*self.lock);
         auto ch = self.channel;
         if (!ch) {
             n = -1;
@@ -172,6 +190,7 @@ fn (self: SshConn) resize(cols: i32, rows: i32) -> void! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005
     cpp {
+        std::lock_guard<std::mutex> guard(*self.lock);
         auto ch = self.channel;
         rc = ch ? ssh_channel_change_pty_size(ch, cols, rows) : -1;
     }
@@ -180,9 +199,12 @@ fn (self: SshConn) resize(cols: i32, rows: i32) -> void! {
     }
 }
 
-fn (mut self: SshConn) close() {
+// Not named `close`: packages share one C++ namespace, so a user method called
+// `close` captures every stdlib `.close()` call in the program (CF-017).
+fn (mut self: SshConn) disconnect() {
     // CFIRE-UPSTREAM: CF-005
     cpp {
+        std::lock_guard<std::mutex> guard(*self.lock);
         if (self.channel) {
             ssh_channel_close(self.channel);
             ssh_channel_free(self.channel);
@@ -190,6 +212,7 @@ fn (mut self: SshConn) close() {
     }
     // CFIRE-UPSTREAM: CF-005
     cpp {
+        std::lock_guard<std::mutex> guard(*self.lock);
         if (self.session) {
             ssh_disconnect(self.session);
             ssh_free(self.session);
@@ -198,6 +221,7 @@ fn (mut self: SshConn) close() {
     // Assigning `none` to a raw pointer lowers to std::nullopt (CF-019).
     // CFIRE-UPSTREAM: CF-019
     cpp {
+        std::lock_guard<std::mutex> guard(*self.lock);
         self.channel = nullptr;
         self.session = nullptr;
     }

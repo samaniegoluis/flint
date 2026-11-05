@@ -1,0 +1,22 @@
+package uievents
+
+import "ext:webui"
+import "../../ports"
+
+fn accepts_sink[E: EventSink](mut e: E) -> bool {
+    e.terminal_output("s1", "hi\u0001")
+    return true
+}
+
+test "WebuiEventSink satisfies EventSink and emits base64 chunks" {
+    mut app := webui.new_app("sink-test", 100, 100)
+    defer app.close()
+    mut sink := new_webui_event_sink(app)
+    assert(accepts_sink(mut sink))
+    assert_eq(app.emitted_events_count("terminal:output"), 1)
+    payload := app.last_emitted_payload("terminal:output")
+    assert(payload.contains("\"session\":\"s1\""))
+    assert(payload.contains("aGkB"))
+    sink.terminal_closed("s1", "eof")
+    assert(app.last_emitted_payload("terminal:closed").contains("eof"))
+}

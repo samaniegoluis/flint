@@ -53,7 +53,7 @@ fn open_cipher_db(path: str, key: []byte) -> CipherDb! {
     mut db := CipherDb{ handle: handle }
     if rc != 0 {
         msg := db.last_error()
-        db.close()
+        db.close_db()
         if rc == 26 {
             return error("vault: wrong key or not a vault file")
         }
@@ -62,7 +62,9 @@ fn open_cipher_db(path: str, key: []byte) -> CipherDb! {
     return db
 }
 
-fn (mut self: CipherDb) close() {
+// Not named `close`: packages share one C++ namespace, so a user method called
+// `close` captures every stdlib `.close()` call in the program (CF-017).
+fn (mut self: CipherDb) close_db() {
     // CFIRE-UPSTREAM: CF-007
     cpp {
         if (self.handle) sqlite3_close_v2(self.handle);

@@ -1,0 +1,10 @@
+package build
+
+import "core:build"
+
+// Throwaway milestone-01 proof: an SSH PTY rendered by xterm.js in a webui window.
+var Spike = build.Executable("flint-pty-spike", {
+    Entry:     "main.cf",
+    Subsystem: "gui",
+    OutDir:    "build",
+})

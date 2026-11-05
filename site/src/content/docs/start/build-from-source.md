@@ -57,8 +57,10 @@ flint 0.0.0-dev
 scripts/test.sh
 ```
 
-The script starts a throwaway `sshd` on `127.0.0.1:2222`, with its own host key, user key
-and config in a temporary directory, so the SSH tests can open a real PTY. It does not
+The script runs the suites in `src/` and `spike/`. It starts a throwaway `sshd` on
+`127.0.0.1:2222`, with its own host key, user key and config in a temporary directory, so
+the SSH tests can open a real PTY. On macOS the spike test also opens the PTY in a hidden
+WebView and checks that the output reaches the terminal. It does not
 touch your system `sshd` or `~/.ssh`. To use another port, set `FLINT_TEST_SSH_PORT`.
 
 To run only the tests that need no network, call `cfire test src`. The SSH tests then

@@ -57,7 +57,7 @@ test "pty shell echoes a command over libssh" {
             break
         }
     }
-    conn.close()
+    conn.disconnect()
     assert(seen.contains("flint-42-spike"), "PTY output must contain the echoed marker")
     assert(seen.contains("30 100"), "the resized PTY must report 30 rows x 100 cols")
 }
@@ -71,7 +71,7 @@ test "auth with a wrong key is rejected" {
     mut conn := try ssh_dial("127.0.0.1", port, os.getenv("USER"), 5)
     bogus := "-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-key\n-----END OPENSSH PRIVATE KEY-----\n"
     assert(!conn.auth_key_content(bogus, "").has_value())
-    conn.close()
+    conn.disconnect()
 }
 
 test "SshConn satisfies the ShellSession port" {

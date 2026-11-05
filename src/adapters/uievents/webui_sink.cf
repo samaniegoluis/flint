@@ -1,0 +1,34 @@
+package uievents
+
+// EventSink over ext:webui: terminal bytes go to the page as events, out-of-band from
+// RPC results. Bytes are base64-encoded because emit() JSON-stringifies the payload and
+// the PTY stream is not guaranteed to be valid UTF-8 (CF-003).
+
+import "ext:webui"
+import "core:encoding/base64"
+
+type TerminalChunk struct {
+    session: str `json:"session"`
+    data: str `json:"data"`
+}
+
+type TerminalClosed struct {
+    session: str `json:"session"`
+    reason: str `json:"reason"`
+}
+
+type WebuiEventSink struct {
+    app: webui.App
+}
+
+fn new_webui_event_sink(app: webui.App) -> WebuiEventSink {
+    return WebuiEventSink{ app: app }
+}
+
+fn (mut self: WebuiEventSink) terminal_output(session_id: str, data: str) {
+    self.app.emit("terminal:output", TerminalChunk{ session: session_id, data: base64.encode_str(data) })
+}
+
+fn (mut self: WebuiEventSink) terminal_closed(session_id: str, reason: str) {
+    self.app.emit("terminal:closed", TerminalClosed{ session: session_id, reason: reason })
+}

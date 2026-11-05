@@ -4,21 +4,27 @@ package application
 
 import "../ports"
 
+type PumpResult struct {
+    bytes: i64
+    closed: bool
+}
+
 // Pumps a shell's output to an event sink until the channel closes or `max_reads`
-// polls (each up to `poll_ms`) are spent. Returns the number of bytes forwarded.
-// Streaming is out-of-band: bytes go through the sink, never as a return value.
-fn pump_shell_output[S: ShellSession, E: EventSink](mut shell: S, mut sink: E, session_id: str, poll_ms: i32, max_reads: i64) -> i64 {
+// polls (each up to `poll_ms`) are spent. Streaming is out-of-band: bytes go through
+// the sink, never as a return value. The result says how many bytes were forwarded
+// and whether the channel closed.
+fn pump_shell_output[S: ShellSession, E: EventSink](mut shell: S, mut sink: E, session_id: str, poll_ms: i32, max_reads: i64) -> PumpResult {
     mut total: i64 = 0
     for _ in 0..max_reads {
         chunk := shell.read(poll_ms) or err {
             // Error.message() is a string_view and does not convert to str (CF-023).
             sink.terminal_closed(session_id, "{err.message()}")
-            return total
+            return PumpResult{ bytes: total, closed: true }
         }
         if chunk.len() > 0 {
             sink.terminal_output(session_id, chunk)
             total += i64(chunk.len())
         }
     }
-    return total
+    return PumpResult{ bytes: total, closed: false }
 }

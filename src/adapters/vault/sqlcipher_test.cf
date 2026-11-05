@@ -26,7 +26,7 @@ test "argon2id key opens a sqlcipher file that leaks no plaintext" {
     assert(ver.len() > 0, "SQLCipher must report a cipher version")
     try db.exec("CREATE TABLE hosts (label TEXT, hostname TEXT, user TEXT);")
     try db.exec_text("INSERT INTO hosts (label, hostname, user) VALUES ('flint-label-marker', ?1, 'flint-user-marker');", "db01.internal.example.org")
-    db.close()
+    db.close_db()
 
     // read_text returns the raw file bytes in a str, which gives us `contains`.
     // (fs.read_all infers std::vector<std::byte>, not []byte: CF-021.)
@@ -43,7 +43,7 @@ test "argon2id key opens a sqlcipher file that leaks no plaintext" {
 
     mut again := try open_cipher_db(path, key)
     host := try again.query_text("SELECT hostname FROM hosts;")
-    again.close()
+    again.close_db()
     assert_eq(host, "db01.internal.example.org")
     try fs.remove(fs.dirname(path))
 }

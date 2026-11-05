@@ -102,3 +102,4 @@ What Tether already does and Flint must not lose.
 | Signed macOS `.app`, Linux AppImage/tarball, Homebrew tap | `next` | |
 | Bundle libssh, libsodium, SQLCipher and libcrypto into the `.app` (rpath fix-up) or link them statically | `next` | Today they are dynamic system packages (D-015); a release cannot rely on Homebrew being installed |
 | Public landing + docs site deployed | `next` | The site itself is built from milestone 01 |
+| Docs site and landing adopt Flint's visual identity (palette, type, logo) from the Claude Design screens (D-011) | `next` | Milestone 01 ships the stock Starlight theme on purpose |

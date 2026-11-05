@@ -1,0 +1,189 @@
+package main
+
+// THROWAWAY SPIKE (milestone 01). Proves that an SSH PTY opened with libssh can be
+// streamed to xterm.js in an ext:webui window: connect over RPC, bytes out-of-band
+// through the EventSink port, keystrokes back over RPC. The real GUI is milestone 04.
+//
+//   cfire run                     # interactive: fill in host, port, user, key path
+//   FLINT_SPIKE_SELFTEST=1 ...    # see spike_test.cf / scripts/test.sh
+
+import "ext:webui"
+import "core:fs"
+import "core:os"
+import "core:sync"
+import "core:sync/context"
+import "../../src/adapters/ssh"
+import "../../src/adapters/uievents"
+import "../../src/application"
+
+type ConnectReq struct {
+    host: str `json:"host"`
+    port: i32 `json:"port"`
+    user: str `json:"user"`
+    key_path: str `json:"key_path"`
+    cols: i32 `json:"cols"`
+    rows: i32 `json:"rows"`
+}
+
+type InputReq struct {
+    data: str `json:"data"`
+}
+
+type ReportReq struct {
+    ok: bool `json:"ok"`
+    detail: str `json:"detail"`
+}
+
+type CallResult struct {
+    ok: bool `json:"ok"`
+    detail: str `json:"detail"`
+}
+
+type SpikeConfig struct {
+    selftest: bool `json:"selftest"`
+    host: str `json:"host"`
+    port: i32 `json:"port"`
+    user: str `json:"user"`
+    key_path: str `json:"key_path"`
+}
+
+var SESSION_ID: str = "spike-1"
+
+fn ui_dir() -> str {
+    if fs.exists("ui/index.html") {
+        return "./ui"
+    }
+    return "spike/pty-webui/ui"
+}
+
+fn config_from_env() -> SpikeConfig {
+    return SpikeConfig{
+        selftest: os.getenv("FLINT_SPIKE_SELFTEST") == "1",
+        host: "127.0.0.1",
+        port: parse_port(os.getenv("FLINT_TEST_SSH_PORT", "22")),
+        user: os.getenv("USER"),
+        key_path: os.getenv("FLINT_TEST_SSH_KEY"),
+    }
+}
+
+// core:str has no integer parser (CF-022).
+fn parse_port(text: str) -> i32 {
+    mut port: i32 = 0
+    for i in 0..text.len() {
+        d := i32(text[i]) - 48
+        if d < 0 || d > 9 {
+            return 22
+        }
+        port = port * 10 + d
+    }
+    if port <= 0 || port > 65535 {
+        return 22
+    }
+    return port
+}
+
+// Builds the window, runs it (or the headless WebView test when `headless_ms` > 0),
+// and returns the self-test verdict reported by the page ("pass", "fail: …" or "").
+fn run_spike(cfg: SpikeConfig, headless_ms: i32) -> str {
+    mut app := webui.new_app("Flint spike: SSH PTY", 960, 600)
+    defer app.close()
+    app.set_dark_mode(true)
+    app.serve_dir(ui_dir())
+    // The runtime embeds a placeholder /index.html that shadows serve_dir (CF-028), so
+    // the page itself is embedded explicitly.
+    page := fs.read_text(ui_dir() + "/index.html") or ""
+    app.set_html(page)
+
+    mut conns := sync.make_channel[SshConn]()
+    mut active := SshConn{}
+    mut connected := false
+
+    app.bind_action("spike_config") || {
+        return cfg
+    }
+
+    // Handlers return a result object: a bind closure cannot return both error(...) and
+    // a value (CF-027).
+    app.bind[ConnectReq]("connect") |req| {
+        if connected {
+            return CallResult{ ok: false, detail: "already connected" }
+        }
+        key_text := fs.read_text(req.key_path) or err {
+            return CallResult{ ok: false, detail: "cannot read the key file" }
+        }
+        mut conn := ssh_dial(req.host, req.port, req.user, 10) or err {
+            return CallResult{ ok: false, detail: "{err.message()}" }
+        }
+        ok_auth := conn.auth_key_content(key_text, "")
+        if !ok_auth.has_value() {
+            conn.disconnect()
+            return CallResult{ ok: false, detail: "authentication failed" }
+        }
+        ok_pty := conn.open_pty_shell("xterm-256color", req.cols, req.rows)
+        if !ok_pty.has_value() {
+            conn.disconnect()
+            return CallResult{ ok: false, detail: "cannot open a PTY" }
+        }
+        active = conn
+        connected = true
+        conns.send(conn)
+        return CallResult{ ok: true, detail: SESSION_ID }
+    }
+
+    app.bind[InputReq]("input") |req| {
+        if !connected {
+            return CallResult{ ok: false, detail: "not connected" }
+        }
+        if !active.write(req.data).has_value() {
+            return CallResult{ ok: false, detail: "write failed" }
+        }
+        return CallResult{ ok: true, detail: "" }
+    }
+
+    app.bind[InputReq]("log") |req| {
+        println("[page] {req.data}")
+        return true
+    }
+
+    app.bind[ReportReq]("report") |req| {
+        mut verdict := "fail: " + req.detail
+        if req.ok {
+            verdict = "pass"
+        }
+        app.set_state("selftest", verdict)
+        return true
+    }
+
+    (ctx, cancel) := context.with_cancel(context.background())
+    sink := new_webui_event_sink(app)
+
+    async.scope(workers: 1) |scope| {
+        scope.spawn || {
+            // spawn captures by const value; take mutable copies (both share state).
+            mut worker_sink := sink
+            mut conn := conns.recv_ctx(ctx) or err { return }
+            for !ctx.is_cancelled() {
+                r := pump_shell_output(mut conn, mut worker_sink, SESSION_ID, 30, 1)
+                if r.closed {
+                    break
+                }
+            }
+            conn.disconnect()
+        }
+        if headless_ms > 0 {
+            _ := app.run_webview_test(headless_ms) or false
+        } else {
+            app.run()
+        }
+        cancel("window closed")
+        conns.close()
+    }
+    return app.get_state("selftest")
+}
+
+fn main() {
+    verdict := run_spike(config_from_env(), 0)
+    if verdict.len() > 0 {
+        println("selftest: {verdict}")
+    }
+}
