@@ -1,0 +1,40 @@
+package uievents
+
+import "core:os"
+import "../../ports"
+import "../../domain"
+
+fn accepts_clipboard[B: Clipboard](mut b: B) -> bool {
+    return true
+}
+
+test "OsClipboard satisfies the Clipboard port" {
+    mut c := new_os_clipboard()
+    assert(accepts_clipboard(mut c))
+}
+
+// macOS: a private named pasteboard, so the test never touches the real clipboard.
+// Linux: GTK's clipboard needs a display; without one the copy fails with `io`.
+test "a copied secret is concealed, and cleared only if nothing was copied since" {
+    board := "net.flint.test.clipboard.{os.getpid()}"
+    mut c := OsClipboard{ board: board }
+    r := c.clipboard_copy_secret("s3cret-value", 0)
+    if !r.has_value() {
+        assert_eq(error_code_of("{r.error().message()}"), "io")
+        println("SKIP: no clipboard here (no display)")
+        return
+    }
+    assert_eq(clipboard_read_text(board), "s3cret-value")
+    assert(clipboard_is_concealed(board), "clipboard managers must be told to skip it")
+    count := clipboard_change_count(board)
+    assert(clipboard_clear_if_unchanged(board, count))
+    assert_eq(clipboard_read_text(board), "")
+
+    // Something else copied in between: the clear leaves it alone.
+    try c.clipboard_copy_secret("second", 0)
+    stale := clipboard_change_count(board)
+    try c.clipboard_copy_secret("newer copy", 0)
+    assert(!clipboard_clear_if_unchanged(board, stale))
+    assert_eq(clipboard_read_text(board), "newer copy")
+    clipboard_release(board)
+}

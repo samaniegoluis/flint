@@ -137,12 +137,12 @@ fn (mut self: SshLink) link_auth_agent() -> void! {
     try auth_result(rc, "agent", conn)
 }
 
-fn (mut self: SshLink) link_shell_open(term: str, cols: i32, rows: i32) -> void! {
+fn (mut self: SshLink) link_shell_open(term: str, cols: i32, rows: i32, command: str) -> void! {
     if self.hops.len() == 0 {
         return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
     }
     mut conn := self.hops[self.hops.len() - 1]
-    opened := conn.open_pty_shell(term, cols, rows)
+    opened := conn.open_pty_shell(term, cols, rows, command)
     if !opened.has_value() {
         return error(coded(ERR_NETWORK, "{opened.error().message()}"))
     }

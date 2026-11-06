@@ -56,6 +56,10 @@ export interface HostView {
   credential: string;
   key: string;
   has_password: boolean;
+  /** Run on every interactive session instead of a bare shell (D-031); '' for none. */
+  command: string;
+  /** A login shell follows when `command` exits. */
+  keep_shell: boolean;
 }
 
 export interface KeyView {
@@ -117,6 +121,8 @@ export interface HostPatch {
   credential: string; set_credential: boolean;
   key: string; set_key: boolean;
   password: string; set_password: boolean;
+  command: string; set_command: boolean;
+  keep_shell: boolean; set_keep_shell: boolean;
 }
 
 export interface CredPatch {
@@ -150,4 +156,15 @@ export interface SessionPromptEvent {
   user: string;
   alias: string;
   host_key: HostKeyPayload;
+}
+
+// The end of a host test (host_test): `code` is '' when the connection works.
+export interface HostTestEvent {
+  session: string;
+  code: string;
+  message: string;
+  host: string;
+  target: string;
+  hops: number;
+  duration_ms: number;
 }

@@ -10,13 +10,18 @@ package application
 import "../domain"
 import "../ports"
 
+// `run_initial_command` false starts a plain shell even when the host has an initial
+// command (`connect --no-command`). `ask_password` false never asks for a password
+// when the stored methods fail (a connection test reports the failure instead).
 type ConnectOptions struct {
     timeout_secs: i64
     accept_new_host_key: bool
+    run_initial_command: bool
+    ask_password: bool
 }
 
 fn default_connect_options() -> ConnectOptions {
-    return ConnectOptions{ timeout_secs: SSH_CONNECT_TIMEOUT_SECS, accept_new_host_key: false }
+    return ConnectOptions{ timeout_secs: SSH_CONNECT_TIMEOUT_SECS, accept_new_host_key: false, run_initial_command: true, ask_password: true }
 }
 
 fn key_index_by_id(keys: []SshKey, id: str) -> i64 {
@@ -206,7 +211,7 @@ fn try_auth_step[C: Crypto, T: SshTransport](crypto: C, session: VaultSession, c
 // Tries each auth step until one is accepted. A rejected step moves on; a network
 // failure stops at once. When every step fails and there is a terminal, the
 // password is asked for once.
-fn authenticate_hop[C: Crypto, T: SshTransport, P: Prompter](crypto: C, session: VaultSession, cat: Catalog, mut link: T, prompter: P, h: Host, user: str) -> void! {
+fn authenticate_hop[C: Crypto, T: SshTransport, P: Prompter](crypto: C, session: VaultSession, cat: Catalog, mut link: T, prompter: P, h: Host, user: str, ask_password: bool) -> void! {
     mut tried: []str = []
     for s in auth_steps(cat, h) {
         r := try_auth_step(crypto, session, cat, mut link, s)
@@ -219,7 +224,7 @@ fn authenticate_hop[C: Crypto, T: SshTransport, P: Prompter](crypto: C, session:
         }
         tried.push(step_label(cat, s))
     }
-    if prompter.prompt_available() {
+    if ask_password && prompter.prompt_available() {
         typed := try prompter.prompt_password(user, h.alias)
         if typed.len() > 0 {
             r := link.link_auth_password(typed)
@@ -241,11 +246,18 @@ fn authenticate_hop[C: Crypto, T: SshTransport, P: Prompter](crypto: C, session:
 // Dials every hop of `alias`, verifying and authenticating each one. On failure the
 // link is hung up. Returns the target host.
 fn open_link[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, alias: str, opts: ConnectOptions) -> Host! {
+    cat := try load_catalog(store)
+    target := try require_host(cat.hosts, alias)
+    _ := try open_link_in(crypto, mut store, session, cat, mut link, prompter, target, opts)
+    return target
+}
+
+// Dials every hop of `target`, a host of `cat` (which may hold an unsaved draft).
+// Returns the number of hops.
+fn open_link_in[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, mut store: S, session: VaultSession, cat: Catalog, mut link: T, prompter: P, target: Host, opts: ConnectOptions) -> i64! {
     if opts.timeout_secs <= 0 {
         return error(coded(ERR_INVALID, "the connect timeout must be positive"))
     }
-    cat := try load_catalog(store)
-    target := try require_host(cat.hosts, alias)
     chain := try jump_chain(cat, target)
     // Resolve every user before dialling anything.
     mut users: []str = []
@@ -259,7 +271,7 @@ fn open_link[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, 
             return error("{done.error().message()}")
         }
     }
-    return target
+    return i64(chain.len())
 }
 
 fn open_hop[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, mut store: S, session: VaultSession, cat: Catalog, mut link: T, prompter: P, hop: Host, user: str, opts: ConnectOptions) -> void! {
@@ -267,17 +279,18 @@ fn open_hop[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, m
     try link.link_dial(hop.hostname, hop.port, user, opts.timeout_secs, algos)
     key := try link.link_server_key()
     _ := try verify_host_key(mut store, prompter, hop, key, opts)
-    try authenticate_hop(crypto, session, cat, mut link, prompter, hop, user)
+    try authenticate_hop(crypto, session, cat, mut link, prompter, hop, user, opts.ask_password)
 }
 
-// Runs an interactive shell until the remote side closes it or local input ends.
-// Returns the remote exit status (-1 when the shell died by a signal).
-fn run_shell[T: SshTransport, M: Terminal](mut link: T, mut term: M, term_name: str) -> i64! {
+// Runs an interactive shell (or `command` on the PTY, "" for the login shell) until
+// the remote side closes it or local input ends. Returns the remote exit status (-1
+// when the shell died by a signal).
+fn run_shell[T: SshTransport, M: Terminal](mut link: T, mut term: M, term_name: str, command: str) -> i64! {
     mut size := term.term_size()
     if !size.is_valid() {
         size = default_terminal_size()
     }
-    try link.link_shell_open(term_name, size.cols, size.rows)
+    try link.link_shell_open(term_name, size.cols, size.rows, command)
     try term.term_raw_enter()
     mut code: i64 = 0
     mut failure := ""
@@ -378,12 +391,80 @@ fn exec_on_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, O: ExecS
     return res
 }
 
-// Connects to `alias` and runs an interactive shell on the local terminal.
+// The PTY command of a session on `h`: its initial command (D-031), unless the
+// options turn it off.
+fn session_command(h: Host, opts: ConnectOptions) -> str {
+    if !opts.run_initial_command {
+        return ""
+    }
+    return initial_command_line(h.initial_command, h.keep_shell)
+}
+
+// Connects to `alias` and runs an interactive shell on the local terminal, or the
+// host's initial command.
 fn connect_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Terminal](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut term: M, alias: str, term_name: str, opts: ConnectOptions) -> i64! {
-    _ := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
-    code := run_shell(mut link, mut term, term_name)
+    target := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
+    code := run_shell(mut link, mut term, term_name, session_command(target, opts))
     link.link_hangup()
     return code
+}
+
+// ---- Testing a host ---------------------------------------------------------------
+
+// Connects to `target` through its jump hosts, verifying every host key and
+// authenticating every hop, then hangs up. No shell, no command, no password prompt:
+// a method that fails is reported (D-019 codes). A new host key is recorded as on a
+// real connect, once the person trusts it.
+fn test_link[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: Clock](crypto: C, mut store: S, session: VaultSession, cat: Catalog, mut link: T, prompter: P, mut clock: K, target: Host, opts: ConnectOptions) -> HostTestView! {
+    mut o := opts
+    o.ask_password = false
+    start := clock.clock_now_ms()
+    hops := try open_link_in(crypto, mut store, session, cat, mut link, prompter, target, o)
+    link.link_hangup()
+    mut t := target.hostname
+    user := auth_user(cat, target) or ""
+    if user.len() > 0 {
+        t = user + "@" + t
+    }
+    if target.port != 22 {
+        t = t + ":{target.port}"
+    }
+    return HostTestView{ host: target.alias, target: t, hops: hops, duration_ms: clock.clock_now_ms() - start }
+}
+
+// `flint host test <alias>`: tests a saved host.
+fn test_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut clock: K, alias: str, opts: ConnectOptions) -> HostTestView! {
+    cat := try load_catalog(store)
+    target := try require_host(cat.hosts, alias)
+    return test_link(crypto, mut store, session, cat, mut link, prompter, mut clock, target, opts)
+}
+
+// Tests the host editor's unsaved form: `p` applied to the host `alias` ("" for a new
+// host), without writing it. The folder is ignored (it never affects a connection
+// and setting it could create groups). A new host has no id yet, so a key trusted
+// during the test is recorded with no host; add_host links it once the host is
+// saved.
+fn test_host_draft[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut clock: K, alias: str, p: HostPatch, opts: ConnectOptions) -> HostTestView! {
+    cat := try load_catalog(store)
+    mut base := Host{ id: "", alias: "", label: "", hostname: "", port: 22, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true }
+    if alias.len() > 0 {
+        base = try require_host(cat.hosts, alias)
+    }
+    if !p.set_hostname && base.hostname.len() == 0 {
+        return error(coded(ERR_USAGE, "a host needs a hostname to be tested"))
+    }
+    mut q := p
+    q.set_group = false
+    draft := try apply_host_patch(crypto, mut store, session, cat, base, q)
+    mut hosts: []Host = []
+    for h in cat.hosts {
+        if h.id != draft.id {
+            hosts.push(h)
+        }
+    }
+    hosts.push(draft)
+    with_draft := Catalog{ groups: cat.groups, hosts: hosts, keys: cat.keys, creds: cat.creds }
+    return test_link(crypto, mut store, session, with_draft, mut link, prompter, mut clock, draft, opts)
 }
 
 // ---- Known hosts -----------------------------------------------------------------

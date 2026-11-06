@@ -83,6 +83,13 @@ export const api = {
   credEdit: (target: string, p: CredPatch) => call<CredView>('cred_edit', { ...p, target }),
   credRm: (name: string) => call<CredView>('cred_rm', { name }),
   knownHostRm: (name: string) => call<KnownHostView>('known_host_rm', { name }),
+  /** Tests the editor's unsaved form; the result arrives as a "host:test" event. */
+  hostTest: (session: string, target: string, p: HostPatch) =>
+    call('host_test', { ...p, session, target, accept_new_host_key: false }),
+  /** The one call that returns a secret (D-029). Keep the value out of logs and state that outlives the field. */
+  secretReveal: (kind: 'host' | 'credential', name: string) => call<{ value: string }>('secret_reveal', { kind, name }),
+  /** The core puts the password on the clipboard and clears it after 30 s. */
+  secretCopy: (kind: 'host' | 'credential', name: string) => call('secret_copy', { kind, name }),
 
   sessionOpen: (session: string, alias: string, cols: number, rows: number) =>
     call('session_open', { session, alias, cols, rows, accept_new_host_key: false }),
@@ -99,7 +106,7 @@ export function emptyHostPatch(): HostPatch {
     port: 22, set_port: false, user: '', set_user: false, group: '', set_group: false,
     tags: [], set_tags: false, color: '', set_color: false, notes: '', set_notes: false,
     jump: '', set_jump: false, credential: '', set_credential: false, key: '', set_key: false,
-    password: '', set_password: false,
+    password: '', set_password: false, command: '', set_command: false, keep_shell: true, set_keep_shell: false,
   };
 }
 

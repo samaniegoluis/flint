@@ -1,10 +1,12 @@
 // New / edit host (design screen 06). Authentication is one of: a saved credential,
-// a key from the vault, a password, or the SSH agent. A stored password is never
-// shown; leaving the field empty keeps it.
+// a key from the vault, a password, or the SSH agent. A stored password stays hidden
+// unless the person reveals or copies it (D-029); leaving the field empty keeps it.
+// **Test connection** tries the unsaved form (host_test), answering a new host key
+// in the editor itself.
 
-import { useMemo, useState } from 'react';
-import { api, emptyHostPatch, toFlintError } from '../api/backend';
-import type { HostView } from '../api/types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api, emptyHostPatch, on, toFlintError } from '../api/backend';
+import type { HostKeyPayload, HostPatch, HostTestEvent, HostView, SessionPromptEvent } from '../api/types';
 import { useApp } from '../state/app';
 import { colorHex, colorName, colorStyle, TAG_COLORS } from '../lib/colors';
 import { groupPaths } from '../lib/tree';
@@ -12,6 +14,16 @@ import { Icon } from '../ui/Icon';
 import { Kbd, Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
 import { Picker } from '../ui/Picker';
+import { PasswordField } from '../ui/PasswordField';
+
+type TestState =
+  | { s: 'idle' }
+  | { s: 'running' }
+  | { s: 'host_key'; prompt: string; key: HostKeyPayload }
+  | { s: 'ok'; ev: HostTestEvent }
+  | { s: 'fail'; code: string; message: string };
+
+let testSeq = 0;
 
 type Mode = 'credential' | 'key' | 'password' | 'agent';
 
@@ -46,6 +58,8 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
     credential: host?.credential ?? (catalog.credentials.length === 1 ? catalog.credentials[0].name : ''),
     key: host?.key ?? '',
     password: '',
+    command: host?.command ?? '',
+    keep_shell: host?.keep_shell ?? true,
   }));
   const [mode, setMode] = useState<Mode>(initialMode(host));
   const [modeChanged, setModeChanged] = useState(false);
@@ -66,12 +80,11 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
     setTagInput('');
   };
 
-  const save = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (busy) return;
+  // The form as a patch against the saved host (all fields for a new one), or an error.
+  const buildPatch = (): HostPatch | string => {
     const port = Number(f.port);
-    if (!f.alias.trim() || !f.hostname.trim()) { setError('Alias and hostname are required.'); return; }
-    if (!Number.isInteger(port) || port < 1 || port > 65535) { setError('The port must be 1 to 65535.'); return; }
+    if (!f.alias.trim() || !f.hostname.trim()) return 'Alias and hostname are required.';
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return 'The port must be 1 to 65535.';
     const p = emptyHostPatch();
     const field = <K extends 'alias' | 'label' | 'hostname' | 'user' | 'group' | 'color' | 'notes' | 'jump'>(k: K, v: string) => {
       if (!host || (host[k] as string) !== v) { p[k] = v; p[`set_${k}` as `set_${K}`] = true as never; }
@@ -97,6 +110,57 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
       if (mode !== 'password' && host?.has_password) { p.password = ''; p.set_password = true; }
     }
     if (mode === 'password' && f.password) { p.password = f.password; p.set_password = true; }
+    if (!host || host.command !== f.command.trim()) { p.command = f.command.trim(); p.set_command = true; }
+    if (!host || host.keep_shell !== f.keep_shell) { p.keep_shell = f.keep_shell; p.set_keep_shell = true; }
+    return p;
+  };
+
+  // ---- Test connection --------------------------------------------------------
+  const [test, setTest] = useState<TestState>({ s: 'idle' });
+  const testId = useRef('');
+  useEffect(() => {
+    const offEnd = on<HostTestEvent>('host:test', (ev) => {
+      if (ev.session !== testId.current) return;
+      testId.current = '';
+      setTest(ev.code ? { s: 'fail', code: ev.code, message: ev.message } : { s: 'ok', ev });
+      if (!ev.code) refreshCatalog();
+    });
+    const offPrompt = on<SessionPromptEvent>('session:prompt', (ev) => {
+      if (ev.session !== testId.current || ev.kind !== 'host_key') return;
+      setTest({ s: 'host_key', prompt: ev.prompt, key: ev.host_key });
+    });
+    return () => {
+      offEnd();
+      offPrompt();
+      if (testId.current) api.sessionClose(testId.current).catch(() => {});
+    };
+  }, [refreshCatalog]);
+  const runTest = async () => {
+    if (testId.current) return;
+    const p = buildPatch();
+    if (typeof p === 'string') { setTest({ s: 'fail', code: 'invalid', message: p }); return; }
+    const id = `test-${Date.now().toString(36)}-${++testSeq}`;
+    testId.current = id;
+    setTest({ s: 'running' });
+    try {
+      await api.hostTest(id, host?.alias ?? '', p);
+    } catch (err) {
+      testId.current = '';
+      const e = toFlintError(err);
+      setTest({ s: 'fail', code: e.code, message: e.message });
+    }
+  };
+  const answerKey = (ok: boolean) => {
+    if (test.s !== 'host_key') return;
+    api.sessionAnswer(testId.current, test.prompt, ok, '').catch(() => {});
+    setTest({ s: 'running' });
+  };
+
+  const save = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (busy) return;
+    const p = buildPatch();
+    if (typeof p === 'string') { setError(p); return; }
     setBusy(true);
     setError('');
     try {
@@ -160,9 +224,9 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
                 options={catalog.keys.map((k) => ({ value: k.name, text: k.name, label: <>{k.name} <span className="faint mono">· {k.type}</span></> }))} />
             )}
             {mode === 'password' && (
-              <div className="input"><Icon name="lock" size="sm" className="faint" />
-                <input type="password" className="pw" aria-label="Password" value={f.password} onChange={(e) => set('password', e.target.value)} autoComplete="off"
-                  placeholder={host?.has_password ? 'Saved — type to replace' : 'Password'} /></div>
+              <PasswordField value={f.password} onChange={(v) => set('password', v)}
+                saved={host?.has_password ? { kind: 'host', name: host.alias } : null}
+                placeholder={host?.has_password ? 'Saved — type to replace' : 'Password'} />
             )}
             {mode === 'agent' && <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />Uses the keys loaded in your SSH agent (<span className="mono">SSH_AUTH_SOCK</span>).</span>}
           </div>
@@ -172,6 +236,13 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
             <div className="field"><span className="flabel">Jump host <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></span>
               <Picker label="Jump host" value={f.jump} onChange={(v) => set('jump', v)} icon="jump" placeholder="None"
                 options={[{ value: '', label: 'None', text: '' }, ...catalog.hosts.filter((h) => h.alias !== host?.alias).map((h) => ({ value: h.alias, text: h.alias, label: <span className="mono">{h.alias}</span>, meta: h.group }))]} /></div>
+          </div>
+          <div className="field"><label className="flabel" htmlFor="hc">On connect <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></label>
+            <div className="input"><Icon name="term" size="sm" className="faint" /><input id="hc" className="mono" value={f.command} onChange={(e) => set('command', e.target.value)} placeholder="e.g. herdr or tmux new -A -s main" spellCheck={false} autoComplete="off" /></div>
+            {f.command.trim() ? (
+              <label className="check" style={{ fontSize: 'var(--fs-sm)' }}><input type="checkbox" checked={f.keep_shell} onChange={(e) => set('keep_shell', e.target.checked)} />
+                <span>Return to a shell when it exits <span className="faint">· otherwise the session ends with it</span></span></label>
+            ) : <span className="hint">Runs in your login shell every time a session opens, like typing it yourself.</span>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', gap: 'var(--sp-4)' }}>
             <div className="field"><span className="flabel">Tags</span>
@@ -193,10 +264,35 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
           </div>
           <div className="field"><label className="flabel" htmlFor="hn">Notes</label>
             <div className="input area"><textarea id="hn" rows={2} value={f.notes} onChange={(e) => set('notes', e.target.value)} /></div></div>
+          {test.s === 'host_key' && (
+            <div className="card prompt" role="alertdialog" aria-label={`Verify ${test.key.alias}`} style={{ boxShadow: 'none' }}
+              onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); answerKey(false); } }}>
+              <div className="prompt-h"><span className="prompt-ic warn"><Icon name="shield" /></span>
+                <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">Verify <span className="mono">{test.key.addr}</span></h2>
+                  <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Flint hasn't seen this server before. Compare the fingerprint with one you got from its admin or console.</p></div></div>
+              <dl className="kv" style={{ margin: 0 }}><dt>Key type</dt><dd className="mono">{test.key.key_type}</dd></dl>
+              <div className="fp">{test.key.fingerprint}</div>
+              <div className="row" style={{ gap: 'var(--sp-2)' }}>
+                <button type="button" className="btn btn-ghost" onClick={() => answerKey(false)}>Cancel test<Key>esc</Key></button>
+                <span className="grow" />
+                <button type="button" className="btn btn-primary" data-autofocus autoFocus onClick={() => answerKey(true)}>Trust and continue</button>
+              </div>
+            </div>
+          )}
+          {test.s === 'ok' && (
+            <span className="hint row" role="status" style={{ gap: 6, color: 'var(--success)' }}><Icon name="shield-ok" size="xs" />
+              Connection works · <span className="mono">{test.ev.target}</span> · host key verified, logged in ({test.ev.duration_ms} ms{test.ev.hops > 1 ? `, through ${test.ev.hops - 1} jump host${test.ev.hops > 2 ? 's' : ''}` : ''})</span>
+          )}
+          {test.s === 'fail' && (
+            <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name={test.code === 'network' || test.code === 'timeout' ? 'wifi-off' : 'alert'} size="xs" />Test failed: {test.message}</span>
+          )}
           {error && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
         </div>
         <div className="modal-f">
           {host && <button type="button" className="btn btn-danger-ghost" onClick={() => onDelete(host.alias)}><Icon name="trash" size="sm" />Delete host</button>}
+          <button type="button" className="btn btn-secondary" onClick={runTest} disabled={test.s === 'running' || test.s === 'host_key'}>
+            {test.s === 'running' ? <><span className="spinner" style={{ width: 12, height: 12, borderWidth: 1.5 }} />Testing…</> : <><Icon name="link" size="sm" />Test connection</>}
+          </button>
           <span className="grow" />
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel<Key>esc</Key></button>
           <button type="submit" className="btn btn-primary" disabled={busy}>{host ? 'Save' : 'Add host'}<span className="kbd-in">{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</span></button>

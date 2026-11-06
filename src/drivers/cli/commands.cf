@@ -276,6 +276,17 @@ fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> HostPatch! {
         patch.key = p.flag_value("--key")
         patch.set_key = true
     }
+    if p.has_flag("--command") {
+        patch.command = p.flag_value("--command")
+        patch.set_command = true
+    }
+    if p.has_flag("--keep-shell") && p.has_flag("--no-keep-shell") {
+        return error(coded(ERR_USAGE, "--keep-shell and --no-keep-shell contradict each other"))
+    }
+    if p.has_flag("--keep-shell") || p.has_flag("--no-keep-shell") {
+        patch.keep_shell = p.has_flag("--keep-shell")
+        patch.set_keep_shell = true
+    }
     if sec.has_password {
         patch.password = sec.password
         patch.set_password = true
@@ -290,7 +301,7 @@ fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> HostPatch! {
 }
 
 fn host_field_flags() -> []str {
-    return ["--label", "--hostname", "--port", "--user", "--group", "--tag", "--no-tags", "--color", "--notes", "--jump", "--cred", "--key", "--password", "--password-stdin"]
+    return ["--label", "--hostname", "--port", "--user", "--group", "--tag", "--no-tags", "--color", "--notes", "--jump", "--cred", "--key", "--password", "--password-stdin", "--command", "--keep-shell", "--no-keep-shell"]
 }
 
 fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
@@ -348,6 +359,10 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
         } else {
             print_host(h)
         }
+        return
+    }
+    if verb == "test" {
+        try cmd_host_test(p, sec, as_json, c, mut store, kc, recents)
         return
     }
     if verb == "rm" {

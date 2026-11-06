@@ -41,7 +41,7 @@ fn ssh_fixture(crypto: FakeCrypto, mut store: FakeStore) -> VaultSession {
 }
 
 fn empty_host_view() -> HostView {
-    return HostView{ alias: "", label: "", hostname: "", port: 0, user: "", group: "", tags: [], color: "", notes: "", jump: "", credential: "", key: "", has_password: false }
+    return HostView{ alias: "", label: "", hostname: "", port: 0, user: "", group: "", tags: [], color: "", notes: "", jump: "", credential: "", key: "", has_password: false, command: "", keep_shell: true }
 }
 
 fn accept_opts() -> ConnectOptions {
@@ -290,7 +290,7 @@ test "a shell relays both ways, follows resizes and leaves raw mode" {
     link.chunks = [out_chunk("$ "), out_chunk(""), out_chunk("hi\r\n"), out_chunk(""), done_chunk(0)]
     mut term := new_fake_terminal(["echo hi\r", "", "exit\r"])
     term.resize_at = 2
-    code := try run_shell(mut link, mut term, "xterm-256color")
+    code := try run_shell(mut link, mut term, "xterm-256color", "")
     assert_eq(code, 0)
     assert_eq(link.calls[0], "shell xterm-256color 120x40")
     assert_eq(term.output, "$ hi\r\n")
@@ -298,4 +298,204 @@ test "a shell relays both ways, follows resizes and leaves raw mode" {
     assert_eq(link.resized, "100x30")
     assert(!term.raw)
     assert_eq(term.raw_entered, 1)
+}
+
+// ---- Initial command (D-031, D-032) ---------------------------------------------
+
+fn web_link() -> FakeLink {
+    mut link := new_fake_link()
+    link.good_password = "host-pw"
+    link.good_key = "PRIVATE one"
+    return link
+}
+
+test "a host's initial command is stored, shown and run on the PTY" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut p := empty_host_patch()
+    p.command = "herdr"
+    p.set_command = true
+    v := try edit_host(crypto, mut store, s, "web", p)
+    assert_eq(v.command, "herdr")
+    assert(v.keep_shell, "a login shell follows by default")
+
+    mut link := web_link()
+    mut term := new_fake_terminal(["exit\r"])
+    _ := try connect_host(crypto, mut store, s, mut link, no_prompter(), mut term, "web", "xterm-256color", accept_opts())
+    assert_eq(link.calls[link.calls.len() - 1], "shell xterm-256color 120x40 \"$SHELL\" -ilc 'herdr'; exec \"$SHELL\" -l")
+
+    mut q := empty_host_patch()
+    q.keep_shell = false
+    q.set_keep_shell = true
+    _ := try edit_host(crypto, mut store, s, "web", q)
+    mut link2 := web_link()
+    mut term2 := new_fake_terminal([])
+    _ := try connect_host(crypto, mut store, s, mut link2, no_prompter(), mut term2, "web", "xterm-256color", accept_opts())
+    assert_eq(link2.calls[link2.calls.len() - 1], "shell xterm-256color 120x40 exec \"$SHELL\" -ilc 'herdr'")
+
+    // --no-command: a plain shell.
+    mut plain := accept_opts()
+    plain.run_initial_command = false
+    mut link3 := web_link()
+    mut term3 := new_fake_terminal([])
+    _ := try connect_host(crypto, mut store, s, mut link3, no_prompter(), mut term3, "web", "xterm-256color", plain)
+    assert_eq(link3.calls[link3.calls.len() - 1], "shell xterm-256color 120x40")
+
+    // exec ignores it.
+    mut link4 := web_link()
+    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    _ := try exec_on_host(crypto, mut store, s, mut link4, no_prompter(), mut sink, mut clock, "web", "uptime", accept_opts(), 60, true)
+    assert_eq(link4.calls[link4.calls.len() - 1], "exec uptime")
+
+    // An empty command clears it; a multi-line one is refused.
+    mut c := empty_host_patch()
+    c.command = "a\nb"
+    c.set_command = true
+    assert_eq(err_code(edit_host(crypto, mut store, s, "web", c)), "invalid")
+    c.command = ""
+    assert_eq((try edit_host(crypto, mut store, s, "web", c)).command, "")
+}
+
+// ---- Testing a host ----------------------------------------------------------------
+
+test "host test connects every hop, hangs up and runs nothing" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut link := web_link()
+    mut clock := FakeClock{ now_ms: 0, step_ms: 7 }
+    r := try test_host(crypto, mut store, s, mut link, no_prompter(), mut clock, "web", accept_opts())
+    assert_eq(r.host, "web")
+    assert_eq(r.target, "deploy@10.0.0.5:2222")
+    assert_eq(r.hops, 2)
+    assert(r.duration_ms > 0)
+    assert(link.hung_up)
+    for call in link.calls {
+        assert(!call.starts_with("shell") && !call.starts_with("exec"), "a test opens no channel")
+    }
+    assert_eq((try store.known_hosts_all()).len(), 2)
+}
+
+test "host test reports a failed method without asking for a password" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    _ := try add_host(crypto, mut store, s, host_patch_user("lone", "lone.example.org", "me"))
+    mut link := new_fake_link()
+    asks := FakePrompter{ available: true, confirm: true, password: "typed" }
+    link.good_password = "typed"
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    r := test_host(crypto, mut store, s, mut link, asks, mut clock, "lone", accept_opts())
+    assert_eq(err_code(r), "auth")
+    for call in link.calls {
+        assert(call != "password typed", "a test never prompts for a password")
+    }
+    // A changed key is still refused.
+    mut evil := web_link()
+    evil.server_fp = "SHA256:other"
+    mut first := web_link()
+    _ := try test_host(crypto, mut store, s, mut first, no_prompter(), mut clock, "bastion", accept_opts())
+    assert_eq(err_code(test_host(crypto, mut store, s, mut evil, yes_prompter(), mut clock, "bastion", accept_opts())), "host_key")
+}
+
+test "a draft host is tested without saving it, and keeps a trusted key once added" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut p := host_patch_user("fresh", "Fresh.Example.org", "me")
+    p.password = "draft-pw"
+    p.set_password = true
+    p.jump = "bastion"
+    p.set_jump = true
+    p.group = "never/created"
+    p.set_group = true
+    mut link := new_fake_link()
+    link.good_password = "host-pw"
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    // The bastion's password is "host-pw"; the draft's own is "draft-pw".
+    mut both := new_fake_link()
+    both.good_password = "host-pw"
+    r := test_host_draft(crypto, mut store, s, mut both, yes_prompter(), mut clock, "", p, default_connect_options())
+    assert_eq(err_code(r), "auth")
+    mut used_draft_pw := false
+    for call in both.calls {
+        if call == "password draft-pw" {
+            used_draft_pw = true
+        }
+    }
+    assert(used_draft_pw, "the draft's typed password is used")
+    assert_eq((try load_catalog(store)).hosts.len(), 2, "nothing is saved")
+    assert_eq((try store.groups_all()).len(), 0, "no folder is created")
+
+    mut ok := new_fake_link()
+    ok.good_password = "draft-pw"
+    // bastion is reached with its own password first: accept either.
+    ok.agent_ok = true
+    v := try test_host_draft(crypto, mut store, s, mut ok, yes_prompter(), mut clock, "", p, default_connect_options())
+    assert_eq(v.host, "fresh")
+    assert_eq(v.hops, 2)
+    known := try store.known_hosts_all()
+    mut fresh_key_host := "?"
+    for k in known {
+        if k.addr == "fresh.example.org" {
+            fresh_key_host = k.host_id
+        }
+    }
+    assert_eq(fresh_key_host, "", "a draft's key is recorded with no host")
+    assert_eq((try load_catalog(store)).hosts.len(), 2)
+
+    _ := try add_host(crypto, mut store, s, p)
+    views := try list_known_hosts(store)
+    mut owner := ""
+    for k in views {
+        if k.addr == "fresh.example.org" {
+            owner = k.host
+        }
+    }
+    assert_eq(owner, "fresh", "adding the host adopts the key its test trusted")
+}
+
+test "an edited draft overrides the saved host for the test only" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut p := empty_host_patch()
+    p.port = 2200
+    p.set_port = true
+    mut link := new_fake_link()
+    link.good_password = "host-pw"
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    v := try test_host_draft(crypto, mut store, s, mut link, yes_prompter(), mut clock, "bastion", p, default_connect_options())
+    assert_eq(v.target, "jump@Bastion.Example.org:2200")
+    assert_eq(link.calls[0], "dial jump@Bastion.Example.org:2200")
+    assert_eq((try show_host(store, "bastion")).port, 22)
+    assert_eq(err_code(test_host_draft(crypto, mut store, s, mut link, yes_prompter(), mut clock, "", empty_host_patch(), default_connect_options())), "usage")
+}
+
+// ---- Reveal and copy (D-029) -------------------------------------------------------
+
+test "a saved password is revealed or copied only by name, and the copy is cleared later" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    assert_eq(try reveal_password(crypto, store, s, "host", "bastion"), "host-pw")
+    assert_eq(try reveal_password(crypto, store, s, "credential", "ops"), "cred-pw")
+    no_pw := reveal_password(crypto, store, s, "host", "web")
+    assert_eq(err_code(no_pw), "not_found")
+    assert(!"{no_pw.error().message()}".contains("pw"))
+    assert_eq(err_code(reveal_password(crypto, store, s, "host", "nope")), "not_found")
+    assert_eq(err_code(reveal_password(crypto, store, s, "key", "k1")), "invalid")
+
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
+    try copy_password(crypto, store, s, mut clip, "credential", "ops")
+    assert_eq(clip.text, "cred-pw")
+    assert_eq(clip.clear_after_ms, 30000)
+    assert_eq(err_code(copy_password(crypto, store, s, mut clip, "host", "web")), "not_found")
+    assert_eq(clip.copies, 1)
+
+    // A session with the wrong secrets key cannot open it.
+    wrong := VaultSession{ path: s.path, name: s.name, secrets_key: [9, 9, 9], cached: false }
+    assert(!reveal_password(crypto, store, wrong, "host", "bastion").has_value())
 }

@@ -18,7 +18,7 @@ flint exec web-01 -- uptime       # one command
 ## Interactive shell
 
 ```sh
-flint connect <alias> [--timeout <secs>] [--accept-new-host-key]
+flint connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]
 ```
 
 `flint connect` opens a shell in a remote terminal the size of your window, and follows
@@ -28,6 +28,14 @@ the shell's exit status. Your terminal is restored when the session ends, even i
 is killed.
 
 The remote terminal type is taken from `TERM` (`xterm-256color` if it is not set).
+
+If the host has an [initial command](/guides/hosts/#run-a-command-on-connect), such as
+`herdr`, it runs instead of the bare shell, through your interactive login shell; when
+it exits, a login shell follows unless the host says to end the session. Use
+`--no-command` to get a plain shell, for example when that program is broken.
+
+To check a host without opening anything, use
+[`flint host test`](/guides/hosts/#check-that-a-host-works).
 
 If the vault is locked, Flint asks for the master password on the terminal first. Do
 not use `--master-stdin` with `flint connect`: it reads all of stdin, so the session

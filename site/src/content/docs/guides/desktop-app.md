@@ -47,18 +47,34 @@ over the terminal.
 ## Hosts, keys and credentials
 
 **New host** (<kbd>⌘N</kbd>) opens the host editor: alias, label, hostname and port,
-folder, authentication, user, jump host, tags, colour and notes. Authentication is one
-of:
+folder, authentication, user, jump host, a command to run on connect, tags, colour and
+notes. Authentication is one of:
 
 - **Credential**: a saved login shared by many hosts. The host's **User** field, when
   set, overrides the credential's user.
 - **Key**: a key stored in the vault.
-- **Password**: saved in the vault, sealed. The editor never shows it back; leave the
-  field empty to keep it.
+- **Password**: saved in the vault, sealed. It stays hidden; leave the field empty to
+  keep it. The eye button shows it for 10 seconds, read-only, and the copy button puts
+  it on the clipboard without showing it. Flint marks the copy so clipboard managers do
+  not keep it (macOS, KDE) and clears the clipboard after 30 seconds, unless you copied
+  something else since. The CLI never prints a password.
 - **Agent**: the keys in your SSH agent (`SSH_AUTH_SOCK`).
 
 Whatever the choice, Flint tries the methods in the [order the CLI
 uses](/guides/connecting/#how-flint-logs-in), then the agent, then asks for a password.
+
+**On connect** is a command that every new session on the host runs, such as `herdr`
+or `tmux new -A -s main`. It runs in your login shell with your profile and `PATH`, as
+if you had typed it. With **Return to a shell when it exits** (the default) a shell
+follows; without it, the session ends with the command. See [Run a command on
+connect](/guides/hosts/#run-a-command-on-connect).
+
+**Test connection** tries what the form says right now, saved or not: it goes through
+every jump host, checks each host key and logs in, then hangs up. A server Flint has not
+seen asks to be verified inside the editor; a key you trust there is kept, and belongs
+to the host once you save it. The result appears above the buttons: **Connection
+works** with the address it reached and how long it took, or **Test failed** with the
+reason. A test never asks for a password. `flint host test` does the same in the CLI.
 
 **Keys** lists the vault's SSH keys with their type, fingerprint and how many hosts or
 credentials use them. **Add key** takes a pasted private key or a file, plus its
@@ -66,7 +82,7 @@ passphrase if it has one. **Copy** puts the public key on the clipboard. A key o
 credential that is in use cannot be deleted.
 
 **Credentials** lists your shared logins. Each one is a username plus a password, a key,
-or the agent.
+or the agent. A saved password can be shown or copied the same way as a host's.
 
 ## Connecting
 

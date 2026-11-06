@@ -281,8 +281,70 @@
     await waitFor(() => toolbarIs('ready'), 'moved, new key', 30000);
     await check(true, 'replacing the key forgets the old one and asks again');
 
+    await setStep('test connection');
+    const isMac = (await window.backend.app_info({})).os === 'mac';
+    const shortcut = (key, code) => (document.activeElement ?? document.body).dispatchEvent(
+      new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
+    await click('.side-head .icon-btn[aria-label^="New host"]');
+    await fill('#ha', 'probe');
+    // 127.0.0.1, not localhost: on Linux localhost resolves to ::1 first, where the
+    // test sshds do not listen. [127.0.0.1]:PORT2 is not known yet (inner went
+    // through localhost).
+    await fill('#hh', '127.0.0.1');
+    await fill('#hp', '1');
+    await click('.seg button', 'Key');
+    await pick('SSH key', 'e2e-key');
+    await fill('#hu', USER);
+    await click('.modal button', 'Test connection');
+    await waitFor(() => hasText('Test failed'), 'the failed test', 30000);
+    await check(true, 'a test of a closed port reports the failure in the editor');
+    await fill('#hp', PORT2);
+    await click('.modal button', 'Test connection');
+    await waitFor(() => q('.modal [role="alertdialog"]'), 'the host key card in the editor', 30000);
+    await check(q('.modal [role="alertdialog"] .fp')?.textContent.startsWith('SHA256:'), 'the test asks to verify a new host key in the editor');
+    await click('.modal [role="alertdialog"] button', 'Trust and continue');
+    await waitFor(() => hasText('Connection works'), 'the successful test', 30000);
+    await check(hasText(`${USER}@127.0.0.1:${PORT2}`), 'the test names the target it reached');
+    await check(!(await window.backend.catalog({})).hosts.some((h) => h.alias === 'probe'), 'testing does not save the host');
+
+    await setStep('initial command');
+    await fill('#hc', 'echo started-$((40+2))');
+    await check(q('.modal .check input[type="checkbox"]')?.checked === true, 'a login shell follows the command by default');
+    await click('.modal button[type="submit"]', 'Add host');
+    await waitFor(() => byText('.tree .ti', 'probe'), 'probe in the tree');
+    const withProbe = await window.backend.catalog({});
+    await check(withProbe.known_hosts.find((k) => k.addr === `[127.0.0.1]:${PORT2}`)?.host === 'probe', 'the key trusted in the test belongs to the saved host');
+    await check(withProbe.hosts.find((h) => h.alias === 'probe').command === 'echo started-$((40+2))', 'the initial command is saved');
+    byText('.tree .ti', 'probe').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await waitFor(() => toolbarIs('ready'), 'the probe session', 30000);
+    await check(!hasText('before connecting'), 'a key trusted in a test is not asked about again');
+    await waitFor(() => termText().includes('started-42'), 'the initial command output', 20000);
+    await runInTerminal('echo shell-after-$((6*7))', 'shell-after-42');
+    await check(true, 'the initial command runs on the PTY, then a login shell');
+
+    await setStep('reveal and copy');
+    shortcut('k', 'KeyK');
+    await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
+    await fill('[aria-label="Command palette"] input', 'pwh');
+    await waitFor(() => q('[role="option"].hot')?.textContent.includes('pwhost'), 'pwhost hot');
+    shortcut('i', 'KeyI');
+    await waitFor(() => q('[role="dialog"][aria-label^="Edit host"]'), 'the pwhost editor');
+    const pwInput = () => q('.modal input[aria-label="Password"]');
+    await check(pwInput()?.type === 'password' && pwInput().value === '', 'a saved password starts hidden and out of the page');
+    await click('.modal button[aria-label="Show password"]');
+    await waitFor(() => pwInput().value === HOST_PW_MARKER, 'the revealed password');
+    await check(pwInput().type === 'text' && pwInput().readOnly, 'Show reveals the saved password, read-only');
+    await click('.modal button[aria-label="Hide password"]');
+    await check(pwInput().value === '' && pwInput().type === 'password', 'Hide drops it from the field');
+    await click('.modal button[aria-label="Copy saved password"]');
+    await waitFor(() => hasText('Password copied'), 'the copy toast');
+    await check(true, 'Copy asks the core to put the password on the clipboard');
+    await check(!JSON.stringify(await window.backend.catalog({})).includes(HOST_PW_MARKER), 'the catalog still carries no password');
+    await click('.modal button', 'Cancel');
+    await waitFor(() => !q('[role="dialog"][aria-label^="Edit host"]'), 'the editor to close');
+
     await setStep('palette');
-    const mac = (await window.backend.app_info({})).os === 'mac';
+    const mac = isMac;
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK', key: 'k', metaKey: mac, ctrlKey: !mac, shiftKey: !mac, bubbles: true, cancelable: true }));
     await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
     await fill('[aria-label="Command palette"] input', 'pwh');
@@ -376,7 +438,7 @@
     // keychain is off here): before, the page unlocked the vault again through the
     // keychain, which on macOS showed a Keychain dialog.
     await waitFor(() => /\d+ hosts? · .*format v\d/.test(text()), 'the vault counts');
-    await check(hasText('4 hosts · 1 key · 0 credentials · '), `the vault page counts the open vault (${(text().match(/\d+ hosts?[^\n]*format v\d/) ?? ['none'])[0]})`);
+    await check(hasText('5 hosts · 1 key · 0 credentials · '), `the vault page counts the open vault (${(text().match(/\d+ hosts?[^\n]*format v\d/) ?? ['none'])[0]})`);
     // Forget a known host here, then connect to it: the owner's walkthrough found the
     // host key card dead (no click, ↵ or esc) on this path.
     await setStep('forget a known host and trust it again');

@@ -48,6 +48,11 @@ type Host struct {
     credential_id: str
     key_id: str
     password: []byte
+    // Run on the PTY instead of a bare login shell (D-031); "" for none.
+    initial_command: str
+    // Start a login shell when the initial command exits, instead of ending the
+    // session.
+    keep_shell: bool
 }
 
 type SshKey struct {
@@ -213,6 +218,7 @@ fn check_host(h: Host) -> void! {
     try check_text("user", h.username, 128, false)
     try check_text("notes", h.notes, 8192, true)
     try check_color(h.color)
+    try check_text("initial command", h.initial_command, 1024, false)
     for t in h.tags {
         try check_name("tag", t)
     }
@@ -259,7 +265,7 @@ fn str_trim_spaces(s: str) -> str {
 }
 
 fn sample_host() -> Host {
-    return Host{ id: "h1", alias: "web-01", label: "Web", hostname: "10.0.0.5", port: 22, username: "root", group_id: "", tags: ["prod"], color: "#ff8800", notes: "line 1\nline 2", jump_host_id: "", credential_id: "", key_id: "", password: [] }
+    return Host{ id: "h1", alias: "web-01", label: "Web", hostname: "10.0.0.5", port: 22, username: "root", group_id: "", tags: ["prod"], color: "#ff8800", notes: "line 1\nline 2", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true }
 }
 
 test "names accept the documented alphabet only" {
@@ -299,6 +305,11 @@ test "host rules" {
     assert(!check_host(h).has_value())
     h = sample_host()
     h.jump_host_id = h.id
+    assert(!check_host(h).has_value())
+    h = sample_host()
+    h.initial_command = "herdr"
+    assert(check_host(h).has_value())
+    h.initial_command = "tmux\nattach"
     assert(!check_host(h).has_value())
 }
 

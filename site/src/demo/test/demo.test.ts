@@ -116,8 +116,39 @@ test('host show and --json carry no secret, only has_password', () => {
 	const j = flint(w, 'host show db --json');
 	assert.equal(
 		j.out[0],
-		'{"alias":"db","label":"","hostname":"10.0.0.12","port":22,"user":"admin","group":"prod","tags":["postgres"],"color":"#e8833a","notes":"","jump":"bastion","credential":"","key":"","has_password":true}',
+		'{"alias":"db","label":"","hostname":"10.0.0.12","port":22,"user":"admin","group":"prod","tags":["postgres"],"color":"#e8833a","notes":"","jump":"bastion","credential":"","key":"","has_password":true,"command":"","keep_shell":true}',
 	);
+});
+
+test('host test walks the jump chain, never asks for a password, and prints the CLI line', () => {
+	const w = worldFromSeed(seed);
+	const r = flint(w, 'host test db', ['yes']);
+	assert.equal(r.code, 0);
+	assert.equal(r.asks.length, 1, 'only the unknown db key is asked about');
+	assert.deepEqual(r.out, ["Connection to 'db' works: admin@10.0.0.12, host key verified, logged in (248 ms, through 1 jump host)."]);
+	const j = flint(w, 'host test bastion --json');
+	assert.deepEqual(j.out, ['{"host":"bastion","target":"jump@bastion.example","hops":1,"duration_ms":184}']);
+	flint(w, 'host add bare --hostname 203.0.113.9 --user me');
+	const bare = flint(w, 'host test bare --accept-new-host-key');
+	assert.deepEqual([bare.code, bare.asks], [12, []]);
+	assert.deepEqual(bare.err, ['flint: me@bare: no auth method was accepted (tried: SSH agent)']);
+	assert.equal(flint(w, 'host test db -- true').code, 2);
+});
+
+test('a host keeps an initial command, shows it, and connect notes it unless --no-command', () => {
+	const w = worldFromSeed(seed);
+	const e = flint(w, 'host edit nas --command htop --json');
+	assert.ok(e.out[0].endsWith('"command":"htop","keep_shell":true}'));
+	assert.ok(flint(w, 'host show nas').out.includes('command     htop (then a login shell)'));
+	flint(w, 'host edit nas --no-keep-shell');
+	assert.ok(flint(w, 'host show nas').out.includes('command     htop (ends the session)'));
+	assert.equal(flint(w, 'host edit nas --keep-shell --no-keep-shell').code, 2);
+	const c = flint(w, 'connect nas', ['yes']);
+	assert.equal(c.code, 0);
+	assert.ok(c.notes.some((n) => n.includes('runs `htop` on nas')));
+	assert.deepEqual(flint(w, 'connect nas --no-command').notes, []);
+	assert.equal(flint(w, 'host edit nas --command ""').code, 0);
+	assert.ok(flint(w, 'host show nas').out.includes('command     -'));
 });
 
 test('errors use the CLI message, JSON envelope and exit code', () => {

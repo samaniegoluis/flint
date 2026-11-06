@@ -8,6 +8,7 @@ import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
 import { Kbd, Key } from '../ui/Kbd';
 import { useTrapFocus } from '../ui/Modal';
+import { PasswordField } from '../ui/PasswordField';
 import { Picker } from '../ui/Picker';
 import type { Confirm } from './KeysPage';
 
@@ -108,7 +109,8 @@ function CredEditor({ name, onClose, onDelete }: { name: string | null; onClose:
               <button type="button" aria-pressed={mode === 'key'} onClick={() => setMode('key')}><Icon name="key" size="sm" />Key</button>
               <button type="button" aria-pressed={mode === 'agent'} onClick={() => setMode('agent')}><Icon name="link" size="sm" />Agent</button>
             </div>
-            {mode === 'password' && <div className="input"><input type="password" className="pw" aria-label="Password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="off" placeholder={cred?.has_password ? 'Saved — type to replace' : 'Password'} /></div>}
+            {mode === 'password' && <PasswordField value={pw} onChange={setPw} saved={cred?.has_password ? { kind: 'credential', name: cred.name } : null}
+              placeholder={cred?.has_password ? 'Saved — type to replace' : 'Password'} />}
             {mode === 'key' && <Picker label="SSH key" value={key} onChange={setKey} icon="key" placeholder="Choose a key"
               options={catalog.keys.map((k) => ({ value: k.name, text: k.name, label: <>{k.name} <span className="faint mono">· {k.type}</span></> }))} />}
             {mode === 'agent' && <span className="hint">Uses the keys loaded in your SSH agent.</span>}

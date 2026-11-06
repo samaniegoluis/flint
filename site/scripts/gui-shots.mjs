@@ -45,6 +45,7 @@ const catalog = {
 		alias: h.alias, label: h.label ?? '', hostname: h.hostname, port: 22, user: h.user ?? '',
 		group: h.group ?? '', tags: h.tags ?? [], color: h.color ?? '', notes: h.notes ?? '',
 		jump: h.jump ?? '', credential: h.credential ?? '', key: h.key ?? '', has_password: Boolean(h.password),
+		command: '', keep_shell: true,
 	})),
 	keys: vault.keys,
 	credentials: vault.creds.map((c) => ({ name: c.name, user: c.user, key: c.key, has_password: Boolean(c.password) })),

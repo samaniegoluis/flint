@@ -62,13 +62,13 @@ export function tokenize(line: string): Tokens {
 const VALUE_FLAGS = [
 	'--vault', '--name', '--hostname', '--label', '--port', '--user', '--group', '--tag',
 	'--color', '--notes', '--jump', '--cred', '--key', '--file', '--alias', '--timeout',
-	'--exec-timeout',
+	'--exec-timeout', '--command',
 ];
 
 const BOOL_FLAGS = [
 	'--json', '--help', '-h', '--version', '-V', '--master-stdin', '--password',
 	'--password-stdin', '--no-password', '--passphrase', '--passphrase-stdin', '--key-stdin',
-	'--no-tags', '--accept-new-host-key',
+	'--no-tags', '--accept-new-host-key', '--keep-shell', '--no-keep-shell', '--no-command',
 ];
 
 const GLOBAL_FLAGS = ['--json', '--vault', '--help', '-h', '--master-stdin'];

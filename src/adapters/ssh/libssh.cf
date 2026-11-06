@@ -151,8 +151,9 @@ fn (self: SshConn) auth_key_content(private_key: str, passphrase: str) -> void! 
     }
 }
 
-// Requests a PTY of the given size and starts an interactive shell on it.
-fn (mut self: SshConn) open_pty_shell(term: str, cols: i32, rows: i32) -> void! {
+// Requests a PTY of the given size and starts the login shell on it, or `command`
+// when it is not "".
+fn (mut self: SshConn) open_pty_shell(term: str, cols: i32, rows: i32, command: str) -> void! {
     mut channel: *mut cpp::ssh_channel_struct
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005
@@ -162,7 +163,7 @@ fn (mut self: SshConn) open_pty_shell(term: str, cols: i32, rows: i32) -> void! 
         channel = ch;
         rc = ch ? ssh_channel_open_session(ch) : -1;
         if (rc == SSH_OK) rc = ssh_channel_request_pty_size(ch, term.c_str(), cols, rows);
-        if (rc == SSH_OK) rc = ssh_channel_request_shell(ch);
+        if (rc == SSH_OK) rc = command.empty() ? ssh_channel_request_shell(ch) : ssh_channel_request_exec(ch, command.c_str());
         if (rc != SSH_OK && ch) { ssh_channel_free(ch); channel = nullptr; }
     }
     if rc != 0 {

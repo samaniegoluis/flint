@@ -54,12 +54,18 @@ See [Vaults](/guides/vaults/).
 | `host edit <alias> [flags]` | Change the fields given |
 | `host list [--group <path>] [--tag <tag>]` | List hosts, optionally filtered |
 | `host show <alias>` | One host |
+| `host test <alias>` | Connect, verify the host key, log in and hang up. Runs nothing |
 | `host rm <alias>` | Remove a host |
 
 Host flags: `--hostname`, `--port`, `--user`, `--label`, `--group`, `--tag` (repeatable),
-`--color`, `--notes`, `--jump`, `--cred`, `--key`, `--password`, `--password-stdin`.
-`host edit` also takes `--alias <new>`, `--no-tags` and `--no-password`. See
-[Hosts and groups](/guides/hosts/).
+`--color`, `--notes`, `--jump`, `--cred`, `--key`, `--password`, `--password-stdin`,
+`--command <cmd>` (run on connect) with `--keep-shell` / `--no-keep-shell`.
+`host edit` also takes `--alias <new>`, `--no-tags` and `--no-password`;
+`--command ""` clears the command. See [Hosts and groups](/guides/hosts/).
+
+`host test` takes `--timeout` and `--accept-new-host-key` like `connect`, never asks for
+a password, and exits 0 or with the SSH error codes (11 to 14). With `--json` it prints
+`{host, target, hops, duration_ms}`.
 
 ### Keys
 
@@ -89,7 +95,7 @@ See [Credentials](/guides/credentials/).
 
 | Command | What it does |
 |---|---|
-| `connect <alias>` | Interactive shell, through the host's jump hosts. Exits with the remote shell's status |
+| `connect <alias>` | Interactive shell, through the host's jump hosts, or the host's initial command (`--no-command` skips it). Exits with the remote shell's status |
 | `exec <alias> -- <command>` | Run one command. Streams its stdout and stderr and exits with its status |
 | `known-host list` | Every recorded server key |
 | `known-host rm <alias\|address>` | Forget a server key, so the next connect asks again |

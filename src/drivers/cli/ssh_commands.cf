@@ -32,6 +32,7 @@ fn connect_options(p: ParsedArgs) -> ConnectOptions! {
         opts.timeout_secs = try parse_seconds_flag("--timeout", p.flag_value("--timeout"))
     }
     opts.accept_new_host_key = p.has_flag("--accept-new-host-key")
+    opts.run_initial_command = !p.has_flag("--no-command")
     return opts
 }
 
@@ -57,9 +58,9 @@ fn remote_command(p: ParsedArgs) -> str {
 }
 
 fn cmd_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> i32! {
-    try p.allow_flags("connect", ["--timeout", "--accept-new-host-key"])
+    try p.allow_flags("connect", ["--timeout", "--accept-new-host-key", "--no-command"])
     if p.positionals.len() != 2 || p.has_rest {
-        return error(coded(ERR_USAGE, "usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key]"))
+        return error(coded(ERR_USAGE, "usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]"))
     }
     opts := try connect_options(p)
     alias := p.positional(1)
@@ -96,6 +97,32 @@ fn cmd_exec(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
         say(json.stringify(res))
     }
     return process_exit_code(res.exit_code)
+}
+
+// `flint host test <alias>`: connect, verify, log in, hang up. Exits 0, or with the
+// error's code (11-14 for host_key, auth, network, timeout).
+fn cmd_host_test(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+    try p.allow_flags("host test", ["--timeout", "--accept-new-host-key"])
+    try p.expect_args("host test", 1, "<alias> [--timeout <secs>] [--accept-new-host-key]")
+    if p.has_rest {
+        return error(coded(ERR_USAGE, "`flint host test` runs no command; use `flint exec <alias> -- <command>`"))
+    }
+    opts := try connect_options(p)
+    s := try open_target(p, sec, c, mut store, kc, recents)
+    mut link := new_ssh_link()
+    mut clock := new_system_clock()
+    r := try test_host(c, mut store, s, mut link, new_tty_prompter(), mut clock, p.positional(2), opts)
+    if as_json {
+        say(json.stringify(r))
+        return
+    }
+    mut via := ""
+    if r.hops == 2 {
+        via = ", through 1 jump host"
+    } else if r.hops > 2 {
+        via = ", through {r.hops - 1} jump hosts"
+    }
+    say("Connection to '{r.host}' works: {r.target}, host key verified, logged in ({r.duration_ms} ms{via}).")
 }
 
 fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {

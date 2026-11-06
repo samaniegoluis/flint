@@ -218,6 +218,76 @@ expect 2 "connect without an alias is a usage error" "" -- connect
 expect 7 "a bad --timeout is invalid" "$SMI" -- exec local --timeout 0 "${SM[@]}" -- true
 expect 3 "exec on an unknown alias is not_found" "$SMI" -- exec nope "${SM[@]}" -- true
 
+echo "== ssh: host test"
+expect 0 "host test on a known host" "$SMI" -- host test local "${SM[@]}"
+check "host test says the connection works" '[[ "$out" == "Connection to '"'"'local'"'"' works: $USER@127.0.0.1:$P, host key verified, logged in ("*" ms)." ]]'
+expect 0 "host test --json through a jump host" "$SMI" -- --json host test inner "${SM[@]}"
+check "host test --json counts both hops" '[[ "$(echo "$out" | json_get "d[\"hops\"]")" == "2" ]]'
+check "host test --json names the host" '[[ "$(echo "$out" | json_get "d[\"host\"]")" == "inner" ]]'
+SSH_AUTH_SOCK= expect 12 "host test with no usable method fails with auth" "$SMI" -- --json host test bare "${SM[@]}"
+check "host test reports auth as JSON" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "auth" ]]'
+expect 13 "host test on a closed port fails with network" "$SMI" -- host test dead --timeout 3 "${SM[@]}"
+expect 3 "host test on an unknown alias is not_found" "$SMI" -- host test nope "${SM[@]}"
+expect 2 "host test takes no remote command" "$SMI" -- host test local "${SM[@]}" -- true
+
+echo "== ssh: initial command"
+expect 0 "host edit --command --no-keep-shell" "$SMI" -- --json host edit local --command 'echo cmd-$((40+2))' --no-keep-shell "${SM[@]}"
+check "--json shows the command" '[[ "$(echo "$out" | json_get "d[\"command\"]")" == '"'"'echo cmd-$((40+2))'"'"' ]]'
+check "--json shows keep_shell off" '[[ "$(echo "$out" | json_get "d[\"keep_shell\"]")" == "False" ]]'
+expect 0 "host show (text) shows the command" "$SMI" -- host show local "${SM[@]}"
+check "text show says the command ends the session" '[[ "$out" == *"command     echo cmd-\$((40+2)) (ends the session)"* ]]'
+expect 0 "exec ignores the initial command" "$SMI" -- exec local "${SM[@]}" -- echo just-exec
+check "exec ran only its own command" '[[ "$out" == "just-exec" ]]'
+expect 2 "--keep-shell and --no-keep-shell together are a usage error" "$SMI" -- host edit local --keep-shell --no-keep-shell "${SM[@]}"
+expect 7 "a multi-line command is invalid" "$SMI" -- host edit local --command $'a\nb' "${SM[@]}"
+cat > "$tmp/cmd_tty.py" <<'PY'
+# Waits for <wait_for> (if any), then types <typed> (if any) until <until> shows up:
+# input typed ahead is flushed when Flint enters raw mode, so it is resent.
+import json, os, pty, select, sys, time
+flint, wait_for, typed, until = sys.argv[1], sys.argv[2].encode(), sys.argv[3].encode(), sys.argv[4].encode()
+args = sys.argv[5:]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv(flint, [flint] + args)
+buf = b""; end = time.time() + 40; last_typed = 0.0; answered = False
+master = os.environ.get("FLINT_E2E_MASTER", "").encode()
+while time.time() < end:
+    r, _, _ = select.select([fd], [], [], 0.2)
+    if r:
+        try:
+            d = os.read(fd, 4096)
+        except OSError:
+            break
+        if not d:
+            break
+        buf += d
+    if b"Master password" in buf and not answered:
+        answered = True
+        os.write(fd, master + b"\n")
+    if typed and wait_for in buf and until not in buf and time.time() - last_typed > 1.5:
+        os.write(fd, typed + b"\n"); last_typed = time.time()
+_, status = os.waitpid(pid, 0)
+print(json.dumps({"saw": wait_for in buf and until in buf, "code": os.waitstatus_to_exitcode(status), "out": buf.decode(errors="replace")}))
+PY
+run_tty() {  # <description> <wait for> <typed line> <until> <flint args...>
+  local desc="$1"; shift
+  checks=$((checks + 1))
+  tty_out="$(FLINT_E2E_MASTER="$MASTER" python3 -I "$tmp/cmd_tty.py" "$flint" "$@" 2>&1)"
+  echo "$tty_out" >> "$all_out"
+  if echo "$tty_out" | is_json && [[ "$(echo "$tty_out" | json_get "d[\"saw\"]")" == "True" ]]; then echo "ok    $desc"; else failures=$((failures + 1)); echo "FAIL  $desc: $tty_out"; fi
+}
+run_tty "connect runs the initial command on the PTY" "cmd-42" "" "" --vault "$sv" connect local
+check "the session ended with the command (status 0)" '[[ "$(echo "$tty_out" | json_get "d[\"code\"]")" == "0" ]]'
+expect 0 "host edit --keep-shell" "$SMI" -- host edit local --keep-shell "${SM[@]}"
+run_tty "with keep-shell the command runs first" "cmd-42" "echo after-\$((6*7)); exit 9" "after-42" --vault "$sv" connect local
+check "a login shell followed the command" '[[ "$(echo "$tty_out" | json_get "d[\"out\"]")" == *"after-42"* ]]'
+check "connect exits with that shell's status" '[[ "$(echo "$tty_out" | json_get "d[\"code\"]")" == "9" ]]'
+run_tty "connect --no-command starts a plain shell" "" "echo plain-\$((6*7)); exit 4" "plain-42" --vault "$sv" connect local --no-command
+check "--no-command skipped the initial command" '[[ "$(echo "$tty_out" | json_get "d[\"out\"]")" != *"cmd-42"* ]]'
+check "--no-command ran the typed line" '[[ "$(echo "$tty_out" | json_get "d[\"out\"]")" == *"plain-42"* && "$(echo "$tty_out" | json_get "d[\"code\"]")" == "4" ]]'
+expect 0 "host edit --command \"\" clears it" "$SMI" -- --json host edit local --command "" "${SM[@]}"
+check "the command is gone" '[[ "$(echo "$out" | json_get "d[\"command\"]")" == "" ]]'
+
 echo "== ssh: a changed host key is refused"
 # A TCP forwarder on P3 that reaches whichever sshd $tmp/fwd_target names, so
 # one address can present two different host keys.
@@ -251,6 +321,7 @@ echo "$P2" > "$tmp/fwd_target"
 expect 11 "a changed key is refused, even with --accept-new-host-key" "$SMI" -- exec moved --accept-new-host-key "${SM[@]}" -- echo must-not-run
 check "the command did not run" '[[ "$out" != *"must-not-run"* ]]'
 check "the error says CHANGED" '[[ "$err" == *"CHANGED"* ]]'
+expect 11 "host test refuses a changed key too" "$SMI" -- host test moved "${SM[@]}"
 expect 0 "known-host rm forgets it" "$SMI" -- known-host rm moved "${SM[@]}"
 expect 3 "known-host rm again is not_found" "$SMI" -- known-host rm moved "${SM[@]}"
 expect 0 "after rm the new key is accepted" "$SMI" -- exec moved --accept-new-host-key "${SM[@]}" -- true

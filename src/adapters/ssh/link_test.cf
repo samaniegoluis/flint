@@ -151,13 +151,42 @@ test "a PTY shell over a link follows a resize" {
     mut link := new_ssh_link()
     try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
-    try link.link_shell_open("xterm-256color", 80, 24)
+    try link.link_shell_open("xterm-256color", 80, 24, "")
     try link.link_channel_resize(132, 43)
     try link.link_channel_write("stty size; exit 5\n")
     res := try read_all(mut link)
     link.link_hangup()
     assert(res.stdout.contains("43 132"))
     assert_eq(res.exit_code, 5)
+}
+
+test "a PTY session runs an initial command, then ends or keeps a login shell" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    // The command lines domain.initial_command_line builds (D-031, D-032).
+    mut once := new_ssh_link()
+    try once.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try once.link_auth_key(try fs.read_text(key_path), "")
+    try once.link_shell_open("xterm-256color", 80, 24, "exec \"$SHELL\" -ilc 'echo started-$((40+2)); [ -t 0 ] && echo on-a-tty; exit 3'")
+    ran := try read_all(mut once)
+    once.link_hangup()
+    assert(ran.stdout.contains("started-42"))
+    assert(ran.stdout.contains("on-a-tty"))
+    assert_eq(ran.exit_code, 3)
+
+    mut kept := new_ssh_link()
+    try kept.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try kept.link_auth_key(try fs.read_text(key_path), "")
+    try kept.link_shell_open("xterm-256color", 80, 24, "\"$SHELL\" -ilc 'echo first-done'; exec \"$SHELL\" -l")
+    try kept.link_channel_write("echo then-$((6*7)); exit 5\n")
+    rest := try read_all(mut kept)
+    kept.link_hangup()
+    assert(rest.stdout.contains("first-done"))
+    assert(rest.stdout.contains("then-42"))
+    assert_eq(rest.exit_code, 5)
 }
 
 test "a recorded key type is negotiated first, and only when the server has it" {
