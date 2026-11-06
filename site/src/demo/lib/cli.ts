@@ -45,6 +45,7 @@ Vaults
   vault status                          Path, lock state and counts
   vault unlock                          Cache the vault key in the OS keychain
   vault lock                            Remove the cached key from this machine
+  vault rename <new-name>               Rename the vault (its file is not moved)
   vault forget <name|path>              Drop a vault from the recent list
 
 Groups
@@ -92,7 +93,7 @@ them from stdin with the --*-stdin flags.`;
 
 /** Every `flint <noun> <verb>` the demo runs, for Tab completion and the coverage test. */
 export const COMMANDS: Record<string, string[]> = {
-	vault: ['create', 'open', 'list', 'use', 'status', 'unlock', 'lock', 'forget'],
+	vault: ['create', 'open', 'list', 'use', 'status', 'unlock', 'lock', 'rename', 'forget'],
 	group: ['add', 'list', 'rename', 'rm'],
 	host: ['add', 'edit', 'list', 'show', 'test', 'rm'],
 	key: ['add', 'list', 'show', 'rename', 'rm'],
@@ -310,6 +311,21 @@ class Cmd {
 				const v = this.resolveVault(p.positional(2));
 				this.world.current = v.name;
 				this.emit({ name: v.name, path: v.path }, () => this.say(`Vault '${v.name}' is now the current vault.`));
+				return ok;
+			}
+			case 'rename': {
+				p.allowFlags('vault rename', []);
+				p.expectArgs('vault rename', 1, '<new-name>');
+				const v = yield* this.openTarget();
+				const name = p.positional(2);
+				if (name.length === 0) fail('invalid', 'vault name must not be empty');
+				if (name.length > 64) fail('invalid', 'vault name must be at most 64 characters');
+				const taken = this.world.vaults.find((x) => x !== v && x.name.toLowerCase() === name.toLowerCase());
+				if (taken) fail('conflict', `another recent vault is already named '${taken.name}'`);
+				const old = v.name;
+				if (this.world.current === old) this.world.current = name;
+				v.name = name;
+				this.emit(info(v), () => this.say(`Renamed vault '${old}' to '${name}'.`));
 				return ok;
 			}
 			case 'forget': {

@@ -1,0 +1,119 @@
+package domain
+
+// Per-machine state of the desktop app's layout (D-030): the sidebar, and which
+// groups are collapsed in each vault's host tree. It lives in the config folder,
+// never in a vault, and holds only opaque ids: a vault is named by its id (a hash of
+// its salt), a group by its random row id. No name from inside a vault (Principle 5).
+
+type VaultUiState struct {
+    vault:     str   `json:"vault"`
+    collapsed: []str `json:"collapsed"`
+}
+
+type UiState struct {
+    sidebar_open:  bool           `json:"sidebar_open"`
+    sidebar_width: i64            `json:"sidebar_width"`
+    vaults:        []VaultUiState `json:"vaults"`
+}
+
+// The bounds match the design's --sidebar-min / --sidebar-max.
+var SIDEBAR_WIDTH_MIN: i64 = 200
+var SIDEBAR_WIDTH_MAX: i64 = 400
+var SIDEBAR_WIDTH_DEFAULT: i64 = 264
+// Vaults remembered, most recently used first; older ones are dropped.
+var UI_STATE_MAX_VAULTS: usize = 32
+// Collapsed groups kept per vault.
+var UI_STATE_MAX_COLLAPSED: usize = 2048
+
+fn default_ui_state() -> UiState {
+    return UiState{ sidebar_open: true, sidebar_width: SIDEBAR_WIDTH_DEFAULT, vaults: [] }
+}
+
+// A 128-bit id as 32 lowercase hex characters: row ids and vault ids alike.
+fn is_hex_id(s: str) -> bool {
+    if s.len() != 32 {
+        return false
+    }
+    for b in s.bytes() {
+        c := u8(b)
+        if !((c >= 48 && c <= 57) || (c >= 97 && c <= 102)) {
+            return false
+        }
+    }
+    return true
+}
+
+fn clamp_sidebar_width(w: i64) -> i64 {
+    if w < SIDEBAR_WIDTH_MIN {
+        return SIDEBAR_WIDTH_MIN
+    }
+    if w > SIDEBAR_WIDTH_MAX {
+        return SIDEBAR_WIDTH_MAX
+    }
+    return w
+}
+
+// Only valid, distinct ids, at most UI_STATE_MAX_COLLAPSED of them.
+fn clean_collapsed(ids: []str) -> []str {
+    mut res: []str = []
+    for id in ids {
+        if res.len() >= UI_STATE_MAX_COLLAPSED {
+            break
+        }
+        if !is_hex_id(id) {
+            continue
+        }
+        mut seen := false
+        for o in res {
+            if o == id {
+                seen = true
+            }
+        }
+        if !seen {
+            res.push(id)
+        }
+    }
+    return res
+}
+
+// What a stored state means once its damage is dropped: the width clamped, bad or
+// repeated vault and group ids left out, the vault list capped. A hand-edited or
+// partly damaged file therefore loads as the parts of it that still make sense.
+fn clean_ui_state(s: UiState) -> UiState {
+    mut res := UiState{ sidebar_open: s.sidebar_open, sidebar_width: clamp_sidebar_width(s.sidebar_width), vaults: [] }
+    for v in s.vaults {
+        if res.vaults.len() >= UI_STATE_MAX_VAULTS {
+            break
+        }
+        if !is_hex_id(v.vault) {
+            continue
+        }
+        mut seen := false
+        for o in res.vaults {
+            if o.vault == v.vault {
+                seen = true
+            }
+        }
+        if !seen {
+            res.vaults.push(VaultUiState{ vault: v.vault, collapsed: clean_collapsed(v.collapsed) })
+        }
+    }
+    return res
+}
+
+test "ui state is cleaned, not refused" {
+    a := "0123456789abcdef0123456789abcdef"
+    b := "fedcba9876543210fedcba9876543210"
+    s := UiState{ sidebar_open: false, sidebar_width: 9000, vaults: [
+        VaultUiState{ vault: a, collapsed: [b, b, "../etc", "ABCDEF0123456789ABCDEF0123456789"] },
+        VaultUiState{ vault: "not-an-id", collapsed: [b] },
+        VaultUiState{ vault: a, collapsed: [] },
+    ] }
+    c := clean_ui_state(s)
+    assert(!c.sidebar_open)
+    assert_eq(c.sidebar_width, SIDEBAR_WIDTH_MAX)
+    assert_eq(c.vaults.len(), usize(1))
+    assert_eq(c.vaults[0].collapsed.len(), usize(1))
+    assert_eq(c.vaults[0].collapsed[0], b)
+    assert_eq(clamp_sidebar_width(10), SIDEBAR_WIDTH_MIN)
+}

@@ -35,6 +35,7 @@ Vaults
   vault status                          Path, lock state and counts
   vault unlock                          Cache the vault key in the OS keychain
   vault lock                            Remove the cached key from this machine
+  vault rename <new-name>               Rename the vault (its file is not moved)
   vault forget <name|path>              Drop a vault from the recent list
 
 Groups

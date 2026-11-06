@@ -87,6 +87,16 @@
 		},
 		{
 			"hint": [
+				"Turn the demo vault into your real one: rename it. The file stays where it is:"
+			],
+			"run": "flint vault rename \"Home Lab\"",
+			"accept": [
+				"flint vault rename"
+			],
+			"where": "local"
+		},
+		{
+			"hint": [
 				"Scripts and AI agents read the same vault as JSON:"
 			],
 			"run": "flint host list --json",

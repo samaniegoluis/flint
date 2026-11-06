@@ -89,6 +89,24 @@ fn (self: Sodium) derive_subkey(master: []byte, id: u64, kdf_context: str) -> []
     return sub
 }
 
+// A BLAKE2b digest (libsodium crypto_generichash) of `data`, `out_len` bytes long
+// (16 to 64). Not a key derivation: it names things, such as a vault by its salt.
+fn (self: Sodium) digest(data: []byte, out_len: usize) -> []byte! {
+    if out_len < 16 || out_len > 64 {
+        return error("internal: digest length must be 16 to 64 bytes")
+    }
+    mut res := make([]byte, out_len)
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-006
+    cpp {
+        rc = crypto_generichash(res.data(), res.size(), data.data(), data.size(), nullptr, 0);
+    }
+    if rc != 0 {
+        return error("internal: digest failed")
+    }
+    return res
+}
+
 // Encrypts `plaintext` and returns nonce || ciphertext || tag.
 fn (self: Sodium) seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte! {
     if key.len() != KEY_LEN {

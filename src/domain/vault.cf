@@ -90,9 +90,12 @@ type KeyInfo struct {
 }
 
 // A vault this machine has opened. Kept in a local config file, outside the vault.
+// `id` is the vault's id (a hash of its salt, D-030), empty until the vault is next
+// unlocked: it is how a moved vault's stale entry is recognised and replaced.
 type RecentVault struct {
     path: str `json:"path"`
     name: str `json:"name"`
+    id:   str `json:"id"`
 }
 
 // ---- Rules -------------------------------------------------------------------

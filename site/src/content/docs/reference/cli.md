@@ -33,6 +33,7 @@ command of `flint exec`. `flint help` prints a summary.
 | `vault status` | Path, lock state and counts |
 | `vault unlock` | Cache the vault key in the OS keychain |
 | `vault lock` | Remove the cached key from this machine |
+| `vault rename <new-name>` | Rename the vault (with `--vault`, another one); the file keeps its name and place |
 | `vault forget <name\|path>` | Drop a vault from the recent list; the file is kept |
 
 See [Vaults](/guides/vaults/).
