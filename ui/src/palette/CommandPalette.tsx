@@ -34,6 +34,8 @@ const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'viewCredentials', icon: 'cred' },
   { action: 'settings', icon: 'settings' },
   { action: 'toggleSidebar', icon: 'sidebar' },
+  { action: 'collapseAll', icon: 'folder' },
+  { action: 'expandAll', icon: 'folder' },
   { action: 'switchVault', icon: 'updown' },
   { action: 'openVault', icon: 'folder' },
   { action: 'createVault', icon: 'plus' },
@@ -89,7 +91,7 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
         if (q && !m) continue;
         out.push({
           group: 'actions', key: 'a:' + a.action, score: (m?.score ?? 0) + 1000,
-          render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m?.positions ?? []} /></span><span className="kbd">{chordLabel(a.action, os)}</span></>),
+          render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m?.positions ?? []} /></span>{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
           run: () => onAction(a.action),
         });
       }

@@ -18,6 +18,7 @@ var MIN_MASTER_PASSWORD_LEN: usize = 8
 type VaultSession struct {
     path: str
     name: str
+    id: str
     secrets_key: []byte
     cached: bool
 }
@@ -45,6 +46,22 @@ type VaultStatus struct {
 // in clear text in the file header.
 fn vault_account(salt: []byte) -> str {
     return "vault-" + hex.encode(salt)
+}
+
+// A vault's id: 128 bits of a BLAKE2b digest of its salt, as hex (D-030). The salt
+// is already in clear in the file header and unique per vault, so the id names the
+// vault wherever its file moves, without telling anything about what is inside it.
+// Used as the key of its UI state and to recognise its recent entry after a move.
+fn vault_id[C: Crypto](crypto: C, salt: []byte) -> str! {
+    mut data: []byte = []
+    // `str.bytes()` yields std::byte, `[]byte` holds unsigned char (CF-055).
+    for b in "flint/vault-id/v1:".bytes() {
+        data.push(u8(b))
+    }
+    for b in salt {
+        data.push(b)
+    }
+    return hex.encode(try crypto.digest(data, 16))
 }
 
 fn session_info(s: VaultSession) -> VaultInfo {
@@ -104,8 +121,9 @@ fn create_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     try store.vault_create(path, page, salt)
     try store.vault_set_meta("name", vault_name)
     cached := keychain.keychain_save(vault_account(salt), master).has_value()
-    try touch_recent(recents, path, vault_name)
-    return VaultSession{ path: path, name: vault_name, secrets_key: secrets, cached: cached }
+    id := try vault_id(crypto, salt)
+    try touch_recent(recents, RecentVault{ path: path, name: vault_name, id: id })
+    return VaultSession{ path: path, name: vault_name, id: id, secrets_key: secrets, cached: cached }
 }
 
 // Unlocks a vault. With an empty `password`, only the key cached in the keychain is
@@ -160,8 +178,9 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     if name.len() == 0 {
         name = vault_name_from_path(path)
     }
-    try touch_recent(recents, path, name)
-    return VaultSession{ path: path, name: name, secrets_key: secrets, cached: cached }
+    id := try vault_id(crypto, salt)
+    try touch_recent(recents, RecentVault{ path: path, name: name, id: id })
+    return VaultSession{ path: path, name: name, id: id, secrets_key: secrets, cached: cached }
 }
 
 // Forgets the cached key, so the next use asks for the master password.
@@ -235,20 +254,65 @@ fn use_vault[S: VaultStore, R: RecentStore](store: S, recents: R, selector: str)
     if !store.vault_file_exists(target.path) {
         return error(coded(ERR_NOT_FOUND, "no vault file at {target.path}"))
     }
-    try touch_recent(recents, target.path, target.name)
+    try touch_recent(recents, target)
     return RecentView{ name: target.name, path: target.path, current: true, exists: true }
 }
 
-// Moves (or adds) a vault to the front of the recent list.
-fn touch_recent[R: RecentStore](recents: R, path: str, name: str) -> void! {
+// Moves (or adds) a vault to the front of the recent list. An entry with the same
+// path, or with the same vault id (the file was moved or copied over), is replaced,
+// so a moved vault leaves no dead entry behind. An entry given without an id keeps
+// the id already recorded for that path.
+fn touch_recent[R: RecentStore](recents: R, entry: RecentVault) -> void! {
     list := try recents.recents_load()
-    mut next: []RecentVault = [RecentVault{ path: path, name: name }]
+    mut first := entry
     for v in list {
-        if v.path != path {
+        if v.path == entry.path && first.id.len() == 0 {
+            first.id = v.id
+        }
+    }
+    mut next: []RecentVault = [first]
+    for v in list {
+        same_vault := first.id.len() > 0 && v.id == first.id
+        if v.path != first.path && !same_vault {
             next.push(v)
         }
     }
     try recents.recents_save(next)
+}
+
+// Renames the open vault: the name in its meta, and its entry in the recent list,
+// which keeps its place. Another recent vault with the same name (ignoring case) is
+// refused, since `vault use <name>` could no longer tell them apart.
+fn rename_vault[S: VaultStore, R: RecentStore](mut store: S, recents: R, session: VaultSession, name: str) -> VaultSession! {
+    try check_vault_name(name)
+    list := try recents.recents_load()
+    for v in list {
+        if v.path != session.path && lower_ascii(v.name) == lower_ascii(name) {
+            return error(coded(ERR_CONFLICT, "another recent vault is already named '{v.name}'"))
+        }
+    }
+    try store.vault_set_meta("name", name)
+    mut found := false
+    for v in list {
+        if v.path == session.path {
+            found = true
+        }
+    }
+    mut next: []RecentVault = []
+    if !found {
+        next.push(RecentVault{ path: session.path, name: name, id: session.id })
+    }
+    for v in list {
+        if v.path == session.path {
+            next.push(RecentVault{ path: v.path, name: name, id: session.id })
+        } else {
+            next.push(v)
+        }
+    }
+    try recents.recents_save(next)
+    mut renamed := session
+    renamed.name = name
+    return renamed
 }
 
 // Finds a vault by selector: "" is the most recent one; otherwise a recent vault's
@@ -273,7 +337,7 @@ fn resolve_vault[R: RecentStore](recents: R, selector: str) -> RecentVault! {
         }
     }
     if selector.starts_with("/") {
-        return RecentVault{ path: selector, name: vault_name_from_path(selector) }
+        return RecentVault{ path: selector, name: vault_name_from_path(selector), id: "" }
     }
     return error(coded(ERR_NOT_FOUND, "no recent vault named '{selector}'"))
 }

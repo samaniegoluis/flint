@@ -1,0 +1,103 @@
+package application
+
+// The desktop app's layout state (D-030): read and written for the open vault. The
+// GUI sees one vault's slice (its collapsed groups) beside the global sidebar state.
+
+import "../domain"
+import "../ports"
+
+// What the GUI reads and writes: the sidebar, and the open vault's collapsed groups.
+type UiStateView struct {
+    sidebar_open:  bool  `json:"sidebar_open"`
+    sidebar_width: i64   `json:"sidebar_width"`
+    collapsed:     []str `json:"collapsed"`
+}
+
+// The stored state, cleaned (a damaged or hand-edited file never stops the app).
+fn load_ui_state[U: UiStateStore](store: U) -> UiState {
+    loaded := store.ui_state_load()
+    if !loaded.has_value() {
+        return default_ui_state()
+    }
+    return clean_ui_state(loaded.value())
+}
+
+// The view for vault `vault` ("" when no vault is open: no collapsed groups).
+fn ui_state_for[U: UiStateStore](store: U, vault: str) -> UiStateView {
+    s := load_ui_state(store)
+    mut collapsed: []str = []
+    for v in s.vaults {
+        if vault.len() > 0 && v.vault == vault {
+            collapsed = v.collapsed
+        }
+    }
+    return UiStateView{ sidebar_open: s.sidebar_open, sidebar_width: s.sidebar_width, collapsed: collapsed }
+}
+
+// Stores `view`: the sidebar globally, the collapsed groups under `vault`, which
+// moves to the front of the list (the oldest vaults fall off past the cap). Values
+// out of range are clamped and bad ids dropped, as on load.
+fn save_ui_state[U: UiStateStore](mut store: U, vault: str, view: UiStateView) -> UiStateView! {
+    current := load_ui_state(store)
+    mut next := UiState{ sidebar_open: view.sidebar_open, sidebar_width: view.sidebar_width, vaults: [] }
+    if vault.len() > 0 {
+        if !is_hex_id(vault) {
+            return error(coded(ERR_INVALID, "internal: bad vault id"))
+        }
+        next.vaults.push(VaultUiState{ vault: vault, collapsed: view.collapsed })
+    }
+    for v in current.vaults {
+        if v.vault != vault {
+            next.vaults.push(v)
+        }
+    }
+    cleaned := clean_ui_state(next)
+    try store.ui_state_save(cleaned)
+    mut res := UiStateView{ sidebar_open: cleaned.sidebar_open, sidebar_width: cleaned.sidebar_width, collapsed: [] }
+    if vault.len() > 0 {
+        res.collapsed = cleaned.vaults[0].collapsed
+    }
+    return res
+}
+
+// ---- What the GUI speaks: group paths ----------------------------------------------
+//
+// The page names groups by path, as everywhere else; the file holds their ids, so a
+// renamed or moved group stays collapsed and no name is ever written (Principle 5).
+
+// The open vault's view, collapsed groups as paths. Ids of groups that no longer
+// exist are left out.
+fn ui_state_paths[U: UiStateStore, S: VaultStore](ui: U, store: S, vault: str) -> UiStateView! {
+    mut view := ui_state_for(ui, vault)
+    if vault.len() == 0 {
+        return view
+    }
+    groups := try store.groups_all()
+    mut paths: []str = []
+    for id in view.collapsed {
+        p := group_path_of(groups, id)
+        if p.len() > 0 {
+            paths.push(p)
+        }
+    }
+    view.collapsed = paths
+    return view
+}
+
+// Stores a view whose collapsed groups are paths; paths that name no group are
+// dropped. Returns the view as stored, in paths.
+fn save_ui_state_paths[U: UiStateStore, S: VaultStore](mut ui: U, store: S, vault: str, view: UiStateView) -> UiStateView! {
+    mut by_id := view
+    by_id.collapsed = []
+    if vault.len() > 0 {
+        groups := try store.groups_all()
+        for p in view.collapsed {
+            id := find_group_id(groups, p)
+            if id.len() > 0 {
+                by_id.collapsed.push(id)
+            }
+        }
+    }
+    _ := try save_ui_state(mut ui, vault, by_id)
+    return ui_state_paths(ui, store, vault)
+}

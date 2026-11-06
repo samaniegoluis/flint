@@ -1,0 +1,56 @@
+package config
+
+// The `UiStateStore` port: ui-state.json in the user's config folder, beside
+// settings.json and vaults.json (D-030). It holds the sidebar state and, per vault
+// id, the ids of collapsed groups: opaque ids only, no names (Principle 5).
+
+import "core:fs"
+import "ext:json"
+import "../../domain"
+
+// File shape: local structs, as in recents.cf (CF-033).
+type UiVaultEntry struct {
+    vault:     str   `json:"vault"`
+    collapsed: []str `json:"collapsed"`
+}
+
+type UiStateFile struct {
+    version:       i64            `json:"version"`
+    sidebar_open:  bool           `json:"sidebar_open"`
+    sidebar_width: i64            `json:"sidebar_width"`
+    vaults:        []UiVaultEntry `json:"vaults"`
+}
+
+type JsonUiStateStore struct {
+    path: str
+}
+
+fn new_json_ui_state_store(dir: str) -> JsonUiStateStore {
+    return JsonUiStateStore{ path: dir + "/ui-state.json" }
+}
+
+fn (self: JsonUiStateStore) ui_state_load() -> UiState! {
+    if !fs.exists(self.path) {
+        return default_ui_state()
+    }
+    text := fs.read_text(self.path) or err {
+        return default_ui_state()
+    }
+    // A damaged file only costs the layout: start from the defaults (D-030).
+    parsed := json.parse[UiStateFile](text) or err {
+        return default_ui_state()
+    }
+    mut s := UiState{ sidebar_open: parsed.sidebar_open, sidebar_width: parsed.sidebar_width, vaults: [] }
+    for v in parsed.vaults {
+        s.vaults.push(VaultUiState{ vault: v.vault, collapsed: v.collapsed })
+    }
+    return s
+}
+
+fn (self: JsonUiStateStore) ui_state_save(s: UiState) -> void! {
+    mut file := UiStateFile{ version: 1, sidebar_open: s.sidebar_open, sidebar_width: s.sidebar_width, vaults: [] }
+    for v in s.vaults {
+        file.vaults.push(UiVaultEntry{ vault: v.vault, collapsed: v.collapsed })
+    }
+    try write_file_atomic(self.path, json.stringify(file) + "\n")
+}

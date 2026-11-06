@@ -18,9 +18,12 @@ Nothing else is written. There is no sidecar file and no plaintext header, so ho
 users, labels, tags, notes, group names, the vault name and the known host keys are all
 encrypted.
 
-Outside the vault file, the [list of recent vaults](/guides/vaults/#several-vaults) in
+Outside the vault file, the [list of recent vaults](/guides/vaults/#the-vault-list) in
 your config folder holds each vault's path and name in clear text, so `flint vault list`
-works while every vault is locked. Nothing from inside a vault is ever written there. While a
+works while every vault is locked, and a **vault id**: 128 bits of a BLAKE2b hash of the
+salt, which is already in clear at the start of the file. The id recognises a vault after
+its file moves, and keys the desktop app's layout state (`ui-state.json`, which holds only
+that id and random group ids). Nothing from inside a vault is ever written there. While a
 change is being written, SQLite keeps a rollback journal next to the file, encrypted as
 well, and deletes it when the change commits.
 

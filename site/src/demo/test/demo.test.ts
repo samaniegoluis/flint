@@ -188,6 +188,17 @@ test('a locked vault asks for its master password once, then stays cached', () =
 	assert.equal(flint(w, 'vault lock').out[0], "Locked vault 'Work': its key is no longer cached on this machine.");
 });
 
+test('vault rename renames the current vault and refuses a name in use', () => {
+	const w = worldFromSeed(seed);
+	assert.deepEqual(flint(w, 'vault rename "Home Lab"').out, ["Renamed vault 'Demo' to 'Home Lab'."]);
+	assert.ok(flint(w, 'vault list').out.some((l) => /^\*\s+Home Lab/.test(l)));
+	const j = flint(w, 'vault rename Lab --json');
+	assert.ok(j.out[0].includes('"name":"Lab"'));
+	const taken = flint(w, 'vault rename work');
+	assert.equal(taken.code, 4);
+	assert.equal(flint(w, 'vault rename').code, 2);
+});
+
 test('the landing shows what the demo CLI prints (D-027)', () => {
 	const landing = readFileSync(fileURLToPath(new URL('../../content/docs/index.mdx', import.meta.url)), 'utf8');
 	const w = worldFromSeed(seed);
@@ -305,7 +316,7 @@ test('the shell tokenizer refuses pipes and keeps quotes', () => {
 
 test('the guide always says what to do, with the exact command', () => {
 	const { s, text } = session();
-	assert.deepEqual(s.guide(), { text: 'Step 1/8 · Every command, on one screen:', command: 'flint help' });
+	assert.deepEqual(s.guide(), { text: 'Step 1/9 · Every command, on one screen:', command: 'flint help' });
 	assert.ok(text().includes('#   flint help'), 'the step hint in the log carries its command');
 	s.submit('flint');
 	assert.equal(s.tourStep, 1, '`flint` alone shows the help, so it completes step 1');

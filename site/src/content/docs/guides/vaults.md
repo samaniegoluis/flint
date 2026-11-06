@@ -52,13 +52,29 @@ flint vault list                    # * marks the current vault
 flint vault open ~/Work/work.flint  # open a vault file and make it current
 flint vault use "Home Lab"          # switch by name (or by path)
 flint --vault work host list        # use another vault for one command
+flint vault rename "Home Lab"       # rename the current vault
 flint vault forget work             # drop it from the list; the file is kept
 ```
 
 `--vault` takes a vault's name (any case) or a path to its file.
 
-The list lives in a small file in your config folder. It holds file paths and vault names,
-never anything from inside a vault:
+## Rename or move a vault
+
+`flint vault rename <new-name>` changes the name stored inside the vault, and its entry in
+the list. The file keeps its name and place, so a test vault can become your real one
+without being copied. Two vaults in the list cannot share a name (ignoring case), since
+`--vault <name>` could no longer tell them apart. The desktop app has **Rename** in
+**Manage vaults** and in **Settings → Vault**, for the open vault.
+
+To move a vault, move its file (in Finder, a file manager or with `mv`) and open it from
+its new place: Flint recognises it and replaces the old entry in the list instead of
+keeping a dead one.
+
+## The vault list
+
+The list lives in a small file in your config folder. It holds file paths, vault names and
+a vault id (a hash of the vault's salt, which is already in clear at the start of the
+file), never anything from inside a vault:
 
 | OS | Location |
 |---|---|

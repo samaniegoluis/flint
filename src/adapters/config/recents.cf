@@ -1,8 +1,9 @@
 package config
 
 // The `RecentStore` port: a small JSON file in the user's config folder listing the
-// vaults this machine has opened, most recent first. It holds file paths and vault
-// names only, never anything from inside a vault (Principle 5).
+// vaults this machine has opened, most recent first. It holds file paths, vault
+// names and vault ids (a hash of the salt, D-030) only, never anything from inside a
+// vault (Principle 5).
 
 import "core:fs"
 import "core:os"
@@ -11,9 +12,11 @@ import "../../domain"
 
 // File shape. Entries use a local struct: a field whose type comes from another
 // package is emitted before that type is complete (CF-033).
+// `id` (the vault id, D-030) came in milestone 07; in older files it reads as "".
 type RecentEntry struct {
     path: str `json:"path"`
     name: str `json:"name"`
+    id:   str `json:"id"`
 }
 
 type RecentFile struct {
@@ -68,7 +71,7 @@ fn (self: JsonRecentStore) recents_load() -> []RecentVault! {
     }
     mut list: []RecentVault = []
     for e in parsed.vaults {
-        list.push(RecentVault{ path: e.path, name: e.name })
+        list.push(RecentVault{ path: e.path, name: e.name, id: e.id })
     }
     return list
 }
@@ -80,7 +83,7 @@ fn (self: JsonRecentStore) recents_save(list: []RecentVault) -> void! {
     }
     mut entries: []RecentEntry = []
     for v in list {
-        entries.push(RecentEntry{ path: v.path, name: v.name })
+        entries.push(RecentEntry{ path: v.path, name: v.name, id: v.id })
     }
     body := json.stringify(RecentFile{ version: 1, vaults: entries })
     fs.write_text(self.path, body + "\n") or err {

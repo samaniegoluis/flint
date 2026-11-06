@@ -168,6 +168,27 @@ check "the forgotten vault file still exists" '[[ -f "$work" ]]'
 expect 0 "vault open adds it back" "$MASTER"$'\n' -- --json vault open "$work" --master-stdin
 check "opened vault reports its name" '[[ "$(echo "$out" | json_get "d[\"name\"]")" == "work" ]]'
 
+echo "== vault rename and a moved vault"
+expect 0 "vault rename" "$MI" -- --json vault rename "Work Two" "${M[@]}"
+check "rename reports the new name" '[[ "$(echo "$out" | json_get "d[\"name\"]")" == "Work Two" ]]'
+expect 0 "vault rename (text)" "$MI" -- vault rename "Work Three" "${M[@]}"
+check "text rename names old and new" '[[ "$out" == "Renamed vault '"'"'Work Two'"'"' to '"'"'Work Three'"'"'." ]]'
+expect 4 "rename to another recent vault's name is a conflict" "$MI" -- vault rename "home lab" "${M[@]}"
+expect 7 "rename to an empty name is invalid" "$MI" -- vault rename "" "${M[@]}"
+expect 2 "rename needs exactly one name" "" -- vault rename
+expect 0 "vault list after rename" "" -- --json vault list
+check "the recent entry has the new name and an id" '[[ "$(echo "$out" | json_get "d[0][\"name\"]")" == "Work Three" && "$(python3 -c "import json;print(len(json.load(open(\"$FLINT_CONFIG_DIR/vaults.json\"))[\"vaults\"][0][\"id\"]))")" == "32" ]]'
+check "the vault list keeps no stale entries" '[[ "$(echo "$out" | json_get "len(d)")" == "2" ]]'
+moved="$tmp/moved/work.flint"
+mkdir -p "$tmp/moved" && mv "$work" "$moved"
+expect 0 "opening a moved vault" "$MI" -- --json vault open "$moved" "${M[@]}"
+check "the moved vault keeps its name" '[[ "$(echo "$out" | json_get "d[\"name\"]")" == "Work Three" ]]'
+expect 0 "vault list after the move" "" -- --json vault list
+check "the moved vault replaced its stale entry" '[[ "$(echo "$out" | json_get "len(d)")" == "2" && "$(echo "$out" | json_get "d[0][\"path\"]")" == "$moved" && "$(echo "$out" | json_get "all(v[\"exists\"] for v in d)")" == "True" ]]'
+mv "$moved" "$work"
+expect 0 "the vault is back where it was" "$MI" -- vault open "$work" "${M[@]}"
+expect 0 "and renamed back" "$MI" -- vault rename work "${M[@]}"
+
 echo "== keychain turned off"
 off="$tmp/off.flint"
 FLINT_KEYCHAIN=off expect 0 "create with the keychain off" "$MASTER"$'\n' -- --json vault create "$off" --master-stdin

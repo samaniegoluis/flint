@@ -72,10 +72,45 @@ export function VaultMenu({ onClose, onManage, style }: { onClose: () => void; o
   );
 }
 
-// Manage vaults: every recent vault, with Forget key and Remove from list.
+// Renames the open vault in place: the name, then Save or Cancel. A name another
+// vault in the list already uses is refused by the core (conflict).
+export function RenameVault({ onDone }: { onDone: () => void }) {
+  const { vault, renameVault, notify, fail } = useApp();
+  const [name, setName] = useState(vault?.name ?? '');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    const v = name.trim();
+    if (!v || v === vault?.name) { onDone(); return; }
+    setBusy(true);
+    try {
+      const old = vault?.name;
+      await renameVault(v);
+      notify(`Renamed ${old} to ${v}`);
+      onDone();
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="row" style={{ gap: 'var(--sp-2)' }} onSubmit={(e) => { e.preventDefault(); save(); }}
+      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onDone(); } }}>
+      <div className="input" style={{ minWidth: 180 }}>
+        <input aria-label="Vault name" value={name} maxLength={64} autoFocus data-autofocus onChange={(e) => setName(e.target.value)} />
+      </div>
+      <button className="btn btn-primary btn-sm" type="submit" disabled={busy || !name.trim()}>Save</button>
+      <button className="btn btn-ghost btn-sm" type="button" onClick={onDone}>Cancel</button>
+    </form>
+  );
+}
+
+// Manage vaults: every recent vault, with Forget key and Remove from list, and
+// Rename for the open one (another vault is renamed after opening it).
 export function ManageVaults({ onClose }: { onClose: () => void }) {
   const { recents, vault, refreshRecents, notify, fail, closeVault } = useApp();
   const [confirm, setConfirm] = useState<{ r: RecentView; kind: 'key' | 'list' } | null>(null);
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => { refreshRecents().catch(() => {}); }, [refreshRecents]);
 
@@ -109,9 +144,12 @@ export function ManageVaults({ onClose }: { onClose: () => void }) {
           <tbody>
             {recents.map((r) => (
               <tr key={r.path}>
-                <td className="primary"><div className="row"><span className={'vault-mark ' + vaultMarkClass(r.path)}>{vaultInitial(r.name)}</span>{r.name}{r.path === vault?.path && <span className="badge accent">open</span>}{!r.exists && <span className="badge warn">not found</span>}</div></td>
+                <td className="primary">{renaming && r.path === vault?.path
+                  ? <RenameVault onDone={() => setRenaming(false)} />
+                  : <div className="row"><span className={'vault-mark ' + vaultMarkClass(r.path)}>{vaultInitial(r.name)}</span>{r.name}{r.path === vault?.path && <span className="badge accent">open</span>}{!r.exists && <span className="badge warn">not found</span>}</div>}</td>
                 <td className="mono trunc" style={{ maxWidth: 300, fontSize: 'var(--fs-xs)' }} title={r.path}>{shortPath(r.path)}</td>
                 <td style={{ textAlign: 'right' }}>
+                  {r.path === vault?.path && !renaming && <button className="btn btn-ghost btn-sm" onClick={() => setRenaming(true)}>Rename</button>}
                   <button className="btn btn-ghost btn-sm" onClick={() => setConfirm({ r, kind: 'key' })}>Forget key</button>
                   <button className="btn btn-danger-ghost btn-sm" onClick={() => setConfirm({ r, kind: 'list' })}>Remove</button>
                 </td>

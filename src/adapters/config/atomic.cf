@@ -1,0 +1,24 @@
+package config
+
+// Writes a config file so a crash or a full disk never leaves it half written: the
+// text goes to `<path>.tmp` in the same folder, which is then renamed over `path`.
+// `fs.write_text` truncates in place, and `fs.write_atomic` does not exist (CF-054).
+
+import "core:fs"
+import "../../domain"
+
+fn write_file_atomic(path: str, text: str) -> void! {
+    dir := fs.dirname(path)
+    fs.mkdir_all(dir) or err {
+        return error(coded(ERR_IO, "cannot create {dir}"))
+    }
+    tmp := path + ".tmp"
+    fs.write_text(tmp, text) or err {
+        _ := fs.remove(tmp)
+        return error(coded(ERR_IO, "cannot write {tmp}"))
+    }
+    fs.rename(tmp, path) or err {
+        _ := fs.remove(tmp)
+        return error(coded(ERR_IO, "cannot replace {path}"))
+    }
+}

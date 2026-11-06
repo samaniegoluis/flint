@@ -13,6 +13,7 @@ import { HostTree } from './HostTree';
 import { ManageVaults, VaultMenu } from './VaultSwitcher';
 import { setActionHandler } from './actions';
 import { SessionArea } from '../sessions/SessionArea';
+import { clampSidebar, SIDEBAR_DEFAULT, useUiState } from '../state/uiState';
 import { sessions, useSessions } from '../sessions/store';
 import { focusTerminal } from '../sessions/TerminalView';
 import { HostEditor } from '../editors/HostEditor';
@@ -44,6 +45,32 @@ export function Shell() {
   const [zoom, setZoom] = useState(0);
   const filterRef = useRef<HTMLInputElement>(null);
   const prevStatus = useRef(new Map<string, string>());
+  const { ui, update: updateUi } = useUiState(vault?.path ?? '');
+  const narrowRef = useRef(narrow);
+  narrowRef.current = narrow;
+
+  // The remembered sidebar state applies once loaded, unless the window is too narrow
+  // to dock it. Only what the person chooses in a wide window is remembered.
+  const uiLoaded = ui !== null;
+  useEffect(() => {
+    if (ui && !narrowRef.current) setCollapsed(!ui.sidebar_open);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uiLoaded, vault?.path]);
+  const setSidebarCollapsed = useCallback((c: boolean | ((was: boolean) => boolean)) => {
+    setCollapsed((was) => {
+      const next = typeof c === 'function' ? c(was) : c;
+      if (!narrowRef.current && next !== was) updateUi({ sidebar_open: !next });
+      return next;
+    });
+  }, [updateUi]);
+
+  const sidebarWidth = ui?.sidebar_width ?? SIDEBAR_DEFAULT;
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-w', sidebarWidth + 'px');
+    return () => { document.documentElement.style.removeProperty('--sidebar-w'); };
+  }, [sidebarWidth]);
+  const collapsedGroups = new Set(ui?.collapsed ?? []);
+  const setCollapsedGroups = useCallback((next: Set<string>) => updateUi({ collapsed: [...next] }), [updateUi]);
 
   const fontSize = Math.max(8, Math.min(32, settings.term_font_size + zoom));
   const tab = tabs.find((t) => t.id === active);
@@ -110,10 +137,10 @@ export function Shell() {
   }), [refreshCatalog]);
 
   const showView = useCallback((v: View) => {
-    if (v === 'hosts' && view === 'hosts') { setCollapsed((c) => !c); return; }
+    if (v === 'hosts' && view === 'hosts') { setSidebarCollapsed((c) => !c); return; }
     setView(v);
-    if (v === 'hosts') setCollapsed(false);
-  }, [view]);
+    if (v === 'hosts') setSidebarCollapsed(false);
+  }, [view, setSidebarCollapsed]);
 
   const cycleRegion = (dir: 1 | -1) => {
     const regions = ['.palette-btn', '.rail', '.sidebar', '.tabbar', '.toolbar', '.pane', '.statusbar']
@@ -136,14 +163,16 @@ export function Shell() {
       case 'palette': setPalette({ hostsOnly: false }); break;
       case 'gotoHost': setPalette({ hostsOnly: true }); break;
       case 'newSession': setPalette({ hostsOnly: true, newSession: true }); break;
-      case 'switchVault': setView('hosts'); setCollapsed(false); setSwitcher(true); break;
+      case 'switchVault': setView('hosts'); setSidebarCollapsed(false); setSwitcher(true); break;
       case 'openVault': openVaultFile().catch(fail); break;
       case 'createVault': go('create'); break;
       case 'closeTab': if (active) sessions.close(active); break;
       case 'reconnect': if (active) sessions.reconnect(active); break;
       case 'duplicate': if (tab) connect(tab.alias, true); break;
-      case 'toggleSidebar': if (view === 'hosts') setCollapsed((c) => !c); else { setView('hosts'); setCollapsed(false); } break;
-      case 'viewHosts': setView('hosts'); setCollapsed(false); setTimeout(() => filterRef.current?.focus(), 0); break;
+      case 'toggleSidebar': if (view === 'hosts') setSidebarCollapsed((c) => !c); else { setView('hosts'); setSidebarCollapsed(false); } break;
+      case 'viewHosts': setView('hosts'); setSidebarCollapsed(false); setTimeout(() => filterRef.current?.focus(), 0); break;
+      case 'collapseAll': setView('hosts'); setSidebarCollapsed(false); setCollapsedGroups(new Set(catalog.groups.map((g) => g.path))); break;
+      case 'expandAll': setView('hosts'); setSidebarCollapsed(false); setCollapsedGroups(new Set()); break;
       case 'viewKeys': setView('keys'); break;
       case 'viewCredentials': setView('credentials'); break;
       case 'settings': setView('settings'); break;
@@ -165,7 +194,7 @@ export function Shell() {
       case 'prevRegion': cycleRegion(-1); break;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, tab, view, selected, catalog.hosts, connect, lock, openVaultFile, fail, go]);
+  }, [active, tab, view, selected, catalog.hosts, catalog.groups, connect, lock, openVaultFile, fail, go, setSidebarCollapsed, setCollapsedGroups]);
 
   useEffect(() => {
     setActionHandler(run);
@@ -222,7 +251,9 @@ export function Shell() {
       {showSidebar && narrow && <div style={{ position: 'absolute', inset: 'var(--titlebar-h) 0 var(--statusbar-h) var(--rail-w)', zIndex: 4 }} onMouseDown={() => setCollapsed(true)} />}
       {showSidebar && (
         <div style={narrow ? { position: 'relative', zIndex: 5 } : undefined} onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
-          <HostTree selected={selected} filterRef={filterRef} h={{
+          <HostTree selected={selected} filterRef={filterRef} collapsed={collapsedGroups} setCollapsed={setCollapsedGroups}
+            resizer={narrow ? null : <SidebarResizer width={sidebarWidth} onLive={(w) => document.documentElement.style.setProperty('--sidebar-w', w + 'px')} onDone={(w) => updateUi({ sidebar_width: w })} />}
+            h={{
             connect, select: setSelected,
             editHost: (alias) => setEditor({ alias, group: '' }),
             newHost: (group) => setEditor({ alias: null, group }),
@@ -230,7 +261,14 @@ export function Shell() {
             newGroup,
             renameGroup: (path) => setAsk({
               title: `Rename ${path}`, label: 'New name', value: path.split('/').pop() ?? '', action: 'Rename',
-              run: async (v) => { await api.groupRename(path, v); await refreshCatalog(); },
+              run: async (v) => {
+                const g = await api.groupRename(path, v);
+                // Keep the renamed group, and the groups under it, collapsed.
+                if ([...collapsedGroups].some((c) => c === path || c.startsWith(path + '/'))) {
+                  setCollapsedGroups(new Set([...collapsedGroups].map((c) => (c === path ? g.path : c.startsWith(path + '/') ? g.path + c.slice(path.length) : c))));
+                }
+                await refreshCatalog();
+              },
             }),
             deleteGroup: (path) => setConfirm({
               title: `Delete group ${path}?`, body: 'Only an empty group can be deleted; move or delete its hosts first.', action: 'Delete group',
@@ -272,6 +310,43 @@ export function Shell() {
         <EmptyVault onNewHost={() => setEditor({ alias: null, group: '' })} onAddKey={() => { setView('keys'); setAddingKey(true); }} onCreds={() => setView('credentials')} />
       )}
     </div>
+  );
+}
+
+// The sidebar's right edge: drag to resize (200-400 px), double-click for the default
+// width, or focus it and use ← →. The width applies live; it is stored when the drag ends.
+function SidebarResizer({ width, onLive, onDone }: { width: number; onLive: (w: number) => void; onDone: (w: number) => void }) {
+  const [dragging, setDragging] = useState(false);
+  return (
+    <div className={'sidebar-resize' + (dragging ? ' is-hover' : '')} role="separator" aria-orientation="vertical" aria-label="Resize the sidebar"
+      aria-valuemin={200} aria-valuemax={400} aria-valuenow={width} tabIndex={0} title="Drag to resize · double-click to reset"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        const el = e.currentTarget;
+        el.setPointerCapture(e.pointerId);
+        setDragging(true);
+        const left = (el.parentElement?.getBoundingClientRect().left ?? 0);
+        let last = width;
+        const move = (ev: PointerEvent) => { last = clampSidebar(ev.clientX - left); onLive(last); };
+        const up = () => {
+          el.removeEventListener('pointermove', move);
+          el.removeEventListener('pointerup', up);
+          el.removeEventListener('pointercancel', up);
+          setDragging(false);
+          if (last !== width) onDone(last);
+        };
+        el.addEventListener('pointermove', move);
+        el.addEventListener('pointerup', up);
+        el.addEventListener('pointercancel', up);
+      }}
+      onDoubleClick={() => { onLive(SIDEBAR_DEFAULT); onDone(SIDEBAR_DEFAULT); }}
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        const w = clampSidebar(width + (e.key === 'ArrowRight' ? 16 : -16));
+        onLive(w);
+        onDone(w);
+      }} />
   );
 }
 

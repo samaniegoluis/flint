@@ -15,17 +15,20 @@ import { actionFor } from '../lib/keymap';
 import { runAction } from '../shell/actions';
 import { sessions } from './store';
 import styles from './TerminalView.module.css';
+import { paletteVars, themePalette } from '../lib/terminalThemes';
 
 const PRINTABLE_KEY_CODE_RE = /^(Key[A-Z]|Digit[0-9]|Space|Backquote|Minus|Equal|Bracket(Left|Right)|Backslash|Semicolon|Quote|Comma|Period|Slash|Intl(Backslash|Ro|Yen))$/;
 const IME_SENTINEL_KEYS = new Set(['Dead', 'Unidentified', 'Process', 'AltGraph']);
 
-function cssVar(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+function readVar(name: string, el: Element = document.documentElement): string {
+  return getComputedStyle(el).getPropertyValue(name).trim();
 }
 
-// The terminal palette comes from the tokens (--ansi-0…15, --term-*), read when the
-// theme changes.
-export function terminalTheme(): ITheme {
+// The terminal palette comes from the CSS variables (--ansi-0…15, --term-*) as `el`
+// sees them: the design tokens, overridden on the pane by the chosen colour theme
+// (Settings → Terminal). Read again when the theme or the light/dark mode changes.
+export function terminalTheme(el: Element = document.documentElement): ITheme {
+  const cssVar = (name: string) => readVar(name, el);
   const ansi = (n: number) => cssVar('--ansi-' + n);
   return {
     background: cssVar('--term-bg'), foreground: cssVar('--term-fg'),
@@ -38,7 +41,7 @@ export function terminalTheme(): ITheme {
 }
 
 export function fontStack(family: string): string {
-  const base = cssVar('--font-mono') || 'monospace';
+  const base = readVar('--font-mono') || 'monospace';
   return family ? `"${family}", ${base}` : base;
 }
 
@@ -76,7 +79,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       cursorBlink: settings.term_cursor_blink,
       scrollback: 10000,
       allowProposedApi: true,
-      theme: terminalTheme(),
+      theme: terminalTheme(hostRef.current ?? undefined),
       vtExtensions: { kittyKeyboard: true },
     } as ConstructorParameters<typeof Terminal>[0]);
     const fit = new FitAddon();
@@ -182,8 +185,8 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
-    term.options.theme = terminalTheme();
-  }, [dark, settings.accent]);
+    term.options.theme = terminalTheme(hostRef.current ?? undefined);
+  }, [dark, settings.accent, settings.term_theme]);
 
   useEffect(() => {
     const term = termRef.current;
@@ -210,7 +213,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
   }, [active, focus]);
 
   return (
-    <div ref={hostRef} className={styles.term} data-tab={tabId} hidden={!active}>
+    <div ref={hostRef} className={styles.term} data-tab={tabId} hidden={!active} style={paletteVars(themePalette(settings.term_theme, dark))}>
       <div ref={screenRef} className={styles.screen} />
     </div>
   );

@@ -93,6 +93,14 @@ export interface Catalog {
   known_hosts: KnownHostView[];
 }
 
+// The layout state of this machine (D-030): the sidebar, and the open vault's
+// collapsed groups by path (the core stores their ids).
+export interface UiStateView {
+  sidebar_open: boolean;
+  sidebar_width: number;
+  collapsed: string[];
+}
+
 export interface Settings {
   theme: 'system' | 'dark' | 'light';
   accent: 'ember' | 'sapphire' | 'moss' | 'iris';
@@ -104,6 +112,7 @@ export interface Settings {
   term_line_height: number;
   term_cursor: 'block' | 'bar' | 'underline';
   term_cursor_blink: boolean;
+  term_theme: 'default' | 'catppuccin' | 'tokyo-night' | 'aura' | 'dracula' | 'nord';
 }
 
 // A host patch as the core's HostPatch: a `set_*` flag says the field is given.

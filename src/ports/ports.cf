@@ -19,6 +19,7 @@ type Crypto interface {
     derive_subkey(master: []byte, id: u64, kdf_context: str) -> []byte!
     seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte!
     unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte!
+    digest(data: []byte, out_len: usize) -> []byte!
 }
 
 // The encrypted vault file (adapters/vault, SQLCipher). One vault is open at a time.
@@ -152,6 +153,14 @@ type ExecSink interface {
 // clears it after `clear_after_ms` unless something else was copied since (D-029).
 type Clipboard interface {
     clipboard_copy_secret(text: str, clear_after_ms: i64) -> void!
+}
+
+// The desktop app's layout state (adapters/config, ui-state.json, D-030).
+// `ui_state_load` returns the defaults when nothing has been saved yet or the file
+// is damaged; writes are atomic.
+type UiStateStore interface {
+    ui_state_load() -> UiState!
+    ui_state_save(s: UiState) -> void!
 }
 
 // Monotonic milliseconds, for timeouts and durations (adapters/process).

@@ -47,6 +47,16 @@ fn (self: FakeCrypto) derive_subkey(master: []byte, id: u64, kdf_context: str) -
     return k
 }
 
+// Not a real hash: distinct inputs of the tests give distinct outputs.
+fn (self: FakeCrypto) digest(data: []byte, out_len: usize) -> []byte! {
+    mut res := make([]byte, out_len)
+    for i, b in data {
+        j := i % out_len
+        res[j] = u8(res[j] * 31 + u8(b) + u8(i))
+    }
+    return res
+}
+
 // sealed = [aad_len] aad [key0] (plaintext xor key0)
 fn (self: FakeCrypto) seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte! {
     mut s: []byte = [u8(aad.len())]
@@ -387,7 +397,13 @@ fn (self: FakeRecents) recents_load() -> []RecentVault! {
     for line in str_split_lines(text) {
         tab := str.index_of(line, "\t")
         if tab >= 0 {
-            list.push(RecentVault{ path: line.substr(0, usize(tab)), name: line.substr(usize(tab) + 1) })
+            rest := line.substr(usize(tab) + 1)
+            tab2 := str.index_of(rest, "\t")
+            if tab2 >= 0 {
+                list.push(RecentVault{ path: line.substr(0, usize(tab)), name: rest.substr(0, usize(tab2)), id: rest.substr(usize(tab2) + 1) })
+            } else {
+                list.push(RecentVault{ path: line.substr(0, usize(tab)), name: rest, id: "" })
+            }
         }
     }
     return list
@@ -396,7 +412,7 @@ fn (self: FakeRecents) recents_load() -> []RecentVault! {
 fn (self: FakeRecents) recents_save(list: []RecentVault) -> void! {
     mut text := ""
     for v in list {
-        text = text + v.path + "\t" + v.name + "\n"
+        text = text + v.path + "\t" + v.name + "\t" + v.id + "\n"
     }
     try fs.write_text(self.path, text)
 }
@@ -679,6 +695,20 @@ fn (self: FakeSettingsStore) settings_load() -> Settings! {
 
 fn (mut self: FakeSettingsStore) settings_save(s: Settings) -> void! {
     self.saved = s
+}
+
+type FakeUiStateStore struct {
+    saved: UiState
+    saves: i64
+}
+
+fn (self: FakeUiStateStore) ui_state_load() -> UiState! {
+    return self.saved
+}
+
+fn (mut self: FakeUiStateStore) ui_state_save(s: UiState) -> void! {
+    self.saved = s
+    self.saves += 1
 }
 
 type FakeFonts struct {

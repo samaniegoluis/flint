@@ -596,3 +596,61 @@ The entries below were found while building milestone 02 against the same cfire 
   pkg-config file, `flint-native-gui`, so the CLI does not load AppKit or GTK (CF-031).
 - **Ideal:** `webui.App.clipboard_set(text, { concealed: true, clear_after_ms })` and
   `clipboard_get()`, run on the UI thread, for macOS, GTK and WebView2.
+
+### CF-054 · bug · `confirmed`: `fs.write_all` is documented as atomic but is not; `fs.rename` is undocumented
+- **Repro:** `cfire stdlib core:fs` (cfire 0.9.4, also `cfire_stdlib_lookup`) says
+  `write_all` "writes a byte slice atomically to disk". `runtime/core/fs.hpp` lowers
+  `write_all` and `write_text` to the same `write_bytes`, which truncates and writes in
+  place: a crash or a full disk mid-write leaves a truncated file. `fs.rename` exists in
+  `fs.hpp` (and type-checks) but is missing from the stdlib reference, so the documented
+  API has no way to write a file atomically.
+- **Workaround:** none native. `src/adapters/config/atomic.cf` writes `<path>.tmp` with
+  `fs.write_text`, then `fs.rename`s it over the target (`ui-state.json`, D-030).
+- **Ideal:** document `fs.rename`, fix the `write_all` text, and add
+  `fs.write_atomic(path, data)` (temp file in the same folder, fsync, rename).
+
+### CF-055 · bug · `confirmed`: `str.bytes()` and `[]byte` are different C++ types
+- **Repro:** `mut data: []byte = []; for b in "abc".bytes() { data.push(b) }` passes
+  `cfire check`, then clang fails: `no known conversion from 'const std::byte' to
+  'unsigned char'`. `str.bytes()` lowers to `std::span<const std::byte>`, `[]byte` to
+  `std::vector<std::uint8_t>`. The same split breaks `sha256.hash_bytes(data)` with a
+  `[]byte` argument (`no viable conversion … to std::span<const std::byte>`).
+- **Workaround:** push `u8(b)` (`vault_id` in `src/application/session.cf`); the test
+  fake of `Crypto.digest` does not call `sha256` (`src/application/fakes_test.cf`).
+- **Ideal:** one byte type, or an implicit view between the two, checked by cfire, not
+  by clang.
+
+### CF-056 · bug · `confirmed`: a parse error in one file of a package is reported as C++ errors in the others
+- **Repro:** name a local `out` (a reserved word: the `out` parameter intent) in one
+  file of a package, then `cfire test <dir>`. The file is silently left out, and the
+  output is clang's `unknown type name 'FakeCrypto'` / `use of undeclared identifier
+  'SALT_LEN'` in the *other* files. The real message (`expected 'IDENT', got 'out'`)
+  appears only from `cfire check <file>` (or `cfire_check` over MCP), buried among
+  the cascade. Hit three times in milestone 07.
+- **Workaround:** run `cfire check` on the edited file when a package fails this way.
+- **Ideal:** stop at the parse error and print it first; and a message that says `out`
+  is reserved (`'out' is a parameter intent and cannot name a variable`).
+
+### CF-057 · bug · `confirmed`: `ext:json` ignores the `default:"…"` struct tag
+- **Repro:** `type A struct { x: str \`json:"x"\`; y: str \`json:"y" default:"dflt"\` }`,
+  then `json.parse[A]("{\"x\":\"1\"}")` succeeds with `a.y == ""` (cfire 0.9.4). The
+  language rules (`cfire/INVALID-STRUCT-TAG`) validate `default:` tags at compile
+  time, so the tag reads as supported; it only seems to apply to `cli` parsing.
+- **Workaround:** a field added to a stored file reads as its zero value in older files,
+  and the application layer repairs it: `load_settings` falls back field by field
+  (`term_theme`, `src/application/settings.cf`); an empty recent-vault `id` means
+  "unknown" (`src/application/session.cf`).
+- **Ideal:** `json.parse` fills a missing field from its `default:` tag, or the checker
+  warns that `default:` has no effect outside `cli` structs.
+
+### CF-058 · bug · `confirmed`: `cfire build <target>` builds every target
+- **Repro:** with two executables in `build.cf` (`Flint` → `build/flint`, `FlintGui` →
+  `build/gui/Flint.app`), `cfire build Flint` prints both `✓ Built Native Binary` and
+  `✓ Built Native App` (cfire 0.9.4). Rebuilding the app bundle rewrites its fixed
+  `Info.plist`, so the icon key `scripts/build-gui.sh` adds (CF-052) is gone: the owner's
+  install command (`build-gui.sh && cfire build Flint && ditto …`) installed an app with
+  no icon.
+- **Workaround:** build the CLI first, then `scripts/build-gui.sh` last
+  (`cfire build && scripts/build-gui.sh`), so the bundle is patched after cfire writes it.
+- **Ideal:** `cfire build <name>` builds only that target (and says so when the name
+  matches none).

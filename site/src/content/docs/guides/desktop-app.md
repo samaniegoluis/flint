@@ -30,8 +30,12 @@ can turn the reopening off in **Settings → Appearance → Window**.
 | Status bar | Lock state, the number of open sessions, **Lock** |
 
 Click **Hosts** again (or press <kbd>⌘B</kbd>) to hide the sidebar and give the terminal
-the whole width. Below about 1040 px of window width the sidebar starts hidden and opens
-over the terminal.
+the whole width. Drag the sidebar's right edge to make it wider or narrower (200 to 400 px;
+double-click the edge for the default width, or focus it and use <kbd>←</kbd> <kbd>→</kbd>).
+Below about 1040 px of window width the sidebar starts hidden and opens over the terminal.
+
+Flint remembers the layout on this machine: whether the sidebar is open, its width, and
+which groups are collapsed in each vault. See [Layout on this machine](#layout-on-this-machine).
 
 ### The host tree
 
@@ -43,6 +47,8 @@ over the terminal.
   here**, **New subgroup**, **Rename** and **Delete** (only an empty group can be
   deleted).
 - The filter matches aliases, labels, hostnames and tags.
+- **Collapse all** and **Expand all** sit beside **New group** at the top of the tree, and
+  in the command palette.
 
 ## Hosts, keys and credentials
 
@@ -123,7 +129,7 @@ always reach the shell; on Linux, Flint's own shortcuts use <kbd>Ctrl+Shift</kbd
 and paste with <kbd>⌘C</kbd> <kbd>⌘V</kbd> on macOS and <kbd>Ctrl+Shift+C</kbd>
 <kbd>Ctrl+Shift+V</kbd> on Linux. Right-click copies the selection, or pastes when
 nothing is selected. <kbd>⌘+</kbd> <kbd>⌘−</kbd> <kbd>⌘0</kbd> change the font size of
-open sessions.
+open sessions. Its colours come from **Settings → Terminal → Colours**.
 
 ## The command palette
 
@@ -139,7 +145,10 @@ palettes <kbd>⌘↵</kbd> opens a host in a new tab. <kbd>⌘I</kbd> edits the 
 The vault button at the top of the sidebar (<kbd>⇧⌘O</kbd>) lists your recent vaults,
 with **Open vault…**, **Create vault…** and **Manage vaults…**. Switching vaults closes
 the sessions of the current one. **Manage vaults** can forget a vault's cached key on
-this machine, or remove it from the list; the file itself is never deleted.
+this machine, or remove it from the list; the file itself is never deleted. It also has
+**Rename** for the open vault, as does **Settings → Vault**: the name changes inside the
+vault and in the list, and the file keeps its name and place (see
+[Rename or move a vault](/guides/vaults/#rename-or-move-a-vault)).
 
 **Lock** (<kbd>⌘L</kbd>) closes every session and returns to the unlock screen. The
 keychain still holds the key, so to require the master password on this machine, use
@@ -151,12 +160,24 @@ Settings belong to this machine, not to the vault, and save as you change them.
 
 - **Appearance**: dark, light or matching the system; the accent colour; row density;
   whether to follow the system's reduce-motion setting; reopening the last vault.
-- **Terminal**: the font (any monospaced font installed on this machine, or the bundled
-  JetBrains Mono), size, line height and cursor.
+- **Terminal**: the colours (Default, Catppuccin, Tokyo Night, Aura, Dracula or Nord, each
+  in a dark and a light variant that follows the app's theme), the font (any monospaced
+  font installed on this machine, or the bundled JetBrains Mono), size, line height and
+  cursor.
 - **Keyboard shortcuts**: the full map for macOS and Linux. Custom shortcuts are coming
   in a later version.
-- **Vault**: the open vault's file and counts, whether this machine remembers its key,
-  **Lock now**, and the known hosts, each of which you can forget.
+- **Vault**: the open vault's file and counts, **Rename**, whether this machine remembers
+  its key, **Lock now**, and the known hosts, each of which you can forget.
 
 They are kept in `settings.json` in Flint's config folder (`~/Library/Application
 Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults list.
+
+## Layout on this machine
+
+The sidebar (open or closed, and its width) and the collapsed groups of each vault are
+kept in `ui-state.json` in the same config folder, not in the vault: a vault synced
+between machines is not rewritten each time you fold a group, and each machine keeps its
+own layout. The file holds only ids: a vault is named by a hash of its salt, and a group
+by its random id, so it never contains a vault, group or host name. A vault that is moved
+or renamed keeps its layout, and so does a renamed group. If the file is damaged, Flint
+starts from the default layout.

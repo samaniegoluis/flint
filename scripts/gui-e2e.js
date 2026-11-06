@@ -35,6 +35,17 @@
       await sleep(50);
     }
   }
+  // waitFor for a condition that needs an RPC (an async function).
+  async function waitForAsync(fn, what, ms = 20000) {
+    const start = Date.now();
+    for (;;) {
+      let v;
+      try { v = await fn(); } catch { v = null; }
+      if (v) return v;
+      if (Date.now() - start > ms) throw new Error('timed out waiting for ' + what);
+      await sleep(50);
+    }
+  }
   const text = () => document.body.innerText;
   const hasText = (t) => text().includes(t);
   const q = (sel, root = document) => root.querySelector(sel);
@@ -431,6 +442,15 @@
     await check(saved.accent === 'moss' && saved.theme === 'light', 'appearance settings are saved');
     await click('.nav-i', 'Terminal');
     await waitFor(() => hasText('installed monospaced fonts'), 'the terminal settings');
+    await click('[role="radiogroup"][aria-label="Terminal colours"] button', 'Aura');
+    await waitForAsync(async () => (await window.backend.settings_get({})).term_theme === 'aura', 'the terminal theme to be saved');
+    const preview = q('.set-row .term');
+    await check(preview.style.getPropertyValue('--term-bg') === '#f3f0ff', `the preview uses Aura's light palette in the light theme (${preview.style.getPropertyValue('--term-bg')})`);
+    const pane = q('[data-tab]');
+    if (pane) await check(pane.style.getPropertyValue('--ansi-4') === '#7b58d6', 'an open terminal takes the chosen palette');
+    await click('[role="radiogroup"][aria-label="Terminal colours"] button', 'Default');
+    await waitFor(() => !q('.set-row .term').style.getPropertyValue('--term-bg'), 'the default palette (tokens) again');
+    await check(true, 'Default goes back to the design tokens');
     await click('.nav-i', 'Vault');
     await waitFor(() => hasText('Known hosts'), 'the vault settings');
     await check(byText('td', `[127.0.0.1]:${PORT}`), 'known hosts are listed');
@@ -489,6 +509,51 @@
       await check(!termText().includes('winch-10'), 'coming back from Settings sends the shell no resize');
     }
 
+    await setStep('app state: sidebar and groups');
+    // The Hosts button toggles the sidebar when the Hosts view is already shown.
+    if (!q('.sidebar')) await click('.rail-btn', 'Hosts');
+    await click('.side-head .icon-btn[aria-label="New group"]');
+    await fill('#ta', 'e2e-grp');
+    await click('.modal button[type="submit"]');
+    const grpRow = () => byText('.tree .ti[aria-expanded]', 'e2e-grp');
+    await waitFor(grpRow, 'the new group in the tree');
+    const uiState = () => window.backend.ui_state_get({});
+    grpRow().click();
+    await waitForAsync(async () => (await uiState()).collapsed.includes('e2e-grp'), 'the collapsed group to be stored');
+    await check(grpRow().getAttribute('aria-expanded') === 'false', 'a collapsed group is stored for this vault');
+    await click('.side-head .icon-btn[aria-label="Expand all groups"]');
+    await waitForAsync(async () => (await uiState()).collapsed.length === 0, 'expand all to be stored');
+    await check(qa('.tree .ti[aria-expanded="false"]').length === 0, 'Expand all opens every group');
+    await click('.side-head .icon-btn[aria-label="Collapse all groups"]');
+    await waitForAsync(async () => (await uiState()).collapsed.length === qa('.tree .ti[aria-expanded]').length, 'collapse all to be stored');
+    await check(qa('.tree .ti[aria-expanded="true"]').length === 0, 'Collapse all closes every group');
+    const resizer = await waitFor(() => q('.sidebar-resize'), 'the sidebar resize handle');
+    resizer.focus();
+    resizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true, cancelable: true }));
+    await waitForAsync(async () => (await uiState()).sidebar_width === 280, 'the new sidebar width to be stored');
+    await check(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w').trim() === '280px', 'the sidebar takes the new width');
+    if (window.innerWidth >= 1040) {
+      await click('.rail-btn', 'Hosts');
+      await waitForAsync(async () => (await uiState()).sidebar_open === false, 'the closed sidebar to be stored');
+      await check(!q('.sidebar'), 'the Hosts button closes the sidebar, and that is remembered');
+      await click('.rail-btn', 'Hosts');
+      await waitForAsync(async () => (await uiState()).sidebar_open === true, 'the open sidebar to be stored');
+    } else {
+      await log(`skip sidebar open/closed: the window is ${window.innerWidth} px, too narrow to dock it`);
+    }
+
+    await setStep('rename the vault');
+    await click('.rail-btn', 'Settings');
+    await click('.nav-i', 'Vault');
+    await click('button', 'Rename…');
+    await fill('[aria-label="Vault name"]', 'E2E Renamed');
+    await click('button[type="submit"]', 'Save');
+    await waitFor(() => hasText('Renamed E2E Vault to E2E Renamed'), 'the rename notice');
+    const recents = await window.backend.vault_recents({});
+    await check(recents[0].name === 'E2E Renamed', 'the recent list shows the new name');
+    await click('.rail-btn', 'Hosts');
+    await check(q('.vault-btn .vault-name').textContent === 'E2E Renamed', 'the vault button shows the new name');
+
     await setStep('lock');
     await click('.statusbar .sb-btn', 'Lock');
     await waitFor(() => hasText('Master password'), 'the unlock screen');
@@ -501,8 +566,11 @@
     await check(q('#pw').value === 'wrong-password', 'the wrong attempt stays in the field, selected');
     await fill('#pw', MASTER);
     await click('button[type="submit"]', 'Unlock');
-    await waitFor(() => byText('.tree .ti', 'local'), 'the unlocked tree', 30000);
+    await waitFor(() => byText('.tree .ti', 'local') || grpRow(), 'the unlocked tree', 30000);
     await check(true, 'the right master password unlocks the vault again');
+    await waitFor(() => grpRow()?.getAttribute('aria-expanded') === 'false', 'the collapsed group after unlocking');
+    await check(true, 'the vault opens with its groups collapsed as they were left');
+    await check(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w').trim() === '280px', 'and with the sidebar width that was set');
 
     await log(`${passed} checks passed`);
     await window.backend.e2e_report({ ok: true, detail: '' });

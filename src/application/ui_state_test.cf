@@ -1,0 +1,69 @@
+package application
+
+import "../domain"
+
+test "ui state is kept per vault, most recent first, and cleaned" {
+    mut store := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+    a := "0123456789abcdef0123456789abcdef"
+    b := "fedcba9876543210fedcba9876543210"
+    g := "00112233445566778899aabbccddeeff"
+
+    fresh := ui_state_for(store, a)
+    assert(fresh.sidebar_open)
+    assert_eq(fresh.sidebar_width, SIDEBAR_WIDTH_DEFAULT)
+    assert_eq(fresh.collapsed.len(), usize(0))
+
+    _ := try save_ui_state(mut store, a, UiStateView{ sidebar_open: false, sidebar_width: 320, collapsed: [g] })
+    _ := try save_ui_state(mut store, b, UiStateView{ sidebar_open: false, sidebar_width: 1000, collapsed: [] })
+    assert_eq(store.saved.vaults[0].vault, b)
+    assert_eq(store.saved.sidebar_width, SIDEBAR_WIDTH_MAX)
+
+    back := ui_state_for(store, a)
+    assert(!back.sidebar_open)
+    assert_eq(back.collapsed.len(), usize(1))
+    assert_eq(back.collapsed[0], g)
+    assert_eq(ui_state_for(store, "").collapsed.len(), usize(0))
+
+    // No vault open: only the sidebar is stored, the vaults are kept.
+    _ := try save_ui_state(mut store, "", UiStateView{ sidebar_open: true, sidebar_width: 250, collapsed: [g] })
+    assert_eq(store.saved.vaults.len(), usize(2))
+    assert(store.saved.sidebar_open)
+
+    bad := save_ui_state(mut store, "../../x", UiStateView{ sidebar_open: true, sidebar_width: 250, collapsed: [] })
+    assert(!bad.has_value())
+}
+
+fn test_vault_id(i: i64) -> str {
+    digits := "0123456789abcdef"
+    return "000000000000000000000000000000" + digits.substr(usize(i / 16), 1) + digits.substr(usize(i % 16), 1)
+}
+
+test "ui state keeps at most the cap of vaults" {
+    mut store := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+    for i in 0..40 {
+        id := test_vault_id(i64(i))
+        _ := try save_ui_state(mut store, id, UiStateView{ sidebar_open: true, sidebar_width: 264, collapsed: [] })
+    }
+    assert_eq(store.saved.vaults.len(), UI_STATE_MAX_VAULTS)
+    assert_eq(store.saved.vaults[0].vault, test_vault_id(39))
+}
+
+test "the GUI's group paths are stored as ids and survive a rename" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/Ui.flint", "", "correct horse")
+    _ := try add_group(crypto, mut store, "homelab/proxmox")
+    _ := try add_group(crypto, mut store, "work")
+    mut ui := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+
+    saved := try save_ui_state_paths(mut ui, store, s.id, UiStateView{ sidebar_open: true, sidebar_width: 264, collapsed: ["homelab/proxmox", "work", "nope"] })
+    assert_eq(saved.collapsed.len(), usize(2))
+    for id in ui.saved.vaults[0].collapsed {
+        assert(is_hex_id(id), "only ids are stored")
+    }
+
+    _ := try rename_group(mut store, "work", "office")
+    back := try ui_state_paths(ui, store, s.id)
+    assert_eq(back.collapsed.len(), usize(2))
+    assert(back.collapsed[0] == "office" || back.collapsed[1] == "office")
+}

@@ -72,6 +72,7 @@ fn main() {
     config_dir := flint_config_dir()
     recents := new_json_recent_store(config_dir)
     mut settings_store := new_json_settings_store(config_dir)
+    mut ui_state_store := new_json_ui_state_store(config_dir)
     inspector := new_libssh_key_inspector()
     font_catalog := new_os_font_catalog()
     mut clipboard := new_os_clipboard()
@@ -89,6 +90,8 @@ fn main() {
     app.bind_raw("settings_get") |params| { return rpc_settings_get(settings_store) }
     app.bind_raw("settings_set") |params| { return rpc_settings_set(params, mut settings_store) }
     app.bind_raw("fonts_mono") |params| { return rpc_fonts_mono(font_catalog) }
+    app.bind_raw("ui_state_get") |params| { return rpc_ui_state_get(ui_state_store, store, st) }
+    app.bind_raw("ui_state_set") |params| { return rpc_ui_state_set(params, mut ui_state_store, store, st) }
 
     app.bind_raw("vault_recents") |params| { return rpc_vault_recents(store, recents) }
     app.bind_raw("vault_unlock") |params| { return rpc_vault_unlock(params, c, mut store, kc, recents, mut st) }
@@ -97,6 +100,7 @@ fn main() {
     app.bind_raw("vault_forget_key") |params| { return rpc_vault_forget_key(params, mut store, kc, mut st) }
     app.bind_raw("vault_forget") |params| { return rpc_vault_forget(params, mut store, kc, recents, mut st) }
     app.bind_raw("vault_status") |params| { return rpc_vault_status(mut store, st) }
+    app.bind_raw("vault_rename") |params| { return rpc_vault_rename(params, mut store, recents, mut st) }
 
     app.bind_raw("catalog") |params| { return rpc_catalog(store, st) }
     app.bind_raw("group_add") |params| { return rpc_group_add(params, c, mut store, st) }

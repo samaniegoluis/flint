@@ -4,7 +4,7 @@
 
 import type {
   AppInfo, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  KnownHostView, RecentView, Settings, VaultInfo, VaultStatus,
+  KnownHostView, RecentView, Settings, UiStateView, VaultInfo, VaultStatus,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -59,6 +59,8 @@ export const api = {
   settingsGet: () => call<Settings>('settings_get'),
   settingsSet: (s: Settings) => call<Settings>('settings_set', s),
   fonts: () => call<{ fonts: string[] }>('fonts_mono'),
+  uiStateGet: () => call<UiStateView>('ui_state_get'),
+  uiStateSet: (s: UiStateView & { vault: string }) => call<UiStateView>('ui_state_set', s),
 
   recents: () => call<RecentView[]>('vault_recents'),
   unlock: (path: string, password: string) => call<VaultInfo>('vault_unlock', { path, password }),
@@ -67,6 +69,7 @@ export const api = {
   forgetKey: (path: string) => call('vault_forget_key', { path }),
   forget: (path: string) => call('vault_forget', { path }),
   status: () => call<VaultStatus>('vault_status'),
+  rename: (name: string) => call<VaultInfo>('vault_rename', { name }),
 
   catalog: () => call<Catalog>('catalog'),
   groupAdd: (path: string) => call<GroupView>('group_add', { path }),

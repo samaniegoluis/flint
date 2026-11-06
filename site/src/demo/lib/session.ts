@@ -115,7 +115,7 @@ export class DemoSession {
 		return { text: 'Explore freely: flint help lists every command, and tour starts the guide again.', command: 'flint help' };
 	}
 
-	/** "Step 2 of 8", or null with no tour running. */
+	/** "Step 2 of 9", or null with no tour running. */
 	tourLabel(): string | null {
 		return this.tourStep === null ? null : `Step ${this.tourStep + 1} of ${TOUR.steps.length}`;
 	}

@@ -91,8 +91,9 @@ function stub({ catalog, recents, screens, theme }) {
 	const b64 = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
 	const settings = {
 		theme, accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
-		term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: false,
+		term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: false, term_theme: 'default',
 	};
+	const uiState = { sidebar_open: true, sidebar_width: 264, collapsed: [] };
 	const current = recents.find((r) => r.current);
 	const replies = {
 		app_info: () => ({ version: '0.1.0', os: 'mac', libssh: '', libsodium: '', sqlite: '', e2e: false }),
@@ -100,6 +101,8 @@ function stub({ catalog, recents, screens, theme }) {
 		settings_get: () => settings,
 		settings_set: (s) => s,
 		fonts_mono: () => ({ fonts: [] }),
+		ui_state_get: () => uiState,
+		ui_state_set: (s) => ({ sidebar_open: s.sidebar_open, sidebar_width: s.sidebar_width, collapsed: s.collapsed }),
 		vault_recents: () => recents,
 		vault_unlock: () => ({ path: current.path, name: current.name, format: 1, cached: true }),
 		vault_status: () => ({ path: current.path, name: current.name, exists: true, cached: true, groups: catalog.groups.length, hosts: catalog.hosts.length, keys: catalog.keys.length, credentials: catalog.credentials.length }),

@@ -56,6 +56,15 @@ type NameReq struct {
     name: str `json:"name"`
 }
 
+// The page's layout state, with the vault it was read for: a write that arrives
+// after the page switched vaults must not land on the new one.
+type UiStateReq struct {
+    vault:         str   `json:"vault"`
+    sidebar_open:  bool  `json:"sidebar_open"`
+    sidebar_width: i64   `json:"sidebar_width"`
+    collapsed:     []str `json:"collapsed"`
+}
+
 type RenameReq struct {
     name:     str `json:"name"`
     new_name: str `json:"new_name"`
@@ -173,22 +182,24 @@ type HostTestEvent struct {
 type GuiState struct {
     path:        str
     name:        str
+    id:          str
     secrets_key: []byte
     cached:      bool
     unlocked:    bool
 }
 
 fn new_gui_state() -> GuiState {
-    return GuiState{ path: "", name: "", secrets_key: [], cached: false, unlocked: false }
+    return GuiState{ path: "", name: "", id: "", secrets_key: [], cached: false, unlocked: false }
 }
 
 fn (self: GuiState) vault_session() -> VaultSession {
-    return VaultSession{ path: self.path, name: self.name, secrets_key: self.secrets_key, cached: self.cached }
+    return VaultSession{ path: self.path, name: self.name, id: self.id, secrets_key: self.secrets_key, cached: self.cached }
 }
 
 fn (mut self: GuiState) adopt(s: VaultSession) {
     self.path = s.path
     self.name = s.name
+    self.id = s.id
     self.secrets_key = s.secrets_key
     self.cached = s.cached
     self.unlocked = true
@@ -197,6 +208,7 @@ fn (mut self: GuiState) adopt(s: VaultSession) {
 fn (mut self: GuiState) forget() {
     self.path = ""
     self.name = ""
+    self.id = ""
     self.secrets_key = []
     self.cached = false
     self.unlocked = false
@@ -258,6 +270,29 @@ fn rpc_settings_set(params: str, mut store: JsonSettingsStore) -> str! {
     return json.stringify(try save_settings(mut store, req))
 }
 
+// The sidebar and the open vault's collapsed groups (D-030). With no vault unlocked,
+// only the sidebar part is read or written.
+// Collapsed groups travel as paths; the core stores their ids.
+fn rpc_ui_state_get(ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState) -> str! {
+    mut vault := ""
+    if st.unlocked {
+        vault = st.id
+    }
+    return json.stringify(try ui_state_paths(ui, store, vault))
+}
+
+fn rpc_ui_state_set(params: str, mut ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState) -> str! {
+    req := try parse_req[UiStateReq](params)
+    mut view := UiStateView{ sidebar_open: req.sidebar_open, sidebar_width: req.sidebar_width, collapsed: req.collapsed }
+    mut vault := ""
+    if st.unlocked && req.vault == st.path {
+        vault = st.id
+    } else {
+        view.collapsed = []
+    }
+    return json.stringify(try save_ui_state_paths(mut ui, store, vault, view))
+}
+
 fn rpc_fonts_mono(catalog: OsFontCatalog) -> str! {
     return json.stringify(FontList{ fonts: try list_mono_fonts(catalog) })
 }
@@ -313,6 +348,15 @@ fn rpc_vault_forget(params: str, mut store: LockedVaultStore, kc: OsKeychain, re
         st.forget()
     }
     return json.stringify(try forget_recent(mut store, kc, recents, req.path))
+}
+
+// Renames the vault open in this window; another vault must be opened first.
+fn rpc_vault_rename(params: str, mut store: LockedVaultStore, recents: JsonRecentStore, mut st: GuiState) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[NameReq](params)
+    s := try rename_vault(mut store, recents, st.vault_session(), req.name)
+    st.adopt(s)
+    return json.stringify(session_info(s))
 }
 
 fn rpc_vault_status(mut store: LockedVaultStore, st: GuiState) -> str! {
