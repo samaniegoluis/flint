@@ -85,6 +85,8 @@ What Tether already does and Flint must not lose.
 | Detect cloud-sync conflict copies and offer to merge | `next` | |
 | Split / export a subset of hosts into a new vault ("give these 20 to my team") | `later` | |
 | Import / merge another vault | `later` | The successor of `flint import tether`: same report (added, already present, changed, not imported) and the same re-run rule, so most of `src/application/tether.cf` carries over. Possible uses: moving hosts between a personal and a work vault, restoring from an export, merging a vault a teammate shared |
+| **Import from other SSH clients** (MobaXterm sessions, mRemoteNG `confCons.xml`, Termius export, SecureCRT, `~/.ssh/config`) through the same import as "Import / merge another vault": one report, the same re-run rule | `idea` | Owner, M08 review (2026-11-06): grow the Flint import into the place other clients' exports come in, testing each against a real export |
+| The generic import's GUI as a **large centred modal** (`min(90vw, 1040px) × min(85vh, 760px)`) with a real preview table (filter, perhaps choose what to import), not a side drawer | `idea` | Owner, M08 review (2026-11-06): the Tether drawer was widened to 50% with wrapping notes as a stopgap, since it will be removed |
 | Multi-recipient vaults: encrypt to teammates' public keys (age-style), revoke access | `later` | Replaces "share the master password" |
 | Short-lived SSH certificates: the vault acts as a CA, `flint share --host X --ttl 8h` | `idea` | Teleport/Smallstep, personal-sized |
 | Local change log + per-record merge for concurrent edits on two machines | `idea` | Only if conflicts become a real problem |
