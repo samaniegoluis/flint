@@ -58,13 +58,17 @@ PY
 python3 -I "$tmp/fwd.py" "$port3" "$FLINT_TEST_SSH_PORT" "$FLINT_TEST_SSH_PORT2" & fwd_pid=$!
 sleep 0.5
 
-E2E_VAULT="$tmp/e2e.flint" E2E_PORT3="$port3" python3 -I - "$root/scripts/gui-e2e.js" "$tmp/e2e.js" <<'PY'
+# The Tether vault for the import step, written by Tether's own code.
+cp "$root/src/adapters/vault/testdata/tether-v5.tether" "$tmp/old.tether"
+mkdir -p /tmp/flint-tether-fixture && cp "$root/src/adapters/vault/testdata/tether-legacy-ed25519" /tmp/flint-tether-fixture/id_legacy
+
+E2E_VAULT="$tmp/e2e.flint" E2E_PORT3="$port3" E2E_TETHER="$tmp/old.tether" python3 -I - "$root/scripts/gui-e2e.js" "$tmp/e2e.js" <<'PY'
 import os, sys
 src = open(sys.argv[1]).read()
 key = open(os.environ["FLINT_TEST_SSH_KEY"]).read().replace("\\", "\\\\").replace("`", "\\`")
 values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_PORT"],
           "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"],
-          "USER": os.environ["USER"], "KEY": key}
+          "USER": os.environ["USER"], "KEY": key, "TETHER": os.environ["E2E_TETHER"]}
 for k, v in values.items():
     src = src.replace("@@" + k + "@@", v)
 open(sys.argv[2], "w").write(src)
@@ -78,7 +82,7 @@ if ! grep -q '^e2e: pass' "$tmp/run.log"; then
   exit 1
 fi
 # Principle 5: nothing from inside the vault is readable in the file.
-for marker in local pwhost e2e-key gui-host-pw-marker 127.0.0.1 "SQLite format 3"; do
+for marker in local pwhost e2e-key gui-host-pw-marker 127.0.0.1 codebox.lan "Code Box" pw-codebox "SQLite format 3"; do
   if grep -aq -- "$marker" "$tmp/e2e.flint"; then
     echo "gui-e2e: the vault file contains '$marker' in clear" >&2
     exit 1

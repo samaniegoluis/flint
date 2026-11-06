@@ -181,7 +181,8 @@ Settings belong to this machine, not to the vault, and save as you change them.
 - **Keyboard shortcuts**: the full map for macOS and Linux. Custom shortcuts are coming
   in a later version.
 - **Vault**: the open vault's file and counts, **Rename**, whether this machine remembers
-  its key, **Lock now**, and the known hosts, each of which you can forget.
+  its key, **Lock now**, the known hosts, each of which you can forget, and **Import from
+  Tether…** ([Moving from Tether](/guides/from-tether/)).
 
 They are kept in `settings.json` in Flint's config folder (`~/Library/Application
 Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults list.

@@ -9,10 +9,18 @@ hosts, stored keys, credentials, saved passwords and the host keys you already t
 The Tether file is only read, never changed, so you can keep using Tether until you
 are happy with Flint.
 
-## Import
+## Import in the desktop app
 
-Open (or create) the Flint vault to import into, then point Flint at the Tether file.
-Tether shows its path under **Settings → Vault**; it ends in `.tether`.
+Open (or create) the Flint vault to import into, then go to **Settings → Vault → Import
+from Tether…**. Choose the Tether file (Tether shows its path under its own **Settings →
+Vault**; it ends in `.tether`), type Tether's master password, and press **Preview** to
+see what would be imported without writing anything. **Import** writes it and shows the
+same report: what was added, what was already there, what changed on the way and what
+could not be imported.
+
+## Import from the command line
+
+The same import, for the current vault (`--vault` picks another):
 
 ```sh
 flint import tether ~/OneDrive/Tether/vault.tether --dry-run
