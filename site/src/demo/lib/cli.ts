@@ -43,8 +43,8 @@ Vaults
   vault list                            Recent vaults; * marks the current one
   vault use <name|path>                 Make a recent vault the current one
   vault status                          Path, lock state and counts
-  vault unlock                          Cache the vault key in the OS keychain
-  vault lock                            Remove the cached key from this machine
+  vault unlock                          Ask Flint to unlock the vault, and wait
+  vault lock                            Lock the vault in Flint; remove any cached key
   vault rename <new-name>               Rename the vault (its file is not moved)
   vault forget <name|path>              Drop a vault from the recent list
 
@@ -92,6 +92,10 @@ Global flags
   --vault <v>       Use this vault instead of the current one
   --master-stdin    Read the master password from the first line of stdin
   --version, -V     Print the version and linked libraries
+
+With Flint open and the vault unlocked there, commands run through it and need no
+master password. Otherwise flint asks for it on the terminal (or --master-stdin),
+for that one command; with no terminal, Flint is asked to unlock the vault.
 
 Secrets are never taken from arguments: Flint prompts on the terminal, or reads
 them from stdin with the --*-stdin flags.`;
@@ -223,12 +227,13 @@ class Cmd {
 		return byName;
 	}
 
+	// Unlocked in Flint: the command runs there. Otherwise the master password, for this
+	// one command; nothing is kept (D-042).
 	private *openTarget(): Generator<Ask, Vault, string> {
 		const v = this.resolveVault(this.p.value('--vault'));
-		if (v.cached) return v;
+		if (v.unlocked) return v;
 		const pw = yield { label: `Master password for '${v.name}': `, secret: true };
 		if (pw.length === 0) fail('wrong_password', 'the password is wrong or the file is not a Flint vault');
-		v.cached = true; // every unlock caches the key on this machine (D-005)
 		return v;
 	}
 
@@ -241,15 +246,7 @@ class Cmd {
 	*vault(): Run {
 		const p = this.p;
 		const verb = p.positional(1);
-		const info = (v: Vault) => ({ path: v.path, name: v.name, format: 1, cached: v.cached });
-		const printInfo = (verbText: string, v: Vault) => {
-			this.say(`${verbText} vault '${v.name}' at ${v.path}`);
-			this.say(
-				v.cached
-					? 'The key is cached in the OS keychain; this machine opens it without a prompt.'
-					: 'The key is not cached; Flint will ask for the master password each time.',
-			);
-		};
+		const info = (v: Vault) => ({ path: v.path, name: v.name, format: 1, cached: false });
 		switch (verb) {
 			case 'create':
 				p.allowFlags('vault create', ['--name']);
@@ -262,17 +259,23 @@ class Cmd {
 			case 'unlock': {
 				p.allowFlags('vault unlock', []);
 				p.expectArgs('vault unlock', 0, '[--vault <name|path>]');
-				const v = yield* this.openTarget();
-				this.emit(info(v), () => printInfo('Unlocked', v));
+				const v = this.resolveVault(p.value('--vault'));
+				if (!v.unlocked) {
+					if (!this.asJson) this.io.err(`Flint is asking for the master password of '${v.name}'…`);
+					this.io.note(`flint (demo): Flint's window would ask for the master password of '${v.name}' now. The demo unlocks it for you; Flint holds one vault at a time.`);
+					for (const o of this.world.vaults) o.unlocked = false;
+					v.unlocked = true;
+				}
+				this.emit(info(v), () => this.say(`Unlocked vault '${v.name}' in Flint. Commands use it until Flint locks it.`));
 				return ok;
 			}
 			case 'lock': {
 				p.allowFlags('vault lock', []);
 				p.expectArgs('vault lock', 0, '[--vault <name|path>]');
 				const v = this.resolveVault(p.value('--vault'));
-				v.cached = false;
-				this.emit({ ...info(v), cached: false }, () =>
-					this.say(`Locked vault '${v.name}': its key is no longer cached on this machine.`),
+				v.unlocked = false;
+				this.emit(info(v), () =>
+					this.say(`Locked vault '${v.name}': Flint holds no key for it and none is cached on this machine.`),
 				);
 				return ok;
 			}
@@ -280,19 +283,19 @@ class Cmd {
 				p.allowFlags('vault status', []);
 				p.expectArgs('vault status', 0, '[--vault <name|path>]');
 				const v = this.resolveVault(p.value('--vault'));
-				const n = (k: number) => (v.cached ? k : 0);
+				const n = (k: number) => (v.unlocked ? k : 0);
 				const st = {
-					path: v.path, name: v.name, exists: true, cached: v.cached,
+					path: v.path, name: v.name, exists: true, unlocked: v.unlocked, cached: false,
 					groups: n(v.groups.length), hosts: n(v.hosts.length), keys: n(v.keys.length), credentials: n(v.creds.length),
 				};
 				this.emit(st, () => {
-					if (!v.cached) {
-						fields(['vault', 'path', 'state'], [v.name, v.path, 'locked']).forEach((l) => this.say(l));
+					if (!v.unlocked) {
+						fields(['vault', 'path', 'state'], [v.name, v.path, 'locked (unlock it in Flint, or pass --master-stdin)']).forEach((l) => this.say(l));
 						return;
 					}
 					fields(
 						['vault', 'path', 'state', 'groups', 'hosts', 'keys', 'credentials'],
-						[v.name, v.path, 'unlocked (key cached in the OS keychain)', `${st.groups}`, `${st.hosts}`, `${st.keys}`, `${st.credentials}`],
+						[v.name, v.path, 'unlocked in Flint', `${st.groups}`, `${st.hosts}`, `${st.keys}`, `${st.credentials}`],
 					).forEach((l) => this.say(l));
 				});
 				return ok;

@@ -87,6 +87,16 @@
 		},
 		{
 			"hint": [
+				"Flint, the app, holds this vault unlocked; every flint command asks it:"
+			],
+			"run": "flint vault status",
+			"accept": [
+				"flint vault status"
+			],
+			"where": "local"
+		},
+		{
+			"hint": [
 				"Turn the demo vault into your real one: rename it. The file stays where it is:"
 			],
 			"run": "flint vault rename \"Home Lab\"",

@@ -1,0 +1,269 @@
+package ipc
+
+// The streamed mode of the app's socket (D-042): `flint connect`, `flint exec` and
+// `flint host test` run in the app, and their terminal, output and prompts travel
+// over the client's connection. Each frame is one tag byte and a payload:
+//
+//   app → CLI   o stdout bytes · e stderr bytes · R enter raw mode · L leave raw mode
+//               p a prompt (JSON) · k heartbeat · n not served (JSON) · x end (JSON)
+//   CLI → app   i keystrokes · r resize (JSON) · a a prompt's answer (JSON) · z input ended
+//
+// This file is the app's side: the `Terminal`, `Prompter` and `ExecSink` ports over a
+// connection, so the core's use cases run unchanged. A password the person types on
+// the client's terminal for a host travels CLI → app only; nothing secret goes back
+// (Principle 6).
+
+import "core:time"
+import "ext:json"
+import "../../domain"
+
+TAG_STDOUT: str = "o"
+TAG_STDERR: str = "e"
+TAG_RAW_ENTER: str = "R"
+TAG_RAW_LEAVE: str = "L"
+TAG_PROMPT: str = "p"
+TAG_HEARTBEAT: str = "k"
+TAG_NOT_SERVED: str = "n"
+TAG_END: str = "x"
+TAG_INPUT: str = "i"
+TAG_RESIZE: str = "r"
+TAG_ANSWER: str = "a"
+TAG_INPUT_END: str = "z"
+
+// A frame is written within this time, or the client is gone (Principle 8).
+RELAY_SEND_MS: i32 = 5000
+// Silence on a live session is broken by a heartbeat this often, so the client can
+// tell a quiet shell from an app that stopped answering.
+RELAY_HEARTBEAT_MS: i64 = 15000
+// How long the app waits for the person at the client to answer a prompt.
+RELAY_PROMPT_WAIT_MS: i64 = 300000
+
+type RelaySize struct {
+    cols: i64 `json:"cols"`
+    rows: i64 `json:"rows"`
+}
+
+type RelayPrompt struct {
+    kind:     str             `json:"kind"`
+    user:     str             `json:"user"`
+    alias:    str             `json:"alias"`
+    question: HostKeyQuestion `json:"question"`
+}
+
+type RelayAnswer struct {
+    ok:    bool `json:"ok"`
+    value: str  `json:"value"`
+}
+
+fn relay_frame(tag: str, payload: str) -> str {
+    return tag + payload
+}
+
+fn relay_tag(frame: str) -> str {
+    if frame.len() == 0 {
+        return ""
+    }
+    return frame.substr(0, 1)
+}
+
+fn relay_payload(frame: str) -> str {
+    if frame.len() <= 1 {
+        return ""
+    }
+    return frame.substr(1)
+}
+
+// Each port holds its own copy of this: the connection (one descriptor, shared by
+// the copies), the terminal size the client last reported, and when it last wrote.
+// The copies do not share their flags, and need not: the prompts come before the
+// shell, and the terminal owns everything after.
+type RelayLink struct {
+    conn:         IpcConn
+    can_prompt:   bool
+    cols:         i32
+    rows:         i32
+    resized:      bool
+    input_ended:  bool
+    last_sent_ms: i64
+    broken:       bool
+}
+
+fn new_relay_link(conn: IpcConn, can_prompt: bool, cols: i32, rows: i32) -> RelayLink {
+    return RelayLink{ conn: conn, can_prompt: can_prompt, cols: cols, rows: rows, resized: false, input_ended: false, last_sent_ms: time.now_ms(), broken: false }
+}
+
+// Sends one frame; a client that went away marks the link broken, and every later
+// write is skipped.
+fn (mut self: RelayLink) put(tag: str, payload: str) {
+    if self.broken {
+        return
+    }
+    self.conn.send(relay_frame(tag, payload), RELAY_SEND_MS) or {
+        self.broken = true
+        return
+    }
+    self.last_sent_ms = time.now_ms()
+}
+
+fn (mut self: RelayLink) heartbeat() {
+    if time.now_ms() - self.last_sent_ms >= RELAY_HEARTBEAT_MS {
+        self.put(TAG_HEARTBEAT, "")
+    }
+}
+
+// Reads one frame from the client if it arrives within `timeout_ms` and applies a
+// resize or the end of input. Returns the keystrokes it carried ("" for none), or
+// the frame itself through `other` for the caller to look at.
+fn (mut self: RelayLink) take(timeout_ms: i32, mut other: str) -> str! {
+    other = ""
+    if self.broken {
+        return error(coded(ERR_IO, "the flint client went away"))
+    }
+    if !self.conn.readable(timeout_ms) {
+        return ""
+    }
+    frame := self.conn.recv(RELAY_SEND_MS) or err {
+        self.broken = true
+        return error(coded(ERR_IO, "the flint client went away"))
+    }
+    tag := relay_tag(frame)
+    if tag == TAG_INPUT {
+        return relay_payload(frame)
+    }
+    if tag == TAG_RESIZE {
+        sz := json.parse[RelaySize](relay_payload(frame)) or RelaySize{ cols: 0, rows: 0 }
+        if sz.cols > 0 && sz.rows > 0 {
+            self.cols = i32(sz.cols)
+            self.rows = i32(sz.rows)
+            self.resized = true
+        }
+        return ""
+    }
+    if tag == TAG_INPUT_END {
+        self.input_ended = true
+        return ""
+    }
+    other = frame
+    return ""
+}
+
+// ---- Terminal ------------------------------------------------------------------
+
+type SocketTerminal struct {
+    link: RelayLink
+}
+
+fn new_socket_terminal(link: RelayLink) -> SocketTerminal {
+    return SocketTerminal{ link: link }
+}
+
+fn (self: SocketTerminal) term_size() -> TerminalSize {
+    return TerminalSize{ cols: self.link.cols, rows: self.link.rows }
+}
+
+fn (mut self: SocketTerminal) term_raw_enter() -> void! {
+    self.link.put(TAG_RAW_ENTER, "")
+    if self.link.broken {
+        return error(coded(ERR_IO, "the flint client went away"))
+    }
+}
+
+fn (mut self: SocketTerminal) term_raw_leave() {
+    self.link.put(TAG_RAW_LEAVE, "")
+}
+
+fn (mut self: SocketTerminal) term_input(timeout_ms: i32) -> str! {
+    self.link.heartbeat()
+    if self.link.input_ended {
+        return error(coded(ERR_IO, "end of input"))
+    }
+    mut other := ""
+    typed := try self.link.take(timeout_ms, mut other)
+    if self.link.input_ended {
+        return error(coded(ERR_IO, "end of input"))
+    }
+    return typed
+}
+
+fn (mut self: SocketTerminal) term_output(data: str) {
+    self.link.put(TAG_STDOUT, data)
+}
+
+fn (mut self: SocketTerminal) term_take_resize() -> bool {
+    changed := self.link.resized
+    self.link.resized = false
+    return changed
+}
+
+// ---- ExecSink ------------------------------------------------------------------
+
+type SocketExecSink struct {
+    link: RelayLink
+}
+
+fn new_socket_exec_sink(link: RelayLink) -> SocketExecSink {
+    return SocketExecSink{ link: link }
+}
+
+fn (mut self: SocketExecSink) exec_stdout(data: str) {
+    self.link.put(TAG_STDOUT, data)
+}
+
+fn (mut self: SocketExecSink) exec_stderr(data: str) {
+    self.link.put(TAG_STDERR, data)
+}
+
+// ---- Prompter ------------------------------------------------------------------
+
+type SocketPrompter struct {
+    link: RelayLink
+}
+
+fn new_socket_prompter(link: RelayLink) -> SocketPrompter {
+    return SocketPrompter{ link: link }
+}
+
+fn (self: SocketPrompter) prompt_available() -> bool {
+    return self.link.can_prompt && !self.link.broken
+}
+
+// Sends the question and waits for the answer, skipping anything else the client
+// sends meanwhile.
+fn (self: SocketPrompter) ask(p: RelayPrompt) -> RelayAnswer! {
+    mut link := self.link
+    link.put(TAG_PROMPT, json.stringify(p))
+    deadline := time.now_ms() + RELAY_PROMPT_WAIT_MS
+    for time.now_ms() < deadline {
+        mut other := ""
+        _ := try link.take(250, mut other)
+        if relay_tag(other) == TAG_ANSWER {
+            return json.parse[RelayAnswer](relay_payload(other)) or {
+                return error(coded(ERR_INVALID, "the flint client sent an answer this Flint cannot read"))
+            }
+        }
+        if link.input_ended {
+            return error(coded(ERR_IO, "the flint client stopped before answering"))
+        }
+    }
+    return error(coded(ERR_TIMEOUT, "nobody answered the prompt within {RELAY_PROMPT_WAIT_MS / 1000}s"))
+}
+
+fn (self: SocketPrompter) prompt_host_key(q: HostKeyQuestion) -> bool! {
+    a := try self.ask(RelayPrompt{ kind: "host_key", user: "", alias: q.alias, question: q })
+    return a.ok
+}
+
+fn (self: SocketPrompter) host_key_changed(q: HostKeyQuestion) {
+}
+
+fn (self: SocketPrompter) prompt_password(user: str, alias: str) -> str! {
+    a := try self.ask(RelayPrompt{ kind: "password", user: user, alias: alias, question: empty_question() })
+    if !a.ok {
+        return ""
+    }
+    return a.value
+}
+
+fn empty_question() -> HostKeyQuestion {
+    return HostKeyQuestion{ alias: "", addr: "", key_type: "", fingerprint: "", known_key_type: "", known_fingerprint: "" }
+}

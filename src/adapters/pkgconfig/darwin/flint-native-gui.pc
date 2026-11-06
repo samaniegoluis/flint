@@ -5,4 +5,4 @@ Name: flint-native-gui
 Description: Native shims of Flint's desktop app (macOS)
 Version: 1
 Cflags: -I${pcfiledir}/../../uievents/native
-Libs: -framework AppKit
+Libs: -framework AppKit -framework IOKit -framework CoreFoundation

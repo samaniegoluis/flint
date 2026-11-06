@@ -4,7 +4,7 @@
 
 import type {
   AppInfo, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, VaultInfo, VaultStatus,
+  KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, UnlockRequest, VaultInfo, VaultStatus,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -66,6 +66,12 @@ export const api = {
   unlock: (path: string, password: string) => call<VaultInfo>('vault_unlock', { path, password }),
   create: (path: string, name: string, password: string) => call<VaultInfo>('vault_create', { path, name, password }),
   close: () => call('vault_close'),
+  /** Locks the vault: its key leaves memory, open sessions keep running (D-042). */
+  lock: () => call('vault_lock'),
+  /** Someone is using the window; keeps the vault from locking for idleness. */
+  activity: () => call('activity'),
+  unlockRequest: () => call<UnlockRequest>('unlock_request'),
+  unlockRequestDismiss: () => call('unlock_request_dismiss'),
   forgetKey: (path: string) => call('vault_forget_key', { path }),
   forget: (path: string) => call('vault_forget', { path }),
   status: () => call<VaultStatus>('vault_status'),

@@ -57,6 +57,11 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     if check_settings(probe).has_value() {
         fixed.term_theme = s.term_theme
     }
+    probe = d
+    probe.lock_after = s.lock_after
+    if check_settings(probe).has_value() {
+        fixed.lock_after = s.lock_after
+    }
     return fixed
 }
 

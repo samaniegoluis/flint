@@ -222,11 +222,7 @@ fn print_group_list(groups: []GroupView) {
 
 fn print_vault_info(verb: str, v: VaultInfo) {
     say("{verb} vault '{v.name}' at {v.path}")
-    if v.cached {
-        say("The key is cached in the OS keychain; this machine opens it without a prompt.")
-    } else {
-        say("The key is not cached; Flint will ask for the master password each time.")
-    }
+    say("Commands use it through Flint once it is unlocked there, or with --master-stdin.")
 }
 
 fn print_status(st: VaultStatus) {
@@ -234,11 +230,11 @@ fn print_status(st: VaultStatus) {
         print_fields(["vault", "path", "state"], [st.name, st.path, "missing (no file at this path)"])
         return
     }
-    if !st.cached {
-        print_fields(["vault", "path", "state"], [st.name, st.path, "locked"])
+    if !st.unlocked {
+        print_fields(["vault", "path", "state"], [st.name, st.path, "locked (unlock it in Flint, or pass --master-stdin)"])
         return
     }
-    print_fields(["vault", "path", "state", "groups", "hosts", "keys", "credentials"], [st.name, st.path, "unlocked (key cached in the OS keychain)", "{st.groups}", "{st.hosts}", "{st.keys}", "{st.credentials}"])
+    print_fields(["vault", "path", "state", "groups", "hosts", "keys", "credentials"], [st.name, st.path, "unlocked in Flint", "{st.groups}", "{st.hosts}", "{st.keys}", "{st.credentials}"])
 }
 
 fn print_recents(list: []RecentView) {

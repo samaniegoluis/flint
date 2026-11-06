@@ -177,15 +177,25 @@ test('host add asks for the password with echo off and never prints it', () => {
 	assert.ok(j.out[0].includes('"alias":"my-server"') && j.out[0].includes('"has_password":true'));
 });
 
-test('a locked vault asks for its master password once, then stays cached', () => {
+test('a vault not unlocked in Flint asks for its master password for each command', () => {
 	const w = worldFromSeed(seed);
 	flint(w, 'vault use Work');
-	assert.deepEqual(flint(w, 'vault status').out, ['vault  Work', 'path   /home/you/OneDrive/work.flint', 'state  locked']);
+	assert.deepEqual(flint(w, 'vault status').out, ['vault  Work', 'path   /home/you/OneDrive/work.flint', 'state  locked (unlock it in Flint, or pass --master-stdin)']);
 	const first = flint(w, 'host list', ['any password']);
 	assert.deepEqual(first.asks, ["Master password for 'Work': "]);
 	assert.equal(first.out.length, 3);
-	assert.deepEqual(flint(w, 'host list').asks, []);
-	assert.equal(flint(w, 'vault lock').out[0], "Locked vault 'Work': its key is no longer cached on this machine.");
+	assert.deepEqual(flint(w, 'host list', ['again']).asks, ["Master password for 'Work': "]);
+});
+
+test('vault unlock asks Flint, which holds one vault at a time; vault lock locks it', () => {
+	const w = worldFromSeed(seed);
+	const u = flint(w, 'vault unlock --vault Work');
+	assert.deepEqual(u.out, ["Unlocked vault 'Work' in Flint. Commands use it until Flint locks it."]);
+	assert.ok(u.err.some((l) => l.includes("Flint is asking for the master password of 'Work'")));
+	assert.deepEqual(flint(w, '--vault Work host list').asks, []);
+	assert.ok(flint(w, 'vault status --json').out[0].includes('"unlocked":false'));
+	assert.equal(flint(w, 'vault lock --vault Work').out[0], "Locked vault 'Work': Flint holds no key for it and none is cached on this machine.");
+	assert.deepEqual(flint(w, '--vault Work host list', ['pw']).asks, ["Master password for 'Work': "]);
 });
 
 test('vault rename renames the current vault and refuses a name in use', () => {
@@ -323,7 +333,7 @@ test('the shell tokenizer refuses pipes and keeps quotes', () => {
 
 test('the guide always says what to do, with the exact command', () => {
 	const { s, text } = session();
-	assert.deepEqual(s.guide(), { text: 'Step 1/9 · Every command, on one screen:', command: 'flint help' });
+	assert.deepEqual(s.guide(), { text: 'Step 1/10 · Every command, on one screen:', command: 'flint help' });
 	assert.ok(text().includes('#   flint help'), 'the step hint in the log carries its command');
 	s.submit('flint');
 	assert.equal(s.tourStep, 1, '`flint` alone shows the help, so it completes step 1');

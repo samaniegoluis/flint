@@ -10,6 +10,11 @@ flint [--json] [--vault <name|path>] <command> [args] [flags]
 Flags can go anywhere on the line, up to a bare `--`: what follows it is the remote
 command of `flint exec`. `flint help` prints a summary.
 
+With the Flint app open and the vault unlocked there, every command on that vault,
+`connect` and `exec` included, runs inside the app and needs no master password.
+Otherwise a command that needs the vault asks for it, for that one command; with no
+terminal, Flint's window asks instead ([Vaults](/guides/vaults/#flint-holds-the-unlocked-vault)).
+
 ## Global flags
 
 | Flag | Meaning |
@@ -31,8 +36,8 @@ command of `flint exec`. `flint help` prints a summary.
 | `vault list` | Recent vaults, current one first |
 | `vault use <name\|path>` | Make a recent vault current |
 | `vault status` | Path, lock state and counts |
-| `vault unlock` | Cache the vault key in the OS keychain |
-| `vault lock` | Remove the cached key from this machine |
+| `vault unlock` | Ask Flint to unlock the vault (starting it if needed), and wait up to 2 minutes |
+| `vault lock` | Lock the vault in Flint, and remove any key cached on this machine |
 | `vault rename <new-name>` | Rename the vault (with `--vault`, another one); the file keeps its name and place |
 | `vault forget <name\|path>` | Drop a vault from the recent list; the file is kept |
 
@@ -126,8 +131,9 @@ Flint never takes a secret from a command-line argument or an environment variab
 it would leak into `ps`, shell history and child processes. A secret comes from one of
 two places:
 
-- **The terminal.** Flint asks with echo off: the master password when a vault is locked,
-  or a host/credential password when you pass `--password`.
+- **The terminal.** Flint asks with echo off: the master password when the vault is not
+  unlocked in the Flint app (for that one command; nothing is kept), or a host/credential
+  password when you pass `--password`.
 - **Stdin**, with a `--*-stdin` flag. This is for scripts and agents.
 
 When a command takes several secrets on stdin, they are read in this order:
@@ -172,11 +178,11 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 2 | `usage` | Bad command line: unknown command or flag, missing argument |
 | 3 | `not_found` | No such vault, host, group, key or credential |
 | 4 | `conflict` | Already exists, or still in use |
-| 5 | `locked` | The vault is locked and no master password was given |
+| 5 | `locked` | The vault is not unlocked in Flint and no master password was given. With no terminal, Flint's window now asks for it (see [Vaults](/guides/vaults/#flint-holds-the-unlocked-vault)) |
 | 6 | `wrong_password` | The master password (or a Tether vault's, on import) is wrong |
 | 7 | `invalid` | A value breaks a rule (alias, port, colour, key format…) |
 | 8 | `unsupported` | The vault was written by a newer Flint, or a Tether vault has a schema Flint does not read |
-| 9 | `keychain` | The OS keychain refused an operation |
+| 9 | `keychain` | The OS keychain refused to remove a cached key (`vault lock`, `vault forget`) |
 | 10 | `io` | The vault or config file could not be read or written |
 | 11 | `host_key` | A server key is unknown and could not be confirmed, or it changed |
 | 12 | `auth` | The server accepted none of the auth methods |
@@ -194,8 +200,9 @@ nothing on stdout and a JSON error on stderr.
 
 | Variable | Meaning |
 |---|---|
-| `FLINT_CONFIG_DIR` | Folder for the recent-vault list and the open app's socket (see [Vaults](/guides/vaults/#the-cli-and-the-open-app)) |
-| `FLINT_KEYCHAIN=off` | Never cache vault keys; always ask for the master password |
+| `FLINT_CONFIG_DIR` | Folder for the recent-vault list and the open app's socket (see [Vaults](/guides/vaults/#flint-holds-the-unlocked-vault)) |
+| `FLINT_APP` | The Flint app `flint` starts when a locked vault needs unlocking: a path to `Flint` or `Flint.app`. `off` never starts it |
+| `FLINT_KEYCHAIN=off` | For the app: never cache vault keys, always ask for the master password. The CLI never reads the keychain |
 | `SSH_AUTH_SOCK` | The SSH agent to try after the vault's keys and passwords |
 | `TERM` | The terminal type `flint connect` asks the server for (default `xterm-256color`) |
 

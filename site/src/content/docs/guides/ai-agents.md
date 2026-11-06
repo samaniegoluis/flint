@@ -19,15 +19,11 @@ flint --json exec web-01 -- 'systemctl is-active nginx'
 
 ## Set up the machine
 
-The agent runs `flint` as you, on your machine, so it uses your current vault and the key
-cached in the OS keychain.
+The agent runs `flint` as you, on your machine. It never opens the vault itself: every
+command goes through the **Flint app**, which holds the vault unlocked
+([how](/guides/vaults/#flint-holds-the-unlocked-vault)).
 
-1. Unlock the vault once, in the app or with:
-
-   ```sh
-   flint vault unlock
-   ```
-
+1. Open Flint and unlock the vault. Keep it open while the agent works.
 2. Check that a command runs without a prompt:
 
    ```sh
@@ -39,16 +35,10 @@ cached in the OS keychain.
    `flint host test <alias>` or a first `flint connect`. An agent has no terminal to
    answer the host key question, so an unknown key stops it with `host_key`.
 
-With the vault unlocked in the open app, `host`, `group`, `key`, `cred` and the other
-vault commands run inside Flint and need no cached key at all
-([how](/guides/vaults/#the-cli-and-the-open-app)). `flint exec` and `flint connect` still
-open the vault themselves, so the steps above are still needed for them.
-
-On macOS, a new Flint build shows the Keychain dialog the first time it reads the cached
-key ([why](/guides/vaults/#what-the-cache-protects-and-what-it-does-not)). Run one command
-yourself after each update, so the dialog does not wait on the agent. On Linux, the cache
-needs a Secret Service (GNOME Keyring, KWallet); without one, every command asks for the
-master password and an agent gets `locked`.
+When the vault locks (idle time, screen lock, sleep) or Flint is closed, the agent's next
+command fails with `locked`, and Flint's window, started if needed, asks you for the
+master password and names the command that asked. Unlock, and the agent can run it
+again. **Settings → Vault → Lock after** sets the idle time (1 hour by default).
 
 ## Tell your agent about Flint
 
@@ -64,8 +54,8 @@ keys or `ssh` directly.
 - Run a command: `flint --json exec <alias> -- '<command>'`. Quote the whole remote
   command: the remote shell parses it.
 - Long jobs: add `--exec-timeout <secs>` (default 600).
-- Exit code 5 (`locked`): ask me to unlock Flint. 11 (`host_key`): ask me to check the
-  server's key. Never pass `--accept-new-host-key`.
+- Exit code 5 (`locked`): Flint is asking me to unlock it; wait for me, then retry.
+  11 (`host_key`): ask me to check the server's key. Never pass `--accept-new-host-key`.
 - `sudo` needs a password Flint does not give out: print the exact command for me to run.
 ```
 
@@ -101,7 +91,7 @@ command's own failure comes as the usual object on stdout with its `exit_code`.
 
 | Exit | Code | What the agent should do |
 |---|---|---|
-| 5 | `locked` | Stop and ask you to unlock the vault |
+| 5 | `locked` | Stop: Flint's window is asking you to unlock. Retry once you have |
 | 11 | `host_key` | Stop. The key is unknown, or it **changed**, which Flint always refuses |
 | 12 | `auth` | Report it: the server refused every login method in the vault |
 | 13 | `network` | The host is unreachable: VPN, address, firewall |
@@ -122,22 +112,23 @@ or remove that rule.
 
 ## Limits today
 
-The cached key opens the vault for **any program that runs `flint` as you**, not only the
-agent you started, and an agent can run any command on any host in the vault, as that
-host's user. It cannot take a password or key away, but a command can, for example, add a
-key to `~/.ssh/authorized_keys`. Ways to narrow it today:
+While the vault is unlocked in Flint, **any program that runs `flint` as you** can use
+it, not only the agent you started, and an agent can run any command on any host in the
+vault, as that host's user. It cannot take a password or key away, but a command can,
+for example, add a key to `~/.ssh/authorized_keys`. Ways to narrow it today:
 
-- **A vault for agents.** Put only the hosts an agent may use in a vault of its own, and
-  have the agent pass `--vault`:
+- **A vault for agents.** Put only the hosts an agent may use in a vault of its own, keep
+  that vault open in Flint while the agent works, and have the agent pass `--vault`:
 
   ```sh
   flint vault create ~/Sync/agent.flint --name Agent
   flint --vault Agent host add web-01 --hostname 10.0.0.5 --user deploy
   ```
 
-  Keep your main vault's key out of the cache on that machine: run
-  `flint --vault <main> vault lock` when you are done (opening it in the app caches it
-  again), or set `FLINT_KEYCHAIN=off` for the app.
+  Flint holds one vault at a time, so your main vault stays locked meanwhile: a command
+  on it gets `locked`.
+- **A short lock time.** Settings → Vault → Lock after, so an unattended vault does not
+  stay open for long.
 - **Limit the server side.** Agents log in as a user without `NOPASSWD` sudo and not as
   `root`, with access only to what they need.
 - **Watch the transcript.** Every remote command an agent runs is in its own

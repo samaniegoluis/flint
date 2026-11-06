@@ -50,6 +50,24 @@
     await check(true, 'a host added by the CLI shows in the tree without a reload');
     await waitFor(() => q('.vault-name')?.textContent === 'Served Renamed', 'the name the CLI gave the vault', 30000);
     await check(true, 'a rename by the CLI shows in the window');
+
+    step = 'locked by the CLI';
+    await waitFor(() => q('.lock-screen [data-lock-reason="cli"]'), 'the lock screen after `flint vault lock`', 90000);
+    await check(true, '`flint vault lock` locks the window');
+    const banner = await waitFor(() => q('[data-unlock-request]'), 'the unlock request of a command', 90000);
+    // `flint vault unlock` may ask again before this page looks, naming itself.
+    await check(/flint (host list|vault unlock)/.test(banner.textContent), 'a command on the locked vault makes the window ask, naming it');
+    {
+      const pw = q('#pw');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(pw, MASTER);
+      pw.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(30);
+      byText('button[type="submit"]', 'Unlock').click();
+    }
+    await waitFor(() => !q('.lock-screen') && byText('.tree .ti', 'local-web'), 'the unlocked tree again', 30000);
+    await check(!q('[data-unlock-request]'), 'unlocking answers the request');
+
+    step = 'stop';
     await waitFor(() => byText('.tree .ti', 'e2e-stop'), 'the stop host', 90000);
     await check(!hasText('served-host-pw-marker'), 'no password the CLI sent reaches the page');
 

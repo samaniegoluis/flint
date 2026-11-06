@@ -1,34 +1,56 @@
 package main
 
-// The app's socket server (D-038): it lets the `flint` CLI use the vault unlocked in
-// this window instead of opening the file itself. adapters/ipc owns the socket (mode
-// 0600, a peer of another uid is closed unread, Principle 11); clicmd owns the
-// protocol and runs the command (serve.cf there). This file only wires them to the
-// app's state: whether this vault is the one held, and holding it still while a
-// command runs.
+// The app's socket server (D-038, D-042): it lets the `flint` CLI use the vault
+// unlocked in this window instead of opening the file itself, and ask this window to
+// unlock or lock it. adapters/ipc owns the socket (mode 0600, a peer of another uid
+// is closed unread, Principle 11); clicmd owns the protocol and runs the command
+// (serve.cf there). This file wires them to the app's state: whether this vault is
+// the one held, holding it still while a command runs, and locking it.
 
 import "core:fs"
+import "core:time"
 import "ext:webui"
 import "../../adapters/config"
 import "../../adapters/crypto"
 import "../../adapters/ipc"
 import "../../adapters/keychain"
 import "../../adapters/process"
+import "../../adapters/uievents"
 import "../../adapters/vault"
 import "../../application"
+import "../../domain"
 import "../clicmd"
 
-// How often the accept loop looks at its stop flag.
+// How often an accept loop looks at its stop flag.
 SERVE_ACCEPT_WAIT_MS: i32 = 250
+// Accept loops on the one listener: that many clients at once, a `connect` holding
+// one for as long as it lasts (CF-083).
+SERVE_ACCEPTORS: i64 = 8
+// How often the lock timer looks at the idle time and the OS's lock and sleep events.
+LOCK_TICK_MS: i64 = 1000
 
 type VaultChanged struct {
     path: str `json:"path"`
     name: str `json:"name"`
 }
 
+// The vault locked: `reason` is "manual", "idle", "screen", "sleep" or "cli".
+type VaultLocked struct {
+    path:   str `json:"path"`
+    name:   str `json:"name"`
+    reason: str `json:"reason"`
+}
+
+// A CLI asked this window to unlock `path`; `caller` is the command.
+type UnlockRequest struct {
+    path:   str `json:"path"`
+    name:   str `json:"name"`
+    caller: str `json:"caller"`
+}
+
 // Listens on the config folder's socket. With another Flint already serving it, or
-// a socket that cannot be made, the app runs without serving: the CLI then opens
-// vaults itself, as before. Returns a listener with `open` false in that case.
+// a socket that cannot be made, the app runs without serving: the CLI then asks for
+// the master password. Returns a listener with `open` false in that case.
 fn start_serving(config_dir: str) -> IpcListener {
     path := ipc_socket_path(config_dir)
     // On a first launch nothing has written to the config folder yet.
@@ -43,7 +65,72 @@ fn start_serving(config_dir: str) -> IpcListener {
     return l
 }
 
-// Answers one client's request, on the accept loop's thread (CF-083).
+// Locks the vault this window holds: the key is overwritten, the store closed, and
+// the vault opens again only with its master password in this run (never from the
+// keychain). Open sessions keep running: they hold no key (D-042). The page shows
+// its lock screen on "vault:locked". Returns whether a vault was unlocked.
+fn lock_now(mut store: LockedVaultStore, st: GuiState, mut app: webui.App, reason: str) -> bool {
+    st.hold()
+    if !st.unlocked() {
+        st.release()
+        return false
+    }
+    s := st.vault_session()
+    st.holder.mark_relocked(s.path)
+    st.forget()
+    close_vault(mut store)
+    st.release()
+    app.emit("vault:locked", VaultLocked{ path: s.path, name: s.name, reason: reason })
+    return true
+}
+
+// The lock timer: once a second, the OS's screen lock and sleep events, then the
+// idle time against the setting. Ends when the window closes.
+fn run_lock_timer(mut store: LockedVaultStore, st: GuiState, mut app: webui.App) {
+    for !st.holder.quitting() {
+        time.sleep_ms(LOCK_TICK_MS)
+        event := system_events_take()
+        if event.len() > 0 {
+            _ := lock_now(mut store, st, mut app, event)
+        } else if st.unlocked() && idle_lock_due(time.now_ms(), st.holder.last_activity(), st.holder.lock_after()) {
+            _ := lock_now(mut store, st, mut app, "idle")
+        }
+    }
+}
+
+// One accept loop. Several run on the same listener (SERVE_ACCEPTORS).
+fn run_accept_loop(listener: IpcListener, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, st: GuiState, mut app: webui.App) {
+    for !listener.stopped() {
+        got := listener.accept_wait(SERVE_ACCEPT_WAIT_MS)
+        if !got.has_value() {
+            break
+        }
+        conn := got.value()
+        if conn.open {
+            mut cn := conn
+            serve_client(mut cn, c, mut store, kc, recents, st, mut app)
+        }
+    }
+}
+
+// Where the app stands for `path`: unlocked here, being asked for, another vault
+// unlocked, or locked.
+fn app_state_for(st: GuiState, path: str) -> AppState {
+    if st.unlocked() {
+        s := st.vault_session()
+        if s.path == path {
+            return AppState{ state: APP_UNLOCKED, name: s.name }
+        }
+        return AppState{ state: APP_OTHER, name: s.name }
+    }
+    (asked, caller) := st.holder.ask()
+    if asked == path {
+        return AppState{ state: APP_ASKING, name: "" }
+    }
+    return AppState{ state: APP_LOCKED, name: "" }
+}
+
+// Answers one client's request.
 fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, st: GuiState, mut app: webui.App) {
     defer conn.close()
     text := conn.recv(SERVE_SEND_MS) or {
@@ -52,9 +139,52 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
     req := parse_serve_request(text) or {
         return
     }
-    if req.kind != "run" {
-        return
+    // A command from the CLI is someone using the vault.
+    st.holder.touch(time.now_ms())
+    if req.kind == "run" {
+        serve_run(mut conn, req, c, mut store, kc, recents, st, mut app)
+    } else if req.kind == "session" {
+        serve_session(mut conn, req, c, mut store, kc, recents, st)
+    } else if req.kind == "status" {
+        now := app_state_for(st, req.vault)
+        _ := conn.send(app_state_json(now.state, now.name), SERVE_SEND_MS) or {}
+    } else if req.kind == "unlock" {
+        now := app_state_for(st, req.vault)
+        if now.state == APP_LOCKED || now.state == APP_ASKING {
+            name := recent_name(recents, req.vault)
+            st.holder.set_ask(req.vault, req.caller)
+            app.emit("vault:unlock-request", UnlockRequest{ path: req.vault, name: name, caller: req.caller })
+            bring_window_to_front()
+            _ := conn.send(app_state_json(APP_ASKING, ""), SERVE_SEND_MS) or {}
+        } else {
+            _ := conn.send(app_state_json(now.state, now.name), SERVE_SEND_MS) or {}
+        }
+    } else if req.kind == "lock" {
+        now := app_state_for(st, req.vault)
+        mut locked := false
+        if now.state == APP_UNLOCKED {
+            locked = lock_now(mut store, st, mut app, "cli")
+        }
+        mut answer := APP_LOCKED
+        if locked {
+            answer = APP_UNLOCKED
+        }
+        _ := conn.send(app_state_json(answer, ""), SERVE_SEND_MS) or {}
     }
+}
+
+// The name the recent list gives `path`, or the file's name.
+fn recent_name(recents: JsonRecentStore, path: str) -> str {
+    list := list_recents(recents) or []
+    for r in list {
+        if r.path == path {
+            return r.name
+        }
+    }
+    return vault_name_from_path(path)
+}
+
+fn serve_run(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, st: GuiState, mut app: webui.App) {
     st.hold()
     defer st.release()
     session := st.vault_session()
@@ -76,4 +206,18 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
         }
     }
     _ := conn.send(serve_reply_json(reply), SERVE_SEND_MS) or {}
+}
+
+// `connect`, `exec` and `host test`: the vault is checked and copied under the hold,
+// then the session runs without it, as a window tab does.
+fn serve_session(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, st: GuiState) {
+    st.hold()
+    session := st.vault_session()
+    ok := st.unlocked() && session.path == req.vault && session_servable(req)
+    st.release()
+    if !ok {
+        _ := conn.send(session_not_served_frame(), SERVE_SEND_MS) or {}
+        return
+    }
+    run_served_session(conn, req, c, mut store, kc, recents, session)
 }

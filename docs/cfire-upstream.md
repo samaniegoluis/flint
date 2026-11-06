@@ -558,6 +558,12 @@ The entries below were found while building milestone 01 against cfire `3963814`
   (`no matching function for call to 'cfire_method_read'`). Flint prefixes every port
   method (`vault_*`, `keychain_*`, `recents_*`), renamed `Crypto.open` to `unseal`, and
   reads the vault header with `std::ifstream` in `src/adapters/vault/store.cf`.
+- **Still at `2d8613d` (M11b), free functions across packages:** `clicmd` declared
+  `fn answer_prompt(prompter: TtyPrompter, payload: str)` while `uievents` already had an
+  `answer_prompt` of other parameters. The CLI (which does not import `uievents`) built;
+  the app failed with `no matching conversion for functional-style cast from
+  'TtyPrompter' to 'std::string'` at a call site in `main.cf`. Renamed
+  `answer_relayed_prompt`.
 - **Ideal:** one C++ namespace per package, and stdlib method calls that never route to
   user methods. This matters a lot for a hexagonal layout, where two adapters naturally
   both have `open`, `close` and `new`.
@@ -1382,6 +1388,41 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Workaround:** the accept loop answers one client at a time on its own task
   (`src/drivers/gui/main.cf`, `serve.cf`); commands on one vault run one at a time
   anyway (the vault holder's lock), and the CLI asks every secret before it connects,
-  so no client holds the loop while a person types.
+  so no client holds the loop while a person types. **From M11b** a `flint connect`
+  holds its connection for hours, so the app starts several accept loops on the same
+  listener (`SERVE_ACCEPTORS`), each answering one client at a time: that many clients
+  at once, a fixed number of workers taken for good.
 - **Ideal:** capture the scope by reference (it outlives every task it joins), or a
   `scope.handle()` that tasks can spawn through.
+
+### CF-084 · missing · `confirmed`: no way to hear screen lock, sleep or idle from the OS
+- **At `2d8613d`:** neither `core:os` nor `ext:webui` reports that the screen locked, that
+  the computer is going to sleep, or that the user is idle. `os.on_signal` covers POSIX
+  signals only; the webview's run loop is not reachable from cfire.
+- **Repro:** `cfire_stdlib_lookup ext:webui`, `core:os`: no `on_screen_lock`, `on_sleep`,
+  `idle_seconds`.
+- **Why Flint needs it:** the vault auto-locks on screen lock and on sleep (spec v3,
+  milestone 11b, D-042).
+- **Workaround:** `src/adapters/uievents/native/flint_sysevents.hpp`: on macOS the
+  distributed notification `com.apple.screenIsLocked` and `IORegisterForSystemPower`
+  (linked through `flint-native-gui.pc`, CF-031); on Linux logind's `Session.Lock` and
+  `Manager.PrepareForSleep` and the screensavers' `ActiveChanged` over GIO. The callbacks
+  only bump counters that a cfire timer reads, so no native callback calls into cfire.
+  Idle time is Flint's own (page activity and socket requests), not the OS's.
+- **Ideal:** `webui.App.on_system(fn(event: SystemEvent))` with `ScreenLocked`,
+  `WillSleep`, `Woke`, delivered on the UI thread like other webui events.
+
+### CF-085 · bug · `confirmed`: `shared[T]` cannot be built or used from cfire
+- **At `2d8613d`:** `shared(L{ n: 1 })` → `use of undeclared identifier 'shared'`; a method
+  call through a `shared[L]` field (`self.link.bump()`) → `no matching function for call
+  to 'cfire_method_bump'` (`std::shared_ptr<L>` → `L&`); a field read (`self.link.n`) →
+  `no member named 'n' in 'std::shared_ptr<L>'; did you mean to use '->'`.
+- **Repro:** `type L struct { n: i64 }` / `fn (mut self: L) bump() { self.n = self.n + 1 }`
+  / `type T struct { link: shared[L] }` / `fn (mut self: T) go() { self.link.bump() }`.
+- **Why Flint needs it:** the socket relay's terminal, prompter and output ports would
+  share one connection state (M11b).
+- **Workaround:** each port holds its own copy of the state (`src/adapters/ipc/relay.cf`);
+  the copies share only the descriptor, which is enough because prompts end before the
+  shell starts.
+- **Ideal:** a constructor (`shared(v)` or `make_shared[T](v)`) and auto-deref of a
+  `shared[T]` for field access and method calls, as for `own[T]`.

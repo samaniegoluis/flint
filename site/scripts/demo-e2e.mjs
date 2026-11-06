@@ -61,7 +61,7 @@ try {
 		await dialog.waitFor({ state: 'visible' });
 		check(await page.evaluate(() => document.activeElement?.id === 'cli-demo-input'), 'desktop: the input has focus on open');
 		check((await logText(page)).includes("Welcome to Flint's demo"), 'desktop: the welcome and first step are shown');
-		check((await page.locator('[data-step]').innerText()) === 'Step 1 of 9', 'desktop: the bar shows the tour step');
+		check((await page.locator('[data-step]').innerText()) === 'Step 1 of 10', 'desktop: the bar shows the tour step');
 		check((await page.locator('[data-guide]').innerText()).includes('Every command'), 'desktop: the guide shows the current step');
 		check((await page.locator('.cli-demo__chip--next').innerText()).includes('flint help'), 'desktop: the step command is the highlighted chip');
 		await type(page, 'flint list');
@@ -85,6 +85,7 @@ try {
 		await type(page, 'flint host add my-server --hostname 203.0.113.10 --user me --password');
 		check((await page.locator('#cli-demo-input').getAttribute('type')) === 'password', 'desktop: the password prompt hides the input');
 		await type(page, 'secret-typed-in-e2e');
+		await type(page, 'flint vault status');
 		await type(page, 'flint vault rename "Home Lab"');
 		await type(page, 'flint host list --json');
 		const all = await logText(page);

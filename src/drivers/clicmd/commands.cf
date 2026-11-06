@@ -140,7 +140,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         if as_json {
             say(json.stringify(VaultInfo{ path: target.path, name: target.name, format: VAULT_FORMAT_V1, cached: false }))
         } else {
-            say("Locked vault '{target.name}': its key is no longer cached on this machine.")
+            say("Locked vault '{target.name}': Flint holds no key for it and none is cached on this machine.")
         }
         return
     }
@@ -148,7 +148,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try p.allow_flags("vault status", [])
         try p.expect_args("vault status", 0, "[--vault <name|path>]")
         target := try resolve_vault(recents, vault_selector(p))
-        mut st := VaultStatus{ path: "", name: "", exists: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0 }
+        mut st := VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0 }
         if src.served && target.path == src.session.path {
             // Unlocked in the app: counts from the open store, no keychain read.
             st = try open_vault_status(mut store, src.session)
@@ -405,10 +405,6 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
         } else {
             print_host(h)
         }
-        return
-    }
-    if verb == "test" {
-        try cmd_host_test(p, sec, as_json, c, mut store, src, recents)
         return
     }
     if verb == "rm" {

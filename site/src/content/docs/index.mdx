@@ -130,9 +130,10 @@ See the [CLI reference](/reference/cli/).
 		Passwords, private keys and passphrases are sealed again with XChaCha20-Poly1305,
 		each bound to its own field, and opened only to connect.
 	</Card>
-	<Card title="One master password" icon="laptop">
-		The vault key comes from Argon2id. The OS keychain can keep that key, never the
-		password, so a machine you trust opens the vault without asking.
+	<Card title="Flint holds the key" icon="laptop">
+		The vault key comes from Argon2id and lives in the running app. The CLI and your
+		agents ask the app; it locks on its own when you are idle, the screen locks or the
+		computer sleeps.
 	</Card>
 	<Card title="Host keys are checked" icon="warning">
 		Flint asks before it trusts a new server key, and always refuses a changed one
@@ -142,7 +143,7 @@ See the [CLI reference](/reference/cli/).
 
 The details are in [Vault format](/reference/vault-format/),
 [Connecting](/guides/connecting/#known-hosts) and the [Security model](/reference/security-model/),
-which also says what the keychain cache does not protect against.
+which also says what an unlocked vault does not protect against.
 
 <CfireBand />
 

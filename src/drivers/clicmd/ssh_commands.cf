@@ -57,30 +57,26 @@ fn remote_command(p: ParsedArgs) -> str {
     return cmd
 }
 
-fn cmd_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> i32! {
+// The terminal, prompter and output of a session command: the process's own stdio
+// for the CLI on its own, the client's connection when the app runs it (D-042).
+fn cmd_connect[M: Terminal, P: Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, mut term: M, prompter: P, term_name: str) -> i32! {
     try p.allow_flags("connect", ["--timeout", "--accept-new-host-key", "--no-command"])
     if p.positionals.len() != 2 || p.has_rest {
         return error(coded(ERR_USAGE, "usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]"))
     }
     opts := try connect_options(p)
     alias := p.positional(1)
-    // Typed: the checker takes `os.getenv` for an optional (CF-063).
-    mut term_name: str = os.getenv("TERM")
-    if term_name.len() == 0 {
-        term_name = "xterm-256color"
-    }
     s := try open_target(p, sec, c, mut store, src, recents)
     mut link := new_ssh_link()
-    mut term := new_stdio_terminal()
     mut clock := new_system_clock()
-    code := try connect_host(c, mut store, s, mut link, new_tty_prompter(), mut term, mut clock, alias, term_name, opts)
+    code := try connect_host(c, mut store, s, mut link, prompter, mut term, mut clock, alias, term_name, opts)
     if as_json {
         say(json.stringify(SessionEnd{ host: alias, exit_code: code }))
     }
     return process_exit_code(code)
 }
 
-fn cmd_exec(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> i32! {
+fn cmd_exec[P: Prompter, O: ExecSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, prompter: P, mut sink: O) -> i32! {
     try p.allow_flags("exec", ["--timeout", "--exec-timeout", "--accept-new-host-key"])
     if p.positionals.len() != 2 || !p.has_rest || p.rest.len() == 0 {
         return error(coded(ERR_USAGE, "usage: flint exec <alias> [--timeout <secs>] [--exec-timeout <secs>] -- <command>"))
@@ -92,9 +88,8 @@ fn cmd_exec(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     }
     s := try open_target(p, sec, c, mut store, src, recents)
     mut link := new_ssh_link()
-    mut sink := new_stdio_exec_sink()
     mut clock := new_system_clock()
-    res := try exec_on_host(c, mut store, s, mut link, new_tty_prompter(), mut sink, mut clock, p.positional(1), remote_command(p), opts, exec_timeout, as_json)
+    res := try exec_on_host(c, mut store, s, mut link, prompter, mut sink, mut clock, p.positional(1), remote_command(p), opts, exec_timeout, as_json)
     if as_json {
         say(json.stringify(res))
     }
@@ -103,7 +98,7 @@ fn cmd_exec(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
 
 // `flint host test <alias>`: connect, verify, log in, hang up. Exits 0, or with the
 // error's code (11-14 for host_key, auth, network, timeout).
-fn cmd_host_test(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_host_test[P: Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, prompter: P) -> void! {
     try p.allow_flags("host test", ["--timeout", "--accept-new-host-key"])
     try p.expect_args("host test", 1, "<alias> [--timeout <secs>] [--accept-new-host-key]")
     if p.has_rest {
@@ -113,7 +108,7 @@ fn cmd_host_test(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut 
     s := try open_target(p, sec, c, mut store, src, recents)
     mut link := new_ssh_link()
     mut clock := new_system_clock()
-    r := try test_host(c, mut store, s, mut link, new_tty_prompter(), mut clock, p.positional(2), opts)
+    r := try test_host(c, mut store, s, mut link, prompter, mut clock, p.positional(2), opts)
     if as_json {
         say(json.stringify(r))
         return

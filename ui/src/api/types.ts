@@ -113,7 +113,21 @@ export interface Settings {
   term_cursor: 'block' | 'bar' | 'underline';
   term_cursor_blink: boolean;
   term_theme: 'default' | 'catppuccin' | 'tokyo-night' | 'aura' | 'dracula' | 'nord';
+  /** Auto-lock after this long with nobody using the vault (D-042). */
+  lock_after: LockAfter;
 }
+
+export type LockAfter = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | 'never';
+
+/** A `flint` command asked this window to unlock a vault; `path` is "" for none. */
+export interface UnlockRequest {
+  path: string;
+  name: string;
+  caller: string;
+}
+
+/** Why the vault locked: the Lock button, idle time, the screen, sleep or `flint vault lock`. */
+export type LockReason = 'manual' | 'idle' | 'screen' | 'sleep' | 'cli';
 
 // A host patch as the core's HostPatch: a `set_*` flag says the field is given.
 export interface HostPatch {

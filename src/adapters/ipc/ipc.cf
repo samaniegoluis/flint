@@ -228,6 +228,20 @@ fn (self: IpcConn) recv(timeout_ms: i32) -> str! {
     return got
 }
 
+// Whether a frame (or the peer's close) is waiting, within `timeout_ms`. A closed
+// connection is always "readable": the next recv says why.
+fn (self: IpcConn) readable(timeout_ms: i32) -> bool {
+    if !self.open {
+        return true
+    }
+    mut r := false
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        r = flint_ipc::readable(self.fd, timeout_ms);
+    }
+    return r
+}
+
 fn (mut self: IpcConn) close() {
     if !self.open {
         return

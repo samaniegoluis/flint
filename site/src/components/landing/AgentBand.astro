@@ -51,16 +51,17 @@
 	</div>
 
 	<ol class="flint-agent__steps">
-		<li><strong>Unlock once.</strong> Open the vault in the app or with <code>flint vault unlock</code>. The OS keychain keeps its key, never the password.</li>
+		<li><strong>Unlock in Flint.</strong> The app holds the vault’s key; the CLI never reads it. Locked or closed, Flint’s window asks you, naming the command that wants in.</li>
 		<li><strong>Your agent asks Flint.</strong> <code>flint exec &lt;alias&gt; -- …</code> from any agent that can run a command: Claude Code, Codex, a script.</li>
 		<li><strong>Flint does the login.</strong> Jump hosts, keys, passwords and host keys stay on Flint’s side. Only the result comes back.</li>
 	</ol>
 
 	<div class="flint-agent__next">
 		<p>
-			<strong>Today</strong>, any program on your machine that can run <code>flint</code> can do what your
-			agent does. <strong>Next</strong>, Flint approves each program that asks for the vault in its own
-			window, limited to the hosts you choose and for a set time, and shows you every <code>sudo</code> command before it runs.
+			<strong>Today</strong>, while the vault is unlocked in Flint, any program on your machine that can run
+			<code>flint</code> can do what your agent does; it locks on its own when you step away. <strong>Next</strong>,
+			Flint approves each program that asks for the vault in its own window, limited to the hosts you choose
+			and for a set time, and shows you every <code>sudo</code> command before it runs.
 		</p>
 		<p class="flint-agent__links">
 			<a href="/guides/ai-agents/">Use Flint with an AI agent <span aria-hidden="true">→</span></a>

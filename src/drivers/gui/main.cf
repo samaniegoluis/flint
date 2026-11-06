@@ -80,13 +80,14 @@ fn main() {
         clipboard.board = "net.flint.gui-e2e"
     }
     mut st := new_gui_state()
+    st.holder.set_lock_after((load_settings(settings_store) or default_settings()).lock_after)
 
     app.bind_raw("app_info") |params| { return rpc_app_info(e2e) }
     app.bind_raw("window_theme") |params| { return rpc_window_theme(params, mut app) }
     app.bind_raw("dialog_open") |params| { return rpc_dialog_open(params, app) }
     app.bind_raw("dialog_save") |params| { return rpc_dialog_save(params, app) }
     app.bind_raw("settings_get") |params| { return rpc_settings_get(settings_store) }
-    app.bind_raw("settings_set") |params| { return rpc_settings_set(params, mut settings_store) }
+    app.bind_raw("settings_set") |params| { return rpc_settings_set(params, mut settings_store, st) }
     app.bind_raw("fonts_mono") |params| { return rpc_fonts_mono(font_catalog) }
     app.bind_raw("ui_state_get") |params| { return rpc_ui_state_get(ui_state_store, store, st) }
     app.bind_raw("ui_state_set") |params| { return rpc_ui_state_set(params, mut ui_state_store, store, st) }
@@ -105,6 +106,10 @@ fn main() {
         return rpc_vault_create(req, c, mut s, kc, recents, mut g)
     }
     app.bind_raw("vault_close") |params| { return rpc_vault_close(mut store, mut st) }
+    app.bind_raw("vault_lock") |params| { return rpc_vault_lock(mut store, st, mut app) }
+    app.bind_raw("activity") |params| { return rpc_activity(st) }
+    app.bind_raw("unlock_request") |params| { return rpc_unlock_request(st, recents) }
+    app.bind_raw("unlock_request_dismiss") |params| { return rpc_unlock_request_dismiss(st) }
     app.bind_raw("vault_forget_key") |params| { return rpc_vault_forget_key(params, mut store, kc, mut st) }
     app.bind_raw("vault_forget") |params| { return rpc_vault_forget(params, mut store, kc, recents, mut st) }
     app.bind_raw("vault_status") |params| { return rpc_vault_status(mut store, st) }
@@ -137,6 +142,12 @@ fn main() {
     app.bind_raw("e2e_log") |params| { return rpc_e2e_log(params) }
     if e2e {
         app.bind_raw("e2e_clipboard") |params| { return rpc_e2e_clipboard(clipboard) }
+        // Stands in for the OS's screen lock and sleep (D-042).
+        app.bind_raw("e2e_system_event") |params| {
+            req := try parse_req[NameReq](params)
+            system_events_inject(req.name)
+            return ok_json()
+        }
     }
 
     async.scope(workers: 64) |scope| {
@@ -175,29 +186,31 @@ fn main() {
             }
             return ok_json()
         }
-        // The CLI's way into the vault unlocked here (serve.cf, D-038).
+        // The CLI's way into the vault unlocked here (serve.cf, D-038, D-042): several
+        // accept loops on one listener, since a `flint connect` keeps its connection.
         mut listener := start_serving(config_dir)
         if listener.open {
-            loop_listener := listener
-            loop_store := store
-            loop_app := app
-            loop_st := st
-            scope.spawn || {
-                for !loop_listener.stopped() {
-                    got := loop_listener.accept_wait(SERVE_ACCEPT_WAIT_MS)
-                    if !got.has_value() {
-                        break
-                    }
-                    conn := got.value()
-                    if conn.open {
-                        // One at a time: a task cannot spawn into this scope (CF-083).
-                        mut cn := conn
-                        mut s := loop_store
-                        mut a := loop_app
-                        serve_client(mut cn, c, mut s, kc, recents, loop_st, mut a)
-                    }
+            for i in 0..SERVE_ACCEPTORS {
+                loop_listener := listener
+                loop_store := store
+                loop_app := app
+                loop_st := st
+                scope.spawn || {
+                    mut s := loop_store
+                    mut a := loop_app
+                    run_accept_loop(loop_listener, c, mut s, kc, recents, loop_st, mut a)
                 }
             }
+        }
+        // Auto-lock: idle time, screen lock and sleep.
+        _ := system_events_start()
+        timer_store := store
+        timer_app := app
+        timer_st := st
+        scope.spawn || {
+            mut s := timer_store
+            mut a := timer_app
+            run_lock_timer(mut s, timer_st, mut a)
         }
         install_app_menu("Flint")
         // On Linux the end-to-end run opens the real window under xvfb-run
@@ -207,6 +220,7 @@ fn main() {
         } else {
             app.run()
         }
+        st.holder.set_quitting()
         gui_session_close_all()
         listener.close()
     }

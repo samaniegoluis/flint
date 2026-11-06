@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../api/backend';
-import type { Settings, VaultStatus } from '../api/types';
+import type { LockAfter, Settings, VaultStatus } from '../api/types';
 import { shortPath, useApp, vaultInitial, vaultMarkClass } from '../state/app';
 import { ACTION_TITLES, chordLabel, SHORTCUT_GROUPS } from '../lib/keymap';
 import { Icon, type IconName } from '../ui/Icon';
@@ -239,6 +239,32 @@ function Shortcuts() {
   );
 }
 
+const LOCK_AFTER: { value: LockAfter; label: string }[] = [
+  { value: '1m', label: '1 minute' },
+  { value: '5m', label: '5 minutes' },
+  { value: '15m', label: '15 minutes' },
+  { value: '30m', label: '30 minutes' },
+  { value: '1h', label: '1 hour' },
+  { value: '4h', label: '4 hours' },
+  { value: 'never', label: 'Never' },
+];
+
+// Auto-lock (D-042): idle time here; the screen locking and sleep always lock.
+function LockAfterRow() {
+  const [s, set] = useSetting();
+  return (
+    <Row title="Lock after" desc="With nobody using Flint or its CLI for this long, the vault locks. It also locks when the screen locks and before the computer sleeps. Set on this computer.">
+      <div className="row">
+        <div className="seg" role="radiogroup" aria-label="Lock after">
+          {LOCK_AFTER.map((o) => (
+            <button key={o.value} type="button" role="radio" aria-checked={s.lock_after === o.value} aria-pressed={s.lock_after === o.value} onClick={() => set({ lock_after: o.value })}>{o.label}</button>
+          ))}
+        </div>
+      </div>
+    </Row>
+  );
+}
+
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (c: Confirm) => void }) {
@@ -279,9 +305,10 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
           })}>Forget on this device</button>}
         </div>
       </Row>
-      <Row title="Lock" desc="Closes every session and clears the vault's keys from this window.">
+      <Row title="Lock" desc="Clears the vault key from memory. Open sessions keep running behind the lock screen; the flint CLI and new sessions wait until you unlock with the master password.">
         <div><button className="btn btn-secondary" onClick={onLock}><Icon name="lock" size="sm" />Lock now<Kbd action="lock" /></button></div>
       </Row>
+      <LockAfterRow />
       <Row title="Known hosts" desc="Server keys this vault trusts. Shared with the Flint CLI.">
         {catalog.known_hosts.length === 0 ? <span className="faint" style={{ fontSize: 'var(--fs-sm)' }}>None yet: a server's key is recorded the first time you trust it.</span> : (
           <table className="table compact">

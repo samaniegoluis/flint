@@ -131,10 +131,10 @@ scripts/cli-e2e.sh
 ```
 
 It builds `flint` and drives it against throwaway vaults in a temporary folder: every
-command, every exit code, `--json` output, the keychain cache (and `FLINT_KEYCHAIN=off`).
-It also checks that no password, key or passphrase appears in any output, and that no
-hostname, user, label or note appears in clear text in the vault files. It removes its
-keychain entries when it finishes.
+command, every exit code, `--json` output, and that the CLI never caches a vault key. It
+also checks that no password, key or passphrase appears in any output, and that no
+hostname, user, label or note appears in clear text in the vault files. It sets
+`FLINT_APP=off`, so a locked vault never starts your installed Flint.
 
 The page's own unit tests (keyboard map, host tree, fuzzy search) run with Vitest:
 
@@ -151,10 +151,24 @@ scripts/gui-e2e.sh
 It builds the app and drives its real UI in a hidden WebView against the throwaway
 `sshd`s: creates a vault, adds a key and hosts, trusts a host key, types in the terminal,
 checks the PTY size, reconnects, connects through a jump host, meets a changed host key
-behind a TCP forwarder and replaces it, uses the palette and settings, then locks and
-unlocks. It also checks that no password reaches the page and that nothing from the vault
+behind a TCP forwarder and replaces it, uses the palette and settings, then locks
+(with a session that keeps running behind the lock screen, and on a simulated screen lock
+and sleep) and unlocks. It also checks that no password reaches the page and that nothing from the vault
 is readable in its file. It uses its own config folder and `FLINT_KEYCHAIN=off`, so your
 keychain is not touched.
+
+### The CLI through the app
+
+```sh
+scripts/serve-e2e.sh
+```
+
+It opens the app headless on a throwaway vault, unlocks it, and drives `flint` with no
+terminal and no master password: commands, `exec`, `host test` and `connect` (on a
+pseudo-terminal, with the host key question and a resize relayed) run in the app, with
+the same output and exit codes as the CLI on its own; a long `exec` does not hold up other
+commands; `flint vault lock` locks the window and the next command makes it ask, naming
+the command; and with the app closed, `flint` starts it on its unlock screen.
 
 ## Check the Linux build from macOS
 
@@ -166,7 +180,7 @@ scripts/linux-check.sh
 
 It builds the page on the host (the image has no Node), then builds a Debian image with
 cfire pinned to the same commit and the apt packages above. Inside, it builds `flint` and
-the desktop app, and runs the tests and the CLI end-to-end run twice: once against
-gnome-keyring on a private D-Bus session (keychain cache on), and once with no Secret
-Service at all (every command takes the master password). Then it runs the desktop app's
-end-to-end check in the real GTK window under Xvfb.
+the desktop app, and runs the tests and the CLI end-to-end run against gnome-keyring on
+a private D-Bus session (the keychain adapter's tests use it; a screensaver signal sent
+on that bus must lock the vault). Then it runs the desktop app's end-to-end check and the
+CLI-through-the-app check in the real GTK window under Xvfb.

@@ -47,7 +47,8 @@ export interface KnownHost {
 export interface Vault {
 	name: string;
 	path: string;
-	cached: boolean;
+	/** Unlocked in the Flint app, which the demo pretends is open (D-042). One at a time. */
+	unlocked: boolean;
 	groups: string[];
 	hosts: Host[];
 	keys: Key[];
@@ -100,7 +101,7 @@ export function worldFromSeed(seed: any): World {
 		vaults: seed.vaults.map((v: any) => ({
 			name: v.name,
 			path: v.path,
-			cached: v.cached,
+			unlocked: v.unlocked,
 			groups: [...v.groups],
 			keys: v.keys.map((k: any) => ({
 				name: k.name, type: k.type, fingerprint: k.fingerprint, publicKey: k.public_key, hasPassphrase: k.has_passphrase,
