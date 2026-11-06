@@ -33,6 +33,7 @@ What Tether already does and Flint must not lose.
 | Remember collapsed groups per vault | `done` | Milestone 07 (D-030) |
 | Auto-updater from GitHub releases + "What's new" screen | `later` | |
 | Import an existing Tether vault | `done` | Milestone 08 (D-034): `flint import tether` and Settings → Vault |
+| **Remove `flint import tether`** and its GUI entry, libargon2 and the Tether fixture once the owner has moved his vault: the owner is Tether's only user, so the importer has no other audience. Replace it with Flint's own export / import (section on vaults: "Split / export…", "Import / merge…") | `next` | Owner, after the M08 build (2026-11-06). Removing it also drops the one P4 exception (D-034); record the removal as a new decision |
 | **Test connection** in the host editor (on the unsaved draft) and `flint host test <alias>`: dial, verify the host key like a real connect, authenticate, close | `mvp` | Milestone 06. Tether has it (`TestConnection`); raised by the owner while using the MVP |
 | **Reveal and copy a password** in the host and credential editors: hidden by default, only while unlocked, hides again after a few seconds; copy is written by the core straight to the clipboard and cleared after ~30 s. GUI only, no CLI `--reveal` | `mvp` | Milestone 06 (D-029, narrows P6). Tether has the eye button (`RevealHostPassword`) |
 | **Initial command per host** (e.g. `herdr` on codebox), with a per-host "return to shell when it exits" option. Run through the remote login shell, like `ssh -t host cmd`, not instead of it as Tether did; `flint connect` honours it, `--no-command` skips it | `mvp` | Milestone 06 (D-031, migration 003). Tether has `InitialCommand` |
@@ -83,7 +84,7 @@ What Tether already does and Flint must not lose.
 | Sync via any cloud folder (OneDrive, Dropbox, iCloud) | `done` | Journal mode `DELETE`, not WAL |
 | Detect cloud-sync conflict copies and offer to merge | `next` | |
 | Split / export a subset of hosts into a new vault ("give these 20 to my team") | `later` | |
-| Import / merge another vault | `later` | |
+| Import / merge another vault | `later` | The successor of `flint import tether`: same report (added, already present, changed, not imported) and the same re-run rule, so most of `src/application/tether.cf` carries over. Possible uses: moving hosts between a personal and a work vault, restoring from an export, merging a vault a teammate shared |
 | Multi-recipient vaults: encrypt to teammates' public keys (age-style), revoke access | `later` | Replaces "share the master password" |
 | Short-lived SSH certificates: the vault acts as a CA, `flint share --host X --ttl 8h` | `idea` | Teleport/Smallstep, personal-sized |
 | Local change log + per-record merge for concurrent edits on two machines | `idea` | Only if conflicts become a real problem |
