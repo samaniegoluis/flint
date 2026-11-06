@@ -581,3 +581,26 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     }
     return error(coded(ERR_USAGE, "unknown command `flint cred {verb}`; see `flint help`"))
 }
+
+// ---- import --------------------------------------------------------------------
+
+fn cmd_import(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore, inspector: LibsshKeyInspector) -> void! {
+    source := p.positional(1)
+    if source != "tether" {
+        return error(coded(ERR_USAGE, "Flint imports from 'tether' only: `flint import tether <file>`"))
+    }
+    try p.allow_flags("import tether", ["--password-stdin", "--dry-run"])
+    try p.expect_args("import tether", 1, "<file> [--password-stdin] [--dry-run]")
+    file := absolute_path(p.positional(2))
+    s := try open_target(p, sec, c, mut store, kc, recents)
+    mut password := sec.password
+    if !sec.has_password {
+        password = try prompt_secret("Tether master password")
+    }
+    r := try import_tether(c, mut store, inspector, new_tether_reader(), s, file, password, p.has_flag("--dry-run"))
+    if as_json {
+        say(json.stringify(r))
+    } else {
+        print_import_report(r, s.name)
+    }
+}

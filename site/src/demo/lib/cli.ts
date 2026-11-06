@@ -82,6 +82,11 @@ SSH
        -- <command>                     Run one command; exits with its status
   known-host list | known-host rm <alias|address>
 
+Import
+  import tether <file> [--password-stdin] [--dry-run]
+                                        Copy a Tether vault into this one (asks for
+                                        Tether's master password); --dry-run reports only
+
 Global flags
   --json            Write JSON to stdout (errors as JSON to stderr)
   --vault <v>       Use this vault instead of the current one
@@ -99,6 +104,7 @@ export const COMMANDS: Record<string, string[]> = {
 	key: ['add', 'list', 'show', 'rename', 'rm'],
 	cred: ['add', 'edit', 'list', 'show', 'rm'],
 	'known-host': ['list', 'rm'],
+	import: ['tether'],
 	connect: [],
 	exec: [],
 	help: [],
@@ -162,6 +168,7 @@ function* dispatch(args: string[], world: World, io: Io, asJson: boolean): Run {
 		case 'key': return yield* c.key();
 		case 'cred': return yield* c.cred();
 		case 'known-host': return yield* c.knownHost();
+		case 'import': return c.importVault();
 		case 'connect': return yield* c.connect();
 		default: return yield* c.exec();
 	}
@@ -493,6 +500,16 @@ class Cmd {
 			}
 		}
 		fail('usage', `unknown command \`flint host ${verb}\`; see \`flint help\``);
+	}
+
+	// ---- import ----
+
+	importVault(): Outcome {
+		const p = this.p;
+		if (p.positional(1) !== 'tether') fail('usage', "Flint imports from 'tether' only: `flint import tether <file>`");
+		p.allowFlags('import tether', ['--password-stdin', '--dry-run']);
+		p.expectArgs('import tether', 1, '<file> [--password-stdin] [--dry-run]');
+		return this.notInDemo('import tether');
 	}
 
 	// ---- key ----

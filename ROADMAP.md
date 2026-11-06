@@ -26,13 +26,13 @@ What Tether already does and Flint must not lose.
 | Theme, accent colour, terminal font from installed fonts | `done` | |
 | SFTP browser over the same connection: list, up/download with queue, drag & drop, rename, delete, mkdir, `..` | `next` | Needs file drag & drop from the OS (CF-004) |
 | File browser opens in the terminal's cwd (OSC 7 shell integration, herdr focused pane) | `next` | |
-| Local port-forward tunnels (`-L`), saved per host | `next` | |
-| OSC 52 clipboard (copy from Neovim/tmux/Zellij) | `mvp` | Milestone 08 |
-| Dead-key / IME correctness, in-order input delivery | `mvp` | Milestone 08. Both were real Tether bugs |
+| Local port-forward tunnels (`-L`), saved per host | `next` | When it ships, `flint import tether` should carry Tether's tunnels too (today it lists them as not imported, D-034) |
+| OSC 52 clipboard (copy from Neovim/tmux/Zellij) | `done` | Milestone 08 (D-034): write only, through the core |
+| Dead-key / IME correctness, in-order input delivery | `done` | Milestone 08. Both were real Tether bugs; now under unit and gui-e2e tests |
 | Customisable keyboard shortcuts | `next` | |
 | Remember collapsed groups per vault | `done` | Milestone 07 (D-030) |
 | Auto-updater from GitHub releases + "What's new" screen | `later` | |
-| Import an existing Tether vault | `mvp` | Milestone 08. One-shot migration for the author |
+| Import an existing Tether vault | `done` | Milestone 08 (D-034): `flint import tether` and Settings → Vault |
 | **Test connection** in the host editor (on the unsaved draft) and `flint host test <alias>`: dial, verify the host key like a real connect, authenticate, close | `mvp` | Milestone 06. Tether has it (`TestConnection`); raised by the owner while using the MVP |
 | **Reveal and copy a password** in the host and credential editors: hidden by default, only while unlocked, hides again after a few seconds; copy is written by the core straight to the clipboard and cleared after ~30 s. GUI only, no CLI `--reveal` | `mvp` | Milestone 06 (D-029, narrows P6). Tether has the eye button (`RevealHostPassword`) |
 | **Initial command per host** (e.g. `herdr` on codebox), with a per-host "return to shell when it exits" option. Run through the remote login shell, like `ssh -t host cmd`, not instead of it as Tether did; `flint connect` honours it, `--no-command` skips it | `mvp` | Milestone 06 (D-031, migration 003). Tether has `InitialCommand` |

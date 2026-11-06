@@ -234,6 +234,13 @@ test('commands that need local files explain themselves instead', () => {
 	const r = flint(worldFromSeed(seed), 'vault create ~/x.flint');
 	assert.equal(r.code, 0);
 	assert.match(r.notes[0], /vault create.*leaves it out/);
+	const imp = flint(worldFromSeed(seed), 'import tether ~/vault.tether --dry-run');
+	assert.equal(imp.code, 0);
+	assert.match(imp.notes[0], /import tether.*leaves it out/);
+	const other = flint(worldFromSeed(seed), 'import termius ~/x');
+	assert.deepEqual(other.err, ["flint: Flint imports from 'tether' only: `flint import tether <file>`"]);
+	assert.equal(other.code, 2);
+	assert.equal(flint(worldFromSeed(seed), 'import tether').code, 2);
 });
 
 // ---- the session: prompts, remote shell, tour -------------------------------------

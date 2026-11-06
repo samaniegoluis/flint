@@ -82,6 +82,10 @@ The first entries below came from reading cfire at commit `feat(webui): add ext:
 - **Confirmed (M01):** nothing in cfire provides a password KDF or an XChaCha20 AEAD.
 - **Workaround:** `src/adapters/crypto/sodium.cf` over the system libsodium
   (`@pkg("libsodium")`).
+- **Again in M08:** importing a Tether vault needs Argon2id with 4 lanes, which
+  libsodium's `crypto_pwhash` cannot compute (it fixes parallelism at 1).
+  `src/adapters/vault/tether.cf` calls the reference libargon2 (`@pkg("libargon2")`,
+  D-034) for that one derivation.
 - **Ideal:** `ext:crypto/sodium` (or a libsodium-backed `core:crypto/*`).
 
 ### CF-007 · missing · `confirmed`: encrypted SQLite in `ext:db/sqlite`
@@ -615,6 +619,8 @@ The entries below were found while building milestone 02 against the same cfire 
   'unsigned char'`. `str.bytes()` lowers to `std::span<const std::byte>`, `[]byte` to
   `std::vector<std::uint8_t>`. The same split breaks `sha256.hash_bytes(data)` with a
   `[]byte` argument (`no viable conversion … to std::span<const std::byte>`).
+- **Also (M08):** `base64.decode` returns `std::vector<std::byte>`, which no `[]byte`
+  parameter takes; `tether_b64` in `src/domain/tether.cf` copies it with `u8(b)`.
 - **Workaround:** push `u8(b)` (`vault_id` in `src/application/session.cf`); the test
   fake of `Crypto.digest` does not call `sha256` (`src/application/fakes_test.cf`).
 - **Ideal:** one byte type, or an implicit view between the two, checked by cfire, not
@@ -664,3 +670,18 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Workaround:** `str.index_of(s, x)` and `s.contains(x)` (`src/application/terminal.cf`).
 - **Ideal:** an unknown method on `str` is a compile error, or `find` returns `i64`
   with `-1` like `index_of`. A comparison of an unsigned value with `< 0` warns.
+
+### CF-060 · bug · `confirmed`: a `str` slice passes to no `str` parameter, and cannot be interpolated
+- **Repro (cfire 0.9.4):** `fn shout(s: str) -> str { … }` then `shout(a[0..5])` fails in
+  clang (`no matching function for call to 'shout'`: the slice is a `std::string_view`,
+  the parameter a `const std::string&`). `println("{a[0..5]}")` fails too
+  (`basic_format_string … not a constant expression`); inside a `str` field built from
+  it (`mut h := "{a[0..5]}"` assigned to a struct) the text is kept literally when the
+  slice bounds hold a cast (`"{addr[0..usize(colon)]}"` came out as that literal).
+  Default parameters are documented as read-only borrows, so a view reads as fine.
+  An interpolation holding a call with a quoted, interpolated argument
+  (`"x ({error_text_of(\"{e.message()}\")})"`) is also printed literally, braces and all.
+- **Workaround:** bind the slice first, then copy it by interpolation:
+  `head := addr[0..usize(colon)]; host := "{head}"` (`src/domain/tether.cf`).
+- **Ideal:** a `str` slice converts to `str` where one is expected (or `str` borrows
+  lower to `std::string_view`), and interpolation takes any expression.

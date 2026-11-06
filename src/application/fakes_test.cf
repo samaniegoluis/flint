@@ -105,10 +105,11 @@ type FakeStore struct {
     snap_hosts: []Host
     snap_keys: []SshKey
     snap_creds: []Credential
+    snap_known: []KnownHost
 }
 
 fn new_fake_store() -> FakeStore {
-    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [] }
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [] }
 }
 
 fn (self: FakeStore) vault_file_exists(path: str) -> bool {
@@ -187,6 +188,7 @@ fn (mut self: FakeStore) vault_begin() -> void! {
     self.snap_hosts = self.hosts
     self.snap_keys = self.keys
     self.snap_creds = self.creds
+    self.snap_known = self.known
 }
 
 fn (mut self: FakeStore) vault_commit() -> void! {
@@ -197,6 +199,7 @@ fn (mut self: FakeStore) vault_rollback() {
     self.hosts = self.snap_hosts
     self.keys = self.snap_keys
     self.creds = self.snap_creds
+    self.known = self.snap_known
 }
 
 fn (self: FakeStore) groups_all() -> []Group! {

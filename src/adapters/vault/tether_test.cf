@@ -1,0 +1,94 @@
+package vault
+
+import "core:fs"
+import "../../ports"
+import "../../domain"
+
+fn accepts_tether_source[T: TetherSource](t: T) -> bool {
+    return true
+}
+
+// The fixture is written by Tether's own code (scripts/make-tether-fixture.sh).
+fn tether_fixture() -> str {
+    for p in ["src/adapters/vault/testdata/tether-v5.tether", "testdata/tether-v5.tether"] {
+        if fs.exists(p) {
+            return p
+        }
+    }
+    return "src/adapters/vault/testdata/tether-v5.tether"
+}
+
+test "TetherReader satisfies the TetherSource port" {
+    assert(accepts_tether_source(new_tether_reader()))
+}
+
+test "a Tether v5 vault reads with its rows and sealed secrets" {
+    r := new_tether_reader()
+    f := try r.tether_read(tether_fixture())
+    assert_eq(f.format, 5)
+    assert_eq(f.groups.len(), 5)
+    assert_eq(f.hosts.len(), 9)
+    assert_eq(f.keys.len(), 1)
+    assert_eq(f.creds.len(), 1)
+    assert_eq(f.known_hosts.len(), 3)
+    assert_eq(f.tunnels.len(), 1)
+    h := f.hosts[0]
+    assert_eq(h.label, "Code Box")
+    assert_eq(h.initial_command, "herdr")
+    assert_eq(h.tags.len(), 2)
+    assert_eq(h.tags[1], "home lab")
+    assert(h.password_enc.len() > 40, "the password stays sealed")
+    assert(!h.password_enc.contains("pw-codebox"))
+    assert_eq(f.hosts[1].port, 2222)
+    assert_eq(f.hosts[1].key_id, f.keys[0].id)
+    assert_eq(f.hosts[2].jump_host_id, h.id)
+    assert_eq(f.hosts[3].credential_id, f.creds[0].id)
+    assert_eq(f.hosts[7].key_path, "/tmp/flint-tether-fixture/id_legacy")
+}
+
+test "Tether's key derivation (Argon2id, 4 lanes) opens its verifier" {
+    r := new_tether_reader()
+    f := try r.tether_read(tether_fixture())
+    salt := try tether_b64(f.salt_b64)
+    key := try r.tether_derive_key("tether-fixture-pw", salt)
+    assert_eq(key.len(), 32)
+    // The verifier is opened by the core (application/tether.cf); here only that
+    // the derivation is deterministic and depends on the password.
+    again := try r.tether_derive_key("tether-fixture-pw", salt)
+    assert(key == again)
+    other := try r.tether_derive_key("wrong", salt)
+    assert(key != other)
+}
+
+test "a file that is not a Tether vault is refused" {
+    r := new_tether_reader()
+    path := "/tmp/flint-tether-not-a-vault.txt"
+    try fs.write_text(path, "hello, not sqlite at all, just enough bytes to look like a header")
+    defer { _ = fs.remove(path) }
+    res := r.tether_read(path)
+    assert(!res.has_value())
+    assert_eq(error_code_of("{res.error().message()}"), "invalid")
+    missing := r.tether_read("/tmp/flint-no-such-tether-file.tether")
+    assert_eq(error_code_of("{missing.error().message()}"), "not_found")
+}
+
+test "a Tether vault is opened read-only and left unchanged" {
+    path := tether_fixture()
+    before := try fs.read_bytes(path)
+    r := new_tether_reader()
+    _ := try r.tether_read(path)
+    after := try fs.read_bytes(path)
+    assert(before == after)
+    assert(!fs.exists(path + "-journal"))
+}
+
+test "a key file is read, a missing one is not_found" {
+    r := new_tether_reader()
+    path := "/tmp/flint-tether-keyfile-test"
+    try fs.write_text(path, "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n")
+    defer { _ = fs.remove(path) }
+    text := try r.tether_read_key_file(path)
+    assert(text.starts_with("-----BEGIN"))
+    missing := r.tether_read_key_file("/tmp/flint-no-such-key-file")
+    assert_eq(error_code_of("{missing.error().message()}"), "not_found")
+}

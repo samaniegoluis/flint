@@ -1,0 +1,309 @@
+package application
+
+import "core:encoding/base64"
+import "ext:json"
+
+// ---- A fake Tether file --------------------------------------------------------
+
+// Tether's key in these tests: the fake derivation returns it for "tpw" only.
+fn tkey() -> []byte {
+    mut k := make([]byte, 32)
+    for i in 0..32 {
+        k[i] = u8(7)
+    }
+    return k
+}
+
+// A Tether secret column: sealed with no AAD, base64.
+fn tseal(plain: str) -> str {
+    if plain.len() == 0 {
+        return ""
+    }
+    crypto := FakeCrypto{ derive_calls: 0 }
+    sealed := crypto.seal(tkey(), str_to_bytes(plain), []) or []
+    return base64.encode_str(bytes_to_str(sealed))
+}
+
+// Holds no TetherFile: a struct field of a struct type from another package can be
+// emitted before that type is complete (CF-033). `tether_read` builds the sample.
+type FakeTetherSource struct {
+    key_file_paths: []str
+    key_file_texts: []str
+}
+
+fn (self: FakeTetherSource) tether_read(path: str) -> TetherFile! {
+    if path != "/t/vault.tether" {
+        return error(coded(ERR_NOT_FOUND, "no file at {path}"))
+    }
+    return sample_tether_file()
+}
+
+fn (self: FakeTetherSource) tether_derive_key(password: str, salt: []byte) -> []byte! {
+    if password == "tpw" {
+        return tkey()
+    }
+    mut k := make([]byte, 32)
+    for i in 0..32 {
+        k[i] = u8(9)
+    }
+    return k
+}
+
+fn (self: FakeTetherSource) tether_read_key_file(path: str) -> str! {
+    for i in 0..self.key_file_paths.len() {
+        if self.key_file_paths[i] == path {
+            return self.key_file_texts[i]
+        }
+    }
+    return error(coded(ERR_NOT_FOUND, "no key file at {path}"))
+}
+
+// Each private key has its own fingerprint, so reuse by fingerprint is testable.
+type TetherInspector struct {
+    unused: bool
+}
+
+fn (self: TetherInspector) inspect_private_key(private_key: str, passphrase: str) -> KeyInfo! {
+    if !private_key.starts_with("PRIVATE ") {
+        return error(coded(ERR_INVALID, "the private key could not be read"))
+    }
+    if private_key.contains("ENCRYPTED") && passphrase != "kp" {
+        return error(coded(ERR_INVALID, "wrong passphrase"))
+    }
+    return KeyInfo{ key_type: "ssh-ed25519", public_key: "ssh-ed25519 AAAA" + private_key, fingerprint: "SHA256:" + private_key }
+}
+
+fn thost(id: str, label: str, hostname: str, port: i64, user: str, auth: str) -> TetherHost {
+    return TetherHost{ id: id, group_id: "", label: label, hostname: hostname, port: port, username: user, auth_type: auth, key_id: "", key_path: "", credential_id: "", jump_host_id: "", password_enc: "", tags: [], color: "", notes: "", initial_command: "" }
+}
+
+fn sample_tether() -> FakeTetherSource {
+    return FakeTetherSource{ key_file_paths: ["/keys/id_legacy"], key_file_texts: ["PRIVATE legacy-file"] }
+}
+
+fn sample_tether_file() -> TetherFile {
+    mut f := TetherFile{ format: 5, salt_b64: base64.encode_str("0123456789abcdef"), verifier_enc: tseal(TETHER_VERIFIER), groups: [], hosts: [], keys: [], creds: [], known_hosts: [], tunnels: [] }
+    f.groups.push(TetherGroup{ id: "g1", parent_id: "", name: "Homelab" })
+    f.groups.push(TetherGroup{ id: "g2", parent_id: "g1", name: "Proxmox" })
+    f.groups.push(TetherGroup{ id: "g3", parent_id: "", name: "Clients / ACME" })
+    f.keys.push(TetherKey{ id: "k1", name: "homelab ed25519", key_type: "ssh-ed25519", fingerprint: "x", private_key_enc: tseal("PRIVATE ENCRYPTED stored"), passphrase_enc: tseal("kp") })
+    f.creds.push(TetherCredential{ id: "c1", name: "ops", username: "ops", auth_type: "password", key_id: "", password_enc: tseal("pw-ops") })
+
+    mut code := thost("h1", "Code Box", "codebox.lan", 22, "luis", "password")
+    code.group_id = "g1"
+    code.password_enc = tseal("pw-codebox")
+    code.tags = ["dev", "home lab", "!!!"]
+    code.color = "#ff8800"
+    code.notes = "main box\nline two"
+    code.initial_command = "herdr"
+    f.hosts.push(code)
+    mut pve := thost("h2", "pve-01", "pve-01.lan", 2222, "root", "key")
+    pve.group_id = "g2"
+    pve.key_id = "k1"
+    f.hosts.push(pve)
+    mut web := thost("h3", "Web (prod)", "web.example.com", 22, "deploy", "agent")
+    web.group_id = "g3"
+    web.jump_host_id = "h1"
+    f.hosts.push(web)
+    mut db := thost("h4", "db", "10.0.0.5", 22, "ignored", "password")
+    db.credential_id = "c1"
+    f.hosts.push(db)
+    f.hosts.push(thost("h5", "Code Box", "codebox2.lan", 22, "luis", "agent"))
+    f.hosts.push(thost("h6", "Code Box", "codebox.lan", 22, "luis", "agent"))
+    mut nandu := thost("h7", "Ñandú Server!", "nandu.lan", 22, "root", "agent")
+    nandu.color = "red"
+    f.hosts.push(nandu)
+    mut legacy := thost("h8", "legacy", "legacy.lan", 22, "admin", "key")
+    legacy.key_path = "/keys/id_legacy"
+    f.hosts.push(legacy)
+    mut gone := thost("h9", "gone key", "gone.lan", 22, "admin", "key")
+    gone.key_path = "/keys/missing"
+    f.hosts.push(gone)
+    f.hosts.push(thost("h10", "bad host", "has space.lan", 22, "x", "agent"))
+
+    f.known_hosts.push(TetherKnownHost{ addr: "codebox.lan:22", key_type: "ssh-ed25519", fingerprint: "SHA256:cb", host_id: "h1", created_at: "2026-01-01T00:00:00Z" })
+    f.known_hosts.push(TetherKnownHost{ addr: "pve-01.lan:2222", key_type: "ecdsa-sha2-nistp256", fingerprint: "SHA256:pve", host_id: "h2", created_at: "2026-01-02T00:00:00Z" })
+    f.known_hosts.push(TetherKnownHost{ addr: "weird", key_type: "ssh-ed25519", fingerprint: "SHA256:w", host_id: "", created_at: "" })
+    f.tunnels.push(TetherTunnel{ host_id: "h2", name: "proxmox ui", local_port: 8006, remote_host: "localhost", remote_port: 8006 })
+    return f
+}
+
+fn has_note(notes: []ImportNote, kind: str, name: str, detail_part: str) -> bool {
+    for n in notes {
+        if n.kind == kind && n.name == name && n.detail.contains(detail_part) {
+            return true
+        }
+    }
+    return false
+}
+
+fn host_by_alias(store: FakeStore, alias: str) -> Host {
+    for h in store.hosts {
+        if h.alias == alias {
+            return h
+        }
+    }
+    return Host{ id: "", alias: "", label: "", hostname: "", port: 0, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true }
+}
+
+// ---- Names -------------------------------------------------------------------
+
+test "tether labels become Flint names" {
+    assert_eq(import_slug("Code Box"), "code-box")
+    assert_eq(import_slug("Ñandú Server!"), "nandu-server")
+    assert_eq(import_slug("Web (prod)"), "web-prod")
+    assert_eq(import_slug("..hidden"), "hidden")
+    assert_eq(import_slug("日本"), "")
+    assert_eq(import_slug("db_01.lan"), "db_01.lan")
+    long_label := "abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abc"
+    assert(import_slug(long_label).len() <= 64)
+    assert(!import_slug(long_label).ends_with("-"))
+    assert_eq(unique_name("code-box", ["Code-Box", "code-box-2"]), "code-box-3")
+    assert_eq(import_group_name("Clients / ACME"), "Clients - ACME")
+    assert_eq(import_group_name("  "), "group")
+}
+
+// ---- The import --------------------------------------------------------------
+
+test "a tether vault is imported with groups, keys, credentials, hosts and known hosts" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    src := sample_tether()
+    r := try import_tether(crypto, mut store, TetherInspector{ unused: false }, src, s, "/t/vault.tether", "tpw", false)
+
+    assert_eq(r.format, 5)
+    assert_eq(r.added.groups, 3)
+    assert_eq(r.added.keys, 2)
+    assert_eq(r.added.credentials, 1)
+    assert_eq(r.added.hosts, 8)
+    assert_eq(r.already_present.hosts, 1)
+    assert_eq(r.added.known_hosts, 2)
+    assert_eq(group_path_of(store.groups, host_by_alias(store, "pve-01").group_id), "Homelab/Proxmox")
+    assert_eq(group_path_of(store.groups, host_by_alias(store, "web-prod").group_id), "Clients - ACME")
+
+    code := host_by_alias(store, "code-box")
+    assert_eq(code.label, "Code Box")
+    assert_eq(code.initial_command, "herdr")
+    assert(!code.keep_shell, "Tether ended the session with the program")
+    assert_eq(code.tags.len(), 2)
+    assert_eq(code.tags[1], "home-lab")
+    assert_eq(code.color, "#ff8800")
+    assert_eq(code.notes, "main box\nline two")
+    // The password is sealed again under the Flint vault's key.
+    assert_eq(try open_secret(crypto, s, "hosts", code.id, "password", code.password), "pw-codebox")
+
+    pve := host_by_alias(store, "pve-01")
+    assert_eq(pve.port, 2222)
+    assert(pve.key_id.len() > 0)
+    assert_eq(host_by_alias(store, "web-prod").jump_host_id, code.id)
+    db := host_by_alias(store, "db")
+    assert(db.credential_id.len() > 0)
+    assert_eq(db.username, "")
+    assert_eq(host_by_alias(store, "code-box-2").hostname, "codebox2.lan")
+    assert_eq(host_by_alias(store, "nandu-server").color, "")
+    assert(host_by_alias(store, "legacy").key_id.len() > 0)
+    assert_eq(host_by_alias(store, "gone-key").key_id, "")
+
+    mut ops := Credential{ id: "", name: "", username: "", key_id: "", password: [] }
+    for c in store.creds {
+        ops = c
+    }
+    assert_eq(ops.name, "ops")
+    assert_eq(try open_secret(crypto, s, "credentials", ops.id, "password", ops.password), "pw-ops")
+
+    assert_eq(store.known.len(), 2)
+    for k in store.known {
+        if k.addr == "codebox.lan" {
+            assert_eq(k.host_id, code.id)
+        } else {
+            assert_eq(k.addr, "[pve-01.lan]:2222")
+            assert_eq(k.host_id, pve.id)
+        }
+    }
+
+    assert(has_note(r.changed, "host", "Code Box", "alias 'code-box-2'"))
+    assert(has_note(r.changed, "host", "code-box", "tag '!!!' dropped"))
+    assert(has_note(r.changed, "host", "nandu-server", "colour 'red' dropped"))
+    assert(has_note(r.changed, "group", "Clients / ACME", "Clients - ACME"))
+    assert(has_note(r.changed, "key", "homelab ed25519", "homelab-ed25519"))
+    assert(has_note(r.not_imported, "key file", "/keys/missing", "cannot be read"))
+    assert(has_note(r.not_imported, "host", "bad host", "hostname"))
+    assert(has_note(r.not_imported, "known host", "weird", "not an address"))
+    assert(has_note(r.not_imported, "tunnel", "pve-01: proxmox ui", "no tunnels yet"))
+}
+
+test "a tether import never reports a secret" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    r := try import_tether(crypto, mut store, TetherInspector{ unused: false }, sample_tether(), s, "/t/vault.tether", "tpw", false)
+    text := json.stringify(r)
+    for secret in ["pw-codebox", "pw-ops", "kp", "ENCRYPTED stored", "legacy-file", "tpw"] {
+        assert(!text.contains(secret), "the report holds no secret")
+    }
+}
+
+test "importing the same tether vault twice adds nothing the second time" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    src := sample_tether()
+    _ := try import_tether(crypto, mut store, TetherInspector{ unused: false }, src, s, "/t/vault.tether", "tpw", false)
+    hosts := store.hosts.len()
+    r := try import_tether(crypto, mut store, TetherInspector{ unused: false }, src, s, "/t/vault.tether", "tpw", false)
+    assert_eq(r.added.hosts, 0)
+    assert_eq(r.added.groups, 0)
+    assert_eq(r.added.keys, 0)
+    assert_eq(r.added.credentials, 0)
+    assert_eq(r.added.known_hosts, 0)
+    assert_eq(r.already_present.hosts, 9)
+    assert_eq(r.already_present.known_hosts, 2)
+    assert_eq(store.hosts.len(), hosts)
+}
+
+test "a dry run reports the import and writes nothing" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    r := try import_tether(crypto, mut store, TetherInspector{ unused: false }, sample_tether(), s, "/t/vault.tether", "tpw", true)
+    assert(r.dry_run)
+    assert_eq(r.added.hosts, 8)
+    assert_eq(store.hosts.len(), 0)
+    assert_eq(store.groups.len(), 0)
+    assert_eq(store.keys.len(), 0)
+    assert_eq(store.creds.len(), 0)
+    assert_eq(store.known.len(), 0)
+}
+
+test "a wrong tether password or a missing file is refused before anything is written" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    assert_eq(err_code(import_tether(crypto, mut store, TetherInspector{ unused: false }, sample_tether(), s, "/t/vault.tether", "nope", false)), "wrong_password")
+    assert_eq(err_code(import_tether(crypto, mut store, TetherInspector{ unused: false }, sample_tether(), s, "/t/other.tether", "tpw", false)), "not_found")
+    assert_eq(store.hosts.len(), 0)
+}
+
+test "an existing flint host, key and conflicting known host are kept" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    mut p := empty_host_patch()
+    p.alias = "code-box"
+    p.set_alias = true
+    p.hostname = "other.lan"
+    p.set_hostname = true
+    _ := try add_host(crypto, mut store, s, p)
+    try store.known_host_put(KnownHost{ addr: "codebox.lan", key_type: "ssh-ed25519", fingerprint: "SHA256:different", host_id: "", added_at: "" })
+    r := try import_tether(crypto, mut store, TetherInspector{ unused: false }, sample_tether(), s, "/t/vault.tether", "tpw", false)
+    // "code-box" is taken by another machine: the Tether host gets the next alias.
+    assert_eq(host_by_alias(store, "code-box").hostname, "other.lan")
+    assert_eq(host_by_alias(store, "code-box-2").hostname, "codebox.lan")
+    assert(has_note(r.not_imported, "known host", "codebox.lan", "another key"))
+    for k in store.known {
+        if k.addr == "codebox.lan" {
+            assert_eq(k.fingerprint, "SHA256:different")
+        }
+    }
+}

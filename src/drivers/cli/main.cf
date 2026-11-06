@@ -72,6 +72,11 @@ SSH
        -- <command>                     Run one command; exits with its status
   known-host list | known-host rm <alias|address>
 
+Import
+  import tether <file> [--password-stdin] [--dry-run]
+                                        Copy a Tether vault into this one (asks for
+                                        Tether's master password); --dry-run reports only
+
 Global flags
   --json            Write JSON to stdout (errors as JSON to stderr)
   --vault <v>       Use this vault instead of the current one
@@ -113,7 +118,7 @@ fn run_cli(p: ParsedArgs, as_json: bool) -> i32! {
         return 0
     }
     session_noun := noun == "connect" || noun == "exec"
-    if !session_noun && noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" && noun != "known-host" {
+    if !session_noun && noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" && noun != "known-host" && noun != "import" {
         return error(coded(ERR_USAGE, "unknown command '{noun}'; see `flint help`"))
     }
     if p.positional(1).len() == 0 {
@@ -142,6 +147,8 @@ fn run_cli(p: ParsedArgs, as_json: bool) -> i32! {
             result = cmd_host(p, sec, as_json, c, mut store, kc, recents)
         } else if noun == "key" {
             result = cmd_key(p, sec, as_json, c, mut store, kc, recents, new_libssh_key_inspector())
+        } else if noun == "import" {
+            result = cmd_import(p, sec, as_json, c, mut store, kc, recents, new_libssh_key_inspector())
         } else if noun == "known-host" {
             result = cmd_known_host(p, sec, as_json, c, mut store, kc, recents)
         } else {
