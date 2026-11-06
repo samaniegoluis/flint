@@ -1269,3 +1269,28 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
      are offered it.
   4. Keep `.mcp.json` for MCP (with a bare `cfire`), and leave MCP out of the plugin.
   5. `cfire ide --status` checks `claude plugin list` for the plugin, not files on disk.
+
+### CF-075 · bug · `open`: the runtime's system simdjson does not compile on Ubuntu 24.04 with clang 19
+- **At `2d8613d`:** every `cfire build` links `-lsimdjson` and includes the system
+  `simdjson.h`. Ubuntu 24.04 (and Zorin OS 18, built on it) ships simdjson **3.6.4**; with
+  its `clang-19` package, any program fails in the header:
+  `/usr/include/simdjson.h:6226:13: error: no member named 'print_newline' in
+  'base_formatter<formatter>'` (also `print_indents`, `print_space`). Homebrew (4.6.x) and
+  Debian trixie are fine.
+- **Repro:** Zorin OS 18.1, `apt install libsimdjson-dev clang-19`, cfire `2d8613d` built with
+  `clang++-19`; `cfire build` in Flint (or any project that uses `json`).
+- **Workaround (Flint's Zorin box):** simdjson 4.6.6's single-header release built as a
+  static library in `~/.local` (`clang++-19 -O2 -std=c++17 -c simdjson.cpp`, `ar rcs
+  libsimdjson.a`), found through `CPLUS_INCLUDE_PATH=~/.local/include` and
+  `LIBRARY_PATH=~/.local/lib`. Documented in Flint's *Build from source*.
+- **Ideal:** vendor simdjson in `runtime/vendor` (it is one header and one source file),
+  or state and check a minimum version with a clear error.
+
+### CF-076 · bug · `open`: a failed clang AST ingestion prints the whole AST as JSON
+- **At `2d8613d`:** when ingesting an `import cpp` header fails, the error message is
+  followed by the AST dump: 11.7 million lines for `flint_ssh.hpp`, so the one useful line
+  (`error: use of undeclared identifier 'ssh_channel_get_exit_state'`) is lost unless the
+  log is searched for `error:`.
+- **Repro:** a header that calls a function the installed library lacks (Flint against
+  libssh 0.10), then `cfire build`.
+- **Ideal:** print clang's diagnostics only; keep the dump behind a verbose flag.

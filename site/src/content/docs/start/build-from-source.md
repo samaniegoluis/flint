@@ -43,6 +43,34 @@ brew install libssh libsodium sqlcipher argon2 pkg-config
 sudo apt install libssh-dev libsodium-dev libsqlcipher-dev libargon2-dev libsecret-1-dev pkg-config openssh-server
 ```
 
+#### Ubuntu 24.04 and Zorin OS 18
+
+Flint builds there with libssh 0.10, with two adjustments in your home folder (no `sudo`):
+
+- **`clang++` by name.** The `clang-19` package installs `clang++-19` only, and cfire runs
+  `clang++`:
+
+  ```sh
+  ln -sf /usr/bin/clang++-19 ~/.local/bin/clang++
+  ```
+
+- **A newer simdjson.** Ubuntu's simdjson 3.6 does not compile with clang 19
+  (`no member named 'print_newline'`). Build simdjson 4 as a static library and point the
+  build at it:
+
+  ```sh
+  mkdir -p ~/.local/src/simdjson ~/.local/include ~/.local/lib && cd ~/.local/src/simdjson
+  for f in simdjson.h simdjson.cpp; do
+    curl -fsSLO https://raw.githubusercontent.com/simdjson/simdjson/v4.6.6/singleheader/$f
+  done
+  clang++-19 -O2 -std=c++17 -DSIMDJSON_THREADS_ENABLED=1 -pthread -c simdjson.cpp
+  ar rcs ~/.local/lib/libsimdjson.a simdjson.o && cp simdjson.h ~/.local/include/
+  export CPLUS_INCLUDE_PATH=~/.local/include LIBRARY_PATH=~/.local/lib   # before cfire build
+  ```
+
+With libssh 0.10, a command killed by a signal still exits 255, but `flint exec --json`
+reports an empty `signal`: 0.10 does not give its name.
+
 ## 3. Build
 
 From the repository root:
