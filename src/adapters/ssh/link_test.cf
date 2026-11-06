@@ -83,7 +83,12 @@ test "a signal is reported instead of an exit code" {
     res := try read_all(mut link)
     link.link_hangup()
     assert_eq(res.exit_code, -1)
-    assert_eq(res.signal, "TERM")
+    // libssh 0.10 reports no signal name with the exit state (flint_ssh.hpp).
+    if libssh_version().starts_with("0.10") {
+        assert_eq(res.signal, "")
+    } else {
+        assert_eq(res.signal, "TERM")
+    }
 }
 
 test "a second hop is reached through a tunnel over the first" {

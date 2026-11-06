@@ -42,8 +42,7 @@ fn ssh_dial(host: str, port: i32, user: str, timeout_secs: i64) -> SshConn! {
 // Like ssh_dial, but over an already connected socket `fd` (a jump-host tunnel)
 // when `fd` >= 0. `host` and `port` then only name the server. `host_key_algos`,
 // when not empty, is an SSH_OPTIONS_HOSTKEYS list such as "^ssh-ed25519": the "^"
-// prepend form needs libssh 0.11; an older libssh rejects it and keeps its
-// defaults, which only loses the preference, never the host key check.
+// prepend form needs libssh 0.11, so on 0.10 the list is spelled out in full.
 fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, host_key_algos: str) -> SshConn! {
     if timeout_secs <= 0 {
         return error(coded(ERR_INVALID, "ssh: a positive timeout is required"))
@@ -73,7 +72,26 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
             ssh_options_set(s, SSH_OPTIONS_KNOWNHOSTS, "/dev/null");
             ssh_options_set(s, SSH_OPTIONS_GLOBAL_KNOWNHOSTS, "/dev/null");
             if (!host_key_algos.empty()) {
-                ssh_options_set(s, SSH_OPTIONS_HOSTKEYS, host_key_algos.c_str());
+                std::string algos = host_key_algos;
+#if LIBSSH_VERSION_INT < SSH_VERSION_INT(0, 11, 0)
+                // libssh 0.10 (Ubuntu 24.04, Zorin OS 18) has no "^" prepend form and
+                // would keep its defaults, negotiating ed25519 for a host the vault
+                // trusts by another key type: a false "host key changed". Spell the
+                // whole list instead, the preferred types first, then 0.10's defaults.
+                if (algos[0] == '^') {
+                    std::string preferred = algos.substr(1);
+                    std::string list = preferred;
+                    const char* defaults[] = {"ssh-ed25519", "ecdsa-sha2-nistp521", "ecdsa-sha2-nistp384",
+                                              "ecdsa-sha2-nistp256", "rsa-sha2-512", "rsa-sha2-256"};
+                    for (const char* d : defaults) {
+                        if (("," + preferred + ",").find(std::string(",") + d + ",") == std::string::npos) {
+                            list += std::string(",") + d;
+                        }
+                    }
+                    algos = list;
+                }
+#endif
+                ssh_options_set(s, SSH_OPTIONS_HOSTKEYS, algos.c_str());
             }
             if (fd >= 0) {
                 socket_t sock = fd;
