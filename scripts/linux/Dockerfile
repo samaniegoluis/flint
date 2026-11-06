@@ -3,6 +3,7 @@
 # full-screen editor step.
 #
 #   scripts/linux-check.sh
+#   FLINT_E2E_VIM=1 scripts/linux-check.sh   # also runs the vim step, which fails on Linux (ROADMAP)
 FROM debian:trixie
 
 ARG CFIRE_COMMIT=2d8613ddb2c9c249b60046d6211e6335d138d866
