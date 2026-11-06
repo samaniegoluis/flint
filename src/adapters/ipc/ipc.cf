@@ -1,0 +1,241 @@
+package ipc
+
+// The local socket between the running app and the `flint` CLI (D-038, Principle 11):
+// a Unix domain socket, mode 0600, in the config folder. The app listens; every
+// connection's peer uid comes from the kernel and must be the app's own, or the
+// connection is closed before a byte of it is read. Messages are length-prefixed
+// frames (native/flint_ipc.hpp); what they carry is the driver's business.
+
+// CFIRE-UPSTREAM: CF-081, CF-031
+import cpp "flint_ipc.hpp" @pkg("flint-native")
+
+import "../../domain"
+
+// The socket's file name in the config folder.
+IPC_SOCKET_NAME: str = "flint.sock"
+
+// The largest frame either side accepts (a request carries at most a private key).
+IPC_MAX_FRAME: usize = 16777216
+
+type IpcPeer struct {
+    uid: i64
+    pid: i64
+}
+
+// A connection. `open` is false for "no connection" (a zero fd is stdin, CF-078).
+type IpcConn struct {
+    fd:   i32
+    open: bool
+    peer: IpcPeer
+}
+
+type IpcListener struct {
+    fd:   i32
+    open: bool
+    path: str
+    // The uid a peer must have: the app's own, unless a test says otherwise.
+    allowed_uid: i64
+    // Shared by every copy, so another thread can stop the accept loop.
+    flag: shared[cpp::flint_ipc::StopFlag]
+}
+
+fn ipc_socket_path(config_dir: str) -> str {
+    return config_dir + "/" + IPC_SOCKET_NAME
+}
+
+fn ipc_own_uid() -> i64 {
+    mut uid: i64 = 0
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        uid = flint_ipc::own_uid();
+    }
+    return uid
+}
+
+// The file mode bits of `path` (-1 when it does not exist), for tests and checks.
+fn ipc_file_mode(path: str) -> i64 {
+    mut mode: i64 = -1
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        mode = flint_ipc::file_mode(path);
+    }
+    return mode
+}
+
+// Listens on `path` for peers of this process's uid. Fails with `conflict` when
+// another Flint already serves it.
+fn ipc_listen(path: str) -> IpcListener! {
+    return ipc_listen_for(path, ipc_own_uid())
+}
+
+// As ipc_listen, accepting only peers of `uid`. Tests pass another uid to prove a
+// stranger is refused.
+fn ipc_listen_for(path: str, uid: i64) -> IpcListener! {
+    mut fd: i32 = -1
+    mut msg := ""
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        std::string err;
+        fd = flint_ipc::listen_unix(path, err);
+        msg = err;
+    }
+    if fd == -2 {
+        return error(coded(ERR_CONFLICT, msg))
+    }
+    if fd < 0 {
+        return error(coded(ERR_IO, "cannot listen on {path}: {msg}"))
+    }
+    mut l := IpcListener{ fd: fd, open: true, path: path, allowed_uid: uid }
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        l.flag = std::make_shared<flint_ipc::StopFlag>();
+    }
+    return l
+}
+
+fn (self: IpcListener) stopped() -> bool {
+    mut s := false
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        s = self.flag->stop.load();
+    }
+    return s
+}
+
+// Asks the accept loop to end; it does within one wait.
+fn (self: IpcListener) stop() {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        self.flag->stop.store(true);
+    }
+}
+
+// Waits up to `timeout_ms` for a peer of the allowed uid. Returns a connection with
+// `open` false on timeout, and when a peer of another uid was refused (its socket is
+// closed before anything is read from it).
+fn (self: IpcListener) accept_wait(timeout_ms: i32) -> IpcConn! {
+    mut fd: i32 = -1
+    mut uid: i64 = -1
+    mut pid: i64 = 0
+    mut known := false
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        fd = flint_ipc::accept_conn(self.fd, timeout_ms);
+        if (fd >= 0) {
+            int64_t u = -1, p = 0;
+            known = flint_ipc::peer_creds(fd, u, p);
+            uid = u;
+            pid = p;
+        }
+    }
+    if fd == -1 {
+        return error(coded(ERR_IO, "accept failed on {self.path}"))
+    }
+    if fd < 0 {
+        return IpcConn{ fd: 0, open: false, peer: IpcPeer{ uid: -1, pid: 0 } }
+    }
+    if !peer_allowed(known, uid, self.allowed_uid) {
+        // CFIRE-UPSTREAM: CF-081
+        cpp {
+            flint_ipc::close_fd(fd);
+        }
+        return IpcConn{ fd: 0, open: false, peer: IpcPeer{ uid: uid, pid: pid } }
+    }
+    return IpcConn{ fd: fd, open: true, peer: IpcPeer{ uid: uid, pid: pid } }
+}
+
+// A peer is let in only when the kernel told us its uid and it is the allowed one.
+fn peer_allowed(known: bool, uid: i64, allowed_uid: i64) -> bool {
+    return known && uid >= 0 && uid == allowed_uid
+}
+
+// Stops listening and removes the socket file.
+fn (mut self: IpcListener) close() {
+    if !self.open {
+        return
+    }
+    self.stop()
+    fd := self.fd
+    path := self.path
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        flint_ipc::close_fd(fd);
+        flint_ipc::unlink_socket(path);
+    }
+    self.open = false
+}
+
+// Connects to the app. Fails with `not_found` when no Flint listens at `path`, so
+// the caller can tell "not running" from a broken socket (`io`).
+fn ipc_connect(path: str, timeout_ms: i32) -> IpcConn! {
+    mut fd: i32 = -1
+    mut msg := ""
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        std::string err;
+        fd = flint_ipc::connect_unix(path, timeout_ms, err);
+        msg = err;
+    }
+    if fd == -2 {
+        return error(coded(ERR_NOT_FOUND, "Flint is not running"))
+    }
+    if fd < 0 {
+        return error(coded(ERR_IO, "cannot reach Flint at {path}: {msg}"))
+    }
+    return IpcConn{ fd: fd, open: true, peer: IpcPeer{ uid: -1, pid: 0 } }
+}
+
+fn (self: IpcConn) send(payload: str, timeout_ms: i32) -> void! {
+    if !self.open {
+        return error(coded(ERR_IO, "the connection is closed"))
+    }
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        ok = flint_ipc::write_frame(self.fd, payload, timeout_ms);
+    }
+    if !ok {
+        return error(coded(ERR_IO, "the other side of the socket went away"))
+    }
+}
+
+// The next frame. A peer that closed cleanly gives an `io` error saying so.
+fn (self: IpcConn) recv(timeout_ms: i32) -> str! {
+    if !self.open {
+        return error(coded(ERR_IO, "the connection is closed"))
+    }
+    mut rc: i32 = 0
+    mut got := ""
+    max := IPC_MAX_FRAME
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        std::string buf;
+        rc = flint_ipc::read_frame(self.fd, buf, timeout_ms, max);
+        got = std::move(buf);
+    }
+    if rc == -2 {
+        return error(coded(ERR_TIMEOUT, "no answer on the socket within {timeout_ms} ms"))
+    }
+    if rc == -3 {
+        return error(coded(ERR_INVALID, "a message on the socket is over {max} bytes"))
+    }
+    if rc == 1 {
+        return error(coded(ERR_IO, "the other side closed the socket"))
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "the socket broke in the middle of a message"))
+    }
+    return got
+}
+
+fn (mut self: IpcConn) close() {
+    if !self.open {
+        return
+    }
+    fd := self.fd
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        flint_ipc::close_fd(fd);
+    }
+    self.open = false
+}
