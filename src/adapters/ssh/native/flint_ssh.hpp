@@ -7,6 +7,8 @@
 // helpers and the forwarder thread below (CF-031).
 #pragma once
 #include <libssh/libssh.h>
+// ssh_send_keepalive is declared with the server API but serves a client too.
+#include <libssh/server.h>
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
@@ -17,6 +19,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <chrono>
+#include <fcntl.h>
+#include <netdb.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -133,6 +138,99 @@ inline bool read_chunk(ssh_channel ch, int timeout_ms, std::string& out, std::st
 #endif
     }
     return true;
+}
+
+// ---- Dialling ------------------------------------------------------------------
+//
+// libssh connects only to the first address a name resolves to, so a host whose
+// first address is IPv6 (`localhost` -> ::1 on Debian) fails with "Connection
+// refused" when the server listens on IPv4 only. dial_tcp tries every address in
+// resolver order, as OpenSSH does, within one overall deadline (Principle 8), and
+// returns a connected blocking socket for SSH_OPTIONS_FD, or -1 with `err` set.
+
+// Tries `candidates` (numeric addresses) in order until one connects before the
+// deadline. Returns the connected blocking socket, or -1 with `err` set.
+inline int dial_candidates(const std::vector<std::string>& candidates, int port, long timeout_secs, std::string& err) {
+    using clock = std::chrono::steady_clock;
+    const auto deadline = clock::now() + std::chrono::seconds(timeout_secs);
+    std::string service = std::to_string(port);
+    err = "no address to connect to";
+    for (const auto& addr : candidates) {
+        addrinfo hints{};
+        hints.ai_family = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV;
+        addrinfo* ai = nullptr;
+        if (::getaddrinfo(addr.c_str(), service.c_str(), &hints, &ai) != 0 || !ai) {
+            err = "bad address " + addr;
+            continue;
+        }
+        int fd = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd < 0) {
+            err = std::strerror(errno);
+            ::freeaddrinfo(ai);
+            continue;
+        }
+        int flags = ::fcntl(fd, F_GETFL, 0);
+        ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        int rc = ::connect(fd, ai->ai_addr, ai->ai_addrlen);
+        int why = rc == 0 ? 0 : errno;
+        ::freeaddrinfo(ai);
+        if (rc != 0 && why == EINPROGRESS) {
+            auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - clock::now()).count();
+            pollfd p{fd, POLLOUT, 0};
+            int pr = left > 0 ? ::poll(&p, 1, static_cast<int>(left)) : 0;
+            if (pr > 0) {
+                int so = 0;
+                socklen_t len = sizeof so;
+                ::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so, &len);
+                rc = so == 0 ? 0 : -1;
+                why = so;
+            } else {
+                rc = -1;
+                why = pr == 0 ? ETIMEDOUT : errno;
+            }
+        }
+        if (rc == 0) {
+            ::fcntl(fd, F_SETFL, flags);
+            return fd;
+        }
+        err = addr + ": " + std::strerror(why);
+        ::close(fd);
+        if (clock::now() >= deadline) {
+            err = "timed out";
+            break;
+        }
+    }
+    return -1;
+}
+
+// Resolves `host` and dials its addresses in resolver order.
+inline int dial_tcp(const std::string& host, int port, long timeout_secs, std::string& err) {
+    addrinfo hints{};
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    addrinfo* list = nullptr;
+    int gai = ::getaddrinfo(host.c_str(), nullptr, &hints, &list);
+    if (gai != 0) {
+        err = std::string("cannot resolve ") + host + ": " + gai_strerror(gai);
+        return -1;
+    }
+    std::vector<std::string> candidates;
+    for (addrinfo* ai = list; ai; ai = ai->ai_next) {
+        char buf[NI_MAXHOST];
+        if (::getnameinfo(ai->ai_addr, ai->ai_addrlen, buf, sizeof buf, nullptr, 0, NI_NUMERICHOST) == 0) {
+            candidates.emplace_back(buf);
+        }
+    }
+    ::freeaddrinfo(list);
+    return dial_candidates(candidates, port, timeout_secs, err);
+}
+
+// ---- Keepalive -----------------------------------------------------------------
+
+inline int send_keepalive(ssh_session s) {
+    return ssh_send_keepalive(s) == SSH_OK ? 0 : -1;
 }
 
 // ---- Jump-host tunnel ---------------------------------------------------------

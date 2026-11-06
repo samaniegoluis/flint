@@ -50,7 +50,8 @@ flint host edit codebox --command ""                    # back to a plain shell
 The command runs on the remote terminal through your interactive login shell, so your
 profile, rc files and `PATH` are loaded as in a shell you opened yourself. By default a
 login shell follows when the command exits; with `--no-keep-shell` the session ends
-with the command. `flint connect --no-command` and `flint exec` never run it.
+with the command. `flint connect --no-command` and `flint exec` never run it; in the
+app, search the host in the command palette and pick **Connect without command**.
 `host show` lists it.
 
 ## Check that a host works

@@ -32,7 +32,8 @@ The remote terminal type is taken from `TERM` (`xterm-256color` if it is not set
 If the host has an [initial command](/guides/hosts/#run-a-command-on-connect), such as
 `herdr`, it runs instead of the bare shell, through your interactive login shell; when
 it exits, a login shell follows unless the host says to end the session. Use
-`--no-command` to get a plain shell, for example when that program is broken.
+`--no-command` to get a plain shell, for example when that program is broken. The app
+does the same from the [command palette](/guides/desktop-app/#the-command-palette).
 
 To check a host without opening anything, use
 [`flint host test`](/guides/hosts/#check-that-a-host-works).
@@ -156,6 +157,19 @@ counts as changed and is refused like any other changed key.
 | `--exec-timeout <secs>` | 600 | The whole remote command of `flint exec`; past it Flint exits with `timeout` (14) |
 
 Both take 1 to 86400 seconds. An interactive shell has no time limit.
+
+A hostname that resolves to several addresses (IPv6 and IPv4, say) is tried address by
+address in the resolver's order, as `ssh` does, until one answers. All of them share
+the one `--timeout`. So `localhost`, which resolves to `::1` first on Debian, still
+reaches a server that listens only on `127.0.0.1`.
+
+### Idle sessions
+
+An interactive session, in the CLI or a tab in the app, sends the server a keepalive
+after 30 seconds without hearing from it, as OpenSSH's `ServerAliveInterval 30` does.
+Routers, NATs and firewalls that drop idle connections then leave it open while you
+read. If the keepalive cannot be sent, the connection is gone: the session ends with
+`network` (exit code 13 in the CLI, a lost connection in the app).
 
 ## Not supported yet
 

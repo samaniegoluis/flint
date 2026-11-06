@@ -32,8 +32,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onConnect 
     return (
       <section className="main" aria-label="No open sessions" hidden={!shown} style={{ alignItems: 'center', justifyContent: 'center', background: 'var(--surface-base)' }}>
         <div className="col" style={{ width: 520, gap: 'var(--sp-5)' }}>
-          <div className="col" style={{ alignItems: 'center', gap: 'var(--sp-2)', textAlign: 'center' }}>
-            <Logo size={32} />
+          <div className="col" style={{ alignItems: 'center', gap: 'var(--sp-3)', textAlign: 'center' }}>
+            <Logo size={64} />
             <h2 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)' }}>No open sessions</h2>
             <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Pick a host from the sidebar, or jump straight to one.</p>
           </div>

@@ -72,7 +72,8 @@ fn cmd_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut st
     s := try open_target(p, sec, c, mut store, kc, recents)
     mut link := new_ssh_link()
     mut term := new_stdio_terminal()
-    code := try connect_host(c, mut store, s, mut link, new_tty_prompter(), mut term, alias, term_name, opts)
+    mut clock := new_system_clock()
+    code := try connect_host(c, mut store, s, mut link, new_tty_prompter(), mut term, mut clock, alias, term_name, opts)
     if as_json {
         say(json.stringify(SessionEnd{ host: alias, exit_code: code }))
     }

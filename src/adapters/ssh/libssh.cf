@@ -11,6 +11,8 @@ package ssh
 import cpp "libssh/libssh.h" @pkg("libssh")
 // CFIRE-UPSTREAM: CF-026
 import cpp "mutex"
+// CFIRE-UPSTREAM: CF-005, CF-031
+import cpp "flint_ssh.hpp" @pkg("flint-native")
 
 import "../../domain"
 
@@ -18,6 +20,11 @@ type SshConn struct {
     // Owned by this value; released by close().
     session: *mut cpp::ssh_session_struct
     channel: *mut cpp::ssh_channel_struct
+    // The socket Flint dialled for a first hop, when `owns_sock`. libssh does not
+    // close a socket given through SSH_OPTIONS_FD, so disconnect() does. A flag, not
+    // -1: a zero-initialised SshConn must not own fd 0 (CF-078).
+    sock: i32
+    owns_sock: bool
     // Shared by every copy of this value. cfire has no mutex type (CF-026).
     lock: shared[cpp::std::mutex]
 }
@@ -49,6 +56,24 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
     }
     mut session: *mut cpp::ssh_session_struct
     mut rc: i32 = 0
+    mut sock: i32 = -1
+    mut dial_err := ""
+    // A first hop: dial it here, trying every address the name resolves to
+    // (native/flint_ssh.hpp), then hand libssh the connected socket.
+    if fd < 0 {
+        // CFIRE-UPSTREAM: CF-005
+        cpp {
+            sock = flint_ssh::dial_tcp(host, static_cast<int>(port), static_cast<long>(timeout_secs), dial_err);
+        }
+        if sock < 0 {
+            return error(coded(ERR_NETWORK, "connect to {host}:{port} failed: {dial_err}"))
+        }
+    }
+    // CF-079: no `if` expression.
+    mut use_fd := sock
+    if fd >= 0 {
+        use_fd = fd
+    }
     // CFIRE-UPSTREAM: CF-005
     cpp {
         ssh_session s = ssh_new();
@@ -93,14 +118,12 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
 #endif
                 ssh_options_set(s, SSH_OPTIONS_HOSTKEYS, algos.c_str());
             }
-            if (fd >= 0) {
-                socket_t sock = fd;
-                ssh_options_set(s, SSH_OPTIONS_FD, &sock);
-            }
+            socket_t given = use_fd;
+            ssh_options_set(s, SSH_OPTIONS_FD, &given);
             rc = ssh_connect(s);
         }
     }
-    mut conn := SshConn{ session: session }
+    mut conn := SshConn{ session: session, sock: sock, owns_sock: sock >= 0 }
     // CFIRE-UPSTREAM: CF-026
     cpp {
         conn.lock = std::make_shared<std::mutex>();
@@ -111,6 +134,23 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
         return error(coded(ERR_NETWORK, "connect to {host}:{port} failed: {msg}"))
     }
     return conn
+}
+
+// Connects to the first of `addresses` (numeric, in order) that answers before the
+// timeout, then closes it. What ssh_dial does for a name's addresses; exposed so a
+// test can put an address with no server first.
+fn tcp_dial_first(addresses: []str, port: i32, timeout_secs: i64) -> void! {
+    mut fd: i32 = -1
+    mut err := ""
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::vector<std::string> list(addresses.begin(), addresses.end());
+        fd = flint_ssh::dial_candidates(list, static_cast<int>(port), static_cast<long>(timeout_secs), err);
+        if (fd >= 0) ::close(fd);
+    }
+    if fd < 0 {
+        return error(coded(ERR_NETWORK, "connect to port {port} failed: {err}"))
+    }
 }
 
 // SHA-256 fingerprint of the server host key, in OpenSSH "SHA256:..." form.
@@ -259,6 +299,10 @@ fn (mut self: SshConn) disconnect() {
             ssh_free(self.session);
         }
         self.session = nullptr;
+        if (self.owns_sock && self.sock >= 0) {
+            ::close(self.sock);
+        }
+        self.owns_sock = false;
     }
 }
 

@@ -284,8 +284,9 @@ fn open_hop[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, m
 
 // Runs an interactive shell (or `command` on the PTY, "" for the login shell) until
 // the remote side closes it or local input ends. Returns the remote exit status (-1
-// when the shell died by a signal).
-fn run_shell[T: SshTransport, M: Terminal](mut link: T, mut term: M, term_name: str, command: str) -> i64! {
+// when the shell died by a signal). After SSH_KEEPALIVE_SECS with nothing heard from
+// the server it sends a keepalive; one that cannot be sent ends the session.
+fn run_shell[T: SshTransport, M: Terminal, K: Clock](mut link: T, mut term: M, mut clock: K, term_name: str, command: str) -> i64! {
     mut size := term.term_size()
     if !size.is_valid() {
         size = default_terminal_size()
@@ -295,6 +296,8 @@ fn run_shell[T: SshTransport, M: Terminal](mut link: T, mut term: M, term_name: 
     mut code: i64 = 0
     mut failure := ""
     mut running := true
+    keepalive_ms := SSH_KEEPALIVE_SECS * 1000
+    mut last_heard := clock.clock_now_ms()
     for running {
         got := link.link_channel_read(10)
         if !got.has_value() {
@@ -302,15 +305,25 @@ fn run_shell[T: SshTransport, M: Terminal](mut link: T, mut term: M, term_name: 
             running = false
         } else {
             chunk := got.value()
+            now := clock.clock_now_ms()
             if chunk.stdout.len() > 0 {
                 term.term_output(chunk.stdout)
+                last_heard = now
             }
             if chunk.stderr.len() > 0 {
                 term.term_output(chunk.stderr)
+                last_heard = now
             }
             if chunk.done {
                 code = chunk.exit_code
                 running = false
+            } else if now - last_heard >= keepalive_ms {
+                sent := link.link_keepalive()
+                if !sent.has_value() {
+                    failure = "{sent.error().message()}"
+                    running = false
+                }
+                last_heard = now
             }
         }
         if running {
@@ -402,9 +415,9 @@ fn session_command(h: Host, opts: ConnectOptions) -> str {
 
 // Connects to `alias` and runs an interactive shell on the local terminal, or the
 // host's initial command.
-fn connect_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Terminal](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut term: M, alias: str, term_name: str, opts: ConnectOptions) -> i64! {
+fn connect_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Terminal, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut term: M, mut clock: K, alias: str, term_name: str, opts: ConnectOptions) -> i64! {
     target := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
-    code := run_shell(mut link, mut term, term_name, session_command(target, opts))
+    code := run_shell(mut link, mut term, mut clock, term_name, session_command(target, opts))
     link.link_hangup()
     return code
 }
