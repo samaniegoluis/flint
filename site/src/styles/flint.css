@@ -474,3 +474,161 @@
 	font-size: var(--sl-text-sm);
 	color: var(--sl-color-gray-3);
 }
+
+/* Your agent uses your vault (M10): a band lit in the accent, an agent session beside
+   what the agent gets and never gets, three steps, then today/next. */
+.flint-agent {
+	margin-top: 3.5rem;
+	padding: clamp(1.25rem, 4vw, 2.25rem);
+	border: 1px solid var(--flint-border);
+	border-radius: 14px;
+	background:
+		radial-gradient(70% 90% at 100% 0%, var(--flint-glow), transparent 70%),
+		var(--flint-surface-raised);
+}
+.flint-agent__kicker {
+	margin: 0;
+	font-size: var(--sl-text-xs);
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--sl-color-text-accent);
+}
+.flint-agent h2 {
+	margin: 0.4rem 0 0;
+	font-size: var(--sl-text-3xl);
+	line-height: 1.1;
+	letter-spacing: -0.02em;
+	color: var(--sl-color-white);
+	text-wrap: balance;
+}
+.flint-agent__lede {
+	margin: 1rem 0 0;
+	max-width: 46rem;
+	color: var(--sl-color-gray-2);
+	text-wrap: pretty;
+}
+.flint-agent__grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1.75rem 2.5rem;
+	margin-top: 1.75rem;
+}
+@media (min-width: 60rem) {
+	.flint-agent__grid {
+		grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+		align-items: center;
+	}
+}
+.flint-agent .flint-term .u {
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+.flint-agent .flint-term .b {
+	color: var(--flint-term-prompt);
+}
+.flint-agent__lists {
+	display: grid;
+	gap: 1.25rem;
+}
+.flint-agent__lists h3 {
+	margin: 0;
+	font-size: var(--sl-text-base);
+	color: var(--sl-color-white);
+}
+.flint-agent__lists ul {
+	margin: 0.5rem 0 0;
+	padding: 0;
+	list-style: none;
+	display: grid;
+	gap: 0.45rem;
+}
+.flint-agent__lists li {
+	position: relative;
+	padding-inline-start: 1.5rem;
+	color: var(--sl-color-gray-3);
+	font-size: var(--sl-text-sm);
+}
+.flint-agent__lists li::before {
+	position: absolute;
+	inset-inline-start: 0;
+	font-weight: 700;
+}
+.flint-agent__yes li::before {
+	content: '✓';
+	color: var(--sl-color-green);
+}
+.flint-agent__no li::before {
+	content: '✕';
+	color: var(--sl-color-red);
+}
+.flint-agent__steps {
+	margin: 2rem 0 0;
+	padding: 0;
+	list-style: none;
+	counter-reset: flint-step;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 0.75rem 1.25rem;
+}
+@media (min-width: 50rem) {
+	.flint-agent__steps {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+.flint-agent__steps li {
+	counter-increment: flint-step;
+	margin: 0;
+	padding: 0.85rem 1rem;
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: 8px;
+	color: var(--sl-color-gray-3);
+	font-size: var(--sl-text-sm);
+}
+.flint-agent__steps li::before {
+	content: counter(flint-step);
+	display: inline-grid;
+	place-items: center;
+	width: 1.5rem;
+	height: 1.5rem;
+	margin-inline-end: 0.5rem;
+	border-radius: 50%;
+	background: var(--sl-color-accent-low);
+	color: var(--sl-color-text-accent);
+	font-weight: 700;
+	font-size: var(--sl-text-xs);
+}
+.flint-agent__steps strong {
+	color: var(--sl-color-white);
+}
+.flint-agent__next {
+	margin-top: 1.5rem;
+	padding-top: 1.25rem;
+	border-top: 1px solid var(--sl-color-hairline-light);
+}
+.flint-agent__next p {
+	margin: 0;
+	color: var(--sl-color-gray-3);
+	font-size: var(--sl-text-sm);
+	text-wrap: pretty;
+}
+.flint-agent__next strong {
+	color: var(--sl-color-white);
+}
+.flint-agent__links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 1.5rem;
+	margin-top: 0.75rem !important;
+}
+.flint-agent__links a {
+	color: var(--sl-color-text-accent);
+	font-weight: 600;
+	text-decoration: none;
+}
+.flint-agent__links a:hover {
+	text-decoration: underline;
+}
+.flint-agent code {
+	font-size: 0.9em;
+}
