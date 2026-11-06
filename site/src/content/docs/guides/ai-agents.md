@@ -39,6 +39,11 @@ cached in the OS keychain.
    `flint host test <alias>` or a first `flint connect`. An agent has no terminal to
    answer the host key question, so an unknown key stops it with `host_key`.
 
+With the vault unlocked in the open app, `host`, `group`, `key`, `cred` and the other
+vault commands run inside Flint and need no cached key at all
+([how](/guides/vaults/#the-cli-and-the-open-app)). `flint exec` and `flint connect` still
+open the vault themselves, so the steps above are still needed for them.
+
 On macOS, a new Flint build shows the Keychain dialog the first time it reads the cached
 key ([why](/guides/vaults/#what-the-cache-protects-and-what-it-does-not)). Run one command
 yourself after each update, so the dialog does not wait on the agent. On Linux, the cache

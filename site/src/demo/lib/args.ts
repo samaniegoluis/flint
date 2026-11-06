@@ -1,5 +1,5 @@
 // Command-line handling: a small shell tokenizer for the demo prompt, and the flag
-// parser of src/drivers/cli/args.cf.
+// parser of src/drivers/clicmd/args.cf.
 import { fail } from './errors.ts';
 
 /** `pipe` holds the words after a single `|`, when there is one. */

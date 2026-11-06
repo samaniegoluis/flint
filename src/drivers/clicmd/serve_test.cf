@@ -1,0 +1,59 @@
+package clicmd
+
+import "ext:json"
+import "../../domain"
+
+fn parsed(args: []str) -> ParsedArgs {
+    r := parse_cli_args(args)
+    assert(r.has_value())
+    return r.value()
+}
+
+test "the app serves vault commands that open no SSH session" {
+    assert(servable(parsed(["host", "list"])))
+    assert(servable(parsed(["--json", "host", "add", "web", "--hostname", "h"])))
+    assert(servable(parsed(["group", "rm", "a"])))
+    assert(servable(parsed(["key", "show", "k"])))
+    assert(servable(parsed(["cred", "list"])))
+    assert(servable(parsed(["known-host", "rm", "web"])))
+    assert(servable(parsed(["import", "tether", "f"])))
+    assert(servable(parsed(["vault", "status"])))
+    assert(servable(parsed(["vault", "rename", "x"])))
+    assert(!servable(parsed(["host", "test", "web"])))
+    assert(!servable(parsed(["connect", "web"])))
+    assert(!servable(parsed(["exec", "web", "--", "id"])))
+    for verb in ["create", "open", "unlock", "lock", "list", "use", "forget"] {
+        assert(!servable(parsed(["vault", verb])))
+    }
+}
+
+test "only writes make the window reload" {
+    run := ServeRequest{ kind: "run", version: SERVE_PROTOCOL, vault: "/v", argv: [], cwd: "/", as_json: false, secrets: no_wire_secrets() }
+    mut r := run
+    r.argv = ["host", "add", "web", "--hostname", "h"]
+    assert(served_changes_vault(r))
+    r.argv = ["host", "list"]
+    assert(!served_changes_vault(r))
+    r.argv = ["import", "tether", "f", "--dry-run"]
+    assert(!served_changes_vault(r))
+    r.argv = ["import", "tether", "f"]
+    assert(served_changes_vault(r))
+    r.argv = ["vault", "rename", "n"]
+    assert(served_changes_vault(r))
+}
+
+test "a request from another protocol version is refused" {
+    req := ServeRequest{ kind: "run", version: SERVE_PROTOCOL + 1, vault: "/v", argv: ["host", "list"], cwd: "/", as_json: false, secrets: no_wire_secrets() }
+    bad := parse_serve_request(json.stringify(req))
+    assert(!bad.has_value())
+    assert_eq(error_code_of("{bad.error().message()}"), ERR_UNSUPPORTED)
+    junk := parse_serve_request("{not json")
+    assert_eq(error_code_of("{junk.error().message()}"), ERR_INVALID)
+}
+
+test "a reply never names a secret field" {
+    text := json_not_served()
+    assert(!text.contains("password"))
+    assert(!text.contains("passphrase"))
+    assert(!text.contains("key_text"))
+}

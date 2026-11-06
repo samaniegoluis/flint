@@ -645,7 +645,7 @@ The entries below were found while building milestone 01 against cfire `3963814`
 - **Workaround (M02):** `src/adapters/process/` reads argv through `_NSGetArgv` (macOS)
   or `/proc/self/cmdline` (Linux), writes stderr, exits with a code and reads passwords
   from `/dev/tty` with echo off, in `native/flint_process.hpp`. The subcommand and flag
-  parser is plain cfire in `src/drivers/cli/args.cf`.
+  parser is plain cfire in `src/drivers/clicmd/args.cf`.
 - **Ideal:** `os.args() -> []str`, `eprintln`, `os.exit(code)`, and subcommand plus
   positional support in `core:cli`.
 
@@ -1153,7 +1153,7 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Repro (466751b):** `mut rows: [][]str = []` then `rows.push(["a", "b"])` → clang
   `no matching function for call to 'vec_push'`. `push` now lowers to the template
   `cfire::vec_push(vec, U&& val)`, which cannot deduce a braced list.
-- **Workaround:** `row: []str = ["a", "b"]; rows.push(row)` (`src/drivers/cli/output.cf`).
+- **Workaround:** `row: []str = ["a", "b"]; rows.push(row)` (`src/drivers/clicmd/output.cf`).
 - **Ideal:** lower the literal with the element type (`std::vector<std::string>{…}`), as
   the CF-040 fix does for `or []`.
 
@@ -1337,3 +1337,51 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   separate process.
 - **Ideal:** take the descriptor baseline after a warm-up of process-lifetime system
   handles (resolver, keychain), or let a test opt out of the check with a reason.
+
+### CF-081 · missing · `confirmed`: no Unix domain socket listener and no peer credentials
+- **At `2d8613d`:** `ext:net` offers TCP only (`listen_tcp`, `connect_tcp`); `AF_UNIX` appears
+  only as a `socketpair` fallback inside sandboxes. Nothing binds or connects a path, sets
+  its mode, or reports who is on the other end (`SO_PEERCRED` on Linux, `getpeereid` and
+  `LOCAL_PEERPID` on macOS). `core:os` has `socketpair` and `poll_fd`, not `bind`/`accept`.
+- **Repro:** `cfire_stdlib_lookup ext:net`; no `listen_unix`, no `peer_uid`.
+- **Why Flint needs it:** the app serves the unlocked vault to the CLI over a socket that
+  only the same user may use (D-038, Principle 11). A loopback TCP port is reachable by
+  every user on the machine and tells the server nothing about the caller.
+- **Workaround:** `src/adapters/ipc/native/flint_ipc.hpp` (listen with mode 0600, clear a
+  stale socket, never remove a non-socket file, accept with a deadline, peer uid and pid
+  from the kernel, 4-byte length-prefixed frames under a deadline, no `SIGPIPE`), wrapped
+  by `src/adapters/ipc/ipc.cf`.
+- **Ideal:** `net.listen_unix(path, mode = 0o600) -> UnixListener!`,
+  `net.connect_unix(path, timeout_ms) -> UnixConn!`, and `conn.peer() -> Peer{uid, gid,
+  pid}!` on both; a named pipe with the caller's SID on Windows under the same API.
+
+### CF-082 · missing · `confirmed`: no tray / menu bar icon in `ext:webui`
+- **At `2d8613d`:** `ext:webui` has an app menu (`add_menu_item`) and a window icon
+  (`set_icon`), but no status item: nothing like `NSStatusItem` on macOS or an
+  AppIndicator / `StatusNotifierItem` on Linux, and no way to close the window while the
+  app keeps running.
+- **Repro:** `cfire_stdlib_lookup tray` → no match; `cfire_stdlib_lookup ext:webui` lists
+  no status item or "hide window" call.
+- **Why Flint needs it:** milestone 14 keeps Flint in the menu bar with the window closed
+  and locked while it serves approved grants (D-038).
+- **Workaround:** none yet; to be decided at milestone 14's plan (a native adapter, or a
+  cfire change).
+- **Ideal:** `app.tray(icon_path, tooltip)` with `tray.add_item(title, event)`,
+  `app.hide_window()` / `app.show_window()`, and an option for the window's close button
+  to hide instead of quit.
+
+### CF-083 · missing · `confirmed`: a task cannot spawn into the scope it runs in
+- **At `2d8613d`:** inside `async.scope(workers: N) |scope| { scope.spawn || { … } }`, a
+  closure given to `scope.spawn` that calls `scope.spawn` again does not compile: the
+  capture copies `cfire::async::Scope`, whose `std::vector<std::future<void>>` member has
+  no copy constructor (`no matching function for call to '__construct_at'`, "in implicit
+  copy constructor for 'cfire::async::Scope'").
+- **Repro:** `async.scope(workers: 4) |scope| { scope.spawn || { scope.spawn || {} } }`.
+- **Why Flint needs it:** the app's socket server accepts on one task and would answer
+  each client on a task of its own.
+- **Workaround:** the accept loop answers one client at a time on its own task
+  (`src/drivers/gui/main.cf`, `serve.cf`); commands on one vault run one at a time
+  anyway (the vault holder's lock), and the CLI asks every secret before it connects,
+  so no client holds the loop while a person types.
+- **Ideal:** capture the scope by reference (it outlives every task it joins), or a
+  `scope.handle()` that tasks can spawn through.

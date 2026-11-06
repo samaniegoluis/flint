@@ -1,0 +1,79 @@
+package main
+
+// The app's socket server (D-038): it lets the `flint` CLI use the vault unlocked in
+// this window instead of opening the file itself. adapters/ipc owns the socket (mode
+// 0600, a peer of another uid is closed unread, Principle 11); clicmd owns the
+// protocol and runs the command (serve.cf there). This file only wires them to the
+// app's state: whether this vault is the one held, and holding it still while a
+// command runs.
+
+import "core:fs"
+import "ext:webui"
+import "../../adapters/config"
+import "../../adapters/crypto"
+import "../../adapters/ipc"
+import "../../adapters/keychain"
+import "../../adapters/process"
+import "../../adapters/vault"
+import "../../application"
+import "../clicmd"
+
+// How often the accept loop looks at its stop flag.
+SERVE_ACCEPT_WAIT_MS: i32 = 250
+
+type VaultChanged struct {
+    path: str `json:"path"`
+    name: str `json:"name"`
+}
+
+// Listens on the config folder's socket. With another Flint already serving it, or
+// a socket that cannot be made, the app runs without serving: the CLI then opens
+// vaults itself, as before. Returns a listener with `open` false in that case.
+fn start_serving(config_dir: str) -> IpcListener {
+    path := ipc_socket_path(config_dir)
+    // On a first launch nothing has written to the config folder yet.
+    fs.mkdir_all(config_dir) or err {
+        write_stderr("flint-gui: not serving the CLI: cannot create {config_dir}\n")
+        return IpcListener{ fd: 0, open: false, path: path, allowed_uid: -1 }
+    }
+    l := ipc_listen(path) or err {
+        write_stderr("flint-gui: not serving the CLI: {err.message()}\n")
+        return IpcListener{ fd: 0, open: false, path: path, allowed_uid: -1 }
+    }
+    return l
+}
+
+// Answers one client's request, on the accept loop's thread (CF-083).
+fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, st: GuiState, mut app: webui.App) {
+    defer conn.close()
+    text := conn.recv(SERVE_SEND_MS) or {
+        return
+    }
+    req := parse_serve_request(text) or {
+        return
+    }
+    if req.kind != "run" {
+        return
+    }
+    st.hold()
+    defer st.release()
+    session := st.vault_session()
+    if !st.unlocked() || session.path != req.vault {
+        _ := conn.send(json_not_served(), SERVE_SEND_MS) or {}
+        return
+    }
+    reply := run_served(req, c, mut store, kc, recents, session)
+    if reply.served {
+        // `vault rename` changes the name inside the file: keep the window's in step.
+        name := store.vault_get_meta("name") or session.name
+        if name.len() > 0 && name != session.name {
+            mut renamed := session
+            renamed.name = name
+            st.adopt(renamed)
+        }
+        if served_changes_vault(req) {
+            app.emit("vault:changed", VaultChanged{ path: session.path, name: st.vault_session().name })
+        }
+    }
+    _ := conn.send(serve_reply_json(reply), SERVE_SEND_MS) or {}
+}

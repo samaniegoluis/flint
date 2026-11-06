@@ -1,0 +1,124 @@
+package ipc
+
+import "core:fs"
+import "core:encoding/hex"
+import "core:crypto/sha256"
+import "../../domain"
+
+// A short folder: a socket path must fit in sun_path (104 bytes on macOS).
+fn temp_socket_dir() -> str {
+    dir := "/tmp/fl-ipc-" + hex.encode(sha256.random_bytes(4))
+    _ := fs.mkdir_all(dir)
+    return dir
+}
+
+test "a listener is owner-only and lets its own uid in" {
+    dir := temp_socket_dir()
+    path := ipc_socket_path(dir)
+    mut l := try ipc_listen(path)
+    assert_eq(ipc_file_mode(path), 384)
+    mut client := try ipc_connect(path, 2000)
+    mut server := try l.accept_wait(2000)
+    assert(server.open)
+    assert_eq(server.peer.uid, ipc_own_uid())
+    assert(server.peer.pid > 0)
+    try client.send("hello", 2000)
+    assert_eq(try server.recv(2000), "hello")
+    try server.send("", 2000)
+    assert_eq(try client.recv(2000), "")
+    client.close()
+    server.close()
+    l.close()
+    assert_eq(ipc_file_mode(path), -1)
+    fs.remove(dir) or {}
+}
+
+test "a peer of another uid is closed before anything is read" {
+    dir := temp_socket_dir()
+    path := ipc_socket_path(dir)
+    mut l := try ipc_listen_for(path, ipc_own_uid() + 1)
+    mut client := try ipc_connect(path, 2000)
+    refused := try l.accept_wait(2000)
+    assert(!refused.open)
+    assert_eq(refused.peer.uid, ipc_own_uid())
+    // The app closed its end: the client sees the socket go away, never an answer.
+    _ := client.send("host list", 2000) or {}
+    got := client.recv(2000)
+    assert(!got.has_value())
+    assert_eq(error_code_of("{got.error().message()}"), ERR_IO)
+    client.close()
+    l.close()
+    fs.remove(dir) or {}
+}
+
+test "peer_allowed needs a known uid that matches" {
+    assert(peer_allowed(true, 501, 501))
+    assert(!peer_allowed(true, 0, 501))
+    assert(!peer_allowed(false, 501, 501))
+    assert(!peer_allowed(true, -1, -1))
+}
+
+test "no Flint listening is not_found, a stale socket is replaced, a live one is kept" {
+    dir := temp_socket_dir()
+    path := ipc_socket_path(dir)
+    missing := ipc_connect(path, 500)
+    assert(!missing.has_value())
+    assert_eq(error_code_of("{missing.error().message()}"), ERR_NOT_FOUND)
+
+    mut first := try ipc_listen(path)
+    second := ipc_listen(path)
+    assert(!second.has_value())
+    assert_eq(error_code_of("{second.error().message()}"), ERR_CONFLICT)
+    first.close()
+
+    // A socket file nobody accepts on (a Flint that crashed) is cleared.
+    mut stale := try ipc_listen(path)
+    stale.open = false
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        flint_ipc::close_fd(stale.fd);
+    }
+    stale_conn := ipc_connect(path, 500)
+    assert(!stale_conn.has_value())
+    assert_eq(error_code_of("{stale_conn.error().message()}"), ERR_NOT_FOUND)
+    mut again := try ipc_listen(path)
+    again.close()
+    fs.remove(dir) or {}
+}
+
+test "a file that is not a socket is never removed" {
+    dir := temp_socket_dir()
+    path := ipc_socket_path(dir)
+    _ := fs.write_text(path, "not a socket") or {}
+    r := ipc_listen(path)
+    assert(!r.has_value())
+    assert_eq(error_code_of("{r.error().message()}"), ERR_IO)
+    assert_eq(fs.read_text(path) or "", "not a socket")
+    fs.remove(dir) or {}
+}
+
+test "a path too long for sun_path is refused with a reason" {
+    mut long := "/tmp/"
+    for i in 0..30 {
+        long = long + "abcdefgh"
+    }
+    r := ipc_listen(long + "/flint.sock")
+    assert(!r.has_value())
+    assert("{r.error().message()}".contains("limit"))
+}
+
+test "recv times out when nothing arrives" {
+    dir := temp_socket_dir()
+    path := ipc_socket_path(dir)
+    mut l := try ipc_listen(path)
+    mut client := try ipc_connect(path, 2000)
+    mut server := try l.accept_wait(2000)
+    got := server.recv(150)
+    assert(!got.has_value())
+    assert_eq(error_code_of("{got.error().message()}"), ERR_TIMEOUT)
+    assert(!(try l.accept_wait(50)).open)
+    client.close()
+    server.close()
+    l.close()
+    fs.remove(dir) or {}
+}

@@ -50,9 +50,9 @@ function session() {
 // ---- the demo matches the real CLI --------------------------------------------
 
 test('help is the CLI usage text, word for word', () => {
-	const main = repo('src/drivers/cli/main.cf');
+	const main = repo('src/drivers/clicmd/run.cf');
 	const m = main.match(/fn usage_text\(\) -> str \{\s*return `([\s\S]*?)`/);
-	assert.ok(m, 'usage_text not found in main.cf');
+	assert.ok(m, 'usage_text not found in run.cf');
 	assert.equal(USAGE, m[1].replace(/\n$/, ''));
 });
 
@@ -84,7 +84,7 @@ test('error codes are in the CLI exit-code order', () => {
 });
 
 test('the demo knows every CLI flag', () => {
-	const args = repo('src/drivers/cli/args.cf');
+	const args = repo('src/drivers/clicmd/args.cf');
 	const demo = readFileSync(fileURLToPath(new URL('../lib/args.ts', import.meta.url)), 'utf8');
 	for (const fn of ['value_flags', 'bool_flags']) {
 		const m = args.match(new RegExp(`fn ${fn}\\(\\) -> \\[\\]str \\{\\s*return \\[([^\\]]*)\\]`));

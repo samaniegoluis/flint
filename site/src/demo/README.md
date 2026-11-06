@@ -5,7 +5,7 @@ A simulated `flint` in the browser (D-026). It opens from **Try the CLI** on the
 
 | Path | Holds |
 |---|---|
-| `lib/cli.ts` | The `flint` commands: flags, messages, JSON, exit codes, copied from `src/drivers/cli/` |
+| `lib/cli.ts` | The `flint` commands: flags, messages, JSON, exit codes, copied from `src/drivers/clicmd/` |
 | `lib/vault.ts` | The vault rules and messages of `src/application/` and `src/domain/vault.cf` |
 | `lib/args.ts`, `lib/errors.ts`, `lib/format.ts` | Flag parsing, error codes and table output, as in the CLI |
 | `lib/remote.ts` | The fake Linux every host opens after `flint connect` |

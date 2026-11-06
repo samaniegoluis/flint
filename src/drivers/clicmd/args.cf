@@ -1,4 +1,4 @@
-package main
+package clicmd
 
 // Command-line parsing for `flint`. core:cli has no positional arguments or
 // subcommands and ignores unknown flags (CF-024), so this is a small parser of its

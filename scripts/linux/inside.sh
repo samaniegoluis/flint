@@ -34,3 +34,7 @@ grep -q "keychain cache: False" /tmp/e2e-none.log
 echo "== desktop app end-to-end under Xvfb"
 PATH="$PATH:/usr/sbin" scripts/gui-e2e.sh | tee /tmp/gui-e2e.log
 grep -q "^e2e: pass" /tmp/gui-e2e.log
+# The CLI as a client of the running app, the app under Xvfb (scripts/serve-e2e.sh).
+echo "== CLI through the running app under Xvfb"
+scripts/serve-e2e.sh | tee /tmp/serve-e2e.log
+grep -q "^serve-e2e: .* checks passed" /tmp/serve-e2e.log

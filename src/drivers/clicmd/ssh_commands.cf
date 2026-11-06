@@ -1,4 +1,4 @@
-package main
+package clicmd
 
 // `flint connect`, `flint exec` and `flint known-host`. Each handler parses its
 // flags, calls one use case and formats the result (Principle 2). `connect` and
@@ -57,7 +57,7 @@ fn remote_command(p: ParsedArgs) -> str {
     return cmd
 }
 
-fn cmd_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> i32! {
+fn cmd_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> i32! {
     try p.allow_flags("connect", ["--timeout", "--accept-new-host-key", "--no-command"])
     if p.positionals.len() != 2 || p.has_rest {
         return error(coded(ERR_USAGE, "usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]"))
@@ -69,7 +69,7 @@ fn cmd_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut st
     if term_name.len() == 0 {
         term_name = "xterm-256color"
     }
-    s := try open_target(p, sec, c, mut store, kc, recents)
+    s := try open_target(p, sec, c, mut store, src, recents)
     mut link := new_ssh_link()
     mut term := new_stdio_terminal()
     mut clock := new_system_clock()
@@ -80,7 +80,7 @@ fn cmd_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut st
     return process_exit_code(code)
 }
 
-fn cmd_exec(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> i32! {
+fn cmd_exec(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> i32! {
     try p.allow_flags("exec", ["--timeout", "--exec-timeout", "--accept-new-host-key"])
     if p.positionals.len() != 2 || !p.has_rest || p.rest.len() == 0 {
         return error(coded(ERR_USAGE, "usage: flint exec <alias> [--timeout <secs>] [--exec-timeout <secs>] -- <command>"))
@@ -90,7 +90,7 @@ fn cmd_exec(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if p.has_flag("--exec-timeout") {
         exec_timeout = try parse_seconds_flag("--exec-timeout", p.flag_value("--exec-timeout"))
     }
-    s := try open_target(p, sec, c, mut store, kc, recents)
+    s := try open_target(p, sec, c, mut store, src, recents)
     mut link := new_ssh_link()
     mut sink := new_stdio_exec_sink()
     mut clock := new_system_clock()
@@ -103,14 +103,14 @@ fn cmd_exec(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
 
 // `flint host test <alias>`: connect, verify, log in, hang up. Exits 0, or with the
 // error's code (11-14 for host_key, auth, network, timeout).
-fn cmd_host_test(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+fn cmd_host_test(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
     try p.allow_flags("host test", ["--timeout", "--accept-new-host-key"])
     try p.expect_args("host test", 1, "<alias> [--timeout <secs>] [--accept-new-host-key]")
     if p.has_rest {
         return error(coded(ERR_USAGE, "`flint host test` runs no command; use `flint exec <alias> -- <command>`"))
     }
     opts := try connect_options(p)
-    s := try open_target(p, sec, c, mut store, kc, recents)
+    s := try open_target(p, sec, c, mut store, src, recents)
     mut link := new_ssh_link()
     mut clock := new_system_clock()
     r := try test_host(c, mut store, s, mut link, new_tty_prompter(), mut clock, p.positional(2), opts)
@@ -127,12 +127,12 @@ fn cmd_host_test(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut 
     say("Connection to '{r.host}' works: {r.target}, host key verified, logged in ({r.duration_ms} ms{via}).")
 }
 
-fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb == "list" {
         try p.allow_flags("known-host list", [])
         try p.expect_args("known-host list", 0, "")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         list := try list_known_hosts(store)
         if as_json {
             say(json.stringify(list))
@@ -144,7 +144,7 @@ fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut
     if verb == "rm" {
         try p.allow_flags("known-host rm", [])
         try p.expect_args("known-host rm", 1, "<alias|address>")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         k := try remove_known_host(mut store, p.positional(2))
         if as_json {
             say(json.stringify(ForgottenKey{ removed: "known-host", addr: k.addr, fingerprint: k.fingerprint }))

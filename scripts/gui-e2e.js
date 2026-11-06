@@ -683,6 +683,16 @@
     await check(q('#pw').value === 'wrong-password', 'the wrong attempt stays in the field, selected');
     await fill('#pw', MASTER);
     await click('button[type="submit"]', 'Unlock');
+    {
+      // Argon2id runs on a worker: another call answers while the unlock is still
+      // deriving the key (an unlock on the UI thread would answer it afterwards).
+      const t0 = performance.now();
+      await window.backend.app_info({});
+      const answered = performance.now() - t0;
+      const stillUnlocking = !(byText('.tree .ti', 'local') || grpRow());
+      log(`app_info answered in ${Math.round(answered)} ms during the unlock`);
+      await check(stillUnlocking && answered < 300, 'the window answers while the vault unlocks');
+    }
     await waitFor(() => byText('.tree .ti', 'local') || grpRow(), 'the unlocked tree', 30000);
     await check(true, 'the right master password unlocks the vault again');
     await waitFor(() => grpRow()?.getAttribute('aria-expanded') === 'false', 'the collapsed group after unlocking');

@@ -92,8 +92,18 @@ fn main() {
     app.bind_raw("ui_state_set") |params| { return rpc_ui_state_set(params, mut ui_state_store, store, st) }
 
     app.bind_raw("vault_recents") |params| { return rpc_vault_recents(store, recents) }
-    app.bind_raw("vault_unlock") |params| { return rpc_vault_unlock(params, c, mut store, kc, recents, mut st) }
-    app.bind_raw("vault_create") |params| { return rpc_vault_create(params, c, mut store, kc, recents, mut st) }
+    // On a worker: captures are read-only there, and the copies share the store's
+    // connection and the state's holder.
+    app.bind_async[UnlockReq]("vault_unlock") |req| {
+        mut s := store
+        mut g := st
+        return rpc_vault_unlock(req, c, mut s, kc, recents, mut g)
+    }
+    app.bind_async[CreateReq]("vault_create") |req| {
+        mut s := store
+        mut g := st
+        return rpc_vault_create(req, c, mut s, kc, recents, mut g)
+    }
     app.bind_raw("vault_close") |params| { return rpc_vault_close(mut store, mut st) }
     app.bind_raw("vault_forget_key") |params| { return rpc_vault_forget_key(params, mut store, kc, mut st) }
     app.bind_raw("vault_forget") |params| { return rpc_vault_forget(params, mut store, kc, recents, mut st) }
@@ -165,6 +175,30 @@ fn main() {
             }
             return ok_json()
         }
+        // The CLI's way into the vault unlocked here (serve.cf, D-038).
+        mut listener := start_serving(config_dir)
+        if listener.open {
+            loop_listener := listener
+            loop_store := store
+            loop_app := app
+            loop_st := st
+            scope.spawn || {
+                for !loop_listener.stopped() {
+                    got := loop_listener.accept_wait(SERVE_ACCEPT_WAIT_MS)
+                    if !got.has_value() {
+                        break
+                    }
+                    conn := got.value()
+                    if conn.open {
+                        // One at a time: a task cannot spawn into this scope (CF-083).
+                        mut cn := conn
+                        mut s := loop_store
+                        mut a := loop_app
+                        serve_client(mut cn, c, mut s, kc, recents, loop_st, mut a)
+                    }
+                }
+            }
+        }
         install_app_menu("Flint")
         // On Linux the end-to-end run opens the real window under xvfb-run
         // (scripts/linux), and the page quits when done.
@@ -174,8 +208,13 @@ fn main() {
             app.run()
         }
         gui_session_close_all()
+        listener.close()
     }
+    // Waits for an unlock or create still running on a worker, then closes.
+    st.hold()
+    st.forget()
     close_vault(mut store)
+    st.release()
 
     if e2e {
         verdict := app.get_state("e2e")

@@ -1,4 +1,4 @@
-// The simulated `flint` command. Each handler mirrors src/drivers/cli/*.cf: the same
+// The simulated `flint` command. Each handler mirrors src/drivers/clicmd/*.cf: the same
 // flags, messages, JSON shapes, error codes and exit codes. A command that needs the
 // person (a password, a host key answer) yields an Ask and resumes with the answer.
 import { FlintError, exitCodeFor, fail } from './errors.ts';

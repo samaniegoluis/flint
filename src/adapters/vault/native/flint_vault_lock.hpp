@@ -17,3 +17,40 @@ struct VaultCell {
 };
 
 } // namespace flint_vault
+
+#include <algorithm>
+#include <cstddef>
+#include <string>
+#include <vector>
+
+namespace flint_vault {
+
+// CFIRE-UPSTREAM: CF-026
+// The unlocked vault of a program with several threads (the GUI's UI thread, its
+// unlock and create workers, and the socket server): which vault is open and its
+// secrets key, shared by every copy of the holder. `mtx` guards the fields for one
+// read or write and is never held for long, so the UI thread never waits on it.
+// `op` is held for a whole operation that must not see the vault change under it
+// (an unlock, a vault switch, a command served over the socket).
+struct SessionCell {
+    std::mutex mtx;
+    std::recursive_mutex op;
+    bool unlocked = false;
+    std::string path;
+    std::string name;
+    std::string id;
+    std::vector<std::byte> secrets_key;
+    bool cached = false;
+
+    void wipe() {
+        std::fill(secrets_key.begin(), secrets_key.end(), std::byte{0});
+        secrets_key.clear();
+        path.clear();
+        name.clear();
+        id.clear();
+        cached = false;
+        unlocked = false;
+    }
+};
+
+} // namespace flint_vault
