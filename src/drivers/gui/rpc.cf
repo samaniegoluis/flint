@@ -249,11 +249,17 @@ fn rpc_window_theme(params: str, mut app: webui.App) -> str! {
 
 fn rpc_dialog_open(params: str, app: webui.App) -> str! {
     req := try parse_req[DialogReq](params)
+    if native_file_dialogs() {
+        return json.stringify(PathReply{ path: choose_file_to_open(req.title) })
+    }
     return json.stringify(PathReply{ path: app.open_file_dialog(req.title) })
 }
 
 fn rpc_dialog_save(params: str, app: webui.App) -> str! {
     req := try parse_req[DialogReq](params)
+    if native_file_dialogs() {
+        return json.stringify(PathReply{ path: choose_file_to_save(req.title, req.default_name) })
+    }
     return json.stringify(PathReply{ path: app.save_file_dialog(req.title, req.default_name) })
 }
 
