@@ -77,7 +77,8 @@ inline void run_clear(void* ctx) {
 }
 
 // 0 on success, 2 when there is no pasteboard (AppKit not loaded), 1 when the write failed.
-inline int copy_secret(const std::string& name, const std::string& text, int64_t clear_after_ms) {
+// A secret is concealed and cleared later; plain text (OSC 52) is neither.
+inline int copy_to(const std::string& name, const std::string& text, int64_t clear_after_ms, bool concealed) {
     Pool pool;
     id pb = board(name);
     if (!pb) return 2;
@@ -85,7 +86,7 @@ inline int copy_secret(const std::string& name, const std::string& text, int64_t
     auto set = reinterpret_cast<signed char (*)(id, SEL, id, id)>(objc_msgSend);
     if (!set(pb, sel("setString:forType:"), ns_string(text), ns_string("public.utf8-plain-text"))) return 1;
     // nspasteboard.org: clipboard managers do not record or show concealed items.
-    set(pb, sel("setString:forType:"), ns_string(""), ns_string("org.nspasteboard.ConcealedType"));
+    if (concealed) set(pb, sel("setString:forType:"), ns_string(""), ns_string("org.nspasteboard.ConcealedType"));
     auto* job = new ClearJob{name, change_count_of(pb)};
     if (clear_after_ms > 0) {
         dispatch_after_f(dispatch_time(DISPATCH_TIME_NOW, clear_after_ms * 1000000LL), dispatch_get_main_queue(), job, run_clear);
@@ -126,6 +127,7 @@ inline void release_board(const std::string& name) {
 // took the clipboard (or Flint cleared it).
 inline uint64_t& live_seq() { static uint64_t s = 0; return s; }
 inline uint64_t& next_seq() { static uint64_t s = 0; return s; }
+inline bool& live_concealed() { static bool b = false; return b; }
 
 struct ClipData {
     std::string text;
@@ -167,7 +169,7 @@ inline bool clear_if_unchanged(const std::string&, long count) {
     return true;
 }
 
-inline int copy_secret(const std::string&, const std::string& text, int64_t clear_after_ms) {
+inline int copy_to(const std::string&, const std::string& text, int64_t clear_after_ms, bool concealed) {
     if (!gdk_display_get_default()) return 2;
     GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
     auto* d = new ClipData{text, ++next_seq()};
@@ -178,12 +180,13 @@ inline int copy_secret(const std::string&, const std::string& text, int64_t clea
         {const_cast<gchar*>("TEXT"), 0, 0},
         {const_cast<gchar*>("x-kde-passwordManagerHint"), 0, 1},
     };
-    if (!gtk_clipboard_set_with_data(cb, targets, 5, get_cb, clear_cb, d)) {
+    if (!gtk_clipboard_set_with_data(cb, targets, concealed ? 5 : 4, get_cb, clear_cb, d)) {
         wipe(d->text);
         delete d;
         return 1;
     }
     live_seq() = d->seq;
+    live_concealed() = concealed;
     gtk_clipboard_set_can_store(cb, nullptr, 0);
     if (clear_after_ms > 0) {
         g_timeout_add(static_cast<guint>(clear_after_ms), timer_cb, reinterpret_cast<gpointer>(static_cast<uintptr_t>(d->seq)));
@@ -199,18 +202,25 @@ inline std::string read_text(const std::string&) {
     return s;
 }
 
-inline bool is_concealed(const std::string&) { return live_seq() != 0; }
+inline bool is_concealed(const std::string&) { return live_seq() != 0 && live_concealed(); }
 inline void release_board(const std::string&) {}
 
 #else
 
 inline long change_count(const std::string&) { return -1; }
 inline bool clear_if_unchanged(const std::string&, long) { return false; }
-inline int copy_secret(const std::string&, const std::string&, int64_t) { return 2; }
+inline int copy_to(const std::string&, const std::string&, int64_t, bool) { return 2; }
 inline std::string read_text(const std::string&) { return ""; }
 inline bool is_concealed(const std::string&) { return false; }
 inline void release_board(const std::string&) {}
 
 #endif
+
+inline int copy_secret(const std::string& name, const std::string& text, int64_t clear_after_ms) {
+    return copy_to(name, text, clear_after_ms, true);
+}
+inline int copy_text(const std::string& name, const std::string& text) {
+    return copy_to(name, text, 0, false);
+}
 
 }  // namespace flint_clip

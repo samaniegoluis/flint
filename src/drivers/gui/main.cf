@@ -116,15 +116,20 @@ fn main() {
     app.bind_raw("cred_edit") |params| { return rpc_cred_edit(params, c, mut store, st) }
     app.bind_raw("cred_rm") |params| { return rpc_cred_rm(params, mut store, st) }
     app.bind_raw("known_host_rm") |params| { return rpc_known_host_rm(params, mut store, st) }
+    app.bind_raw("import_tether") |params| { return rpc_import_tether(params, c, mut store, inspector, st) }
     app.bind_raw("secret_reveal") |params| { return rpc_secret_reveal(params, c, store, st) }
     app.bind_raw("secret_copy") |params| { return rpc_secret_copy(params, c, store, mut clipboard, st) }
 
+    app.bind_raw("terminal_clipboard") |params| { return rpc_terminal_clipboard(params, mut clipboard) }
     app.bind_raw("session_input") |params| { return rpc_session_input(params) }
     app.bind_raw("session_resize") |params| { return rpc_session_resize(params) }
     app.bind_raw("session_answer") |params| { return rpc_session_answer(params) }
     app.bind_raw("session_close") |params| { return rpc_session_close(params) }
     app.bind_raw("e2e_report") |params| { return rpc_e2e_report(params, mut app) }
     app.bind_raw("e2e_log") |params| { return rpc_e2e_log(params) }
+    if e2e {
+        app.bind_raw("e2e_clipboard") |params| { return rpc_e2e_clipboard(clipboard) }
+    }
 
     async.scope(workers: 64) |scope| {
         app.bind_raw("session_open") |params| {

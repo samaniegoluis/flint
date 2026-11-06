@@ -33,6 +33,23 @@ fn (mut self: OsClipboard) clipboard_copy_secret(text: str, clear_after_ms: i64)
     }
 }
 
+// Puts plain text a remote program copied (OSC 52) on the clipboard: not concealed,
+// never cleared, like a copy from any other terminal.
+fn (mut self: OsClipboard) clipboard_copy_text(text: str) -> void! {
+    mut rc: i32 = 0
+    name := self.board
+    // CFIRE-UPSTREAM: CF-053
+    cpp {
+        rc = flint_clip::copy_text(name, text);
+    }
+    if rc == 2 {
+        return error(coded(ERR_IO, "no clipboard is available"))
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "the clipboard refused the copy"))
+    }
+}
+
 // ---- For the tests -----------------------------------------------------------------
 
 fn clipboard_read_text(board: str) -> str {

@@ -8,6 +8,7 @@
   const PORT3 = '@@PORT3@@';
   const USER = '@@USER@@';
   const KEY = `@@KEY@@`;
+  const TETHER = '@@TETHER@@';
   const MASTER = 'e2e-master-password-42';
   const HOST_PW_MARKER = 'gui-host-pw-marker';
 
@@ -222,6 +223,52 @@
     key('Enter', 'Enter', 13);
     await runInTerminal('cat /tmp/flint-e2e-vim.txt; echo vim-$((6*7))', 'vim-42');
     await check(/^hello$/m.test(termText()), 'keys typed in vim reach it (insert, Esc, :wq)' + (/^hello$/m.test(termText()) ? '' : ' — terminal: ' + termText().split('\n').filter((l) => l.trim()).slice(-6).join(' | ')));
+
+    await setStep('osc 52');
+    // A remote program sets the clipboard: the core writes it (the run's private board).
+    await runInTerminal(`printf '\\033]52;c;%s\\a' "$(printf 'osc52-from-remote-%s' "$((6*7))" | base64)"; echo osc-sent-$((6*7))`, 'osc-sent-42');
+    {
+      const clip = await waitForAsync(async () => {
+        const r = await window.backend.e2e_clipboard({});
+        const v = (typeof r === 'string' ? JSON.parse(r) : r)?.name;
+        return v === 'osc52-from-remote-42' ? v : null;
+      }, 'the OSC 52 text on the clipboard');
+      await check(clip === 'osc52-from-remote-42', 'OSC 52 from the remote reaches the clipboard');
+    }
+    await runInTerminal(`printf '\\033]52;c;?\\a'; echo osc-query-$((6*7))`, 'osc-query-42');
+    await check(true, 'an OSC 52 query is ignored and the session carries on');
+
+    await setStep('input order');
+    // 300 writes in one tick, as xterm.js answering a burst of colour queries: they
+    // must reach the remote in order (Tether 14a1461).
+    await runInTerminal('stty -echo; cat > /tmp/flint-e2e-order.txt; stty echo; echo cat-done-$((6*7))', '');
+    await sleep(300);
+    {
+      const t = activeTerm();
+      for (let i = 0; i < 300; i++) t.input(`L${i}\n`, true);
+      t.input('\x04', true);
+    }
+    await waitFor(() => termText().includes('cat-done-42'), 'cat to finish');
+    await runInTerminal(`awk 'NR-1!=substr($0,2){bad=1} END{print ((bad||NR!=300)?"order-bad-" NR:"order-" "ok")}' /tmp/flint-e2e-order.txt`, '\norder-');
+    await check(termText().includes('order-ok'), 'a 300-write burst reaches the remote in order' + (termText().includes('order-ok') ? '' : ' — ' + (termText().match(/order-bad-\d+/) || [''])[0]));
+
+    await setStep('dead key');
+    // WebKit's flush of a dead ' that did not combine: compositionend commits "'",
+    // then one keydown carries "'s". Only the "s" is new (Tether a872c3f).
+    await runInTerminal('stty -echo; head -n 1 > /tmp/flint-e2e-dead.txt; stty echo; echo head-done-$((6*7))', '');
+    await sleep(300);
+    {
+      const t = activeTerm();
+      const ta = qa('.pane > div').find((d) => d.style.display !== 'none').querySelector('textarea');
+      t.input("it'", true); // what xterm sends for the committed composition
+      ta.dispatchEvent(new CompositionEvent('compositionend', { data: "'", bubbles: true }));
+      ta.dispatchEvent(new KeyboardEvent('keydown', { key: "'s", code: 'KeyS', keyCode: 222, bubbles: true, cancelable: true }));
+      await sleep(100);
+      t.input('\r', true);
+    }
+    await waitFor(() => termText().includes('head-done-42'), 'head to finish');
+    await runInTerminal('echo "[$(cat /tmp/flint-e2e-dead.txt)]-$((6*7))"', ']-42');
+    await check(termText().includes("[it's]"), "a dead ' flushed with s types it's, not it''s");
 
     await setStep('exit');
     await type('exit 7');
@@ -553,6 +600,52 @@
     await check(recents[0].name === 'E2E Renamed', 'the recent list shows the new name');
     await click('.rail-btn', 'Hosts');
     await check(q('.vault-btn .vault-name').textContent === 'E2E Renamed', 'the vault button shows the new name');
+
+    await setStep('import from tether');
+    await click('.rail-btn', 'Settings');
+    await click('.nav-i', 'Vault');
+    await click('button', 'Import from Tether…');
+    await waitFor(() => q('[role="dialog"][aria-label="Import from Tether"]'), 'the import drawer');
+    await fill('[aria-label="Tether vault file"]', TETHER);
+    await fill('#tpw', 'not-the-password');
+    await click('.drawer .modal-f button', 'Preview');
+    await waitFor(() => q('.drawer [role="alert"]'), 'the wrong password error');
+    await check(q('.drawer [role="alert"]').textContent.includes('Tether master password is wrong'), 'a wrong Tether password is refused');
+    await fill('#tpw', 'tether-fixture-pw');
+    await click('.drawer .modal-f button', 'Preview');
+    await waitFor(() => q('.drawer [aria-label="Import report"]'), 'the preview report');
+    await check(hasText('Preview: nothing was written yet') && hasText('Would add 5 groups, 8 hosts, 2 keys, 1 credential, 3 known hosts'), 'Preview reports what an import would add');
+    await check(!byText('.tree .label, .tree *', 'code-box'), 'the preview wrote nothing');
+    await check(byText('.drawer td', 'pve-01: proxmox ui') && hasText('no tunnels yet'), 'the report lists the tunnel it cannot import');
+    await click('.drawer .modal-f button', 'Import');
+    await waitFor(() => hasText('Imported 8 hosts from Tether'), 'the import notice');
+    await check(!q('#tpw'), 'the Tether password field is gone once imported');
+    await click('.drawer .modal-f button', 'Done');
+    await click('.rail-btn', 'Hosts');
+    await waitFor(() => hasText('code-box') || hasText('Code Box'), 'the imported hosts in the tree');
+    {
+      const cat = await window.backend.catalog({});
+      const code = cat.hosts.find((h) => h.alias === 'code-box');
+      await check(code && code.has_password && code.command === 'herdr' && code.group === 'Homelab', 'an imported host keeps its group, command and saved password');
+      await check(!JSON.stringify(cat).includes('pw-codebox'), 'no imported secret reaches the page');
+    }
+    {
+      const r = q('.titlebar .tb-title').getBoundingClientRect();
+      await check(Math.abs(r.left + r.width / 2 - window.innerWidth / 2) <= 1, 'the title is centred on the window');
+    }
+    await click('.rail-btn', 'Settings');
+    await click('.nav-i', 'Vault');
+    await click('button', 'Import from Tether…');
+    await waitFor(() => q('[role="dialog"][aria-label="Import from Tether"]'), 'the import drawer again');
+    await fill('[aria-label="Tether vault file"]', TETHER);
+    await fill('#tpw', 'tether-fixture-pw');
+    await click('.drawer .modal-f button', 'Preview');
+    await waitFor(() => hasText('Preview: nothing new to import'), 'the nothing-new preview');
+    await check(hasText('Everything was already in') && !hasText('Would add'), 'a preview with nothing to add says so');
+    await click('.drawer .modal-f button', 'Import');
+    await waitFor(() => hasText('Nothing new to import: everything is already in'), 'the nothing-new notice');
+    await check(hasText('Everything was already in') && !hasText('Added 0'), 'importing again adds nothing and says so');
+    await click('.drawer .modal-f button', 'Done');
 
     await setStep('lock');
     await click('.statusbar .sb-btn', 'Lock');

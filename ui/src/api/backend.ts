@@ -4,7 +4,7 @@
 
 import type {
   AppInfo, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  KnownHostView, RecentView, Settings, UiStateView, VaultInfo, VaultStatus,
+  KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, VaultInfo, VaultStatus,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -89,6 +89,9 @@ export const api = {
   /** Tests the editor's unsaved form; the result arrives as a "host:test" event. */
   hostTest: (session: string, target: string, p: HostPatch) =>
     call('host_test', { ...p, session, target, accept_new_host_key: false }),
+  /** Copies a Tether vault into the open vault; `dryRun` only reports (D-034). */
+  importTether: (path: string, password: string, dryRun: boolean) =>
+    call<TetherImportReport>('import_tether', { path, password, dry_run: dryRun }),
   /** The one call that returns a secret (D-029). Keep the value out of logs and state that outlives the field. */
   secretReveal: (kind: 'host' | 'credential', name: string) => call<{ value: string }>('secret_reveal', { kind, name }),
   /** The core puts the password on the clipboard and clears it after 30 s. */
@@ -96,6 +99,8 @@ export const api = {
 
   sessionOpen: (session: string, alias: string, cols: number, rows: number) =>
     call('session_open', { session, alias, cols, rows, accept_new_host_key: false }),
+  /** An OSC 52 payload ("c;base64") a remote program wrote; the core copies it. */
+  terminalClipboard: (payload: string) => call<{ outcome: string; bytes: number }>('terminal_clipboard', { name: payload }),
   sessionInput: (session: string, data: string) => call('session_input', { session, data }),
   sessionResize: (session: string, cols: number, rows: number) => call('session_resize', { session, cols, rows }),
   sessionAnswer: (session: string, prompt: string, ok: boolean, value: string) =>

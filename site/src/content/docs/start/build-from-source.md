@@ -5,7 +5,8 @@ description: Install the toolchain and native libraries, then build and test Fli
 
 Flint is written in [cfire](https://github.com/gsandoval/cfire) and links these native
 libraries: **libssh** (SSH), **libsodium** (key derivation and encryption),
-**SQLCipher** (the encrypted vault file) and, on Linux, **libsecret** (the keychain). They
+**SQLCipher** (the encrypted vault file), **libargon2** (only to read a Tether vault on
+import) and, on Linux, **libsecret** (the keychain). They
 are found through `pkg-config` and linked dynamically. On macOS the keychain is
 Security.framework.
 
@@ -25,13 +26,13 @@ cfire doctor
 ### macOS (Homebrew)
 
 ```sh
-brew install libssh libsodium sqlcipher pkg-config
+brew install libssh libsodium sqlcipher argon2 pkg-config
 ```
 
 ### Debian and Ubuntu
 
 ```sh
-sudo apt install libssh-dev libsodium-dev libsqlcipher-dev libsecret-1-dev pkg-config openssh-server
+sudo apt install libssh-dev libsodium-dev libsqlcipher-dev libargon2-dev libsecret-1-dev pkg-config openssh-server
 ```
 
 ## 3. Build

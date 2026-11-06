@@ -53,6 +53,7 @@ export default defineConfig({
 						{ label: 'SSH keys', slug: 'guides/keys' },
 						{ label: 'Credentials', slug: 'guides/credentials' },
 						{ label: 'Connecting', slug: 'guides/connecting' },
+						{ label: 'Moving from Tether', slug: 'guides/from-tether' },
 					],
 				},
 				{

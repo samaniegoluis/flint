@@ -120,7 +120,9 @@ Checkable rules. Every milestone is checked against them before it is closed. Ru
 3. Native C++ appears only inside `adapters/`, and each block carries
    `// CFIRE-UPSTREAM: CF-NNN` with a matching entry in `docs/cfire-upstream.md`.
 4. **(owner review)** No hand-rolled cryptography. Key derivation and AEAD go through
-   libsodium only.
+   libsodium only. **One exception (D-034):** reading a Tether vault derives its key with
+   the reference libargon2 (4 lanes, which libsodium cannot do), confined to
+   `adapters/vault/tether.cf`; Tether's secrets are still opened with libsodium.
 5. **(owner review)** The vault file on disk is encrypted in full. No hostname, user or label
    from inside a vault is ever written in clear text, including in logs. (The recent-vaults
    list keeps each vault's file path and name in clear, D-021.) The vault schema and file

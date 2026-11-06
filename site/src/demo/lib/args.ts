@@ -68,7 +68,7 @@ const VALUE_FLAGS = [
 const BOOL_FLAGS = [
 	'--json', '--help', '-h', '--version', '-V', '--master-stdin', '--password',
 	'--password-stdin', '--no-password', '--passphrase', '--passphrase-stdin', '--key-stdin',
-	'--no-tags', '--accept-new-host-key', '--keep-shell', '--no-keep-shell', '--no-command',
+	'--no-tags', '--accept-new-host-key', '--keep-shell', '--no-keep-shell', '--no-command', '--dry-run',
 ];
 
 const GLOBAL_FLAGS = ['--json', '--vault', '--help', '-h', '--master-stdin'];

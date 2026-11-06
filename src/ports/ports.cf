@@ -153,6 +153,8 @@ type ExecSink interface {
 // clears it after `clear_after_ms` unless something else was copied since (D-029).
 type Clipboard interface {
     clipboard_copy_secret(text: str, clear_after_ms: i64) -> void!
+    // Plain text a remote program copied (OSC 52): not concealed, never cleared.
+    clipboard_copy_text(text: str) -> void!
 }
 
 // The desktop app's layout state (adapters/config, ui-state.json, D-030).
@@ -166,4 +168,15 @@ type UiStateStore interface {
 // Monotonic milliseconds, for timeouts and durations (adapters/process).
 type Clock interface {
     clock_now_ms() -> i64
+}
+
+// A Tether vault file, read for the one-shot import (adapters/vault/tether.cf).
+// `tether_read` opens the file read-only and returns its rows with every secret
+// still sealed. `tether_derive_key` is Tether's Argon2id (4 lanes, which libsodium
+// cannot compute: D-034, libargon2). `tether_read_key_file` reads a private key a
+// Tether host points to on disk.
+type TetherSource interface {
+    tether_read(path: str) -> TetherFile!
+    tether_derive_key(password: str, salt: []byte) -> []byte!
+    tether_read_key_file(path: str) -> str!
 }

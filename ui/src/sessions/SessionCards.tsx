@@ -194,7 +194,7 @@ function HostKeyChanged({ tab }: { tab: Tab }) {
           <div className="col" style={{ gap: 4 }}><span className="flabel danger-t">Presented now · {k.key_type}</span><div className="fp" style={{ borderColor: 'var(--danger-border)' }}>{k.fingerprint}</div></div>
         </div>
         <div className="field"><label className="flabel" htmlFor={'cf-' + tab.id}>To replace the saved key, type <span className="mono strong">{k.alias}</span></label>
-          <div className="input"><input id={'cf-' + tab.id} className="mono" placeholder={k.alias} value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" /></div></div>
+          <div className="input"><input id={'cf-' + tab.id} className="mono" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" /></div></div>
         <div className="row" style={{ gap: 'var(--sp-2)' }}>
           <button type="button" className={'btn btn-danger' + (ok ? '' : ' is-disabled')} aria-disabled={!ok} onClick={() => replace()}>Replace key and connect</button>
           <span className="grow" />

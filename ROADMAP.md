@@ -26,13 +26,14 @@ What Tether already does and Flint must not lose.
 | Theme, accent colour, terminal font from installed fonts | `done` | |
 | SFTP browser over the same connection: list, up/download with queue, drag & drop, rename, delete, mkdir, `..` | `next` | Needs file drag & drop from the OS (CF-004) |
 | File browser opens in the terminal's cwd (OSC 7 shell integration, herdr focused pane) | `next` | |
-| Local port-forward tunnels (`-L`), saved per host | `next` | |
-| OSC 52 clipboard (copy from Neovim/tmux/Zellij) | `mvp` | Milestone 08 |
-| Dead-key / IME correctness, in-order input delivery | `mvp` | Milestone 08. Both were real Tether bugs |
+| Local port-forward tunnels (`-L`), saved per host | `next` | When it ships, `flint import tether` should carry Tether's tunnels too (today it lists them as not imported, D-034) |
+| OSC 52 clipboard (copy from Neovim/tmux/Zellij) | `done` | Milestone 08 (D-034): write only, through the core |
+| Dead-key / IME correctness, in-order input delivery | `done` | Milestone 08. Both were real Tether bugs; now under unit and gui-e2e tests |
 | Customisable keyboard shortcuts | `next` | |
 | Remember collapsed groups per vault | `done` | Milestone 07 (D-030) |
 | Auto-updater from GitHub releases + "What's new" screen | `later` | |
-| Import an existing Tether vault | `mvp` | Milestone 08. One-shot migration for the author |
+| Import an existing Tether vault | `done` | Milestone 08 (D-034): `flint import tether` and Settings → Vault |
+| **Remove `flint import tether`** and its GUI entry, libargon2 and the Tether fixture once the owner has moved his vault: the owner is Tether's only user, so the importer has no other audience. Replace it with Flint's own export / import (section on vaults: "Split / export…", "Import / merge…") | `next` | Owner, after the M08 build (2026-11-06). Removing it also drops the one P4 exception (D-034); record the removal as a new decision |
 | **Test connection** in the host editor (on the unsaved draft) and `flint host test <alias>`: dial, verify the host key like a real connect, authenticate, close | `mvp` | Milestone 06. Tether has it (`TestConnection`); raised by the owner while using the MVP |
 | **Reveal and copy a password** in the host and credential editors: hidden by default, only while unlocked, hides again after a few seconds; copy is written by the core straight to the clipboard and cleared after ~30 s. GUI only, no CLI `--reveal` | `mvp` | Milestone 06 (D-029, narrows P6). Tether has the eye button (`RevealHostPassword`) |
 | **Initial command per host** (e.g. `herdr` on codebox), with a per-host "return to shell when it exits" option. Run through the remote login shell, like `ssh -t host cmd`, not instead of it as Tether did; `flint connect` honours it, `--no-command` skips it | `mvp` | Milestone 06 (D-031, migration 003). Tether has `InitialCommand` |
@@ -83,7 +84,9 @@ What Tether already does and Flint must not lose.
 | Sync via any cloud folder (OneDrive, Dropbox, iCloud) | `done` | Journal mode `DELETE`, not WAL |
 | Detect cloud-sync conflict copies and offer to merge | `next` | |
 | Split / export a subset of hosts into a new vault ("give these 20 to my team") | `later` | |
-| Import / merge another vault | `later` | |
+| Import / merge another vault | `later` | The successor of `flint import tether`: same report (added, already present, changed, not imported) and the same re-run rule, so most of `src/application/tether.cf` carries over. Possible uses: moving hosts between a personal and a work vault, restoring from an export, merging a vault a teammate shared |
+| **Import from other SSH clients** (MobaXterm sessions, mRemoteNG `confCons.xml`, Termius export, SecureCRT, `~/.ssh/config`) through the same import as "Import / merge another vault": one report, the same re-run rule | `idea` | Owner, M08 review (2026-11-06): grow the Flint import into the place other clients' exports come in, testing each against a real export |
+| The generic import's GUI as a **large centred modal** (`min(90vw, 1040px) × min(85vh, 760px)`) with a real preview table (filter, perhaps choose what to import), not a side drawer | `idea` | Owner, M08 review (2026-11-06): the Tether drawer was widened to 50% with wrapping notes as a stopgap, since it will be removed |
 | Multi-recipient vaults: encrypt to teammates' public keys (age-style), revoke access | `later` | Replaces "share the master password" |
 | Short-lived SSH certificates: the vault acts as a CA, `flint share --host X --ttl 8h` | `idea` | Teleport/Smallstep, personal-sized |
 | Local change log + per-record merge for concurrent edits on two machines | `idea` | Only if conflicts become a real problem |

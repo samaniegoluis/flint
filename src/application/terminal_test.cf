@@ -52,3 +52,47 @@ test "pump stops after max_reads while the shell stays open" {
     assert(!r.closed)
     assert_eq(sink.closed_reason, "")
 }
+
+// ---- OSC 52 -------------------------------------------------------------------------
+
+test "osc 52: a clipboard write is decoded and copied as plain text" {
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 99, copies: 0 }
+    r := try osc52_copy(mut clip, "c;aGVsbG8gd29ybGQ=")
+    assert_eq(r.outcome, "copied")
+    assert_eq(r.bytes, 11)
+    assert_eq(clip.text, "hello world")
+    assert_eq(clip.clear_after_ms, 0)
+    assert_eq(clip.copies, 1)
+}
+
+test "osc 52: an empty selection list means the clipboard, utf-8 survives" {
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
+    // "héllo ✓" in base64
+    r := try osc52_copy(mut clip, ";aMOpbGxvIOKckw==")
+    assert_eq(r.outcome, "copied")
+    assert_eq(clip.text, "héllo ✓")
+}
+
+test "osc 52: tmux's 'pc' list copies, primary only is ignored" {
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
+    a := try osc52_copy(mut clip, "pc;YQ==")
+    assert_eq(a.outcome, "copied")
+    b := try osc52_copy(mut clip, "p;Yg==")
+    assert_eq(b.outcome, "ignored")
+    assert_eq(clip.text, "a")
+    assert_eq(clip.copies, 1)
+}
+
+test "osc 52: a clipboard query is ignored, never answered" {
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
+    r := try osc52_copy(mut clip, "c;?")
+    assert_eq(r.outcome, "ignored")
+    assert_eq(clip.copies, 0)
+}
+
+test "osc 52: bad input is refused with a stable code" {
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
+    assert_eq(err_code(osc52_copy(mut clip, "no-separator")), "invalid")
+    assert_eq(err_code(osc52_copy(mut clip, "c;!!!not base64!!!")), "invalid")
+    assert_eq(clip.copies, 0)
+}
