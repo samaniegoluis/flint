@@ -685,3 +685,13 @@ The entries below were found while building milestone 02 against the same cfire 
   `head := addr[0..usize(colon)]; host := "{head}"` (`src/domain/tether.cf`).
 - **Ideal:** a `str` slice converts to `str` where one is expected (or `str` borrows
   lower to `std::string_view`), and interpolation takes any expression.
+
+### CF-061 · bug · `confirmed`: `x := f() or []` builds with libc++ but not libstdc++
+- **Repro (cfire 0.9.4):** `sealed := crypto.seal(k, data, []) or []` where `seal`
+  returns `[]byte!` lowers to `….value_or({})`. Apple clang with libc++ accepts it; on
+  Linux (clang with libstdc++ 14) it fails: `no matching member function for call to
+  'value_or'` (`couldn't infer template argument '_Up'`). `cfire check` passes on both,
+  so the break only shows in the Linux run.
+- **Workaround:** test `has_value()` and take `.value()` (`tseal` in
+  `src/application/tether_test.cf`).
+- **Ideal:** emit the default with its type (`value_or(std::vector<std::uint8_t>{})`).
