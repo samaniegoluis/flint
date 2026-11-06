@@ -111,6 +111,7 @@ inline bool read_chunk(ssh_channel ch, int timeout_ms, std::string& out, std::st
     if (e > 0) err.assign(buf, static_cast<size_t>(e));
     if (n <= 0 && e <= 0 && (ssh_channel_is_eof(ch) || ssh_channel_is_closed(ch))) {
         done = true;
+#if LIBSSH_VERSION_INT >= SSH_VERSION_INT(0, 11, 0)
         uint32_t status = 0;
         char* signal = nullptr;
         int core = 0;
@@ -124,6 +125,12 @@ inline bool read_chunk(ssh_channel ch, int timeout_ms, std::string& out, std::st
         } else {
             code = -1;
         }
+#else
+        // libssh 0.10 (Ubuntu 24.04, Zorin OS 18) has no ssh_channel_get_exit_state:
+        // the status only, -1 when the command ended without one (a signal, whose
+        // name 0.10 does not report here).
+        code = static_cast<std::int64_t>(ssh_channel_get_exit_status(ch));
+#endif
     }
     return true;
 }
