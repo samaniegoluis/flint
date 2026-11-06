@@ -1,0 +1,219 @@
+package clicmd
+
+// The CLI as a client of the running app (D-038), and the app's side of it.
+//
+// With Flint open and the command's vault unlocked in it, the CLI does not open the
+// vault file: it sends the command line over the local socket (adapters/ipc, mode
+// 0600, same uid only, Principle 11) and the app runs it with the same handlers,
+// against the vault it holds, capturing what the command prints. The CLI prints that
+// and exits with the command's status, so the output is the same either way.
+//
+// One connection, one exchange: run {vault, argv, cwd, ...} → {served, stdout,
+// stderr, exit}. `served` is false when the app does not hold that vault unlocked.
+// Prompts for secrets (`--password`, `--passphrase`, Tether's master password) are
+// asked on the client's terminal first, as the command would ask them, and travel in
+// the request, towards the app only: no reply ever carries a secret (Principle 6).
+// The CLI falls back to opening the vault itself (with the secrets it already has)
+// when Flint is not running or answers "not served"; once a request is sent, a socket
+// that breaks is an error, never a second attempt. The app answers one connection
+// at a time (CF-083): commands on one vault run one at a time anyway.
+
+import "core:fs"
+import "ext:json"
+import "../../adapters/config"
+import "../../adapters/crypto"
+import "../../adapters/ipc"
+import "../../adapters/keychain"
+import "../../adapters/process"
+import "../../adapters/vault"
+import "../../application"
+import "../../domain"
+
+SERVE_PROTOCOL: i64 = 1
+
+// Connecting, and sending a request or a reply (Principle 8).
+SERVE_CONNECT_MS: i32 = 1000
+SERVE_SEND_MS: i32 = 5000
+// A whole command, the slowest being an import that derives Tether's key, plus the
+// commands queued before it.
+SERVE_RUN_MS: i32 = 300000
+
+type WireSecrets struct {
+    password:       str  `json:"password"`
+    has_password:   bool `json:"has_password"`
+    passphrase:     str  `json:"passphrase"`
+    has_passphrase: bool `json:"has_passphrase"`
+    key_text:       str  `json:"key_text"`
+    has_key:        bool `json:"has_key"`
+}
+
+type ServeRequest struct {
+    kind:    str         `json:"kind"`
+    version: i64         `json:"v"`
+    vault:   str         `json:"vault"`
+    argv:    []str       `json:"argv"`
+    cwd:     str         `json:"cwd"`
+    as_json: bool        `json:"json"`
+    secrets: WireSecrets `json:"secrets"`
+}
+
+type ServeReply struct {
+    served: bool `json:"served"`
+    stdout: str  `json:"stdout"`
+    stderr: str  `json:"stderr"`
+    exit:   i64  `json:"exit"`
+}
+
+fn not_served() -> ServeReply {
+    return ServeReply{ served: false, stdout: "", stderr: "", exit: 0 }
+}
+
+fn no_wire_secrets() -> WireSecrets {
+    return WireSecrets{ password: "", has_password: false, passphrase: "", has_passphrase: false, key_text: "", has_key: false }
+}
+
+// Commands the app runs for the CLI: those that need the unlocked vault and open no
+// SSH session. `vault create|open|unlock|lock|list|use|forget` manage files and the
+// keychain and stay in the CLI; `connect`, `exec` and `host test` come with 11b.
+fn servable(p: ParsedArgs) -> bool {
+    noun := p.positional(0)
+    verb := p.positional(1)
+    if noun == "group" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "import" {
+        return true
+    }
+    if noun == "host" {
+        return verb != "test"
+    }
+    if noun == "vault" {
+        return verb == "status" || verb == "rename"
+    }
+    return false
+}
+
+// Asks on the client's terminal for what the command would ask for, so the app,
+// which has no terminal for it, finds it in the request. The same prompts, in the
+// same cases, as the handlers' own.
+fn fill_prompts(p: ParsedArgs, mut sec: SecretInput) -> void! {
+    noun := p.positional(0)
+    verb := p.positional(1)
+    if (noun == "host" || noun == "cred") && (verb == "add" || verb == "edit") {
+        if !sec.has_password && p.has_flag("--password") {
+            label := if_host(noun == "host", "host password", "credential password")
+            sec.password = try prompt_secret(label)
+            sec.has_password = true
+        }
+        return
+    }
+    if noun == "key" && verb == "add" && !sec.has_passphrase && p.has_flag("--passphrase") {
+        sec.passphrase = try prompt_secret("key passphrase")
+        sec.has_passphrase = true
+        return
+    }
+    if noun == "import" && !sec.has_password {
+        sec.password = try prompt_secret("Tether master password")
+        sec.has_password = true
+    }
+}
+
+// No `if` expression in cfire (CF-079).
+fn if_host(cond: bool, a: str, b: str) -> str {
+    if cond {
+        return a
+    }
+    return b
+}
+
+// The client side: runs the command in the app when it serves the command's vault.
+// Returns `served: false` when Flint is not running, holds another vault or none;
+// the caller then runs the command itself, with the prompts already answered.
+fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> ServeReply! {
+    recents := new_json_recent_store(flint_config_dir())
+    target := resolve_vault(recents, vault_selector(p)) or {
+        return not_served()
+    }
+    socket := ipc_socket_path(flint_config_dir())
+    if !fs.exists(socket) {
+        return not_served()
+    }
+    try fill_prompts(p, mut sec)
+    mut conn := ipc_connect(socket, SERVE_CONNECT_MS) or {
+        return not_served()
+    }
+    defer conn.close()
+    wire := WireSecrets{ password: sec.password, has_password: sec.has_password, passphrase: sec.passphrase, has_passphrase: sec.has_passphrase, key_text: sec.key_text, has_key: sec.has_key }
+    req := ServeRequest{ kind: "run", version: SERVE_PROTOCOL, vault: target.path, argv: args, cwd: current_dir(), as_json: as_json, secrets: wire }
+    conn.send(json.stringify(req), SERVE_SEND_MS) or {
+        return not_served()
+    }
+    text := conn.recv(SERVE_RUN_MS) or err {
+        return error(coded(ERR_IO, "Flint stopped answering while it ran the command: {error_text_of("{err.message()}")}"))
+    }
+    return json.parse[ServeReply](text) or {
+        return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
+    }
+}
+
+// ---- The app's side ------------------------------------------------------------
+
+fn parse_serve_request(text: str) -> ServeRequest! {
+    req := json.parse[ServeRequest](text) or {
+        return error(coded(ERR_INVALID, "malformed request on the socket"))
+    }
+    if req.version != SERVE_PROTOCOL {
+        return error(coded(ERR_UNSUPPORTED, "this Flint speaks socket protocol {SERVE_PROTOCOL}, not {req.version}"))
+    }
+    return req
+}
+
+// Runs a client's command against `session`, the vault the app holds (attached to
+// `store`), capturing everything it prints. The caller holds the vault still for
+// the whole run and has checked that `req.vault` is `session`'s.
+fn run_served(req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, session: VaultSession) -> ServeReply {
+    parsed := parse_cli_args(req.argv)
+    if !parsed.has_value() || !servable(parsed.value()) {
+        return not_served()
+    }
+    p := parsed.value()
+    if check_command(p).has_value() == false || wants_help(p) {
+        return not_served()
+    }
+    sec := SecretInput{
+        master: "", has_master: false,
+        password: req.secrets.password, has_password: req.secrets.has_password,
+        passphrase: req.secrets.passphrase, has_passphrase: req.secrets.has_passphrase,
+        key_text: req.secrets.key_text, has_key: req.secrets.has_key,
+    }
+    capture_begin(req.cwd)
+    status := run_command(p, sec, req.as_json, c, mut store, served_vault_source(kc, session), recents)
+    mut code: i32 = 0
+    if status.has_value() {
+        code = status.value()
+    } else {
+        code = report_error("{status.error().message()}", req.as_json)
+    }
+    (o, e) := capture_end()
+    return ServeReply{ served: true, stdout: o, stderr: e, exit: i64(code) }
+}
+
+fn json_not_served() -> str {
+    return json.stringify(not_served())
+}
+
+fn serve_reply_json(r: ServeReply) -> str {
+    return json.stringify(r)
+}
+
+// Whether a served command may have changed the vault, so the window reloads what it
+// shows. Reads (`list`, `show`, `status`, a dry run) do not.
+fn served_changes_vault(req: ServeRequest) -> bool {
+    parsed := parse_cli_args(req.argv)
+    if !parsed.has_value() {
+        return false
+    }
+    p := parsed.value()
+    verb := p.positional(1)
+    if p.positional(0) == "import" {
+        return !p.has_flag("--dry-run")
+    }
+    return verb == "add" || verb == "edit" || verb == "rename" || verb == "rm"
+}

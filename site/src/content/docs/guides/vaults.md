@@ -67,6 +67,25 @@ can do is run commands on your servers through `flint exec`. To narrow that toda
 where it approves each program that asks for the vault, in its own window; the
 [Security model](/reference/security-model/) has the plan.
 
+## The CLI and the open app
+
+While Flint is open with a vault unlocked, `flint` commands on **that** vault run inside
+the app: the CLI hands the command to Flint over a local socket, Flint runs it and sends
+back what it printed. The CLI reads no cached key and asks for no master password, and
+the output and exit codes are the same as when it works on its own. The app's window
+shows a change made from the CLI straight away.
+
+| Runs in the open app | Still runs in the CLI on its own |
+|---|---|
+| `group`, `host` (except `host test`), `key`, `cred`, `known-host`, `import`, `vault status`, `vault rename` | `connect`, `exec`, `host test`, `vault create`, `open`, `unlock`, `lock`, `list`, `use`, `forget`, and any command on another vault |
+
+A command that would ask for a secret (`--password`, `--passphrase`, Tether's master
+password) still asks for it in your terminal, before it goes to Flint.
+
+The socket is `flint.sock` in the config folder, readable and writable by you only, and
+Flint closes any connection from another user before reading it. With Flint closed, or
+with another vault open in it, the CLI opens the vault itself as before.
+
 ## Several vaults
 
 Flint remembers every vault it has opened on this machine, most recent first.

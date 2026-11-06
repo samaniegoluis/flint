@@ -194,7 +194,7 @@ nothing on stdout and a JSON error on stderr.
 
 | Variable | Meaning |
 |---|---|
-| `FLINT_CONFIG_DIR` | Folder for the recent-vault list (see [Vaults](/guides/vaults/)) |
+| `FLINT_CONFIG_DIR` | Folder for the recent-vault list and the open app's socket (see [Vaults](/guides/vaults/#the-cli-and-the-open-app)) |
 | `FLINT_KEYCHAIN=off` | Never cache vault keys; always ask for the master password |
 | `SSH_AUTH_SOCK` | The SSH agent to try after the vault's keys and passwords |
 | `TERM` | The terminal type `flint connect` asks the server for (default `xterm-256color`) |

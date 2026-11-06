@@ -1,0 +1,161 @@
+package clicmd
+
+// Dispatch of a `flint` command line to its handler, shared by the CLI (on its own,
+// or as a client of the running app) and by the app, which runs the same handlers
+// for a command the CLI sends over the socket (serve.cf). One code path, so a
+// command prints the same and exits the same either way (Principle 7).
+
+import "core:os"
+import "../../adapters/config"
+import "../../adapters/crypto"
+import "../../adapters/keychain"
+import "../../adapters/process"
+import "../../adapters/ssh"
+import "../../adapters/vault"
+import "../../domain"
+
+fn usage_text() -> str {
+    return `flint - SSH client over one encrypted vault
+
+Usage: flint [--json] [--vault <name|path>] <command> [args] [flags]
+
+Vaults
+  vault create <path> [--name <name>]   Create a vault (asks for a master password)
+  vault open <path>                     Open an existing vault and make it current
+  vault list                            Recent vaults; * marks the current one
+  vault use <name|path>                 Make a recent vault the current one
+  vault status                          Path, lock state and counts
+  vault unlock                          Cache the vault key in the OS keychain
+  vault lock                            Remove the cached key from this machine
+  vault rename <new-name>               Rename the vault (its file is not moved)
+  vault forget <name|path>              Drop a vault from the recent list
+
+Groups
+  group add <path>                      Create a group, e.g. homelab/proxmox
+  group list | group rename <path> <new-name> | group rm <path>
+
+Hosts
+  host add <alias> --hostname <host> [--port N] [--user U] [--label L]
+           [--group <path>] [--tag T]... [--color #rrggbb] [--notes N]
+           [--jump <alias>] [--cred <name>] [--key <name>]
+           [--password | --password-stdin] [--command <cmd> [--no-keep-shell]]
+                                        --command runs on connect, then a login
+                                        shell (--no-keep-shell: ends the session)
+  host edit <alias> [same flags] [--alias <new>] [--no-tags] [--no-password]
+           [--command ""] [--keep-shell]
+  host list [--group <path>] [--tag <tag>] | host show <alias> | host rm <alias>
+  host test <alias> [--timeout <secs>] [--accept-new-host-key]
+                                        Connect, verify the host key, log in, hang up
+
+Keys
+  key add <name> (--file <path> | --key-stdin) [--passphrase | --passphrase-stdin]
+  key list | key show <name> | key rename <name> <new-name> | key rm <name>
+
+Credentials
+  cred add <name> --user <user> [--key <name>] [--password | --password-stdin]
+  cred edit <name> [--name N] [--user U] [--key K] [--password | --password-stdin | --no-password]
+  cred list | cred show <name> | cred rm <name>
+
+SSH
+  connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]
+                                        Interactive shell, through jump hosts; runs
+                                        the host's --command unless --no-command
+  exec <alias> [--timeout <secs>] [--exec-timeout <secs>] [--accept-new-host-key]
+       -- <command>                     Run one command; exits with its status
+  known-host list | known-host rm <alias|address>
+
+Import
+  import tether <file> [--password-stdin] [--dry-run]
+                                        Copy a Tether vault into this one (asks for
+                                        Tether's master password); --dry-run reports only
+
+Global flags
+  --json            Write JSON to stdout (errors as JSON to stderr)
+  --vault <v>       Use this vault instead of the current one
+  --master-stdin    Read the master password from the first line of stdin
+  --version, -V     Print the version and linked libraries
+
+Secrets are never taken from arguments: Flint prompts on the terminal, or reads
+them from stdin with the --*-stdin flags.
+`
+}
+
+// Checks the command line's shape: a known noun and a verb or alias after it.
+fn check_command(p: ParsedArgs) -> void! {
+    noun := p.positional(0)
+    session_noun := noun == "connect" || noun == "exec"
+    if !session_noun && noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" && noun != "known-host" && noun != "import" {
+        return error(coded(ERR_USAGE, "unknown command '{noun}'; see `flint help`"))
+    }
+    if p.positional(1).len() == 0 {
+        if session_noun {
+            return error(coded(ERR_USAGE, "`flint {noun}` needs a host alias; see `flint help`"))
+        }
+        return error(coded(ERR_USAGE, "`flint {noun}` needs a command; see `flint help`"))
+    }
+}
+
+fn wants_help(p: ParsedArgs) -> bool {
+    noun := p.positional(0)
+    return noun.len() == 0 || noun == "help" || p.has_flag("--help") || p.has_flag("-h")
+}
+
+// Runs one checked command against `src`'s vault. Returns the process exit status:
+// 0, or the remote status of `connect` and `exec`.
+fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> i32! {
+    noun := p.positional(0)
+    if noun == "connect" {
+        return cmd_connect(p, sec, as_json, c, mut store, src, recents)
+    }
+    if noun == "exec" {
+        return cmd_exec(p, sec, as_json, c, mut store, src, recents)
+    }
+    if noun == "vault" {
+        try cmd_vault(p, sec, as_json, c, mut store, src, recents)
+    } else if noun == "group" {
+        try cmd_group(p, sec, as_json, c, mut store, src, recents)
+    } else if noun == "host" {
+        try cmd_host(p, sec, as_json, c, mut store, src, recents)
+    } else if noun == "key" {
+        try cmd_key(p, sec, as_json, c, mut store, src, recents, new_libssh_key_inspector())
+    } else if noun == "import" {
+        try cmd_import(p, sec, as_json, c, mut store, src, recents, new_libssh_key_inspector())
+    } else if noun == "known-host" {
+        try cmd_known_host(p, sec, as_json, c, mut store, src, recents)
+    } else {
+        try cmd_cred(p, sec, as_json, c, mut store, src, recents)
+    }
+    return 0
+}
+
+// Runs a command in this process, on the vault file itself: the keychain's cached
+// key, or the master password from stdin or the terminal.
+fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
+    c := try new_sodium()
+    mut store := new_locked_vault_store()
+    kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
+    recents := new_json_recent_store(flint_config_dir())
+    status := run_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents)
+    store.vault_detach()
+    return status
+}
+
+// The whole CLI: help, then the running app if it serves this command's vault
+// (serve.cf), else the command in this process.
+fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
+    if wants_help(p) {
+        write_stdout(usage_text())
+        return 0
+    }
+    try check_command(p)
+    mut sec := try read_stdin_secrets(p)
+    if servable(p) {
+        reply := try ask_app(p, args, as_json, mut sec)
+        if reply.served {
+            write_stdout(reply.stdout)
+            write_stderr(reply.stderr)
+            return i32(reply.exit)
+        }
+    }
+    return run_local(p, sec, as_json)
+}

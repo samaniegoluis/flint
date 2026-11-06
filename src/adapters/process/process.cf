@@ -52,7 +52,48 @@ fn write_stderr(s: str) {
 
 // Writes `s` to stdout as is (no newline added).
 fn write_stdout(s: str) {
-    print(s)
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        flint_proc::write_out(s);
+    }
+}
+
+// From here until capture_end, this thread's stdout and stderr writes are kept, it
+// has no terminal and an empty stdin, and `current_dir()` is `cwd`: the app runs a
+// CLI command for a client on its socket this way (D-038).
+fn capture_begin(cwd: str) {
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        flint_proc::capture_begin(cwd);
+    }
+}
+
+// Ends this thread's capture and returns (stdout, stderr).
+fn capture_end() -> (str, str) {
+    mut o := ""
+    mut e := ""
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        flint_proc::capture_end(o, e);
+    }
+    return (o, e)
+}
+
+// The working directory: the client's during a capture, else the process's.
+fn current_dir() -> str {
+    mut dir := ""
+    mut captured := false
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        if (auto* c = flint_proc::capture_slot()) {
+            dir = c->cwd;
+            captured = true;
+        }
+    }
+    if captured {
+        return dir
+    }
+    return os.cwd()
 }
 
 // Flushes stdout and stderr and ends the process with `code`.
@@ -61,6 +102,14 @@ fn exit_process(code: i32) {
 }
 
 fn stdin_is_terminal() -> bool {
+    mut captured := false
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        captured = flint_proc::capturing();
+    }
+    if captured {
+        return false
+    }
     return os.is_tty()
 }
 

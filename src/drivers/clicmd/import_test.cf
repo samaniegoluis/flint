@@ -1,4 +1,4 @@
-package main
+package clicmd
 
 // The Tether import with every real adapter: the fixture Tether's own code wrote
 // (scripts/make-tether-fixture.sh), libargon2 for its key, libsodium to open each

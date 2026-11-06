@@ -1,8 +1,9 @@
-package main
+package clicmd
 
 // Command handlers. Each one parses its input, calls one use case and formats the
 // result (Principle 2). `open_target` is shared plumbing: it picks the vault and
-// gathers the master password when the keychain has no key for it.
+// gathers the master password when the keychain has no key for it, or, for a
+// command the running app serves (serve.cf), hands back the app's unlocked vault.
 
 import "core:fs"
 import "core:os"
@@ -10,6 +11,7 @@ import "ext:json"
 import "../../adapters/config"
 import "../../adapters/crypto"
 import "../../adapters/keychain"
+import "../../adapters/process"
 import "../../adapters/ssh"
 import "../../adapters/vault"
 import "../../application"
@@ -21,9 +23,9 @@ fn absolute_path(path: str) -> str {
         return path
     }
     if path.starts_with("./") {
-        return os.cwd() + "/" + path.substr(2)
+        return current_dir() + "/" + path.substr(2)
     }
-    return os.cwd() + "/" + path
+    return current_dir() + "/" + path
 }
 
 // A --vault selector: a path (anything with '/' or ending in .flint) is made
@@ -36,9 +38,33 @@ fn vault_selector(p: ParsedArgs) -> str {
     return sel
 }
 
-fn open_target(p: ParsedArgs, sec: SecretInput, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> VaultSession! {
+// Where a command's vault comes from: the keychain or a typed master password (the
+// CLI on its own), or the vault the running app holds (a command served over the
+// socket; `session` is that vault, already attached to the store).
+type VaultSource struct {
+    kc:      OsKeychain
+    served:  bool
+    session: VaultSession
+}
+
+fn local_vault_source(kc: OsKeychain) -> VaultSource {
+    return VaultSource{ kc: kc, served: false, session: VaultSession{ path: "", name: "", id: "", secrets_key: [], cached: false } }
+}
+
+fn served_vault_source(kc: OsKeychain, session: VaultSession) -> VaultSource {
+    return VaultSource{ kc: kc, served: true, session: session }
+}
+
+fn open_target(p: ParsedArgs, sec: SecretInput, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> VaultSession! {
     target := try resolve_vault(recents, vault_selector(p))
-    cached := unlock_vault(c, mut store, kc, recents, target.path, "")
+    if src.served {
+        // The app checked the target before running the command; this is a guard.
+        if target.path != src.session.path {
+            return error(coded(ERR_INTERNAL, "the app serves another vault than {target.path}"))
+        }
+        return src.session
+    }
+    cached := unlock_vault(c, mut store, src.kc, recents, target.path, "")
     if cached.has_value() {
         return cached.value()
     }
@@ -47,12 +73,12 @@ fn open_target(p: ParsedArgs, sec: SecretInput, c: Sodium, mut store: SqlVaultSt
         return error(msg)
     }
     password := try master_password_for(sec, target.name)
-    return unlock_vault(c, mut store, kc, recents, target.path, password)
+    return unlock_vault(c, mut store, src.kc, recents, target.path, password)
 }
 
 // ---- vault ---------------------------------------------------------------------
 
-fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb == "create" {
         try p.allow_flags("vault create", ["--name"])
@@ -61,7 +87,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         if !sec.has_master {
             password = try prompt_new_secret("master password")
         }
-        s := try create_vault(c, mut store, kc, recents, absolute_path(p.positional(2)), p.flag_value("--name"), password)
+        s := try create_vault(c, mut store, src.kc, recents, absolute_path(p.positional(2)), p.flag_value("--name"), password)
         info := session_info(s)
         if as_json {
             say(json.stringify(info))
@@ -75,7 +101,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try p.expect_args("vault open", 1, "<path>")
         path := absolute_path(p.positional(2))
         mut s := VaultSession{ path: "", name: "", id: "", secrets_key: [], cached: false }
-        cached := unlock_vault(c, mut store, kc, recents, path, "")
+        cached := unlock_vault(c, mut store, src.kc, recents, path, "")
         if cached.has_value() {
             s = cached.value()
         } else {
@@ -84,7 +110,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
                 return error(msg)
             }
             password := try master_password_for(sec, vault_name_from_path(path))
-            s = try unlock_vault(c, mut store, kc, recents, path, password)
+            s = try unlock_vault(c, mut store, src.kc, recents, path, password)
         }
         info := session_info(s)
         if as_json {
@@ -97,7 +123,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
     if verb == "unlock" {
         try p.allow_flags("vault unlock", [])
         try p.expect_args("vault unlock", 0, "[--vault <name|path>]")
-        s := try open_target(p, sec, c, mut store, kc, recents)
+        s := try open_target(p, sec, c, mut store, src, recents)
         info := session_info(s)
         if as_json {
             say(json.stringify(info))
@@ -110,7 +136,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try p.allow_flags("vault lock", [])
         try p.expect_args("vault lock", 0, "[--vault <name|path>]")
         target := try resolve_vault(recents, vault_selector(p))
-        try lock_vault(mut store, kc, target.path)
+        try lock_vault(mut store, src.kc, target.path)
         if as_json {
             say(json.stringify(VaultInfo{ path: target.path, name: target.name, format: VAULT_FORMAT_V1, cached: false }))
         } else {
@@ -122,7 +148,13 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try p.allow_flags("vault status", [])
         try p.expect_args("vault status", 0, "[--vault <name|path>]")
         target := try resolve_vault(recents, vault_selector(p))
-        st := try vault_status(c, mut store, kc, recents, target.path, target.name)
+        mut st := VaultStatus{ path: "", name: "", exists: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0 }
+        if src.served && target.path == src.session.path {
+            // Unlocked in the app: counts from the open store, no keychain read.
+            st = try open_vault_status(mut store, src.session)
+        } else {
+            st = try vault_status(c, mut store, src.kc, recents, target.path, target.name)
+        }
         if as_json {
             say(json.stringify(st))
         } else {
@@ -159,7 +191,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
     if verb == "rename" {
         try p.allow_flags("vault rename", [])
         try p.expect_args("vault rename", 1, "<new-name>")
-        s := try open_target(p, sec, c, mut store, kc, recents)
+        s := try open_target(p, sec, c, mut store, src, recents)
         old := s.name
         renamed := try rename_vault(mut store, recents, s, p.positional(2))
         info := session_info(renamed)
@@ -177,7 +209,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         if sel.contains("/") || sel.ends_with(".flint") {
             sel = absolute_path(sel)
         }
-        gone := try forget_recent(mut store, kc, recents, sel)
+        gone := try forget_recent(mut store, src.kc, recents, sel)
         if as_json {
             say(json.stringify(RemovedNote{ removed: "vault", name: gone.name }))
         } else {
@@ -190,7 +222,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
 
 // ---- group ---------------------------------------------------------------------
 
-fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb != "add" && verb != "list" && verb != "rename" && verb != "rm" {
         return error(coded(ERR_USAGE, "unknown command `flint group {verb}`; see `flint help`"))
@@ -205,7 +237,7 @@ fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
     } else {
         try p.expect_args("group rm", 1, "<path>")
     }
-    _ := try open_target(p, sec, c, mut store, kc, recents)
+    _ := try open_target(p, sec, c, mut store, src, recents)
     if verb == "list" {
         groups := try list_groups(store)
         if as_json {
@@ -318,7 +350,7 @@ fn host_field_flags() -> []str {
     return ["--label", "--hostname", "--port", "--user", "--group", "--tag", "--no-tags", "--color", "--notes", "--jump", "--cred", "--key", "--password", "--password-stdin", "--command", "--keep-shell", "--no-keep-shell"]
 }
 
-fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb == "add" {
         try p.allow_flags("host add", host_field_flags())
@@ -326,7 +358,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
         mut patch := try host_patch_from_flags(p, sec)
         patch.alias = p.positional(2)
         patch.set_alias = true
-        s := try open_target(p, sec, c, mut store, kc, recents)
+        s := try open_target(p, sec, c, mut store, src, recents)
         h := try add_host(c, mut store, s, patch)
         if as_json {
             say(json.stringify(h))
@@ -342,7 +374,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
         try p.allow_flags("host edit", allowed)
         try p.expect_args("host edit", 1, "<alias> [options]")
         patch := try host_patch_from_flags(p, sec)
-        s := try open_target(p, sec, c, mut store, kc, recents)
+        s := try open_target(p, sec, c, mut store, src, recents)
         h := try edit_host(c, mut store, s, p.positional(2), patch)
         if as_json {
             say(json.stringify(h))
@@ -354,7 +386,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if verb == "list" {
         try p.allow_flags("host list", ["--group", "--tag"])
         try p.expect_args("host list", 0, "[--group <path>] [--tag <tag>]")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         hosts := try list_hosts(store, p.flag_value("--group"), p.flag_value("--tag"))
         if as_json {
             say(json.stringify(hosts))
@@ -366,7 +398,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if verb == "show" {
         try p.allow_flags("host show", [])
         try p.expect_args("host show", 1, "<alias>")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         h := try show_host(store, p.positional(2))
         if as_json {
             say(json.stringify(h))
@@ -376,13 +408,13 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
         return
     }
     if verb == "test" {
-        try cmd_host_test(p, sec, as_json, c, mut store, kc, recents)
+        try cmd_host_test(p, sec, as_json, c, mut store, src, recents)
         return
     }
     if verb == "rm" {
         try p.allow_flags("host rm", [])
         try p.expect_args("host rm", 1, "<alias>")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         h := try remove_host(mut store, p.positional(2))
         if as_json {
             say(json.stringify(RemovedNote{ removed: "host", name: h.alias }))
@@ -396,7 +428,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
 
 // ---- key -----------------------------------------------------------------------
 
-fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore, inspector: LibsshKeyInspector) -> void! {
+fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, inspector: LibsshKeyInspector) -> void! {
     verb := p.positional(1)
     if verb == "add" {
         try p.allow_flags("key add", ["--file", "--key-stdin", "--passphrase", "--passphrase-stdin"])
@@ -416,7 +448,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store:
         if !sec.has_passphrase && p.has_flag("--passphrase") {
             passphrase = try prompt_secret("key passphrase")
         }
-        s := try open_target(p, sec, c, mut store, kc, recents)
+        s := try open_target(p, sec, c, mut store, src, recents)
         k := try add_key(c, mut store, inspector, s, p.positional(2), content, passphrase)
         if as_json {
             say(json.stringify(k))
@@ -428,7 +460,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store:
     if verb == "list" {
         try p.allow_flags("key list", [])
         try p.expect_args("key list", 0, "")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         keys := try list_keys(store)
         if as_json {
             say(json.stringify(keys))
@@ -440,7 +472,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store:
     if verb == "show" {
         try p.allow_flags("key show", [])
         try p.expect_args("key show", 1, "<name>")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         k := try show_key(store, p.positional(2))
         if as_json {
             say(json.stringify(k))
@@ -452,7 +484,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store:
     if verb == "rename" {
         try p.allow_flags("key rename", [])
         try p.expect_args("key rename", 2, "<name> <new-name>")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         k := try rename_key(mut store, p.positional(2), p.positional(3))
         if as_json {
             say(json.stringify(k))
@@ -464,7 +496,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store:
     if verb == "rm" {
         try p.allow_flags("key rm", [])
         try p.expect_args("key rm", 1, "<name>")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         k := try remove_key(mut store, p.positional(2))
         if as_json {
             say(json.stringify(RemovedNote{ removed: "key", name: k.name }))
@@ -513,7 +545,7 @@ fn cred_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> CredPatch! {
     return patch
 }
 
-fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore) -> void! {
+fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb == "add" {
         try p.allow_flags("cred add", ["--user", "--key", "--password", "--password-stdin"])
@@ -521,7 +553,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
         mut patch := try cred_patch_from_flags(p, sec)
         patch.name = p.positional(2)
         patch.set_name = true
-        s := try open_target(p, sec, c, mut store, kc, recents)
+        s := try open_target(p, sec, c, mut store, src, recents)
         v := try add_cred(c, mut store, s, patch)
         if as_json {
             say(json.stringify(v))
@@ -534,7 +566,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
         try p.allow_flags("cred edit", ["--name", "--user", "--key", "--password", "--password-stdin", "--no-password"])
         try p.expect_args("cred edit", 1, "<name> [options]")
         patch := try cred_patch_from_flags(p, sec)
-        s := try open_target(p, sec, c, mut store, kc, recents)
+        s := try open_target(p, sec, c, mut store, src, recents)
         v := try edit_cred(c, mut store, s, p.positional(2), patch)
         if as_json {
             say(json.stringify(v))
@@ -546,7 +578,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if verb == "list" {
         try p.allow_flags("cred list", [])
         try p.expect_args("cred list", 0, "")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         list := try list_creds(store)
         if as_json {
             say(json.stringify(list))
@@ -558,7 +590,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if verb == "show" {
         try p.allow_flags("cred show", [])
         try p.expect_args("cred show", 1, "<name>")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         v := try show_cred(store, p.positional(2))
         if as_json {
             say(json.stringify(v))
@@ -570,7 +602,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if verb == "rm" {
         try p.allow_flags("cred rm", [])
         try p.expect_args("cred rm", 1, "<name>")
-        _ := try open_target(p, sec, c, mut store, kc, recents)
+        _ := try open_target(p, sec, c, mut store, src, recents)
         v := try remove_cred(mut store, p.positional(2))
         if as_json {
             say(json.stringify(RemovedNote{ removed: "credential", name: v.name }))
@@ -584,7 +616,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
 
 // ---- import --------------------------------------------------------------------
 
-fn cmd_import(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: SqlVaultStore, kc: OsKeychain, recents: JsonRecentStore, inspector: LibsshKeyInspector) -> void! {
+fn cmd_import(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, inspector: LibsshKeyInspector) -> void! {
     source := p.positional(1)
     if source != "tether" {
         return error(coded(ERR_USAGE, "Flint imports from 'tether' only: `flint import tether <file>`"))
@@ -592,7 +624,7 @@ fn cmd_import(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut sto
     try p.allow_flags("import tether", ["--password-stdin", "--dry-run"])
     try p.expect_args("import tether", 1, "<file> [--password-stdin] [--dry-run]")
     file := absolute_path(p.positional(2))
-    s := try open_target(p, sec, c, mut store, kc, recents)
+    s := try open_target(p, sec, c, mut store, src, recents)
     mut password := sec.password
     if !sec.has_password {
         password = try prompt_secret("Tether master password")

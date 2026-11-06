@@ -1,4 +1,4 @@
-// Output formatting of src/drivers/cli/output.cf: two-space columns, "-" for empty.
+// Output formatting of src/drivers/clicmd/output.cf: two-space columns, "-" for empty.
 import type { Host } from './vault.ts';
 
 export function table(headers: string[], rows: string[][]): string[] {

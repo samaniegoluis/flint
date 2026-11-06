@@ -1,17 +1,15 @@
 package main
 
-// The `flint` CLI driver and composition root: it builds the adapters, parses the
-// command line and hands each command to its handler (commands.cf).
+// The `flint` CLI's entry point and composition root. The command handlers live in
+// src/drivers/clicmd, shared with the app, which runs them for a command the CLI
+// sends it over the local socket (D-038).
 
-import "core:os"
 import "ext:json"
-import "../../adapters/config"
 import "../../adapters/crypto"
-import "../../adapters/keychain"
 import "../../adapters/process"
 import "../../adapters/ssh"
 import "../../adapters/vault"
-import "../../domain"
+import "../clicmd"
 
 FLINT_VERSION: str = "0.0.0-dev"
 
@@ -20,72 +18,6 @@ type VersionInfo struct {
     libssh:    str `json:"libssh"`
     libsodium: str `json:"libsodium"`
     sqlite:    str `json:"sqlite"`
-}
-
-fn usage_text() -> str {
-    return `flint - SSH client over one encrypted vault
-
-Usage: flint [--json] [--vault <name|path>] <command> [args] [flags]
-
-Vaults
-  vault create <path> [--name <name>]   Create a vault (asks for a master password)
-  vault open <path>                     Open an existing vault and make it current
-  vault list                            Recent vaults; * marks the current one
-  vault use <name|path>                 Make a recent vault the current one
-  vault status                          Path, lock state and counts
-  vault unlock                          Cache the vault key in the OS keychain
-  vault lock                            Remove the cached key from this machine
-  vault rename <new-name>               Rename the vault (its file is not moved)
-  vault forget <name|path>              Drop a vault from the recent list
-
-Groups
-  group add <path>                      Create a group, e.g. homelab/proxmox
-  group list | group rename <path> <new-name> | group rm <path>
-
-Hosts
-  host add <alias> --hostname <host> [--port N] [--user U] [--label L]
-           [--group <path>] [--tag T]... [--color #rrggbb] [--notes N]
-           [--jump <alias>] [--cred <name>] [--key <name>]
-           [--password | --password-stdin] [--command <cmd> [--no-keep-shell]]
-                                        --command runs on connect, then a login
-                                        shell (--no-keep-shell: ends the session)
-  host edit <alias> [same flags] [--alias <new>] [--no-tags] [--no-password]
-           [--command ""] [--keep-shell]
-  host list [--group <path>] [--tag <tag>] | host show <alias> | host rm <alias>
-  host test <alias> [--timeout <secs>] [--accept-new-host-key]
-                                        Connect, verify the host key, log in, hang up
-
-Keys
-  key add <name> (--file <path> | --key-stdin) [--passphrase | --passphrase-stdin]
-  key list | key show <name> | key rename <name> <new-name> | key rm <name>
-
-Credentials
-  cred add <name> --user <user> [--key <name>] [--password | --password-stdin]
-  cred edit <name> [--name N] [--user U] [--key K] [--password | --password-stdin | --no-password]
-  cred list | cred show <name> | cred rm <name>
-
-SSH
-  connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]
-                                        Interactive shell, through jump hosts; runs
-                                        the host's --command unless --no-command
-  exec <alias> [--timeout <secs>] [--exec-timeout <secs>] [--accept-new-host-key]
-       -- <command>                     Run one command; exits with its status
-  known-host list | known-host rm <alias|address>
-
-Import
-  import tether <file> [--password-stdin] [--dry-run]
-                                        Copy a Tether vault into this one (asks for
-                                        Tether's master password); --dry-run reports only
-
-Global flags
-  --json            Write JSON to stdout (errors as JSON to stderr)
-  --vault <v>       Use this vault instead of the current one
-  --master-stdin    Read the master password from the first line of stdin
-  --version, -V     Print the version and linked libraries
-
-Secrets are never taken from arguments: Flint prompts on the terminal, or reads
-them from stdin with the --*-stdin flags.
-`
 }
 
 fn print_version(as_json: bool) {
@@ -103,63 +35,6 @@ fn print_version(as_json: bool) {
     say("  libssh     {info.libssh}")
     say("  libsodium  {info.libsodium}")
     say("  sqlite     {info.sqlite}")
-}
-
-// Runs one command. Returns the process exit status: 0, or the remote status of
-// `connect` and `exec`.
-fn run_cli(p: ParsedArgs, as_json: bool) -> i32! {
-    if p.has_flag("--version") || p.has_flag("-V") {
-        print_version(as_json)
-        return 0
-    }
-    noun := p.positional(0)
-    if noun.len() == 0 || noun == "help" || p.has_flag("--help") || p.has_flag("-h") {
-        write_stdout(usage_text())
-        return 0
-    }
-    session_noun := noun == "connect" || noun == "exec"
-    if !session_noun && noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" && noun != "known-host" && noun != "import" {
-        return error(coded(ERR_USAGE, "unknown command '{noun}'; see `flint help`"))
-    }
-    if p.positional(1).len() == 0 {
-        if session_noun {
-            return error(coded(ERR_USAGE, "`flint {noun}` needs a host alias; see `flint help`"))
-        }
-        return error(coded(ERR_USAGE, "`flint {noun}` needs a command; see `flint help`"))
-    }
-    sec := try read_stdin_secrets(p)
-    c := try new_sodium()
-    mut store := new_sql_vault_store()
-    kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
-    recents := new_json_recent_store(flint_config_dir())
-    mut status: i32! = 0
-    if noun == "connect" {
-        status = cmd_connect(p, sec, as_json, c, mut store, kc, recents)
-    } else if noun == "exec" {
-        status = cmd_exec(p, sec, as_json, c, mut store, kc, recents)
-    } else {
-        mut result: void! = {}
-        if noun == "vault" {
-            result = cmd_vault(p, sec, as_json, c, mut store, kc, recents)
-        } else if noun == "group" {
-            result = cmd_group(p, sec, as_json, c, mut store, kc, recents)
-        } else if noun == "host" {
-            result = cmd_host(p, sec, as_json, c, mut store, kc, recents)
-        } else if noun == "key" {
-            result = cmd_key(p, sec, as_json, c, mut store, kc, recents, new_libssh_key_inspector())
-        } else if noun == "import" {
-            result = cmd_import(p, sec, as_json, c, mut store, kc, recents, new_libssh_key_inspector())
-        } else if noun == "known-host" {
-            result = cmd_known_host(p, sec, as_json, c, mut store, kc, recents)
-        } else {
-            result = cmd_cred(p, sec, as_json, c, mut store, kc, recents)
-        }
-        if !result.has_value() {
-            status = error("{result.error().message()}")
-        }
-    }
-    store.vault_detach()
-    return status
 }
 
 fn main() {
@@ -181,7 +56,12 @@ fn main() {
         fail_with("{parsed.error().message()}", as_json)
         return
     }
-    done := run_cli(parsed.value(), as_json)
+    p := parsed.value()
+    if p.has_flag("--version") || p.has_flag("-V") {
+        print_version(as_json)
+        return
+    }
+    done := run_cli(p, args, as_json)
     if !done.has_value() {
         fail_with("{done.error().message()}", as_json)
         return

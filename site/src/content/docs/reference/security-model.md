@@ -57,6 +57,12 @@ that runs Flint as you:
 the cache off, and [Limits today](/guides/ai-agents/#limits-today) how to narrow what an
 agent can reach.
 
+**Started:** while the app holds a vault unlocked, the CLI's vault commands run inside the
+app over a local socket (mode 0600 in the config folder; a connection from another user
+is closed unread), with no cached key read
+([details](/guides/vaults/#the-cli-and-the-open-app)). Any program running as you can
+still use that socket, as it can run `flint`: approving each caller comes next.
+
 ## Next
 
 Flint is moving the access decision from the OS keychain into Flint itself, the same on
@@ -79,5 +85,6 @@ macOS, Linux and Windows:
   password only after you allow it.
 - **An activity log** of what each approved caller ran.
 
-None of this is built yet; it is planned for the next version. The design and the reasons
+The first step is in: the CLI's vault commands already run inside the open app. The
+rest is being built now. The design and the reasons
 behind it are in the repository: `docs/vault-access-model.md`.

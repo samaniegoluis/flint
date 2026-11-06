@@ -645,7 +645,7 @@ The entries below were found while building milestone 01 against cfire `3963814`
 - **Workaround (M02):** `src/adapters/process/` reads argv through `_NSGetArgv` (macOS)
   or `/proc/self/cmdline` (Linux), writes stderr, exits with a code and reads passwords
   from `/dev/tty` with echo off, in `native/flint_process.hpp`. The subcommand and flag
-  parser is plain cfire in `src/drivers/cli/args.cf`.
+  parser is plain cfire in `src/drivers/clicmd/args.cf`.
 - **Ideal:** `os.args() -> []str`, `eprintln`, `os.exit(code)`, and subcommand plus
   positional support in `core:cli`.
 
@@ -1153,7 +1153,7 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Repro (466751b):** `mut rows: [][]str = []` then `rows.push(["a", "b"])` → clang
   `no matching function for call to 'vec_push'`. `push` now lowers to the template
   `cfire::vec_push(vec, U&& val)`, which cannot deduce a braced list.
-- **Workaround:** `row: []str = ["a", "b"]; rows.push(row)` (`src/drivers/cli/output.cf`).
+- **Workaround:** `row: []str = ["a", "b"]; rows.push(row)` (`src/drivers/clicmd/output.cf`).
 - **Ideal:** lower the literal with the element type (`std::vector<std::string>{…}`), as
   the CF-040 fix does for `or []`.
 
@@ -1369,3 +1369,19 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** `app.tray(icon_path, tooltip)` with `tray.add_item(title, event)`,
   `app.hide_window()` / `app.show_window()`, and an option for the window's close button
   to hide instead of quit.
+
+### CF-083 · missing · `confirmed`: a task cannot spawn into the scope it runs in
+- **At `2d8613d`:** inside `async.scope(workers: N) |scope| { scope.spawn || { … } }`, a
+  closure given to `scope.spawn` that calls `scope.spawn` again does not compile: the
+  capture copies `cfire::async::Scope`, whose `std::vector<std::future<void>>` member has
+  no copy constructor (`no matching function for call to '__construct_at'`, "in implicit
+  copy constructor for 'cfire::async::Scope'").
+- **Repro:** `async.scope(workers: 4) |scope| { scope.spawn || { scope.spawn || {} } }`.
+- **Why Flint needs it:** the app's socket server accepts on one task and would answer
+  each client on a task of its own.
+- **Workaround:** the accept loop answers one client at a time on its own task
+  (`src/drivers/gui/main.cf`, `serve.cf`); commands on one vault run one at a time
+  anyway (the vault holder's lock), and the CLI asks every secret before it connects,
+  so no client holds the loop while a person types.
+- **Ideal:** capture the scope by reference (it outlives every task it joins), or a
+  `scope.handle()` that tasks can spawn through.

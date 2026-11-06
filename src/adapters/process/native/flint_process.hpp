@@ -8,7 +8,10 @@
 // - raw mode restored at exit and on SIGINT/SIGTERM/SIGHUP (os.make_raw restores
 //   only at scope exit, and os.on_signal runs a std::function inside the handler);
 // - the window size, 0x0 when unknown (os.term_size reports 80 columns);
-// - the executable's folder and the OS name (CF-031).
+// - the executable's folder and the OS name (CF-031);
+// - a per-thread capture of stdout and stderr, with no terminal and an empty stdin,
+//   for a CLI command the app runs for a client on its socket (D-038): the output
+//   goes back over the socket, and nothing reaches the app's own streams or tty.
 #pragma once
 #include <cstdio>
 #include <cstdlib>
@@ -35,13 +38,48 @@
 
 namespace flint_proc {
 
+struct Capture {
+    std::string out;
+    std::string err;
+    std::string cwd;
+};
+
+inline Capture*& capture_slot() {
+    static thread_local Capture* slot = nullptr;
+    return slot;
+}
+
+inline void capture_begin(const std::string& cwd) {
+    delete capture_slot();
+    capture_slot() = new Capture{"", "", cwd};
+}
+
+inline void capture_end(std::string& out, std::string& err) {
+    Capture* c = capture_slot();
+    if (c) {
+        out = std::move(c->out);
+        err = std::move(c->err);
+        delete c;
+    }
+    capture_slot() = nullptr;
+}
+
+inline bool capturing() { return capture_slot() != nullptr; }
+
+inline void write_out(const std::string& s) {
+    if (Capture* c = capture_slot()) { c->out += s; return; }
+    std::fwrite(s.data(), 1, s.size(), stdout);
+}
+
 inline void write_err(const std::string& s) {
+    if (Capture* c = capture_slot()) { c->err += s; return; }
     std::fflush(stdout);
     std::fwrite(s.data(), 1, s.size(), stderr);
     std::fflush(stderr);
 }
 
 inline bool has_tty() {
+    if (capturing()) return false;
     int fd = open("/dev/tty", O_RDWR | O_NOCTTY);
     if (fd < 0) return false;
     ::close(fd);
@@ -49,6 +87,7 @@ inline bool has_tty() {
 }
 
 inline std::string read_stdin_all() {
+    if (capturing()) return "";
     std::string data((std::istreambuf_iterator<char>(std::cin)), std::istreambuf_iterator<char>());
     return data;
 }
@@ -56,6 +95,7 @@ inline std::string read_stdin_all() {
 // Prompts on /dev/tty and reads one line with echo off. Returns -1 when there is no
 // terminal, 0 on success.
 inline int read_secret_tty(const std::string& prompt, std::string& out) {
+    if (capturing()) return -1;
     int fd = open("/dev/tty", O_RDWR | O_NOCTTY);
     if (fd < 0) return -1;
     (void)!write(fd, prompt.data(), prompt.size());
@@ -80,6 +120,7 @@ inline int read_secret_tty(const std::string& prompt, std::string& out) {
 // Prompts on /dev/tty and reads one line with echo on. Returns -1 when there is
 // no terminal.
 inline int read_line_tty(const std::string& prompt, std::string& out) {
+    if (capturing()) return -1;
     int fd = open("/dev/tty", O_RDWR | O_NOCTTY);
     if (fd < 0) return -1;
     (void)!write(fd, prompt.data(), prompt.size());

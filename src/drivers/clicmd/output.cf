@@ -1,4 +1,4 @@
-package main
+package clicmd
 
 // Output formatting: data to stdout, diagnostics to stderr (Principle 7). Views come
 // from the application layer and carry no secret values (Principle 6).
@@ -26,8 +26,8 @@ fn say(line: str) {
     write_stdout(line + "\n")
 }
 
-// Prints an error and ends the process with its stable exit code.
-fn fail_with(msg: str, as_json: bool) {
+// Prints an error to stderr and returns its stable exit code.
+fn report_error(msg: str, as_json: bool) -> i32 {
     code := error_code_of(msg)
     text := error_text_of(msg)
     if as_json {
@@ -35,7 +35,12 @@ fn fail_with(msg: str, as_json: bool) {
     } else {
         write_stderr("flint: " + text + "\n")
     }
-    exit_process(exit_code_for(code))
+    return exit_code_for(code)
+}
+
+// Prints an error and ends the process with its stable exit code.
+fn fail_with(msg: str, as_json: bool) {
+    exit_process(report_error(msg, as_json))
 }
 
 fn pad_right(s: str, width: usize) -> str {

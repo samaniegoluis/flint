@@ -175,6 +175,30 @@ fn main() {
             }
             return ok_json()
         }
+        // The CLI's way into the vault unlocked here (serve.cf, D-038).
+        mut listener := start_serving(config_dir)
+        if listener.open {
+            loop_listener := listener
+            loop_store := store
+            loop_app := app
+            loop_st := st
+            scope.spawn || {
+                for !loop_listener.stopped() {
+                    got := loop_listener.accept_wait(SERVE_ACCEPT_WAIT_MS)
+                    if !got.has_value() {
+                        break
+                    }
+                    conn := got.value()
+                    if conn.open {
+                        // One at a time: a task cannot spawn into this scope (CF-083).
+                        mut cn := conn
+                        mut s := loop_store
+                        mut a := loop_app
+                        serve_client(mut cn, c, mut s, kc, recents, loop_st, mut a)
+                    }
+                }
+            }
+        }
         install_app_menu("Flint")
         // On Linux the end-to-end run opens the real window under xvfb-run
         // (scripts/linux), and the page quits when done.
@@ -184,6 +208,7 @@ fn main() {
             app.run()
         }
         gui_session_close_all()
+        listener.close()
     }
     // Waits for an unlock or create still running on a worker, then closes.
     st.hold()

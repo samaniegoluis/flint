@@ -4,7 +4,7 @@
 // show the welcome screen.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, FlintError, toFlintError } from '../api/backend';
+import { api, FlintError, on, toFlintError } from '../api/backend';
 import type { AppInfo, Catalog, RecentView, Settings, VaultInfo } from '../api/types';
 import type { Os } from '../lib/keymap';
 
@@ -190,6 +190,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
+
+  // A command from the `flint` CLI ran against this vault in the app (D-038): show
+  // what it changed.
+  useEffect(() => on<{ path: string; name: string }>('vault:changed', (e) => {
+    if (!vault || e.path !== vault.path) return;
+    if (e.name !== vault.name) setVault({ ...vault, name: e.name });
+    refreshCatalog().catch(() => {});
+    refreshRecents().catch(() => {});
+  }), [vault, refreshCatalog, refreshRecents]);
 
   // Startup.
   useEffect(() => {
