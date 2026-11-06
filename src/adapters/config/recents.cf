@@ -12,11 +12,11 @@ import "../../domain"
 
 // File shape. Entries use a local struct: a field whose type comes from another
 // package is emitted before that type is complete (CF-033).
-// `id` (the vault id, D-030) came in milestone 07; older files have none.
+// `id` (the vault id, D-030) came in milestone 07; in older files it reads as "".
 type RecentEntry struct {
     path: str `json:"path"`
     name: str `json:"name"`
-    id:   str `json:"id" default:""`
+    id:   str `json:"id"`
 }
 
 type RecentFile struct {

@@ -30,7 +30,7 @@ What Tether already does and Flint must not lose.
 | OSC 52 clipboard (copy from Neovim/tmux/Zellij) | `mvp` | Milestone 08 |
 | Dead-key / IME correctness, in-order input delivery | `mvp` | Milestone 08. Both were real Tether bugs |
 | Customisable keyboard shortcuts | `next` | |
-| Remember collapsed groups per vault | `mvp` | Milestone 07 (D-030) |
+| Remember collapsed groups per vault | `done` | Milestone 07 (D-030) |
 | Auto-updater from GitHub releases + "What's new" screen | `later` | |
 | Import an existing Tether vault | `mvp` | Milestone 08. One-shot migration for the author |
 | **Test connection** in the host editor (on the unsaved draft) and `flint host test <alias>`: dial, verify the host key like a real connect, authenticate, close | `mvp` | Milestone 06. Tether has it (`TestConnection`); raised by the owner while using the MVP |
@@ -38,7 +38,7 @@ What Tether already does and Flint must not lose.
 | **Initial command per host** (e.g. `herdr` on codebox), with a per-host "return to shell when it exits" option. Run through the remote login shell, like `ssh -t host cmd`, not instead of it as Tether did; `flint connect` honours it, `--no-command` skips it | `mvp` | Milestone 06 (D-031, migration 003). Tether has `InitialCommand` |
 | GUI: open a session **without the initial command** (a palette action, e.g. "Connect to codebox without herdr"), like `flint connect --no-command` | `next` | Found while building milestone 06: in the app a broken initial command can only be cleared in the host editor |
 | `flint host test @group` / test every host in a folder from the GUI, with a summary | `idea` | Milestone 06 tests one host |
-| Sidebar open/closed remembered, and **Collapse all / Expand all** in the host tree, all remembered per machine | `mvp` | Milestone 07 (D-030). Tether has both (config file beside the app) |
+| Sidebar open/closed remembered, and **Collapse all / Expand all** in the host tree, all remembered per machine | `done` | Milestone 07 (D-030). Tether has both (config file beside the app) |
 
 ## 2. CLI
 
@@ -87,7 +87,7 @@ What Tether already does and Flint must not lose.
 | Multi-recipient vaults: encrypt to teammates' public keys (age-style), revoke access | `later` | Replaces "share the master password" |
 | Short-lived SSH certificates: the vault acts as a CA, `flint share --host X --ttl 8h` | `idea` | Teleport/Smallstep, personal-sized |
 | Local change log + per-record merge for concurrent edits on two machines | `idea` | Only if conflicts become a real problem |
-| Rename a vault: `flint vault rename <name>` and **Rename** in Manage vaults / Settings → Vault (the name lives in the vault's meta and is copied to `recents.json`, D-021). Moving the file stays a Finder job, but opening a moved vault replaces its stale recent entry (same salt, D-017) instead of leaving a dead one | `mvp` | Milestone 07. Raised in the M04 owner walkthrough: the owner wants to turn a test vault into the real one. Today the name is fixed at creation |
+| Rename a vault: `flint vault rename <name>` and **Rename** in Manage vaults / Settings → Vault (the name lives in the vault's meta and is copied to `recents.json`, D-021). Moving the file stays a Finder job, but opening a moved vault replaces its stale recent entry (same salt, D-017) instead of leaving a dead one | `done` | Milestone 07. Raised in the M04 owner walkthrough: the owner wants to turn a test vault into the real one. Today the name is fixed at creation |
 | Change the master password (`flint vault passwd`): new salt, `sqlcipher_export` re-key, re-seal secrets | `next` | Not in M02. Changes the keychain account (salt-based, D-017) |
 | Auto-lock: forget the cached key after N idle days, or require Touch ID / the login password to read it | `idea` | Today the cache lasts until `flint vault lock` |
 | **Touch ID to open a vault** (macOS): the cached key is released only after Touch ID, or the login password when there is no sensor; a per-machine setting, offered when the Mac has biometrics (`LAContext.canEvaluatePolicy`) | `next` | Raised in the M04 owner walkthrough. Today, once **Always Allow** is given, anyone using the logged-in Mac opens the vault with no prompt. Strongest form: a Keychain item with `SecAccessControl` `.userPresence`, which needs the data-protection keychain and so a Developer ID-signed build with a keychain-access-groups entitlement; **no interim `LAContext` check**: on an unsigned build it would add Touch ID on top of the Keychain dialog after every update, and the owner prefers no Touch ID to two prompts (M04 owner walkthrough). So this lands with the signed build, as one Touch ID per open. Linux: polkit/fprintd, later |
@@ -115,7 +115,7 @@ What Tether already does and Flint must not lose.
 | Dual-pane SFTP, remote ↔ remote | `later` | |
 | Quick-edit remote files (CodeMirror) | `later` | |
 | Light theme polish, more accents | `next` | |
-| Terminal colour themes in Settings → Terminal, as in Tether: Default, Catppuccin, Tokyo Night, Aura, Dracula, Nord, each with a dark and a light palette | `mvp` | Milestone 07. Raised in the M04 owner walkthrough (the owner uses Aura). Port the palettes from Tether's `frontend/src/theme/terminalThemes.js`; they replace only the 16 ANSI colours and the terminal background/foreground/cursor, so no new design pass is needed |
+| Terminal colour themes in Settings → Terminal, as in Tether: Default, Catppuccin, Tokyo Night, Aura, Dracula, Nord, each with a dark and a light palette | `done` | Milestone 07. Raised in the M04 owner walkthrough (the owner uses Aura). Port the palettes from Tether's `frontend/src/theme/terminalThemes.js`; they replace only the 16 ANSI colours and the terminal background/foreground/cursor, so no new design pass is needed |
 | Passphrase prompt for a key whose passphrase is not stored (design screen 10b), and an encrypted on-disk key | `next` | M04 has no such prompt: keys added to the vault keep their passphrase |
 | Host key prompt: **Connect once** (trust without recording) | `idea` | Needs a third trust state in the core (D-025) |
 | Password prompt: **Save to vault** (create and link a credential from the typed password) | `next` | Left out of M04 |

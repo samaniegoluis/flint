@@ -11,6 +11,8 @@ import { Icon, type IconName } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { Picker } from '../ui/Picker';
 import type { Confirm } from './KeysPage';
+import { RenameVault } from '../shell/VaultSwitcher';
+import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
 
 export type SettingsSection = 'appearance' | 'terminal' | 'shortcuts' | 'vault';
 
@@ -140,8 +142,19 @@ function Stepper({ value, onChange, min, max, step, format, label }: { value: nu
   );
 }
 
+// A theme's swatch: its background with four of its ANSI colours.
+function ThemeSwatch({ vars }: { vars: React.CSSProperties }) {
+  return (
+    <span aria-hidden="true" style={{ ...vars, display: 'inline-flex', gap: 2, padding: 3, borderRadius: 4, background: 'var(--term-bg)', border: '1px solid var(--border-subtle)' }}>
+      {[1, 2, 4, 5].map((n) => <span key={n} style={{ width: 6, height: 10, borderRadius: 1, background: `var(--ansi-${n})` }} />)}
+    </span>
+  );
+}
+
 function TerminalSettings() {
   const [s, set] = useSetting();
+  const { dark } = useApp();
+  const themeVars = paletteVars(themePalette(s.term_theme, dark));
   const [fonts, setFonts] = useState<string[]>([]);
   useEffect(() => { api.fonts().then((r) => setFonts(r.fonts)).catch(() => setFonts([])); }, []);
   const nerd = (f: string) => /nerd/i.test(f);
@@ -149,6 +162,16 @@ function TerminalSettings() {
   return (
     <>
       <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', paddingBottom: 'var(--sp-2)' }}>Terminal</h1>
+      <Row title="Colours" desc={`The terminal's palette, in its ${dark ? 'dark' : 'light'} variant: it follows the app's theme.`}>
+        <div className="seg" role="radiogroup" aria-label="Terminal colours" style={{ flexWrap: 'wrap' }}>
+          {TERM_THEMES.map((t) => (
+            <button key={t.id} type="button" role="radio" aria-checked={s.term_theme === t.id} aria-pressed={s.term_theme === t.id}
+              onClick={() => set({ term_theme: t.id })} style={{ gap: 'var(--sp-2)' }}>
+              <ThemeSwatch vars={paletteVars(dark ? t.dark : t.light)} />{t.label}
+            </button>
+          ))}
+        </div>
+      </Row>
       <Row title="Font" desc="Monospaced fonts installed on this machine. Nerd Font builds show prompt glyphs.">
         <div style={{ maxWidth: 360 }}>
           <Picker label="Terminal font" value={s.term_font} onChange={(v) => set({ term_font: v })} placeholder="JetBrains Mono"
@@ -176,8 +199,8 @@ function TerminalSettings() {
           <Toggle on={s.term_cursor_blink} onChange={(v) => set({ term_cursor_blink: v })} label="Blink" />
         </div>
       </Row>
-      <Row title="Preview" desc="Uses the active theme's ANSI palette.">
-        <div className="term" style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', fontFamily: family, fontSize: s.term_font_size, lineHeight: s.term_line_height / 100 }}>
+      <Row title="Preview" desc="Uses the chosen colours and font.">
+        <div className="term" style={{ ...themeVars, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', fontFamily: family, fontSize: s.term_font_size, lineHeight: s.term_line_height / 100 }}>
           <div className="l"><span className="g">luis</span><span className="d">@</span><span className="b">prod-api-01</span> <span className="c">~/srv/api</span> <span className="m">(main)</span> <span className="pc">❯</span> ls</div>
           <div className="l"><span className="b">dist</span>  <span className="b">src</span>  <span className="g">deploy.sh</span>  package.json  <span className="r">release.tar.gz</span></div>
           <div className="l"><span className="d"># 0O 1lI {'{}'}[] =&gt; != === -&gt;</span></div>
@@ -220,6 +243,7 @@ const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (c: Confirm) => void }) {
   const { vault, catalog, os, refreshCatalog, notify, closeVault } = useApp();
   const [st, setSt] = useState<VaultStatus | null>(null);
+  const [renaming, setRenaming] = useState(false);
   // Sessions record trusted keys on their worker, and the CLI can change the file:
   // read the catalog again when the page opens, or Known hosts shows a stale list.
   useEffect(() => { refreshCatalog().catch(() => {}); }, [refreshCatalog]);
@@ -237,6 +261,11 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
           {st && <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>{count(st.hosts, 'host')} · {count(st.keys, 'key')} · {count(st.credentials, 'credential')} · {count(st.groups, 'group')} · format v{vault.format}</span>}
         </div>
       </div>
+      <Row title="Name" desc="Shown in the vault switcher and used by flint --vault. The file keeps its name.">
+        {renaming
+          ? <RenameVault onDone={() => setRenaming(false)} />
+          : <div className="row"><button className="btn btn-secondary btn-sm" onClick={() => setRenaming(true)}>Rename…</button></div>}
+      </Row>
       <Row title="On this device" desc={st?.cached ? `The vault key is in ${keychain}.` : 'This machine asks for the master password.'}>
         <div className="row" style={{ gap: 'var(--sp-3)' }}>
           <span className={'badge ' + (st?.cached ? 'ok' : '')}>{st?.cached ? 'Remembered' : 'Not remembered'}</span>

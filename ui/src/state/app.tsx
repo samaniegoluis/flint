@@ -18,7 +18,7 @@ export interface Toast {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system', accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
-  term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: true,
+  term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: true, term_theme: 'default',
 };
 
 const EMPTY_CATALOG: Catalog = { groups: [], hosts: [], keys: [], credentials: [], known_hosts: [] };
@@ -43,6 +43,7 @@ interface AppApi {
   closeVault: () => Promise<void>;
   openVaultFile: () => Promise<void>;
   switchTo: (r: RecentView) => Promise<void>;
+  renameVault: (name: string) => Promise<VaultInfo>;
   refreshCatalog: () => Promise<Catalog>;
   saveSettings: (s: Settings) => Promise<void>;
   notify: (text: string, kind?: Toast['kind']) => void;
@@ -107,6 +108,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await refreshRecents();
     setPhase('main');
   }, [refreshCatalog, refreshRecents]);
+
+  // Renames the open vault: its name inside the file and in the recent list.
+  const renameVault = useCallback(async (name: string) => {
+    const v = await api.rename(name);
+    setVault(v);
+    await refreshRecents();
+    return v;
+  }, [refreshRecents]);
 
   const unlock = useCallback(async (path: string, password: string) => {
     const v = await api.unlock(path, password);
@@ -217,10 +226,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppApi>(() => ({
     info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError,
-    go: setPhase, setTarget, refreshRecents, unlock, create, closeVault, openVaultFile, switchTo,
+    go: setPhase, setTarget, refreshRecents, unlock, create, closeVault, openVaultFile, switchTo, renameVault,
     refreshCatalog, saveSettings, notify, fail,
   }), [info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError, refreshRecents,
-    unlock, create, closeVault, openVaultFile, switchTo, refreshCatalog, saveSettings, notify, fail]);
+    unlock, create, closeVault, openVaultFile, switchTo, renameVault, refreshCatalog, saveSettings, notify, fail]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

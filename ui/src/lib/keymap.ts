@@ -8,12 +8,14 @@ export type Action =
   | 'palette' | 'gotoHost' | 'switchVault' | 'openVault' | 'createVault'
   | 'newSession' | 'closeTab' | 'reconnect' | 'duplicate' | 'toggleSidebar'
   | 'viewHosts' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'editHost'
+  | 'collapseAll' | 'expandAll'
   | 'lock' | 'fontBigger' | 'fontSmaller' | 'fontReset' | 'nextRegion' | 'prevRegion'
   | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5' | 'tab6' | 'tab7' | 'tab8' | 'tab9';
 
-// `shifted` is the ⇧⌘ layer. `code` is KeyboardEvent.code, so the map holds on any
+// `none` marks an action with no shortcut (palette and buttons only). `shifted` is the ⇧⌘ layer. `code` is KeyboardEvent.code, so the map holds on any
 // keyboard layout. `bare` chords (F6) take no modifier.
 interface Chord {
+  none?: boolean;
   code: string;
   shifted?: boolean;
   bare?: boolean;
@@ -38,6 +40,8 @@ const CHORDS: Record<Action, Chord> = {
   settings: { code: 'Comma', label: ',' },
   newHost: { code: 'KeyN', label: 'N' },
   editHost: { code: 'KeyI', label: 'I' },
+  collapseAll: { none: true, code: '', label: '' },
+  expandAll: { none: true, code: '', label: '' },
   lock: { code: 'KeyL', label: 'L' },
   fontBigger: { code: 'Equal', label: '+' },
   fontSmaller: { code: 'Minus', label: '−' },
@@ -64,7 +68,7 @@ export interface KeyLike {
 }
 
 function matches(c: Chord, e: KeyLike, os: Os): boolean {
-  if (e.code !== c.code) return false;
+  if (c.none || e.code !== c.code) return false;
   if (c.bare) return !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
   if (c.shiftOnly) return e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey;
   if (os === 'mac') {
@@ -84,6 +88,7 @@ export function actionFor(e: KeyLike, os: Os): Action | null {
 
 export function chordLabel(action: Action, os: Os): string {
   const c = CHORDS[action];
+  if (c.none) return '';
   if (c.bare) return c.label;
   if (c.shiftOnly) return os === 'mac' ? '⇧' + c.label : 'Shift+' + c.label;
   if (os === 'mac') return (c.shifted ? '⇧⌘' : '⌘') + c.label;
@@ -112,6 +117,8 @@ export const ACTION_TITLES: Record<Action, string> = {
   settings: 'Settings',
   newHost: 'New host',
   editHost: 'Edit host',
+  collapseAll: 'Collapse all groups',
+  expandAll: 'Expand all groups',
   lock: 'Lock vault',
   fontBigger: 'Bigger terminal font',
   fontSmaller: 'Smaller terminal font',

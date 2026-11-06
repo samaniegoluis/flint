@@ -56,6 +56,15 @@ type NameReq struct {
     name: str `json:"name"`
 }
 
+// The page's layout state, with the vault it was read for: a write that arrives
+// after the page switched vaults must not land on the new one.
+type UiStateReq struct {
+    vault:         str   `json:"vault"`
+    sidebar_open:  bool  `json:"sidebar_open"`
+    sidebar_width: i64   `json:"sidebar_width"`
+    collapsed:     []str `json:"collapsed"`
+}
+
 type RenameReq struct {
     name:     str `json:"name"`
     new_name: str `json:"new_name"`
@@ -263,13 +272,25 @@ fn rpc_settings_set(params: str, mut store: JsonSettingsStore) -> str! {
 
 // The sidebar and the open vault's collapsed groups (D-030). With no vault unlocked,
 // only the sidebar part is read or written.
-fn rpc_ui_state_get(store: JsonUiStateStore, st: GuiState) -> str! {
-    return json.stringify(ui_state_for(store, st.id))
+// Collapsed groups travel as paths; the core stores their ids.
+fn rpc_ui_state_get(ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState) -> str! {
+    mut vault := ""
+    if st.unlocked {
+        vault = st.id
+    }
+    return json.stringify(try ui_state_paths(ui, store, vault))
 }
 
-fn rpc_ui_state_set(params: str, mut store: JsonUiStateStore, st: GuiState) -> str! {
-    req := try parse_req[UiStateView](params)
-    return json.stringify(try save_ui_state(mut store, st.id, req))
+fn rpc_ui_state_set(params: str, mut ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState) -> str! {
+    req := try parse_req[UiStateReq](params)
+    mut view := UiStateView{ sidebar_open: req.sidebar_open, sidebar_width: req.sidebar_width, collapsed: req.collapsed }
+    mut vault := ""
+    if st.unlocked && req.vault == st.path {
+        vault = st.id
+    } else {
+        view.collapsed = []
+    }
+    return json.stringify(try save_ui_state_paths(mut ui, store, vault, view))
 }
 
 fn rpc_fonts_mono(catalog: OsFontCatalog) -> str! {

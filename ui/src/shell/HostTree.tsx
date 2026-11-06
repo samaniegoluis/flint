@@ -25,11 +25,15 @@ export interface TreeHandlers {
   select: (alias: string | null) => void;
 }
 
-export function HostTree({ selected, filterRef, h }: { selected: string | null; filterRef: React.RefObject<HTMLInputElement>; h: TreeHandlers }) {
+// `collapsed` holds group paths and is owned by the shell, which remembers it per
+// vault on this machine (D-030).
+export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer, h }: {
+  selected: string | null; filterRef: React.RefObject<HTMLInputElement>;
+  collapsed: Set<string>; setCollapsed: (next: Set<string>) => void; resizer: React.ReactNode; h: TreeHandlers;
+}) {
   const { vault, catalog, os } = useApp();
   const { tabs } = useSessions();
   const [filter, setFilter] = useState('');
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const treeRef = useRef<HTMLDivElement>(null);
@@ -51,13 +55,11 @@ export function HostTree({ selected, filterRef, h }: { selected: string | null; 
   }, [focusKey, rows]);
 
   const toggle = (path: string, open?: boolean) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      const isOpen = !next.has(path);
-      if (open === undefined ? isOpen : !open) next.add(path);
-      else next.delete(path);
-      return next;
-    });
+    const next = new Set(collapsed);
+    const isOpen = !next.has(path);
+    if (open === undefined ? isOpen : !open) next.add(path);
+    else next.delete(path);
+    setCollapsed(next);
   };
 
   const move = (to: number) => {
@@ -119,6 +121,7 @@ export function HostTree({ selected, filterRef, h }: { selected: string | null; 
   };
 
   const pad = (depth: number) => ({ paddingLeft: 8 + depth * 20 });
+  const allCollapsed = catalog.groups.length > 0 && catalog.groups.every((g) => collapsed.has(g.path));
 
   return (
     <aside className="sidebar" data-for="hosts" aria-label="Hosts" style={{ display: 'flex' }}>
@@ -145,6 +148,9 @@ export function HostTree({ selected, filterRef, h }: { selected: string | null; 
       </label>
       <div className="side-head">
         <span className="label">Hosts <span className="count-all">· {catalog.hosts.length}</span></span>
+        {catalog.groups.length > 0 && (allCollapsed
+          ? <button className="icon-btn" aria-label="Expand all groups" title="Expand all" onClick={() => setCollapsed(new Set())}><Icon name="chev" size="sm" /></button>
+          : <button className="icon-btn" aria-label="Collapse all groups" title="Collapse all" onClick={() => setCollapsed(new Set(catalog.groups.map((g) => g.path)))}><Icon name="chev-r" size="sm" /></button>)}
         <button className="icon-btn" aria-label="New group" title="New group" onClick={() => h.newGroup('')}><Icon name="folder" size="sm" /></button>
         <button className="icon-btn" aria-label={`New host (${chordLabel('newHost', os)})`} title="New host" onClick={() => h.newHost('')}><Icon name="plus" size="sm" /></button>
       </div>
@@ -185,6 +191,7 @@ export function HostTree({ selected, filterRef, h }: { selected: string | null; 
         </div>
       )}
       {menu && <ContextMenu {...menu} onClose={() => setMenu(null)} />}
+      {resizer}
     </aside>
   );
 }

@@ -47,3 +47,23 @@ test "ui state keeps at most the cap of vaults" {
     assert_eq(store.saved.vaults.len(), UI_STATE_MAX_VAULTS)
     assert_eq(store.saved.vaults[0].vault, test_vault_id(39))
 }
+
+test "the GUI's group paths are stored as ids and survive a rename" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/Ui.flint", "", "correct horse")
+    _ := try add_group(crypto, mut store, "homelab/proxmox")
+    _ := try add_group(crypto, mut store, "work")
+    mut ui := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+
+    saved := try save_ui_state_paths(mut ui, store, s.id, UiStateView{ sidebar_open: true, sidebar_width: 264, collapsed: ["homelab/proxmox", "work", "nope"] })
+    assert_eq(saved.collapsed.len(), usize(2))
+    for id in ui.saved.vaults[0].collapsed {
+        assert(is_hex_id(id), "only ids are stored")
+    }
+
+    _ := try rename_group(mut store, "work", "office")
+    back := try ui_state_paths(ui, store, s.id)
+    assert_eq(back.collapsed.len(), usize(2))
+    assert(back.collapsed[0] == "office" || back.collapsed[1] == "office")
+}

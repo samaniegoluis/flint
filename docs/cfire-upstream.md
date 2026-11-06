@@ -630,3 +630,15 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Workaround:** run `cfire check` on the edited file when a package fails this way.
 - **Ideal:** stop at the parse error and print it first; and a message that says `out`
   is reserved (`'out' is a parameter intent and cannot name a variable`).
+
+### CF-057 · bug · `confirmed`: `ext:json` ignores the `default:"…"` struct tag
+- **Repro:** `type A struct { x: str \`json:"x"\`; y: str \`json:"y" default:"dflt"\` }`,
+  then `json.parse[A]("{\"x\":\"1\"}")` succeeds with `a.y == ""` (cfire 0.9.4). The
+  language rules (`cfire/INVALID-STRUCT-TAG`) validate `default:` tags at compile
+  time, so the tag reads as supported; it only seems to apply to `cli` parsing.
+- **Workaround:** a field added to a stored file reads as its zero value in older files,
+  and the application layer repairs it: `load_settings` falls back field by field
+  (`term_theme`, `src/application/settings.cf`); an empty recent-vault `id` means
+  "unknown" (`src/application/session.cf`).
+- **Ideal:** `json.parse` fills a missing field from its `default:` tag, or the checker
+  warns that `default:` has no effect outside `cli` structs.

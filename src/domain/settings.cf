@@ -15,7 +15,13 @@ type Settings struct {
     term_line_height:   i64  `json:"term_line_height"`
     term_cursor:        str  `json:"term_cursor"`
     term_cursor_blink:  bool `json:"term_cursor_blink"`
+    // Milestone 07. Files written before it have none: the field reads as ""
+    // (ext:json ignores `default:`, CF-057) and load_settings repairs it.
+    term_theme:         str  `json:"term_theme"`
 }
+
+// Terminal colour themes (ui/src/lib/terminalThemes.ts holds the palettes).
+var TERM_THEMES: []str = ["default", "catppuccin", "tokyo-night", "aura", "dracula", "nord"]
 
 var TERM_FONT_SIZE_MIN: i64 = 8
 var TERM_FONT_SIZE_MAX: i64 = 32
@@ -25,7 +31,7 @@ var TERM_LINE_HEIGHT_MIN: i64 = 100
 var TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default" }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {
@@ -57,6 +63,9 @@ fn check_settings(s: Settings) -> void! {
     if !one_of(s.term_cursor, ["block", "bar", "underline"]) {
         return error(coded(ERR_INVALID, "cursor must be block, bar or underline"))
     }
+    if !one_of(s.term_theme, TERM_THEMES) {
+        return error(coded(ERR_INVALID, "terminal theme must be default, catppuccin, tokyo-night, aura, dracula or nord"))
+    }
     try check_text("terminal font", s.term_font, 128, false)
     // The name ends up in a CSS font-family list, quoted.
     for b in s.term_font.bytes() {
@@ -82,5 +91,10 @@ test "default settings are valid and bad values are refused" {
     s.term_font = "JetBrainsMono Nerd Font"
     assert(check_settings(s).has_value())
     s.term_font = "x\"; color: red"
+    assert(!check_settings(s).has_value())
+    s = default_settings()
+    s.term_theme = "aura"
+    assert(check_settings(s).has_value())
+    s.term_theme = "solarized"
     assert(!check_settings(s).has_value())
 }

@@ -90,8 +90,8 @@ fn main() {
     app.bind_raw("settings_get") |params| { return rpc_settings_get(settings_store) }
     app.bind_raw("settings_set") |params| { return rpc_settings_set(params, mut settings_store) }
     app.bind_raw("fonts_mono") |params| { return rpc_fonts_mono(font_catalog) }
-    app.bind_raw("ui_state_get") |params| { return rpc_ui_state_get(ui_state_store, st) }
-    app.bind_raw("ui_state_set") |params| { return rpc_ui_state_set(params, mut ui_state_store, st) }
+    app.bind_raw("ui_state_get") |params| { return rpc_ui_state_get(ui_state_store, store, st) }
+    app.bind_raw("ui_state_set") |params| { return rpc_ui_state_set(params, mut ui_state_store, store, st) }
 
     app.bind_raw("vault_recents") |params| { return rpc_vault_recents(store, recents) }
     app.bind_raw("vault_unlock") |params| { return rpc_vault_unlock(params, c, mut store, kc, recents, mut st) }

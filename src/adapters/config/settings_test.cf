@@ -21,6 +21,13 @@ test "settings round-trip through settings.json and default when missing or dama
     back := try store.settings_load()
     assert_eq(back.accent, "moss")
     assert_eq(back.term_font, "JetBrainsMono Nerd Font")
+    // A file from before terminal themes keeps its other choices.
+    try fs.write_text(dir + "/settings.json", "{\"version\":1,\"settings\":{\"theme\":\"dark\",\"accent\":\"iris\",\"density\":\"default\",\"follow_motion\":true,\"reopen_last_vault\":true,\"term_font\":\"\",\"term_font_size\":14,\"term_line_height\":100,\"term_cursor\":\"bar\",\"term_cursor_blink\":false}}")
+    old := try store.settings_load()
+    assert_eq(old.accent, "iris")
+    // ext:json ignores `default:` (CF-057): the field reads as "", and
+    // application.load_settings repairs it to the default.
+    assert_eq(old.term_theme, "")
     try fs.write_text(dir + "/settings.json", "{not json")
     again := try store.settings_load()
     assert_eq(again.accent, "ember")

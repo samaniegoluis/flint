@@ -59,3 +59,45 @@ fn save_ui_state[U: UiStateStore](mut store: U, vault: str, view: UiStateView) -
     }
     return res
 }
+
+// ---- What the GUI speaks: group paths ----------------------------------------------
+//
+// The page names groups by path, as everywhere else; the file holds their ids, so a
+// renamed or moved group stays collapsed and no name is ever written (Principle 5).
+
+// The open vault's view, collapsed groups as paths. Ids of groups that no longer
+// exist are left out.
+fn ui_state_paths[U: UiStateStore, S: VaultStore](ui: U, store: S, vault: str) -> UiStateView! {
+    mut view := ui_state_for(ui, vault)
+    if vault.len() == 0 {
+        return view
+    }
+    groups := try store.groups_all()
+    mut paths: []str = []
+    for id in view.collapsed {
+        p := group_path_of(groups, id)
+        if p.len() > 0 {
+            paths.push(p)
+        }
+    }
+    view.collapsed = paths
+    return view
+}
+
+// Stores a view whose collapsed groups are paths; paths that name no group are
+// dropped. Returns the view as stored, in paths.
+fn save_ui_state_paths[U: UiStateStore, S: VaultStore](mut ui: U, store: S, vault: str, view: UiStateView) -> UiStateView! {
+    mut by_id := view
+    by_id.collapsed = []
+    if vault.len() > 0 {
+        groups := try store.groups_all()
+        for p in view.collapsed {
+            id := find_group_id(groups, p)
+            if id.len() > 0 {
+                by_id.collapsed.push(id)
+            }
+        }
+    }
+    _ := try save_ui_state(mut ui, vault, by_id)
+    return ui_state_paths(ui, store, vault)
+}

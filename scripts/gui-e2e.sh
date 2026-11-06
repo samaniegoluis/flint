@@ -85,4 +85,15 @@ for marker in local pwhost e2e-key gui-host-pw-marker 127.0.0.1 "SQLite format 3
   fi
 done
 echo "gui-e2e: the vault file holds no clear-text host data"
+# D-030: the layout state holds ids only, never a name from inside the vault.
+ui_state="$tmp/config/ui-state.json"
+[[ -f "$ui_state" ]] || { echo "gui-e2e: no ui-state.json was written" >&2; exit 1; }
+for marker in e2e-grp local pwhost "E2E Renamed"; do
+  if grep -aq -- "$marker" "$ui_state"; then
+    echo "gui-e2e: ui-state.json contains '$marker'" >&2
+    exit 1
+  fi
+done
+grep -q '"E2E Renamed"' "$tmp/config/vaults.json" || { echo "gui-e2e: the rename did not reach vaults.json" >&2; exit 1; }
+echo "gui-e2e: ui-state.json holds ids only; vaults.json has the new name"
 exit "$status"

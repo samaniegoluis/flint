@@ -21,11 +21,22 @@ test "settings are validated on save and repaired field by field on load" {
     edited.theme = "light"
     edited.term_line_height = 999
     edited.reopen_last_vault = false
+    edited.term_theme = "aura"
     store.saved = edited
     fixed := try load_settings(store)
     assert_eq(fixed.theme, "light")
     assert_eq(fixed.term_line_height, i64(100))
     assert(!fixed.reopen_last_vault)
+    assert_eq(fixed.term_theme, "aura")
+
+    // A settings.json from before terminal themes reads the field as "" (CF-057).
+    mut old := default_settings()
+    old.accent = "iris"
+    old.term_theme = ""
+    store.saved = old
+    repaired := try load_settings(store)
+    assert_eq(repaired.term_theme, "default")
+    assert_eq(repaired.accent, "iris")
 }
 
 test "installed mono fonts are deduplicated and sorted" {
