@@ -7,6 +7,21 @@ is drawn from the `next` items, and the shipped one is archived as `docs/spec-v<
 Status: `mvp` (in the current spec, [`docs/spec.md`](./docs/spec.md)) · `next` (candidate for the next spec)
 · `later` · `idea` (not yet evaluated) · `done`.
 
+## Order of work
+
+Agreed with the owner on 2026-11-06, after v2 (milestones 06-10) shipped. Each block is a
+spec or a few milestones; `lean-spec` draws the next spec from the top of this list.
+
+| # | Block | Items |
+|---|---|---|
+| 0 | **Quick wins**, before or while v3 is planned | The selection font bug (WebGL atlas, §6), *Connect without the initial command* in the palette (§1), keepalives (§2), the IPv6 → IPv4 fallback (§6), unlock and create off the UI thread (§6) |
+| 1 | **Spec v3, Flint holds the vault** (D-038, `docs/vault-access-model.md`), four milestones | **M11** Flint holds the vault: local socket, the CLI as a client of every command, `exec` and `connect` relayed through the app, unlock asked for by the CLI, auto-lock (may split into 11a/11b at plan time; starts with a spike of local sockets with peer credentials and a tray icon in `ext:webui`). **M12** Caller approval: approval window, scoped expiring grants, tokens, activity log, presence check (Touch ID, polkit). **M13** `flint exec --sudo` inside the app (D-039). **M14** Tray with two locks, *Remember on this computer* |
+| 2 | **SFTP** | Side panel (design screens 14a-c) and `flint cp`, built on the client model |
+| 3 | **Tunnels** | `-L` forwards per host, `flint tunnel`, living in the app or `flint serve`; `flint import tether` carries Tether's tunnels |
+| 4 | **`flint agent`** | The SSH agent, in the process that holds the key |
+| 5 | **Embedded RDP** | A spec of its own (§9) |
+| 6 | **MCP server**, optional | Only after the owner weighs what it adds over the CLI, which agents already use under the same grants |
+
 ## 1. Parity with Tether
 
 What Tether already does and Flint must not lose.
@@ -50,7 +65,7 @@ What Tether already does and Flint must not lose.
 | Fuzzy host picker when `flint connect` has no alias | `next` | Slipped from the MVP (milestone 03) |
 | `flint exec <alias> -- cmd` | `done` | |
 | `flint exec` forwards local stdin to the remote command (`cat file \| flint exec web -- 'cat > x'`) | `next` | Today stdin is closed at start (milestone 03) |
-| `flint exec --tty` / `connect -- <cmd>`: a command on a PTY | `next` | `flint exec --sudo` (section 3) depends on it |
+| `flint exec --tty` / `connect -- <cmd>`: a command on a PTY | `next` | No longer a prerequisite of `flint exec --sudo`, which runs on a PTY inside the app (D-039) |
 | Keepalives (`ServerAliveInterval`) for idle `flint connect` sessions | `next` | |
 | `flint exec @group -- cmd`: parallel fan-out, structured JSON per host | `next` | Great for agents and scripts |
 | `flint cp a:/path b:/path` (remote ↔ local ↔ remote, by alias) | `next` | |
@@ -66,7 +81,7 @@ What Tether already does and Flint must not lose.
 | Feature | Status | Notes |
 |---|---|---|
 | **Flint grants vault access, not the OS keychain** (D-038, `docs/vault-access-model.md`): the unlocked key lives in the running app (later `flint serve`); `flint` becomes a client of it over a local socket (Unix socket 0600, named pipe on Windows) | `next` | The base for everything below. Today any program that runs `flint` opens a cached vault, and on Linux/Windows any program can read the cached key itself |
-| **Caller approval window**: who asks (peer pid/uid, executable and parent chain: "`flint` started by Claude Code"), which vault, which hosts, for how long; Deny / Allow | `next` | Same isolated window as the sudo approval below. A grant is scoped (hosts/groups, actions) and expires |
+| **Caller approval window**: who asks (peer pid/uid, executable and parent chain: "`flint` started by Claude Code"), which vault, which hosts, for how long; Deny / Allow | `next` | A window of the running app, the same one that approves `sudo` below (D-039). A grant is scoped (hosts/groups, actions) and expires |
 | **The CLI asks for an unlock**: with Flint closed or locked, `flint` starts the app on its unlock screen naming the caller; one step unlocks and approves. A person at a terminal can still type the master password for one command; an agent with no terminal gets `locked` with "open Flint" | `next` | Owner, M10 planning (2026-11-06): "I want to use the CLI, so I open Flint" |
 | **Tray with two locks**: closing the window keeps Flint in the menu bar / system tray, still serving approved grants, but the **window** is locked: opening it asks for the master password or Touch ID | `next` | Owner idea, M10 planning. Protects against a person at the machine while agents keep working. Needs a tray icon in `ext:webui` (check, then a CF entry) |
 | **Auto-lock** the vault after a configurable idle time, on screen lock and on sleep; zero the key on lock | `next` | Replaces the "forget the cached key after N idle days" idea in section 4 |
@@ -80,11 +95,11 @@ What Tether already does and Flint must not lose.
 | **Scoped agent tokens**: `flint token create --hosts @homelab --allow exec,read --ttl 1h`. The agent never sees credentials | `next` | |
 | **Per-host policies**: read-only, command allowlist, "ask me in the GUI before running on prod" | `next` | |
 | **Audit log** of every command run through a token | `next` | |
-| **`flint exec --sudo -- <argv>`**: run a command as root on a host whose login user is a sudoer, approved by the owner, never by the caller | `next` | Raised while an AI agent set up a Linux box over `flint exec` and had to hand every `sudo` step to the owner (2026-11-06). Flint builds the line itself, `sudo -p <random nonce> -- <argv>` with each argument quoted (never a shell string), on a PTY; it types the host's password from the vault once, and only when it sees its own nonce prompt, so a command that prints a fake `password:` gets nothing. Then `sudo -k`, so the 15-minute sudo cache cannot carry unapproved commands. The caller sees output and exit code only. Distinct errors for *denied by the owner*, *approval timed out* and *user is not a sudoer*. Without `--sudo`, `sudo` fails as today. Depends on `flint exec --tty`. D-036 |
-| **Sudo approval window**: Flint's own dialog (not the keychain prompt, which cannot show the command) naming the caller, host, user and the exact argv, with Deny / Approve | `next` | Part of `flint exec --sudo`. **An isolated window, the same whether the app is open or closed**: the CLI has already opened the vault (keychain-cached key, D-005) and resolved host, user and password, so the window loads no vault and starts no app; it shows what the CLI hands it and answers yes or no. The CLI spawns it as a child and reads the answer on a private pipe, so the caller cannot forge an "approved" (a socket to the running app could be). Approve proves presence, not knowledge of the host password: Touch ID on macOS, the vault password where there is no biometric. Only when the CLI cannot open the vault on its own does the window first ask for the vault password. No answer in ~2 min = denied. Every decision goes to the audit log. Open question: whether `ext:webui` can open a small window without the full app, or this needs its own helper |
+| **`flint exec --sudo -- <argv>`**: run a command as root on a host whose login user is a sudoer, approved by the owner, never by the caller | `next` | Raised while an AI agent set up a Linux box over `flint exec` and had to hand every `sudo` step to the owner (2026-11-06). Flint builds the line itself, `sudo -p <random nonce> -- <argv>` with each argument quoted (never a shell string), on a PTY; it types the host's password from the vault once, and only when it sees its own nonce prompt, so a command that prints a fake `password:` gets nothing. Then `sudo -k`, so the 15-minute sudo cache cannot carry unapproved commands. The caller sees output and exit code only. Distinct errors for *denied by the owner*, *approval timed out* and *user is not a sudoer*. Without `--sudo`, `sudo` fails as today. The app runs it (D-038): the CLI sends the request over the local socket and gets output and exit code back, so it needs Flint running, not `flint exec --tty`; with Flint closed it fails with "open Flint", even for a person who could type the master password (D-039). D-036 |
+| **Sudo approval window**: Flint's own dialog (not the keychain prompt, which cannot show the command) naming the caller, host, user and the exact argv, with Deny / Approve | `next` | Part of `flint exec --sudo`. **A window of the running app** (D-039), the caller approval window of section 3 showing one command: the app holds the key, resolves host, user and password and runs the command itself, so the caller can only ask; there is no answer for it to forge. Approve proves presence, not knowledge of the host password: Touch ID on macOS, polkit or the vault password where there is no biometric. No answer in ~2 min = denied. Every decision goes to the activity log. Supersedes the isolated child window planned before D-038 |
 | Per-host **sudo password** field, defaulting to the login password | `next` | Part of `flint exec --sudo`, for hosts that log in with a key: the approval window asks once and offers to save it |
 | Sudo through `flint agent` (`pam_ssh_agent_auth`): sudo on the server authenticates with a key in the forwarded agent, no password | `idea` | **May never ship: weigh the risk first.** The agent signs for any program on its socket (git, VS Code, scripts) and only sees a challenge, never the command, so its prompt can say "something on ZorinOS asks to authorize sudo" but not what will run. That is why the CLI path above comes first. If ever built, three locks: a dedicated sudo-only key, never a login key; confirmation on every use for that key, not switchable off; agent forwarding (`ssh -A`, which this needs) only on request, since root on the server can use a forwarded socket while you are connected. Needs a one-time root setup of PAM and sudoers on each host. For people using plain `ssh` or VS Code, not for AI agents. Prior art: Secretive, 1Password and `ssh-add -c` confirm-per-use, Teleport per-session MFA, `sudoreplay`/`sudo_logsrvd` |
-| **MCP server**: list hosts, exec, read file, tail logs. All under tokens + policies | `next` | cfire has `McpServer` in `ext:ai` |
+| **MCP server**: list hosts, exec, read file, tail logs. All under tokens + policies | `later` | Optional, last in the order of work: the owner wants to weigh what it adds over the CLI first, since agents already use `flint` under the same grants (2026-11-06). cfire has `McpServer` in `ext:ai` |
 | Agent activity panel in the GUI: live timeline, pending approvals | `later` | Very demo-able |
 | Session recording (asciicast) | `idea` | |
 
@@ -166,7 +181,7 @@ What Tether already does and Flint must not lose.
 |---|---|---|
 | Interactive CLI demo on the landing: overlay terminal, guided tour, demo vault, fake Linux | `done` | Milestone 05 (D-026) |
 | Landing sections: the desktop app beside the CLI, scripts and agents, security, what's next | `done` | D-027; screenshots from `npm run shots:gui` |
-| Landing section for AI agents (MCP server, scoped tokens, policies, the approval flow in the GUI) | `next` | Once the MCP server ships; today it is one line in "What's next" |
+| Landing section for AI agents (scoped tokens, policies, the approval flow in the GUI) | `done` | Milestone 10: the agent band. It grows with the access model (v3); the MCP server joins it only if it ships |
 | Comparison with other SSH clients on the landing (Termius, MobaXterm, Tether) | `later` | Only once SFTP and tunnels ship; today it would argue against Flint |
 | More app screenshots on the landing and the desktop-app guide (command palette, host editor, host-key prompt) | `idea` | `shots:gui` can drive them; one more `screens` entry each |
 | The hero terminal plays the demo tour by itself (typing animation, termynal-style) before the visitor opens the demo | `idea` | Left out of M05; respect `prefers-reduced-motion` |

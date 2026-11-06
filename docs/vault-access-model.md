@@ -153,9 +153,11 @@ timestamp. **Chosen (D-038).**
    activity log.
 3. **Tray and presence:** the tray with the window lock, Touch ID / Windows Hello / polkit
    for the window and approvals, the "Remember on this computer" checkbox with its warning.
-4. **`flint exec --sudo`** on the same approval window.
+4. **`flint exec --sudo`** on the same approval window, run by the app (D-039).
 
-The MCP server (ROADMAP §3) sits on top of grants and tokens.
+Agreed as spec v3, milestones 11-14, with presence (Touch ID, polkit) moved into caller
+approval so `--sudo` starts with it, and sudo before the tray (ROADMAP → Order of work).
+The MCP server (ROADMAP §3) would sit on top of grants and tokens; it is optional and last.
 
 ## What the docs say until then
 
