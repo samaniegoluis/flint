@@ -28,6 +28,8 @@ export interface Tab {
   changedKey: HostKeyPayload | null;
   end: SessionEnd | null;
   connectedAt: number;
+  /** Opened without the host's initial command; a reconnect keeps it that way. */
+  noCommand: boolean;
 }
 
 interface Snapshot {
@@ -121,16 +123,16 @@ class SessionStore {
     this.bySession.set(session, tabId);
     this.patch(tabId, { session, status: 'connecting', prompt: null, changedKey: null, end: null });
     const size = this.sizes.get(tabId) ?? { cols: 100, rows: 30 };
-    api.sessionOpen(session, t.alias, size.cols, size.rows).catch((err) => {
+    api.sessionOpen(session, t.alias, size.cols, size.rows, t.noCommand).catch((err) => {
       this.bySession.delete(session);
       const e = err as { code?: string; message?: string };
       this.patch(tabId, { status: 'ended', end: { code: e.code ?? 'internal', message: e.message ?? String(err), exit_code: -1 } });
     });
   }
 
-  open(alias: string): string {
+  open(alias: string, noCommand = false): string {
     const id = mint('t');
-    const tab: Tab = { id, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0 };
+    const tab: Tab = { id, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, noCommand };
     this.set({ tabs: [...this.snap.tabs, tab], active: id });
     this.connect(id);
     return id;

@@ -154,6 +154,11 @@ a new tab, so pressing it twice on the same host gives you two sessions. In the 
 palettes <kbd>⌘↵</kbd> opens a host in a new tab. <kbd>⌘I</kbd> edits the host, and
 <kbd>Tab</kbd> moves between result groups.
 
+When the search finds a host with an [initial command](/guides/hosts/#run-a-command-on-connect),
+a second row, **Connect without command**, opens it in a new tab with a plain shell, as
+`flint connect --no-command` does. Use it when that program is broken: the command
+stays saved, and **Reconnect** in that tab keeps skipping it.
+
 ## Vaults
 
 The vault button at the top of the sidebar (<kbd>⇧⌘O</kbd>) lists your recent vaults,

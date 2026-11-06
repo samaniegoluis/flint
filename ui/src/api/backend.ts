@@ -97,8 +97,9 @@ export const api = {
   /** The core puts the password on the clipboard and clears it after 30 s. */
   secretCopy: (kind: 'host' | 'credential', name: string) => call('secret_copy', { kind, name }),
 
-  sessionOpen: (session: string, alias: string, cols: number, rows: number) =>
-    call('session_open', { session, alias, cols, rows, accept_new_host_key: false }),
+  /** `noCommand` skips the host's initial command, like `flint connect --no-command`. */
+  sessionOpen: (session: string, alias: string, cols: number, rows: number, noCommand = false) =>
+    call('session_open', { session, alias, cols, rows, accept_new_host_key: false, no_command: noCommand }),
   /** An OSC 52 payload ("c;base64") a remote program wrote; the core copies it. */
   terminalClipboard: (payload: string) => call<{ outcome: string; bytes: number }>('terminal_clipboard', { name: payload }),
   sessionInput: (session: string, data: string) => call('session_input', { session, data }),

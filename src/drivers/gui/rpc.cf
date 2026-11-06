@@ -88,6 +88,8 @@ type SessionOpenReq struct {
     cols:                i32  `json:"cols"`
     rows:                i32  `json:"rows"`
     accept_new_host_key: bool `json:"accept_new_host_key"`
+    // Skip the host's initial command (the palette's "Connect … without …").
+    no_command:          bool `json:"no_command"`
 }
 
 type SessionInputReq struct {
@@ -531,6 +533,7 @@ fn session_open_reply(req: SessionOpenReq!) -> str! {
 fn run_gui_session(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, vs: VaultSession, req: SessionOpenReq) {
     mut opts := default_connect_options()
     opts.accept_new_host_key = req.accept_new_host_key
+    opts.run_initial_command = !req.no_command
     mut link := new_ssh_link()
     mut term := new_gui_terminal(app, req.session)
     prompter := new_gui_prompter(app, req.session)

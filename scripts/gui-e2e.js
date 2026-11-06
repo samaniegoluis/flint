@@ -386,6 +386,24 @@
     await runInTerminal('echo shell-after-$((6*7))', 'shell-after-42');
     await check(true, 'the initial command runs on the PTY, then a login shell');
 
+    await setStep('connect without the initial command');
+    const tabsBeforePlain = qa('.tab').length;
+    shortcut('k', 'KeyK');
+    await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
+    await fill('[aria-label="Command palette"] input', 'probe');
+    const plainRow = await waitFor(() => qa('[aria-label="Command palette"] [role="option"]').find((o) => o.textContent.includes('Connect without command')), 'the "without" row for probe');
+    await check(plainRow.textContent.includes('echo started-$((40+2))'), 'the palette names the command it will skip');
+    plainRow.click();
+    await waitFor(() => qa('.tab').length === tabsBeforePlain + 1, 'a new tab for probe');
+    await waitFor(() => toolbarIs('ready'), 'the plain probe session', 30000);
+    await runInTerminal('echo plain-$((6*7))', 'plain-42');
+    await check(!termText().includes('started-42'), 'the session opened without the initial command');
+    shortcut('r', 'KeyR');
+    await waitFor(() => toolbarIs('connecting') || toolbarIs('ready'), 'the reconnect');
+    await waitFor(() => toolbarIs('ready'), 'the plain probe session again', 30000);
+    await runInTerminal('echo again-$((6*7))', 'again-42');
+    await check(!termText().includes('started-42'), 'a reconnect keeps the session without the initial command');
+
     await setStep('reveal and copy');
     shortcut('k', 'KeyK');
     await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');

@@ -32,7 +32,8 @@ The remote terminal type is taken from `TERM` (`xterm-256color` if it is not set
 If the host has an [initial command](/guides/hosts/#run-a-command-on-connect), such as
 `herdr`, it runs instead of the bare shell, through your interactive login shell; when
 it exits, a login shell follows unless the host says to end the session. Use
-`--no-command` to get a plain shell, for example when that program is broken.
+`--no-command` to get a plain shell, for example when that program is broken. The app
+does the same from the [command palette](/guides/desktop-app/#the-command-palette).
 
 To check a host without opening anything, use
 [`flint host test`](/guides/hosts/#check-that-a-host-works).

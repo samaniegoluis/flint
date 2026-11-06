@@ -110,12 +110,13 @@ export function Shell() {
     });
   }, [tabs, active, os, notify]);
 
-  const connect = useCallback((alias: string, newTab: boolean) => {
+  // `noCommand` (the palette's "without …" row) always opens its own tab.
+  const connect = useCallback((alias: string, newTab: boolean, noCommand = false) => {
     setView('hosts');
     if (narrow) setCollapsed(true);
-    const open = sessions.get().tabs.find((t) => t.alias === alias && t.status !== 'ended');
-    if (open && !newTab) sessions.activate(open.id);
-    else sessions.open(alias);
+    const open = sessions.get().tabs.find((t) => t.alias === alias && t.status !== 'ended' && !t.noCommand);
+    if (open && !newTab && !noCommand) sessions.activate(open.id);
+    else sessions.open(alias, noCommand);
   }, [narrow]);
 
   const lock = useCallback(async () => {

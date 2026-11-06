@@ -50,7 +50,7 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
   hostsOnly: boolean;
   newSession?: boolean;
   onClose: () => void;
-  onConnect: (alias: string, newTab: boolean) => void;
+  onConnect: (alias: string, newTab: boolean, noCommand?: boolean) => void;
   onEdit: (alias: string) => void;
   onAction: (a: Action) => void;
 }) {
@@ -83,6 +83,24 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
         run: (newTab) => onConnect(h.alias, newTab || newSession),
         edit: () => onEdit(h.alias),
       });
+      // A host with an initial command can be opened without it once, like
+      // `flint connect --no-command`: a way in when that program is broken. Offered
+      // only while searching, so an empty palette does not list every host twice.
+      if (h.command && q) {
+        out.push({
+          group: 'hosts', key: 'hn:' + h.alias, score: (name?.score ?? 0) + (alt ? alt.score / 4 : 0) + 1999,
+          render: () => (
+            <>
+              <span className={'hmark ' + c.className} style={c.style} />
+              <span className="mono" style={{ width: 160, flex: 'none' }}><Hl text={h.alias} positions={name?.positions ?? []} /></span>
+              <span className="grow faint trunc" style={{ fontSize: 'var(--fs-xs)' }}>without <span className="mono">{h.command}</span></span>
+              <span className="hint">Connect without command</span>
+            </>
+          ),
+          run: () => onConnect(h.alias, true, true),
+          edit: () => onEdit(h.alias),
+        });
+      }
     }
     if (!hostsOnly) {
       for (const a of PALETTE_ACTIONS) {
