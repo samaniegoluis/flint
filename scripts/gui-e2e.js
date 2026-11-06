@@ -629,6 +629,20 @@
       await check(code && code.has_password && code.command === 'herdr' && code.group === 'Homelab', 'an imported host keeps its group, command and saved password');
       await check(!JSON.stringify(cat).includes('pw-codebox'), 'no imported secret reaches the page');
     }
+    {
+      const r = q('.titlebar .tb-title').getBoundingClientRect();
+      await check(Math.abs(r.left + r.width / 2 - window.innerWidth / 2) <= 1, 'the title is centred on the window');
+    }
+    await click('.rail-btn', 'Settings');
+    await click('.nav-i', 'Vault');
+    await click('button', 'Import from Tether…');
+    await waitFor(() => q('[role="dialog"][aria-label="Import from Tether"]'), 'the import drawer again');
+    await fill('[aria-label="Tether vault file"]', TETHER);
+    await fill('#tpw', 'tether-fixture-pw');
+    await click('.drawer .modal-f button', 'Import');
+    await waitFor(() => hasText('Nothing new to import'), 'the nothing-new notice');
+    await check(hasText('Added 0 groups, 0 hosts'), 'importing again adds nothing');
+    await click('.drawer .modal-f button', 'Done');
 
     await setStep('lock');
     await click('.statusbar .sb-btn', 'Lock');

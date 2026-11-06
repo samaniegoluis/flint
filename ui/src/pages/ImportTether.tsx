@@ -27,13 +27,14 @@ function Notes({ title, notes }: { title: string; notes: ImportNote[] }) {
   return (
     <div className="field">
       <span className="flabel">{title} ({notes.length})</span>
-      <table className="table compact" aria-label={title}>
+      <table className="table note-table" aria-label={title}>
+        <colgroup><col className="note-kind" /><col className="note-name" /><col /></colgroup>
         <tbody>
           {notes.map((n, i) => (
             <tr key={i}>
-              <td className="faint" style={{ whiteSpace: 'nowrap' }}>{n.kind}</td>
+              <td className="note-kind">{n.kind}</td>
               <td className="mono primary">{n.name}</td>
-              <td style={{ fontSize: 'var(--fs-sm)' }}>{n.detail}</td>
+              <td>{n.detail}</td>
             </tr>
           ))}
         </tbody>
@@ -50,11 +51,14 @@ export function ImportTetherDrawer({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  // A path's end (the file name) matters more than its start: keep it in view.
+  const showPathEnd = () => requestAnimationFrame(() => { const el = fileRef.current; if (el) el.scrollLeft = el.scrollWidth; });
   useTrapFocus(ref, onClose);
 
   const pick = async () => {
     const { path } = await api.dialogOpen('Choose a Tether vault');
-    if (path) { setFile(path); setReport(null); }
+    if (path) { setFile(path); setReport(null); showPathEnd(); }
   };
 
   const run = async (dryRun: boolean) => {
@@ -66,7 +70,10 @@ export function ImportTetherDrawer({ onClose }: { onClose: () => void }) {
       if (!dryRun) {
         setPassword('');
         await refreshCatalog();
-        notify(`Imported ${plural(r.added.hosts, 'host', 'hosts')} from Tether`);
+        const added = r.added.groups + r.added.hosts + r.added.keys + r.added.credentials + r.added.known_hosts;
+        notify(added === 0
+          ? `Nothing new to import: everything is already in ${vault?.name ?? 'this vault'}`
+          : `Imported ${plural(r.added.hosts, 'host', 'hosts')} from Tether`);
       }
     } catch (err) {
       setError(toFlintError(err).message);
@@ -78,7 +85,7 @@ export function ImportTetherDrawer({ onClose }: { onClose: () => void }) {
   const done = report && !report.dry_run;
   const ready = !!file.trim() && !!password && !busy;
   return (
-    <aside ref={ref} className="drawer" role="dialog" aria-label="Import from Tether">
+    <aside ref={ref} className="drawer drawer-wide" role="dialog" aria-label="Import from Tether">
       <form style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
         onSubmit={(e) => { e.preventDefault(); if (ready && !done) run(!report); }}
         onKeyDown={(e) => { if (e.key === 'Enter' && (os === 'mac' ? e.metaKey : e.ctrlKey) && ready && !done) run(false); }}>
@@ -90,7 +97,7 @@ export function ImportTetherDrawer({ onClose }: { onClose: () => void }) {
           </span>
           <div className="field"><span className="flabel">Tether vault</span>
             <div className="row" style={{ gap: 'var(--sp-2)' }}>
-              <div className="input grow"><Icon name="file" size="sm" className="faint" /><input className="mono" aria-label="Tether vault file" value={file} disabled={!!done}
+              <div className="input grow"><Icon name="file" size="sm" className="faint" /><input ref={fileRef} className="mono" aria-label="Tether vault file" value={file} onBlur={showPathEnd} disabled={!!done}
                 onChange={(e) => { setFile(e.target.value); setReport(null); }} placeholder="vault.tether" style={{ fontSize: 'var(--fs-sm)' }} data-autofocus /></div>
               <button type="button" className="btn btn-secondary" style={{ height: 'var(--control-h)' }} disabled={!!done} onClick={() => pick().catch(() => {})}>Choose…</button>
             </div>

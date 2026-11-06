@@ -42,14 +42,16 @@ body { margin: 0; background: var(--surface-desk); }
 .traffic i { display: block; width: 12px; height: 12px; border-radius: 50%; }
 .traffic i:nth-child(1) { background: var(--mac-close); } .traffic i:nth-child(2) { background: var(--mac-min); } .traffic i:nth-child(3) { background: var(--mac-zoom); }
 .tb-brand { display: none; align-items: center; gap: var(--sp-2); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
-.tb-title { flex: 1; display: flex; justify-content: center; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-tertiary); min-width: 0; }
+/* Centred on the whole window, not on the space between the controls; kept clear of
+   the palette button (260px) on both sides so it never runs under it. */
+.tb-title { position: absolute; left: 50%; transform: translateX(-50%); max-width: calc(100% - 2 * (260px + var(--sp-6))); display: flex; justify-content: center; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-tertiary); min-width: 0; overflow: hidden; white-space: nowrap; pointer-events: none; }
 .wc { display: none; gap: var(--sp-1); margin-left: var(--sp-2); }
 .wc button { width: 28px; height: 24px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: var(--text-secondary); }
 .wc button:hover { background: var(--surface-hover); color: var(--text-primary); }
 .wc button.close:hover { background: var(--danger); color: var(--text-on-danger); }
 .app[data-os="linux"] .traffic { display: none; }
 .app[data-os="linux"] .tb-brand, .app[data-os="linux"] .wc { display: flex; }
-.palette-btn { width: 260px; height: 26px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-2); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--text-tertiary); font-size: var(--fs-sm); }
+.palette-btn { margin-left: auto; width: 260px; height: 26px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-2); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--text-tertiary); font-size: var(--fs-sm); }
 .palette-btn:hover { border-color: var(--border-strong); color: var(--text-secondary); }
 
 /* Rail */
@@ -351,3 +353,18 @@ body { margin: 0; background: var(--surface-desk); }
 .set-l .t { font-weight: var(--fw-medium); }
 .set-l .d { font-size: var(--fs-xs); color: var(--text-tertiary); }
 
+
+/* A wider drawer for content with long rows (the import report). */
+.drawer.drawer-wide { width: clamp(400px, 50%, 760px); }
+
+/* Notes of an import report: fixed columns whose cells wrap (long paths too)
+   instead of scrolling the drawer sideways. */
+.note-table { table-layout: fixed; }
+.note-table col.note-kind { width: 96px; }
+.note-table col.note-name { width: 38%; }
+.note-table td { height: auto; padding: var(--sp-2) var(--sp-3); vertical-align: top; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
+.note-table td.note-kind { font-size: var(--fs-xs); color: var(--text-tertiary); text-transform: uppercase; letter-spacing: var(--tracking-label); padding-top: calc(var(--sp-2) + 2px); }
+
+/* App chrome is not text: a double click or drag on it selects nothing. Inputs, the
+   terminal and data (tables, fingerprints, paths) stay selectable. */
+.titlebar, .rail, .statusbar, .tab, .tree, .btn, .icon-btn, .flabel, .seg, .palette-btn { -webkit-user-select: none; user-select: none; }
