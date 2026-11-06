@@ -243,3 +243,29 @@ test "OpenSSH's known_hosts files are not read" {
     assert_eq(user_file, "/dev/null")
     assert_eq(global_file, "/dev/null")
 }
+
+test "a keepalive goes out mid-session and the channel keeps working" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    mut link := new_ssh_link()
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_auth_key(try fs.read_text(key_path), "")
+    try link.link_exec_start("sleep 1; echo still-here")
+    try link.link_keepalive()
+    _ := try link.link_channel_read(300)
+    try link.link_keepalive()
+    res := try read_all(mut link)
+    link.link_hangup()
+    assert(res.done)
+    assert_eq(res.stdout, "still-here\n")
+    assert_eq(res.exit_code, 0)
+}
+
+test "a keepalive on a link with no hop fails with network" {
+    mut link := new_ssh_link()
+    r := link.link_keepalive()
+    assert(!r.has_value())
+}

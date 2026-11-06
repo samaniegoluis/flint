@@ -115,6 +115,8 @@ type SshTransport interface {
     link_channel_read(timeout_ms: i32) -> ExecChunk!
     link_channel_write(data: str) -> void!
     link_channel_resize(cols: i32, rows: i32) -> void!
+    // Sends a keepalive request on the last hop without waiting for the answer.
+    link_keepalive() -> void!
     link_hangup()
 }
 

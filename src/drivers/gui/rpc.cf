@@ -534,7 +534,8 @@ fn run_gui_session(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, v
     mut link := new_ssh_link()
     mut term := new_gui_terminal(app, req.session)
     prompter := new_gui_prompter(app, req.session)
-    result := connect_host(c, mut store, vs, mut link, prompter, mut term, req.alias, "xterm-256color", opts)
+    mut clock := new_system_clock()
+    result := connect_host(c, mut store, vs, mut link, prompter, mut term, mut clock, req.alias, "xterm-256color", opts)
     link.link_hangup()
     if result.has_value() {
         emit_session_state(mut app, req.session, "ended", "", "", result.value())

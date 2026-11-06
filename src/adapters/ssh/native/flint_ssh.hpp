@@ -7,6 +7,8 @@
 // helpers and the forwarder thread below (CF-031).
 #pragma once
 #include <libssh/libssh.h>
+// ssh_send_keepalive is declared with the server API but serves a client too.
+#include <libssh/server.h>
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
@@ -133,6 +135,12 @@ inline bool read_chunk(ssh_channel ch, int timeout_ms, std::string& out, std::st
 #endif
     }
     return true;
+}
+
+// ---- Keepalive -----------------------------------------------------------------
+
+inline int send_keepalive(ssh_session s) {
+    return ssh_send_keepalive(s) == SSH_OK ? 0 : -1;
 }
 
 // ---- Jump-host tunnel ---------------------------------------------------------

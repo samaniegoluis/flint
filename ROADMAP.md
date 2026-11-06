@@ -67,7 +67,8 @@ What Tether already does and Flint must not lose.
 | `flint exec <alias> -- cmd` | `done` | |
 | `flint exec` forwards local stdin to the remote command (`cat file \| flint exec web -- 'cat > x'`) | `next` | Today stdin is closed at start (milestone 03) |
 | `flint exec --tty` / `connect -- <cmd>`: a command on a PTY | `next` | No longer a prerequisite of `flint exec --sudo`, which runs on a PTY inside the app (D-039) |
-| Keepalives (`ServerAliveInterval`) for idle `flint connect` sessions | `next` | |
+| Keepalives (`ServerAliveInterval`) for idle `flint connect` sessions | `done` | Quick wins: every 30 s without hearing from the server, in the CLI and the app's tabs (Tether's interval) |
+| A configurable keepalive interval, and dropping a session after N unanswered keepalives (`ServerAliveCountMax`) | `idea` | Quick wins send a fixed 30 s keepalive and only notice a dead link when sending fails |
 | `flint exec @group -- cmd`: parallel fan-out, structured JSON per host | `next` | Great for agents and scripts |
 | `flint cp a:/path b:/path` (remote ↔ local ↔ remote, by alias) | `next` | |
 | `flint tunnel up\|down\|ls <name>` | `next` | |

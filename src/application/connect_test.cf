@@ -287,7 +287,8 @@ test "a shell relays both ways, follows resizes and leaves raw mode" {
     link.chunks = [out_chunk("$ "), out_chunk(""), out_chunk("hi\r\n"), out_chunk(""), done_chunk(0)]
     mut term := new_fake_terminal(["echo hi\r", "", "exit\r"])
     term.resize_at = 2
-    code := try run_shell(mut link, mut term, "xterm-256color", "")
+    mut clock := idle_clock()
+    code := try run_shell(mut link, mut term, mut clock, "xterm-256color", "")
     assert_eq(code, 0)
     assert_eq(link.calls[0], "shell xterm-256color 120x40")
     assert_eq(term.output, "$ hi\r\n")
@@ -295,6 +296,42 @@ test "a shell relays both ways, follows resizes and leaves raw mode" {
     assert_eq(link.resized, "100x30")
     assert(!term.raw)
     assert_eq(term.raw_entered, 1)
+    assert_eq(link.keepalives, 0)
+}
+
+// A clock that barely moves: no keepalive is ever due.
+fn idle_clock() -> FakeClock {
+    return FakeClock{ now_ms: 0, step_ms: 1 }
+}
+
+fn quiet_chunk() -> ExecChunk {
+    return out_chunk("")
+}
+
+test "a quiet shell sends a keepalive every interval, and output resets the wait" {
+    mut link := new_fake_link()
+    // Each read advances the clock 10 s: reads 1-3 hear nothing (30 s), read 4 is
+    // output, reads 5-7 are quiet again, then the shell ends.
+    link.chunks = [quiet_chunk(), quiet_chunk(), quiet_chunk(), out_chunk("$ "), quiet_chunk(), quiet_chunk(), quiet_chunk(), done_chunk(0)]
+    mut term := new_fake_terminal([])
+    mut clock := FakeClock{ now_ms: 0, step_ms: 10000 }
+    code := try run_shell(mut link, mut term, mut clock, "xterm-256color", "")
+    assert_eq(code, 0)
+    assert_eq(link.keepalives, 2)
+    assert_eq(term.output, "$ ")
+}
+
+test "a keepalive that cannot be sent ends the session with a network error" {
+    mut link := new_fake_link()
+    link.fail_keepalive = true
+    link.chunks = [quiet_chunk(), quiet_chunk(), quiet_chunk(), quiet_chunk(), done_chunk(0)]
+    mut term := new_fake_terminal([])
+    mut clock := FakeClock{ now_ms: 0, step_ms: 10000 }
+    r := run_shell(mut link, mut term, mut clock, "xterm-256color", "")
+    assert(!r.has_value())
+    assert_eq(error_code_of("{r.error().message()}"), ERR_NETWORK)
+    assert_eq(link.keepalives, 1)
+    assert(!term.raw, "raw mode is left on the way out")
 }
 
 // ---- Initial command (D-031, D-032) ---------------------------------------------
@@ -319,7 +356,8 @@ test "a host's initial command is stored, shown and run on the PTY" {
 
     mut link := web_link()
     mut term := new_fake_terminal(["exit\r"])
-    _ := try connect_host(crypto, mut store, s, mut link, no_prompter(), mut term, "web", "xterm-256color", accept_opts())
+    mut clock1 := idle_clock()
+    _ := try connect_host(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock1, "web", "xterm-256color", accept_opts())
     assert_eq(link.calls[link.calls.len() - 1], "shell xterm-256color 120x40 \"$SHELL\" -ilc 'herdr'; exec \"$SHELL\" -l")
 
     mut q := empty_host_patch()
@@ -328,7 +366,8 @@ test "a host's initial command is stored, shown and run on the PTY" {
     _ := try edit_host(crypto, mut store, s, "web", q)
     mut link2 := web_link()
     mut term2 := new_fake_terminal([])
-    _ := try connect_host(crypto, mut store, s, mut link2, no_prompter(), mut term2, "web", "xterm-256color", accept_opts())
+    mut clock2 := idle_clock()
+    _ := try connect_host(crypto, mut store, s, mut link2, no_prompter(), mut term2, mut clock2, "web", "xterm-256color", accept_opts())
     assert_eq(link2.calls[link2.calls.len() - 1], "shell xterm-256color 120x40 exec \"$SHELL\" -ilc 'herdr'")
 
     // --no-command: a plain shell.
@@ -336,7 +375,8 @@ test "a host's initial command is stored, shown and run on the PTY" {
     plain.run_initial_command = false
     mut link3 := web_link()
     mut term3 := new_fake_terminal([])
-    _ := try connect_host(crypto, mut store, s, mut link3, no_prompter(), mut term3, "web", "xterm-256color", plain)
+    mut clock3 := idle_clock()
+    _ := try connect_host(crypto, mut store, s, mut link3, no_prompter(), mut term3, mut clock3, "web", "xterm-256color", plain)
     assert_eq(link3.calls[link3.calls.len() - 1], "shell xterm-256color 120x40")
 
     // exec ignores it.

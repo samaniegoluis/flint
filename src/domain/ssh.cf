@@ -6,6 +6,10 @@ package domain
 // Default timeouts (Principle 8). Every dial, auth and exec is bounded.
 SSH_CONNECT_TIMEOUT_SECS: i64 = 15
 SSH_EXEC_TIMEOUT_SECS: i64 = 600
+// An interactive session that has heard nothing from the server for this long sends
+// a keepalive request (OpenSSH's ServerAliveInterval), so routers, NATs and firewalls
+// that drop idle connections keep it open. Tether used the same interval.
+SSH_KEEPALIVE_SECS: i64 = 30
 
 // A recorded server host key. One per address: a key of another type at the same
 // address counts as a changed key.

@@ -220,6 +220,22 @@ fn (mut self: SshLink) link_channel_resize(cols: i32, rows: i32) -> void! {
     }
 }
 
+// A `keepalive@openssh.com` global request on the last hop. It travels inside every
+// tunnel, so it keeps the whole chain's TCP connection busy. Non-blocking: the reply,
+// or the server's refusal, is consumed by later reads.
+fn (mut self: SshLink) link_keepalive() -> void! {
+    conn := try self.last_hop()
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = conn.session ? flint_ssh::send_keepalive(conn.session) : -1;
+    }
+    if rc != 0 {
+        return error(coded(ERR_NETWORK, "the connection was lost: {conn.last_error()}"))
+    }
+}
+
 // Closes every hop, innermost first. Tunnel i runs over hop i and carries hop
 // i+1, so it is stopped after hop i+1 is gone and before hop i goes. A tunnel
 // whose next hop never connected is stopped the same way.

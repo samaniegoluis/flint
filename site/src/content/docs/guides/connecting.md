@@ -157,6 +157,14 @@ counts as changed and is refused like any other changed key.
 
 Both take 1 to 86400 seconds. An interactive shell has no time limit.
 
+### Idle sessions
+
+An interactive session, in the CLI or a tab in the app, sends the server a keepalive
+after 30 seconds without hearing from it, as OpenSSH's `ServerAliveInterval 30` does.
+Routers, NATs and firewalls that drop idle connections then leave it open while you
+read. If the keepalive cannot be sent, the connection is gone: the session ends with
+`network` (exit code 13 in the CLI, a lost connection in the app).
+
 ## Not supported yet
 
 - Forwarding your stdin to `flint exec`, agent forwarding, port forwarding and SFTP.
