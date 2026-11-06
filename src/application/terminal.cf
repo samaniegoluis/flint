@@ -19,8 +19,7 @@ fn pump_shell_output[S: ShellSession, E: EventSink](mut shell: S, mut sink: E, s
     mut total: i64 = 0
     for _ in 0..max_reads {
         chunk := shell.read(poll_ms) or err {
-            // Error.message() is a string_view and does not convert to str (CF-023).
-            sink.terminal_closed(session_id, "{err.message()}")
+            sink.terminal_closed(session_id, err.message())
             return PumpResult{ bytes: total, closed: true }
         }
         if chunk.len() > 0 {
@@ -35,7 +34,7 @@ fn pump_shell_output[S: ShellSession, E: EventSink](mut shell: S, mut sink: E, s
 
 // The largest text a remote program may put on the clipboard in one OSC 52 request,
 // decoded. tmux and Neovim send far less; this only bounds a hostile stream.
-var OSC52_MAX_BYTES: i64 = 1048576
+OSC52_MAX_BYTES: i64 = 1048576
 
 // What an OSC 52 request did: "copied", or "ignored" for a query ("?") or a request
 // for a selection other than the clipboard (primary, secondary, cut buffers).

@@ -4,9 +4,8 @@ package main
 // and returns the result as JSON (Principle 2); an error rejects the page's promise
 // with the core's "code: message" text.
 //
-// They are named functions rather than closures because a webui closure cannot
-// return both an error and a value (CF-027). Adapters are passed in one by one: a
-// struct in this package cannot hold another package's struct (CF-033).
+// Each is a named function, bound in main.cf by a one-line closure, so a handler
+// reads like any use case call and can be tested on its own.
 
 import "ext:webui"
 import "ext:json"
@@ -22,13 +21,13 @@ import "../../adapters/vault"
 import "../../application"
 import "../../domain"
 
-var FLINT_VERSION: str = "0.0.0-dev"
+FLINT_VERSION: str = "0.0.0-dev"
 
 // The most sessions open at once; each one holds a worker thread.
-var MAX_SESSIONS: i64 = 48
+MAX_SESSIONS: i64 = 48
 
 // How long the headless end-to-end run (FLINT_GUI_E2E) may take.
-var E2E_TIMEOUT_MS: i32 = 120000
+E2E_TIMEOUT_MS: i32 = 120000
 
 // ---- Requests ---------------------------------------------------------------------
 
@@ -71,8 +70,7 @@ type RenameReq struct {
 }
 
 // host_edit and cred_edit send the patch's fields plus `target`, the alias or name
-// being edited; the request is parsed twice rather than nesting the patch in a local
-// struct (CF-033).
+// being edited, at the top level; the request is parsed once as each.
 type TargetReq struct {
     target: str `json:"target"`
 }
@@ -183,40 +181,32 @@ type HostTestEvent struct {
 
 // ---- State ------------------------------------------------------------------------
 
-// The unlocked vault, mirrored field by field from VaultSession (CF-033). Handlers
-// run on the UI thread one at a time; a session worker gets a copy when it starts.
+// The unlocked vault. Handlers run on the UI thread one at a time; a session worker
+// gets a copy when it starts.
 type GuiState struct {
-    path:        str
-    name:        str
-    id:          str
-    secrets_key: []byte
-    cached:      bool
-    unlocked:    bool
+    session:  VaultSession
+    unlocked: bool
+}
+
+fn no_vault_session() -> VaultSession {
+    return VaultSession{ path: "", name: "", id: "", secrets_key: [], cached: false }
 }
 
 fn new_gui_state() -> GuiState {
-    return GuiState{ path: "", name: "", id: "", secrets_key: [], cached: false, unlocked: false }
+    return GuiState{ session: no_vault_session(), unlocked: false }
 }
 
 fn (self: GuiState) vault_session() -> VaultSession {
-    return VaultSession{ path: self.path, name: self.name, id: self.id, secrets_key: self.secrets_key, cached: self.cached }
+    return self.session
 }
 
 fn (mut self: GuiState) adopt(s: VaultSession) {
-    self.path = s.path
-    self.name = s.name
-    self.id = s.id
-    self.secrets_key = s.secrets_key
-    self.cached = s.cached
+    self.session = s
     self.unlocked = true
 }
 
 fn (mut self: GuiState) forget() {
-    self.path = ""
-    self.name = ""
-    self.id = ""
-    self.secrets_key = []
-    self.cached = false
+    self.session = no_vault_session()
     self.unlocked = false
 }
 
@@ -282,7 +272,7 @@ fn rpc_settings_set(params: str, mut store: JsonSettingsStore) -> str! {
 fn rpc_ui_state_get(ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState) -> str! {
     mut vault := ""
     if st.unlocked {
-        vault = st.id
+        vault = st.session.id
     }
     return json.stringify(try ui_state_paths(ui, store, vault))
 }
@@ -291,8 +281,8 @@ fn rpc_ui_state_set(params: str, mut ui: JsonUiStateStore, store: LockedVaultSto
     req := try parse_req[UiStateReq](params)
     mut view := UiStateView{ sidebar_open: req.sidebar_open, sidebar_width: req.sidebar_width, collapsed: req.collapsed }
     mut vault := ""
-    if st.unlocked && req.vault == st.path {
-        vault = st.id
+    if st.unlocked && req.vault == st.session.path {
+        vault = st.session.id
     } else {
         view.collapsed = []
     }
@@ -338,7 +328,7 @@ fn rpc_vault_close(mut store: LockedVaultStore, mut st: GuiState) -> str! {
 // Forgets the cached key on this machine (`flint vault lock`).
 fn rpc_vault_forget_key(params: str, mut store: LockedVaultStore, kc: OsKeychain, mut st: GuiState) -> str! {
     req := try parse_req[PathReq](params)
-    if req.path == st.path {
+    if req.path == st.session.path {
         gui_session_close_all()
         st.forget()
     }
@@ -349,7 +339,7 @@ fn rpc_vault_forget_key(params: str, mut store: LockedVaultStore, kc: OsKeychain
 // Drops a vault from the recent list (`flint vault forget`).
 fn rpc_vault_forget(params: str, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> str! {
     req := try parse_req[PathReq](params)
-    if req.path == st.path {
+    if req.path == st.session.path {
         gui_session_close_all()
         st.forget()
     }
@@ -420,12 +410,9 @@ fn rpc_key_add(params: str, c: Sodium, mut store: LockedVaultStore, inspector: L
     req := try parse_req[KeyAddReq](params)
     mut content := req.private_key
     if req.file.len() > 0 {
-        // Assign through a new binding: `content = f() or err { }` drops the
-        // or-block (CF-048).
-        text := fs.read_text(req.file) or err {
+        content = fs.read_text(req.file) or err {
             return error(coded(ERR_NOT_FOUND, "cannot read the key file {req.file}"))
         }
-        content = text
     }
     return json.stringify(try add_key(c, mut store, inspector, st.vault_session(), req.name, content, req.passphrase))
 }

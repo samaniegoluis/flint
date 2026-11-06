@@ -10,8 +10,7 @@ import "core:os"
 import "ext:json"
 import "../../domain"
 
-// File shape. Entries use a local struct: a field whose type comes from another
-// package is emitted before that type is complete (CF-033).
+// File shape: a local struct, so the file format does not follow the domain type.
 // `id` (the vault id, D-030) came in milestone 07; in older files it reads as "".
 type RecentEntry struct {
     path: str `json:"path"`

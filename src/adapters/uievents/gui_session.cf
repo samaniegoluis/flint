@@ -16,7 +16,7 @@ import cpp "flint_gui.hpp" @pkg("flint-native")
 import "../../domain"
 
 // How long a prompt waits for the person before the connection attempt gives up.
-var PROMPT_TIMEOUT_MS: i32 = 300000
+PROMPT_TIMEOUT_MS: i32 = 300000
 
 // ---- Mailboxes (called from RPC handlers and the worker) --------------------------
 
@@ -125,8 +125,8 @@ type SessionState struct {
     exit_code: i64 `json:"exit_code"`
 }
 
-// A local mirror of the domain's HostKeyQuestion: a field typed with another
-// package's struct can be emitted before that struct is complete (CF-033).
+// The event payload for a host key question: the page's shape, kept apart from the
+// domain's HostKeyQuestion.
 type HostKeyPayload struct {
     alias:             str `json:"alias"`
     addr:              str `json:"addr"`

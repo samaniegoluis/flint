@@ -9,7 +9,7 @@ import "../ports"
 // Fields to set on a host. A `set_*` flag says the field was given; on `add`, the
 // fields not given keep their defaults. Empty reference names (group, jump,
 // credential, key) clear the reference. An empty password clears it. The JSON tags
-// are for the GUI's requests: ext:json skips untagged fields (CF-049).
+// fix the names of the GUI's request fields.
 type HostPatch struct {
     alias: str `json:"alias"`
     set_alias: bool `json:"set_alias"`

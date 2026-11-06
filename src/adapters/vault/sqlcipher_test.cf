@@ -8,9 +8,9 @@ import "../../domain"
 
 // Migration 001 as shipped. An applied migration must never change (Principle 10);
 // if this test fails, revert the edit and append a new migration instead.
-var MIGRATION_001_SHA256: str = "9ed7d684e513f15455c31c2680407da618820c08eddb64d23796129919be5afd"
-var MIGRATION_002_SHA256: str = "9973529e84f0c738288de9b0187a5b48810ced2b269bda6d248571e1442beeb7"
-var MIGRATION_003_SHA256: str = "d68639a62a93d26076581b02403eb1f9f3b4df0c6f9807842988940fb5b64b9c"
+MIGRATION_001_SHA256: str = "9ed7d684e513f15455c31c2680407da618820c08eddb64d23796129919be5afd"
+MIGRATION_002_SHA256: str = "9973529e84f0c738288de9b0187a5b48810ced2b269bda6d248571e1442beeb7"
+MIGRATION_003_SHA256: str = "d68639a62a93d26076581b02403eb1f9f3b4df0c6f9807842988940fb5b64b9c"
 
 fn temp_vault_path(name: str) -> str {
     dir := "/tmp/flint-test-" + hex.encode(sha256.random_bytes(8))

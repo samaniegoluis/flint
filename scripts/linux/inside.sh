@@ -29,8 +29,8 @@ grep -q "keychain cache: True" /tmp/e2e-keyring.log
 echo "== cli e2e (no Secret Service: every command takes the master password)"
 scripts/cli-e2e.sh | tee /tmp/e2e-none.log
 grep -q "keychain cache: False" /tmp/e2e-none.log
-# cfire run_webview_test is a no-op on Linux (CF-029): the desktop app's end-to-end
-# run opens the real GTK window under Xvfb instead (scripts/gui-e2e.sh).
+# The desktop app's end-to-end run opens the real GTK window under Xvfb
+# (scripts/gui-e2e.sh).
 echo "== desktop app end-to-end under Xvfb"
 PATH="$PATH:/usr/sbin" scripts/gui-e2e.sh | tee /tmp/gui-e2e.log
 grep -q "^e2e: pass" /tmp/gui-e2e.log

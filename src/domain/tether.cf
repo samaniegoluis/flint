@@ -14,9 +14,9 @@ import "core:encoding/base64"
 // Versions of Tether's schema (`PRAGMA user_version`) the import reads. 1 has
 // groups and hosts; 2 adds stored keys, known hosts and host passwords; 3
 // credentials; 4 the initial command; 5 tunnels and jump hosts.
-var TETHER_FORMAT_MIN: i64 = 1
-var TETHER_FORMAT_MAX: i64 = 5
-var TETHER_VERIFIER: str = "tether-verify-v1"
+TETHER_FORMAT_MIN: i64 = 1
+TETHER_FORMAT_MAX: i64 = 5
+TETHER_VERIFIER: str = "tether-verify-v1"
 
 type TetherGroup struct {
     id: str
@@ -77,7 +77,6 @@ type TetherTunnel struct {
     remote_port: i64
 }
 
-// Declared after its element types (CF-033).
 type TetherFile struct {
     format: i64
     salt_b64: str

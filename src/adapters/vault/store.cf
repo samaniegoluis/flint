@@ -6,19 +6,14 @@ package vault
 import "core:fs"
 import "../../domain"
 
-// Holds the raw handle rather than a CipherDb: a struct field of another struct
-// type can be emitted before that type is complete (CF-033).
+// Holds the raw handle; `conn()` wraps it in a CipherDb view. LockedVaultStore
+// shares this handle across threads (locked.cf).
 type SqlVaultStore struct {
     handle: *mut cpp::sqlite3
 }
 
 fn new_sql_vault_store() -> SqlVaultStore {
-    mut s := SqlVaultStore{}
-    // CFIRE-UPSTREAM: CF-019
-    cpp {
-        s.handle = nullptr;
-    }
-    return s
+    return SqlVaultStore{ handle: none }
 }
 
 // A view of the open connection; it does not own the handle.
@@ -27,10 +22,7 @@ fn (self: SqlVaultStore) conn() -> CipherDb {
 }
 
 fn (mut self: SqlVaultStore) adopt(db: CipherDb) {
-    // CFIRE-UPSTREAM: CF-019
-    cpp {
-        self.handle = db.handle;
-    }
+    self.handle = db.handle
 }
 
 fn (self: SqlVaultStore) vault_file_exists(path: str) -> bool {
@@ -42,24 +34,14 @@ fn (self: SqlVaultStore) vault_read_salt(path: str) -> []byte! {
     if !fs.exists(path) {
         return error(coded(ERR_NOT_FOUND, "no vault file at {path}"))
     }
-    // Read with std::ifstream: fs.File's `read` method is captured by SshConn.read
-    // once both are in one program (CF-017).
-    mut head := make([]byte, 16)
-    mut got: i64 = 0
-    // CFIRE-UPSTREAM: CF-017
-    cpp {
-        std::ifstream in(path, std::ios::binary);
-        if (in) {
-            in.read(reinterpret_cast<char*>(head.data()), 16);
-            got = static_cast<std::int64_t>(in.gcount());
-        } else {
-            got = -1;
-        }
-    }
-    if got < 0 {
+    mut f := fs.open(path) or err {
         return error(coded(ERR_IO, "cannot read {path}"))
     }
-    if got != 16 {
+    defer f.close()
+    head := f.read_bytes(16) or err {
+        return error(coded(ERR_IO, "cannot read {path}"))
+    }
+    if head.len() != 16 {
         return error(coded(ERR_INVALID, "{path} is not a Flint vault"))
     }
     return head
@@ -101,10 +83,7 @@ fn (mut self: SqlVaultStore) vault_detach() {
     if db.is_open() {
         db.close_db()
     }
-    // CFIRE-UPSTREAM: CF-019
-    cpp {
-        self.handle = nullptr;
-    }
+    self.handle = none
 }
 
 fn (self: SqlVaultStore) require_open() -> void! {
@@ -125,10 +104,10 @@ fn (self: SqlVaultStore) vault_format() -> i64! {
 fn (self: SqlVaultStore) vault_get_meta(key: str) -> str! {
     try self.require_open()
     res := try self.conn().query_cells("SELECT value FROM meta WHERE key = ?1;", [sql_text(key)])
-    if res.rows.len() == 0 {
+    if res.len() == 0 {
         return ""
     }
-    return cell_str(res.rows[0][0])
+    return cell_str(res[0][0])
 }
 
 fn (self: SqlVaultStore) vault_set_meta(key: str, value: str) -> void! {
@@ -155,7 +134,7 @@ fn (self: SqlVaultStore) groups_all() -> []Group! {
     try self.require_open()
     res := try self.conn().query_cells("SELECT id, ifnull(parent_id, ''), name FROM groups ORDER BY name COLLATE NOCASE;", [])
     mut list: []Group = []
-    for r in res.rows {
+    for r in res {
         list.push(Group{ id: cell_str(r[0]), parent_id: cell_str(r[1]), name: cell_str(r[2]) })
     }
     return list
@@ -178,7 +157,7 @@ fn (self: SqlVaultStore) hosts_all() -> []Host! {
     res := try self.conn().query_cells("SELECT id, alias, label, hostname, port, username, ifnull(group_id, ''), color, notes, ifnull(jump_host_id, ''), ifnull(credential_id, ''), ifnull(key_id, ''), password, initial_command, keep_shell FROM hosts ORDER BY alias COLLATE NOCASE;", [])
     tag_res := try self.conn().query_cells("SELECT host_id, tag FROM host_tags ORDER BY host_id, position;", [])
     mut tags_by_host: map[str][]str = {}
-    for t in tag_res.rows {
+    for t in tag_res {
         hid := cell_str(t[0])
         if !tags_by_host.contains(hid) {
             tags_by_host[hid] = []
@@ -186,7 +165,7 @@ fn (self: SqlVaultStore) hosts_all() -> []Host! {
         tags_by_host[hid].push(cell_str(t[1]))
     }
     mut list: []Host = []
-    for r in res.rows {
+    for r in res {
         id := cell_str(r[0])
         mut tags: []str = []
         if tags_by_host.contains(id) {
@@ -246,7 +225,7 @@ fn (self: SqlVaultStore) keys_all() -> []SshKey! {
     try self.require_open()
     res := try self.conn().query_cells("SELECT id, name, key_type, public_key, fingerprint, private_key, passphrase FROM ssh_keys ORDER BY name COLLATE NOCASE;", [])
     mut list: []SshKey = []
-    for r in res.rows {
+    for r in res {
         list.push(SshKey{ id: cell_str(r[0]), name: cell_str(r[1]), key_type: cell_str(r[2]), public_key: cell_str(r[3]), fingerprint: cell_str(r[4]), private_key: cell_bytes(r[5]), passphrase: cell_bytes(r[6]) })
     }
     return list
@@ -270,7 +249,7 @@ fn (self: SqlVaultStore) creds_all() -> []Credential! {
     try self.require_open()
     res := try self.conn().query_cells("SELECT id, name, username, ifnull(key_id, ''), password FROM credentials ORDER BY name COLLATE NOCASE;", [])
     mut list: []Credential = []
-    for r in res.rows {
+    for r in res {
         list.push(Credential{ id: cell_str(r[0]), name: cell_str(r[1]), username: cell_str(r[2]), key_id: cell_str(r[3]), password: cell_bytes(r[4]) })
     }
     return list
@@ -294,7 +273,7 @@ fn (self: SqlVaultStore) known_hosts_all() -> []KnownHost! {
     try self.require_open()
     res := try self.conn().query_cells("SELECT addr, key_type, fingerprint, ifnull(host_id, ''), added_at FROM known_hosts ORDER BY addr COLLATE NOCASE;", [])
     mut list: []KnownHost = []
-    for r in res.rows {
+    for r in res {
         list.push(KnownHost{ addr: cell_str(r[0]), key_type: cell_str(r[1]), fingerprint: cell_str(r[2]), host_id: cell_str(r[3]), added_at: cell_str(r[4]) })
     }
     return list

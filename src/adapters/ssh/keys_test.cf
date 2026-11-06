@@ -10,9 +10,10 @@ fn inspector_port_check[I: KeyInspector](i: I) -> bool {
 
 fn keygen(dir: str, name: str, passphrase: str) -> str! {
     path := dir + "/" + name
-    // os.command does not link on Linux (CF-041); the arguments here are fixed test
-    // values, so a shell line is safe.
-    _ := try os.exec_output("ssh-keygen -q -t ed25519 -N '" + passphrase + "' -C flint-test -f '" + path + "'")
+    r := try os.command("ssh-keygen", ["-q", "-t", "ed25519", "-N", passphrase, "-C", "flint-test", "-f", path])
+    if r.exit_code != 0 {
+        return error("ssh-keygen failed: {r.stderr}")
+    }
     return path
 }
 

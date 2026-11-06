@@ -34,7 +34,7 @@ fn warm_up_keychain() -> bool {
     return true
 }
 
-var KEYCHAIN_WARM: bool = warm_up_keychain()
+KEYCHAIN_WARM: bool = warm_up_keychain()
 
 // Talks to the real OS keychain. FLINT_TEST_KEYCHAIN=off skips it on a machine
 // without one (a headless Linux box with no Secret Service).

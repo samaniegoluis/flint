@@ -11,7 +11,7 @@ import "ext:webui"
 import "core:encoding/base64"
 import cpp "flint_gui.hpp" @pkg("flint-native")
 
-var TRIM_EVERY: i32 = 512
+TRIM_EVERY: i32 = 512
 
 type TerminalChunk struct {
     session: str `json:"session"`

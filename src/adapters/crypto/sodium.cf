@@ -6,10 +6,10 @@ package crypto
 // CFIRE-UPSTREAM: CF-006
 import cpp "sodium.h" @pkg("libsodium")
 
-var KEY_LEN: usize = 32
-var SALT_LEN: usize = 16
-var NONCE_LEN: usize = 24
-var TAG_LEN: usize = 16
+KEY_LEN: usize = 32
+SALT_LEN: usize = 16
+NONCE_LEN: usize = 24
+TAG_LEN: usize = 16
 
 // Stateless: the KDF cost is chosen by the caller (the vault format pins it, D-017).
 type Sodium struct {
@@ -28,7 +28,7 @@ fn init_sodium() -> bool {
     return rc >= 0
 }
 
-var SODIUM_READY: bool = init_sodium()
+SODIUM_READY: bool = init_sodium()
 
 fn new_sodium() -> Sodium! {
     if !SODIUM_READY {
@@ -129,7 +129,7 @@ fn (self: Sodium) seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte! {
     return sealed
 }
 
-// Decrypts the output of `seal`. Not named `open`: that would capture `fs.open` (CF-017). Fails if the key, the AAD or any byte is wrong.
+// Decrypts the output of `seal`. Fails if the key, the AAD or any byte is wrong.
 fn (self: Sodium) unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte! {
     if key.len() != KEY_LEN {
         return error("internal: key must be {KEY_LEN} bytes")

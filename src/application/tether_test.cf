@@ -28,8 +28,7 @@ fn tseal(plain: str) -> str {
     return base64.encode_str(bytes_to_str(sealed.value()))
 }
 
-// Holds no TetherFile: a struct field of a struct type from another package can be
-// emitted before that type is complete (CF-033). `tether_read` builds the sample.
+// `tether_read` builds the sample file on each call.
 type FakeTetherSource struct {
     key_file_paths: []str
     key_file_texts: []str

@@ -6,7 +6,7 @@ import "core:encoding/hex"
 // Cross-checked against argon2-cffi (the reference C implementation):
 // hash_secret_raw(b"flint", bytes(range(16)), time_cost=2, memory_cost=65536,
 // parallelism=1, hash_len=32, type=ID).
-var ARGON2_VECTOR: str = "592d7ec75bb085ab5ba3ba0c81792c9aba96973ca244ed3442f8d12547212642"
+ARGON2_VECTOR: str = "592d7ec75bb085ab5ba3ba0c81792c9aba96973ca244ed3442f8d12547212642"
 
 fn hex_of(b: []byte) -> str {
     return hex.encode(b)
@@ -22,8 +22,8 @@ fn port_roundtrip[C: Crypto](c: C) -> bool {
 }
 
 // libsodium's OPSLIMIT/MEMLIMIT_INTERACTIVE: fast enough for tests.
-var TEST_OPS: u64 = 2
-var TEST_MEM: usize = 67108864
+TEST_OPS: u64 = 2
+TEST_MEM: usize = 67108864
 
 fn test_salt() -> []byte {
     mut salt := make([]byte, SALT_LEN)

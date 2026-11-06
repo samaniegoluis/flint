@@ -13,9 +13,13 @@ import cpp "flint_ssh.hpp" @pkg("flint-native")
 
 import "../../domain"
 
-// `SshLink` itself is declared in libssh.cf, right after `SshConn`: cfire emits
-// structs file by file, and this file's could come first, leaving `[]SshConn`
-// incomplete, which libstdc++ rejects (CF-033).
+// A chain of sessions: the SshTransport adapter.
+type SshLink struct {
+    hops: []SshConn
+    // Shared by every copy of this value; owns the tunnel threads (CF-026, CF-043).
+    tunnels: shared[cpp::flint_ssh::Tunnels]
+    timeout_secs: i64
+}
 
 fn new_ssh_link() -> SshLink {
     mut link := SshLink{ hops: [], timeout_secs: 0 }

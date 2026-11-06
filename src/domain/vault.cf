@@ -11,14 +11,14 @@ package domain
 // The numbers are pinned here, not taken from libsodium's *_MODERATE macros, so a
 // libsodium upgrade can never change how an existing vault is opened.
 
-var VAULT_FORMAT_V1: i64 = 1
-var VAULT_SALT_LEN: usize = 16
-var VAULT_KEY_LEN: usize = 32
-var VAULT_ARGON2_OPS: u64 = 3
-var VAULT_ARGON2_MEM: usize = 268435456
-var VAULT_KDF_CONTEXT: str = "flintvlt"
-var VAULT_SUBKEY_PAGE: u64 = 1
-var VAULT_SUBKEY_SECRETS: u64 = 2
+VAULT_FORMAT_V1: i64 = 1
+VAULT_SALT_LEN: usize = 16
+VAULT_KEY_LEN: usize = 32
+VAULT_ARGON2_OPS: u64 = 3
+VAULT_ARGON2_MEM: usize = 268435456
+VAULT_KDF_CONTEXT: str = "flintvlt"
+VAULT_SUBKEY_PAGE: u64 = 1
+VAULT_SUBKEY_SECRETS: u64 = 2
 
 // ---- Entities ----------------------------------------------------------------
 //
@@ -73,8 +73,7 @@ type Credential struct {
     password: []byte
 }
 
-// Every row of a vault, loaded together so ids resolve to names. Declared after
-// its element types: cfire emits structs in declaration order (CF-033).
+// Every row of a vault, loaded together so ids resolve to names.
 type Catalog struct {
     groups: []Group
     hosts: []Host
