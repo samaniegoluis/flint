@@ -12,14 +12,22 @@ Security.framework.
 
 ## 1. Install cfire
 
-Flint is built against cfire commit `3963814`. The installer builds whatever cfire's `main`
-points to, so check the commit first:
+Flint is built against cfire commit `466751b`. cfire's installer builds whatever its `main`
+points to and cannot pick a commit, so build that commit from a checkout instead:
 
 ```sh
-git ls-remote https://github.com/gsandoval/cfire refs/heads/main
-curl -fsSL https://cfire.memo.engineer/install.sh | sh
+git clone https://github.com/gsandoval/cfire && cd cfire
+git checkout 466751b
+make build
+mkdir -p ~/.local/bin ~/.cfire
+rm -f ~/.local/bin/cfire && cp cfire ~/.local/bin/cfire
+rm -rf ~/.cfire/runtime && cp -R runtime ~/.cfire/runtime
+cfire --version     # cfire 0.9.5 (466751b, …)
 cfire doctor
 ```
+
+On macOS, remove the old binary before copying the new one (`rm`, then `cp`): copying
+over an existing signed binary makes macOS kill the new one on launch.
 
 ## 2. Install the native libraries
 
@@ -46,9 +54,9 @@ cfire build
 ```
 
 `scripts/env.sh` adds Flint's own pkg-config folder (`src/adapters/pkgconfig/<os>/`) to
-`PKG_CONFIG_PATH`. The keychain and process adapters reach their native headers and link
-flags through it, because cfire cannot yet link an Apple framework or select a source file
-per platform. Without it, `cfire build` fails to find `flint-native`.
+`PKG_CONFIG_PATH`. The adapters reach their native headers and link flags through it:
+cfire's `build.cf` can declare frameworks, but only for `cfire build` of an executable, not
+for `cfire test` of a package. Without it, `cfire build` fails to find `flint-native`.
 
 The output lists the library versions that were linked:
 
@@ -134,9 +142,3 @@ the desktop app, and runs the tests and the CLI end-to-end run twice: once again
 gnome-keyring on a private D-Bus session (keychain cache on), and once with no Secret
 Service at all (every command takes the master password). Then it runs the desktop app's
 end-to-end check in the real GTK window under Xvfb.
-
-:::note
-cfire's prelude PCH does not match `-pthread`, which WebKitGTK requires, so a WebView
-build on Linux needs a `clang++` wrapper that drops `-pthread`. The image installs one.
-The plain `flint` CLI is not affected.
-:::

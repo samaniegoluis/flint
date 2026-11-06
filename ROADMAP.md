@@ -24,7 +24,7 @@ What Tether already does and Flint must not lose.
 | Tabs, xterm.js, Kitty keyboard protocol, WebGL | `done` | |
 | Command palette | `done` | |
 | Theme, accent colour, terminal font from installed fonts | `done` | |
-| SFTP browser over the same connection: list, up/download with queue, drag & drop, rename, delete, mkdir, `..` | `next` | Needs file drag & drop from the OS (CF-004) |
+| SFTP browser over the same connection: list, up/download with queue, drag & drop, rename, delete, mkdir, `..` | `next` | File drag & drop from the OS: cfire `466751b` emits `files:dropped` (CF-004), not tried yet |
 | File browser opens in the terminal's cwd (OSC 7 shell integration, herdr focused pane) | `next` | |
 | Local port-forward tunnels (`-L`), saved per host | `next` | When it ships, `flint import tether` should carry Tether's tunnels too (today it lists them as not imported, D-034) |
 | OSC 52 clipboard (copy from Neovim/tmux/Zellij) | `done` | Milestone 08 (D-034): write only, through the core |
@@ -103,7 +103,9 @@ What Tether already does and Flint must not lose.
 | Hexagonal core + adapters + drivers | `done` | |
 | `flint serve`: daemon holding live sessions over a local socket. GUI, CLI and MCP become clients | `later` | Enables shared sessions, a persistent agent and tunnels |
 | `flint attach`: attach the CLI to a session open in the GUI, and vice versa | `later` | Needs the daemon |
-| Rewrite native shims in pure cfire as `CF-NNN` entries land | ongoing | See `docs/cfire-upstream.md` |
+| Rewrite native shims in pure cfire as `CF-NNN` entries land | ongoing | See `docs/cfire-upstream.md`. Milestone 09 (cfire `466751b`) did the first pass; what is left is listed there as `partly resolved` / `not adopted` |
+| GUI session mailboxes and vault/SSH locks in cfire (`sync` channels with `recv_timeout`, `sync.Mutex`) instead of `flint_gui.hpp` / `flint_vault_lock.hpp` | `idea` | CF-026: possible now in part, but cfire's `Mutex` neither owns its data nor is recursive (`LockedVaultStore` needs re-entry), and `ch.len()` does not compile. A rewrite of the GUI's threading, worth its own milestone |
+| Terminal output as bytes instead of base64 text in `terminal:output` | `idea` | CF-003: only worth it once webui has a real binary channel; `emit_bytes` today is base64 plus one `eval_js`, like Flint's `emit` |
 | Wipe key material from memory: the master, page and secrets keys when a session ends, and decrypted secrets once libssh has them (`sodium_memzero`) | `next` | Found in the milestone 02/03 owner review; only the hex `PRAGMA key` text is zeroed today |
 
 ## 6. UI
@@ -125,7 +127,7 @@ What Tether already does and Flint must not lose.
 | Connection lost: automatic retry with backoff and a countdown (design screen 11c) | `next` | M04 offers Reconnect only |
 | Connecting card with per-hop progress (jump host, TCP, key exchange, auth, shell — design screen 11a) | `idea` | Needs progress events from the connect use case |
 | "No open sessions" page lists recently used hosts (design screen 13b) | `next` | M04 lists hosts alphabetically; recency needs a per-machine history |
-| Unlock and create run off the UI thread (Argon2id holds it about a second) | `next` | CF-046; the page keeps painting, but the window does not respond meanwhile |
+| Unlock and create run off the UI thread (Argon2id holds it about a second) | `next` | The page keeps painting, but the window does not respond meanwhile. cfire `466751b` has `app.bind_async` (CF-046), a direct fit for these two calls |
 | Opt out of caching the vault key at unlock ("Remember on this device" unchecked) | `idea` | Today every unlock caches it (D-005); Settings → Vault can forget it |
 | Command palette actions in context, as in design screen 09: "New host in <group>", "Reconnect <tab>", "Open Files on <host>", and the `⌘P hosts only` hint in its footer | `next` | Raised in the M04 owner walkthrough; M04 lists the same generic actions everywhere |
 | Drag a host between groups in the tree | `next` | M04 changes the folder in the host editor |
@@ -140,10 +142,10 @@ What Tether already does and Flint must not lose.
 | Feature | Status | Notes |
 |---|---|---|
 | macOS + Linux | `done` | |
-| Windows | `later` | Blocked on CF-001 (WebView2) and CF-010 (POSIX runtime). The owner wants it (M04 owner walkthrough), not urgently: until then, keep new platform code behind adapters so Windows stays a port, not a rewrite. The shortcut table and keychain copy name macOS and Linux only |
+| Windows | `later` | cfire `466751b` added a WebView2 backend and a Win32 runtime (CF-001, CF-010), untried; Flint's own native shims (keychain, process, fonts, clipboard) have no Windows side yet. The owner wants it (M04 owner walkthrough), not urgently: until then, keep new platform code behind adapters so Windows stays a port, not a rewrite. The shortcut table and keychain copy name macOS and Linux only |
 | Signed macOS `.app`, Linux AppImage/tarball, Homebrew tap | `next` | A stable Developer ID signature also stops the Keychain prompt after every update (D-020) |
 | Bundle libssh, libsodium, SQLCipher and libcrypto into the `.app` (rpath fix-up) or link them statically | `next` | Today they are dynamic system packages (D-015); a release cannot rely on Homebrew being installed |
-| App icon on Linux: the GTK window icon and a `.desktop` file with `assets/app-icon/flint-256.png`; Windows `.ico` when Windows lands | `next` | macOS has it since the M04 owner walkthrough (`assets/app-icon/`, CF-052); webui sets no GTK window icon |
+| App icon on Linux: the GTK window icon and a `.desktop` file with `assets/app-icon/flint-256.png`; Windows `.ico` when Windows lands | `next` | macOS has it since the M04 owner walkthrough (`assets/app-icon/`; declared in `build.cf` since M09). cfire `466751b` has `app.set_icon(path)` for the GTK window (CF-052), not tried; GTK takes a PNG, not the `.icns` |
 | Public landing + docs site deployed | `next` | The site itself is built from milestone 01 |
 
 ## 8. Docs site
