@@ -54,6 +54,30 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
   const screenRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const webglRef = useRef<WebglAddon | null>(null);
+
+  // The WebGL renderer draws each glyph once into a texture atlas and reuses it. A
+  // glyph drawn before the terminal's font was ready keeps the fallback font, and
+  // only cells redrawn later (a selection, a new background) use the real one: text
+  // that changes font when selected, or nearly vanishes after a font change. Dropping
+  // the atlas once the font is in redraws every glyph with it. Cheap: glyphs are
+  // drawn again on demand.
+  const redrawGlyphs = () => {
+    const term = termRef.current;
+    if (!term) return;
+    try {
+      webglRef.current?.clearTextureAtlas();
+      fitRef.current?.fit();
+    } catch {
+      // not measurable while hidden
+    }
+    term.refresh(0, term.rows - 1);
+  };
+  // After the next two frames, when a system font (which fires no font-loading
+  // event) has been resolved for the new text.
+  const redrawGlyphsSoon = () => {
+    requestAnimationFrame(() => requestAnimationFrame(redrawGlyphs));
+  };
   const activeRef = useRef(active);
   activeRef.current = active;
   const osRef = useRef(os);
@@ -88,13 +112,20 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     let webgl: WebglAddon | undefined;
     try {
       webgl = new WebglAddon();
-      webgl.onContextLoss(() => { webgl?.dispose(); webgl = undefined; });
+      webgl.onContextLoss(() => { webgl?.dispose(); webgl = undefined; webglRef.current = null; });
       term.loadAddon(webgl);
     } catch {
       webgl = undefined;
     }
     termRef.current = term;
     fitRef.current = fit;
+    webglRef.current = webgl ?? null;
+    // Web fonts (the bundled ones) report when they finish loading; system fonts do not.
+    let alive = true;
+    const onFontsLoaded = () => { if (alive) redrawGlyphs(); };
+    document.fonts?.ready.then(onFontsLoaded).catch(() => {});
+    document.fonts?.addEventListener('loadingdone', onFontsLoaded);
+    redrawGlyphsSoon();
     // The headless end-to-end run reads the terminal's buffer (scripts/gui-e2e.js).
     const e2e = (window as unknown as { __flintE2E?: { terms: Record<string, Terminal> } }).__flintE2E;
     if (e2e) e2e.terms[tabId] = term;
@@ -168,6 +199,8 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     observer.observe(screenRef.current!);
 
     return () => {
+      alive = false;
+      document.fonts?.removeEventListener('loadingdone', onFontsLoaded);
       cancelAnimationFrame(raf);
       observer.disconnect();
       input.dispose();
@@ -179,6 +212,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
+      webglRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabId]);
@@ -199,6 +233,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     term.options.cursorStyle = settings.term_cursor;
     term.options.cursorBlink = settings.term_cursor_blink;
     refit();
+    redrawGlyphsSoon();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.term_font, fontSize, settings.term_line_height, settings.term_cursor, settings.term_cursor_blink]);
 
