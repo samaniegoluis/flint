@@ -25,6 +25,24 @@ as is.
 - Each entry gives: what Flint needed, a minimal repro or source pointer, the workaround and
   where it lives, and what an ideal API would look like.
 
+## Status at cfire `2d8613d` (2026-11-06)
+
+cfire `2d8613d` answered Flint's follow-up review of `466751b` (CF-027 and the review's
+E1–E7). It changes the compiler, the LSP, the MCP server and the docs; the runtime headers
+are byte-identical to `466751b`, so every runtime entry (and the Windows findings below)
+stands as it was. Flint moved to it the same day (D-037) and re-ran its repros:
+
+| Entry or item | At `2d8613d` |
+|---|---|
+| CF-027 | `resolved ✓`. The real trigger (`or err { return error(…) }` in a closure) failed at `466751b`; it builds now |
+| CF-056 | `resolved ✓`, now including the message for a local named `out` |
+| E1 (MCP `cfire_check` passed code clang rejects) | the MCP check now runs the C++ step (read in the diff, not re-run) |
+| E2 (`cfire run` hid the exit code) | `os.exit(3)` → `cfire run` exits 3 |
+| E4, E5, E6 (docs: `Channel.close` receiver, `core:build`, `exit`) | documented. The `core:build` page names `build.Link`, `build.PkgConfig`, `build.os()` and `AppName`; the build system did not change in this commit, so Flint has not relied on them |
+| E7 (LSP for Claude Code) | not working: see **CF-074** |
+
+Everything else in the table below is unchanged.
+
 ## Status at cfire `466751b` (2026-11-06)
 
 cfire `466751b` answered CF-001..CF-053. Flint moved to it in milestone 09 and checked
@@ -660,7 +678,7 @@ The entries below were found while building milestone 01 against cfire `3963814`
   channels and contexts.
 
 ### CF-027 · bug · `resolved ✓`: a `bind` closure cannot return both `error(…)` and a value
-- **At `466751b`:** a `bind` closure can return `error(…)` and a value. Flint keeps named handlers by choice.
+- **At `2d8613d`:** resolved. At `466751b` only `return error(…)` worked; the case that matters, `v := check(params) or err { return error("bad") }` inside a `bind_raw` closure, still failed with the deduction error. It now builds. Flint keeps named handlers by choice.
 - **Repro:** `app.bind[Req]("x") |req| { if req.n < 0 { return error("neg") } return "ok" }`
   → clang `'auto' in return type deduced as 'std::string' here but deduced as
   'unexpected<cfire::Error>' in earlier return statement`. `try` inside the closure fails
@@ -1007,7 +1025,8 @@ The entries below were found while building milestone 02 against the same cfire 
   by clang.
 
 ### CF-056 · bug · `resolved ✓`: a parse error in one file of a package is reported as C++ errors in the others
-- **At `466751b`:** the parse error comes first (see CF-016). The message for `out` is still `unexpected token 'out'`, without saying it is reserved.
+- **At `466751b`:** the parse error comes first (see CF-016).
+- **At `2d8613d`:** the message says why: `'out' is a reserved parameter-intent keyword and cannot be used as a variable name`.
 - **Repro:** name a local `out` (a reserved word: the `out` parameter intent) in one
   file of a package, then `cfire test <dir>`. The file is silently left out, and the
   output is clang's `unknown type name 'FakeCrypto'` / `use of undeclared identifier
@@ -1202,3 +1221,51 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   `src/adapters/uievents/native/flint_gui.hpp`).
 - **Ideal:** a way to turn the built-in menu off, or to declare which shortcuts the page
   owns; Quit through the same close path as the window's close button.
+
+### CF-074 · bug · `confirmed`: `cfire ide claude` writes LSP files Claude Code never loads
+- **At `2d8613d`:** the commit answers the review's E7 by writing `.lsp.json` and
+  `.claude-plugin/plugin.json` into the project. `cfire lsp` itself works well on Flint:
+  go-to-definition across files (`src/drivers/gui/main.cf` → `rpc.cf:240`), references
+  and hover (with the signature and the lowered C++). Only the Claude Code wiring is wrong.
+- **Repro:** in an empty git repo, `cfire ide claude`. It reports
+  `Claude Code (.mcp.json + .lsp.json + .claude-plugin/plugin.json + .claude/rules/cfire.md)`.
+  Then `claude plugin list` in that folder (Claude Code 2.1.319) lists only the LSP
+  plugins installed at user scope (`clangd-lsp`, `gopls-lsp`, `swift-lsp`); `cfire` is
+  not among them, and no `cfire` LSP starts. `claude plugin validate .` accepts the
+  manifest (one warning: no `author`), so the files are well formed; they are just never
+  read.
+- **Why:** Claude Code reads `.lsp.json` and `lspServers` only from a **plugin's** root,
+  and a plugin loads only when it is installed from a marketplace (`/plugin marketplace
+  add …`, then `/plugin install <name>@<marketplace>`) or passed with
+  `claude --plugin-dir <path>` for one session. A `.claude-plugin/plugin.json` at the root
+  of the project being edited is not picked up
+  ([plugins reference](https://code.claude.com/docs/en/plugins-reference)).
+  This is how the official LSP plugins work: `gopls-lsp@claude-plugins-official` is a
+  plugin with an `lspServers` entry and nothing else.
+- **Side effects of the current output:**
+  - `.mcp.json` now holds the absolute path of the binary
+    (`/Users/<user>/.local/bin/cfire`) where it used to hold `cfire`. The file is usually
+    committed, so it breaks for every other contributor and for CI. Same in
+    `.lsp.json`, `plugin.json` and the rules file (`powered by /Users/<user>/… mcp`).
+  - `plugin.json` declares the `cfire` MCP server again. If the plugin were loaded, the
+    session would get two `cfire` MCP servers.
+  - `cfire ide --status` counts Claude Code as configured once `.mcp.json` and `.lsp.json`
+    exist, and the rules file tells agents to "prefer LSP semantic lookups over raw text
+    `grep`", so an agent is sent to an LSP that is not there.
+- **Workaround:** none in Flint, on purpose. Flint keeps its `.mcp.json` (bare `cfire`)
+  and its rules file as they are, and waits for this entry rather than patching it
+  locally.
+- **Ideal:** ship cfire's LSP to Claude Code the way the official LSP plugins are shipped:
+  1. A marketplace in the cfire repo (`.claude-plugin/marketplace.json`) with one plugin,
+     e.g. `cfire-lsp`, whose `plugin.json` has only `lspServers`:
+     `{"cfire": {"command": "cfire", "args": ["lsp"], "extensionToLanguage": {".cf": "cfire"}}}`.
+     The bare `cfire` resolves through `PATH`, so nothing machine-specific is written.
+  2. Install it once per machine: `/plugin marketplace add gsandoval/cfire` and
+     `/plugin install cfire-lsp@cfire` (or `claude plugin install … --scope user`). One
+     install covers every cfire project.
+  3. `cfire ide claude` runs or prints those two commands instead of writing `.lsp.json`
+     and `.claude-plugin/`; for a team repo it can add the marketplace to
+     `.claude/settings.json` (`extraKnownMarketplaces` + `enabledPlugins`) so collaborators
+     are offered it.
+  4. Keep `.mcp.json` for MCP (with a bare `cfire`), and leave MCP out of the plugin.
+  5. `cfire ide --status` checks `claude plugin list` for the plugin, not files on disk.

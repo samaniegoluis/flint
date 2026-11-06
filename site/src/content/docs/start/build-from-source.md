@@ -12,17 +12,17 @@ Security.framework.
 
 ## 1. Install cfire
 
-Flint is built against cfire commit `466751b`. cfire's installer builds whatever its `main`
+Flint is built against cfire commit `2d8613d`. cfire's installer builds whatever its `main`
 points to and cannot pick a commit, so build that commit from a checkout instead:
 
 ```sh
 git clone https://github.com/gsandoval/cfire && cd cfire
-git checkout 466751b
+git checkout 2d8613d
 make build
 mkdir -p ~/.local/bin ~/.cfire
 rm -f ~/.local/bin/cfire && cp cfire ~/.local/bin/cfire
 rm -rf ~/.cfire/runtime && cp -R runtime ~/.cfire/runtime
-cfire --version     # cfire 0.9.5 (466751b, …)
+cfire --version     # cfire 0.9.5 (2d8613d, …)
 cfire doctor
 ```
 

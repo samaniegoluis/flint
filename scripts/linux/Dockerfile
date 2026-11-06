@@ -5,7 +5,7 @@
 #   scripts/linux-check.sh
 FROM debian:trixie
 
-ARG CFIRE_COMMIT=466751b5499f5e8aa4943ff0b13a24846698e6e8
+ARG CFIRE_COMMIT=2d8613ddb2c9c249b60046d6211e6335d138d866
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         clang make git ca-certificates pkg-config \
