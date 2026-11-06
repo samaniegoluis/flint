@@ -153,3 +153,10 @@ What Tether already does and Flint must not lose.
 | Comparison with other SSH clients on the landing (Termius, MobaXterm, Tether) | `later` | Only once SFTP and tunnels ship; today it would argue against Flint |
 | More app screenshots on the landing and the desktop-app guide (command palette, host editor, host-key prompt) | `idea` | `shots:gui` can drive them; one more `screens` entry each |
 | The hero terminal plays the demo tour by itself (typing animation, termynal-style) before the visitor opens the demo | `idea` | Left out of M05; respect `prefers-reduced-motion` |
+
+## 9. Other protocols
+
+| Feature | Status | Notes |
+|---|---|---|
+| **RDP hosts, step 1: hand off to the native client.** An `rdp` host type in the vault; `flint connect` and the GUI open the system client with the vault's credentials (`cmdkey` + `mstsc` on Windows, `xfreerdp /from-stdin` on Linux, Windows App on macOS) | `later` | Cheap, and the vault becomes the single place for RDP logins too. Weak spot: the macOS Windows App takes no password from a `.rdp` file or the command line, so there it is copy-to-clipboard or `xfreerdp` under XQuartz. Tether tried RDP and gave up |
+| **RDP hosts, step 2: embedded RDP sessions with libfreerdp** (FreeRDP 3, C, Apache 2.0) in a tab, like SSH sessions: framebuffer to a canvas in the webview, keyboard/mouse mapping (layouts, Cmd vs Ctrl), clipboard, resize, NLA/CredSSP | `later` | The owner's preferred option. Works on macOS, Linux and Windows: Flint would use only the core library and render frames itself, so FreeRDP's own per-platform clients do not matter. Linking C fits cfire (a shim in `adapters/` + a `CF-NNN` entry), unlike cgo in Tether. A spec of its own, not a milestone. Windows inherits Flint's own Windows blockers (CF-001, CF-010). Not rdpwrap: that is a server-side `termsrv.dll` patch that enables incoming RDP on Windows Home, not a client library |
