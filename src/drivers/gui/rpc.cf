@@ -183,11 +183,11 @@ type HostTestEvent struct {
 
 // ---- State ------------------------------------------------------------------------
 
-// The unlocked vault. Handlers run on the UI thread one at a time; a session worker
-// gets a copy when it starts.
+// The unlocked vault, in a holder every copy shares (D-038): page handlers run on
+// the UI thread, unlock and create on a worker, and commands from the CLI on the
+// socket server's workers. A session worker gets a copy of the session when it starts.
 type GuiState struct {
-    session:  VaultSession
-    unlocked: bool
+    holder: SessionHolder
 }
 
 fn no_vault_session() -> VaultSession {
@@ -195,25 +195,41 @@ fn no_vault_session() -> VaultSession {
 }
 
 fn new_gui_state() -> GuiState {
-    return GuiState{ session: no_vault_session(), unlocked: false }
+    return GuiState{ holder: new_session_holder() }
+}
+
+fn (self: GuiState) unlocked() -> bool {
+    return self.holder.held().unlocked
 }
 
 fn (self: GuiState) vault_session() -> VaultSession {
-    return self.session
+    h := self.holder.held()
+    if !h.unlocked {
+        return no_vault_session()
+    }
+    return VaultSession{ path: h.path, name: h.name, id: h.id, secrets_key: h.secrets_key, cached: h.cached }
 }
 
-fn (mut self: GuiState) adopt(s: VaultSession) {
-    self.session = s
-    self.unlocked = true
+fn (self: GuiState) adopt(s: VaultSession) {
+    self.holder.put(HeldSession{ unlocked: true, path: s.path, name: s.name, id: s.id, secrets_key: s.secrets_key, cached: s.cached })
 }
 
-fn (mut self: GuiState) forget() {
-    self.session = no_vault_session()
-    self.unlocked = false
+fn (self: GuiState) forget() {
+    self.holder.wipe()
+}
+
+// Holds the vault still for a whole operation: an unlock or switch, or a command
+// served over the socket. Recursive; pair every hold with a release.
+fn (self: GuiState) hold() {
+    self.holder.hold()
+}
+
+fn (self: GuiState) release() {
+    self.holder.release()
 }
 
 fn (self: GuiState) require_unlocked() -> void! {
-    if !self.unlocked {
+    if !self.unlocked() {
         return error(coded(ERR_LOCKED, "no vault is unlocked"))
     }
 }
@@ -228,12 +244,14 @@ fn ok_json() -> str {
     return json.stringify(Ok{ ok: true })
 }
 
-// Ends every session and closes the vault before another one is opened.
+// Ends every session and closes the vault before another one is opened. The state
+// says "locked" before the store detaches, so a reader on another thread gets
+// `locked`, never a half-closed vault. Callers hold the state (`st.hold()`).
 fn close_current(mut store: LockedVaultStore, mut st: GuiState) {
-    if st.unlocked {
+    if st.unlocked() {
         gui_session_close_all()
-        close_vault(mut store)
         st.forget()
+        close_vault(mut store)
     }
 }
 
@@ -279,8 +297,8 @@ fn rpc_settings_set(params: str, mut store: JsonSettingsStore) -> str! {
 // Collapsed groups travel as paths; the core stores their ids.
 fn rpc_ui_state_get(ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState) -> str! {
     mut vault := ""
-    if st.unlocked {
-        vault = st.session.id
+    if st.unlocked() {
+        vault = st.vault_session().id
     }
     return json.stringify(try ui_state_paths(ui, store, vault))
 }
@@ -289,8 +307,9 @@ fn rpc_ui_state_set(params: str, mut ui: JsonUiStateStore, store: LockedVaultSto
     req := try parse_req[UiStateReq](params)
     mut view := UiStateView{ sidebar_open: req.sidebar_open, sidebar_width: req.sidebar_width, collapsed: req.collapsed }
     mut vault := ""
-    if st.unlocked && req.vault == st.session.path {
-        vault = st.session.id
+    held := st.vault_session()
+    if st.unlocked() && req.vault == held.path {
+        vault = held.id
     } else {
         view.collapsed = []
     }
@@ -308,35 +327,44 @@ fn rpc_vault_recents(store: LockedVaultStore, recents: JsonRecentStore) -> str! 
 }
 
 // An empty password tries the keychain; the error code `locked` means it has no key.
-fn rpc_vault_unlock(params: str, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> str! {
-    req := try parse_req[UnlockReq](params)
+// Unlock and create run on a worker (`bind_async`): Argon2id takes about a second,
+// and the window keeps responding meanwhile. Each holds the state for its whole run,
+// so a command served over the socket never sees the vault switch under it.
+fn rpc_vault_unlock(req: UnlockReq, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> VaultInfo! {
+    st.hold()
+    defer st.release()
     close_current(mut store, mut st)
     s := try unlock_vault(c, mut store, kc, recents, req.path, req.password)
     st.adopt(s)
-    return json.stringify(session_info(s))
+    return session_info(s)
 }
 
-fn rpc_vault_create(params: str, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> str! {
-    req := try parse_req[CreateReq](params)
+fn rpc_vault_create(req: CreateReq, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> VaultInfo! {
+    st.hold()
+    defer st.release()
     close_current(mut store, mut st)
     s := try create_vault(c, mut store, kc, recents, req.path, req.name, req.password)
     st.adopt(s)
-    return json.stringify(session_info(s))
+    return session_info(s)
 }
 
 // Closes the vault in this window: every session ends and its keys leave memory.
 // The keychain cache stays, so the vault reopens without a prompt.
 fn rpc_vault_close(mut store: LockedVaultStore, mut st: GuiState) -> str! {
+    st.hold()
+    defer st.release()
     gui_session_close_all()
-    close_vault(mut store)
     st.forget()
+    close_vault(mut store)
     return ok_json()
 }
 
 // Forgets the cached key on this machine (`flint vault lock`).
 fn rpc_vault_forget_key(params: str, mut store: LockedVaultStore, kc: OsKeychain, mut st: GuiState) -> str! {
     req := try parse_req[PathReq](params)
-    if req.path == st.session.path {
+    st.hold()
+    defer st.release()
+    if st.unlocked() && req.path == st.vault_session().path {
         gui_session_close_all()
         st.forget()
     }
@@ -347,7 +375,9 @@ fn rpc_vault_forget_key(params: str, mut store: LockedVaultStore, kc: OsKeychain
 // Drops a vault from the recent list (`flint vault forget`).
 fn rpc_vault_forget(params: str, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> str! {
     req := try parse_req[PathReq](params)
-    if req.path == st.session.path {
+    st.hold()
+    defer st.release()
+    if st.unlocked() && req.path == st.vault_session().path {
         gui_session_close_all()
         st.forget()
     }
@@ -356,8 +386,10 @@ fn rpc_vault_forget(params: str, mut store: LockedVaultStore, kc: OsKeychain, re
 
 // Renames the vault open in this window; another vault must be opened first.
 fn rpc_vault_rename(params: str, mut store: LockedVaultStore, recents: JsonRecentStore, mut st: GuiState) -> str! {
-    try st.require_unlocked()
     req := try parse_req[NameReq](params)
+    st.hold()
+    defer st.release()
+    try st.require_unlocked()
     s := try rename_vault(mut store, recents, st.vault_session(), req.name)
     st.adopt(s)
     return json.stringify(session_info(s))

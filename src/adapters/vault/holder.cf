@@ -1,0 +1,88 @@
+package vault
+
+// SessionHolder: which vault a program with several threads has unlocked, and its
+// secrets key, shared by every copy (native/flint_vault_lock.hpp). The GUI keeps its
+// state here so that unlock and create can run on a worker and the socket server can
+// serve the same vault (D-038). Fields go in and out one by one; the driver puts them
+// back together as a VaultSession.
+//
+// `hold()` / `release()` take the holder's operation lock (recursive) for a whole
+// operation: an unlock, a vault switch, a command served over the socket. Getters
+// and setters take a separate short lock, so a reader never sees half of a write and
+// the UI thread never waits for an unlock to finish.
+
+import cpp "flint_vault_lock.hpp" @pkg("flint-native")
+
+type SessionHolder struct {
+    cell: shared[cpp::flint_vault::SessionCell]
+}
+
+type HeldSession struct {
+    unlocked:    bool
+    path:        str
+    name:        str
+    id:          str
+    secrets_key: []byte
+    cached:      bool
+}
+
+fn new_session_holder() -> SessionHolder {
+    mut h := SessionHolder{}
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        h.cell = std::make_shared<flint_vault::SessionCell>();
+    }
+    return h
+}
+
+fn (self: SessionHolder) hold() {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        self.cell->op.lock();
+    }
+}
+
+fn (self: SessionHolder) release() {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        self.cell->op.unlock();
+    }
+}
+
+fn (self: SessionHolder) held() -> HeldSession {
+    mut s := HeldSession{ unlocked: false, path: "", name: "", id: "", secrets_key: [], cached: false }
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        s.unlocked = self.cell->unlocked;
+        s.path = self.cell->path;
+        s.name = self.cell->name;
+        s.id = self.cell->id;
+        s.secrets_key = self.cell->secrets_key;
+        s.cached = self.cell->cached;
+    }
+    return s
+}
+
+fn (self: SessionHolder) put(s: HeldSession) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->wipe();
+        self.cell->unlocked = s.unlocked;
+        self.cell->path = s.path;
+        self.cell->name = s.name;
+        self.cell->id = s.id;
+        self.cell->secrets_key = s.secrets_key;
+        self.cell->cached = s.cached;
+    }
+}
+
+// Forgets the vault and overwrites its secrets key in the holder.
+fn (self: SessionHolder) wipe() {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->wipe();
+    }
+}

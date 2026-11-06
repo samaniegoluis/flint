@@ -1,0 +1,24 @@
+package vault
+
+test "every copy of a holder sees the same vault, and wipe forgets it" {
+    h := new_session_holder()
+    copy := h
+    assert(!copy.held().unlocked)
+    h.put(HeldSession{ unlocked: true, path: "/v/a.flint", name: "a", id: "id-a", secrets_key: [byte(7), byte(8)], cached: true })
+    got := copy.held()
+    assert(got.unlocked)
+    assert_eq(got.path, "/v/a.flint")
+    assert_eq(got.secrets_key.len(), 2)
+    // Holding the operation lock (recursive) does not block reads and writes.
+    copy.hold()
+    copy.hold()
+    copy.put(HeldSession{ unlocked: true, path: "/v/b.flint", name: "b", id: "id-b", secrets_key: [], cached: false })
+    assert_eq(h.held().name, "b")
+    copy.release()
+    copy.release()
+    h.wipe()
+    gone := copy.held()
+    assert(!gone.unlocked)
+    assert_eq(gone.path, "")
+    assert_eq(gone.secrets_key.len(), 0)
+}
