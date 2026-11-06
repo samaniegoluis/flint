@@ -1,0 +1,70 @@
+---
+// "Your agent uses your vault, not your passwords" on the landing (M10, D-038). The
+// session is illustrative: the commands, the --json shape and the exit codes are the real
+// CLI's (reference/cli.md); hosts and addresses are the demo's.
+---
+
+<section class="flint-agent not-content" aria-labelledby="flint-agent-title">
+	<p class="flint-agent__kicker">For you and your AI agent</p>
+	<h2 id="flint-agent-title">Your agent uses your vault, not your passwords</h2>
+	<p class="flint-agent__lede">
+		You work in the app. Your coding agent works in the terminal. Both use the same vault, so
+		an agent you ask to fix a server reaches it by its alias with <code>flint exec</code>.
+		Flint logs in, checks the host key and hands back the output. No password lands in the
+		prompt, the transcript or the agent’s context.
+	</p>
+
+	<div class="flint-agent__grid">
+		<div class="flint-term" role="img" aria-label="An agent session: the user asks why nginx is down on web-01; the agent lists hosts with flint, tests the nginx config through flint exec, reads the JSON result and reports the cause">
+			<div class="flint-term-bar" aria-hidden="true"><i></i><i></i><i></i><span>agent session</span></div>
+			<pre aria-hidden="true"><span class="u">› nginx is down on web-01, can you check?</span>
+
+<span class="b">●</span> flint --json host list
+  <span class="d">[&#123;"alias":"</span><span class="a">web-01</span><span class="d">","hostname":"10.0.0.5","user":"deploy", …&#125;]</span>
+
+<span class="b">●</span> flint --json exec <span class="a">web-01</span> -- 'nginx -t'
+  <span class="d">&#123;"host":"web-01","exit_code":1,"stderr":"nginx: [emerg]</span>
+  <span class="d"> unknown directive \"proxy_passs\" in …/sites-enabled/app:14", …&#125;</span>
+
+<span class="b">●</span> A typo in <span class="ok">/etc/nginx/sites-enabled/app</span>, line 14:
+  <span class="ok">proxy_passs</span> → <span class="ok">proxy_pass</span>. Want me to fix it and reload?</pre>
+		</div>
+
+		<div class="flint-agent__lists">
+			<div>
+				<h3>Your agent gets</h3>
+				<ul class="flint-agent__yes">
+					<li>Your hosts by alias, group and tag</li>
+					<li>Each command’s output and exit code, as JSON if it asks</li>
+					<li>Errors with stable codes it can act on: <code>locked</code>, <code>host_key</code>, <code>auth</code></li>
+				</ul>
+			</div>
+			<div>
+				<h3>It never gets</h3>
+				<ul class="flint-agent__no">
+					<li>Passwords, private keys or passphrases. No command prints them</li>
+					<li>Your master password or the vault key</li>
+					<li>A way past a changed host key: Flint refuses it before logging in</li>
+				</ul>
+			</div>
+		</div>
+	</div>
+
+	<ol class="flint-agent__steps">
+		<li><strong>Unlock once.</strong> Open the vault in the app or with <code>flint vault unlock</code>. The OS keychain keeps its key, never the password.</li>
+		<li><strong>Your agent asks Flint.</strong> <code>flint exec &lt;alias&gt; -- …</code> from any agent that can run a command: Claude Code, Codex, a script.</li>
+		<li><strong>Flint does the login.</strong> Jump hosts, keys, passwords and host keys stay on Flint’s side. Only the result comes back.</li>
+	</ol>
+
+	<div class="flint-agent__next">
+		<p>
+			<strong>Today</strong>, any program on your machine that can run <code>flint</code> can do what your
+			agent does. <strong>Next</strong>, Flint approves each program that asks for the vault in its own
+			window, limited to the hosts you choose and for a set time, and shows you every <code>sudo</code> command before it runs.
+		</p>
+		<p class="flint-agent__links">
+			<a href="/guides/ai-agents/">Use Flint with an AI agent <span aria-hidden="true">→</span></a>
+			<a href="/reference/security-model/">Security model <span aria-hidden="true">→</span></a>
+		</p>
+	</div>
+</section>

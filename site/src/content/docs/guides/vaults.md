@@ -43,6 +43,30 @@ If no keychain is available (for example, a headless Linux box with no keyring d
 Flint asks for the master password each time. To turn the cache off on purpose, set
 `FLINT_KEYCHAIN=off`.
 
+### What the cache protects, and what it does not
+
+The cached key opens the vault for **anyone and anything that runs Flint on this machine
+as you**: you in the app, you in a terminal, an AI agent you started, and any other
+program. That is what makes the CLI and agents work without a prompt, and it is also its
+limit.
+
+| | macOS | Linux |
+|---|---|---|
+| Another program reads the cached key directly | Not without a dialog: the Keychain item belongs to Flint's binary | **Yes.** The Secret Service has no per-app access list, so any program in your session can read it |
+| Another program runs `flint` and uses the vault | Yes | Yes |
+| Someone at your unlocked computer opens Flint | Yes | Yes |
+
+On macOS, each new Flint build has a new code identity until releases are signed, so the
+first time it reads the cached key macOS asks whether Flint may use your confidential
+information. **Always Allow** asks for your login password and stops the dialog until the
+next build; **Deny** makes Flint ask for the master password instead.
+
+No program gets your passwords or keys this way: no `flint` command prints them. What it
+can do is run commands on your servers through `flint exec`. To narrow that today, see
+[Use Flint with an AI agent](/guides/ai-agents/#limits-today). Flint is moving to a model
+where it approves each program that asks for the vault, in its own window; the
+[Security model](/reference/security-model/) has the plan.
+
 ## Several vaults
 
 Flint remembers every vault it has opened on this machine, most recent first.

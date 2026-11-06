@@ -36,6 +36,7 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 import CliDemo from '../../components/CliDemo.astro';
 import AppShot from '../../components/landing/AppShot.astro';
 import CfireBand from '../../components/landing/CfireBand.astro';
+import AgentBand from '../../components/landing/AgentBand.astro';
 
 <CliDemo />
 
@@ -80,11 +81,12 @@ web-01   deploy@10.0.0.5       prod     nginx
 </div>
 </div>
 
-## Built for scripts and agents
+<AgentBand />
 
-Every command takes `--json`, and its exit codes are stable. `flint exec` runs one command
-by alias and hands back its output and exit status. Keys and passwords never leave the
-vault, and are never printed.
+## Built for scripts
+
+Every command takes `--json`, and its exit codes are stable, so a shell script, a CI job
+or an agent reads results instead of scraping text.
 
 <div class="flint-split">
 <div>
@@ -138,8 +140,9 @@ See the [CLI reference](/reference/cli/).
 	</Card>
 </CardGrid>
 
-The details are in [Vault format](/reference/vault-format/) and
-[Connecting](/guides/connecting/#known-hosts).
+The details are in [Vault format](/reference/vault-format/),
+[Connecting](/guides/connecting/#known-hosts) and the [Security model](/reference/security-model/),
+which also says what the keychain cache does not protect against.
 
 <CfireBand />
 
@@ -149,7 +152,9 @@ The details are in [Vault format](/reference/vault-format/) and
 	<li><strong>SFTP</strong> A file browser over the same connection, with an upload and download queue.</li>
 	<li><strong>Tunnels</strong> Local port forwards saved per host, and <code>flint tunnel up</code>.</li>
 	<li><strong>SSH agent</strong> <code>flint agent</code> serves keys from the vault to <code>ssh</code>, <code>git</code> and your editor, with no key on disk.</li>
-	<li><strong>MCP server</strong> AI agents list hosts and run commands under scoped, expiring tokens and per-host policies, and never see a credential.</li>
+	<li><strong>Approved access</strong> Flint approves each program or agent that asks for the vault, in its own window, limited to the hosts you choose and for a set time.</li>
+	<li><strong>sudo you approve</strong> <code>flint exec --sudo</code> shows you the exact command; Flint types the password, the agent never sees it.</li>
+	<li><strong>MCP server</strong> AI agents list hosts and run commands under the same approvals, with per-host policies and an activity log.</li>
 	<li><strong>Releases</strong> A signed macOS app, a Linux AppImage and a Homebrew tap.</li>
 </ul>
 

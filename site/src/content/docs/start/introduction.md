@@ -11,10 +11,15 @@ SSH keys and login credentials.
 
 - **The whole vault is encrypted.** Hostnames, users and labels are encrypted too, not only
   passwords. You can keep the vault in a cloud-synced folder.
-- **The CLI is a first-class citizen.** Every command supports `--json`, so scripts and AI
-  agents can reach your servers by alias without ever seeing a credential.
+- **You and your AI agent share one vault.** You work in the app; your agent runs
+  `flint exec` in the terminal. It reaches your servers by alias and gets the output, never
+  a password or a key. See [Use Flint with an AI agent](/guides/ai-agents/).
+- **The CLI is a first-class citizen.** Every command supports `--json` and stable exit
+  codes, for scripts as much as agents.
 - **One master password per vault.** The key derived from it can be cached in the OS
-  keychain, so a machine you trust opens the vault without asking.
+  keychain, so a machine you trust opens the vault without asking. The
+  [Security model](/reference/security-model/) says what that cache protects and what
+  Flint does next.
 
 ## Status
 
