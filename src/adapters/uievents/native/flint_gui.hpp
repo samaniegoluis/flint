@@ -1,4 +1,4 @@
-// CFIRE-UPSTREAM: CF-002, CF-026, CF-031, CF-051
+// CFIRE-UPSTREAM: CF-002, CF-026, CF-031, CF-051, CF-073
 //
 // Native helpers for the GUI's webui adapters (src/adapters/uievents):
 //
@@ -271,18 +271,23 @@ inline void trim_history(cfire::webui::App& app) {
     st->eval_history.clear();
 }
 
-// ---- macOS menu bar (CF-051) ------------------------------------------------------
+// ---- macOS menu bar (CF-051, CF-073) ----------------------------------------------
 
 // The standard menus, with no item on a key the page owns (⌘W, ⌘N, ⌘O, ⌘T…). Each
 // item has a nil target, so AppKit sends it along the responder chain: the WKWebView
 // answers cut:/copy:/paste:/selectAll:/undo:, the window answers performClose:.
 // Quit closes the window, which ends webui's run loop as the close button does, so
 // the GUI driver's shutdown (sessions closed, vault closed) still runs.
+//
+// webui's App.run() installs its own menu, which binds ⌘W to Close Window, and offers
+// no way to leave a key to the page (CF-073). So this menu is queued on the main
+// queue: it is set once the run loop starts, after webui's, and replaces it.
 inline void install_app_menu(const std::string& app_name) {
 #if defined(__APPLE__) && defined(__OBJC__)
-    @autoreleasepool {
-        [NSApplication sharedApplication];
-        NSString* name = [NSString stringWithUTF8String:app_name.c_str()];
+    std::string title = app_name;
+    [NSApplication sharedApplication];
+    dispatch_async(dispatch_get_main_queue(), ^{ @autoreleasepool {
+        NSString* name = [NSString stringWithUTF8String:title.c_str()];
         NSMenu* bar = [[NSMenu alloc] init];
 
         auto add = [](NSMenu* m, NSString* title, SEL action, NSString* key, NSEventModifierFlags mods) {
@@ -320,7 +325,7 @@ inline void install_app_menu(const std::string& app_name) {
         [NSApp setWindowsMenu:window];
 
         [NSApp setMainMenu:bar];
-    }
+    }});
 #else
     (void)app_name;
 #endif

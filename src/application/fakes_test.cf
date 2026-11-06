@@ -19,11 +19,7 @@ type FakeCrypto struct {
 }
 
 fn (self: FakeCrypto) random_bytes(n: usize) -> []byte {
-    mut b := make([]byte, n)
-    for i in 0..n {
-        b[i] = u8(rand.range_i64(0, 255))
-    }
-    return b
+    return rand.bytes(n)
 }
 
 fn (self: FakeCrypto) derive_key(password: str, salt: []byte, ops: u64, mem_bytes: usize) -> []byte! {
@@ -34,7 +30,7 @@ fn (self: FakeCrypto) derive_key(password: str, salt: []byte, ops: u64, mem_byte
         if password.len() > 0 {
             v = v ^ u8(pw[i % password.len()]) ^ u8(password.len())
         }
-        k[i] = v
+        k[i] = byte(v)
     }
     return k
 }
@@ -42,7 +38,7 @@ fn (self: FakeCrypto) derive_key(password: str, salt: []byte, ops: u64, mem_byte
 fn (self: FakeCrypto) derive_subkey(master: []byte, id: u64, kdf_context: str) -> []byte! {
     mut k := make([]byte, 32)
     for i in 0..32 {
-        k[i] = master[i] ^ u8(id * 31 + 7)
+        k[i] = master[i] ^ byte(u8(id * 31 + 7))
     }
     return k
 }
@@ -52,14 +48,14 @@ fn (self: FakeCrypto) digest(data: []byte, out_len: usize) -> []byte! {
     mut res := make([]byte, out_len)
     for i, b in data {
         j := i % out_len
-        res[j] = u8(res[j] * 31 + u8(b) + u8(i))
+        res[j] = byte(u8(u8(res[j]) * 31 + u8(b) + u8(i)))
     }
     return res
 }
 
 // sealed = [aad_len] aad [key0] (plaintext xor key0)
 fn (self: FakeCrypto) seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte! {
-    mut s: []byte = [u8(aad.len())]
+    mut s: []byte = [byte(u8(aad.len()))]
     for b in aad {
         s.push(b)
     }
@@ -358,20 +354,7 @@ fn (self: FakeKeychain) keychain_load(account: str) -> []byte! {
         return []
     }
     text := try fs.read_text(p)
-    // hex.decode yields std::byte (CF-021); rebuild a []byte by hand.
-    mut out_key := make([]byte, text.len() / 2)
-    tb := text.bytes()
-    for i in 0..(text.len() / 2) {
-        out_key[i] = u8(hex_nibble(u8(tb[2 * i])) * 16 + hex_nibble(u8(tb[2 * i + 1])))
-    }
-    return out_key
-}
-
-fn hex_nibble(c: u8) -> u8 {
-    if c <= 57 {
-        return c - 48
-    }
-    return c - 87
+    return hex.decode(text)
 }
 
 fn (self: FakeKeychain) keychain_forget(account: str) -> void! {

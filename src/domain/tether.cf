@@ -90,17 +90,11 @@ type TetherFile struct {
     tunnels: []TetherTunnel
 }
 
-// Base64 text to `[]byte`. `base64.decode` returns cfire's other byte vector, which
-// no `[]byte` parameter takes (CF-055), so the bytes are copied.
+// Base64 text to `[]byte`.
 fn tether_b64(text: str) -> []byte! {
-    raw := base64.decode(text) or err {
+    return base64.decode(text) or err {
         return error(coded(ERR_INVALID, "a Tether value is not valid base64"))
     }
-    mut bytes_out: []byte = []
-    for b in raw {
-        bytes_out.push(u8(b))
-    }
-    return bytes_out
 }
 
 // A known-host address as Tether records it ("host:port", "[v6]:port") in Flint's

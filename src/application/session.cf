@@ -53,11 +53,7 @@ fn vault_account(salt: []byte) -> str {
 // vault wherever its file moves, without telling anything about what is inside it.
 // Used as the key of its UI state and to recognise its recent entry after a move.
 fn vault_id[C: Crypto](crypto: C, salt: []byte) -> str! {
-    mut data: []byte = []
-    // `str.bytes()` yields std::byte, `[]byte` holds unsigned char (CF-055).
-    for b in "flint/vault-id/v1:".bytes() {
-        data.push(u8(b))
-    }
+    mut data := []byte("flint/vault-id/v1:")
     for b in salt {
         data.push(b)
     }

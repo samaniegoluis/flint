@@ -41,7 +41,7 @@ fn (self: Sodium) random_bytes(n: usize) -> []byte {
     mut buf := make([]byte, n)
     // CFIRE-UPSTREAM: CF-006
     cpp {
-        randombytes_buf(buf.data(), buf.size());
+        randombytes_buf(cfire::c_arg(buf.data()), buf.size());
     }
     return buf
 }
@@ -56,8 +56,8 @@ fn (self: Sodium) derive_key(password: str, salt: []byte, ops: u64, mem_bytes: u
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-006
     cpp {
-        rc = crypto_pwhash(key.data(), key.size(), password.data(), password.size(),
-            salt.data(), static_cast<unsigned long long>(ops), static_cast<size_t>(mem_bytes),
+        rc = crypto_pwhash(cfire::c_arg(key.data()), key.size(), password.data(), password.size(),
+            cfire::c_arg(salt.data()), static_cast<unsigned long long>(ops), static_cast<size_t>(mem_bytes),
             crypto_pwhash_ALG_ARGON2ID13);
     }
     if rc != 0 {
@@ -80,8 +80,8 @@ fn (self: Sodium) derive_subkey(master: []byte, id: u64, kdf_context: str) -> []
     // CFIRE-UPSTREAM: CF-006
     cpp {
         static_assert(crypto_kdf_KEYBYTES == 32 && crypto_kdf_CONTEXTBYTES == 8);
-        rc = crypto_kdf_derive_from_key(sub.data(), sub.size(), static_cast<uint64_t>(id),
-            kdf_context.data(), master.data());
+        rc = crypto_kdf_derive_from_key(cfire::c_arg(sub.data()), sub.size(), static_cast<uint64_t>(id),
+            kdf_context.data(), cfire::c_arg(master.data()));
     }
     if rc != 0 {
         return error("internal: subkey derivation failed")
@@ -99,7 +99,7 @@ fn (self: Sodium) digest(data: []byte, out_len: usize) -> []byte! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-006
     cpp {
-        rc = crypto_generichash(res.data(), res.size(), data.data(), data.size(), nullptr, 0);
+        rc = crypto_generichash(cfire::c_arg(res.data()), res.size(), cfire::c_arg(data.data()), data.size(), nullptr, 0);
     }
     if rc != 0 {
         return error("internal: digest failed")
@@ -116,12 +116,12 @@ fn (self: Sodium) seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-006
     cpp {
-        randombytes_buf(sealed.data(), crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
+        randombytes_buf(cfire::c_arg(sealed.data()), crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
         unsigned long long clen = 0;
         rc = crypto_aead_xchacha20poly1305_ietf_encrypt(
-            sealed.data() + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES, &clen,
-            plaintext.data(), plaintext.size(), aad.data(), aad.size(),
-            nullptr, sealed.data(), key.data());
+            cfire::c_arg(sealed.data()) + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES, &clen,
+            cfire::c_arg(plaintext.data()), plaintext.size(), cfire::c_arg(aad.data()), aad.size(),
+            nullptr, cfire::c_arg(sealed.data()), cfire::c_arg(key.data()));
     }
     if rc != 0 {
         return error("internal: encryption failed")
@@ -143,10 +143,10 @@ fn (self: Sodium) unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte! {
     cpp {
         unsigned long long mlen = 0;
         rc = crypto_aead_xchacha20poly1305_ietf_decrypt(
-            plain.data(), &mlen, nullptr,
-            sealed.data() + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES,
+            cfire::c_arg(plain.data()), &mlen, nullptr,
+            cfire::c_arg(sealed.data()) + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES,
             sealed.size() - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES,
-            aad.data(), aad.size(), sealed.data(), key.data());
+            cfire::c_arg(aad.data()), aad.size(), cfire::c_arg(sealed.data()), cfire::c_arg(key.data()));
     }
     if rc != 0 {
         return error("invalid: a sealed value failed to open (wrong key or tampered data)")
@@ -158,7 +158,7 @@ fn (self: Sodium) unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte! {
 fn wipe(mut buf: []byte) {
     // CFIRE-UPSTREAM: CF-006
     cpp {
-        sodium_memzero(buf.data(), buf.size());
+        sodium_memzero(cfire::c_arg(buf.data()), buf.size());
     }
 }
 

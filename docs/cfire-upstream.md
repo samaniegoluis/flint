@@ -695,3 +695,124 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Workaround:** test `has_value()` and take `.value()` (`tseal` in
   `src/application/tether_test.cf`).
 - **Ideal:** emit the default with its type (`value_or(std::vector<std::uint8_t>{})`).
+---
+
+The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026-11-06).
+
+### CF-062 · bug · `confirmed`: `[]byte` changed C++ type with no diagnostic from cfire
+- **Repro (466751b):** `msg: []byte = [7, 7]` and `buf[i] = u8(x)` passed `cfire check` and
+  built at `3963814`; now clang fails (`no matching constructor for initialization of
+  'std::vector<std::byte>'`, `assigning to 'std::byte' from incompatible type
+  'std::uint8_t'`). `cfire check` still passes, so the break shows only in clang.
+- **Context:** the change itself is the fix for CF-021/CF-055 and is welcome. Flint migrated
+  ~40 sites: `byte(n)` literals, `[]byte("text")`, `str(bytes)`, and `cfire::c_arg(v.data())`
+  to hand a `[]byte` to a C API taking `unsigned char*`.
+- **Ideal:** `cfire check` reports an integer literal or a `u8` stored into `[]byte` with a
+  fix-it (`byte(...)`), and the changelog says `[]byte` now lowers to `std::byte`.
+
+### CF-063 · bug · `confirmed`: the checker takes `os.getenv` for an optional (false `NULL-DEREF`)
+- **Repro (466751b):** `override := os.getenv("X")` then `if override.len() > 0 { … }` →
+  `member access on potentially null pointer 'override' without '!= none' guard
+  (cfire/NULL-DEREF)`. `os.getenv` returns `str` (`runtime/core/os.hpp`), but
+  `expr_returns_optional_sema` (`src/sema.hpp`) lists `getenv` by name as optional. The
+  same list marks `str.find` optional, while it still returns `npos` at run time (CF-059).
+- **Workaround:** annotate the binding: `override: str = os.getenv("X")` (5 files).
+- **Ideal:** derive optionality from the declared signature, not from a list of names.
+
+### CF-064 · bug · `confirmed`: `os.getpid()` no longer compiles
+- **Repro (466751b):** `"{os.getpid()}"` → clang `no member named 'getpid' in namespace
+  'cfire::os'`. At `3963814` the call passed through to `::getpid()`. `core:os` never
+  documented it, but nothing in cfire rejects it either.
+- **Workaround:** a random tag (`hex.encode(rand.bytes(4))`) for unique test names.
+- **Ideal:** `os.getpid() -> i64`, or a cfire diagnostic for an unknown `os.` member.
+
+### CF-065 · bug · `confirmed`: a struct field named `stdout` is renamed, but not inside `cpp {}`
+- **Repro (466751b):** `type ExecChunk struct { stdout: str }`, then
+  `cpp { read(chunk.stdout); }` → clang `no member named '__stdoutp' in 'ExecChunk'`.
+  The CF-038 fix emits the field as `stdout_cf_`; the text of a `cpp {}` block is left as
+  written, so it names a field that no longer exists.
+- **Workaround:** the block fills locals and the struct is built in cfire
+  (`link_channel_read` in `src/adapters/ssh/link.cf`).
+- **Ideal:** rename identifiers inside `cpp {}` too, or report the mismatch in `cfire check`.
+
+### CF-066 · bug · `confirmed`: every struct gets JSON code, including ones that hold a `webui.App`
+- **Repro (466751b):** `type Sink struct { app: webui.App }` in a program that imports
+  `ext:webui` → clang `the supplied type is not formattable` from the generated
+  `stringify_struct<Sink>`. The CF-049 fix registers all structs for JSON, even those that
+  are never serialised and hold non-serialisable types.
+- **Workaround:** tag the field `` `json:"-"` `` (`src/adapters/uievents/`).
+- **Ideal:** generate JSON code only for structs that reach `json.*` or an RPC, or skip
+  fields whose type has no JSON form.
+
+### CF-067 · bug · `confirmed`: `xs.push([a, b])` no longer compiles
+- **Repro (466751b):** `mut rows: [][]str = []` then `rows.push(["a", "b"])` → clang
+  `no matching function for call to 'vec_push'`. `push` now lowers to the template
+  `cfire::vec_push(vec, U&& val)`, which cannot deduce a braced list.
+- **Workaround:** `row: []str = ["a", "b"]; rows.push(row)` (`src/drivers/cli/output.cf`).
+- **Ideal:** lower the literal with the element type (`std::vector<std::string>{…}`), as
+  the CF-040 fix does for `or []`.
+
+### CF-068 · bug · `confirmed`: errors in one file of a package are reported against the test file
+- **Repro (466751b):** a compile error at `src/adapters/ssh/link.cf:188` while running
+  `cfire test src/drivers/cli` is printed as `src/drivers/cli/import_test.cf:188:68`. The
+  line is right, the file is the test file being run. Found throughout the migration.
+- **Ideal:** keep each source file's name in the `#line` directives of the merged unit.
+
+### CF-069 · bug · `confirmed`: **`sqlite.open_encrypted` writes a plaintext database**
+- **Repro (466751b):** `sqlite.open_encrypted("/tmp/x.db", "pw")`, create a table, insert
+  `"TOP-SECRET-PAYLOAD"` → succeeds; the file starts with `SQLite format 3` and the value is
+  readable with `grep`. `ext:db/sqlite` links the system `sqlite3`, which ignores
+  `PRAGMA key` silently. The response to CF-007 says the build detects SQLCipher and sets
+  `-DSQLITE_HAS_CODEC`; that code is not in `src/buildsys.hpp`.
+- **Ideal:** link SQLCipher whenever `open_encrypted` is used, and fail (at build time, or
+  at open with `PRAGMA cipher_version` empty) when it is not available. Never fall back to
+  plaintext.
+- **Flint:** unaffected (its own SQLCipher adapter, CF-007).
+
+### CF-070 · bug · `confirmed`: `ext:crypto/sodium` falls back to other algorithms without libsodium
+- **Source (466751b):** `runtime/core/sodium.hpp`. Without `CFIRE_SODIUM_NATIVE`,
+  `sodium.argon2id` returns PBKDF2-SHA256 of a modified salt (not Argon2id, not
+  memory-hard, a different output), and `xchacha20poly1305_*` use a hand-written
+  ChaCha20/Poly1305. The caller cannot tell which one ran.
+- **Why it matters:** a vault sealed on a machine without libsodium cannot be opened on
+  one with it, and is weaker than its code says.
+- **Ideal:** no fallback: a build error when libsodium is missing.
+- **Flint:** unaffected (its own libsodium adapter, CF-006; Principle 4 forbids
+  hand-rolled cryptography).
+
+### CF-071 · bug · `confirmed`: `ext:keychain` does not persist on Linux and leaks the secret
+- **Source (466751b):** `runtime/core/keychain.hpp`.
+  - Linux `get` never asks the Secret Service: it reads only an in-process map, so after a
+    restart every lookup is "not found".
+  - Linux `set` runs `printf '%s' '<secret>' | secret-tool store …` through `std::system`:
+    the secret is visible in the process list, and a `'` in it breaks the command (shell
+    injection). The exit status is ignored, and nothing is stored without
+    `DBUS_SESSION_BUS_ADDRESS`, still returning success.
+  - macOS `set` ignores the `SecItemAdd` status, so a refused write reports success.
+  - Every secret is also kept in a process-global plaintext map for the life of the process.
+  - `CFIRE_HEADLESS_TEST=1` in the environment silently switches a production binary to the
+    in-memory store (the same switch turns `ext:net/ssh` into its mock server).
+- **Ideal:** libsecret's C API (`secret_password_store_sync`/`lookup_sync`), errors
+  returned, `[]byte` secrets, no in-memory copy, and test mode chosen at build time.
+- **Flint:** unaffected (its own adapter, CF-008).
+
+### CF-072 · bug · `confirmed`: reinstalling over an existing binary on macOS kills it; the installer cannot pin a build
+- **Repro:** `cp new/cfire ~/.local/bin/cfire` over the existing file (what `install.sh`
+  does), then `cfire --version` → killed with SIGKILL (exit 137). macOS caches the code
+  signature per file; `rm` before `cp` (a new file) works.
+- **Also:** `install.sh` builds a GitHub tarball (no `.git`), so the CF-011 SHA is `dev`;
+  and `CFIRE_VERSION` only takes a branch (`refs/heads/…`), so a commit or tag cannot be
+  installed.
+- **Ideal:** install to a temp name and `mv` it into place; accept a commit or tag; pass
+  the SHA to `make` (`GIT_SHA=…`); publish tagged releases.
+
+### CF-073 · bug · `confirmed`: webui's built-in macOS menu takes ⌘W from the page, with no opt-out
+- **Repro (466751b):** `App.run()` now always sets `NSApp.mainMenu` (the CF-051 fix), with
+  Window → Close Window on ⌘W and Quit on a handler of its own. An app whose page uses ⌘W
+  (Flint closes a terminal tab with it) gets the window closed instead. A menu the app
+  set before `run()`, as Flint did for CF-051, is replaced.
+- **Workaround:** Flint queues its own menu on the main queue before `run()`, so it is set
+  after webui's and replaces it (`install_app_menu` in
+  `src/adapters/uievents/native/flint_gui.hpp`).
+- **Ideal:** a way to turn the built-in menu off, or to declare which shortcuts the page
+  owns; Quit through the same close path as the window's close button.

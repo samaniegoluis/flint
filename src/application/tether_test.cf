@@ -9,7 +9,7 @@ import "ext:json"
 fn tkey() -> []byte {
     mut k := make([]byte, 32)
     for i in 0..32 {
-        k[i] = u8(7)
+        k[i] = byte(7)
     }
     return k
 }
@@ -48,7 +48,7 @@ fn (self: FakeTetherSource) tether_derive_key(password: str, salt: []byte) -> []
     }
     mut k := make([]byte, 32)
     for i in 0..32 {
-        k[i] = u8(9)
+        k[i] = byte(9)
     }
     return k
 }

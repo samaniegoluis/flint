@@ -496,6 +496,6 @@ test "a saved password is revealed or copied only by name, and the copy is clear
     assert_eq(clip.copies, 1)
 
     // A session with the wrong secrets key cannot open it.
-    wrong := VaultSession{ path: s.path, name: s.name, secrets_key: [9, 9, 9], cached: false }
+    wrong := VaultSession{ path: s.path, name: s.name, secrets_key: [byte(9), byte(9), byte(9)], cached: false }
     assert(!reveal_password(crypto, store, wrong, "host", "bastion").has_value())
 }

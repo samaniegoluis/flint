@@ -153,6 +153,8 @@ tag `demo-2026-11-05`) must keep opening the owner's vaults. Migration 003 lands
 | 07 | **App state and vaults** | `ui-state.json` in the config folder (D-030): sidebar open/closed and width (drag to resize), collapsed groups per vault (salt hash → group ids), **Collapse all / Expand all**; debounced, atomic writes; a damaged file falls back to defaults. **Rename a vault** (`flint vault rename`, Manage vaults, Settings → Vault) and a moved vault's recent entry replaced by salt. **Terminal colour themes** from Tether's `terminalThemes.js`. Docs and the CLI demo updated |
 | 08 | **Leave Tether** | **OSC 52** copy into the system clipboard (through the `Clipboard` port). **Dead keys / IME** composed correctly and input delivered in order (the Tether bugs). **`flint import tether <file>`** (and a GUI entry): reads a Tether vault with its master password and writes groups, hosts, keys and credentials into the open Flint vault, reporting what it could not carry over. Docs updated |
 
+| 09 | **Move to cfire 466751b** | cfire pinned to `466751b` (local install and the Linux image), which answers CF-001..CF-053. **Forced migration:** Flint builds and passes every suite again (`[]byte` is now `std::vector<std::byte>`, plus the regressions found). **Adopt the fixes:** workarounds for fixed compiler bugs rewritten as plain cfire, native shims replaced by the stdlib where it behaves the same; the SSH, crypto, SQLCipher, keychain and clipboard adapters stay. **`docs/cfire-upstream.md`** marks each entry resolved, or says why the new cfire API does not serve Flint, and adds the new gaps. No user-visible change |
+
 ## Open questions
 
 - **Flint's licence.** MIT or Apache-2.0. It also depends on cfire publishing a licence

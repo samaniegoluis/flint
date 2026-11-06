@@ -218,7 +218,7 @@ fn (self: CipherDb) query_cells(sql: str, args: []SqlCell) -> SqlRows! {
                     }
                     case SQLITE_BLOB: {
                         cell.kind = 3;
-                        const auto* b = static_cast<const std::uint8_t*>(sqlite3_column_blob(st, c));
+                        const auto* b = static_cast<const std::byte*>(sqlite3_column_blob(st, c));
                         int len = sqlite3_column_bytes(st, c);
                         cell.blob_val.assign(b, b + len);
                         break;

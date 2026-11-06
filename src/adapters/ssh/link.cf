@@ -177,7 +177,13 @@ fn (mut self: SshLink) link_exec_start(command: str) -> void! {
 
 fn (mut self: SshLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
     conn := try self.last_hop()
-    mut chunk := ExecChunk{ stdout: "", stderr: "", done: false, exit_code: 0, signal: "" }
+    // The C++ block fills locals: cfire renames a `stdout` field in the generated C++,
+    // so `chunk.stdout` cannot be named inside `cpp {}` (CF-065).
+    mut out_text := ""
+    mut err_text := ""
+    mut done := false
+    mut exit_code: i64 = 0
+    mut signal := ""
     mut ok := true
     // CFIRE-UPSTREAM: CF-005
     cpp {
@@ -185,13 +191,13 @@ fn (mut self: SshLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
         if (!conn.channel) {
             ok = false;
         } else {
-            ok = flint_ssh::read_chunk(conn.channel, timeout_ms, chunk.stdout, chunk.stderr, chunk.done, chunk.exit_code, chunk.signal);
+            ok = flint_ssh::read_chunk(conn.channel, timeout_ms, out_text, err_text, done, exit_code, signal);
         }
     }
     if !ok {
         return error(coded(ERR_NETWORK, "the connection was lost: {conn.last_error()}"))
     }
-    return chunk
+    return ExecChunk{ stdout: out_text, stderr: err_text, done: done, exit_code: exit_code, signal: signal }
 }
 
 fn (mut self: SshLink) link_channel_write(data: str) -> void! {

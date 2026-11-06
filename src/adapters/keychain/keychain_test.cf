@@ -10,13 +10,8 @@ fn keychain_port_check[K: Keychain](k: K) -> bool {
     return got.len() == 0
 }
 
-// stdlib byte helpers return std::byte vectors, not []byte (CF-021).
 fn random_key_bytes() -> []byte {
-    mut b := make([]byte, 32)
-    for i in 0..32 {
-        b[i] = u8(rand.range_i64(0, 255))
-    }
-    return b
+    return rand.bytes(32)
 }
 
 // On Linux, glib and libsecret keep their D-Bus connection open for the life of the
@@ -64,7 +59,7 @@ test "save, load, overwrite and forget a vault key in the OS keychain" {
 
 test "a disabled keychain stores nothing and finds nothing" {
     kc := new_os_keychain(false)
-    assert(!kc.keychain_save("x", [1]).has_value())
+    assert(!kc.keychain_save("x", [byte(1)]).has_value())
     assert_eq((try kc.keychain_load("x")).len(), 0)
     assert(kc.keychain_forget("x").has_value())
 }

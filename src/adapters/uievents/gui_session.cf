@@ -160,7 +160,7 @@ fn empty_host_key_question() -> HostKeyQuestion {
 // ---- Terminal port ----------------------------------------------------------------
 
 type GuiTerminal struct {
-    app: webui.App
+    app: webui.App `json:"-"`
     session: str
 }
 
@@ -229,7 +229,7 @@ type PromptAnswer struct {
 }
 
 type GuiPrompter struct {
-    app: webui.App
+    app: webui.App `json:"-"`
     session: str
     timeout_ms: i32
 }
