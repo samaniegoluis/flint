@@ -23,7 +23,7 @@ is `docs/build-log.md` plus `git log`.
 
 | File | What it holds |
 |---|---|
-| [`docs/spec.md`](docs/spec.md) | The current spec (v2): scope, stack, architecture, **Principles**, milestones. The MVP is [`docs/spec-v1.md`](docs/spec-v1.md) |
+| [`docs/spec.md`](docs/spec.md) | The current spec (v3, Flint holds the vault): scope, stack, architecture, **Principles**, milestones. Earlier: [`spec-v1.md`](docs/spec-v1.md) (MVP), [`spec-v2.md`](docs/spec-v2.md) |
 | [`ROADMAP.md`](ROADMAP.md) | Everything beyond the current spec. The backlog |
 | [`docs/build-log.md`](docs/build-log.md) | One line per finished milestone. The only state |
 | [`docs/decisions.md`](docs/decisions.md) | One-line decision log |
