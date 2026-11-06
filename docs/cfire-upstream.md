@@ -642,3 +642,15 @@ The entries below were found while building milestone 02 against the same cfire 
   "unknown" (`src/application/session.cf`).
 - **Ideal:** `json.parse` fills a missing field from its `default:` tag, or the checker
   warns that `default:` has no effect outside `cli` structs.
+
+### CF-058 · bug · `confirmed`: `cfire build <target>` builds every target
+- **Repro:** with two executables in `build.cf` (`Flint` → `build/flint`, `FlintGui` →
+  `build/gui/Flint.app`), `cfire build Flint` prints both `✓ Built Native Binary` and
+  `✓ Built Native App` (cfire 0.9.4). Rebuilding the app bundle rewrites its fixed
+  `Info.plist`, so the icon key `scripts/build-gui.sh` adds (CF-052) is gone: the owner's
+  install command (`build-gui.sh && cfire build Flint && ditto …`) installed an app with
+  no icon.
+- **Workaround:** build the CLI first, then `scripts/build-gui.sh` last
+  (`cfire build && scripts/build-gui.sh`), so the bundle is patched after cfire writes it.
+- **Ideal:** `cfire build <name>` builds only that target (and says so when the name
+  matches none).
