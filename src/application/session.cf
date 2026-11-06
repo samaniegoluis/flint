@@ -12,7 +12,7 @@ import "core:str"
 import "../domain"
 import "../ports"
 
-var MIN_MASTER_PASSWORD_LEN: usize = 8
+MIN_MASTER_PASSWORD_LEN: usize = 8
 
 // An unlocked vault. The store passed alongside it holds the open file.
 type VaultSession struct {
@@ -53,11 +53,7 @@ fn vault_account(salt: []byte) -> str {
 // vault wherever its file moves, without telling anything about what is inside it.
 // Used as the key of its UI state and to recognise its recent entry after a move.
 fn vault_id[C: Crypto](crypto: C, salt: []byte) -> str! {
-    mut data: []byte = []
-    // `str.bytes()` yields std::byte, `[]byte` holds unsigned char (CF-055).
-    for b in "flint/vault-id/v1:".bytes() {
-        data.push(u8(b))
-    }
+    mut data := []byte("flint/vault-id/v1:")
     for b in salt {
         data.push(b)
     }
@@ -137,12 +133,7 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     mut from_cache := false
     if password.len() == 0 {
         // A keychain that cannot be reached is treated like one with no entry.
-        // `or []` lowers to value_or({}), which libstdc++ rejects (CF-040).
-        mut cached_key: []byte = []
-        loaded := keychain.keychain_load(account)
-        if loaded.has_value() {
-            cached_key = loaded.value()
-        }
+        cached_key := keychain.keychain_load(account) or []
         if cached_key.len() != VAULT_KEY_LEN {
             return error(coded(ERR_LOCKED, "the vault at {path} is locked; the master password is needed"))
         }

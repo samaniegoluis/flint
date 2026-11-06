@@ -10,8 +10,7 @@ import "core:os"
 import "ext:json"
 import "../../domain"
 
-// File shape. Entries use a local struct: a field whose type comes from another
-// package is emitted before that type is complete (CF-033).
+// File shape: a local struct, so the file format does not follow the domain type.
 // `id` (the vault id, D-030) came in milestone 07; in older files it reads as "".
 type RecentEntry struct {
     path: str `json:"path"`
@@ -32,11 +31,12 @@ type JsonRecentStore struct {
 // ~/Library/Application Support/Flint on macOS and $XDG_CONFIG_HOME/flint
 // (default ~/.config/flint) on Linux.
 fn flint_config_dir() -> str {
-    override := os.getenv("FLINT_CONFIG_DIR")
+    // Typed: the checker takes `os.getenv` for an optional (CF-063).
+    override: str = os.getenv("FLINT_CONFIG_DIR")
     if override.len() > 0 {
         return override
     }
-    home := os.getenv("HOME")
+    home: str = os.getenv("HOME")
     mut apple := false
     // cfire has no build-target query (CF-031).
     // CFIRE-UPSTREAM: CF-031
@@ -48,7 +48,7 @@ fn flint_config_dir() -> str {
     if apple {
         return home + "/Library/Application Support/Flint"
     }
-    xdg := os.getenv("XDG_CONFIG_HOME")
+    xdg: str = os.getenv("XDG_CONFIG_HOME")
     if xdg.len() > 0 {
         return xdg + "/flint"
     }

@@ -4,8 +4,8 @@ package domain
 // exec returns. Plain types and rules, no I/O (Principle 1).
 
 // Default timeouts (Principle 8). Every dial, auth and exec is bounded.
-var SSH_CONNECT_TIMEOUT_SECS: i64 = 15
-var SSH_EXEC_TIMEOUT_SECS: i64 = 600
+SSH_CONNECT_TIMEOUT_SECS: i64 = 15
+SSH_EXEC_TIMEOUT_SECS: i64 = 600
 
 // A recorded server host key. One per address: a key of another type at the same
 // address counts as a changed key.
@@ -24,9 +24,9 @@ type ServerKey struct {
 }
 
 // The outcome of checking a server key against the known hosts.
-var HOST_KEY_KNOWN: str = "known"
-var HOST_KEY_NEW: str = "new"
-var HOST_KEY_CHANGED: str = "changed"
+HOST_KEY_KNOWN: str = "known"
+HOST_KEY_NEW: str = "new"
+HOST_KEY_CHANGED: str = "changed"
 
 // A server key the person is asked about (a new key) or told about (a changed key,
 // which is always refused, D-019). `known_*` are empty for a new key.

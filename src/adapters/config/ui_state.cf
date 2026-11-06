@@ -8,7 +8,7 @@ import "core:fs"
 import "ext:json"
 import "../../domain"
 
-// File shape: local structs, as in recents.cf (CF-033).
+// File shape: local structs, as in recents.cf.
 type UiVaultEntry struct {
     vault:     str   `json:"vault"`
     collapsed: []str `json:"collapsed"`

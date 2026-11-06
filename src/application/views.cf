@@ -3,8 +3,7 @@ package application
 // Whole-vault views for the desktop app: one call fills the sidebar tree, the keys
 // and credentials pages and the command palette. Secrets appear only as flags.
 //
-// Every view type lives in this file, inner types first: structs are emitted in
-// declaration order and the file order within a package is not stable (CF-033).
+// Every view type lives in this file.
 
 import "../ports"
 

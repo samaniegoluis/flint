@@ -13,15 +13,15 @@ import "core:encoding/hex"
 // Applied on every open, before the first page is read, so a SQLCipher upgrade that
 // changes its defaults cannot change how a v1 vault is read. Migration 001 records
 // the same values in the `meta` table.
-var CIPHER_COMPATIBILITY: str = "4"
-var CIPHER_PAGE_SIZE: str = "4096"
-var CIPHER_HMAC_ALGORITHM: str = "HMAC_SHA512"
-var CIPHER_KDF_ALGORITHM: str = "PBKDF2_HMAC_SHA512"
-var CIPHER_KDF_ITER: str = "256000"
+CIPHER_COMPATIBILITY: str = "4"
+CIPHER_PAGE_SIZE: str = "4096"
+CIPHER_HMAC_ALGORITHM: str = "HMAC_SHA512"
+CIPHER_KDF_ALGORITHM: str = "PBKDF2_HMAC_SHA512"
+CIPHER_KDF_ITER: str = "256000"
 
 // SQLite result codes this file branches on.
-var SQLITE_NOTADB_CODE: i32 = 26
-var SQLITE_CONSTRAINT_CODE: i32 = 19
+SQLITE_NOTADB_CODE: i32 = 26
+SQLITE_CONSTRAINT_CODE: i32 = 19
 
 // A bound parameter or a result column. `kind`: 0 null, 1 integer, 2 text, 3 blob.
 type SqlCell struct {
@@ -59,19 +59,11 @@ fn sql_blob(v: []byte) -> SqlCell {
     return SqlCell{ kind: 3, int_val: 0, text_val: "", blob_val: v }
 }
 
-// Result rows. A struct, because `[][]SqlCell!` lowers to a matrix of
-// `expected<SqlCell>` instead of `expected<matrix>` (CF-032).
-type SqlRows struct {
-    rows: [][]SqlCell
-}
-
 type CipherDb struct {
     // Owned by this value; closed by close_db().
     handle: *mut cpp::sqlite3
 }
 
-// Helpers are methods rather than functions taking the pointer: a `*mut T`
-// parameter lowers to `const T*&` and the C API rejects it (CF-019).
 fn (self: CipherDb) last_error() -> str {
     mut msg := ""
     // CFIRE-UPSTREAM: CF-007
@@ -82,12 +74,7 @@ fn (self: CipherDb) last_error() -> str {
 }
 
 fn (self: CipherDb) is_open() -> bool {
-    mut open_now := false
-    // CFIRE-UPSTREAM: CF-019
-    cpp {
-        open_now = self.handle != nullptr;
-    }
-    return open_now
+    return self.handle != none
 }
 
 // Opens an encrypted database at `path` with a raw 32-byte key and its 16-byte salt.
@@ -144,18 +131,12 @@ fn open_cipher_db(path: str, key: []byte, salt: []byte, create: bool) -> CipherD
     return db
 }
 
-// Not named `close`: packages share one C++ namespace, so a user method called
-// `close` captures every stdlib `.close()` call in the program (CF-017).
 fn (mut self: CipherDb) close_db() {
     // CFIRE-UPSTREAM: CF-007
     cpp {
         if (self.handle) sqlite3_close_v2(self.handle);
     }
-    // Assigning `none` to a raw pointer lowers to std::nullopt (CF-019).
-    // CFIRE-UPSTREAM: CF-019
-    cpp {
-        self.handle = nullptr;
-    }
+    self.handle = none
 }
 
 // Runs one or more statements that take no parameters and return no rows.
@@ -179,7 +160,7 @@ fn (self: CipherDb) statement_error(rc: i32) -> str {
 
 // Runs one statement with bound parameters (?1, ?2, ...) and returns its rows. Use it
 // for writes too: they return no rows.
-fn (self: CipherDb) query_cells(sql: str, args: []SqlCell) -> SqlRows! {
+fn (self: CipherDb) query_cells(sql: str, args: []SqlCell) -> [][]SqlCell! {
     mut rc: i32 = 0
     mut result: [][]SqlCell = []
     // CFIRE-UPSTREAM: CF-007
@@ -218,7 +199,7 @@ fn (self: CipherDb) query_cells(sql: str, args: []SqlCell) -> SqlRows! {
                     }
                     case SQLITE_BLOB: {
                         cell.kind = 3;
-                        const auto* b = static_cast<const std::uint8_t*>(sqlite3_column_blob(st, c));
+                        const auto* b = static_cast<const std::byte*>(sqlite3_column_blob(st, c));
                         int len = sqlite3_column_bytes(st, c);
                         cell.blob_val.assign(b, b + len);
                         break;
@@ -236,7 +217,7 @@ fn (self: CipherDb) query_cells(sql: str, args: []SqlCell) -> SqlRows! {
     if rc != 0 {
         return error(self.statement_error(rc))
     }
-    return SqlRows{ rows: result }
+    return result
 }
 
 // Runs one parameterised statement that returns no rows.
@@ -247,10 +228,10 @@ fn (self: CipherDb) run_sql(sql: str, args: []SqlCell) -> void! {
 // The first column of the first row as text, or "" when there is no row.
 fn (self: CipherDb) query_text(sql: str) -> str! {
     res := try self.query_cells(sql, [])
-    if res.rows.len() == 0 || res.rows[0].len() == 0 {
+    if res.len() == 0 || res[0].len() == 0 {
         return ""
     }
-    return cell_str(res.rows[0][0])
+    return cell_str(res[0][0])
 }
 
 fn cell_str(c: SqlCell) -> str {

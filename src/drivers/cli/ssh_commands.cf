@@ -64,7 +64,8 @@ fn cmd_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut st
     }
     opts := try connect_options(p)
     alias := p.positional(1)
-    mut term_name := os.getenv("TERM")
+    // Typed: the checker takes `os.getenv` for an optional (CF-063).
+    mut term_name: str = os.getenv("TERM")
     if term_name.len() == 0 {
         term_name = "xterm-256color"
     }

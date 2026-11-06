@@ -8,9 +8,9 @@ import "../../domain"
 
 // Migration 001 as shipped. An applied migration must never change (Principle 10);
 // if this test fails, revert the edit and append a new migration instead.
-var MIGRATION_001_SHA256: str = "9ed7d684e513f15455c31c2680407da618820c08eddb64d23796129919be5afd"
-var MIGRATION_002_SHA256: str = "9973529e84f0c738288de9b0187a5b48810ced2b269bda6d248571e1442beeb7"
-var MIGRATION_003_SHA256: str = "d68639a62a93d26076581b02403eb1f9f3b4df0c6f9807842988940fb5b64b9c"
+MIGRATION_001_SHA256: str = "9ed7d684e513f15455c31c2680407da618820c08eddb64d23796129919be5afd"
+MIGRATION_002_SHA256: str = "9973529e84f0c738288de9b0187a5b48810ced2b269bda6d248571e1442beeb7"
+MIGRATION_003_SHA256: str = "d68639a62a93d26076581b02403eb1f9f3b4df0c6f9807842988940fb5b64b9c"
 
 fn temp_vault_path(name: str) -> str {
     dir := "/tmp/flint-test-" + hex.encode(sha256.random_bytes(8))
@@ -21,7 +21,7 @@ fn temp_vault_path(name: str) -> str {
 fn test_key(seed: u8) -> []byte {
     mut k := make([]byte, 32)
     for i in 0..32 {
-        k[i] = seed
+        k[i] = byte(seed)
     }
     return k
 }
@@ -29,13 +29,13 @@ fn test_key(seed: u8) -> []byte {
 fn test_salt_bytes() -> []byte {
     mut s := make([]byte, 16)
     for i in 0..16 {
-        s[i] = u8(160 + i)
+        s[i] = byte(160 + i)
     }
     return s
 }
 
 fn marker_host() -> Host {
-    return Host{ id: "h1", alias: "flint-alias-marker", label: "flint-label-marker", hostname: "db01.internal.example.org", port: 2201, username: "flint-user-marker", group_id: "", tags: ["flint-tag-marker", "prod"], color: "#112233", notes: "flint-notes-marker", jump_host_id: "", credential_id: "", key_id: "", password: [1, 2, 3], initial_command: "flint-command-marker", keep_shell: false }
+    return Host{ id: "h1", alias: "flint-alias-marker", label: "flint-label-marker", hostname: "db01.internal.example.org", port: 2201, username: "flint-user-marker", group_id: "", tags: ["flint-tag-marker", "prod"], color: "#112233", notes: "flint-notes-marker", jump_host_id: "", credential_id: "", key_id: "", password: [byte(1), byte(2), byte(3)], initial_command: "flint-command-marker", keep_shell: false }
 }
 
 // Compiles only if SqlVaultStore satisfies the VaultStore port.
@@ -100,7 +100,7 @@ test "rows round-trip and migrations are idempotent" {
 
     // Credentials round-trip too, insert and update (the host columns of migration
     // 003 are not theirs).
-    try store.cred_put(Credential{ id: "c1", name: "ops", username: "deploy", key_id: "", password: [4, 5] })
+    try store.cred_put(Credential{ id: "c1", name: "ops", username: "deploy", key_id: "", password: [byte(4), byte(5)] })
     try store.cred_put(Credential{ id: "c1", name: "ops", username: "deploy2", key_id: "", password: [] })
     creds := try store.creds_all()
     assert_eq(creds.len(), 1)
@@ -138,7 +138,7 @@ test "a wrong key or salt is reported as wrong_password" {
     assert(!bad.has_value())
     assert_eq(error_code_of("{bad.error().message()}"), "wrong_password")
     mut other_salt := test_salt_bytes()
-    other_salt[0] = 1
+    other_salt[0] = byte(1)
     assert(!store.vault_attach(path, test_key(7), other_salt).has_value())
     try fs.remove(fs.dirname(path))
 }

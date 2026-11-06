@@ -76,7 +76,7 @@ test('error codes are in the CLI exit-code order', () => {
 	assert.ok(list);
 	const names = list[1].split(',').map((s) => s.trim());
 	const values = names.map((n) => {
-		const m = errors.match(new RegExp(`var ${n}: str = "([a-z_]+)"`));
+		const m = errors.match(new RegExp(`^${n}: str = "([a-z_]+)"`, 'm'));
 		assert.ok(m, n);
 		return m[1];
 	});

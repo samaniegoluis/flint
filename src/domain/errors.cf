@@ -5,21 +5,21 @@ package domain
 // travels as a prefix; drivers map it to an exit code and a JSON `code` field
 // (Principle 7). Messages never contain secret values (Principle 6).
 
-var ERR_USAGE: str = "usage"
-var ERR_INVALID: str = "invalid"
-var ERR_NOT_FOUND: str = "not_found"
-var ERR_CONFLICT: str = "conflict"
-var ERR_LOCKED: str = "locked"
-var ERR_WRONG_PASSWORD: str = "wrong_password"
-var ERR_UNSUPPORTED: str = "unsupported"
-var ERR_KEYCHAIN: str = "keychain"
-var ERR_IO: str = "io"
-var ERR_INTERNAL: str = "internal"
+ERR_USAGE: str = "usage"
+ERR_INVALID: str = "invalid"
+ERR_NOT_FOUND: str = "not_found"
+ERR_CONFLICT: str = "conflict"
+ERR_LOCKED: str = "locked"
+ERR_WRONG_PASSWORD: str = "wrong_password"
+ERR_UNSUPPORTED: str = "unsupported"
+ERR_KEYCHAIN: str = "keychain"
+ERR_IO: str = "io"
+ERR_INTERNAL: str = "internal"
 // SSH codes (D-019), appended after the vault codes so exit codes 1-10 never move.
-var ERR_HOST_KEY: str = "host_key"
-var ERR_AUTH: str = "auth"
-var ERR_NETWORK: str = "network"
-var ERR_TIMEOUT: str = "timeout"
+ERR_HOST_KEY: str = "host_key"
+ERR_AUTH: str = "auth"
+ERR_NETWORK: str = "network"
+ERR_TIMEOUT: str = "timeout"
 
 // Builds an error message carrying a stable code.
 fn coded(code: str, msg: str) -> str {

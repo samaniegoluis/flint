@@ -3,12 +3,7 @@ package fonts
 import "../../ports"
 
 fn fonts_port_check[F: FontCatalog](f: F) -> []str {
-    // Not `or []`: it does not compile with libstdc++ (CF-040).
-    r := f.mono_font_families()
-    if !r.has_value() {
-        return []
-    }
-    return r.value()
+    return f.mono_font_families() or []
 }
 
 test "the OS font catalog lists monospaced families" {

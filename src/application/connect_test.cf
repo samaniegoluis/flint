@@ -206,16 +206,13 @@ test "an unknown host key needs a terminal or --accept-new-host-key" {
     _ := try open_link(crypto, mut store, s, mut link3, yes_prompter(), "bastion", default_connect_options())
     assert_eq((try store.known_hosts_all()).len(), 1)
     // Nothing was recorded yet, so the library defaults were used.
-    // Element by element: assert_eq against a slice literal does not compile (CF-044).
-    assert_eq(link3.dial_algos.len(), 1)
-    assert_eq(link3.dial_algos[0], "")
+    assert_eq(link3.dial_algos, [""])
 
     // Known now: no prompt, no flag needed, and the recorded type is asked for first.
     mut link4 := new_fake_link()
     link4.good_password = "host-pw"
     _ := try open_link(crypto, mut store, s, mut link4, no_prompter(), "bastion", default_connect_options())
-    assert_eq(link4.dial_algos.len(), 1)
-    assert_eq(link4.dial_algos[0], "^ssh-ed25519")
+    assert_eq(link4.dial_algos, ["^ssh-ed25519"])
 }
 
 test "a changed host key is refused even with --accept-new-host-key, until forgotten" {
@@ -496,6 +493,6 @@ test "a saved password is revealed or copied only by name, and the copy is clear
     assert_eq(clip.copies, 1)
 
     // A session with the wrong secrets key cannot open it.
-    wrong := VaultSession{ path: s.path, name: s.name, secrets_key: [9, 9, 9], cached: false }
+    wrong := VaultSession{ path: s.path, name: s.name, secrets_key: [byte(9), byte(9), byte(9)], cached: false }
     assert(!reveal_password(crypto, store, wrong, "host", "bastion").has_value())
 }

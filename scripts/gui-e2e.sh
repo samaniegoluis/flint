@@ -7,8 +7,7 @@
 #
 #   scripts/gui-e2e.sh
 #
-# Linux: cfire's headless WebView runner is a no-op there (CF-029), so the real GTK
-# window opens under xvfb-run instead.
+# Linux: the real GTK window opens under xvfb-run.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"

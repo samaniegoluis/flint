@@ -7,7 +7,7 @@ import "core:fs"
 import "ext:json"
 import "../../domain"
 
-// File shape: a local struct, as in recents.cf (CF-033).
+// File shape: a local struct, as in recents.cf.
 type SettingsFile struct {
     version:  i64      `json:"version"`
     settings: Settings `json:"settings"`

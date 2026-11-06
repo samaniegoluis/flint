@@ -6,9 +6,8 @@ package ports
 // cfire interfaces lower to C++20 concepts (static dispatch), so use cases take
 // their dependencies as generic parameters constrained by these interfaces.
 //
-// Method names are prefixed by their port (`vault_`, `keychain_`, ...): packages
-// share one C++ namespace, so a method called `open` or `get` would capture every
-// stdlib call of that name in the program (CF-017).
+// Method names are prefixed by their port (`vault_`, `keychain_`, ...), so an
+// adapter that serves several ports reads unambiguously.
 
 import "../domain"
 

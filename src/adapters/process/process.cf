@@ -1,20 +1,22 @@
 package process
 
 // Process plumbing for the CLI driver: argv, stdout/stderr, exit codes, terminal
-// prompts, and the local side of an SSH session (raw mode, resizes, byte I/O). The native code is in native/flint_process.hpp (CF-024).
+// prompts, and the local side of an SSH session (raw mode, resizes, byte I/O). What
+// core:os covers is used directly; the rest is in native/flint_process.hpp (CF-024).
 
 // CFIRE-UPSTREAM: CF-024, CF-031
 import cpp "flint_process.hpp" @pkg("flint-native")
 
+import "core:os"
 import "core:time"
 import "../../domain"
 
 // Command-line arguments after the program name.
 fn process_args() -> []str {
+    all := os.args()
     mut list: []str = []
-    // CFIRE-UPSTREAM: CF-024
-    cpp {
-        list = flint_proc::args();
+    for i in 1..all.len() {
+        list.push(all[i])
     }
     return list
 }
@@ -50,27 +52,16 @@ fn write_stderr(s: str) {
 
 // Writes `s` to stdout as is (no newline added).
 fn write_stdout(s: str) {
-    // CFIRE-UPSTREAM: CF-024
-    cpp {
-        flint_proc::write_out(s);
-    }
+    print(s)
 }
 
 // Flushes stdout and stderr and ends the process with `code`.
 fn exit_process(code: i32) {
-    // CFIRE-UPSTREAM: CF-024
-    cpp {
-        flint_proc::exit_with(code);
-    }
+    os.exit(code)
 }
 
 fn stdin_is_terminal() -> bool {
-    mut tty := false
-    // CFIRE-UPSTREAM: CF-024
-    cpp {
-        tty = flint_proc::stdin_is_tty();
-    }
-    return tty
+    return os.is_tty()
 }
 
 // True when the process has a controlling terminal to prompt on.

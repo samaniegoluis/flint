@@ -141,7 +141,7 @@ fn (self: CipherDb) migrate() -> void! {
 // The highest migration applied to the open vault (0 for a new file).
 fn (self: CipherDb) schema_version() -> i64! {
     res := try self.query_cells("SELECT ifnull(max(version), 0) FROM schema_migrations;", [])
-    return cell_i64(res.rows[0][0])
+    return cell_i64(res[0][0])
 }
 
 fn (self: CipherDb) apply_migration(m: Migration) -> void! {

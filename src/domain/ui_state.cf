@@ -17,13 +17,13 @@ type UiState struct {
 }
 
 // The bounds match the design's --sidebar-min / --sidebar-max.
-var SIDEBAR_WIDTH_MIN: i64 = 200
-var SIDEBAR_WIDTH_MAX: i64 = 400
-var SIDEBAR_WIDTH_DEFAULT: i64 = 264
+SIDEBAR_WIDTH_MIN: i64 = 200
+SIDEBAR_WIDTH_MAX: i64 = 400
+SIDEBAR_WIDTH_DEFAULT: i64 = 264
 // Vaults remembered, most recently used first; older ones are dropped.
-var UI_STATE_MAX_VAULTS: usize = 32
+UI_STATE_MAX_VAULTS: usize = 32
 // Collapsed groups kept per vault.
-var UI_STATE_MAX_COLLAPSED: usize = 2048
+UI_STATE_MAX_COLLAPSED: usize = 2048
 
 fn default_ui_state() -> UiState {
     return UiState{ sidebar_open: true, sidebar_width: SIDEBAR_WIDTH_DEFAULT, vaults: [] }

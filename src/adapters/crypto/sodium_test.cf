@@ -6,7 +6,7 @@ import "core:encoding/hex"
 // Cross-checked against argon2-cffi (the reference C implementation):
 // hash_secret_raw(b"flint", bytes(range(16)), time_cost=2, memory_cost=65536,
 // parallelism=1, hash_len=32, type=ID).
-var ARGON2_VECTOR: str = "592d7ec75bb085ab5ba3ba0c81792c9aba96973ca244ed3442f8d12547212642"
+ARGON2_VECTOR: str = "592d7ec75bb085ab5ba3ba0c81792c9aba96973ca244ed3442f8d12547212642"
 
 fn hex_of(b: []byte) -> str {
     return hex.encode(b)
@@ -15,20 +15,20 @@ fn hex_of(b: []byte) -> str {
 // Compiles only if Sodium satisfies the Crypto port.
 fn port_roundtrip[C: Crypto](c: C) -> bool {
     key := c.random_bytes(32)
-    msg: []byte = [7, 7]
+    msg: []byte = [byte(7), byte(7)]
     sealed := c.seal(key, msg, []) or err { return false }
     back := c.unseal(key, sealed, []) or err { return false }
     return back == msg
 }
 
 // libsodium's OPSLIMIT/MEMLIMIT_INTERACTIVE: fast enough for tests.
-var TEST_OPS: u64 = 2
-var TEST_MEM: usize = 67108864
+TEST_OPS: u64 = 2
+TEST_MEM: usize = 67108864
 
 fn test_salt() -> []byte {
     mut salt := make([]byte, SALT_LEN)
     for i in 0..SALT_LEN {
-        salt[i] = u8(i)
+        salt[i] = byte(i)
     }
     return salt
 }
@@ -52,8 +52,8 @@ test "derive_key rejects a short salt" {
 test "seal/open round-trips and fresh nonces differ" {
     c := try new_sodium()
     key := c.random_bytes(KEY_LEN)
-    msg: []byte = [104, 111, 115, 116]
-    aad: []byte = [1]
+    msg: []byte = [byte(104), byte(111), byte(115), byte(116)]
+    aad: []byte = [byte(1)]
     s1 := try c.seal(key, msg, aad)
     s2 := try c.seal(key, msg, aad)
     assert_eq(s1.len(), NONCE_LEN + msg.len() + TAG_LEN)
@@ -65,13 +65,13 @@ test "seal/open round-trips and fresh nonces differ" {
 test "open fails on tampered ciphertext, wrong key or wrong aad" {
     c := try new_sodium()
     key := c.random_bytes(KEY_LEN)
-    msg: []byte = [1, 2, 3]
-    aad: []byte = [9]
+    msg: []byte = [byte(1), byte(2), byte(3)]
+    aad: []byte = [byte(9)]
     sealed := try c.seal(key, msg, aad)
 
     mut tampered := sealed
-    tampered[NONCE_LEN] = tampered[NONCE_LEN] ^ 1
-    other: []byte = [8]
+    tampered[NONCE_LEN] = tampered[NONCE_LEN] ^ byte(1)
+    other: []byte = [byte(8)]
     assert(!c.unseal(key, tampered, aad).has_value())
     assert(!c.unseal(c.random_bytes(KEY_LEN), sealed, aad).has_value())
     assert(!c.unseal(key, sealed, other).has_value())
@@ -79,7 +79,7 @@ test "open fails on tampered ciphertext, wrong key or wrong aad" {
 }
 
 test "wipe zeroes the buffer" {
-    mut k: []byte = [1, 2, 3]
+    mut k: []byte = [byte(1), byte(2), byte(3)]
     wipe(mut k)
     assert(k[0] == 0 && k[1] == 0 && k[2] == 0)
 }

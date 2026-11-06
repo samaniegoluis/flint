@@ -1,4 +1,4 @@
-// CFIRE-UPSTREAM: CF-002, CF-026, CF-031, CF-051
+// CFIRE-UPSTREAM: CF-026, CF-031, CF-073
 //
 // Native helpers for the GUI's webui adapters (src/adapters/uievents):
 //
@@ -6,13 +6,9 @@
 //   resizes and prompt answers arrive on the UI thread. cfire has no mutex or
 //   condition variable usable across threads, and a Channel has no receive with a
 //   timeout (CF-026), so each session gets a mailbox here, found by session id.
-// * Trimming webui's history. `App.emit()` and every RPC reply keep their payload in
-//   memory forever (CF-002). A terminal emits for hours, so the history is cleared
-//   from time to time. `App` keeps its state private and has no API for this, so the
-//   pointer is reached through the standard explicit-instantiation access rule.
-// * The macOS menu bar. webui opens its window with no main menu (CF-051), and on
-//   macOS ⌘Q, ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z reach a WKWebView only through menu items, so
-//   the standard Flint / Edit / Window menus are installed here before the run loop.
+// * The macOS menu bar. webui's own menu puts Close Window on ⌘W, which the page
+//   uses to close a tab (CF-073), so Flint's standard Flint / Edit / Window menus
+//   replace it once the run loop starts.
 // * No top-level cpp block in a .cf file (CF-031), hence this header.
 #pragma once
 #include "core/webui.hpp"
@@ -236,7 +232,7 @@ inline int await_answer(const std::string& id, int timeout_ms, std::string& out)
     return 0;
 }
 
-// ---- Ids and webui history (CF-002) -------------------------------------------------
+// ---- Ids ----------------------------------------------------------------------------
 
 // A process-wide counter for prompt ids.
 inline long long next_seq() {
@@ -244,45 +240,23 @@ inline long long next_seq() {
     return ++n;
 }
 
-// True once every `every` calls: when to trim webui's history.
-inline bool note_emit(int every) {
-    static std::atomic<long long> n{0};
-    return (++n % every) == 0;
-}
-
-using AppStatePtr = std::shared_ptr<cfire::webui::detail::AppState> cfire::webui::App::*;
-
-struct AppStateAccess {
-    friend AppStatePtr app_state_member(AppStateAccess);
-};
-
-template <AppStatePtr Member>
-struct AppStateRobber {
-    friend AppStatePtr app_state_member(AppStateAccess) { return Member; }
-};
-
-template struct AppStateRobber<&cfire::webui::App::state_>;
-
-inline void trim_history(cfire::webui::App& app) {
-    auto& st = app.*app_state_member(AppStateAccess{});
-    if (!st) return;
-    std::lock_guard<std::recursive_mutex> lock(st->mtx);
-    st->emitted_history.clear();
-    st->eval_history.clear();
-}
-
-// ---- macOS menu bar (CF-051) ------------------------------------------------------
+// ---- macOS menu bar (CF-073) ------------------------------------------------------
 
 // The standard menus, with no item on a key the page owns (⌘W, ⌘N, ⌘O, ⌘T…). Each
 // item has a nil target, so AppKit sends it along the responder chain: the WKWebView
 // answers cut:/copy:/paste:/selectAll:/undo:, the window answers performClose:.
 // Quit closes the window, which ends webui's run loop as the close button does, so
 // the GUI driver's shutdown (sessions closed, vault closed) still runs.
+//
+// webui's App.run() installs its own menu, which binds ⌘W to Close Window, and offers
+// no way to leave a key to the page (CF-073). So this menu is queued on the main
+// queue: it is set once the run loop starts, after webui's, and replaces it.
 inline void install_app_menu(const std::string& app_name) {
 #if defined(__APPLE__) && defined(__OBJC__)
-    @autoreleasepool {
-        [NSApplication sharedApplication];
-        NSString* name = [NSString stringWithUTF8String:app_name.c_str()];
+    std::string title = app_name;
+    [NSApplication sharedApplication];
+    dispatch_async(dispatch_get_main_queue(), ^{ @autoreleasepool {
+        NSString* name = [NSString stringWithUTF8String:title.c_str()];
         NSMenu* bar = [[NSMenu alloc] init];
 
         auto add = [](NSMenu* m, NSString* title, SEL action, NSString* key, NSEventModifierFlags mods) {
@@ -320,7 +294,7 @@ inline void install_app_menu(const std::string& app_name) {
         [NSApp setWindowsMenu:window];
 
         [NSApp setMainMenu:bar];
-    }
+    }});
 #else
     (void)app_name;
 #endif

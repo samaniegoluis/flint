@@ -1,8 +1,14 @@
 // CFIRE-UPSTREAM: CF-024, CF-031, CF-042
 //
-// Process shim for src/adapters/process/process.cf: argv outside `main`, stderr,
-// exit codes and reading a password from the terminal with echo off. cfire exposes
-// none of these (CF-024) and has no top-level cpp block (CF-031).
+// Process shim for src/adapters/process/process.cf: what cfire's core:os and
+// core:cli do not cover the way Flint needs it (CF-024, CF-042):
+// - stderr writes that flush stdout first, so the two streams keep their order;
+// - prompts on /dev/tty, so a password is asked for even when stdin is piped
+//   (cli.prompt_password reads stdin);
+// - raw mode restored at exit and on SIGINT/SIGTERM/SIGHUP (os.make_raw restores
+//   only at scope exit, and os.on_signal runs a std::function inside the handler);
+// - the window size, 0x0 when unknown (os.term_size reports 80 columns);
+// - the executable's folder and the OS name (CF-031).
 #pragma once
 #include <cstdio>
 #include <cstdlib>
@@ -23,56 +29,17 @@
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #include <climits>
-extern "C" {
-int* _NSGetArgc(void);
-char*** _NSGetArgv(void);
-}
 #else
 #include <climits>
 #endif
 
 namespace flint_proc {
 
-// Arguments after the program name.
-inline std::vector<std::string> args() {
-    std::vector<std::string> out;
-#if defined(__APPLE__)
-    int argc = *_NSGetArgc();
-    char** argv = *_NSGetArgv();
-    for (int i = 1; i < argc; i++) out.emplace_back(argv[i]);
-#else
-    std::ifstream f("/proc/self/cmdline", std::ios::binary);
-    std::string all((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    size_t start = 0;
-    bool first = true;
-    for (size_t i = 0; i < all.size(); i++) {
-        if (all[i] == '\0') {
-            if (!first) out.emplace_back(all.substr(start, i - start));
-            first = false;
-            start = i + 1;
-        }
-    }
-#endif
-    return out;
-}
-
 inline void write_err(const std::string& s) {
     std::fflush(stdout);
     std::fwrite(s.data(), 1, s.size(), stderr);
     std::fflush(stderr);
 }
-
-inline void write_out(const std::string& s) {
-    std::fwrite(s.data(), 1, s.size(), stdout);
-}
-
-[[noreturn]] inline void exit_with(int code) {
-    std::fflush(stdout);
-    std::fflush(stderr);
-    std::exit(code);
-}
-
-inline bool stdin_is_tty() { return isatty(STDIN_FILENO) == 1; }
 
 inline bool has_tty() {
     int fd = open("/dev/tty", O_RDWR | O_NOCTTY);

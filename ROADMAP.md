@@ -24,7 +24,7 @@ What Tether already does and Flint must not lose.
 | Tabs, xterm.js, Kitty keyboard protocol, WebGL | `done` | |
 | Command palette | `done` | |
 | Theme, accent colour, terminal font from installed fonts | `done` | |
-| SFTP browser over the same connection: list, up/download with queue, drag & drop, rename, delete, mkdir, `..` | `next` | Needs file drag & drop from the OS (CF-004) |
+| SFTP browser over the same connection: list, up/download with queue, drag & drop, rename, delete, mkdir, `..` | `next` | File drag & drop from the OS: cfire `466751b` emits `files:dropped` (CF-004), not tried yet |
 | File browser opens in the terminal's cwd (OSC 7 shell integration, herdr focused pane) | `next` | |
 | Local port-forward tunnels (`-L`), saved per host | `next` | When it ships, `flint import tether` should carry Tether's tunnels too (today it lists them as not imported, D-034) |
 | OSC 52 clipboard (copy from Neovim/tmux/Zellij) | `done` | Milestone 08 (D-034): write only, through the core |
@@ -50,7 +50,7 @@ What Tether already does and Flint must not lose.
 | Fuzzy host picker when `flint connect` has no alias | `next` | Slipped from the MVP (milestone 03) |
 | `flint exec <alias> -- cmd` | `done` | |
 | `flint exec` forwards local stdin to the remote command (`cat file \| flint exec web -- 'cat > x'`) | `next` | Today stdin is closed at start (milestone 03) |
-| `flint exec --tty` / `connect -- <cmd>`: a command on a PTY | `idea` | |
+| `flint exec --tty` / `connect -- <cmd>`: a command on a PTY | `next` | `flint exec --sudo` (section 3) depends on it |
 | Keepalives (`ServerAliveInterval`) for idle `flint connect` sessions | `next` | |
 | `flint exec @group -- cmd`: parallel fan-out, structured JSON per host | `next` | Great for agents and scripts |
 | `flint cp a:/path b:/path` (remote ↔ local ↔ remote, by alias) | `next` | |
@@ -73,6 +73,10 @@ What Tether already does and Flint must not lose.
 | **Scoped agent tokens**: `flint token create --hosts @homelab --allow exec,read --ttl 1h`. The agent never sees credentials | `next` | |
 | **Per-host policies**: read-only, command allowlist, "ask me in the GUI before running on prod" | `next` | |
 | **Audit log** of every command run through a token | `next` | |
+| **`flint exec --sudo -- <argv>`**: run a command as root on a host whose login user is a sudoer, approved by the owner, never by the caller | `next` | Raised while an AI agent set up a Linux box over `flint exec` and had to hand every `sudo` step to the owner (2026-11-06). Flint builds the line itself, `sudo -p <random nonce> -- <argv>` with each argument quoted (never a shell string), on a PTY; it types the host's password from the vault once, and only when it sees its own nonce prompt, so a command that prints a fake `password:` gets nothing. Then `sudo -k`, so the 15-minute sudo cache cannot carry unapproved commands. The caller sees output and exit code only. Distinct errors for *denied by the owner*, *approval timed out* and *user is not a sudoer*. Without `--sudo`, `sudo` fails as today. Depends on `flint exec --tty`. D-036 |
+| **Sudo approval window**: Flint's own dialog (not the keychain prompt, which cannot show the command) naming the caller, host, user and the exact argv, with Deny / Approve | `next` | Part of `flint exec --sudo`. **An isolated window, the same whether the app is open or closed**: the CLI has already opened the vault (keychain-cached key, D-005) and resolved host, user and password, so the window loads no vault and starts no app; it shows what the CLI hands it and answers yes or no. The CLI spawns it as a child and reads the answer on a private pipe, so the caller cannot forge an "approved" (a socket to the running app could be). Approve proves presence, not knowledge of the host password: Touch ID on macOS, the vault password where there is no biometric. Only when the CLI cannot open the vault on its own does the window first ask for the vault password. No answer in ~2 min = denied. Every decision goes to the audit log. Open question: whether `ext:webui` can open a small window without the full app, or this needs its own helper |
+| Per-host **sudo password** field, defaulting to the login password | `next` | Part of `flint exec --sudo`, for hosts that log in with a key: the approval window asks once and offers to save it |
+| Sudo through `flint agent` (`pam_ssh_agent_auth`): sudo on the server authenticates with a key in the forwarded agent, no password | `idea` | **May never ship: weigh the risk first.** The agent signs for any program on its socket (git, VS Code, scripts) and only sees a challenge, never the command, so its prompt can say "something on ZorinOS asks to authorize sudo" but not what will run. That is why the CLI path above comes first. If ever built, three locks: a dedicated sudo-only key, never a login key; confirmation on every use for that key, not switchable off; agent forwarding (`ssh -A`, which this needs) only on request, since root on the server can use a forwarded socket while you are connected. Needs a one-time root setup of PAM and sudoers on each host. For people using plain `ssh` or VS Code, not for AI agents. Prior art: Secretive, 1Password and `ssh-add -c` confirm-per-use, Teleport per-session MFA, `sudoreplay`/`sudo_logsrvd` |
 | **MCP server**: list hosts, exec, read file, tail logs. All under tokens + policies | `next` | cfire has `McpServer` in `ext:ai` |
 | Agent activity panel in the GUI: live timeline, pending approvals | `later` | Very demo-able |
 | Session recording (asciicast) | `idea` | |
@@ -103,7 +107,9 @@ What Tether already does and Flint must not lose.
 | Hexagonal core + adapters + drivers | `done` | |
 | `flint serve`: daemon holding live sessions over a local socket. GUI, CLI and MCP become clients | `later` | Enables shared sessions, a persistent agent and tunnels |
 | `flint attach`: attach the CLI to a session open in the GUI, and vice versa | `later` | Needs the daemon |
-| Rewrite native shims in pure cfire as `CF-NNN` entries land | ongoing | See `docs/cfire-upstream.md` |
+| Rewrite native shims in pure cfire as `CF-NNN` entries land | ongoing | See `docs/cfire-upstream.md`. Milestone 09 (cfire `466751b`) did the first pass; what is left is listed there as `partly resolved` / `not adopted` |
+| GUI session mailboxes and vault/SSH locks in cfire (`sync` channels with `recv_timeout`, `sync.Mutex`) instead of `flint_gui.hpp` / `flint_vault_lock.hpp` | `idea` | CF-026: possible now in part, but cfire's `Mutex` neither owns its data nor is recursive (`LockedVaultStore` needs re-entry), and `ch.len()` does not compile. A rewrite of the GUI's threading, worth its own milestone |
+| Terminal output as bytes instead of base64 text in `terminal:output` | `idea` | CF-003: only worth it once webui has a real binary channel; `emit_bytes` today is base64 plus one `eval_js`, like Flint's `emit` |
 | Wipe key material from memory: the master, page and secrets keys when a session ends, and decrypted secrets once libssh has them (`sodium_memzero`) | `next` | Found in the milestone 02/03 owner review; only the hex `PRAGMA key` text is zeroed today |
 
 ## 6. UI
@@ -125,7 +131,7 @@ What Tether already does and Flint must not lose.
 | Connection lost: automatic retry with backoff and a countdown (design screen 11c) | `next` | M04 offers Reconnect only |
 | Connecting card with per-hop progress (jump host, TCP, key exchange, auth, shell — design screen 11a) | `idea` | Needs progress events from the connect use case |
 | "No open sessions" page lists recently used hosts (design screen 13b) | `next` | M04 lists hosts alphabetically; recency needs a per-machine history |
-| Unlock and create run off the UI thread (Argon2id holds it about a second) | `next` | CF-046; the page keeps painting, but the window does not respond meanwhile |
+| Unlock and create run off the UI thread (Argon2id holds it about a second) | `next` | The page keeps painting, but the window does not respond meanwhile. cfire `466751b` has `app.bind_async` (CF-046), a direct fit for these two calls |
 | Opt out of caching the vault key at unlock ("Remember on this device" unchecked) | `idea` | Today every unlock caches it (D-005); Settings → Vault can forget it |
 | Command palette actions in context, as in design screen 09: "New host in <group>", "Reconnect <tab>", "Open Files on <host>", and the `⌘P hosts only` hint in its footer | `next` | Raised in the M04 owner walkthrough; M04 lists the same generic actions everywhere |
 | Drag a host between groups in the tree | `next` | M04 changes the folder in the host editor |
@@ -133,6 +139,7 @@ What Tether already does and Flint must not lose.
 | gui-e2e's vim step fails on Linux (Xvfb): vim starts and shows `[New]`, but after `ihello`, Esc and `:wq` the file is never written (`vim-42` never appears). The Linux image had no vim at all until milestone 06, so the step had never run there | `next` | Found in the milestone 06 Linux check. The rest of gui-e2e passes on Linux with the step skipped. Start by dumping the terminal buffer on timeout; suspect the synthetic keydowns under WebKitGTK |
 | A hostname that resolves to IPv6 first (`localhost` → `::1` on Debian) fails with "Connection refused" when the server listens only on IPv4: Flint does not fall back to the next address, as `ssh` does | `next` | Found in the milestone 06 Linux check (the test sshds listen on 127.0.0.1). Check libssh's address handling; may need to resolve and try each address in the adapter |
 | gui-e2e on macOS sometimes ends with an empty `e2e:` line: the page stops with no failed step and no report (about 1 run in 6) | `next` | Seen in the M04 owner walkthrough, not diagnosed. Start by logging `window.onerror` and the WebContent process state before `run_webview_test` times out. Later runs narrowed it: the report stops right after `vim redraws after its start-up queries (DECRQM)`, the step that types into vim, in 5 of 6 empty runs; one sat in a check waiting on a synthetic ↵, which never submits a form |
+| Selected terminal text can render in another font: the WebGL renderer rasterises glyphs into its atlas when the terminal opens, and a selection redraws those cells (new background) with whatever font is available by then. Seen with `MesloLGL Nerd Font Mono`; changing the font in Settings (which rebuilds the atlas) made it near invisible | `next` | Found in the M09 owner review; not caused by M09 (no `ui/` change). Fix in `ui/src/sessions/TerminalView.tsx`: after `document.fonts.ready` (and on later font loads), call `webgl.clearTextureAtlas()`. Tether avoids it by opening with `monospace` and setting the font later |
 | macOS: one title bar. The native traffic lights over the in-app bar (webui `set_frameless`: full-size content, transparent title bar), as in the design | `next` | Found in the M04 owner walkthrough: today the OS title bar ("Flint") sits above the app's bar (D-024). Needs a drag region and left padding for the traffic lights; Linux keeps the OS chrome |
 
 ## 7. Platforms & distribution
@@ -140,10 +147,10 @@ What Tether already does and Flint must not lose.
 | Feature | Status | Notes |
 |---|---|---|
 | macOS + Linux | `done` | |
-| Windows | `later` | Blocked on CF-001 (WebView2) and CF-010 (POSIX runtime). The owner wants it (M04 owner walkthrough), not urgently: until then, keep new platform code behind adapters so Windows stays a port, not a rewrite. The shortcut table and keychain copy name macOS and Linux only |
+| Windows | `later` | cfire `466751b` added a WebView2 backend and a Win32 runtime (CF-001, CF-010), untried; Flint's own native shims (keychain, process, fonts, clipboard) have no Windows side yet. The owner wants it (M04 owner walkthrough), not urgently: until then, keep new platform code behind adapters so Windows stays a port, not a rewrite. The shortcut table and keychain copy name macOS and Linux only |
 | Signed macOS `.app`, Linux AppImage/tarball, Homebrew tap | `next` | A stable Developer ID signature also stops the Keychain prompt after every update (D-020) |
 | Bundle libssh, libsodium, SQLCipher and libcrypto into the `.app` (rpath fix-up) or link them statically | `next` | Today they are dynamic system packages (D-015); a release cannot rely on Homebrew being installed |
-| App icon on Linux: the GTK window icon and a `.desktop` file with `assets/app-icon/flint-256.png`; Windows `.ico` when Windows lands | `next` | macOS has it since the M04 owner walkthrough (`assets/app-icon/`, CF-052); webui sets no GTK window icon |
+| App icon on Linux: the GTK window icon and a `.desktop` file with `assets/app-icon/flint-256.png`; Windows `.ico` when Windows lands | `next` | macOS has it since the M04 owner walkthrough (`assets/app-icon/`; declared in `build.cf` since M09). cfire `466751b` has `app.set_icon(path)` for the GTK window (CF-052), not tried; GTK takes a PNG, not the `.icns` |
 | Public landing + docs site deployed | `next` | The site itself is built from milestone 01 |
 
 ## 8. Docs site
