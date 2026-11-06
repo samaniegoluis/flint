@@ -7,6 +7,7 @@ package main
 // app's state: whether this vault is the one held, and holding it still while a
 // command runs.
 
+import "core:fs"
 import "ext:webui"
 import "../../adapters/config"
 import "../../adapters/crypto"
@@ -30,6 +31,11 @@ type VaultChanged struct {
 // vaults itself, as before. Returns a listener with `open` false in that case.
 fn start_serving(config_dir: str) -> IpcListener {
     path := ipc_socket_path(config_dir)
+    // On a first launch nothing has written to the config folder yet.
+    fs.mkdir_all(config_dir) or err {
+        write_stderr("flint-gui: not serving the CLI: cannot create {config_dir}\n")
+        return IpcListener{ fd: 0, open: false, path: path, allowed_uid: -1 }
+    }
     l := ipc_listen(path) or err {
         write_stderr("flint-gui: not serving the CLI: {err.message()}\n")
         return IpcListener{ fd: 0, open: false, path: path, allowed_uid: -1 }

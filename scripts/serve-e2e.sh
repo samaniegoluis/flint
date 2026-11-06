@@ -92,6 +92,25 @@ expect 0 "create another vault" "$MASTER"$'\n' -- vault create "$other" --name "
 expect 0 "make the first vault current again" "" -- vault use "$vault"
 expect 5 "without the app, no master password and no terminal: locked" "" -- host list
 
+echo "== a first launch, on a config folder that does not exist yet"
+cat > "$tmp/idle.js" <<'JS'
+(async () => {
+  const end = performance.now() + 4000;
+  await new Promise((resolve) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => { if (performance.now() >= end) resolve(); else ch.port2.postMessage(0); };
+    ch.port2.postMessage(0);
+  });
+  await window.backend.e2e_report({ ok: true, detail: '' });
+  window.runtime.Quit();
+})();
+JS
+FLINT_CONFIG_DIR="$tmp/fresh" FLINT_GUI_E2E="$tmp/idle.js" "${app[@]}" >"$tmp/fresh.log" 2>&1 &
+fresh_pid=$!
+for _ in $(seq 1 100); do [[ -S "$tmp/fresh/flint.sock" ]] && break; sleep 0.1; done
+check "the app creates the config folder and serves on a first launch" '[[ -S "$tmp/fresh/flint.sock" ]]'
+wait "$fresh_pid"
+
 echo "== the app"
 E2E_MASTER="$MASTER" python3 -I - "$root/scripts/serve-e2e.js" "$tmp/serve-e2e.js" <<'PY'
 import os, sys
