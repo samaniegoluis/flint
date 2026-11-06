@@ -20,8 +20,12 @@ fn tseal(plain: str) -> str {
         return ""
     }
     crypto := FakeCrypto{ derive_calls: 0 }
-    sealed := crypto.seal(tkey(), str_to_bytes(plain), []) or []
-    return base64.encode_str(bytes_to_str(sealed))
+    // `or []` does not compile with libstdc++ (no type to infer), so test the result.
+    sealed := crypto.seal(tkey(), str_to_bytes(plain), [])
+    if !sealed.has_value() {
+        return ""
+    }
+    return base64.encode_str(bytes_to_str(sealed.value()))
 }
 
 // Holds no TetherFile: a struct field of a struct type from another package can be
