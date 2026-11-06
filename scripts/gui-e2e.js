@@ -639,9 +639,12 @@
     await waitFor(() => q('[role="dialog"][aria-label="Import from Tether"]'), 'the import drawer again');
     await fill('[aria-label="Tether vault file"]', TETHER);
     await fill('#tpw', 'tether-fixture-pw');
+    await click('.drawer .modal-f button', 'Preview');
+    await waitFor(() => hasText('Preview: nothing new to import'), 'the nothing-new preview');
+    await check(hasText('Everything was already in') && !hasText('Would add'), 'a preview with nothing to add says so');
     await click('.drawer .modal-f button', 'Import');
-    await waitFor(() => hasText('Nothing new to import'), 'the nothing-new notice');
-    await check(hasText('Added 0 groups, 0 hosts'), 'importing again adds nothing');
+    await waitFor(() => hasText('Nothing new to import: everything is already in'), 'the nothing-new notice');
+    await check(hasText('Everything was already in') && !hasText('Added 0'), 'importing again adds nothing and says so');
     await click('.drawer .modal-f button', 'Done');
 
     await setStep('lock');

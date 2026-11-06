@@ -15,6 +15,10 @@ function plural(n: number, one: string, many: string) {
   return n === 1 ? `1 ${one}` : `${n} ${many}`;
 }
 
+function addedTotal(c: ImportCounts) {
+  return c.groups + c.hosts + c.keys + c.credentials + c.known_hosts;
+}
+
 export function countsText(c: ImportCounts) {
   return [
     plural(c.groups, 'group', 'groups'), plural(c.hosts, 'host', 'hosts'), plural(c.keys, 'key', 'keys'),
@@ -70,8 +74,7 @@ export function ImportTetherDrawer({ onClose }: { onClose: () => void }) {
       if (!dryRun) {
         setPassword('');
         await refreshCatalog();
-        const added = r.added.groups + r.added.hosts + r.added.keys + r.added.credentials + r.added.known_hosts;
-        notify(added === 0
+        notify(addedTotal(r.added) === 0
           ? `Nothing new to import: everything is already in ${vault?.name ?? 'this vault'}`
           : `Imported ${plural(r.added.hosts, 'host', 'hosts')} from Tether`);
       }
@@ -109,11 +112,18 @@ export function ImportTetherDrawer({ onClose }: { onClose: () => void }) {
           {error && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
           {report && (
             <div className="col" role="status" aria-label="Import report" style={{ gap: 'var(--sp-3)' }}>
-              <div className="panel col" style={{ padding: 'var(--sp-3)', gap: 4 }}>
-                <span className="strong">{report.dry_run ? 'Preview: nothing was written yet' : 'Imported'}</span>
-                <span style={{ fontSize: 'var(--fs-sm)' }}>{report.dry_run ? 'Would add' : 'Added'} {countsText(report.added)}.</span>
-                <span className="faint" style={{ fontSize: 'var(--fs-sm)' }}>Already in the vault: {countsText(report.already_present)}.</span>
-              </div>
+              {addedTotal(report.added) === 0 ? (
+                <div className="panel col" style={{ padding: 'var(--sp-3)', gap: 4 }}>
+                  <span className="strong">{report.dry_run ? 'Preview: nothing new to import' : 'Nothing new to import'}</span>
+                  <span style={{ fontSize: 'var(--fs-sm)' }}>Everything was already in {vault?.name ?? 'this vault'}: {countsText(report.already_present)}.</span>
+                </div>
+              ) : (
+                <div className="panel col" style={{ padding: 'var(--sp-3)', gap: 4 }}>
+                  <span className="strong">{report.dry_run ? 'Preview: nothing was written yet' : 'Imported'}</span>
+                  <span style={{ fontSize: 'var(--fs-sm)' }}>{report.dry_run ? 'Would add' : 'Added'} {countsText(report.added)}.</span>
+                  <span className="faint" style={{ fontSize: 'var(--fs-sm)' }}>Already in the vault: {countsText(report.already_present)}.</span>
+                </div>
+              )}
               <Notes title="Changed on the way" notes={report.changed} />
               <Notes title="Not imported" notes={report.not_imported} />
             </div>
