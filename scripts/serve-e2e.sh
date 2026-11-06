@@ -299,6 +299,26 @@ expect 0 "vault unlock waits for the window" "" -- vault unlock
 expect 0 "and the CLI is served again" "" -- --json vault status
 check "status says unlocked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" == "True" ]]'
 
+# Linux, on a private session bus only (scripts/linux/inside.sh): never on a
+# desktop's real bus, where every program would hear the screensaver turn on.
+if [[ "${FLINT_TEST_PRIVATE_DBUS:-}" == 1 ]]; then
+  echo "== a screensaver turning on locks the vault (D-Bus)"
+  dbus-send --session --type=signal /org/gnome/ScreenSaver org.gnome.ScreenSaver.ActiveChanged boolean:true
+  st=""
+  for _ in $(seq 1 50); do
+    st="$(printf '' | no_tty "$flint" --json vault status 2>/dev/null | json_get 'd["unlocked"]')"
+    [[ "$st" == "False" ]] && break
+    sleep 0.1
+  done
+  check "ActiveChanged(true) of org.gnome.ScreenSaver locks the vault" '[[ "$st" == "False" ]]'
+  for _ in $(seq 1 200); do
+    st="$(printf '' | no_tty "$flint" --json vault status 2>/dev/null | json_get 'd["unlocked"]')"
+    [[ "$st" == "True" ]] && break
+    sleep 0.1
+  done
+  check "the window unlocks it again" '[[ "$st" == "True" ]]'
+fi
+
 expect 0 "add the stop host" "" -- host add e2e-stop --hostname 10.0.0.9
 
 for _ in $(seq 1 300); do kill -0 "$app_pid" 2>/dev/null || break; sleep 0.1; done

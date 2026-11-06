@@ -22,8 +22,8 @@ with_keyring() {
   dbus-run-session -- bash -c "printf flint-test | gnome-keyring-daemon --unlock --components=secrets >/dev/null && $1"
 }
 # The bus is private, so the D-Bus screen-lock test may send signals on it.
-echo "== tests (keychain: gnome-keyring; screensaver signals on the private bus)"
-with_keyring "PATH=\$PATH:/usr/sbin FLINT_TEST_PRIVATE_DBUS=1 scripts/test.sh src"
+echo "== tests (keychain: gnome-keyring)"
+with_keyring "PATH=\$PATH:/usr/sbin scripts/test.sh src"
 # The CLI never reads the keychain (D-042): one run, with a keyring present to show
 # it is not used.
 echo "== cli e2e"
@@ -35,6 +35,7 @@ echo "== desktop app end-to-end under Xvfb"
 PATH="$PATH:/usr/sbin" scripts/gui-e2e.sh | tee /tmp/gui-e2e.log
 grep -q "^e2e: pass" /tmp/gui-e2e.log
 # The CLI as a client of the running app, the app under Xvfb (scripts/serve-e2e.sh).
-echo "== CLI through the running app under Xvfb"
-scripts/serve-e2e.sh | tee /tmp/serve-e2e.log
+# On a private session bus, so a screensaver signal can be sent to the app safely.
+echo "== CLI through the running app under Xvfb (screensaver signals on a private bus)"
+dbus-run-session -- env FLINT_TEST_PRIVATE_DBUS=1 scripts/serve-e2e.sh | tee /tmp/serve-e2e.log
 grep -q "^serve-e2e: .* checks passed" /tmp/serve-e2e.log

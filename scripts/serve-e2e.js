@@ -68,7 +68,21 @@
     await check(!q('[data-unlock-request]'), 'unlocking answers the request');
 
     step = 'stop';
-    await waitFor(() => byText('.tree .ti', 'e2e-stop'), 'the stop host', 90000);
+    // A screen lock sent on D-Bus (Linux check) locks the window here: unlock again.
+    let relocks = 0;
+    await waitFor(() => {
+      const lock = q('.lock-screen [data-lock-reason]');
+      if (lock && !q('#pw')?.disabled) {
+        relocks++;
+        log('ok   the window locked (' + lock.getAttribute('data-lock-reason') + '); unlocking again');
+        const pw = q('#pw');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(pw, MASTER);
+        pw.dispatchEvent(new Event('input', { bubbles: true }));
+        setTimeout(() => byText('button[type="submit"]', 'Unlock')?.click(), 30);
+        return null;
+      }
+      return byText('.tree .ti', 'e2e-stop');
+    }, 'the stop host', 90000);
     await check(!hasText('served-host-pw-marker'), 'no password the CLI sent reaches the page');
 
     await log(`${passed} checks passed`);

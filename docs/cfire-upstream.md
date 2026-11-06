@@ -1341,6 +1341,11 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Workaround:** the SSH adapter's tests dial numeric addresses
   (`src/adapters/ssh/libssh_test.cf`); `scripts/cli-e2e.sh` dials `localhost` in a
   separate process.
+- **Also GLib's D-Bus connections (M11b, Linux):** a test that subscribes to a
+  screensaver signal on a private session bus passes its assertions and fails the canary
+  with 4 leaked descriptors (`g_bus_get_sync` keeps the system and session connections
+  and GLib's worker wakeups for the life of the process). The check moved to
+  `scripts/serve-e2e.sh`, against the running app.
 - **Ideal:** take the descriptor baseline after a warm-up of process-lifetime system
   handles (resolver, keychain), or let a test opt out of the check with a reason.
 
