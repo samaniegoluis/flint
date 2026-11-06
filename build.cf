@@ -16,4 +16,5 @@ var FlintGui = build.Executable("Flint", {
     Entry:     "src/drivers/gui/main.cf",
     Subsystem: "gui",
     OutDir:    "build/gui",
+    Icon:      "assets/app-icon/Flint.icns",
 })

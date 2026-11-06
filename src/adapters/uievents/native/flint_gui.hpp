@@ -1,4 +1,4 @@
-// CFIRE-UPSTREAM: CF-002, CF-026, CF-031, CF-051, CF-073
+// CFIRE-UPSTREAM: CF-026, CF-031, CF-073
 //
 // Native helpers for the GUI's webui adapters (src/adapters/uievents):
 //
@@ -6,13 +6,9 @@
 //   resizes and prompt answers arrive on the UI thread. cfire has no mutex or
 //   condition variable usable across threads, and a Channel has no receive with a
 //   timeout (CF-026), so each session gets a mailbox here, found by session id.
-// * Trimming webui's history. `App.emit()` and every RPC reply keep their payload in
-//   memory forever (CF-002). A terminal emits for hours, so the history is cleared
-//   from time to time. `App` keeps its state private and has no API for this, so the
-//   pointer is reached through the standard explicit-instantiation access rule.
-// * The macOS menu bar. webui opens its window with no main menu (CF-051), and on
-//   macOS ⌘Q, ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z reach a WKWebView only through menu items, so
-//   the standard Flint / Edit / Window menus are installed here before the run loop.
+// * The macOS menu bar. webui's own menu puts Close Window on ⌘W, which the page
+//   uses to close a tab (CF-073), so Flint's standard Flint / Edit / Window menus
+//   replace it once the run loop starts.
 // * No top-level cpp block in a .cf file (CF-031), hence this header.
 #pragma once
 #include "core/webui.hpp"
@@ -236,7 +232,7 @@ inline int await_answer(const std::string& id, int timeout_ms, std::string& out)
     return 0;
 }
 
-// ---- Ids and webui history (CF-002) -------------------------------------------------
+// ---- Ids ----------------------------------------------------------------------------
 
 // A process-wide counter for prompt ids.
 inline long long next_seq() {
@@ -244,34 +240,7 @@ inline long long next_seq() {
     return ++n;
 }
 
-// True once every `every` calls: when to trim webui's history.
-inline bool note_emit(int every) {
-    static std::atomic<long long> n{0};
-    return (++n % every) == 0;
-}
-
-using AppStatePtr = std::shared_ptr<cfire::webui::detail::AppState> cfire::webui::App::*;
-
-struct AppStateAccess {
-    friend AppStatePtr app_state_member(AppStateAccess);
-};
-
-template <AppStatePtr Member>
-struct AppStateRobber {
-    friend AppStatePtr app_state_member(AppStateAccess) { return Member; }
-};
-
-template struct AppStateRobber<&cfire::webui::App::state_>;
-
-inline void trim_history(cfire::webui::App& app) {
-    auto& st = app.*app_state_member(AppStateAccess{});
-    if (!st) return;
-    std::lock_guard<std::recursive_mutex> lock(st->mtx);
-    st->emitted_history.clear();
-    st->eval_history.clear();
-}
-
-// ---- macOS menu bar (CF-051, CF-073) ----------------------------------------------
+// ---- macOS menu bar (CF-073) ------------------------------------------------------
 
 // The standard menus, with no item on a key the page owns (⌘W, ⌘N, ⌘O, ⌘T…). Each
 // item has a nil target, so AppKit sends it along the responder chain: the WKWebView

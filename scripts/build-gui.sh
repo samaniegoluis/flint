@@ -37,10 +37,6 @@ case "$(uname -s)" in
     rm -rf "$res/ui"
     mkdir -p "$res"
     cp -R ui/dist "$res/ui"
-    # cfire writes a fixed Info.plist with no icon (CF-052): add it before signing.
-    # CFIRE-UPSTREAM: CF-052
-    cp assets/app-icon/Flint.icns "$res/Flint.icns"
-    plutil -replace CFBundleIconFile -string Flint build/gui/Flint.app/Contents/Info.plist
     codesign --force --deep -s - build/gui/Flint.app >/dev/null 2>&1 || echo "build-gui: ad-hoc signing failed" >&2
     echo "build-gui: build/gui/Flint.app"
     ;;

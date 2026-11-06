@@ -3,15 +3,10 @@ package uievents
 // EventSink over ext:webui: terminal bytes go to the page as events, out-of-band from
 // RPC results. Bytes are base64-encoded because emit() JSON-stringifies the payload and
 // the PTY stream is not guaranteed to be valid UTF-8 (CF-003).
-//
-// webui keeps every emitted payload and every RPC reply in memory (CF-002), so the
-// sink clears that history once every TRIM_EVERY events.
 
 import "ext:webui"
 import "core:encoding/base64"
 import cpp "flint_gui.hpp" @pkg("flint-native")
-
-TRIM_EVERY: i32 = 512
 
 type TerminalChunk struct {
     session: str `json:"session"`
@@ -31,21 +26,11 @@ fn new_webui_event_sink(app: webui.App) -> WebuiEventSink {
     return WebuiEventSink{ app: app }
 }
 
-// Clears webui's emit and reply history once every TRIM_EVERY calls.
-fn trim_webui_history(mut app: webui.App) {
-    every := TRIM_EVERY
-    // CFIRE-UPSTREAM: CF-002
-    cpp {
-        if (flint_gui::note_emit(every)) {
-            flint_gui::trim_history(app);
-        }
-    }
-}
-
-// Installs the macOS menu bar (Quit, Edit, Window) before the run loop starts; a
-// no-op on Linux, where GTK's text fields handle the clipboard keys themselves.
+// Installs Flint's macOS menu bar (Quit, Edit, Window) in place of webui's once the
+// run loop starts; a no-op on Linux, where GTK's text fields handle the clipboard
+// keys themselves.
 fn install_app_menu(app_name: str) {
-    // CFIRE-UPSTREAM: CF-051
+    // CFIRE-UPSTREAM: CF-073
     cpp {
         flint_gui::install_app_menu(app_name);
     }
@@ -53,7 +38,6 @@ fn install_app_menu(app_name: str) {
 
 fn (mut self: WebuiEventSink) terminal_output(session_id: str, data: str) {
     self.app.emit("terminal:output", TerminalChunk{ session: session_id, data: base64.encode_str(data) })
-    trim_webui_history(mut self.app)
 }
 
 fn (mut self: WebuiEventSink) terminal_closed(session_id: str, reason: str) {

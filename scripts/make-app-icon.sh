@@ -2,7 +2,7 @@
 # Renders the app icon (assets/app-icon/flint-app-icon.svg) into the files the
 # builds use, which are committed so a build needs neither tool:
 #
-#   assets/app-icon/Flint.icns      macOS bundle icon (scripts/build-gui.sh)
+#   assets/app-icon/Flint.icns      macOS bundle icon (build.cf, Icon)
 #   assets/app-icon/flint-256.png   Linux and anything else that takes a PNG
 #
 #   scripts/make-app-icon.sh        # needs rsvg-convert (librsvg) and macOS iconutil
