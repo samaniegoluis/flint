@@ -25,6 +25,24 @@ as is.
 - Each entry gives: what Flint needed, a minimal repro or source pointer, the workaround and
   where it lives, and what an ideal API would look like.
 
+## Status at cfire `2d8613d` (2026-11-06)
+
+cfire `2d8613d` answered Flint's follow-up review of `466751b` (CF-027 and the review's
+E1–E7). It changes the compiler, the LSP, the MCP server and the docs; the runtime headers
+are byte-identical to `466751b`, so every runtime entry (and the Windows findings below)
+stands as it was. Flint moved to it the same day (D-037) and re-ran its repros:
+
+| Entry or item | At `2d8613d` |
+|---|---|
+| CF-027 | `resolved ✓`. The real trigger (`or err { return error(…) }` in a closure) failed at `466751b`; it builds now |
+| CF-056 | `resolved ✓`, now including the message for a local named `out` |
+| E1 (MCP `cfire_check` passed code clang rejects) | the MCP check now runs the C++ step (read in the diff, not re-run) |
+| E2 (`cfire run` hid the exit code) | `os.exit(3)` → `cfire run` exits 3 |
+| E4, E5, E6 (docs: `Channel.close` receiver, `core:build`, `exit`) | documented. The `core:build` page names `build.Link`, `build.PkgConfig`, `build.os()` and `AppName`; the build system did not change in this commit, so Flint has not relied on them |
+| E7 (LSP for Claude Code) | not working: see **CF-074** |
+
+Everything else in the table below is unchanged.
+
 ## Status at cfire `466751b` (2026-11-06)
 
 cfire `466751b` answered CF-001..CF-053. Flint moved to it in milestone 09 and checked
@@ -35,25 +53,212 @@ every entry against its repro:
 | `resolved ✓` | 002, 009, 012–016, 019–025, 027, 028, 030, 032, 033, 035–041, 044, 047–049, 052, 055, 056, 061 |
 | `partly resolved` | 011, 017, 018, 026, 031, 034, 042, 043, 051 |
 | `not adopted` | 003, 005, 006, 007, 008, 045, 053 |
-| `answered, untested` | 001, 004, 010, 029, 046, 050 |
-| `open` | 054, 057, 058, 059, 060 (not in that batch), and the new CF-062..CF-073 |
+| `answered, untested` | 004, 029, 046, 050 |
+| `open` | 001 and 010 (Windows, checked by cross-compiling: see the entries), 054, 057, 058, 059, 060 (not in that batch), and the new CF-062..CF-073 |
 
 **Most urgent of the new ones:** CF-069 (`sqlite.open_encrypted` writes plaintext),
 CF-070 (`ext:crypto/sodium` silently swaps algorithms) and CF-071 (`ext:keychain` on
 Linux). Flint does not use these modules, but anyone who does is exposed.
+
+## Windows at `466751b` (checked 2026-11-06)
+
+cfire `466751b` announces Windows support (a Win32 runtime, a WebView2 backend for
+`ext:webui`, Credential Manager for `ext:keychain`). Flint checked it the day it moved to
+that build. **Short answer: it is not usable yet.** A hello world does not compile for
+Windows, and the "WebView2" backend opens an empty Win32 window with no WebView2 in it.
+Most of the Win32 code that exists is close, and the defects are small and listed with
+file and line below, so this is a punch list, not a redesign.
+
+**Still true at `2d8613d`** (the next cfire commit, 2026-11-06): it changes nothing under
+`runtime/`, and the hello world below fails with the same three errors against it. File
+and line references below hold for both commits.
+
+Details live in two entries, each with lettered sub-items so they can be fixed and
+ticked off one by one:
+
+- **CF-001** · `ext:webui` on Windows: items CF-001.a–j.
+- **CF-010** · the core runtime and the toolchain on Windows: items CF-010.a–m.
+
+### How it was checked
+
+No Windows machine was involved. Everything was cross-compiled on macOS (arm64) inside
+Docker with **llvm-mingw** (image `mstorsjo/llvm-mingw:latest`, clang 23.1.5, target
+`x86_64-w64-mingw32`, libc++ and the mingw-w64 Windows headers), against the runtime
+headers installed by cfire `0.9.5 (466751b)` in `~/.cfire/runtime`. Nothing was run: there
+is no Wine in that setup. Every finding is tagged with how it was established:
+
+- **[compiled]**: reproduced with the compiler or linker. Exact error text is quoted.
+- **[read]**: found by reading the source against the Win32 documentation. Not executed.
+  The behaviour described is what the documented API does, but no binary showed it.
+
+To reproduce (the repro of each item says what goes into `t.cpp`):
+
+```sh
+docker run --rm -v "$PWD":/w -v ~/.cfire/runtime:/rt:ro mstorsjo/llvm-mingw:latest \
+  sh -c 'cd /w && x86_64-w64-mingw32-clang++ -std=c++23 -I/rt t.cpp -o t.exe -mwindows -lole32 -ladvapi32'
+```
+
+`cfire emit-cpp file.cf > t.cpp` turns any `.cf` file into that input. MSVC was not tried.
+The two compile errors in CF-010.a and CF-010.b are not specific to mingw: both come from
+`<windows.h>` and the standard library, so MSVC hits them too.
+
+### Results
+
+| Check | Result |
+|---|---|
+| Hello world (`fn main() { println("hello") }`) | **Fails**: 3 errors in `cfire_prelude.hpp` (CF-010.a, CF-010.b) |
+| Hello world with those 3 lines patched locally | Compiles and links to a 387 KB `.exe` |
+| `#include` each of `core/encoding`, `fs`, `json`, `os`, `str`, `time`, `crypto`, `keychain`, `ssh`, `sqlite`, `webui` (patched prelude, `-fsyntax-only`) | Pass |
+| `#include "core/cli.hpp"` | **Fails**: `'termios.h' file not found` (CF-010.c) |
+| `#include "core/net.hpp"` | **Fails**: `'arpa/inet.h' file not found`, from `core/net/tcp.hpp` (CF-010.c) |
+| A `webui.App` that calls `app.run()`, linked with the flags cfire uses for Windows | **Fails to link**: `undefined symbol: __declspec(dllimport) DwmSetWindowAttribute` (CF-001.f) |
+| Same, adding `-ldwmapi` | Links (305 KB `.exe`); the window would hold no web content (CF-001.a) |
+| `cfire build --target x86_64-w64-mingw32` on macOS | **Fails**: clang is fed the host's headers (CF-010.k) |
+| Flint's generated CLI and GUI translation units | Stop at the same prelude errors, then at Flint's own native headers, which have no Windows side yet (Flint's work, not cfire's) |
+
+### Suggested order
+
+1. **CF-010.a, CF-010.b**: three lines in the prelude. Until they land, nothing compiles.
+2. **CF-001.a–f**: a real WebView2 in the window. The JS side of the bridge already
+   handles `window.chrome.webview` (`bridge.hpp:168`), so the work is the native side.
+   The Linux backend is the closest model: it fits in one function of ~80 lines.
+   CF-001.g (the offscreen runner) goes with it, so the backend can be tested.
+3. **CF-010.d–i, CF-010.l**: process, pipe, console and signal primitives that compile
+   but misbehave. CF-010.d is a security issue (argument injection).
+4. **CF-010.c**: Winsock, for `core:net` and `core:cli`.
+5. The rest: CF-001.h–j, CF-010.j, CF-010.k, CF-010.m. Until then, `cfire doc --llm`
+   should not list WebView2 and Credential Manager as supported (it does today, under
+   `ext:webui` and `ext:keychain`), because agents and users read it as a promise.
+
+### Done when
+
+- A hello world built from `cfire build` on Windows (or with a documented cross target)
+  runs and prints.
+- `cfire new demo --webui && cd demo && cfire run` on Windows shows the template's page,
+  a `bind`-ed call returns a value, and an `emit` reaches the page.
+- `cfire test` on a webui project runs the offscreen runner on Windows and passes for a
+  correct page (CF-001.g).
+- A CI job builds and runs those two on `windows-latest` (GitHub Actions has both MSVC
+  and the WebView2 runtime preinstalled). Without one, Windows will regress silently,
+  since no maintainer machine runs it.
 
 The first entries below came from reading cfire at commit `feat(webui): add ext:webui …`
 (2026-11-04). They are `suspected` until milestone 01 confirms or discards them.
 
 ---
 
-### CF-001 · missing · `answered, untested`: Windows backend for `ext:webui` (WebView2)
-- **At `466751b`:** WebView2 backend added. Not tried: Windows is outside Flint's current scope.
+### CF-001 · missing · `open`: Windows backend for `ext:webui` (WebView2)
+- **At `466751b`:** a Win32 window, but **no WebView2 in it** (see "Windows at `466751b`"
+  above for how this was checked). Paths are under `~/.cfire/runtime/core/`.
 - **Needed:** Flint (and Tether before it) targets Windows.
-- **Source:** `runtime/core/webui.hpp` has WKWebView (macOS/iOS) and WebKitGTK (Linux)
-  backends only.
-- **Workaround:** none. Windows is out of the MVP.
-- **Ideal:** a WebView2 backend with the same `webui.App` API.
+- **Workaround:** none. Windows is out of Flint's current spec (D-007).
+
+**What a backend has to do.** `webui/bridge.hpp` is platform-neutral, and every backend
+plugs into it the same way. The Linux one (`webui/linux_gtk.hpp`, `run_linux_webkitgtk()`,
+lines 63–143) is the shortest complete example. The steps and their WebView2 equivalents:
+
+| Step | Linux (`linux_gtk.hpp`) | WebView2 equivalent | Windows at `466751b` |
+|---|---|---|---|
+| Create the web view in the window | `webkit_web_view_new_with_user_content_manager` (97) | `CreateCoreWebView2EnvironmentWithOptions` → `CreateCoreWebView2Controller(hwnd)` → `get_CoreWebView2` | missing |
+| Serve `app://localhost/*` from `AppState::resolve_asset()` (`bridge.hpp:384`) | `register_uri_scheme("app", linux_scheme_cb)` (82, handler at 9) | `AddWebResourceRequestedFilter` + `add_WebResourceRequested` → `CreateWebResourceResponse` with an `IStream` (`SHCreateMemStream`). Or `SetVirtualHostNameToFolderMapping` for `serve_dirs`, though that skips embedded assets | missing |
+| Inject `kPreloadBridgeJs` (`bridge.hpp`) at document start | `webkit_user_script_new(…INJECT_AT_DOCUMENT_START)` (85) | `AddScriptToExecuteOnDocumentCreated` | missing |
+| Page → native messages into `AppState::handle_ipc_message()` (`bridge.hpp:431`) | `script-message-received::external` (94–95) | `add_WebMessageReceived` → `TryGetWebMessageAsString`. The JS side already posts through `window.chrome.webview.postMessage` (`bridge.hpp:168–169`) | missing |
+| Native → page: set `platform_eval` | `g_idle_add` + `evaluate_javascript` (103) | `ExecuteScript`, marshalled to the UI thread (CF-001.c) | missing (only reset to `nullptr` at 280) |
+| Load the start page | `load_uri("app://localhost/index.html")` (129) | `Navigate(L"app://localhost/index.html")` | missing |
+| Resize the view with the window | GTK container | `ICoreWebView2Controller::put_Bounds` on `WM_SIZE` | `WM_SIZE` calls `ctx->on_resize`, which is never set (185) |
+| Clean up | `platform_*` reset (134–140) | same, plus `Close()` the controller | partial |
+
+**Items**
+
+- **CF-001.a · [read] No WebView2 is created.** `webui/windows_webview2.hpp`,
+  `run_win32_webview2()` (169–289) registers a window class, creates an `HWND` and runs a
+  message loop. Lines 162–167 include `<WebView2.h>` when it exists and define
+  `CFIRE_HAS_WEBVIEW2_HEADER`, but nothing reads that macro and nothing calls a WebView2
+  API anywhere in the runtime (`grep -rn "ICoreWebView2\|CreateCoreWebView2" runtime/`
+  finds nothing). Every row marked "missing" above follows from this. Effect: an app
+  opens a dark empty window (`hbrBackground`, 181); `app.bind`, `app.on`, `app.emit`,
+  `set_state` and `eval_js` reach nothing; `serve_dir`/embedded assets are never read.
+- **CF-001.b · [read] The rest of the `platform_*` hooks.** `bridge.hpp:362–371` has 10
+  hooks. Windows sets 6 (`set_title`, `set_size`, `minimize`, `maximize`, `drag`, `quit`,
+  lines 226–246) and not `eval`, `fullscreen`, `center` or `screenshot`. `app.fullscreen()`
+  and `app.center()` are silent no-ops. Screenshots exist on macOS only, so that one
+  matches Linux; `ICoreWebView2::CapturePreview` would give it to Windows.
+- **CF-001.c · [read] Threading for `platform_eval`.** `AppState::eval_js()`
+  (`bridge.hpp:419`) is called from any thread (Flint emits from a reader thread for
+  every terminal chunk). WebView2 objects are single-threaded apartment objects: calling
+  `ExecuteScript` off the UI thread fails with `RPC_E_WRONG_THREAD`. The Windows
+  `platform_eval` must queue the script and `PostMessageW` the window (a private
+  `WM_APP + n`), then run it in `wndproc`; the Linux backend does the same with
+  `g_idle_add` (103–106). The same goes for `platform_set_title`/`set_size`/… if they can
+  be called from another thread: today they call Win32 directly, which works for
+  `SetWindowTextW` across threads but blocks on the UI thread's message loop.
+- **CF-001.d · [read] Creation is asynchronous.** Environment and controller creation
+  complete in COM callbacks on the UI thread, while the message loop is already running.
+  Scripts, `Navigate` and `eval_js` calls that arrive before the controller exists have
+  to be queued and flushed in the controller-created callback. Without the runtime
+  installed, `CreateCoreWebView2EnvironmentWithOptions` returns
+  `HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)`: `app.run()` should report that (the
+  Evergreen runtime ships with Windows 11 and current Windows 10, but not with Server or
+  older LTSC builds) instead of showing an empty window.
+- **CF-001.e · [read] `app://` needs registering.** WebView2 only lets a page use a
+  custom scheme as a secure origin (needed for `fetch`, `crypto.subtle`, clipboard) when it
+  is registered up front with `ICoreWebView2CustomSchemeRegistration` in the environment
+  options (`ICoreWebView2EnvironmentOptions4::SetCustomSchemeRegistrations`), with
+  `TreatAsSecure` and an allowed origin list. The alternative most WebView2 hosts use is
+  `https://app.localhost/` (or `http://…`) served through `WebResourceRequested`; then
+  `bridge.hpp`'s URL handling and any test that checks `app://localhost` need to accept it.
+- **CF-001.f · [compiled] It does not link with cfire's Windows flags.** cfire's binary
+  carries `-mwindows -lole32 -ladvapi32` for Windows GUI builds. `DwmSetWindowAttribute`
+  (`windows_webview2.hpp:212`, dark title bar) lives in `dwmapi`:
+  `ld.lld: error: undefined symbol: __declspec(dllimport) DwmSetWindowAttribute`. Adding
+  `-ldwmapi` links. Once the WebView2 calls exist they also need `WebView2Loader`
+  (`WebView2LoaderStatic.lib` for MSVC, or ship `WebView2Loader.dll`) plus the
+  `WebView2.h` header from the `Microsoft.Web.WebView2` NuGet package, which is not in
+  the Windows SDK or in mingw-w64. Today's `__has_include(<WebView2.h>)` guard means a
+  machine without the header builds an app without a web view and says nothing: it
+  should be a build error.
+- **CF-001.g · [read] The offscreen test runner always reports failure.**
+  `webui.hpp:765–767`: `run_webview_test()` calls `run_win32_webview2(state_, true, …)`
+  and returns `state_->quit_requested`. That flag is only set when the window closes, and
+  the offscreen loop (`windows_webview2.hpp:256–270`) exits on the timeout without
+  setting it, so a correct page returns `false`. macOS and Linux return whether the page
+  loaded and the bridge answered; Windows should do the same (`NavigationCompleted` with
+  `IsSuccess`, then one round trip through the bridge). Note also that the window is
+  created at `(-2000, -2000)` but never shown (249–252): WebView2 does not paint, and may
+  not finish navigation, in a window that was never shown; `ShowWindow(SW_SHOWNOACTIVATE)`
+  off-screen is the usual trick.
+- **CF-001.h · [read] Icons.** `set_icon` is documented as taking `.png`, `.icns` or
+  `.ico` (`cfire doc --llm`, `ext:webui`). Windows loads it with
+  `LoadImageW(…, IMAGE_ICON, …, LR_LOADFROMFILE)` (217), which only reads `.ico`; a
+  `.png` gives no icon and no error. The `.exe`'s own icon (Explorer, taskbar pin) needs
+  an `.ico` in a resource script compiled with `windres`/`rc.exe`; nothing in cfire's
+  binary mentions either, so `build.Executable({ Icon: … })` (used for the macOS
+  `.icns`) has no Windows counterpart. The `HICON` from `LoadImageW` is also never
+  destroyed, and the background brush from `CreateSolidBrush` (181) leaks per `run()`.
+- **CF-001.i · [read] Menus and keyboard.** `add_menu_item` builds the menu bar on macOS
+  only (`custom_menus` is read in `macos_ios.hpp:423` and nowhere else). On Windows, as on
+  Linux, the menu items and their shortcuts are ignored. WebView2 also needs
+  `AcceleratorKeyPressed` handled if the host wants to see Ctrl/Alt shortcuts before the
+  page does.
+- **CF-001.j · [read] Clipboard writes likely always fail.** `windows_webview2.hpp:27–64`,
+  `win32_clipboard_set()` calls `OpenClipboard(nullptr)` then `EmptyClipboard()` (28–29).
+  The Win32 documentation for `EmptyClipboard`: if the clipboard was opened with a `NULL`
+  window, it sets the clipboard owner to `NULL`, "this causes `SetClipboardData` to fail".
+  So `app.clipboard_set` and `clipboard_set_secret` most likely put nothing on the
+  clipboard. Fix: open it with the app's `HWND` (or a message-only window when there is
+  none). When `SetClipboardData` fails the `HGLOBAL` stays the caller's and leaks (38,
+  49, 58: the result is not checked). The concealed formats themselves are the right
+  ones (`ExcludeClipboardContentFromMonitorProcessing`, `CanIncludeInClipboardHistory` =
+  0). `win32_monospace_fonts()` (95–105) looks right; it lists GDI families, which
+  include `@`-prefixed vertical variants that it already skips.
+
+- **Repro (CF-001.a, CF-001.f):** `t.cpp` = `#include "cfire_prelude.hpp"`,
+  `#include "core/webui.hpp"`, `int main(){ cfire::webui::App app; app.run(); }`. Build
+  with the command above (after the CF-010.a/b prelude fix): link error. Add `-ldwmapi`:
+  it links, and the source shows the window it creates holds no web view.
+- **Ideal:** a WebView2 backend that satisfies the table above with the same
+  `webui.App` API, failing the build when the WebView2 SDK is missing and failing
+  `app.run()` with a clear error when the runtime is.
 
 ### CF-002 · bug · `resolved ✓`: `App.emit()` retains every payload forever
 - **At `466751b`:** history is a ring buffer (256 entries per event, `app.set_max_history`). Flint's periodic trim and its private-member access are deleted.
@@ -142,9 +347,125 @@ The first entries below came from reading cfire at commit `feat(webui): add ext:
 - **Source:** the GitHub API reports no licence for `gsandoval/cfire`.
 - **Ideal:** an OSI licence (MIT or Apache-2.0) covering the compiler and `runtime/`.
 
-### CF-010 · missing · `answered, untested`: Windows support in the core runtime
-- **At `466751b`:** `_WIN32` paths added across the runtime. Not tried (see CF-001).
-- **Source:** `core:os/exec` uses `posix_spawnp`, `core:os/signal` uses POSIX signals,
+### CF-010 · missing · `open`: Windows support in the core runtime
+- **At `466751b`:** `_WIN32` paths added across the runtime, but **a hello world does not
+  compile for Windows** (see "Windows at `466751b`" above for how this was checked).
+  Paths are under `~/.cfire/runtime/`. Items a–c stop the build; d–m compile but
+  misbehave.
+- **Repro (a, b):** `hello.cf` = `fn main() { println("hello") }`;
+  `cfire emit-cpp hello.cf > t.cpp`; build with the command above. Output:
+  ```
+  cfire_prelude.hpp:943:12: error: cannot initialize return object of type 'const char *' with an rvalue of type 'const value_type *' (aka 'const wchar_t *')
+  cfire_prelude.hpp:955:12: error: cannot initialize return object of type 'const char *' with an rvalue of type 'const value_type *' (aka 'const wchar_t *')
+  cfire_prelude.hpp:1536:14: error: target of using declaration conflicts with declaration already in scope
+  /opt/llvm-mingw/x86_64-w64-mingw32/include/rpcndr.h:93:25: note: conflicting declaration
+     93 |   typedef unsigned char byte;
+  ```
+
+**Items**
+
+- **CF-010.a · [compiled] `c_str`/`c_arg` of a path.** `cfire_prelude.hpp:942–944` and
+  `954–956` return `p.c_str()` as `const char*`. On Windows `std::filesystem::path`
+  stores `wchar_t`, so `c_str()` is `const wchar_t*`. A `const char*` cannot be borrowed
+  from the path there: these two overloads need to return an owning holder on Windows
+  (the prelude already has `CStrViewHolder`, line 917, for `string_view`), built from
+  `p.u8string()` or `p.string()`. Prefer UTF-8 (`u8string`): `path::string()` converts
+  through the ANSI code page and throws on characters it cannot represent, and every
+  other string in cfire is UTF-8. The same UTF-8 rule applies wherever the runtime passes
+  a path to a C API (`fopen` needs `_wfopen`, see CF-010.l).
+- **CF-010.b · [compiled] `byte` clashes with `<windows.h>`.** `cfire_prelude.hpp:1536`
+  puts `cfire::byte` (a conversion function, 1410) in the global namespace with
+  `using cfire::byte;`. `rpcndr.h`, pulled in by `<windows.h>`, declares
+  `typedef unsigned char byte;` there too. Every program fails, because the prelude itself
+  includes `<windows.h>`. MSVC has the same typedef. Options: do not export `byte` globally
+  on Windows and have the code generator emit `cfire::byte(...)`; or define
+  `WIN32_LEAN_AND_MEAN` *and* stop `rpcndr.h` being reached (fragile: `objbase.h` from
+  webui and `wincred.h` from keychain bring it back). The first is the robust one. To
+  get past it for this check, the `using` was simply removed under `_WIN32`: enough for a
+  hello world, not for code that calls `byte(x)`.
+- **CF-010.c · [compiled] Modules with no Windows side.** `core/cli.hpp:9` includes
+  `<termios.h>` and `unistd.h` unconditionally (so `cli.prompt_password` and friends do not
+  exist on Windows), and `core/net/tcp.hpp:19` includes `<arpa/inet.h>`. Networking on
+  Windows needs Winsock: `<winsock2.h>`/`<ws2tcpip.h>` before `<windows.h>`, `WSAStartup`
+  once, link `ws2_32`, `SOCKET` instead of `int` (sockets are not CRT file descriptors, so
+  `fd_read`/`fd_write`/`poll_fd` cannot take them), `closesocket`, `WSAPoll`.
+  `grep -rn WSAStartup runtime/` finds nothing today.
+- **CF-010.d · [read] `os.command` quoting.** `core/os.hpp:255–258` builds the command
+  line as `"binary" "arg1" "arg2"` with no escaping. Windows programs split their command
+  line with the `CommandLineToArgvW` rules, so an argument that contains `"` ends the
+  quoted span early and the rest becomes new arguments, and one that ends in `\` escapes
+  the closing quote. Both are argument injection when an argument comes from data (a host
+  name, a file name). The standard fix is the quoting algorithm from Microsoft's
+  "Everyone quotes command line arguments the wrong way" (double the backslashes that
+  precede a `"`, escape the `"`, double trailing backslashes). Also: `CreateProcessA`
+  (268) takes the ANSI code page, so a UTF-8 path or argument with non-ASCII characters is
+  garbled; convert to UTF-16 and call `CreateProcessW`. `.bat`/`.cmd` files need
+  `cmd.exe /c` and its own escaping rules; `CreateProcess` does not run them directly.
+- **CF-010.e · [read] `os.command` can deadlock.** `core/os.hpp:300–301` reads the child's
+  stdout until EOF and only then reads stderr. A child that writes more than the pipe
+  buffer (`CreatePipe(…, 0)` takes the system default, 4 KB in practice) to stderr before closing stdout blocks
+  on that write forever, and so does the parent. Read both pipes concurrently (a thread
+  for stderr, or overlapped I/O on named pipes).
+- **CF-010.f · [read] `os.poll_fd` on Windows.** `core/os.hpp:502–517` waits on the CRT
+  descriptor's handle with `WaitForSingleObject`. Anonymous pipe handles are not
+  documented as waitable objects; in practice the wait returns immediately, so
+  `poll_fd` says "readable" when nothing is there and the next read blocks. A console
+  input handle is waitable but is signalled by *any* input record (key-up, focus, mouse,
+  resize), so the same happens on a key release. Per handle type: `PeekNamedPipe` for
+  pipes, `GetNumberOfConsoleInputEvents` + `PeekConsoleInputW` for consoles (keep only
+  key-down records with a character), `WSAPoll` for sockets.
+- **CF-010.g · [read] `os.socketpair` is a pipe.** `core/os.hpp:519–522` returns `pipe()`
+  on Windows. A pipe is one-way: writing to end 0 fails, and code that uses the pair as a
+  wake-up channel in both directions (or hands one end to a child as a socket) breaks.
+  Real options: a loopback TCP pair (the usual emulation), or `AF_UNIX` sockets (Windows 10
+  1803+). Either way the ends are `SOCKET`s, not CRT descriptors (see CF-010.c).
+- **CF-010.h · [read] Raw console mode.** `core/os.hpp:475–499` clears echo, line and
+  processed input, but does not set `ENABLE_VIRTUAL_TERMINAL_INPUT`. Without it, arrow,
+  Home/End and function keys produce no bytes at all through `_read`/`ReadFile`, so a
+  terminal program (an SSH client, a TUI) cannot see them. The output side needs
+  `ENABLE_VIRTUAL_TERMINAL_PROCESSING` on the output handle for ANSI escapes to render
+  instead of printing as text; nothing in the runtime sets it (`grep -rn
+  VIRTUAL_TERMINAL runtime/` is empty). There is no window-resize signal on Windows: a
+  resize arrives as a `WINDOW_BUFFER_SIZE_EVENT` input record, which the byte-oriented
+  read path discards.
+- **CF-010.i · [read] `os.on_signal`.** `core/os.hpp:546–549` uses `std::signal`. The
+  Windows CRT supports only `SIGINT`, `SIGBREAK`, `SIGTERM` (never raised by the system),
+  `SIGABRT`, `SIGFPE`, `SIGILL` and `SIGSEGV`; it resets the handler to `SIG_DFL` after each
+  delivery (so a second Ctrl+C kills the process); and it runs the `SIGINT` handler on a
+  new thread. Closing the console window, logoff and shutdown reach a process only through
+  `SetConsoleCtrlHandler`. `SIGHUP`, `SIGWINCH` and `SIGPIPE` do not exist, so cfire code
+  that names them needs a documented answer on Windows.
+- **CF-010.j · [read] `ext:keychain` on Windows.** `core/keychain.hpp`:
+  `CredWriteA`'s result is discarded (101), so `set` reports success when the write
+  fails; it fails for secrets over `CRED_MAX_CREDENTIAL_BLOB_SIZE` (2560 bytes), among
+  others. `CredDeleteA` (219) likewise. The secret is also copied into the in-process
+  `memory_fallback_store` (42), and `get` falls back to it (164) when Credential Manager has
+  nothing, so within one process a failed write still "reads back". This is the same
+  pattern as CF-071 on Linux. The `A` variants take service and account in the ANSI code
+  page; `CredWriteW` with UTF-16 conversions avoids that.
+- **CF-010.k · [compiled] No cross-compiling to Windows.** On macOS,
+  `cfire build --target x86_64-w64-mingw32` runs clang with the host's include paths
+  (Homebrew's `sodium.h` → `'stdlib.h' file not found`). There is no option for a target
+  sysroot or a cross compiler, so a Windows binary has to be built on Windows. Accepting
+  `CFIRE_CXX`/a `--sysroot`, or documenting the llvm-mingw image as the cross toolchain,
+  would let macOS and Linux CI build Windows. Separately: cfire's binary carries
+  `-mwindows`, `-subsystem=`, `mingw` and `msvc`, so it seems to drive both toolchains on
+  Windows; which one is the default, how `@pkg(...)` resolves there (pkg-config is not
+  standard on Windows; vcpkg or MSYS2 provide it), and how `build.Executable({ Icon })`
+  maps to a resource file, were not checked.
+- **CF-010.l · [read] Console text and UTF-8.** Nothing in the runtime calls
+  `SetConsoleOutputCP(CP_UTF8)`/`SetConsoleCP(CP_UTF8)` (`grep -rn SetConsoleOutputCP
+  runtime/` is empty). cfire strings are UTF-8, so `println("café")` prints mojibake in a
+  default Windows console, and `readln` returns input in the console's code page. Either
+  set both code pages at startup, or write through `WriteConsoleW` when the handle is a
+  console. The same UTF-8/UTF-16 boundary applies to file APIs that take `char*` paths
+  (`fopen`, `std::ifstream(const char*)`); `std::filesystem::path` built from `u8string`
+  is the safe route.
+- **CF-010.m · [read] `File.fd()` returns -1.** `core/fs.hpp:256–262` (`File.fd()`)
+  returns `-1` on Windows instead of `_fileno(fp_)`, so code that passes a file's
+  descriptor on (to `poll_fd`, `fd_read`) gets an invalid one there.
+
+- **Source (before `466751b`):** `core:os/exec` uses `posix_spawnp`, `core:os/signal` uses POSIX signals,
   `runtime/core/sqlite.hpp` has `#if !defined(_WIN32)`, and the guide documents Windows only
   via WSL2.
 - **Ideal:** native Windows (MSVC or clang-cl) builds of `core:*`.
@@ -357,7 +678,7 @@ The entries below were found while building milestone 01 against cfire `3963814`
   channels and contexts.
 
 ### CF-027 · bug · `resolved ✓`: a `bind` closure cannot return both `error(…)` and a value
-- **At `466751b`:** a `bind` closure can return `error(…)` and a value. Flint keeps named handlers by choice.
+- **At `2d8613d`:** resolved. At `466751b` only `return error(…)` worked; the case that matters, `v := check(params) or err { return error("bad") }` inside a `bind_raw` closure, still failed with the deduction error. It now builds. Flint keeps named handlers by choice.
 - **Repro:** `app.bind[Req]("x") |req| { if req.n < 0 { return error("neg") } return "ok" }`
   → clang `'auto' in return type deduced as 'std::string' here but deduced as
   'unexpected<cfire::Error>' in earlier return statement`. `try` inside the closure fails
@@ -704,7 +1025,8 @@ The entries below were found while building milestone 02 against the same cfire 
   by clang.
 
 ### CF-056 · bug · `resolved ✓`: a parse error in one file of a package is reported as C++ errors in the others
-- **At `466751b`:** the parse error comes first (see CF-016). The message for `out` is still `unexpected token 'out'`, without saying it is reserved.
+- **At `466751b`:** the parse error comes first (see CF-016).
+- **At `2d8613d`:** the message says why: `'out' is a reserved parameter-intent keyword and cannot be used as a variable name`.
 - **Repro:** name a local `out` (a reserved word: the `out` parameter intent) in one
   file of a package, then `cfire test <dir>`. The file is silently left out, and the
   output is clang's `unknown type name 'FakeCrypto'` / `use of undeclared identifier
@@ -899,3 +1221,51 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   `src/adapters/uievents/native/flint_gui.hpp`).
 - **Ideal:** a way to turn the built-in menu off, or to declare which shortcuts the page
   owns; Quit through the same close path as the window's close button.
+
+### CF-074 · bug · `confirmed`: `cfire ide claude` writes LSP files Claude Code never loads
+- **At `2d8613d`:** the commit answers the review's E7 by writing `.lsp.json` and
+  `.claude-plugin/plugin.json` into the project. `cfire lsp` itself works well on Flint:
+  go-to-definition across files (`src/drivers/gui/main.cf` → `rpc.cf:240`), references
+  and hover (with the signature and the lowered C++). Only the Claude Code wiring is wrong.
+- **Repro:** in an empty git repo, `cfire ide claude`. It reports
+  `Claude Code (.mcp.json + .lsp.json + .claude-plugin/plugin.json + .claude/rules/cfire.md)`.
+  Then `claude plugin list` in that folder (Claude Code 2.1.319) lists only the LSP
+  plugins installed at user scope (`clangd-lsp`, `gopls-lsp`, `swift-lsp`); `cfire` is
+  not among them, and no `cfire` LSP starts. `claude plugin validate .` accepts the
+  manifest (one warning: no `author`), so the files are well formed; they are just never
+  read.
+- **Why:** Claude Code reads `.lsp.json` and `lspServers` only from a **plugin's** root,
+  and a plugin loads only when it is installed from a marketplace (`/plugin marketplace
+  add …`, then `/plugin install <name>@<marketplace>`) or passed with
+  `claude --plugin-dir <path>` for one session. A `.claude-plugin/plugin.json` at the root
+  of the project being edited is not picked up
+  ([plugins reference](https://code.claude.com/docs/en/plugins-reference)).
+  This is how the official LSP plugins work: `gopls-lsp@claude-plugins-official` is a
+  plugin with an `lspServers` entry and nothing else.
+- **Side effects of the current output:**
+  - `.mcp.json` now holds the absolute path of the binary
+    (`/Users/<user>/.local/bin/cfire`) where it used to hold `cfire`. The file is usually
+    committed, so it breaks for every other contributor and for CI. Same in
+    `.lsp.json`, `plugin.json` and the rules file (`powered by /Users/<user>/… mcp`).
+  - `plugin.json` declares the `cfire` MCP server again. If the plugin were loaded, the
+    session would get two `cfire` MCP servers.
+  - `cfire ide --status` counts Claude Code as configured once `.mcp.json` and `.lsp.json`
+    exist, and the rules file tells agents to "prefer LSP semantic lookups over raw text
+    `grep`", so an agent is sent to an LSP that is not there.
+- **Workaround:** none in Flint, on purpose. Flint keeps its `.mcp.json` (bare `cfire`)
+  and its rules file as they are, and waits for this entry rather than patching it
+  locally.
+- **Ideal:** ship cfire's LSP to Claude Code the way the official LSP plugins are shipped:
+  1. A marketplace in the cfire repo (`.claude-plugin/marketplace.json`) with one plugin,
+     e.g. `cfire-lsp`, whose `plugin.json` has only `lspServers`:
+     `{"cfire": {"command": "cfire", "args": ["lsp"], "extensionToLanguage": {".cf": "cfire"}}}`.
+     The bare `cfire` resolves through `PATH`, so nothing machine-specific is written.
+  2. Install it once per machine: `/plugin marketplace add gsandoval/cfire` and
+     `/plugin install cfire-lsp@cfire` (or `claude plugin install … --scope user`). One
+     install covers every cfire project.
+  3. `cfire ide claude` runs or prints those two commands instead of writing `.lsp.json`
+     and `.claude-plugin/`; for a team repo it can add the marketplace to
+     `.claude/settings.json` (`extraKnownMarketplaces` + `enabledPlugins`) so collaborators
+     are offered it.
+  4. Keep `.mcp.json` for MCP (with a bare `cfire`), and leave MCP out of the plugin.
+  5. `cfire ide --status` checks `claude plugin list` for the plugin, not files on disk.

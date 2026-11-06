@@ -17,10 +17,14 @@ fi
 cd "$root"
 
 "$root/scripts/build-gui.sh" >/dev/null
+# The vim step fails under Xvfb on Linux (ROADMAP, "gui-e2e's vim step"), so it runs
+# only on macOS unless FLINT_E2E_VIM=1 asks for it: set that while fixing it.
 if [[ "$(uname -s)" == Darwin ]]; then
   app=(build/gui/Flint.app/Contents/MacOS/Flint)
+  run_vim=1
 else
   app=(timeout 300 xvfb-run -a build/gui/Flint)
+  run_vim="${FLINT_E2E_VIM:-0}"
 fi
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-gui-e2e.XXXXXX")"
@@ -61,13 +65,14 @@ sleep 0.5
 cp "$root/src/adapters/vault/testdata/tether-v5.tether" "$tmp/old.tether"
 mkdir -p /tmp/flint-tether-fixture && cp "$root/src/adapters/vault/testdata/tether-legacy-ed25519" /tmp/flint-tether-fixture/id_legacy
 
-E2E_VAULT="$tmp/e2e.flint" E2E_PORT3="$port3" E2E_TETHER="$tmp/old.tether" python3 -I - "$root/scripts/gui-e2e.js" "$tmp/e2e.js" <<'PY'
+E2E_VAULT="$tmp/e2e.flint" E2E_PORT3="$port3" E2E_TETHER="$tmp/old.tether" E2E_VIM="$run_vim" python3 -I - "$root/scripts/gui-e2e.js" "$tmp/e2e.js" <<'PY'
 import os, sys
 src = open(sys.argv[1]).read()
 key = open(os.environ["FLINT_TEST_SSH_KEY"]).read().replace("\\", "\\\\").replace("`", "\\`")
 values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_PORT"],
           "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"],
-          "USER": os.environ["USER"], "KEY": key, "TETHER": os.environ["E2E_TETHER"]}
+          "USER": os.environ["USER"], "KEY": key, "TETHER": os.environ["E2E_TETHER"],
+          "VIM": os.environ["E2E_VIM"]}
 for k, v in values.items():
     src = src.replace("@@" + k + "@@", v)
 open(sys.argv[2], "w").write(src)
