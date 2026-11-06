@@ -76,6 +76,12 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
             ssh_options_set(s, SSH_OPTIONS_TIMEOUT, &t);
             // Flint resolves hosts from its vault, never from ~/.ssh/config.
             ssh_options_set(s, SSH_OPTIONS_PROCESS_CONFIG, &no_config);
+            // Nor from OpenSSH's known_hosts: the vault holds the trusted keys. libssh
+            // reorders the host key algorithms by what those files list for the host,
+            // which overrides `host_key_algos` and negotiates a key type the vault
+            // does not hold (a false "host key changed").
+            ssh_options_set(s, SSH_OPTIONS_KNOWNHOSTS, "/dev/null");
+            ssh_options_set(s, SSH_OPTIONS_GLOBAL_KNOWNHOSTS, "/dev/null");
             if (!host_key_algos.empty()) {
                 ssh_options_set(s, SSH_OPTIONS_HOSTKEYS, host_key_algos.c_str());
             }

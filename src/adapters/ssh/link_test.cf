@@ -215,3 +215,29 @@ test "a recorded key type is negotiated first, and only when the server has it" 
     assert_eq((try fallback.link_server_key()).key_type, "ssh-ed25519")
     fallback.link_hangup()
 }
+
+test "OpenSSH's known_hosts files are not read" {
+    (port, _) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT not set")
+        return
+    }
+    // libssh reorders host key algorithms by those files, which would override the
+    // vault's preferred key type (a false "host key changed" on a host whose
+    // ~/.ssh/known_hosts lists another type).
+    mut link := new_ssh_link()
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    session := link.hops[0].session
+    mut user_file := ""
+    mut global_file := ""
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        char* v = nullptr;
+        if (ssh_options_get(session, SSH_OPTIONS_KNOWNHOSTS, &v) == SSH_OK && v) { user_file = v; ssh_string_free_char(v); }
+        v = nullptr;
+        if (ssh_options_get(session, SSH_OPTIONS_GLOBAL_KNOWNHOSTS, &v) == SSH_OK && v) { global_file = v; ssh_string_free_char(v); }
+    }
+    link.link_hangup()
+    assert_eq(user_file, "/dev/null")
+    assert_eq(global_file, "/dev/null")
+}
