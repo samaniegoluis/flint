@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cfire": {
+      "type": "stdio",
+      "command": "cfire",
+      "args": ["mcp"]
+    }
+  }
+}
