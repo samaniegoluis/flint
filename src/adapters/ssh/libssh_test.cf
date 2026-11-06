@@ -75,3 +75,21 @@ test "SshConn satisfies the ShellSession port" {
     conn := SshConn{}
     assert(accepts_shell(conn))
 }
+
+test "the dialler falls back to the next address when the first has no server" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    // The test sshd listens on 127.0.0.1 only: ::1 refuses, as `localhost` does on
+    // Debian, where it resolves to ::1 first.
+    try tcp_dial_first(["::1", "127.0.0.1"], port, 5)
+    only_v6 := tcp_dial_first(["::1"], port, 5)
+    assert(!only_v6.has_value())
+    assert_eq(error_code_of("{only_v6.error().message()}"), "network")
+}
+
+// Names (`localhost`, one that does not resolve) are dialled by scripts/cli-e2e.sh: on
+// macOS the first lookup in a process leaves two resolver sockets open, which the
+// test runner's descriptor-leak check reports as a leak (CF-080).

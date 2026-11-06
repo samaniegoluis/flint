@@ -1307,3 +1307,33 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   keeps webui's panels on macOS.
 - **Ideal:** GTK 3 file choosers and a `GtkMessageDialog` in webui on Linux (Windows:
   `IFileDialog`), and an error for "no dialog on this platform" instead of `""`.
+
+### CF-078 · missing · `open`: a struct field default cannot be a negative literal
+- **At `2d8613d`:** `type C struct { a: i32 = 7 }` parses; `a: i32 = -1` fails with
+  `unexpected token '-' in expression`.
+- **Repro:** `cfire check` on `type C struct { a: i32 = -1 }`.
+- **Workaround:** `SshConn` (`src/adapters/ssh/libssh.cf`) marks the socket it owns with
+  a `bool` (zero-initialised to `false`) next to the descriptor, since a zero-initialised
+  `i32` is fd 0, not "no socket".
+- **Ideal:** any constant expression as a field default, `-1` included.
+
+### CF-079 · missing · `open`: no `if` expression
+- **At `2d8613d`:** `x := if c { a } else { b }` fails with `unexpected token 'if' in
+  expression`.
+- **Repro:** `cfire check` on `fn f(c: bool) -> i32 { x := if c { 1 } else { 2 }; return x }`.
+- **Workaround:** a `mut` local assigned in an `if` statement (`ssh_dial_over`).
+- **Ideal:** `if` as an expression, or a ternary.
+
+### CF-080 · bug · `open`: the test runner's descriptor-leak check flags the system resolver
+- **At `2d8613d`:** every `test` block fails with `resource leak canary (test leaked 2
+  open file descriptor(s))` when it is the first code in the process to resolve a name
+  on macOS. `getaddrinfo("localhost")` opens two sockets to mDNSResponder and keeps them
+  for the life of the process (a plain C++ program shows 3 → 5 descriptors after the
+  first lookup, 5 after the second). They are not the test's to close.
+- **Repro:** a `test` block that calls `getaddrinfo("localhost", …)` (through
+  `import cpp`) and frees the result.
+- **Workaround:** the SSH adapter's tests dial numeric addresses
+  (`src/adapters/ssh/libssh_test.cf`); `scripts/cli-e2e.sh` dials `localhost` in a
+  separate process.
+- **Ideal:** take the descriptor baseline after a warm-up of process-lifetime system
+  handles (resolver, keychain), or let a test opt out of the check with a reason.

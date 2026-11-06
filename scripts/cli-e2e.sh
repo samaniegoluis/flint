@@ -281,6 +281,20 @@ expect 13 "host test on a closed port fails with network" "$SMI" -- host test de
 expect 3 "host test on an unknown alias is not_found" "$SMI" -- host test nope "${SM[@]}"
 expect 2 "host test takes no remote command" "$SMI" -- host test local "${SM[@]}" -- true
 
+echo "== ssh: a hostname with several addresses"
+# The test sshd listens on 127.0.0.1 only. `localhost` resolves to ::1 first on Debian
+# (and 127.0.0.1 first on macOS): Flint tries each address in turn, as ssh does.
+expect 0 "host add by name" "$SMI" -- host add byname --hostname localhost --port "$P" --user "$USER" --key tkey "${SM[@]}"
+expect 0 "exec on a name that resolves to IPv6 and IPv4" "$SMI" -- exec byname --accept-new-host-key "${SM[@]}" -- echo by-name-ok
+check "the command ran over the IPv4 address" '[[ "$out" == "by-name-ok" ]]'
+expect 0 "host add with a name that does not resolve" "$SMI" -- host add nowhere --hostname no-such-host.invalid --user "$USER" "${SM[@]}"
+expect 13 "exec on a name that does not resolve" "$SMI" -- exec nowhere --timeout 3 "${SM[@]}" -- true
+check "the error says the name did not resolve" '[[ "$err" == *"cannot resolve no-such-host.invalid"* ]]'
+# The interactive connect below expects localhost's key to be new.
+expect 0 "known-host rm by name" "$SMI" -- known-host rm byname "${SM[@]}"
+expect 0 "host rm by name" "$SMI" -- host rm byname "${SM[@]}"
+expect 0 "host rm nowhere" "$SMI" -- host rm nowhere "${SM[@]}"
+
 echo "== ssh: initial command"
 expect 0 "host edit --command --no-keep-shell" "$SMI" -- --json host edit local --command 'echo cmd-$((40+2))' --no-keep-shell "${SM[@]}"
 check "--json shows the command" '[[ "$(echo "$out" | json_get "d[\"command\"]")" == '"'"'echo cmd-$((40+2))'"'"' ]]'

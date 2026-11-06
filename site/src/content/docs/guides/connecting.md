@@ -158,6 +158,11 @@ counts as changed and is refused like any other changed key.
 
 Both take 1 to 86400 seconds. An interactive shell has no time limit.
 
+A hostname that resolves to several addresses (IPv6 and IPv4, say) is tried address by
+address in the resolver's order, as `ssh` does, until one answers. All of them share
+the one `--timeout`. So `localhost`, which resolves to `::1` first on Debian, still
+reaches a server that listens only on `127.0.0.1`.
+
 ### Idle sessions
 
 An interactive session, in the CLI or a tab in the app, sends the server a keepalive
