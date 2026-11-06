@@ -96,6 +96,8 @@ export const api = {
 
   sessionOpen: (session: string, alias: string, cols: number, rows: number) =>
     call('session_open', { session, alias, cols, rows, accept_new_host_key: false }),
+  /** An OSC 52 payload ("c;base64") a remote program wrote; the core copies it. */
+  terminalClipboard: (payload: string) => call<{ outcome: string; bytes: number }>('terminal_clipboard', { name: payload }),
   sessionInput: (session: string, data: string) => call('session_input', { session, data }),
   sessionResize: (session: string, cols: number, rows: number) => call('session_resize', { session, cols, rows }),
   sessionAnswer: (session: string, prompt: string, ok: boolean, value: string) =>

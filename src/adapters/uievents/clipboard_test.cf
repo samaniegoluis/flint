@@ -38,3 +38,17 @@ test "a copied secret is concealed, and cleared only if nothing was copied since
     assert_eq(clipboard_read_text(board), "newer copy")
     clipboard_release(board)
 }
+
+test "text a remote program copied (OSC 52) is plain, not concealed" {
+    board := "net.flint.test.clipboard-text.{os.getpid()}"
+    mut c := OsClipboard{ board: board }
+    r := c.clipboard_copy_text("from neovim ✓")
+    if !r.has_value() {
+        assert_eq(error_code_of("{r.error().message()}"), "io")
+        println("SKIP: no clipboard here (no display)")
+        return
+    }
+    assert_eq(clipboard_read_text(board), "from neovim ✓")
+    assert(!clipboard_is_concealed(board), "a plain copy is not hidden from clipboard managers")
+    clipboard_release(board)
+}

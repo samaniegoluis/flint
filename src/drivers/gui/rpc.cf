@@ -473,6 +473,14 @@ fn rpc_secret_copy(params: str, c: Sodium, store: LockedVaultStore, mut clip: Os
     return ok_json()
 }
 
+// A remote program asked to set the clipboard (OSC 52). xterm.js hands the page the
+// sequence's payload; the core parses it and writes it, since the webview's own
+// clipboard API refuses a write no click started (Tether 57f8c51).
+fn rpc_terminal_clipboard(params: str, mut clip: OsClipboard) -> str! {
+    req := try parse_req[NameReq](params)
+    return json.stringify(try osc52_copy(mut clip, req.name))
+}
+
 // Forgets a host's key: the explicit step before reconnecting to a host whose key
 // changed (D-019). The core never replaces a key by itself.
 fn rpc_known_host_rm(params: str, mut store: LockedVaultStore, st: GuiState) -> str! {
@@ -599,6 +607,11 @@ fn rpc_e2e_report(params: str, mut app: webui.App) -> str! {
     }
     app.set_state("e2e", verdict)
     return ok_json()
+}
+
+// The headless run's private clipboard, to check an OSC 52 copy. Bound only in that run.
+fn rpc_e2e_clipboard(clip: OsClipboard) -> str! {
+    return json.stringify(NameReq{ name: clipboard_read_text(clip.board) })
 }
 
 fn rpc_e2e_log(params: str) -> str! {

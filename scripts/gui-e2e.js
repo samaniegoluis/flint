@@ -223,6 +223,52 @@
     await runInTerminal('cat /tmp/flint-e2e-vim.txt; echo vim-$((6*7))', 'vim-42');
     await check(/^hello$/m.test(termText()), 'keys typed in vim reach it (insert, Esc, :wq)' + (/^hello$/m.test(termText()) ? '' : ' — terminal: ' + termText().split('\n').filter((l) => l.trim()).slice(-6).join(' | ')));
 
+    await setStep('osc 52');
+    // A remote program sets the clipboard: the core writes it (the run's private board).
+    await runInTerminal(`printf '\\033]52;c;%s\\a' "$(printf 'osc52-from-remote-%s' "$((6*7))" | base64)"; echo osc-sent-$((6*7))`, 'osc-sent-42');
+    {
+      const clip = await waitForAsync(async () => {
+        const r = await window.backend.e2e_clipboard({});
+        const v = (typeof r === 'string' ? JSON.parse(r) : r)?.name;
+        return v === 'osc52-from-remote-42' ? v : null;
+      }, 'the OSC 52 text on the clipboard');
+      await check(clip === 'osc52-from-remote-42', 'OSC 52 from the remote reaches the clipboard');
+    }
+    await runInTerminal(`printf '\\033]52;c;?\\a'; echo osc-query-$((6*7))`, 'osc-query-42');
+    await check(true, 'an OSC 52 query is ignored and the session carries on');
+
+    await setStep('input order');
+    // 300 writes in one tick, as xterm.js answering a burst of colour queries: they
+    // must reach the remote in order (Tether 14a1461).
+    await runInTerminal('stty -echo; cat > /tmp/flint-e2e-order.txt; stty echo; echo cat-done-$((6*7))', '');
+    await sleep(300);
+    {
+      const t = activeTerm();
+      for (let i = 0; i < 300; i++) t.input(`L${i}\n`, true);
+      t.input('\x04', true);
+    }
+    await waitFor(() => termText().includes('cat-done-42'), 'cat to finish');
+    await runInTerminal(`awk 'NR-1!=substr($0,2){bad=1} END{print ((bad||NR!=300)?"order-bad-" NR:"order-" "ok")}' /tmp/flint-e2e-order.txt`, '\norder-');
+    await check(termText().includes('order-ok'), 'a 300-write burst reaches the remote in order' + (termText().includes('order-ok') ? '' : ' — ' + (termText().match(/order-bad-\d+/) || [''])[0]));
+
+    await setStep('dead key');
+    // WebKit's flush of a dead ' that did not combine: compositionend commits "'",
+    // then one keydown carries "'s". Only the "s" is new (Tether a872c3f).
+    await runInTerminal('stty -echo; head -n 1 > /tmp/flint-e2e-dead.txt; stty echo; echo head-done-$((6*7))', '');
+    await sleep(300);
+    {
+      const t = activeTerm();
+      const ta = qa('.pane > div').find((d) => d.style.display !== 'none').querySelector('textarea');
+      t.input("it'", true); // what xterm sends for the committed composition
+      ta.dispatchEvent(new CompositionEvent('compositionend', { data: "'", bubbles: true }));
+      ta.dispatchEvent(new KeyboardEvent('keydown', { key: "'s", code: 'KeyS', keyCode: 222, bubbles: true, cancelable: true }));
+      await sleep(100);
+      t.input('\r', true);
+    }
+    await waitFor(() => termText().includes('head-done-42'), 'head to finish');
+    await runInTerminal('echo "[$(cat /tmp/flint-e2e-dead.txt)]-$((6*7))"', ']-42');
+    await check(termText().includes("[it's]"), "a dead ' flushed with s types it's, not it''s");
+
     await setStep('exit');
     await type('exit 7');
     await enter();

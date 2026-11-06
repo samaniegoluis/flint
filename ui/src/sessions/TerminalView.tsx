@@ -12,13 +12,13 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { useApp } from '../state/app';
 import { actionFor } from '../lib/keymap';
+import { keyInput } from '../lib/keyInput';
+import { api } from '../api/backend';
 import { runAction } from '../shell/actions';
 import { sessions } from './store';
 import styles from './TerminalView.module.css';
 import { paletteVars, themePalette } from '../lib/terminalThemes';
 
-const PRINTABLE_KEY_CODE_RE = /^(Key[A-Z]|Digit[0-9]|Space|Backquote|Minus|Equal|Bracket(Left|Right)|Backslash|Semicolon|Quote|Comma|Period|Slash|Intl(Backslash|Ro|Yen))$/;
-const IME_SENTINEL_KEYS = new Set(['Dead', 'Unidentified', 'Process', 'AltGraph']);
 
 function readVar(name: string, el: Element = document.documentElement): string {
   return getComputedStyle(el).getPropertyValue(name).trim();
@@ -113,17 +113,11 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       if (e.type !== 'keydown') return true;
       const lastCommit = committed;
       committed = '';
-      // A dead key that did not combine is flushed as one keydown carrying the dead
-      // char plus the next one; the dead char already went out on compositionend.
-      if (lastCommit && e.key.length > lastCommit.length && e.key.startsWith(lastCommit)) {
+      // Dead keys, IME and dictation (lib/keyInput.ts).
+      const ki = keyInput(e, lastCommit);
+      if (ki.kind === 'paste') {
         e.preventDefault();
-        term.paste(e.key.slice(lastCommit.length));
-        return false;
-      }
-      // Dictation and text expanders insert a whole string in one keydown.
-      if (e.key.length > 1 && PRINTABLE_KEY_CODE_RE.test(e.code) && !IME_SENTINEL_KEYS.has(e.key)) {
-        e.preventDefault();
-        term.paste(e.key);
+        if (ki.text) term.paste(ki.text);
         return false;
       }
       const mac = osRef.current === 'mac';
@@ -157,6 +151,13 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     term.element?.addEventListener('contextmenu', onContextMenu);
 
     const input = term.onData((data) => sessions.input(tabId, data));
+    // OSC 52: a remote program (Neovim, tmux, Zellij) sets the clipboard. The core
+    // writes it: the webview refuses a clipboard write no click started. Queries are
+    // ignored there, so the remote never reads the clipboard.
+    const osc52 = term.parser.registerOscHandler(52, (payload) => {
+      api.terminalClipboard(payload).catch((err) => console.warn('OSC 52 copy failed', err));
+      return true;
+    });
     sessions.attach(tabId, (bytes) => term.write(bytes));
 
     let raf = 0;
@@ -170,6 +171,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       cancelAnimationFrame(raf);
       observer.disconnect();
       input.dispose();
+      osc52.dispose();
       sessions.detach(tabId);
       term.textarea?.removeEventListener('compositionend', onCompositionEnd);
       term.element?.removeEventListener('contextmenu', onContextMenu);

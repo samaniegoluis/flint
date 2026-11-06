@@ -654,3 +654,13 @@ The entries below were found while building milestone 02 against the same cfire 
   (`cfire build && scripts/build-gui.sh`), so the bundle is patched after cfire writes it.
 - **Ideal:** `cfire build <name>` builds only that target (and says so when the name
   matches none).
+
+### CF-059 · bug · `confirmed`: `s.find(x)` on a `str` compiles to `std::string::find` and returns `npos`
+- **Repro:** `s := "abc"; i := s.find(";"); if i < 0 { … } else { println("found at {i}") }`
+  prints `found at 18446744073709551615` (cfire 0.9.4). `find` is not in the `str`
+  method set the docs list (`str.index_of` is, returning `-1`), but the call passes
+  through to C++ unchecked, and `i < 0` on the unsigned result is silently always
+  false. Found writing the OSC 52 parser (milestone 08): a missing `;` read as found.
+- **Workaround:** `str.index_of(s, x)` and `s.contains(x)` (`src/application/terminal.cf`).
+- **Ideal:** an unknown method on `str` is a compile error, or `find` returns `i64`
+  with `-1` like `index_of`. A comparison of an unsigned value with `< 0` warns.

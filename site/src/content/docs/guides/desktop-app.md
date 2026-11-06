@@ -131,6 +131,20 @@ and paste with <kbd>⌘C</kbd> <kbd>⌘V</kbd> on macOS and <kbd>Ctrl+Shift+C</k
 nothing is selected. <kbd>⌘+</kbd> <kbd>⌘−</kbd> <kbd>⌘0</kbd> change the font size of
 open sessions. Its colours come from **Settings → Terminal → Colours**.
 
+**Copy from a remote program.** Neovim, tmux and Zellij can copy to your clipboard over
+SSH with the OSC 52 sequence: a yank in Neovim (with `clipboard=unnamedplus`, or its
+built-in OSC 52 provider), a copy-mode selection in tmux (`set -g set-clipboard on`) or
+in Zellij lands on your Mac's or Linux desktop's clipboard. Flint only lets a remote
+program *write* the clipboard: a request to read it is ignored, so nothing on the server
+can see what you copied. A single copy is limited to 1 MB.
+
+**Accents and other layouts.** Dead keys (US International, ABC Extended, most ISO
+layouts) and input methods (Japanese, Chinese, Korean) compose as they do in any other
+app: <kbd>'</kbd> <kbd>e</kbd> types `é`, and <kbd>'</kbd> <kbd>s</kbd> types `'s`, not
+`''s`. Dictation and text expansion insert the whole phrase. Everything you type reaches
+the server in the order you typed it, also when the terminal answers a burst of
+queries from a full-screen program.
+
 ## The command palette
 
 <kbd>⌘K</kbd> searches hosts, actions and vaults. <kbd>⌘P</kbd> (**Go to host**)

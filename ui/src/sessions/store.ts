@@ -8,6 +8,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { api, on } from '../api/backend';
+import { InputQueue } from '../lib/inputQueue';
 import type { HostKeyPayload, SessionPromptEvent, SessionStateEvent } from '../api/types';
 
 export type TabStatus = 'connecting' | 'prompt' | 'ready' | 'ended';
@@ -54,6 +55,7 @@ class SessionStore {
   private sizes = new Map<string, { cols: number; rows: number }>();
   private bySession = new Map<string, string>();
   private started = false;
+  private inputs = new InputQueue((session, data) => api.sessionInput(session, data));
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
@@ -100,6 +102,7 @@ class SessionStore {
       else {
         this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: ev.exit_code } });
         this.bySession.delete(ev.session);
+        this.inputs.drop(ev.session);
       }
     });
     on<SessionPromptEvent>('session:prompt', (ev) => {
@@ -176,7 +179,7 @@ class SessionStore {
 
   input(tabId: string, data: string) {
     const t = this.tab(tabId);
-    if (t && t.status === 'ready') api.sessionInput(t.session, data).catch(() => {});
+    if (t && t.status === 'ready') this.inputs.push(t.session, data);
   }
 
   resize(tabId: string, cols: number, rows: number) {

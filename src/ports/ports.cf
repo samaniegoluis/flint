@@ -153,6 +153,8 @@ type ExecSink interface {
 // clears it after `clear_after_ms` unless something else was copied since (D-029).
 type Clipboard interface {
     clipboard_copy_secret(text: str, clear_after_ms: i64) -> void!
+    // Plain text a remote program copied (OSC 52): not concealed, never cleared.
+    clipboard_copy_text(text: str) -> void!
 }
 
 // The desktop app's layout state (adapters/config, ui-state.json, D-030).

@@ -683,6 +683,12 @@ fn (mut self: FakeClipboard) clipboard_copy_secret(text: str, clear_after_ms: i6
     self.copies += 1
 }
 
+fn (mut self: FakeClipboard) clipboard_copy_text(text: str) -> void! {
+    self.text = text
+    self.clear_after_ms = 0
+    self.copies += 1
+}
+
 // ---- Settings and fonts -------------------------------------------------------------
 
 type FakeSettingsStore struct {

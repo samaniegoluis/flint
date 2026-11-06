@@ -2,6 +2,8 @@ package application
 
 // Use cases. They orchestrate ports and hold the business rules; drivers call them.
 
+import "core:encoding/base64"
+import "core:str"
 import "../ports"
 
 type PumpResult struct {
@@ -27,4 +29,45 @@ fn pump_shell_output[S: ShellSession, E: EventSink](mut shell: S, mut sink: E, s
         }
     }
     return PumpResult{ bytes: total, closed: false }
+}
+
+// ---- OSC 52 (copy from a remote program) ---------------------------------------------
+
+// The largest text a remote program may put on the clipboard in one OSC 52 request,
+// decoded. tmux and Neovim send far less; this only bounds a hostile stream.
+var OSC52_MAX_BYTES: i64 = 1048576
+
+// What an OSC 52 request did: "copied", or "ignored" for a query ("?") or a request
+// for a selection other than the clipboard (primary, secondary, cut buffers).
+type Osc52Result struct {
+    outcome: str `json:"outcome"`
+    bytes: i64 `json:"bytes"`
+}
+
+// Handles the payload of an OSC 52 sequence (`Pc;Pd`: selection letters, then base64
+// text) a remote program wrote to the terminal. Only writes are honoured: a query
+// would hand the clipboard to whoever controls the remote output, so it is ignored.
+// An empty `Pc` means the clipboard; a list without `c` (only primary, `p`, or `s`)
+// is ignored, since a desktop app has one clipboard.
+fn osc52_copy[B: Clipboard](mut clip: B, payload: str) -> Osc52Result! {
+    semi := str.index_of(payload, ";")
+    if semi < 0 {
+        return error(coded(ERR_INVALID, "an OSC 52 request is 'selection;base64'"))
+    }
+    targets := payload[0..usize(semi)]
+    data := payload[usize(semi) + 1..payload.len()]
+    if data == "?" {
+        return Osc52Result{ outcome: "ignored", bytes: 0 }
+    }
+    if targets.len() > 0 && !targets.contains("c") {
+        return Osc52Result{ outcome: "ignored", bytes: 0 }
+    }
+    if i64(data.len()) > OSC52_MAX_BYTES / 3 * 4 + 4 {
+        return error(coded(ERR_INVALID, "an OSC 52 request is over {OSC52_MAX_BYTES} bytes"))
+    }
+    text := base64.decode_str(data) or err {
+        return error(coded(ERR_INVALID, "an OSC 52 request is not valid base64"))
+    }
+    try clip.clipboard_copy_text(text)
+    return Osc52Result{ outcome: "copied", bytes: i64(text.len()) }
 }
