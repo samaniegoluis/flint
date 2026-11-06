@@ -1294,3 +1294,16 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Repro:** a header that calls a function the installed library lacks (Flint against
   libssh 0.10), then `cfire build`.
 - **Ideal:** print clang's diagnostics only; keep the dump behind a verbose flag.
+
+### CF-077 · gap · `open`: `ext:webui` file dialogs are macOS-only and silently return "" on Linux
+- **At `2d8613d`:** `open_file_dialog`, `save_file_dialog` and `message_dialog`
+  (`runtime/core/webui.hpp`) have an `NSOpenPanel`/`NSSavePanel`/`NSAlert` body under
+  `__APPLE__`; every other platform returns `""` (or nothing) without showing a window.
+  The caller cannot tell "not supported" from "cancelled".
+- **Repro:** on Zorin OS 18 (GTK 3, WebKitGTK 4.1), Flint's *Create a vault* → **Choose…**:
+  nothing opens. Docker/Xvfb runs never hit it, since gui-e2e types the path.
+- **Workaround:** `src/adapters/uievents/native/flint_dialog.hpp` runs a modal
+  `GtkFileChooserDialog` over the active window on Linux; the GUI driver uses it there and
+  keeps webui's panels on macOS.
+- **Ideal:** GTK 3 file choosers and a `GtkMessageDialog` in webui on Linux (Windows:
+  `IFileDialog`), and an error for "no dialog on this platform" instead of `""`.
