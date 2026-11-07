@@ -304,13 +304,13 @@ check "status says unlocked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" =
 if [[ "${FLINT_TEST_PRIVATE_DBUS:-}" == 1 ]]; then
   echo "== a screensaver turning on locks the vault (D-Bus)"
   dbus-send --session --type=signal /org/gnome/ScreenSaver org.gnome.ScreenSaver.ActiveChanged boolean:true
-  st=""
+  # The app's log, not `vault status`: the page unlocks again as soon as it sees the
+  # lock screen, so a status poll can miss a lock that did happen.
   for _ in $(seq 1 150); do
-    st="$(printf '' | no_tty "$flint" --json vault status 2>/dev/null | json_get 'd["unlocked"]')"
-    [[ "$st" == "False" ]] && break
+    grep -q "vault locked (screen)" "$tmp/app.log" && break
     sleep 0.1
   done
-  check "ActiveChanged(true) of org.gnome.ScreenSaver locks the vault" '[[ "$st" == "False" ]]'
+  check "ActiveChanged(true) of org.gnome.ScreenSaver locks the vault" 'grep -q "vault locked (screen)" "$tmp/app.log"'
   for _ in $(seq 1 200); do
     st="$(printf '' | no_tty "$flint" --json vault status 2>/dev/null | json_get 'd["unlocked"]')"
     [[ "$st" == "True" ]] && break
