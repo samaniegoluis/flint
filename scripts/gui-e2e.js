@@ -611,6 +611,13 @@
       await click('.rail-btn', 'Hosts');
       await sleep(200);
       await check(!q('.sidebar') && (await uiState()).sidebar_open === false, 'coming back from Settings keeps the sidebar closed');
+      await click('.rail-btn', 'Settings');
+      // ⇧⌘H (Ctrl+Alt+Shift+H elsewhere), the Hosts button's shortcut.
+      (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'H', code: 'KeyH', bubbles: true, cancelable: true,
+        metaKey: isMac, ctrlKey: !isMac, shiftKey: true, altKey: !isMac }));
+      await waitFor(() => document.querySelector('.app')?.dataset.view === 'hosts', 'the Hosts view from its shortcut');
+      await sleep(200);
+      await check(!q('.sidebar') && (await uiState()).sidebar_open === false, 'the Hosts shortcut from Settings keeps the sidebar closed');
       await click('.rail-btn', 'Hosts');
       await waitForAsync(async () => (await uiState()).sidebar_open === true, 'the open sidebar to be stored');
     } else {

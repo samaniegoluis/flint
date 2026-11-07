@@ -169,7 +169,8 @@ export function Shell() {
       case 'reconnect': if (active) sessions.reconnect(active); break;
       case 'duplicate': if (tab) connect(tab.alias, true); break;
       case 'toggleSidebar': if (view === 'hosts') setSidebarCollapsed((c) => !c); else { setView('hosts'); setSidebarCollapsed(false); } break;
-      case 'viewHosts': setView('hosts'); setSidebarCollapsed(false); setTimeout(() => filterRef.current?.focus(), 0); break;
+      // Like the rail button: the sidebar stays as it was left (⌘B shows or hides it).
+      case 'viewHosts': setView('hosts'); if (!collapsed) setTimeout(() => filterRef.current?.focus(), 0); break;
       case 'collapseAll': setView('hosts'); setSidebarCollapsed(false); setCollapsedGroups(new Set(catalog.groups.map((g) => g.path))); break;
       case 'expandAll': setView('hosts'); setSidebarCollapsed(false); setCollapsedGroups(new Set()); break;
       case 'viewKeys': setView('keys'); break;
@@ -193,7 +194,7 @@ export function Shell() {
       case 'prevRegion': cycleRegion(-1); break;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, tab, view, selected, catalog.hosts, catalog.groups, connect, lock, openVaultFile, fail, go, setSidebarCollapsed, setCollapsedGroups]);
+  }, [active, tab, view, collapsed, selected, catalog.hosts, catalog.groups, connect, lock, openVaultFile, fail, go, setSidebarCollapsed, setCollapsedGroups]);
 
   useEffect(() => {
     setActionHandler(run);
