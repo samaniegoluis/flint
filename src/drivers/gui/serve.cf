@@ -80,6 +80,7 @@ fn lock_now(mut store: LockedVaultStore, st: GuiState, mut app: webui.App, reaso
     st.forget()
     close_vault(mut store)
     st.release()
+    write_stderr("flint-gui: vault locked ({reason})\n")
     app.emit("vault:locked", VaultLocked{ path: s.path, name: s.name, reason: reason })
     return true
 }

@@ -203,7 +203,7 @@ fn main() {
             }
         }
         // Auto-lock: idle time, screen lock and sleep.
-        _ := system_events_start()
+        write_stderr("flint-gui: locks on idle, {system_events_start()}\n")
         timer_store := store
         timer_app := app
         timer_st := st

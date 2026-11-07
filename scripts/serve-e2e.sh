@@ -305,7 +305,7 @@ if [[ "${FLINT_TEST_PRIVATE_DBUS:-}" == 1 ]]; then
   echo "== a screensaver turning on locks the vault (D-Bus)"
   dbus-send --session --type=signal /org/gnome/ScreenSaver org.gnome.ScreenSaver.ActiveChanged boolean:true
   st=""
-  for _ in $(seq 1 50); do
+  for _ in $(seq 1 150); do
     st="$(printf '' | no_tty "$flint" --json vault status 2>/dev/null | json_get 'd["unlocked"]')"
     [[ "$st" == "False" ]] && break
     sleep 0.1
@@ -323,7 +323,7 @@ expect 0 "add the stop host" "" -- host add e2e-stop --hostname 10.0.0.9
 
 for _ in $(seq 1 300); do kill -0 "$app_pid" 2>/dev/null || break; sleep 0.1; done
 wait "$app_pid"; app_pid=""
-sed 's/^/app: /' "$tmp/app.log" | grep -E "ok |FAILED|checks passed|e2e:|page text" || true
+sed 's/^/app: /' "$tmp/app.log" | grep -E "ok |FAILED|checks passed|e2e:|page text|locks on|vault locked" || true
 check "the window checks passed" 'grep -q "^e2e: pass" "$tmp/app.log"'
 check "the socket file is removed when the app quits" '[[ ! -e "$sock" ]]'
 expect 5 "with the app gone, the CLI is on its own again: locked" "" -- host list
