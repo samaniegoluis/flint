@@ -82,19 +82,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
     // Checked before presence, so a bad form never shows the OS dialog.
     scope := try access_scope_from_names(held_catalog(st, store), req.scope)
     _ := try grant_from_approval(ap, "check", scope, req.read, req.exec, req.write, req.duration, time.now_ms())
-    method := presence.presence_method()
-    if method == PRESENCE_PASSWORD {
-        session := st.vault_session()
-        ok := try verify_master_password(c, store, session, req.password)
-        if !ok {
-            return error(coded(ERR_WRONG_PASSWORD, "that is not the master password of this vault"))
-        }
-    } else {
-        ok := try presence.presence_confirm("allow {ap.label} to use your vault")
-        if !ok {
-            return error(coded(ERR_DENIED, "presence was not confirmed; nothing was allowed"))
-        }
-    }
+    try confirm_presence(c, store, presence, st.vault_session(), req.password, "allow {ap.label} to use your vault")
     st.holder.access_hold()
     mut book := st.holder.access_book()
     still := find_approval(book, req.id) or ap

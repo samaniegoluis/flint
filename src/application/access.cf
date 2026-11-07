@@ -4,6 +4,7 @@ package application
 // paths in, ids in the grants (so a rename keeps them), and names back out.
 
 import "../domain"
+import "../ports"
 
 // What the window chose to allow, by name.
 type ScopeByName struct {
@@ -77,4 +78,21 @@ fn grant_views(grants: []Grant, cat: Catalog) -> []GrantView {
         views.push(grant_view(g, cat))
     }
     return views
+}
+
+// The presence check before an Allow takes effect (Principle 12): the OS's own
+// (Touch ID, the Mac's password, polkit) or, where it has none, the vault's master
+// password checked against the key held. Fails with `wrong_password` or `denied`.
+fn confirm_presence[C: Crypto, S: VaultStore, P: Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str, reason: str) -> void! {
+    if presence.presence_method() == "password" {
+        ok := try verify_master_password(crypto, store, session, password)
+        if !ok {
+            return error(coded(ERR_WRONG_PASSWORD, "that is not the master password of this vault"))
+        }
+        return
+    }
+    ok := try presence.presence_confirm(reason)
+    if !ok {
+        return error(coded(ERR_DENIED, "presence was not confirmed; nothing was allowed"))
+    }
 }
