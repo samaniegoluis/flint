@@ -151,8 +151,27 @@ test('a host keeps an initial command, shows it, and connect notes it unless --n
 	assert.ok(flint(w, 'host show nas').out.includes('command     -'));
 });
 
-test('errors use the CLI message, JSON envelope and exit code', () => {
+/** A world whose terminal Flint has already allowed (milestone 12). */
+function allowed(): World {
 	const w = worldFromSeed(seed);
+	w.approved = true;
+	return w;
+}
+
+test('the first command waits for Flint to allow this terminal, once until a lock', () => {
+	const w = worldFromSeed(seed);
+	const a = flint(w, 'host list');
+	assert.deepEqual(a.err, ['Waiting for approval in Flint (flint, started by Terminal)…']);
+	assert.equal(a.code, 0);
+	assert.deepEqual(flint(w, 'host list').err, []);
+	assert.equal(flint(worldFromSeed(seed), 'host list --json').err.length, 0, '--json waits silently');
+	flint(w, 'vault lock');
+	flint(w, 'vault unlock');
+	assert.equal(flint(w, 'host list').err.length, 1, 'a lock ends the grant');
+});
+
+test('errors use the CLI message, JSON envelope and exit code', () => {
+	const w = allowed();
 	const a = flint(w, 'host show nope');
 	assert.deepEqual([a.err, a.code], [["flint: no host 'nope'"], 3]);
 	const b = flint(w, 'host show nope --json');
@@ -219,13 +238,13 @@ test('the landing shows what the demo CLI prints (D-027)', () => {
 });
 
 test('exec asks to trust an unknown server key, then runs the command', () => {
-	const w = worldFromSeed(seed);
+	const w = allowed();
 	const r = flint(w, 'exec web-01 -- uptime', ['yes']);
 	assert.equal(r.asks.length, 1);
 	assert.match(r.asks[0], /^The host 'web-01' \(10\.0\.0\.5\) is not known yet\.\nssh-ed25519 key fingerprint is SHA256:\S{43}\.\nTrust this key/);
 	assert.deepEqual(r.out, [' 10:42:07 up 41 days,  2:17,  1 user,  load average: 0.08, 0.05, 0.01']);
 	assert.equal(flint(w, 'exec web-01 -- uptime').asks.length, 0, 'the key is recorded');
-	const no = flint(worldFromSeed(seed), 'exec web-01 -- uptime', ['no']);
+	const no = flint(allowed(), 'exec web-01 -- uptime', ['no']);
 	assert.deepEqual([no.err, no.code], [["flint: the host key of 'web-01' was not trusted"], 11]);
 	const j = flint(w, 'exec web-01 --json -- cat nope');
 	assert.equal(j.code, 1);

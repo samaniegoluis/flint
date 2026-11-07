@@ -77,8 +77,9 @@ Global flags
   --version, -V     Print the version and linked libraries
 
 With Flint open and the vault unlocked there, commands run through it and need no
-master password. Otherwise flint asks for it on the terminal (or --master-stdin),
-for that one command; with no terminal, Flint is asked to unlock the vault.
+master password, once you allow the program that runs flint in Flint's window.
+Otherwise flint asks for it on the terminal (or --master-stdin), for that one
+command; with no terminal, Flint is asked to unlock the vault.
 
 Secrets are never taken from arguments: Flint prompts on the terminal, or reads
 them from stdin with the --*-stdin flags.

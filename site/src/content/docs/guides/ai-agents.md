@@ -35,10 +35,36 @@ command goes through the **Flint app**, which holds the vault unlocked
    `flint host test <alias>` or a first `flint connect`. An agent has no terminal to
    answer the host key question, so an unknown key stops it with `host_key`.
 
+The first time the agent runs `flint`, Flint asks you in its own window
+([Approve a program](#approve-a-program)). The command waits while you decide.
+
 When the vault locks (idle time, screen lock, sleep) or Flint is closed, the agent's next
 command fails with `locked`, and Flint's window, started if needed, asks you for the
-master password and names the command that asked. Unlock, and the agent can run it
-again. **Settings → Vault → Lock after** sets the idle time (1 hour by default).
+master password and names the command that asked. Unlock (with **Allow … for 1 hour**
+ticked, the agent is approved in the same step), and the agent can run it again.
+**Settings → Vault → Lock after** sets the idle time (1 hour by default).
+
+## Approve a program
+
+Flint answers no `flint` command until you approve the program behind it. The window
+names it after the program that started `flint`, skipping shells: *"flint, started by
+Claude Code"*, *"flint, started by tmux"*. It shows the chain of processes and the exact
+command, and lets you choose:
+
+| | |
+|---|---|
+| **Hosts** | The host the command runs on, its group, or the whole vault |
+| **Actions** | **Read** (list and show; never a secret), **Run commands** (`exec`, `connect`, `host test` on the hosts chosen), **Change the vault** (add, edit, remove; needs the whole vault) |
+| **For** | 15 minutes, 1 hour, 4 hours, or until the vault locks |
+
+**Allow** asks you to prove you are at the machine: Touch ID or your Mac's password on
+macOS, your login password through polkit on Linux, or the vault's master password where
+neither is available. **Deny**, or no answer within two minutes, refuses the command.
+
+The grant covers every `flint` that program starts until it expires, the vault locks or
+Flint quits; it is tied to that process, so another program, or the same one started
+again, asks again. **Settings → Access** lists the grants, and **Revoke** ends one now.
+The status bar counts them.
 
 ## Tell your agent about Flint
 
@@ -55,6 +81,7 @@ keys or `ssh` directly.
   command: the remote shell parses it.
 - Long jobs: add `--exec-timeout <secs>` (default 600).
 - Exit code 5 (`locked`): Flint is asking me to unlock it; wait for me, then retry.
+  15 (`denied`) or 16 (`approval_timeout`): I did not approve it in Flint; ask me first.
   11 (`host_key`): ask me to check the server's key. Never pass `--accept-new-host-key`.
 - `sudo` needs a password Flint does not give out: print the exact command for me to run.
 ```
@@ -96,6 +123,8 @@ command's own failure comes as the usual object on stdout with its `exit_code`.
 | 12 | `auth` | Report it: the server refused every login method in the vault |
 | 13 | `network` | The host is unreachable: VPN, address, firewall |
 | 14 | `timeout` | The command ran past `--exec-timeout` |
+| 15 | `denied` | You denied it in Flint, or the grant does not cover it. Ask before retrying |
+| 16 | `approval_timeout` | Nobody answered Flint's window within two minutes |
 
 The full list is in the [CLI reference](/reference/cli/#output-and-errors).
 
@@ -112,28 +141,21 @@ or remove that rule.
 
 ## Limits today
 
-While the vault is unlocked in Flint, **any program that runs `flint` as you** can use
-it, not only the agent you started, and an agent can run any command on any host in the
-vault, as that host's user. It cannot take a password or key away, but a command can,
-for example, add a key to `~/.ssh/authorized_keys`. Ways to narrow it today:
+An approved program can run any command on the hosts you allowed, as each host's login
+user. It cannot take a password or key away, but a command can, for example, add a key
+to `~/.ssh/authorized_keys`. Ways to narrow it:
 
+- **Allow one host or one group**, not the whole vault, and only **Run commands** when
+  the agent does not need to change the vault.
+- **A short grant**: 15 minutes, or until the vault locks, with a short
+  **Settings → Vault → Lock after**.
 - **A vault for agents.** Put only the hosts an agent may use in a vault of its own, keep
-  that vault open in Flint while the agent works, and have the agent pass `--vault`:
-
-  ```sh
-  flint vault create ~/Sync/agent.flint --name Agent
-  flint --vault Agent host add web-01 --hostname 10.0.0.5 --user deploy
-  ```
-
-  Flint holds one vault at a time, so your main vault stays locked meanwhile: a command
-  on it gets `locked`.
-- **A short lock time.** Settings → Vault → Lock after, so an unattended vault does not
-  stay open for long.
+  that vault open in Flint while the agent works, and have the agent pass `--vault`.
+  Flint holds one vault at a time, so your main vault stays locked meanwhile.
 - **Limit the server side.** Agents log in as a user without `NOPASSWD` sudo and not as
   `root`, with access only to what they need.
 - **Watch the transcript.** Every remote command an agent runs is in its own
   `flint exec` line.
 
-Flint is moving to a model where it approves each program that asks for the vault, in its
-own window, for chosen hosts and a set time, with an activity log. See the
-[Security model](/reference/security-model/#next).
+Still to come: tokens for programs that no terminal or agent starts (a cron job, CI), and
+an activity log of what each grant ran. See the [Security model](/reference/security-model/#next).

@@ -36,7 +36,7 @@
 				<ul class="flint-agent__yes">
 					<li>Your hosts by alias, group and tag</li>
 					<li>Each command’s output and exit code, as JSON if it asks</li>
-					<li>Errors with stable codes it can act on: <code>locked</code>, <code>host_key</code>, <code>auth</code></li>
+					<li>Errors with stable codes it can act on: <code>locked</code>, <code>denied</code>, <code>host_key</code>, <code>auth</code></li>
 				</ul>
 			</div>
 			<div>
@@ -52,16 +52,17 @@
 
 	<ol class="flint-agent__steps">
 		<li><strong>Unlock in Flint.</strong> The app holds the vault’s key; the CLI never reads it. Locked or closed, Flint’s window asks you, naming the command that wants in.</li>
+		<li><strong>You allow it, once.</strong> The first <code>flint</code> your agent runs opens Flint’s window: “flint, started by Claude Code”. Pick the hosts, what it may do and for how long, and confirm with Touch ID.</li>
 		<li><strong>Your agent asks Flint.</strong> <code>flint exec &lt;alias&gt; -- …</code> from any agent that can run a command: Claude Code, Codex, a script.</li>
 		<li><strong>Flint does the login.</strong> Jump hosts, keys, passwords and host keys stay on Flint’s side. Only the result comes back.</li>
 	</ol>
 
 	<div class="flint-agent__next">
 		<p>
-			<strong>Today</strong>, while the vault is unlocked in Flint, any program on your machine that can run
-			<code>flint</code> can do what your agent does; it locks on its own when you step away. <strong>Next</strong>,
-			Flint approves each program that asks for the vault in its own window, limited to the hosts you choose
-			and for a set time, and shows you every <code>sudo</code> command before it runs.
+			<strong>Today</strong>, no program uses the vault until you allow it in Flint’s window, for the hosts
+			you choose and a set time; grants end when the vault locks, which it does on its own when you step away.
+			<strong>Next</strong>, tokens for jobs no agent starts, a log of what each grant ran, and every
+			<code>sudo</code> command shown to you before it runs.
 		</p>
 		<p class="flint-agent__links">
 			<a href="/guides/ai-agents/">Use Flint with an AI agent <span aria-hidden="true">→</span></a>

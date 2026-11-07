@@ -68,7 +68,7 @@ the `Flint` program or to `Flint.app`); `FLINT_APP=off` never starts it.
 | | |
 |---|---|
 | A program reads the vault key from the keychain through `flint` | **No.** The CLI never reads it |
-| A program runs `flint` while the vault is unlocked in Flint | Yes, until Flint locks it. Approving each program in Flint's window is the next step ([Security model](/reference/security-model/)) |
+| A program runs `flint` while the vault is unlocked in Flint | Only once you approve it in Flint's window, for the hosts, actions and time you choose ([Approve a program](/guides/ai-agents/#approve-a-program)) |
 | A program runs `flint` while the vault is locked or Flint is closed | No. It gets `locked`, and Flint's window asks you |
 | On Linux, another program reads the app's cached key from the Secret Service | Yes: the Secret Service has no per-app access list. *Forget on this device* in **Settings → Vault** removes it, and the app then asks for the master password on each launch |
 | Someone at your unlocked computer opens Flint | Yes, while the vault is unlocked |
@@ -78,8 +78,8 @@ first time the app reads its cached key macOS asks whether Flint may use your
 confidential information. **Always Allow** asks for your login password and stops the
 dialog until the next build; **Deny** makes Flint ask for the master password instead.
 
-No program gets your passwords or keys through `flint`: no command prints them. What it
-can do is run commands on your servers through `flint exec`. To narrow that, see
+No program gets your passwords or keys through `flint`: no command prints them. What an
+approved program can do is run commands on the servers you allowed through `flint exec`. To narrow that, see
 [Use Flint with an AI agent](/guides/ai-agents/#limits-today).
 
 ## Locking

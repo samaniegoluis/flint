@@ -20,7 +20,8 @@
 		},
 		{
 			"hint": [
-				"Your vault already holds a few hosts. List them:"
+				"Your vault already holds a few hosts. List them. Flint first asks you, in its",
+				"window, to allow this terminal; the demo allows it for you:"
 			],
 			"run": "flint host list",
 			"accept": [

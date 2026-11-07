@@ -27,7 +27,7 @@ can turn the reopening off in **Settings → Appearance → Window**.
 | Activity bar (left) | **Hosts**, **Keys**, **Credentials**, and **Settings** at the bottom. **Files** (SFTP) is coming in a later version |
 | Sidebar | The vault button (switch vaults), a filter, and your hosts in their groups |
 | Main area | One tab per session, the session toolbar and the terminal |
-| Status bar | Lock state, the number of open sessions, **Lock** |
+| Status bar | Lock state, the number of open sessions, **Lock**, and **Agents: N** while programs you approved may use the vault |
 
 Click **Hosts** again (or press <kbd>⌘B</kbd>) to hide the sidebar and give the terminal
 the whole width; it stays hidden when you come back to **Hosts** from another view. Drag the sidebar's right edge to make it wider or narrower (200 to 400 px;
@@ -181,8 +181,21 @@ screen locks, and before the computer sleeps. See [Locking](/guides/vaults/#lock
 
 When a `flint` command finds the vault locked and has no terminal to ask on (an agent, a
 script), Flint comes to the front on the unlock screen and names the command: *"`flint
-exec web -- uptime` wants to use this vault."* Unlock, and the command can run again. With
-Flint closed, `flint` starts it.
+exec web -- uptime` wants to use this vault."* With **Allow … for 1 hour** ticked, the
+program that ran it is approved in the same step, for that host (or the whole vault for a
+command that names none); the master password you type confirms it. Unlock, and the
+command can run again. With Flint closed, `flint` starts it.
+
+### Approving a program
+
+The first time a program runs `flint` while the vault is unlocked, Flint comes to the
+front with the approval window: who asks (*"flint, started by Claude Code"*, with its
+chain of processes), the command, and what to allow: the host, its group or the whole
+vault; reading, running commands, changing the vault; for 15 minutes, 1 hour, 4 hours or
+until the vault locks. **Allow** asks for Touch ID or your Mac's password (macOS), your
+login password through polkit (Linux), or the master password. **Deny** (<kbd>Esc</kbd>)
+refuses it, and so does no answer within two minutes. See
+[Approve a program](/guides/ai-agents/#approve-a-program).
 
 ## Settings
 
@@ -199,6 +212,8 @@ Settings belong to this machine, not to the vault, and save as you change them.
 - **Vault**: the open vault's file and counts, **Rename**, whether this machine remembers
   its key, **Lock now**, **Lock after**, the known hosts, each of which you can forget, and **Import from
   Tether…** ([Moving from Tether](/guides/from-tether/)).
+- **Access**: the programs you approved, with what they may do and until when, and
+  **Revoke** for each (or all). Grants end when the vault locks or Flint quits.
 
 They are kept in `settings.json` in Flint's config folder (`~/Library/Application
 Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults list.

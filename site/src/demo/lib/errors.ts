@@ -15,6 +15,8 @@ export const ERROR_CODES = [
 	'auth',
 	'network',
 	'timeout',
+	'denied',
+	'approval_timeout',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
