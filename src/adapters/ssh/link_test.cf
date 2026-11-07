@@ -13,8 +13,7 @@ fn accepts_transport[T: SshTransport](mut t: T) -> bool {
 
 // The second sshd started by scripts/test.sh, dialled through the first.
 fn inner_port() -> i64 {
-    // Typed: the checker takes `os.getenv` for an optional (CF-063).
-    port: str = os.getenv("FLINT_TEST_SSH_PORT2")
+    port := os.getenv("FLINT_TEST_SSH_PORT2")
     return str.parse_i64(port) or 0
 }
 

@@ -25,9 +25,9 @@ test "settings round-trip through settings.json and default when missing or dama
     try fs.write_text(dir + "/settings.json", "{\"version\":1,\"settings\":{\"theme\":\"dark\",\"accent\":\"iris\",\"density\":\"default\",\"follow_motion\":true,\"reopen_last_vault\":true,\"term_font\":\"\",\"term_font_size\":14,\"term_line_height\":100,\"term_cursor\":\"bar\",\"term_cursor_blink\":false}}")
     old := try store.settings_load()
     assert_eq(old.accent, "iris")
-    // ext:json ignores `default:` (CF-057): the field reads as "", and
-    // application.load_settings repairs it to the default.
-    assert_eq(old.term_theme, "")
+    // Fields the file lacks read their `default:` tag.
+    assert_eq(old.term_theme, "default")
+    assert_eq(old.lock_after, "1h")
     try fs.write_text(dir + "/settings.json", "{not json")
     again := try store.settings_load()
     assert_eq(again.accent, "ember")

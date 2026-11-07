@@ -20,10 +20,50 @@ as is.
   - `not adopted`: cfire answered with an API Flint cannot use; the **At** line says why
     and what it would need. Flint's own solution stays, so nothing is blocked.
   - `answered, untested`: cfire added it, but Flint has no use for it yet.
+  - `declined upstream`: cfire chose not to do it (or the part that is left), and said why.
+    A decision, not a bug: the **At** line quotes the reason. Flint's own solution stays.
+  - `deferred upstream`: cfire accepted it and put it in its long-term backlog.
   - `open`: still reproduces.
 - An entry answered by a cfire build carries an **At `<commit>`** line under its heading.
+- From `43431f2` on, an **At** line says how it was checked: **[ran]** (a repro was run against
+  that build), **[compiled]** (built or cross-compiled, not run) or **[read]** (the source was
+  read, nothing was run).
 - Each entry gives: what Flint needed, a minimal repro or source pointer, the workaround and
   where it lives, and what an ideal API would look like.
+
+## Status at cfire `43431f2` (2026-11-07)
+
+cfire `43431f2` answers CF-001..CF-085, on top of `5c805e5` (a refactor that splits the
+compiler, the LSP and the runtime into smaller headers). Its triage is in cfire's
+`docs/planning/backlog.md`: each entry is done, deferred, or declined with a reason.
+Flint moved to it in milestone 11c (D-044) and checked every answered entry: by running its
+repro against the installed build where it could (**[ran]**), by building or
+cross-compiling (**[compiled]**), or by reading the source (**[read]**). Every entry it
+touched has an **At `43431f2`** line saying which.
+
+Flint built and passed its suites on `43431f2` before any change. The workarounds it no
+longer needs are gone (CF-057, 060, 063, 064, 066, 067, 078).
+
+| Status | Entries |
+|---|---|
+| `resolved ✓` (newly) | 011, 057, 058, 059, 060, 062, 063, 064, 066, 067, 068, 069, 070 [read], 071, 075 [read], 076, 078, 080, 083 |
+| `partly resolved` | 010, 017, 034, 042, 072, 074, 077, 082, 085: what is left is on each **At** line |
+| `declined upstream` | 003, 005, 018, 026, 031, 043, 051, 054, 065, 073, 079, 084: cfire's decision, not a bug. Flint's own solution stays |
+| `deferred upstream` | 001 (a real WebView2), 081 (Unix sockets); 010's networking and sysroot items |
+| `not adopted` | 006, 007, 008, 053: cfire's modules now fail closed, but Flint's adapters do more |
+| `answered, untested` | 004, 029, 045, 046, 050 |
+| **New** | CF-086..CF-091, below |
+
+**Most urgent of the new ones:**
+
+- **CF-089:** the test runner's descriptor-leak check is now off for every package that has
+  an `import cpp`, so a real leak there passes. That is every package where a C library
+  opens files and sockets.
+- **CF-090:** `sodium.argon2id`'s default memory cost is 4 MiB, while the reference says
+  64 MiB: 16 times weaker than documented, and silent.
+- **CF-087:** the new simdjson check refuses Debian's simdjson 3.12, which builds, so
+  `cfire build` fails on Debian trixie with clang 19 until simdjson 4 is installed by hand.
+- **CF-086:** `make install` fails on every machine.
 
 ## Status at cfire `2d8613d` (2026-11-06)
 
@@ -72,6 +112,12 @@ file and line below, so this is a punch list, not a redesign.
 **Still true at `2d8613d`** (the next cfire commit, 2026-11-06): it changes nothing under
 `runtime/`, and the hello world below fails with the same three errors against it. File
 and line references below hold for both commits.
+
+**At `43431f2`** (2026-11-07), with the same llvm-mingw image: a hello world compiles and
+links, `core/cli.hpp` compiles, and a `webui.App` links with cfire's Windows flags
+(CF-001.f). `core/net.hpp` still fails, and the window still holds no WebView2: cfire
+deferred the COM integration, Winsock and the sysroot. File and line references below are
+from `466751b`; `5c805e5` split several of those files.
 
 Details live in two entries, each with lettered sub-items so they can be fixed and
 ticked off one by one:
@@ -147,7 +193,8 @@ The first entries below came from reading cfire at commit `feat(webui): add ext:
 
 ---
 
-### CF-001 · missing · `open`: Windows backend for `ext:webui` (WebView2)
+### CF-001 · missing · `deferred upstream`: Windows backend for `ext:webui` (WebView2)
+- **At `43431f2`:** [compiled] CF-001.f is fixed: cfire's Windows link flags now carry `-ldwmapi`, and a `webui.App` that calls `run()` links (746 KB `.exe`, llvm-mingw). CF-001.j: the Win32 clipboard owner is fixed in the source [read]. The rest (a–e: a real `ICoreWebView2` with its bridge; g: the offscreen runner; h, i: icons and menus) is **deferred by cfire** ("Full Windows `ICoreWebView2` COM Integration", P3). The window still holds no web content: without `<WebView2.h>` at compile time it prints that the SDK is missing.
 - **At `466751b`:** a Win32 window, but **no WebView2 in it** (see "Windows at `466751b`"
   above for how this was checked). Paths are under `~/.cfire/runtime/core/`.
 - **Needed:** Flint (and Tether before it) targets Windows.
@@ -278,7 +325,8 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
   because they emit fewer than 512.
 - **Ideal:** record history only in test mode, or keep a bounded ring buffer.
 
-### CF-003 · improvement · `not adopted`: high-throughput / binary event channel
+### CF-003 · improvement · `declined upstream`: high-throughput / binary event channel
+- **At `43431f2`:** **cfire's decision:** `app.emit` and `app.emit_bytes` are enough; a streaming channel inside `ext:webui` is out of scope. Flint's events stay as they are.
 - **At `466751b`:** `app.emit_bytes` base64-encodes the bytes and runs one `eval_js` per event, which is what Flint already does through `emit`. No throughput gain, so Flint keeps `emit`. Still wanted: a real binary path (custom scheme, `postMessage` with an `ArrayBuffer`, or a local socket) and batching.
 - **Needed:** terminal output is raw bytes at high rates.
 - **Source:** `emit()` JSON-stringifies the payload and calls `eval_js(...)` once per event.
@@ -297,7 +345,8 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
   files.
 - **Ideal:** an event such as `files:dropped` with absolute paths and the drop coordinates.
 
-### CF-005 · missing · `not adopted`: SSH client module
+### CF-005 · missing · `declined upstream`: SSH client module
+- **At `43431f2`:** **cfire's decision:** `ext:net/ssh` stays a high-level module; a specialised SSH client binds libssh directly. That is what Flint does, so nothing changes.
 - **At `466751b`:** `ext:net/ssh` covers dial, fingerprint, key/password/agent auth, PTY, exec, SFTP and forwarding, but not what Flint relies on: `SSH_OPTIONS_FD` (a session over another session's channel, for jump hosts), a host key algorithm preference, keyboard-interactive auth, `userauth_list`, private key inspection, an exec's exit status and signal. Known hosts go to `~/.ssh/known_hosts`, where Flint keeps them in its vault. `CFIRE_HEADLESS_TEST=1` swaps in a mock server (CF-071). Flint keeps its libssh adapter.
 - **Needed:** the core of Flint: PTY, exec, SFTP, agent, port forwarding, known_hosts.
 - **Confirmed (M01):** cfire has no SSH support.
@@ -308,6 +357,7 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
 - **Ideal:** `ext:net/ssh`, so a 15-line SSH client is possible in cfire.
 
 ### CF-006 · missing · `not adopted`: vetted crypto: Argon2id, XChaCha20-Poly1305
+- **At `43431f2`:** [ran, read] libsodium is now required: without it `ext:crypto/sodium` stops at `#error` (no PBKDF2 or hand-written fallback, CF-070), and it adds `blake2b` and `derive_subkey`. Parallelism is still 1 (Tether's 4 lanes still need libargon2), and the default cost is far below what the reference says (**CF-090**). Flint keeps its adapter.
 - **At `466751b`:** `ext:crypto/sodium` has Argon2id (parallelism 1), XChaCha20-Poly1305, random bytes and memzero, but no `crypto_kdf` subkeys or BLAKE2b digest, and it falls back to PBKDF2 and a hand-written cipher without libsodium (CF-070). Tether's 4-lane Argon2id still needs libargon2. Flint keeps its libsodium adapter.
 - **Needed:** master-password key derivation and secret AEAD.
 - **Source:** `core:crypto/aes` is a header-only AES-GCM implementation. Its constant-time
@@ -322,6 +372,7 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
 - **Ideal:** `ext:crypto/sodium` (or a libsodium-backed `core:crypto/*`).
 
 ### CF-007 · missing · `not adopted`: encrypted SQLite in `ext:db/sqlite`
+- **At `43431f2`:** [ran] With SQLCipher installed the build links it and `open_encrypted` writes an encrypted file (no `SQLite format 3` header, the inserted value is not in it). [read] Without SQLCipher, `apply_key` checks `PRAGMA cipher_version` and returns an error instead of writing plaintext (CF-069). A raw key (`x'…'`) is accepted; the cipher settings are not exposed. Flint keeps its adapter, which pins them.
 - **At `466751b`:** `sqlite.open_encrypted` writes a plaintext file when SQLCipher is not linked, and it is not linked by default (CF-069). Flint keeps its SQLCipher adapter, which also pins the cipher settings and keys with a raw key and salt.
 - **Needed:** the vault file must be encrypted in full.
 - **Source:** `ext:db/sqlite` links the system `sqlite3`.
@@ -333,6 +384,7 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
 - **Ideal:** `sqlite.open(path, key: bytes)` backed by a cipher build.
 
 ### CF-008 · missing · `not adopted`: OS keychain module
+- **At `43431f2`:** [ran, macOS] `set`, `get` and `delete_password` round-trip, a secret with quotes and `$(id)` included, and `get` after delete reports not found. [read, Linux] `secret-tool` now gets the secret on stdin with shell-quoted arguments, `lookup` reads the Secret Service, the exit status is checked, and the in-memory store exists only in `CFIRE_TEST_MODE` builds (CF-071). Secrets are still `str`, not `[]byte`. Flint keeps its adapter (libsecret's C API, byte buffers).
 - **At `466751b`:** `ext:keychain` does not read the Secret Service on Linux, passes the secret through a shell, ignores errors and keeps secrets in memory (CF-071). Flint keeps its Security.framework / libsecret adapter, now on `std::byte` buffers.
 - **Needed:** cache the derived vault key per machine (macOS Keychain, Linux Secret Service,
   later Windows Credential Manager).
@@ -347,7 +399,8 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
 - **Source:** the GitHub API reports no licence for `gsandoval/cfire`.
 - **Ideal:** an OSI licence (MIT or Apache-2.0) covering the compiler and `runtime/`.
 
-### CF-010 · missing · `open`: Windows support in the core runtime
+### CF-010 · missing · `partly resolved`: Windows support in the core runtime
+- **At `43431f2`:** [compiled] CF-010.a and CF-010.b are fixed: a hello world compiles and links for Windows (403 KB `.exe`, llvm-mingw, the runtime installed by `43431f2`). CF-010.c: `core/cli.hpp` compiles now; `core/net.hpp` still fails (`'arpa/inet.h' file not found`). [read] CF-010.d, e, f, h, j, l, m are changed in the source (`CommandLineToArgvW`-style quoting, concurrent pipe draining, `PeekNamedPipe`, VT input, `CredWriteW` status, `CP_UTF8`, `_fileno`); nothing was run on Windows. **Deferred by cfire:** CF-010.c (net, Winsock), g (`socketpair`) and k (a cross-compiling sysroot).
 - **At `466751b`:** `_WIN32` paths added across the runtime, but **a hello world does not
   compile for Windows** (see "Windows at `466751b`" above for how this was checked).
   Paths are under `~/.cfire/runtime/`. Items a–c stop the build; d–m compile but
@@ -470,7 +523,8 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
   via WSL2.
 - **Ideal:** native Windows (MSVC or clang-cl) builds of `core:*`.
 
-### CF-011 · improvement · `partly resolved`: `cfire --version` does not identify the build
+### CF-011 · improvement · `resolved ✓`: `cfire --version` does not identify the build
+- **At `43431f2`:** [ran] `CFIRE_VERSION=43431f2 sh install.sh` installed that commit and `cfire --version` prints `cfire 0.9.5 (43431f2, …)`.
 - **At `466751b`:** `cfire --version` prints the commit (`cfire 0.9.5 (466751b, …)`) when built from a git checkout. The installer builds a tarball, so it prints `dev`, and it cannot install a commit or tag (CF-072).
 - **Needed:** every entry here must be reproducible against an exact cfire build.
 - **Repro:** `curl -fsSL https://cfire.memo.engineer/install.sh | sh` compiles whatever
@@ -536,6 +590,7 @@ The entries below were found while building milestone 01 against cfire `3963814`
   target cannot be parsed.
 
 ### CF-017 · bug · `partly resolved`: packages are not namespaced in the generated C++
+- **At `43431f2`:** [ran] Types are mangled per package now (`cfire_pkg_p__Mode`): a `Mode` and a `helper` in both `main` and `p` build, `p.helper()` works inside an interpolation, and `p.Mode::B` lowers correctly. Still: a match arm cannot name the package: `p.Mode::A => …` fails to parse (`expected '=>', got '::'`); the bare variant (`A => …`) works.
 - **At `466751b`:** functions are mangled per package and a user method no longer captures stdlib calls of the same name (Flint reads the vault header with `fs.open` again). Still open: **types** share one C++ namespace, so two packages that each declare `Mode` fail with `redefinition of 'Mode'`; and `"{p.helper()}"` (a call into an imported user package inside an interpolation) does not compile. Flint keeps its type names unique and its port method prefixes (by choice).
 - **Repro:** `p/p.cf` (`package p` / `fn helper() -> i64 { return 7 }` /
   `type Mode enum { A, B }`), `m/main.cf` (`package main` / `import "../p"` /
@@ -568,7 +623,8 @@ The entries below were found while building milestone 01 against cfire `3963814`
   user methods. This matters a lot for a hexagonal layout, where two adapters naturally
   both have `open`, `close` and `new`.
 
-### CF-018 · improvement · `partly resolved`: the `cfire test` fd-leak canary has no opt-out
+### CF-018 · improvement · `declined upstream`: the `cfire test` fd-leak canary has no opt-out
+- **At `43431f2`:** **cfire's decision:** no per-test opt-out attribute, "to keep the test grammar clean". Instead the canary is skipped for every test of a package that has an `import cpp`. That silences Flint's warm-up cases, and also every real leak in those packages: **CF-089**. Flint's warm-ups stay (harmless, and needed again if CF-089 lands).
 - **At `466751b`:** the canary pre-warms SQLite's RNG for `ext:db/sqlite` and skips tests that import `ext:keychain` or reach `run_webview_test` through a helper. Flint's own libsodium and libsecret still open fds on first use, so its start-up warm-ups stay. Still wanted: a per-test opt-out.
 - **Repro:** a test whose first call into libsodium runs `sodium_init()`. libsodium keeps
   the system RNG fd open for the life of the process, and the canary fails the test with
@@ -662,7 +718,8 @@ The entries below were found while building milestone 01 against cfire `3963814`
 - **Workaround:** one field per line, no commas.
 - **Ideal:** accept commas, or fix the reference sheet.
 
-### CF-026 · missing · `partly resolved`: concurrency primitives beyond `async.scope` and channels
+### CF-026 · missing · `declined upstream`: concurrency primitives beyond `async.scope` and channels
+- **At `43431f2`:** [ran] `ch.len()` compiles and returns the queued count. **cfire's decision:** no owning `sync.Mutex[T]` and no multi-channel `select`. Flint's session mailboxes and locks stay native.
 - **At `466751b`:** `sync.Mutex`, `try_recv` and `recv_timeout` work, and the `with_timeout` hang is fixed. `Mutex` does not own its data and is not recursive, `ch.len()` is documented but does not compile (`no member named 'size'`), and there is no `select`. Captures in `scope.spawn` stay read-only, which is fine. Flint's session mailboxes and locks stay native for now (on its roadmap).
 - **Needed:** the GUI reads a PTY on a worker thread while keystrokes arrive on the UI
   thread. libssh requires calls on one session to be serialised.
@@ -737,7 +794,8 @@ The entries below were found while building milestone 01 against cfire `3963814`
 
 The entries below were found while building milestone 02 against the same cfire build.
 
-### CF-031 · missing · `partly resolved`: no way to link a framework, pick per-platform sources, or write top-level C++
+### CF-031 · missing · `declined upstream`: no way to link a framework, pick per-platform sources, or write top-level C++
+- **At `43431f2`:** [ran] `cfire test` now applies the nearest `build.cf`'s `Frameworks` (a test calling CoreFoundation links with `Frameworks: ["CoreFoundation"]` and fails to link without it). **cfire's decision:** no `@framework("…")` on `import cpp` and no top-level `cpp {}`; linkage belongs in `build.cf`. Flint keeps its pkg-config files: they also carry the adapters' `-I` paths and, on Linux, `libsecret-1`.
 - **At `466751b`:** `*_darwin.cf`/`*_linux.cf` files are picked by platform, and `build.cf` takes `Frameworks`/`Libraries`. Those flags apply to `cfire build` of a declared executable only, not to `cfire test` of a package, so Flint's tests still need its pkg-config files. Still wanted: `@framework("…")` on `import cpp`.
 - **Needed:** the keychain adapter calls Security.framework on macOS and libsecret on
   Linux; the CLI needs `_NSGetArgv` (macOS) or `/proc/self/cmdline` (Linux).
@@ -786,6 +844,7 @@ The entries below were found while building milestone 02 against the same cfire 
   fields, across packages.
 
 ### CF-034 · bug · `partly resolved`: a string literal inside an interpolation breaks the string
+- **At `43431f2`:** [ran] `"{p.helper()}"` works. Still: an escaped quote in a nested literal, `"eq={v == "a\"b"}"`, passes `cfire check` and fails in clang (`call to consteval function 'std::basic_format_string<char>…' is not a constant expression`); the lowering is `std::println("eq={v == \"a\"b\"}")`, the expression kept as text.
 - **At `466751b`:** nested quotes work (`"{f("x")}"`, `"{os.getenv("HOME")}"`). A call into an imported user package inside an interpolation (`"{p.helper()}"`) still fails in clang.
 - **Repro:** `msg := "{f("x")}"` → `call to 'f' expects 1 argument(s), got 6`;
   `dir := "/tmp/" + "{os.getenv("USER")}"` → clang `use of undeclared identifier 'USER'`.
@@ -865,6 +924,7 @@ The entries below were found while building milestone 02 against the same cfire 
   from `<unistd.h>`.
 
 ### CF-042 · missing · `partly resolved`: no terminal raw mode, window size or signal handlers
+- **At `43431f2`:** [read] `os.make_raw` registers an `atexit` hook, so `os.exit()` restores the terminal. Still: nothing restores it on SIGTERM or SIGHUP, and `on_signal` still runs a `std::function` inside the handler. Flint keeps its native raw mode.
 - **At `466751b`:** `os.make_raw`, `os.term_size`, `os.on_signal` and `os.poll_fd` exist. Flint keeps its native raw mode: `RawTerminal` restores only at scope exit, not at `exit()` or on SIGTERM/SIGHUP; `on_signal` runs a `std::function` inside the signal handler (not async-signal-safe); `term_size` reports 80 columns when there is no terminal, where Flint needs "unknown".
 - **Repro:** an interactive SSH client needs to put stdin in raw mode (`cfmakeraw`),
   restore it on exit or on SIGTERM/SIGHUP, read the window size (`TIOCGWINSZ`), learn
@@ -877,7 +937,8 @@ The entries below were found while building milestone 02 against the same cfire 
   `size(fd) -> (cols, rows)`, `on_resize(fn)`, and `os.on_signal(sig, fn)`; plus
   `poll(fds, timeout)` for byte streams.
 
-### CF-043 · missing · `partly resolved`: no socketpair, poll or threads for a byte-stream bridge
+### CF-043 · missing · `declined upstream`: no socketpair, poll or threads for a byte-stream bridge
+- **At `43431f2`:** **cfire's decision:** no joinable `Thread` value; concurrency stays structured (`async.scope`). Flint's tunnel stays native.
 - **At `466751b`:** `os.socketpair`, `os.poll_fd` and fd reads/writes exist. There is still no joinable thread value to own a bridge's thread, so Flint's tunnel stays native.
 - **Repro:** a jump host is a libssh channel that must look like a socket to the next
   libssh session (`SSH_OPTIONS_FD`). That takes a `socketpair`, a thread that `poll`s one
@@ -900,7 +961,8 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Ideal:** lower a slice literal in `assert_eq`/`assert_ne` to the type of the other
   operand.
 
-### CF-045 · missing · `not adopted`: no way to list installed fonts
+### CF-045 · missing · `answered, untested`: no way to list installed fonts
+- **At `43431f2`:** [read] On macOS `monospace_fonts()` now returns family names (`[NSFont familyName]`, deduplicated), and a free `webui.monospace_fonts()` builds a temporary `App` for it. Flint keeps its adapter, which needs no `App`.
 - **At `466751b`:** `app.monospace_fonts()` returns font names on macOS (`Menlo-Regular`, `Menlo-Bold`, …), not the family names CSS takes, and needs an `App`. Flint keeps its CoreText / fontconfig adapter.
 - **Needed:** Settings → Terminal lists every installed monospaced font. A webview
   cannot enumerate fonts (WKWebView and WebKitGTK have no Local Font Access API).
@@ -963,7 +1025,8 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Ideal:** `run_webview_test` sets `WKPreferences.inactiveSchedulingPolicy = .none`
   (macOS 14+) so the page runs as if visible.
 
-### CF-051 · missing · `partly resolved`: a webui app on macOS has no menu bar
+### CF-051 · missing · `declined upstream`: a webui app on macOS has no menu bar
+- **At `43431f2`:** **cfire's decision:** the standard macOS menu stays as is, with no opt-out (see CF-073). Flint sets its own menu after webui's.
 - **At `466751b`:** webui installs a standard menu, but it puts Close Window on ⌘W, which Flint's page uses to close a tab, and replaces any menu set before `run()` (CF-073). Flint now sets its own menu after webui's.
 - **Repro:** run any `ext:webui` app on macOS and press ⌘Q: nothing happens. ⌘C, ⌘V,
   ⌘X, ⌘A and ⌘Z do nothing in the page's text fields either. `App.run()` creates the
@@ -989,6 +1052,7 @@ The entries below were found while building milestone 02 against the same cfire 
   Windows) and `BundleId`.
 
 ### CF-053 · missing · `not adopted`: no clipboard API in `ext:webui` (or anywhere in cfire)
+- **At `43431f2`:** [read] The secret is no longer kept in the app's state map, Linux sets `x-kde-passwordManagerHint`, and the delayed clear runs on the GTK main loop. Still on Linux: the clear (`gtk_clipboard_set_text(cb, "", 0)`) checks only webui's own copy counter, so it also erases whatever another app copied in between. Flint keeps its adapter.
 - **At `466751b`:** `app.clipboard_set_secret` works on macOS, but on Linux it sets no password-manager hint, calls GTK from a background thread to clear, and clears without checking that the clipboard still holds the secret. It also keeps the secret in the app's state map. Flint keeps its adapter.
 - **Repro:** a desktop app that must put text on the system clipboard from the core,
   not from the page (Flint copies a saved password without sending it to the page,
@@ -1003,7 +1067,8 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Ideal:** `webui.App.clipboard_set(text, { concealed: true, clear_after_ms })` and
   `clipboard_get()`, run on the UI thread, for macOS, GTK and WebView2.
 
-### CF-054 · bug · `open`: `fs.write_all` is documented as atomic but is not; `fs.rename` is undocumented
+### CF-054 · bug · `declined upstream`: `fs.write_all` is documented as atomic but is not; `fs.rename` is undocumented
+- **At `43431f2`:** [ran] `cfire inspect core:fs` no longer calls `write_all` atomic and lists `fs.rename`. **cfire's decision:** no `fs.write_atomic`.
 - **At `466751b`:** not in the 466751b batch. Still: `write_all` is not atomic and there is no `fs.write_atomic`.
 - **Repro:** `cfire stdlib core:fs` (cfire 0.9.4, also `cfire_stdlib_lookup`) says
   `write_all` "writes a byte slice atomically to disk". `runtime/core/fs.hpp` lowers
@@ -1043,7 +1108,8 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Ideal:** stop at the parse error and print it first; and a message that says `out`
   is reserved (`'out' is a parameter intent and cannot name a variable`).
 
-### CF-057 · bug · `open`: `ext:json` ignores the `default:"…"` struct tag
+### CF-057 · bug · `resolved ✓`: `ext:json` ignores the `default:"…"` struct tag
+- **At `43431f2`:** [ran] `json.parse` fills a missing field from its `default:` tag (`y=[dflt]`). Flint's settings use it for the fields added after a release (`term_theme`, `lock_after`).
 - **At `466751b`:** not in the 466751b batch. Still reproduces (`y` is `""`).
 - **Repro:** `type A struct { x: str \`json:"x"\`; y: str \`json:"y" default:"dflt"\` }`,
   then `json.parse[A]("{\"x\":\"1\"}")` succeeds with `a.y == ""` (cfire 0.9.4). The
@@ -1056,7 +1122,8 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Ideal:** `json.parse` fills a missing field from its `default:` tag, or the checker
   warns that `default:` has no effect outside `cli` structs.
 
-### CF-058 · bug · `open`: `cfire build <target>` builds every target
+### CF-058 · bug · `resolved ✓`: `cfire build <target>` builds every target
+- **At `43431f2`:** [ran] In Flint, `cfire build Flint` builds the CLI only, `cfire build FlintGui` the app only, and `cfire build Nope` says `executable 'Nope' not found in …/build.cf`.
 - **At `466751b`:** not in the 466751b batch. `cfire build Flint` still builds both targets. It no longer costs Flint the icon (CF-052).
 - **Repro:** with two executables in `build.cf` (`Flint` → `build/flint`, `FlintGui` →
   `build/gui/Flint.app`), `cfire build Flint` prints both `✓ Built Native Binary` and
@@ -1069,7 +1136,8 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Ideal:** `cfire build <name>` builds only that target (and says so when the name
   matches none).
 
-### CF-059 · bug · `open`: `s.find(x)` on a `str` compiles to `std::string::find` and returns `npos`
+### CF-059 · bug · `resolved ✓`: `s.find(x)` on a `str` compiles to `std::string::find` and returns `npos`
+- **At `43431f2`:** [ran] `s.find(";")` is a compile error: `unknown str method 'find'; use 'index_of' instead (returns i64 index or -1) (cfire/UNKNOWN-METHOD)`. **cfire's decision:** no `find` alias.
 - **At `466751b`:** not in the 466751b batch. Still prints `found at 18446744073709551615`. The checker now treats `str.find` as optional (CF-063), but the runtime still returns `npos`.
 - **Repro:** `s := "abc"; i := s.find(";"); if i < 0 { … } else { println("found at {i}") }`
   prints `found at 18446744073709551615` (cfire 0.9.4). `find` is not in the `str`
@@ -1080,7 +1148,8 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Ideal:** an unknown method on `str` is a compile error, or `find` returns `i64`
   with `-1` like `index_of`. A comparison of an unsigned value with `< 0` warns.
 
-### CF-060 · bug · `open`: a `str` slice passes to no `str` parameter, and cannot be interpolated
+### CF-060 · bug · `resolved ✓`: a `str` slice passes to no `str` parameter, and cannot be interpolated
+- **At `43431f2`:** [ran] `println("{a[0..5]}")`, `"{addr[0..usize(colon)]}"` and `"x ({error_text_of("{e}")})"` all print what they should. Passing a slice to a `str` parameter is a cfire error with a fix-it (`change parameter type to '&str' or convert explicitly with 'str(...)'`). **cfire's decision:** the slice stays a view; no implicit copy. Flint writes `str(addr[0..usize(colon)])` (`src/domain/tether.cf`).
 - **At `466751b`:** not in the 466751b batch. Both repros still fail in clang.
 - **Repro (cfire 0.9.4):** `fn shout(s: str) -> str { … }` then `shout(a[0..5])` fails in
   clang (`no matching function for call to 'shout'`: the slice is a `std::string_view`,
@@ -1110,7 +1179,8 @@ The entries below were found while building milestone 02 against the same cfire 
 
 The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026-11-06).
 
-### CF-062 · bug · `confirmed`: `[]byte` changed C++ type with no diagnostic from cfire
+### CF-062 · bug · `resolved ✓`: `[]byte` changed C++ type with no diagnostic from cfire
+- **At `43431f2`:** [ran] `msg: []byte = [7, 7]` and `buf[0] = x` (a `u8`) are cfire errors: `cannot use integer/u8 value in '[]byte' literal without explicit 'byte(...)' conversion (cfire/TYPE-MISMATCH)`. The assignment's diagnostic points at column 1 of the line.
 - **Repro (466751b):** `msg: []byte = [7, 7]` and `buf[i] = u8(x)` passed `cfire check` and
   built at `3963814`; now clang fails (`no matching constructor for initialization of
   'std::vector<std::byte>'`, `assigning to 'std::byte' from incompatible type
@@ -1121,7 +1191,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** `cfire check` reports an integer literal or a `u8` stored into `[]byte` with a
   fix-it (`byte(...)`), and the changelog says `[]byte` now lowers to `std::byte`.
 
-### CF-063 · bug · `confirmed`: the checker takes `os.getenv` for an optional (false `NULL-DEREF`)
+### CF-063 · bug · `resolved ✓`: the checker takes `os.getenv` for an optional (false `NULL-DEREF`)
+- **At `43431f2`:** [ran] `override := os.getenv("X")` then `.len()` builds. Flint dropped its 8 type annotations.
 - **Repro (466751b):** `override := os.getenv("X")` then `if override.len() > 0 { … }` →
   `member access on potentially null pointer 'override' without '!= none' guard
   (cfire/NULL-DEREF)`. `os.getenv` returns `str` (`runtime/core/os.hpp`), but
@@ -1130,14 +1201,16 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Workaround:** annotate the binding: `override: str = os.getenv("X")` (5 files).
 - **Ideal:** derive optionality from the declared signature, not from a list of names.
 
-### CF-064 · bug · `confirmed`: `os.getpid()` no longer compiles
+### CF-064 · bug · `resolved ✓`: `os.getpid()` no longer compiles
+- **At `43431f2`:** [ran] `os.getpid()` returns the pid. Flint's tests use it for unique names again.
 - **Repro (466751b):** `"{os.getpid()}"` → clang `no member named 'getpid' in namespace
   'cfire::os'`. At `3963814` the call passed through to `::getpid()`. `core:os` never
   documented it, but nothing in cfire rejects it either.
 - **Workaround:** a random tag (`hex.encode(rand.bytes(4))`) for unique test names.
 - **Ideal:** `os.getpid() -> i64`, or a cfire diagnostic for an unknown `os.` member.
 
-### CF-065 · bug · `confirmed`: a struct field named `stdout` is renamed, but not inside `cpp {}`
+### CF-065 · bug · `declined upstream`: a struct field named `stdout` is renamed, but not inside `cpp {}`
+- **At `43431f2`:** **cfire's decision:** `cpp {}` blocks stay verbatim C++. Flint keeps filling locals in the block.
 - **Repro (466751b):** `type ExecChunk struct { stdout: str }`, then
   `cpp { read(chunk.stdout); }` → clang `no member named '__stdoutp' in 'ExecChunk'`.
   The CF-038 fix emits the field as `stdout_cf_`; the text of a `cpp {}` block is left as
@@ -1146,7 +1219,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   (`link_channel_read` in `src/adapters/ssh/link.cf`).
 - **Ideal:** rename identifiers inside `cpp {}` too, or report the mismatch in `cfire check`.
 
-### CF-066 · bug · `confirmed`: every struct gets JSON code, including ones that hold a `webui.App`
+### CF-066 · bug · `resolved ✓`: every struct gets JSON code, including ones that hold a `webui.App`
+- **At `43431f2`:** [ran] A struct holding a `webui.App` builds with no tag. Flint dropped its three `json:"-"`.
 - **Repro (466751b):** `type Sink struct { app: webui.App }` in a program that imports
   `ext:webui` → clang `the supplied type is not formattable` from the generated
   `stringify_struct<Sink>`. The CF-049 fix registers all structs for JSON, even those that
@@ -1155,7 +1229,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** generate JSON code only for structs that reach `json.*` or an RPC, or skip
   fields whose type has no JSON form.
 
-### CF-067 · bug · `confirmed`: `xs.push([a, b])` no longer compiles
+### CF-067 · bug · `resolved ✓`: `xs.push([a, b])` no longer compiles
+- **At `43431f2`:** [ran] `rows.push(["a", "b"])` builds. Flint pushes row literals directly. A nested literal with no declared type is a separate gap: **CF-091**.
 - **Repro (466751b):** `mut rows: [][]str = []` then `rows.push(["a", "b"])` → clang
   `no matching function for call to 'vec_push'`. `push` now lowers to the template
   `cfire::vec_push(vec, U&& val)`, which cannot deduce a braced list.
@@ -1163,13 +1238,15 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** lower the literal with the element type (`std::vector<std::string>{…}`), as
   the CF-040 fix does for `or []`.
 
-### CF-068 · bug · `confirmed`: errors in one file of a package are reported against the test file
+### CF-068 · bug · `resolved ✓`: errors in one file of a package are reported against the test file
+- **At `43431f2`:** [ran] A clang error in `a.cf` while running `cfire test` on its package is reported as `a.cf:4:16`, not against the test file.
 - **Repro (466751b):** a compile error at `src/adapters/ssh/link.cf:188` while running
   `cfire test src/drivers/cli` is printed as `src/drivers/cli/import_test.cf:188:68`. The
   line is right, the file is the test file being run. Found throughout the migration.
 - **Ideal:** keep each source file's name in the `#line` directives of the merged unit.
 
-### CF-069 · bug · `confirmed`: **`sqlite.open_encrypted` writes a plaintext database**
+### CF-069 · bug · `resolved ✓`: **`sqlite.open_encrypted` writes a plaintext database**
+- **At `43431f2`:** [ran] With SQLCipher present the file is encrypted (see CF-007). [read] Without it, `open_encrypted` returns `sqlite.open_encrypted requires SQLCipher …` instead of writing plaintext; not run, since this Mac has SQLCipher.
 - **Repro (466751b):** `sqlite.open_encrypted("/tmp/x.db", "pw")`, create a table, insert
   `"TOP-SECRET-PAYLOAD"` → succeeds; the file starts with `SQLite format 3` and the value is
   readable with `grep`. `ext:db/sqlite` links the system `sqlite3`, which ignores
@@ -1180,7 +1257,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   plaintext.
 - **Flint:** unaffected (its own SQLCipher adapter, CF-007).
 
-### CF-070 · bug · `confirmed`: `ext:crypto/sodium` falls back to other algorithms without libsodium
+### CF-070 · bug · `resolved ✓`: `ext:crypto/sodium` falls back to other algorithms without libsodium
+- **At `43431f2`:** [read] Without libsodium, `ext:crypto/sodium` stops at `#error "ext:crypto/sodium requires libsodium …"`; the fallback code is gone. Not run without libsodium. A new, smaller problem in the same module: **CF-090**.
 - **Source (466751b):** `runtime/core/sodium.hpp`. Without `CFIRE_SODIUM_NATIVE`,
   `sodium.argon2id` returns PBKDF2-SHA256 of a modified salt (not Argon2id, not
   memory-hard, a different output), and `xchacha20poly1305_*` use a hand-written
@@ -1191,7 +1269,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Flint:** unaffected (its own libsodium adapter, CF-006; Principle 4 forbids
   hand-rolled cryptography).
 
-### CF-071 · bug · `confirmed`: `ext:keychain` does not persist on Linux and leaks the secret
+### CF-071 · bug · `resolved ✓`: `ext:keychain` does not persist on Linux and leaks the secret
+- **At `43431f2`:** [ran, macOS; read, Linux] See CF-008: errors are returned, `get` reads the Secret Service, the secret goes through stdin, and the in-memory store is compiled only into test builds.
 - **Source (466751b):** `runtime/core/keychain.hpp`.
   - Linux `get` never asks the Secret Service: it reads only an in-process map, so after a
     restart every lookup is "not found".
@@ -1207,7 +1286,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   returned, `[]byte` secrets, no in-memory copy, and test mode chosen at build time.
 - **Flint:** unaffected (its own adapter, CF-008).
 
-### CF-072 · bug · `confirmed`: reinstalling over an existing binary on macOS kills it; the installer cannot pin a build
+### CF-072 · bug · `partly resolved`: reinstalling over an existing binary on macOS kills it; the installer cannot pin a build
+- **At `43431f2`:** [ran] Reinstalling over the existing `~/.local/bin/cfire` on macOS works (temp file + `mv -f`), `CFIRE_VERSION` takes a commit, and the SHA reaches `--version`. Still: the installer copies the new runtime over `~/.cfire/runtime` without clearing it, so headers removed upstream stay behind (Flint's docs say to delete the folder first); and `make install` is broken: **CF-086**.
 - **Repro:** `cp new/cfire ~/.local/bin/cfire` over the existing file (what `install.sh`
   does), then `cfire --version` → killed with SIGKILL (exit 137). macOS caches the code
   signature per file; `rm` before `cp` (a new file) works.
@@ -1217,7 +1297,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** install to a temp name and `mv` it into place; accept a commit or tag; pass
   the SHA to `make` (`GIT_SHA=…`); publish tagged releases.
 
-### CF-073 · bug · `confirmed`: webui's built-in macOS menu takes ⌘W from the page, with no opt-out
+### CF-073 · bug · `declined upstream`: webui's built-in macOS menu takes ⌘W from the page, with no opt-out
+- **At `43431f2`:** **cfire's decision:** the standard macOS menu, ⌘W included, stays with no opt-out. Flint keeps installing its own menu after `run()`.
 - **Repro (466751b):** `App.run()` now always sets `NSApp.mainMenu` (the CF-051 fix), with
   Window → Close Window on ⌘W and Quit on a handler of its own. An app whose page uses ⌘W
   (Flint closes a terminal tab with it) gets the window closed instead. A menu the app
@@ -1228,7 +1309,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** a way to turn the built-in menu off, or to declare which shortcuts the page
   owns; Quit through the same close path as the window's close button.
 
-### CF-074 · bug · `confirmed`: `cfire ide claude` writes LSP files Claude Code never loads
+### CF-074 · bug · `partly resolved`: `cfire ide claude` writes LSP files Claude Code never loads
+- **At `43431f2`:** [ran] The cfire repository ships a marketplace with one LSP-only plugin (`claude plugin validate` passes, one warning: the README has no install line), and every file now says `cfire`, not an absolute path; `.mcp.json` is unchanged in shape and MCP is no longer in `plugin.json`. Still: `cfire ide claude` writes `.lsp.json`, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` into the project, where Claude Code does not read them; it does not run or print the marketplace install commands; and `cfire ide --status` reports Claude Code `[configured]` from the environment, without checking that the plugin is installed. Not checked: whether the LSP starts once the plugin is installed (it changes the owner's user-level Claude Code settings).
 - **At `2d8613d`:** the commit answers the review's E7 by writing `.lsp.json` and
   `.claude-plugin/plugin.json` into the project. `cfire lsp` itself works well on Flint:
   go-to-definition across files (`src/drivers/gui/main.cf` → `rpc.cf:240`), references
@@ -1276,7 +1358,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   4. Keep `.mcp.json` for MCP (with a bare `cfire`), and leave MCP out of the plugin.
   5. `cfire ide --status` checks `claude plugin list` for the plugin, not files on disk.
 
-### CF-075 · bug · `open`: the runtime's system simdjson does not compile on Ubuntu 24.04 with clang 19
+### CF-075 · bug · `resolved ✓`: the runtime's system simdjson does not compile on Ubuntu 24.04 with clang 19
+- **At `43431f2`:** [read] `cfire build` and `cfire doctor` now name the problem (`system simdjson 3.x is incompatible with Clang 19 …`) and look in `~/.local` first. The check also refuses versions that build: **CF-087**.
 - **At `2d8613d`:** every `cfire build` links `-lsimdjson` and includes the system
   `simdjson.h`. Ubuntu 24.04 (and Zorin OS 18, built on it) ships simdjson **3.6.4**; with
   its `clang-19` package, any program fails in the header:
@@ -1292,7 +1375,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** vendor simdjson in `runtime/vendor` (it is one header and one source file),
   or state and check a minimum version with a clear error.
 
-### CF-076 · bug · `open`: a failed clang AST ingestion prints the whole AST as JSON
+### CF-076 · bug · `resolved ✓`: a failed clang AST ingestion prints the whole AST as JSON
+- **At `43431f2`:** [ran] A header calling an undeclared function prints clang's diagnostic only (5 lines, 653 bytes).
 - **At `2d8613d`:** when ingesting an `import cpp` header fails, the error message is
   followed by the AST dump: 11.7 million lines for `flint_ssh.hpp`, so the one useful line
   (`error: use of undeclared identifier 'ssh_channel_get_exit_state'`) is lost unless the
@@ -1301,7 +1385,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   libssh 0.10), then `cfire build`.
 - **Ideal:** print clang's diagnostics only; keep the dump behind a verbose flag.
 
-### CF-077 · gap · `open`: `ext:webui` file dialogs are macOS-only and silently return "" on Linux
+### CF-077 · gap · `partly resolved`: `ext:webui` file dialogs are macOS-only and silently return "" on Linux
+- **At `43431f2`:** [read] `open_file_dialog`, `save_file_dialog` and `message_dialog` use `GtkFileChooserDialog` / `GtkMessageDialog` on Linux and Win32 dialogs on Windows. Still: the GTK dialogs have no parent window (`nullptr`), so they are not modal to the app's window and can open behind it; and every platform still returns `""` both for "cancelled" and for "no dialog here". Flint keeps its adapter, modal over the active window.
 - **At `2d8613d`:** `open_file_dialog`, `save_file_dialog` and `message_dialog`
   (`runtime/core/webui.hpp`) have an `NSOpenPanel`/`NSSavePanel`/`NSAlert` body under
   `__APPLE__`; every other platform returns `""` (or nothing) without showing a window.
@@ -1314,7 +1399,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** GTK 3 file choosers and a `GtkMessageDialog` in webui on Linux (Windows:
   `IFileDialog`), and an error for "no dialog on this platform" instead of `""`.
 
-### CF-078 · missing · `open`: a struct field default cannot be a negative literal
+### CF-078 · missing · `resolved ✓`: a struct field default cannot be a negative literal
+- **At `43431f2`:** [ran] `a: i32 = -1` and `b: f64 = -2.5` are accepted as field defaults. `SshConn.sock` defaults to -1 and its `owns_sock` flag is gone.
 - **At `2d8613d`:** `type C struct { a: i32 = 7 }` parses; `a: i32 = -1` fails with
   `unexpected token '-' in expression`.
 - **Repro:** `cfire check` on `type C struct { a: i32 = -1 }`.
@@ -1323,14 +1409,16 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   `i32` is fd 0, not "no socket".
 - **Ideal:** any constant expression as a field default, `-1` included.
 
-### CF-079 · missing · `open`: no `if` expression
+### CF-079 · missing · `declined upstream`: no `if` expression
+- **At `43431f2`:** **cfire's decision:** `if` stays a statement; `match` is the expression form.
 - **At `2d8613d`:** `x := if c { a } else { b }` fails with `unexpected token 'if' in
   expression`.
 - **Repro:** `cfire check` on `fn f(c: bool) -> i32 { x := if c { 1 } else { 2 }; return x }`.
 - **Workaround:** a `mut` local assigned in an `if` statement (`ssh_dial_over`).
 - **Ideal:** `if` as an expression, or a ternary.
 
-### CF-080 · bug · `open`: the test runner's descriptor-leak check flags the system resolver
+### CF-080 · bug · `resolved ✓`: the test runner's descriptor-leak check flags the system resolver
+- **At `43431f2`:** [ran] A test that resolves `localhost` through `import cpp` passes. It passes because the canary no longer runs for any package with an `import cpp` (**CF-089**), not because of a warm-up.
 - **At `2d8613d`:** every `test` block fails with `resource leak canary (test leaked 2
   open file descriptor(s))` when it is the first code in the process to resolve a name
   on macOS. `getaddrinfo("localhost")` opens two sockets to mDNSResponder and keeps them
@@ -1349,7 +1437,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** take the descriptor baseline after a warm-up of process-lifetime system
   handles (resolver, keychain), or let a test opt out of the check with a reason.
 
-### CF-081 · missing · `confirmed`: no Unix domain socket listener and no peer credentials
+### CF-081 · missing · `deferred upstream`: no Unix domain socket listener and no peer credentials
+- **At `43431f2`:** **Deferred by cfire** (P3): `net.listen_unix`, `net.connect_unix` and `conn.peer()`. Flint keeps `flint_ipc.hpp`.
 - **At `2d8613d`:** `ext:net` offers TCP only (`listen_tcp`, `connect_tcp`); `AF_UNIX` appears
   only as a `socketpair` fallback inside sandboxes. Nothing binds or connects a path, sets
   its mode, or reports who is on the other end (`SO_PEERCRED` on Linux, `getpeereid` and
@@ -1366,7 +1455,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   `net.connect_unix(path, timeout_ms) -> UnixConn!`, and `conn.peer() -> Peer{uid, gid,
   pid}!` on both; a named pipe with the caller's SID on Windows under the same API.
 
-### CF-082 · missing · `confirmed`: no tray / menu bar icon in `ext:webui`
+### CF-082 · missing · `partly resolved`: no tray / menu bar icon in `ext:webui`
+- **At `43431f2`:** [read] `set_tray`, `add_tray_item`, `hide_window`, `show_window` and `set_hide_on_close` exist. macOS uses `NSStatusItem`. Linux uses `GtkStatusIcon`, deprecated since GTK 3.14: it is an XEmbed tray icon, which Wayland sessions do not show and GNOME shows only with an extension (Zorin's desktop is GNOME). An AppIndicator / `StatusNotifierItem` is what Linux desktops show today. To settle at milestone 14's plan.
 - **At `2d8613d`:** `ext:webui` has an app menu (`add_menu_item`) and a window icon
   (`set_icon`), but no status item: nothing like `NSStatusItem` on macOS or an
   AppIndicator / `StatusNotifierItem` on Linux, and no way to close the window while the
@@ -1381,7 +1471,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   `app.hide_window()` / `app.show_window()`, and an option for the window's close button
   to hide instead of quit.
 
-### CF-083 · missing · `confirmed`: a task cannot spawn into the scope it runs in
+### CF-083 · missing · `resolved ✓`: a task cannot spawn into the scope it runs in
+- **At `43431f2`:** [ran] A task that spawns into its own scope compiles and `with_scope` joins both (`sum=3`). Flint has not used it yet: the socket server's fixed acceptors (`SERVE_ACCEPTORS`) are for milestone 12's plan.
 - **At `2d8613d`:** inside `async.scope(workers: N) |scope| { scope.spawn || { … } }`, a
   closure given to `scope.spawn` that calls `scope.spawn` again does not compile: the
   capture copies `cfire::async::Scope`, whose `std::vector<std::future<void>>` member has
@@ -1400,7 +1491,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** capture the scope by reference (it outlives every task it joins), or a
   `scope.handle()` that tasks can spawn through.
 
-### CF-084 · missing · `confirmed`: no way to hear screen lock, sleep or idle from the OS
+### CF-084 · missing · `declined upstream`: no way to hear screen lock, sleep or idle from the OS
+- **At `43431f2`:** **cfire's decision:** screen lock, sleep and wake are application-specific native concerns. Flint keeps `flint_sysevents.hpp`.
 - **At `2d8613d`:** neither `core:os` nor `ext:webui` reports that the screen locked, that
   the computer is going to sleep, or that the user is idle. `os.on_signal` covers POSIX
   signals only; the webview's run loop is not reachable from cfire.
@@ -1417,7 +1509,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** `webui.App.on_system(fn(event: SystemEvent))` with `ScreenLocked`,
   `WillSleep`, `Woke`, delivered on the UI thread like other webui events.
 
-### CF-085 · bug · `confirmed`: `shared[T]` cannot be built or used from cfire
+### CF-085 · bug · `partly resolved`: `shared[T]` cannot be built or used from cfire
+- **At `43431f2`:** [ran] Field reads and method calls through a `shared[T]` field (`self.link.bump()`, `t.link.n`) and on a `shared[T]` local (`s.bump()`, `s.n`) work. `shared(v)` is a cfire error with a fix-it to `make[shared[T]](v)` (**cfire's decision**: one constructor). Still: a local copied from a field loses the deref: `other := t.link` then `other.n` → clang `no member named 'n' in 'std::shared_ptr<L>'`.
 - **At `2d8613d`:** `shared(L{ n: 1 })` → `use of undeclared identifier 'shared'`; a method
   call through a `shared[L]` field (`self.link.bump()`) → `no matching function for call
   to 'cfire_method_bump'` (`std::shared_ptr<L>` → `L&`); a field read (`self.link.n`) →
@@ -1431,3 +1524,99 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   shell starts.
 - **Ideal:** a constructor (`shared(v)` or `make_shared[T](v)`) and auto-deref of a
   `shared[T]` for field access and method calls, as for `own[T]`.
+
+---
+
+The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 2026-11-07).
+
+### CF-086 · bug · `confirmed`: `make install` fails: its temp file name changes between recipe lines
+- **Repro (43431f2):** `make install PREFIX=/usr/local CXX=clang++` (Debian trixie, in
+  Flint's Linux image) →
+  `cp cfire /usr/local/bin/.cfire.tmp.$$` then `chmod: cannot access
+  '/usr/local/bin/.cfire.tmp.33': No such file or directory`,
+  `make: *** [Makefile:30: install] Error 1`.
+- **Cause:** the CF-072 fix names the temp file `.cfire.tmp.$$$$` on three recipe lines
+  (`Makefile:29–31`). Make runs each line in its own shell, so `$$` is a different pid on
+  each: `cp` writes one name and `chmod` and `mv` look for another. `install.sh` does the
+  same in one shell, so it works.
+- **Workaround:** Flint's image runs `make build` and installs the binary, `runtime/` and
+  `pkg/` by hand (`scripts/linux/Dockerfile`).
+- **Ideal:** one shell for the three commands (`cp … && chmod … && mv …` on one line, or
+  `.ONESHELL`), or `install -m 755 cfire $(DESTDIR)$(PREFIX)/bin/.cfire.tmp && mv -f …`
+  with a fixed name.
+
+### CF-087 · bug · `confirmed`: the simdjson check refuses versions that build
+- **Repro (43431f2):** Debian trixie (`libsimdjson-dev` 3.12.3, `clang` 19), `cfire build`
+  in Flint → `error building target 'native' for executable 'flint': system simdjson 3.12.3
+  is incompatible with Clang 19 (requires simdjson >= 4.0 …)`. At `2d8613d` the same image
+  built and passed every Flint suite with that simdjson.
+- **Cause:** the CF-075 check (`src/buildsys.hpp:659–680`) refuses every `1.x`, `2.x` and
+  `3.x` when clang is 19 or newer. The breakage CF-075 reported is Ubuntu's 3.6.4
+  (`no member named 'print_newline'`); 3.12 does not have it. The check is also skipped
+  whenever `~/.local/include/simdjson.h` exists, whatever is on the include path.
+- **Workaround:** Flint's image builds simdjson 4.6.6 into `~/.local`, as on Ubuntu
+  (`scripts/linux/Dockerfile`, *Build from source*).
+- **Ideal:** test the header, not the version string: compile a one-line probe that includes
+  `simdjson.h` once (cached) and report its error; or vendor simdjson in `runtime/vendor`.
+  If a version gate stays, put the floor where the break is (it is somewhere between 3.6
+  and 3.12) and let an environment variable override it.
+
+### CF-088 · bug · `confirmed`: `==` on an enum passes `cfire check` and fails in clang
+- **Repro (43431f2, also 2d8613d):** `type Mode enum { X, Y }` then
+  `w := Mode::Y` / `if w == Mode::Y { … }` → `cfire check` passes; clang:
+  `invalid operands to binary expression ('Mode' and 'Mode')`. Enums lower to a struct
+  around a variant (`Mode{_Y{}}`) with no `operator==`. The same for an enum of another
+  package (`p.Mode`).
+- **Workaround:** `match`. Flint compares no enums.
+- **Ideal:** generate `operator==` for enums whose variants carry no data (or all
+  comparable data), or reject `==` in the checker with a hint to use `match`.
+
+### CF-089 · bug · `confirmed`: the descriptor-leak check is off for any package with `import cpp`
+- **Repro (43431f2):** three one-test packages.
+  - `import cpp "fcntl.h"` and a test that calls `::open("/dev/null", O_RDONLY)` and never
+    closes it → `PASS`.
+  - `import cpp "netdb.h"` and a test that resolves `localhost` → `PASS` (CF-080's case).
+  - No `import cpp`; a test that calls `os.socketpair()` and never closes the pair →
+    `FAIL: resource leak canary (test leaked 2 open file descriptor(s))`. The check
+    itself still works.
+- **Cause:** the CF-018/CF-080 fix sets `check_fd_leak = !has_cpp_import && …`
+  (`src/codegen/test_runner.hpp`): one `import cpp` anywhere in the package turns the check
+  off for all of its tests.
+- **Why it matters:** the packages with `import cpp` are the ones where a C library opens
+  sockets and files (Flint's SSH, IPC, vault and keychain adapters). Those lost the check
+  that would catch a socket left open, which is what it is for.
+- **Workaround:** none needed to pass; Flint keeps its start-up warm-ups, so the check can be
+  turned back on.
+- **Ideal:** take the baseline after the process-lifetime handles exist (a warm-up the
+  runner does once: resolver, libsodium, D-Bus), or compare the descriptor set by kind
+  (ignore descriptors the C library opened before the test's first call); or the opt-out
+  per test (CF-018) instead of per package. A blanket exemption only if a test names it.
+
+### CF-090 · bug · `confirmed`: `sodium.argon2id` defaults to 4 MiB, and reorders its arguments by guessing
+- **Repro (43431f2):** `cfire inspect ext:crypto/sodium` documents
+  `fn argon2id(password: str, salt: []byte, out_len: usize = 32, opslimit: u64 = 2,
+  memlimit: usize = 67108864)`, a 64 MiB default. Then `sodium.argon2id("pw", salt)` returns
+  the same key as `sodium.argon2id("pw", salt, 32, 2, 4194304)` (4 MiB) and a different
+  one from `(…, 32, 2, 67108864)`; it takes 3 ms against 54 ms.
+- **Cause:** `runtime/core/sodium.hpp`: the short overload calls the C++ function with
+  `ops_limit = 2, mem_kib = 4096`. The C++ signature is
+  `(password, salt, ops_limit, mem_kib, key_len)`, not the documented order. A call in the
+  documented order works only because a heuristic swaps the values back
+  (`if (key_len > 1024 && ops_limit >= 16 && ops_limit <= 1024) …`). Outside that window
+  the values are taken in the other order: `argon2id(pw, salt, 2048, 32, 67108864)` reports
+  `key_len must be between 16 and 1024 bytes` for a call whose `out_len` is 2048.
+- **Why it matters:** a caller who trusts the reference derives a key 16 times cheaper to
+  attack than documented, and two builds that disagree on the default derive different keys
+  from the same password.
+- **Flint:** unaffected (its own adapter, CF-006, with explicit costs).
+- **Ideal:** one C++ signature in the documented order, named in the generated call, no
+  heuristic; a default of libsodium's `crypto_pwhash_MEMLIMIT_MODERATE` (256 MiB) or
+  `INTERACTIVE` (64 MiB) by name; an error, not a guess, for out-of-range values.
+
+### CF-091 · bug · `confirmed`: a nested slice literal with no declared type passes `cfire check` and fails in clang
+- **Repro (43431f2):** `need := [["host", "list"], ["exec", "web"]]` → `cfire check` passes;
+  clang: `cannot deduce actual type for variable 'need' with type 'auto' from initializer
+  list` (the lowering is `auto need = {{"host", "list"}, {"exec", "web"}};`).
+- **Workaround:** declare the type (`need: [][]str = …`, `src/drivers/clicmd/serve_test.cf`).
+- **Ideal:** infer `[][]str` from the elements, as for a flat literal, or ask for the type in
+  the checker.

@@ -14,8 +14,7 @@ fn accepts_shell[S: ShellSession](s: S) -> bool {
 // 127.0.0.1 and exports FLINT_TEST_SSH_PORT and FLINT_TEST_SSH_KEY. Without them the
 // tests print SKIP and do nothing.
 fn test_target() -> (i32, str) {
-    // Typed: the checker takes `os.getenv` for an optional (CF-063).
-    port: str = os.getenv("FLINT_TEST_SSH_PORT")
+    port := os.getenv("FLINT_TEST_SSH_PORT")
     key: str = os.getenv("FLINT_TEST_SSH_KEY")
     if port.len() == 0 || key.len() == 0 {
         return (0, "")
@@ -74,6 +73,11 @@ test "auth with a wrong key is rejected" {
 test "SshConn satisfies the ShellSession port" {
     conn := SshConn{}
     assert(accepts_shell(conn))
+}
+
+test "a zero-initialised SshConn owns no socket" {
+    conn := SshConn{}
+    assert_eq(conn.sock, -1)
 }
 
 test "the dialler falls back to the next address when the first has no server" {

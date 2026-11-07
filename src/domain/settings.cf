@@ -15,12 +15,11 @@ type Settings struct {
     term_line_height:   i64  `json:"term_line_height"`
     term_cursor:        str  `json:"term_cursor"`
     term_cursor_blink:  bool `json:"term_cursor_blink"`
-    // Milestone 07. Files written before it have none: the field reads as ""
-    // (ext:json ignores `default:`, CF-057) and load_settings repairs it.
-    term_theme:         str  `json:"term_theme"`
+    // Milestone 07. A file written before it has none and reads the default.
+    term_theme:         str  `json:"term_theme" default:"default"`
     // Milestone 11b: how long the vault stays unlocked with nobody using it
-    // (LOCK_AFTER, "never" to turn it off). Older files read "" and are repaired.
-    lock_after:         str  `json:"lock_after"`
+    // (LOCK_AFTER, "never" to turn it off). Older files read the default.
+    lock_after:         str  `json:"lock_after" default:"1h"`
 }
 
 // Terminal colour themes (ui/src/lib/terminalThemes.ts holds the palettes).

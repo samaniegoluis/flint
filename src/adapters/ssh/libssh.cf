@@ -20,11 +20,9 @@ type SshConn struct {
     // Owned by this value; released by close().
     session: *mut cpp::ssh_session_struct
     channel: *mut cpp::ssh_channel_struct
-    // The socket Flint dialled for a first hop, when `owns_sock`. libssh does not
-    // close a socket given through SSH_OPTIONS_FD, so disconnect() does. A flag, not
-    // -1: a zero-initialised SshConn must not own fd 0 (CF-078).
-    sock: i32
-    owns_sock: bool
+    // The socket Flint dialled for a first hop, or -1. libssh does not close a
+    // socket given through SSH_OPTIONS_FD, so disconnect() does.
+    sock: i32 = -1
     // Shared by every copy of this value. cfire has no mutex type (CF-026).
     lock: shared[cpp::std::mutex]
 }
@@ -123,7 +121,7 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
             rc = ssh_connect(s);
         }
     }
-    mut conn := SshConn{ session: session, sock: sock, owns_sock: sock >= 0 }
+    mut conn := SshConn{ session: session, sock: sock }
     // CFIRE-UPSTREAM: CF-026
     cpp {
         conn.lock = std::make_shared<std::mutex>();
@@ -299,10 +297,10 @@ fn (mut self: SshConn) disconnect() {
             ssh_free(self.session);
         }
         self.session = nullptr;
-        if (self.owns_sock && self.sock >= 0) {
+        if (self.sock >= 0) {
             ::close(self.sock);
         }
-        self.owns_sock = false;
+        self.sock = -1;
     }
 }
 

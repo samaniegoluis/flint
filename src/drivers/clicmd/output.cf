@@ -51,8 +51,7 @@ fn pad_right(s: str, width: usize) -> str {
     return res
 }
 
-// Prints rows as left-aligned columns, two spaces apart. Callers bind each row to a
-// typed local first: `rows.push([...])` does not compile (CF-067).
+// Prints rows as left-aligned columns, two spaces apart.
 fn print_table(headers: []str, rows: [][]str) {
     mut widths: []usize = []
     for h in headers {
@@ -163,8 +162,7 @@ fn print_host_list(hosts: []HostView) {
     }
     mut rows: [][]str = []
     for h in hosts {
-        row: []str = [h.alias, host_target(h), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags))]
-        rows.push(row)
+        rows.push([h.alias, host_target(h), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags))])
     }
     print_table(["ALIAS", "TARGET", "GROUP", "TAGS"], rows)
 }
@@ -180,8 +178,7 @@ fn print_key_list(keys: []KeyView) {
     }
     mut rows: [][]str = []
     for k in keys {
-        row: []str = [k.name, k.key_type, k.fingerprint, yes_no(k.has_passphrase)]
-        rows.push(row)
+        rows.push([k.name, k.key_type, k.fingerprint, yes_no(k.has_passphrase)])
     }
     print_table(["NAME", "TYPE", "FINGERPRINT", "PASSPHRASE"], rows)
 }
@@ -201,8 +198,7 @@ fn print_cred_list(creds: []CredView) {
     }
     mut rows: [][]str = []
     for c in creds {
-        row: []str = [c.name, c.user, dash_if_empty(c.key), yes_no(c.has_password)]
-        rows.push(row)
+        rows.push([c.name, c.user, dash_if_empty(c.key), yes_no(c.has_password)])
     }
     print_table(["NAME", "USER", "KEY", "PASSWORD"], rows)
 }
@@ -214,8 +210,7 @@ fn print_group_list(groups: []GroupView) {
     }
     mut rows: [][]str = []
     for g in groups {
-        row: []str = [g.path, "{g.hosts}", "{g.subgroups}"]
-        rows.push(row)
+        rows.push([g.path, "{g.hosts}", "{g.subgroups}"])
     }
     print_table(["GROUP", "HOSTS", "SUBGROUPS"], rows)
 }
@@ -252,8 +247,7 @@ fn print_recents(list: []RecentView) {
         if !v.exists {
             path = path + " (missing)"
         }
-        row: []str = [mark, v.name, path]
-        rows.push(row)
+        rows.push([mark, v.name, path])
     }
     print_table(["", "NAME", "PATH"], rows)
 }
@@ -265,8 +259,7 @@ fn print_known_hosts(list: []KnownHostView) {
     }
     mut rows: [][]str = []
     for k in list {
-        row: []str = [k.addr, dash_if_empty(k.host), k.key_type, k.fingerprint, k.added_at]
-        rows.push(row)
+        rows.push([k.addr, dash_if_empty(k.host), k.key_type, k.fingerprint, k.added_at])
     }
     print_table(["ADDRESS", "HOST", "TYPE", "FINGERPRINT", "ADDED"], rows)
 }
@@ -290,8 +283,7 @@ fn print_import_notes(title: str, notes: []ImportNote) {
     say("{title} ({notes.len()}):")
     mut rows: [][]str = []
     for n in notes {
-        row: []str = ["  " + n.kind, n.name, n.detail]
-        rows.push(row)
+        rows.push(["  " + n.kind, n.name, n.detail])
     }
     print_table(["  KIND", "NAME", "DETAIL"], rows)
 }

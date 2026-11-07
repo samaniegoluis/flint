@@ -24,8 +24,7 @@ import "../../application"
 // Where the built page is: $FLINT_UI_DIR, then the app bundle's Resources/ui, then
 // ui/ next to the executable, then ui/dist in a source checkout.
 fn find_ui_dir() -> str {
-    // Typed: the checker takes `os.getenv` for an optional (CF-063).
-    override: str = os.getenv("FLINT_UI_DIR")
+    override := os.getenv("FLINT_UI_DIR")
     if override.len() > 0 {
         return override
     }

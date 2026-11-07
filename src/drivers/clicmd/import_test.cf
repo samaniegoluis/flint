@@ -5,8 +5,7 @@ package clicmd
 // secret and seal it again, SQLCipher for the Flint vault, libssh to read the keys.
 
 import "core:fs"
-import "core:rand"
-import "core:encoding/hex"
+import "core:os"
 
 fn fixture_path() -> str {
     for p in ["src/adapters/vault/testdata/tether-v5.tether", "../../adapters/vault/testdata/tether-v5.tether"] {
@@ -18,8 +17,7 @@ fn fixture_path() -> str {
 }
 
 test "a real Tether vault is imported and its secrets open under the Flint vault's key" {
-    // A random tag, not the pid: cfire has no os.getpid (CF-064).
-    tag := hex.encode(rand.bytes(4))
+    tag := os.getpid()
     dir := "/tmp/flint-import-test-{tag}"
     try fs.mkdir_all(dir)
     defer { _ = fs.remove(dir) }
