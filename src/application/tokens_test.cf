@@ -1,0 +1,165 @@
+package application
+
+import "../domain"
+
+// ---- Token store ---------------------------------------------------------------
+
+type FakeTokenStore struct {
+    tokens:   []Token
+    activity: []ActivityEntry
+    next_id:  i64
+}
+
+fn new_fake_token_store() -> FakeTokenStore {
+    return FakeTokenStore{ tokens: [], activity: [], next_id: 1 }
+}
+
+fn (self: FakeTokenStore) tokens_all() -> []Token! {
+    return self.tokens
+}
+
+fn (mut self: FakeTokenStore) token_put(t: Token) -> void! {
+    for i, o in self.tokens {
+        if o.id == t.id {
+            self.tokens[i] = t
+            return
+        }
+    }
+    self.tokens.push(t)
+}
+
+fn (mut self: FakeTokenStore) activity_add(e: ActivityEntry, keep: i64) -> void! {
+    mut row := e
+    row.id = self.next_id
+    self.next_id = self.next_id + 1
+    self.activity.push(row)
+    mut kept: []ActivityEntry = []
+    for a in self.activity {
+        if a.id > self.next_id - 1 - keep {
+            kept.push(a)
+        }
+    }
+    self.activity = kept
+}
+
+fn (self: FakeTokenStore) activity_page(before_id: i64, limit: i64) -> []ActivityEntry! {
+    mut page: []ActivityEntry = []
+    n := self.activity.len()
+    for k in 0..n {
+        a := self.activity[n - 1 - k]
+        if i64(page.len()) < limit && (before_id <= 0 || a.id < before_id) {
+            page.push(a)
+        }
+    }
+    return page
+}
+
+fn token_req(name: str, hosts: []str, read: bool, exec: bool, write: bool) -> TokenRequest {
+    return TokenRequest{ name: name, scope: ScopeByName{ all: false, groups: [], hosts: hosts }, read: read, exec: exec, write: write, ttl: "1d" }
+}
+
+fn token_vault(mut store: FakeStore) -> void! {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/t.flint", "", "correct horse")
+    _ := try add_group(crypto, mut store, "lab")
+    mut p := host_patch("codebox", "10.0.0.5")
+    p.group = "lab"
+    p.set_group = true
+    _ := try add_host(crypto, mut store, s, p)
+}
+
+test "a token is created once, stored hashed, and checked by its text" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    try token_vault(mut store)
+    mut tokens := new_fake_token_store()
+    made := try create_token(crypto, store, mut tokens, token_req("nightly", ["codebox"], true, true, false), 1000)
+    assert(made.secret.starts_with("flint_"))
+    assert_eq(made.token.name, "nightly")
+    assert_eq(made.token.hosts[0], "codebox")
+    assert_eq(made.token.expires_at, 1000 + 86400)
+    assert_eq(made.token.status, TOKEN_ACTIVE)
+    // The store holds a hash, never the text or its secret.
+    stored := tokens.tokens[0]
+    assert(stored.hash.len() == 64)
+    assert(!made.secret.contains(stored.hash))
+    assert(!stored.hash.contains(split_token_text(made.secret).secret))
+
+    t := try check_token(crypto, tokens, made.secret, 2000)
+    assert_eq(t.id, made.token.id)
+    // A changed secret, an unknown id, garbage: all denied.
+    parts := split_token_text(made.secret)
+    mut flipped := parts.secret.substr(1) + "0"
+    if flipped == parts.secret {
+        flipped = parts.secret.substr(1) + "1"
+    }
+    bad := check_token(crypto, tokens, token_text(parts.id, flipped), 2000)
+    assert_eq(error_code_of("{bad.error().message()}"), ERR_DENIED)
+    assert(!check_token(crypto, tokens, token_text("ffffffffffffffff", parts.secret), 2000).has_value())
+    junk := check_token(crypto, tokens, "hunter2", 2000)
+    assert_eq(error_code_of("{junk.error().message()}"), ERR_DENIED)
+    assert(!"{junk.error().message()}".contains("hunter2"))
+    // Expired.
+    late := check_token(crypto, tokens, made.secret, 1000 + 86400)
+    assert("{late.error().message()}".contains("expired"))
+}
+
+test "a revoked token is refused and its name can be used again" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    try token_vault(mut store)
+    mut tokens := new_fake_token_store()
+    made := try create_token(crypto, store, mut tokens, token_req("ci", [], true, false, false), 1000)
+    clash := create_token(crypto, store, mut tokens, token_req("CI", [], true, false, false), 1001)
+    assert_eq(error_code_of("{clash.error().message()}"), ERR_CONFLICT)
+    v := try revoke_token(store, mut tokens, "ci", 1100)
+    assert_eq(v.status, TOKEN_REVOKED)
+    assert_eq(v.revoked_at, 1100)
+    again := try revoke_token(store, mut tokens, made.token.id, 1200)
+    assert_eq(again.revoked_at, 1100)
+    refused := check_token(crypto, tokens, made.secret, 1300)
+    assert("{refused.error().message()}".contains("revoked"))
+    _ := try create_token(crypto, store, mut tokens, token_req("ci", [], true, false, false), 1400)
+    list := try list_tokens(store, tokens, 1500)
+    assert_eq(list.len(), 2)
+    assert_eq(list[0].status, TOKEN_REVOKED)
+    assert_eq(list[1].status, TOKEN_ACTIVE)
+    missing := revoke_token(store, mut tokens, "nope", 1500)
+    assert_eq(error_code_of("{missing.error().message()}"), ERR_NOT_FOUND)
+}
+
+test "a token request says what it allows and where" {
+    mut store := new_fake_store()
+    try token_vault(mut store)
+    none_allowed := check_token_request(store, token_req("x", ["codebox"], false, false, false))
+    assert_eq(error_code_of("{none_allowed.error().message()}"), ERR_USAGE)
+    no_hosts := check_token_request(store, token_req("x", [], false, true, false))
+    assert_eq(error_code_of("{no_hosts.error().message()}"), ERR_USAGE)
+    // Reading alone needs no hosts: it is vault-wide.
+    reader := try check_token_request(store, token_req("x", [], true, false, false))
+    assert(reader.all)
+    narrow_write := check_token_request(store, token_req("x", ["codebox"], true, false, true))
+    assert_eq(error_code_of("{narrow_write.error().message()}"), ERR_INVALID)
+    ghost := check_token_request(store, token_req("x", ["ghost"], false, true, false))
+    assert_eq(error_code_of("{ghost.error().message()}"), ERR_NOT_FOUND)
+    mut bad_ttl := token_req("x", ["codebox"], false, true, false)
+    bad_ttl.ttl = "never"
+    assert(!check_token_request(store, bad_ttl).has_value())
+    mut by_group := token_req("x", [], false, true, false)
+    by_group.scope.groups = ["lab"]
+    s := try check_token_request(store, by_group)
+    assert_eq(s.groups.len(), 1)
+}
+
+test "the activity log keeps the newest entries and pages back" {
+    mut tokens := new_fake_token_store()
+    for n in 0..5 {
+        try tokens.activity_add(ActivityEntry{ id: 0, at: i64(n), caller: "c", via: ACTIVITY_VIA_GRANT, token: "", action: ACCESS_EXEC, host: "h", command: "flint exec h -- true", outcome: ACTIVITY_ALLOWED }, 3)
+    }
+    page := try list_activity(tokens, 0, 2)
+    assert_eq(page.len(), 2)
+    assert_eq(page[0].at, 4)
+    rest := try list_activity(tokens, page[1].id, 10)
+    assert_eq(rest.len(), 1)
+    assert_eq(rest[0].at, 2)
+}

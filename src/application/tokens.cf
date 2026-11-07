@@ -1,0 +1,160 @@
+package application
+
+// Tokens and the activity log (milestone 12b, D-046). A token's secret is made from
+// libsodium's random bytes and only its BLAKE2b hash is stored (Principle 4); the
+// text is returned once, by `create_token`, and never again (Principle 6). Scopes go
+// in by name and are stored by id, as grants are (access.cf).
+
+import "core:encoding/hex"
+import "core:str"
+import "../domain"
+import "../ports"
+
+// What `flint token create` asks for, by name.
+type TokenRequest struct {
+    name:  str         `json:"name"`
+    scope: ScopeByName `json:"scope"`
+    read:  bool        `json:"read"`
+    exec:  bool        `json:"exec"`
+    write: bool        `json:"write"`
+    ttl:   str         `json:"ttl"`
+}
+
+// A token as `token list` and the window show it: never its secret or its hash.
+type TokenView struct {
+    id:         str   `json:"id"`
+    name:       str   `json:"name"`
+    all:        bool  `json:"all"`
+    groups:     []str `json:"groups"`
+    hosts:      []str `json:"hosts"`
+    read:       bool  `json:"read"`
+    exec:       bool  `json:"exec"`
+    write:      bool  `json:"write"`
+    created_at: i64   `json:"created_at"`
+    expires_at: i64   `json:"expires_at"`
+    revoked_at: i64   `json:"revoked_at"`
+    status:     str   `json:"status"`
+}
+
+// A new token: its view and, this once, the text the program will hold.
+type CreatedToken struct {
+    token:  TokenView `json:"token"`
+    secret: str       `json:"secret"`
+}
+
+fn token_view(t: Token, cat: Catalog, now_s: i64) -> TokenView {
+    g := grant_view(token_as_grant(t, ""), cat)
+    return TokenView{ id: t.id, name: t.name, all: t.scope.all, groups: g.groups, hosts: g.hosts, read: t.read, exec: t.exec, write: t.write, created_at: t.created_at, expires_at: t.expires_at, revoked_at: t.revoked_at, status: token_status(t, now_s) }
+}
+
+// Checks a request before the window asks for it: the same rules `create_token`
+// applies, so a bad request never reaches the owner. Returns the scope by id.
+fn check_token_request[S: VaultStore](store: S, req: TokenRequest) -> AccessScope! {
+    try check_token_name(req.name)
+    _ := try token_ttl_seconds(req.ttl)
+    if !req.read && !req.exec && !req.write {
+        return error(coded(ERR_USAGE, "say what the token allows: --allow read,exec,write"))
+    }
+    mut by_name := req.scope
+    if !by_name.all && by_name.groups.len() == 0 && by_name.hosts.len() == 0 {
+        if req.exec || req.write {
+            return error(coded(ERR_USAGE, "say which hosts the token reaches: --hosts <alias,@group,...> or --all"))
+        }
+        // Reading is vault-wide anyway.
+        by_name.all = true
+    }
+    if req.write && !by_name.all {
+        return error(coded(ERR_INVALID, "a token that changes the vault must reach all of it: --all"))
+    }
+    cat := try load_catalog(store)
+    return access_scope_from_names(cat, by_name)
+}
+
+// The hex hash stored for a token's secret.
+fn token_hash[C: Crypto](crypto: C, id: str, secret: str) -> str! {
+    return hex.encode(try crypto.digest([]byte(token_hash_input(id, secret)), 32))
+}
+
+fn create_token[C: Crypto, S: VaultStore, T: TokenStore](crypto: C, store: S, mut tokens: T, req: TokenRequest, now_s: i64) -> CreatedToken! {
+    scope := try check_token_request(store, req)
+    name := str.trim(req.name)
+    for t in try tokens.tokens_all() {
+        if token_status(t, now_s) == TOKEN_ACTIVE && str.to_lower(t.name) == str.to_lower(name) {
+            return error(coded(ERR_CONFLICT, "a live token is already named '{name}'; revoke it or pick another name"))
+        }
+    }
+    id := hex.encode(crypto.random_bytes(TOKEN_ID_HEX / 2))
+    secret := hex.encode(crypto.random_bytes(TOKEN_SECRET_HEX / 2))
+    ttl := try token_ttl_seconds(req.ttl)
+    t := Token{ id: id, name: name, hash: try token_hash(crypto, id, secret), scope: scope, read: req.read, exec: req.exec, write: req.write, created_at: now_s, expires_at: now_s + ttl, revoked_at: 0 }
+    try tokens.token_put(t)
+    cat := try load_catalog(store)
+    return CreatedToken{ token: token_view(t, cat, now_s), secret: token_text(id, secret) }
+}
+
+fn list_tokens[S: VaultStore, T: TokenStore](store: S, tokens: T, now_s: i64) -> []TokenView! {
+    cat := try load_catalog(store)
+    mut views: []TokenView = []
+    for t in try tokens.tokens_all() {
+        views.push(token_view(t, cat, now_s))
+    }
+    return views
+}
+
+// Revokes the token with id `key`, or the live one named `key`. Revoking twice is
+// not an error: the token stays revoked from the first time.
+fn revoke_token[S: VaultStore, T: TokenStore](store: S, mut tokens: T, key: str, now_s: i64) -> TokenView! {
+    all := try tokens.tokens_all()
+    mut t := find_token(all, key, now_s) or {
+        return error(coded(ERR_NOT_FOUND, "no token '{key}'; see `flint token list`"))
+    }
+    if t.revoked_at == 0 {
+        t.revoked_at = now_s
+        try tokens.token_put(t)
+    }
+    cat := try load_catalog(store)
+    return token_view(t, cat, now_s)
+}
+
+// The live token `text` names, if its secret matches the stored hash (compared in
+// constant time). Every failure is `denied`, saying why without echoing the text.
+fn check_token[C: Crypto, T: TokenStore](crypto: C, tokens: T, text: str, now_s: i64) -> Token! {
+    return check_token_in(crypto, try tokens.tokens_all(), text, now_s)
+}
+
+fn check_token_in[C: Crypto](crypto: C, all: []Token, text: str, now_s: i64) -> Token! {
+    parts := split_token_text(text)
+    if !parts.ok {
+        return error(coded(ERR_DENIED, "FLINT_TOKEN is not a Flint token"))
+    }
+    for t in all {
+        if t.id == parts.id {
+            want := try token_hash(crypto, parts.id, parts.secret)
+            if !crypto.equal([]byte(want), []byte(t.hash)) {
+                return error(coded(ERR_DENIED, "FLINT_TOKEN does not match a token of this vault"))
+            }
+            status := token_status(t, now_s)
+            if status == TOKEN_REVOKED {
+                return error(coded(ERR_DENIED, "the token '{t.name}' was revoked"))
+            }
+            if status == TOKEN_EXPIRED {
+                return error(coded(ERR_DENIED, "the token '{t.name}' has expired; create a new one with `flint token create`"))
+            }
+            return t
+        }
+    }
+    return error(coded(ERR_DENIED, "FLINT_TOKEN does not match a token of this vault"))
+}
+
+fn record_activity[T: TokenStore](mut tokens: T, e: ActivityEntry) -> void! {
+    try tokens.activity_add(e, ACTIVITY_KEEP)
+}
+
+// The newest entries before `before_id` (0: the newest), at most `limit` (1-500).
+fn list_activity[T: TokenStore](tokens: T, before_id: i64, limit: i64) -> []ActivityEntry! {
+    mut n := limit
+    if n <= 0 || n > 500 {
+        n = 200
+    }
+    return tokens.activity_page(before_id, n)
+}

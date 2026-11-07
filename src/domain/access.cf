@@ -18,6 +18,9 @@ import "core:str"
 ACCESS_READ: str = "read"
 ACCESS_EXEC: str = "exec"
 ACCESS_WRITE: str = "write"
+// Creating a token (milestone 12b): approved one by one in the window, never by a
+// grant or another token.
+ACCESS_TOKEN: str = "token"
 
 // How long a grant lasts. "lock" lasts until the vault locks.
 GRANT_DURATIONS: []str = ["15m", "1h", "4h", "lock"]
@@ -298,6 +301,8 @@ type Approval struct {
     created_ms:     i64          `json:"created_ms"`
     deadline_ms:    i64          `json:"deadline_ms"`
     state:          str          `json:"state"`
+    // For `token create` (milestone 12b): the token the owner is asked to create.
+    token:          TokenAsk     `json:"token"`
 }
 
 // The app's access state: live grants and the requests waiting for an answer.
@@ -330,7 +335,7 @@ fn proposed_grant(ap: Approval, cat: Catalog, id: str, now_ms: i64) -> Grant! {
 
 fn new_approval(id: str, vault_id: str, c: Caller, request: str, need: AccessNeed, now_ms: i64) -> Approval {
     a := caller_anchor(c)
-    return Approval{ id: id, vault_id: vault_id, label: caller_label(c), request: request, need: need, chain: c.chain, anchor_pid: a.pid, anchor_started: a.started, created_ms: now_ms, deadline_ms: now_ms + APPROVAL_WAIT_MS, state: APPROVAL_PENDING }
+    return Approval{ id: id, vault_id: vault_id, label: caller_label(c), request: request, need: need, chain: c.chain, anchor_pid: a.pid, anchor_started: a.started, created_ms: now_ms, deadline_ms: now_ms + APPROVAL_WAIT_MS, state: APPROVAL_PENDING, token: no_token_ask() }
 }
 
 // The grant an approval becomes when the owner allows it.

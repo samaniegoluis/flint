@@ -54,6 +54,33 @@ export interface Vault {
 	keys: Key[];
 	creds: Cred[];
 	knownHosts: KnownHost[];
+	/** Tokens (milestone 12b): revoked, never deleted. The demo keeps no hash: nothing is real. */
+	tokens: Token[];
+}
+
+export interface Token {
+	id: string;
+	name: string;
+	all: boolean;
+	groups: string[];
+	hosts: string[];
+	read: boolean;
+	exec: boolean;
+	write: boolean;
+	createdAt: number;
+	expiresAt: number;
+	revokedAt: number;
+}
+
+export interface TokenRequest {
+	name: string;
+	all: boolean;
+	groups: string[];
+	hosts: string[];
+	read: boolean;
+	exec: boolean;
+	write: boolean;
+	ttl: string;
 }
 
 export interface World {
@@ -80,6 +107,45 @@ export function keyView(k: Key) {
 
 export function credView(c: Cred) {
 	return { name: c.name, user: c.user, key: c.key, has_password: c.hasPassword };
+}
+
+const TTLS: Record<string, number> = { '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400, '7d': 7 * 86400, '30d': 30 * 86400, '90d': 90 * 86400 };
+
+export function tokenStatus(t: Token, now: number): string {
+	if (t.revokedAt > 0) return 'revoked';
+	return now >= t.expiresAt ? 'expired' : 'active';
+}
+
+export function tokenView(t: Token, now: number) {
+	return {
+		id: t.id, name: t.name, all: t.all, groups: t.groups, hosts: t.hosts, read: t.read, exec: t.exec, write: t.write,
+		created_at: t.createdAt, expires_at: t.expiresAt, revoked_at: t.revokedAt, status: tokenStatus(t, now),
+	};
+}
+
+export function tokenAllows(t: { read: boolean; exec: boolean; write: boolean }): string {
+	return [t.read && 'read', t.exec && 'exec', t.write && 'write'].filter(Boolean).join(',');
+}
+
+export function tokenReach(t: { all: boolean; groups: string[]; hosts: string[] }): string {
+	if (t.all) return 'whole vault';
+	return [...t.hosts, ...t.groups.map((g) => '@' + g)].join(', ');
+}
+
+/** utc_text: "2026-11-08 10:00 UTC". */
+export function utcText(secs: number): string {
+	return new Date(secs * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+}
+
+/** Stable fake hex for the demo's tokens: never a real secret. */
+function fakeHex(seed: string, n: number): string {
+	let h = 2166136261;
+	let out = '';
+	for (let i = 0; out.length < n; i++) {
+		for (const ch of seed + i) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+		out += h.toString(16).padStart(8, '0');
+	}
+	return out.slice(0, n);
 }
 
 // ---- seed --------------------------------------------------------------------
@@ -119,6 +185,7 @@ export function worldFromSeed(seed: any): World {
 				const sk = serverKeyFor(k.addr);
 				return { addr: k.addr, keyType: sk.type, fingerprint: sk.fingerprint, addedAt: k.added_at };
 			}),
+			tokens: [],
 		})),
 	};
 }
@@ -448,6 +515,52 @@ export class VaultOps {
 		if (!k) fail('not_found', `no known host key for '${selector}'`);
 		this.v.knownHosts = this.v.knownHosts.filter((x) => x !== k);
 		return k;
+	}
+
+	// tokens (src/application/tokens.cf, check_token_request and create_token)
+
+	createToken(req: TokenRequest, now: number): { token: Token; secret: string } {
+		const name = req.name.trim();
+		if (!name) fail('usage', 'a token needs a name: --name <name>');
+		if (name.length > 64) fail('invalid', "a token's name is at most 64 characters");
+		if (name.startsWith('flint_')) fail('invalid', "a token's name may not start with flint_");
+		if (!(req.ttl in TTLS)) fail('invalid', '--ttl must be one of 15m, 1h, 4h, 1d, 7d, 30d, 90d');
+		if (!req.read && !req.exec && !req.write) fail('usage', 'say what the token allows: --allow read,exec,write');
+		let all = req.all;
+		if (!all && req.groups.length === 0 && req.hosts.length === 0) {
+			if (req.exec || req.write) fail('usage', 'say which hosts the token reaches: --hosts <alias,@group,...> or --all');
+			all = true;
+		}
+		if (req.write && !all) fail('invalid', 'a token that changes the vault must reach all of it: --all');
+		const groups: string[] = [];
+		const hosts: string[] = [];
+		if (!all) {
+			for (const g of req.groups) {
+				const found = this.v.groups.find((x) => x.toLowerCase() === g.toLowerCase());
+				if (!found) fail('not_found', `group '${g}'`);
+				groups.push(found);
+			}
+			for (const a of req.hosts) {
+				const found = this.v.hosts.find((h) => h.alias.toLowerCase() === a.toLowerCase());
+				if (!found) fail('not_found', `host '${a}'`);
+				hosts.push(found.alias);
+			}
+		}
+		if (this.v.tokens.some((t) => tokenStatus(t, now) === 'active' && t.name.toLowerCase() === name.toLowerCase())) {
+			fail('conflict', `a live token is already named '${name}'; revoke it or pick another name`);
+		}
+		const id = fakeHex(this.v.name + name + this.v.tokens.length, 16);
+		const t: Token = { id, name, all, groups, hosts, read: req.read, exec: req.exec, write: req.write, createdAt: now, expiresAt: now + TTLS[req.ttl], revokedAt: 0 };
+		this.v.tokens.push(t);
+		return { token: t, secret: `flint_${id}_${fakeHex('demo-secret' + id, 64)}` };
+	}
+
+	revokeToken(key: string, now: number): Token {
+		const t = this.v.tokens.find((x) => x.id === key)
+			?? this.v.tokens.find((x) => tokenStatus(x, now) === 'active' && x.name.toLowerCase() === key.trim().toLowerCase());
+		if (!t) fail('not_found', `no token '${key}'; see \`flint token list\``);
+		if (t.revokedAt === 0) t.revokedAt = now;
+		return t;
 	}
 }
 

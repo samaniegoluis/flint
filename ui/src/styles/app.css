@@ -25,3 +25,9 @@ button.panel:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 @media (prefers-reduced-motion: reduce) {
   :root[data-motion="full"] { --dur-instant: 60ms; --dur-fast: 120ms; --dur-base: 180ms; --dur-slow: 240ms; }
 }
+
+/* Settings → Access: the activity log (milestone 12b). Commands wrap; the rest stays on one line. */
+.activity-table td { height: auto; padding-top: var(--sp-2); padding-bottom: var(--sp-2); vertical-align: top; white-space: normal; }
+.activity-table td.nowrap { white-space: nowrap; }
+.activity-table td.err { color: var(--danger); }
+.activity-table td.mono { font-size: var(--fs-xs); }

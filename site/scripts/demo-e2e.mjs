@@ -61,7 +61,7 @@ try {
 		await dialog.waitFor({ state: 'visible' });
 		check(await page.evaluate(() => document.activeElement?.id === 'cli-demo-input'), 'desktop: the input has focus on open');
 		check((await logText(page)).includes("Welcome to Flint's demo"), 'desktop: the welcome and first step are shown');
-		check((await page.locator('[data-step]').innerText()) === 'Step 1 of 10', 'desktop: the bar shows the tour step');
+		check((await page.locator('[data-step]').innerText()) === 'Step 1 of 11', 'desktop: the bar shows the tour step');
 		check((await page.locator('[data-guide]').innerText()).includes('Every command'), 'desktop: the guide shows the current step');
 		check((await page.locator('.cli-demo__chip--next').innerText()).includes('flint help'), 'desktop: the step command is the highlighted chip');
 		await type(page, 'flint list');
@@ -88,13 +88,15 @@ try {
 		await type(page, 'flint vault status');
 		await type(page, 'flint vault rename "Home Lab"');
 		await type(page, 'flint host list --json');
+		await type(page, 'flint token create --name nightly --allow exec --hosts nas --ttl 30d');
 		const all = await logText(page);
 		check(all.includes("That's the tour"), 'desktop: the tour reaches its end');
 		check(all.includes('Welcome to Ubuntu'), 'desktop: the remote shell greeted');
 		check(!(await page.content()).includes('secret-typed-in-e2e'), 'desktop: the typed password is nowhere in the page');
 		check(all.includes('"alias":"my-server"'), 'desktop: the added host is in --json');
+		check(/flint_[0-9a-f]{16}_[0-9a-f]{64}/.test(all), 'desktop: token create prints the token once');
 		await page.keyboard.press('ArrowUp');
-		check((await page.locator('#cli-demo-input').inputValue()) === 'flint host list --json', 'desktop: ↑ recalls the last command');
+		check((await page.locator('#cli-demo-input').inputValue()) === 'flint token create --name nightly --allow exec --hosts nas --ttl 30d', 'desktop: ↑ recalls the last command');
 		check(all.includes('#   flint host list --json | jq'), 'desktop: --json offers jq as a tip');
 		await page.locator('.cli-demo__chip', { hasText: '| jq' }).click();
 		check((await page.locator('.cli-demo__jq-key').count()) > 0, 'desktop: the jq chip runs and colours the JSON');

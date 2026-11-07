@@ -6,8 +6,8 @@ import { ParsedArgs, parseFlintArgs, parsePort, parseSeconds, wantsJson } from '
 import { dash, fields, hostTarget, json, table, yesNo } from './format.ts';
 import { RemoteShell } from './remote.ts';
 import {
-	VaultOps, credView, hostView, keyView, serverKeyFor,
-	type CredPatch, type Host, type HostPatch, type Vault, type World,
+	VaultOps, credView, hostView, keyView, serverKeyFor, tokenAllows, tokenReach, tokenStatus, tokenView, utcText,
+	type CredPatch, type Host, type HostPatch, type TokenRequest, type Vault, type World,
 } from './vault.ts';
 
 export interface Ask {
@@ -82,6 +82,13 @@ SSH
        -- <command>                     Run one command; exits with its status
   known-host list | known-host rm <alias|address>
 
+Tokens (for programs Flint cannot ask about: cron, launchd, CI on this machine)
+  token create --name <name> --allow read,exec[,write] [--hosts <alias,@group,...> | --all]
+               [--ttl 15m|1h|4h|1d|7d|30d|90d]
+                                        Flint asks you to approve it; prints the
+                                        token once (default --ttl 1d)
+  token list | token revoke <id|name>
+
 Import
   import tether <file> [--password-stdin] [--dry-run]
                                         Copy a Tether vault into this one (asks for
@@ -94,7 +101,8 @@ Global flags
   --version, -V     Print the version and linked libraries
 
 With Flint open and the vault unlocked there, commands run through it and need no
-master password, once you allow the program that runs flint in Flint's window.
+master password, once you allow the program that runs flint in Flint's window, or
+it passes a token in FLINT_TOKEN.
 Otherwise flint asks for it on the terminal (or --master-stdin), for that one
 command; with no terminal, Flint is asked to unlock the vault.
 
@@ -110,6 +118,7 @@ export const COMMANDS: Record<string, string[]> = {
 	cred: ['add', 'edit', 'list', 'show', 'rm'],
 	'known-host': ['list', 'rm'],
 	import: ['tether'],
+	token: ['create', 'list', 'revoke'],
 	connect: [],
 	exec: [],
 	help: [],
@@ -174,6 +183,7 @@ function* dispatch(args: string[], world: World, io: Io, asJson: boolean): Run {
 		case 'cred': return yield* c.cred();
 		case 'known-host': return yield* c.knownHost();
 		case 'import': return c.importVault();
+		case 'token': return yield* c.token();
 		case 'connect': return yield* c.connect();
 		default: return yield* c.exec();
 	}
@@ -668,6 +678,56 @@ class Cmd {
 		fail('usage', `unknown command \`flint known-host ${verb}\`; see \`flint help\``);
 	}
 
+	// ---- token (src/drivers/clicmd/tokens.cf) ----
+
+	*token(): Run {
+		const p = this.p;
+		const verb = p.positional(1);
+		const now = Math.floor(this.io.now().getTime() / 1000);
+		if (verb === 'create') {
+			p.allowFlags('token create', ['--name', '--hosts', '--all', '--allow', '--ttl']);
+			p.expectArgs('token create', 0, '');
+			const req = tokenRequestFromFlags(p);
+			const v = this.resolveVault(p.value('--vault'));
+			if (!v.unlocked) fail('locked', '`flint token create` runs in Flint, which asks you to approve it: open Flint, unlock this vault and run it again');
+			const ops = new VaultOps(yield* this.openTarget());
+			// Flint's window asks every time; the demo plays the owner and allows it.
+			if (!this.asJson) this.io.err(`Waiting for approval in Flint (flint, started by Terminal)…`);
+			const made = ops.createToken(req, now);
+			if (this.asJson) {
+				this.say(json({ token: tokenView(made.token, now), secret: made.secret }));
+				return ok;
+			}
+			const t = made.token;
+			this.io.err(`Created token '${t.name}' (${tokenAllows(t)} on ${tokenReach(t)}), until ${utcText(t.expiresAt)}.`);
+			this.io.err('Flint shows it this once. Give it to the program as FLINT_TOKEN:');
+			this.say(made.secret);
+			return ok;
+		}
+		if (verb === 'list') {
+			p.allowFlags('token list', []);
+			p.expectArgs('token list', 0, '');
+			const v = yield* this.openTarget();
+			const list = v.tokens.map((t) => tokenView(t, now));
+			this.emit(list, () => {
+				if (list.length === 0) return this.say('No tokens. Create one with `flint token create`.');
+				table(['ID', 'NAME', 'ALLOWS', 'REACHES', 'STATUS', 'UNTIL'], v.tokens.map((t) => [
+					t.id, t.name, tokenAllows(t), tokenReach(t), tokenStatus(t, now), utcText(t.revokedAt > 0 ? t.revokedAt : t.expiresAt),
+				])).forEach((l) => this.say(l));
+			});
+			return ok;
+		}
+		if (verb === 'revoke') {
+			p.allowFlags('token revoke', []);
+			p.expectArgs('token revoke', 1, '<id|name>');
+			const ops = new VaultOps(yield* this.openTarget());
+			const t = ops.revokeToken(p.positional(2), now);
+			this.emit(tokenView(t, now), () => this.say(`Revoked token '${t.name}' (${t.id}). A program that uses it is refused from now on.`));
+			return ok;
+		}
+		fail('usage', `unknown command \`flint token ${verb}\`; see \`flint help\``);
+	}
+
 	// ---- connect / exec ----
 
 	/** Walks the jump chain, checks each server key and resolves the login (connect.cf). */
@@ -766,4 +826,28 @@ class Cmd {
 		}
 		return { code };
 	}
+}
+
+/** token_request_from_flags: "--hosts codebox,@homelab", "--allow exec,read". */
+function tokenRequestFromFlags(p: ParsedArgs): TokenRequest {
+	const req: TokenRequest = { name: p.value('--name'), all: p.has('--all'), groups: [], hosts: [], read: false, exec: false, write: false, ttl: p.has('--ttl') ? p.value('--ttl') : '1d' };
+	for (const v of p.values('--hosts')) {
+		for (const part of v.split(',')) {
+			const item = part.trim();
+			if (item.startsWith('@')) { if (item.length > 1) req.groups.push(item.slice(1)); }
+			else if (item) req.hosts.push(item);
+		}
+	}
+	if (!p.has('--allow')) fail('usage', 'say what the token allows: --allow read,exec,write');
+	for (const v of p.values('--allow')) {
+		for (const part of v.split(',')) {
+			const a = part.trim();
+			if (a === 'read') req.read = true;
+			else if (a === 'exec') req.exec = true;
+			else if (a === 'write') req.write = true;
+			else if (a) fail('usage', `--allow takes read, exec and write, not '${a}'`);
+		}
+	}
+	if (req.all && (req.hosts.length > 0 || req.groups.length > 0)) fail('usage', '--all and --hosts do not go together');
+	return req;
 }

@@ -54,6 +54,17 @@ type VaultStore interface {
     known_host_drop(addr: str) -> void!
 }
 
+// Tokens and the activity log, in the open vault (adapters/vault, migration 004,
+// milestone 12b). Served by the same store as `VaultStore`. Tokens are revoked, never
+// deleted. `activity_add` drops the oldest entries beyond `keep`; `activity_page`
+// returns the newest entries with an id below `before_id` (0: from the newest).
+type TokenStore interface {
+    tokens_all() -> []Token!
+    token_put(t: Token) -> void!
+    activity_add(e: ActivityEntry, keep: i64) -> void!
+    activity_page(before_id: i64, limit: i64) -> []ActivityEntry!
+}
+
 // The OS keychain (adapters/keychain). Holds one master key per vault, by account.
 // `keychain_load` returns an empty slice when there is no entry.
 type Keychain interface {

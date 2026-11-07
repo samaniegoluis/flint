@@ -4,6 +4,7 @@ package vault
 // nothing about the rules between them; secrets arrive and leave already sealed.
 
 import "core:fs"
+import "core:str"
 import "../../domain"
 
 // Holds the raw handle; `conn()` wraps it in a CipherDb view. LockedVaultStore
@@ -291,4 +292,84 @@ fn (self: SqlVaultStore) known_host_put(k: KnownHost) -> void! {
 fn (self: SqlVaultStore) known_host_drop(addr: str) -> void! {
     try self.require_open()
     try self.conn().run_sql("DELETE FROM known_hosts WHERE addr = ?1;", [sql_text(addr)])
+}
+
+// ---- Tokens and the activity log (migration 004) ----------------------------------
+
+fn join_ids(ids: []str) -> str {
+    return str.join(ids, ",")
+}
+
+fn split_ids(s: str) -> []str {
+    mut parts: []str = []
+    if s.len() == 0 {
+        return parts
+    }
+    for part in str.split(s, ",") {
+        if part.len() > 0 {
+            parts.push(part)
+        }
+    }
+    return parts
+}
+
+fn sql_bool(b: bool) -> SqlCell {
+    if b {
+        return sql_int(1)
+    }
+    return sql_int(0)
+}
+
+fn (self: SqlVaultStore) tokens_all() -> []Token! {
+    try self.require_open()
+    res := try self.conn().query_cells("SELECT id, name, hash, scope_all, scope_groups, scope_hosts, allow_read, allow_exec, allow_write, created_at, expires_at, revoked_at FROM tokens ORDER BY created_at, id;", [])
+    mut list: []Token = []
+    for r in res {
+        scope := AccessScope{ all: cell_i64(r[3]) != 0, groups: split_ids(cell_str(r[4])), hosts: split_ids(cell_str(r[5])) }
+        list.push(Token{ id: cell_str(r[0]), name: cell_str(r[1]), hash: cell_str(r[2]), scope: scope, read: cell_i64(r[6]) != 0, exec: cell_i64(r[7]) != 0, write: cell_i64(r[8]) != 0, created_at: cell_i64(r[9]), expires_at: cell_i64(r[10]), revoked_at: cell_i64(r[11]) })
+    }
+    return list
+}
+
+fn (self: SqlVaultStore) token_put(t: Token) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("INSERT INTO tokens (id, name, hash, scope_all, scope_groups, scope_hosts, allow_read, allow_exec, allow_write, created_at, expires_at, revoked_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) ON CONFLICT(id) DO UPDATE SET name = excluded.name, hash = excluded.hash, scope_all = excluded.scope_all, scope_groups = excluded.scope_groups, scope_hosts = excluded.scope_hosts, allow_read = excluded.allow_read, allow_exec = excluded.allow_exec, allow_write = excluded.allow_write, created_at = excluded.created_at, expires_at = excluded.expires_at, revoked_at = excluded.revoked_at;", [
+            sql_text(t.id), sql_text(t.name), sql_text(t.hash), sql_bool(t.scope.all), sql_text(join_ids(t.scope.groups)), sql_text(join_ids(t.scope.hosts)),
+            sql_bool(t.read), sql_bool(t.exec), sql_bool(t.write), sql_int(t.created_at), sql_int(t.expires_at), sql_int(t.revoked_at),
+    ])
+}
+
+// The insert and the trim in one savepoint (inside a transaction or not), so a reader
+// never sees a log that is half trimmed.
+fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: i64) -> void! {
+    try self.require_open()
+    try self.conn().exec("SAVEPOINT activity_add;")
+    done := self.activity_insert(e, keep)
+    if !done.has_value() {
+        _ := self.conn().exec("ROLLBACK TO activity_add;")
+        _ := self.conn().exec("RELEASE activity_add;")
+        return error("{done.error().message()}")
+    }
+    try self.conn().exec("RELEASE activity_add;")
+}
+
+fn (self: SqlVaultStore) activity_insert(e: ActivityEntry, keep: i64) -> void! {
+    try self.conn().run_sql("INSERT INTO activity (at, caller, via, token_id, action, host, command, outcome) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);", [
+            sql_int(e.at), sql_text(e.caller), sql_text(e.via), sql_text(e.token), sql_text(e.action), sql_text(e.host), sql_text(e.command), sql_text(e.outcome),
+    ])
+    try self.conn().run_sql("DELETE FROM activity WHERE id <= (SELECT max(id) FROM activity) - ?1;", [sql_int(keep)])
+}
+
+fn (self: SqlVaultStore) activity_page(before_id: i64, limit: i64) -> []ActivityEntry! {
+    try self.require_open()
+    mut before := before_id
+    if before <= 0 {
+        before = 9223372036854775807
+    }
+    res := try self.conn().query_cells("SELECT id, at, caller, via, token_id, action, host, command, outcome FROM activity WHERE id < ?1 ORDER BY id DESC LIMIT ?2;", [sql_int(before), sql_int(limit)])
+    mut list: []ActivityEntry = []
+    for r in res {
+        list.push(ActivityEntry{ id: cell_i64(r[0]), at: cell_i64(r[1]), caller: cell_str(r[2]), via: cell_str(r[3]), token: cell_str(r[4]), action: cell_str(r[5]), host: cell_str(r[6]), command: cell_str(r[7]), outcome: cell_str(r[8]) })
+    }
+    return list
 }

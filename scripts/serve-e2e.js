@@ -42,6 +42,17 @@
       if (!form || form.dataset.e2eSeen) continue;
       form.dataset.e2eSeen = '1';
       const req = form.querySelector('[data-approval-request]')?.textContent ?? '';
+      if (form.dataset.kind === 'token') {
+        // `token create` (milestone 12b): the token, no scope or duration to pick.
+        const name = form.querySelector('[data-token-name]')?.textContent ?? '';
+        if (name.includes('deny-me')) { form.querySelector('[data-approval-deny]').click(); log('ok   denied the token ' + name); continue; }
+        log((form.querySelector('[data-scope-all]') ? 'FAIL ' : 'ok   ') + 'a token request offers no grant to choose: ' + name);
+        setValue(form.querySelector('#approval-pw'), MASTER);
+        await sleep(30);
+        form.querySelector('[data-approval-allow]').click();
+        log('ok   allowed the token ' + name);
+        continue;
+      }
       if (req.includes('timeout-me')) { log('ok   left unanswered: ' + req); continue; }
       if (req.includes('deny-me')) {
         // A click beside the window is not an answer, and the countdown runs on the
@@ -131,6 +142,35 @@
       return byText('.tree .ti', 'e2e-stop');
     }, 'the stop host', 90000);
     await check(!hasText('served-host-pw-marker'), 'no password the CLI sent reaches the page');
+
+    step = 'tokens and activity';
+    {
+      const toks = (await window.backend.tokens_list()).tokens;
+      const nightly = toks.find((t) => t.name === 'nightly');
+      await check(nightly && nightly.status === 'revoked', 'the window lists the revoked token');
+      await check(toks.every((t) => !('hash' in t) && !('secret' in t)), 'the token list carries no hash and no secret');
+      await check(!toks.some((t) => t.name.includes('deny-me')), 'a denied token was never created');
+      const log2 = (await window.backend.activity_log({ before: 0, limit: 500 })).entries;
+      const viaToken = log2.filter((e) => e.via === 'token');
+      await check(viaToken.some((e) => e.outcome === 'allowed' && e.command.includes('echo via-token')), 'the log has the exec a token ran');
+      await check(viaToken.some((e) => e.outcome === 'denied' && e.host === 'tty'), 'and the one outside its scope, refused');
+      await check(log2.some((e) => e.outcome === 'denied' && e.command.includes('deny-me')), 'the log has what the owner denied');
+      await check(log2.some((e) => e.outcome === 'timeout'), 'and what nobody answered');
+      await check(log2.some((e) => e.action === 'token' && e.outcome === 'allowed' && e.command.includes("'nightly'")), 'and the token created, by name');
+      await check(!log2.some((e) => e.action === 'read' && e.outcome === 'allowed'), 'no allowed read is logged');
+      await check(log2.some((e) => e.action === 'read' && e.outcome === 'denied' && e.via === 'token'), 'a read refused for a bad token is');
+      await check(!log2.some((e) => e.command.includes('flint_')), 'no token text is logged');
+      // The view: Settings → Access.
+      byText('.rail-btn', 'Settings')?.click();
+      await sleep(200);
+      byText('.nav-i', 'Access')?.click();
+      await waitFor(() => q('[data-activity] [data-activity-entry]'), 'the activity table', 10000);
+      await check(qa('[data-activity] [data-activity-entry="denied"]').length > 0, 'Settings → Access shows the activity, refusals included');
+      await check(!q('[data-token="nightly"]'), 'a revoked token is hidden until asked for');
+      q('[data-tokens-ended]')?.click();
+      await waitFor(() => q('[data-token="nightly"][data-token-status="revoked"]'), 'the revoked token row', 5000);
+      await check(true, 'and listed as revoked when asked for');
+    }
 
     await log(`${passed} checks passed`);
     await window.backend.e2e_report({ ok: true, detail: '' });

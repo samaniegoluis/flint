@@ -82,6 +82,20 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
         st.holder.access_release()
         return access_state(st, store, presence)
     }
+    if ap.token.name.len() > 0 {
+        // `token create`: allowed for this one request, never as a grant.
+        try confirm_presence(c, store, presence, st.vault_session(), req.password, "create the token \"{ap.token.name}\" in the vault {st.vault_session().name}")
+        st.holder.access_hold()
+        mut tbook := st.holder.access_book()
+        if !set_approval_state(mut tbook, req.id, APPROVAL_ALLOWED) {
+            st.holder.access_release()
+            return error(coded(ERR_NOT_FOUND, "this request stopped waiting before it was allowed"))
+        }
+        st.holder.put_access_book(tbook)
+        st.holder.access_release()
+        write_stderr("flint-gui: allowed {ap.label} to create a token\n")
+        return access_state(st, store, presence)
+    }
     // Checked before presence, so a bad form never shows the OS dialog.
     scope := try access_scope_from_names(held_catalog(st, store), req.scope)
     _ := try grant_from_approval(ap, "check", scope, req.read, req.exec, req.write, req.duration, time.now_ms())
@@ -121,4 +135,49 @@ fn rpc_access_revoke(params: str, st: GuiState, store: LockedVaultStore, presenc
     st.holder.access_release()
     app.emit("access:changed", GrantsChanged{ count: i64(book.grants.len()) })
     return json.stringify(access_state(st, store, presence))
+}
+
+// ---- Tokens and the activity log (milestone 12b) ------------------------------------
+
+type TokensState struct {
+    now_s:  i64         `json:"now_s"`
+    tokens: []TokenView `json:"tokens"`
+}
+
+type ActivityReq struct {
+    before: i64 `json:"before"`
+    limit:  i64 `json:"limit"`
+}
+
+type ActivityPage struct {
+    entries: []ActivityEntry `json:"entries"`
+}
+
+fn rpc_tokens_list(st: GuiState, store: LockedVaultStore) -> str! {
+    st.hold()
+    defer st.release()
+    try st.require_unlocked()
+    now := time.unix_seconds()
+    return json.stringify(TokensState{ now_s: now, tokens: try list_tokens(store, store, now) })
+}
+
+// The owner revokes a token from Settings → Access. Narrowing access needs no presence.
+fn rpc_token_revoke(params: str, st: GuiState, store: LockedVaultStore, mut app: webui.App) -> str! {
+    req := try parse_req[NameReq](params)
+    st.hold()
+    defer st.release()
+    try st.require_unlocked()
+    now := time.unix_seconds()
+    mut ts := store
+    _ := try revoke_token(store, mut ts, req.name, now)
+    app.emit("access:changed", GrantsChanged{ count: i64(st.holder.access_book().grants.len()) })
+    return json.stringify(TokensState{ now_s: now, tokens: try list_tokens(store, store, now) })
+}
+
+fn rpc_activity_log(params: str, st: GuiState, store: LockedVaultStore) -> str! {
+    req := try parse_req[ActivityReq](params)
+    st.hold()
+    defer st.release()
+    try st.require_unlocked()
+    return json.stringify(ActivityPage{ entries: try list_activity(store, req.before, req.limit) })
 }

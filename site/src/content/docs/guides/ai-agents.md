@@ -156,6 +156,49 @@ to `~/.ssh/authorized_keys`. Ways to narrow it:
   `root`, with access only to what they need.
 - **Watch the transcript.** Every remote command an agent runs is in its own
   `flint exec` line.
+- **Read the activity log** in **Settings → Access**: every command a program ran or
+  changed through Flint, and every request refused, newest first.
 
-Still to come: tokens for programs that no terminal or agent starts (a cron job, CI), and
-an activity log of what each grant ran. See the [Security model](/reference/security-model/#next).
+## Tokens for scheduled jobs
+
+A cron job, a launchd agent or a CI runner on this machine has nobody at a terminal and
+no Flint window to wait on: every run is a new process, so a grant would be asked for each
+time. Give it a **token** instead:
+
+```sh
+flint token create --name nightly-backup --allow exec --hosts nas,@homelab --ttl 30d
+```
+
+Flint shows the request in its window, the token's name, what it allows, which hosts and
+for how long, and creates it only once you allow it, with Touch ID or your password. It
+asks every time: no grant covers `token create`, so an agent you approved for an hour
+cannot mint itself a token that lasts a month. The token is printed **once**, alone on
+stdout:
+
+```sh
+FLINT_TOKEN=$(flint token create --name ci --allow read)   # keep it in the job's secret store
+```
+
+The job passes it in the `FLINT_TOKEN` environment variable, never as an argument (it would
+show in `ps`):
+
+```sh
+FLINT_TOKEN=flint_… flint exec nas -- /usr/local/bin/backup.sh
+```
+
+With a token, Flint decides on the token alone and never opens a window: a request it
+covers runs; anything else fails at once with `denied` (15), saying why (outside its
+hosts, revoked, expired). A token never unlocks the vault, so Flint must be running with
+it unlocked, and it never creates another token.
+
+| Flag | Meaning |
+|---|---|
+| `--name` | What `token list`, `token revoke` and the activity log call it |
+| `--allow` | `read`, `exec`, `write`, comma-separated. `write` needs `--all` |
+| `--hosts` | Host aliases and `@group` paths (with their subgroups). Not needed for `read` alone |
+| `--all` | The whole vault |
+| `--ttl` | `15m`, `1h`, `4h`, `1d` (the default), `7d`, `30d`, `90d`. There is no "never" |
+
+`flint token list` shows every token with its status; `flint token revoke <name|id>`, or
+**Revoke** in **Settings → Access**, ends one at once. Flint keeps only a hash of the
+token's secret, inside the encrypted vault. See the [CLI reference](/reference/cli/#tokens).

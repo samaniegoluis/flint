@@ -231,6 +231,18 @@ export interface CallerProc {
 }
 
 export type AccessAction = 'read' | 'exec' | 'write';
+/** What a request needs: an action of a grant, or creating a token (milestone 12b). */
+export type AccessNeedAction = AccessAction | 'token';
+
+/** The token `flint token create` asks the owner for; `name` is '' otherwise. */
+export interface TokenAsk {
+  name: string;
+  /** "read,exec" */
+  allows: string;
+  /** "codebox, @homelab" or "whole vault" */
+  reaches: string;
+  ttl: string;
+}
 
 /** A request waiting in the approval window. */
 export interface Approval {
@@ -240,12 +252,13 @@ export interface Approval {
   label: string;
   /** The command, without flag values. */
   request: string;
-  need: { action: AccessAction; host: string };
+  need: { action: AccessNeedAction; host: string };
   chain: CallerProc[];
   anchor_pid: number;
   created_ms: number;
   deadline_ms: number;
   state: string;
+  token: TokenAsk;
 }
 
 export interface GrantView {
@@ -285,4 +298,39 @@ export interface AccessAnswer {
   write: boolean;
   duration: GrantDuration;
   password: string;
+}
+
+/** A token as Settings → Access lists it (milestone 12b): never its secret. Times are Unix seconds. */
+export interface TokenView {
+  id: string;
+  name: string;
+  all: boolean;
+  groups: string[];
+  hosts: string[];
+  read: boolean;
+  exec: boolean;
+  write: boolean;
+  created_at: number;
+  expires_at: number;
+  /** 0 while not revoked. */
+  revoked_at: number;
+  status: 'active' | 'expired' | 'revoked';
+}
+
+export interface TokensState {
+  now_s: number;
+  tokens: TokenView[];
+}
+
+/** One line of the activity log (milestone 12b). `at` is Unix seconds. */
+export interface ActivityEntry {
+  id: number;
+  at: number;
+  caller: string;
+  via: 'grant' | 'token' | 'window';
+  token: string;
+  action: AccessNeedAction;
+  host: string;
+  command: string;
+  outcome: 'allowed' | 'denied' | 'timeout';
 }

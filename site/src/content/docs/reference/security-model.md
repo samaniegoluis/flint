@@ -75,6 +75,21 @@ through polkit (Linux, with `dev.flint.approve` installed from
 `packaging/linux/dev.flint.policy`), or the vault's master password. A program that can
 click Flint's window still cannot approve itself. Denying needs nothing.
 
+**Tokens** (`flint token create`) are for programs nobody starts from an approved
+terminal: a cron job, CI. A token is a grant with a secret, kept in the vault: Flint
+stores only a BLAKE2b hash of the secret (libsodium) and compares it in constant time;
+the token is printed once, to whoever created it. Creating one is approved in Flint's
+window **every time**, with presence, and no grant or token covers it, so an approved
+agent cannot turn its hour into a month. A request with `FLINT_TOKEN` is decided by the
+token alone and refused at once outside its scope, after it expires (90 days at most) or
+once revoked. A token never unlocks the vault.
+
+The **activity log**, in the vault, records every command a caller ran or changed through
+Flint and every request refused: when, which program (and token), the host and the
+command, never a flag's value or a secret. Allowed reads are not recorded, so a synced
+vault is not rewritten by every `host list`. It keeps the newest 10,000 entries. Read it
+in **Settings → Access**.
+
 What a grant does not stop: a program running as you that is a **child of an approved
 program** shares its grant, and a program that can control the approved one (debug it,
 type into its terminal) can act through it. [Limits today](/guides/ai-agents/#limits-today)
@@ -85,17 +100,15 @@ shows how to narrow what an agent can reach.
 The access decision moves further into Flint itself, the same on macOS, Linux and
 Windows:
 
-- **Tokens** for programs no person or agent starts (a cron job, CI): `flint token
-  create`, scoped like a grant, shown once, stored hashed in the vault.
 - **Closed to the menu bar or tray**, Flint keeps serving approved callers but locks its
   **window**: opening it asks for the master password or Touch ID.
 - **Remember on this computer** becomes a choice at unlock, off by default, with the risk
   in plain words: it lets Flint reopen without the master password.
 - **`sudo` you approve.** `flint exec --sudo` shows you the exact command; Flint types the
   password only after you allow it.
-- **An activity log** of what each approved caller ran.
 
 Done so far: Flint holds the unlocked vault, the CLI (`connect` and `exec` included) runs
-through it, a locked vault makes the window ask, the vault locks on its own, and every
-caller is approved in Flint's window with presence. The
+through it, a locked vault makes the window ask, the vault locks on its own, every
+caller is approved in Flint's window with presence, tokens serve scheduled jobs, and an
+activity log in the vault shows what callers ran. The
 design and the reasons behind it are in the repository: `docs/vault-access-model.md`.

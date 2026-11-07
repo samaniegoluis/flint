@@ -1,0 +1,295 @@
+package domain
+
+import "core:str"
+
+// Tokens and the activity log (milestone 12b, D-040, D-046, Principle 12).
+//
+// A **token** is a grant with a secret, for a program that is not a child of a
+// terminal the owner approved (a cron job, a launchd agent, a CI runner on this
+// machine). It lives in the vault, so it outlives the app; only a hash of its secret
+// is stored (Principle 4, through libsodium in the application layer). The text a
+// program holds is `flint_<id>_<secret>`: `id` finds the row, `secret` proves it.
+// A token never unlocks a vault and never creates another token.
+//
+// The **activity log** records what callers were allowed to run or change, and every
+// request refused, in the vault. Allowed reads are not recorded: a synced vault would
+// be rewritten by every `host list`.
+
+TOKEN_PREFIX: str = "flint_"
+// Hex characters of a token's id (8 bytes) and secret (32 bytes).
+TOKEN_ID_HEX: usize = 16
+TOKEN_SECRET_HEX: usize = 64
+// Domain separation for the hash of a token's secret.
+TOKEN_HASH_CONTEXT: str = "flint/token/v1:"
+
+// How long a token lasts. There is no "never": a token on disk somewhere ends.
+TOKEN_TTLS: []str = ["15m", "1h", "4h", "1d", "7d", "30d", "90d"]
+TOKEN_DEFAULT_TTL: str = "1d"
+TOKEN_NAME_MAX: usize = 64
+
+TOKEN_ACTIVE: str = "active"
+TOKEN_EXPIRED: str = "expired"
+TOKEN_REVOKED: str = "revoked"
+
+// Times are Unix seconds (the wall clock): a token's expiry must mean the same
+// after the app restarts.
+type Token struct {
+    id:         str         `json:"id"`
+    name:       str         `json:"name"`
+    // Hex of the BLAKE2b hash of TOKEN_HASH_CONTEXT ‖ id ‖ ":" ‖ secret.
+    hash:       str         `json:"hash"`
+    scope:      AccessScope `json:"scope"`
+    read:       bool        `json:"read"`
+    exec:       bool        `json:"exec"`
+    write:      bool        `json:"write"`
+    created_at: i64         `json:"created_at"`
+    expires_at: i64         `json:"expires_at"`
+    // 0 while not revoked.
+    revoked_at: i64         `json:"revoked_at"`
+}
+
+// A token's text split in two. `ok` is false for anything not shaped like one.
+type TokenText struct {
+    ok:     bool
+    id:     str
+    secret: str
+}
+
+fn is_lower_hex(s: str) -> bool {
+    // A method on a string literal emits invalid C++ (CF-094).
+    digits: str = "0123456789abcdef"
+    for i in 0..s.len() {
+        ch := s.substr(i, 1)
+        if !digits.contains(ch) {
+            return false
+        }
+    }
+    return true
+}
+
+fn split_token_text(text: str) -> TokenText {
+    bad := TokenText{ ok: false, id: "", secret: "" }
+    t := str.trim(text)
+    if !t.starts_with(TOKEN_PREFIX) || t.len() != TOKEN_PREFIX.len() + TOKEN_ID_HEX + 1 + TOKEN_SECRET_HEX {
+        return bad
+    }
+    id := t.substr(TOKEN_PREFIX.len(), TOKEN_ID_HEX)
+    if t.substr(TOKEN_PREFIX.len() + TOKEN_ID_HEX, 1) != "_" {
+        return bad
+    }
+    secret := t.substr(TOKEN_PREFIX.len() + TOKEN_ID_HEX + 1)
+    if !is_lower_hex(id) || !is_lower_hex(secret) {
+        return bad
+    }
+    return TokenText{ ok: true, id: id, secret: secret }
+}
+
+fn token_text(id: str, secret: str) -> str {
+    return TOKEN_PREFIX + id + "_" + secret
+}
+
+// What the hash is taken over.
+fn token_hash_input(id: str, secret: str) -> str {
+    return TOKEN_HASH_CONTEXT + id + ":" + secret
+}
+
+fn token_ttl_seconds(ttl: str) -> i64! {
+    if ttl == "15m" {
+        return 15 * 60
+    }
+    if ttl == "1h" {
+        return 3600
+    }
+    if ttl == "4h" {
+        return 4 * 3600
+    }
+    if ttl == "1d" {
+        return 86400
+    }
+    if ttl == "7d" {
+        return 7 * 86400
+    }
+    if ttl == "30d" {
+        return 30 * 86400
+    }
+    if ttl == "90d" {
+        return 90 * 86400
+    }
+    return error(coded(ERR_INVALID, "--ttl must be one of 15m, 1h, 4h, 1d, 7d, 30d, 90d"))
+}
+
+fn token_status(t: Token, now_s: i64) -> str {
+    if t.revoked_at > 0 {
+        return TOKEN_REVOKED
+    }
+    if now_s >= t.expires_at {
+        return TOKEN_EXPIRED
+    }
+    return TOKEN_ACTIVE
+}
+
+// A token's name: what `token revoke` and the window call it.
+fn check_token_name(name: str) -> void! {
+    n := str.trim(name)
+    if n.len() == 0 {
+        return error(coded(ERR_USAGE, "a token needs a name: --name <name>"))
+    }
+    if n.len() > TOKEN_NAME_MAX {
+        return error(coded(ERR_INVALID, "a token's name is at most {TOKEN_NAME_MAX} characters"))
+    }
+    if n.starts_with(TOKEN_PREFIX) {
+        return error(coded(ERR_INVALID, "a token's name may not start with {TOKEN_PREFIX}"))
+    }
+}
+
+// The grant a token stands for, so one rule decides what grants and tokens cover.
+fn token_as_grant(t: Token, vault_id: str) -> Grant {
+    return Grant{ id: t.id, vault_id: vault_id, anchor_pid: 0, anchor_started: 0, label: t.name, scope: t.scope, read: t.read, exec: t.exec, write: t.write, created_ms: 0, expires_ms: 0, duration: "" }
+}
+
+// Whether active token `t` allows `need` at `now_s`. A token never creates a token.
+fn token_covers(t: Token, vault_id: str, need: AccessNeed, cat: Catalog, now_s: i64) -> bool {
+    if token_status(t, now_s) != TOKEN_ACTIVE || need.action == ACCESS_TOKEN {
+        return false
+    }
+    return grant_covers(token_as_grant(t, vault_id), vault_id, need, cat, 0)
+}
+
+// The token with `id`, or the one live token named `name` (case ignored).
+fn find_token(tokens: []Token, key: str, now_s: i64) -> Token? {
+    for t in tokens {
+        if t.id == key {
+            return t
+        }
+    }
+    for t in tokens {
+        if token_status(t, now_s) == TOKEN_ACTIVE && str.to_lower(t.name) == str.to_lower(str.trim(key)) {
+            return t
+        }
+    }
+    return none
+}
+
+// What the approval window shows for `token create`: the token as the owner reads
+// it. `name` is "" for any other request.
+type TokenAsk struct {
+    name:    str `json:"name"`
+    allows:  str `json:"allows"`
+    reaches: str `json:"reaches"`
+    ttl:     str `json:"ttl"`
+}
+
+fn no_token_ask() -> TokenAsk {
+    return TokenAsk{ name: "", allows: "", reaches: "", ttl: "" }
+}
+
+// ---- Activity log -------------------------------------------------------------------
+
+// The log keeps this many entries; older ones are dropped as new ones arrive.
+ACTIVITY_KEEP: i64 = 10000
+
+// How the request was allowed (or would have been).
+ACTIVITY_VIA_GRANT: str = "grant"
+ACTIVITY_VIA_TOKEN: str = "token"
+ACTIVITY_VIA_WINDOW: str = "window"
+
+ACTIVITY_ALLOWED: str = "allowed"
+ACTIVITY_DENIED: str = "denied"
+ACTIVITY_TIMEOUT: str = "timeout"
+
+type ActivityEntry struct {
+    id:      i64 `json:"id"`
+    // Unix seconds.
+    at:      i64 `json:"at"`
+    // "flint, started by Claude Code", or the token's name.
+    caller:  str `json:"caller"`
+    via:     str `json:"via"`
+    token:   str `json:"token"`
+    action:  str `json:"action"`
+    // The host alias at the time ("" when the command names none).
+    host:    str `json:"host"`
+    command: str `json:"command"`
+    outcome: str `json:"outcome"`
+}
+
+// Whether an allowed request with `need` goes into the log: everything but reading.
+// A refused request always does.
+fn activity_logged(need: AccessNeed) -> bool {
+    return need.action != ACCESS_READ
+}
+
+// ---- Tests ------------------------------------------------------------------------
+
+fn test_token(scope: AccessScope, read: bool, exec: bool, write: bool) -> Token {
+    return Token{ id: "00112233aabbccdd", name: "backup", hash: "", scope: scope, read: read, exec: exec, write: write, created_at: 1000, expires_at: 2000, revoked_at: 0 }
+}
+
+test "a token's text splits into id and secret" {
+    id := "00112233aabbccdd"
+    secret := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    t := split_token_text(token_text(id, secret))
+    assert(t.ok)
+    assert_eq(t.id, id)
+    assert_eq(t.secret, secret)
+    assert(split_token_text(" " + token_text(id, secret) + "\n").ok)
+    assert(!split_token_text("").ok)
+    assert(!split_token_text("flint_" + id).ok)
+    assert(!split_token_text("flint_" + id + "-" + secret).ok)
+    assert(!split_token_text("flint_" + id + "_" + secret + "0").ok)
+    assert(!split_token_text("flint_" + id + "_" + str.to_upper(secret)).ok)
+    assert(!split_token_text("tlint_" + id + "_" + secret).ok)
+}
+
+test "token durations" {
+    assert_eq(try token_ttl_seconds("15m"), 900)
+    assert_eq(try token_ttl_seconds("1d"), 86400)
+    assert_eq(try token_ttl_seconds("90d"), 90 * 86400)
+    assert(!token_ttl_seconds("never").has_value())
+    assert(!token_ttl_seconds("lock").has_value())
+}
+
+test "a token ends on expiry and on revoke" {
+    mut t := test_token(AccessScope{ all: true, groups: [], hosts: [] }, true, false, false)
+    assert_eq(token_status(t, 1999), TOKEN_ACTIVE)
+    assert_eq(token_status(t, 2000), TOKEN_EXPIRED)
+    t.revoked_at = 1500
+    assert_eq(token_status(t, 1600), TOKEN_REVOKED)
+}
+
+test "a token covers what a grant with its scope would" {
+    cat := test_catalog()
+    t := test_token(AccessScope{ all: false, groups: [], hosts: ["h-api"] }, true, true, false)
+    assert(token_covers(t, "v1", AccessNeed{ action: ACCESS_READ, host: "" }, cat, 1500))
+    assert(token_covers(t, "v1", run_need("api-01"), cat, 1500))
+    assert(!token_covers(t, "v1", run_need("lab-01"), cat, 1500))
+    assert(!token_covers(t, "v1", AccessNeed{ action: ACCESS_WRITE, host: "" }, cat, 1500))
+    assert(!token_covers(t, "v1", run_need("api-01"), cat, 2000))
+    all := test_token(AccessScope{ all: true, groups: [], hosts: [] }, true, true, true)
+    assert(token_covers(all, "v1", AccessNeed{ action: ACCESS_WRITE, host: "" }, cat, 1500))
+    // Never another token, whatever it allows.
+    assert(!token_covers(all, "v1", AccessNeed{ action: ACCESS_TOKEN, host: "" }, cat, 1500))
+}
+
+test "tokens are found by id, or by the name of a live one" {
+    mut a := test_token(AccessScope{ all: true, groups: [], hosts: [] }, true, false, false)
+    mut b := a
+    b.id = "ffffffffffffffff"
+    a.revoked_at = 1200
+    list := [a, b]
+    assert_eq((find_token(list, "00112233aabbccdd", 1500) or b).id, a.id)
+    assert_eq((find_token(list, "Backup", 1500) or a).id, b.id)
+    assert(!find_token(list, "nightly", 1500).has_value())
+}
+
+test "token names" {
+    assert(check_token_name("nightly backup").has_value())
+    assert(!check_token_name("  ").has_value())
+    assert(!check_token_name("flint_x").has_value())
+}
+
+test "reads stay out of the activity log" {
+    assert(!activity_logged(AccessNeed{ action: ACCESS_READ, host: "" }))
+    assert(activity_logged(run_need("api-01")))
+    assert(activity_logged(AccessNeed{ action: ACCESS_WRITE, host: "" }))
+    assert(activity_logged(AccessNeed{ action: ACCESS_TOKEN, host: "" }))
+}

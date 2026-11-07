@@ -125,6 +125,24 @@ adds only what is missing. A wrong Tether password exits with `wrong_password`, 
 that is not a Tether vault with `invalid`, a Tether schema Flint does not know with
 `unsupported`. See [Moving from Tether](/guides/from-tether/).
 
+### Tokens
+
+| Command | What it does |
+|---|---|
+| `token create --name <name> --allow <actions> [--hosts <list> \| --all] [--ttl <ttl>]` | Ask Flint to create a token for a program it cannot ask (cron, launchd, CI). Flint's window asks you to approve it, every time; the token is printed once, alone on stdout |
+| `token list` | Every token: id, name, what it allows, which hosts, status (`active`, `expired`, `revoked`) and until when |
+| `token revoke <name\|id>` | End a token at once. Revoked tokens stay listed, so the activity log can still name them |
+
+`--allow` takes `read`, `exec` and `write`, comma-separated; `write` needs `--all`.
+`--hosts` takes host aliases and `@group` paths, comma-separated, and may repeat; reading
+alone needs no hosts. `--ttl` is `15m`, `1h`, `4h`, `1d` (default), `7d`, `30d` or `90d`.
+`token create` runs only in Flint: without it, it fails with `locked`; with `FLINT_TOKEN`
+set it fails with `denied`. `token list` and `token revoke` also work with the master
+password typed for one command. With `--json`, `create` prints `{token, secret}` and
+`list` an array of `{id, name, all, groups, hosts, read, exec, write, created_at,
+expires_at, revoked_at, status}` (Unix seconds); no output ever carries a token's hash.
+See [Tokens for scheduled jobs](/guides/ai-agents/#tokens-for-scheduled-jobs).
+
 ## Secrets
 
 Flint never takes a secret from a command-line argument or an environment variable, where
@@ -135,6 +153,10 @@ two places:
   unlocked in the Flint app (for that one command; nothing is kept), or a host/credential
   password when you pass `--password`.
 - **Stdin**, with a `--*-stdin` flag. This is for scripts and agents.
+
+The one exception is `FLINT_TOKEN`: a scheduled job has neither a terminal nor a stdin to
+spare, and a token is scoped, expires and can be revoked, unlike a password. Set it only
+in the job's own environment, from its secret store.
 
 When a command takes several secrets on stdin, they are read in this order:
 
@@ -188,7 +210,7 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 12 | `auth` | The server accepted none of the auth methods |
 | 13 | `network` | A host could not be reached, or the connection dropped |
 | 14 | `timeout` | `flint exec` ran past `--exec-timeout` |
-| 15 | `denied` | The owner denied this program in Flint's window, or its grant does not cover the command (see [Approve a program](/guides/ai-agents/#approve-a-program)) |
+| 15 | `denied` | The owner denied this program in Flint's window, or its grant or token does not cover the command; a token that is revoked, expired or wrong (see [Approve a program](/guides/ai-agents/#approve-a-program)) |
 | 16 | `approval_timeout` | Nobody answered Flint's approval window within two minutes |
 
 The codes are stable: scripts can rely on them.
@@ -208,6 +230,7 @@ nothing on stdout and a JSON error on stderr.
 |---|---|
 | `FLINT_CONFIG_DIR` | Folder for the recent-vault list and the open app's socket (see [Vaults](/guides/vaults/#flint-holds-the-unlocked-vault)) |
 | `FLINT_APP` | The Flint app `flint` starts when a locked vault needs unlocking: a path to `Flint` or `Flint.app`. `off` never starts it |
+| `FLINT_TOKEN` | A token from `flint token create`: the request is allowed by it alone, or refused with `denied`, and Flint never asks. The one secret Flint reads from the environment, since a scheduled job has no terminal |
 | `FLINT_KEYCHAIN=off` | For the app: never cache vault keys, always ask for the master password. The CLI never reads the keychain |
 | `SSH_AUTH_SOCK` | The SSH agent to try after the vault's keys and passwords |
 | `TERM` | The terminal type `flint connect` asks the server for (default `xterm-256color`) |

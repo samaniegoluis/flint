@@ -102,6 +102,39 @@ ALTER TABLE hosts ADD COLUMN initial_command TEXT NOT NULL DEFAULT '';
 ALTER TABLE hosts ADD COLUMN keep_shell INTEGER NOT NULL DEFAULT 1;
 ` })
 
+    // 004: tokens and the activity log (milestone 12b, D-040, D-046). A token is a
+    // grant handed to a program: only the hash of its secret is kept, and it is
+    // revoked, never deleted, so the log can still name it. Scopes are comma lists of
+    // group and host ids. Times are Unix seconds. The log holds what callers were
+    // allowed to run or refused (never reads), the newest ACTIVITY_KEEP entries.
+    list.push(Migration{ version: 4, name: "tokens and activity log", sql: `
+CREATE TABLE tokens (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    scope_all INTEGER NOT NULL,
+    scope_groups TEXT NOT NULL DEFAULT '',
+    scope_hosts TEXT NOT NULL DEFAULT '',
+    allow_read INTEGER NOT NULL,
+    allow_exec INTEGER NOT NULL,
+    allow_write INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    revoked_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    caller TEXT NOT NULL,
+    via TEXT NOT NULL,
+    token_id TEXT NOT NULL DEFAULT '',
+    action TEXT NOT NULL,
+    host TEXT NOT NULL DEFAULT '',
+    command TEXT NOT NULL,
+    outcome TEXT NOT NULL
+);
+` })
+
     return list
 }
 

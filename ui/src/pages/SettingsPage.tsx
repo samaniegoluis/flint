@@ -48,7 +48,7 @@ export function SettingsPage({ section, setSection, onLock, onConfirm }: {
           {section === 'terminal' && <TerminalSettings />}
           {section === 'shortcuts' && <Shortcuts />}
           {section === 'vault' && <VaultSettings onLock={onLock} onConfirm={onConfirm} />}
-          {section === 'access' && <AccessSettings />}
+          {section === 'access' && <AccessSettings onConfirm={onConfirm} />}
         </div>
       </div>
     </section>
