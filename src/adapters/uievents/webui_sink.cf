@@ -19,7 +19,7 @@ type TerminalClosed struct {
 }
 
 type WebuiEventSink struct {
-    app: webui.App `json:"-"`
+    app: webui.App
 }
 
 fn new_webui_event_sink(app: webui.App) -> WebuiEventSink {

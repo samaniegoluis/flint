@@ -31,8 +31,7 @@ type JsonRecentStore struct {
 // ~/Library/Application Support/Flint on macOS and $XDG_CONFIG_HOME/flint
 // (default ~/.config/flint) on Linux.
 fn flint_config_dir() -> str {
-    // Typed: the checker takes `os.getenv` for an optional (CF-063).
-    override: str = os.getenv("FLINT_CONFIG_DIR")
+    override := os.getenv("FLINT_CONFIG_DIR")
     if override.len() > 0 {
         return override
     }

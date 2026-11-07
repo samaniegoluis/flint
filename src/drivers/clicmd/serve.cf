@@ -293,8 +293,7 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
     defer conn.close()
     mut term := new_stdio_terminal()
     size := term.term_size()
-    // Typed: the checker takes `os.getenv` for an optional (CF-063).
-    mut term_name: str = os.getenv("TERM")
+    mut term_name := os.getenv("TERM")
     if term_name.len() == 0 {
         term_name = "xterm-256color"
     }
@@ -402,8 +401,7 @@ fn ask_app_state(conn: IpcConn, kind: str, vault: str, caller: str) -> AppState!
 // Where the desktop app is: $FLINT_APP (`off` never starts it), else the platform's
 // usual place.
 fn app_launch_command() -> []str {
-    // Typed: the checker takes `os.getenv` for an optional (CF-063).
-    override: str = os.getenv("FLINT_APP")
+    override := os.getenv("FLINT_APP")
     if override.len() > 0 {
         if override.ends_with(".app") {
             return ["open", "-a", override]
@@ -426,8 +424,7 @@ fn app_launch_command() -> []str {
 // Starts Flint, detached, so it outlives this command. False when it could not be
 // started.
 fn start_app() -> bool {
-    // Typed: the checker takes `os.getenv` for an optional (CF-063).
-    mode: str = os.getenv("FLINT_APP")
+    mode := os.getenv("FLINT_APP")
     if mode == "off" {
         return false
     }

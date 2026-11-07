@@ -1,7 +1,6 @@
 package uievents
 
-import "core:rand"
-import "core:encoding/hex"
+import "core:os"
 import "../../ports"
 import "../../domain"
 
@@ -14,11 +13,11 @@ test "OsClipboard satisfies the Clipboard port" {
     assert(accepts_clipboard(mut c))
 }
 
-// cfire has no os.getpid (CF-064), so a random tag keeps each run apart.
+// The pid keeps each run apart.
 // macOS: a private named pasteboard, so the test never touches the real clipboard.
 // Linux: GTK's clipboard needs a display; without one the copy fails with `io`.
 test "a copied secret is concealed, and cleared only if nothing was copied since" {
-    tag := hex.encode(rand.bytes(4))
+    tag := os.getpid()
     board := "net.flint.test.clipboard.{tag}"
     mut c := OsClipboard{ board: board }
     r := c.clipboard_copy_secret("s3cret-value", 0)
@@ -43,7 +42,7 @@ test "a copied secret is concealed, and cleared only if nothing was copied since
 }
 
 test "text a remote program copied (OSC 52) is plain, not concealed" {
-    tag := hex.encode(rand.bytes(4))
+    tag := os.getpid()
     board := "net.flint.test.clipboard-text.{tag}"
     mut c := OsClipboard{ board: board }
     r := c.clipboard_copy_text("from neovim ✓")

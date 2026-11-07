@@ -110,9 +110,7 @@ fn tether_addr_to_flint(addr: str) -> str {
     if colon <= 0 || colon == i64(bytes.len()) - 1 {
         return ""
     }
-    // A slice is a string view and passes to no `str` parameter: copy it (CF-060).
-    head := addr[0..usize(colon)]
-    mut host := "{head}"
+    mut host := str(addr[0..usize(colon)])
     port_text := addr[usize(colon) + 1..addr.len()]
     mut port: i64 = 0
     for b in port_text.bytes() {

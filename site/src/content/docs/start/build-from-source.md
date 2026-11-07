@@ -12,22 +12,18 @@ Security.framework.
 
 ## 1. Install cfire
 
-Flint is built against cfire commit `2d8613d`. cfire's installer builds whatever its `main`
-points to and cannot pick a commit, so build that commit from a checkout instead:
+Flint is built against cfire commit `43431f2`. cfire's installer takes the commit in
+`CFIRE_VERSION`:
 
 ```sh
-git clone https://github.com/gsandoval/cfire && cd cfire
-git checkout 2d8613d
-make build
-mkdir -p ~/.local/bin ~/.cfire
-rm -f ~/.local/bin/cfire && cp cfire ~/.local/bin/cfire
-rm -rf ~/.cfire/runtime && cp -R runtime ~/.cfire/runtime
-cfire --version     # cfire 0.9.5 (2d8613d, …)
-cfire doctor
+rm -rf ~/.cfire/runtime     # the installer copies over it and leaves stale headers
+curl -fsSL https://raw.githubusercontent.com/gsandoval/cfire/43431f2/docs/install.sh \
+  | CFIRE_VERSION=43431f2 sh
+cfire --version     # cfire 0.9.5 (43431f2, …)
 ```
 
-On macOS, remove the old binary before copying the new one (`rm`, then `cp`): copying
-over an existing signed binary makes macOS kill the new one on launch.
+It installs `cfire` into `~/.local/bin` and its runtime into `~/.cfire/runtime`, then runs
+`cfire doctor`.
 
 ## 2. Install the native libraries
 
@@ -43,30 +39,32 @@ brew install libssh libsodium sqlcipher argon2 pkg-config
 sudo apt install libssh-dev libsodium-dev libsqlcipher-dev libargon2-dev libsecret-1-dev pkg-config openssh-server
 ```
 
+#### simdjson 4 (Debian, Ubuntu 24.04, Zorin OS 18)
+
+cfire refuses a system simdjson older than 4 when it builds with clang 19 or later
+(`system simdjson 3.12.3 is incompatible with Clang 19`), and Debian and Ubuntu ship 3.x.
+Ubuntu's 3.6 really does fail to compile; Debian's 3.12 builds, but cfire refuses it too.
+Build simdjson 4 as a static library in your home folder (no `sudo`) and point the build
+at it:
+
+```sh
+mkdir -p ~/.local/src/simdjson ~/.local/include ~/.local/lib && cd ~/.local/src/simdjson
+for f in simdjson.h simdjson.cpp; do
+  curl -fsSLO https://raw.githubusercontent.com/simdjson/simdjson/v4.6.6/singleheader/$f
+done
+clang++ -O2 -std=c++17 -DSIMDJSON_THREADS_ENABLED=1 -pthread -c simdjson.cpp
+ar rcs ~/.local/lib/libsimdjson.a simdjson.o && cp simdjson.h ~/.local/include/
+export CPLUS_INCLUDE_PATH=~/.local/include LIBRARY_PATH=~/.local/lib   # before cfire build
+```
+
 #### Ubuntu 24.04 and Zorin OS 18
 
-Flint builds there with libssh 0.10, with two adjustments in your home folder (no `sudo`):
+Flint builds there with libssh 0.10. The `clang-19` package installs `clang++-19` only,
+and cfire runs `clang++`, so link it by name before building simdjson:
 
-- **`clang++` by name.** The `clang-19` package installs `clang++-19` only, and cfire runs
-  `clang++`:
-
-  ```sh
-  ln -sf /usr/bin/clang++-19 ~/.local/bin/clang++
-  ```
-
-- **A newer simdjson.** Ubuntu's simdjson 3.6 does not compile with clang 19
-  (`no member named 'print_newline'`). Build simdjson 4 as a static library and point the
-  build at it:
-
-  ```sh
-  mkdir -p ~/.local/src/simdjson ~/.local/include ~/.local/lib && cd ~/.local/src/simdjson
-  for f in simdjson.h simdjson.cpp; do
-    curl -fsSLO https://raw.githubusercontent.com/simdjson/simdjson/v4.6.6/singleheader/$f
-  done
-  clang++-19 -O2 -std=c++17 -DSIMDJSON_THREADS_ENABLED=1 -pthread -c simdjson.cpp
-  ar rcs ~/.local/lib/libsimdjson.a simdjson.o && cp simdjson.h ~/.local/include/
-  export CPLUS_INCLUDE_PATH=~/.local/include LIBRARY_PATH=~/.local/lib   # before cfire build
-  ```
+```sh
+ln -sf /usr/bin/clang++-19 ~/.local/bin/clang++
+```
 
 With libssh 0.10, a command killed by a signal still exits 255, but `flint exec --json`
 reports an empty `signal`: 0.10 does not give its name.
@@ -82,9 +80,8 @@ cfire build
 ```
 
 `scripts/env.sh` adds Flint's own pkg-config folder (`src/adapters/pkgconfig/<os>/`) to
-`PKG_CONFIG_PATH`. The adapters reach their native headers and link flags through it:
-cfire's `build.cf` can declare frameworks, but only for `cfire build` of an executable, not
-for `cfire test` of a package. Without it, `cfire build` fails to find `flint-native`.
+`PKG_CONFIG_PATH`. The adapters reach their native headers, per-OS link flags and libsecret
+through it. Without it, `cfire build` fails to find `flint-native`.
 
 The output lists the library versions that were linked:
 

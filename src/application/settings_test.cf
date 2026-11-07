@@ -29,7 +29,7 @@ test "settings are validated on save and repaired field by field on load" {
     assert(!fixed.reopen_last_vault)
     assert_eq(fixed.term_theme, "aura")
 
-    // A settings.json from before terminal themes reads the field as "" (CF-057).
+    // An empty theme (a hand-edited file) is repaired to the default.
     mut old := default_settings()
     old.accent = "iris"
     old.term_theme = ""
