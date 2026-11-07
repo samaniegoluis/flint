@@ -52,7 +52,7 @@ longer needs are gone (CF-057, 060, 063, 064, 066, 067, 078).
 | `deferred upstream` | 001 (a real WebView2), 081 (Unix sockets); 010's networking and sysroot items |
 | `not adopted` | 006, 007, 008, 053: cfire's modules now fail closed, but Flint's adapters do more |
 | `answered, untested` | 004, 029, 045, 046, 050 |
-| **New** | CF-086..CF-091, below |
+| **New** | CF-086..CF-091, below; CF-092 (milestone 12) |
 
 **Most urgent of the new ones:**
 
@@ -1620,3 +1620,16 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Workaround:** declare the type (`need: [][]str = …`, `src/drivers/clicmd/serve_test.cf`).
 - **Ideal:** infer `[][]str` from the elements, as for a flat literal, or ask for the type in
   the checker.
+
+### CF-092 · missing · `open`: no way to read another process's parent, start time or executable
+- **Repro (43431f2):** `cfire inspect core:os` has `getpid`-style calls for the running
+  process only; nothing returns a pid's parent, start time, executable path or argv. Flint
+  needs them for the caller of its socket (milestone 12): the peer pid comes from the
+  kernel (CF-081), then its chain of parents up to pid 1 names who asked ("`flint`, started
+  by Claude Code") and pins a grant to that process by pid and start time.
+- **Workaround:** `src/adapters/ipc/native/flint_peer.hpp`: macOS `proc_pidinfo`
+  (`PROC_PIDTBSDINFO`), `proc_pidpath`, `sysctl(KERN_PROCARGS2)`; Linux `/proc/<pid>/stat`,
+  `/proc/<pid>/exe`, `/proc/<pid>/cmdline`.
+- **Ideal:** `os.process_info(pid) -> ProcessInfo?` with `ppid`, `start_time`, `exe` and
+  `argv`, on macOS, Linux and Windows (`NtQueryInformationProcess`,
+  `QueryFullProcessImageName`).
