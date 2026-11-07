@@ -31,3 +31,10 @@ button.panel:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .activity-table td.nowrap { white-space: nowrap; }
 .activity-table td.err { color: var(--danger); }
 .activity-table td.mono { font-size: var(--fs-xs); }
+
+/* `exec --sudo` in the approval window (milestone 13): each argument a chip, so a
+   reader sees where one ends; provisional until the Claude Design run (17a). */
+.argv { display: flex; flex-wrap: wrap; gap: 4px; }
+.argv-chip { padding: 1px 6px; border-radius: 4px; background: var(--surface-active); white-space: pre-wrap; word-break: break-all; }
+.hint.warn { color: var(--warning); }
+.activity-badge { display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 4px; font-size: var(--fs-xs); background: var(--danger-subtle); color: var(--danger); }

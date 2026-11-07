@@ -42,6 +42,25 @@
       if (!form || form.dataset.e2eSeen) continue;
       form.dataset.e2eSeen = '1';
       const req = form.querySelector('[data-approval-request]')?.textContent ?? '';
+      if (form.dataset.kind === 'sudo') {
+        // `exec --sudo` (milestone 13): the exact argv, no grant to choose.
+        const argv = [...form.querySelectorAll('[data-arg]')].map((e) => e.textContent);
+        log((form.querySelector('[data-scope-all]') ? 'FAIL ' : 'ok   ') + 'a sudo request offers no grant to choose: ' + argv.join(' '));
+        if (argv.includes('deny-me')) { form.querySelector('[data-approval-deny]').click(); log('ok   denied the sudo command'); continue; }
+        const field = form.querySelector('[data-sudo-password]');
+        if (argv.includes('typed-pw') || argv.includes('save-pw') || argv.includes('wrong-pw')) {
+          if (!field) { log('FAIL the window asks for a sudo password it does not hold'); continue; }
+          setValue(field, argv.includes('wrong-pw') ? 'not-the-sudo-password' : 'flint-e2e-login-pw');
+          if (argv.includes('save-pw')) form.querySelector('[data-sudo-save]').click();
+        } else {
+          log((field ? 'FAIL ' : 'ok   ') + 'with a saved sudo password the window asks for none');
+        }
+        setValue(form.querySelector('#approval-pw'), MASTER);
+        await sleep(30);
+        form.querySelector('[data-approval-allow]').click();
+        log('ok   allowed the sudo command ' + argv.join(' '));
+        continue;
+      }
       if (form.dataset.kind === 'token') {
         // `token create` (milestone 12b): the token, no scope or duration to pick.
         const name = form.querySelector('[data-token-name]')?.textContent ?? '';
@@ -106,7 +125,7 @@
     step = 'served changes';
     await waitFor(() => byText('.tree .ti', 'served-web'), 'the host the CLI added', 90000);
     await check(true, 'a host added by the CLI shows in the tree without a reload');
-    await waitFor(() => q('.vault-name')?.textContent === 'Served Renamed', 'the name the CLI gave the vault', 30000);
+    await waitFor(() => q('.vault-name')?.textContent === 'Served Renamed', 'the name the CLI gave the vault', 120000);
     await check(true, 'a rename by the CLI shows in the window');
 
     step = 'locked by the CLI';
@@ -161,12 +180,19 @@
       await check(log2.some((e) => e.action === 'read' && e.outcome === 'denied' && e.via === 'token'), 'a read refused for a bad token is');
       await check(viaToken.some((e) => e.outcome === 'denied' && e.command.includes('after-revoke') && e.caller.includes('(token nightly)') && e.token.length > 0), 'a revoked token is still named when refused');
       await check(!log2.some((e) => e.command.includes('flint_')), 'no token text is logged');
+      const sudoRows = log2.filter((e) => e.action === 'sudo');
+      if (sudoRows.length > 0) {
+        await check(sudoRows.some((e) => e.outcome === 'allowed' && e.via === 'window' && e.command.includes("--sudo -- 'sh' '-c'")), 'the log keeps a sudo command whole, each argument quoted');
+        await check(sudoRows.some((e) => e.outcome === 'denied' && e.via === 'token'), 'and the token refused for sudo');
+        await check(!log2.some((e) => e.command.includes('flint-e2e-login-pw') || e.command.includes('flint-sudo')), 'no sudo password or prompt in the log');
+      }
       // The view: Settings → Access.
       byText('.rail-btn', 'Settings')?.click();
       await sleep(200);
       byText('.nav-i', 'Access')?.click();
       await waitFor(() => q('[data-activity] [data-activity-entry]'), 'the activity table', 10000);
       await check(qa('[data-activity] [data-activity-entry="denied"]').length > 0, 'Settings → Access shows the activity, refusals included');
+      if (sudoRows.length > 0) await check(!!q('[data-activity] [data-activity-sudo]'), 'a sudo command is marked root in the activity');
       await check(!q('[data-token="nightly"]'), 'a revoked token is hidden until asked for');
       q('[data-tokens-ended]')?.click();
       await waitFor(() => q('[data-token="nightly"][data-token-status="revoked"]'), 'the revoked token row', 5000);

@@ -4,7 +4,7 @@ import { buildTree } from './tree';
 
 const host = (alias: string, group = '', extra: Partial<HostView> = {}): HostView => ({
   alias, label: '', hostname: alias + '.lan', port: 22, user: '', group, tags: [], color: '', notes: '',
-  jump: '', credential: '', key: '', has_password: false, command: '', keep_shell: true, ...extra,
+  jump: '', credential: '', key: '', has_password: false, has_sudo_password: false, command: '', keep_shell: true, ...extra,
 });
 
 const groups = [

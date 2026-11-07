@@ -7,6 +7,10 @@
 // `flint token create` (milestone 12b) shows the token instead: its name, what it
 // allows, where and for how long, as the command asked. The owner allows or denies
 // that one request; it never becomes a grant.
+//
+// `flint exec --sudo` (milestone 13) shows the host, the login user and the exact
+// argv, one argument per chip. Allowed once, for that command; when Flint has no
+// password to type for sudo there, the window takes one, and may keep it for the host.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, on, toFlintError } from '../api/backend';
@@ -89,6 +93,8 @@ export function ApprovalDialog({ ap, presence, catalog, skew, onDone }: {
   });
   const [duration, setDuration] = useState<GrantDuration>('1h');
   const [password, setPassword] = useState('');
+  const [sudoPassword, setSudoPassword] = useState('');
+  const [saveSudo, setSaveSudo] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -102,12 +108,14 @@ export function ApprovalDialog({ ap, presence, catalog, skew, onDone }: {
     try {
       const s = await api.accessAnswer({
         id: ap.id, allow, duration, password: allow ? password : '',
+        sudo_password: allow ? sudoPassword : '', save_sudo_password: allow && saveSudo && !!sudoPassword,
         scope: scope === 'all' ? { all: true, groups: [], hosts: [] }
           : scope === 'group' ? { all: false, groups: [group], hosts: [] }
           : { all: false, groups: [], hosts: [host] },
         read: actions.read, exec: actions.exec, write: actions.write && scope === 'all',
       });
       setPassword('');
+      setSudoPassword('');
       onDone(s);
     } catch (err) {
       const e = toFlintError(err);
@@ -117,23 +125,49 @@ export function ApprovalDialog({ ap, presence, catalog, skew, onDone }: {
     }
   };
   const token = ap.token?.name ? ap.token : null;
-  const covers = token !== null || ((actions[ap.need.action as AccessAction]) && (ap.need.action !== 'write' || scope === 'all'));
+  const sudo = ap.sudo?.host ? ap.sudo : null;
+  const covers = token !== null || sudo !== null || ((actions[ap.need.action as AccessAction]) && (ap.need.action !== 'write' || scope === 'all'));
 
   return (
     <Modal label="Allow access to the vault" onClose={() => { if (!busy) answer(false); }} width={520} top={96} className="approval" scrimCloses={false}>
-      <form data-approval={ap.id} data-kind={token ? 'token' : 'grant'} onSubmit={(e) => { e.preventDefault(); answer(true); }}>
+      <form data-approval={ap.id} data-kind={sudo ? 'sudo' : token ? 'token' : 'grant'} onSubmit={(e) => { e.preventDefault(); answer(true); }}>
         <div className="modal-h">
           <span className="prompt-ic"><Icon name="lock" /></span>
           <div className="col grow" style={{ gap: 2 }}>
-            <h2>{token ? `${ap.label} wants to create a token` : `${ap.label} wants to use this vault`}</h2>
+            <h2>{sudo ? `${ap.label} wants to run a command as root on ${sudo.host}` : token ? `${ap.label} wants to create a token` : `${ap.label} wants to use this vault`}</h2>
             <span className="muted" style={{ fontSize: 'var(--fs-xs)' }} title={ap.chain.map((p) => `${p.pid} ${p.exe}`).join('\n')}>
               {chain.join(' → ')} · pid {ap.chain[0]?.pid ?? '?'}
             </span>
           </div>
         </div>
         <div className="modal-b">
-          <div className="panel mono" data-approval-request style={{ padding: 'var(--sp-2) var(--sp-3)', fontSize: 'var(--fs-sm)', wordBreak: 'break-all' }}>{ap.request}</div>
-          {token ? (
+          {!sudo && <div className="panel mono" data-approval-request style={{ padding: 'var(--sp-2) var(--sp-3)', fontSize: 'var(--fs-sm)', wordBreak: 'break-all' }}>{ap.request}</div>}
+          {sudo ? (
+            <>
+              <dl className="kv" data-sudo-ask>
+                <dt>Host</dt><dd data-sudo-host>{sudo.host}</dd>
+                <dt>As</dt><dd><span className="mono">{sudo.user}</span> → <span className="mono">root</span> (sudo)</dd>
+              </dl>
+              <div className="field">
+                <span className="label">Command, exactly as it will run</span>
+                <div className="panel mono argv" data-sudo-argv style={{ padding: 'var(--sp-2) var(--sp-3)', fontSize: 'var(--fs-sm)', maxHeight: 160, overflowY: 'auto' }}>
+                  {sudo.argv.map((a, i) => <span key={i} className="argv-chip" data-arg={i}>{a}</span>)}
+                </div>
+              </div>
+              {sudo.has_password ? (
+                <span className="hint row" style={{ gap: 6 }}><Icon name="lock" size="xs" />Flint types the sudo password it holds for {sudo.host} when sudo asks. The program never sees it.</span>
+              ) : (
+                <>
+                  <label className="field">
+                    <span className="label">Sudo password for {sudo.user} on {sudo.host}</span>
+                    <div className="input"><input id="approval-sudo-pw" type="password" autoComplete="off" value={sudoPassword} onChange={(e) => setSudoPassword(e.target.value)} data-sudo-password /></div>
+                  </label>
+                  <label className="check fit"><input type="checkbox" checked={saveSudo} onChange={(e) => setSaveSudo(e.target.checked)} data-sudo-save /><span>Save it for {sudo.host}</span></label>
+                </>
+              )}
+              <span className="hint warn row" style={{ gap: 6 }}><Icon name="alert" size="xs" />Runs as root, once. Nothing else is allowed by this.</span>
+            </>
+          ) : token ? (
             <>
               <dl className="kv" data-token-ask>
                 <dt>Name</dt><dd data-token-name>{token.name}</dd>
@@ -184,7 +218,7 @@ export function ApprovalDialog({ ap, presence, catalog, skew, onDone }: {
           <span className="muted grow" style={{ fontSize: 'var(--fs-xs)' }} data-approval-countdown>Denied automatically in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}</span>
           <button type="button" className="btn btn-ghost" data-approval-deny disabled={busy} onClick={() => answer(false)}>Deny<Key>esc</Key></button>
           <button type="submit" className="btn btn-primary" data-approval-allow disabled={busy || (presence === 'password' && !password)}>
-            {busy && presence !== 'password' ? `Confirm with ${presenceLabel(presence)}…` : 'Allow'}
+            {busy && presence !== 'password' ? `Confirm with ${presenceLabel(presence)}…` : sudo ? 'Run as root' : 'Allow'}
           </button>
         </div>
       </form>
