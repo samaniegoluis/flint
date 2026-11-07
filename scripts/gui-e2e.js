@@ -607,6 +607,10 @@
       await click('.rail-btn', 'Hosts');
       await waitForAsync(async () => (await uiState()).sidebar_open === false, 'the closed sidebar to be stored');
       await check(!q('.sidebar'), 'the Hosts button closes the sidebar, and that is remembered');
+      await click('.rail-btn', 'Settings');
+      await click('.rail-btn', 'Hosts');
+      await sleep(200);
+      await check(!q('.sidebar') && (await uiState()).sidebar_open === false, 'coming back from Settings keeps the sidebar closed');
       await click('.rail-btn', 'Hosts');
       await waitForAsync(async () => (await uiState()).sidebar_open === true, 'the open sidebar to be stored');
     } else {

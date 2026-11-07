@@ -30,7 +30,7 @@ can turn the reopening off in **Settings → Appearance → Window**.
 | Status bar | Lock state, the number of open sessions, **Lock** |
 
 Click **Hosts** again (or press <kbd>⌘B</kbd>) to hide the sidebar and give the terminal
-the whole width. Drag the sidebar's right edge to make it wider or narrower (200 to 400 px;
+the whole width; it stays hidden when you come back to **Hosts** from another view. Drag the sidebar's right edge to make it wider or narrower (200 to 400 px;
 double-click the edge for the default width, or focus it and use <kbd>←</kbd> <kbd>→</kbd>).
 Below about 1040 px of window width the sidebar starts hidden and opens over the terminal.
 

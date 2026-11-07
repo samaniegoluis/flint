@@ -137,8 +137,8 @@ export function Shell() {
 
   const showView = useCallback((v: View) => {
     if (v === 'hosts' && view === 'hosts') { setSidebarCollapsed((c) => !c); return; }
+    // Coming back to Hosts from another view keeps the sidebar as it was left.
     setView(v);
-    if (v === 'hosts') setSidebarCollapsed(false);
   }, [view, setSidebarCollapsed]);
 
   const cycleRegion = (dir: 1 | -1) => {
