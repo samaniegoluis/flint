@@ -1,6 +1,6 @@
 ---
 title: Vaults
-description: Create, open, lock and switch between encrypted vaults.
+description: Create, open, lock and switch between encrypted vaults, and how Flint holds the unlocked one.
 ---
 
 A **vault** is one file that holds your hosts, groups, SSH keys and credentials. The
@@ -26,65 +26,84 @@ There is no way to recover a vault whose master password is lost. Keep it in a p
 manager.
 :::
 
-## The keychain cache
+## Flint holds the unlocked vault
 
-When you create or unlock a vault, Flint stores the key derived from your master password
-in the OS keychain: Keychain on macOS, or the Secret Service (GNOME Keyring, KWallet) on
-Linux. From then on this machine opens the vault without a prompt. The password itself
-is never stored.
+An unlocked vault's key lives in the **running Flint app**, and only there. Everything
+else asks the app:
+
+- **The app** unlocks a vault with its master password. On launch it can reopen the last
+  vault without a prompt, from the key it saved in the OS keychain (Keychain on macOS,
+  the Secret Service on Linux). The password itself is never stored.
+- **The `flint` CLI** never reads that keychain. While Flint is open with the vault
+  unlocked, every command on that vault runs **inside the app**: the CLI hands it the
+  command line over a local socket and prints what comes back. `connect`, `exec` and
+  `host test` run there too, with your terminal, the prompts and the remote PTY relayed.
+  The output and exit codes are the same either way.
+- Otherwise the CLI asks for the master password **for that one command**, on your
+  terminal or from `--master-stdin`, and keeps nothing.
+- With **no terminal** (an agent, a script, a cron job) and no `--master-stdin`, `flint`
+  asks Flint to unlock: it starts the app if it is closed, the unlock screen names the
+  command (*"`flint exec web -- uptime` wants to use this vault"*), and the command fails
+  with `locked`. Unlock in the window and run it again.
 
 | Command | What it does |
 |---|---|
-| `flint vault unlock` | Asks for the master password and caches the key on this machine |
-| `flint vault lock` | Removes the cached key. The next command asks for the password again |
-| `flint vault status` | Shows whether the vault is locked, and what it holds when it is not |
+| `flint vault unlock` | Asks Flint to unlock the vault (starting it if needed) and waits up to 2 minutes for you to unlock it there |
+| `flint vault lock` | Locks the vault in Flint and removes any key cached on this machine |
+| `flint vault status` | Shows whether Flint holds the vault unlocked, and what it holds when it does |
 
-If no keychain is available (for example, a headless Linux box with no keyring daemon),
-Flint asks for the master password each time. To turn the cache off on purpose, set
-`FLINT_KEYCHAIN=off`.
+A command that needs a secret of its own (`--password`, `--passphrase`, Tether's master
+password, a host's password at login) asks for it in your terminal, and only sends it to
+Flint. The socket is `flint.sock` in the config folder, usable by you only; Flint closes
+any connection from another user before reading it.
 
-### What the cache protects, and what it does not
+If Flint has **another** vault open, a command on this one asks for its master password,
+or fails with `locked` (*"Flint has vault 'Work' open"*) when nobody can type it.
 
-The cached key opens the vault for **anyone and anything that runs Flint on this machine
-as you**: you in the app, you in a terminal, an AI agent you started, and any other
-program. That is what makes the CLI and agents work without a prompt, and it is also its
-limit.
+`FLINT_APP` tells `flint` where the app is when it is not in the usual place (a path to
+the `Flint` program or to `Flint.app`); `FLINT_APP=off` never starts it.
 
-| | macOS | Linux |
-|---|---|---|
-| Another program reads the cached key directly | Not without a dialog: the Keychain item belongs to Flint's binary | **Yes.** The Secret Service has no per-app access list, so any program in your session can read it |
-| Another program runs `flint` and uses the vault | Yes | Yes |
-| Someone at your unlocked computer opens Flint | Yes | Yes |
+### What this protects, and what it does not
+
+| | |
+|---|---|
+| A program reads the vault key from the keychain through `flint` | **No.** The CLI never reads it |
+| A program runs `flint` while the vault is unlocked in Flint | Yes, until Flint locks it. Approving each program in Flint's window is the next step ([Security model](/reference/security-model/)) |
+| A program runs `flint` while the vault is locked or Flint is closed | No. It gets `locked`, and Flint's window asks you |
+| On Linux, another program reads the app's cached key from the Secret Service | Yes: the Secret Service has no per-app access list. *Forget on this device* in **Settings → Vault** removes it, and the app then asks for the master password on each launch |
+| Someone at your unlocked computer opens Flint | Yes, while the vault is unlocked |
 
 On macOS, each new Flint build has a new code identity until releases are signed, so the
-first time it reads the cached key macOS asks whether Flint may use your confidential
-information. **Always Allow** asks for your login password and stops the dialog until the
-next build; **Deny** makes Flint ask for the master password instead.
+first time the app reads its cached key macOS asks whether Flint may use your
+confidential information. **Always Allow** asks for your login password and stops the
+dialog until the next build; **Deny** makes Flint ask for the master password instead.
 
-No program gets your passwords or keys this way: no `flint` command prints them. What it
-can do is run commands on your servers through `flint exec`. To narrow that today, see
-[Use Flint with an AI agent](/guides/ai-agents/#limits-today). Flint is moving to a model
-where it approves each program that asks for the vault, in its own window; the
-[Security model](/reference/security-model/) has the plan.
+No program gets your passwords or keys through `flint`: no command prints them. What it
+can do is run commands on your servers through `flint exec`. To narrow that, see
+[Use Flint with an AI agent](/guides/ai-agents/#limits-today).
 
-## The CLI and the open app
+## Locking
 
-While Flint is open with a vault unlocked, `flint` commands on **that** vault run inside
-the app: the CLI hands the command to Flint over a local socket, Flint runs it and sends
-back what it printed. The CLI reads no cached key and asks for no master password, and
-the output and exit codes are the same as when it works on its own. The app's window
-shows a change made from the CLI straight away.
+A vault locks **on its own**:
 
-| Runs in the open app | Still runs in the CLI on its own |
-|---|---|
-| `group`, `host` (except `host test`), `key`, `cred`, `known-host`, `import`, `vault status`, `vault rename` | `connect`, `exec`, `host test`, `vault create`, `open`, `unlock`, `lock`, `list`, `use`, `forget`, and any command on another vault |
+- after a time with nobody using it: no typing or clicking in Flint, no `flint` command.
+  **Settings → Vault → Lock after** sets it: 1, 5, 15 or 30 minutes, 1 hour (the
+  default), 4 hours, or never;
+- when the screen locks;
+- before the computer goes to sleep.
 
-A command that would ask for a secret (`--password`, `--passphrase`, Tether's master
-password) still asks for it in your terminal, before it goes to Flint.
+And when you choose: **Lock** in the status bar, ⌘L (Ctrl+Shift+L on Linux), the
+command palette, or `flint vault lock`.
 
-The socket is `flint.sock` in the config folder, readable and writable by you only, and
-Flint closes any connection from another user before reading it. With Flint closed, or
-with another vault open in it, the CLI opens the vault itself as before.
+Locking overwrites the vault key in memory. The window shows the lock screen, and the
+CLI gets `locked` until you unlock. **Open sessions keep running** behind the lock
+screen: they hold no key, and you find them as you left them. Once locked, the vault opens
+again **only with its master password**, never from the keychain, until Flint is
+restarted. **Close vault** on the lock screen ends its sessions instead.
+
+On Linux, Flint hears the screen lock and sleep from logind (`Lock`, `PrepareForSleep`)
+and from the desktop's screensaver (`org.freedesktop.ScreenSaver` or
+`org.gnome.ScreenSaver`). A desktop that sends none of them still locks on the idle time.
 
 ## Several vaults
 

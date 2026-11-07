@@ -532,7 +532,8 @@ test "a saved password is revealed or copied only by name, and the copy is clear
     assert_eq(err_code(copy_password(crypto, store, s, mut clip, "host", "web")), "not_found")
     assert_eq(clip.copies, 1)
 
-    // A session with the wrong secrets key cannot open it.
-    wrong := VaultSession{ path: s.path, name: s.name, secrets_key: [byte(9), byte(9), byte(9)], cached: false }
+    // A session with the wrong secrets key cannot open it. The key is derived from a
+    // random salt, so a fixed "wrong" byte could be the right one (1 run in 256).
+    wrong := VaultSession{ path: s.path, name: s.name, secrets_key: [byte(u8(s.secrets_key[0]) ^ u8(1)), byte(9), byte(9)], cached: false }
     assert(!reveal_password(crypto, store, wrong, "host", "bastion").has_value())
 }

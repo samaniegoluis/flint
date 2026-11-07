@@ -21,20 +21,21 @@ ldd ./build/gui/Flint | grep -E "crypto|ssh|sodium|sqlcipher|webkit" || true
 with_keyring() {
   dbus-run-session -- bash -c "printf flint-test | gnome-keyring-daemon --unlock --components=secrets >/dev/null && $1"
 }
+# The bus is private, so the D-Bus screen-lock test may send signals on it.
 echo "== tests (keychain: gnome-keyring)"
 with_keyring "PATH=\$PATH:/usr/sbin scripts/test.sh src"
-echo "== cli e2e (keychain: gnome-keyring)"
-with_keyring "scripts/cli-e2e.sh" | tee /tmp/e2e-keyring.log
-grep -q "keychain cache: True" /tmp/e2e-keyring.log
-echo "== cli e2e (no Secret Service: every command takes the master password)"
-scripts/cli-e2e.sh | tee /tmp/e2e-none.log
-grep -q "keychain cache: False" /tmp/e2e-none.log
+# The CLI never reads the keychain (D-042): one run, with a keyring present to show
+# it is not used.
+echo "== cli e2e"
+with_keyring "scripts/cli-e2e.sh" | tee /tmp/e2e.log
+grep -q "keychain cache: False" /tmp/e2e.log
 # The desktop app's end-to-end run opens the real GTK window under Xvfb
 # (scripts/gui-e2e.sh).
 echo "== desktop app end-to-end under Xvfb"
 PATH="$PATH:/usr/sbin" scripts/gui-e2e.sh | tee /tmp/gui-e2e.log
 grep -q "^e2e: pass" /tmp/gui-e2e.log
 # The CLI as a client of the running app, the app under Xvfb (scripts/serve-e2e.sh).
-echo "== CLI through the running app under Xvfb"
-scripts/serve-e2e.sh | tee /tmp/serve-e2e.log
+# On a private session bus, so a screensaver signal can be sent to the app safely.
+echo "== CLI through the running app under Xvfb (screensaver signals on a private bus)"
+dbus-run-session -- env FLINT_TEST_PRIVATE_DBUS=1 scripts/serve-e2e.sh | tee /tmp/serve-e2e.log
 grep -q "^serve-e2e: .* checks passed" /tmp/serve-e2e.log

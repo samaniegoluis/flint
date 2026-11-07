@@ -35,6 +35,11 @@ type VaultStatus struct {
     path:        str  `json:"path"`
     name:        str  `json:"name"`
     exists:      bool `json:"exists"`
+    // Unlocked in the running Flint, which holds its key (D-042). The CLI on its own
+    // never holds one, so it reports false.
+    unlocked:    bool `json:"unlocked"`
+    // Its key is cached in this machine's OS keychain, for the app's next launch.
+    // Only the app knows: the CLI never reads the keychain, and reports false.
     cached:      bool `json:"cached"`
     groups:      i64  `json:"groups"`
     hosts:       i64  `json:"hosts"`
@@ -185,7 +190,7 @@ fn lock_vault[S: VaultStore, K: Keychain](mut store: S, keychain: K, path: str) 
 // Reports a vault without asking for its password: counts appear only when the
 // keychain holds its key.
 fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C, mut store: S, keychain: K, recents: R, path: str, name: str) -> VaultStatus! {
-    mut st := VaultStatus{ path: path, name: name, exists: store.vault_file_exists(path), cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0 }
+    mut st := VaultStatus{ path: path, name: name, exists: store.vault_file_exists(path), unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0 }
     if !st.exists {
         return st
     }
@@ -195,6 +200,7 @@ fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
         }
         return error("{err.message()}")
     }
+    st.unlocked = true
     st.cached = true
     st.name = session.name
     st.groups = i64((try store.groups_all()).len())
@@ -208,7 +214,7 @@ fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
 // keychain read (on macOS that read can show a Keychain dialog) and no second unlock.
 fn open_vault_status[S: VaultStore](mut store: S, session: VaultSession) -> VaultStatus! {
     return VaultStatus{
-        path: session.path, name: session.name, exists: true, cached: session.cached,
+        path: session.path, name: session.name, exists: true, unlocked: true, cached: session.cached,
         groups: i64((try store.groups_all()).len()),
         hosts: i64((try store.hosts_all()).len()),
         keys: i64((try store.keys_all()).len()),

@@ -1,14 +1,18 @@
 // App-wide state: platform, settings, the recent vaults, the unlocked vault and its
-// catalog. Startup follows the vault lifecycle in docs/spec.md: reopen the last
-// vault (from the keychain when it holds a key), else ask for its password, else
-// show the welcome screen.
+// catalog. Startup follows the vault lifecycle in docs/spec.md: a vault a `flint`
+// command asked for, else the last vault (from the keychain when it holds a key),
+// else ask for its password, else show the welcome screen.
+//
+// Locking (D-042) keeps the main window mounted under the lock screen, so open
+// sessions and their terminals carry on; the vault's key and catalog are gone until
+// the master password is typed again.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, FlintError, on, toFlintError } from '../api/backend';
-import type { AppInfo, Catalog, RecentView, Settings, VaultInfo } from '../api/types';
+import type { AppInfo, Catalog, LockReason, RecentView, Settings, UnlockRequest, VaultInfo } from '../api/types';
 import type { Os } from '../lib/keymap';
 
-export type Phase = 'boot' | 'welcome' | 'create' | 'unlock' | 'main';
+export type Phase = 'boot' | 'welcome' | 'create' | 'unlock' | 'main' | 'locked';
 
 export interface Toast {
   id: number;
@@ -19,7 +23,11 @@ export interface Toast {
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system', accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
   term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: true, term_theme: 'default',
+  lock_after: '1h',
 };
+
+// How often the page tells the core someone is using the window.
+const ACTIVITY_EVERY_MS = 15000;
 
 const EMPTY_CATALOG: Catalog = { groups: [], hosts: [], keys: [], credentials: [], known_hosts: [] };
 
@@ -35,6 +43,12 @@ interface AppApi {
   catalog: Catalog;
   toast: Toast | null;
   bootError: string;
+  /** Why the vault locked, while the lock screen shows. */
+  lockReason: LockReason | null;
+  /** The unlock a `flint` command is waiting on. */
+  unlockRequest: UnlockRequest | null;
+  dismissUnlockRequest: () => void;
+  lock: () => Promise<void>;
   go: (p: Phase) => void;
   setTarget: (r: RecentView | null) => void;
   refreshRecents: () => Promise<RecentView[]>;
@@ -73,6 +87,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [catalog, setCatalog] = useState<Catalog>(EMPTY_CATALOG);
   const [toast, setToast] = useState<Toast | null>(null);
   const [bootError, setBootError] = useState('');
+  const [lockReason, setLockReason] = useState<LockReason | null>(null);
+  const [unlockRequest, setUnlockRequest] = useState<UnlockRequest | null>(null);
 
   const os: Os = info?.os ?? (/mac/i.test(navigator.platform) ? 'mac' : 'linux');
   const dark = settings.theme === 'system' ? sysDark : settings.theme === 'dark';
@@ -119,9 +135,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const unlock = useCallback(async (path: string, password: string) => {
     const v = await api.unlock(path, password);
+    setLockReason(null);
+    setUnlockRequest((r) => (r && r.path === v.path ? null : r));
     await enter(v);
     return v;
   }, [enter]);
+
+  // The core locked the vault (the Lock button, idle time, the screen, sleep, the
+  // CLI): the lock screen covers the window, which stays mounted.
+  const showLocked = useCallback((path: string, name: string, reason: LockReason) => {
+    setCatalog(EMPTY_CATALOG);
+    setLockReason(reason);
+    setTarget({ path, name, current: true, exists: true });
+    setPhase('locked');
+  }, []);
+
+  const lock = useCallback(async () => {
+    await api.lock();
+    if (vault) showLocked(vault.path, vault.name, 'manual');
+  }, [vault, showLocked]);
+
+  const dismissUnlockRequest = useCallback(() => {
+    setUnlockRequest(null);
+    api.unlockRequestDismiss().catch(() => {});
+  }, []);
 
   const create = useCallback(async (path: string, name: string, password: string) => {
     const v = await api.create(path, name, password);
@@ -134,6 +171,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const list = await refreshRecents();
     setVault(null);
     setCatalog(EMPTY_CATALOG);
+    setLockReason(null);
     const current = list.find((r) => r.exists) ?? null;
     setTarget(current);
     setPhase(current ? 'unlock' : 'welcome');
@@ -200,6 +238,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshRecents().catch(() => {});
   }), [vault, refreshCatalog, refreshRecents]);
 
+  useEffect(() => on<{ path: string; name: string; reason: LockReason }>('vault:locked', (e) => {
+    if (vault && e.path === vault.path) showLocked(e.path, vault.name, e.reason);
+  }), [vault, showLocked]);
+
+  // A `flint` command is waiting for a vault: show its unlock screen, naming the
+  // command. The core asks only while no vault is unlocked.
+  const takeUnlockRequest = useCallback((r: UnlockRequest) => {
+    if (!r.path) return;
+    setUnlockRequest(r);
+    if (phase === 'locked' && target?.path === r.path) return;
+    if (phase === 'locked') return; // another vault is locked here; the screen offers to switch
+    setTarget({ path: r.path, name: r.name, current: false, exists: true });
+    setPhase('unlock');
+  }, [phase, target]);
+  useEffect(() => on<UnlockRequest>('vault:unlock-request', takeUnlockRequest), [takeUnlockRequest]);
+
+  // Someone using the window keeps the vault unlocked; the core locks it after the
+  // idle time in Settings.
+  useEffect(() => {
+    if (phase !== 'main') return;
+    let last = 0;
+    const touch = () => {
+      const now = Date.now();
+      if (now - last < ACTIVITY_EVERY_MS) return;
+      last = now;
+      api.activity().catch(() => {});
+    };
+    const kinds = ['keydown', 'pointerdown', 'wheel'] as const;
+    for (const k of kinds) window.addEventListener(k, touch, { capture: true, passive: true });
+    return () => { for (const k of kinds) window.removeEventListener(k, touch, { capture: true }); };
+  }, [phase]);
+
   // Startup.
   useEffect(() => {
     (async () => {
@@ -209,6 +279,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const s = await api.settingsGet();
         setSettings(s);
         const list = await refreshRecents();
+        // A `flint` command started this app to have a vault unlocked.
+        const asked = await api.unlockRequest().catch(() => null);
+        if (asked?.path) {
+          setUnlockRequest(asked);
+          try {
+            await unlock(asked.path, '');
+          } catch {
+            setTarget({ path: asked.path, name: asked.name, current: false, exists: true });
+            setPhase('unlock');
+          }
+          return;
+        }
         const last = list.find((r) => r.exists);
         if (!last) {
           setPhase('welcome');
@@ -235,9 +317,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppApi>(() => ({
     info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError,
+    lockReason, unlockRequest, dismissUnlockRequest, lock,
     go: setPhase, setTarget, refreshRecents, unlock, create, closeVault, openVaultFile, switchTo, renameVault,
     refreshCatalog, saveSettings, notify, fail,
-  }), [info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError, refreshRecents,
+  }), [info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError,
+    lockReason, unlockRequest, dismissUnlockRequest, lock, refreshRecents,
     unlock, create, closeVault, openVaultFile, switchTo, renameVault, refreshCatalog, saveSettings, notify, fail]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -4,7 +4,7 @@
 		{
 			"name": "Demo",
 			"path": "/home/you/Sync/demo.flint",
-			"cached": true,
+			"unlocked": true,
 			"groups": ["prod", "homelab"],
 			"keys": [
 				{
@@ -27,7 +27,7 @@
 		{
 			"name": "Work",
 			"path": "/home/you/OneDrive/work.flint",
-			"cached": false,
+			"unlocked": false,
 			"groups": ["ci"],
 			"keys": [],
 			"creds": [{ "name": "build", "user": "ci", "key": "", "password": "set" }],

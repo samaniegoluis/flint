@@ -1,0 +1,54 @@
+package uievents
+
+// Screen lock and sleep, heard from the OS for the app's auto-lock (D-042,
+// native/flint_sysevents.hpp). The OS callbacks only count; the app takes the events
+// from its lock timer.
+
+// CFIRE-UPSTREAM: CF-084, CF-031
+import cpp "flint_sysevents.hpp" @pkg("flint-native-gui")
+
+// Subscribes to the OS's lock and sleep events. Call once on the main thread before
+// the window runs. Returns what it subscribed to ("" for nothing), for the log.
+fn system_events_start() -> str {
+    mut got := ""
+    // CFIRE-UPSTREAM: CF-084
+    cpp {
+        got = flint_sysevents::start();
+    }
+    return got
+}
+
+// The next event: "screen" (the screen locked), "sleep" (the computer is going to
+// sleep) or "" for none.
+fn system_events_take() -> str {
+    mut kind := ""
+    // CFIRE-UPSTREAM: CF-084
+    cpp {
+        kind = flint_sysevents::take();
+    }
+    return kind
+}
+
+// Stands in for the OS in the headless end-to-end run.
+fn system_events_inject(kind: str) {
+    // CFIRE-UPSTREAM: CF-084
+    cpp {
+        flint_sysevents::inject(kind);
+    }
+}
+
+// Brings the window to the front, from any thread.
+fn bring_window_to_front() {
+    // CFIRE-UPSTREAM: CF-084
+    cpp {
+        flint_sysevents::bring_to_front();
+    }
+}
+
+// Runs the main loop for `ms` milliseconds, for tests where no window runs it.
+fn system_events_pump(ms: i32) {
+    // CFIRE-UPSTREAM: CF-084
+    cpp {
+        flint_sysevents::pump(ms);
+    }
+}

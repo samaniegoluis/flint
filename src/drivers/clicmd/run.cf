@@ -13,6 +13,7 @@ import "../../adapters/process"
 import "../../adapters/ssh"
 import "../../adapters/vault"
 import "../../domain"
+import "../../ports"
 
 fn usage_text() -> str {
     return `flint - SSH client over one encrypted vault
@@ -25,8 +26,8 @@ Vaults
   vault list                            Recent vaults; * marks the current one
   vault use <name|path>                 Make a recent vault the current one
   vault status                          Path, lock state and counts
-  vault unlock                          Cache the vault key in the OS keychain
-  vault lock                            Remove the cached key from this machine
+  vault unlock                          Ask Flint to unlock the vault, and wait
+  vault lock                            Lock the vault in Flint; remove any cached key
   vault rename <new-name>               Rename the vault (its file is not moved)
   vault forget <name|path>              Drop a vault from the recent list
 
@@ -75,6 +76,10 @@ Global flags
   --master-stdin    Read the master password from the first line of stdin
   --version, -V     Print the version and linked libraries
 
+With Flint open and the vault unlocked there, commands run through it and need no
+master password. Otherwise flint asks for it on the terminal (or --master-stdin),
+for that one command; with no terminal, Flint is asked to unlock the vault.
+
 Secrets are never taken from arguments: Flint prompts on the terminal, or reads
 them from stdin with the --*-stdin flags.
 `
@@ -100,16 +105,32 @@ fn wants_help(p: ParsedArgs) -> bool {
     return noun.len() == 0 || noun == "help" || p.has_flag("--help") || p.has_flag("-h")
 }
 
-// Runs one checked command against `src`'s vault. Returns the process exit status:
-// 0, or the remote status of `connect` and `exec`.
-fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> i32! {
+// The commands that open an SSH session: they need a terminal, a prompter and an
+// output stream, which the app relays over the socket (D-042).
+fn is_session_command(p: ParsedArgs) -> bool {
+    noun := p.positional(0)
+    return noun == "connect" || noun == "exec" || (noun == "host" && p.positional(1) == "test")
+}
+
+// Runs one checked session command against `src`'s vault, on the given terminal,
+// prompter and output. Returns the process exit status: 0, or the remote status of
+// `connect` and `exec`.
+fn run_session_command[M: Terminal, P: Prompter, O: ExecSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, mut term: M, prompter: P, mut sink: O, term_name: str) -> i32! {
     noun := p.positional(0)
     if noun == "connect" {
-        return cmd_connect(p, sec, as_json, c, mut store, src, recents)
+        return cmd_connect(p, sec, as_json, c, mut store, src, recents, mut term, prompter, term_name)
     }
     if noun == "exec" {
-        return cmd_exec(p, sec, as_json, c, mut store, src, recents)
+        return cmd_exec(p, sec, as_json, c, mut store, src, recents, prompter, mut sink)
     }
+    try cmd_host_test(p, sec, as_json, c, mut store, src, recents, prompter)
+    return 0
+}
+
+// Runs one checked command that opens no SSH session against `src`'s vault.
+// Returns the process exit status, 0.
+fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> i32! {
+    noun := p.positional(0)
     if noun == "vault" {
         try cmd_vault(p, sec, as_json, c, mut store, src, recents)
     } else if noun == "group" {
@@ -128,33 +149,87 @@ fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut st
     return 0
 }
 
-// Runs a command in this process, on the vault file itself: the keychain's cached
-// key, or the master password from stdin or the terminal.
+// Runs a command in this process, on the vault file itself, with the master
+// password typed for it (the terminal, or --master-stdin). The CLI never reads a key
+// from the OS keychain (D-038, Principle 11): the keychain is reached only to remove
+// a cached key (`vault lock`, `vault forget`).
 fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
     c := try new_sodium()
     mut store := new_locked_vault_store()
-    kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
+    verb := p.positional(1)
+    removes_key := p.positional(0) == "vault" && (verb == "lock" || verb == "forget")
+    kc := new_os_keychain(removes_key && os.getenv("FLINT_KEYCHAIN") != "off")
     recents := new_json_recent_store(flint_config_dir())
-    status := run_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents)
+    mut status: i32! = 0
+    if is_session_command(p) {
+        // Typed: the checker takes `os.getenv` for an optional (CF-063).
+        mut term_name: str = os.getenv("TERM")
+        if term_name.len() == 0 {
+            term_name = "xterm-256color"
+        }
+        mut term := new_stdio_terminal()
+        mut sink := new_stdio_exec_sink()
+        status = run_session_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents, mut term, new_tty_prompter(), mut sink, term_name)
+    } else {
+        status = run_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents)
+    }
     store.vault_detach()
     return status
 }
 
-// The whole CLI: help, then the running app if it serves this command's vault
-// (serve.cf), else the command in this process.
+// The whole CLI: help, then the running app if it holds this command's vault
+// unlocked (serve.cf), else the command in this process with a typed master
+// password. With nobody to type it, Flint is asked to unlock and the command fails
+// with `locked`.
 fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
     if wants_help(p) {
         write_stdout(usage_text())
         return 0
     }
     try check_command(p)
+    noun := p.positional(0)
+    verb := p.positional(1)
+    if noun == "vault" && verb == "unlock" {
+        try cmd_vault_unlock_app(p, as_json)
+        return 0
+    }
     mut sec := try read_stdin_secrets(p)
-    if servable(p) {
-        reply := try ask_app(p, args, as_json, mut sec)
-        if reply.served {
-            write_stdout(reply.stdout)
-            write_stderr(reply.stderr)
-            return i32(reply.exit)
+    if noun == "vault" && verb == "lock" {
+        recents := new_json_recent_store(flint_config_dir())
+        target := try resolve_vault(recents, vault_selector(p))
+        _ := lock_in_app(target)
+    }
+    // Twice at most: a second time once Flint, asked to unlock, says it has.
+    for attempt in 0..2 {
+        if servable(p) {
+            reply := try ask_app(p, args, as_json, mut sec)
+            if reply.served {
+                write_stdout(reply.stdout)
+                write_stderr(reply.stderr)
+                return i32(reply.exit)
+            }
+        } else if is_session_command(p) {
+            reply := try ask_app_session(p, args, as_json, sec)
+            if reply.served {
+                write_stdout(reply.stdout)
+                write_stderr(reply.stderr)
+                return i32(reply.exit)
+            }
+        }
+        // Usage errors and everything else come out of the command itself; only a
+        // vault left locked with nobody to type its password turns to Flint.
+        local := run_local(p, sec, as_json)
+        if local.has_value() || attempt == 1 || sec.has_master || has_terminal() || !needs_unlocked_vault(p) {
+            return local
+        }
+        if error_code_of("{local.error().message()}") != ERR_LOCKED {
+            return local
+        }
+        recents := new_json_recent_store(flint_config_dir())
+        target := try resolve_vault(recents, vault_selector(p))
+        st := request_unlock(target, caller_summary(p))
+        if st.state != APP_UNLOCKED {
+            return error(locked_error(target, st))
         }
     }
     return run_local(p, sec, as_json)

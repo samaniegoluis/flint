@@ -27,7 +27,7 @@ const NARROW = 1040;
 
 export function Shell() {
   const app = useApp();
-  const { os, vault, catalog, settings, notify, fail, refreshCatalog, closeVault, openVaultFile, go } = app;
+  const { os, vault, catalog, settings, notify, fail, refreshCatalog, openVaultFile, go, phase } = app;
   const { tabs, active } = useSessions();
   const [view, setView] = useState<View>('hosts');
   const [narrow, setNarrow] = useState(window.innerWidth < NARROW);
@@ -119,10 +119,8 @@ export function Shell() {
     else sessions.open(alias, noCommand);
   }, [narrow]);
 
-  const lock = useCallback(async () => {
-    sessions.closeAll();
-    await closeVault();
-  }, [closeVault]);
+  // The key leaves memory; open sessions keep running under the lock screen (D-042).
+  const lock = app.lock;
 
   const deleteHost = useCallback((alias: string) => setConfirm({
     title: `Delete host ${alias}?`,
@@ -200,7 +198,8 @@ export function Shell() {
   useEffect(() => {
     setActionHandler(run);
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
+      // Under the lock screen the window takes no shortcut.
+      if (e.defaultPrevented || phase !== 'main') return;
       const a = actionFor(e, os);
       if (!a) return;
       // While a dialog is open only its own keys apply, plus the palette toggle.
@@ -211,7 +210,7 @@ export function Shell() {
     };
     window.addEventListener('keydown', onKey);
     return () => { window.removeEventListener('keydown', onKey); setActionHandler(null); };
-  }, [run, os]);
+  }, [run, os, phase]);
 
   const anyOverlay = palette || editor || confirm || ask || manage;
   const sessionsOpen = tabs.filter((t) => t.status !== 'ended').length;

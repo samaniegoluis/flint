@@ -50,7 +50,39 @@
     await check(true, 'a host added by the CLI shows in the tree without a reload');
     await waitFor(() => q('.vault-name')?.textContent === 'Served Renamed', 'the name the CLI gave the vault', 30000);
     await check(true, 'a rename by the CLI shows in the window');
-    await waitFor(() => byText('.tree .ti', 'e2e-stop'), 'the stop host', 90000);
+
+    step = 'locked by the CLI';
+    await waitFor(() => q('.lock-screen [data-lock-reason="cli"]'), 'the lock screen after `flint vault lock`', 90000);
+    await check(true, '`flint vault lock` locks the window');
+    const banner = await waitFor(() => q('[data-unlock-request]'), 'the unlock request of a command', 90000);
+    // `flint vault unlock` may ask again before this page looks, naming itself.
+    await check(/flint (host list|vault unlock)/.test(banner.textContent), 'a command on the locked vault makes the window ask, naming it');
+    {
+      const pw = q('#pw');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(pw, MASTER);
+      pw.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(30);
+      byText('button[type="submit"]', 'Unlock').click();
+    }
+    await waitFor(() => !q('.lock-screen') && byText('.tree .ti', 'local-web'), 'the unlocked tree again', 30000);
+    await check(!q('[data-unlock-request]'), 'unlocking answers the request');
+
+    step = 'stop';
+    // A screen lock sent on D-Bus (Linux check) locks the window here: unlock again.
+    let relocks = 0;
+    await waitFor(() => {
+      const lock = q('.lock-screen [data-lock-reason]');
+      if (lock && !q('#pw')?.disabled) {
+        relocks++;
+        log('ok   the window locked (' + lock.getAttribute('data-lock-reason') + '); unlocking again');
+        const pw = q('#pw');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(pw, MASTER);
+        pw.dispatchEvent(new Event('input', { bubbles: true }));
+        setTimeout(() => byText('button[type="submit"]', 'Unlock')?.click(), 30);
+        return null;
+      }
+      return byText('.tree .ti', 'e2e-stop');
+    }, 'the stop host', 90000);
     await check(!hasText('served-host-pw-marker'), 'no password the CLI sent reaches the page');
 
     await log(`${passed} checks passed`);

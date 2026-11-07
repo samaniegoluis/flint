@@ -10,6 +10,7 @@ package main
 import "ext:webui"
 import "ext:json"
 import "core:fs"
+import "core:time"
 import "../../adapters/config"
 import "../../adapters/crypto"
 import "../../adapters/fonts"
@@ -212,6 +213,7 @@ fn (self: GuiState) vault_session() -> VaultSession {
 
 fn (self: GuiState) adopt(s: VaultSession) {
     self.holder.put(HeldSession{ unlocked: true, path: s.path, name: s.name, id: s.id, secrets_key: s.secrets_key, cached: s.cached })
+    self.holder.touch(time.now_ms())
 }
 
 fn (self: GuiState) forget() {
@@ -287,9 +289,11 @@ fn rpc_settings_get(store: JsonSettingsStore) -> str! {
     return json.stringify(try load_settings(store))
 }
 
-fn rpc_settings_set(params: str, mut store: JsonSettingsStore) -> str! {
+fn rpc_settings_set(params: str, mut store: JsonSettingsStore, st: GuiState) -> str! {
     req := try parse_req[Settings](params)
-    return json.stringify(try save_settings(mut store, req))
+    saved := try save_settings(mut store, req)
+    st.holder.set_lock_after(saved.lock_after)
+    return json.stringify(saved)
 }
 
 // The sidebar and the open vault's collapsed groups (D-030). With no vault unlocked,
@@ -327,16 +331,55 @@ fn rpc_vault_recents(store: LockedVaultStore, recents: JsonRecentStore) -> str! 
 }
 
 // An empty password tries the keychain; the error code `locked` means it has no key.
-// Unlock and create run on a worker (`bind_async`): Argon2id takes about a second,
-// and the window keeps responding meanwhile. Each holds the state for its whole run,
-// so a command served over the socket never sees the vault switch under it.
+// A vault locked in this run never opens from the keychain: only its master password
+// unlocks it again (D-042). Unlock and create run on a worker (`bind_async`):
+// Argon2id takes about a second, and the window keeps responding meanwhile. Each
+// holds the state for its whole run, so a command served over the socket never sees
+// the vault switch under it.
 fn rpc_vault_unlock(req: UnlockReq, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> VaultInfo! {
+    if req.password.len() == 0 && st.holder.relocked(req.path) {
+        return error(coded(ERR_LOCKED, "the vault was locked; its master password is needed"))
+    }
     st.hold()
     defer st.release()
     close_current(mut store, mut st)
     s := try unlock_vault(c, mut store, kc, recents, req.path, req.password)
     st.adopt(s)
+    st.holder.clear_relocked(s.path)
+    (asked, caller) := st.holder.ask()
+    if asked == s.path {
+        st.holder.set_ask("", "")
+    }
     return session_info(s)
+}
+
+// Locks the vault now (the Lock button, the palette, ⌘L).
+fn rpc_vault_lock(mut store: LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
+    _ := lock_now(mut store, st, mut app, "manual")
+    return ok_json()
+}
+
+// The page reports that someone is using the window (throttled there), which keeps
+// the vault from locking for idleness.
+fn rpc_activity(st: GuiState) -> str! {
+    st.holder.touch(time.now_ms())
+    return ok_json()
+}
+
+// The unlock a CLI asked for and is still waiting on, for a page that loads after
+// the request: the path is "" when there is none.
+fn rpc_unlock_request(st: GuiState, recents: JsonRecentStore) -> str! {
+    (path, caller) := st.holder.ask()
+    if path.len() == 0 || st.unlocked() {
+        return json.stringify(UnlockRequest{ path: "", name: "", caller: "" })
+    }
+    return json.stringify(UnlockRequest{ path: path, name: recent_name(recents, path), caller: caller })
+}
+
+// The person turned down the CLI's request on the unlock screen.
+fn rpc_unlock_request_dismiss(st: GuiState) -> str! {
+    st.holder.set_ask("", "")
+    return ok_json()
 }
 
 fn rpc_vault_create(req: CreateReq, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> VaultInfo! {

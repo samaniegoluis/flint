@@ -18,10 +18,17 @@ type Settings struct {
     // Milestone 07. Files written before it have none: the field reads as ""
     // (ext:json ignores `default:`, CF-057) and load_settings repairs it.
     term_theme:         str  `json:"term_theme"`
+    // Milestone 11b: how long the vault stays unlocked with nobody using it
+    // (LOCK_AFTER, "never" to turn it off). Older files read "" and are repaired.
+    lock_after:         str  `json:"lock_after"`
 }
 
 // Terminal colour themes (ui/src/lib/terminalThemes.ts holds the palettes).
 TERM_THEMES: []str = ["default", "catppuccin", "tokyo-night", "aura", "dracula", "nord"]
+
+// Auto-lock after this long idle (D-042). 1m is there to try it out.
+LOCK_AFTER: []str = ["1m", "5m", "15m", "30m", "1h", "4h", "never"]
+LOCK_AFTER_DEFAULT: str = "1h"
 
 TERM_FONT_SIZE_MIN: i64 = 8
 TERM_FONT_SIZE_MAX: i64 = 32
@@ -31,7 +38,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default" }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {
@@ -66,6 +73,9 @@ fn check_settings(s: Settings) -> void! {
     if !one_of(s.term_theme, TERM_THEMES) {
         return error(coded(ERR_INVALID, "terminal theme must be default, catppuccin, tokyo-night, aura, dracula or nord"))
     }
+    if !one_of(s.lock_after, LOCK_AFTER) {
+        return error(coded(ERR_INVALID, "lock after must be 1m, 5m, 15m, 30m, 1h, 4h or never"))
+    }
     try check_text("terminal font", s.term_font, 128, false)
     // The name ends up in a CSS font-family list, quoted.
     for b in s.term_font.bytes() {
@@ -97,4 +107,48 @@ test "default settings are valid and bad values are refused" {
     assert(check_settings(s).has_value())
     s.term_theme = "solarized"
     assert(!check_settings(s).has_value())
+    s = default_settings()
+    assert_eq(s.lock_after, "1h")
+    s.lock_after = "1m"
+    assert(check_settings(s).has_value())
+    s.lock_after = "2m"
+    assert(!check_settings(s).has_value())
+}
+
+// How long an idle vault stays unlocked, in milliseconds; 0 for never.
+fn lock_after_ms(setting: str) -> i64 {
+    if setting == "1m" {
+        return 60000
+    }
+    if setting == "5m" {
+        return 300000
+    }
+    if setting == "15m" {
+        return 900000
+    }
+    if setting == "30m" {
+        return 1800000
+    }
+    if setting == "1h" {
+        return 3600000
+    }
+    if setting == "4h" {
+        return 14400000
+    }
+    return 0
+}
+
+// Whether an unlocked vault last used at `last_ms` locks now.
+fn idle_lock_due(now_ms: i64, last_ms: i64, setting: str) -> bool {
+    limit := lock_after_ms(setting)
+    return limit > 0 && now_ms - last_ms >= limit
+}
+
+test "idle lock follows the setting" {
+    assert(!idle_lock_due(59999, 0, "1m"))
+    assert(idle_lock_due(60000, 0, "1m"))
+    assert(!idle_lock_due(3599999, 0, "1h"))
+    assert(idle_lock_due(3600000, 0, "1h"))
+    assert(!idle_lock_due(999999999, 0, "never"))
+    assert_eq(lock_after_ms(""), 0)
 }

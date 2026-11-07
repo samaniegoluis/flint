@@ -1,0 +1,19 @@
+package uievents
+
+test "lock and sleep events are taken once, sleep first" {
+    _ := system_events_take()
+    assert_eq(system_events_take(), "")
+    system_events_inject("screen")
+    system_events_inject("screen")
+    assert_eq(system_events_take(), "screen")
+    assert_eq(system_events_take(), "")
+    system_events_inject("screen")
+    system_events_inject("sleep")
+    assert_eq(system_events_take(), "sleep")
+    assert_eq(system_events_take(), "")
+}
+
+// The D-Bus path (a screensaver's ActiveChanged on a private session bus) is checked
+// against the running app in scripts/serve-e2e.sh on Linux: GLib keeps its bus
+// connections for the life of the process, which a test here reports as leaked
+// descriptors (CF-080).

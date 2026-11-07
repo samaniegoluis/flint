@@ -19,6 +19,7 @@ struct VaultCell {
 } // namespace flint_vault
 
 #include <algorithm>
+#include <cstdint>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -41,6 +42,15 @@ struct SessionCell {
     std::string id;
     std::vector<std::byte> secrets_key;
     bool cached = false;
+    // Access state of the app (D-042), also under `mtx`: when someone last used it,
+    // the unlock a CLI asked for and who asked, and the vaults locked in this run,
+    // which open again only with the master password, never from the keychain.
+    int64_t last_activity_ms = 0;
+    std::string ask_path;
+    std::string ask_caller;
+    std::vector<std::string> relocked;
+    std::string lock_after;
+    bool quitting = false;
 
     void wipe() {
         std::fill(secrets_key.begin(), secrets_key.end(), std::byte{0});

@@ -37,6 +37,15 @@ test "settings are validated on save and repaired field by field on load" {
     repaired := try load_settings(store)
     assert_eq(repaired.term_theme, "default")
     assert_eq(repaired.accent, "iris")
+
+    // And one from before auto-lock (milestone 11b) locks after an hour, the default.
+    mut pre_lock := default_settings()
+    pre_lock.lock_after = ""
+    pre_lock.term_theme = "nord"
+    store.saved = pre_lock
+    relocked := try load_settings(store)
+    assert_eq(relocked.lock_after, "1h")
+    assert_eq(relocked.term_theme, "nord")
 }
 
 test "installed mono fonts are deduplicated and sorted" {

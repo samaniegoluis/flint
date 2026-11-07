@@ -1,24 +1,31 @@
 package clicmd
 
-// The CLI as a client of the running app (D-038), and the app's side of it.
+// The CLI as a client of the running app (D-038, D-041, D-042), and the app's side
+// of it.
 //
 // With Flint open and the command's vault unlocked in it, the CLI does not open the
 // vault file: it sends the command line over the local socket (adapters/ipc, mode
 // 0600, same uid only, Principle 11) and the app runs it with the same handlers,
-// against the vault it holds, capturing what the command prints. The CLI prints that
-// and exits with the command's status, so the output is the same either way.
+// against the vault it holds. The CLI never reads a key from the OS keychain: when
+// the app does not serve the command, a person at a terminal (or a script with
+// --master-stdin) types the master password for that one command, and anyone else
+// gets `locked` while Flint shows its unlock screen naming the command.
 //
-// One connection, one exchange: run {vault, argv, cwd, ...} → {served, stdout,
-// stderr, exit}. `served` is false when the app does not hold that vault unlocked.
-// Prompts for secrets (`--password`, `--passphrase`, Tether's master password) are
-// asked on the client's terminal first, as the command would ask them, and travel in
-// the request, towards the app only: no reply ever carries a secret (Principle 6).
-// The CLI falls back to opening the vault itself (with the secrets it already has)
-// when Flint is not running or answers "not served"; once a request is sent, a socket
-// that breaks is an error, never a second attempt. The app answers one connection
-// at a time (CF-083): commands on one vault run one at a time anyway.
+// One connection, one exchange. Request kinds:
+//   run      a command that opens no SSH session → {served, stdout, stderr, exit}
+//   session  `connect`, `exec`, `host test`: streamed frames (adapters/ipc/relay.cf)
+//   unlock   show the unlock screen for a vault, naming the caller → {state, name}
+//   status   whether the app holds a vault unlocked → {state, name}
+//   lock     lock the vault if the app holds it → {state, name}
+//
+// Prompts for secrets a command needs (`--password`, `--passphrase`, Tether's master
+// password, a host's password at login) are asked on the client's terminal and
+// travel towards the app only: no reply ever carries a secret (Principle 6). Once a
+// request is sent, a socket that breaks is an error, never a second attempt.
 
 import "core:fs"
+import "core:os"
+import "core:time"
 import "ext:json"
 import "../../adapters/config"
 import "../../adapters/crypto"
@@ -29,7 +36,7 @@ import "../../adapters/vault"
 import "../../application"
 import "../../domain"
 
-SERVE_PROTOCOL: i64 = 1
+SERVE_PROTOCOL: i64 = 2
 
 // Connecting, and sending a request or a reply (Principle 8).
 SERVE_CONNECT_MS: i32 = 1000
@@ -37,6 +44,19 @@ SERVE_SEND_MS: i32 = 5000
 // A whole command, the slowest being an import that derives Tether's key, plus the
 // commands queued before it.
 SERVE_RUN_MS: i32 = 300000
+// A live interactive session sends a heartbeat every RELAY_HEARTBEAT_MS; this much
+// silence means the app stopped answering.
+SESSION_SILENCE_MS: i64 = 60000
+// How long `flint` waits for a Flint it started to listen on its socket.
+APP_START_WAIT_MS: i64 = 15000
+// How long `flint vault unlock` waits for the person to unlock in Flint.
+UNLOCK_WAIT_MS: i64 = 120000
+
+// States in an unlock, status or lock reply.
+APP_UNLOCKED: str = "unlocked"
+APP_ASKING: str = "asking"
+APP_LOCKED: str = "locked"
+APP_OTHER: str = "other"
 
 type WireSecrets struct {
     password:       str  `json:"password"`
@@ -55,6 +75,13 @@ type ServeRequest struct {
     cwd:     str         `json:"cwd"`
     as_json: bool        `json:"json"`
     secrets: WireSecrets `json:"secrets"`
+    // A session's terminal: whether the client can prompt, its TERM and size.
+    tty:     bool        `json:"tty"`
+    term:    str         `json:"term"`
+    cols:    i64         `json:"cols"`
+    rows:    i64         `json:"rows"`
+    // What to show in Flint's unlock screen: the command, without its flags.
+    caller:  str         `json:"caller"`
 }
 
 type ServeReply struct {
@@ -62,6 +89,20 @@ type ServeReply struct {
     stdout: str  `json:"stdout"`
     stderr: str  `json:"stderr"`
     exit:   i64  `json:"exit"`
+}
+
+// The answer to unlock, status and lock: `state` is one of APP_*, `name` the vault
+// the app holds when it is another one.
+type AppState struct {
+    state: str `json:"state"`
+    name:  str `json:"name"`
+}
+
+// The last frame of a session.
+type SessionEndFrame struct {
+    exit:   i64 `json:"exit"`
+    stdout: str `json:"stdout"`
+    stderr: str `json:"stderr"`
 }
 
 fn not_served() -> ServeReply {
@@ -72,9 +113,17 @@ fn no_wire_secrets() -> WireSecrets {
     return WireSecrets{ password: "", has_password: false, passphrase: "", has_passphrase: false, key_text: "", has_key: false }
 }
 
-// Commands the app runs for the CLI: those that need the unlocked vault and open no
-// SSH session. `vault create|open|unlock|lock|list|use|forget` manage files and the
-// keychain and stay in the CLI; `connect`, `exec` and `host test` come with 11b.
+fn wire_secrets(sec: SecretInput) -> WireSecrets {
+    return WireSecrets{ password: sec.password, has_password: sec.has_password, passphrase: sec.passphrase, has_passphrase: sec.has_passphrase, key_text: sec.key_text, has_key: sec.has_key }
+}
+
+fn new_request(kind: str, vault: str) -> ServeRequest {
+    return ServeRequest{ kind: kind, version: SERVE_PROTOCOL, vault: vault, argv: [], cwd: "", as_json: false, secrets: no_wire_secrets(), tty: false, term: "", cols: 0, rows: 0, caller: "" }
+}
+
+// Commands the app runs for the CLI in one exchange: those that need the unlocked
+// vault and open no SSH session. `vault create|open|unlock|lock|list|use|forget`
+// manage files and stay in the CLI; `connect`, `exec` and `host test` are sessions.
 fn servable(p: ParsedArgs) -> bool {
     noun := p.positional(0)
     verb := p.positional(1)
@@ -88,6 +137,33 @@ fn servable(p: ParsedArgs) -> bool {
         return verb == "status" || verb == "rename"
     }
     return false
+}
+
+// Commands that cannot run without the vault's key: with no terminal and no
+// --master-stdin they ask Flint to unlock instead.
+fn needs_unlocked_vault(p: ParsedArgs) -> bool {
+    noun := p.positional(0)
+    if noun == "vault" {
+        return p.positional(1) == "rename"
+    }
+    return noun == "group" || noun == "host" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "import" || noun == "connect" || noun == "exec"
+}
+
+// The command as Flint's unlock screen names it: `flint`, the words before any flag,
+// and for `exec` the remote command. Never a flag's value; secrets are never in argv
+// anyway (D-018).
+fn caller_summary(p: ParsedArgs) -> str {
+    mut s := "flint"
+    for w in p.positionals {
+        s = s + " " + w
+    }
+    if p.positional(0) == "exec" && p.rest.len() > 0 {
+        s = s + " -- " + remote_command(p)
+    }
+    if s.len() > 160 {
+        s = s.substr(0, 157) + "..."
+    }
+    return s
 }
 
 // Asks on the client's terminal for what the command would ask for, so the app,
@@ -123,25 +199,40 @@ fn if_host(cond: bool, a: str, b: str) -> str {
     return b
 }
 
-// The client side: runs the command in the app when it serves the command's vault.
-// Returns `served: false` when Flint is not running, holds another vault or none;
-// the caller then runs the command itself, with the prompts already answered.
+// A connection to the running app, or `open` false when it is not running.
+fn dial_app() -> IpcConn {
+    socket := ipc_socket_path(flint_config_dir())
+    closed := IpcConn{ fd: 0, open: false, peer: IpcPeer{ uid: -1, pid: 0 } }
+    if !fs.exists(socket) {
+        return closed
+    }
+    return ipc_connect(socket, SERVE_CONNECT_MS) or closed
+}
+
+// The client side of a `run`: the command runs in the app when it serves the
+// command's vault. Returns `served: false` when Flint is not running, holds another
+// vault or none; the caller then runs the command itself, with the prompts already
+// answered.
 fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> ServeReply! {
     recents := new_json_recent_store(flint_config_dir())
     target := resolve_vault(recents, vault_selector(p)) or {
         return not_served()
     }
-    socket := ipc_socket_path(flint_config_dir())
-    if !fs.exists(socket) {
+    if !fs.exists(ipc_socket_path(flint_config_dir())) {
         return not_served()
     }
     try fill_prompts(p, mut sec)
-    mut conn := ipc_connect(socket, SERVE_CONNECT_MS) or {
+    mut conn := dial_app()
+    if !conn.open {
         return not_served()
     }
     defer conn.close()
-    wire := WireSecrets{ password: sec.password, has_password: sec.has_password, passphrase: sec.passphrase, has_passphrase: sec.has_passphrase, key_text: sec.key_text, has_key: sec.has_key }
-    req := ServeRequest{ kind: "run", version: SERVE_PROTOCOL, vault: target.path, argv: args, cwd: current_dir(), as_json: as_json, secrets: wire }
+    mut req := new_request("run", target.path)
+    req.argv = args
+    req.cwd = current_dir()
+    req.as_json = as_json
+    req.secrets = wire_secrets(sec)
+    req.caller = caller_summary(p)
     conn.send(json.stringify(req), SERVE_SEND_MS) or {
         return not_served()
     }
@@ -151,6 +242,300 @@ fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> S
     return json.parse[ServeReply](text) or {
         return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
     }
+}
+
+// How long the client waits for the next frame of a session before the shell is
+// open, or for an `exec` that prints nothing: every hop's dial and login, the
+// command's own limit, and a margin.
+fn session_wait_ms(p: ParsedArgs) -> i64 {
+    mut dial := SSH_CONNECT_TIMEOUT_SECS
+    if p.has_flag("--timeout") {
+        dial = parse_seconds_flag("--timeout", p.flag_value("--timeout")) or SSH_CONNECT_TIMEOUT_SECS
+    }
+    mut run: i64 = 0
+    if p.positional(0) == "exec" {
+        run = SSH_EXEC_TIMEOUT_SECS
+        if p.has_flag("--exec-timeout") {
+            run = parse_seconds_flag("--exec-timeout", p.flag_value("--exec-timeout")) or SSH_EXEC_TIMEOUT_SECS
+        }
+    }
+    return (dial * 8 + run + 60) * 1000
+}
+
+// Answers a prompt the app relays, on this terminal.
+fn answer_relayed_prompt(prompter: TtyPrompter, payload: str) -> RelayAnswer {
+    q := json.parse[RelayPrompt](payload) or {
+        return RelayAnswer{ ok: false, value: "" }
+    }
+    if q.kind == "host_key" {
+        yes := prompter.prompt_host_key(q.question) or false
+        return RelayAnswer{ ok: yes, value: "" }
+    }
+    if q.kind == "password" {
+        typed := prompter.prompt_password(q.user, q.alias) or ""
+        return RelayAnswer{ ok: typed.len() > 0, value: typed }
+    }
+    return RelayAnswer{ ok: false, value: "" }
+}
+
+// The client side of a session: `connect`, `exec` or `host test` run in the app,
+// this process relaying its terminal. Returns `served: false` when the app does not
+// hold the command's vault unlocked; nothing has run then.
+fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) -> ServeReply! {
+    recents := new_json_recent_store(flint_config_dir())
+    target := resolve_vault(recents, vault_selector(p)) or {
+        return not_served()
+    }
+    mut conn := dial_app()
+    if !conn.open {
+        return not_served()
+    }
+    defer conn.close()
+    mut term := new_stdio_terminal()
+    size := term.term_size()
+    // Typed: the checker takes `os.getenv` for an optional (CF-063).
+    mut term_name: str = os.getenv("TERM")
+    if term_name.len() == 0 {
+        term_name = "xterm-256color"
+    }
+    mut req := new_request("session", target.path)
+    req.argv = args
+    req.cwd = current_dir()
+    req.as_json = as_json
+    req.secrets = wire_secrets(sec)
+    req.tty = has_terminal()
+    req.term = term_name
+    req.cols = i64(size.cols)
+    req.rows = i64(size.rows)
+    req.caller = caller_summary(p)
+    conn.send(json.stringify(req), SERVE_SEND_MS) or {
+        return not_served()
+    }
+    prompter := new_tty_prompter()
+    wait_ms := session_wait_ms(p)
+    mut raw := false
+    mut input_open := true
+    mut last_heard := time.now_ms()
+    for true {
+        if raw {
+            typed := term.term_input(10)
+            if !typed.has_value() {
+                if input_open {
+                    input_open = false
+                    conn.send(relay_frame(TAG_INPUT_END, ""), SERVE_SEND_MS) or {}
+                }
+            } else if typed.value().len() > 0 {
+                conn.send(relay_frame(TAG_INPUT, typed.value()), SERVE_SEND_MS) or {}
+            }
+            if term.term_take_resize() {
+                now := term.term_size()
+                conn.send(relay_frame(TAG_RESIZE, json.stringify(RelaySize{ cols: i64(now.cols), rows: i64(now.rows) })), SERVE_SEND_MS) or {}
+            }
+        }
+        mut poll_ms: i32 = 250
+        if raw {
+            poll_ms = 10
+        }
+        if !conn.readable(poll_ms) {
+            mut limit := wait_ms
+            if raw {
+                limit = SESSION_SILENCE_MS
+            }
+            if time.now_ms() - last_heard > limit {
+                if raw {
+                    term.term_raw_leave()
+                }
+                return error(coded(ERR_TIMEOUT, "Flint stopped answering during the session"))
+            }
+            continue
+        }
+        frame := conn.recv(SERVE_SEND_MS) or {
+            if raw {
+                term.term_raw_leave()
+            }
+            return error(coded(ERR_IO, "Flint went away during the session"))
+        }
+        last_heard = time.now_ms()
+        tag := relay_tag(frame)
+        body := relay_payload(frame)
+        if tag == TAG_NOT_SERVED {
+            return not_served()
+        } else if tag == TAG_STDOUT {
+            term.term_output(body)
+        } else if tag == TAG_STDERR {
+            write_stderr(body)
+        } else if tag == TAG_RAW_ENTER {
+            try term.term_raw_enter()
+            raw = true
+        } else if tag == TAG_RAW_LEAVE {
+            term.term_raw_leave()
+            raw = false
+        } else if tag == TAG_PROMPT {
+            answer := answer_relayed_prompt(prompter, body)
+            conn.send(relay_frame(TAG_ANSWER, json.stringify(answer)), SERVE_SEND_MS) or {}
+            last_heard = time.now_ms()
+        } else if tag == TAG_END {
+            if raw {
+                term.term_raw_leave()
+            }
+            end := json.parse[SessionEndFrame](body) or {
+                return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
+            }
+            return ServeReply{ served: true, stdout: end.stdout, stderr: end.stderr, exit: end.exit }
+        }
+    }
+    return not_served()
+}
+
+// One exchange of kind unlock, status or lock. `open` false on the connection when
+// Flint is not running.
+fn ask_app_state(conn: IpcConn, kind: str, vault: str, caller: str) -> AppState! {
+    mut req := new_request(kind, vault)
+    req.caller = caller
+    try conn.send(json.stringify(req), SERVE_SEND_MS)
+    text := try conn.recv(SERVE_SEND_MS)
+    return json.parse[AppState](text) or {
+        return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
+    }
+}
+
+// Where the desktop app is: $FLINT_APP (`off` never starts it), else the platform's
+// usual place.
+fn app_launch_command() -> []str {
+    // Typed: the checker takes `os.getenv` for an optional (CF-063).
+    override: str = os.getenv("FLINT_APP")
+    if override.len() > 0 {
+        if override.ends_with(".app") {
+            return ["open", "-a", override]
+        }
+        return [override]
+    }
+    if os_name() == "mac" {
+        return ["open", "-a", "Flint"]
+    }
+    // Next to this flint (a build tree or an install), else on the PATH.
+    beside: []str = [executable_dir() + "/gui/Flint", executable_dir() + "/Flint", executable_dir() + "/flint-app"]
+    for path in beside {
+        if fs.exists(path) {
+            return [path]
+        }
+    }
+    return ["flint-app"]
+}
+
+// Starts Flint, detached, so it outlives this command. False when it could not be
+// started.
+fn start_app() -> bool {
+    // Typed: the checker takes `os.getenv` for an optional (CF-063).
+    mode: str = os.getenv("FLINT_APP")
+    if mode == "off" {
+        return false
+    }
+    cmd := app_launch_command()
+    if cmd[0] == "open" {
+        r := os.command(cmd[0], cmd[1..]) or {
+            return false
+        }
+        return r.exit_code == 0
+    }
+    // The program path is an argument of the shell, never part of its script.
+    // Its output goes nowhere: `os.command` waits until every holder of its pipes is gone.
+    r := os.command("sh", ["-c", "command -v \"$0\" >/dev/null 2>&1 || exit 1; (setsid \"$0\" || \"$0\") >/dev/null 2>&1 </dev/null &", cmd[0]]) or {
+        return false
+    }
+    return r.exit_code == 0
+}
+
+// Asks Flint to unlock the command's vault, starting it when it is not running.
+// Returns its state: unlocked (it already was, or Flint reopened it on start),
+// asking (its unlock screen now names the command), other (it holds another vault),
+// or locked (Flint could not be reached).
+fn request_unlock(target: RecentVault, caller: str) -> AppState {
+    mut conn := dial_app()
+    if !conn.open {
+        if !start_app() {
+            return AppState{ state: APP_LOCKED, name: "" }
+        }
+        deadline := time.now_ms() + APP_START_WAIT_MS
+        for !conn.open && time.now_ms() < deadline {
+            time.sleep_ms(200)
+            conn = dial_app()
+        }
+        if !conn.open {
+            return AppState{ state: APP_LOCKED, name: "" }
+        }
+    }
+    defer conn.close()
+    return ask_app_state(conn, "unlock", target.path, caller) or AppState{ state: APP_LOCKED, name: "" }
+}
+
+// The `locked` error for a command that found its vault locked with nobody to type
+// the master password.
+fn locked_error(target: RecentVault, st: AppState) -> str {
+    if st.state == APP_ASKING {
+        return coded(ERR_LOCKED, "vault '{target.name}' is locked; Flint is asking for its master password. Unlock it there and run the command again")
+    }
+    if st.state == APP_OTHER {
+        return coded(ERR_LOCKED, "Flint has vault '{st.name}' open, not '{target.name}'; switch to it in Flint, or pass --master-stdin")
+    }
+    return coded(ERR_LOCKED, "vault '{target.name}' is locked and Flint could not be started; open Flint and unlock it, or pass --master-stdin")
+}
+
+// `flint vault unlock`: Flint holds the key, so unlocking means asking Flint. Waits
+// for the person to unlock there.
+fn cmd_vault_unlock_app(p: ParsedArgs, as_json: bool) -> void! {
+    try p.allow_flags("vault unlock", [])
+    try p.expect_args("vault unlock", 0, "[--vault <name|path>]")
+    if p.has_flag("--master-stdin") {
+        return error(coded(ERR_USAGE, "`flint vault unlock` asks Flint to unlock; type the master password there, or pass --master-stdin to the command that needs the vault"))
+    }
+    recents := new_json_recent_store(flint_config_dir())
+    target := try resolve_vault(recents, vault_selector(p))
+    mut st := request_unlock(target, caller_summary(p))
+    if st.state == APP_ASKING {
+        if !as_json {
+            write_stderr("Flint is asking for the master password of '{target.name}'…\n")
+        }
+        deadline := time.now_ms() + UNLOCK_WAIT_MS
+        for st.state == APP_ASKING && time.now_ms() < deadline {
+            time.sleep_ms(500)
+            conn := dial_app()
+            if !conn.open {
+                break
+            }
+            mut c := conn
+            st = ask_app_state(c, "status", target.path, "") or AppState{ state: APP_LOCKED, name: "" }
+            c.close()
+            if st.state == APP_LOCKED {
+                // Not asking any more and not unlocked: the person went elsewhere.
+                break
+            }
+        }
+        if st.state == APP_ASKING {
+            return error(coded(ERR_TIMEOUT, "vault '{target.name}' was not unlocked in Flint within {UNLOCK_WAIT_MS / 1000}s"))
+        }
+    }
+    if st.state != APP_UNLOCKED {
+        return error(locked_error(target, st))
+    }
+    info := VaultInfo{ path: target.path, name: target.name, format: VAULT_FORMAT_V1, cached: false }
+    if as_json {
+        say(json.stringify(info))
+    } else {
+        say("Unlocked vault '{target.name}' in Flint. Commands use it until Flint locks it.")
+    }
+}
+
+// `flint vault lock`: tells a running Flint to lock the vault if it holds it.
+// Returns whether it did.
+fn lock_in_app(target: RecentVault) -> bool {
+    mut conn := dial_app()
+    if !conn.open {
+        return false
+    }
+    defer conn.close()
+    st := ask_app_state(conn, "lock", target.path, "") or AppState{ state: APP_LOCKED, name: "" }
+    return st.state == APP_UNLOCKED
 }
 
 // ---- The app's side ------------------------------------------------------------
@@ -165,6 +550,15 @@ fn parse_serve_request(text: str) -> ServeRequest! {
     return req
 }
 
+fn served_secrets(req: ServeRequest) -> SecretInput {
+    return SecretInput{
+        master: "", has_master: false,
+        password: req.secrets.password, has_password: req.secrets.has_password,
+        passphrase: req.secrets.passphrase, has_passphrase: req.secrets.has_passphrase,
+        key_text: req.secrets.key_text, has_key: req.secrets.has_key,
+    }
+}
+
 // Runs a client's command against `session`, the vault the app holds (attached to
 // `store`), capturing everything it prints. The caller holds the vault still for
 // the whole run and has checked that `req.vault` is `session`'s.
@@ -177,14 +571,8 @@ fn run_served(req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsK
     if check_command(p).has_value() == false || wants_help(p) {
         return not_served()
     }
-    sec := SecretInput{
-        master: "", has_master: false,
-        password: req.secrets.password, has_password: req.secrets.has_password,
-        passphrase: req.secrets.passphrase, has_passphrase: req.secrets.has_passphrase,
-        key_text: req.secrets.key_text, has_key: req.secrets.has_key,
-    }
     capture_begin(req.cwd)
-    status := run_command(p, sec, req.as_json, c, mut store, served_vault_source(kc, session), recents)
+    status := run_command(p, served_secrets(req), req.as_json, c, mut store, served_vault_source(kc, session), recents)
     mut code: i32 = 0
     if status.has_value() {
         code = status.value()
@@ -195,12 +583,61 @@ fn run_served(req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsK
     return ServeReply{ served: true, stdout: o, stderr: e, exit: i64(code) }
 }
 
+// Whether the app runs this session request (a checked `connect`, `exec` or `host
+// test`); it then owes the client the session's frames.
+fn session_servable(req: ServeRequest) -> bool {
+    parsed := parse_cli_args(req.argv)
+    if !parsed.has_value() {
+        return false
+    }
+    p := parsed.value()
+    return is_session_command(p) && check_command(p).has_value() && !wants_help(p)
+}
+
+// Runs a client's session command against `session` (a copy the caller took of the
+// vault the app holds), its terminal, prompts and output relayed over `conn`, and
+// ends with the frame carrying the exit status and what the command printed. The
+// vault is not held still meanwhile: a session can last hours, and needs the key
+// only to log in.
+fn run_served_session(conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, session: VaultSession) {
+    p := parse_cli_args(req.argv) or {
+        return
+    }
+    link := new_relay_link(conn, req.tty, i32(req.cols), i32(req.rows))
+    mut term := new_socket_terminal(link)
+    mut sink := new_socket_exec_sink(link)
+    prompter := new_socket_prompter(link)
+    mut term_name := req.term
+    if term_name.len() == 0 {
+        term_name = "xterm-256color"
+    }
+    capture_begin(req.cwd)
+    status := run_session_command(p, served_secrets(req), req.as_json, c, mut store, served_vault_source(kc, session), recents, mut term, prompter, mut sink, term_name)
+    mut code: i32 = 0
+    if status.has_value() {
+        code = status.value()
+    } else {
+        code = report_error("{status.error().message()}", req.as_json)
+    }
+    (o, e) := capture_end()
+    end := SessionEndFrame{ exit: i64(code), stdout: o, stderr: e }
+    conn.send(relay_frame(TAG_END, json.stringify(end)), SERVE_SEND_MS) or {}
+}
+
+fn session_not_served_frame() -> str {
+    return relay_frame(TAG_NOT_SERVED, "{}")
+}
+
 fn json_not_served() -> str {
     return json.stringify(not_served())
 }
 
 fn serve_reply_json(r: ServeReply) -> str {
     return json.stringify(r)
+}
+
+fn app_state_json(state: str, name: str) -> str {
+    return json.stringify(AppState{ state: state, name: name })
 }
 
 // Whether a served command may have changed the vault, so the window reloads what it

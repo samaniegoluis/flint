@@ -25,6 +25,8 @@ flint="$root/build/flint"
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-e2e.XXXXXX")"
 export FLINT_CONFIG_DIR="$tmp/config"
+# A locked vault with no terminal would start the desktop app (D-042): not here.
+export FLINT_APP=off
 all_out="$tmp/all-output"
 : > "$all_out"
 failures=0
@@ -147,10 +149,12 @@ echo "== lock, unlock, wrong password"
 expect 0 "vault lock" "" -- vault lock
 expect 5 "a locked vault with no terminal fails with locked" "" -- host list
 expect 6 "a wrong master password fails with wrong_password" "wrong password here"$'\n' -- host list --master-stdin
-expect 0 "the master password on stdin unlocks" "$MASTER"$'\n' -- --json vault unlock --master-stdin
-if [[ "$cached" == "True" ]]; then
-  expect 0 "after unlock the keychain opens it without a password" "" -- host list
-fi
+expect 0 "the master password on stdin opens it for one command" "$MASTER"$'\n' -- --json host list --master-stdin
+expect 5 "and nothing is cached: the next command is locked again" "" -- host list
+check "the CLI never caches the key (D-042)" '[[ "$cached" == "False" ]]'
+expect 2 "vault unlock takes no master password: Flint asks for it" "$MASTER"$'\n' -- vault unlock --master-stdin
+expect 5 "vault unlock with Flint not running: locked" "" -- vault unlock
+check "it says to open Flint" '[[ "$err" == *"open Flint"* ]]'
 
 echo "== several vaults"
 work="$tmp/work.flint"

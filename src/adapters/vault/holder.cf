@@ -86,3 +86,115 @@ fn (self: SessionHolder) wipe() {
         self.cell->wipe();
     }
 }
+
+// ---- Access state (D-042) --------------------------------------------------------
+
+// Someone used the app or its vault now: the page, a terminal tab, a CLI command.
+fn (self: SessionHolder) touch(now_ms: i64) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->last_activity_ms = now_ms;
+    }
+}
+
+fn (self: SessionHolder) last_activity() -> i64 {
+    mut t: i64 = 0
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        t = self.cell->last_activity_ms;
+    }
+    return t
+}
+
+// A CLI asked to unlock `path`; `caller` is the command, as the unlock screen names it.
+fn (self: SessionHolder) set_ask(path: str, caller: str) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->ask_path = path;
+        self.cell->ask_caller = caller;
+    }
+}
+
+// The pending unlock request: (path, caller), ("", "") for none.
+fn (self: SessionHolder) ask() -> (str, str) {
+    mut path := ""
+    mut caller := ""
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        path = self.cell->ask_path;
+        caller = self.cell->ask_caller;
+    }
+    return (path, caller)
+}
+
+// `path` was locked in this run: it opens again with the master password only.
+fn (self: SessionHolder) mark_relocked(path: str) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        auto& v = self.cell->relocked;
+        if (std::find(v.begin(), v.end(), path) == v.end()) v.push_back(path);
+    }
+}
+
+fn (self: SessionHolder) relocked(path: str) -> bool {
+    mut found := false
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        auto& v = self.cell->relocked;
+        found = std::find(v.begin(), v.end(), path) != v.end();
+    }
+    return found
+}
+
+fn (self: SessionHolder) clear_relocked(path: str) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        auto& v = self.cell->relocked;
+        v.erase(std::remove(v.begin(), v.end(), path), v.end());
+    }
+}
+
+// The auto-lock setting the lock timer follows (LOCK_AFTER), set at start and on save.
+fn (self: SessionHolder) set_lock_after(setting: str) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->lock_after = setting;
+    }
+}
+
+fn (self: SessionHolder) lock_after() -> str {
+    mut s := ""
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        s = self.cell->lock_after;
+    }
+    return s
+}
+
+// The window closed: background loops end.
+fn (self: SessionHolder) set_quitting() {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->quitting = true;
+    }
+}
+
+fn (self: SessionHolder) quitting() -> bool {
+    mut q := false
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        q = self.cell->quitting;
+    }
+    return q
+}

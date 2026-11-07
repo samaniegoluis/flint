@@ -57,3 +57,60 @@ test "a reply never names a secret field" {
     assert(!text.contains("passphrase"))
     assert(!text.contains("key_text"))
 }
+
+test "session commands are streamed, not run in one exchange" {
+    assert(is_session_command(parsed(["host", "test", "web"])))
+    assert(is_session_command(parsed(["connect", "web"])))
+    assert(is_session_command(parsed(["exec", "web", "--", "id"])))
+    assert(!is_session_command(parsed(["host", "list"])))
+    sess := ServeRequest{ kind: "session", version: SERVE_PROTOCOL, vault: "/v", argv: ["exec", "web", "--", "id"], cwd: "/", as_json: false, secrets: no_wire_secrets() }
+    assert(session_servable(sess))
+    mut bad := sess
+    bad.argv = ["host", "list"]
+    assert(!session_servable(bad))
+    bad.argv = ["exec"]
+    assert(!session_servable(bad))
+}
+
+test "commands that need the key ask Flint to unlock; the rest do not" {
+    // Typed: a literal of literals is not inferred as a range (CF-067).
+    need: [][]str = [["host", "list"], ["connect", "web"], ["exec", "web", "--", "id"], ["vault", "rename", "x"], ["import", "tether", "f"]]
+    for args in need {
+        assert(needs_unlocked_vault(parsed(args)))
+    }
+    free: [][]str = [["vault", "status"], ["vault", "list"], ["vault", "lock"], ["vault", "create", "/v"]]
+    for args in free {
+        assert(!needs_unlocked_vault(parsed(args)))
+    }
+}
+
+test "the unlock screen names the command, never a flag's value" {
+    assert_eq(caller_summary(parsed(["--json", "exec", "web", "--timeout", "9", "--", "uptime", "-p"])), "flint exec web -- uptime -p")
+    assert_eq(caller_summary(parsed(["host", "add", "db", "--hostname", "10.0.0.1"])), "flint host add db")
+    long := caller_summary(parsed(["exec", "web", "--", "echo", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]))
+    assert_eq(long.len(), 160)
+    assert(long.ends_with("..."))
+}
+
+test "relay frames carry a tag and raw bytes" {
+    f := relay_frame(TAG_STDOUT, "\x1b[1mhi\x00")
+    assert_eq(relay_tag(f), "o")
+    assert_eq(relay_payload(f), "\x1b[1mhi\x00")
+    assert_eq(relay_tag(""), "")
+    assert_eq(relay_payload("k"), "")
+    assert_eq(relay_tag(session_not_served_frame()), TAG_NOT_SERVED)
+}
+
+test "a session waits longer for a slow exec than for a login" {
+    assert_eq(session_wait_ms(parsed(["connect", "web"])), (15 * 8 + 60) * 1000)
+    assert_eq(session_wait_ms(parsed(["exec", "web", "--exec-timeout", "30", "--", "id"])), (15 * 8 + 30 + 60) * 1000)
+    assert_eq(session_wait_ms(parsed(["host", "test", "web", "--timeout", "5"])), (5 * 8 + 60) * 1000)
+}
+
+test "a locked error says what to do" {
+    t := RecentVault{ path: "/v.flint", name: "Home", id: "" }
+    assert(locked_error(t, AppState{ state: APP_ASKING, name: "" }).contains("Flint is asking"))
+    assert(locked_error(t, AppState{ state: APP_OTHER, name: "Work" }).contains("'Work'"))
+    assert(locked_error(t, AppState{ state: APP_LOCKED, name: "" }).contains("could not be started"))
+    assert_eq(error_code_of(locked_error(t, AppState{ state: APP_LOCKED, name: "" })), ERR_LOCKED)
+}

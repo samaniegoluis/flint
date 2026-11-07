@@ -169,9 +169,20 @@ this machine, or remove it from the list; the file itself is never deleted. It a
 vault and in the list, and the file keeps its name and place (see
 [Rename or move a vault](/guides/vaults/#rename-or-move-a-vault)).
 
-**Lock** (<kbd>⌘L</kbd>) closes every session and returns to the unlock screen. The
-keychain still holds the key, so to require the master password on this machine, use
-**Settings → Vault → Forget on this device** (the same as `flint vault lock`).
+**Lock** (<kbd>⌘L</kbd>) wipes the vault key from memory and shows the lock screen over
+the window. **Open sessions keep running** behind it and are there when you unlock; the
+`flint` CLI and new sessions wait. Once locked, the vault opens again only with its master
+password, never from the keychain, until Flint restarts. **Close vault** on the lock
+screen ends its sessions instead.
+
+The vault also locks on its own: after **Settings → Vault → Lock after** (1 hour by
+default; 1 minute to 4 hours, or never) with nobody using Flint or its CLI, when the
+screen locks, and before the computer sleeps. See [Locking](/guides/vaults/#locking).
+
+When a `flint` command finds the vault locked and has no terminal to ask on (an agent, a
+script), Flint comes to the front on the unlock screen and names the command: *"`flint
+exec web -- uptime` wants to use this vault."* Unlock, and the command can run again. With
+Flint closed, `flint` starts it.
 
 ## Settings
 
@@ -186,7 +197,7 @@ Settings belong to this machine, not to the vault, and save as you change them.
 - **Keyboard shortcuts**: the full map for macOS and Linux. Custom shortcuts are coming
   in a later version.
 - **Vault**: the open vault's file and counts, **Rename**, whether this machine remembers
-  its key, **Lock now**, the known hosts, each of which you can forget, and **Import from
+  its key, **Lock now**, **Lock after**, the known hosts, each of which you can forget, and **Import from
   Tether…** ([Moving from Tether](/guides/from-tether/)).
 
 They are kept in `settings.json` in Flint's config folder (`~/Library/Application

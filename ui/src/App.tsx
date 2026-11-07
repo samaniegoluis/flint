@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { AppProvider, useApp } from './state/app';
 import { Welcome } from './screens/Welcome';
 import { CreateVault } from './screens/CreateVault';
@@ -19,6 +19,23 @@ function Toast() {
   );
 }
 
+// The main window, and the lock screen over it: the same element in both phases,
+// so a lock never unmounts the terminals of the sessions that keep running.
+function Main() {
+  const { phase } = useApp();
+  const locked = phase === 'locked';
+  const host = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (host.current) host.current.inert = locked;
+  }, [locked]);
+  return (
+    <>
+      <div ref={host} style={{ display: 'contents' }} aria-hidden={locked || undefined}><Shell /></div>
+      {locked && <Unlock locked />}
+    </>
+  );
+}
+
 function Phase() {
   const { phase, info } = useApp();
 
@@ -36,7 +53,7 @@ function Phase() {
   if (phase === 'welcome') return <Welcome />;
   if (phase === 'create') return <CreateVault />;
   if (phase === 'unlock') return <Unlock />;
-  return <Shell />;
+  return <Main />;
 }
 
 function Root() {

@@ -88,10 +88,11 @@ const screens = {
 function stub({ catalog, recents, screens, theme }) {
 	const listeners = new Map();
 	const emit = (event, data) => (listeners.get(event) ?? []).forEach((cb) => cb(data));
+	window.__shotsEmit = emit;
 	const b64 = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
 	const settings = {
 		theme, accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
-		term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: false, term_theme: 'default',
+		term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: false, term_theme: 'default', lock_after: '1h',
 	};
 	const uiState = { sidebar_open: true, sidebar_width: 264, collapsed: [] };
 	const current = recents.find((r) => r.current);
@@ -105,7 +106,7 @@ function stub({ catalog, recents, screens, theme }) {
 		ui_state_set: (s) => ({ sidebar_open: s.sidebar_open, sidebar_width: s.sidebar_width, collapsed: s.collapsed }),
 		vault_recents: () => recents,
 		vault_unlock: () => ({ path: current.path, name: current.name, format: 1, cached: true }),
-		vault_status: () => ({ path: current.path, name: current.name, exists: true, cached: true, groups: catalog.groups.length, hosts: catalog.hosts.length, keys: catalog.keys.length, credentials: catalog.credentials.length }),
+		vault_status: () => ({ path: current.path, name: current.name, exists: true, unlocked: true, cached: true, groups: catalog.groups.length, hosts: catalog.hosts.length, keys: catalog.keys.length, credentials: catalog.credentials.length }),
 		catalog: () => catalog,
 		session_open: ({ session, alias }) => {
 			setTimeout(() => {
@@ -114,6 +115,10 @@ function stub({ catalog, recents, screens, theme }) {
 			}, 50);
 			return {};
 		},
+		activity: () => ({}),
+		unlock_request: () => ({ path: '', name: '', caller: '' }),
+		unlock_request_dismiss: () => ({}),
+		vault_lock: () => ({}),
 		session_input: () => ({}),
 		session_resize: () => ({}),
 		session_close: () => ({}),
@@ -165,6 +170,22 @@ try {
 		const file = join(outDir, `app-${theme}.png`);
 		await page.screenshot({ path: file });
 		console.log(`wrote ${file}`);
+		// FLINT_SHOTS_EXTRA=<dir>: more screens for a visual check, not used by the landing.
+		const extra = process.env.FLINT_SHOTS_EXTRA;
+		if (extra) {
+			mkdirSync(extra, { recursive: true });
+			await page.getByRole('button', { name: 'Settings' }).first().click();
+			await page.locator('.nav-i', { hasText: 'Vault' }).click();
+			await page.waitForTimeout(300);
+			await page.screenshot({ path: join(extra, `settings-vault-${theme}.png`) });
+			await page.evaluate((path) => window.__shotsEmit('vault:locked', { path, name: 'Demo', reason: 'idle' }), recents.find((r) => r.current).path);
+			await page.waitForTimeout(300);
+			await page.screenshot({ path: join(extra, `locked-${theme}.png`) });
+			await page.evaluate((path) => window.__shotsEmit('vault:unlock-request', { path, name: 'Demo', caller: 'flint exec web-01 -- uptime' }), recents.find((r) => r.current).path);
+			await page.waitForTimeout(300);
+			await page.screenshot({ path: join(extra, `locked-request-${theme}.png`) });
+			console.log(`wrote extra screens to ${extra}`);
+		}
 		await page.close();
 	}
 } finally {

@@ -244,6 +244,17 @@ inline int read_frame(int fd, std::string& out, int timeout_ms, size_t max_len) 
     return rc == 1 ? -1 : rc;
 }
 
+// Whether `fd` has something to read (or the peer hung up) within `timeout_ms`.
+inline bool readable(int fd, int timeout_ms) {
+    pollfd p{fd, POLLIN, 0};
+    for (;;) {
+        int n = ::poll(&p, 1, timeout_ms);
+        if (n > 0) return true;
+        if (n == 0) return false;
+        if (errno != EINTR) return true;
+    }
+}
+
 inline void close_fd(int fd) {
     if (fd >= 0) ::close(fd);
 }

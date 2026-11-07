@@ -672,9 +672,26 @@
     await click('.drawer .modal-f button', 'Done');
 
     await setStep('lock');
+    // A session that must keep running under the lock screen (D-042).
+    await click('.rail-btn', 'Hosts');
+    await waitFor(() => byText('.tree .ti', 'local'), 'local in the tree');
+    byText('.tree .ti', 'local').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await waitFor(() => toolbarIs('ready'), 'a session before locking', 30000);
+    await runInTerminal('echo before-lock-$((1+1))', 'before-lock-2');
+    const vaultPath = (await window.backend.vault_status({})).path;
     await click('.statusbar .sb-btn', 'Lock');
-    await waitFor(() => hasText('Master password'), 'the unlock screen');
-    await check(qa('.tab').length === 0, 'locking closes every session');
+    await waitFor(() => q('.lock-screen [data-lock-reason="manual"]'), 'the lock screen');
+    await check(hasText('Master password'), 'Lock shows the lock screen');
+    await check(qa('.tab').length > 0 && !!q('.tab')?.closest('[inert]'), 'the tabs stay, behind the lock screen and out of reach');
+    await check(hasText('keeps running') || hasText('keep running'), 'the lock screen says the sessions keep running');
+    {
+      let refused = '';
+      try { await window.backend.catalog({}); } catch (e) { refused = String(e?.message ?? e); }
+      await check(refused.startsWith('locked'), 'a locked vault answers nothing');
+      refused = '';
+      try { await window.backend.vault_unlock({ path: vaultPath, password: '' }); } catch (e) { refused = String(e?.message ?? e); }
+      await check(refused.startsWith('locked'), 'a vault locked in this run never reopens without its master password');
+    }
     await fill('#pw', 'wrong-password');
     await click('button[type="submit"]', 'Unlock');
     await waitFor(() => hasText('Wrong password'), 'the wrong password message', 30000);
@@ -695,6 +712,20 @@
     }
     await waitFor(() => byText('.tree .ti', 'local') || grpRow(), 'the unlocked tree', 30000);
     await check(true, 'the right master password unlocks the vault again');
+    await check(!q('.lock-screen') && !q('.tab')?.closest('[inert]'), 'the lock screen is gone');
+    await runInTerminal('echo after-lock-$((2+2))', 'after-lock-4');
+    await check(true, 'the session that ran under the lock screen still works');
+
+    await setStep('lock on screen lock and sleep');
+    for (const kind of ['screen', 'sleep']) {
+      await window.backend.e2e_system_event({ name: kind });
+      await waitFor(() => q(`.lock-screen [data-lock-reason="${kind}"]`), `the lock screen after ${kind}`, 10000);
+      await check(true, `the vault locks on ${kind === 'screen' ? 'a screen lock' : 'sleep'}`);
+      await fill('#pw', MASTER);
+      await click('button[type="submit"]', 'Unlock');
+      await waitFor(() => !q('.lock-screen') && (byText('.tree .ti', 'local') || grpRow()), 'the unlocked tree', 30000);
+    }
+    await check(qa('.tab').length > 0, 'the tabs are still there after both locks');
     await waitFor(() => grpRow()?.getAttribute('aria-expanded') === 'false', 'the collapsed group after unlocking');
     await check(true, 'the vault opens with its groups collapsed as they were left');
     await check(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w').trim() === '280px', 'and with the sidebar width that was set');

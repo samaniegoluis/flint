@@ -16,9 +16,9 @@ SSH keys and login credentials.
   a password or a key. See [Use Flint with an AI agent](/guides/ai-agents/).
 - **The CLI is a first-class citizen.** Every command supports `--json` and stable exit
   codes, for scripts as much as agents.
-- **One master password per vault.** The key derived from it can be cached in the OS
-  keychain, so a machine you trust opens the vault without asking. The
-  [Security model](/reference/security-model/) says what that cache protects and what
+- **Flint holds the unlocked vault.** The key derived from the master password lives in
+  the running app; the CLI and your agents ask it, and it locks on its own when you step
+  away. The [Security model](/reference/security-model/) says what that protects and what
   Flint does next.
 
 ## Status
@@ -28,7 +28,7 @@ Flint is in early development. Here is what works today:
 | Area | Status |
 |---|---|
 | Build on macOS and Linux | Works |
-| Encrypted vaults, keychain unlock, recent vaults | Works ([Vaults](/guides/vaults/)) |
+| Encrypted vaults, unlock in the app, auto-lock, recent vaults | Works ([Vaults](/guides/vaults/)) |
 | Hosts, groups, keys, credentials from the CLI | Works ([CLI reference](/reference/cli/)) |
 | `flint connect` / `flint exec`, jump hosts, known hosts | Works ([Connecting](/guides/connecting/)) |
 | Desktop app: vaults, host tree, tabs, terminal, prompts, palette, settings | Works ([The desktop app](/guides/desktop-app/)) |
