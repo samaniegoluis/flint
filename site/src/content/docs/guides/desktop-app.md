@@ -27,7 +27,7 @@ can turn the reopening off in **Settings → Appearance → Window**.
 | Activity bar (left) | **Hosts**, **Keys**, **Credentials**, and **Settings** at the bottom. **Files** (SFTP) is coming in a later version |
 | Sidebar | The vault button (switch vaults), a filter, and your hosts in their groups |
 | Main area | One tab per session, the session toolbar and the terminal |
-| Status bar | Lock state, the number of open sessions, **Lock**, and **Agents: N** while programs you approved may use the vault |
+| Status bar | Lock state, the number of open sessions, **Lock**, and **Agents: N** while programs you approved may use the vault (it opens Settings → Access, and shows **N waiting** while a request waits and Flint is not in front) |
 
 Click **Hosts** again (or press <kbd>⌘B</kbd>) to hide the sidebar and give the terminal
 the whole width; it stays hidden when you come back to **Hosts** from another view. Drag the sidebar's right edge to make it wider or narrower (200 to 400 px;
@@ -68,6 +68,12 @@ notes. Authentication is one of:
 
 Whatever the choice, Flint tries the methods in the [order the CLI
 uses](/guides/connecting/#how-flint-logs-in), then the agent, then asks for a password.
+
+Below authentication, **Sudo password** sets what [`flint exec
+--sudo`](/guides/ai-agents/#sudo) types when sudo asks: **Same as the login password**
+(it says where that comes from, the host's password or its credential's, or that there is
+none and the approval window asks each time), or **Its own password**. A saved one shows
+as **Saved**, never its value, with **Change** and **Remove**.
 
 **On connect** is a command that every new session on the host runs, such as `herdr`
 or `tmux new -A -s main`. It runs in your login shell with your profile and `PATH`, as
@@ -192,9 +198,13 @@ The first time a program runs `flint` while the vault is unlocked, Flint comes t
 front with the approval window: who asks (*"flint, started by Claude Code"*, with its
 chain of processes), the command, and what to allow: the host, its group or the whole
 vault; reading, running commands, changing the vault; for 15 minutes, 1 hour, 4 hours or
-until the vault locks. **Allow** asks for Touch ID or your Mac's password (macOS), your
-login password through polkit (Linux), or the master password. **Deny** (<kbd>Esc</kbd>)
-refuses it, and so does no answer within two minutes. See
+until the vault locks. The action the command needs is marked *needed*; a choice that
+does not cover it says so, and that request will still be refused. **Allow**
+(<kbd>⌘↵</kbd>, <kbd>Ctrl+↵</kbd> on Linux) asks for Touch ID or your Mac's password
+(macOS), your login password through polkit (Linux), or the master password. **Deny**
+has the focus (<kbd>Esc</kbd>), unless the window asks for a password; it refuses, and so
+does no answer within two minutes (the countdown shows it). Several requests wait in
+turn: the window says *1 of N waiting* and names the next one. See
 [Approve a program](/guides/ai-agents/#approve-a-program).
 
 `flint token create` brings up the same window showing the token instead: its name, what
@@ -203,8 +213,9 @@ token; it never becomes a grant, so the next `token create` asks again. See
 [Tokens for scheduled jobs](/guides/ai-agents/#tokens-for-scheduled-jobs).
 
 `flint exec <alias> --sudo -- <command>` brings it up for one command as root: the
-host, the login user, and the command's arguments, one per chip, exactly as they will
-run. **Run as root** (with presence) allows that command only. When Flint holds no
+host, the login user, and the command's arguments, one per chip, after the `sudo --`
+Flint adds (tinted), never cut short. **Run as root** (with presence) allows that command
+only. When Flint holds no
 password for sudo on that host, the window asks for one, with **Save it for this
 host**. See [sudo](/guides/ai-agents/#sudo).
 

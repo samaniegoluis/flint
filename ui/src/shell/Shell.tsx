@@ -49,6 +49,17 @@ export function Shell() {
   const { ui, update: updateUi } = useUiState(vault?.path ?? '');
   const access = useAccessState(phase === 'main');
   const approval = access.state?.pending[0] ?? null;
+  const grantCount = access.state?.grants.length ?? 0;
+  const waiting = access.state?.pending.length ?? 0;
+  // A request waits behind another app: the status bar says so until Flint is in front.
+  const [focused, setFocused] = useState(() => document.hasFocus());
+  useEffect(() => {
+    const on = () => setFocused(true);
+    const off = () => setFocused(false);
+    window.addEventListener('focus', on);
+    window.addEventListener('blur', off);
+    return () => { window.removeEventListener('focus', on); window.removeEventListener('blur', off); };
+  }, []);
   const narrowRef = useRef(narrow);
   narrowRef.current = narrow;
 
@@ -294,9 +305,11 @@ export function Shell() {
         <button className="sb-btn" onClick={() => lock().catch(fail)}>Lock<Kbd action="lock" /></button>
         <span className="sb-item">{sessionsOpen === 0 ? 'No sessions' : `${sessionsOpen} session${sessionsOpen === 1 ? '' : 's'}`}</span>
         {tab && <span className="sb-item mono">{tab.alias}</span>}
-        {(access.state?.grants.length ?? 0) > 0 && (
-          <button className="sb-btn" data-grants onClick={() => { setSection('access'); setView('settings'); }}>
-            Agents: {access.state?.grants.length}
+        {(grantCount > 0 || (waiting > 0 && !focused)) && (
+          <button className="sb-btn sb-agents" data-grants onClick={() => { setSection('access'); setView('settings'); }}
+            aria-label={`Agents: ${grantCount} active grant${grantCount === 1 ? '' : 's'}${waiting > 0 && !focused ? `, ${waiting} waiting` : ''}. Open Settings, Access`}>
+            <Icon name="agent" />Agents: {grantCount}
+            {waiting > 0 && !focused && <span className="sb-pending" data-agents-waiting>{waiting} waiting</span>}
           </button>
         )}
         <span className="grow" />
@@ -314,7 +327,7 @@ export function Shell() {
       )}
       {manage && <ManageVaults onClose={() => setManage(false)} />}
       {approval && access.state && (
-        <ApprovalDialog key={approval.id} ap={approval} presence={access.state.presence} catalog={catalog} skew={access.skew}
+        <ApprovalDialog key={approval.id} ap={approval} queue={access.state.pending} presence={access.state.presence} catalog={catalog} skew={access.skew}
           onDone={(s) => (s ? access.setState(s) : access.refresh())} />
       )}
       {confirm && <ConfirmDialog c={confirm} onClose={() => setConfirm(null)} />}

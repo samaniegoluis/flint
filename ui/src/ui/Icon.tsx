@@ -19,7 +19,8 @@ export type IconName =
   | 'check' | 'lock' | 'unlock' | 'folder' | 'x' | 'reconnect' | 'dup' | 'files' | 'split'
   | 'term' | 'eye' | 'alert' | 'shield' | 'shield-ok' | 'wifi-off' | 'trash' | 'edit' | 'file'
   | 'clip' | 'info' | 'enter' | 'sun' | 'moon' | 'monitor' | 'keyboard' | 'palette' | 'link'
-  | 'cloud' | 'jump' | 'sidebar' | 'arrow-r' | 'sparkle' | 'more' | 'reveal';
+  | 'cloud' | 'jump' | 'sidebar' | 'arrow-r' | 'sparkle' | 'more' | 'reveal'
+  | 'fingerprint' | 'agent' | 'chain' | 'shield-key';
 
 export function Icon({ name, size, className = '', label }: { name: IconName; size?: 'xs' | 'sm' | 'lg' | 'xl'; className?: string; label?: string }) {
   const cls = ['ic', size ? 'ic-' + size : '', className].filter(Boolean).join(' ');

@@ -10,14 +10,34 @@ import type { ActivityEntry, GrantView, TokenView } from '../api/types';
 import type { Confirm } from '../pages/KeysPage';
 import { useApp } from '../state/app';
 import { presenceLabel, useAccessState } from './ApprovalDialog';
+import { Icon } from '../ui/Icon';
 
-function scopeText(g: GrantView): string {
-  if (g.all) return 'Whole vault';
-  return [...g.groups.map((p) => `group ${p}`), ...g.hosts].join(', ') || 'Nothing (deleted)';
+type Scoped = { all: boolean; groups: string[]; hosts: string[]; read: boolean; exec: boolean; write: boolean };
+
+function ScopeChips({ s }: { s: Scoped }) {
+  if (s.all) return <span className="chip">Whole vault</span>;
+  const items = [...s.groups.map((p) => ({ key: 'g:' + p, text: p, title: `Group ${p}, its subgroups included` })), ...s.hosts.map((h) => ({ key: 'h:' + h, text: h, title: h }))];
+  if (items.length === 0) return <span className="faint">Nothing (deleted)</span>;
+  return (
+    <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
+      {items.map((i) => <span key={i.key} className="chip" title={i.title} style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.text}</span>)}
+    </div>
+  );
 }
 
-function actionsText(g: GrantView): string {
-  return [g.read && 'read', g.exec && 'run commands', g.write && 'change the vault'].filter(Boolean).join(' · ');
+function ActionBadges({ s }: { s: Scoped }) {
+  return (
+    <div className="row" style={{ gap: 4 }}>
+      {s.read && <span className="badge">Read</span>}
+      {s.exec && <span className="badge accent">Run</span>}
+      {s.write && <span className="badge warn">Change</span>}
+    </div>
+  );
+}
+
+/** "Claude Code" out of "flint, started by Claude Code". */
+function callerName(label: string): string {
+  return label.replace(/^.*?, started by /, '');
 }
 
 function expiresText(g: GrantView, now: number, skew: number): string {
@@ -26,28 +46,36 @@ function expiresText(g: GrantView, now: number, skew: number): string {
   return min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} min left` : `${min} min left`;
 }
 
-function tokenActions(t: TokenView): string {
-  return [t.read && 'read', t.exec && 'run commands', t.write && 'change the vault'].filter(Boolean).join(' · ');
-}
-
-function tokenScope(t: TokenView): string {
-  if (t.all) return 'Whole vault';
-  return [...t.groups.map((p) => `group ${p}`), ...t.hosts].join(', ') || 'Nothing (deleted)';
-}
-
 /** "12 Nov, 14:05" in the viewer's time zone, from Unix seconds. */
 export function whenText(secs: number): string {
   const d = new Date(secs * 1000);
   return d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-function tokenUntil(t: TokenView): string {
-  if (t.status === 'revoked') return `revoked ${whenText(t.revoked_at)}`;
-  if (t.status === 'expired') return `expired ${whenText(t.expires_at)}`;
-  return `until ${whenText(t.expires_at)}`;
+/** "13:41" for today, "7 Nov" before: the activity log's When column. */
+export function shortWhen(secs: number, now = new Date()): string {
+  const d = new Date(secs * 1000);
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
-const OUTCOME: Record<ActivityEntry['outcome'], string> = { allowed: 'Allowed', denied: 'Denied', timeout: 'No answer' };
+/** "in 28 days", "in 5 h", "in 12 min", from Unix seconds. */
+export function inText(secs: number, nowSecs: number): string {
+  const d = Math.max(0, secs - nowSecs);
+  if (d >= 2 * 86400) return `in ${Math.floor(d / 86400)} days`;
+  if (d >= 3600) return `in ${Math.floor(d / 3600)} h`;
+  return `in ${Math.max(1, Math.floor(d / 60))} min`;
+}
+
+function tokenUntil(t: TokenView, nowSecs: number): string {
+  if (t.status === 'revoked') return `revoked ${whenText(t.revoked_at)}`;
+  if (t.status === 'expired') return `expired ${whenText(t.expires_at)}`;
+  return inText(t.expires_at, nowSecs);
+}
+
+const OUTCOME: Record<ActivityEntry['outcome'], { text: string; tone: string }> = {
+  allowed: { text: 'Allowed', tone: 'ok' }, denied: { text: 'Denied', tone: 'danger' }, timeout: { text: 'Timed out', tone: 'danger' },
+};
 const VIA: Record<ActivityEntry['via'], string> = { grant: 'grant', token: 'token', window: 'asked' };
 const PAGE = 200;
 
@@ -70,32 +98,39 @@ function TokensSection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
   const live = tokens.filter((t) => t.status === 'active');
   const ended = tokens.filter((t) => t.status !== 'active');
   const shown = showEnded ? [...live, ...ended] : live;
+  const nowSecs = Date.now() / 1000;
   return (
-    <section data-tokens style={{ paddingTop: 'var(--sp-6)' }}>
-      <div className="row" style={{ alignItems: 'center', paddingBottom: 'var(--sp-2)' }}>
-        <span className="label grow">Tokens · {live.length}</span>
+    <section data-tokens>
+      <div className="section-h">
+        <h2>Tokens</h2>{live.length > 0 && <span className="badge">{live.length}</span>}<span className="grow" />
         {ended.length > 0 && (
           <button className="btn btn-ghost btn-sm" data-tokens-ended onClick={() => setShowEnded(!showEnded)}>
             {showEnded ? 'Hide ended' : `Show ended (${ended.length})`}
           </button>
         )}
       </div>
-      <p className="muted" style={{ fontSize: 'var(--fs-xs)', paddingBottom: 'var(--sp-2)' }}>
+      <p className="muted" style={{ fontSize: 'var(--fs-sm)', paddingBottom: 'var(--sp-2)', maxWidth: 680, lineHeight: 1.55 }}>
         For programs Flint cannot ask: cron, launchd, a CI runner. Create one with <span className="mono">flint token create</span>;
         the program passes it in <span className="mono">FLINT_TOKEN</span>. Kept in the vault, as a hash.
       </p>
-      {shown.length === 0 && <div className="panel muted" data-no-tokens style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>No tokens.</div>}
-      <div className="col" style={{ gap: 'var(--sp-2)' }}>
-        {shown.map((t) => (
-          <div key={t.id} className="panel row" data-token={t.name} data-token-status={t.status} style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-3)', alignItems: 'center', opacity: t.status === 'active' ? 1 : 0.6 }}>
-            <div className="col grow" style={{ gap: 2, minWidth: 0 }}>
-              <span className="strong trunc">{t.name} <span className="muted mono" style={{ fontSize: 'var(--fs-xs)' }}>{t.id}</span></span>
-              <span className="muted trunc" style={{ fontSize: 'var(--fs-xs)' }}>{tokenScope(t)} · {tokenActions(t)} · {tokenUntil(t)}</span>
-            </div>
-            {t.status === 'active' && <button className="btn btn-secondary btn-sm" data-token-revoke onClick={() => revoke(t)}>Revoke</button>}
-          </div>
-        ))}
-      </div>
+      {shown.length === 0 ? (
+        <div className="panel muted" data-no-tokens style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>No tokens.</div>
+      ) : (
+        <table className="table compact">
+          <thead><tr><th>Name</th><th>Hosts</th><th>Actions</th><th>Expires</th><th style={{ width: 80 }} /></tr></thead>
+          <tbody>
+            {shown.map((t) => (
+              <tr key={t.id} data-token={t.name} data-token-status={t.status} style={{ opacity: t.status === 'active' ? 1 : 0.6 }}>
+                <td className="primary mono" title={t.id}>{t.name}</td>
+                <td><ScopeChips s={t} /></td>
+                <td><ActionBadges s={t} /></td>
+                <td title={`until ${whenText(t.expires_at)}`}>{tokenUntil(t, nowSecs)}</td>
+                <td style={{ textAlign: 'right' }}>{t.status === 'active' && <button className="btn btn-secondary btn-sm" data-token-revoke onClick={() => revoke(t)}>Revoke</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </section>
   );
 }
@@ -117,30 +152,36 @@ function ActivitySection() {
     api.activityLog(last.id, PAGE).then((p) => { setEntries([...entries, ...p.entries]); setMore(p.entries.length === PAGE); }).catch(() => {});
   };
   return (
-    <section data-activity style={{ paddingTop: 'var(--sp-6)' }}>
-      <span className="label" style={{ display: 'block', paddingBottom: 'var(--sp-2)' }}>Activity</span>
-      <p className="muted" style={{ fontSize: 'var(--fs-xs)', paddingBottom: 'var(--sp-2)' }}>
-        What programs ran or changed through Flint, and what was refused. Allowed reads are not recorded. Kept in the vault, the newest 10,000.
+    <section data-activity>
+      <div className="section-h"><h2>Activity</h2><span className="grow" /><span className="hint">Reads aren't logged</span></div>
+      <p className="muted" style={{ fontSize: 'var(--fs-sm)', paddingBottom: 'var(--sp-3)', maxWidth: 680, lineHeight: 1.55 }}>
+        What programs ran or changed through Flint, and what was refused. Commands run as root are tinted and always shown in full.
       </p>
-      {entries.length === 0 && <div className="panel muted" data-no-activity style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>Nothing yet.</div>}
-      {entries.length > 0 && (
-        <div className="panel" style={{ padding: 0, overflowX: 'auto' }}>
-          <table className="table activity-table">
-            <thead><tr><th>When</th><th>Caller</th><th>Command</th><th>Result</th></tr></thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.id} data-activity-entry={e.outcome} data-activity-via={e.via}>
-                  <td className="muted nowrap">{whenText(e.at)}</td>
-                  <td>{e.caller} <span className="muted" style={{ fontSize: 'var(--fs-xs)' }}>· {VIA[e.via]}</span></td>
-                  <td className="mono" style={{ wordBreak: 'break-all' }}>{e.action === 'sudo' && <span className="activity-badge" data-activity-sudo>root</span>}{e.command}</td>
-                  <td className={e.outcome === 'allowed' ? 'nowrap' : 'nowrap err'}>{OUTCOME[e.outcome]}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {entries.length === 0 ? (
+        <div className="panel muted" data-no-activity style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>Nothing yet.</div>
+      ) : (
+        <div className="col" role="table" aria-label="Activity">
+          <div className="act-row head" role="row"><span>When</span><span>Caller</span><span>Command</span><span>Result</span></div>
+          {entries.map((e) => (
+            <div key={e.id} role="row" className={e.action === 'sudo' ? 'act-row sudo' : 'act-row'} data-activity-entry={e.outcome} data-activity-via={e.via}>
+              <span className="when" title={new Date(e.at * 1000).toLocaleString()}>{shortWhen(e.at)}</span>
+              <span className="caller row" style={{ gap: 6 }}>
+                <Icon name="agent" size="xs" /><span className="trunc">{e.caller}</span>
+                <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>· {VIA[e.via]}{e.token ? ` ${e.token}` : ''}</span>
+              </span>
+              <span className="cmd">
+                {e.action === 'sudo' && <span className="root-badge" data-activity-sudo>root</span>}
+                {e.command}
+              </span>
+              <span><span className={`badge ${OUTCOME[e.outcome].tone}`}>{e.outcome === 'allowed' && <Icon name="check" />}{OUTCOME[e.outcome].text}</span></span>
+            </div>
+          ))}
         </div>
       )}
-      {more && <div style={{ paddingTop: 'var(--sp-2)' }}><button className="btn btn-ghost btn-sm" data-activity-more onClick={loadMore}>Load more</button></div>}
+      <div className="row" style={{ paddingTop: 'var(--sp-3)', gap: 'var(--sp-3)' }}>
+        <span className="hint grow">Allowed reads (list, show) are not recorded. Command output and sudo passwords never are. Kept in the vault, the newest 10,000.</span>
+        {more && <button className="btn btn-ghost btn-sm" data-activity-more onClick={loadMore}>Load more</button>}
+      </div>
     </section>
   );
 }
@@ -154,28 +195,39 @@ export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void 
   const grants = state?.grants ?? [];
   return (
     <>
-      <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', paddingBottom: 'var(--sp-3)' }}>Access</h1>
-      <p className="muted" style={{ fontSize: 'var(--fs-sm)', paddingBottom: 'var(--sp-4)' }}>
-        Programs that run <span className="mono">flint</span> while this window holds the vault ask here first. A grant covers the
-        program that started <span className="mono">flint</span> (Claude Code, a terminal), ends when it expires or the vault
-        locks, and is confirmed with {presenceLabel(state?.presence ?? 'password')}.
+      <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', paddingBottom: 'var(--sp-2)' }}>Access</h1>
+      <p className="muted" style={{ fontSize: 'var(--fs-sm)', maxWidth: 680, lineHeight: 1.55 }}>
+        Programs reach this vault through the <span className="mono">flint</span> CLI. Before Flint runs anything for a program, you approve it in
+        the approval window. A grant covers the program that started <span className="mono">flint</span> (Claude Code, a terminal app, tmux), is
+        limited to some hosts and actions, ends when it expires or the vault locks, and is confirmed with {presenceLabel(state?.presence ?? 'password')}.
       </p>
-      <div className="row" style={{ alignItems: 'center', paddingBottom: 'var(--sp-2)' }}>
-        <span className="label grow">Active grants · {grants.length}</span>
-        {grants.length > 1 && <button className="btn btn-secondary btn-sm" onClick={() => revoke('')}>Revoke all</button>}
+      <div className="section-h">
+        <h2>Active grants</h2>{grants.length > 0 && <span className="badge">{grants.length}</span>}<span className="grow" />
+        {grants.length > 1 && <button className="btn btn-danger-ghost btn-sm" data-grants-revoke-all onClick={() => revoke('')}>Revoke all</button>}
       </div>
-      {grants.length === 0 && <div className="panel muted" data-no-grants style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>No program may use this vault right now.</div>}
-      <div className="col" style={{ gap: 'var(--sp-2)' }}>
-        {grants.map((g) => (
-          <div key={g.id} className="panel row" data-grant={g.id} style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-3)', alignItems: 'center' }}>
-            <div className="col grow" style={{ gap: 2, minWidth: 0 }}>
-              <span className="strong trunc">{g.label}</span>
-              <span className="muted trunc" style={{ fontSize: 'var(--fs-xs)' }}>{scopeText(g)} · {actionsText(g)} · {expiresText(g, now, skew)} · pid {g.anchor_pid}</span>
-            </div>
-            <button className="btn btn-secondary btn-sm" onClick={() => revoke(g.id)}>Revoke</button>
-          </div>
-        ))}
-      </div>
+      {grants.length === 0 ? (
+        <div className="panel empty" data-no-grants style={{ padding: 'var(--sp-6)' }}>
+          <span className="empty-ic"><Icon name="shield-key" /></span>
+          <span className="strong">No program may use this vault right now</span>
+          <span style={{ fontSize: 'var(--fs-sm)', maxWidth: 480 }}>When a program runs <span className="mono">flint</span>, Flint comes to the front and asks you first. Grants end when they expire or the vault locks.</span>
+        </div>
+      ) : (
+        <table className="table compact">
+          <thead><tr><th>Program</th><th>Hosts</th><th>Actions</th><th>Time left</th><th>Anchor</th><th style={{ width: 80 }} /></tr></thead>
+          <tbody>
+            {grants.map((g) => (
+              <tr key={g.id} data-grant={g.id}>
+                <td className="primary" title={g.label}><div className="row" style={{ gap: 'var(--sp-2)' }}><Icon name="agent" />{callerName(g.label)}</div></td>
+                <td><ScopeChips s={g} /></td>
+                <td><ActionBadges s={g} /></td>
+                <td>{expiresText(g, now, skew)}</td>
+                <td className="mono">pid {g.anchor_pid}</td>
+                <td style={{ textAlign: 'right' }}><button className="btn btn-secondary btn-sm" onClick={() => revoke(g.id)}>Revoke</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       <TokensSection onConfirm={onConfirm} />
       <ActivitySection />
     </>

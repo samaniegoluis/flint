@@ -12,7 +12,6 @@ body { background: var(--surface-base); }
 .input.err, .input.err:focus-within { border-color: var(--danger); box-shadow: var(--danger-glow); }
 .tags:focus-within { border-color: var(--accent); box-shadow: var(--focus-glow); }
 .select:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-glow); }
-.check:focus-within input { box-shadow: var(--focus-ring); }
 .mi:focus-visible { outline: none; background: var(--surface-active); }
 .panel:hover { border-color: var(--border-strong); }
 button.panel:focus-visible { outline: none; box-shadow: var(--focus-ring); }
@@ -26,15 +25,14 @@ button.panel:focus-visible { outline: none; box-shadow: var(--focus-ring); }
   :root[data-motion="full"] { --dur-instant: 60ms; --dur-fast: 120ms; --dur-base: 180ms; --dur-slow: 240ms; }
 }
 
-/* Settings → Access: the activity log (milestone 12b). Commands wrap; the rest stays on one line. */
-.activity-table td { height: auto; padding-top: var(--sp-2); padding-bottom: var(--sp-2); vertical-align: top; white-space: normal; }
-.activity-table td.nowrap { white-space: nowrap; }
-.activity-table td.err { color: var(--danger); }
-.activity-table td.mono { font-size: var(--fs-xs); }
-
-/* `exec --sudo` in the approval window (milestone 13): each argument a chip, so a
-   reader sees where one ends; provisional until the Claude Design run (17a). */
-.argv { display: flex; flex-wrap: wrap; gap: 4px; }
-.argv-chip { padding: 1px 6px; border-radius: 4px; background: var(--surface-active); white-space: pre-wrap; word-break: break-all; }
-.hint.warn { color: var(--warning); }
-.activity-badge { display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 4px; font-size: var(--fs-xs); background: var(--danger-subtle); color: var(--danger); }
+/* The approval window's default button (Deny) shows its ring whenever it has the
+   focus, not only after a key: the window opens from a click as often as from a key. */
+.approval .btn[data-default-focus]:focus { outline: none; box-shadow: var(--focus-ring); }
+.check:focus-within input, .opt:focus-within input { box-shadow: var(--focus-ring); }
+.act-row .cmd .root-badge { margin-right: 6px; }
+/* A long command breaks at spaces first, inside a word only when it must. */
+.act-row .cmd { word-break: normal; overflow-wrap: anywhere; }
+.act-row .when { white-space: nowrap; }
+.act-row .caller { min-width: 0; }
+/* The next request in the approval window's queue (17a6), at the foot of the card. */
+.approval-next { gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--border-subtle); background: var(--surface-overlay); border-radius: 0 0 var(--radius-lg) var(--radius-lg); font-size: var(--fs-sm); }

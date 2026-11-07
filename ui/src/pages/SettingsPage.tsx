@@ -23,7 +23,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
   { id: 'terminal', label: 'Terminal', icon: 'term' },
   { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'keyboard' },
   { id: 'vault', label: 'Vault', icon: 'lock' },
-  { id: 'access', label: 'Access', icon: 'shield' },
+  { id: 'access', label: 'Access', icon: 'shield-key' },
 ];
 
 export function SettingsPage({ section, setSection, onLock, onConfirm }: {
