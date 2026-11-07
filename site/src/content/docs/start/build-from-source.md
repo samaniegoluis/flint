@@ -181,3 +181,11 @@ the desktop app, and runs the tests and the CLI end-to-end run against gnome-key
 a private D-Bus session (the keychain adapter's tests use it; a screensaver signal sent
 on that bus must lock the vault). Then it runs the desktop app's end-to-end check and the
 CLI-through-the-app check in the real GTK window under Xvfb.
+
+To run only some of it, name the steps after the build (`tests`, `cli`, `gui`, `serve`)
+and, for `tests`, the suites:
+
+```sh
+FLINT_LINUX_STEPS=serve scripts/linux-check.sh
+FLINT_LINUX_STEPS=tests FLINT_LINUX_SUITES=src/adapters/ssh scripts/linux-check.sh
+```
