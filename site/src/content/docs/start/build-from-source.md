@@ -25,6 +25,15 @@ cfire --version     # cfire 0.9.5 (43431f2, …)
 It installs `cfire` into `~/.local/bin` and its runtime into `~/.cfire/runtime`, then runs
 `cfire doctor`.
 
+If an older cfire was installed from a checkout, its runtime in `~/.local/share/cfire`
+takes precedence over the new one, and the build fails in clang. `cfire doctor` names the
+runtime it uses; if it says `~/.local/share/cfire`, move that folder aside and clear the
+precompiled-header cache:
+
+```sh
+mv ~/.local/share/cfire ~/.local/share/cfire-old && rm -rf /tmp/cfire_pch_cache
+```
+
 ## 2. Install the native libraries
 
 ### macOS (Homebrew)

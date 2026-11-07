@@ -1668,3 +1668,17 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   arithmetic, UTC only).
 - **Ideal:** `t.format_rfc3339()` and a `t.format(layout)` with local time, as Go's
   `time.Time.Format`.
+
+### CF-096 · bug · `confirmed`: a runtime left in `~/.local/share/cfire` shadows the one the installer writes
+- **Repro (43431f2, Zorin OS 18):** a box that once installed cfire `2d8613d` from a checkout
+  has its runtime in `~/.local/share/cfire/runtime`. Running the `43431f2` installer
+  (`CFIRE_VERSION=43431f2`) writes `~/.cfire/runtime` and prints "Core compiler & runtime
+  ready", but `cfire` keeps using the old FHS-prefix runtime (`cfire doctor`: "[System FHS
+  Prefix]"). Flint then fails in clang with 20 errors such as `too many arguments to
+  function call, expected 2, have 3` on `cfire::json::get_i32(obj, "cols", out.cols)`.
+- **Workaround:** move the old prefix aside (`mv ~/.local/share/cfire
+  ~/.local/share/cfire-2d8613d`) and clear `/tmp/cfire_pch_cache`; documented in
+  `site/src/content/docs/start/build-from-source.md`.
+- **Ideal:** the installer (or `cfire doctor`) warns when a runtime of another version sits
+  earlier in the search order, or the compiler refuses a runtime whose version differs
+  from its own.

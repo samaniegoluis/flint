@@ -1,11 +1,13 @@
 # Claude Design brief: Flint desktop UI
 
-Two messages to Claude Design:
+Messages to Claude Design, all in one chat:
 
 1. **Message 1: explore.** Product context plus three layout directions for the two key
    screens only. Cheap to compare.
 2. **Message 2: build out.** Send it after picking (or mixing) a direction. It asks for
    every screen, the tokens and the component sheet.
+3. **Later messages** add the screens of a milestone the base design lacks, in the same
+   chat (message 3: caller approval and agent access; message 4: `--sudo`).
 
 ---
 
@@ -201,3 +203,117 @@ SSH agent), optional jump host, tags, colour, notes.
   - tooltip with shortcut, key chip, status dot, progress bar, empty state.
 - **Interaction notes:** focus order; hover, active and focus-visible states; sidebar
   collapse; how prompts overlay the terminal; how the SFTP panel resizes and toggles.
+
+---
+
+## Message 3: caller approval and agent access (sent 2026-11-07, milestones 12a and 12b)
+
+Sent in the same Claude Design chat after milestone 12a. The output is the handoff zip of
+2026-11-07 09:58 (screens `16a1`…`16d`). What shipped differs from it in places: tokens
+are created from the CLI only (no "New token…" sheet), expire in 15 min to 90 days (no
+"Never"), and the activity log has no exit code and no filters yet (ROADMAP ideas).
+
+```
+Flint follow-up: caller approval and agent access (v3, milestones 12a and 12b). Same
+tokens.css, components and dark/light pairs as the existing screens. The agent-activity
+wireframe (15) is the starting point; these screens replace it. Name the new files 16a…,
+16b…, and so on.
+
+Context: the `flint` CLI talks to the running app over a local socket. Before Flint runs
+anything for a program, the owner approves that program in Flint's own window. A grant
+covers the program that started `flint` (Claude Code, a terminal app, tmux), is scoped,
+and expires. Allow is confirmed with Touch ID (macOS), the login password via polkit
+(Linux), or the vault's master password where neither exists. A working version ships
+today; lessons from the owner's walkthrough are noted below.
+
+16a · Approval window: a modal card over the main shell (04); the app comes to the front.
+  - Header: "flint, started by Claude Code wants to use this vault". Below it, the caller's
+    process chain as a breadcrumb (zsh → herdr → zsh → flint) and its pid.
+  - The request, in mono: "flint exec CodeBox -- uptime".
+  - Hosts: three choices. The host itself, its group (paths can be long, e.g.
+    "HomeLabLS/Proxmox2"; they must not wrap awkwardly inside a segmented button; consider
+    radio rows or truncation with a tooltip), and the whole vault.
+  - Actions: checkboxes. Read (list and show, never a secret), Run commands (exec, connect,
+    host test on the hosts in scope), Change the vault (needs the whole vault, so it is
+    disabled otherwise). Only the box and its text are clickable, never the whole row.
+  - Duration: 15 min, 1 hour, 4 hours, Until locked.
+  - A warning line when the choice does not cover the request.
+  - Footer: "Denied automatically in 1:52" countdown, Deny (esc), Allow (⌘↵).
+  - Clicking outside the card does nothing: only Deny, Esc or the countdown deny.
+  - Variants: (a) waiting for Touch ID (the system sheet sits on top; the Allow button reads
+    "Confirm with Touch ID…"); (b) master-password fallback, a password field inside the
+    card like 10a; (c) error state ("that is not the master password").
+  - Optional: a "1 of 3 waiting" indicator when several requests queue.
+
+16b · Unlock screen with a caller (variant of 03): the CLI asked while the vault was locked.
+  - Top panel: "flint exec CodeBox -- hostname wants to use this vault", a checkbox
+    "Allow flint, started by Claude Code for 1 hour" (ticked by default), a hint line
+    ("What this command needs, on its host. The master password you type confirms it.
+    Change or revoke it in Settings → Access"), and Dismiss.
+
+16c · Settings → Access: a new section below Vault (12d), with a shield icon.
+  - An intro paragraph.
+  - Active grants: rows with the caller label, scope (Whole vault / host / group …),
+    actions, time left ("42 min left" / "until the vault locks"), the anchor pid, and
+    Revoke; Revoke all; an empty state ("No program may use this vault right now").
+  - Tokens (milestone 12b): rows with name, scope, actions, expiry, last used, and Revoke;
+    "New token…" opens a sheet with name, scope, actions and expiry (30 days default,
+    never). After creation the secret is shown ONCE with Copy and a strong "you will not
+    see this again" note.
+  - Activity (milestone 12b): a timeline of what each grant or token ran: caller or token,
+    host, action (exec/connect/test/write, plus approved / denied / revoked events),
+    result (exit code), time. Filters by host and caller. Reads are not logged; say so in
+    the empty or footer text.
+
+16d · Status bar item (04): "Agents: 2" opens Settings → Access. A highlighted
+  "1 waiting" state while an approval is pending and the window is not in front.
+
+Dark and light for every screen. Keep the density of the existing settings pages.
+```
+
+---
+
+## Message 4: `flint exec --sudo` (milestone 13, to send)
+
+```
+Flint follow-up: running a command as root (v3, milestone 13). Same tokens.css,
+components and dark/light pairs as the existing screens, and the approval window of
+16a1 as the base. Name the new files 17a…, 17b…, and so on.
+
+Context: `flint exec CodeBox --sudo -- systemctl restart nginx` asks the running Flint to
+run that command as root on the host. Flint runs `sudo` itself and types the host's sudo
+password only when sudo asks for it, so the program that asked never sees the password.
+Every such command is approved on its own, in Flint's window, with presence (Touch ID,
+polkit, or the master password). No grant or token ever covers it.
+
+17a · Approval window, sudo mode (a variant of 16a1, with no Hosts, Actions or Duration):
+  - Header: "flint, started by Claude Code wants to run a command as root on CodeBox".
+    Below it, the process chain and pid as in 16a1.
+  - Where: host label and alias, the login user and "→ root (sudo)".
+  - The command, in mono, exactly as it will run. Each argument's boundary must be
+    visible (Flint runs these arguments as given, never re-split by a shell): consider
+    argument chips, or alternating subtle backgrounds. It must handle long commands
+    (10+ arguments, long paths, a `sh -c '…'` script) by wrapping inside a scrollable
+    block, never truncating.
+  - A clear warning tone, stronger than the grant window's: "Runs as root, once. Nothing
+    else is allowed by this."
+  - Sudo password line, two states:
+    (a) Flint has one for this host: "Flint types the sudo password saved for CodeBox."
+    (b) It has none: a password field "Sudo password for lsamaniego on CodeBox" and a
+        checkbox "Save it for CodeBox" (unticked by default).
+  - Footer: the countdown, Deny (esc) and a primary "Run as root" (⌘↵).
+  - Variants: waiting for Touch ID (as 16a3); master-password fallback (as 16a4); the
+    long-command case; and "1 of 2 waiting" when a grant request and a sudo request queue.
+
+17b · Host editor (06): a "Sudo password" setting in the auth section, three choices:
+  "Same as the login password" (default; only offered when the host or its credential
+  has a password), "Its own password" (a password field, with Saved · Change · Remove
+  once stored), and "None: ask each time". One hint line: Flint types it only when sudo
+  asks, and only for a command you approved.
+
+17c · Activity (16c5, as shipped: When, Caller, Command, Result; no filters yet): a sudo
+  row stands out (a small "root" or "sudo" badge), shows the full command, and the
+  results Allowed, Denied, Timed out, and "Not a sudoer" / "Sudo password refused".
+
+Dark and light for every screen.
+```
