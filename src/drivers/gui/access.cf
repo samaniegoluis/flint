@@ -1,0 +1,124 @@
+package main
+
+// The approval window's side of caller approval (milestone 12, Principle 12): the
+// requests waiting for the owner, the live grants, and the owner's answer. The
+// socket server waits on the book (serve.cf, `gate`); these handlers change it.
+
+import "core:encoding/hex"
+import "core:time"
+import "ext:json"
+import "ext:webui"
+import "../../adapters/crypto"
+import "../../adapters/uievents"
+import "../../adapters/vault"
+import "../../application"
+import "../../domain"
+
+type AccessState struct {
+    // How Allow is confirmed: touchid, device, polkit or password.
+    presence: str        `json:"presence"`
+    // The core's clock (monotonic, not the wall clock): the page turns deadlines and
+    // expiries into its own time with it.
+    now_ms:   i64        `json:"now_ms"`
+    pending:  []Approval `json:"pending"`
+    grants:   []GrantView `json:"grants"`
+}
+
+type AccessAnswer struct {
+    id:       str         `json:"id"`
+    allow:    bool        `json:"allow"`
+    scope:    ScopeByName `json:"scope"`
+    read:     bool        `json:"read"`
+    exec:     bool        `json:"exec"`
+    write:    bool        `json:"write"`
+    duration: str         `json:"duration"`
+    // The master password, only when the presence method is "password".
+    password: str         `json:"password"`
+}
+
+type GrantsChanged struct {
+    count: i64 `json:"count"`
+}
+
+fn access_state(st: GuiState, store: LockedVaultStore, presence: OsPresence) -> AccessState {
+    now := time.now_ms()
+    book := st.holder.access_book()
+    cat := held_catalog(st, store)
+    return AccessState{ presence: presence.presence_method(), now_ms: now, pending: waiting_approvals(book, now), grants: grant_views(live_grants(book.grants, now), cat) }
+}
+
+// The open vault's catalog, or an empty one when it is locked.
+fn held_catalog(st: GuiState, store: LockedVaultStore) -> Catalog {
+    empty := Catalog{ groups: [], hosts: [], keys: [], creds: [] }
+    st.hold()
+    defer st.release()
+    if !st.unlocked() {
+        return empty
+    }
+    return load_catalog(store) or empty
+}
+
+// What the window shows: run on the UI thread, it never asks the OS.
+fn rpc_access_state(st: GuiState, store: LockedVaultStore, presence: OsPresence) -> str! {
+    return json.stringify(access_state(st, store, presence))
+}
+
+// The owner answers approval `id`. Allow first proves presence (the OS's check, or
+// the master password checked against the key held), then becomes a grant. Runs on
+// a worker: Touch ID and polkit block until the person answers.
+fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, presence: OsPresence, st: GuiState, mut app: webui.App) -> AccessState! {
+    try st.require_unlocked()
+    ap := find_approval(st.holder.access_book(), req.id) or {
+        return error(coded(ERR_NOT_FOUND, "this request is no longer waiting"))
+    }
+    if ap.state != APPROVAL_PENDING {
+        return error(coded(ERR_NOT_FOUND, "this request is no longer waiting"))
+    }
+    if !req.allow {
+        st.holder.access_hold()
+        mut book := st.holder.access_book()
+        _ := set_approval_state(mut book, req.id, APPROVAL_DENIED)
+        st.holder.put_access_book(book)
+        st.holder.access_release()
+        return access_state(st, store, presence)
+    }
+    // Checked before presence, so a bad form never shows the OS dialog.
+    scope := try access_scope_from_names(held_catalog(st, store), req.scope)
+    _ := try grant_from_approval(ap, "check", scope, req.read, req.exec, req.write, req.duration, time.now_ms())
+    try confirm_presence(c, store, presence, st.vault_session(), req.password, "let \"{ap.label}\" use the vault {st.vault_session().name}")
+    st.holder.access_hold()
+    mut book := st.holder.access_book()
+    still := find_approval(book, req.id) or ap
+    if still.state != APPROVAL_PENDING || !find_approval(book, req.id).has_value() {
+        st.holder.access_release()
+        return error(coded(ERR_NOT_FOUND, "this request stopped waiting before it was allowed"))
+    }
+    g := grant_from_approval(ap, hex.encode(c.random_bytes(8)), scope, req.read, req.exec, req.write, req.duration, time.now_ms()) or err {
+        st.holder.access_release()
+        return error("{err.message()}")
+    }
+    book.grants.push(g)
+    _ := set_approval_state(mut book, req.id, APPROVAL_ALLOWED)
+    st.holder.put_access_book(book)
+    st.holder.access_release()
+    write_stderr("flint-gui: allowed {ap.label} ({g.duration})\n")
+    app.emit("access:changed", GrantsChanged{ count: i64(book.grants.len()) })
+    return access_state(st, store, presence)
+}
+
+// Ends grant `id`, or every grant when `id` is "".
+fn rpc_access_revoke(params: str, st: GuiState, store: LockedVaultStore, presence: OsPresence, mut app: webui.App) -> str! {
+    req := try parse_req[NameReq](params)
+    st.holder.access_hold()
+    mut book := st.holder.access_book()
+    if req.name.len() == 0 {
+        book.grants = []
+    } else if !revoke_grant(mut book, req.name) {
+        st.holder.access_release()
+        return error(coded(ERR_NOT_FOUND, "no such grant"))
+    }
+    st.holder.put_access_book(book)
+    st.holder.access_release()
+    app.emit("access:changed", GrantsChanged{ count: i64(book.grants.len()) })
+    return json.stringify(access_state(st, store, presence))
+}

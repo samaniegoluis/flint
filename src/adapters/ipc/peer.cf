@@ -1,0 +1,57 @@
+package ipc
+
+// The caller on the other end of the socket (D-038, Principle 12): the peer's pid as
+// the kernel reported it at accept (never a claim the peer makes), then its parents
+// up to pid 1, each with its start time, executable and argv[0]. The domain picks
+// the anchor a grant is tied to (domain/access.cf).
+
+// CFIRE-UPSTREAM: CF-092, CF-031
+import cpp "flint_peer.hpp" @pkg("flint-native")
+
+import "../../domain"
+
+// A chain longer than this is cut: real ones are under ten deep.
+PEER_CHAIN_MAX: i64 = 32
+
+// One process, or `false` when it is gone or not ours to read.
+fn peer_proc(pid: i64) -> (CallerProc, bool) {
+    mut ppid: i64 = 0
+    mut started: i64 = 0
+    mut exe := ""
+    mut argv0 := ""
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-092
+    cpp {
+        flint_peer::Info info;
+        ok = flint_peer::info(pid, info);
+        if (ok) {
+            ppid = info.ppid;
+            started = info.started;
+            exe = info.exe;
+            argv0 = info.argv0;
+        }
+    }
+    return (CallerProc{ pid: pid, ppid: ppid, started: started, exe: exe, argv0: argv0 }, ok)
+}
+
+// The caller behind a connection: `peer` and its parents. A parent that exited
+// before we looked ends the chain there.
+fn ipc_caller(peer: IpcPeer) -> Caller {
+    mut chain: []CallerProc = []
+    mut pid := peer.pid
+    for _ in 0..PEER_CHAIN_MAX {
+        if pid <= 0 {
+            break
+        }
+        (p, ok) := peer_proc(pid)
+        if !ok {
+            break
+        }
+        chain.push(p)
+        if pid == 1 || p.ppid == pid {
+            break
+        }
+        pid = p.ppid
+    }
+    return Caller{ uid: peer.uid, chain: chain }
+}

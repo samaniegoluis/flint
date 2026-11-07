@@ -114,3 +114,25 @@ test "a locked error says what to do" {
     assert(locked_error(t, AppState{ state: APP_LOCKED, name: "" }).contains("could not be started"))
     assert_eq(error_code_of(locked_error(t, AppState{ state: APP_LOCKED, name: "" })), ERR_LOCKED)
 }
+
+test "each served command needs read, exec on a host, or write" {
+    assert_eq(access_need(parsed(["host", "list"])).action, ACCESS_READ)
+    assert_eq(access_need(parsed(["--json", "key", "show", "k"])).action, ACCESS_READ)
+    assert_eq(access_need(parsed(["vault", "status"])).action, ACCESS_READ)
+    assert_eq(access_need(parsed(["known-host", "list"])).action, ACCESS_READ)
+    assert_eq(access_need(parsed(["import", "tether", "f", "--dry-run"])).action, ACCESS_READ)
+    assert_eq(access_need(parsed(["import", "tether", "f"])).action, ACCESS_WRITE)
+    assert_eq(access_need(parsed(["host", "add", "web", "--hostname", "h"])).action, ACCESS_WRITE)
+    assert_eq(access_need(parsed(["known-host", "rm", "web"])).action, ACCESS_WRITE)
+    assert_eq(access_need(parsed(["vault", "rename", "x"])).action, ACCESS_WRITE)
+    ex := access_need(parsed(["exec", "web", "--", "uptime"]))
+    assert_eq(ex.action, ACCESS_EXEC)
+    assert_eq(ex.host, "web")
+    assert_eq(access_need(parsed(["connect", "db"])).host, "db")
+    assert_eq(access_need(parsed(["host", "test", "api"])).host, "api")
+}
+
+test "a wait notice is told apart from a reply" {
+    assert(is_wait_notice(wait_notice_json("Waiting for approval in Flint…")))
+    assert(!is_wait_notice(json.stringify(not_served())))
+}

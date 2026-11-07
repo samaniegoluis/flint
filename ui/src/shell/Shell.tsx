@@ -21,6 +21,7 @@ import { KeysPage, type Confirm } from '../pages/KeysPage';
 import { CredentialsPage } from '../pages/CredentialsPage';
 import { SettingsPage, type SettingsSection } from '../pages/SettingsPage';
 import { CommandPalette } from '../palette/CommandPalette';
+import { ApprovalDialog, useAccessState } from '../access/ApprovalDialog';
 
 type View = 'hosts' | 'keys' | 'credentials' | 'settings';
 const NARROW = 1040;
@@ -46,6 +47,8 @@ export function Shell() {
   const filterRef = useRef<HTMLInputElement>(null);
   const prevStatus = useRef(new Map<string, string>());
   const { ui, update: updateUi } = useUiState(vault?.path ?? '');
+  const access = useAccessState(phase === 'main');
+  const approval = access.state?.pending[0] ?? null;
   const narrowRef = useRef(narrow);
   narrowRef.current = narrow;
 
@@ -291,6 +294,11 @@ export function Shell() {
         <button className="sb-btn" onClick={() => lock().catch(fail)}>Lock<Kbd action="lock" /></button>
         <span className="sb-item">{sessionsOpen === 0 ? 'No sessions' : `${sessionsOpen} session${sessionsOpen === 1 ? '' : 's'}`}</span>
         {tab && <span className="sb-item mono">{tab.alias}</span>}
+        {(access.state?.grants.length ?? 0) > 0 && (
+          <button className="sb-btn" data-grants onClick={() => { setSection('access'); setView('settings'); }}>
+            Agents: {access.state?.grants.length}
+          </button>
+        )}
         <span className="grow" />
         {zoom !== 0 && <button className="sb-btn" onClick={() => setZoom(0)} title="Reset terminal font size">{fontSize} px</button>}
         <span className="sb-item"><Kbd action="palette" />Commands</span>
@@ -305,6 +313,10 @@ export function Shell() {
           onNewCredential={() => { setEditor(null); setView('credentials'); setCredEditing(null); }} />
       )}
       {manage && <ManageVaults onClose={() => setManage(false)} />}
+      {approval && access.state && (
+        <ApprovalDialog key={approval.id} ap={approval} presence={access.state.presence} catalog={catalog} skew={access.skew}
+          onDone={(s) => (s ? access.setState(s) : access.refresh())} />
+      )}
       {confirm && <ConfirmDialog c={confirm} onClose={() => setConfirm(null)} />}
       {ask && <TextDialog ask={ask} onClose={() => setAsk(null)} />}
       {!anyOverlay && catalog.hosts.length === 0 && view === 'hosts' && tabs.length === 0 && (

@@ -124,6 +124,8 @@ export interface UnlockRequest {
   path: string;
   name: string;
   caller: string;
+  /** Who runs it ("flint, started by Claude Code"); the unlock can allow it. */
+  label: string;
 }
 
 /** Why the vault locked: the Lock button, idle time, the screen, sleep or `flint vault lock`. */
@@ -215,4 +217,72 @@ export interface TetherImportReport {
   already_present: ImportCounts;
   changed: ImportNote[];
   not_imported: ImportNote[];
+}
+
+// ---- Caller approval (milestone 12) ----------------------------------------------
+
+/** One process of a caller's chain, the `flint` CLI first. */
+export interface CallerProc {
+  pid: number;
+  ppid: number;
+  started: number;
+  exe: string;
+  argv0: string;
+}
+
+export type AccessAction = 'read' | 'exec' | 'write';
+
+/** A request waiting in the approval window. */
+export interface Approval {
+  id: string;
+  vault_id: string;
+  /** "flint, started by Claude Code" */
+  label: string;
+  /** The command, without flag values. */
+  request: string;
+  need: { action: AccessAction; host: string };
+  chain: CallerProc[];
+  anchor_pid: number;
+  created_ms: number;
+  deadline_ms: number;
+  state: string;
+}
+
+export interface GrantView {
+  id: string;
+  label: string;
+  all: boolean;
+  groups: string[];
+  hosts: string[];
+  read: boolean;
+  exec: boolean;
+  write: boolean;
+  created_ms: number;
+  /** 0 = until the vault locks. */
+  expires_ms: number;
+  anchor_pid: number;
+}
+
+/** How Allow is confirmed: Touch ID, the Mac's password, polkit, or the master password. */
+export type PresenceMethod = 'touchid' | 'device' | 'polkit' | 'password';
+
+export interface AccessState {
+  presence: PresenceMethod;
+  /** The core's clock when it answered; deadlines and expiries are on it. */
+  now_ms: number;
+  pending: Approval[];
+  grants: GrantView[];
+}
+
+export type GrantDuration = '15m' | '1h' | '4h' | 'lock';
+
+export interface AccessAnswer {
+  id: string;
+  allow: boolean;
+  scope: { all: boolean; groups: string[]; hosts: string[] };
+  read: boolean;
+  exec: boolean;
+  write: boolean;
+  duration: GrantDuration;
+  password: string;
 }

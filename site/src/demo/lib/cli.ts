@@ -94,8 +94,9 @@ Global flags
   --version, -V     Print the version and linked libraries
 
 With Flint open and the vault unlocked there, commands run through it and need no
-master password. Otherwise flint asks for it on the terminal (or --master-stdin),
-for that one command; with no terminal, Flint is asked to unlock the vault.
+master password, once you allow the program that runs flint in Flint's window.
+Otherwise flint asks for it on the terminal (or --master-stdin), for that one
+command; with no terminal, Flint is asked to unlock the vault.
 
 Secrets are never taken from arguments: Flint prompts on the terminal, or reads
 them from stdin with the --*-stdin flags.`;
@@ -231,7 +232,15 @@ class Cmd {
 	// one command; nothing is kept (D-042).
 	private *openTarget(): Generator<Ask, Vault, string> {
 		const v = this.resolveVault(this.p.value('--vault'));
-		if (v.unlocked) return v;
+		if (v.unlocked) {
+			// The first command from this terminal waits for the owner's Allow in Flint;
+			// the demo plays the owner and allows it.
+			if (!this.world.approved) {
+				if (!this.asJson) this.io.err('Waiting for approval in Flint (flint, started by Terminal)…');
+				this.world.approved = true;
+			}
+			return v;
+		}
 		const pw = yield { label: `Master password for '${v.name}': `, secret: true };
 		if (pw.length === 0) fail('wrong_password', 'the password is wrong or the file is not a Flint vault');
 		return v;
@@ -265,6 +274,7 @@ class Cmd {
 					this.io.note(`flint (demo): Flint's window would ask for the master password of '${v.name}' now. The demo unlocks it for you; Flint holds one vault at a time.`);
 					for (const o of this.world.vaults) o.unlocked = false;
 					v.unlocked = true;
+					this.world.approved = false;
 				}
 				this.emit(info(v), () => this.say(`Unlocked vault '${v.name}' in Flint. Commands use it until Flint locks it.`));
 				return ok;
@@ -274,6 +284,7 @@ class Cmd {
 				p.expectArgs('vault lock', 0, '[--vault <name|path>]');
 				const v = this.resolveVault(p.value('--vault'));
 				v.unlocked = false;
+				this.world.approved = false;
 				this.emit(info(v), () =>
 					this.say(`Locked vault '${v.name}': Flint holds no key for it and none is cached on this machine.`),
 				);

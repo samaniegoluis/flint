@@ -13,6 +13,9 @@ package vault
 
 import cpp "flint_vault_lock.hpp" @pkg("flint-native")
 
+import "ext:json"
+import "../../domain"
+
 type SessionHolder struct {
     cell: shared[cpp::flint_vault::SessionCell]
 }
@@ -197,4 +200,55 @@ fn (self: SessionHolder) quitting() -> bool {
         q = self.cell->quitting;
     }
     return q
+}
+
+// ---- Caller approval (milestone 12) -------------------------------------------------
+
+// Takes the access lock for a read-modify-write of the book. Recursive; pair every
+// hold with a release.
+fn (self: SessionHolder) access_hold() {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        self.cell->access_op.lock();
+    }
+}
+
+fn (self: SessionHolder) access_release() {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        self.cell->access_op.unlock();
+    }
+}
+
+// The grants and waiting approvals. Empty before the first write and after a clear.
+fn (self: SessionHolder) access_book() -> AccessBook {
+    mut text := ""
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::recursive_mutex> g(self.cell->access_op);
+        text = self.cell->access_json;
+    }
+    if text.len() == 0 {
+        return empty_access_book()
+    }
+    return json.parse[AccessBook](text) or empty_access_book()
+}
+
+fn (self: SessionHolder) put_access_book(book: AccessBook) {
+    text := json.stringify(book)
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::recursive_mutex> g(self.cell->access_op);
+        self.cell->access_json = text;
+    }
+}
+
+// Ends every grant and refuses every waiting approval: the vault locked or another
+// one was opened.
+fn (self: SessionHolder) access_clear() {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::recursive_mutex> g(self.cell->access_op);
+        self.cell->access_json.clear();
+    }
 }

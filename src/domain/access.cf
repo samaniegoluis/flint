@@ -1,0 +1,556 @@
+package domain
+
+import "core:str"
+
+// Who calls the app over its socket, and what they were allowed (D-038, D-040,
+// Principle 12).
+//
+// A **caller** is the process on the other end of the socket (always a `flint`
+// CLI) and its chain of parents, as the kernel reports them. The chain's **anchor**
+// is the first process that is not `flint`, a shell or a wrapper: Claude Code for an
+// agent (which starts a new shell for every command), tmux or the terminal app for a
+// person. A **grant** is tied to that anchor by pid and start time, so every `flint`
+// an approved agent runs is covered, and a pid reused by another process is not.
+//
+// Grants live in memory only: they end on expiry, on lock and when the app quits.
+
+// What a request does with the vault.
+ACCESS_READ: str = "read"
+ACCESS_EXEC: str = "exec"
+ACCESS_WRITE: str = "write"
+
+// How long a grant lasts. "lock" lasts until the vault locks.
+GRANT_DURATIONS: []str = ["15m", "1h", "4h", "lock"]
+
+// Executables a caller chain passes through without being the caller itself.
+TRANSPARENT_EXES: []str = ["flint", "sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh", "csh", "nu", "xonsh", "elvish", "pwsh", "env", "timeout", "gtimeout", "nohup", "xargs", "time", "nice", "caffeinate", "login", "script", "stdbuf", "direnv"]
+
+// One process of a caller's chain. `started` pins the pid (its unit is the OS's).
+type CallerProc struct {
+    pid:     i64 `json:"pid"`
+    ppid:    i64 `json:"ppid"`
+    started: i64 `json:"started"`
+    exe:     str `json:"exe"`
+    argv0:   str `json:"argv0"`
+}
+
+// The peer of a socket connection: its uid and its chain, the peer itself first.
+type Caller struct {
+    uid:   i64          `json:"uid"`
+    chain: []CallerProc `json:"chain"`
+}
+
+// Which hosts a grant reaches. `all` covers the whole vault; otherwise the hosts
+// listed by id and every host in the listed groups or their subgroups.
+type AccessScope struct {
+    all:    bool  `json:"all"`
+    groups: []str `json:"groups"`
+    hosts:  []str `json:"hosts"`
+}
+
+type Grant struct {
+    id:             str         `json:"id"`
+    vault_id:       str         `json:"vault_id"`
+    anchor_pid:     i64         `json:"anchor_pid"`
+    anchor_started: i64         `json:"anchor_started"`
+    // How the window names the caller ("flint, started by Claude Code").
+    label:          str         `json:"label"`
+    scope:          AccessScope `json:"scope"`
+    read:           bool        `json:"read"`
+    exec:           bool        `json:"exec"`
+    write:          bool        `json:"write"`
+    created_ms:     i64         `json:"created_ms"`
+    // Wall-clock milliseconds; 0 lasts until the vault locks.
+    expires_ms:     i64         `json:"expires_ms"`
+    duration:       str         `json:"duration"`
+}
+
+// What one request needs: an action and, for `exec`, the host alias it runs on
+// ("" when the command names none, such as `host test` of an unsaved address).
+type AccessNeed struct {
+    action: str `json:"action"`
+    host:   str `json:"host"`
+}
+
+// The last part of a path.
+fn path_base(p: str) -> str {
+    slash := str.last_index_of(p, "/")
+    if slash >= 0 {
+        return p.substr(usize(slash) + 1)
+    }
+    return p
+}
+
+// How a process is called: argv[0] without its path or a login shell's leading "-",
+// else the executable's file name.
+fn proc_name(p: CallerProc) -> str {
+    mut n := path_base(p.argv0)
+    if n.starts_with("-") {
+        n = n.substr(1)
+    }
+    if n.len() == 0 {
+        n = path_base(p.exe)
+    }
+    return n
+}
+
+fn is_transparent(p: CallerProc) -> bool {
+    exe := path_base(p.exe)
+    name := proc_name(p)
+    for t in TRANSPARENT_EXES {
+        if exe == t || name == t {
+            return true
+        }
+    }
+    return false
+}
+
+// The index of the chain's anchor: the first process that is not transparent and
+// not pid 1 (launchd, init or systemd, which would make every daemon one caller).
+// A chain of only transparent processes anchors on the last one before pid 1, so a
+// `flint` started straight by launchd is its own caller and is asked every time.
+fn anchor_index(chain: []CallerProc) -> i64 {
+    mut last: i64 = 0
+    for i, p in chain {
+        if p.pid <= 1 {
+            break
+        }
+        if !is_transparent(p) {
+            return i
+        }
+        last = i
+    }
+    return last
+}
+
+// A friendly name for a few well-known callers; the process name otherwise.
+fn friendly_name(name: str) -> str {
+    if name == "claude" {
+        return "Claude Code"
+    }
+    if name == "codex" {
+        return "Codex"
+    }
+    if name == "iTerm2" {
+        return "iTerm"
+    }
+    if name == "Terminal" {
+        return "Terminal"
+    }
+    if name == "tmux" || name == "tmux: server" {
+        return "tmux"
+    }
+    return name
+}
+
+// "flint, started by Claude Code". The peer itself when it is its own anchor.
+fn caller_label(c: Caller) -> str {
+    if c.chain.len() == 0 {
+        return "an unknown process"
+    }
+    i := anchor_index(c.chain)
+    first := proc_name(c.chain[0])
+    if i == 0 {
+        return first
+    }
+    return "{first}, started by {friendly_name(proc_name(c.chain[i]))}"
+}
+
+fn caller_anchor(c: Caller) -> CallerProc {
+    if c.chain.len() == 0 {
+        return CallerProc{ pid: 0, ppid: 0, started: 0, exe: "", argv0: "" }
+    }
+    return c.chain[anchor_index(c.chain)]
+}
+
+// The expiry of a grant made at `now_ms` for `duration` (0 = until the vault locks).
+fn grant_expiry(now_ms: i64, duration: str) -> i64! {
+    if duration == "15m" {
+        return now_ms + 15 * 60000
+    }
+    if duration == "1h" {
+        return now_ms + 60 * 60000
+    }
+    if duration == "4h" {
+        return now_ms + 4 * 60 * 60000
+    }
+    if duration == "lock" {
+        return 0
+    }
+    return error(coded(ERR_INVALID, "duration must be 15m, 1h, 4h or lock"))
+}
+
+fn grant_live(g: Grant, now_ms: i64) -> bool {
+    return g.expires_ms == 0 || now_ms < g.expires_ms
+}
+
+fn grant_matches_caller(g: Grant, c: Caller) -> bool {
+    a := caller_anchor(c)
+    return a.pid > 0 && g.anchor_pid == a.pid && g.anchor_started == a.started
+}
+
+// Whether group `gid` is `target` or one of its subgroups.
+fn group_within(groups: []Group, gid: str, target: str) -> bool {
+    mut cur := gid
+    // The tree is shallow; the bound only guards against a cycle.
+    for _ in 0..64 {
+        if cur.len() == 0 {
+            return false
+        }
+        if cur == target {
+            return true
+        }
+        mut parent := ""
+        for g in groups {
+            if g.id == cur {
+                parent = g.parent_id
+            }
+        }
+        cur = parent
+    }
+    return false
+}
+
+// Whether `scope` reaches the host with `alias`. A host the vault does not hold is
+// reached: the command then fails with `not_found` and runs nothing.
+fn scope_reaches(scope: AccessScope, cat: Catalog, alias: str) -> bool {
+    if scope.all {
+        return true
+    }
+    for h in cat.hosts {
+        if str.to_lower(h.alias) == str.to_lower(alias) {
+            for id in scope.hosts {
+                if id == h.id {
+                    return true
+                }
+            }
+            for gid in scope.groups {
+                if group_within(cat.groups, h.group_id, gid) {
+                    return true
+                }
+            }
+            return false
+        }
+    }
+    return true
+}
+
+// Whether `g` allows `need` on the vault `vault_id` at `now_ms`. Reading covers the
+// vault's hosts, groups, keys and credentials (never a secret: Principle 6); running
+// is checked against the scope; changing the vault needs the whole vault in scope.
+fn grant_covers(g: Grant, vault_id: str, need: AccessNeed, cat: Catalog, now_ms: i64) -> bool {
+    if g.vault_id != vault_id || !grant_live(g, now_ms) {
+        return false
+    }
+    if need.action == ACCESS_READ {
+        return g.read
+    }
+    if need.action == ACCESS_EXEC {
+        return g.exec && (need.host.len() == 0 || scope_reaches(g.scope, cat, need.host))
+    }
+    if need.action == ACCESS_WRITE {
+        return g.write && g.scope.all
+    }
+    return false
+}
+
+// The live grant of `grants` that lets `c` do `need`, if any.
+fn find_grant(grants: []Grant, c: Caller, vault_id: str, need: AccessNeed, cat: Catalog, now_ms: i64) -> Grant? {
+    for g in grants {
+        if grant_matches_caller(g, c) && grant_covers(g, vault_id, need, cat, now_ms) {
+            return g
+        }
+    }
+    return none
+}
+
+// The grants still live at `now_ms`.
+fn live_grants(grants: []Grant, now_ms: i64) -> []Grant {
+    mut live: []Grant = []
+    for g in grants {
+        if grant_live(g, now_ms) {
+            live.push(g)
+        }
+    }
+    return live
+}
+
+// ---- Approvals ----------------------------------------------------------------------
+
+// How long a caller waits for the owner to answer before it is refused.
+APPROVAL_WAIT_MS: i64 = 120000
+
+APPROVAL_PENDING: str = "pending"
+APPROVAL_ALLOWED: str = "allowed"
+APPROVAL_DENIED: str = "denied"
+
+// A request waiting in the approval window. `request` is the command as the window
+// shows it (no flag values: D-018). `chain` is for the window's detail.
+type Approval struct {
+    id:             str          `json:"id"`
+    vault_id:       str          `json:"vault_id"`
+    label:          str          `json:"label"`
+    request:        str          `json:"request"`
+    need:           AccessNeed   `json:"need"`
+    chain:          []CallerProc `json:"chain"`
+    anchor_pid:     i64          `json:"anchor_pid"`
+    anchor_started: i64          `json:"anchor_started"`
+    created_ms:     i64          `json:"created_ms"`
+    deadline_ms:    i64          `json:"deadline_ms"`
+    state:          str          `json:"state"`
+}
+
+// The app's access state: live grants and the requests waiting for an answer.
+type AccessBook struct {
+    grants:  []Grant    `json:"grants"`
+    pending: []Approval `json:"pending"`
+    // The caller of an unlock a CLI asked for (none or one): the unlock screen can
+    // allow it in the same step.
+    asking:  []Approval `json:"asking"`
+}
+
+fn empty_access_book() -> AccessBook {
+    return AccessBook{ grants: [], pending: [], asking: [] }
+}
+
+// The grant the window proposes for `ap`: the host it runs on (when the vault has
+// it), else the whole vault; reading plus what it needs; one hour. The unlock screen
+// gives exactly this when the owner ticks "Allow".
+fn proposed_grant(ap: Approval, cat: Catalog, id: str, now_ms: i64) -> Grant! {
+    mut scope := AccessScope{ all: true, groups: [], hosts: [] }
+    if ap.need.action == ACCESS_EXEC {
+        for h in cat.hosts {
+            if str.to_lower(h.alias) == str.to_lower(ap.need.host) {
+                scope = AccessScope{ all: false, groups: [], hosts: [h.id] }
+            }
+        }
+    }
+    return grant_from_approval(ap, id, scope, true, ap.need.action == ACCESS_EXEC, ap.need.action == ACCESS_WRITE, "1h", now_ms)
+}
+
+fn new_approval(id: str, vault_id: str, c: Caller, request: str, need: AccessNeed, now_ms: i64) -> Approval {
+    a := caller_anchor(c)
+    return Approval{ id: id, vault_id: vault_id, label: caller_label(c), request: request, need: need, chain: c.chain, anchor_pid: a.pid, anchor_started: a.started, created_ms: now_ms, deadline_ms: now_ms + APPROVAL_WAIT_MS, state: APPROVAL_PENDING }
+}
+
+// The grant an approval becomes when the owner allows it.
+fn grant_from_approval(ap: Approval, id: str, scope: AccessScope, read: bool, exec: bool, write: bool, duration: str, now_ms: i64) -> Grant! {
+    expires := try grant_expiry(now_ms, duration)
+    if !read && !exec && !write {
+        return error(coded(ERR_INVALID, "a grant must allow at least one action"))
+    }
+    if !scope.all && scope.groups.len() == 0 && scope.hosts.len() == 0 {
+        return error(coded(ERR_INVALID, "a grant must reach at least one host or group"))
+    }
+    return Grant{ id: id, vault_id: ap.vault_id, anchor_pid: ap.anchor_pid, anchor_started: ap.anchor_started, label: ap.label, scope: scope, read: read, exec: exec, write: write, created_ms: now_ms, expires_ms: expires, duration: duration }
+}
+
+fn find_approval(book: AccessBook, id: str) -> Approval? {
+    for ap in book.pending {
+        if ap.id == id {
+            return ap
+        }
+    }
+    return none
+}
+
+// Sets the state of approval `id`; false when it is no longer waiting.
+fn set_approval_state(mut book: AccessBook, id: str, state: str) -> bool {
+    for i in 0..book.pending.len() {
+        if book.pending[i].id == id && book.pending[i].state == APPROVAL_PENDING {
+            book.pending[i].state = state
+            return true
+        }
+    }
+    return false
+}
+
+fn drop_approval(mut book: AccessBook, id: str) {
+    mut kept: []Approval = []
+    for ap in book.pending {
+        if ap.id != id {
+            kept.push(ap)
+        }
+    }
+    book.pending = kept
+}
+
+// Ends grant `id`; false when there was none.
+fn revoke_grant(mut book: AccessBook, id: str) -> bool {
+    mut kept: []Grant = []
+    mut found := false
+    for g in book.grants {
+        if g.id == id {
+            found = true
+        } else {
+            kept.push(g)
+        }
+    }
+    book.grants = kept
+    return found
+}
+
+// The approvals still waiting, for the window.
+fn waiting_approvals(book: AccessBook, now_ms: i64) -> []Approval {
+    mut w: []Approval = []
+    for ap in book.pending {
+        if ap.state == APPROVAL_PENDING && now_ms < ap.deadline_ms {
+            w.push(ap)
+        }
+    }
+    return w
+}
+
+// ---- Tests ------------------------------------------------------------------------
+
+fn test_proc(pid: i64, ppid: i64, exe: str, argv0: str) -> CallerProc {
+    return CallerProc{ pid: pid, ppid: ppid, started: pid * 10, exe: exe, argv0: argv0 }
+}
+
+// flint ← zsh -c ← claude ← zsh ← tmux ← launchd
+fn agent_chain() -> []CallerProc {
+    return [
+        test_proc(500, 400, "/usr/local/bin/flint", "flint"),
+        test_proc(400, 300, "/bin/zsh", "/bin/zsh"),
+        test_proc(300, 200, "/Users/me/.local/share/claude/versions/2.1.3", "claude"),
+        test_proc(200, 100, "/bin/zsh", "-zsh"),
+        test_proc(100, 1, "/opt/homebrew/bin/tmux", "tmux"),
+        test_proc(1, 0, "/sbin/launchd", "launchd"),
+    ]
+}
+
+test "an agent's flint anchors on the agent, not on its shells" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    assert_eq(anchor_index(c.chain), 2)
+    assert_eq(caller_anchor(c).pid, 300)
+    assert_eq(caller_label(c), "flint, started by Claude Code")
+}
+
+test "a person's flint anchors on tmux or the terminal app" {
+    chain := [
+        test_proc(500, 200, "/usr/local/bin/flint", "flint"),
+        test_proc(200, 150, "/bin/zsh", "-zsh"),
+        test_proc(150, 100, "/usr/bin/login", "login"),
+        test_proc(100, 1, "/Applications/iTerm.app/Contents/MacOS/iTerm2", "/Applications/iTerm.app/Contents/MacOS/iTerm2"),
+        test_proc(1, 0, "/sbin/launchd", "launchd"),
+    ]
+    c := Caller{ uid: 501, chain: chain }
+    assert_eq(caller_anchor(c).pid, 100)
+    assert_eq(caller_label(c), "flint, started by iTerm")
+}
+
+test "a flint started straight by launchd is its own caller" {
+    chain := [test_proc(500, 1, "/usr/local/bin/flint", "flint"), test_proc(1, 0, "/sbin/launchd", "launchd")]
+    c := Caller{ uid: 501, chain: chain }
+    assert_eq(anchor_index(c.chain), 0)
+    assert_eq(caller_label(c), "flint")
+}
+
+fn test_catalog() -> Catalog {
+    groups := [
+        Group{ id: "g-prod", parent_id: "", name: "Production" },
+        Group{ id: "g-api", parent_id: "g-prod", name: "api" },
+        Group{ id: "g-lab", parent_id: "", name: "Lab" },
+    ]
+    mut a := Host{}
+    a.id = "h-api"
+    a.alias = "api-01"
+    a.group_id = "g-api"
+    mut b := Host{}
+    b.id = "h-lab"
+    b.alias = "lab-01"
+    b.group_id = "g-lab"
+    return Catalog{ groups: groups, hosts: [a, b], keys: [], creds: [] }
+}
+
+fn test_grant(scope: AccessScope, read: bool, exec: bool, write: bool, expires_ms: i64) -> Grant {
+    return Grant{ id: "g1", vault_id: "v1", anchor_pid: 300, anchor_started: 3000, label: "x", scope: scope, read: read, exec: exec, write: write, created_ms: 0, expires_ms: expires_ms, duration: "1h" }
+}
+
+fn run_need(alias: str) -> AccessNeed {
+    return AccessNeed{ action: ACCESS_EXEC, host: alias }
+}
+
+test "a grant reaches the hosts of its groups and subgroups only" {
+    cat := test_catalog()
+    g := test_grant(AccessScope{ all: false, groups: ["g-prod"], hosts: [] }, true, true, false, 0)
+    assert(grant_covers(g, "v1", run_need("api-01"), cat, 5))
+    assert(!grant_covers(g, "v1", run_need("lab-01"), cat, 5))
+    assert(grant_covers(g, "v1", AccessNeed{ action: ACCESS_READ, host: "" }, cat, 5))
+    // Changing the vault needs the whole vault, even with write ticked.
+    assert(!grant_covers(test_grant(AccessScope{ all: false, groups: ["g-prod"], hosts: [] }, true, true, true, 0), "v1", AccessNeed{ action: ACCESS_WRITE, host: "" }, cat, 5))
+    assert(grant_covers(test_grant(AccessScope{ all: true, groups: [], hosts: [] }, false, false, true, 0), "v1", AccessNeed{ action: ACCESS_WRITE, host: "" }, cat, 5))
+}
+
+test "a grant by host id survives a rename of its alias" {
+    mut cat := test_catalog()
+    g := test_grant(AccessScope{ all: false, groups: [], hosts: ["h-lab"] }, false, true, false, 0)
+    cat.hosts[1].alias = "lab-renamed"
+    assert(grant_covers(g, "v1", AccessNeed{ action: ACCESS_EXEC, host: "lab-renamed" }, cat, 5))
+    assert(!grant_covers(g, "v1", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, cat, 5))
+}
+
+test "a grant ends at its expiry, and belongs to one vault and one anchor" {
+    cat := test_catalog()
+    g := test_grant(AccessScope{ all: true, groups: [], hosts: [] }, true, false, false, 1000)
+    read := AccessNeed{ action: ACCESS_READ, host: "" }
+    assert(grant_covers(g, "v1", read, cat, 999))
+    assert(!grant_covers(g, "v1", read, cat, 1000))
+    assert(!grant_covers(g, "v2", read, cat, 5))
+    assert(!grant_covers(g, "v1", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, cat, 5))
+    agent := Caller{ uid: 501, chain: agent_chain() }
+    assert(grant_matches_caller(g, agent))
+    // The same pid started at another time is another process.
+    mut reused := agent_chain()
+    reused[2].started = 1
+    assert(!grant_matches_caller(g, Caller{ uid: 501, chain: reused }))
+    assert(find_grant([g], agent, "v1", read, cat, 5).has_value())
+    assert(!find_grant([g], agent, "v1", read, cat, 2000).has_value())
+}
+
+test "durations" {
+    assert_eq(try grant_expiry(100, "15m"), 100 + 900000)
+    assert_eq(try grant_expiry(100, "lock"), 0)
+    assert(!grant_expiry(100, "forever").has_value())
+}
+
+test "an approval becomes a grant for its caller's anchor" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    ap := new_approval("a1", "v1", c, "flint exec api-01 -- uptime", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, 1000)
+    assert_eq(ap.deadline_ms, 1000 + APPROVAL_WAIT_MS)
+    assert_eq(ap.label, "flint, started by Claude Code")
+    g := try grant_from_approval(ap, "g1", AccessScope{ all: false, groups: ["g-prod"], hosts: [] }, true, true, false, "1h", 2000)
+    assert(grant_matches_caller(g, c))
+    assert_eq(g.expires_ms, 2000 + 3600000)
+    assert(find_grant([g], c, "v1", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, test_catalog(), 3000).has_value())
+    assert(!grant_from_approval(ap, "g2", AccessScope{ all: false, groups: [], hosts: [] }, true, false, false, "1h", 0).has_value())
+    assert(!grant_from_approval(ap, "g2", AccessScope{ all: true, groups: [], hosts: [] }, false, false, false, "1h", 0).has_value())
+}
+
+test "the proposed grant is the host it runs on, or the whole vault" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    run := new_approval("a1", "v1", c, "flint exec api-01 -- uptime", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, 0)
+    g := try proposed_grant(run, test_catalog(), "g1", 0)
+    assert(!g.scope.all)
+    assert_eq(g.scope.hosts[0], "h-api")
+    assert(g.read && g.exec && !g.write)
+    assert_eq(g.expires_ms, 3600000)
+    unknown := new_approval("a2", "v1", c, "flint exec nope", AccessNeed{ action: ACCESS_EXEC, host: "nope" }, 0)
+    assert((try proposed_grant(unknown, test_catalog(), "g2", 0)).scope.all)
+    write := new_approval("a3", "v1", c, "flint host add", AccessNeed{ action: ACCESS_WRITE, host: "" }, 0)
+    w := try proposed_grant(write, test_catalog(), "g3", 0)
+    assert(w.scope.all && w.write)
+}
+
+test "an approval is answered once" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    mut book := empty_access_book()
+    book.pending.push(new_approval("a1", "v1", c, "flint host list", AccessNeed{ action: ACCESS_READ, host: "" }, 0))
+    assert_eq(waiting_approvals(book, 10).len(), 1)
+    assert_eq(waiting_approvals(book, APPROVAL_WAIT_MS).len(), 0)
+    assert(set_approval_state(mut book, "a1", APPROVAL_DENIED))
+    assert(!set_approval_state(mut book, "a1", APPROVAL_ALLOWED))
+    assert_eq(find_approval(book, "a1").value().state, APPROVAL_DENIED)
+    drop_approval(mut book, "a1")
+    assert(!find_approval(book, "a1").has_value())
+}

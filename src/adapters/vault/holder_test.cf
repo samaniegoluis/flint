@@ -22,3 +22,18 @@ test "every copy of a holder sees the same vault, and wipe forgets it" {
     assert_eq(gone.path, "")
     assert_eq(gone.secrets_key.len(), 0)
 }
+
+test "the access book is shared by copies and cleared on demand" {
+    h := new_session_holder()
+    copy := h
+    assert_eq(h.access_book().grants.len(), 0)
+    mut book := empty_access_book()
+    book.grants.push(Grant{ id: "g1", vault_id: "v", anchor_pid: 2, anchor_started: 3, label: "x", scope: AccessScope{ all: true, groups: [], hosts: [] }, read: true, exec: false, write: false, created_ms: 0, expires_ms: 0, duration: "lock" })
+    h.access_hold()
+    h.put_access_book(book)
+    h.access_release()
+    assert_eq(copy.access_book().grants.len(), 1)
+    assert_eq(copy.access_book().grants[0].id, "g1")
+    copy.access_clear()
+    assert_eq(h.access_book().grants.len(), 0)
+}

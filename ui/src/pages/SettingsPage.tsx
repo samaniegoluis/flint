@@ -14,14 +14,16 @@ import type { Confirm } from './KeysPage';
 import { RenameVault } from '../shell/VaultSwitcher';
 import { ImportTetherDrawer } from './ImportTether';
 import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
+import { AccessSettings } from '../access/AccessSettings';
 
-export type SettingsSection = 'appearance' | 'terminal' | 'shortcuts' | 'vault';
+export type SettingsSection = 'appearance' | 'terminal' | 'shortcuts' | 'vault' | 'access';
 
 const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
   { id: 'appearance', label: 'Appearance', icon: 'palette' },
   { id: 'terminal', label: 'Terminal', icon: 'term' },
   { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'keyboard' },
   { id: 'vault', label: 'Vault', icon: 'lock' },
+  { id: 'access', label: 'Access', icon: 'shield' },
 ];
 
 export function SettingsPage({ section, setSection, onLock, onConfirm }: {
@@ -46,6 +48,7 @@ export function SettingsPage({ section, setSection, onLock, onConfirm }: {
           {section === 'terminal' && <TerminalSettings />}
           {section === 'shortcuts' && <Shortcuts />}
           {section === 'vault' && <VaultSettings onLock={onLock} onConfirm={onConfirm} />}
+          {section === 'access' && <AccessSettings />}
         </div>
       </div>
     </section>

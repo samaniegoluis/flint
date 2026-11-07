@@ -107,6 +107,14 @@ where the executable looks for it: `Flint.app/Contents/Resources/ui` on macOS, `
 on Linux. On macOS it signs the bundle again ad hoc, because adding the page invalidates
 cfire's signature. On Linux the app also needs WebKitGTK (`libwebkit2gtk-4.1-dev`).
 
+On Linux, approving a program in Flint's window asks for your login password through
+polkit once Flint's action is installed; without it, Flint asks for the vault's master
+password instead:
+
+```sh
+sudo cp packaging/linux/dev.flint.policy /usr/share/polkit-1/actions/
+```
+
 ## 4. Run the tests
 
 ```sh
@@ -165,7 +173,10 @@ terminal and no master password: commands, `exec`, `host test` and `connect` (on
 pseudo-terminal, with the host key question and a resize relayed) run in the app, with
 the same output and exit codes as the CLI on its own; a long `exec` does not hold up other
 commands; `flint vault lock` locks the window and the next command makes it ask, naming
-the command; and with the app closed, `flint` starts it on its unlock screen.
+the command; and with the app closed, `flint` starts it on its unlock screen. The page
+plays the owner in the approval window, with the master password as presence
+(`FLINT_PRESENCE=password`): it denies one request, leaves one unanswered, allows one host
+only, and checks that a lock ends every grant.
 
 ## Check the Linux build from macOS
 

@@ -188,8 +188,14 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 12 | `auth` | The server accepted none of the auth methods |
 | 13 | `network` | A host could not be reached, or the connection dropped |
 | 14 | `timeout` | `flint exec` ran past `--exec-timeout` |
+| 15 | `denied` | The owner denied this program in Flint's window, or its grant does not cover the command (see [Approve a program](/guides/ai-agents/#approve-a-program)) |
+| 16 | `approval_timeout` | Nobody answered Flint's approval window within two minutes |
 
 The codes are stable: scripts can rely on them.
+
+A command Flint has to ask you about waits for your answer and says so on stderr
+(*Waiting for approval in Flint (flint, started by Claude Code)…*); with `--json` it waits
+silently, so stderr holds at most the one JSON error.
 
 `connect` and `exec` exit with the **remote** status once the command has run (255 for
 a signal), so a remote `exit 3` and a `not_found` error both exit 3. Use `--json` to

@@ -122,3 +122,25 @@ test "recv times out when nothing arrives" {
     l.close()
     fs.remove(dir) or {}
 }
+
+test "a peer's caller chain is read from the kernel, up to pid 1" {
+    dir := temp_socket_dir()
+    path := ipc_socket_path(dir)
+    mut l := try ipc_listen(path)
+    mut client := try ipc_connect(path, 2000)
+    mut server := try l.accept_wait(2000)
+    c := ipc_caller(server.peer)
+    // The peer is this test process; its parent started it.
+    assert(c.chain.len() >= 2)
+    assert_eq(c.chain[0].pid, server.peer.pid)
+    assert(c.chain[0].exe.len() > 0)
+    assert(c.chain[0].started > 0)
+    assert_eq(c.chain[1].pid, c.chain[0].ppid)
+    assert(c.chain[c.chain.len() - 1].pid >= 1)
+    // A pid that does not exist gives an empty chain.
+    assert_eq(ipc_caller(IpcPeer{ uid: 0, pid: 999999999 }).chain.len(), 0)
+    client.close()
+    server.close()
+    l.close()
+    fs.remove(dir) or {}
+}

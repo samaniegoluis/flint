@@ -1,20 +1,22 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
-// A modal over a scrim. Esc and a click on the scrim close it; focus moves into it
-// and stays inside while it is open.
-export function Modal({ label, onClose, children, width = 560, top = 72, className = '' }: {
+// A modal over a scrim. Esc and a click on the scrim close it (unless
+// `scrimCloses` is false, for a dialog where closing means an answer); focus moves
+// into it and stays inside while it is open.
+export function Modal({ label, onClose, children, width = 560, top = 72, className = '', scrimCloses = true }: {
   label: string;
   onClose: () => void;
   children: ReactNode;
   width?: number;
   top?: number;
   className?: string;
+  scrimCloses?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useTrapFocus(ref, onClose);
   return (
     <>
-      <div className="scrim" onMouseDown={onClose} />
+      <div className="scrim" onMouseDown={scrimCloses ? onClose : undefined} />
       <div
         ref={ref}
         className={'modal ' + className}

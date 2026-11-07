@@ -59,6 +59,8 @@ export interface Vault {
 export interface World {
 	current: string;
 	vaults: Vault[];
+	/** This terminal was allowed in Flint's window (milestone 12); until a lock. */
+	approved?: boolean;
 }
 
 // ---- views: the JSON shapes of the real CLI, in its field order -------------

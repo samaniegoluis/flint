@@ -179,6 +179,19 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     return VaultSession{ path: path, name: name, id: id, secrets_key: secrets, cached: cached }
 }
 
+// Whether `password` is the master password of the vault `session` holds: the key
+// it derives must be the one in memory, compared in constant time. The window uses
+// it as a presence check where the OS has none (milestone 12).
+fn verify_master_password[C: Crypto, S: VaultStore](crypto: C, store: S, session: VaultSession, password: str) -> bool! {
+    if password.len() == 0 || session.secrets_key.len() == 0 {
+        return false
+    }
+    salt := try store.vault_read_salt(session.path)
+    master := try crypto.derive_key(password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
+    (_, secrets) := try derive_vault_keys(crypto, master)
+    return crypto.equal(secrets, session.secrets_key)
+}
+
 // Forgets the cached key, so the next use asks for the master password.
 fn lock_vault[S: VaultStore, K: Keychain](mut store: S, keychain: K, path: str) -> void! {
     try check_absolute(path)
