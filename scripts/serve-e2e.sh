@@ -324,6 +324,47 @@ check "another host is outside it and asks again (denied here)" '[[ "$scope_out"
 check "two approvals for four commands" '[[ $((asked_scope_after - asked_scope_before)) == 2 ]]'
 expect 0 "the grants in force while the vault stays unlocked" "" -- --json vault status
 
+echo "== tokens (milestone 12b, D-046)"
+asked_tok_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
+new_caller "" -- token create --name nightly --allow exec,read --hosts local
+tok="$out"
+check "token create, allowed in the window, prints only the token on stdout" '[[ $status == 0 && "$tok" =~ ^flint_[0-9a-f]{16}_[0-9a-f]{64}$ ]]'
+check "and says on stderr it is shown this once" '[[ "$err" == *"shows it this once"* ]]'
+# One caller twice: a grant never covers token create, so each one asks.
+twice_out="$(printf '' | no_tty perl "$tmp/scope.pl" "$flint" "token create --name twice-a --allow read" "token create --name twice-b --allow read" 2>"$tmp/twice.err")"
+asked_tok_after=$(grep -c "asking the owner to approve" "$tmp/app.log")
+check "a caller that created a token is asked again for the next one" '[[ "$twice_out" == *"0,0"* && $((asked_tok_after - asked_tok_before)) == 3 ]]'
+new_caller "" -- token create --name deny-me-token --allow read
+check "a token the owner denies is not created (denied, 15)" '[[ $status == 15 && "$out" != flint_* ]]'
+new_caller "" -- token create --name bad --allow exec --hosts ghost
+check "a token for a host the vault lacks never reaches the window" '[[ $status == 3 && "$(grep -c "asking the owner to approve" "$tmp/app.log")" == $((asked_tok_after + 1)) ]]'
+asked_use_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
+FLINT_TOKEN="$tok" new_caller "" -- exec local -- echo via-token
+check "FLINT_TOKEN runs an exec in its scope, with no window" '[[ $status == 0 && "$out" == *via-token* ]]'
+FLINT_TOKEN="$tok" new_caller "" -- host list
+check "and reads" '[[ $status == 0 && "$out" == *local-web* ]]'
+FLINT_TOKEN="$tok" new_caller "" -- exec tty -- echo outside
+check "a host outside the token is refused at once (denied)" '[[ $status == 15 && "$out" != *outside* && "$err" == *"does not allow"* ]]'
+FLINT_TOKEN="$tok" new_caller "" -- host add tok-host --hostname 10.0.0.9
+check "a change the token does not allow is refused" '[[ $status == 15 ]]'
+FLINT_TOKEN="$tok" new_caller "" -- token create --name minted --allow read
+check "a token cannot create a token" '[[ $status == 15 && "$err" == *"cannot create tokens"* ]]'
+FLINT_TOKEN="flint_not-a-token" new_caller "" -- host list
+check "a malformed token is refused without echoing it" '[[ $status == 15 && "$err" != *not-a-token* ]]'
+FLINT_TOKEN="${tok%?}0" new_caller "" -- host list
+[[ "${tok: -1}" == 0 ]] && FLINT_TOKEN="${tok%?}1" new_caller "" -- host list
+check "a token with a changed secret is refused" '[[ $status == 15 ]]'
+check "none of that asked the owner" '[[ "$(grep -c "asking the owner to approve" "$tmp/app.log")" == $asked_use_before ]]'
+expect 0 "token list" "" -- --json token list
+check "it lists the token by name, with no secret and no hash" '[[ "$out" == *nightly* && "$out" != *"${tok#flint_*_}"* && "$out" != *\"hash\"* ]]'
+expect 0 "token revoke by name" "" -- token revoke nightly
+FLINT_TOKEN="$tok" new_caller "" -- exec local -- echo after-revoke
+check "a revoked token is refused" '[[ $status == 15 && "$out" != *after-revoke* && "$err" == *revoked* ]]'
+local_run "" -- --json token list
+check "the CLI on its own lists tokens too, from the vault" '[[ $lstatus == 0 && "$lout" == *revoked* ]]'
+local_run "" -- token create --name local --allow read
+check "but creates none: that needs Flint (locked)" '[[ $lstatus == 5 && "$lerr" == *"runs in Flint"* ]]'
+
 echo "== another vault"
 expect 5 "another vault than the app's: locked, with no terminal" "" -- --vault "$other" host list
 check "it names the vault Flint has open" '[[ "$err" == *"Flint has vault"* ]]'
@@ -407,6 +448,7 @@ echo "== no secret left the app (Principle 6)"
 check "no password in any output" '! grep -q -e "$HOST_PW" -e "$CRED_PW" "$all_out"'
 check "no private key in any output" '! grep -q "PRIVATE KEY" "$all_out"'
 check "no password in the app log" '! grep -q -e "$HOST_PW" -e "$CRED_PW" "$tmp/app.log"'
+check "no token in the app log" '! grep -q "${tok#flint_*_}" "$tmp/app.log"'
 
 echo
 echo "serve-e2e: $((checks - failures))/$checks checks passed"

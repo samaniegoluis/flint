@@ -112,6 +112,9 @@ fn main() {
     presence := new_os_presence()
     app.bind_raw("access_state") |params| { return rpc_access_state(st, store, presence) }
     app.bind_raw("access_revoke") |params| { return rpc_access_revoke(params, st, store, presence, mut app) }
+    app.bind_raw("tokens_list") |params| { return rpc_tokens_list(st, store) }
+    app.bind_raw("token_revoke") |params| { return rpc_token_revoke(params, st, store, mut app) }
+    app.bind_raw("activity_log") |params| { return rpc_activity_log(params, st, store) }
     // On a worker: Touch ID and polkit block until the person answers.
     app.bind_async[AccessAnswer]("access_answer") |req| {
         mut a := app

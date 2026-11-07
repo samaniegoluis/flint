@@ -238,3 +238,31 @@ fn (self: LockedVaultStore) known_host_drop(addr: str) -> void! {
     self.leave()
     return r
 }
+
+fn (self: LockedVaultStore) tokens_all() -> []Token! {
+    inner := self.enter()
+    r := inner.tokens_all()
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) token_put(t: Token) -> void! {
+    inner := self.enter()
+    r := inner.token_put(t)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) activity_add(e: ActivityEntry, keep: i64) -> void! {
+    inner := self.enter()
+    r := inner.activity_add(e, keep)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) activity_page(before_id: i64, limit: i64) -> []ActivityEntry! {
+    inner := self.enter()
+    r := inner.activity_page(before_id, limit)
+    self.leave()
+    return r
+}

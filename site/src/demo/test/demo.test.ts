@@ -228,6 +228,32 @@ test('vault rename renames the current vault and refuses a name in use', () => {
 	assert.equal(flint(w, 'vault rename').code, 2);
 });
 
+test('token create is approved in Flint, prints the token once, and list and revoke follow the CLI', () => {
+	const w = worldFromSeed(seed);
+	const made = flint(w, 'token create --name nightly --allow exec --hosts nas,@prod --ttl 30d');
+	assert.equal(made.code, 0);
+	assert.equal(made.out.length, 1, 'only the token on stdout');
+	assert.match(made.out[0], /^flint_[0-9a-f]{16}_[0-9a-f]{64}$/);
+	assert.ok(made.err.includes('Waiting for approval in Flint (flint, started by Terminal)…'), 'Flint asks for every token');
+	assert.match(made.err.find((l) => l.startsWith('Created')) ?? '', /^Created token 'nightly' \(exec on nas, @prod\), until \d{4}-\d\d-\d\d \d\d:\d\d UTC\.$/);
+	assert.ok(made.err.includes('Flint shows it this once, above. Give it to the program in the FLINT_TOKEN environment variable.'));
+	const list = flint(w, 'token list');
+	assert.match(list.out[0], /^ID\s+NAME\s+ALLOWS\s+REACHES\s+STATUS\s+UNTIL$/);
+	assert.ok(list.out[1].includes('nightly') && list.out[1].includes('active'));
+	const j = JSON.parse(flint(w, 'token list --json').out[0]);
+	assert.equal(j[0].name, 'nightly');
+	assert.ok(!JSON.stringify(j).includes(made.out[0]), 'the list never carries the token');
+	assert.equal(flint(w, 'token create --name nightly --allow read').code, 4, 'a live name is taken');
+	assert.equal(flint(w, 'token create --name x --allow exec').code, 2, 'exec needs hosts');
+	assert.equal(flint(w, 'token create --name x --allow write --hosts nas').code, 7, 'write needs --all');
+	assert.equal(flint(w, 'token create --name x --allow exec --hosts ghost').code, 3);
+	assert.deepEqual(flint(w, 'token revoke nightly').out, [`Revoked token 'nightly' (${j[0].id}). A program that uses it is refused from now on.`]);
+	assert.ok(flint(w, 'token list').out[1].includes('revoked'));
+	assert.equal(flint(w, 'token revoke nightly').code, 3, 'a revoked token is found by id only');
+	const work = flint(w, 'token create --vault Work --name x --allow read');
+	assert.equal(work.code, 5, 'a vault not unlocked in Flint cannot make tokens');
+});
+
 test('the landing shows what the demo CLI prints (D-027)', () => {
 	const landing = readFileSync(fileURLToPath(new URL('../../content/docs/index.mdx', import.meta.url)), 'utf8');
 	const w = worldFromSeed(seed);
@@ -352,7 +378,7 @@ test('the shell tokenizer refuses pipes and keeps quotes', () => {
 
 test('the guide always says what to do, with the exact command', () => {
 	const { s, text } = session();
-	assert.deepEqual(s.guide(), { text: 'Step 1/10 · Every command, on one screen:', command: 'flint help' });
+	assert.deepEqual(s.guide(), { text: 'Step 1/11 · Every command, on one screen:', command: 'flint help' });
 	assert.ok(text().includes('#   flint help'), 'the step hint in the log carries its command');
 	s.submit('flint');
 	assert.equal(s.tourStep, 1, '`flint` alone shows the help, so it completes step 1');

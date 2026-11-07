@@ -3,8 +3,8 @@
 // FlintError so the UI can branch on stable codes (D-018, D-019).
 
 import type {
-  AccessAnswer, AccessState, AppInfo, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, UnlockRequest, VaultInfo, VaultStatus,
+  AccessAnswer, AccessState, ActivityEntry, AppInfo, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
+  KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -80,6 +80,11 @@ export const api = {
   accessAnswer: (a: AccessAnswer) => call<AccessState>('access_answer', a),
   /** Ends one grant, or every grant with ''. */
   accessRevoke: (id: string) => call<AccessState>('access_revoke', { name: id }),
+  /** Tokens of the open vault (milestone 12b). */
+  tokensList: () => call<TokensState>('tokens_list'),
+  tokenRevoke: (id: string) => call<TokensState>('token_revoke', { name: id }),
+  /** The newest activity entries before `before` (0: from the newest). */
+  activityLog: (before: number, limit: number) => call<{ entries: ActivityEntry[] }>('activity_log', { before, limit }),
   forgetKey: (path: string) => call('vault_forget_key', { path }),
   forget: (path: string) => call('vault_forget', { path }),
   status: () => call<VaultStatus>('vault_status'),

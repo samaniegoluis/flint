@@ -42,7 +42,7 @@ import "../../adapters/vault"
 import "../../application"
 import "../../domain"
 
-SERVE_PROTOCOL: i64 = 3
+SERVE_PROTOCOL: i64 = 4
 
 // Connecting, and sending a request or a reply (Principle 8).
 SERVE_CONNECT_MS: i32 = 1000
@@ -90,6 +90,8 @@ type ServeRequest struct {
     caller:  str         `json:"caller"`
     // What the command needs, for the grant an unlock may give with it (milestone 12).
     need:    AccessNeed  `json:"need"`
+    // FLINT_TOKEN of the client, if set (milestone 12b): a secret, towards the app only.
+    token:   str         `json:"token"`
 }
 
 type ServeReply struct {
@@ -126,7 +128,7 @@ fn wire_secrets(sec: SecretInput) -> WireSecrets {
 }
 
 fn new_request(kind: str, vault: str) -> ServeRequest {
-    return ServeRequest{ kind: kind, version: SERVE_PROTOCOL, vault: vault, argv: [], cwd: "", as_json: false, secrets: no_wire_secrets(), tty: false, term: "", cols: 0, rows: 0, caller: "", need: AccessNeed{ action: ACCESS_READ, host: "" } }
+    return ServeRequest{ kind: kind, version: SERVE_PROTOCOL, vault: vault, argv: [], cwd: "", as_json: false, secrets: no_wire_secrets(), tty: false, term: "", cols: 0, rows: 0, caller: "", need: AccessNeed{ action: ACCESS_READ, host: "" }, token: "" }
 }
 
 // Commands the app runs for the CLI in one exchange: those that need the unlocked
@@ -135,7 +137,7 @@ fn new_request(kind: str, vault: str) -> ServeRequest {
 fn servable(p: ParsedArgs) -> bool {
     noun := p.positional(0)
     verb := p.positional(1)
-    if noun == "group" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "import" {
+    if noun == "group" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "import" || noun == "token" {
         return true
     }
     if noun == "host" {
@@ -158,6 +160,9 @@ fn access_need(p: ParsedArgs) -> AccessNeed {
     }
     if noun == "host" && verb == "test" {
         return AccessNeed{ action: ACCESS_EXEC, host: p.positional(2) }
+    }
+    if noun == "token" && verb == "create" {
+        return AccessNeed{ action: ACCESS_TOKEN, host: "" }
     }
     if verb == "list" || verb == "show" || verb == "status" || (noun == "vault" && verb == "unlock") {
         return AccessNeed{ action: ACCESS_READ, host: "" }
@@ -211,7 +216,7 @@ fn needs_unlocked_vault(p: ParsedArgs) -> bool {
     if noun == "vault" {
         return p.positional(1) == "rename"
     }
-    return noun == "group" || noun == "host" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "import" || noun == "connect" || noun == "exec"
+    return noun == "group" || noun == "host" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "import" || noun == "token" || noun == "connect" || noun == "exec"
 }
 
 // The command as Flint's unlock screen names it: `flint`, the words before any flag,
@@ -298,6 +303,7 @@ fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> S
     req.as_json = as_json
     req.secrets = wire_secrets(sec)
     req.caller = caller_summary(p)
+    req.token = os.getenv("FLINT_TOKEN")
     conn.send(json.stringify(req), SERVE_SEND_MS) or {
         return not_served()
     }
@@ -381,6 +387,7 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
     req.cols = i64(size.cols)
     req.rows = i64(size.rows)
     req.caller = caller_summary(p)
+    req.token = os.getenv("FLINT_TOKEN")
     conn.send(json.stringify(req), SERVE_SEND_MS) or {
         return not_served()
     }
@@ -742,4 +749,16 @@ fn served_changes_vault(req: ServeRequest) -> bool {
         return !p.has_flag("--dry-run")
     }
     return verb == "add" || verb == "edit" || verb == "rename" || verb == "rm"
+}
+
+// Whether a served command created or revoked a token, so the window's list of
+// tokens reloads.
+fn served_changes_tokens(req: ServeRequest) -> bool {
+    parsed := parse_cli_args(req.argv)
+    if !parsed.has_value() {
+        return false
+    }
+    p := parsed.value()
+    verb := p.positional(1)
+    return p.positional(0) == "token" && (verb == "create" || verb == "revoke")
 }

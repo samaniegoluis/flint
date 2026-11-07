@@ -474,6 +474,19 @@ if [[ -n "${FLINT_TEST_PW_PORT:-}" ]]; then
   check "the auth error names the host password, not its value" '[[ "$err" == *"host password"* && "$err" != *"wrong-password"* ]]'
 fi
 
+echo "== tokens, with the CLI on its own (milestone 12b)"
+expect 0 "token list on a vault with none" "$SMI" -- token list "${SM[@]}"
+check "it says there are none" '[[ "$out" == "No tokens."* ]]'
+expect 0 "token list --json" "$SMI" -- --json token list "${SM[@]}"
+check "an empty JSON list" '[[ "$out" == "[]" ]]'
+expect 5 "token create needs Flint: locked" "$SMI" -- token create --name nightly --allow exec --hosts local "${SM[@]}"
+check "it says to open Flint" '[[ "$err" == *"runs in Flint"* ]]'
+expect 2 "token create without --allow is a usage error" "$SMI" -- token create --name nightly "${SM[@]}"
+expect 2 "an unknown --allow action is a usage error" "$SMI" -- --json token create --name n --allow sudo "${SM[@]}"
+check "as a JSON error" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "usage" ]]'
+expect 3 "token revoke of an unknown token: not_found" "$SMI" -- token revoke nightly "${SM[@]}"
+expect 2 "an unknown token verb" "$SMI" -- token frob "${SM[@]}"
+
 echo "== every --json output parses"
 expect 0 "version --json" "" -- --version --json
 check "version is JSON" 'echo "$out" | is_json'

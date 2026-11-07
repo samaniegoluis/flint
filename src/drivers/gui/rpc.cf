@@ -356,7 +356,8 @@ fn rpc_vault_unlock(req: UnlockReq, c: Sodium, mut store: LockedVaultStore, kc: 
     st.holder.clear_relocked(s.path)
     if asked == s.path {
         st.holder.set_ask("", "")
-        if req.allow && req.password.len() > 0 && asking.len() > 0 {
+        // `token create` is never allowed here: only the approval window allows it.
+        if req.allow && req.password.len() > 0 && asking.len() > 0 && asking[0].need.action != ACCESS_TOKEN {
             allow_on_unlock(asking[0], c, store, st, s.id)
         }
     }
@@ -402,7 +403,7 @@ fn rpc_unlock_request(st: GuiState, recents: JsonRecentStore) -> str! {
     }
     asking := st.holder.access_book().asking
     mut label := ""
-    if asking.len() > 0 {
+    if asking.len() > 0 && asking[0].need.action != ACCESS_TOKEN {
         label = asking[0].label
     }
     return json.stringify(UnlockRequest{ path: path, name: recent_name(recents, path), caller: caller, label: label })

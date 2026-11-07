@@ -10,6 +10,7 @@ package main
 import "core:encoding/hex"
 import "core:fs"
 import "core:os"
+import "core:str"
 import "core:time"
 import "ext:webui"
 import "../../adapters/config"
@@ -209,10 +210,21 @@ fn recent_name(recents: JsonRecentStore, path: str) -> str {
 
 // ---- Caller approval (milestone 12, Principle 12) -----------------------------------
 
-// The check every run and session request passes before its command runs: a live
-// grant of this caller's anchor that covers what the command needs, or the owner's
-// answer in the window. Returns "" to go ahead, an error message to refuse with, or
-// "gone" when the client left while waiting (nothing to answer then).
+// The check every run and session request passes before its command runs.
+//
+// - With FLINT_TOKEN (milestone 12b), the token alone decides: live, its secret's
+//   hash matching, and its scope covering the request; otherwise `denied` at once,
+//   with no window (a program with a token has nobody to ask).
+// - `token create` is asked in the window every time, one by one, with presence: no
+//   grant and no token covers it, so an agent cannot mint a token that outlives its
+//   grant.
+// - Anything else: a live grant of this caller's anchor that covers what the command
+//   needs, or the owner's answer in the window.
+//
+// Returns "" to go ahead, an error message to refuse with, or "gone" when the client
+// left while waiting (nothing to answer then). The activity log gets every refusal
+// and every allowed request but a read (D-046: an allowed read would rewrite a synced
+// vault on every `host list`; a refusal is rare and worth seeing).
 //
 // The vault is held only to read it; the wait for the owner holds nothing, so the
 // window, the lock timer and other clients carry on meanwhile. A lock while waiting
@@ -223,6 +235,23 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     }
     need := access_need(parsed)
     caller := ipc_caller(conn.peer)
+    mut ask := no_token_ask()
+    if need.action == ACCESS_TOKEN && req.token.len() == 0 {
+        // A request the command would refuse never reaches the owner.
+        treq := token_request_from_flags(parsed) or err {
+            return "{err.message()}"
+        }
+        ask = TokenAsk{ name: str.trim(treq.name), allows: token_allows_text(treq.read, treq.exec, treq.write), reaches: token_reach_text(treq.scope.all, treq.scope.groups, treq.scope.hosts), ttl: treq.ttl }
+        st.hold()
+        checked := check_token_request(store, treq)
+        st.release()
+        if !checked.has_value() {
+            return "{checked.error().message()}"
+        }
+        if ask.reaches.len() == 0 {
+            ask.reaches = "whole vault"
+        }
+    }
     st.hold()
     session := st.vault_session()
     if !st.unlocked() || session.path != req.vault {
@@ -230,14 +259,56 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         return coded(ERR_LOCKED, "the vault locked before the command ran")
     }
     cat := load_catalog(store) or Catalog{ groups: [], hosts: [], keys: [], creds: [] }
+    mut tokens: []Token = []
+    if req.token.len() > 0 {
+        tokens = store.tokens_all() or []
+    }
     st.release()
     now := time.now_ms()
-    if find_grant(st.holder.access_book().grants, caller, session.id, need, cat, now).has_value() {
+    mut entry := ActivityEntry{ id: 0, at: time.unix_seconds(), caller: caller_label(caller), via: ACTIVITY_VIA_GRANT, token: "", action: need.action, host: need.host, command: activity_command(parsed, ask), outcome: ACTIVITY_ALLOWED }
+
+    if req.token.len() > 0 {
+        entry.via = ACTIVITY_VIA_TOKEN
+        if need.action == ACCESS_TOKEN {
+            entry.outcome = ACTIVITY_DENIED
+            log_activity(st, store, session, entry, mut app)
+            return coded(ERR_DENIED, "a token cannot create tokens: run `flint token create` from your terminal, without FLINT_TOKEN, and approve it in Flint")
+        }
+        t := check_token_in(c, tokens, req.token, time.unix_seconds()) or err {
+            entry.outcome = ACTIVITY_DENIED
+            // A revoked or expired token is still named in the log.
+            known := match_token(c, tokens, req.token)
+            if known.has_value() {
+                entry.token = known.value().id
+                entry.caller = "{entry.caller} (token {known.value().name})"
+            }
+            log_activity(st, store, session, entry, mut app)
+            return "{err.message()}"
+        }
+        entry.token = t.id
+        entry.caller = "{entry.caller} (token {t.name})"
+        if !token_covers(t, session.id, need, cat, time.unix_seconds()) {
+            entry.outcome = ACTIVITY_DENIED
+            log_activity(st, store, session, entry, mut app)
+            return coded(ERR_DENIED, "the token '{t.name}' does not allow this; see `flint token list`")
+        }
+        if activity_logged(need) {
+            log_activity(st, store, session, entry, mut app)
+        }
         return ""
     }
+
+    if need.action != ACCESS_TOKEN && find_grant(st.holder.access_book().grants, caller, session.id, need, cat, now).has_value() {
+        if activity_logged(need) {
+            log_activity(st, store, session, entry, mut app)
+        }
+        return ""
+    }
+    entry.via = ACTIVITY_VIA_WINDOW
     id := hex.encode(c.random_bytes(8))
     mut ap := new_approval(id, session.id, caller, req.caller, need, now)
     ap.deadline_ms = now + approval_wait_ms()
+    ap.token = ask
     st.holder.access_hold()
     mut book := st.holder.access_book()
     book.pending.push(ap)
@@ -261,9 +332,15 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
             forget_approval(st, id)
             app.emit("access:resolved", ApprovalResolved{ id: id, state: state })
             if state == APPROVAL_DENIED {
+                entry.outcome = ACTIVITY_DENIED
+                log_activity(st, store, session, entry, mut app)
                 return coded(ERR_DENIED, "the owner denied this request in Flint")
             }
-            if find_grant(st.holder.access_book().grants, caller, session.id, need, cat, t).has_value() {
+            // A token is allowed for this one request; nothing else is.
+            if need.action == ACCESS_TOKEN || find_grant(st.holder.access_book().grants, caller, session.id, need, cat, t).has_value() {
+                if activity_logged(need) {
+                    log_activity(st, store, session, entry, mut app)
+                }
                 return ""
             }
             return coded(ERR_DENIED, "the access allowed in Flint does not cover this request")
@@ -271,6 +348,8 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         if t >= ap.deadline_ms {
             forget_approval(st, id)
             app.emit("access:resolved", ApprovalResolved{ id: id, state: "expired" })
+            entry.outcome = ACTIVITY_TIMEOUT
+            log_activity(st, store, session, entry, mut app)
             return coded(ERR_APPROVAL_TIMEOUT, "nobody answered in Flint within {approval_wait_ms() / 1000}s; run the command again and allow it there")
         }
         // A client that hung up is not waiting any more. Before a session's raw mode
@@ -286,6 +365,41 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         }
     }
     return ""
+}
+
+// The command as the activity log keeps it: the words before any flag and, for
+// `exec`, the remote command (caller_summary, D-018); for `token create` the token's
+// name, what it allows and where. Never a flag's value otherwise.
+fn activity_command(p: ParsedArgs, ask: TokenAsk) -> str {
+    s := caller_summary(p)
+    if ask.name.len() > 0 {
+        return "{s} '{ask.name}' ({ask.allows} on {ask.reaches}, {ask.ttl})"
+    }
+    return s
+}
+
+// Appends `e` to the open vault's log, if `session` is still the vault held. A
+// failure is reported by its code only: a message could name a host (Principle 5).
+fn log_activity(st: GuiState, store: LockedVaultStore, session: VaultSession, e: ActivityEntry, mut app: webui.App) {
+    st.hold()
+    still := st.unlocked() && st.vault_session().path == session.path
+    mut ok := true
+    if still {
+        mut ts := store
+        done := record_activity(mut ts, e)
+        if !done.has_value() {
+            ok = false
+            write_stderr("flint-gui: the activity log was not written ({error_code_of("{done.error().message()}")})\n")
+        }
+    }
+    st.release()
+    if still && ok {
+        app.emit("activity:added", ActivityAdded{ outcome: e.outcome })
+    }
+}
+
+type ActivityAdded struct {
+    outcome: str `json:"outcome"`
 }
 
 // How long a caller waits for the owner. The headless end-to-end run (and only it)
@@ -355,6 +469,9 @@ fn serve_run(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedV
         }
         if served_changes_vault(req) {
             app.emit("vault:changed", VaultChanged{ path: session.path, name: st.vault_session().name })
+        }
+        if served_changes_tokens(req) {
+            app.emit("access:changed", GrantsChanged{ count: i64(st.holder.access_book().grants.len()) })
         }
     }
     _ := conn.send(serve_reply_json(reply), SERVE_SEND_MS) or {}

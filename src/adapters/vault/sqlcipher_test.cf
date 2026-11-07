@@ -11,6 +11,7 @@ import "../../domain"
 MIGRATION_001_SHA256: str = "9ed7d684e513f15455c31c2680407da618820c08eddb64d23796129919be5afd"
 MIGRATION_002_SHA256: str = "9973529e84f0c738288de9b0187a5b48810ced2b269bda6d248571e1442beeb7"
 MIGRATION_003_SHA256: str = "d68639a62a93d26076581b02403eb1f9f3b4df0c6f9807842988940fb5b64b9c"
+MIGRATION_004_SHA256: str = "05c65140fa57a387055c58982a185aa12b1a4d28871ac9499a36201dc5ef33da"
 
 fn temp_vault_path(name: str) -> str {
     dir := "/tmp/flint-test-" + hex.encode(sha256.random_bytes(8))
@@ -196,6 +197,10 @@ test "migration 002 is frozen" {
     assert_eq(sha256.hash_hex(vault_migrations()[1].sql.bytes()), MIGRATION_002_SHA256)
 }
 
+test "migration 004 is frozen" {
+    assert_eq(sha256.hash_hex(vault_migrations()[3].sql.bytes()), MIGRATION_004_SHA256)
+}
+
 test "migration 003 is frozen" {
     assert_eq(sha256.hash_hex(vault_migrations()[2].sql.bytes()), MIGRATION_003_SHA256)
 }
@@ -211,7 +216,7 @@ test "a vault at schema 2 gains an empty initial command that keeps the shell" {
     db.close_db()
     mut store := new_sql_vault_store()
     try store.vault_attach(path, test_key(7), test_salt_bytes())
-    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "3")
+    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "{vault_migrations().len()}")
     hosts := try store.hosts_all()
     assert_eq(hosts.len(), 1)
     assert_eq(hosts[0].initial_command, "")
@@ -277,5 +282,72 @@ test "control: an unkeyed sqlite file does expose the hostname" {
     raw := try fs.read_text(path)
     assert(raw.contains("SQLite format 3"))
     assert(raw.contains("db01.internal.example.org"))
+    try fs.remove(fs.dirname(path))
+}
+
+fn marker_token(id: str, name: str, revoked_at: i64) -> Token {
+    return Token{ id: id, name: name, hash: "ab" + id, scope: AccessScope{ all: false, groups: ["g1", "g2"], hosts: ["h1"] }, read: true, exec: true, write: false, created_at: 100, expires_at: 200, revoked_at: revoked_at }
+}
+
+fn marker_entry(n: i64) -> ActivityEntry {
+    return ActivityEntry{ id: 0, at: 1000 + n, caller: "flint-caller-marker", via: ACTIVITY_VIA_GRANT, token: "", action: ACCESS_EXEC, host: "flint-activity-host-marker", command: "flint exec web -- flint-activity-command-marker {n}", outcome: ACTIVITY_ALLOWED }
+}
+
+test "tokens and activity round-trip, stay encrypted, and the log keeps the newest" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try store.token_put(marker_token("t1", "flint-token-name-marker", 0))
+    try store.token_put(marker_token("t2", "other", 0))
+    try store.token_put(marker_token("t1", "flint-token-name-marker", 150))
+    tokens := try store.tokens_all()
+    assert_eq(tokens.len(), 2)
+    assert_eq(tokens[0].id, "t1")
+    assert_eq(tokens[0].revoked_at, 150)
+    assert_eq(tokens[0].scope.groups.len(), 2)
+    assert_eq(tokens[0].scope.groups[1], "g2")
+    assert_eq(tokens[0].scope.hosts[0], "h1")
+    assert(!tokens[0].scope.all)
+    assert(tokens[0].read && tokens[0].exec && !tokens[0].write)
+    assert_eq(tokens[0].expires_at, 200)
+    assert_eq(tokens[0].hash, "abt1")
+
+    for n in 0..5 {
+        try store.activity_add(marker_entry(n), 3)
+    }
+    page := try store.activity_page(0, 10)
+    assert_eq(page.len(), 3)
+    assert_eq(page[0].at, 1004)
+    assert_eq(page[2].at, 1002)
+    assert_eq(page[0].host, "flint-activity-host-marker")
+    assert_eq(page[0].outcome, ACTIVITY_ALLOWED)
+    older := try store.activity_page(page[0].id, 1)
+    assert_eq(older.len(), 1)
+    assert_eq(older[0].at, 1003)
+    store.vault_detach()
+
+    raw := try fs.read_text(path)
+    for needle in ["flint-token-name-marker", "flint-caller-marker", "flint-activity-host-marker", "flint-activity-command-marker", "CREATE TABLE tokens"] {
+        assert(!raw.contains(needle), "leaked: {needle}")
+    }
+    try fs.remove(fs.dirname(path))
+}
+
+test "a vault at schema 3 gains empty tokens and activity" {
+    path := temp_vault_path("v.flint")
+    mut db := try open_cipher_db(path, test_key(7), test_salt_bytes(), true)
+    try db.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+    try db.apply_migration(vault_migrations()[0])
+    try db.apply_migration(vault_migrations()[1])
+    try db.apply_migration(vault_migrations()[2])
+    try db.exec("INSERT INTO hosts (id, alias, label, hostname, port, username, color, notes) VALUES ('h1', 'web', '', 'web.example.org', 22, 'u', '', '');")
+    db.close_db()
+    mut store := new_sql_vault_store()
+    try store.vault_attach(path, test_key(7), test_salt_bytes())
+    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "4")
+    assert_eq((try store.hosts_all()).len(), 1)
+    assert_eq((try store.tokens_all()).len(), 0)
+    assert_eq((try store.activity_page(0, 10)).len(), 0)
+    store.vault_detach()
     try fs.remove(fs.dirname(path))
 }

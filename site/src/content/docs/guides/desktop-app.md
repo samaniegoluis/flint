@@ -197,6 +197,11 @@ login password through polkit (Linux), or the master password. **Deny** (<kbd>Es
 refuses it, and so does no answer within two minutes. See
 [Approve a program](/guides/ai-agents/#approve-a-program).
 
+`flint token create` brings up the same window showing the token instead: its name, what
+it allows, which hosts and when it expires. **Allow** (with presence) creates that one
+token; it never becomes a grant, so the next `token create` asks again. See
+[Tokens for scheduled jobs](/guides/ai-agents/#tokens-for-scheduled-jobs).
+
 ## Settings
 
 Settings belong to this machine, not to the vault, and save as you change them.
@@ -213,7 +218,11 @@ Settings belong to this machine, not to the vault, and save as you change them.
   its key, **Lock now**, **Lock after**, the known hosts, each of which you can forget, and **Import from
   Tether…** ([Moving from Tether](/guides/from-tether/)).
 - **Access**: the programs you approved, with what they may do and until when, and
-  **Revoke** for each (or all). Grants end when the vault locks or Flint quits.
+  **Revoke** for each (or all). Grants end when the vault locks or Flint quits. Below
+  them, the vault's **tokens** (**Revoke** ends one; **Show ended** lists the expired
+  and revoked ones) and the **activity log**: when, which program or token, the command
+  and whether it was allowed, denied or left unanswered, newest first, with **Load
+  more**. Allowed reads are not recorded; refused ones are.
 
 They are kept in `settings.json` in Flint's config folder (`~/Library/Application
 Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults list.

@@ -1647,3 +1647,24 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `ext:auth.confirm_presence(reason) -> bool!` and `ext:auth.presence_kinds()`,
   on macOS (`LAContext`), Linux (polkit) and Windows (Windows Hello,
   `UserConsentVerifier`), blocking a worker, never the main thread.
+
+### CF-094 · bug · `confirmed`: a method call on a string literal passes `cfire check` and fails in clang
+- **Repro (43431f2):** `if "0123456789abcdef".contains(ch) { … }` → `cfire check` passes;
+  clang: `member reference base type 'const char[17]' is not a structure or union` (the
+  literal is lowered as a C string, not a `cfire::str`).
+- **Same family:** `for part in s.split(",")` on a `str` also passes `cfire check` and
+  fails in clang (`no member named 'split' in 'std::string'`); only the free function
+  `str.split(s, ",")` lowers.
+- **Workaround:** bind the literal to a typed constant first (`digits: str = "…"`,
+  `src/domain/token.cf`); call `str.split` as a function (`src/adapters/vault/store.cf`).
+- **Ideal:** lower a literal that receives a method call as a `str` value, or reject it in
+  the checker.
+
+### CF-095 · missing · `open`: `core:time` has no way to format a wall-clock time
+- **Repro (43431f2):** `cfire inspect core:time` describes "RFC 3339 / ISO 8601 formatting"
+  but lists only `now`, `unix`, `unix_seconds` and `parse_rfc3339`: nothing turns a `Time`
+  or Unix seconds into text. Flint prints when a token expires (milestone 12b).
+- **Workaround:** `utc_text` in `src/drivers/clicmd/tokens.cf` (days to a civil date by
+  arithmetic, UTC only).
+- **Ideal:** `t.format_rfc3339()` and a `t.format(layout)` with local time, as Go's
+  `time.Time.Format`.
