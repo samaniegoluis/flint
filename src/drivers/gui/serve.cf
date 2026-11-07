@@ -47,11 +47,13 @@ type VaultLocked struct {
     reason: str `json:"reason"`
 }
 
-// A CLI asked this window to unlock `path`; `caller` is the command.
+// A CLI asked this window to unlock `path`; `caller` is the command, `label` who
+// runs it ("flint, started by Claude Code"), which the unlock screen can allow.
 type UnlockRequest struct {
     path:   str `json:"path"`
     name:   str `json:"name"`
     caller: str `json:"caller"`
+    label:  str `json:"label"`
 }
 
 // An approval left the window: answered, timed out, or its caller went away.
@@ -166,7 +168,15 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
         if now.state == APP_LOCKED || now.state == APP_ASKING {
             name := recent_name(recents, req.vault)
             st.holder.set_ask(req.vault, req.caller)
-            app.emit("vault:unlock-request", UnlockRequest{ path: req.vault, name: name, caller: req.caller })
+            // Who asks, kept until the unlock: the unlock screen may allow it at once.
+            caller := ipc_caller(conn.peer)
+            ap := new_approval(hex.encode(c.random_bytes(8)), "", caller, req.caller, req.need, time.now_ms())
+            st.holder.access_hold()
+            mut book := st.holder.access_book()
+            book.asking = [ap]
+            st.holder.put_access_book(book)
+            st.holder.access_release()
+            app.emit("vault:unlock-request", UnlockRequest{ path: req.vault, name: name, caller: req.caller, label: ap.label })
             bring_window_to_front()
             _ := conn.send(app_state_json(APP_ASKING, ""), SERVE_SEND_MS) or {}
         } else {

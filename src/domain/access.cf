@@ -304,10 +304,28 @@ type Approval struct {
 type AccessBook struct {
     grants:  []Grant    `json:"grants"`
     pending: []Approval `json:"pending"`
+    // The caller of an unlock a CLI asked for (none or one): the unlock screen can
+    // allow it in the same step.
+    asking:  []Approval `json:"asking"`
 }
 
 fn empty_access_book() -> AccessBook {
-    return AccessBook{ grants: [], pending: [] }
+    return AccessBook{ grants: [], pending: [], asking: [] }
+}
+
+// The grant the window proposes for `ap`: the host it runs on (when the vault has
+// it), else the whole vault; reading plus what it needs; one hour. The unlock screen
+// gives exactly this when the owner ticks "Allow".
+fn proposed_grant(ap: Approval, cat: Catalog, id: str, now_ms: i64) -> Grant! {
+    mut scope := AccessScope{ all: true, groups: [], hosts: [] }
+    if ap.need.action == ACCESS_EXEC {
+        for h in cat.hosts {
+            if str.to_lower(h.alias) == str.to_lower(ap.need.host) {
+                scope = AccessScope{ all: false, groups: [], hosts: [h.id] }
+            }
+        }
+    }
+    return grant_from_approval(ap, id, scope, true, ap.need.action == ACCESS_EXEC, ap.need.action == ACCESS_WRITE, "1h", now_ms)
 }
 
 fn new_approval(id: str, vault_id: str, c: Caller, request: str, need: AccessNeed, now_ms: i64) -> Approval {
@@ -507,6 +525,21 @@ test "an approval becomes a grant for its caller's anchor" {
     assert(find_grant([g], c, "v1", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, test_catalog(), 3000).has_value())
     assert(!grant_from_approval(ap, "g2", AccessScope{ all: false, groups: [], hosts: [] }, true, false, false, "1h", 0).has_value())
     assert(!grant_from_approval(ap, "g2", AccessScope{ all: true, groups: [], hosts: [] }, false, false, false, "1h", 0).has_value())
+}
+
+test "the proposed grant is the host it runs on, or the whole vault" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    run := new_approval("a1", "v1", c, "flint exec api-01 -- uptime", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, 0)
+    g := try proposed_grant(run, test_catalog(), "g1", 0)
+    assert(!g.scope.all)
+    assert_eq(g.scope.hosts[0], "h-api")
+    assert(g.read && g.exec && !g.write)
+    assert_eq(g.expires_ms, 3600000)
+    unknown := new_approval("a2", "v1", c, "flint exec nope", AccessNeed{ action: ACCESS_EXEC, host: "nope" }, 0)
+    assert((try proposed_grant(unknown, test_catalog(), "g2", 0)).scope.all)
+    write := new_approval("a3", "v1", c, "flint host add", AccessNeed{ action: ACCESS_WRITE, host: "" }, 0)
+    w := try proposed_grant(write, test_catalog(), "g3", 0)
+    assert(w.scope.all && w.write)
 }
 
 test "an approval is answered once" {

@@ -9,6 +9,7 @@ package main
 
 import "ext:webui"
 import "ext:json"
+import "core:encoding/hex"
 import "core:fs"
 import "core:time"
 import "../../adapters/config"
@@ -37,8 +38,11 @@ type PathReq struct {
 }
 
 type UnlockReq struct {
-    path:     str `json:"path"`
-    password: str `json:"password"`
+    path:     str  `json:"path"`
+    password: str  `json:"password"`
+    // Allow the CLI caller that asked for this unlock, as the window proposes
+    // (milestone 12). The typed master password is the presence check.
+    allow:    bool `json:"allow"`
 }
 
 type CreateReq struct {
@@ -344,15 +348,36 @@ fn rpc_vault_unlock(req: UnlockReq, c: Sodium, mut store: LockedVaultStore, kc: 
     }
     st.hold()
     defer st.release()
+    (asked, caller) := st.holder.ask()
+    asking := st.holder.access_book().asking
     close_current(mut store, mut st)
     s := try unlock_vault(c, mut store, kc, recents, req.path, req.password)
     st.adopt(s)
     st.holder.clear_relocked(s.path)
-    (asked, caller) := st.holder.ask()
     if asked == s.path {
         st.holder.set_ask("", "")
+        if req.allow && req.password.len() > 0 && asking.len() > 0 {
+            allow_on_unlock(asking[0], c, store, st, s.id)
+        }
     }
     return session_info(s)
+}
+
+// The unlock screen's "Allow" for the caller that asked: the grant the approval
+// window would propose, confirmed by the master password just typed.
+fn allow_on_unlock(asked: Approval, c: Sodium, store: LockedVaultStore, st: GuiState, vault_id: str) {
+    cat := load_catalog(store) or Catalog{ groups: [], hosts: [], keys: [], creds: [] }
+    mut ap := asked
+    ap.vault_id = vault_id
+    g := proposed_grant(ap, cat, hex.encode(c.random_bytes(8)), time.now_ms()) or {
+        return
+    }
+    st.holder.access_hold()
+    mut book := st.holder.access_book()
+    book.grants.push(g)
+    st.holder.put_access_book(book)
+    st.holder.access_release()
+    write_stderr("flint-gui: allowed {g.label} ({g.duration}) at unlock\n")
 }
 
 // Locks the vault now (the Lock button, the palette, ⌘L).
@@ -373,9 +398,14 @@ fn rpc_activity(st: GuiState) -> str! {
 fn rpc_unlock_request(st: GuiState, recents: JsonRecentStore) -> str! {
     (path, caller) := st.holder.ask()
     if path.len() == 0 || st.unlocked() {
-        return json.stringify(UnlockRequest{ path: "", name: "", caller: "" })
+        return json.stringify(UnlockRequest{ path: "", name: "", caller: "", label: "" })
     }
-    return json.stringify(UnlockRequest{ path: path, name: recent_name(recents, path), caller: caller })
+    asking := st.holder.access_book().asking
+    mut label := ""
+    if asking.len() > 0 {
+        label = asking[0].label
+    }
+    return json.stringify(UnlockRequest{ path: path, name: recent_name(recents, path), caller: caller, label: label })
 }
 
 // The person turned down the CLI's request on the unlock screen.

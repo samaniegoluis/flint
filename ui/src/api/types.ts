@@ -124,6 +124,8 @@ export interface UnlockRequest {
   path: string;
   name: string;
   caller: string;
+  /** Who runs it ("flint, started by Claude Code"); the unlock can allow it. */
+  label: string;
 }
 
 /** Why the vault locked: the Lock button, idle time, the screen, sleep or `flint vault lock`. */

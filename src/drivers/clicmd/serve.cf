@@ -88,6 +88,8 @@ type ServeRequest struct {
     rows:    i64         `json:"rows"`
     // What to show in Flint's unlock screen: the command, without its flags.
     caller:  str         `json:"caller"`
+    // What the command needs, for the grant an unlock may give with it (milestone 12).
+    need:    AccessNeed  `json:"need"`
 }
 
 type ServeReply struct {
@@ -124,7 +126,7 @@ fn wire_secrets(sec: SecretInput) -> WireSecrets {
 }
 
 fn new_request(kind: str, vault: str) -> ServeRequest {
-    return ServeRequest{ kind: kind, version: SERVE_PROTOCOL, vault: vault, argv: [], cwd: "", as_json: false, secrets: no_wire_secrets(), tty: false, term: "", cols: 0, rows: 0, caller: "" }
+    return ServeRequest{ kind: kind, version: SERVE_PROTOCOL, vault: vault, argv: [], cwd: "", as_json: false, secrets: no_wire_secrets(), tty: false, term: "", cols: 0, rows: 0, caller: "", need: AccessNeed{ action: ACCESS_READ, host: "" } }
 }
 
 // Commands the app runs for the CLI in one exchange: those that need the unlocked
@@ -157,7 +159,7 @@ fn access_need(p: ParsedArgs) -> AccessNeed {
     if noun == "host" && verb == "test" {
         return AccessNeed{ action: ACCESS_EXEC, host: p.positional(2) }
     }
-    if verb == "list" || verb == "show" || verb == "status" {
+    if verb == "list" || verb == "show" || verb == "status" || (noun == "vault" && verb == "unlock") {
         return AccessNeed{ action: ACCESS_READ, host: "" }
     }
     if noun == "import" && p.has_flag("--dry-run") {
@@ -464,8 +466,13 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
 // One exchange of kind unlock, status or lock. `open` false on the connection when
 // Flint is not running.
 fn ask_app_state(conn: IpcConn, kind: str, vault: str, caller: str) -> AppState! {
+    return ask_app_state_for(conn, kind, vault, caller, AccessNeed{ action: ACCESS_READ, host: "" })
+}
+
+fn ask_app_state_for(conn: IpcConn, kind: str, vault: str, caller: str, need: AccessNeed) -> AppState! {
     mut req := new_request(kind, vault)
     req.caller = caller
+    req.need = need
     try conn.send(json.stringify(req), SERVE_SEND_MS)
     text := try conn.recv(SERVE_SEND_MS)
     return json.parse[AppState](text) or {
@@ -522,7 +529,7 @@ fn start_app() -> bool {
 // Returns its state: unlocked (it already was, or Flint reopened it on start),
 // asking (its unlock screen now names the command), other (it holds another vault),
 // or locked (Flint could not be reached).
-fn request_unlock(target: RecentVault, caller: str) -> AppState {
+fn request_unlock(target: RecentVault, caller: str, need: AccessNeed) -> AppState {
     mut conn := dial_app()
     if !conn.open {
         if !start_app() {
@@ -538,7 +545,7 @@ fn request_unlock(target: RecentVault, caller: str) -> AppState {
         }
     }
     defer conn.close()
-    return ask_app_state(conn, "unlock", target.path, caller) or AppState{ state: APP_LOCKED, name: "" }
+    return ask_app_state_for(conn, "unlock", target.path, caller, need) or AppState{ state: APP_LOCKED, name: "" }
 }
 
 // The `locked` error for a command that found its vault locked with nobody to type
@@ -563,7 +570,7 @@ fn cmd_vault_unlock_app(p: ParsedArgs, as_json: bool) -> void! {
     }
     recents := new_json_recent_store(flint_config_dir())
     target := try resolve_vault(recents, vault_selector(p))
-    mut st := request_unlock(target, caller_summary(p))
+    mut st := request_unlock(target, caller_summary(p), access_need(p))
     if st.state == APP_ASKING {
         if !as_json {
             write_stderr("Flint is asking for the master password of '{target.name}'…\n")

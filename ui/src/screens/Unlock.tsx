@@ -27,6 +27,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
   const [error, setError] = useState('');
   const [caps, setCaps] = useState(false);
   const [switcher, setSwitcher] = useState(false);
+  const [allowCaller, setAllowCaller] = useState(true);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -53,7 +54,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
     // Argon2id holds the app's UI thread for about a second (CF-046); the page keeps
     // painting "Unlocking…" because WebKit renders it in another process.
     try {
-      await unlock(target.path, pw);
+      await unlock(target.path, pw, !!request?.label && request.path === target.path && allowCaller);
     } catch (err) {
       const fe = toFlintError(err);
       setError(fe.code === 'wrong_password'
@@ -98,6 +99,15 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
               <span className="hint">{request.path === target.path
                 ? 'Unlock it to let the command run again; nothing runs until you do.'
                 : 'Close this vault to unlock that one; the sessions here end.'}</span>
+              {request.label && request.path === target.path && (
+                <label className="check" data-unlock-allow>
+                  <input type="checkbox" checked={allowCaller} onChange={(e) => setAllowCaller(e.target.checked)} />
+                  <span className="col" style={{ gap: 2 }}>
+                    <span>Allow <span className="strong">{request.label}</span> for 1 hour</span>
+                    <span className="muted" style={{ fontSize: 'var(--fs-xs)' }}>What this command needs, on {request.caller.startsWith('flint exec') || request.caller.startsWith('flint connect') || request.caller.startsWith('flint host test') ? 'its host' : 'this vault'}. The master password you type confirms it. Change or revoke it in Settings → Access.</span>
+                  </span>
+                </label>
+              )}
               <div className="row" style={{ gap: 'var(--sp-3)' }}>
                 {request.path !== target.path && <button type="button" className="btn btn-secondary btn-sm" onClick={() => switchToRequested().catch(fail)}>Unlock {request.name} instead</button>}
                 <button type="button" className="btn btn-ghost btn-sm" onClick={dismissUnlockRequest}>Dismiss</button>

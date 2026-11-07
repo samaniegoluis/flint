@@ -64,7 +64,8 @@ export const api = {
   uiStateSet: (s: UiStateView & { vault: string }) => call<UiStateView>('ui_state_set', s),
 
   recents: () => call<RecentView[]>('vault_recents'),
-  unlock: (path: string, password: string) => call<VaultInfo>('vault_unlock', { path, password }),
+  /** `allow` also grants the CLI caller that asked for this unlock (milestone 12). */
+  unlock: (path: string, password: string, allow = false) => call<VaultInfo>('vault_unlock', { path, password, allow }),
   create: (path: string, name: string, password: string) => call<VaultInfo>('vault_create', { path, name, password }),
   close: () => call('vault_close'),
   /** Locks the vault: its key leaves memory, open sessions keep running (D-042). */

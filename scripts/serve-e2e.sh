@@ -144,8 +144,7 @@ for _ in $(seq 1 300); do
 done
 check "the app serves the socket" '[[ -S "$sock" ]]'
 check "the socket is owner-only (0600)" '[[ "$(file_mode "$sock")" == "600" ]]'
-check "the first command asked the owner, naming the caller" 'grep -q "asking the owner to approve flint, started by" "$tmp/app.log"'
-check "and was allowed in the window" 'grep -q "allowed flint, started by" "$tmp/app.log"'
+check "the first command, which asked for the unlock, was allowed with it" 'grep -q "allowed flint, started by .* at unlock" "$tmp/app.log"'
 
 echo "== commands served by the app: no keychain, no master password, no terminal"
 expect 0 "host list" "" -- host list
@@ -293,10 +292,9 @@ new_caller() {  # <stdin> -- <flint args...>  ($out, $err, $status)
   out="$(cat "$tmp/out")"; err="$(cat "$tmp/err")"
   { echo "\$ (new caller) flint $*"; echo "$out"; echo "$err"; } >> "$all_out"
 }
-asked_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
 new_caller "" -- host show deny-me
 check "a request the owner denies fails with denied (15)" '[[ $status == 15 && "$err" == *"denied"* ]]'
-check "the caller is named after the program that started flint" 'grep -q "asking the owner to approve flint, started by perl" "$tmp/app.log"'
+check "the window names the caller after the program that started flint" 'grep -q "asking the owner to approve flint, started by perl" "$tmp/app.log"'
 new_caller "" -- --json host show deny-me
 check "denied is a JSON error with --json" '[[ $status == 15 && "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "denied" ]]'
 t0=$(python3 -c 'import time; print(time.time())')
@@ -346,7 +344,8 @@ check "it says Flint is asking for the master password" '[[ "$err" == *"Flint is
 expect 0 "vault unlock waits for the window" "" -- vault unlock
 expect 0 "and the CLI is served again" "" -- --json vault status
 check "status says unlocked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" == "True" ]]'
-check "the lock ended the grants: the owner was asked again" '[[ $(grep -c "asking the owner to approve" "$tmp/app.log") -gt $asked_scope_after ]]'
+check "unlocking with Allow ticked allowed the command that asked" 'grep -q "allowed flint, started by .* (1h) at unlock" "$tmp/app.log"'
+asked_after_unlock=$(grep -c "asking the owner to approve" "$tmp/app.log")
 
 # Linux, on a private session bus only (scripts/linux/inside.sh): never on a
 # desktop's real bus, where every program would hear the screensaver turn on.
@@ -369,6 +368,7 @@ if [[ "${FLINT_TEST_PRIVATE_DBUS:-}" == 1 ]]; then
 fi
 
 expect 0 "add the stop host" "" -- host add e2e-stop --hostname 10.0.0.9
+check "the lock ended the whole-vault grant: a write asks again" '[[ $(grep -c "asking the owner to approve" "$tmp/app.log") -gt $asked_after_unlock ]]'
 
 for _ in $(seq 1 300); do kill -0 "$app_pid" 2>/dev/null || break; sleep 0.1; done
 wait "$app_pid"; app_pid=""

@@ -52,7 +52,7 @@ interface AppApi {
   go: (p: Phase) => void;
   setTarget: (r: RecentView | null) => void;
   refreshRecents: () => Promise<RecentView[]>;
-  unlock: (path: string, password: string) => Promise<VaultInfo>;
+  unlock: (path: string, password: string, allow?: boolean) => Promise<VaultInfo>;
   create: (path: string, name: string, password: string) => Promise<VaultInfo>;
   closeVault: () => Promise<void>;
   openVaultFile: () => Promise<void>;
@@ -133,8 +133,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return v;
   }, [refreshRecents]);
 
-  const unlock = useCallback(async (path: string, password: string) => {
-    const v = await api.unlock(path, password);
+  const unlock = useCallback(async (path: string, password: string, allow = false) => {
+    const v = await api.unlock(path, password, allow);
     setLockReason(null);
     setUnlockRequest((r) => (r && r.path === v.path ? null : r));
     await enter(v);

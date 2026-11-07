@@ -226,7 +226,7 @@ fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
         }
         recents := new_json_recent_store(flint_config_dir())
         target := try resolve_vault(recents, vault_selector(p))
-        st := request_unlock(target, caller_summary(p))
+        st := request_unlock(target, caller_summary(p), access_need(p))
         if st.state != APP_UNLOCKED {
             return error(locked_error(target, st))
         }
