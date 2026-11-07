@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width">
-<title>15 · Wireframe — agent activity panel — dark</title>
+<title>17c · Access — activity with sudo rows — light</title>
 <link rel="stylesheet" href="../fonts/fonts.css">
 <link rel="stylesheet" href="../tokens.css">
 <link rel="stylesheet" href="../flint.css">
@@ -64,8 +64,12 @@
 <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
 <symbol id="i-arrow-r" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
 <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
+<symbol id="i-fingerprint" viewBox="0 0 24 24"><path d="M6.5 6.5A7.5 7.5 0 0 1 19.5 12v1.5M4.5 10.5A7.5 7.5 0 0 0 4.5 13M8 19a10 10 0 0 0 1.5-5.5V12a2.5 2.5 0 0 1 5 0v1.5c0 2.6-.6 5-1.7 7M12 12v1.5c0 3-.9 5.7-2.4 7.5M17 15.5c-.2 1.8-.7 3.4-1.4 4.8M7.5 16.5c.4-1 .5-2 .5-3V12a4 4 0 0 1 6.8-2.8"/></symbol>
+<symbol id="i-agent" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12.5h.01M15 12.5h.01M9.5 16h5"/></symbol>
+<symbol id="i-chain" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="i-shield-key" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><circle cx="12" cy="11" r="2"/><path d="M12 13v3"/></symbol>
 </svg>
-<div class="app" data-theme="dark" data-view="hosts" data-os="mac" style="width: 1280px; height: 800px">
+<div class="app" data-theme="light" data-view="settings" data-os="mac" style="width: 1280px; height: 800px">
 <div style="position: absolute; inset: 0"><div class="chrome" style="position: absolute; inset: 0; font-family: var(--font-ui); color: var(--text-primary)">
 <header class="titlebar">
 <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -120,38 +124,34 @@
 <div class="sidebar-resize" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
 </aside>
 </div></div>
-<section class="main" aria-label="Sessions">
-<div class="tabbar"><span class="tab on"><span class="st st-on"></span>prod-api-01</span><span class="tab"><span class="st st-wait"></span>prod-api-02</span><span class="tab"><span class="st st-off"></span>stg-web</span></div>
-<div class="toolbar"><span class="mono strong">prod-api-01</span><span class="dotsep">·</span><span class="mono">luis</span><span class="dotsep">·</span><span class="mono">18 ms</span><span class="grow"></span><span class="wf" style="height: 24px; padding: 0 var(--sp-2); display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-tertiary)"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-bot"></use></svg>Agents · 1 pending</span></div>
-<div class="pane">
-<div class="term" style="opacity: 0.5" aria-hidden="true">
-<div class="l"><span class="g">luis</span><span class="d">@</span><span class="b">prod-api-01</span> <span class="c">~</span> <span class="pc">❯</span> <span class="cur"></span></div>
+<section class="main page" aria-label="Settings" style="flex-direction: row">
+<nav class="settings-nav" aria-label="Settings sections">
+<span class="label" style="padding: 0 var(--sp-2) var(--sp-2)">Settings</span>
+<a class="nav-i" href="#appearance"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-palette"></use></svg>Appearance</a>
+<a class="nav-i" href="#terminal"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-term"></use></svg>Terminal</a>
+<a class="nav-i" href="#keyboard"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-keyboard"></use></svg>Keyboard shortcuts</a>
+<a class="nav-i" href="#vault"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-lock"></use></svg>Vault</a>
+<a class="nav-i on" href="#access" aria-current="page"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-shield-key"></use></svg>Access</a>
+</nav>
+<div class="grow" style="padding: var(--sp-6) var(--sp-8); overflow: hidden">
+<div class="col" style="max-width: 900px">
+<h1 style="font-size: var(--fs-xl); font-weight: var(--fw-semibold); padding-bottom: var(--sp-2)">Activity</h1>
+<p class="muted" style="font-size: var(--fs-sm); padding-bottom: var(--sp-3)">Every command a grant, token or root approval ran. Commands run as root are tinted and always shown in full.</p>
+<div class="col" role="table" aria-label="Activity">
+<div class="act-row head" role="row"><span>When</span><span>Caller</span><span>Command</span><span>Result</span></div>
+<div class="act-row sudo" role="row"><span class="when">13:41</span><span class="row" style="gap: 6px"><svg class="ic ic-sm info-t" aria-hidden="true"><use href="#i-agent"></use></svg>Claude Code</span><span class="cmd"><span class="root-badge" style="margin-right: 6px">root</span><span class="mono faint" style="margin-right: 6px">CodeBox</span>systemctl restart nginx</span><span><span class="badge ok"><svg class="ic" aria-hidden="true"><use href="#i-check"></use></svg>Allowed · exit 0</span></span></div>
+<div class="act-row sudo" role="row"><span class="when">13:38</span><span class="row" style="gap: 6px"><svg class="ic ic-sm info-t" aria-hidden="true"><use href="#i-agent"></use></svg>Claude Code</span><span class="cmd"><span class="root-badge" style="margin-right: 6px">root</span><span class="mono faint" style="margin-right: 6px">CodeBox</span>/usr/bin/env DEBIAN_FRONTEND=noninteractive LC_ALL=C sh -c 'set -euo pipefail; apt-get update -qq; apt-get install -y --no-install-recommends nginx-extras; nginx -t &amp;&amp; systemctl reload nginx' flint-deploy --log /var/log/flint/deploy-2026-11-07T13-38-02.log</span><span><span class="badge danger">Denied by you</span></span></div>
+<div class="act-row sudo" role="row"><span class="when">13:30</span><span class="row" style="gap: 6px"><svg class="ic ic-sm info-t" aria-hidden="true"><use href="#i-agent"></use></svg>Claude Code</span><span class="cmd"><span class="root-badge" style="margin-right: 6px">root</span><span class="mono faint" style="margin-right: 6px">CodeBox</span>journalctl -u nginx -n 200 --no-pager</span><span><span class="badge danger">Timed out · 2:00</span></span></div>
+<div class="act-row sudo" role="row"><span class="when">13:22</span><span class="row" style="gap: 6px"><svg class="ic ic-sm faint" aria-hidden="true"><use href="#i-agent"></use></svg>Ghostty</span><span class="cmd"><span class="root-badge" style="margin-right: 6px">root</span><span class="mono faint" style="margin-right: 6px">CodeBox</span>apt-get upgrade -y</span><span><span class="badge warn">Not a sudoer</span></span></div>
+<div class="act-row sudo" role="row"><span class="when">13:20</span><span class="row" style="gap: 6px"><svg class="ic ic-sm faint" aria-hidden="true"><use href="#i-agent"></use></svg>Ghostty</span><span class="cmd"><span class="root-badge" style="margin-right: 6px">root</span><span class="mono faint" style="margin-right: 6px">CodeBox</span>systemctl status nginx</span><span><span class="badge warn">Sudo password refused</span></span></div>
+<div class="act-row" role="row"><span class="when">13:12</span><span class="row" style="gap: 6px"><svg class="ic ic-sm info-t" aria-hidden="true"><use href="#i-agent"></use></svg>Claude Code</span><span class="cmd trunc"><span class="mono faint" style="margin-right: 6px">CodeBox</span>exec uptime</span><span><span class="badge ok">exit 0</span></span></div>
+<div class="act-row" role="row"><span class="when">13:10</span><span class="row" style="gap: 6px"><svg class="ic ic-sm info-t" aria-hidden="true"><use href="#i-agent"></use></svg>Claude Code</span><span class="cmd trunc"><span class="mono faint" style="margin-right: 6px">CodeBox</span>approved · Run · CodeBox · 1 hour</span><span><span class="badge">event</span></span></div>
 </div>
-<aside class="wf" aria-label="Agent activity (wireframe)" style="width: 380px; flex: none; margin: var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); background: var(--surface-base)">
-<div class="row"><span class="wf-tag grow">Wireframe · post-MVP · right side reserved (380 px) — Files now lives in the left sidebar</span></div>
-<div class="row" style="gap: var(--sp-2)"><svg class="ic ic-sm faint" aria-hidden="true"><use href="#i-bot"></use></svg><span class="strong grow">Agent activity</span><span class="wf" style="padding: 2px 8px; font-size: var(--fs-xs); color: var(--text-tertiary)">All hosts ▾</span></div>
-
-<div class="wf" style="padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-3); border-color: var(--text-tertiary)">
-<span class="wf-tag">Pending approval</span>
-<p style="font-size: var(--fs-sm); line-height: 1.5">Agent <span class="strong">deploy-bot</span> wants to run <span class="mono strong" style="background: var(--surface-active); padding: 1px 4px; border-radius: var(--radius-xs)">systemctl restart nginx</span> on <span class="mono strong">prod-web-1</span></p>
-<div class="row" style="gap: var(--sp-2)"><span class="wf-line" style="width: 40%"></span><span class="wf-line" style="width: 25%"></span></div>
-<span class="hint">Token scope: prod-web-* · risky: restarts a service</span>
-<div class="row" style="gap: var(--sp-2)"><span class="wf" style="flex: 1; height: 30px; display: flex; align-items: center; justify-content: center; font-size: var(--fs-sm)">Deny <span class="kbd" style="margin-left: 6px">esc</span></span><span class="wf wf-fill" style="flex: 1; height: 30px; display: flex; align-items: center; justify-content: center; font-size: var(--fs-sm); border-style: solid">Approve <span class="kbd" style="margin-left: 6px">⌘↵</span></span></div>
+<div class="row" style="padding-top: var(--sp-3)"><span class="hint grow">Reads (list, show) are not logged. Command output and sudo passwords are never stored. Kept 30 days.</span></div>
 </div>
-
-<span class="wf-tag">Timeline</span>
-<div class="col" style="gap: var(--sp-3)">
-<div class="row" style="gap: var(--sp-2); align-items: flex-start"><span class="wf" style="width: 20px; height: 20px; border-radius: 50%; flex: none"></span><div class="col grow" style="gap: 4px"><span class="mono" style="font-size: var(--fs-xs)">deploy-bot · prod-web-1 · 21:58</span><span class="wf-line" style="width: 80%"></span><span class="hint">ran · exit 0</span></div></div>
-<div class="row" style="gap: var(--sp-2); align-items: flex-start"><span class="wf" style="width: 20px; height: 20px; border-radius: 50%; flex: none"></span><div class="col grow" style="gap: 4px"><span class="mono" style="font-size: var(--fs-xs)">deploy-bot · prod-web-1 · 21:57</span><span class="wf-line" style="width: 60%"></span><span class="hint">ran · exit 0</span></div></div>
-<div class="row" style="gap: var(--sp-2); align-items: flex-start"><span class="wf" style="width: 20px; height: 20px; border-radius: 50%; flex: none"></span><div class="col grow" style="gap: 4px"><span class="mono" style="font-size: var(--fs-xs)">audit-agent · db-primary · 21:40</span><span class="wf-line" style="width: 70%"></span><span class="hint">denied by luis</span></div></div>
-<div class="row" style="gap: var(--sp-2); align-items: flex-start"><span class="wf" style="width: 20px; height: 20px; border-radius: 50%; flex: none"></span><div class="col grow" style="gap: 4px"><span class="mono" style="font-size: var(--fs-xs)">audit-agent · db-primary · 21:39</span><span class="wf-line" style="width: 50%"></span><span class="hint">read-only · auto-approved</span></div></div>
-</div>
-<span class="grow"></span>
-<div class="wf" style="padding: var(--sp-2); font-size: var(--fs-xs); color: var(--text-tertiary)">Notes: approvals also raise a system notification; the card pins to the top until resolved; one timeline per vault, filterable by host and agent.</div>
-</aside>
 </div>
 </section>
-<footer class="statusbar"><span class="sb-item"><svg class="ic" aria-hidden="true"><use href="#i-unlock"></use></svg>Unlocked · Keychain</span><span class="sb-item">3 sessions</span><span class="grow"></span><span class="sb-item wf" style="padding: 0 6px">Agents: 1 pending</span></footer>
+<footer class="statusbar"><span class="sb-item"><svg class="ic" aria-hidden="true"><use href="#i-unlock"></use></svg>Unlocked · Keychain</span><span class="sb-item">3 sessions</span><span class="grow"></span><button class="sb-btn sb-agents"><svg class="ic" aria-hidden="true"><use href="#i-agent"></use></svg>Agents: 2</button></footer>
 </div>
 </body>
 </html>
