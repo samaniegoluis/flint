@@ -62,8 +62,9 @@
 			<strong>Today</strong>, no program uses the vault until you allow it in Flint’s window, for the hosts
 			you choose and a set time; grants end when the vault locks, which it does on its own when you step away.
 			A cron job or CI gets a <strong>token</strong> you approve, scoped and expiring, and the vault keeps an
-			<strong>activity log</strong> of what every program ran and what was refused.
-			<strong>Next</strong>, every <code>sudo</code> command shown to you before it runs.
+			<strong>activity log</strong> of what every program ran and what was refused. A command as root runs
+			only with <code>--sudo</code>, shown to you argument by argument; Flint types the sudo password, and the
+			agent never sees it. <strong>Next</strong>, Flint keeps serving from the menu bar with its window locked.
 		</p>
 		<p class="flint-agent__links">
 			<a href="/guides/ai-agents/">Use Flint with an AI agent <span aria-hidden="true">→</span></a>

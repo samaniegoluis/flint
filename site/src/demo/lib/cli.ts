@@ -57,10 +57,12 @@ Hosts
            [--group <path>] [--tag T]... [--color #rrggbb] [--notes N]
            [--jump <alias>] [--cred <name>] [--key <name>]
            [--password | --password-stdin] [--command <cmd> [--no-keep-shell]]
+           [--sudo-password | --sudo-password-stdin]
                                         --command runs on connect, then a login
-                                        shell (--no-keep-shell: ends the session)
+                                        shell (--no-keep-shell: ends the session);
+                                        the sudo password defaults to the login one
   host edit <alias> [same flags] [--alias <new>] [--no-tags] [--no-password]
-           [--command ""] [--keep-shell]
+           [--no-sudo-password] [--command ""] [--keep-shell]
   host list [--group <path>] [--tag <tag>] | host show <alias> | host rm <alias>
   host test <alias> [--timeout <secs>] [--accept-new-host-key]
                                         Connect, verify the host key, log in, hang up
@@ -80,6 +82,10 @@ SSH
                                         the host's --command unless --no-command
   exec <alias> [--timeout <secs>] [--exec-timeout <secs>] [--accept-new-host-key]
        -- <command>                     Run one command; exits with its status
+  exec <alias> --sudo -- <command> [args]
+                                        Run it as root: Flint asks you in its window
+                                        for each one and types the sudo password
+                                        itself (needs Flint open)
   known-host list | known-host rm <alias|address>
 
 Tokens (for programs Flint cannot ask about: cron, launchd, CI on this machine)
@@ -441,12 +447,19 @@ class Cmd {
 		} else if (p.has('--no-password')) {
 			patch.password = false;
 		}
+		if (p.has('--sudo-password')) {
+			const pw = yield* this.secret('sudo password');
+			patch.sudoPassword = pw.length > 0;
+		} else if (p.has('--no-sudo-password')) {
+			patch.sudoPassword = false;
+		}
 		return patch;
 	}
 
 	private static HOST_FLAGS = [
 		'--label', '--hostname', '--port', '--user', '--group', '--tag', '--no-tags', '--color', '--notes',
-		'--jump', '--cred', '--key', '--password', '--password-stdin', '--command', '--keep-shell', '--no-keep-shell',
+		'--jump', '--cred', '--key', '--password', '--password-stdin', '--sudo-password', '--sudo-password-stdin',
+		'--command', '--keep-shell', '--no-keep-shell',
 	];
 
 	*host(): Run {
@@ -464,7 +477,7 @@ class Cmd {
 				return ok;
 			}
 			case 'edit': {
-				p.allowFlags('host edit', [...Cmd.HOST_FLAGS, '--alias', '--no-password']);
+				p.allowFlags('host edit', [...Cmd.HOST_FLAGS, '--alias', '--no-password', '--no-sudo-password']);
 				p.expectArgs('host edit', 1, '<alias> [options]');
 				const patch = yield* this.hostPatch();
 				const ops = new VaultOps(yield* this.openTarget());
@@ -493,9 +506,9 @@ class Cmd {
 				const h = ops.findHost(p.positional(2));
 				this.emit(hostView(h), () =>
 					fields(
-						['alias', 'label', 'hostname', 'port', 'user', 'group', 'tags', 'color', 'jump', 'credential', 'key', 'password', 'command', 'notes'],
+						['alias', 'label', 'hostname', 'port', 'user', 'group', 'tags', 'color', 'jump', 'credential', 'key', 'password', 'sudo password', 'command', 'notes'],
 						[h.alias, dash(h.label), h.hostname, `${h.port}`, dash(h.user), dash(h.group), dash(h.tags.join(', ')), dash(h.color),
-							dash(h.jump), dash(h.credential), dash(h.key), h.hasPassword ? 'set' : 'not set', commandText(h), dash(h.notes)],
+							dash(h.jump), dash(h.credential), dash(h.key), h.hasPassword ? 'set' : 'not set', h.hasSudoPassword ? 'set' : 'the login password', commandText(h), dash(h.notes)],
 					).forEach((l) => this.say(l)),
 				);
 				return ok;
@@ -807,13 +820,22 @@ class Cmd {
 
 	*exec(): Run {
 		const p = this.p;
-		p.allowFlags('exec', ['--timeout', '--exec-timeout', '--accept-new-host-key']);
+		p.allowFlags('exec', ['--timeout', '--exec-timeout', '--accept-new-host-key', '--sudo']);
 		if (p.positionals.length !== 2 || !p.hasRest || p.rest.length === 0) {
-			fail('usage', 'usage: flint exec <alias> [--timeout <secs>] [--exec-timeout <secs>] -- <command>');
+			fail('usage', 'usage: flint exec <alias> [--timeout <secs>] [--exec-timeout <secs>] [--sudo] -- <command>');
 		}
 		if (p.has('--exec-timeout')) parseSeconds('--exec-timeout', p.value('--exec-timeout'));
+		const sudo = p.has('--sudo');
+		if (sudo) {
+			const v = this.resolveVault(p.value('--vault'));
+			if (!v.unlocked) fail('locked', '`flint exec --sudo` runs only through Flint: open Flint, unlock this vault there, and run it again');
+			const ops = new VaultOps(yield* this.openTarget());
+			ops.findHost(p.positional(1));
+			// Flint's window asks for every sudo command; the demo plays the owner and allows it.
+			if (!this.asJson) this.io.err('Waiting for approval in Flint (flint, started by Terminal)…');
+		}
 		const { host, user } = yield* this.reach(p.positional(1));
-		const shell = new RemoteShell(host.alias, user, host.hostname, () => this.io.now());
+		const shell = new RemoteShell(host.alias, sudo ? 'root' : user, host.hostname, () => this.io.now());
 		const r = shell.run(p.rest.map((w) => (/[\s'"]/.test(w) ? `'${w}'` : w)).join(' '));
 		const code = r.exit ? 0 : r.code;
 		const stdout = r.exit ? [] : r.stdout;

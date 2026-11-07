@@ -57,8 +57,9 @@ own transaction; a vault from a newer Flint is refused rather than downgraded.
 | 2 | `known_hosts`: one server key per address (key type and SHA-256 fingerprint), recorded on first connect |
 | 3 | `hosts.initial_command` and `hosts.keep_shell`: the command an interactive session runs, and whether a login shell follows it |
 | 4 | `tokens` (name, BLAKE2b hash of the secret, scope by group and host id, actions, created, expiry and revocation times; revoked, never deleted) and `activity` (time, caller, how it was allowed, action, host, command, outcome; the newest 10,000) |
+| 5 | `hosts.sudo_password`: the password `exec --sudo` types, sealed with the secrets key like the host's password; empty means the login password |
 
-A vault that has been opened by a Flint with migration 4 is refused by older builds.
+A vault that has been opened by a Flint with migration 5 is refused by older builds.
 
 ## The keychain
 

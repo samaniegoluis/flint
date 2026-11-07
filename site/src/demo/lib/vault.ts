@@ -17,6 +17,8 @@ export interface Host {
 	credential: string;
 	key: string;
 	hasPassword: boolean;
+	/** The host's own sudo password (`exec --sudo`); otherwise the login password. */
+	hasSudoPassword: boolean;
 	/** The initial command (D-031); '' for a plain shell. */
 	command: string;
 	keepShell: boolean;
@@ -97,7 +99,7 @@ export function hostView(h: Host) {
 		alias: h.alias, label: h.label, hostname: h.hostname, port: h.port, user: h.user,
 		group: h.group, tags: h.tags, color: h.color, notes: h.notes, jump: h.jump,
 		credential: h.credential, key: h.key, has_password: h.hasPassword,
-		command: h.command, keep_shell: h.keepShell,
+		has_sudo_password: h.hasSudoPassword, command: h.command, keep_shell: h.keepShell,
 	};
 }
 
@@ -178,7 +180,7 @@ export function worldFromSeed(seed: any): World {
 			hosts: v.hosts.map((h: any) => ({
 				alias: h.alias, label: h.label ?? '', hostname: h.hostname, port: h.port ?? 22, user: h.user ?? '',
 				group: h.group ?? '', tags: h.tags ?? [], color: h.color ?? '', notes: h.notes ?? '',
-				jump: h.jump ?? '', credential: h.credential ?? '', key: h.key ?? '', hasPassword: !!h.password,
+				jump: h.jump ?? '', credential: h.credential ?? '', key: h.key ?? '', hasPassword: !!h.password, hasSudoPassword: false,
 				command: h.command ?? '', keepShell: h.keep_shell ?? true,
 			})),
 			knownHosts: v.known_hosts.map((k: any) => {
@@ -336,6 +338,7 @@ export class VaultOps {
 		if (patch.color !== undefined) h.color = patch.color;
 		if (patch.notes !== undefined) h.notes = patch.notes;
 		if (patch.password !== undefined) h.hasPassword = patch.password;
+		if (patch.sudoPassword !== undefined) h.hasSudoPassword = patch.sudoPassword;
 		if (patch.command !== undefined) h.command = patch.command;
 		if (patch.keepShell !== undefined) h.keepShell = patch.keepShell;
 		if (isNew) {
@@ -373,7 +376,7 @@ export class VaultOps {
 	addHost(patch: HostPatch): Host {
 		const h: Host = {
 			alias: '', label: '', hostname: '', port: 22, user: '', group: '', tags: [], color: '',
-			notes: '', jump: '', credential: '', key: '', hasPassword: false, command: '', keepShell: true,
+			notes: '', jump: '', credential: '', key: '', hasPassword: false, hasSudoPassword: false, command: '', keepShell: true,
 		};
 		const groupsBefore = [...this.v.groups];
 		try {
@@ -579,6 +582,8 @@ export interface HostPatch {
 	key?: string;
 	/** Whether a password is stored after the change. The value itself is never kept. */
 	password?: boolean;
+	/** The same for the sudo password. */
+	sudoPassword?: boolean;
 	command?: string;
 	keepShell?: boolean;
 }

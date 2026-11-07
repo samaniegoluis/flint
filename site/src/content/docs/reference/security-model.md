@@ -90,6 +90,15 @@ command, never a flag's value or a secret. Allowed reads are not recorded, so a 
 vault is not rewritten by every `host list`. It keeps the newest 10,000 entries. Read it
 in **Settings → Access**.
 
+**`sudo` you approve** (`flint exec --sudo`): a command as root is approved in Flint's
+window one at a time, with presence, showing the exact arguments; no grant or token
+covers it. Flint runs `sudo -S -k -p <random prompt> -- <arguments>`, each argument one
+shell word, and writes the host's sudo password (sealed in the vault, or the login
+password) to sudo's stdin only when that random prompt appears, so a command printing a
+fake prompt gets nothing. The prompt and the password never reach the caller, the log or
+the activity; `-k` leaves no sudo session cached for a later command. It runs only in
+Flint, never on a typed master password.
+
 What a grant does not stop: a program running as you that is a **child of an approved
 program** shares its grant, and a program that can control the approved one (debug it,
 type into its terminal) can act through it. [Limits today](/guides/ai-agents/#limits-today)
@@ -104,11 +113,10 @@ Windows:
   **window**: opening it asks for the master password or Touch ID.
 - **Remember on this computer** becomes a choice at unlock, off by default, with the risk
   in plain words: it lets Flint reopen without the master password.
-- **`sudo` you approve.** `flint exec --sudo` shows you the exact command; Flint types the
-  password only after you allow it.
 
 Done so far: Flint holds the unlocked vault, the CLI (`connect` and `exec` included) runs
 through it, a locked vault makes the window ask, the vault locks on its own, every
-caller is approved in Flint's window with presence, tokens serve scheduled jobs, and an
-activity log in the vault shows what callers ran. The
+caller is approved in Flint's window with presence, tokens serve scheduled jobs, an
+activity log in the vault shows what callers ran, and `exec --sudo` runs a command as
+root you approved, with Flint typing the password. The
 design and the reasons behind it are in the repository: `docs/vault-access-model.md`.

@@ -126,6 +126,17 @@
 				"flint token create"
 			],
 			"where": "local"
+		},
+		{
+			"hint": [
+				"A command as root: Flint's window shows you the exact arguments, and Flint types",
+				"the sudo password itself once you allow it (the demo does). The agent never sees it:"
+			],
+			"run": "flint exec web-01 --sudo -- whoami",
+			"accept": [
+				"flint exec web-01 --sudo"
+			],
+			"where": "local"
 		}
 	],
 	"done": [

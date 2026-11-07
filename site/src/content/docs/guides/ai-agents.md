@@ -83,7 +83,10 @@ keys or `ssh` directly.
 - Exit code 5 (`locked`): Flint is asking me to unlock it; wait for me, then retry.
   15 (`denied`) or 16 (`approval_timeout`): I did not approve it in Flint; ask me first.
   11 (`host_key`): ask me to check the server's key. Never pass `--accept-new-host-key`.
-- `sudo` needs a password Flint does not give out: print the exact command for me to run.
+- As root: `flint --json exec <alias> --sudo -- <command> [args]`. I approve each one
+  in Flint, which types the sudo password; you never see it. Pass the arguments as
+  separate words, not one quoted string. Exit 17 (`not_sudoer`) or 18 (`sudo_password`):
+  tell me.
 ```
 
 ## Commands an agent uses
@@ -93,6 +96,7 @@ keys or `ssh` directly.
 | `flint --json host list` | Every host: alias, hostname, user, group, tags. No secret |
 | `flint --json host show <alias>` | One host, with `has_password` instead of the password |
 | `flint --json exec <alias> -- '<cmd>'` | `{host, exit_code, signal, stdout, stderr, duration_ms}` |
+| `flint --json exec <alias> --sudo -- <cmd> [args]` | The same, run as root once you allow that exact command in Flint |
 | `flint --json known-host list` | The server keys Flint has recorded |
 
 Everything after `--` is joined with spaces and parsed by the **remote** shell, like `ssh`.
@@ -125,19 +129,44 @@ command's own failure comes as the usual object on stdout with its `exit_code`.
 | 14 | `timeout` | The command ran past `--exec-timeout` |
 | 15 | `denied` | You denied it in Flint, or the grant does not cover it. Ask before retrying |
 | 16 | `approval_timeout` | Nobody answered Flint's window within two minutes |
+| 17 | `not_sudoer` | The host's login user may not use `sudo` |
+| 18 | `sudo_password` | sudo refused the password Flint typed, or Flint has none for that host |
 
 The full list is in the [CLI reference](/reference/cli/#output-and-errors).
 
 ## sudo
 
-A command that needs `sudo` with a password fails under `flint exec`: there is no terminal
-for the prompt, and Flint never hands the password to the caller. Have the agent print the
-command so you run it. `flint exec --sudo`, on the roadmap, will show you the exact command
-in a Flint window and type the password itself after you approve.
+A plain `flint exec` cannot answer a `sudo` password prompt: there is no terminal for it,
+and Flint never hands a password to the caller. `flint exec --sudo` runs one command as
+root instead:
+
+```sh
+flint exec web-01 --sudo -- systemctl restart nginx
+```
+
+1. Flint's window shows the program that asks, the host, the login user and the
+   **exact arguments**, one per chip. No grant or token covers it: every `--sudo`
+   command is asked for, and confirmed with Touch ID, polkit or the master password.
+2. Flint runs `sudo -S -k -p <random prompt> -- <arguments>` on the host, each argument
+   quoted as one word: the arguments are never parsed by a shell. For pipes or
+   redirections the agent passes them on purpose, and you see them:
+   `--sudo -- sh -c 'journalctl -u nginx | tail -n 50'`.
+3. Flint types the sudo password only when sudo prints that random prompt, so a command
+   that prints a fake `password:` gets nothing. The prompt and the password never reach
+   the agent's output. `-k` leaves no cached sudo session behind for later commands.
+
+The password is the host's **sudo password** if you set one (`flint host edit <alias>
+--sudo-password`, or the host editor), else its login password. When Flint has neither,
+the window asks for it, for that command, with **Save it for this host**.
+
+`--sudo` runs only through Flint: with Flint closed or the vault locked it fails with
+`locked`, even for a person who could type the master password. The command gets no
+terminal and its stdin is closed once sudo has the password, as with `flint exec`. Every
+decision is in the activity log, with the full command.
 
 If a host lets its login user run `sudo` with no password (`NOPASSWD`), or logs in as
-`root`, the agent gets root there with no question asked. Keep agents away from such hosts,
-or remove that rule.
+`root`, a plain `flint exec` gets root there with no window. Keep agents away from such
+hosts, or remove that rule.
 
 ## Limits today
 

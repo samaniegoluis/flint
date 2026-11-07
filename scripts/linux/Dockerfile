@@ -13,7 +13,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         libssh-dev libsodium-dev libsqlcipher-dev libargon2-dev libsimdjson-dev libsecret-1-dev \
         libwebkit2gtk-4.1-dev libgtk-3-dev \
         openssh-server openssh-client xvfb xauth \
-        gnome-keyring dbus python3 perl \
+        gnome-keyring dbus python3 perl sudo \
         vim \
     && rm -rf /var/lib/apt/lists/*
 
@@ -32,6 +32,9 @@ RUN useradd --create-home --shell /bin/bash flint
 # A password for the password and keyboard-interactive auth checks (linux-check.sh
 # starts root sshds that accept it). Test-only: the image is never published.
 RUN echo 'flint:flint-e2e-login-pw' | chpasswd
+# `exec --sudo` (milestone 13) runs the real sudo here: the e2e user may use it, with
+# its password (serve-e2e, FLINT_E2E_SUDO=1). Test-only, like the password above.
+RUN echo 'flint ALL=(ALL) ALL' > /etc/sudoers.d/flint && chmod 440 /etc/sudoers.d/flint
 USER flint
 WORKDIR /home/flint
 

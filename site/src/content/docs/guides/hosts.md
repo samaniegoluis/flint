@@ -29,12 +29,15 @@ flint host add web-01 --hostname 10.20.30.40 --user root \
 | `--key <name>` | Log in with a stored [key](/guides/keys/) | none |
 | `--password` | Ask for a password for this host | none |
 | `--password-stdin` | Read that password from stdin | none |
+| `--sudo-password` | Ask for the password [`exec --sudo`](/guides/ai-agents/#sudo) types, when it is not the login password | the login password |
+| `--sudo-password-stdin` | Read that password from stdin | none |
 | `--command <cmd>` | Run this on every interactive connect, e.g. `herdr` or `tmux new -A -s main` | none |
 | `--no-keep-shell` | End the session when that command exits, instead of starting a login shell | keep the shell |
 
 The password is encrypted again inside the encrypted vault and is never printed. Output
 only says whether one is set. In the desktop app you can [reveal or copy
-it](/guides/desktop-app/#hosts-keys-and-credentials).
+it](/guides/desktop-app/#hosts-keys-and-credentials). The sudo password is never
+revealed, not even in the app: it is only typed for a `sudo` you approved.
 
 ## Run a command on connect
 
