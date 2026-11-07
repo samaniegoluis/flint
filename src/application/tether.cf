@@ -483,7 +483,7 @@ fn import_tether_rows[C: Crypto, S: VaultStore, I: KeyInspector, T: TetherSource
             r.changed.push(note("host", name, "alias '{alias}' ('{base}' is taken)"))
         }
         id := new_row_id(crypto)
-        mut h := Host{ id: id, alias: alias, label: import_text(th.label, 128, false), hostname: th.hostname, port: th.port, username: import_text(user, 128, false), group_id: "", tags: [], color: "", notes: import_text(th.notes, 8192, true), jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: th.initial_command, keep_shell: false }
+        mut h := Host{ id: id, alias: alias, label: import_text(th.label, 128, false), hostname: th.hostname, port: th.port, username: import_text(user, 128, false), group_id: "", tags: [], color: "", notes: import_text(th.notes, 8192, true), jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: th.initial_command, keep_shell: false, sudo_password: [] }
         if th.notes.len() > 8192 {
             r.changed.push(note("host", alias, "notes cut to 8192 characters"))
         }

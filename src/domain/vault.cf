@@ -53,6 +53,9 @@ type Host struct {
     // Start a login shell when the initial command exits, instead of ending the
     // session.
     keep_shell: bool
+    // The password Flint types when sudo asks (`exec --sudo`, milestone 13), sealed
+    // like `password`; empty: the login password is used.
+    sudo_password: []byte
 }
 
 type SshKey struct {
@@ -267,7 +270,7 @@ fn str_trim_spaces(s: str) -> str {
 }
 
 fn sample_host() -> Host {
-    return Host{ id: "h1", alias: "web-01", label: "Web", hostname: "10.0.0.5", port: 22, username: "root", group_id: "", tags: ["prod"], color: "#ff8800", notes: "line 1\nline 2", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true }
+    return Host{ id: "h1", alias: "web-01", label: "Web", hostname: "10.0.0.5", port: 22, username: "root", group_id: "", tags: ["prod"], color: "#ff8800", notes: "line 1\nline 2", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true, sudo_password: [] }
 }
 
 test "names accept the documented alphabet only" {

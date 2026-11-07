@@ -217,46 +217,68 @@ fn recent_name(recents: JsonRecentStore, path: str) -> str {
 //   with no window (a program with a token has nobody to ask).
 // - `token create` is asked in the window every time, one by one, with presence: no
 //   grant and no token covers it, so an agent cannot mint a token that outlives its
-//   grant.
+//   grant. So is `exec --sudo` (milestone 13, D-039): the window shows the host, the
+//   login user and the exact argv, and may take a sudo password for it.
 // - Anything else: a live grant of this caller's anchor that covers what the command
 //   needs, or the owner's answer in the window.
 //
-// Returns "" to go ahead, an error message to refuse with, or "gone" when the client
-// left while waiting (nothing to answer then). The activity log gets every refusal
+// Returns `refusal` "" to go ahead, an error message to refuse with, or "gone" when
+// the client left while waiting (nothing to answer then); and, for an allowed `exec
+// --sudo`, the sudo password the owner typed in the window ("" for none). The activity log gets every refusal
 // and every allowed request but a read (D-046: an allowed read would rewrite a synced
 // vault on every `host list`; a refusal is rare and worth seeing).
 //
 // The vault is held only to read it; the wait for the owner holds nothing, so the
 // window, the lock timer and other clients carry on meanwhile. A lock while waiting
 // ends the approval (the book is cleared) and refuses with `locked`.
-fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st: GuiState, mut app: webui.App, session_kind: bool) -> str {
+type GateOutcome struct {
+    refusal:    str
+    sudo_typed: str
+}
+
+fn refuse(msg: str) -> GateOutcome {
+    return GateOutcome{ refusal: msg, sudo_typed: "" }
+}
+
+fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st: GuiState, mut app: webui.App, session_kind: bool) -> GateOutcome {
     parsed := parse_cli_args(req.argv) or {
-        return ""
+        return refuse("")
     }
     need := access_need(parsed)
     caller := ipc_caller(conn.peer)
     mut ask := no_token_ask()
+    mut sudo := no_sudo_ask()
     if need.action == ACCESS_TOKEN && req.token.len() == 0 {
         // A request the command would refuse never reaches the owner.
         treq := token_request_from_flags(parsed) or err {
-            return "{err.message()}"
+            return refuse("{err.message()}")
         }
         ask = TokenAsk{ name: str.trim(treq.name), allows: token_allows_text(treq.read, treq.exec, treq.write), reaches: token_reach_text(treq.scope.all, treq.scope.groups, treq.scope.hosts), ttl: treq.ttl }
         st.hold()
         checked := check_token_request(store, treq)
         st.release()
         if !checked.has_value() {
-            return "{checked.error().message()}"
+            return refuse("{checked.error().message()}")
         }
         if ask.reaches.len() == 0 {
             ask.reaches = "whole vault"
         }
     }
+    if need.action == ACCESS_SUDO && req.token.len() == 0 {
+        // Checked before the window: an unknown host or no command never reaches it.
+        st.hold()
+        asked := sudo_ask_for(store, need.host, parsed.rest)
+        st.release()
+        if !asked.has_value() {
+            return refuse("{asked.error().message()}")
+        }
+        sudo = asked.value()
+    }
     st.hold()
     session := st.vault_session()
     if !st.unlocked() || session.path != req.vault {
         st.release()
-        return coded(ERR_LOCKED, "the vault locked before the command ran")
+        return refuse(coded(ERR_LOCKED, "the vault locked before the command ran"))
     }
     cat := load_catalog(store) or Catalog{ groups: [], hosts: [], keys: [], creds: [] }
     mut tokens: []Token = []
@@ -265,14 +287,19 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     }
     st.release()
     now := time.now_ms()
-    mut entry := ActivityEntry{ id: 0, at: time.unix_seconds(), caller: caller_label(caller), via: ACTIVITY_VIA_GRANT, token: "", action: need.action, host: need.host, command: activity_command(parsed, ask), outcome: ACTIVITY_ALLOWED }
+    mut entry := ActivityEntry{ id: 0, at: time.unix_seconds(), caller: caller_label(caller), via: ACTIVITY_VIA_GRANT, token: "", action: need.action, host: need.host, command: activity_command(parsed, ask, sudo), outcome: ACTIVITY_ALLOWED }
 
     if req.token.len() > 0 {
         entry.via = ACTIVITY_VIA_TOKEN
         if need.action == ACCESS_TOKEN {
             entry.outcome = ACTIVITY_DENIED
             log_activity(st, store, session, entry, mut app)
-            return coded(ERR_DENIED, "a token cannot create tokens: run `flint token create` from your terminal, without FLINT_TOKEN, and approve it in Flint")
+            return refuse(coded(ERR_DENIED, "a token cannot create tokens: run `flint token create` from your terminal, without FLINT_TOKEN, and approve it in Flint"))
+        }
+        if need.action == ACCESS_SUDO {
+            entry.outcome = ACTIVITY_DENIED
+            log_activity(st, store, session, entry, mut app)
+            return refuse(coded(ERR_DENIED, "a token cannot run commands as root: `exec --sudo` is approved one by one in Flint's window"))
         }
         t := check_token_in(c, tokens, req.token, time.unix_seconds()) or err {
             entry.outcome = ACTIVITY_DENIED
@@ -283,32 +310,33 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
                 entry.caller = "{entry.caller} (token {known.value().name})"
             }
             log_activity(st, store, session, entry, mut app)
-            return "{err.message()}"
+            return refuse("{err.message()}")
         }
         entry.token = t.id
         entry.caller = "{entry.caller} (token {t.name})"
         if !token_covers(t, session.id, need, cat, time.unix_seconds()) {
             entry.outcome = ACTIVITY_DENIED
             log_activity(st, store, session, entry, mut app)
-            return coded(ERR_DENIED, "the token '{t.name}' does not allow this; see `flint token list`")
+            return refuse(coded(ERR_DENIED, "the token '{t.name}' does not allow this; see `flint token list`"))
         }
         if activity_logged(need) {
             log_activity(st, store, session, entry, mut app)
         }
-        return ""
+        return refuse("")
     }
 
-    if need.action != ACCESS_TOKEN && find_grant(st.holder.access_book().grants, caller, session.id, need, cat, now).has_value() {
+    if !asked_every_time(need) && find_grant(st.holder.access_book().grants, caller, session.id, need, cat, now).has_value() {
         if activity_logged(need) {
             log_activity(st, store, session, entry, mut app)
         }
-        return ""
+        return refuse("")
     }
     entry.via = ACTIVITY_VIA_WINDOW
     id := hex.encode(c.random_bytes(8))
     mut ap := new_approval(id, session.id, caller, req.caller, need, now)
     ap.deadline_ms = now + approval_wait_ms()
     ap.token = ask
+    ap.sudo = sudo
     st.holder.access_hold()
     mut book := st.holder.access_book()
     book.pending.push(ap)
@@ -325,53 +353,58 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         t := time.now_ms()
         cur := find_approval(st.holder.access_book(), id) or {
             app.emit("access:resolved", ApprovalResolved{ id: id, state: APPROVAL_DENIED })
-            return coded(ERR_LOCKED, "the vault locked while Flint was asking for approval")
+            return refuse(coded(ERR_LOCKED, "the vault locked while Flint was asking for approval"))
         }
         state := cur.state
         if state != APPROVAL_PENDING {
-            forget_approval(st, id)
+            typed := forget_approval(st, id)
             app.emit("access:resolved", ApprovalResolved{ id: id, state: state })
             if state == APPROVAL_DENIED {
                 entry.outcome = ACTIVITY_DENIED
                 log_activity(st, store, session, entry, mut app)
-                return coded(ERR_DENIED, "the owner denied this request in Flint")
+                return refuse(coded(ERR_DENIED, "the owner denied this request in Flint"))
             }
-            // A token is allowed for this one request; nothing else is.
-            if need.action == ACCESS_TOKEN || find_grant(st.holder.access_book().grants, caller, session.id, need, cat, t).has_value() {
+            // A token or a sudo command is allowed for this one request; nothing else is.
+            if asked_every_time(need) || find_grant(st.holder.access_book().grants, caller, session.id, need, cat, t).has_value() {
                 if activity_logged(need) {
                     log_activity(st, store, session, entry, mut app)
                 }
-                return ""
+                return GateOutcome{ refusal: "", sudo_typed: typed }
             }
-            return coded(ERR_DENIED, "the access allowed in Flint does not cover this request")
+            return refuse(coded(ERR_DENIED, "the access allowed in Flint does not cover this request"))
         }
         if t >= ap.deadline_ms {
-            forget_approval(st, id)
+            _ := forget_approval(st, id)
             app.emit("access:resolved", ApprovalResolved{ id: id, state: "expired" })
             entry.outcome = ACTIVITY_TIMEOUT
             log_activity(st, store, session, entry, mut app)
-            return coded(ERR_APPROVAL_TIMEOUT, "nobody answered in Flint within {approval_wait_ms() / 1000}s; run the command again and allow it there")
+            return refuse(coded(ERR_APPROVAL_TIMEOUT, "nobody answered in Flint within {approval_wait_ms() / 1000}s; run the command again and allow it there"))
         }
         // A client that hung up is not waiting any more. Before a session's raw mode
         // the client sends nothing, so anything readable is its close.
         if conn.readable(0) {
-            forget_approval(st, id)
+            _ := forget_approval(st, id)
             app.emit("access:resolved", ApprovalResolved{ id: id, state: "gone" })
-            return "gone"
+            return refuse("gone")
         }
         if session_kind && t - last_notice >= APPROVAL_NOTICE_MS {
             send_wait(conn, notice, session_kind)
             last_notice = t
         }
     }
-    return ""
+    return refuse("")
 }
 
 // The command as the activity log keeps it: the words before any flag and, for
 // `exec`, the remote command (caller_summary, D-018); for `token create` the token's
-// name, what it allows and where. Never a flag's value otherwise.
-fn activity_command(p: ParsedArgs, ask: TokenAsk) -> str {
+// name, what it allows and where; for `exec --sudo` the full argv, each argument
+// quoted, never cut. Never a flag's value otherwise.
+fn activity_command(p: ParsedArgs, ask: TokenAsk, sudo: SudoAsk) -> str {
     s := caller_summary(p)
+    if sudo.host.len() > 0 {
+        // The whole command, as approved: what ran as root (milestone 13).
+        return "flint exec {sudo.host} --sudo -- {str.join(quoted_argv(sudo.argv), " ")}"
+    }
     if ask.name.len() > 0 {
         return "{s} '{ask.name}' ({ask.allows} on {ask.reaches}, {ask.ttl})"
     }
@@ -422,12 +455,25 @@ fn send_wait(conn: IpcConn, notice: str, session_kind: bool) {
     }
 }
 
-fn forget_approval(st: GuiState, id: str) {
+// Drops approval `id` from the book, with any sudo password typed for it, which it
+// returns ("" for none).
+fn forget_approval(st: GuiState, id: str) -> str {
     st.holder.access_hold()
     mut book := st.holder.access_book()
     drop_approval(mut book, id)
+    typed := take_sudo_typed(mut book, id)
     st.holder.put_access_book(book)
     st.holder.access_release()
+    return typed
+}
+
+// Each argument as the shell word Flint sends: a reader sees where one ends.
+fn quoted_argv(argv: []str) -> []str {
+    mut q: []str = []
+    for a in argv {
+        q.push(shell_single_quote(a))
+    }
+    return q
 }
 
 // Whether this app runs a client's one-exchange request: its vault is the one held
@@ -443,7 +489,7 @@ fn serve_run(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedV
         _ := conn.send(json_not_served(), SERVE_SEND_MS) or {}
         return
     }
-    refusal := gate(conn, req, c, store, st, mut app, false)
+    refusal := gate(conn, req, c, store, st, mut app, false).refusal
     if refusal == "gone" {
         return
     }
@@ -487,7 +533,8 @@ fn serve_session(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Loc
         _ := conn.send(session_not_served_frame(), SERVE_SEND_MS) or {}
         return
     }
-    refusal := gate(conn, req, c, store, st, mut app, true)
+    outcome := gate(conn, req, c, store, st, mut app, true)
+    refusal := outcome.refusal
     if refusal == "gone" {
         return
     }
@@ -503,5 +550,5 @@ fn serve_session(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Loc
         _ := conn.send(refused_session_frame(coded(ERR_LOCKED, "the vault locked before the command ran"), req), SERVE_SEND_MS) or {}
         return
     }
-    run_served_session(conn, req, c, mut store, kc, recents, session)
+    run_served_session(conn, req, c, mut store, kc, recents, session, outcome.sudo_typed)
 }

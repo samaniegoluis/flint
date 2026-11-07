@@ -12,6 +12,7 @@ MIGRATION_001_SHA256: str = "9ed7d684e513f15455c31c2680407da618820c08eddb64d2379
 MIGRATION_002_SHA256: str = "9973529e84f0c738288de9b0187a5b48810ced2b269bda6d248571e1442beeb7"
 MIGRATION_003_SHA256: str = "d68639a62a93d26076581b02403eb1f9f3b4df0c6f9807842988940fb5b64b9c"
 MIGRATION_004_SHA256: str = "05c65140fa57a387055c58982a185aa12b1a4d28871ac9499a36201dc5ef33da"
+MIGRATION_005_SHA256: str = "8d77133943706ed50b72cdb9427af697d678168099b8417a5aadecd93886409c"
 
 fn temp_vault_path(name: str) -> str {
     dir := "/tmp/flint-test-" + hex.encode(sha256.random_bytes(8))
@@ -36,7 +37,7 @@ fn test_salt_bytes() -> []byte {
 }
 
 fn marker_host() -> Host {
-    return Host{ id: "h1", alias: "flint-alias-marker", label: "flint-label-marker", hostname: "db01.internal.example.org", port: 2201, username: "flint-user-marker", group_id: "", tags: ["flint-tag-marker", "prod"], color: "#112233", notes: "flint-notes-marker", jump_host_id: "", credential_id: "", key_id: "", password: [byte(1), byte(2), byte(3)], initial_command: "flint-command-marker", keep_shell: false }
+    return Host{ id: "h1", alias: "flint-alias-marker", label: "flint-label-marker", hostname: "db01.internal.example.org", port: 2201, username: "flint-user-marker", group_id: "", tags: ["flint-tag-marker", "prod"], color: "#112233", notes: "flint-notes-marker", jump_host_id: "", credential_id: "", key_id: "", password: [byte(1), byte(2), byte(3)], initial_command: "flint-command-marker", keep_shell: false, sudo_password: [] }
 }
 
 // Compiles only if SqlVaultStore satisfies the VaultStore port.
@@ -201,6 +202,10 @@ test "migration 004 is frozen" {
     assert_eq(sha256.hash_hex(vault_migrations()[3].sql.bytes()), MIGRATION_004_SHA256)
 }
 
+test "migration 005 is frozen" {
+    assert_eq(sha256.hash_hex(vault_migrations()[4].sql.bytes()), MIGRATION_005_SHA256)
+}
+
 test "migration 003 is frozen" {
     assert_eq(sha256.hash_hex(vault_migrations()[2].sql.bytes()), MIGRATION_003_SHA256)
 }
@@ -344,10 +349,50 @@ test "a vault at schema 3 gains empty tokens and activity" {
     db.close_db()
     mut store := new_sql_vault_store()
     try store.vault_attach(path, test_key(7), test_salt_bytes())
-    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "4")
+    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "{vault_migrations().len()}")
     assert_eq((try store.hosts_all()).len(), 1)
     assert_eq((try store.tokens_all()).len(), 0)
     assert_eq((try store.activity_page(0, 10)).len(), 0)
     store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "a vault at schema 4 gains an empty sudo password per host" {
+    path := temp_vault_path("v.flint")
+    mut db := try open_cipher_db(path, test_key(7), test_salt_bytes(), true)
+    try db.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+    for i in 0..4 {
+        try db.apply_migration(vault_migrations()[i])
+    }
+    try db.exec("INSERT INTO hosts (id, alias, label, hostname, port, username, color, notes, password) VALUES ('h1', 'web', '', 'web.example.org', 22, 'u', '', '', x'010203');")
+    db.close_db()
+    mut store := new_sql_vault_store()
+    try store.vault_attach(path, test_key(7), test_salt_bytes())
+    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "5")
+    hosts := try store.hosts_all()
+    assert_eq(hosts.len(), 1)
+    assert_eq(hosts[0].sudo_password.len(), 0)
+    assert_eq(hosts[0].password.len(), 3)
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "a host's sudo password round-trips and stays encrypted" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    mut h := marker_host()
+    h.sudo_password = []byte("flint-sudo-marker")
+    try store.host_put(h)
+    got := try store.hosts_all()
+    assert(got[0].sudo_password == []byte("flint-sudo-marker"))
+    h.sudo_password = []
+    try store.host_put(h)
+    assert_eq((try store.hosts_all())[0].sudo_password.len(), 0)
+    h.sudo_password = []byte("flint-sudo-marker")
+    try store.host_put(h)
+    store.vault_detach()
+    raw := try fs.read_text(path)
+    assert(!raw.contains("flint-sudo-marker"), "the sudo password must not leak")
     try fs.remove(fs.dirname(path))
 }

@@ -41,7 +41,7 @@ fn ssh_fixture(crypto: FakeCrypto, mut store: FakeStore) -> VaultSession {
 }
 
 fn empty_host_view() -> HostView {
-    return HostView{ alias: "", label: "", hostname: "", port: 0, user: "", group: "", tags: [], color: "", notes: "", jump: "", credential: "", key: "", has_password: false, command: "", keep_shell: true }
+    return HostView{ alias: "", label: "", hostname: "", port: 0, user: "", group: "", tags: [], color: "", notes: "", jump: "", credential: "", key: "", has_password: false, has_sudo_password: false, command: "", keep_shell: true }
 }
 
 fn accept_opts() -> ConnectOptions {

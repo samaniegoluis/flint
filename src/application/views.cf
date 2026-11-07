@@ -29,6 +29,9 @@ type HostView struct {
     credential:   str   `json:"credential"`
     key:          str   `json:"key"`
     has_password: bool  `json:"has_password"`
+    // Whether the host has its own sudo password; without one `exec --sudo` types the
+    // login password.
+    has_sudo_password: bool `json:"has_sudo_password"`
     command:      str   `json:"command"`
     keep_shell:   bool  `json:"keep_shell"`
 }

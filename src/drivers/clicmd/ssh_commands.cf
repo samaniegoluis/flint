@@ -77,9 +77,14 @@ fn cmd_connect[M: Terminal, P: Prompter](p: ParsedArgs, sec: SecretInput, as_jso
 }
 
 fn cmd_exec[P: Prompter, O: ExecSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, prompter: P, mut sink: O) -> i32! {
-    try p.allow_flags("exec", ["--timeout", "--exec-timeout", "--accept-new-host-key"])
+    try p.allow_flags("exec", ["--timeout", "--exec-timeout", "--accept-new-host-key", "--sudo"])
     if p.positionals.len() != 2 || !p.has_rest || p.rest.len() == 0 {
-        return error(coded(ERR_USAGE, "usage: flint exec <alias> [--timeout <secs>] [--exec-timeout <secs>] -- <command>"))
+        return error(coded(ERR_USAGE, "usage: flint exec <alias> [--timeout <secs>] [--exec-timeout <secs>] [--sudo] -- <command>"))
+    }
+    // D-039: only the running Flint runs a command as root, after the owner allowed
+    // it in its window; never on a typed master password.
+    if p.has_flag("--sudo") && !sec.in_app {
+        return error(coded(ERR_LOCKED, "`flint exec --sudo` runs only through Flint: open Flint, unlock this vault there, and run it again"))
     }
     opts := try connect_options(p)
     mut exec_timeout := SSH_EXEC_TIMEOUT_SECS
@@ -89,7 +94,12 @@ fn cmd_exec[P: Prompter, O: ExecSink](p: ParsedArgs, sec: SecretInput, as_json: 
     s := try open_target(p, sec, c, mut store, src, recents)
     mut link := new_ssh_link()
     mut clock := new_system_clock()
-    res := try exec_on_host(c, mut store, s, mut link, prompter, mut sink, mut clock, p.positional(1), remote_command(p), opts, exec_timeout, as_json)
+    mut res := ExecResult{ host: "", exit_code: 0, signal: "", stdout: "", stderr: "", duration_ms: 0 }
+    if p.has_flag("--sudo") {
+        res = try exec_sudo_on_host(c, mut store, s, mut link, prompter, mut sink, mut clock, p.positional(1), p.rest, sec.sudo_typed, opts, exec_timeout, as_json)
+    } else {
+        res = try exec_on_host(c, mut store, s, mut link, prompter, mut sink, mut clock, p.positional(1), remote_command(p), opts, exec_timeout, as_json)
+    }
     if as_json {
         say(json.stringify(res))
     }

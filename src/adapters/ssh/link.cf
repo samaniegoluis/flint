@@ -156,6 +156,16 @@ fn (mut self: SshLink) link_shell_open(term: str, cols: i32, rows: i32, command:
 // Starts `command` and closes its stdin at once: stdin is not forwarded yet, and
 // a command that reads it must see EOF rather than hang.
 fn (mut self: SshLink) link_exec_start(command: str) -> void! {
+    try self.exec_open(command, true)
+}
+
+// Starts `command` with its stdin left open, for `link_channel_write` and then
+// `link_channel_eof` (`exec --sudo` writes the sudo password there, D-047).
+fn (mut self: SshLink) link_exec_open(command: str) -> void! {
+    try self.exec_open(command, false)
+}
+
+fn (mut self: SshLink) exec_open(command: str, close_stdin: bool) -> void! {
     if self.hops.len() == 0 {
         return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
     }
@@ -169,7 +179,7 @@ fn (mut self: SshLink) link_exec_start(command: str) -> void! {
         channel = ch;
         rc = ch ? ssh_channel_open_session(ch) : -1;
         if (rc == SSH_OK) rc = ssh_channel_request_exec(ch, command.c_str());
-        if (rc == SSH_OK) rc = ssh_channel_send_eof(ch);
+        if (rc == SSH_OK && close_stdin) rc = ssh_channel_send_eof(ch);
         if (rc != SSH_OK && ch) { ssh_channel_free(ch); channel = nullptr; }
     }
     if rc != 0 {
@@ -177,6 +187,20 @@ fn (mut self: SshLink) link_exec_start(command: str) -> void! {
     }
     conn.channel = channel
     self.hops[self.hops.len() - 1] = conn
+}
+
+// Closes the running command's stdin.
+fn (mut self: SshLink) link_channel_eof() -> void! {
+    conn := try self.last_hop()
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = conn.channel ? ssh_channel_send_eof(conn.channel) : -1;
+    }
+    if rc != 0 {
+        return error(coded(ERR_NETWORK, "the connection was lost"))
+    }
 }
 
 fn (mut self: SshLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {

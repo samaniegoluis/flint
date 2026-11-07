@@ -42,7 +42,7 @@ import "../../adapters/vault"
 import "../../application"
 import "../../domain"
 
-SERVE_PROTOCOL: i64 = 4
+SERVE_PROTOCOL: i64 = 5
 
 // Connecting, and sending a request or a reply (Principle 8).
 SERVE_CONNECT_MS: i32 = 1000
@@ -71,6 +71,9 @@ type WireSecrets struct {
     has_passphrase: bool `json:"has_passphrase"`
     key_text:       str  `json:"key_text"`
     has_key:        bool `json:"has_key"`
+    // A host's sudo password for `host add|edit` (milestone 13).
+    sudo_password:     str  `json:"sudo_password"`
+    has_sudo_password: bool `json:"has_sudo_password"`
 }
 
 type ServeRequest struct {
@@ -120,11 +123,11 @@ fn not_served() -> ServeReply {
 }
 
 fn no_wire_secrets() -> WireSecrets {
-    return WireSecrets{ password: "", has_password: false, passphrase: "", has_passphrase: false, key_text: "", has_key: false }
+    return WireSecrets{ password: "", has_password: false, passphrase: "", has_passphrase: false, key_text: "", has_key: false, sudo_password: "", has_sudo_password: false }
 }
 
 fn wire_secrets(sec: SecretInput) -> WireSecrets {
-    return WireSecrets{ password: sec.password, has_password: sec.has_password, passphrase: sec.passphrase, has_passphrase: sec.has_passphrase, key_text: sec.key_text, has_key: sec.has_key }
+    return WireSecrets{ password: sec.password, has_password: sec.has_password, passphrase: sec.passphrase, has_passphrase: sec.has_passphrase, key_text: sec.key_text, has_key: sec.has_key, sudo_password: sec.sudo_password, has_sudo_password: sec.has_sudo_password }
 }
 
 fn new_request(kind: str, vault: str) -> ServeRequest {
@@ -155,6 +158,9 @@ fn servable(p: ParsedArgs) -> bool {
 fn access_need(p: ParsedArgs) -> AccessNeed {
     noun := p.positional(0)
     verb := p.positional(1)
+    if noun == "exec" && p.has_flag("--sudo") {
+        return AccessNeed{ action: ACCESS_SUDO, host: p.positional(1) }
+    }
     if noun == "connect" || noun == "exec" {
         return AccessNeed{ action: ACCESS_EXEC, host: p.positional(1) }
     }
@@ -228,6 +234,9 @@ fn caller_summary(p: ParsedArgs) -> str {
         s = s + " " + w
     }
     if p.positional(0) == "exec" && p.rest.len() > 0 {
+        if p.has_flag("--sudo") {
+            s = s + " --sudo"
+        }
         s = s + " -- " + remote_command(p)
     }
     if s.len() > 160 {
@@ -247,6 +256,10 @@ fn fill_prompts(p: ParsedArgs, mut sec: SecretInput) -> void! {
             label := if_host(noun == "host", "host password", "credential password")
             sec.password = try prompt_secret(label)
             sec.has_password = true
+        }
+        if noun == "host" && !sec.has_sudo_password && p.has_flag("--sudo-password") {
+            sec.sudo_password = try prompt_secret("sudo password")
+            sec.has_sudo_password = true
         }
         return
     }
@@ -642,6 +655,8 @@ fn served_secrets(req: ServeRequest) -> SecretInput {
         password: req.secrets.password, has_password: req.secrets.has_password,
         passphrase: req.secrets.passphrase, has_passphrase: req.secrets.has_passphrase,
         key_text: req.secrets.key_text, has_key: req.secrets.has_key,
+        sudo_password: req.secrets.sudo_password, has_sudo_password: req.secrets.has_sudo_password,
+        in_app: true, sudo_typed: "",
     }
 }
 
@@ -695,7 +710,7 @@ fn session_servable(req: ServeRequest) -> bool {
 // ends with the frame carrying the exit status and what the command printed. The
 // vault is not held still meanwhile: a session can last hours, and needs the key
 // only to log in.
-fn run_served_session(conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, session: VaultSession) {
+fn run_served_session(conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, session: VaultSession, sudo_typed: str) {
     p := parse_cli_args(req.argv) or {
         return
     }
@@ -708,7 +723,9 @@ fn run_served_session(conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Lo
         term_name = "xterm-256color"
     }
     capture_begin(req.cwd)
-    status := run_session_command(p, served_secrets(req), req.as_json, c, mut store, served_vault_source(kc, session), recents, mut term, prompter, mut sink, term_name)
+    mut sec := served_secrets(req)
+    sec.sudo_typed = sudo_typed
+    status := run_session_command(p, sec, req.as_json, c, mut store, served_vault_source(kc, session), recents, mut term, prompter, mut sink, term_name)
     mut code: i32 = 0
     if status.has_value() {
         code = status.value()

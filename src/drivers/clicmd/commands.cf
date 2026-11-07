@@ -343,11 +343,21 @@ fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> HostPatch! {
         patch.password = ""
         patch.set_password = true
     }
+    if sec.has_sudo_password {
+        patch.sudo_password = sec.sudo_password
+        patch.set_sudo_password = true
+    } else if p.has_flag("--sudo-password") {
+        patch.sudo_password = try prompt_secret("sudo password")
+        patch.set_sudo_password = true
+    } else if p.has_flag("--no-sudo-password") {
+        patch.sudo_password = ""
+        patch.set_sudo_password = true
+    }
     return patch
 }
 
 fn host_field_flags() -> []str {
-    return ["--label", "--hostname", "--port", "--user", "--group", "--tag", "--no-tags", "--color", "--notes", "--jump", "--cred", "--key", "--password", "--password-stdin", "--command", "--keep-shell", "--no-keep-shell"]
+    return ["--label", "--hostname", "--port", "--user", "--group", "--tag", "--no-tags", "--color", "--notes", "--jump", "--cred", "--key", "--password", "--password-stdin", "--sudo-password", "--sudo-password-stdin", "--command", "--keep-shell", "--no-keep-shell"]
 }
 
 fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
@@ -371,6 +381,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
         mut allowed := host_field_flags()
         allowed.push("--alias")
         allowed.push("--no-password")
+        allowed.push("--no-sudo-password")
         try p.allow_flags("host edit", allowed)
         try p.expect_args("host edit", 1, "<alias> [options]")
         patch := try host_patch_from_flags(p, sec)
