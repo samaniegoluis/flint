@@ -73,7 +73,7 @@ test "session commands are streamed, not run in one exchange" {
 }
 
 test "commands that need the key ask Flint to unlock; the rest do not" {
-    // Typed: a literal of literals is not inferred as a range (CF-067).
+    // Typed: a literal of literals is not inferred (CF-091).
     need: [][]str = [["host", "list"], ["connect", "web"], ["exec", "web", "--", "id"], ["vault", "rename", "x"], ["import", "tether", "f"]]
     for args in need {
         assert(needs_unlocked_vault(parsed(args)))
