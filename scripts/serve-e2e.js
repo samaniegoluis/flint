@@ -25,6 +25,41 @@
   const text = () => document.body.innerText;
   const hasText = (t) => text().includes(t);
   const q = (sel) => document.querySelector(sel);
+
+  // The owner, for this run (milestone 12): answers every approval the CLI raises.
+  // Requests naming "deny-me" are denied, "timeout-me" left unanswered, "scope-me"
+  // allowed as the window proposes (that host, read and run, 1 hour); the rest are
+  // allowed for the whole vault and every action until the vault locks. Allow takes
+  // the master password: the run sets FLINT_PRESENCE=password.
+  const setValue = (el, v) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  (async () => {
+    for (;;) {
+      await sleep(50);
+      const form = document.querySelector('[data-approval]');
+      if (!form || form.dataset.e2eSeen) continue;
+      form.dataset.e2eSeen = '1';
+      const req = form.querySelector('[data-approval-request]')?.textContent ?? '';
+      if (req.includes('timeout-me')) { log('ok   left unanswered: ' + req); continue; }
+      if (req.includes('deny-me')) { form.querySelector('[data-approval-deny]').click(); log('ok   denied: ' + req); continue; }
+      if (!req.includes('scope-me')) {
+        form.querySelector('[data-scope-all]').click();
+        await sleep(30);
+        for (const a of ['read', 'exec', 'write']) {
+          const box = form.querySelector(`[data-action="${a}"]`);
+          if (!box.checked) { box.click(); await sleep(10); }
+        }
+        form.querySelector('[data-duration="lock"]').click();
+      }
+      await sleep(30);
+      setValue(form.querySelector('#approval-pw'), MASTER);
+      await sleep(30);
+      form.querySelector('[data-approval-allow]').click();
+      log('ok   allowed: ' + req);
+    }
+  })();
   const qa = (sel) => [...document.querySelectorAll(sel)];
   const byText = (sel, t) => qa(sel).find((el) => el.textContent.includes(t));
   let passed = 0;

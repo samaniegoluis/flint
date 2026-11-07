@@ -1,0 +1,80 @@
+package application
+
+// Caller approval as the window speaks it (milestone 12): host aliases and group
+// paths in, ids in the grants (so a rename keeps them), and names back out.
+
+import "../domain"
+
+// What the window chose to allow, by name.
+type ScopeByName struct {
+    all:    bool  `json:"all"`
+    groups: []str `json:"groups"`
+    hosts:  []str `json:"hosts"`
+}
+
+// A live grant as the window lists it.
+type GrantView struct {
+    id:         str   `json:"id"`
+    label:      str   `json:"label"`
+    all:        bool  `json:"all"`
+    groups:     []str `json:"groups"`
+    hosts:      []str `json:"hosts"`
+    read:       bool  `json:"read"`
+    exec:       bool  `json:"exec"`
+    write:      bool  `json:"write"`
+    created_ms: i64   `json:"created_ms"`
+    expires_ms: i64   `json:"expires_ms"`
+    anchor_pid: i64   `json:"anchor_pid"`
+}
+
+// The scope with ids for `s`. Every name must exist.
+fn access_scope_from_names(cat: Catalog, s: ScopeByName) -> AccessScope! {
+    if s.all {
+        return AccessScope{ all: true, groups: [], hosts: [] }
+    }
+    mut groups: []str = []
+    for path in s.groups {
+        id := find_group_id(cat.groups, path)
+        if id.len() == 0 {
+            return error(coded(ERR_NOT_FOUND, "group '{path}'"))
+        }
+        groups.push(id)
+    }
+    mut hosts: []str = []
+    for alias in s.hosts {
+        idx := host_index_by_alias(cat.hosts, alias)
+        if idx < 0 {
+            return error(coded(ERR_NOT_FOUND, "host '{alias}'"))
+        }
+        hosts.push(cat.hosts[usize(idx)].id)
+    }
+    return AccessScope{ all: false, groups: groups, hosts: hosts }
+}
+
+// A grant with its scope by name. A host or group deleted since is left out.
+fn grant_view(g: Grant, cat: Catalog) -> GrantView {
+    mut groups: []str = []
+    for id in g.scope.groups {
+        p := group_path_of(cat.groups, id)
+        if p.len() > 0 {
+            groups.push(p)
+        }
+    }
+    mut hosts: []str = []
+    for id in g.scope.hosts {
+        for h in cat.hosts {
+            if h.id == id {
+                hosts.push(h.alias)
+            }
+        }
+    }
+    return GrantView{ id: g.id, label: g.label, all: g.scope.all, groups: groups, hosts: hosts, read: g.read, exec: g.exec, write: g.write, created_ms: g.created_ms, expires_ms: g.expires_ms, anchor_pid: g.anchor_pid }
+}
+
+fn grant_views(grants: []Grant, cat: Catalog) -> []GrantView {
+    mut views: []GrantView = []
+    for g in grants {
+        views.push(grant_view(g, cat))
+    }
+    return views
+}

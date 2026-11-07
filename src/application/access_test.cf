@@ -1,0 +1,21 @@
+package application
+
+import "../domain"
+
+test "a scope by name maps to ids and back" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    _ := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/a.flint", "", "correct horse")
+    _ := try add_group(crypto, mut store, "lab/pve")
+    cat0 := try load_catalog(store)
+    assert(cat0.groups.len() == 2)
+    s := try access_scope_from_names(cat0, ScopeByName{ all: false, groups: ["lab/pve"], hosts: [] })
+    assert_eq(s.groups.len(), 1)
+    assert(!access_scope_from_names(cat0, ScopeByName{ all: false, groups: ["nope"], hosts: [] }).has_value())
+    assert(!access_scope_from_names(cat0, ScopeByName{ all: false, groups: [], hosts: ["ghost"] }).has_value())
+    g := Grant{ id: "g", vault_id: "v", anchor_pid: 1, anchor_started: 1, label: "x", scope: s, read: true, exec: false, write: false, created_ms: 0, expires_ms: 0, duration: "lock" }
+    v := grant_view(g, cat0)
+    assert_eq(v.groups[0], "lab/pve")
+    whole := try access_scope_from_names(cat0, ScopeByName{ all: true, groups: [], hosts: [] })
+    assert(whole.all)
+}

@@ -110,8 +110,8 @@ fn main() {
     app.bind_raw("unlock_request") |params| { return rpc_unlock_request(st, recents) }
     app.bind_raw("unlock_request_dismiss") |params| { return rpc_unlock_request_dismiss(st) }
     presence := new_os_presence()
-    app.bind_raw("access_state") |params| { return rpc_access_state(st, presence) }
-    app.bind_raw("access_revoke") |params| { return rpc_access_revoke(params, st, presence, mut app) }
+    app.bind_raw("access_state") |params| { return rpc_access_state(st, store, presence) }
+    app.bind_raw("access_revoke") |params| { return rpc_access_revoke(params, st, store, presence, mut app) }
     // On a worker: Touch ID and polkit block until the person answers.
     app.bind_async[AccessAnswer]("access_answer") |req| {
         mut a := app

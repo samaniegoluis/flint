@@ -40,6 +40,10 @@ export FLINT_CONFIG_DIR="$tmp/cfg"
 export FLINT_KEYCHAIN=off
 # Only the launch check below lets `flint` start the app (D-042).
 export FLINT_APP=off
+# Caller approval (milestone 12): the page approves with the master password, and a
+# request nobody answers is refused after 8 s instead of two minutes.
+export FLINT_PRESENCE=password
+export FLINT_APPROVAL_WAIT_MS=8000
 app_pid=""
 cleanup() {
   if [[ -n "$app_pid" ]]; then kill "$app_pid" 2>/dev/null; wait "$app_pid" 2>/dev/null; fi
@@ -140,6 +144,8 @@ for _ in $(seq 1 300); do
 done
 check "the app serves the socket" '[[ -S "$sock" ]]'
 check "the socket is owner-only (0600)" '[[ "$(file_mode "$sock")" == "600" ]]'
+check "the first command asked the owner, naming the caller" 'grep -q "asking the owner to approve flint, started by" "$tmp/app.log"'
+check "and was allowed in the window" 'grep -q "allowed flint, started by" "$tmp/app.log"'
 
 echo "== commands served by the app: no keychain, no master password, no terminal"
 expect 0 "host list" "" -- host list
@@ -278,6 +284,48 @@ check "connect exits with the remote shell status" '[[ "$(echo "$pty_out" | json
 expect 0 "the key trusted on that terminal was recorded in the app's vault" "" -- --json known-host list
 check "localhost is a known host" '[[ "$out" == *"[localhost]:$P"* ]]'
 
+echo "== caller approval (milestone 12, Principle 12)"
+# Under perl, which stays as the parent, each run is a new caller: no grant covers it.
+new_caller() {  # <stdin> -- <flint args...>  ($out, $err, $status)
+  local input="$1"; shift 2
+  printf '%s' "$input" | no_tty perl -e 'exit(system(@ARGV) >> 8)' "$flint" "$@" >"$tmp/out" 2>"$tmp/err"
+  status=$?
+  out="$(cat "$tmp/out")"; err="$(cat "$tmp/err")"
+  { echo "\$ (new caller) flint $*"; echo "$out"; echo "$err"; } >> "$all_out"
+}
+asked_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
+new_caller "" -- host show deny-me
+check "a request the owner denies fails with denied (15)" '[[ $status == 15 && "$err" == *"denied"* ]]'
+check "the caller is named after the program that started flint" 'grep -q "asking the owner to approve flint, started by perl" "$tmp/app.log"'
+new_caller "" -- --json host show deny-me
+check "denied is a JSON error with --json" '[[ $status == 15 && "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "denied" ]]'
+t0=$(python3 -c 'import time; print(time.time())')
+new_caller "" -- host show timeout-me
+t1=$(python3 -c 'import time; print(time.time())')
+check "a request nobody answers fails with approval_timeout (16)" '[[ $status == 16 && "$err" == *"nobody answered"* ]]'
+check "after the wait, not before" 'python3 -c "import sys; sys.exit(0 if 7 < $t1 - $t0 < 20 else 1)"'
+check "the client said it was waiting" '[[ "$err" == *"Waiting for approval in Flint"* ]]'
+new_caller "" -- exec local -- echo deny-me
+check "a denied exec runs nothing and says why" '[[ $status == 15 && "$out" != *deny-me* && "$err" == *"denied"* ]]'
+check "a session told the client it was waiting" '[[ "$err" == *"Waiting for approval in Flint"* ]]'
+
+# One caller, several commands: a grant scoped to one host is reused for it, and
+# does not reach another host.
+cat > "$tmp/scope.pl" <<'PL'
+my ($flint, @runs) = @ARGV;
+my @codes;
+for my $r (@runs) { push @codes, system($flint, split(/ /, $r)) >> 8; }
+print join(",", @codes), "\n";
+PL
+asked_scope_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
+scope_out="$(printf '' | no_tty perl "$tmp/scope.pl" "$flint" "exec local -- echo scope-me" "exec local -- echo again" "host list" "exec tty -- echo deny-me" 2>"$tmp/scope.err")"
+echo "$scope_out" >> "$all_out"
+asked_scope_after=$(grep -c "asking the owner to approve" "$tmp/app.log")
+check "a grant for one host runs there, again without asking, and reads" '[[ "$scope_out" == *"0,0,0,"* ]]'
+check "another host is outside it and asks again (denied here)" '[[ "$scope_out" == *",15" ]]'
+check "two approvals for four commands" '[[ $((asked_scope_after - asked_scope_before)) == 2 ]]'
+expect 0 "the grants in force while the vault stays unlocked" "" -- --json vault status
+
 echo "== another vault"
 expect 5 "another vault than the app's: locked, with no terminal" "" -- --vault "$other" host list
 check "it names the vault Flint has open" '[[ "$err" == *"Flint has vault"* ]]'
@@ -298,6 +346,7 @@ check "it says Flint is asking for the master password" '[[ "$err" == *"Flint is
 expect 0 "vault unlock waits for the window" "" -- vault unlock
 expect 0 "and the CLI is served again" "" -- --json vault status
 check "status says unlocked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" == "True" ]]'
+check "the lock ended the grants: the owner was asked again" '[[ $(grep -c "asking the owner to approve" "$tmp/app.log") -gt $asked_scope_after ]]'
 
 # Linux, on a private session bus only (scripts/linux/inside.sh): never on a
 # desktop's real bus, where every program would hear the screensaver turn on.

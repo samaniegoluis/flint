@@ -3,7 +3,7 @@
 // FlintError so the UI can branch on stable codes (D-018, D-019).
 
 import type {
-  AppInfo, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
+  AccessAnswer, AccessState, AppInfo, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
   KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, UnlockRequest, VaultInfo, VaultStatus,
 } from './types';
 
@@ -22,6 +22,7 @@ declare global {
 const CODES = [
   'internal', 'usage', 'not_found', 'conflict', 'locked', 'wrong_password', 'invalid',
   'unsupported', 'keychain', 'io', 'host_key', 'auth', 'network', 'timeout',
+  'denied', 'approval_timeout',
 ];
 
 export class FlintError extends Error {
@@ -72,6 +73,12 @@ export const api = {
   activity: () => call('activity'),
   unlockRequest: () => call<UnlockRequest>('unlock_request'),
   unlockRequestDismiss: () => call('unlock_request_dismiss'),
+  /** Waiting approvals and live grants (milestone 12). */
+  accessState: () => call<AccessState>('access_state'),
+  /** Allow first asks for presence (Touch ID, polkit, or `password`): it may take a while. */
+  accessAnswer: (a: AccessAnswer) => call<AccessState>('access_answer', a),
+  /** Ends one grant, or every grant with ''. */
+  accessRevoke: (id: string) => call<AccessState>('access_revoke', { name: id }),
   forgetKey: (path: string) => call('vault_forget_key', { path }),
   forget: (path: string) => call('vault_forget', { path }),
   status: () => call<VaultStatus>('vault_status'),

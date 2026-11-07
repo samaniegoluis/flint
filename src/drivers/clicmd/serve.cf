@@ -180,9 +180,10 @@ fn is_wait_notice(text: str) -> bool {
     return text.starts_with("{\"wait\":true")
 }
 
-// Tells the person what the wait is, once.
-fn show_wait(message: str, mut shown: bool) {
-    if !shown {
+// Tells the person what the wait is, once. Not with --json, whose stderr carries one
+// JSON error at most (Principle 7).
+fn show_wait(message: str, as_json: bool, mut shown: bool) {
+    if !shown && !as_json {
         write_stderr(message + "\n")
         shown = true
     }
@@ -308,7 +309,7 @@ fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> S
             break
         }
         notice := json.parse[WaitNotice](text) or WaitNotice{ wait: true, message: "" }
-        show_wait(notice.message, mut shown)
+        show_wait(notice.message, as_json, mut shown)
     }
     return json.parse[ServeReply](text) or {
         return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
@@ -432,7 +433,7 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
         if tag == TAG_NOT_SERVED {
             return not_served()
         } else if tag == TAG_WAIT {
-            show_wait(body, mut shown)
+            show_wait(body, as_json, mut shown)
         } else if tag == TAG_STDOUT {
             term.term_output(body)
         } else if tag == TAG_STDERR {

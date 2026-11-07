@@ -18,13 +18,13 @@ type AccessState struct {
     // How Allow is confirmed: touchid, device, polkit or password.
     presence: str        `json:"presence"`
     pending:  []Approval `json:"pending"`
-    grants:   []Grant    `json:"grants"`
+    grants:   []GrantView `json:"grants"`
 }
 
 type AccessAnswer struct {
     id:       str         `json:"id"`
     allow:    bool        `json:"allow"`
-    scope:    AccessScope `json:"scope"`
+    scope:    ScopeByName `json:"scope"`
     read:     bool        `json:"read"`
     exec:     bool        `json:"exec"`
     write:    bool        `json:"write"`
@@ -37,15 +37,27 @@ type GrantsChanged struct {
     count: i64 `json:"count"`
 }
 
-fn access_state(st: GuiState, presence: OsPresence) -> AccessState {
+fn access_state(st: GuiState, store: LockedVaultStore, presence: OsPresence) -> AccessState {
     now := time.now_ms()
     book := st.holder.access_book()
-    return AccessState{ presence: presence.presence_method(), pending: waiting_approvals(book, now), grants: live_grants(book.grants, now) }
+    cat := held_catalog(st, store)
+    return AccessState{ presence: presence.presence_method(), pending: waiting_approvals(book, now), grants: grant_views(live_grants(book.grants, now), cat) }
+}
+
+// The open vault's catalog, or an empty one when it is locked.
+fn held_catalog(st: GuiState, store: LockedVaultStore) -> Catalog {
+    empty := Catalog{ groups: [], hosts: [], keys: [], creds: [] }
+    st.hold()
+    defer st.release()
+    if !st.unlocked() {
+        return empty
+    }
+    return load_catalog(store) or empty
 }
 
 // What the window shows: run on the UI thread, it never asks the OS.
-fn rpc_access_state(st: GuiState, presence: OsPresence) -> str! {
-    return json.stringify(access_state(st, presence))
+fn rpc_access_state(st: GuiState, store: LockedVaultStore, presence: OsPresence) -> str! {
+    return json.stringify(access_state(st, store, presence))
 }
 
 // The owner answers approval `id`. Allow first proves presence (the OS's check, or
@@ -65,10 +77,11 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
         _ := set_approval_state(mut book, req.id, APPROVAL_DENIED)
         st.holder.put_access_book(book)
         st.holder.access_release()
-        return access_state(st, presence)
+        return access_state(st, store, presence)
     }
     // Checked before presence, so a bad form never shows the OS dialog.
-    _ := try grant_from_approval(ap, "check", req.scope, req.read, req.exec, req.write, req.duration, time.now_ms())
+    scope := try access_scope_from_names(held_catalog(st, store), req.scope)
+    _ := try grant_from_approval(ap, "check", scope, req.read, req.exec, req.write, req.duration, time.now_ms())
     method := presence.presence_method()
     if method == PRESENCE_PASSWORD {
         session := st.vault_session()
@@ -89,7 +102,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
         st.holder.access_release()
         return error(coded(ERR_NOT_FOUND, "this request stopped waiting before it was allowed"))
     }
-    g := grant_from_approval(ap, hex.encode(c.random_bytes(8)), req.scope, req.read, req.exec, req.write, req.duration, time.now_ms()) or err {
+    g := grant_from_approval(ap, hex.encode(c.random_bytes(8)), scope, req.read, req.exec, req.write, req.duration, time.now_ms()) or err {
         st.holder.access_release()
         return error("{err.message()}")
     }
@@ -99,11 +112,11 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
     st.holder.access_release()
     write_stderr("flint-gui: allowed {ap.label} ({g.duration})\n")
     app.emit("access:changed", GrantsChanged{ count: i64(book.grants.len()) })
-    return access_state(st, presence)
+    return access_state(st, store, presence)
 }
 
 // Ends grant `id`, or every grant when `id` is "".
-fn rpc_access_revoke(params: str, st: GuiState, presence: OsPresence, mut app: webui.App) -> str! {
+fn rpc_access_revoke(params: str, st: GuiState, store: LockedVaultStore, presence: OsPresence, mut app: webui.App) -> str! {
     req := try parse_req[NameReq](params)
     st.holder.access_hold()
     mut book := st.holder.access_book()
@@ -116,5 +129,5 @@ fn rpc_access_revoke(params: str, st: GuiState, presence: OsPresence, mut app: w
     st.holder.put_access_book(book)
     st.holder.access_release()
     app.emit("access:changed", GrantsChanged{ count: i64(book.grants.len()) })
-    return json.stringify(access_state(st, presence))
+    return json.stringify(access_state(st, store, presence))
 }

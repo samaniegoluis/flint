@@ -9,6 +9,7 @@ package main
 
 import "core:encoding/hex"
 import "core:fs"
+import "core:os"
 import "core:time"
 import "ext:webui"
 import "../../adapters/config"
@@ -225,7 +226,8 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         return ""
     }
     id := hex.encode(c.random_bytes(8))
-    ap := new_approval(id, session.id, caller, req.caller, need, now)
+    mut ap := new_approval(id, session.id, caller, req.caller, need, now)
+    ap.deadline_ms = now + approval_wait_ms()
     st.holder.access_hold()
     mut book := st.holder.access_book()
     book.pending.push(ap)
@@ -259,7 +261,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         if t >= ap.deadline_ms {
             forget_approval(st, id)
             app.emit("access:resolved", ApprovalResolved{ id: id, state: "expired" })
-            return coded(ERR_APPROVAL_TIMEOUT, "nobody answered in Flint within {APPROVAL_WAIT_MS / 1000}s; run the command again and allow it there")
+            return coded(ERR_APPROVAL_TIMEOUT, "nobody answered in Flint within {approval_wait_ms() / 1000}s; run the command again and allow it there")
         }
         // A client that hung up is not waiting any more. Before a session's raw mode
         // the client sends nothing, so anything readable is its close.
@@ -274,6 +276,18 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         }
     }
     return ""
+}
+
+// How long a caller waits for the owner. The headless end-to-end run (and only it)
+// may shorten it with FLINT_APPROVAL_WAIT_MS, to check a timeout in seconds.
+fn approval_wait_ms() -> i64 {
+    if os.getenv("FLINT_GUI_E2E").len() > 0 {
+        ms := os.getenv("FLINT_APPROVAL_WAIT_MS").parse_i64() or APPROVAL_WAIT_MS
+        if ms > 0 && ms < APPROVAL_WAIT_MS {
+            return ms
+        }
+    }
+    return APPROVAL_WAIT_MS
 }
 
 fn send_wait(conn: IpcConn, notice: str, session_kind: bool) {
