@@ -218,7 +218,7 @@ fn scope_reaches(scope: AccessScope, cat: Catalog, alias: str) -> bool {
         return true
     }
     for h in cat.hosts {
-        if h.alias == alias {
+        if str.to_lower(h.alias) == str.to_lower(alias) {
             for id in scope.hosts {
                 if id == h.id {
                     return true
@@ -273,6 +273,114 @@ fn live_grants(grants: []Grant, now_ms: i64) -> []Grant {
         }
     }
     return live
+}
+
+// ---- Approvals ----------------------------------------------------------------------
+
+// How long a caller waits for the owner to answer before it is refused.
+APPROVAL_WAIT_MS: i64 = 120000
+
+APPROVAL_PENDING: str = "pending"
+APPROVAL_ALLOWED: str = "allowed"
+APPROVAL_DENIED: str = "denied"
+
+// A request waiting in the approval window. `request` is the command as the window
+// shows it (no flag values: D-018). `chain` is for the window's detail.
+type Approval struct {
+    id:             str          `json:"id"`
+    vault_id:       str          `json:"vault_id"`
+    label:          str          `json:"label"`
+    request:        str          `json:"request"`
+    need:           AccessNeed   `json:"need"`
+    chain:          []CallerProc `json:"chain"`
+    anchor_pid:     i64          `json:"anchor_pid"`
+    anchor_started: i64          `json:"anchor_started"`
+    created_ms:     i64          `json:"created_ms"`
+    deadline_ms:    i64          `json:"deadline_ms"`
+    state:          str          `json:"state"`
+}
+
+// The app's access state: live grants and the requests waiting for an answer.
+type AccessBook struct {
+    grants:  []Grant    `json:"grants"`
+    pending: []Approval `json:"pending"`
+}
+
+fn empty_access_book() -> AccessBook {
+    return AccessBook{ grants: [], pending: [] }
+}
+
+fn new_approval(id: str, vault_id: str, c: Caller, request: str, need: AccessNeed, now_ms: i64) -> Approval {
+    a := caller_anchor(c)
+    return Approval{ id: id, vault_id: vault_id, label: caller_label(c), request: request, need: need, chain: c.chain, anchor_pid: a.pid, anchor_started: a.started, created_ms: now_ms, deadline_ms: now_ms + APPROVAL_WAIT_MS, state: APPROVAL_PENDING }
+}
+
+// The grant an approval becomes when the owner allows it.
+fn grant_from_approval(ap: Approval, id: str, scope: AccessScope, read: bool, exec: bool, write: bool, duration: str, now_ms: i64) -> Grant! {
+    expires := try grant_expiry(now_ms, duration)
+    if !read && !exec && !write {
+        return error(coded(ERR_INVALID, "a grant must allow at least one action"))
+    }
+    if !scope.all && scope.groups.len() == 0 && scope.hosts.len() == 0 {
+        return error(coded(ERR_INVALID, "a grant must reach at least one host or group"))
+    }
+    return Grant{ id: id, vault_id: ap.vault_id, anchor_pid: ap.anchor_pid, anchor_started: ap.anchor_started, label: ap.label, scope: scope, read: read, exec: exec, write: write, created_ms: now_ms, expires_ms: expires, duration: duration }
+}
+
+fn find_approval(book: AccessBook, id: str) -> Approval? {
+    for ap in book.pending {
+        if ap.id == id {
+            return ap
+        }
+    }
+    return none
+}
+
+// Sets the state of approval `id`; false when it is no longer waiting.
+fn set_approval_state(mut book: AccessBook, id: str, state: str) -> bool {
+    for i in 0..book.pending.len() {
+        if book.pending[i].id == id && book.pending[i].state == APPROVAL_PENDING {
+            book.pending[i].state = state
+            return true
+        }
+    }
+    return false
+}
+
+fn drop_approval(mut book: AccessBook, id: str) {
+    mut kept: []Approval = []
+    for ap in book.pending {
+        if ap.id != id {
+            kept.push(ap)
+        }
+    }
+    book.pending = kept
+}
+
+// Ends grant `id`; false when there was none.
+fn revoke_grant(mut book: AccessBook, id: str) -> bool {
+    mut kept: []Grant = []
+    mut found := false
+    for g in book.grants {
+        if g.id == id {
+            found = true
+        } else {
+            kept.push(g)
+        }
+    }
+    book.grants = kept
+    return found
+}
+
+// The approvals still waiting, for the window.
+fn waiting_approvals(book: AccessBook, now_ms: i64) -> []Approval {
+    mut w: []Approval = []
+    for ap in book.pending {
+        if ap.state == APPROVAL_PENDING && now_ms < ap.deadline_ms {
+            w.push(ap)
+        }
+    }
+    return w
 }
 
 // ---- Tests ------------------------------------------------------------------------
@@ -386,4 +494,30 @@ test "durations" {
     assert_eq(try grant_expiry(100, "15m"), 100 + 900000)
     assert_eq(try grant_expiry(100, "lock"), 0)
     assert(!grant_expiry(100, "forever").has_value())
+}
+
+test "an approval becomes a grant for its caller's anchor" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    ap := new_approval("a1", "v1", c, "flint exec api-01 -- uptime", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, 1000)
+    assert_eq(ap.deadline_ms, 1000 + APPROVAL_WAIT_MS)
+    assert_eq(ap.label, "flint, started by Claude Code")
+    g := try grant_from_approval(ap, "g1", AccessScope{ all: false, groups: ["g-prod"], hosts: [] }, true, true, false, "1h", 2000)
+    assert(grant_matches_caller(g, c))
+    assert_eq(g.expires_ms, 2000 + 3600000)
+    assert(find_grant([g], c, "v1", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, test_catalog(), 3000).has_value())
+    assert(!grant_from_approval(ap, "g2", AccessScope{ all: false, groups: [], hosts: [] }, true, false, false, "1h", 0).has_value())
+    assert(!grant_from_approval(ap, "g2", AccessScope{ all: true, groups: [], hosts: [] }, false, false, false, "1h", 0).has_value())
+}
+
+test "an approval is answered once" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    mut book := empty_access_book()
+    book.pending.push(new_approval("a1", "v1", c, "flint host list", AccessNeed{ action: ACCESS_READ, host: "" }, 0))
+    assert_eq(waiting_approvals(book, 10).len(), 1)
+    assert_eq(waiting_approvals(book, APPROVAL_WAIT_MS).len(), 0)
+    assert(set_approval_state(mut book, "a1", APPROVAL_DENIED))
+    assert(!set_approval_state(mut book, "a1", APPROVAL_ALLOWED))
+    assert_eq(find_approval(book, "a1").value().state, APPROVAL_DENIED)
+    drop_approval(mut book, "a1")
+    assert(!find_approval(book, "a1").has_value())
 }

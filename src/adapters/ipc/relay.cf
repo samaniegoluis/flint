@@ -25,6 +25,9 @@ TAG_PROMPT: str = "p"
 TAG_HEARTBEAT: str = "k"
 TAG_NOT_SERVED: str = "n"
 TAG_END: str = "x"
+// The app waits for the owner to approve the caller (milestone 12): the payload is
+// what to tell the person, and the frame repeats while the wait lasts.
+TAG_WAIT: str = "w"
 TAG_INPUT: str = "i"
 TAG_RESIZE: str = "r"
 TAG_ANSWER: str = "a"

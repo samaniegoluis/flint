@@ -52,7 +52,7 @@ longer needs are gone (CF-057, 060, 063, 064, 066, 067, 078).
 | `deferred upstream` | 001 (a real WebView2), 081 (Unix sockets); 010's networking and sysroot items |
 | `not adopted` | 006, 007, 008, 053: cfire's modules now fail closed, but Flint's adapters do more |
 | `answered, untested` | 004, 029, 045, 046, 050 |
-| **New** | CF-086..CF-091, below; CF-092 (milestone 12) |
+| **New** | CF-086..CF-091, below; CF-092, CF-093 (milestone 12) |
 
 **Most urgent of the new ones:**
 
@@ -1633,3 +1633,17 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `os.process_info(pid) -> ProcessInfo?` with `ppid`, `start_time`, `exe` and
   `argv`, on macOS, Linux and Windows (`NtQueryInformationProcess`,
   `QueryFullProcessImageName`).
+
+### CF-093 · missing · `open`: no presence check (Touch ID, polkit, Windows Hello)
+- **Repro (43431f2):** nothing in `core:` or `ext:` asks the OS to confirm the person at the
+  machine is there. Flint needs it before the owner's **Allow** in the caller approval
+  window takes effect (milestone 12), so a program that clicks the window cannot approve
+  itself.
+- **Workaround:** `src/adapters/uievents/native/flint_presence.hpp`: macOS
+  `LAContext evaluatePolicy:LAPolicyDeviceOwnerAuthentication` (Touch ID or the Mac's
+  password; linked with `-framework LocalAuthentication`, CF-031); Linux polkit
+  `CheckAuthorization` over GIO for an action Flint ships (`dev.flint.approve`). Where
+  neither works, Flint asks for the vault's master password itself.
+- **Ideal:** `ext:auth.confirm_presence(reason) -> bool!` and `ext:auth.presence_kinds()`,
+  on macOS (`LAContext`), Linux (polkit) and Windows (Windows Hello,
+  `UserConsentVerifier`), blocking a worker, never the main thread.

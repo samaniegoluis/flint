@@ -218,6 +218,8 @@ fn (self: GuiState) adopt(s: VaultSession) {
 
 fn (self: GuiState) forget() {
     self.holder.wipe()
+    // A lock or another vault ends every grant and refuses every waiting approval.
+    self.holder.access_clear()
 }
 
 // Holds the vault still for a whole operation: an unlock or switch, or a command

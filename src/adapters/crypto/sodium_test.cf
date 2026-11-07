@@ -112,3 +112,13 @@ test "subkeys are independent and deterministic" {
     assert(a != master)
     assert(!c.derive_subkey(master, 1, "short").has_value())
 }
+
+test "equal compares in constant time and by length" {
+    c := try new_sodium()
+    a := c.random_bytes(32)
+    mut b := a
+    assert(c.equal(a, b))
+    b[31] = byte(u8(b[31]) ^ u8(1))
+    assert(!c.equal(a, b))
+    assert(!c.equal(a, c.random_bytes(16)))
+}

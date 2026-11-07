@@ -1,0 +1,66 @@
+package uievents
+
+// Presence checks for the approval window (milestone 12, native/flint_presence.hpp):
+// Touch ID or the Mac's password on macOS, polkit on Linux. Where the OS has none,
+// the method is "password" and the window asks for the vault's master password,
+// which the core checks against the key it holds (application/session.cf).
+//
+// FLINT_PRESENCE=password picks the master password even where the OS could ask:
+// for the headless end-to-end runs, and for anyone who prefers it. Nothing turns the
+// check off.
+
+// CFIRE-UPSTREAM: CF-093, CF-031
+import cpp "flint_presence.hpp" @pkg("flint-native-gui")
+
+import "core:os"
+import "../../domain"
+
+PRESENCE_TOUCH_ID: str = "touchid"
+PRESENCE_DEVICE: str = "device"
+PRESENCE_POLKIT: str = "polkit"
+PRESENCE_PASSWORD: str = "password"
+
+type OsPresence struct {
+    force_password: bool
+}
+
+fn new_os_presence() -> OsPresence {
+    return OsPresence{ force_password: os.getenv("FLINT_PRESENCE") == "password" }
+}
+
+// How the window confirms the owner is there: touchid, device, polkit or password.
+fn (self: OsPresence) presence_method() -> str {
+    if self.force_password {
+        return PRESENCE_PASSWORD
+    }
+    mut m := ""
+    // CFIRE-UPSTREAM: CF-093
+    cpp {
+        m = flint_presence::method();
+    }
+    if m.len() == 0 {
+        return PRESENCE_PASSWORD
+    }
+    return m
+}
+
+// Asks the OS to confirm the person is there, showing `reason`. Blocks until they
+// answer (at most two minutes): call it from a worker. False when they cancel or
+// fail; an error when the OS could not ask.
+fn (self: OsPresence) presence_confirm(reason: str) -> bool! {
+    if self.presence_method() == PRESENCE_PASSWORD {
+        return error(coded(ERR_UNSUPPORTED, "no presence check from the OS here; the master password is used"))
+    }
+    mut rc: i32 = -1
+    mut why := ""
+    // CFIRE-UPSTREAM: CF-093
+    cpp {
+        std::string err;
+        rc = flint_presence::confirm(reason, err);
+        why = err;
+    }
+    if rc < 0 {
+        return error(coded(ERR_UNSUPPORTED, "the presence check could not be shown: {why}"))
+    }
+    return rc == 1
+}

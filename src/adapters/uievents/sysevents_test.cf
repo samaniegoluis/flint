@@ -17,3 +17,9 @@ test "lock and sleep events are taken once, sleep first" {
 // against the running app in scripts/serve-e2e.sh on Linux: GLib keeps its bus
 // connections for the life of the process, which a test here reports as leaked
 // descriptors (CF-080).
+
+test "FLINT_PRESENCE=password picks the master password and never skips the check" {
+    p := OsPresence{ force_password: true }
+    assert_eq(p.presence_method(), PRESENCE_PASSWORD)
+    assert(!p.presence_confirm("x").has_value())
+}

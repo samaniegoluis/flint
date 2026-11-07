@@ -19,6 +19,8 @@ type Crypto interface {
     seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte!
     unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte!
     digest(data: []byte, out_len: usize) -> []byte!
+    // Compares two byte strings in constant time (false when the lengths differ).
+    equal(a: []byte, b: []byte) -> bool
 }
 
 // The encrypted vault file (adapters/vault, SQLCipher). One vault is open at a time.
@@ -156,6 +158,15 @@ type Clipboard interface {
     clipboard_copy_secret(text: str, clear_after_ms: i64) -> void!
     // Plain text a remote program copied (OSC 52): not concealed, never cleared.
     clipboard_copy_text(text: str) -> void!
+}
+
+// A presence check before the owner's Allow takes effect (adapters/uievents,
+// milestone 12). `presence_method` is "touchid", "device" (the Mac's password),
+// "polkit" or "password" (the window asks for the vault's master password, which the
+// core checks itself). `presence_confirm` asks the OS and blocks until answered.
+type Presence interface {
+    presence_method() -> str
+    presence_confirm(reason: str) -> bool!
 }
 
 // The desktop app's layout state (adapters/config, ui-state.json, D-030).

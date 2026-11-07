@@ -18,6 +18,12 @@ package clicmd
 //   status   whether the app holds a vault unlocked → {state, name}
 //   lock     lock the vault if the app holds it → {state, name}
 //
+// Before a run or a session, the app checks the caller against its grants (milestone
+// 12, Principle 12). With none that covers the request it asks the owner in its
+// window and tells the client so: a `{"wait": …}` frame before a run's reply, a
+// TAG_WAIT frame in a session. A refusal is an ordinary reply or end frame carrying
+// `denied`, `approval_timeout` or `locked`.
+//
 // Prompts for secrets a command needs (`--password`, `--passphrase`, Tether's master
 // password, a host's password at login) are asked on the client's terminal and
 // travel towards the app only: no reply ever carries a secret (Principle 6). Once a
@@ -36,7 +42,7 @@ import "../../adapters/vault"
 import "../../application"
 import "../../domain"
 
-SERVE_PROTOCOL: i64 = 2
+SERVE_PROTOCOL: i64 = 3
 
 // Connecting, and sending a request or a reply (Principle 8).
 SERVE_CONNECT_MS: i32 = 1000
@@ -139,6 +145,62 @@ fn servable(p: ParsedArgs) -> bool {
     return false
 }
 
+// What a command does with the vault, for the app's grants: reading (list, show,
+// status, a dry-run import), running on a host (connect, exec, host test) or changing
+// the vault (everything else it serves).
+fn access_need(p: ParsedArgs) -> AccessNeed {
+    noun := p.positional(0)
+    verb := p.positional(1)
+    if noun == "connect" || noun == "exec" {
+        return AccessNeed{ action: ACCESS_EXEC, host: p.positional(1) }
+    }
+    if noun == "host" && verb == "test" {
+        return AccessNeed{ action: ACCESS_EXEC, host: p.positional(2) }
+    }
+    if verb == "list" || verb == "show" || verb == "status" {
+        return AccessNeed{ action: ACCESS_READ, host: "" }
+    }
+    if noun == "import" && p.has_flag("--dry-run") {
+        return AccessNeed{ action: ACCESS_READ, host: "" }
+    }
+    return AccessNeed{ action: ACCESS_WRITE, host: "" }
+}
+
+// The frame a run's client gets while the app waits for the owner.
+type WaitNotice struct {
+    wait:    bool `json:"wait"`
+    message: str  `json:"message"`
+}
+
+fn wait_notice_json(message: str) -> str {
+    return json.stringify(WaitNotice{ wait: true, message: message })
+}
+
+fn is_wait_notice(text: str) -> bool {
+    return text.starts_with("{\"wait\":true")
+}
+
+// Tells the person what the wait is, once.
+fn show_wait(message: str, mut shown: bool) {
+    if !shown {
+        write_stderr(message + "\n")
+        shown = true
+    }
+}
+
+// A refused request, formatted as the command's own error would be.
+fn refused_reply(msg: str, req: ServeRequest) -> ServeReply {
+    capture_begin(req.cwd)
+    code := report_error(msg, req.as_json)
+    (o, e) := capture_end()
+    return ServeReply{ served: true, stdout: o, stderr: e, exit: i64(code) }
+}
+
+fn refused_session_frame(msg: str, req: ServeRequest) -> str {
+    r := refused_reply(msg, req)
+    return relay_frame(TAG_END, json.stringify(SessionEndFrame{ exit: r.exit, stdout: r.stdout, stderr: r.stderr }))
+}
+
 // Commands that cannot run without the vault's key: with no terminal and no
 // --master-stdin they ask Flint to unlock instead.
 fn needs_unlocked_vault(p: ParsedArgs) -> bool {
@@ -236,8 +298,17 @@ fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> S
     conn.send(json.stringify(req), SERVE_SEND_MS) or {
         return not_served()
     }
-    text := conn.recv(SERVE_RUN_MS) or err {
-        return error(coded(ERR_IO, "Flint stopped answering while it ran the command: {error_text_of("{err.message()}")}"))
+    mut text := ""
+    mut shown := false
+    for true {
+        text = conn.recv(SERVE_RUN_MS) or err {
+            return error(coded(ERR_IO, "Flint stopped answering while it ran the command: {error_text_of("{err.message()}")}"))
+        }
+        if !is_wait_notice(text) {
+            break
+        }
+        notice := json.parse[WaitNotice](text) or WaitNotice{ wait: true, message: "" }
+        show_wait(notice.message, mut shown)
     }
     return json.parse[ServeReply](text) or {
         return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
@@ -315,6 +386,7 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
     mut raw := false
     mut input_open := true
     mut last_heard := time.now_ms()
+    mut shown := false
     for true {
         if raw {
             typed := term.term_input(10)
@@ -359,6 +431,8 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
         body := relay_payload(frame)
         if tag == TAG_NOT_SERVED {
             return not_served()
+        } else if tag == TAG_WAIT {
+            show_wait(body, mut shown)
         } else if tag == TAG_STDOUT {
             term.term_output(body)
         } else if tag == TAG_STDERR {
@@ -578,6 +652,16 @@ fn run_served(req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsK
     }
     (o, e) := capture_end()
     return ServeReply{ served: true, stdout: o, stderr: e, exit: i64(code) }
+}
+
+// Whether the app runs this one-exchange request (a checked command it serves).
+fn run_request_servable(req: ServeRequest) -> bool {
+    parsed := parse_cli_args(req.argv)
+    if !parsed.has_value() || !servable(parsed.value()) {
+        return false
+    }
+    p := parsed.value()
+    return check_command(p).has_value() && !wants_help(p)
 }
 
 // Whether the app runs this session request (a checked `connect`, `exec` or `host

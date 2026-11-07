@@ -51,6 +51,11 @@ struct SessionCell {
     std::vector<std::string> relocked;
     std::string lock_after;
     bool quitting = false;
+    // Caller approval (milestone 12): the grants and waiting approvals, as the JSON
+    // of a domain AccessBook. `access_op` is held for a read-modify-write of it; it
+    // is a separate lock so an approval never waits on a running command.
+    std::recursive_mutex access_op;
+    std::string access_json;
 
     void wipe() {
         std::fill(secrets_key.begin(), secrets_key.end(), std::byte{0});

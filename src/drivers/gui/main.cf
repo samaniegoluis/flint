@@ -109,6 +109,14 @@ fn main() {
     app.bind_raw("activity") |params| { return rpc_activity(st) }
     app.bind_raw("unlock_request") |params| { return rpc_unlock_request(st, recents) }
     app.bind_raw("unlock_request_dismiss") |params| { return rpc_unlock_request_dismiss(st) }
+    presence := new_os_presence()
+    app.bind_raw("access_state") |params| { return rpc_access_state(st, presence) }
+    app.bind_raw("access_revoke") |params| { return rpc_access_revoke(params, st, presence, mut app) }
+    // On a worker: Touch ID and polkit block until the person answers.
+    app.bind_async[AccessAnswer]("access_answer") |req| {
+        mut a := app
+        return rpc_access_answer(req, c, store, presence, st, mut a)
+    }
     app.bind_raw("vault_forget_key") |params| { return rpc_vault_forget_key(params, mut store, kc, mut st) }
     app.bind_raw("vault_forget") |params| { return rpc_vault_forget(params, mut store, kc, recents, mut st) }
     app.bind_raw("vault_status") |params| { return rpc_vault_status(mut store, st) }
