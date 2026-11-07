@@ -268,6 +268,8 @@ export type PresenceMethod = 'touchid' | 'device' | 'polkit' | 'password';
 
 export interface AccessState {
   presence: PresenceMethod;
+  /** The core's clock when it answered; deadlines and expiries are on it. */
+  now_ms: number;
   pending: Approval[];
   grants: GrantView[];
 }

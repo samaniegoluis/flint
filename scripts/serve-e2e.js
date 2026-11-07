@@ -43,7 +43,19 @@
       form.dataset.e2eSeen = '1';
       const req = form.querySelector('[data-approval-request]')?.textContent ?? '';
       if (req.includes('timeout-me')) { log('ok   left unanswered: ' + req); continue; }
-      if (req.includes('deny-me')) { form.querySelector('[data-approval-deny]').click(); log('ok   denied: ' + req); continue; }
+      if (req.includes('deny-me')) {
+        // A click beside the window is not an answer, and the countdown runs on the
+        // page's clock (both found in the M12 walkthrough).
+        const left = form.querySelector('[data-approval-countdown]')?.textContent ?? '';
+        document.querySelector('.scrim')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        await sleep(150);
+        const still = document.querySelector('[data-approval]') === form;
+        log((still ? 'ok   ' : 'FAIL ') + 'a click beside the approval window does not deny it');
+        log((/in 0:0[1-9]|in 0:[1-9]\d|in [1-9]:\d\d/.test(left) ? 'ok   ' : 'FAIL ') + 'the countdown shows the time left: ' + left);
+        form.querySelector('[data-approval-deny]').click();
+        log('ok   denied: ' + req);
+        continue;
+      }
       if (!req.includes('scope-me')) {
         form.querySelector('[data-scope-all]').click();
         await sleep(30);

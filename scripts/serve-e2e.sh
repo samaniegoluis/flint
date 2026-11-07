@@ -374,6 +374,8 @@ for _ in $(seq 1 300); do kill -0 "$app_pid" 2>/dev/null || break; sleep 0.1; do
 wait "$app_pid"; app_pid=""
 sed 's/^/app: /' "$tmp/app.log" | grep -E "ok |FAILED|checks passed|e2e:|page text|locks on|vault locked" || true
 check "the window checks passed" 'grep -q "^e2e: pass" "$tmp/app.log"'
+check "a click beside the approval window does not deny it" 'grep -q "ok   a click beside the approval window" "$tmp/app.log" && ! grep -q "FAIL a click beside" "$tmp/app.log"'
+check "the approval countdown shows the time left" 'grep -q "ok   the countdown shows the time left" "$tmp/app.log" && ! grep -q "FAIL the countdown" "$tmp/app.log"'
 check "the socket file is removed when the app quits" '[[ ! -e "$sock" ]]'
 expect 5 "with the app gone, the CLI is on its own again: locked" "" -- host list
 

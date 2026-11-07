@@ -17,6 +17,9 @@ import "../../domain"
 type AccessState struct {
     // How Allow is confirmed: touchid, device, polkit or password.
     presence: str        `json:"presence"`
+    // The core's clock (monotonic, not the wall clock): the page turns deadlines and
+    // expiries into its own time with it.
+    now_ms:   i64        `json:"now_ms"`
     pending:  []Approval `json:"pending"`
     grants:   []GrantView `json:"grants"`
 }
@@ -41,7 +44,7 @@ fn access_state(st: GuiState, store: LockedVaultStore, presence: OsPresence) -> 
     now := time.now_ms()
     book := st.holder.access_book()
     cat := held_catalog(st, store)
-    return AccessState{ presence: presence.presence_method(), pending: waiting_approvals(book, now), grants: grant_views(live_grants(book.grants, now), cat) }
+    return AccessState{ presence: presence.presence_method(), now_ms: now, pending: waiting_approvals(book, now), grants: grant_views(live_grants(book.grants, now), cat) }
 }
 
 // The open vault's catalog, or an empty one when it is locked.
@@ -82,7 +85,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
     // Checked before presence, so a bad form never shows the OS dialog.
     scope := try access_scope_from_names(held_catalog(st, store), req.scope)
     _ := try grant_from_approval(ap, "check", scope, req.read, req.exec, req.write, req.duration, time.now_ms())
-    try confirm_presence(c, store, presence, st.vault_session(), req.password, "allow {ap.label} to use your vault")
+    try confirm_presence(c, store, presence, st.vault_session(), req.password, "let \"{ap.label}\" use the vault {st.vault_session().name}")
     st.holder.access_hold()
     mut book := st.holder.access_book()
     still := find_approval(book, req.id) or ap

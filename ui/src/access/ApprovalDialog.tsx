@@ -33,19 +33,27 @@ export function presenceLabel(m: PresenceMethod): string {
   return 'the master password';
 }
 
+/** The core's times (deadlines, expiries) are on its own clock: this offset turns
+ * them into Date.now() time. Taken when a state arrives. */
+export function clockSkew(s: AccessState): number {
+  return Date.now() - s.now_ms;
+}
+
 /** Keeps the access state in step with the core's events. */
 export function useAccessState(active: boolean) {
-  const [state, setState] = useState<AccessState | null>(null);
-  const refresh = useCallback(() => { api.accessState().then(setState).catch(() => {}); }, []);
+  const [state, setStateRaw] = useState<AccessState | null>(null);
+  const [skew, setSkew] = useState(0);
+  const setState = useCallback((s: AccessState) => { setSkew(clockSkew(s)); setStateRaw(s); }, []);
+  const refresh = useCallback(() => { api.accessState().then(setState).catch(() => {}); }, [setState]);
   useEffect(() => {
-    if (!active) { setState(null); return; }
+    if (!active) { setStateRaw(null); return; }
     refresh();
     const offs = [on('access:request', refresh), on('access:resolved', refresh), on('access:changed', refresh)];
     // Expired grants leave the list without an event.
     const t = window.setInterval(refresh, 15000);
     return () => { offs.forEach((off) => off()); window.clearInterval(t); };
   }, [active, refresh]);
-  return { state, setState, refresh };
+  return { state, setState, refresh, skew };
 }
 
 function groupOf(catalog: Catalog, host: string): string {
@@ -56,10 +64,12 @@ function hostKnown(catalog: Catalog, host: string): boolean {
   return !!host && catalog.hosts.some((h) => h.alias.toLowerCase() === host.toLowerCase());
 }
 
-export function ApprovalDialog({ ap, presence, catalog, onDone }: {
+export function ApprovalDialog({ ap, presence, catalog, skew, onDone }: {
   ap: Approval;
   presence: PresenceMethod;
   catalog: Catalog;
+  /** Date.now() minus the core's clock, which is not the wall clock. */
+  skew: number;
   onDone: (s: AccessState | null) => void;
 }) {
   const host = ap.need.host;
@@ -75,7 +85,7 @@ export function ApprovalDialog({ ap, presence, catalog, onDone }: {
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(t); }, []);
-  const left = Math.max(0, Math.round((ap.deadline_ms - now) / 1000));
+  const left = Math.max(0, Math.round((ap.deadline_ms + skew - now) / 1000));
   const chain = useMemo(() => ap.chain.map((p) => (p.argv0.split('/').pop() || p.exe.split('/').pop() || '?').replace(/^-/, '')).reverse(), [ap.chain]);
 
   const answer = async (allow: boolean) => {
@@ -101,7 +111,7 @@ export function ApprovalDialog({ ap, presence, catalog, onDone }: {
   const covers = (actions[ap.need.action]) && (ap.need.action !== 'write' || scope === 'all');
 
   return (
-    <Modal label="Allow access to the vault" onClose={() => { if (!busy) answer(false); }} width={520} top={96} className="approval">
+    <Modal label="Allow access to the vault" onClose={() => { if (!busy) answer(false); }} width={520} top={96} className="approval" scrimCloses={false}>
       <form data-approval={ap.id} onSubmit={(e) => { e.preventDefault(); answer(true); }}>
         <div className="modal-h">
           <span className="prompt-ic"><Icon name="lock" /></span>
@@ -125,7 +135,7 @@ export function ApprovalDialog({ ap, presence, catalog, onDone }: {
           <div className="field">
             <span className="label">Actions</span>
             {ACTIONS.map((a) => (
-              <label key={a.value} className="check">
+              <label key={a.value} className="check fit">
                 <input type="checkbox" data-action={a.value} checked={actions[a.value]} disabled={a.value === 'write' && scope !== 'all'}
                   onChange={(e) => setActions({ ...actions, [a.value]: e.target.checked })} />
                 <span className="col" style={{ gap: 2 }}><span>{a.label}</span><span className="muted" style={{ fontSize: 'var(--fs-xs)' }}>{a.hint}</span></span>

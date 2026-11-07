@@ -100,7 +100,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
                 ? 'Unlock it to let the command run again; nothing runs until you do.'
                 : 'Close this vault to unlock that one; the sessions here end.'}</span>
               {request.label && request.path === target.path && (
-                <label className="check" data-unlock-allow>
+                <label className="check fit" data-unlock-allow>
                   <input type="checkbox" checked={allowCaller} onChange={(e) => setAllowCaller(e.target.checked)} />
                   <span className="col" style={{ gap: 2 }}>
                     <span>Allow <span className="strong">{request.label}</span> for 1 hour</span>
