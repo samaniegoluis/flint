@@ -700,7 +700,7 @@ class Cmd {
 			}
 			const t = made.token;
 			this.io.err(`Created token '${t.name}' (${tokenAllows(t)} on ${tokenReach(t)}), until ${utcText(t.expiresAt)}.`);
-			this.io.err('Flint shows it this once. Give it to the program as FLINT_TOKEN:');
+			this.io.err('Flint shows it this once, above. Give it to the program in the FLINT_TOKEN environment variable.');
 			this.say(made.secret);
 			return ok;
 		}

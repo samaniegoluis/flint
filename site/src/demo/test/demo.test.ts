@@ -236,7 +236,7 @@ test('token create is approved in Flint, prints the token once, and list and rev
 	assert.match(made.out[0], /^flint_[0-9a-f]{16}_[0-9a-f]{64}$/);
 	assert.ok(made.err.includes('Waiting for approval in Flint (flint, started by Terminal)…'), 'Flint asks for every token');
 	assert.match(made.err.find((l) => l.startsWith('Created')) ?? '', /^Created token 'nightly' \(exec on nas, @prod\), until \d{4}-\d\d-\d\d \d\d:\d\d UTC\.$/);
-	assert.ok(made.err.includes('Flint shows it this once. Give it to the program as FLINT_TOKEN:'));
+	assert.ok(made.err.includes('Flint shows it this once, above. Give it to the program in the FLINT_TOKEN environment variable.'));
 	const list = flint(w, 'token list');
 	assert.match(list.out[0], /^ID\s+NAME\s+ALLOWS\s+REACHES\s+STATUS\s+UNTIL$/);
 	assert.ok(list.out[1].includes('nightly') && list.out[1].includes('active'));

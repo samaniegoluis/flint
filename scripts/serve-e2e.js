@@ -159,6 +159,7 @@
       await check(log2.some((e) => e.action === 'token' && e.outcome === 'allowed' && e.command.includes("'nightly'")), 'and the token created, by name');
       await check(!log2.some((e) => e.action === 'read' && e.outcome === 'allowed'), 'no allowed read is logged');
       await check(log2.some((e) => e.action === 'read' && e.outcome === 'denied' && e.via === 'token'), 'a read refused for a bad token is');
+      await check(viaToken.some((e) => e.outcome === 'denied' && e.command.includes('after-revoke') && e.caller.includes('(token nightly)') && e.token.length > 0), 'a revoked token is still named when refused');
       await check(!log2.some((e) => e.command.includes('flint_')), 'no token text is logged');
       // The view: Settings → Access.
       byText('.rail-btn', 'Settings')?.click();

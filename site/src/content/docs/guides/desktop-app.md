@@ -222,7 +222,7 @@ Settings belong to this machine, not to the vault, and save as you change them.
   them, the vault's **tokens** (**Revoke** ends one; **Show ended** lists the expired
   and revoked ones) and the **activity log**: when, which program or token, the command
   and whether it was allowed, denied or left unanswered, newest first, with **Load
-  more**. Reading is not recorded.
+  more**. Allowed reads are not recorded; refused ones are.
 
 They are kept in `settings.json` in Flint's config folder (`~/Library/Application
 Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults list.

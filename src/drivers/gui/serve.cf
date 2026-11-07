@@ -276,6 +276,12 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         }
         t := check_token_in(c, tokens, req.token, time.unix_seconds()) or err {
             entry.outcome = ACTIVITY_DENIED
+            // A revoked or expired token is still named in the log.
+            known := match_token(c, tokens, req.token)
+            if known.has_value() {
+                entry.token = known.value().id
+                entry.caller = "{entry.caller} (token {known.value().name})"
+            }
             log_activity(st, store, session, entry, mut app)
             return "{err.message()}"
         }

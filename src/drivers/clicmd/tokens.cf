@@ -162,7 +162,7 @@ fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         }
         t := made.token
         write_stderr("Created token '{t.name}' ({token_allows_text(t.read, t.exec, t.write)} on {token_reach_text(t.all, t.groups, t.hosts)}), until {utc_text(t.expires_at)}.\n")
-        write_stderr("Flint shows it this once. Give it to the program as FLINT_TOKEN:\n")
+        write_stderr("Flint shows it this once, above. Give it to the program in the FLINT_TOKEN environment variable.\n")
         say(made.secret)
         return
     }

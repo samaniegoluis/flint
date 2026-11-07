@@ -120,7 +120,7 @@ function ActivitySection() {
     <section data-activity style={{ paddingTop: 'var(--sp-6)' }}>
       <span className="label" style={{ display: 'block', paddingBottom: 'var(--sp-2)' }}>Activity</span>
       <p className="muted" style={{ fontSize: 'var(--fs-xs)', paddingBottom: 'var(--sp-2)' }}>
-        What programs ran or changed through Flint, and what was refused. Reading is not recorded. Kept in the vault, the newest 10,000.
+        What programs ran or changed through Flint, and what was refused. Allowed reads are not recorded. Kept in the vault, the newest 10,000.
       </p>
       {entries.length === 0 && <div className="panel muted" data-no-activity style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>Nothing yet.</div>}
       {entries.length > 0 && (

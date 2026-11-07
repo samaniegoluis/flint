@@ -119,6 +119,8 @@ test "a revoked token is refused and its name can be used again" {
     assert_eq(again.revoked_at, 1100)
     refused := check_token(crypto, tokens, made.secret, 1300)
     assert("{refused.error().message()}".contains("revoked"))
+    // Still matched by its secret, so the log can name it.
+    assert_eq((try match_token(crypto, tokens.tokens, made.secret)).name, "ci")
     _ := try create_token(crypto, store, mut tokens, token_req("ci", [], true, false, false), 1400)
     list := try list_tokens(store, tokens, 1500)
     assert_eq(list.len(), 2)

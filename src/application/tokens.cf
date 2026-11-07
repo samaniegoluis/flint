@@ -123,6 +123,21 @@ fn check_token[C: Crypto, T: TokenStore](crypto: C, tokens: T, text: str, now_s:
 }
 
 fn check_token_in[C: Crypto](crypto: C, all: []Token, text: str, now_s: i64) -> Token! {
+    t := try match_token(crypto, all, text)
+    status := token_status(t, now_s)
+    if status == TOKEN_REVOKED {
+        return error(coded(ERR_DENIED, "the token '{t.name}' was revoked"))
+    }
+    if status == TOKEN_EXPIRED {
+        return error(coded(ERR_DENIED, "the token '{t.name}' has expired; create a new one with `flint token create`"))
+    }
+    return t
+}
+
+// The token `text` names when its secret matches the stored hash (compared in
+// constant time), whether live, revoked or expired: the activity log names it even
+// when it is refused.
+fn match_token[C: Crypto](crypto: C, all: []Token, text: str) -> Token! {
     parts := split_token_text(text)
     if !parts.ok {
         return error(coded(ERR_DENIED, "FLINT_TOKEN is not a Flint token"))
@@ -132,13 +147,6 @@ fn check_token_in[C: Crypto](crypto: C, all: []Token, text: str, now_s: i64) -> 
             want := try token_hash(crypto, parts.id, parts.secret)
             if !crypto.equal([]byte(want), []byte(t.hash)) {
                 return error(coded(ERR_DENIED, "FLINT_TOKEN does not match a token of this vault"))
-            }
-            status := token_status(t, now_s)
-            if status == TOKEN_REVOKED {
-                return error(coded(ERR_DENIED, "the token '{t.name}' was revoked"))
-            }
-            if status == TOKEN_EXPIRED {
-                return error(coded(ERR_DENIED, "the token '{t.name}' has expired; create a new one with `flint token create`"))
             }
             return t
         }
