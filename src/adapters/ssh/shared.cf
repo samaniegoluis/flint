@@ -1,0 +1,235 @@
+package ssh
+
+// SFTP beside a GUI tab's terminal (milestone 17, D-053). A tab's worker connects
+// through a `SharedLink`: an `SshLink` that, once its shell is open, publishes its
+// last hop under the tab's session id (native/flint_files.hpp), and that detaches
+// it before hanging up. The Files view borrows the session from other threads:
+//
+//   borrow_browse     the session's one shared SFTP channel, one request at a time
+//   borrow_transfer   the session with no channel: the transfer opens its own
+//
+// and gives it back when done. Detaching waits until nothing borrows the session,
+// so it is never freed under a request; each request is bounded by the dial
+// timeout (Principle 8), and so is that wait.
+
+// CFIRE-UPSTREAM: CF-026, CF-031
+import cpp "flint_files.hpp" @pkg("flint-native")
+
+import "../../domain"
+
+// An `SshLink` that lends its session to the Files view while its shell runs.
+type SharedLink struct {
+    inner:      SshLink
+    session_id: str
+}
+
+fn new_shared_link(session_id: str) -> SharedLink {
+    return SharedLink{ inner: new_ssh_link(), session_id: session_id }
+}
+
+fn (mut self: SharedLink) link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void! {
+    try self.inner.link_dial(hostname, port, user, timeout_secs, host_key_algos)
+}
+
+fn (self: SharedLink) link_server_key() -> ServerKey! {
+    return self.inner.link_server_key()
+}
+
+fn (mut self: SharedLink) link_auth_key(private_key: str, passphrase: str) -> void! {
+    try self.inner.link_auth_key(private_key, passphrase)
+}
+
+fn (mut self: SharedLink) link_auth_password(password: str) -> void! {
+    try self.inner.link_auth_password(password)
+}
+
+fn (mut self: SharedLink) link_auth_agent() -> void! {
+    try self.inner.link_auth_agent()
+}
+
+// Opens the shell, then lends the session: the Files view can browse it from now on.
+fn (mut self: SharedLink) link_shell_open(term: str, cols: i32, rows: i32, command: str) -> void! {
+    try self.inner.link_shell_open(term, cols, rows, command)
+    conn := try self.inner.last_hop()
+    id := self.session_id
+    timeout := self.inner.timeout_secs
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_files::publish(id, conn.session, conn.lock, timeout);
+    }
+}
+
+fn (mut self: SharedLink) link_exec_start(command: str) -> void! {
+    try self.inner.link_exec_start(command)
+}
+
+fn (mut self: SharedLink) link_exec_open(command: str) -> void! {
+    try self.inner.link_exec_open(command)
+}
+
+fn (mut self: SharedLink) link_channel_eof() -> void! {
+    try self.inner.link_channel_eof()
+}
+
+fn (mut self: SharedLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
+    return self.inner.link_channel_read(timeout_ms)
+}
+
+fn (mut self: SharedLink) link_channel_write(data: str) -> void! {
+    try self.inner.link_channel_write(data)
+}
+
+fn (mut self: SharedLink) link_channel_resize(cols: i32, rows: i32) -> void! {
+    try self.inner.link_channel_resize(cols, rows)
+}
+
+fn (mut self: SharedLink) link_keepalive() -> void! {
+    try self.inner.link_keepalive()
+}
+
+// Takes the session back from the Files view (waiting for its requests), then hangs up.
+fn (mut self: SharedLink) link_hangup() {
+    files_detach(self.session_id)
+    self.inner.link_hangup()
+}
+
+// ---- Borrowing (any thread) ------------------------------------------------------
+
+fn files_detach(session_id: str) {
+    mut idle := true
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        idle = flint_files::detach(session_id);
+    }
+    if !idle {
+        // CFIRE-UPSTREAM: CF-026
+        cpp {
+            std::fprintf(stderr, "flint-gui: a Files request outlived the wait while session %s closed\n", session_id.c_str());
+        }
+    }
+}
+
+// Whether the session `session_id` is lent to the Files view (its shell is open).
+fn files_available(session_id: str) -> bool {
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        ok = flint_files::has(session_id);
+    }
+    return ok
+}
+
+fn borrow_failure(rc: i32, session_id: str) -> str {
+    if rc == 2 {
+        return coded(ERR_NETWORK, "the host is still answering an earlier request; try again")
+    }
+    return coded(ERR_NOT_FOUND, "session '{session_id}' is not connected")
+}
+
+// A link over a borrowed session: the session's last hop with no channel of its
+// own, so nothing here touches the terminal. Never hung up: it does not own the
+// session.
+fn borrowed_link(session: *mut cpp::ssh_session_struct, lock: shared[cpp::std::mutex], timeout_secs: i64, channel: *mut cpp::sftp_session_struct) -> SshLink {
+    mut link := new_ssh_link()
+    mut conn := SshConn{ sock: -1 }
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        conn.session = session;
+        conn.channel = nullptr;
+        conn.lock = lock;
+    }
+    link.hops.push(conn)
+    link.timeout_secs = timeout_secs
+    link.sftp = channel
+    return link
+}
+
+// The session's shared SFTP channel (opened on first use). One browse request at
+// a time per session; give it back with `give_back_browse`, whatever happened.
+fn borrow_browse(session_id: str) -> SshLink! {
+    mut rc: i32 = 0
+    mut session: *mut cpp::ssh_session_struct
+    mut lock: shared[cpp::std::mutex]
+    mut timeout: i64 = 0
+    mut channel: *mut cpp::sftp_session_struct
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        long long t = 0;
+        rc = flint_files::borrow(session_id, true, "", session, lock, t, channel);
+        timeout = t;
+    }
+    if rc != 0 {
+        return error(borrow_failure(rc, session_id))
+    }
+    mut link := borrowed_link(session, lock, timeout, channel)
+    if link.sftp == none {
+        opened := link.sftp_open()
+        if !opened.has_value() {
+            give_back_browse(session_id, link)
+            return error("{opened.error().message()}")
+        }
+    }
+    return link
+}
+
+// Gives the browse channel back. A request that lost the connection drops the
+// channel, so the next one opens a fresh one.
+fn give_back_browse(session_id: str, link: SshLink) {
+    channel := link.sftp
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_files::give_back(session_id, true, "", channel);
+    }
+}
+
+// Like `give_back_browse` after a failure that may have broken the channel.
+fn drop_browse(session_id: str, mut link: SshLink) {
+    link.sftp_close()
+    give_back_browse(session_id, link)
+}
+
+// The session for transfer `transfer_id`, with no SFTP channel yet: the copy opens
+// its own and `give_back_transfer` closes it.
+fn borrow_transfer(session_id: str, transfer_id: str) -> SshLink! {
+    mut rc: i32 = 0
+    mut session: *mut cpp::ssh_session_struct
+    mut lock: shared[cpp::std::mutex]
+    mut timeout: i64 = 0
+    mut channel: *mut cpp::sftp_session_struct
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        long long t = 0;
+        rc = flint_files::borrow(session_id, false, transfer_id, session, lock, t, channel);
+        timeout = t;
+    }
+    if rc != 0 {
+        return error(borrow_failure(rc, session_id))
+    }
+    // `channel` is null here: a literal `none` lowers to std::nullopt (CF-102).
+    return borrowed_link(session, lock, timeout, channel)
+}
+
+fn give_back_transfer(session_id: str, transfer_id: str, mut link: SshLink) {
+    link.sftp_close()
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_files::give_back(session_id, false, transfer_id, nullptr);
+    }
+}
+
+// Asks a running transfer to stop; it removes its partial file on the way out.
+fn files_cancel(transfer_id: str) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_files::cancel(transfer_id);
+    }
+}
+
+fn files_cancelled(transfer_id: str) -> bool {
+    mut c := false
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        c = flint_files::is_cancelled(transfer_id);
+    }
+    return c
+}

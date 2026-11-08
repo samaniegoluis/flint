@@ -179,6 +179,17 @@ fn main() {
     app.bind_raw("session_resize") |params| { return rpc_session_resize(params) }
     app.bind_raw("session_answer") |params| { return rpc_session_answer(params, st) }
     app.bind_raw("session_close") |params| { return rpc_session_close(params, st) }
+    // The Files view (files.cf): each request on its own worker thread.
+    app.bind_async[FilesPathReq]("files_home") |req| { return rpc_files_home(req, st) }
+    app.bind_async[FilesPathReq]("files_list") |req| { return rpc_files_list(req, st) }
+    app.bind_async[FilesRenameReq]("files_rename") |req| { return rpc_files_rename(req, st) }
+    app.bind_async[FilesPathReq]("files_remove") |req| { return rpc_files_remove(req, st) }
+    app.bind_async[FilesPathReq]("files_mkdir") |req| { return rpc_files_mkdir(req, st) }
+    app.bind_async[FilesTransferReq]("files_transfer") |req| { return rpc_files_transfer(req, app, st) }
+    app.bind_raw("files_cancel") |params| {
+        req := try parse_req[FilesIdReq](params)
+        return rpc_files_cancel(req)
+    }
     app.bind_raw("e2e_report") |params| { return rpc_e2e_report(params, mut app) }
     app.bind_raw("e2e_log") |params| { return rpc_e2e_log(params) }
     if e2e {

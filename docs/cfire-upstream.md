@@ -1746,3 +1746,24 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   Milestone 16. No native code.
 - **Ideal:** `{x:.1f}` lowers to `std::format("{:.1f}", x)`, and an interpolation cfire cannot lower is
   a compile error, never a literal.
+
+### CF-102 · bug · `confirmed`: `none` passed for a raw pointer parameter lowers to `std::nullopt`
+- **Repro (43431f2, macOS):** `fn f(p: *mut cpp::sftp_session_struct) -> i64 { ... }` called as `f(none)`
+  fails in clang: "no known conversion from 'const nullopt_t' to 'sftp_session_struct *'". Assigning
+  `none` to a raw pointer field (`self.sftp = none`) and comparing (`p == none`) lower correctly.
+- **Workaround:** pass a pointer variable that native code has set to `nullptr` (`borrow_transfer` in
+  `src/adapters/ssh/shared.cf`). Milestone 17. No new native code.
+- **Ideal:** `none` in an argument position typed as a raw pointer lowers to `nullptr`, as it does in an
+  assignment.
+
+### CF-103 · bug · `confirmed`: a namespaced native function shadows a cfire function of the same name
+- **Repro (43431f2, macOS):** with `import cpp "flint_fs.hpp"` (which declares
+  `flint_fs::remove_path(const std::string&, std::string&)`) anywhere in the build, a call to the cfire
+  use case `remove_path[T: SftpTransport](mut sftp: T, path: str)` from another package lowers to
+  `remove_path(std::string(link), std::string(req.path))`: cfire resolves the call against the
+  native declaration, ignoring its namespace, and casts the arguments to its parameter types. clang
+  then fails with "no matching conversion … from 'SshLink' to 'std::string'".
+- **Workaround:** the use case is named `remove_remote` (`src/application/files.cf`). Milestone 17.
+  No native code.
+- **Ideal:** a qualified C++ name (`flint_fs::remove_path`) is only reachable qualified, and a cfire
+  function is never resolved against a native one.

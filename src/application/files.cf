@@ -30,6 +30,12 @@ fn list_dir[T: SftpTransport](sftp: T, path: str) -> []FileEntry! {
     return sftp.sftp_list(path)
 }
 
+// The absolute form of `path` on the host: "." is the login folder, where the Files
+// view starts.
+fn real_path[T: SftpTransport](sftp: T, path: str) -> str! {
+    return sftp.sftp_realpath(path)
+}
+
 fn stat_path[T: SftpTransport](sftp: T, path: str) -> FileEntry! {
     return sftp.sftp_stat(path)
 }
@@ -46,7 +52,7 @@ fn rename_path[T: SftpTransport](mut sftp: T, from: str, to: str) -> void! {
 
 // Removes a file, or a folder with everything in it: the tree is walked breadth
 // first, its files removed on the way, then its folders deepest first.
-fn remove_path[T: SftpTransport](mut sftp: T, path: str) -> void! {
+fn remove_remote[T: SftpTransport](mut sftp: T, path: str) -> void! {
     entry := try sftp.sftp_stat(path)
     if !entry.is_dir() {
         try sftp.sftp_remove(path, false)
@@ -363,6 +369,13 @@ fn copy_files[T: SftpTransport, L: LocalFiles, K: TransferSink, C: Clock](mut sf
 
 fn open_sftp[T: SftpTransport](mut sftp: T) -> void! {
     try sftp.sftp_open()
+}
+
+// The Files view's transfers (milestone 17): a copy over a session that is already
+// logged in (a tab's), on an SFTP channel of its own.
+fn transfer_files[T: SftpTransport, L: LocalFiles, K: TransferSink, C: Clock](mut sftp: T, mut local: L, mut sink: K, mut clock: C, req: CopyRequest) -> CopyResult! {
+    try sftp.sftp_open()
+    return copy_files(mut sftp, mut local, mut sink, mut clock, req)
 }
 
 // `flint cp`: connects to `req.alias` (verifying and logging in as `exec` does),

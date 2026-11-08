@@ -1,0 +1,154 @@
+package main
+
+// The Files view's RPC handlers (milestone 17): SFTP over the active tab's own
+// session (D-053), borrowed from the tab's worker (adapters/ssh/shared.cf). Each
+// handler runs on its own worker thread (`bind_async`), so a slow host never
+// blocks the window, parses its request, calls one use case and returns the
+// result. Like typing in a tab, none of them runs while the window is locked
+// (D-043); a transfer already running carries on behind the lock screen.
+//
+// A transfer resolves when it ends, with the files and bytes it copied, and
+// reports its progress as "files:transfer" events in between. The page mints the
+// transfer id and subscribes before starting (spec: Streaming is out-of-band).
+
+import "ext:webui"
+import "ext:json"
+import "../../adapters/process"
+import "../../adapters/ssh"
+import "../../adapters/uievents"
+import "../../application"
+import "../../domain"
+
+type FilesPathReq struct {
+    session: str `json:"session"`
+    path:    str `json:"path"`
+}
+
+type FilesRenameReq struct {
+    session: str `json:"session"`
+    from:    str `json:"from"`
+    to:      str `json:"to"`
+}
+
+type FilesTransferReq struct {
+    session:   str  `json:"session"`
+    id:        str  `json:"id"`
+    direction: str  `json:"direction"`
+    local:     str  `json:"local"`
+    remote:    str  `json:"remote"`
+    recursive: bool `json:"recursive"`
+    force:     bool `json:"force"`
+}
+
+type FilesIdReq struct {
+    id: str `json:"id"`
+}
+
+type FilesListReply struct {
+    path:    str         `json:"path"`
+    entries: []FileEntry `json:"entries"`
+}
+
+// Gives the browse channel back: dropped when the request failed on the network,
+// so the next request opens a fresh one.
+fn finish_browse(session: str, link: SshLink, failed: str) {
+    if failed.len() > 0 && error_code_of(failed) == ERR_NETWORK {
+        mut l := link
+        drop_browse(session, mut l)
+        return
+    }
+    give_back_browse(session, link)
+}
+
+// The login folder's absolute path: where the Files view starts.
+fn rpc_files_home(req: FilesPathReq, st: GuiState) -> PathReply! {
+    try st.require_open_window()
+    link := try borrow_browse(req.session)
+    r := real_path(link, ".")
+    if !r.has_value() {
+        msg := "{r.error().message()}"
+        finish_browse(req.session, link, msg)
+        return error(msg)
+    }
+    give_back_browse(req.session, link)
+    return PathReply{ path: r.value() }
+}
+
+// A folder's entries, by absolute path (`files_home` gives the first one).
+fn rpc_files_list(req: FilesPathReq, st: GuiState) -> FilesListReply! {
+    try st.require_open_window()
+    link := try borrow_browse(req.session)
+    r := list_dir(link, req.path)
+    if !r.has_value() {
+        msg := "{r.error().message()}"
+        finish_browse(req.session, link, msg)
+        return error(msg)
+    }
+    give_back_browse(req.session, link)
+    return FilesListReply{ path: req.path, entries: r.value() }
+}
+
+fn rpc_files_rename(req: FilesRenameReq, st: GuiState) -> PathReply! {
+    try st.require_open_window()
+    mut link := try borrow_browse(req.session)
+    r := rename_path(mut link, req.from, req.to)
+    if !r.has_value() {
+        msg := "{r.error().message()}"
+        finish_browse(req.session, link, msg)
+        return error(msg)
+    }
+    give_back_browse(req.session, link)
+    return PathReply{ path: req.to }
+}
+
+// A file, or a folder with everything in it. The page asks first.
+fn rpc_files_remove(req: FilesPathReq, st: GuiState) -> PathReply! {
+    try st.require_open_window()
+    mut link := try borrow_browse(req.session)
+    r := remove_remote(mut link, req.path)
+    if !r.has_value() {
+        msg := "{r.error().message()}"
+        finish_browse(req.session, link, msg)
+        return error(msg)
+    }
+    give_back_browse(req.session, link)
+    return PathReply{ path: req.path }
+}
+
+fn rpc_files_mkdir(req: FilesPathReq, st: GuiState) -> PathReply! {
+    try st.require_open_window()
+    mut link := try borrow_browse(req.session)
+    r := make_dir(mut link, req.path)
+    if !r.has_value() {
+        msg := "{r.error().message()}"
+        finish_browse(req.session, link, msg)
+        return error(msg)
+    }
+    give_back_browse(req.session, link)
+    return PathReply{ path: req.path }
+}
+
+// An upload or a download, on its own SFTP channel over the tab's session. It
+// resolves once the copy ends; "exists" means the page should ask, then retry
+// with `force`.
+fn rpc_files_transfer(req: FilesTransferReq, app: webui.App, st: GuiState) -> CopyResult! {
+    try st.require_open_window()
+    if req.id.len() == 0 {
+        return error(coded(ERR_INVALID, "a transfer needs an id"))
+    }
+    mut link := try borrow_transfer(req.session, req.id)
+    mut local := new_local_fs()
+    mut sink := new_gui_transfer_sink(app, req.session, req.id)
+    mut clock := new_system_clock()
+    copy := CopyRequest{ id: req.id, alias: "", direction: req.direction, local: req.local, remote: req.remote, recursive: req.recursive, force: req.force }
+    r := transfer_files(mut link, mut local, mut sink, mut clock, copy)
+    give_back_transfer(req.session, req.id, mut link)
+    return r
+}
+
+// Asks a running transfer to stop; its promise then fails and its partial file
+// is removed. Allowed behind the lock screen too: stopping takes nothing out.
+fn rpc_files_cancel(req: FilesIdReq) -> str! {
+    files_cancel(req.id)
+    return ok_json()
+}

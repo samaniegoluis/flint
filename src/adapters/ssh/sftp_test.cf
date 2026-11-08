@@ -244,3 +244,113 @@ test "an sftp request to a stalled server fails within the timeout" {
     assert(!r.has_value())
     assert(took < 6000, "the stalled request must end within the 3 s timeout (and a margin)")
 }
+
+// ---- The Files view's shared session (milestone 17) --------------------------------
+
+test "SharedLink satisfies the SshTransport port" {
+    mut link := new_shared_link("t-port")
+    assert(accepts_transport(mut link))
+}
+
+test "a session that was never published cannot be borrowed" {
+    r := borrow_browse("nobody")
+    assert(!r.has_value())
+    assert_eq(error_code_of("{r.error().message()}"), "not_found")
+    assert(!files_available("nobody"))
+}
+
+test "a shared link lends its session once the shell is open, and takes it back on hangup" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    id := "files-{time.now_ms()}"
+    mut link := new_shared_link(id)
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_auth_key(try fs.read_text(key_path), "")
+    assert(!files_available(id))
+    try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
+    assert(files_available(id))
+    // Browsing: the shared channel opens on first use and is kept across borrows.
+    mut b := try borrow_browse(id)
+    home := try b.sftp_realpath(".")
+    give_back_browse(id, b)
+    mut b2 := try borrow_browse(id)
+    assert(b2.sftp != none)
+    entries := try list_files(b2, home)
+    give_back_browse(id, b2)
+    assert(entries >= 0)
+    // A transfer opens its own channel beside the browse one, and the terminal works.
+    dir := scratch_dir("shared")
+    mut t := try borrow_transfer(id, "x1")
+    try t.sftp_open()
+    try t.sftp_mkdir(dir)
+    try t.sftp_file_open(dir + "/a.txt", true, true)
+    try t.sftp_file_write("hello")
+    try t.sftp_file_close()
+    give_back_transfer(id, "x1", mut t)
+    try link.link_channel_write("echo shared-$((40+2))\n")
+    mut got := ""
+    for _ in 0..100 {
+        chunk := link.link_channel_read(50) or ExecChunk{ stdout: "", stderr: "", done: false, exit_code: 0, signal: "" }
+        got = got + chunk.stdout
+        if got.contains("shared-42") {
+            break
+        }
+    }
+    assert(got.contains("shared-42"), "the terminal keeps working beside SFTP")
+    mut c := try borrow_browse(id)
+    st := try c.sftp_stat(dir + "/a.txt")
+    _ := c.sftp_remove(dir + "/a.txt", false)
+    _ := c.sftp_remove(dir, true)
+    give_back_browse(id, c)
+    assert_eq(st.size, 5)
+    // A cancel is seen by the transfer it names.
+    files_cancel("x2")
+    assert(files_cancelled("x2"))
+    link.link_hangup()
+    assert(!files_available(id))
+    r := borrow_transfer(id, "x3")
+    assert(!r.has_value())
+}
+
+fn list_files[T: SftpTransport](t: T, path: str) -> i64! {
+    return i64((try t.sftp_list(path)).len())
+}
+
+test "hangup waits for a request still using the session" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    id := "files-wait-{time.now_ms()}"
+    mut link := new_shared_link(id)
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_auth_key(try fs.read_text(key_path), "")
+    try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
+    mut held := try borrow_browse(id)
+    done_ch := sync.make_channel[i64]()
+    start := time.now_ms()
+    async.scope(workers: 2) |scope| {
+        scope.spawn || {
+            mut h := held
+            // Still in use 300 ms after hangup began: hangup must wait for it.
+            time.sleep_ms(300)
+            ok := h.sftp_stat(".")
+            mut v: i64 = 0
+            if ok.has_value() {
+                v = 1
+            }
+            done_ch.send(v)
+            give_back_browse(id, h)
+        }
+        time.sleep_ms(50)
+        link.link_hangup()
+    }
+    waited := time.now_ms() - start
+    worked := done_ch.recv_timeout(5000) or -1
+    assert_eq(worked, 1)
+    assert(waited >= 300, "hangup returned before the borrowed request finished")
+}

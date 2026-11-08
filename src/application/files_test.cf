@@ -397,12 +397,23 @@ test "downloading the login folder names it from the host" {
     assert(here.tree.has("/w/me"))
 }
 
-test "remove_path removes a folder with everything in it; rename refuses a taken name" {
+test "remove_remote removes a folder with everything in it; rename refuses a taken name" {
     mut host := FakeSftp{ tree: fake_tree([fdir("/d"), ffile("/d/a", "a"), fdir("/d/e"), ffile("/d/e/b", "b"), ffile("/x", "x")]) }
-    try remove_path(mut host, "/d")
+    try remove_remote(mut host, "/d")
     assert(!host.tree.has("/d") && !host.tree.has("/d/e/b"))
     try make_dir(mut host, "/n")
     assert_eq(code_of(rename_path(mut host, "/n", "/x")), ERR_EXISTS)
     try rename_path(mut host, "/n", "/m")
     assert(host.tree.has("/m"))
+}
+
+test "a Files view transfer opens its SFTP channel, then copies" {
+    mut host := FakeSftp{ tree: fake_tree([fdir("/srv")]) }
+    mut here := FakeLocal{ tree: fake_tree([fdir("/w"), ffile("/w/a.txt", "abc")]) }
+    mut sink := quiet_sink()
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    res := try transfer_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/a.txt", "/srv/", false, false))
+    assert_eq(res.bytes, 3)
+    assert_eq(host.tree.data_of("/srv/a.txt"), "abc")
+    assert_eq(try real_path(host, "/srv"), "/srv")
 }
