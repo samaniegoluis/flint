@@ -145,6 +145,62 @@ type TransferProgress struct {
     bytes_done:  i64 `json:"bytes_done"`
 }
 
+// A byte count as people read it: "512 B", "1.5 KB", "12.0 MB" (powers of 1024).
+fn human_bytes(n: i64) -> str {
+    if n < 1024 {
+        return "{n} B"
+    }
+    units: []str = ["KB", "MB", "GB", "TB"]
+    mut value := f64(n) / 1024.0
+    mut u: usize = 0
+    for value >= 1024.0 && u < units.len() - 1 {
+        value = value / 1024.0
+        u += 1
+    }
+    tenths := i64(value * 10.0 + 0.5)
+    unit := units[u]
+    return "{tenths / 10}.{tenths % 10} {unit}"
+}
+
+// The line `flint cp` keeps updating on stderr for the file at hand.
+fn progress_line(p: TransferProgress) -> str {
+    mut pct := ""
+    if p.file_size > 0 {
+        pct = "  {p.file_bytes * 100 / p.file_size}%"
+    }
+    return "{remote_base(p.file)}  {human_bytes(p.file_bytes)} / {human_bytes(p.file_size)}{pct}"
+}
+
+// What the approval window shows for `flint cp` (milestone 16): the direction, the
+// host, the path here (absolute, from the CLI's folder) and the path on the host.
+type CopyAsk struct {
+    direction: str  `json:"direction"`
+    host:      str  `json:"host"`
+    local:     str  `json:"local"`
+    remote:    str  `json:"remote"`
+    recursive: bool `json:"recursive"`
+    force:     bool `json:"force"`
+}
+
+fn no_copy_ask() -> CopyAsk {
+    return CopyAsk{ direction: "", host: "", local: "", remote: "", recursive: false, force: false }
+}
+
+// `path` as seen from folder `cwd`: unchanged when absolute.
+fn absolute_from(cwd: str, path: str) -> str {
+    if path.starts_with("/") || cwd.len() == 0 {
+        return path
+    }
+    if path == "." {
+        return cwd
+    }
+    mut p := path
+    if p.starts_with("./") {
+        p = p.substr(2)
+    }
+    return remote_join(cwd, p)
+}
+
 test "a cp argument names a host only with alias: before any slash" {
     assert(is_remote_arg("web:/etc/app.conf"))
     assert(is_remote_arg("web:"))
@@ -175,4 +231,20 @@ test "remote path helpers" {
     assert_eq(remote_join(".", "a"), "a")
     assert_eq(part_path("/etc/app.conf"), "/etc/.app.conf.flint-part")
     assert_eq(part_path("app.conf"), ".app.conf.flint-part")
+}
+
+test "byte counts and the progress line read as people say them" {
+    assert_eq(human_bytes(0), "0 B")
+    assert_eq(human_bytes(1023), "1023 B")
+    assert_eq(human_bytes(1536), "1.5 KB")
+    assert_eq(human_bytes(12582912), "12.0 MB")
+    p := TransferProgress{ id: "", file: "/etc/app.conf", file_bytes: 512, file_size: 2048, files_done: 0, bytes_done: 512 }
+    assert_eq(progress_line(p), "app.conf  512 B / 2.0 KB  25%")
+}
+
+test "a local path is shown from the CLI's folder" {
+    assert_eq(absolute_from("/home/me", "."), "/home/me")
+    assert_eq(absolute_from("/home/me", "./a.conf"), "/home/me/a.conf")
+    assert_eq(absolute_from("/home/me", "site/"), "/home/me/site/")
+    assert_eq(absolute_from("/home/me", "/etc/x"), "/etc/x")
 }

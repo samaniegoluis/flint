@@ -43,7 +43,7 @@ import "../../adapters/vault"
 import "../../application"
 import "../../domain"
 
-SERVE_PROTOCOL: i64 = 6
+SERVE_PROTOCOL: i64 = 7
 
 // Connecting, and sending a request or a reply (Principle 8).
 SERVE_CONNECT_MS: i32 = 1000
@@ -168,6 +168,10 @@ fn access_need(p: ParsedArgs) -> AccessNeed {
     if noun == "connect" || noun == "exec" {
         return AccessNeed{ action: ACCESS_EXEC, host: p.positional(1) }
     }
+    // Reading or writing a host's files has the power of a command there (D-051).
+    if noun == "cp" {
+        return AccessNeed{ action: ACCESS_EXEC, host: cp_alias(p) }
+    }
     if noun == "host" && verb == "test" {
         return AccessNeed{ action: ACCESS_EXEC, host: p.positional(2) }
     }
@@ -226,7 +230,7 @@ fn needs_unlocked_vault(p: ParsedArgs) -> bool {
     if noun == "vault" {
         return p.positional(1) == "rename"
     }
-    return noun == "group" || noun == "host" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "import" || noun == "token" || noun == "connect" || noun == "exec"
+    return noun == "group" || noun == "host" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "import" || noun == "token" || noun == "connect" || noun == "exec" || noun == "cp"
 }
 
 // The command as Flint's unlock screen and approval window name it, on one line of
@@ -239,6 +243,22 @@ fn caller_summary(p: ParsedArgs) -> str {
 // words before any flag, and for `exec` the remote command, uncut. Never a flag's
 // value; secrets are never in argv anyway (D-018).
 fn caller_command(p: ParsedArgs) -> str {
+    if p.positional(0) == "cp" {
+        // `-r` and `--force` take no value and change what is copied: they are shown.
+        mut c := "flint cp"
+        if p.has_flag("-r") || p.has_flag("--recursive") {
+            c = c + " -r"
+        }
+        if p.has_flag("--force") {
+            c = c + " --force"
+        }
+        for i, w in p.positionals {
+            if i > 0 {
+                c = c + " " + w
+            }
+        }
+        return c
+    }
     mut s := "flint"
     for w in p.positionals {
         s = s + " " + w
@@ -412,6 +432,10 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
         return not_served()
     }
     prompter := new_tty_prompter()
+    // `cp` only: the app asks this process to read and write this machine's files.
+    serves_files := p.positional(0) == "cp"
+    mut local := new_local_fs()
+    mut progress := new_stderr_transfer_sink(as_json)
     wait_ms := session_wait_ms(p)
     mut raw := false
     mut input_open := true
@@ -473,6 +497,16 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
         } else if tag == TAG_RAW_LEAVE {
             term.term_raw_leave()
             raw = false
+        } else if tag == TAG_FILE_OP && serves_files {
+            conn.send(serve_file_op(mut local, body), SERVE_SEND_MS) or {
+                return error(coded(ERR_IO, "Flint went away during the copy"))
+            }
+            last_heard = time.now_ms()
+        } else if tag == TAG_PROGRESS && serves_files {
+            pr := json.parse[TransferProgress](body)
+            if pr.has_value() {
+                progress.transfer_progress(pr.value())
+            }
         } else if tag == TAG_PROMPT {
             answer := answer_relayed_prompt(prompter, body)
             conn.send(relay_frame(TAG_ANSWER, json.stringify(answer)), SERVE_SEND_MS) or {}
@@ -488,6 +522,80 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
         }
     }
     return not_served()
+}
+
+// Runs one file request of the app on this machine's files and returns the answer
+// frame (milestone 16). An error travels back as its coded message.
+fn serve_file_op(mut local: LocalFs, payload: str) -> str {
+    mut reply := RelayFileReply{ ok: true, err: "", entry: empty_file_entry(), entries: [] }
+    parsed := parse_file_op(payload)
+    if !parsed.has_value() {
+        reply.ok = false
+        reply.err = "{parsed.error().message()}"
+        return file_reply_frame(reply, "")
+    }
+    (op, data) := parsed.value()
+    mut bytes := ""
+    mut failure := ""
+    if op.op == "stat" {
+        r := local.local_stat(op.path)
+        if r.has_value() {
+            reply.entry = r.value()
+        } else {
+            failure = "{r.error().message()}"
+        }
+    } else if op.op == "list" {
+        r := local.local_list(op.path)
+        if r.has_value() {
+            reply.entries = r.value()
+        } else {
+            failure = "{r.error().message()}"
+        }
+    } else if op.op == "open" {
+        r := local.local_file_open(op.path, op.write, op.exclusive)
+        if !r.has_value() {
+            failure = "{r.error().message()}"
+        }
+    } else if op.op == "read" {
+        r := local.local_file_read()
+        if r.has_value() {
+            bytes = r.value()
+        } else {
+            failure = "{r.error().message()}"
+        }
+    } else if op.op == "write" {
+        r := local.local_file_write(data)
+        if !r.has_value() {
+            failure = "{r.error().message()}"
+        }
+    } else if op.op == "close" {
+        r := local.local_file_close()
+        if !r.has_value() {
+            failure = "{r.error().message()}"
+        }
+    } else if op.op == "rename" {
+        r := local.local_rename(op.path, op.to)
+        if !r.has_value() {
+            failure = "{r.error().message()}"
+        }
+    } else if op.op == "remove" {
+        r := local.local_remove(op.path)
+        if !r.has_value() {
+            failure = "{r.error().message()}"
+        }
+    } else if op.op == "mkdir" {
+        r := local.local_mkdir(op.path)
+        if !r.has_value() {
+            failure = "{r.error().message()}"
+        }
+    } else {
+        failure = coded(ERR_UNSUPPORTED, "Flint asked for a file operation this flint does not know ({op.op})")
+    }
+    if failure.len() > 0 {
+        reply.ok = false
+        reply.err = failure
+    }
+    return file_reply_frame(reply, bytes)
 }
 
 // A second launch of the desktop app asks the Flint already running to show its
@@ -740,6 +848,8 @@ fn run_served_session(conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Lo
     mut term := new_socket_terminal(link)
     mut sink := new_socket_exec_sink(link)
     prompter := new_socket_prompter(link)
+    mut local := new_socket_local_files(link)
+    mut progress := new_socket_transfer_sink(link)
     mut term_name := req.term
     if term_name.len() == 0 {
         term_name = "xterm-256color"
@@ -747,7 +857,7 @@ fn run_served_session(conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Lo
     capture_begin(req.cwd)
     mut sec := served_secrets(req)
     sec.sudo_typed = sudo_typed
-    status := run_session_command(p, sec, req.as_json, c, mut store, served_vault_source(kc, session), recents, mut term, prompter, mut sink, term_name)
+    status := run_session_command(p, sec, req.as_json, c, mut store, served_vault_source(kc, session), recents, mut term, prompter, mut sink, mut local, mut progress, term_name)
     mut code: i32 = 0
     if status.has_value() {
         code = status.value()

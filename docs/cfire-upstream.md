@@ -1735,3 +1735,14 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   cfire does not check a generic body's calls against its constraints, only the instantiation (C++
   concepts), so the second interface is never stated where it is used.
 - **Ideal:** `T: A + B` (Rust) or interface embedding (Go), checked in the body.
+
+### CF-101 · bug · `confirmed`: a precision spec (`{x:.1f}`) breaks interpolation
+- **Repro (43431f2, macOS):** `value := 1.5` then `return "{value:.1f} {units[u]}"` returns the literal
+  text `{value:.1f} {units[u]}`, uninterpolated, with no diagnostic. In `println("a: {value:.1f}")` the same
+  spec fails in clang instead ("call to consteval function std::basic_format_string … The argument
+  index starts with an invalid character"). The rules sheet shows `{mask:04x}`, so format specs are
+  meant to work.
+- **Workaround:** `human_bytes` in `src/domain/files.cf` rounds to tenths with integer arithmetic.
+  Milestone 16. No native code.
+- **Ideal:** `{x:.1f}` lowers to `std::format("{:.1f}", x)`, and an interpolation cfire cannot lower is
+  a compile error, never a literal.

@@ -121,6 +121,20 @@ command runs with no terminal; its output and exit status come back as with `exe
 It runs only through Flint, approved one command at a time; with Flint closed or the
 vault locked it fails with `locked`. See [sudo](/guides/ai-agents/#sudo).
 
+### Files
+
+| Command | What it does |
+|---|---|
+| `cp <local path> <alias>:<path>` | Copy to the host: into `<path>` when it is a folder, else to that name |
+| `cp <alias>:<path> <local path>` | Copy from the host. `<alias>:` alone is the login folder |
+
+`-r` (or `--recursive`) copies a folder and everything in it, merging into a folder that
+is already there. `--force` replaces an existing file, which is otherwise refused with
+`exists`. `--timeout` and `--accept-new-host-key` work as for `exec`. Progress goes to
+stderr when it is a terminal. With `--json`, `cp` prints `{host, direction, files:
+[{source, target, bytes}], folders, bytes, skipped, duration_ms}`. Through Flint it needs
+a grant that runs commands on that host. See [Copying files](/guides/files/).
+
 ### Import
 
 | Command | What it does |
@@ -224,6 +238,9 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 16 | `approval_timeout` | Nobody answered Flint's approval window within two minutes |
 | 17 | `not_sudoer` | `exec --sudo`: the host's login user may not use `sudo` |
 | 18 | `sudo_password` | `exec --sudo`: sudo refused the password Flint typed, or Flint has none for that host |
+| 19 | `permission_denied` | `cp`: the user may not read that file or write in that folder, here or on the host |
+| 20 | `exists` | `cp`: the file is already there; `--force` replaces it |
+| 21 | `not_a_directory` | `cp`: a path that has to be a folder is a file |
 
 The codes are stable: scripts can rely on them.
 

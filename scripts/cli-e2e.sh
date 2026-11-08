@@ -485,6 +485,53 @@ if [[ -n "${FLINT_TEST_PW_PORT:-}" ]]; then
   check "the auth error names the host password, not its value" '[[ "$err" == *"host password"* && "$err" != *"wrong-password"* ]]'
 fi
 
+echo "== files: flint cp (milestone 16)"
+cpd="$tmp/cp"; rem="$cpd/remote"; loc="$cpd/local"
+mkdir -p "$rem" "$loc/site/css"
+printf 'port=8080\n' > "$loc/app.conf"
+head -c 1048577 /dev/urandom > "$loc/blob.bin"
+printf '<h1>hi</h1>\n' > "$loc/site/index.html"
+printf 'body{}\n' > "$loc/site/css/a.css"
+expect 0 "cp uploads a file into a folder" "$SMI" -- cp "$loc/app.conf" "local:$rem/" "${SM[@]}"
+check "the host has the file" 'cmp -s "$loc/app.conf" "$rem/app.conf"'
+check "the summary names the target" '[[ "$out" == "Copied 1 file (10 B) to local:$rem/app.conf in "* ]]'
+expect 0 "cp --json uploads a 1 MB binary file" "$SMI" -- --json cp "$loc/blob.bin" "local:$rem/blob.bin" "${SM[@]}"
+check "the binary file arrived byte for byte" 'cmp -s "$loc/blob.bin" "$rem/blob.bin"'
+check "--json reports direction, target and bytes" '[[ "$(echo "$out" | json_get "d[\"direction\"], d[\"files\"][0][\"target\"], d[\"bytes\"]")" == "('"'"'upload'"'"', '"'"'$rem/blob.bin'"'"', 1048577)" ]]'
+check "no progress on a stderr that is not a terminal" '[[ -z "$err" ]]'
+expect 20 "an existing file is refused with exists" "$SMI" -- --json cp "$loc/app.conf" "local:$rem/" "${SM[@]}"
+check "as a JSON error with its code" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "exists" ]]'
+printf 'port=9090\n' > "$loc/app.conf"
+expect 0 "--force replaces it" "$SMI" -- cp --force "$loc/app.conf" "local:$rem/" "${SM[@]}"
+check "the host has the new content" 'cmp -s "$loc/app.conf" "$rem/app.conf"'
+expect 7 "a folder without -r is invalid" "$SMI" -- cp "$loc/site" "local:$rem/" "${SM[@]}"
+expect 0 "cp -r uploads a folder" "$SMI" -- --json cp -r "$loc/site" "local:$rem/" "${SM[@]}"
+check "the tree arrived" 'diff -r "$loc/site" "$rem/site" >/dev/null'
+check "--json counts 2 files and 2 folders" '[[ "$(echo "$out" | json_get "len(d[\"files\"]), d[\"folders\"]")" == "(2, 2)" ]]'
+expect 0 "cp downloads a file to a new name" "$SMI" -- cp "local:$rem/blob.bin" "$loc/back.bin" "${SM[@]}"
+check "the download is byte for byte" 'cmp -s "$loc/blob.bin" "$loc/back.bin"'
+mkdir -p "$loc/dl"
+expect 0 "cp -r downloads a folder into a local folder" "$SMI" -- cp -r "local:$rem/site" "$loc/dl" "${SM[@]}"
+check "the tree came back" 'diff -r "$loc/site" "$loc/dl/site" >/dev/null'
+pushd "$loc/dl" >/dev/null
+expect 0 "a relative local path is the current folder's" "$SMI" -- cp "local:$rem/app.conf" . "${SM[@]}"
+popd >/dev/null
+check "it landed in the current folder" 'cmp -s "$rem/app.conf" "$loc/dl/app.conf"'
+expect 0 "cp through a jump host" "$SMI" -- cp "$loc/app.conf" "inner:$rem/via-jump.conf" "${SM[@]}"
+check "the jump copy arrived" 'cmp -s "$loc/app.conf" "$rem/via-jump.conf"'
+expect 3 "a missing remote file is not_found" "$SMI" -- cp "local:$rem/nope" "$loc/" "${SM[@]}"
+expect 3 "a missing local file is not_found" "$SMI" -- cp "$loc/nope" "local:$rem/" "${SM[@]}"
+expect 3 "a missing remote folder is not_found" "$SMI" -- cp "$loc/app.conf" "local:$rem/no/such/" "${SM[@]}"
+expect 21 "a file as the folder is not_a_directory" "$SMI" -- cp "$loc/app.conf" "local:$rem/app.conf/x" "${SM[@]}"
+mkdir -p "$rem/locked"; chmod 000 "$rem/locked"
+expect 19 "a folder the user cannot write is permission_denied" "$SMI" -- cp "$loc/app.conf" "local:$rem/locked/" "${SM[@]}"
+chmod 755 "$rem/locked"
+expect 2 "two hosts is a usage error" "$SMI" -- cp "local:/a" "inner:/b" "${SM[@]}"
+expect 2 "no host is a usage error" "$SMI" -- cp "$loc/a" "$loc/b" "${SM[@]}"
+expect 2 "cp with one path is a usage error" "$SMI" -- cp "$loc/a" "${SM[@]}"
+expect 3 "an unknown alias is not_found" "$SMI" -- cp "$loc/app.conf" "nohost:/tmp/" "${SM[@]}"
+check "no partial file is left anywhere" '[[ -z "$(find "$cpd" -name "*.flint-part")" ]]'
+
 echo "== tokens, with the CLI on its own (milestone 12b)"
 expect 0 "token list on a vault with none" "$SMI" -- token list "${SM[@]}"
 check "it says there are none" '[[ "$out" == "No tokens."* ]]'

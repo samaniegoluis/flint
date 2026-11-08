@@ -59,7 +59,7 @@ command, and lets you choose:
 | | |
 |---|---|
 | **Hosts** | The host the command runs on, its group, or the whole vault |
-| **Actions** | **Read** (list and show; never a secret), **Run commands** (`exec`, `connect`, `host test` on the hosts chosen), **Change the vault** (add, edit, remove; needs the whole vault) |
+| **Actions** | **Read** (list and show; never a secret), **Run commands** (`exec`, `connect`, `host test` and `cp` on the hosts chosen), **Change the vault** (add, edit, remove; needs the whole vault) |
 | **Duration** | 15 minutes, 1 hour, 4 hours, or until the vault locks |
 
 **Allow** asks you to prove you are at the machine: Touch ID or your Mac's password on
@@ -86,6 +86,9 @@ keys or `ssh` directly.
 - Run a command: `flint --json exec <alias> -- '<command>'`. Quote the whole remote
   command: the remote shell parses it.
 - Long jobs: add `--exec-timeout <secs>` (default 600).
+- Copy files: `flint --json cp ./file <alias>:/path/` or `flint --json cp <alias>:/path ./`
+  (`-r` for a folder). Never `exec cat` or a heredoc. Exit 20 (`exists`): the file is
+  there; ask me before passing `--force`.
 - Exit code 5 (`locked`): Flint is asking me to unlock it; wait for me, then retry.
   15 (`denied`) or 16 (`approval_timeout`): I did not approve it in Flint; ask me first.
   11 (`host_key`): ask me to check the server's key. Never pass `--accept-new-host-key`.
@@ -103,6 +106,7 @@ keys or `ssh` directly.
 | `flint --json host show <alias>` | One host, with `has_password` instead of the password |
 | `flint --json exec <alias> -- '<cmd>'` | `{host, exit_code, signal, stdout, stderr, duration_ms}` |
 | `flint --json exec <alias> --sudo -- <cmd> [args]` | The same, run as root once you allow that exact command in Flint |
+| `flint --json cp [-r] <src> <dst>` | Copies a file or folder to or from one host: `{host, direction, files, folders, bytes, skipped, duration_ms}` |
 | `flint --json known-host list` | The server keys Flint has recorded |
 
 Everything after `--` is joined with spaces and parsed by the **remote** shell, like `ssh`.
@@ -137,6 +141,9 @@ command's own failure comes as the usual object on stdout with its `exit_code`.
 | 16 | `approval_timeout` | Nobody answered Flint's window within two minutes |
 | 17 | `not_sudoer` | The host's login user may not use `sudo` |
 | 18 | `sudo_password` | sudo refused the password Flint typed, or Flint has none for that host |
+| 19 | `permission_denied` | `cp`: the host's user may not read or write there |
+| 20 | `exists` | `cp`: the file is already there. Ask before `--force` |
+| 21 | `not_a_directory` | `cp`: a path that must be a folder is a file |
 
 The full list is in the [CLI reference](/reference/cli/#output-and-errors).
 

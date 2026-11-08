@@ -354,6 +354,13 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     ap.deadline_ms = now + approval_wait_ms()
     ap.token = ask
     ap.sudo = sudo
+    if parsed.positional(0) == "cp" {
+        creq := copy_request_from_args(parsed)
+        if creq.has_value() {
+            r := creq.value()
+            ap.copy = CopyAsk{ direction: r.direction, host: r.alias, local: absolute_from(req.cwd, r.local), remote: r.remote, recursive: r.recursive, force: r.force }
+        }
+    }
     st.holder.access_hold()
     mut book := st.holder.access_book()
     book.pending.push(ap)

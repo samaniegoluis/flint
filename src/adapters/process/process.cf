@@ -300,3 +300,49 @@ fn new_system_clock() -> SystemClock {
 fn (mut self: SystemClock) clock_now_ms() -> i64 {
     return time.now_ms()
 }
+
+// Whether stderr is a terminal (progress is drawn only there). False while a served
+// command's output is captured.
+fn stderr_is_terminal() -> bool {
+    mut tty := false
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        tty = !flint_proc::capturing() && isatty(STDERR_FILENO) == 1;
+    }
+    return tty
+}
+
+// Draws a copy's progress on stderr (milestone 16): one line per file, redrawn in
+// place at most ten times a second and ended once the file is complete. Silent when
+// stderr is not a terminal, or with --json.
+type StderrTransferSink struct {
+    on: bool
+    last_ms: i64
+    files_done: i64
+}
+
+fn new_stderr_transfer_sink(as_json: bool) -> StderrTransferSink {
+    return StderrTransferSink{ on: !as_json && stderr_is_terminal(), last_ms: 0, files_done: 0 }
+}
+
+fn (mut self: StderrTransferSink) transfer_progress(p: TransferProgress) {
+    if !self.on {
+        return
+    }
+    now := time.now_ms()
+    finished := p.files_done > self.files_done
+    if !finished && p.file_bytes > 0 && p.file_bytes < p.file_size && now - self.last_ms < 100 {
+        return
+    }
+    self.last_ms = now
+    mut line := "\r" + progress_line(p) + "\x1b[K"
+    if finished {
+        self.files_done = p.files_done
+        line = line + "\n"
+    }
+    write_stderr(line)
+}
+
+fn (self: StderrTransferSink) transfer_cancelled() -> bool {
+    return false
+}

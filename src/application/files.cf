@@ -44,21 +44,32 @@ fn rename_path[T: SftpTransport](mut sftp: T, from: str, to: str) -> void! {
     try sftp.sftp_rename(from, to)
 }
 
-// Removes a file, or a folder with everything in it.
+// Removes a file, or a folder with everything in it: the tree is walked breadth
+// first, its files removed on the way, then its folders deepest first.
 fn remove_path[T: SftpTransport](mut sftp: T, path: str) -> void! {
     entry := try sftp.sftp_stat(path)
     if !entry.is_dir() {
         try sftp.sftp_remove(path, false)
         return
     }
-    for e in try sftp.sftp_list(path) {
-        if e.is_dir() {
-            try remove_path(mut sftp, e.path)
-        } else {
-            try sftp.sftp_remove(e.path, false)
+    mut folders: []str = [path]
+    mut i: usize = 0
+    for i < folders.len() {
+        dir := folders[i]
+        i += 1
+        for e in try sftp.sftp_list(dir) {
+            if e.is_dir() {
+                folders.push(e.path)
+            } else {
+                try sftp.sftp_remove(e.path, false)
+            }
         }
     }
-    try sftp.sftp_remove(path, true)
+    mut k := folders.len()
+    for k > 0 {
+        k -= 1
+        try sftp.sftp_remove(folders[k], true)
+    }
 }
 
 fn make_dir[T: SftpTransport](mut sftp: T, path: str) -> void! {
