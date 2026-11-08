@@ -239,7 +239,9 @@ function ActivitySection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
         <div className="col" role="list" aria-label="Activity">
           <div className="act-row head" aria-hidden="true"><span>When</span><span>Caller</span><span>Command</span><span>Result</span></div>
           {entries.map((e) => (
-            <button key={e.id} type="button" role="listitem" aria-haspopup="dialog" aria-label={`${OUTCOME[e.outcome].text}: ${e.command.slice(0, 80)}`}
+            // tabIndex: WebKit on macOS skips buttons on Tab unless keyboard navigation
+            // is on in System Settings; an explicit tabindex keeps the rows reachable.
+            <button key={e.id} type="button" role="listitem" aria-haspopup="dialog" tabIndex={0} aria-label={`${OUTCOME[e.outcome].text}: ${e.command.slice(0, 80)}`}
               className={e.action === 'sudo' ? 'act-row sudo' : 'act-row'} data-activity-entry={e.outcome} data-activity-via={e.via}
               onClick={() => setOpen(e)} onKeyDown={(k) => { if (k.key === 'Enter') { k.preventDefault(); setOpen(e); } }}>
               <span className="when" title={`${exactWhen(e.at).time} ${exactWhen(e.at).offset}`}>{shortWhen(e.at)}</span>
