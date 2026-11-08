@@ -19,6 +19,9 @@ export const ERROR_CODES = [
 	'approval_timeout',
 	'not_sudoer',
 	'sudo_password',
+	'permission_denied',
+	'exists',
+	'not_a_directory',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

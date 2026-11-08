@@ -223,6 +223,11 @@ and **Show full command** opens all of it (up to 16 KB) in a scrolling panel wit
 Viewing it asks for no Touch ID or password. What the window shows is read from the
 arguments Flint will run, not from words the program sends.
 
+`flint cp` is a request to run commands on that host (reading or writing its files has
+that power), and the window says so: **wants to copy files to** (or **from**) the host,
+with the path on this computer, the path on the host, whether it is a folder and whether
+`--force` replaces files. See [Copying files](/guides/files/).
+
 `flint token create` brings up the same window showing the token instead: its name, what
 it allows, which hosts and when it expires. **Allow** (with presence) creates that one
 token; it never becomes a grant, so the next `token create` asks again. See

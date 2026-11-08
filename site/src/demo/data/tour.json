@@ -51,6 +51,17 @@
 		},
 		{
 			"hint": [
+				"Copy a file to a server: the same login, over SFTP, with no key on disk. A folder",
+				"needs -r, and an existing file needs --force:"
+			],
+			"run": "flint cp ./app.conf web-01:app/",
+			"accept": [
+				"flint cp"
+			],
+			"where": "local"
+		},
+		{
+			"hint": [
 				"Open a shell on db. Flint goes through bastion for you:"
 			],
 			"run": "flint connect db",

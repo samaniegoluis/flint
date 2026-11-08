@@ -40,6 +40,19 @@ export class RemoteShell {
 		if (this.home === '/root') this.dirs.delete('/home/root');
 	}
 
+	/** A path as SFTP sees it (relative to the login folder): a file, a folder or nothing. */
+	entry(arg: string): { path: string; kind: 'file' | 'dir'; size: number } | null {
+		const p = this.resolve(arg === '' ? '.' : arg);
+		if (this.dirs.has(p)) return { path: p, kind: 'dir', size: 4096 };
+		if (this.files.has(p)) return { path: p, kind: 'file', size: (this.files.get(p) as string).length };
+		return null;
+	}
+
+	/** A folder's entries, for `flint cp -r`. */
+	entries(dir: string): { name: string; isDir: boolean }[] {
+		return this.children(this.resolve(dir));
+	}
+
 	/** The prompt, with `~` for the home folder. */
 	prompt(): string {
 		return `${this.user}@${this.shortHost()}:${this.tilde(this.cwd)}$ `;

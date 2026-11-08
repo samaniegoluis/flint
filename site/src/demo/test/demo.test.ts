@@ -298,6 +298,28 @@ test('exec asks to trust an unknown server key, then runs the command', () => {
 	assert.equal(j.out[0], '{"host":"web-01","exit_code":1,"signal":"","stdout":"","stderr":"cat: nope: No such file or directory\\n","duration_ms":214}');
 });
 
+test('cp copies to and from a host as the CLI places files, with its errors and JSON', () => {
+	const w = allowed();
+	const up = flint(w, 'cp ./app.conf web-01:app/ --accept-new-host-key');
+	assert.equal(up.code, 0);
+	assert.deepEqual(up.out, ['Copied 1 file (20 B) to web-01:app/app.conf in 220 ms.']);
+	assert.ok(up.notes.some((n) => n.includes('copies nothing')));
+	const j = flint(w, 'cp --json -r ./site web-01:/tmp/');
+	assert.equal(j.out[0], '{"host":"web-01","direction":"upload","files":[{"source":"./site/css/site.css","target":"/tmp/site/css/site.css","bytes":34},{"source":"./site/index.html","target":"/tmp/site/index.html","bytes":18}],"folders":2,"bytes":52,"skipped":[],"duration_ms":260}');
+	const down = flint(w, 'cp web-01:/var/log/syslog .');
+	assert.deepEqual([down.code, down.out[0].startsWith('Copied 1 file (') && down.out[0].endsWith(' to syslog in 220 ms.')], [0, true]);
+	assert.equal(flint(w, 'cp web-01:notes.txt ./app.conf').code, 20, 'an existing file needs --force');
+	assert.equal(flint(w, 'cp --force web-01:notes.txt ./app.conf').code, 0);
+	assert.equal(flint(w, 'cp ./site web-01:/tmp/').code, 7, 'a folder needs -r');
+	assert.equal(flint(w, 'cp ./nope web-01:/tmp/').code, 3);
+	assert.equal(flint(w, 'cp ./app.conf web-01:/etc/hostname/x').code, 21);
+	assert.equal(flint(w, 'cp web-01:/a db:/b').code, 2);
+	assert.equal(flint(w, 'cp ./a ./b').code, 2);
+	assert.equal(flint(w, 'cp ./app.conf ghost:/tmp/').code, 3);
+	const e = flint(w, 'cp ./app.conf web-01:notes.txt --json');
+	assert.deepEqual(e.err, ['{"error":{"code":"exists","message":"notes.txt on the host already exists; pass --force to replace it"}}']);
+});
+
 test('a host with no user is refused, as connect.cf does', () => {
 	const w = worldFromSeed(seed);
 	flint(w, 'host add bare --hostname 198.51.100.4');
@@ -328,12 +350,12 @@ test('the tour runs end to end on its suggested commands', () => {
 		const run = TOUR_STEPS[i].run;
 		assert.ok(s.chips().includes(run), `step ${i + 1}: its command is not offered as a chip`);
 		s.submit(run);
-		if (i === 3 || i === 4) s.submit('yes'); // trust web-01, then db
-		if (i === 4) {
+		if (i === 3 || i === 5) s.submit('yes'); // trust web-01, then db
+		if (i === 5) {
 			s.submit('ls');
 			s.submit('cat notes.txt');
 		}
-		if (i === 6) s.submit('pw-typed-in-the-demo');
+		if (i === 7) s.submit('pw-typed-in-the-demo');
 	}
 	assert.equal(s.tourStep, null);
 	const all = text().join('\n');
@@ -399,7 +421,7 @@ test('the shell tokenizer refuses pipes and keeps quotes', () => {
 
 test('the guide always says what to do, with the exact command', () => {
 	const { s, text } = session();
-	assert.deepEqual(s.guide(), { text: 'Step 1/12 · Every command, on one screen:', command: 'flint help' });
+	assert.deepEqual(s.guide(), { text: 'Step 1/13 · Every command, on one screen:', command: 'flint help' });
 	assert.ok(text().includes('#   flint help'), 'the step hint in the log carries its command');
 	s.submit('flint');
 	assert.equal(s.tourStep, 1, '`flint` alone shows the help, so it completes step 1');
