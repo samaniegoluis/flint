@@ -76,7 +76,7 @@ function tokenUntil(t: TokenView, nowSecs: number): string {
 const OUTCOME: Record<ActivityEntry['outcome'], { text: string; tone: string }> = {
   allowed: { text: 'Allowed', tone: 'ok' }, denied: { text: 'Denied', tone: 'danger' }, timeout: { text: 'Timed out', tone: 'danger' },
 };
-const VIA: Record<ActivityEntry['via'], string> = { grant: 'grant', token: 'token', window: 'asked' };
+const VIA: Record<ActivityEntry['via'], string> = { grant: 'via a grant', token: 'via token', window: 'asked you' };
 const PAGE = 200;
 
 function TokensSection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
@@ -165,9 +165,12 @@ function ActivitySection() {
           {entries.map((e) => (
             <div key={e.id} role="row" className={e.action === 'sudo' ? 'act-row sudo' : 'act-row'} data-activity-entry={e.outcome} data-activity-via={e.via}>
               <span className="when" title={new Date(e.at * 1000).toLocaleString()}>{shortWhen(e.at)}</span>
-              <span className="caller row" style={{ gap: 6 }}>
-                <Icon name="agent" size="xs" /><span className="trunc">{e.caller}</span>
-                <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>· {VIA[e.via]}{e.token ? ` ${e.token}` : ''}</span>
+              <span className="caller row" style={{ gap: 6, alignItems: 'flex-start' }} title={e.caller}>
+                <Icon name="agent" size="xs" />
+                <span className="col" style={{ minWidth: 0 }}>
+                  <span className="trunc">{callerName(e.caller)}</span>
+                  <span className="faint trunc" style={{ fontSize: 'var(--fs-xs)' }}>{VIA[e.via]}{e.token ? ` ${e.token}` : ''}</span>
+                </span>
               </span>
               <span className="cmd">
                 {e.action === 'sudo' && <span className="root-badge" data-activity-sudo>root</span>}
