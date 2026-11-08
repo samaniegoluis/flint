@@ -64,7 +64,7 @@ fn open_target(p: ParsedArgs, sec: SecretInput, c: Sodium, mut store: LockedVaul
         }
         return src.session
     }
-    cached := unlock_vault(c, mut store, src.kc, recents, target.path, "")
+    cached := unlock_vault(c, mut store, src.kc, recents, target.path, "", false)
     if cached.has_value() {
         return cached.value()
     }
@@ -73,7 +73,7 @@ fn open_target(p: ParsedArgs, sec: SecretInput, c: Sodium, mut store: LockedVaul
         return error(msg)
     }
     password := try master_password_for(sec, target.name)
-    return unlock_vault(c, mut store, src.kc, recents, target.path, password)
+    return unlock_vault(c, mut store, src.kc, recents, target.path, password, false)
 }
 
 // ---- vault ---------------------------------------------------------------------
@@ -87,7 +87,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         if !sec.has_master {
             password = try prompt_new_secret("master password")
         }
-        s := try create_vault(c, mut store, src.kc, recents, absolute_path(p.positional(2)), p.flag_value("--name"), password)
+        s := try create_vault(c, mut store, src.kc, recents, absolute_path(p.positional(2)), p.flag_value("--name"), password, false)
         info := session_info(s)
         if as_json {
             say(json.stringify(info))
@@ -101,7 +101,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try p.expect_args("vault open", 1, "<path>")
         path := absolute_path(p.positional(2))
         mut s := VaultSession{ path: "", name: "", id: "", secrets_key: [], cached: false }
-        cached := unlock_vault(c, mut store, src.kc, recents, path, "")
+        cached := unlock_vault(c, mut store, src.kc, recents, path, "", false)
         if cached.has_value() {
             s = cached.value()
         } else {
@@ -110,7 +110,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
                 return error(msg)
             }
             password := try master_password_for(sec, vault_name_from_path(path))
-            s = try unlock_vault(c, mut store, src.kc, recents, path, password)
+            s = try unlock_vault(c, mut store, src.kc, recents, path, password, false)
         }
         info := session_info(s)
         if as_json {

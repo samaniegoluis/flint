@@ -252,3 +252,49 @@ fn (self: SessionHolder) access_clear() {
         self.cell->access_json.clear();
     }
 }
+
+// ---- Window lock and Remember (milestone 14) ----------------------------------------
+
+// The window is locked: closed to the tray, it shows only its lock screen until the
+// master password or a presence check. The vault and its grants are untouched.
+fn (self: SessionHolder) set_window_locked(locked: bool) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->window_locked = locked;
+    }
+}
+
+fn (self: SessionHolder) window_locked() -> bool {
+    mut l := false
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        l = self.cell->window_locked;
+    }
+    return l
+}
+
+// Whether this run knows the key of `path` is remembered on this computer: it
+// opened from the keychain, or was unlocked with Remember ticked. The unlock screen
+// ticks the box for it, so unlocking it again after a lock keeps it remembered.
+fn (self: SessionHolder) set_remembered(path: str, on: bool) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        auto& v = self.cell->remembered;
+        v.erase(std::remove(v.begin(), v.end(), path), v.end());
+        if (on) v.push_back(path);
+    }
+}
+
+fn (self: SessionHolder) remembered(path: str) -> bool {
+    mut found := false
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        auto& v = self.cell->remembered;
+        found = std::find(v.begin(), v.end(), path) != v.end();
+    }
+    return found
+}

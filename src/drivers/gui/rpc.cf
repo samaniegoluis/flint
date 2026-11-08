@@ -43,11 +43,22 @@ type UnlockReq struct {
     // Allow the CLI caller that asked for this unlock, as the window proposes
     // (milestone 12). The typed master password is the presence check.
     allow:    bool `json:"allow"`
+    // Remember on this computer (D-048): cache the key so Flint reopens the vault
+    // without the master password. Unticked on a vault that was remembered, its key
+    // is removed.
+    remember: bool `json:"remember"`
 }
 
 type CreateReq struct {
-    path:     str `json:"path"`
-    name:     str `json:"name"`
+    path:     str  `json:"path"`
+    name:     str  `json:"name"`
+    password: str  `json:"password"`
+    remember: bool `json:"remember"`
+}
+
+// Opens the window after it was closed to the tray: the master password, or ""
+// for the OS's presence check.
+type WindowUnlockReq struct {
     password: str `json:"password"`
 }
 
@@ -166,6 +177,20 @@ type PathReply struct {
     path: str `json:"path"`
 }
 
+type RememberedReply struct {
+    remembered: bool `json:"remembered"`
+}
+
+// The window's lock (milestone 14), for the page: whether it is locked, the vault
+// it holds, the presence method that opens it, and how many callers wait for an
+// answer (who they are shows only once the window is open).
+type WindowState struct {
+    locked:   bool `json:"locked"`
+    vault:    str  `json:"vault"`
+    presence: str  `json:"presence"`
+    waiting:  i64  `json:"waiting"`
+}
+
 type FontList struct {
     fonts: []str `json:"fonts"`
 }
@@ -236,9 +261,28 @@ fn (self: GuiState) release() {
     self.holder.release()
 }
 
+// What every page handler that reads or changes the vault checks first. A window
+// closed to the tray is locked (milestone 14): until it is opened again its page
+// gets nothing from the vault, though the vault keeps serving its grants.
 fn (self: GuiState) require_unlocked() -> void! {
     if !self.unlocked() {
         return error(coded(ERR_LOCKED, "no vault is unlocked"))
+    }
+    try self.require_open_window()
+}
+
+// The vault alone, whatever the window: opening a locked window needs it unlocked.
+fn (self: GuiState) require_unlocked_vault() -> void! {
+    if !self.unlocked() {
+        return error(coded(ERR_LOCKED, "no vault is unlocked"))
+    }
+}
+
+// For page handlers that hold no vault data but act for the person at the window
+// (typing into a session, answering its prompts).
+fn (self: GuiState) require_open_window() -> void! {
+    if self.holder.window_locked() {
+        return error(coded(ERR_LOCKED, "the window is locked; open it with the master password"))
     }
 }
 
@@ -296,6 +340,7 @@ fn rpc_settings_get(store: JsonSettingsStore) -> str! {
 }
 
 fn rpc_settings_set(params: str, mut store: JsonSettingsStore, st: GuiState) -> str! {
+    try st.require_open_window()
     req := try parse_req[Settings](params)
     saved := try save_settings(mut store, req)
     st.holder.set_lock_after(saved.lock_after)
@@ -343,6 +388,11 @@ fn rpc_vault_recents(store: LockedVaultStore, recents: JsonRecentStore) -> str! 
 // holds the state for its whole run, so a command served over the socket never sees
 // the vault switch under it.
 fn rpc_vault_unlock(req: UnlockReq, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> VaultInfo! {
+    if req.password.len() == 0 {
+        // A locked window opens with the master password or presence, never with the
+        // keychain's key behind it (milestone 14).
+        try st.require_open_window()
+    }
     if req.password.len() == 0 && st.holder.relocked(req.path) {
         return error(coded(ERR_LOCKED, "the vault was locked; its master password is needed"))
     }
@@ -351,9 +401,18 @@ fn rpc_vault_unlock(req: UnlockReq, c: Sodium, mut store: LockedVaultStore, kc: 
     (asked, caller) := st.holder.ask()
     asking := st.holder.access_book().asking
     close_current(mut store, mut st)
-    s := try unlock_vault(c, mut store, kc, recents, req.path, req.password)
+    s := try unlock_vault(c, mut store, kc, recents, req.path, req.password, req.remember)
+    if req.password.len() > 0 && !req.remember && st.holder.remembered(s.path) {
+        // Unticked: this computer no longer remembers it.
+        _ := forget_vault_key(store, kc, s.path)
+    }
+    st.holder.set_remembered(s.path, s.cached)
     st.adopt(s)
     st.holder.clear_relocked(s.path)
+    if req.password.len() > 0 {
+        // The master password just typed opens the window too.
+        st.holder.set_window_locked(false)
+    }
     if asked == s.path {
         st.holder.set_ask("", "")
         // `token create` and `exec --sudo` are never allowed here: only the approval
@@ -417,10 +476,12 @@ fn rpc_unlock_request_dismiss(st: GuiState) -> str! {
 }
 
 fn rpc_vault_create(req: CreateReq, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> VaultInfo! {
+    try st.require_open_window()
     st.hold()
     defer st.release()
     close_current(mut store, mut st)
-    s := try create_vault(c, mut store, kc, recents, req.path, req.name, req.password)
+    s := try create_vault(c, mut store, kc, recents, req.path, req.name, req.password, req.remember)
+    st.holder.set_remembered(s.path, s.cached)
     st.adopt(s)
     return session_info(s)
 }
@@ -428,6 +489,7 @@ fn rpc_vault_create(req: CreateReq, c: Sodium, mut store: LockedVaultStore, kc: 
 // Closes the vault in this window: every session ends and its keys leave memory.
 // The keychain cache stays, so the vault reopens without a prompt.
 fn rpc_vault_close(mut store: LockedVaultStore, mut st: GuiState) -> str! {
+    try st.require_open_window()
     st.hold()
     defer st.release()
     gui_session_close_all()
@@ -446,7 +508,15 @@ fn rpc_vault_forget_key(params: str, mut store: LockedVaultStore, kc: OsKeychain
         st.forget()
     }
     try lock_vault(mut store, kc, req.path)
+    st.holder.set_remembered(req.path, false)
     return ok_json()
+}
+
+// Whether the unlock screen ticks Remember on this computer for `path`: this run
+// knows its key is remembered (it opened from the keychain, or was ticked).
+fn rpc_vault_remembered(params: str, st: GuiState) -> str! {
+    req := try parse_req[PathReq](params)
+    return json.stringify(RememberedReply{ remembered: st.holder.remembered(req.path) })
 }
 
 // Drops a vault from the recent list (`flint vault forget`).
@@ -458,6 +528,7 @@ fn rpc_vault_forget(params: str, mut store: LockedVaultStore, kc: OsKeychain, re
         gui_session_close_all()
         st.forget()
     }
+    st.holder.set_remembered(req.path, false)
     return json.stringify(try forget_recent(mut store, kc, recents, req.path))
 }
 
@@ -698,7 +769,10 @@ fn run_gui_host_test(mut app: webui.App, c: Sodium, mut store: LockedVaultStore,
     gui_session_drop(req.session)
 }
 
-fn rpc_session_input(params: str) -> str! {
+// Typing, answering a prompt and closing a tab are refused while the window is
+// locked: the sessions keep running behind its lock screen (D-043), out of reach.
+fn rpc_session_input(params: str, st: GuiState) -> str! {
+    try st.require_open_window()
     req := try parse_req[SessionInputReq](params)
     try gui_session_input(req.session, req.data)
     return ok_json()
@@ -710,13 +784,15 @@ fn rpc_session_resize(params: str) -> str! {
     return ok_json()
 }
 
-fn rpc_session_answer(params: str) -> str! {
+fn rpc_session_answer(params: str, st: GuiState) -> str! {
+    try st.require_open_window()
     req := try parse_req[SessionAnswerReq](params)
     try gui_session_answer(req.session, req.prompt, req.ok, req.value)
     return ok_json()
 }
 
-fn rpc_session_close(params: str) -> str! {
+fn rpc_session_close(params: str, st: GuiState) -> str! {
+    try st.require_open_window()
     req := try parse_req[SessionReq](params)
     _ := gui_session_close(req.session)
     return ok_json()

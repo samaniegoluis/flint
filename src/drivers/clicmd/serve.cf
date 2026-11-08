@@ -17,6 +17,7 @@ package clicmd
 //   unlock   show the unlock screen for a vault, naming the caller → {state, name}
 //   status   whether the app holds a vault unlocked → {state, name}
 //   lock     lock the vault if the app holds it → {state, name}
+//   show     show the app's window (a second launch of Flint, milestone 14) → {state, name}
 //
 // Before a run or a session, the app checks the caller against its grants (milestone
 // 12, Principle 12). With none that covers the request it asks the owner in its
@@ -481,6 +482,20 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
         }
     }
     return not_served()
+}
+
+// A second launch of the desktop app asks the Flint already running to show its
+// window, and exits when it answers (milestone 14). False when none answers.
+fn show_running_app() -> bool {
+    mut conn := dial_app()
+    if !conn.open {
+        return false
+    }
+    defer conn.close()
+    _ := ask_app_state(conn, "show", "", "") or {
+        return false
+    }
+    return true
 }
 
 // One exchange of kind unlock, status or lock. `open` false on the connection when

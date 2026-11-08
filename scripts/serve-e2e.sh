@@ -414,6 +414,16 @@ expect 0 "make the served vault current again" "" -- vault use "$vault"
 expect 0 "vault unlock: Flint already holds it" "" -- vault unlock
 check "it says so" '[[ "$out" == *"in Flint"* ]]'
 
+echo "== a second launch of Flint shows the running one and exits (milestone 14)"
+second_start=$(date +%s)
+second_status=0
+env -u FLINT_GUI_E2E timeout 20 "${app[@]}" >"$tmp/second.log" 2>&1 || second_status=$?
+second_took=$(( $(date +%s) - second_start ))
+check "the second launch exits at once, with status 0" '[[ $second_status == 0 && $second_took -lt 10 ]]'
+check "it says Flint is already running" 'grep -q "already running" "$tmp/second.log"'
+check "the running app is still serving" '[[ -S "$sock" ]]'
+expect 0 "and the CLI is still served" "" -- --json vault status
+
 echo "== a rename, then the stop host"
 expect 0 "vault rename" "" -- vault rename "Served Renamed"
 check "the recent list has the new name" 'grep -q "Served Renamed" "$FLINT_CONFIG_DIR/vaults.json"'

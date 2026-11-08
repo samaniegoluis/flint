@@ -92,6 +92,8 @@ fn lock_now(mut store: LockedVaultStore, st: GuiState, mut app: webui.App, reaso
     }
     s := st.vault_session()
     st.holder.mark_relocked(s.path)
+    // The vault's lock screen replaces the window's.
+    st.holder.set_window_locked(false)
     st.forget()
     close_vault(mut store)
     st.release()
@@ -178,11 +180,17 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
             st.holder.put_access_book(book)
             st.holder.access_release()
             app.emit("vault:unlock-request", UnlockRequest{ path: req.vault, name: name, caller: req.caller, label: ap.label })
-            bring_window_to_front()
+            show_window(mut app)
             _ := conn.send(app_state_json(APP_ASKING, ""), SERVE_SEND_MS) or {}
         } else {
             _ := conn.send(app_state_json(now.state, now.name), SERVE_SEND_MS) or {}
         }
+    } else if req.kind == "show" {
+        // A second launch of Flint (milestone 14): this one shows its window, locked
+        // if it was closed to the tray, and the new one exits. Nothing of the vault
+        // travels, so no grant is checked (as for status, unlock and lock).
+        show_window(mut app)
+        _ := conn.send(app_state_json(app_state_for(st, req.vault).state, ""), SERVE_SEND_MS) or {}
     } else if req.kind == "lock" {
         now := app_state_for(st, req.vault)
         mut locked := false
@@ -344,7 +352,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     st.holder.access_release()
     write_stderr("flint-gui: asking the owner to approve {ap.label}\n")
     app.emit("access:request", ap)
-    bring_window_to_front()
+    show_window(mut app)
     notice := "Waiting for approval in Flint ({ap.label})…"
     send_wait(conn, notice, session_kind)
     mut last_notice := now

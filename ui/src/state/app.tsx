@@ -3,13 +3,16 @@
 // command asked for, else the last vault (from the keychain when it holds a key),
 // else ask for its password, else show the welcome screen.
 //
+// The window has a lock of its own (milestone 14): closed to the tray, it comes back
+// covered by the window lock screen while the vault keeps serving its grants.
+//
 // Locking (D-042) keeps the main window mounted under the lock screen, so open
 // sessions and their terminals carry on; the vault's key and catalog are gone until
 // the master password is typed again.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, FlintError, on, toFlintError } from '../api/backend';
-import type { AppInfo, Catalog, LockReason, RecentView, Settings, UnlockRequest, VaultInfo } from '../api/types';
+import type { AppInfo, Catalog, LockReason, RecentView, Settings, UnlockRequest, VaultInfo, WindowState } from '../api/types';
 import type { Os } from '../lib/keymap';
 
 export type Phase = 'boot' | 'welcome' | 'create' | 'unlock' | 'main' | 'locked';
@@ -49,11 +52,15 @@ interface AppApi {
   unlockRequest: UnlockRequest | null;
   dismissUnlockRequest: () => void;
   lock: () => Promise<void>;
+  /** The window's lock, while it covers the window (milestone 14). */
+  windowLock: WindowState | null;
+  /** Opens the locked window: the master password, or '' for Touch ID / polkit. */
+  openWindow: (password: string) => Promise<void>;
   go: (p: Phase) => void;
   setTarget: (r: RecentView | null) => void;
   refreshRecents: () => Promise<RecentView[]>;
-  unlock: (path: string, password: string, allow?: boolean) => Promise<VaultInfo>;
-  create: (path: string, name: string, password: string) => Promise<VaultInfo>;
+  unlock: (path: string, password: string, allow?: boolean, remember?: boolean) => Promise<VaultInfo>;
+  create: (path: string, name: string, password: string, remember?: boolean) => Promise<VaultInfo>;
   closeVault: () => Promise<void>;
   openVaultFile: () => Promise<void>;
   switchTo: (r: RecentView) => Promise<void>;
@@ -89,6 +96,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [bootError, setBootError] = useState('');
   const [lockReason, setLockReason] = useState<LockReason | null>(null);
   const [unlockRequest, setUnlockRequest] = useState<UnlockRequest | null>(null);
+  const [windowLock, setWindowLock] = useState<WindowState | null>(null);
 
   const os: Os = info?.os ?? (/mac/i.test(navigator.platform) ? 'mac' : 'linux');
   const dark = settings.theme === 'system' ? sysDark : settings.theme === 'dark';
@@ -133,9 +141,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return v;
   }, [refreshRecents]);
 
-  const unlock = useCallback(async (path: string, password: string, allow = false) => {
-    const v = await api.unlock(path, password, allow);
+  const unlock = useCallback(async (path: string, password: string, allow = false, remember = false) => {
+    const v = await api.unlock(path, password, allow, remember);
     setLockReason(null);
+    setWindowLock(null);
     setUnlockRequest((r) => (r && r.path === v.path ? null : r));
     await enter(v);
     return v;
@@ -160,8 +169,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     api.unlockRequestDismiss().catch(() => {});
   }, []);
 
-  const create = useCallback(async (path: string, name: string, password: string) => {
-    const v = await api.create(path, name, password);
+  const create = useCallback(async (path: string, name: string, password: string, remember = false) => {
+    const v = await api.create(path, name, password, remember);
     await enter(v);
     return v;
   }, [enter]);
@@ -239,8 +248,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }), [vault, refreshCatalog, refreshRecents]);
 
   useEffect(() => on<{ path: string; name: string; reason: LockReason }>('vault:locked', (e) => {
+    // The vault's lock screen replaces the window's.
+    setWindowLock(null);
     if (vault && e.path === vault.path) showLocked(e.path, vault.name, e.reason);
   }), [vault, showLocked]);
+
+  // The window was closed to the tray: it is locked until opened again. A caller
+  // asking meanwhile only changes the count the lock screen shows.
+  const refreshWindowLock = useCallback(() => {
+    api.windowState().then((w) => setWindowLock(w.locked ? w : null)).catch(() => {});
+  }, []);
+  useEffect(() => on('window:locked', refreshWindowLock), [refreshWindowLock]);
+  useEffect(() => {
+    if (!windowLock) return;
+    const offs = [on('access:request', refreshWindowLock), on('access:resolved', refreshWindowLock)];
+    return () => offs.forEach((off) => off());
+  }, [windowLock, refreshWindowLock]);
+
+  const openWindow = useCallback(async (password: string) => {
+    const w = await api.windowUnlock(password);
+    setWindowLock(w.locked ? w : null);
+    // What the lock kept from the page: the catalog may have changed meanwhile.
+    await refreshCatalog().catch(() => {});
+  }, [refreshCatalog]);
 
   // A `flint` command is waiting for a vault: show its unlock screen, naming the
   // command. The core asks only while no vault is unlocked.
@@ -276,6 +306,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         const i = await api.appInfo();
         setInfo(i);
+        // A page reloaded behind a locked window comes back locked.
+        const w = await api.windowState().catch(() => null);
+        if (w?.locked) setWindowLock(w);
         const s = await api.settingsGet();
         setSettings(s);
         const list = await refreshRecents();
@@ -317,11 +350,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppApi>(() => ({
     info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError,
-    lockReason, unlockRequest, dismissUnlockRequest, lock,
+    lockReason, unlockRequest, dismissUnlockRequest, lock, windowLock, openWindow,
     go: setPhase, setTarget, refreshRecents, unlock, create, closeVault, openVaultFile, switchTo, renameVault,
     refreshCatalog, saveSettings, notify, fail,
   }), [info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError,
-    lockReason, unlockRequest, dismissUnlockRequest, lock, refreshRecents,
+    lockReason, unlockRequest, dismissUnlockRequest, lock, windowLock, openWindow, refreshRecents,
     unlock, create, closeVault, openVaultFile, switchTo, renameVault, refreshCatalog, saveSettings, notify, fail]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

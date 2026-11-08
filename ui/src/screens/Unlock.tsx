@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { toFlintError } from '../api/backend';
+import { api, toFlintError } from '../api/backend';
 import { shortPath, useApp } from '../state/app';
 import { CallerLabel } from '../access/ApprovalDialog';
 import { Icon, Logo } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { actionFor } from '../lib/keymap';
 import { VaultMenu } from '../shell/VaultSwitcher';
+import { RememberOption } from '../ui/RememberOption';
 import { sessions, useSessions } from '../sessions/store';
 import type { LockReason } from '../api/types';
 
@@ -29,6 +30,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
   const [caps, setCaps] = useState(false);
   const [switcher, setSwitcher] = useState(false);
   const [allowCaller, setAllowCaller] = useState(true);
+  const [remember, setRemember] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -44,6 +46,13 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
   }, [locked, os, openVaultFile, fail, go]);
 
   useEffect(() => { setPw(''); setError(''); input.current?.focus(); }, [target?.path]);
+  // Off by default (D-048); ticked for a vault this run knows is remembered, so
+  // unlocking it after a lock keeps it remembered unless the box is unticked.
+  useEffect(() => {
+    setRemember(false);
+    if (!target) return;
+    api.vaultRemembered(target.path).then((r) => setRemember(r.remembered)).catch(() => {});
+  }, [target?.path]);
 
   if (!target) return null;
 
@@ -55,7 +64,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
     // Argon2id holds the app's UI thread for about a second (CF-046); the page keeps
     // painting "Unlocking…" because WebKit renders it in another process.
     try {
-      await unlock(target.path, pw, !!request?.label && request.path === target.path && allowCaller);
+      await unlock(target.path, pw, !!request?.label && request.path === target.path && allowCaller, remember);
     } catch (err) {
       const fe = toFlintError(err);
       setError(fe.code === 'wrong_password'
@@ -69,7 +78,6 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
     }
   };
 
-  const keychain = os === 'mac' ? 'macOS Keychain' : 'the keyring';
   const live = tabs.filter((t) => t.status !== 'ended').length;
   const request = unlockRequest && unlockRequest.path ? unlockRequest : null;
   // Leaves the locked vault for another one: its sessions end.
@@ -132,7 +140,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
             {locked && <span className="muted" data-lock-reason={lockReason ?? 'manual'} style={{ fontSize: 'var(--fs-sm)' }}>{LOCK_REASONS[lockReason ?? 'manual']}{live > 0 ? ` ${live === 1 ? 'One session keeps' : `${live} sessions keep`} running.` : ''}</span>}
           </div>
           <div className="field">
-            <label className="flabel" htmlFor="pw">{locked ? 'Master password' : <>Master password — this {os === 'mac' ? 'Mac' : 'machine'} has no saved key for this vault</>}</label>
+            <label className="flabel" htmlFor="pw">Master password</label>
             <div className={'input lg mono' + (error ? ' err' : '')} style={{ paddingLeft: 'var(--sp-4)', gap: 'var(--sp-3)' }}>
               <span className="accent-t" aria-hidden="true">❯</span>
               <input id="pw" ref={input} type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} autoFocus
@@ -146,9 +154,8 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
             </div>
             {error && <span id="pwe" className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
           </div>
-          {locked
-            ? <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />The vault key left memory when it locked. Until you unlock, the flint CLI and new sessions cannot use this vault.</span>
-            : <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />Once unlocked, the key is saved in {keychain} and the next launch opens this vault without asking.</span>}
+          <RememberOption checked={remember} onChange={setRemember} os={os} disabled={busy} />
+          {locked && <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />The vault key left memory when it locked. Until you unlock, the flint CLI and new sessions cannot use this vault.</span>}
           <div className="row" style={{ justifyContent: 'center', gap: 'var(--sp-5)', paddingTop: 'var(--sp-5)', borderTop: '1px solid var(--border-subtle)', position: 'relative' }}>
             {locked
               ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => closeLocked().catch(fail)}>Close vault{live > 0 ? ' and end its sessions' : ''}</button>

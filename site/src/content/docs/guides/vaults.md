@@ -31,9 +31,10 @@ manager.
 An unlocked vault's key lives in the **running Flint app**, and only there. Everything
 else asks the app:
 
-- **The app** unlocks a vault with its master password. On launch it can reopen the last
-  vault without a prompt, from the key it saved in the OS keychain (Keychain on macOS,
-  the Secret Service on Linux). The password itself is never stored.
+- **The app** unlocks a vault with its master password. On launch it reopens the last
+  vault without a prompt only if you ticked
+  [Remember on this computer](#remember-on-this-computer) for it. The password itself is
+  never stored.
 - **The `flint` CLI** never reads that keychain. While Flint is open with the vault
   unlocked, every command on that vault runs **inside the app**: the CLI hands it the
   command line over a local socket and prints what comes back. `connect`, `exec` and
@@ -70,13 +71,8 @@ the `Flint` program or to `Flint.app`); `FLINT_APP=off` never starts it.
 | A program reads the vault key from the keychain through `flint` | **No.** The CLI never reads it |
 | A program runs `flint` while the vault is unlocked in Flint | Only once you approve it in Flint's window, for the hosts, actions and time you choose ([Approve a program](/guides/ai-agents/#approve-a-program)) |
 | A program runs `flint` while the vault is locked or Flint is closed | No. It gets `locked`, and Flint's window asks you |
-| On Linux, another program reads the app's cached key from the Secret Service | Yes: the Secret Service has no per-app access list. *Forget on this device* in **Settings → Vault** removes it, and the app then asks for the master password on each launch |
-| Someone at your unlocked computer opens Flint | Yes, while the vault is unlocked |
-
-On macOS, each new Flint build has a new code identity until releases are signed, so the
-first time the app reads its cached key macOS asks whether Flint may use your
-confidential information. **Always Allow** asks for your login password and stops the
-dialog until the next build; **Deny** makes Flint ask for the master password instead.
+| On Linux, another program reads the app's remembered key from the Secret Service | Only if you ticked **Remember on this computer**: the Secret Service has no per-app access list. Without it no key is ever written there |
+| Someone at your unlocked computer opens Flint's window | Not when you closed it to the menu bar or tray: it asks for the master password or Touch ID. Yes while the window is open |
 
 No program gets your passwords or keys through `flint`: no command prints them. What an
 approved program can do is run commands on the servers you allowed through `flint exec`. To narrow that, see
@@ -104,6 +100,47 @@ restarted. **Close vault** on the lock screen ends its sessions instead.
 On Linux, Flint hears the screen lock and sleep from logind (`Lock`, `PrepareForSleep`)
 and from the desktop's screensaver (`org.freedesktop.ScreenSaver` or
 `org.gnome.ScreenSaver`). A desktop that sends none of them still locks on the idle time.
+
+## Remember on this computer
+
+The unlock and create screens have a **Remember on this computer** box, **off by
+default**. Ticked, the vault key goes into the OS keychain (Keychain on macOS, the Secret
+Service on Linux) and Flint reopens the vault on launch without the master password. The
+box says what that costs: *Flint, the `flint` CLI and the agents you approve open this
+vault without the master password. Anyone using this computer while it is unlocked can
+open Flint too.* The CLI still goes through Flint and its approvals; it never reads the
+keychain.
+
+Left unticked, no key reaches the keychain, and Flint asks for the master password on
+every launch. Unticking it on a vault this computer remembers removes its key, as do
+**Forget on this device** in **Settings → Vault** and `flint vault lock`.
+
+Before version 3 (milestone 14) Flint cached the key on every unlock. The first time a
+newer Flint starts, it removes those keys once; tick the box at the next unlock to keep a
+vault remembered.
+
+On macOS, each new Flint build has a new code identity until releases are signed, so the
+first time the app reads a remembered key macOS asks whether Flint may use your
+confidential information. **Always Allow** asks for your login password and stops the
+dialog until the next build; **Deny** makes Flint ask for the master password instead.
+
+## The window's own lock
+
+Closing Flint's window does not quit it: Flint stays in the **menu bar** (macOS) or the
+**system tray** (Linux), the vault stays unlocked, and the programs you approved keep
+working. The **window** is locked: opening it again, from the menu bar icon (**Open
+Flint**), the Dock, or by launching Flint again, shows a lock screen that opens with
+Touch ID (or your Mac's password), polkit on Linux, or the vault's master password.
+Until then the window shows the vault's name and how many commands wait for an answer,
+nothing from inside the vault, and nobody can type into the sessions behind it.
+
+A new program that asks while the window is locked waits, as usual, for up to two
+minutes: Flint comes to the front, and you answer once the window is open.
+
+The menu bar icon also has **Lock Vault** (the vault's own lock, which ends every grant)
+and **Quit Flint**. ⌘Q, **Quit Flint** in the command palette and Ctrl+Shift+Q on Linux
+quit too. On a Linux desktop that shows no tray icon (GNOME without the AppIndicator
+extension, some Wayland sessions), launch Flint again to bring its window back.
 
 ## Several vaults
 

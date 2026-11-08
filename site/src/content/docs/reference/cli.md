@@ -37,7 +37,7 @@ terminal, Flint's window asks instead ([Vaults](/guides/vaults/#flint-holds-the-
 | `vault use <name\|path>` | Make a recent vault current |
 | `vault status` | Path, lock state and counts |
 | `vault unlock` | Ask Flint to unlock the vault (starting it if needed), and wait up to 2 minutes |
-| `vault lock` | Lock the vault in Flint, and remove any key cached on this machine |
+| `vault lock` | Lock the vault in Flint, and remove its key if this machine remembers it |
 | `vault rename <new-name>` | Rename the vault (with `--vault`, another one); the file keeps its name and place |
 | `vault forget <name\|path>` | Drop a vault from the recent list; the file is kept |
 
@@ -214,7 +214,7 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 6 | `wrong_password` | The master password (or a Tether vault's, on import) is wrong |
 | 7 | `invalid` | A value breaks a rule (alias, port, colour, key format…) |
 | 8 | `unsupported` | The vault was written by a newer Flint, or a Tether vault has a schema Flint does not read |
-| 9 | `keychain` | The OS keychain refused to remove a cached key (`vault lock`, `vault forget`) |
+| 9 | `keychain` | The OS keychain refused to remove a remembered key (`vault lock`, `vault forget`) |
 | 10 | `io` | The vault or config file could not be read or written |
 | 11 | `host_key` | A server key is unknown and could not be confirmed, or it changed |
 | 12 | `auth` | The server accepted none of the auth methods |
@@ -243,7 +243,7 @@ nothing on stdout and a JSON error on stderr.
 | `FLINT_CONFIG_DIR` | Folder for the recent-vault list and the open app's socket (see [Vaults](/guides/vaults/#flint-holds-the-unlocked-vault)) |
 | `FLINT_APP` | The Flint app `flint` starts when a locked vault needs unlocking: a path to `Flint` or `Flint.app`. `off` never starts it |
 | `FLINT_TOKEN` | A token from `flint token create`: the request is allowed by it alone, or refused with `denied`, and Flint never asks. The one secret Flint reads from the environment, since a scheduled job has no terminal |
-| `FLINT_KEYCHAIN=off` | For the app: never cache vault keys, always ask for the master password. The CLI never reads the keychain |
+| `FLINT_KEYCHAIN=off` | For the app: never remember vault keys (**Remember on this computer** does nothing), always ask for the master password. The CLI never reads the keychain |
 | `SSH_AUTH_SOCK` | The SSH agent to try after the vault's keys and passwords |
 | `TERM` | The terminal type `flint connect` asks the server for (default `xterm-256color`) |
 

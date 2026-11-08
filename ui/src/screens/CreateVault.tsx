@@ -4,6 +4,7 @@ import { useApp } from '../state/app';
 import { Icon, Logo } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { passwordStrength } from '../lib/strength';
+import { RememberOption } from '../ui/RememberOption';
 
 const MIN_LEN = 8;
 
@@ -16,6 +17,7 @@ export function CreateVault() {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [remember, setRemember] = useState(false);
 
   const strength = passwordStrength(pw);
   const mismatch = pw2.length > 0 && pw !== pw2;
@@ -35,14 +37,13 @@ export function CreateVault() {
     setBusy(true);
     setError('');
     try {
-      await create(path, name.trim(), pw);
+      await create(path, name.trim(), pw, remember);
     } catch (err) {
       setError(toFlintError(err).message);
       setBusy(false);
     }
   };
 
-  const keychain = os === 'mac' ? 'macOS Keychain' : 'the Secret Service keyring';
   return (
     <>
       <header className="titlebar" style={{ background: 'var(--surface-base)', borderBottomColor: 'transparent' }}>
@@ -89,7 +90,7 @@ export function CreateVault() {
               </div>
               {mismatch && <span id="mp2e" className="hint err">The passwords do not match.</span>}
             </div>
-            <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />Flint keeps the vault key in {keychain} so this machine opens the vault without asking.</span>
+            <RememberOption checked={remember} onChange={setRemember} os={os} disabled={busy} />
             {error && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
           </div>
           <div className="modal-f">

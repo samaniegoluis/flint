@@ -101,9 +101,10 @@ fn derive_vault_keys[C: Crypto](crypto: C, master: []byte) -> ([]byte, []byte)! 
     return (page, secrets)
 }
 
-// Creates a new vault file, caches its key in the keychain when possible, and puts
-// it first in the recent list.
-fn create_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C, mut store: S, keychain: K, recents: R, path: str, name: str, password: str) -> VaultSession! {
+// Creates a new vault file and puts it first in the recent list. With `remember`
+// (Remember on this computer, off by default, D-048) its key is cached in the
+// keychain when possible, so the app reopens it without the master password.
+fn create_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C, mut store: S, keychain: K, recents: R, path: str, name: str, password: str, remember: bool) -> VaultSession! {
     try check_absolute(path)
     mut vault_name := name
     if vault_name.len() == 0 {
@@ -121,7 +122,10 @@ fn create_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     (page, secrets) := try derive_vault_keys(crypto, master)
     try store.vault_create(path, page, salt)
     try store.vault_set_meta("name", vault_name)
-    cached := keychain.keychain_save(vault_account(salt), master).has_value()
+    mut cached := false
+    if remember {
+        cached = keychain.keychain_save(vault_account(salt), master).has_value()
+    }
     id := try vault_id(crypto, salt)
     try touch_recent(recents, RecentVault{ path: path, name: vault_name, id: id })
     return VaultSession{ path: path, name: vault_name, id: id, secrets_key: secrets, cached: cached }
@@ -129,8 +133,9 @@ fn create_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
 
 // Unlocks a vault. With an empty `password`, only the key cached in the keychain is
 // tried, and a vault with no cached key fails with `locked`. With a password, the
-// key is derived, and cached on success.
-fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C, mut store: S, keychain: K, recents: R, path: str, password: str) -> VaultSession! {
+// key is derived, and cached on success only with `remember` (D-048). Without it the
+// keychain is left as it is: forgetting a remembered key is `forget_vault_key`.
+fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C, mut store: S, keychain: K, recents: R, path: str, password: str, remember: bool) -> VaultSession! {
     try check_absolute(path)
     salt := try store.vault_read_salt(path)
     account := vault_account(salt)
@@ -167,7 +172,7 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
         return error(coded(ERR_UNSUPPORTED, "vault format {format} is not supported"))
     }
     mut cached := from_cache
-    if !from_cache {
+    if !from_cache && remember {
         cached = keychain.keychain_save(account, master).has_value()
     }
     mut name := try store.vault_get_meta("name")
@@ -192,6 +197,35 @@ fn verify_master_password[C: Crypto, S: VaultStore](crypto: C, store: S, session
     return crypto.equal(secrets, session.secrets_key)
 }
 
+// Forgets the key this machine remembers for the vault at `path`, leaving the vault
+// as it is: open stays open (Remember on this computer unticked at unlock).
+fn forget_vault_key[S: VaultStore, K: Keychain](store: S, keychain: K, path: str) -> void! {
+    try check_absolute(path)
+    salt := try store.vault_read_salt(path)
+    try keychain.keychain_forget(vault_account(salt))
+}
+
+// Removes, once per machine, the key every earlier Flint cached on each unlock
+// (D-005, superseded by D-048): from milestone 14 a key is in the keychain only if
+// Remember on this computer was ticked for it. Every recent vault whose file can be
+// read loses its cached key; a vault that is gone is skipped. Returns how many keys
+// were asked to go, and fails only when the keychain itself cannot be reached.
+fn forget_cached_keys[S: VaultStore, K: Keychain, R: RecentStore](store: S, keychain: K, recents: R) -> i64! {
+    mut n: i64 = 0
+    for r in try list_recents(recents) {
+        if !store.vault_file_exists(r.path) {
+            continue
+        }
+        salt := store.vault_read_salt(r.path)
+        if !salt.has_value() {
+            continue
+        }
+        try keychain.keychain_forget(vault_account(salt.value()))
+        n += 1
+    }
+    return n
+}
+
 // Forgets the cached key, so the next use asks for the master password.
 fn lock_vault[S: VaultStore, K: Keychain](mut store: S, keychain: K, path: str) -> void! {
     try check_absolute(path)
@@ -207,7 +241,7 @@ fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     if !st.exists {
         return st
     }
-    session := unlock_vault(crypto, mut store, keychain, recents, path, "") or err {
+    session := unlock_vault(crypto, mut store, keychain, recents, path, "", false) or err {
         if error_code_of("{err.message()}") == ERR_LOCKED {
             return st
         }

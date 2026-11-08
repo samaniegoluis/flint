@@ -17,6 +17,7 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     fixed.follow_motion = s.follow_motion
     fixed.reopen_last_vault = s.reopen_last_vault
     fixed.term_cursor_blink = s.term_cursor_blink
+    fixed.keys_cleared = s.keys_cleared
     mut probe := d
     probe.theme = s.theme
     if check_settings(probe).has_value() {
@@ -65,10 +66,28 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     return fixed
 }
 
+// `keys_cleared` is the app's own record, not a preference: the stored value is
+// kept whatever the page sends.
 fn save_settings[T: SettingsStore](mut store: T, s: Settings) -> Settings! {
     try check_settings(s)
-    try store.settings_save(s)
-    return s
+    mut saved := s
+    saved.keys_cleared = (try load_settings(store)).keys_cleared
+    try store.settings_save(saved)
+    return saved
+}
+
+// Runs forget_cached_keys the first time a milestone-14 Flint starts on this
+// machine, and records that it did. Returns how many keys it removed (0 when it had
+// already run). A keychain that cannot be reached leaves it for the next start.
+fn forget_cached_keys_once[T: SettingsStore, S: VaultStore, K: Keychain, R: RecentStore](mut settings: T, store: S, keychain: K, recents: R) -> i64! {
+    mut s := try load_settings(settings)
+    if s.keys_cleared {
+        return 0
+    }
+    n := try forget_cached_keys(store, keychain, recents)
+    s.keys_cleared = true
+    try settings.settings_save(s)
+    return n
 }
 
 // Installed monospaced families, sorted and without duplicates.

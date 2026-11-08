@@ -30,7 +30,7 @@ test "a real Tether vault is imported and its secrets open under the Flint vault
     mut store := new_sql_vault_store()
     kc := new_os_keychain(false)
     recents := new_json_recent_store(dir + "/cfg")
-    s := try create_vault(c, mut store, kc, recents, dir + "/t.flint", "Import test", "mpw-import-test")
+    s := try create_vault(c, mut store, kc, recents, dir + "/t.flint", "Import test", "mpw-import-test", false)
     r := try import_tether(c, mut store, new_libssh_key_inspector(), new_tether_reader(), s, fixture_path(), "tether-fixture-pw", false)
     assert_eq(r.added.hosts, 8)
     assert_eq(r.added.keys, 2)

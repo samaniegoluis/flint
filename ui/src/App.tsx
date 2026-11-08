@@ -3,6 +3,7 @@ import { AppProvider, useApp } from './state/app';
 import { Welcome } from './screens/Welcome';
 import { CreateVault } from './screens/CreateVault';
 import { Unlock } from './screens/Unlock';
+import { WindowLock } from './screens/WindowLock';
 import { Shell } from './shell/Shell';
 import { Icon, Logo } from './ui/Icon';
 import { sessions } from './sessions/store';
@@ -19,11 +20,13 @@ function Toast() {
   );
 }
 
-// The main window, and the lock screen over it: the same element in both phases,
-// so a lock never unmounts the terminals of the sessions that keep running.
+// The main window, and the lock screens over it (the vault's, or the window's own
+// when it was closed to the tray): the same element in every phase, so a lock never
+// unmounts the terminals of the sessions that keep running.
 function Main() {
-  const { phase } = useApp();
-  const locked = phase === 'locked';
+  const { phase, windowLock } = useApp();
+  const vaultLocked = phase === 'locked';
+  const locked = vaultLocked || !!windowLock;
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (host.current) host.current.inert = locked;
@@ -31,7 +34,8 @@ function Main() {
   return (
     <>
       <div ref={host} style={{ display: 'contents' }} aria-hidden={locked || undefined}><Shell /></div>
-      {locked && <Unlock locked />}
+      {vaultLocked && <Unlock locked />}
+      {!vaultLocked && windowLock && <WindowLock />}
     </>
   );
 }

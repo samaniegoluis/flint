@@ -1,0 +1,97 @@
+package main
+
+// The tray and the window's own lock (milestone 14, D-038, D-048). Closing the
+// window hides it: Flint stays in the menu bar or system tray, the socket keeps
+// serving approved grants, and the window is locked until the master password or
+// the OS's presence check (Touch ID, polkit) opens it again. The vault's own lock
+// (idle, screen lock, sleep, Lock) is unchanged and stronger: it wipes the key.
+
+import "ext:webui"
+import "ext:json"
+import "core:time"
+import "../../adapters/crypto"
+import "../../adapters/process"
+import "../../adapters/uievents"
+import "../../adapters/vault"
+import "../../application"
+import "../../domain"
+
+TRAY_OPEN: str = "tray:open"
+TRAY_LOCK: str = "tray:lock"
+TRAY_QUIT: str = "tray:quit"
+
+type WindowLocked struct {
+    vault: str `json:"vault"`
+}
+
+// The tray icon and its menu. macOS takes a template image the system tints; the
+// Linux tray gets a light glyph for its dark panel.
+fn install_tray(mut app: webui.App, ui_dir: str) {
+    mut icon := ui_dir + "/tray.png"
+    if os_name() == "mac" {
+        icon = ui_dir + "/tray-template.png"
+    }
+    app.set_tray(icon, "Flint")
+    app.add_tray_item("Open Flint", TRAY_OPEN)
+    app.add_tray_item("Lock Vault", TRAY_LOCK)
+    app.add_tray_item("-", "")
+    app.add_tray_item("Quit Flint", TRAY_QUIT)
+    app.set_hide_on_close(true)
+}
+
+// The window was closed to the tray: lock it if it shows a vault.
+fn lock_window(st: GuiState, mut app: webui.App) {
+    if !st.unlocked() || st.holder.window_locked() {
+        return
+    }
+    st.holder.set_window_locked(true)
+    write_stderr("flint-gui: window closed to the tray, locked\n")
+    app.emit("window:locked", WindowLocked{ vault: st.vault_session().name })
+}
+
+// Shows the window, deminiaturised and in front: the tray, a second launch of Flint,
+// or a CLI that needs the person (an unlock, an approval).
+fn show_window(mut app: webui.App) {
+    app.show_window()
+    bring_window_to_front()
+}
+
+// Quits Flint: the tray's Quit, ⌘Q, or the palette.
+fn quit_app(mut app: webui.App) {
+    write_stderr("flint-gui: quit\n")
+    app.quit()
+}
+
+fn window_state(st: GuiState, presence: OsPresence) -> WindowState {
+    if !st.holder.window_locked() || !st.unlocked() {
+        return WindowState{ locked: false, vault: "", presence: "", waiting: 0 }
+    }
+    book := st.holder.access_book()
+    waiting := waiting_approvals(book, time.now_ms())
+    return WindowState{ locked: true, vault: st.vault_session().name, presence: presence.presence_method(), waiting: i64(waiting.len()) }
+}
+
+fn rpc_window_state(st: GuiState, presence: OsPresence) -> str! {
+    return json.stringify(window_state(st, presence))
+}
+
+// Opens the locked window: the master password, or the presence check when the
+// request carries none. Runs on a worker: Touch ID and polkit block until answered.
+fn rpc_window_unlock(req: WindowUnlockReq, c: Sodium, store: LockedVaultStore, presence: OsPresence, st: GuiState, mut app: webui.App) -> WindowState! {
+    if !st.holder.window_locked() {
+        return window_state(st, presence)
+    }
+    try st.require_unlocked_vault()
+    try confirm_window_unlock(c, store, presence, st.vault_session(), req.password)
+    st.holder.set_window_locked(false)
+    st.holder.touch(time.now_ms())
+    write_stderr("flint-gui: window opened\n")
+    // The approval window shows the callers that waited behind the lock.
+    app.emit("access:changed", GrantsChanged{ count: i64(st.holder.access_book().grants.len()) })
+    return window_state(st, presence)
+}
+
+fn rpc_app_quit(mut app: webui.App) -> str! {
+    quit_app(mut app)
+    return ok_json()
+}

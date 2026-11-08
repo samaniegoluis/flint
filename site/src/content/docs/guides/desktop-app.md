@@ -15,9 +15,16 @@ With no vault yet, Flint shows the welcome screen:
   Syncthing) to use it on several machines.
 - **Open a vault file…**: pick an existing `.flint` file.
 
-After that, Flint reopens the last vault on every launch. If the OS keychain holds its
-key, the vault opens without a prompt; otherwise Flint asks for the master password. You
-can turn the reopening off in **Settings → Appearance → Window**.
+After that, Flint reopens the last vault on every launch and asks for its master
+password, or opens it without a prompt if you ticked **Remember on this computer** at
+unlock ([what that means](/guides/vaults/#remember-on-this-computer)). You can turn the
+reopening off in **Settings → Appearance → Window**.
+
+**Closing the window keeps Flint running** in the menu bar (macOS) or the system tray
+(Linux), serving the programs you approved, with the window locked: opening it again
+asks for Touch ID, polkit or the master password
+([the window's own lock](/guides/vaults/#the-windows-own-lock)). **Quit Flint** in the
+menu bar icon, ⌘Q or the command palette quits it.
 
 ## The main window
 
@@ -169,7 +176,7 @@ stays saved, and **Reconnect** in that tab keeps skipping it.
 
 The vault button at the top of the sidebar (<kbd>⇧⌘O</kbd>) lists your recent vaults,
 with **Open vault…**, **Create vault…** and **Manage vaults…**. Switching vaults closes
-the sessions of the current one. **Manage vaults** can forget a vault's cached key on
+the sessions of the current one. **Manage vaults** can forget a vault's remembered key on
 this machine, or remove it from the list; the file itself is never deleted. It also has
 **Rename** for the open vault, as does **Settings → Vault**: the name changes inside the
 vault and in the list, and the file keeps its name and place (see
@@ -178,7 +185,9 @@ vault and in the list, and the file keeps its name and place (see
 **Lock** (<kbd>⌘L</kbd>) wipes the vault key from memory and shows the lock screen over
 the window. **Open sessions keep running** behind it and are there when you unlock; the
 `flint` CLI and new sessions wait. Once locked, the vault opens again only with its master
-password, never from the keychain, until Flint restarts. **Close vault** on the lock
+password, never from the keychain, until Flint restarts. The unlock screen keeps
+**Remember on this computer** ticked for a vault this computer remembers; untick it to
+remove its key. **Close vault** on the lock
 screen ends its sessions instead.
 
 The vault also locks on its own: after **Settings → Vault → Lock after** (1 hour by

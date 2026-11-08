@@ -9,7 +9,7 @@ export type Action =
   | 'newSession' | 'closeTab' | 'reconnect' | 'duplicate' | 'toggleSidebar'
   | 'viewHosts' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'editHost'
   | 'collapseAll' | 'expandAll'
-  | 'lock' | 'fontBigger' | 'fontSmaller' | 'fontReset' | 'nextRegion' | 'prevRegion'
+  | 'lock' | 'quit' | 'fontBigger' | 'fontSmaller' | 'fontReset' | 'nextRegion' | 'prevRegion'
   | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5' | 'tab6' | 'tab7' | 'tab8' | 'tab9';
 
 // `none` marks an action with no shortcut (palette and buttons only). `shifted` is the ⇧⌘ layer. `code` is KeyboardEvent.code, so the map holds on any
@@ -43,6 +43,7 @@ const CHORDS: Record<Action, Chord> = {
   collapseAll: { none: true, code: '', label: '' },
   expandAll: { none: true, code: '', label: '' },
   lock: { code: 'KeyL', label: 'L' },
+  quit: { code: 'KeyQ', label: 'Q' },
   fontBigger: { code: 'Equal', label: '+' },
   fontSmaller: { code: 'Minus', label: '−' },
   fontReset: { code: 'Digit0', label: '0' },
@@ -120,6 +121,7 @@ export const ACTION_TITLES: Record<Action, string> = {
   collapseAll: 'Collapse all groups',
   expandAll: 'Expand all groups',
   lock: 'Lock vault',
+  quit: 'Quit Flint',
   fontBigger: 'Bigger terminal font',
   fontSmaller: 'Smaller terminal font',
   fontReset: 'Reset terminal font',
@@ -131,7 +133,7 @@ export const ACTION_TITLES: Record<Action, string> = {
 };
 
 export const SHORTCUT_GROUPS: { title: string; actions: Action[] }[] = [
-  { title: 'General', actions: ['palette', 'gotoHost', 'settings', 'lock', 'nextRegion', 'prevRegion'] },
+  { title: 'General', actions: ['palette', 'gotoHost', 'settings', 'lock', 'quit', 'nextRegion', 'prevRegion'] },
   { title: 'Vaults', actions: ['switchVault', 'openVault', 'createVault'] },
   { title: 'Sessions', actions: ['newSession', 'closeTab', 'reconnect', 'duplicate', 'tab1', 'tab9'] },
   { title: 'Views', actions: ['viewHosts', 'viewKeys', 'viewCredentials', 'toggleSidebar'] },
