@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, toFlintError } from '../api/backend';
 import { useApp } from '../state/app';
 import { Icon, Logo } from '../ui/Icon';
@@ -24,6 +24,14 @@ export function CreateVault() {
   const ready = name.trim() && path && pw.length >= MIN_LEN && pw === pw2 && !busy;
 
   const back = () => go(vault ? 'main' : target ? 'unlock' : 'welcome');
+
+  // Esc goes back wherever focus is: WebKit on macOS does not focus a checkbox on
+  // click, so after ticking Remember the focus is on the page, outside the form.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) back(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   const choose = async () => {
     const fileName = (name.trim() || 'vault').toLowerCase().replace(/[^a-z0-9._-]+/g, '-') + '.flint';
@@ -51,8 +59,7 @@ export function CreateVault() {
         <div className="tb-title">New vault</div>
       </header>
       <main style={{ position: 'absolute', inset: '38px 0 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <form className="card" aria-label="Create vault" style={{ width: 520, display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-1)' }} onSubmit={submit}
-          onKeyDown={(e) => { if (e.key === 'Escape') back(); }}>
+        <form className="card" aria-label="Create vault" style={{ width: 520, display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-1)' }} onSubmit={submit}>
           <div className="modal-h"><Logo size={22} /><h2>Create a vault</h2></div>
           <div className="modal-b" style={{ gap: 'var(--sp-5)' }}>
             <div className="field">
