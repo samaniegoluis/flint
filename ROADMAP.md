@@ -85,6 +85,7 @@ What Tether already does and Flint must not lose.
 | Auto-detect an encrypted key in `flint key add` and prompt for its passphrase | `idea` | Today `--passphrase` must be given |
 | Known hosts behind different jump hosts with the same address (two `10.0.0.12`) share one record: key them by jump chain + address, like OpenSSH's `HostKeyAlias` | `later` | Found in the milestone 02/03 owner review; needs a migration |
 | `flint vault status` says why a vault is locked: `locked (keychain access denied)` after a Keychain Deny | `next` | Today a denied read looks like no cached key (D-020) |
+| **Bug:** `flint exec` run by the CLI itself (Flint not holding the vault) loses the first line of output after the master password prompt | `next` | Seen 2026-11-08 by the owner: `exec codebox -- bash -c 'echo line 1; …; echo line 40'` printed a blank line, then `line 2`…`line 40`. The same command served by the app printed `line 1`. Probably the prompt's line handling (echo off, newline) eating the first output line |
 
 ## 3. Agents & security (the differentiator)
 
