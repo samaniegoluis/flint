@@ -281,6 +281,18 @@ export interface Approval {
   sudo: SudoAsk;
   /** The whole command `request` sums up (milestone 15). */
   command: CommandText;
+  /** `flint cp` (milestone 16): what is copied where; `direction` is "" otherwise. */
+  copy?: CopyAsk;
+}
+
+export interface CopyAsk {
+  direction: 'upload' | 'download' | '';
+  host: string;
+  /** The path on this machine, absolute. */
+  local: string;
+  remote: string;
+  recursive: boolean;
+  force: boolean;
 }
 
 export interface SudoAsk {

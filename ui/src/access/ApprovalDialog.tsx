@@ -11,6 +11,9 @@
 // `flint exec --sudo` (milestone 13) shows the host, the login user and the exact
 // argv, one argument per chip. Allowed once, for that command; when Flint has no
 // password to type for sudo there, the window takes one, and may keep it for the host.
+//
+// `flint cp` (milestone 16) is a grant request like `exec` (D-051), and says what it
+// copies: the direction, the host, and the paths here and there.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, on, toFlintError } from '../api/backend';
@@ -98,11 +101,11 @@ export function CallerLabel({ label }: { label: string }) {
 }
 
 /** What kind of request an approval is, for the queue strip. */
-function kindOf(ap: Approval): 'sudo' | 'token' | 'grant' {
-  return ap.sudo?.host ? 'sudo' : ap.token?.name ? 'token' : 'grant';
+function kindOf(ap: Approval): 'sudo' | 'token' | 'copy' | 'grant' {
+  return ap.sudo?.host ? 'sudo' : ap.token?.name ? 'token' : ap.copy?.direction ? 'copy' : 'grant';
 }
 
-const KIND_LABEL = { sudo: 'Run as root', token: 'Token request', grant: 'Grant request' };
+const KIND_LABEL = { sudo: 'Run as root', token: 'Token request', copy: 'Copy files', grant: 'Grant request' };
 
 export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   ap: Approval;
@@ -147,6 +150,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   const sudo = kind === 'sudo' ? ap.sudo : null;
   const sudoHost = sudo ? findHost(catalog, sudo.host) : undefined;
   const askSudo = !!sudo && !sudo.has_password;
+  const copy = kind === 'copy' && ap.copy ? ap.copy : null;
 
   // The window opens over whatever had the focus: a click, a key in a terminal, or
   // nothing (another app in front). When the window comes back to the front with the
@@ -216,7 +220,9 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
             <h2 style={{ lineHeight: 'var(--lh-tight)' }}>
               <CallerLabel label={ap.label} />
               {sudo ? <> wants to run a command as <span className="danger-t">root</span> on <span className="mono">{sudo.host}</span></>
-                : token ? ' wants to create a token' : ' wants to use this vault'}
+                : token ? ' wants to create a token'
+                : copy ? <> wants to copy files {copy.direction === 'upload' ? 'to' : 'from'} <span className="mono">{copy.host}</span></>
+                : ' wants to use this vault'}
             </h2>
             <span className="chain" title={ap.chain.map((p) => `${p.pid} ${p.exe}`).join('\n')}>
               {chain.map((p, i) => (
@@ -276,6 +282,18 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                   title={more ? 'Summary — open the full command to read all of it' : undefined}>{ap.request}</div>
                 {more && <MoreRow more={more} data="approval" onShow={() => setShowCommand(true)} />}
               </div>
+              {copy && (
+                <dl className="kv" data-copy-ask data-direction={copy.direction} style={{ margin: 0, gridTemplateColumns: '72px minmax(0, 1fr)' }}>
+                  <dt>Copy</dt>
+                  <dd>{copy.direction === 'upload'
+                    ? <>This computer <Icon name="arrow-r" /> <span className="mono strong">{copy.host}</span></>
+                    : <><span className="mono strong">{copy.host}</span> <Icon name="arrow-r" /> this computer</>}
+                    {copy.recursive && <span className="faint"> · a folder, with everything in it</span>}</dd>
+                  <dt>From</dt><dd className="mono" style={{ wordBreak: 'break-all' }} data-copy-from>{copy.direction === 'upload' ? copy.local : `${copy.host}:${copy.remote}`}</dd>
+                  <dt>To</dt><dd className="mono" style={{ wordBreak: 'break-all' }} data-copy-to>{copy.direction === 'upload' ? `${copy.host}:${copy.remote}` : copy.local}</dd>
+                  {copy.force && <><dt></dt><dd className="warn-t" data-copy-force>Replaces files that are already there (--force)</dd></>}
+                </dl>
+              )}
               {token ? (
                 <>
                   <dl className="kv" data-token-ask style={{ margin: 0, gridTemplateColumns: '88px minmax(0, 1fr)' }}>
