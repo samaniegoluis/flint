@@ -224,9 +224,11 @@ Viewing it asks for no Touch ID or password. What the window shows is read from 
 arguments Flint will run, not from words the program sends.
 
 `flint cp` is a request to run commands on that host (reading or writing its files has
-that power), and the window says so: **wants to copy files to** (or **from**) the host,
-with the path on this computer, the path on the host, whether it is a folder and whether
-`--force` replaces files. See [Copying files](/guides/files/).
+that power), and the window says so: **wants to copy files to** (or **from**) the host.
+A strip shows the direction (*This computer → host*, marked Upload or Download), then
+**From** and **To** with the whole path on each end, never cut. A folder copy (`-r`) says
+so, and `--force` adds a warning that files already in the destination are replaced. See
+[Copying files](/guides/files/).
 
 `flint token create` brings up the same window showing the token instead: its name, what
 it allows, which hosts and when it expires. **Allow** (with presence) creates that one

@@ -15,9 +15,9 @@
 // `flint cp` (milestone 16) is a grant request like `exec` (D-051), and says what it
 // copies: the direction, the host, and the paths here and there.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, on, toFlintError } from '../api/backend';
-import type { AccessAction, AccessState, Approval, Catalog, GrantDuration, PresenceMethod } from '../api/types';
+import type { AccessAction, AccessState, Approval, Catalog, CopyAsk, GrantDuration, PresenceMethod } from '../api/types';
 import { Modal } from '../ui/Modal';
 import { Key } from '../ui/Kbd';
 import { useApp } from '../state/app';
@@ -101,6 +101,57 @@ export function CallerLabel({ label }: { label: string }) {
 }
 
 /** What kind of request an approval is, for the queue strip. */
+/** A path that wraps only after a `/` (design 16f*): never cut mid-name or truncated. */
+function SlashPath({ path, data }: { path: string; data: string }) {
+  const parts = path.split('/');
+  return (
+    <span className="cp-path" {...{ [data]: true }}>
+      {parts.map((p, i) => <Fragment key={i}>{p}{i < parts.length - 1 && <>/<wbr /></>}</Fragment>)}
+    </span>
+  );
+}
+
+/**
+ * Where a copy lands, as far as the window can tell before connecting: a destination
+ * ending in `/` is a folder, so the source goes in it under its own name (D-054).
+ */
+export function copyTarget(dst: string, src: string): string {
+  if (!dst.endsWith('/')) return dst;
+  const name = src.replace(/\/+$/, '').split('/').pop() ?? '';
+  return name && name !== '.' && name !== '..' ? `${dst}${name}${src.endsWith('/') ? '/' : ''}` : dst;
+}
+
+/** `flint cp`'s transfer block (design 16f1-16f3): direction, both paths, -r and --force. */
+function CopyBlock({ copy }: { copy: CopyAsk }) {
+  const up = copy.direction === 'upload';
+  const here = <><Icon name="monitor" />This computer</>;
+  const host = <><Icon name="hosts" /><span className="mono">{copy.host}</span></>;
+  const src = up ? copy.local : copy.remote;
+  const dst = copyTarget(up ? copy.remote : copy.local, src);
+  return (
+    <div className="cp" data-copy-ask data-direction={copy.direction} data-copy-host={copy.host} aria-label={`${up ? 'Upload' : 'Download'}: copy direction and paths`}>
+      <div className="cp-dir">
+        <span className="grow row" style={{ gap: 'var(--sp-2)' }}>
+          <span className="cp-end">{up ? here : host}</span>
+          <svg className="cp-arrow" viewBox="0 0 28 14" aria-hidden="true" style={{ fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }}><path d="M2 7h23M19 2l6 5-6 5" /></svg>
+          <span className="cp-end">{up ? host : here}</span>
+        </span>
+        <span className="badge info">{up ? 'Upload' : 'Download'}</span>
+      </div>
+      <div className="cp-row"><span className="who"><span className="role">From</span>{up ? 'This computer' : <span className="mono">{copy.host}</span>}</span><SlashPath path={src} data="data-copy-from" /></div>
+      <div className="cp-row"><span className="who"><span className="role">To</span>{up ? <span className="mono">{copy.host}</span> : 'This computer'}</span><SlashPath path={dst} data="data-copy-to" /></div>
+      {copy.recursive && (
+        <div className="cp-notes"><span className="cp-note" data-copy-recursive><Icon name="folder" className="info-t" />A folder, with everything in it <span className="mono faint">-r</span></span></div>
+      )}
+      {copy.force && (
+        <div className="cp-force" role="note" data-copy-force><Icon name="alert" size="sm" className="warn-t" />
+          <span><strong>Replaces files that are already there.</strong> With <span className="mono">--force</span>, anything with the same name in the destination on {up ? <span className="mono">{copy.host}</span> : 'this computer'} is overwritten without asking.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function kindOf(ap: Approval): 'sudo' | 'token' | 'copy' | 'grant' {
   return ap.sudo?.host ? 'sudo' : ap.token?.name ? 'token' : ap.copy?.direction ? 'copy' : 'grant';
 }
@@ -282,18 +333,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                   title={more ? 'Summary — open the full command to read all of it' : undefined}>{ap.request}</div>
                 {more && <MoreRow more={more} data="approval" onShow={() => setShowCommand(true)} />}
               </div>
-              {copy && (
-                <dl className="kv" data-copy-ask data-direction={copy.direction} style={{ margin: 0, gridTemplateColumns: '72px minmax(0, 1fr)' }}>
-                  <dt>Copy</dt>
-                  <dd>{copy.direction === 'upload'
-                    ? <>This computer <Icon name="arrow-r" /> <span className="mono strong">{copy.host}</span></>
-                    : <><span className="mono strong">{copy.host}</span> <Icon name="arrow-r" /> this computer</>}
-                    {copy.recursive && <span className="faint"> · a folder, with everything in it</span>}</dd>
-                  <dt>From</dt><dd className="mono" style={{ wordBreak: 'break-all' }} data-copy-from>{copy.direction === 'upload' ? copy.local : `${copy.host}:${copy.remote}`}</dd>
-                  <dt>To</dt><dd className="mono" style={{ wordBreak: 'break-all' }} data-copy-to>{copy.direction === 'upload' ? `${copy.host}:${copy.remote}` : copy.local}</dd>
-                  {copy.force && <><dt></dt><dd className="warn-t" data-copy-force>Replaces files that are already there (--force)</dd></>}
-                </dl>
-              )}
+              {copy && <CopyBlock copy={copy} />}
               {token ? (
                 <>
                   <dl className="kv" data-token-ask style={{ margin: 0, gridTemplateColumns: '88px minmax(0, 1fr)' }}>

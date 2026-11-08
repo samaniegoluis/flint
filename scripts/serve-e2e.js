@@ -80,7 +80,10 @@
         const up = form.querySelector('[data-copy-ask]')?.dataset.direction === 'upload';
         const local = up ? from : to;
         const remote = up ? to : from;
-        log((/wants to copy files (to|from) local/.test(title) && local.startsWith('/') && remote.startsWith('local:') ? 'ok   ' : 'FAIL ') + 'the approval window says copy files with the direction, the host and both paths');
+        const host = form.querySelector('[data-copy-ask]')?.dataset.copyHost ?? '';
+        const badge = form.querySelector('[data-copy-ask] .badge')?.textContent ?? '';
+        log((/wants to copy files (to|from) local/.test(title) && host === 'local' && local.startsWith('/') && remote.length > 0 && !remote.startsWith('local:') && badge === (up ? 'Upload' : 'Download') ? 'ok   ' : 'FAIL ') + 'the approval window says copy files with the direction, the host and both paths');
+        if (req.includes('--force')) log((form.querySelector('[data-copy-force]') ? 'ok   ' : 'FAIL ') + 'a copy with --force warns that it replaces files');
         log((form.querySelector('[data-scope-host]') && form.querySelector('[data-action="exec"]')?.checked ? 'ok   ' : 'FAIL ') + 'a copy proposes running commands on that host');
       }
       if (req.includes('timeout-me')) { log('ok   left unanswered: ' + req); continue; }
