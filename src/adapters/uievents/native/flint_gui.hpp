@@ -242,11 +242,33 @@ inline long long next_seq() {
 
 // ---- macOS menu bar (CF-073) ------------------------------------------------------
 
+#if defined(__APPLE__) && defined(__OBJC__)
+}  // namespace flint_gui
+@interface FlintAppDelegate : NSObject <NSApplicationDelegate>
+@end
+@implementation FlintAppDelegate
+- (BOOL)applicationShouldHandleReopen:(NSApplication*)sender hasVisibleWindows:(BOOL)visible {
+    if (!visible) {
+        for (NSWindow* w in [sender windows]) {
+            if ([w isMiniaturized]) [w deminiaturize:nil];
+            [w makeKeyAndOrderFront:nil];
+        }
+    }
+    return YES;
+}
+@end
+namespace flint_gui {
+#endif
+
 // The standard menus, with no item on a key the page owns (⌘W, ⌘N, ⌘O, ⌘T…). Each
 // item has a nil target, so AppKit sends it along the responder chain: the WKWebView
 // answers cut:/copy:/paste:/selectAll:/undo:, the window answers performClose:.
-// Quit closes the window, which ends webui's run loop as the close button does, so
-// the GUI driver's shutdown (sessions closed, vault closed) still runs.
+// Quit sends stop: to NSApp, which ends webui's run loop, so the GUI driver's
+// shutdown (sessions closed, vault closed) still runs. The close button only hides
+// the window in the menu bar (milestone 14).
+//
+// The app also gets a delegate for one message webui leaves unanswered: a click on
+// the Dock icon (or `open -a Flint`) with the window hidden shows it again (CF-097).
 //
 // webui's App.run() installs its own menu, which binds ⌘W to Close Window, and offers
 // no way to leave a key to the page (CF-073). So this menu is queued on the main
@@ -277,7 +299,9 @@ inline void install_app_menu(const std::string& app_name) {
         add(app, @"Hide Others", @selector(hideOtherApplications:), @"h", cmd | NSEventModifierFlagOption);
         add(app, @"Show All", @selector(unhideAllApplications:), @"", 0);
         [app addItem:[NSMenuItem separatorItem]];
-        add(app, [@"Quit " stringByAppendingString:name], @selector(performClose:), @"q", cmd);
+        // Quit stops the app: closing the window only hides it in the menu bar
+        // (milestone 14), so `performClose:` would no longer quit.
+        add(app, [@"Quit " stringByAppendingString:name], @selector(stop:), @"q", cmd);
 
         NSMenu* edit = submenu(@"Edit");
         add(edit, @"Undo", @selector(undo:), @"z", cmd);
@@ -294,6 +318,10 @@ inline void install_app_menu(const std::string& app_name) {
         [NSApp setWindowsMenu:window];
 
         [NSApp setMainMenu:bar];
+
+        // NSApp keeps a weak reference: the delegate lives as long as the process.
+        static FlintAppDelegate* delegate = [[FlintAppDelegate alloc] init];
+        if ([NSApp delegate] == nil) [NSApp setDelegate:delegate];
     }});
 #else
     (void)app_name;

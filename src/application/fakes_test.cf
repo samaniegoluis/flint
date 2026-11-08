@@ -453,7 +453,7 @@ fn (self: FakeInspector) inspect_private_key(private_key: str, passphrase: str) 
 // ---- Fixture -------------------------------------------------------------------
 
 fn fresh_session(crypto: FakeCrypto, mut store: FakeStore) -> VaultSession {
-    return create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/test.flint", "", "correct horse") or VaultSession{ path: "", name: "", secrets_key: [], cached: false }
+    return create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/test.flint", "", "correct horse", false) or VaultSession{ path: "", name: "", secrets_key: [], cached: false }
 }
 
 // ---- SSH transport, prompter, terminal, sink, clock -----------------------------

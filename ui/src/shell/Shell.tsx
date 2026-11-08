@@ -201,6 +201,7 @@ export function Shell() {
         break;
       }
       case 'lock': lock().catch(fail); break;
+      case 'quit': api.quit().catch(fail); break;
       case 'fontBigger': setZoom((z) => z + 1); break;
       case 'fontSmaller': setZoom((z) => z - 1); break;
       case 'fontReset': setZoom(0); break;

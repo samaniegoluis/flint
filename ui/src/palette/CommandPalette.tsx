@@ -40,6 +40,7 @@ const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'openVault', icon: 'folder' },
   { action: 'createVault', icon: 'plus' },
   { action: 'lock', icon: 'lock' },
+  { action: 'quit', icon: 'x' },
 ];
 
 function Hl({ text, positions }: { text: string; positions: number[] }) {

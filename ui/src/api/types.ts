@@ -117,11 +117,24 @@ export interface Settings {
   term_theme: 'default' | 'catppuccin' | 'tokyo-night' | 'aura' | 'dracula' | 'nord';
   /** Auto-lock after this long with nobody using the vault (D-042). */
   lock_after: LockAfter;
+  /** The app's own record that earlier cached keys were removed (D-048); the core keeps it. */
+  keys_cleared?: boolean;
 }
 
 export type LockAfter = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | 'never';
 
 /** A `flint` command asked this window to unlock a vault; `path` is "" for none. */
+/** The window's own lock (milestone 14): closed to the tray, it opens with the
+ *  master password or the presence check. */
+export interface WindowState {
+  locked: boolean;
+  vault: string;
+  /** How the window opens: the OS's check, or `password` where it has none. */
+  presence: PresenceMethod;
+  /** Callers waiting for an answer, shown once the window is open. */
+  waiting: number;
+}
+
 export interface UnlockRequest {
   path: string;
   name: string;

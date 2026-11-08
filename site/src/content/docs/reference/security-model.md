@@ -48,11 +48,11 @@ password for one command ([details](/guides/vaults/#flint-holds-the-unlocked-vau
 
 | Who | Today |
 |---|---|
-| You, in the app | Unlock with the master password. The app may reopen the last vault on launch from a key it saved in the OS keychain |
+| You, in the app | Unlock with the master password. The app reopens the last vault on launch without it only if you ticked **Remember on this computer**, which saves the key in the OS keychain |
 | You, in a terminal | Through the app while the vault is unlocked there; otherwise the master password, for that one command |
 | An AI agent you started | Only once you approve it in Flint's window: the hosts, actions and time you chose, as the host's login user. Never a password or a key. While the vault is locked, `locked`, and Flint's window asks you to unlock, naming the command |
-| Another program running as you | The same as an agent: Flint asks you before it runs anything, naming the program. On Linux it can still read the app's cached key from the Secret Service, which has no per-app access list; **Forget on this device** in Settings → Vault removes it |
-| A person at your unlocked computer | Opens Flint while the vault is unlocked |
+| Another program running as you | The same as an agent: Flint asks you before it runs anything, naming the program. On Linux, if you ticked **Remember on this computer**, it can read that key from the Secret Service, which has no per-app access list |
+| A person at your unlocked computer | Nothing from a window you closed to the menu bar or tray: it opens with Touch ID, polkit or the master password. Everything in a window left open |
 | A person with your file but not your computer | Nothing, without the master password |
 
 The vault **locks on its own**: after the idle time in Settings (1 hour by default), when
@@ -104,19 +104,21 @@ program** shares its grant, and a program that can control the approved one (deb
 type into its terminal) can act through it. [Limits today](/guides/ai-agents/#limits-today)
 shows how to narrow what an agent can reach.
 
+### Two locks
+
+**Closed to the menu bar or tray**, Flint keeps serving approved callers but locks its
+**window**: until Touch ID (or the Mac's password), polkit or the master password opens
+it, the window's page gets nothing from the vault (the app refuses it every read) and
+cannot type into the sessions behind it. The vault's own lock is the stronger one: it
+wipes the key and ends every grant.
+
+**Remember on this computer** is a choice at unlock, off by default, with the risk in
+plain words: it saves the vault key in the OS keychain so Flint reopens without the
+master password. Without it no key is written there; the keys earlier versions cached on
+every unlock are removed once.
+
 ## Next
 
-The access decision moves further into Flint itself, the same on macOS, Linux and
-Windows:
-
-- **Closed to the menu bar or tray**, Flint keeps serving approved callers but locks its
-  **window**: opening it asks for the master password or Touch ID.
-- **Remember on this computer** becomes a choice at unlock, off by default, with the risk
-  in plain words: it lets Flint reopen without the master password.
-
-Done so far: Flint holds the unlocked vault, the CLI (`connect` and `exec` included) runs
-through it, a locked vault makes the window ask, the vault locks on its own, every
-caller is approved in Flint's window with presence, tokens serve scheduled jobs, an
-activity log in the vault shows what callers ran, and `exec --sudo` runs a command as
-root you approved, with Flint typing the password. The
-design and the reasons behind it are in the repository: `docs/vault-access-model.md`.
+Windows (a named pipe and Windows Hello), a headless `flint serve`, and a Keychain item
+only Touch ID releases, which needs a signed build. The design and the reasons behind
+the access model are in the repository: `docs/vault-access-model.md`.

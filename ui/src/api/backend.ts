@@ -4,7 +4,7 @@
 
 import type {
   AccessAnswer, AccessState, ActivityEntry, AppInfo, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus,
+  KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -64,9 +64,18 @@ export const api = {
   uiStateSet: (s: UiStateView & { vault: string }) => call<UiStateView>('ui_state_set', s),
 
   recents: () => call<RecentView[]>('vault_recents'),
-  /** `allow` also grants the CLI caller that asked for this unlock (milestone 12). */
-  unlock: (path: string, password: string, allow = false) => call<VaultInfo>('vault_unlock', { path, password, allow }),
-  create: (path: string, name: string, password: string) => call<VaultInfo>('vault_create', { path, name, password }),
+  /** `allow` also grants the CLI caller that asked for this unlock (milestone 12).
+   *  `remember` is Remember on this computer (D-048): unticked on a remembered vault, its key goes. */
+  unlock: (path: string, password: string, allow = false, remember = false) => call<VaultInfo>('vault_unlock', { path, password, allow, remember }),
+  create: (path: string, name: string, password: string, remember = false) => call<VaultInfo>('vault_create', { path, name, password, remember }),
+  /** Whether this run knows the vault's key is remembered: the unlock screen ticks the box. */
+  vaultRemembered: (path: string) => call<{ remembered: boolean }>('vault_remembered', { path }),
+  /** The window's lock (milestone 14). */
+  windowState: () => call<WindowState>('window_state'),
+  /** Opens the locked window: the master password, or '' for Touch ID / polkit. */
+  windowUnlock: (password: string) => call<WindowState>('window_unlock', { password }),
+  /** Quits Flint: the window and the tray, and the CLI's way into the vault. */
+  quit: () => call('app_quit'),
   close: () => call('vault_close'),
   /** Locks the vault: its key leaves memory, open sessions keep running (D-042). */
   lock: () => call('vault_lock'),

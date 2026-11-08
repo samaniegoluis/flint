@@ -83,6 +83,24 @@ fn grant_views(grants: []Grant, cat: Catalog) -> []GrantView {
 // The presence check before an Allow takes effect (Principle 12): the OS's own
 // (Touch ID, the Mac's password, polkit) or, where it has none, the vault's master
 // password checked against the key held. Fails with `wrong_password` or `denied`.
+// Opens the window again after it was closed to the tray (milestone 14): with
+// `password`, it must be the master password of the vault held; without one, the
+// OS's presence check (Touch ID, polkit) must pass. Where the OS has no check, only
+// the master password opens it.
+fn confirm_window_unlock[C: Crypto, S: VaultStore, P: Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str) -> void! {
+    if password.len() > 0 || presence.presence_method() == "password" {
+        ok := try verify_master_password(crypto, store, session, password)
+        if !ok {
+            return error(coded(ERR_WRONG_PASSWORD, "that is not the master password of this vault"))
+        }
+        return
+    }
+    ok := try presence.presence_confirm("open the Flint window for the vault {session.name}")
+    if !ok {
+        return error(coded(ERR_DENIED, "presence was not confirmed; the window stays locked"))
+    }
+}
+
 fn confirm_presence[C: Crypto, S: VaultStore, P: Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str, reason: str) -> void! {
     if presence.presence_method() == "password" {
         ok := try verify_master_password(crypto, store, session, password)

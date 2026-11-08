@@ -51,6 +51,10 @@ struct SessionCell {
     std::vector<std::string> relocked;
     std::string lock_after;
     bool quitting = false;
+    // Milestone 14: the window is locked (closed to the tray) while the vault stays
+    // unlocked, and the vaults this run knows are remembered on this computer.
+    bool window_locked = false;
+    std::vector<std::string> remembered;
     // Caller approval (milestone 12): the grants and waiting approvals, as the JSON
     // of a domain AccessBook. `access_op` is held for a read-modify-write of it; it
     // is a separate lock so an approval never waits on a running command.

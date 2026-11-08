@@ -4,6 +4,8 @@
 #
 #   assets/app-icon/Flint.icns      macOS bundle icon (build.cf, Icon)
 #   assets/app-icon/flint-256.png   Linux and anything else that takes a PNG
+#   ui/public/tray-template.png      macOS menu bar glyph (assets/app-icon/flint-tray.svg)
+#   ui/public/tray.png               Linux tray glyph, light on the dark panel
 #
 #   scripts/make-app-icon.sh        # needs rsvg-convert (librsvg) and macOS iconutil
 set -euo pipefail
@@ -22,4 +24,8 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$set_dir" -o "$dir/Flint.icns"
 rsvg-convert -w 256 -h 256 "$svg" -o "$dir/flint-256.png"
-echo "make-app-icon: $dir/Flint.icns, $dir/flint-256.png"
+tray="$dir/flint-tray.svg"
+rsvg-convert -w 36 -h 36 "$tray" -o "$root/ui/public/tray-template.png"
+sed 's/#000/#D8DBE0/g' "$tray" > "$tmp/tray-light.svg"
+rsvg-convert -w 48 -h 48 "$tmp/tray-light.svg" -o "$root/ui/public/tray.png"
+echo "make-app-icon: $dir/Flint.icns, $dir/flint-256.png, ui/public/tray-template.png, ui/public/tray.png"

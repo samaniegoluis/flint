@@ -37,3 +37,21 @@ test "the access book is shared by copies and cleared on demand" {
     copy.access_clear()
     assert_eq(h.access_book().grants.len(), 0)
 }
+
+test "the window lock and the remembered vaults are shared by copies" {
+    h := new_session_holder()
+    copy := h
+    assert(!copy.window_locked())
+    h.set_window_locked(true)
+    assert(copy.window_locked())
+    h.set_window_locked(false)
+    assert(!copy.window_locked())
+
+    assert(!copy.remembered("/v/a.flint"))
+    h.set_remembered("/v/a.flint", true)
+    h.set_remembered("/v/a.flint", true)
+    assert(copy.remembered("/v/a.flint"))
+    assert(!copy.remembered("/v/b.flint"))
+    h.set_remembered("/v/a.flint", false)
+    assert(!copy.remembered("/v/a.flint"))
+}

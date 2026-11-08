@@ -51,7 +51,7 @@ test "ui state keeps at most the cap of vaults" {
 test "the GUI's group paths are stored as ids and survive a rename" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
-    s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/Ui.flint", "", "correct horse")
+    s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/Ui.flint", "", "correct horse", false)
     _ := try add_group(crypto, mut store, "homelab/proxmox")
     _ := try add_group(crypto, mut store, "work")
     mut ui := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }

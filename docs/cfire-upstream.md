@@ -1456,6 +1456,13 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   pid}!` on both; a named pipe with the caller's SID on Windows under the same API.
 
 ### CF-082 · missing · `partly resolved`: no tray / menu bar icon in `ext:webui`
+- **Used in milestone 14** [ran on macOS]: `set_tray`, `add_tray_item`, `set_hide_on_close`
+  and `show_window` drive Flint's menu bar icon (`src/drivers/gui/window.cf`), with no
+  native code; the close button sends `window:close_requested` to `app.on`. What is left:
+  (1) Linux still gets a `GtkStatusIcon` (below), so Flint also shows its window when
+  launched a second time; (2) tray items are fixed at start, with no way to change a title
+  or disable an item (a "Lock Vault" with no vault unlocked); (3) a window hidden by the
+  close button is not shown again by a Dock click (CF-097).
 - **At `43431f2`:** [read] `set_tray`, `add_tray_item`, `hide_window`, `show_window` and `set_hide_on_close` exist. macOS uses `NSStatusItem`. Linux uses `GtkStatusIcon`, deprecated since GTK 3.14: it is an XEmbed tray icon, which Wayland sessions do not show and GNOME shows only with an extension (Zorin's desktop is GNOME). An AppIndicator / `StatusNotifierItem` is what Linux desktops show today. To settle at milestone 14's plan.
 - **At `2d8613d`:** `ext:webui` has an app menu (`add_menu_item`) and a window icon
   (`set_icon`), but no status item: nothing like `NSStatusItem` on macOS or an
@@ -1682,3 +1689,16 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** the installer (or `cfire doctor`) warns when a runtime of another version sits
   earlier in the search order, or the compiler refuses a runtime whose version differs
   from its own.
+
+### CF-097 · missing · `confirmed`: a click on the Dock icon does not bring back a window hidden by the close button
+- **Repro (43431f2, macOS):** an `ext:webui` app with `set_hide_on_close(true)`: close the
+  window, then click the app's icon in the Dock (or run `open -a` on it). Nothing appears:
+  webui sets no `NSApplicationDelegate`, so `applicationShouldHandleReopen:hasVisibleWindows:`
+  is never answered, and the hidden window stays hidden until the tray's own item shows it.
+- **Workaround:** `install_app_menu` in `src/adapters/uievents/native/flint_gui.hpp` sets a
+  small app delegate (only if none is set) whose reopen handler orders the windows front.
+  Tagged with CF-073, the shim it lives in.
+- **Related:** webui's own Quit item calls `performClose:` on the key window, which with
+  hide-on-close only hides it; Flint's menu sends `stop:` instead.
+- **Ideal:** with hide-on-close set, webui answers reopen by showing the window (and emits
+  `window:reopened`), and its Quit item quits (`app.quit()`) whatever hide-on-close says.

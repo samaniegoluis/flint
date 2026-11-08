@@ -44,6 +44,11 @@ master password and names the command that asked. Unlock (with **Allow … for 1
 ticked, the agent is approved in the same step), and the agent can run it again.
 **Settings → Vault → Lock after** sets the idle time (1 hour by default).
 
+Closing Flint's window does not stop the agent: Flint stays in the menu bar or system
+tray and keeps serving what you approved, with its window locked until Touch ID, polkit
+or the master password opens it ([the window's own lock](/guides/vaults/#the-windows-own-lock)).
+A new request waits for you to open the window and answer.
+
 ## Approve a program
 
 Flint answers no `flint` command until you approve the program behind it. The window

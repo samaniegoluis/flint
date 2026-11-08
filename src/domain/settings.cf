@@ -20,6 +20,9 @@ type Settings struct {
     // Milestone 11b: how long the vault stays unlocked with nobody using it
     // (LOCK_AFTER, "never" to turn it off). Older files read the default.
     lock_after:         str  `json:"lock_after" default:"1h"`
+    // Milestone 14: the keys every earlier Flint cached on each unlock were removed
+    // from this machine's keychain (D-048). Set once by the app, never by the page.
+    keys_cleared:       bool `json:"keys_cleared" default:"false"`
 }
 
 // Terminal colour themes (ui/src/lib/terminalThemes.ts holds the palettes).
@@ -37,7 +40,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {

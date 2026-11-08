@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Flint's menu bar / tray glyph: the logo's gem and spark in one colour, for a
+       macOS template image (the system tints it) and, recoloured by
+       scripts/make-app-icon.sh, the Linux tray. -->
+  <path fill="#000" fill-rule="evenodd" d="M9 3L17 7L19 15L12 21L5 16L4 8Z M9.9 5.6L6 8.7L6.8 14.9L12 18.6L17.3 14.2L15.8 8.3Z"/>
+  <path fill="#000" d="M9 3L12 11L17 7Z M12 11L19 15L12 21Z"/>
+  <path fill="#000" d="M20.5 1.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/>
+</svg>

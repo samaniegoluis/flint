@@ -25,6 +25,7 @@ speaks the Kitty keyboard protocol.
 | New host (new key or credential on those pages) | ⌘N | Ctrl+Shift+N |
 | Edit host | ⌘I | Ctrl+Shift+I |
 | Lock vault | ⌘L | Ctrl+Shift+L |
+| Quit Flint (closing the window only hides it in the menu bar or tray) | ⌘Q | Ctrl+Shift+Q |
 | Copy · paste in the terminal | ⌘C · ⌘V | Ctrl+Shift+C · Ctrl+Shift+V |
 | Terminal font size | ⌘+ ⌘− ⌘0 | Ctrl+Shift+= − 0 |
 | Move between regions (leave the terminal) | F6 · ⇧F6 | F6 · Shift+F6 |

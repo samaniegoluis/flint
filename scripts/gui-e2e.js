@@ -695,6 +695,7 @@
     await check(hasText('Master password'), 'Lock shows the lock screen');
     await check(qa('.tab').length > 0 && !!q('.tab')?.closest('[inert]'), 'the tabs stay, behind the lock screen and out of reach');
     await check(hasText('keeps running') || hasText('keep running'), 'the lock screen says the sessions keep running');
+    await check(q('[data-remember] input') && !q('[data-remember] input').checked, 'Remember on this computer is offered, unticked');
     {
       let refused = '';
       try { await window.backend.catalog({}); } catch (e) { refused = String(e?.message ?? e); }
@@ -740,6 +741,32 @@
     await waitFor(() => grpRow()?.getAttribute('aria-expanded') === 'false', 'the collapsed group after unlocking');
     await check(true, 'the vault opens with its groups collapsed as they were left');
     await check(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w').trim() === '280px', 'and with the sidebar width that was set');
+
+    await setStep('window closed to the tray');
+    await window.backend.e2e_close_window({});
+    await waitFor(() => q('[data-window-lock]'), 'the window lock screen', 10000);
+    await check(hasText('The vault is still unlocked'), 'closing the window locks it, the vault stays unlocked');
+    await check(!!q('.tab')?.closest('[inert]'), 'the tabs are behind the window lock, out of reach');
+    {
+      const refusal = async (fn) => { try { await fn(); return 'answered'; } catch (e) { return String(e?.message ?? e); } };
+      await check((await refusal(() => window.backend.catalog({}))).startsWith('locked'), 'a locked window reads nothing from the vault');
+      const tab = q('[data-tab]')?.getAttribute('data-tab') ?? 'none';
+      await check((await refusal(() => window.backend.session_input({ session: tab, data: 'x' }))).startsWith('locked'), 'a locked window types into no session');
+      await check((await refusal(() => window.backend.vault_unlock({ path: vaultPath, password: '' }))).startsWith('locked'), 'a locked window does not reopen the vault without a password');
+      const acc = await window.backend.access_state({});
+      await check(acc.pending.length === 0 && acc.grants.length === 0, 'a locked window shows no grant and no caller');
+      await check((await window.backend.window_state({})).locked, 'the core reports the window locked');
+    }
+    await fill('#wpw', 'not-the-master-password');
+    await click('button[type="submit"]', 'Open');
+    await waitFor(() => hasText('Wrong password.'), 'the wrong password message', 30000);
+    await check(!!q('[data-window-lock]'), 'a wrong password leaves the window locked');
+    await fill('#wpw', MASTER);
+    await click('button[type="submit"]', 'Open');
+    await waitFor(() => !q('[data-window-lock]'), 'the window to open', 30000);
+    await check(!q('.tab')?.closest('[inert]') && (byText('.tree .ti', 'local') || grpRow()), 'the master password opens the window on the same vault');
+    await runInTerminal('echo after-window-$((3+3))', 'after-window-6');
+    await check(true, 'the session that ran behind the window lock still works');
 
     await log(`${passed} checks passed`);
     await window.backend.e2e_report({ ok: true, detail: '' });

@@ -63,16 +63,18 @@ A vault that has been opened by a Flint with migration 5 is refused by older bui
 
 ## The keychain
 
-The master key, not the password, is what Flint caches in the OS keychain. It is stored
+With **Remember on this computer** ticked at unlock (off by default), the master key, not
+the password, is what Flint keeps in the OS keychain. It is stored
 as a generic password with service `Flint` and account `vault-<salt in hex>`. On macOS
 it goes in your login keychain, which does not sync to iCloud. On Linux it goes in the
-Secret Service's default collection. `flint vault lock` deletes it.
+Secret Service's default collection. Unticking the box, **Forget on this device** and
+`flint vault lock` delete it.
 
 ## What this protects against
 
 - **Someone with the file** (a cloud provider, a stolen backup) learns its size and the
   salt, and nothing else. To read it they must guess the master password, and each guess
   costs a 256 MiB Argon2id run.
-- **Someone with your unlocked user session** can use the cached key, as they could use
-  any logged-in app. Run `flint vault lock` on machines you do not fully trust, or set
-  `FLINT_KEYCHAIN=off`.
+- **Someone with your unlocked user session** can use a remembered key, as they could use
+  any logged-in app. Leave **Remember on this computer** unticked on machines you do not
+  fully trust, or set `FLINT_KEYCHAIN=off`.

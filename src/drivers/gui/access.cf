@@ -47,6 +47,10 @@ type GrantsChanged struct {
 
 fn access_state(st: GuiState, store: LockedVaultStore, presence: OsPresence) -> AccessState {
     now := time.now_ms()
+    if st.holder.window_locked() {
+        // A locked window shows none of it: the lock screen counts who waits.
+        return AccessState{ presence: presence.presence_method(), now_ms: now, pending: [], grants: [] }
+    }
     book := st.holder.access_book()
     cat := held_catalog(st, store)
     return AccessState{ presence: presence.presence_method(), now_ms: now, pending: waiting_approvals(book, now), grants: grant_views(live_grants(book.grants, now), cat) }
@@ -155,6 +159,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
 
 // Ends grant `id`, or every grant when `id` is "".
 fn rpc_access_revoke(params: str, st: GuiState, store: LockedVaultStore, presence: OsPresence, mut app: webui.App) -> str! {
+    try st.require_open_window()
     req := try parse_req[NameReq](params)
     st.holder.access_hold()
     mut book := st.holder.access_book()
