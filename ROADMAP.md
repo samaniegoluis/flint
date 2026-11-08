@@ -23,6 +23,7 @@ spec or a few milestones; `lean-spec` draws the next spec from the top of this l
 | 6 | **Embedded RDP** | A spec of its own (§9) |
 | 7 | **MCP server**, optional | Only after the owner weighs what it adds over the CLI, which agents already use under the same grants |
 | 8 | **Later: review once the plan is done** | No date. Optional features the owner reviews when nothing above is left (2026-11-06): **broadcast input** and **workspaces** (§6), **`flint inventory`** for Ansible (§2), **fleet key rotation** (§3), the Ansible-style options of **`flint exec @group`** (§2), **last command time per pane** (§6) |
+| 9 | **Remote vault, self-hosted** (D-050) | The last block, after block 8 (owner, 2026-11-08): `flint-vault-server` in Docker, **Connect remote vault** in the app, per-record merge (§10). A spec of its own |
 
 ## 1. Parity with Tether
 
@@ -139,14 +140,14 @@ What Tether already does and Flint must not lose.
 | Feature | Status | Notes |
 |---|---|---|
 | Sync via any cloud folder (OneDrive, Dropbox, iCloud) | `done` | Journal mode `DELETE`, not WAL |
-| Detect cloud-sync conflict copies and offer to merge | `next` | |
+| Detect cloud-sync conflict copies and offer to merge | `next` | The per-record merge of the remote vault (§10, D-050) is the same logic: whichever lands first builds it for both |
 | Split / export a subset of hosts into a new vault ("give these 20 to my team") | `later` | |
 | Import / merge another vault | `later` | The successor of `flint import tether`: same report (added, already present, changed, not imported) and the same re-run rule, so most of `src/application/tether.cf` carries over. Possible uses: moving hosts between a personal and a work vault, restoring from an export, merging a vault a teammate shared |
 | **Import from other SSH clients** (MobaXterm sessions, mRemoteNG `confCons.xml`, Termius export, SecureCRT, `~/.ssh/config`) through the same import as "Import / merge another vault": one report, the same re-run rule | `idea` | Owner, M08 review (2026-11-06): grow the Flint import into the place other clients' exports come in, testing each against a real export |
 | The generic import's GUI as a **large centred modal** (`min(90vw, 1040px) × min(85vh, 760px)`) with a real preview table (filter, perhaps choose what to import), not a side drawer | `idea` | Owner, M08 review (2026-11-06): the Tether drawer was widened to 50% with wrapping notes as a stopgap, since it will be removed |
 | Multi-recipient vaults: encrypt to teammates' public keys (age-style), revoke access | `later` | Replaces "share the master password" |
 | Short-lived SSH certificates: the vault acts as a CA, `flint share --host X --ttl 8h` | `idea` | Teleport/Smallstep, personal-sized |
-| Local change log + per-record merge for concurrent edits on two machines | `idea` | Only if conflicts become a real problem |
+| Local change log + per-record merge for concurrent edits on two machines | `later` | Folded into the remote vault (§10, D-050): `updated_at` and tombstones per record, merged in the client |
 | Rename a vault: `flint vault rename <name>` and **Rename** in Manage vaults / Settings → Vault (the name lives in the vault's meta and is copied to `recents.json`, D-021). Moving the file stays a Finder job, but opening a moved vault replaces its stale recent entry (same salt, D-017) instead of leaving a dead one | `done` | Milestone 07. Raised in the M04 owner walkthrough: the owner wants to turn a test vault into the real one. Today the name is fixed at creation |
 | Change the master password (`flint vault passwd`): new salt, `sqlcipher_export` re-key, re-seal secrets | `next` | Not in M02. Changes the keychain account (salt-based, D-017) |
 | Auto-lock: forget the cached key after N idle days, or require Touch ID / the login password to read it | `idea` | Superseded by **Auto-lock** (done, M11b) and **Presence check** in section 3 (D-038). The app's cached key lasts until `flint vault lock` or **Forget on this device** |
@@ -231,3 +232,30 @@ What Tether already does and Flint must not lose.
 |---|---|---|
 | **RDP hosts, step 1: hand off to the native client.** An `rdp` host type in the vault; `flint connect` and the GUI open the system client with the vault's credentials (`cmdkey` + `mstsc` on Windows, `xfreerdp /from-stdin` on Linux, Windows App on macOS) | `later` | Cheap, and the vault becomes the single place for RDP logins too. Weak spot: the macOS Windows App takes no password from a `.rdp` file or the command line, so there it is copy-to-clipboard or `xfreerdp` under XQuartz. Tether tried RDP and gave up |
 | **RDP hosts, step 2: embedded RDP sessions with libfreerdp** (FreeRDP 3, C, Apache 2.0) in a tab, like SSH sessions: framebuffer to a canvas in the webview, keyboard/mouse mapping (layouts, Cmd vs Ctrl), clipboard, resize, NLA/CredSSP | `later` | The owner's preferred option. Works on macOS, Linux and Windows: Flint would use only the core library and render frames itself, so FreeRDP's own per-platform clients do not matter. Linking C fits cfire (a shim in `adapters/` + a `CF-NNN` entry), unlike cgo in Tether. A spec of its own, not a milestone. Windows inherits Flint's own Windows blockers (CF-001, CF-010). Not rdpwrap: that is a server-side `termsrv.dll` patch that enables incoming RDP on Windows Home, not a client library |
+
+## 10. Remote vault (self-hosted sync)
+
+Owner, 2026-11-08 (D-050). **Local-first, like Obsidian Sync:** every machine keeps its own
+full copy of the vault and works offline; an optional server the owner runs keeps the
+copies in step, so five machines share one vault without passing a file around. The server
+never holds the key and never decrypts anything: it stores the vault exactly as it is on
+disk, encrypted in full (Principle 5). Self-hosted first: whoever wants it runs it on their
+own infrastructure (Docker, a volume, a domain behind their reverse proxy).
+
+| Feature | Status | Notes |
+|---|---|---|
+| **`flint-vault-server`**: a separate binary in this repo, in cfire, that stores one encrypted vault blob with a version number. `GET /vault` returns blob + version; `PUT /vault` with `If-Match: <version>` replaces it, `409` when another machine uploaded first | `later` | Small on purpose (a few hundred lines on `ext:net/http`): all the hard logic lives in the client. Authenticated by a **token** set as an environment variable when the server starts; the token says who may talk to the server, the master password still says who may read the vault, so a leaked token gives only ciphertext. Rate limit per client, a request size cap, explicit timeouts (Principle 8); TLS from the reverse proxy (Dokploy, NPM, Caddy). Storage behind a port: SQLite or a plain file on a volume first |
+| **Docker image on GHCR**, a `docker-compose.yml` with a volume, and a docs page *Self-host a remote vault* | `later` | Open source like the rest. Built and pushed by GitHub Actions |
+| **Connect remote vault** in the app, beside *Create vault* and *Open vault*: URL and token, then the master password. Downloads a local copy and keeps it in step; also `flint vault connect <url>` | `later` | Everything else is unchanged: the CLI, grants, tokens, Touch ID, the tray and `exec --sudo` work on the local copy and never learn the vault is remote. The server token is kept in the OS keychain, not in clear in the config. Offline edits are pushed on reconnect |
+| **Per-record merge in the client**: on a `409`, download the remote copy, open both with the vault key, merge record by record, upload again | `later` | Pure cfire in the domain and application layers, tested with `cfire test` (Principle 1). Needs an appended migration adding `updated_at` and tombstones (deleted records kept as markers) to every synced table (Principle 10). The same merge resolves cloud-folder conflict copies (§4) |
+| Server status page: last sync, version, size, which devices connected and their app versions | `idea` | Metadata only, by design: the server cannot show hosts because it cannot decrypt them. No value yet; not in the first version |
+| **Hosted sync, paid** (~$2/month): the same server and protocol, run by the author, with accounts in front of the token | `idea` | Only if Flint grows. Validate demand first: GitHub release download counts (`download_count` per asset in the releases API), Homebrew cask analytics, docs-site analytics (Umami or Plausible), and a waitlist on the self-host page. Not telemetry inside the app: a phone-home in an SSH client costs more trust than it measures; if ever, opt-in and off by default. The server stays open source: it is trivial and the open client documents its protocol anyway; people pay for not running it. Costs to plan for: payment fees (an annual price or a merchant of record), support, and a master password that can never be recovered (say so at sign-up); a stolen store of blobs is offline-crackable for weak master passwords, so require strong ones. Needs the signed macOS build first. Version history (restore last week's vault) is the natural paid extra |
+
+**Out of scope, decided 2026-11-08 (D-050):** a **web version** of Flint (cfire builds WASM,
+but a browser cannot open TCP sockets, so SSH from a page needs a WebSocket → TCP relay
+that reaches the target network, plus libssh in WASM; limited and not worth it for a
+desktop-first product); **users and shared vaults** on the server (credentials are
+personal, so sharing a vault saves a teammate little; a shared host inventory with
+personal credentials is a different product, see multi-recipient vaults in §4); a
+**per-record sync protocol** with records stored separately on the server (leaks how many
+records exist and when they change; not needed at personal scale).
