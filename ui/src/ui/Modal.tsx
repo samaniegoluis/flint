@@ -35,7 +35,9 @@ export function Modal({ label, onClose, children, width = 560, top = 72, classNa
     </>
   );
   if (layer === 1) return body;
-  return createPortal(body, document.querySelector('.app') ?? document.body);
+  // Into the vault's lock screen when it is up: it covers the window (z-index 1000),
+  // so a modal at the window's root would sit behind it.
+  return createPortal(body, document.querySelector('.lock-screen') ?? document.querySelector('.app') ?? document.body);
 }
 
 // The open dialogs, innermost last: only the top one handles keys and holds the focus.

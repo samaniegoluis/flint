@@ -435,8 +435,15 @@ echo "== lock from the CLI, then a command asks the window to unlock"
 expect 0 "vault lock locks the window" "" -- vault lock
 expect 0 "vault status: locked" "" -- --json vault status
 check "status says locked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" == "False" ]]'
-expect 5 "a command on the locked vault, with no terminal: locked" "" -- host list
+# A long command, so the lock screen's request offers "Show full command" (M15, 16e1b).
+expect 5 "a command on the locked vault, with no terminal: locked" "" -- exec local -- echo locked-long "$long_tail" locked-long-end
 check "it says Flint is asking for the master password" '[[ "$err" == *"Flint is asking"* ]]'
+# `vault unlock` would replace that request: let the page check the long one first.
+for _ in $(seq 1 300); do
+  grep -q "leaves the lock screen asking" "$tmp/app.log" && break
+  grep -q "\[page\] FAIL\|check failed" "$tmp/app.log" && break
+  sleep 0.2
+done
 expect 0 "vault unlock waits for the window" "" -- vault unlock
 expect 0 "and the CLI is served again" "" -- --json vault status
 check "status says unlocked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" == "True" ]]'

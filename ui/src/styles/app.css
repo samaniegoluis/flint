@@ -36,3 +36,6 @@ button.panel:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .act-row .caller { min-width: 0; }
 /* The next request in the approval window's queue (17a6), at the foot of the card. */
 .approval-next { gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--border-subtle); background: var(--surface-overlay); border-radius: 0 0 var(--radius-lg) var(--radius-lg); font-size: var(--fs-sm); }
+/* A checkbox row in a column (the unlock screen's "Allow …") is as wide as its text:
+   a stretched label would toggle on a click in the empty space beside it. */
+.col > .opt, .field > .opt { align-self: flex-start; }

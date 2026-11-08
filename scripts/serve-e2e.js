@@ -144,8 +144,20 @@
     await waitFor(() => q('.lock-screen [data-lock-reason="cli"]'), 'the lock screen after `flint vault lock`', 90000);
     await check(true, '`flint vault lock` locks the window');
     const banner = await waitFor(() => q('[data-unlock-request]'), 'the unlock request of a command', 90000);
-    // `flint vault unlock` may ask again before this page looks, naming itself.
-    await check(/flint (host list|vault unlock)/.test(banner.textContent), 'a command on the locked vault makes the window ask, naming it');
+    // The shell runs `flint vault unlock` only once this block has logged its last check.
+    await check(/flint exec local -- echo locked-long/.test(banner.textContent), 'a command on the locked vault makes the window ask, naming it');
+    {
+      // The full command opens over the lock screen, not behind it (found in the
+      // design 16e walkthrough: the lock screen sits at z-index 1000).
+      q('[data-unlock-show-command]')?.click();
+      const full = await waitFor(() => q('[data-command-full]'), 'the full command on the lock screen', 5000);
+      const r = full.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(20, r.height / 2));
+      await check(!!top?.closest('[data-command-modal]') && full.textContent.includes('locked-long-end'), 'Show full command on the lock screen shows the whole command, on top');
+      q('[data-command-modal]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(150);
+      await check(!q('[data-command-full]') && !!q('.lock-screen [data-unlock-request]'), 'Esc closes it and leaves the lock screen asking');
+    }
     {
       const pw = q('#pw');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(pw, MASTER);
