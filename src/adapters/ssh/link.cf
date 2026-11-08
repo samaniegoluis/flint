@@ -19,6 +19,9 @@ type SshLink struct {
     // Shared by every copy of this value; owns the tunnel threads (CF-026, CF-043).
     tunnels: shared[cpp::flint_ssh::Tunnels]
     timeout_secs: i64
+    // The SFTP channel on the last hop and its one open file (sftp.cf), or none.
+    sftp: *mut cpp::sftp_session_struct
+    sftp_file: *mut cpp::sftp_file_struct
 }
 
 fn new_ssh_link() -> SshLink {
@@ -264,6 +267,7 @@ fn (mut self: SshLink) link_keepalive() -> void! {
 // i+1, so it is stopped after hop i+1 is gone and before hop i goes. A tunnel
 // whose next hop never connected is stopped the same way.
 fn (mut self: SshLink) link_hangup() {
+    self.sftp_close()
     mut i := self.hops.len()
     for i > 0 {
         i -= 1

@@ -1,0 +1,281 @@
+package ssh
+
+// The `SftpTransport` port over libssh (milestone 16): one SFTP channel on the last
+// hop of a link, and at most one open file on it. Every call takes the hop's mutex,
+// so an SFTP channel can share a session with a running PTY channel whose reader
+// takes the same mutex (the Files view, milestone 17; see the spike in
+// sftp_test.cf). Each request blocks at most for the dial timeout, which libssh
+// applies to every blocking read on the session (Principle 8).
+//
+// Errors carry `not_found`, `permission_denied`, `exists`, `not_a_directory`, `io`
+// (the server refused for another reason) or `network` (the channel is gone).
+
+// CFIRE-UPSTREAM: CF-005
+import cpp "libssh/sftp.h" @pkg("libssh")
+// CFIRE-UPSTREAM: CF-005, CF-031
+import cpp "flint_sftp.hpp" @pkg("flint-native")
+
+import "../../domain"
+
+// The largest read asked of the server at once: OpenSSH serves up to 255 KB.
+SFTP_READ_CHUNK: usize = 65536
+
+fn sftp_failure(rc: i32, what: str, path: str, conn: SshConn) -> str {
+    if rc == 1 {
+        return coded(ERR_NOT_FOUND, "{path}: no such file or folder on the host")
+    }
+    if rc == 2 {
+        return coded(ERR_PERMISSION, "{path}: permission denied on the host")
+    }
+    if rc == 3 {
+        return coded(ERR_EXISTS, "{path} already exists on the host")
+    }
+    if rc == 6 {
+        return coded(ERR_NOT_DIR, "{path} is not a folder on the host")
+    }
+    if rc == 4 {
+        return coded(ERR_IO, "the host refused to {what} {path}")
+    }
+    return coded(ERR_NETWORK, "the SFTP connection was lost while trying to {what} {path}: {conn.last_error()}")
+}
+
+fn native_entry_kind(kind: str) -> str {
+    if kind == "file" || kind == "dir" || kind == "link" {
+        return kind
+    }
+    return FILE_KIND_OTHER
+}
+
+fn (self: SshLink) sftp_hop() -> SshConn! {
+    conn := try self.last_hop()
+    if self.sftp == none {
+        return error(coded(ERR_INTERNAL, "sftp: no SFTP channel is open"))
+    }
+    return conn
+}
+
+// Opens the SFTP subsystem on the last hop. A second call keeps the open channel.
+fn (mut self: SshLink) sftp_open() -> void! {
+    conn := try self.last_hop()
+    if self.sftp != none {
+        return
+    }
+    mut sftp: *mut cpp::sftp_session_struct
+    mut msg := ""
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        std::string err;
+        sftp = flint_sftp::open(conn.session, err);
+        msg = err;
+    }
+    if sftp == none {
+        return error(coded(ERR_NETWORK, "cannot start SFTP on the host: {msg}"))
+    }
+    self.sftp = sftp
+}
+
+fn (self: SshLink) sftp_stat(path: str) -> FileEntry! {
+    conn := try self.sftp_hop()
+    mut name := ""
+    mut kind := ""
+    mut size: i64 = 0
+    mut mtime: i64 = 0
+    mut mode: i64 = 0
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        flint_sftp::Entry e;
+        rc = flint_sftp::stat_path(self.sftp, path, true, e);
+        kind = e.kind; size = e.size; mtime = e.mtime; mode = e.mode;
+    }
+    if rc != 0 {
+        return error(sftp_failure(rc, "read", path, conn))
+    }
+    return FileEntry{ name: remote_base(path), path: path, kind: native_entry_kind(kind), size: size, mtime: mtime, mode: mode }
+}
+
+// The entries of folder `path`, without `.` and `..`, links not followed.
+fn (self: SshLink) sftp_list(path: str) -> []FileEntry! {
+    conn := try self.sftp_hop()
+    mut names: []str = []
+    mut kinds: []str = []
+    mut sizes: []i64 = []
+    mut mtimes: []i64 = []
+    mut modes: []i64 = []
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        std::vector<flint_sftp::Entry> list;
+        rc = flint_sftp::list(self.sftp, path, list);
+        for (auto& e : list) {
+            names.push_back(e.name); kinds.push_back(e.kind);
+            sizes.push_back(e.size); mtimes.push_back(e.mtime); modes.push_back(e.mode);
+        }
+    }
+    if rc != 0 {
+        return error(sftp_failure(rc, "list", path, conn))
+    }
+    mut entries: []FileEntry = []
+    for i, n in names {
+        entries.push(FileEntry{ name: n, path: remote_join(path, n), kind: native_entry_kind(kinds[i]), size: sizes[i], mtime: mtimes[i], mode: modes[i] })
+    }
+    return entries
+}
+
+// Opens `path` for reading (`write` false) or writing: created or truncated, and
+// with `exclusive` refused with `exists` when it is there. One file at a time.
+fn (mut self: SshLink) sftp_file_open(path: str, write: bool, exclusive: bool) -> void! {
+    conn := try self.sftp_hop()
+    if self.sftp_file != none {
+        return error(coded(ERR_INTERNAL, "sftp: a file is already open"))
+    }
+    mut f: *mut cpp::sftp_file_struct
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        sftp_file opened = nullptr;
+        rc = flint_sftp::open_file(self.sftp, path, write, exclusive, opened);
+        f = opened;
+    }
+    if rc != 0 {
+        mut what := "read"
+        if write {
+            what = "write"
+        }
+        return error(sftp_failure(rc, what, path, conn))
+    }
+    self.sftp_file = f
+}
+
+// Up to SFTP_READ_CHUNK bytes of the open file; "" at its end.
+fn (mut self: SshLink) sftp_file_read() -> str! {
+    conn := try self.sftp_hop()
+    if self.sftp_file == none {
+        return error(coded(ERR_INTERNAL, "sftp: no file is open"))
+    }
+    mut data := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = flint_sftp::read_file(self.sftp, self.sftp_file, SFTP_READ_CHUNK, data);
+    }
+    if rc != 0 {
+        return error(sftp_failure(rc, "read", "the file", conn))
+    }
+    return data
+}
+
+fn (mut self: SshLink) sftp_file_write(data: str) -> void! {
+    conn := try self.sftp_hop()
+    if self.sftp_file == none {
+        return error(coded(ERR_INTERNAL, "sftp: no file is open"))
+    }
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = flint_sftp::write_file(self.sftp, self.sftp_file, data);
+    }
+    if rc != 0 {
+        return error(sftp_failure(rc, "write", "the file", conn))
+    }
+}
+
+// Closes the open file, if any. Closing a written file is when the server reports a
+// failed write (a full disk), so it can fail.
+fn (mut self: SshLink) sftp_file_close() -> void! {
+    if self.sftp_file == none {
+        return
+    }
+    conn := try self.sftp_hop()
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = sftp_close(self.sftp_file) == 0 ? 0 : flint_sftp::map_error(self.sftp);
+    }
+    self.sftp_file = none
+    if rc != 0 {
+        return error(sftp_failure(rc, "close", "the file", conn))
+    }
+}
+
+// Renames `from` to `to`; a `to` that exists is refused (`exists` or `io`).
+fn (mut self: SshLink) sftp_rename(from: str, to: str) -> void! {
+    conn := try self.sftp_hop()
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = flint_sftp::rename_path(self.sftp, from, to);
+    }
+    if rc != 0 {
+        return error(sftp_failure(rc, "rename", from, conn))
+    }
+}
+
+// Removes a file, or an empty folder when `folder`.
+fn (mut self: SshLink) sftp_remove(path: str, folder: bool) -> void! {
+    conn := try self.sftp_hop()
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = folder ? flint_sftp::remove_dir(self.sftp, path) : flint_sftp::remove_file(self.sftp, path);
+    }
+    if rc != 0 {
+        return error(sftp_failure(rc, "remove", path, conn))
+    }
+}
+
+fn (mut self: SshLink) sftp_mkdir(path: str) -> void! {
+    conn := try self.sftp_hop()
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = flint_sftp::make_dir(self.sftp, path);
+    }
+    if rc != 0 {
+        return error(sftp_failure(rc, "create", path, conn))
+    }
+}
+
+// The absolute form of `path` on the host ("." is the login folder).
+fn (self: SshLink) sftp_realpath(path: str) -> str! {
+    conn := try self.sftp_hop()
+    mut real := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = flint_sftp::real_path(self.sftp, path, real);
+    }
+    if rc != 0 {
+        return error(sftp_failure(rc, "find", path, conn))
+    }
+    return real
+}
+
+// Closes the open file and the SFTP channel; the session stays up.
+fn (mut self: SshLink) sftp_close() {
+    if self.sftp == none || self.hops.len() == 0 {
+        self.sftp = none
+        self.sftp_file = none
+        return
+    }
+    conn := self.hops[self.hops.len() - 1]
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        if (self.sftp_file) sftp_close(self.sftp_file);
+        sftp_free(self.sftp);
+    }
+    self.sftp = none
+    self.sftp_file = none
+}

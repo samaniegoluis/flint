@@ -1702,3 +1702,13 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   hide-on-close only hides it; Flint's menu sends `stop:` instead.
 - **Ideal:** with hide-on-close set, webui answers reopen by showing the window (and emits
   `window:reopened`), and its Quit item quits (`app.quit()`) whatever hide-on-close says.
+
+### CF-098 · bug · `confirmed`: assigning a captured variable inside `scope.spawn` compiles and is lost
+- **Repro (43431f2, macOS):** `mut heard := ""` then `async.scope(workers: 2) |scope| { scope.spawn || { heard = "x" } }`;
+  after the scope, `heard` is still `""`. The task gets a copy of every capture (as `src/drivers/gui/main.cf`
+  notes, "captures are read-only inside the task"), but an assignment to one is accepted with no
+  diagnostic, so a result written there vanishes silently.
+- **Workaround:** the task sends its result on a `sync.make_channel[str]()` and the caller receives it
+  (`src/adapters/ssh/sftp_test.cf`, milestone 16's spike). No native code.
+- **Ideal:** reject an assignment to a captured variable inside a spawned task (a diagnostic such as
+  `cfire/ASSIGN-TO-TASK-CAPTURE`), or capture `mut` locals by shared reference under the scope's join.

@@ -214,3 +214,53 @@ type TetherSource interface {
     tether_derive_key(password: str, salt: []byte) -> []byte!
     tether_read_key_file(path: str) -> str!
 }
+
+// Files on a host over SFTP (adapters/ssh/sftp.cf, milestone 16), on the last hop of
+// an `SshTransport` link that is already logged in. One SFTP channel per link and
+// one open file at a time. Every request is bounded by the link's dial timeout
+// (Principle 8). Errors carry `not_found`, `permission_denied`, `exists`,
+// `not_a_directory`, `io` or `network`.
+type SftpTransport interface {
+    sftp_open() -> void!
+    // Follows links.
+    sftp_stat(path: str) -> FileEntry!
+    // A folder's entries without `.` and `..`; links are not followed.
+    sftp_list(path: str) -> []FileEntry!
+    // For reading (`write` false) or writing: created or truncated, refused with
+    // `exists` when `exclusive` and the file is there.
+    sftp_file_open(path: str, write: bool, exclusive: bool) -> void!
+    // The next bytes of the open file; "" at its end.
+    sftp_file_read() -> str!
+    sftp_file_write(data: str) -> void!
+    sftp_file_close() -> void!
+    sftp_rename(from: str, to: str) -> void!
+    // A file, or an empty folder when `folder`.
+    sftp_remove(path: str, folder: bool) -> void!
+    sftp_mkdir(path: str) -> void!
+    // The absolute form of `path` ("." is the login folder).
+    sftp_realpath(path: str) -> str!
+    sftp_close()
+}
+
+// Files on this machine (adapters/process/local_fs.cf; over the socket, the CLI's own,
+// adapters/ipc/relay_files.cf). The same shape as `SftpTransport`, so a copy reads one
+// and writes the other. A relative path is the CLI's current folder's.
+type LocalFiles interface {
+    local_stat(path: str) -> FileEntry!
+    local_list(path: str) -> []FileEntry!
+    local_file_open(path: str, write: bool, exclusive: bool) -> void!
+    local_file_read() -> str!
+    local_file_write(data: str) -> void!
+    local_file_close() -> void!
+    // Replaces `to` if it exists.
+    local_rename(from: str, to: str) -> void!
+    local_remove(path: str) -> void!
+    local_mkdir(path: str) -> void!
+}
+
+// Where a copy reports its progress, and how it learns it was cancelled (stderr in
+// the CLI, frames to the CLI from the app, events to the window in milestone 17).
+type TransferSink interface {
+    transfer_progress(p: TransferProgress)
+    transfer_cancelled() -> bool
+}

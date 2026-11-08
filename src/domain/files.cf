@@ -1,0 +1,178 @@
+package domain
+
+// Files on a host and on this machine (milestone 16): entries, paths, and what
+// `flint cp` copies where. Pure: no I/O.
+
+import "core:str"
+
+FILE_KIND_FILE: str = "file"
+FILE_KIND_DIR: str = "dir"
+FILE_KIND_LINK: str = "link"
+FILE_KIND_OTHER: str = "other"
+
+COPY_UPLOAD: str = "upload"
+COPY_DOWNLOAD: str = "download"
+
+// What a partial download (or upload) is called while it is written, in the folder
+// it lands in; renamed to its name once complete.
+PART_SUFFIX: str = ".flint-part"
+
+// A file or folder. `mtime` is Unix seconds, `mode` the permission bits.
+type FileEntry struct {
+    name:  str `json:"name"`
+    path:  str `json:"path"`
+    kind:  str `json:"kind"`
+    size:  i64 `json:"size"`
+    mtime: i64 `json:"mtime"`
+    mode:  i64 `json:"mode"`
+}
+
+fn (self: FileEntry) is_dir() -> bool {
+    return self.kind == FILE_KIND_DIR
+}
+
+fn (self: FileEntry) is_file() -> bool {
+    return self.kind == FILE_KIND_FILE
+}
+
+// `alias:/path` as `flint cp` takes it. `alias:` alone is the login folder.
+type RemotePath struct {
+    alias: str
+    path:  str
+}
+
+// Whether a `flint cp` argument names a host: `alias:` before any `/`. A local path
+// with a colon is written `./a:b`, as with scp.
+fn is_remote_arg(arg: str) -> bool {
+    colon := str.index_of(arg, ":")
+    if colon <= 0 {
+        return false
+    }
+    slash := str.index_of(arg, "/")
+    return slash < 0 || colon < slash
+}
+
+fn parse_remote_arg(arg: str) -> RemotePath! {
+    colon := str.index_of(arg, ":")
+    if colon <= 0 {
+        return error(coded(ERR_USAGE, "'{arg}' is not alias:/path"))
+    }
+    alias := arg.substr(0, usize(colon))
+    mut path := arg.substr(usize(colon) + 1)
+    if path.len() == 0 {
+        path = "."
+    }
+    return RemotePath{ alias: alias, path: path }
+}
+
+// Drops trailing slashes but the root's.
+fn trim_slashes(p: str) -> str {
+    mut s := p
+    for s.len() > 1 && s.ends_with("/") {
+        s = s.substr(0, s.len() - 1)
+    }
+    return s
+}
+
+// The last element of a `/` path: "/var/log/" -> "log", "/" -> "/".
+fn remote_base(p: str) -> str {
+    s := trim_slashes(p)
+    if s == "/" {
+        return s
+    }
+    i := str.last_index_of(s, "/")
+    if i < 0 {
+        return s
+    }
+    return s.substr(usize(i) + 1)
+}
+
+// The folder of a `/` path: "/a/b" -> "/a", "b" -> ".", "/a" -> "/".
+fn remote_dir(p: str) -> str {
+    s := trim_slashes(p)
+    i := str.last_index_of(s, "/")
+    if i < 0 {
+        return "."
+    }
+    if i == 0 {
+        return "/"
+    }
+    return s.substr(0, usize(i))
+}
+
+fn remote_join(dir: str, name: str) -> str {
+    if dir.len() == 0 || dir == "." {
+        return name
+    }
+    if dir.ends_with("/") {
+        return dir + name
+    }
+    return dir + "/" + name
+}
+
+// The name a file is written under until it is complete: ".<name>.flint-part" in
+// the same folder, hidden from a plain `ls`.
+fn part_path(target: str) -> str {
+    return remote_join(remote_dir(target), "." + remote_base(target) + PART_SUFFIX)
+}
+
+// One file `flint cp` copies, and how much of it went.
+type CopiedFile struct {
+    source: str `json:"source"`
+    target: str `json:"target"`
+    bytes:  i64 `json:"bytes"`
+}
+
+// What `flint cp` reports.
+type CopyResult struct {
+    host:        str          `json:"host"`
+    direction:   str          `json:"direction"`
+    files:       []CopiedFile `json:"files"`
+    folders:     i64          `json:"folders"`
+    bytes:       i64          `json:"bytes"`
+    // Links and special files a recursive copy left out.
+    skipped:     []str        `json:"skipped"`
+    duration_ms: i64          `json:"duration_ms"`
+}
+
+// What a copy reports while it runs: the file at hand, and the whole copy so far.
+type TransferProgress struct {
+    id:          str `json:"id"`
+    file:        str `json:"file"`
+    file_bytes:  i64 `json:"file_bytes"`
+    file_size:   i64 `json:"file_size"`
+    files_done:  i64 `json:"files_done"`
+    bytes_done:  i64 `json:"bytes_done"`
+}
+
+test "a cp argument names a host only with alias: before any slash" {
+    assert(is_remote_arg("web:/etc/app.conf"))
+    assert(is_remote_arg("web:"))
+    assert(is_remote_arg("web:app.conf"))
+    assert(!is_remote_arg("./a:b"))
+    assert(!is_remote_arg("/tmp/a:b"))
+    assert(!is_remote_arg(":x"))
+    assert(!is_remote_arg("app.conf"))
+}
+
+test "a remote argument splits into alias and path" {
+    r := try parse_remote_arg("web:/var/log/")
+    assert_eq(r.alias, "web")
+    assert_eq(r.path, "/var/log/")
+    home := try parse_remote_arg("web:")
+    assert_eq(home.path, ".")
+}
+
+test "remote path helpers" {
+    assert_eq(remote_base("/var/log/"), "log")
+    assert_eq(remote_base("app.conf"), "app.conf")
+    assert_eq(remote_base("/"), "/")
+    assert_eq(remote_dir("/var/log"), "/var")
+    assert_eq(remote_dir("/var"), "/")
+    assert_eq(remote_dir("app.conf"), ".")
+    assert_eq(remote_join("/etc", "a"), "/etc/a")
+    assert_eq(remote_join("/", "a"), "/a")
+    assert_eq(remote_join(".", "a"), "a")
+    assert_eq(part_path("/etc/app.conf"), "/etc/.app.conf.flint-part")
+    assert_eq(part_path("app.conf"), ".app.conf.flint-part")
+}
