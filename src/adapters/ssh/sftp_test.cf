@@ -36,8 +36,13 @@ fn sftp_link() -> SshLink! {
     return link
 }
 
+// A fresh folder name under $TMPDIR, or /tmp where it is unset (Linux).
 fn scratch_dir(tag: str) -> str {
-    d := os.getenv("TMPDIR") + "/flint-sftp-" + tag + "-{time.now_ms()}"
+    mut base := os.getenv("TMPDIR")
+    if base.len() == 0 {
+        base = "/tmp"
+    }
+    d := base + "/flint-sftp-" + tag + "-{time.now_ms()}"
     return str.replace(d, "//", "/")
 }
 

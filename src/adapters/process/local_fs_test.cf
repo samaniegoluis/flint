@@ -14,7 +14,11 @@ test "LocalFs satisfies the LocalFiles port" {
 }
 
 test "local files: write, stat, list, read, rename, remove, with stable codes" {
-    dir := os.getenv("TMPDIR") + "/flint-localfs-{time.now_ms()}"
+    mut base := os.getenv("TMPDIR")
+    if base.len() == 0 {
+        base = "/tmp"
+    }
+    dir := base + "/flint-localfs-{time.now_ms()}"
     mut l := new_local_fs()
     try l.local_mkdir(dir)
     defer fs.remove(dir) or {}
