@@ -135,6 +135,12 @@ CREATE TABLE activity (
 );
 ` })
 
+    // 005: a sudo password per host (milestone 13, D-039), sealed with the secrets key
+    // like `password`. NULL: Flint types the host's login password when sudo asks.
+    list.push(Migration{ version: 5, name: "host sudo password", sql: `
+ALTER TABLE hosts ADD COLUMN sudo_password BLOB;
+` })
+
     return list
 }
 

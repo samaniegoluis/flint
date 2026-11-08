@@ -21,6 +21,9 @@ ACCESS_WRITE: str = "write"
 // Creating a token (milestone 12b): approved one by one in the window, never by a
 // grant or another token.
 ACCESS_TOKEN: str = "token"
+// Running a command as root (`exec --sudo`, milestone 13): approved one by one in the
+// window, never by a grant or a token (Principle 12).
+ACCESS_SUDO: str = "sudo"
 
 // How long a grant lasts. "lock" lasts until the vault locks.
 GRANT_DURATIONS: []str = ["15m", "1h", "4h", "lock"]
@@ -303,6 +306,8 @@ type Approval struct {
     state:          str          `json:"state"`
     // For `token create` (milestone 12b): the token the owner is asked to create.
     token:          TokenAsk     `json:"token"`
+    // For `exec --sudo` (milestone 13): the host, user and exact argv.
+    sudo:           SudoAsk      `json:"sudo"`
 }
 
 // The app's access state: live grants and the requests waiting for an answer.
@@ -312,10 +317,38 @@ type AccessBook struct {
     // The caller of an unlock a CLI asked for (none or one): the unlock screen can
     // allow it in the same step.
     asking:  []Approval `json:"asking"`
+    // A sudo password the owner typed in the window for one allowed `exec --sudo`,
+    // until that request takes it (milestone 13). Memory only, like the rest of the
+    // book, and cleared with it on every lock.
+    typed:   []SudoTyped `json:"typed"`
+}
+
+type SudoTyped struct {
+    id:       str `json:"id"`
+    password: str `json:"password"`
 }
 
 fn empty_access_book() -> AccessBook {
-    return AccessBook{ grants: [], pending: [], asking: [] }
+    return AccessBook{ grants: [], pending: [], asking: [], typed: [] }
+}
+
+fn put_sudo_typed(mut book: AccessBook, id: str, password: str) {
+    book.typed.push(SudoTyped{ id: id, password: password })
+}
+
+// The password typed for approval `id`, removed from the book; "" for none.
+fn take_sudo_typed(mut book: AccessBook, id: str) -> str {
+    mut found := ""
+    mut kept: []SudoTyped = []
+    for t in book.typed {
+        if t.id == id {
+            found = t.password
+        } else {
+            kept.push(t)
+        }
+    }
+    book.typed = kept
+    return found
 }
 
 // The grant the window proposes for `ap`: the host it runs on (when the vault has
@@ -333,9 +366,20 @@ fn proposed_grant(ap: Approval, cat: Catalog, id: str, now_ms: i64) -> Grant! {
     return grant_from_approval(ap, id, scope, true, ap.need.action == ACCESS_EXEC, ap.need.action == ACCESS_WRITE, "1h", now_ms)
 }
 
+// Whether the unlock screen a CLI raised may allow its caller in the same step: never
+// for `token create` or `exec --sudo`, which only the approval window allows, one by one.
+fn allowed_at_unlock(need: AccessNeed) -> bool {
+    return need.action != ACCESS_TOKEN && need.action != ACCESS_SUDO
+}
+
+// Whether a request is approved one by one in the window, never by a grant.
+fn asked_every_time(need: AccessNeed) -> bool {
+    return need.action == ACCESS_TOKEN || need.action == ACCESS_SUDO
+}
+
 fn new_approval(id: str, vault_id: str, c: Caller, request: str, need: AccessNeed, now_ms: i64) -> Approval {
     a := caller_anchor(c)
-    return Approval{ id: id, vault_id: vault_id, label: caller_label(c), request: request, need: need, chain: c.chain, anchor_pid: a.pid, anchor_started: a.started, created_ms: now_ms, deadline_ms: now_ms + APPROVAL_WAIT_MS, state: APPROVAL_PENDING, token: no_token_ask() }
+    return Approval{ id: id, vault_id: vault_id, label: caller_label(c), request: request, need: need, chain: c.chain, anchor_pid: a.pid, anchor_started: a.started, created_ms: now_ms, deadline_ms: now_ms + APPROVAL_WAIT_MS, state: APPROVAL_PENDING, token: no_token_ask(), sudo: no_sudo_ask() }
 }
 
 // The grant an approval becomes when the owner allows it.

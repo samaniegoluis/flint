@@ -1,0 +1,206 @@
+package domain
+
+import "core:str"
+
+// `flint exec --sudo` (milestone 13, D-036, D-039, D-047). The app runs
+// `sudo -S -k -p <prompt> -- <argv>` on an exec channel of its own (no PTY: no pager
+// waits for a key, stdout and stderr stay apart) and writes the host's sudo password
+// to sudo's stdin only when sudo prints that exact prompt on stderr, which carries a
+// random nonce: a command that prints a fake `password:` gets nothing. `-k` ignores
+// sudo's cached credentials and leaves none behind, so no later command inherits
+// root. The prompt is cut from what the caller sees, and so is the password, should
+// it ever be printed.
+
+// What the approval window shows for a sudo request.
+type SudoAsk struct {
+    host:         str   `json:"host"`
+    user:         str   `json:"user"`
+    argv:         []str `json:"argv"`
+    // Whether Flint has a password to type (the host's sudo password, or its login
+    // password); without one the window asks for it.
+    has_password: bool  `json:"has_password"`
+}
+
+fn no_sudo_ask() -> SudoAsk {
+    return SudoAsk{ host: "", user: "", argv: [], has_password: false }
+}
+
+// The prompt sudo is told to print, from a hex nonce. No `%`: sudo expands those.
+fn sudo_prompt(nonce_hex: str) -> str {
+    return "[flint-sudo:" + nonce_hex + "]"
+}
+
+// The remote command line: each argument quoted as one shell word, never a shell
+// string, so the command that runs is exactly the argv the owner approved.
+fn sudo_command_line(prompt: str, argv: []str) -> str {
+    mut s := "sudo -S -k -p " + shell_single_quote(prompt) + " --"
+    for a in argv {
+        s = s + " " + shell_single_quote(a)
+    }
+    return s
+}
+
+// How sudo says the login user may not use it (sudo 1.8 and 1.9 wording).
+SUDO_NOT_ALLOWED: []str = ["is not in the sudoers file", "is not allowed to run sudo", "may not run sudo on", "is not allowed to execute"]
+
+// Watches a sudo PTY's output as it arrives.
+type SudoWatch struct {
+    prompt:  str
+    secret:  str
+    // Output held back because it may be the start of the prompt or the secret.
+    pending: str
+    prompts: i64
+    // The last visible output, to recognise sudo's own refusals.
+    seen:    str
+}
+
+// What to do after a chunk: `out` goes to the caller; `send_password` types the
+// password once; `refused` means sudo asked again, so the password was wrong.
+type SudoStep struct {
+    output:        str
+    send_password: bool
+    refused:       bool
+}
+
+fn new_sudo_watch(prompt: str, secret: str) -> SudoWatch {
+    return SudoWatch{ prompt: prompt, secret: secret, pending: "", prompts: 0, seen: "" }
+}
+
+// The length of the longest end of `s` that starts `needle` (a needle cut by a chunk).
+fn partial_suffix(s: str, needle: str) -> usize {
+    if needle.len() < 2 {
+        return 0
+    }
+    mut k := needle.len() - 1
+    if s.len() < k {
+        k = s.len()
+    }
+    for k > 0 {
+        if s.ends_with(needle.substr(0, k)) {
+            return k
+        }
+        k -= 1
+    }
+    return 0
+}
+
+fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
+    mut step := SudoStep{ output: "", send_password: false, refused: false }
+    mut buf := w.pending + data
+    if w.secret.len() > 0 {
+        buf = str.replace(buf, w.secret, "")
+    }
+    mut idx := str.index_of(buf, w.prompt)
+    for idx >= 0 {
+        step.output = step.output + buf.substr(0, usize(idx))
+        buf = buf.substr(usize(idx) + w.prompt.len())
+        w.prompts += 1
+        if w.prompts == 1 {
+            step.send_password = true
+        } else {
+            step.refused = true
+        }
+        idx = str.index_of(buf, w.prompt)
+    }
+    mut hold := partial_suffix(buf, w.prompt)
+    if w.secret.len() > 0 {
+        k := partial_suffix(buf, w.secret)
+        if k > hold {
+            hold = k
+        }
+    }
+    step.output = step.output + buf.substr(0, buf.len() - hold)
+    w.pending = buf.substr(buf.len() - hold)
+    w.seen = w.seen + step.output
+    if w.seen.len() > 4096 {
+        w.seen = w.seen.substr(w.seen.len() - 4096)
+    }
+    return step
+}
+
+// What is still held back once the command ended.
+fn sudo_flush(mut w: SudoWatch) -> str {
+    mut rest := w.pending
+    if w.secret.len() > 0 {
+        rest = str.replace(rest, w.secret, "")
+    }
+    w.pending = ""
+    return rest
+}
+
+// Whether sudo refused because the login user may not use it.
+fn sudo_not_allowed(w: SudoWatch) -> bool {
+    for phrase in SUDO_NOT_ALLOWED {
+        if w.seen.contains(phrase) {
+            return true
+        }
+    }
+    return false
+}
+
+// ---- Tests ------------------------------------------------------------------------
+
+test "a sudo command line quotes every argument as one word" {
+    line := sudo_command_line(sudo_prompt("ab12"), ["systemctl", "restart", "nginx"])
+    assert_eq(line, "sudo -S -k -p '[flint-sudo:ab12]' -- 'systemctl' 'restart' 'nginx'")
+    tricky := sudo_command_line("[p]", ["sh", "-c", "echo 'hi' > /tmp/x; rm -rf $HOME"])
+    assert_eq(tricky, "sudo -S -k -p '[p]' -- 'sh' '-c' 'echo '\\''hi'\\'' > /tmp/x; rm -rf $HOME'")
+}
+
+test "the password is typed once, at the real prompt, and the prompt is cut" {
+    mut w := new_sudo_watch(sudo_prompt("ab12"), "s3cret")
+    a := sudo_feed(mut w, "[flint-sudo:ab12]")
+    assert(a.send_password)
+    assert_eq(a.output, "")
+    b := sudo_feed(mut w, "\nnginx restarted\n")
+    assert(!b.send_password && !b.refused)
+    assert_eq(b.output, "\nnginx restarted\n")
+}
+
+test "a prompt split across chunks is still found" {
+    mut w := new_sudo_watch(sudo_prompt("ab12"), "s3cret")
+    a := sudo_feed(mut w, "motd line\n[flint-su")
+    assert(!a.send_password)
+    assert_eq(a.output, "motd line\n")
+    b := sudo_feed(mut w, "do:ab12]")
+    assert(b.send_password)
+    assert_eq(b.output, "")
+}
+
+test "a fake password prompt gets nothing" {
+    mut w := new_sudo_watch(sudo_prompt("ab12"), "s3cret")
+    a := sudo_feed(mut w, "[sudo] password for me: ")
+    assert(!a.send_password)
+    assert_eq(a.output, "[sudo] password for me: ")
+    b := sudo_feed(mut w, "Password:")
+    assert(!b.send_password)
+}
+
+test "sudo asking twice means the password was refused" {
+    mut w := new_sudo_watch(sudo_prompt("ab12"), "wrong")
+    assert(sudo_feed(mut w, "[flint-sudo:ab12]").send_password)
+    again := sudo_feed(mut w, "\r\nSorry, try again.\r\n[flint-sudo:ab12]")
+    assert(again.refused)
+    assert(!again.send_password)
+}
+
+test "the password never reaches the output, even echoed or split" {
+    mut w := new_sudo_watch(sudo_prompt("ab12"), "s3cret")
+    _ := sudo_feed(mut w, "[flint-sudo:ab12]")
+    a := sudo_feed(mut w, "s3c")
+    b := sudo_feed(mut w, "ret\nok\n")
+    rest := sudo_flush(mut w)
+    all := a.output + b.output + rest
+    assert(!all.contains("s3cret"))
+    assert_eq(all, "\nok\n")
+}
+
+test "sudo's refusal of a user who may not use it is recognised" {
+    mut w := new_sudo_watch(sudo_prompt("ab12"), "pw")
+    _ := sudo_feed(mut w, "[flint-sudo:ab12]")
+    _ := sudo_feed(mut w, "\r\nme is not in the sudoers file.  This incident will be reported.\r\n")
+    assert(sudo_not_allowed(w))
+    mut ok := new_sudo_watch(sudo_prompt("ab12"), "pw")
+    _ := sudo_feed(mut ok, "all good\n")
+    assert(!sudo_not_allowed(ok))
+}

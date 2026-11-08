@@ -47,6 +47,8 @@ export FLINT_APPROVAL_WAIT_MS=8000
 app_pid=""
 cleanup() {
   if [[ -n "$app_pid" ]]; then kill "$app_pid" 2>/dev/null; wait "$app_pid" 2>/dev/null; fi
+  # FLINT_E2E_KEEP=<dir> keeps the app's log and the commands' output for a look.
+  if [[ -n "${FLINT_E2E_KEEP:-}" ]]; then cp "$tmp/app.log" "$all_out" "$FLINT_E2E_KEEP/" 2>/dev/null; fi
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -364,6 +366,45 @@ local_run "" -- --json token list
 check "the CLI on its own lists tokens too, from the vault" '[[ $lstatus == 0 && "$lout" == *revoked* ]]'
 local_run "" -- token create --name local --allow read
 check "but creates none: that needs Flint (locked)" '[[ $lstatus == 5 && "$lerr" == *"runs in Flint"* ]]'
+
+# `exec --sudo` (milestone 13, D-039, D-047): the real sudo in the Linux image
+# (FLINT_E2E_SUDO=1, the e2e user is a sudoer with that password), a stand-in on
+# macOS (scripts/test.sh). Either way the password is flint-e2e-login-pw, and the
+# page types it in the window when the argv names typed-pw or save-pw.
+if [[ -n "${FLINT_FAKE_SUDO_DIR:-}" || -n "${FLINT_E2E_SUDO:-}" ]]; then
+  echo "== exec --sudo (milestone 13)"
+  SUDO_PW="flint-e2e-login-pw"
+  root_check='if [ "$(id -u)" = 0 ] || [ -n "$FAKE_SUDO_ROOT" ]; then echo as-root; fi'
+  asked_sudo_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
+  new_caller "" -- exec local --sudo -- sh -c "$root_check" typed-pw
+  check "exec --sudo runs as root with the password typed in the window" '[[ $status == 0 && "$out" == as-root ]]'
+  check "the caller sees neither sudo's prompt nor the password" '[[ "$err$out" != *flint-sudo* && "$err$out" != *"$SUDO_PW"* ]]'
+  new_caller "" -- exec local --sudo -- true deny-me
+  check "a sudo command the owner denies fails with denied (15)" '[[ $status == 15 ]]'
+  new_caller "" -- exec local --sudo -- true wrong-pw
+  check "a wrong sudo password fails with sudo_password (18)" '[[ $status == 18 && "$err" == *"refused the password"* ]]'
+  new_caller "" -- --json exec local --sudo -- sh -c "$root_check" save-pw
+  check "--json captures a sudo command's output" '[[ $status == 0 && "$(echo "$out" | json_get "d[\"stdout\"]")" == as-root* ]]'
+  local_run "" -- --json host show local
+  check "the window saved the sudo password for the host, as asked" '[[ "$(echo "$lout" | json_get "d[\"has_sudo_password\"]")" == "True" && "$lout" != *"$SUDO_PW"* ]]'
+  sudo_out="$(printf '' | no_tty perl "$tmp/scope.pl" "$flint" "host list" "exec local --sudo -- echo first" "exec local --sudo -- echo second" 2>"$tmp/sudo.err")"
+  echo "$sudo_out" >> "$all_out"
+  asked_sudo_after=$(grep -c "asking the owner to approve" "$tmp/app.log")
+  check "no grant covers sudo: each command is asked for, with the saved password" '[[ "$sudo_out" == *"0,0,0"* && $((asked_sudo_after - asked_sudo_before)) == 7 ]]'
+  FLINT_TOKEN="$tok" new_caller "" -- exec local --sudo -- id
+  check "a token never runs sudo" '[[ $status == 15 && "$err" == *"cannot run commands as root"* ]]'
+  new_caller "" -- exec nope --sudo -- id
+  check "sudo on a host the vault lacks never reaches the window" '[[ $status == 3 && "$(grep -c "asking the owner to approve" "$tmp/app.log")" == $asked_sudo_after ]]'
+  if [[ -n "${FLINT_FAKE_SUDO_DIR:-}" ]]; then
+    touch "$FLINT_FAKE_SUDO_DIR/not-a-sudoer"
+    new_caller "" -- exec local --sudo -- id
+    check "a login user who may not sudo fails with not_sudoer (17)" '[[ $status == 17 && "$err" == *"may not use sudo"* ]]'
+    rm -f "$FLINT_FAKE_SUDO_DIR/not-a-sudoer"
+  fi
+  check "no sudo password in the app log" '! grep -q "$SUDO_PW" "$tmp/app.log"'
+else
+  echo "skip  exec --sudo (no sudo to run against: macOS stand-in or FLINT_E2E_SUDO=1)"
+fi
 
 echo "== another vault"
 expect 5 "another vault than the app's: locked, with no terminal" "" -- --vault "$other" host list

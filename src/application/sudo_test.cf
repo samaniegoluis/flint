@@ -1,0 +1,95 @@
+package application
+
+import "../domain"
+
+fn sudo_link(chunks: []ExecChunk) -> FakeLink {
+    mut link := new_fake_link()
+    link.chunks = chunks
+    return link
+}
+
+test "sudo types the password at its prompt only, and hides prompt and password" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut link := sudo_link([err_chunk("@PROMPT@"), out_chunk("restarted\n"), err_chunk("s3cret\n"), done_chunk(0)])
+    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    res := try run_sudo(crypto, mut link, mut sink, mut clock, "web", "me", ["systemctl", "restart", "nginx"], "s3cret", 60, false)
+    assert_eq(res.exit_code, 0)
+    assert(link.calls[0].starts_with("exec-open sudo -S -k -p '[flint-sudo:"))
+    assert(link.calls[0].ends_with("' -- 'systemctl' 'restart' 'nginx'"))
+    assert_eq(link.written, "s3cret\n")
+    assert_eq(link.calls[1], "eof")
+    assert_eq(sink.out_text, "restarted\n")
+    assert(!sink.err_text.contains("s3cret"))
+    assert(!sink.err_text.contains("flint-sudo"))
+}
+
+test "a fake prompt from the command gets no password" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut link := sudo_link([out_chunk("[sudo] password for me: "), err_chunk("Password:"), done_chunk(0)])
+    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    _ := try run_sudo(crypto, mut link, mut sink, mut clock, "web", "me", ["true"], "s3cret", 60, true)
+    assert_eq(link.written, "")
+}
+
+test "a refused password, a missing one and a user who may not sudo are told apart" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    mut wrong := sudo_link([err_chunk("@PROMPT@"), err_chunk("Sorry, try again.\n@PROMPT@"), done_chunk(1)])
+    r1 := run_sudo(crypto, mut wrong, mut sink, mut clock, "web", "me", ["true"], "bad", 60, true)
+    assert_eq(err_code(r1), ERR_SUDO_PASSWORD)
+    assert_eq(wrong.written, "bad\n")
+    mut none_held := sudo_link([err_chunk("@PROMPT@"), done_chunk(1)])
+    r2 := run_sudo(crypto, mut none_held, mut sink, mut clock, "web", "me", ["true"], "", 60, true)
+    assert_eq(err_code(r2), ERR_SUDO_PASSWORD)
+    assert_eq(none_held.written, "")
+    mut barred := sudo_link([err_chunk("@PROMPT@"), err_chunk("me is not in the sudoers file.  This incident will be reported.\n"), done_chunk(1)])
+    r3 := run_sudo(crypto, mut barred, mut sink, mut clock, "web", "me", ["true"], "pw", 60, true)
+    assert_eq(err_code(r3), ERR_NOT_SUDOER)
+    assert(!"{r3.error().message()}".contains("pw"))
+}
+
+test "with no prompt, stdin closes once the command speaks or the wait ends" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    mut talk := sudo_link([out_chunk("hi\n"), done_chunk(0)])
+    _ := try run_sudo(crypto, mut talk, mut sink, mut clock, "web", "me", ["echo", "hi"], "pw", 60, true)
+    assert_eq(talk.written, "")
+    assert_eq(talk.calls[1], "eof")
+    mut quiet := sudo_link([out_chunk(""), out_chunk(""), done_chunk(0)])
+    mut slow := FakeClock{ now_ms: 0, step_ms: 2000 }
+    _ := try run_sudo(crypto, mut quiet, mut sink, mut slow, "web", "me", ["true"], "pw", 60, true)
+    assert_eq(quiet.calls[1], "eof")
+}
+
+test "the sudo password is the host's own, else its login password" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    mut p := host_patch("web", "10.0.0.5")
+    p.user = "me"
+    p.set_user = true
+    p.password = "login-pw"
+    p.set_password = true
+    _ := try add_host(crypto, mut store, s, p)
+    cat := try load_catalog(store)
+    assert_eq(try sudo_password_for(crypto, s, cat, cat.hosts[0]), "login-pw")
+    ask := try sudo_ask_for(store, "web", ["id"])
+    assert(ask.has_password)
+    assert_eq(ask.user, "me")
+    v := try set_host_sudo_password(crypto, mut store, s, "web", "root-pw")
+    assert(v.has_sudo_password)
+    cat2 := try load_catalog(store)
+    assert_eq(try sudo_password_for(crypto, s, cat2, cat2.hosts[0]), "root-pw")
+    cleared := try set_host_sudo_password(crypto, mut store, s, "web", "")
+    assert(!cleared.has_sudo_password)
+    mut q := host_patch("bare", "10.0.0.6")
+    q.user = "me"
+    q.set_user = true
+    _ := try add_host(crypto, mut store, s, q)
+    assert(!(try sudo_ask_for(store, "bare", ["id"])).has_password)
+    assert_eq(err_code(sudo_ask_for(store, "bare", [])), ERR_USAGE)
+}

@@ -107,7 +107,8 @@ check "tag filter is case-insensitive" '[[ "$(echo "$out" | json_get "len(d)")" 
 expect 0 "host list --group" "$MI" -- --json host list --group e2e-group-marker "${M[@]}"
 check "group filter includes subgroups" '[[ "$(echo "$out" | json_get "len(d)")" == "1" ]]'
 expect 0 "host show (text)" "$MI" -- host show web-01 "${M[@]}"
-check "text show says the password is set" '[[ "$out" == *"password    set"* ]]'
+check "text show says the password is set" '[[ "$out" == *"password       set"* ]]'
+check "text show says sudo uses the login password" '[[ "$out" == *"sudo password  the login password"* ]]'
 expect 4 "duplicate alias is a conflict" "$MI" -- host add WEB-01 --hostname x "${M[@]}"
 expect 7 "bad port is invalid" "$MI" -- host add bad --hostname x --port 99999 "${M[@]}"
 expect 2 "missing hostname is a usage error" "$MI" -- host add nohost "${M[@]}"
@@ -304,11 +305,21 @@ expect 0 "host edit --command --no-keep-shell" "$SMI" -- --json host edit local 
 check "--json shows the command" '[[ "$(echo "$out" | json_get "d[\"command\"]")" == '"'"'echo cmd-$((40+2))'"'"' ]]'
 check "--json shows keep_shell off" '[[ "$(echo "$out" | json_get "d[\"keep_shell\"]")" == "False" ]]'
 expect 0 "host show (text) shows the command" "$SMI" -- host show local "${SM[@]}"
-check "text show says the command ends the session" '[[ "$out" == *"command     echo cmd-\$((40+2)) (ends the session)"* ]]'
+check "text show says the command ends the session" '[[ "$out" == *"command        echo cmd-\$((40+2)) (ends the session)"* ]]'
 expect 0 "exec ignores the initial command" "$SMI" -- exec local "${SM[@]}" -- echo just-exec
 check "exec ran only its own command" '[[ "$out" == "just-exec" ]]'
 expect 2 "--keep-shell and --no-keep-shell together are a usage error" "$SMI" -- host edit local --keep-shell --no-keep-shell "${SM[@]}"
 expect 7 "a multi-line command is invalid" "$SMI" -- host edit local --command $'a\nb' "${SM[@]}"
+
+echo "== sudo, with the CLI on its own"
+expect 0 "host edit --sudo-password-stdin" "$SMI"$'sudo-e2e-marker\n' -- --json host edit local --sudo-password-stdin "${SM[@]}"
+check "--json says the host has a sudo password, never its value" '[[ "$(echo "$out" | json_get "d[\"has_sudo_password\"]")" == "True" && "$out" != *sudo-e2e-marker* ]]'
+expect 0 "host show (text) with a sudo password" "$SMI" -- host show local "${SM[@]}"
+check "text show says the sudo password is set" '[[ "$out" == *"sudo password  set"* && "$out" != *sudo-e2e-marker* ]]'
+expect 5 "exec --sudo needs Flint" "$SMI" -- exec local --sudo "${SM[@]}" -- id -u
+check "it says to open Flint and runs nothing" '[[ "$err" == *"runs only through Flint"* && -z "$out" ]]'
+expect 0 "host edit --no-sudo-password" "$SMI" -- --json host edit local --no-sudo-password "${SM[@]}"
+check "the sudo password is gone" '[[ "$(echo "$out" | json_get "d[\"has_sudo_password\"]")" == "False" ]]'
 cat > "$tmp/cmd_tty.py" <<'PY'
 # Waits for <wait_for> (if any), then types <typed> (if any) until <until> shows up:
 # input typed ahead is flushed when Flint enters raw mode, so it is resent.

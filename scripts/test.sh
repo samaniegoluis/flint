@@ -45,8 +45,49 @@ UsePAM no
 StrictModes no
 PermitTTY yes
 AllowTcpForwarding yes
+${sudo_env:-}
 CFG
 }
+# `exec --sudo` (milestone 13): on macOS the sessions find a stand-in `sudo` first on
+# their PATH, which behaves like sudo -S -p for the password FLINT_E2E_SUDO_PW (the
+# e2e user's password in the Linux image, where the real sudo runs). It answers
+# "not in the sudoers file" when the file not-a-sudoer exists next to it.
+if [[ "$(uname -s)" == Darwin ]]; then
+  mkdir -p "$tmp/fakebin"
+  cat > "$tmp/fakebin/sudo" <<'SUDO'
+#!/bin/bash
+prompt="Password:"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -S|-k) shift ;;
+    -p) prompt="$2"; shift 2 ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+here="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "$here/not-a-sudoer" ]]; then
+  printf '%s' "$prompt" >&2
+  IFS= read -r pw
+  echo "$USER is not in the sudoers file.  This incident will be reported." >&2
+  exit 1
+fi
+if [[ ! -f "$here/no-password" ]]; then
+  for attempt in 1 2 3; do
+    printf '%s' "$prompt" >&2
+    if ! IFS= read -r pw; then echo "sudo: no password was provided" >&2; exit 1; fi
+    [[ "$pw" == "flint-e2e-login-pw" ]] && break
+    echo "Sorry, try again." >&2
+    [[ $attempt == 3 ]] && { echo "sudo: 3 incorrect password attempts" >&2; exit 1; }
+  done
+fi
+export FAKE_SUDO_ROOT=1
+exec "$@"
+SUDO
+  chmod 755 "$tmp/fakebin/sudo"
+  export FLINT_FAKE_SUDO_DIR="$tmp/fakebin"
+  sudo_env="SetEnv PATH=$tmp/fakebin:/usr/bin:/bin:/usr/sbin:/sbin"
+fi
 write_config sshd "$port" "$tmp/host_ed25519" "$tmp/host_ecdsa"
 write_config sshd2 "$port2" "$tmp/host2_ed25519"
 

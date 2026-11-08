@@ -58,10 +58,13 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
     credential: host?.credential ?? (catalog.credentials.length === 1 ? catalog.credentials[0].name : ''),
     key: host?.key ?? '',
     password: '',
+    sudo_password: '',
     command: host?.command ?? '',
     keep_shell: host?.keep_shell ?? true,
   }));
   const [mode, setMode] = useState<Mode>(initialMode(host));
+  // `exec --sudo` (milestone 13): the login password, or one of the host's own.
+  const [sudoOwn, setSudoOwn] = useState(!!host?.has_sudo_password);
   const [modeChanged, setModeChanged] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [error, setError] = useState('');
@@ -112,6 +115,8 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
     if (mode === 'password' && f.password) { p.password = f.password; p.set_password = true; }
     if (!host || host.command !== f.command.trim()) { p.command = f.command.trim(); p.set_command = true; }
     if (!host || host.keep_shell !== f.keep_shell) { p.keep_shell = f.keep_shell; p.set_keep_shell = true; }
+    if (sudoOwn && f.sudo_password) { p.sudo_password = f.sudo_password; p.set_sudo_password = true; }
+    if (!sudoOwn && host?.has_sudo_password) { p.sudo_password = ''; p.set_sudo_password = true; }
     return p;
   };
 
@@ -243,6 +248,18 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
               <label className="check" style={{ fontSize: 'var(--fs-sm)' }}><input type="checkbox" checked={f.keep_shell} onChange={(e) => set('keep_shell', e.target.checked)} />
                 <span>Return to a shell when it exits <span className="faint">· otherwise the session ends with it</span></span></label>
             ) : <span className="hint">Runs in your login shell every time a session opens, like typing it yourself.</span>}
+          </div>
+          <div className="field" data-sudo-field>
+            <span className="flabel">Sudo password <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· for flint exec --sudo</span></span>
+            <div className="seg full" role="group" aria-label="Sudo password">
+              <button type="button" data-sudo-mode="login" aria-pressed={!sudoOwn} onClick={() => setSudoOwn(false)}>Same as the login password</button>
+              <button type="button" data-sudo-mode="own" aria-pressed={sudoOwn} onClick={() => setSudoOwn(true)}>Its own password</button>
+            </div>
+            {sudoOwn && (
+              <PasswordField value={f.sudo_password} onChange={(v) => set('sudo_password', v)} saved={null} label="Sudo password"
+                placeholder={host?.has_sudo_password ? 'Saved — type to replace' : 'Sudo password'} />
+            )}
+            <span className="hint">Flint types it only when sudo asks, and only for a command you approved in its window.</span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', gap: 'var(--sp-4)' }}>
             <div className="field"><span className="flabel">Tags</span>

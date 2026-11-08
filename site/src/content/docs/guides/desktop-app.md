@@ -202,6 +202,12 @@ it allows, which hosts and when it expires. **Allow** (with presence) creates th
 token; it never becomes a grant, so the next `token create` asks again. See
 [Tokens for scheduled jobs](/guides/ai-agents/#tokens-for-scheduled-jobs).
 
+`flint exec <alias> --sudo -- <command>` brings it up for one command as root: the
+host, the login user, and the command's arguments, one per chip, exactly as they will
+run. **Run as root** (with presence) allows that command only. When Flint holds no
+password for sudo on that host, the window asks for one, with **Save it for this
+host**. See [sudo](/guides/ai-agents/#sudo).
+
 ## Settings
 
 Settings belong to this machine, not to the vault, and save as you change them.

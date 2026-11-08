@@ -41,10 +41,13 @@ type HostPatch struct {
     set_command: bool `json:"set_command"`
     keep_shell: bool `json:"keep_shell"`
     set_keep_shell: bool `json:"set_keep_shell"`
+    // The password typed for `exec --sudo` (milestone 13); "" removes it.
+    sudo_password: str `json:"sudo_password"`
+    set_sudo_password: bool `json:"set_sudo_password"`
 }
 
 fn empty_host_patch() -> HostPatch {
-    return HostPatch{ alias: "", set_alias: false, label: "", set_label: false, hostname: "", set_hostname: false, port: 22, set_port: false, user: "", set_user: false, group: "", set_group: false, tags: [], set_tags: false, color: "", set_color: false, notes: "", set_notes: false, jump: "", set_jump: false, credential: "", set_credential: false, key: "", set_key: false, password: "", set_password: false, command: "", set_command: false, keep_shell: true, set_keep_shell: false }
+    return HostPatch{ alias: "", set_alias: false, label: "", set_label: false, hostname: "", set_hostname: false, port: 22, set_port: false, user: "", set_user: false, group: "", set_group: false, tags: [], set_tags: false, color: "", set_color: false, notes: "", set_notes: false, jump: "", set_jump: false, credential: "", set_credential: false, key: "", set_key: false, password: "", set_password: false, command: "", set_command: false, keep_shell: true, set_keep_shell: false, sudo_password: "", set_sudo_password: false }
 }
 
 fn load_catalog[S: VaultStore](store: S) -> Catalog! {
@@ -128,6 +131,7 @@ fn host_view(cat: Catalog, h: Host) -> HostView {
         credential: cred_name_of(cat.creds, h.credential_id),
         key: key_name_of(cat.keys, h.key_id),
         has_password: h.password.len() > 0,
+        has_sudo_password: h.sudo_password.len() > 0,
         command: h.initial_command,
         keep_shell: h.keep_shell,
     }
@@ -245,6 +249,9 @@ fn apply_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: 
     if p.set_password {
         h.password = try seal_secret(crypto, session, "hosts", h.id, "password", p.password)
     }
+    if p.set_sudo_password {
+        h.sudo_password = try seal_secret(crypto, session, "hosts", h.id, "sudo_password", p.sudo_password)
+    }
     return h
 }
 
@@ -272,7 +279,7 @@ fn add_host[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSes
         return error(coded(ERR_USAGE, "a host needs a hostname (--hostname)"))
     }
     cat := try load_catalog(store)
-    h := Host{ id: new_row_id(crypto), alias: "", label: "", hostname: "", port: 22, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true }
+    h := Host{ id: new_row_id(crypto), alias: "", label: "", hostname: "", port: 22, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true, sudo_password: [] }
     view := try save_host_patch(crypto, mut store, session, cat, h, p)
     // A key trusted while testing the unsaved host was recorded with no host
     // (test_host_draft): it belongs to this host now.

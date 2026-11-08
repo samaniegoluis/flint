@@ -23,6 +23,9 @@ ERR_TIMEOUT: str = "timeout"
 // Caller approval codes (milestone 12), appended so earlier exit codes never move.
 ERR_DENIED: str = "denied"
 ERR_APPROVAL_TIMEOUT: str = "approval_timeout"
+// `flint exec --sudo` codes (milestone 13), appended likewise.
+ERR_NOT_SUDOER: str = "not_sudoer"
+ERR_SUDO_PASSWORD: str = "sudo_password"
 
 // Builds an error message carrying a stable code.
 fn coded(code: str, msg: str) -> str {
@@ -32,7 +35,7 @@ fn coded(code: str, msg: str) -> str {
 // Every code a driver may see, in exit-code order (exit code = index + 1, except
 // that `internal` is 1).
 fn known_error_codes() -> []str {
-    return [ERR_INTERNAL, ERR_USAGE, ERR_NOT_FOUND, ERR_CONFLICT, ERR_LOCKED, ERR_WRONG_PASSWORD, ERR_INVALID, ERR_UNSUPPORTED, ERR_KEYCHAIN, ERR_IO, ERR_HOST_KEY, ERR_AUTH, ERR_NETWORK, ERR_TIMEOUT, ERR_DENIED, ERR_APPROVAL_TIMEOUT]
+    return [ERR_INTERNAL, ERR_USAGE, ERR_NOT_FOUND, ERR_CONFLICT, ERR_LOCKED, ERR_WRONG_PASSWORD, ERR_INVALID, ERR_UNSUPPORTED, ERR_KEYCHAIN, ERR_IO, ERR_HOST_KEY, ERR_AUTH, ERR_NETWORK, ERR_TIMEOUT, ERR_DENIED, ERR_APPROVAL_TIMEOUT, ERR_NOT_SUDOER, ERR_SUDO_PASSWORD]
 }
 
 // The code an error message starts with, or `internal` when it carries none.
@@ -91,4 +94,6 @@ test "exit codes are stable" {
     assert_eq(exit_code_for(ERR_TIMEOUT), 14)
     assert_eq(exit_code_for(ERR_DENIED), 15)
     assert_eq(exit_code_for(ERR_APPROVAL_TIMEOUT), 16)
+    assert_eq(exit_code_for(ERR_NOT_SUDOER), 17)
+    assert_eq(exit_code_for(ERR_SUDO_PASSWORD), 18)
 }

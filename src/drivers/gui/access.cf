@@ -5,6 +5,7 @@ package main
 // socket server waits on the book (serve.cf, `gate`); these handlers change it.
 
 import "core:encoding/hex"
+import "core:str"
 import "core:time"
 import "ext:json"
 import "ext:webui"
@@ -34,6 +35,10 @@ type AccessAnswer struct {
     duration: str         `json:"duration"`
     // The master password, only when the presence method is "password".
     password: str         `json:"password"`
+    // `exec --sudo` (milestone 13): a sudo password typed for this command, and
+    // whether to keep it as the host's.
+    sudo_password:      str  `json:"sudo_password"`
+    save_sudo_password: bool `json:"save_sudo_password"`
 }
 
 type GrantsChanged struct {
@@ -80,6 +85,34 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
         _ := set_approval_state(mut book, req.id, APPROVAL_DENIED)
         st.holder.put_access_book(book)
         st.holder.access_release()
+        return access_state(st, store, presence)
+    }
+    if ap.sudo.host.len() > 0 {
+        // `exec --sudo`: allowed for this one command, never as a grant.
+        try confirm_presence(c, store, presence, st.vault_session(), req.password, "run \"{str.join(ap.sudo.argv, " ")}\" as root on {ap.sudo.host}")
+        if req.save_sudo_password && req.sudo_password.len() > 0 {
+            st.hold()
+            mut ts := store
+            saved := set_host_sudo_password(c, mut ts, st.vault_session(), ap.sudo.host, req.sudo_password)
+            st.release()
+            if !saved.has_value() {
+                return error("{saved.error().message()}")
+            }
+            app.emit("vault:changed", VaultChanged{ path: st.vault_session().path, name: st.vault_session().name })
+        }
+        st.holder.access_hold()
+        mut sbook := st.holder.access_book()
+        if !set_approval_state(mut sbook, req.id, APPROVAL_ALLOWED) {
+            st.holder.access_release()
+            return error(coded(ERR_NOT_FOUND, "this request stopped waiting before it was allowed"))
+        }
+        if req.sudo_password.len() > 0 {
+            put_sudo_typed(mut sbook, req.id, req.sudo_password)
+        }
+        st.holder.put_access_book(sbook)
+        st.holder.access_release()
+        // No host here: the log never names what is inside the vault (Principle 5).
+        write_stderr("flint-gui: allowed {ap.label} to run one command as root\n")
         return access_state(st, store, presence)
     }
     if ap.token.name.len() > 0 {

@@ -125,6 +125,9 @@ type SshTransport interface {
     link_auth_agent() -> void!
     link_shell_open(term: str, cols: i32, rows: i32, command: str) -> void!
     link_exec_start(command: str) -> void!
+    // Like `link_exec_start`, with stdin left open until `link_channel_eof`.
+    link_exec_open(command: str) -> void!
+    link_channel_eof() -> void!
     link_channel_read(timeout_ms: i32) -> ExecChunk!
     link_channel_write(data: str) -> void!
     link_channel_resize(cols: i32, rows: i32) -> void!

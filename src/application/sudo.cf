@@ -1,0 +1,168 @@
+package application
+
+// `flint exec --sudo` (milestone 13, D-036, D-039, D-047): the app runs one command as
+// root on a host, approved one by one in its window. The sudo password is opened here,
+// written to sudo's stdin only at sudo's own prompt (domain/sudo.cf), and goes nowhere
+// else (Principle 6).
+
+import "core:encoding/hex"
+import "../domain"
+import "../ports"
+
+// How long to wait for sudo's prompt before closing stdin when none comes (no
+// password needed): a command reading stdin then sees EOF, as with a plain exec.
+SUDO_PROMPT_WAIT_MS: i64 = 3000
+
+// The credential a host logs in with, if it has one.
+fn host_credential(cat: Catalog, h: Host) -> Credential? {
+    if h.credential_id.len() > 0 {
+        idx := cred_index_by_id(cat.creds, h.credential_id)
+        if idx >= 0 {
+            return cat.creds[usize(idx)]
+        }
+    }
+    return none
+}
+
+// Whether Flint has a password to type for sudo on `h`: its own sudo password, else its
+// login password (the host's, then its credential's).
+fn has_sudo_secret(cat: Catalog, h: Host) -> bool {
+    if h.sudo_password.len() > 0 || h.password.len() > 0 {
+        return true
+    }
+    c := host_credential(cat, h) or {
+        return false
+    }
+    return c.password.len() > 0
+}
+
+// The password Flint types when sudo asks on `h`, by the same rule; "" when none.
+fn sudo_password_for[C: Crypto](crypto: C, session: VaultSession, cat: Catalog, h: Host) -> str! {
+    if h.sudo_password.len() > 0 {
+        return open_secret(crypto, session, "hosts", h.id, "sudo_password", h.sudo_password)
+    }
+    if h.password.len() > 0 {
+        return open_secret(crypto, session, "hosts", h.id, "password", h.password)
+    }
+    c := host_credential(cat, h) or {
+        return ""
+    }
+    return open_secret(crypto, session, "credentials", c.id, "password", c.password)
+}
+
+// What the approval window shows for `exec <alias> --sudo -- <argv>`: never a secret.
+fn sudo_ask_for[S: VaultStore](store: S, alias: str, argv: []str) -> SudoAsk! {
+    if argv.len() == 0 {
+        return error(coded(ERR_USAGE, "no command given; use `flint exec <alias> --sudo -- <command> [args]`"))
+    }
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    user := try auth_user(cat, h)
+    return SudoAsk{ host: h.alias, user: user, argv: argv, has_password: has_sudo_secret(cat, h) }
+}
+
+// Saves `password` as host `alias`'s sudo password; "" removes it.
+fn set_host_sudo_password[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, alias: str, password: str) -> HostView! {
+    mut p := empty_host_patch()
+    p.sudo_password = password
+    p.set_sudo_password = true
+    return edit_host(crypto, mut store, session, alias, p)
+}
+
+// Runs `argv` as root on the connected `link`. `password` is typed at sudo's prompt
+// ("" when Flint has none: a prompt then fails with `sudo_password`). With `capture`,
+// stdout and stderr are collected into the result; otherwise they stream to `sink`.
+fn run_sudo[C: Crypto, T: SshTransport, O: ExecSink, K: Clock](crypto: C, mut link: T, mut sink: O, mut clock: K, alias: str, user: str, argv: []str, password: str, timeout_secs: i64, capture: bool) -> ExecResult! {
+    if argv.len() == 0 {
+        return error(coded(ERR_USAGE, "no command given; use `flint exec <alias> --sudo -- <command> [args]`"))
+    }
+    if timeout_secs <= 0 {
+        return error(coded(ERR_INVALID, "the exec timeout must be positive"))
+    }
+    prompt := sudo_prompt(hex.encode(crypto.random_bytes(16)))
+    start := clock.clock_now_ms()
+    deadline := start + timeout_secs * 1000
+    try link.link_exec_open(sudo_command_line(prompt, argv))
+    mut err_watch := new_sudo_watch(prompt, password)
+    mut out_watch := new_sudo_watch(prompt, password)
+    mut stdin_open := true
+    mut res := ExecResult{ host: alias, exit_code: 0, signal: "", stdout: "", stderr: "", duration_ms: 0 }
+    mut running := true
+    for running {
+        now := clock.clock_now_ms()
+        if now > deadline {
+            return error(coded(ERR_TIMEOUT, "the command on '{alias}' did not finish within {timeout_secs}s"))
+        }
+        if stdin_open && now - start >= SUDO_PROMPT_WAIT_MS {
+            try link.link_channel_eof()
+            stdin_open = false
+        }
+        chunk := try link.link_channel_read(100)
+        outs := sudo_feed(mut out_watch, chunk.stdout)
+        errs := sudo_feed(mut err_watch, chunk.stderr)
+        if errs.refused {
+            return error(coded(ERR_SUDO_PASSWORD, "sudo on '{alias}' refused the password Flint typed; set the right one with `flint host edit {alias} --sudo-password`"))
+        }
+        if errs.send_password {
+            if password.len() == 0 {
+                return error(coded(ERR_SUDO_PASSWORD, "sudo on '{alias}' asks for a password and Flint has none; set one with `flint host edit {alias} --sudo-password`"))
+            }
+            if stdin_open {
+                try link.link_channel_write(password + "\n")
+                try link.link_channel_eof()
+                stdin_open = false
+            }
+        }
+        // Output on stdout means the command itself is running: sudo asks nothing more.
+        if stdin_open && outs.output.len() > 0 {
+            try link.link_channel_eof()
+            stdin_open = false
+        }
+        emit_exec_output(mut sink, mut res, outs.output, errs.output, capture)
+        if chunk.done {
+            emit_exec_output(mut sink, mut res, sudo_flush(mut out_watch), sudo_flush(mut err_watch), capture)
+            res.exit_code = chunk.exit_code
+            res.signal = chunk.signal
+            running = false
+        }
+    }
+    if res.exit_code == 1 && sudo_not_allowed(err_watch) {
+        return error(coded(ERR_NOT_SUDOER, "'{user}' may not use sudo on '{alias}'"))
+    }
+    res.duration_ms = clock.clock_now_ms() - start
+    return res
+}
+
+fn emit_exec_output[O: ExecSink](mut sink: O, mut res: ExecResult, stdout_text: str, errs: str, capture: bool) {
+    if capture {
+        res.stdout = res.stdout + stdout_text
+        res.stderr = res.stderr + errs
+        return
+    }
+    if stdout_text.len() > 0 {
+        sink.exec_stdout(stdout_text)
+    }
+    if errs.len() > 0 {
+        sink.exec_stderr(errs)
+    }
+}
+
+// Connects to `alias` and runs `argv` as root on it. `typed` is a sudo password the
+// owner typed in the approval window for this one command ("" for none); otherwise
+// Flint types the one the vault holds for the host.
+fn exec_sudo_on_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, O: ExecSink, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut sink: O, mut clock: K, alias: str, argv: []str, typed: str, opts: ConnectOptions, exec_timeout_secs: i64, capture: bool) -> ExecResult! {
+    if argv.len() == 0 {
+        return error(coded(ERR_USAGE, "no command given; use `flint exec <alias> --sudo -- <command> [args]`"))
+    }
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    user := try auth_user(cat, h)
+    mut password := typed
+    if password.len() == 0 {
+        password = try sudo_password_for(crypto, session, cat, h)
+    }
+    target := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
+    res := run_sudo(crypto, mut link, mut sink, mut clock, target.alias, user, argv, password, exec_timeout_secs, capture)
+    link.link_hangup()
+    return res
+}

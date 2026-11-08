@@ -56,6 +56,8 @@ export interface HostView {
   credential: string;
   key: string;
   has_password: boolean;
+  /** The host has its own sudo password; otherwise `exec --sudo` types the login one. */
+  has_sudo_password: boolean;
   /** Run on every interactive session instead of a bare shell (D-031); '' for none. */
   command: string;
   /** A login shell follows when `command` exits. */
@@ -148,6 +150,7 @@ export interface HostPatch {
   password: string; set_password: boolean;
   command: string; set_command: boolean;
   keep_shell: boolean; set_keep_shell: boolean;
+  sudo_password: string; set_sudo_password: boolean;
 }
 
 export interface CredPatch {
@@ -232,7 +235,7 @@ export interface CallerProc {
 
 export type AccessAction = 'read' | 'exec' | 'write';
 /** What a request needs: an action of a grant, or creating a token (milestone 12b). */
-export type AccessNeedAction = AccessAction | 'token';
+export type AccessNeedAction = AccessAction | 'token' | 'sudo';
 
 /** The token `flint token create` asks the owner for; `name` is '' otherwise. */
 export interface TokenAsk {
@@ -259,6 +262,16 @@ export interface Approval {
   deadline_ms: number;
   state: string;
   token: TokenAsk;
+  /** `exec --sudo` (milestone 13): host, login user and the exact argv. */
+  sudo: SudoAsk;
+}
+
+export interface SudoAsk {
+  host: string;
+  user: string;
+  argv: string[];
+  /** Flint has a password to type; otherwise the window asks for one. */
+  has_password: boolean;
 }
 
 export interface GrantView {
@@ -298,6 +311,9 @@ export interface AccessAnswer {
   write: boolean;
   duration: GrantDuration;
   password: string;
+  /** `exec --sudo`: a sudo password for this command, and whether to keep it. */
+  sudo_password: string;
+  save_sudo_password: boolean;
 }
 
 /** A token as Settings → Access lists it (milestone 12b): never its secret. Times are Unix seconds. */

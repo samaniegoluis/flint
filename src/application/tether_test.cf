@@ -146,7 +146,7 @@ fn host_by_alias(store: FakeStore, alias: str) -> Host {
             return h
         }
     }
-    return Host{ id: "", alias: "", label: "", hostname: "", port: 0, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true }
+    return Host{ id: "", alias: "", label: "", hostname: "", port: 0, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true, sudo_password: [] }
 }
 
 // ---- Names -------------------------------------------------------------------

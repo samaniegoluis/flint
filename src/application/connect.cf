@@ -459,7 +459,7 @@ fn test_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: Clock](c
 // saved.
 fn test_host_draft[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut clock: K, alias: str, p: HostPatch, opts: ConnectOptions) -> HostTestView! {
     cat := try load_catalog(store)
-    mut base := Host{ id: "", alias: "", label: "", hostname: "", port: 22, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true }
+    mut base := Host{ id: "", alias: "", label: "", hostname: "", port: 22, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true, sudo_password: [] }
     if alias.len() > 0 {
         base = try require_host(cat.hosts, alias)
     }

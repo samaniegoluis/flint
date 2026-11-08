@@ -476,10 +476,12 @@ type FakeLink struct {
     dial_algos: []str
     keepalives: i64
     fail_keepalive: bool
+    // The sudo prompt of the last `link_exec_open`; "@PROMPT@" in a chunk becomes it.
+    prompt: str
 }
 
 fn new_fake_link() -> FakeLink {
-    return FakeLink{ good_key: "", good_password: "", agent_ok: false, server_fp: "SHA256:server", calls: [], chunks: [], read_pos: 0, written: "", resized: "", hung_up: false, fail_dial: false, dial_algos: [], keepalives: 0, fail_keepalive: false }
+    return FakeLink{ good_key: "", good_password: "", agent_ok: false, server_fp: "SHA256:server", calls: [], chunks: [], read_pos: 0, written: "", resized: "", hung_up: false, fail_dial: false, dial_algos: [], keepalives: 0, fail_keepalive: false, prompt: "" }
 }
 
 fn (mut self: FakeLink) link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void! {
@@ -527,10 +529,30 @@ fn (mut self: FakeLink) link_exec_start(command: str) -> void! {
     self.calls.push("exec " + command)
 }
 
+fn (mut self: FakeLink) link_exec_open(command: str) -> void! {
+    self.calls.push("exec-open " + command)
+    start := str.index_of(command, "-p '")
+    if start >= 0 {
+        rest := command.substr(usize(start) + 4)
+        end := str.index_of(rest, "'")
+        if end >= 0 {
+            self.prompt = rest.substr(0, usize(end))
+        }
+    }
+}
+
+fn (mut self: FakeLink) link_channel_eof() -> void! {
+    self.calls.push("eof")
+}
+
 fn (mut self: FakeLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
     if self.read_pos < self.chunks.len() {
-        c := self.chunks[self.read_pos]
+        mut c := self.chunks[self.read_pos]
         self.read_pos += 1
+        if self.prompt.len() > 0 {
+            c.stdout = str.replace(c.stdout, "@PROMPT@", self.prompt)
+            c.stderr = str.replace(c.stderr, "@PROMPT@", self.prompt)
+        }
         return c
     }
     return ExecChunk{ stdout: "", stderr: "", done: true, exit_code: 0, signal: "" }

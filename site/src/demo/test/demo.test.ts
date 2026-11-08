@@ -112,11 +112,11 @@ test('host list is the CLI table', () => {
 test('host show and --json carry no secret, only has_password', () => {
 	const w = worldFromSeed(seed);
 	const show = flint(w, 'host show db');
-	assert.ok(show.out.includes('password    set'));
+	assert.ok(show.out.includes('password       set'));
 	const j = flint(w, 'host show db --json');
 	assert.equal(
 		j.out[0],
-		'{"alias":"db","label":"","hostname":"10.0.0.12","port":22,"user":"admin","group":"prod","tags":["postgres"],"color":"#e8833a","notes":"","jump":"bastion","credential":"","key":"","has_password":true,"command":"","keep_shell":true}',
+		'{"alias":"db","label":"","hostname":"10.0.0.12","port":22,"user":"admin","group":"prod","tags":["postgres"],"color":"#e8833a","notes":"","jump":"bastion","credential":"","key":"","has_password":true,"has_sudo_password":false,"command":"","keep_shell":true}',
 	);
 });
 
@@ -138,17 +138,17 @@ test('host test walks the jump chain, never asks for a password, and prints the 
 test('a host keeps an initial command, shows it, and connect notes it unless --no-command', () => {
 	const w = worldFromSeed(seed);
 	const e = flint(w, 'host edit nas --command htop --json');
-	assert.ok(e.out[0].endsWith('"command":"htop","keep_shell":true}'));
-	assert.ok(flint(w, 'host show nas').out.includes('command     htop (then a login shell)'));
+	assert.ok(e.out[0].endsWith('"has_sudo_password":false,"command":"htop","keep_shell":true}'));
+	assert.ok(flint(w, 'host show nas').out.includes('command        htop (then a login shell)'));
 	flint(w, 'host edit nas --no-keep-shell');
-	assert.ok(flint(w, 'host show nas').out.includes('command     htop (ends the session)'));
+	assert.ok(flint(w, 'host show nas').out.includes('command        htop (ends the session)'));
 	assert.equal(flint(w, 'host edit nas --keep-shell --no-keep-shell').code, 2);
 	const c = flint(w, 'connect nas', ['yes']);
 	assert.equal(c.code, 0);
 	assert.ok(c.notes.some((n) => n.includes('runs `htop` on nas')));
 	assert.deepEqual(flint(w, 'connect nas --no-command').notes, []);
 	assert.equal(flint(w, 'host edit nas --command ""').code, 0);
-	assert.ok(flint(w, 'host show nas').out.includes('command     -'));
+	assert.ok(flint(w, 'host show nas').out.includes('command        -'));
 });
 
 /** A world whose terminal Flint has already allowed (milestone 12). */
@@ -252,6 +252,20 @@ test('token create is approved in Flint, prints the token once, and list and rev
 	assert.equal(flint(w, 'token revoke nightly').code, 3, 'a revoked token is found by id only');
 	const work = flint(w, 'token create --vault Work --name x --allow read');
 	assert.equal(work.code, 5, 'a vault not unlocked in Flint cannot make tokens');
+});
+
+test('exec --sudo is approved in Flint and runs as root; the sudo password is never shown', () => {
+	const w = worldFromSeed(seed);
+	const r = flint(w, 'exec web-01 --accept-new-host-key --sudo -- whoami');
+	assert.equal(r.code, 0);
+	assert.deepEqual(r.out, ['root']);
+	assert.ok(r.err.includes('Waiting for approval in Flint (flint, started by Terminal)…'), 'Flint asks for every sudo command');
+	assert.equal(flint(w, 'exec web-01 --sudo -- ').code, 2, 'no command is a usage error');
+	assert.equal(flint(w, 'exec ghost --sudo -- id').code, 3);
+	assert.equal(flint(w, 'exec web-01 --vault Work --sudo -- id').code, 5, 'a vault not unlocked in Flint runs no sudo');
+	const shown = flint(w, 'host show web-01');
+	assert.ok(shown.out.some((l) => /^sudo password\s+the login password$/.test(l)));
+	assert.equal(JSON.parse(flint(w, 'host show web-01 --json').out[0]).has_sudo_password, false);
 });
 
 test('the landing shows what the demo CLI prints (D-027)', () => {
@@ -378,7 +392,7 @@ test('the shell tokenizer refuses pipes and keeps quotes', () => {
 
 test('the guide always says what to do, with the exact command', () => {
 	const { s, text } = session();
-	assert.deepEqual(s.guide(), { text: 'Step 1/11 · Every command, on one screen:', command: 'flint help' });
+	assert.deepEqual(s.guide(), { text: 'Step 1/12 · Every command, on one screen:', command: 'flint help' });
 	assert.ok(text().includes('#   flint help'), 'the step hint in the log carries its command');
 	s.submit('flint');
 	assert.equal(s.tourStep, 1, '`flint` alone shows the help, so it completes step 1');

@@ -132,7 +132,7 @@ function ActivitySection() {
                 <tr key={e.id} data-activity-entry={e.outcome} data-activity-via={e.via}>
                   <td className="muted nowrap">{whenText(e.at)}</td>
                   <td>{e.caller} <span className="muted" style={{ fontSize: 'var(--fs-xs)' }}>· {VIA[e.via]}</span></td>
-                  <td className="mono" style={{ wordBreak: 'break-all' }}>{e.command}</td>
+                  <td className="mono" style={{ wordBreak: 'break-all' }}>{e.action === 'sudo' && <span className="activity-badge" data-activity-sudo>root</span>}{e.command}</td>
                   <td className={e.outcome === 'allowed' ? 'nowrap' : 'nowrap err'}>{OUTCOME[e.outcome]}</td>
                 </tr>
               ))}

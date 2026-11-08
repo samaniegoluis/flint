@@ -65,8 +65,10 @@ See [Vaults](/guides/vaults/).
 
 Host flags: `--hostname`, `--port`, `--user`, `--label`, `--group`, `--tag` (repeatable),
 `--color`, `--notes`, `--jump`, `--cred`, `--key`, `--password`, `--password-stdin`,
-`--command <cmd>` (run on connect) with `--keep-shell` / `--no-keep-shell`.
-`host edit` also takes `--alias <new>`, `--no-tags` and `--no-password`;
+`--sudo-password`, `--sudo-password-stdin` (what `exec --sudo` types; without one, the
+login password), `--command <cmd>` (run on connect) with `--keep-shell` / `--no-keep-shell`.
+`host edit` also takes `--alias <new>`, `--no-tags`, `--no-password` and
+`--no-sudo-password`;
 `--command ""` clears the command. See [Hosts and groups](/guides/hosts/).
 
 `host test` takes `--timeout` and `--accept-new-host-key` like `connect`, never asks for
@@ -103,6 +105,7 @@ See [Credentials](/guides/credentials/).
 |---|---|
 | `connect <alias>` | Interactive shell, through the host's jump hosts, or the host's initial command (`--no-command` skips it). Exits with the remote shell's status |
 | `exec <alias> -- <command>` | Run one command. Streams its stdout and stderr and exits with its status |
+| `exec <alias> --sudo -- <command> [args]` | Run it as root. Flint's window asks you for each one, and Flint types the sudo password. Needs Flint open |
 | `known-host list` | Every recorded server key |
 | `known-host rm <alias\|address>` | Forget a server key, so the next connect asks again |
 
@@ -111,6 +114,12 @@ See [Credentials](/guides/credentials/).
 refused), and `exec` takes `--exec-timeout <secs>` (default 600). With `--json`, `exec`
 prints `{host, exit_code, signal, stdout, stderr, duration_ms}` and `connect` prints
 `{host, exit_code}` after the session. See [Connecting](/guides/connecting/).
+
+With `--sudo`, the words after `--` are the command and its arguments, each passed to
+`sudo` as one word, never parsed by a shell (`--sudo -- sh -c '…'` for a pipe). The
+command runs with no terminal; its output and exit status come back as with `exec`.
+It runs only through Flint, approved one command at a time; with Flint closed or the
+vault locked it fails with `locked`. See [sudo](/guides/ai-agents/#sudo).
 
 ### Import
 
@@ -150,8 +159,8 @@ it would leak into `ps`, shell history and child processes. A secret comes from 
 two places:
 
 - **The terminal.** Flint asks with echo off: the master password when the vault is not
-  unlocked in the Flint app (for that one command; nothing is kept), or a host/credential
-  password when you pass `--password`.
+  unlocked in the Flint app (for that one command; nothing is kept), a host/credential
+  password when you pass `--password`, or a host's sudo password with `--sudo-password`.
 - **Stdin**, with a `--*-stdin` flag. This is for scripts and agents.
 
 The one exception is `FLINT_TOKEN`: a scheduled job has neither a terminal nor a stdin to
@@ -162,8 +171,9 @@ When a command takes several secrets on stdin, they are read in this order:
 
 1. The master password line (`--master-stdin`)
 2. The password line (`--password-stdin`)
-3. The passphrase line (`--passphrase-stdin`)
-4. The private key, which takes the rest of stdin (`--key-stdin`)
+3. The sudo password line (`--sudo-password-stdin`)
+4. The passphrase line (`--passphrase-stdin`)
+5. The private key, which takes the rest of stdin (`--key-stdin`)
 
 ```sh
 printf '%s\n%s\n' "$MASTER" "$HOST_PASSWORD" |
@@ -171,7 +181,7 @@ printf '%s\n%s\n' "$MASTER" "$HOST_PASSWORD" |
 ```
 
 Output never contains a secret, with or without `--json`. Hosts and credentials report
-`has_password`, keys report `has_passphrase`.
+`has_password` (hosts also `has_sudo_password`), keys report `has_passphrase`.
 
 ## Output and errors
 
@@ -212,6 +222,8 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 14 | `timeout` | `flint exec` ran past `--exec-timeout` |
 | 15 | `denied` | The owner denied this program in Flint's window, or its grant or token does not cover the command; a token that is revoked, expired or wrong (see [Approve a program](/guides/ai-agents/#approve-a-program)) |
 | 16 | `approval_timeout` | Nobody answered Flint's approval window within two minutes |
+| 17 | `not_sudoer` | `exec --sudo`: the host's login user may not use `sudo` |
+| 18 | `sudo_password` | `exec --sudo`: sudo refused the password Flint typed, or Flint has none for that host |
 
 The codes are stable: scripts can rely on them.
 
