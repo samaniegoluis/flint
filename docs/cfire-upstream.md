@@ -1712,3 +1712,26 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   (`src/adapters/ssh/sftp_test.cf`, milestone 16's spike). No native code.
 - **Ideal:** reject an assignment to a captured variable inside a spawned task (a diagnostic such as
   `cfire/ASSIGN-TO-TASK-CAPTURE`), or capture `mut` locals by shared reference under the scope's join.
+
+### CF-099 · missing · `confirmed`: `core:fs` has no stat, no exclusive create and no error kind
+- **Repro (43431f2):** `cfire_stdlib_lookup core:fs` lists `exists`, `list_dir` (names only), `open`
+  with Read/Write/Append/ReadWrite and `remove`, but nothing returns a file's kind, size, mtime or
+  mode, nothing tells a link from its target (`lstat`), `open` has no create-exclusive mode, and a
+  failure is a message only, so "no such file", "permission denied" and "not a directory" cannot be
+  told apart. `flint cp` needs all of these to choose a target and to report stable errors.
+- **Workaround:** `src/adapters/process/native/flint_fs.hpp` (stat/lstat, opendir, `open` with
+  `O_EXCL`, read/write/fsync, rename, unlink/rmdir, mkdir, errno mapped to kinds), wrapped by
+  `src/adapters/process/local_fs.cf`. Milestone 16.
+- **Ideal:** `fs.stat(path) -> FileInfo!` and `fs.lstat` (kind, size, mtime, mode), `OpenMode::CreateNew`,
+  and an `fs.ErrorKind` (`NotFound`, `PermissionDenied`, `AlreadyExists`, `NotADirectory`,
+  `IsADirectory`) on every `core:fs` error, as Rust's `std::io::ErrorKind`.
+
+### CF-100 · missing · `confirmed`: a type parameter cannot require two interfaces
+- **Repro (43431f2):** `fn both[T: A + B](t: T)` fails with "expected 'IDENT', got '+'", and an
+  interface cannot embed another (`type AB interface { A; B }`: "expected '('"). A libssh link serves
+  both `SshTransport` and `SftpTransport`; `copy_with_host` must call both on one value.
+- **Workaround:** the parameter names `SshTransport` only, and the SFTP calls go through helpers that
+  name `SftpTransport` (`open_sftp`, `copy_files` in `src/application/files.cf`). This compiles because
+  cfire does not check a generic body's calls against its constraints, only the instantiation (C++
+  concepts), so the second interface is never stated where it is used.
+- **Ideal:** `T: A + B` (Rust) or interface embedding (Go), checked in the body.

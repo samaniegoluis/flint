@@ -178,6 +178,7 @@ What Tether already does and Flint must not lose.
 | A served command asks for its secrets after checking its flags, as the CLI on its own does | `idea` | M11a: with Flint open, `host add --password` with a bad flag prompts for the password before it reports the usage error (D-041) |
 | Terminal output as bytes instead of base64 text in `terminal:output` | `idea` | CF-003: only worth it once webui has a real binary channel; `emit_bytes` today is base64 plus one `eval_js`, like Flint's `emit` |
 | Wipe key material from memory: the master, page and secrets keys when a session ends, and decrypted secrets once libssh has them (`sodium_memzero`) | `next` | Found in the milestone 02/03 owner review; only the hex `PRAGMA key` text is zeroed today |
+| The sudo test `a refused password, a missing one and a user who may not sudo are told apart` failed once in M16 (`err_code(r1)` was `ok`, not `sudo_password`) and passed on the next three runs | `next` | Found 2026-11-08 while building M16, with no change to `sudo.cf`. The prompt is random per run (`[flint-sudo:<hex>]`), so a prompt that differs between the fake's `@PROMPT@` and what `run_sudo` waits for, or a timing step in `FakeClock`, are the first suspects |
 
 ## 6. UI
 
