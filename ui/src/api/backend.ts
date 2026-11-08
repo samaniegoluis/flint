@@ -3,7 +3,7 @@
 // FlintError so the UI can branch on stable codes (D-018, D-019).
 
 import type {
-  AccessAnswer, AccessState, ActivityEntry, AppInfo, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
+  AccessAnswer, AccessState, ActivityEntry, AppInfo, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
   KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
@@ -94,6 +94,11 @@ export const api = {
   tokenRevoke: (id: string) => call<TokensState>('token_revoke', { name: id }),
   /** The newest activity entries before `before` (0: from the newest). */
   activityLog: (before: number, limit: number) => call<{ entries: ActivityEntry[] }>('activity_log', { before, limit }),
+  /** How long the open vault's activity log keeps entries (milestone 15). */
+  activityRetention: () => call<{ days: RetentionDays; label: string }>('activity_retention'),
+  /** How many entries a retention of `days` would remove now. */
+  activityRetentionPreview: (days: RetentionDays) => call<{ days: RetentionDays; remove: number }>('activity_retention_preview', { days }),
+  activityRetentionSet: (days: RetentionDays) => call<{ days: RetentionDays; label: string; removed: number }>('activity_retention_set', { days }),
   forgetKey: (path: string) => call('vault_forget_key', { path }),
   forget: (path: string) => call('vault_forget', { path }),
   status: () => call<VaultStatus>('vault_status'),

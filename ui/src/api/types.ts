@@ -141,6 +141,8 @@ export interface UnlockRequest {
   caller: string;
   /** Who runs it ("flint, started by Claude Code"); the unlock can allow it. */
   label: string;
+  /** The whole command `caller` sums up (milestone 15). */
+  command: CommandText;
 }
 
 /** Why the vault locked: the Lock button, idle time, the screen, sleep or `flint vault lock`. */
@@ -277,6 +279,8 @@ export interface Approval {
   token: TokenAsk;
   /** `exec --sudo` (milestone 13): host, login user and the exact argv. */
   sudo: SudoAsk;
+  /** The whole command `request` sums up (milestone 15). */
+  command: CommandText;
 }
 
 export interface SudoAsk {
@@ -362,4 +366,15 @@ export interface ActivityEntry {
   host: string;
   command: string;
   outcome: 'allowed' | 'denied' | 'timeout';
+  /** Bytes cut from the end of `command` past 16 KB (milestone 15); 0 when whole. */
+  cut: number;
 }
+
+/** A command as shown and kept (milestone 15): whole up to 16 KB, `cut` bytes beyond. */
+export interface CommandText {
+  text: string;
+  cut: number;
+}
+
+/** How long the activity log keeps entries, in days; 0 is no limit (milestone 15). */
+export type RetentionDays = 30 | 90 | 365 | 0;

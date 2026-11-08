@@ -6,11 +6,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api, on, toFlintError } from '../api/backend';
-import type { ActivityEntry, GrantView, TokenView } from '../api/types';
+import type { ActivityEntry, GrantView, RetentionDays, TokenView } from '../api/types';
 import type { Confirm } from '../pages/KeysPage';
 import { useApp } from '../state/app';
 import { presenceLabel, useAccessState } from './ApprovalDialog';
 import { Icon } from '../ui/Icon';
+import { CommandModal } from './CommandModal';
 
 type Scoped = { all: boolean; groups: string[]; hosts: string[]; read: boolean; exec: boolean; write: boolean };
 
@@ -135,9 +136,72 @@ function TokensSection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
   );
 }
 
-function ActivitySection() {
+const RETENTION: { days: RetentionDays; label: string }[] = [
+  { days: 30, label: '30 days' }, { days: 90, label: '90 days' }, { days: 365, label: '1 year' }, { days: 0, label: 'No limit' },
+];
+const ACTION_LABEL: Record<string, string> = { exec: 'Run', write: 'Change', read: 'Read', token: 'Create a token', sudo: 'Run as root' };
+
+/** "Sat 8 Nov 2026, 14:05:09": an entry's exact time, with seconds. */
+export function exactWhen(secs: number): string {
+  return new Date(secs * 1000).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function ActivityDetail({ e, onClose }: { e: ActivityEntry; onClose: () => void }) {
+  const details = (
+    <dl className="kv" data-activity-detail style={{ margin: 0, gridTemplateColumns: '88px minmax(0, 1fr)' }}>
+      <dt>When</dt><dd data-activity-when>{exactWhen(e.at)}</dd>
+      <dt>Caller</dt><dd style={{ wordBreak: 'break-word' }}>{e.caller}</dd>
+      <dt>Allowed</dt><dd>{VIA[e.via]}{e.token ? <> <span className="mono">{e.token}</span></> : ''}</dd>
+      {e.host && <><dt>Host</dt><dd className="mono">{e.host}</dd></>}
+      <dt>Action</dt><dd>{ACTION_LABEL[e.action] ?? e.action}</dd>
+      <dt>Result</dt><dd><span className={`badge ${OUTCOME[e.outcome].tone}`}>{OUTCOME[e.outcome].text}</span></dd>
+    </dl>
+  );
+  return <CommandModal title="Activity entry" command={e.command} cut={e.cut} details={details} onClose={onClose} />;
+}
+
+function RetentionChoice({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
+  const { notify, fail } = useApp();
+  const [days, setDays] = useState<RetentionDays | null>(null);
+  useEffect(() => { api.activityRetention().then((r) => setDays(r.days)).catch(() => {}); }, []);
+  const longer = (a: RetentionDays, b: RetentionDays) => a === 0 || (b !== 0 && a >= b);
+  const apply = async (d: RetentionDays) => {
+    const r = await api.activityRetentionSet(d);
+    setDays(r.days);
+    notify(r.removed > 0 ? `Activity kept ${r.label.toLowerCase()} · ${r.removed.toLocaleString()} older entries removed` : `Activity kept ${r.label.toLowerCase()}`);
+  };
+  const pick = async (d: RetentionDays) => {
+    if (days === null || d === days) return;
+    try {
+      if (longer(d, days)) { await apply(d); return; }
+      const p = await api.activityRetentionPreview(d);
+      if (p.remove === 0) { await apply(d); return; }
+      const label = RETENTION.find((o) => o.days === d)?.label ?? `${d} days`;
+      onConfirm({
+        title: `Keep activity for ${label.toLowerCase()}?`,
+        body: `${p.remove.toLocaleString()} ${p.remove === 1 ? 'entry is' : 'entries are'} older than ${label.toLowerCase()} and will be removed now. This cannot be undone.`,
+        action: `Remove ${p.remove.toLocaleString()} ${p.remove === 1 ? 'entry' : 'entries'}`,
+        run: () => apply(d),
+      });
+    } catch (e) { fail(toFlintError(e)); }
+  };
+  return (
+    <div className="row" style={{ gap: 'var(--sp-2)' }}>
+      <span className="hint">Keep</span>
+      <div className="seg" role="radiogroup" aria-label="Keep activity for" data-retention>
+        {RETENTION.map((o) => (
+          <button key={o.days} type="button" role="radio" aria-checked={days === o.days} aria-pressed={days === o.days}
+            data-retention-days={o.days} disabled={days === null} onClick={() => pick(o.days)}>{o.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ActivitySection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [more, setMore] = useState(false);
+  const [open, setOpen] = useState<ActivityEntry | null>(null);
   const refresh = useCallback(() => {
     api.activityLog(0, PAGE).then((p) => { setEntries(p.entries); setMore(p.entries.length === PAGE); }).catch(() => {});
   }, []);
@@ -153,9 +217,9 @@ function ActivitySection() {
   };
   return (
     <section data-activity>
-      <div className="section-h"><h2>Activity</h2><span className="grow" /><span className="hint">Reads aren't logged</span></div>
+      <div className="section-h"><h2>Activity</h2><span className="grow" /><RetentionChoice onConfirm={onConfirm} /></div>
       <p className="muted" style={{ fontSize: 'var(--fs-sm)', paddingBottom: 'var(--sp-3)', maxWidth: 680, lineHeight: 1.55 }}>
-        What programs ran or changed through Flint, and what was refused. Commands run as root are tinted and always shown in full.
+        What programs ran or changed through Flint, and what was refused. Commands run as root are tinted. Open an entry for the whole command.
       </p>
       {entries.length === 0 ? (
         <div className="panel muted" data-no-activity style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>Nothing yet.</div>
@@ -163,8 +227,10 @@ function ActivitySection() {
         <div className="col" role="table" aria-label="Activity">
           <div className="act-row head" role="row"><span>When</span><span>Caller</span><span>Command</span><span>Result</span></div>
           {entries.map((e) => (
-            <div key={e.id} role="row" className={e.action === 'sudo' ? 'act-row sudo' : 'act-row'} data-activity-entry={e.outcome} data-activity-via={e.via}>
-              <span className="when" title={new Date(e.at * 1000).toLocaleString()}>{shortWhen(e.at)}</span>
+            <div key={e.id} role="row" tabIndex={0} aria-label={`${OUTCOME[e.outcome].text}: ${e.command.slice(0, 80)}`}
+              className={e.action === 'sudo' ? 'act-row sudo open' : 'act-row open'} data-activity-entry={e.outcome} data-activity-via={e.via}
+              onClick={() => setOpen(e)} onKeyDown={(k) => { if (k.key === 'Enter' || k.key === ' ') { k.preventDefault(); setOpen(e); } }}>
+              <span className="when" title={exactWhen(e.at)}>{shortWhen(e.at)}</span>
               <span className="caller row" style={{ gap: 6, alignItems: 'flex-start' }} title={e.caller}>
                 <Icon name="agent" size="xs" />
                 <span className="col" style={{ minWidth: 0 }}>
@@ -182,9 +248,10 @@ function ActivitySection() {
         </div>
       )}
       <div className="row" style={{ paddingTop: 'var(--sp-3)', gap: 'var(--sp-3)' }}>
-        <span className="hint grow">Allowed reads (list, show) are not recorded. Command output and sudo passwords never are. Kept in the vault, the newest 10,000.</span>
+        <span className="hint grow">Allowed reads (list, show) are not recorded. Command output and sudo passwords never are. Kept in the vault; only this window changes how long.</span>
         {more && <button className="btn btn-ghost btn-sm" data-activity-more onClick={loadMore}>Load more</button>}
       </div>
+      {open && <ActivityDetail e={open} onClose={() => setOpen(null)} />}
     </section>
   );
 }
@@ -232,7 +299,7 @@ export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void 
         </table>
       )}
       <TokensSection onConfirm={onConfirm} />
-      <ActivitySection />
+      <ActivitySection onConfirm={onConfirm} />
     </>
   );
 }

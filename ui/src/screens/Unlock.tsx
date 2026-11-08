@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, toFlintError } from '../api/backend';
 import { shortPath, useApp } from '../state/app';
 import { CallerLabel } from '../access/ApprovalDialog';
+import { CommandModal, moreText } from '../access/CommandModal';
 import { Icon, Logo } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { actionFor } from '../lib/keymap';
@@ -31,6 +32,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
   const [switcher, setSwitcher] = useState(false);
   const [allowCaller, setAllowCaller] = useState(true);
   const [remember, setRemember] = useState(false);
+  const [showCommand, setShowCommand] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -80,6 +82,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
 
   const live = tabs.filter((t) => t.status !== 'ended').length;
   const request = unlockRequest && unlockRequest.path ? unlockRequest : null;
+  const more = request?.command ? moreText(request.caller, request.command.text) : '';
   // Leaves the locked vault for another one: its sessions end.
   const closeLocked = async () => {
     sessions.closeAll();
@@ -111,6 +114,12 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
                 </p>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={dismissUnlockRequest}>Dismiss</button>
               </div>
+              {more && (
+                <div className="row" style={{ marginLeft: 40, gap: 'var(--sp-2)' }}>
+                  <span className="hint grow" data-unlock-more>{more}</span>
+                  <button type="button" className="btn btn-ghost btn-sm" data-unlock-show-command onClick={() => setShowCommand(true)}>Show full command</button>
+                </div>
+              )}
               {request.label && request.path === target.path ? (
                 <>
                   <label className="opt" data-unlock-allow style={{ marginLeft: 40 }}>
@@ -166,6 +175,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
             {switcher && <VaultMenu onClose={() => setSwitcher(false)} style={{ top: 48, left: '50%', marginLeft: -170 }} />}
           </div>
         </form>
+        {showCommand && request && <CommandModal title="Full command" command={request.command.text} cut={request.command.cut} onClose={() => setShowCommand(false)} />}
       </main>
       <footer className="mono faint" style={{ position: 'absolute', left: 0, right: 0, bottom: 'var(--sp-4)', textAlign: 'center', fontSize: 'var(--fs-xs)' }}>
         Flint {info?.version} · vault format v1 · Argon2id + SQLCipher + XChaCha20-Poly1305

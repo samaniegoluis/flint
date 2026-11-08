@@ -73,6 +73,18 @@
         continue;
       }
       if (req.includes('timeout-me')) { log('ok   left unanswered: ' + req); continue; }
+      if (req.includes('long-cmd')) {
+        // Milestone 15 (D-049): a command past 160 characters shows its first line, how
+        // much is left, and the whole of it in a modal that Esc closes without denying.
+        const more = form.querySelector('[data-approval-more]')?.textContent ?? '';
+        log((/^\+\d[\d,.]* more characters$/.test(more) && !req.includes('long-cmd-end') ? 'ok   ' : 'FAIL ') + 'the approval window says how much of a long command is left: ' + more);
+        form.querySelector('[data-approval-show-command]')?.click();
+        const full = await waitFor(() => document.querySelector('[data-command-full]'), 'the full command', 5000).catch(() => null);
+        log((full && full.textContent.includes('long-cmd-end') ? 'ok   ' : 'FAIL ') + 'Show full command opens the whole command');
+        document.querySelector('[data-command-modal]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await sleep(150);
+        log((!document.querySelector('[data-command-full]') && document.querySelector('[data-approval]') === form ? 'ok   ' : 'FAIL ') + 'Esc closes the full command and leaves the request waiting');
+      }
       if (req.includes('deny-me')) {
         // A click beside the window is not an answer, and the countdown runs on the
         // page's clock (both found in the M12 walkthrough).
@@ -180,6 +192,8 @@
       await check(log2.some((e) => e.action === 'read' && e.outcome === 'denied' && e.via === 'token'), 'a read refused for a bad token is');
       await check(viaToken.some((e) => e.outcome === 'denied' && e.command.includes('after-revoke') && e.caller.includes('(token nightly)') && e.token.length > 0), 'a revoked token is still named when refused');
       await check(!log2.some((e) => e.command.includes('flint_')), 'no token text is logged');
+      const long = log2.find((e) => e.command.includes('long-cmd-end'));
+      await check(long && long.cut === 0 && long.command.length > 600, 'the log keeps a long command whole');
       const sudoRows = log2.filter((e) => e.action === 'sudo');
       if (sudoRows.length > 0) {
         await check(sudoRows.some((e) => e.outcome === 'allowed' && e.via === 'window' && e.command.includes("--sudo -- 'sh' '-c'")), 'the log keeps a sudo command whole, each argument quoted');
@@ -193,6 +207,27 @@
       await waitFor(() => q('[data-activity] [data-activity-entry]'), 'the activity table', 10000);
       await check(qa('[data-activity] [data-activity-entry="denied"]').length > 0, 'Settings → Access shows the activity, refusals included');
       if (sudoRows.length > 0) await check(!!q('[data-activity] [data-activity-sudo]'), 'a sudo command is marked root in the activity');
+      {
+        // Milestone 15: an entry opens its detail with the whole command and the exact time.
+        const row = qa('[data-activity] [data-activity-entry]').find((r) => r.textContent.includes('long-cmd'));
+        await check(!!row, 'the long command is in the activity table');
+        row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        const full = await waitFor(() => q('[data-command-full]'), 'the activity entry detail', 5000);
+        await check(full.textContent.includes('long-cmd-end'), 'Enter on an entry opens the whole command');
+        await check(/\d{1,2}:\d{2}:\d{2}/.test(q('[data-activity-when]')?.textContent ?? ''), 'with the exact time, seconds included');
+        q('[data-command-modal] [data-autofocus]')?.click();
+        await sleep(100);
+        await check(!q('[data-command-full]'), 'Close closes it');
+        // Retention: the vault keeps 90 days unless chosen; nothing here is older than 30.
+        await check(q('[data-retention-days="90"]')?.getAttribute('aria-checked') === 'true', 'the activity log keeps 90 days by default');
+        q('[data-retention-days="30"]')?.click();
+        await waitFor(() => q('[data-retention-days="30"]')?.getAttribute('aria-checked') === 'true', 'the 30-day retention', 5000);
+        await check((await window.backend.activity_retention()).days === 30, 'choosing 30 days keeps it in the vault');
+        const after = (await window.backend.activity_log({ before: 0, limit: 500 })).entries;
+        await check(after.length === log2.length, 'shortening it with nothing that old removes nothing');
+        q('[data-retention-days="90"]')?.click();
+        await waitFor(() => q('[data-retention-days="90"]')?.getAttribute('aria-checked') === 'true', 'the 90-day retention again', 5000);
+      }
       await check(!q('[data-token="nightly"]'), 'a revoked token is hidden until asked for');
       q('[data-tokens-ended]')?.click();
       await waitFor(() => q('[data-token="nightly"][data-token-status="revoked"]'), 'the revoked token row', 5000);
