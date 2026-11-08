@@ -155,6 +155,8 @@ function ActivityDetail({ e, onClose }: { e: ActivityEntry; onClose: () => void 
   const { catalog } = useApp();
   const root = e.action === 'sudo';
   const host = e.host ? findHost(catalog, e.host) : undefined;
+  // The login user as the core picks it (auth_user): the host's, else its credential's.
+  const user = host?.user || catalog.credentials.find((c) => c.name === host?.credential)?.user || '';
   const when = exactWhen(e.at);
   const details = (
     <dl className="kv" data-activity-detail style={{ margin: 0, gridTemplateColumns: '88px minmax(0, 1fr)' }}>
@@ -162,7 +164,7 @@ function ActivityDetail({ e, onClose }: { e: ActivityEntry; onClose: () => void 
       <dt>Caller</dt><dd style={{ wordBreak: 'break-word' }}><CallerLabel label={e.caller} /></dd>
       <dt>Allowed</dt><dd>{VIA[e.via]}{e.token ? <> <span className="mono">{e.token}</span></> : ''}</dd>
       {e.host && <><dt>Host</dt><dd><span className="mono">{e.host}</span>{root
-        ? <span className="faint"> · {host?.user ? `${host.user} → ` : ''}root (sudo)</span>
+        ? <span className="faint"> · {user ? `${user} → ` : ''}root (sudo)</span>
         : host?.group ? <span className="faint"> · {host.group}</span> : null}</dd></>}
       <dt>Action</dt><dd><span className="mono">{root ? 'exec' : e.action}</span>{root && <> <span className="root-badge">root</span></>}</dd>
       <dt>Result</dt><dd><span className={`badge ${OUTCOME[e.outcome].tone}`}>{OUTCOME[e.outcome].text}</span></dd>
