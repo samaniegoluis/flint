@@ -36,9 +36,3 @@ button.panel:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .act-row .caller { min-width: 0; }
 /* The next request in the approval window's queue (17a6), at the foot of the card. */
 .approval-next { gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--border-subtle); background: var(--surface-overlay); border-radius: 0 0 var(--radius-lg) var(--radius-lg); font-size: var(--fs-sm); }
-
-/* Milestone 15: an activity entry opens its detail; a long command shows three lines. */
-.act-row.open { cursor: pointer; }
-.act-row.open:hover { background: var(--surface-hover); }
-.act-row.open:focus-visible { outline: none; box-shadow: inset 0 0 0 2px rgba(242, 154, 82, 0.75); }
-.act-row .cmd { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

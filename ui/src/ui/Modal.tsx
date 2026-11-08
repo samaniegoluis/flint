@@ -1,9 +1,12 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 // A modal over a scrim. Esc and a click on the scrim close it (unless
 // `scrimCloses` is false, for a dialog where closing means an answer); focus moves
 // into it and stays inside while it is open.
-export function Modal({ label, onClose, children, width = 560, top = 72, className = '', scrimCloses = true }: {
+// `layer` 2 is a modal over another one (the full command over the approval window,
+// 16e2a): it renders at the window's root, above the first, on a second scrim.
+export function Modal({ label, onClose, children, width = 560, top = 72, className = '', scrimCloses = true, layer = 1 }: {
   label: string;
   onClose: () => void;
   children: ReactNode;
@@ -11,15 +14,17 @@ export function Modal({ label, onClose, children, width = 560, top = 72, classNa
   top?: number;
   className?: string;
   scrimCloses?: boolean;
+  layer?: 1 | 2;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useTrapFocus(ref, onClose);
-  return (
+  const s2 = layer === 2 ? ' s2' : '';
+  const body = (
     <>
-      <div className="scrim" onMouseDown={scrimCloses ? onClose : undefined} />
+      <div className={'scrim' + s2} onMouseDown={scrimCloses ? onClose : undefined} />
       <div
         ref={ref}
-        className={'modal ' + className}
+        className={'modal' + s2 + ' ' + className}
         role="dialog"
         aria-modal="true"
         aria-label={label}
@@ -29,6 +34,8 @@ export function Modal({ label, onClose, children, width = 560, top = 72, classNa
       </div>
     </>
   );
+  if (layer === 1) return body;
+  return createPortal(body, document.querySelector('.app') ?? document.body);
 }
 
 // The open dialogs, innermost last: only the top one handles keys and holds the focus.

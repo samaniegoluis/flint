@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, toFlintError } from '../api/backend';
 import { shortPath, useApp } from '../state/app';
 import { CallerLabel } from '../access/ApprovalDialog';
-import { CommandModal, moreText } from '../access/CommandModal';
+import { CommandModal, MoreRow, moreText } from '../access/CommandModal';
 import { Icon, Logo } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { actionFor } from '../lib/keymap';
@@ -110,14 +110,14 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
               <div className="row" style={{ gap: 'var(--sp-3)', alignItems: 'flex-start' }}>
                 <span className="prompt-ic info" style={{ width: 28, height: 28 }}><Icon name="agent" /></span>
                 <p className="grow" style={{ fontSize: 'var(--fs-md)', margin: 0, minWidth: 0, wordBreak: 'break-word' }}>
-                  <span className="mono strong">{request.caller}</span> wants to use {request.path === target.path ? 'this vault' : <>vault <span className="strong">{request.name}</span></>}
+                  <span className={more ? 'mono strong req-summary' : 'mono strong'} style={more ? { display: 'block' } : undefined}
+                    title={more ? 'Summary — open the full command to read all of it' : undefined}>{request.caller}</span>{more ? '' : ' '}wants to use {request.path === target.path ? 'this vault' : <>vault <span className="strong">{request.name}</span></>}
                 </p>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={dismissUnlockRequest}>Dismiss</button>
               </div>
               {more && (
-                <div className="row" style={{ marginLeft: 40, gap: 'var(--sp-2)' }}>
-                  <span className="hint grow" data-unlock-more>{more}</span>
-                  <button type="button" className="btn btn-ghost btn-sm" data-unlock-show-command onClick={() => setShowCommand(true)}>Show full command</button>
+                <div style={{ marginLeft: 40, marginTop: 'calc(var(--sp-2) * -1)' }}>
+                  <MoreRow more={more} data="unlock" onShow={() => setShowCommand(true)} />
                 </div>
               )}
               {request.label && request.path === target.path ? (
@@ -175,7 +175,8 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
             {switcher && <VaultMenu onClose={() => setSwitcher(false)} style={{ top: 48, left: '50%', marginLeft: -170 }} />}
           </div>
         </form>
-        {showCommand && request && <CommandModal title="Full command" command={request.command.text} cut={request.command.cut} onClose={() => setShowCommand(false)} />}
+        {showCommand && request && <CommandModal title="Full command" command={request.command.text} cut={request.command.cut} onClose={() => setShowCommand(false)}
+          footer={<span className="hint">Esc returns to the unlock screen</span>} />}
       </main>
       <footer className="mono faint" style={{ position: 'absolute', left: 0, right: 0, bottom: 'var(--sp-4)', textAlign: 'center', fontSize: 'var(--fs-xs)' }}>
         Flint {info?.version} · vault format v1 · Argon2id + SQLCipher + XChaCha20-Poly1305

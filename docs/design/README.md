@@ -9,6 +9,7 @@ Direction **A (Editor)** as the base, plus B's command palette and unlock layout
 | `screens/NN-screen-name.{dark,light}.html` | One plain HTML file per screen and theme. Open in a browser at ≥ 1280 px wide. |
 | `screens/16*.{dark,light}.html` | v3 · milestones 12a and 12b: caller approval, unlock with a waiting caller, Settings › Access, and the Agents status item. |
 | `screens/17*.{dark,light}.html` | v3 · milestone 13: the approval window as root (`exec --sudo`), the host's sudo password, and Activity with sudo rows. |
+| `screens/16e*.{dark,light}.html` | v4 · milestone 15: whole commands (summary + "Show full command", the full-command modal), the activity entry, and activity retention. |
 | `tokens.css` | **The source of truth.** CSS custom properties keyed by `html[data-theme="dark"\|"light"]`. Import once at the app root. |
 | `flint.css` | The mockups' component classes. It's a reference for your CSS Modules, not production CSS. It uses tokens only. |
 | `components.{dark,light}.html` | The component sheet. |
@@ -175,6 +176,18 @@ The rule is: **macOS ⌘ → Linux Ctrl+Shift**, and **⇧⌘ → Ctrl+Alt+Shift
 
 No grant or token ever covers a root command. Each one needs its own approval with presence.
 
+## Whole commands & activity retention — milestone 15 (screens 16e*)
+
+| Screen | What it shows |
+|---|---|
+| `16e1a` | The approval (16a1) with a long command. The Request box holds a one-line summary ending in "...", then a quiet row with "+1,240 more characters" and a ghost button, "Show full command". |
+| `16e1b` | The same treatment on the unlock screen's caller panel (16b), aligned with its text. |
+| `16e2a` | The **Full command** modal over the approval. It sits on a second, darker scrim. The command is a wrapped mono block that scrolls (max 360 px) and here holds a heredoc script; under it, "1,397 characters". The footer has Copy and Close. A footer tag reads "Approval still waiting · 1:31 — Esc returns to it", and the countdown keeps running underneath. |
+| `16e2b` | The same modal opened from an activity entry, cut: "Cut at 16 KB: 3,100 more bytes not kept.", with a dashed cut marker at the end of the block. Copy is in its "Copied ✓" state. |
+| `16e3a` / `16e3b` | **Activity entry**: a key/value block (When with seconds and offset, Caller with process chain, Allowed via a grant / via token / asked you, Host, Action, Result badge) above the command. The sudo variant (`16e3b`) uses the root tint and argument chips, as in 17a/17c. |
+| `16e4a` | Activity (16c5) with **Keep**: 30 days · 90 days · 1 year · No limit, with 90 selected. Rows are buttons with hover and focus states, and commands are clamped to 3 lines. |
+| `16e4b` | Confirm when a shorter period removes entries: "Keep activity for 30 days?" / "412 entries are older than 30 days and will be removed now. This cannot be undone." / Cancel (focused) and **Remove 412 entries** (destructive). |
+
 ## What Flint left out (2026-11-07)
 
 The design is adapted to what Flint has; these parts wait on the roadmap.
@@ -184,3 +197,6 @@ The design is adapted to what Flint has; these parts wait on the roadmap.
 - Activity's **exit code**, its **approved / revoked** event rows, its **filters**, and the sudo results **Not a sudoer** and **Sudo password refused**. Activity shows Allowed, Denied and Timed out.
 - **17b**: the sudo option **None: ask each time**. Without a password to type (none of the host's, no login password), the window asks for one.
 - **17a1**: the command label says "Command", not "runs exactly as shown": Flint runs `sudo -S -k -p <prompt> --`, and the `sudo` chip says so in its tooltip.
+- **16e2a**: the size line says "1,397 characters", not "runs exactly as shown" (the request is the caller's command line, not what the host runs).
+- **16e3a / 16e3b**: the activity entry has no process chain, grant detail, exit code, duration or sudo result: the log keeps the caller's label, how it was let in, the host, the action and Allowed / Denied / Timed out. A sudo entry's argument chips are read back from the logged command, and shown as text when it was cut.
+- **16e4b**: the confirm is the app's shared one (Cancel as a ghost button).

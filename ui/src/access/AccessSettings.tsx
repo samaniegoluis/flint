@@ -9,9 +9,9 @@ import { api, on, toFlintError } from '../api/backend';
 import type { ActivityEntry, GrantView, RetentionDays, TokenView } from '../api/types';
 import type { Confirm } from '../pages/KeysPage';
 import { useApp } from '../state/app';
-import { presenceLabel, useAccessState } from './ApprovalDialog';
+import { CallerLabel, findHost, presenceLabel, useAccessState } from './ApprovalDialog';
 import { Icon } from '../ui/Icon';
-import { CommandModal } from './CommandModal';
+import { CommandModal, sudoArgv } from './CommandModal';
 
 type Scoped = { all: boolean; groups: string[]; hosts: string[]; read: boolean; exec: boolean; write: boolean };
 
@@ -139,25 +139,37 @@ function TokensSection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
 const RETENTION: { days: RetentionDays; label: string }[] = [
   { days: 30, label: '30 days' }, { days: 90, label: '90 days' }, { days: 365, label: '1 year' }, { days: 0, label: 'No limit' },
 ];
-const ACTION_LABEL: Record<string, string> = { exec: 'Run', write: 'Change', read: 'Read', token: 'Create a token', sudo: 'Run as root' };
 
-/** "Sat 8 Nov 2026, 14:05:09": an entry's exact time, with seconds. */
-export function exactWhen(secs: number): string {
-  return new Date(secs * 1000).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+/** "2026-11-08 07:12:41" and "UTC−6": an entry's exact local time, with seconds and offset. */
+export function exactWhen(secs: number): { time: string; offset: string } {
+  const d = new Date(secs * 1000);
+  const p = (n: number) => String(n).padStart(2, '0');
+  const time = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  const off = -d.getTimezoneOffset();
+  const h = Math.floor(Math.abs(off) / 60), m = Math.abs(off) % 60;
+  const offset = off === 0 ? 'UTC' : `UTC${off < 0 ? '−' : '+'}${h}${m ? ':' + p(m) : ''}`;
+  return { time, offset };
 }
 
 function ActivityDetail({ e, onClose }: { e: ActivityEntry; onClose: () => void }) {
+  const { catalog } = useApp();
+  const root = e.action === 'sudo';
+  const host = e.host ? findHost(catalog, e.host) : undefined;
+  const when = exactWhen(e.at);
   const details = (
     <dl className="kv" data-activity-detail style={{ margin: 0, gridTemplateColumns: '88px minmax(0, 1fr)' }}>
-      <dt>When</dt><dd data-activity-when>{exactWhen(e.at)}</dd>
-      <dt>Caller</dt><dd style={{ wordBreak: 'break-word' }}>{e.caller}</dd>
+      <dt>When</dt><dd data-activity-when><span className="mono">{when.time}</span> <span className="faint">{when.offset}</span></dd>
+      <dt>Caller</dt><dd style={{ wordBreak: 'break-word' }}><CallerLabel label={e.caller} /></dd>
       <dt>Allowed</dt><dd>{VIA[e.via]}{e.token ? <> <span className="mono">{e.token}</span></> : ''}</dd>
-      {e.host && <><dt>Host</dt><dd className="mono">{e.host}</dd></>}
-      <dt>Action</dt><dd>{ACTION_LABEL[e.action] ?? e.action}</dd>
+      {e.host && <><dt>Host</dt><dd><span className="mono">{e.host}</span>{root
+        ? <span className="faint"> · {host?.user ? `${host.user} → ` : ''}root (sudo)</span>
+        : host?.group ? <span className="faint"> · {host.group}</span> : null}</dd></>}
+      <dt>Action</dt><dd><span className="mono">{root ? 'exec' : e.action}</span>{root && <> <span className="root-badge">root</span></>}</dd>
       <dt>Result</dt><dd><span className={`badge ${OUTCOME[e.outcome].tone}`}>{OUTCOME[e.outcome].text}</span></dd>
     </dl>
   );
-  return <CommandModal title="Activity entry" command={e.command} cut={e.cut} details={details} onClose={onClose} />;
+  return <CommandModal title="Activity entry" icon="clock" root={root} argv={root && e.cut === 0 ? sudoArgv(e.command) : null}
+    command={e.command} cut={e.cut} details={details} onClose={onClose} />;
 }
 
 function RetentionChoice({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
@@ -186,8 +198,8 @@ function RetentionChoice({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
     } catch (e) { fail(toFlintError(e)); }
   };
   return (
-    <div className="row" style={{ gap: 'var(--sp-2)' }}>
-      <span className="hint">Keep</span>
+    <div className="row" style={{ gap: 'var(--sp-3)' }}>
+      <span className="flabel">Keep</span>
       <div className="seg" role="radiogroup" aria-label="Keep activity for" data-retention>
         {RETENTION.map((o) => (
           <button key={o.days} type="button" role="radio" aria-checked={days === o.days} aria-pressed={days === o.days}
@@ -224,13 +236,13 @@ function ActivitySection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
       {entries.length === 0 ? (
         <div className="panel muted" data-no-activity style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>Nothing yet.</div>
       ) : (
-        <div className="col" role="table" aria-label="Activity">
-          <div className="act-row head" role="row"><span>When</span><span>Caller</span><span>Command</span><span>Result</span></div>
+        <div className="col" role="list" aria-label="Activity">
+          <div className="act-row head" aria-hidden="true"><span>When</span><span>Caller</span><span>Command</span><span>Result</span></div>
           {entries.map((e) => (
-            <div key={e.id} role="row" tabIndex={0} aria-label={`${OUTCOME[e.outcome].text}: ${e.command.slice(0, 80)}`}
-              className={e.action === 'sudo' ? 'act-row sudo open' : 'act-row open'} data-activity-entry={e.outcome} data-activity-via={e.via}
-              onClick={() => setOpen(e)} onKeyDown={(k) => { if (k.key === 'Enter' || k.key === ' ') { k.preventDefault(); setOpen(e); } }}>
-              <span className="when" title={exactWhen(e.at)}>{shortWhen(e.at)}</span>
+            <button key={e.id} type="button" role="listitem" aria-haspopup="dialog" aria-label={`${OUTCOME[e.outcome].text}: ${e.command.slice(0, 80)}`}
+              className={e.action === 'sudo' ? 'act-row sudo' : 'act-row'} data-activity-entry={e.outcome} data-activity-via={e.via}
+              onClick={() => setOpen(e)} onKeyDown={(k) => { if (k.key === 'Enter') { k.preventDefault(); setOpen(e); } }}>
+              <span className="when" title={`${exactWhen(e.at).time} ${exactWhen(e.at).offset}`}>{shortWhen(e.at)}</span>
               <span className="caller row" style={{ gap: 6, alignItems: 'flex-start' }} title={e.caller}>
                 <Icon name="agent" size="xs" />
                 <span className="col" style={{ minWidth: 0 }}>
@@ -238,12 +250,12 @@ function ActivitySection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
                   <span className="faint trunc" style={{ fontSize: 'var(--fs-xs)' }}>{VIA[e.via]}{e.token ? ` ${e.token}` : ''}</span>
                 </span>
               </span>
-              <span className="cmd">
+              <span className="cmd clamp3">
                 {e.action === 'sudo' && <span className="root-badge" data-activity-sudo>root</span>}
                 {e.command}
               </span>
               <span><span className={`badge ${OUTCOME[e.outcome].tone}`}>{e.outcome === 'allowed' && <Icon name="check" />}{OUTCOME[e.outcome].text}</span></span>
-            </div>
+            </button>
           ))}
         </div>
       )}

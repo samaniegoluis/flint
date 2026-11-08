@@ -435,3 +435,17 @@ body { margin: 0; background: var(--surface-desk); }
 .act-row .when { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-tertiary); padding-top: 2px; }
 .act-row .cmd { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-primary); white-space: pre-wrap; word-break: break-all; }
 .act-row .cmd.trunc { white-space: nowrap; }
+
+/* Whole commands & retention (M15) */
+.req-summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.more-row { display: flex; align-items: center; gap: var(--sp-2); }
+.cmd-block { max-height: 360px; overflow: auto; margin: 0; padding: var(--sp-3); background: var(--surface-sunken); border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.55; color: var(--text-primary); white-space: pre-wrap; word-break: break-all; }
+.cmd-block .cut { display: block; margin-top: var(--sp-2); padding-top: var(--sp-2); border-top: 1px dashed var(--warning-border); color: var(--warning); }
+.scrim.s2 { z-index: 32; }
+.modal.s2 { z-index: 33; }
+button.act-row { width: 100%; text-align: left; cursor: pointer; background: none; font: inherit; color: inherit; border: 0; border-bottom: 1px solid var(--border-subtle); }
+button.act-row:hover, button.act-row.is-hover { background: var(--surface-hover); }
+button.act-row:focus-visible, button.act-row.is-focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent); border-radius: var(--radius-sm); }
+button.act-row.sudo.is-focus, button.act-row.sudo:focus-visible { box-shadow: inset 3px 0 0 var(--danger), inset 0 0 0 2px var(--accent); }
+.clamp3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.waiting-tag { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 var(--sp-2); border-radius: var(--radius-full); background: var(--warning-subtle); color: var(--warning); font-size: var(--fs-xs); font-weight: var(--fw-medium); }
