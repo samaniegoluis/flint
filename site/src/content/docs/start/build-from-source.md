@@ -187,6 +187,33 @@ plays the owner in the approval window, with the master password as presence
 (`FLINT_PRESENCE=password`): it denies one request, leaves one unanswered, allows one host
 only, and checks that a lock ends every grant.
 
+## Install your build
+
+To use the build you just made every day, install the app and the CLI together, so they
+speak the same socket protocol:
+
+```sh
+scripts/install.sh
+```
+
+It builds both, quits a running Flint (its vault locks and its grants end), and installs:
+
+| | macOS | Linux |
+|---|---|---|
+| App | `/Applications/Flint.app` | `~/.local/share/flint/`, started by `~/.local/bin/flint-app` and a menu entry |
+| CLI | `~/.local/bin/flint` | `~/.local/bin/flint` |
+
+`flint` starts the installed app when it needs one (`open -a Flint` on macOS, `flint-app`
+beside it on Linux), so run the script again after each update. `FLINT_PREFIX` puts the
+CLI in another folder.
+
+- A build is signed ad hoc, so each install is a new program to the macOS Keychain: a
+  vault opened with **Remember on this computer** asks for Keychain access again.
+- A build with a new migration updates the vault the first time it opens it, and an older
+  Flint then refuses that vault. Try a new build on a copy of the vault first.
+- One Flint runs per config folder. With the installed app open, starting a build from
+  `build/gui` only shows the installed app's window: quit it first.
+
 ## Check the Linux build from macOS
 
 With Docker running:
