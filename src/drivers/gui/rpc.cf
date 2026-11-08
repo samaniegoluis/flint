@@ -409,6 +409,13 @@ fn rpc_vault_unlock(req: UnlockReq, c: Sodium, mut store: LockedVaultStore, kc: 
     st.holder.set_remembered(s.path, s.cached)
     st.adopt(s)
     st.holder.clear_relocked(s.path)
+    // What aged out of the activity log while the vault was closed (milestone 15). A
+    // failure is reported by its code only (Principle 5) and does not stop the unlock.
+    mut ts := store
+    pruned := prune_activity(mut ts, time.unix_seconds())
+    if !pruned.has_value() {
+        write_stderr("flint-gui: the activity log was not pruned ({error_code_of("{pruned.error().message()}")})\n")
+    }
     if req.password.len() > 0 {
         // The master password just typed opens the window too.
         st.holder.set_window_locked(false)
@@ -459,14 +466,18 @@ fn rpc_activity(st: GuiState) -> str! {
 fn rpc_unlock_request(st: GuiState, recents: JsonRecentStore) -> str! {
     (path, caller) := st.holder.ask()
     if path.len() == 0 || st.unlocked() {
-        return json.stringify(UnlockRequest{ path: "", name: "", caller: "", label: "" })
+        return json.stringify(UnlockRequest{ path: "", name: "", caller: "", label: "", command: CommandText{ text: "", cut: 0 } })
     }
     asking := st.holder.access_book().asking
     mut label := ""
-    if asking.len() > 0 && allowed_at_unlock(asking[0].need) {
-        label = asking[0].label
+    mut command := CommandText{ text: caller, cut: 0 }
+    if asking.len() > 0 {
+        command = asking[0].command
+        if allowed_at_unlock(asking[0].need) {
+            label = asking[0].label
+        }
     }
-    return json.stringify(UnlockRequest{ path: path, name: recent_name(recents, path), caller: caller, label: label })
+    return json.stringify(UnlockRequest{ path: path, name: recent_name(recents, path), caller: caller, label: label, command: command })
 }
 
 // The person turned down the CLI's request on the unlock screen.
@@ -545,7 +556,7 @@ fn rpc_vault_rename(params: str, mut store: LockedVaultStore, recents: JsonRecen
 
 fn rpc_vault_status(mut store: LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
-    return json.stringify(try open_vault_status(mut store, st.vault_session()))
+    return json.stringify(try open_vault_status(store, store, st.vault_session()))
 }
 
 // ---- Catalog ------------------------------------------------------------------------

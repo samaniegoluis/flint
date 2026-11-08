@@ -92,6 +92,20 @@ test "the unlock screen names the command, never a flag's value" {
     assert(long.ends_with("..."))
 }
 
+test "the whole command is uncut and still has no flag values" {
+    mut words: []str = ["exec", "web", "--timeout", "9", "--", "echo"]
+    mut tail := ""
+    for i in 0..100 {
+        words.push("word{i}")
+        tail = tail + " word{i}"
+    }
+    whole := caller_command(parsed(words))
+    assert_eq(whole, "flint exec web -- echo" + tail)
+    assert(whole.len() > 160)
+    assert(!whole.contains("--timeout"))
+    assert_eq(caller_command(parsed(["exec", "web", "--sudo", "--", "systemctl", "restart", "nginx"])), "flint exec web --sudo -- systemctl restart nginx")
+}
+
 test "relay frames carry a tag and raw bytes" {
     f := relay_frame(TAG_STDOUT, "\x1b[1mhi\x00")
     assert_eq(relay_tag(f), "o")

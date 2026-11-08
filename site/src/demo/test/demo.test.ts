@@ -206,6 +206,13 @@ test('a vault not unlocked in Flint asks for its master password for each comman
 	assert.deepEqual(flint(w, 'host list', ['again']).asks, ["Master password for 'Work': "]);
 });
 
+test('vault status says how long the activity log keeps entries', () => {
+	const w = worldFromSeed(seed);
+	const st = flint(w, 'vault status');
+	assert.equal(st.out[st.out.length - 1], 'activity     kept 90 days');
+	assert.ok(flint(w, 'vault status --json').out[0].includes('"activity_days":90'));
+});
+
 test('vault unlock asks Flint, which holds one vault at a time; vault lock locks it', () => {
 	const w = worldFromSeed(seed);
 	const u = flint(w, 'vault unlock --vault Work');

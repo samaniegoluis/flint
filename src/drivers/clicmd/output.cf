@@ -233,7 +233,18 @@ fn print_status(st: VaultStatus) {
         print_fields(["vault", "path", "state"], [st.name, st.path, "locked (unlock it in Flint, or pass --master-stdin)"])
         return
     }
-    print_fields(["vault", "path", "state", "groups", "hosts", "keys", "credentials"], [st.name, st.path, "unlocked in Flint", "{st.groups}", "{st.hosts}", "{st.keys}", "{st.credentials}"])
+    mut fields: []str = ["vault", "path", "state", "groups", "hosts", "keys", "credentials"]
+    mut values: []str = [st.name, st.path, "unlocked in Flint", "{st.groups}", "{st.hosts}", "{st.keys}", "{st.credentials}"]
+    if st.activity_days >= 0 {
+        // Set in Flint's Settings → Access only (D-052).
+        fields.push("activity")
+        if st.activity_days == 0 {
+            values.push("kept with no time limit")
+        } else {
+            values.push("kept {retention_label(st.activity_days)}")
+        }
+    }
+    print_fields(fields, values)
 }
 
 fn print_recents(list: []RecentView) {

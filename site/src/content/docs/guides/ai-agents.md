@@ -193,7 +193,12 @@ to `~/.ssh/authorized_keys`. Ways to narrow it:
   `flint exec` line.
 - **Read the activity log** in **Settings → Access**: every command a program ran or
   changed through Flint, and every request refused or left to time out, newest first.
-  Commands run as root carry a `root` badge and are always shown in full.
+  Commands run as root carry a `root` badge. Click an entry, or press Enter on it, for the
+  whole command (up to 16 KB) with the exact time and the full caller chain. Entries are
+  kept 90 days unless you choose 30 days, 1 year or no limit there.
+- **Read the whole command before you allow it.** A long `flint exec` shows its first line
+  in the approval window with **Show full command**; what it shows is read from the
+  arguments Flint will run.
 
 ## Tokens for scheduled jobs
 

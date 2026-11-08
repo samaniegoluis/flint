@@ -61,8 +61,16 @@ type VaultStore interface {
 type TokenStore interface {
     tokens_all() -> []Token!
     token_put(t: Token) -> void!
-    activity_add(e: ActivityEntry, keep: i64) -> void!
+    // Appends `e` and prunes to `keep` in one savepoint.
+    activity_add(e: ActivityEntry, keep: ActivityKeep) -> void!
     activity_page(before_id: i64, limit: i64) -> []ActivityEntry!
+    // Prunes to `keep`; the number of entries removed (milestone 15).
+    activity_prune(keep: ActivityKeep) -> i64!
+    // How many entries are older than `since_at` (Unix seconds).
+    activity_count_before(since_at: i64) -> i64!
+    // The vault's retention in days (0: no limit; -1: never set).
+    activity_retention() -> i64!
+    set_activity_retention(days: i64) -> void!
 }
 
 // The OS keychain (adapters/keychain). Holds one master key per vault, by account.

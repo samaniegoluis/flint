@@ -340,9 +340,9 @@ fn (self: SqlVaultStore) token_put(t: Token) -> void! {
     ])
 }
 
-// The insert and the trim in one savepoint (inside a transaction or not), so a reader
-// never sees a log that is half trimmed.
-fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: i64) -> void! {
+// The insert and the prune in one savepoint (inside a transaction or not), so a
+// reader never sees a log that is half pruned.
+fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> void! {
     try self.require_open()
     try self.conn().exec("SAVEPOINT activity_add;")
     done := self.activity_insert(e, keep)
@@ -354,11 +354,73 @@ fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: i64) -> void! {
     try self.conn().exec("RELEASE activity_add;")
 }
 
-fn (self: SqlVaultStore) activity_insert(e: ActivityEntry, keep: i64) -> void! {
-    try self.conn().run_sql("INSERT INTO activity (at, caller, via, token_id, action, host, command, outcome) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);", [
-            sql_int(e.at), sql_text(e.caller), sql_text(e.via), sql_text(e.token), sql_text(e.action), sql_text(e.host), sql_text(e.command), sql_text(e.outcome),
+fn (self: SqlVaultStore) activity_insert(e: ActivityEntry, keep: ActivityKeep) -> void! {
+    try self.conn().run_sql("INSERT INTO activity (at, caller, via, token_id, action, host, command, outcome, command_cut) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);", [
+            sql_int(e.at), sql_text(e.caller), sql_text(e.via), sql_text(e.token), sql_text(e.action), sql_text(e.host), sql_text(e.command), sql_text(e.outcome), sql_int(e.cut),
     ])
-    try self.conn().run_sql("DELETE FROM activity WHERE id <= (SELECT max(id) FROM activity) - ?1;", [sql_int(keep)])
+    _ := try self.activity_trim(keep)
+}
+
+// Deletes what `keep` no longer covers: entries older than `since_at`, then the
+// oldest ones while the log is over `max_bytes`. The newest entry always stays.
+fn (self: SqlVaultStore) activity_trim(keep: ActivityKeep) -> i64! {
+    before := try self.activity_count()
+    if keep.since_at > 0 {
+        try self.conn().run_sql("DELETE FROM activity WHERE at < ?1 AND id < (SELECT max(id) FROM activity);", [sql_int(keep.since_at)])
+    }
+    if keep.max_bytes > 0 {
+        size := try self.activity_bytes()
+        if size > keep.max_bytes {
+            // The newest rows that fit; everything older goes.
+            res := try self.conn().query_cells("SELECT id FROM (SELECT id, sum(length(caller) + length(command) + length(host) + length(token_id) + ?1) OVER (ORDER BY id DESC) AS total FROM activity) WHERE total > ?2 ORDER BY id DESC LIMIT 1;", [sql_int(ACTIVITY_ROW_BYTES), sql_int(keep.max_bytes)])
+            if res.len() > 0 {
+                try self.conn().run_sql("DELETE FROM activity WHERE id <= ?1 AND id < (SELECT max(id) FROM activity);", [sql_int(cell_i64(res[0][0]))])
+            }
+        }
+    }
+    after := try self.activity_count()
+    return before - after
+}
+
+fn (self: SqlVaultStore) activity_count() -> i64! {
+    res := try self.conn().query_cells("SELECT count(*) FROM activity;", [])
+    return cell_i64(res[0][0])
+}
+
+fn (self: SqlVaultStore) activity_bytes() -> i64! {
+    res := try self.conn().query_cells("SELECT ifnull(sum(length(caller) + length(command) + length(host) + length(token_id) + ?1), 0) FROM activity;", [sql_int(ACTIVITY_ROW_BYTES)])
+    return cell_i64(res[0][0])
+}
+
+fn (self: SqlVaultStore) activity_prune(keep: ActivityKeep) -> i64! {
+    try self.require_open()
+    try self.conn().exec("SAVEPOINT activity_prune;")
+    done := self.activity_trim(keep)
+    if !done.has_value() {
+        _ := self.conn().exec("ROLLBACK TO activity_prune;")
+        _ := self.conn().exec("RELEASE activity_prune;")
+        return error("{done.error().message()}")
+    }
+    try self.conn().exec("RELEASE activity_prune;")
+    return done.value()
+}
+
+fn (self: SqlVaultStore) activity_count_before(since_at: i64) -> i64! {
+    try self.require_open()
+    res := try self.conn().query_cells("SELECT count(*) FROM activity WHERE at < ?1;", [sql_int(since_at)])
+    return cell_i64(res[0][0])
+}
+
+fn (self: SqlVaultStore) activity_retention() -> i64! {
+    v := try self.vault_get_meta("activity_retention_days")
+    if v.len() == 0 {
+        return -1
+    }
+    return v.parse_i64() or -1
+}
+
+fn (self: SqlVaultStore) set_activity_retention(days: i64) -> void! {
+    try self.vault_set_meta("activity_retention_days", "{days}")
 }
 
 fn (self: SqlVaultStore) activity_page(before_id: i64, limit: i64) -> []ActivityEntry! {
@@ -367,10 +429,10 @@ fn (self: SqlVaultStore) activity_page(before_id: i64, limit: i64) -> []Activity
     if before <= 0 {
         before = 9223372036854775807
     }
-    res := try self.conn().query_cells("SELECT id, at, caller, via, token_id, action, host, command, outcome FROM activity WHERE id < ?1 ORDER BY id DESC LIMIT ?2;", [sql_int(before), sql_int(limit)])
+    res := try self.conn().query_cells("SELECT id, at, caller, via, token_id, action, host, command, outcome, command_cut FROM activity WHERE id < ?1 ORDER BY id DESC LIMIT ?2;", [sql_int(before), sql_int(limit)])
     mut list: []ActivityEntry = []
     for r in res {
-        list.push(ActivityEntry{ id: cell_i64(r[0]), at: cell_i64(r[1]), caller: cell_str(r[2]), via: cell_str(r[3]), token: cell_str(r[4]), action: cell_str(r[5]), host: cell_str(r[6]), command: cell_str(r[7]), outcome: cell_str(r[8]) })
+        list.push(ActivityEntry{ id: cell_i64(r[0]), at: cell_i64(r[1]), caller: cell_str(r[2]), via: cell_str(r[3]), token: cell_str(r[4]), action: cell_str(r[5]), host: cell_str(r[6]), command: cell_str(r[7]), outcome: cell_str(r[8]), cut: cell_i64(r[9]) })
     }
     return list
 }

@@ -253,7 +253,7 @@ fn (self: LockedVaultStore) token_put(t: Token) -> void! {
     return r
 }
 
-fn (self: LockedVaultStore) activity_add(e: ActivityEntry, keep: i64) -> void! {
+fn (self: LockedVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> void! {
     inner := self.enter()
     r := inner.activity_add(e, keep)
     self.leave()
@@ -263,6 +263,34 @@ fn (self: LockedVaultStore) activity_add(e: ActivityEntry, keep: i64) -> void! {
 fn (self: LockedVaultStore) activity_page(before_id: i64, limit: i64) -> []ActivityEntry! {
     inner := self.enter()
     r := inner.activity_page(before_id, limit)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) activity_prune(keep: ActivityKeep) -> i64! {
+    inner := self.enter()
+    r := inner.activity_prune(keep)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) activity_count_before(since_at: i64) -> i64! {
+    inner := self.enter()
+    r := inner.activity_count_before(since_at)
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) activity_retention() -> i64! {
+    inner := self.enter()
+    r := inner.activity_retention()
+    self.leave()
+    return r
+}
+
+fn (self: LockedVaultStore) set_activity_retention(days: i64) -> void! {
+    inner := self.enter()
+    r := inner.set_activity_retention(days)
     self.leave()
     return r
 }

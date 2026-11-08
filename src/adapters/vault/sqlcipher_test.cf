@@ -295,10 +295,10 @@ fn marker_token(id: str, name: str, revoked_at: i64) -> Token {
 }
 
 fn marker_entry(n: i64) -> ActivityEntry {
-    return ActivityEntry{ id: 0, at: 1000 + n, caller: "flint-caller-marker", via: ACTIVITY_VIA_GRANT, token: "", action: ACCESS_EXEC, host: "flint-activity-host-marker", command: "flint exec web -- flint-activity-command-marker {n}", outcome: ACTIVITY_ALLOWED }
+    return ActivityEntry{ id: 0, at: 1000 + n, caller: "flint-caller-marker", via: ACTIVITY_VIA_GRANT, token: "", action: ACCESS_EXEC, host: "flint-activity-host-marker", command: "flint exec web -- flint-activity-command-marker {n}", outcome: ACTIVITY_ALLOWED, cut: 0 }
 }
 
-test "tokens and activity round-trip, stay encrypted, and the log keeps the newest" {
+test "tokens and activity round-trip, stay encrypted, and the log keeps by age" {
     path := temp_vault_path("v.flint")
     mut store := new_sql_vault_store()
     try store.vault_create(path, test_key(7), test_salt_bytes())
@@ -317,8 +317,9 @@ test "tokens and activity round-trip, stay encrypted, and the log keeps the newe
     assert_eq(tokens[0].expires_at, 200)
     assert_eq(tokens[0].hash, "abt1")
 
+    // Kept from 1002 on: the two oldest go as the later ones arrive.
     for n in 0..5 {
-        try store.activity_add(marker_entry(n), 3)
+        try store.activity_add(marker_entry(n), ActivityKeep{ since_at: 1002, max_bytes: ACTIVITY_MAX_BYTES })
     }
     page := try store.activity_page(0, 10)
     assert_eq(page.len(), 3)
@@ -368,7 +369,7 @@ test "a vault at schema 4 gains an empty sudo password per host" {
     db.close_db()
     mut store := new_sql_vault_store()
     try store.vault_attach(path, test_key(7), test_salt_bytes())
-    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "5")
+    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "{vault_migrations().len()}")
     hosts := try store.hosts_all()
     assert_eq(hosts.len(), 1)
     assert_eq(hosts[0].sudo_password.len(), 0)
@@ -394,5 +395,59 @@ test "a host's sudo password round-trips and stays encrypted" {
     store.vault_detach()
     raw := try fs.read_text(path)
     assert(!raw.contains("flint-sudo-marker"), "the sudo password must not leak")
+    try fs.remove(fs.dirname(path))
+}
+
+test "a vault at schema 5 keeps its activity, whole and uncut" {
+    path := temp_vault_path("v.flint")
+    mut db := try open_cipher_db(path, test_key(7), test_salt_bytes(), true)
+    try db.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+    for i in 0..5 {
+        try db.apply_migration(vault_migrations()[i])
+    }
+    try db.exec("INSERT INTO activity (at, caller, via, action, host, command, outcome) VALUES (5, 'c', 'grant', 'exec', 'web', 'flint exec web -- uptime', 'allowed');")
+    db.close_db()
+    mut store := new_sql_vault_store()
+    try store.vault_attach(path, test_key(7), test_salt_bytes())
+    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "6")
+    page := try store.activity_page(0, 10)
+    assert_eq(page.len(), 1)
+    assert_eq(page[0].command, "flint exec web -- uptime")
+    assert_eq(page[0].cut, 0)
+    assert_eq(try store.activity_retention(), -1)
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "the activity log keeps a cut, its retention, and stays under its size cap" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    mut e := marker_entry(0)
+    e.cut = 42
+    try store.activity_add(e, ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    assert_eq((try store.activity_page(0, 1))[0].cut, 42)
+
+    try store.set_activity_retention(365)
+    assert_eq(try store.activity_retention(), 365)
+    try store.set_activity_retention(0)
+    assert_eq(try store.activity_retention(), 0)
+
+    // Each marker entry is about 160 bytes with its row cost: a cap of 500 keeps 3.
+    for n in 1..10 {
+        try store.activity_add(marker_entry(n), ActivityKeep{ since_at: 0, max_bytes: 500 })
+    }
+    kept := try store.activity_page(0, 20)
+    assert(kept.len() >= 1 && kept.len() <= 3, "kept {kept.len()}")
+    assert_eq(kept[0].at, 1009)
+    // A single entry over the cap is still kept: the newest always stays.
+    assert_eq(try store.activity_prune(ActivityKeep{ since_at: 0, max_bytes: 1 }), i64(kept.len()) - 1)
+    assert_eq((try store.activity_page(0, 20)).len(), 1)
+
+    assert_eq(try store.activity_count_before(2000), 1)
+    assert_eq(try store.activity_count_before(1009), 0)
+    // The newest stays even when it is older than the retention.
+    assert_eq(try store.activity_prune(ActivityKeep{ since_at: 5000, max_bytes: 0 }), 0)
+    store.vault_detach()
     try fs.remove(fs.dirname(path))
 }

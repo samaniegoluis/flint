@@ -55,6 +55,8 @@ type UnlockRequest struct {
     name:   str `json:"name"`
     caller: str `json:"caller"`
     label:  str `json:"label"`
+    // The whole command `caller` sums up (milestone 15).
+    command: CommandText `json:"command"`
 }
 
 // An approval left the window: answered, timed out, or its caller went away.
@@ -173,13 +175,16 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
             st.holder.set_ask(req.vault, req.caller)
             // Who asks, kept until the unlock: the unlock screen may allow it at once.
             caller := ipc_caller(conn.peer)
-            ap := new_approval(hex.encode(c.random_bytes(8)), "", caller, req.caller, req.need, time.now_ms())
+            mut ap := new_approval(hex.encode(c.random_bytes(8)), "", caller, req.caller, req.need, time.now_ms())
+            if req.command.len() > 0 {
+                ap.command = whole_command(req.command)
+            }
             st.holder.access_hold()
             mut book := st.holder.access_book()
             book.asking = [ap]
             st.holder.put_access_book(book)
             st.holder.access_release()
-            app.emit("vault:unlock-request", UnlockRequest{ path: req.vault, name: name, caller: req.caller, label: ap.label })
+            app.emit("vault:unlock-request", UnlockRequest{ path: req.vault, name: name, caller: req.caller, label: ap.label, command: ap.command })
             show_window(mut app)
             _ := conn.send(app_state_json(APP_ASKING, ""), SERVE_SEND_MS) or {}
         } else {
@@ -295,7 +300,8 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     }
     st.release()
     now := time.now_ms()
-    mut entry := ActivityEntry{ id: 0, at: time.unix_seconds(), caller: caller_label(caller), via: ACTIVITY_VIA_GRANT, token: "", action: need.action, host: need.host, command: activity_command(parsed, ask, sudo), outcome: ACTIVITY_ALLOWED }
+    logged := whole_command(activity_command(parsed, ask, sudo))
+    mut entry := ActivityEntry{ id: 0, at: time.unix_seconds(), caller: caller_label(caller), via: ACTIVITY_VIA_GRANT, token: "", action: need.action, host: need.host, command: logged.text, outcome: ACTIVITY_ALLOWED, cut: logged.cut }
 
     if req.token.len() > 0 {
         entry.via = ACTIVITY_VIA_TOKEN
@@ -341,7 +347,10 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     }
     entry.via = ACTIVITY_VIA_WINDOW
     id := hex.encode(c.random_bytes(8))
-    mut ap := new_approval(id, session.id, caller, req.caller, need, now)
+    // What the window shows is read from the argv that runs, never from the client's
+    // own words (`req.caller`), which a client could set to anything (milestone 15).
+    mut ap := new_approval(id, session.id, caller, caller_summary(parsed), need, now)
+    ap.command = whole_command(caller_command(parsed))
     ap.deadline_ms = now + approval_wait_ms()
     ap.token = ask
     ap.sudo = sudo
@@ -403,12 +412,12 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     return refuse("")
 }
 
-// The command as the activity log keeps it: the words before any flag and, for
-// `exec`, the remote command (caller_summary, D-018); for `token create` the token's
-// name, what it allows and where; for `exec --sudo` the full argv, each argument
-// quoted, never cut. Never a flag's value otherwise.
+// The command as the activity log keeps it, whole up to 16 KB (milestone 15): the
+// words before any flag and, for `exec`, the remote command (caller_command, D-018);
+// for `token create` the token's name, what it allows and where; for `exec --sudo`
+// the full argv, each argument quoted. Never a flag's value otherwise.
 fn activity_command(p: ParsedArgs, ask: TokenAsk, sudo: SudoAsk) -> str {
-    s := caller_summary(p)
+    s := caller_command(p)
     if sudo.host.len() > 0 {
         // The whole command, as approved: what ran as root (milestone 13).
         return "flint exec {sudo.host} --sudo -- {str.join(quoted_argv(sudo.argv), " ")}"
@@ -427,7 +436,7 @@ fn log_activity(st: GuiState, store: LockedVaultStore, session: VaultSession, e:
     mut ok := true
     if still {
         mut ts := store
-        done := record_activity(mut ts, e)
+        done := record_activity(mut ts, e, time.unix_seconds())
         if !done.has_value() {
             ok = false
             write_stderr("flint-gui: the activity log was not written ({error_code_of("{done.error().message()}")})\n")

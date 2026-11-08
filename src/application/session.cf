@@ -45,6 +45,9 @@ type VaultStatus struct {
     hosts:       i64  `json:"hosts"`
     keys:        i64  `json:"keys"`
     credentials: i64  `json:"credentials"`
+    // How many days the activity log keeps (0: no limit; -1: unknown, the vault is
+    // not unlocked here). Milestone 15.
+    activity_days: i64 `json:"activity_days"`
 }
 
 // The keychain account of a vault: its salt, which is unique per vault and already
@@ -237,7 +240,7 @@ fn lock_vault[S: VaultStore, K: Keychain](mut store: S, keychain: K, path: str) 
 // Reports a vault without asking for its password: counts appear only when the
 // keychain holds its key.
 fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C, mut store: S, keychain: K, recents: R, path: str, name: str) -> VaultStatus! {
-    mut st := VaultStatus{ path: path, name: name, exists: store.vault_file_exists(path), unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0 }
+    mut st := VaultStatus{ path: path, name: name, exists: store.vault_file_exists(path), unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1 }
     if !st.exists {
         return st
     }
@@ -259,8 +262,9 @@ fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
 
 // Reports the vault that is already open in `session`, from the open store: no
 // keychain read (on macOS that read can show a Keychain dialog) and no second unlock.
-fn open_vault_status[S: VaultStore](mut store: S, session: VaultSession) -> VaultStatus! {
+fn open_vault_status[S: VaultStore, T: TokenStore](store: S, tokens: T, session: VaultSession) -> VaultStatus! {
     return VaultStatus{
+        activity_days: try activity_retention_days(tokens),
         path: session.path, name: session.name, exists: true, unlocked: true, cached: session.cached,
         groups: i64((try store.groups_all()).len()),
         hosts: i64((try store.hosts_all()).len()),
