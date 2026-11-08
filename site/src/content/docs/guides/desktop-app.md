@@ -31,8 +31,8 @@ menu bar icon, ⌘Q or the command palette quits it.
 | Area | What it holds |
 |---|---|
 | Title bar | The vault and the active session; the command palette button |
-| Activity bar (left) | **Hosts**, **Keys**, **Credentials**, and **Settings** at the bottom. **Files** (SFTP) is coming in a later version |
-| Sidebar | The vault button (switch vaults), a filter, and your hosts in their groups |
+| Activity bar (left) | **Hosts** and **Files** (both in the sidebar), **Keys**, **Credentials**, and **Settings** at the bottom |
+| Sidebar | **Hosts**: the vault button (switch vaults), a filter, and your hosts in their groups. **Files**: the active tab's host, over SFTP ([The Files view](/guides/files-view/)) |
 | Main area | One tab per session, the session toolbar and the terminal |
 | Status bar | Lock state, the number of open sessions, **Lock**, and **Agents: N** while programs you approved may use the vault (it opens Settings → Access, and shows **N waiting** while a request waits and Flint is not in front) |
 

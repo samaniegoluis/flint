@@ -4,7 +4,7 @@
 
 import type {
   AccessAnswer, AccessState, ActivityEntry, AppInfo, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
+  CopyResult, FileEntry, KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -22,7 +22,7 @@ declare global {
 const CODES = [
   'internal', 'usage', 'not_found', 'conflict', 'locked', 'wrong_password', 'invalid',
   'unsupported', 'keychain', 'io', 'host_key', 'auth', 'network', 'timeout',
-  'denied', 'approval_timeout', 'not_sudoer', 'sudo_password',
+  'denied', 'approval_timeout', 'not_sudoer', 'sudo_password', 'permission_denied', 'exists', 'not_a_directory',
 ];
 
 export class FlintError extends Error {
@@ -140,6 +140,21 @@ export const api = {
   sessionAnswer: (session: string, prompt: string, ok: boolean, value: string) =>
     call('session_answer', { session, prompt, ok, value }),
   sessionClose: (session: string) => call('session_close', { session }),
+
+  /** The Files view (milestone 17): SFTP over a tab's own session (D-053). */
+  filesHome: (session: string) => call<{ path: string }>('files_home', { session, path: '' }),
+  filesList: (session: string, path: string) => call<{ path: string; entries: FileEntry[] }>('files_list', { session, path }),
+  filesRename: (session: string, from: string, to: string) => call<{ path: string }>('files_rename', { session, from, to }),
+  /** A file, or a folder with everything in it. */
+  filesRemove: (session: string, path: string) => call<{ path: string }>('files_remove', { session, path }),
+  filesMkdir: (session: string, path: string) => call<{ path: string }>('files_mkdir', { session, path }),
+  /** Resolves when the copy ends; progress arrives as "files:transfer" events with this `id`. */
+  filesTransfer: (t: { session: string; id: string; direction: 'upload' | 'download'; local: string; remote: string; recursive: boolean; force: boolean }) =>
+    call<CopyResult>('files_transfer', t),
+  filesCancel: (id: string) => call('files_cancel', { id }),
+  /** A chunk (base64) of a file dropped from the OS, staged until it is uploaded (CF-004). */
+  filesStage: (drop: string, rel: string, data: string) => call<{ path: string }>('files_stage', { drop, rel, data }),
+  filesStageDiscard: (drop: string) => call('files_stage_discard', { id: drop }),
 };
 
 export function emptyHostPatch(): HostPatch {

@@ -30,6 +30,8 @@ export interface Tab {
   connectedAt: number;
   /** Opened without the host's initial command; a reconnect keeps it that way. */
   noCommand: boolean;
+  /** The shell's folder from OSC 7 (milestone 17), "" until it reports one. */
+  cwd: string;
 }
 
 interface Snapshot {
@@ -121,7 +123,7 @@ class SessionStore {
     if (!t) return;
     const session = mint('s');
     this.bySession.set(session, tabId);
-    this.patch(tabId, { session, status: 'connecting', prompt: null, changedKey: null, end: null });
+    this.patch(tabId, { session, status: 'connecting', prompt: null, changedKey: null, end: null, cwd: '' });
     const size = this.sizes.get(tabId) ?? { cols: 100, rows: 30 };
     api.sessionOpen(session, t.alias, size.cols, size.rows, t.noCommand).catch((err) => {
       this.bySession.delete(session);
@@ -132,7 +134,7 @@ class SessionStore {
 
   open(alias: string, noCommand = false): string {
     const id = mint('t');
-    const tab: Tab = { id, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, noCommand };
+    const tab: Tab = { id, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, noCommand, cwd: '' };
     this.set({ tabs: [...this.snap.tabs, tab], active: id });
     this.connect(id);
     return id;
@@ -177,6 +179,12 @@ class SessionStore {
     const prompt = t.prompt.prompt;
     this.patch(tabId, { prompt: null, status: 'connecting' });
     api.sessionAnswer(t.session, prompt, ok, value).catch(() => {});
+  }
+
+  /** The shell said where it is (OSC 7). */
+  setCwd(tabId: string, cwd: string) {
+    const t = this.tab(tabId);
+    if (t && t.cwd !== cwd) this.patch(tabId, { cwd });
   }
 
   input(tabId: string, data: string) {

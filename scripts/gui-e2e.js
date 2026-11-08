@@ -276,11 +276,109 @@
     await runInTerminal('echo "[$(cat /tmp/flint-e2e-dead.txt)]-$((6*7))"', ']-42');
     await check(termText().includes("[it's]"), "a dead ' flushed with s types it's, not it''s");
 
+    await setStep('files view');
+    {
+      // Milestone 17: the Files view over the tab's own session (D-053). The sshd is
+      // this machine, so the host's files are a scratch folder here.
+      const mac = (await window.backend.app_info({})).os === 'mac';
+      const chord = (code, key, extra = {}) => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', {
+        key, code, bubbles: true, cancelable: true, metaKey: mac, ctrlKey: !mac, shiftKey: !mac, ...extra }));
+      const dir = `/tmp/flint-gui-files-${Date.now()}`;
+      await runInTerminal(`mkdir -p ${dir}/old && printf hello > ${dir}/a.txt && head -c 33554432 /dev/zero > ${dir}/big.bin && echo files-ready-$((6*7))`, 'files-ready-42');
+      chord('KeyE', 'e');
+      const aside = () => q('.sidebar[data-for="files"]');
+      await waitFor(() => aside()?.dataset.filesPath, 'the Files view to list the login folder', 20000);
+      await check(document.querySelector('.app')?.dataset.view === 'files' && q('[data-files-host]')?.textContent === 'local', 'the Files shortcut opens the view on the active tab, "Files · local"');
+      // A login shell may report its folder already (zsh on macOS does); bash in the Linux image does not.
+      if (q('[data-files-goto-cwd]')?.getAttribute('aria-disabled') === 'true') await check(/OSC 7/.test(q('[data-files-goto-cwd]').title), "Go to the terminal's folder is off, with a hint, while the shell reports none (OSC 7)");
+      else await log('note the login shell reports its folder (OSC 7) already');
+      // OSC 7 from the shell: the crosshair takes the view to the terminal's folder.
+      await runInTerminal(`cd ${dir} && printf '\\033]7;file://e2e%s\\033\\\\' "$PWD"; echo osc7-$((6*7))`, 'osc7-42');
+      await waitFor(() => q('[data-files-goto-cwd]')?.getAttribute('aria-disabled') === 'false', 'the OSC 7 folder');
+      q('[data-files-goto-cwd]').click();
+      await waitFor(() => aside()?.dataset.filesPath === dir && q('[data-file="a.txt"]'), 'the scratch folder listed');
+      await check(q('[data-files-count]')?.textContent === 'Synced with terminal', "Go to the terminal's folder lists the shell's folder, synced");
+      await check(q('[data-file="old"]')?.dataset.kind === 'dir' && qa('.frow[data-file]')[0]?.dataset.file === 'old', 'folders come first, with sizes and dates beside files');
+      // New folder, rename, delete.
+      await click('[data-files-mkdir]');
+      await fill('#ta', 'made');
+      await click('.modal button[type="submit"]');
+      await waitFor(() => q('[data-file="made"]'), 'the new folder');
+      await check(q('[data-file="made"]').dataset.kind === 'dir', 'New folder creates a folder on the host');
+      q('[data-file="a.txt"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 300 }));
+      await click('.menu .mi', 'Rename');
+      await fill('#ta', 'b.txt');
+      await click('.modal button[type="submit"]');
+      await waitFor(() => q('[data-file="b.txt"]') && !q('[data-file="a.txt"]'), 'the renamed file');
+      await check(q('[data-file="b.txt"].sel'), 'Rename renames on the host and keeps the file selected');
+      q('[data-file="old"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 300 }));
+      await click('.menu .mi', 'Delete');
+      await waitFor(() => hasText('Delete old?'), 'the delete confirmation');
+      await click('.modal .btn-danger', 'Delete folder');
+      await waitFor(() => !q('[data-file="old"]'), 'the folder to go');
+      await check(true, 'Delete asks first, then removes the folder');
+      // Into a folder and back up with ⌘↑.
+      q('[data-file="made"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await waitFor(() => aside()?.dataset.filesPath === dir + '/made', 'the subfolder');
+      q('[data-files-list]').focus();
+      q('[data-files-list]').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', code: 'ArrowUp', bubbles: true, cancelable: true, metaKey: mac, ctrlKey: !mac, shiftKey: !mac }));
+      await waitFor(() => aside()?.dataset.filesPath === dir, 'back up one folder');
+      await check(q('[data-file="made"].sel'), 'the up chord climbs one folder and selects where it came from');
+      // A drop from the OS: the page stages the bytes, then uploads them (CF-004).
+      const dt = new DataTransfer();
+      dt.items.add(new File(['dropped-bytes-42\n'], 'dropped.txt', { type: 'text/plain' }));
+      aside().dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      await waitFor(() => q('[data-files-dropzone]'), 'the drop zone');
+      await check(q('[data-files-dropzone]').textContent.includes(`local:${dir}`), 'dragging files over the sidebar shows the drop zone and the remote folder');
+      aside().dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      await waitFor(() => q('[data-transfer="dropped.txt"][data-state="done"]'), 'the dropped file uploaded', 20000);
+      await waitFor(() => q('[data-file="dropped.txt"]'), 'the uploaded file in the list');
+      await runInTerminal(`cat ${dir}/dropped.txt; ls -a ${dir} | grep -c flint-part; echo drop-check-$((6*7))`, 'drop-check-42');
+      await check(termText().includes('dropped-bytes-42') && /\n0\n/.test(termText()), 'a file dropped from the OS lands on the host byte for byte, with no part file left');
+      // The same name again: the row asks before it replaces.
+      const dt2 = new DataTransfer();
+      dt2.items.add(new File(['second-version\n'], 'dropped.txt'));
+      aside().dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt2 }));
+      await waitFor(() => q('[data-transfer="dropped.txt"][data-state="conflict"]'), 'the replace question');
+      await check(true, 'an upload over an existing file asks first');
+      q('[data-transfer="dropped.txt"][data-state="conflict"] [data-transfer-replace]').click();
+      await waitFor(() => qa('[data-transfer="dropped.txt"][data-state="done"]').length === 2, 'the replaced upload');
+      await runInTerminal(`cat ${dir}/dropped.txt; echo replace-check-$((6*7))`, 'replace-check-42');
+      await check(termText().includes('second-version'), 'Replace uploads over the existing file');
+      await click('[data-files-clear]');
+      await check(!q('[data-transfer]'), 'Clear done empties the queue of finished transfers');
+      // A download and a cancel, through the same RPC the save dialog leads to.
+      const session = aside().dataset.filesSession;
+      const res = await window.backend.files_transfer({ session, id: 'e2e-dl', direction: 'download', local: dir + '/made/b-copy.txt', remote: dir + '/b.txt', recursive: false, force: true });
+      await check(res.bytes === 5, 'a download over the tab\'s session copies the file');
+      let heard = 0;
+      const off = window.runtime.EventsOn('files:transfer', (ev) => { if (ev.id === 'e2e-cancel') heard++; });
+      const started = window.backend.files_transfer({ session, id: 'e2e-cancel', direction: 'download', local: dir + '/made/big-copy.bin', remote: dir + '/big.bin', recursive: false, force: true })
+        .then(() => 'finished', (err) => String(err));
+      await waitFor(() => heard > 0, 'progress of the big download');
+      await window.backend.files_cancel({ id: 'e2e-cancel' });
+      const outcome = await started;
+      off();
+      await check(/cancelled/.test(outcome), 'a running transfer reports progress and stops when cancelled: ' + outcome);
+      await runInTerminal(`ls -a ${dir}/made | grep -c -e flint-part -e big-copy; echo cancel-check-$((6*7))`, 'cancel-check-42');
+      await check(/\n0\n/.test(termText()), 'a cancelled download leaves no partial file');
+      // The terminal still works beside SFTP, and the Files button toggles the view.
+      await runInTerminal('echo beside-sftp-$((6*7))', 'beside-sftp-42');
+      await check(true, 'the terminal keeps working beside the Files view');
+      await runInTerminal(`rm -rf ${dir}; cd; echo files-clean-$((6*7))`, 'files-clean-42');
+      await click('.rail-btn', 'Hosts');
+      await waitFor(() => document.querySelector('.app')?.dataset.view === 'hosts', 'back to the Hosts view');
+    }
+
     await setStep('exit');
     await type('exit 7');
     await enter();
     await waitFor(() => hasText('Session ended'), 'the session ended card');
     await check(hasText('with status 7'), 'the remote exit status is shown');
+    await click('.rail-btn', 'Files');
+    await waitFor(() => q('[data-files-empty]'), 'the Files view without a session');
+    await check(hasText('Open a session to browse its files') && q('[data-files-reconnect]'), 'Files on an ended session offers Reconnect (14c)');
+    await click('.rail-btn', 'Hosts');
     await click('.pane-dim .btn-primary', 'Reconnect');
     await waitFor(() => toolbarIs('ready'), 'the reconnected session', 30000);
     await check(!hasText('before connecting'), 'a reconnect to a known host does not ask again');

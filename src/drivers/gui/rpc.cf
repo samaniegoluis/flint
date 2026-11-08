@@ -29,7 +29,7 @@ FLINT_VERSION: str = "0.0.0-dev"
 MAX_SESSIONS: i64 = 48
 
 // How long the headless end-to-end run (FLINT_GUI_E2E) may take.
-E2E_TIMEOUT_MS: i32 = 120000
+E2E_TIMEOUT_MS: i32 = 240000
 
 // ---- Requests ---------------------------------------------------------------------
 

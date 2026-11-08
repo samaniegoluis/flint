@@ -54,6 +54,7 @@ export default defineConfig({
 						{ label: 'Credentials', slug: 'guides/credentials' },
 						{ label: 'Connecting', slug: 'guides/connecting' },
 						{ label: 'Copying files', slug: 'guides/files' },
+						{ label: 'The Files view', slug: 'guides/files-view' },
 						{ label: 'Use Flint with an AI agent', slug: 'guides/ai-agents' },
 						{ label: 'Moving from Tether', slug: 'guides/from-tether' },
 					],

@@ -1,0 +1,17 @@
+---
+// The Files view on the landing (milestone 17, D-027): taken with the app shots by
+// `npm run shots:gui`, one per theme.
+import { Image } from 'astro:assets';
+import dark from '../../assets/screens/app-files-dark.png';
+import light from '../../assets/screens/app-files-light.png';
+
+const alt =
+	'The Flint desktop app with the Files view open on web-01: the folder /home/deploy beside its terminal, and a transfer queue with one upload done and one at 3.1 MB/s.';
+const sizes = '(min-width: 72rem) 68rem, 100vw';
+---
+
+<figure class="flint-shot not-content">
+	<Image src={dark} alt={alt} widths={[640, 1280, 2560]} sizes={sizes} class="light:sl-hidden" loading="lazy" />
+	<Image src={light} alt={alt} widths={[640, 1280, 2560]} sizes={sizes} class="dark:sl-hidden" loading="lazy" />
+	<figcaption>The Files view on <code>web-01</code>, over the tab's own connection, with its transfer queue.</figcaption>
+</figure>

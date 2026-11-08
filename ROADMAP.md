@@ -16,7 +16,7 @@ spec or a few milestones; `lean-spec` draws the next spec from the top of this l
 |---|---|---|
 | 0 | **Quick wins**, before or while v3 is planned | The selection font bug (WebGL atlas, §6), *Connect without the initial command* in the palette (§1), keepalives (§2), the IPv6 → IPv4 fallback (§6) |
 | 1 | **Spec v3, Flint holds the vault** (D-038, `docs/vault-access-model.md`): shipped, archived as `docs/spec-v3.md`, milestones 11a, 11b, 11c, 12a, 12b, 13, 14 | **M11** Flint holds the vault: local socket, the CLI as a client of every command, `exec` and `connect` relayed through the app, unlock asked for by the CLI, auto-lock, unlock and create off the UI thread (§6) (may split into 11a/11b at plan time; starts with a spike of local sockets with peer credentials and a tray icon in `ext:webui`). **M12** Caller approval: approval window, scoped expiring grants, tokens, activity log, presence check (Touch ID, polkit). **M13** `flint exec --sudo` inside the app (D-039). **M14** Tray with two locks, *Remember on this computer* |
-| 2 | **Spec v4, Files**: now `docs/spec.md`, milestones 15, 16, 17 (D-051) | **M15** whole commands in the approval window and the activity log, retention by days (D-049, pulled in from §3). **M16** SFTP in the core and `flint cp` local ↔ remote. **M17** the Files view (design screens 14a-c), with *Go to the terminal's folder* (OSC 7) |
+| 2 | **Spec v4, Files**: shipped with milestones 15, 16, 17 (D-051) | **M15** whole commands in the approval window and the activity log, retention by days (D-049, pulled in from §3). **M16** SFTP in the core and `flint cp` local ↔ remote. **M17** the Files view (design screens 14a-c), with *Go to the terminal's folder* (OSC 7) |
 | 2b | **Copy between servers** (owner, 2026-11-08): a milestone of its own after v4, before or with split panes | `flint cp` remote ↔ remote relayed through Flint, and the app's two-pane copy between servers (needs new Claude Design screens). See §2 and §6 |
 | 3 | **Split panes** | Up to four panes in a tab, each its own SSH session (§6). The base the later broadcast input and workspaces build on. Placed by the owner on 2026-11-06; needs new screens from Claude Design (the base design only reserved the disabled Split button) |
 | 4 | **Tunnels** | `-L` forwards per host, `flint tunnel`, living in the app or `flint serve`; `flint import tether` carries Tether's tunnels |
@@ -43,8 +43,8 @@ What Tether already does and Flint must not lose.
 | Tabs, xterm.js, Kitty keyboard protocol, WebGL | `done` | |
 | Command palette | `done` | |
 | Theme, accent colour, terminal font from installed fonts | `done` | |
-| SFTP browser over the same connection: list, up/download with queue, drag & drop, rename, delete, mkdir, `..` | `mvp` | Spec v4, M16 (core) and M17 (the Files view). File drag & drop from the OS: cfire `466751b` emits `files:dropped` (CF-004), not tried yet |
-| File browser opens in the terminal's cwd (OSC 7 shell integration, herdr focused pane) | `mvp` | Spec v4, M17: *Go to the terminal's folder*, disabled with a hint when the shell sends no OSC 7 |
+| SFTP browser over the same connection: list, up/download with queue, drag & drop, rename, delete, mkdir, `..` | `done` | M16 (core, `flint cp`) and M17 (the Files view). Drops are staged on this machine first: the webview gives the page bytes, not paths (CF-004) |
+| File browser opens in the terminal's cwd (OSC 7 shell integration, herdr focused pane) | `done` | M17: *Go to the terminal's folder*, greyed out with a hint when the shell sends no OSC 7; the docs give zsh, bash and fish snippets. herdr's focused pane is not read |
 | Local port-forward tunnels (`-L`), saved per host | `next` | When it ships, `flint import tether` should carry Tether's tunnels too (today it lists them as not imported, D-034) |
 | OSC 52 clipboard (copy from Neovim/tmux/Zellij) | `done` | Milestone 08 (D-034): write only, through the core |
 | Dead-key / IME correctness, in-order input delivery | `done` | Milestone 08. Both were real Tether bugs; now under unit and gui-e2e tests |
@@ -194,6 +194,10 @@ What Tether already does and Flint must not lose.
 | Host health and latency dot in the sidebar | `next` | |
 | Snippets: saved commands per host or group | `next` | |
 | **Copy between servers** in the app: a button in the Files view, pick a second server, two panes side by side (FileZilla-style, but each pane a server), drag from one to the other | `next` | Owner, 2026-11-08. Same use case as `flint cp` remote ↔ remote (§2, block 2b). Needs new Claude Design screens: 14a-c have one pane |
+| Files view: **Show in Finder** / the file manager on a finished download (design 14a draws it) | `next` | M17 left it out: it needs a "reveal" adapter (`open -R` on macOS, the file manager's D-Bus call on Linux) |
+| Files view: **Upload** picks several files, or a folder (the open dialog picks one file today; folders upload by dragging them in) | `next` | M17. Needs the native open dialog to allow several and folders (CF-077's shim) |
+| Drops without staging: upload a dropped file from its own path once cfire's webview reports real paths (CF-004) | `idea` | M17 copies each dropped file into `<config>/drops/` first, a second write of the bytes |
+| Files view: sort by size or date, and filter the list | `idea` | M17 sorts folders first, then by name |
 | Quick-edit remote files (CodeMirror) | `later` | |
 | Light theme polish, more accents | `next` | |
 | Terminal colour themes in Settings → Terminal, as in Tether: Default, Catppuccin, Tokyo Night, Aura, Dracula, Nord, each with a dark and a light palette | `done` | Milestone 07. Raised in the M04 owner walkthrough (the owner uses Aura). Port the palettes from Tether's `frontend/src/theme/terminalThemes.js`; they replace only the 16 ANSI colours and the terminal background/foreground/cursor, so no new design pass is needed |

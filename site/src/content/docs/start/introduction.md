@@ -32,7 +32,8 @@ Flint is in early development. Here is what works today:
 | Hosts, groups, keys, credentials from the CLI | Works ([CLI reference](/reference/cli/)) |
 | `flint connect` / `flint exec`, jump hosts, known hosts | Works ([Connecting](/guides/connecting/)) |
 | Desktop app: vaults, host tree, tabs, terminal, prompts, palette, settings | Works ([The desktop app](/guides/desktop-app/)) |
-| SFTP, tunnels, splits | Planned |
+| Files over SFTP: `flint cp` and the app's Files view | Works ([Copying files](/guides/files/), [The Files view](/guides/files-view/)) |
+| Tunnels, splits | Planned |
 
 To try the CLI without installing anything, open the [demo on the home page](/#try-the-cli):
 a simulated terminal with a demo vault and a short guided tour. It runs entirely in your

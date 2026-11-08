@@ -100,6 +100,8 @@ export interface Catalog {
 export interface UiStateView {
   sidebar_open: boolean;
   sidebar_width: number;
+  /** The Files view's own width (milestone 17), 200–480. */
+  files_width: number;
   collapsed: string[];
 }
 
@@ -390,3 +392,34 @@ export interface CommandText {
 
 /** How long the activity log keeps entries, in days; 0 is no limit (milestone 15). */
 export type RetentionDays = 30 | 90 | 365 | 0;
+
+/** A file or folder on a host (milestone 16). `mtime` is Unix seconds. */
+export interface FileEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'dir' | 'link' | 'other';
+  size: number;
+  mtime: number;
+  mode: number;
+}
+
+export interface CopyResult {
+  host: string;
+  direction: 'upload' | 'download';
+  files: { source: string; target: string; bytes: number }[];
+  folders: number;
+  bytes: number;
+  skipped: string[];
+  duration_ms: number;
+}
+
+/** A transfer's progress (milestone 17), sent as "files:transfer". */
+export interface TransferEvent {
+  session: string;
+  id: string;
+  file: string;
+  file_bytes: number;
+  file_size: number;
+  files_done: number;
+  bytes_done: number;
+}

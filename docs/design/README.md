@@ -209,6 +209,8 @@ These are 16a1 with Hosts, Actions (Run commands marked "needed") and Duration u
 
 The design is adapted to what Flint has; these parts wait on the roadmap.
 
+- **14a / 14b (milestone 17)**: a finished download has no **Show in Finder** button yet. An upload onto an existing name asks in its queue row (**Replace** / **Skip**), not in a dialog. Upload picks one file; folders upload by dragging them in. The crosshair is greyed out, with a tooltip, while the shell sends no OSC 7. The status bar has no transfer item.
+
 - **16c3 / 16c4**: creating a token from the app. Tokens are made with `flint token create` and approved in the window.
 - Token expiry **Never**, and a token's **Last used** column.
 - Activity's **exit code**, its **approved / revoked** event rows, its **filters**, and the sudo results **Not a sudoer** and **Sudo password refused**. Activity shows Allowed, Denied and Timed out.
