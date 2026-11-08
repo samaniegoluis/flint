@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { toFlintError } from '../api/backend';
 import { shortPath, useApp } from '../state/app';
+import { CallerLabel } from '../access/ApprovalDialog';
 import { Icon, Logo } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { actionFor } from '../lib/keymap';
@@ -92,27 +93,37 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
         <div className="tb-brand"><Logo />Flint</div>
       </header>
       <main style={{ position: 'absolute', inset: '38px 0 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingBottom: 'var(--sp-16)', background: 'var(--surface-sunken)' }}>
-        <form aria-label={locked ? 'Vault locked' : 'Unlock vault'} className="col" style={{ width: 460, gap: 'var(--sp-6)' }} onSubmit={submit}>
+        <form aria-label={locked ? 'Vault locked' : 'Unlock vault'} className="col" style={{ width: request ? 500 : 460, gap: request ? 'var(--sp-5)' : 'var(--sp-6)' }} onSubmit={submit}>
           {request && (
-            <div className="panel col" role="status" data-unlock-request style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-2)', borderColor: 'var(--accent)' }}>
-              <span className="row" style={{ gap: 6 }}><Icon name="info" size="xs" className="accent-t" /><span><span className="mono strong">{request.caller}</span> wants to use {request.path === target.path ? 'this vault' : <>vault <span className="strong">{request.name}</span></>}.</span></span>
-              <span className="hint">{request.path === target.path
-                ? 'Unlock it to let the command run again; nothing runs until you do.'
-                : 'Close this vault to unlock that one; the sessions here end.'}</span>
-              {request.label && request.path === target.path && (
-                <label className="check fit" data-unlock-allow>
-                  <input type="checkbox" checked={allowCaller} onChange={(e) => setAllowCaller(e.target.checked)} />
-                  <span className="col" style={{ gap: 2 }}>
-                    <span>Allow <span className="strong">{request.label}</span> for 1 hour</span>
-                    <span className="muted" style={{ fontSize: 'var(--fs-xs)' }}>What this command needs, on {request.caller.startsWith('flint exec') || request.caller.startsWith('flint connect') || request.caller.startsWith('flint host test') ? 'its host' : 'this vault'}. The master password you type confirms it. Change or revoke it in Settings → Access.</span>
-                  </span>
-                </label>
-              )}
-              <div className="row" style={{ gap: 'var(--sp-3)' }}>
-                {request.path !== target.path && <button type="button" className="btn btn-secondary btn-sm" onClick={() => switchToRequested().catch(fail)}>Unlock {request.name} instead</button>}
+            <section className="panel col" role="status" aria-label="A command is waiting" data-unlock-request style={{ padding: 'var(--sp-4)', gap: 'var(--sp-3)', borderColor: 'var(--info-border)' }}>
+              <div className="row" style={{ gap: 'var(--sp-3)', alignItems: 'flex-start' }}>
+                <span className="prompt-ic info" style={{ width: 28, height: 28 }}><Icon name="agent" /></span>
+                <p className="grow" style={{ fontSize: 'var(--fs-md)', margin: 0, minWidth: 0, wordBreak: 'break-word' }}>
+                  <span className="mono strong">{request.caller}</span> wants to use {request.path === target.path ? 'this vault' : <>vault <span className="strong">{request.name}</span></>}
+                </p>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={dismissUnlockRequest}>Dismiss</button>
               </div>
-            </div>
+              {request.label && request.path === target.path ? (
+                <>
+                  <label className="opt" data-unlock-allow style={{ marginLeft: 40 }}>
+                    <input type="checkbox" checked={allowCaller} onChange={(e) => setAllowCaller(e.target.checked)} />
+                    <span className="opt-t"><span className="opt-l" style={{ maxWidth: 'none', display: 'inline' }}>Allow <CallerLabel label={request.label} /> for 1 hour</span></span>
+                  </label>
+                  <p className="hint" style={{ marginLeft: 64, lineHeight: 1.5 }}>
+                    What this command needs, on {request.caller.startsWith('flint exec') || request.caller.startsWith('flint connect') || request.caller.startsWith('flint host test') ? 'its host' : 'this vault'}. The master password you type confirms it. Change or revoke it in Settings → Access.
+                  </p>
+                </>
+              ) : (
+                <p className="hint" style={{ marginLeft: 40, lineHeight: 1.5 }}>{request.path === target.path
+                  ? 'Unlock it to let the command run again; nothing runs until you do.'
+                  : 'Close this vault to unlock that one; the sessions here end.'}</p>
+              )}
+              {request.path !== target.path && (
+                <div className="row" style={{ marginLeft: 40 }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => switchToRequested().catch(fail)}>Unlock {request.name} instead</button>
+                </div>
+              )}
+            </section>
           )}
           <div className="col" style={{ alignItems: 'center', gap: 'var(--sp-3)', textAlign: 'center' }}>
             {locked ? <Icon name="lock" size="lg" className="accent-t" /> : <Logo size={40} label="Flint" />}

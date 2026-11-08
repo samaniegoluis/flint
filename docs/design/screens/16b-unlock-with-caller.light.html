@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>16b · Unlock with a caller — light</title>
+<link rel="stylesheet" href="../fonts/fonts.css">
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../flint.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="flint-logo" viewBox="0 0 24 24"><path d="M9 3L17 7L19 15L12 21L5 16L4 8Z" style="fill:var(--logo-base);stroke:none"/><path d="M9 3L12 11L17 7Z" style="fill:var(--logo-hi);stroke:none"/><path d="M12 11L19 15L12 21Z" style="fill:var(--logo-low);stroke:none"/><path d="M12 11L5 16L4 8L9 3Z" style="fill:var(--logo-mid);stroke:none"/><path d="M20.5 1.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z" style="fill:var(--accent);stroke:none"/></symbol>
+<symbol id="i-hosts" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14.5 8.5l2 2"/></symbol>
+<symbol id="i-cred" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.5 1.8-2.2 3-2.2s2.4.7 3 2.2M14 10h4M14 13h3"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="i-updown" viewBox="0 0 24 24"><path d="M7 9l5-5 5 5M7 15l5 5 5-5"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-reconnect" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+<symbol id="i-dup" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+<symbol id="i-files" viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h3l2 2h4a2 2 0 0 1 2 2v1M3 6v10a2 2 0 0 0 2 2h4"/><rect x="12" y="12" width="9" height="8" rx="1.5"/></symbol>
+<symbol id="i-split" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+<symbol id="i-term" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M12 8v5M12 16h.01"/></symbol>
+<symbol id="i-shield-ok" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
+<symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 9-2.6M9 15.5a5 5 0 0 1 4-1M12 19h.01M3 3l18 18"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 6 6v5"/></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" style="stroke-width:3"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+<symbol id="i-reveal" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2M3 7v10a2 2 0 0 0 2 2h6"/><path d="M15 19l6-6M16 13h5v5"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h4"/></symbol>
+<symbol id="i-min" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+<symbol id="i-max" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+<symbol id="i-enter" viewBox="0 0 24 24"><path d="M20 5v6a3 3 0 0 1-3 3H5M9 10l-4 4 4 4"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-bot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><path d="M12 4v4M9.5 13h.01M14.5 13h.01"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+<symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
+<symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1 0 1.5-.7 1.5-1.5 0-1.2-1-1.5-1-2.5s.8-1.5 2-1.5H17a4 4 0 0 0 4-4c0-4.7-4-8.5-9-8.5z"/><path d="M7.5 11h.01M10 7.5h.01M15 7.5h.01"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+<symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a5 5 0 0 1-.6-10A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z"/></symbol>
+<symbol id="i-jump" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 12c2-5 8-5 10 0"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></symbol>
+<symbol id="i-grip" viewBox="0 0 24 24"><path d="M10 6h.01M14 6h.01M10 12h.01M14 12h.01M10 18h.01M14 18h.01" style="stroke-width:2.6"/></symbol>
+<symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+<symbol id="i-arrow-r" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
+<symbol id="i-fingerprint" viewBox="0 0 24 24"><path d="M6.5 6.5A7.5 7.5 0 0 1 19.5 12v1.5M4.5 10.5A7.5 7.5 0 0 0 4.5 13M8 19a10 10 0 0 0 1.5-5.5V12a2.5 2.5 0 0 1 5 0v1.5c0 2.6-.6 5-1.7 7M12 12v1.5c0 3-.9 5.7-2.4 7.5M17 15.5c-.2 1.8-.7 3.4-1.4 4.8M7.5 16.5c.4-1 .5-2 .5-3V12a4 4 0 0 1 6.8-2.8"/></symbol>
+<symbol id="i-agent" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12.5h.01M15 12.5h.01M9.5 16h5"/></symbol>
+<symbol id="i-chain" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="i-shield-key" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><circle cx="12" cy="11" r="2"/><path d="M12 13v3"/></symbol>
+</svg>
+<div class="app" data-theme="light" data-os="mac" style="width: 1280px; height: 800px; background: var(--surface-sunken)">
+<header class="titlebar" style="background: transparent; border-bottom-color: transparent"><div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div></header>
+
+<main style="position: absolute; inset: 38px 0 0 0; display: flex; align-items: center; justify-content: center; padding-bottom: var(--sp-10)">
+<form aria-label="Unlock vault" class="col" style="width: 500px; gap: var(--sp-5)">
+<section class="panel col" aria-labelledby="ucT" style="padding: var(--sp-4); gap: var(--sp-3); border-color: var(--info-border)">
+<div class="row" style="gap: var(--sp-3); align-items: flex-start">
+<span class="prompt-ic info" style="width: 28px; height: 28px"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-agent"></use></svg></span>
+<p id="ucT" class="grow" style="font-size: var(--fs-md)"><span class="mono strong">flint exec CodeBox -- hostname</span> wants to use this vault</p>
+<button type="button" class="btn btn-ghost btn-sm">Dismiss</button>
+</div>
+<label class="opt" style="margin-left: 40px"><input type="checkbox" checked><span class="opt-t"><span class="opt-l">Allow <span class="mono">flint</span>, started by <span class="info-t">Claude Code</span> for 1 hour</span></span></label>
+<p class="hint" style="margin-left: 64px; line-height: 1.5">What this command needs, on its host. The master password you type confirms it. Change or revoke it in Settings → Access.</p>
+</section>
+
+<div class="col" style="align-items: center; gap: var(--sp-2); text-align: center; padding-top: var(--sp-2)">
+<svg class="logo" width="36" height="36" role="img" aria-label="Flint"><use href="#flint-logo"></use></svg>
+<h1 style="font-size: var(--fs-2xl); font-weight: var(--fw-semibold); letter-spacing: -0.01em">Work</h1>
+<span class="mono muted" style="font-size: var(--fs-sm)">~/Dropbox/vaults/work.flint</span>
+</div>
+
+<div class="field">
+<label class="flabel" for="pw">Master password — this Mac has no saved key for this vault</label>
+<div class="input lg focus mono" style="padding-left: var(--sp-4); gap: var(--sp-3)">
+<span class="accent-t" aria-hidden="true">❯</span>
+<input id="pw" type="password" class="pw" value="correct-horse-batt" style="font-size: var(--fs-lg)">
+<button type="submit" class="btn btn-primary btn-sm" style="font-family: var(--font-ui)">Unlock<span class="kbd-in">↵</span></button>
+</div>
+</div>
+<label class="opt"><input type="checkbox" checked><span class="opt-t"><span class="opt-l">Remember on this device</span><span class="hint">Saved in macOS Keychain — next launch unlocks automatically.</span></span></label>
+
+<div class="row" style="justify-content: center; gap: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--border-subtle)">
+<button type="button" class="btn btn-ghost btn-sm">Switch vault<span class="kbd">⇧⌘O</span></button>
+<button type="button" class="btn btn-ghost btn-sm">Open file…<span class="kbd">⌘O</span></button>
+</div>
+</form>
+</main>
+</div>
+</body>
+</html>

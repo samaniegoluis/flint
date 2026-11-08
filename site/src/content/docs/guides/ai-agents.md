@@ -55,7 +55,7 @@ command, and lets you choose:
 |---|---|
 | **Hosts** | The host the command runs on, its group, or the whole vault |
 | **Actions** | **Read** (list and show; never a secret), **Run commands** (`exec`, `connect`, `host test` on the hosts chosen), **Change the vault** (add, edit, remove; needs the whole vault) |
-| **For** | 15 minutes, 1 hour, 4 hours, or until the vault locks |
+| **Duration** | 15 minutes, 1 hour, 4 hours, or until the vault locks |
 
 **Allow** asks you to prove you are at the machine: Touch ID or your Mac's password on
 macOS, your login password through polkit on Linux, or the vault's master password where
@@ -64,7 +64,8 @@ neither is available. **Deny**, or no answer within two minutes, refuses the com
 The grant covers every `flint` that program starts until it expires, the vault locks or
 Flint quits; it is tied to that process, so another program, or the same one started
 again, asks again. **Settings → Access** lists the grants, and **Revoke** ends one now.
-The status bar counts them.
+The status bar counts them (**Agents: N**), and shows **N waiting** while a request waits
+behind another app.
 
 ## Tell your agent about Flint
 
@@ -186,7 +187,8 @@ to `~/.ssh/authorized_keys`. Ways to narrow it:
 - **Watch the transcript.** Every remote command an agent runs is in its own
   `flint exec` line.
 - **Read the activity log** in **Settings → Access**: every command a program ran or
-  changed through Flint, and every request refused, newest first.
+  changed through Flint, and every request refused or left to time out, newest first.
+  Commands run as root carry a `root` badge and are always shown in full.
 
 ## Tokens for scheduled jobs
 

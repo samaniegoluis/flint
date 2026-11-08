@@ -7,7 +7,8 @@ Direction **A (Editor)** as the base, plus B's command palette and unlock layout
 | Path | What it is |
 |---|---|
 | `screens/NN-screen-name.{dark,light}.html` | One plain HTML file per screen and theme. Open in a browser at ≥ 1280 px wide. |
-| `screens/15-wireframe-agent-activity.*.html` | Wireframe only: reserves space for the post-MVP agent panel. |
+| `screens/16*.{dark,light}.html` | v3 · milestones 12a and 12b: caller approval, unlock with a waiting caller, Settings › Access, and the Agents status item. |
+| `screens/17*.{dark,light}.html` | v3 · milestone 13: the approval window as root (`exec --sudo`), the host's sudo password, and Activity with sudo rows. |
 | `tokens.css` | **The source of truth.** CSS custom properties keyed by `html[data-theme="dark"\|"light"]`. Import once at the app root. |
 | `flint.css` | The mockups' component classes. It's a reference for your CSS Modules, not production CSS. It uses tokens only. |
 | `components.{dark,light}.html` | The component sheet. |
@@ -137,4 +138,49 @@ The rule is: **macOS ⌘ → Linux Ctrl+Shift**, and **⇧⌘ → Ctrl+Alt+Shift
 - Dragging files from the OS turns the **whole sidebar** into the drop target and shows the remote path. Existing files ask before they're replaced.
 - The transfer queue is docked at the bottom of the sidebar, with per-file progress and cancel. "Clear done" keeps failed items (with Retry) until they're dismissed, and the queue collapses when it's empty.
 
-**Kept out of the MVP screens:** splits (the button is disabled), saved workspaces, session restore, per-host health or latency in the tree, and agent tokens. The agent panel appears only as a wireframe, on the right side of the window, which stays free now that Files lives in the left sidebar.
+**Kept out of the MVP screens:** splits (the button is disabled), saved workspaces, session restore, per-host health or latency in the tree, and agent tokens. Caller approval (v3) is designed separately; see below.
+
+## Agent access — v3, milestones 12a & 12b (screens 16*)
+
+| Screen | What it shows |
+|---|---|
+| `16a1` approval | A modal over the main shell; Flint comes to the front. It names the program ("flint, started by Claude Code wants to use this vault"), shows the process chain zsh → herdr → zsh → flint with its pid, and the request in mono. There's a "1 of 3 waiting" counter. **Hosts** is a radio list: this host, its group (long paths truncate with a tooltip), whole vault. **Actions** are checkboxes: Read, Run commands (pre-ticked, marked needed), and Change the vault (disabled unless Whole vault). **Duration** is a segmented control. The footer has the countdown, Deny (esc) and Allow (⌘↵). |
+| `16a2` | The choice doesn't cover the request. A warning line says so, Allow stays enabled, and this request will be refused. |
+| `16a3` | Waiting for Touch ID: the system sheet sits on top and Allow reads "Confirm with Touch ID…". On Linux, polkit's dialog takes the same place. |
+| `16a4` / `16a5` | Master-password fallback inside the card, and its error: "That is not the master password. Nothing was allowed." |
+| `16b` | The unlock screen when the CLI asked while the vault was locked. A top panel shows the request, "Allow flint, started by Claude Code for 1 hour" (ticked), the hint line and Dismiss. |
+| `16c1` | Settings → Access, below Vault, with a shield icon. An intro, then Active grants: program, hosts, actions, time left ("42 min left" / "until the vault locks"), anchor pid, Revoke, and Revoke all. |
+| `16c2` | Empty state: "No program may use this vault right now". |
+| `16c3` / `16c4` | (12b) The "New token…" sheet: name, hosts, actions, expiry (30 days by default; Never is an option). After creation the secret is shown once, with Copy and a strong "you will not see this again" note. |
+| `16c5` | (12b) Activity: caller or token, host, action (exec / connect / test / write, plus approved / denied / revoked events), result, time; filters by host and caller. A note says reads aren't logged. |
+| `16d` | The status bar item "Agents: 2" opens Settings → Access. While an approval is pending and the window isn't in front, it shows a highlighted "1 waiting". |
+
+**Behaviour**
+- Clicking outside the card does nothing; only Deny, esc or the countdown deny.
+- Only the box and its label are clickable on options, not the whole row.
+- Deny has initial focus. Allow needs ⌘↵ and then the presence step: Touch ID, polkit, or the master password.
+- **As built:** initial focus goes to the first password field when the window shows one (16a4, 17a2, 17a4 draw it focused), otherwise to Deny. 17a2 draws both the field and Deny focused; only one can be. Deny's ring shows on `:focus`, not only `:focus-visible`, so it is visible however the window was opened.
+
+## Run as root — v3, milestone 13 (screens 17*)
+
+| Screen | What it shows |
+|---|---|
+| `17a1` | The approval window in sudo mode. It's 16a1 without Hosts, Actions or Duration, with a danger tone: tinted header and border, plus "Runs as root, once. Nothing else is allowed by this." It shows Where (label, alias, address), As (`lsamaniego → root (sudo)`), the command as **argument chips** with the Flint-added `sudo --` tinted, and the line "Flint types the sudo password saved for CodeBox". The footer has the countdown, Deny (esc) and Run as root (⌘↵). |
+| `17a2` | No saved sudo password: the field "Sudo password for lsamaniego on CodeBox" and "Save it for CodeBox", unticked. |
+| `17a3` / `17a4` | Waiting for Touch ID (system sheet on top), and the master-password fallback. The fallback field says it's the vault password, not the host's sudo password. |
+| `17a5` | A long command (10 arguments, long paths, an `sh -c` script). The chips wrap inside a scrollable block with an argument count and are never truncated. A multi-line argument gets a full-width chip. |
+| `17a6` | "1 of 2 waiting", with a "Next" strip showing the queued grant request. |
+| `17b1` / `17b2` | Host editor: the Sudo password setting in the auth section. Options: Same as the login password (the default, offered only when the host or its credential has a password), Its own password (Saved · Change · Remove), None: ask each time. One hint line. |
+| `17c` | Activity as shipped (When, Caller, Command, Result). Sudo rows get a danger edge and a `root` badge, show the full command, and carry results Allowed, Denied, Timed out, Not a sudoer, Sudo password refused. |
+
+No grant or token ever covers a root command. Each one needs its own approval with presence.
+
+## What Flint left out (2026-11-07)
+
+The design is adapted to what Flint has; these parts wait on the roadmap.
+
+- **16c3 / 16c4**: creating a token from the app. Tokens are made with `flint token create` and approved in the window.
+- Token expiry **Never**, and a token's **Last used** column.
+- Activity's **exit code**, its **approved / revoked** event rows, its **filters**, and the sudo results **Not a sudoer** and **Sudo password refused**. Activity shows Allowed, Denied and Timed out.
+- **17b**: the sudo option **None: ask each time**. Without a password to type (none of the host's, no login password), the window asks for one.
+- **17a1**: the command label says "Command", not "runs exactly as shown": Flint runs `sudo -S -k -p <prompt> --`, and the `sudo` chip says so in its tooltip.

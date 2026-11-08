@@ -65,6 +65,7 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
   const [mode, setMode] = useState<Mode>(initialMode(host));
   // `exec --sudo` (milestone 13): the login password, or one of the host's own.
   const [sudoOwn, setSudoOwn] = useState(!!host?.has_sudo_password);
+  const [sudoChange, setSudoChange] = useState(false);
   const [modeChanged, setModeChanged] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [error, setError] = useState('');
@@ -186,6 +187,13 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
     { m: 'password', icon: 'lock', label: 'Password' },
     { m: 'agent', icon: 'link', label: 'Agent' },
   ];
+  // Where "Same as the login password" takes its password from, or that there is none
+  // (then the approval window asks for one each time).
+  const cred = catalog.credentials.find((c) => c.name === f.credential);
+  const loginSource = mode === 'credential' && cred?.has_password ? `From credential “${cred.name}”`
+    : mode === 'password' && (f.password || host?.has_password) ? "This host's login password"
+    : 'No login password here: the approval window asks for one each time.';
+
   return (
     <Modal label={host ? `Edit host ${host.alias}` : 'New host'} onClose={onClose} width={680} top={52}>
       <form onSubmit={save} onKeyDown={(e) => { if (e.key === 'Enter' && (os === 'mac' ? e.metaKey : e.ctrlKey)) save(); }} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -235,6 +243,28 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
             )}
             {mode === 'agent' && <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />Uses the keys loaded in your SSH agent (<span className="mono">SSH_AUTH_SOCK</span>).</span>}
           </div>
+          <div className="field" data-sudo-field style={{ padding: 'var(--sp-3)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', background: 'var(--surface-raised)' }}>
+            <span className="flabel row" style={{ gap: 'var(--sp-2)' }}><Icon name="shield" size="sm" />Sudo password <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· for flint exec --sudo</span></span>
+            <div className="opt-list" role="radiogroup" aria-label="Sudo password">
+              <label className="opt"><input type="radio" name="sudo-mode" data-sudo-mode="login" checked={!sudoOwn} onChange={() => setSudoOwn(false)} />
+                <span className="opt-t"><span className="opt-l">Same as the login password</span><span className="hint">{loginSource}</span></span></label>
+              <label className="opt"><input type="radio" name="sudo-mode" data-sudo-mode="own" checked={sudoOwn} onChange={() => setSudoOwn(true)} />
+                <span className="opt-t"><span className="opt-l">Its own password</span></span></label>
+            </div>
+            {sudoOwn && host?.has_sudo_password && !sudoChange ? (
+              <div className="row" data-sudo-saved style={{ marginLeft: 24, gap: 'var(--sp-2)', fontSize: 'var(--fs-sm)' }}>
+                <span className="badge ok"><Icon name="check" />Saved</span><span className="mono faint">••••••••••</span><span className="grow" />
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSudoChange(true)}>Change</button>
+                <button type="button" className="btn btn-danger-ghost btn-sm" onClick={() => setSudoOwn(false)}>Remove</button>
+              </div>
+            ) : sudoOwn && (
+              <div style={{ marginLeft: 24 }}>
+                <PasswordField value={f.sudo_password} onChange={(v) => set('sudo_password', v)} saved={null} label="Sudo password"
+                  placeholder={host?.has_sudo_password ? 'Type the new one' : 'Sudo password'} />
+              </div>
+            )}
+            <span className="hint">Flint types it only when sudo asks, and only for a command you approved in its window.</span>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--sp-4)' }}>
             <div className="field"><label className="flabel" htmlFor="hu">User {mode === 'credential' && <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· overrides the credential's</span>}</label>
               <div className="input"><input id="hu" className="mono" value={f.user} onChange={(e) => set('user', e.target.value)} placeholder={mode === 'credential' ? 'from the credential' : 'root'} /></div></div>
@@ -248,18 +278,6 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
               <label className="check" style={{ fontSize: 'var(--fs-sm)' }}><input type="checkbox" checked={f.keep_shell} onChange={(e) => set('keep_shell', e.target.checked)} />
                 <span>Return to a shell when it exits <span className="faint">· otherwise the session ends with it</span></span></label>
             ) : <span className="hint">Runs in your login shell every time a session opens, like typing it yourself.</span>}
-          </div>
-          <div className="field" data-sudo-field>
-            <span className="flabel">Sudo password <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· for flint exec --sudo</span></span>
-            <div className="seg full" role="group" aria-label="Sudo password">
-              <button type="button" data-sudo-mode="login" aria-pressed={!sudoOwn} onClick={() => setSudoOwn(false)}>Same as the login password</button>
-              <button type="button" data-sudo-mode="own" aria-pressed={sudoOwn} onClick={() => setSudoOwn(true)}>Its own password</button>
-            </div>
-            {sudoOwn && (
-              <PasswordField value={f.sudo_password} onChange={(v) => set('sudo_password', v)} saved={null} label="Sudo password"
-                placeholder={host?.has_sudo_password ? 'Saved — type to replace' : 'Sudo password'} />
-            )}
-            <span className="hint">Flint types it only when sudo asks, and only for a command you approved in its window.</span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', gap: 'var(--sp-4)' }}>
             <div className="field"><span className="flabel">Tags</span>
