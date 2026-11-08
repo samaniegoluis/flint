@@ -86,9 +86,18 @@ once revoked. A token never unlocks the vault.
 
 The **activity log**, in the vault, records every command a caller ran or changed through
 Flint and every request refused: when, which program (and token), the host and the
-command, never a flag's value or a secret. Allowed reads are not recorded, so a synced
-vault is not rewritten by every `host list`. It keeps the newest 10,000 entries. Read it
-in **Settings → Access**.
+whole command (up to 16 KB), never a flag's value or a secret. Allowed reads are not
+recorded, so a synced vault is not rewritten by every `host list`. It keeps entries for
+30 days, 90 days (the default), 1 year or with no limit, set per vault in **Settings →
+Access** and nowhere else: no CLI command changes it, so a program allowed to change
+the vault cannot shorten the record of what it did. Past about 50 MB the oldest entries
+go whatever the setting. Read it in **Settings → Access**.
+
+**What you approve is what runs.** The approval window shows the command read from the
+arguments Flint is about to run, not from words the program sends to describe itself, and
+**Show full command** opens all of it. Viewing a command needs no Touch ID or password:
+presence protects allowing, not reading. A whole command never leaves the vault and the
+app: it is not written to Flint's own log or to any error.
 
 **`sudo` you approve** (`flint exec --sudo`): a command as root is approved in Flint's
 window one at a time, with presence, showing the exact arguments; no grant or token

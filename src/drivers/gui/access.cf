@@ -219,3 +219,56 @@ fn rpc_activity_log(params: str, st: GuiState, store: LockedVaultStore) -> str! 
     try st.require_unlocked()
     return json.stringify(ActivityPage{ entries: try list_activity(store, req.before, req.limit) })
 }
+
+// ---- Activity retention (milestone 15, D-049) -------------------------------------
+
+type RetentionState struct {
+    days:  i64 `json:"days"`
+    label: str `json:"label"`
+}
+
+type RetentionReq struct {
+    days: i64 `json:"days"`
+}
+
+type RetentionPreview struct {
+    days:   i64 `json:"days"`
+    remove: i64 `json:"remove"`
+}
+
+type RetentionSet struct {
+    days:    i64 `json:"days"`
+    label:   str `json:"label"`
+    removed: i64 `json:"removed"`
+}
+
+fn rpc_activity_retention(st: GuiState, store: LockedVaultStore) -> str! {
+    st.hold()
+    defer st.release()
+    try st.require_unlocked()
+    days := try activity_retention_days(store)
+    return json.stringify(RetentionState{ days: days, label: retention_label(days) })
+}
+
+// How many entries a shorter retention would remove, for the page to ask first.
+fn rpc_activity_retention_preview(params: str, st: GuiState, store: LockedVaultStore) -> str! {
+    req := try parse_req[RetentionReq](params)
+    st.hold()
+    defer st.release()
+    try st.require_unlocked()
+    return json.stringify(RetentionPreview{ days: req.days, remove: try retention_would_remove(store, req.days, time.unix_seconds()) })
+}
+
+// Only the person at the window sets it: no CLI command does (D-052), so a caller
+// with a grant to change the vault cannot shorten the log of what it did.
+fn rpc_activity_retention_set(params: str, st: GuiState, store: LockedVaultStore, mut app: webui.App) -> str! {
+    req := try parse_req[RetentionReq](params)
+    st.hold()
+    defer st.release()
+    try st.require_unlocked()
+    mut ts := store
+    removed := try set_activity_retention_days(mut ts, req.days, time.unix_seconds())
+    write_stderr("flint-gui: the activity log now keeps {retention_label(req.days)} ({removed} removed)\n")
+    app.emit("activity:added", ActivityAdded{ outcome: "" })
+    return json.stringify(RetentionSet{ days: req.days, label: retention_label(req.days), removed: removed })
+}

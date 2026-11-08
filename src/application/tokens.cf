@@ -154,8 +154,46 @@ fn match_token[C: Crypto](crypto: C, all: []Token, text: str) -> Token! {
     return error(coded(ERR_DENIED, "FLINT_TOKEN does not match a token of this vault"))
 }
 
-fn record_activity[T: TokenStore](mut tokens: T, e: ActivityEntry) -> void! {
-    try tokens.activity_add(e, ACTIVITY_KEEP)
+// Appends `e`, pruning what the vault's retention no longer keeps (milestone 15).
+fn record_activity[T: TokenStore](mut tokens: T, e: ActivityEntry, now_s: i64) -> void! {
+    days := try activity_retention_days(tokens)
+    try tokens.activity_add(e, activity_keep(days, now_s))
+}
+
+// The vault's retention in days, ACTIVITY_RETENTION_DEFAULT when never set.
+fn activity_retention_days[T: TokenStore](tokens: T) -> i64! {
+    days := try tokens.activity_retention()
+    if !retention_valid(days) {
+        return ACTIVITY_RETENTION_DEFAULT
+    }
+    return days
+}
+
+// Prunes the log to the vault's retention, at unlock; the number of entries removed.
+fn prune_activity[T: TokenStore](mut tokens: T, now_s: i64) -> i64! {
+    days := try activity_retention_days(tokens)
+    return tokens.activity_prune(activity_keep(days, now_s))
+}
+
+// How many entries a retention of `days` would remove now.
+fn retention_would_remove[T: TokenStore](tokens: T, days: i64, now_s: i64) -> i64! {
+    if !retention_valid(days) {
+        return error(coded(ERR_INVALID, "keep the activity log for 30, 90 or 365 days, or with no limit"))
+    }
+    keep := activity_keep(days, now_s)
+    if keep.since_at == 0 {
+        return 0
+    }
+    return tokens.activity_count_before(keep.since_at)
+}
+
+// Sets the vault's retention and prunes to it; the number of entries removed.
+fn set_activity_retention_days[T: TokenStore](mut tokens: T, days: i64, now_s: i64) -> i64! {
+    if !retention_valid(days) {
+        return error(coded(ERR_INVALID, "keep the activity log for 30, 90 or 365 days, or with no limit"))
+    }
+    try tokens.set_activity_retention(days)
+    return tokens.activity_prune(activity_keep(days, now_s))
 }
 
 // The newest entries before `before_id` (0: the newest), at most `limit` (1-500).

@@ -196,7 +196,8 @@ screen locks, and before the computer sleeps. See [Locking](/guides/vaults/#lock
 
 When a `flint` command finds the vault locked and has no terminal to ask on (an agent, a
 script), Flint comes to the front on the unlock screen and names the command: *"`flint
-exec web -- uptime` wants to use this vault."* With **Allow … for 1 hour** ticked, the
+exec web -- uptime` wants to use this vault."* A command longer than one line says how
+much is left (*+1,240 more characters*) and has **Show full command**. With **Allow … for 1 hour** ticked, the
 program that ran it is approved in the same step, for that host (or the whole vault for a
 command that names none); the master password you type confirms it. Unlock, and the
 command can run again. With Flint closed, `flint` starts it.
@@ -215,6 +216,12 @@ has the focus (<kbd>Esc</kbd>), unless the window asks for a password; it refuse
 does no answer within two minutes (the countdown shows it). Several requests wait in
 turn: the window says *1 of N waiting* and names the next one. See
 [Approve a program](/guides/ai-agents/#approve-a-program).
+
+The command is shown on one line. When it is longer, the window says how much is left
+and **Show full command** opens all of it (up to 16 KB) in a scrolling panel with
+**Copy**; <kbd>Esc</kbd> or **Close** goes back to the request, which is still waiting.
+Viewing it asks for no Touch ID or password. What the window shows is read from the
+arguments Flint will run, not from words the program sends.
 
 `flint token create` brings up the same window showing the token instead: its name, what
 it allows, which hosts and when it expires. **Allow** (with presence) creates that one
@@ -248,7 +255,12 @@ Settings belong to this machine, not to the vault, and save as you change them.
   them, the vault's **tokens** (**Revoke** ends one; **Show ended** lists the expired
   and revoked ones) and the **activity log**: when, which program or token, the command
   and whether it was allowed, denied or left unanswered, newest first, with **Load
-  more**. Allowed reads are not recorded; refused ones are.
+  more**. Allowed reads are not recorded; refused ones are. Click an entry, or press
+  <kbd>Enter</kbd> on it, for its detail: the exact time with seconds, the caller, how it
+  was allowed, the host and the whole command, with **Copy**. **Keep** sets how long the
+  vault keeps entries: 30 days, 90 days (the default), 1 year or no limit. A shorter
+  choice that removes entries says how many and asks first. This setting is in the vault,
+  not on this machine, and only this window changes it.
 
 They are kept in `settings.json` in Flint's config folder (`~/Library/Application
 Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults list.

@@ -314,6 +314,8 @@ class Cmd {
 				const st = {
 					path: v.path, name: v.name, exists: true, unlocked: v.unlocked, cached: false,
 					groups: n(v.groups.length), hosts: n(v.hosts.length), keys: n(v.keys.length), credentials: n(v.creds.length),
+					// Set in the app only (D-052); the demo's vaults keep the default.
+					activity_days: v.unlocked ? 90 : -1,
 				};
 				this.emit(st, () => {
 					if (!v.unlocked) {
@@ -321,8 +323,8 @@ class Cmd {
 						return;
 					}
 					fields(
-						['vault', 'path', 'state', 'groups', 'hosts', 'keys', 'credentials'],
-						[v.name, v.path, 'unlocked in Flint', `${st.groups}`, `${st.hosts}`, `${st.keys}`, `${st.credentials}`],
+						['vault', 'path', 'state', 'groups', 'hosts', 'keys', 'credentials', 'activity'],
+						[v.name, v.path, 'unlocked in Flint', `${st.groups}`, `${st.hosts}`, `${st.keys}`, `${st.credentials}`, 'kept 90 days'],
 					).forEach((l) => this.say(l));
 				});
 				return ok;

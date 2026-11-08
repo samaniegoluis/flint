@@ -19,6 +19,7 @@ import { Modal } from '../ui/Modal';
 import { Key } from '../ui/Kbd';
 import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
+import { CommandModal, moreText } from './CommandModal';
 
 type ScopeKind = 'host' | 'group' | 'all';
 
@@ -130,6 +131,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   const [busy, setBusy] = useState(false);
   // Allow is waiting on presence (Touch ID, polkit), not a Deny on its way.
   const [confirming, setConfirming] = useState(false);
+  const [showCommand, setShowCommand] = useState(false);
   const [now, setNow] = useState(Date.now());
   const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(t); }, []);
@@ -201,6 +203,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   const allowKey = os === 'mac' ? '⌘↵' : 'Ctrl+↵';
   const next = queue[1];
   const argCount = sudo?.argv.length ?? 0;
+  const more = ap.command ? moreText(ap.request, ap.command.text) : '';
 
   return (
     <Modal label={sudo ? 'Run a command as root' : 'Allow access to the vault'} onClose={() => { if (!busy) answer(false); }} width={580} top={46}
@@ -269,6 +272,12 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
               <div className="col" style={{ gap: 6 }}>
                 <span className="label">Request</span>
                 <div className="fp" data-approval-request style={{ padding: '6px var(--sp-3)', wordBreak: 'break-all' }}>{ap.request}</div>
+                {more && (
+                  <div className="row" style={{ gap: 'var(--sp-2)' }}>
+                    <span className="hint grow" data-approval-more>{more}</span>
+                    <button type="button" className="btn btn-ghost btn-sm" data-approval-show-command onClick={() => setShowCommand(true)}>Show full command</button>
+                  </div>
+                )}
               </div>
               {token ? (
                 <>
@@ -368,6 +377,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
           </div>
         )}
       </form>
+      {showCommand && <CommandModal title="Full command" command={ap.command.text} cut={ap.command.cut} onClose={() => setShowCommand(false)} />}
     </Modal>
   );
 }

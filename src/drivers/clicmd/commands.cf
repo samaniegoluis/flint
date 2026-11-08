@@ -148,10 +148,10 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try p.allow_flags("vault status", [])
         try p.expect_args("vault status", 0, "[--vault <name|path>]")
         target := try resolve_vault(recents, vault_selector(p))
-        mut st := VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0 }
+        mut st := VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1 }
         if src.served && target.path == src.session.path {
             // Unlocked in the app: counts from the open store, no keychain read.
-            st = try open_vault_status(mut store, src.session)
+            st = try open_vault_status(store, store, src.session)
         } else {
             st = try vault_status(c, mut store, src.kc, recents, target.path, target.name)
         }

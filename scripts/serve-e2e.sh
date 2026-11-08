@@ -308,6 +308,10 @@ check "the client said it was waiting" '[[ "$err" == *"Waiting for approval in F
 new_caller "" -- exec local -- echo deny-me
 check "a denied exec runs nothing and says why" '[[ $status == 15 && "$out" != *deny-me* && "$err" == *"denied"* ]]'
 check "a session told the client it was waiting" '[[ "$err" == *"Waiting for approval in Flint"* ]]'
+# Milestone 15 (D-049): the window shows a long command whole; the log keeps it whole.
+long_tail="$(printf 'x%.0s' $(seq 1 600))"
+new_caller "" -- exec local -- echo long-cmd "$long_tail" long-cmd-end
+check "a long exec allowed in the window runs whole" '[[ $status == 0 && "$out" == *long-cmd-end* ]]'
 
 # One caller, several commands: a grant scoped to one host is reused for it, and
 # does not reach another host.
@@ -468,6 +472,9 @@ sed 's/^/app: /' "$tmp/app.log" | grep -E "ok |FAILED|checks passed|e2e:|page te
 check "the window checks passed" 'grep -q "^e2e: pass" "$tmp/app.log"'
 check "a click beside the approval window does not deny it" 'grep -q "ok   a click beside the approval window" "$tmp/app.log" && ! grep -q "FAIL a click beside" "$tmp/app.log"'
 check "the approval countdown shows the time left" 'grep -q "ok   the countdown shows the time left" "$tmp/app.log" && ! grep -q "FAIL the countdown" "$tmp/app.log"'
+for what in "the approval window says how much of a long command is left" "Show full command opens the whole command" "Esc closes the full command and leaves the request waiting"; do
+  check "$what" 'grep -q "ok   $what" "$tmp/app.log" && ! grep -q "FAIL $what" "$tmp/app.log"'
+done
 check "the socket file is removed when the app quits" '[[ ! -e "$sock" ]]'
 expect 5 "with the app gone, the CLI is on its own again: locked" "" -- host list
 

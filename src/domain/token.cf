@@ -185,8 +185,92 @@ fn no_token_ask() -> TokenAsk {
 
 // ---- Activity log -------------------------------------------------------------------
 
-// The log keeps this many entries; older ones are dropped as new ones arrive.
-ACTIVITY_KEEP: i64 = 10000
+// How long the log keeps an entry, in days, set per vault (milestone 15, D-049):
+// 30 days, 90 days, 1 year or no limit (0). Older entries are pruned on each write
+// and at unlock.
+ACTIVITY_RETENTION_DAYS: []i64 = [30, 90, 365, 0]
+ACTIVITY_RETENTION_DEFAULT: i64 = 90
+// A safety net whatever the retention: past this many bytes the oldest entries go.
+ACTIVITY_MAX_BYTES: i64 = 52428800
+// What a row costs beyond its text columns, for the size cap.
+ACTIVITY_ROW_BYTES: i64 = 64
+
+// What the log keeps: entries from `since_at` (Unix seconds; 0, every age), up to
+// `max_bytes` in all.
+type ActivityKeep struct {
+    since_at:  i64
+    max_bytes: i64
+}
+
+fn retention_valid(days: i64) -> bool {
+    for d in ACTIVITY_RETENTION_DAYS {
+        if d == days {
+            return true
+        }
+    }
+    return false
+}
+
+// "90 days", "1 year", "no limit".
+fn retention_label(days: i64) -> str {
+    if days == 0 {
+        return "no limit"
+    }
+    if days == 365 {
+        return "1 year"
+    }
+    return "{days} days"
+}
+
+// What a vault with `days` of retention keeps at `now_s`.
+fn activity_keep(days: i64, now_s: i64) -> ActivityKeep {
+    mut since := i64(0)
+    if days > 0 {
+        since = now_s - days * 86400
+    }
+    return ActivityKeep{ since_at: since, max_bytes: ACTIVITY_MAX_BYTES }
+}
+
+// ---- Whole commands (milestone 15, D-049) ------------------------------------------
+
+// The approval window and the log keep a command up to this many bytes.
+COMMAND_MAX_BYTES: i64 = 16384
+// The one-line summary in the approval window, the unlock screen and the queue.
+COMMAND_SUMMARY_MAX: i64 = 160
+
+// A command as shown and kept: `text`, and how many bytes were cut from its end
+// (0: it is whole).
+type CommandText struct {
+    text: str `json:"text"`
+    cut:  i64 `json:"cut"`
+}
+
+// The largest prefix of `s` of at most `max` bytes that does not split a UTF-8
+// character.
+fn utf8_prefix(s: str, max: i64) -> str {
+    if i64(s.len()) <= max {
+        return s
+    }
+    mut end := usize(max)
+    for end > 0 && (u8(s[end]) & 0xC0) == 0x80 {
+        end = end - 1
+    }
+    return s.substr(0, end)
+}
+
+// `s` capped at COMMAND_MAX_BYTES.
+fn whole_command(s: str) -> CommandText {
+    t := utf8_prefix(s, COMMAND_MAX_BYTES)
+    return CommandText{ text: t, cut: i64(s.len()) - i64(t.len()) }
+}
+
+// `s` cut to one line of COMMAND_SUMMARY_MAX bytes, ending in "..." when cut.
+fn command_summary(s: str) -> str {
+    if i64(s.len()) <= COMMAND_SUMMARY_MAX {
+        return s
+    }
+    return utf8_prefix(s, COMMAND_SUMMARY_MAX - 3) + "..."
+}
 
 // How the request was allowed (or would have been).
 ACTIVITY_VIA_GRANT: str = "grant"
@@ -210,6 +294,9 @@ type ActivityEntry struct {
     host:    str `json:"host"`
     command: str `json:"command"`
     outcome: str `json:"outcome"`
+    // Bytes cut from the end of `command` past COMMAND_MAX_BYTES (milestone 15); 0
+    // when whole. Entries from before milestone 15 were cut at 160 and say 0.
+    cut:     i64 `json:"cut"`
 }
 
 // Whether an allowed request with `need` goes into the log: everything but reading.
@@ -292,4 +379,44 @@ test "reads stay out of the activity log" {
     assert(activity_logged(run_need("api-01")))
     assert(activity_logged(AccessNeed{ action: ACCESS_WRITE, host: "" }))
     assert(activity_logged(AccessNeed{ action: ACCESS_TOKEN, host: "" }))
+}
+
+test "a whole command is capped on a character boundary" {
+    short := whole_command("flint exec web -- uptime")
+    assert_eq(short.text, "flint exec web -- uptime")
+    assert_eq(short.cut, 0)
+    mut long := ""
+    for _ in 0..COMMAND_MAX_BYTES {
+        long = long + "a"
+    }
+    long = long + "€tail"
+    w := whole_command(long)
+    assert_eq(i64(w.text.len()), COMMAND_MAX_BYTES)
+    assert_eq(w.cut, 7)
+    // A three-byte character straddling the cap is left out whole.
+    odd := whole_command(long.substr(0, usize(COMMAND_MAX_BYTES - 1)) + "€")
+    assert_eq(i64(odd.text.len()), COMMAND_MAX_BYTES - 1)
+    assert_eq(odd.cut, 3)
+}
+
+test "a summary is one line of at most 160 bytes" {
+    assert_eq(command_summary("flint host list"), "flint host list")
+    mut long := "flint exec web -- echo "
+    for _ in 0..200 {
+        long = long + "ñ"
+    }
+    s := command_summary(long)
+    assert(i64(s.len()) <= COMMAND_SUMMARY_MAX)
+    assert(s.ends_with("..."))
+    assert(long.starts_with(s.substr(0, s.len() - 3)))
+}
+
+test "retention keeps entries by age" {
+    assert(retention_valid(30) && retention_valid(90) && retention_valid(365) && retention_valid(0))
+    assert(!retention_valid(7))
+    assert_eq(activity_keep(90, 100 * 86400).since_at, 10 * 86400)
+    assert_eq(activity_keep(0, 100 * 86400).since_at, 0)
+    assert_eq(retention_label(365), "1 year")
+    assert_eq(retention_label(0), "no limit")
+    assert_eq(retention_label(30), "30 days")
 }

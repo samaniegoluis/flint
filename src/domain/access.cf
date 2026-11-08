@@ -308,6 +308,8 @@ type Approval struct {
     token:          TokenAsk     `json:"token"`
     // For `exec --sudo` (milestone 13): the host, user and exact argv.
     sudo:           SudoAsk      `json:"sudo"`
+    // The whole command `request` sums up, up to 16 KB (milestone 15, D-049).
+    command:        CommandText  `json:"command"`
 }
 
 // The app's access state: live grants and the requests waiting for an answer.
@@ -379,7 +381,7 @@ fn asked_every_time(need: AccessNeed) -> bool {
 
 fn new_approval(id: str, vault_id: str, c: Caller, request: str, need: AccessNeed, now_ms: i64) -> Approval {
     a := caller_anchor(c)
-    return Approval{ id: id, vault_id: vault_id, label: caller_label(c), request: request, need: need, chain: c.chain, anchor_pid: a.pid, anchor_started: a.started, created_ms: now_ms, deadline_ms: now_ms + APPROVAL_WAIT_MS, state: APPROVAL_PENDING, token: no_token_ask(), sudo: no_sudo_ask() }
+    return Approval{ id: id, vault_id: vault_id, label: caller_label(c), request: request, need: need, chain: c.chain, anchor_pid: a.pid, anchor_started: a.started, created_ms: now_ms, deadline_ms: now_ms + APPROVAL_WAIT_MS, state: APPROVAL_PENDING, token: no_token_ask(), sudo: no_sudo_ask(), command: whole_command(request) }
 }
 
 // The grant an approval becomes when the owner allows it.

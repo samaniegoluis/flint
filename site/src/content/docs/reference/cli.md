@@ -35,7 +35,7 @@ terminal, Flint's window asks instead ([Vaults](/guides/vaults/#flint-holds-the-
 | `vault open <path>` | Open an existing vault and make it current |
 | `vault list` | Recent vaults, current one first |
 | `vault use <name\|path>` | Make a recent vault current |
-| `vault status` | Path, lock state and counts |
+| `vault status` | Path, lock state, counts, and how long the activity log keeps entries (set in the app, **Settings → Access**) |
 | `vault unlock` | Ask Flint to unlock the vault (starting it if needed), and wait up to 2 minutes |
 | `vault lock` | Lock the vault in Flint, and remove its key if this machine remembers it |
 | `vault rename <new-name>` | Rename the vault (with `--vault`, another one); the file keeps its name and place |
