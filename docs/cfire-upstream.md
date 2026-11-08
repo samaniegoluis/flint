@@ -1767,3 +1767,12 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   No native code.
 - **Ideal:** a qualified C++ name (`flint_fs::remove_path`) is only reachable qualified, and a cfire
   function is never resolved against a native one.
+
+### CF-104 · bug · `confirmed`: a `"\0"` string literal is the empty string
+- **Repro (43431f2, macOS):** `rel.contains("\0")` is true for every string, `"a.txt"` included: the literal
+  lowers to `std::string("\0")`, built from a C string, which stops at the NUL and is empty.
+- **Workaround:** `valid_drop_path` in `src/domain/files.cf` does not test for NUL. A NUL in a dropped
+  file's path only shortens the path the native code sees (`c_str()`), which stays inside the drop's
+  folder. Milestone 17. No native code.
+- **Ideal:** string literals lower with their length (`std::string("\0", 1)` or a `""s` literal), so an
+  embedded NUL survives.

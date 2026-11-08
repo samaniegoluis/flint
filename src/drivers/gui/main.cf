@@ -186,6 +186,18 @@ fn main() {
     app.bind_async[FilesPathReq]("files_remove") |req| { return rpc_files_remove(req, st) }
     app.bind_async[FilesPathReq]("files_mkdir") |req| { return rpc_files_mkdir(req, st) }
     app.bind_async[FilesTransferReq]("files_transfer") |req| { return rpc_files_transfer(req, app, st) }
+    mut drops := new_fs_drop_stage(config_dir)
+    drops.stage_clear_all()
+    // The page awaits each chunk before it sends the next, so a drop is appended in order.
+    app.bind_async[FilesStageReq]("files_stage") |req| {
+        mut d := drops
+        return rpc_files_stage(req, mut d, st)
+    }
+    app.bind_raw("files_stage_discard") |params| {
+        req := try parse_req[FilesIdReq](params)
+        mut d := drops
+        return rpc_files_stage_discard(req, mut d)
+    }
     app.bind_raw("files_cancel") |params| {
         req := try parse_req[FilesIdReq](params)
         return rpc_files_cancel(req)

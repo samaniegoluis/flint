@@ -9,6 +9,7 @@ package application
 // Every file lands under a temporary name in its folder (`.<name>.flint-part`) and
 // is renamed only once complete; a failure or a cancel removes the partial file.
 
+import "core:str"
 import "../domain"
 import "../ports"
 
@@ -394,4 +395,27 @@ fn copy_with_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, L: Loc
     res := copy_files(mut link, mut local, mut sink, mut clock, r)
     link.link_hangup()
     return res
+}
+
+// ---- Files dropped from the OS (milestone 17) ----------------------------------------
+
+// Appends a chunk of dropped file `rel` to drop `drop_id`, and returns where the
+// drop's top element (`rel`'s first part) is on this machine: what the upload
+// then copies.
+fn stage_dropped[D: DropStage](mut stage: D, drop_id: str, rel: str, data: str) -> str! {
+    if !valid_drop_id(drop_id) {
+        return error(coded(ERR_INVALID, "'{drop_id}' is not a drop id"))
+    }
+    if !valid_drop_path(rel) {
+        return error(coded(ERR_INVALID, "'{rel}' is not a path inside a drop"))
+    }
+    try stage.stage_append(drop_id, rel, data)
+    top := str.split(rel, "/")[0]
+    return remote_join(stage.stage_folder(drop_id), top)
+}
+
+fn discard_dropped[D: DropStage](mut stage: D, drop_id: str) {
+    if valid_drop_id(drop_id) {
+        stage.stage_discard(drop_id)
+    }
 }

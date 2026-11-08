@@ -13,6 +13,7 @@ package main
 
 import "ext:webui"
 import "ext:json"
+import "core:encoding/base64"
 import "../../adapters/process"
 import "../../adapters/ssh"
 import "../../adapters/uievents"
@@ -38,6 +39,13 @@ type FilesTransferReq struct {
     remote:    str  `json:"remote"`
     recursive: bool `json:"recursive"`
     force:     bool `json:"force"`
+}
+
+type FilesStageReq struct {
+    drop: str `json:"drop"`
+    rel:  str `json:"rel"`
+    // A chunk of the file, base64: the page reads dropped files as bytes (CF-004).
+    data: str `json:"data"`
 }
 
 type FilesIdReq struct {
@@ -150,5 +158,20 @@ fn rpc_files_transfer(req: FilesTransferReq, app: webui.App, st: GuiState) -> Co
 // is removed. Allowed behind the lock screen too: stopping takes nothing out.
 fn rpc_files_cancel(req: FilesIdReq) -> str! {
     files_cancel(req.id)
+    return ok_json()
+}
+
+// A chunk of a file dropped from the OS, staged on this machine until it is
+// uploaded (CF-004: the webview gives the page bytes, not paths).
+fn rpc_files_stage(req: FilesStageReq, mut stage: FsDropStage, st: GuiState) -> PathReply! {
+    try st.require_open_window()
+    data := base64.decode_str(req.data) or err {
+        return error(coded(ERR_INVALID, "a dropped file's chunk is not base64"))
+    }
+    return PathReply{ path: try stage_dropped(mut stage, req.drop, req.rel, data) }
+}
+
+fn rpc_files_stage_discard(req: FilesIdReq, mut stage: FsDropStage) -> str! {
+    discard_dropped(mut stage, req.id)
     return ok_json()
 }

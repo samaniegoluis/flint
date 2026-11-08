@@ -201,6 +201,48 @@ fn absolute_from(cwd: str, path: str) -> str {
     return remote_join(cwd, p)
 }
 
+// A dropped file's path inside its drop: relative, with no empty, "." or ".."
+// element, so it can never leave the drop's folder.
+fn valid_drop_path(rel: str) -> bool {
+    if rel.len() == 0 || rel.len() > 4096 || rel.starts_with("/") {
+        return false
+    }
+    for part in str.split(rel, "/") {
+        if part.len() == 0 || part == "." || part == ".." {
+            return false
+        }
+    }
+    return true
+}
+
+// A drop id the page minted: letters, digits and '-', at most 64.
+fn valid_drop_id(id: str) -> bool {
+    if id.len() == 0 || id.len() > 64 {
+        return false
+    }
+    for b in id.bytes() {
+        c := u8(b)
+        if !((c >= 48 && c <= 57) || (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 45) {
+            return false
+        }
+    }
+    return true
+}
+
+test "a dropped file's path stays inside its drop" {
+    assert(valid_drop_path("a.txt"))
+    assert(valid_drop_path("site/css/app.css"))
+    assert(!valid_drop_path(""))
+    assert(!valid_drop_path("/etc/passwd"))
+    assert(!valid_drop_path("../x"))
+    assert(!valid_drop_path("a/../../x"))
+    assert(!valid_drop_path("a//b"))
+    assert(!valid_drop_path("./a"))
+    assert(valid_drop_id("d-1a2b"))
+    assert(!valid_drop_id("../x"))
+    assert(!valid_drop_id(""))
+}
+
 test "a cp argument names a host only with alias: before any slash" {
     assert(is_remote_arg("web:/etc/app.conf"))
     assert(is_remote_arg("web:"))

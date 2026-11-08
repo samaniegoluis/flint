@@ -417,3 +417,32 @@ test "a Files view transfer opens its SFTP channel, then copies" {
     assert_eq(host.tree.data_of("/srv/a.txt"), "abc")
     assert_eq(try real_path(host, "/srv"), "/srv")
 }
+
+type FakeDropStage struct {
+    appended: []str
+    discarded: []str
+}
+
+fn (self: FakeDropStage) stage_folder(drop_id: str) -> str {
+    return "/cfg/drops/" + drop_id
+}
+
+fn (mut self: FakeDropStage) stage_append(drop_id: str, rel: str, data: str) -> void! {
+    self.appended.push(drop_id + ":" + rel + "=" + data)
+}
+
+fn (mut self: FakeDropStage) stage_discard(drop_id: str) {
+    self.discarded.push(drop_id)
+}
+
+test "a dropped file is staged inside its drop, and its top element is what uploads" {
+    mut stage := FakeDropStage{ appended: [], discarded: [] }
+    assert_eq(try stage_dropped(mut stage, "d1", "site/css/app.css", "body{}"), "/cfg/drops/d1/site")
+    assert_eq(try stage_dropped(mut stage, "d1", "notes.txt", "hi"), "/cfg/drops/d1/notes.txt")
+    assert_eq(code_of(stage_dropped(mut stage, "d1", "../../.ssh/x", "")), ERR_INVALID)
+    assert_eq(code_of(stage_dropped(mut stage, "../d", "a", "")), ERR_INVALID)
+    assert_eq(stage.appended.len(), 2)
+    discard_dropped(mut stage, "d1")
+    discard_dropped(mut stage, "../x")
+    assert_eq(stage.discarded.len(), 1)
+}

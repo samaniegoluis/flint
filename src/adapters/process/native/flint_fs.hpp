@@ -183,4 +183,44 @@ inline int make_dir(const std::string& path, std::string& err) {
     return OK;
 }
 
+// Creates every missing folder of `path` with `mode` (0700 for Flint's own drops).
+inline int make_dirs(const std::string& path, mode_t mode, std::string& err) {
+    std::string acc;
+    std::size_t i = 0;
+    while (i <= path.size()) {
+        std::size_t j = path.find('/', i);
+        if (j == std::string::npos) j = path.size();
+        acc = path.substr(0, j);
+        if (!acc.empty() && ::mkdir(acc.c_str(), mode) != 0 && errno != EEXIST) {
+            err = std::strerror(errno);
+            return map_errno(errno);
+        }
+        i = j + 1;
+    }
+    return OK;
+}
+
+// Appends `data` to `path`, created 0600 when missing (a dropped file being staged).
+inline int append_file(const std::string& path, const std::string& data, std::string& err) {
+    int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (fd < 0) {
+        err = std::strerror(errno);
+        return map_errno(errno);
+    }
+    std::size_t off = 0;
+    while (off < data.size()) {
+        ssize_t n = ::write(fd, data.data() + off, data.size() - off);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            err = std::strerror(errno);
+            int rc = map_errno(errno);
+            ::close(fd);
+            return rc;
+        }
+        off += static_cast<std::size_t>(n);
+    }
+    ::close(fd);
+    return OK;
+}
+
 }  // namespace flint_fs

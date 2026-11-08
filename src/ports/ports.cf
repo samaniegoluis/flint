@@ -258,6 +258,18 @@ type LocalFiles interface {
     local_mkdir(path: str) -> void!
 }
 
+// Files dragged into the window from the OS (milestone 17): the webview hands the
+// page their bytes, not their paths (CF-004), so the page sends them here in chunks
+// and the upload reads them from this machine. One folder per drop, readable only
+// by the person (adapters/process/drop_stage.cf); discarded once uploaded.
+type DropStage interface {
+    // The drop's folder, absolute.
+    stage_folder(drop_id: str) -> str
+    // Appends `data` to `rel` (a relative path, already checked) in the drop's folder.
+    stage_append(drop_id: str, rel: str, data: str) -> void!
+    stage_discard(drop_id: str)
+}
+
 // Where a copy reports its progress, and how it learns it was cancelled (stderr in
 // the CLI, frames to the CLI from the app, events to the window in milestone 17).
 type TransferSink interface {
