@@ -338,8 +338,14 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
 - **Ideal:** a binary streaming channel to the page (custom scheme, `postMessage` with
   `ArrayBuffer`, or a local websocket), plus optional batching.
 
-### CF-004 · missing · `answered, untested`: OS file drag & drop into the webview
+### CF-004 · missing · `answered, wrong`: OS file drag & drop into the webview
 - **At `466751b`:** `files:dropped` event added. Flint has no drop target yet (SFTP upload is on its roadmap).
+- **Tried at `43431f2` (milestone 17):** the event carries names, not paths. The bridge's drop listener
+  (`core/webui/bridge.hpp`) sends `f.path || f.name`; `File.path` is an Electron extension that neither
+  WKWebView nor WebKitGTK has, and there is no native drop handler, so a dropped `report.pdf` arrives as
+  `"report.pdf"`. **Workaround:** the page reads the dropped files' bytes and stages them on this machine
+  through an RPC (`files_stage`, `src/adapters/process/drop_stage.cf`, D-055); no native code. **Ideal:**
+  a native drop handler (`NSDraggingDestination` / GTK `drag-data-received`) that reports absolute paths.
 - **Needed:** SFTP upload by dropping files from Finder or the file manager (roadmap `next`).
 - **Source:** no drop handler in `webui.hpp`. The page cannot get real paths for dropped
   files.
