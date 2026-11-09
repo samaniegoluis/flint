@@ -86,7 +86,9 @@ keys or `ssh` directly.
 - Run a command: `flint --json exec <alias> -- '<command>'`. Quote the whole remote
   command: the remote shell parses it.
 - Long jobs: add `--exec-timeout <secs>` (default 600).
-- Copy files: `flint --json cp ./file <alias>:/path/` or `flint --json cp <alias>:/path ./`
+- Copy files: `flint --json cp ./file <alias>:/path/` or `flint --json cp <alias>:/path ./`,
+  or from one host to another: `flint --json cp <alias>:/path <other>:/path/` (the grant
+  must reach both hosts)
   (`-r` for a folder). Never `exec cat` or a heredoc. Exit 20 (`exists`): the file is
   there; ask me before passing `--force`.
 - Exit code 5 (`locked`): Flint is asking me to unlock it; wait for me, then retry.
@@ -106,7 +108,7 @@ keys or `ssh` directly.
 | `flint --json host show <alias>` | One host, with `has_password` instead of the password |
 | `flint --json exec <alias> -- '<cmd>'` | `{host, exit_code, signal, stdout, stderr, duration_ms}` |
 | `flint --json exec <alias> --sudo -- <cmd> [args]` | The same, run as root once you allow that exact command in Flint |
-| `flint --json cp [-r] <src> <dst>` | Copies a file or folder to or from one host: `{host, direction, files, folders, bytes, skipped, duration_ms}` |
+| `flint --json cp [-r] <src> <dst>` | Copies a file or folder to or from a host, or between two: `{host, to_host, direction, files, folders, bytes, skipped, duration_ms}` |
 | `flint --json known-host list` | The server keys Flint has recorded |
 
 Everything after `--` is joined with spaces and parsed by the **remote** shell, like `ssh`.

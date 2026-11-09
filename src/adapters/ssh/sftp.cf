@@ -20,23 +20,35 @@ import "../../domain"
 // The largest read asked of the server at once: OpenSSH serves up to 255 KB.
 SFTP_READ_CHUNK: usize = 65536
 
-fn sftp_failure(rc: i32, what: str, path: str, conn: SshConn) -> str {
+fn sftp_failure(rc: i32, what: str, path: str, conn: SshConn, label: str) -> str {
+    on := sftp_on(label)
     if rc == 1 {
-        return coded(ERR_NOT_FOUND, "{path}: no such file or folder on the host")
+        return coded(ERR_NOT_FOUND, "{path}: no such file or folder on {on}")
     }
     if rc == 2 {
-        return coded(ERR_PERMISSION, "{path}: permission denied on the host")
+        return coded(ERR_PERMISSION, "{path}: permission denied on {on}")
     }
     if rc == 3 {
-        return coded(ERR_EXISTS, "{path} already exists on the host")
+        return coded(ERR_EXISTS, "{path} already exists on {on}")
     }
     if rc == 6 {
-        return coded(ERR_NOT_DIR, "{path} is not a folder on the host")
+        return coded(ERR_NOT_DIR, "{path} is not a folder on {on}")
     }
     if rc == 4 {
-        return coded(ERR_IO, "the host refused to {what} {path}")
+        return coded(ERR_IO, "{on} refused to {what} {path}")
     }
     return coded(ERR_NETWORK, "the SFTP connection was lost while trying to {what} {path}: {conn.last_error()}")
+}
+
+fn sftp_on(label: str) -> str {
+    if label.len() > 0 {
+        return label
+    }
+    return "the host"
+}
+
+fn (mut self: SshLink) sftp_label(name: str) {
+    self.label = name
 }
 
 fn native_entry_kind(kind: str) -> str {
@@ -70,7 +82,7 @@ fn (mut self: SshLink) sftp_open() -> void! {
         msg = err;
     }
     if sftp == none {
-        return error(coded(ERR_NETWORK, "cannot start SFTP on the host: {msg}"))
+        return error(coded(ERR_NETWORK, "cannot start SFTP on {sftp_on(self.label)}: {msg}"))
     }
     self.sftp = sftp
 }
@@ -91,7 +103,7 @@ fn (self: SshLink) sftp_stat(path: str) -> FileEntry! {
         kind = e.kind; size = e.size; mtime = e.mtime; mode = e.mode;
     }
     if rc != 0 {
-        return error(sftp_failure(rc, "read", path, conn))
+        return error(sftp_failure(rc, "read", path, conn, self.label))
     }
     return FileEntry{ name: remote_base(path), path: path, kind: native_entry_kind(kind), size: size, mtime: mtime, mode: mode }
 }
@@ -116,7 +128,7 @@ fn (self: SshLink) sftp_list(path: str) -> []FileEntry! {
         }
     }
     if rc != 0 {
-        return error(sftp_failure(rc, "list", path, conn))
+        return error(sftp_failure(rc, "list", path, conn, self.label))
     }
     mut entries: []FileEntry = []
     for i, n in names {
@@ -146,7 +158,7 @@ fn (mut self: SshLink) sftp_file_open(path: str, write: bool, exclusive: bool) -
         if write {
             what = "write"
         }
-        return error(sftp_failure(rc, what, path, conn))
+        return error(sftp_failure(rc, what, path, conn, self.label))
     }
     self.sftp_file = f
 }
@@ -165,7 +177,7 @@ fn (mut self: SshLink) sftp_file_read() -> str! {
         rc = flint_sftp::read_file(self.sftp, self.sftp_file, SFTP_READ_CHUNK, data);
     }
     if rc != 0 {
-        return error(sftp_failure(rc, "read", "the file", conn))
+        return error(sftp_failure(rc, "read", "the file", conn, self.label))
     }
     return data
 }
@@ -182,7 +194,7 @@ fn (mut self: SshLink) sftp_file_write(data: str) -> void! {
         rc = flint_sftp::write_file(self.sftp, self.sftp_file, data);
     }
     if rc != 0 {
-        return error(sftp_failure(rc, "write", "the file", conn))
+        return error(sftp_failure(rc, "write", "the file", conn, self.label))
     }
 }
 
@@ -201,7 +213,7 @@ fn (mut self: SshLink) sftp_file_close() -> void! {
     }
     self.sftp_file = none
     if rc != 0 {
-        return error(sftp_failure(rc, "close", "the file", conn))
+        return error(sftp_failure(rc, "close", "the file", conn, self.label))
     }
 }
 
@@ -215,7 +227,7 @@ fn (mut self: SshLink) sftp_rename(from: str, to: str) -> void! {
         rc = flint_sftp::rename_path(self.sftp, from, to);
     }
     if rc != 0 {
-        return error(sftp_failure(rc, "rename", from, conn))
+        return error(sftp_failure(rc, "rename", from, conn, self.label))
     }
 }
 
@@ -229,7 +241,7 @@ fn (mut self: SshLink) sftp_remove(path: str, folder: bool) -> void! {
         rc = folder ? flint_sftp::remove_dir(self.sftp, path) : flint_sftp::remove_file(self.sftp, path);
     }
     if rc != 0 {
-        return error(sftp_failure(rc, "remove", path, conn))
+        return error(sftp_failure(rc, "remove", path, conn, self.label))
     }
 }
 
@@ -242,7 +254,7 @@ fn (mut self: SshLink) sftp_mkdir(path: str) -> void! {
         rc = flint_sftp::make_dir(self.sftp, path);
     }
     if rc != 0 {
-        return error(sftp_failure(rc, "create", path, conn))
+        return error(sftp_failure(rc, "create", path, conn, self.label))
     }
 }
 
@@ -257,7 +269,7 @@ fn (self: SshLink) sftp_realpath(path: str) -> str! {
         rc = flint_sftp::real_path(self.sftp, path, real);
     }
     if rc != 0 {
-        return error(sftp_failure(rc, "find", path, conn))
+        return error(sftp_failure(rc, "find", path, conn, self.label))
     }
     return real
 }

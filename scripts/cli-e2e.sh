@@ -526,10 +526,31 @@ expect 21 "a file as the folder is not_a_directory" "$SMI" -- cp "$loc/app.conf"
 mkdir -p "$rem/locked"; chmod 000 "$rem/locked"
 expect 19 "a folder the user cannot write is permission_denied" "$SMI" -- cp "$loc/app.conf" "local:$rem/locked/" "${SM[@]}"
 chmod 755 "$rem/locked"
-expect 2 "two hosts is a usage error" "$SMI" -- cp "local:/a" "inner:/b" "${SM[@]}"
 expect 2 "no host is a usage error" "$SMI" -- cp "$loc/a" "$loc/b" "${SM[@]}"
 expect 2 "cp with one path is a usage error" "$SMI" -- cp "$loc/a" "${SM[@]}"
 expect 3 "an unknown alias is not_found" "$SMI" -- cp "$loc/app.conf" "nohost:/tmp/" "${SM[@]}"
+echo "== files: flint cp between two hosts (milestone 18)"
+# `local` and `inner` (reached through `local` as a jump host) are two sshds on this
+# machine, so both see the same folders: the copy still goes host → flint → host.
+mkdir -p "$rem/to"
+expect 0 "cp copies a file from one host to another" "$SMI" -- cp "local:$rem/blob.bin" "inner:$rem/to/" "${SM[@]}"
+check "it arrived byte for byte" 'cmp -s "$loc/blob.bin" "$rem/to/blob.bin"'
+check "the summary names both hosts" '[[ "$out" == "Copied 1 file (1.0 MB) from local:$rem/blob.bin to inner:$rem/to/blob.bin in "* ]]'
+expect 0 "--json reports both hosts" "$SMI" -- --json cp --force "local:$rem/app.conf" "inner:$rem/to/app.conf" "${SM[@]}"
+check "--json has direction relay, host and to_host" '[[ "$(echo "$out" | json_get "d[\"direction\"], d[\"host\"], d[\"to_host\"], d[\"bytes\"]")" == "('"'"'relay'"'"', '"'"'local'"'"', '"'"'inner'"'"', 10)" ]]'
+expect 20 "an existing file on the destination host is refused" "$SMI" -- --json cp "local:$rem/app.conf" "inner:$rem/to/" "${SM[@]}"
+check "the error names the destination host" '[[ "$err" == *"on inner already exists"* ]]'
+expect 7 "a folder between hosts needs -r" "$SMI" -- cp "local:$rem/site" "inner:$rem/to/" "${SM[@]}"
+check "the error names the source host" '[[ "$err" == *"on local is a folder"* ]]'
+expect 0 "cp -r copies a folder between hosts" "$SMI" -- cp -r "inner:$rem/site" "local:$rem/to/" "${SM[@]}"
+check "the tree arrived" 'diff -r "$loc/site" "$rem/to/site" >/dev/null'
+expect 3 "a missing file on the source host is not_found" "$SMI" -- cp "local:$rem/nope" "inner:$rem/to/" "${SM[@]}"
+expect 3 "an unknown source alias is not_found" "$SMI" -- cp "nohost:/a" "inner:$rem/to/" "${SM[@]}"
+expect 3 "an unknown destination alias is not_found" "$SMI" -- cp "local:$rem/app.conf" "nohost:/tmp/" "${SM[@]}"
+printf 'half a fi' > "$rem/to/.stale.conf.flint-part"
+cp "$loc/app.conf" "$rem/stale.conf"
+expect 0 "a part file a cut copy left is replaced" "$SMI" -- cp "local:$rem/stale.conf" "inner:$rem/to/" "${SM[@]}"
+check "the copy is whole and the part file is gone" 'cmp -s "$rem/stale.conf" "$rem/to/stale.conf" && [[ ! -e "$rem/to/.stale.conf.flint-part" ]]'
 check "no partial file is left anywhere" '[[ -z "$(find "$cpd" -name "*.flint-part")" ]]'
 
 echo "== tokens, with the CLI on its own (milestone 12b)"

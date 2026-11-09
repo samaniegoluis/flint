@@ -127,13 +127,15 @@ vault locked it fails with `locked`. See [sudo](/guides/ai-agents/#sudo).
 |---|---|
 | `cp <local path> <alias>:<path>` | Copy to the host: into `<path>` when it is a folder, else to that name |
 | `cp <alias>:<path> <local path>` | Copy from the host. `<alias>:` alone is the login folder |
+| `cp <alias>:<path> <alias>:<path>` | Copy from one host to another, through this machine |
 
 `-r` (or `--recursive`) copies a folder and everything in it, merging into a folder that
 is already there. `--force` replaces an existing file, which is otherwise refused with
 `exists`. `--timeout` and `--accept-new-host-key` work as for `exec`. Progress goes to
-stderr when it is a terminal. With `--json`, `cp` prints `{host, direction, files:
-[{source, target, bytes}], folders, bytes, skipped, duration_ms}`. Through Flint it needs
-a grant that runs commands on that host. See [Copying files](/guides/files/).
+stderr when it is a terminal. With `--json`, `cp` prints `{host, to_host, direction,
+files: [{source, target, bytes}], folders, bytes, skipped, duration_ms}`; `direction` is
+`upload`, `download` or `relay`. Through Flint it needs a grant that runs commands on that
+host, or on both hosts of a copy between two. See [Copying files](/guides/files/).
 
 ### Import
 

@@ -52,7 +52,8 @@
 		{
 			"hint": [
 				"Copy a file to a server: the same login, over SFTP, with no key on disk. A folder",
-				"needs -r, and an existing file needs --force:"
+				"needs -r, an existing file needs --force, and alias:path on both sides copies",
+				"from one server to another:"
 			],
 			"run": "flint cp ./app.conf web-01:app/",
 			"accept": [

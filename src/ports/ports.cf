@@ -240,6 +240,9 @@ type SftpTransport interface {
     // The absolute form of `path` ("." is the login folder).
     sftp_realpath(path: str) -> str!
     sftp_close()
+    // How errors name this host ("on db1"); "the host" until set. A copy between two
+    // hosts (milestone 18) names each.
+    sftp_label(name: str)
 }
 
 // Files on this machine (adapters/process/local_fs.cf; over the socket, the CLI's own,

@@ -72,7 +72,19 @@
         log('ok   allowed the token ' + name);
         continue;
       }
-      if (form.dataset.kind === 'copy') {
+      if (form.dataset.kind === 'copy' && form.querySelector('[data-copy-ask]')?.dataset.direction === 'relay') {
+        // A copy between two hosts (milestone 18): both hosts named, a grant for both.
+        const title = form.querySelector('h2')?.textContent ?? '';
+        const ask = form.querySelector('[data-copy-ask]');
+        const from = form.querySelector('[data-copy-from]')?.textContent ?? '';
+        const badge = ask.querySelector('.badge')?.textContent ?? '';
+        log((/wants to copy files between two servers/.test(title) && ask.dataset.copyHost === 'local' && ask.dataset.copyToHost === 'tty' && from.endsWith('blob.bin') && badge === 'Server to server' ? 'ok   ' : 'FAIL ') + 'the approval window names both hosts of a copy between two');
+        log((form.querySelector('[data-scope-hosts]') && form.querySelector('[data-scope-host]')?.checked && form.querySelector('[data-action="exec"]')?.checked ? 'ok   ' : 'FAIL ') + 'a copy between two hosts proposes a grant for both');
+        // Design 16g3: the caller's grant from `exec local` already reaches local; tty is new.
+        const chip = (alias) => form.querySelector(`[data-scope-chip="${alias}"]`);
+        const tagOf = (alias) => chip(alias)?.nextElementSibling?.textContent ?? '';
+        log((chip('local')?.dataset.allowed === 'yes' && /^already allowed · \d+ (min|h)/.test(tagOf('local')) && chip('tty')?.dataset.allowed === 'no' && tagOf('tty') === 'new — this grant adds it' ? 'ok   ' : 'FAIL ') + 'the window says which of the two hosts the grant adds: ' + tagOf('local') + ' / ' + tagOf('tty'));
+      } else if (form.dataset.kind === 'copy') {
         // `flint cp` (milestone 16): a grant request that says what it copies where.
         const title = form.querySelector('h2')?.textContent ?? '';
         const from = form.querySelector('[data-copy-from]')?.textContent ?? '';
@@ -224,6 +236,7 @@
       await check(copies.some((e) => e.outcome === 'allowed' && e.action === 'exec' && e.host === 'local' && e.command.includes('blob.bin')), 'the log has every copy, under exec on its host');
       await check(copies.some((e) => e.outcome === 'allowed' && e.command.startsWith('flint cp -r ')), 'with -r when it copied a folder');
       await check(copies.some((e) => e.outcome === 'denied' && e.command.includes('deny-me.bin')), 'and the copy the owner denied');
+      await check(copies.some((e) => e.outcome === 'allowed' && e.host === 'local → tty' && e.command.includes('again-relay.bin')), 'a copy between two hosts is logged under both: local → tty');
       const sudoRows = log2.filter((e) => e.action === 'sudo');
       if (sudoRows.length > 0) {
         await check(sudoRows.some((e) => e.outcome === 'allowed' && e.via === 'window' && e.command.includes("--sudo -- 'sh' '-c'")), 'the log keeps a sudo command whole, each argument quoted');

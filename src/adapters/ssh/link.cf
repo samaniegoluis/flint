@@ -22,10 +22,12 @@ type SshLink struct {
     // The SFTP channel on the last hop and its one open file (sftp.cf), or none.
     sftp: *mut cpp::sftp_session_struct
     sftp_file: *mut cpp::sftp_file_struct
+    // How SFTP errors name the host: "the host" when empty (sftp_label).
+    label: str
 }
 
 fn new_ssh_link() -> SshLink {
-    mut link := SshLink{ hops: [], timeout_secs: 0 }
+    mut link := SshLink{ hops: [], timeout_secs: 0, label: "" }
     // CFIRE-UPSTREAM: CF-026
     cpp {
         link.tunnels = std::make_shared<flint_ssh::Tunnels>();

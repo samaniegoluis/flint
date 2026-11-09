@@ -1,0 +1,50 @@
+package ssh
+
+// The far end of a copy between two hosts (milestone 18). A copy reads one side
+// through `SftpTransport` and writes the other through `LocalFiles` (application/
+// files.cf); for a copy from host to host, the destination host's link serves
+// `LocalFiles` too, over its own SFTP channel. Nothing here touches this machine's
+// disk: the bytes go host → Flint → host.
+//
+// cfire has no generic struct to wrap a link in (and no `T: A + B`, CF-100), so the
+// link itself carries these methods; each one is the SFTP call of the same name.
+
+import "../../domain"
+
+fn (self: SshLink) local_stat(path: str) -> FileEntry! {
+    return self.sftp_stat(path)
+}
+
+fn (self: SshLink) local_list(path: str) -> []FileEntry! {
+    return self.sftp_list(path)
+}
+
+fn (mut self: SshLink) local_file_open(path: str, write: bool, exclusive: bool) -> void! {
+    return self.sftp_file_open(path, write, exclusive)
+}
+
+fn (mut self: SshLink) local_file_read() -> str! {
+    return self.sftp_file_read()
+}
+
+fn (mut self: SshLink) local_file_write(data: str) -> void! {
+    return self.sftp_file_write(data)
+}
+
+fn (mut self: SshLink) local_file_close() -> void! {
+    return self.sftp_file_close()
+}
+
+// OpenSSH's server renames over an existing file (posix-rename, D-053); where a
+// server refuses, the copy removes the old file and renames again.
+fn (mut self: SshLink) local_rename(from: str, to: str) -> void! {
+    return self.sftp_rename(from, to)
+}
+
+fn (mut self: SshLink) local_remove(path: str) -> void! {
+    return self.sftp_remove(path, false)
+}
+
+fn (mut self: SshLink) local_mkdir(path: str) -> void! {
+    return self.sftp_mkdir(path)
+}

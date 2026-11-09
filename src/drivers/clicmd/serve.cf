@@ -169,8 +169,9 @@ fn access_need(p: ParsedArgs) -> AccessNeed {
         return AccessNeed{ action: ACCESS_EXEC, host: p.positional(1) }
     }
     // Reading or writing a host's files has the power of a command there (D-051).
+    // A copy between two hosts runs on both: a grant must reach both (milestone 18).
     if noun == "cp" {
-        return AccessNeed{ action: ACCESS_EXEC, host: cp_alias(p) }
+        return AccessNeed{ action: ACCESS_EXEC, host: cp_alias(p), host2: cp_second_alias(p) }
     }
     if noun == "host" && verb == "test" {
         return AccessNeed{ action: ACCESS_EXEC, host: p.positional(2) }

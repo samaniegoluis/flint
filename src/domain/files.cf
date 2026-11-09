@@ -12,6 +12,9 @@ FILE_KIND_OTHER: str = "other"
 
 COPY_UPLOAD: str = "upload"
 COPY_DOWNLOAD: str = "download"
+// From one host to another, through Flint (milestone 18): the bytes go host → Flint
+// → host, so no credential ever reaches a host.
+COPY_RELAY: str = "relay"
 
 // What a partial download (or upload) is called while it is written, in the folder
 // it lands in; renamed to its name once complete.
@@ -126,6 +129,8 @@ type CopiedFile struct {
 // What `flint cp` reports.
 type CopyResult struct {
     host:        str          `json:"host"`
+    // The destination host of a relay copy; "" for an upload or a download.
+    to_host:     str          `json:"to_host"`
     direction:   str          `json:"direction"`
     files:       []CopiedFile `json:"files"`
     folders:     i64          `json:"folders"`
@@ -173,17 +178,27 @@ fn progress_line(p: TransferProgress) -> str {
 
 // What the approval window shows for `flint cp` (milestone 16): the direction, the
 // host, the path here (absolute, from the CLI's folder) and the path on the host.
+// A relay copy (milestone 18) reads `remote` on `host` and writes `to_path` on
+// `to_host`; `local` is then "", and `host_allowed` / `to_allowed` say whether the
+// caller's own live grant already runs commands there, until `*_until_ms` (0 = until
+// the vault locks), so the window can say which host the grant adds (design 16g3).
 type CopyAsk struct {
     direction: str  `json:"direction"`
     host:      str  `json:"host"`
     local:     str  `json:"local"`
     remote:    str  `json:"remote"`
+    to_host:   str  `json:"to_host"`
+    to_path:   str  `json:"to_path"`
     recursive: bool `json:"recursive"`
     force:     bool `json:"force"`
+    host_allowed:        bool `json:"host_allowed"`
+    host_allowed_until:  i64  `json:"host_allowed_until"`
+    to_allowed:          bool `json:"to_allowed"`
+    to_allowed_until:    i64  `json:"to_allowed_until"`
 }
 
 fn no_copy_ask() -> CopyAsk {
-    return CopyAsk{ direction: "", host: "", local: "", remote: "", recursive: false, force: false }
+    return CopyAsk{ direction: "", host: "", local: "", remote: "", to_host: "", to_path: "", recursive: false, force: false, host_allowed: false, host_allowed_until: 0, to_allowed: false, to_allowed_until: 0 }
 }
 
 // `path` as seen from folder `cwd`: unchanged when absolute.

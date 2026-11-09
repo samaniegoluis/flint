@@ -73,9 +73,20 @@ type Grant struct {
 
 // What one request needs: an action and, for `exec`, the host alias it runs on
 // ("" when the command names none, such as `host test` of an unsaved address).
+// A copy between two hosts (milestone 18) runs on both: `host2` is the second, and a
+// grant must reach both.
 type AccessNeed struct {
     action: str `json:"action"`
     host:   str `json:"host"`
+    host2:  str `json:"host2"`
+}
+
+// The host or hosts a need names, as the activity log shows them: "db1 → nas".
+fn need_hosts(need: AccessNeed) -> str {
+    if need.host2.len() == 0 {
+        return need.host
+    }
+    return "{need.host} → {need.host2}"
 }
 
 // The last part of a path.
@@ -252,6 +263,9 @@ fn grant_covers(g: Grant, vault_id: str, need: AccessNeed, cat: Catalog, now_ms:
         return g.read
     }
     if need.action == ACCESS_EXEC {
+        if need.host2.len() > 0 && !scope_reaches(g.scope, cat, need.host2) {
+            return false
+        }
         return g.exec && (need.host.len() == 0 || scope_reaches(g.scope, cat, need.host))
     }
     if need.action == ACCESS_WRITE {
@@ -268,6 +282,27 @@ fn find_grant(grants: []Grant, c: Caller, vault_id: str, need: AccessNeed, cat: 
         }
     }
     return none
+}
+
+// The caller's live grants that already run commands on `alias`, and when the last of
+// them ends (0 = until the vault locks). A copy between two hosts shows it for each
+// end (design 16g3).
+fn exec_allowed_until(grants: []Grant, c: Caller, vault_id: str, alias: str, cat: Catalog, now_ms: i64) -> (bool, i64) {
+    need := AccessNeed{ action: ACCESS_EXEC, host: alias }
+    mut found := false
+    mut until: i64 = 0
+    for g in grants {
+        if grant_matches_caller(g, c) && grant_covers(g, vault_id, need, cat, now_ms) {
+            if g.expires_ms == 0 {
+                return (true, 0)
+            }
+            if !found || g.expires_ms > until {
+                until = g.expires_ms
+            }
+            found = true
+        }
+    }
+    return (found, until)
 }
 
 // The grants still live at `now_ms`.
@@ -355,16 +390,25 @@ fn take_sudo_typed(mut book: AccessBook, id: str) -> str {
     return found
 }
 
-// The grant the window proposes for `ap`: the host it runs on (when the vault has
-// it), else the whole vault; reading plus what it needs; one hour. The unlock screen
-// gives exactly this when the owner ticks "Allow".
+// The grant the window proposes for `ap`: the host it runs on, or both hosts of a
+// copy between two (when the vault has them), else the whole vault; reading plus what
+// it needs; one hour. The unlock screen gives exactly this when the owner ticks "Allow".
 fn proposed_grant(ap: Approval, cat: Catalog, id: str, now_ms: i64) -> Grant! {
     mut scope := AccessScope{ all: true, groups: [], hosts: [] }
     if ap.need.action == ACCESS_EXEC {
+        mut ids: []str = []
+        mut wanted := 1
+        if ap.need.host2.len() > 0 && str.to_lower(ap.need.host2) != str.to_lower(ap.need.host) {
+            wanted = 2
+        }
         for h in cat.hosts {
-            if str.to_lower(h.alias) == str.to_lower(ap.need.host) {
-                scope = AccessScope{ all: false, groups: [], hosts: [h.id] }
+            a := str.to_lower(h.alias)
+            if a == str.to_lower(ap.need.host) || (ap.need.host2.len() > 0 && a == str.to_lower(ap.need.host2)) {
+                ids.push(h.id)
             }
+        }
+        if ids.len() == usize(wanted) {
+            scope = AccessScope{ all: false, groups: [], hosts: ids }
         }
     }
     return grant_from_approval(ap, id, scope, true, ap.need.action == ACCESS_EXEC, ap.need.action == ACCESS_WRITE, "1h", now_ms)
@@ -606,4 +650,51 @@ test "an approval is answered once" {
     assert_eq(find_approval(book, "a1").value().state, APPROVAL_DENIED)
     drop_approval(mut book, "a1")
     assert(!find_approval(book, "a1").has_value())
+}
+
+test "a copy between two hosts needs a grant that reaches both" {
+    cat := test_catalog()
+    both := AccessNeed{ action: ACCESS_EXEC, host: "api-01", host2: "lab-01" }
+    only_api := test_grant(AccessScope{ all: false, groups: [], hosts: ["h-api"] }, true, true, false, 0)
+    assert(!grant_covers(only_api, "v1", both, cat, 5))
+    two := test_grant(AccessScope{ all: false, groups: [], hosts: ["h-api", "h-lab"] }, true, true, false, 0)
+    assert(grant_covers(two, "v1", both, cat, 5))
+    assert(grant_covers(test_grant(AccessScope{ all: true, groups: [], hosts: [] }, false, true, false, 0), "v1", both, cat, 5))
+    assert_eq(need_hosts(both), "api-01 → lab-01")
+    assert_eq(need_hosts(AccessNeed{ action: ACCESS_EXEC, host: "lab-01" }), "lab-01")
+}
+
+test "a copy between two hosts says which end a grant already reaches" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    cat := test_catalog()
+    only_api := test_grant(AccessScope{ all: false, groups: [], hosts: ["h-api"] }, true, true, false, 9000)
+    (api, until) := exec_allowed_until([only_api], c, "v1", "api-01", cat, 5)
+    assert(api)
+    assert_eq(until, 9000)
+    (lab, _) := exec_allowed_until([only_api], c, "v1", "lab-01", cat, 5)
+    assert(!lab)
+    (late, _) := exec_allowed_until([only_api], c, "v1", "api-01", cat, 9001)
+    assert(!late)
+    (other, _) := exec_allowed_until([only_api], c, "v2", "api-01", cat, 5)
+    assert(!other)
+    read_only := test_grant(AccessScope{ all: true, groups: [], hosts: [] }, true, false, false, 0)
+    (ro, _) := exec_allowed_until([read_only], c, "v1", "api-01", cat, 5)
+    assert(!ro)
+    forever := test_grant(AccessScope{ all: true, groups: [], hosts: [] }, false, true, false, 0)
+    (both, end) := exec_allowed_until([only_api, forever], c, "v1", "api-01", cat, 5)
+    assert(both)
+    assert_eq(end, 0)
+}
+
+test "the proposed grant of a copy between two hosts names both" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    ap := new_approval("a1", "v1", c, "flint cp api-01:/a lab-01:/b", AccessNeed{ action: ACCESS_EXEC, host: "api-01", host2: "lab-01" }, 0)
+    g := try proposed_grant(ap, test_catalog(), "g1", 0)
+    assert(!g.scope.all)
+    assert_eq(g.scope.hosts.len(), 2)
+    assert(grant_covers(g, "v1", ap.need, test_catalog(), 5))
+    same := new_approval("a2", "v1", c, "flint cp lab-01:/a lab-01:/b", AccessNeed{ action: ACCESS_EXEC, host: "lab-01", host2: "lab-01" }, 0)
+    assert_eq((try proposed_grant(same, test_catalog(), "g2", 0)).scope.hosts.len(), 1)
+    half := new_approval("a3", "v1", c, "flint cp api-01:/a nope:/b", AccessNeed{ action: ACCESS_EXEC, host: "api-01", host2: "nope" }, 0)
+    assert((try proposed_grant(half, test_catalog(), "g3", 0)).scope.all)
 }

@@ -23,6 +23,7 @@ import { Key } from '../ui/Kbd';
 import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
 import { CommandModal, MoreRow, moreText } from './CommandModal';
+import { colorStyle } from '../lib/colors';
 
 type ScopeKind = 'host' | 'group' | 'all';
 
@@ -85,8 +86,8 @@ function hostKnown(catalog: Catalog, host: string): boolean {
   return !!host && !!findHost(catalog, host);
 }
 
-function hostsIn(catalog: Catalog, group: string): number {
-  return catalog.hosts.filter((h) => h.group === group || h.group.startsWith(group + '/')).length;
+function hostsIn(catalog: Catalog, groups: string[]): number {
+  return catalog.hosts.filter((h) => groups.some((g) => h.group === g || h.group.startsWith(g + '/'))).length;
 }
 
 function plural(n: number, one: string): string {
@@ -121,8 +122,70 @@ export function copyTarget(dst: string, src: string): string {
   return name && name !== '.' && name !== '..' ? `${dst}${name}${src.endsWith('/') ? '/' : ''}` : dst;
 }
 
+/** A host's colour square and alias, for the ends of a copy between two hosts. */
+function HostEnd({ catalog, alias }: { catalog: Catalog; alias: string }) {
+  const c = colorStyle(findHost(catalog, alias)?.color ?? '');
+  return <span className="cp-end"><span className={'fsw ' + c.className} style={c.style} /><span className="mono">{alias}</span></span>;
+}
+
+/** The alias, and the host's name on the network when it says something more. */
+function HostWho({ catalog, alias }: { catalog: Catalog; alias: string }) {
+  const h = findHost(catalog, alias);
+  return <span className="who"><span className="mono strong">{alias}</span>{h?.hostname && h.hostname !== alias && <span className="faint">{h.hostname}</span>}</span>;
+}
+
+const ARROW = <svg className="cp-arrow" viewBox="0 0 28 14" aria-hidden="true" style={{ fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }}><path d="M2 7h23M19 2l6 5-6 5" /></svg>;
+
+/**
+ * A copy from one host to another (milestone 18, design 16g1-16g2): FROM → via Flint →
+ * TO, each end with its host and path, the -r and --force flags as chips, and --force's
+ * warning about the destination host.
+ */
+function RelayBlock({ copy, catalog }: { copy: CopyAsk; catalog: Catalog }) {
+  const to = copy.to_host ?? '';
+  const dst = copyTarget(copy.to_path ?? '', copy.remote);
+  const row = { gridTemplateColumns: '40px 118px minmax(0, 1fr)' };
+  return (
+    <div className="cp" data-copy-ask data-direction="relay" data-copy-host={copy.host} data-copy-to-host={to} aria-label={`Copy between servers: from ${copy.host} to ${to}`}>
+      <div className="cp-dir">
+        <span className="grow row" style={{ gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
+          <HostEnd catalog={catalog} alias={copy.host} />{ARROW}<span className="hint" style={{ whiteSpace: 'nowrap' }}>via Flint</span>{ARROW}<HostEnd catalog={catalog} alias={to} />
+        </span>
+        <span className="badge info">Server to server</span>
+      </div>
+      <div className="cp-row" style={row}><span className="role" style={{ paddingTop: 3 }}>From</span><HostWho catalog={catalog} alias={copy.host} /><SlashPath path={copy.remote} data="data-copy-from" /></div>
+      <div className="cp-row" style={row}><span className="role" style={{ paddingTop: 3 }}>To</span><HostWho catalog={catalog} alias={to} /><SlashPath path={dst} data="data-copy-to" /></div>
+      {(copy.recursive || copy.force) && (
+        <div className="cp-notes" style={{ flexDirection: 'row', gap: 'var(--sp-2)' }}>
+          {copy.recursive && <span className="chip" style={{ fontFamily: 'var(--font-ui)' }} data-copy-recursive><Icon name="folder" size="xs" />&nbsp;folder (-r)</span>}
+          {copy.force && <span className="badge warn"><Icon name="alert" />overwrite (--force)</span>}
+        </div>
+      )}
+      {copy.force && (
+        <div className="cp-force" role="note" data-copy-force><Icon name="alert" size="sm" className="warn-t" />
+          <span><strong>Replaces files that are already there.</strong> With <span className="mono">--force</span>, anything with the same name in the destination on <span className="mono">{to}</span> is overwritten without asking.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What a relay copy's host chip says about the caller's grants (design 16g3): "" when
+ * neither end is reached yet (16g1 shows no tags), else whether this end already is and
+ * for how long, or that the new grant adds it. `left` is in seconds, -1 = until locked.
+ */
+export function relayTag(allowed: boolean, left: number, otherAllowed: boolean): string {
+  if (!allowed) return otherAllowed ? 'new — this grant adds it' : '';
+  if (left < 0) return 'already allowed · until locked';
+  const min = Math.ceil(left / 60);
+  if (min < 60) return `already allowed · ${min} min left`;
+  return `already allowed · ${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''} left`;
+}
+
 /** `flint cp`'s transfer block (design 16f1-16f3): direction, both paths, -r and --force. */
-function CopyBlock({ copy }: { copy: CopyAsk }) {
+function CopyBlock({ copy, catalog }: { copy: CopyAsk; catalog: Catalog }) {
+  if (copy.direction === 'relay') return <RelayBlock copy={copy} catalog={catalog} />;
   const up = copy.direction === 'upload';
   const here = <><Icon name="monitor" />This computer</>;
   const host = <><Icon name="hosts" /><span className="mono">{copy.host}</span></>;
@@ -170,8 +233,17 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
 }) {
   const { os } = useApp();
   const host = ap.need.host;
-  const group = groupOf(catalog, host);
-  const initialScope: ScopeKind = ap.need.action === 'write' || !hostKnown(catalog, host) ? 'all' : 'host';
+  // A copy between two hosts runs on both (milestone 18, design 16g): "these two hosts"
+  // means both, and "their groups" both groups, offered when each host is in one.
+  const host2 = ap.need.host2 && ap.need.host2.toLowerCase() !== host.toLowerCase() ? ap.need.host2 : '';
+  const hostsKnown = hostKnown(catalog, host) && (!host2 || hostKnown(catalog, host2));
+  const groups = useMemo(() => {
+    const g1 = groupOf(catalog, host);
+    if (!host2) return g1 ? [g1] : [];
+    const g2 = groupOf(catalog, host2);
+    return !g1 || !g2 ? [] : g1 === g2 ? [g1] : [g1, g2];
+  }, [catalog, host, host2]);
+  const initialScope: ScopeKind = ap.need.action === 'write' || !hostsKnown ? 'all' : 'host';
   const [scope, setScope] = useState<ScopeKind>(initialScope);
   const [actions, setActions] = useState<Record<AccessAction, boolean>>({
     read: true, exec: ap.need.action === 'exec', write: ap.need.action === 'write',
@@ -202,6 +274,20 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   const sudoHost = sudo ? findHost(catalog, sudo.host) : undefined;
   const askSudo = !!sudo && !sudo.has_password;
   const copy = kind === 'copy' && ap.copy ? ap.copy : null;
+  // Design 16g3: which of the two hosts the caller's grant already reaches, and which
+  // the new grant adds. A grant that ends while the window waits counts as gone.
+  const relayEnds = useMemo(() => {
+    if (!copy || copy.direction !== 'relay' || !host2) return [];
+    const end = (alias: string, allowed?: boolean, until?: number) => {
+      if (!allowed) return { alias, allowed: false, left: 0 };
+      if (!until) return { alias, allowed: true, left: -1 };
+      const left = Math.round((until + skew - now) / 1000);
+      return { alias, allowed: left > 0, left };
+    };
+    const a = end(host, copy.host_allowed, copy.host_allowed_until);
+    const b = end(host2, copy.to_allowed, copy.to_allowed_until);
+    return [a, b].map((e, i) => ({ ...e, tag: relayTag(e.allowed, e.left, (i === 0 ? b : a).allowed) }));
+  }, [copy, host, host2, skew, now]);
 
   // The window opens over whatever had the focus: a click, a key in a terminal, or
   // nothing (another app in front). When the window comes back to the front with the
@@ -226,8 +312,8 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
         id: ap.id, allow, duration, password: allow ? password : '',
         sudo_password: allow ? sudoPassword : '', save_sudo_password: allow && saveSudo && !!sudoPassword,
         scope: scope === 'all' ? { all: true, groups: [], hosts: [] }
-          : scope === 'group' ? { all: false, groups: [group], hosts: [] }
-          : { all: false, groups: [], hosts: [host] },
+          : scope === 'group' ? { all: false, groups, hosts: [] }
+          : { all: false, groups: [], hosts: host2 ? [host, host2] : [host] },
         read: actions.read, exec: actions.exec, write: actions.write && scope === 'all',
       });
       setPassword('');
@@ -272,6 +358,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
               <CallerLabel label={ap.label} />
               {sudo ? <> wants to run a command as <span className="danger-t">root</span> on <span className="mono">{sudo.host}</span></>
                 : token ? ' wants to create a token'
+                : copy && copy.direction === 'relay' ? ' wants to copy files between two servers'
                 : copy ? <> wants to copy files {copy.direction === 'upload' ? 'to' : 'from'} <span className="mono">{copy.host}</span></>
                 : ' wants to use this vault'}
             </h2>
@@ -328,12 +415,14 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
           ) : (
             <>
               <div className="col" style={{ gap: 6 }}>
-                <span className="label">Request</span>
+                {copy?.direction === 'relay'
+                  ? <div className="row"><span className="label grow">Request</span><span className="hint row" style={{ gap: 4 }} data-copy-relay><Icon name="shield-ok" size="xs" className="info-t" />Bytes pass through Flint — no key or password goes on a server</span></div>
+                  : <span className="label">Request</span>}
                 <div className={more ? 'fp req-summary' : 'fp'} data-approval-request style={{ padding: '6px var(--sp-3)', wordBreak: 'break-all' }}
                   title={more ? 'Summary — open the full command to read all of it' : undefined}>{ap.request}</div>
                 {more && <MoreRow more={more} data="approval" onShow={() => setShowCommand(true)} />}
               </div>
-              {copy && <CopyBlock copy={copy} />}
+              {copy && <CopyBlock copy={copy} catalog={catalog} />}
               {token ? (
                 <>
                   <dl className="kv" data-token-ask style={{ margin: 0, gridTemplateColumns: '88px minmax(0, 1fr)' }}>
@@ -349,13 +438,23 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                   <div className="choice-row">
                     <span className="flabel">Hosts</span>
                     <div className="opt-list" role="radiogroup" aria-label="Hosts">
-                      {hostKnown(catalog, host) && (
+                      {hostsKnown && (
                         <label className="opt"><input type="radio" name="approval-scope" data-scope-host checked={scope === 'host'} onChange={() => setScope('host')} />
-                          <span className="opt-t"><span className="opt-l">This host <span className="mono muted">{host}</span></span></span></label>
+                          {host2
+                            ? <span className="opt-t"><span className="opt-l" data-scope-hosts>These two hosts</span>
+                              <span className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 3 }}>
+                                {relayEnds.map((e) => (
+                                  <Fragment key={e.alias}>
+                                    <span className="chip" data-scope-chip={e.alias} data-allowed={e.allowed ? 'yes' : 'no'}>{e.alias}</span>
+                                    {e.tag && <span className={e.allowed ? 'badge ok' : 'badge accent'}>{e.tag}</span>}
+                                  </Fragment>
+                                ))}
+                              </span></span>
+                            : <span className="opt-t"><span className="opt-l">This host <span className="mono muted">{host}</span></span></span>}</label>
                       )}
-                      {group && (
+                      {groups.length > 0 && (
                         <label className="opt"><input type="radio" name="approval-scope" data-scope-group checked={scope === 'group'} onChange={() => setScope('group')} />
-                          <span className="opt-t"><span className="opt-l">Its group <span className="path muted" title={group}>{group}</span></span><span className="hint">{plural(hostsIn(catalog, group), 'host')}</span></span></label>
+                          <span className="opt-t"><span className="opt-l">{host2 ? (groups.length > 1 ? 'Their groups' : 'Their group') : 'Its group'} <span className="path muted" title={groups.join(', ')}>{groups.join(', ')}</span></span><span className="hint">{plural(hostsIn(catalog, groups), 'host')}</span></span></label>
                       )}
                       <label className="opt"><input type="radio" name="approval-scope" data-scope-all checked={scope === 'all'} onChange={() => setScope('all')} />
                         <span className="opt-t"><span className="opt-l">Whole vault</span><span className="hint">{plural(catalog.hosts.length, 'host')}</span></span></label>

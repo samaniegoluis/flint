@@ -301,7 +301,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     st.release()
     now := time.now_ms()
     logged := whole_command(activity_command(parsed, ask, sudo))
-    mut entry := ActivityEntry{ id: 0, at: time.unix_seconds(), caller: caller_label(caller), via: ACTIVITY_VIA_GRANT, token: "", action: need.action, host: need.host, command: logged.text, outcome: ACTIVITY_ALLOWED, cut: logged.cut }
+    mut entry := ActivityEntry{ id: 0, at: time.unix_seconds(), caller: caller_label(caller), via: ACTIVITY_VIA_GRANT, token: "", action: need.action, host: need_hosts(need), command: logged.text, outcome: ACTIVITY_ALLOWED, cut: logged.cut }
 
     if req.token.len() > 0 {
         entry.via = ACTIVITY_VIA_TOKEN
@@ -358,7 +358,14 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         creq := copy_request_from_args(parsed)
         if creq.has_value() {
             r := creq.value()
-            ap.copy = CopyAsk{ direction: r.direction, host: r.alias, local: absolute_from(req.cwd, r.local), remote: r.remote, recursive: r.recursive, force: r.force }
+            if r.direction == COPY_RELAY {
+                grants := st.holder.access_book().grants
+                (from_ok, from_until) := exec_allowed_until(grants, caller, session.id, r.alias, cat, now)
+                (to_ok, to_until) := exec_allowed_until(grants, caller, session.id, r.to_alias, cat, now)
+                ap.copy = CopyAsk{ direction: r.direction, host: r.alias, local: "", remote: r.remote, to_host: r.to_alias, to_path: r.local, recursive: r.recursive, force: r.force, host_allowed: from_ok, host_allowed_until: from_until, to_allowed: to_ok, to_allowed_until: to_until }
+            } else {
+                ap.copy = CopyAsk{ direction: r.direction, host: r.alias, local: absolute_from(req.cwd, r.local), remote: r.remote, recursive: r.recursive, force: r.force, host_allowed: false, host_allowed_until: 0, to_allowed: false, to_allowed_until: 0 }
+            }
         }
     }
     st.holder.access_hold()

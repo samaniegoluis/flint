@@ -22,6 +22,8 @@ type FakeTree struct {
     written: i64
     fail_write_after: i64
     no_overwrite_rename: bool
+    // Removing anything fails, as over a channel that died (milestone 18).
+    remove_dead: bool
 }
 
 fn fake_tree(nodes: []FakeNode) -> FakeTree {
@@ -29,7 +31,7 @@ fn fake_tree(nodes: []FakeNode) -> FakeTree {
     for n in nodes {
         all.push(n)
     }
-    return FakeTree{ nodes: all, open_path: "", open_write: false, read_pos: 0, chunk: 4, written: 0, fail_write_after: 0, no_overwrite_rename: false }
+    return FakeTree{ nodes: all, open_path: "", open_write: false, read_pos: 0, chunk: 4, written: 0, fail_write_after: 0, no_overwrite_rename: false, remove_dead: false }
 }
 
 fn fdir(path: str) -> FakeNode {
@@ -158,6 +160,9 @@ fn (mut self: FakeTree) t_rename(from: str, to: str) -> void! {
 }
 
 fn (mut self: FakeTree) t_remove(path: str) -> void! {
+    if self.remove_dead {
+        return error(coded(ERR_NETWORK, "the SFTP connection was lost while trying to remove {path}"))
+    }
     mut kept: []FakeNode = []
     mut found := false
     for n in self.nodes {
@@ -222,6 +227,9 @@ fn (self: FakeSftp) sftp_realpath(path: str) -> str! {
     }
     return path
 }
+fn (mut self: FakeSftp) sftp_label(name: str) {
+}
+
 fn (mut self: FakeSftp) sftp_close() {
 }
 
@@ -445,4 +453,91 @@ test "a dropped file is staged inside its drop, and its top element is what uplo
     discard_dropped(mut stage, "d1")
     discard_dropped(mut stage, "../x")
     assert_eq(stage.discarded.len(), 1)
+}
+
+// ---- Copies between two hosts (milestone 18) -----------------------------------------
+
+fn relay_req(from_path: str, to_path: str, recursive: bool, force: bool) -> CopyRequest {
+    return CopyRequest{ id: "t1", alias: "db1", direction: COPY_RELAY, local: to_path, remote: from_path, recursive: recursive, force: force, to_alias: "nas" }
+}
+
+test "a copy between two hosts reads one and writes the other" {
+    mut db1 := FakeSftp{ tree: fake_tree([fdir("/var"), fdir("/var/backups"), ffile("/var/backups/db.sql", "CREATE TABLE t;\n")]) }
+    mut nas := FakeLocal{ tree: fake_tree([fdir("/srv"), fdir("/srv/backups")]) }
+    mut sink := quiet_sink()
+    mut clock := FakeClock{ now_ms: 0, step_ms: 3 }
+    res := try copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/var/backups/db.sql", "/srv/backups/", false, false))
+    assert_eq(nas.tree.data_of("/srv/backups/db.sql"), "CREATE TABLE t;\n")
+    assert(!nas.tree.has("/srv/backups/.db.sql.flint-part"))
+    assert_eq(db1.tree.data_of("/var/backups/db.sql"), "CREATE TABLE t;\n")
+    assert_eq(res.direction, COPY_RELAY)
+    assert_eq(res.host, "db1")
+    assert_eq(res.to_host, "nas")
+    assert_eq(res.bytes, 16)
+    assert_eq(res.files[0].source, "/var/backups/db.sql")
+    assert_eq(res.files[0].target, "/srv/backups/db.sql")
+    assert_eq(sink.last.bytes_done, 16)
+}
+
+test "a copy between two hosts names each host in its errors" {
+    mut db1 := FakeSftp{ tree: fake_tree([fdir("/d"), ffile("/d/a", "a"), fdir("/d/site")]) }
+    mut nas := FakeLocal{ tree: fake_tree([fdir("/srv"), ffile("/srv/a", "old")]) }
+    mut sink := quiet_sink()
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    exists := copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/srv/", false, false))
+    assert_eq(code_of(exists), ERR_EXISTS)
+    assert("{exists.error().message()}".contains("/srv/a on nas already exists"))
+    folder := copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/d/site", "/srv/", false, false))
+    assert("{folder.error().message()}".contains("/d/site on db1 is a folder"))
+    missing := copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/nowhere/x", false, false))
+    assert_eq(code_of(missing), ERR_NOT_FOUND)
+    assert("{missing.error().message()}".contains("on nas"))
+    _ := try copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/srv/", false, true))
+    assert_eq(nas.tree.data_of("/srv/a"), "a")
+}
+
+test "a folder copied between two hosts, with -r" {
+    mut db1 := FakeSftp{ tree: fake_tree([fdir("/etc"), fdir("/etc/app"), ffile("/etc/app/a.conf", "a=1"), fdir("/etc/app/d"), ffile("/etc/app/d/b.conf", "b=2")]) }
+    mut nas := FakeLocal{ tree: fake_tree([fdir("/bk")]) }
+    mut sink := quiet_sink()
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    res := try copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/etc/app", "/bk", true, false))
+    assert_eq(nas.tree.data_of("/bk/app/a.conf"), "a=1")
+    assert_eq(nas.tree.data_of("/bk/app/d/b.conf"), "b=2")
+    assert_eq(res.folders, 2)
+}
+
+test "a part file a cut copy left is removed before the next copy of that file" {
+    mut host := FakeSftp{ tree: fake_tree([fdir("/etc"), ffile("/etc/.app.conf.flint-part", "half a fi")]) }
+    mut here := FakeLocal{ tree: fake_tree([ffile("/app.conf", "whole")]) }
+    mut sink := quiet_sink()
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    _ := try copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/app.conf", "/etc/", false, false))
+    assert_eq(host.tree.data_of("/etc/app.conf"), "whole")
+    assert(!host.tree.has("/etc/.app.conf.flint-part"))
+}
+
+test "a copy whose channel died says where its part file may be left" {
+    mut db1 := FakeSftp{ tree: fake_tree([ffile("/big", "0123456789abcdef")]) }
+    mut nas := FakeLocal{ tree: fake_tree([fdir("/srv")]) }
+    nas.tree.fail_write_after = 6
+    nas.tree.remove_dead = true
+    mut sink := quiet_sink()
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    failed := copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/big", "/srv/", false, false))
+    assert_eq(code_of(failed), ERR_IO)
+    assert("{failed.error().message()}".contains(".big.flint-part may be left in /srv on nas"))
+}
+
+test "a copy between two hosts that is cancelled leaves nothing on the destination" {
+    mut db1 := FakeSftp{ tree: fake_tree([ffile("/big", "0123456789abcdef")]) }
+    mut nas := FakeLocal{ tree: fake_tree([fdir("/srv")]) }
+    mut sink := quiet_sink()
+    sink.cancel_after = 2
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    cancelled := copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/big", "/srv/", false, false))
+    assert_eq(code_of(cancelled), ERR_IO)
+    assert(!nas.tree.has("/srv/big"))
+    assert(!nas.tree.has("/srv/.big.flint-part"))
+    assert(db1.tree.has("/big"))
 }

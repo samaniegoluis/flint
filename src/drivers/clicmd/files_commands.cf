@@ -1,18 +1,19 @@
 package clicmd
 
-// `flint cp` (milestone 16): copies between this machine and one host, by alias, in
-// either direction. The handler parses the two paths and the flags, calls one use
-// case and formats the result (Principle 2).
+// `flint cp` (milestones 16, 18): copies between this machine and one host, by alias,
+// in either direction, or from one host to another through Flint. The handler parses
+// the two paths and the flags, calls one use case and formats the result (Principle 2).
 
 import "ext:json"
 import "../../application"
 import "../../domain"
 
 fn cp_usage() -> str {
-    return coded(ERR_USAGE, "usage: flint cp [-r] [--force] <alias>:<path> <local path>  |  flint cp [-r] [--force] <local path> <alias>:<path>")
+    return coded(ERR_USAGE, "usage: flint cp [-r] [--force] <src> <dst>, where one or both name a host as <alias>:<path>")
 }
 
-// The copy `flint cp <src> <dst>` asks for: exactly one side names a host.
+// The copy `flint cp <src> <dst>` asks for: one side names a host, or both (a copy
+// between two hosts, which reads `remote` on `alias` and writes `local` on `to_alias`).
 fn copy_request_from_args(p: ParsedArgs) -> CopyRequest! {
     if p.positionals.len() != 3 || p.has_rest {
         return error(cp_usage())
@@ -21,14 +22,16 @@ fn copy_request_from_args(p: ParsedArgs) -> CopyRequest! {
     dst := p.positional(2)
     src_remote := is_remote_arg(src)
     dst_remote := is_remote_arg(dst)
-    if src_remote && dst_remote {
-        return error(coded(ERR_USAGE, "both paths name a host; `flint cp` copies between this machine and one host (host to host is on the roadmap)"))
-    }
     if !src_remote && !dst_remote {
         return error(coded(ERR_USAGE, "neither path names a host; write one as <alias>:<path>, e.g. web:/etc/app.conf"))
     }
     recursive := p.has_flag("-r") || p.has_flag("--recursive")
     force := p.has_flag("--force")
+    if src_remote && dst_remote {
+        a := try parse_remote_arg(src)
+        b := try parse_remote_arg(dst)
+        return CopyRequest{ id: "cp", alias: a.alias, direction: COPY_RELAY, local: b.path, remote: a.path, recursive: recursive, force: force, to_alias: b.alias }
+    }
     if src_remote {
         r := try parse_remote_arg(src)
         return CopyRequest{ id: "cp", alias: r.alias, direction: COPY_DOWNLOAD, local: dst, remote: r.path, recursive: recursive, force: force }
@@ -49,6 +52,15 @@ fn cp_alias(p: ParsedArgs) -> str {
     return ""
 }
 
+// The destination host of a copy between two hosts ("" for any other copy).
+fn cp_second_alias(p: ParsedArgs) -> str {
+    if !is_remote_arg(p.positional(1)) || !is_remote_arg(p.positional(2)) {
+        return ""
+    }
+    r := parse_remote_arg(p.positional(2)) or RemotePath{ alias: "", path: "" }
+    return r.alias
+}
+
 fn duration_text(ms: i64) -> str {
     if ms < 1000 {
         return "{ms} ms"
@@ -59,10 +71,16 @@ fn duration_text(ms: i64) -> str {
 
 fn copy_summary(r: CopyResult, req: CopyRequest) -> str {
     mut where := "to {r.host}:{req.remote}"
+    if r.direction == COPY_RELAY {
+        where = "from {r.host}:{req.remote} to {r.to_host}:{req.local}"
+        if r.files.len() == 1 && r.folders == 0 {
+            where = "from {r.host}:{r.files[0].source} to {r.to_host}:{r.files[0].target}"
+        }
+    }
     if r.direction == COPY_DOWNLOAD {
         where = "from {r.host}:{req.remote} to {req.local}"
     }
-    if r.files.len() == 1 && r.folders == 0 {
+    if r.files.len() == 1 && r.folders == 0 && r.direction != COPY_RELAY {
         f := r.files[0]
         if r.direction == COPY_UPLOAD {
             where = "to {r.host}:{f.target}"
@@ -84,7 +102,13 @@ fn cmd_cp[P: Prompter, L: LocalFiles, K: TransferSink](p: ParsedArgs, sec: Secre
     s := try open_target(p, sec, c, mut store, src, recents)
     mut link := new_ssh_link()
     mut clock := new_system_clock()
-    res := try copy_with_host(c, mut store, s, mut link, prompter, mut local, mut sink, mut clock, req, opts)
+    mut res := CopyResult{}
+    if req.direction == COPY_RELAY {
+        mut to := new_ssh_link()
+        res = try relay_with_hosts(c, mut store, s, mut link, mut to, prompter, mut sink, mut clock, req, opts)
+    } else {
+        res = try copy_with_host(c, mut store, s, mut link, prompter, mut local, mut sink, mut clock, req, opts)
+    }
     if as_json {
         say(json.stringify(res))
         return 0
