@@ -320,6 +320,17 @@
       // Into a folder and back up with ⌘↑.
       q('[data-file="made"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
       await waitFor(() => aside()?.dataset.filesPath === dir + '/made', 'the subfolder');
+      {
+        // A narrow panel shrinks the folders above, never the one being shown.
+        const nav = q('[data-files-crumbs]');
+        nav.style.maxWidth = '140px';
+        const cur = nav.querySelector('.cur-c');
+        // Reading the boxes lays the page out; no frame is needed (none comes in a headless run).
+        const box = cur && { cr: cur.getBoundingClientRect().right, nr: nav.getBoundingClientRect().right, nw: nav.getBoundingClientRect().width, sw: cur.scrollWidth, cw: cur.clientWidth };
+        const fits = box && cur.textContent === 'made' && box.nw <= 140.5 && box.cr <= box.nr + 0.5 && box.sw <= box.cw;
+        nav.style.maxWidth = '';
+        await check(fits, 'in a narrow panel the breadcrumb keeps the current folder whole' + (fits ? '' : ` ${JSON.stringify(box)}`));
+      }
       q('[data-files-list]').focus();
       q('[data-files-list]').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', code: 'ArrowUp', bubbles: true, cancelable: true, metaKey: mac, ctrlKey: !mac, shiftKey: !mac }));
       await waitFor(() => aside()?.dataset.filesPath === dir, 'back up one folder');

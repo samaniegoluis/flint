@@ -462,6 +462,10 @@ button.act-row.sudo.is-focus, button.act-row.sudo:focus-visible { box-shadow: in
 .crumbs button { padding: 2px 4px; border-radius: var(--radius-xs); color: var(--text-secondary); }
 .crumbs button:hover { background: var(--surface-hover); color: var(--text-primary); }
 .crumbs .cur-c { color: var(--text-primary); }
+.crumbs .crumb { display: flex; align-items: center; gap: 2px; flex: 0 1 auto; min-width: 0; }
+.crumbs .crumb:first-child { flex: none; }
+.crumbs .crumb.crumb-last { flex: 0 0 auto; max-width: 100%; }
+.crumbs .crumb > button, .crumbs .crumb > .cur-c { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .frow { height: 28px; display: grid; grid-template-columns: minmax(0, 1fr) 60px 72px; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3); font-size: var(--fs-sm); color: var(--text-secondary); }
 .frow:hover { background: var(--surface-hover); }
 .frow.sel { background: var(--surface-active); color: var(--text-primary); }

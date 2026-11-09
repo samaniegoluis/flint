@@ -263,13 +263,14 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
 function Crumbs({ path, onGo }: { path: string; onGo: (p: string) => void }) {
   const all = crumbs(path);
   // A deep path keeps the root and its last three folders; "…" climbs to the hidden part.
+  // In a narrow panel the folders above shrink to an ellipsis, so the current one stays seen.
   const parts = all.length > 5 ? [all[0], { name: '…', path: all[all.length - 4].path }, ...all.slice(-3)] : all;
   return (
     <>
       {parts.map((c, i) => {
         const last = i === parts.length - 1;
         return (
-          <span key={c.path + c.name} className="row" style={{ gap: 2, flex: 'none' }}>
+          <span key={c.path + c.name} className={last ? 'crumb crumb-last' : 'crumb'}>
             {i > 1 && <span>/</span>}
             {last && i > 0 ? <span className="cur-c" title={path}>{c.name}</span> : <button onClick={() => onGo(c.path)} title={c.path}>{c.name}</button>}
           </span>
