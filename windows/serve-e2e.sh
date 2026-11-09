@@ -169,6 +169,8 @@ expect 0 "cp up through the app" "" -- cp "$W\\blob.bin" "local:$tmp/blob-up.bin
 check "the upload is byte for byte" 'cmp -s "$WIN_TMP/blob.bin" "$tmp/blob-up.bin"'
 expect 0 "cp down through the app" "" -- cp "local:$tmp/blob-up.bin" "$W\\blob-down.bin"
 check "the download is byte for byte" 'cmp -s "$WIN_TMP/blob.bin" "$WIN_TMP/blob-down.bin"'
+expect 0 "cp from one host to another through the app (milestone 18)" "" -- cp "local:$tmp/blob-up.bin" "local:$tmp/blob-relay.bin"
+check "the host-to-host copy is byte for byte" 'cmp -s "$WIN_TMP/blob.bin" "$tmp/blob-relay.bin"'
 # A new caller (flint ← cscript): the grant above covers "flint, started by wsl" only.
 cp "$here/new-caller.js" "$WIN_TMP/new-caller.js"
 checks=$((checks + 1))

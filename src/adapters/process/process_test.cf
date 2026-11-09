@@ -38,7 +38,8 @@ test "a fresh terminal reports no pending resize" {
 }
 
 test "the executable folder and OS name are known" {
-    assert(executable_dir().starts_with("/"))
     os := os_name()
-    assert(os == "mac" || os == "linux")
+    assert(os == "mac" || os == "linux" || os == "windows")
+    // "C:/..." on Windows (windows-port).
+    assert(executable_dir().starts_with("/") || (os == "windows" && executable_dir().substr(1, 2) == ":/"))
 }
