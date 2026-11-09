@@ -8,6 +8,7 @@ package process
 import cpp "flint_process.hpp" @pkg("flint-native")
 
 import "core:os"
+import "core:str"
 import "core:time"
 import "../../domain"
 
@@ -31,6 +32,30 @@ fn executable_dir() -> str {
         dir = flint_proc::executable_dir();
     }
     return dir
+}
+
+// Windows only (windows-port): starts the program at `path` detached from this
+// process, like `setsid` on POSIX. False when it could not be started, and always
+// false elsewhere (POSIX callers use the shell, drivers/clicmd/serve.cf).
+fn spawn_detached(path: str) -> bool {
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        #if defined(_WIN32)
+        ok = flint_proc::spawn_detached(path);
+        #endif
+    }
+    return ok
+}
+
+// Windows local paths with `/` separators, so the rest of Flint sees one form. The
+// CLI applies it to its arguments, the GUI to what the file dialogs return
+// (windows-port).
+fn local_slashes(path: str) -> str {
+    if os_name() == "windows" {
+        return str.replace(path, "\\", "/")
+    }
+    return path
 }
 
 // "mac" or "linux": the keyboard map and window chrome differ (CF-031).
@@ -93,7 +118,12 @@ fn current_dir() -> str {
     if captured {
         return dir
     }
-    return os.cwd()
+    here: str = os.cwd()
+    if os_name() == "windows" {
+        // One form for local paths on Windows: `/` separators (windows-port).
+        return str.replace(here, "\\", "/")
+    }
+    return here
 }
 
 // Flushes stdout and stderr and ends the process with `code`.

@@ -8,13 +8,26 @@ fn fonts_port_check[F: FontCatalog](f: F) -> []str {
 
 test "the OS font catalog lists monospaced families" {
     names := fonts_port_check(new_os_font_catalog())
-    // Every macOS has Menlo; a Linux box without fontconfig lists none.
+    // Every macOS has Menlo, every Windows Consolas; a Linux box without fontconfig
+    // lists none.
     mut apple := false
+    mut windows := false
     // CFIRE-UPSTREAM: CF-031
     cpp {
         #if defined(__APPLE__)
         apple = true;
+        #elif defined(_WIN32)
+        windows = true;
         #endif
+    }
+    if windows {
+        mut consolas := false
+        for n in names {
+            if n == "Consolas" {
+                consolas = true
+            }
+        }
+        assert(consolas, "Consolas should be listed as monospaced: {names}")
     }
     if apple {
         mut menlo := false

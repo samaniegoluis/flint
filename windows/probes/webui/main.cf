@@ -1,0 +1,44 @@
+package main
+
+import "core:os"
+import "ext:webui"
+
+type Greet struct {
+    name: str `json:"name"`
+}
+
+// WebUI probe: a page, one bound call that returns a value, one event to the page.
+// Done when the window shows "bridge ok: hello, Windows" and "event ok". The backend also
+// prints each step; with PROBE_AUTOQUIT=1 it closes the window once the page saw the event.
+fn main() {
+    mut app := webui.new_app("cfire webui probe", 640, 360)
+    app.set_html(`<!doctype html><html><body style="font:16px system-ui;padding:24px">
+<h1>cfire webui on Windows</h1>
+<p id="bridge">bridge: waiting…</p>
+<p id="event">event: waiting…</p>
+<script>
+window.runtime.EventsOn("ping", d => {
+  document.getElementById("event").textContent = "event ok: " + JSON.stringify(d)
+  window.runtime.EventsEmit("seen", {origin: location.origin, ua: navigator.userAgent})
+})
+window.backend.greet({name: "Windows"}).then(r => {
+  document.getElementById("bridge").textContent = "bridge ok: " + r
+  window.runtime.EventsEmit("ready", "{}")
+}).catch(e => { document.getElementById("bridge").textContent = "bridge FAILED: " + e })
+</script></body></html>`)
+    app.bind[Greet]("greet") |g| {
+        return "hello, {g.name}"
+    }
+    app.on("ready") |_d| {
+        println("backend: page called greet and got its answer")
+        msg: str = "pong"
+        app.emit("ping", msg)
+    }
+    app.on("seen") |d| {
+        println("backend: page received the event: {d}")
+        if os.getenv("PROBE_AUTOQUIT") == "1" {
+            app.eval("window.runtime.Quit()")
+        }
+    }
+    app.run()
+}

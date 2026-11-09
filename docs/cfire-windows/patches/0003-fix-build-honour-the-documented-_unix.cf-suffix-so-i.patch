@@ -1,0 +1,36 @@
+From 2159fbdcec45ba6d9e065fd940fc6f409254df5a Mon Sep 17 00:00:00 2001
+From: Luis Samaniego <luis.samaniego86@gmail.com>
+Date: Mon, 9 Nov 2026 09:25:35 -0600
+Subject: [PATCH 3/8] fix(build): honour the documented _unix.cf suffix, so it
+ is not compiled for Windows
+
+cfire doc --llm lists *_unix.cf among the OS-conditional files, but
+file_matches_target() only knew _darwin/_macos, _ios, _linux and _windows. A
+package with name_unix.cf and name_windows.cf built for x86_64-w64-mingw32
+compiled both: 'redefinition of cfire_pkg_plat__name'.
+
+_unix now means every target except Windows and wasm.
+---
+ src/build/package_loader.hpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/build/package_loader.hpp b/src/build/package_loader.hpp
+index 1865c5f..bb5d886 100644
+--- a/src/build/package_loader.hpp
++++ b/src/build/package_loader.hpp
+@@ -45,6 +45,12 @@ namespace cfire::build {
+     if (stem.ends_with("_ios")) return plan.is_ios;
+     if (stem.ends_with("_linux")) return is_linux;
+     if (stem.ends_with("_windows")) return is_windows;
++    // `_unix` is documented ("compiled only when targeting the matching platform") but was
++    // not handled, so a `_unix.cf` file was compiled for Windows too and clashed with its
++    // `_windows.cf` sibling ("redefinition of ..."). Unix = every target but Windows and wasm.
++    if (stem.ends_with("_unix")) {
++        return !is_windows && plan.target_triple.find("wasm") == std::string::npos;
++    }
+     return true;
+ }
+ 
+-- 
+2.43.0
+

@@ -90,6 +90,63 @@ inline int forget(const std::string& service, const std::string& account) {
 
 }  // namespace flint_kc
 
+#elif defined(_WIN32)  // Windows (windows-port): Credential Manager
+
+#include <windows.h>
+#include <wincred.h>
+
+namespace flint_kc {
+
+// One generic credential per vault: target "<service>/<account>" (e.g.
+// "Flint/3f2a..."), user name = the account, blob = the key bytes. Persisted
+// per user on this machine (CRED_PERSIST_LOCAL_MACHINE: not roamed to other PCs).
+inline std::wstring target(const std::string& service, const std::string& account) {
+    std::string t = service + "/" + account;
+    int n = ::MultiByteToWideChar(CP_UTF8, 0, t.data(), static_cast<int>(t.size()), nullptr, 0);
+    std::wstring w(static_cast<size_t>(n), L'\0');
+    ::MultiByteToWideChar(CP_UTF8, 0, t.data(), static_cast<int>(t.size()), w.data(), n);
+    return w;
+}
+
+inline int map_error(DWORD e) {
+    if (e == ERROR_NOT_FOUND) return 1;
+    if (e == ERROR_NO_SUCH_LOGON_SESSION) return 2;  // no credential store for this session
+    return 3;
+}
+
+inline int save(const std::string& service, const std::string& account, const std::vector<std::byte>& secret) {
+    if (secret.size() > CRED_MAX_CREDENTIAL_BLOB_SIZE) return 3;
+    std::wstring t = target(service, account);
+    std::wstring user(account.begin(), account.end());
+    CREDENTIALW c{};
+    c.Type = CRED_TYPE_GENERIC;
+    c.TargetName = t.data();
+    c.Comment = const_cast<wchar_t*>(L"Flint vault key");
+    c.CredentialBlobSize = static_cast<DWORD>(secret.size());
+    c.CredentialBlob = reinterpret_cast<LPBYTE>(const_cast<std::byte*>(secret.data()));
+    c.Persist = CRED_PERSIST_LOCAL_MACHINE;
+    c.UserName = user.data();
+    return ::CredWriteW(&c, 0) ? 0 : map_error(::GetLastError());
+}
+
+inline int load(const std::string& service, const std::string& account, std::vector<std::byte>& out) {
+    std::wstring t = target(service, account);
+    PCREDENTIALW c = nullptr;
+    if (!::CredReadW(t.c_str(), CRED_TYPE_GENERIC, 0, &c)) return map_error(::GetLastError());
+    const auto* p = reinterpret_cast<const std::byte*>(c->CredentialBlob);
+    out.assign(p, p + c->CredentialBlobSize);
+    ::SecureZeroMemory(c->CredentialBlob, c->CredentialBlobSize);
+    ::CredFree(c);
+    return 0;
+}
+
+inline int forget(const std::string& service, const std::string& account) {
+    std::wstring t = target(service, account);
+    return ::CredDeleteW(t.c_str(), CRED_TYPE_GENERIC, 0) ? 0 : map_error(::GetLastError());
+}
+
+}  // namespace flint_kc
+
 #else  // Linux: Secret Service through libsecret
 
 #include <libsecret/secret.h>

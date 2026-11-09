@@ -621,8 +621,14 @@ fn app_launch_command() -> []str {
     if os_name() == "mac" {
         return ["open", "-a", "Flint"]
     }
-    // Next to this flint (a build tree or an install), else on the PATH.
-    beside: []str = [executable_dir() + "/gui/Flint", executable_dir() + "/Flint", executable_dir() + "/flint-app"]
+    // Next to this flint (a build tree or an install), else on the PATH. On Windows,
+    // Flint.exe next to flint.exe is the same name to the file system (it ignores
+    // case): the app is gui\Flint.exe in a build tree, flint-app.exe in an install.
+    // windows-port.
+    mut beside: []str = [executable_dir() + "/gui/Flint", executable_dir() + "/Flint", executable_dir() + "/flint-app"]
+    if os_name() == "windows" {
+        beside = [executable_dir() + "/gui/Flint.exe", executable_dir() + "/flint-app.exe"]
+    }
     for path in beside {
         if fs.exists(path) {
             return [path]
@@ -644,6 +650,10 @@ fn start_app() -> bool {
             return false
         }
         return r.exit_code == 0
+    }
+    // Windows has no sh or setsid: CreateProcess, detached (windows-port).
+    if os_name() == "windows" {
+        return spawn_detached(cmd[0])
     }
     // The program path is an argument of the shell, never part of its script.
     // Its output goes nowhere: `os.command` waits until every holder of its pipes is gone.

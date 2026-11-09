@@ -1,0 +1,438 @@
+From c72836e448583743d406fe425053d10fb63308f3 Mon Sep 17 00:00:00 2001
+From: Luis Samaniego <luis.samaniego86@gmail.com>
+Date: Mon, 9 Nov 2026 09:43:42 -0600
+Subject: [PATCH 4/8] feat(webui): a real WebView2 in the Windows window
+ (CF-001.a-e, g)
+
+The Win32 backend opened an empty window: nothing created a WebView2. Add a
+Wv2Host, modelled on the Linux backend:
+
+- WebView2Loader.dll loaded at run time (a missing DLL is a message, not a
+  process that cannot start); environment with its user data in
+  %LOCALAPPDATA%\<exe>\WebView2, not next to the executable.
+- kPreloadBridgeJs at document start; window.chrome.webview.postMessage into
+  AppState::handle_ipc_message.
+- Assets from AppState::resolve_asset on https://app.localhost/, answered in
+  WebResourceRequested (no network). WebView2 has no app:// scheme without
+  ICoreWebView2EnvironmentOptions4 registrations.
+- platform_eval posts the script to the window (kWmCfireEval) so ExecuteScript
+  always runs on the UI thread; scripts sent before the first page load are
+  queued and flushed on NavigationCompleted.
+- A transparent page background only when asked (else WebView2's white, as on
+  the other backends), per-monitor
+  DPI awareness, and a clear message when the WebView2 Runtime is missing.
+- COM callbacks from lambdas (Wv2Handler): WRL is MSVC-only. IIDs are parsed
+  from WebView2.h's uuid strings: the SDK defines them only in an MSVC .lib.
+
+run_webview_test uses the same host offscreen, so cfire test on a webui app
+now loads the page and returns whether it called runtime.Quit().
+Links -lshlwapi (SHCreateMemStream) for Windows GUI builds.
+---
+ runtime/core/webui/windows_webview2.hpp | 332 ++++++++++++++++++++++++
+ src/buildsys.hpp                        |   4 +-
+ 2 files changed, 334 insertions(+), 2 deletions(-)
+
+diff --git a/runtime/core/webui/windows_webview2.hpp b/runtime/core/webui/windows_webview2.hpp
+index ba45a2b..793f875 100644
+--- a/runtime/core/webui/windows_webview2.hpp
++++ b/runtime/core/webui/windows_webview2.hpp
+@@ -155,8 +155,14 @@ struct Win32WindowContext {
+     std::shared_ptr<AppState> state;
+     HWND hwnd = nullptr;
+     std::function<void(RECT)> on_resize;
++    // Runs a script on the UI thread. AppState::eval_js may be called from any thread
++    // (async RPC workers, app code); platform_eval posts kWmCfireEval and this runs it.
++    std::function<void(const std::string&)> on_eval;
+ };
+ 
++// Posted by platform_eval with a heap std::string* in lParam; the WndProc owns and frees it.
++inline constexpr UINT kWmCfireEval = WM_APP + 2;
++
+ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+     auto* ctx = reinterpret_cast<Win32WindowContext*>(::GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+     switch (msg) {
+@@ -243,6 +249,11 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam,
+             }
+             return ::DefWindowProcW(hwnd, msg, wParam, lParam);
+         }
++        case kWmCfireEval: {
++            std::unique_ptr<std::string> js(reinterpret_cast<std::string*>(lParam));
++            if (ctx && ctx->on_eval && js) ctx->on_eval(*js);
++            return 0;
++        }
+         case WM_DESTROY: {
+             if (ctx && ctx->state) {
+                 ctx->state->quit_requested.store(true, std::memory_order_relaxed);
+@@ -257,13 +268,314 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam,
+ 
+ #if __has_include(<WebView2.h>)
+ #include <WebView2.h>
++#include <shlwapi.h>
+ #define CFIRE_HAS_WEBVIEW2_HEADER 1
+ #else
+ #define CFIRE_HAS_WEBVIEW2_HEADER 0
+ #endif
+ 
++#if CFIRE_HAS_WEBVIEW2_HEADER
++// --- WebView2 host (CF-001.a-e) -----------------------------------------------------------
++//
++// The same contract as the Linux backend: kPreloadBridgeJs at document start, messages from
++// the page (`window.chrome.webview.postMessage`) into AppState::handle_ipc_message, assets
++// from AppState::resolve_asset, and every script run on the UI thread.
++
++// The page origin on Windows. WebView2 has no `app://` scheme unless the environment is
++// created with ICoreWebView2EnvironmentOptions4 custom scheme registrations, so assets are
++// served from a virtual host whose requests are answered in WebResourceRequested: nothing
++// goes to the network (Tauri does the same with http://tauri.localhost). A `.localhost`
++// host is a secure context, like `app://localhost` on the other backends.
++inline constexpr std::wstring_view kWv2Origin = L"https://app.localhost";
++
++// IIDs from the uuid strings in WebView2.h. The SDK defines them only in an MSVC library
++// (WebView2Guid.lib), and mingw has no __uuidof for these interfaces.
++constexpr auto wv2_hex(char c) -> unsigned {
++    return c <= '9' ? static_cast<unsigned>(c - '0') : static_cast<unsigned>((c | 0x20) - 'a' + 10);
++}
++constexpr auto wv2_iid(const char (&u)[37]) -> IID {
++    auto h = [&](int at, int n) {
++        unsigned long long v = 0;
++        for (int i = 0; i < n; ++i) v = (v << 4) | wv2_hex(u[at + i]);
++        return v;
++    };
++    IID g{};
++    g.Data1 = static_cast<unsigned long>(h(0, 8));
++    g.Data2 = static_cast<unsigned short>(h(9, 4));
++    g.Data3 = static_cast<unsigned short>(h(14, 4));
++    g.Data4[0] = static_cast<unsigned char>(h(19, 2));
++    g.Data4[1] = static_cast<unsigned char>(h(21, 2));
++    for (int i = 0; i < 6; ++i) g.Data4[2 + i] = static_cast<unsigned char>(h(24 + 2 * i, 2));
++    return g;
++}
++
++// One COM object per callback, built from a lambda: WRL's Callback<> is MSVC-only.
++// The signature comes from I::Invoke, so each use names only the interface and its uuid.
++template <class I, class M>
++struct Wv2Handler;
++
++template <class I, class... A>
++struct Wv2Handler<I, HRESULT (STDMETHODCALLTYPE I::*)(A...)> final : I {
++    IID iid;
++    std::function<HRESULT(A...)> fn;
++    std::atomic<ULONG> refs{1};
++
++    Wv2Handler(IID i, std::function<HRESULT(A...)> f) : iid(i), fn(std::move(f)) {}
++    virtual ~Wv2Handler() = default;
++
++    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** out) override {
++        if (!out) return E_POINTER;
++        if (IsEqualIID(riid, __uuidof(IUnknown)) || IsEqualIID(riid, iid)) {
++            *out = static_cast<I*>(this);
++            AddRef();
++            return S_OK;
++        }
++        *out = nullptr;
++        return E_NOINTERFACE;
++    }
++    ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
++    ULONG STDMETHODCALLTYPE Release() override {
++        ULONG n = --refs;
++        if (n == 0) delete this;
++        return n;
++    }
++    HRESULT STDMETHODCALLTYPE Invoke(A... a) override { return fn ? fn(a...) : S_OK; }
++};
++
++// Returns a handler holding one reference: the caller passes it to WebView2 (which takes
++// its own) and then Releases it.
++template <class I, class F>
++[[nodiscard]] auto wv2_handler(const char (&uuid)[37], F&& f) -> I* {
++    using H = Wv2Handler<I, decltype(&I::Invoke)>;
++    return new H(wv2_iid(uuid), std::forward<F>(f));
++}
++
++inline constexpr char kIidEnvCompleted[] = "4e8a3389-c9d8-4bd2-b6b5-124fee6cc14d";
++inline constexpr char kIidControllerCompleted[] = "6c4819f3-c9b7-4260-8127-c9f5bde7f68c";
++inline constexpr char kIidWebMessageReceived[] = "57213f19-00e6-49fa-8e07-898ea01ecbd2";
++inline constexpr char kIidWebResourceRequested[] = "ab00b74c-15f1-4646-80e8-e76341d25d71";
++inline constexpr char kIidNavigationCompleted[] = "d33a35bf-1c49-4f98-93ab-006e0533fe1c";
++inline constexpr char kIidController2[] = "c979903e-d4ca-4228-92eb-47ee3fa96eab";
++
++using Wv2CreateEnvironmentFn = HRESULT(STDAPICALLTYPE*)(
++    PCWSTR, PCWSTR, ICoreWebView2EnvironmentOptions*,
++    ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler*);
++
++// WebView2Loader.dll from the SDK, next to the executable (LoadLibraryW looks in the
++// executable's folder first). Loaded at run time so a missing DLL is a message, not a
++// process that fails to start.
++[[nodiscard]] inline auto wv2_load_loader() -> Wv2CreateEnvironmentFn {
++    HMODULE mod = ::LoadLibraryW(L"WebView2Loader.dll");
++    if (!mod) return nullptr;
++    void* sym = reinterpret_cast<void*>(::GetProcAddress(mod, "CreateCoreWebView2EnvironmentWithOptions"));
++    return reinterpret_cast<Wv2CreateEnvironmentFn>(sym);
++}
++
++// %LOCALAPPDATA%\<exe name>\WebView2. WebView2's default is a folder next to the
++// executable, which fails when the program is installed somewhere read-only.
++[[nodiscard]] inline auto wv2_user_data_dir() -> std::wstring {
++    wchar_t base[MAX_PATH];
++    DWORD n = ::GetEnvironmentVariableW(L"LOCALAPPDATA", base, MAX_PATH);
++    if (n == 0 || n >= MAX_PATH) return L"";
++    wchar_t exe[MAX_PATH];
++    DWORD m = ::GetModuleFileNameW(nullptr, exe, MAX_PATH);
++    std::wstring stem = (m > 0 && m < MAX_PATH) ? std::filesystem::path(exe).stem().wstring() : L"cfire-webui";
++    return (std::filesystem::path(base) / stem / L"WebView2").wstring();
++}
++
++struct Wv2Host {
++    std::shared_ptr<AppState> state;
++    HWND hwnd = nullptr;
++    ICoreWebView2Environment* env = nullptr;
++    ICoreWebView2Controller* controller = nullptr;
++    ICoreWebView2* webview = nullptr;
++    std::vector<std::string> pending_js{};  // eval_js calls made before the first page load
++    bool loaded = false;
++
++    Wv2Host(std::shared_ptr<AppState> st, HWND h) : state(std::move(st)), hwnd(h) {}
++    Wv2Host(const Wv2Host&) = delete;
++    Wv2Host& operator=(const Wv2Host&) = delete;
++    ~Wv2Host() {
++        if (webview) webview->Release();
++        if (controller) {
++            controller->Close();
++            controller->Release();
++        }
++        if (env) env->Release();
++    }
++
++    // UI thread only (the WndProc's kWmCfireEval).
++    void eval(const std::string& js) {
++        if (!webview || !loaded) {
++            pending_js.push_back(js);
++            return;
++        }
++        std::wstring w = utf8_to_wide(js);
++        webview->ExecuteScript(w.c_str(), nullptr);
++    }
++
++    void resize(RECT rc) {
++        if (controller) controller->put_Bounds(rc);
++    }
++
++    static void report(const char* what, HRESULT hr) {
++        if (hr == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) {
++            std::fprintf(stderr, "webui: %s failed: the WebView2 Runtime is not installed "
++                                 "(https://developer.microsoft.com/microsoft-edge/webview2/).\n", what);
++        } else {
++            std::fprintf(stderr, "webui: %s failed (HRESULT 0x%08lx).\n", what, static_cast<unsigned long>(hr));
++        }
++    }
++
++    auto start() -> HRESULT {
++        Wv2CreateEnvironmentFn create = wv2_load_loader();
++        if (!create) {
++            std::fprintf(stderr, "webui: WebView2Loader.dll was not found next to the executable; "
++                                 "copy it from the Microsoft.Web.WebView2 SDK (build/native/x64).\n");
++            return E_FAIL;
++        }
++        std::wstring udf = wv2_user_data_dir();
++        auto* h = wv2_handler<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
++            kIidEnvCompleted, [this](HRESULT hr, ICoreWebView2Environment* e) -> HRESULT { return on_environment(hr, e); });
++        HRESULT hr = create(nullptr, udf.empty() ? nullptr : udf.c_str(), nullptr, h);
++        h->Release();
++        if (FAILED(hr)) report("CreateCoreWebView2EnvironmentWithOptions", hr);
++        return hr;
++    }
++
++    auto on_environment(HRESULT hr, ICoreWebView2Environment* e) -> HRESULT {
++        if (FAILED(hr) || !e) {
++            report("creating the WebView2 environment", FAILED(hr) ? hr : E_POINTER);
++            return S_OK;
++        }
++        env = e;
++        env->AddRef();
++        auto* h = wv2_handler<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
++            kIidControllerCompleted, [this](HRESULT r, ICoreWebView2Controller* c) -> HRESULT { return on_controller(r, c); });
++        HRESULT r = env->CreateCoreWebView2Controller(hwnd, h);
++        h->Release();
++        if (FAILED(r)) report("CreateCoreWebView2Controller", r);
++        return S_OK;
++    }
++
++    auto on_controller(HRESULT hr, ICoreWebView2Controller* c) -> HRESULT {
++        if (FAILED(hr) || !c) {
++            report("creating the WebView2 controller", FAILED(hr) ? hr : E_POINTER);
++            return S_OK;
++        }
++        controller = c;
++        controller->AddRef();
++        controller->get_CoreWebView2(&webview);
++        if (!webview) return S_OK;
++
++        // Transparent background only when asked. Otherwise WebView2's default (white), like
++        // WKWebView and WebKitGTK: dark_mode is the window chrome, not the page, and painting
++        // the page dark left unstyled pages black-on-dark.
++        if (state->transparent) {
++            ICoreWebView2Controller2* c2 = nullptr;
++            IID iid_c2 = wv2_iid(kIidController2);
++            if (SUCCEEDED(controller->QueryInterface(iid_c2, reinterpret_cast<void**>(&c2))) && c2) {
++                c2->put_DefaultBackgroundColor(COREWEBVIEW2_COLOR{0, 0, 0, 0});
++                c2->Release();
++            }
++        }
++
++        ICoreWebView2Settings* settings = nullptr;
++        if (SUCCEEDED(webview->get_Settings(&settings)) && settings) {
++            settings->put_IsStatusBarEnabled(FALSE);
++            settings->put_IsWebMessageEnabled(TRUE);
++            settings->Release();
++        }
++
++        RECT rc{};
++        ::GetClientRect(hwnd, &rc);
++        controller->put_Bounds(rc);
++
++        std::wstring preload = utf8_to_wide(kPreloadBridgeJs);
++        webview->AddScriptToExecuteOnDocumentCreated(preload.c_str(), nullptr);
++
++        EventRegistrationToken tok{};
++        auto* msg_h = wv2_handler<ICoreWebView2WebMessageReceivedEventHandler>(
++            kIidWebMessageReceived, [this](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
++                LPWSTR raw = nullptr;
++                if (args && SUCCEEDED(args->TryGetWebMessageAsString(&raw)) && raw) {
++                    std::string m = wide_to_utf8(raw);
++                    ::CoTaskMemFree(raw);
++                    state->handle_ipc_message(m);
++                }
++                return S_OK;
++            });
++        webview->add_WebMessageReceived(msg_h, &tok);
++        msg_h->Release();
++
++        std::wstring filter = std::wstring(kWv2Origin) + L"/*";
++        webview->AddWebResourceRequestedFilter(filter.c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
++        auto* res_h = wv2_handler<ICoreWebView2WebResourceRequestedEventHandler>(
++            kIidWebResourceRequested, [this](ICoreWebView2*, ICoreWebView2WebResourceRequestedEventArgs* args) -> HRESULT {
++                serve(args);
++                return S_OK;
++            });
++        webview->add_WebResourceRequested(res_h, &tok);
++        res_h->Release();
++
++        auto* nav_h = wv2_handler<ICoreWebView2NavigationCompletedEventHandler>(
++            kIidNavigationCompleted, [this](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
++                if (!loaded) {
++                    loaded = true;
++                    auto queued = std::move(pending_js);
++                    pending_js.clear();
++                    for (const auto& js : queued) eval(js);
++                }
++                return S_OK;
++            });
++        webview->add_NavigationCompleted(nav_h, &tok);
++        nav_h->Release();
++
++        std::wstring url = std::wstring(kWv2Origin) + L"/index.html";
++        webview->Navigate(url.c_str());
++        return S_OK;
++    }
++
++    void serve(ICoreWebView2WebResourceRequestedEventArgs* args) {
++        if (!args || !env) return;
++        ICoreWebView2WebResourceRequest* req = nullptr;
++        if (FAILED(args->get_Request(&req)) || !req) return;
++        LPWSTR uri_w = nullptr;
++        req->get_Uri(&uri_w);
++        req->Release();
++        std::string uri = uri_w ? wide_to_utf8(uri_w) : std::string{};
++        if (uri_w) ::CoTaskMemFree(uri_w);
++
++        std::string origin = wide_to_utf8(kWv2Origin);
++        std::string path = uri.starts_with(origin) ? uri.substr(origin.size()) : std::string("/");
++        auto asset = state->resolve_asset(path);
++        int status = asset ? 200 : 404;
++        std::string body = asset ? asset->content : std::string("404 Not Found");
++        std::string mime = asset ? asset->mime : std::string("text/plain; charset=utf-8");
++
++        IStream* stream = SHCreateMemStream(reinterpret_cast<const BYTE*>(body.data()), static_cast<UINT>(body.size()));
++        std::wstring headers = L"Content-Type: " + utf8_to_wide(mime) + L"\r\nCache-Control: no-store";
++        ICoreWebView2WebResourceResponse* resp = nullptr;
++        env->CreateWebResourceResponse(stream, status, status == 200 ? L"OK" : L"Not Found", headers.c_str(), &resp);
++        if (resp) {
++            args->put_Response(resp);
++            resp->Release();
++        }
++        if (stream) stream->Release();
++    }
++};
++#endif // CFIRE_HAS_WEBVIEW2_HEADER
++
+ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool offscreen_test = false, std::int32_t timeout_ms = 3000) {
+     (void)::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
++    // Sharp text on high-DPI screens; without it Windows bitmap-scales the whole window.
++    // Looked up at run time: the API is Windows 10 1703+, and the headers hide it unless
++    // _WIN32_WINNT says so.
++    if (HMODULE user32 = ::GetModuleHandleW(L"user32.dll")) {
++        using SetDpiCtxFn = BOOL(WINAPI*)(HANDLE);
++        void* sym = reinterpret_cast<void*>(::GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
++        if (sym) (void)reinterpret_cast<SetDpiCtxFn>(sym)(reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(-4))); // PER_MONITOR_AWARE_V2
++    }
+ 
+     HINSTANCE hInst = ::GetModuleHandleW(nullptr);
+     const wchar_t* kClassName = L"CfireWebUIWindowClass";
+@@ -376,6 +688,21 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
+         };
+     }
+ 
++#if CFIRE_HAS_WEBVIEW2_HEADER
++    std::optional<Wv2Host> wv2;
++    wv2.emplace(state_, hwnd);
++    ctx.on_resize = [&wv2](RECT rc) { if (wv2) wv2->resize(rc); };
++    ctx.on_eval = [&wv2](const std::string& js) { if (wv2) wv2->eval(js); };
++    {
++        std::lock_guard<std::recursive_mutex> lock(state_->mtx);
++        state_->platform_eval = [hwnd](const std::string& js) {
++            auto* copy = new std::string(js);
++            if (!::PostMessageW(hwnd, kWmCfireEval, 0, reinterpret_cast<LPARAM>(copy))) delete copy;
++        };
++    }
++    (void)wv2->start();
++#endif
++
+     if (!offscreen_test) {
+         ::ShowWindow(hwnd, SW_SHOW);
+         ::UpdateWindow(hwnd);
+@@ -421,6 +748,11 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
+         state_->platform_show_window = nullptr;
+         state_->platform_quit = nullptr;
+     }
++#if CFIRE_HAS_WEBVIEW2_HEADER
++    ctx.on_eval = nullptr;
++    ctx.on_resize = nullptr;
++    wv2.reset();
++#endif
+     ::CoUninitialize();
+ }
+ 
+diff --git a/src/buildsys.hpp b/src/buildsys.hpp
+index e965589..ff47d2e 100644
+--- a/src/buildsys.hpp
++++ b/src/buildsys.hpp
+@@ -381,14 +381,14 @@ namespace cfire::build {
+                         }
+ #elif defined(_WIN32)
+                         plan.ldflags.insert(plan.ldflags.end(), {
+-                            "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32", "-lcomdlg32"
++                            "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32", "-lcomdlg32", "-lshlwapi"
+                         });
+ #endif
+                         if (plan.target_triple.find("windows") != std::string::npos ||
+                             plan.target_triple.find("win32") != std::string::npos ||
+                             plan.target_triple.find("mingw") != std::string::npos) {
+                             plan.ldflags.insert(plan.ldflags.end(), {
+-                                "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32", "-lcomdlg32"
++                                "-luser32", "-lgdi32", "-lshell32", "-lole32", "-ldwmapi", "-ladvapi32", "-lcomdlg32", "-lshlwapi"
+                             });
+                         }
+                     }
+-- 
+2.43.0
+

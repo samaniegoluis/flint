@@ -20,11 +20,7 @@
 #include <thread>
 #include <vector>
 #include <chrono>
-#include <fcntl.h>
-#include <netdb.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#include "flint_sock.hpp"  // sockets on POSIX and Windows (windows-port)
 
 namespace flint_ssh {
 
@@ -165,38 +161,36 @@ inline int dial_candidates(const std::vector<std::string>& candidates, int port,
             err = "bad address " + addr;
             continue;
         }
-        int fd = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        int fd = flint_sock::open(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (fd < 0) {
-            err = std::strerror(errno);
+            err = flint_sock::error_text(flint_sock::last_error());
             ::freeaddrinfo(ai);
             continue;
         }
-        int flags = ::fcntl(fd, F_GETFL, 0);
-        ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-        int rc = ::connect(fd, ai->ai_addr, ai->ai_addrlen);
-        int why = rc == 0 ? 0 : errno;
+        flint_sock::set_nonblocking(fd, true);
+        int rc = ::connect(fd, ai->ai_addr, static_cast<flint_sock::socklen>(ai->ai_addrlen));
+        int why = rc == 0 ? 0 : flint_sock::last_error();
         ::freeaddrinfo(ai);
-        if (rc != 0 && why == EINPROGRESS) {
+        if (rc != 0 && flint_sock::in_progress(why)) {
             auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - clock::now()).count();
-            pollfd p{fd, POLLOUT, 0};
-            int pr = left > 0 ? ::poll(&p, 1, static_cast<int>(left)) : 0;
+            int pr = left > 0 ? flint_sock::poll_one(fd, POLLOUT, static_cast<int>(left)) : 0;
             if (pr > 0) {
                 int so = 0;
-                socklen_t len = sizeof so;
-                ::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so, &len);
+                flint_sock::socklen len = sizeof so;
+                ::getsockopt(fd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so), &len);
                 rc = so == 0 ? 0 : -1;
                 why = so;
             } else {
                 rc = -1;
-                why = pr == 0 ? ETIMEDOUT : errno;
+                why = pr == 0 ? flint_sock::kTimedOut : flint_sock::last_error();
             }
         }
         if (rc == 0) {
-            ::fcntl(fd, F_SETFL, flags);
+            flint_sock::set_nonblocking(fd, false);
             return fd;
         }
-        err = addr + ": " + std::strerror(why);
-        ::close(fd);
+        err = addr + ": " + flint_sock::error_text(why);
+        flint_sock::close(fd);
         if (clock::now() >= deadline) {
             err = "timed out";
             break;
@@ -211,6 +205,7 @@ inline int dial_tcp(const std::string& host, int port, long timeout_secs, std::s
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     addrinfo* list = nullptr;
+    flint_sock::init();
     int gai = ::getaddrinfo(host.c_str(), nullptr, &hints, &list);
     if (gai != 0) {
         err = std::string("cannot resolve ") + host + ": " + gai_strerror(gai);
@@ -219,7 +214,7 @@ inline int dial_tcp(const std::string& host, int port, long timeout_secs, std::s
     std::vector<std::string> candidates;
     for (addrinfo* ai = list; ai; ai = ai->ai_next) {
         char buf[NI_MAXHOST];
-        if (::getnameinfo(ai->ai_addr, ai->ai_addrlen, buf, sizeof buf, nullptr, 0, NI_NUMERICHOST) == 0) {
+        if (::getnameinfo(ai->ai_addr, static_cast<flint_sock::socklen>(ai->ai_addrlen), buf, sizeof buf, nullptr, 0, NI_NUMERICHOST) == 0) {
             candidates.emplace_back(buf);
         }
     }
@@ -253,8 +248,8 @@ struct Tunnel {
 
 inline bool write_all(int fd, const char* data, size_t len) {
     while (len > 0) {
-        ssize_t w = ::write(fd, data, len);
-        if (w < 0 && errno == EINTR) continue;
+        int w = flint_sock::send_some(fd, data, len);
+        if (w < 0 && flint_sock::interrupted(flint_sock::last_error())) continue;
         if (w <= 0) return false;
         data += w;
         len -= static_cast<size_t>(w);
@@ -274,17 +269,17 @@ inline void pump(Tunnel* t) {
         outer_fd = ssh_get_fd(t->outer);
     }
     while (!t->stop.load()) {
-        pollfd p[2] = {{t->local_fd, POLLIN, 0}, {outer_fd, POLLIN, 0}};
-        int pr = ::poll(p, outer_fd >= 0 ? 2 : 1, 5);
-        if (pr < 0 && errno != EINTR) break;
-        if (pr > 0 && (p[0].revents & (POLLIN | POLLHUP | POLLERR))) {
-            ssize_t n = ::read(t->local_fd, buf, sizeof buf);
+        short revents = 0;
+        int pr = flint_sock::poll_two(t->local_fd, outer_fd, POLLIN, 5, &revents);
+        if (pr < 0 && !flint_sock::interrupted(flint_sock::last_error())) break;
+        if (pr > 0 && (revents & (POLLIN | POLLHUP | POLLERR))) {
+            int n = flint_sock::recv_some(t->local_fd, buf, sizeof buf);
             if (n <= 0) break;
             std::lock_guard<std::mutex> g(*t->outer_lock);
             size_t off = 0;
             bool ok = true;
             while (off < static_cast<size_t>(n)) {
-                int w = ssh_channel_write(t->channel, buf + off, static_cast<uint32_t>(n - static_cast<ssize_t>(off)));
+                int w = ssh_channel_write(t->channel, buf + off, static_cast<uint32_t>(static_cast<size_t>(n) - off));
                 if (w <= 0) { ok = false; break; }
                 off += static_cast<size_t>(w);
             }
@@ -305,7 +300,7 @@ inline void pump(Tunnel* t) {
         }
         if (done) break;
     }
-    ::shutdown(t->local_fd, SHUT_RDWR);
+    flint_sock::shutdown_both(t->local_fd);
 }
 
 // Opens the tunnel to host:port through `outer`. On success `inner_fd` is the
@@ -327,8 +322,8 @@ inline std::shared_ptr<Tunnel> open_tunnel(ssh_session outer, std::shared_ptr<st
         }
     }
     int fds[2];
-    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
-        err = std::strerror(errno);
+    if (flint_sock::pair(fds) != 0) {
+        err = flint_sock::error_text(flint_sock::last_error());
         std::lock_guard<std::mutex> g(*lock);
         ssh_channel_close(t->channel);
         ssh_channel_free(t->channel);
@@ -346,8 +341,8 @@ inline void close_tunnel(const std::shared_ptr<Tunnel>& t) {
     if (!t) return;
     t->stop.store(true);
     if (t->worker.joinable()) t->worker.join();
-    if (t->local_fd >= 0) { ::close(t->local_fd); t->local_fd = -1; }
-    if (t->inner_fd >= 0) { ::close(t->inner_fd); t->inner_fd = -1; }
+    if (t->local_fd >= 0) { flint_sock::close(t->local_fd); t->local_fd = -1; }
+    if (t->inner_fd >= 0) { flint_sock::close(t->inner_fd); t->inner_fd = -1; }
     std::lock_guard<std::mutex> g(*t->outer_lock);
     if (t->channel) {
         ssh_channel_close(t->channel);

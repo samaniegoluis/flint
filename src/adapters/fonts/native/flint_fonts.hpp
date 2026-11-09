@@ -6,11 +6,15 @@
 //
 // macOS: CoreText, families whose fonts carry the monospace trait.
 // Linux: fontconfig's `fc-list :spacing=mono family` (absent fontconfig → none).
+// Windows (windows-port branch): GDI's EnumFontFamiliesExW, fixed-pitch families.
 #pragma once
 #include <string>
 #include <vector>
 #if defined(__APPLE__)
 #include <CoreText/CoreText.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#include <set>
 #else
 #include <cstdio>
 #endif
@@ -56,6 +60,31 @@ inline std::vector<std::string> mono_families() {
         CFRelease(descs);
     }
     CFRelease(coll);
+    return out;
+}
+#elif defined(_WIN32)
+inline std::vector<std::string> mono_families() {
+    std::set<std::wstring> names;
+    HDC dc = ::GetDC(nullptr);
+    if (!dc) return {};
+    LOGFONTW lf{};
+    lf.lfCharSet = DEFAULT_CHARSET;
+    ::EnumFontFamiliesExW(dc, &lf, +[](const LOGFONTW* f, const TEXTMETRICW*, DWORD, LPARAM p) -> int {
+        // '@' names are the vertical variants of CJK fonts.
+        if ((f->lfPitchAndFamily & 0x3) == FIXED_PITCH && f->lfFaceName[0] != L'@') {
+            reinterpret_cast<std::set<std::wstring>*>(p)->insert(f->lfFaceName);
+        }
+        return 1;
+    }, reinterpret_cast<LPARAM>(&names), 0);
+    ::ReleaseDC(nullptr, dc);
+    std::vector<std::string> out;
+    for (const auto& w : names) {
+        int n = ::WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        if (n <= 1) continue;
+        std::string s(static_cast<size_t>(n - 1), '\0');
+        ::WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, s.data(), n, nullptr, nullptr);
+        out.push_back(s);
+    }
     return out;
 }
 #else

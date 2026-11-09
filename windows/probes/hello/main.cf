@@ -1,0 +1,5 @@
+package main
+
+fn main() {
+    println("hello from cfire on Windows")
+}

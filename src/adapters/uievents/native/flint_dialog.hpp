@@ -5,6 +5,10 @@
 // showing anything (CF-077), so on Linux this shim runs a GTK 3 file chooser, modal over
 // the app window, the way NSOpenPanel/NSSavePanel run on macOS. Called from a webui
 // binding, which runs on the GTK main thread.
+//
+// Windows (windows-port branch): nothing here. cfire's Windows backend has its own
+// dialogs (GetOpenFileNameW / GetSaveFileNameW, owned by the app window), so native()
+// stays false and the GUI driver calls ext:webui's, as on macOS.
 #pragma once
 
 #include <cstdlib>
