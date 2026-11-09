@@ -9,7 +9,8 @@
   const USER = '@@USER@@';
   const KEY = `@@KEY@@`;
   const TETHER = '@@TETHER@@';
-  // '0' on Linux unless FLINT_E2E_VIM=1: the vim step fails there (ROADMAP, gui-e2e.sh).
+  // The vim step runs on its own, in a run of its own (gui-e2e.sh): '1' there, and that
+  // run stops after it. A freeze in vim then fails that run by name, not the whole suite.
   const RUN_VIM = '@@VIM@@' === '1';
   const MASTER = 'e2e-master-password-42';
   const HOST_PW_MARKER = 'gui-host-pw-marker';
@@ -205,7 +206,7 @@
 
     await setStep('vim');
     if (!RUN_VIM) {
-      await log('skip vim: known failure on Linux, see ROADMAP (FLINT_E2E_VIM=1 runs it)');
+      await log('skip vim: it runs on its own (gui-e2e.sh, the vim run)');
     } else {
       // A full-screen editor queries the terminal at start (DECRQM, XTGETTCAP, DA2…).
       // A reply that throws inside xterm.js stops its write queue: the editor still
@@ -232,6 +233,13 @@
       key('Enter', 'Enter', 13);
       await runInTerminal('cat /tmp/flint-e2e-vim.txt; echo vim-$((6*7))', 'vim-42');
       await check(/^hello$/m.test(termText()), 'keys typed in vim reach it (insert, Esc, :wq)' + (/^hello$/m.test(termText()) ? '' : ' — terminal: ' + termText().split('\n').filter((l) => l.trim()).slice(-6).join(' | ')));
+    }
+
+    if (RUN_VIM) {
+      await log(`${passed} checks passed`);
+      await window.backend.e2e_report({ ok: true, detail: '' });
+      window.runtime.Quit();
+      return;
     }
 
     await setStep('osc 52');
@@ -380,9 +388,37 @@
       // The terminal still works beside SFTP, and the Files button toggles the view.
       await runInTerminal('echo beside-sftp-$((6*7))', 'beside-sftp-42');
       await check(true, 'the terminal keeps working beside the Files view');
-      await runInTerminal(`rm -rf ${dir}; cd; echo files-clean-$((6*7))`, 'files-clean-42');
+      // A narrow window (under 1040 px) lays the sidebar over the terminal: it must be
+      // drawn whole there, the top-most thing at its centre (milestone 21).
+      const overTerminal = (sel) => {
+        const el = q(sel);
+        const r = el?.getBoundingClientRect();
+        if (!r || r.height < 300) return false;
+        const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return el.contains(at) && getComputedStyle(el).backgroundColor !== 'rgba(0, 0, 0, 0)';
+      };
+      // The headless window cannot be resized (CF-111), so the page is told it is 900 px
+      // wide: the shell lays the sidebar out by window.innerWidth.
+      const width = Object.getOwnPropertyDescriptor(window, 'innerWidth');
+      const setWidth = (w) => {
+        if (w) Object.defineProperty(window, 'innerWidth', { configurable: true, get: () => w });
+        else if (width) Object.defineProperty(window, 'innerWidth', width);
+        else delete window.innerWidth;
+        window.dispatchEvent(new Event('resize'));
+      };
+      setWidth(900);
+      await waitFor(() => document.querySelector('.app')?.dataset.narrow === 'true', 'the narrow layout', 10000);
+      await click('.rail-btn', 'Files');
+      await waitFor(() => overTerminal('.sidebar[data-for="files"]'), 'the Files view drawn over the terminal in a narrow window', 10000);
+      await check(true, 'in a narrow window the Files view is drawn whole, over the terminal');
       await click('.rail-btn', 'Hosts');
-      await waitFor(() => document.querySelector('.app')?.dataset.view === 'hosts', 'back to the Hosts view');
+      await waitFor(() => overTerminal('.sidebar[data-for="hosts"]'), 'the Hosts view drawn over the terminal in a narrow window', 10000);
+      await check(true, 'in a narrow window the Hosts view is drawn whole, over the terminal');
+      setWidth(0);
+      await waitFor(() => document.querySelector('.app')?.dataset.narrow === 'false', 'the wide layout again', 10000);
+      await runInTerminal(`rm -rf ${dir}; cd; echo files-clean-$((6*7))`, 'files-clean-42');
+      if (document.querySelector('.app')?.dataset.view !== 'hosts' || !q('.sidebar[data-for="hosts"]')) await click('.rail-btn', 'Hosts');
+      await waitFor(() => document.querySelector('.app')?.dataset.view === 'hosts' && q('.sidebar[data-for="hosts"]'), 'back to the Hosts view');
     }
 
     await setStep('exit');

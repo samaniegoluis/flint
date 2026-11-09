@@ -210,7 +210,7 @@ fn main() {
         return rpc_files_cancel(req)
     }
     app.bind_raw("e2e_report") |params| { return rpc_e2e_report(params, mut app) }
-    app.bind_raw("e2e_log") |params| { return rpc_e2e_log(params) }
+    app.bind_raw("e2e_log") |params| { return rpc_e2e_log(params, mut app) }
     if e2e {
         app.bind_raw("e2e_clipboard") |params| { return rpc_e2e_clipboard(clipboard) }
         // Stands in for the window's close button with the tray (milestone 14).
@@ -313,7 +313,7 @@ fn main() {
         // On Linux the end-to-end run opens the real window under xvfb-run
         // (scripts/linux), and the page quits when done.
         if e2e && os_name() == "mac" {
-            _ := app.run_webview_test(E2E_TIMEOUT_MS) or false
+            _ := app.run_webview_test(e2e_timeout_ms()) or false
         } else {
             app.run()
         }
@@ -328,7 +328,12 @@ fn main() {
     st.release()
 
     if e2e {
-        verdict := app.get_state("e2e")
+        mut verdict := app.get_state("e2e")
+        // No verdict: the page never reported (it froze, or the run hit its cap).
+        // Name the last thing it logged, so the failure says where it stopped.
+        if verdict.len() == 0 {
+            verdict = "fail: no verdict in {e2e_timeout_ms() / 1000} s; last page line: {app.get_state("e2e_last")}"
+        }
         write_stdout("e2e: {verdict}\n")
         if verdict != "pass" {
             exit_process(1)

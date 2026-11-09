@@ -1907,3 +1907,17 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** a non-diverging form that yields a fallback and binds the error (`x := f() or
   err { log(err); fallback }`), or a nameable `Error` type.
 
+
+### CF-111 · missing · `confirmed`: the macOS headless runner cannot resize its window
+- **Repro (c5b1d4b, macOS):** in an app run with `run_webview_test`, a binding that calls
+  `app.set_size(900, 600)` changes nothing: `run_macos_webview_test`
+  (`core/webui/macos_ios.hpp`) sets `platform_eval`, `platform_set_title` and
+  `platform_quit` but not `platform_set_size`, so `App::set_size` only stores the numbers.
+  The page's `window.innerWidth` stays at the size the window was made with. In Flint's
+  M21 run the page also never answered again after that call (no verdict until the 240 s
+  cap); not narrowed further.
+- **Workaround:** gui-e2e tells the page it is 900 px wide (`window.innerWidth` redefined
+  plus a `resize` event) to check the narrow layout, and the real 900 px window is checked
+  by the landing's screenshot script in Chromium (`FLINT_SHOTS_EXTRA`). No native code.
+- **Ideal:** `platform_set_size` in the headless runner (`setContentSize:` on its
+  off-screen window, then the WKWebView's frame), as `app.run()` has it.
