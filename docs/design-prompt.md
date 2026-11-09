@@ -378,3 +378,53 @@ a tab into up to four terminal panes.
   - 18g · Split panes with the Files view open: it follows the focused pane, and its
     header says which pane it is showing.
 ```
+
+## Message 6: side panel, pinned or floating (ROADMAP §6, to send)
+
+Written at milestone 19's close (2026-11-09). The order against milestone 20 (split
+panes) is still the owner's call; these screens are needed either way.
+
+```
+Flint follow-up: the side panel, pinned or floating. Same tokens.css, components and
+dark/light pairs as the existing screens. Name the new files 19…, as below.
+
+Context: today every side view (Hosts, Files, Keys, Credentials, and later ones) opens
+docked to the left of the terminal and takes its width. Each time it opens or closes the
+terminal is resized: full-screen programs (vim, htop, tmux) redraw and the shell prompt
+reflows, and with split panes (18a-g) every pane shrinks at once. Milestone 19 already
+shipped one floating layer: the second file pane of "Copy to another server…" floats over
+the terminal beside the Files view and never resizes it (it departs from 14d2, which drew
+it docked and 700 px wide). Now the whole side panel gets the same choice, with a pin.
+
+The rule (owner): one panel and one width for every side view, with a pin.
+  - Pinned: as today. It stays open and takes the terminal's space; ⌘E (Files) and the
+    rail icons show or hide it, and it stays as it was left.
+  - Unpinned: it looks the same but floats over the terminal (a shadow or an edge that
+    reads as "over", in both themes) and never resizes it. It always goes away again:
+    hovering a rail icon opens it after ~150 ms, leaving it hides it after ~300-500 ms,
+    but never during a drag, an open context menu, a focused input or a waiting question
+    (Replace / Skip). Opened with the keyboard it stays until Esc or a click back in the
+    terminal. Dragging files from the OS onto a rail icon opens it (spring-loaded).
+  - The rail always stays docked. A docked panel never grows past its own width: anything
+    wider floats (as the second file pane does).
+
+19 · Side panel, pinned or floating:
+  - 19a · The pin: where it lives in the panel header, and how pinned and unpinned read
+    (icon state, tooltip "Pin the panel" / "Unpin"), on Hosts and on Files.
+  - 19b · Unpinned, floating over a busy terminal (vim or htop full width behind it):
+    the panel's edge, shadow and the terminal visibly not resized. Both themes.
+  - 19c · Opening on hover: the rail icon under the pointer and the panel appearing; a
+    hint of what keeps it open (a context menu open in the Files view, or a Replace /
+    Skip strip waiting).
+  - 19d · Unpinned with the two file panes (as built in M19): Files floating, the second
+    pane floating beside it, and the chip "⇄ nas · 2 copying" when the second pane is
+    hidden. Everything over the terminal, nothing resizes it.
+  - 19e · Spring-loaded drop: a file dragged from the OS over the Files rail icon, the
+    panel opening under the drag and the drop zone of 14b.
+  - 19f · Unpinned with split panes (redo of 18g): the panel floating over a 2×2 split,
+    its header saying which pane Files is showing, the focused pane still marked.
+  - 19g · At 900×600 (as 04c and 18f): pinned and unpinned side by side, to judge which
+    should be the default on a small window.
+  - Settings → Appearance: a row "Side panel: Pinned / Floating" (the default), if you
+    think it belongs there and not only on the pin.
+```
