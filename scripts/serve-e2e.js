@@ -78,8 +78,12 @@
         const ask = form.querySelector('[data-copy-ask]');
         const from = form.querySelector('[data-copy-from]')?.textContent ?? '';
         const badge = ask.querySelector('.badge')?.textContent ?? '';
-        log((/wants to copy files from local to tty/.test(title) && ask.dataset.copyHost === 'local' && ask.dataset.copyToHost === 'tty' && from.endsWith('blob.bin') && badge === 'Between hosts' ? 'ok   ' : 'FAIL ') + 'the approval window names both hosts of a copy between two');
+        log((/wants to copy files between two servers/.test(title) && ask.dataset.copyHost === 'local' && ask.dataset.copyToHost === 'tty' && from.endsWith('blob.bin') && badge === 'Server to server' ? 'ok   ' : 'FAIL ') + 'the approval window names both hosts of a copy between two');
         log((form.querySelector('[data-scope-hosts]') && form.querySelector('[data-scope-host]')?.checked && form.querySelector('[data-action="exec"]')?.checked ? 'ok   ' : 'FAIL ') + 'a copy between two hosts proposes a grant for both');
+        // Design 16g3: the caller's grant from `exec local` already reaches local; tty is new.
+        const chip = (alias) => form.querySelector(`[data-scope-chip="${alias}"]`);
+        const tagOf = (alias) => chip(alias)?.nextElementSibling?.textContent ?? '';
+        log((chip('local')?.dataset.allowed === 'yes' && /^already allowed · \d+ (min|h)/.test(tagOf('local')) && chip('tty')?.dataset.allowed === 'no' && tagOf('tty') === 'new — this grant adds it' ? 'ok   ' : 'FAIL ') + 'the window says which of the two hosts the grant adds: ' + tagOf('local') + ' / ' + tagOf('tty'));
       } else if (form.dataset.kind === 'copy') {
         // `flint cp` (milestone 16): a grant request that says what it copies where.
         const title = form.querySelector('h2')?.textContent ?? '';

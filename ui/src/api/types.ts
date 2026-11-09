@@ -299,6 +299,12 @@ export interface CopyAsk {
   to_path?: string;
   recursive: boolean;
   force: boolean;
+  /** A relay copy (design 16g3): the caller's own live grant already runs commands on
+   * `host` / `to_host`, until `*_until` on the core's clock (0 = until the vault locks). */
+  host_allowed?: boolean;
+  host_allowed_until?: number;
+  to_allowed?: boolean;
+  to_allowed_until?: number;
 }
 
 export interface SudoAsk {

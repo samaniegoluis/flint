@@ -359,9 +359,12 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         if creq.has_value() {
             r := creq.value()
             if r.direction == COPY_RELAY {
-                ap.copy = CopyAsk{ direction: r.direction, host: r.alias, local: "", remote: r.remote, to_host: r.to_alias, to_path: r.local, recursive: r.recursive, force: r.force }
+                grants := st.holder.access_book().grants
+                (from_ok, from_until) := exec_allowed_until(grants, caller, session.id, r.alias, cat, now)
+                (to_ok, to_until) := exec_allowed_until(grants, caller, session.id, r.to_alias, cat, now)
+                ap.copy = CopyAsk{ direction: r.direction, host: r.alias, local: "", remote: r.remote, to_host: r.to_alias, to_path: r.local, recursive: r.recursive, force: r.force, host_allowed: from_ok, host_allowed_until: from_until, to_allowed: to_ok, to_allowed_until: to_until }
             } else {
-                ap.copy = CopyAsk{ direction: r.direction, host: r.alias, local: absolute_from(req.cwd, r.local), remote: r.remote, recursive: r.recursive, force: r.force }
+                ap.copy = CopyAsk{ direction: r.direction, host: r.alias, local: absolute_from(req.cwd, r.local), remote: r.remote, recursive: r.recursive, force: r.force, host_allowed: false, host_allowed_until: 0, to_allowed: false, to_allowed_until: 0 }
             }
         }
     }

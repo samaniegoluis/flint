@@ -114,6 +114,8 @@ window says **copy files**, with the direction, the host and both paths, and eve
 in **Settings → Activity**. See [Use Flint with an AI agent](/guides/ai-agents/).
 
 A copy from one host to another runs on both, so the grant must reach **both** hosts: one
-window names both, and proposes a grant for the two of them. A grant that reaches only one
-is not enough, and the copy is refused with `denied`. Activity shows it as
+window names both, says the bytes pass through Flint, and proposes a grant for the two of
+them (or their groups). A grant that reaches only one is not enough: the window asks again
+and marks which host is already allowed and which one the new grant adds. A token that
+reaches only one is refused with `denied`. Activity shows it as
 `db-01 → nas`.

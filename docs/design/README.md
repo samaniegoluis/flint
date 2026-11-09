@@ -224,6 +224,8 @@ The bytes always flow server A → Flint → server B; no key or password is eve
 | `18f` | Four panes at 900 × 600, with the sidebar collapsed and an icon-only toolbar. |
 | `18g` | Split panes with the Files view. Files follows the focused pane, and its header carries the same pane number badge. |
 
+- **As built (16g, milestone 18, D-058):** the host's colour square is its own colour (none: grey), and its name on the network shows under the alias only when it differs. 16g3's tags come from the caller's live grants when the window opens; a grant that ends while it waits loses its tag. A 16g1 with no grant yet shows no tags.
+
 **Focus in split panes:** the focused pane has an ember border and a tinted header, and the other panes' output is dimmed to 60 %. Either cue alone is weak with busy output or in light mode; together they hold up. Pane numbers 1–4 appear in pane headers, the toolbar badge ("pane 2 of 4") and the Files header.
 
 **Shortcut change:** Split right takes ⌘D, so **Duplicate session moves to ⌥⌘D**.

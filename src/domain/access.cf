@@ -284,6 +284,27 @@ fn find_grant(grants: []Grant, c: Caller, vault_id: str, need: AccessNeed, cat: 
     return none
 }
 
+// The caller's live grants that already run commands on `alias`, and when the last of
+// them ends (0 = until the vault locks). A copy between two hosts shows it for each
+// end (design 16g3).
+fn exec_allowed_until(grants: []Grant, c: Caller, vault_id: str, alias: str, cat: Catalog, now_ms: i64) -> (bool, i64) {
+    need := AccessNeed{ action: ACCESS_EXEC, host: alias }
+    mut found := false
+    mut until: i64 = 0
+    for g in grants {
+        if grant_matches_caller(g, c) && grant_covers(g, vault_id, need, cat, now_ms) {
+            if g.expires_ms == 0 {
+                return (true, 0)
+            }
+            if !found || g.expires_ms > until {
+                until = g.expires_ms
+            }
+            found = true
+        }
+    }
+    return (found, until)
+}
+
 // The grants still live at `now_ms`.
 fn live_grants(grants: []Grant, now_ms: i64) -> []Grant {
     mut live: []Grant = []
@@ -641,6 +662,28 @@ test "a copy between two hosts needs a grant that reaches both" {
     assert(grant_covers(test_grant(AccessScope{ all: true, groups: [], hosts: [] }, false, true, false, 0), "v1", both, cat, 5))
     assert_eq(need_hosts(both), "api-01 → lab-01")
     assert_eq(need_hosts(AccessNeed{ action: ACCESS_EXEC, host: "lab-01" }), "lab-01")
+}
+
+test "a copy between two hosts says which end a grant already reaches" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    cat := test_catalog()
+    only_api := test_grant(AccessScope{ all: false, groups: [], hosts: ["h-api"] }, true, true, false, 9000)
+    (api, until) := exec_allowed_until([only_api], c, "v1", "api-01", cat, 5)
+    assert(api)
+    assert_eq(until, 9000)
+    (lab, _) := exec_allowed_until([only_api], c, "v1", "lab-01", cat, 5)
+    assert(!lab)
+    (late, _) := exec_allowed_until([only_api], c, "v1", "api-01", cat, 9001)
+    assert(!late)
+    (other, _) := exec_allowed_until([only_api], c, "v2", "api-01", cat, 5)
+    assert(!other)
+    read_only := test_grant(AccessScope{ all: true, groups: [], hosts: [] }, true, false, false, 0)
+    (ro, _) := exec_allowed_until([read_only], c, "v1", "api-01", cat, 5)
+    assert(!ro)
+    forever := test_grant(AccessScope{ all: true, groups: [], hosts: [] }, false, true, false, 0)
+    (both, end) := exec_allowed_until([only_api, forever], c, "v1", "api-01", cat, 5)
+    assert(both)
+    assert_eq(end, 0)
 }
 
 test "the proposed grant of a copy between two hosts names both" {
