@@ -131,8 +131,8 @@ export const api = {
   secretCopy: (kind: 'host' | 'credential', name: string) => call('secret_copy', { kind, name }),
 
   /** `noCommand` skips the host's initial command, like `flint connect --no-command`. */
-  sessionOpen: (session: string, alias: string, cols: number, rows: number, noCommand = false) =>
-    call('session_open', { session, alias, cols, rows, accept_new_host_key: false, no_command: noCommand }),
+  sessionOpen: (session: string, alias: string, cols: number, rows: number, noCommand = false, filesOnly = false) =>
+    call('session_open', { session, alias, cols, rows, accept_new_host_key: false, no_command: noCommand, files_only: filesOnly }),
   /** An OSC 52 payload ("c;base64") a remote program wrote; the core copies it. */
   terminalClipboard: (payload: string) => call<{ outcome: string; bytes: number }>('terminal_clipboard', { name: payload }),
   sessionInput: (session: string, data: string) => call('session_input', { session, data }),
@@ -151,6 +151,9 @@ export const api = {
   /** Resolves when the copy ends; progress arrives as "files:transfer" events with this `id`. */
   filesTransfer: (t: { session: string; id: string; direction: 'upload' | 'download'; local: string; remote: string; recursive: boolean; force: boolean }) =>
     call<CopyResult>('files_transfer', t),
+  /** A copy between two sessions (milestone 19): host → Flint → host, not logged (D-055). */
+  filesRelay: (t: { session: string; to_session: string; id: string; alias: string; to_alias: string; path: string; to_path: string; recursive: boolean; force: boolean }) =>
+    call<CopyResult>('files_relay', t),
   filesCancel: (id: string) => call('files_cancel', { id }),
   /** A chunk (base64) of a file dropped from the OS, staged until it is uploaded (CF-004). */
   filesStage: (drop: string, rel: string, data: string) => call<{ path: string }>('files_stage', { drop, rel, data }),

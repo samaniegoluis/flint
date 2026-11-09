@@ -3,7 +3,7 @@ import { applyProgress, clearDone, nextToStart, type Transfer } from './store';
 
 const tr = (id: string, p: Partial<Transfer>): Transfer => ({
   id, tabId: 't1', session: 's1', alias: 'web', direction: 'upload', name: id, local: '/l/' + id, remote: '/r/', recursive: false, force: false,
-  state: 'queued', bytes: 0, total: 0, file: '', filesDone: 0, startedAt: 0, rate: 0, error: null, folder: '/r', drop: '', ...p,
+  state: 'queued', bytes: 0, total: 0, file: '', filesDone: 0, startedAt: 0, rate: 0, error: null, folder: '/r', drop: '', toSession: '', toAlias: '', view: 't1', ...p,
 });
 
 describe('the transfer queue', () => {

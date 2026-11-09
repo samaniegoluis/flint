@@ -25,7 +25,8 @@
     ch.port2.postMessage(0);
   });
   let step = 'start';
-  const setStep = (s) => { step = s; return log('--   ' + s); };
+  const t0 = performance.now();
+  const setStep = (s) => { step = s; return log('--   ' + s + ` (${Math.round((performance.now() - t0) / 1000)} s)`); };
   let passed = 0;
 
   async function waitFor(fn, what, ms = 20000) {
@@ -419,6 +420,129 @@
     await click('.tab', 'local');
     await waitFor(() => termText().includes('again-ok'), 'the first tab terminal');
     await check(termText().includes('again-ok') && !termText().includes('via-jump-ok'), 'each tab keeps its own scrollback');
+
+    await setStep('copy between servers');
+    {
+      // Milestone 19: a second Files pane on another host, floating beside the view
+      // (D-059), and copies host → Flint → host. Both sshds are this machine and the
+      // same user, so both login folders are this $HOME.
+      const mac = (await window.backend.app_info({})).os === 'mac';
+      const chord = (code, key, extra = {}) => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', {
+        key, code, bubbles: true, cancelable: true, metaKey: mac, ctrlKey: !mac, shiftKey: !mac, ...extra }));
+      const name = `flint-e2e-two-${Date.now()}`;
+      await runInTerminal(`mkdir -p ~/${name}/src/sub ~/${name}/dst && printf hello-relay > ~/${name}/src/a.txt && printf deep-relay > ~/${name}/src/sub/x.txt && cd ~/${name}/src && printf '\\033]7;file://e2e%s\\033\\\\' "$PWD"; echo two-ready-$((6*7))`, 'two-ready-42');
+      chord('KeyE', 'e');
+      const aside = () => q('.sidebar[data-for="files"]');
+      await waitFor(() => aside()?.dataset.filesPath?.endsWith(`/${name}/src`) && q('[data-file="a.txt"]'), 'the Files view on the OSC 7 folder', 20000);
+      await check(true, "the Files view opens on the terminal's folder by itself (OSC 7)");
+      const base = aside().dataset.filesPath.replace(/\/src$/, '');
+      // 14d1: the picker, this tab's host greyed out.
+      await click('[data-files-pick]');
+      await waitFor(() => q('[data-files-picker]'), 'the server picker');
+      const me = byText('[data-files-picker] .picker-row.off', 'local');
+      await check(me && me.textContent.includes('this tab') && q('[data-files-pick-host="inner"]'), "the picker lists the vault's hosts and greys out this tab's (14d1)");
+      await click('[data-files-pick-host="inner"]');
+      const pane = () => q('[data-files-pane="2"]');
+      await waitFor(() => pane()?.dataset.pairStatus === 'ready' && pane().dataset.filesPath, 'the second pane listed', 20000);
+      await check(pane().textContent.includes('its tab’s session') && qa('.tab').length === 2, "a host with an open tab lends that tab's session: no new login");
+      const main = q('.main').getBoundingClientRect();
+      await check(pane().getBoundingClientRect().left >= aside().getBoundingClientRect().right - 2 && Math.abs(main.left - aside().getBoundingClientRect().right) < 3,
+        'the second pane floats over the terminal, which keeps its width (D-059)');
+      const into = async (folder, path) => {
+        pane().querySelector(`[data-file="${folder}"]`).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        await waitFor(() => pane().dataset.filesPath === path, 'the second pane in ' + path);
+      };
+      await waitFor(() => pane().querySelector(`[data-file="${name}"]`), 'the scratch folder in the second pane');
+      await into(name, base);
+      await into('dst', base + '/dst');
+      // 14d3a: drag a file from the first pane onto the second.
+      const drag = async (row, target) => {
+        const dt = new DataTransfer();
+        row.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: 700, clientY: 300 }));
+        await waitFor(() => q('[data-files-drag-label]'), 'the drag label');
+        const label = q('[data-files-drag-label]').textContent;
+        target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        row.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+        return label;
+      };
+      const row1 = (n) => aside().querySelector(`:scope > .col [data-file="${n}"]`);
+      const label = await drag(row1('a.txt'), pane().querySelector('[data-files-list]'));
+      await check(label.includes('Copy to inner · dst/'), 'dragging over the other pane names its host and folder (14d3a): ' + label);
+      await waitFor(() => q('[data-transfer="a.txt"][data-direction="relay"][data-state="done"]'), 'the copy between servers', 20000);
+      await check(q('[data-transfer="a.txt"] [data-transfer-route]')?.textContent === 'localinner', 'the queue row reads local → inner (14d4)');
+      await waitFor(() => pane().querySelector('[data-file="a.txt"]'), 'the copy listed in the second pane');
+      // The same name again: the strip asks (14d4); Replace copies over it.
+      await drag(row1('a.txt'), pane().querySelector('[data-files-list]'));
+      await waitFor(() => q('.conflict[data-transfer="a.txt"]'), 'the replace question');
+      await check(q('.conflict[data-transfer="a.txt"]').textContent.includes('already exists on inner in dst/'), 'a name clash names the host and folder');
+      q('.conflict[data-transfer="a.txt"] [data-transfer-replace]').click();
+      await waitFor(() => qa('[data-transfer="a.txt"][data-state="done"]').length === 2, 'the replaced copy');
+      // ⌘→ (Ctrl+Shift+→) copies the selection: a folder, with what is in it.
+      row1('sub').click();
+      await sleep(150);
+      aside().querySelector(':scope > .col [data-files-list]').focus();
+      chord('ArrowRight', 'ArrowRight');
+      await waitFor(() => q('[data-transfer="sub"][data-direction="relay"][data-state="done"]'), 'the folder copy', 20000);
+      await runInTerminal(`cat ${base}/dst/a.txt ${base}/dst/sub/x.txt; ls -a ${base}/dst | grep -c flint-part; echo relay-check-$((6*7))`, 'relay-check-42');
+      await check(termText().includes('hello-relaydeep-relay') && /\n0\n/.test(termText()), 'files and folders land on the other host byte for byte, with no part file left');
+      // Hiding is not closing (D-059): Esc hides the pane, the chip brings it back as it was.
+      pane().querySelector('[data-files-list]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await waitFor(() => !pane() && q('[data-files-pair-chip]'), 'the hidden pane');
+      await check(q('[data-files-pair-chip]').textContent.includes('inner'), 'a hidden pane leaves a chip naming its host');
+      q('[data-files-pair-chip]').click();
+      await waitFor(() => pane()?.dataset.filesPath === base + '/dst', 'the pane back');
+      await check(true, 'the chip shows the pane again on the same folder');
+      q('.pane').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      await waitFor(() => !pane(), 'a click in the terminal hides the pane');
+      q('[data-files-pair-chip]').click();
+      await waitFor(() => pane(), 'the pane back again');
+      await click('[data-files-one-pane]');
+      await waitFor(() => !pane() && q('[data-files-pick]'), 'one pane');
+      await check(qa('.tab').length === 2, 'One pane ends the mode and leaves the borrowed tab alone');
+
+      // A host with no open tab: a session with no terminal, its host key asked in the pane (14d5c).
+      await click('.rail-btn', 'Hosts');
+      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await fill('#ha', 'side');
+      await fill('#hh', '127.0.0.1');
+      await fill('#hp', PORT2);
+      await click('.seg button', 'Key');
+      await pick('SSH key', 'e2e-key');
+      await fill('#hu', USER);
+      await click('.modal button[type="submit"]', 'Add host');
+      await waitFor(() => byText('.tree .ti', 'side'), 'side in the tree');
+      chord('KeyE', 'e');
+      await click('[data-files-pick]');
+      await click('[data-files-pick-host="side"]');
+      await waitFor(() => pane()?.querySelector('[data-files-pane-hostkey]'), 'the host key question in the pane', 20000);
+      await check(pane().textContent.includes('Verify side'), "a new host's key is asked inside the pane (14d5c)");
+      await click('[data-files-pane-hostkey] button[type="submit"]');
+      await waitFor(() => pane()?.dataset.pairStatus === 'ready' && pane().dataset.filesPath, 'the Flint-only session', 20000);
+      await check(pane().textContent.includes('no tab · Flint-only session') && qa('.tab').length === 2, 'a host with no tab gets a session of its own with no terminal, and no tab');
+      await waitFor(() => pane().querySelector(`[data-file="${name}"]`), 'the scratch folder over the Flint-only session');
+      await into(name, base);
+      // ⌘← copies from the second pane back to the first: src already has a.txt, so Skip.
+      pane().querySelector('[data-file="src"]').click();
+      await into('src', base + '/src');
+      pane().querySelector('[data-file="a.txt"]').click();
+      await sleep(150);
+      pane().querySelector('[data-files-list]').focus();
+      chord('ArrowLeft', 'ArrowLeft');
+      await waitFor(() => q('.conflict[data-transfer="a.txt"]'), 'a copy back to the first pane, asked');
+      q('.conflict[data-transfer="a.txt"] [data-transfer-skip]').click();
+      await waitFor(() => !q('.conflict'), 'skipped');
+      await check(true, 'a copy from the second pane to the first asks before replacing, and Skip leaves it');
+      await click('[data-files-one-pane]');
+      await waitFor(() => !pane(), 'one pane');
+      await runInTerminal(`cd; rm -rf ~/${name}; echo two-clean-$((6*7))`, 'two-clean-42');
+      // Later steps meet [127.0.0.1]:PORT2 as a new host key: leave it as found.
+      await window.backend.known_host_rm({ name: 'side' });
+      await window.backend.host_rm({ name: 'side' });
+      await click('[data-files-clear]');
+      await click('.rail-btn', 'Hosts');
+      await waitFor(() => document.querySelector('.app')?.dataset.view === 'hosts', 'back to the Hosts view');
+    }
 
     await setStep('changed host key');
     await click('.side-head .icon-btn[aria-label^="New host"]');
