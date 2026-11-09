@@ -46,7 +46,7 @@ paths (the socket code moved into shared helpers with the same behaviour).
 | Terminal | `process/native/flint_process.hpp` | `CONIN$`/`CONOUT$` for prompts (echo off via console mode), **only when the console has a window** (`GetConsoleWindow()`): a process started with `CREATE_NO_WINDOW` (WSL interop from a pipe, a service, a scheduled task) still opens `CONIN$`, and a prompt there waits forever; raw mode = console modes + `ENABLE_VIRTUAL_TERMINAL_INPUT/PROCESSING` + UTF-8 code pages, restored at exit and by `SetConsoleCtrlHandler`; **no SIGWINCH**: `read_input` compares the window size each call; input drops non-text console events so a read never blocks on them; pipes via `PeekNamedPipe` |
 | SSH | `ssh/native/flint_ssh.hpp`, `ssh/libssh.cf` | Dialling and the jump-host tunnel on `flint_sock`; `NUL` instead of `/dev/null` for known_hosts |
 | Config folder | `adapters/config/recents.cf` | `%APPDATA%/Flint` |
-| Paths | `domain/files.cf`, `application/session.cf`, `drivers/clicmd/commands.cf`, `adapters/process/process.cf` | `is_absolute_path()` accepts `C:/…`; the CLI turns `\` into `/` at the boundary (`local_slashes`, `current_dir`), so Flint keeps one form of local path. Remote paths stay POSIX |
+| Paths | `domain/files.cf`, `application/session.cf`, `drivers/clicmd/commands.cf`, `adapters/process/process.cf`, `drivers/gui/rpc.cf` | `is_absolute_path()` accepts `C:/…`; `\` becomes `/` at each edge (`local_slashes` in `adapters/process`, `current_dir`): the CLI's arguments **and what the GUI's file dialogs return** (without the second, creating or opening a vault in the app failed with "vault path must be absolute"). Flint keeps one form of local path, and the app shows `C:/Users/…`. Remote paths stay POSIX |
 | `flint cp` | `drivers/clicmd/files_commands.cf`, `domain/files.cf` | `C:\…` / `C:/…` is a local path, not host `C` (`is_drive_path`, checked only on Windows: on POSIX `c:/x` is still host `c`); the local side goes through `local_slashes` |
 | GUI: screen lock, sleep, window to front | `uievents/native/flint_sysevents.hpp` | A thread of its own with a hidden top-level window (never shown): `WTSRegisterSessionNotification` → `WTS_SESSION_LOCK` is "screen", `WM_POWERBROADCAST`/`PBT_APMSUSPEND` (plus `RegisterSuspendResumeNotification`, Modern Standby) is "sleep". Independent of webui's loop. `bring_to_front`: webui's window (class `CfireWebUIWindowClass`) restored and `SetForegroundWindow`, `FlashWindowEx` when Windows refuses |
 | GUI: presence check | `uievents/native/flint_presence.hpp` | **Degraded:** none on Windows; the window asks for the master password (the existing fallback). Windows Hello is the candidate |
@@ -57,7 +57,7 @@ paths (the socket code moved into shared helpers with the same behaviour).
 | Caller chain | `ipc/native/flint_peer.hpp`, `domain/access.cf` | `exe` with `/`, `argv0` = image name without `.exe`: without it `C:\…\flint.exe` never matched `flint` in `TRANSPARENT_EXES` and every command was its own caller (asked again each time). `cmd`, `powershell` are transparent; `WindowsTerminal` reads "Windows Terminal". From WSL the anchor is `wsl` |
 | App icon | `assets/app-icon/Flint.ico` (new) | From `flint-256.png` (256…16); embedded by cfire W-13 |
 | Windows build and install | `windows/build-gui.sh` (new) | `build/windows/Flint/`: `flint.exe`, `flint-app.exe`, `WebView2Loader.dll`, `ui/`; `--install DIR` copies it and adds `Flint.lnk` |
-| Checks | `windows/gui-e2e.sh`, `windows/serve-e2e.sh` + `serve-page.js` (new), `ssh-relay.ps1 -ListenHost` | The UI e2e and a subset of serve-e2e, on Windows from WSL |
+| Checks | `windows/gui-e2e.sh`, `windows/serve-e2e.sh` + `serve-page.js` + `new-caller.js` (new), `ssh-relay.ps1 -ListenHost` | The UI e2e and a subset of serve-e2e, on Windows from WSL. `new-caller.js` runs `flint.exe` under `cscript` (`//E:jscript`: the `.js` association may be gone) so the app sees a caller it has not approved, the stand-in for the perl wrapper on Linux |
 | App start (`serve`) | `drivers/clicmd/serve.cf`, `adapters/process` | `spawn_detached`: `CreateProcessW` with `DETACHED_PROCESS \| CREATE_NEW_PROCESS_GROUP`, no inherited handles, `CREATE_BREAKAWAY_FROM_JOB` when the job allows it; replaces `sh -c … setsid`. The app is `gui\Flint.exe` (build tree) or `flint-app.exe` (install): **`Flint.exe` next to `flint.exe` is the same file** on a case-insensitive file system |
 
 ## Verified on Windows (so far)
@@ -111,12 +111,35 @@ otherwise.
   dialog focus trap (logged: a window started from WSL never gets the system focus, so
   focus events do not fire). `cfire test` on Windows: `uievents` 91/91 (real clipboard,
   no skip), `fonts` 77/77 (Consolas listed), `domain` 77/77.
-- **CLI ↔ app** (2026-11-09): `windows/serve-e2e.sh` reached 40/46 before the caller-chain
-  fix (the 6 were the harness and the per-command approval); by hand after it, `flint
-  host list` with no master password is served by the running app over AF_UNIX, asks once
-  ("flint, started by wsl"), and the next command is not asked again. With the app closed
-  the CLI started `flint-app.exe` beside it on the unlock screen and `vault unlock`
-  waited for it.
+  Re-run after the dialog path fix: 138 pass again, once `scripts/gui-e2e.js` waits up
+  to 5 s for the lock screen to go after an unlock. Two runs in a row had failed "the lock
+  screen is gone": the tree showed a moment before the lock screen left. A timing fix in
+  the shared script, worth carrying to `main`.
+- **CLI ↔ app** (2026-11-09): `windows/serve-e2e.sh`, **49/49** in about 40 s, four runs
+  after the harness fixes below: three green, one with a single failure (next line). It
+  covers the CLI on its own (`locked` with the app off), the app serving over AF_UNIX
+  with one approval for "flint, started by wsl", the same stdout, stderr and exit code
+  served and local, `exec` and `cp` (300 KB both ways, byte for byte) run in the app
+  against a throwaway sshd, a **new caller denied** ("flint, started by cscript"), a second
+  launch showing the running app, the socket gone after quit, and, with the app closed,
+  the CLI starting `flint-app.exe` beside it, `vault unlock` waiting for the window, and
+  the CLI then working through it.
+  - **Intermittent, 1 run in 4:** in the last phase (the app the CLI started),
+    `host add e2e-stop-2` was asked again and nobody answered (`approval_timeout`, 16).
+    The started app's page log is not captured (it is detached), so the cause is open.
+  - **Harness fixes that got it there** (none in Flint itself): the CLI waits until the
+    page has unlocked before polling; the page checks the master password field kept its
+    text before clicking Unlock, and retries (the unlock screen rendered again just after
+    it appeared and came back empty; a person never sees that); the script stops at once
+    if the page did not unlock, and logs the page's text; an sshd left by an interrupted
+    run is killed first (it held the port with other keys: every `exec` failed with
+    `auth`); the relay gets 30 s to start; the second launch has a `timeout`.
+- **Create and open a vault from the app** (2026-11-09, owner): with the dialog paths
+  converted, both work in the installed app (`D:\Programas\Flint`).
+- **cfire probes** (2026-11-09, `windows-fixes` with 0007 and 0008): `windows/run-probes.sh`
+  green: hello, platform files, core 9/9, stdlib suite 14/14, webui offscreen 4/4, the
+  webui window. In the first of two runs the offscreen step stopped the script with no
+  output (`set -e` on an empty `grep`); alone and in the second run it passed.
 
 ## Not done yet
 
@@ -125,8 +148,9 @@ otherwise.
 | Interactive `connect` | Needs a person at Windows Terminal: `windows/ssh-lab.sh start`, then the command in the part 5 report. Raw console, resize without SIGWINCH, Ctrl+C, UTF-8 typing, the console restored on exit |
 | Host key prompt in a real terminal | The `GetConsoleWindow()` rule says Windows Terminal (ConPTY) has a window handle; checked only that the hidden interop console has none |
 | Credential Manager by a person | The CLI only deletes entries (D-038: `vault lock`, `vault forget`); the app writes them when "remember" is on. Checked with the adapter's test; a person looks once the GUI runs (part 6): `cmdkey /list:Flint/*`, or Control Panel → Credential Manager → Windows Credentials → Generic Credentials, target `Flint/<vault id>` |
-| `flint serve` / handoff with the real app | `spawn_detached` works; the IPC handoff to a real `Flint.exe` waits for the GUI (part 6) |
-| GUI (part 6, in progress) | Built, installed in `D:\Programas\Flint` and checked by `windows/gui-e2e.sh` (below). Left: the person checks (Win+L and sleep, a real dialog, a drag from Explorer, `cmdkey /list:Flint/*` with Remember on, the icons), `windows/serve-e2e.sh` flaky at the first unlock (a CLI's unlock request races the page typing the password), Windows Hello, `set_dark_mode` at run time (cfire), the lessons and ideas sections |
+| GUI person checks (part 6) | Win+L and sleep with the app unlocked, a real dialog (save a key), a drag from Explorer into the Files view, `cmdkey /list:Flint/*` with "Remember on this computer", the icons (Explorer, title bar, taskbar, tray) |
+| `serve-e2e` last phase | Intermittent `approval_timeout` on `host add e2e-stop-2` (1 run in 4, see Verified); capture the started app's log to find out why |
+| Windows Hello, `set_dark_mode` at run time | Ideas below |
 | CLI from WSL, and installing the CLI | Owner's decision (2026-11-09): for now WSL calls the Windows `flint.exe` (an alias), which the app serves as "flint, started by wsl" (like 1Password's `op.exe`). Later, once the port is further along: an installer that puts `flint` on `PATH`, or an "Install command-line tool" in Settings that makes the link, and WSL handled the same way |
 | Packaging | GitHub Actions: build on `windows-latest` (MSYS2 CLANG64) or cross-compile on Ubuntu with llvm-mingw as here; an installer (Inno Setup, WiX or MSIX) carrying `WebView2Loader.dll`, naming the app `flint-app.exe` or putting it in its own folder; code signing. Only once cfire's Windows support is upstream |
 
@@ -170,4 +194,61 @@ otherwise.
 - **A sandboxed shell has its own network namespace.** A server started from Claude
   Code's sandboxed Bash listens where nothing else can reach it; start test servers
   outside the sandbox.
+- **A path that exists can still read as missing.** A listening AF_UNIX socket's file is a
+  reparse point that `std::filesystem::exists` cannot follow (error 1920), so cfire's
+  `fs.exists` said false and the CLI thought the app was not running (cfire W-14). On
+  Windows, ask about the file itself (`symlink_status`, what `lstat` is on POSIX) before
+  calling a path missing.
+- **A window started from WSL never gets the foreground.** Windows gives focus only to the
+  process the user last touched; an `.exe` started from a WSL shell is not it. The window
+  shows, but `focus`/`blur` never fire and `document.hasFocus()` stays false. Checks that
+  need focus (the dialog focus trap) log themselves as skipped; a person checks them.
+- **Windows and WSL each have their own `127.0.0.2`.** In mirrored mode `127.0.0.1` is
+  shared (and broken here), but `127.0.0.2` is two addresses. A relay listening on
+  Windows' `127.0.0.2:P` that forwards to WSL's `127.0.0.2:P` makes one `host:port`
+  that the Windows app and the Linux sshd both agree on (`ssh-relay.ps1 -ListenHost`).
+- **Normalise the caller chain where it is read.** The native code returned `exe` with
+  `\` and `argv0` as the full image path, so `C:\…\flint.exe` never matched `flint` in
+  `TRANSPARENT_EXES` and every command became its own caller, asked again each time.
+  `exe` with `/` and `argv0` = the image name without `.exe` fixed it, before any rule
+  in `domain/access.cf` saw them.
+- **`.png` icons need `CreateIconFromResourceEx`.** `LoadImageW(IMAGE_ICON,
+  LR_LOADFROMFILE)` reads `.ico` only and fails silently on a PNG; PNG bytes are valid
+  icon resource data for `CreateIconFromResourceEx` (Vista+), sized with
+  `GetSystemMetrics` (cfire W-12). The `.exe`'s own icon is a resource, so it needs
+  windres at build time (W-13).
+- **Windows reuses pids, and a parent pid can be stale.** Toolhelp keeps a process's
+  `th32ParentProcessID` after the parent exits, and Windows hands pids out again quickly.
+  `ipc_caller` walks `ppid` with no check that the parent was created **before** the
+  child, so a chain can step into an unrelated process that took the parent's old pid,
+  and the window names the wrong program. The definitive port should stop the walk when
+  a parent's creation time is later than its child's (the times are already read with
+  `GetProcessTimes`); POSIX does not need it (a dead parent's children are reparented).
+- **Edges are every place a path comes in, not only the command line.** The CLI turned
+  `\` into `/`, but the GUI's file dialogs returned `C:\…` and both creating and opening
+  a vault failed ("vault path must be absolute"). List the inputs: arguments, dialogs,
+  drops, environment variables, config files.
+- **A test page must check what it typed.** A React screen can render again right after
+  it appears and drop a field's value; the page then submits an empty form and waits
+  forever. Read the value back before submitting, retry, and make the harness stop at
+  the first failed step with the page's text in the log, instead of running forty
+  commands that can only fail (each costs seconds; a hang costs the whole timeout).
+- **Kill what an interrupted run left before starting.** An sshd from a stopped run kept
+  the port with other keys, and the next run's `exec`s all failed with `auth`, which
+  looked like a Flint bug. Also: `Stop-Process` returns before the `.exe` is released;
+  wait for the exit before copying over it.
 
+## Ideas for the definitive port on `main`
+
+Not done here; worth doing when `main` redoes the port on a cfire with Windows support.
+
+| Idea | Why |
+|---|---|
+| **Clipboard through `navigator.clipboard`** for plain copies, the native code only for secrets | WebView2 grants the async clipboard API to the app's origin; one code path on all three platforms. Secrets still need the native write, for the "no history, no cloud" formats and the clear timer |
+| **File dialogs in ext:webui on `IFileDialog`** (cfire W-15) | No `MAX_PATH` buffer, the modern dialog, folder pickers (`FOS_PICKFOLDERS`); Flint's own `flint_dialog` stays empty on Windows |
+| **Presence with Windows Hello** (`UserConsentVerifier`, WinRT) | Today the window asks for the master password instead (the degraded fallback). Hello is the Windows equivalent of Touch ID / polkit for "the owner is here" |
+| **The CLI from WSL delegating to `flint.exe`** | As 1Password's `op.exe`: one vault, one app, one approval ("flint, started by wsl"), no Linux build to keep in step. A `flint` shim in WSL's `PATH` that calls the Windows binary, with arguments' paths translated (`wslpath -w`) |
+| **An icon per platform in `build.cf`** | Today W-13 looks for the `.ico` beside the `.icns`; an explicit `Icon` per target (or a list) is clearer, and the same `.rc` can carry a `VERSIONINFO` |
+| **WebView2's data folder name** | WebView2 keeps its profile in `%LOCALAPPDATA%\flint-app` (the `.exe` name). Name it `Flint` (or `Flint\WebView2`) through the environment options, so uninstalling and support know where it is |
+| **A tray glyph for the light taskbar** | The tray PNG is drawn for a dark bar; on Windows' light theme it is hard to see. Pick the glyph from `SystemUsesLightTheme` (and on change, `WM_SETTINGCHANGE`) |
+| **`set_dark_mode` at run time** | cfire reads the flag once when the window is made, on every backend; on Windows `DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE)` can be called again, so the title bar follows the page's theme without a restart |

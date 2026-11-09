@@ -33,7 +33,7 @@ cleanup() {
   stop_app
   [[ -f "$tmp/sshd.pid" ]] && kill "$(cat "$tmp/sshd.pid")" 2>/dev/null
   powershell.exe -NoProfile -c "Get-NetTCPConnection -LocalAddress 127.0.0.2 -LocalPort $P -State Listen -ErrorAction SilentlyContinue | % { Stop-Process -Id \$_.OwningProcess -Force -ErrorAction SilentlyContinue }" >/dev/null 2>&1 || true
-  cp "$tmp/app.log" "$WIN_TMP/app.log" 2>/dev/null  # kept for a look
+  cp "$tmp/app.log" "$tmp/sshd.log" "$WIN_TMP/" 2>/dev/null  # kept for a look
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -55,11 +55,15 @@ StrictModes no
 PermitTTY yes
 Subsystem sftp internal-sftp
 CFG
+# An sshd left by an interrupted run would answer on the port with other keys.
+pkill -f "sshd -f ${TMPDIR:-/tmp}/flint-win-serve\\." 2>/dev/null; sleep 0.3
 setsid /usr/sbin/sshd -f "$tmp/sshd_config" -E "$tmp/sshd.log"
+for _ in $(seq 1 50); do [[ -s "$tmp/sshd.pid" ]] && break; sleep 0.1; done
+[[ -s "$tmp/sshd.pid" ]] || { echo "serve-e2e: sshd did not start" >&2; cat "$tmp/sshd.log" >&2; exit 1; }
 setsid nohup powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$here/ssh-relay.ps1")" -ListenHost 127.0.0.2 \
   -Port "$P" -TargetHost 127.0.0.2 -Target "$P" -Distro "$WSL_DISTRO_NAME" > "$tmp/relay.log" 2>&1 &
-for _ in $(seq 1 100); do grep -q '^relay:' "$tmp/relay.log" 2>/dev/null && break; sleep 0.1; done
-grep -q '^relay:' "$tmp/relay.log" || { echo "serve-e2e: the relay did not start" >&2; exit 1; }
+for _ in $(seq 1 300); do grep -q '^relay:' "$tmp/relay.log" 2>/dev/null && break; sleep 0.1; done
+grep -q '^relay:' "$tmp/relay.log" || { echo "serve-e2e: the relay did not start" >&2; cat "$tmp/relay.log" >&2; exit 1; }
 
 # ---- the app folder and the run's files, on the Windows side
 stop_app
@@ -108,12 +112,26 @@ MASTER="$MASTER" python3 -I -c 'import os,sys; open(sys.argv[2],"w").write(open(
   "$here/serve-page.js" "$WIN_TMP/serve-page.js"
 FLINT_GUI_E2E="$W\\serve-page.js" "$WIN_TMP/app/flint-app.exe" > "$tmp/app.log" 2>&1 &
 app_pid=$!
+# The CLI waits until the page has unlocked: a command that reaches the locked app
+# re-renders the unlock screen (naming the command) while the page is typing the master
+# password, and the page then submits an empty field.
+for _ in $(seq 1 600); do
+  grep -q "the window unlocks" "$tmp/app.log" 2>/dev/null && break
+  kill -0 "$app_pid" 2>/dev/null || break
+  sleep 0.1
+done
+check "the page unlocked the vault in the window" 'grep -q "the window unlocks" "$tmp/app.log"'
+if ! grep -q "the window unlocks" "$tmp/app.log"; then
+  # Everything after this needs the unlocked app: stop here, with what the page saw.
+  echo "serve-e2e: the page did not unlock; the app said:" >&2; tail -20 "$tmp/app.log" >&2
+  exit 1
+fi
 for _ in $(seq 1 300); do
   printf '' | "$flint" host list >/dev/null 2>&1 && break
   sleep 0.2
 done
 check "the app serves the socket" 'sock_exists'
-check "the first command, which asked for the unlock, was allowed with it" 'grep -q "allowed flint" "$tmp/app.log"'
+check "the first command was allowed in the window" 'grep -q "ok   allowed: " "$tmp/app.log"'
 expect 0 "host list, served: no master password, no keychain" "" -- host list
 check "it lists the hosts" '[[ "$out" == *local-web* && "$out" == *local* ]]'
 expect 0 "host add with a password on stdin" "$HOST_PW"$'\n' -- --json host add served-web --hostname 10.0.0.6 --user root --password-stdin
@@ -151,12 +169,18 @@ expect 0 "cp up through the app" "" -- cp "$W\\blob.bin" "local:$tmp/blob-up.bin
 check "the upload is byte for byte" 'cmp -s "$WIN_TMP/blob.bin" "$tmp/blob-up.bin"'
 expect 0 "cp down through the app" "" -- cp "local:$tmp/blob-up.bin" "$W\\blob-down.bin"
 check "the download is byte for byte" 'cmp -s "$WIN_TMP/blob.bin" "$WIN_TMP/blob-down.bin"'
-expect 15 "a caller the owner denies is refused" "" -- exec local -- echo deny-me
+# A new caller (flint ← cscript): the grant above covers "flint, started by wsl" only.
+cp "$here/new-caller.js" "$WIN_TMP/new-caller.js"
+checks=$((checks + 1))
+cscript.exe //nologo //E:jscript "$W\\new-caller.js" "$W\\app\\flint.exe" exec local -- echo deny-me >"$tmp/out" 2>"$tmp/err"; got=$?
+out="$(tr -d '\r' < "$tmp/out")"; err="$(tr -d '\r' < "$tmp/err")"
+if [[ $got == 15 ]]; then echo "ok    a new caller the owner denies is refused"; else failures=$((failures + 1)); echo "FAIL  a new caller the owner denies is refused: exit $got, want 15"; echo "      stdout: $out"; echo "      stderr: $err"; fi
 check "it runs nothing and says why" '[[ "$out" != *deny-me* && "$err" == *"denied"* ]]'
+check "the window names the new caller" 'grep -q "started by cscript" "$tmp/app.log"'
 grep -q "denied: .*deny-me" "$tmp/app.log" && echo "ok    the window denied it" || { failures=$((failures + 1)); echo "FAIL  the window did not deny deny-me"; }
 
 echo "== a second launch shows the running Flint and exits"
-"$WIN_TMP/app/flint-app.exe" > "$tmp/second.log" 2>&1
+timeout 60 timeout 60 "$WIN_TMP/app/flint-app.exe" > "$tmp/second.log" 2>&1
 check "the second launch exits at once, saying so" 'grep -q "already running" "$tmp/second.log"'
 
 echo "== the stop host: the app quits"

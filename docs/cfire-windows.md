@@ -330,8 +330,10 @@ worked around
   signature goes through `CreateIconFromResourceEx` (PNG icon data, Windows Vista+), sized
   with `GetSystemMetrics` (`SM_CXSMICON` for the tray and the small window icon, `SM_CXICON`
   for the big one); anything else still goes through `LoadImageW`.
-- **Verified:** Flint's tray shows its own glyph (owner's visual check, see the port
-  guide).
+- **Verified:** Flint's app runs with the patch and has a tray (`windows/gui-e2e.sh`, the
+  tray close step).
+  Whether the tray shows Flint's glyph is the owner's visual check, pending (port guide,
+  "Not done yet").
 - **Suggested fix:** the same; `.ico` keeps working.
 
 ## W-13
@@ -352,8 +354,9 @@ fixed · [patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-o
   `<triple>-windres`, `llvm-windres` or `windres` on `PATH`; with none, a warning and no
   icon. The webui window class loads icon resource 1 (`wc.hIcon`, `wc.hIconSm`), so the
   title bar and the taskbar use it too.
-- **Verified:** `llvm-objdump -h` shows a `.rsrc` section in `Flint.exe`; the owner saw the
-  icon in Explorer, the title bar and the taskbar (port guide).
+- **Verified:** `llvm-objdump -h` shows a `.rsrc` section in `Flint.exe`. The icon in
+  Explorer, the title bar and the taskbar is the owner's visual check, pending (port
+  guide, "Not done yet").
 - **Suggested fix:** the same idea. An `Icon` per platform in `build.cf` (or a list) would
   be more explicit than "the `.ico` beside it". A version resource (`VERSIONINFO`, product
   name, version) is the natural next line in the same `.rc`.

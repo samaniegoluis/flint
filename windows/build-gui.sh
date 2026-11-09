@@ -50,8 +50,9 @@ echo "build-gui: $out"
 
 if [[ -n "$install_dir" ]]; then
   win_dir="$(wslpath -w "$install_dir")"
-  # A running copy holds its .exe open: stop it (the app locks the vault on quit).
-  powershell.exe -NoProfile -c "Get-Process flint-app,flint -ErrorAction SilentlyContinue | ? { \$_.Path -like '$win_dir\\*' } | Stop-Process -Force" >/dev/null 2>&1 || true
+  # A running copy holds its .exe open: stop it and wait until it is gone (the app locks
+  # the vault on quit).
+  powershell.exe -NoProfile -c "Get-Process flint-app,flint -ErrorAction SilentlyContinue | ? { \$_.Path -like '$win_dir\\*' } | % { Stop-Process -Id \$_.Id -Force; [void]\$_.WaitForExit(10000) }" >/dev/null 2>&1 || true
   mkdir -p "$install_dir"
   rm -rf "$install_dir/ui"
   cp -R "$out/." "$install_dir/"

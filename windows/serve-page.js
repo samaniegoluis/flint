@@ -53,10 +53,19 @@
   })();
   let step = 'unlock';
   try {
-    setValue(await waitFor(() => q('#pw'), 'the unlock screen'), MASTER);
-    await sleep(30);
-    byText('button[type="submit"]', 'Unlock').click();
-    await waitFor(() => byText('.tree .ti', 'local-web'), 'the unlocked tree');
+    // The unlock screen can render again just after it appears (on Windows it did, and
+    // the field came back empty): type, check the field kept it, then submit; retry.
+    for (let attempt = 1; ; attempt++) {
+      setValue(await waitFor(() => q('#pw'), 'the unlock screen'), MASTER);
+      await sleep(300);
+      if (q('#pw')?.value === MASTER) {
+        byText('button[type="submit"]', 'Unlock').click();
+        try { await waitFor(() => byText('.tree .ti', 'local-web'), 'the unlocked tree', 10000); break; } catch (e) { if (attempt >= 5) throw e; }
+      } else if (attempt >= 5) {
+        throw new Error('the master password field kept losing its text');
+      }
+      await log('unlock: attempt ' + attempt + ' did not take, again');
+    }
     await log('ok   the window unlocks the vault the CLI will use');
     step = 'served changes';
     await waitFor(() => byText('.tree .ti', 'served-web'), 'the host the CLI added', 90000);
@@ -66,6 +75,8 @@
     await window.backend.e2e_report({ ok: true, detail: '' });
   } catch (e) {
     await log('FAILED at ' + step + ': ' + e.message);
+    await log('page text: ' + document.body.innerText.replace(/\s+/g, ' ').slice(0, 600));
+    await log('page text: ' + document.body.innerText.replace(/\s+/g, ' ').slice(0, 600));
     await window.backend.e2e_report({ ok: false, detail: step + ': ' + e.message });
   }
   window.runtime.Quit();

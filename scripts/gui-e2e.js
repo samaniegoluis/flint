@@ -833,7 +833,10 @@
     }
     await waitFor(() => byText('.tree .ti', 'local') || grpRow(), 'the unlocked tree', 30000);
     await check(true, 'the right master password unlocks the vault again');
-    await check(!q('.lock-screen') && !q('.tab')?.closest('[inert]'), 'the lock screen is gone');
+    // The tree can show a moment before the lock screen leaves (seen on Windows): wait.
+    const lockGone = () => !q('.lock-screen') && !q('.tab')?.closest('[inert]');
+    try { await waitFor(lockGone, 'the lock screen to go', 5000); } catch {}
+    await check(lockGone(), 'the lock screen is gone');
     await runInTerminal('echo after-lock-$((2+2))', 'after-lock-4');
     await check(true, 'the session that ran under the lock screen still works');
 

@@ -31,14 +31,6 @@ fn absolute_path(raw: str) -> str {
     return current_dir() + "/" + path
 }
 
-// Windows local paths with `/` separators, so the rest of Flint sees one form.
-fn local_slashes(path: str) -> str {
-    if os_name() == "windows" {
-        return str.replace(path, "\\", "/")
-    }
-    return path
-}
-
 // A --vault selector: a path (anything with '/' or ending in .flint) is made
 // absolute; a name is kept as is.
 fn vault_selector(p: ParsedArgs) -> str {

@@ -48,6 +48,16 @@ fn spawn_detached(path: str) -> bool {
     return ok
 }
 
+// Windows local paths with `/` separators, so the rest of Flint sees one form. The
+// CLI applies it to its arguments, the GUI to what the file dialogs return
+// (windows-port).
+fn local_slashes(path: str) -> str {
+    if os_name() == "windows" {
+        return str.replace(path, "\\", "/")
+    }
+    return path
+}
+
 // "mac" or "linux": the keyboard map and window chrome differ (CF-031).
 fn os_name() -> str {
     mut name := ""
