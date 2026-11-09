@@ -266,6 +266,13 @@ try {
 			await page.setViewportSize({ width: 900, height: 600 });
 			await page.waitForTimeout(600);
 			await page.screenshot({ path: join(extra, `split-narrow-${theme}.png`) });
+			// A narrow window lays the sidebar over the terminal, drawn whole (milestone 21).
+			for (const [view, rail] of [['files', 'Files'], ['hosts', 'Hosts']]) {
+				await page.locator('.rail-btn', { hasText: rail }).click();
+				await page.waitForTimeout(400);
+				await page.screenshot({ path: join(extra, `${view}-narrow-${theme}.png`) });
+			}
+			await page.keyboard.press('Escape');
 			await page.setViewportSize({ width: 1280, height: 640 });
 			for (let i = 0; i < 3; i++) await page.keyboard.press('Meta+w');
 			await page.waitForTimeout(300);

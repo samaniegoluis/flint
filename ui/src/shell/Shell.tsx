@@ -118,7 +118,9 @@ export function Shell() {
     if (!root) return;
     root.dataset.view = view;
     root.dataset.collapsed = String(SIDE_VIEWS.includes(view) && (collapsed || narrow));
-    return () => { delete root.dataset.view; delete root.dataset.collapsed; };
+    // A narrow window lays the sidebar over the terminal instead of beside it.
+    root.dataset.narrow = String(narrow);
+    return () => { delete root.dataset.view; delete root.dataset.collapsed; delete root.dataset.narrow; };
   }, [view, collapsed, narrow]);
 
   useEffect(() => {
@@ -313,7 +315,7 @@ export function Shell() {
 
       {showSidebar && narrow && <div style={{ position: 'absolute', inset: 'var(--titlebar-h) 0 var(--statusbar-h) var(--rail-w)', zIndex: 4 }} onMouseDown={() => setCollapsed(true)} />}
       {showSidebar && view === 'files' && (
-        <div style={narrow ? { position: 'relative', zIndex: 5 } : undefined} onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
+        <div onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
           <FilesView tab={tab} onReconnect={(id) => sessions.reconnect(id)} onGoToHost={() => setPalette({ hostsOnly: true })} onConfirm={setConfirm} onAsk={setAsk}
             onEditHost={(alias) => setEditor({ alias, group: '' })}
             resizer={narrow ? null : <SidebarResizer width={filesWidth} min={FILES_MIN} max={FILES_MAX} reset={FILES_DEFAULT} clamp={clampFiles} label="Resize the Files sidebar"
@@ -321,7 +323,7 @@ export function Shell() {
         </div>
       )}
       {showSidebar && view === 'hosts' && (
-        <div style={narrow ? { position: 'relative', zIndex: 5 } : undefined} onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
+        <div onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
           <HostTree selected={selected} filterRef={filterRef} collapsed={collapsedGroups} setCollapsed={setCollapsedGroups}
             resizer={narrow ? null : <SidebarResizer width={sidebarWidth} min={SIDEBAR_MIN} max={SIDEBAR_MAX} reset={SIDEBAR_DEFAULT} clamp={clampSidebar} label="Resize the sidebar" onLive={(w) => document.documentElement.style.setProperty('--sidebar-w', w + 'px')} onDone={(w) => updateUi({ sidebar_width: w })} />}
             h={{
