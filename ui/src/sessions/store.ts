@@ -67,6 +67,9 @@ function b64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
+/** How long a pane's size must hold before the shell is told (see resize). */
+const RESIZE_SETTLE_MS = 120;
+
 let seq = 0;
 const mint = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++seq}`;
 
@@ -307,12 +310,22 @@ class SessionStore {
     if (t && t.status === 'ready') this.inputs.push(t.session, data);
   }
 
+  // The shell hears of a new size once it settles: a split resizes a pane in two
+  // steps (its header appears, then the width changes) and a divider drag in many,
+  // and a shell answers each one by drawing its prompt again (M20 owner check).
+  private resizeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
   resize(paneId: string, cols: number, rows: number) {
     const prev = this.sizes.get(paneId);
     if (prev && prev.cols === cols && prev.rows === rows) return;
     this.sizes.set(paneId, { cols, rows });
-    const t = this.pane(paneId);
-    if (t && t.session && t.status !== 'ended') api.sessionResize(t.session, cols, rows).catch(() => {});
+    clearTimeout(this.resizeTimers.get(paneId));
+    this.resizeTimers.set(paneId, setTimeout(() => {
+      this.resizeTimers.delete(paneId);
+      const t = this.pane(paneId);
+      const size = this.sizes.get(paneId);
+      if (t && size && t.session && t.status !== 'ended') api.sessionResize(t.session, size.cols, size.rows).catch(() => {});
+    }, RESIZE_SETTLE_MS));
   }
 
   attach(paneId: string, writer: Writer) {
