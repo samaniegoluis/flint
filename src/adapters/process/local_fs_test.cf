@@ -20,14 +20,19 @@ test "local files: write, stat, list, read, rename, remove, with stable codes" {
     }
     dir := base + "/flint-localfs-{time.now_ms()}"
     mut l := new_local_fs()
+    mut got_code := "ok"
     try l.local_mkdir(dir)
     defer fs.remove(dir) or {}
-    assert_eq(error_code_of("{l.local_mkdir(dir).error().message()}"), "exists")
+    got_code = "ok"
+    l.local_mkdir(dir) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "exists")
     path := dir + "/a.bin"
     try l.local_file_open(path, true, true)
     try l.local_file_write("hello\tworld")
     try l.local_file_close()
-    assert_eq(error_code_of("{l.local_file_open(path, true, true).error().message()}"), "exists")
+    got_code = "ok"
+    l.local_file_open(path, true, true) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "exists")
     st := try l.local_stat(path)
     assert(st.is_file())
     assert_eq(st.size, 11)
@@ -39,9 +44,15 @@ test "local files: write, stat, list, read, rename, remove, with stable codes" {
     try l.local_mkdir(dir + "/sub")
     list := try l.local_list(dir)
     assert_eq(list.len(), 2)
-    assert_eq(error_code_of("{l.local_list(path).error().message()}"), "not_a_directory")
-    assert_eq(error_code_of("{l.local_stat(dir + "/nope").error().message()}"), "not_found")
-    assert_eq(error_code_of("{l.local_file_open(dir, false, false).error().message()}"), "invalid")
+    got_code = "ok"
+    l.local_list(path) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "not_a_directory")
+    got_code = "ok"
+    l.local_stat(dir + "/nope") or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "not_found")
+    got_code = "ok"
+    l.local_file_open(dir, false, false) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "invalid")
     try l.local_rename(path, dir + "/sub/b.bin")
     assert((try l.local_stat(dir + "/sub/b.bin")).is_file())
     try l.local_remove(dir + "/sub/b.bin")

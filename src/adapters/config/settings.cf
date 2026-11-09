@@ -4,7 +4,7 @@ package config
 // recent-vaults list. It holds appearance and terminal preferences only.
 
 import "core:fs"
-import "ext:json"
+import "core:json"
 import "../../domain"
 
 // File shape: a local struct, as in recents.cf.

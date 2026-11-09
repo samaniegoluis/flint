@@ -16,11 +16,10 @@ type UiStateView struct {
 
 // The stored state, cleaned (a damaged or hand-edited file never stops the app).
 fn load_ui_state[U: UiStateStore](store: U) -> UiState {
-    loaded := store.ui_state_load()
-    if !loaded.has_value() {
+    loaded := store.ui_state_load() or err {
         return default_ui_state()
     }
-    return clean_ui_state(loaded.value())
+    return clean_ui_state(loaded)
 }
 
 // The view for vault `vault` ("" when no vault is open: no collapsed groups).

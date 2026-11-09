@@ -165,19 +165,17 @@ fn (self: CipherDb) migrate() -> void! {
             try self.exec("BEGIN IMMEDIATE;")
             // Read again under the write lock: another Flint process opening the same
             // vault may have applied this step while this one waited for the lock.
-            now := self.schema_version()
-            if !now.has_value() {
+            now := self.schema_version() or err {
                 _ := self.exec("ROLLBACK;")
-                return error("io: migration {m.version} failed: {now.error().message()}")
+                return error("io: migration {m.version} failed: {err.message()}")
             }
-            if now.value() >= m.version {
+            if now >= m.version {
                 try self.exec("COMMIT;")
                 continue
             }
-            applied := self.apply_migration(m)
-            if !applied.has_value() {
+            self.apply_migration(m) or err {
                 _ := self.exec("ROLLBACK;")
-                return error("io: migration {m.version} failed: {applied.error().message()}")
+                return error("io: migration {m.version} failed: {err.message()}")
             }
             try self.exec("COMMIT;")
         }

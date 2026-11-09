@@ -175,6 +175,22 @@ fn check_hostname(value: str) -> void! {
     }
 }
 
+// Whether check_color passes.
+fn color_valid(value: str) -> bool {
+    check_color(value) or {
+        return false
+    }
+    return true
+}
+
+// Whether check_text passes.
+fn text_valid(kind: str, value: str, max_len: usize, multiline: bool) -> bool {
+    check_text(kind, value, max_len, multiline) or {
+        return false
+    }
+    return true
+}
+
 // Colours are empty (none) or "#rrggbb".
 fn check_color(value: str) -> void! {
     if value.len() == 0 {
@@ -274,48 +290,64 @@ fn sample_host() -> Host {
 }
 
 test "names accept the documented alphabet only" {
-    assert(check_name("alias", "web-01.prod_a").has_value())
-    assert(!check_name("alias", "").has_value())
-    assert(!check_name("alias", "-x").has_value())
-    assert(!check_name("alias", ".x").has_value())
-    assert(!check_name("alias", "web 01").has_value())
-    assert(!check_name("alias", "a/b").has_value())
-    bad := check_name("alias", "a b")
-    assert_eq(error_code_of("{bad.error().message()}"), "invalid")
+    mut refused := 0
+    try check_name("alias", "web-01.prod_a")
+    check_name("alias", "") or { refused += 1 }
+    assert_eq(refused, 1)
+    check_name("alias", "-x") or { refused += 1 }
+    assert_eq(refused, 2)
+    check_name("alias", ".x") or { refused += 1 }
+    assert_eq(refused, 3)
+    check_name("alias", "web 01") or { refused += 1 }
+    assert_eq(refused, 4)
+    check_name("alias", "a/b") or { refused += 1 }
+    assert_eq(refused, 5)
+    mut bad := ""
+    check_name("alias", "a b") or err { bad = "{err.message()}" }
+    assert_eq(error_code_of("{bad}"), "invalid")
 }
 
 test "group paths split and validate" {
+    mut refused := 0
     parts := split_group_path("/homelab//proxmox/")
     assert_eq(parts.len(), 2)
     assert_eq(parts[0], "homelab")
     assert_eq(parts[1], "proxmox")
     assert_eq(split_group_path("").len(), 0)
-    assert(check_group_name("Home Lab").has_value())
-    assert(!check_group_name(" x").has_value())
+    try check_group_name("Home Lab")
+    check_group_name(" x") or { refused += 1 }
+    assert_eq(refused, 1)
 }
 
 test "host rules" {
-    assert(check_host(sample_host()).has_value())
+    mut refused := 0
+    try check_host(sample_host())
     mut h := sample_host()
     h.port = 70000
-    assert(!check_host(h).has_value())
+    check_host(h) or { refused += 1 }
+    assert_eq(refused, 1)
     h = sample_host()
     h.color = "#ff88"
-    assert(!check_host(h).has_value())
+    check_host(h) or { refused += 1 }
+    assert_eq(refused, 2)
     h = sample_host()
     h.hostname = "bad host"
-    assert(!check_host(h).has_value())
+    check_host(h) or { refused += 1 }
+    assert_eq(refused, 3)
     h = sample_host()
     h.label = "two\nlines"
-    assert(!check_host(h).has_value())
+    check_host(h) or { refused += 1 }
+    assert_eq(refused, 4)
     h = sample_host()
     h.jump_host_id = h.id
-    assert(!check_host(h).has_value())
+    check_host(h) or { refused += 1 }
+    assert_eq(refused, 5)
     h = sample_host()
     h.initial_command = "herdr"
-    assert(check_host(h).has_value())
+    try check_host(h)
     h.initial_command = "tmux\nattach"
-    assert(!check_host(h).has_value())
+    check_host(h) or { refused += 1 }
+    assert_eq(refused, 6)
 }
 
 test "tags are deduplicated in order" {

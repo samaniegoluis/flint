@@ -162,7 +162,6 @@ fn exec_sudo_on_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, O: 
         password = try sudo_password_for(crypto, session, cat, h)
     }
     target := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
-    res := run_sudo(crypto, mut link, mut sink, mut clock, target.alias, user, argv, password, exec_timeout_secs, capture)
-    link.link_hangup()
-    return res
+    defer link.link_hangup()
+    return run_sudo(crypto, mut link, mut sink, mut clock, target.alias, user, argv, password, exec_timeout_secs, capture)
 }

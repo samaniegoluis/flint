@@ -46,8 +46,9 @@ test "a real Tether vault is imported and its secrets open under the Flint vault
     assert(pem.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----"))
     store.vault_detach()
 
-    wrong := import_tether(c, mut store, new_libssh_key_inspector(), new_tether_reader(), s, fixture_path(), "not it", false)
-    assert_eq(error_code_of("{wrong.error().message()}"), "wrong_password")
+    mut wrong := ""
+    import_tether(c, mut store, new_libssh_key_inspector(), new_tether_reader(), s, fixture_path(), "not it", false) or err { wrong = "{err.message()}" }
+    assert_eq(error_code_of("{wrong}"), "wrong_password")
 }
 
 fn str_replace_suffix(s: str, suffix: str, with: str) -> str {

@@ -31,6 +31,36 @@ as is.
 - Each entry gives: what Flint needed, a minimal repro or source pointer, the workaround and
   where it lives, and what an ideal API would look like.
 
+## Status at cfire `c5b1d4b` (2026-11-09)
+
+cfire `c5b1d4b` (0.10.0) is six commits on `43431f2`: a stricter checker, a new I/O layer
+(`fs.File` over a descriptor, `_bytes`/`_text` pairs, RAII stdio), `json`, `net`, `keychain`
+and `audio` moved from `ext:` to `core:`, Winsock2 for Windows, and `ext:ai` agents. It
+answers none of Flint's open entries; its commits cite "CF-086..CF-089", which are cfire's
+own backlog items and not Flint's entries of those numbers (CF-108). Flint moved to it in
+milestone 19b (D-060). Every open entry it could touch has an **At `c5b1d4b`** line.
+
+**What the move took:** `ext:json` → `core:json` (one line per file); about 380 places where
+a fallible result was stored, inspected with `has_value()` or passed as an argument, now an
+error (`cfire/UNHANDLED-RESULT`), rewritten with `or err { … }`, `or { … }`, `try` or `defer`;
+the vault header read with `read_exact` (CF-107). No workaround could be dropped.
+
+| Status | Entries |
+|---|---|
+| Unchanged, rechecked [ran] | 088, 091, 094, 098, 100, 101, 104, 105 |
+| Unchanged [read] | 086, 087, 089, 090, 092, 093, 095, 096, 097, 099, 102, 103 |
+| Changed upstream, not used by Flint | 010 (Winsock2) |
+| **New** | CF-106..CF-110, below |
+
+**Most urgent of the new ones:**
+
+- **CF-109:** on macOS the installer's `runtime/VERSION` shadows the standard `<version>`
+  header and every build fails until the file is removed.
+- **CF-107:** `File.read_bytes(n)` changed meaning with no diagnostic; code that read a
+  header with it now fails at run time.
+- **CF-106:** `cfire check` reports a false `REDUNDANT-TRY` on every call through a generic
+  interface parameter (137 in Flint), and `cfire fix` would delete those `try`s.
+
 ## Status at cfire `43431f2` (2026-11-07)
 
 cfire `43431f2` answers CF-001..CF-085, on top of `5c805e5` (a refactor that splits the
@@ -406,6 +436,7 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
 - **Ideal:** an OSI licence (MIT or Apache-2.0) covering the compiler and `runtime/`.
 
 ### CF-010 · missing · `partly resolved`: Windows support in the core runtime
+- **At `c5b1d4b`:** [read] cfire ported `core/net/tcp.hpp`, `tls.hpp` and `os.socketpair` to Winsock2 (CF-010.c-net, g) with a mock-header test and a Windows CI job. Flint builds nothing for Windows yet, so nothing was run; k (a cross sysroot) is still deferred.
 - **At `43431f2`:** [compiled] CF-010.a and CF-010.b are fixed: a hello world compiles and links for Windows (403 KB `.exe`, llvm-mingw, the runtime installed by `43431f2`). CF-010.c: `core/cli.hpp` compiles now; `core/net.hpp` still fails (`'arpa/inet.h' file not found`). [read] CF-010.d, e, f, h, j, l, m are changed in the source (`CommandLineToArgvW`-style quoting, concurrent pipe draining, `PeekNamedPipe`, VT input, `CredWriteW` status, `CP_UTF8`, `_fileno`); nothing was run on Windows. **Deferred by cfire:** CF-010.c (net, Winsock), g (`socketpair`) and k (a cross-compiling sysroot).
 - **At `466751b`:** `_WIN32` paths added across the runtime, but **a hello world does not
   compile for Windows** (see "Windows at `466751b`" above for how this was checked).
@@ -850,6 +881,7 @@ The entries below were found while building milestone 02 against the same cfire 
   fields, across packages.
 
 ### CF-034 · bug · `partly resolved`: a string literal inside an interpolation breaks the string
+- **At `c5b1d4b`:** [ran] A related shape: a plain literal holding `{` (`"{not json"`) is read as an interpolation as soon as a `}` follows anywhere on the same line (`parse("{not json") or err { x = "{err.message()}" }` → "unexpected token '}' in expression"). Workaround: the literal on its own line (`src/drivers/clicmd/serve_test.cf`). There is still no escape for a literal `{`.
 - **At `43431f2`:** [ran] `"{p.helper()}"` works. Still: an escaped quote in a nested literal, `"eq={v == "a\"b"}"`, passes `cfire check` and fails in clang (`call to consteval function 'std::basic_format_string<char>…' is not a constant expression`); the lowering is `std::println("eq={v == \"a\"b\"}")`, the expression kept as text.
 - **At `466751b`:** nested quotes work (`"{f("x")}"`, `"{os.getenv("HOME")}"`). A call into an imported user package inside an interpolation (`"{p.helper()}"`) still fails in clang.
 - **Repro:** `msg := "{f("x")}"` → `call to 'f' expects 1 argument(s), got 6`;
@@ -1543,6 +1575,7 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 2026-11-07).
 
 ### CF-086 · bug · `confirmed`: `make install` fails: its temp file name changes between recipe lines
+- **At `c5b1d4b`:** [read] Unchanged: the `install` recipe still names its temp file `.cfire.tmp.$$$$` on three recipe lines, each its own shell. The Linux image still installs by hand.
 - **Repro (43431f2):** `make install PREFIX=/usr/local CXX=clang++` (Debian trixie, in
   Flint's Linux image) →
   `cp cfire /usr/local/bin/.cfire.tmp.$$` then `chmod: cannot access
@@ -1559,6 +1592,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   with a fixed name.
 
 ### CF-087 · bug · `confirmed`: the simdjson check refuses versions that build
+- **At `c5b1d4b`:** [read] Unchanged in `src/build/deps.hpp`. The Linux image still builds simdjson 4.
 - **Repro (43431f2):** Debian trixie (`libsimdjson-dev` 3.12.3, `clang` 19), `cfire build`
   in Flint → `error building target 'native' for executable 'flint': system simdjson 3.12.3
   is incompatible with Clang 19 (requires simdjson >= 4.0 …)`. At `2d8613d` the same image
@@ -1575,6 +1609,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   and 3.12) and let an environment variable override it.
 
 ### CF-088 · bug · `confirmed`: `==` on an enum passes `cfire check` and fails in clang
+- **At `c5b1d4b`:** [ran] Still passes `cfire check` and fails in clang (`invalid operands to binary expression ('Mode' and 'Mode')`).
 - **Repro (43431f2, also 2d8613d):** `type Mode enum { X, Y }` then
   `w := Mode::Y` / `if w == Mode::Y { … }` → `cfire check` passes; clang:
   `invalid operands to binary expression ('Mode' and 'Mode')`. Enums lower to a struct
@@ -1585,6 +1620,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   comparable data), or reject `==` in the checker with a hint to use `match`.
 
 ### CF-089 · bug · `confirmed`: the descriptor-leak check is off for any package with `import cpp`
+- **At `c5b1d4b`:** [read] The test runner is unchanged; cfire's own "CF-089" in this build is a different item (CF-108).
 - **Repro (43431f2):** three one-test packages.
   - `import cpp "fcntl.h"` and a test that calls `::open("/dev/null", O_RDONLY)` and never
     closes it → `PASS`.
@@ -1606,6 +1642,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   per test (CF-018) instead of per package. A blanket exemption only if a test names it.
 
 ### CF-090 · bug · `confirmed`: `sodium.argon2id` defaults to 4 MiB, and reorders its arguments by guessing
+- **At `c5b1d4b`:** [read] `runtime/core/sodium.hpp` is unchanged.
 - **Repro (43431f2):** `cfire inspect ext:crypto/sodium` documents
   `fn argon2id(password: str, salt: []byte, out_len: usize = 32, opslimit: u64 = 2,
   memlimit: usize = 67108864)`, a 64 MiB default. Then `sodium.argon2id("pw", salt)` returns
@@ -1627,6 +1664,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `INTERACTIVE` (64 MiB) by name; an error, not a guess, for out-of-range values.
 
 ### CF-091 · bug · `confirmed`: a nested slice literal with no declared type passes `cfire check` and fails in clang
+- **At `c5b1d4b`:** [ran] Still fails in clang (`cannot deduce actual type for variable 'need' with type 'auto' from initializer list`).
 - **Repro (43431f2):** `need := [["host", "list"], ["exec", "web"]]` → `cfire check` passes;
   clang: `cannot deduce actual type for variable 'need' with type 'auto' from initializer
   list` (the lowering is `auto need = {{"host", "list"}, {"exec", "web"}};`).
@@ -1635,6 +1673,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   the checker.
 
 ### CF-092 · missing · `open`: no way to read another process's parent, start time or executable
+- **At `c5b1d4b`:** [read] Nothing new in `core:os`.
 - **Repro (43431f2):** `cfire inspect core:os` has `getpid`-style calls for the running
   process only; nothing returns a pid's parent, start time, executable path or argv. Flint
   needs them for the caller of its socket (milestone 12): the peer pid comes from the
@@ -1648,6 +1687,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `QueryFullProcessImageName`).
 
 ### CF-093 · missing · `open`: no presence check (Touch ID, polkit, Windows Hello)
+- **At `c5b1d4b`:** [read] Nothing new.
 - **Repro (43431f2):** nothing in `core:` or `ext:` asks the OS to confirm the person at the
   machine is there. Flint needs it before the owner's **Allow** in the caller approval
   window takes effect (milestone 12), so a program that clicks the window cannot approve
@@ -1662,6 +1702,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `UserConsentVerifier`), blocking a worker, never the main thread.
 
 ### CF-094 · bug · `confirmed`: a method call on a string literal passes `cfire check` and fails in clang
+- **At `c5b1d4b`:** [ran] Still fails in clang (`member reference base type 'const char[17]' is not a structure or union`).
 - **Repro (43431f2):** `if "0123456789abcdef".contains(ch) { … }` → `cfire check` passes;
   clang: `member reference base type 'const char[17]' is not a structure or union` (the
   literal is lowered as a C string, not a `cfire::str`).
@@ -1674,6 +1715,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   the checker.
 
 ### CF-095 · missing · `open`: `core:time` has no way to format a wall-clock time
+- **At `c5b1d4b`:** [read] `runtime/core/time.hpp` is unchanged.
 - **Repro (43431f2):** `cfire inspect core:time` describes "RFC 3339 / ISO 8601 formatting"
   but lists only `now`, `unix`, `unix_seconds` and `parse_rfc3339`: nothing turns a `Time`
   or Unix seconds into text. Flint prints when a token expires (milestone 12b).
@@ -1683,6 +1725,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `time.Time.Format`.
 
 ### CF-096 · bug · `confirmed`: a runtime left in `~/.local/share/cfire` shadows the one the installer writes
+- **At `c5b1d4b`:** [read] Still open: for `~/.local/bin/cfire` the runtime search tries `<prefix>/share/cfire/runtime` (`~/.local/share/cfire`) before `~/.cfire/runtime`.
 - **Repro (43431f2, Zorin OS 18):** a box that once installed cfire `2d8613d` from a checkout
   has its runtime in `~/.local/share/cfire/runtime`. Running the `43431f2` installer
   (`CFIRE_VERSION=43431f2`) writes `~/.cfire/runtime` and prints "Core compiler & runtime
@@ -1697,6 +1740,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   from its own.
 
 ### CF-097 · missing · `confirmed`: a click on the Dock icon does not bring back a window hidden by the close button
+- **At `c5b1d4b`:** [read] `ext:webui` only gained the Windows test backend.
 - **Repro (43431f2, macOS):** an `ext:webui` app with `set_hide_on_close(true)`: close the
   window, then click the app's icon in the Dock (or run `open -a` on it). Nothing appears:
   webui sets no `NSApplicationDelegate`, so `applicationShouldHandleReopen:hasVisibleWindows:`
@@ -1710,6 +1754,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `window:reopened`), and its Quit item quits (`app.quit()`) whatever hide-on-close says.
 
 ### CF-098 · bug · `confirmed`: assigning a captured variable inside `scope.spawn` compiles and is lost
+- **At `c5b1d4b`:** [ran] Still compiles and is lost: `seen = 5` inside `scope.spawn` leaves `seen` at 0.
 - **Repro (43431f2, macOS):** `mut heard := ""` then `async.scope(workers: 2) |scope| { scope.spawn || { heard = "x" } }`;
   after the scope, `heard` is still `""`. The task gets a copy of every capture (as `src/drivers/gui/main.cf`
   notes, "captures are read-only inside the task"), but an assignment to one is accepted with no
@@ -1720,6 +1765,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `cfire/ASSIGN-TO-TASK-CAPTURE`), or capture `mut` locals by shared reference under the scope's join.
 
 ### CF-099 · missing · `confirmed`: `core:fs` has no stat, no exclusive create and no error kind
+- **At `c5b1d4b`:** [read] `core:fs` gained `is_file`, `is_dir`, `copy_file`, `append_*` and fd-based `File` handles, but still no stat (kind, size, mtime, mode in one call), no exclusive create and no error kind.
 - **Repro (43431f2):** `cfire_stdlib_lookup core:fs` lists `exists`, `list_dir` (names only), `open`
   with Read/Write/Append/ReadWrite and `remove`, but nothing returns a file's kind, size, mtime or
   mode, nothing tells a link from its target (`lstat`), `open` has no create-exclusive mode, and a
@@ -1733,6 +1779,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `IsADirectory`) on every `core:fs` error, as Rust's `std::io::ErrorKind`.
 
 ### CF-100 · missing · `confirmed`: a type parameter cannot require two interfaces
+- **At `c5b1d4b`:** [ran] Still a parse error (`expected 'IDENT', got '+'`).
 - **Repro (43431f2):** `fn both[T: A + B](t: T)` fails with "expected 'IDENT', got '+'", and an
   interface cannot embed another (`type AB interface { A; B }`: "expected '('"). A libssh link serves
   both `SshTransport` and `SftpTransport`; `copy_with_host` must call both on one value.
@@ -1743,6 +1790,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `T: A + B` (Rust) or interface embedding (Go), checked in the body.
 
 ### CF-101 · bug · `confirmed`: a precision spec (`{x:.1f}`) breaks interpolation
+- **At `c5b1d4b`:** [ran] Still fails in clang (`call to consteval function 'std::basic_format_string<char>::basic_format_string<char[15]>' is not a constant expression`).
 - **Repro (43431f2, macOS):** `value := 1.5` then `return "{value:.1f} {units[u]}"` returns the literal
   text `{value:.1f} {units[u]}`, uninterpolated, with no diagnostic. In `println("a: {value:.1f}")` the same
   spec fails in clang instead ("call to consteval function std::basic_format_string … The argument
@@ -1754,6 +1802,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   a compile error, never a literal.
 
 ### CF-102 · bug · `confirmed`: `none` passed for a raw pointer parameter lowers to `std::nullopt`
+- **At `c5b1d4b`:** [read] Not rechecked; no change found in how arguments lower.
 - **Repro (43431f2, macOS):** `fn f(p: *mut cpp::sftp_session_struct) -> i64 { ... }` called as `f(none)`
   fails in clang: "no known conversion from 'const nullopt_t' to 'sftp_session_struct *'". Assigning
   `none` to a raw pointer field (`self.sftp = none`) and comparing (`p == none`) lower correctly.
@@ -1763,6 +1812,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   assignment.
 
 ### CF-103 · bug · `confirmed`: a namespaced native function shadows a cfire function of the same name
+- **At `c5b1d4b`:** [read] Not rechecked.
 - **Repro (43431f2, macOS):** with `import cpp "flint_fs.hpp"` (which declares
   `flint_fs::remove_path(const std::string&, std::string&)`) anywhere in the build, a call to the cfire
   use case `remove_path[T: SftpTransport](mut sftp: T, path: str)` from another package lowers to
@@ -1775,6 +1825,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   function is never resolved against a native one.
 
 ### CF-104 · bug · `confirmed`: a `"\0"` string literal is the empty string
+- **At `c5b1d4b`:** [ran] Still true for every string: `"a.txt".contains("\0")` prints `true`.
 - **Repro (43431f2, macOS):** `rel.contains("\0")` is true for every string, `"a.txt"` included: the literal
   lowers to `std::string("\0")`, built from a C string, which stops at the NUL and is empty.
 - **Workaround:** `valid_drop_path` in `src/domain/files.cf` does not test for NUL. A NUL in a dropped
@@ -1784,6 +1835,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   embedded NUL survives.
 
 ### CF-105 · missing · `confirmed`: no generic struct, so a port cannot be wrapped as another
+- **At `c5b1d4b`:** [ran] Still a parse error (`expected 'struct', 'enum', or 'interface' after type name`).
 - **Repro (43431f2, macOS):** `type Wrap[T: Src] struct { inner: T }` fails with "expected 'struct',
   'enum', or 'interface' after type name". Milestone 18 copies from one host to another by reusing
   the copy written for this machine ↔ host: the destination host must serve `LocalFiles`, which an
@@ -1793,3 +1845,65 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   the existing `FakeLocal` as the destination host. No native code.
 - **Ideal:** generic structs with constrained type parameters and methods on them (`fn (self:
   Wrap[T]) …`), as Go and Rust have.
+
+### CF-106 · bug · `confirmed`: a false `REDUNDANT-TRY` on calls through a generic interface parameter
+- **Repro (c5b1d4b, macOS):** `type Store interface { save(n: i64) -> void! }` and
+  `fn keep[S: Store](store: S) -> void! { try store.save(1) }` → `cfire check`: "'try' used on
+  non-fallible expression; remove 'try' (cfire/REDUNDANT-TRY)". The call is fallible and the
+  program builds and propagates the error correctly. The same blindness hides real misses:
+  `x := store.load()` (an `i64!`) without `try` or `or` is not reported there.
+- **Impact:** 137 false errors in Flint (every use case calls its ports this way), plus 3
+  `REDUNDANT-OR`. `cfire check` still exits 0 and `cfire build` is not blocked, but the
+  editor shows them, and `cfire fix` applies the fix-it, which deletes the `try` and drops
+  the error. Flint does not run `cfire fix`.
+- **Workaround:** none needed to build; the diagnostics are ignored.
+- **Ideal:** resolve a method call on a value whose type is a constrained type parameter
+  through the interface's signature, for both rules.
+
+### CF-107 · bug · `confirmed`: `File.read_bytes(n)` now fails on a file longer than `n`
+- **Repro (c5b1d4b, macOS):** `f := try fs.open("big.bin")` on a 100-byte file, then
+  `f.read_bytes(16)` → error `fd_read_all exceeded max_bytes limit (16)`. At `43431f2` it
+  returned the first 16 bytes. On a seekable file the argument is now a limit for reading the
+  whole file, not a count; nothing warns about the change.
+- **Impact:** Flint reads the vault's 16-byte salt this way, so every vault failed to open
+  ("cannot read") while `cfire check` and the build passed.
+- **Workaround:** `f.read_exact(16)` after checking `fs.file_size` (a shorter file stays
+  "not a Flint vault"), `src/adapters/vault/store.cf`. No native code.
+- **Ideal:** keep a call's meaning when its signature stays, or flag the old use
+  (`cfire/DEPRECATED-API` already does it for `read_all` and `write_str`).
+
+### CF-108 · improvement · `confirmed`: cfire's backlog reuses Flint's entry numbers
+- **What happened:** cfire's commits `b3909cc` and `9cb6f7a` name their work "CF-086..CF-088"
+  and "CF-089" (the `core:`/`ext:` split, `ai.Agent`, `ai.Client`, unified I/O), while Flint's
+  CF-086..CF-089 are other entries (`make install`, the simdjson check, enum `==`, the leak
+  check), all still open. Reading the commit log, they look answered.
+- **Ideal:** one numbering: cfire's own items under another prefix, or a note in the commit
+  when a number is not Flint's.
+
+### CF-109 · bug · `confirmed`: on macOS the runtime's `VERSION` file breaks every build
+- **Repro (c5b1d4b, macOS):** `CFIRE_VERSION=c5b1d4b sh install.sh` writes
+  `~/.cfire/runtime/VERSION` (`0.10.0 c5b1d4b`). The runtime folder is on the include path and
+  APFS ignores case, so libc++'s `#include <version>` (from `<fstream>`) reads it:
+  `.cfire/runtime/version:1:1: error: expected unqualified-id`. simdjson warns about the same
+  file (`non-portable path to file '<VERSION>'`).
+- **Workaround:** `rm ~/.cfire/runtime/VERSION` after installing; `cfire doctor` then reads
+  the version from the prelude's markers. In the build-from-source page. Linux file systems
+  are case-sensitive and do not hit it.
+- **Ideal:** keep the stamp out of the include path (`share/cfire/VERSION`, or a name no
+  header has, such as `.cfire-version`).
+
+### CF-110 · missing · `confirmed`: no way to keep a call's value and its error and go on
+- **What happened:** from `c5b1d4b` a fallible result cannot be stored or passed on, and a
+  binding or assignment `x = f() or err { … }` must leave the block (`NON-DIVERGING-OR-BLOCK`).
+  Code that keeps going after a failure and uses the value on success (a copy that records
+  the error and still closes both files, a loop that logs and continues) has no direct form.
+  `Error` cannot be named as a type either (`fn f(e: Error)` fails in clang: unknown type
+  name 'Error'), so the error itself cannot be handed to a helper.
+- **Workaround:** small helpers that take the value as a `mut` parameter and return the
+  message or a `bool` (`side_stat_into` in `src/application/files.cf`,
+  `open_tether_secret_into`, `settings_valid`), or that return from inside `or err`
+  (`served_exit`, `relay_typed`); tests keep the message in a string
+  (`f() or err { msg = "{err.message()}" }`). No native code.
+- **Ideal:** a non-diverging form that yields a fallback and binds the error (`x := f() or
+  err { log(err); fallback }`), or a nameable `Error` type.
+

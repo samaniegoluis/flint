@@ -96,6 +96,7 @@ fn token_vault(mut store: FakeStore) -> void! {
 }
 
 test "a token is created once, stored hashed, and checked by its text" {
+    mut refused := 0
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     try token_vault(mut store)
@@ -120,15 +121,19 @@ test "a token is created once, stored hashed, and checked by its text" {
     if flipped == parts.secret {
         flipped = parts.secret.substr(1) + "1"
     }
-    bad := check_token(crypto, tokens, token_text(parts.id, flipped), 2000)
-    assert_eq(error_code_of("{bad.error().message()}"), ERR_DENIED)
-    assert(!check_token(crypto, tokens, token_text("ffffffffffffffff", parts.secret), 2000).has_value())
-    junk := check_token(crypto, tokens, "hunter2", 2000)
-    assert_eq(error_code_of("{junk.error().message()}"), ERR_DENIED)
-    assert(!"{junk.error().message()}".contains("hunter2"))
+    mut bad := ""
+    check_token(crypto, tokens, token_text(parts.id, flipped), 2000) or err { bad = "{err.message()}" }
+    assert_eq(error_code_of("{bad}"), ERR_DENIED)
+    check_token(crypto, tokens, token_text("ffffffffffffffff", parts.secret), 2000) or { refused += 1 }
+    assert_eq(refused, 1)
+    mut junk := ""
+    check_token(crypto, tokens, "hunter2", 2000) or err { junk = "{err.message()}" }
+    assert_eq(error_code_of("{junk}"), ERR_DENIED)
+    assert(!"{junk}".contains("hunter2"))
     // Expired.
-    late := check_token(crypto, tokens, made.secret, 1000 + 86400)
-    assert("{late.error().message()}".contains("expired"))
+    mut late := ""
+    check_token(crypto, tokens, made.secret, 1000 + 86400) or err { late = "{err.message()}" }
+    assert("{late}".contains("expired"))
 }
 
 test "a revoked token is refused and its name can be used again" {
@@ -137,15 +142,17 @@ test "a revoked token is refused and its name can be used again" {
     try token_vault(mut store)
     mut tokens := new_fake_token_store()
     made := try create_token(crypto, store, mut tokens, token_req("ci", [], true, false, false), 1000)
-    clash := create_token(crypto, store, mut tokens, token_req("CI", [], true, false, false), 1001)
-    assert_eq(error_code_of("{clash.error().message()}"), ERR_CONFLICT)
+    mut clash := ""
+    create_token(crypto, store, mut tokens, token_req("CI", [], true, false, false), 1001) or err { clash = "{err.message()}" }
+    assert_eq(error_code_of("{clash}"), ERR_CONFLICT)
     v := try revoke_token(store, mut tokens, "ci", 1100)
     assert_eq(v.status, TOKEN_REVOKED)
     assert_eq(v.revoked_at, 1100)
     again := try revoke_token(store, mut tokens, made.token.id, 1200)
     assert_eq(again.revoked_at, 1100)
-    refused := check_token(crypto, tokens, made.secret, 1300)
-    assert("{refused.error().message()}".contains("revoked"))
+    mut refused := ""
+    check_token(crypto, tokens, made.secret, 1300) or err { refused = "{err.message()}" }
+    assert("{refused}".contains("revoked"))
     // Still matched by its secret, so the log can name it.
     assert_eq((try match_token(crypto, tokens.tokens, made.secret)).name, "ci")
     _ := try create_token(crypto, store, mut tokens, token_req("ci", [], true, false, false), 1400)
@@ -153,27 +160,34 @@ test "a revoked token is refused and its name can be used again" {
     assert_eq(list.len(), 2)
     assert_eq(list[0].status, TOKEN_REVOKED)
     assert_eq(list[1].status, TOKEN_ACTIVE)
-    missing := revoke_token(store, mut tokens, "nope", 1500)
-    assert_eq(error_code_of("{missing.error().message()}"), ERR_NOT_FOUND)
+    mut missing := ""
+    revoke_token(store, mut tokens, "nope", 1500) or err { missing = "{err.message()}" }
+    assert_eq(error_code_of("{missing}"), ERR_NOT_FOUND)
 }
 
 test "a token request says what it allows and where" {
+    mut refused := 0
     mut store := new_fake_store()
     try token_vault(mut store)
-    none_allowed := check_token_request(store, token_req("x", ["codebox"], false, false, false))
-    assert_eq(error_code_of("{none_allowed.error().message()}"), ERR_USAGE)
-    no_hosts := check_token_request(store, token_req("x", [], false, true, false))
-    assert_eq(error_code_of("{no_hosts.error().message()}"), ERR_USAGE)
+    mut none_allowed := ""
+    check_token_request(store, token_req("x", ["codebox"], false, false, false)) or err { none_allowed = "{err.message()}" }
+    assert_eq(error_code_of("{none_allowed}"), ERR_USAGE)
+    mut no_hosts := ""
+    check_token_request(store, token_req("x", [], false, true, false)) or err { no_hosts = "{err.message()}" }
+    assert_eq(error_code_of("{no_hosts}"), ERR_USAGE)
     // Reading alone needs no hosts: it is vault-wide.
     reader := try check_token_request(store, token_req("x", [], true, false, false))
     assert(reader.all)
-    narrow_write := check_token_request(store, token_req("x", ["codebox"], true, false, true))
-    assert_eq(error_code_of("{narrow_write.error().message()}"), ERR_INVALID)
-    ghost := check_token_request(store, token_req("x", ["ghost"], false, true, false))
-    assert_eq(error_code_of("{ghost.error().message()}"), ERR_NOT_FOUND)
+    mut narrow_write := ""
+    check_token_request(store, token_req("x", ["codebox"], true, false, true)) or err { narrow_write = "{err.message()}" }
+    assert_eq(error_code_of("{narrow_write}"), ERR_INVALID)
+    mut ghost := ""
+    check_token_request(store, token_req("x", ["ghost"], false, true, false)) or err { ghost = "{err.message()}" }
+    assert_eq(error_code_of("{ghost}"), ERR_NOT_FOUND)
     mut bad_ttl := token_req("x", ["codebox"], false, true, false)
     bad_ttl.ttl = "never"
-    assert(!check_token_request(store, bad_ttl).has_value())
+    check_token_request(store, bad_ttl) or { refused += 1 }
+    assert_eq(refused, 1)
     mut by_group := token_req("x", [], false, true, false)
     by_group.scope.groups = ["lab"]
     s := try check_token_request(store, by_group)
@@ -199,6 +213,7 @@ test "the activity log keeps 90 days by default and pages back" {
 }
 
 test "retention is set per vault, counted before and pruned at once" {
+    mut refused := 0
     mut tokens := new_fake_token_store()
     tokens.retention = 0
     for day in [1, 200, 300, 395, 400] {
@@ -209,11 +224,13 @@ test "retention is set per vault, counted before and pruned at once" {
     assert_eq(try retention_would_remove(tokens, 365, now), 1)
     assert_eq(try retention_would_remove(tokens, 30, now), 3)
     assert_eq(try retention_would_remove(tokens, 0, now), 0)
-    assert(!retention_would_remove(tokens, 7, now).has_value())
+    retention_would_remove(tokens, 7, now) or { refused += 1 }
+    assert_eq(refused, 1)
     assert_eq(try set_activity_retention_days(mut tokens, 30, now), 3)
     assert_eq(try activity_retention_days(tokens), 30)
     assert_eq((try list_activity(tokens, 0, 10)).len(), 2)
     // Days later, an unlock prunes what aged out meanwhile.
     assert_eq(try prune_activity(mut tokens, 426 * 86400), 1)
-    assert(!set_activity_retention_days(mut tokens, 45, now).has_value())
+    set_activity_retention_days(mut tokens, 45, now) or { refused += 1 }
+    assert_eq(refused, 2)
 }

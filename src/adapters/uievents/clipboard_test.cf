@@ -20,9 +20,10 @@ test "a copied secret is concealed, and cleared only if nothing was copied since
     tag := os.getpid()
     board := "net.flint.test.clipboard.{tag}"
     mut c := OsClipboard{ board: board }
-    r := c.clipboard_copy_secret("s3cret-value", 0)
-    if !r.has_value() {
-        assert_eq(error_code_of("{r.error().message()}"), "io")
+    mut r := ""
+    c.clipboard_copy_secret("s3cret-value", 0) or err { r = "{err.message()}" }
+    if r.len() > 0 {
+        assert_eq(error_code_of("{r}"), "io")
         println("SKIP: no clipboard here (no display)")
         return
     }
@@ -45,9 +46,10 @@ test "text a remote program copied (OSC 52) is plain, not concealed" {
     tag := os.getpid()
     board := "net.flint.test.clipboard-text.{tag}"
     mut c := OsClipboard{ board: board }
-    r := c.clipboard_copy_text("from neovim ✓")
-    if !r.has_value() {
-        assert_eq(error_code_of("{r.error().message()}"), "io")
+    mut r := ""
+    c.clipboard_copy_text("from neovim ✓") or err { r = "{err.message()}" }
+    if r.len() > 0 {
+        assert_eq(error_code_of("{r}"), "io")
         println("SKIP: no clipboard here (no display)")
         return
     }

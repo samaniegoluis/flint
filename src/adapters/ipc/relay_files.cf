@@ -13,7 +13,7 @@ package ipc
 // connection; the CLI's side is `serve_file_op` (clicmd/serve.cf), on a `LocalFs`.
 
 import "core:str"
-import "ext:json"
+import "core:json"
 import "../../domain"
 
 TAG_FILE_OP: str = "f"

@@ -254,19 +254,20 @@ fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
         }
         // Usage errors and everything else come out of the command itself; only a
         // vault left locked with nobody to type its password turns to Flint.
-        local := run_local(p, sec, as_json)
-        if local.has_value() || attempt == 1 || sec.has_master || has_terminal() || !needs_unlocked_vault(p) {
-            return local
+        code := run_local(p, sec, as_json) or err {
+            msg := "{err.message()}"
+            if attempt == 1 || sec.has_master || has_terminal() || !needs_unlocked_vault(p) || error_code_of(msg) != ERR_LOCKED {
+                return error(msg)
+            }
+            recents := new_json_recent_store(flint_config_dir())
+            target := try resolve_vault(recents, vault_selector(p))
+            st := request_unlock(target, p)
+            if st.state != APP_UNLOCKED {
+                return error(locked_error(target, st))
+            }
+            continue
         }
-        if error_code_of("{local.error().message()}") != ERR_LOCKED {
-            return local
-        }
-        recents := new_json_recent_store(flint_config_dir())
-        target := try resolve_vault(recents, vault_selector(p))
-        st := request_unlock(target, p)
-        if st.state != APP_UNLOCKED {
-            return error(locked_error(target, st))
-        }
+        return code
     }
     return run_local(p, sec, as_json)
 }

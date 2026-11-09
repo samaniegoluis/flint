@@ -5,7 +5,7 @@ package clicmd
 // `exec` return the remote exit status, which becomes Flint's own (as with ssh).
 
 import "core:os"
-import "ext:json"
+import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto"
 import "../../adapters/keychain"

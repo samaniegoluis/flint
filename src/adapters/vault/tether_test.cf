@@ -65,11 +65,13 @@ test "a file that is not a Tether vault is refused" {
     path := "/tmp/flint-tether-not-a-vault.txt"
     try fs.write_text(path, "hello, not sqlite at all, just enough bytes to look like a header")
     defer { _ = fs.remove(path) }
-    res := r.tether_read(path)
-    assert(!res.has_value())
-    assert_eq(error_code_of("{res.error().message()}"), "invalid")
-    missing := r.tether_read("/tmp/flint-no-such-tether-file.tether")
-    assert_eq(error_code_of("{missing.error().message()}"), "not_found")
+    mut res := ""
+    r.tether_read(path) or err { res = "{err.message()}" }
+    assert(res.len() > 0)
+    assert_eq(error_code_of("{res}"), "invalid")
+    mut missing := ""
+    r.tether_read("/tmp/flint-no-such-tether-file.tether") or err { missing = "{err.message()}" }
+    assert_eq(error_code_of("{missing}"), "not_found")
 }
 
 test "a Tether vault is opened read-only and left unchanged" {
@@ -89,6 +91,7 @@ test "a key file is read, a missing one is not_found" {
     defer { _ = fs.remove(path) }
     text := try r.tether_read_key_file(path)
     assert(text.starts_with("-----BEGIN"))
-    missing := r.tether_read_key_file("/tmp/flint-no-such-key-file")
-    assert_eq(error_code_of("{missing.error().message()}"), "not_found")
+    mut missing := ""
+    r.tether_read_key_file("/tmp/flint-no-such-key-file") or err { missing = "{err.message()}" }
+    assert_eq(error_code_of("{missing}"), "not_found")
 }

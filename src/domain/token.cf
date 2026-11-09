@@ -328,11 +328,14 @@ test "a token's text splits into id and secret" {
 }
 
 test "token durations" {
+    mut refused := 0
     assert_eq(try token_ttl_seconds("15m"), 900)
     assert_eq(try token_ttl_seconds("1d"), 86400)
     assert_eq(try token_ttl_seconds("90d"), 90 * 86400)
-    assert(!token_ttl_seconds("never").has_value())
-    assert(!token_ttl_seconds("lock").has_value())
+    token_ttl_seconds("never") or { refused += 1 }
+    assert_eq(refused, 1)
+    token_ttl_seconds("lock") or { refused += 1 }
+    assert_eq(refused, 2)
 }
 
 test "a token ends on expiry and on revoke" {
@@ -369,9 +372,12 @@ test "tokens are found by id, or by the name of a live one" {
 }
 
 test "token names" {
-    assert(check_token_name("nightly backup").has_value())
-    assert(!check_token_name("  ").has_value())
-    assert(!check_token_name("flint_x").has_value())
+    mut refused := 0
+    try check_token_name("nightly backup")
+    check_token_name("  ") or { refused += 1 }
+    assert_eq(refused, 1)
+    check_token_name("flint_x") or { refused += 1 }
+    assert_eq(refused, 2)
 }
 
 test "reads stay out of the activity log" {

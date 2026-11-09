@@ -7,7 +7,7 @@ package config
 
 import "core:fs"
 import "core:os"
-import "ext:json"
+import "core:json"
 import "../../domain"
 
 // File shape: a local struct, so the file format does not follow the domain type.

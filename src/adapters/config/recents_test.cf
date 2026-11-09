@@ -10,6 +10,7 @@ fn recents_port_check[R: RecentStore](r: R) -> bool {
 }
 
 test "recent vaults round-trip through the JSON file" {
+    mut refused := 0
     dir := "/tmp/flint-config-" + sha256.random_hex(8)
     store := new_json_recent_store(dir)
     assert(recents_port_check(store))
@@ -25,7 +26,8 @@ test "recent vaults round-trip through the JSON file" {
     assert_eq(old[0].name, "Home")
     assert_eq(old[0].id, "")
     try fs.write_text(dir + "/vaults.json", "{not json")
-    assert(!store.recents_load().has_value())
+    store.recents_load() or { refused += 1 }
+    assert_eq(refused, 1)
     try fs.remove(dir)
 }
 

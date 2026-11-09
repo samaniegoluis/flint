@@ -7,7 +7,7 @@ package clicmd
 
 import "core:fs"
 import "core:os"
-import "ext:json"
+import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto"
 import "../../adapters/keychain"
@@ -64,16 +64,21 @@ fn open_target(p: ParsedArgs, sec: SecretInput, c: Sodium, mut store: LockedVaul
         }
         return src.session
     }
-    cached := unlock_vault(c, mut store, src.kc, recents, target.path, "", false)
-    if cached.has_value() {
-        return cached.value()
+    return unlock_cached_or_typed(c, mut store, src.kc, recents, target.path, target.name, sec)
+}
+
+// Unlocks `path` with the key the keychain caches for it, or else with the master
+// password (from stdin or typed).
+fn unlock_cached_or_typed(c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, path: str, name: str, sec: SecretInput) -> VaultSession! {
+    cached := unlock_vault(c, mut store, kc, recents, path, "", false) or err {
+        msg := "{err.message()}"
+        if error_code_of(msg) != ERR_LOCKED {
+            return error(msg)
+        }
+        password := try master_password_for(sec, name)
+        return unlock_vault(c, mut store, kc, recents, path, password, false)
     }
-    msg := "{cached.error().message()}"
-    if error_code_of(msg) != ERR_LOCKED {
-        return error(msg)
-    }
-    password := try master_password_for(sec, target.name)
-    return unlock_vault(c, mut store, src.kc, recents, target.path, password, false)
+    return cached
 }
 
 // ---- vault ---------------------------------------------------------------------
@@ -100,18 +105,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try p.allow_flags("vault open", [])
         try p.expect_args("vault open", 1, "<path>")
         path := absolute_path(p.positional(2))
-        mut s := VaultSession{ path: "", name: "", id: "", secrets_key: [], cached: false }
-        cached := unlock_vault(c, mut store, src.kc, recents, path, "", false)
-        if cached.has_value() {
-            s = cached.value()
-        } else {
-            msg := "{cached.error().message()}"
-            if error_code_of(msg) != ERR_LOCKED {
-                return error(msg)
-            }
-            password := try master_password_for(sec, vault_name_from_path(path))
-            s = try unlock_vault(c, mut store, src.kc, recents, path, password, false)
-        }
+        s := try unlock_cached_or_typed(c, mut store, src.kc, recents, path, vault_name_from_path(path), sec)
         info := session_info(s)
         if as_json {
             say(json.stringify(info))

@@ -38,17 +38,20 @@ test "a refused password, a missing one and a user who may not sudo are told apa
     mut sink := FakeSink{ out_text: "", err_text: "" }
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
     mut wrong := sudo_link([err_chunk("@PROMPT@"), err_chunk("Sorry, try again.\n@PROMPT@"), done_chunk(1)])
-    r1 := run_sudo(crypto, mut wrong, mut sink, mut clock, "web", "me", ["true"], "bad", 60, true)
+    mut r1 := ""
+    run_sudo(crypto, mut wrong, mut sink, mut clock, "web", "me", ["true"], "bad", 60, true) or err { r1 = "{err.message()}" }
     assert_eq(err_code(r1), ERR_SUDO_PASSWORD)
     assert_eq(wrong.written, "bad\n")
     mut none_held := sudo_link([err_chunk("@PROMPT@"), done_chunk(1)])
-    r2 := run_sudo(crypto, mut none_held, mut sink, mut clock, "web", "me", ["true"], "", 60, true)
+    mut r2 := ""
+    run_sudo(crypto, mut none_held, mut sink, mut clock, "web", "me", ["true"], "", 60, true) or err { r2 = "{err.message()}" }
     assert_eq(err_code(r2), ERR_SUDO_PASSWORD)
     assert_eq(none_held.written, "")
     mut barred := sudo_link([err_chunk("@PROMPT@"), err_chunk("me is not in the sudoers file.  This incident will be reported.\n"), done_chunk(1)])
-    r3 := run_sudo(crypto, mut barred, mut sink, mut clock, "web", "me", ["true"], "pw", 60, true)
+    mut r3 := ""
+    run_sudo(crypto, mut barred, mut sink, mut clock, "web", "me", ["true"], "pw", 60, true) or err { r3 = "{err.message()}" }
     assert_eq(err_code(r3), ERR_NOT_SUDOER)
-    assert(!"{r3.error().message()}".contains("pw"))
+    assert(!"{r3}".contains("pw"))
 }
 
 test "with no prompt, stdin closes once the command speaks or the wait ends" {
@@ -66,6 +69,7 @@ test "with no prompt, stdin closes once the command speaks or the wait ends" {
 }
 
 test "the sudo password is the host's own, else its login password" {
+    mut got_code := "ok"
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -91,5 +95,7 @@ test "the sudo password is the host's own, else its login password" {
     q.set_user = true
     _ := try add_host(crypto, mut store, s, q)
     assert(!(try sudo_ask_for(store, "bare", ["id"])).has_password)
-    assert_eq(err_code(sudo_ask_for(store, "bare", [])), ERR_USAGE)
+    got_code = "ok"
+    sudo_ask_for(store, "bare", []) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, ERR_USAGE)
 }

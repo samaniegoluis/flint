@@ -6,7 +6,7 @@
 #   FLINT_E2E_VIM=1 scripts/linux-check.sh   # also runs the vim step, which fails on Linux (ROADMAP)
 FROM debian:trixie
 
-ARG CFIRE_COMMIT=43431f25fdd3a110dc3a02390d847e061b77a593
+ARG CFIRE_COMMIT=c5b1d4bd09f7b1b07a3f855a095389f5cd3df332
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         clang make git curl ca-certificates pkg-config \

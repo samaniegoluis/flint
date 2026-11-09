@@ -12,8 +12,11 @@ test "settings are validated on save and repaired field by field on load" {
     assert_eq((try load_settings(store)).term_font_size, i64(15))
 
     s.accent = "neon"
-    bad := save_settings(mut store, s)
-    assert(!bad.has_value())
+    mut refused := false
+    save_settings(mut store, s) or {
+        refused = true
+    }
+    assert(refused)
     assert_eq(store.saved.accent, "ember")
 
     // A hand-edited file with one bad field keeps the good ones.

@@ -246,6 +246,15 @@ fn file_base_name(path: str) -> str {
 // ---- Secrets ----------------------------------------------------------------------
 
 // Opens one Tether secret column ("" stays ""). Tether seals with no AAD.
+// open_tether_secret for a caller that goes on either way: the secret lands in
+// `plain`; false when it would not open.
+fn open_tether_secret_into[C: Crypto](crypto: C, key: []byte, enc: str, mut plain: str) -> bool {
+    plain = open_tether_secret(crypto, key, enc) or {
+        return false
+    }
+    return true
+}
+
 fn open_tether_secret[C: Crypto](crypto: C, key: []byte, enc: str) -> str! {
     if enc.len() == 0 {
         return ""
@@ -350,24 +359,21 @@ fn import_tether_rows[C: Crypto, S: VaultStore, I: KeyInspector, T: TetherSource
     mut key_ids: map[str]str = {}
     mut keys := try store.keys_all()
     for k in f.keys {
-        priv_r := open_tether_secret(crypto, key, k.private_key_enc)
-        if !priv_r.has_value() {
+        priv_r := open_tether_secret(crypto, key, k.private_key_enc) or err {
             r.not_imported.push(note("key", k.name, "its private key could not be decrypted"))
             continue
         }
-        priv := priv_r.value()
-        pass_r := open_tether_secret(crypto, key, k.passphrase_enc)
-        if !pass_r.has_value() {
+        priv := priv_r
+        pass_r := open_tether_secret(crypto, key, k.passphrase_enc) or err {
             r.not_imported.push(note("key", k.name, "its passphrase could not be decrypted"))
             continue
         }
-        pass := pass_r.value()
-        info_r := inspector.inspect_private_key(priv, pass)
-        if !info_r.has_value() {
+        pass := pass_r
+        info_r := inspector.inspect_private_key(priv, pass) or err {
             r.not_imported.push(note("key", k.name, "Flint cannot read this private key"))
             continue
         }
-        info := info_r.value()
+        info := info_r
         existing := key_by_fingerprint(keys, info.fingerprint)
         if existing.len() > 0 {
             key_ids[k.id] = existing
@@ -393,12 +399,11 @@ fn import_tether_rows[C: Crypto, S: VaultStore, I: KeyInspector, T: TetherSource
             r.already_present.credentials += 1
             continue
         }
-        pw_r := open_tether_secret(crypto, key, c.password_enc)
-        if !pw_r.has_value() {
+        pw_r := open_tether_secret(crypto, key, c.password_enc) or err {
             r.not_imported.push(note("credential", c.name, "its password could not be decrypted"))
             continue
         }
-        pw := pw_r.value()
+        pw := pw_r
         mut cname := import_slug(c.name)
         if cname.len() == 0 {
             cname = "credential"
@@ -431,19 +436,17 @@ fn import_tether_rows[C: Crypto, S: VaultStore, I: KeyInspector, T: TetherSource
             continue
         }
         file_key_ids[h.key_path] = ""
-        text_r := src.tether_read_key_file(h.key_path)
-        if !text_r.has_value() {
-            why := error_text_of("{text_r.error().message()}")
+        text_r := src.tether_read_key_file(h.key_path) or err {
+            why := error_text_of("{err.message()}")
             r.not_imported.push(note("key file", h.key_path, "cannot be read ({why}); add it with `flint key add` and set it on the host"))
             continue
         }
-        text := text_r.value()
-        info_r := inspector.inspect_private_key(text, "")
-        if !info_r.has_value() {
+        text := text_r
+        info_r := inspector.inspect_private_key(text, "") or err {
             r.not_imported.push(note("key file", h.key_path, "is passphrase-protected or not a key Flint reads; add it with `flint key add` and set it on the host"))
             continue
         }
-        info := info_r.value()
+        info := info_r
         existing := key_by_fingerprint(keys, info.fingerprint)
         if existing.len() > 0 {
             file_key_ids[h.key_path] = existing
@@ -504,8 +507,7 @@ fn import_tether_rows[C: Crypto, S: VaultStore, I: KeyInspector, T: TetherSource
         }
         h.tags = dedup_tags(tags)
         if th.color.len() > 0 {
-            ok_color := check_color(th.color)
-            if ok_color.has_value() {
+            if color_valid(th.color) {
                 h.color = th.color
             } else {
                 r.changed.push(note("host", alias, "colour '{th.color}' dropped (Flint keeps '#rrggbb' colours)"))
@@ -527,17 +529,16 @@ fn import_tether_rows[C: Crypto, S: VaultStore, I: KeyInspector, T: TetherSource
                 }
             }
             if th.auth_type == "password" && th.password_enc.len() > 0 {
-                pw := open_tether_secret(crypto, key, th.password_enc)
-                if pw.has_value() {
-                    h.password = try seal_secret(crypto, session, "hosts", id, "password", pw.value())
+                mut pw := ""
+                if open_tether_secret_into(crypto, key, th.password_enc, mut pw) {
+                    h.password = try seal_secret(crypto, session, "hosts", id, "password", pw)
                 } else {
                     r.changed.push(note("host", alias, "its saved password could not be decrypted; Flint will ask for it"))
                 }
             }
         }
-        checked := check_host(h)
-        if !checked.has_value() {
-            r.not_imported.push(note("host", name, error_text_of("{checked.error().message()}")))
+        check_host(h) or err {
+            r.not_imported.push(note("host", name, error_text_of("{err.message()}")))
             continue
         }
         try store.host_put(h)

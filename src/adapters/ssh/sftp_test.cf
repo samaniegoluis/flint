@@ -22,9 +22,10 @@ test "SshLink satisfies the SftpTransport port" {
 
 test "sftp calls before sftp_open fail as internal" {
     link := new_ssh_link()
-    r := link.sftp_stat("/")
-    assert(!r.has_value())
-    assert_eq(error_code_of("{r.error().message()}"), "internal")
+    mut r := ""
+    link.sftp_stat("/") or err { r = "{err.message()}" }
+    assert(r.len() > 0)
+    assert_eq(error_code_of("{r}"), "internal")
 }
 
 fn sftp_link() -> SshLink! {
@@ -58,8 +59,9 @@ test "sftp writes, stats, lists, reads, renames and removes" {
     assert(home.starts_with("/"))
     dir := scratch_dir("basic")
     try link.sftp_mkdir(dir)
-    again := link.sftp_mkdir(dir)
-    assert(!again.has_value())
+    mut again := ""
+    link.sftp_mkdir(dir) or err { again = "{err.message()}" }
+    assert(again.len() > 0)
 
     path := dir + "/a.txt"
     mut big := ""
@@ -70,9 +72,10 @@ test "sftp writes, stats, lists, reads, renames and removes" {
     try link.sftp_file_write(big)
     try link.sftp_file_close()
     // Exclusive refuses an existing file.
-    excl := link.sftp_file_open(path, true, true)
-    assert(!excl.has_value())
-    assert_eq(error_code_of("{excl.error().message()}"), "exists")
+    mut excl := ""
+    link.sftp_file_open(path, true, true) or err { excl = "{err.message()}" }
+    assert(excl.len() > 0)
+    assert_eq(error_code_of("{excl}"), "exists")
 
     st := try link.sftp_stat(path)
     assert(st.is_file())
@@ -101,19 +104,22 @@ test "sftp writes, stats, lists, reads, renames and removes" {
     assert(kinds.contains("a.txt=file;") && kinds.contains("sub=dir;"), kinds)
 
     // Listing a file is not_a_directory, a missing path not_found.
-    as_dir := link.sftp_list(path)
-    assert_eq(error_code_of("{as_dir.error().message()}"), "not_a_directory")
-    missing := link.sftp_stat(dir + "/nope")
-    assert_eq(error_code_of("{missing.error().message()}"), "not_found")
+    mut as_dir := ""
+    link.sftp_list(path) or err { as_dir = "{err.message()}" }
+    assert_eq(error_code_of("{as_dir}"), "not_a_directory")
+    mut missing := ""
+    link.sftp_stat(dir + "/nope") or err { missing = "{err.message()}" }
+    assert_eq(error_code_of("{missing}"), "not_found")
 
     // Rename onto a name that is free, then onto one that is taken.
     try link.sftp_rename(path, dir + "/b.txt")
     try link.sftp_file_open(dir + "/c.txt", true, false)
     try link.sftp_file_write("c")
     try link.sftp_file_close()
-    over := link.sftp_rename(dir + "/c.txt", dir + "/b.txt")
-    println("spike: rename onto an existing file: {over.has_value()}")
-    if over.has_value() {
+    mut over := ""
+    link.sftp_rename(dir + "/c.txt", dir + "/b.txt") or err { over = "{err.message()}" }
+    println("spike: rename onto an existing file: {over.len() == 0}")
+    if over.len() == 0 {
         // posix-rename@openssh.com: the server replaced it.
         assert_eq((try link.sftp_stat(dir + "/b.txt")).size, 1)
     } else {
@@ -123,8 +129,9 @@ test "sftp writes, stats, lists, reads, renames and removes" {
     try link.sftp_remove(dir + "/b.txt", false)
     try link.sftp_remove(dir + "/sub", true)
     try link.sftp_remove(dir, true)
-    gone := link.sftp_stat(dir)
-    assert_eq(error_code_of("{gone.error().message()}"), "not_found")
+    mut gone := ""
+    link.sftp_stat(dir) or err { gone = "{err.message()}" }
+    assert_eq(error_code_of("{gone}"), "not_found")
 }
 
 // flint cp hands the adapter 256 KB at a time (LOCAL_READ_CHUNK). libssh 0.10 sent such
@@ -230,11 +237,10 @@ test "sftp shares a session with a PTY read on another thread" {
             mut r := reader
             mut got := ""
             for _ in 0..400 {
-                chunk := r.link_channel_read(50)
-                if !chunk.has_value() {
+                chunk := r.link_channel_read(50) or {
                     break
                 }
-                got = got + chunk.value().stdout
+                got = got + chunk.stdout
                 if got.contains("ticks-42") {
                     break
                 }
@@ -242,11 +248,10 @@ test "sftp shares a session with a PTY read on another thread" {
             heard_ch.send(got)
         }
         for _ in 0..40 {
-            st := link.sftp_stat(".")
-            if !st.has_value() {
+            st := link.sftp_stat(".") or {
                 break
             }
-            if st.value().is_dir() {
+            if st.is_dir() {
                 stats += 1
             }
             _ := link.sftp_list(".") or []
@@ -276,11 +281,12 @@ test "an sftp request to a stalled server fails within the timeout" {
     try link.sftp_open()
     try fs.write_text(stall_file, "stall")
     start := time.now_ms()
-    r := link.sftp_stat(".")
+    mut r := ""
+    link.sftp_stat(".") or err { r = "{err.message()}" }
     took := time.now_ms() - start
     fs.remove(stall_file) or {}
-    println("spike: stalled stat -> ok={r.has_value()} in {took} ms")
-    assert(!r.has_value())
+    println("spike: stalled stat -> ok={r.len() == 0} in {took} ms")
+    assert(r.len() > 0)
     assert(took < 6000, "the stalled request must end within the 3 s timeout (and a margin)")
 }
 
@@ -292,9 +298,10 @@ test "SharedLink satisfies the SshTransport port" {
 }
 
 test "a session that was never published cannot be borrowed" {
-    r := borrow_browse("nobody")
-    assert(!r.has_value())
-    assert_eq(error_code_of("{r.error().message()}"), "not_found")
+    mut r := ""
+    borrow_browse("nobody") or err { r = "{err.message()}" }
+    assert(r.len() > 0)
+    assert_eq(error_code_of("{r}"), "not_found")
     assert(!files_available("nobody"))
 }
 
@@ -350,8 +357,9 @@ test "a shared link lends its session once the shell is open, and takes it back 
     assert(files_cancelled("x2"))
     link.link_hangup()
     assert(!files_available(id))
-    r := borrow_transfer(id, "x3")
-    assert(!r.has_value())
+    mut r := ""
+    borrow_transfer(id, "x3") or err { r = "{err.message()}" }
+    assert(r.len() > 0)
 }
 
 fn list_files[T: SftpTransport](t: T, path: str) -> i64! {
@@ -377,9 +385,10 @@ test "hangup waits for a request still using the session" {
             mut h := held
             // Still in use 300 ms after hangup began: hangup must wait for it.
             time.sleep_ms(300)
-            ok := h.sftp_stat(".")
+            mut ok := ""
+            h.sftp_stat(".") or err { ok = "{err.message()}" }
             mut v: i64 = 0
-            if ok.has_value() {
+            if ok.len() == 0 {
                 v = 1
             }
             done_ch.send(v)
@@ -450,6 +459,7 @@ test "a shared link lends its session with no shell, and two lent sessions relay
 
 test "a plain link refuses to lend its session" {
     mut link := new_ssh_link()
-    r := link.link_lend()
-    assert_eq(error_code_of("{r.error().message()}"), "internal")
+    mut r := ""
+    link.link_lend() or err { r = "{err.message()}" }
+    assert_eq(error_code_of("{r}"), "internal")
 }

@@ -1,12 +1,13 @@
 package clicmd
 
-import "ext:json"
+import "core:json"
 import "../../domain"
 
 fn parsed(args: []str) -> ParsedArgs {
-    r := parse_cli_args(args)
-    assert(r.has_value())
-    return r.value()
+    r := parse_cli_args(args) or err {
+        panic("{err.message()}")
+    }
+    return r
 }
 
 test "the app serves vault commands that open no SSH session" {
@@ -44,11 +45,15 @@ test "only writes make the window reload" {
 
 test "a request from another protocol version is refused" {
     req := ServeRequest{ kind: "run", version: SERVE_PROTOCOL + 1, vault: "/v", argv: ["host", "list"], cwd: "/", as_json: false, secrets: no_wire_secrets() }
-    bad := parse_serve_request(json.stringify(req))
-    assert(!bad.has_value())
-    assert_eq(error_code_of("{bad.error().message()}"), ERR_UNSUPPORTED)
-    junk := parse_serve_request("{not json")
-    assert_eq(error_code_of("{junk.error().message()}"), ERR_INVALID)
+    mut bad := ""
+    parse_serve_request(json.stringify(req)) or err { bad = "{err.message()}" }
+    assert(bad.len() > 0)
+    assert_eq(error_code_of("{bad}"), ERR_UNSUPPORTED)
+    // On its own line: a `}` later on the same line would make `{not json` an interpolation.
+    not_json := "{not json"
+    mut junk := ""
+    parse_serve_request(not_json) or err { junk = "{err.message()}" }
+    assert_eq(error_code_of("{junk}"), ERR_INVALID)
 }
 
 test "a reply never names a secret field" {

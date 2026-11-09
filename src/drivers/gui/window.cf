@@ -7,7 +7,7 @@ package main
 // (idle, screen lock, sleep, Lock) is unchanged and stronger: it wipes the key.
 
 import "ext:webui"
-import "ext:json"
+import "core:json"
 import "core:time"
 import "../../adapters/crypto"
 import "../../adapters/process"

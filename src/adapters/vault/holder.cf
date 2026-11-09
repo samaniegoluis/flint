@@ -13,7 +13,7 @@ package vault
 
 import cpp "flint_vault_lock.hpp" @pkg("flint-native")
 
-import "ext:json"
+import "core:json"
 import "../../domain"
 
 type SessionHolder struct {

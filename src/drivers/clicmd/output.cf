@@ -3,7 +3,7 @@ package clicmd
 // Output formatting: data to stdout, diagnostics to stderr (Principle 7). Views come
 // from the application layer and carry no secret values (Principle 6).
 
-import "ext:json"
+import "core:json"
 import "../../adapters/process"
 import "../../application"
 import "../../domain"

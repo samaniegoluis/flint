@@ -121,11 +121,10 @@ fn run_lock_timer(mut store: LockedVaultStore, st: GuiState, mut app: webui.App)
 // One accept loop. Several run on the same listener (SERVE_ACCEPTORS).
 fn run_accept_loop(listener: IpcListener, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, st: GuiState, mut app: webui.App) {
     for !listener.stopped() {
-        got := listener.accept_wait(SERVE_ACCEPT_WAIT_MS)
-        if !got.has_value() {
+        got := listener.accept_wait(SERVE_ACCEPT_WAIT_MS) or err {
             break
         }
-        conn := got.value()
+        conn := got
         if conn.open {
             mut cn := conn
             serve_client(mut cn, c, mut store, kc, recents, st, mut app)
@@ -249,6 +248,29 @@ type GateOutcome struct {
     sudo_typed: str
 }
 
+// Names in the log entry the token `secret` still matches, when it is revoked or
+// expired.
+fn name_known_token(c: Sodium, tokens: []Token, secret: str, mut entry: ActivityEntry) {
+    known := match_token(c, tokens, secret) or {
+        return
+    }
+    entry.token = known.id
+    entry.caller = "{entry.caller} (token {known.name})"
+}
+
+// What the approval window shows for a `cp` request: for a copy between two hosts,
+// which of them the caller's own grants already reach (design 16g3).
+fn copy_ask_for(parsed: ParsedArgs, st: GuiState, caller: Caller, vault_id: str, cat: Catalog, now: i64, cwd: str) -> CopyAsk! {
+    r := try copy_request_from_args(parsed)
+    if r.direction == COPY_RELAY {
+        grants := st.holder.access_book().grants
+        (from_ok, from_until) := exec_allowed_until(grants, caller, vault_id, r.alias, cat, now)
+        (to_ok, to_until) := exec_allowed_until(grants, caller, vault_id, r.to_alias, cat, now)
+        return CopyAsk{ direction: r.direction, host: r.alias, local: "", remote: r.remote, to_host: r.to_alias, to_path: r.local, recursive: r.recursive, force: r.force, host_allowed: from_ok, host_allowed_until: from_until, to_allowed: to_ok, to_allowed_until: to_until }
+    }
+    return CopyAsk{ direction: r.direction, host: r.alias, local: absolute_from(cwd, r.local), remote: r.remote, recursive: r.recursive, force: r.force, host_allowed: false, host_allowed_until: 0, to_allowed: false, to_allowed_until: 0 }
+}
+
 fn refuse(msg: str) -> GateOutcome {
     return GateOutcome{ refusal: msg, sudo_typed: "" }
 }
@@ -268,11 +290,11 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         }
         ask = TokenAsk{ name: str.trim(treq.name), allows: token_allows_text(treq.read, treq.exec, treq.write), reaches: token_reach_text(treq.scope.all, treq.scope.groups, treq.scope.hosts), ttl: treq.ttl }
         st.hold()
-        checked := check_token_request(store, treq)
-        st.release()
-        if !checked.has_value() {
-            return refuse("{checked.error().message()}")
+        check_token_request(store, treq) or err {
+            st.release()
+            return refuse("{err.message()}")
         }
+        st.release()
         if ask.reaches.len() == 0 {
             ask.reaches = "whole vault"
         }
@@ -280,12 +302,11 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     if need.action == ACCESS_SUDO && req.token.len() == 0 {
         // Checked before the window: an unknown host or no command never reaches it.
         st.hold()
-        asked := sudo_ask_for(store, need.host, parsed.rest)
-        st.release()
-        if !asked.has_value() {
-            return refuse("{asked.error().message()}")
+        sudo = sudo_ask_for(store, need.host, parsed.rest) or err {
+            st.release()
+            return refuse("{err.message()}")
         }
-        sudo = asked.value()
+        st.release()
     }
     st.hold()
     session := st.vault_session()
@@ -318,11 +339,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         t := check_token_in(c, tokens, req.token, time.unix_seconds()) or err {
             entry.outcome = ACTIVITY_DENIED
             // A revoked or expired token is still named in the log.
-            known := match_token(c, tokens, req.token)
-            if known.has_value() {
-                entry.token = known.value().id
-                entry.caller = "{entry.caller} (token {known.value().name})"
-            }
+            name_known_token(c, tokens, req.token, mut entry)
             log_activity(st, store, session, entry, mut app)
             return refuse("{err.message()}")
         }
@@ -355,18 +372,8 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     ap.token = ask
     ap.sudo = sudo
     if parsed.positional(0) == "cp" {
-        creq := copy_request_from_args(parsed)
-        if creq.has_value() {
-            r := creq.value()
-            if r.direction == COPY_RELAY {
-                grants := st.holder.access_book().grants
-                (from_ok, from_until) := exec_allowed_until(grants, caller, session.id, r.alias, cat, now)
-                (to_ok, to_until) := exec_allowed_until(grants, caller, session.id, r.to_alias, cat, now)
-                ap.copy = CopyAsk{ direction: r.direction, host: r.alias, local: "", remote: r.remote, to_host: r.to_alias, to_path: r.local, recursive: r.recursive, force: r.force, host_allowed: from_ok, host_allowed_until: from_until, to_allowed: to_ok, to_allowed_until: to_until }
-            } else {
-                ap.copy = CopyAsk{ direction: r.direction, host: r.alias, local: absolute_from(req.cwd, r.local), remote: r.remote, recursive: r.recursive, force: r.force, host_allowed: false, host_allowed_until: 0, to_allowed: false, to_allowed_until: 0 }
-            }
-        }
+        // An argv that does not parse as a copy leaves the window's copy card empty.
+        ap.copy = copy_ask_for(parsed, st, caller, session.id, cat, now, req.cwd) or ap.copy
     }
     st.holder.access_hold()
     mut book := st.holder.access_book()
@@ -450,10 +457,9 @@ fn log_activity(st: GuiState, store: LockedVaultStore, session: VaultSession, e:
     mut ok := true
     if still {
         mut ts := store
-        done := record_activity(mut ts, e, time.unix_seconds())
-        if !done.has_value() {
+        record_activity(mut ts, e, time.unix_seconds()) or err {
             ok = false
-            write_stderr("flint-gui: the activity log was not written ({error_code_of("{done.error().message()}")})\n")
+            write_stderr("flint-gui: the activity log was not written ({error_code_of("{err.message()}")})\n")
         }
     }
     st.release()

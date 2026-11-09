@@ -4,7 +4,7 @@ package main
 // src/drivers/clicmd, shared with the app, which runs them for a command the CLI
 // sends it over the local socket (D-038).
 
-import "ext:json"
+import "core:json"
 import "../../adapters/crypto"
 import "../../adapters/process"
 import "../../adapters/ssh"
@@ -51,22 +51,20 @@ fn main() {
             as_json = true
         }
     }
-    parsed := parse_cli_args(args)
-    if !parsed.has_value() {
-        fail_with("{parsed.error().message()}", as_json)
+    parsed := parse_cli_args(args) or err {
+        fail_with("{err.message()}", as_json)
         return
     }
-    p := parsed.value()
+    p := parsed
     if p.has_flag("--version") || p.has_flag("-V") {
         print_version(as_json)
         return
     }
-    done := run_cli(p, args, as_json)
-    if !done.has_value() {
-        fail_with("{done.error().message()}", as_json)
+    done := run_cli(p, args, as_json) or err {
+        fail_with("{err.message()}", as_json)
         return
     }
-    if done.value() != 0 {
-        exit_process(done.value())
+    if done != 0 {
+        exit_process(done)
     }
 }

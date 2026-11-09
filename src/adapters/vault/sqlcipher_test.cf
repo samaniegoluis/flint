@@ -132,16 +132,19 @@ test "the pinned SQLCipher parameters are in force and recorded" {
 }
 
 test "a wrong key or salt is reported as wrong_password" {
+    mut refused := 0
     path := temp_vault_path("v.flint")
     mut store := new_sql_vault_store()
     try store.vault_create(path, test_key(7), test_salt_bytes())
     store.vault_detach()
-    bad := store.vault_attach(path, test_key(8), test_salt_bytes())
-    assert(!bad.has_value())
-    assert_eq(error_code_of("{bad.error().message()}"), "wrong_password")
+    mut bad := ""
+    store.vault_attach(path, test_key(8), test_salt_bytes()) or err { bad = "{err.message()}" }
+    assert(bad.len() > 0)
+    assert_eq(error_code_of("{bad}"), "wrong_password")
     mut other_salt := test_salt_bytes()
     other_salt[0] = byte(1)
-    assert(!store.vault_attach(path, test_key(7), other_salt).has_value())
+    store.vault_attach(path, test_key(7), other_salt) or { refused += 1 }
+    assert_eq(refused, 1)
     try fs.remove(fs.dirname(path))
 }
 
@@ -150,10 +153,12 @@ test "create refuses an existing file and attach a missing one" {
     mut store := new_sql_vault_store()
     try store.vault_create(path, test_key(7), test_salt_bytes())
     store.vault_detach()
-    dup := store.vault_create(path, test_key(7), test_salt_bytes())
-    assert_eq(error_code_of("{dup.error().message()}"), "conflict")
-    missing := store.vault_attach(path + ".nope", test_key(7), test_salt_bytes())
-    assert_eq(error_code_of("{missing.error().message()}"), "not_found")
+    mut dup := ""
+    store.vault_create(path, test_key(7), test_salt_bytes()) or err { dup = "{err.message()}" }
+    assert_eq(error_code_of("{dup}"), "conflict")
+    mut missing := ""
+    store.vault_attach(path + ".nope", test_key(7), test_salt_bytes()) or err { missing = "{err.message()}" }
+    assert_eq(error_code_of("{missing}"), "not_found")
     try fs.remove(fs.dirname(path))
 }
 
@@ -163,22 +168,25 @@ test "foreign keys and unique names are enforced" {
     try store.vault_create(path, test_key(7), test_salt_bytes())
     mut h := marker_host()
     h.group_id = "missing"
-    dangling := store.host_put(h)
-    assert_eq(error_code_of("{dangling.error().message()}"), "conflict")
+    mut dangling := ""
+    store.host_put(h) or err { dangling = "{err.message()}" }
+    assert_eq(error_code_of("{dangling}"), "conflict")
     try store.host_put(marker_host())
     mut twin := marker_host()
     twin.id = "h2"
     twin.alias = "FLINT-ALIAS-MARKER"
-    clash := store.host_put(twin)
-    assert_eq(error_code_of("{clash.error().message()}"), "conflict")
+    mut clash := ""
+    store.host_put(twin) or err { clash = "{err.message()}" }
+    assert_eq(error_code_of("{clash}"), "conflict")
     store.vault_detach()
     try fs.remove(fs.dirname(path))
 }
 
 test "operations on a detached store report locked" {
     store := new_sql_vault_store()
-    r := store.hosts_all()
-    assert_eq(error_code_of("{r.error().message()}"), "locked")
+    mut r := ""
+    store.hosts_all() or err { r = "{err.message()}" }
+    assert_eq(error_code_of("{r}"), "locked")
 }
 
 test "SqlVaultStore satisfies the VaultStore port" {

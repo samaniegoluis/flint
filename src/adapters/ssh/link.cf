@@ -151,9 +151,8 @@ fn (mut self: SshLink) link_shell_open(term: str, cols: i32, rows: i32, command:
         return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
     }
     mut conn := self.hops[self.hops.len() - 1]
-    opened := conn.open_pty_shell(term, cols, rows, command)
-    if !opened.has_value() {
-        return error(coded(ERR_NETWORK, "{opened.error().message()}"))
+    conn.open_pty_shell(term, cols, rows, command) or err {
+        return error(coded(ERR_NETWORK, "{err.message()}"))
     }
     self.hops[self.hops.len() - 1] = conn
 }
@@ -235,16 +234,14 @@ fn (mut self: SshLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
 
 fn (mut self: SshLink) link_channel_write(data: str) -> void! {
     conn := try self.last_hop()
-    w := conn.write(data)
-    if !w.has_value() {
+    conn.write(data) or err {
         return error(coded(ERR_NETWORK, "the connection was lost"))
     }
 }
 
 fn (mut self: SshLink) link_channel_resize(cols: i32, rows: i32) -> void! {
     conn := try self.last_hop()
-    r := conn.resize(cols, rows)
-    if !r.has_value() {
+    conn.resize(cols, rows) or err {
         return error(coded(ERR_NETWORK, "resize failed"))
     }
 }

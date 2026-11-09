@@ -15,7 +15,7 @@ import cpp "sqlite3.h" @pkg("sqlcipher")
 // CFIRE-UPSTREAM: CF-006
 import cpp "argon2.h" @pkg("libargon2")
 import "core:fs"
-import "ext:json"
+import "core:json"
 import "../../domain"
 
 // Tether's Argon2id parameters (internal/keystore/crypto.go), pinned by its format.

@@ -214,28 +214,31 @@ fn try_auth_step[C: Crypto, T: SshTransport](crypto: C, session: VaultSession, c
 fn authenticate_hop[C: Crypto, T: SshTransport, P: Prompter](crypto: C, session: VaultSession, cat: Catalog, mut link: T, prompter: P, h: Host, user: str, ask_password: bool) -> void! {
     mut tried: []str = []
     for s in auth_steps(cat, h) {
-        r := try_auth_step(crypto, session, cat, mut link, s)
-        if r.has_value() {
-            return
+        try_auth_step(crypto, session, cat, mut link, s) or err {
+            msg := "{err.message()}"
+            if error_code_of(msg) != ERR_AUTH {
+                return error(msg)
+            }
+            tried.push(step_label(cat, s))
+            continue
         }
-        msg := "{r.error().message()}"
-        if error_code_of(msg) != ERR_AUTH {
-            return error(msg)
-        }
-        tried.push(step_label(cat, s))
+        return
     }
     if ask_password && prompter.prompt_available() {
         typed := try prompter.prompt_password(user, h.alias)
         if typed.len() > 0 {
-            r := link.link_auth_password(typed)
-            if r.has_value() {
+            mut accepted := true
+            link.link_auth_password(typed) or err {
+                accepted = false
+                msg := "{err.message()}"
+                if error_code_of(msg) != ERR_AUTH {
+                    return error(msg)
+                }
+                tried.push("typed password")
+            }
+            if accepted {
                 return
             }
-            msg := "{r.error().message()}"
-            if error_code_of(msg) != ERR_AUTH {
-                return error(msg)
-            }
-            tried.push("typed password")
         }
     }
     return error(coded(ERR_AUTH, "{user}@{h.alias}: no auth method was accepted (tried: {join_labels(tried)})"))
@@ -265,10 +268,9 @@ fn open_link_in[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: 
         users.push(try auth_user(cat, hop))
     }
     for i, hop in chain {
-        done := open_hop(crypto, mut store, session, cat, mut link, prompter, hop, users[i], opts)
-        if !done.has_value() {
+        open_hop(crypto, mut store, session, cat, mut link, prompter, hop, users[i], opts) or err {
             link.link_hangup()
-            return error("{done.error().message()}")
+            return error("{err.message()}")
         }
     }
     return i64(chain.len())
@@ -299,42 +301,41 @@ fn run_shell[T: SshTransport, M: Terminal, K: Clock](mut link: T, mut term: M, m
     keepalive_ms := SSH_KEEPALIVE_SECS * 1000
     mut last_heard := clock.clock_now_ms()
     for running {
-        got := link.link_channel_read(10)
-        if !got.has_value() {
-            failure = "{got.error().message()}"
+        // `continue` with `running` false ends the loop, skipping the steps below as
+        // their `running` checks did.
+        chunk := link.link_channel_read(10) or err {
+            failure = "{err.message()}"
             running = false
-        } else {
-            chunk := got.value()
-            now := clock.clock_now_ms()
-            if chunk.stdout.len() > 0 {
-                term.term_output(chunk.stdout)
-                last_heard = now
-            }
-            if chunk.stderr.len() > 0 {
-                term.term_output(chunk.stderr)
-                last_heard = now
-            }
-            if chunk.done {
-                code = chunk.exit_code
+            continue
+        }
+        now := clock.clock_now_ms()
+        if chunk.stdout.len() > 0 {
+            term.term_output(chunk.stdout)
+            last_heard = now
+        }
+        if chunk.stderr.len() > 0 {
+            term.term_output(chunk.stderr)
+            last_heard = now
+        }
+        if chunk.done {
+            code = chunk.exit_code
+            running = false
+        } else if now - last_heard >= keepalive_ms {
+            link.link_keepalive() or err {
+                failure = "{err.message()}"
                 running = false
-            } else if now - last_heard >= keepalive_ms {
-                sent := link.link_keepalive()
-                if !sent.has_value() {
-                    failure = "{sent.error().message()}"
-                    running = false
-                }
-                last_heard = now
             }
+            last_heard = now
         }
         if running {
-            typed := term.term_input(10)
-            if !typed.has_value() {
+            typed := term.term_input(10) or {
                 // Local input ended (stdin closed): end the session.
                 running = false
-            } else if typed.value().len() > 0 {
-                sent := link.link_channel_write(typed.value())
-                if !sent.has_value() {
-                    failure = "{sent.error().message()}"
+                continue
+            }
+            if typed.len() > 0 {
+                link.link_channel_write(typed) or err {
+                    failure = "{err.message()}"
                     running = false
                 }
             }
@@ -399,9 +400,8 @@ fn exec_on_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, O: ExecS
         return error(coded(ERR_USAGE, "no command given; use `flint exec <alias> -- <command>`"))
     }
     target := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
-    res := run_exec(mut link, mut sink, mut clock, target.alias, command, exec_timeout_secs, capture)
-    link.link_hangup()
-    return res
+    defer link.link_hangup()
+    return run_exec(mut link, mut sink, mut clock, target.alias, command, exec_timeout_secs, capture)
 }
 
 // The PTY command of a session on `h`: its initial command (D-031), unless the
@@ -417,9 +417,8 @@ fn session_command(h: Host, opts: ConnectOptions) -> str {
 // host's initial command.
 fn connect_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Terminal, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut term: M, mut clock: K, alias: str, term_name: str, opts: ConnectOptions) -> i64! {
     target := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
-    code := run_shell(mut link, mut term, mut clock, term_name, session_command(target, opts))
-    link.link_hangup()
-    return code
+    defer link.link_hangup()
+    return run_shell(mut link, mut term, mut clock, term_name, session_command(target, opts))
 }
 
 // The app's second Files pane on a host with no open tab (milestone 19, D-056):
@@ -430,34 +429,30 @@ fn connect_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Termi
 // `term_raw_enter` tells the page the session is ready. Hangs up either way.
 fn hold_files_session[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Terminal, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut term: M, mut clock: K, alias: str, opts: ConnectOptions) -> i64! {
     _ := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
-    lent := link.link_lend()
-    if !lent.has_value() {
+    link.link_lend() or err {
         link.link_hangup()
-        return error("{lent.error().message()}")
+        return error("{err.message()}")
     }
-    entered := term.term_raw_enter()
-    if !entered.has_value() {
+    term.term_raw_enter() or err {
         link.link_hangup()
-        return error("{entered.error().message()}")
+        return error("{err.message()}")
     }
     keepalive_ms := SSH_KEEPALIVE_SECS * 1000
     mut last := clock.clock_now_ms()
     mut failure := ""
     mut running := true
     for running {
-        waited := term.term_input(250)
-        if !waited.has_value() {
+        term.term_input(250) or {
             running = false
-        } else {
-            now := clock.clock_now_ms()
-            if now - last >= keepalive_ms {
-                sent := link.link_keepalive()
-                if !sent.has_value() {
-                    failure = "{sent.error().message()}"
-                    running = false
-                }
-                last = now
+            continue
+        }
+        now := clock.clock_now_ms()
+        if now - last >= keepalive_ms {
+            link.link_keepalive() or err {
+                failure = "{err.message()}"
+                running = false
             }
+            last = now
         }
     }
     term.term_raw_leave()

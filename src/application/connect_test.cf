@@ -101,7 +101,8 @@ test "a host with no user anywhere is refused before dialling" {
     s := ssh_fixture(crypto, mut store)
     _ := try add_host(crypto, mut store, s, host_patch("bare", "bare.example.org"))
     mut link := new_fake_link()
-    r := open_link(crypto, mut store, s, mut link, no_prompter(), "bare", accept_opts())
+    mut r := ""
+    open_link(crypto, mut store, s, mut link, no_prompter(), "bare", accept_opts()) or err { r = "{err.message()}" }
     assert_eq(err_code(r), "invalid")
     assert_eq(link.calls.len(), 0)
 }
@@ -138,9 +139,10 @@ test "rejected methods fall through to the next, then fail with auth naming them
     mut link2 := new_fake_link()
     link2.good_password = "host-pw"
     // web: key rejected, credential password rejected, agent rejected.
-    r := open_link(crypto, mut store, s, mut link2, no_prompter(), "web", accept_opts())
+    mut r := ""
+    open_link(crypto, mut store, s, mut link2, no_prompter(), "web", accept_opts()) or err { r = "{err.message()}" }
     assert_eq(err_code(r), "auth")
-    msg := "{r.error().message()}"
+    msg := "{r}"
     assert(msg.contains("key 'k1'"))
     assert(msg.contains("credential 'ops' password"))
     assert(msg.contains("SSH agent"))
@@ -179,26 +181,31 @@ test "a network failure stops at once" {
     s := ssh_fixture(crypto, mut store)
     mut link := new_fake_link()
     link.fail_dial = true
-    r := open_link(crypto, mut store, s, mut link, no_prompter(), "web", accept_opts())
+    mut r := ""
+    open_link(crypto, mut store, s, mut link, no_prompter(), "web", accept_opts()) or err { r = "{err.message()}" }
     assert_eq(err_code(r), "network")
     assert_eq(link.calls.len(), 1)
     assert(link.hung_up)
 }
 
 test "an unknown host key needs a terminal or --accept-new-host-key" {
+    mut got_code := "ok"
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := ssh_fixture(crypto, mut store)
     mut link := new_fake_link()
     link.good_password = "host-pw"
-    r := open_link(crypto, mut store, s, mut link, no_prompter(), "bastion", default_connect_options())
+    mut r := ""
+    open_link(crypto, mut store, s, mut link, no_prompter(), "bastion", default_connect_options()) or err { r = "{err.message()}" }
     assert_eq(err_code(r), "host_key")
     assert_eq((try store.known_hosts_all()).len(), 0)
 
     refuse := FakePrompter{ available: true, confirm: false, password: "" }
     mut link2 := new_fake_link()
     link2.good_password = "host-pw"
-    assert_eq(err_code(open_link(crypto, mut store, s, mut link2, refuse, "bastion", default_connect_options())), "host_key")
+    got_code = "ok"
+    open_link(crypto, mut store, s, mut link2, refuse, "bastion", default_connect_options()) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "host_key")
     assert_eq((try store.known_hosts_all()).len(), 0)
 
     mut link3 := new_fake_link()
@@ -216,6 +223,7 @@ test "an unknown host key needs a terminal or --accept-new-host-key" {
 }
 
 test "a changed host key is refused even with --accept-new-host-key, until forgotten" {
+    mut got_code := "ok"
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := ssh_fixture(crypto, mut store)
@@ -226,9 +234,10 @@ test "a changed host key is refused even with --accept-new-host-key, until forgo
     mut evil := new_fake_link()
     evil.good_password = "host-pw"
     evil.server_fp = "SHA256:other"
-    r := open_link(crypto, mut store, s, mut evil, yes_prompter(), "bastion", accept_opts())
+    mut r := ""
+    open_link(crypto, mut store, s, mut evil, yes_prompter(), "bastion", accept_opts()) or err { r = "{err.message()}" }
     assert_eq(err_code(r), "host_key")
-    assert("{r.error().message()}".contains("CHANGED"))
+    assert("{r}".contains("CHANGED"))
     assert_eq(evil.calls.len(), 1, "no credential may be sent to a changed key")
 
     views := try list_known_hosts(store)
@@ -236,7 +245,9 @@ test "a changed host key is refused even with --accept-new-host-key, until forgo
     assert_eq(views[0].host, "bastion")
     gone := try remove_known_host(mut store, "bastion")
     assert_eq(gone.addr, "bastion.example.org")
-    assert_eq(err_code(remove_known_host(mut store, "bastion")), "not_found")
+    got_code = "ok"
+    remove_known_host(mut store, "bastion") or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "not_found")
 
     mut again := new_fake_link()
     again.good_password = "host-pw"
@@ -268,6 +279,7 @@ test "exec streams or captures output and reports the exit code" {
 }
 
 test "exec times out and refuses an empty command" {
+    mut got_code := "ok"
     mut link := new_fake_link()
     mut many: []ExecChunk = []
     for _ in 0..100 {
@@ -276,10 +288,15 @@ test "exec times out and refuses an empty command" {
     link.chunks = many
     mut sink := FakeSink{ out_text: "", err_text: "" }
     mut clock := FakeClock{ now_ms: 0, step_ms: 500 }
-    r := run_exec(mut link, mut sink, mut clock, "web", "sleep 99", 2, false)
+    mut r := ""
+    run_exec(mut link, mut sink, mut clock, "web", "sleep 99", 2, false) or err { r = "{err.message()}" }
     assert_eq(err_code(r), "timeout")
-    assert_eq(err_code(run_exec(mut link, mut sink, mut clock, "web", "", 2, false)), "usage")
-    assert_eq(err_code(run_exec(mut link, mut sink, mut clock, "web", "x", 0, false)), "invalid")
+    got_code = "ok"
+    run_exec(mut link, mut sink, mut clock, "web", "", 2, false) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "usage")
+    got_code = "ok"
+    run_exec(mut link, mut sink, mut clock, "web", "x", 0, false) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "invalid")
 }
 
 test "a shell relays both ways, follows resizes and leaves raw mode" {
@@ -327,9 +344,10 @@ test "a keepalive that cannot be sent ends the session with a network error" {
     link.chunks = [quiet_chunk(), quiet_chunk(), quiet_chunk(), quiet_chunk(), done_chunk(0)]
     mut term := new_fake_terminal([])
     mut clock := FakeClock{ now_ms: 0, step_ms: 10000 }
-    r := run_shell(mut link, mut term, mut clock, "xterm-256color", "")
-    assert(!r.has_value())
-    assert_eq(error_code_of("{r.error().message()}"), ERR_NETWORK)
+    mut r := ""
+    run_shell(mut link, mut term, mut clock, "xterm-256color", "") or err { r = "{err.message()}" }
+    assert(r.len() > 0)
+    assert_eq(error_code_of("{r}"), ERR_NETWORK)
     assert_eq(link.keepalives, 1)
     assert(!term.raw, "raw mode is left on the way out")
 }
@@ -344,6 +362,7 @@ fn web_link() -> FakeLink {
 }
 
 test "a host's initial command is stored, shown and run on the PTY" {
+    mut got_code := "ok"
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := ssh_fixture(crypto, mut store)
@@ -390,7 +409,9 @@ test "a host's initial command is stored, shown and run on the PTY" {
     mut c := empty_host_patch()
     c.command = "a\nb"
     c.set_command = true
-    assert_eq(err_code(edit_host(crypto, mut store, s, "web", c)), "invalid")
+    got_code = "ok"
+    edit_host(crypto, mut store, s, "web", c) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "invalid")
     c.command = ""
     assert_eq((try edit_host(crypto, mut store, s, "web", c)).command, "")
 }
@@ -416,6 +437,7 @@ test "host test connects every hop, hangs up and runs nothing" {
 }
 
 test "host test reports a failed method without asking for a password" {
+    mut got_code := "ok"
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := ssh_fixture(crypto, mut store)
@@ -424,7 +446,8 @@ test "host test reports a failed method without asking for a password" {
     asks := FakePrompter{ available: true, confirm: true, password: "typed" }
     link.good_password = "typed"
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
-    r := test_host(crypto, mut store, s, mut link, asks, mut clock, "lone", accept_opts())
+    mut r := ""
+    test_host(crypto, mut store, s, mut link, asks, mut clock, "lone", accept_opts()) or err { r = "{err.message()}" }
     assert_eq(err_code(r), "auth")
     for call in link.calls {
         assert(call != "password typed", "a test never prompts for a password")
@@ -434,7 +457,9 @@ test "host test reports a failed method without asking for a password" {
     evil.server_fp = "SHA256:other"
     mut first := web_link()
     _ := try test_host(crypto, mut store, s, mut first, no_prompter(), mut clock, "bastion", accept_opts())
-    assert_eq(err_code(test_host(crypto, mut store, s, mut evil, yes_prompter(), mut clock, "bastion", accept_opts())), "host_key")
+    got_code = "ok"
+    test_host(crypto, mut store, s, mut evil, yes_prompter(), mut clock, "bastion", accept_opts()) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "host_key")
 }
 
 test "a draft host is tested without saving it, and keeps a trusted key once added" {
@@ -454,7 +479,8 @@ test "a draft host is tested without saving it, and keeps a trusted key once add
     // The bastion's password is "host-pw"; the draft's own is "draft-pw".
     mut both := new_fake_link()
     both.good_password = "host-pw"
-    r := test_host_draft(crypto, mut store, s, mut both, yes_prompter(), mut clock, "", p, default_connect_options())
+    mut r := ""
+    test_host_draft(crypto, mut store, s, mut both, yes_prompter(), mut clock, "", p, default_connect_options()) or err { r = "{err.message()}" }
     assert_eq(err_code(r), "auth")
     mut used_draft_pw := false
     for call in both.calls {
@@ -495,6 +521,7 @@ test "a draft host is tested without saving it, and keeps a trusted key once add
 }
 
 test "an edited draft overrides the saved host for the test only" {
+    mut got_code := "ok"
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := ssh_fixture(crypto, mut store)
@@ -508,34 +535,46 @@ test "an edited draft overrides the saved host for the test only" {
     assert_eq(v.target, "jump@Bastion.Example.org:2200")
     assert_eq(link.calls[0], "dial jump@Bastion.Example.org:2200")
     assert_eq((try show_host(store, "bastion")).port, 22)
-    assert_eq(err_code(test_host_draft(crypto, mut store, s, mut link, yes_prompter(), mut clock, "", empty_host_patch(), default_connect_options())), "usage")
+    got_code = "ok"
+    test_host_draft(crypto, mut store, s, mut link, yes_prompter(), mut clock, "", empty_host_patch(), default_connect_options()) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "usage")
 }
 
 // ---- Reveal and copy (D-029) -------------------------------------------------------
 
 test "a saved password is revealed or copied only by name, and the copy is cleared later" {
+    mut got_code := "ok"
+    mut refused := 0
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := ssh_fixture(crypto, mut store)
     assert_eq(try reveal_password(crypto, store, s, "host", "bastion"), "host-pw")
     assert_eq(try reveal_password(crypto, store, s, "credential", "ops"), "cred-pw")
-    no_pw := reveal_password(crypto, store, s, "host", "web")
+    mut no_pw := ""
+    reveal_password(crypto, store, s, "host", "web") or err { no_pw = "{err.message()}" }
     assert_eq(err_code(no_pw), "not_found")
-    assert(!"{no_pw.error().message()}".contains("pw"))
-    assert_eq(err_code(reveal_password(crypto, store, s, "host", "nope")), "not_found")
-    assert_eq(err_code(reveal_password(crypto, store, s, "key", "k1")), "invalid")
+    assert(!"{no_pw}".contains("pw"))
+    got_code = "ok"
+    reveal_password(crypto, store, s, "host", "nope") or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "not_found")
+    got_code = "ok"
+    reveal_password(crypto, store, s, "key", "k1") or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "invalid")
 
     mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
     try copy_password(crypto, store, s, mut clip, "credential", "ops")
     assert_eq(clip.text, "cred-pw")
     assert_eq(clip.clear_after_ms, 30000)
-    assert_eq(err_code(copy_password(crypto, store, s, mut clip, "host", "web")), "not_found")
+    got_code = "ok"
+    copy_password(crypto, store, s, mut clip, "host", "web") or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "not_found")
     assert_eq(clip.copies, 1)
 
     // A session with the wrong secrets key cannot open it. The key is derived from a
     // random salt, so a fixed "wrong" byte could be the right one (1 run in 256).
     wrong := VaultSession{ path: s.path, name: s.name, secrets_key: [byte(u8(s.secrets_key[0]) ^ u8(1)), byte(9), byte(9)], cached: false }
-    assert(!reveal_password(crypto, store, wrong, "host", "bastion").has_value())
+    reveal_password(crypto, store, wrong, "host", "bastion") or { refused += 1 }
+    assert_eq(refused, 1)
 }
 
 // ---- A Files pane's session with no terminal (milestone 19) ---------------------
@@ -566,8 +605,9 @@ test "a Files pane's session ends with a network error when a keepalive cannot b
     link.fail_keepalive = true
     mut term := new_fake_terminal(["", "", "", ""])
     mut clock := FakeClock{ now_ms: 0, step_ms: 20000 }
-    r := hold_files_session(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock, "web", accept_opts())
-    assert_eq(error_code_of("{r.error().message()}"), ERR_NETWORK)
+    mut r := ""
+    hold_files_session(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock, "web", accept_opts()) or err { r = "{err.message()}" }
+    assert_eq(error_code_of("{r}"), ERR_NETWORK)
     assert_eq(link.keepalives, 1)
     assert(link.hung_up)
 }
@@ -580,8 +620,9 @@ test "a Files pane's session that fails to log in never lends it" {
     link.fail_dial = true
     mut term := new_fake_terminal([])
     mut clock := idle_clock()
-    r := hold_files_session(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock, "web", accept_opts())
-    assert_eq(error_code_of("{r.error().message()}"), ERR_NETWORK)
+    mut r := ""
+    hold_files_session(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock, "web", accept_opts()) or err { r = "{err.message()}" }
+    assert_eq(error_code_of("{r}"), ERR_NETWORK)
     for c in link.calls {
         assert(c != "lend")
     }

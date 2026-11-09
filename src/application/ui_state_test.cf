@@ -29,8 +29,9 @@ test "ui state is kept per vault, most recent first, and cleaned" {
     assert_eq(store.saved.vaults.len(), usize(2))
     assert(store.saved.sidebar_open)
 
-    bad := save_ui_state(mut store, "../../x", UiStateView{ sidebar_open: true, sidebar_width: 250, collapsed: [] })
-    assert(!bad.has_value())
+    mut bad := ""
+    save_ui_state(mut store, "../../x", UiStateView{ sidebar_open: true, sidebar_width: 250, collapsed: [] }) or err { bad = "{err.message()}" }
+    assert(bad.len() > 0)
 }
 
 fn test_vault_id(i: i64) -> str {

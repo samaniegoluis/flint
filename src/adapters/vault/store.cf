@@ -35,17 +35,21 @@ fn (self: SqlVaultStore) vault_read_salt(path: str) -> []byte! {
     if !fs.exists(path) {
         return error(coded(ERR_NOT_FOUND, "no vault file at {path}"))
     }
+    size := fs.file_size(path) or err {
+        return error(coded(ERR_IO, "cannot read {path}"))
+    }
+    if size < 16 {
+        return error(coded(ERR_INVALID, "{path} is not a Flint vault"))
+    }
     mut f := fs.open(path) or err {
         return error(coded(ERR_IO, "cannot read {path}"))
     }
     defer f.close()
-    head := f.read_bytes(16) or err {
+    // read_exact, not read_bytes: from cfire c5b1d4b read_bytes(n) on a file fails when
+    // the file holds more than n bytes (CF-107).
+    return f.read_exact(16) or err {
         return error(coded(ERR_IO, "cannot read {path}"))
     }
-    if head.len() != 16 {
-        return error(coded(ERR_INVALID, "{path} is not a Flint vault"))
-    }
-    return head
 }
 
 fn (mut self: SqlVaultStore) vault_create(path: str, page_key: []byte, salt: []byte) -> void! {
@@ -58,11 +62,10 @@ fn (mut self: SqlVaultStore) vault_create(path: str, page_key: []byte, salt: []b
     }
     self.vault_detach()
     self.adopt(try open_cipher_db(path, page_key, salt, true))
-    migrated := self.conn().migrate()
-    if !migrated.has_value() {
+    self.conn().migrate() or err {
         self.vault_detach()
         _ := fs.remove(path)
-        return error("{migrated.error().message()}")
+        return error("{err.message()}")
     }
 }
 
@@ -72,10 +75,9 @@ fn (mut self: SqlVaultStore) vault_attach(path: str, page_key: []byte, salt: []b
     }
     self.vault_detach()
     self.adopt(try open_cipher_db(path, page_key, salt, false))
-    migrated := self.conn().migrate()
-    if !migrated.has_value() {
+    self.conn().migrate() or err {
         self.vault_detach()
-        return error("{migrated.error().message()}")
+        return error("{err.message()}")
     }
 }
 
@@ -345,11 +347,10 @@ fn (self: SqlVaultStore) token_put(t: Token) -> void! {
 fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> void! {
     try self.require_open()
     try self.conn().exec("SAVEPOINT activity_add;")
-    done := self.activity_insert(e, keep)
-    if !done.has_value() {
+    self.activity_insert(e, keep) or err {
         _ := self.conn().exec("ROLLBACK TO activity_add;")
         _ := self.conn().exec("RELEASE activity_add;")
-        return error("{done.error().message()}")
+        return error("{err.message()}")
     }
     try self.conn().exec("RELEASE activity_add;")
 }
@@ -395,14 +396,13 @@ fn (self: SqlVaultStore) activity_bytes() -> i64! {
 fn (self: SqlVaultStore) activity_prune(keep: ActivityKeep) -> i64! {
     try self.require_open()
     try self.conn().exec("SAVEPOINT activity_prune;")
-    done := self.activity_trim(keep)
-    if !done.has_value() {
+    done := self.activity_trim(keep) or err {
         _ := self.conn().exec("ROLLBACK TO activity_prune;")
         _ := self.conn().exec("RELEASE activity_prune;")
-        return error("{done.error().message()}")
+        return error("{err.message()}")
     }
     try self.conn().exec("RELEASE activity_prune;")
-    return done.value()
+    return done
 }
 
 fn (self: SqlVaultStore) activity_count_before(since_at: i64) -> i64! {

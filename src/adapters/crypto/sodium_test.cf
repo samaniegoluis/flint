@@ -44,9 +44,11 @@ test "argon2id derivation is deterministic and password-sensitive" {
 }
 
 test "derive_key rejects a short salt" {
+    mut refused := 0
     c := try new_sodium()
     short_salt := make([]byte, 4)
-    assert(!c.derive_key("pw", short_salt, TEST_OPS, TEST_MEM).has_value())
+    c.derive_key("pw", short_salt, TEST_OPS, TEST_MEM) or { refused += 1 }
+    assert_eq(refused, 1)
 }
 
 test "seal/open round-trips and fresh nonces differ" {
@@ -63,6 +65,7 @@ test "seal/open round-trips and fresh nonces differ" {
 }
 
 test "open fails on tampered ciphertext, wrong key or wrong aad" {
+    mut refused := 0
     c := try new_sodium()
     key := c.random_bytes(KEY_LEN)
     msg: []byte = [byte(1), byte(2), byte(3)]
@@ -72,10 +75,13 @@ test "open fails on tampered ciphertext, wrong key or wrong aad" {
     mut tampered := sealed
     tampered[NONCE_LEN] = tampered[NONCE_LEN] ^ byte(1)
     other: []byte = [byte(8)]
-    assert(!c.unseal(key, tampered, aad).has_value())
-    assert(!c.unseal(c.random_bytes(KEY_LEN), sealed, aad).has_value())
-    assert(!c.unseal(key, sealed, other).has_value())
-    assert(c.unseal(key, sealed, aad).has_value())
+    c.unseal(key, tampered, aad) or { refused += 1 }
+    assert_eq(refused, 1)
+    c.unseal(c.random_bytes(KEY_LEN), sealed, aad) or { refused += 1 }
+    assert_eq(refused, 2)
+    c.unseal(key, sealed, other) or { refused += 1 }
+    assert_eq(refused, 3)
+    _ := try c.unseal(key, sealed, aad)
 }
 
 test "wipe zeroes the buffer" {
@@ -100,6 +106,7 @@ test "argon2id matches a fixed vector" {
 }
 
 test "subkeys are independent and deterministic" {
+    mut refused := 0
     c := try new_sodium()
     master := c.random_bytes(KEY_LEN)
     a := try c.derive_subkey(master, 1, "flintvlt")
@@ -110,7 +117,8 @@ test "subkeys are independent and deterministic" {
     assert(a != b)
     assert(a != d)
     assert(a != master)
-    assert(!c.derive_subkey(master, 1, "short").has_value())
+    c.derive_subkey(master, 1, "short") or { refused += 1 }
+    assert_eq(refused, 1)
 }
 
 test "equal compares in constant time and by length" {

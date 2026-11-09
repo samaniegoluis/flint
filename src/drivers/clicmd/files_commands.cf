@@ -4,7 +4,7 @@ package clicmd
 // in either direction, or from one host to another through Flint. The handler parses
 // the two paths and the flags, calls one use case and formats the result (Principle 2).
 
-import "ext:json"
+import "core:json"
 import "../../application"
 import "../../domain"
 
