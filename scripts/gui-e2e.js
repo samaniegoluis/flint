@@ -653,9 +653,10 @@
       await check(sessionCount() === sessionsBefore + 3, 'closing a pane hangs up its session');
       panes()[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       await waitFor(() => panes()[0].classList.contains('focus'), 'pane 1 focused');
-      await runInTerminal(`for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 ${pid} 2>/dev/null || break; sleep 0.5; done; kill -0 ${pid} 2>/dev/null && echo pane-still-$((40+1)) || echo pane-gone-$((40+2))`, 'pane-');
-      await waitFor(() => /pane-(still-41|gone-42)/.test(termText()), 'the check on the closed pane');
-      await check(termText().includes('pane-gone-42'), "the closed pane's shell ended on the host; the other panes keep working");
+      // A process that has exited but is not reaped yet still answers kill -0: look at its state.
+      await runInTerminal(`for i in $(seq 1 30); do s=$(ps -o stat= -p ${pid} 2>/dev/null); case "$s" in ''|Z*) break;; esac; sleep 0.5; done; s=$(ps -o stat= -p ${pid} 2>/dev/null); case "$s" in ''|Z*) echo pane-gone-$((40+2));; *) echo pane-still-$((40+1)) "[$s]"; ps -o pid,ppid,stat,args -p ${pid};; esac`, 'pane-');
+      await waitFor(() => /pane-(still-41|gone-42)/.test(termText()), 'the check on the closed pane', 25000);
+      await check(termText().includes('pane-gone-42'), "the closed pane's shell ended on the host; the other panes keep working" + (termText().includes('pane-gone-42') ? '' : ' — terminal: ' + termText().split('\n').filter((l) => l.trim()).slice(-4).join(' | ')));
       send('KeyW');
       await waitFor(() => panes().length === 2, 'two panes');
       await check(sessionCount() === sessionsBefore + 2, '⌘W closes the focused pane');

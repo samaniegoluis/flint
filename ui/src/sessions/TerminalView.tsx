@@ -1,5 +1,6 @@
-// One xterm.js terminal per tab. It stays mounted while the tab is open (hidden when
-// another tab is active), so scrollback survives tab switches and reconnects.
+// One xterm.js terminal per pane. It stays mounted while the pane is open (hidden when
+// another tab is active), so scrollback survives tab switches, splits and reconnects.
+// `tabId` is the pane's id (milestone 20: a tab holds up to four panes).
 //
 // Ported from Tether's terminal: Kitty keyboard protocol (xterm.js 6.1 beta),
 // the WebGL renderer (the DOM renderer mis-sizes cells in this beta), dead-key and
@@ -264,7 +265,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
   );
 }
 
-// Focuses the active tab's terminal (after a prompt closes, or F6).
+// Focuses a pane's terminal (after a prompt closes, or F6).
 export function focusTerminal(tabId: string | null) {
   if (!tabId) return;
   const el = document.querySelector<HTMLElement>(`[data-tab="${tabId}"] textarea`);
