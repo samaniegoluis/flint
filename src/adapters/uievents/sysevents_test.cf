@@ -19,7 +19,9 @@ test "lock and sleep events are taken once, sleep first" {
 // descriptors (CF-080).
 
 test "FLINT_PRESENCE=password picks the master password and never skips the check" {
+    mut refused := 0
     p := OsPresence{ force_password: true }
     assert_eq(p.presence_method(), PRESENCE_PASSWORD)
-    assert(!p.presence_confirm("x").has_value())
+    p.presence_confirm("x") or { refused += 1 }
+    assert_eq(refused, 1)
 }

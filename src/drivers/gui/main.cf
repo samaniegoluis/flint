@@ -39,6 +39,18 @@ fn find_ui_dir() -> str {
     return "ui/dist"
 }
 
+// Once per machine, the keys earlier Flints cached on every unlock go (D-048); says
+// on stderr what happened.
+fn report_forget_cached_keys(mut settings_store: JsonSettingsStore, store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore) {
+    removed := forget_cached_keys_once(mut settings_store, store, kc, recents) or err {
+        write_stderr("flint-gui: cached vault keys left in place: {err.message()}\n")
+        return
+    }
+    if removed > 0 {
+        write_stderr("flint-gui: removed {removed} vault keys an earlier Flint cached; Remember on this computer brings one back\n")
+    }
+}
+
 fn main() {
     ui_dir := find_ui_dir()
     e2e_script: str = os.getenv("FLINT_GUI_E2E")
@@ -65,13 +77,12 @@ fn main() {
         app.embed_asset("/e2e.js", script, "text/javascript")
     }
 
-    sodium_ok := new_sodium()
-    if !sodium_ok.has_value() {
+    sodium_ok := new_sodium() or err {
         write_stderr("flint-gui: libsodium failed to start\n")
         exit_process(1)
         return
     }
-    c := sodium_ok.value()
+    c := sodium_ok
     mut store := new_locked_vault_store()
     kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
     config_dir := flint_config_dir()
@@ -90,12 +101,7 @@ fn main() {
     st.holder.set_lock_after((load_settings(settings_store) or default_settings()).lock_after)
     // Once per machine: the keys earlier Flints cached on every unlock go (D-048).
     if os.getenv("FLINT_KEYCHAIN") != "off" {
-        cleared := forget_cached_keys_once(mut settings_store, store, kc, recents)
-        if !cleared.has_value() {
-            write_stderr("flint-gui: cached vault keys left in place: {cleared.error().message()}\n")
-        } else if cleared.value() > 0 {
-            write_stderr("flint-gui: removed {cleared.value()} vault keys an earlier Flint cached; Remember on this computer brings one back\n")
-        }
+        report_forget_cached_keys(mut settings_store, store, kc, recents)
     }
 
     app.bind_raw("app_info") |params| { return rpc_app_info(e2e) }
@@ -223,32 +229,30 @@ fn main() {
 
     async.scope(workers: 64) |scope| {
         app.bind_raw("session_open") |params| {
-            req := session_open_check(params, st)
-            if req.has_value() {
-                worker_app := app
-                worker_store := store
-                vs := st.vault_session()
-                r := req.value()
-                emit_session_state(mut app, r.session, "connecting", "", "", 0)
-                scope.spawn || {
-                    // Captures are read-only inside the task: take mutable copies.
-                    mut a := worker_app
-                    mut s := worker_store
-                    run_gui_session(mut a, c, mut s, vs, r)
-                }
+            r := session_open_check(params, st) or err {
+                return error("{err.message()}")
             }
-            return session_open_reply(req)
+            worker_app := app
+            worker_store := store
+            vs := st.vault_session()
+            emit_session_state(mut app, r.session, "connecting", "", "", 0)
+            scope.spawn || {
+                // Captures are read-only inside the task: take mutable copies.
+                mut a := worker_app
+                mut s := worker_store
+                run_gui_session(mut a, c, mut s, vs, r)
+            }
+            return ok_json()
         }
         app.bind_raw("host_test") |params| {
-            req := host_test_check(params, st)
-            if !req.has_value() {
-                return error("{req.error().message()}")
+            req := host_test_check(params, st) or err {
+                return error("{err.message()}")
             }
             patch := parse_req[HostPatch](params) or empty_host_patch()
             worker_app := app
             worker_store := store
             vs := st.vault_session()
-            r := req.value()
+            r := req
             scope.spawn || {
                 // Captures are read-only inside the task: take mutable copies.
                 mut a := worker_app

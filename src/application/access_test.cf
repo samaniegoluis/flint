@@ -3,6 +3,7 @@ package application
 import "../domain"
 
 test "a scope by name maps to ids and back" {
+    mut refused := 0
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     _ := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/a.flint", "", "correct horse", false)
@@ -11,8 +12,10 @@ test "a scope by name maps to ids and back" {
     assert(cat0.groups.len() == 2)
     s := try access_scope_from_names(cat0, ScopeByName{ all: false, groups: ["lab/pve"], hosts: [] })
     assert_eq(s.groups.len(), 1)
-    assert(!access_scope_from_names(cat0, ScopeByName{ all: false, groups: ["nope"], hosts: [] }).has_value())
-    assert(!access_scope_from_names(cat0, ScopeByName{ all: false, groups: [], hosts: ["ghost"] }).has_value())
+    access_scope_from_names(cat0, ScopeByName{ all: false, groups: ["nope"], hosts: [] }) or { refused += 1 }
+    assert_eq(refused, 1)
+    access_scope_from_names(cat0, ScopeByName{ all: false, groups: [], hosts: ["ghost"] }) or { refused += 1 }
+    assert_eq(refused, 2)
     g := Grant{ id: "g", vault_id: "v", anchor_pid: 1, anchor_started: 1, label: "x", scope: s, read: true, exec: false, write: false, created_ms: 0, expires_ms: 0, duration: "lock" }
     v := grant_view(g, cat0)
     assert_eq(v.groups[0], "lab/pve")
@@ -38,11 +41,13 @@ test "presence is the OS's check, or the master password where it has none" {
     mut store := new_fake_store()
     s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/p.flint", "", "correct horse", false)
     try confirm_presence(crypto, store, FakePresence{ method: "password", answer: false }, s, "correct horse", "r")
-    wrong := confirm_presence(crypto, store, FakePresence{ method: "password", answer: true }, s, "nope", "r")
-    assert_eq(error_code_of("{wrong.error().message()}"), ERR_WRONG_PASSWORD)
+    mut wrong := ""
+    confirm_presence(crypto, store, FakePresence{ method: "password", answer: true }, s, "nope", "r") or err { wrong = "{err.message()}" }
+    assert_eq(error_code_of("{wrong}"), ERR_WRONG_PASSWORD)
     try confirm_presence(crypto, store, FakePresence{ method: "touchid", answer: true }, s, "", "r")
-    no := confirm_presence(crypto, store, FakePresence{ method: "touchid", answer: false }, s, "correct horse", "r")
-    assert_eq(error_code_of("{no.error().message()}"), ERR_DENIED)
+    mut no := ""
+    confirm_presence(crypto, store, FakePresence{ method: "touchid", answer: false }, s, "correct horse", "r") or err { no = "{err.message()}" }
+    assert_eq(error_code_of("{no}"), ERR_DENIED)
 }
 
 test "the window opens again with the master password or the OS's presence check" {
@@ -51,13 +56,16 @@ test "the window opens again with the master password or the OS's presence check
     s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/w.flint", "", "correct horse", false)
     // Touch ID or polkit.
     try confirm_window_unlock(crypto, store, FakePresence{ method: "touchid", answer: true }, s, "")
-    no := confirm_window_unlock(crypto, store, FakePresence{ method: "touchid", answer: false }, s, "")
-    assert_eq(error_code_of("{no.error().message()}"), ERR_DENIED)
+    mut no := ""
+    confirm_window_unlock(crypto, store, FakePresence{ method: "touchid", answer: false }, s, "") or err { no = "{err.message()}" }
+    assert_eq(error_code_of("{no}"), ERR_DENIED)
     // The master password works where there is a presence check too, and never a wrong one.
     try confirm_window_unlock(crypto, store, FakePresence{ method: "touchid", answer: false }, s, "correct horse")
-    wrong := confirm_window_unlock(crypto, store, FakePresence{ method: "touchid", answer: true }, s, "nope")
-    assert_eq(error_code_of("{wrong.error().message()}"), ERR_WRONG_PASSWORD)
+    mut wrong := ""
+    confirm_window_unlock(crypto, store, FakePresence{ method: "touchid", answer: true }, s, "nope") or err { wrong = "{err.message()}" }
+    assert_eq(error_code_of("{wrong}"), ERR_WRONG_PASSWORD)
     // No presence check on this machine: an empty password is not enough.
-    empty := confirm_window_unlock(crypto, store, FakePresence{ method: "password", answer: true }, s, "")
-    assert_eq(error_code_of("{empty.error().message()}"), ERR_WRONG_PASSWORD)
+    mut empty := ""
+    confirm_window_unlock(crypto, store, FakePresence{ method: "password", answer: true }, s, "") or err { empty = "{err.message()}" }
+    assert_eq(error_code_of("{empty}"), ERR_WRONG_PASSWORD)
 }

@@ -156,12 +156,15 @@ test "flags parse anywhere, with values inline or separate" {
 }
 
 test "unknown flags and missing values are usage errors" {
-    bad := parse_cli_args(["host", "list", "--nope"])
-    assert_eq(error_code_of("{bad.error().message()}"), "usage")
-    missing := parse_cli_args(["host", "add", "--hostname"])
-    assert_eq(error_code_of("{missing.error().message()}"), "usage")
-    valued := parse_cli_args(["--json=1"])
-    assert_eq(error_code_of("{valued.error().message()}"), "usage")
+    mut bad := ""
+    parse_cli_args(["host", "list", "--nope"]) or err { bad = "{err.message()}" }
+    assert_eq(error_code_of("{bad}"), "usage")
+    mut missing := ""
+    parse_cli_args(["host", "add", "--hostname"]) or err { missing = "{err.message()}" }
+    assert_eq(error_code_of("{missing}"), "usage")
+    mut valued := ""
+    parse_cli_args(["--json=1"]) or err { valued = "{err.message()}" }
+    assert_eq(error_code_of("{valued}"), "usage")
 }
 
 // "30" -> 30 seconds, 1-86400.
@@ -187,15 +190,23 @@ test "everything after -- is kept apart, flags included" {
 }
 
 test "seconds parse within 1-86400" {
+    mut refused := 0
     assert_eq(try parse_seconds_flag("--timeout", "15"), 15)
-    assert(!parse_seconds_flag("--timeout", "0").has_value())
-    assert(!parse_seconds_flag("--timeout", "86401").has_value())
-    assert(!parse_seconds_flag("--timeout", "1s").has_value())
+    parse_seconds_flag("--timeout", "0") or { refused += 1 }
+    assert_eq(refused, 1)
+    parse_seconds_flag("--timeout", "86401") or { refused += 1 }
+    assert_eq(refused, 2)
+    parse_seconds_flag("--timeout", "1s") or { refused += 1 }
+    assert_eq(refused, 3)
 }
 
 test "ports parse strictly" {
+    mut refused := 0
     assert_eq(try parse_port_flag("2222"), 2222)
-    assert(!parse_port_flag("22a").has_value())
-    assert(!parse_port_flag("").has_value())
-    assert(!parse_port_flag("-1").has_value())
+    parse_port_flag("22a") or { refused += 1 }
+    assert_eq(refused, 1)
+    parse_port_flag("") or { refused += 1 }
+    assert_eq(refused, 2)
+    parse_port_flag("-1") or { refused += 1 }
+    assert_eq(refused, 3)
 }

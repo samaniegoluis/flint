@@ -52,16 +52,14 @@ fn (self: LockedVaultStore) leave_with(inner: SqlVaultStore) {
 
 fn (mut self: LockedVaultStore) vault_create(path: str, page_key: []byte, salt: []byte) -> void! {
     mut inner := self.enter()
-    r := inner.vault_create(path, page_key, salt)
-    self.leave_with(inner)
-    return r
+    defer self.leave_with(inner)
+    return inner.vault_create(path, page_key, salt)
 }
 
 fn (mut self: LockedVaultStore) vault_attach(path: str, page_key: []byte, salt: []byte) -> void! {
     mut inner := self.enter()
-    r := inner.vault_attach(path, page_key, salt)
-    self.leave_with(inner)
-    return r
+    defer self.leave_with(inner)
+    return inner.vault_attach(path, page_key, salt)
 }
 
 fn (mut self: LockedVaultStore) vault_detach() {
@@ -73,23 +71,23 @@ fn (mut self: LockedVaultStore) vault_detach() {
 // Keeps the mutex held until vault_commit or vault_rollback.
 fn (self: LockedVaultStore) vault_begin() -> void! {
     inner := self.enter()
-    r := inner.vault_begin()
-    if !r.has_value() {
+    inner.vault_begin() or err {
         self.leave()
+        return error("{err.message()}")
     }
-    return r
 }
 
 // A failed COMMIT is rolled back here, so the transaction and the mutex both end.
 fn (self: LockedVaultStore) vault_commit() -> void! {
     inner := self.enter()
-    r := inner.vault_commit()
-    if !r.has_value() {
+    inner.vault_commit() or err {
         inner.vault_rollback()
+        self.leave()
+        self.leave()
+        return error("{err.message()}")
     }
     self.leave()
     self.leave()
-    return r
 }
 
 fn (self: LockedVaultStore) vault_rollback() {
@@ -101,196 +99,168 @@ fn (self: LockedVaultStore) vault_rollback() {
 
 fn (self: LockedVaultStore) vault_file_exists(path: str) -> bool {
     inner := self.enter()
-    r := inner.vault_file_exists(path)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.vault_file_exists(path)
 }
 
 fn (self: LockedVaultStore) vault_read_salt(path: str) -> []byte! {
     inner := self.enter()
-    r := inner.vault_read_salt(path)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.vault_read_salt(path)
 }
 
 fn (self: LockedVaultStore) vault_format() -> i64! {
     inner := self.enter()
-    r := inner.vault_format()
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.vault_format()
 }
 
 fn (self: LockedVaultStore) vault_get_meta(key: str) -> str! {
     inner := self.enter()
-    r := inner.vault_get_meta(key)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.vault_get_meta(key)
 }
 
 fn (self: LockedVaultStore) vault_set_meta(key: str, value: str) -> void! {
     inner := self.enter()
-    r := inner.vault_set_meta(key, value)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.vault_set_meta(key, value)
 }
 
 fn (self: LockedVaultStore) groups_all() -> []Group! {
     inner := self.enter()
-    r := inner.groups_all()
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.groups_all()
 }
 
 fn (self: LockedVaultStore) group_put(g: Group) -> void! {
     inner := self.enter()
-    r := inner.group_put(g)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.group_put(g)
 }
 
 fn (self: LockedVaultStore) group_drop(id: str) -> void! {
     inner := self.enter()
-    r := inner.group_drop(id)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.group_drop(id)
 }
 
 fn (self: LockedVaultStore) hosts_all() -> []Host! {
     inner := self.enter()
-    r := inner.hosts_all()
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.hosts_all()
 }
 
 fn (self: LockedVaultStore) host_put(h: Host) -> void! {
     inner := self.enter()
-    r := inner.host_put(h)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.host_put(h)
 }
 
 fn (self: LockedVaultStore) host_drop(id: str) -> void! {
     inner := self.enter()
-    r := inner.host_drop(id)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.host_drop(id)
 }
 
 fn (self: LockedVaultStore) keys_all() -> []SshKey! {
     inner := self.enter()
-    r := inner.keys_all()
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.keys_all()
 }
 
 fn (self: LockedVaultStore) key_put(k: SshKey) -> void! {
     inner := self.enter()
-    r := inner.key_put(k)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.key_put(k)
 }
 
 fn (self: LockedVaultStore) key_drop(id: str) -> void! {
     inner := self.enter()
-    r := inner.key_drop(id)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.key_drop(id)
 }
 
 fn (self: LockedVaultStore) creds_all() -> []Credential! {
     inner := self.enter()
-    r := inner.creds_all()
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.creds_all()
 }
 
 fn (self: LockedVaultStore) cred_put(c: Credential) -> void! {
     inner := self.enter()
-    r := inner.cred_put(c)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.cred_put(c)
 }
 
 fn (self: LockedVaultStore) cred_drop(id: str) -> void! {
     inner := self.enter()
-    r := inner.cred_drop(id)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.cred_drop(id)
 }
 
 fn (self: LockedVaultStore) known_hosts_all() -> []KnownHost! {
     inner := self.enter()
-    r := inner.known_hosts_all()
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.known_hosts_all()
 }
 
 fn (self: LockedVaultStore) known_host_put(k: KnownHost) -> void! {
     inner := self.enter()
-    r := inner.known_host_put(k)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.known_host_put(k)
 }
 
 fn (self: LockedVaultStore) known_host_drop(addr: str) -> void! {
     inner := self.enter()
-    r := inner.known_host_drop(addr)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.known_host_drop(addr)
 }
 
 fn (self: LockedVaultStore) tokens_all() -> []Token! {
     inner := self.enter()
-    r := inner.tokens_all()
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.tokens_all()
 }
 
 fn (self: LockedVaultStore) token_put(t: Token) -> void! {
     inner := self.enter()
-    r := inner.token_put(t)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.token_put(t)
 }
 
 fn (self: LockedVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> void! {
     inner := self.enter()
-    r := inner.activity_add(e, keep)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.activity_add(e, keep)
 }
 
 fn (self: LockedVaultStore) activity_page(before_id: i64, limit: i64) -> []ActivityEntry! {
     inner := self.enter()
-    r := inner.activity_page(before_id, limit)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.activity_page(before_id, limit)
 }
 
 fn (self: LockedVaultStore) activity_prune(keep: ActivityKeep) -> i64! {
     inner := self.enter()
-    r := inner.activity_prune(keep)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.activity_prune(keep)
 }
 
 fn (self: LockedVaultStore) activity_count_before(since_at: i64) -> i64! {
     inner := self.enter()
-    r := inner.activity_count_before(since_at)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.activity_count_before(since_at)
 }
 
 fn (self: LockedVaultStore) activity_retention() -> i64! {
     inner := self.enter()
-    r := inner.activity_retention()
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.activity_retention()
 }
 
 fn (self: LockedVaultStore) set_activity_retention(days: i64) -> void! {
     inner := self.enter()
-    r := inner.set_activity_retention(days)
-    self.leave()
-    return r
+    defer self.leave()
+    return inner.set_activity_retention(days)
 }

@@ -24,11 +24,15 @@ fn test_target() -> (i32, str) {
 }
 
 test "dial refuses a non-positive timeout" {
-    assert(!ssh_dial("127.0.0.1", 22, "nobody", 0).has_value())
+    mut refused := 0
+    ssh_dial("127.0.0.1", 22, "nobody", 0) or { refused += 1 }
+    assert_eq(refused, 1)
 }
 
 test "dial to a closed port fails within the timeout" {
-    assert(!ssh_dial("127.0.0.1", 1, "nobody", 2).has_value())
+    mut refused := 0
+    ssh_dial("127.0.0.1", 1, "nobody", 2) or { refused += 1 }
+    assert_eq(refused, 1)
 }
 
 test "pty shell echoes a command over libssh" {
@@ -59,6 +63,7 @@ test "pty shell echoes a command over libssh" {
 }
 
 test "auth with a wrong key is rejected" {
+    mut refused := 0
     (port, _) := test_target()
     if port == 0 {
         println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
@@ -66,7 +71,8 @@ test "auth with a wrong key is rejected" {
     }
     mut conn := try ssh_dial("127.0.0.1", port, os.getenv("USER"), 5)
     bogus := "-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-key\n-----END OPENSSH PRIVATE KEY-----\n"
-    assert(!conn.auth_key_content(bogus, "").has_value())
+    conn.auth_key_content(bogus, "") or { refused += 1 }
+    assert_eq(refused, 1)
     conn.disconnect()
 }
 
@@ -89,9 +95,10 @@ test "the dialler falls back to the next address when the first has no server" {
     // The test sshd listens on 127.0.0.1 only: ::1 refuses, as `localhost` does on
     // Debian, where it resolves to ::1 first.
     try tcp_dial_first(["::1", "127.0.0.1"], port, 5)
-    only_v6 := tcp_dial_first(["::1"], port, 5)
-    assert(!only_v6.has_value())
-    assert_eq(error_code_of("{only_v6.error().message()}"), "network")
+    mut only_v6 := ""
+    tcp_dial_first(["::1"], port, 5) or err { only_v6 = "{err.message()}" }
+    assert(only_v6.len() > 0)
+    assert_eq(error_code_of("{only_v6}"), "network")
 }
 
 // Names (`localhost`, one that does not resolve) are dialled by scripts/cli-e2e.sh: on

@@ -47,7 +47,11 @@ fn rename_path[T: SftpTransport](mut sftp: T, from: str, to: str) -> void! {
     if remote_base(to).len() == 0 || remote_base(to) == "." || remote_base(to) == ".." {
         return error(coded(ERR_INVALID, "'{to}' is not a name a file can have"))
     }
-    if (sftp.sftp_stat(to)).has_value() {
+    mut taken := true
+    sftp.sftp_stat(to) or {
+        taken = false
+    }
+    if taken {
         return error(coded(ERR_EXISTS, "{to} already exists on the host"))
     }
     try sftp.sftp_rename(from, to)
@@ -86,6 +90,15 @@ fn make_dir[T: SftpTransport](mut sftp: T, path: str) -> void! {
 }
 
 // ---- One primitive, either side ----------------------------------------------------
+
+// side_stat for a caller that goes on either way: the entry lands in `entry`, and the
+// result is the error message, "" when the path was found.
+fn side_stat_into[T: SftpTransport, L: LocalFiles](remote: bool, sftp: T, local: L, path: str, mut entry: FileEntry) -> str {
+    entry = side_stat(remote, sftp, local, path) or err {
+        return "{err.message()}"
+    }
+    return ""
+}
 
 fn side_stat[T: SftpTransport, L: LocalFiles](remote: bool, sftp: T, local: L, path: str) -> FileEntry! {
     if remote {
@@ -139,9 +152,8 @@ fn side_rename[T: SftpTransport, L: LocalFiles](remote: bool, mut sftp: T, mut l
 // Removes a file; "" when it went, else why not.
 fn side_remove[T: SftpTransport, L: LocalFiles](remote: bool, mut sftp: T, mut local: L, path: str) -> str {
     if remote {
-        r := sftp.sftp_remove(path, false)
-        if !r.has_value() {
-            return "{r.error().message()}"
+        sftp.sftp_remove(path, false) or err {
+            return "{err.message()}"
         }
         return ""
     }
@@ -180,9 +192,10 @@ fn side_name(req: CopyRequest, remote: bool) -> str {
 // `dst` when it is a folder, else at `dst` itself, whose folder must exist. A folder
 // is never copied over a file.
 fn copy_target[T: SftpTransport, L: LocalFiles](remote: bool, sftp: T, local: L, dst: str, name: str, src_is_dir: bool, on: str) -> str! {
-    st := side_stat(remote, sftp, local, dst)
-    if st.has_value() {
-        if st.value().is_dir() {
+    mut st := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+    msg := side_stat_into(remote, sftp, local, dst, mut st)
+    if msg.len() == 0 {
+        if st.is_dir() {
             return remote_join(trim_slashes(dst), name)
         }
         if src_is_dir {
@@ -190,7 +203,6 @@ fn copy_target[T: SftpTransport, L: LocalFiles](remote: bool, sftp: T, local: L,
         }
         return dst
     }
-    msg := "{st.error().message()}"
     if error_code_of(msg) != ERR_NOT_FOUND {
         return error(msg)
     }
@@ -198,15 +210,14 @@ fn copy_target[T: SftpTransport, L: LocalFiles](remote: bool, sftp: T, local: L,
         return error(coded(ERR_NOT_FOUND, "{dst}{on}: no such folder"))
     }
     parent := remote_dir(dst)
-    up := side_stat(remote, sftp, local, parent)
-    if !up.has_value() {
-        pmsg := "{up.error().message()}"
+    up := side_stat(remote, sftp, local, parent) or err {
+        pmsg := "{err.message()}"
         if error_code_of(pmsg) == ERR_NOT_FOUND {
             return error(coded(ERR_NOT_FOUND, "{parent}{on}: no such folder"))
         }
         return error(pmsg)
     }
-    if !up.value().is_dir() {
+    if !up.is_dir() {
         return error(coded(ERR_NOT_DIR, "{parent}{on} is not a folder"))
     }
     return dst
@@ -220,9 +231,10 @@ fn copy_cancelled() -> str {
 fn copy_one[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut sftp: T, mut local: L, mut sink: K, req: CopyRequest, src: str, size: i64, target: str, mut res: CopyResult, mut prog: TransferProgress) -> void! {
     dst_remote := upload
     src_remote := !upload
-    existing := side_stat(dst_remote, sftp, local, target)
-    if existing.has_value() {
-        if existing.value().is_dir() {
+    mut existing := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+    existed := side_stat_into(dst_remote, sftp, local, target, mut existing).len() == 0
+    if existed {
+        if existing.is_dir() {
             return error(coded(ERR_EXISTS, "{target}{side_name(req, dst_remote)} is a folder; a file cannot replace it"))
         }
         if !req.force {
@@ -231,17 +243,17 @@ fn copy_one[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut 
     }
     part := part_path(target)
     // A part file a cut copy left (a dropped channel, a killed CLI) goes first.
-    if side_stat(dst_remote, sftp, local, part).has_value() {
+    mut stale_part := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+    if side_stat_into(dst_remote, sftp, local, part, mut stale_part).len() == 0 {
         stale := side_remove(dst_remote, mut sftp, mut local, part)
         if stale.len() > 0 {
             return error(stale)
         }
     }
     try side_open(src_remote, mut sftp, mut local, src, false)
-    opened := side_open(dst_remote, mut sftp, mut local, part, true)
-    if !opened.has_value() {
+    side_open(dst_remote, mut sftp, mut local, part, true) or err {
         _ := side_close(src_remote, mut sftp, mut local)
-        return error("{opened.error().message()}")
+        return error("{err.message()}")
     }
     prog.file = target
     prog.file_bytes = 0
@@ -253,18 +265,16 @@ fn copy_one[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut 
             failure = copy_cancelled()
             break
         }
-        chunk := side_read(src_remote, mut sftp, mut local)
-        if !chunk.has_value() {
-            failure = "{chunk.error().message()}"
+        chunk := side_read(src_remote, mut sftp, mut local) or err {
+            failure = "{err.message()}"
             break
         }
-        data := chunk.value()
+        data := chunk
         if data.len() == 0 {
             break
         }
-        wrote := side_write(dst_remote, mut sftp, mut local, data)
-        if !wrote.has_value() {
-            failure = "{wrote.error().message()}"
+        side_write(dst_remote, mut sftp, mut local, data) or err {
+            failure = "{err.message()}"
             break
         }
         prog.file_bytes += i64(data.len())
@@ -272,21 +282,24 @@ fn copy_one[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut 
         sink.transfer_progress(prog)
     }
     _ := side_close(src_remote, mut sftp, mut local)
-    closed := side_close(dst_remote, mut sftp, mut local)
-    if failure.len() == 0 && !closed.has_value() {
-        failure = "{closed.error().message()}"
+    side_close(dst_remote, mut sftp, mut local) or err {
+        if failure.len() == 0 {
+            failure = "{err.message()}"
+        }
     }
     if failure.len() == 0 {
-        moved := side_rename(dst_remote, mut sftp, mut local, part, target)
-        if !moved.has_value() && existing.has_value() {
+        mut move_failure := ""
+        side_rename(dst_remote, mut sftp, mut local, part, target) or err {
+            move_failure = "{err.message()}"
+        }
+        if move_failure.len() > 0 && existed {
             // A server that will not rename over a file: remove it, then rename.
             _ := side_remove(dst_remote, mut sftp, mut local, target)
-            moved2 := side_rename(dst_remote, mut sftp, mut local, part, target)
-            if !moved2.has_value() {
-                failure = "{moved2.error().message()}"
+            side_rename(dst_remote, mut sftp, mut local, part, target) or err {
+                failure = "{err.message()}"
             }
-        } else if !moved.has_value() {
-            failure = "{moved.error().message()}"
+        } else if move_failure.len() > 0 {
+            failure = move_failure
         }
     }
     if failure.len() > 0 {
@@ -313,13 +326,13 @@ fn copy_tree[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut
     }
     dst_remote := upload
     src_remote := !upload
-    existing := side_stat(dst_remote, sftp, local, target)
-    if existing.has_value() {
-        if !existing.value().is_dir() {
+    mut existing := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+    msg := side_stat_into(dst_remote, sftp, local, target, mut existing)
+    if msg.len() == 0 {
+        if !existing.is_dir() {
             return error(coded(ERR_NOT_DIR, "{target}{side_name(req, dst_remote)} is a file, not a folder"))
         }
     } else {
-        msg := "{existing.error().message()}"
         if error_code_of(msg) != ERR_NOT_FOUND {
             return error(msg)
         }
@@ -336,9 +349,9 @@ fn copy_tree[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut
         child_target := remote_join(target, e.name)
         mut entry := e
         if e.kind == FILE_KIND_LINK {
-            followed := side_stat(src_remote, sftp, local, e.path)
-            if followed.has_value() && followed.value().is_file() {
-                entry = followed.value()
+            mut followed := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+            if side_stat_into(src_remote, sftp, local, e.path, mut followed).len() == 0 && followed.is_file() {
+                entry = followed
             }
         }
         if entry.is_dir() {
@@ -415,16 +428,14 @@ fn transfer_files[T: SftpTransport, L: LocalFiles, K: TransferSink, C: Clock](mu
 // first is named and the SFTP calls go through functions that name the second.
 fn copy_with_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, L: LocalFiles, K: TransferSink, M: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut local: L, mut sink: K, mut clock: M, req: CopyRequest, opts: ConnectOptions) -> CopyResult! {
     target := try open_link(crypto, mut store, session, mut link, prompter, req.alias, opts)
-    opened := open_sftp(mut link)
-    if !opened.has_value() {
+    open_sftp(mut link) or err {
         link.link_hangup()
-        return error("{opened.error().message()}")
+        return error("{err.message()}")
     }
     mut r := req
     r.alias = target.alias
-    res := copy_files(mut link, mut local, mut sink, mut clock, r)
-    link.link_hangup()
-    return res
+    defer link.link_hangup()
+    return copy_files(mut link, mut local, mut sink, mut clock, r)
 }
 
 fn label_sftp[T: SftpTransport](mut sftp: T, name: str) {
@@ -443,30 +454,29 @@ fn relay_with_hosts[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: T
         return error(coded(ERR_INTERNAL, "relay: not a copy between two hosts"))
     }
     source := try open_link(crypto, mut store, session, mut from, prompter, req.alias, opts)
-    opened := open_sftp(mut from)
-    if !opened.has_value() {
+    open_sftp(mut from) or err {
         from.link_hangup()
-        return error("{opened.error().message()}")
+        return error("{err.message()}")
     }
     label_sftp(mut from, source.alias)
     dest := open_link(crypto, mut store, session, mut to, prompter, req.to_alias, opts) or err {
         from.link_hangup()
         return error("{err.message()}")
     }
-    opened2 := open_sftp(mut to)
-    if !opened2.has_value() {
+    open_sftp(mut to) or err {
         from.link_hangup()
         to.link_hangup()
-        return error("{opened2.error().message()}")
+        return error("{err.message()}")
     }
     label_sftp(mut to, dest.alias)
     mut r := req
     r.alias = source.alias
     r.to_alias = dest.alias
-    res := copy_files(mut from, mut to, mut sink, mut clock, r)
-    from.link_hangup()
-    to.link_hangup()
-    return res
+    defer {
+        from.link_hangup()
+        to.link_hangup()
+    }
+    return copy_files(mut from, mut to, mut sink, mut clock, r)
 }
 
 // The Files view's copy between two servers (milestone 19, D-059): both sessions

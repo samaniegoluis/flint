@@ -27,32 +27,36 @@ test "a GUI session mailbox carries input, resizes and close" {
     // Nothing typed: the wait times out with no input.
     empty := term.term_input(5) or "x"
     assert_eq(empty, "")
-    assert(gui_session_input("t1", "ls\r").has_value())
-    assert(gui_session_input("t1", "pwd\r").has_value())
+    try gui_session_input("t1", "ls\r")
+    try gui_session_input("t1", "pwd\r")
     assert_eq(term.term_input(5) or "", "ls\rpwd\r")
 
     assert(!term.term_take_resize())
-    assert(gui_session_resize("t1", 120, 40).has_value())
+    try gui_session_resize("t1", 120, 40)
     assert(term.term_take_resize())
     assert(!term.term_take_resize())
     assert_eq(term.term_size().cols, 120)
-    bad := gui_session_resize("t1", 0, 40)
-    assert(!bad.has_value())
+    mut bad := ""
+    gui_session_resize("t1", 0, 40) or err { bad = "{err.message()}" }
+    assert(bad.len() > 0)
 
     term.term_output("hi")
     assert(app.last_emitted_payload("terminal:output").contains("aGk="))
-    assert(term.term_raw_enter().has_value())
+    try term.term_raw_enter()
     assert(app.last_emitted_payload("session:state").contains("\"ready\""))
 
     assert(gui_session_close("t1"))
-    gone := term.term_input(5)
-    assert(!gone.has_value())
-    late := gui_session_input("t1", "x")
-    assert(!late.has_value())
+    mut gone := ""
+    term.term_input(5) or err { gone = "{err.message()}" }
+    assert(gone.len() > 0)
+    mut late := ""
+    gui_session_input("t1", "x") or err { late = "{err.message()}" }
+    assert(late.len() > 0)
     gui_session_drop("t1")
-    missing := gui_session_input("t1", "x")
-    assert(!missing.has_value())
-    assert(error_code_of("{missing.error().message()}") == ERR_NOT_FOUND)
+    mut missing := ""
+    gui_session_input("t1", "x") or err { missing = "{err.message()}" }
+    assert(missing.len() > 0)
+    assert(error_code_of("{missing}") == ERR_NOT_FOUND)
 }
 
 // The page's side of a prompt: wait for the event, then answer it.
@@ -67,7 +71,11 @@ fn answer_when_asked(mut app: webui.App, session: str, ok: bool, value: str) {
                 id := rest.substr(0, usize(end))
                 if id.len() > 0 {
                     // An earlier prompt's payload is refused; keep waiting.
-                    if gui_session_answer(session, id, ok, value).has_value() {
+                    mut answered := true
+                    gui_session_answer(session, id, ok, value) or {
+                        answered = false
+                    }
+                    if answered {
                         return
                     }
                 }
@@ -115,8 +123,9 @@ test "the GUI prompter blocks until the page answers or cancels" {
     }
     assert_eq(cancelled, "")
     // An answer for a prompt that is not waiting is refused.
-    stale := gui_session_answer("p1", "password-0", true, "x")
-    assert(!stale.has_value())
+    mut stale := ""
+    gui_session_answer("p1", "password-0", true, "x") or err { stale = "{err.message()}" }
+    assert(stale.len() > 0)
     gui_session_drop("p1")
 }
 
@@ -132,8 +141,9 @@ test "a prompt fails at once when its session is closed" {
             time.sleep_ms(50)
             _ := gui_session_close("c1")
         }
-        r := p.prompt_password("luis", "web")
-        failed = !r.has_value()
+        mut r := ""
+        p.prompt_password("luis", "web") or err { r = "{err.message()}" }
+        failed = r.len() > 0
     }
     assert(failed)
     gui_session_drop("c1")

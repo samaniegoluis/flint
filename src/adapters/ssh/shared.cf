@@ -169,10 +169,9 @@ fn borrow_browse(session_id: str) -> SshLink! {
     }
     mut link := borrowed_link(session, lock, timeout, channel)
     if link.sftp == none {
-        opened := link.sftp_open()
-        if !opened.has_value() {
+        link.sftp_open() or err {
             give_back_browse(session_id, link)
-            return error("{opened.error().message()}")
+            return error("{err.message()}")
         }
     }
     return link

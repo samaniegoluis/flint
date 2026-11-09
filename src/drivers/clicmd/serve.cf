@@ -33,7 +33,7 @@ package clicmd
 import "core:fs"
 import "core:os"
 import "core:time"
-import "ext:json"
+import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto"
 import "../../adapters/ipc"
@@ -444,15 +444,7 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
     mut shown := false
     for true {
         if raw {
-            typed := term.term_input(10)
-            if !typed.has_value() {
-                if input_open {
-                    input_open = false
-                    conn.send(relay_frame(TAG_INPUT_END, ""), SERVE_SEND_MS) or {}
-                }
-            } else if typed.value().len() > 0 {
-                conn.send(relay_frame(TAG_INPUT, typed.value()), SERVE_SEND_MS) or {}
-            }
+            relay_typed(mut term, conn, mut input_open)
             if term.term_take_resize() {
                 now := term.term_size()
                 conn.send(relay_frame(TAG_RESIZE, json.stringify(RelaySize{ cols: i64(now.cols), rows: i64(now.rows) })), SERVE_SEND_MS) or {}
@@ -504,10 +496,10 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
             }
             last_heard = time.now_ms()
         } else if tag == TAG_PROGRESS && serves_files {
-            pr := json.parse[TransferProgress](body)
-            if pr.has_value() {
-                progress.transfer_progress(pr.value())
+            pr := json.parse[TransferProgress](body) or {
+                continue
             }
+            progress.transfer_progress(pr)
         } else if tag == TAG_PROMPT {
             answer := answer_relayed_prompt(prompter, body)
             conn.send(relay_frame(TAG_ANSWER, json.stringify(answer)), SERVE_SEND_MS) or {}
@@ -525,78 +517,63 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
     return not_served()
 }
 
+// Forwards what was typed on this terminal to the app; once stdin closes, says so
+// once.
+fn relay_typed(mut term: StdioTerminal, conn: IpcConn, mut input_open: bool) {
+    typed := term.term_input(10) or {
+        if input_open {
+            input_open = false
+            conn.send(relay_frame(TAG_INPUT_END, ""), SERVE_SEND_MS) or {}
+        }
+        return
+    }
+    if typed.len() > 0 {
+        conn.send(relay_frame(TAG_INPUT, typed), SERVE_SEND_MS) or {}
+    }
+}
+
 // Runs one file request of the app on this machine's files and returns the answer
 // frame (milestone 16). An error travels back as its coded message.
 fn serve_file_op(mut local: LocalFs, payload: str) -> str {
     mut reply := RelayFileReply{ ok: true, err: "", entry: empty_file_entry(), entries: [] }
-    parsed := parse_file_op(payload)
-    if !parsed.has_value() {
+    parsed := parse_file_op(payload) or err {
         reply.ok = false
-        reply.err = "{parsed.error().message()}"
+        reply.err = "{err.message()}"
         return file_reply_frame(reply, "")
     }
-    (op, data) := parsed.value()
+    (op, data) := parsed
     mut bytes := ""
-    mut failure := ""
-    if op.op == "stat" {
-        r := local.local_stat(op.path)
-        if r.has_value() {
-            reply.entry = r.value()
-        } else {
-            failure = "{r.error().message()}"
-        }
-    } else if op.op == "list" {
-        r := local.local_list(op.path)
-        if r.has_value() {
-            reply.entries = r.value()
-        } else {
-            failure = "{r.error().message()}"
-        }
-    } else if op.op == "open" {
-        r := local.local_file_open(op.path, op.write, op.exclusive)
-        if !r.has_value() {
-            failure = "{r.error().message()}"
-        }
-    } else if op.op == "read" {
-        r := local.local_file_read()
-        if r.has_value() {
-            bytes = r.value()
-        } else {
-            failure = "{r.error().message()}"
-        }
-    } else if op.op == "write" {
-        r := local.local_file_write(data)
-        if !r.has_value() {
-            failure = "{r.error().message()}"
-        }
-    } else if op.op == "close" {
-        r := local.local_file_close()
-        if !r.has_value() {
-            failure = "{r.error().message()}"
-        }
-    } else if op.op == "rename" {
-        r := local.local_rename(op.path, op.to)
-        if !r.has_value() {
-            failure = "{r.error().message()}"
-        }
-    } else if op.op == "remove" {
-        r := local.local_remove(op.path)
-        if !r.has_value() {
-            failure = "{r.error().message()}"
-        }
-    } else if op.op == "mkdir" {
-        r := local.local_mkdir(op.path)
-        if !r.has_value() {
-            failure = "{r.error().message()}"
-        }
-    } else {
-        failure = coded(ERR_UNSUPPORTED, "Flint asked for a file operation this flint does not know ({op.op})")
-    }
-    if failure.len() > 0 {
+    run_file_op(mut local, op, data, mut reply, mut bytes) or err {
         reply.ok = false
-        reply.err = failure
+        reply.err = "{err.message()}"
     }
     return file_reply_frame(reply, bytes)
+}
+
+// One file request on this machine's files, its result written into `reply` (an
+// entry or a listing) or `bytes` (what a read returned).
+fn run_file_op(mut local: LocalFs, op: RelayFileOp, data: str, mut reply: RelayFileReply, mut bytes: str) -> void! {
+    if op.op == "stat" {
+        reply.entry = try local.local_stat(op.path)
+    } else if op.op == "list" {
+        reply.entries = try local.local_list(op.path)
+    } else if op.op == "open" {
+        try local.local_file_open(op.path, op.write, op.exclusive)
+    } else if op.op == "read" {
+        bytes = try local.local_file_read()
+    } else if op.op == "write" {
+        try local.local_file_write(data)
+    } else if op.op == "close" {
+        try local.local_file_close()
+    } else if op.op == "rename" {
+        try local.local_rename(op.path, op.to)
+    } else if op.op == "remove" {
+        try local.local_remove(op.path)
+    } else if op.op == "mkdir" {
+        try local.local_mkdir(op.path)
+    } else {
+        return error(coded(ERR_UNSUPPORTED, "Flint asked for a file operation this flint does not know ({op.op})"))
+    }
 }
 
 // A second launch of the desktop app asks the Flint already running to show its
@@ -795,45 +772,50 @@ fn served_secrets(req: ServeRequest) -> SecretInput {
 // `store`), capturing everything it prints. The caller holds the vault still for
 // the whole run and has checked that `req.vault` is `session`'s.
 fn run_served(req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, session: VaultSession) -> ServeReply {
-    parsed := parse_cli_args(req.argv)
-    if !parsed.has_value() || !servable(parsed.value()) {
+    p := parse_cli_args(req.argv) or {
         return not_served()
     }
-    p := parsed.value()
-    if check_command(p).has_value() == false || wants_help(p) {
+    if !servable(p) || !command_checks(p) || wants_help(p) {
         return not_served()
     }
     capture_begin(req.cwd)
-    status := run_command(p, served_secrets(req), req.as_json, c, mut store, served_vault_source(kc, session), recents)
-    mut code: i32 = 0
-    if status.has_value() {
-        code = status.value()
-    } else {
-        code = report_error("{status.error().message()}", req.as_json)
-    }
+    code := served_exit(p, req, c, mut store, kc, session, recents)
     (o, e) := capture_end()
     return ServeReply{ served: true, stdout: o, stderr: e, exit: i64(code) }
 }
 
-// Whether the app runs this one-exchange request (a checked command it serves).
-fn run_request_servable(req: ServeRequest) -> bool {
-    parsed := parse_cli_args(req.argv)
-    if !parsed.has_value() || !servable(parsed.value()) {
+// The exit status of a command run for a client, or the code of the error it
+// reported.
+fn served_exit(p: ParsedArgs, req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, session: VaultSession, recents: JsonRecentStore) -> i32 {
+    return run_command(p, served_secrets(req), req.as_json, c, mut store, served_vault_source(kc, session), recents) or err {
+        return report_error("{err.message()}", req.as_json)
+    }
+}
+
+// Whether the command line passes check_command (its flags and arguments are valid).
+fn command_checks(p: ParsedArgs) -> bool {
+    check_command(p) or {
         return false
     }
-    p := parsed.value()
-    return check_command(p).has_value() && !wants_help(p)
+    return true
+}
+
+// Whether the app runs this one-exchange request (a checked command it serves).
+fn run_request_servable(req: ServeRequest) -> bool {
+    p := parse_cli_args(req.argv) or {
+        return false
+    }
+    return servable(p) && command_checks(p) && !wants_help(p)
 }
 
 // Whether the app runs this session request (a checked `connect`, `exec` or `host
 // test`); it then owes the client the session's frames.
 fn session_servable(req: ServeRequest) -> bool {
-    parsed := parse_cli_args(req.argv)
-    if !parsed.has_value() {
+    parsed := parse_cli_args(req.argv) or err {
         return false
     }
-    p := parsed.value()
-    return is_session_command(p) && check_command(p).has_value() && !wants_help(p)
+    p := parsed
+    return is_session_command(p) && command_checks(p) && !wants_help(p)
 }
 
 // Runs a client's session command against `session` (a copy the caller took of the
@@ -858,16 +840,18 @@ fn run_served_session(conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Lo
     capture_begin(req.cwd)
     mut sec := served_secrets(req)
     sec.sudo_typed = sudo_typed
-    status := run_session_command(p, sec, req.as_json, c, mut store, served_vault_source(kc, session), recents, mut term, prompter, mut sink, mut local, mut progress, term_name)
-    mut code: i32 = 0
-    if status.has_value() {
-        code = status.value()
-    } else {
-        code = report_error("{status.error().message()}", req.as_json)
-    }
+    code := session_exit(p, sec, req.as_json, c, mut store, served_vault_source(kc, session), recents, mut term, prompter, mut sink, mut local, mut progress, term_name)
     (o, e) := capture_end()
     end := SessionEndFrame{ exit: i64(code), stdout: o, stderr: e }
     conn.send(relay_frame(TAG_END, json.stringify(end)), SERVE_SEND_MS) or {}
+}
+
+// The exit status of a session command run for a client, or the code of the error it
+// reported.
+fn session_exit[M: Terminal, P: Prompter, O: ExecSink, L: LocalFiles, K: TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, mut term: M, prompter: P, mut sink: O, mut local: L, mut progress: K, term_name: str) -> i32 {
+    return run_session_command(p, sec, as_json, c, mut store, src, recents, mut term, prompter, mut sink, mut local, mut progress, term_name) or err {
+        return report_error("{err.message()}", as_json)
+    }
 }
 
 fn session_not_served_frame() -> str {
@@ -889,11 +873,10 @@ fn app_state_json(state: str, name: str) -> str {
 // Whether a served command may have changed the vault, so the window reloads what it
 // shows. Reads (`list`, `show`, `status`, a dry run) do not.
 fn served_changes_vault(req: ServeRequest) -> bool {
-    parsed := parse_cli_args(req.argv)
-    if !parsed.has_value() {
+    parsed := parse_cli_args(req.argv) or err {
         return false
     }
-    p := parsed.value()
+    p := parsed
     verb := p.positional(1)
     if p.positional(0) == "import" {
         return !p.has_flag("--dry-run")
@@ -904,11 +887,10 @@ fn served_changes_vault(req: ServeRequest) -> bool {
 // Whether a served command created or revoked a token, so the window's list of
 // tokens reloads.
 fn served_changes_tokens(req: ServeRequest) -> bool {
-    parsed := parse_cli_args(req.argv)
-    if !parsed.has_value() {
+    parsed := parse_cli_args(req.argv) or err {
         return false
     }
-    p := parsed.value()
+    p := parsed
     verb := p.positional(1)
     return p.positional(0) == "token" && (verb == "create" || verb == "revoke")
 }

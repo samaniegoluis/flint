@@ -16,8 +16,9 @@ test "LockedVaultStore shares one connection between copies and threads" {
         scope.spawn || {
             mut w := worker_copy
             for i in 0..40 {
-                put := w.known_host_put(KnownHost{ addr: "w{i}", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" })
-                assert(put.has_value())
+                mut put := ""
+                w.known_host_put(KnownHost{ addr: "w{i}", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" }) or err { put = "{err.message()}" }
+                assert(put.len() == 0)
             }
         }
         for i in 0..40 {
@@ -37,6 +38,7 @@ test "LockedVaultStore shares one connection between copies and threads" {
 
     // Detaching through one copy closes it for all.
     store.vault_detach()
-    after := worker_copy.hosts_all()
-    assert(!after.has_value())
+    mut after := ""
+    worker_copy.hosts_all() or err { after = "{err.message()}" }
+    assert(after.len() > 0)
 }

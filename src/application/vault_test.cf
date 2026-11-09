@@ -23,11 +23,13 @@ test "create, lock and unlock a vault through the keychain" {
 
     // Locked: no password is no longer enough.
     try lock_vault(mut store, kc, "/v/Home Lab.flint")
-    locked := unlock_vault(crypto, mut store, kc, recents, "/v/Home Lab.flint", "", true)
-    assert_eq(code_of_err("{locked.error().message()}"), "locked")
+    mut locked := ""
+    unlock_vault(crypto, mut store, kc, recents, "/v/Home Lab.flint", "", true) or err { locked = "{err.message()}" }
+    assert_eq(code_of_err(locked), "locked")
 
-    wrong := unlock_vault(crypto, mut store, kc, recents, "/v/Home Lab.flint", "wrong horse", true)
-    assert_eq(code_of_err("{wrong.error().message()}"), "wrong_password")
+    mut wrong := ""
+    unlock_vault(crypto, mut store, kc, recents, "/v/Home Lab.flint", "wrong horse", true) or err { wrong = "{err.message()}" }
+    assert_eq(code_of_err("{wrong}"), "wrong_password")
 
     back := try unlock_vault(crypto, mut store, kc, recents, "/v/Home Lab.flint", "correct horse", true)
     assert(back.cached, "a password unlock caches the key again")
@@ -37,10 +39,12 @@ test "create, lock and unlock a vault through the keychain" {
 test "create validates its input" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
-    too_short := create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/a.flint", "", "short", true)
-    assert_eq(code_of_err("{too_short.error().message()}"), "invalid")
-    rel := create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "a.flint", "", "correct horse", true)
-    assert_eq(code_of_err("{rel.error().message()}"), "invalid")
+    mut too_short := ""
+    create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/a.flint", "", "short", true) or err { too_short = "{err.message()}" }
+    assert_eq(code_of_err("{too_short}"), "invalid")
+    mut rel := ""
+    create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "a.flint", "", "correct horse", true) or err { rel = "{err.message()}" }
+    assert_eq(code_of_err("{rel}"), "invalid")
 }
 
 test "a disabled keychain still unlocks with the password" {
@@ -52,8 +56,9 @@ test "a disabled keychain still unlocks with the password" {
     s := try create_vault(crypto, mut store, kc, recents, "/v/x.flint", "X", "correct horse", true)
     assert(!s.cached)
     store.vault_detach()
-    locked := unlock_vault(crypto, mut store, kc, recents, "/v/x.flint", "", true)
-    assert_eq(code_of_err("{locked.error().message()}"), "locked")
+    mut locked := ""
+    unlock_vault(crypto, mut store, kc, recents, "/v/x.flint", "", true) or err { locked = "{err.message()}" }
+    assert_eq(code_of_err(locked), "locked")
     _ := try unlock_vault(crypto, mut store, kc, recents, "/v/x.flint", "correct horse", true)
 }
 
@@ -66,8 +71,9 @@ test "a stale cached key is dropped and reported as locked" {
     salt := try store.vault_read_salt("/v/x.flint")
     try kc.keychain_save(vault_account(salt), crypto.random_bytes(32))
     store.vault_detach()
-    stale := unlock_vault(crypto, mut store, kc, recents, "/v/x.flint", "", true)
-    assert_eq(code_of_err("{stale.error().message()}"), "locked")
+    mut stale := ""
+    unlock_vault(crypto, mut store, kc, recents, "/v/x.flint", "", true) or err { stale = "{err.message()}" }
+    assert_eq(code_of_err("{stale}"), "locked")
     assert_eq((try kc.keychain_load(vault_account(salt))).len(), 0)
 }
 
@@ -83,8 +89,9 @@ test "recent vaults resolve by name, path or recency, and can be forgotten" {
     assert_eq((try resolve_vault(recents, "two")).path, "/a/two.flint")
     assert_eq((try resolve_vault(recents, "/a/two.flint")).name, "Two")
     assert_eq((try resolve_vault(recents, "/b/new.flint")).name, "new")
-    missing := resolve_vault(recents, "nope")
-    assert_eq(code_of_err("{missing.error().message()}"), "not_found")
+    mut missing := ""
+    resolve_vault(recents, "nope") or err { missing = "{err.message()}" }
+    assert_eq(code_of_err("{missing}"), "not_found")
     mut store := new_fake_store()
     _ := try forget_recent(mut store, new_fake_keychain(), recents, "Two")
     assert_eq((try list_recents(recents)).len(), 1)
@@ -113,14 +120,17 @@ test "status reports counts only when the key is cached" {
 }
 
 test "secrets are sealed with an AAD bound to row and field" {
+    mut refused := 0
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
     sealed := try seal_secret(crypto, s, "hosts", "id1", "password", "hunter2!")
     assert(sealed.len() > 0)
     assert_eq(try open_secret(crypto, s, "hosts", "id1", "password", sealed), "hunter2!")
-    assert(!open_secret(crypto, s, "hosts", "id2", "password", sealed).has_value())
-    assert(!open_secret(crypto, s, "credentials", "id1", "password", sealed).has_value())
+    open_secret(crypto, s, "hosts", "id2", "password", sealed) or { refused += 1 }
+    assert_eq(refused, 1)
+    open_secret(crypto, s, "credentials", "id1", "password", sealed) or { refused += 1 }
+    assert_eq(refused, 2)
     assert_eq((try seal_secret(crypto, s, "hosts", "id1", "password", "")).len(), 0)
 }
 
@@ -165,10 +175,12 @@ test "renaming a vault updates its meta and its recent entry in place" {
     assert_eq(list[1].name, "Home Lab")
     assert_eq(list[1].id, s.id)
 
-    taken := rename_vault(mut store, recents, renamed, "work")
-    assert_eq(code_of_err("{taken.error().message()}"), "conflict")
-    empty := rename_vault(mut store, recents, renamed, "")
-    assert_eq(code_of_err("{empty.error().message()}"), "invalid")
+    mut taken := ""
+    rename_vault(mut store, recents, renamed, "work") or err { taken = "{err.message()}" }
+    assert_eq(code_of_err("{taken}"), "conflict")
+    mut empty := ""
+    rename_vault(mut store, recents, renamed, "") or err { empty = "{err.message()}" }
+    assert_eq(code_of_err("{empty}"), "invalid")
     // The same name in another case is a rename of itself, not a conflict.
     same := try rename_vault(mut store, recents, renamed, "home lab")
     assert_eq(same.name, "home lab")
@@ -184,6 +196,7 @@ test "the master password is checked against the key in memory" {
 }
 
 test "a key reaches the keychain only with Remember on this computer" {
+    mut refused := 0
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     kc := new_fake_keychain()
@@ -191,13 +204,15 @@ test "a key reaches the keychain only with Remember on this computer" {
     s := try create_vault(crypto, mut store, kc, recents, "/v/r.flint", "", "correct horse", false)
     assert(!s.cached, "created without Remember: nothing cached")
     store.vault_detach()
-    locked := unlock_vault(crypto, mut store, kc, recents, "/v/r.flint", "", false)
-    assert_eq(code_of_err("{locked.error().message()}"), "locked")
+    mut locked := ""
+    unlock_vault(crypto, mut store, kc, recents, "/v/r.flint", "", false) or err { locked = "{err.message()}" }
+    assert_eq(code_of_err(locked), "locked")
 
     plain := try unlock_vault(crypto, mut store, kc, recents, "/v/r.flint", "correct horse", false)
     assert(!plain.cached)
     store.vault_detach()
-    assert(!unlock_vault(crypto, mut store, kc, recents, "/v/r.flint", "", false).has_value())
+    unlock_vault(crypto, mut store, kc, recents, "/v/r.flint", "", false) or { refused += 1 }
+    assert_eq(refused, 1)
 
     kept := try unlock_vault(crypto, mut store, kc, recents, "/v/r.flint", "correct horse", true)
     assert(kept.cached, "ticked: the key is cached")
@@ -212,10 +227,12 @@ test "a key reaches the keychain only with Remember on this computer" {
     try forget_vault_key(store, kc, "/v/r.flint")
     assert(store.attached)
     store.vault_detach()
-    assert(!unlock_vault(crypto, mut store, kc, recents, "/v/r.flint", "", false).has_value())
+    unlock_vault(crypto, mut store, kc, recents, "/v/r.flint", "", false) or { refused += 1 }
+    assert_eq(refused, 2)
 }
 
 test "the keys earlier Flints cached are removed once per machine" {
+    mut refused := 0
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     kc := new_fake_keychain()
@@ -227,7 +244,8 @@ test "the keys earlier Flints cached are removed once per machine" {
     mut settings := FakeSettingsStore{ saved: default_settings() }
     assert_eq(try forget_cached_keys_once(mut settings, store, kc, recents), i64(1))
     assert(settings.saved.keys_cleared)
-    assert(!unlock_vault(crypto, mut store, kc, recents, "/v/a.flint", "", false).has_value())
+    unlock_vault(crypto, mut store, kc, recents, "/v/a.flint", "", false) or { refused += 1 }
+    assert_eq(refused, 1)
 
     // Remembered after that: a later start leaves it alone.
     _ := try unlock_vault(crypto, mut store, kc, recents, "/v/a.flint", "correct horse", true)

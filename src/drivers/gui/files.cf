@@ -12,7 +12,7 @@ package main
 // transfer id and subscribes before starting (spec: Streaming is out-of-band).
 
 import "ext:webui"
-import "ext:json"
+import "core:json"
 import "core:encoding/base64"
 import "../../adapters/process"
 import "../../adapters/ssh"
@@ -86,36 +86,33 @@ fn finish_browse(session: str, link: SshLink, failed: str) {
 fn rpc_files_home(req: FilesPathReq, st: GuiState) -> PathReply! {
     try st.require_open_window()
     link := try borrow_browse(req.session)
-    r := real_path(link, ".")
-    if !r.has_value() {
-        msg := "{r.error().message()}"
+    r := real_path(link, ".") or err {
+        msg := "{err.message()}"
         finish_browse(req.session, link, msg)
         return error(msg)
     }
     give_back_browse(req.session, link)
-    return PathReply{ path: r.value() }
+    return PathReply{ path: r }
 }
 
 // A folder's entries, by absolute path (`files_home` gives the first one).
 fn rpc_files_list(req: FilesPathReq, st: GuiState) -> FilesListReply! {
     try st.require_open_window()
     link := try borrow_browse(req.session)
-    r := list_dir(link, req.path)
-    if !r.has_value() {
-        msg := "{r.error().message()}"
+    r := list_dir(link, req.path) or err {
+        msg := "{err.message()}"
         finish_browse(req.session, link, msg)
         return error(msg)
     }
     give_back_browse(req.session, link)
-    return FilesListReply{ path: req.path, entries: r.value() }
+    return FilesListReply{ path: req.path, entries: r }
 }
 
 fn rpc_files_rename(req: FilesRenameReq, st: GuiState) -> PathReply! {
     try st.require_open_window()
     mut link := try borrow_browse(req.session)
-    r := rename_path(mut link, req.from, req.to)
-    if !r.has_value() {
-        msg := "{r.error().message()}"
+    rename_path(mut link, req.from, req.to) or err {
+        msg := "{err.message()}"
         finish_browse(req.session, link, msg)
         return error(msg)
     }
@@ -127,9 +124,8 @@ fn rpc_files_rename(req: FilesRenameReq, st: GuiState) -> PathReply! {
 fn rpc_files_remove(req: FilesPathReq, st: GuiState) -> PathReply! {
     try st.require_open_window()
     mut link := try borrow_browse(req.session)
-    r := remove_remote(mut link, req.path)
-    if !r.has_value() {
-        msg := "{r.error().message()}"
+    remove_remote(mut link, req.path) or err {
+        msg := "{err.message()}"
         finish_browse(req.session, link, msg)
         return error(msg)
     }
@@ -140,9 +136,8 @@ fn rpc_files_remove(req: FilesPathReq, st: GuiState) -> PathReply! {
 fn rpc_files_mkdir(req: FilesPathReq, st: GuiState) -> PathReply! {
     try st.require_open_window()
     mut link := try borrow_browse(req.session)
-    r := make_dir(mut link, req.path)
-    if !r.has_value() {
-        msg := "{r.error().message()}"
+    make_dir(mut link, req.path) or err {
+        msg := "{err.message()}"
         finish_browse(req.session, link, msg)
         return error(msg)
     }
@@ -163,9 +158,8 @@ fn rpc_files_transfer(req: FilesTransferReq, app: webui.App, st: GuiState) -> Co
     mut sink := new_gui_transfer_sink(app, req.session, req.id)
     mut clock := new_system_clock()
     copy := CopyRequest{ id: req.id, alias: "", direction: req.direction, local: req.local, remote: req.remote, recursive: req.recursive, force: req.force }
-    r := transfer_files(mut link, mut local, mut sink, mut clock, copy)
-    give_back_transfer(req.session, req.id, mut link)
-    return r
+    defer give_back_transfer(req.session, req.id, mut link)
+    return transfer_files(mut link, mut local, mut sink, mut clock, copy)
 }
 
 // A copy from one session to another (milestone 19, D-059): each session lends a
@@ -184,10 +178,11 @@ fn rpc_files_relay(req: FilesRelayReq, app: webui.App, st: GuiState) -> CopyResu
     mut sink := new_gui_transfer_sink(app, req.session, req.id)
     mut clock := new_system_clock()
     copy := CopyRequest{ id: req.id, alias: req.alias, direction: COPY_RELAY, local: req.to_path, remote: req.path, recursive: req.recursive, force: req.force, to_alias: req.to_alias }
-    r := relay_between_sessions(mut from, mut to, mut sink, mut clock, copy)
-    give_back_transfer(req.to_session, req.id, mut to)
-    give_back_transfer(req.session, req.id, mut from)
-    return r
+    defer {
+        give_back_transfer(req.to_session, req.id, mut to)
+        give_back_transfer(req.session, req.id, mut from)
+    }
+    return relay_between_sessions(mut from, mut to, mut sink, mut clock, copy)
 }
 
 // Asks a running transfer to stop; its promise then fails and its partial file

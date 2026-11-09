@@ -40,8 +40,9 @@ test "SshLink satisfies the SshTransport port" {
 
 test "a link to a closed port fails with network" {
     mut link := new_ssh_link()
-    r := link.link_dial("127.0.0.1", 1, "nobody", 2, "")
-    assert_eq(error_code_of("{r.error().message()}"), "network")
+    mut r := ""
+    link.link_dial("127.0.0.1", 1, "nobody", 2, "") or err { r = "{err.message()}" }
+    assert_eq(error_code_of("{r}"), "network")
     link.link_hangup()
 }
 
@@ -57,8 +58,9 @@ test "exec over a link returns stdout, stderr and the exit code" {
     sk := try link.link_server_key()
     assert_eq(sk.key_type, "ssh-ed25519")
     assert(sk.fingerprint.starts_with("SHA256:"))
-    bad := link.link_auth_password("not-the-password")
-    assert_eq(error_code_of("{bad.error().message()}"), "auth")
+    mut bad := ""
+    link.link_auth_password("not-the-password") or err { bad = "{err.message()}" }
+    assert_eq(error_code_of("{bad}"), "auth")
     try link.link_auth_key(key_text, "")
     try link.link_exec_start("echo out-$((6*7)); echo err-line >&2; cat; exit 7")
     res := try read_all(mut link)
@@ -123,8 +125,9 @@ test "a jump to an unreachable port fails with network and cleans up" {
     mut link := new_ssh_link()
     try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
-    r := link.link_dial("127.0.0.1", 1, os.getenv("USER"), 5, "")
-    assert_eq(error_code_of("{r.error().message()}"), "network")
+    mut r := ""
+    link.link_dial("127.0.0.1", 1, os.getenv("USER"), 5, "") or err { r = "{err.message()}" }
+    assert_eq(error_code_of("{r}"), "network")
     link.link_hangup()
 }
 
@@ -265,6 +268,7 @@ test "a keepalive goes out mid-session and the channel keeps working" {
 
 test "a keepalive on a link with no hop fails with network" {
     mut link := new_ssh_link()
-    r := link.link_keepalive()
-    assert(!r.has_value())
+    mut r := ""
+    link.link_keepalive() or err { r = "{err.message()}" }
+    assert(r.len() > 0)
 }

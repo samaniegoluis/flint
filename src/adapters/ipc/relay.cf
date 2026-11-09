@@ -14,7 +14,7 @@ package ipc
 // (Principle 6).
 
 import "core:time"
-import "ext:json"
+import "core:json"
 import "../../domain"
 
 TAG_STDOUT: str = "o"

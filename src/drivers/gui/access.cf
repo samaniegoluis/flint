@@ -7,7 +7,7 @@ package main
 import "core:encoding/hex"
 import "core:str"
 import "core:time"
-import "ext:json"
+import "core:json"
 import "ext:webui"
 import "../../adapters/crypto"
 import "../../adapters/uievents"
@@ -97,11 +97,11 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
         if req.save_sudo_password && req.sudo_password.len() > 0 {
             st.hold()
             mut ts := store
-            saved := set_host_sudo_password(c, mut ts, st.vault_session(), ap.sudo.host, req.sudo_password)
-            st.release()
-            if !saved.has_value() {
-                return error("{saved.error().message()}")
+            set_host_sudo_password(c, mut ts, st.vault_session(), ap.sudo.host, req.sudo_password) or err {
+                st.release()
+                return error("{err.message()}")
             }
+            st.release()
             app.emit("vault:changed", VaultChanged{ path: st.vault_session().path, name: st.vault_session().name })
         }
         st.holder.access_hold()

@@ -58,10 +58,12 @@ test "save, load, overwrite and forget a vault key in the OS keychain" {
 }
 
 test "a disabled keychain stores nothing and finds nothing" {
+    mut refused := 0
     kc := new_os_keychain(false)
-    assert(!kc.keychain_save("x", [byte(1)]).has_value())
+    kc.keychain_save("x", [byte(1)]) or { refused += 1 }
+    assert_eq(refused, 1)
     assert_eq((try kc.keychain_load("x")).len(), 0)
-    assert(kc.keychain_forget("x").has_value())
+    try kc.keychain_forget("x")
 }
 
 test "OsKeychain satisfies the Keychain port" {

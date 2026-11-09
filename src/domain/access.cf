@@ -606,12 +606,15 @@ test "a grant ends at its expiry, and belongs to one vault and one anchor" {
 }
 
 test "durations" {
+    mut refused := 0
     assert_eq(try grant_expiry(100, "15m"), 100 + 900000)
     assert_eq(try grant_expiry(100, "lock"), 0)
-    assert(!grant_expiry(100, "forever").has_value())
+    grant_expiry(100, "forever") or { refused += 1 }
+    assert_eq(refused, 1)
 }
 
 test "an approval becomes a grant for its caller's anchor" {
+    mut refused := 0
     c := Caller{ uid: 501, chain: agent_chain() }
     ap := new_approval("a1", "v1", c, "flint exec api-01 -- uptime", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, 1000)
     assert_eq(ap.deadline_ms, 1000 + APPROVAL_WAIT_MS)
@@ -620,8 +623,10 @@ test "an approval becomes a grant for its caller's anchor" {
     assert(grant_matches_caller(g, c))
     assert_eq(g.expires_ms, 2000 + 3600000)
     assert(find_grant([g], c, "v1", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, test_catalog(), 3000).has_value())
-    assert(!grant_from_approval(ap, "g2", AccessScope{ all: false, groups: [], hosts: [] }, true, false, false, "1h", 0).has_value())
-    assert(!grant_from_approval(ap, "g2", AccessScope{ all: true, groups: [], hosts: [] }, false, false, false, "1h", 0).has_value())
+    grant_from_approval(ap, "g2", AccessScope{ all: false, groups: [], hosts: [] }, true, false, false, "1h", 0) or { refused += 1 }
+    assert_eq(refused, 1)
+    grant_from_approval(ap, "g2", AccessScope{ all: true, groups: [], hosts: [] }, false, false, false, "1h", 0) or { refused += 1 }
+    assert_eq(refused, 2)
 }
 
 test "the proposed grant is the host it runs on, or the whole vault" {

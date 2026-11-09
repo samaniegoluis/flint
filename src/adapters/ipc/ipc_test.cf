@@ -43,9 +43,10 @@ test "a peer of another uid is closed before anything is read" {
     assert_eq(refused.peer.uid, ipc_own_uid())
     // The app closed its end: the client sees the socket go away, never an answer.
     _ := client.send("host list", 2000) or {}
-    got := client.recv(2000)
-    assert(!got.has_value())
-    assert_eq(error_code_of("{got.error().message()}"), ERR_IO)
+    mut got := ""
+    client.recv(2000) or err { got = "{err.message()}" }
+    assert(got.len() > 0)
+    assert_eq(error_code_of("{got}"), ERR_IO)
     client.close()
     l.close()
     fs.remove(dir) or {}
@@ -61,14 +62,16 @@ test "peer_allowed needs a known uid that matches" {
 test "no Flint listening is not_found, a stale socket is replaced, a live one is kept" {
     dir := temp_socket_dir()
     path := ipc_socket_path(dir)
-    missing := ipc_connect(path, 500)
-    assert(!missing.has_value())
-    assert_eq(error_code_of("{missing.error().message()}"), ERR_NOT_FOUND)
+    mut missing := ""
+    ipc_connect(path, 500) or err { missing = "{err.message()}" }
+    assert(missing.len() > 0)
+    assert_eq(error_code_of("{missing}"), ERR_NOT_FOUND)
 
     mut first := try ipc_listen(path)
-    second := ipc_listen(path)
-    assert(!second.has_value())
-    assert_eq(error_code_of("{second.error().message()}"), ERR_CONFLICT)
+    mut second := ""
+    ipc_listen(path) or err { second = "{err.message()}" }
+    assert(second.len() > 0)
+    assert_eq(error_code_of("{second}"), ERR_CONFLICT)
     first.close()
 
     // A socket file nobody accepts on (a Flint that crashed) is cleared.
@@ -78,9 +81,10 @@ test "no Flint listening is not_found, a stale socket is replaced, a live one is
     cpp {
         flint_ipc::close_fd(stale.fd);
     }
-    stale_conn := ipc_connect(path, 500)
-    assert(!stale_conn.has_value())
-    assert_eq(error_code_of("{stale_conn.error().message()}"), ERR_NOT_FOUND)
+    mut stale_conn := ""
+    ipc_connect(path, 500) or err { stale_conn = "{err.message()}" }
+    assert(stale_conn.len() > 0)
+    assert_eq(error_code_of("{stale_conn}"), ERR_NOT_FOUND)
     mut again := try ipc_listen(path)
     again.close()
     fs.remove(dir) or {}
@@ -90,9 +94,10 @@ test "a file that is not a socket is never removed" {
     dir := temp_socket_dir()
     path := ipc_socket_path(dir)
     _ := fs.write_text(path, "not a socket") or {}
-    r := ipc_listen(path)
-    assert(!r.has_value())
-    assert_eq(error_code_of("{r.error().message()}"), ERR_IO)
+    mut r := ""
+    ipc_listen(path) or err { r = "{err.message()}" }
+    assert(r.len() > 0)
+    assert_eq(error_code_of("{r}"), ERR_IO)
     assert_eq(fs.read_text(path) or "", "not a socket")
     fs.remove(dir) or {}
 }
@@ -102,9 +107,10 @@ test "a path too long for sun_path is refused with a reason" {
     for i in 0..30 {
         long = long + "abcdefgh"
     }
-    r := ipc_listen(long + "/flint.sock")
-    assert(!r.has_value())
-    assert("{r.error().message()}".contains("limit"))
+    mut r := ""
+    ipc_listen(long + "/flint.sock") or err { r = "{err.message()}" }
+    assert(r.len() > 0)
+    assert("{r}".contains("limit"))
 }
 
 test "recv times out when nothing arrives" {
@@ -113,9 +119,10 @@ test "recv times out when nothing arrives" {
     mut l := try ipc_listen(path)
     mut client := try ipc_connect(path, 2000)
     mut server := try l.accept_wait(2000)
-    got := server.recv(150)
-    assert(!got.has_value())
-    assert_eq(error_code_of("{got.error().message()}"), ERR_TIMEOUT)
+    mut got := ""
+    server.recv(150) or err { got = "{err.message()}" }
+    assert(got.len() > 0)
+    assert_eq(error_code_of("{got}"), ERR_TIMEOUT)
     assert(!(try l.accept_wait(50)).open)
     client.close()
     server.close()

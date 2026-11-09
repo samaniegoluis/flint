@@ -1,7 +1,7 @@
 package application
 
 import "core:encoding/base64"
-import "ext:json"
+import "core:json"
 
 // ---- A fake Tether file --------------------------------------------------------
 
@@ -20,12 +20,10 @@ fn tseal(plain: str) -> str {
         return ""
     }
     crypto := FakeCrypto{ derive_calls: 0 }
-    // `or []` does not compile with libstdc++ (no type to infer), so test the result.
-    sealed := crypto.seal(tkey(), str_to_bytes(plain), [])
-    if !sealed.has_value() {
+    sealed := crypto.seal(tkey(), str_to_bytes(plain), []) or {
         return ""
     }
-    return base64.encode_str(bytes_to_str(sealed.value()))
+    return base64.encode_str(bytes_to_str(sealed))
 }
 
 // `tether_read` builds the sample file on each call.
@@ -280,11 +278,16 @@ test "a dry run reports the import and writes nothing" {
 }
 
 test "a wrong tether password or a missing file is refused before anything is written" {
+    mut got_code := "ok"
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
-    assert_eq(err_code(import_tether(crypto, mut store, TetherInspector{ unused: false }, sample_tether(), s, "/t/vault.tether", "nope", false)), "wrong_password")
-    assert_eq(err_code(import_tether(crypto, mut store, TetherInspector{ unused: false }, sample_tether(), s, "/t/other.tether", "tpw", false)), "not_found")
+    got_code = "ok"
+    import_tether(crypto, mut store, TetherInspector{ unused: false }, sample_tether(), s, "/t/vault.tether", "nope", false) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "wrong_password")
+    got_code = "ok"
+    import_tether(crypto, mut store, TetherInspector{ unused: false }, sample_tether(), s, "/t/other.tether", "tpw", false) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "not_found")
     assert_eq(store.hosts.len(), 0)
 }
 

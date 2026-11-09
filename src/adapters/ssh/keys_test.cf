@@ -5,7 +5,10 @@ import "core:os"
 import "../../ports"
 
 fn inspector_port_check[I: KeyInspector](i: I) -> bool {
-    return !i.inspect_private_key("nope", "").has_value()
+    i.inspect_private_key("nope", "") or {
+        return true
+    }
+    return false
 }
 
 fn keygen(dir: str, name: str, passphrase: str) -> str! {
@@ -18,6 +21,7 @@ fn keygen(dir: str, name: str, passphrase: str) -> str! {
 }
 
 test "inspects plain and passphrase-protected keys and rejects bad input" {
+    mut refused := 0
     dir := "/tmp/flint-keys-" + os.getenv("USER", "test")
     _ := fs.remove(dir)
     try fs.mkdir_all(dir)
@@ -34,18 +38,22 @@ test "inspects plain and passphrase-protected keys and rejects bad input" {
     assert(plain_pub.starts_with(info.public_key), "public key must match ssh-keygen's")
     assert(expected_fp.contains(info.fingerprint), "fingerprint must match ssh-keygen -l")
 
-    assert(!ki.inspect_private_key(locked, "").has_value())
-    wrong := ki.inspect_private_key(locked, "nope")
-    assert(!wrong.has_value())
-    msg := "{wrong.error().message()}"
+    ki.inspect_private_key(locked, "") or { refused += 1 }
+    assert_eq(refused, 1)
+    mut wrong := ""
+    ki.inspect_private_key(locked, "nope") or err { wrong = "{err.message()}" }
+    assert(wrong.len() > 0)
+    msg := "{wrong}"
     assert(!msg.contains("s3cret"))
     assert(!msg.contains("PRIVATE KEY"))
     unlocked := try ki.inspect_private_key(locked, "s3cret-pass")
     assert_eq(unlocked.key_type, "ssh-ed25519")
 
-    pub_only := ki.inspect_private_key(plain_pub, "")
-    assert(!pub_only.has_value())
-    assert(!ki.inspect_private_key("", "").has_value())
+    mut pub_only := ""
+    ki.inspect_private_key(plain_pub, "") or err { pub_only = "{err.message()}" }
+    assert(pub_only.len() > 0)
+    ki.inspect_private_key("", "") or { refused += 1 }
+    assert_eq(refused, 2)
     try fs.remove(dir)
 }
 

@@ -261,10 +261,9 @@ fn save_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: V
         store.vault_rollback()
         return error("{err.message()}")
     }
-    put := store.host_put(patched)
-    if !put.has_value() {
+    store.host_put(patched) or err {
         store.vault_rollback()
-        return error("{put.error().message()}")
+        return error("{err.message()}")
     }
     try store.vault_commit()
     after := try load_catalog(store)

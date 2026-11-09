@@ -52,6 +52,14 @@ fn one_of(value: str, allowed: []str) -> bool {
     return false
 }
 
+// Whether check_settings passes.
+fn settings_valid(s: Settings) -> bool {
+    check_settings(s) or {
+        return false
+    }
+    return true
+}
+
 // Checks every field; the message names the first one that is wrong.
 fn check_settings(s: Settings) -> void! {
     if !one_of(s.theme, ["system", "dark", "light"]) {
@@ -89,32 +97,39 @@ fn check_settings(s: Settings) -> void! {
 }
 
 test "default settings are valid and bad values are refused" {
-    assert(check_settings(default_settings()).has_value())
+    mut refused := 0
+    try check_settings(default_settings())
     mut s := default_settings()
     s.theme = "neon"
-    assert(!check_settings(s).has_value())
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 1)
     s = default_settings()
     s.term_font_size = 99
-    assert(!check_settings(s).has_value())
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 2)
     s = default_settings()
     s.term_line_height = 90
-    assert(!check_settings(s).has_value())
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 3)
     s = default_settings()
     s.term_font = "JetBrainsMono Nerd Font"
-    assert(check_settings(s).has_value())
+    try check_settings(s)
     s.term_font = "x\"; color: red"
-    assert(!check_settings(s).has_value())
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 4)
     s = default_settings()
     s.term_theme = "aura"
-    assert(check_settings(s).has_value())
+    try check_settings(s)
     s.term_theme = "solarized"
-    assert(!check_settings(s).has_value())
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 5)
     s = default_settings()
     assert_eq(s.lock_after, "1h")
     s.lock_after = "1m"
-    assert(check_settings(s).has_value())
+    try check_settings(s)
     s.lock_after = "2m"
-    assert(!check_settings(s).has_value())
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 6)
 }
 
 // How long an idle vault stays unlocked, in milliseconds; 0 for never.

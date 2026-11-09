@@ -13,7 +13,7 @@ package clicmd
 
 import "core:str"
 import "core:time"
-import "ext:json"
+import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto"
 import "../../adapters/keychain"
@@ -195,6 +195,7 @@ fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
 }
 
 test "token scope flags" {
+    mut refused := 0
     p := try parse_cli_args(["token", "create", "--name", "n", "--hosts", "codebox, @homelab/pve", "--hosts", "web", "--allow", "exec,read"])
     s := token_scope_from_flags(p)
     assert_eq(s.hosts.len(), 2)
@@ -204,9 +205,11 @@ test "token scope flags" {
     assert(req.read && req.exec && !req.write)
     assert_eq(req.ttl, TOKEN_DEFAULT_TTL)
     bad := try parse_cli_args(["token", "create", "--name", "n", "--allow", "sudo"])
-    assert(!token_request_from_flags(bad).has_value())
+    token_request_from_flags(bad) or { refused += 1 }
+    assert_eq(refused, 1)
     both := try parse_cli_args(["token", "create", "--name", "n", "--all", "--hosts", "x", "--allow", "read"])
-    assert(!token_request_from_flags(both).has_value())
+    token_request_from_flags(both) or { refused += 1 }
+    assert_eq(refused, 2)
 }
 
 test "utc dates" {

@@ -91,8 +91,13 @@ test "osc 52: a clipboard query is ignored, never answered" {
 }
 
 test "osc 52: bad input is refused with a stable code" {
+    mut got_code := "ok"
     mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
-    assert_eq(err_code(osc52_copy(mut clip, "no-separator")), "invalid")
-    assert_eq(err_code(osc52_copy(mut clip, "c;!!!not base64!!!")), "invalid")
+    got_code = "ok"
+    osc52_copy(mut clip, "no-separator") or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "invalid")
+    got_code = "ok"
+    osc52_copy(mut clip, "c;!!!not base64!!!") or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "invalid")
     assert_eq(clip.copies, 0)
 }

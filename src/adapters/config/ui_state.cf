@@ -5,7 +5,7 @@ package config
 // id, the ids of collapsed groups: opaque ids only, no names (Principle 5).
 
 import "core:fs"
-import "ext:json"
+import "core:json"
 import "../../domain"
 
 // File shape: local structs, as in recents.cf.

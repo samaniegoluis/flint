@@ -319,13 +319,6 @@ fn copy_req(direction: str, local: str, remote: str, recursive: bool, force: boo
     return CopyRequest{ id: "t1", alias: "web", direction: direction, local: local, remote: remote, recursive: recursive, force: force }
 }
 
-fn code_of[T](r: T!) -> str {
-    if r.has_value() {
-        return "ok"
-    }
-    return error_code_of("{r.error().message()}")
-}
-
 test "an upload into a folder keeps the file's name and reports progress" {
     mut host := FakeSftp{ tree: fake_tree([fdir("/etc"), fdir("/etc/app")]) }
     mut here := FakeLocal{ tree: fake_tree([fdir("/w"), ffile("/w/app.conf", "port=8080\n")]) }
@@ -350,8 +343,9 @@ test "a download to a new name, and an existing file needs --force" {
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
     _ := try copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_DOWNLOAD, "/w/new.log", "/var/log/app.log", false, false))
     assert_eq(here.tree.data_of("/w/new.log"), "line 1\nline 2\n")
-    refused := copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_DOWNLOAD, "/w/old.log", "/var/log/app.log", false, false))
-    assert_eq(code_of(refused), ERR_EXISTS)
+    mut refused := ""
+    copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_DOWNLOAD, "/w/old.log", "/var/log/app.log", false, false)) or err { refused = "{err.message()}" }
+    assert_eq(err_code(refused), ERR_EXISTS)
     assert_eq(here.tree.data_of("/w/old.log"), "old")
     _ := try copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_DOWNLOAD, "/w/old.log", "/var/log/app.log", false, true))
     assert_eq(here.tree.data_of("/w/old.log"), "line 1\nline 2\n")
@@ -368,17 +362,32 @@ test "a server that will not rename over a file gets the old one removed first" 
 }
 
 test "stable errors: not found, a folder without -r, a missing folder, not a directory" {
+    mut got_code := "ok"
     mut host := FakeSftp{ tree: fake_tree([fdir("/etc"), ffile("/etc/hosts", "x")]) }
     mut here := FakeLocal{ tree: fake_tree([fdir("/w"), fdir("/w/site"), ffile("/w/site/index.html", "hi"), ffile("/w/a", "a")]) }
     mut sink := quiet_sink()
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
-    assert_eq(code_of(copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/nope", "/etc/", false, false))), ERR_NOT_FOUND)
-    assert_eq(code_of(copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/site", "/etc/", false, false))), ERR_INVALID)
-    assert_eq(code_of(copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/a", "/srv/a", false, false))), ERR_NOT_FOUND)
-    assert_eq(code_of(copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/a", "/etc/hosts/a", false, false))), ERR_NOT_DIR)
-    assert_eq(code_of(copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/site", "/etc/hosts", true, false))), ERR_NOT_DIR)
-    assert_eq(code_of(copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/a", "/nodir/", false, false))), ERR_NOT_FOUND)
-    assert_eq(code_of(copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_DOWNLOAD, "/w/", "/etc", false, false))), ERR_INVALID)
+    got_code = "ok"
+    copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/nope", "/etc/", false, false)) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, ERR_NOT_FOUND)
+    got_code = "ok"
+    copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/site", "/etc/", false, false)) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, ERR_INVALID)
+    got_code = "ok"
+    copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/a", "/srv/a", false, false)) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, ERR_NOT_FOUND)
+    got_code = "ok"
+    copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/a", "/etc/hosts/a", false, false)) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, ERR_NOT_DIR)
+    got_code = "ok"
+    copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/site", "/etc/hosts", true, false)) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, ERR_NOT_DIR)
+    got_code = "ok"
+    copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/w/a", "/nodir/", false, false)) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, ERR_NOT_FOUND)
+    got_code = "ok"
+    copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_DOWNLOAD, "/w/", "/etc", false, false)) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, ERR_INVALID)
 }
 
 test "a recursive upload creates the tree and merges into an existing folder" {
@@ -413,15 +422,17 @@ test "a cancelled copy and a failed write leave no partial file" {
     mut sink := quiet_sink()
     sink.cancel_after = 2
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
-    cancelled := copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/big", "/etc/", false, false))
-    assert_eq(code_of(cancelled), ERR_IO)
+    mut cancelled := ""
+    copy_files(mut host, mut here, mut sink, mut clock, copy_req(COPY_UPLOAD, "/big", "/etc/", false, false)) or err { cancelled = "{err.message()}" }
+    assert_eq(err_code(cancelled), ERR_IO)
     assert(!host.tree.has("/etc/big"))
     assert(!host.tree.has("/etc/.big.flint-part"))
     mut full := FakeSftp{ tree: fake_tree([fdir("/etc")]) }
     full.tree.fail_write_after = 6
     mut sink2 := quiet_sink()
-    failed := copy_files(mut full, mut here, mut sink2, mut clock, copy_req(COPY_UPLOAD, "/big", "/etc/", false, false))
-    assert_eq(code_of(failed), ERR_IO)
+    mut failed := ""
+    copy_files(mut full, mut here, mut sink2, mut clock, copy_req(COPY_UPLOAD, "/big", "/etc/", false, false)) or err { failed = "{err.message()}" }
+    assert_eq(err_code(failed), ERR_IO)
     assert(!full.tree.has("/etc/.big.flint-part"))
     assert(!full.tree.has("/etc/big"))
 }
@@ -436,11 +447,14 @@ test "downloading the login folder names it from the host" {
 }
 
 test "remove_remote removes a folder with everything in it; rename refuses a taken name" {
+    mut got_code := "ok"
     mut host := FakeSftp{ tree: fake_tree([fdir("/d"), ffile("/d/a", "a"), fdir("/d/e"), ffile("/d/e/b", "b"), ffile("/x", "x")]) }
     try remove_remote(mut host, "/d")
     assert(!host.tree.has("/d") && !host.tree.has("/d/e/b"))
     try make_dir(mut host, "/n")
-    assert_eq(code_of(rename_path(mut host, "/n", "/x")), ERR_EXISTS)
+    got_code = "ok"
+    rename_path(mut host, "/n", "/x") or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, ERR_EXISTS)
     try rename_path(mut host, "/n", "/m")
     assert(host.tree.has("/m"))
 }
@@ -474,11 +488,16 @@ fn (mut self: FakeDropStage) stage_discard(drop_id: str) {
 }
 
 test "a dropped file is staged inside its drop, and its top element is what uploads" {
+    mut got_code := "ok"
     mut stage := FakeDropStage{ appended: [], discarded: [] }
     assert_eq(try stage_dropped(mut stage, "d1", "site/css/app.css", "body{}"), "/cfg/drops/d1/site")
     assert_eq(try stage_dropped(mut stage, "d1", "notes.txt", "hi"), "/cfg/drops/d1/notes.txt")
-    assert_eq(code_of(stage_dropped(mut stage, "d1", "../../.ssh/x", "")), ERR_INVALID)
-    assert_eq(code_of(stage_dropped(mut stage, "../d", "a", "")), ERR_INVALID)
+    got_code = "ok"
+    stage_dropped(mut stage, "d1", "../../.ssh/x", "") or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, ERR_INVALID)
+    got_code = "ok"
+    stage_dropped(mut stage, "../d", "a", "") or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, ERR_INVALID)
     assert_eq(stage.appended.len(), 2)
     discard_dropped(mut stage, "d1")
     discard_dropped(mut stage, "../x")
@@ -514,14 +533,17 @@ test "a copy between two hosts names each host in its errors" {
     mut nas := FakeLocal{ tree: fake_tree([fdir("/srv"), ffile("/srv/a", "old")]) }
     mut sink := quiet_sink()
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
-    exists := copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/srv/", false, false))
-    assert_eq(code_of(exists), ERR_EXISTS)
-    assert("{exists.error().message()}".contains("/srv/a on nas already exists"))
-    folder := copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/d/site", "/srv/", false, false))
-    assert("{folder.error().message()}".contains("/d/site on db1 is a folder"))
-    missing := copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/nowhere/x", false, false))
-    assert_eq(code_of(missing), ERR_NOT_FOUND)
-    assert("{missing.error().message()}".contains("on nas"))
+    mut exists := ""
+    copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/srv/", false, false)) or err { exists = "{err.message()}" }
+    assert_eq(err_code(exists), ERR_EXISTS)
+    assert(exists.contains("/srv/a on nas already exists"))
+    mut folder := ""
+    copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/d/site", "/srv/", false, false)) or err { folder = "{err.message()}" }
+    assert(folder.contains("/d/site on db1 is a folder"))
+    mut missing := ""
+    copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/nowhere/x", false, false)) or err { missing = "{err.message()}" }
+    assert_eq(err_code(missing), ERR_NOT_FOUND)
+    assert("{missing}".contains("on nas"))
     _ := try copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/srv/", false, true))
     assert_eq(nas.tree.data_of("/srv/a"), "a")
 }
@@ -554,9 +576,10 @@ test "a copy whose channel died says where its part file may be left" {
     nas.tree.remove_dead = true
     mut sink := quiet_sink()
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
-    failed := copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/big", "/srv/", false, false))
-    assert_eq(code_of(failed), ERR_IO)
-    assert("{failed.error().message()}".contains(".big.flint-part may be left in /srv on nas"))
+    mut failed := ""
+    copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/big", "/srv/", false, false)) or err { failed = "{err.message()}" }
+    assert_eq(err_code(failed), ERR_IO)
+    assert("{failed}".contains(".big.flint-part may be left in /srv on nas"))
 }
 
 test "a copy between two hosts that is cancelled leaves nothing on the destination" {
@@ -565,8 +588,9 @@ test "a copy between two hosts that is cancelled leaves nothing on the destinati
     mut sink := quiet_sink()
     sink.cancel_after = 2
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
-    cancelled := copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/big", "/srv/", false, false))
-    assert_eq(code_of(cancelled), ERR_IO)
+    mut cancelled := ""
+    copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/big", "/srv/", false, false)) or err { cancelled = "{err.message()}" }
+    assert_eq(err_code(cancelled), ERR_IO)
     assert(!nas.tree.has("/srv/big"))
     assert(!nas.tree.has("/srv/.big.flint-part"))
     assert(db1.tree.has("/big"))
@@ -591,11 +615,13 @@ test "the Files view's copy between sessions asks before replacing, and names th
     mut nas := FakeSftp{ tree: fake_tree([fdir("/srv"), ffile("/srv/a", "old")]) }
     mut sink := quiet_sink()
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
-    exists := relay_between_sessions(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/srv/", false, false))
-    assert_eq(code_of(exists), ERR_EXISTS)
-    assert("{exists.error().message()}".contains("on nas"))
+    mut exists := ""
+    relay_between_sessions(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/srv/", false, false)) or err { exists = "{err.message()}" }
+    assert_eq(err_code(exists), ERR_EXISTS)
+    assert("{exists}".contains("on nas"))
     _ := try relay_between_sessions(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/srv/", false, true))
     assert_eq(nas.tree.data_of("/srv/a"), "new")
-    wrong := relay_between_sessions(mut db1, mut nas, mut sink, mut clock, copy_req(COPY_UPLOAD, "/d/a", "/srv/", false, false))
-    assert_eq(code_of(wrong), ERR_INTERNAL)
+    mut wrong := ""
+    relay_between_sessions(mut db1, mut nas, mut sink, mut clock, copy_req(COPY_UPLOAD, "/d/a", "/srv/", false, false)) or err { wrong = "{err.message()}" }
+    assert_eq(err_code(wrong), ERR_INTERNAL)
 }
