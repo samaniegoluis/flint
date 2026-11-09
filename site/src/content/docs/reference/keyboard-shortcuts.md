@@ -40,11 +40,10 @@ while text is selected (with nothing selected it interrupts the remote program);
 <kbd>Ctrl+V</kbd> and <kbd>Shift+Insert</kbd> paste. <kbd>Ctrl+V</kbd> therefore no
 longer reaches the remote (vim's visual block: use <kbd>Ctrl+Q</kbd> there).
 
-Windows reads <kbd>AltGr</kbd> as <kbd>Ctrl+Alt</kbd>, so a <kbd>Ctrl+Alt</kbd> shortcut
-whose key types a character with <kbd>AltGr</kbd> on your layout types that character
-instead (US-International: <kbd>AltGr+1</kbd> is ¡, <kbd>AltGr+Shift+N</kbd> is Ñ;
-Spanish: <kbd>AltGr+2</kbd> is @). On such a layout run the action from the command
-palette.
+On a Windows layout with <kbd>AltGr</kbd> characters on the digits or letters
+(US-International), Windows takes <kbd>Ctrl+Alt</kbd> as <kbd>AltGr</kbd>: <kbd>Ctrl+Alt+1</kbd>
+types ¡ instead of changing the layout. There, run those actions from the command palette
+or the toolbar's Split menu. <kbd>AltGr</kbd> itself always types its character.
 
 ## In lists and dialogs
 

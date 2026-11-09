@@ -76,29 +76,16 @@ const CHORDS: Record<Action, Chord> = {
 
 export interface KeyLike {
   code: string;
-  key?: string;
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
   shiftKey: boolean;
 }
 
-// Windows reports AltGr as Ctrl+Alt, and treats a pressed Ctrl+Alt as AltGr. On a
-// layout where the chord's key has an AltGr character (US-International: AltGr+1 is
-// ¡, AltGr+Shift+N is Ñ; Spanish: AltGr+2 is @), the press is text and goes to the
-// terminal, as in Windows Terminal: the shortcut only fires when the key would type
-// its own letter or digit.
-function altGrText(e: KeyLike): boolean {
-  if (!e.key || e.key === 'Unidentified') return false;
-  const m = /^(?:Key|Digit)(.)$/.exec(e.code);
-  return !m || e.key.toUpperCase() !== m[1];
-}
-
 function matches(c: Chord, e: KeyLike, os: Os): boolean {
   if (c.none || e.code !== c.code) return false;
   if (c.bare) return !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
   if (c.shiftOnly) return e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey;
-  if (os === 'windows' && e.ctrlKey && e.altKey && altGrText(e)) return false;
   if (c.alt) {
     if (os === 'mac') return e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey;
     return e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey;

@@ -55,25 +55,6 @@ describe('keymap', () => {
     expect(chordLabel('layout4', 'linux')).toBe('Ctrl+Alt+4');
   });
 
-  it('on Windows leaves an AltGr character to the terminal (AltGr is Ctrl+Alt there)', () => {
-    const typed = (code: string, k: string, mods: Parameters<typeof key>[1]) => ({ ...key(code, mods), key: k });
-    // US-International: AltGr+1 is ¡, AltGr+D is ð, AltGr+Shift+N is Ñ, AltGr+Shift+O is Ó.
-    expect(actionFor(typed('Digit1', '¡', { ctrl: true, alt: true }), 'windows')).toBeNull();
-    expect(actionFor(typed('KeyD', 'ð', { ctrl: true, alt: true }), 'windows')).toBeNull();
-    expect(actionFor(typed('KeyN', 'Ñ', { ctrl: true, alt: true, shift: true }), 'windows')).toBeNull();
-    expect(actionFor(typed('KeyO', 'Ó', { ctrl: true, alt: true, shift: true }), 'windows')).toBeNull();
-    // Spanish: AltGr+2 is @. A dead key is text too.
-    expect(actionFor(typed('Digit2', '@', { ctrl: true, alt: true }), 'windows')).toBeNull();
-    expect(actionFor(typed('Digit3', 'Dead', { ctrl: true, alt: true }), 'windows')).toBeNull();
-    // A key with no AltGr character on the layout keeps its shortcut.
-    expect(actionFor(typed('Digit1', '1', { ctrl: true, alt: true }), 'windows')).toBe('layout1');
-    expect(actionFor(typed('KeyD', 'd', { ctrl: true, alt: true }), 'windows')).toBe('duplicate');
-    expect(actionFor(typed('KeyO', 'O', { ctrl: true, alt: true, shift: true }), 'windows')).toBe('switchVault');
-    // Ctrl+Shift chords are not AltGr; Linux keeps its rule (AltGr is not Ctrl+Alt there).
-    expect(actionFor(typed('KeyD', 'D', { ctrl: true, shift: true }), 'windows')).toBe('splitRight');
-    expect(actionFor(typed('Digit1', '¡', { ctrl: true, alt: true }), 'linux')).toBe('layout1');
-  });
-
   it('moves between panes with ⌘] and ⌘[', () => {
     expect(actionFor(key('BracketRight', { meta: true }), 'mac')).toBe('focusNextPane');
     expect(actionFor(key('BracketLeft', { ctrl: true, shift: true }), 'linux')).toBe('focusPrevPane');
