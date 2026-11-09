@@ -153,10 +153,20 @@ inline int read_file(sftp_session sftp, sftp_file f, size_t max, std::string& ou
     return OK;
 }
 
+// libssh 0.11+ splits a write by the server's limits. 0.10 sends it as one request, and
+// OpenSSH's sftp-server drops the channel over a 256 KB message, so there each request
+// carries at most 32 KB, the size every SFTP server must accept.
+#if LIBSSH_VERSION_INT >= SSH_VERSION_INT(0, 11, 0)
+inline constexpr size_t kMaxWrite = SIZE_MAX;
+#else
+inline constexpr size_t kMaxWrite = 32768;
+#endif
+
 inline int write_file(sftp_session sftp, sftp_file f, const std::string& data) {
     size_t done = 0;
     while (done < data.size()) {
-        ssize_t n = sftp_write(f, data.data() + done, data.size() - done);
+        size_t left = data.size() - done;
+        ssize_t n = sftp_write(f, data.data() + done, left < kMaxWrite ? left : kMaxWrite);
         if (n <= 0) return map_error(sftp);
         done += static_cast<size_t>(n);
     }

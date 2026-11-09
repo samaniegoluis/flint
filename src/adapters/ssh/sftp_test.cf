@@ -127,6 +127,45 @@ test "sftp writes, stats, lists, reads, renames and removes" {
     assert_eq(error_code_of("{gone.error().message()}"), "not_found")
 }
 
+// flint cp hands the adapter 256 KB at a time (LOCAL_READ_CHUNK). libssh 0.10 sent such
+// a write as one request, over OpenSSH sftp-server's 256 KB message limit, and the server
+// dropped the channel: the adapter must split it.
+test "sftp writes 1 MB handed over in one call" {
+    (port, _) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    mut link := try sftp_link()
+    defer link.link_hangup()
+    dir := scratch_dir("onewrite")
+    try link.sftp_mkdir(dir)
+    path := dir + "/blob.bin"
+    mut blob := "0123456789abcdef"
+    for _ in 0..16 {
+        blob = blob + blob
+    }
+    assert_eq(blob.len(), usize(1048576))
+    try link.sftp_file_open(path, true, true)
+    try link.sftp_file_write(blob)
+    try link.sftp_file_close()
+    st := try link.sftp_stat(path)
+    assert_eq(st.size, i64(blob.len()))
+    try link.sftp_file_open(path, false, false)
+    mut back := ""
+    for true {
+        chunk := try link.sftp_file_read()
+        if chunk.len() == 0 {
+            break
+        }
+        back = back + chunk
+    }
+    try link.sftp_file_close()
+    assert(back == blob, "what was read back must be what was written")
+    try link.sftp_remove(path, false)
+    try link.sftp_remove(dir, true)
+}
+
 test "sftp shares a session with a running PTY, in turn" {
     (port, key_path) := test_target()
     if port == 0 {
