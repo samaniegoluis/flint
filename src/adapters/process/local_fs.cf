@@ -1,0 +1,195 @@
+package process
+
+// The `LocalFiles` port on this machine's file system (milestone 16): what `flint cp`
+// reads and writes here. One open file at a time. Errors carry `not_found`,
+// `permission_denied`, `exists`, `not_a_directory` or `io`, with the OS's reason.
+
+// CFIRE-UPSTREAM: CF-099, CF-031
+import cpp "flint_fs.hpp" @pkg("flint-native")
+
+import "../../domain"
+
+// The most bytes one read returns.
+LOCAL_READ_CHUNK: usize = 262144
+
+type LocalFs struct {
+    // The open file's descriptor, or -1.
+    fd: i32 = -1
+    // Whether it was opened for writing (it is flushed to disk on close).
+    writing: bool = false
+}
+
+fn new_local_fs() -> LocalFs {
+    return LocalFs{ fd: -1, writing: false }
+}
+
+fn local_failure(rc: i32, path: str, reason: str) -> str {
+    if rc == 1 {
+        return coded(ERR_NOT_FOUND, "{path}: no such file or folder")
+    }
+    if rc == 2 {
+        return coded(ERR_PERMISSION, "{path}: permission denied")
+    }
+    if rc == 3 {
+        return coded(ERR_EXISTS, "{path} already exists")
+    }
+    if rc == 6 {
+        return coded(ERR_NOT_DIR, "{path}: not a folder")
+    }
+    if rc == 7 {
+        return coded(ERR_INVALID, "{path} is a folder")
+    }
+    return coded(ERR_IO, "{path}: {reason}")
+}
+
+fn (self: LocalFs) local_stat(path: str) -> FileEntry! {
+    mut kind := ""
+    mut size: i64 = 0
+    mut mtime: i64 = 0
+    mut mode: i64 = 0
+    mut reason := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        flint_fs::Entry e;
+        rc = flint_fs::stat_path(path, true, e, reason);
+        kind = e.kind; size = e.size; mtime = e.mtime; mode = e.mode;
+    }
+    if rc != 0 {
+        return error(local_failure(rc, path, reason))
+    }
+    return FileEntry{ name: remote_base(path), path: path, kind: kind, size: size, mtime: mtime, mode: mode }
+}
+
+// A folder's entries, links not followed, in no particular order.
+fn (self: LocalFs) local_list(path: str) -> []FileEntry! {
+    mut names: []str = []
+    mut kinds: []str = []
+    mut sizes: []i64 = []
+    mut mtimes: []i64 = []
+    mut modes: []i64 = []
+    mut reason := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        std::vector<flint_fs::Entry> list;
+        rc = flint_fs::list(path, list, reason);
+        for (auto& e : list) {
+            names.push_back(e.name); kinds.push_back(e.kind);
+            sizes.push_back(e.size); mtimes.push_back(e.mtime); modes.push_back(e.mode);
+        }
+    }
+    if rc != 0 {
+        return error(local_failure(rc, path, reason))
+    }
+    mut entries: []FileEntry = []
+    for i, n in names {
+        entries.push(FileEntry{ name: n, path: remote_join(path, n), kind: kinds[i], size: sizes[i], mtime: mtimes[i], mode: modes[i] })
+    }
+    return entries
+}
+
+fn (mut self: LocalFs) local_file_open(path: str, write: bool, exclusive: bool) -> void! {
+    if self.fd >= 0 {
+        return error(coded(ERR_INTERNAL, "local: a file is already open"))
+    }
+    mut fd: i32 = -1
+    mut rc: i32 = 0
+    mut reason := ""
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        int code = 0;
+        fd = flint_fs::open_file(path, write, exclusive, code, reason);
+        rc = code;
+    }
+    if fd < 0 {
+        return error(local_failure(rc, path, reason))
+    }
+    self.fd = fd
+    self.writing = write
+}
+
+fn (mut self: LocalFs) local_file_read() -> str! {
+    if self.fd < 0 {
+        return error(coded(ERR_INTERNAL, "local: no file is open"))
+    }
+    mut data := ""
+    mut reason := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        rc = flint_fs::read_file(self.fd, LOCAL_READ_CHUNK, data, reason);
+    }
+    if rc != 0 {
+        return error(local_failure(rc, "the file", reason))
+    }
+    return data
+}
+
+fn (mut self: LocalFs) local_file_write(data: str) -> void! {
+    if self.fd < 0 {
+        return error(coded(ERR_INTERNAL, "local: no file is open"))
+    }
+    mut reason := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        rc = flint_fs::write_file(self.fd, data, reason);
+    }
+    if rc != 0 {
+        return error(local_failure(rc, "the file", reason))
+    }
+}
+
+fn (mut self: LocalFs) local_file_close() -> void! {
+    if self.fd < 0 {
+        return
+    }
+    mut reason := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        rc = flint_fs::close_file(self.fd, self.writing, reason);
+    }
+    self.fd = -1
+    self.writing = false
+    if rc != 0 {
+        return error(local_failure(rc, "the file", reason))
+    }
+}
+
+fn (mut self: LocalFs) local_rename(from: str, to: str) -> void! {
+    mut reason := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        rc = flint_fs::rename_path(from, to, reason);
+    }
+    if rc != 0 {
+        return error(local_failure(rc, to, reason))
+    }
+}
+
+fn (mut self: LocalFs) local_remove(path: str) -> void! {
+    mut reason := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        rc = flint_fs::remove_path(path, reason);
+    }
+    if rc != 0 {
+        return error(local_failure(rc, path, reason))
+    }
+}
+
+fn (mut self: LocalFs) local_mkdir(path: str) -> void! {
+    mut reason := ""
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        rc = flint_fs::make_dir(path, reason);
+    }
+    if rc != 0 {
+        return error(local_failure(rc, path, reason))
+    }
+}

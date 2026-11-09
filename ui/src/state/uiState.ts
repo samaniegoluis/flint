@@ -13,8 +13,13 @@ export const SIDEBAR_DEFAULT = 264;
 const SAVE_DELAY_MS = 250;
 
 export const clampSidebar = (w: number) => Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w)));
+// The Files view's own width (milestone 17).
+export const FILES_MIN = 200;
+export const FILES_MAX = 480;
+export const FILES_DEFAULT = 340;
+export const clampFiles = (w: number) => Math.round(Math.min(FILES_MAX, Math.max(FILES_MIN, w)));
 
-const DEFAULTS: UiStateView = { sidebar_open: true, sidebar_width: SIDEBAR_DEFAULT, collapsed: [] };
+const DEFAULTS: UiStateView = { sidebar_open: true, sidebar_width: SIDEBAR_DEFAULT, files_width: FILES_DEFAULT, collapsed: [] };
 
 export function useUiState(vaultPath: string) {
   const [ui, setUi] = useState<UiStateView | null>(null);

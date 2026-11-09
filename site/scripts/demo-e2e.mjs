@@ -61,7 +61,7 @@ try {
 		await dialog.waitFor({ state: 'visible' });
 		check(await page.evaluate(() => document.activeElement?.id === 'cli-demo-input'), 'desktop: the input has focus on open');
 		check((await logText(page)).includes("Welcome to Flint's demo"), 'desktop: the welcome and first step are shown');
-		check((await page.locator('[data-step]').innerText()) === 'Step 1 of 12', 'desktop: the bar shows the tour step');
+		check((await page.locator('[data-step]').innerText()) === 'Step 1 of 13', 'desktop: the bar shows the tour step');
 		check((await page.locator('[data-guide]').innerText()).includes('Every command'), 'desktop: the guide shows the current step');
 		check((await page.locator('.cli-demo__chip--next').innerText()).includes('flint help'), 'desktop: the step command is the highlighted chip');
 		await type(page, 'flint list');
@@ -73,6 +73,8 @@ try {
 		await type(page, 'flint exec web-01 -- uptime');
 		check((await page.locator('[data-prompt]').innerText()).includes('(yes/no)'), 'desktop: an unknown host key asks yes/no');
 		await type(page, 'yes');
+		await type(page, 'flint cp ./app.conf web-01:app/');
+		check((await logText(page)).includes('Copied 1 file (20 B) to web-01:app/app.conf'), 'desktop: cp prints what it copied where');
 		await type(page, 'flint connect db');
 		await type(page, 'yes');
 		const remotePrompt = await page.locator('[data-prompt]').textContent();

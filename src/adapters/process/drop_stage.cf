@@ -1,0 +1,51 @@
+package process
+
+// The `DropStage` port (milestone 17): files dragged into the window are written
+// under <config folder>/drops/<drop id>/, folders 0700 and files 0600, until they
+// are uploaded. Every drop left over by a crash is removed when the app starts.
+
+// CFIRE-UPSTREAM: CF-099, CF-031
+import cpp "flint_fs.hpp" @pkg("flint-native")
+
+import "core:fs"
+import "../../domain"
+
+type FsDropStage struct {
+    root: str
+}
+
+fn new_fs_drop_stage(config_dir: str) -> FsDropStage {
+    return FsDropStage{ root: config_dir + "/drops" }
+}
+
+fn (self: FsDropStage) stage_folder(drop_id: str) -> str {
+    return self.root + "/" + drop_id
+}
+
+fn (mut self: FsDropStage) stage_append(drop_id: str, rel: str, data: str) -> void! {
+    path := self.stage_folder(drop_id) + "/" + rel
+    folder := remote_dir(path)
+    mut rc: i32 = 0
+    mut reason := ""
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        std::string err;
+        rc = flint_fs::make_dirs(folder, 0700, err);
+        if (rc == 0) rc = flint_fs::append_file(path, data, err);
+        reason = err;
+    }
+    if rc != 0 {
+        return error(local_failure(rc, path, reason))
+    }
+}
+
+fn (mut self: FsDropStage) stage_discard(drop_id: str) {
+    _ := fs.remove(self.stage_folder(drop_id))
+}
+
+// Removes what earlier runs left in the drops folder.
+fn (mut self: FsDropStage) stage_clear_all() {
+    if fs.exists(self.root) {
+        _ := fs.remove(self.root)
+    }
+}

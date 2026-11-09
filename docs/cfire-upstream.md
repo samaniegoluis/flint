@@ -338,8 +338,14 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
 - **Ideal:** a binary streaming channel to the page (custom scheme, `postMessage` with
   `ArrayBuffer`, or a local websocket), plus optional batching.
 
-### CF-004 · missing · `answered, untested`: OS file drag & drop into the webview
+### CF-004 · missing · `answered, wrong`: OS file drag & drop into the webview
 - **At `466751b`:** `files:dropped` event added. Flint has no drop target yet (SFTP upload is on its roadmap).
+- **Tried at `43431f2` (milestone 17):** the event carries names, not paths. The bridge's drop listener
+  (`core/webui/bridge.hpp`) sends `f.path || f.name`; `File.path` is an Electron extension that neither
+  WKWebView nor WebKitGTK has, and there is no native drop handler, so a dropped `report.pdf` arrives as
+  `"report.pdf"`. **Workaround:** the page reads the dropped files' bytes and stages them on this machine
+  through an RPC (`files_stage`, `src/adapters/process/drop_stage.cf`, D-055); no native code. **Ideal:**
+  a native drop handler (`NSDraggingDestination` / GTK `drag-data-received`) that reports absolute paths.
 - **Needed:** SFTP upload by dropping files from Finder or the file manager (roadmap `next`).
 - **Source:** no drop handler in `webui.hpp`. The page cannot get real paths for dropped
   files.
@@ -1702,3 +1708,77 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   hide-on-close only hides it; Flint's menu sends `stop:` instead.
 - **Ideal:** with hide-on-close set, webui answers reopen by showing the window (and emits
   `window:reopened`), and its Quit item quits (`app.quit()`) whatever hide-on-close says.
+
+### CF-098 · bug · `confirmed`: assigning a captured variable inside `scope.spawn` compiles and is lost
+- **Repro (43431f2, macOS):** `mut heard := ""` then `async.scope(workers: 2) |scope| { scope.spawn || { heard = "x" } }`;
+  after the scope, `heard` is still `""`. The task gets a copy of every capture (as `src/drivers/gui/main.cf`
+  notes, "captures are read-only inside the task"), but an assignment to one is accepted with no
+  diagnostic, so a result written there vanishes silently.
+- **Workaround:** the task sends its result on a `sync.make_channel[str]()` and the caller receives it
+  (`src/adapters/ssh/sftp_test.cf`, milestone 16's spike). No native code.
+- **Ideal:** reject an assignment to a captured variable inside a spawned task (a diagnostic such as
+  `cfire/ASSIGN-TO-TASK-CAPTURE`), or capture `mut` locals by shared reference under the scope's join.
+
+### CF-099 · missing · `confirmed`: `core:fs` has no stat, no exclusive create and no error kind
+- **Repro (43431f2):** `cfire_stdlib_lookup core:fs` lists `exists`, `list_dir` (names only), `open`
+  with Read/Write/Append/ReadWrite and `remove`, but nothing returns a file's kind, size, mtime or
+  mode, nothing tells a link from its target (`lstat`), `open` has no create-exclusive mode, and a
+  failure is a message only, so "no such file", "permission denied" and "not a directory" cannot be
+  told apart. `flint cp` needs all of these to choose a target and to report stable errors.
+- **Workaround:** `src/adapters/process/native/flint_fs.hpp` (stat/lstat, opendir, `open` with
+  `O_EXCL`, read/write/fsync, rename, unlink/rmdir, mkdir, errno mapped to kinds), wrapped by
+  `src/adapters/process/local_fs.cf`. Milestone 16.
+- **Ideal:** `fs.stat(path) -> FileInfo!` and `fs.lstat` (kind, size, mtime, mode), `OpenMode::CreateNew`,
+  and an `fs.ErrorKind` (`NotFound`, `PermissionDenied`, `AlreadyExists`, `NotADirectory`,
+  `IsADirectory`) on every `core:fs` error, as Rust's `std::io::ErrorKind`.
+
+### CF-100 · missing · `confirmed`: a type parameter cannot require two interfaces
+- **Repro (43431f2):** `fn both[T: A + B](t: T)` fails with "expected 'IDENT', got '+'", and an
+  interface cannot embed another (`type AB interface { A; B }`: "expected '('"). A libssh link serves
+  both `SshTransport` and `SftpTransport`; `copy_with_host` must call both on one value.
+- **Workaround:** the parameter names `SshTransport` only, and the SFTP calls go through helpers that
+  name `SftpTransport` (`open_sftp`, `copy_files` in `src/application/files.cf`). This compiles because
+  cfire does not check a generic body's calls against its constraints, only the instantiation (C++
+  concepts), so the second interface is never stated where it is used.
+- **Ideal:** `T: A + B` (Rust) or interface embedding (Go), checked in the body.
+
+### CF-101 · bug · `confirmed`: a precision spec (`{x:.1f}`) breaks interpolation
+- **Repro (43431f2, macOS):** `value := 1.5` then `return "{value:.1f} {units[u]}"` returns the literal
+  text `{value:.1f} {units[u]}`, uninterpolated, with no diagnostic. In `println("a: {value:.1f}")` the same
+  spec fails in clang instead ("call to consteval function std::basic_format_string … The argument
+  index starts with an invalid character"). The rules sheet shows `{mask:04x}`, so format specs are
+  meant to work.
+- **Workaround:** `human_bytes` in `src/domain/files.cf` rounds to tenths with integer arithmetic.
+  Milestone 16. No native code.
+- **Ideal:** `{x:.1f}` lowers to `std::format("{:.1f}", x)`, and an interpolation cfire cannot lower is
+  a compile error, never a literal.
+
+### CF-102 · bug · `confirmed`: `none` passed for a raw pointer parameter lowers to `std::nullopt`
+- **Repro (43431f2, macOS):** `fn f(p: *mut cpp::sftp_session_struct) -> i64 { ... }` called as `f(none)`
+  fails in clang: "no known conversion from 'const nullopt_t' to 'sftp_session_struct *'". Assigning
+  `none` to a raw pointer field (`self.sftp = none`) and comparing (`p == none`) lower correctly.
+- **Workaround:** pass a pointer variable that native code has set to `nullptr` (`borrow_transfer` in
+  `src/adapters/ssh/shared.cf`). Milestone 17. No new native code.
+- **Ideal:** `none` in an argument position typed as a raw pointer lowers to `nullptr`, as it does in an
+  assignment.
+
+### CF-103 · bug · `confirmed`: a namespaced native function shadows a cfire function of the same name
+- **Repro (43431f2, macOS):** with `import cpp "flint_fs.hpp"` (which declares
+  `flint_fs::remove_path(const std::string&, std::string&)`) anywhere in the build, a call to the cfire
+  use case `remove_path[T: SftpTransport](mut sftp: T, path: str)` from another package lowers to
+  `remove_path(std::string(link), std::string(req.path))`: cfire resolves the call against the
+  native declaration, ignoring its namespace, and casts the arguments to its parameter types. clang
+  then fails with "no matching conversion … from 'SshLink' to 'std::string'".
+- **Workaround:** the use case is named `remove_remote` (`src/application/files.cf`). Milestone 17.
+  No native code.
+- **Ideal:** a qualified C++ name (`flint_fs::remove_path`) is only reachable qualified, and a cfire
+  function is never resolved against a native one.
+
+### CF-104 · bug · `confirmed`: a `"\0"` string literal is the empty string
+- **Repro (43431f2, macOS):** `rel.contains("\0")` is true for every string, `"a.txt"` included: the literal
+  lowers to `std::string("\0")`, built from a C string, which stops at the NUL and is empty.
+- **Workaround:** `valid_drop_path` in `src/domain/files.cf` does not test for NUL. A NUL in a dropped
+  file's path only shortens the path the native code sees (`c_str()`), which stays inside the drop's
+  folder. Milestone 17. No native code.
+- **Ideal:** string literals lower with their length (`std::string("\0", 1)` or a `""s` literal), so an
+  embedded NUL survives.

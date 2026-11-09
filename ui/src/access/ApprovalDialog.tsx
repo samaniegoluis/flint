@@ -11,10 +11,13 @@
 // `flint exec --sudo` (milestone 13) shows the host, the login user and the exact
 // argv, one argument per chip. Allowed once, for that command; when Flint has no
 // password to type for sudo there, the window takes one, and may keep it for the host.
+//
+// `flint cp` (milestone 16) is a grant request like `exec` (D-051), and says what it
+// copies: the direction, the host, and the paths here and there.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, on, toFlintError } from '../api/backend';
-import type { AccessAction, AccessState, Approval, Catalog, GrantDuration, PresenceMethod } from '../api/types';
+import type { AccessAction, AccessState, Approval, Catalog, CopyAsk, GrantDuration, PresenceMethod } from '../api/types';
 import { Modal } from '../ui/Modal';
 import { Key } from '../ui/Kbd';
 import { useApp } from '../state/app';
@@ -98,11 +101,62 @@ export function CallerLabel({ label }: { label: string }) {
 }
 
 /** What kind of request an approval is, for the queue strip. */
-function kindOf(ap: Approval): 'sudo' | 'token' | 'grant' {
-  return ap.sudo?.host ? 'sudo' : ap.token?.name ? 'token' : 'grant';
+/** A path that wraps only after a `/` (design 16f*): never cut mid-name or truncated. */
+function SlashPath({ path, data }: { path: string; data: string }) {
+  const parts = path.split('/');
+  return (
+    <span className="cp-path" {...{ [data]: true }}>
+      {parts.map((p, i) => <Fragment key={i}>{p}{i < parts.length - 1 && <>/<wbr /></>}</Fragment>)}
+    </span>
+  );
 }
 
-const KIND_LABEL = { sudo: 'Run as root', token: 'Token request', grant: 'Grant request' };
+/**
+ * Where a copy lands, as far as the window can tell before connecting: a destination
+ * ending in `/` is a folder, so the source goes in it under its own name (D-054).
+ */
+export function copyTarget(dst: string, src: string): string {
+  if (!dst.endsWith('/')) return dst;
+  const name = src.replace(/\/+$/, '').split('/').pop() ?? '';
+  return name && name !== '.' && name !== '..' ? `${dst}${name}${src.endsWith('/') ? '/' : ''}` : dst;
+}
+
+/** `flint cp`'s transfer block (design 16f1-16f3): direction, both paths, -r and --force. */
+function CopyBlock({ copy }: { copy: CopyAsk }) {
+  const up = copy.direction === 'upload';
+  const here = <><Icon name="monitor" />This computer</>;
+  const host = <><Icon name="hosts" /><span className="mono">{copy.host}</span></>;
+  const src = up ? copy.local : copy.remote;
+  const dst = copyTarget(up ? copy.remote : copy.local, src);
+  return (
+    <div className="cp" data-copy-ask data-direction={copy.direction} data-copy-host={copy.host} aria-label={`${up ? 'Upload' : 'Download'}: copy direction and paths`}>
+      <div className="cp-dir">
+        <span className="grow row" style={{ gap: 'var(--sp-2)' }}>
+          <span className="cp-end">{up ? here : host}</span>
+          <svg className="cp-arrow" viewBox="0 0 28 14" aria-hidden="true" style={{ fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }}><path d="M2 7h23M19 2l6 5-6 5" /></svg>
+          <span className="cp-end">{up ? host : here}</span>
+        </span>
+        <span className="badge info">{up ? 'Upload' : 'Download'}</span>
+      </div>
+      <div className="cp-row"><span className="who"><span className="role">From</span>{up ? 'This computer' : <span className="mono">{copy.host}</span>}</span><SlashPath path={src} data="data-copy-from" /></div>
+      <div className="cp-row"><span className="who"><span className="role">To</span>{up ? <span className="mono">{copy.host}</span> : 'This computer'}</span><SlashPath path={dst} data="data-copy-to" /></div>
+      {copy.recursive && (
+        <div className="cp-notes"><span className="cp-note" data-copy-recursive><Icon name="folder" className="info-t" />A folder, with everything in it <span className="mono faint">-r</span></span></div>
+      )}
+      {copy.force && (
+        <div className="cp-force" role="note" data-copy-force><Icon name="alert" size="sm" className="warn-t" />
+          <span><strong>Replaces files that are already there.</strong> With <span className="mono">--force</span>, anything with the same name in the destination on {up ? <span className="mono">{copy.host}</span> : 'this computer'} is overwritten without asking.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function kindOf(ap: Approval): 'sudo' | 'token' | 'copy' | 'grant' {
+  return ap.sudo?.host ? 'sudo' : ap.token?.name ? 'token' : ap.copy?.direction ? 'copy' : 'grant';
+}
+
+const KIND_LABEL = { sudo: 'Run as root', token: 'Token request', copy: 'Copy files', grant: 'Grant request' };
 
 export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   ap: Approval;
@@ -147,6 +201,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   const sudo = kind === 'sudo' ? ap.sudo : null;
   const sudoHost = sudo ? findHost(catalog, sudo.host) : undefined;
   const askSudo = !!sudo && !sudo.has_password;
+  const copy = kind === 'copy' && ap.copy ? ap.copy : null;
 
   // The window opens over whatever had the focus: a click, a key in a terminal, or
   // nothing (another app in front). When the window comes back to the front with the
@@ -216,7 +271,9 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
             <h2 style={{ lineHeight: 'var(--lh-tight)' }}>
               <CallerLabel label={ap.label} />
               {sudo ? <> wants to run a command as <span className="danger-t">root</span> on <span className="mono">{sudo.host}</span></>
-                : token ? ' wants to create a token' : ' wants to use this vault'}
+                : token ? ' wants to create a token'
+                : copy ? <> wants to copy files {copy.direction === 'upload' ? 'to' : 'from'} <span className="mono">{copy.host}</span></>
+                : ' wants to use this vault'}
             </h2>
             <span className="chain" title={ap.chain.map((p) => `${p.pid} ${p.exe}`).join('\n')}>
               {chain.map((p, i) => (
@@ -276,6 +333,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                   title={more ? 'Summary — open the full command to read all of it' : undefined}>{ap.request}</div>
                 {more && <MoreRow more={more} data="approval" onShow={() => setShowCommand(true)} />}
               </div>
+              {copy && <CopyBlock copy={copy} />}
               {token ? (
                 <>
                   <dl className="kv" data-token-ask style={{ margin: 0, gridTemplateColumns: '88px minmax(0, 1fr)' }}>

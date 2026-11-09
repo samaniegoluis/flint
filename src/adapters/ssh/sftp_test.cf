@@ -1,0 +1,395 @@
+package ssh
+
+// SFTP over libssh against the throwaway sshd of scripts/test.sh (milestone 16's
+// spike). The last tests settle the spec's open question for the Files view: an
+// SFTP channel shares the session of a running PTY, in turn and from two threads.
+
+import "core:os"
+import "core:fs"
+import "core:time"
+import "core:str"
+import "core:sync"
+import "../../ports"
+
+fn accepts_sftp[T: SftpTransport](t: T) -> bool {
+    return true
+}
+
+test "SshLink satisfies the SftpTransport port" {
+    link := new_ssh_link()
+    assert(accepts_sftp(link))
+}
+
+test "sftp calls before sftp_open fail as internal" {
+    link := new_ssh_link()
+    r := link.sftp_stat("/")
+    assert(!r.has_value())
+    assert_eq(error_code_of("{r.error().message()}"), "internal")
+}
+
+fn sftp_link() -> SshLink! {
+    (port, key_path) := test_target()
+    mut link := new_ssh_link()
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_auth_key(try fs.read_text(key_path), "")
+    try link.sftp_open()
+    return link
+}
+
+// A fresh folder name under $TMPDIR, or /tmp where it is unset (Linux).
+fn scratch_dir(tag: str) -> str {
+    mut base := os.getenv("TMPDIR")
+    if base.len() == 0 {
+        base = "/tmp"
+    }
+    d := base + "/flint-sftp-" + tag + "-{time.now_ms()}"
+    return str.replace(d, "//", "/")
+}
+
+test "sftp writes, stats, lists, reads, renames and removes" {
+    (port, _) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    mut link := try sftp_link()
+    defer link.link_hangup()
+    home := try link.sftp_realpath(".")
+    assert(home.starts_with("/"))
+    dir := scratch_dir("basic")
+    try link.sftp_mkdir(dir)
+    again := link.sftp_mkdir(dir)
+    assert(!again.has_value())
+
+    path := dir + "/a.txt"
+    mut big := ""
+    for i in 0..20000 {
+        big = big + "line {i}\n"
+    }
+    try link.sftp_file_open(path, true, true)
+    try link.sftp_file_write(big)
+    try link.sftp_file_close()
+    // Exclusive refuses an existing file.
+    excl := link.sftp_file_open(path, true, true)
+    assert(!excl.has_value())
+    assert_eq(error_code_of("{excl.error().message()}"), "exists")
+
+    st := try link.sftp_stat(path)
+    assert(st.is_file())
+    assert_eq(st.size, i64(big.len()))
+    assert_eq(st.name, "a.txt")
+
+    try link.sftp_file_open(path, false, false)
+    mut back := ""
+    for true {
+        chunk := try link.sftp_file_read()
+        if chunk.len() == 0 {
+            break
+        }
+        back = back + chunk
+    }
+    try link.sftp_file_close()
+    assert(back == big, "what was read back must be what was written")
+
+    try link.sftp_mkdir(dir + "/sub")
+    list := try link.sftp_list(dir)
+    assert_eq(list.len(), 2)
+    mut kinds := ""
+    for e in list {
+        kinds = kinds + e.name + "=" + e.kind + ";"
+    }
+    assert(kinds.contains("a.txt=file;") && kinds.contains("sub=dir;"), kinds)
+
+    // Listing a file is not_a_directory, a missing path not_found.
+    as_dir := link.sftp_list(path)
+    assert_eq(error_code_of("{as_dir.error().message()}"), "not_a_directory")
+    missing := link.sftp_stat(dir + "/nope")
+    assert_eq(error_code_of("{missing.error().message()}"), "not_found")
+
+    // Rename onto a name that is free, then onto one that is taken.
+    try link.sftp_rename(path, dir + "/b.txt")
+    try link.sftp_file_open(dir + "/c.txt", true, false)
+    try link.sftp_file_write("c")
+    try link.sftp_file_close()
+    over := link.sftp_rename(dir + "/c.txt", dir + "/b.txt")
+    println("spike: rename onto an existing file: {over.has_value()}")
+    if over.has_value() {
+        // posix-rename@openssh.com: the server replaced it.
+        assert_eq((try link.sftp_stat(dir + "/b.txt")).size, 1)
+    } else {
+        try link.sftp_remove(dir + "/c.txt", false)
+    }
+
+    try link.sftp_remove(dir + "/b.txt", false)
+    try link.sftp_remove(dir + "/sub", true)
+    try link.sftp_remove(dir, true)
+    gone := link.sftp_stat(dir)
+    assert_eq(error_code_of("{gone.error().message()}"), "not_found")
+}
+
+// flint cp hands the adapter 256 KB at a time (LOCAL_READ_CHUNK). libssh 0.10 sent such
+// a write as one request, over OpenSSH sftp-server's 256 KB message limit, and the server
+// dropped the channel: the adapter must split it.
+test "sftp writes 1 MB handed over in one call" {
+    (port, _) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    mut link := try sftp_link()
+    defer link.link_hangup()
+    dir := scratch_dir("onewrite")
+    try link.sftp_mkdir(dir)
+    path := dir + "/blob.bin"
+    mut blob := "0123456789abcdef"
+    for _ in 0..16 {
+        blob = blob + blob
+    }
+    assert_eq(blob.len(), usize(1048576))
+    try link.sftp_file_open(path, true, true)
+    try link.sftp_file_write(blob)
+    try link.sftp_file_close()
+    st := try link.sftp_stat(path)
+    assert_eq(st.size, i64(blob.len()))
+    try link.sftp_file_open(path, false, false)
+    mut back := ""
+    for true {
+        chunk := try link.sftp_file_read()
+        if chunk.len() == 0 {
+            break
+        }
+        back = back + chunk
+    }
+    try link.sftp_file_close()
+    assert(back == blob, "what was read back must be what was written")
+    try link.sftp_remove(path, false)
+    try link.sftp_remove(dir, true)
+}
+
+test "sftp shares a session with a running PTY, in turn" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    mut link := new_ssh_link()
+    defer link.link_hangup()
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_auth_key(try fs.read_text(key_path), "")
+    // A plain sh on the PTY: a login shell's line editor and prompt take seconds.
+    try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
+    try link.sftp_open()
+    dir := scratch_dir("pty")
+    try link.link_channel_write("mkdir -p {dir} && echo made-$((6*7))\n")
+    mut seen := ""
+    for _ in 0..100 {
+        seen = seen + (try link.link_channel_read(300)).stdout
+        if seen.contains("made-42") {
+            break
+        }
+    }
+    assert(seen.contains("made-42"))
+    // The shell made the folder; SFTP sees it and writes into it, then the shell
+    // sees the file SFTP wrote.
+    assert((try link.sftp_stat(dir)).is_dir())
+    try link.sftp_file_open(dir + "/from-sftp", true, true)
+    try link.sftp_file_write("sftp-was-here")
+    try link.sftp_file_close()
+    try link.link_channel_write("cat {dir}/from-sftp; echo; rm -r {dir}; echo done-$((1+1))\n")
+    seen = ""
+    for _ in 0..100 {
+        seen = seen + (try link.link_channel_read(300)).stdout
+        if seen.contains("done-2") {
+            break
+        }
+    }
+    assert(seen.contains("sftp-was-here"), "the shell must read the file SFTP wrote")
+}
+
+test "sftp shares a session with a PTY read on another thread" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    mut link := new_ssh_link()
+    defer link.link_hangup()
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_auth_key(try fs.read_text(key_path), "")
+    // A plain sh on the PTY: a login shell's line editor and prompt take seconds.
+    try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
+    try link.sftp_open()
+    // The shell prints a counter for ~3 s while this thread lists and stats.
+    try link.link_channel_write("for i in $(seq 1 30); do echo tick-$i; sleep 0.1; done; echo ticks-$((40+2))\n")
+    reader := link
+    mut stats: i64 = 0
+    // A task's captures are copies: what it heard comes back on a channel (CF-098).
+    heard_ch := sync.make_channel[str]()
+    async.scope(workers: 2) |scope| {
+        scope.spawn || {
+            mut r := reader
+            mut got := ""
+            for _ in 0..400 {
+                chunk := r.link_channel_read(50)
+                if !chunk.has_value() {
+                    break
+                }
+                got = got + chunk.value().stdout
+                if got.contains("ticks-42") {
+                    break
+                }
+            }
+            heard_ch.send(got)
+        }
+        for _ in 0..40 {
+            st := link.sftp_stat(".")
+            if !st.has_value() {
+                break
+            }
+            if st.value().is_dir() {
+                stats += 1
+            }
+            _ := link.sftp_list(".") or []
+        }
+    }
+    heard := heard_ch.recv_timeout(10000) or ""
+    println("spike: {stats} SFTP stats while the PTY was read on another thread")
+    assert_eq(stats, 40)
+    assert(heard.contains("tick-30") && heard.contains("ticks-42"), "the PTY reader must see every tick")
+}
+
+// Principle 8 for SFTP: a request to a server that stops answering fails within the
+// dial timeout. Needs a forwarder that freezes once FLINT_TEST_STALL_FILE exists
+// (milestone 16's spike); skipped otherwise.
+test "an sftp request to a stalled server fails within the timeout" {
+    (port, key_path) := test_target()
+    stall_port := os.getenv("FLINT_TEST_STALL_PORT")
+    stall_file := os.getenv("FLINT_TEST_STALL_FILE")
+    if port == 0 || stall_port.len() == 0 {
+        println("SKIP: FLINT_TEST_STALL_PORT not set")
+        return
+    }
+    mut link := new_ssh_link()
+    defer link.link_hangup()
+    try link.link_dial("127.0.0.1", i64(stall_port.parse_i64() or 0), os.getenv("USER"), 3, "")
+    try link.link_auth_key(try fs.read_text(key_path), "")
+    try link.sftp_open()
+    try fs.write_text(stall_file, "stall")
+    start := time.now_ms()
+    r := link.sftp_stat(".")
+    took := time.now_ms() - start
+    fs.remove(stall_file) or {}
+    println("spike: stalled stat -> ok={r.has_value()} in {took} ms")
+    assert(!r.has_value())
+    assert(took < 6000, "the stalled request must end within the 3 s timeout (and a margin)")
+}
+
+// ---- The Files view's shared session (milestone 17) --------------------------------
+
+test "SharedLink satisfies the SshTransport port" {
+    mut link := new_shared_link("t-port")
+    assert(accepts_transport(mut link))
+}
+
+test "a session that was never published cannot be borrowed" {
+    r := borrow_browse("nobody")
+    assert(!r.has_value())
+    assert_eq(error_code_of("{r.error().message()}"), "not_found")
+    assert(!files_available("nobody"))
+}
+
+test "a shared link lends its session once the shell is open, and takes it back on hangup" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    id := "files-{time.now_ms()}"
+    mut link := new_shared_link(id)
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_auth_key(try fs.read_text(key_path), "")
+    assert(!files_available(id))
+    try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
+    assert(files_available(id))
+    // Browsing: the shared channel opens on first use and is kept across borrows.
+    mut b := try borrow_browse(id)
+    home := try b.sftp_realpath(".")
+    give_back_browse(id, b)
+    mut b2 := try borrow_browse(id)
+    assert(b2.sftp != none)
+    entries := try list_files(b2, home)
+    give_back_browse(id, b2)
+    assert(entries >= 0)
+    // A transfer opens its own channel beside the browse one, and the terminal works.
+    dir := scratch_dir("shared")
+    mut t := try borrow_transfer(id, "x1")
+    try t.sftp_open()
+    try t.sftp_mkdir(dir)
+    try t.sftp_file_open(dir + "/a.txt", true, true)
+    try t.sftp_file_write("hello")
+    try t.sftp_file_close()
+    give_back_transfer(id, "x1", mut t)
+    try link.link_channel_write("echo shared-$((40+2))\n")
+    mut got := ""
+    for _ in 0..100 {
+        chunk := link.link_channel_read(50) or ExecChunk{ stdout: "", stderr: "", done: false, exit_code: 0, signal: "" }
+        got = got + chunk.stdout
+        if got.contains("shared-42") {
+            break
+        }
+    }
+    assert(got.contains("shared-42"), "the terminal keeps working beside SFTP")
+    mut c := try borrow_browse(id)
+    st := try c.sftp_stat(dir + "/a.txt")
+    _ := c.sftp_remove(dir + "/a.txt", false)
+    _ := c.sftp_remove(dir, true)
+    give_back_browse(id, c)
+    assert_eq(st.size, 5)
+    // A cancel is seen by the transfer it names.
+    files_cancel("x2")
+    assert(files_cancelled("x2"))
+    link.link_hangup()
+    assert(!files_available(id))
+    r := borrow_transfer(id, "x3")
+    assert(!r.has_value())
+}
+
+fn list_files[T: SftpTransport](t: T, path: str) -> i64! {
+    return i64((try t.sftp_list(path)).len())
+}
+
+test "hangup waits for a request still using the session" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    id := "files-wait-{time.now_ms()}"
+    mut link := new_shared_link(id)
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_auth_key(try fs.read_text(key_path), "")
+    try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
+    mut held := try borrow_browse(id)
+    done_ch := sync.make_channel[i64]()
+    start := time.now_ms()
+    async.scope(workers: 2) |scope| {
+        scope.spawn || {
+            mut h := held
+            // Still in use 300 ms after hangup began: hangup must wait for it.
+            time.sleep_ms(300)
+            ok := h.sftp_stat(".")
+            mut v: i64 = 0
+            if ok.has_value() {
+                v = 1
+            }
+            done_ch.send(v)
+            give_back_browse(id, h)
+        }
+        time.sleep_ms(50)
+        link.link_hangup()
+    }
+    waited := time.now_ms() - start
+    worked := done_ch.recv_timeout(5000) or -1
+    assert_eq(worked, 1)
+    assert(waited >= 300, "hangup returned before the borrowed request finished")
+}

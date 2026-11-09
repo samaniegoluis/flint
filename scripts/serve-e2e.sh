@@ -410,6 +410,40 @@ else
   echo "skip  exec --sudo (no sudo to run against: macOS stand-in or FLINT_E2E_SUDO=1)"
 fi
 
+echo "== flint cp through the app (milestone 16)"
+cpd="$tmp/cp"; mkdir -p "$cpd/remote" "$cpd/here/site/sub"
+head -c 300000 /dev/urandom > "$cpd/here/blob.bin"
+printf 'a\n' > "$cpd/here/site/a.txt"; printf 'b\n' > "$cpd/here/site/sub/b.txt"
+asked_cp_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
+new_caller "" -- cp "$cpd/here/blob.bin" "local:$cpd/remote/" --accept-new-host-key
+check "a cp from a new caller asks, then uploads byte for byte" '[[ $status == 0 && "$(grep -c "asking the owner to approve" "$tmp/app.log")" -gt $asked_cp_before ]] && cmp -s "$cpd/here/blob.bin" "$cpd/remote/blob.bin"'
+new_caller "" -- cp "$cpd/here/blob.bin" "local:$cpd/remote/deny-me.bin"
+check "a denied cp copies nothing" '[[ $status == 15 && ! -e "$cpd/remote/deny-me.bin" ]]'
+expect 0 "cp -r --json uploads a folder through the app" "" -- --json cp -r "$cpd/here/site" "local:$cpd/remote/"
+check "the folder arrived" 'diff -r "$cpd/here/site" "$cpd/remote/site" >/dev/null'
+check "--json counts its files" '[[ "$(echo "$out" | json_get "len(d[\"files\"])")" == "2" ]]'
+pushd "$cpd/here" >/dev/null
+expect 0 "a download to a relative path lands in the CLI's folder" "" -- cp "local:$cpd/remote/blob.bin" ./back.bin
+popd >/dev/null
+check "the download is byte for byte, written by the CLI" 'cmp -s "$cpd/here/blob.bin" "$cpd/here/back.bin"'
+expect 20 "an existing file is refused through the app too" "" -- --json cp "$cpd/here/blob.bin" "local:$cpd/remote/"
+check "with its JSON code" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "exists" ]]'
+for cmd in "cp $cpd/here/nope local:$cpd/remote/" "cp local:$cpd/remote/blob.bin $cpd/no/such/" "--json cp -r local:$cpd/remote/site $cpd/here/site/sub/b.txt"; do
+  # shellcheck disable=SC2086
+  printf '' | no_tty "$flint" $cmd >"$tmp/sout" 2>"$tmp/serr"; sstatus=$?
+  # shellcheck disable=SC2086
+  local_run "" -- $cmd
+  checks=$((checks + 1))
+  if [[ "$sstatus" == "$lstatus" ]] && cmp -s "$tmp/sout" "$tmp/lout" && cmp -s "$tmp/serr" "$tmp/lerr"; then
+    echo "ok    same stdout, stderr and exit: flint $cmd"
+  else
+    failures=$((failures + 1))
+    echo "FAIL  served and local differ: flint $cmd (exit $sstatus vs $lstatus)"
+    diff "$tmp/sout" "$tmp/lout" | head -5; diff "$tmp/serr" "$tmp/lerr" | head -5
+  fi
+done
+check "no partial file is left" '[[ -z "$(find "$cpd" -name "*.flint-part")" ]]'
+
 echo "== another vault"
 expect 5 "another vault than the app's: locked, with no terminal" "" -- --vault "$other" host list
 check "it names the vault Flint has open" '[[ "$err" == *"Flint has vault"* ]]'
@@ -479,7 +513,7 @@ sed 's/^/app: /' "$tmp/app.log" | grep -E "ok |FAILED|checks passed|e2e:|page te
 check "the window checks passed" 'grep -q "^e2e: pass" "$tmp/app.log"'
 check "a click beside the approval window does not deny it" 'grep -q "ok   a click beside the approval window" "$tmp/app.log" && ! grep -q "FAIL a click beside" "$tmp/app.log"'
 check "the approval countdown shows the time left" 'grep -q "ok   the countdown shows the time left" "$tmp/app.log" && ! grep -q "FAIL the countdown" "$tmp/app.log"'
-for what in "the approval window says how much of a long command is left" "Show full command opens the whole command" "Esc closes the full command and leaves the request waiting"; do
+for what in "the approval window says copy files with the direction, the host and both paths" "a copy proposes running commands on that host" "the approval window says how much of a long command is left" "Show full command opens the whole command" "Esc closes the full command and leaves the request waiting"; do
   check "$what" 'grep -q "ok   $what" "$tmp/app.log" && ! grep -q "FAIL $what" "$tmp/app.log"'
 done
 check "the socket file is removed when the app quits" '[[ ! -e "$sock" ]]'

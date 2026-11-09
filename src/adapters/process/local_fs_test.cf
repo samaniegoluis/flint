@@ -1,0 +1,49 @@
+package process
+
+import "core:fs"
+import "core:os"
+import "core:time"
+import "../../ports"
+
+fn accepts_local_files[L: LocalFiles](l: L) -> bool {
+    return true
+}
+
+test "LocalFs satisfies the LocalFiles port" {
+    assert(accepts_local_files(new_local_fs()))
+}
+
+test "local files: write, stat, list, read, rename, remove, with stable codes" {
+    mut base := os.getenv("TMPDIR")
+    if base.len() == 0 {
+        base = "/tmp"
+    }
+    dir := base + "/flint-localfs-{time.now_ms()}"
+    mut l := new_local_fs()
+    try l.local_mkdir(dir)
+    defer fs.remove(dir) or {}
+    assert_eq(error_code_of("{l.local_mkdir(dir).error().message()}"), "exists")
+    path := dir + "/a.bin"
+    try l.local_file_open(path, true, true)
+    try l.local_file_write("hello\tworld")
+    try l.local_file_close()
+    assert_eq(error_code_of("{l.local_file_open(path, true, true).error().message()}"), "exists")
+    st := try l.local_stat(path)
+    assert(st.is_file())
+    assert_eq(st.size, 11)
+    try l.local_file_open(path, false, false)
+    back := try l.local_file_read()
+    assert_eq(back.len(), 11)
+    assert_eq(try l.local_file_read(), "")
+    try l.local_file_close()
+    try l.local_mkdir(dir + "/sub")
+    list := try l.local_list(dir)
+    assert_eq(list.len(), 2)
+    assert_eq(error_code_of("{l.local_list(path).error().message()}"), "not_a_directory")
+    assert_eq(error_code_of("{l.local_stat(dir + "/nope").error().message()}"), "not_found")
+    assert_eq(error_code_of("{l.local_file_open(dir, false, false).error().message()}"), "invalid")
+    try l.local_rename(path, dir + "/sub/b.bin")
+    assert((try l.local_stat(dir + "/sub/b.bin")).is_file())
+    try l.local_remove(dir + "/sub/b.bin")
+    try l.local_remove(dir + "/sub")
+}

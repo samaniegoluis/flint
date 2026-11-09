@@ -21,6 +21,7 @@ speaks the Kitty keyboard protocol.
 | Duplicate session | ⌘D | Ctrl+Shift+D |
 | Toggle the sidebar | ⌘B | Ctrl+Shift+B |
 | Hosts · Keys · Credentials | ⇧⌘H · ⇧⌘K · ⇧⌘C | Ctrl+Alt+Shift+H · K · C |
+| Files view (show or hide) | ⌘E | Ctrl+Shift+E |
 | Settings | ⌘, | Ctrl+Shift+, |
 | New host (new key or credential on those pages) | ⌘N | Ctrl+Shift+N |
 | Edit host | ⌘I | Ctrl+Shift+I |
@@ -35,6 +36,7 @@ speaks the Kitty keyboard protocol.
 | Where | Keys |
 |---|---|
 | Host tree | ↑ ↓ move · ← → collapse or expand · ↵ connect · ⌘↵ new tab · ⌘I edit · ⌫ delete |
+| Files list | ↑ ↓ move · ↵ open a folder, rename a file · ⌘↑ up one folder · ⌘↓ download · ⌘⌫ delete · context-menu key for the menu |
 | Command palette | ↑ ↓ move · ↵ open · ⌘↵ new tab · ⌘I edit host · Tab next group · esc close |
 | Prompts over a session | ↵ the primary action · esc cancel. A changed host key has no ↵ action |
 | Editors | ⌘↵ save · esc cancel |

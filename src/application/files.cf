@@ -1,0 +1,421 @@
+package application
+
+// File use cases over SFTP (milestone 16): list, stat, rename, remove and mkdir on a
+// host, and copying files and folders between this machine and the host, in either
+// direction, for `flint cp` and the Files view (milestone 17).
+//
+// A copy is written once for both directions: each primitive picks the side it acts
+// on (`side_*`), the host's (`SftpTransport`) or this machine's (`LocalFiles`).
+// Every file lands under a temporary name in its folder (`.<name>.flint-part`) and
+// is renamed only once complete; a failure or a cancel removes the partial file.
+
+import "core:str"
+import "../domain"
+import "../ports"
+
+// What `copy_files` copies: `local` and `remote` paths, the direction, `-r` and
+// `--force`.
+type CopyRequest struct {
+    id:        str
+    alias:     str
+    direction: str
+    local:     str
+    remote:    str
+    recursive: bool
+    force:     bool
+}
+
+// ---- Thin use cases (the Files view) ----------------------------------------------
+
+fn list_dir[T: SftpTransport](sftp: T, path: str) -> []FileEntry! {
+    return sftp.sftp_list(path)
+}
+
+// The absolute form of `path` on the host: "." is the login folder, where the Files
+// view starts.
+fn real_path[T: SftpTransport](sftp: T, path: str) -> str! {
+    return sftp.sftp_realpath(path)
+}
+
+fn stat_path[T: SftpTransport](sftp: T, path: str) -> FileEntry! {
+    return sftp.sftp_stat(path)
+}
+
+fn rename_path[T: SftpTransport](mut sftp: T, from: str, to: str) -> void! {
+    if remote_base(to).len() == 0 || remote_base(to) == "." || remote_base(to) == ".." {
+        return error(coded(ERR_INVALID, "'{to}' is not a name a file can have"))
+    }
+    if (sftp.sftp_stat(to)).has_value() {
+        return error(coded(ERR_EXISTS, "{to} already exists on the host"))
+    }
+    try sftp.sftp_rename(from, to)
+}
+
+// Removes a file, or a folder with everything in it: the tree is walked breadth
+// first, its files removed on the way, then its folders deepest first.
+fn remove_remote[T: SftpTransport](mut sftp: T, path: str) -> void! {
+    entry := try sftp.sftp_stat(path)
+    if !entry.is_dir() {
+        try sftp.sftp_remove(path, false)
+        return
+    }
+    mut folders: []str = [path]
+    mut i: usize = 0
+    for i < folders.len() {
+        dir := folders[i]
+        i += 1
+        for e in try sftp.sftp_list(dir) {
+            if e.is_dir() {
+                folders.push(e.path)
+            } else {
+                try sftp.sftp_remove(e.path, false)
+            }
+        }
+    }
+    mut k := folders.len()
+    for k > 0 {
+        k -= 1
+        try sftp.sftp_remove(folders[k], true)
+    }
+}
+
+fn make_dir[T: SftpTransport](mut sftp: T, path: str) -> void! {
+    try sftp.sftp_mkdir(path)
+}
+
+// ---- One primitive, either side ----------------------------------------------------
+
+fn side_stat[T: SftpTransport, L: LocalFiles](remote: bool, sftp: T, local: L, path: str) -> FileEntry! {
+    if remote {
+        return sftp.sftp_stat(path)
+    }
+    return local.local_stat(path)
+}
+
+fn side_list[T: SftpTransport, L: LocalFiles](remote: bool, sftp: T, local: L, path: str) -> []FileEntry! {
+    if remote {
+        return sftp.sftp_list(path)
+    }
+    return local.local_list(path)
+}
+
+fn side_open[T: SftpTransport, L: LocalFiles](remote: bool, mut sftp: T, mut local: L, path: str, write: bool) -> void! {
+    if remote {
+        return sftp.sftp_file_open(path, write, false)
+    }
+    return local.local_file_open(path, write, false)
+}
+
+fn side_read[T: SftpTransport, L: LocalFiles](remote: bool, mut sftp: T, mut local: L) -> str! {
+    if remote {
+        return sftp.sftp_file_read()
+    }
+    return local.local_file_read()
+}
+
+fn side_write[T: SftpTransport, L: LocalFiles](remote: bool, mut sftp: T, mut local: L, data: str) -> void! {
+    if remote {
+        return sftp.sftp_file_write(data)
+    }
+    return local.local_file_write(data)
+}
+
+fn side_close[T: SftpTransport, L: LocalFiles](remote: bool, mut sftp: T, mut local: L) -> void! {
+    if remote {
+        return sftp.sftp_file_close()
+    }
+    return local.local_file_close()
+}
+
+fn side_rename[T: SftpTransport, L: LocalFiles](remote: bool, mut sftp: T, mut local: L, from: str, to: str) -> void! {
+    if remote {
+        return sftp.sftp_rename(from, to)
+    }
+    return local.local_rename(from, to)
+}
+
+fn side_remove[T: SftpTransport, L: LocalFiles](remote: bool, mut sftp: T, mut local: L, path: str) {
+    if remote {
+        _ := sftp.sftp_remove(path, false)
+        return
+    }
+    _ := local.local_remove(path)
+}
+
+fn side_mkdir[T: SftpTransport, L: LocalFiles](remote: bool, mut sftp: T, mut local: L, path: str) -> void! {
+    if remote {
+        return sftp.sftp_mkdir(path)
+    }
+    return local.local_mkdir(path)
+}
+
+fn side_name(remote: bool) -> str {
+    if remote {
+        return " on the host"
+    }
+    return ""
+}
+
+// ---- Copying ------------------------------------------------------------------------
+
+// Where `src` (named `name`) lands when copied to `dst`, as cp and scp place it: into
+// `dst` when it is a folder, else at `dst` itself, whose folder must exist. A folder
+// is never copied over a file.
+fn copy_target[T: SftpTransport, L: LocalFiles](remote: bool, sftp: T, local: L, dst: str, name: str, src_is_dir: bool) -> str! {
+    st := side_stat(remote, sftp, local, dst)
+    if st.has_value() {
+        if st.value().is_dir() {
+            return remote_join(trim_slashes(dst), name)
+        }
+        if src_is_dir {
+            return error(coded(ERR_NOT_DIR, "{dst}{side_name(remote)} is a file, not a folder"))
+        }
+        return dst
+    }
+    msg := "{st.error().message()}"
+    if error_code_of(msg) != ERR_NOT_FOUND {
+        return error(msg)
+    }
+    if dst.ends_with("/") {
+        return error(coded(ERR_NOT_FOUND, "{dst}{side_name(remote)}: no such folder"))
+    }
+    parent := remote_dir(dst)
+    up := side_stat(remote, sftp, local, parent)
+    if !up.has_value() {
+        pmsg := "{up.error().message()}"
+        if error_code_of(pmsg) == ERR_NOT_FOUND {
+            return error(coded(ERR_NOT_FOUND, "{parent}{side_name(remote)}: no such folder"))
+        }
+        return error(pmsg)
+    }
+    if !up.value().is_dir() {
+        return error(coded(ERR_NOT_DIR, "{parent}{side_name(remote)} is not a folder"))
+    }
+    return dst
+}
+
+fn copy_cancelled() -> str {
+    return coded(ERR_IO, "the copy was cancelled")
+}
+
+// Copies one regular file `src` (of `size` bytes) to `target`, through its part file.
+fn copy_one[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut sftp: T, mut local: L, mut sink: K, req: CopyRequest, src: str, size: i64, target: str, mut res: CopyResult, mut prog: TransferProgress) -> void! {
+    dst_remote := upload
+    src_remote := !upload
+    existing := side_stat(dst_remote, sftp, local, target)
+    if existing.has_value() {
+        if existing.value().is_dir() {
+            return error(coded(ERR_EXISTS, "{target}{side_name(dst_remote)} is a folder; a file cannot replace it"))
+        }
+        if !req.force {
+            return error(coded(ERR_EXISTS, "{target}{side_name(dst_remote)} already exists; pass --force to replace it"))
+        }
+    }
+    part := part_path(target)
+    try side_open(src_remote, mut sftp, mut local, src, false)
+    opened := side_open(dst_remote, mut sftp, mut local, part, true)
+    if !opened.has_value() {
+        _ := side_close(src_remote, mut sftp, mut local)
+        return error("{opened.error().message()}")
+    }
+    prog.file = target
+    prog.file_bytes = 0
+    prog.file_size = size
+    sink.transfer_progress(prog)
+    mut failure := ""
+    for failure.len() == 0 {
+        if sink.transfer_cancelled() {
+            failure = copy_cancelled()
+            break
+        }
+        chunk := side_read(src_remote, mut sftp, mut local)
+        if !chunk.has_value() {
+            failure = "{chunk.error().message()}"
+            break
+        }
+        data := chunk.value()
+        if data.len() == 0 {
+            break
+        }
+        wrote := side_write(dst_remote, mut sftp, mut local, data)
+        if !wrote.has_value() {
+            failure = "{wrote.error().message()}"
+            break
+        }
+        prog.file_bytes += i64(data.len())
+        prog.bytes_done += i64(data.len())
+        sink.transfer_progress(prog)
+    }
+    _ := side_close(src_remote, mut sftp, mut local)
+    closed := side_close(dst_remote, mut sftp, mut local)
+    if failure.len() == 0 && !closed.has_value() {
+        failure = "{closed.error().message()}"
+    }
+    if failure.len() == 0 {
+        moved := side_rename(dst_remote, mut sftp, mut local, part, target)
+        if !moved.has_value() && existing.has_value() {
+            // A server that will not rename over a file: remove it, then rename.
+            side_remove(dst_remote, mut sftp, mut local, target)
+            moved2 := side_rename(dst_remote, mut sftp, mut local, part, target)
+            if !moved2.has_value() {
+                failure = "{moved2.error().message()}"
+            }
+        } else if !moved.has_value() {
+            failure = "{moved.error().message()}"
+        }
+    }
+    if failure.len() > 0 {
+        side_remove(dst_remote, mut sftp, mut local, part)
+        return error(failure)
+    }
+    prog.files_done += 1
+    sink.transfer_progress(prog)
+    mut copied := CopiedFile{ source: src, target: target, bytes: prog.file_bytes }
+    res.files.push(copied)
+    res.bytes += prog.file_bytes
+}
+
+// Copies folder `src` to `target` (created when missing, merged when it is there),
+// then everything in it. Links to files are copied as files; links to folders and
+// special files are skipped and reported.
+fn copy_tree[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut sftp: T, mut local: L, mut sink: K, req: CopyRequest, src: str, target: str, mut res: CopyResult, mut prog: TransferProgress, depth: i64) -> void! {
+    if depth > 64 {
+        return error(coded(ERR_INVALID, "{src} is nested more than 64 folders deep"))
+    }
+    dst_remote := upload
+    src_remote := !upload
+    existing := side_stat(dst_remote, sftp, local, target)
+    if existing.has_value() {
+        if !existing.value().is_dir() {
+            return error(coded(ERR_NOT_DIR, "{target}{side_name(dst_remote)} is a file, not a folder"))
+        }
+    } else {
+        msg := "{existing.error().message()}"
+        if error_code_of(msg) != ERR_NOT_FOUND {
+            return error(msg)
+        }
+        try side_mkdir(dst_remote, mut sftp, mut local, target)
+        res.folders += 1
+    }
+    for e in try side_list(src_remote, sftp, local, src) {
+        if sink.transfer_cancelled() {
+            return error(copy_cancelled())
+        }
+        if e.name.ends_with(PART_SUFFIX) {
+            continue
+        }
+        child_target := remote_join(target, e.name)
+        mut entry := e
+        if e.kind == FILE_KIND_LINK {
+            followed := side_stat(src_remote, sftp, local, e.path)
+            if followed.has_value() && followed.value().is_file() {
+                entry = followed.value()
+            }
+        }
+        if entry.is_dir() {
+            try copy_tree(upload, mut sftp, mut local, mut sink, req, e.path, child_target, mut res, mut prog, depth + 1)
+        } else if entry.is_file() {
+            try copy_one(upload, mut sftp, mut local, mut sink, req, e.path, entry.size, child_target, mut res, mut prog)
+        } else {
+            res.skipped.push(e.path)
+        }
+    }
+}
+
+// Copies `req.local` to `req.remote` (upload) or back (download) over an open SFTP
+// channel. A folder needs `recursive`; an existing file needs `force`.
+fn copy_files[T: SftpTransport, L: LocalFiles, K: TransferSink, C: Clock](mut sftp: T, mut local: L, mut sink: K, mut clock: C, req: CopyRequest) -> CopyResult! {
+    if req.direction != COPY_UPLOAD && req.direction != COPY_DOWNLOAD {
+        return error(coded(ERR_INTERNAL, "copy: unknown direction '{req.direction}'"))
+    }
+    start := clock.clock_now_ms()
+    upload := req.direction == COPY_UPLOAD
+    mut src := req.remote
+    mut dst := req.local
+    if upload {
+        src = req.local
+        dst = req.remote
+    }
+    src_remote := !upload
+    mut name := remote_base(src)
+    if name == "/" || name == "." || name == ".." {
+        if !src_remote {
+            return error(coded(ERR_INVALID, "name the folder to copy, not '{src}'"))
+        }
+        // The host's login folder (`web:`) or its parent: copied under its own name.
+        src = try sftp.sftp_realpath(src)
+        name = remote_base(src)
+        if name == "/" {
+            return error(coded(ERR_INVALID, "the host's root folder cannot be copied whole"))
+        }
+    }
+    entry := try side_stat(src_remote, sftp, local, src)
+    if !entry.is_dir() && !entry.is_file() {
+        return error(coded(ERR_INVALID, "{src}{side_name(src_remote)} is not a regular file or a folder"))
+    }
+    if entry.is_dir() && !req.recursive {
+        return error(coded(ERR_INVALID, "{src}{side_name(src_remote)} is a folder; pass -r to copy it"))
+    }
+    target := try copy_target(upload, sftp, local, dst, name, entry.is_dir())
+    mut res := CopyResult{ host: req.alias, direction: req.direction, files: [], folders: 0, bytes: 0, skipped: [], duration_ms: 0 }
+    mut prog := TransferProgress{ id: req.id, file: "", file_bytes: 0, file_size: 0, files_done: 0, bytes_done: 0 }
+    if entry.is_dir() {
+        try copy_tree(upload, mut sftp, mut local, mut sink, req, src, target, mut res, mut prog, 0)
+    } else {
+        try copy_one(upload, mut sftp, mut local, mut sink, req, src, entry.size, target, mut res, mut prog)
+    }
+    res.duration_ms = clock.clock_now_ms() - start
+    return res
+}
+
+fn open_sftp[T: SftpTransport](mut sftp: T) -> void! {
+    try sftp.sftp_open()
+}
+
+// The Files view's transfers (milestone 17): a copy over a session that is already
+// logged in (a tab's), on an SFTP channel of its own.
+fn transfer_files[T: SftpTransport, L: LocalFiles, K: TransferSink, C: Clock](mut sftp: T, mut local: L, mut sink: K, mut clock: C, req: CopyRequest) -> CopyResult! {
+    try sftp.sftp_open()
+    return copy_files(mut sftp, mut local, mut sink, mut clock, req)
+}
+
+// `flint cp`: connects to `req.alias` (verifying and logging in as `exec` does),
+// opens SFTP on that session, copies, and hangs up. `link` serves both
+// `SshTransport` and `SftpTransport`: cfire has no `T: A + B` (CF-100), so only the
+// first is named and the SFTP calls go through functions that name the second.
+fn copy_with_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, L: LocalFiles, K: TransferSink, M: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut local: L, mut sink: K, mut clock: M, req: CopyRequest, opts: ConnectOptions) -> CopyResult! {
+    target := try open_link(crypto, mut store, session, mut link, prompter, req.alias, opts)
+    opened := open_sftp(mut link)
+    if !opened.has_value() {
+        link.link_hangup()
+        return error("{opened.error().message()}")
+    }
+    mut r := req
+    r.alias = target.alias
+    res := copy_files(mut link, mut local, mut sink, mut clock, r)
+    link.link_hangup()
+    return res
+}
+
+// ---- Files dropped from the OS (milestone 17) ----------------------------------------
+
+// Appends a chunk of dropped file `rel` to drop `drop_id`, and returns where the
+// drop's top element (`rel`'s first part) is on this machine: what the upload
+// then copies.
+fn stage_dropped[D: DropStage](mut stage: D, drop_id: str, rel: str, data: str) -> str! {
+    if !valid_drop_id(drop_id) {
+        return error(coded(ERR_INVALID, "'{drop_id}' is not a drop id"))
+    }
+    if !valid_drop_path(rel) {
+        return error(coded(ERR_INVALID, "'{rel}' is not a path inside a drop"))
+    }
+    try stage.stage_append(drop_id, rel, data)
+    top := str.split(rel, "/")[0]
+    return remote_join(stage.stage_folder(drop_id), top)
+}
+
+fn discard_dropped[D: DropStage](mut stage: D, drop_id: str) {
+    if valid_drop_id(drop_id) {
+        stage.stage_discard(drop_id)
+    }
+}

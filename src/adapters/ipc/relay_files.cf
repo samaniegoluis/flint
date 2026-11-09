@@ -1,0 +1,176 @@
+package ipc
+
+// `flint cp` run by the app (milestone 16): the files on this machine are read and
+// written by the CLI, never by the app, so the app needs no access to the person's
+// folders (on macOS a GUI app reading ~/Downloads raises a privacy prompt the CLI's
+// terminal already answered). Frames, after relay.cf's:
+//
+//   app → CLI   f a file request: JSON (RelayFileOp), "\n", then the bytes to write
+//               P progress (JSON TransferProgress)
+//   CLI → app   F its answer: JSON (RelayFileReply), "\n", then the bytes read
+//
+// The app's side below serves the `LocalFiles` and `TransferSink` ports over the
+// connection; the CLI's side is `serve_file_op` (clicmd/serve.cf), on a `LocalFs`.
+
+import "core:str"
+import "ext:json"
+import "../../domain"
+
+TAG_FILE_OP: str = "f"
+TAG_FILE_REPLY: str = "F"
+TAG_PROGRESS: str = "P"
+
+// How long the app waits for the CLI to answer one file request (a slow disk; the
+// client gone is noticed at once).
+RELAY_FILE_MS: i32 = 60000
+
+type RelayFileOp struct {
+    op:        str  `json:"op"`
+    path:      str  `json:"path"`
+    to:        str  `json:"to"`
+    write:     bool `json:"write"`
+    exclusive: bool `json:"exclusive"`
+}
+
+type RelayFileReply struct {
+    ok:      bool        `json:"ok"`
+    // The error, as a coded message, when not ok.
+    err:     str         `json:"err"`
+    entry:   FileEntry   `json:"entry"`
+    entries: []FileEntry `json:"entries"`
+}
+
+fn empty_file_entry() -> FileEntry {
+    return FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+}
+
+fn file_op(op: str, path: str) -> RelayFileOp {
+    return RelayFileOp{ op: op, path: path, to: "", write: false, exclusive: false }
+}
+
+// A frame's JSON head and the bytes after it.
+fn split_head(payload: str) -> (str, str) {
+    nl := str.index_of(payload, "\n")
+    if nl < 0 {
+        return (payload, "")
+    }
+    return (payload.substr(0, usize(nl)), payload.substr(usize(nl) + 1))
+}
+
+fn file_op_frame(op: RelayFileOp, data: str) -> str {
+    return relay_frame(TAG_FILE_OP, json.stringify(op) + "\n" + data)
+}
+
+fn file_reply_frame(r: RelayFileReply, data: str) -> str {
+    return relay_frame(TAG_FILE_REPLY, json.stringify(r) + "\n" + data)
+}
+
+fn parse_file_op(payload: str) -> (RelayFileOp, str)! {
+    (head, data) := split_head(payload)
+    op := json.parse[RelayFileOp](head) or {
+        return error(coded(ERR_INVALID, "Flint sent a file request this flint cannot read"))
+    }
+    return (op, data)
+}
+
+// ---- The app's side -------------------------------------------------------------
+
+// This machine's files as the CLI at the other end of `link` sees them.
+type SocketLocalFiles struct {
+    link: RelayLink
+}
+
+fn new_socket_local_files(link: RelayLink) -> SocketLocalFiles {
+    return SocketLocalFiles{ link: link }
+}
+
+fn client_gone() -> str {
+    return coded(ERR_IO, "the flint client went away")
+}
+
+// Sends one request and waits for its answer, skipping any other frame.
+fn (self: SocketLocalFiles) ask(op: RelayFileOp, data: str) -> (RelayFileReply, str)! {
+    mut link := self.link
+    if link.broken {
+        return error(client_gone())
+    }
+    link.conn.send(file_op_frame(op, data), RELAY_SEND_MS) or {
+        return error(client_gone())
+    }
+    for true {
+        frame := link.conn.recv(RELAY_FILE_MS) or {
+            return error(client_gone())
+        }
+        if relay_tag(frame) == TAG_FILE_REPLY {
+            (head, bytes) := split_head(relay_payload(frame))
+            reply := json.parse[RelayFileReply](head) or {
+                return error(coded(ERR_IO, "the flint client sent an answer this Flint cannot read"))
+            }
+            if !reply.ok {
+                return error(reply.err)
+            }
+            return (reply, bytes)
+        }
+        if relay_tag(frame) == TAG_INPUT_END {
+            return error(client_gone())
+        }
+    }
+    return error(client_gone())
+}
+
+fn (self: SocketLocalFiles) local_stat(path: str) -> FileEntry! {
+    (r, _) := try self.ask(file_op("stat", path), "")
+    return r.entry
+}
+
+fn (self: SocketLocalFiles) local_list(path: str) -> []FileEntry! {
+    (r, _) := try self.ask(file_op("list", path), "")
+    return r.entries
+}
+
+fn (mut self: SocketLocalFiles) local_file_open(path: str, write: bool, exclusive: bool) -> void! {
+    _ := try self.ask(RelayFileOp{ op: "open", path: path, to: "", write: write, exclusive: exclusive }, "")
+}
+
+fn (mut self: SocketLocalFiles) local_file_read() -> str! {
+    (_, bytes) := try self.ask(file_op("read", ""), "")
+    return bytes
+}
+
+fn (mut self: SocketLocalFiles) local_file_write(data: str) -> void! {
+    _ := try self.ask(file_op("write", ""), data)
+}
+
+fn (mut self: SocketLocalFiles) local_file_close() -> void! {
+    _ := try self.ask(file_op("close", ""), "")
+}
+
+fn (mut self: SocketLocalFiles) local_rename(from: str, to: str) -> void! {
+    _ := try self.ask(RelayFileOp{ op: "rename", path: from, to: to, write: false, exclusive: false }, "")
+}
+
+fn (mut self: SocketLocalFiles) local_remove(path: str) -> void! {
+    _ := try self.ask(file_op("remove", path), "")
+}
+
+fn (mut self: SocketLocalFiles) local_mkdir(path: str) -> void! {
+    _ := try self.ask(file_op("mkdir", path), "")
+}
+
+// Progress to the CLI, which draws it on its stderr when that is a terminal. A copy
+// is cancelled once the client is gone.
+type SocketTransferSink struct {
+    link: RelayLink
+}
+
+fn new_socket_transfer_sink(link: RelayLink) -> SocketTransferSink {
+    return SocketTransferSink{ link: link }
+}
+
+fn (mut self: SocketTransferSink) transfer_progress(p: TransferProgress) {
+    self.link.put(TAG_PROGRESS, json.stringify(p))
+}
+
+fn (self: SocketTransferSink) transfer_cancelled() -> bool {
+    return self.link.broken
+}

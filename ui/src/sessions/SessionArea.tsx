@@ -13,8 +13,11 @@ import { SessionCard } from './SessionCards';
 
 // Stays mounted while another view (Keys, Credentials, Settings) is shown, with
 // `shown` false: unmounting it disposed every xterm.js terminal and its scrollback.
-export function SessionArea({ shown, fontSize, onPalette, onEditHost, onConnect }: {
+export function SessionArea({ shown, fontSize, onPalette, onEditHost, onConnect, onFiles, filesOn }: {
   shown: boolean;
+  /** The toolbar's Files button (⌘E): opens or closes the Files view. */
+  onFiles: () => void;
+  filesOn: boolean;
   fontSize: number;
   onPalette: (hostsOnly: boolean) => void;
   onEditHost: (alias: string) => void;
@@ -112,7 +115,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onConnect 
           <button className="tbtn" onClick={() => sessions.reconnect(tab.id)}><Icon name="reconnect" size="sm" />Reconnect<Kbd action="reconnect" /></button>
           <button className="tbtn" onClick={() => onConnect(tab.alias, true)}><Icon name="dup" size="sm" />Duplicate<Kbd action="duplicate" /></button>
           <span className="sep" />
-          <button className="tbtn is-disabled" aria-disabled="true" title="Files (SFTP) — coming soon"><Icon name="files" size="sm" />Files</button>
+          <button className={'tbtn' + (filesOn ? ' on' : '')} aria-pressed={filesOn} data-toolbar-files onClick={onFiles} title={`Files (${chordLabel('viewFiles', os)})`}><Icon name="files" size="sm" />Files<Kbd action="viewFiles" /></button>
           <button className="tbtn is-disabled" aria-disabled="true" title="Split — coming soon"><Icon name="split" size="sm" />Split</button>
         </div>
       )}

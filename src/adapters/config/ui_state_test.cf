@@ -20,6 +20,14 @@ test "ui state round-trips through an atomic JSON file and survives damage" {
     assert(!back.sidebar_open)
     assert_eq(back.sidebar_width, i64(300))
     assert_eq(back.vaults[0].collapsed[0], a)
+    assert_eq(back.files_width, i64(0))
+
+    // A file written before milestone 17 has no files_width: it loads with the default.
+    try fs.write_text(dir + "/ui-state.json", "{\"version\":1,\"sidebar_open\":false,\"sidebar_width\":280,\"vaults\":[]}")
+    old := try store.ui_state_load()
+    assert(!old.sidebar_open)
+    assert_eq(old.sidebar_width, i64(280))
+    assert_eq(old.files_width, FILES_WIDTH_DEFAULT)
 
     try fs.write_text(dir + "/ui-state.json", "{\"version\":1,\"sidebar_op")
     damaged := try store.ui_state_load()

@@ -13,6 +13,8 @@ type VaultUiState struct {
 type UiState struct {
     sidebar_open:  bool           `json:"sidebar_open"`
     sidebar_width: i64            `json:"sidebar_width"`
+    // The Files view's own width (milestone 17).
+    files_width:   i64            `json:"files_width"`
     vaults:        []VaultUiState `json:"vaults"`
 }
 
@@ -20,13 +22,17 @@ type UiState struct {
 SIDEBAR_WIDTH_MIN: i64 = 200
 SIDEBAR_WIDTH_MAX: i64 = 400
 SIDEBAR_WIDTH_DEFAULT: i64 = 264
+// The Files view's: --sidebar-files-min / -max / -w.
+FILES_WIDTH_MIN: i64 = 200
+FILES_WIDTH_MAX: i64 = 480
+FILES_WIDTH_DEFAULT: i64 = 340
 // Vaults remembered, most recently used first; older ones are dropped.
 UI_STATE_MAX_VAULTS: usize = 32
 // Collapsed groups kept per vault.
 UI_STATE_MAX_COLLAPSED: usize = 2048
 
 fn default_ui_state() -> UiState {
-    return UiState{ sidebar_open: true, sidebar_width: SIDEBAR_WIDTH_DEFAULT, vaults: [] }
+    return UiState{ sidebar_open: true, sidebar_width: SIDEBAR_WIDTH_DEFAULT, files_width: FILES_WIDTH_DEFAULT, vaults: [] }
 }
 
 // A 128-bit id as 32 lowercase hex characters: row ids and vault ids alike.
@@ -49,6 +55,20 @@ fn clamp_sidebar_width(w: i64) -> i64 {
     }
     if w > SIDEBAR_WIDTH_MAX {
         return SIDEBAR_WIDTH_MAX
+    }
+    return w
+}
+
+// 0 (a file written before milestone 17) is the default.
+fn clamp_files_width(w: i64) -> i64 {
+    if w == 0 {
+        return FILES_WIDTH_DEFAULT
+    }
+    if w < FILES_WIDTH_MIN {
+        return FILES_WIDTH_MIN
+    }
+    if w > FILES_WIDTH_MAX {
+        return FILES_WIDTH_MAX
     }
     return w
 }
@@ -80,7 +100,7 @@ fn clean_collapsed(ids: []str) -> []str {
 // repeated vault and group ids left out, the vault list capped. A hand-edited or
 // partly damaged file therefore loads as the parts of it that still make sense.
 fn clean_ui_state(s: UiState) -> UiState {
-    mut res := UiState{ sidebar_open: s.sidebar_open, sidebar_width: clamp_sidebar_width(s.sidebar_width), vaults: [] }
+    mut res := UiState{ sidebar_open: s.sidebar_open, sidebar_width: clamp_sidebar_width(s.sidebar_width), files_width: clamp_files_width(s.files_width), vaults: [] }
     for v in s.vaults {
         if res.vaults.len() >= UI_STATE_MAX_VAULTS {
             break
@@ -116,4 +136,11 @@ test "ui state is cleaned, not refused" {
     assert_eq(c.vaults[0].collapsed.len(), usize(1))
     assert_eq(c.vaults[0].collapsed[0], b)
     assert_eq(clamp_sidebar_width(10), SIDEBAR_WIDTH_MIN)
+}
+
+test "the Files view's width is clamped, and 0 is the default" {
+    assert_eq(clamp_files_width(0), FILES_WIDTH_DEFAULT)
+    assert_eq(clamp_files_width(50), FILES_WIDTH_MIN)
+    assert_eq(clamp_files_width(9000), FILES_WIDTH_MAX)
+    assert_eq(clamp_files_width(410), i64(410))
 }

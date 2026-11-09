@@ -72,6 +72,20 @@
         log('ok   allowed the token ' + name);
         continue;
       }
+      if (form.dataset.kind === 'copy') {
+        // `flint cp` (milestone 16): a grant request that says what it copies where.
+        const title = form.querySelector('h2')?.textContent ?? '';
+        const from = form.querySelector('[data-copy-from]')?.textContent ?? '';
+        const to = form.querySelector('[data-copy-to]')?.textContent ?? '';
+        const up = form.querySelector('[data-copy-ask]')?.dataset.direction === 'upload';
+        const local = up ? from : to;
+        const remote = up ? to : from;
+        const host = form.querySelector('[data-copy-ask]')?.dataset.copyHost ?? '';
+        const badge = form.querySelector('[data-copy-ask] .badge')?.textContent ?? '';
+        log((/wants to copy files (to|from) local/.test(title) && host === 'local' && local.startsWith('/') && remote.length > 0 && !remote.startsWith('local:') && badge === (up ? 'Upload' : 'Download') ? 'ok   ' : 'FAIL ') + 'the approval window says copy files with the direction, the host and both paths');
+        if (req.includes('--force')) log((form.querySelector('[data-copy-force]') ? 'ok   ' : 'FAIL ') + 'a copy with --force warns that it replaces files');
+        log((form.querySelector('[data-scope-host]') && form.querySelector('[data-action="exec"]')?.checked ? 'ok   ' : 'FAIL ') + 'a copy proposes running commands on that host');
+      }
       if (req.includes('timeout-me')) { log('ok   left unanswered: ' + req); continue; }
       if (req.includes('long-cmd')) {
         // Milestone 15 (D-049): a command past 160 characters shows its first line, how
@@ -206,6 +220,10 @@
       await check(!log2.some((e) => e.command.includes('flint_')), 'no token text is logged');
       const long = log2.find((e) => e.command.includes('long-cmd-end'));
       await check(long && long.cut === 0 && long.command.length > 600, 'the log keeps a long command whole');
+      const copies = log2.filter((e) => e.command.startsWith('flint cp'));
+      await check(copies.some((e) => e.outcome === 'allowed' && e.action === 'exec' && e.host === 'local' && e.command.includes('blob.bin')), 'the log has every copy, under exec on its host');
+      await check(copies.some((e) => e.outcome === 'allowed' && e.command.startsWith('flint cp -r ')), 'with -r when it copied a folder');
+      await check(copies.some((e) => e.outcome === 'denied' && e.command.includes('deny-me.bin')), 'and the copy the owner denied');
       const sudoRows = log2.filter((e) => e.action === 'sudo');
       if (sudoRows.length > 0) {
         await check(sudoRows.some((e) => e.outcome === 'allowed' && e.via === 'window' && e.command.includes("--sudo -- 'sh' '-c'")), 'the log keeps a sudo command whole, each argument quoted');

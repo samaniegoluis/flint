@@ -1,0 +1,60 @@
+package uievents
+
+// The `TransferSink` port for the Files view (milestone 17): a transfer's progress
+// goes to the page as "files:transfer" events, at most every PROGRESS_EVERY_MS and
+// whenever a file starts or ends, and its cancel flag is the one the Files
+// registry keeps (adapters/ssh/native/flint_files.hpp), which a cancel request or
+// the end of the session sets.
+
+import "ext:webui"
+import "core:time"
+// CFIRE-UPSTREAM: CF-026
+import cpp "flint_files.hpp" @pkg("flint-native")
+import "../../domain"
+
+PROGRESS_EVERY_MS: i64 = 100
+
+type TransferEvent struct {
+    session:    str `json:"session"`
+    id:         str `json:"id"`
+    file:       str `json:"file"`
+    file_bytes: i64 `json:"file_bytes"`
+    file_size:  i64 `json:"file_size"`
+    files_done: i64 `json:"files_done"`
+    bytes_done: i64 `json:"bytes_done"`
+}
+
+type GuiTransferSink struct {
+    app:        webui.App
+    session:    str
+    id:         str
+    last_ms:    i64
+    last_file:  str
+    last_done:  i64
+}
+
+fn new_gui_transfer_sink(app: webui.App, session_id: str, transfer_id: str) -> GuiTransferSink {
+    return GuiTransferSink{ app: app, session: session_id, id: transfer_id, last_ms: 0, last_file: "", last_done: -1 }
+}
+
+fn (mut self: GuiTransferSink) transfer_progress(p: TransferProgress) {
+    now := time.now_ms()
+    boundary := p.file != self.last_file || p.files_done != self.last_done || p.file_bytes == p.file_size
+    if !boundary && now - self.last_ms < PROGRESS_EVERY_MS {
+        return
+    }
+    self.last_ms = now
+    self.last_file = p.file
+    self.last_done = p.files_done
+    self.app.emit("files:transfer", TransferEvent{ session: self.session, id: p.id, file: p.file, file_bytes: p.file_bytes, file_size: p.file_size, files_done: p.files_done, bytes_done: p.bytes_done })
+}
+
+fn (self: GuiTransferSink) transfer_cancelled() -> bool {
+    mut c := false
+    id := self.id
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        c = flint_files::is_cancelled(id);
+    }
+    return c
+}

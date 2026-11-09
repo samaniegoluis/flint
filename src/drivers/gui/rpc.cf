@@ -29,7 +29,7 @@ FLINT_VERSION: str = "0.0.0-dev"
 MAX_SESSIONS: i64 = 48
 
 // How long the headless end-to-end run (FLINT_GUI_E2E) may take.
-E2E_TIMEOUT_MS: i32 = 120000
+E2E_TIMEOUT_MS: i32 = 240000
 
 // ---- Requests ---------------------------------------------------------------------
 
@@ -77,6 +77,7 @@ type UiStateReq struct {
     vault:         str   `json:"vault"`
     sidebar_open:  bool  `json:"sidebar_open"`
     sidebar_width: i64   `json:"sidebar_width"`
+    files_width:   i64   `json:"files_width" default:"340"`
     collapsed:     []str `json:"collapsed"`
 }
 
@@ -360,7 +361,7 @@ fn rpc_ui_state_get(ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState)
 
 fn rpc_ui_state_set(params: str, mut ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState) -> str! {
     req := try parse_req[UiStateReq](params)
-    mut view := UiStateView{ sidebar_open: req.sidebar_open, sidebar_width: req.sidebar_width, collapsed: req.collapsed }
+    mut view := UiStateView{ sidebar_open: req.sidebar_open, sidebar_width: req.sidebar_width, files_width: req.files_width, collapsed: req.collapsed }
     mut vault := ""
     held := st.vault_session()
     if st.unlocked() && req.vault == held.path {
@@ -725,7 +726,8 @@ fn run_gui_session(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, v
     mut opts := default_connect_options()
     opts.accept_new_host_key = req.accept_new_host_key
     opts.run_initial_command = !req.no_command
-    mut link := new_ssh_link()
+    // Lends the session to the Files view once its shell is open (D-053).
+    mut link := new_shared_link(req.session)
     mut term := new_gui_terminal(app, req.session)
     prompter := new_gui_prompter(app, req.session)
     mut clock := new_system_clock()

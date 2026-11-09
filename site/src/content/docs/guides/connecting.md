@@ -173,7 +173,8 @@ read. If the keepalive cannot be sent, the connection is gone: the session ends 
 
 ## Not supported yet
 
-- Forwarding your stdin to `flint exec`, agent forwarding, port forwarding and SFTP.
+- Forwarding your stdin to `flint exec`, agent forwarding and port forwarding. (Files go
+  over SFTP with [`flint cp`](/guides/files/) and [the Files view](/guides/files-view/).)
 - Picking a host interactively when `flint connect` has no alias.
 - Reading `~/.ssh/config`: Flint takes everything from the vault.
 

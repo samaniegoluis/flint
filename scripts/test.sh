@@ -44,6 +44,7 @@ KbdInteractiveAuthentication no
 UsePAM no
 StrictModes no
 PermitTTY yes
+Subsystem sftp internal-sftp
 AllowTcpForwarding yes
 ${sudo_env:-}
 CFG

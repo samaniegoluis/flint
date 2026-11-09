@@ -10,6 +10,7 @@ Direction **A (Editor)** as the base, plus B's command palette and unlock layout
 | `screens/16*.{dark,light}.html` | v3 · milestones 12a and 12b: caller approval, unlock with a waiting caller, Settings › Access, and the Agents status item. |
 | `screens/17*.{dark,light}.html` | v3 · milestone 13: the approval window as root (`exec --sudo`), the host's sudo password, and Activity with sudo rows. |
 | `screens/16e*.{dark,light}.html` | v4 · milestone 15: whole commands (summary + "Show full command", the full-command modal), the activity entry, and activity retention. |
+| `screens/16f*.{dark,light}.html` | v4 · milestone 16: the approval window for `flint cp` (direction, both paths, `-r` and `--force`). |
 | `tokens.css` | **The source of truth.** CSS custom properties keyed by `html[data-theme="dark"\|"light"]`. Import once at the app root. |
 | `flint.css` | The mockups' component classes. It's a reference for your CSS Modules, not production CSS. It uses tokens only. |
 | `components.{dark,light}.html` | The component sheet. |
@@ -188,9 +189,27 @@ No grant or token ever covers a root command. Each one needs its own approval wi
 | `16e4a` | Activity (16c5) with **Keep**: 30 days · 90 days · 1 year · No limit, with 90 selected. Rows are buttons with hover and focus states, and commands are clamped to 3 lines. |
 | `16e4b` | Confirm when a shorter period removes entries: "Keep activity for 30 days?" / "412 entries are older than 30 days and will be removed now. This cannot be undone." / Cancel (focused) and **Remove 412 entries** (destructive). |
 
+## flint cp — grant request variant, milestone 16 (screens 16f*)
+
+These are 16a1 with Hosts, Actions (Run commands marked "needed") and Duration unchanged. The header reads "<caller> wants to copy files to <host>" (or "from <host>"). Under the Request line, a transfer block shows:
+- **Direction**, as a strip with a pill for each end and an arrow between them: `This computer → CodeBox` or `CodeBox → This computer`, plus an Upload or Download badge.
+- **Paths**: one row for each end, labelled From and To, source first. The path on this computer is always absolute, with `~` expanded. Paths wrap after each `/`, never mid-name, and are never truncated.
+- **Optional notes**: "A folder, with everything in it `-r`", and for `--force` a warning that files already in the destination will be replaced.
+
+| Screen | Case |
+|---|---|
+| `16f1` | Upload a folder (`-r`), with long paths on both ends |
+| `16f2` | Download a single file |
+| `16f3` | Download a folder with `--force`, showing the warning strip |
+
+- **As built:** the window does not connect before it asks, so **To** is the destination as given, with the source's name added when it ends in `/` (a folder, D-054). `.` and a destination without a trailing `/` stay as given: whether they are folders is only known once connected. A remote path is shown as `flint cp` was given it, relative to the login folder when it does not start with `/`.
+
+
 ## What Flint left out (2026-11-07)
 
 The design is adapted to what Flint has; these parts wait on the roadmap.
+
+- **14a / 14b (milestone 17)**: a finished download has no **Show in Finder** button yet. An upload onto an existing name asks in its queue row (**Replace** / **Skip**), not in a dialog. Upload picks one file; folders upload by dragging them in. The crosshair is greyed out, with a tooltip, while the shell sends no OSC 7. The status bar has no transfer item.
 
 - **16c3 / 16c4**: creating a token from the app. Tokens are made with `flint token create` and approved in the window.
 - Token expiry **Never**, and a token's **Last used** column.

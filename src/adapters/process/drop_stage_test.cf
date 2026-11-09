@@ -1,0 +1,28 @@
+package process
+
+import "core:fs"
+import "core:crypto/sha256"
+import "../../ports"
+
+fn accepts_stage[D: DropStage](mut d: D) -> bool {
+    return true
+}
+
+test "a drop is staged in private folders, appended in order, and discarded" {
+    dir := "/tmp/flint-drops-" + sha256.random_hex(8)
+    mut stage := new_fs_drop_stage(dir)
+    assert(accepts_stage(mut stage))
+    try stage.stage_append("d1", "site/css/app.css", "body{")
+    try stage.stage_append("d1", "site/css/app.css", "}")
+    assert_eq(try fs.read_text(dir + "/drops/d1/site/css/app.css"), "body{}")
+    folder := try new_local_fs().local_stat(dir + "/drops/d1/site")
+    assert_eq(folder.mode % 512, 448)
+    file := try new_local_fs().local_stat(dir + "/drops/d1/site/css/app.css")
+    assert_eq(file.mode % 512, 384)
+    stage.stage_discard("d1")
+    assert(!fs.exists(dir + "/drops/d1"))
+    try stage.stage_append("d2", "a", "x")
+    stage.stage_clear_all()
+    assert(!fs.exists(dir + "/drops"))
+    _ := fs.remove(dir)
+}

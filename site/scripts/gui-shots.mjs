@@ -85,7 +85,17 @@ const screens = {
 	],
 };
 
-function stub({ catalog, recents, screens, theme }) {
+// What the Files view lists on web-01 (milestone 17): name, kind, size, minutes ago.
+const listing = {
+	'/home/deploy': [
+		['releases', 'dir', 0, 90], ['shared', 'dir', 0, 2400], ['site', 'dir', 0, 130],
+		['.env', 'file', 412, 30000], ['deploy.sh', 'file', 2150, 8000], ['nginx.conf', 'file', 1830, 240],
+		['README.md', 'file', 6550, 40000], ['release-2.3.tar.gz', 'file', 50540000, 9000],
+	],
+};
+
+function stub({ catalog, recents, screens, theme, listing }) {
+	const now = Math.floor(Date.now() / 1000);
 	const listeners = new Map();
 	const emit = (event, data) => (listeners.get(event) ?? []).forEach((cb) => cb(data));
 	window.__shotsEmit = emit;
@@ -94,7 +104,7 @@ function stub({ catalog, recents, screens, theme }) {
 		theme, accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
 		term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: false, term_theme: 'default', lock_after: '1h',
 	};
-	const uiState = { sidebar_open: true, sidebar_width: 264, collapsed: [] };
+	const uiState = { sidebar_open: true, sidebar_width: 264, files_width: 340, collapsed: [] };
 	const current = recents.find((r) => r.current);
 	const replies = {
 		app_info: () => ({ version: '0.1.0', os: 'mac', libssh: '', libsodium: '', sqlite: '', e2e: false }),
@@ -103,7 +113,7 @@ function stub({ catalog, recents, screens, theme }) {
 		settings_set: (s) => s,
 		fonts_mono: () => ({ fonts: [] }),
 		ui_state_get: () => uiState,
-		ui_state_set: (s) => ({ sidebar_open: s.sidebar_open, sidebar_width: s.sidebar_width, collapsed: s.collapsed }),
+		ui_state_set: (s) => ({ sidebar_open: s.sidebar_open, sidebar_width: s.sidebar_width, files_width: s.files_width, collapsed: s.collapsed }),
 		vault_recents: () => recents,
 		vault_unlock: () => ({ path: current.path, name: current.name, format: 1, cached: true }),
 		vault_status: () => ({ path: current.path, name: current.name, exists: true, unlocked: true, cached: true, groups: catalog.groups.length, hosts: catalog.hosts.length, keys: catalog.keys.length, credentials: catalog.credentials.length }),
@@ -122,7 +132,25 @@ function stub({ catalog, recents, screens, theme }) {
 		session_input: () => ({}),
 		session_resize: () => ({}),
 		session_close: () => ({}),
+		// The Files view: one folder, an upload that is done and one under way.
+		files_home: () => ({ path: '/home/deploy' }),
+		files_list: ({ path }) => ({
+			path,
+			entries: (listing[path] ?? []).map(([name, kind, size, ago]) => ({ name, path: `${path}/${name}`, kind, size, mtime: now - ago * 60, mode: 420 })),
+		}),
+		dialog_open: () => ({ path: window.__shotsUploads.shift() ?? '' }),
+		files_transfer: ({ id, local }) => {
+			const size = local.endsWith('.tar.gz') ? 20971520 : 1290;
+			if (size < 4096) return new Promise((r) => setTimeout(() => r({ host: 'web-01', direction: 'upload', files: [{ source: local, target: '', bytes: size }], folders: 0, bytes: size, skipped: [], duration_ms: 40 }), 60));
+			const ev = (bytes) => emit('files:transfer', { session: '', id, file: local, file_bytes: bytes, file_size: size, files_done: 0, bytes_done: bytes });
+			// About 3 MB/s: the rate is read from the second report on.
+			setTimeout(() => ev(9750000), 40);
+			setTimeout(() => ev(13000000), 1040);
+			return new Promise(() => {});
+		},
+		files_cancel: () => ({}),
 	};
+	window.__shotsUploads = ['/Users/me/build/nginx.conf', '/Users/me/build/release-2.4.tar.gz'];
 	window.backend = new Proxy({}, {
 		get: (_, name) => async (params) => {
 			const fn = replies[name];
@@ -153,7 +181,7 @@ try {
 		const page = await browser.newPage({ viewport: { width: 1280, height: 640 }, deviceScaleFactor: 2, colorScheme: theme });
 		const errors = [];
 		page.on('pageerror', (e) => errors.push(String(e)));
-		await page.addInitScript(stub, { catalog, recents, screens, theme });
+		await page.addInitScript(stub, { catalog, recents, screens, theme, listing });
 		await page.goto(base);
 		const tree = page.getByRole('tree');
 		await tree.waitFor();
@@ -170,6 +198,22 @@ try {
 		const file = join(outDir, `app-${theme}.png`);
 		await page.screenshot({ path: file });
 		console.log(`wrote ${file}`);
+		// The Files view on web-01's tab, with an upload done and one under way.
+		await page.locator('.tab', { hasText: 'web-01' }).first().click();
+		await page.keyboard.press('Meta+e');
+		await page.locator('[data-file="deploy.sh"]').waitFor();
+		await page.locator('[data-file="deploy.sh"]').click();
+		await page.locator('[data-files-upload]').click();
+		await page.locator('[data-transfer="nginx.conf"][data-state="done"]').waitFor();
+		await page.locator('[data-files-upload]').click();
+		await page.waitForTimeout(1500);
+		await page.mouse.move(0, 0);
+		if (errors.length) throw new Error(`page errors (${theme}): ${errors.join('; ')}`);
+		const filesShot = join(outDir, `app-files-${theme}.png`);
+		await page.screenshot({ path: filesShot });
+		console.log(`wrote ${filesShot}`);
+		await page.keyboard.press('Meta+e');
+		await page.locator('.tab', { hasText: 'db' }).first().click();
 		// FLINT_SHOTS_EXTRA=<dir>: more screens for a visual check, not used by the landing.
 		const extra = process.env.FLINT_SHOTS_EXTRA;
 		if (extra) {

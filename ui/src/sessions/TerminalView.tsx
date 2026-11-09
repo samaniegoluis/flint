@@ -16,6 +16,7 @@ import { keyInput } from '../lib/keyInput';
 import { api } from '../api/backend';
 import { runAction } from '../shell/actions';
 import { sessions } from './store';
+import { parseOsc7 } from '../files/paths';
 import styles from './TerminalView.module.css';
 import { paletteVars, themePalette } from '../lib/terminalThemes';
 
@@ -189,6 +190,12 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       api.terminalClipboard(payload).catch((err) => console.warn('OSC 52 copy failed', err));
       return true;
     });
+    // OSC 7: the shell reports its folder; the Files view can go there (milestone 17).
+    const osc7 = term.parser.registerOscHandler(7, (payload) => {
+      const cwd = parseOsc7(payload);
+      if (cwd) sessions.setCwd(tabId, cwd);
+      return true;
+    });
     sessions.attach(tabId, (bytes) => term.write(bytes));
 
     let raf = 0;
@@ -205,6 +212,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       observer.disconnect();
       input.dispose();
       osc52.dispose();
+      osc7.dispose();
       sessions.detach(tabId);
       term.textarea?.removeEventListener('compositionend', onCompositionEnd);
       term.element?.removeEventListener('contextmenu', onContextMenu);

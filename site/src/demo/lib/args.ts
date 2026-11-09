@@ -69,7 +69,7 @@ const BOOL_FLAGS = [
 	'--json', '--help', '-h', '--version', '-V', '--master-stdin', '--password',
 	'--password-stdin', '--no-password', '--passphrase', '--passphrase-stdin', '--key-stdin',
 	'--no-tags', '--accept-new-host-key', '--keep-shell', '--no-keep-shell', '--no-command', '--dry-run', '--all',
-	'--sudo', '--sudo-password', '--sudo-password-stdin', '--no-sudo-password',
+	'--sudo', '--sudo-password', '--sudo-password-stdin', '--no-sudo-password', '-r', '--recursive', '--force',
 ];
 
 const GLOBAL_FLAGS = ['--json', '--vault', '--help', '-h', '--master-stdin'];

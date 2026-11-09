@@ -13,7 +13,9 @@ import { HostTree } from './HostTree';
 import { ManageVaults, VaultMenu } from './VaultSwitcher';
 import { setActionHandler } from './actions';
 import { SessionArea } from '../sessions/SessionArea';
-import { clampSidebar, SIDEBAR_DEFAULT, useUiState } from '../state/uiState';
+import { clampFiles, clampSidebar, FILES_DEFAULT, FILES_MAX, FILES_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, useUiState } from '../state/uiState';
+import { FilesView } from '../files/FilesView';
+import { files as filesStore } from '../files/store';
 import { sessions, useSessions } from '../sessions/store';
 import { focusTerminal } from '../sessions/TerminalView';
 import { HostEditor } from '../editors/HostEditor';
@@ -23,7 +25,9 @@ import { SettingsPage, type SettingsSection } from '../pages/SettingsPage';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ApprovalDialog, useAccessState } from '../access/ApprovalDialog';
 
-type View = 'hosts' | 'keys' | 'credentials' | 'settings';
+type View = 'hosts' | 'files' | 'keys' | 'credentials' | 'settings';
+// The views that keep the sessions on screen beside a sidebar.
+const SIDE_VIEWS: View[] = ['hosts', 'files'];
 const NARROW = 1040;
 
 export function Shell() {
@@ -83,12 +87,25 @@ export function Shell() {
     document.documentElement.style.setProperty('--sidebar-w', sidebarWidth + 'px');
     return () => { document.documentElement.style.removeProperty('--sidebar-w'); };
   }, [sidebarWidth]);
+  const filesWidth = ui?.files_width || FILES_DEFAULT;
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-files-w', filesWidth + 'px');
+    return () => { document.documentElement.style.removeProperty('--sidebar-files-w'); };
+  }, [filesWidth]);
+  // Transfers queued while the window was locked start once it opens again.
+  useEffect(() => { if (phase === 'main') filesStore.resume(); }, [phase]);
+  // A closed tab's folder and finished transfers go with it.
+  useEffect(() => {
+    const open = new Set(tabs.map((t) => t.id));
+    for (const id of Object.keys(filesStore.get().folders)) if (!open.has(id)) filesStore.forget(id);
+  }, [tabs]);
   const collapsedGroups = new Set(ui?.collapsed ?? []);
   const setCollapsedGroups = useCallback((next: Set<string>) => updateUi({ collapsed: [...next] }), [updateUi]);
 
   const fontSize = Math.max(8, Math.min(32, settings.term_font_size + zoom));
   const tab = tabs.find((t) => t.id === active);
-  const showSidebar = view === 'hosts' && !collapsed;
+  const sideView = SIDE_VIEWS.includes(view);
+  const showSidebar = sideView && !collapsed;
 
   // The design's layout rules key off the root's data-view and data-collapsed: the
   // main area starts after the rail, plus the sidebar when it is docked.
@@ -96,7 +113,7 @@ export function Shell() {
     const root = document.querySelector<HTMLElement>('.app');
     if (!root) return;
     root.dataset.view = view;
-    root.dataset.collapsed = String(view === 'hosts' && (collapsed || narrow));
+    root.dataset.collapsed = String(SIDE_VIEWS.includes(view) && (collapsed || narrow));
     return () => { delete root.dataset.view; delete root.dataset.collapsed; };
   }, [view, collapsed, narrow]);
 
@@ -126,7 +143,7 @@ export function Shell() {
 
   // `noCommand` (the palette's "without …" row) always opens its own tab.
   const connect = useCallback((alias: string, newTab: boolean, noCommand = false) => {
-    setView('hosts');
+    setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts'));
     if (narrow) setCollapsed(true);
     const open = sessions.get().tabs.find((t) => t.alias === alias && t.status !== 'ended' && !t.noCommand);
     if (open && !newTab && !noCommand) sessions.activate(open.id);
@@ -150,7 +167,10 @@ export function Shell() {
   }), [refreshCatalog]);
 
   const showView = useCallback((v: View) => {
-    if (v === 'hosts' && view === 'hosts') { setSidebarCollapsed((c) => !c); return; }
+    if (SIDE_VIEWS.includes(v) && view === v) { setSidebarCollapsed((c) => !c); return; }
+    // Files is asked for explicitly, and Hosts ↔ Files swaps what the sidebar shows:
+    // both open it. Coming back to Hosts from another view keeps it as it was left.
+    if (v === 'files' || (SIDE_VIEWS.includes(v) && SIDE_VIEWS.includes(view))) setSidebarCollapsed(false);
     // Coming back to Hosts from another view keeps the sidebar as it was left.
     setView(v);
   }, [view, setSidebarCollapsed]);
@@ -169,7 +189,7 @@ export function Shell() {
     const tabIdx = a.startsWith('tab') ? Number(a.slice(3)) - 1 : -1;
     if (tabIdx >= 0) {
       const t = sessions.get().tabs[tabIdx];
-      if (t) { setView('hosts'); sessions.activate(t.id); }
+      if (t) { setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts')); sessions.activate(t.id); }
       return;
     }
     switch (a) {
@@ -182,7 +202,12 @@ export function Shell() {
       case 'closeTab': if (active) sessions.close(active); break;
       case 'reconnect': if (active) sessions.reconnect(active); break;
       case 'duplicate': if (tab) connect(tab.alias, true); break;
-      case 'toggleSidebar': if (view === 'hosts') setSidebarCollapsed((c) => !c); else { setView('hosts'); setSidebarCollapsed(false); } break;
+      case 'toggleSidebar': if (SIDE_VIEWS.includes(view)) setSidebarCollapsed((c) => !c); else { setView('hosts'); setSidebarCollapsed(false); } break;
+      // The Files view follows the active tab (⌘E, the toolbar's Files button).
+      case 'viewFiles':
+        if (view === 'files' && !collapsed) setSidebarCollapsed(true);
+        else { setView('files'); setSidebarCollapsed(false); setTimeout(() => document.querySelector<HTMLElement>('[data-files-list]')?.focus(), 0); }
+        break;
       // Like the rail button: the sidebar stays as it was left (⌘B shows or hides it).
       case 'viewHosts': setView('hosts'); if (!collapsed) setTimeout(() => filterRef.current?.focus(), 0); break;
       case 'collapseAll': setView('hosts'); setSidebarCollapsed(false); setCollapsedGroups(new Set(catalog.groups.map((g) => g.path))); break;
@@ -231,8 +256,8 @@ export function Shell() {
   const anyOverlay = palette || editor || confirm || ask || manage;
   const sessionsOpen = tabs.filter((t) => t.status !== 'ended').length;
   const crumb = tab ? <><span>{vault?.name}</span><span className="faint">/</span><span className="mono muted">{tab.alias}</span></> : <span>{vault?.name}</span>;
-  const railBtn = (v: View, icon: 'hosts' | 'key' | 'cred' | 'settings', label: string, action: Action) => (
-    <button className={'rail-btn' + (view === v ? (v === 'hosts' && collapsed ? ' is-collapsed is-on' : ' is-on') : '')} data-item={v}
+  const railBtn = (v: View, icon: 'hosts' | 'files' | 'key' | 'cred' | 'settings', label: string, action: Action) => (
+    <button className={'rail-btn' + (view === v ? (SIDE_VIEWS.includes(v) && collapsed ? ' is-collapsed is-on' : ' is-on') : '')} data-item={v}
       aria-pressed={view === v} title={`${label} (${chordLabel(action, os)})`} onClick={() => showView(v)}>
       <Icon name={icon} />{label}
     </button>
@@ -256,7 +281,7 @@ export function Shell() {
         btns[(i + (e.key === 'ArrowDown' ? 1 : btns.length - 1)) % btns.length]?.focus();
       }}>
         {railBtn('hosts', 'hosts', 'Hosts', 'viewHosts')}
-        <button className="rail-btn is-disabled" aria-disabled="true" title="Files (SFTP) — coming soon" style={{ opacity: 0.45, cursor: 'not-allowed' }}><Icon name="files" />Files</button>
+        {railBtn('files', 'files', 'Files', 'viewFiles')}
         <span className="rail-sep" role="separator" />
         {railBtn('keys', 'key', 'Keys', 'viewKeys')}
         {railBtn('credentials', 'cred', 'Credentials', 'viewCredentials')}
@@ -265,10 +290,17 @@ export function Shell() {
       </nav>
 
       {showSidebar && narrow && <div style={{ position: 'absolute', inset: 'var(--titlebar-h) 0 var(--statusbar-h) var(--rail-w)', zIndex: 4 }} onMouseDown={() => setCollapsed(true)} />}
-      {showSidebar && (
+      {showSidebar && view === 'files' && (
+        <div style={narrow ? { position: 'relative', zIndex: 5 } : undefined} onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
+          <FilesView tab={tab} onReconnect={(id) => sessions.reconnect(id)} onGoToHost={() => setPalette({ hostsOnly: true })} onConfirm={setConfirm} onAsk={setAsk}
+            resizer={narrow ? null : <SidebarResizer width={filesWidth} min={FILES_MIN} max={FILES_MAX} reset={FILES_DEFAULT} clamp={clampFiles} label="Resize the Files sidebar"
+              onLive={(w) => document.documentElement.style.setProperty('--sidebar-files-w', w + 'px')} onDone={(w) => updateUi({ files_width: w })} />} />
+        </div>
+      )}
+      {showSidebar && view === 'hosts' && (
         <div style={narrow ? { position: 'relative', zIndex: 5 } : undefined} onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
           <HostTree selected={selected} filterRef={filterRef} collapsed={collapsedGroups} setCollapsed={setCollapsedGroups}
-            resizer={narrow ? null : <SidebarResizer width={sidebarWidth} onLive={(w) => document.documentElement.style.setProperty('--sidebar-w', w + 'px')} onDone={(w) => updateUi({ sidebar_width: w })} />}
+            resizer={narrow ? null : <SidebarResizer width={sidebarWidth} min={SIDEBAR_MIN} max={SIDEBAR_MAX} reset={SIDEBAR_DEFAULT} clamp={clampSidebar} label="Resize the sidebar" onLive={(w) => document.documentElement.style.setProperty('--sidebar-w', w + 'px')} onDone={(w) => updateUi({ sidebar_width: w })} />}
             h={{
             connect, select: setSelected,
             editHost: (alias) => setEditor({ alias, group: '' }),
@@ -296,7 +328,7 @@ export function Shell() {
         </div>
       )}
 
-      <SessionArea shown={view === 'hosts'} fontSize={fontSize} onPalette={(h) => setPalette(h ? { hostsOnly: true, newSession: true } : { hostsOnly: false })} onEditHost={(alias) => setEditor({ alias, group: '' })} onConnect={connect} />
+      <SessionArea shown={sideView} filesOn={view === 'files' && !collapsed} onFiles={() => run('viewFiles')} fontSize={fontSize} onPalette={(h) => setPalette(h ? { hostsOnly: true, newSession: true } : { hostsOnly: false })} onEditHost={(alias) => setEditor({ alias, group: '' })} onConnect={connect} />
       {view === 'keys' && <KeysPage adding={addingKey} setAdding={setAddingKey} onConfirm={setConfirm} />}
       {view === 'credentials' && <CredentialsPage editing={credEditing} setEditing={setCredEditing} onConfirm={setConfirm} />}
       {view === 'settings' && <SettingsPage section={section} setSection={setSection} onLock={() => lock().catch(fail)} onConfirm={setConfirm} />}
@@ -340,13 +372,17 @@ export function Shell() {
   );
 }
 
-// The sidebar's right edge: drag to resize (200-400 px), double-click for the default
-// width, or focus it and use ← →. The width applies live; it is stored when the drag ends.
-function SidebarResizer({ width, onLive, onDone }: { width: number; onLive: (w: number) => void; onDone: (w: number) => void }) {
+// The sidebar's right edge: drag to resize (Hosts 200-400 px, Files 200-480 px),
+// double-click for the default width, or focus it and use ← →. The width applies
+// live; it is stored when the drag ends.
+function SidebarResizer({ width, min, max, reset, clamp, label, onLive, onDone }: {
+  width: number; min: number; max: number; reset: number; clamp: (w: number) => number; label: string;
+  onLive: (w: number) => void; onDone: (w: number) => void;
+}) {
   const [dragging, setDragging] = useState(false);
   return (
-    <div className={'sidebar-resize' + (dragging ? ' is-hover' : '')} role="separator" aria-orientation="vertical" aria-label="Resize the sidebar"
-      aria-valuemin={200} aria-valuemax={400} aria-valuenow={width} tabIndex={0} title="Drag to resize · double-click to reset"
+    <div className={'sidebar-resize' + (dragging ? ' is-hover' : '')} role="separator" aria-orientation="vertical" aria-label={label}
+      aria-valuemin={min} aria-valuemax={max} aria-valuenow={width} tabIndex={0} title="Drag to resize · double-click to reset"
       onPointerDown={(e) => {
         e.preventDefault();
         const el = e.currentTarget;
@@ -354,7 +390,7 @@ function SidebarResizer({ width, onLive, onDone }: { width: number; onLive: (w: 
         setDragging(true);
         const left = (el.parentElement?.getBoundingClientRect().left ?? 0);
         let last = width;
-        const move = (ev: PointerEvent) => { last = clampSidebar(ev.clientX - left); onLive(last); };
+        const move = (ev: PointerEvent) => { last = clamp(ev.clientX - left); onLive(last); };
         const up = () => {
           el.removeEventListener('pointermove', move);
           el.removeEventListener('pointerup', up);
@@ -366,11 +402,11 @@ function SidebarResizer({ width, onLive, onDone }: { width: number; onLive: (w: 
         el.addEventListener('pointerup', up);
         el.addEventListener('pointercancel', up);
       }}
-      onDoubleClick={() => { onLive(SIDEBAR_DEFAULT); onDone(SIDEBAR_DEFAULT); }}
+      onDoubleClick={() => { onLive(reset); onDone(reset); }}
       onKeyDown={(e) => {
         if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
         e.preventDefault();
-        const w = clampSidebar(width + (e.key === 'ArrowRight' ? 16 : -16));
+        const w = clamp(width + (e.key === 'ArrowRight' ? 16 : -16));
         onLive(w);
         onDone(w);
       }} />

@@ -71,6 +71,14 @@ SSH
                                         itself (needs Flint open)
   known-host list | known-host rm <alias|address>
 
+Files
+  cp [-r] [--force] <local path> <alias>:<path>
+                                        Copy to the host (into <path> when it is a
+                                        folder); -r for a folder
+  cp [-r] [--force] <alias>:<path> <local path>
+                                        Copy from the host; an existing file needs
+                                        --force. <alias>: alone is the login folder
+
 Tokens (for programs Flint cannot ask about: cron, launchd, CI on this machine)
   token create --name <name> --allow read,exec[,write] [--hosts <alias,@group,...> | --all]
                [--ttl 15m|1h|4h|1d|7d|30d|90d]
@@ -103,11 +111,14 @@ them from stdin with the --*-stdin flags.
 // Checks the command line's shape: a known noun and a verb or alias after it.
 fn check_command(p: ParsedArgs) -> void! {
     noun := p.positional(0)
-    session_noun := noun == "connect" || noun == "exec"
+    session_noun := noun == "connect" || noun == "exec" || noun == "cp"
     if !session_noun && noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" && noun != "known-host" && noun != "import" && noun != "token" {
         return error(coded(ERR_USAGE, "unknown command '{noun}'; see `flint help`"))
     }
     if p.positional(1).len() == 0 {
+        if noun == "cp" {
+            return error(cp_usage())
+        }
         if session_noun {
             return error(coded(ERR_USAGE, "`flint {noun}` needs a host alias; see `flint help`"))
         }
@@ -121,17 +132,21 @@ fn wants_help(p: ParsedArgs) -> bool {
 }
 
 // The commands that open an SSH session: they need a terminal, a prompter and an
-// output stream, which the app relays over the socket (D-042).
+// output stream, which the app relays over the socket (D-042), and for `cp` this
+// machine's files, which the CLI reads and writes for the app (milestone 16).
 fn is_session_command(p: ParsedArgs) -> bool {
     noun := p.positional(0)
-    return noun == "connect" || noun == "exec" || (noun == "host" && p.positional(1) == "test")
+    return noun == "connect" || noun == "exec" || noun == "cp" || (noun == "host" && p.positional(1) == "test")
 }
 
 // Runs one checked session command against `src`'s vault, on the given terminal,
 // prompter and output. Returns the process exit status: 0, or the remote status of
 // `connect` and `exec`.
-fn run_session_command[M: Terminal, P: Prompter, O: ExecSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, mut term: M, prompter: P, mut sink: O, term_name: str) -> i32! {
+fn run_session_command[M: Terminal, P: Prompter, O: ExecSink, L: LocalFiles, K: TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, mut term: M, prompter: P, mut sink: O, mut local: L, mut progress: K, term_name: str) -> i32! {
     noun := p.positional(0)
+    if noun == "cp" {
+        return cmd_cp(p, sec, as_json, c, mut store, src, recents, prompter, mut local, mut progress)
+    }
     if noun == "connect" {
         return cmd_connect(p, sec, as_json, c, mut store, src, recents, mut term, prompter, term_name)
     }
@@ -185,7 +200,9 @@ fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
         }
         mut term := new_stdio_terminal()
         mut sink := new_stdio_exec_sink()
-        status = run_session_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents, mut term, new_tty_prompter(), mut sink, term_name)
+        mut local := new_local_fs()
+        mut progress := new_stderr_transfer_sink(as_json)
+        status = run_session_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents, mut term, new_tty_prompter(), mut sink, mut local, mut progress, term_name)
     } else {
         status = run_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents)
     }

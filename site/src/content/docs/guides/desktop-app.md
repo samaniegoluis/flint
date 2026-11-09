@@ -31,8 +31,8 @@ menu bar icon, ⌘Q or the command palette quits it.
 | Area | What it holds |
 |---|---|
 | Title bar | The vault and the active session; the command palette button |
-| Activity bar (left) | **Hosts**, **Keys**, **Credentials**, and **Settings** at the bottom. **Files** (SFTP) is coming in a later version |
-| Sidebar | The vault button (switch vaults), a filter, and your hosts in their groups |
+| Activity bar (left) | **Hosts** and **Files** (both in the sidebar), **Keys**, **Credentials**, and **Settings** at the bottom |
+| Sidebar | **Hosts**: the vault button (switch vaults), a filter, and your hosts in their groups. **Files**: the active tab's host, over SFTP ([The Files view](/guides/files-view/)) |
 | Main area | One tab per session, the session toolbar and the terminal |
 | Status bar | Lock state, the number of open sessions, **Lock**, and **Agents: N** while programs you approved may use the vault (it opens Settings → Access, and shows **N waiting** while a request waits and Flint is not in front) |
 
@@ -222,6 +222,13 @@ and **Show full command** opens all of it (up to 16 KB) in a scrolling panel wit
 **Copy**; <kbd>Esc</kbd> or **Close** goes back to the request, which is still waiting.
 Viewing it asks for no Touch ID or password. What the window shows is read from the
 arguments Flint will run, not from words the program sends.
+
+`flint cp` is a request to run commands on that host (reading or writing its files has
+that power), and the window says so: **wants to copy files to** (or **from**) the host.
+A strip shows the direction (*This computer → host*, marked Upload or Download), then
+**From** and **To** with the whole path on each end, never cut. A folder copy (`-r`) says
+so, and `--force` adds a warning that files already in the destination are replaced. See
+[Copying files](/guides/files/).
 
 `flint token create` brings up the same window showing the token instead: its name, what
 it allows, which hosts and when it expires. **Allow** (with presence) creates that one
