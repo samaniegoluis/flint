@@ -62,6 +62,8 @@ export interface Transfer {
   folder: string;
   /** The staged drop it uploads from, discarded once it ends. */
   drop: string;
+  /** Cancelled by Skip at a name clash: the row reads Skipped. */
+  skipped?: boolean;
 }
 
 interface Snapshot {
@@ -79,6 +81,19 @@ const mint = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++seq}`
 export function nextToStart(transfers: Transfer[], session: string): Transfer | undefined {
   if (transfers.some((t) => t.session === session && t.state === 'running')) return undefined;
   return transfers.find((t) => t.session === session && t.state === 'queued');
+}
+
+/** States in which a transfer has not ended yet. */
+const PENDING: TransferState[] = ['staging', 'queued', 'running', 'conflict'];
+
+/**
+ * A copy between servers that is already in the queue and not ended: the same
+ * item from the same session into the same folder of the same session. A second
+ * press of ⌘→ (or a second drop) while it waits must not queue it again.
+ */
+export function pendingRelay(transfers: Transfer[], c: { session: string; toSession: string; remote: string; local: string }): Transfer | undefined {
+  return transfers.find((t) => t.direction === 'relay' && PENDING.includes(t.state) && t.session === c.session
+    && t.toSession === c.toSession && t.remote === c.remote && t.local === c.local);
 }
 
 /** Clear done: finished and cancelled rows go; failed ones stay until dismissed or retried. */
@@ -299,9 +314,11 @@ class FilesStore {
    * first pane's; `view` is the destination pane's folder key, listed again after.
    */
   relay(tabId: string, from: { session: string; alias: string }, entry: FileEntry, to: { key: string; session: string; alias: string; folder: string }) {
+    const local = to.folder + (to.folder.endsWith('/') ? '' : '/');
+    if (pendingRelay(this.snap.transfers, { session: from.session, toSession: to.session, remote: entry.path, local })) return;
     this.queue({
       tabId, session: from.session, alias: from.alias, direction: 'relay', name: entry.name,
-      local: to.folder + (to.folder.endsWith('/') ? '' : '/'), remote: entry.path,
+      local, remote: entry.path,
       recursive: entry.kind === 'dir', force: false, total: entry.kind === 'dir' ? 0 : entry.size,
       folder: to.folder, drop: '', toSession: to.session, toAlias: to.alias, view: to.key,
     });
@@ -420,6 +437,12 @@ class FilesStore {
     }
   }
 
+  /** Skip at a name clash: the transfer ends without replacing anything. */
+  skip(id: string) {
+    if (this.transfer(id)?.state !== 'conflict') return;
+    this.patchTransfer(id, { state: 'cancelled', skipped: true, rate: 0 });
+  }
+
   /** A failed transfer goes back in the queue. */
   retry(id: string, force = false) {
     const t = this.transfer(id);
@@ -433,7 +456,7 @@ class FilesStore {
   resolveAll(tabId: string, replace: boolean) {
     for (const t of this.snap.transfers.filter((x) => x.tabId === tabId && x.state === 'conflict')) {
       if (replace) this.retry(t.id, true);
-      else this.cancel(t.id);
+      else this.skip(t.id);
     }
   }
 

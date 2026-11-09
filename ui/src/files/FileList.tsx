@@ -60,7 +60,8 @@ export function FileList({ fkey, folder, os, listRef, dropPath, onOpenFile, onMe
     const i = sel ? entries.indexOf(sel) : -1;
     if (ev.key === 'ArrowUp' && isMod(ev, os)) { ev.preventDefault(); files.up(fkey); return; }
     if (ev.key === 'ArrowDown' && isMod(ev, os)) { ev.preventDefault(); if (sel && onDownload) onDownload(sel); return; }
-    if (ev.key === copyKey && isMod(ev, os)) { ev.preventDefault(); if (sel && onCopyOther) onCopyOther(sel); return; }
+    // A held key repeats: one press, one copy.
+    if (ev.key === copyKey && isMod(ev, os)) { ev.preventDefault(); if (sel && onCopyOther && !ev.repeat) onCopyOther(sel); return; }
     if ((ev.key === 'Backspace' || ev.key === 'Delete') && (isMod(ev, os) || ev.key === 'Delete')) { ev.preventDefault(); if (sel) onRemove(sel); return; }
     if (ev.key === 'ArrowDown') { ev.preventDefault(); const n = entries[Math.min(entries.length - 1, i + 1)]; if (n) files.select(fkey, n.path); return; }
     if (ev.key === 'ArrowUp') { ev.preventDefault(); if (i <= 0) files.select(fkey, null); else files.select(fkey, entries[i - 1].path); return; }

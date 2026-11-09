@@ -530,9 +530,14 @@
       pane().querySelector('[data-files-list]').focus();
       chord('ArrowLeft', 'ArrowLeft');
       await waitFor(() => q('.conflict[data-transfer="a.txt"]'), 'a copy back to the first pane, asked');
+      // Pressed again, or held so the key repeats, while it waits: still one copy (owner walkthrough).
+      chord('ArrowLeft', 'ArrowLeft');
+      chord('ArrowLeft', 'ArrowLeft', { repeat: true });
+      await sleep(300);
+      await check(qa('[data-transfer="a.txt"][data-direction="relay"]:not([data-state="done"])').length === 1,'a second ⌘← while the copy waits does not queue it again');
       q('.conflict[data-transfer="a.txt"] [data-transfer-skip]').click();
       await waitFor(() => !q('.conflict'), 'skipped');
-      await check(true, 'a copy from the second pane to the first asks before replacing, and Skip leaves it');
+      await check(/Skipped/.test(q('[data-transfer="a.txt"][data-state="cancelled"]')?.textContent ?? ''), 'a copy from the second pane to the first asks before replacing, and Skip leaves it and reads Skipped');
       await click('[data-files-one-pane]');
       await waitFor(() => !pane(), 'one pane');
       await runInTerminal(`cd; rm -rf ~/${name}; echo two-clean-$((6*7))`, 'two-clean-42');

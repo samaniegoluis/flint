@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyProgress, clearDone, nextToStart, type Transfer } from './store';
+import { applyProgress, clearDone, nextToStart, pendingRelay, type Transfer } from './store';
 
 const tr = (id: string, p: Partial<Transfer>): Transfer => ({
   id, tabId: 't1', session: 's1', alias: 'web', direction: 'upload', name: id, local: '/l/' + id, remote: '/r/', recursive: false, force: false,
@@ -24,5 +24,16 @@ describe('the transfer queue', () => {
     expect(applyProgress(first, { ...ev, file_bytes: 1536, bytes_done: 1536 }, 2000, 1000).rate).toBe(1024);
     expect(applyProgress(tr('a', { state: 'running', recursive: true }), ev, 1000, 0).total).toBe(0);
     expect(applyProgress(tr('a', { state: 'running', recursive: true, total: 9000 }), ev, 1000, 0).total).toBe(9000);
+  });
+
+  it('finds a copy between servers still waiting, so a second ⌘← does not queue it twice', () => {
+    const c = { session: 'z', toSession: 'c', remote: '/home/u/README.md', local: '/home/u/' };
+    const relay = (id: string, p: Partial<Transfer>) => tr(id, { direction: 'relay', session: 'z', toSession: 'c', remote: c.remote, local: c.local, ...p });
+    for (const state of ['queued', 'running', 'conflict'] as const) expect(pendingRelay([relay('a', { state })], c)?.id).toBe('a');
+    // Ended (copied, skipped, failed), to another folder or from the other side: a new copy.
+    for (const state of ['done', 'cancelled', 'failed'] as const) expect(pendingRelay([relay('a', { state })], c)).toBeUndefined();
+    expect(pendingRelay([relay('a', { local: '/tmp/' })], c)).toBeUndefined();
+    expect(pendingRelay([relay('a', { session: 'c', toSession: 'z' })], c)).toBeUndefined();
+    expect(pendingRelay([tr('a', { session: 'z', remote: c.remote, local: c.local })], c)).toBeUndefined();
   });
 });

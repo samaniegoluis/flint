@@ -340,7 +340,7 @@ function TransferRow({ t, others }: { t: Transfer; others: number }) {
     action = null;
   } else if (t.state === 'cancelled') {
     icon = <Icon name="x" size="sm" className="faint" />;
-    status = <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>Cancelled</span>;
+    status = <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>{t.skipped ? 'Skipped' : 'Cancelled'}</span>;
     action = <button className="icon-btn" aria-label="Dismiss" title="Dismiss" onClick={() => files.dismiss(t.id)}><Icon name="x" size="xs" /></button>;
   } else if (t.state === 'failed') {
     icon = <Icon name="alert" size="sm" className="danger-t" />;
@@ -356,7 +356,7 @@ function TransferRow({ t, others }: { t: Transfer; others: number }) {
   if (t.state === 'conflict') {
     const target = t.direction === 'upload' ? t.alias : t.direction === 'relay' ? t.toAlias : 'this computer';
     const replace = () => (all ? files.resolveAll(t.tabId, true) : files.retry(t.id, true));
-    const skip = () => (all ? files.resolveAll(t.tabId, false) : files.cancel(t.id));
+    const skip = () => (all ? files.resolveAll(t.tabId, false) : files.skip(t.id));
     return (
       <div className="conflict" role="alert" data-transfer={t.name} data-state={t.state} data-direction={t.direction} title={where}>
         <div className="row" style={{ fontSize: 'var(--fs-sm)', gap: 'var(--sp-2)' }}>
