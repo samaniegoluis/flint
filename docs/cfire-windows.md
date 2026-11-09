@@ -26,11 +26,14 @@ Sibling of [`cfire-upstream.md`](cfire-upstream.md), which tracks every other ga
 | [W-03](#w-03) | `os.cwd()` returns a path, not `str`: does not compile on Windows | **fixed** | 0002 |
 | [W-04](#w-04) | `.exe` needs `libc++.dll` and `libunwind.dll`; fails silently without them | worked around | none |
 | [W-05](#w-05) | `println` writes `\r\n` on Windows | question | none |
-| [W-06](#w-06) | `ext:webui`: still no WebView2 in the window | open (next) | none |
+| [W-06](#w-06) | `ext:webui`: no WebView2 in the window | **fixed** | 0004 |
 | [W-07](#w-07) | cfire's Windows CI never got past its first build step | open | none |
 | [W-08](#w-08) | `*_unix.cf` is compiled for Windows too | **fixed** | 0003 |
+| [W-09](#w-09) | `WebView2.h` includes `EventToken.h`; mingw ships `eventtoken.h` | worked around | none |
+| [W-10](#w-10) | cfire does not know where the WebView2 SDK is, nor ship `WebView2Loader.dll` | worked around | none |
 
-**Works on Windows today** (ran, not just compiled), once W-01 to W-04 are dealt with:
+**Works on Windows** (ran, not just compiled), with W-01, W-04, W-09 and W-10 worked
+around and patches 0001–0004 applied:
 
 | Check | Result | Confirms |
 |---|---|---|
@@ -43,6 +46,8 @@ Sibling of [`cfire-upstream.md`](cfire-upstream.md), which tracks every other ga
 | `os.exec_output`, `os.pipe`, `getenv`/`setenv` with UTF-8, `getpid` | pass | |
 | `fs` write, read, remove under a UTF-8 path (`probe-ñ-✓/archivo-ü.txt`) | pass | CF-010.a |
 | `_windows.cf` / `_unix.cf` file selection | picks the right file | W-08 |
+| `webui.App` window: page from `set_html`, a `bind` call answered, an `emit` received, `runtime.Quit()` | works, Edge WebView2 157 | W-06, CF-001.a–e |
+| `app.run_webview_test` from `cfire test` (offscreen): success, timeout, rejected call | 3/3 pass | CF-001.g |
 
 ## How to read each entry
 
@@ -143,21 +148,58 @@ Sibling of [`cfire-upstream.md`](cfire-upstream.md), which tracks every other ga
 
 ## W-06
 
-**`ext:webui`: still no WebView2 in the window** · [ran] · open, the next piece of work
+**`ext:webui`: no WebView2 in the window** · [ran] · fixed ·
+[patch 0004](cfire-windows/patches/0004-feat-webui-a-real-WebView2-in-the-Windows-window-CF-.patch) ·
+CF-001.a–e and .g
 
-- **Symptom:** a `webui.App` with `set_html`, one `bind` and one `emit` builds and links
-  for Windows, opens a Win32 window, and prints:
-  `webui: WebView2 SDK header (<WebView2.h>) was not present at compile time; install the WebView2 SDK to render WebUI content on Windows.`
-- **Cause:** `runtime/core/webui/windows_webview2.hpp` has no `ICoreWebView2` code at
-  all (`grep -c ICoreWebView2` over `runtime/` is 0). With `<WebView2.h>` present it would
-  still open an empty window: the header only switches the warning off. Between
-  `43431f2` and `c5b1d4b` this file changed 6 lines (the `#if` name and a
-  `DefWindowProcW` return). This is CF-001.a–e, which cfire marked P3.
-- **Next:** implement it in the local copy (environment, controller, `app://localhost/`
-  via `WebResourceRequested`, `postMessage` bridge, `ExecuteScript` on the UI thread),
-  with the WebView2 SDK from the `Microsoft.Web.WebView2` NuGet package. The probe is
-  [`windows/probes/webui/main.cf`](../windows/probes/webui/main.cf): done when the window
-  shows `bridge ok: hello, Windows` and `event ok: "pong"`.
+- **Symptom (before):** a `webui.App` opened an empty Win32 window and printed
+  `webui: WebView2 SDK header (<WebView2.h>) was not present at compile time…`. With the
+  header present it would still have been empty: `runtime/` had no `ICoreWebView2` code.
+- **Patch:** a `Wv2Host` in `windows_webview2.hpp`, built on the same contract as the Linux
+  backend, so `bridge.hpp` and `webui.hpp` are untouched:
+
+  | Linux (WebKitGTK) | Windows (patch) |
+  |---|---|
+  | `webkit_user_script_new(kPreloadBridgeJs, …START)` | `AddScriptToExecuteOnDocumentCreated(kPreloadBridgeJs)` |
+  | `script-message-received::external` → `handle_ipc_message` | `WebMessageReceived` → `TryGetWebMessageAsString` → `handle_ipc_message` |
+  | `app://` scheme → `resolve_asset` | `https://app.localhost/*` filter → `WebResourceRequested` → `resolve_asset` → `CreateWebResourceResponse` |
+  | `platform_eval` → `g_idle_add` | `platform_eval` → `PostMessageW(kWmCfireEval)` → `ExecuteScript` on the UI thread |
+  | `run_linux_webview_test` | the same `run_win32_webview2(…, offscreen=true)`, now with a WebView in it |
+
+- **Design choices the author may want to revisit:**
+  - **Origin `https://app.localhost`, not `app://localhost`.** WebView2 only serves a custom
+    scheme when the environment is created with `ICoreWebView2EnvironmentOptions4` scheme
+    registrations, which means implementing the options COM object as well. A virtual host
+    answered in `WebResourceRequested` never touches the network, is a secure context, and
+    is what Tauri does (`http://tauri.localhost`). Pages that use relative URLs do not
+    notice; a page that hard-codes `app://localhost/` would.
+  - **`WebView2Loader.dll` loaded at run time** (`LoadLibraryW` + `GetProcAddress`), so a
+    missing DLL prints a message instead of Windows refusing to start the process.
+    Alternatives: link `WebView2LoaderStatic.lib` (an MSVC library: may work with MSVC
+    builds, untested with mingw), or a built-in loader that finds the installed runtime in
+    the registry, as webview/webview does (no DLL to ship, but it calls an undocumented
+    entry point).
+  - **User data in `%LOCALAPPDATA%\<exe name>\WebView2`.** WebView2's default is a folder
+    next to the `.exe`, which fails for a program installed in `Program Files`.
+  - **COM callbacks from lambdas** (`Wv2Handler<I>`, signature taken from `I::Invoke`):
+    WRL's `Callback<>` is MSVC-only. **IIDs are parsed at compile time** from the uuid
+    strings in `WebView2.h`, because the SDK defines them only in `WebView2Guid.lib` (MSVC)
+    and mingw has no `__uuidof` for these interfaces.
+  - **Scripts sent before the first page load are queued** and run on the first
+    `NavigationCompleted`. WebKitGTK runs them against whatever is loaded; queuing seemed
+    the less surprising behaviour.
+  - Also: background colour from `dark_mode`/`transparent` (no white flash on a dark app),
+    per-monitor DPI awareness (looked up at run time, Windows 10 1703+), and a clear
+    message when the WebView2 Runtime is missing (`HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)`,
+    CF-001.e). `-lshlwapi` is added to the Windows GUI link flags for `SHCreateMemStream`.
+- **Verified:** [`windows/probes/webui/main.cf`](../windows/probes/webui/main.cf) in a real
+  window (page, bound call, event, `Quit`), and
+  [`webui_test.cf`](../windows/probes/webui/webui_test.cf) offscreen through `cfire test`:
+  a page that quits (true), one that never does (false after the timeout), and a bound call
+  that returns an error (the promise rejects with its message).
+- **Not done:** CF-001.h, i, j (icons from `.png`, menus, the clipboard owner) and screenshots
+  (`platform_screenshot`, which `CapturePreview` would give), `platform_fullscreen` and
+  `platform_center` (no Windows hook yet), drag-and-drop of files from Explorer.
 
 ## W-07
 
@@ -193,6 +235,35 @@ Sibling of [`cfire-upstream.md`](cfire-upstream.md), which tracks every other ga
 - **Also seen:** the docs list `*_wasm.cf` too, and it is not handled either (not
   Windows-related, not changed). `_windows.cf` *is* handled, but the docs do not list it.
 
+## W-09
+
+**`WebView2.h` includes `EventToken.h`; mingw-w64 ships `eventtoken.h`** · [compiled] ·
+worked around
+
+- **Symptom:** cross-compiling from Linux, `fatal error: 'EventToken.h' file not found`.
+  On Windows the filesystem ignores case, so this only bites a cross build.
+- **Workaround:** a one-line `EventToken.h` that includes `<eventtoken.h>`, in an include
+  directory of its own ([`windows/bin/sysroot.sh`](../windows/bin/sysroot.sh)).
+- **Suggested fix:** if cfire ever documents cross-compiling for Windows, ship the same
+  shim with the runtime (or in whatever fetches the SDK, W-10).
+
+## W-10
+
+**cfire does not know where the WebView2 SDK is, nor ship `WebView2Loader.dll`** · [ran] ·
+worked around
+
+- **Symptom:** with patch 0004, an `ext:webui` build needs `<WebView2.h>` on the include
+  path, and the `.exe` needs `WebView2Loader.dll` next to it (else it prints
+  `webui: WebView2Loader.dll was not found next to the executable…`). `cfire test` runs its
+  binary from the temp folder, so the DLL has to be there too.
+- **Workaround:** our wrapper adds the SDK's `include/`, and `run-probes.sh` copies the DLL
+  next to each `.exe` and into `/tmp`.
+- **Suggested fix:** a `cfire setup --webview2` that fetches the pinned
+  `Microsoft.Web.WebView2` NuGet package (like `cfire setup --wasm`), a `cfire doctor` line
+  for it, and `cfire build`/`cfire test` copying `WebView2Loader.dll` next to the binary
+  they produce for an `ext:webui` target. Or the built-in loader from W-06, which removes
+  the DLL altogether.
+
 ---
 
 ## Seen along the way, not Windows-specific
@@ -217,7 +288,7 @@ file is next updated.
 # llvm-mingw: unpack the ucrt-ubuntu-x86_64 release into ~/.local/opt/
 # cfire: build cfire-windows (make build CXX=clang++) and install by hand (CF-086)
 
-# every time
+# every time: hello, platform files, core, cfire's stdlib suite, webui offscreen and in a window
 ~/Personal/Proyectos/cfire/flint-windows/windows/run-probes.sh
 ```
 

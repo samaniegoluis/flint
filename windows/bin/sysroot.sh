@@ -22,4 +22,17 @@ for p in $PKGS; do
   [ -f "$SYSROOT/.pkgs/$f" ] || curl -fsSL "$REPO/$f" -o "$SYSROOT/.pkgs/$f"
   tar --zstd -xf "$SYSROOT/.pkgs/$f" -C "$SYSROOT" clang64
 done
-echo "sysroot ready: $SYSROOT/clang64"
+# WebView2 SDK (headers + WebView2Loader.dll) for ext:webui. Pinned like the rest.
+WV2_VERSION=1.0.4314.35
+WV2="$SYSROOT/webview2"
+if [ "$(cat "$WV2/VERSION" 2>/dev/null)" != "$WV2_VERSION" ]; then
+  mkdir -p "$WV2"
+  curl -fsSL "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/$WV2_VERSION/microsoft.web.webview2.$WV2_VERSION.nupkg" -o "$WV2/wv2.nupkg"
+  python3 -I -c 'import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); [z.extract(n, sys.argv[2]) for n in z.namelist() if n.startswith("build/native/")]' "$WV2/wv2.nupkg" "$WV2"
+  echo "$WV2_VERSION" > "$WV2/VERSION"
+fi
+# WebView2.h includes "EventToken.h"; mingw-w64 ships eventtoken.h. Only a problem on a
+# case-sensitive filesystem, i.e. cross-compiling from Linux (W-09).
+mkdir -p "$WV2/shim"
+printf '#include <eventtoken.h>\n' > "$WV2/shim/EventToken.h"
+echo "sysroot ready: $SYSROOT/clang64, WebView2 SDK $WV2_VERSION"

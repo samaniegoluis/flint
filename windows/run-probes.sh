@@ -15,5 +15,16 @@ echo "== core";             (cd argv_echo && cfire build --target $T -o ../core/
 (cd core && ARGV_ECHO=argv_echo.exe WSLENV=ARGV_ECHO cfire test --target $T core_test.cf | grep -E '^--- |\((.*)tests')
 echo "== cfire stdlib suite"
 (cd "$CFIRE_SRC" && cfire test --target $T tests/stdlib_suite_test.cf | grep -E '^--- FAIL|\((.*)tests')
-echo "== webui (build only; run windows/probes/webui/webui_probe.exe by hand to see the window)"
-(cd webui && cfire build --target $T -o webui_probe.exe main.cf >/dev/null && echo "built webui_probe.exe")
+# WebView2Loader.dll must sit next to each .exe (W-10). cfire test runs its binary from /tmp.
+WV2_DLL="${WIN_SYSROOT:-$HOME/.local/opt/win-sysroot}/webview2/build/native/x64/WebView2Loader.dll"
+cp "$WV2_DLL" /tmp/
+echo "== webui offscreen (cfire test)"
+(cd webui && cfire test --target $T webui_test.cf | grep -E '^--- |\((.*)tests')
+echo "== webui window (closes itself once the page saw the event)"
+# Run from a Windows folder: WebView2 and cmd.exe dislike \\wsl.localhost paths.
+WIN_TMP="$(wslpath "$(cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r')")/cfire-probes"
+mkdir -p "$WIN_TMP"
+(cd webui && cfire build --target $T -o webui_probe.exe main.cf >/dev/null)
+cp webui/webui_probe.exe "$WV2_DLL" "$WIN_TMP/"
+(cd "$WIN_TMP" && PROBE_AUTOQUIT=1 WSLENV=PROBE_AUTOQUIT timeout 60 ./webui_probe.exe)
+echo "To look at it: $WIN_TMP/webui_probe.exe (without PROBE_AUTOQUIT it stays open)"

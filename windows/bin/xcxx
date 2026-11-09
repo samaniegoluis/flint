@@ -2,5 +2,8 @@
 # Cross C++ compiler for cfire's CFIRE_CXX: llvm-mingw plus the MSYS2 CLANG64 sysroot
 # (sysroot.sh). Linked static, so the .exe needs no libc++.dll / libunwind.dll / lib*.dll.
 L=$(ls -d "$HOME"/.local/opt/llvm-mingw-* | tail -1)
-R="${WIN_SYSROOT:-$HOME/.local/opt/win-sysroot}/clang64"
-exec "$L/bin/x86_64-w64-mingw32-clang++" -isystem "$R/include" -L"$R/lib" "$@" -static
+S="${WIN_SYSROOT:-$HOME/.local/opt/win-sysroot}"
+R="$S/clang64"
+W="$S/webview2"
+exec "$L/bin/x86_64-w64-mingw32-clang++" -isystem "$R/include" -isystem "$W/shim" -isystem "$W/build/native/include" \
+  -L"$R/lib" "$@" -static
