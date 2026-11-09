@@ -528,3 +528,16 @@ test "a copy whose channel died says where its part file may be left" {
     assert_eq(code_of(failed), ERR_IO)
     assert("{failed.error().message()}".contains(".big.flint-part may be left in /srv on nas"))
 }
+
+test "a copy between two hosts that is cancelled leaves nothing on the destination" {
+    mut db1 := FakeSftp{ tree: fake_tree([ffile("/big", "0123456789abcdef")]) }
+    mut nas := FakeLocal{ tree: fake_tree([fdir("/srv")]) }
+    mut sink := quiet_sink()
+    sink.cancel_after = 2
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    cancelled := copy_files(mut db1, mut nas, mut sink, mut clock, relay_req("/big", "/srv/", false, false))
+    assert_eq(code_of(cancelled), ERR_IO)
+    assert(!nas.tree.has("/srv/big"))
+    assert(!nas.tree.has("/srv/.big.flint-part"))
+    assert(db1.tree.has("/big"))
+}

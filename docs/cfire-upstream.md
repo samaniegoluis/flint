@@ -1782,3 +1782,14 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   folder. Milestone 17. No native code.
 - **Ideal:** string literals lower with their length (`std::string("\0", 1)` or a `""s` literal), so an
   embedded NUL survives.
+
+### CF-105 · missing · `confirmed`: no generic struct, so a port cannot be wrapped as another
+- **Repro (43431f2, macOS):** `type Wrap[T: Src] struct { inner: T }` fails with "expected 'struct',
+  'enum', or 'interface' after type name". Milestone 18 copies from one host to another by reusing
+  the copy written for this machine ↔ host: the destination host must serve `LocalFiles`, which an
+  adapter struct `HostAsLocal[T: SftpTransport]` would do for any transport (and for test fakes).
+- **Workaround:** `SshLink` itself carries the `local_*` methods, each the SFTP call of the same name
+  (`src/adapters/ssh/sftp_far.cf`); `relay_with_hosts` names `SshTransport` only (CF-100). Tests use
+  the existing `FakeLocal` as the destination host. No native code.
+- **Ideal:** generic structs with constrained type parameters and methods on them (`fn (self:
+  Wrap[T]) …`), as Go and Rust have.
