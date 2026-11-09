@@ -22,7 +22,12 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
   green (Verified, below). Installed in `D:\Programas\Flint`. The handoff for cfire's
   author is `D:\Respaldos\flint-windows\cfire-windows-2026-11-09.zip` (already given,
   or to give). Backups: git bundles in `D:\Respaldos\flint-windows`.
-- **Owner checks still open:** Win+L and sleep with the app unlocked (it should lock), a
+- **Merged `main` again (2026-11-09):** milestone 20 (split panes, `b912435`), no conflicts,
+  UI only. On Windows the Linux ⌥⌘ layer (Ctrl+Alt) swallowed AltGr characters; fixed in
+  `keymap.ts` (What Flint changed, "AltGr and shortcuts"). gui-e2e 178 pass.
+- **Owner checks still open:** split panes in a real window (⌘D is Ctrl+Shift+D, drag a
+  divider, Ctrl+Alt+1..4 on the US layout), AltGr characters typed into a pane on
+  US-International (¡ ð Ñ Ó reach the shell, no layout changes), Win+L and sleep with the app unlocked (it should lock), a
   real dialog (save a key), a drag from Explorer into the Files view,
   `cmdkey /list:Flint/*` after unlocking with "Remember on this computer", interactive
   `connect` in Windows Terminal (`windows/ssh-lab.sh start` first; it is stopped), and
@@ -99,6 +104,7 @@ paths (the socket code moved into shared helpers with the same behaviour).
 | GUI: presence check | `uievents/native/flint_presence.hpp` | **Degraded:** none on Windows; the window asks for the master password (the existing fallback). Windows Hello is the candidate |
 | GUI: clipboard | `uievents/native/flint_clipboard.hpp` | `CF_UNICODETEXT`; a secret also carries `ExcludeClipboardContentFromMonitorProcessing`, `CanIncludeInClipboardHistory=0`, `CanUploadToCloudClipboard=0`; `GetClipboardSequenceNumber` is the change count; owner = a message-only window on the calling (UI) thread, which also runs the clear `SetTimer` |
 | GUI: terminal copy and paste | `ui/src/lib/clipboardKeys.ts` (new, tested), `sessions/TerminalView.tsx`, Settings, `site/` | As Windows Terminal (owner's choice): Ctrl+Shift+C, Ctrl+Insert and Ctrl+C over a selection copy (the selection clears, so the next Ctrl+C interrupts); Ctrl+Shift+V, Ctrl+V and Shift+Insert paste through the webview's own paste event (no clipboard permission). Before, Shift+Insert reached the remote as `ESC[2;2~` and the shell printed `2~`. `Os` gains `'windows'`; Settings names Windows Credential Manager instead of the Secret Service |
+| GUI: AltGr and shortcuts | `ui/src/lib/keymap.ts` (tested), `site/` | Windows reports AltGr as Ctrl+Alt, the Linux ⌥⌘ layer (Ctrl+Alt) and ⇧⌘ layer (Ctrl+Alt+Shift) swallowed AltGr characters: US-International AltGr+1..4 (¡²³¤, milestone 20's layouts), AltGr+D (ð, Duplicate), AltGr+Shift+N/O (Ñ/Ó, Create/Switch vault). On Windows a Ctrl+Alt chord whose `key` is not its own letter or digit is text and goes to the terminal, as in Windows Terminal |
 | GUI: file dialogs | `uievents/native/flint_dialog.hpp` | Nothing: `native()` stays false and the driver uses cfire's Windows dialogs (`GetOpenFileNameW`), as on macOS |
 | GUI: monospaced fonts | `fonts/native/flint_fonts.hpp` | `EnumFontFamiliesExW`, `FIXED_PITCH`, no `@` vertical faces (the POSIX branch would `popen("fc-list")` through `cmd.exe`) |
 | GUI link flags | `pkgconfig/windows/flint-native-gui.pc` (new), `flint-native.pc` | `-luser32 -lwtsapi32`; `-lgdi32 -luser32` for fonts |
@@ -120,7 +126,7 @@ otherwise.
 | `windows/build-gui.sh` | CLI, app and page build with no change beyond the merge |
 | `windows/test-suites.sh` | **10 suites, 1071 tests pass** on Windows: config 89, crypto 89, fonts 81, ipc 93, keychain 83, process 89, uievents 95, vault 114, application 193, clicmd 145. `ssh` not run (needs sshd on `127.0.0.1` from Windows). First run: ipc, vault and clicmd failed only because "/tmp" from a WSL folder is the WSL share; process had two POSIX-only asserts |
 | `windows/cli-smoke.sh` | 49/49 |
-| `windows/gui-e2e.sh` | **155 pass**: 138 + main's milestones 18-19 (two panes, copy between servers, a host key asked inside the pane, Skip) + 2 for the Windows copy and paste keys (none reaches the remote; Ctrl+C over a selection clears it). Skipped as before: vim, the focus trap. A real paste from the Windows clipboard into an SSH session: owner, with Shift+Insert, Ctrl+Shift+V and Ctrl+V, and Ctrl+C over a selection copies without interrupting the remote while Ctrl+C with none still interrupts (2026-11-09). Ctrl+Insert not checked by a person |
+| `windows/gui-e2e.sh` | **178 pass** after merging milestone 20 (the 25-check split-panes step included), twice: before and after the AltGr fix. Before that, **155 pass**: 138 + main's milestones 18-19 (two panes, copy between servers, a host key asked inside the pane, Skip) + 2 for the Windows copy and paste keys (none reaches the remote; Ctrl+C over a selection clears it). Skipped as before: vim, the focus trap. A real paste from the Windows clipboard into an SSH session: owner, with Shift+Insert, Ctrl+Shift+V and Ctrl+V, and Ctrl+C over a selection copies without interrupting the remote while Ctrl+C with none still interrupts (2026-11-09). Ctrl+Insert not checked by a person |
 | `windows/serve-e2e.sh` | **51/51**, twice 49/49 before the new check: `flint cp` between two hosts through the app (milestone 18) |
 | `windows/run-probes.sh` | green |
 | Linux regression | The port's copy and `origin/main`'s, side by side, same cfire, `127.0.0.1` → `127.0.0.2` in the copies only: **the same results**. Suites: keychain (no Secret Service in WSL) and uievents (no GTK) fail on both, the rest pass; the port's fonts test first failed to compile on Linux (a `{names}` slice in a message, fine on libc++, not on GCC 13's libstdc++; fixed, and noted for cfire). `cli-e2e`: **338/346 on both**, the same 8 `localhost` checks. `cli-e2e` now builds the GUI target too (`cfire build`), which this WSL cannot (no GTK): the copies used `cfire build flint` |
