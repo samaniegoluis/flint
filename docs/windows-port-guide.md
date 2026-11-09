@@ -24,10 +24,11 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
   or to give). Backups: git bundles in `D:\Respaldos\flint-windows`.
 - **Merged `main` again (2026-11-09):** milestone 20 (split panes, `b912435`), no conflicts,
   UI only. On Windows the Linux ⌥⌘ layer (Ctrl+Alt) swallowed AltGr characters; fixed in
-  nothing (What Flint changed, "AltGr and shortcuts"). gui-e2e 178 pass. Owner: split
-  panes work on the Spanish layout; on US-International Ctrl+Alt types ¡ (expected).
-- **Owner checks still open:** split panes in a real window (⌘D is Ctrl+Shift+D, drag a
-  divider), Win+L and sleep with the app unlocked (it should lock), a
+  nothing (What Flint changed, "AltGr and shortcuts"). gui-e2e 178 pass. Owner, in the
+  installed app: splitting, dragging dividers and the glyphs after a split look right;
+  the Ctrl+Alt layouts work on the Spanish layout; on US-International Ctrl+Alt types ¡
+  (expected).
+- **Owner checks still open:** Win+L and sleep with the app unlocked (it should lock), a
   real dialog (save a key), a drag from Explorer into the Files view,
   `cmdkey /list:Flint/*` after unlocking with "Remember on this computer", interactive
   `connect` in Windows Terminal (`windows/ssh-lab.sh start` first; it is stopped), and
