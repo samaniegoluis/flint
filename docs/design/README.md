@@ -11,6 +11,7 @@ Direction **A (Editor)** as the base, plus B's command palette and unlock layout
 | `screens/17*.{dark,light}.html` | v3 · milestone 13: the approval window as root (`exec --sudo`), the host's sudo password, and Activity with sudo rows. |
 | `screens/16e*.{dark,light}.html` | v4 · milestone 15: whole commands (summary + "Show full command", the full-command modal), the activity entry, and activity retention. |
 | `screens/16f*.{dark,light}.html` | v4 · milestone 16: the approval window for `flint cp` (direction, both paths, `-r` and `--force`). |
+| `screens/16g*`, `14d*`, `18*` `.{dark,light}.html` | v5 · milestones 18–20: the approval for a copy between two hosts (18), two file panes in the Files view (19), split terminal panes (20). |
 | `tokens.css` | **The source of truth.** CSS custom properties keyed by `html[data-theme="dark"\|"light"]`. Import once at the app root. |
 | `flint.css` | The mockups' component classes. It's a reference for your CSS Modules, not production CSS. It uses tokens only. |
 | `components.{dark,light}.html` | The component sheet. |
@@ -204,6 +205,28 @@ These are 16a1 with Hosts, Actions (Run commands marked "needed") and Duration u
 
 - **As built:** the window does not connect before it asks, so **To** is the destination as given, with the source's name added when it ends in `/` (a folder, D-054). `.` and a destination without a trailing `/` stay as given: whether they are folders is only known once connected. A remote path is shown as `flint cp` was given it, relative to the login folder when it does not start with `/`.
 
+## v5 — server to server, and split panes (screens 16g*, 14d*, 18*)
+
+The bytes always flow server A → Flint → server B; no key or password is ever put on a server. The approval window and the Files header both say this ("via Flint").
+
+| Screen | What it shows |
+|---|---|
+| `16g1` / `16g2` / `16g3` | The approval for copying between two servers, a variant of 16f1. A direction strip reads `prod-api-01 → via Flint → db-primary`. From and To rows show host, alias and path; paths wrap at `/` and are never truncated. Flag chips: "folder (-r)", and "overwrite (--force)" in the warning tone, with the 16f3 strip. Hosts offers "These two hosts" with both chips. 16g3 tags each chip: "already allowed · 32 min left" or "new — this grant adds it". |
+| `14d1` | Files header: **Copy to another server…** opens a host picker with a filter, folders as in the sidebar, and the current host greyed out as "this tab". |
+| `14d2` | Two file panes. Each has its own header (colour dot, label, role tag **This tab** or **Other server · no tab, Flint-only session**, breadcrumb, `..`, refresh) and its own list. The Files view widens to 700 px, the terminal stays visible with an icon-only toolbar, and **One pane** returns to a single pane. |
+| `14d3a` / `14d3b` | Dragging to the other pane: the target pane and folder highlight, and the drag label reads "Copy to db-primary · scripts/". The context menu has **Copy to db-primary** (⌘→). |
+| `14d4` | The queue between servers. Each row shows `A → B`, with per-file progress and cancel. A name clash shows a Replace / Skip strip with "Do this for the other N conflicts". |
+| `14d5a–d` | The other server, logging in without a terminal, inside its pane: connecting, password (10a), unknown host key (10c), auth failed. |
+| `18a1` / `18a2` | Two panes side by side with the **Split** menu open (Split right ⌘D, Split down ⇧⌘D, the four layouts ⌥⌘1–4, Focus next pane ⌘], Close pane ⌘W). Two panes stacked on the same host, with the divider being dragged. |
+| `18b` / `18c` | Grid 2 × 2; one large + two small. |
+| `18d` | One pane connecting (11a), one with connection lost (11c), two running. The others are untouched. |
+| `18e` | Palette: "Open db-primary in a new pane" (⇧⌘↵). |
+| `18f` | Four panes at 900 × 600, with the sidebar collapsed and an icon-only toolbar. |
+| `18g` | Split panes with the Files view. Files follows the focused pane, and its header carries the same pane number badge. |
+
+**Focus in split panes:** the focused pane has an ember border and a tinted header, and the other panes' output is dimmed to 60 %. Either cue alone is weak with busy output or in light mode; together they hold up. Pane numbers 1–4 appear in pane headers, the toolbar badge ("pane 2 of 4") and the Files header.
+
+**Shortcut change:** Split right takes ⌘D, so **Duplicate session moves to ⌥⌘D**.
 
 ## What Flint left out (2026-11-07)
 
