@@ -342,6 +342,8 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   // Deny has the focus unless a password is asked for: then the first field has it.
   const focusOn: 'sudo' | 'master' | 'deny' = askSudo ? 'sudo' : presence === 'password' ? 'master' : 'deny';
   const allowKey = os === 'mac' ? '⌘↵' : 'Ctrl+↵';
+  // The presence check this system would offer (Windows Hello is not wired yet).
+  const noPresence = os === 'windows' ? 'No Windows Hello' : 'No Touch ID or polkit agent';
   const next = queue[1];
   const argCount = sudo?.argv.length ?? 0;
   const more = ap.command ? moreText(ap.request, ap.command.text) : '';
@@ -501,7 +503,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                   <input id="approval-pw" type="password" className="pw" autoComplete="off" value={password} aria-invalid={wrongPassword || undefined}
                     onChange={(e) => { setPassword(e.target.value); setWrongPassword(false); }} {...(focusOn === 'master' ? { 'data-autofocus': true } : {})} />
                 </div>
-                {!wrongPassword && <span className="hint">{sudo ? "No Touch ID or polkit agent here. This is the vault's password, not the host's sudo password." : 'Master password for this vault. No Touch ID or polkit agent is available here.'}</span>}
+                {!wrongPassword && <span className="hint">{sudo ? `${noPresence} here. This is the vault's password, not the host's sudo password.` : `Master password for this vault. ${noPresence} is available here.`}</span>}
                 {wrongPassword && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
               </div>
             </div>

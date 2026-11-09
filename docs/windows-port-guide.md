@@ -29,12 +29,16 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
   the Ctrl+Alt layouts work on the Spanish layout; on US-International Ctrl+Alt types ¡
   (expected).
 - **Owner checks done:** Win+L with the app unlocked locks the vault: after signing back
-  in to Windows, Flint asks for the master password (2026-11-09).
-- **Owner checks still open:** sleep with the app unlocked (it should lock), a
-  real dialog (save a key), a drag from Explorer into the Files view,
-  `cmdkey /list:Flint/*` after unlocking with "Remember on this computer", interactive
-  `connect` in Windows Terminal (`windows/ssh-lab.sh start` first; it is stopped), and
-  Ctrl+Insert to copy.
+  in to Windows, Flint asks for the master password. On the owner's own vault in the
+  installed app: unlocking with "Remember on this computer" stores a Generic, local-machine
+  credential `Flint/vault-<id>` (`cmdkey /list:Flint/*`); Ctrl+Insert copies a terminal
+  selection; a file dragged from Explorer into the Files view uploads; saving a key opens
+  the Windows dialog and writes the file; `flint.exe connect local` in Windows Terminal
+  (pwsh) asks for a grant naming the chain `explorer › WindowsTerminal › pwsh › flint`,
+  is allowed with the master password (no presence check on Windows), and opens an
+  interactive shell (all 2026-11-09). The grant's hint named Touch ID and polkit; it now
+  says "No Windows Hello" on Windows.
+- **Owner checks still open:** sleep with the app unlocked (it should lock).
 
 **Next phase: when cfire ships Windows support upstream.**
 
