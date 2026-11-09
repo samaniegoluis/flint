@@ -244,6 +244,31 @@ try {
 		const extra = process.env.FLINT_SHOTS_EXTRA;
 		if (extra) {
 			mkdirSync(extra, { recursive: true });
+			// Split panes (milestone 20): two side by side, the Split menu, three, four,
+			// and four at 900 × 600 (18f).
+			await page.keyboard.press('Meta+d');
+			await page.waitForTimeout(400);
+			await page.screenshot({ path: join(extra, `split-2-${theme}.png`) });
+			await page.locator('[data-split-button]').click();
+			await page.waitForTimeout(200);
+			await page.screenshot({ path: join(extra, `split-menu-${theme}.png`) });
+			await page.keyboard.press('Escape');
+			await page.keyboard.press('Meta+k');
+			await page.keyboard.type('web');
+			await page.waitForTimeout(200);
+			await page.screenshot({ path: join(extra, `split-palette-${theme}.png`) });
+			await page.keyboard.press('Meta+Shift+Enter');
+			await page.waitForTimeout(400);
+			await page.screenshot({ path: join(extra, `split-3-${theme}.png`) });
+			await page.keyboard.press('Meta+Shift+d');
+			await page.waitForTimeout(400);
+			await page.screenshot({ path: join(extra, `split-4-${theme}.png`) });
+			await page.setViewportSize({ width: 900, height: 600 });
+			await page.waitForTimeout(600);
+			await page.screenshot({ path: join(extra, `split-narrow-${theme}.png`) });
+			await page.setViewportSize({ width: 1280, height: 640 });
+			for (let i = 0; i < 3; i++) await page.keyboard.press('Meta+w');
+			await page.waitForTimeout(300);
 			await page.getByRole('button', { name: 'Settings' }).first().click();
 			await page.locator('.nav-i', { hasText: 'Vault' }).click();
 			await page.waitForTimeout(300);

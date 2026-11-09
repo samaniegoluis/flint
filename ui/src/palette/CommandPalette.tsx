@@ -1,7 +1,9 @@
 // The command palette (⌘K; ⌘P and ⌘T limit it to hosts). Hosts first, then actions,
 // then vaults. ↵ opens (with ⌘P a host with an open tab switches to it; with ⌘T,
-// "New session", it always opens a new tab), ⌘↵ opens a host in a new tab, ⌘I edits
-// it, Tab moves between result groups.
+// "New session", it always opens a new tab), ⌘↵ opens a host in a new tab, ⇧⌘↵ in a
+// new pane of the active tab (design 18e), ⌘I edits it, Tab moves between result
+// groups. While searching, the best hosts are also offered as "Open <host> in a new
+// pane" actions.
 
 import { useMemo, useRef, useState } from 'react';
 import { useApp, vaultInitial, vaultMarkClass, shortPath } from '../state/app';
@@ -12,6 +14,7 @@ import { Icon, type IconName } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
 import { useSessions } from '../sessions/store';
+import { MAX_PANES } from '../lib/layout';
 
 type Group = 'all' | 'hosts' | 'actions' | 'vaults';
 
@@ -20,7 +23,10 @@ interface Item {
   key: string;
   score: number;
   render: () => React.ReactNode;
-  run: (newTab: boolean) => void;
+  /** `tab`: ⌘↵, a new tab. `pane`: ⇧⌘↵, a new pane of the active tab. */
+  run: (mode: 'open' | 'tab' | 'pane') => void;
+  /** Hosts only: ⇧⌘↵ applies. */
+  host?: boolean;
   edit?: () => void;
 }
 
@@ -28,6 +34,13 @@ const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'newHost', icon: 'plus' },
   { action: 'reconnect', icon: 'reconnect' },
   { action: 'duplicate', icon: 'dup' },
+  { action: 'splitRight', icon: 'split' },
+  { action: 'splitDown', icon: 'split' },
+  { action: 'focusNextPane', icon: 'split' },
+  { action: 'layout1', icon: 'split' },
+  { action: 'layout2', icon: 'split' },
+  { action: 'layout3', icon: 'split' },
+  { action: 'layout4', icon: 'split' },
   { action: 'closeTab', icon: 'x' },
   { action: 'viewHosts', icon: 'hosts' },
   { action: 'viewKeys', icon: 'key' },
@@ -47,16 +60,22 @@ function Hl({ text, positions }: { text: string; positions: number[] }) {
   return <>{highlight(text, positions).map((r, i) => (r.match ? <span key={i} className="match">{r.text}</span> : <span key={i}>{r.text}</span>))}</>;
 }
 
-export function CommandPalette({ hostsOnly, newSession = false, onClose, onConnect, onEdit, onAction }: {
+export function CommandPalette({ hostsOnly, newSession = false, onClose, onConnect, onSplit, onEdit, onAction }: {
   hostsOnly: boolean;
   newSession?: boolean;
   onClose: () => void;
   onConnect: (alias: string, newTab: boolean, noCommand?: boolean) => void;
+  /** Opens a host in a new pane of the active tab. */
+  onSplit: (alias: string, noCommand?: boolean) => void;
   onEdit: (alias: string) => void;
   onAction: (a: Action) => void;
 }) {
   const { catalog, recents, vault, os, switchTo, fail } = useApp();
-  const { tabs } = useSessions();
+  const { tabs, panes, active } = useSessions();
+  const activeTab = tabs.find((t) => t.id === active);
+  // A new pane goes into the active tab, while it has room.
+  const canSplit = !!activeTab && activeTab.panes.length < MAX_PANES;
+  const paneNo = activeTab ? activeTab.panes.indexOf(activeTab.focus) + 1 : 0;
   const [q, setQ] = useState('');
   const [group, setGroup] = useState<Group>(hostsOnly ? 'hosts' : 'all');
   const [hot, setHot] = useState(0);
@@ -69,7 +88,7 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
       const where = h.group ? h.group.split('/').join(' / ') : h.hostname;
       const alt = q ? fuzzy(q, `${h.label} ${h.hostname} ${h.tags.join(' ')} ${h.group}`) : null;
       if (q && !name && !alt) continue;
-      const tabIdx = tabs.findIndex((t) => t.alias === h.alias && t.status !== 'ended');
+      const tabIdx = tabs.findIndex((t) => panes.some((p) => p.tab === t.id && p.alias === h.alias && p.status !== 'ended'));
       const c = colorStyle(h.color);
       out.push({
         group: 'hosts', key: 'h:' + h.alias, score: (name?.score ?? 0) + (alt ? alt.score / 4 : 0) + 2000,
@@ -81,8 +100,9 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
             <span className="hint">{newSession ? 'New tab' : tabIdx >= 0 ? 'Switch to tab' : 'Connect'}</span>
           </>
         ),
-        run: (newTab) => onConnect(h.alias, newTab || newSession),
+        run: (mode) => (mode === 'pane' && canSplit ? onSplit(h.alias) : onConnect(h.alias, mode === 'tab' || newSession)),
         edit: () => onEdit(h.alias),
+        host: true,
       });
       // A host with an initial command can be opened without it once, like
       // `flint connect --no-command`: a way in when that program is broken. Offered
@@ -98,10 +118,32 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
               <span className="hint">Connect without command</span>
             </>
           ),
-          run: () => onConnect(h.alias, true, true),
+          run: (mode) => (mode === 'pane' && canSplit ? onSplit(h.alias, true) : onConnect(h.alias, true, true)),
           edit: () => onEdit(h.alias),
+          host: true,
         });
       }
+    }
+    if (!hostsOnly && canSplit && q) {
+      // The best three hosts, as "Open <host> in a new pane" (design 18e).
+      const best = catalog.hosts
+        .map((h) => ({ h, m: fuzzy(q, h.alias) }))
+        .filter((x) => x.m)
+        .sort((a, b) => b.m!.score - a.m!.score)
+        .slice(0, 3);
+      best.forEach(({ h, m }, i) => {
+        out.push({
+          group: 'actions', key: 'np:' + h.alias, score: m!.score + 1500,
+          render: () => (
+            <>
+              <Icon name="split" size="sm" />
+              <span className="grow trunc">Open <span className="mono"><Hl text={h.alias} positions={m!.positions} /></span> in a new pane</span>
+              {i === 0 && <span className="hint">splits pane {paneNo} · {activeTab!.panes.length + 1} of {MAX_PANES}</span>}
+            </>
+          ),
+          run: () => onSplit(h.alias),
+        });
+      });
     }
     if (!hostsOnly) {
       for (const a of PALETTE_ACTIONS) {
@@ -132,7 +174,7 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
       }
     }
     return out;
-  }, [catalog.hosts, tabs, q, hostsOnly, newSession, os, recents, vault, onConnect, onEdit, onAction, switchTo, fail]);
+  }, [catalog.hosts, tabs, panes, canSplit, paneNo, activeTab, q, hostsOnly, newSession, os, recents, vault, onConnect, onSplit, onEdit, onAction, switchTo, fail]);
 
   const counts = { hosts: 0, actions: 0, vaults: 0 };
   for (const it of items) counts[it.group]++;
@@ -148,7 +190,7 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
     const mod = os === 'mac' ? e.metaKey : e.ctrlKey;
     if (e.key === 'ArrowDown') { e.preventDefault(); setHot(Math.min(shown.length - 1, hot + 1)); scrollHot(hot + 1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setHot(Math.max(0, hot - 1)); scrollHot(hot - 1); }
-    else if (e.key === 'Enter' && current) { e.preventDefault(); finish(() => current.run(mod)); }
+    else if (e.key === 'Enter' && current) { e.preventDefault(); finish(() => current.run(mod && e.shiftKey ? 'pane' : mod ? 'tab' : 'open')); }
     else if (e.key === 'Tab' && !hostsOnly) {
       e.preventDefault();
       const groups: Group[] = ['all', 'hosts', 'actions', 'vaults'];
@@ -191,7 +233,7 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
               <div key={it.key} style={{ display: 'contents' }}>
                 {header && <div className="menu-label"><span className="label">{it.group[0].toUpperCase() + it.group.slice(1)}</span></div>}
                 <button id={'pi-' + it.key} className={'mi' + (it === current ? ' hot' : '')} role="option" aria-selected={it === current} tabIndex={-1}
-                  style={{ minHeight: 38 }} onMouseMove={() => setHot(i)} onClick={(e) => finish(() => it.run(os === 'mac' ? e.metaKey : e.ctrlKey))}>
+                  style={{ minHeight: 38 }} onMouseMove={() => setHot(i)} onClick={(e) => { const m = os === 'mac' ? e.metaKey : e.ctrlKey; finish(() => it.run(m && e.shiftKey ? 'pane' : m ? 'tab' : 'open')); }}>
                   {it.render()}
                   {it === current && <Key>↵</Key>}
                 </button>
@@ -205,6 +247,7 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
           {/* ⌘↵ and ⌘I only act on a host, so they are offered only while one is hot. */}
           {current?.group === 'hosts' && <>
             {!newSession && <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</Key>open in new tab</span>}
+            {canSplit && <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⇧⌘↵' : 'Ctrl+Shift+↵'}</Key>open in a new pane</span>}
             <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘I' : 'Ctrl+I'}</Key>edit host</span>
           </>}
         </div>

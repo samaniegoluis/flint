@@ -35,4 +35,29 @@ describe('keymap', () => {
     expect(chordLabel('switchVault', 'linux')).toBe('Ctrl+Alt+Shift+O');
     expect(chordLabel('palette', 'linux')).toBe('Ctrl+Shift+K');
   });
+  it('splits with ⌘D and ⇧⌘D, and moves Duplicate to ⌥⌘D', () => {
+    expect(actionFor(key('KeyD', { meta: true }), 'mac')).toBe('splitRight');
+    expect(actionFor(key('KeyD', { meta: true, shift: true }), 'mac')).toBe('splitDown');
+    expect(actionFor(key('KeyD', { meta: true, alt: true }), 'mac')).toBe('duplicate');
+    expect(actionFor(key('KeyD', { ctrl: true, shift: true }), 'linux')).toBe('splitRight');
+    expect(actionFor(key('KeyD', { ctrl: true, shift: true, alt: true }), 'linux')).toBe('splitDown');
+    expect(actionFor(key('KeyD', { ctrl: true, alt: true }), 'linux')).toBe('duplicate');
+    expect(chordLabel('duplicate', 'mac')).toBe('⌥⌘D');
+    expect(chordLabel('duplicate', 'linux')).toBe('Ctrl+Alt+D');
+  });
+
+  it('takes ⌥⌘1-4 for layouts, apart from ⌘1-9 for tabs', () => {
+    expect(actionFor(key('Digit3', { meta: true, alt: true }), 'mac')).toBe('layout3');
+    expect(actionFor(key('Digit3', { meta: true }), 'mac')).toBe('tab3');
+    expect(actionFor(key('Digit1', { ctrl: true, alt: true }), 'linux')).toBe('layout1');
+    expect(actionFor(key('Digit1', { ctrl: true, shift: true }), 'linux')).toBe('tab1');
+    expect(actionFor(key('Digit5', { meta: true, alt: true }), 'mac')).toBeNull();
+    expect(chordLabel('layout4', 'linux')).toBe('Ctrl+Alt+4');
+  });
+
+  it('moves between panes with ⌘] and ⌘[', () => {
+    expect(actionFor(key('BracketRight', { meta: true }), 'mac')).toBe('focusNextPane');
+    expect(actionFor(key('BracketLeft', { ctrl: true, shift: true }), 'linux')).toBe('focusPrevPane');
+    expect(chordLabel('focusNextPane', 'linux')).toBe('Ctrl+Shift+]');
+  });
 });

@@ -12,7 +12,7 @@
 import { useSyncExternalStore } from 'react';
 import { api, on } from '../api/backend';
 import type { HostKeyPayload, SessionPromptEvent, SessionStateEvent } from '../api/types';
-import type { SessionEnd, Tab, TabStatus } from '../sessions/store';
+import type { SessionEnd, Pane, PaneStatus } from '../sessions/store';
 import { files } from './store';
 
 export interface Pair {
@@ -24,7 +24,7 @@ export interface Pair {
   /** A session with no terminal that Flint opened for the pane; else `otherTab`'s. */
   own: boolean;
   otherTab: string;
-  status: TabStatus;
+  status: PaneStatus;
   prompt: SessionPromptEvent | null;
   changedKey: HostKeyPayload | null;
   end: SessionEnd | null;
@@ -43,7 +43,7 @@ const mint = () => `f-${Date.now().toString(36)}-${++seq}`;
  * The pane as it is now. A pane over another tab's session follows that tab: a tab
  * that reconnected lends its new session, one that closed or dropped ends the pane.
  */
-export function livePair(p: Pair, tabs: Tab[]): Pair {
+export function livePair(p: Pair, tabs: Pane[]): Pair {
   if (p.own) return p;
   const t = tabs.find((x) => x.id === p.otherTab);
   if (!t) return { ...p, status: 'ended', end: { code: 'network', message: `The tab for ${p.alias} was closed.`, exit_code: -1 } };
@@ -99,7 +99,7 @@ class PairStore {
    * Opens the second pane of `tabId` on `alias`: over that host's connected tab when
    * it has one, otherwise on a session of its own with no terminal.
    */
-  open(tabId: string, alias: string, tabs: Tab[]) {
+  open(tabId: string, alias: string, tabs: Pane[]) {
     this.start();
     this.close(tabId);
     const other = tabs.find((t) => t.alias === alias && t.status === 'ready' && t.id !== tabId);

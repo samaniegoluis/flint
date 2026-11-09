@@ -18,6 +18,7 @@ import { clampFiles, clampSidebar, FILES_DEFAULT, FILES_MAX, FILES_MIN, SIDEBAR_
 import { FilesView } from '../files/FilesView';
 import { files as filesStore } from '../files/store';
 import { sessions, useSessions } from '../sessions/store';
+import { LAYOUTS, MAX_PANES, type SplitDir } from '../lib/layout';
 import { focusTerminal } from '../sessions/TerminalView';
 import { HostEditor } from '../editors/HostEditor';
 import { KeysPage, type Confirm } from '../pages/KeysPage';
@@ -34,7 +35,7 @@ const NARROW = 1040;
 export function Shell() {
   const app = useApp();
   const { os, vault, catalog, settings, notify, fail, refreshCatalog, openVaultFile, go, phase } = app;
-  const { tabs, active } = useSessions();
+  const { tabs, panes, active } = useSessions();
   const [view, setView] = useState<View>('hosts');
   const [narrow, setNarrow] = useState(window.innerWidth < NARROW);
   const [collapsed, setCollapsed] = useState(window.innerWidth < NARROW);
@@ -95,17 +96,18 @@ export function Shell() {
   }, [filesWidth]);
   // Transfers queued while the window was locked start once it opens again.
   useEffect(() => { if (phase === 'main') filesStore.resume(); }, [phase]);
-  // A closed tab's folder and finished transfers go with it.
+  // A closed pane's folder and finished transfers go with it.
   useEffect(() => {
-    const open = new Set(tabs.map((t) => t.id));
+    const open = new Set(panes.map((t) => t.id));
     for (const id of Object.keys(filesStore.get().folders)) if (!open.has(keyTab(id))) filesStore.forget(id);
     pairs.keepOnly(open);
-  }, [tabs]);
+  }, [panes]);
   const collapsedGroups = new Set(ui?.collapsed ?? []);
   const setCollapsedGroups = useCallback((next: Set<string>) => updateUi({ collapsed: [...next] }), [updateUi]);
 
   const fontSize = Math.max(8, Math.min(32, settings.term_font_size + zoom));
-  const tab = tabs.find((t) => t.id === active);
+  // The active tab's focused pane: the Files view, the title and the status bar follow it.
+  const tab = panes.find((p) => p.id === tabs.find((t) => t.id === active)?.focus);
   const sideView = SIDE_VIEWS.includes(view);
   const showSidebar = sideView && !collapsed;
 
@@ -131,26 +133,38 @@ export function Shell() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // A prompt that opens in a background tab gets a toast naming the tab's shortcut.
+  // A prompt that opens in a background tab gets a toast naming the tab's shortcut;
+  // one in another pane of this tab names the pane.
   useEffect(() => {
-    tabs.forEach((t, i) => {
-      const before = prevStatus.current.get(t.id);
-      if (t.status === 'prompt' && before !== 'prompt' && t.id !== active) {
-        const chord = i < 9 ? ' ' + chordLabel(('tab' + (i + 1)) as Action, os) : '';
-        notify(`${t.alias} needs your input${chord}`, 'info');
-      }
-      prevStatus.current.set(t.id, t.status);
-    });
-  }, [tabs, active, os, notify]);
+    for (const p of panes) {
+      const before = prevStatus.current.get(p.id);
+      prevStatus.current.set(p.id, p.status);
+      if (p.status !== 'prompt' || before === 'prompt') continue;
+      const i = tabs.findIndex((t) => t.id === p.tab);
+      const t = tabs[i];
+      if (!t || (t.id === active && t.focus === p.id)) continue;
+      if (t.id === active) notify(`${p.alias} needs your input in pane ${t.panes.indexOf(p.id) + 1}`, 'info');
+      else notify(`${p.alias} needs your input${i < 9 ? ' ' + chordLabel(('tab' + (i + 1)) as Action, os) : ''}`, 'info');
+    }
+  }, [panes, tabs, active, os, notify]);
 
   // `noCommand` (the palette's "without …" row) always opens its own tab.
   const connect = useCallback((alias: string, newTab: boolean, noCommand = false) => {
     setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts'));
     if (narrow) setCollapsed(true);
-    const open = sessions.get().tabs.find((t) => t.alias === alias && t.status !== 'ended' && !t.noCommand);
-    if (open && !newTab && !noCommand) sessions.activate(open.id);
+    const open = sessions.get().panes.find((t) => t.alias === alias && t.status !== 'ended' && !t.noCommand);
+    if (open && !newTab && !noCommand) sessions.focusPane(open.id);
     else sessions.open(alias, noCommand);
   }, [narrow]);
+
+  // A new pane in the active tab (⌘D, ⇧⌘D, the Split menu, the palette's ⇧⌘↵).
+  const split = useCallback((dir: SplitDir, alias?: string, noCommand = false) => {
+    setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts'));
+    const t = sessions.tab(sessions.get().active);
+    if (!t) { if (alias) sessions.open(alias, noCommand); return; }
+    if (t.panes.length >= MAX_PANES) { notify(`A tab holds up to ${MAX_PANES} panes`, 'info'); return; }
+    sessions.split(dir, alias, noCommand);
+  }, [notify]);
 
   // The key leaves memory; open sessions keep running under the lock screen (D-042).
   const lock = app.lock;
@@ -183,7 +197,7 @@ export function Shell() {
     const cur = regions.findIndex((r) => r.contains(document.activeElement));
     const next = regions[(cur + dir + regions.length) % regions.length];
     if (!next) return;
-    if (next.classList.contains('pane')) { focusTerminal(active); return; }
+    if (next.classList.contains('pane')) { focusTerminal(tab?.id ?? null); return; }
     (next.matches('button') ? next : next.querySelector<HTMLElement>('[tabindex="0"], button:not([disabled]), input'))?.focus();
   };
 
@@ -201,9 +215,15 @@ export function Shell() {
       case 'switchVault': setView('hosts'); setSidebarCollapsed(false); setSwitcher(true); break;
       case 'openVault': openVaultFile().catch(fail); break;
       case 'createVault': go('create'); break;
-      case 'closeTab': if (active) sessions.close(active); break;
-      case 'reconnect': if (active) sessions.reconnect(active); break;
+      // ⌘W closes the focused pane; the last one closes its tab.
+      case 'closeTab': if (tab) sessions.close(tab.id); break;
+      case 'reconnect': if (tab) sessions.reconnect(tab.id); break;
       case 'duplicate': if (tab) connect(tab.alias, true); break;
+      case 'splitRight': split('right'); break;
+      case 'splitDown': split('down'); break;
+      case 'focusNextPane': sessions.cycleFocus(1); break;
+      case 'focusPrevPane': sessions.cycleFocus(-1); break;
+      case 'layout1': case 'layout2': case 'layout3': case 'layout4': sessions.setLayout(LAYOUTS[Number(a.slice(6)) - 1]); break;
       case 'toggleSidebar': if (SIDE_VIEWS.includes(view)) setSidebarCollapsed((c) => !c); else { setView('hosts'); setSidebarCollapsed(false); } break;
       // The Files view follows the active tab (⌘E, the toolbar's Files button).
       case 'viewFiles':
@@ -236,7 +256,7 @@ export function Shell() {
       case 'prevRegion': cycleRegion(-1); break;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, tab, view, collapsed, selected, catalog.hosts, catalog.groups, connect, lock, openVaultFile, fail, go, setSidebarCollapsed, setCollapsedGroups]);
+  }, [active, tab, view, collapsed, selected, catalog.hosts, catalog.groups, connect, split, lock, openVaultFile, fail, go, setSidebarCollapsed, setCollapsedGroups]);
 
   useEffect(() => {
     setActionHandler(run);
@@ -256,7 +276,7 @@ export function Shell() {
   }, [run, os, phase]);
 
   const anyOverlay = palette || editor || confirm || ask || manage;
-  const sessionsOpen = tabs.filter((t) => t.status !== 'ended').length;
+  const sessionsOpen = panes.filter((t) => t.status !== 'ended').length;
   const crumb = tab ? <><span>{vault?.name}</span><span className="faint">/</span><span className="mono muted">{tab.alias}</span></> : <span>{vault?.name}</span>;
   const railBtn = (v: View, icon: 'hosts' | 'files' | 'key' | 'cred' | 'settings', label: string, action: Action) => (
     <button className={'rail-btn' + (view === v ? (SIDE_VIEWS.includes(v) && collapsed ? ' is-collapsed is-on' : ' is-on') : '')} data-item={v}
@@ -355,6 +375,7 @@ export function Shell() {
 
       {palette && (
         <CommandPalette hostsOnly={palette.hostsOnly} newSession={!!palette.newSession} onClose={() => setPalette(null)} onConnect={connect}
+          onSplit={(alias, noCommand) => split('right', alias, noCommand)}
           onEdit={(alias) => setEditor({ alias, group: '' })} onAction={(a) => setTimeout(() => run(a), 0)} />
       )}
       {editor && (
