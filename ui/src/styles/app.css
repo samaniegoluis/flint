@@ -34,6 +34,11 @@ button.panel:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .act-row .cmd { word-break: normal; overflow-wrap: anywhere; }
 .act-row .when { white-space: nowrap; }
 .act-row .caller { min-width: 0; }
+/* In a short window the approval card keeps its header and its footer (Deny, Allow)
+   in view and scrolls its body: a copy between two hosts (16g) is the tallest card. */
+.modal.approval > form { display: flex; flex-direction: column; min-height: 0; }
+.modal.approval .modal-b { overflow-y: auto; min-height: 0; }
+.modal.approval .modal-b > * { flex-shrink: 0; }
 /* The next request in the approval window's queue (17a6), at the foot of the card. */
 .approval-next { gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--border-subtle); background: var(--surface-overlay); border-radius: 0 0 var(--radius-lg) var(--radius-lg); font-size: var(--fs-sm); }
 /* A checkbox row in a column (the unlock screen's "Allow …") is as wide as its text:
