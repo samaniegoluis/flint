@@ -107,6 +107,8 @@ type SessionOpenReq struct {
     accept_new_host_key: bool `json:"accept_new_host_key"`
     // Skip the host's initial command (the palette's "Connect … without …").
     no_command:          bool `json:"no_command"`
+    // A session with no terminal for the Files view's second pane (milestone 19).
+    files_only:          bool `json:"files_only"`
 }
 
 type SessionInputReq struct {
@@ -731,7 +733,13 @@ fn run_gui_session(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, v
     mut term := new_gui_terminal(app, req.session)
     prompter := new_gui_prompter(app, req.session)
     mut clock := new_system_clock()
-    result := connect_host(c, mut store, vs, mut link, prompter, mut term, mut clock, req.alias, "xterm-256color", opts)
+    mut result: i64! = 0
+    if req.files_only {
+        // The second Files pane on a host with no open tab: no PTY (D-056).
+        result = hold_files_session(c, mut store, vs, mut link, prompter, mut term, mut clock, req.alias, opts)
+    } else {
+        result = connect_host(c, mut store, vs, mut link, prompter, mut term, mut clock, req.alias, "xterm-256color", opts)
+    }
     link.link_hangup()
     if result.has_value() {
         emit_session_state(mut app, req.session, "ended", "", "", result.value())

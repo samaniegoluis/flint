@@ -469,6 +469,23 @@ fn relay_with_hosts[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: T
     return res
 }
 
+// The Files view's copy between two servers (milestone 19, D-059): both sessions
+// are already logged in (a tab's, or a pane's session with no terminal), each lent
+// with no channel; each gets an SFTP channel of its own, and the bytes stream from
+// `from` to `to` through this process as `flint cp a:/x b:/y` does (D-057), with
+// nothing on this machine's disk. `to` serves `LocalFiles` over its channel
+// (adapters/ssh/sftp_far.cf); cfire has no `T: A + B` (CF-100). Not logged (D-055).
+fn relay_between_sessions[T: SftpTransport, K: TransferSink, C: Clock](mut from: T, mut to: T, mut sink: K, mut clock: C, req: CopyRequest) -> CopyResult! {
+    if req.direction != COPY_RELAY {
+        return error(coded(ERR_INTERNAL, "relay: not a copy between two hosts"))
+    }
+    try open_sftp(mut from)
+    try open_sftp(mut to)
+    label_sftp(mut from, req.alias)
+    label_sftp(mut to, req.to_alias)
+    return copy_files(mut from, mut to, mut sink, mut clock, req)
+}
+
 // ---- Files dropped from the OS (milestone 17) ----------------------------------------
 
 // Appends a chunk of dropped file `rel` to drop `drop_id`, and returns where the

@@ -537,3 +537,53 @@ test "a saved password is revealed or copied only by name, and the copy is clear
     wrong := VaultSession{ path: s.path, name: s.name, secrets_key: [byte(u8(s.secrets_key[0]) ^ u8(1)), byte(9), byte(9)], cached: false }
     assert(!reveal_password(crypto, store, wrong, "host", "bastion").has_value())
 }
+
+// ---- A Files pane's session with no terminal (milestone 19) ---------------------
+
+test "a Files pane's session logs in, opens no shell, lends the session and ends when the pane closes" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut link := web_link()
+    mut term := new_fake_terminal(["", "", ""])
+    term.closed_at_end = true
+    mut clock := idle_clock()
+    code := try hold_files_session(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock, "web", accept_opts())
+    assert_eq(code, 0)
+    assert_eq(link.calls[link.calls.len() - 1], "lend")
+    for c in link.calls {
+        assert(!c.starts_with("shell"), "no PTY: {c}")
+    }
+    assert_eq(term.raw_entered, 1)
+    assert(link.hung_up)
+}
+
+test "a Files pane's session ends with a network error when a keepalive cannot be sent" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut link := web_link()
+    link.fail_keepalive = true
+    mut term := new_fake_terminal(["", "", "", ""])
+    mut clock := FakeClock{ now_ms: 0, step_ms: 20000 }
+    r := hold_files_session(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock, "web", accept_opts())
+    assert_eq(error_code_of("{r.error().message()}"), ERR_NETWORK)
+    assert_eq(link.keepalives, 1)
+    assert(link.hung_up)
+}
+
+test "a Files pane's session that fails to log in never lends it" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut link := web_link()
+    link.fail_dial = true
+    mut term := new_fake_terminal([])
+    mut clock := idle_clock()
+    r := hold_files_session(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock, "web", accept_opts())
+    assert_eq(error_code_of("{r.error().message()}"), ERR_NETWORK)
+    for c in link.calls {
+        assert(c != "lend")
+    }
+    assert_eq(term.raw_entered, 0)
+}

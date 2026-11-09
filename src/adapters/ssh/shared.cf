@@ -50,6 +50,12 @@ fn (mut self: SharedLink) link_auth_agent() -> void! {
 // Opens the shell, then lends the session: the Files view can browse it from now on.
 fn (mut self: SharedLink) link_shell_open(term: str, cols: i32, rows: i32, command: str) -> void! {
     try self.inner.link_shell_open(term, cols, rows, command)
+    try self.link_lend()
+}
+
+// Lends the session to the Files view: after the shell opens in a tab, or with no
+// channel at all for a second Files pane on a host with no tab (milestone 19).
+fn (mut self: SharedLink) link_lend() -> void! {
     conn := try self.inner.last_hop()
     id := self.session_id
     timeout := self.inner.timeout_secs

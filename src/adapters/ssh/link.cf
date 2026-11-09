@@ -265,6 +265,11 @@ fn (mut self: SshLink) link_keepalive() -> void! {
     }
 }
 
+// A plain link has no Files view to lend its session to (adapters/ssh/shared.cf).
+fn (mut self: SshLink) link_lend() -> void! {
+    return error(coded(ERR_INTERNAL, "this link cannot lend its session"))
+}
+
 // Closes every hop, innermost first. Tunnel i runs over hop i and carries hop
 // i+1, so it is stopped after hop i+1 is gone and before hop i goes. A tunnel
 // whose next hop never connected is stopped the same way.
