@@ -317,3 +317,64 @@ polkit, or the master password). No grant or token ever covers it.
 
 Dark and light for every screen.
 ```
+
+---
+
+## Message 5: between servers (v5, milestones 18-20, to send)
+
+```
+Flint follow-up: copying between two servers and split panes (v5). Same tokens.css,
+components and dark/light pairs as the existing screens. Name the new files 14d…, 16g…
+and 18…, as below.
+
+Context: v4 shipped the Files view (14a-c: a sidebar view over the active tab's session,
+with breadcrumb, `..`, a file list, a context menu, a transfer queue and a drop zone) and
+`flint cp` between this machine and one host, approved in the copy files window (16f1-3).
+v5 lets a file go from one server to another. The bytes always pass through Flint
+(server A → Flint → server B): no key or password is ever put on a server. It also splits
+a tab into up to four terminal panes.
+
+16g · Approval window, copy between two servers (a variant of 16f1):
+  - Header: "flint, started by Claude Code wants to copy files between two servers".
+    The process chain and pid as in 16f1.
+  - Both ends must read at a glance as FROM → TO: source host (label, alias) and path,
+    an arrow, destination host and path. Mono for paths, long paths wrap, never truncate.
+  - Flags as chips when present: "folder (-r)", "overwrite (--force)", the latter in the
+    warning tone of 16f3.
+  - The grant this creates must visibly cover both hosts (the Hosts row of 16a1 shows two).
+  - 16g1 a file, 16g2 a folder with --force, 16g3 when one of the two hosts already has a
+    grant and the other does not (say which one is new).
+
+14d · Files view with two panes (copy between servers):
+  - 14d1 · Entry: a button in the Files view header, "Copy to another server…", opens a
+    host picker (vault hosts, with a filter, folders as in the sidebar, the current host
+    greyed out).
+  - 14d2 · Two panes side by side, each a server: its own header (host label, colour dot,
+    breadcrumb, `..`, refresh) and its own list. The view widens for it (it may take most
+    of the window; the terminal stays visible, narrower). A close button returns to one
+    pane. Which pane is "this tab's session" and which is the other server must be clear.
+  - 14d3 · Dragging a file or folder from one pane to the other: the drop target pane and
+    folder highlight, the cursor says "Copy to <host>". Also a context-menu item
+    "Copy to <other host>".
+  - 14d4 · The transfer queue for a copy between servers: each row names both hosts
+    (A → B), per-file progress, cancel, and the Replace / Skip choice when the name
+    exists on the destination.
+  - 14d5 · The second server is connecting (it has no open tab, so Flint logs in to it
+    without a terminal): the pane shows the connecting state, then a password prompt or
+    an unknown host key inside the pane, reusing 10a and 10c, and an auth-failed state.
+
+18 · Split panes (up to four panes per tab, each its own SSH session):
+  - 18a · Two panes side by side, then stacked; 18b · 2×2; 18c · one large + two small.
+    A thin divider that can be dragged; the focused pane clearly marked (accent border or
+    a dimmed inactive pane, your call, it must survive both themes and busy output).
+  - Each pane has a slim header: host label, colour dot, and a close button on hover. Two
+    panes may be the same host.
+  - The session toolbar's Split button (disabled today) becomes a menu: split right, split
+    down, and the four layouts, with their shortcuts (⌘D, ⌘⇧D).
+  - 18d · One pane connecting, one with connection lost (reusing 11a and 11c inside the
+    pane), two running: one dropping leaves the others alone.
+  - 18e · The command palette with "Open <host> in a new pane".
+  - 18f · At 900×600 (as 04c): what four panes look like at the smallest window.
+  - 18g · Split panes with the Files view open: it follows the focused pane, and its
+    header says which pane it is showing.
+```
