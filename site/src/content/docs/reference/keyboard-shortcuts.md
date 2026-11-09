@@ -3,8 +3,8 @@ title: Keyboard shortcuts
 description: Every shortcut of the desktop app, on macOS and Linux.
 ---
 
-On Linux, <kbd>⌘</kbd> becomes <kbd>Ctrl+Shift</kbd> and <kbd>⇧⌘</kbd> becomes
-<kbd>Ctrl+Alt+Shift</kbd>. Plain <kbd>Ctrl</kbd> chords always reach the terminal, which
+On Linux, <kbd>⌘</kbd> becomes <kbd>Ctrl+Shift</kbd>, <kbd>⇧⌘</kbd> becomes
+<kbd>Ctrl+Alt+Shift</kbd> and <kbd>⌥⌘</kbd> becomes <kbd>Ctrl+Alt</kbd>. Plain <kbd>Ctrl</kbd> chords always reach the terminal, which
 speaks the Kitty keyboard protocol.
 
 | Action | macOS | Linux |
@@ -15,10 +15,13 @@ speaks the Kitty keyboard protocol.
 | Open vault file | ⌘O | Ctrl+Shift+O |
 | Create vault | ⇧⌘N | Ctrl+Alt+Shift+N |
 | New session (pick a host; always a new tab) | ⌘T | Ctrl+Shift+T |
-| Close tab | ⌘W | Ctrl+Shift+W |
+| Close the focused pane (the last one closes the tab) | ⌘W | Ctrl+Shift+W |
 | Go to tab 1–9 | ⌘1 … ⌘9 | Ctrl+Shift+1 … 9 |
 | Reconnect | ⌘R | Ctrl+Shift+R |
-| Duplicate session | ⌘D | Ctrl+Shift+D |
+| Duplicate session (a new tab on the same host) | ⌥⌘D | Ctrl+Alt+D |
+| Split right · split down | ⌘D · ⇧⌘D | Ctrl+Shift+D · Ctrl+Alt+Shift+D |
+| Focus the next · previous pane | ⌘] · ⌘[ | Ctrl+Shift+] · Ctrl+Shift+[ |
+| Layout: side by side · stacked · grid · one large + two small | ⌥⌘1 … ⌥⌘4 | Ctrl+Alt+1 … 4 |
 | Toggle the sidebar | ⌘B | Ctrl+Shift+B |
 | Hosts · Keys · Credentials | ⇧⌘H · ⇧⌘K · ⇧⌘C | Ctrl+Alt+Shift+H · K · C |
 | Files view (show or hide) | ⌘E | Ctrl+Shift+E |
@@ -44,6 +47,7 @@ longer reaches the remote (vim's visual block: use <kbd>Ctrl+Q</kbd> there).
 | Host tree | ↑ ↓ move · ← → collapse or expand · ↵ connect · ⌘↵ new tab · ⌘I edit · ⌫ delete |
 | Files list | ↑ ↓ move · ↵ open a folder, rename a file · ⌘↑ up one folder · ⌘↓ download · ⌘⌫ delete · context-menu key for the menu |
 | Files with two servers | ⌘→ copy to the second pane's server · ⌘← (in the second pane) copy back to the first · esc hide the second pane |
-| Command palette | ↑ ↓ move · ↵ open · ⌘↵ new tab · ⌘I edit host · Tab next group · esc close |
+| Command palette | ↑ ↓ move · ↵ open · ⌘↵ new tab · ⇧⌘↵ new pane · ⌘I edit host · Tab next group · esc close |
+| Divider between panes | ← → or ↑ ↓ resize · double-click to even out |
 | Prompts over a session | ↵ the primary action · esc cancel. A changed host key has no ↵ action |
 | Editors | ⌘↵ save · esc cancel |

@@ -1,5 +1,6 @@
-// One xterm.js terminal per tab. It stays mounted while the tab is open (hidden when
-// another tab is active), so scrollback survives tab switches and reconnects.
+// One xterm.js terminal per pane. It stays mounted while the pane is open (hidden when
+// another tab is active), so scrollback survives tab switches, splits and reconnects.
+// `tabId` is the pane's id (milestone 20: a tab holds up to four panes).
 //
 // Ported from Tether's terminal: Kitty keyboard protocol (xterm.js 6.1 beta),
 // the WebGL renderer (the DOM renderer mis-sizes cells in this beta), dead-key and
@@ -40,6 +41,15 @@ export function terminalTheme(el: Element = document.documentElement): ITheme {
     brightBlack: ansi(8), brightRed: ansi(9), brightGreen: ansi(10), brightYellow: ansi(11), brightBlue: ansi(12),
     brightMagenta: ansi(13), brightCyan: ansi(14), brightWhite: ansi(15),
   };
+}
+
+// Every mounted terminal's "redraw all glyphs". The WebGL renderer shares one glyph
+// atlas between terminals with the same options: when a new pane's terminal mounts
+// (a split) or one is resized, the others kept drawing from cells the atlas had
+// moved, and showed garbled glyphs until their next output (M20 owner check).
+const redrawers = new Set<() => void>();
+function redrawOthers(self: () => void) {
+  for (const r of redrawers) if (r !== self) r();
 }
 
 export function fontStack(family: string): string {
@@ -125,9 +135,12 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     // Web fonts (the bundled ones) report when they finish loading; system fonts do not.
     let alive = true;
     const onFontsLoaded = () => { if (alive) redrawGlyphs(); };
+    const redrawMine = () => { if (alive) redrawGlyphsSoon(); };
+    redrawers.add(redrawMine);
     document.fonts?.ready.then(onFontsLoaded).catch(() => {});
     document.fonts?.addEventListener('loadingdone', onFontsLoaded);
     redrawGlyphsSoon();
+    redrawOthers(redrawMine);
     // The headless end-to-end run reads the terminal's buffer (scripts/gui-e2e.js).
     const e2e = (window as unknown as { __flintE2E?: { terms: Record<string, Terminal> } }).__flintE2E;
     if (e2e) e2e.terms[tabId] = term;
@@ -206,14 +219,20 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     sessions.attach(tabId, (bytes) => term.write(bytes));
 
     let raf = 0;
+    let settle = 0;
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(refit);
+      // Once a split or a divider drag settles, every pane redraws its glyphs.
+      clearTimeout(settle);
+      settle = window.setTimeout(() => { redrawMine(); redrawOthers(redrawMine); }, 150);
     });
     observer.observe(screenRef.current!);
 
     return () => {
       alive = false;
+      redrawers.delete(redrawMine);
+      clearTimeout(settle);
       document.fonts?.removeEventListener('loadingdone', onFontsLoaded);
       cancelAnimationFrame(raf);
       observer.disconnect();
@@ -271,7 +290,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
   );
 }
 
-// Focuses the active tab's terminal (after a prompt closes, or F6).
+// Focuses a pane's terminal (after a prompt closes, or F6).
 export function focusTerminal(tabId: string | null) {
   if (!tabId) return;
   const el = document.querySelector<HTMLElement>(`[data-tab="${tabId}"] textarea`);

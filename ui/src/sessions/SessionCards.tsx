@@ -1,5 +1,5 @@
-// Cards and prompts drawn over a tab's dimmed terminal (design screens 10 and 11).
-// They belong to the tab, not the window: other tabs keep working. ↵ runs the
+// Cards and prompts drawn over a pane's dimmed terminal (design screens 10, 11, 18d).
+// They belong to the pane, not the window: other panes and tabs keep working. ↵ runs the
 // primary action and esc cancels, except on a changed host key, which has no
 // default action and puts initial focus on the safe one.
 
@@ -9,7 +9,7 @@ import type { HostView } from '../api/types';
 import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
 import { Kbd, Key } from '../ui/Kbd';
-import { sessions, type Tab } from './store';
+import { sessions, type Pane } from './store';
 
 function hostLine(h: HostView | undefined, alias: string): string {
   if (!h) return alias;
@@ -18,7 +18,13 @@ function hostLine(h: HostView | undefined, alias: string): string {
   return (user ? user + '@' : '') + addr + (h.jump ? ` · via ${h.jump}` : '') + (h.credential ? ` · credential ${h.credential}` : '');
 }
 
-export function SessionCard({ tab, active, onEditHost }: { tab: Tab; active: boolean; onEditHost: (alias: string) => void }) {
+export function SessionCard({ tab, active, split, onEditHost }: {
+  tab: Pane;
+  active: boolean;
+  /** The pane shares its tab with others: closing it closes the pane, not the tab. */
+  split: boolean;
+  onEditHost: (alias: string) => void;
+}) {
   const { catalog } = useApp();
   const host = catalog.hosts.find((h) => h.alias === tab.alias);
   const ref = useRef<HTMLDivElement>(null);
@@ -38,7 +44,7 @@ export function SessionCard({ tab, active, onEditHost }: { tab: Tab; active: boo
             <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">Session ended</h2>
               <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>The shell on <span className="mono">{tab.alias}</span> exited{tab.end.exit_code >= 0 ? <> with status <span className="mono">{tab.end.exit_code}</span></> : ' on a signal'}.</span></div></div>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
-            <button className="btn btn-ghost" onClick={() => sessions.close(tab.id)}>Close tab<Kbd action="closeTab" /></button>
+            <button className="btn btn-ghost" onClick={() => sessions.close(tab.id)}>{split ? 'Close pane' : 'Close tab'}<Kbd action="closeTab" /></button>
             <span className="grow" />
             <button className="btn btn-primary" data-autofocus onClick={() => sessions.reconnect(tab.id)}>Reconnect<Kbd action="reconnect" inline /></button>
           </div>
@@ -98,7 +104,7 @@ export function SessionCard({ tab, active, onEditHost }: { tab: Tab; active: boo
             <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{lost ? 'Connection lost' : `Could not connect to ${tab.alias}`}</h2>
               <span className="mono muted" style={{ fontSize: 'var(--fs-xs)' }}>{tab.end.message}</span></div></div>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
-            <button className="btn btn-ghost" onClick={() => sessions.close(tab.id)}>Close tab<Kbd action="closeTab" /></button>
+            <button className="btn btn-ghost" onClick={() => sessions.close(tab.id)}>{split ? 'Close pane' : 'Close tab'}<Kbd action="closeTab" /></button>
             <span className="grow" />
             <button className="btn btn-primary" data-autofocus onClick={() => sessions.reconnect(tab.id)}>Reconnect<Kbd action="reconnect" inline /></button>
           </div>
@@ -109,7 +115,7 @@ export function SessionCard({ tab, active, onEditHost }: { tab: Tab; active: boo
   return null;
 }
 
-function PasswordPrompt({ tab }: { tab: Tab }) {
+function PasswordPrompt({ tab }: { tab: Pane }) {
   const [pw, setPw] = useState('');
   const [show, setShow] = useState(false);
   const p = tab.prompt!;
@@ -139,7 +145,7 @@ function PasswordPrompt({ tab }: { tab: Tab }) {
   );
 }
 
-function HostKeyPrompt({ tab }: { tab: Tab }) {
+function HostKeyPrompt({ tab }: { tab: Pane }) {
   const k = tab.prompt!.host_key;
   return (
     <div className="pane-dim">
@@ -165,7 +171,7 @@ function HostKeyPrompt({ tab }: { tab: Tab }) {
 // A changed key is always refused by the core (D-019). Replacing it is an explicit
 // `known-host rm` followed by a new connection, enabled only once the person types
 // the host's alias.
-function HostKeyChanged({ tab }: { tab: Tab }) {
+function HostKeyChanged({ tab }: { tab: Pane }) {
   const { fail, refreshCatalog } = useApp();
   const k = tab.changedKey!;
   const [typed, setTyped] = useState('');

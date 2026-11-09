@@ -1,23 +1,27 @@
 // The keyboard map from the design handoff (docs/design/README.md): macOS ⌘ maps to
-// Ctrl+Shift on Linux, and ⇧⌘ maps to Ctrl+Alt+Shift, so plain Ctrl chords always
-// reach the terminal (Kitty keyboard protocol).
+// Ctrl+Shift on Linux, ⇧⌘ to Ctrl+Alt+Shift and ⌥⌘ to Ctrl+Alt, so plain Ctrl chords
+// always reach the terminal (Kitty keyboard protocol).
 
 export type Os = 'mac' | 'linux' | 'windows';
 
 export type Action =
   | 'palette' | 'gotoHost' | 'switchVault' | 'openVault' | 'createVault'
   | 'newSession' | 'closeTab' | 'reconnect' | 'duplicate' | 'toggleSidebar'
+  | 'splitRight' | 'splitDown' | 'focusNextPane' | 'focusPrevPane'
+  | 'layout1' | 'layout2' | 'layout3' | 'layout4'
   | 'viewHosts' | 'viewFiles' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'editHost'
   | 'collapseAll' | 'expandAll'
   | 'lock' | 'quit' | 'fontBigger' | 'fontSmaller' | 'fontReset' | 'nextRegion' | 'prevRegion'
   | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5' | 'tab6' | 'tab7' | 'tab8' | 'tab9';
 
-// `none` marks an action with no shortcut (palette and buttons only). `shifted` is the ⇧⌘ layer. `code` is KeyboardEvent.code, so the map holds on any
+// `none` marks an action with no shortcut (palette and buttons only). `shifted` is the
+// ⇧⌘ layer and `alt` the ⌥⌘ one. `code` is KeyboardEvent.code, so the map holds on any
 // keyboard layout. `bare` chords (F6) take no modifier.
 interface Chord {
   none?: boolean;
   code: string;
   shifted?: boolean;
+  alt?: boolean;
   bare?: boolean;
   shiftOnly?: boolean;
   label: string;
@@ -32,7 +36,16 @@ const CHORDS: Record<Action, Chord> = {
   newSession: { code: 'KeyT', label: 'T' },
   closeTab: { code: 'KeyW', label: 'W' },
   reconnect: { code: 'KeyR', label: 'R' },
-  duplicate: { code: 'KeyD', label: 'D' },
+  // Split right takes ⌘D, so Duplicate moves to ⌥⌘D (design 18, README).
+  duplicate: { code: 'KeyD', alt: true, label: 'D' },
+  splitRight: { code: 'KeyD', label: 'D' },
+  splitDown: { code: 'KeyD', shifted: true, label: 'D' },
+  focusNextPane: { code: 'BracketRight', label: ']' },
+  focusPrevPane: { code: 'BracketLeft', label: '[' },
+  layout1: { code: 'Digit1', alt: true, label: '1' },
+  layout2: { code: 'Digit2', alt: true, label: '2' },
+  layout3: { code: 'Digit3', alt: true, label: '3' },
+  layout4: { code: 'Digit4', alt: true, label: '4' },
   toggleSidebar: { code: 'KeyB', label: 'B' },
   viewHosts: { code: 'KeyH', shifted: true, label: 'H' },
   viewFiles: { code: 'KeyE', label: 'E' },
@@ -73,6 +86,10 @@ function matches(c: Chord, e: KeyLike, os: Os): boolean {
   if (c.none || e.code !== c.code) return false;
   if (c.bare) return !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
   if (c.shiftOnly) return e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey;
+  if (c.alt) {
+    if (os === 'mac') return e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey;
+    return e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey;
+  }
   if (os === 'mac') {
     return e.metaKey && !e.ctrlKey && !e.altKey && e.shiftKey === !!c.shifted;
   }
@@ -93,6 +110,7 @@ export function chordLabel(action: Action, os: Os): string {
   if (c.none) return '';
   if (c.bare) return c.label;
   if (c.shiftOnly) return os === 'mac' ? '⇧' + c.label : 'Shift+' + c.label;
+  if (c.alt) return (os === 'mac' ? '⌥⌘' : 'Ctrl+Alt+') + c.label;
   if (os === 'mac') return (c.shifted ? '⇧⌘' : '⌘') + c.label;
   return (c.shifted ? 'Ctrl+Alt+Shift+' : 'Ctrl+Shift+') + c.label;
 }
@@ -109,9 +127,17 @@ export const ACTION_TITLES: Record<Action, string> = {
   openVault: 'Open vault file',
   createVault: 'Create vault',
   newSession: 'New session',
-  closeTab: 'Close tab',
+  closeTab: 'Close pane',
   reconnect: 'Reconnect',
   duplicate: 'Duplicate session',
+  splitRight: 'Split right',
+  splitDown: 'Split down',
+  focusNextPane: 'Focus next pane',
+  focusPrevPane: 'Focus previous pane',
+  layout1: 'Layout: side by side',
+  layout2: 'Layout: stacked',
+  layout3: 'Layout: grid 2 × 2',
+  layout4: 'Layout: one large + two small',
   toggleSidebar: 'Toggle sidebar',
   viewHosts: 'Hosts view',
   viewFiles: 'Files view',
@@ -138,6 +164,7 @@ export const SHORTCUT_GROUPS: { title: string; actions: Action[] }[] = [
   { title: 'General', actions: ['palette', 'gotoHost', 'settings', 'lock', 'quit', 'nextRegion', 'prevRegion'] },
   { title: 'Vaults', actions: ['switchVault', 'openVault', 'createVault'] },
   { title: 'Sessions', actions: ['newSession', 'closeTab', 'reconnect', 'duplicate', 'tab1', 'tab9'] },
+  { title: 'Panes', actions: ['splitRight', 'splitDown', 'focusNextPane', 'focusPrevPane', 'layout1', 'layout2', 'layout3', 'layout4'] },
   { title: 'Views', actions: ['viewHosts', 'viewFiles', 'viewKeys', 'viewCredentials', 'toggleSidebar'] },
   { title: 'Hosts', actions: ['newHost', 'editHost'] },
   { title: 'Terminal', actions: ['fontBigger', 'fontSmaller', 'fontReset'] },

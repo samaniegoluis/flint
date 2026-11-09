@@ -503,3 +503,37 @@ button.picker-row:not(.off) { cursor: pointer; }
 .picker-row.off { color: var(--text-disabled); }
 .conflict { display: flex; flex-direction: column; gap: 6px; padding: var(--sp-2) var(--sp-3); background: var(--warning-subtle); border-top: 1px solid var(--warning-border); border-bottom: 1px solid var(--warning-border); }
 .ic.flip-x { transform: scaleX(-1); }
+
+/* v5 · Split panes (design 18*, milestone 20). One tab's panes in a grid; a single
+   pane fills the area with no frame, as before. The focused pane has an ember border
+   and a tinted header, the others' output is dimmed to 60 % (design README). */
+.splits { position: absolute; inset: 0; display: grid; }
+.splits.multi { gap: 4px; padding: 4px; background: var(--surface-chrome); }
+.spane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--term-bg); }
+.splits.multi .spane { border: 1px solid var(--border-default); border-radius: var(--radius-sm); overflow: hidden; }
+.splits.multi .spane.focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.sp-body { position: relative; flex: 1; min-height: 0; }
+.splits.multi .spane:not(.focus) .sp-body > [data-tab] { opacity: 0.6; }
+.splits.multi .sp-body > [data-tab] { padding: var(--sp-2) var(--sp-3); }
+.sp-h { height: 26px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 6px; background: var(--surface-raised); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-xs); color: var(--text-secondary); user-select: none; }
+.spane.focus .sp-h { background: var(--accent-subtle); color: var(--text-primary); }
+.sp-num { min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--radius-xs); background: var(--surface-active); color: var(--text-secondary); font-family: var(--font-mono); font-size: 10px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.spane.focus .sp-num, .files-pane-no { background: var(--accent); color: var(--text-on-accent); }
+.sp-x { opacity: 0; width: 20px; height: 20px; border-radius: var(--radius-xs); display: inline-flex; align-items: center; justify-content: center; color: var(--text-tertiary); flex: none; }
+.sp-x:hover { background: var(--surface-active); color: var(--text-primary); }
+.spane:hover .sp-x, .sp-x:focus-visible { opacity: 1; }
+.sp-x:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.splits.multi .pane-dim { padding: var(--sp-3); }
+.splits.multi .prompt { width: min(460px, 100%); max-height: 100%; overflow: auto; }
+.sp-div { position: absolute; z-index: 3; background: transparent; border-radius: 2px; touch-action: none; }
+.sp-div.cols { cursor: col-resize; }
+.sp-div.rows { cursor: row-resize; }
+.sp-div:hover, .sp-div.drag, .sp-div:focus-visible { background: var(--accent); outline: none; }
+.layout-ic { display: inline-grid; width: 20px; height: 14px; gap: 1px; padding: 1px; border: 1px solid currentColor; border-radius: 3px; flex: none; }
+.layout-ic i { background: currentColor; opacity: 0.45; border-radius: 1px; }
+.tab-split { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-ui); font-size: var(--fs-2xs); color: var(--text-tertiary); }
+.mi[aria-disabled="true"] { color: var(--text-disabled); cursor: not-allowed; background: none; }
+/* A narrow window keeps the toolbar's icons (design 18f). */
+@media (max-width: 1040px) {
+  .toolbar .tbtn .tb-l, .toolbar .tbtn .kbd, .toolbar .tb-host { display: none; }
+}

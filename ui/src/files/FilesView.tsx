@@ -1,5 +1,6 @@
 // The Files view (design screens 14a-d, milestones 17 and 19): a sidebar that
-// follows the active tab and browses its host over the tab's own session (D-053).
+// follows the active tab's focused pane and browses its host over that pane's own
+// session (D-053).
 // Path bar with `..` (⌘↑), a breadcrumb and Go to the terminal's folder (OSC 7);
 // Upload and New folder; the list; a context menu; the transfer queue docked at the
 // bottom; and the whole sidebar as a drop target for files dragged in from the OS.
@@ -11,7 +12,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, toFlintError } from '../api/backend';
 import type { FileEntry } from '../api/types';
-import { useSessions, type Tab } from '../sessions/store';
+import { useSessions, type Pane } from '../sessions/store';
 import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
@@ -25,7 +26,7 @@ import { dropFolderAt, FileList, folderLabel, paneDrag, setPaneDrag } from './Fi
 import { OtherPane, ServerPicker } from './OtherPane';
 
 interface Props {
-  tab: Tab | undefined;
+  tab: Pane | undefined;
   resizer: ReactNode;
   onReconnect: (tabId: string) => void;
   onGoToHost: () => void;
@@ -37,7 +38,10 @@ interface Props {
 export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, onAsk, onEditHost }: Props) {
   const { os, notify, fail } = useApp();
   const { folders, transfers } = useFiles();
-  const { tabs } = useSessions();
+  const { panes: tabs, tabs: layouts } = useSessions();
+  // In a split tab the header carries the focused pane's number (design 18g).
+  const owner = tab ? layouts.find((t) => t.id === tab.tab) : undefined;
+  const paneNo = owner && owner.panes.length > 1 ? owner.panes.indexOf(tab!.id) + 1 : 0;
   const allPairs = usePairs();
   const ready = tab?.status === 'ready';
   const folder = tab ? folders[tab.id] : undefined;
@@ -82,7 +86,7 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
 
   const title = (
     <div className="side-title">
-      <span className="strong grow trunc" style={{ fontSize: 'var(--fs-sm)' }}>Files{tab && <> · <span className="mono" data-files-host>{tab.alias}</span></>}</span>
+      <span className="strong grow trunc" style={{ fontSize: 'var(--fs-sm)' }}>Files{tab && <> · {paneNo > 0 && <><span className="sp-num files-pane-no" data-files-pane-no title={`Pane ${paneNo}`}>{paneNo}</span> </>}<span className="mono" data-files-host>{tab.alias}</span></>}</span>
       {pairButton}
       {ready && <button className="icon-btn" aria-label="Refresh" title="Refresh" data-files-refresh onClick={() => tab && files.refresh(tab.id)}><Icon name="reconnect" size="sm" /></button>}
     </div>

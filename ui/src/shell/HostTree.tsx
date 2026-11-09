@@ -32,7 +32,7 @@ export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer
   collapsed: Set<string>; setCollapsed: (next: Set<string>) => void; resizer: React.ReactNode; h: TreeHandlers;
 }) {
   const { vault, catalog, os } = useApp();
-  const { tabs } = useSessions();
+  const { panes: tabs } = useSessions();
   const [filter, setFilter] = useState('');
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);

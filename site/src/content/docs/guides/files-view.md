@@ -4,13 +4,16 @@ description: Browse a host's files beside its terminal, upload and download with
 ---
 
 The **Files** view browses the host of the active tab, over that tab's own connection.
+In a tab split into panes, it browses the focused pane's host.
 It needs no second login: a host that asks for a password or a one-time code asks once,
 for the terminal. Open it with **Files** in the activity bar, the session toolbar's
 **Files** button, or <kbd>⌘E</kbd> (<kbd>Ctrl+Shift+E</kbd> on Linux). Press it again to
 hide it.
 
-The view follows the active tab. Its header reads **Files · <host>**, and each tab keeps
-its own folder and scroll position, so switching tabs and back puts you where you were.
+The view follows the active tab, and in a split tab its [focused pane](/guides/desktop-app/#split-panes).
+Its header reads **Files · <host>**, with the pane's number when the tab has several, and
+each tab or pane keeps its own folder and scroll position, so switching and coming back
+puts you where you were.
 When the active tab is not connected, the view says so and offers **Reconnect** (or
 **Go to host…** with no tab open).
 
