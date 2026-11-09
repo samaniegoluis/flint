@@ -186,6 +186,7 @@ fn main() {
     app.bind_async[FilesPathReq]("files_remove") |req| { return rpc_files_remove(req, st) }
     app.bind_async[FilesPathReq]("files_mkdir") |req| { return rpc_files_mkdir(req, st) }
     app.bind_async[FilesTransferReq]("files_transfer") |req| { return rpc_files_transfer(req, app, st) }
+    app.bind_async[FilesRelayReq]("files_relay") |req| { return rpc_files_relay(req, app, st) }
     mut drops := new_fs_drop_stage(config_dir)
     drops.stage_clear_all()
     // The page awaits each chunk before it sends the next, so a drop is appended in order.

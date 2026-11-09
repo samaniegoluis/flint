@@ -3,6 +3,11 @@
 // so a folder is reloaded when its tab reconnects, and a transfer belongs to the
 // session it started on.
 //
+// A copy between two servers (milestone 19, D-059) is a `relay` transfer: it reads
+// `remote` on its session and writes `local` on `toSession`, and belongs to the
+// first pane's tab, whose queue shows it. A folder key is a tab's id, or `<tab>~2`
+// for that tab's second pane (pair.ts).
+//
 // Transfers run one at a time per session, in the order they were queued. A drop
 // from the OS is first staged on this machine (the webview hands the page bytes,
 // not paths: CF-004), then uploaded like any other file.
@@ -30,7 +35,12 @@ export interface Transfer {
   tabId: string;
   session: string;
   alias: string;
-  direction: 'upload' | 'download';
+  direction: 'upload' | 'download' | 'relay';
+  /** A relay's destination session and host. */
+  toSession: string;
+  toAlias: string;
+  /** The folder key whose listing `folder` is (default: the tab's own). */
+  view: string;
   /** What the row shows: the file or folder's name. */
   name: string;
   local: string;
@@ -52,6 +62,8 @@ export interface Transfer {
   folder: string;
   /** The staged drop it uploads from, discarded once it ends. */
   drop: string;
+  /** Cancelled by Skip at a name clash: the row reads Skipped. */
+  skipped?: boolean;
 }
 
 interface Snapshot {
@@ -69,6 +81,19 @@ const mint = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++seq}`
 export function nextToStart(transfers: Transfer[], session: string): Transfer | undefined {
   if (transfers.some((t) => t.session === session && t.state === 'running')) return undefined;
   return transfers.find((t) => t.session === session && t.state === 'queued');
+}
+
+/** States in which a transfer has not ended yet. */
+const PENDING: TransferState[] = ['staging', 'queued', 'running', 'conflict'];
+
+/**
+ * A copy between servers that is already in the queue and not ended: the same
+ * item from the same session into the same folder of the same session. A second
+ * press of ⌘→ (or a second drop) while it waits must not queue it again.
+ */
+export function pendingRelay(transfers: Transfer[], c: { session: string; toSession: string; remote: string; local: string }): Transfer | undefined {
+  return transfers.find((t) => t.direction === 'relay' && PENDING.includes(t.state) && t.session === c.session
+    && t.toSession === c.toSession && t.remote === c.remote && t.local === c.local);
 }
 
 /** Clear done: finished and cancelled rows go; failed ones stay until dismissed or retried. */
@@ -151,11 +176,19 @@ class FilesStore {
 
   // ---- Browsing ----------------------------------------------------------------
 
-  /** Lists the tab's folder when it is not listed yet, or was listed on another session. */
-  ensure(tabId: string, session: string) {
+  /**
+   * Lists the tab's folder when it is not listed yet, or was listed on another
+   * session. `start` is where a first listing opens (the terminal's folder, OSC 7).
+   */
+  ensure(tabId: string, session: string, start = '') {
     const f = this.snap.folders[tabId];
     if (f && f.session === session && (f.entries.length > 0 || f.loading || f.error)) return;
-    this.load(tabId, session, f?.path ?? '');
+    this.load(tabId, session, start || f?.path || '');
+  }
+
+  /** The folder a key shows, or undefined. */
+  folder(key: string): FolderState | undefined {
+    return this.snap.folders[key];
   }
 
   private async load(tabId: string, session: string, path: string, keepSelection = false) {
@@ -249,9 +282,9 @@ class FilesStore {
 
   // ---- Transfers -----------------------------------------------------------------
 
-  private queue(t: Omit<Transfer, 'id' | 'state' | 'bytes' | 'file' | 'filesDone' | 'startedAt' | 'rate' | 'error'> & { state?: TransferState }): string {
+  private queue(t: Omit<Transfer, 'id' | 'state' | 'bytes' | 'file' | 'filesDone' | 'startedAt' | 'rate' | 'error' | 'toSession' | 'toAlias' | 'view'> & { state?: TransferState; toSession?: string; toAlias?: string; view?: string }): string {
     const id = mint('x');
-    const full: Transfer = { id, state: 'queued', bytes: 0, file: '', filesDone: 0, startedAt: 0, rate: 0, error: null, ...t };
+    const full: Transfer = { id, state: 'queued', bytes: 0, file: '', filesDone: 0, startedAt: 0, rate: 0, error: null, toSession: '', toAlias: '', view: t.tabId, ...t };
     this.set({ transfers: [...this.snap.transfers, full] });
     if (full.state === 'queued') this.pump(full.session);
     return id;
@@ -273,6 +306,22 @@ class FilesStore {
         recursive: false, force: false, total: 0, folder, drop: '',
       });
     }
+  }
+
+  /**
+   * Copies `entry` from one pane's host to the other's, into `folder` there
+   * (milestone 19): the bytes go host → Flint → host. The row is `tabId`'s, the
+   * first pane's; `view` is the destination pane's folder key, listed again after.
+   */
+  relay(tabId: string, from: { session: string; alias: string }, entry: FileEntry, to: { key: string; session: string; alias: string; folder: string }) {
+    const local = to.folder + (to.folder.endsWith('/') ? '' : '/');
+    if (pendingRelay(this.snap.transfers, { session: from.session, toSession: to.session, remote: entry.path, local })) return;
+    this.queue({
+      tabId, session: from.session, alias: from.alias, direction: 'relay', name: entry.name,
+      local, remote: entry.path,
+      recursive: entry.kind === 'dir', force: false, total: entry.kind === 'dir' ? 0 : entry.size,
+      folder: to.folder, drop: '', toSession: to.session, toAlias: to.alias, view: to.key,
+    });
   }
 
   /** Files dragged in from the OS: each top-level file or folder is staged, then uploaded. */
@@ -341,10 +390,12 @@ class FilesStore {
     this.lastEvent.set(id, startedAt);
     this.patchTransfer(id, { state: 'running', startedAt, bytes: 0, rate: 0, error: null });
     try {
-      const res = await api.filesTransfer({ session: t.session, id, direction: t.direction, local: t.local, remote: t.remote, recursive: t.recursive, force: t.force });
+      const res = t.direction === 'relay'
+        ? await api.filesRelay({ session: t.session, to_session: t.toSession, id, alias: t.alias, to_alias: t.toAlias, path: t.remote, to_path: t.local, recursive: t.recursive, force: t.force })
+        : await api.filesTransfer({ session: t.session, id, direction: t.direction, local: t.local, remote: t.remote, recursive: t.recursive, force: t.force });
       this.patchTransfer(id, { state: 'done', bytes: res.bytes, total: res.bytes, filesDone: res.files.length, rate: 0 });
       if (t.drop) api.filesStageDiscard(t.drop).catch(() => {});
-      this.refreshIfShowing(t.tabId, t.folder);
+      this.refreshIfShowing(t.view, t.folder);
     } catch (err) {
       const e = toFlintError(err);
       const cur = this.transfer(id);
@@ -362,16 +413,16 @@ class FilesStore {
         this.patchTransfer(id, { state: 'failed', error: e, rate: 0 });
         this.onError(`${t.name}: ${e.message}`);
       }
-      this.refreshIfShowing(t.tabId, t.folder);
+      this.refreshIfShowing(t.view, t.folder);
     } finally {
       this.lastEvent.delete(id);
       if (!this.waiting) this.pump(t.session);
     }
   }
 
-  private refreshIfShowing(tabId: string, folder: string) {
-    const f = this.snap.folders[tabId];
-    if (folder && f && f.path === folder) this.load(tabId, f.session, f.path, true);
+  private refreshIfShowing(key: string, folder: string) {
+    const f = this.snap.folders[key];
+    if (folder && f && f.path === folder) this.load(key, f.session, f.path, true);
   }
 
   cancel(id: string) {
@@ -386,6 +437,12 @@ class FilesStore {
     }
   }
 
+  /** Skip at a name clash: the transfer ends without replacing anything. */
+  skip(id: string) {
+    if (this.transfer(id)?.state !== 'conflict') return;
+    this.patchTransfer(id, { state: 'cancelled', skipped: true, rate: 0 });
+  }
+
   /** A failed transfer goes back in the queue. */
   retry(id: string, force = false) {
     const t = this.transfer(id);
@@ -393,6 +450,14 @@ class FilesStore {
     if (!t.local) { this.onError(`${t.name}: drop it again to retry`); return; }
     this.patchTransfer(id, { state: 'queued', error: null, force: force || t.force, bytes: 0 });
     this.pump(t.session);
+  }
+
+  /** Answers every conflict in `tabId`'s queue at once (14d4: "Do this for the other N conflicts"). */
+  resolveAll(tabId: string, replace: boolean) {
+    for (const t of this.snap.transfers.filter((x) => x.tabId === tabId && x.state === 'conflict')) {
+      if (replace) this.retry(t.id, true);
+      else this.skip(t.id);
+    }
   }
 
   dismiss(id: string) {

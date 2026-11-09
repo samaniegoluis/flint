@@ -141,6 +141,10 @@ type SshTransport interface {
     link_channel_resize(cols: i32, rows: i32) -> void!
     // Sends a keepalive request on the last hop without waiting for the answer.
     link_keepalive() -> void!
+    // Lends the logged-in session to the Files view with no channel of its own (the
+    // app's second Files pane, milestone 19). Only a GUI tab's link can; any other
+    // fails with `internal`.
+    link_lend() -> void!
     link_hangup()
 }
 

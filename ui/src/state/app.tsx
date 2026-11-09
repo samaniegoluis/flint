@@ -10,6 +10,7 @@
 // sessions and their terminals carry on; the vault's key and catalog are gone until
 // the master password is typed again.
 
+import { pairs } from '../files/pair';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, FlintError, on, toFlintError } from '../api/backend';
 import type { AppInfo, Catalog, LockReason, RecentView, Settings, UnlockRequest, VaultInfo, WindowState } from '../api/types';
@@ -153,6 +154,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // The core locked the vault (the Lock button, idle time, the screen, sleep, the
   // CLI): the lock screen covers the window, which stays mounted.
   const showLocked = useCallback((path: string, name: string, reason: LockReason) => {
+    // Locking ends the Files view's two-pane mode: the core hung up its sessions (D-059).
+    pairs.closeAll();
     setCatalog(EMPTY_CATALOG);
     setLockReason(reason);
     setTarget({ path, name, current: true, exists: true });

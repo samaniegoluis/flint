@@ -226,6 +226,8 @@ The bytes always flow server A → Flint → server B; no key or password is eve
 
 - **As built (16g, milestone 18, D-058):** the host's colour square is its own colour (none: grey), and its name on the network shows under the alias only when it differs. 16g3's tags come from the caller's live grants when the window opens; a grant that ends while it waits loses its tag. A 16g1 with no grant yet shows no tags.
 
+- **As built (14d, milestone 19, D-059):** the second pane **floats** over the terminal beside the Files view, which keeps its width, instead of widening the docked view to 700 px: the terminal is never resized. Its header carries the hide button (‹) and **One pane**; the role hint (*Flint-only session* / *its tab's session*) sits on its own line under it. While two-pane mode is on, **Copy to another server…** becomes the chip `⇄ <host> · N copying`, which shows a hidden pane again; Esc or a click in the terminal hides it, and the mode, its session and its copies stay. The first pane keeps its 14a layout (no role tag); the queue stays there, a relay row's route `A › B` on a line under the name. ⌘← copies from the second pane back. Left out: 14d5b's **Save to vault** (save a password in the host editor) and 14d5c's **Once** (a host key is trusted or not); a changed host key in the pane says to open a tab on the host.
+
 **Focus in split panes:** the focused pane has an ember border and a tinted header, and the other panes' output is dimmed to 60 %. Either cue alone is weak with busy output or in light mode; together they hold up. Pane numbers 1–4 appear in pane headers, the toolbar badge ("pane 2 of 4") and the Files header.
 
 **Shortcut change:** Split right takes ⌘D, so **Duplicate session moves to ⌥⌘D**.

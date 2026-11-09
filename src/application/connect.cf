@@ -422,6 +422,52 @@ fn connect_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Termi
     return code
 }
 
+// The app's second Files pane on a host with no open tab (milestone 19, D-056):
+// connects to `alias` as a session does (host key, login, prompts, jump hosts),
+// opens no PTY, and lends the session to the Files view until the pane closes
+// (`term` input ends: returns 0) or the connection is lost (a keepalive that cannot
+// be sent). `term` carries no bytes; it is only the pane's mailbox, and
+// `term_raw_enter` tells the page the session is ready. Hangs up either way.
+fn hold_files_session[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Terminal, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut term: M, mut clock: K, alias: str, opts: ConnectOptions) -> i64! {
+    _ := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
+    lent := link.link_lend()
+    if !lent.has_value() {
+        link.link_hangup()
+        return error("{lent.error().message()}")
+    }
+    entered := term.term_raw_enter()
+    if !entered.has_value() {
+        link.link_hangup()
+        return error("{entered.error().message()}")
+    }
+    keepalive_ms := SSH_KEEPALIVE_SECS * 1000
+    mut last := clock.clock_now_ms()
+    mut failure := ""
+    mut running := true
+    for running {
+        waited := term.term_input(250)
+        if !waited.has_value() {
+            running = false
+        } else {
+            now := clock.clock_now_ms()
+            if now - last >= keepalive_ms {
+                sent := link.link_keepalive()
+                if !sent.has_value() {
+                    failure = "{sent.error().message()}"
+                    running = false
+                }
+                last = now
+            }
+        }
+    }
+    term.term_raw_leave()
+    link.link_hangup()
+    if failure.len() > 0 {
+        return error(failure)
+    }
+    return 0
+}
+
 // ---- Testing a host ---------------------------------------------------------------
 
 // Connects to `target` through its jump hosts, verifying every host key and

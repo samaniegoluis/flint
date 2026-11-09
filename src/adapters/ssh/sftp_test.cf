@@ -393,3 +393,63 @@ test "hangup waits for a request still using the session" {
     assert_eq(worked, 1)
     assert(waited >= 300, "hangup returned before the borrowed request finished")
 }
+
+// ---- A Files pane's session with no terminal (milestone 19) -----------------------
+
+test "a shared link lends its session with no shell, and two lent sessions relay a file" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    key := try fs.read_text(key_path)
+    a := "pane-a-{time.now_ms()}"
+    b := "pane-b-{time.now_ms()}"
+    mut la := new_shared_link(a)
+    try la.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try la.link_auth_key(key, "")
+    try la.link_lend()
+    mut lb := new_shared_link(b)
+    try lb.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try lb.link_auth_key(key, "")
+    try lb.link_lend()
+    assert(files_available(a))
+    assert(files_available(b))
+    // A keepalive on a session with no channel.
+    try la.link_keepalive()
+    dir := scratch_dir("relay-panes")
+    mut w := try borrow_transfer(a, "r0")
+    try w.sftp_open()
+    try w.sftp_mkdir(dir)
+    try w.sftp_mkdir(dir + "/to")
+    try w.sftp_file_open(dir + "/a.txt", true, true)
+    try w.sftp_file_write("from pane a")
+    try w.sftp_file_close()
+    give_back_transfer(a, "r0", mut w)
+    // The copy: a's channel reads, b's channel writes.
+    mut from := try borrow_transfer(a, "r1")
+    mut to := try borrow_transfer(b, "r1")
+    try from.sftp_open()
+    try to.sftp_open()
+    try from.sftp_file_open(dir + "/a.txt", false, false)
+    try to.local_file_open(dir + "/to/a.txt", true, true)
+    try to.local_file_write(try from.sftp_file_read())
+    try to.local_file_close()
+    try from.sftp_file_close()
+    give_back_transfer(b, "r1", mut to)
+    give_back_transfer(a, "r1", mut from)
+    mut check := try borrow_browse(b)
+    st := try check.sftp_stat(dir + "/to/a.txt")
+    give_back_browse(b, check)
+    assert_eq(st.size, 11)
+    la.link_hangup()
+    lb.link_hangup()
+    assert(!files_available(a))
+    assert(!files_available(b))
+}
+
+test "a plain link refuses to lend its session" {
+    mut link := new_ssh_link()
+    r := link.link_lend()
+    assert_eq(error_code_of("{r.error().message()}"), "internal")
+}

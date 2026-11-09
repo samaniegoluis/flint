@@ -1,3 +1,4 @@
+import { pairs } from '../files/pair';
 import { useEffect, useRef, useState } from 'react';
 import { api, toFlintError } from '../api/backend';
 import { shortPath, useApp } from '../state/app';
@@ -86,11 +87,13 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
   // Leaves the locked vault for another one: its sessions end.
   const closeLocked = async () => {
     sessions.closeAll();
+    pairs.closeAll();
     await closeVault();
   };
   const switchToRequested = async () => {
     if (!request) return;
     sessions.closeAll();
+    pairs.closeAll();
     await closeVault();
     try {
       await unlock(request.path, '');

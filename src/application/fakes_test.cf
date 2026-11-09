@@ -573,6 +573,10 @@ fn (mut self: FakeLink) link_keepalive() -> void! {
     }
 }
 
+fn (mut self: FakeLink) link_lend() -> void! {
+    self.calls.push("lend")
+}
+
 fn (mut self: FakeLink) link_hangup() {
     self.hung_up = true
 }
@@ -631,10 +635,12 @@ type FakeTerminal struct {
     output: str
     raw: bool
     raw_entered: i64
+    // Once `inputs` run out, input fails as when the tab or pane is closed.
+    closed_at_end: bool
 }
 
 fn new_fake_terminal(inputs: []str) -> FakeTerminal {
-    return FakeTerminal{ cols: 120, rows: 40, inputs: inputs, input_pos: 0, resize_at: 999, output: "", raw: false, raw_entered: 0 }
+    return FakeTerminal{ cols: 120, rows: 40, inputs: inputs, input_pos: 0, resize_at: 999, output: "", raw: false, raw_entered: 0, closed_at_end: false }
 }
 
 fn (self: FakeTerminal) term_size() -> TerminalSize {
@@ -659,6 +665,9 @@ fn (mut self: FakeTerminal) term_input(timeout_ms: i32) -> str! {
             self.rows = 30
         }
         return s
+    }
+    if self.closed_at_end {
+        return error(coded(ERR_IO, "the session was closed"))
     }
     return ""
 }

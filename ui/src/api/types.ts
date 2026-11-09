@@ -415,7 +415,8 @@ export interface FileEntry {
 
 export interface CopyResult {
   host: string;
-  direction: 'upload' | 'download';
+  to_host?: string;
+  direction: 'upload' | 'download' | 'relay';
   files: { source: string; target: string; bytes: number }[];
   folders: number;
   bytes: number;

@@ -41,6 +41,20 @@ type FilesTransferReq struct {
     force:     bool `json:"force"`
 }
 
+// A copy between two sessions (milestone 19): `path` on `session` to `to_path` on
+// `to_session`. The aliases only name each host in messages.
+type FilesRelayReq struct {
+    session:    str  `json:"session"`
+    to_session: str  `json:"to_session"`
+    id:         str  `json:"id"`
+    alias:      str  `json:"alias"`
+    to_alias:   str  `json:"to_alias"`
+    path:       str  `json:"path"`
+    to_path:    str  `json:"to_path"`
+    recursive:  bool `json:"recursive"`
+    force:      bool `json:"force"`
+}
+
 type FilesStageReq struct {
     drop: str `json:"drop"`
     rel:  str `json:"rel"`
@@ -151,6 +165,28 @@ fn rpc_files_transfer(req: FilesTransferReq, app: webui.App, st: GuiState) -> Co
     copy := CopyRequest{ id: req.id, alias: "", direction: req.direction, local: req.local, remote: req.remote, recursive: req.recursive, force: req.force }
     r := transfer_files(mut link, mut local, mut sink, mut clock, copy)
     give_back_transfer(req.session, req.id, mut link)
+    return r
+}
+
+// A copy from one session to another (milestone 19, D-059): each session lends a
+// channel of its own, the bytes go host → Flint → host, and progress is reported
+// under the source session. Closing either session cancels it. Not logged (D-055).
+fn rpc_files_relay(req: FilesRelayReq, app: webui.App, st: GuiState) -> CopyResult! {
+    try st.require_open_window()
+    if req.id.len() == 0 || req.to_session.len() == 0 {
+        return error(coded(ERR_INVALID, "a copy between servers needs an id and two sessions"))
+    }
+    mut from := try borrow_transfer(req.session, req.id)
+    mut to := borrow_transfer(req.to_session, req.id) or err {
+        give_back_transfer(req.session, req.id, mut from)
+        return error("{err.message()}")
+    }
+    mut sink := new_gui_transfer_sink(app, req.session, req.id)
+    mut clock := new_system_clock()
+    copy := CopyRequest{ id: req.id, alias: req.alias, direction: COPY_RELAY, local: req.to_path, remote: req.path, recursive: req.recursive, force: req.force, to_alias: req.to_alias }
+    r := relay_between_sessions(mut from, mut to, mut sink, mut clock, copy)
+    give_back_transfer(req.to_session, req.id, mut to)
+    give_back_transfer(req.session, req.id, mut from)
     return r
 }
 

@@ -2,6 +2,7 @@
 // bar, the Hosts sidebar, the main area (sessions, or a full-page view) and the
 // status bar, plus every overlay. App shortcuts are handled here.
 
+import { keyTab, pairs } from '../files/pair';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/backend';
 import { useApp } from '../state/app';
@@ -97,7 +98,8 @@ export function Shell() {
   // A closed tab's folder and finished transfers go with it.
   useEffect(() => {
     const open = new Set(tabs.map((t) => t.id));
-    for (const id of Object.keys(filesStore.get().folders)) if (!open.has(id)) filesStore.forget(id);
+    for (const id of Object.keys(filesStore.get().folders)) if (!open.has(keyTab(id))) filesStore.forget(id);
+    pairs.keepOnly(open);
   }, [tabs]);
   const collapsedGroups = new Set(ui?.collapsed ?? []);
   const setCollapsedGroups = useCallback((next: Set<string>) => updateUi({ collapsed: [...next] }), [updateUi]);
@@ -293,6 +295,7 @@ export function Shell() {
       {showSidebar && view === 'files' && (
         <div style={narrow ? { position: 'relative', zIndex: 5 } : undefined} onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
           <FilesView tab={tab} onReconnect={(id) => sessions.reconnect(id)} onGoToHost={() => setPalette({ hostsOnly: true })} onConfirm={setConfirm} onAsk={setAsk}
+            onEditHost={(alias) => setEditor({ alias, group: '' })}
             resizer={narrow ? null : <SidebarResizer width={filesWidth} min={FILES_MIN} max={FILES_MAX} reset={FILES_DEFAULT} clamp={clampFiles} label="Resize the Files sidebar"
               onLive={(w) => document.documentElement.style.setProperty('--sidebar-files-w', w + 'px')} onDone={(w) => updateUi({ files_width: w })} />} />
         </div>

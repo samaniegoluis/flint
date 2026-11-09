@@ -233,6 +233,36 @@ fn (mut self: FakeSftp) sftp_label(name: str) {
 fn (mut self: FakeSftp) sftp_close() {
 }
 
+// A host that is the far end of a copy between two sessions serves `LocalFiles`
+// over its own channel, as adapters/ssh/sftp_far.cf does for a real link.
+fn (self: FakeSftp) local_stat(path: str) -> FileEntry! {
+    return self.tree.t_stat(path)
+}
+fn (self: FakeSftp) local_list(path: str) -> []FileEntry! {
+    return self.tree.t_list(path)
+}
+fn (mut self: FakeSftp) local_file_open(path: str, write: bool, exclusive: bool) -> void! {
+    try self.tree.t_open(path, write)
+}
+fn (mut self: FakeSftp) local_file_read() -> str! {
+    return self.tree.t_read()
+}
+fn (mut self: FakeSftp) local_file_write(data: str) -> void! {
+    try self.tree.t_write(data)
+}
+fn (mut self: FakeSftp) local_file_close() -> void! {
+    try self.tree.t_close()
+}
+fn (mut self: FakeSftp) local_rename(from: str, to: str) -> void! {
+    try self.tree.t_rename(from, to)
+}
+fn (mut self: FakeSftp) local_remove(path: str) -> void! {
+    try self.tree.t_remove(path)
+}
+fn (mut self: FakeSftp) local_mkdir(path: str) -> void! {
+    try self.tree.t_mkdir(path)
+}
+
 type FakeLocal struct {
     tree: FakeTree
 }
@@ -540,4 +570,32 @@ test "a copy between two hosts that is cancelled leaves nothing on the destinati
     assert(!nas.tree.has("/srv/big"))
     assert(!nas.tree.has("/srv/.big.flint-part"))
     assert(db1.tree.has("/big"))
+}
+
+// ---- Copies between two sessions in the app (milestone 19) ---------------------------
+
+test "the Files view copies a folder from one session to the other" {
+    mut db1 := FakeSftp{ tree: fake_tree([fdir("/etc"), fdir("/etc/app"), ffile("/etc/app/a.conf", "a=1")]) }
+    mut nas := FakeSftp{ tree: fake_tree([fdir("/bk")]) }
+    mut sink := quiet_sink()
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    res := try relay_between_sessions(mut db1, mut nas, mut sink, mut clock, relay_req("/etc/app", "/bk/", true, false))
+    assert_eq(nas.tree.data_of("/bk/app/a.conf"), "a=1")
+    assert_eq(res.host, "db1")
+    assert_eq(res.to_host, "nas")
+    assert_eq(res.direction, COPY_RELAY)
+}
+
+test "the Files view's copy between sessions asks before replacing, and names the host" {
+    mut db1 := FakeSftp{ tree: fake_tree([fdir("/d"), ffile("/d/a", "new")]) }
+    mut nas := FakeSftp{ tree: fake_tree([fdir("/srv"), ffile("/srv/a", "old")]) }
+    mut sink := quiet_sink()
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    exists := relay_between_sessions(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/srv/", false, false))
+    assert_eq(code_of(exists), ERR_EXISTS)
+    assert("{exists.error().message()}".contains("on nas"))
+    _ := try relay_between_sessions(mut db1, mut nas, mut sink, mut clock, relay_req("/d/a", "/srv/", false, true))
+    assert_eq(nas.tree.data_of("/srv/a"), "new")
+    wrong := relay_between_sessions(mut db1, mut nas, mut sink, mut clock, copy_req(COPY_UPLOAD, "/d/a", "/srv/", false, false))
+    assert_eq(code_of(wrong), ERR_INTERNAL)
 }
