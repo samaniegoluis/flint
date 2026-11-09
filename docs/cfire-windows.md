@@ -196,7 +196,8 @@ CF-001.a–e and .g
     message when the WebView2 Runtime is missing (`HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)`,
     CF-001.e). `-lshlwapi` is added to the Windows GUI link flags for `SHCreateMemStream`.
 - **Verified:** [`windows/probes/webui/main.cf`](../windows/probes/webui/main.cf) in a real
-  window (page, bound call, event, `Quit`), and
+  window (page, bound call, event, `Quit`; owner's visual check 2026-11-09: page renders,
+  text sharp, dark title bar, white page), and
   [`webui_test.cf`](../windows/probes/webui/webui_test.cf) offscreen through `cfire test`:
   a page that quits (true), one that never does (false after the timeout), and a bound call
   that returns an error (the promise rejects with its message).
