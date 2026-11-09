@@ -78,6 +78,9 @@ Files
   cp [-r] [--force] <alias>:<path> <local path>
                                         Copy from the host; an existing file needs
                                         --force. <alias>: alone is the login folder
+  cp [-r] [--force] <alias>:<path> <alias>:<path>
+                                        Copy from one host to another, through this
+                                        machine (no key or password goes to a host)
 
 Tokens (for programs Flint cannot ask about: cron, launchd, CI on this machine)
   token create --name <name> --allow read,exec[,write] [--hosts <alias,@group,...> | --all]

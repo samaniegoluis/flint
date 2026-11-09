@@ -442,6 +442,20 @@ for cmd in "cp $cpd/here/nope local:$cpd/remote/" "cp local:$cpd/remote/blob.bin
     diff "$tmp/sout" "$tmp/lout" | head -5; diff "$tmp/serr" "$tmp/lerr" | head -5
   fi
 done
+echo "== flint cp between two hosts through the app (milestone 18)"
+# One caller: a grant for `local` alone does not reach a copy to `tty` (behind it), so
+# the window asks again and proposes both hosts; that grant then covers the next copy.
+asked_relay_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
+relay_out="$(printf '' | no_tty perl "$tmp/scope.pl" "$flint" "exec local -- echo scope-me" "cp local:$cpd/here/blob.bin tty:$cpd/remote/scope-me-relay.bin" "cp local:$cpd/here/blob.bin tty:$cpd/remote/again-relay.bin" "exec tty -- echo both" 2>"$tmp/relay.err")"
+echo "$relay_out" >> "$all_out"
+asked_relay_after=$(grep -c "asking the owner to approve" "$tmp/app.log")
+check "a copy between two hosts runs through the app, byte for byte" '[[ "$relay_out" == *"0,0,0,0"* ]] && cmp -s "$cpd/here/blob.bin" "$cpd/remote/scope-me-relay.bin" && cmp -s "$cpd/here/blob.bin" "$cpd/remote/again-relay.bin"'
+check "a grant for one host is not enough: it asks again, then the grant reaches both" '[[ $((asked_relay_after - asked_relay_before)) == 2 ]]'
+new_caller "" -- token create --name relay-one --allow exec --hosts local
+rtok="$out"
+FLINT_TOKEN="$rtok" new_caller "" -- cp "local:$cpd/here/blob.bin" "tty:$cpd/remote/token-relay.bin"
+check "a token for one of the two hosts is refused (denied)" '[[ $status == 15 && ! -e "$cpd/remote/token-relay.bin" && "$err" == *"does not allow this"* ]]'
+expect 0 "token revoke relay-one" "" -- token revoke relay-one
 check "no partial file is left" '[[ -z "$(find "$cpd" -name "*.flint-part")" ]]'
 
 echo "== another vault"
@@ -513,7 +527,7 @@ sed 's/^/app: /' "$tmp/app.log" | grep -E "ok |FAILED|checks passed|e2e:|page te
 check "the window checks passed" 'grep -q "^e2e: pass" "$tmp/app.log"'
 check "a click beside the approval window does not deny it" 'grep -q "ok   a click beside the approval window" "$tmp/app.log" && ! grep -q "FAIL a click beside" "$tmp/app.log"'
 check "the approval countdown shows the time left" 'grep -q "ok   the countdown shows the time left" "$tmp/app.log" && ! grep -q "FAIL the countdown" "$tmp/app.log"'
-for what in "the approval window says copy files with the direction, the host and both paths" "a copy proposes running commands on that host" "the approval window says how much of a long command is left" "Show full command opens the whole command" "Esc closes the full command and leaves the request waiting"; do
+for what in "the approval window says copy files with the direction, the host and both paths" "a copy proposes running commands on that host" "the approval window names both hosts of a copy between two" "a copy between two hosts proposes a grant for both" "the approval window says how much of a long command is left" "Show full command opens the whole command" "Esc closes the full command and leaves the request waiting"; do
   check "$what" 'grep -q "ok   $what" "$tmp/app.log" && ! grep -q "FAIL $what" "$tmp/app.log"'
 done
 check "the socket file is removed when the app quits" '[[ ! -e "$sock" ]]'

@@ -272,7 +272,8 @@ export interface Approval {
   label: string;
   /** The command, without flag values. */
   request: string;
-  need: { action: AccessNeedAction; host: string };
+  /** `host2`: the second host of a copy between two (milestone 18), else "". */
+  need: { action: AccessNeedAction; host: string; host2?: string };
   chain: CallerProc[];
   anchor_pid: number;
   created_ms: number;
@@ -288,11 +289,14 @@ export interface Approval {
 }
 
 export interface CopyAsk {
-  direction: 'upload' | 'download' | '';
+  /** `relay`: from `host`'s `remote` to `to_host`'s `to_path` (milestone 18). */
+  direction: 'upload' | 'download' | 'relay' | '';
   host: string;
-  /** The path on this machine, absolute. */
+  /** The path on this machine, absolute ("" for a relay). */
   local: string;
   remote: string;
+  to_host?: string;
+  to_path?: string;
   recursive: boolean;
   force: boolean;
 }

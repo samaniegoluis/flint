@@ -305,7 +305,7 @@ test('cp copies to and from a host as the CLI places files, with its errors and 
 	assert.deepEqual(up.out, ['Copied 1 file (20 B) to web-01:app/app.conf in 220 ms.']);
 	assert.ok(up.notes.some((n) => n.includes('copies nothing')));
 	const j = flint(w, 'cp --json -r ./site web-01:/tmp/');
-	assert.equal(j.out[0], '{"host":"web-01","direction":"upload","files":[{"source":"./site/css/site.css","target":"/tmp/site/css/site.css","bytes":34},{"source":"./site/index.html","target":"/tmp/site/index.html","bytes":18}],"folders":2,"bytes":52,"skipped":[],"duration_ms":260}');
+	assert.equal(j.out[0], '{"host":"web-01","to_host":"","direction":"upload","files":[{"source":"./site/css/site.css","target":"/tmp/site/css/site.css","bytes":34},{"source":"./site/index.html","target":"/tmp/site/index.html","bytes":18}],"folders":2,"bytes":52,"skipped":[],"duration_ms":260}');
 	const down = flint(w, 'cp web-01:/var/log/syslog .');
 	assert.deepEqual([down.code, down.out[0].startsWith('Copied 1 file (') && down.out[0].endsWith(' to syslog in 220 ms.')], [0, true]);
 	assert.equal(flint(w, 'cp web-01:notes.txt ./app.conf').code, 20, 'an existing file needs --force');
@@ -313,11 +313,26 @@ test('cp copies to and from a host as the CLI places files, with its errors and 
 	assert.equal(flint(w, 'cp ./site web-01:/tmp/').code, 7, 'a folder needs -r');
 	assert.equal(flint(w, 'cp ./nope web-01:/tmp/').code, 3);
 	assert.equal(flint(w, 'cp ./app.conf web-01:/etc/hostname/x').code, 21);
-	assert.equal(flint(w, 'cp web-01:/a db:/b').code, 2);
 	assert.equal(flint(w, 'cp ./a ./b').code, 2);
 	assert.equal(flint(w, 'cp ./app.conf ghost:/tmp/').code, 3);
 	const e = flint(w, 'cp ./app.conf web-01:notes.txt --json');
 	assert.deepEqual(e.err, ['{"error":{"code":"exists","message":"notes.txt on the host already exists; pass --force to replace it"}}']);
+});
+
+test('cp copies from one host to another, naming each host, as milestone 18 does', () => {
+	const w = allowed();
+	const r = flint(w, 'cp web-01:/var/log/syslog nas:/tmp/ --accept-new-host-key');
+	assert.equal(r.code, 0);
+	assert.ok(r.out[0].startsWith('Copied 1 file (') && r.out[0].endsWith(' from web-01:/var/log/syslog to nas:/tmp/syslog in 220 ms.'), r.out[0]);
+	assert.ok(r.notes.some((n) => n.includes('no key or password goes to a host')));
+	const j = flint(w, 'cp --json web-01:/var/log/syslog nas:/tmp/');
+	const d = JSON.parse(j.out[0]);
+	assert.deepEqual([d.host, d.to_host, d.direction], ['web-01', 'nas', 'relay']);
+	const ex = flint(w, 'cp --json web-01:/etc/hostname nas:/etc/');
+	assert.deepEqual([ex.code, JSON.parse(ex.err[0]).error.message], [20, '/etc/hostname on nas already exists; pass --force to replace it']);
+	assert.equal(flint(w, 'cp web-01:/var/log nas:/tmp/').code, 7, 'a folder needs -r');
+	assert.equal(flint(w, 'cp web-01:/nope nas:/tmp/').code, 3);
+	assert.equal(flint(w, 'cp web-01:/etc/hostname ghost:/tmp/').code, 3);
 });
 
 test('a host with no user is refused, as connect.cf does', () => {

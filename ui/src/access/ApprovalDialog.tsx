@@ -121,8 +121,42 @@ export function copyTarget(dst: string, src: string): string {
   return name && name !== '.' && name !== '..' ? `${dst}${name}${src.endsWith('/') ? '/' : ''}` : dst;
 }
 
+/**
+ * A copy from one host to another (milestone 18; provisional until design 16g): both
+ * ends are hosts, FROM → TO, and --force warns about the destination host.
+ */
+function RelayBlock({ copy }: { copy: CopyAsk }) {
+  const to = copy.to_host ?? '';
+  const end = (alias: string) => <><Icon name="hosts" /><span className="mono">{alias}</span></>;
+  const dst = copyTarget(copy.to_path ?? '', copy.remote);
+  return (
+    <div className="cp" data-copy-ask data-direction="relay" data-copy-host={copy.host} data-copy-to-host={to} aria-label="Between two hosts: copy direction and paths">
+      <div className="cp-dir">
+        <span className="grow row" style={{ gap: 'var(--sp-2)' }}>
+          <span className="cp-end">{end(copy.host)}</span>
+          <svg className="cp-arrow" viewBox="0 0 28 14" aria-hidden="true" style={{ fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }}><path d="M2 7h23M19 2l6 5-6 5" /></svg>
+          <span className="cp-end">{end(to)}</span>
+        </span>
+        <span className="badge info">Between hosts</span>
+      </div>
+      <div className="cp-row"><span className="who"><span className="role">From</span><span className="mono">{copy.host}</span></span><SlashPath path={copy.remote} data="data-copy-from" /></div>
+      <div className="cp-row"><span className="who"><span className="role">To</span><span className="mono">{to}</span></span><SlashPath path={dst} data="data-copy-to" /></div>
+      <div className="cp-notes"><span className="cp-note" data-copy-relay><Icon name="monitor" className="info-t" />Through this computer: no key or password goes to either host</span></div>
+      {copy.recursive && (
+        <div className="cp-notes"><span className="cp-note" data-copy-recursive><Icon name="folder" className="info-t" />A folder, with everything in it <span className="mono faint">-r</span></span></div>
+      )}
+      {copy.force && (
+        <div className="cp-force" role="note" data-copy-force><Icon name="alert" size="sm" className="warn-t" />
+          <span><strong>Replaces files that are already there.</strong> With <span className="mono">--force</span>, anything with the same name in the destination on <span className="mono">{to}</span> is overwritten without asking.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** `flint cp`'s transfer block (design 16f1-16f3): direction, both paths, -r and --force. */
 function CopyBlock({ copy }: { copy: CopyAsk }) {
+  if (copy.direction === 'relay') return <RelayBlock copy={copy} />;
   const up = copy.direction === 'upload';
   const here = <><Icon name="monitor" />This computer</>;
   const host = <><Icon name="hosts" /><span className="mono">{copy.host}</span></>;
@@ -170,8 +204,12 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
 }) {
   const { os } = useApp();
   const host = ap.need.host;
-  const group = groupOf(catalog, host);
-  const initialScope: ScopeKind = ap.need.action === 'write' || !hostKnown(catalog, host) ? 'all' : 'host';
+  // A copy between two hosts runs on both (milestone 18): "these hosts" means both, and
+  // "its group" only when they share one.
+  const host2 = ap.need.host2 && ap.need.host2.toLowerCase() !== host.toLowerCase() ? ap.need.host2 : '';
+  const hostsKnown = hostKnown(catalog, host) && (!host2 || hostKnown(catalog, host2));
+  const group = !host2 || groupOf(catalog, host2) === groupOf(catalog, host) ? groupOf(catalog, host) : '';
+  const initialScope: ScopeKind = ap.need.action === 'write' || !hostsKnown ? 'all' : 'host';
   const [scope, setScope] = useState<ScopeKind>(initialScope);
   const [actions, setActions] = useState<Record<AccessAction, boolean>>({
     read: true, exec: ap.need.action === 'exec', write: ap.need.action === 'write',
@@ -227,7 +265,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
         sudo_password: allow ? sudoPassword : '', save_sudo_password: allow && saveSudo && !!sudoPassword,
         scope: scope === 'all' ? { all: true, groups: [], hosts: [] }
           : scope === 'group' ? { all: false, groups: [group], hosts: [] }
-          : { all: false, groups: [], hosts: [host] },
+          : { all: false, groups: [], hosts: host2 ? [host, host2] : [host] },
         read: actions.read, exec: actions.exec, write: actions.write && scope === 'all',
       });
       setPassword('');
@@ -272,6 +310,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
               <CallerLabel label={ap.label} />
               {sudo ? <> wants to run a command as <span className="danger-t">root</span> on <span className="mono">{sudo.host}</span></>
                 : token ? ' wants to create a token'
+                : copy && copy.direction === 'relay' ? <> wants to copy files from <span className="mono">{copy.host}</span> to <span className="mono">{copy.to_host}</span></>
                 : copy ? <> wants to copy files {copy.direction === 'upload' ? 'to' : 'from'} <span className="mono">{copy.host}</span></>
                 : ' wants to use this vault'}
             </h2>
@@ -349,9 +388,11 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                   <div className="choice-row">
                     <span className="flabel">Hosts</span>
                     <div className="opt-list" role="radiogroup" aria-label="Hosts">
-                      {hostKnown(catalog, host) && (
+                      {hostsKnown && (
                         <label className="opt"><input type="radio" name="approval-scope" data-scope-host checked={scope === 'host'} onChange={() => setScope('host')} />
-                          <span className="opt-t"><span className="opt-l">This host <span className="mono muted">{host}</span></span></span></label>
+                          <span className="opt-t">{host2
+                            ? <span className="opt-l" data-scope-hosts>Both hosts <span className="mono muted">{host}</span> <span className="muted">and</span> <span className="mono muted">{host2}</span></span>
+                            : <span className="opt-l">This host <span className="mono muted">{host}</span></span>}</span></label>
                       )}
                       {group && (
                         <label className="opt"><input type="radio" name="approval-scope" data-scope-group checked={scope === 'group'} onChange={() => setScope('group')} />

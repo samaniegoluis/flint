@@ -125,7 +125,9 @@ or an agent reads results instead of scraping text.
 - **Jump hosts by alias.** `db` above is reached through `bastion`, a hop Flint verifies
   like any other host.
 - **Files by alias.** `flint cp ./app.conf web-01:/etc/app/` copies over SFTP with the
-  login in the vault, a folder with `-r`, and no key on disk for `scp`.
+  login in the vault, a folder with `-r`, and no key on disk for `scp`. Between two hosts
+  too: `flint cp db-01:/backups/db.sql nas:/srv/` passes through Flint, so no key ever
+  lands on a host.
 
 See the [CLI reference](/reference/cli/).
 

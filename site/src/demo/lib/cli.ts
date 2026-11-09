@@ -95,6 +95,9 @@ Files
   cp [-r] [--force] <alias>:<path> <local path>
                                         Copy from the host; an existing file needs
                                         --force. <alias>: alone is the login folder
+  cp [-r] [--force] <alias>:<path> <alias>:<path>
+                                        Copy from one host to another, through this
+                                        machine (no key or password goes to a host)
 
 Tokens (for programs Flint cannot ask about: cron, launchd, CI on this machine)
   token create --name <name> --allow read,exec[,write] [--hosts <alias,@group,...> | --all]
@@ -836,52 +839,70 @@ class Cmd {
 		p.allowFlags('cp', ['-r', '--recursive', '--force', '--timeout', '--accept-new-host-key']);
 		if (p.positionals.length !== 3 || p.hasRest) fail('usage', CP_USAGE);
 		const [srcArg, dstArg] = [p.positional(1), p.positional(2)];
+		const relay = isRemoteArg(srcArg) && isRemoteArg(dstArg);
 		const up = !isRemoteArg(srcArg);
-		if (isRemoteArg(srcArg) && isRemoteArg(dstArg)) {
-			fail('usage', 'both paths name a host; `flint cp` copies between this machine and one host (host to host is on the roadmap)');
-		}
 		if (up && !isRemoteArg(dstArg)) fail('usage', 'neither path names a host; write one as <alias>:<path>, e.g. web:/etc/app.conf');
-		const remoteArg = up ? dstArg : srcArg;
-		const alias = remoteArg.slice(0, remoteArg.indexOf(':'));
-		const remotePath = remoteArg.slice(remoteArg.indexOf(':') + 1) || '.';
-		const localPath = up ? srcArg : dstArg;
+		const split = (a: string) => ({ alias: a.slice(0, a.indexOf(':')), path: a.slice(a.indexOf(':') + 1) || '.' });
 		const recursive = p.has('-r') || p.has('--recursive');
 		const force = p.has('--force');
-		const { host, user } = yield* this.reach(alias);
-		const shell = new RemoteShell(host.alias, user, host.hostname, () => this.io.now());
-		const remote: Side = { remote: true, entry: (a) => shell.entry(a), entries: (a) => shell.entries(a) };
-		const local = localSide();
-		const [src, dst] = up ? [local, remote] : [remote, local];
-		let source = up ? localPath : remotePath;
-		const dest = up ? remotePath : localPath;
+		const hostSide = function* (this: Cmd, alias: string, label: string): Generator<Ask, { side: Side; shell: RemoteShell; alias: string }, string> {
+			const { host, user } = yield* this.reach(alias);
+			const shell = new RemoteShell(host.alias, user, host.hostname, () => this.io.now());
+			return { side: { remote: true, label, entry: (a) => shell.entry(a), entries: (a) => shell.entries(a) }, shell, alias: host.alias };
+		};
+		let src: Side, dst: Side, source: string, dest: string, hostAlias: string, toHost = '';
+		let srcShell: RemoteShell | null = null;
+		if (relay) {
+			// A copy between two hosts (milestone 18): each side is named by its alias.
+			const a = split(srcArg), b = split(dstArg);
+			const from = yield* hostSide.call(this, a.alias, '');
+			const to = yield* hostSide.call(this, b.alias, '');
+			from.side.label = ` on ${from.alias}`;
+			to.side.label = ` on ${to.alias}`;
+			[src, dst, source, dest, hostAlias, toHost, srcShell] = [from.side, to.side, a.path, b.path, from.alias, to.alias, from.shell];
+		} else {
+			const r = split(up ? dstArg : srcArg);
+			const h = yield* hostSide.call(this, r.alias, ' on the host');
+			const local = localSide();
+			[src, dst] = up ? [local, h.side] : [h.side, local];
+			source = up ? srcArg : r.path;
+			dest = up ? r.path : dstArg;
+			hostAlias = h.alias;
+			srcShell = up ? null : h.shell;
+		}
 		let name = baseOf(source);
 		if (name === '/' || name === '.' || name === '..') {
-			if (!src.remote) fail('invalid', `name the folder to copy, not '${source}'`);
-			source = (shell.entry(source) as { path: string }).path;
+			if (!srcShell) fail('invalid', `name the folder to copy, not '${source}'`);
+			source = (srcShell.entry(source) as { path: string }).path;
 			name = baseOf(source);
 		}
 		const entry = src.entry(source) ?? missing(src, source);
-		if (entry.kind === 'dir' && !recursive) fail('invalid', `${source}${onHost(src)} is a folder; pass -r to copy it`);
+		if (entry.kind === 'dir' && !recursive) fail('invalid', `${source}${src.label} is a folder; pass -r to copy it`);
 		const target = copyTarget(dst, dest, name, entry.kind === 'dir');
 		const plan: CopyPlan = { files: [], folders: 0 };
 		if (entry.kind === 'dir') planTree(src, dst, force, source, target, plan);
 		else planOne(dst, force, source, entry.size, target, plan);
 		const bytes = plan.files.reduce((n, f) => n + f.bytes, 0);
-		const direction = up ? 'upload' : 'download';
+		const direction = relay ? 'relay' : up ? 'upload' : 'download';
 		const ms = 180 + 40 * plan.files.length;
 		if (this.asJson) {
-			this.say(json({ host: host.alias, direction, files: plan.files, folders: plan.folders, bytes, skipped: [], duration_ms: ms }));
+			this.say(json({ host: hostAlias, to_host: toHost, direction, files: plan.files, folders: plan.folders, bytes, skipped: [], duration_ms: ms }));
 		} else {
-			let where = up ? `to ${host.alias}:${remotePath}` : `from ${host.alias}:${remotePath} to ${localPath}`;
+			let where = relay ? `from ${hostAlias}:${source} to ${toHost}:${dest}` : up ? `to ${hostAlias}:${dest}` : `from ${hostAlias}:${source} to ${dest}`;
 			if (plan.files.length === 1 && plan.folders === 0) {
 				const f = plan.files[0];
-				where = up ? `to ${host.alias}:${f.target}` : `from ${host.alias}:${f.source} to ${f.target}`;
+				where = relay ? `from ${hostAlias}:${f.source} to ${toHost}:${f.target}` : up ? `to ${hostAlias}:${f.target}` : `from ${hostAlias}:${f.source} to ${f.target}`;
 			}
 			const n = plan.files.length;
 			const folders = plan.folders > 0 ? `, ${plan.folders === 1 ? '1 folder' : `${plan.folders} folders`} created` : '';
 			this.say(`Copied ${n === 1 ? '1 file' : `${n} files`} (${humanBytes(bytes)}${folders}) ${where} in ${ms} ms.`);
 		}
-		this.io.note('The demo copies nothing: its servers and this machine are read-only. The real flint copies over SFTP, with the login in the vault.', '/guides/files/');
+		this.io.note(
+			relay
+				? 'The demo copies nothing: its servers are read-only. The real flint reads from the first host and writes to the second through this machine, so no key or password goes to a host.'
+				: 'The demo copies nothing: its servers and this machine are read-only. The real flint copies over SFTP, with the login in the vault.',
+			'/guides/files/',
+		);
 		return { code: 0 };
 	}
 
@@ -919,7 +940,7 @@ class Cmd {
 
 // ---- flint cp (files_commands.cf, application/files.cf) ----
 
-const CP_USAGE = 'usage: flint cp [-r] [--force] <alias>:<path> <local path>  |  flint cp [-r] [--force] <local path> <alias>:<path>';
+const CP_USAGE = 'usage: flint cp [-r] [--force] <src> <dst>, where one or both name a host as <alias>:<path>';
 
 /** is_remote_arg: `alias:` before any `/`. */
 function isRemoteArg(a: string): boolean {
@@ -940,6 +961,8 @@ const LOCAL_DIRS = ['/', '/home', '/home/you', '/home/you/site', '/home/you/site
 
 interface Side {
 	remote: boolean;
+	/** How messages name this side: '' (this machine), ' on the host', or ' on <alias>' between two hosts. */
+	label: string;
 	entry(path: string): { path: string; kind: 'file' | 'dir'; size: number } | null;
 	entries(path: string): { name: string; isDir: boolean }[];
 }
@@ -957,6 +980,7 @@ function localSide(): Side {
 	};
 	return {
 		remote: false,
+		label: '',
 		entry(a) {
 			const p = norm(a);
 			if (LOCAL_DIRS.includes(p)) return { path: p, kind: 'dir', size: 4096 };
@@ -978,7 +1002,6 @@ const trimSlashes = (p: string) => (p.length > 1 ? p.replace(/\/+$/, '') : p);
 const baseOf = (p: string) => { const s = trimSlashes(p); return s === '/' ? s : s.slice(s.lastIndexOf('/') + 1); };
 const dirOf = (p: string) => { const s = trimSlashes(p); const i = s.lastIndexOf('/'); return i < 0 ? '.' : i === 0 ? '/' : s.slice(0, i); };
 const joinPath = (d: string, n: string) => (d === '' || d === '.' ? n : d.endsWith('/') ? d + n : d + '/' + n);
-const onHost = (s: Side) => (s.remote ? ' on the host' : '');
 
 function humanBytes(n: number): string {
 	if (n < 1024) return `${n} B`;
@@ -991,7 +1014,7 @@ function humanBytes(n: number): string {
 }
 
 function missing(s: Side, path: string): never {
-	fail('not_found', s.remote ? `${path}: no such file or folder on the host` : `${path}: no such file or folder`);
+	fail('not_found', `${path}: no such file or folder${s.label}`);
 }
 
 /** copy_target: into `dst` when it is a folder, else at `dst`, whose folder must exist. */
@@ -999,14 +1022,14 @@ function copyTarget(dst: Side, path: string, name: string, srcIsDir: boolean): s
 	const st = dst.entry(path);
 	if (st) {
 		if (st.kind === 'dir') return joinPath(trimSlashes(path), name);
-		if (srcIsDir) fail('not_a_directory', `${path}${onHost(dst)} is a file, not a folder`);
+		if (srcIsDir) fail('not_a_directory', `${path}${dst.label} is a file, not a folder`);
 		return path;
 	}
-	if (path.endsWith('/')) fail('not_found', `${path}${onHost(dst)}: no such folder`);
+	if (path.endsWith('/')) fail('not_found', `${path}${dst.label}: no such folder`);
 	const parent = dirOf(path);
 	const up = dst.entry(parent);
-	if (!up) fail('not_found', `${parent}${onHost(dst)}: no such folder`);
-	if (up.kind !== 'dir') fail('not_a_directory', `${parent}${onHost(dst)} is not a folder`);
+	if (!up) fail('not_found', `${parent}${dst.label}: no such folder`);
+	if (up.kind !== 'dir') fail('not_a_directory', `${parent}${dst.label} is not a folder`);
 	return path;
 }
 
@@ -1014,14 +1037,14 @@ interface CopyPlan { files: { source: string; target: string; bytes: number }[];
 
 function planOne(dst: Side, force: boolean, source: string, size: number, target: string, plan: CopyPlan) {
 	const there = dst.entry(target);
-	if (there?.kind === 'dir') fail('exists', `${target}${onHost(dst)} is a folder; a file cannot replace it`);
-	if (there && !force) fail('exists', `${target}${onHost(dst)} already exists; pass --force to replace it`);
+	if (there?.kind === 'dir') fail('exists', `${target}${dst.label} is a folder; a file cannot replace it`);
+	if (there && !force) fail('exists', `${target}${dst.label} already exists; pass --force to replace it`);
 	plan.files.push({ source, target, bytes: size });
 }
 
 function planTree(src: Side, dst: Side, force: boolean, source: string, target: string, plan: CopyPlan) {
 	const there = dst.entry(target);
-	if (there && there.kind !== 'dir') fail('not_a_directory', `${target}${onHost(dst)} is a file, not a folder`);
+	if (there && there.kind !== 'dir') fail('not_a_directory', `${target}${dst.label} is a file, not a folder`);
 	if (!there) plan.folders++;
 	for (const e of src.entries(source)) {
 		const child = joinPath(source, e.name);
