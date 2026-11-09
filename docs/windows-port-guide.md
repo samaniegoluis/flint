@@ -1,10 +1,12 @@
 # Flint on Windows: port guide
 
-What Flint itself needed to build and run on Windows, worked out on the isolated
-`windows-port` branch (WSL2, 2026-11-09). **This branch is not merged.** When cfire ships
-real Windows support, Flint's `main` (by then on a newer cfire) gets the same changes again,
-using this guide as the checklist, and the cfire side is checked against
-[`cfire-windows.md`](cfire-windows.md).
+What Flint itself needed to build and run on Windows, worked out on an isolated branch
+(WSL2, 2026-11-09). **The branch is not merged and not pushed.** Since `main` moved to
+cfire `c5b1d4b` (D-060), the branch is `main` plus the Windows port and nothing else:
+`windows-port-2` = `origin/main` (`83557b0`) with `windows-port` merged in. When cfire ships
+real Windows support, that diff is the port; this guide is its checklist and the cfire side
+is checked against [`cfire-windows.md`](cfire-windows.md). Keep the branch close to `main`
+by merging `main` into it now and then.
 
 | Two files, two readers | |
 |---|---|
@@ -15,20 +17,26 @@ using this guide as the checklist, and the cfire side is checked against
 
 | What | Where |
 |---|---|
-| Flint worktree | `~/Personal/Proyectos/cfire/flint-windows`, branch `windows-port` (local only) |
+| Flint worktree | `~/Personal/Proyectos/cfire/flint-windows`, branch `windows-port-2` (local only). `windows-port` is the history before the merge, kept for reference |
 | cfire clone | `~/Personal/Proyectos/cfire/cfire-windows` |
-| cfire for the patches (read by the author) | branch `windows-fixes` = `c5b1d4b` (HEAD on 2026-11-09) + patches |
-| cfire Flint builds against | branch `windows-fixes-flint` = `24a43f6` + `5c06d4a` + the same patches, installed in `~/.local/opt/cfire-flint` |
+| cfire (patches and Flint) | branch `windows-fixes` = `c5b1d4b` (the commit `main` pins) + patches 0001-0008, installed by hand in `~/.local` (`bin/cfire`, `share/cfire`) |
 | Toolchain | llvm-mingw in `~/.local/opt/llvm-mingw-*`, MSYS2 CLANG64 libraries + WebView2 SDK in `~/.local/opt/win-sysroot` (`windows/bin/sysroot.sh`) |
-| Environment | `source windows/bin/env-flint.sh` (Flint) or `windows/bin/env.sh` (cfire probes on HEAD) |
+| Environment | `source windows/bin/env.sh` (Flint and the cfire probes) |
 | Build the CLI | `cfire build --target x86_64-w64-mingw32` in the worktree → `build/flint.exe` |
-| Checks | `windows/run-probes.sh` (cfire), `windows/cli-smoke.sh` (Flint CLI, vault + SSH + `cp`) |
+| Checks | `windows/run-probes.sh` (cfire), `windows/test-suites.sh` (Flint's suites on Windows), `windows/cli-smoke.sh` (CLI, vault + SSH + `cp`), `windows/gui-e2e.sh`, `windows/serve-e2e.sh` |
 | SSH for checks by hand | `windows/ssh-lab.sh start\|stop`: two throwaway sshd in WSL + `windows/ssh-relay.ps1` + a vault in `%TEMP%\flint-lab` |
 
-**Why two cfire branches.** cfire after `24a43f6` renamed modules (`ext:json` → `core:json`,
-`b3909cc`) and, in `c5b1d4b`, rejects `.has_value()` on a `T!` (`cfire/UNHANDLED-RESULT`,
-hundreds of hits in Flint's tests). Moving Flint to that cfire is `main`'s job, not the
-port's, so the port builds on the last commit before the renames.
+**One cfire since the merge.** Until `main` moved to `c5b1d4b`, Flint could not build on
+the cfire the patches sit on (module renames in `b3909cc`, `cfire/UNHANDLED-RESULT` in
+`c5b1d4b`), so the port used a second branch, `windows-fixes-flint` (`24a43f6` + the same
+patches) and `windows/bin/env-flint.sh`. Both are gone on `windows-port-2`; the old branch
+and `~/.local/opt/cfire-flint` remain only for `windows-port`.
+
+**The merge (2026-11-09).** Three conflicts: `flint_ssh.hpp` (main's tunnel pump now waits
+on the outer session's socket too, milestone 18; on `flint_sock` with a new `poll_two`),
+`commands.cf` (imports), `files_commands.cf` (`flint cp` between two hosts with the
+drive-letter rule, also in `cp_second_alias`). The port's code needed nothing for the new
+cfire: it never stored a `T!`.
 
 ## What Flint changed
 
@@ -38,7 +46,7 @@ paths (the socket code moved into shared helpers with the same behaviour).
 | Area | File | Windows side |
 |---|---|---|
 | Link flags | `src/adapters/pkgconfig/windows/flint-native.pc` (new) | `Requires: libssh libcrypto zlib` (static libssh needs OpenSSL listed: MSYS2's `libssh.pc` has no `Libs.private`), `-ladvapi32 -lcrypt32 -lws2_32 -liphlpapi -lbcrypt` |
-| Sockets | `ipc/native/flint_sock.hpp` (new) | `closesocket`, `WSAPoll`, `WSAGetLastError`, `ioctlsocket(FIONBIO)`, `WSAStartup` once, and a **socketpair over loopback TCP** (Windows has none) |
+| Sockets | `ipc/native/flint_sock.hpp` (new) | `closesocket`, `WSAPoll` (`poll_one`, `poll_two`), `WSAGetLastError`, `ioctlsocket(FIONBIO)`, `WSAStartup` once, and a **socketpair over loopback TCP** (Windows has none) |
 | IPC (CLI ↔ app) | `ipc/native/flint_ipc.hpp` | **AF_UNIX** (Windows 10 1803+), not a named pipe: same code shape. Peer pid from `SIO_AF_UNIX_GETPEERPID`; "same uid" = same **token user SID** (`own_uid()` is 0, a peer is 0 or 1). Mode 0600 = a **protected DACL with one ACE for the owner** (`SetFileSecurityW`); AF_UNIX checks write access on connect. A stale socket file is recognised by its reparse tag `IO_REPARSE_TAG_AF_UNIX` before deleting it |
 | Caller info | `ipc/native/flint_peer.hpp` | ppid from a Toolhelp snapshot, start time from `GetProcessTimes`, path from `QueryFullProcessImageNameW`; argv[0] = the image path (reading it really needs the PEB) |
 | Keychain | `keychain/native/flint_keychain.hpp` | **Credential Manager**: generic credential, target `Flint/<vault id>`, `CRED_PERSIST_LOCAL_MACHINE` |
@@ -64,6 +72,20 @@ paths (the socket code moved into shared helpers with the same behaviour).
 
 Every line here **ran** on Windows 11 (build 26200) through WSL interop, unless it says
 otherwise.
+
+### On `windows-port-2` (main + the port, cfire `c5b1d4b` + patches), 2026-11-09
+
+| Check | Result |
+|---|---|
+| `windows/build-gui.sh` | CLI, app and page build with no change beyond the merge |
+| `windows/test-suites.sh` | **10 suites, 1071 tests pass** on Windows: config 89, crypto 89, fonts 81, ipc 93, keychain 83, process 89, uievents 95, vault 114, application 193, clicmd 145. `ssh` not run (needs sshd on `127.0.0.1` from Windows). First run: ipc, vault and clicmd failed only because "/tmp" from a WSL folder is the WSL share; process had two POSIX-only asserts |
+| `windows/cli-smoke.sh` | 49/49 |
+| `windows/gui-e2e.sh` | **153 pass** (138 + main's milestones 18-19: two panes, copy between servers, a host key asked inside the pane, Skip). Skipped as before: vim, the focus trap |
+| `windows/serve-e2e.sh` | **51/51**, twice 49/49 before the new check: `flint cp` between two hosts through the app (milestone 18) |
+| `windows/run-probes.sh` | green |
+| Linux regression | LINUX_REGRESSION_PENDING |
+
+### Before the merge (`windows-port`, cfire `24a43f6` + patches)
 
 - `flint --version`, `--help`: libssh 0.12.2/OpenSSL, libsodium 1.0.22, SQLCipher 4.19.0.
 - `windows/cli-smoke.sh`, **49/49** (2026-11-09):
@@ -148,7 +170,7 @@ otherwise.
 | Interactive `connect` | Needs a person at Windows Terminal: `windows/ssh-lab.sh start`, then the command in the part 5 report. Raw console, resize without SIGWINCH, Ctrl+C, UTF-8 typing, the console restored on exit |
 | Host key prompt in a real terminal | The `GetConsoleWindow()` rule says Windows Terminal (ConPTY) has a window handle; checked only that the hidden interop console has none |
 | Credential Manager by a person | The CLI only deletes entries (D-038: `vault lock`, `vault forget`); the app writes them when "remember" is on. Checked with the adapter's test; a person looks once the GUI runs (part 6): `cmdkey /list:Flint/*`, or Control Panel → Credential Manager → Windows Credentials → Generic Credentials, target `Flint/<vault id>` |
-| GUI person checks (part 6) | Win+L and sleep with the app unlocked, a real dialog (save a key), a drag from Explorer into the Files view, `cmdkey /list:Flint/*` with "Remember on this computer", the icons (Explorer, title bar, taskbar, tray) |
+| GUI person checks (part 6) | Win+L and sleep with the app unlocked, a real dialog (save a key), a drag from Explorer into the Files view, `cmdkey /list:Flint/*` with "Remember on this computer". The icons are done (Explorer, title bar, taskbar, tray: owner, 2026-11-09) |
 | `serve-e2e` last phase | Intermittent `approval_timeout` on `host add e2e-stop-2` (1 run in 4, see Verified); capture the started app's log to find out why |
 | Windows Hello, `set_dark_mode` at run time | Ideas below |
 | CLI from WSL, and installing the CLI | Owner's decision (2026-11-09): for now WSL calls the Windows `flint.exe` (an alias), which the app serves as "flint, started by wsl" (like 1Password's `op.exe`). Later, once the port is further along: an installer that puts `flint` on `PATH`, or an "Install command-line tool" in Settings that makes the link, and WSL handled the same way |
@@ -233,6 +255,11 @@ otherwise.
   forever. Read the value back before submitting, retry, and make the harness stop at
   the first failed step with the page's text in the log, instead of running forty
   commands that can only fail (each costs seconds; a hang costs the whole timeout).
+- **A Windows test binary started from a WSL folder sees "/tmp" on the WSL share.** A
+  rooted path without a drive is relative to the current drive, and from WSL that is
+  `\\wsl.localhost\<distro>`: SQLite cannot lock files there ("database is locked") and a
+  socket file cannot get an ACL. Run Windows tests from a folder under `%TEMP%`
+  (`windows/test-suites.sh`), where "/tmp" is `C:\tmp`.
 - **Kill what an interrupted run left before starting.** An sshd from a stopped run kept
   the port with other keys, and the next run's `exec`s all failed with `auth`, which
   looked like a Flint bug. Also: `Stop-Process` returns before the `.exe` is released;
