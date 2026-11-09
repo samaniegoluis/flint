@@ -428,3 +428,64 @@ The rule (owner): one panel and one width for every side view, with a pin.
   - Settings → Appearance: a row "Side panel: Pinned / Floating" (the default), if you
     think it belongs there and not only on the pin.
 ```
+
+## Message 7: tunnels (v6, milestone 23, to send)
+
+Written at v6's planning (2026-11-09, D-062). Send it in the same chat as messages 1-6; it
+is needed before milestone 23 is built.
+
+```
+Flint follow-up: tunnels (local port forwards, `ssh -L`). Same tokens.css, components and
+dark/light pairs as the existing screens. Name the new files 06c…, 16h… and 20…, as below.
+
+Context: a tunnel lets something on this machine (a database client, a browser) reach a
+service that only listens inside a server: 127.0.0.1:5432 here goes to localhost:5432 on
+db1. The rules (owner):
+  - A tunnel is saved in its host: name, local port, destination as seen from the server
+    (localhost:5432 by default, or another machine on its network, e.g. 10.0.0.5:5432),
+    and "Open when I connect". It uses the host's login, credentials and jump hosts.
+  - A host's running tunnels do not live in a tab. They ride a session of their own with no
+    terminal, so closing the tab (or the terminal reconnecting) leaves them up, and a tunnel
+    can run with no terminal at all.
+  - Three ways to open, all from the same host: SSH only (connect as today), SSH with
+    tunnels (connecting starts the "Open when I connect" ones; the session toolbar toggles
+    each), tunnels only (a Tunnels view in the rail, the palette, or `flint tunnel up`).
+  - Local side is always 127.0.0.1, never the LAN: say so, do not offer a bind address.
+
+06c · Host editor, Tunnels section (beside 06 and 17b):
+  - 06c1 · A list of the host's tunnels, each row "pg · 127.0.0.1:5432 → localhost:5432"
+    with an "Open when I connect" check, edit and remove; an "Add tunnel" button. Mono for
+    ports and addresses. Empty state: one line saying what a tunnel is.
+  - 06c2 · Adding or editing one: name, local port, destination host (placeholder
+    "localhost") and port, the check. Inline errors: a name already used on this host, a
+    port out of range, a local port another tunnel of the vault already uses.
+
+20 · Tunnels in the app:
+  - 20a · The Tunnels view (a rail item, same panel width as Hosts): every tunnel grouped by
+    host (colour dot and label as in the sidebar), each with a switch and its live state:
+    "listening 127.0.0.1:5432 · 2 connections", stopped, starting, "port 5432 in use",
+    "connection lost · retrying". A filter at the top. Both themes.
+  - 20b · The tunnels' session connecting for a host with no open tab: the row shows the
+    connecting state, then a password prompt or an unknown host key, reusing 10a and 10c
+    (as 14d5 did for the second file pane), and an auth-failed state.
+  - 20c · The session toolbar's Tunnels button and its menu: a check per tunnel of this
+    host with its state, "Manage tunnels…" opening 06c. The button shows a count when
+    some are up.
+  - 20d · A host's tab while it has tunnels up: a small mark on the tab (and on the host
+    in the sidebar), with a tooltip listing them. Also a closed tab: the host still shows
+    its tunnels running in the sidebar.
+  - 20e · Command palette: "Start tunnel pg on db1", "Stop tunnel …", "Connect to db1 with
+    tunnels".
+  - 20f · At 900×600 (as 04c): the Tunnels view and the toolbar menu.
+
+16h · Approval window, a program opening a tunnel (a variant of 16a1 and 16f1):
+  - Header: "flint, started by Claude Code wants to open a tunnel". The process chain and
+    pid as in 16a1.
+  - What it opens, at a glance: the host (label, alias), "127.0.0.1:5432 on this Mac →
+    localhost:5432 on db1". Mono for addresses.
+  - The grant it creates covers the host's exec scope (Hosts row of 16a1): say that the
+    program could also run commands there.
+  - 16h1 a tunnel; 16h2 the same when the local port is already in use on this machine:
+    the window says so plainly before Allow, so the person is not asked to approve a
+    tunnel that cannot open.
+```
