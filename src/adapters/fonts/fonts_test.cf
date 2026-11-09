@@ -27,7 +27,7 @@ test "the OS font catalog lists monospaced families" {
                 consolas = true
             }
         }
-        assert(consolas, "Consolas should be listed as monospaced: {names}")
+        assert(consolas, "Consolas should be listed as monospaced")
     }
     if apple {
         mut menlo := false

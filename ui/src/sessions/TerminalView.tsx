@@ -13,6 +13,7 @@ import '@xterm/xterm/css/xterm.css';
 import { useApp } from '../state/app';
 import { actionFor } from '../lib/keymap';
 import { keyInput } from '../lib/keyInput';
+import { clipboardKey } from '../lib/clipboardKeys';
 import { api } from '../api/backend';
 import { runAction } from '../shell/actions';
 import { sessions } from './store';
@@ -153,12 +154,18 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
         return false;
       }
       const mac = osRef.current === 'mac';
-      // Copy and paste: ⌘C/⌘V on macOS (native events), Ctrl+Shift+C/V on Linux.
-      if (!mac && e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyC') {
-        if (term.hasSelection()) navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
+      // Copy and paste: ⌘C/⌘V on macOS (native events), Ctrl+Shift+C/V on Linux, and
+      // on Windows also Ctrl+C/V and Ctrl/Shift+Insert (lib/clipboardKeys.ts).
+      const ck = clipboardKey(e, osRef.current, term.hasSelection());
+      if (ck === 'copy') {
+        if (term.hasSelection()) {
+          navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
+          // As Windows Terminal: the next Ctrl+C interrupts again.
+          if (osRef.current === 'windows') term.clearSelection();
+        }
         return false;
       }
-      if (!mac && e.ctrlKey && e.shiftKey && !e.altKey && e.code === 'KeyV') return false;
+      if (ck === 'nativePaste') return false;
       const action = actionFor(e, osRef.current);
       if (action) {
         e.preventDefault();

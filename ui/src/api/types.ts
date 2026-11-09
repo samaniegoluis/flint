@@ -3,7 +3,7 @@
 
 export interface AppInfo {
   version: string;
-  os: 'mac' | 'linux';
+  os: 'mac' | 'linux' | 'windows';
   libssh: string;
   libsodium: string;
   sqlite: string;

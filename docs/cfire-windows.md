@@ -416,6 +416,12 @@ file is next updated.
   calls it when the page's theme changes (`window_theme`), so a light page keeps a dark
   title bar until the next launch. A `platform_set_dark_mode` hook (on Windows,
   `DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE)` again) would fix it.
+- Interpolating a slice, `"listed: {names}"` with `names: []str`, compiles where the C++
+  library formats ranges (llvm-mingw's libc++) and fails on Linux with GCC 13's libstdc++
+  (Ubuntu 24.04): `std::formatter<[]str, char>` is not specialised (`<format>:3672`, a
+  `static_assert`), reported at the `.cf` line as a consteval `basic_format_string` error.
+  The same file built and passed for Windows. cfire could reject it at check time, or
+  format slices itself (`[a, b]`) instead of leaning on C++23 range formatting.
 - `app.emit("ping", "pong")` with a string literal does not compile
   (`json::stringify<char[5]>` has no viable overload); a `str` variable works. Seen on
   the Windows target; not yet tried on macOS or Linux.

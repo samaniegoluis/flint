@@ -140,8 +140,10 @@ host.
 The terminal is xterm.js with the Kitty keyboard protocol. Plain <kbd>Ctrl</kbd> chords
 always reach the shell; on Linux, Flint's own shortcuts use <kbd>Ctrl+Shift</kbd>. Copy
 and paste with <kbd>⌘C</kbd> <kbd>⌘V</kbd> on macOS and <kbd>Ctrl+Shift+C</kbd>
-<kbd>Ctrl+Shift+V</kbd> on Linux. Right-click copies the selection, or pastes when
-nothing is selected. <kbd>⌘+</kbd> <kbd>⌘−</kbd> <kbd>⌘0</kbd> change the font size of
+<kbd>Ctrl+Shift+V</kbd> on Linux. On Windows, also <kbd>Ctrl+Insert</kbd> or
+<kbd>Ctrl+C</kbd> over a selection to copy, and <kbd>Ctrl+V</kbd> or
+<kbd>Shift+Insert</kbd> to paste, as in Windows Terminal. Right-click copies the
+selection, or pastes when nothing is selected. <kbd>⌘+</kbd> <kbd>⌘−</kbd> <kbd>⌘0</kbd> change the font size of
 open sessions. Its colours come from **Settings → Terminal → Colours**.
 
 **Copy from a remote program.** Neovim, tmux and Zellij can copy to your clipboard over

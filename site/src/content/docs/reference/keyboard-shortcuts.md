@@ -31,6 +31,12 @@ speaks the Kitty keyboard protocol.
 | Terminal font size | ⌘+ ⌘− ⌘0 | Ctrl+Shift+= − 0 |
 | Move between regions (leave the terminal) | F6 · ⇧F6 | F6 · Shift+F6 |
 
+On Windows the shortcuts are the Linux ones, and the terminal also copies and pastes as
+Windows Terminal does: <kbd>Ctrl+Insert</kbd> copies, and so does <kbd>Ctrl+C</kbd>
+while text is selected (with nothing selected it interrupts the remote program);
+<kbd>Ctrl+V</kbd> and <kbd>Shift+Insert</kbd> paste. <kbd>Ctrl+V</kbd> therefore no
+longer reaches the remote (vim's visual block: use <kbd>Ctrl+Q</kbd> there).
+
 ## In lists and dialogs
 
 | Where | Keys |

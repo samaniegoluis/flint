@@ -17,12 +17,12 @@ let current: PaneDrag | null = null;
 export const paneDrag = () => current;
 export const setPaneDrag = (d: PaneDrag | null) => { current = d; };
 
-const isMod = (e: React.KeyboardEvent, os: 'mac' | 'linux') => (os === 'mac' ? e.metaKey && !e.ctrlKey : e.ctrlKey && e.shiftKey);
+const isMod = (e: React.KeyboardEvent, os: 'mac' | 'linux' | 'windows') => (os === 'mac' ? e.metaKey && !e.ctrlKey : e.ctrlKey && e.shiftKey);
 
 interface Props {
   fkey: string;
   folder: FolderState | undefined;
-  os: 'mac' | 'linux';
+  os: 'mac' | 'linux' | 'windows';
   listRef: RefObject<HTMLDivElement>;
   /** The folder row a drag from the other pane would drop into. */
   dropPath: string | null;

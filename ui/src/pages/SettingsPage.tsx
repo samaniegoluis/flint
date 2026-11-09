@@ -226,7 +226,7 @@ function Shortcuts() {
       </div>
       <div className="callout info"><Icon name="keyboard" size="sm" className="info-t" /><span>On Linux <span className="mono strong">⌘</span> becomes <span className="mono strong">Ctrl+Shift</span> and <span className="mono strong">⇧⌘</span> becomes <span className="mono strong">Ctrl+Alt+Shift</span>, so plain Ctrl combos always reach the terminal (Kitty keyboard protocol). Custom shortcuts are coming in a later version.</span></div>
       <table className="table compact">
-        <thead><tr><th>Action</th><th>macOS</th><th>Linux</th></tr></thead>
+        <thead><tr><th>Action</th><th>macOS</th><th>Linux · Windows</th></tr></thead>
         <tbody>
           {SHORTCUT_GROUPS.flatMap((g) => g.actions).filter((a) => match(ACTION_TITLES[a] + chordLabel(a, 'mac') + chordLabel(a, 'linux'))).map((a) => (
             <tr key={a}>
@@ -236,6 +236,7 @@ function Shortcuts() {
             </tr>
           ))}
           {match('copy paste') && <tr><td className="primary">Copy · paste in the terminal</td><td><span className="kbd-group"><span className="kbd">⌘C</span><span className="kbd">⌘V</span></span></td><td><span className="kbd-group"><span className="kbd">Ctrl+Shift+C</span><span className="kbd">Ctrl+Shift+V</span></span></td></tr>}
+          {match('copy paste windows insert') && <tr><td className="primary">Also on Windows: copy · paste</td><td>—</td><td><span className="kbd-group"><span className="kbd">Ctrl+C</span><span className="kbd">Ctrl+Insert</span></span> · <span className="kbd-group"><span className="kbd">Ctrl+V</span><span className="kbd">Shift+Insert</span></span><br /><span className="muted">Ctrl+C copies only while text is selected</span></td></tr>}
         </tbody>
       </table>
     </div>
@@ -280,7 +281,7 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
   useEffect(() => { refreshCatalog().catch(() => {}); }, [refreshCatalog]);
   useEffect(() => { api.status().then(setSt).catch(() => {}); }, [catalog]);
   if (!vault) return null;
-  const keychain = os === 'mac' ? 'macOS Keychain' : 'the Secret Service keyring';
+  const keychain = os === 'mac' ? 'macOS Keychain' : os === 'windows' ? 'Windows Credential Manager' : 'the Secret Service keyring';
   return (
     <>
       <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', paddingBottom: 'var(--sp-3)' }}>Vault</h1>

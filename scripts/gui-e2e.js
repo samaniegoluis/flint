@@ -277,6 +277,36 @@
     await runInTerminal('echo "[$(cat /tmp/flint-e2e-dead.txt)]-$((6*7))"', ']-42');
     await check(termText().includes("[it's]"), "a dead ' flushed with s types it's, not it''s");
 
+    await setStep('windows clipboard keys');
+    // Windows (windows-port): Shift+Insert and Ctrl+V paste, Ctrl+Insert copies, and
+    // Ctrl+C copies while text is selected (lib/clipboardKeys.ts). None of them may
+    // reach the remote as a key: Shift+Insert used to arrive as ESC[2;2~ and the shell
+    // printed "2~". A synthetic key cannot make the webview paste, so this checks that
+    // the remote gets only what is typed after them, and that Ctrl+C over a selection
+    // does not interrupt.
+    if ((await window.backend.app_info({})).os === 'windows') {
+      await runInTerminal('stty -echo; head -n 1 > /tmp/flint-e2e-keys.txt; stty echo; echo keys-done-$((6*7))', '');
+      await sleep(300);
+      const t = activeTerm();
+      const ta = qa('.pane > div').find((d) => d.style.display !== 'none').querySelector('textarea');
+      const press = (code, key, mods) => ta.dispatchEvent(new KeyboardEvent('keydown', { code, key, bubbles: true, cancelable: true, ...mods }));
+      press('Insert', 'Insert', { shiftKey: true });
+      press('KeyV', 'v', { ctrlKey: true });
+      press('Insert', 'Insert', { ctrlKey: true });
+      t.selectAll();
+      press('KeyC', 'c', { ctrlKey: true });
+      const cleared = !t.hasSelection();
+      await sleep(100);
+      t.input('typed-after\r', true);
+      await waitFor(() => termText().includes('keys-done-42'), 'head to finish');
+      await runInTerminal('echo "[$(cat /tmp/flint-e2e-keys.txt)]-keys$((6*7))"', ']-keys42');
+      const got = ([...termText().matchAll(/\[([^\]\n]*)\]-keys42/g)].pop() || ['', '?'])[1];
+      await check(got === 'typed-after', 'Shift+Insert, Ctrl+V, Ctrl+Insert and Ctrl+C over a selection send nothing to the remote' + (got === 'typed-after' ? '' : ` — the remote read [${JSON.stringify(got)}]`));
+      await check(cleared, 'Ctrl+C over a selection copies and clears it, so the next Ctrl+C interrupts');
+    } else {
+      await log('skip windows clipboard keys: not Windows');
+    }
+
     await setStep('files view');
     {
       // Milestone 17: the Files view over the tab's own session (D-053). The sshd is
