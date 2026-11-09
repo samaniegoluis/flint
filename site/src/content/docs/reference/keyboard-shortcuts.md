@@ -37,6 +37,7 @@ speaks the Kitty keyboard protocol.
 |---|---|
 | Host tree | ↑ ↓ move · ← → collapse or expand · ↵ connect · ⌘↵ new tab · ⌘I edit · ⌫ delete |
 | Files list | ↑ ↓ move · ↵ open a folder, rename a file · ⌘↑ up one folder · ⌘↓ download · ⌘⌫ delete · context-menu key for the menu |
+| Files with two servers | ⌘→ copy to the second pane's server · ⌘← (in the second pane) copy back to the first · esc hide the second pane |
 | Command palette | ↑ ↓ move · ↵ open · ⌘↵ new tab · ⌘I edit host · Tab next group · esc close |
 | Prompts over a session | ↵ the primary action · esc cancel. A changed host key has no ↵ action |
 | Editors | ⌘↵ save · esc cancel |

@@ -85,8 +85,14 @@ const screens = {
 	],
 };
 
-// What the Files view lists on web-01 (milestone 17): name, kind, size, minutes ago.
+// What the Files view lists (milestones 17 and 19): web-01's login folder, and nas's in
+// the second pane. Name, kind, size, minutes ago.
+const homes = { 'web-01': '/home/deploy', nas: '/srv/backups' };
 const listing = {
+	'/srv/backups': [
+		['db', 'dir', 0, 300], ['web-01', 'dir', 0, 9000], ['deploy.sh', 'file', 2150, 600], ['nginx.conf', 'file', 1830, 0],
+		['restic.env', 'file', 288, 70000], ['retention.txt', 'file', 940, 52000],
+	],
 	'/home/deploy': [
 		['releases', 'dir', 0, 90], ['shared', 'dir', 0, 2400], ['site', 'dir', 0, 130],
 		['.env', 'file', 412, 30000], ['deploy.sh', 'file', 2150, 8000], ['nginx.conf', 'file', 1830, 240],
@@ -94,7 +100,8 @@ const listing = {
 	],
 };
 
-function stub({ catalog, recents, screens, theme, listing }) {
+function stub({ catalog, recents, screens, theme, listing, homes }) {
+	const bySession = new Map();
 	const now = Math.floor(Date.now() / 1000);
 	const listeners = new Map();
 	const emit = (event, data) => (listeners.get(event) ?? []).forEach((cb) => cb(data));
@@ -118,8 +125,10 @@ function stub({ catalog, recents, screens, theme, listing }) {
 		vault_unlock: () => ({ path: current.path, name: current.name, format: 1, cached: true }),
 		vault_status: () => ({ path: current.path, name: current.name, exists: true, unlocked: true, cached: true, groups: catalog.groups.length, hosts: catalog.hosts.length, keys: catalog.keys.length, credentials: catalog.credentials.length }),
 		catalog: () => catalog,
-		session_open: ({ session, alias }) => {
+		session_open: ({ session, alias, files_only }) => {
+			bySession.set(session, alias);
 			setTimeout(() => {
+				if (files_only) return emit('session:state', { session, state: 'ready', code: '', message: '', exit_code: 0 });
 				emit('session:state', { session, state: 'ready', code: '', message: '', exit_code: 0 });
 				emit('terminal:output', { session, data: b64((screens[alias] ?? ['$ ']).join('\r\n')) });
 			}, 50);
@@ -133,7 +142,7 @@ function stub({ catalog, recents, screens, theme, listing }) {
 		session_resize: () => ({}),
 		session_close: () => ({}),
 		// The Files view: one folder, an upload that is done and one under way.
-		files_home: () => ({ path: '/home/deploy' }),
+		files_home: ({ session }) => ({ path: homes[bySession.get(session)] ?? '/home/deploy' }),
 		files_list: ({ path }) => ({
 			path,
 			entries: (listing[path] ?? []).map(([name, kind, size, ago]) => ({ name, path: `${path}/${name}`, kind, size, mtime: now - ago * 60, mode: 420 })),
@@ -146,6 +155,15 @@ function stub({ catalog, recents, screens, theme, listing }) {
 			// About 3 MB/s: the rate is read from the second report on.
 			setTimeout(() => ev(9750000), 40);
 			setTimeout(() => ev(13000000), 1040);
+			return new Promise(() => {});
+		},
+		// A copy to nas (milestone 19): deploy.sh done, the release on its way.
+		files_relay: ({ id, path, to_path }) => {
+			const size = path.endsWith('.tar.gz') ? 50540000 : 2150;
+			if (size < 4096) return new Promise((r) => setTimeout(() => r({ host: 'web-01', to_host: 'nas', direction: 'relay', files: [{ source: path, target: to_path, bytes: size }], folders: 0, bytes: size, skipped: [], duration_ms: 40 }), 60));
+			const ev = (bytes) => emit('files:transfer', { session: '', id, file: path, file_bytes: bytes, file_size: size, files_done: 0, bytes_done: bytes });
+			setTimeout(() => ev(26000000), 40);
+			setTimeout(() => ev(32200000), 1040);
 			return new Promise(() => {});
 		},
 		files_cancel: () => ({}),
@@ -181,7 +199,7 @@ try {
 		const page = await browser.newPage({ viewport: { width: 1280, height: 640 }, deviceScaleFactor: 2, colorScheme: theme });
 		const errors = [];
 		page.on('pageerror', (e) => errors.push(String(e)));
-		await page.addInitScript(stub, { catalog, recents, screens, theme, listing });
+		await page.addInitScript(stub, { catalog, recents, screens, theme, listing, homes });
 		await page.goto(base);
 		const tree = page.getByRole('tree');
 		await tree.waitFor();
@@ -198,20 +216,28 @@ try {
 		const file = join(outDir, `app-${theme}.png`);
 		await page.screenshot({ path: file });
 		console.log(`wrote ${file}`);
-		// The Files view on web-01's tab, with an upload done and one under way.
+		// The Files view on web-01's tab with a second pane on nas (14d2, milestone 19):
+		// deploy.sh copied over, the release on its way.
 		await page.locator('.tab', { hasText: 'web-01' }).first().click();
 		await page.keyboard.press('Meta+e');
-		await page.locator('[data-file="deploy.sh"]').waitFor();
-		await page.locator('[data-file="deploy.sh"]').click();
-		await page.locator('[data-files-upload]').click();
+		const first = page.locator('.sidebar[data-for="files"] > .col');
+		await first.locator('[data-file="deploy.sh"]').waitFor();
+		await page.locator('[data-files-pick]').click();
+		await page.locator('[data-files-pick-host="nas"]').click();
+		await page.locator('[data-files-pane="2"] [data-file="restic.env"]').waitFor();
+		await first.locator('[data-file="nginx.conf"]').click();
+		await page.keyboard.press('Meta+ArrowRight');
 		await page.locator('[data-transfer="nginx.conf"][data-state="done"]').waitFor();
-		await page.locator('[data-files-upload]').click();
+		await first.locator('[data-file="release-2.3.tar.gz"]').click();
+		await page.keyboard.press('Meta+ArrowRight');
 		await page.waitForTimeout(1500);
+		await first.locator('[data-file="deploy.sh"]').click();
 		await page.mouse.move(0, 0);
 		if (errors.length) throw new Error(`page errors (${theme}): ${errors.join('; ')}`);
 		const filesShot = join(outDir, `app-files-${theme}.png`);
 		await page.screenshot({ path: filesShot });
 		console.log(`wrote ${filesShot}`);
+		await page.locator('[data-files-one-pane]').click();
 		await page.keyboard.press('Meta+e');
 		await page.locator('.tab', { hasText: 'db' }).first().click();
 		// FLINT_SHOTS_EXTRA=<dir>: more screens for a visual check, not used by the landing.

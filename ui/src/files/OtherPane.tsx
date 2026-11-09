@@ -190,7 +190,8 @@ export function OtherPane({ tabId, session, alias, pair, onConfirm, onAsk, onEdi
   };
 
   const hide = () => pairs.setHidden(tabId, true);
-  const roleHint = pair.own ? 'no tab · Flint-only session' : 'its tab’s session';
+  const roleHint = pair.own ? 'Flint-only session' : 'its tab’s session';
+  const roleTitle = pair.own ? `${pair.alias} has no open tab: Flint logged in without a terminal, for this pane only` : `The pane uses ${pair.alias}'s open tab`;
   const st = pair.status === 'ready' ? 'st-on' : pair.status === 'ended' ? 'st-fail' : 'st-wait';
 
   return (
@@ -207,11 +208,12 @@ export function OtherPane({ tabId, session, alias, pair, onConfirm, onAsk, onEdi
           <span className={'sp-dot ' + color.className} style={color.style} />
           <span className="mono strong trunc" data-files-pane-host>{pair.alias}</span>
           <span className="role-tag other">Other server</span>
-          <span className="hint trunc grow" style={{ minWidth: 0 }}>{roleHint}</span>
+          <span className="grow" />
           <span className={'st ' + st} role="img" aria-label={pair.status} />
           <button className="icon-btn" aria-label="Hide this pane (Esc). Copies carry on" title="Hide this pane (Esc). Copies carry on" data-files-pane-hide onClick={hide}><Icon name="chev-r" size="sm" className="flip-x" /></button>
           <button className="btn btn-ghost btn-sm" data-files-one-pane title="Back to one pane: ends this pane's session" onClick={() => pairs.close(tabId)}><Icon name="sidebar" size="sm" />One pane</button>
         </div>
+        <span className="hint trunc" title={roleTitle} data-files-pane-role>{roleHint}</span>
         <div className="row" style={{ gap: 2 }}>
           <button className="icon-btn" aria-label="Up one folder" disabled={!ready || !path || path === '/'} onClick={() => files.up(key)}><Icon name="up" size="sm" /></button>
           <nav className="crumbs grow" aria-label="Path" data-files-pane-crumbs>

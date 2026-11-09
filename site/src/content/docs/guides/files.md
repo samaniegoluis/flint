@@ -6,7 +6,7 @@ description: Copy files and folders between this machine and a host, or from one
 `flint cp` copies files and folders between this machine and a host, or from one host
 to another, over SFTP. In
 the desktop app, [the Files view](/guides/files-view/) does the same beside a session's
-terminal. It logs
+terminal, and copies between two servers in two side-by-side panes. It logs
 in the way `flint exec` does, with the key or password in the vault, through the host's
 jump hosts, after checking the server's key. You need no `scp`, no `~/.ssh/config` and no
 key on disk.

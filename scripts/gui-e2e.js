@@ -519,7 +519,7 @@
       await check(pane().textContent.includes('Verify side'), "a new host's key is asked inside the pane (14d5c)");
       await click('[data-files-pane-hostkey] button[type="submit"]');
       await waitFor(() => pane()?.dataset.pairStatus === 'ready' && pane().dataset.filesPath, 'the Flint-only session', 20000);
-      await check(pane().textContent.includes('no tab · Flint-only session') && qa('.tab').length === 2, 'a host with no tab gets a session of its own with no terminal, and no tab');
+      await check(pane().textContent.includes('Flint-only session') && qa('.tab').length === 2, 'a host with no tab gets a session of its own with no terminal, and no tab');
       await waitFor(() => pane().querySelector(`[data-file="${name}"]`), 'the scratch folder over the Flint-only session');
       await into(name, base);
       // ⌘← copies from the second pane back to the first: src already has a.txt, so Skip.

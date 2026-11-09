@@ -328,7 +328,7 @@ function TransferRow({ t, others }: { t: Transfer; others: number }) {
   const size = t.total > 0 ? `${humanSize(t.bytes)}/${humanSize(t.total)}` : humanSize(t.bytes);
   const [all, setAll] = useState(false);
   let icon = <Icon name={t.direction === 'upload' ? 'upload' : t.direction === 'download' ? 'download' : 'arrow-r'} size="sm" className="accent-t" />;
-  let status: ReactNode = <span className="mono faint" style={{ fontSize: 'var(--fs-xs)' }}>{size}{t.direction === 'relay' && t.rate > 0 ? ` · ${humanSize(Math.round(t.rate))}/s` : ''}</span>;
+  let status: ReactNode = <span className="mono faint" style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}>{size}</span>;
   let action: ReactNode = <button className="icon-btn" aria-label={`Cancel ${verb}`} title={`Cancel ${verb}`} data-transfer-cancel onClick={() => files.cancel(t.id)}><Icon name="x" size="xs" /></button>;
   if (t.state === 'queued') {
     icon = <Icon name="clock" size="sm" className="faint" />;
@@ -378,13 +378,11 @@ function TransferRow({ t, others }: { t: Transfer; others: number }) {
   return (
     <div className="xfer" data-transfer={t.name} data-state={t.state} data-direction={t.direction}>
       <div className="row" style={{ fontSize: 'var(--fs-sm)', gap: 'var(--sp-2)' }}>
-        {icon}
-        <span className={'mono trunc' + (t.direction === 'relay' ? '' : ' grow')} title={where}>{t.name}</span>
-        {t.direction === 'relay' && (
-          <span className="chain grow" style={{ marginLeft: 'var(--sp-1)', minWidth: 0 }} data-transfer-route><span className="node trunc">{t.alias}</span><Icon name="chain" size="xs" /><span className="node caller trunc">{t.toAlias}</span></span>
-        )}
-        {status}{action}
+        {icon}<span className="mono grow trunc" title={where}>{t.name}</span>{status}{action}
       </div>
+      {t.direction === 'relay' && (
+        <span className="chain" style={{ paddingLeft: 22 }} data-transfer-route title={where}><span className="node">{t.alias}</span><Icon name="chain" size="xs" /><span className="node caller">{t.toAlias}</span></span>
+      )}
       {active && <div className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><i style={{ width: t.total > 0 ? pct + '%' : '30%' }} className={t.total > 0 ? '' : 'indeterminate'} /></div>}
       {active && <span className="hint mono">{t.recursive && t.file ? `${t.filesDone} done · ` : ''}{rateLine(t)}</span>}
     </div>

@@ -1,6 +1,6 @@
 ---
 title: The Files view
-description: Browse a host's files beside its terminal, upload and download with a queue, drag files in from your computer, and jump to the terminal's folder.
+description: Browse a host's files beside its terminal, upload and download with a queue, drag files in from your computer, copy files between two servers, and jump to the terminal's folder.
 ---
 
 The **Files** view browses the host of the active tab, over that tab's own connection.
@@ -25,8 +25,11 @@ When the active tab is not connected, the view says so and offers **Reconnect** 
   it does not, the button is greyed out and says so. When the list shows the terminal's
   folder, the bar reads **Synced with terminal**.
 
-The view starts in the login folder. Flint opens it again where you left it after a
-reconnect; a folder that is gone takes you back to the login folder.
+When the shell has reported its folder (see [below](#go-to-the-terminals-folder)), the
+view **opens on the terminal's folder**: each time you open it, not as you `cd` while it
+is open, so the list never moves under you. Otherwise it opens where you left it, or in
+the login folder the first time. A folder that is gone takes you back to the login
+folder.
 
 ## Files and folders
 
@@ -78,6 +81,41 @@ and browsing, wait until you open it again. Transfers are not written to **Setti
 with the vault, not what you do in the window.
 
 The same copies from a terminal, or from a script, are [`flint cp`](/guides/files/).
+
+## Copying between two servers
+
+**Copy to another server…** in the view's header copies files from this host straight to
+another one. Pick the other server in the list (type to filter; the current host is
+greyed out as *this tab*), and a second file pane opens beside the view, on that server.
+
+- The bytes go **host → Flint → host**: Flint reads from one server and writes to the
+  other as it reads, with nothing saved on this computer, and no key or password is ever
+  put on either server.
+- The second pane uses the server's open tab when it has a connected one (*its tab's
+  session*). Otherwise Flint logs in to it **without a terminal**, just for the pane
+  (*Flint-only session*): a password or a new host key is asked inside the pane,
+  as a connect would, and that session ends when the pane closes. A host key that has
+  changed is never accepted there; open a tab on the host to review it.
+- **Drag** a file or folder from one pane onto the other. The pane, and the folder under
+  the pointer, light up, and a label says where the copy goes (*Copy to db-primary ·
+  scripts/*). Dropped on the pane, it goes into the folder the pane shows; on a folder
+  row, into that folder.
+- Or right-click it and choose **Copy to <server>**, or press <kbd>⌘→</kbd>
+  (<kbd>Ctrl+Shift+→</kbd> on Linux) in the first pane; <kbd>⌘←</kbd>
+  (<kbd>Ctrl+Shift+←</kbd>) copies from the second pane back to the first.
+- The copies line up in the first pane's queue, each row reading *host → host*, with
+  progress, cancel and **Retry**. A name that is already there asks **Replace** or
+  **Skip**; with several clashes, **Do this for the other N conflicts** answers them all.
+
+The second pane **floats over the terminal**: the terminal keeps its size, so nothing in
+it redraws. <kbd>esc</kbd>, a click in the terminal or the pane's **‹** button hide it,
+but the copies, the pane's folder and its session carry on: the header's
+**⇄ <server> · N copying** shows it again as it was. **One pane** closes it and ends its
+own session; closing the tab or locking the vault does too.
+
+Like the rest of the window's transfers, these copies are not written to **Settings →
+Activity**. From a terminal or a script, the same copy is
+[`flint cp a:/path b:/path`](/guides/files/).
 
 ## Go to the terminal's folder
 
