@@ -38,7 +38,9 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
   is allowed with the master password (no presence check on Windows), and opens an
   interactive shell (all 2026-11-09). The grant's hint named Touch ID and polkit; it now
   says "No Windows Hello" on Windows.
-- **Owner checks still open:** sleep with the app unlocked (it should lock).
+  Sleep with the app unlocked locks it too: after waking, Flint asks for the master
+  password (2026-11-09).
+- **Owner checks still open:** none.
 
 **Next phase: when cfire ships Windows support upstream.**
 
