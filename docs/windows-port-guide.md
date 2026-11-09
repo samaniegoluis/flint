@@ -28,7 +28,9 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
   installed app: splitting, dragging dividers and the glyphs after a split look right;
   the Ctrl+Alt layouts work on the Spanish layout; on US-International Ctrl+Alt types ¡
   (expected).
-- **Owner checks still open:** Win+L and sleep with the app unlocked (it should lock), a
+- **Owner checks done:** Win+L with the app unlocked locks the vault: after signing back
+  in to Windows, Flint asks for the master password (2026-11-09).
+- **Owner checks still open:** sleep with the app unlocked (it should lock), a
   real dialog (save a key), a drag from Explorer into the Files view,
   `cmdkey /list:Flint/*` after unlocking with "Remember on this computer", interactive
   `connect` in Windows Terminal (`windows/ssh-lab.sh start` first; it is stopped), and
