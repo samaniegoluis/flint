@@ -188,8 +188,11 @@ CF-001.a–e and .g
   - **Scripts sent before the first page load are queued** and run on the first
     `NavigationCompleted`. WebKitGTK runs them against whatever is loaded; queuing seemed
     the less surprising behaviour.
-  - Also: background colour from `dark_mode`/`transparent` (no white flash on a dark app),
-    per-monitor DPI awareness (looked up at run time, Windows 10 1703+), and a clear
+  - **Page background:** WebView2's default (white), as on WKWebView and WebKitGTK, and
+    transparent only with `set_transparent(true)`. A first version painted it dark when
+    `dark_mode` was on (the default) to avoid a white flash while loading: unstyled pages
+    came out black-on-dark, so it was dropped. `dark_mode` stays the window chrome only.
+  - Also: per-monitor DPI awareness (looked up at run time, Windows 10 1703+), and a clear
     message when the WebView2 Runtime is missing (`HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)`,
     CF-001.e). `-lshlwapi` is added to the Windows GUI link flags for `SHCreateMemStream`.
 - **Verified:** [`windows/probes/webui/main.cf`](../windows/probes/webui/main.cf) in a real

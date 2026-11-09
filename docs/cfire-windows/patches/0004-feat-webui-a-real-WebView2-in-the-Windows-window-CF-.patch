@@ -1,4 +1,4 @@
-From 40925bb9224c083fc42598bac4ec83876d4388f7 Mon Sep 17 00:00:00 2001
+From c72836e448583743d406fe425053d10fb63308f3 Mon Sep 17 00:00:00 2001
 From: Luis Samaniego <luis.samaniego86@gmail.com>
 Date: Mon, 9 Nov 2026 09:43:42 -0600
 Subject: [PATCH 4/4] feat(webui): a real WebView2 in the Windows window
@@ -18,7 +18,8 @@ Wv2Host, modelled on the Linux backend:
 - platform_eval posts the script to the window (kWmCfireEval) so ExecuteScript
   always runs on the UI thread; scripts sent before the first page load are
   queued and flushed on NavigationCompleted.
-- Background colour from dark_mode/transparent (no white flash), per-monitor
+- A transparent page background only when asked (else WebView2's white, as on
+  the other backends), per-monitor
   DPI awareness, and a clear message when the WebView2 Runtime is missing.
 - COM callbacks from lambdas (Wv2Handler): WRL is MSVC-only. IIDs are parsed
   from WebView2.h's uuid strings: the SDK defines them only in an MSVC .lib.
@@ -32,7 +33,7 @@ Links -lshlwapi (SHCreateMemStream) for Windows GUI builds.
  2 files changed, 334 insertions(+), 2 deletions(-)
 
 diff --git a/runtime/core/webui/windows_webview2.hpp b/runtime/core/webui/windows_webview2.hpp
-index ba45a2b..b65c86a 100644
+index ba45a2b..793f875 100644
 --- a/runtime/core/webui/windows_webview2.hpp
 +++ b/runtime/core/webui/windows_webview2.hpp
 @@ -155,8 +155,14 @@ struct Win32WindowContext {
@@ -266,16 +267,16 @@ index ba45a2b..b65c86a 100644
 +        controller->get_CoreWebView2(&webview);
 +        if (!webview) return S_OK;
 +
-+        // Background behind the page: transparent when asked, else the window's colour, so
-+        // a dark app does not flash white while the page loads.
-+        ICoreWebView2Controller2* c2 = nullptr;
-+        IID iid_c2 = wv2_iid(kIidController2);
-+        if (SUCCEEDED(controller->QueryInterface(iid_c2, reinterpret_cast<void**>(&c2))) && c2) {
-+            COREWEBVIEW2_COLOR bg{255, 255, 255, 255};
-+            if (state->transparent) bg = COREWEBVIEW2_COLOR{0, 0, 0, 0};
-+            else if (state->dark_mode) bg = COREWEBVIEW2_COLOR{255, 13, 17, 23};
-+            c2->put_DefaultBackgroundColor(bg);
-+            c2->Release();
++        // Transparent background only when asked. Otherwise WebView2's default (white), like
++        // WKWebView and WebKitGTK: dark_mode is the window chrome, not the page, and painting
++        // the page dark left unstyled pages black-on-dark.
++        if (state->transparent) {
++            ICoreWebView2Controller2* c2 = nullptr;
++            IID iid_c2 = wv2_iid(kIidController2);
++            if (SUCCEEDED(controller->QueryInterface(iid_c2, reinterpret_cast<void**>(&c2))) && c2) {
++                c2->put_DefaultBackgroundColor(COREWEBVIEW2_COLOR{0, 0, 0, 0});
++                c2->Release();
++            }
 +        }
 +
 +        ICoreWebView2Settings* settings = nullptr;
