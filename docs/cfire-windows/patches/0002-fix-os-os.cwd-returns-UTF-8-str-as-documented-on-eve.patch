@@ -1,0 +1,38 @@
+From 622003805c248a616fe441cb386f1f279a89ddb8 Mon Sep 17 00:00:00 2001
+From: Luis Samaniego <luis.samaniego86@gmail.com>
+Date: Mon, 9 Nov 2026 09:22:18 -0600
+Subject: [PATCH 2/3] fix(os): os.cwd() returns UTF-8 str, as documented, on
+ every platform
+
+cwd() returned std::filesystem::path. The docs and the sema catalog say
+`fn cwd() -> str`, and on POSIX the path converts to std::string implicitly, so
+it went unnoticed. On Windows path::string_type is std::wstring: `here: str =
+os.cwd()` fails with 'no viable conversion from std::filesystem::path to str'.
+
+Return the u8string as std::string.
+---
+ runtime/core/os.hpp | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/runtime/core/os.hpp b/runtime/core/os.hpp
+index 791c3f3..f7c5ddf 100644
+--- a/runtime/core/os.hpp
++++ b/runtime/core/os.hpp
+@@ -80,8 +80,12 @@ inline void setenv(std::string_view key, std::string_view val) {
+ #endif
+ }
+ 
+-[[nodiscard]] inline auto cwd() -> std::filesystem::path {
+-    return std::filesystem::current_path();
++// Returns UTF-8 text, as documented (`fn cwd() -> str`). Returning the path itself only
++// worked where path::string_type is std::string: on Windows it is std::wstring, so
++// `here: str = os.cwd()` did not compile.
++[[nodiscard]] inline auto cwd() -> std::string {
++    auto u8 = std::filesystem::current_path().u8string();
++    return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+ }
+ 
+ [[nodiscard]] inline auto getpid() noexcept -> std::int64_t {
+-- 
+2.43.0
+

@@ -1,0 +1,5 @@
+package plat
+
+fn name() -> str {
+    return "unix"
+}
