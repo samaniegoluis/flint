@@ -1,0 +1,177 @@
+From 56c35303bb74decd5decd15d5c90a48f377a8215 Mon Sep 17 00:00:00 2001
+From: Luis Samaniego <luis.samaniego86@gmail.com>
+Date: Mon, 9 Nov 2026 12:14:38 -0600
+Subject: [PATCH 7/8] feat(webui): app and tray icons on Windows: PNG files and
+ an embedded .ico
+
+set_icon and set_tray loaded their file with LoadImageW(IMAGE_ICON), which
+takes .ico only: the .png every other backend takes was silently ignored and
+the tray showed the generic application icon. PNG files now go through
+CreateIconFromResourceEx (PNG icon data, Vista+), sized for the title bar,
+the taskbar and the notification area.
+
+A Windows .exe also had no icon of its own (Explorer, taskbar, Alt+Tab): the
+build file's Icon only became CFIRE_APP_ICON_PATH, a build-machine path. For a
+Windows GUI target, cfire build now compiles the .ico beside Icon (same name)
+as icon resource 1 with windres ($CFIRE_WINDRES, <triple>-windres next to
+$CFIRE_CXX, then on PATH), and the webui window class loads resource 1.
+---
+ runtime/core/webui/windows_webview2.hpp | 41 +++++++++++++----
+ src/buildsys.hpp                        | 61 +++++++++++++++++++++++++
+ 2 files changed, 94 insertions(+), 8 deletions(-)
+
+diff --git a/runtime/core/webui/windows_webview2.hpp b/runtime/core/webui/windows_webview2.hpp
+index 793f875..962ff1a 100644
+--- a/runtime/core/webui/windows_webview2.hpp
++++ b/runtime/core/webui/windows_webview2.hpp
+@@ -64,6 +64,29 @@ inline void win32_clipboard_set(std::string_view text, bool concealed, HWND hwnd
+     ::CloseClipboard();
+ }
+ 
++// Loads an icon from a file at the given size: an .ico through LoadImageW, a .png (what
++// set_icon/set_tray take on the other platforms) through CreateIconFromResourceEx, which
++// accepts PNG-compressed icon data since Windows Vista. nullptr when neither works.
++[[nodiscard]] inline auto win32_load_icon_file(const std::string& path, int cx, int cy) -> HICON {
++    if (path.empty()) return nullptr;
++    std::wstring wpath = utf8_to_wide(path);
++    HANDLE f = ::CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
++    if (f == INVALID_HANDLE_VALUE) return nullptr;
++    std::vector<BYTE> bytes;
++    LARGE_INTEGER size{};
++    if (::GetFileSizeEx(f, &size) && size.QuadPart > 8 && size.QuadPart < (16 << 20)) {
++        bytes.resize(static_cast<std::size_t>(size.QuadPart));
++        DWORD got = 0;
++        if (!::ReadFile(f, bytes.data(), static_cast<DWORD>(bytes.size()), &got, nullptr) || got != bytes.size()) bytes.clear();
++    }
++    ::CloseHandle(f);
++    static constexpr BYTE kPng[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
++    if (bytes.size() > 8 && std::memcmp(bytes.data(), kPng, 8) == 0) {
++        return ::CreateIconFromResourceEx(bytes.data(), static_cast<DWORD>(bytes.size()), TRUE, 0x00030000, cx, cy, LR_DEFAULTCOLOR);
++    }
++    return static_cast<HICON>(::LoadImageW(nullptr, wpath.c_str(), IMAGE_ICON, cx, cy, LR_LOADFROMFILE));
++}
++
+ [[nodiscard]] inline auto win32_open_file_dialog(std::string_view dialog_title, HWND owner = nullptr) -> std::string {
+     wchar_t file_buf[MAX_PATH] = {0};
+     std::wstring wtitle = utf8_to_wide(dialog_title);
+@@ -587,6 +610,11 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
+     wc.hInstance = hInst;
+     wc.hCursor = ::LoadCursorW(nullptr, MAKEINTRESOURCEW(32512)); // IDC_ARROW
+     wc.hbrBackground = ::CreateSolidBrush(RGB(13, 17, 23));
++    // Icon resource 1, which `cfire build` embeds from the `.ico` beside the build file's
++    // Icon: the title bar, the taskbar and Alt+Tab. None → the system's default.
++    wc.hIcon = ::LoadIconW(hInst, MAKEINTRESOURCEW(1));
++    wc.hIconSm = static_cast<HICON>(::LoadImageW(hInst, MAKEINTRESOURCEW(1), IMAGE_ICON,
++        ::GetSystemMetrics(SM_CXSMICON), ::GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
+     wc.lpszClassName = kClassName;
+     ::RegisterClassExW(&wc);
+ 
+@@ -627,12 +655,10 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
+     }
+ 
+     if (!state_->icon_path.empty()) {
+-        std::wstring wicon = utf8_to_wide(state_->icon_path);
+-        HANDLE hIcon = ::LoadImageW(nullptr, wicon.c_str(), IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
+-        if (hIcon) {
+-            ::SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(hIcon));
+-            ::SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(hIcon));
+-        }
++        HICON big = win32_load_icon_file(state_->icon_path, ::GetSystemMetrics(SM_CXICON), ::GetSystemMetrics(SM_CYICON));
++        HICON small = win32_load_icon_file(state_->icon_path, ::GetSystemMetrics(SM_CXSMICON), ::GetSystemMetrics(SM_CYSMICON));
++        if (big) ::SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big));
++        if (small) ::SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small));
+     }
+ 
+     NOTIFYICONDATAW nid{};
+@@ -644,8 +670,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
+         nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+         nid.uCallbackMessage = WM_APP + 1;
+         if (!state_->tray_icon_path.empty()) {
+-            std::wstring wticon = utf8_to_wide(state_->tray_icon_path);
+-            nid.hIcon = static_cast<HICON>(::LoadImageW(nullptr, wticon.c_str(), IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE));
++            nid.hIcon = win32_load_icon_file(state_->tray_icon_path, ::GetSystemMetrics(SM_CXSMICON), ::GetSystemMetrics(SM_CYSMICON));
+         }
+         if (!nid.hIcon) {
+             nid.hIcon = ::LoadIconW(nullptr, MAKEINTRESOURCEW(32512)); // IDI_APPLICATION
+diff --git a/src/buildsys.hpp b/src/buildsys.hpp
+index 9be19ad..f020f8b 100644
+--- a/src/buildsys.hpp
++++ b/src/buildsys.hpp
+@@ -740,6 +740,63 @@ namespace cfire::build {
+     return "clang++";
+ }
+ 
++// The resource compiler for a Windows target: $CFIRE_WINDRES, then `<triple>-windres` next
++// to $CFIRE_CXX (llvm-mingw keeps them side by side), then `<triple>-windres`,
++// `llvm-windres` and `windres` on PATH. "" when none runs.
++[[nodiscard]] inline auto resolve_windres(const std::string& target_triple) -> std::string {
++    if (const char* env = std::getenv("CFIRE_WINDRES"); env && *env) return env;
++    std::string triple = target_triple.empty() ? "x86_64-w64-mingw32" : target_triple;
++    std::vector<std::string> candidates;
++    if (const char* cxx = std::getenv("CFIRE_CXX"); cxx && *cxx) {
++        auto dir = std::filesystem::path(cxx).parent_path();
++        if (!dir.empty()) candidates.push_back((dir / (triple + "-windres")).string());
++    }
++    candidates.push_back(triple + "-windres");
++    candidates.push_back("llvm-windres");
++    candidates.push_back("windres");
++    for (const auto& c : candidates) {
++        int rc = 0;
++        (void)bridge::run_command_capture(std::format("\"{}\" --version 2>&1", c), rc);
++        if (rc == 0) return c;
++    }
++    return "";
++}
++
++// A Windows `.exe` shows the icon in its resources (Explorer, the taskbar, Alt+Tab). The
++// build file's Icon names one file for every platform, so for Windows the `.ico` beside it
++// (same name) is compiled as icon resource 1, which the webui window class loads.
++// Returns the object to link, or "" (no `.ico`, or no resource compiler: a warning).
++[[nodiscard]] inline auto compile_windows_icon(const std::filesystem::path& icon, const std::filesystem::path& out_bin,
++                                               const std::string& target_triple) -> std::string {
++    std::error_code ec;
++    auto ico = icon;
++    ico.replace_extension(".ico");
++    if (!std::filesystem::exists(ico, ec)) return "";
++    std::string windres = resolve_windres(target_triple);
++    if (windres.empty()) {
++        std::fprintf(stderr, "cfire: %s is not embedded: no resource compiler (set CFIRE_WINDRES)\n", ico.string().c_str());
++        return "";
++    }
++    auto dir = std::filesystem::temp_directory_path() / "cfire_win_res";
++    std::filesystem::create_directories(dir, ec);
++    auto stem = out_bin.stem().string();
++    auto rc = dir / (stem + ".rc");
++    auto obj = dir / (stem + ".res.o");
++    {
++        std::ofstream out(rc, std::ios::binary | std::ios::trunc);
++        std::string path = std::filesystem::absolute(ico, ec).generic_string();
++        out << "1 ICON \"" << path << "\"\n";
++    }
++    int code = 0;
++    std::string out = bridge::run_command_capture(
++        std::format("\"{}\" -i \"{}\" -o \"{}\" 2>&1", windres, rc.string(), obj.string()), code);
++    if (code != 0) {
++        std::fprintf(stderr, "cfire: %s is not embedded: %s\n", ico.string().c_str(), out.c_str());
++        return "";
++    }
++    return obj.string();
++}
++
+ [[nodiscard]] inline auto prelude_pch_path(
+     const std::filesystem::path& runtime_dir,
+     bool sanitize
+@@ -963,6 +1020,10 @@ namespace cfire::build {
+ #endif
+             if (is_windows) {
+                 plan.ldflags.push_back("-mwindows");
++                if (!plan.icon_path.empty() && !test_mode) {
++                    std::string res_obj = compile_windows_icon(plan.icon_path, out_bin, target_triple);
++                    if (!res_obj.empty()) plan.ldflags.push_back(std::format("\"{}\"", res_obj));
++                }
+             } else {
+ #if defined(__APPLE__)
+                 if ((target_triple.empty() || target_triple.find("apple") != std::string::npos) && !test_mode) {
+-- 
+2.43.0
+

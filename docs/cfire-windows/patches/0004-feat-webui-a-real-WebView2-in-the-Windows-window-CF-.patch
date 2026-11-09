@@ -1,7 +1,7 @@
 From c72836e448583743d406fe425053d10fb63308f3 Mon Sep 17 00:00:00 2001
 From: Luis Samaniego <luis.samaniego86@gmail.com>
 Date: Mon, 9 Nov 2026 09:43:42 -0600
-Subject: [PATCH 4/6] feat(webui): a real WebView2 in the Windows window
+Subject: [PATCH 4/8] feat(webui): a real WebView2 in the Windows window
  (CF-001.a-e, g)
 
 The Win32 backend opened an empty window: nothing created a WebView2. Add a

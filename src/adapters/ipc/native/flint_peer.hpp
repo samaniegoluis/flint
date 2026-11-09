@@ -8,6 +8,7 @@
 // sysctl(KERN_PROCARGS2). Linux: /proc/<pid>/stat, /proc/<pid>/exe, /proc/<pid>/cmdline.
 // The start time pins a pid: a pid reused by another process has another start time.
 #pragma once
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -73,8 +74,10 @@ inline bool info(int64_t pid, Info& out) {
 
 // Windows (windows-port): the parent pid from a Toolhelp snapshot, the creation time
 // (100 ns since 1601) from GetProcessTimes, the image path from
-// QueryFullProcessImageNameW. argv[0] would mean reading another process's PEB; the
-// image path stands in for it, which is what a caller check compares anyway.
+// QueryFullProcessImageNameW. argv[0] would mean reading another process's PEB: it is
+// the image's file name without `.exe` instead ("pwsh", "WindowsTerminal"), what a
+// POSIX argv[0] gives the caller check (TRANSPARENT_EXES, friendly names). The path
+// uses `/`, the one form of path Flint keeps (port guide).
 inline std::string utf8(const wchar_t* w, int n) {
     int len = ::WideCharToMultiByte(CP_UTF8, 0, w, n, nullptr, 0, nullptr, nullptr);
     std::string s(static_cast<size_t>(len), '\0');
@@ -94,7 +97,15 @@ inline bool info(int64_t pid, Info& out) {
     out.exe = ::QueryFullProcessImageNameW(proc, 0, path, &len) ? utf8(path, static_cast<int>(len)) : "";
     ::CloseHandle(proc);
     if (!ok) return false;
-    out.argv0 = out.exe;
+    for (char& c : out.exe) {
+        if (c == '\\') c = '/';
+    }
+    out.argv0 = out.exe.substr(out.exe.rfind('/') + 1);
+    if (out.argv0.size() > 4) {
+        std::string ext = out.argv0.substr(out.argv0.size() - 4);
+        for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (ext == ".exe") out.argv0.resize(out.argv0.size() - 4);
+    }
     out.ppid = 0;
     HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap != INVALID_HANDLE_VALUE) {

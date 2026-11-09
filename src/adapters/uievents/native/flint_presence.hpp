@@ -13,6 +13,10 @@
 // interaction allowed, so the desktop's polkit agent asks for the login password or a
 // fingerprint. Where that action is not installed or polkit is missing, the app
 // falls back to the vault's master password (src/adapters/uievents/presence.cf).
+//
+// Windows (windows-port branch): no OS check yet, so the window asks for the master
+// password. Windows Hello (WinRT UserConsentVerifier, through
+// IUserConsentVerifierInterop for a desktop window) is the candidate.
 #pragma once
 #include <string>
 
@@ -21,6 +25,7 @@
 #import <Foundation/Foundation.h>
 #import <LocalAuthentication/LocalAuthentication.h>
 #endif
+#elif defined(_WIN32)
 #else
 #include <gio/gio.h>
 #include <unistd.h>
@@ -84,6 +89,14 @@ inline int confirm(const std::string& reason, std::string& err) {
 inline std::string method() { return ""; }
 inline int confirm(const std::string&, std::string& err) {
     err = "no presence check in this build";
+    return -1;
+}
+
+#elif defined(_WIN32)
+
+inline std::string method() { return ""; }
+inline int confirm(const std::string&, std::string& err) {
+    err = "no presence check on Windows yet";
     return -1;
 }
 

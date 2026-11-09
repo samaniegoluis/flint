@@ -1,7 +1,7 @@
 From f746a282cab0b4d21e7c597f75df7f1a94f390f9 Mon Sep 17 00:00:00 2001
 From: Luis Samaniego <luis.samaniego86@gmail.com>
 Date: Mon, 9 Nov 2026 10:16:10 -0600
-Subject: [PATCH 5/6] fix(build): read import cpp headers with CFIRE_CXX, like
+Subject: [PATCH 5/8] fix(build): read import cpp headers with CFIRE_CXX, like
  the build itself
 
 inspect_header() ran a fixed 'clang++' over the header with the build's cflags.

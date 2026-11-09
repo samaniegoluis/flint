@@ -32,6 +32,10 @@ Sibling of [`cfire-upstream.md`](cfire-upstream.md), which tracks every other ga
 | [W-09](#w-09) | `WebView2.h` includes `EventToken.h`; mingw ships `eventtoken.h` | worked around | none |
 | [W-10](#w-10) | cfire does not know where the WebView2 SDK is, nor ship `WebView2Loader.dll` | worked around | none |
 | [W-11](#w-11) | `os.args()` is in the ANSI code page, not UTF-8 | **fixed** | 0006 |
+| [W-12](#w-12) | `set_tray` / `set_icon` take `.ico` only on Windows; a `.png` is silently ignored | **fixed** | 0007 |
+| [W-13](#w-13) | A Windows `.exe` has no icon: the build file's `Icon` is never embedded | **fixed** | 0007 |
+| [W-14](#w-14) | `fs.exists` is false for an AF_UNIX socket file on Windows | **fixed** | 0008 |
+| [W-15](#w-15) | The Windows file dialogs cut paths at `MAX_PATH` | open | none |
 
 **Works on Windows** (ran, not just compiled), with W-01, W-04, W-09 and W-10 worked
 around and patches 0001–0006 applied:
@@ -215,7 +219,7 @@ CF-001.a–e and .g
   [`webui_test.cf`](../windows/probes/webui/webui_test.cf) offscreen through `cfire test`:
   a page that quits (true), one that never does (false after the timeout), and a bound call
   that returns an error (the promise rejects with its message).
-- **Not done:** CF-001.h, i, j (icons from `.png`, menus, the clipboard owner) and screenshots
+- **Not done:** CF-001.i, j (menus, the clipboard owner; icons from `.png` are W-12) and screenshots
   (`platform_screenshot`, which `CapturePreview` would give), `platform_fullscreen` and
   `platform_center` (no Windows hook yet), drag-and-drop of files from Explorer.
 
@@ -310,6 +314,84 @@ worked around
   Not checked: the iOS entry point and any place that reads `argv` other than
   `set_process_args`.
 
+
+## W-12
+
+**`set_tray` and `set_icon` take `.ico` only on Windows; a `.png` is silently ignored** ·
+[ran] · fixed ·
+[patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-on-Windows-PNG-files-a.patch)
+
+- **Symptom:** Flint passes `ui/tray.png` to `app.set_tray` (as on macOS and Linux). On
+  Windows the notification area showed the generic application icon, with no message.
+- **Cause:** `windows_webview2.hpp` loads both files with
+  `LoadImageW(…, IMAGE_ICON, LR_LOADFROMFILE)`, which reads `.ico` files only. The other
+  backends take a `.png`.
+- **Patch:** `win32_load_icon_file(path, cx, cy)`: a file that starts with the PNG
+  signature goes through `CreateIconFromResourceEx` (PNG icon data, Windows Vista+), sized
+  with `GetSystemMetrics` (`SM_CXSMICON` for the tray and the small window icon, `SM_CXICON`
+  for the big one); anything else still goes through `LoadImageW`.
+- **Verified:** Flint's tray shows its own glyph (owner's visual check, see the port
+  guide).
+- **Suggested fix:** the same; `.ico` keeps working.
+
+## W-13
+
+**A Windows `.exe` has no icon: the build file's `Icon` is never embedded** · [ran] ·
+fixed · [patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-on-Windows-PNG-files-a.patch)
+
+- **Symptom:** `Icon: "assets/app-icon/Flint.icns"` in `build.cf` gives the macOS bundle
+  its icon. The Windows `.exe` shows the generic icon in Explorer, the taskbar and Alt+Tab.
+- **Cause:** for a non-Apple target, `Icon` only becomes `-DCFIRE_APP_ICON_PATH="<absolute
+  path on the build machine>"`, which webui then tries to load at run time on the user's
+  machine (it is not there, and it is an `.icns`). A Windows icon lives in the `.exe`'s
+  resources, which need a resource compiler.
+- **Patch:** for a Windows GUI target, `cfire build` looks for the `.ico` beside `Icon`
+  (same name, `.ico` extension), writes a one-line `.rc` (`1 ICON "<path>"`), compiles it
+  with windres and links the object. windres is `$CFIRE_WINDRES`, else
+  `<triple>-windres` next to `$CFIRE_CXX` (llvm-mingw ships it there), else
+  `<triple>-windres`, `llvm-windres` or `windres` on `PATH`; with none, a warning and no
+  icon. The webui window class loads icon resource 1 (`wc.hIcon`, `wc.hIconSm`), so the
+  title bar and the taskbar use it too.
+- **Verified:** `llvm-objdump -h` shows a `.rsrc` section in `Flint.exe`; the owner saw the
+  icon in Explorer, the title bar and the taskbar (port guide).
+- **Suggested fix:** the same idea. An `Icon` per platform in `build.cf` (or a list) would
+  be more explicit than "the `.ico` beside it". A version resource (`VERSIONINFO`, product
+  name, version) is the natural next line in the same `.rc`.
+
+## W-14
+
+**`fs.exists` is false for an AF_UNIX socket file on Windows** · [ran] · fixed ·
+[patch 0008](cfire-windows/patches/0008-fix-fs-fs.exists-sees-an-AF_UNIX-socket-file-on-Wind.patch)
+
+- **Symptom:** with Flint's app running and listening on `%APPDATA%\Flint\flint.sock`
+  (an AF_UNIX socket, Windows 10 1803+), the CLI said the app was not running. The CLI
+  checks `fs.exists(socket)` before it dials.
+- **Cause:** a listening AF_UNIX socket's file is a reparse point
+  (`IO_REPARSE_TAG_AF_UNIX`). `std::filesystem::exists` follows reparse points and fails on
+  this one with `ERROR_CANT_ACCESS_FILE` (1920, "The file cannot be accessed by the
+  system"); cfire's `fs.exists` swallows the error and returns false.
+  `std::filesystem::symlink_status` on the same file succeeds (type "regular").
+  Probe: `exists=0 ec=1920`, `symlink_status exists=1` on the live socket.
+- **Patch:** on Windows, when `exists()` fails with an error, `fs.exists` asks
+  `symlink_status` about the file itself (what `lstat` does on POSIX). POSIX is unchanged.
+- **Verified:** the CLI ↔ app handoff in Flint's `windows/serve-e2e.sh`.
+- **Suggested fix:** the same, and the same thought for `fs.stat`/`is_file`-style helpers
+  if cfire grows them: a path that exists but cannot be followed should not read as
+  missing.
+
+## W-15
+
+**The Windows file dialogs cut paths at `MAX_PATH`** · [read] · open
+
+- `win32_open_file_dialog` / `win32_save_file_dialog` give `GetOpenFileNameW` a
+  `wchar_t[MAX_PATH]` buffer: a path longer than 259 characters fails the dialog (it
+  returns false with `FNERR_BUFFERTOOSMALL`), which reads as "cancelled". Rare, but long
+  paths are common under `OneDrive\…`.
+- **Suggested fix:** `IFileOpenDialog` / `IFileSaveDialog` (COM, Vista+): no buffer, the
+  modern dialog, folder pickers for free (`FOS_PICKFOLDERS`), and the same owner window.
+  Flint uses these dialogs as they are (import from Tether, save a key, the Files view's
+  downloads); they work.
+
 ---
 
 ## Seen along the way, not Windows-specific
@@ -328,6 +410,11 @@ file is next updated.
   while the other reads it (`clang++: error: no such file or directory:
   '/tmp/cfire_clang_ast_…/tu.cpp'`). Seen running two copies of Flint's suites in
   parallel. A per-process suffix (or `mkdtemp`) would avoid it.
+- `set_dark_mode` after the window is open changes nothing on any backend: the flag is
+  read once when the window is made (`macos_ios.hpp:538`, `windows_webview2.hpp`). Flint
+  calls it when the page's theme changes (`window_theme`), so a light page keeps a dark
+  title bar until the next launch. A `platform_set_dark_mode` hook (on Windows,
+  `DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE)` again) would fix it.
 - `app.emit("ping", "pong")` with a string literal does not compile
   (`json::stringify<char[5]>` has no viable overload); a `str` variable works. Seen on
   the Windows target; not yet tried on macOS or Linux.

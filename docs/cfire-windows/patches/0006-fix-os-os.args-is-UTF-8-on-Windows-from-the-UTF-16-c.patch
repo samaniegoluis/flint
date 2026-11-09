@@ -1,7 +1,7 @@
 From 5b3901d4fa6b6951559053be07b614875d118ffe Mon Sep 17 00:00:00 2001
 From: Luis Samaniego <luis.samaniego86@gmail.com>
 Date: Mon, 9 Nov 2026 11:03:28 -0600
-Subject: [PATCH 6/6] fix(os): os.args() is UTF-8 on Windows, from the UTF-16
+Subject: [PATCH 6/8] fix(os): os.args() is UTF-8 on Windows, from the UTF-16
  command line
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

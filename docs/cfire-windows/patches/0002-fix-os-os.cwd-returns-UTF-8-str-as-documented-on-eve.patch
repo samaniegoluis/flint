@@ -1,7 +1,7 @@
 From 622003805c248a616fe441cb386f1f279a89ddb8 Mon Sep 17 00:00:00 2001
 From: Luis Samaniego <luis.samaniego86@gmail.com>
 Date: Mon, 9 Nov 2026 09:22:18 -0600
-Subject: [PATCH 2/6] fix(os): os.cwd() returns UTF-8 str, as documented, on
+Subject: [PATCH 2/8] fix(os): os.cwd() returns UTF-8 str, as documented, on
  every platform
 
 cwd() returned std::filesystem::path. The docs and the sema catalog say

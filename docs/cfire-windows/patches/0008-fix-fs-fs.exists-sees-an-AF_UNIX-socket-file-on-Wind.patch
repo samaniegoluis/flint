@@ -1,0 +1,41 @@
+From 7075fa0691ab172af5f17313e7dbdaa6cb2a552d Mon Sep 17 00:00:00 2001
+From: Luis Samaniego <luis.samaniego86@gmail.com>
+Date: Mon, 9 Nov 2026 12:14:38 -0600
+Subject: [PATCH 8/8] fix(fs): fs.exists sees an AF_UNIX socket file on Windows
+
+std::filesystem::exists fails with ERROR_CANT_ACCESS_FILE (1920) on a
+reparse point the system cannot follow, such as the IO_REPARSE_TAG_AF_UNIX
+file of a listening AF_UNIX socket, so fs.exists returned false for a socket
+that was there. On Windows, when exists() fails, ask symlink_status about the
+file itself, as lstat does on POSIX.
+---
+ runtime/core/fs.hpp | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/runtime/core/fs.hpp b/runtime/core/fs.hpp
+index eae917b..51f1757 100644
+--- a/runtime/core/fs.hpp
++++ b/runtime/core/fs.hpp
+@@ -68,7 +68,18 @@ namespace detail {
+ 
+ [[nodiscard]] inline auto exists(const std::filesystem::path& p) noexcept -> bool {
+     std::error_code ec;
+-    return std::filesystem::exists(detail::resolve_path(p, false), ec);
++    auto resolved = detail::resolve_path(p, false);
++    if (std::filesystem::exists(resolved, ec)) return true;
++#if defined(_WIN32)
++    // A reparse point the system cannot follow, such as an AF_UNIX socket file, makes
++    // exists() fail (ERROR_CANT_ACCESS_FILE) although the file is there: ask about the
++    // file itself, as lstat does on POSIX.
++    if (ec) {
++        std::error_code ec2;
++        return std::filesystem::exists(std::filesystem::symlink_status(resolved, ec2));
++    }
++#endif
++    return false;
+ }
+ 
+ [[nodiscard]] inline auto is_dir(const std::filesystem::path& p) noexcept -> bool {
+-- 
+2.43.0
+

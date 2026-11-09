@@ -14,6 +14,13 @@
 // session and Manager.PrepareForSleep(true) on the system bus, and ActiveChanged(true)
 // of org.freedesktop.ScreenSaver and org.gnome.ScreenSaver on the session bus.
 // Signals are dispatched by the GTK main loop.
+//
+// Windows (windows-port branch): a thread of its own with a hidden window that is never
+// shown, so it needs nothing from webui's message loop. WTSRegisterSessionNotification
+// sends it WM_WTSSESSION_CHANGE (WTS_SESSION_LOCK counts as the screen locking), and
+// as a top-level window it gets WM_POWERBROADCAST (PBT_APMSUSPEND counts as sleep);
+// RegisterSuspendResumeNotification, where present (Windows 8+), asks for that message
+// on Modern Standby machines too. A message-only window would get neither broadcast.
 #pragma once
 #include <atomic>
 #include <cstdint>
@@ -26,6 +33,11 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/IOMessage.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#include <wtsapi32.h>
+#include <future>
+#include <thread>
 #else
 #include <gio/gio.h>
 #include <gtk/gtk.h>
@@ -102,6 +114,66 @@ inline std::string start() {
     return got;
 }
 
+#elif defined(_WIN32)
+
+inline constexpr const wchar_t* kEventsClass = L"FlintSystemEventsWindow";
+// webui's window class (cfire runtime/core/webui/windows_webview2.hpp).
+inline constexpr const wchar_t* kAppWindowClass = L"CfireWebUIWindowClass";
+
+inline LRESULT CALLBACK events_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+        case WM_WTSSESSION_CHANGE:
+            if (wp == WTS_SESSION_LOCK) screen_count()++;
+            return 0;
+        case WM_POWERBROADCAST:
+            if (wp == PBT_APMSUSPEND) sleep_count()++;
+            return TRUE;
+        default:
+            return ::DefWindowProcW(hwnd, msg, wp, lp);
+    }
+}
+
+// The thread's loop: creates the window, reports what it subscribed to, then pumps
+// messages for the life of the process.
+inline void events_thread(std::promise<std::string> ready) {
+    HINSTANCE inst = ::GetModuleHandleW(nullptr);
+    WNDCLASSEXW wc{};
+    wc.cbSize = sizeof(wc);
+    wc.lpfnWndProc = events_wndproc;
+    wc.hInstance = inst;
+    wc.lpszClassName = kEventsClass;
+    ::RegisterClassExW(&wc);
+    HWND hwnd = ::CreateWindowExW(WS_EX_TOOLWINDOW, kEventsClass, L"Flint system events", WS_OVERLAPPED,
+                                  0, 0, 0, 0, nullptr, nullptr, inst, nullptr);
+    if (!hwnd) {
+        ready.set_value("");
+        return;
+    }
+    std::string got;
+    if (::WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION)) got = "session";
+    got += got.empty() ? "power" : ",power";
+    // Windows 8+: looked up at run time, the headers hide it below _WIN32_WINNT 0x0602.
+    using RegFn = HANDLE(WINAPI*)(HANDLE, DWORD);
+    if (auto fn = reinterpret_cast<RegFn>(reinterpret_cast<void*>(
+            ::GetProcAddress(::GetModuleHandleW(L"user32.dll"), "RegisterSuspendResumeNotification")))) {
+        (void)fn(hwnd, 0 /* DEVICE_NOTIFY_WINDOW_HANDLE */);
+    }
+    ready.set_value(got);
+    MSG m{};
+    while (::GetMessageW(&m, nullptr, 0, 0) > 0) {
+        ::TranslateMessage(&m);
+        ::DispatchMessageW(&m);
+    }
+}
+
+// Call once. Returns what it could subscribe to, for the log.
+inline std::string start() {
+    std::promise<std::string> ready;
+    auto got = ready.get_future();
+    std::thread(events_thread, std::move(ready)).detach();
+    return got.get();
+}
+
 #else
 
 inline void on_signal(GDBusConnection*, const gchar*, const gchar*, const gchar* iface, const gchar* signal,
@@ -170,6 +242,18 @@ inline std::string start() {
 inline void pump(int ms) {
 #if defined(__APPLE__)
     CFRunLoopRunInMode(kCFRunLoopDefaultMode, ms / 1000.0, false);
+#elif defined(_WIN32)
+    ULONGLONG end = ::GetTickCount64() + static_cast<ULONGLONG>(ms);
+    MSG m{};
+    while (::GetTickCount64() < end) {
+        bool any = false;
+        while (::PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
+            any = true;
+            ::TranslateMessage(&m);
+            ::DispatchMessageW(&m);
+        }
+        if (!any) ::Sleep(10);
+    }
 #else
     gint64 end = g_get_monotonic_time() + static_cast<gint64>(ms) * 1000;
     while (g_get_monotonic_time() < end) {
@@ -191,6 +275,24 @@ inline void bring_to_front() {
         }
     }});
 #endif
+#elif defined(_WIN32)
+    // webui's own window(s) in this process; ShowWindow and SetForegroundWindow work from
+    // any thread. Windows refuses the foreground to a process that has not had the
+    // person's last input: the taskbar button flashes instead.
+    ::EnumWindows(+[](HWND w, LPARAM) -> BOOL {
+        DWORD pid = 0;
+        ::GetWindowThreadProcessId(w, &pid);
+        if (pid != ::GetCurrentProcessId()) return TRUE;
+        wchar_t cls[64] = {0};
+        ::GetClassNameW(w, cls, 64);
+        if (std::wstring(cls) != kAppWindowClass) return TRUE;
+        ::ShowWindow(w, ::IsIconic(w) ? SW_RESTORE : SW_SHOW);
+        if (!::SetForegroundWindow(w)) {
+            FLASHWINFO fi{sizeof(FLASHWINFO), w, FLASHW_ALL | FLASHW_TIMERNOFG, 0, 0};
+            ::FlashWindowEx(&fi);
+        }
+        return TRUE;
+    }, 0);
 #else
     g_idle_add(+[](gpointer) -> gboolean {
         GList* tops = gtk_window_list_toplevels();

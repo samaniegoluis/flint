@@ -9,7 +9,11 @@
 # bytes copied both ways. Nothing listens beyond loopback on either side.
 #
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File ssh-relay.ps1 -Port 2322 -TargetHost 127.0.0.2 -Target 2222
-param([int]$Port = 2322, [string]$TargetHost = "127.0.0.2", [int]$Target = 2222, [string]$Distro = "Ubuntu-24.04")
+#
+# -ListenHost 127.0.0.2 listens on Windows' own 127.0.0.2 instead: with the same port
+# on both sides, `127.0.0.2:<port>` then names the same sshd from Windows and from
+# inside WSL (a jump host dialling the next hop), which windows/gui-e2e.sh needs.
+param([int]$Port = 2322, [string]$TargetHost = "127.0.0.2", [int]$Target = 2222, [string]$Distro = "Ubuntu-24.04", [string]$ListenHost = "127.0.0.1")
 
 Add-Type -TypeDefinition @"
 using System;
@@ -19,10 +23,10 @@ using System.Net.Sockets;
 using System.Threading.Tasks;
 
 public static class WslRelay {
-    public static void Run(int port, string host, int target, string distro) {
-        var listener = new TcpListener(IPAddress.Loopback, port);
+    public static void Run(string listen, int port, string host, int target, string distro) {
+        var listener = new TcpListener(IPAddress.Parse(listen), port);
         listener.Start();
-        Console.WriteLine("relay: 127.0.0.1:" + port + " -> WSL " + host + ":" + target);
+        Console.WriteLine("relay: " + listen + ":" + port + " -> WSL " + host + ":" + target);
         Console.Out.Flush();
         while (true) {
             var client = listener.AcceptTcpClient();
@@ -69,4 +73,4 @@ public static class WslRelay {
 }
 "@
 
-[WslRelay]::Run($Port, $TargetHost, $Target, $Distro)
+[WslRelay]::Run($ListenHost, $Port, $TargetHost, $Target, $Distro)

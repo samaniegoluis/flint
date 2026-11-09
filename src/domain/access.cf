@@ -29,7 +29,7 @@ ACCESS_SUDO: str = "sudo"
 GRANT_DURATIONS: []str = ["15m", "1h", "4h", "lock"]
 
 // Executables a caller chain passes through without being the caller itself.
-TRANSPARENT_EXES: []str = ["flint", "sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh", "csh", "nu", "xonsh", "elvish", "pwsh", "env", "timeout", "gtimeout", "nohup", "xargs", "time", "nice", "caffeinate", "login", "script", "stdbuf", "direnv"]
+TRANSPARENT_EXES: []str = ["flint", "sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh", "csh", "nu", "xonsh", "elvish", "pwsh", "powershell", "cmd", "env", "timeout", "gtimeout", "nohup", "xargs", "time", "nice", "caffeinate", "login", "script", "stdbuf", "direnv"]
 
 // One process of a caller's chain. `started` pins the pid (its unit is the OS's).
 type CallerProc struct {
@@ -145,6 +145,9 @@ fn friendly_name(name: str) -> str {
     }
     if name == "tmux" || name == "tmux: server" {
         return "tmux"
+    }
+    if name == "WindowsTerminal" {
+        return "Windows Terminal"
     }
     return name
 }
@@ -490,6 +493,20 @@ test "a person's flint anchors on tmux or the terminal app" {
     c := Caller{ uid: 501, chain: chain }
     assert_eq(caller_anchor(c).pid, 100)
     assert_eq(caller_label(c), "flint, started by iTerm")
+}
+
+// Windows (windows-port): the peer adapter reports argv0 as the image name without
+// `.exe` and the path with `/`.
+test "on Windows a person's flint anchors on Windows Terminal, past its shell" {
+    chain := [
+        test_proc(500, 200, "C:/Programas/Flint/flint.exe", "flint"),
+        test_proc(200, 150, "C:/Program Files/PowerShell/7/pwsh.exe", "pwsh"),
+        test_proc(150, 100, "C:/Program Files/WindowsApps/Microsoft.WindowsTerminal/WindowsTerminal.exe", "WindowsTerminal"),
+        test_proc(100, 4, "C:/Windows/explorer.exe", "explorer"),
+    ]
+    c := Caller{ uid: 0, chain: chain }
+    assert_eq(caller_anchor(c).pid, 150)
+    assert_eq(caller_label(c), "flint, started by Windows Terminal")
 }
 
 test "a flint started straight by launchd is its own caller" {
