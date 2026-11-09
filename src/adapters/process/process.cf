@@ -34,6 +34,20 @@ fn executable_dir() -> str {
     return dir
 }
 
+// Windows only (windows-port): starts the program at `path` detached from this
+// process, like `setsid` on POSIX. False when it could not be started, and always
+// false elsewhere (POSIX callers use the shell, drivers/clicmd/serve.cf).
+fn spawn_detached(path: str) -> bool {
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-024
+    cpp {
+        #if defined(_WIN32)
+        ok = flint_proc::spawn_detached(path);
+        #endif
+    }
+    return ok
+}
+
 // "mac" or "linux": the keyboard map and window chrome differ (CF-031).
 fn os_name() -> str {
     mut name := ""

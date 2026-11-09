@@ -107,8 +107,14 @@ inline HANDLE open_console(const wchar_t* name) {
     return ::CreateFileW(name, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
 }
 
+// A console with no window is nobody's terminal: a process started with
+// CREATE_NO_WINDOW (WSL interop from a pipe, a service, a scheduled task) still opens
+// CONIN$, and a prompt there would wait forever. Windows Terminal and ssh sessions
+// (ConPTY) and a classic conhost all give the console a window handle.
+inline bool console_has_window() { return ::GetConsoleWindow() != nullptr; }
+
 inline bool has_tty() {
-    if (capturing()) return false;
+    if (capturing() || !console_has_window()) return false;
     HANDLE h = open_console(L"CONIN$");
     if (h == INVALID_HANDLE_VALUE) return false;
     ::CloseHandle(h);
@@ -122,7 +128,7 @@ inline std::string read_stdin_all() {
 }
 
 inline int read_console_line(const std::string& prompt, bool echo, std::string& out) {
-    if (capturing()) return -1;
+    if (capturing() || !console_has_window()) return -1;
     HANDLE in = open_console(L"CONIN$");
     if (in == INVALID_HANDLE_VALUE) return -1;
     HANDLE con = open_console(L"CONOUT$");
@@ -326,6 +332,29 @@ inline std::string executable_dir() {
 }
 
 inline const char* os_name() { return "windows"; }
+
+// Starts `path` with no console, no inherited handles and its own process group, so it
+// outlives this process and Ctrl+C here does not reach it: what `setsid prog
+// </dev/null >/dev/null 2>&1 &` does on POSIX. Leaves the caller's job object when the
+// job allows it (a job that kills its processes on close would take the app down with
+// the CLI). A bare name is looked up like a command (`.exe` added, then the PATH).
+// True when the process was created.
+inline bool spawn_detached(const std::string& path) {
+    std::wstring cmd = L"\"" + wide(path) + L"\"";
+    STARTUPINFOW si{};
+    si.cb = sizeof si;
+    PROCESS_INFORMATION pi{};
+    DWORD flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_UNICODE_ENVIRONMENT;
+    BOOL ok = ::CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, flags | CREATE_BREAKAWAY_FROM_JOB,
+                               nullptr, nullptr, &si, &pi);
+    if (!ok && ::GetLastError() == ERROR_ACCESS_DENIED) {
+        ok = ::CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, flags, nullptr, nullptr, &si, &pi);
+    }
+    if (!ok) return false;
+    ::CloseHandle(pi.hThread);
+    ::CloseHandle(pi.hProcess);
+    return true;
+}
 
 #else
 inline bool has_tty() {

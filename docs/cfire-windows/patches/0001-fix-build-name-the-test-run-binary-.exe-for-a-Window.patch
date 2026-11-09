@@ -1,7 +1,7 @@
 From 67604663a8a7a06df530314bb3d5bb1c11bb0e58 Mon Sep 17 00:00:00 2001
 From: Luis Samaniego <luis.samaniego86@gmail.com>
 Date: Mon, 9 Nov 2026 09:15:30 -0600
-Subject: [PATCH 1/5] fix(build): name the test/run binary .exe for a Windows
+Subject: [PATCH 1/6] fix(build): name the test/run binary .exe for a Windows
  target, not by host
 
 cfire test and cfire run build into a temp path and then exec it. The .exe suffix

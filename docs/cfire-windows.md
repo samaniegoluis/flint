@@ -21,7 +21,7 @@ Sibling of [`cfire-upstream.md`](cfire-upstream.md), which tracks every other ga
 
 | ID | What | Status | Patch |
 |---|---|---|---|
-| [W-01](#w-01) | `cfire build --target x86_64-w64-mingw32` uses the host's clang and headers | worked around | none |
+| [W-01](#w-01) | `cfire build --target x86_64-w64-mingw32` uses the host's clang and headers; `import cpp` ignored `CFIRE_CXX` | worked around; `import cpp` **fixed** | 0005 |
 | [W-02](#w-02) | `cfire test` / `cfire run` look for the binary without `.exe` | **fixed** | 0001 |
 | [W-03](#w-03) | `os.cwd()` returns a path, not `str`: does not compile on Windows | **fixed** | 0002 |
 | [W-04](#w-04) | `.exe` needs `libc++.dll` and `libunwind.dll`; fails silently without them | worked around | none |
@@ -31,9 +31,10 @@ Sibling of [`cfire-upstream.md`](cfire-upstream.md), which tracks every other ga
 | [W-08](#w-08) | `*_unix.cf` is compiled for Windows too | **fixed** | 0003 |
 | [W-09](#w-09) | `WebView2.h` includes `EventToken.h`; mingw ships `eventtoken.h` | worked around | none |
 | [W-10](#w-10) | cfire does not know where the WebView2 SDK is, nor ship `WebView2Loader.dll` | worked around | none |
+| [W-11](#w-11) | `os.args()` is in the ANSI code page, not UTF-8 | **fixed** | 0006 |
 
 **Works on Windows** (ran, not just compiled), with W-01, W-04, W-09 and W-10 worked
-around and patches 0001–0004 applied:
+around and patches 0001–0006 applied:
 
 | Check | Result | Confirms |
 |---|---|---|
@@ -42,6 +43,7 @@ around and patches 0001–0004 applied:
 | TCP listen, connect, write, read on loopback | pass | CF-010.c (Winsock) |
 | `net.socketpair()` both ways | pass | CF-010.g |
 | `os.command` with spaces, quotes, trailing `\`, `&`, `\|` and an empty argument | arrive intact | CF-010.d (argument quoting) |
+| `os.args()` of a child given `año-ñ ✓.txt` | arrives as UTF-8 | W-11 |
 | `os.command` child writing 300 KB to stdout **and** stderr | no deadlock | CF-010.e (pipe draining) |
 | `os.exec_output`, `os.pipe`, `getenv`/`setenv` with UTF-8, `getpid` | pass | |
 | `fs` write, read, remove under a UTF-8 path (`probe-ñ-✓/archivo-ü.txt`) | pass | CF-010.a |
@@ -76,7 +78,16 @@ around and patches 0001–0004 applied:
   before falling back to `clang++ --target`, and document `CFIRE_CXX`. `cfire doctor` has
   a "Cross-Platform Targets" section that lists wasm but not Windows: a line there that
   finds llvm-mingw (or says how to get it) would make this discoverable.
-- **Patch:** none. A wrapper outside cfire was enough.
+- **Patch:** none for the compiler choice. A wrapper outside cfire was enough.
+- **Then `import cpp` failed** · [compiled] · fixed ·
+  [patch 0005](cfire-windows/patches/0005-fix-build-read-import-cpp-headers-with-CFIRE_CXX-lik.patch).
+  With `CFIRE_CXX` set, the build itself used llvm-mingw, but every `import cpp` stopped
+  first: `clang AST ingestion failed for sodium.h: 'stdlib.h' file not found`.
+  `inspect_header()` (`clang_bridge.hpp`) runs a fixed `clang++` over the header with the
+  build's cflags, which carry `--target=<triple>`, so the host clang looked for Windows
+  headers it does not have. The patch uses `CFIRE_CXX` there too, falling back to
+  `clang++`. Suggested fix: one place that resolves the compiler
+  (`resolve_cxx_compiler` in `buildsys.hpp`), used by both.
 
 ## W-02
 
@@ -95,6 +106,9 @@ around and patches 0001–0004 applied:
 - **Why it matters beyond cross-compiling:** with it, `cfire test --target …` runs the
   test binary on Windows straight from WSL2. That is how every [ran] result in this file
   was produced.
+- **Also:** `cfire build --target x86_64-w64-mingw32` prints
+  `✓ Built Native Binary: …/build/flint` although the file is `build/flint.exe`.
+  Cosmetic, same cause.
 - **Suggested fix:** the same idea. The triple checks (`find("windows") || find("win32")
   || find("mingw")`) are repeated in `buildsys.hpp:82`, `:957`, `:632`, `:387` and
   `package_loader.hpp:31`; one helper could replace them all.
@@ -268,6 +282,34 @@ worked around
   they produce for an `ext:webui` target. Or the built-in loader from W-06, which removes
   the DLL altogether.
 
+## W-11
+
+**`os.args()` is in the ANSI code page, not UTF-8** · [ran] · fixed ·
+[patch 0006](cfire-windows/patches/0006-fix-os-os.args-is-UTF-8-on-Windows-from-the-UTF-16-c.patch)
+
+- **Symptom:** Flint's `flint cp "C:\…\año-ñ ✓.txt" web:/tmp/` failed with
+  `C:/…/a�o-� ?.txt: no such file or folder`. The same name downloaded *to* Windows had
+  the same fault on the remote side: the argument was already wrong before any file API
+  saw it. ASCII names worked.
+- **Cause:** the generated `main(int argc, char** argv)` (`codegen.hpp`) hands `argv` to
+  `set_process_args` (`cfire_prelude.hpp`). On Windows the CRT fills `argv` from the
+  command line in the **ANSI code page** (1252 here): `ñ` becomes the single byte
+  `0xF1`, invalid as UTF-8, and `✓`, which 1252 cannot hold, becomes `?` for good. Every
+  other `str` in cfire is UTF-8, and the file APIs (CF-010.a) convert from UTF-8, so the
+  bytes no longer name the file.
+- **Patch:** on Windows, `set_process_args` ignores `argv` and reads
+  `CommandLineToArgvW(GetCommandLineW())`, converting each argument with
+  `WideCharToMultiByte(CP_UTF8)`. Windows targets link `-lshell32` for it
+  (`buildsys.hpp`, next to `-lws2_32`).
+- **Verified:** a new probe in
+  [`windows/probes/core/core_test.cf`](../windows/probes/core/core_test.cf) runs a child
+  with `año-ñ ✓.txt` and reads back `[año-ñ ✓.txt]` (it prints its `os.args()`); Flint's
+  `cp` with that name both ways passes in `windows/cli-smoke.sh`.
+- **Suggested fix:** the same, or a `wmain` in the generated code on Windows (needs
+  `-municode` with mingw). Worth a line in the docs: `os.args()` is UTF-8 on every OS.
+  Not checked: the iOS entry point and any place that reads `argv` other than
+  `set_process_args`.
+
 ---
 
 ## Seen along the way, not Windows-specific
@@ -280,6 +322,12 @@ file is next updated.
   cfire's hooks back on in a clone that had turned them off. The pre-commit hook rebuilds
   cfire and can stage regenerated docs into an unrelated commit.
 - `cfire build --help` prints `failed to open file: --help`.
+- Two `cfire` processes building the same package at once can break each other:
+  `clang_bridge.hpp:473` writes the header it inspects to
+  `/tmp/cfire_clang_ast_<hash of the key>`, the same path for both, and one removes it
+  while the other reads it (`clang++: error: no such file or directory:
+  '/tmp/cfire_clang_ast_…/tu.cpp'`). Seen running two copies of Flint's suites in
+  parallel. A per-process suffix (or `mkdtemp`) would avoid it.
 - `app.emit("ping", "pong")` with a string literal does not compile
   (`json::stringify<char[5]>` has no viable overload); a `str` variable works. Seen on
   the Windows target; not yet tried on macOS or Linux.

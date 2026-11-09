@@ -1,7 +1,7 @@
 From 2159fbdcec45ba6d9e065fd940fc6f409254df5a Mon Sep 17 00:00:00 2001
 From: Luis Samaniego <luis.samaniego86@gmail.com>
 Date: Mon, 9 Nov 2026 09:25:35 -0600
-Subject: [PATCH 3/5] fix(build): honour the documented _unix.cf suffix, so it
+Subject: [PATCH 3/6] fix(build): honour the documented _unix.cf suffix, so it
  is not compiled for Windows
 
 cfire doc --llm lists *_unix.cf among the OS-conditional files, but

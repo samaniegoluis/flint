@@ -42,6 +42,11 @@ test "os.command: arguments with spaces and quotes arrive intact (CF-010.d)" {
     assert_eq(str.replace(r.stdout, "\r\n", "\n"), want)
 }
 
+test "os.args: a UTF-8 argument arrives as UTF-8, not in the ANSI code page (W-11)" {
+    r := try os.command(helper(), ["año-ñ ✓.txt"])
+    assert_eq(str.replace(r.stdout, "\r\n", "\n"), "[año-ñ ✓.txt]\n")
+}
+
 test "os.command: a child writing 300 KB to stdout and stderr does not deadlock (CF-010.e)" {
     r := try os.command(helper(), ["big"])
     // 3000 lines of 99 x's + newline. Windows' CRT writes "\r\n" (docs/cfire-windows.md, W-05).

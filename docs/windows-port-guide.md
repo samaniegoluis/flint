@@ -22,7 +22,8 @@ using this guide as the checklist, and the cfire side is checked against
 | Toolchain | llvm-mingw in `~/.local/opt/llvm-mingw-*`, MSYS2 CLANG64 libraries + WebView2 SDK in `~/.local/opt/win-sysroot` (`windows/bin/sysroot.sh`) |
 | Environment | `source windows/bin/env-flint.sh` (Flint) or `windows/bin/env.sh` (cfire probes on HEAD) |
 | Build the CLI | `cfire build --target x86_64-w64-mingw32` in the worktree → `build/flint.exe` |
-| Checks | `windows/run-probes.sh` (cfire), `windows/cli-smoke.sh` (Flint CLI) |
+| Checks | `windows/run-probes.sh` (cfire), `windows/cli-smoke.sh` (Flint CLI, vault + SSH + `cp`) |
+| SSH for checks by hand | `windows/ssh-lab.sh start\|stop`: two throwaway sshd in WSL + `windows/ssh-relay.ps1` + a vault in `%TEMP%\flint-lab` |
 
 **Why two cfire branches.** cfire after `24a43f6` renamed modules (`ext:json` → `core:json`,
 `b3909cc`) and, in `c5b1d4b`, rejects `.has_value()` on a `T!` (`cfire/UNHANDLED-RESULT`,
@@ -42,28 +43,63 @@ paths (the socket code moved into shared helpers with the same behaviour).
 | Caller info | `ipc/native/flint_peer.hpp` | ppid from a Toolhelp snapshot, start time from `GetProcessTimes`, path from `QueryFullProcessImageNameW`; argv[0] = the image path (reading it really needs the PEB) |
 | Keychain | `keychain/native/flint_keychain.hpp` | **Credential Manager**: generic credential, target `Flint/<vault id>`, `CRED_PERSIST_LOCAL_MACHINE` |
 | Local files | `process/native/flint_fs.hpp` | Wide APIs from UTF-8; `_wopen` with **`_O_BINARY`** (else `\n` → `\r\n`); rename with `MoveFileExW(REPLACE_EXISTING)` (CRT rename refuses an existing target); synthesised modes 0755/0644/0444; `mode` ignored by `make_dirs` |
-| Terminal | `process/native/flint_process.hpp` | `CONIN$`/`CONOUT$` for prompts (echo off via console mode); raw mode = console modes + `ENABLE_VIRTUAL_TERMINAL_INPUT/PROCESSING` + UTF-8 code pages, restored at exit and by `SetConsoleCtrlHandler`; **no SIGWINCH**: `read_input` compares the window size each call; input drops non-text console events so a read never blocks on them; pipes via `PeekNamedPipe` |
+| Terminal | `process/native/flint_process.hpp` | `CONIN$`/`CONOUT$` for prompts (echo off via console mode), **only when the console has a window** (`GetConsoleWindow()`): a process started with `CREATE_NO_WINDOW` (WSL interop from a pipe, a service, a scheduled task) still opens `CONIN$`, and a prompt there waits forever; raw mode = console modes + `ENABLE_VIRTUAL_TERMINAL_INPUT/PROCESSING` + UTF-8 code pages, restored at exit and by `SetConsoleCtrlHandler`; **no SIGWINCH**: `read_input` compares the window size each call; input drops non-text console events so a read never blocks on them; pipes via `PeekNamedPipe` |
 | SSH | `ssh/native/flint_ssh.hpp`, `ssh/libssh.cf` | Dialling and the jump-host tunnel on `flint_sock`; `NUL` instead of `/dev/null` for known_hosts |
 | Config folder | `adapters/config/recents.cf` | `%APPDATA%/Flint` |
 | Paths | `domain/files.cf`, `application/session.cf`, `drivers/clicmd/commands.cf`, `adapters/process/process.cf` | `is_absolute_path()` accepts `C:/…`; the CLI turns `\` into `/` at the boundary (`local_slashes`, `current_dir`), so Flint keeps one form of local path. Remote paths stay POSIX |
+| `flint cp` | `drivers/clicmd/files_commands.cf`, `domain/files.cf` | `C:\…` / `C:/…` is a local path, not host `C` (`is_drive_path`, checked only on Windows: on POSIX `c:/x` is still host `c`); the local side goes through `local_slashes` |
+| App start (`serve`) | `drivers/clicmd/serve.cf`, `adapters/process` | `spawn_detached`: `CreateProcessW` with `DETACHED_PROCESS \| CREATE_NEW_PROCESS_GROUP`, no inherited handles, `CREATE_BREAKAWAY_FROM_JOB` when the job allows it; replaces `sh -c … setsid`. The app is `gui\Flint.exe` (build tree) or `flint-app.exe` (install): **`Flint.exe` next to `flint.exe` is the same file** on a case-insensitive file system |
 
 ## Verified on Windows (so far)
 
+Every line here **ran** on Windows 11 (build 26200) through WSL interop, unless it says
+otherwise.
+
 - `flint --version`, `--help`: libssh 0.12.2/OpenSSL, libsodium 1.0.22, SQLCipher 4.19.0.
-- `windows/cli-smoke.sh`: vault create (SQLCipher file written), group add, host add/list/show,
-  `vault status --json`, `vault list`, a wrong master password refused (exit 6), `--vault`
-  with a backslash path.
+- `windows/cli-smoke.sh`, **49/49** (2026-11-09):
+  - vault create (SQLCipher file written), group add, host add/list/show,
+    `vault status --json`, `vault list`, a wrong master password refused (exit 6),
+    `--vault` with a backslash path;
+  - SSH against a throwaway sshd in WSL: `key add`, `host add`, an unknown host key with
+    no terminal fails with `host_key` (exit 11, not a hang), `host test
+    --accept-new-host-key`, `exec` (stdout, remote exit status, `--json` with both
+    streams, `--exec-timeout` → 14), a **jump host** for `exec`, `host test` (2 hops) and
+    `cp` (the loopback socketpair carries the inner session);
+  - `cp` over SFTP both ways: a UTF-8 name (`año-ñ ✓.txt`), a 1 MB binary byte-exact,
+    no CRLF added, `-r` folders, `--force`, `exists` (20), a relative `.` target,
+    `not_found` (3) on either side, `permission_denied` (19).
+- **Credential Manager**: `cfire test --target x86_64-w64-mingw32 src/adapters/keychain`,
+  79/79, including the test that saves, reads, overwrites and deletes a real generic
+  credential. Not checked by a person yet (the CLI never writes one, see below).
+- **App start**: with a stand-in `flint-app.exe` next to `flint.exe`, `flint host list`
+  on a locked vault started it detached; it was still running 20 s after `flint.exe`
+  had exited (exit 5, `locked`, as expected with no real app answering).
+- **Linux regression** (2026-11-09, native clang, the cfire in `~/.local/opt/cfire-flint`,
+  `scripts/env.sh`): the worktree's `HEAD` and `main`'s `b15271b` side by side, with
+  `127.0.0.1` → `127.0.0.2` in the copies' tests and scripts only (lesson below).
+  Same results on both, so nothing here comes from the port:
+
+  | | port (`HEAD`) | `main` (`b15271b`) | Why |
+  |---|---|---|---|
+  | `scripts/test.sh` suites | 11 pass, 2 fail | 11 pass, 2 fail | keychain: no Secret Service in WSL; `uievents`: no `gtk+-3.0` headers |
+  | `scripts/cli-e2e.sh` | 323/331 | 323/331 | the 8 use `localhost`, which resolves to the broken `127.0.0.1` here (IPv4/IPv6 dial, `known-host rm` by name, the `connect` PTY checks) |
+
+  Every suite counts 2 more passing tests on the port: the two new `domain` tests
+  (absolute paths, drive paths), which every package's test binary pulls in.
+  Not run on Linux: the GUI and `serve-e2e` (no GTK/WebKitGTK headers in this WSL), and
+  the `connect` PTY checks (the `localhost` problem). `scripts/linux-check.sh` (Docker)
+  would cover them; Docker is not wired into this distro.
 
 ## Not done yet
 
 | Item | Note |
 |---|---|
-| SSH against a real server | `host test`, `exec`, `connect` (raw console), `cp` (SFTP), jump host. Plan: a throwaway `sshd` in WSL on `127.0.0.1:2222` (WSL is in mirrored networking mode, so Windows reaches it) |
-| Linux regression run | The shared socket code changed; run `scripts/test.sh` on Linux in the worktree |
-| `flint serve` / app handoff | `drivers/clicmd/serve.cf:672` starts the app with `sh -c … setsid`: needs a Windows way (`CreateProcess` detached) |
-| Keychain dialog check | A person confirms an entry appears in Credential Manager |
+| Interactive `connect` | Needs a person at Windows Terminal: `windows/ssh-lab.sh start`, then the command in the part 5 report. Raw console, resize without SIGWINCH, Ctrl+C, UTF-8 typing, the console restored on exit |
+| Host key prompt in a real terminal | The `GetConsoleWindow()` rule says Windows Terminal (ConPTY) has a window handle; checked only that the hidden interop console has none |
+| Credential Manager by a person | The CLI only deletes entries (D-038: `vault lock`, `vault forget`); the app writes them when "remember" is on. Checked with the adapter's test; a person looks once the GUI runs (part 6): `cmdkey /list:Flint/*`, or Control Panel → Credential Manager → Windows Credentials → Generic Credentials, target `Flint/<vault id>` |
+| `flint serve` / handoff with the real app | `spawn_detached` works; the IPC handoff to a real `Flint.exe` waits for the GUI (part 6) |
 | GUI (part 6) | `uievents/native/flint_presence.hpp` and `flint_sysevents.hpp` use GIO; clipboard, dialogs and gui shims compile but have no Windows side yet; `WebView2Loader.dll` must ship next to `Flint.exe` |
-| Packaging | GitHub Actions: build on `windows-latest` (MSYS2 CLANG64) or cross-compile on Ubuntu with llvm-mingw as here; an installer (Inno Setup, WiX or MSIX) carrying `WebView2Loader.dll`; code signing. Only once cfire's Windows support is upstream |
+| Packaging | GitHub Actions: build on `windows-latest` (MSYS2 CLANG64) or cross-compile on Ubuntu with llvm-mingw as here; an installer (Inno Setup, WiX or MSIX) carrying `WebView2Loader.dll`, naming the app `flint-app.exe` or putting it in its own folder; code signing. Only once cfire's Windows support is upstream |
 
 ## Lessons
 
@@ -84,3 +120,25 @@ paths (the socket code moved into shared helpers with the same behaviour).
   there; route socket I/O through one helper.
 - **Text mode bites twice:** CRT files (`_O_BINARY`) and stdout (`println` writes `\r\n`,
   cfire W-05).
+- **A Windows console is not a person.** A process started with no window (WSL interop
+  from a pipe, a service, a scheduled task) still opens `CONIN$`; a prompt there blocks
+  forever. Ask `GetConsoleWindow()` first, as POSIX asks whether `/dev/tty` opens.
+- **Arguments arrive in the ANSI code page** unless the runtime reads the UTF-16 command
+  line (cfire W-11). Test every path feature with a non-ASCII name, on the command line
+  too, not only through the file APIs.
+- **`Flint.exe` and `flint.exe` are one file** on Windows (and on a default macOS
+  volume): the CLI and the app need different names or folders.
+- **`C:\x` looks like `host:path`.** Anything that splits on `:` needs a drive-letter
+  rule, on Windows only (scp has the same one).
+- **This WSL's mirrored networking breaks `127.0.0.1` for Linux listeners**, both from
+  Windows and from Linux itself (an `ip rule` sends TCP to `127.0.0.1` through
+  `loopback0` to Windows, and nothing comes back). `127.0.0.2` stays inside Linux.
+  The checks use a throwaway sshd on `127.0.0.2` and `windows/ssh-relay.ps1`
+  (Windows `127.0.0.1:2322` → `wsl.exe nc`) instead of binding to a LAN address. A
+  `wsl --shutdown` might restore it; not tried, it would end the session.
+- **A relay through a child's stdin must flush.** .NET's redirected stdin is a buffered
+  `FileStream`: the SSH banner came back, the client's never left.
+- **A sandboxed shell has its own network namespace.** A server started from Claude
+  Code's sandboxed Bash listens where nothing else can reach it; start test servers
+  outside the sandbox.
+

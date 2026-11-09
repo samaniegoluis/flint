@@ -1,0 +1,71 @@
+From 5b3901d4fa6b6951559053be07b614875d118ffe Mon Sep 17 00:00:00 2001
+From: Luis Samaniego <luis.samaniego86@gmail.com>
+Date: Mon, 9 Nov 2026 11:03:28 -0600
+Subject: [PATCH 6/6] fix(os): os.args() is UTF-8 on Windows, from the UTF-16
+ command line
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+main(int argc, char** argv) receives the arguments in the ANSI code page on
+Windows, so "año-ñ ✓.txt" reached os.args() as "a\xf1o-\xf1 ?.txt" and a
+UTF-8 path given on the command line could not be opened. set_process_args
+now takes GetCommandLineW() through CommandLineToArgvW and converts each
+argument to UTF-8, like every other str. Windows targets link shell32 for it.
+---
+ runtime/cfire_prelude.hpp | 19 +++++++++++++++++++
+ src/buildsys.hpp          |  1 +
+ 2 files changed, 20 insertions(+)
+
+diff --git a/runtime/cfire_prelude.hpp b/runtime/cfire_prelude.hpp
+index 0d5ba41..6da42ee 100644
+--- a/runtime/cfire_prelude.hpp
++++ b/runtime/cfire_prelude.hpp
+@@ -61,6 +61,7 @@
+ #include <io.h>
+ #include <fcntl.h>
+ #include <windows.h>
++#include <shellapi.h>
+ #endif
+ 
+ #if !__has_include(<print>)
+@@ -1021,6 +1022,24 @@ inline auto process_args_storage() -> std::vector<std::string>& {
+ inline void set_process_args(int argc, char** argv) {
+     auto& out = process_args_storage();
+     out.clear();
++#if defined(_WIN32)
++    // argv from main() is in the ANSI code page: "año ✓" arrives as "a\xf1o ?" and
++    // a UTF-8 path in it cannot be opened. Take the UTF-16 command line instead and
++    // convert each argument to UTF-8, like every other str in cfire.
++    int wargc = 0;
++    if (LPWSTR* wargv = ::CommandLineToArgvW(::GetCommandLineW(), &wargc)) {
++        out.reserve(static_cast<std::size_t>(wargc));
++        for (int i = 0; i < wargc; ++i) {
++            int wlen = static_cast<int>(::wcslen(wargv[i]));
++            int len = ::WideCharToMultiByte(CP_UTF8, 0, wargv[i], wlen, nullptr, 0, nullptr, nullptr);
++            std::string a(static_cast<std::size_t>(len), '\0');
++            ::WideCharToMultiByte(CP_UTF8, 0, wargv[i], wlen, a.data(), len, nullptr, nullptr);
++            out.push_back(std::move(a));
++        }
++        ::LocalFree(wargv);
++        return;
++    }
++#endif
+     if (argc > 0 && argv) {
+         out.reserve(static_cast<std::size_t>(argc));
+         for (int i = 0; i < argc; ++i) {
+diff --git a/src/buildsys.hpp b/src/buildsys.hpp
+index ff47d2e..9be19ad 100644
+--- a/src/buildsys.hpp
++++ b/src/buildsys.hpp
+@@ -90,6 +90,7 @@ namespace cfire::build {
+     if (is_win_target) {
+         plan.ldflags.push_back("-lws2_32");
+         plan.ldflags.push_back("-ladvapi32");
++        plan.ldflags.push_back("-lshell32");  // CommandLineToArgvW: UTF-8 os.args()
+     }
+ 
+     // 1. Parse & execute any pre-build commands declared in sibling or ancestor `build.cf` (BS-08, CF-031)
+-- 
+2.43.0
+
