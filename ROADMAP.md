@@ -181,6 +181,7 @@ What Tether already does and Flint must not lose.
 | Terminal output as bytes instead of base64 text in `terminal:output` | `idea` | CF-003: only worth it once webui has a real binary channel; `emit_bytes` today is base64 plus one `eval_js`, like Flint's `emit` |
 | Wipe key material from memory: the master, page and secrets keys when a session ends, and decrypted secrets once libssh has them (`sodium_memzero`) | `next` | Found in the milestone 02/03 owner review; only the hex `PRAGMA key` text is zeroed today |
 | The sudo test `a refused password, a missing one and a user who may not sudo are told apart` failed once in M16 (`err_code(r1)` was `ok`, not `sudo_password`) and passed on the next three runs | `next` | Found 2026-11-08 while building M16, with no change to `sudo.cf`. The prompt is random per run (`[flint-sudo:<hex>]`), so a prompt that differs between the fake's `@PROMPT@` and what `run_sudo` waits for, or a timing step in `FakeClock`, are the first suspects |
+| A copy whose SFTP channel dies part-way leaves its `.<name>.flint-part` on the host | `idea` | Found in M16's owner check on libssh 0.10 (2026-11-09): sftp-server dropped the channel on an oversized write, so the cleanup had no channel to remove the part file with (cli-e2e: "no partial file is left anywhere"). The cause is fixed (writes split to 32 KB below libssh 0.11); a dropped connection can still leave one. Options: remove stale `*.flint-part` of the same name before the next copy to that folder, or say in the error that one may be left |
 
 ## 6. UI
 
