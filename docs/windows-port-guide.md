@@ -13,6 +13,45 @@ by merging `main` into it now and then.
 | [`cfire-windows.md`](cfire-windows.md) + `cfire-windows/patches/` | For cfire's author: what cfire lacked on Windows, with patches |
 | This file | For us: what Flint had to change, and the lessons |
 
+## Resume here
+
+State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
+
+- **Done:** the CLI and the desktop app build and run on Windows 11 on top of `main`
+  (`83557b0`, cfire `c5b1d4b`) with cfire patches 0001-0008. Every automated check is
+  green (Verified, below). Installed in `D:\Programas\Flint`. The handoff for cfire's
+  author is `D:\Respaldos\flint-windows\cfire-windows-2026-11-09.zip` (already given,
+  or to give). Backups: git bundles in `D:\Respaldos\flint-windows`.
+- **Owner checks still open:** Win+L and sleep with the app unlocked (it should lock), a
+  real dialog (save a key), a drag from Explorer into the Files view,
+  `cmdkey /list:Flint/*` after unlocking with "Remember on this computer", interactive
+  `connect` in Windows Terminal (`windows/ssh-lab.sh start` first; it is stopped), and
+  Ctrl+Insert to copy.
+
+**Next phase: when cfire ships Windows support upstream.**
+
+1. Read cfire's changes since `c5b1d4b` and, for each W-NN in
+   [`cfire-windows.md`](cfire-windows.md), decide: covered upstream (drop the patch),
+   covered differently (adapt Flint), or still missing (keep the patch, rebase it).
+2. Build that cfire in `~/Personal/Proyectos/cfire/cfire-windows` (a new branch from
+   upstream plus only the patches still needed), install it in `~/.local`
+   (`bin/cfire`, `share/cfire`; `make install` fails, CF-086), check
+   `cfire --version`.
+3. Bring `windows-port-2` up to `main` (merge `origin/main`). If `main` pins the new
+   cfire, there is still one cfire for both.
+4. Rebuild and re-run, in this order: `windows/run-probes.sh` (cfire),
+   `windows/build-gui.sh`, `windows/test-suites.sh`, `windows/cli-smoke.sh`,
+   `windows/gui-e2e.sh`, `windows/serve-e2e.sh`; then the Linux regression
+   (Verified explains how). Fix what breaks; drop Flint workarounds that cfire now
+   makes unnecessary (W-04 static linking, W-09 `EventToken.h`, W-10 the WebView2 SDK
+   and `WebView2Loader.dll`, W-13 the `.ico` beside the `.icns`).
+5. Update this guide and `cfire-windows.md`, refresh the bundles, reinstall in
+   `D:\Programas\Flint`, and ask the owner for the person checks above.
+
+Rules that still hold: the branch stays local (no push, no merge into `main`); one
+commit per step; test servers start outside the Bash sandbox; never two cfire builds of
+the same package at once.
+
 ## Where things are
 
 | What | Where |
