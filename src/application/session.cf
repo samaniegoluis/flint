@@ -93,7 +93,7 @@ fn check_vault_name(name: str) -> void! {
 }
 
 fn check_absolute(path: str) -> void! {
-    if !path.starts_with("/") {
+    if !is_absolute_path(path) {
         return error(coded(ERR_INVALID, "vault path must be absolute"))
     }
 }
@@ -384,7 +384,7 @@ fn resolve_vault[R: RecentStore](recents: R, selector: str) -> RecentVault! {
             return v
         }
     }
-    if selector.starts_with("/") {
+    if is_absolute_path(selector) {
         return RecentVault{ path: selector, name: vault_name_from_path(selector), id: "" }
     }
     return error(coded(ERR_NOT_FOUND, "no recent vault named '{selector}'"))

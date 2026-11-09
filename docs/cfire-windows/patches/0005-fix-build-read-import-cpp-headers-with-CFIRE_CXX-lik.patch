@@ -1,0 +1,43 @@
+From f746a282cab0b4d21e7c597f75df7f1a94f390f9 Mon Sep 17 00:00:00 2001
+From: Luis Samaniego <luis.samaniego86@gmail.com>
+Date: Mon, 9 Nov 2026 10:16:10 -0600
+Subject: [PATCH 5/5] fix(build): read import cpp headers with CFIRE_CXX, like
+ the build itself
+
+inspect_header() ran a fixed 'clang++' over the header with the build's cflags.
+Cross-compiling for x86_64-w64-mingw32, those cflags carry --target=<triple>,
+so the host clang looked for Windows headers it does not have and every
+'import cpp' failed: "clang AST ingestion failed for sodium.h: 'stdlib.h' file
+not found". The build step already honours CFIRE_CXX; use it here too.
+---
+ src/clang_bridge.hpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/clang_bridge.hpp b/src/clang_bridge.hpp
+index 63f5c4e..ec87af4 100644
+--- a/src/clang_bridge.hpp
++++ b/src/clang_bridge.hpp
+@@ -2,6 +2,7 @@
+ // src/clang_bridge.hpp — C++23 Clang AST Header Ingestor, ParmVarDecl Extractor & Persistent Cache
+ 
+ #include <cstdio>
++#include <cstdlib>
+ #include <expected>
+ #include <filesystem>
+ #include <format>
+@@ -478,7 +479,11 @@ inline void save_cached_index(const std::filesystem::path& cache_file, const Hea
+         out << std::format("#include <{}>\n", clean_hdr);
+     }
+ 
+-    std::string cmd = "clang++ -std=c++2b -Xclang -ast-dump=json -fsyntax-only";
++    // The same compiler the build uses (buildsys.hpp resolve_cxx_compiler): with a
++    // cross target the cflags carry --target=<triple>, which the host's clang++ cannot
++    // honour without that target's headers.
++    const char* env_cxx = std::getenv("CFIRE_CXX");
++    std::string cmd = std::string(env_cxx && *env_cxx ? env_cxx : "clang++") + " -std=c++2b -Xclang -ast-dump=json -fsyntax-only";
+     for (const auto& f : cflags) {
+         cmd += " " + shell_quote(f);
+     }
+-- 
+2.43.0
+

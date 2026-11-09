@@ -92,8 +92,13 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
             // reorders the host key algorithms by what those files list for the host,
             // which overrides `host_key_algos` and negotiates a key type the vault
             // does not hold (a false "host key changed").
-            ssh_options_set(s, SSH_OPTIONS_KNOWNHOSTS, "/dev/null");
-            ssh_options_set(s, SSH_OPTIONS_GLOBAL_KNOWNHOSTS, "/dev/null");
+#if defined(_WIN32)
+            const char* no_file = "NUL";  // windows-port
+#else
+            const char* no_file = "/dev/null";
+#endif
+            ssh_options_set(s, SSH_OPTIONS_KNOWNHOSTS, no_file);
+            ssh_options_set(s, SSH_OPTIONS_GLOBAL_KNOWNHOSTS, no_file);
             if (!host_key_algos.empty()) {
                 std::string algos = host_key_algos;
 #if LIBSSH_VERSION_INT < SSH_VERSION_INT(0, 11, 0)
@@ -144,7 +149,7 @@ fn tcp_dial_first(addresses: []str, port: i32, timeout_secs: i64) -> void! {
     cpp {
         std::vector<std::string> list(addresses.begin(), addresses.end());
         fd = flint_ssh::dial_candidates(list, static_cast<int>(port), static_cast<long>(timeout_secs), err);
-        if (fd >= 0) ::close(fd);
+        flint_sock::close(fd);
     }
     if fd < 0 {
         return error(coded(ERR_NETWORK, "connect to port {port} failed: {err}"))
@@ -298,7 +303,7 @@ fn (mut self: SshConn) disconnect() {
         }
         self.session = nullptr;
         if (self.sock >= 0) {
-            ::close(self.sock);
+            flint_sock::close(self.sock);
         }
         self.sock = -1;
     }

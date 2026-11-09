@@ -22,6 +22,10 @@ for p in $PKGS; do
   [ -f "$SYSROOT/.pkgs/$f" ] || curl -fsSL "$REPO/$f" -o "$SYSROOT/.pkgs/$f"
   tar --zstd -xf "$SYSROOT/.pkgs/$f" -C "$SYSROOT" clang64
 done
+# MSYS2's .pc files say prefix=/clang64. Make them absolute, so pkg-config needs no
+# PKG_CONFIG_SYSROOT_DIR (which would also rewrite Flint's own -I paths).
+sed -i "s#^prefix=/clang64#prefix=$SYSROOT/clang64#" "$SYSROOT"/clang64/lib/pkgconfig/*.pc
+
 # WebView2 SDK (headers + WebView2Loader.dll) for ext:webui. Pinned like the rest.
 WV2_VERSION=1.0.4314.35
 WV2="$SYSROOT/webview2"

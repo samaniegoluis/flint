@@ -186,9 +186,27 @@ fn no_copy_ask() -> CopyAsk {
     return CopyAsk{ direction: "", host: "", local: "", remote: "", recursive: false, force: false }
 }
 
+// A path that does not depend on a working folder: "/..." everywhere, and "C:/..."
+// for a Windows local path (kept with forward slashes, which Windows accepts; the CLI
+// turns backslashes into them at the boundary). windows-port.
+fn is_absolute_path(path: str) -> bool {
+    if path.starts_with("/") {
+        return true
+    }
+    return path.len() >= 3 && path.substr(1, 2) == ":/"
+}
+
+test "absolute paths: POSIX and Windows drive letters" {
+    assert(is_absolute_path("/var/log"))
+    assert(is_absolute_path("C:/Users/me/lab.flint"))
+    assert(!is_absolute_path("lab.flint"))
+    assert(!is_absolute_path("./a/b"))
+    assert(!is_absolute_path("C:"))
+}
+
 // `path` as seen from folder `cwd`: unchanged when absolute.
 fn absolute_from(cwd: str, path: str) -> str {
-    if path.starts_with("/") || cwd.len() == 0 {
+    if is_absolute_path(path) || cwd.len() == 0 {
         return path
     }
     if path == "." {

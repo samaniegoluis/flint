@@ -8,6 +8,7 @@ package process
 import cpp "flint_process.hpp" @pkg("flint-native")
 
 import "core:os"
+import "core:str"
 import "core:time"
 import "../../domain"
 
@@ -93,7 +94,12 @@ fn current_dir() -> str {
     if captured {
         return dir
     }
-    return os.cwd()
+    here: str = os.cwd()
+    if os_name() == "windows" {
+        // One form for local paths on Windows: `/` separators (windows-port).
+        return str.replace(here, "\\", "/")
+    }
+    return here
 }
 
 // Flushes stdout and stderr and ends the process with `code`.

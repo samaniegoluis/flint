@@ -23,11 +23,15 @@
 #include <atomic>
 #include <cerrno>
 #include <csignal>
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
+#endif
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
@@ -78,6 +82,252 @@ inline void write_err(const std::string& s) {
     std::fflush(stderr);
 }
 
+#if defined(_WIN32)
+// Windows (windows-port). The console stands in for /dev/tty: CONIN$ and CONOUT$
+// reach it even when stdin and stdout are redirected. Raw mode is console modes
+// (no line input, no echo, no Ctrl+C processing, VT input), restored at exit and on
+// Ctrl+C/close. Windows has no SIGWINCH: read_input compares the window size on each
+// call and raises the same flag.
+
+inline std::wstring wide(const std::string& s) {
+    int n = ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    std::wstring w(static_cast<size_t>(n), L'\0');
+    ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
+    return w;
+}
+
+inline std::string utf8(const wchar_t* w, size_t n) {
+    int len = ::WideCharToMultiByte(CP_UTF8, 0, w, static_cast<int>(n), nullptr, 0, nullptr, nullptr);
+    std::string s(static_cast<size_t>(len), '\0');
+    ::WideCharToMultiByte(CP_UTF8, 0, w, static_cast<int>(n), s.data(), len, nullptr, nullptr);
+    return s;
+}
+
+inline HANDLE open_console(const wchar_t* name) {
+    return ::CreateFileW(name, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+}
+
+inline bool has_tty() {
+    if (capturing()) return false;
+    HANDLE h = open_console(L"CONIN$");
+    if (h == INVALID_HANDLE_VALUE) return false;
+    ::CloseHandle(h);
+    return true;
+}
+
+inline std::string read_stdin_all() {
+    if (capturing()) return "";
+    std::string data((std::istreambuf_iterator<char>(std::cin)), std::istreambuf_iterator<char>());
+    return data;
+}
+
+inline int read_console_line(const std::string& prompt, bool echo, std::string& out) {
+    if (capturing()) return -1;
+    HANDLE in = open_console(L"CONIN$");
+    if (in == INVALID_HANDLE_VALUE) return -1;
+    HANDLE con = open_console(L"CONOUT$");
+    if (con != INVALID_HANDLE_VALUE) {
+        std::wstring wp = wide(prompt);
+        DWORD w = 0;
+        ::WriteConsoleW(con, wp.data(), static_cast<DWORD>(wp.size()), &w, nullptr);
+    }
+    DWORD old = 0;
+    bool restore = ::GetConsoleMode(in, &old) != FALSE;
+    if (restore) {
+        DWORD mode = old | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT;
+        mode = echo ? (mode | ENABLE_ECHO_INPUT) : (mode & ~static_cast<DWORD>(ENABLE_ECHO_INPUT));
+        ::SetConsoleMode(in, mode);
+    }
+    std::wstring line;
+    wchar_t buf[256];
+    DWORD got = 0;
+    while (::ReadConsoleW(in, buf, 256, &got, nullptr) && got > 0) {
+        line.append(buf, got);
+        if (line.find(L'\n') != std::wstring::npos) break;
+    }
+    if (restore) ::SetConsoleMode(in, old);
+    if (!echo && con != INVALID_HANDLE_VALUE) {
+        DWORD w = 0;
+        ::WriteConsoleW(con, L"\r\n", 2, &w, nullptr);  // what ECHONL does on POSIX
+    }
+    while (!line.empty() && (line.back() == L'\n' || line.back() == L'\r')) line.pop_back();
+    out = utf8(line.data(), line.size());
+    std::fill(line.begin(), line.end(), L'\0');
+    if (con != INVALID_HANDLE_VALUE) ::CloseHandle(con);
+    ::CloseHandle(in);
+    return 0;
+}
+
+inline int read_secret_tty(const std::string& prompt, std::string& out) { return read_console_line(prompt, false, out); }
+inline int read_line_tty(const std::string& prompt, std::string& out) { return read_console_line(prompt, true, out); }
+
+inline std::atomic<bool>& winch_flag() {
+    static std::atomic<bool> flag{false};
+    return flag;
+}
+
+struct RawState {
+    DWORD in_mode = 0;
+    DWORD out_mode = 0;
+    UINT in_cp = 0;
+    UINT out_cp = 0;
+    bool active = false;
+    int cols = 0;
+    int rows = 0;
+};
+
+inline RawState& raw_state() {
+    static RawState st;
+    return st;
+}
+
+inline void raw_restore() {
+    RawState& st = raw_state();
+    if (st.active) {
+        ::SetConsoleMode(::GetStdHandle(STD_INPUT_HANDLE), st.in_mode);
+        ::SetConsoleMode(::GetStdHandle(STD_OUTPUT_HANDLE), st.out_mode);
+        ::SetConsoleCP(st.in_cp);
+        ::SetConsoleOutputCP(st.out_cp);
+        st.active = false;
+    }
+}
+
+inline BOOL WINAPI flint_on_ctrl(DWORD) {
+    raw_restore();
+    return FALSE;  // let the default handler end the process
+}
+
+inline void window_size(int& cols, int& rows) {
+    cols = 0;
+    rows = 0;
+    CONSOLE_SCREEN_BUFFER_INFO info;
+    if (::GetConsoleScreenBufferInfo(::GetStdHandle(STD_OUTPUT_HANDLE), &info) ||
+        ::GetConsoleScreenBufferInfo(::GetStdHandle(STD_ERROR_HANDLE), &info)) {
+        cols = info.srWindow.Right - info.srWindow.Left + 1;
+        rows = info.srWindow.Bottom - info.srWindow.Top + 1;
+    }
+}
+
+inline int raw_enter() {
+    HANDLE in = ::GetStdHandle(STD_INPUT_HANDLE);
+    HANDLE out = ::GetStdHandle(STD_OUTPUT_HANDLE);
+    RawState& st = raw_state();
+    if (st.active) return 0;
+    DWORD in_mode = 0, out_mode = 0;
+    if (!::GetConsoleMode(in, &in_mode)) return 0;  // not a console: nothing to change
+    ::GetConsoleMode(out, &out_mode);
+    st.in_mode = in_mode;
+    st.out_mode = out_mode;
+    st.in_cp = ::GetConsoleCP();
+    st.out_cp = ::GetConsoleOutputCP();
+    DWORD raw_in = (in_mode & ~static_cast<DWORD>(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT |
+                                                  ENABLE_QUICK_EDIT_MODE)) |
+                   ENABLE_VIRTUAL_TERMINAL_INPUT | ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT;
+    if (!::SetConsoleMode(in, raw_in)) return -1;
+    ::SetConsoleMode(out, out_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN);
+    ::SetConsoleCP(CP_UTF8);
+    ::SetConsoleOutputCP(CP_UTF8);
+    window_size(st.cols, st.rows);
+    st.active = true;
+    static bool hooked = false;
+    if (!hooked) {
+        hooked = true;
+        std::atexit(raw_restore);
+        ::SetConsoleCtrlHandler(flint_on_ctrl, TRUE);
+    }
+    return 0;
+}
+
+inline bool take_winch() { return winch_flag().exchange(false); }
+
+inline void check_resize() {
+    RawState& st = raw_state();
+    int c = 0, r = 0;
+    window_size(c, r);
+    if (c != st.cols || r != st.rows) {
+        st.cols = c;
+        st.rows = r;
+        winch_flag().store(true);
+    }
+}
+
+// Waits up to `timeout_ms` for stdin. Console: drops events that carry no text
+// (key-ups, focus, mouse, resizes) so the read never blocks on them; a pipe: checks
+// how much is buffered. Returns the bytes read ("" on timeout), or false at end of input.
+inline bool read_input(int timeout_ms, std::string& out) {
+    out.clear();
+    check_resize();
+    HANDLE in = ::GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode = 0;
+    if (::GetConsoleMode(in, &mode)) {
+        DWORD wr = ::WaitForSingleObject(in, static_cast<DWORD>(timeout_ms < 0 ? INFINITE : timeout_ms));
+        check_resize();
+        if (wr != WAIT_OBJECT_0) return true;
+        INPUT_RECORD rec[64];
+        DWORD n = 0;
+        if (!::PeekConsoleInputW(in, rec, 64, &n)) return false;
+        bool text = false;
+        for (DWORD i = 0; i < n; ++i) {
+            if (rec[i].EventType == KEY_EVENT && rec[i].Event.KeyEvent.bKeyDown && rec[i].Event.KeyEvent.uChar.UnicodeChar) {
+                text = true;
+                break;
+            }
+        }
+        if (!text) {
+            ::ReadConsoleInputW(in, rec, n, &n);  // discard what cannot become bytes
+            return true;
+        }
+        char buf[4096];
+        DWORD got = 0;
+        if (!::ReadFile(in, buf, sizeof buf, &got, nullptr)) return false;
+        out.assign(buf, got);
+        return true;
+    }
+    DWORD type = ::GetFileType(in);
+    if (type == FILE_TYPE_PIPE) {
+        DWORD avail = 0;
+        auto start = ::GetTickCount64();
+        for (;;) {
+            if (!::PeekNamedPipe(in, nullptr, 0, nullptr, &avail, nullptr)) return false;  // writer closed
+            if (avail > 0) break;
+            if (static_cast<int64_t>(::GetTickCount64() - start) >= timeout_ms) return true;
+            ::Sleep(5);
+        }
+    }
+    char buf[4096];
+    DWORD got = 0;
+    if (!::ReadFile(in, buf, sizeof buf, &got, nullptr) || got == 0) return false;
+    out.assign(buf, got);
+    return true;
+}
+
+inline void write_fd(int fd, const std::string& s) {
+    std::fflush(stdout);
+    HANDLE h = ::GetStdHandle(fd == 2 ? STD_ERROR_HANDLE : STD_OUTPUT_HANDLE);
+    const char* d = s.data();
+    size_t len = s.size();
+    while (len > 0) {
+        DWORD w = 0;
+        if (!::WriteFile(h, d, static_cast<DWORD>(len), &w, nullptr) || w == 0) return;
+        d += w;
+        len -= w;
+    }
+}
+
+// The folder holding the running executable, with `/` separators; "" on failure.
+inline std::string executable_dir() {
+    wchar_t buf[32768];
+    DWORD n = ::GetModuleFileNameW(nullptr, buf, sizeof(buf) / sizeof(buf[0]));
+    if (n == 0) return "";
+    std::string path = utf8(buf, n);
+    for (char& c : path) if (c == '\\') c = '/';
+    auto slash = path.rfind('/');
+    return slash == std::string::npos ? "" : path.substr(0, slash);
+}
+
+inline const char* os_name() { return "windows"; }
+
+#else
 inline bool has_tty() {
     if (capturing()) return false;
     int fd = open("/dev/tty", O_RDWR | O_NOCTTY);
@@ -270,5 +520,7 @@ inline const char* os_name() {
     return "linux";
 #endif
 }
+
+#endif
 
 }  // namespace flint_proc

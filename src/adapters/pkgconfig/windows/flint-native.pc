@@ -1,0 +1,9 @@
+# CFIRE-UPSTREAM: CF-031
+# See ../darwin/flint-native.pc. Windows port (windows-port branch only): the keychain
+# shim sits on Credential Manager (advapi32), sockets on Winsock.
+Name: flint-native
+Description: Native shims for Flint's keychain and process adapters (Windows)
+Version: 1
+Requires: libssh libcrypto zlib
+Cflags: -I${pcfiledir}/../../keychain/native -I${pcfiledir}/../../process/native -I${pcfiledir}/../../ssh/native -I${pcfiledir}/../../uievents/native -I${pcfiledir}/../../vault/native -I${pcfiledir}/../../fonts/native -I${pcfiledir}/../../ipc/native
+Libs: -ladvapi32 -lcrypt32 -lws2_32 -liphlpapi -lbcrypt
