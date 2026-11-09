@@ -119,8 +119,8 @@ else
 fi
 # Exit 1: the main run failed. Exit 3: only the vim run did, so a report can tell the
 # known vim freeze (ROADMAP) from a new failure. Either way the run is not a pass.
-if [[ " ${failed[*]} " == *" main "* ]]; then
-  echo "gui-e2e: FAILED: ${failed[*]}" >&2
+if [[ " ${failed[*]:-} " == *" main "* ]]; then
+  echo "gui-e2e: FAILED: ${failed[*]:-}" >&2
   exit 1
 fi
 if [[ "$only" == vim ]]; then
