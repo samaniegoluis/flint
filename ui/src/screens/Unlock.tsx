@@ -24,7 +24,7 @@ const LOCK_REASONS: Record<LockReason, string> = {
 // whose sessions keep running, and only the master password opens it again (D-042).
 export function Unlock({ locked = false }: { locked?: boolean }) {
   const { target, unlock, openVaultFile, os, info, fail, go, lockReason, unlockRequest, dismissUnlockRequest, closeVault } = useApp();
-  const { tabs } = useSessions();
+  const { panes: tabs } = useSessions();
   const [pw, setPw] = useState('');
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);

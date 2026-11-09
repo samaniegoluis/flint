@@ -80,9 +80,12 @@
     passed++;
     return log('ok   ' + what);
   }
+  // The active tab's focused pane (milestone 20: a tab holds up to four).
+  const activeRegion = () => qa('.pane > div').find((d) => d.style.display !== 'none');
+  const activePane = () => { const r = activeRegion(); return r?.querySelector('.spane.focus') ?? r?.querySelector('.spane') ?? r; };
   const activeTerm = () => {
     const tab = q('.tab.on');
-    const region = qa('.pane > div').find((d) => d.style.display !== 'none');
+    const region = activePane();
     const id = region?.querySelector('[data-tab]')?.getAttribute('data-tab');
     return tab && id ? window.__flintE2E.terms[id] : null;
   };
@@ -95,7 +98,7 @@
     return lines.join('\n');
   };
   async function type(data) {
-    const ta = await waitFor(() => qa('.pane > div').find((d) => d.style.display !== 'none')?.querySelector('textarea'), 'terminal textarea');
+    const ta = await waitFor(() => activePane()?.querySelector('textarea'), 'terminal textarea');
     ta.focus();
     const dt = new DataTransfer();
     dt.setData('text/plain', data);
@@ -105,7 +108,7 @@
   async function enter() {
     // A paste of "\r" is turned into Enter by xterm's bracketed-paste-free path.
     const t = activeTerm();
-    const ta = qa('.pane > div').find((d) => d.style.display !== 'none').querySelector('textarea');
+    const ta = activePane().querySelector('textarea');
     ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
     await sleep(50);
     return t;
@@ -208,7 +211,7 @@
       // A reply that throws inside xterm.js stops its write queue: the editor still
       // gets every key but the screen never changes again (vite.config.ts, target).
       const key = (k, code, keyCode) => {
-        const ta = qa('.pane > div').find((d) => d.style.display !== 'none').querySelector('textarea');
+        const ta = activePane().querySelector('textarea');
         ta.dispatchEvent(new KeyboardEvent('keydown', { key: k, code, keyCode, bubbles: true, cancelable: true }));
       };
       const keys = async (text) => {
@@ -266,7 +269,7 @@
     await sleep(300);
     {
       const t = activeTerm();
-      const ta = qa('.pane > div').find((d) => d.style.display !== 'none').querySelector('textarea');
+      const ta = activePane().querySelector('textarea');
       t.input("it'", true); // what xterm sends for the committed composition
       ta.dispatchEvent(new CompositionEvent('compositionend', { data: "'", bubbles: true }));
       ta.dispatchEvent(new KeyboardEvent('keydown', { key: "'s", code: 'KeyS', keyCode: 222, bubbles: true, cancelable: true }));
@@ -549,6 +552,121 @@
       await waitFor(() => document.querySelector('.app')?.dataset.view === 'hosts', 'back to the Hosts view');
     }
 
+    await setStep('split panes');
+    {
+      const mac = (await window.backend.app_info({})).os === 'mac';
+      // App chords where the terminal has the focus: ⌘ is Ctrl+Shift on Linux, ⇧⌘ is
+      // Ctrl+Alt+Shift and ⌥⌘ is Ctrl+Alt.
+      const send = (code, layer = '') => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', {
+        key: '', code, bubbles: true, cancelable: true,
+        ...(mac ? { metaKey: true, shiftKey: layer === 'shift', altKey: layer === 'alt' }
+          : { ctrlKey: true, shiftKey: layer !== 'alt', altKey: layer !== '' }),
+      }));
+      const panes = () => qa('.spane', activeRegion());
+      const grid = () => activeRegion()?.querySelector('.splits');
+      const sessionCount = () => Number((q('.statusbar')?.textContent.match(/(\d+) sessions?/) ?? [0, 0])[1]);
+      const paneTerm = (el) => window.__flintE2E.terms[el.querySelector('[data-tab]').getAttribute('data-tab')];
+      const termOf = (el) => { const b = paneTerm(el).buffer.active; const out = []; for (let i = 0; i < b.length; i++) out.push(b.getLine(i)?.translateToString(true) ?? ''); return out.join('\n'); };
+      await click('.tab', 'local');
+      await waitFor(() => toolbarIs('ready'), 'the local tab');
+      const tabsBefore = qa('.tab').length;
+      const sessionsBefore = sessionCount();
+      (await waitFor(() => activePane()?.querySelector('textarea'), 'terminal')).focus();
+      send('KeyD', 'alt');
+      await waitFor(() => qa('.tab').length === tabsBefore + 1 && toolbarIs('ready'), 'a duplicated tab', 30000);
+      await check(q('.tab.on')?.textContent.includes('local'), 'Duplicate moved to ⌥⌘D (Ctrl+Alt+D) and opens a new tab of the host');
+      await check(q('[data-split-button]') && !q('[data-split-button]').getAttribute('aria-disabled'), "the toolbar's Split button is on");
+
+      activePane().querySelector('textarea').focus();
+      send('KeyD');
+      await waitFor(() => panes().length === 2, 'a second pane');
+      await check(grid().classList.contains('multi') && grid().style.gridTemplateColumns.split('fr').length - 1 === 2 && qa('.tab').length === tabsBefore + 1,
+        '⌘D (Ctrl+Shift+D) splits the tab right, in the same tab');
+      await check(panes()[1].classList.contains('focus') && q('[data-pane-badge]')?.textContent === 'pane 2 of 2' && /2/.test(q('.tab.on .tab-split')?.textContent ?? ''),
+        'the new pane has the focus, the toolbar says "pane 2 of 2" and the tab shows two panes');
+      await waitFor(() => toolbarIs('ready'), 'the second pane connected', 30000);
+      await runInTerminal('echo pane-two-$$-$((6*7))', 'pane-two-');
+      const pid = await waitFor(() => (termText().match(/pane-two-(\d+)-42/) ?? [])[1], "pane two's shell pid");
+      await check(!termOf(panes()[0]).includes('pane-two-'), 'each pane is its own session with its own scrollback');
+      await check(getComputedStyle(panes()[0].querySelector('[data-tab]')).opacity === '0.6' && getComputedStyle(panes()[1].querySelector('[data-tab]')).opacity === '1',
+        "the other pane's output is dimmed to 60 %");
+      await check(sessionCount() === sessionsBefore + 2, 'the status bar counts each pane as a session');
+
+      send('KeyD', 'shift');
+      await waitFor(() => panes().length === 3, 'a third pane');
+      await check(panes()[0].style.gridRow.includes('span 2'), '⇧⌘D with three panes makes one large + two small');
+      await waitFor(() => toolbarIs('ready'), 'the third pane connected', 30000);
+
+      // The palette's ⇧⌘↵ opens a host in a new pane (18e).
+      send('KeyK');
+      await fill('.palette input', 'inner');
+      await waitFor(() => q('[data-palette-hints]')?.textContent.includes('new pane'), 'the new pane hint');
+      await check(byText('[role="option"]', 'in a new pane'), 'the palette offers "Open inner in a new pane"');
+      q('.palette input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true, metaKey: mac, ctrlKey: !mac, shiftKey: true }));
+      await waitFor(() => panes().length === 4, 'a fourth pane');
+      await check(grid().style.gridTemplateRows.split('fr').length - 1 === 2 && panes()[3].textContent.includes('inner'), "⇧⌘↵ in the palette opens the host in a new pane; four make a grid");
+      await waitFor(() => toolbarIs('ready'), 'inner connected in its pane', 30000);
+      activePane().querySelector('textarea').focus();
+      send('KeyD');
+      await sleep(200);
+      await check(panes().length === 4 && hasText('A tab holds up to 4 panes'), 'a fifth pane is refused with a note');
+
+      send('Digit1', 'alt');
+      await waitFor(() => grid().style.gridTemplateColumns.split('fr').length - 1 === 4, 'side by side');
+      await check(true, '⌥⌘1 (Ctrl+Alt+1) lays the four panes side by side');
+      send('Digit3', 'alt');
+      await waitFor(() => grid().style.gridTemplateRows.split('fr').length - 1 === 2, 'the grid again');
+      await check(true, '⌥⌘3 (Ctrl+Alt+3) puts them back in a grid');
+
+      send('BracketLeft');
+      await waitFor(() => panes()[2].classList.contains('focus'), 'focus on pane 3');
+      send('BracketRight');
+      send('BracketRight');
+      await waitFor(() => panes()[0].classList.contains('focus'), 'focus wraps to pane 1');
+      await check(q('[data-pane-badge]')?.textContent === 'pane 1 of 4', '⌘[ and ⌘] move the focus between panes, wrapping around');
+      panes()[3].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      await waitFor(() => panes()[3].classList.contains('focus'), 'a click focuses pane 4');
+      await check(q('.toolbar .mono.strong')?.textContent === 'inner', 'a click focuses a pane, and the toolbar follows it');
+
+      await click('[data-toolbar-files]');
+      await waitFor(() => q('[data-files-host]')?.textContent === 'inner', 'Files on inner');
+      await check(q('[data-files-pane-no]')?.textContent === '4', "the Files view follows the focused pane and carries its number (18g)");
+      panes()[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      await waitFor(() => q('[data-files-host]')?.textContent === 'local' && q('[data-files-pane-no]')?.textContent === '2', 'Files follows to pane 2');
+      await check(true, 'focusing another pane moves the Files view to it');
+      await click('[data-toolbar-files]');
+      await click('.rail-btn', 'Hosts');
+
+      const div = q('.sp-div.cols', activeRegion());
+      const before = grid().style.gridTemplateColumns;
+      div.focus();
+      div.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+      await waitFor(() => grid().style.gridTemplateColumns !== before, 'the columns resized');
+      await check(/0\.55fr/.test(grid().style.gridTemplateColumns), 'a divider resizes the panes beside it');
+      div.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await waitFor(() => grid().style.gridTemplateColumns === before, 'evened out');
+      await check(true, 'a double-click on a divider evens the panes out');
+
+      // Close pane 2 with its ×: only its session hangs up.
+      panes()[1].querySelector('.sp-x').click();
+      await waitFor(() => panes().length === 3, 'three panes');
+      await check(sessionCount() === sessionsBefore + 3, 'closing a pane hangs up its session');
+      panes()[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      await waitFor(() => panes()[0].classList.contains('focus'), 'pane 1 focused');
+      // A process that has exited but is not reaped yet still answers kill -0: look at its state.
+      await runInTerminal(`for i in $(seq 1 30); do s=$(ps -o stat= -p ${pid} 2>/dev/null); case "$s" in ''|Z*) break;; esac; sleep 0.5; done; s=$(ps -o stat= -p ${pid} 2>/dev/null); case "$s" in ''|Z*) echo pane-gone-$((40+2));; *) echo pane-still-$((40+1)) "[$s]"; ps -o pid,ppid,stat,args -p ${pid};; esac`, 'pane-');
+      await waitFor(() => /pane-(still-41|gone-42)/.test(termText()), 'the check on the closed pane', 25000);
+      await check(termText().includes('pane-gone-42'), "the closed pane's shell ended on the host; the other panes keep working" + (termText().includes('pane-gone-42') ? '' : ' — terminal: ' + termText().split('\n').filter((l) => l.trim()).slice(-4).join(' | ')));
+      send('KeyW');
+      await waitFor(() => panes().length === 2, 'two panes');
+      await check(sessionCount() === sessionsBefore + 2, '⌘W closes the focused pane');
+      await click('.tab.on .tx');
+      await waitFor(() => qa('.tab').length === tabsBefore, 'the split tab closed');
+      await check(sessionCount() === sessionsBefore, "closing the tab hangs up every pane's session");
+      await click('.tab', 'local');
+      await waitFor(() => toolbarIs('ready'), 'back on the local tab');
+    }
+
     await setStep('changed host key');
     await click('.side-head .icon-btn[aria-label^="New host"]');
     await fill('#ha', 'moved');
@@ -717,14 +835,14 @@
     cmd('i', 'KeyI');
     await escClosesEditor('from the palette');
     if (qa('.tab').length) {
-      (await waitFor(() => qa('.pane > div').find((d) => d.style.display !== 'none')?.querySelector('textarea'), 'terminal textarea')).focus();
+      (await waitFor(() => activePane()?.querySelector('textarea'), 'terminal textarea')).focus();
       cmd('i', 'KeyI');
       await escClosesEditor('from the terminal');
       // In the real app the terminal took the focus back from the editor, and xterm
       // swallowed Esc (owner walkthrough).
       cmd('i', 'KeyI');
       await waitFor(editorOpen, 'the host editor again');
-      const ta = qa('.pane > div').find((d) => d.style.display !== 'none').querySelector('textarea');
+      const ta = activePane().querySelector('textarea');
       ta.focus();
       await sleep(50);
       await check(editorOpen().contains(document.activeElement), 'a dialog takes the focus back from the terminal behind it');

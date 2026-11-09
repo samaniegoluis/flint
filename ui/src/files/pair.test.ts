@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { keyTab, livePair, paneKey, type Pair } from './pair';
 import { folderLabel } from './FileList';
-import type { Tab } from '../sessions/store';
+import type { Pane } from '../sessions/store';
 
-const tab = (id: string, p: Partial<Tab>): Tab => ({
-  id, alias: 'db', session: 's-' + id, status: 'ready', prompt: null, changedKey: null, end: null, connectedAt: 1, noCommand: false, cwd: '', ...p,
+const tab = (id: string, p: Partial<Pane>): Pane => ({
+  id, tab: 't-' + id, alias: 'db', session: 's-' + id, status: 'ready', prompt: null, changedKey: null, end: null, connectedAt: 1, noCommand: false, cwd: '', ...p,
 });
 const pair = (p: Partial<Pair>): Pair => ({
   tabId: 't1', alias: 'db', session: 's-old', own: false, otherTab: 't2', status: 'ready', prompt: null, changedKey: null, end: null, hidden: false, ...p,

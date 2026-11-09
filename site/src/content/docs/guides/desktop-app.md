@@ -32,8 +32,8 @@ menu bar icon, ⌘Q or the command palette quits it.
 |---|---|
 | Title bar | The vault and the active session; the command palette button |
 | Activity bar (left) | **Hosts** and **Files** (both in the sidebar), **Keys**, **Credentials**, and **Settings** at the bottom |
-| Sidebar | **Hosts**: the vault button (switch vaults), a filter, and your hosts in their groups. **Files**: the active tab's host, over SFTP ([The Files view](/guides/files-view/)) |
-| Main area | One tab per session, the session toolbar and the terminal |
+| Sidebar | **Hosts**: the vault button (switch vaults), a filter, and your hosts in their groups. **Files**: the focused pane's host, over SFTP ([The Files view](/guides/files-view/)) |
+| Main area | The tabs, the session toolbar and the terminals: up to four panes in a tab ([Split panes](#split-panes)) |
 | Status bar | Lock state, the number of open sessions, **Lock**, and **Agents: N** while programs you approved may use the vault (it opens Settings → Access, and shows **N waiting** while a request waits and Flint is not in front) |
 
 Click **Hosts** again (or press <kbd>⌘B</kbd>) to hide the sidebar and give the terminal
@@ -132,8 +132,37 @@ connection only; save it in the host editor to skip the prompt next time.
 
 The terminal and its scrollback stay. A card says why the session ended (the shell's
 exit status, a failed login, a lost connection) with **Reconnect** (<kbd>⌘R</kbd>), which
-keeps the scrollback. **Duplicate** (<kbd>⌘D</kbd>) opens another session to the same
-host.
+keeps the scrollback. **Duplicate** (<kbd>⌥⌘D</kbd>, <kbd>Ctrl+Alt+D</kbd> on Linux)
+opens another session to the same host in a new tab.
+
+### Split panes
+
+A tab holds up to four panes, each its own SSH session with its own login, scrollback,
+prompts and **Reconnect**. One pane losing its connection leaves the others alone.
+
+- **Split right** (<kbd>⌘D</kbd>) and **Split down** (<kbd>⇧⌘D</kbd>) open a new pane on
+  the focused pane's host, beside it. On Linux they are <kbd>Ctrl+Shift+D</kbd> and
+  <kbd>Ctrl+Alt+Shift+D</kbd>. The session toolbar's **Split** button has the same
+  actions, the layouts and **Close pane**.
+- To open *another* host in a new pane, search for it in the command palette and press
+  <kbd>⇧⌘↵</kbd>, or pick **Open <host> in a new pane**.
+- Two panes sit side by side or stacked, as you split them; three become one large and
+  two small, four a 2 × 2 grid. Change the layout from the **Split** menu or with
+  <kbd>⌥⌘1</kbd> to <kbd>⌥⌘4</kbd> (<kbd>Ctrl+Alt+1</kbd> to <kbd>4</kbd> on Linux):
+  side by side, stacked, grid, one large + two small.
+- Drag the line between two panes to resize them; double-click it to even them out, or
+  focus it with <kbd>Tab</kbd> and use the arrow keys. New panes and new layouts start
+  even.
+
+The **focused pane** has an ember border and a tinted header, and the others' output is
+dimmed. Click a pane to focus it, or press <kbd>⌘]</kbd> and <kbd>⌘[</kbd> for the next
+and previous one (<kbd>Ctrl+Shift+]</kbd> and <kbd>[</kbd> on Linux). The tab's title,
+the session toolbar (with **pane 2 of 4**), **Reconnect**, the title bar and the
+[Files view](/guides/files-view/) follow the focused pane.
+
+<kbd>⌘W</kbd> closes the focused pane and hangs up its session; the last pane closes the
+tab. The tab's **×** closes the tab and every pane in it. A prompt that opens in a pane
+without the focus shows a note naming its pane. Layouts are not kept when Flint quits.
 
 ### The terminal
 
@@ -164,8 +193,10 @@ queries from a full-screen program.
 searches hosts only, and <kbd>↵</kbd> takes you to the host's open tab or connects it if it
 has none. <kbd>⌘T</kbd> (**New session**) searches hosts too, but <kbd>↵</kbd> always opens
 a new tab, so pressing it twice on the same host gives you two sessions. In the other
-palettes <kbd>⌘↵</kbd> opens a host in a new tab. <kbd>⌘I</kbd> edits the host, and
-<kbd>Tab</kbd> moves between result groups.
+palettes <kbd>⌘↵</kbd> opens a host in a new tab. With a tab open, <kbd>⇧⌘↵</kbd> opens
+the host in a new pane of that tab ([Split panes](#split-panes)), and while you search the
+best matches are also offered as **Open <host> in a new pane**. <kbd>⌘I</kbd> edits the
+host, and <kbd>Tab</kbd> moves between result groups.
 
 When the search finds a host with an [initial command](/guides/hosts/#run-a-command-on-connect),
 a second row, **Connect without command**, opens it in a new tab with a plain shell, as

@@ -1,15 +1,18 @@
-// The main area while the Hosts view is on: tabs, the session toolbar and one
-// terminal per tab. With no tab open it shows the "No open sessions" start page.
+// The main area while the Hosts view is on: tabs, the session toolbar and each tab's
+// panes (one to four terminals, milestone 20). The toolbar, the tab's title and the
+// Files view follow the focused pane. With no tab open it shows the "No open
+// sessions" start page.
 
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useApp } from '../state/app';
 import { chordLabel } from '../lib/keymap';
 import { colorStyle } from '../lib/colors';
 import { Icon, Logo } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
+import { MAX_PANES } from '../lib/layout';
 import { sessions, statusLabel, useSessions } from './store';
-import { TerminalView } from './TerminalView';
-import { SessionCard } from './SessionCards';
+import { SplitView } from './SplitView';
+import { LayoutIcon, SplitMenu } from './SplitMenu';
 
 // Stays mounted while another view (Keys, Credentials, Settings) is shown, with
 // `shown` false: unmounting it disposed every xterm.js terminal and its scrollback.
@@ -24,10 +27,15 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onConnect,
   onConnect: (alias: string, newTab: boolean) => void;
 }) {
   const { os, catalog } = useApp();
-  const { tabs, active } = useSessions();
+  const { tabs, panes, active } = useSessions();
   const tablist = useRef<HTMLDivElement>(null);
-  const tab = tabs.find((t) => t.id === active);
+  const [menu, setMenu] = useState(false);
+  const activeTab = tabs.find((t) => t.id === active);
+  // The focused pane of the active tab: the toolbar speaks for it.
+  const tab = panes.find((p) => p.id === activeTab?.focus);
   const host = catalog.hosts.find((h) => h.alias === tab?.alias);
+  const paneCount = activeTab?.panes.length ?? 0;
+  const paneNo = activeTab ? activeTab.panes.indexOf(activeTab.focus) + 1 : 0;
 
   const firstHosts = useMemo(() => [...catalog.hosts].sort((a, b) => a.alias.localeCompare(b.alias)).slice(0, 6), [catalog.hosts]);
 
@@ -87,43 +95,55 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onConnect,
     <section className="main" aria-label="Sessions" hidden={!shown}>
       <div className="tabbar" role="tablist" aria-label="Open sessions" ref={tablist} onKeyDown={onTabKey}>
         {tabs.map((t, i) => {
-          const st = statusLabel(t);
+          // A tab is titled by its focused pane; a prompt in another pane shows too.
+          const fp = panes.find((p) => p.id === t.focus);
+          if (!fp) return null;
+          const waiting = panes.find((p) => p.tab === t.id && p.id !== t.focus && p.status === 'prompt');
+          const st = waiting && fp.status === 'ready' ? statusLabel(waiting) : statusLabel(fp);
           const on = t.id === active;
+          const n = t.panes.length;
           return (
             <button key={t.id} className={'tab' + (on ? ' on' : '')} role="tab" aria-selected={on} tabIndex={on ? 0 : -1}
+              aria-label={n > 1 ? `${fp.alias}, ${n} panes` : undefined}
               onClick={() => sessions.activate(t.id)}
-              onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); sessions.close(t.id); } }}>
-              <span className={'st ' + st.dot} role="img" aria-label={t.status} />
-              {t.alias}
+              onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); sessions.closeTab(t.id); } }}>
+              <span className={'st ' + st.dot} role="img" aria-label={fp.status} />
+              {fp.alias}
+              {n > 1 && <span className="tab-split" title={`${n} panes`}><LayoutIcon layout={t.layout} small />{n}</span>}
               {st.meta && <span className={'tab-meta ' + st.metaClass}>{st.meta}</span>}
               {on ? (
-                <span className="tx" role="button" aria-label={`Close tab (${chordLabel('closeTab', os)})`} onClick={(e) => { e.stopPropagation(); sessions.close(t.id); }}><Icon name="x" size="xs" /></span>
+                <span className="tx" role="button" aria-label={n > 1 ? 'Close tab and its panes' : `Close tab (${chordLabel('closeTab', os)})`} onClick={(e) => { e.stopPropagation(); sessions.closeTab(t.id); }}><Icon name="x" size="xs" /></span>
               ) : (i < 9 && <span className="kbd">{chordLabel(('tab' + (i + 1)) as 'tab1', os)}</span>)}
             </button>
           );
         })}
         <button className="tab-add" aria-label={`New session (${chordLabel('newSession', os)})`} onClick={() => onPalette(true)}><Icon name="plus" size="sm" /><Kbd action="newSession" /></button>
       </div>
-      {tab && s && (
+      {tab && s && activeTab && (
         <div className="toolbar">
           <span className={'st ' + s.dot} role="img" aria-label={tab.status} />
           <span className="mono strong">{tab.alias}</span>
           {host?.user && <><span className="dotsep">·</span><span className="mono">{host.user}</span></>}
           {!ready && s.meta && <><span className="dotsep">·</span><span className={s.metaClass}>{s.meta}</span></>}
-          {host && <span className="mono faint trunc" style={{ marginLeft: 'var(--sp-2)' }}>{host.hostname}:{host.port}{host.jump ? ` via ${host.jump}` : ''}</span>}
+          {paneCount > 1 && <span className="badge accent" data-pane-badge style={{ marginLeft: 'var(--sp-2)' }}>pane {paneNo} of {paneCount}</span>}
+          {host && <span className="mono faint trunc tb-host" style={{ marginLeft: 'var(--sp-2)' }}>{host.hostname}:{host.port}{host.jump ? ` via ${host.jump}` : ''}</span>}
           <span className="grow" />
-          <button className="tbtn" onClick={() => sessions.reconnect(tab.id)}><Icon name="reconnect" size="sm" />Reconnect<Kbd action="reconnect" /></button>
-          <button className="tbtn" onClick={() => onConnect(tab.alias, true)}><Icon name="dup" size="sm" />Duplicate<Kbd action="duplicate" /></button>
+          <button className="tbtn" title={`Reconnect (${chordLabel('reconnect', os)})`} onClick={() => sessions.reconnect(tab.id)}><Icon name="reconnect" size="sm" /><span className="tb-l">Reconnect</span><Kbd action="reconnect" /></button>
+          <button className="tbtn" title={`Duplicate (${chordLabel('duplicate', os)})`} onClick={() => onConnect(tab.alias, true)}><Icon name="dup" size="sm" /><span className="tb-l">Duplicate</span><Kbd action="duplicate" /></button>
           <span className="sep" />
-          <button className={'tbtn' + (filesOn ? ' on' : '')} aria-pressed={filesOn} data-toolbar-files onClick={onFiles} title={`Files (${chordLabel('viewFiles', os)})`}><Icon name="files" size="sm" />Files<Kbd action="viewFiles" /></button>
-          <button className="tbtn is-disabled" aria-disabled="true" title="Split — coming soon"><Icon name="split" size="sm" />Split</button>
+          <button className={'tbtn' + (filesOn ? ' on' : '')} aria-pressed={filesOn} data-toolbar-files onClick={onFiles} title={`Files (${chordLabel('viewFiles', os)})`}><Icon name="files" size="sm" /><span className="tb-l">Files</span><Kbd action="viewFiles" /></button>
+          <span style={{ position: 'relative', display: 'flex' }}>
+            <button className={'tbtn' + (menu ? ' on' : '')} data-split-button aria-haspopup="menu" aria-expanded={menu}
+              title={paneCount >= MAX_PANES ? `Split · this tab has ${MAX_PANES} panes` : `Split (${chordLabel('splitRight', os)})`}
+              onClick={() => setMenu((m) => !m)}><Icon name="split" size="sm" /><span className="tb-l">Split</span></button>
+            {menu && <SplitMenu tab={activeTab} onClose={() => setMenu(false)} />}
+          </span>
         </div>
       )}
       <div className="pane">
         {tabs.map((t) => (
-          <div key={t.id} style={{ position: 'absolute', inset: 0, display: t.id === active ? 'block' : 'none' }} role="region" aria-label={`Terminal — ${t.alias}`}>
-            <TerminalView tabId={t.id} active={shown && t.id === active} focus={shown && t.id === active && t.status === 'ready'} fontSize={fontSize} />
-            <SessionCard tab={t} active={t.id === active} onEditHost={onEditHost} />
+          <div key={t.id} style={{ position: 'absolute', inset: 0, display: t.id === active ? 'block' : 'none' }}>
+            <SplitView tab={t} panes={panes.filter((p) => p.tab === t.id)} shown={shown} active={t.id === active} fontSize={fontSize} onEditHost={onEditHost} />
           </div>
         ))}
       </div>
