@@ -262,13 +262,22 @@ inline bool write_all(int fd, const char* data, size_t len) {
     return true;
 }
 
+// Moves bytes both ways until either end closes. It wakes when the next session
+// writes (`local_fd`) or when the outer session's socket has data, and then drains
+// everything the channel holds: waiting out the poll between two reads made a
+// download through a jump host crawl at one small read per 5 ms (milestone 18).
 inline void pump(Tunnel* t) {
     char buf[32768];
+    int outer_fd = -1;
+    {
+        std::lock_guard<std::mutex> g(*t->outer_lock);
+        outer_fd = ssh_get_fd(t->outer);
+    }
     while (!t->stop.load()) {
-        pollfd p{t->local_fd, POLLIN, 0};
-        int pr = ::poll(&p, 1, 5);
+        pollfd p[2] = {{t->local_fd, POLLIN, 0}, {outer_fd, POLLIN, 0}};
+        int pr = ::poll(p, outer_fd >= 0 ? 2 : 1, 5);
         if (pr < 0 && errno != EINTR) break;
-        if (pr > 0 && (p.revents & (POLLIN | POLLHUP | POLLERR))) {
+        if (pr > 0 && (p[0].revents & (POLLIN | POLLHUP | POLLERR))) {
             ssize_t n = ::read(t->local_fd, buf, sizeof buf);
             if (n <= 0) break;
             std::lock_guard<std::mutex> g(*t->outer_lock);
@@ -281,15 +290,20 @@ inline void pump(Tunnel* t) {
             }
             if (!ok) break;
         }
-        int n = 0;
-        bool eof = false;
-        {
-            std::lock_guard<std::mutex> g(*t->outer_lock);
-            n = ssh_channel_read_nonblocking(t->channel, buf, sizeof buf, 0);
-            eof = n == 0 && (ssh_channel_is_eof(t->channel) || ssh_channel_is_closed(t->channel));
+        bool done = false;
+        for (;;) {
+            int n = 0;
+            bool eof = false;
+            {
+                std::lock_guard<std::mutex> g(*t->outer_lock);
+                n = ssh_channel_read_nonblocking(t->channel, buf, sizeof buf, 0);
+                eof = n == 0 && (ssh_channel_is_eof(t->channel) || ssh_channel_is_closed(t->channel));
+            }
+            if (n < 0 || eof) { done = true; break; }
+            if (n == 0) break;
+            if (!write_all(t->local_fd, buf, static_cast<size_t>(n))) { done = true; break; }
         }
-        if (n < 0 || eof) break;
-        if (n > 0 && !write_all(t->local_fd, buf, static_cast<size_t>(n))) break;
+        if (done) break;
     }
     ::shutdown(t->local_fd, SHUT_RDWR);
 }
