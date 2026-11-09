@@ -12,18 +12,30 @@ Security.framework.
 
 ## 1. Install cfire
 
-Flint is built against cfire commit `43431f2`. cfire's installer takes the commit in
-`CFIRE_VERSION`:
+Flint is built against cfire commit `c5b1d4b` (cfire 0.10.0). cfire's installer takes the
+commit in `CFIRE_VERSION`:
 
 ```sh
 rm -rf ~/.cfire/runtime     # the installer copies over it and leaves stale headers
-curl -fsSL https://raw.githubusercontent.com/gsandoval/cfire/43431f2/docs/install.sh \
-  | CFIRE_VERSION=43431f2 sh
-cfire --version     # cfire 0.9.5 (43431f2, …)
+curl -fsSL https://raw.githubusercontent.com/gsandoval/cfire/c5b1d4b/docs/install.sh \
+  | CFIRE_VERSION=c5b1d4b sh
+cfire --version     # cfire 0.10.0 (c5b1d4b, …)
 ```
 
 It installs `cfire` into `~/.local/bin` and its runtime into `~/.cfire/runtime`, then runs
 `cfire doctor`.
+
+**On macOS, remove the runtime's version stamp** after installing:
+
+```sh
+rm ~/.cfire/runtime/VERSION
+```
+
+The installer writes it into the runtime folder, which is on the compiler's include path,
+and macOS file systems ignore case: `#include <version>` in the C++ standard library then
+reads that file and every build fails (`.cfire/runtime/version:1:1: error: expected
+unqualified-id`). cfire works without it; `cfire doctor` reads the version from the
+runtime's headers instead.
 
 If an older cfire was installed from a checkout, its runtime in `~/.local/share/cfire`
 takes precedence over the new one, and the build fails in clang. `cfire doctor` names the
