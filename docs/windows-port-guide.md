@@ -28,6 +28,12 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
   installed app: splitting, dragging dividers and the glyphs after a split look right;
   the Ctrl+Alt layouts work on the Spanish layout; on US-International Ctrl+Alt types ¡
   (expected).
+- **Merged `main` again (2026-11-09):** milestone 21 (v5 debts, `6f82186`) and spec v6,
+  no conflicts, same cfire `c5b1d4b`. `windows/gui-e2e.sh` now runs the vim step in a run
+  of its own, as `scripts/gui-e2e.sh` does (`FLINT_E2E_VIM=1`, `FLINT_E2E_ONLY=vim`; exit 3
+  when only vim fails). gui-e2e **180 pass**, the narrow-window checks included; serve-e2e
+  51/51. Milestone 24 removes the Tether import: then `windows/gui-e2e.sh` drops the
+  `.tether` fixture and the key in `C:\tmp`.
 - **Owner checks done:** Win+L with the app unlocked locks the vault: after signing back
   in to Windows, Flint asks for the master password. On the owner's own vault in the
   installed app: unlocking with "Remember on this computer" stores a Generic, local-machine
@@ -132,13 +138,13 @@ otherwise.
 
 | Check | Result |
 |---|---|
-| `windows/build-gui.sh` | CLI, app and page build with no change beyond the merge |
+| `windows/build-gui.sh` | CLI, app and page build with no change beyond the merge (milestones 20 and 21) |
 | `windows/test-suites.sh` | **10 suites, 1071 tests pass** on Windows: config 89, crypto 89, fonts 81, ipc 93, keychain 83, process 89, uievents 95, vault 114, application 193, clicmd 145. `ssh` not run (needs sshd on `127.0.0.1` from Windows). First run: ipc, vault and clicmd failed only because "/tmp" from a WSL folder is the WSL share; process had two POSIX-only asserts |
 | `windows/cli-smoke.sh` | 49/49 |
-| `windows/gui-e2e.sh` | **178 pass** after merging milestone 20 (the 25-check split-panes step included). Before that, **155 pass**: 138 + main's milestones 18-19 (two panes, copy between servers, a host key asked inside the pane, Skip) + 2 for the Windows copy and paste keys (none reaches the remote; Ctrl+C over a selection clears it). Skipped as before: vim, the focus trap. A real paste from the Windows clipboard into an SSH session: owner, with Shift+Insert, Ctrl+Shift+V and Ctrl+V, and Ctrl+C over a selection copies without interrupting the remote while Ctrl+C with none still interrupts (2026-11-09). Ctrl+Insert not checked by a person |
+| `windows/gui-e2e.sh` | **180 pass** after merging milestone 21 (+2: the Files and Hosts views drawn whole over the terminal in a narrow window, on WebView2). The vim run on its own (`FLINT_E2E_ONLY=vim`) fails as before, now by name: `timed out waiting for "vim-42"`, exit 3. **178 pass** after merging milestone 20 (the 25-check split-panes step included). Before that, **155 pass**: 138 + main's milestones 18-19 (two panes, copy between servers, a host key asked inside the pane, Skip) + 2 for the Windows copy and paste keys (none reaches the remote; Ctrl+C over a selection clears it). Skipped as before: vim, the focus trap. A real paste from the Windows clipboard into an SSH session: owner, with Shift+Insert, Ctrl+Shift+V and Ctrl+V, and Ctrl+C over a selection copies without interrupting the remote while Ctrl+C with none still interrupts (2026-11-09). Ctrl+Insert not checked by a person |
 | `windows/serve-e2e.sh` | **51/51**, twice 49/49 before the new check: `flint cp` between two hosts through the app (milestone 18) |
 | `windows/run-probes.sh` | green |
-| Linux regression | The port's copy and `origin/main`'s, side by side, same cfire, `127.0.0.1` → `127.0.0.2` in the copies only: **the same results**. Suites: keychain (no Secret Service in WSL) and uievents (no GTK) fail on both, the rest pass; the port's fonts test first failed to compile on Linux (a `{names}` slice in a message, fine on libc++, not on GCC 13's libstdc++; fixed, and noted for cfire). `cli-e2e`: **338/346 on both**, the same 8 `localhost` checks. `cli-e2e` now builds the GUI target too (`cfire build`), which this WSL cannot (no GTK): the copies used `cfire build flint` |
+| Linux regression | Not re-run after milestone 21: main brought only GUI and gui-e2e changes, which this WSL cannot build (no GTK), and the port's Linux-testable code did not change. Before: the port's copy and `origin/main`'s, side by side, same cfire, `127.0.0.1` → `127.0.0.2` in the copies only: **the same results**. Suites: keychain (no Secret Service in WSL) and uievents (no GTK) fail on both, the rest pass; the port's fonts test first failed to compile on Linux (a `{names}` slice in a message, fine on libc++, not on GCC 13's libstdc++; fixed, and noted for cfire). `cli-e2e`: **338/346 on both**, the same 8 `localhost` checks. `cli-e2e` now builds the GUI target too (`cfire build`), which this WSL cannot (no GTK): the copies used `cfire build flint` |
 
 ### Before the merge (`windows-port`, cfire `24a43f6` + patches)
 

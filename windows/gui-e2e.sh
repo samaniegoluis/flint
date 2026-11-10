@@ -13,13 +13,20 @@
 # except for substitutions made on the fly: 127.0.0.1 → 127.0.0.2, the jump host's
 # `localhost` → 127.0.0.3, the local side of the download (the sshd is not this
 # machine) and Windows paths.
-# The vim step is off as on Linux (ROADMAP: synthetic keys never reach :wq; here too,
-# 2026-11-09); FLINT_E2E_VIM=1 runs it. Run outside any sandbox (it listens on sockets).
+# The vim step runs in a run of its own after the main one, as in scripts/gui-e2e.sh. It
+# is off as on Linux (ROADMAP: synthetic keys never reach :wq; here too, 2026-11-09);
+# FLINT_E2E_VIM=1 adds the vim run, FLINT_E2E_ONLY=vim runs only it. Exit status: 0 both
+# passed, 1 the main run failed, 3 only the vim run failed.
+# Run outside any sandbox (it listens on sockets).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 app_dir="$root/build/windows/Flint"
 [[ -f "$app_dir/flint-app.exe" ]] || { echo "gui-e2e: build it first: windows/build-gui.sh" >&2; exit 1; }
+run_vim="${FLINT_E2E_VIM:-0}"
+only="${FLINT_E2E_ONLY:-}"
+[[ -z "$only" || "$only" == vim ]] || { echo "gui-e2e: FLINT_E2E_ONLY takes only 'vim'" >&2; exit 2; }
+[[ "$only" != vim ]] || run_vim=1
 
 P1="${FLINT_WIN_E2E_PORT:-2232}"; P2=$((P1 + 1)); P3=$((P1 + 2))
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-win-e2e.XXXXXX")"
@@ -113,13 +120,16 @@ made_c_tmp=""
 mkdir -p /mnt/c/tmp/flint-tether-fixture
 cp "$root/src/adapters/vault/testdata/tether-legacy-ed25519" /mnt/c/tmp/flint-tether-fixture/id_legacy
 
-E2E_KEY="$tmp/user_ed25519" E2E_W="$W" P1="$P1" P2="$P2" P3="$P3" E2E_VIM="${FLINT_E2E_VIM:-0}" \
-  python3 -I - "$root/scripts/gui-e2e.js" "$WIN_TMP/e2e.js" <<'PY'
+# Writes the page script for one run: $1 vault file name, $2 '1' for the vim run, $3 the
+# script's name, all in $WIN_TMP.
+make_script() {
+  E2E_KEY="$tmp/user_ed25519" E2E_W="$W" P1="$P1" P2="$P2" P3="$P3" E2E_VAULT="$1" E2E_VIM="$2" \
+    python3 -I - "$root/scripts/gui-e2e.js" "$WIN_TMP/$3" <<'PY'
 import os, sys
 src = open(sys.argv[1]).read()
 key = open(os.environ["E2E_KEY"]).read().replace("\\", "\\\\").replace("`", "\\`")
 w = os.environ["E2E_W"]
-values = {"VAULT": w + "/e2e.flint", "PORT": os.environ["P1"], "PORT2": os.environ["P2"],
+values = {"VAULT": w + "/" + os.environ["E2E_VAULT"], "PORT": os.environ["P1"], "PORT2": os.environ["P2"],
           "PORT3": os.environ["P3"], "USER": os.environ["USER"], "KEY": key,
           "TETHER": w + "/old.tether", "VIM": os.environ["E2E_VIM"]}
 for k, v in values.items():
@@ -135,16 +145,50 @@ src = src.replace(c, "if (document.hasFocus()) { " + c + " } else { await log('s
 src = src.replace("local: dir + '/made/", "local: '" + w + "/downloads/")
 open(sys.argv[2], "w").write(src)
 PY
+}
 
-status=0
-cd "$WIN_TMP/app"
-FLINT_CONFIG_DIR="$W/config" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$W/e2e.js" \
-  WSLENV=FLINT_CONFIG_DIR:FLINT_KEYCHAIN:FLINT_GUI_E2E \
-  timeout 600 ./flint-app.exe 2>&1 | tr -d '\r' | tee "$tmp/run.log" || status=$?
-if ! grep -q '^e2e: pass' "$tmp/run.log"; then
-  echo "gui-e2e: FAILED" >&2
+# Runs the app once: $1 the run's name, $2 its script, $3 its config folder (all in
+# $WIN_TMP), $4 its log, $5 its cap in seconds. The app's own cap applies on macOS only,
+# so here `timeout` is the cap; a run killed before its verdict is named with the last
+# line the page logged, as scripts/gui-e2e.sh does.
+run_app() {
+  local st=0
+  mkdir -p "$WIN_TMP/$3"
+  (cd "$WIN_TMP/app" && FLINT_CONFIG_DIR="$W/$3" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$W/$2" \
+    WSLENV=FLINT_CONFIG_DIR:FLINT_KEYCHAIN:FLINT_GUI_E2E \
+    timeout "$5" ./flint-app.exe 2>&1 | tr -d '\r' | tee "$4") || st=$?
+  if ! grep -q '^e2e: ' "$4"; then
+    echo "e2e: fail: killed with no verdict after $5 s (exit $st); last page line: $(grep '\[page\]' "$4" | tail -1 | sed 's/^.*\[page\] //')"
+  fi
+  if ! grep -q '^e2e: pass' "$4"; then
+    echo "gui-e2e ($1): FAILED" >&2
+    return 1
+  fi
+}
+
+failed=()
+if [[ "$only" != vim ]]; then
+  make_script e2e.flint 0 e2e.js
+  run_app main e2e.js config "$tmp/run.log" 600 || failed+=(main)
+fi
+if [[ "$run_vim" == 1 ]]; then
+  make_script vim.flint 1 vim.js
+  run_app vim vim.js config-vim "$tmp/vim.log" 90 || failed+=(vim)
+else
+  echo "gui-e2e: skip the vim run (synthetic keys never reach :wq; FLINT_E2E_VIM=1 runs it)"
+fi
+# Exit 1: the main run failed. Exit 3: only the vim run did (as scripts/gui-e2e.sh).
+if [[ " ${failed[*]:-} " == *" main "* ]]; then
+  echo "gui-e2e: FAILED: ${failed[*]:-}" >&2
   exit 1
 fi
+if [[ "$only" == vim ]]; then
+  [[ ${#failed[@]} -eq 0 ]] || { echo "gui-e2e: FAILED: vim" >&2; exit 3; }
+  echo "gui-e2e: the vim run passed"
+  exit 0
+fi
+status=0
+[[ ${#failed[@]} -eq 0 ]] || status=3
 for marker in local pwhost e2e-key gui-host-pw-marker 127.0.0.2 codebox.lan "Code Box" pw-codebox "SQLite format 3"; do
   if grep -aq -- "$marker" "$WIN_TMP/e2e.flint"; then
     echo "gui-e2e: the vault file contains '$marker' in clear" >&2
