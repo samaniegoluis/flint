@@ -65,6 +65,8 @@ while True:
     threading.Thread(target=pipe, args=(c, u), daemon=True).start()
     threading.Thread(target=pipe, args=(u, c), daemon=True).start()
 PY
+# A free port for the tunnels step (milestone 23).
+tport="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 python3 -I "$tmp/fwd.py" "$port3" "$FLINT_TEST_SSH_PORT" "$FLINT_TEST_SSH_PORT2" & fwd_pid=$!
 sleep 0.5
 
@@ -74,12 +76,12 @@ mkdir -p /tmp/flint-tether-fixture && cp "$root/src/adapters/vault/testdata/teth
 
 # Writes the page script for one run: $1 vault file, $2 '1' for the vim run, $3 output.
 make_script() {
-  E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TETHER="$tmp/old.tether" E2E_VIM="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
+  E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TPORT="$tport" E2E_TETHER="$tmp/old.tether" E2E_VIM="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
 import os, sys
 src = open(sys.argv[1]).read()
 key = open(os.environ["FLINT_TEST_SSH_KEY"]).read().replace("\\", "\\\\").replace("`", "\\`")
 values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_PORT"],
-          "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"],
+          "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"], "TPORT": os.environ["E2E_TPORT"],
           "USER": os.environ["USER"], "KEY": key, "TETHER": os.environ["E2E_TETHER"],
           "VIM": os.environ["E2E_VIM"]}
 for k, v in values.items():
@@ -108,7 +110,7 @@ run_app() {
 failed=()
 if [[ "$only" != vim ]]; then
   make_script "$tmp/e2e.flint" 0 "$tmp/e2e.js"
-  run_app main "$tmp/e2e.js" "$tmp/config" "$tmp/run.log" || failed+=(main)
+  run_app main "$tmp/e2e.js" "$tmp/config" "$tmp/run.log" "${FLINT_E2E_MAIN_MS:-}" || failed+=(main)
 fi
 if [[ "$run_vim" == 1 ]]; then
   make_script "$tmp/vim.flint" 1 "$tmp/vim.js"

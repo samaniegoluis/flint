@@ -6,6 +6,8 @@
   const PORT = '@@PORT@@';
   const PORT2 = '@@PORT2@@';
   const PORT3 = '@@PORT3@@';
+  // A free port on 127.0.0.1 for the tunnels step (milestone 23).
+  const TPORT = '@@TPORT@@';
   const USER = '@@USER@@';
   const KEY = `@@KEY@@`;
   const TETHER = '@@TETHER@@';
@@ -1081,6 +1083,117 @@
     await waitFor(() => hasText('Nothing new to import: everything is already in'), 'the nothing-new notice');
     await check(hasText('Everything was already in') && !hasText('Added 0'), 'importing again adds nothing and says so');
     await click('.drawer .modal-f button', 'Done');
+
+    await setStep('tunnels');
+    {
+      // Milestone 23 (design 06c, 20): a tunnel saved in the host editor, started from
+      // the Tunnels view, used by a second host whose address is the tunnel's port, then
+      // the toolbar menu, the palette, a port in use and removing it.
+      const tunView = () => q('[data-tunnels-view]');
+      const tunState = (name) => q(`[data-tunnel="${name}"]`)?.dataset.state ?? '';
+      const tunText = (name) => q(`[data-tunnel="${name}"] [data-tunnel-state]`)?.textContent ?? '';
+      await click('.rail-btn', 'Hosts');
+      await click('.tab', 'local');
+      await waitFor(() => toolbarIs('ready'), 'the local tab');
+      await click('[data-toolbar-tunnels]');
+      await waitFor(() => q('[data-tunnels-menu]'), 'the toolbar Tunnels menu');
+      await check(hasText('No tunnels on this host yet.'), 'the toolbar menu of a host with no tunnels says so');
+      await click('[data-tunnels-menu] .mi', 'Add a tunnel…');
+      await waitFor(() => q('[data-host-tunnels]'), 'the host editor at its Tunnels section');
+      await check(hasText('No tunnels. A tunnel lets an app'), "the editor's Tunnels section has an empty state");
+      await click('[data-add-tunnel]');
+      await fill('#tun-name', 'fwd');
+      await fill('#tun-local', TPORT);
+      await fill('[data-tunnel-dialog] input[aria-label="Destination host"]', '127.0.0.1');
+      await fill('[data-tunnel-dialog] input[aria-label="Destination port"]', PORT2);
+      await click('[data-tunnel-dialog] button[type="submit"]');
+      await waitFor(() => q('[data-host-tunnel="fwd"]'), 'the saved tunnel in the editor');
+      await check(q('[data-host-tunnel="fwd"] .mp')?.textContent === `127.0.0.1:${TPORT}→127.0.0.1:${PORT2}`, 'the editor lists the tunnel as 127.0.0.1:port → destination');
+      await click('[data-add-tunnel]');
+      await fill('#tun-name', 'FWD');
+      await fill('#tun-local', PORT);
+      await waitFor(() => q('[data-shared-port]') || true, 'a moment');
+      await click('[data-tunnel-dialog] button[type="submit"]');
+      await waitFor(() => q('[data-tunnel-dialog] .ferr[role="alert"]'), 'the name error');
+      await check(/already has a tunnel named FWD/.test(q('[data-tunnel-dialog] .ferr').textContent), 'a name used on the host is refused inline, whatever its case');
+      await fill('#tun-name', 'busy');
+      await click('[data-tunnel-dialog] button[type="submit"]');
+      await waitFor(() => q('[data-host-tunnel="busy"]'), 'the second tunnel');
+      await click('.modal button', 'Cancel');
+      await waitFor(() => !q('[data-host-tunnels]'), 'the editor to close');
+
+      await click('.rail-btn', 'Tunnels');
+      await waitFor(() => tunView() && q('[data-tunnel="fwd"]'), 'the Tunnels view');
+      await check(q('[data-tunnel-host="local"]') && tunText('fwd') === 'stopped', 'the Tunnels view lists the host\'s tunnels, stopped');
+      await click('[data-tunnel-switch="fwd"]');
+      await waitFor(() => tunState('fwd') === 'ok', 'fwd listening', 30000);
+      await check(tunText('fwd') === 'listening · no connections', 'the switch starts the tunnel on its own session: "listening · no connections"');
+      await waitFor(() => q('[data-tunnels-badge]')?.textContent === '1' && q('[data-tunnels-status]') && q('.tab [data-tun-mark="local"]'), 'the marks');
+      await check(true, 'the rail badge, the status bar and the tab mark show 1 tunnel up');
+      await click('[data-tunnel-switch="busy"]');
+      await waitFor(() => tunState('busy') === 'warn', 'busy refused', 30000);
+      await check(/^port \d+ in use · by another program$/.test(tunText('busy')), 'a port in use shows as such: ' + tunText('busy'));
+
+      // A host whose address is the tunnel: its shell proves bytes go through.
+      await click('.rail-btn', 'Hosts');
+      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await fill('#ha', 'through');
+      await fill('#hh', '127.0.0.1');
+      await fill('#hp', TPORT);
+      await click('.seg button', 'Key');
+      await pick('SSH key', 'e2e-key');
+      await fill('#hu', USER);
+      await click('.modal button[type="submit"]', 'Add host');
+      await waitFor(() => byText('.tree .ti', 'through'), 'through in the tree');
+      byText('.tree .ti', 'through').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await waitFor(() => hasText('before connecting'), 'the host key prompt through the tunnel');
+      await click('button[type="submit"]', 'Trust and connect');
+      await waitFor(() => toolbarIs('ready'), 'the session through the tunnel', 30000);
+      await runInTerminal('echo through-tunnel-ok', 'through-tunnel-ok');
+      await check(true, 'a session to 127.0.0.1:<tunnel port> reaches the destination through the tunnel');
+      await click('.rail-btn', 'Tunnels');
+      await waitFor(() => tunText('fwd') === 'listening · 1 connection', 'one connection', 10000);
+      await check(true, 'the Tunnels view counts the live connection');
+      await click('.tab.on .tx');
+      await waitFor(() => tunText('fwd') === 'listening · no connections', 'the connection to close', 10000);
+      await check(true, 'closing that tab closes its connection; the tunnel stays up');
+
+      // The toolbar menu stops it; the palette starts it again.
+      await click('.tab', 'local');
+      await waitFor(() => toolbarIs('ready'), 'the local tab');
+      await check(q('[data-toolbar-tunnels] .tcount')?.textContent === '1', 'the toolbar Tunnels button counts the tunnels up');
+      await click('[data-toolbar-tunnels]');
+      await click('[data-tunnels-menu-item="fwd"]');
+      await waitFor(() => tunState('fwd') === 'idle' && !q('[data-tunnels-badge]'), 'fwd stopped from the menu', 10000);
+      await check(q('[data-tunnels-menu-item="fwd"]')?.getAttribute('aria-checked') === 'false', 'the toolbar menu stops a tunnel, and its check clears');
+      await click('[data-toolbar-tunnels]');
+      await waitFor(() => !q('[data-tunnels-menu]'), 'the menu to close');
+      await click('.palette-btn');
+      await fill('[aria-label="Command palette"] input', 'fwd');
+      await waitFor(() => byText('[role="option"]', 'Start tunnel fwd on local'), 'the palette action');
+      await click('[role="option"]', 'Start tunnel fwd on local');
+      await waitFor(() => tunState('fwd') === 'ok', 'fwd from the palette', 30000);
+      await check(true, 'the palette starts a tunnel: "Start tunnel fwd on local"');
+
+      // Removing a running tunnel stops it; the view shows its empty state at the end.
+      await click('[data-toolbar-tunnels]');
+      await click('[data-tunnels-menu] .mi', 'Manage tunnels…');
+      await waitFor(() => q('[data-host-tunnel="fwd"]'), 'the editor');
+      await click('[data-host-tunnel="fwd"] button[aria-label="Remove tunnel fwd"]');
+      await click('[data-host-tunnel="busy"] button[aria-label="Remove tunnel busy"]');
+      await waitFor(() => !q('[data-host-tunnel]'), 'both removed');
+      await click('.modal button', 'Cancel');
+      // The Tunnels view is still open beside the tab (a click on its rail item would hide it).
+      await waitFor(() => q('[data-tunnels-empty]') && !q('[data-tunnels-badge]'), 'the empty Tunnels view', 10000);
+      await check(true, 'removing a running tunnel stops it; the Tunnels view shows its empty state');
+      const after = await window.backend.tunnels_list({});
+      await check(Array.isArray(after) && after.length === 0, 'no tunnel is left saved');
+      await click('.rail-btn', 'Hosts');
+      byText('.tree .ti', 'through').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 100, clientY: 200 }));
+      await click('.menu .mi', 'Delete host');
+      await click('.modal button', 'Delete host');
+      await waitFor(() => !byText('.tree .ti', 'through'), 'through deleted');
+    }
 
     await setStep('lock');
     // A session that must keep running under the lock screen (D-042).
