@@ -75,6 +75,10 @@ body { margin: 0; background: var(--surface-desk); }
 .app[data-view="hosts"] .sidebar[data-for="hosts"], .app[data-view="files"] .sidebar[data-for="files"] { display: flex; }
 .app[data-collapsed="true"] .sidebar { display: none; }
 .sidebar[data-for="files"] { width: var(--sidebar-files-w); }
+/* A narrow window: the open sidebar lies over the terminal (which keeps its width), above
+   the click-away layer of Shell.tsx. The sidebar is positioned against .app, never against
+   a wrapper: a wrapper with no height gave it none (ROADMAP §6, M21). */
+.app[data-narrow="true"] .sidebar { z-index: 5; box-shadow: var(--shadow-popover); }
 .sidebar-resize { position: absolute; right: -4px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 3; }
 .sidebar-resize::after { content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 1px; background: transparent; transition: background var(--dur-fast); }
 .sidebar-resize:hover::after, .sidebar-resize.is-hover::after { background: var(--accent); width: 2px; left: 2px; }

@@ -11,6 +11,7 @@ import "ext:webui"
 import "core:json"
 import "core:encoding/hex"
 import "core:fs"
+import "core:os"
 import "core:time"
 import "../../adapters/config"
 import "../../adapters/crypto"
@@ -28,8 +29,18 @@ FLINT_VERSION: str = "0.0.0-dev"
 // The most sessions open at once; each one holds a worker thread.
 MAX_SESSIONS: i64 = 48
 
-// How long the headless end-to-end run (FLINT_GUI_E2E) may take.
+// How long the headless end-to-end run (FLINT_GUI_E2E) may take on macOS.
 E2E_TIMEOUT_MS: i32 = 240000
+
+// The run's cap: FLINT_GUI_E2E_TIMEOUT_MS when set (gui-e2e.sh gives its short vim run
+// 60 s, so a freeze there costs a minute, not four), else E2E_TIMEOUT_MS.
+fn e2e_timeout_ms() -> i32 {
+    ms := os.getenv("FLINT_GUI_E2E_TIMEOUT_MS").parse_i64() or 0
+    if ms <= 0 || ms > 3600000 {
+        return E2E_TIMEOUT_MS
+    }
+    return i32(ms)
+}
 
 // ---- Requests ---------------------------------------------------------------------
 
@@ -828,8 +839,10 @@ fn rpc_e2e_clipboard(clip: OsClipboard) -> str! {
     return json.stringify(NameReq{ name: clipboard_read_text(clip.board) })
 }
 
-fn rpc_e2e_log(params: str) -> str! {
+fn rpc_e2e_log(params: str, mut app: webui.App) -> str! {
     req := try parse_req[NameReq](params)
     write_stderr("[page] {req.name}\n")
+    // The last line, for the verdict when the page never reports (main.cf).
+    app.set_state("e2e_last", req.name)
     return ok_json()
 }
