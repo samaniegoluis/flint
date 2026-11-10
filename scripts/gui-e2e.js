@@ -231,6 +231,14 @@
       await waitFor(() => !termText().includes('-- INSERT --'), 'vim back in normal mode');
       await keys(':wq');
       key('Enter', 'Enter', 13);
+      // Keys sent while vim is still quitting are lost: the tty changes mode under them
+      // (seen on Windows, 2026-11-09: the cat never ran). Wait, as a person would, for
+      // vim to leave the alternate screen and the shell's prompt to settle.
+      await waitFor(() => activeTerm().buffer.active.type === 'normal', 'vim to quit');
+      for (let screen = '', t0 = Date.now(); termText() !== screen && Date.now() - t0 < 10000; ) {
+        screen = termText();
+        await sleep(300);
+      }
       await runInTerminal('cat /tmp/flint-e2e-vim.txt; echo vim-$((6*7))', 'vim-42');
       await check(/^hello$/m.test(termText()), 'keys typed in vim reach it (insert, Esc, :wq)' + (/^hello$/m.test(termText()) ? '' : ' — terminal: ' + termText().split('\n').filter((l) => l.trim()).slice(-6).join(' | ')));
     }
