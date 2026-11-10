@@ -190,6 +190,27 @@ in Zellij lands on your Mac's or Linux desktop's clipboard. Flint only lets a re
 program *write* the clipboard: a request to read it is ignored, so nothing on the server
 can see what you copied. A single copy is limited to 1 MB.
 
+**Paste an image for a program on the server.** Paste a screenshot (<kbd>⌘V</kbd>, or
+<kbd>Ctrl+Shift+V</kbd> on Linux) into a session and Flint uploads it to the server,
+over that pane's own connection, and pastes its path where you are typing. A program
+there that reads images by path, such as Claude Code, gets the picture; a plain shell
+just gets the path, ready for `ls`, `scp` or anything else. Nothing is typed after it, so
+you finish the line and press <kbd>Enter</kbd> yourself.
+
+- The file lands in `~/.cache/flint/paste/<id>/` with its name cleaned up (letters,
+  digits, `.`, `_` and `-`). The folders are readable only by you (mode `0700`) and the
+  file is `0600`. When the home folder cannot hold it, Flint uses `/tmp/flint-<uid>/`,
+  and refuses one there that someone else made.
+- Each paste removes what earlier pastes left there more than a day before. Nothing is
+  removed when the session closes, so a program you left running can still open it.
+- A clipboard with text in it pastes the text, as before, even when it also carries a
+  picture (cells copied from a spreadsheet, for example).
+- Images up to **Settings → Terminal → Largest file to paste** (20 MB unless you change
+  it) are uploaded; a larger one is refused with its size. Use the
+  [Files view](/guides/files-view/) for big files: it shows progress and has no limit.
+- While it uploads, Flint shows *Pasting image to &lt;host&gt;…*; if the upload fails (no
+  SFTP on the server, no permission, a lost connection), it says why.
+
 **Accents and other layouts.** Dead keys (US International, ABC Extended, most ISO
 layouts) and input methods (Japanese, Chinese, Korean) compose as they do in any other
 app: <kbd>'</kbd> <kbd>e</kbd> types `é`, and <kbd>'</kbd> <kbd>s</kbd> types `'s`, not
@@ -300,8 +321,9 @@ Settings belong to this machine, not to the vault, and save as you change them.
   whether to follow the system's reduce-motion setting; reopening the last vault.
 - **Terminal**: the colours (Default, Catppuccin, Tokyo Night, Aura, Dracula or Nord, each
   in a dark and a light variant that follows the app's theme), the font (any monospaced
-  font installed on this machine, or the bundled JetBrains Mono), size, line height and
-  cursor.
+  font installed on this machine, or the bundled JetBrains Mono), size, line height,
+  cursor, and the **largest file to paste** (10, 20, 50 or 100 MB; see
+  [The terminal](#the-terminal)).
 - **Keyboard shortcuts**: the full map for macOS and Linux. Custom shortcuts are coming
   in a later version.
 - **Vault**: the open vault's file and counts, **Rename**, whether this machine remembers

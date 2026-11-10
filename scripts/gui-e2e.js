@@ -20,9 +20,10 @@
   //   vault     test connection, initial command, palette, settings, known hosts,
   //             sidebar and groups, rename, lock, the tray
   //   tunnels   tunnels in the app (milestone 23)
+  //   paste     an image pasted into the terminal lands on the server (milestone 25)
   //   vim       vim in the terminal (it freezes on macOS at times, ROADMAP)
   const RUN = '@@RUN@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'vim'];
+  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim'];
   const MASTER = 'e2e-master-password-42';
   const HOST_PW_MARKER = 'gui-host-pw-marker';
 
@@ -749,6 +750,75 @@
       await click('button[type="submit"]', 'Trust and connect');
       await waitFor(() => toolbarIs('ready'), 'moved, new key', 30000);
       await check(true, 'replacing the key forgets the old one and asks again');
+    }
+
+    if (RUN === 'paste') {
+      // A paste event as ⌘V hands it: an image file, with or without text beside it.
+      const pasteData = async (text, files) => {
+        const ta = await waitFor(() => activePane()?.querySelector('textarea'), 'terminal textarea');
+        ta.focus();
+        const dt = new DataTransfer();
+        if (text !== null) dt.setData('text/plain', text);
+        for (const f of files) dt.items.add(f);
+        ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+        await sleep(50);
+      };
+      // A real 1×1 PNG.
+      const pngBytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
+      const png = new File([pngBytes], 'Screen Shot e2e.png', { type: 'image/png' });
+      const pathRe = /(\/\S*\/\.cache\/flint\/paste\/p-[a-z0-9-]+\/Screen-Shot-e2e\.png)/;
+      // The buffer with wrapped rows joined: a long path spans two rows.
+      const fullText = () => {
+        const b = activeTerm()?.buffer.active;
+        if (!b) return '';
+        let out = '';
+        for (let i = 0; i < b.length; i++) {
+          const line = b.getLine(i);
+          if (!line) continue;
+          out += (i > 0 && !line.isWrapped ? '\n' : '') + line.translateToString(true);
+        }
+        return out;
+      };
+      const pathCount = () => (fullText().match(new RegExp(pathRe.source, 'g')) || []).length;
+
+      await setStep('paste: an image');
+      // /bin/ls: the login shell may alias ls (eza on the owner's Mac).
+      await type('/bin/ls -ln ');
+      await pasteData(null, [png]);
+      await waitFor(() => hasText('Pasting image to local'), 'the upload notice');
+      await check(true, 'pasting an image shows "Pasting image to local…"');
+      const pasted = await waitFor(() => fullText().match(pathRe), 'the pasted path in the prompt', 20000);
+      const path = pasted[1];
+      await check(true, `the image's path on the server is pasted into the prompt (${path})`);
+      await type('; echo ls-$((6*7))');
+      await enter();
+      await waitFor(() => termText().includes('ls-42'), 'the ls of the pasted file');
+      // macOS's ls marks extended attributes with '@' after the mode.
+      await check(new RegExp(`-rw-------@? +1 +\\d+ +\\d+ +${pngBytes.length} `).test(fullText()), `the file is on the server, mode 0600, ${pngBytes.length} bytes`);
+      const folder = path.replace(/\/[^/]+$/, '');
+      await runInTerminal(`/bin/ls -ld ${folder} ~/.cache/flint/paste ~/.cache/flint | cut -c1-10 | sort | uniq -c; echo modes-$((6*7))`, 'modes-42');
+      await check(/3 drwx------/.test(termText()), 'its folder, the paste folder and ~/.cache/flint are 0700');
+      await runInTerminal(`od -An -tx1 -N8 ${path} | tr -s ' '; echo head-$((6*7))`, 'head-42');
+      await check(termText().includes(' 89 50 4e 47 0d 0a 1a 0a'), 'the bytes on the server are the pasted image');
+
+      await setStep('paste: text wins');
+      const before = pathCount();
+      await pasteData('echo text-wins-$((6*7))', [png]);
+      await enter();
+      await waitFor(() => termText().includes('text-wins-42'), 'the pasted text to run');
+      await sleep(500);
+      await check(pathCount() === before && !hasText('Paste to local failed'), 'a clipboard with text and an image pastes the text, and uploads nothing');
+
+      await setStep('paste: over the limit');
+      const big = new File([new Uint8Array(20 * 1048576 + 1)], 'big.png', { type: 'image/png' });
+      await pasteData(null, [big]);
+      await waitFor(() => hasText('over the 20 MB paste limit'), 'the limit toast');
+      await check(hasText('Use Files to upload it'), 'an image over the limit is refused, pointing to Files');
+
+      await setStep('paste: the limit is a setting');
+      const saved = await window.backend.settings_get({});
+      await check(saved.paste_limit_mb === 20, 'the paste limit defaults to 20 MB');
+      await runInTerminal(`rm -rf ${folder}; echo cleaned-$((6*7))`, 'cleaned-42');
     }
 
     if (RUN === 'tunnels') {

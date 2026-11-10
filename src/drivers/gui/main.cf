@@ -213,6 +213,11 @@ fn main() {
         mut d := drops
         return rpc_files_stage(req, mut d, st)
     }
+    // Paste into the terminal (paste.cf, milestone 25).
+    app.bind_async[TerminalPasteReq]("terminal_paste") |req| {
+        mut d := drops
+        return rpc_terminal_paste(req, mut d, settings_store, st)
+    }
     app.bind_raw("files_stage_discard") |params| {
         req := try parse_req[FilesIdReq](params)
         mut d := drops

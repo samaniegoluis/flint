@@ -1,0 +1,172 @@
+package application
+
+// Paste into the terminal (milestone 25, D-066): a file on this machine (an image
+// the page staged from the clipboard) is written on the server, over the pane's own
+// session, into a paste folder of the person's own; the result is the path to paste.
+// Rules and names live in domain/paste.cf.
+
+import "../domain"
+import "../ports"
+
+type PasteRequest struct {
+    // Unique per paste (the page's drop id): the folder the file lands in.
+    id:       str
+    // The staged file on this machine, and the name it had on the clipboard.
+    local:    str
+    name:     str
+    // A MIME type or extension for a file with no name ("image/png").
+    kind:     str
+    limit_mb: i64
+}
+
+type PasteResult struct {
+    // Where the file is on the server, and the same path escaped for a shell: the
+    // text the page pastes.
+    path: str `json:"path"`
+    text: str `json:"text"`
+    size: i64 `json:"size"`
+}
+
+// Creates `path` if it is missing (an existing folder is fine) and, when `own`,
+// makes it 0700.
+fn paste_dir[T: SftpTransport](mut sftp: T, path: str, own: bool) -> void! {
+    // SFTP v3 has no "exists" status: OpenSSH answers a plain failure, so a refused
+    // mkdir is fine when a folder is there, and its own error otherwise.
+    sftp.sftp_mkdir(path) or err {
+        msg := "{err.message()}"
+        st := sftp.sftp_stat(path) or {
+            return error(msg)
+        }
+        if !st.is_dir() {
+            return error(coded(ERR_NOT_DIR, "{path} is not a folder"))
+        }
+    }
+    if own {
+        try sftp.sftp_chmod(path, PASTE_DIR_MODE)
+    }
+}
+
+// The paste folder: ~/.cache/flint/paste, or /tmp/flint-<uid> when the home folder
+// cannot hold it. A /tmp folder that is there already must be the person's own (not
+// one someone else made, nor a link to one), or the paste is refused.
+fn paste_root[T: SftpTransport](mut sftp: T) -> str! {
+    home := try sftp.sftp_realpath(".")
+    mut failed := ""
+    for i, rel in PASTE_HOME_DIRS {
+        // ~/.cache is shared with other programs: created if missing, left as it is.
+        paste_dir(mut sftp, remote_join(home, rel), i > 0) or err {
+            failed = "{err.message()}"
+            break
+        }
+    }
+    if failed.len() == 0 {
+        return remote_join(home, PASTE_HOME_DIRS[PASTE_HOME_DIRS.len() - 1])
+    }
+    code := error_code_of(failed)
+    if code != ERR_PERMISSION && code != ERR_NOT_FOUND && code != ERR_NOT_DIR {
+        return error(failed)
+    }
+    me := try sftp.sftp_stat(home)
+    tmp := paste_tmp_folder(me.uid)
+    try paste_dir(mut sftp, tmp, false)
+    st := try sftp.sftp_stat(tmp)
+    if st.uid != me.uid {
+        return error(coded(ERR_PERMISSION, "{tmp} belongs to someone else, and {home} cannot hold the paste folder"))
+    }
+    try sftp.sftp_chmod(tmp, PASTE_DIR_MODE)
+    return tmp
+}
+
+// Removes what earlier pastes left in `root` more than a day before `now` (the host's
+// clock). Best effort: a paste never fails because an old one could not go.
+fn prune_pastes[T: SftpTransport](mut sftp: T, root: str, keep: str, now: i64) {
+    entries := sftp.sftp_list(root) or {
+        return
+    }
+    for e in entries {
+        if e.name == keep || !paste_stale(e.mtime, now) {
+            continue
+        }
+        remove_remote(mut sftp, e.path) or {}
+    }
+}
+
+// Writes `req.local` to <paste folder>/<id>/<clean name> on the host, the folder
+// 0700 and the file 0600, then prunes old pastes. A failure removes what it wrote.
+fn paste_to_remote[T: SftpTransport, L: LocalFiles](mut sftp: T, mut local: L, req: PasteRequest) -> PasteResult! {
+    if !valid_drop_id(req.id) {
+        return error(coded(ERR_INVALID, "a paste needs an id"))
+    }
+    name := paste_file_name(req.name, req.kind)
+    src := try local.local_stat(req.local)
+    if !src.is_file() {
+        return error(coded(ERR_INVALID, "only a file can be pasted"))
+    }
+    try check_paste_size(name, src.size, req.limit_mb)
+
+    root := try paste_root(mut sftp)
+    folder := remote_join(root, req.id)
+    try sftp.sftp_mkdir(folder)
+    target := remote_join(folder, name)
+    written := paste_write(mut sftp, mut local, req.local, folder, target) or err {
+        msg := "{err.message()}"
+        sftp.sftp_remove(target, false) or {}
+        sftp.sftp_remove(folder, true) or {}
+        return error(msg)
+    }
+    // The new folder's time is the host's "now", whatever this machine's clock says.
+    made := sftp.sftp_stat(folder) or {
+        return PasteResult{ path: target, text: shell_escape_path(target), size: written }
+    }
+    prune_pastes(mut sftp, root, req.id, made.mtime)
+    return PasteResult{ path: target, text: shell_escape_path(target), size: written }
+}
+
+fn paste_write[T: SftpTransport, L: LocalFiles](mut sftp: T, mut local: L, src: str, folder: str, target: str) -> i64! {
+    try sftp.sftp_chmod(folder, PASTE_DIR_MODE)
+    try sftp.sftp_file_open(target, true, true)
+    mut written: i64 = 0
+    mut failed := ""
+    // 0600 before a single byte is in it.
+    sftp.sftp_chmod(target, PASTE_FILE_MODE) or err {
+        failed = "{err.message()}"
+    }
+    if failed.len() == 0 {
+        local.local_file_open(src, false, false) or err {
+            failed = "{err.message()}"
+        }
+        if failed.len() == 0 {
+            for {
+                chunk := local.local_file_read() or err {
+                    failed = "{err.message()}"
+                    break
+                }
+                if chunk.len() == 0 {
+                    break
+                }
+                sftp.sftp_file_write(chunk) or err {
+                    failed = "{err.message()}"
+                    break
+                }
+                written += i64(chunk.len())
+            }
+            local.local_file_close() or {}
+        }
+    }
+    sftp.sftp_file_close() or err {
+        if failed.len() == 0 {
+            failed = "{err.message()}"
+        }
+    }
+    if failed.len() > 0 {
+        return error(failed)
+    }
+    return written
+}
+
+// A paste over a session that is already logged in (the pane's), on an SFTP
+// channel of its own, as the Files view's transfers.
+fn paste_over_session[T: SftpTransport, L: LocalFiles](mut sftp: T, mut local: L, req: PasteRequest) -> PasteResult! {
+    try open_sftp(mut sftp)
+    return paste_to_remote(mut sftp, mut local, req)
+}

@@ -242,6 +242,8 @@ type SftpTransport interface {
     // A file, or an empty folder when `folder`.
     sftp_remove(path: str, folder: bool) -> void!
     sftp_mkdir(path: str) -> void!
+    // Sets `path`'s permission bits, as `chmod` (milestone 25).
+    sftp_chmod(path: str, mode: i64) -> void!
     // The absolute form of `path` ("." is the login folder).
     sftp_realpath(path: str) -> str!
     sftp_close()

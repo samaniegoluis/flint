@@ -31,6 +31,7 @@ struct Entry {
     int64_t size = 0;
     int64_t mtime = 0;
     int64_t mode = 0;
+    int64_t uid = 0;
 };
 
 inline int map_error(sftp_session sftp) {
@@ -64,6 +65,7 @@ inline void fill(Entry& e, sftp_attributes a) {
     e.size = static_cast<int64_t>(a->size);
     e.mtime = static_cast<int64_t>(a->mtime);
     e.mode = static_cast<int64_t>(a->permissions & 07777);
+    e.uid = static_cast<int64_t>(a->uid);
 }
 
 inline sftp_session open(ssh_session s, std::string& err) {
@@ -187,6 +189,12 @@ inline int remove_dir(sftp_session sftp, const std::string& path) {
 
 inline int make_dir(sftp_session sftp, const std::string& path) {
     return sftp_mkdir(sftp, path.c_str(), 0755) == 0 ? OK : map_error(sftp);
+}
+
+// Sets `path`'s permission bits (milestone 25: the paste folder 0700, a pasted file
+// 0600).
+inline int change_mode(sftp_session sftp, const std::string& path, int64_t mode) {
+    return sftp_chmod(sftp, path.c_str(), static_cast<mode_t>(mode & 07777)) == 0 ? OK : map_error(sftp);
 }
 
 inline int real_path(sftp_session sftp, const std::string& path, std::string& out) {

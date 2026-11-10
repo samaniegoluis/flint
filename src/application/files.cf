@@ -192,7 +192,7 @@ fn side_name(req: CopyRequest, remote: bool) -> str {
 // `dst` when it is a folder, else at `dst` itself, whose folder must exist. A folder
 // is never copied over a file.
 fn copy_target[T: SftpTransport, L: LocalFiles](remote: bool, sftp: T, local: L, dst: str, name: str, src_is_dir: bool, on: str) -> str! {
-    mut st := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+    mut st := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0, uid: 0 }
     msg := side_stat_into(remote, sftp, local, dst, mut st)
     if msg.len() == 0 {
         if st.is_dir() {
@@ -231,7 +231,7 @@ fn copy_cancelled() -> str {
 fn copy_one[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut sftp: T, mut local: L, mut sink: K, req: CopyRequest, src: str, size: i64, target: str, mut res: CopyResult, mut prog: TransferProgress) -> void! {
     dst_remote := upload
     src_remote := !upload
-    mut existing := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+    mut existing := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0, uid: 0 }
     existed := side_stat_into(dst_remote, sftp, local, target, mut existing).len() == 0
     if existed {
         if existing.is_dir() {
@@ -243,7 +243,7 @@ fn copy_one[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut 
     }
     part := part_path(target)
     // A part file a cut copy left (a dropped channel, a killed CLI) goes first.
-    mut stale_part := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+    mut stale_part := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0, uid: 0 }
     if side_stat_into(dst_remote, sftp, local, part, mut stale_part).len() == 0 {
         stale := side_remove(dst_remote, mut sftp, mut local, part)
         if stale.len() > 0 {
@@ -326,7 +326,7 @@ fn copy_tree[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut
     }
     dst_remote := upload
     src_remote := !upload
-    mut existing := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+    mut existing := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0, uid: 0 }
     msg := side_stat_into(dst_remote, sftp, local, target, mut existing)
     if msg.len() == 0 {
         if !existing.is_dir() {
@@ -349,7 +349,7 @@ fn copy_tree[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut
         child_target := remote_join(target, e.name)
         mut entry := e
         if e.kind == FILE_KIND_LINK {
-            mut followed := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+            mut followed := FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0, uid: 0 }
             if side_stat_into(src_remote, sftp, local, e.path, mut followed).len() == 0 && followed.is_file() {
                 entry = followed
             }

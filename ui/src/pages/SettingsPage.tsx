@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../api/backend';
-import type { LockAfter, Settings, VaultStatus } from '../api/types';
+import { PASTE_LIMITS, type LockAfter, type Settings, type VaultStatus } from '../api/types';
 import { shortPath, useApp, vaultInitial, vaultMarkClass } from '../state/app';
 import { ACTION_TITLES, chordLabel, SHORTCUT_GROUPS } from '../lib/keymap';
 import { Icon, type IconName } from '../ui/Icon';
@@ -200,6 +200,13 @@ function TerminalSettings() {
             ))}
           </div>
           <Toggle on={s.term_cursor_blink} onChange={(v) => set({ term_cursor_blink: v })} label="Blink" />
+        </div>
+      </Row>
+      <Row title="Largest file to paste" desc="An image pasted into a session is uploaded to the server and its path is pasted, for a program there such as Claude Code. Larger files go through Files. Set on this computer.">
+        <div className="seg" role="radiogroup" aria-label="Largest file to paste">
+          {PASTE_LIMITS.map((mb) => (
+            <button key={mb} type="button" role="radio" aria-checked={s.paste_limit_mb === mb} aria-pressed={s.paste_limit_mb === mb} onClick={() => set({ paste_limit_mb: mb })}>{mb} MB</button>
+          ))}
         </div>
       </Row>
       <Row title="Preview" desc="Uses the chosen colours and font.">

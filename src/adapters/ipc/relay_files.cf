@@ -41,7 +41,7 @@ type RelayFileReply struct {
 }
 
 fn empty_file_entry() -> FileEntry {
-    return FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0 }
+    return FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0, uid: 0 }
 }
 
 fn file_op(op: str, path: str) -> RelayFileOp {

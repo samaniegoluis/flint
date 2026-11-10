@@ -1,0 +1,115 @@
+package application
+
+// paste_to_remote over the in-memory trees of files_test.cf.
+
+import "../domain"
+
+fn paste_host() -> FakeSftp {
+    mut host := FakeSftp{ tree: fake_tree([fdir("/home"), fdir("/home/me"), fdir("/tmp")]) }
+    host.tree.now = 100000
+    return host
+}
+
+fn paste_here() -> FakeLocal {
+    return FakeLocal{ tree: fake_tree([fdir("/stage"), ffile("/stage/image.png", "PNGDATA")]) }
+}
+
+fn paste_req(id: str) -> PasteRequest {
+    return PasteRequest{ id: id, local: "/stage/image.png", name: "Captura de pantalla.png", kind: "image/png", limit_mb: 20 }
+}
+
+test "a paste lands in a private folder of its own and returns its path" {
+    mut host := paste_host()
+    mut here := paste_here()
+    res := try paste_to_remote(mut host, mut here, paste_req("d-1"))
+    assert_eq(res.path, "/home/me/.cache/flint/paste/d-1/Captura-de-pantalla.png")
+    assert_eq(res.text, res.path)
+    assert_eq(res.size, 7)
+    assert_eq(host.tree.data_of(res.path), "PNGDATA")
+    assert_eq((try host.sftp_stat(res.path)).mode, PASTE_FILE_MODE)
+    assert_eq((try host.sftp_stat("/home/me/.cache/flint/paste/d-1")).mode, PASTE_DIR_MODE)
+    assert_eq((try host.sftp_stat("/home/me/.cache/flint/paste")).mode, PASTE_DIR_MODE)
+    assert_eq((try host.sftp_stat("/home/me/.cache/flint")).mode, PASTE_DIR_MODE)
+    // ~/.cache is shared with other programs: created, not narrowed.
+    assert_eq((try host.sftp_stat("/home/me/.cache")).mode, 493)
+}
+
+test "a second paste reuses the folders, and a day-old one is pruned" {
+    mut host := paste_host()
+    mut here := paste_here()
+    host.tree.now = 1000
+    first := try paste_to_remote(mut host, mut here, paste_req("d-old"))
+    host.tree.now = 1000 + PASTE_MAX_AGE - 10
+    recent := try paste_to_remote(mut host, mut here, paste_req("d-recent"))
+    host.tree.now = 1000 + PASTE_MAX_AGE + 5
+    latest := try paste_to_remote(mut host, mut here, paste_req("d-new"))
+    assert(!host.tree.has(first.path))
+    assert(!host.tree.has("/home/me/.cache/flint/paste/d-old"))
+    assert(host.tree.has(recent.path))
+    assert(host.tree.has(latest.path))
+}
+
+test "a home that cannot hold the folder falls back to /tmp/flint-<uid>" {
+    mut host := paste_host()
+    host.tree.read_only = "/home/me"
+    mut here := paste_here()
+    res := try paste_to_remote(mut host, mut here, paste_req("d-2"))
+    assert_eq(res.path, "/tmp/flint-1000/d-2/Captura-de-pantalla.png")
+    assert_eq((try host.sftp_stat("/tmp/flint-1000")).mode, PASTE_DIR_MODE)
+    assert_eq((try host.sftp_stat(res.path)).mode, PASTE_FILE_MODE)
+}
+
+test "a /tmp folder someone else made is refused" {
+    mut host := paste_host()
+    host.tree.read_only = "/home/me"
+    host.tree.nodes.push(fdir("/tmp/flint-1000"))
+    host.tree.foreign = "/tmp/flint-1000"
+    mut here := paste_here()
+    mut msg := ""
+    paste_to_remote(mut host, mut here, paste_req("d-3")) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_PERMISSION)
+    assert(msg.contains("someone else"))
+    assert(!host.tree.has("/tmp/flint-1000/d-3"))
+}
+
+test "a file over the limit is refused before anything is written" {
+    mut host := paste_host()
+    mut here := paste_here()
+    mut big := ""
+    for i in 0..(1048576 + 1) {
+        big = big + "x"
+    }
+    here.tree.nodes.push(ffile("/stage/big.pdf", big))
+    mut req := paste_req("d-4")
+    req.local = "/stage/big.pdf"
+    req.name = "big.pdf"
+    req.limit_mb = 1
+    mut msg := ""
+    paste_to_remote(mut host, mut here, req) or err { msg = "{err.message()}" }
+    assert(msg.contains("big.pdf"))
+    assert(msg.contains("1 MB"))
+    assert(!host.tree.has("/home/me/.cache"))
+}
+
+test "a failed write leaves nothing behind" {
+    mut host := paste_host()
+    host.tree.fail_write_after = 3
+    mut here := paste_here()
+    mut msg := ""
+    paste_to_remote(mut host, mut here, paste_req("d-5")) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_IO)
+    assert(!host.tree.has("/home/me/.cache/flint/paste/d-5"))
+}
+
+test "a paste needs an id, and a nameless image gets one" {
+    mut host := paste_host()
+    mut here := paste_here()
+    mut msg := ""
+    paste_to_remote(mut host, mut here, paste_req("../x")) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_INVALID)
+    mut req := paste_req("d-6")
+    req.name = ""
+    req.kind = "image/jpeg"
+    res := try paste_to_remote(mut host, mut here, req)
+    assert(res.path.ends_with("/d-6/paste.jpg"))
+}

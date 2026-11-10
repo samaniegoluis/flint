@@ -49,6 +49,19 @@ test "settings are validated on save and repaired field by field on load" {
     relocked := try load_settings(store)
     assert_eq(relocked.lock_after, "1h")
     assert_eq(relocked.term_theme, "nord")
+
+    // A paste limit that is not one of the sizes (a file from before milestone 25
+    // reads 0, a hand edit 7) falls back to 20 MB and keeps the rest.
+    mut odd := default_settings()
+    odd.paste_limit_mb = 7
+    odd.term_theme = "aura"
+    store.saved = odd
+    limited := try load_settings(store)
+    assert_eq(limited.paste_limit_mb, PASTE_LIMIT_DEFAULT_MB)
+    assert_eq(limited.term_theme, "aura")
+    odd.paste_limit_mb = 100
+    store.saved = odd
+    assert_eq((try load_settings(store)).paste_limit_mb, 100)
 }
 
 test "installed mono fonts are deduplicated and sorted" {

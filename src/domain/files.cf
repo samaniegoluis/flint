@@ -28,6 +28,8 @@ type FileEntry struct {
     size:  i64 `json:"size"`
     mtime: i64 `json:"mtime"`
     mode:  i64 `json:"mode"`
+    // The owner's uid on the host (milestone 25: `/tmp/flint-<uid>/`); 0 where unknown.
+    uid:   i64 `json:"uid" default:"0"`
 }
 
 fn (self: FileEntry) is_dir() -> bool {

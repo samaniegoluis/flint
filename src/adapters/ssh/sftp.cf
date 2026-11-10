@@ -94,18 +94,19 @@ fn (self: SshLink) sftp_stat(path: str) -> FileEntry! {
     mut size: i64 = 0
     mut mtime: i64 = 0
     mut mode: i64 = 0
+    mut uid: i64 = 0
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005
     cpp {
         std::lock_guard<std::mutex> guard(*conn.lock);
         flint_sftp::Entry e;
         rc = flint_sftp::stat_path(self.sftp, path, true, e);
-        kind = e.kind; size = e.size; mtime = e.mtime; mode = e.mode;
+        kind = e.kind; size = e.size; mtime = e.mtime; mode = e.mode; uid = e.uid;
     }
     if rc != 0 {
         return error(sftp_failure(rc, "read", path, conn, self.label))
     }
-    return FileEntry{ name: remote_base(path), path: path, kind: native_entry_kind(kind), size: size, mtime: mtime, mode: mode }
+    return FileEntry{ name: remote_base(path), path: path, kind: native_entry_kind(kind), size: size, mtime: mtime, mode: mode, uid: uid }
 }
 
 // The entries of folder `path`, without `.` and `..`, links not followed.
@@ -116,6 +117,7 @@ fn (self: SshLink) sftp_list(path: str) -> []FileEntry! {
     mut sizes: []i64 = []
     mut mtimes: []i64 = []
     mut modes: []i64 = []
+    mut uids: []i64 = []
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005
     cpp {
@@ -124,7 +126,7 @@ fn (self: SshLink) sftp_list(path: str) -> []FileEntry! {
         rc = flint_sftp::list(self.sftp, path, list);
         for (auto& e : list) {
             names.push_back(e.name); kinds.push_back(e.kind);
-            sizes.push_back(e.size); mtimes.push_back(e.mtime); modes.push_back(e.mode);
+            sizes.push_back(e.size); mtimes.push_back(e.mtime); modes.push_back(e.mode); uids.push_back(e.uid);
         }
     }
     if rc != 0 {
@@ -132,7 +134,7 @@ fn (self: SshLink) sftp_list(path: str) -> []FileEntry! {
     }
     mut entries: []FileEntry = []
     for i, n in names {
-        entries.push(FileEntry{ name: n, path: remote_join(path, n), kind: native_entry_kind(kinds[i]), size: sizes[i], mtime: mtimes[i], mode: modes[i] })
+        entries.push(FileEntry{ name: n, path: remote_join(path, n), kind: native_entry_kind(kinds[i]), size: sizes[i], mtime: mtimes[i], mode: modes[i], uid: uids[i] })
     }
     return entries
 }
@@ -255,6 +257,20 @@ fn (mut self: SshLink) sftp_mkdir(path: str) -> void! {
     }
     if rc != 0 {
         return error(sftp_failure(rc, "create", path, conn, self.label))
+    }
+}
+
+// Sets `path`'s permission bits (milestone 25).
+fn (mut self: SshLink) sftp_chmod(path: str, mode: i64) -> void! {
+    conn := try self.sftp_hop()
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        rc = flint_sftp::change_mode(self.sftp, path, mode);
+    }
+    if rc != 0 {
+        return error(sftp_failure(rc, "set the permissions of", path, conn, self.label))
     }
 }
 
