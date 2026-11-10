@@ -81,19 +81,15 @@ tport="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0
 python3 -I "$tmp/fwd.py" "$port3" "$FLINT_TEST_SSH_PORT" "$FLINT_TEST_SSH_PORT2" & fwd_pid=$!
 sleep 0.5
 
-# The Tether vault for the import step, written by Tether's own code.
-cp "$root/src/adapters/vault/testdata/tether-v5.tether" "$tmp/old.tether"
-mkdir -p /tmp/flint-tether-fixture && cp "$root/src/adapters/vault/testdata/tether-legacy-ed25519" /tmp/flint-tether-fixture/id_legacy
-
 # Writes the page script for one run: $1 vault file, $2 the run's name, $3 output.
 make_script() {
-  E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TPORT="$tport" E2E_TETHER="$tmp/old.tether" E2E_RUN="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
+  E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TPORT="$tport" E2E_RUN="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
 import os, sys
 src = open(sys.argv[1]).read()
 key = open(os.environ["FLINT_TEST_SSH_KEY"]).read().replace("\\", "\\\\").replace("`", "\\`")
 values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_PORT"],
           "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"], "TPORT": os.environ["E2E_TPORT"],
-          "USER": os.environ["USER"], "KEY": key, "TETHER": os.environ["E2E_TETHER"],
+          "USER": os.environ["USER"], "KEY": key,
           "RUN": os.environ["E2E_RUN"]}
 for k, v in values.items():
     src = src.replace("@@" + k + "@@", v)

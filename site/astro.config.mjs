@@ -57,7 +57,6 @@ export default defineConfig({
 						{ label: 'The Files view', slug: 'guides/files-view' },
 						{ label: 'Tunnels', slug: 'guides/tunnels' },
 						{ label: 'Use Flint with an AI agent', slug: 'guides/ai-agents' },
-						{ label: 'Moving from Tether', slug: 'guides/from-tether' },
 					],
 				},
 				{

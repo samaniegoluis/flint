@@ -220,17 +220,6 @@ type Clock interface {
     clock_now_ms() -> i64
 }
 
-// A Tether vault file, read for the one-shot import (adapters/vault/tether.cf).
-// `tether_read` opens the file read-only and returns its rows with every secret
-// still sealed. `tether_derive_key` is Tether's Argon2id (4 lanes, which libsodium
-// cannot compute: D-034, libargon2). `tether_read_key_file` reads a private key a
-// Tether host points to on disk.
-type TetherSource interface {
-    tether_read(path: str) -> TetherFile!
-    tether_derive_key(password: str, salt: []byte) -> []byte!
-    tether_read_key_file(path: str) -> str!
-}
-
 // Files on a host over SFTP (adapters/ssh/sftp.cf, milestone 16), on the last hop of
 // an `SshTransport` link that is already logged in. One SFTP channel per link and
 // one open file at a time. Every request is bounded by the link's dial timeout

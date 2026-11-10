@@ -159,19 +159,6 @@ from `ls` when Flint does not run it) and `listen` is `127.0.0.1:<port>` while i
 `ls` and `status` print an array, `rm` prints `{removed, name}`. See
 [Tunnels](/guides/tunnels/).
 
-### Import
-
-| Command | What it does |
-|---|---|
-| `import tether <file>` | Copy a Tether vault into the current vault: groups, hosts, keys, credentials and known host keys. Asks for Tether's master password (`--password-stdin` reads it from stdin). `--dry-run` reports without writing |
-
-With `--json` it prints `{file, format, dry_run, added, already_present, changed,
-not_imported}`: `added` and `already_present` count groups, hosts, keys, credentials and
-known hosts; `changed` and `not_imported` list `{kind, name, detail}`. Running it again
-adds only what is missing. A wrong Tether password exits with `wrong_password`, a file
-that is not a Tether vault with `invalid`, a Tether schema Flint does not know with
-`unsupported`. See [Moving from Tether](/guides/from-tether/).
-
 ### Tokens
 
 | Command | What it does |
@@ -249,9 +236,9 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 3 | `not_found` | No such vault, host, group, key, credential or tunnel |
 | 4 | `conflict` | Already exists, or still in use |
 | 5 | `locked` | The vault is not unlocked in Flint and no master password was given. With no terminal, Flint's window now asks for it (see [Vaults](/guides/vaults/#flint-holds-the-unlocked-vault)) |
-| 6 | `wrong_password` | The master password (or a Tether vault's, on import) is wrong |
+| 6 | `wrong_password` | The master password is wrong |
 | 7 | `invalid` | A value breaks a rule (alias, port, colour, key format…) |
-| 8 | `unsupported` | The vault was written by a newer Flint, or a Tether vault has a schema Flint does not read |
+| 8 | `unsupported` | The vault was written by a newer Flint |
 | 9 | `keychain` | The OS keychain refused to remove a remembered key (`vault lock`, `vault forget`) |
 | 10 | `io` | The vault or config file could not be read or written |
 | 11 | `host_key` | A server key is unknown and could not be confirmed, or it changed |
