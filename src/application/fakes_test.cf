@@ -577,6 +577,10 @@ fn (mut self: FakeLink) link_lend() -> void! {
     self.calls.push("lend")
 }
 
+fn (mut self: FakeLink) link_hand_over(key: str) -> void! {
+    self.calls.push("hand_over {key}")
+}
+
 fn (mut self: FakeLink) link_hangup() {
     self.hung_up = true
 }

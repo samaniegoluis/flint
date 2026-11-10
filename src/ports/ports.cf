@@ -145,6 +145,10 @@ type SshTransport interface {
     // app's second Files pane, milestone 19). Only a GUI tab's link can; any other
     // fails with `internal`.
     link_lend() -> void!
+    // Gives the logged-in session to the tunnel runner under `key` (milestone 22): the
+    // runner owns it from then on and hangs it up; this link is left with no hop. Only
+    // a plain link can; any other fails with `internal`.
+    link_hand_over(key: str) -> void!
     link_hangup()
 }
 
@@ -282,4 +286,22 @@ type DropStage interface {
 type TransferSink interface {
     transfer_progress(p: TransferProgress)
     transfer_cancelled() -> bool
+}
+
+// Running tunnels (adapters/ssh/tunnels.cf, milestone 22, D-062). A host's tunnels
+// share one SSH session with no terminal, handed over by `link_hand_over` under the
+// host's id; each tunnel is a listener on 127.0.0.1 whose every connection opens its
+// own forward channel. A lost session closes every listener of its host and stays
+// reported until released; nothing redials on its own.
+type TunnelRunner interface {
+    // 0: no session for the host; 1: up; 2: lost.
+    tunnel_host_state(host_id: str) -> i64
+    // Listens on 127.0.0.1:local_port (already listening: nothing changes) and returns
+    // the port. Errors: `port_in_use`, `permission_denied`, `network` (no session).
+    tunnel_listen(host_id: str, tunnel_id: str, local_port: i64, dest_host: str, dest_port: i64) -> i64!
+    // Closes the tunnel and its connections; false when it was not running.
+    tunnel_unlisten(host_id: str, tunnel_id: str) -> bool
+    // Closes every tunnel of the host and hangs its session up.
+    tunnel_release(host_id: str)
+    tunnel_live() -> []TunnelLive
 }

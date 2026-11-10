@@ -1921,3 +1921,18 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   by the landing's screenshot script in Chromium (`FLINT_SHOTS_EXTRA`). No native code.
 - **Ideal:** `platform_set_size` in the headless runner (`setContentSize:` on its
   off-screen window, then the WKWebView's frame), as `app.run()` has it.
+
+
+### CF-112 · missing · `confirmed`: no way to wait on several sockets at once
+- **What happened (c5b1d4b, milestone 22):** a tunnel's worker must wait on its listeners,
+  every accepted connection and the SSH session's socket at once, then move whatever is
+  ready. `ext:net` has `listen_tcp_addr`, `accept` and `read` with a timeout per call, but
+  no poll over a set of descriptors, no non-blocking read or write that says "would block",
+  and no way to add a foreign descriptor (libssh's `ssh_get_fd`) to the wait. One thread
+  per connection would work around the poll but needs a mutex per libssh session shared
+  across threads (CF-026), which cfire cannot hold in a struct either.
+- **Workaround:** `src/adapters/ssh/native/flint_tunnel.hpp`: the listener (bound to
+  127.0.0.1 with `bind`/`listen`), `accept`, `poll` and non-blocking reads and writes in
+  C++, one worker thread per host session, called from `src/adapters/ssh/tunnels.cf`.
+- **Ideal:** a `Poller` (or `net.poll(fds, timeout)`) over `TcpListener`, `TcpConn` and raw
+  descriptors, with non-blocking `try_read` / `try_write` on `TcpConn`.
