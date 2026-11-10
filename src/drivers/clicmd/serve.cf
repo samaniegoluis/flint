@@ -150,6 +150,9 @@ fn servable(p: ParsedArgs) -> bool {
     if noun == "host" {
         return verb != "test"
     }
+    if noun == "tunnel" {
+        return !is_tunnel_session(p)
+    }
     if noun == "vault" {
         return verb == "status" || verb == "rename"
     }
@@ -175,6 +178,14 @@ fn access_need(p: ParsedArgs) -> AccessNeed {
     }
     if noun == "host" && verb == "test" {
         return AccessNeed{ action: ACCESS_EXEC, host: p.positional(2) }
+    }
+    // Starting or stopping a tunnel opens a host's ports to this machine: the power
+    // of a command there (milestone 22, D-062).
+    if noun == "tunnel" && (verb == "up" || verb == "down") {
+        return AccessNeed{ action: ACCESS_EXEC, host: tunnel_ref_host(p.positional(2)) }
+    }
+    if noun == "tunnel" && (verb == "ls" || verb == "list") {
+        return AccessNeed{ action: ACCESS_READ, host: "" }
     }
     if noun == "token" && verb == "create" {
         return AccessNeed{ action: ACCESS_TOKEN, host: "" }
@@ -231,7 +242,20 @@ fn needs_unlocked_vault(p: ParsedArgs) -> bool {
     if noun == "vault" {
         return p.positional(1) == "rename"
     }
+    // `tunnel up|down|status` need Flint itself, not just its key: they fail `locked`
+    // at once rather than start Flint (D-062).
+    if noun == "tunnel" {
+        return !is_tunnel_session(p)
+    }
     return noun == "group" || noun == "host" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "import" || noun == "token" || noun == "connect" || noun == "exec" || noun == "cp"
+}
+
+// The host of `<host>:<name>` ("" when it has none).
+fn tunnel_ref_host(text: str) -> str {
+    (h, _) := split_tunnel_ref(text) or {
+        return ""
+    }
+    return h
 }
 
 // The command as Flint's unlock screen and approval window name it, on one line of

@@ -319,6 +319,8 @@ fn main() {
         }
         st.holder.set_quitting()
         gui_session_close_all()
+        // Tunnels run in this process only: quitting closes them (D-062).
+        release_all_tunnels()
         listener.close()
     }
     // Waits for an unlock or create still running on a worker, then closes.
