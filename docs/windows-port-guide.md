@@ -54,8 +54,9 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
   is lost as the tty changes mode. Waiting for vim to leave the alternate screen and the
   prompt to settle makes the vim run pass 3 of 3. The fix is in `scripts/gui-e2e.js`
   (shared), so it belongs on `main`, not here; until it lands, the vim run fails here.
-- **Owner checks still open:** Alt+Tab to another window and back with an SSH session
-  open: the terminal takes keys and Ctrl+V pastes without a click (W-16).
+  Owner, in the installed app: after Alt+Tab away and back, the terminal takes keys and
+  Ctrl+V pastes without a click (2026-11-09).
+- **Owner checks still open:** none.
 
 **Next phase: when cfire ships Windows support upstream.**
 

@@ -398,7 +398,7 @@ fixed · [patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-o
 
 ## W-16
 
-**After Alt+Tab back, the WebView2 does not get the keyboard focus** · [read] · **fixed** ·
+**After Alt+Tab back, the WebView2 does not get the keyboard focus** · [ran] · **fixed** ·
 [patch 0009](cfire-windows/patches/0009-fix-webui-the-WebView2-takes-the-keyboard-focus-back.patch)
 
 - **Symptom (owner, in Flint):** switch to another window and back with Alt+Tab: the
@@ -409,8 +409,9 @@ fixed · [patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-o
   must call `ICoreWebView2Controller::MoveFocus` (WebView2's documented pattern).
 - **Patch:** `WM_SETFOCUS` → `MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)`,
   which keeps the page's own focused element (`NEXT`/`PREVIOUS` would move it to a tab
-  stop). Flint's gui-e2e still passes (180) with it; the Alt+Tab itself is a person's
-  check, since a window started from WSL never gets the foreground.
+  stop). Flint's gui-e2e still passes (180) with it. Checked by a person (a window
+  started from WSL never gets the foreground): after Alt+Tab away and back, the terminal
+  takes keys and Ctrl+V pastes without a click (2026-11-09).
 
 ---
 
