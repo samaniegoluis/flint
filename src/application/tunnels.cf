@@ -1,0 +1,305 @@
+package application
+
+// Tunnels saved in a host and run by the app (milestone 22, D-062): SaveTunnel (add,
+// edit), RemoveTunnel, StartTunnel, StopTunnel and TunnelStatus.
+//
+// A host's running tunnels share one session with no terminal: the first start logs
+// in as a connect does (host key, jump hosts, prompts) and hands the session to the
+// runner; stopping the last one hangs it up. A lost session leaves its tunnels
+// reported as `connection lost` until they are stopped or started again; nothing
+// redials on its own.
+
+import "core:str"
+import "../domain"
+import "../ports"
+
+// What a driver sees of a tunnel. `listen` is the address while it listens.
+type TunnelView struct {
+    host:            str  `json:"host"`
+    name:            str  `json:"name"`
+    local_port:      i64  `json:"local_port"`
+    destination:     str  `json:"destination"`
+    open_on_connect: bool `json:"open_on_connect"`
+    state:           str  `json:"state"`
+    listen:          str  `json:"listen"`
+    connections:     i64  `json:"connections"`
+    error:           str  `json:"error"`
+}
+
+// The fields `tunnel add` and `tunnel edit` set; `set_*` says which.
+type TunnelPatch struct {
+    set_name:        bool
+    name:            str
+    set_local_port:  bool
+    local_port:      i64
+    set_dest:        bool
+    dest_host:       str
+    dest_port:       i64
+    set_open:        bool
+    open_on_connect: bool
+}
+
+fn empty_tunnel_patch() -> TunnelPatch {
+    return TunnelPatch{ set_name: false, name: "", set_local_port: false, local_port: 0, set_dest: false, dest_host: "", dest_port: 0, set_open: false, open_on_connect: false }
+}
+
+fn tunnel_view(h: Host, t: Tunnel, live: []TunnelLive) -> TunnelView {
+    mut v := TunnelView{ host: h.alias, name: t.name, local_port: t.local_port, destination: tunnel_destination(t.dest_host, t.dest_port), open_on_connect: t.open_on_connect, state: TUNNEL_STOPPED, listen: "", connections: 0, error: "" }
+    for l in live {
+        if l.host_id == t.host_id && l.tunnel_id == t.id {
+            if l.up {
+                v.state = TUNNEL_LISTENING
+                v.listen = "127.0.0.1:{l.port}"
+                v.connections = l.connections
+            } else {
+                v.state = TUNNEL_LOST
+            }
+            v.error = l.error
+        }
+    }
+    return v
+}
+
+fn find_tunnel(all: []Tunnel, host_id: str, name: str) -> i64 {
+    want := str.to_lower(name)
+    for i, t in all {
+        if t.host_id == host_id && str.to_lower(t.name) == want {
+            return i64(i)
+        }
+    }
+    return -1
+}
+
+fn require_tunnel(all: []Tunnel, h: Host, name: str) -> Tunnel! {
+    idx := find_tunnel(all, h.id, name)
+    if idx < 0 {
+        return error(coded(ERR_NOT_FOUND, "no tunnel '{name}' on host '{h.alias}'"))
+    }
+    return all[usize(idx)]
+}
+
+// Whether the runner still has a running (or lost) tunnel on `host_id`.
+fn host_has_live[R: TunnelRunner](runner: R, host_id: str) -> bool {
+    for l in runner.tunnel_live() {
+        if l.host_id == host_id {
+            return true
+        }
+    }
+    return false
+}
+
+// Stops what runs for a tunnel or a host that is no longer saved (removed from
+// another window, or by `host rm`), and hangs up a session left with nothing to carry.
+fn prune_tunnels[R: TunnelRunner](saved: []Tunnel, mut runner: R) {
+    mut hosts: []str = []
+    for l in runner.tunnel_live() {
+        mut kept := false
+        for t in saved {
+            if t.id == l.tunnel_id && t.host_id == l.host_id {
+                kept = true
+            }
+        }
+        if !kept {
+            _ := runner.tunnel_unlisten(l.host_id, l.tunnel_id)
+            hosts.push(l.host_id)
+        }
+    }
+    for id in hosts {
+        if runner.tunnel_host_state(id) != 0 && !host_has_live(runner, id) {
+            runner.tunnel_release(id)
+        }
+    }
+}
+
+fn sorted_tunnel_views(mut views: []TunnelView) {
+    // Insertion sort by host, then name; lists are short.
+    for i in 1..views.len() {
+        mut j := i
+        for j > 0 && tunnel_before(views[j], views[j - 1]) {
+            tmp := views[j - 1]
+            views[j - 1] = views[j]
+            views[j] = tmp
+            j -= 1
+        }
+    }
+}
+
+fn tunnel_before(a: TunnelView, b: TunnelView) -> bool {
+    ah := str.to_lower(a.host)
+    bh := str.to_lower(b.host)
+    if ah != bh {
+        return ah < bh
+    }
+    return str.to_lower(a.name) < str.to_lower(b.name)
+}
+
+// `flint tunnel ls [<host>]`: every saved tunnel (of one host), with its state.
+fn list_tunnels[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels: U, mut runner: R, alias: str) -> []TunnelView! {
+    cat := try load_catalog(store)
+    all := try tunnels.tunnels_all()
+    prune_tunnels(all, mut runner)
+    live := runner.tunnel_live()
+    mut only := ""
+    if alias.len() > 0 {
+        only = (try require_host(cat.hosts, alias)).id
+    }
+    mut views: []TunnelView = []
+    for t in all {
+        if only.len() > 0 && t.host_id != only {
+            continue
+        }
+        idx := host_index_by_id(cat.hosts, t.host_id)
+        if idx < 0 {
+            continue
+        }
+        views.push(tunnel_view(cat.hosts[usize(idx)], t, live))
+    }
+    sorted_tunnel_views(mut views)
+    return views
+}
+
+// `flint tunnel status [<host>:<name>]`: one tunnel, or every running one.
+fn running_tunnels[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels: U, mut runner: R) -> []TunnelView! {
+    mut running: []TunnelView = []
+    for v in try list_tunnels(store, tunnels, mut runner, "") {
+        if v.state != TUNNEL_STOPPED {
+            running.push(v)
+        }
+    }
+    return running
+}
+
+fn tunnel_status[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels: U, mut runner: R, alias: str, name: str) -> TunnelView! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    all := try tunnels.tunnels_all()
+    t := try require_tunnel(all, h, name)
+    prune_tunnels(all, mut runner)
+    return tunnel_view(h, t, runner.tunnel_live())
+}
+
+// Applies `p` to `base` and checks the result, including the name's uniqueness in
+// its host.
+fn apply_tunnel_patch(all: []Tunnel, base: Tunnel, p: TunnelPatch) -> Tunnel! {
+    mut t := base
+    if p.set_name {
+        t.name = str.trim(p.name)
+    }
+    if p.set_local_port {
+        t.local_port = p.local_port
+    }
+    if p.set_dest {
+        t.dest_host = p.dest_host
+        t.dest_port = p.dest_port
+    }
+    if p.set_open {
+        t.open_on_connect = p.open_on_connect
+    }
+    try check_tunnel(t)
+    idx := find_tunnel(all, t.host_id, t.name)
+    if idx >= 0 && all[usize(idx)].id != t.id {
+        return error(coded(ERR_CONFLICT, "host already has a tunnel named '{t.name}'"))
+    }
+    return t
+}
+
+// `flint tunnel add <host> <name> --local <port> [--to <dest>]`. The destination
+// defaults to the same port on the server itself (`localhost`).
+fn add_tunnel[C: Crypto, S: VaultStore, U: TunnelStore, R: TunnelRunner](crypto: C, store: S, mut tunnels: U, runner: R, alias: str, p: TunnelPatch) -> TunnelView! {
+    if !p.set_name {
+        return error(coded(ERR_USAGE, "a tunnel needs a name"))
+    }
+    if !p.set_local_port {
+        return error(coded(ERR_USAGE, "a tunnel needs a local port (--local)"))
+    }
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    all := try tunnels.tunnels_all()
+    mut q := p
+    if !q.set_dest {
+        q.set_dest = true
+        q.dest_host = "localhost"
+        q.dest_port = p.local_port
+    }
+    base := Tunnel{ id: new_row_id(crypto), host_id: h.id, name: "", local_port: 0, dest_host: "", dest_port: 0, open_on_connect: false }
+    t := try apply_tunnel_patch(all, base, q)
+    try tunnels.tunnel_put(t)
+    return tunnel_view(h, t, runner.tunnel_live())
+}
+
+// `flint tunnel edit <host>:<name> ...`. A running tunnel keeps its listener and
+// destination until it is started again.
+fn edit_tunnel[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, mut tunnels: U, runner: R, alias: str, name: str, p: TunnelPatch) -> TunnelView! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    all := try tunnels.tunnels_all()
+    base := try require_tunnel(all, h, name)
+    t := try apply_tunnel_patch(all, base, p)
+    try tunnels.tunnel_put(t)
+    return tunnel_view(h, t, runner.tunnel_live())
+}
+
+// `flint tunnel rm <host>:<name>`: stops it if it runs, then forgets it.
+fn remove_tunnel[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, mut tunnels: U, mut runner: R, alias: str, name: str) -> TunnelView! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    all := try tunnels.tunnels_all()
+    t := try require_tunnel(all, h, name)
+    v := tunnel_view(h, t, runner.tunnel_live())
+    try tunnels.tunnel_drop(t.id)
+    stop_running(mut runner, t)
+    mut gone := v
+    gone.state = TUNNEL_STOPPED
+    gone.listen = ""
+    gone.connections = 0
+    gone.error = ""
+    return gone
+}
+
+fn stop_running[R: TunnelRunner](mut runner: R, t: Tunnel) {
+    _ := runner.tunnel_unlisten(t.host_id, t.id)
+    if runner.tunnel_host_state(t.host_id) != 0 && !host_has_live(runner, t.host_id) {
+        runner.tunnel_release(t.host_id)
+    }
+}
+
+// `flint tunnel up <host>:<name>`: listens on 127.0.0.1:<local port>, over the host's
+// tunnel session, which it opens (log in, through jump hosts) when there is none or
+// the last one was lost. Starting a tunnel that already listens changes nothing.
+fn start_tunnel[C: Crypto, S: VaultStore, U: TunnelStore, T: SshTransport, P: Prompter, R: TunnelRunner](crypto: C, mut store: S, tunnels: U, session: VaultSession, mut link: T, prompter: P, mut runner: R, alias: str, name: str, opts: ConnectOptions) -> TunnelView! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    all := try tunnels.tunnels_all()
+    t := try require_tunnel(all, h, name)
+    prune_tunnels(all, mut runner)
+    state := runner.tunnel_host_state(h.id)
+    if state == 2 {
+        // Lost: its listeners are closed already. A new session replaces it.
+        runner.tunnel_release(h.id)
+    }
+    if state != 1 {
+        _ := try open_link_in(crypto, mut store, session, cat, mut link, prompter, h, opts)
+        link.link_hand_over(h.id) or err {
+            link.link_hangup()
+            return error("{err.message()}")
+        }
+    }
+    _ := runner.tunnel_listen(h.id, t.id, t.local_port, t.dest_host, t.dest_port) or err {
+        if !host_has_live(runner, h.id) {
+            runner.tunnel_release(h.id)
+        }
+        return error("{err.message()}")
+    }
+    return tunnel_view(h, t, runner.tunnel_live())
+}
+
+// `flint tunnel down <host>:<name>`: closes its listener and every connection through
+// it; the host's session hangs up with its last tunnel. A stopped tunnel stays stopped.
+fn stop_tunnel[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels: U, mut runner: R, alias: str, name: str) -> TunnelView! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    all := try tunnels.tunnels_all()
+    t := try require_tunnel(all, h, name)
+    stop_running(mut runner, t)
+    return tunnel_view(h, t, runner.tunnel_live())
+}

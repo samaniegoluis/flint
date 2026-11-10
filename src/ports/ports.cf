@@ -73,6 +73,14 @@ type TokenStore interface {
     set_activity_retention(days: i64) -> void!
 }
 
+// Tunnels saved in hosts, in the open vault (adapters/vault, migration 007, milestone
+// 22). Served by the same store as `VaultStore`; removing a host removes its tunnels.
+type TunnelStore interface {
+    tunnels_all() -> []Tunnel!
+    tunnel_put(t: Tunnel) -> void!
+    tunnel_drop(id: str) -> void!
+}
+
 // The OS keychain (adapters/keychain). Holds one master key per vault, by account.
 // `keychain_load` returns an empty slice when there is no entry.
 type Keychain interface {

@@ -114,10 +114,12 @@ type FakeStore struct {
     snap_keys: []SshKey
     snap_creds: []Credential
     snap_known: []KnownHost
+    tunnels: []Tunnel
+    snap_tunnels: []Tunnel
 }
 
 fn new_fake_store() -> FakeStore {
-    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [] }
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [] }
 }
 
 fn (self: FakeStore) vault_file_exists(path: str) -> bool {
@@ -197,6 +199,7 @@ fn (mut self: FakeStore) vault_begin() -> void! {
     self.snap_keys = self.keys
     self.snap_creds = self.creds
     self.snap_known = self.known
+    self.snap_tunnels = self.tunnels
 }
 
 fn (mut self: FakeStore) vault_commit() -> void! {
@@ -208,6 +211,7 @@ fn (mut self: FakeStore) vault_rollback() {
     self.keys = self.snap_keys
     self.creds = self.snap_creds
     self.known = self.snap_known
+    self.tunnels = self.snap_tunnels
 }
 
 fn (self: FakeStore) groups_all() -> []Group! {
@@ -260,6 +264,14 @@ fn (mut self: FakeStore) host_drop(id: str) -> void! {
         }
     }
     self.hosts = next
+    // ON DELETE CASCADE in the SQL store.
+    mut kept: []Tunnel = []
+    for t in self.tunnels {
+        if t.host_id != id {
+            kept.push(t)
+        }
+    }
+    self.tunnels = kept
 }
 
 fn (self: FakeStore) keys_all() -> []SshKey! {
@@ -338,6 +350,38 @@ fn (mut self: FakeStore) known_host_drop(addr: str) -> void! {
         }
     }
     self.known = next
+}
+
+fn (self: FakeStore) tunnels_all() -> []Tunnel! {
+    try self.need_attached()
+    return self.tunnels
+}
+
+// Like the SQL store: a name is unique in its host, whatever its case.
+fn (mut self: FakeStore) tunnel_put(t: Tunnel) -> void! {
+    try self.need_attached()
+    for o in self.tunnels {
+        if o.id != t.id && o.host_id == t.host_id && lower_ascii(o.name) == lower_ascii(t.name) {
+            return error(coded(ERR_CONFLICT, "UNIQUE constraint failed: tunnels.host_id, tunnels.name"))
+        }
+    }
+    for i, o in self.tunnels {
+        if o.id == t.id {
+            self.tunnels[i] = t
+            return
+        }
+    }
+    self.tunnels.push(t)
+}
+
+fn (mut self: FakeStore) tunnel_drop(id: str) -> void! {
+    mut next: []Tunnel = []
+    for t in self.tunnels {
+        if t.id != id {
+            next.push(t)
+        }
+    }
+    self.tunnels = next
 }
 
 // ---- Keychain and recents: temp files, since their methods are not `mut` -------

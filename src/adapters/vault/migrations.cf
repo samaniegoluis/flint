@@ -148,6 +148,22 @@ ALTER TABLE hosts ADD COLUMN sudo_password BLOB;
 ALTER TABLE activity ADD COLUMN command_cut INTEGER NOT NULL DEFAULT 0;
 ` })
 
+    // 007: local port forwards saved in a host (milestone 22, D-062). A tunnel goes
+    // with its host; its name is unique in that host, whatever its case. The
+    // destination is as the server sees it (`localhost` is the server itself).
+    list.push(Migration{ version: 7, name: "tunnels", sql: `
+CREATE TABLE tunnels (
+    id TEXT PRIMARY KEY,
+    host_id TEXT NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    local_port INTEGER NOT NULL,
+    dest_host TEXT NOT NULL,
+    dest_port INTEGER NOT NULL,
+    open_on_connect INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX tunnels_unique_name ON tunnels (host_id, name COLLATE NOCASE);
+` })
+
     return list
 }
 
