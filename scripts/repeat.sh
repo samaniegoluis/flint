@@ -3,9 +3,9 @@
 # relies on (an unexplained failure is isolated and measured before a second attempt).
 #
 #   scripts/repeat.sh <run> <N>                  e.g. scripts/repeat.sh vim 10
-#   FLINT_E2E_VISIBLE=1 scripts/repeat.sh vim 10 macOS: in the real window, on screen
+#   FLINT_E2E_VISIBLE=0 scripts/repeat.sh vim 10 macOS: in cfire's offscreen WebView
 #
-# <run> is one of gui-e2e's runs (terminal, vault, tunnels, paste, vim, main). The app is
+# <run> is one of gui-e2e's runs (terminal, vault, tunnels, paste, vim). The app is
 # built once and the test sshds started once; each repetition is a fresh launch on its
 # own vault. Every failure is listed with the last line its page logged. Exit status: 0
 # when no repetition failed, 1 otherwise, 2 on a usage error.
@@ -24,8 +24,8 @@ fi
 
 out="$(mktemp -d "${TMPDIR:-/tmp}/flint-repeat.XXXXXX")"
 trap 'rm -rf "$out"' EXIT
-mode=hidden
-[[ "${FLINT_E2E_VISIBLE:-0}" != 1 ]] || mode=visible
+mode=visible
+[[ "${FLINT_E2E_VISIBLE:-1}" == 1 ]] || mode=offscreen
 [[ "$(uname -s)" == Darwin ]] || mode=xvfb
 fails=0
 total_s=0

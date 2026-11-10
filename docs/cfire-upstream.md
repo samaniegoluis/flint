@@ -1054,7 +1054,8 @@ The entries below were found while building milestone 02 against the same cfire 
 - **Ideal:** default to the field name when there is no tag, as Go does, or reject the
   type at compile time.
 
-### CF-050 · improvement · `answered, untested`: the headless WebView runner throttles timers
+### CF-050 · improvement · `reopened`: the headless WebView runner throttles timers
+- **At `c5b1d4b` (Flint milestone 27, 2026-11-10):** `inactiveSchedulingPolicy` does not hold. `run_macos_webview_test` puts a borderless window at (-2000, -2000), orders it back and pumps `CFRunLoopRunInMode` by hand, so the page reports `document.hidden === true`. Its timers run normally for about a second; then, with no RPC or DOM event to wake it, WebKit suspends the page for good. **Repro:** in a `run_webview_test` page, `const t0 = Date.now(); while (Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 50));` never ends (a 1 s loop does); the same page under `app.run()` ends at 5.08 s with no gap over 69 ms. Measured in Flint: a wait that never comes true stopped the run until its cap in 10 runs of 10 offscreen, and failed at its own 20 s in 10 of 10 in the window. **Workaround:** on macOS Flint's e2e run uses `app.run()` (the real window, on screen) with its own cap (`run_e2e_cap`, `FLINT_GUI_E2E_VISIBLE`; D-068); the offscreen runner stays behind `FLINT_E2E_VISIBLE=0`. **Ideal:** `run_webview_test` keeps the page visible to WebKit: a window on screen (ordered front, perhaps fully transparent or minimal), the app's own `[NSApp run]` loop, or an option to pick that over offscreen; and a test in cfire that waits 5 s on timers alone.
 - **At `466751b`:** `inactiveSchedulingPolicy` is set and App Nap is held off. Flint's e2e runner already waits on `MessageChannel` posts and was left as is.
 - **Repro:** in `run_webview_test`, a page that waits with `setTimeout(…, 50)` in a
   loop slows to about one wake-up every several seconds after a while, because the

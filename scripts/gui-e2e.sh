@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Headless end-to-end run of the desktop app on macOS: builds it, then drives the
-# real UI (scripts/gui-e2e.js) in a hidden WKWebView against the throwaway sshds of
+# End-to-end run of the desktop app: builds it, then drives the real UI
+# (scripts/gui-e2e.js) in the app's window against the throwaway sshds of
 # scripts/test.sh: create a vault, add a key and hosts, trust a host key, type in
 # the terminal, reconnect, a jump host, a changed host key behind a TCP forwarder,
 # the palette, settings, lock and unlock, tunnels. It runs as several short runs
@@ -8,7 +8,9 @@
 #
 #   scripts/gui-e2e.sh
 #
-# Linux: the real GTK window opens under xvfb-run.
+# macOS: the real window opens on screen, and the run types and clicks in it; leave it
+# alone until it ends (covered, or on another Space, it is hidden again). Linux: the real
+# GTK window opens under xvfb-run.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,21 +24,20 @@ if [[ "${FLINT_E2E_NOBUILD:-0}" != 1 ]]; then
   "$root/scripts/build-gui.sh" >/dev/null
 fi
 # The page script (scripts/gui-e2e.js) is split into short runs, each a launch of the app
-# on a fresh vault and config folder: terminal, vault, tunnels, paste, then vim. A hidden page on
-# macOS stops (WebKit suspends it) once a run opens enough tabs (ROADMAP, "one more tab in
-# the main run freezes the page"); short runs stay under it, and a freeze fails one run by
-# name instead of every step after it. vim freezes on macOS at times and fails under Xvfb
-# on Linux (ROADMAP, "gui-e2e's vim step"), so there it runs only when FLINT_E2E_VIM=1.
-#   FLINT_E2E_ONLY=tunnels scripts/gui-e2e.sh    runs only the named runs (comma-separated);
-#                                                `main` (terminal, tunnels and vault in one
-#                                                launch, the run before milestone 23) only so
+# on a fresh vault and config folder: terminal, vault, tunnels, paste, then vim, so a
+# failure names its run and one run can be repeated alone. vim fails under Xvfb on Linux
+# (ROADMAP, "gui-e2e's vim step"), so there it runs only when FLINT_E2E_VIM=1.
+#   FLINT_E2E_ONLY=tunnels scripts/gui-e2e.sh    runs only the named runs (comma-separated)
 #   FLINT_E2E_MAIN_MS=60000 scripts/gui-e2e.sh   caps each run but vim (default: 240 s)
-#   FLINT_E2E_VISIBLE=1 scripts/gui-e2e.sh       macOS: the real window, on screen, instead of
-#                                                cfire's offscreen one (milestone 27)
+#   FLINT_E2E_VISIBLE=0 scripts/gui-e2e.sh       macOS: cfire's offscreen WebView instead of
+#                                                the window. WebKit suspends that page about
+#                                                a second after nothing happens in it, so a
+#                                                wait that times out there never reports
+#                                                (milestone 27, D-068)
 #   scripts/repeat.sh vim 10                     one run N times, with its failure rate
-# Exit status: 0 all passed, 1 a run other than vim failed, 3 only the vim run failed.
+# Exit status: 0 all passed, 1 a run failed.
 runs=(terminal vault tunnels paste vim)
-known=(terminal vault tunnels paste vim main)
+known=("${runs[@]}")
 if [[ "$(uname -s)" == Darwin ]]; then
   app=(build/gui/Flint.app/Contents/MacOS/Flint)
   run_vim=1
@@ -45,7 +46,7 @@ else
   run_vim="${FLINT_E2E_VIM:-0}"
 fi
 only="${FLINT_E2E_ONLY:-}"
-visible="${FLINT_E2E_VISIBLE:-0}"
+visible="${FLINT_E2E_VISIBLE:-1}"
 if [[ -n "$only" ]]; then
   IFS=, read -r -a picked <<<"$only"
   for r in "${picked[@]}"; do
@@ -146,14 +147,10 @@ summary() {
   done
 }
 summary
-# Exit 1: a run other than vim failed. Exit 3: only vim did, so a report can tell the
-# known vim freeze (ROADMAP) from a new failure. Either way the run is not a pass.
-for r in "${failed[@]:-}"; do
-  if [[ -n "$r" && "$r" != vim ]]; then
-    echo "gui-e2e: FAILED: ${failed[*]}" >&2
-    exit 1
-  fi
-done
+if [[ ${#failed[@]} -gt 0 ]]; then
+  echo "gui-e2e: FAILED: ${failed[*]}" >&2
+  exit 1
+fi
 # Principle 5: nothing from inside the vault is readable in any run's file.
 for f in "$tmp"/*.flint; do
   [[ -f "$f" ]] || continue
@@ -167,10 +164,8 @@ done
 echo "gui-e2e: the vault files hold no clear-text host data"
 # D-030: the layout state holds ids only, never a name from inside the vault. The vault
 # run is the one that makes groups and renames the vault.
-vault_run=""
-for r in vault main; do if [[ -f "$tmp/$r.log" ]]; then vault_run="$r"; fi; done
-if [[ -n "$vault_run" ]]; then
-  ui_state="$tmp/config-$vault_run/ui-state.json"
+if [[ -f "$tmp/vault.log" ]]; then
+  ui_state="$tmp/config-vault/ui-state.json"
   [[ -f "$ui_state" ]] || { echo "gui-e2e: no ui-state.json was written" >&2; exit 1; }
   for marker in e2e-grp local pwhost "E2E Renamed"; do
     if grep -aq -- "$marker" "$ui_state"; then
@@ -178,11 +173,7 @@ if [[ -n "$vault_run" ]]; then
       exit 1
     fi
   done
-  grep -q '"E2E Renamed"' "$tmp/config-$vault_run/vaults.json" || { echo "gui-e2e: the rename did not reach vaults.json" >&2; exit 1; }
+  grep -q '"E2E Renamed"' "$tmp/config-vault/vaults.json" || { echo "gui-e2e: the rename did not reach vaults.json" >&2; exit 1; }
   echo "gui-e2e: ui-state.json holds ids only; vaults.json has the new name"
-fi
-if [[ ${#failed[@]} -gt 0 ]]; then
-  echo "gui-e2e: FAILED: vim" >&2
-  exit 3
 fi
 echo "gui-e2e: pass"

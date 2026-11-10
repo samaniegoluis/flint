@@ -173,7 +173,7 @@ cd ui && npm test
 scripts/gui-e2e.sh
 ```
 
-It builds the app and drives its real UI in a hidden WebView against the throwaway
+It builds the app and drives its real UI in its window against the throwaway
 `sshd`s: creates a vault, adds a key and hosts, trusts a host key, types in the terminal,
 checks the PTY size, reconnects, connects through a jump host, meets a changed host key
 behind a TCP forwarder and replaces it, uses the palette and settings, saves and starts tunnels, then locks
@@ -191,20 +191,20 @@ terminal) and `vim`. To repeat only some of them:
 FLINT_E2E_ONLY=tunnels,vim scripts/gui-e2e.sh
 ```
 
-On macOS the WebView is offscreen by default. `FLINT_E2E_VISIBLE=1` runs it in the app's
-real window instead, on screen, so you can watch the clicks and typing; leave it alone
-while it runs, since covering it or switching Spaces hides it again.
+On macOS each run opens the app's real window, on screen, and you can watch it click and
+type. Leave it alone until the run ends: covered, or on another Space, the window is
+hidden again. `FLINT_E2E_VISIBLE=0` uses an offscreen WebView instead, with nothing on
+screen; WebKit suspends that page about a second after nothing happens in it, so a check
+that times out there stops the run until its cap instead of failing.
 
 To measure a run that fails now and then, repeat it alone and read its failure rate:
 
 ```sh
 scripts/repeat.sh vim 10
-FLINT_E2E_VISIBLE=1 scripts/repeat.sh vim 10
 ```
 
 It builds the app and starts the `sshd`s once, then launches the run N times and lists
-each failure with the last step its page logged. `main` (the `terminal`, `tunnels` and
-`vault` runs in one launch) exists only for this.
+each failure with the last step its page logged.
 
 ### The CLI through the app
 
