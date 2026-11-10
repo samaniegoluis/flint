@@ -48,12 +48,14 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
   password (2026-11-09).
 - **Focus after Alt+Tab (2026-11-09):** the owner saw that after Alt+Tab back to Flint the
   terminal gets no keys (no paste) until clicked. Cause and fix in cfire: W-16, patch 0009
-  (`WM_SETFOCUS` → WebView2 `MoveFocus`). gui-e2e still 180 pass.
+  (`WM_SETFOCUS` → WebView2 `MoveFocus`). gui-e2e still 180 pass. **Found after the
+  handoff:** the zip cfire's author has (0001-0008, W-01..W-15) does not include it, and it
+  was not sent; check it in the next phase, with the rest.
 - **The vim step is a test race, not a Windows failure (2026-11-09):** on Windows vim gets
   every key and `:wq` saves and quits; the next command, sent while vim is still quitting,
   is lost as the tty changes mode. Waiting for vim to leave the alternate screen and the
   prompt to settle makes the vim run pass 3 of 3. The fix is in `scripts/gui-e2e.js`
-  (shared), so it belongs on `main`, not here; until it lands, the vim run fails here.
+  (shared), so it went to `main` (`f994cb8`) and came here by merge.
   Owner, in the installed app: after Alt+Tab away and back, the terminal takes keys and
   Ctrl+V pastes without a click (2026-11-09).
 - **Owner checks still open:** none.

@@ -36,7 +36,7 @@ Sibling of [`cfire-upstream.md`](cfire-upstream.md), which tracks every other ga
 | [W-13](#w-13) | A Windows `.exe` has no icon: the build file's `Icon` is never embedded | **fixed** | 0007 |
 | [W-14](#w-14) | `fs.exists` is false for an AF_UNIX socket file on Windows | **fixed** | 0008 |
 | [W-15](#w-15) | The Windows file dialogs cut paths at `MAX_PATH` | open | none |
-| [W-16](#w-16) | After Alt+Tab back, the WebView2 does not get the keyboard focus | **fixed** | 0009 |
+| [W-16](#w-16) | After Alt+Tab back, the WebView2 does not get the keyboard focus (**after the handoff, not sent**) | **fixed** | 0009 |
 
 **Works on Windows** (ran, not just compiled), with W-01, W-04, W-09 and W-10 worked
 around and patches 0001–0006 applied:
@@ -400,6 +400,11 @@ fixed · [patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-o
 
 **After Alt+Tab back, the WebView2 does not get the keyboard focus** · [ran] · **fixed** ·
 [patch 0009](cfire-windows/patches/0009-fix-webui-the-WebView2-takes-the-keyboard-focus-back.patch)
+
+> **Found after the handoff.** cfire's author already has the 2026-11-09 package (W-01 to
+> W-15, patches 0001-0008) and is working from it; W-16 and patch 0009 are not in it and
+> were not sent. Noted here only: check it when cfire ships Windows support (the port
+> guide's "Next phase").
 
 - **Symptom (owner, in Flint):** switch to another window and back with Alt+Tab: the
   app is active, but the terminal that had the focus gets no keys (a paste does nothing)

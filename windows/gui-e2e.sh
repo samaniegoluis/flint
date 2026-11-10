@@ -14,8 +14,8 @@
 # `localhost` → 127.0.0.3, the local side of the download (the sshd is not this
 # machine) and Windows paths.
 # The vim step runs in a run of its own after the main one, as in scripts/gui-e2e.sh. It
-# is off by default: on Windows it fails only on a race in gui-e2e.js (the next command
-# is sent while vim is still quitting; the port guide, "Resume here");
+# is off by default, as on Linux, though it passes here since main's f994cb8 (the race
+# after :wq, the port guide's "Resume here");
 # FLINT_E2E_VIM=1 adds the vim run, FLINT_E2E_ONLY=vim runs only it. Exit status: 0 both
 # passed, 1 the main run failed, 3 only the vim run failed.
 # Run outside any sandbox (it listens on sockets).
