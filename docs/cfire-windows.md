@@ -36,6 +36,7 @@ Sibling of [`cfire-upstream.md`](cfire-upstream.md), which tracks every other ga
 | [W-13](#w-13) | A Windows `.exe` has no icon: the build file's `Icon` is never embedded | **fixed** | 0007 |
 | [W-14](#w-14) | `fs.exists` is false for an AF_UNIX socket file on Windows | **fixed** | 0008 |
 | [W-15](#w-15) | The Windows file dialogs cut paths at `MAX_PATH` | open | none |
+| [W-16](#w-16) | After Alt+Tab back, the WebView2 does not get the keyboard focus | **fixed** | 0009 |
 
 **Works on Windows** (ran, not just compiled), with W-01, W-04, W-09 and W-10 worked
 around and patches 0001–0006 applied:
@@ -392,6 +393,24 @@ fixed · [patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-o
   modern dialog, folder pickers for free (`FOS_PICKFOLDERS`), and the same owner window.
   Flint uses these dialogs as they are (import from Tether, save a key, the Files view's
   downloads); they work.
+
+---
+
+## W-16
+
+**After Alt+Tab back, the WebView2 does not get the keyboard focus** · [read] · **fixed** ·
+[patch 0009](cfire-windows/patches/0009-fix-webui-the-WebView2-takes-the-keyboard-focus-back.patch)
+
+- **Symptom (owner, in Flint):** switch to another window and back with Alt+Tab: the
+  app is active, but the terminal that had the focus gets no keys (a paste does nothing)
+  until it is clicked.
+- **Cause:** the WndProc of patch 0004 handles no `WM_SETFOCUS`. On activation Windows
+  gives the focus to the host window, and WebView2 does not take it by itself: the host
+  must call `ICoreWebView2Controller::MoveFocus` (WebView2's documented pattern).
+- **Patch:** `WM_SETFOCUS` → `MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)`,
+  which keeps the page's own focused element (`NEXT`/`PREVIOUS` would move it to a tab
+  stop). Flint's gui-e2e still passes (180) with it; the Alt+Tab itself is a person's
+  check, since a window started from WSL never gets the foreground.
 
 ---
 

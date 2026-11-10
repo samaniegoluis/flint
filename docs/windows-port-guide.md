@@ -18,7 +18,7 @@ by merging `main` into it now and then.
 State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
 
 - **Done:** the CLI and the desktop app build and run on Windows 11 on top of `main`
-  (`83557b0`, cfire `c5b1d4b`) with cfire patches 0001-0008. Every automated check is
+  (`83557b0`, cfire `c5b1d4b`) with cfire patches 0001-0009. Every automated check is
   green (Verified, below). Installed in `D:\Programas\Flint`. The handoff for cfire's
   author is `D:\Respaldos\flint-windows\cfire-windows-2026-11-09.zip` (already given,
   or to give). Backups: git bundles in `D:\Respaldos\flint-windows`.
@@ -46,7 +46,16 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
   says "No Windows Hello" on Windows.
   Sleep with the app unlocked locks it too: after waking, Flint asks for the master
   password (2026-11-09).
-- **Owner checks still open:** none.
+- **Focus after Alt+Tab (2026-11-09):** the owner saw that after Alt+Tab back to Flint the
+  terminal gets no keys (no paste) until clicked. Cause and fix in cfire: W-16, patch 0009
+  (`WM_SETFOCUS` → WebView2 `MoveFocus`). gui-e2e still 180 pass.
+- **The vim step is a test race, not a Windows failure (2026-11-09):** on Windows vim gets
+  every key and `:wq` saves and quits; the next command, sent while vim is still quitting,
+  is lost as the tty changes mode. Waiting for vim to leave the alternate screen and the
+  prompt to settle makes the vim run pass 3 of 3. The fix is in `scripts/gui-e2e.js`
+  (shared), so it belongs on `main`, not here; until it lands, the vim run fails here.
+- **Owner checks still open:** Alt+Tab to another window and back with an SSH session
+  open: the terminal takes keys and Ctrl+V pastes without a click (W-16).
 
 **Next phase: when cfire ships Windows support upstream.**
 
@@ -78,7 +87,7 @@ the same package at once.
 |---|---|
 | Flint worktree | `~/Personal/Proyectos/cfire/flint-windows`, branch `windows-port-2` (local only). `windows-port` is the history before the merge, kept for reference |
 | cfire clone | `~/Personal/Proyectos/cfire/cfire-windows` |
-| cfire (patches and Flint) | branch `windows-fixes` = `c5b1d4b` (the commit `main` pins) + patches 0001-0008, installed by hand in `~/.local` (`bin/cfire`, `share/cfire`) |
+| cfire (patches and Flint) | branch `windows-fixes` = `c5b1d4b` (the commit `main` pins) + patches 0001-0009, installed by hand in `~/.local` (`bin/cfire`, `share/cfire`) |
 | Toolchain | llvm-mingw in `~/.local/opt/llvm-mingw-*`, MSYS2 CLANG64 libraries + WebView2 SDK in `~/.local/opt/win-sysroot` (`windows/bin/sysroot.sh`) |
 | Environment | `source windows/bin/env.sh` (Flint and the cfire probes) |
 | Build the CLI | `cfire build --target x86_64-w64-mingw32` in the worktree → `build/flint.exe` |

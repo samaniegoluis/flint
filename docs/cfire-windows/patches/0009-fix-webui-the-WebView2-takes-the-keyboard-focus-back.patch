@@ -1,0 +1,64 @@
+From 0e3eca9a9f5f0ca5aa7f62d80df6c582010f2337 Mon Sep 17 00:00:00 2001
+From: Luis Samaniego <luis.samaniego86@gmail.com>
+Date: Mon, 9 Nov 2026 18:33:25 -0600
+Subject: [PATCH] fix(webui): the WebView2 takes the keyboard focus back when
+ the Windows window gets it
+
+After Alt+Tab back to the app, WM_SETFOCUS reached the host window and stopped
+there: the page's focused element (a terminal) got no keys until a click.
+WM_SETFOCUS now calls MoveFocus(PROGRAMMATIC), which keeps the page's own focus.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ runtime/core/webui/windows_webview2.hpp | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/runtime/core/webui/windows_webview2.hpp b/runtime/core/webui/windows_webview2.hpp
+index 962ff1a..41081f1 100644
+--- a/runtime/core/webui/windows_webview2.hpp
++++ b/runtime/core/webui/windows_webview2.hpp
+@@ -178,6 +178,9 @@ struct Win32WindowContext {
+     std::shared_ptr<AppState> state;
+     HWND hwnd = nullptr;
+     std::function<void(RECT)> on_resize;
++    // The window got the keyboard focus (activation, Alt+Tab back): hand it to the
++    // WebView2, which does not take it by itself, so the page's focused element gets keys.
++    std::function<void()> on_focus;
+     // Runs a script on the UI thread. AppState::eval_js may be called from any thread
+     // (async RPC workers, app code); platform_eval posts kWmCfireEval and this runs it.
+     std::function<void(const std::string&)> on_eval;
+@@ -202,6 +205,10 @@ inline LRESULT CALLBACK cfire_win32_wndproc(HWND hwnd, UINT msg, WPARAM wParam,
+             }
+             return 0;
+         }
++        case WM_SETFOCUS: {
++            if (ctx && ctx->on_focus) ctx->on_focus();
++            return 0;
++        }
+         case WM_GETMINMAXINFO: {
+             if (ctx && ctx->state) {
+                 auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+@@ -441,6 +448,12 @@ struct Wv2Host {
+         if (controller) controller->put_Bounds(rc);
+     }
+ 
++    // PROGRAMMATIC keeps the page's own focused element (MoveFocus docs); NEXT/PREVIOUS
++    // would move it to the first or last tab stop.
++    void focus() {
++        if (controller) controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
++    }
++
+     static void report(const char* what, HRESULT hr) {
+         if (hr == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) {
+             std::fprintf(stderr, "webui: %s failed: the WebView2 Runtime is not installed "
+@@ -718,6 +731,7 @@ inline void run_win32_webview2(const std::shared_ptr<AppState>& state_, bool off
+     wv2.emplace(state_, hwnd);
+     ctx.on_resize = [&wv2](RECT rc) { if (wv2) wv2->resize(rc); };
+     ctx.on_eval = [&wv2](const std::string& js) { if (wv2) wv2->eval(js); };
++    ctx.on_focus = [&wv2]() { if (wv2) wv2->focus(); };
+     {
+         std::lock_guard<std::recursive_mutex> lock(state_->mtx);
+         state_->platform_eval = [hwnd](const std::string& js) {
+-- 
+2.43.0
+
