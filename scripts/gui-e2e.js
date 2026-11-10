@@ -12,16 +12,14 @@
   const KEY = `@@KEY@@`;
   // gui-e2e.sh runs the app once per run, each on a fresh vault and config folder:
   // every run creates the vault and connects to `local`, then does only its own steps.
-  // Short runs keep a hidden page under the point where WebKit stops it (ROADMAP,
-  // "one more tab in the main run freezes the page"), and a freeze fails one run by
-  // name instead of every step after it.
+  // A failure names its run, and one run can be repeated alone (scripts/repeat.sh).
   //   terminal  the shell, files, a jump host, tabs, copy between servers, split panes,
   //             a changed host key
   //   vault     test connection, initial command, palette, settings, known hosts,
   //             sidebar and groups, rename, lock, the tray
   //   tunnels   tunnels in the app (milestone 23)
   //   paste     an image pasted into the terminal lands on the server (milestone 25)
-  //   vim       vim in the terminal (it freezes on macOS at times, ROADMAP)
+  //   vim       vim in the terminal
   const RUN = '@@RUN@@';
   const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim'];
   const MASTER = 'e2e-master-password-42';

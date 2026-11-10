@@ -63,7 +63,7 @@ is `docs/build-log.md` plus `git log`.
 9. **Isolate an unexplained failure before the second attempt.** A test that fails or
    freezes with no known cause is never chased by rerunning a whole suite. Run it alone
    (`FLINT_E2E_ONLY=<step>` for the e2e suites, a name filter for `cfire test`) in a loop
-   of N runs that prints the rate (`scripts/repeat.sh <step> <N>` once M27 adds it), and
+   of N runs that prints the rate (`scripts/repeat.sh <run> <N>`; on macOS the runs use the real window, D-068), and
    iterate there. A fix counts when that loop shows 0 failures in N runs; then the step
    goes back into its run and the full suite runs once to confirm. The measured rate goes
    into the failure's ROADMAP entry (owner, 2026-11-10).
