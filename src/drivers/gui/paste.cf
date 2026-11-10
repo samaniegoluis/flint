@@ -28,10 +28,9 @@ fn rpc_terminal_paste(req: TerminalPasteReq, mut stage: FsDropStage, settings: J
         return error(coded(ERR_INVALID, "a paste needs its staged file"))
     }
     defer discard_dropped(mut stage, req.drop)
-    limit := (load_settings(settings) or default_settings()).paste_limit_mb
     mut link := try borrow_transfer(req.session, req.drop)
     defer give_back_transfer(req.session, req.drop, mut link)
     mut local := new_local_fs()
-    paste := PasteRequest{ id: req.drop, local: remote_join(stage.stage_folder(req.drop), req.rel), name: req.name, kind: req.kind, limit_mb: limit }
-    return paste_over_session(mut link, mut local, paste)
+    paste := PasteRequest{ id: req.drop, local: remote_join(stage.stage_folder(req.drop), req.rel), name: req.name, kind: req.kind, limit_mb: 0 }
+    return paste_over_session(mut link, mut local, settings, paste)
 }

@@ -165,8 +165,11 @@ fn paste_write[T: SftpTransport, L: LocalFiles](mut sftp: T, mut local: L, src: 
 }
 
 // A paste over a session that is already logged in (the pane's), on an SFTP
-// channel of its own, as the Files view's transfers.
-fn paste_over_session[T: SftpTransport, L: LocalFiles](mut sftp: T, mut local: L, req: PasteRequest) -> PasteResult! {
+// channel of its own, as the Files view's transfers. The limit is this machine's
+// setting, never the request's.
+fn paste_over_session[T: SftpTransport, L: LocalFiles, S: SettingsStore](mut sftp: T, mut local: L, settings: S, req: PasteRequest) -> PasteResult! {
+    mut r := req
+    r.limit_mb = (load_settings(settings) or default_settings()).paste_limit_mb
     try open_sftp(mut sftp)
-    return paste_to_remote(mut sftp, mut local, req)
+    return paste_to_remote(mut sftp, mut local, r)
 }

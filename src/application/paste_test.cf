@@ -113,3 +113,25 @@ test "a paste needs an id, and a nameless image gets one" {
     res := try paste_to_remote(mut host, mut here, req)
     assert(res.path.ends_with("/d-6/paste.jpg"))
 }
+
+test "a paste over a session takes the limit from this machine's settings" {
+    mut host := paste_host()
+    mut here := paste_here()
+    mut s := default_settings()
+    s.paste_limit_mb = 10
+    store := FakeSettingsStore{ saved: s }
+    mut big := ""
+    for i in 0..(10 * 1048576 + 1) {
+        big = big + "x"
+    }
+    here.tree.nodes.push(ffile("/stage/big.png", big))
+    mut req := paste_req("d-7")
+    req.local = "/stage/big.png"
+    // Whatever the request says, the setting decides.
+    req.limit_mb = 100
+    mut msg := ""
+    paste_over_session(mut host, mut here, store, req) or err { msg = "{err.message()}" }
+    assert(msg.contains("10 MB paste limit"))
+    res := try paste_over_session(mut host, mut here, store, paste_req("d-8"))
+    assert(res.path.ends_with("/d-8/Captura-de-pantalla.png"))
+}
