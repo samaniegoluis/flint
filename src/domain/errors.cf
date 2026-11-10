@@ -30,7 +30,8 @@ ERR_SUDO_PASSWORD: str = "sudo_password"
 ERR_PERMISSION: str = "permission_denied"
 ERR_EXISTS: str = "exists"
 ERR_NOT_DIR: str = "not_a_directory"
-// Tunnel codes (milestone 22), appended likewise: ERR_PORT_IN_USE is in tunnel.cf.
+// Tunnel codes (milestone 22), appended likewise.
+ERR_PORT_IN_USE: str = "port_in_use"
 
 // Builds an error message carrying a stable code.
 fn coded(code: str, msg: str) -> str {

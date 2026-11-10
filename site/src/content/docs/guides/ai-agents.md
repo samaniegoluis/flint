@@ -91,6 +91,10 @@ keys or `ssh` directly.
   must reach both hosts)
   (`-r` for a folder). Never `exec cat` or a heredoc. Exit 20 (`exists`): the file is
   there; ask me before passing `--force`.
+- Reach a service inside a server: `flint --json tunnel ls`, then
+  `flint --json tunnel up <host>:<name>` and connect to its `listen` address; stop it
+  with `flint tunnel down <host>:<name>` when done. Never add or change tunnels without
+  asking me. Exit 22 (`port_in_use`): tell me.
 - Exit code 5 (`locked`): Flint is asking me to unlock it; wait for me, then retry.
   15 (`denied`) or 16 (`approval_timeout`): I did not approve it in Flint; ask me first.
   11 (`host_key`): ask me to check the server's key. Never pass `--accept-new-host-key`.
@@ -109,6 +113,8 @@ keys or `ssh` directly.
 | `flint --json exec <alias> -- '<cmd>'` | `{host, exit_code, signal, stdout, stderr, duration_ms}` |
 | `flint --json exec <alias> --sudo -- <cmd> [args]` | The same, run as root once you allow that exact command in Flint |
 | `flint --json cp [-r] <src> <dst>` | Copies a file or folder to or from a host, or between two: `{host, to_host, direction, files, folders, bytes, skipped, duration_ms}` |
+| `flint --json tunnel ls` / `tunnel status` | The saved tunnels, or the running ones, with `listen` (`127.0.0.1:<port>`) and `state` |
+| `flint --json tunnel up\|down <host>:<name>` | Starts or stops a saved tunnel in Flint; it keeps running after the command returns |
 | `flint --json known-host list` | The server keys Flint has recorded |
 
 Everything after `--` is joined with spaces and parsed by the **remote** shell, like `ssh`.
@@ -146,6 +152,7 @@ command's own failure comes as the usual object on stdout with its `exit_code`.
 | 19 | `permission_denied` | `cp`: the host's user may not read or write there |
 | 20 | `exists` | `cp`: the file is already there. Ask before `--force` |
 | 21 | `not_a_directory` | `cp`: a path that must be a folder is a file |
+| 22 | `port_in_use` | `tunnel up`: another program holds that local port |
 
 The full list is in the [CLI reference](/reference/cli/#output-and-errors).
 

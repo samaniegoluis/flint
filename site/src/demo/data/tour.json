@@ -63,6 +63,17 @@
 		},
 		{
 			"hint": [
+				"db's Postgres listens only on the server. Its tunnel is saved in the host: Flint",
+				"listens on 127.0.0.1:5432 here and forwards each connection over db's own login:"
+			],
+			"run": "flint tunnel up db:postgres",
+			"accept": [
+				"flint tunnel up"
+			],
+			"where": "local"
+		},
+		{
+			"hint": [
 				"Open a shell on db. Flint goes through bastion for you:"
 			],
 			"run": "flint connect db",

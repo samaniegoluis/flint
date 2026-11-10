@@ -220,7 +220,7 @@ FLINT_KEYCHAIN=off expect 7 "a file that is not a Tether vault is invalid" "$IMI
 FLINT_KEYCHAIN=off expect 2 "only tether is a source" "" -- import termius "$tv"
 FLINT_KEYCHAIN=off expect 0 "import tether" "$IMI$TPW"$'\n' -- import tether "$tv" --password-stdin "${IM[@]}"
 check "the report names what was added" '[[ "$out" == *"added      5 groups, 8 hosts, 2 keys, 1 credential, 3 known hosts"* ]]'
-check "the report lists the tunnel as not imported" '[[ "$out" == *"Not imported"* && "$out" == *"pve-01: proxmox ui"* && "$out" == *"no tunnels yet"* ]]'
+check "the report lists the tunnel as not imported" '[[ "$out" == *"Not imported"* && "$out" == *"pve-01: proxmox ui"* && "$out" == *"flint tunnel add"* ]]'
 FLINT_KEYCHAIN=off expect 0 "the imported host keeps its fields" "$IMI" -- --json host show code-box "${IM[@]}"
 check "label, group, tags, command and saved password came over" '[[ "$(echo "$out" | json_get "(d[\"label\"], d[\"group\"], d[\"tags\"], d[\"command\"], d[\"keep_shell\"], d[\"has_password\"])")" == "('"'"'Code Box'"'"', '"'"'Homelab'"'"', ['"'"'dev'"'"', '"'"'home-lab'"'"'], '"'"'herdr'"'"', False, True)" ]]'
 FLINT_KEYCHAIN=off expect 0 "jump host and port came over" "$IMI" -- --json host show pve-01 "${IM[@]}"

@@ -18,7 +18,7 @@
 			"creds": [{ "name": "deploy", "user": "deploy", "key": "laptop", "password": "" }],
 			"hosts": [
 				{ "alias": "bastion", "hostname": "bastion.example", "user": "jump", "key": "laptop", "notes": "Entry point to the private network" },
-				{ "alias": "db", "hostname": "10.0.0.12", "user": "admin", "group": "prod", "tags": ["postgres"], "jump": "bastion", "password": "set", "color": "#e8833a" },
+				{ "alias": "db", "hostname": "10.0.0.12", "user": "admin", "group": "prod", "tags": ["postgres"], "jump": "bastion", "password": "set", "color": "#e8833a", "tunnels": [{ "name": "postgres", "local_port": 5432, "open_on_connect": true }] },
 				{ "alias": "nas", "label": "Home NAS", "hostname": "192.168.1.20", "user": "pi", "group": "homelab", "tags": ["backup"], "key": "laptop" },
 				{ "alias": "web-01", "hostname": "10.0.0.5", "user": "deploy", "group": "prod", "tags": ["nginx"], "credential": "deploy" }
 			],

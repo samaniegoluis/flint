@@ -6,8 +6,6 @@ package domain
 
 import "core:str"
 
-ERR_PORT_IN_USE: str = "port_in_use"
-
 TUNNEL_NAME_MAX: usize = 64
 TUNNEL_DEST_MAX: usize = 253
 
