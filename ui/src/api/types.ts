@@ -297,6 +297,44 @@ export interface TunnelAsk {
   local_port: number;
   /** As the host sees it: `localhost:5432`, `db.internal:5432`, `[fd00::5]:443`. */
   destination: string;
+  /** `up`: 127.0.0.1:<local_port> cannot be bound now (design 16h2, milestone 23). */
+  port_in_use?: boolean;
+}
+
+/** A saved tunnel and its state (milestone 22, D-063). */
+export interface TunnelView {
+  host: string;
+  name: string;
+  local_port: number;
+  destination: string;
+  open_on_connect: boolean;
+  /** "stopped", "listening" or "connection lost". */
+  state: string;
+  /** `127.0.0.1:<port>` while it listens. */
+  listen: string;
+  connections: number;
+  error: string;
+}
+
+export interface TunnelSave {
+  host: string;
+  /** The tunnel's current name; '' adds one. */
+  target: string;
+  name: string;
+  local_port: number;
+  dest_host: string;
+  dest_port: number;
+  open_on_connect: boolean;
+}
+
+/** The end of a start from the app (milestone 23). */
+export interface TunnelStartedEvent {
+  session: string;
+  host: string;
+  results: { name: string; code: string; message: string }[];
+  /** The login itself failed: every tunnel of the start stayed down. */
+  code: string;
+  message: string;
 }
 
 export interface CopyAsk {

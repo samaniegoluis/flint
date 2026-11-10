@@ -140,6 +140,29 @@ fn (self: NativeTunnels) tunnel_live() -> []TunnelLive {
     return list
 }
 
+fn (mut self: NativeTunnels) tunnel_gate_enter(host_id: str) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_tunnel::gate_enter(host_id);
+    }
+}
+
+fn (mut self: NativeTunnels) tunnel_gate_leave(host_id: str) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_tunnel::gate_leave(host_id);
+    }
+}
+
+fn (self: NativeTunnels) tunnel_port_taken(port: i64) -> bool {
+    mut taken := false
+    // CFIRE-UPSTREAM: CF-112
+    cpp {
+        taken = flint_tunnel::port_taken(static_cast<int>(port));
+    }
+    return taken
+}
+
 // Closes every tunnel and hangs up every tunnel session (the app quitting).
 fn release_all_tunnels() {
     // CFIRE-UPSTREAM: CF-026

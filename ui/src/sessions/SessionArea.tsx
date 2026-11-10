@@ -13,10 +13,11 @@ import { MAX_PANES } from '../lib/layout';
 import { sessions, statusLabel, useSessions } from './store';
 import { SplitView } from './SplitView';
 import { LayoutIcon, SplitMenu } from './SplitMenu';
+import { TunnelMark, TunnelsButton } from '../tunnels/TunnelsMenu';
 
 // Stays mounted while another view (Keys, Credentials, Settings) is shown, with
 // `shown` false: unmounting it disposed every xterm.js terminal and its scrollback.
-export function SessionArea({ shown, fontSize, onPalette, onEditHost, onConnect, onFiles, filesOn }: {
+export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTunnels, onConnect, onFiles, filesOn }: {
   shown: boolean;
   /** The toolbar's Files button (⌘E): opens or closes the Files view. */
   onFiles: () => void;
@@ -24,6 +25,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onConnect,
   fontSize: number;
   onPalette: (hostsOnly: boolean) => void;
   onEditHost: (alias: string) => void;
+  /** The host editor at its Tunnels section (the toolbar's Manage tunnels…). */
+  onManageTunnels: (alias: string) => void;
   onConnect: (alias: string, newTab: boolean) => void;
 }) {
   const { os, catalog } = useApp();
@@ -109,6 +112,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onConnect,
               onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); sessions.closeTab(t.id); } }}>
               <span className={'st ' + st.dot} role="img" aria-label={fp.status} />
               {fp.alias}
+              <TunnelMark host={fp.alias} />
               {n > 1 && <span className="tab-split" title={`${n} panes`}><LayoutIcon layout={t.layout} small />{n}</span>}
               {st.meta && <span className={'tab-meta ' + st.metaClass}>{st.meta}</span>}
               {on ? (
@@ -132,6 +136,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onConnect,
           <button className="tbtn" title={`Duplicate (${chordLabel('duplicate', os)})`} onClick={() => onConnect(tab.alias, true)}><Icon name="dup" size="sm" /><span className="tb-l">Duplicate</span><Kbd action="duplicate" /></button>
           <span className="sep" />
           <button className={'tbtn' + (filesOn ? ' on' : '')} aria-pressed={filesOn} data-toolbar-files onClick={onFiles} title={`Files (${chordLabel('viewFiles', os)})`}><Icon name="files" size="sm" /><span className="tb-l">Files</span><Kbd action="viewFiles" /></button>
+          <TunnelsButton host={tab.alias} onManage={onManageTunnels} />
           <span style={{ position: 'relative', display: 'flex' }}>
             <button className={'tbtn' + (menu ? ' on' : '')} data-split-button aria-haspopup="menu" aria-expanded={menu}
               title={paneCount >= MAX_PANES ? `Split · this tab has ${MAX_PANES} panes` : `Split (${chordLabel('splitRight', os)})`}

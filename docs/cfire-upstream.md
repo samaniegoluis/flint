@@ -1936,3 +1936,19 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   C++, one worker thread per host session, called from `src/adapters/ssh/tunnels.cf`.
 - **Ideal:** a `Poller` (or `net.poll(fds, timeout)`) over `TcpListener`, `TcpConn` and raw
   descriptors, with non-blocking `try_read` / `try_write` on `TcpConn`.
+
+### CF-113 · bug · `confirmed`: a generic call's `[]T!` result is typed `[][]T!` when assigned
+- **What happened (c5b1d4b, milestone 23):** in `src/drivers/gui/tunnels.cf`, assigning
+  the result of a generic use case that returns `[]str!` to a declared fallible variable
+  fails to build, and the message names the wrong type:
+  ```cf
+  fn pick[R: TunnelRunner](mut runner: R) -> []str! { return [] }
+  mut picked: []str! = []
+  picked = pick(mut runner)   // cfire/UNHANDLED-RESULT: returns '[][]str!'
+  ```
+  `run_gui_session` in `src/drivers/gui/rpc.cf` stores an `i64!` the same way
+  (`mut result: i64! = 0`, then `.has_value()`) and builds; with a list from a generic
+  call it does not, so the CF-110 gap has no way through here.
+- **Workaround:** a small non-generic helper that returns `[]str!` with `try`, called with
+  an `or err { …; return }` block that diverges.
+- **Ideal:** the assignment type-checks as `[]str!`, as it does for `i64!`.

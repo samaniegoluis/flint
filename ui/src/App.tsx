@@ -9,13 +9,16 @@ import { Icon, Logo } from './ui/Icon';
 import { sessions } from './sessions/store';
 
 function Toast() {
-  const { toast } = useApp();
-  if (!toast) return null;
+  const { toast, notify } = useApp();
+  if (!toast || !toast.text) return null;
+  // An empty info toast replaces this one and is gone at once.
+  const dismiss = () => notify('', 'info');
   const icon = toast.kind === 'error' ? 'alert' : toast.kind === 'info' ? 'info' : 'check';
   const cls = toast.kind === 'error' ? 'danger-t' : toast.kind === 'info' ? 'accent-t' : 'ok-t';
   return (
     <div className="toast" role={toast.kind === 'error' ? 'alert' : 'status'} style={{ left: 'calc(var(--rail-w) + 16px)', bottom: 'calc(var(--statusbar-h) + 16px)', maxWidth: 560 }}>
       <Icon name={icon} size="sm" className={cls} /><span>{toast.text}</span>
+      {toast.action && <button className="btn btn-secondary btn-sm" data-toast-action onClick={() => { toast.action?.run(); dismiss(); }}>{toast.action.label}</button>}
     </div>
   );
 }

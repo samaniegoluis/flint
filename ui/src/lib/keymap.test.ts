@@ -30,6 +30,12 @@ describe('keymap', () => {
     expect(actionFor(key('Digit3', { meta: true }), 'mac')).toBe('tab3');
   });
 
+  it('opens the Tunnels view with ⇧⌘T, apart from New session', () => {
+    expect(actionFor(key('KeyT', { meta: true, shift: true }), 'mac')).toBe('viewTunnels');
+    expect(actionFor(key('KeyT', { meta: true }), 'mac')).toBe('newSession');
+    expect(chordLabel('viewTunnels', 'linux')).toBe('Ctrl+Alt+Shift+T');
+  });
+
   it('formats labels per platform', () => {
     expect(chordLabel('switchVault', 'mac')).toBe('⇧⌘O');
     expect(chordLabel('switchVault', 'linux')).toBe('Ctrl+Alt+Shift+O');

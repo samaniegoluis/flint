@@ -272,6 +272,9 @@ fn start_tunnel[C: Crypto, S: VaultStore, U: TunnelStore, T: SshTransport, P: Pr
     all := try tunnels.tunnels_all()
     t := try require_tunnel(all, h, name)
     prune_tunnels(all, mut runner)
+    // Starts on one host take turns: a second one finds this one's session.
+    runner.tunnel_gate_enter(h.id)
+    defer runner.tunnel_gate_leave(h.id)
     state := runner.tunnel_host_state(h.id)
     if state == 2 {
         // Lost: its listeners are closed already. A new session replaces it.
@@ -293,6 +296,47 @@ fn start_tunnel[C: Crypto, S: VaultStore, U: TunnelStore, T: SshTransport, P: Pr
     return tunnel_view(h, t, runner.tunnel_live())
 }
 
+// One tunnel of a start from the app: `error` is "" when it listens.
+type TunnelStartOutcome struct {
+    name:  str `json:"name"`
+    error: str `json:"error"`
+}
+
+// Starts `names` on `alias`, in order, over one login (milestone 23). A login that
+// fails or is cancelled ends the start there: the rest would only ask again.
+fn start_tunnels[C: Crypto, S: VaultStore, U: TunnelStore, T: SshTransport, P: Prompter, R: TunnelRunner](crypto: C, mut store: S, tunnels: U, session: VaultSession, mut link: T, prompter: P, mut runner: R, alias: str, names: []str, opts: ConnectOptions) -> []TunnelStartOutcome {
+    mut done: []TunnelStartOutcome = []
+    for name in names {
+        mut r := TunnelStartOutcome{ name: name, error: "" }
+        start_tunnel(crypto, mut store, tunnels, session, mut link, prompter, mut runner, alias, name, opts) or err {
+            r.error = "{err.message()}"
+        }
+        done.push(r)
+        if is_login_error(error_code_of(r.error)) {
+            break
+        }
+    }
+    return done
+}
+
+// Errors that come from logging in, not from one tunnel's port.
+fn is_login_error(code: str) -> bool {
+    return code == ERR_AUTH || code == ERR_HOST_KEY || code == ERR_NETWORK || code == ERR_TIMEOUT
+}
+
+// The tunnels of `alias` a start from the app opens (milestone 23): its *Open when I
+// connect* ones when a tab connects (`all` false), or every one (the palette's
+// "Connect to <host> with tunnels"). Running ones are left out.
+fn tunnels_to_start[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels: U, mut runner: R, alias: str, all: bool) -> []str! {
+    mut names: []str = []
+    for v in try list_tunnels(store, tunnels, mut runner, alias) {
+        if v.state != TUNNEL_LISTENING && (all || v.open_on_connect) {
+            names.push(v.name)
+        }
+    }
+    return names
+}
+
 // `flint tunnel down <host>:<name>`: closes its listener and every connection through
 // it; the host's session hangs up with its last tunnel. A stopped tunnel stays stopped.
 fn stop_tunnel[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels: U, mut runner: R, alias: str, name: str) -> TunnelView! {
@@ -306,9 +350,16 @@ fn stop_tunnel[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels
 
 // The approval window's card for `flint tunnel up|down <host>:<name>`: refused with
 // `not_found` before the window when there is no such tunnel.
-fn tunnel_ask[S: VaultStore, U: TunnelStore](store: S, tunnels: U, verb: str, alias: str, name: str) -> TunnelAsk! {
+// For `up`, it says whether the local port is taken by something other than this
+// tunnel already running (design 16h2).
+fn tunnel_ask[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels: U, runner: R, verb: str, alias: str, name: str) -> TunnelAsk! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
     t := try require_tunnel(try tunnels.tunnels_all(), h, name)
-    return TunnelAsk{ verb: verb, host: h.alias, name: t.name, local_port: t.local_port, destination: tunnel_destination(t.dest_host, t.dest_port) }
+    mut in_use := false
+    if verb == "up" {
+        v := tunnel_view(h, t, runner.tunnel_live())
+        in_use = v.state != TUNNEL_LISTENING && runner.tunnel_port_taken(t.local_port)
+    }
+    return TunnelAsk{ verb: verb, host: h.alias, name: t.name, local_port: t.local_port, destination: tunnel_destination(t.dest_host, t.dest_port), port_in_use: in_use }
 }

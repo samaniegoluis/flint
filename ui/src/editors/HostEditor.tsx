@@ -15,6 +15,7 @@ import { Kbd, Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
 import { Picker } from '../ui/Picker';
 import { PasswordField } from '../ui/PasswordField';
+import { HostTunnels } from '../tunnels/HostTunnels';
 
 type TestState =
   | { s: 'idle' }
@@ -35,9 +36,11 @@ function initialMode(h?: HostView): Mode {
   return 'agent';
 }
 
-export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }: {
+export function HostEditor({ alias, group, showTunnels = false, onClose, onDelete, onNewCredential }: {
   alias: string | null;
   group: string;
+  /** Opened for its Tunnels section (Manage tunnels…): scrolled there. */
+  showTunnels?: boolean;
   onClose: () => void;
   onDelete: (alias: string) => void;
   onNewCredential: () => void;
@@ -206,7 +209,7 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
         <div className="modal-b scroll" style={{ gap: 'var(--sp-4)', paddingBottom: 'var(--sp-4)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--sp-4)' }}>
             <div className="field"><label className="flabel" htmlFor="ha">Alias</label>
-              <div className="input"><input id="ha" className="mono" value={f.alias} onChange={(e) => set('alias', e.target.value)} placeholder="prod-api-01" data-autofocus autoFocus /></div>
+              <div className="input"><input id="ha" className="mono" value={f.alias} onChange={(e) => set('alias', e.target.value)} placeholder="prod-api-01" data-autofocus={!showTunnels || undefined} autoFocus={!showTunnels} /></div>
               <span className="hint">What you type in <span className="mono">flint connect</span>.</span></div>
             <div className="field"><label className="flabel" htmlFor="hl">Label <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></label>
               <div className="input"><input id="hl" value={f.label} onChange={(e) => set('label', e.target.value)} placeholder="e.g. Home server" /></div></div>
@@ -279,6 +282,7 @@ export function HostEditor({ alias, group, onClose, onDelete, onNewCredential }:
                 <span>Return to a shell when it exits <span className="faint">· otherwise the session ends with it</span></span></label>
             ) : <span className="hint">Runs in your login shell every time a session opens, like typing it yourself.</span>}
           </div>
+          <HostTunnels host={host?.alias ?? null} focus={showTunnels} />
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', gap: 'var(--sp-4)' }}>
             <div className="field"><span className="flabel">Tags</span>
               <div className="tags">

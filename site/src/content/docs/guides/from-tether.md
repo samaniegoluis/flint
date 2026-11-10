@@ -66,7 +66,7 @@ A host already in the Flint vault (same label, hostname, port and user) is left 
 
 The report lists each item and why:
 
-- **Tunnels**: add each one with `flint tunnel add` (see [Tunnels](/guides/tunnels/)).
+- **Tunnels**: add each one in the host editor's *Tunnels* section, or with `flint tunnel add` (see [Tunnels](/guides/tunnels/)).
 - **A key file** that is missing, unreadable or passphrase-protected. Add it with
   `flint key add <name> --file <path> --passphrase` and set it on the host.
 - **A colour** that is not `#rrggbb`.

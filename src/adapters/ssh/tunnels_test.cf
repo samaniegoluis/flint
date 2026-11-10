@@ -165,3 +165,31 @@ test "a plain link with no hop cannot hand over" {
     link.link_hand_over("x") or err { r = "{err.message()}" }
     assert_eq(error_code_of(r), "internal")
 }
+
+test "a taken port is seen before any listen, and the gate takes turns" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    mut runner := new_native_tunnels()
+    // The test sshd's own port is taken; probing it leaves nothing listening.
+    assert(runner.tunnel_port_taken(i64(port)))
+    assert(!runner.tunnel_port_taken(0))
+    key := try fs.read_text(key_path)
+    host := "tunnel-probe-{time.now_ms()}"
+    mut carrier := try tunnel_key_link(port, key)
+    try carrier.link_hand_over(host)
+    local := try runner.tunnel_listen(host, "t", 0, "127.0.0.1", 1)
+    assert(runner.tunnel_port_taken(local))
+    _ := runner.tunnel_unlisten(host, "t")
+    assert(!runner.tunnel_port_taken(local))
+    runner.tunnel_release(host)
+    // The gate can be held and left again, by host.
+    runner.tunnel_gate_enter(host)
+    runner.tunnel_gate_enter(host + "-other")
+    runner.tunnel_gate_leave(host)
+    runner.tunnel_gate_leave(host + "-other")
+    runner.tunnel_gate_enter(host)
+    runner.tunnel_gate_leave(host)
+}

@@ -50,10 +50,13 @@ type TunnelAsk struct {
     name:        str `json:"name"`
     local_port:  i64 `json:"local_port"`
     destination: str `json:"destination"`
+    // `up` only: 127.0.0.1:<local_port> cannot be bound now, so Allow could not open
+    // it (design 16h2, milestone 23).
+    port_in_use: bool `json:"port_in_use"`
 }
 
 fn no_tunnel_ask() -> TunnelAsk {
-    return TunnelAsk{ verb: "", host: "", name: "", local_port: 0, destination: "" }
+    return TunnelAsk{ verb: "", host: "", name: "", local_port: 0, destination: "", port_in_use: false }
 }
 
 fn tunnel_name_char_ok(c: u8) -> bool {

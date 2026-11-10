@@ -1,0 +1,197 @@
+package main
+
+// Tunnels in the app (milestone 23, design 06c and 20): the host editor's Tunnels
+// section, the Tunnels view, the session toolbar's menu and the palette call these.
+// Each handler parses its request, calls one use case (application/tunnels.cf) and
+// returns its result (Principle 2). The tunnels themselves run in this process's
+// registry (adapters/ssh/tunnels.cf), the same one `flint tunnel up` uses, so the
+// app shows tunnels the CLI started and the other way round.
+//
+// A start logs in on a worker, like a tab: its prompts (password, unknown host key)
+// travel as "session:prompt" events under the mailbox id the page minted, and it
+// ends with a "tunnel:started" event. A watcher emits "tunnels:changed" whenever the
+// registry's state moves (a connection opens or closes, a session is lost), and so
+// does every change made here; the page then lists the tunnels again.
+
+import "ext:webui"
+import "core:json"
+import "core:time"
+import "../../adapters/ssh"
+import "../../adapters/uievents"
+import "../../adapters/vault"
+import "../../application"
+import "../../domain"
+
+// How often the watcher looks at the registry.
+TUNNEL_WATCH_MS: i64 = 500
+
+// A tunnel saved from the host editor: `target` is the tunnel's current name, or
+// "" to add one to `host`.
+type TunnelSaveReq struct {
+    host:            str  `json:"host"`
+    target:          str  `json:"target"`
+    name:            str  `json:"name"`
+    local_port:      i64  `json:"local_port"`
+    dest_host:       str  `json:"dest_host"`
+    dest_port:       i64  `json:"dest_port"`
+    open_on_connect: bool `json:"open_on_connect"`
+}
+
+type TunnelRefReq struct {
+    host: str `json:"host"`
+    name: str `json:"name"`
+}
+
+// Starts tunnels of `host` on a worker: `names`, or with none, the host's *Open when
+// I connect* tunnels (`all`: every one of them). `session` is the mailbox its
+// prompts go through.
+type TunnelStartReq struct {
+    session: str   `json:"session"`
+    host:    str   `json:"host"`
+    names:   []str `json:"names"`
+    all:     bool  `json:"all"`
+}
+
+type TunnelStartResult struct {
+    name:    str `json:"name"`
+    code:    str `json:"code"`
+    message: str `json:"message"`
+}
+
+// The end of a start: one result per tunnel it tried (`code` "" when it listens);
+// `code` and `message` here when the login itself failed.
+type TunnelStarted struct {
+    session: str                 `json:"session"`
+    host:    str                 `json:"host"`
+    results: []TunnelStartResult `json:"results"`
+    code:    str                 `json:"code"`
+    message: str                 `json:"message"`
+}
+
+type TunnelsChanged struct {
+    reason: str `json:"reason"`
+}
+
+fn emit_tunnels_changed(mut app: webui.App, reason: str) {
+    app.emit("tunnels:changed", TunnelsChanged{ reason: reason })
+}
+
+fn rpc_tunnels_list(store: LockedVaultStore, st: GuiState) -> str! {
+    try st.require_unlocked()
+    mut runner := new_native_tunnels()
+    return json.stringify(try list_tunnels(store, store, mut runner, ""))
+}
+
+fn rpc_tunnel_save(params: str, c: Sodium, store: LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[TunnelSaveReq](params)
+    mut p := empty_tunnel_patch()
+    p.set_name = true
+    p.name = req.name
+    p.set_local_port = true
+    p.local_port = req.local_port
+    p.set_dest = true
+    p.dest_host = req.dest_host
+    p.dest_port = req.dest_port
+    p.set_open = true
+    p.open_on_connect = req.open_on_connect
+    mut tun := store
+    runner := new_native_tunnels()
+    mut v: TunnelView! = error("")
+    if req.target.len() == 0 {
+        v = add_tunnel(c, store, mut tun, runner, req.host, p)
+    } else {
+        v = edit_tunnel(store, mut tun, runner, req.host, req.target, p)
+    }
+    got := try v
+    emit_tunnels_changed(mut app, "saved")
+    return json.stringify(got)
+}
+
+fn rpc_tunnel_rm(params: str, store: LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[TunnelRefReq](params)
+    mut tun := store
+    mut runner := new_native_tunnels()
+    v := try remove_tunnel(store, mut tun, mut runner, req.host, req.name)
+    emit_tunnels_changed(mut app, "removed")
+    return json.stringify(v)
+}
+
+fn rpc_tunnel_stop(params: str, store: LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
+    try st.require_unlocked()
+    req := try parse_req[TunnelRefReq](params)
+    mut runner := new_native_tunnels()
+    v := try stop_tunnel(store, store, mut runner, req.host, req.name)
+    emit_tunnels_changed(mut app, "stopped")
+    return json.stringify(v)
+}
+
+// Checks a start and opens its prompt mailbox. The caller spawns the worker.
+fn tunnel_start_check(params: str, st: GuiState) -> TunnelStartReq! {
+    try st.require_unlocked()
+    req := try parse_req[TunnelStartReq](params)
+    if req.session.len() == 0 || req.host.len() == 0 {
+        return error(coded(ERR_INVALID, "a tunnel start needs an id and a host alias"))
+    }
+    if !gui_session_open(req.session, 0, 0) {
+        return error(coded(ERR_CONFLICT, "session '{req.session}' already exists"))
+    }
+    return req
+}
+
+// The start itself, on a worker: the first tunnel logs in (when the host has no
+// tunnel session yet), the others ride that session.
+fn run_tunnel_start(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, vs: VaultSession, req: TunnelStartReq) {
+    prompter := new_gui_prompter(app, req.session)
+    mut runner := new_native_tunnels()
+    mut done := TunnelStarted{ session: req.session, host: req.host, results: [], code: "", message: "" }
+    names := start_names(store, mut runner, req) or err {
+        why := "{err.message()}"
+        done.code = error_code_of(why)
+        done.message = error_text_of(why)
+        app.emit("tunnel:started", done)
+        gui_session_drop(req.session)
+        return
+    }
+    mut link := new_ssh_link()
+    tun := store
+    for o in start_tunnels(c, mut store, tun, vs, mut link, prompter, mut runner, req.host, names, default_connect_options()) {
+        if o.error.len() == 0 {
+            done.results.push(TunnelStartResult{ name: o.name, code: "", message: "" })
+            continue
+        }
+        done.results.push(TunnelStartResult{ name: o.name, code: error_code_of(o.error), message: error_text_of(o.error) })
+        // The login's own failure is the start's (design 20b4).
+        if is_login_error(error_code_of(o.error)) {
+            done.code = error_code_of(o.error)
+            done.message = error_text_of(o.error)
+        }
+    }
+    app.emit("tunnel:started", done)
+    gui_session_drop(req.session)
+}
+
+// The tunnels a start opens: the ones asked for, or the host's own picks.
+// CFIRE-UPSTREAM: CF-113 (a helper, since the caller cannot keep a list result)
+fn start_names(store: LockedVaultStore, mut runner: NativeTunnels, req: TunnelStartReq) -> []str! {
+    if req.names.len() > 0 {
+        return req.names
+    }
+    return try tunnels_to_start(store, store, mut runner, req.host, req.all)
+}
+
+// Emits "tunnels:changed" when the registry's state moves: a connection opened or
+// closed, a session was lost, the CLI started or stopped a tunnel.
+fn run_tunnel_watch(st: GuiState, mut app: webui.App) {
+    runner := new_native_tunnels()
+    mut last := ""
+    for !st.holder.quitting() {
+        time.sleep_ms(TUNNEL_WATCH_MS)
+        now := json.stringify(runner.tunnel_live())
+        if now != last {
+            last = now
+            emit_tunnels_changed(mut app, "live")
+        }
+    }
+}

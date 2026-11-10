@@ -89,6 +89,10 @@ struct Registry {
     std::mutex mtx;
     std::map<std::string, std::shared_ptr<Host>> hosts;
     std::map<std::string, std::shared_ptr<Host>> adopting;
+    // One per host key, held while a start logs in and listens (milestone 23): two
+    // starts on one host (the app's Open when I connect, a CLI `up`) take turns, so
+    // the second finds the first's session instead of replacing it.
+    std::map<std::string, std::shared_ptr<std::mutex>> gates;
 };
 
 inline Registry& registry() {
@@ -598,6 +602,31 @@ inline std::string states() {
         }
     }
     return out;
+}
+
+// ---- Starting, one at a time per host (milestone 23) -------------------------------
+
+inline std::shared_ptr<std::mutex> gate_of(const std::string& key) {
+    auto& r = registry();
+    std::lock_guard<std::mutex> g(r.mtx);
+    auto& m = r.gates[key];
+    if (!m) m = std::make_shared<std::mutex>();
+    return m;
+}
+
+inline void gate_enter(const std::string& key) { gate_of(key)->lock(); }
+inline void gate_leave(const std::string& key) { gate_of(key)->unlock(); }
+
+// Whether 127.0.0.1:port cannot be bound now (something listens there, or the port
+// needs rights this process lacks). Binds and closes at once; listens on nothing.
+inline bool port_taken(int port) {
+    if (port <= 0 || port > 65535) return false;
+    int fd = -1;
+    int bound = 0;
+    std::string err;
+    int rc = bind_loopback(port, fd, bound, err);
+    if (fd >= 0) ::close(fd);
+    return rc != OK;
 }
 
 }  // namespace flint_tunnel

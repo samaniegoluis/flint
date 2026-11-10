@@ -3,7 +3,8 @@
 // "New session", it always opens a new tab), ⌘↵ opens a host in a new tab, ⇧⌘↵ in a
 // new pane of the active tab (design 18e), ⌘I edits it, Tab moves between result
 // groups. While searching, the best hosts are also offered as "Open <host> in a new
-// pane" actions.
+// pane" actions, and every tunnel as "Start tunnel <name> on <host>" or "Stop …", with
+// "Connect to <host> with tunnels" and "Manage tunnels of <host>…" (design 20e).
 
 import { useMemo, useRef, useState } from 'react';
 import { useApp, vaultInitial, vaultMarkClass, shortPath } from '../state/app';
@@ -15,11 +16,13 @@ import { Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
 import { useSessions } from '../sessions/store';
 import { MAX_PANES } from '../lib/layout';
+import { tunnels, useTunnels } from '../tunnels/store';
 
 type Group = 'all' | 'hosts' | 'actions' | 'vaults';
 
 interface Item {
-  group: Exclude<Group, 'all'>;
+  /** Tunnel rows show under All and Actions, with a header of their own. */
+  group: Exclude<Group, 'all'> | 'tunnels';
   key: string;
   score: number;
   render: () => React.ReactNode;
@@ -43,6 +46,7 @@ const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'layout4', icon: 'split' },
   { action: 'closeTab', icon: 'x' },
   { action: 'viewHosts', icon: 'hosts' },
+  { action: 'viewTunnels', icon: 'tunnel' },
   { action: 'viewKeys', icon: 'key' },
   { action: 'viewCredentials', icon: 'cred' },
   { action: 'settings', icon: 'settings' },
@@ -60,9 +64,15 @@ function Hl({ text, positions }: { text: string; positions: number[] }) {
   return <>{highlight(text, positions).map((r, i) => (r.match ? <span key={i} className="match">{r.text}</span> : <span key={i}>{r.text}</span>))}</>;
 }
 
-export function CommandPalette({ hostsOnly, newSession = false, onClose, onConnect, onSplit, onEdit, onAction }: {
+export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = false, onClose, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction }: {
   hostsOnly: boolean;
   newSession?: boolean;
+  /** Picks a host to add a tunnel to (the Tunnels view's empty state): ↵ opens its editor. */
+  pickToEdit?: boolean;
+  /** Opens a tab on the host and starts every one of its tunnels. */
+  onConnectWithTunnels: (alias: string) => void;
+  /** The host editor, at its Tunnels section. */
+  onManageTunnels: (alias: string) => void;
   onClose: () => void;
   onConnect: (alias: string, newTab: boolean, noCommand?: boolean) => void;
   /** Opens a host in a new pane of the active tab. */
@@ -72,6 +82,7 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
 }) {
   const { catalog, recents, vault, os, switchTo, fail } = useApp();
   const { tabs, panes, active } = useSessions();
+  const tun = useTunnels();
   const activeTab = tabs.find((t) => t.id === active);
   // A new pane goes into the active tab, while it has room.
   const canSplit = !!activeTab && activeTab.panes.length < MAX_PANES;
@@ -100,7 +111,7 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
             <span className="hint">{newSession ? 'New tab' : tabIdx >= 0 ? 'Switch to tab' : 'Connect'}</span>
           </>
         ),
-        run: (mode) => (mode === 'pane' && canSplit ? onSplit(h.alias) : onConnect(h.alias, mode === 'tab' || newSession)),
+        run: (mode) => (pickToEdit ? onManageTunnels(h.alias) : mode === 'pane' && canSplit ? onSplit(h.alias) : onConnect(h.alias, mode === 'tab' || newSession)),
         edit: () => onEdit(h.alias),
         host: true,
       });
@@ -121,6 +132,49 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
           run: (mode) => (mode === 'pane' && canSplit ? onSplit(h.alias, true) : onConnect(h.alias, true, true)),
           edit: () => onEdit(h.alias),
           host: true,
+        });
+      }
+    }
+    if (!hostsOnly && q) {
+      // Tunnels, while searching (design 20e): by tunnel name, host or port.
+      const hostsWith = new Map<string, number>();
+      for (const v of tun.list) {
+        const m = fuzzy(q, `${v.name} ${v.host}`) ?? (String(v.local_port).includes(q) ? { score: 1, positions: [] } : null);
+        if (!m) continue;
+        hostsWith.set(v.host, Math.max(hostsWith.get(v.host) ?? 0, m.score));
+        const up = v.state === 'listening';
+        const conns = v.connections === 0 ? 'no connections' : v.connections === 1 ? '1 connection' : `${v.connections} connections`;
+        out.push({
+          group: 'tunnels', key: 't:' + v.host + ':' + v.name, score: m.score + 1800,
+          render: () => (
+            <>
+              <Icon name="tunnel" size="sm" />
+              <span className="grow trunc">{up ? 'Stop' : 'Start'} tunnel <span className="strong">{v.name}</span> on <span className="mono">{v.host}</span></span>
+              <span className="hint mono">{up ? conns : `127.0.0.1:${v.local_port}`}</span>
+            </>
+          ),
+          run: () => { if (up) void tunnels.stop(v.host, v.name); else tunnels.startTunnels(v.host, [v.name]); },
+        });
+      }
+      for (const [host, score] of hostsWith) {
+        const names = tun.list.filter((v) => v.host === host && v.state !== 'listening').map((v) => v.name);
+        if (names.length > 0) {
+          out.push({
+            group: 'tunnels', key: 'tc:' + host, score: score + 1850,
+            render: () => (
+              <>
+                <Icon name="term" size="sm" />
+                <span className="grow trunc">Connect to <span className="mono">{host}</span> with tunnels</span>
+                <span className="hint trunc">opens a tab · starts {names.join(', ')}</span>
+              </>
+            ),
+            run: () => onConnectWithTunnels(host),
+          });
+        }
+        out.push({
+          group: 'tunnels', key: 'tm:' + host, score: score + 1700,
+          render: () => (<><Icon name="edit" size="sm" /><span className="grow trunc">Manage tunnels of <span className="mono">{host}</span>…</span></>),
+          run: () => onManageTunnels(host),
         });
       }
     }
@@ -174,13 +228,14 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
       }
     }
     return out;
-  }, [catalog.hosts, tabs, panes, canSplit, paneNo, activeTab, q, hostsOnly, newSession, os, recents, vault, onConnect, onSplit, onEdit, onAction, switchTo, fail]);
+  }, [catalog.hosts, tabs, panes, tun.list, canSplit, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail]);
 
   const counts = { hosts: 0, actions: 0, vaults: 0 };
-  for (const it of items) counts[it.group]++;
-  const order: Exclude<Group, 'all'>[] = ['hosts', 'actions', 'vaults'];
+  for (const it of items) counts[it.group === 'tunnels' ? 'actions' : it.group]++;
+  // Hosts stay first, so ↵ on a host's name still connects (20e draws Tunnels first).
+  const order: Item['group'][] = ['hosts', 'tunnels', 'actions', 'vaults'];
   const shown = items
-    .filter((it) => group === 'all' || it.group === group)
+    .filter((it) => group === 'all' || it.group === group || (group === 'actions' && it.group === 'tunnels'))
     .sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group) || b.score - a.score)
     .slice(0, 60);
   const current = shown[Math.min(hot, shown.length - 1)];
@@ -208,7 +263,7 @@ export function CommandPalette({ hostsOnly, newSession = false, onClose, onConne
       <div onKeyDown={onKey} style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
         <label className="row" style={{ height: 52, padding: '0 var(--sp-4)', gap: 'var(--sp-3)', borderBottom: '1px solid var(--border-subtle)' }}>
           <Icon name="search" className="faint" />
-          <input aria-label={newSession ? 'New session on' : hostsOnly ? 'Go to host' : 'Search hosts, actions and vaults'} placeholder={newSession ? 'New session on…' : hostsOnly ? 'Go to host…' : 'Hosts, actions, vaults…'}
+          <input aria-label={pickToEdit ? 'Add a tunnel to' : newSession ? 'New session on' : hostsOnly ? 'Go to host' : 'Search hosts, actions and vaults'} placeholder={pickToEdit ? 'Add a tunnel to…' : newSession ? 'New session on…' : hostsOnly ? 'Go to host…' : 'Hosts, actions, vaults…'}
             value={q} onChange={(e) => { setQ(e.target.value); setHot(0); }} className="grow" data-autofocus autoFocus
             role="combobox" aria-expanded="true" aria-controls="palette-results" aria-activedescendant={current ? 'pi-' + current.key : undefined}
             style={{ background: 'none', border: 0, outline: 'none', fontSize: 'var(--fs-lg)', color: 'var(--text-primary)' }} />
