@@ -628,7 +628,7 @@ fn import_tether_rows[C: Crypto, S: VaultStore, I: KeyInspector, T: TetherSource
                 owner = tether_host_name(th)
             }
         }
-        r.not_imported.push(note("tunnel", "{owner}: {t.name}", "localhost:{t.local_port} → {t.remote_host}:{t.remote_port}; Flint has no tunnels yet"))
+        r.not_imported.push(note("tunnel", "{owner}: {t.name}", "localhost:{t.local_port} → {t.remote_host}:{t.remote_port}; Tether's tunnels are not imported: add it with `flint tunnel add`"))
     }
     return r
 }

@@ -220,7 +220,7 @@ FLINT_KEYCHAIN=off expect 7 "a file that is not a Tether vault is invalid" "$IMI
 FLINT_KEYCHAIN=off expect 2 "only tether is a source" "" -- import termius "$tv"
 FLINT_KEYCHAIN=off expect 0 "import tether" "$IMI$TPW"$'\n' -- import tether "$tv" --password-stdin "${IM[@]}"
 check "the report names what was added" '[[ "$out" == *"added      5 groups, 8 hosts, 2 keys, 1 credential, 3 known hosts"* ]]'
-check "the report lists the tunnel as not imported" '[[ "$out" == *"Not imported"* && "$out" == *"pve-01: proxmox ui"* && "$out" == *"no tunnels yet"* ]]'
+check "the report lists the tunnel as not imported" '[[ "$out" == *"Not imported"* && "$out" == *"pve-01: proxmox ui"* && "$out" == *"flint tunnel add"* ]]'
 FLINT_KEYCHAIN=off expect 0 "the imported host keeps its fields" "$IMI" -- --json host show code-box "${IM[@]}"
 check "label, group, tags, command and saved password came over" '[[ "$(echo "$out" | json_get "(d[\"label\"], d[\"group\"], d[\"tags\"], d[\"command\"], d[\"keep_shell\"], d[\"has_password\"])")" == "('"'"'Code Box'"'"', '"'"'Homelab'"'"', ['"'"'dev'"'"', '"'"'home-lab'"'"'], '"'"'herdr'"'"', False, True)" ]]'
 FLINT_KEYCHAIN=off expect 0 "jump host and port came over" "$IMI" -- --json host show pve-01 "${IM[@]}"
@@ -566,6 +566,43 @@ check "as a JSON error" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")"
 expect 3 "token revoke of an unknown token: not_found" "$SMI" -- token revoke nightly "${SM[@]}"
 expect 2 "an unknown token verb" "$SMI" -- token frob "${SM[@]}"
 
+echo "== tunnels, with the CLI on its own (milestone 22)"
+expect 0 "tunnel ls on a vault with none" "$SMI" -- tunnel ls "${SM[@]}"
+check "it says there are none" '[[ "$out" == "No tunnels."* ]]'
+expect 0 "tunnel add with the default destination" "$SMI" -- tunnel add local pg --local 15432 "${SM[@]}"
+check "it names both ends" '[[ "$out" == "Added tunnel '"'"'local:pg'"'"': 127.0.0.1:15432 to localhost:15432 as local sees it." ]]'
+expect 0 "tunnel add --to host:port --open-on-connect" "$SMI" -- --json tunnel add local e2e-tunnel-marker --local 16379 --to e2e-dest-marker.internal:6379 --open-on-connect "${SM[@]}"
+check "--json has the destination and open_on_connect" '[[ "$(echo "$out" | json_get "d[\"destination\"], d[\"open_on_connect\"], d[\"local_port\"]")" == "('"'"'e2e-dest-marker.internal:6379'"'"', True, 16379)" ]]'
+expect 4 "a second tunnel of the same name, any case: conflict" "$SMI" -- tunnel add local PG --local 1 "${SM[@]}"
+expect 0 "another host may reuse the name" "$SMI" -- tunnel add inner pg --local 25432 --to 5432 "${SM[@]}"
+expect 7 "a port out of range is invalid" "$SMI" -- tunnel add local big --local 70000 "${SM[@]}"
+expect 7 "a name with a colon is invalid" "$SMI" -- tunnel add local a:b --local 1 "${SM[@]}"
+expect 7 "an IPv6 destination without brackets is invalid" "$SMI" -- tunnel add local v6 --local 1 --to fd00::5:443 "${SM[@]}"
+expect 2 "tunnel add without --local is a usage error" "$SMI" -- tunnel add local nolocal "${SM[@]}"
+expect 3 "a tunnel on an unknown host: not_found" "$SMI" -- tunnel add nohost x --local 1 "${SM[@]}"
+expect 0 "tunnel edit renames and moves the local port" "$SMI" -- --json tunnel edit local:PG --name postgres --local 15433 "${SM[@]}"
+check "the destination stays" '[[ "$(echo "$out" | json_get "d[\"name\"], d[\"local_port\"], d[\"destination\"]")" == "('"'"'postgres'"'"', 15433, '"'"'localhost:15432'"'"')" ]]'
+expect 2 "a tunnel is named host:name" "$SMI" -- tunnel edit local --local 1 "${SM[@]}"
+expect 0 "tunnel ls lists every host's tunnels" "$SMI" -- tunnel ls "${SM[@]}"
+check "the table has its columns and a row per tunnel" '[[ "$out" == "TUNNEL"*"LOCAL"*"DESTINATION"*"ON CONNECT"*"STATE"* && "$(echo "$out" | wc -l | tr -d " ")" == "4" ]]'
+expect 0 "tunnel ls <host> --json" "$SMI" -- --json tunnel ls local "${SM[@]}"
+check "two on local, state unknown without Flint" '[[ "$(echo "$out" | json_get "[(t[\"name\"], t[\"state\"]) for t in d]")" == "[('"'"'e2e-tunnel-marker'"'"', '"'"''"'"'), ('"'"'postgres'"'"', '"'"''"'"')]" ]]'
+expect 5 "tunnel up needs Flint: locked" "$SMI" -- tunnel up local:postgres "${SM[@]}"
+check "it says to open Flint" '[[ "$err" == *"runs only through Flint"* ]]'
+expect 5 "tunnel down needs Flint too" "$SMI" -- --json tunnel down local:postgres "${SM[@]}"
+check "as a JSON error with its code" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "locked" ]]'
+expect 5 "tunnel status needs Flint too" "" -- tunnel status
+expect 2 "tunnel up without host:name is a usage error" "$SMI" -- tunnel up local "${SM[@]}"
+expect 2 "an unknown tunnel verb" "$SMI" -- tunnel frob "${SM[@]}"
+expect 0 "tunnel rm" "$SMI" -- --json tunnel rm local:postgres "${SM[@]}"
+check "--json names what was removed" '[[ "$(echo "$out" | json_get "d[\"removed\"], d[\"name\"]")" == "('"'"'tunnel'"'"', '"'"'local:postgres'"'"')" ]]'
+expect 3 "tunnel rm of an unknown tunnel: not_found" "$SMI" -- tunnel rm local:postgres "${SM[@]}"
+expect 0 "a host removed takes its tunnels" "$SMI" -- host add gone --hostname 127.0.0.9 "${SM[@]}"
+expect 0 "a tunnel on it" "$SMI" -- tunnel add gone t --local 1999 "${SM[@]}"
+expect 0 "host rm" "$SMI" -- host rm gone "${SM[@]}"
+expect 0 "tunnel ls --json" "$SMI" -- --json tunnel ls "${SM[@]}"
+check "its tunnel went with it" '[[ "$(echo "$out" | json_get "sorted(t[\"host\"] + \":\" + t[\"name\"] for t in d)")" == "['"'"'inner:pg'"'"', '"'"'local:e2e-tunnel-marker'"'"']" ]]'
+
 echo "== every --json output parses"
 expect 0 "version --json" "" -- --version --json
 check "version is JSON" 'echo "$out" | is_json'
@@ -582,7 +619,7 @@ done
 for needle in "codebox.lan" "Code Box" "Homelab" "pw-codebox" "kp-fixture" "SQLite format 3"; do
   check "imp.flint has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$imp"'
 done
-for needle in "127.0.0.1" "localhost" "$test_key_body" "inner" "SQLite format 3"; do
+for needle in "127.0.0.1" "localhost" "$test_key_body" "inner" "e2e-tunnel-marker" "e2e-dest-marker" "SQLite format 3"; do
   check "ssh.flint has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$sv"'
 done
 check "no journal or WAL file is left next to the vault" '! ls "$tmp"/*.flint-* >/dev/null 2>&1'

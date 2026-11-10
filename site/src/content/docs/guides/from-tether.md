@@ -39,7 +39,7 @@ Imported the Tether vault into 'Home'.
 
 Not imported (2):
   KIND    NAME                DETAIL
-  tunnel  pve-01: proxmox ui  localhost:8006 → localhost:8006; Flint has no tunnels yet
+  tunnel  pve-01: proxmox ui  localhost:8006 → localhost:8006; Tether's tunnels are not imported: add it with `flint tunnel add`
 ```
 
 Running it again adds only what is missing, so an import that stopped half way, or a
@@ -66,7 +66,7 @@ A host already in the Flint vault (same label, hostname, port and user) is left 
 
 The report lists each item and why:
 
-- **Tunnels**: Flint has no tunnels yet; they are next on the roadmap.
+- **Tunnels**: add each one with `flint tunnel add` (see [Tunnels](/guides/tunnels/)).
 - **A key file** that is missing, unreadable or passphrase-protected. Add it with
   `flint key add <name> --file <path> --passphrase` and set it on the host.
 - **A colour** that is not `#rrggbb`.

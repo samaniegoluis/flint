@@ -286,6 +286,17 @@ export interface Approval {
   command: CommandText;
   /** `flint cp` (milestone 16): what is copied where; `direction` is "" otherwise. */
   copy?: CopyAsk;
+  /** `flint tunnel up|down` (milestone 22): `verb` is "" otherwise. */
+  tunnel?: TunnelAsk;
+}
+
+export interface TunnelAsk {
+  verb: 'up' | 'down' | '';
+  host: string;
+  name: string;
+  local_port: number;
+  /** As the host sees it: `localhost:5432`, `db.internal:5432`, `[fd00::5]:443`. */
+  destination: string;
 }
 
 export interface CopyAsk {

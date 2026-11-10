@@ -1,0 +1,167 @@
+package ssh
+
+// Tunnels against the throwaway sshds of scripts/test.sh (milestone 22's spike): a
+// session handed over to the registry forwards 127.0.0.1:<port> to the second sshd,
+// and two SSH sessions dialled through that one tunnel each stream a few megabytes
+// at once while a terminal on the same host keeps answering.
+
+import "core:os"
+import "core:fs"
+import "core:time"
+import "core:sync"
+import "../../ports"
+
+fn accepts_tunnels[R: TunnelRunner](r: R) -> bool {
+    return true
+}
+
+test "NativeTunnels satisfies the TunnelRunner port" {
+    assert(accepts_tunnels(new_native_tunnels()))
+}
+
+fn tunnel_key_link(port: i32, key: str) -> SshLink! {
+    mut link := new_ssh_link()
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_auth_key(key, "")
+    return link
+}
+
+// Dials the second sshd through the tunnel on `local`, runs a command that prints
+// `n` bytes, and returns how many arrived.
+fn bytes_through(local: i64, key: str, n: i64) -> i64! {
+    mut link := new_ssh_link()
+    try link.link_dial("127.0.0.1", local, os.getenv("USER"), 5, "")
+    defer link.link_hangup()
+    try link.link_auth_key(key, "")
+    try link.link_exec_start("head -c {n} /dev/zero | tr '\\000' a")
+    mut got: i64 = 0
+    for true {
+        chunk := try link.link_channel_read(200)
+        got += i64(chunk.stdout.len())
+        if chunk.done {
+            break
+        }
+    }
+    return got
+}
+
+test "two connections stream through one tunnel while a terminal runs on the host" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    key := try fs.read_text(key_path)
+    host := "tunnel-host-{time.now_ms()}"
+    mut runner := new_native_tunnels()
+    assert_eq(runner.tunnel_host_state(host), 0)
+    mut carrier := try tunnel_key_link(port, key)
+    try carrier.link_hand_over(host)
+    // The link no longer owns the session: hanging it up changes nothing.
+    carrier.link_hangup()
+    assert_eq(runner.tunnel_host_state(host), 1)
+    local := try runner.tunnel_listen(host, "t1", 0, "127.0.0.1", inner_port())
+    assert(local > 0)
+    // The same tunnel again is not a second listener.
+    assert_eq(try runner.tunnel_listen(host, "t1", 0, "127.0.0.1", inner_port()), local)
+
+    mut term := try tunnel_key_link(port, key)
+    try term.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
+    size: i64 = 3000000
+    a_ch := sync.make_channel[i64]()
+    b_ch := sync.make_channel[i64]()
+    async.scope(workers: 2) |scope| {
+        scope.spawn || {
+            a_ch.send(bytes_through(local, key, size) or -1)
+        }
+        scope.spawn || {
+            b_ch.send(bytes_through(local, key, size) or -1)
+        }
+        // Meanwhile the terminal on the same host answers.
+        try term.link_channel_write("echo term-$((40+2))\n")
+        mut heard := ""
+        for _ in 0..200 {
+            chunk := term.link_channel_read(50) or ExecChunk{ stdout: "", stderr: "", done: false, exit_code: 0, signal: "" }
+            heard = heard + chunk.stdout
+            if heard.contains("term-42") {
+                break
+            }
+        }
+        assert(heard.contains("term-42"), "the terminal answers while the tunnel streams")
+    }
+    term.link_hangup()
+    assert_eq(a_ch.recv_timeout(30000) or -2, size)
+    assert_eq(b_ch.recv_timeout(30000) or -2, size)
+    mut live := runner.tunnel_live()
+    mut found := false
+    for l in live {
+        if l.host_id == host && l.tunnel_id == "t1" {
+            found = true
+            assert(l.up)
+            assert_eq(l.port, local)
+            assert(l.opened >= 2)
+            assert_eq(l.failed, 0)
+        }
+    }
+    assert(found)
+    stop_start := time.now_ms()
+    assert(runner.tunnel_unlisten(host, "t1"))
+    assert(time.now_ms() - stop_start < 2000, "stopping a tunnel waits only for its worker")
+    assert(!runner.tunnel_unlisten(host, "t1"))
+    // Its port is free again at once: another tunnel can take it.
+    again := try runner.tunnel_listen(host, "t2", local, "127.0.0.1", inner_port())
+    assert_eq(again, local)
+    assert(runner.tunnel_unlisten(host, "t2"))
+    mut r := ""
+    bytes_through(local, key, 10) or err { r = "{err.message()}" }
+    assert(r.len() > 0, "nothing listens once the tunnel stopped")
+    runner.tunnel_release(host)
+    assert_eq(runner.tunnel_host_state(host), 0)
+}
+
+test "a port in use is refused with port_in_use, and a refused destination is counted" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    key := try fs.read_text(key_path)
+    host := "tunnel-busy-{time.now_ms()}"
+    mut runner := new_native_tunnels()
+    mut carrier := try tunnel_key_link(port, key)
+    try carrier.link_hand_over(host)
+    // The test sshd's own port is taken.
+    mut r := ""
+    runner.tunnel_listen(host, "busy", i64(port), "127.0.0.1", 22) or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), "port_in_use")
+    // A destination nothing listens on: the connection is accepted, its channel refused.
+    local := try runner.tunnel_listen(host, "dead", 0, "127.0.0.1", 1)
+    r = ""
+    bytes_through(local, key, 10) or err { r = "{err.message()}" }
+    assert(r.len() > 0)
+    mut failed: i64 = 0
+    for _ in 0..50 {
+        for l in runner.tunnel_live() {
+            if l.host_id == host && l.tunnel_id == "dead" {
+                failed = l.failed
+            }
+        }
+        if failed > 0 {
+            break
+        }
+        time.sleep_ms(20)
+    }
+    assert_eq(failed, 1)
+    runner.tunnel_release(host)
+    assert_eq(runner.tunnel_host_state(host), 0)
+    r = ""
+    runner.tunnel_listen(host, "late", 0, "127.0.0.1", 22) or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), "network")
+}
+
+test "a plain link with no hop cannot hand over" {
+    mut link := new_ssh_link()
+    mut r := ""
+    link.link_hand_over("x") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), "internal")
+}

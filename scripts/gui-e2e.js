@@ -1051,7 +1051,7 @@
     await waitFor(() => q('.drawer [aria-label="Import report"]'), 'the preview report');
     await check(hasText('Preview: nothing was written yet') && hasText('Would add 5 groups, 8 hosts, 2 keys, 1 credential, 3 known hosts'), 'Preview reports what an import would add');
     await check(!byText('.tree .label, .tree *', 'code-box'), 'the preview wrote nothing');
-    await check(byText('.drawer td', 'pve-01: proxmox ui') && hasText('no tunnels yet'), 'the report lists the tunnel it cannot import');
+    await check(byText('.drawer td', 'pve-01: proxmox ui') && hasText('flint tunnel add'), 'the report lists the tunnel it cannot import');
     await click('.drawer .modal-f button', 'Import');
     await waitFor(() => hasText('Imported 8 hosts from Tether'), 'the import notice');
     await check(!q('#tpw'), 'the Tether password field is gone once imported');

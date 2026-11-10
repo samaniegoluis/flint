@@ -1,0 +1,329 @@
+package application
+
+import "../domain"
+
+// A TunnelRunner that records what it was asked: hosts with a session (state 1 up,
+// 2 lost), running tunnels, and ports that are "in use".
+type FakeRunner struct {
+    hosts: []str
+    states: []i64
+    live: []TunnelLive
+    busy: []i64
+    released: []str
+}
+
+fn new_fake_runner() -> FakeRunner {
+    return FakeRunner{ hosts: [], states: [], live: [], busy: [], released: [] }
+}
+
+fn (self: FakeRunner) tunnel_host_state(host_id: str) -> i64 {
+    for i, h in self.hosts {
+        if h == host_id {
+            return self.states[i]
+        }
+    }
+    return 0
+}
+
+fn (mut self: FakeRunner) adopt(host_id: str) {
+    for i, h in self.hosts {
+        if h == host_id {
+            self.states[i] = 1
+            return
+        }
+    }
+    self.hosts.push(host_id)
+    self.states.push(1)
+}
+
+fn (mut self: FakeRunner) tunnel_listen(host_id: str, tunnel_id: str, local_port: i64, dest_host: str, dest_port: i64) -> i64! {
+    if self.tunnel_host_state(host_id) != 1 {
+        return error(coded(ERR_NETWORK, "the host's tunnel session is not connected"))
+    }
+    for l in self.live {
+        if l.host_id == host_id && l.tunnel_id == tunnel_id {
+            return l.port
+        }
+    }
+    for p in self.busy {
+        if p == local_port {
+            return error(coded(ERR_PORT_IN_USE, "port {local_port} on 127.0.0.1 is already in use"))
+        }
+    }
+    self.live.push(TunnelLive{ host_id: host_id, tunnel_id: tunnel_id, up: true, port: local_port, connections: 0, opened: 0, failed: 0, error: "" })
+    return local_port
+}
+
+fn (mut self: FakeRunner) tunnel_unlisten(host_id: str, tunnel_id: str) -> bool {
+    mut was := false
+    mut keep: []TunnelLive = []
+    for l in self.live {
+        if l.host_id == host_id && l.tunnel_id == tunnel_id {
+            was = true
+        } else {
+            keep.push(l)
+        }
+    }
+    self.live = keep
+    return was
+}
+
+fn (mut self: FakeRunner) tunnel_release(host_id: str) {
+    self.released.push(host_id)
+    mut keep: []TunnelLive = []
+    for l in self.live {
+        if l.host_id != host_id {
+            keep.push(l)
+        }
+    }
+    self.live = keep
+    mut hs: []str = []
+    mut st: []i64 = []
+    for i, h in self.hosts {
+        if h != host_id {
+            hs.push(h)
+            st.push(self.states[i])
+        }
+    }
+    self.hosts = hs
+    self.states = st
+}
+
+fn (self: FakeRunner) tunnel_live() -> []TunnelLive {
+    return self.live
+}
+
+// The session dropped: every tunnel of the host is reported lost.
+fn (mut self: FakeRunner) lose(host_id: str) {
+    for i, h in self.hosts {
+        if h == host_id {
+            self.states[i] = 2
+        }
+    }
+    for i, l in self.live {
+        if l.host_id == host_id {
+            self.live[i].up = false
+            self.live[i].error = "the connection was closed"
+        }
+    }
+}
+
+// The tunnels' own store: a second fake, since one value cannot be passed both as
+// the vault (read) and as `mut` tunnels (cfire/MUT-ALIAS). The app passes a copy of
+// its LockedVaultStore, which shares the open vault.
+fn tunnel_fake() -> FakeStore {
+    mut f := new_fake_store()
+    f.attached = true
+    return f
+}
+
+fn pg_patch(name: str, port: i64) -> TunnelPatch {
+    mut p := empty_tunnel_patch()
+    p.set_name = true
+    p.name = name
+    p.set_local_port = true
+    p.local_port = port
+    return p
+}
+
+fn host_id_of(store: FakeStore, alias: str) -> str {
+    for h in store.hosts {
+        if h.alias == alias {
+            return h.id
+        }
+    }
+    return ""
+}
+
+test "a tunnel is saved in its host, with the same port on the server by default" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    _ := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    runner := new_fake_runner()
+    v := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
+    assert_eq(v.host, "web")
+    assert_eq(v.destination, "localhost:5432")
+    assert_eq(v.state, TUNNEL_STOPPED)
+    mut p := pg_patch("redis", 16379)
+    p.set_dest = true
+    p.dest_host = "cache.internal"
+    p.dest_port = 6379
+    p.set_open = true
+    p.open_on_connect = true
+    r := try add_tunnel(crypto, store, mut tun, runner, "web", p)
+    assert_eq(r.destination, "cache.internal:6379")
+    assert(r.open_on_connect)
+    // Names are unique in a host, whatever their case; another host may reuse one.
+    mut got := ""
+    add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("PG", 1)) or err { got = "{err.message()}" }
+    assert_eq(error_code_of(got), ERR_CONFLICT)
+    _ := try add_tunnel(crypto, store, mut tun, runner, "bastion", pg_patch("pg", 5432))
+    mut runner2 := runner
+    all := try list_tunnels(store, tun, mut runner2, "")
+    assert_eq(all.len(), 3)
+    assert_eq(all[0].host, "bastion")
+    assert_eq(all[1].name, "pg")
+    assert_eq(all[2].name, "redis")
+    assert_eq((try list_tunnels(store, tun, mut runner2, "web")).len(), 2)
+    // A bad port or name never reaches the store.
+    got = ""
+    add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("x", 70000)) or err { got = "{err.message()}" }
+    assert_eq(error_code_of(got), ERR_INVALID)
+    got = ""
+    add_tunnel(crypto, store, mut tun, runner, "nope", pg_patch("x", 1)) or err { got = "{err.message()}" }
+    assert_eq(error_code_of(got), ERR_NOT_FOUND)
+}
+
+test "editing and removing a tunnel" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    _ := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    mut runner := new_fake_runner()
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("other", 1234))
+    mut p := empty_tunnel_patch()
+    p.set_name = true
+    p.name = "postgres"
+    p.set_local_port = true
+    p.local_port = 15432
+    v := try edit_tunnel(store, mut tun, runner, "web", "PG", p)
+    assert_eq(v.name, "postgres")
+    assert_eq(v.local_port, 15432)
+    // The destination is kept when only the local port changes.
+    assert_eq(v.destination, "localhost:5432")
+    mut clash := empty_tunnel_patch()
+    clash.set_name = true
+    clash.name = "other"
+    mut got := ""
+    edit_tunnel(store, mut tun, runner, "web", "postgres", clash) or err { got = "{err.message()}" }
+    assert_eq(error_code_of(got), ERR_CONFLICT)
+    _ := try remove_tunnel(store, mut tun, mut runner, "web", "postgres")
+    got = ""
+    tunnel_status(store, tun, mut runner, "web", "postgres") or err { got = "{err.message()}" }
+    assert_eq(error_code_of(got), ERR_NOT_FOUND)
+}
+
+test "starting a tunnel logs in once per host, hands the session over and listens" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    mut runner := new_fake_runner()
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("redis", 6379))
+    web := host_id_of(store, "web")
+    mut link := web_link()
+    // FakeLink cannot reach the runner, so the session it hands over never arrives
+    // and the listen fails; adopt it by hand and start again.
+    mut got := ""
+    start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts()) or err { got = "{err.message()}" }
+    assert_eq(error_code_of(got), ERR_NETWORK)
+    assert_eq(link.calls[link.calls.len() - 1], "hand_over {web}")
+    runner.adopt(web)
+    v2 := try start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts())
+    assert_eq(v2.state, TUNNEL_LISTENING)
+    assert_eq(v2.listen, "127.0.0.1:5432")
+    // A second tunnel on the same host rides the same session: no new login.
+    mut second := web_link()
+    v3 := try start_tunnel(crypto, mut store, tun, s, mut second, no_prompter(), mut runner, "web", "redis", accept_opts())
+    assert_eq(v3.state, TUNNEL_LISTENING)
+    assert_eq(second.calls.len(), 0)
+    assert_eq((try running_tunnels(store, tun, mut runner)).len(), 2)
+    // Stopping one keeps the session; stopping the last hangs it up.
+    before := runner.released.len()
+    d := try stop_tunnel(store, tun, mut runner, "web", "pg")
+    assert_eq(d.state, TUNNEL_STOPPED)
+    assert_eq(runner.released.len(), before)
+    _ := try stop_tunnel(store, tun, mut runner, "web", "redis")
+    assert_eq(runner.released.len(), before + 1)
+    assert_eq(runner.tunnel_host_state(web), 0)
+    // Stopping a stopped tunnel is not an error.
+    again := try stop_tunnel(store, tun, mut runner, "web", "redis")
+    assert_eq(again.state, TUNNEL_STOPPED)
+}
+
+test "a port in use fails the start and hangs up a session that carries nothing" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    mut runner := new_fake_runner()
+    runner.busy = [5432]
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
+    web := host_id_of(store, "web")
+    runner.adopt(web)
+    mut link := web_link()
+    mut got := ""
+    start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts()) or err { got = "{err.message()}" }
+    assert_eq(error_code_of(got), ERR_PORT_IN_USE)
+    assert_eq(runner.released.len(), 1)
+}
+
+test "a lost session shows its tunnels lost until started again" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    mut runner := new_fake_runner()
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
+    web := host_id_of(store, "web")
+    runner.adopt(web)
+    mut link := web_link()
+    _ := try start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts())
+    runner.lose(web)
+    st := try tunnel_status(store, tun, mut runner, "web", "pg")
+    assert_eq(st.state, TUNNEL_LOST)
+    assert(st.error.len() > 0)
+    // Starting it again releases the lost session and logs in anew.
+    mut fresh := web_link()
+    mut got := ""
+    start_tunnel(crypto, mut store, tun, s, mut fresh, no_prompter(), mut runner, "web", "pg", accept_opts()) or err { got = "{err.message()}" }
+    assert_eq(fresh.calls[fresh.calls.len() - 1], "hand_over {web}")
+    assert_eq(runner.released[0], web)
+    // (The fake runner never receives the new session, so that start then fails.)
+    assert_eq(error_code_of(got), ERR_NETWORK)
+}
+
+test "a login that fails hands nothing over" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    mut runner := new_fake_runner()
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
+    mut link := web_link()
+    link.fail_dial = true
+    mut got := ""
+    start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts()) or err { got = "{err.message()}" }
+    assert_eq(error_code_of(got), ERR_NETWORK)
+    for c in link.calls {
+        assert(!c.starts_with("hand_over"))
+    }
+}
+
+test "removing a running tunnel, or its host, stops it" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    mut runner := new_fake_runner()
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
+    _ := try add_tunnel(crypto, store, mut tun, runner, "bastion", pg_patch("ssh", 2200))
+    web := host_id_of(store, "web")
+    bastion := host_id_of(store, "bastion")
+    runner.adopt(web)
+    runner.adopt(bastion)
+    mut link := web_link()
+    _ := try start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts())
+    _ := try start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "bastion", "ssh", accept_opts())
+    _ := try remove_tunnel(store, mut tun, mut runner, "web", "pg")
+    assert_eq(runner.tunnel_host_state(web), 0)
+    // The host goes (its tunnels with it, as ON DELETE CASCADE): the next look stops it.
+    try store.host_drop(bastion)
+    try tun.host_drop(bastion)
+    _ := try list_tunnels(store, tun, mut runner, "")
+    assert_eq(runner.tunnel_host_state(bastion), 0)
+    assert_eq(runner.live.len(), 0)
+}

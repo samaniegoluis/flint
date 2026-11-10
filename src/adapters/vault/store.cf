@@ -297,6 +297,30 @@ fn (self: SqlVaultStore) known_host_drop(addr: str) -> void! {
     try self.conn().run_sql("DELETE FROM known_hosts WHERE addr = ?1;", [sql_text(addr)])
 }
 
+// ---- Tunnels (migration 007) -------------------------------------------------------
+
+fn (self: SqlVaultStore) tunnels_all() -> []Tunnel! {
+    try self.require_open()
+    res := try self.conn().query_cells("SELECT id, host_id, name, local_port, dest_host, dest_port, open_on_connect FROM tunnels ORDER BY host_id, name COLLATE NOCASE;", [])
+    mut list: []Tunnel = []
+    for r in res {
+        list.push(Tunnel{ id: cell_str(r[0]), host_id: cell_str(r[1]), name: cell_str(r[2]), local_port: cell_i64(r[3]), dest_host: cell_str(r[4]), dest_port: cell_i64(r[5]), open_on_connect: cell_i64(r[6]) != 0 })
+    }
+    return list
+}
+
+fn (self: SqlVaultStore) tunnel_put(t: Tunnel) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("INSERT INTO tunnels (id, host_id, name, local_port, dest_host, dest_port, open_on_connect) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET host_id = excluded.host_id, name = excluded.name, local_port = excluded.local_port, dest_host = excluded.dest_host, dest_port = excluded.dest_port, open_on_connect = excluded.open_on_connect;", [
+            sql_text(t.id), sql_text(t.host_id), sql_text(t.name), sql_int(t.local_port), sql_text(t.dest_host), sql_int(t.dest_port), sql_int(bool_int(t.open_on_connect)),
+    ])
+}
+
+fn (self: SqlVaultStore) tunnel_drop(id: str) -> void! {
+    try self.require_open()
+    try self.conn().run_sql("DELETE FROM tunnels WHERE id = ?1;", [sql_text(id)])
+}
+
 // ---- Tokens and the activity log (migration 004) ----------------------------------
 
 fn join_ids(ids: []str) -> str {

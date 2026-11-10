@@ -231,7 +231,7 @@ test "a tether vault is imported with groups, keys, credentials, hosts and known
     assert(has_note(r.not_imported, "key file", "/keys/missing", "cannot be read"))
     assert(has_note(r.not_imported, "host", "bad host", "hostname"))
     assert(has_note(r.not_imported, "known host", "weird", "not an address"))
-    assert(has_note(r.not_imported, "tunnel", "pve-01: proxmox ui", "no tunnels yet"))
+    assert(has_note(r.not_imported, "tunnel", "pve-01: proxmox ui", "flint tunnel add"))
 }
 
 test "a tether import never reports a secret" {

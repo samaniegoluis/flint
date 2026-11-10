@@ -61,7 +61,7 @@ try {
 		await dialog.waitFor({ state: 'visible' });
 		check(await page.evaluate(() => document.activeElement?.id === 'cli-demo-input'), 'desktop: the input has focus on open');
 		check((await logText(page)).includes("Welcome to Flint's demo"), 'desktop: the welcome and first step are shown');
-		check((await page.locator('[data-step]').innerText()) === 'Step 1 of 13', 'desktop: the bar shows the tour step');
+		check((await page.locator('[data-step]').innerText()) === 'Step 1 of 14', 'desktop: the bar shows the tour step');
 		check((await page.locator('[data-guide]').innerText()).includes('Every command'), 'desktop: the guide shows the current step');
 		check((await page.locator('.cli-demo__chip--next').innerText()).includes('flint help'), 'desktop: the step command is the highlighted chip');
 		await type(page, 'flint list');
@@ -75,8 +75,10 @@ try {
 		await type(page, 'yes');
 		await type(page, 'flint cp ./app.conf web-01:app/');
 		check((await logText(page)).includes('Copied 1 file (20 B) to web-01:app/app.conf'), 'desktop: cp prints what it copied where');
-		await type(page, 'flint connect db');
+		await type(page, 'flint tunnel up db:postgres');
 		await type(page, 'yes');
+		check((await logText(page)).includes("Tunnel 'db:postgres' is listening on 127.0.0.1:5432"), 'desktop: tunnel up says where it listens');
+		await type(page, 'flint connect db');
 		const remotePrompt = await page.locator('[data-prompt]').textContent();
 		check(remotePrompt === 'admin@10.0.0.12:~$ ', `desktop: connect opens the remote prompt (${JSON.stringify(remotePrompt)})`);
 		await page.locator('#cli-demo-input').fill('cat no');

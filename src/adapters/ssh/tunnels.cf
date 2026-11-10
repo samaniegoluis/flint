@@ -1,0 +1,149 @@
+package ssh
+
+// The `TunnelRunner` port (milestone 22, D-062) over native/flint_tunnel.hpp: a
+// registry of host sessions that carry local port forwards, one worker thread per
+// session. A use case logs in with a plain `SshLink` and hands its hops over
+// (`link_hand_over`); from then on the registry owns the session.
+//
+// Errors carry `port_in_use`, `permission_denied` or `network`. Nothing here writes
+// to stderr: a destination is a host name from the vault (Principle 5).
+
+// CFIRE-UPSTREAM: CF-026, CF-031, CF-112
+import cpp "flint_tunnel.hpp" @pkg("flint-native")
+
+import "core:str"
+import "../../domain"
+
+// How often a tunnel session sends a keepalive (as a terminal does, D-031's
+// SSH_KEEPALIVE_SECS); a session that cannot be written is lost.
+TUNNEL_KEEPALIVE_SECS: i64 = 30
+
+// Gives this link's hops to the tunnel registry under `key`, and forgets them: a
+// later `link_hangup` on this value does nothing.
+fn (mut self: SshLink) link_hand_over(key: str) -> void! {
+    if self.hops.len() == 0 {
+        return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
+    }
+    self.sftp_close()
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_tunnel::adopt_begin(key);
+    }
+    for conn in self.hops {
+        c := conn
+        // CFIRE-UPSTREAM: CF-005
+        cpp {
+            flint_tunnel::adopt_hop(key, c.session, c.sock, c.lock);
+        }
+    }
+    timeout := self.timeout_secs
+    keepalive := TUNNEL_KEEPALIVE_SECS
+    mut ok := false
+    mut msg := ""
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::string err;
+        ok = flint_tunnel::adopt_finish(key, self.tunnels, timeout, static_cast<int>(keepalive), err);
+        msg = err;
+    }
+    if !ok {
+        self.link_hangup()
+        return error(coded(ERR_INTERNAL, "the tunnel session could not start: {msg}"))
+    }
+    // The registry owns the sessions and the jump tunnels now.
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        self.tunnels = std::make_shared<flint_ssh::Tunnels>();
+    }
+    self.hops = []
+}
+
+// The `TunnelRunner` adapter. Stateless: the registry is the process's own.
+type NativeTunnels struct {
+    unused: i64
+}
+
+fn new_native_tunnels() -> NativeTunnels {
+    return NativeTunnels{ unused: 0 }
+}
+
+fn (self: NativeTunnels) tunnel_host_state(host_id: str) -> i64 {
+    mut st: i64 = 0
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        st = flint_tunnel::host_state(host_id);
+    }
+    return st
+}
+
+fn (mut self: NativeTunnels) tunnel_listen(host_id: str, tunnel_id: str, local_port: i64, dest_host: str, dest_port: i64) -> i64! {
+    mut rc: i32 = 0
+    mut bound: i64 = 0
+    mut msg := ""
+    // CFIRE-UPSTREAM: CF-112
+    cpp {
+        int b = 0;
+        std::string err;
+        rc = flint_tunnel::listen(host_id, tunnel_id, static_cast<int>(local_port), dest_host, static_cast<int>(dest_port), b, err);
+        bound = b;
+        msg = err;
+    }
+    if rc == 1 {
+        return error(coded(ERR_PORT_IN_USE, "port {local_port} on 127.0.0.1 is already in use"))
+    }
+    if rc == 4 {
+        return error(coded(ERR_PERMISSION, "port {local_port} on 127.0.0.1 cannot be used without more rights ({msg})"))
+    }
+    if rc == 3 {
+        return error(coded(ERR_NETWORK, "the host's tunnel session is not connected"))
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "cannot listen on 127.0.0.1:{local_port}: {msg}"))
+    }
+    return bound
+}
+
+fn (mut self: NativeTunnels) tunnel_unlisten(host_id: str, tunnel_id: str) -> bool {
+    mut was := false
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        was = flint_tunnel::unlisten(host_id, tunnel_id);
+    }
+    return was
+}
+
+fn (mut self: NativeTunnels) tunnel_release(host_id: str) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_tunnel::release(host_id);
+    }
+}
+
+fn (self: NativeTunnels) tunnel_live() -> []TunnelLive {
+    mut text := ""
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        text = flint_tunnel::states();
+    }
+    mut list: []TunnelLive = []
+    for line in str.split(text, "\n") {
+        f := str.split(line, "\t")
+        if f.len() < 8 {
+            continue
+        }
+        list.push(TunnelLive{
+            host_id: f[0], tunnel_id: f[1], up: f[2] == "1",
+            port: f[3].parse_i64() or 0, connections: f[4].parse_i64() or 0,
+            opened: f[5].parse_i64() or 0, failed: f[6].parse_i64() or 0, error: f[7],
+        })
+    }
+    return list
+}
+
+// Closes every tunnel and hangs up every tunnel session (the app quitting).
+fn release_all_tunnels() {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_tunnel::release_all();
+    }
+}

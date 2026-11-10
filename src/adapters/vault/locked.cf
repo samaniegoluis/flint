@@ -217,6 +217,24 @@ fn (self: LockedVaultStore) known_host_drop(addr: str) -> void! {
     return inner.known_host_drop(addr)
 }
 
+fn (self: LockedVaultStore) tunnels_all() -> []Tunnel! {
+    inner := self.enter()
+    defer self.leave()
+    return inner.tunnels_all()
+}
+
+fn (self: LockedVaultStore) tunnel_put(t: Tunnel) -> void! {
+    inner := self.enter()
+    defer self.leave()
+    return inner.tunnel_put(t)
+}
+
+fn (self: LockedVaultStore) tunnel_drop(id: str) -> void! {
+    inner := self.enter()
+    defer self.leave()
+    return inner.tunnel_drop(id)
+}
+
 fn (self: LockedVaultStore) tokens_all() -> []Token! {
     inner := self.enter()
     defer self.leave()

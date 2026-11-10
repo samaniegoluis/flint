@@ -22,6 +22,39 @@ export interface Host {
 	/** The initial command (D-031); '' for a plain shell. */
 	command: string;
 	keepShell: boolean;
+	/** Local forwards saved in this host (milestone 22); they go with it. */
+	tunnels: Tunnel[];
+}
+
+export interface Tunnel {
+	name: string;
+	localPort: number;
+	destHost: string;
+	destPort: number;
+	openOnConnect: boolean;
+	/** Running in Flint, which the demo pretends is open. */
+	running: boolean;
+}
+
+/** What `tunnel add|edit` sets; absent fields stay as they are. */
+export interface TunnelPatch {
+	name?: string;
+	localPort?: number;
+	dest?: [string, number];
+	openOnConnect?: boolean;
+}
+
+/** TunnelView of src/application/tunnels.cf, in its field order. */
+export interface TunnelView {
+	host: string;
+	name: string;
+	local_port: number;
+	destination: string;
+	open_on_connect: boolean;
+	state: string;
+	listen: string;
+	connections: number;
+	error: string;
 }
 
 export interface Key {
@@ -182,6 +215,7 @@ export function worldFromSeed(seed: any): World {
 				group: h.group ?? '', tags: h.tags ?? [], color: h.color ?? '', notes: h.notes ?? '',
 				jump: h.jump ?? '', credential: h.credential ?? '', key: h.key ?? '', hasPassword: !!h.password, hasSudoPassword: false,
 				command: h.command ?? '', keepShell: h.keep_shell ?? true,
+				tunnels: (h.tunnels ?? []).map((t: any) => ({ name: t.name, localPort: t.local_port, destHost: t.dest_host ?? 'localhost', destPort: t.dest_port ?? t.local_port, openOnConnect: !!t.open_on_connect, running: false })),
 			})),
 			knownHosts: v.known_hosts.map((k: any) => {
 				const sk = serverKeyFor(k.addr);
@@ -376,7 +410,7 @@ export class VaultOps {
 	addHost(patch: HostPatch): Host {
 		const h: Host = {
 			alias: '', label: '', hostname: '', port: 22, user: '', group: '', tags: [], color: '',
-			notes: '', jump: '', credential: '', key: '', hasPassword: false, hasSudoPassword: false, command: '', keepShell: true,
+			notes: '', jump: '', credential: '', key: '', hasPassword: false, hasSudoPassword: false, command: '', keepShell: true, tunnels: [],
 		};
 		const groupsBefore = [...this.v.groups];
 		try {
@@ -404,6 +438,87 @@ export class VaultOps {
 			for (const o of this.v.hosts) if (lower(o.jump) === lower(before.alias)) o.jump = h.alias;
 		}
 		return h;
+	}
+
+	// tunnels (src/application/tunnels.cf)
+
+	findTunnel(alias: string, name: string): Tunnel {
+		const h = this.findHost(alias);
+		const t = h.tunnels.find((x) => lower(x.name) === lower(name));
+		if (!t) fail('not_found', `no tunnel '${name}' on host '${h.alias}'`);
+		return t;
+	}
+
+	private viewOf(h: Host, t: Tunnel, inFlint: boolean): TunnelView {
+		return {
+			host: h.alias, name: t.name, local_port: t.localPort, destination: tunnelDestination(t.destHost, t.destPort),
+			open_on_connect: t.openOnConnect, state: inFlint ? (t.running ? 'listening' : 'stopped') : '',
+			listen: t.running && inFlint ? `127.0.0.1:${t.localPort}` : '', connections: 0, error: '',
+		};
+	}
+
+	tunnelView(alias: string, name: string, inFlint: boolean): TunnelView {
+		return this.viewOf(this.findHost(alias), this.findTunnel(alias, name), inFlint);
+	}
+
+	/** Every saved tunnel (of one host), by host then name. `inFlint` false: no state. */
+	tunnelViews(alias: string, inFlint: boolean): TunnelView[] {
+		const only = alias ? this.findHost(alias) : null;
+		const out: TunnelView[] = [];
+		for (const h of this.v.hosts) {
+			if (only && h !== only) continue;
+			for (const t of h.tunnels) out.push(this.viewOf(h, t, inFlint));
+		}
+		return out.sort((a, b) => (lower(a.host) !== lower(b.host) ? (lower(a.host) < lower(b.host) ? -1 : 1) : lower(a.name) < lower(b.name) ? -1 : 1));
+	}
+
+	private applyTunnel(h: Host, base: Tunnel, p: TunnelPatch): Tunnel {
+		const t = { ...base };
+		if (p.name !== undefined) t.name = p.name.trim();
+		if (p.localPort !== undefined) t.localPort = p.localPort;
+		if (p.dest) [t.destHost, t.destPort] = p.dest;
+		if (p.openOnConnect !== undefined) t.openOnConnect = p.openOnConnect;
+		checkTunnelName(t.name);
+		checkTunnelPort(t.localPort, 'local port');
+		const clash = h.tunnels.find((o) => o !== base && lower(o.name) === lower(t.name));
+		if (clash) fail('conflict', `host already has a tunnel named '${t.name}'`);
+		return t;
+	}
+
+	addTunnel(alias: string, p: TunnelPatch): TunnelView {
+		if (p.localPort === undefined) fail('usage', 'a tunnel needs a local port (--local)');
+		const h = this.findHost(alias);
+		const q = { ...p, dest: p.dest ?? (['localhost', p.localPort] as [string, number]) };
+		const t = this.applyTunnel(h, { name: '', localPort: 0, destHost: '', destPort: 0, openOnConnect: false, running: false }, q);
+		h.tunnels.push(t);
+		return this.viewOf(h, t, this.v.unlocked);
+	}
+
+	editTunnel(alias: string, name: string, p: TunnelPatch): TunnelView {
+		const h = this.findHost(alias);
+		const base = this.findTunnel(alias, name);
+		const t = this.applyTunnel(h, base, p);
+		Object.assign(base, t);
+		return this.viewOf(h, base, this.v.unlocked);
+	}
+
+	removeTunnel(alias: string, name: string): TunnelView {
+		const h = this.findHost(alias);
+		const t = this.findTunnel(alias, name);
+		h.tunnels = h.tunnels.filter((x) => x !== t);
+		t.running = false;
+		return this.viewOf(h, t, this.v.unlocked);
+	}
+
+	/** Listens, unless another running tunnel holds its port (port_in_use). */
+	startTunnel(alias: string, name: string): void {
+		const t = this.findTunnel(alias, name);
+		for (const h of this.v.hosts) {
+			for (const o of h.tunnels) {
+				if (o !== t && o.running && o.localPort === t.localPort) fail('port_in_use', `port ${t.localPort} on 127.0.0.1 is already in use`);
+			}
+		}
+		t.running = true;
 	}
 
 	removeHost(alias: string): Host {
@@ -593,4 +708,60 @@ export interface CredPatch {
 	user?: string;
 	key?: string;
 	password?: boolean;
+}
+
+// ---- tunnels (src/domain/tunnel.cf) -----------------------------------------------
+
+export function tunnelDestination(host: string, port: number): string {
+	return host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
+}
+
+function checkTunnelName(name: string): void {
+	if (name.length === 0) fail('invalid', 'a tunnel needs a name');
+	if (name.length > 64) fail('invalid', 'a tunnel name has at most 64 characters');
+	if (!/^[A-Za-z0-9._-]+$/.test(name)) fail('invalid', "a tunnel name has only letters, digits, '-', '.' and '_'");
+}
+
+function checkTunnelPort(port: number, what: string): void {
+	if (port < 1 || port > 65535) fail('invalid', `the ${what} ${port} is not between 1 and 65535`);
+}
+
+function checkDestHost(host: string): void {
+	if (host.length === 0) fail('invalid', 'a tunnel needs a destination host');
+	if (host.length > 253) fail('invalid', 'the destination host has at most 253 characters');
+	if (/[\x00-\x20\x7f/@]/.test(host)) fail('invalid', 'the destination host has a character a host name cannot have');
+}
+
+export function parsePortText(text: string, what: string): number {
+	if (text.length === 0) fail('invalid', `the ${what} is missing`);
+	if (!/^[0-9]+$/.test(text)) fail('invalid', `the ${what} '${text}' is not a number`);
+	const port = Number(text);
+	checkTunnelPort(port, what);
+	return port;
+}
+
+/** `5432` (the server itself), `host:5432` or `[::1]:5432`. */
+export function parseTunnelDestination(text: string): [string, number] {
+	const t = text.trim();
+	if (t.startsWith('[')) {
+		const close = t.indexOf(']');
+		if (close < 0 || close + 1 >= t.length || t[close + 1] !== ':') fail('invalid', 'a destination is host:port, or [address]:port');
+		const host = t.slice(1, close);
+		const port = parsePortText(t.slice(close + 2), 'destination port');
+		checkDestHost(host);
+		return [host, port];
+	}
+	const colon = t.lastIndexOf(':');
+	if (colon < 0) return ['localhost', parsePortText(t, 'destination port')];
+	const host = t.slice(0, colon);
+	if (host.includes(':')) fail('invalid', 'an IPv6 destination goes in brackets: [address]:port');
+	checkDestHost(host);
+	return [host, parsePortText(t.slice(colon + 1), 'destination port')];
+}
+
+/** `<host>:<name>`. */
+export function splitTunnelRef(text: string): [string, string] {
+	const colon = text.lastIndexOf(':');
+	if (colon <= 0 || colon + 1 >= text.length) fail('usage', 'a tunnel is named <host>:<name>, e.g. db1:postgres');
+	return [text.slice(0, colon), text.slice(colon + 1)];
 }
