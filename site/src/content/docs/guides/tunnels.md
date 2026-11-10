@@ -44,7 +44,7 @@ the list. The status bar counts every running tunnel.
 **When you connect.** Tick *Open when I connect* on a tunnel and connecting to the host
 starts it, once the terminal is in. Reconnecting the terminal or closing the tab leaves it
 up: closing a host's last tab while its tunnels run says so, with *Stop them*. The palette
-(`⌘K`) finds a tunnel by name, host or port: *Start tunnel pg on db-01*, *Stop tunnel …*,
+(`⌘K`) finds a tunnel by name, host or port, or by its action (`stop pg`): *Start tunnel pg on db-01*, *Stop tunnel …*,
 *Connect to db-01 with tunnels* (a tab, and every one of its tunnels) and *Manage
 tunnels of db-01…*.
 

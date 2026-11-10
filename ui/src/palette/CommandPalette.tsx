@@ -136,13 +136,15 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       }
     }
     if (!hostsOnly && q) {
-      // Tunnels, while searching (design 20e): by tunnel name, host or port.
+      // Tunnels, while searching (design 20e): by tunnel name, host or port, and by the
+      // row's own words, so "stop web" finds "Stop tunnel web on <host>".
       const hostsWith = new Map<string, number>();
       for (const v of tun.list) {
-        const m = fuzzy(q, `${v.name} ${v.host}`) ?? (String(v.local_port).includes(q) ? { score: 1, positions: [] } : null);
+        const up = v.state === 'listening';
+        const m = fuzzy(q, `${v.name} ${v.host}`) ?? fuzzy(q, `${up ? 'stop' : 'start'} tunnel ${v.name} on ${v.host}`)
+          ?? (String(v.local_port).includes(q) ? { score: 1, positions: [] } : null);
         if (!m) continue;
         hostsWith.set(v.host, Math.max(hostsWith.get(v.host) ?? 0, m.score));
-        const up = v.state === 'listening';
         const conns = v.connections === 0 ? 'no connections' : v.connections === 1 ? '1 connection' : `${v.connections} connections`;
         out.push({
           group: 'tunnels', key: 't:' + v.host + ':' + v.name, score: m.score + 1800,
@@ -265,6 +267,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           <Icon name="search" className="faint" />
           <input aria-label={pickToEdit ? 'Add a tunnel to' : newSession ? 'New session on' : hostsOnly ? 'Go to host' : 'Search hosts, actions and vaults'} placeholder={pickToEdit ? 'Add a tunnel to…' : newSession ? 'New session on…' : hostsOnly ? 'Go to host…' : 'Hosts, actions, vaults…'}
             value={q} onChange={(e) => { setQ(e.target.value); setHot(0); }} className="grow" data-autofocus autoFocus
+            spellCheck={false} autoComplete="off" autoCorrect="off" autoCapitalize="off"
             role="combobox" aria-expanded="true" aria-controls="palette-results" aria-activedescendant={current ? 'pi-' + current.key : undefined}
             style={{ background: 'none', border: 0, outline: 'none', fontSize: 'var(--fs-lg)', color: 'var(--text-primary)' }} />
           <Key>esc</Key>

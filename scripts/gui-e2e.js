@@ -837,11 +837,22 @@
       await click('[data-toolbar-tunnels]');
       await waitFor(() => !q('[data-tunnels-menu]'), 'the menu to close');
       await click('.palette-btn');
-      await fill('[aria-label="Command palette"] input', 'fwd');
+      // By the row's own words too ("start fwd"), not only the tunnel's name.
+      await fill('[aria-label="Command palette"] input', 'start fwd');
       await waitFor(() => byText('[role="option"]', 'Start tunnel fwd on local'), 'the palette action');
+      {
+        const input = q('[aria-label="Command palette"] input');
+        await check(input.spellcheck === false && input.getAttribute('autocorrect') === 'off', 'the palette field has no spelling correction');
+      }
       await click('[role="option"]', 'Start tunnel fwd on local');
       await waitFor(() => tunState('fwd') === 'ok', 'fwd from the palette', 30000);
       await check(true, 'the palette starts a tunnel: "Start tunnel fwd on local"');
+      await click('.palette-btn');
+      await fill('[aria-label="Command palette"] input', 'stop fwd');
+      await waitFor(() => byText('[role="option"]', 'Stop tunnel fwd on local'), 'the stop action');
+      await check(true, 'a running tunnel is offered as "Stop tunnel fwd on local", found by "stop fwd"');
+      q('[aria-label="Command palette"] input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+      await waitFor(() => !q('[aria-label="Command palette"]'), 'the palette to close');
 
       // Removing a running tunnel stops it; the view shows its empty state at the end.
       await click('[data-toolbar-tunnels]');
