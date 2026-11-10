@@ -1,0 +1,93 @@
+<!doctype html>
+<!--
+  Milestone 25's spike: what a webview hands the page on a paste and on a drop.
+  Open it in Safari (WebKit, as WKWebView), in a WebKitGTK browser on Linux
+  (Epiphany / GNOME Web) and in Edge on Windows (Chromium, as WebView2), then paste
+  or drop and copy the report. Nothing leaves the page.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flint paste probe</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --fg: #111; --muted: #666; --line: #ddd; --box: #f5f5f5; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #16161a; --fg: #eee; --muted: #999; --line: #333; --box: #202026; } }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; margin: 0; padding: 16px; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { color: var(--muted); margin: 0 0 12px; }
+  #zone { border: 2px dashed var(--line); border-radius: 10px; padding: 28px 16px; text-align: center; background: var(--box); outline: none; }
+  #zone:focus { border-color: #e8743b; }
+  #zone.over { border-color: #e8743b; border-style: solid; }
+  ol { color: var(--muted); padding-left: 20px; }
+  pre { background: var(--box); border: 1px solid var(--line); border-radius: 8px; padding: 12px; white-space: pre-wrap; word-break: break-word; font: 12px/1.5 ui-monospace, monospace; min-height: 120px; }
+  button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--box); color: var(--fg); cursor: pointer; }
+  .row { display: flex; gap: 8px; margin: 12px 0 6px; align-items: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Flint paste probe</h1>
+  <p id="ua"></p>
+  <ol>
+    <li>Click the box, take a screenshot to the clipboard and paste it.</li>
+    <li>Copy an image file in Finder / Explorer / the file manager and paste it.</li>
+    <li>Copy a PDF file the same way and paste it.</li>
+    <li>Drag a file onto the box.</li>
+  </ol>
+  <div id="zone" tabindex="0">Click here, then paste (⌘V / Ctrl+V) or drop a file</div>
+  <div class="row"><strong>Report</strong><button id="copy">Copy report</button><button id="clear">Clear</button></div>
+  <pre id="out"></pre>
+</main>
+<script>
+  const out = document.getElementById('out');
+  const zone = document.getElementById('zone');
+  document.getElementById('ua').textContent = navigator.userAgent;
+  let n = 0;
+  const log = (s) => { out.textContent += s + '\n'; };
+  const fileLine = (f) => `name="${f.name}" type="${f.type || '(none)'}" size=${f.size}`;
+
+  async function describe(kind, dt) {
+    n += 1;
+    log(`#${n} ${kind}`);
+    if (!dt) { log('  no DataTransfer'); return; }
+    log(`  types: ${JSON.stringify([...(dt.types || [])])}`);
+    const items = [...(dt.items || [])];
+    log(`  items: ${items.length}`);
+    for (const it of items) {
+      const f = it.kind === 'file' ? it.getAsFile() : null;
+      log(`   - kind=${it.kind} type="${it.type}"${f ? ' file: ' + fileLine(f) : ''}`);
+    }
+    const files = [...(dt.files || [])];
+    log(`  files: ${files.length}`);
+    for (const f of files) log(`   - ${fileLine(f)}`);
+    for (const t of dt.types || []) {
+      if (t === 'Files') continue;
+      let v = '';
+      try { v = dt.getData(t); } catch (e) { v = '(getData threw ' + e + ')'; }
+      log(`  getData("${t}"): ${JSON.stringify(v.length > 300 ? v.slice(0, 300) + '…' : v)}`);
+    }
+    // Do the first file's bytes really arrive? Read them and show the first ones.
+    const first = files[0] || (items.find((i) => i.kind === 'file') || {}).getAsFile?.();
+    if (first) {
+      try {
+        const buf = new Uint8Array(await first.arrayBuffer());
+        const head = [...buf.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join(' ');
+        log(`  bytes read: ${buf.length} (first: ${head})`);
+      } catch (e) {
+        log(`  bytes: read failed: ${e}`);
+      }
+    }
+    log('');
+  }
+
+  zone.addEventListener('paste', (e) => { e.preventDefault(); describe('paste', e.clipboardData); });
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('over'); describe('drop', e.dataTransfer); });
+  document.getElementById('copy').onclick = () => navigator.clipboard.writeText(out.textContent).catch(() => {});
+  document.getElementById('clear').onclick = () => { out.textContent = ''; n = 0; };
+</script>
+</body>
+</html>

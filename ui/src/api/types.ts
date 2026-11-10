@@ -119,11 +119,16 @@ export interface Settings {
   term_theme: 'default' | 'catppuccin' | 'tokyo-night' | 'aura' | 'dracula' | 'nord';
   /** Auto-lock after this long with nobody using the vault (D-042). */
   lock_after: LockAfter;
+  /** Milestone 25: the largest image or file a paste uploads, in MB. */
+  paste_limit_mb: PasteLimit;
   /** The app's own record that earlier cached keys were removed (D-048); the core keeps it. */
   keys_cleared?: boolean;
 }
 
 export type LockAfter = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | 'never';
+/** Settings → Terminal → Largest file to paste (milestone 25). */
+export type PasteLimit = 10 | 20 | 50 | 100;
+export const PASTE_LIMITS: PasteLimit[] = [10, 20, 50, 100];
 
 /** A `flint` command asked this window to unlock a vault; `path` is "" for none. */
 /** The window's own lock (milestone 14): closed to the tray, it opens with the

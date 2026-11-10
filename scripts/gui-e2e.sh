@@ -19,7 +19,7 @@ cd "$root"
 
 "$root/scripts/build-gui.sh" >/dev/null
 # The page script (scripts/gui-e2e.js) is split into short runs, each a launch of the app
-# on a fresh vault and config folder: terminal, vault, tunnels, then vim. A hidden page on
+# on a fresh vault and config folder: terminal, vault, tunnels, paste, then vim. A hidden page on
 # macOS stops (WebKit suspends it) once a run opens enough tabs (ROADMAP, "one more tab in
 # the main run freezes the page"); short runs stay under it, and a freeze fails one run by
 # name instead of every step after it. vim freezes on macOS at times and fails under Xvfb
@@ -27,7 +27,7 @@ cd "$root"
 #   FLINT_E2E_ONLY=tunnels scripts/gui-e2e.sh    runs only the named runs (comma-separated)
 #   FLINT_E2E_MAIN_MS=60000 scripts/gui-e2e.sh   caps each run but vim (default: 240 s)
 # Exit status: 0 all passed, 1 a run other than vim failed, 3 only the vim run failed.
-runs=(terminal vault tunnels vim)
+runs=(terminal vault tunnels paste vim)
 if [[ "$(uname -s)" == Darwin ]]; then
   app=(build/gui/Flint.app/Contents/MacOS/Flint)
   run_vim=1

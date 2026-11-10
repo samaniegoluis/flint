@@ -9,6 +9,9 @@ type FakeNode struct {
     path: str
     kind: str
     data: str
+    // Milestone 25: permission bits and modification time, for the paste folder.
+    mode: i64
+    mtime: i64
 }
 
 // A file system in memory. `fail_write_after` > 0 fails the write that would pass
@@ -24,22 +27,28 @@ type FakeTree struct {
     no_overwrite_rename: bool
     // Removing anything fails, as over a channel that died (milestone 18).
     remove_dead: bool
+    // The host's clock, stamped on what is created (milestone 25).
+    now: i64
+    // Creating anything in this folder is refused (a home that is not writable).
+    read_only: str
+    // This path belongs to another user (uid 0); everything else is uid 1000's.
+    foreign: str
 }
 
 fn fake_tree(nodes: []FakeNode) -> FakeTree {
-    mut all: []FakeNode = [FakeNode{ path: "/", kind: FILE_KIND_DIR, data: "" }]
+    mut all: []FakeNode = [FakeNode{ path: "/", kind: FILE_KIND_DIR, data: "", mode: 493, mtime: 0 }]
     for n in nodes {
         all.push(n)
     }
-    return FakeTree{ nodes: all, open_path: "", open_write: false, read_pos: 0, chunk: 4, written: 0, fail_write_after: 0, no_overwrite_rename: false, remove_dead: false }
+    return FakeTree{ nodes: all, open_path: "", open_write: false, read_pos: 0, chunk: 4, written: 0, fail_write_after: 0, no_overwrite_rename: false, remove_dead: false, now: 0, read_only: "", foreign: "" }
 }
 
 fn fdir(path: str) -> FakeNode {
-    return FakeNode{ path: path, kind: FILE_KIND_DIR, data: "" }
+    return FakeNode{ path: path, kind: FILE_KIND_DIR, data: "", mode: 493, mtime: 0 }
 }
 
 fn ffile(path: str, data: str) -> FakeNode {
-    return FakeNode{ path: path, kind: FILE_KIND_FILE, data: data }
+    return FakeNode{ path: path, kind: FILE_KIND_FILE, data: data, mode: 420, mtime: 0 }
 }
 
 fn norm(p: str) -> str {
@@ -73,7 +82,7 @@ fn (self: FakeTree) t_stat(path: str) -> FileEntry! {
         return error(coded(ERR_NOT_FOUND, "{path}: no such file"))
     }
     n := self.nodes[usize(i)]
-    return FileEntry{ name: remote_base(n.path), path: n.path, kind: n.kind, size: i64(n.data.len()), mtime: 0, mode: 420 }
+    return FileEntry{ name: remote_base(n.path), path: n.path, kind: n.kind, size: i64(n.data.len()), mtime: n.mtime, mode: n.mode, uid: self.uid_of(n.path) }
 }
 
 fn (self: FakeTree) t_list(path: str) -> []FileEntry! {
@@ -84,7 +93,7 @@ fn (self: FakeTree) t_list(path: str) -> []FileEntry! {
     mut entries: []FileEntry = []
     for n in self.nodes {
         if n.path != "/" && remote_dir(n.path) == norm(path) {
-            entries.push(FileEntry{ name: remote_base(n.path), path: n.path, kind: n.kind, size: i64(n.data.len()), mtime: 0, mode: 420 })
+            entries.push(FileEntry{ name: remote_base(n.path), path: n.path, kind: n.kind, size: i64(n.data.len()), mtime: n.mtime, mode: n.mode, uid: self.uid_of(n.path) })
         }
     }
     return entries
@@ -99,11 +108,14 @@ fn (mut self: FakeTree) t_open(path: str, write: bool) -> void! {
         if parent < 0 {
             return error(coded(ERR_NOT_FOUND, "{path}: no such folder"))
         }
+        if self.refuses(path) {
+            return error(coded(ERR_PERMISSION, "{path}: permission denied"))
+        }
         i := self.find(path)
         if i >= 0 {
             self.nodes[usize(i)].data = ""
         } else {
-            self.nodes.push(FakeNode{ path: norm(path), kind: FILE_KIND_FILE, data: "" })
+            self.nodes.push(FakeNode{ path: norm(path), kind: FILE_KIND_FILE, data: "", mode: 420, mtime: self.now })
         }
     } else {
         st := try self.t_stat(path)
@@ -185,7 +197,29 @@ fn (mut self: FakeTree) t_mkdir(path: str) -> void! {
     if !self.has(remote_dir(path)) {
         return error(coded(ERR_NOT_FOUND, "{path}"))
     }
-    self.nodes.push(fdir(norm(path)))
+    if self.refuses(path) {
+        return error(coded(ERR_PERMISSION, "{path}: permission denied"))
+    }
+    self.nodes.push(FakeNode{ path: norm(path), kind: FILE_KIND_DIR, data: "", mode: 493, mtime: self.now })
+}
+
+fn (self: FakeTree) uid_of(path: str) -> i64 {
+    if self.foreign.len() > 0 && norm(path) == norm(self.foreign) {
+        return 0
+    }
+    return 1000
+}
+
+fn (self: FakeTree) refuses(path: str) -> bool {
+    return self.read_only.len() > 0 && remote_dir(norm(path)) == norm(self.read_only)
+}
+
+fn (mut self: FakeTree) t_chmod(path: str, mode: i64) -> void! {
+    i := self.find(path)
+    if i < 0 {
+        return error(coded(ERR_NOT_FOUND, "{path}"))
+    }
+    self.nodes[usize(i)].mode = mode
 }
 
 type FakeSftp struct {
@@ -220,6 +254,9 @@ fn (mut self: FakeSftp) sftp_remove(path: str, folder: bool) -> void! {
 }
 fn (mut self: FakeSftp) sftp_mkdir(path: str) -> void! {
     try self.tree.t_mkdir(path)
+}
+fn (mut self: FakeSftp) sftp_chmod(path: str, mode: i64) -> void! {
+    try self.tree.t_chmod(path, mode)
 }
 fn (self: FakeSftp) sftp_realpath(path: str) -> str! {
     if path == "." {

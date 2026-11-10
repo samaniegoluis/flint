@@ -156,6 +156,10 @@ export const api = {
   /** A chunk (base64) of a file dropped from the OS, staged until it is uploaded (CF-004). */
   filesStage: (drop: string, rel: string, data: string) => call<{ path: string }>('files_stage', { drop, rel, data }),
   filesStageDiscard: (drop: string) => call('files_stage_discard', { id: drop }),
+  /** Paste into the terminal (milestone 25): writes a staged file on the pane's host
+   *  and returns its path, and the same path escaped for a shell. */
+  terminalPaste: (p: { session: string; drop: string; rel: string; name: string; kind: string }) =>
+    call<{ path: string; text: string; size: number }>('terminal_paste', p),
 
   /** Tunnels (milestone 23): every saved one, with its live state. */
   tunnelsList: () => call<TunnelView[]>('tunnels_list'),

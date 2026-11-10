@@ -23,6 +23,9 @@ type Settings struct {
     // Milestone 14: the keys every earlier Flint cached on each unlock were removed
     // from this machine's keychain (D-048). Set once by the app, never by the page.
     keys_cleared:       bool `json:"keys_cleared" default:"false"`
+    // Milestone 25: the largest image or file a paste into the terminal uploads, in
+    // MB (PASTE_LIMITS_MB). Older files read the default.
+    paste_limit_mb:     i64  `json:"paste_limit_mb" default:"20"`
 }
 
 // Terminal colour themes (ui/src/lib/terminalThemes.ts holds the palettes).
@@ -40,7 +43,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {
@@ -85,6 +88,9 @@ fn check_settings(s: Settings) -> void! {
     }
     if !one_of(s.lock_after, LOCK_AFTER) {
         return error(coded(ERR_INVALID, "lock after must be 1m, 5m, 15m, 30m, 1h, 4h or never"))
+    }
+    if !paste_limit_valid(s.paste_limit_mb) {
+        return error(coded(ERR_INVALID, "largest file to paste must be 10, 20, 50 or 100 MB"))
     }
     try check_text("terminal font", s.term_font, 128, false)
     // The name ends up in a CSS font-family list, quoted.

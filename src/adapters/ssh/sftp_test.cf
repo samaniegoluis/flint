@@ -463,3 +463,33 @@ test "a plain link refuses to lend its session" {
     link.link_lend() or err { r = "{err.message()}" }
     assert_eq(error_code_of("{r}"), "internal")
 }
+
+test "sftp_chmod sets permission bits, and stat reports the owner's uid" {
+    (port, _) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    mut link := try sftp_link()
+    defer link.link_hangup()
+    dir := scratch_dir("chmod")
+    try link.sftp_mkdir(dir)
+    try link.sftp_chmod(dir, 448)
+    assert_eq((try link.sftp_stat(dir)).mode, 448)
+    path := dir + "/p.png"
+    try link.sftp_file_open(path, true, true)
+    try link.sftp_chmod(path, 384)
+    try link.sftp_file_write("png")
+    try link.sftp_file_close()
+    st := try link.sftp_stat(path)
+    assert_eq(st.mode, 384)
+    assert(st.uid > 0)
+    listed := try link.sftp_list(dir)
+    assert_eq(listed[0].uid, st.uid)
+    assert_eq(listed[0].mode, 384)
+    mut missing := ""
+    link.sftp_chmod(dir + "/nope", 384) or err { missing = "{err.message()}" }
+    assert_eq(error_code_of(missing), "not_found")
+    try link.sftp_remove(path, false)
+    try link.sftp_remove(dir, true)
+}

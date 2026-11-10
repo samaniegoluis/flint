@@ -1,0 +1,218 @@
+package domain
+
+// Pasting an image (or a file) into a terminal pane (milestone 25, D-066): the file
+// is written on the server, in a folder of the person's own, and its path is
+// pasted into the pane for a program there (Claude Code, a shell) to read.
+//
+//   ~/.cache/flint/paste/<id>/<name>      the folders 0700, the file 0600
+//   /tmp/flint-<uid>/<id>/<name>          when the home folder is not writable
+//
+// <id> is unique per paste, so the file keeps its own (cleaned) name. Entries older
+// than a day are removed on the next paste, never at session close: an agent in a
+// multiplexer may read the path long after.
+
+// The paste folder, under the login folder.
+PASTE_HOME_DIRS: []str = [".cache", ".cache/flint", ".cache/flint/paste"]
+// What a paste leaves behind is removed after this long (seconds), by the next one.
+PASTE_MAX_AGE: i64 = 86400
+// Settings → Terminal → Largest file to paste, in MB. Anything bigger goes through the
+// Files view, which has a progress bar and no limit.
+PASTE_LIMITS_MB: []i64 = [10, 20, 50, 100]
+PASTE_LIMIT_DEFAULT_MB: i64 = 20
+PASTE_DIR_MODE: i64 = 448   // 0700
+PASTE_FILE_MODE: i64 = 384  // 0600
+// A cleaned name keeps at most this many bytes, its extension included.
+PASTE_NAME_MAX: usize = 100
+
+fn paste_limit_valid(mb: i64) -> bool {
+    for l in PASTE_LIMITS_MB {
+        if l == mb {
+            return true
+        }
+    }
+    return false
+}
+
+// Refused when `size` bytes is over `limit_mb`, naming both and the way around it.
+fn check_paste_size(name: str, size: i64, limit_mb: i64) -> void! {
+    if size > limit_mb * 1048576 {
+        return error(coded(ERR_INVALID, "{name} is {human_bytes(size)}, over the {limit_mb} MB paste limit. Use Files to upload it"))
+    }
+}
+
+// The fallback folder when the home folder is not writable.
+fn paste_tmp_folder(uid: i64) -> str {
+    return "/tmp/flint-{uid}"
+}
+
+fn is_paste_name_byte(c: u8) -> bool {
+    return (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 46 || c == 95 || c == 45
+}
+
+// A file name that is safe to write and to paste unquoted: letters, digits, '.', '_'
+// and '-'; anything else (spaces, accents, quotes, '/') becomes one '-'. Never
+// hidden, never empty: a name with nothing left is "paste" plus the extension of
+// `fallback_ext` ("png" when that is not usable either). Long names are cut, the
+// extension kept.
+fn paste_file_name(name: str, fallback_ext: str) -> str {
+    mut acc := ""
+    mut dash := false
+    for b in name.bytes() {
+        c := u8(b)
+        if c == 45 || !is_paste_name_byte(c) {
+            // One dash for any run of dashes and replaced bytes.
+            if !dash {
+                acc = acc + "-"
+                dash = true
+            }
+        } else {
+            // No dash right before the extension ("a-.png").
+            if c == 46 && dash {
+                acc = acc.substr(0, acc.len() - 1)
+            }
+            acc = acc + byte_to_str(c)
+            dash = false
+        }
+    }
+    // No hidden file, no leading or trailing dash, no "." or "..".
+    for acc.len() > 0 && (acc.starts_with(".") || acc.starts_with("-")) {
+        acc = acc.substr(1)
+    }
+    for acc.len() > 0 && acc.ends_with("-") {
+        acc = acc.substr(0, acc.len() - 1)
+    }
+    if acc.len() == 0 {
+        return "paste." + paste_ext(fallback_ext)
+    }
+    dot := str.last_index_of(acc, ".")
+    if acc.len() > PASTE_NAME_MAX {
+        if dot > 0 && acc.len() - usize(dot) <= 16 {
+            ext := acc.substr(usize(dot))
+            acc = acc.substr(0, PASTE_NAME_MAX - ext.len()) + ext
+        } else {
+            acc = acc.substr(0, PASTE_NAME_MAX)
+        }
+    }
+    return acc
+}
+
+// An extension from a MIME subtype or an extension: lower case letters and digits,
+// 1-5 of them, else "png".
+fn paste_ext(hint: str) -> str {
+    mut sub := hint
+    slash := str.last_index_of(hint, "/")
+    if slash >= 0 {
+        sub = hint.substr(usize(slash) + 1)
+    }
+    mut acc := ""
+    for b in sub.bytes() {
+        mut c := u8(b)
+        if c >= 65 && c <= 90 {
+            c = c + 32
+        }
+        if (c >= 97 && c <= 122) || (c >= 48 && c <= 57) {
+            acc = acc + byte_to_str(c)
+        }
+    }
+    if acc == "jpeg" {
+        return "jpg"
+    }
+    if acc.len() == 0 || acc.len() > 5 {
+        return "png"
+    }
+    return acc
+}
+
+// Whether a paste folder entry modified at `mtime` is old enough to go, by the host's
+// own clock (`now` is the mtime of the folder this paste just made).
+fn paste_stale(mtime: i64, now: i64) -> bool {
+    return now - mtime > PASTE_MAX_AGE
+}
+
+fn is_shell_safe_byte(c: u8) -> bool {
+    return is_paste_name_byte(c) || c == 47 || c == 126 || c == 43 || c == 64 || c == 37 || c == 58 || c == 44 || c == 61
+}
+
+// `path` as a shell word, the way a terminal writes a dropped file: every byte a
+// shell would read specially gets a backslash ("/home/a b/x.png" -> "/home/a\ b/x.png").
+fn shell_escape_path(path: str) -> str {
+    mut acc := ""
+    for b in path.bytes() {
+        c := u8(b)
+        if !is_shell_safe_byte(c) {
+            acc = acc + "\\"
+        }
+        acc = acc + byte_to_str(c)
+    }
+    return acc
+}
+
+test "a pasted file keeps a cleaned version of its name" {
+    assert_eq(paste_file_name("image.png", "png"), "image.png")
+    assert_eq(paste_file_name("Captura de pantalla 2026-11-10 a la(s) 10.png", "png"), "Captura-de-pantalla-2026-11-10-a-la-s-10.png")
+    assert_eq(paste_file_name("informe año.pdf", "pdf"), "informe-a-o.pdf")
+    assert_eq(paste_file_name("../../etc/passwd", ""), "etc-passwd")
+    assert_eq(paste_file_name(".bashrc", ""), "bashrc")
+    assert_eq(paste_file_name("", "image/jpeg"), "paste.jpg")
+    assert_eq(paste_file_name("   ", "png"), "paste.png")
+    assert_eq(paste_file_name(".png", "png"), "png")
+    assert_eq(paste_file_name("$(rm -rf ~).png", "png"), "rm-rf.png")
+}
+
+test "a long name is cut and keeps its extension" {
+    mut long := ""
+    for i in 0..300 {
+        long = long + "a"
+    }
+    n := paste_file_name(long + ".png", "png")
+    assert_eq(n.len(), PASTE_NAME_MAX)
+    assert(n.ends_with(".png"))
+    assert_eq(paste_file_name(long, "png").len(), PASTE_NAME_MAX)
+}
+
+test "an extension comes from a MIME subtype or falls back to png" {
+    assert_eq(paste_ext("png"), "png")
+    assert_eq(paste_ext("JPEG"), "jpg")
+    assert_eq(paste_ext("image/webp"), "webp")
+    assert_eq(paste_ext("svg+xml"), "png")
+    assert_eq(paste_ext("vnd.openxmlformats-officedocument"), "png")
+    assert_eq(paste_ext(""), "png")
+}
+
+test "the paste limit is one of the listed sizes" {
+    assert(paste_limit_valid(PASTE_LIMIT_DEFAULT_MB))
+    assert(paste_limit_valid(100))
+    assert(!paste_limit_valid(0))
+    assert(!paste_limit_valid(1000))
+    check_paste_size("a.png", 20 * 1048576, 20) or { assert(false) }
+    mut msg := ""
+    check_paste_size("big.pdf", 20 * 1048576 + 1, 20) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_INVALID)
+    assert(msg.contains("big.pdf"))
+    assert(msg.contains("20 MB"))
+    assert(msg.contains("Files"))
+}
+
+test "a paste is stale after a day by the host's clock" {
+    assert(!paste_stale(1000, 1000 + PASTE_MAX_AGE))
+    assert(paste_stale(1000, 1001 + PASTE_MAX_AGE))
+    assert(!paste_stale(5000, 1000))
+}
+
+test "a pasted path is escaped as a terminal escapes a dropped file" {
+    assert_eq(shell_escape_path("/home/me/.cache/flint/paste/d-1/image.png"), "/home/me/.cache/flint/paste/d-1/image.png")
+    assert_eq(shell_escape_path("/home/a b/x.png"), "/home/a\\ b/x.png")
+    assert_eq(shell_escape_path("/h/it's"), "/h/it\\'s")
+    assert_eq(paste_tmp_folder(1000), "/tmp/flint-1000")
+}
+
+fuzz "a cleaned name is always safe to write and paste" |name: str| {
+    n := paste_file_name(name, "")
+    assert(n.len() > 0)
+    assert(n.len() <= PASTE_NAME_MAX)
+    assert(!n.starts_with("."))
+    assert(!n.starts_with("-"))
+    assert(!n.contains("/"))
+    assert(n != "..")
+    assert_eq(shell_escape_path(n), n)
+}

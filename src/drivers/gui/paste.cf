@@ -1,0 +1,36 @@
+package main
+
+// Paste into the terminal (milestone 25, D-066): the page has staged an image from
+// the clipboard on this machine (`files_stage`, as a drop); this writes it on the
+// pane's host over the pane's own session and returns the path the page pastes.
+// Like typing, refused while the window is locked (D-043). Not in the activity log,
+// as the window's own copies (D-055).
+
+import "../../adapters/config"
+import "../../adapters/process"
+import "../../adapters/ssh"
+import "../../application"
+import "../../domain"
+
+type TerminalPasteReq struct {
+    session: str `json:"session"`
+    // The staging drop and the file's path inside it (what `files_stage` was sent).
+    drop:    str `json:"drop"`
+    rel:     str `json:"rel"`
+    // The name on the clipboard and its MIME type.
+    name:    str `json:"name"`
+    kind:    str `json:"kind"`
+}
+
+fn rpc_terminal_paste(req: TerminalPasteReq, mut stage: FsDropStage, settings: JsonSettingsStore, st: GuiState) -> PasteResult! {
+    try st.require_open_window()
+    if !valid_drop_id(req.drop) || !valid_drop_path(req.rel) {
+        return error(coded(ERR_INVALID, "a paste needs its staged file"))
+    }
+    defer discard_dropped(mut stage, req.drop)
+    mut link := try borrow_transfer(req.session, req.drop)
+    defer give_back_transfer(req.session, req.drop, mut link)
+    mut local := new_local_fs()
+    paste := PasteRequest{ id: req.drop, local: remote_join(stage.stage_folder(req.drop), req.rel), name: req.name, kind: req.kind, limit_mb: 0 }
+    return paste_over_session(mut link, mut local, settings, paste)
+}
