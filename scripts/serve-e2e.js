@@ -98,6 +98,12 @@
         if (req.includes('--force')) log((form.querySelector('[data-copy-force]') ? 'ok   ' : 'FAIL ') + 'a copy with --force warns that it replaces files');
         log((form.querySelector('[data-scope-host]') && form.querySelector('[data-action="exec"]')?.checked ? 'ok   ' : 'FAIL ') + 'a copy proposes running commands on that host');
       }
+      if (form.dataset.kind === 'tunnel') {
+        // `flint tunnel up` (milestone 22): the tunnel, where it listens, what it reaches.
+        const title = form.querySelector('h2')?.textContent ?? '';
+        const ask = form.querySelector('[data-tunnel-ask]');
+        log((/wants to open a tunnel through local/.test(title) && ask?.dataset.tunnelHost === 'local' && /^127\.0\.0\.1:\d+$/.test(ask?.dataset.tunnelLocal ?? '') && /^127\.0\.0\.1:\d+$/.test(ask?.dataset.tunnelDest ?? '') && form.querySelector('[data-action="exec"]')?.checked ? 'ok   ' : 'FAIL ') + 'the approval window names the tunnel, where it listens and what it reaches');
+      }
       if (req.includes('timeout-me')) { log('ok   left unanswered: ' + req); continue; }
       if (req.includes('long-cmd')) {
         // Milestone 15 (D-049): a command past 160 characters shows its first line, how
@@ -237,6 +243,11 @@
       await check(copies.some((e) => e.outcome === 'allowed' && e.command.startsWith('flint cp -r ')), 'with -r when it copied a folder');
       await check(copies.some((e) => e.outcome === 'denied' && e.command.includes('deny-me.bin')), 'and the copy the owner denied');
       await check(copies.some((e) => e.outcome === 'allowed' && e.host === 'local → tty' && e.command.includes('again-relay.bin')), 'a copy between two hosts is logged under both: local → tty');
+      const tunnels = log2.filter((e) => e.command.startsWith('flint tunnel'));
+      await check(tunnels.some((e) => e.outcome === 'allowed' && e.action === 'exec' && e.host === 'local' && e.command === 'flint tunnel up local:fwd'), 'the log has every tunnel up, under exec on its host');
+      await check(tunnels.some((e) => e.outcome === 'allowed' && e.command === 'flint tunnel down local:fwd'), 'and every tunnel down');
+      await check(tunnels.some((e) => e.outcome === 'denied' && e.command === 'flint tunnel up local:deny-me'), 'and the tunnel the owner denied');
+      await check(!tunnels.some((e) => e.command.startsWith('flint tunnel status') || e.command.startsWith('flint tunnel ls')), 'a tunnel status or list is a read: not logged');
       const sudoRows = log2.filter((e) => e.action === 'sudo');
       if (sudoRows.length > 0) {
         await check(sudoRows.some((e) => e.outcome === 'allowed' && e.via === 'window' && e.command.includes("--sudo -- 'sh' '-c'")), 'the log keeps a sudo command whole, each argument quoted');

@@ -488,32 +488,34 @@ inline int listen(const std::string& key, const std::string& id, int port, const
 }
 
 // Stops tunnel `id` on host `key`, its listener and every connection, and waits
-// (bounded) until its port is free. False when it was not running.
+// (bounded) until its port is free. False when it was not running. The worker closes
+// it (it owns the connections); the listener leaves the list only once closed.
 inline bool unlisten(const std::string& key, const std::string& id) {
     auto h = find(key);
     if (!h) return false;
     std::shared_ptr<Listener> l;
     {
         std::lock_guard<std::mutex> g(h->mtx);
-        std::vector<std::shared_ptr<Listener>> keep;
         for (auto& o : h->listeners) {
-            if (o->id == id) l = o; else keep.push_back(o);
+            if (o->id == id) l = o;
         }
-        h->listeners = std::move(keep);
     }
     if (!l) return false;
     l->stop.store(true);
     wake(h.get());
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(h->timeout_secs * 2 + 5);
-    while (!l->closed.load() && std::chrono::steady_clock::now() < deadline) {
-        if (!h->worker.joinable() || h->lost.load()) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    while (!l->closed.load() && !h->lost.load() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
-    if (!l->closed.load() && h->lost.load()) {
-        // The worker ended before seeing it; it closed every listener on its way out
-        // except one it never had.
-        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    {
+        std::lock_guard<std::mutex> g(h->mtx);
+        std::vector<std::shared_ptr<Listener>> keep;
+        for (auto& o : h->listeners) {
+            if (o != l) keep.push_back(o);
+        }
+        h->listeners = std::move(keep);
     }
+    // A lost session's worker closed every listener on its way out.
     return true;
 }
 

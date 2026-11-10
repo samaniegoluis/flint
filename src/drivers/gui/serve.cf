@@ -308,6 +308,19 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         }
         st.release()
     }
+    mut tunnel := no_tunnel_ask()
+    if parsed.positional(0) == "tunnel" && need.action == ACCESS_EXEC && req.token.len() == 0 {
+        // Checked before the window: an unknown host or tunnel never reaches it.
+        (alias, tname) := split_tunnel_ref(parsed.positional(2)) or err {
+            return refuse("{err.message()}")
+        }
+        st.hold()
+        tunnel = tunnel_ask(store, store, parsed.positional(1), alias, tname) or err {
+            st.release()
+            return refuse("{err.message()}")
+        }
+        st.release()
+    }
     st.hold()
     session := st.vault_session()
     if !st.unlocked() || session.path != req.vault {
@@ -371,6 +384,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     ap.deadline_ms = now + approval_wait_ms()
     ap.token = ask
     ap.sudo = sudo
+    ap.tunnel = tunnel
     if parsed.positional(0) == "cp" {
         // An argv that does not parse as a copy leaves the window's copy card empty.
         ap.copy = copy_ask_for(parsed, st, caller, session.id, cat, now, req.cwd) or ap.copy

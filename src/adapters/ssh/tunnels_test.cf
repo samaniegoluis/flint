@@ -104,9 +104,14 @@ test "two connections stream through one tunnel while a terminal runs on the hos
         }
     }
     assert(found)
+    stop_start := time.now_ms()
     assert(runner.tunnel_unlisten(host, "t1"))
+    assert(time.now_ms() - stop_start < 2000, "stopping a tunnel waits only for its worker")
     assert(!runner.tunnel_unlisten(host, "t1"))
-    // Its port is free again at once.
+    // Its port is free again at once: another tunnel can take it.
+    again := try runner.tunnel_listen(host, "t2", local, "127.0.0.1", inner_port())
+    assert_eq(again, local)
+    assert(runner.tunnel_unlisten(host, "t2"))
     mut r := ""
     bytes_through(local, key, 10) or err { r = "{err.message()}" }
     assert(r.len() > 0, "nothing listens once the tunnel stopped")

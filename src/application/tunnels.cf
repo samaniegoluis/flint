@@ -303,3 +303,12 @@ fn stop_tunnel[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels
     stop_running(mut runner, t)
     return tunnel_view(h, t, runner.tunnel_live())
 }
+
+// The approval window's card for `flint tunnel up|down <host>:<name>`: refused with
+// `not_found` before the window when there is no such tunnel.
+fn tunnel_ask[S: VaultStore, U: TunnelStore](store: S, tunnels: U, verb: str, alias: str, name: str) -> TunnelAsk! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    t := try require_tunnel(try tunnels.tunnels_all(), h, name)
+    return TunnelAsk{ verb: verb, host: h.alias, name: t.name, local_port: t.local_port, destination: tunnel_destination(t.dest_host, t.dest_port) }
+}

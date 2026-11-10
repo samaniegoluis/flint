@@ -44,6 +44,20 @@ type TunnelLive struct {
     error: str
 }
 
+// What the approval window shows for `flint tunnel up|down` (milestone 22): which
+// tunnel, where it listens and what it reaches.
+type TunnelAsk struct {
+    verb:        str `json:"verb"`
+    host:        str `json:"host"`
+    name:        str `json:"name"`
+    local_port:  i64 `json:"local_port"`
+    destination: str `json:"destination"`
+}
+
+fn no_tunnel_ask() -> TunnelAsk {
+    return TunnelAsk{ verb: "", host: "", name: "", local_port: 0, destination: "" }
+}
+
 fn tunnel_name_char_ok(c: u8) -> bool {
     return (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 45 || c == 46 || c == 95
 }

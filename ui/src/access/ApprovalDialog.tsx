@@ -17,7 +17,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, on, toFlintError } from '../api/backend';
-import type { AccessAction, AccessState, Approval, Catalog, CopyAsk, GrantDuration, PresenceMethod } from '../api/types';
+import type { AccessAction, AccessState, Approval, Catalog, CopyAsk, GrantDuration, PresenceMethod, TunnelAsk } from '../api/types';
 import { Modal } from '../ui/Modal';
 import { Key } from '../ui/Kbd';
 import { useApp } from '../state/app';
@@ -215,11 +215,42 @@ function CopyBlock({ copy, catalog }: { copy: CopyAsk; catalog: Catalog }) {
   );
 }
 
-function kindOf(ap: Approval): 'sudo' | 'token' | 'copy' | 'grant' {
-  return ap.sudo?.host ? 'sudo' : ap.token?.name ? 'token' : ap.copy?.direction ? 'copy' : 'grant';
+/**
+ * `flint tunnel up|down`'s block (milestone 22; 16a's layout until the tunnel screens
+ * of design message 7): this computer's 127.0.0.1 port, the host it goes through and
+ * the destination as that host sees it.
+ */
+function TunnelBlock({ tunnel }: { tunnel: TunnelAsk }) {
+  const up = tunnel.verb === 'up';
+  const listen = `127.0.0.1:${tunnel.local_port}`;
+  return (
+    <div className="cp" data-tunnel-ask data-verb={tunnel.verb} data-tunnel-host={tunnel.host} data-tunnel-local={listen} data-tunnel-dest={tunnel.destination}
+      aria-label={`${up ? 'Open' : 'Stop'} tunnel ${tunnel.name}: ${listen} to ${tunnel.destination} through ${tunnel.host}`}>
+      <div className="cp-dir">
+        <span className="grow row" style={{ gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
+          <span className="cp-end"><Icon name="monitor" /><span className="mono">{listen}</span></span>
+          {ARROW}
+          <span className="cp-end"><Icon name="hosts" /><span className="mono">{tunnel.host}</span></span>
+          {ARROW}
+          <span className="cp-end"><span className="mono">{tunnel.destination}</span></span>
+        </span>
+        <span className="badge info">{up ? 'Open tunnel' : 'Stop tunnel'}</span>
+      </div>
+      <div className="cp-row"><span className="who"><span className="role">Tunnel</span></span><span className="mono" data-tunnel-name>{tunnel.host}:{tunnel.name}</span></div>
+      <div className="cp-row"><span className="who"><span className="role">Listens</span>This computer</span><span className="mono">{listen}</span><span className="hint">&nbsp;· this computer only</span></div>
+      <div className="cp-row"><span className="who"><span className="role">Reaches</span></span><span className="mono">{tunnel.destination}</span><span className="hint">&nbsp;· as <span className="mono">{tunnel.host}</span> sees it</span></div>
+      {up && (
+        <div className="cp-notes"><span className="cp-note"><Icon name="info" className="info-t" />Runs in Flint until it is stopped: any program on this computer can connect to it meanwhile.</span></div>
+      )}
+    </div>
+  );
 }
 
-const KIND_LABEL = { sudo: 'Run as root', token: 'Token request', copy: 'Copy files', grant: 'Grant request' };
+function kindOf(ap: Approval): 'sudo' | 'token' | 'copy' | 'tunnel' | 'grant' {
+  return ap.sudo?.host ? 'sudo' : ap.token?.name ? 'token' : ap.copy?.direction ? 'copy' : ap.tunnel?.verb ? 'tunnel' : 'grant';
+}
+
+const KIND_LABEL = { sudo: 'Run as root', token: 'Token request', copy: 'Copy files', tunnel: 'Tunnel', grant: 'Grant request' };
 
 export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   ap: Approval;
@@ -274,6 +305,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   const sudoHost = sudo ? findHost(catalog, sudo.host) : undefined;
   const askSudo = !!sudo && !sudo.has_password;
   const copy = kind === 'copy' && ap.copy ? ap.copy : null;
+  const tunnel = kind === 'tunnel' && ap.tunnel ? ap.tunnel : null;
   // Design 16g3: which of the two hosts the caller's grant already reaches, and which
   // the new grant adds. A grant that ends while the window waits counts as gone.
   const relayEnds = useMemo(() => {
@@ -360,6 +392,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                 : token ? ' wants to create a token'
                 : copy && copy.direction === 'relay' ? ' wants to copy files between two servers'
                 : copy ? <> wants to copy files {copy.direction === 'upload' ? 'to' : 'from'} <span className="mono">{copy.host}</span></>
+                : tunnel ? <> wants to {tunnel.verb === 'up' ? 'open' : 'stop'} a tunnel through <span className="mono">{tunnel.host}</span></>
                 : ' wants to use this vault'}
             </h2>
             <span className="chain" title={ap.chain.map((p) => `${p.pid} ${p.exe}`).join('\n')}>
@@ -423,6 +456,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                 {more && <MoreRow more={more} data="approval" onShow={() => setShowCommand(true)} />}
               </div>
               {copy && <CopyBlock copy={copy} catalog={catalog} />}
+              {tunnel && <TunnelBlock tunnel={tunnel} />}
               {token ? (
                 <>
                   <dl className="kv" data-token-ask style={{ margin: 0, gridTemplateColumns: '88px minmax(0, 1fr)' }}>
