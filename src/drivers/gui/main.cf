@@ -350,8 +350,19 @@ fn main() {
             quit_app(mut a)
         }
         // On Linux the end-to-end run opens the real window under xvfb-run
-        // (scripts/linux), and the page quits when done.
-        if e2e && os_name() == "mac" {
+        // (scripts/linux), and the page quits when done. On macOS it runs in cfire's
+        // offscreen window, or in the real one when asked (milestone 27), with a
+        // worker that keeps the run's cap.
+        visible_e2e := e2e && os_name() == "mac" && e2e_visible()
+        if visible_e2e {
+            cap_app := app
+            cap_st := st
+            scope.spawn || {
+                mut a := cap_app
+                run_e2e_cap(cap_st, mut a)
+            }
+        }
+        if e2e && os_name() == "mac" && !visible_e2e {
             _ := app.run_webview_test(e2e_timeout_ms()) or false
         } else {
             app.run()

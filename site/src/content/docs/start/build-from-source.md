@@ -182,14 +182,29 @@ and sleep) and unlocks. It also checks that no password reaches the page and tha
 is readable in its file. It uses its own config folder and `FLINT_KEYCHAIN=off`, so your
 keychain is not touched.
 
-It runs as four short runs, each a fresh launch of the app on its own vault: `terminal`
+It runs as five short runs, each a fresh launch of the app on its own vault: `terminal`
 (the shell, files, a jump host, tabs, split panes, a changed host key), `vault` (the
-palette, settings, groups, locking), `tunnels` and `vim`. To repeat
-only some of them:
+palette, settings, groups, locking), `tunnels`, `paste` (an image pasted into the
+terminal) and `vim`. To repeat only some of them:
 
 ```sh
 FLINT_E2E_ONLY=tunnels,vim scripts/gui-e2e.sh
 ```
+
+On macOS the WebView is offscreen by default. `FLINT_E2E_VISIBLE=1` runs it in the app's
+real window instead, on screen, so you can watch the clicks and typing; leave it alone
+while it runs, since covering it or switching Spaces hides it again.
+
+To measure a run that fails now and then, repeat it alone and read its failure rate:
+
+```sh
+scripts/repeat.sh vim 10
+FLINT_E2E_VISIBLE=1 scripts/repeat.sh vim 10
+```
+
+It builds the app and starts the `sshd`s once, then launches the run N times and lists
+each failure with the last step its page logged. `main` (the `terminal`, `tunnels` and
+`vault` runs in one launch) exists only for this.
 
 ### The CLI through the app
 

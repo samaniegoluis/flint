@@ -22,8 +22,12 @@
   //   tunnels   tunnels in the app (milestone 23)
   //   paste     an image pasted into the terminal lands on the server (milestone 25)
   //   vim       vim in the terminal (it freezes on macOS at times, ROADMAP)
+  //   main      terminal, tunnels and vault in one launch: the run before milestone 23
+  //             split it, kept for the freeze experiment (scripts/repeat.sh main N)
   const RUN = '@@RUN@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim'];
+  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'main'];
+  const BLOCKS = RUN === 'main' ? ['terminal', 'tunnels', 'vault'] : [RUN];
+  const runs = (name) => BLOCKS.includes(name);
   const MASTER = 'e2e-master-password-42';
   const HOST_PW_MARKER = 'gui-host-pw-marker';
 
@@ -218,7 +222,7 @@
         `the terminal's rows fit inside the pane (screen ${Math.round(screen.height)} px, box ${Math.round(box.height)} px)`);
     }
 
-    if (RUN === 'vim') {
+    if (runs('vim')) {
       await setStep('vim');
       // A full-screen editor queries the terminal at start (DECRQM, XTGETTCAP, DA2…).
       // A reply that throws inside xterm.js stops its write queue: the editor still
@@ -255,7 +259,7 @@
       await check(/^hello$/m.test(termText()), 'keys typed in vim reach it (insert, Esc, :wq)' + (/^hello$/m.test(termText()) ? '' : ' — terminal: ' + termText().split('\n').filter((l) => l.trim()).slice(-6).join(' | ')));
     }
 
-    if (RUN === 'terminal') {
+    if (runs('terminal')) {
       await setStep('osc 52');
       // A remote program sets the clipboard: the core writes it (the run's private board).
       await runInTerminal(`printf '\\033]52;c;%s\\a' "$(printf 'osc52-from-remote-%s' "$((6*7))" | base64)"; echo osc-sent-$((6*7))`, 'osc-sent-42');
@@ -752,7 +756,7 @@
       await check(true, 'replacing the key forgets the old one and asks again');
     }
 
-    if (RUN === 'paste') {
+    if (runs('paste')) {
       // A paste event as ⌘V hands it: an image file, with or without text beside it.
       const pasteData = async (text, files) => {
         const ta = await waitFor(() => activePane()?.querySelector('textarea'), 'terminal textarea');
@@ -821,7 +825,7 @@
       await runInTerminal(`rm -rf ${folder}; echo cleaned-$((6*7))`, 'cleaned-42');
     }
 
-    if (RUN === 'tunnels') {
+    if (runs('tunnels')) {
       await setStep('tunnels');
       // Milestone 23 (design 06c, 20): a tunnel saved in the host editor, started from
       // the Tunnels view, used by a second host whose address is the tunnel's port, then
@@ -944,7 +948,7 @@
       await waitFor(() => !byText('.tree .ti', 'through'), 'through deleted');
     }
 
-    if (RUN === 'vault') {
+    if (runs('vault')) {
       await setStep('test connection');
       const isMac = (await window.backend.app_info({})).os === 'mac';
       const shortcut = (key, code) => (document.activeElement ?? document.body).dispatchEvent(

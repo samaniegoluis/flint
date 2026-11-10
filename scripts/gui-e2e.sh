@@ -17,17 +17,26 @@ if [[ -z "${FLINT_TEST_SSH_PORT:-}" ]]; then
 fi
 cd "$root"
 
-"$root/scripts/build-gui.sh" >/dev/null
+# FLINT_E2E_NOBUILD=1 uses the app already built (scripts/repeat.sh builds it once).
+if [[ "${FLINT_E2E_NOBUILD:-0}" != 1 ]]; then
+  "$root/scripts/build-gui.sh" >/dev/null
+fi
 # The page script (scripts/gui-e2e.js) is split into short runs, each a launch of the app
 # on a fresh vault and config folder: terminal, vault, tunnels, paste, then vim. A hidden page on
 # macOS stops (WebKit suspends it) once a run opens enough tabs (ROADMAP, "one more tab in
 # the main run freezes the page"); short runs stay under it, and a freeze fails one run by
 # name instead of every step after it. vim freezes on macOS at times and fails under Xvfb
 # on Linux (ROADMAP, "gui-e2e's vim step"), so there it runs only when FLINT_E2E_VIM=1.
-#   FLINT_E2E_ONLY=tunnels scripts/gui-e2e.sh    runs only the named runs (comma-separated)
+#   FLINT_E2E_ONLY=tunnels scripts/gui-e2e.sh    runs only the named runs (comma-separated);
+#                                                `main` (terminal, tunnels and vault in one
+#                                                launch, the run before milestone 23) only so
 #   FLINT_E2E_MAIN_MS=60000 scripts/gui-e2e.sh   caps each run but vim (default: 240 s)
+#   FLINT_E2E_VISIBLE=1 scripts/gui-e2e.sh       macOS: the real window, on screen, instead of
+#                                                cfire's offscreen one (milestone 27)
+#   scripts/repeat.sh vim 10                     one run N times, with its failure rate
 # Exit status: 0 all passed, 1 a run other than vim failed, 3 only the vim run failed.
 runs=(terminal vault tunnels paste vim)
+known=(terminal vault tunnels paste vim main)
 if [[ "$(uname -s)" == Darwin ]]; then
   app=(build/gui/Flint.app/Contents/MacOS/Flint)
   run_vim=1
@@ -36,10 +45,11 @@ else
   run_vim="${FLINT_E2E_VIM:-0}"
 fi
 only="${FLINT_E2E_ONLY:-}"
+visible="${FLINT_E2E_VISIBLE:-0}"
 if [[ -n "$only" ]]; then
   IFS=, read -r -a picked <<<"$only"
   for r in "${picked[@]}"; do
-    [[ " ${runs[*]} " == *" $r "* ]] || { echo "gui-e2e: FLINT_E2E_ONLY takes ${runs[*]}, not '$r'" >&2; exit 2; }
+    [[ " ${known[*]} " == *" $r "* ]] || { echo "gui-e2e: FLINT_E2E_ONLY takes ${known[*]}, not '$r'" >&2; exit 2; }
   done
   runs=("${picked[@]}")
   run_vim=1
@@ -104,6 +114,7 @@ PY
 run_app() {
   local st=0
   FLINT_CONFIG_DIR="$3" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$2" FLINT_GUI_E2E_TIMEOUT_MS="${5:-}" \
+    FLINT_GUI_E2E_VISIBLE="$visible" \
     "${app[@]}" 2>&1 | tee "$4" || st=$?
   if ! grep -q '^e2e: ' "$4"; then
     echo "e2e: fail: killed with no verdict (exit $st); last page line: $(grep '\[page\]' "$4" | tail -1 | sed 's/^.*\[page\] //')"
@@ -156,8 +167,10 @@ done
 echo "gui-e2e: the vault files hold no clear-text host data"
 # D-030: the layout state holds ids only, never a name from inside the vault. The vault
 # run is the one that makes groups and renames the vault.
-if [[ -f "$tmp/vault.log" ]]; then
-  ui_state="$tmp/config-vault/ui-state.json"
+vault_run=""
+for r in vault main; do if [[ -f "$tmp/$r.log" ]]; then vault_run="$r"; fi; done
+if [[ -n "$vault_run" ]]; then
+  ui_state="$tmp/config-$vault_run/ui-state.json"
   [[ -f "$ui_state" ]] || { echo "gui-e2e: no ui-state.json was written" >&2; exit 1; }
   for marker in e2e-grp local pwhost "E2E Renamed"; do
     if grep -aq -- "$marker" "$ui_state"; then
@@ -165,7 +178,7 @@ if [[ -f "$tmp/vault.log" ]]; then
       exit 1
     fi
   done
-  grep -q '"E2E Renamed"' "$tmp/config-vault/vaults.json" || { echo "gui-e2e: the rename did not reach vaults.json" >&2; exit 1; }
+  grep -q '"E2E Renamed"' "$tmp/config-$vault_run/vaults.json" || { echo "gui-e2e: the rename did not reach vaults.json" >&2; exit 1; }
   echo "gui-e2e: ui-state.json holds ids only; vaults.json has the new name"
 fi
 if [[ ${#failed[@]} -gt 0 ]]; then
