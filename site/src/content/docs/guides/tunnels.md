@@ -123,7 +123,8 @@ Linux, and fails with `permission_denied`.
 **Run commands** reaches that host, or your **Allow** in Flint's window, which shows the
 host, `127.0.0.1:<port>` on this machine and the destination on the host, and says that
 the grant would also let the program run commands there. When the port is already in use
-on this machine, the window says so and offers no **Allow**, since the tunnel could not
-open. `ls` and `status` only read. Every
+on this machine, the window says so, names the program that holds it (when it runs as
+you; another user's process stays unnamed) and offers no **Allow**, since the tunnel could
+not open. `ls` and `status` only read. Every
 `up` and `down` is in the activity log. See [Use Flint with an AI
 agent](/guides/ai-agents/).

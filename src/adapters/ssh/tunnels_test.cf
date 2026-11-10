@@ -176,14 +176,22 @@ test "a taken port is seen before any listen, and the gate takes turns" {
     // The test sshd's own port is taken; probing it leaves nothing listening.
     assert(runner.tunnel_port_taken(i64(port)))
     assert(!runner.tunnel_port_taken(0))
+    // The test sshd runs as this user, so its name can be seen.
+    assert(runner.tunnel_port_owner(i64(port)).name.len() > 0)
     key := try fs.read_text(key_path)
     host := "tunnel-probe-{time.now_ms()}"
     mut carrier := try tunnel_key_link(port, key)
     try carrier.link_hand_over(host)
     local := try runner.tunnel_listen(host, "t", 0, "127.0.0.1", 1)
     assert(runner.tunnel_port_taken(local))
+    // This process holds it, and says so with its own pid.
+    owner := runner.tunnel_port_owner(local)
+    assert_eq(owner.pid, os.getpid())
+    assert(owner.name.len() > 0)
     _ := runner.tunnel_unlisten(host, "t")
     assert(!runner.tunnel_port_taken(local))
+    assert_eq(runner.tunnel_port_owner(local).name, "")
+    assert_eq(runner.tunnel_port_owner(0).pid, 0)
     runner.tunnel_release(host)
     // The gate can be held and left again, by host.
     runner.tunnel_gate_enter(host)

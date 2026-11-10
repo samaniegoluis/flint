@@ -299,6 +299,9 @@ export interface TunnelAsk {
   destination: string;
   /** `up`: 127.0.0.1:<local_port> cannot be bound now (design 16h2, milestone 23). */
   port_in_use?: boolean;
+  /** With `port_in_use`: the program holding the port and its pid, when Flint may see it ('' for another user's process). */
+  port_owner?: string;
+  port_owner_pid?: number;
 }
 
 /** A saved tunnel and its state (milestone 22, D-063). */

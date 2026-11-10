@@ -53,10 +53,21 @@ type TunnelAsk struct {
     // `up` only: 127.0.0.1:<local_port> cannot be bound now, so Allow could not open
     // it (design 16h2, milestone 23).
     port_in_use: bool `json:"port_in_use"`
+    // With `port_in_use`: the program that holds the port and its pid, when Flint may
+    // see it ("" and 0 for another user's process).
+    port_owner:     str `json:"port_owner"`
+    port_owner_pid: i64 `json:"port_owner_pid"`
 }
 
 fn no_tunnel_ask() -> TunnelAsk {
-    return TunnelAsk{ verb: "", host: "", name: "", local_port: 0, destination: "", port_in_use: false }
+    return TunnelAsk{ verb: "", host: "", name: "", local_port: 0, destination: "", port_in_use: false, port_owner: "", port_owner_pid: 0 }
+}
+
+// The program that listens on a local port, as far as this user may look (design
+// 16h2). An empty name: none found (nothing listens, or another user's process).
+type PortOwner struct {
+    name: str
+    pid:  i64
 }
 
 fn tunnel_name_char_ok(c: u8) -> bool {

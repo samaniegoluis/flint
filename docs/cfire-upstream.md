@@ -1952,3 +1952,16 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Workaround:** a small non-generic helper that returns `[]str!` with `try`, called with
   an `or err { …; return }` block that diverges.
 - **Ideal:** the assignment type-checks as `[]str!`, as it does for `i64!`.
+
+### CF-114 · missing · `confirmed`: no way to ask which process holds a port
+- **What happened (milestone 23, design 16h2):** when a tunnel's local port is taken, the
+  approval window names the program that holds it (`Python (pid 11121)`). cfire can bind a
+  port to see that it is taken, but `core:os` has no process list and nothing that maps a
+  listening socket to its process: no `libproc` on macOS, and reading `/proc/net/tcp` and
+  every `/proc/<pid>/fd` link by hand needs `readlink` and directory listing of `/proc`,
+  which `core:fs` does not offer for symlinks.
+- **Workaround:** `flint_tunnel::port_owner` in `src/adapters/ssh/native/flint_tunnel.hpp`
+  (`proc_listpids` / `proc_pidfdinfo` on macOS; `/proc/net/tcp{,6}` and `/proc/*/fd` on
+  Linux), called from `tunnel_port_owner` in `src/adapters/ssh/tunnels.cf`.
+- **Ideal:** `net.port_owner(port) -> (name: str, pid: i64)?`, or a process list with each
+  process's sockets in `core:os`; plus `fs.readlink`.

@@ -107,6 +107,9 @@
           // Design 16h2 (milestone 23): a port already taken has nothing to allow.
           const allow = form.querySelector('[data-approval-allow]');
           log((allow?.disabled && form.querySelector('[data-tunnel-port-in-use]') ? 'ok   ' : 'FAIL ') + 'the approval window says the port is in use and offers no Allow');
+          // The test sshd holds it and runs as this user, so the window names it.
+          const owner = form.querySelector('[data-port-owner]')?.textContent ?? '';
+          log((/sshd/.test(owner) && /\(pid \d+\)/.test(form.querySelector('[data-tunnel-port-in-use]')?.textContent ?? '') ? 'ok   ' : 'FAIL ') + 'and names the program that holds it: ' + owner);
           form.querySelector('[data-approval-deny]').click();
           log('ok   denied: ' + req);
           continue;

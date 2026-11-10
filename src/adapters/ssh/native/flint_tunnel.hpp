@@ -1,4 +1,4 @@
-// CFIRE-UPSTREAM: CF-005, CF-026, CF-031, CF-112
+// CFIRE-UPSTREAM: CF-005, CF-026, CF-031, CF-112, CF-114
 //
 // Local port forwards (milestone 22, D-062): the registry of hosts whose SSH session
 // carries tunnels, and the one thread per host session that moves their bytes.
@@ -19,7 +19,8 @@
 //   session's timeout (SSH_OPTIONS_TIMEOUT, Principle 8).
 //
 // cfire has no thread or mutex usable from a struct (CF-026), no top-level cpp block
-// (CF-031), no sockets with accept/poll (CF-112) and no SSH (CF-005), hence this header.
+// (CF-031), no sockets with accept/poll (CF-112), no SSH (CF-005) and no way to ask
+// which process holds a port (CF-114), hence this header.
 #pragma once
 #include "flint_ssh.hpp"
 #include <arpa/inet.h>
@@ -33,6 +34,17 @@
 #include <string>
 #include <thread>
 #include <vector>
+#ifdef __APPLE__
+#include <libproc.h>
+#include <sys/proc_info.h>
+#else
+#include <cstdlib>
+#include <dirent.h>
+#include <fstream>
+#include <set>
+#include <sstream>
+#include <unistd.h>
+#endif
 
 namespace flint_tunnel {
 
@@ -627,6 +639,106 @@ inline bool port_taken(int port) {
     int rc = bind_loopback(port, fd, bound, err);
     if (fd >= 0) ::close(fd);
     return rc != OK;
+}
+
+// ---- Who holds a port (milestone 23, design 16h2) ---------------------------------
+
+// The process that listens on TCP `port` (on any address), as far as this user may
+// look: its name and pid. False when none is found: nothing listens, or the holder
+// belongs to another user (root, a system service) and the system hides its sockets.
+inline bool port_owner(int port, std::string& name, int& pid) {
+    name.clear();
+    pid = 0;
+    if (port <= 0 || port > 65535) return false;
+#ifdef __APPLE__
+    int bytes = proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0);
+    if (bytes <= 0) return false;
+    std::vector<pid_t> pids(static_cast<size_t>(bytes) / sizeof(pid_t) + 64);
+    bytes = proc_listpids(PROC_ALL_PIDS, 0, pids.data(), static_cast<int>(pids.size() * sizeof(pid_t)));
+    if (bytes <= 0) return false;
+    size_t n = static_cast<size_t>(bytes) / sizeof(pid_t);
+    for (size_t i = 0; i < n; i++) {
+        pid_t p = pids[i];
+        if (p <= 0) continue;
+        int size = proc_pidinfo(p, PROC_PIDLISTFDS, 0, nullptr, 0);
+        if (size <= 0) continue;   // another user's process: not ours to look into
+        std::vector<proc_fdinfo> fds(static_cast<size_t>(size) / sizeof(proc_fdinfo) + 8);
+        size = proc_pidinfo(p, PROC_PIDLISTFDS, 0, fds.data(), static_cast<int>(fds.size() * sizeof(proc_fdinfo)));
+        if (size <= 0) continue;
+        size_t k = static_cast<size_t>(size) / sizeof(proc_fdinfo);
+        for (size_t j = 0; j < k; j++) {
+            if (fds[j].proc_fdtype != PROX_FDTYPE_SOCKET) continue;
+            socket_fdinfo si{};
+            if (proc_pidfdinfo(p, fds[j].proc_fd, PROC_PIDFDSOCKETINFO, &si, sizeof si) != static_cast<int>(sizeof si)) continue;
+            if (si.psi.soi_kind != SOCKINFO_TCP) continue;
+            const auto& tcp = si.psi.soi_proto.pri_tcp;
+            if (tcp.tcpsi_state != TSI_S_LISTEN) continue;
+            if (ntohs(static_cast<uint16_t>(tcp.tcpsi_ini.insi_lport)) != port) continue;
+            char buf[2 * MAXCOMLEN + 1] = {};
+            if (proc_name(p, buf, sizeof buf) > 0) name = buf;
+            if (name.empty()) {
+                char path[PROC_PIDPATHINFO_MAXSIZE] = {};
+                if (proc_pidpath(p, path, sizeof path) > 0) {
+                    name = path;
+                    auto slash = name.rfind('/');
+                    if (slash != std::string::npos) name = name.substr(slash + 1);
+                }
+            }
+            pid = p;
+            return true;
+        }
+    }
+    return false;
+#else
+    // The listening sockets on that port, by inode, then the process that has one open.
+    std::set<std::string> wanted;
+    for (const char* table : {"/proc/net/tcp", "/proc/net/tcp6"}) {
+        std::ifstream in(table);
+        std::string line;
+        std::getline(in, line);   // the header
+        while (std::getline(in, line)) {
+            std::istringstream f(line);
+            std::string sl, local, remote, st, queues, timer, retr, uid, timeout, inode;
+            if (!(f >> sl >> local >> remote >> st >> queues >> timer >> retr >> uid >> timeout >> inode)) continue;
+            if (st != "0A") continue;   // TCP_LISTEN
+            auto colon = local.rfind(':');
+            if (colon == std::string::npos) continue;
+            if (std::strtol(local.c_str() + colon + 1, nullptr, 16) != port) continue;
+            if (inode != "0") wanted.insert("socket:[" + inode + "]");
+        }
+    }
+    if (wanted.empty()) return false;
+    DIR* procs = ::opendir("/proc");
+    if (!procs) return false;
+    bool found = false;
+    while (!found) {
+        dirent* e = ::readdir(procs);
+        if (!e) break;
+        char* end = nullptr;
+        long p = std::strtol(e->d_name, &end, 10);
+        if (p <= 0 || !end || *end != '\0') continue;
+        std::string dir = std::string("/proc/") + e->d_name + "/fd";
+        DIR* fds = ::opendir(dir.c_str());
+        if (!fds) continue;   // another user's process
+        while (dirent* d = ::readdir(fds)) {
+            if (d->d_name[0] == '.') continue;
+            char target[256];
+            ssize_t len = ::readlink((dir + "/" + d->d_name).c_str(), target, sizeof target - 1);
+            if (len <= 0) continue;
+            target[len] = '\0';
+            if (wanted.count(target)) {
+                std::ifstream comm(std::string("/proc/") + e->d_name + "/comm");
+                std::getline(comm, name);
+                pid = static_cast<int>(p);
+                found = true;
+                break;
+            }
+        }
+        ::closedir(fds);
+    }
+    ::closedir(procs);
+    return found;
+#endif
 }
 
 }  // namespace flint_tunnel

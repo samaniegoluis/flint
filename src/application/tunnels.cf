@@ -351,15 +351,19 @@ fn stop_tunnel[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels
 // The approval window's card for `flint tunnel up|down <host>:<name>`: refused with
 // `not_found` before the window when there is no such tunnel.
 // For `up`, it says whether the local port is taken by something other than this
-// tunnel already running (design 16h2).
+// tunnel already running, and by which program when that can be seen (design 16h2).
 fn tunnel_ask[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels: U, runner: R, verb: str, alias: str, name: str) -> TunnelAsk! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
     t := try require_tunnel(try tunnels.tunnels_all(), h, name)
     mut in_use := false
+    mut owner := PortOwner{ name: "", pid: 0 }
     if verb == "up" {
         v := tunnel_view(h, t, runner.tunnel_live())
         in_use = v.state != TUNNEL_LISTENING && runner.tunnel_port_taken(t.local_port)
+        if in_use {
+            owner = runner.tunnel_port_owner(t.local_port)
+        }
     }
-    return TunnelAsk{ verb: verb, host: h.alias, name: t.name, local_port: t.local_port, destination: tunnel_destination(t.dest_host, t.dest_port), port_in_use: in_use }
+    return TunnelAsk{ verb: verb, host: h.alias, name: t.name, local_port: t.local_port, destination: tunnel_destination(t.dest_host, t.dest_port), port_in_use: in_use, port_owner: owner.name, port_owner_pid: owner.pid }
 }

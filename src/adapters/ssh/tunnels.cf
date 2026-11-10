@@ -8,7 +8,7 @@ package ssh
 // Errors carry `port_in_use`, `permission_denied` or `network`. Nothing here writes
 // to stderr: a destination is a host name from the vault (Principle 5).
 
-// CFIRE-UPSTREAM: CF-026, CF-031, CF-112
+// CFIRE-UPSTREAM: CF-026, CF-031, CF-112, CF-114
 import cpp "flint_tunnel.hpp" @pkg("flint-native")
 
 import "core:str"
@@ -161,6 +161,20 @@ fn (self: NativeTunnels) tunnel_port_taken(port: i64) -> bool {
         taken = flint_tunnel::port_taken(static_cast<int>(port));
     }
     return taken
+}
+
+fn (self: NativeTunnels) tunnel_port_owner(port: i64) -> PortOwner {
+    mut name := ""
+    mut pid: i64 = 0
+    // CFIRE-UPSTREAM: CF-114
+    cpp {
+        std::string n;
+        int p = 0;
+        flint_tunnel::port_owner(static_cast<int>(port), n, p);
+        name = n;
+        pid = p;
+    }
+    return PortOwner{ name: name, pid: pid }
 }
 
 // Closes every tunnel and hangs up every tunnel session (the app quitting).

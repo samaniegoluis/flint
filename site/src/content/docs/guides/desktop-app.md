@@ -277,8 +277,8 @@ so, and `--force` adds a warning that files already in the destination are repla
 
 `flint tunnel up` shows the host, then `127.0.0.1:<port>` on this machine → the
 destination on the host, and says the grant would also let the program run commands
-there. When that port is already in use here, the window says so and **Allow** is off:
-the tunnel could not open. See [Tunnels](/guides/tunnels/#through-an-agent).
+there. When that port is already in use here, the window says so, names the program that
+holds it when it runs as you, and **Allow** is off: the tunnel could not open. See [Tunnels](/guides/tunnels/#through-an-agent).
 
 `flint token create` brings up the same window showing the token instead: its name, what
 it allows, which hosts and when it expires. **Allow** (with presence) creates that one

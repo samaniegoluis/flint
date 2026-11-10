@@ -218,7 +218,8 @@ function CopyBlock({ copy, catalog }: { copy: CopyAsk; catalog: Catalog }) {
 /**
  * `flint tunnel up|down`'s block (design 16h1, milestone 23): the host it goes through,
  * then this computer's 127.0.0.1 port → the destination as that host sees it. When the
- * port is already taken (16h2) it says so, and the window offers no Allow.
+ * port is already taken (16h2) it says so, and by which program when Flint may see it,
+ * and the window offers no Allow.
  */
 function TunnelBlock({ tunnel, catalog, os }: { tunnel: TunnelAsk; catalog: Catalog; os: string }) {
   const up = tunnel.verb === 'up';
@@ -252,7 +253,9 @@ function TunnelBlock({ tunnel, catalog, os }: { tunnel: TunnelAsk; catalog: Cata
       {taken && (
         <div className="cp-force" role="alert" data-tunnel-port-in-use style={{ background: 'var(--danger-subtle)', borderTopColor: 'var(--danger-border)' }}>
           <Icon name="alert" size="sm" className="danger-t" />
-          <span><span className="strong">Port {tunnel.local_port} is already in use on {here}.</span> This tunnel can't open, so there is nothing to allow. Stop what uses it, or give the tunnel another local port (<span className="mono">flint tunnel edit {tunnel.host}:{tunnel.name} --local …</span>).</span>
+          {tunnel.port_owner
+            ? <span><span className="strong">Port {tunnel.local_port} is already in use on {here}</span>, by <span className="mono" data-port-owner>{tunnel.port_owner}</span> (pid {tunnel.port_owner_pid}). This tunnel can't open, so there is nothing to allow. Stop that program, or give the tunnel another local port (<span className="mono">flint tunnel edit {tunnel.host}:{tunnel.name} --local …</span>).</span>
+            : <span><span className="strong">Port {tunnel.local_port} is already in use on {here}.</span> This tunnel can't open, so there is nothing to allow. Stop what uses it, or give the tunnel another local port (<span className="mono">flint tunnel edit {tunnel.host}:{tunnel.name} --local …</span>).</span>}
         </div>
       )}
     </div>
