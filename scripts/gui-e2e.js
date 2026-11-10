@@ -10,7 +10,6 @@
   const TPORT = '@@TPORT@@';
   const USER = '@@USER@@';
   const KEY = `@@KEY@@`;
-  const TETHER = '@@TETHER@@';
   // gui-e2e.sh runs the app once per run, each on a fresh vault and config folder:
   // every run creates the vault and connects to `local`, then does only its own steps.
   // Short runs keep a hidden page under the point where WebKit stops it (ROADMAP,
@@ -19,7 +18,7 @@
   //   terminal  the shell, files, a jump host, tabs, copy between servers, split panes,
   //             a changed host key
   //   vault     test connection, initial command, palette, settings, known hosts,
-  //             sidebar and groups, rename, Tether import, lock, the tray
+  //             sidebar and groups, rename, lock, the tray
   //   tunnels   tunnels in the app (milestone 23)
   //   vim       vim in the terminal (it freezes on macOS at times, ROADMAP)
   const RUN = '@@RUN@@';
@@ -1167,51 +1166,14 @@
       await click('.rail-btn', 'Hosts');
       await check(q('.vault-btn .vault-name').textContent === 'E2E Renamed', 'the vault button shows the new name');
 
-      await setStep('import from tether');
-      await click('.rail-btn', 'Settings');
-      await click('.nav-i', 'Vault');
-      await click('button', 'Import from Tether…');
-      await waitFor(() => q('[role="dialog"][aria-label="Import from Tether"]'), 'the import drawer');
-      await fill('[aria-label="Tether vault file"]', TETHER);
-      await fill('#tpw', 'not-the-password');
-      await click('.drawer .modal-f button', 'Preview');
-      await waitFor(() => q('.drawer [role="alert"]'), 'the wrong password error');
-      await check(q('.drawer [role="alert"]').textContent.includes('Tether master password is wrong'), 'a wrong Tether password is refused');
-      await fill('#tpw', 'tether-fixture-pw');
-      await click('.drawer .modal-f button', 'Preview');
-      await waitFor(() => q('.drawer [aria-label="Import report"]'), 'the preview report');
-      await check(hasText('Preview: nothing was written yet') && hasText('Would add 5 groups, 8 hosts, 2 keys, 1 credential, 3 known hosts'), 'Preview reports what an import would add');
-      await check(!byText('.tree .label, .tree *', 'code-box'), 'the preview wrote nothing');
-      await check(byText('.drawer td', 'pve-01: proxmox ui') && hasText('flint tunnel add'), 'the report lists the tunnel it cannot import');
-      await click('.drawer .modal-f button', 'Import');
-      await waitFor(() => hasText('Imported 8 hosts from Tether'), 'the import notice');
-      await check(!q('#tpw'), 'the Tether password field is gone once imported');
-      await click('.drawer .modal-f button', 'Done');
-      await click('.rail-btn', 'Hosts');
-      await waitFor(() => hasText('code-box') || hasText('Code Box'), 'the imported hosts in the tree');
-      {
-        const cat = await window.backend.catalog({});
-        const code = cat.hosts.find((h) => h.alias === 'code-box');
-        await check(code && code.has_password && code.command === 'herdr' && code.group === 'Homelab', 'an imported host keeps its group, command and saved password');
-        await check(!JSON.stringify(cat).includes('pw-codebox'), 'no imported secret reaches the page');
-      }
       {
         const r = q('.titlebar .tb-title').getBoundingClientRect();
         await check(Math.abs(r.left + r.width / 2 - window.innerWidth / 2) <= 1, 'the title is centred on the window');
       }
       await click('.rail-btn', 'Settings');
       await click('.nav-i', 'Vault');
-      await click('button', 'Import from Tether…');
-      await waitFor(() => q('[role="dialog"][aria-label="Import from Tether"]'), 'the import drawer again');
-      await fill('[aria-label="Tether vault file"]', TETHER);
-      await fill('#tpw', 'tether-fixture-pw');
-      await click('.drawer .modal-f button', 'Preview');
-      await waitFor(() => hasText('Preview: nothing new to import'), 'the nothing-new preview');
-      await check(hasText('Everything was already in') && !hasText('Would add'), 'a preview with nothing to add says so');
-      await click('.drawer .modal-f button', 'Import');
-      await waitFor(() => hasText('Nothing new to import: everything is already in'), 'the nothing-new notice');
-      await check(hasText('Everything was already in') && !hasText('Added 0'), 'importing again adds nothing and says so');
-      await click('.drawer .modal-f button', 'Done');
+      await waitFor(() => byText('button', 'Rename…'), 'the vault settings');
+      await check(!hasText('Import from Tether'), 'Settings → Vault offers no Tether import (milestone 24)');
 
       await setStep('lock');
       // A session that must keep running under the lock screen (D-042).

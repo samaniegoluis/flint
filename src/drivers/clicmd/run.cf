@@ -101,11 +101,6 @@ Tokens (for programs Flint cannot ask about: cron, launchd, CI on this machine)
                                         token once (default --ttl 1d)
   token list | token revoke <id|name>
 
-Import
-  import tether <file> [--password-stdin] [--dry-run]
-                                        Copy a Tether vault into this one (asks for
-                                        Tether's master password); --dry-run reports only
-
 Global flags
   --json            Write JSON to stdout (errors as JSON to stderr)
   --vault <v>       Use this vault instead of the current one
@@ -127,7 +122,7 @@ them from stdin with the --*-stdin flags.
 fn check_command(p: ParsedArgs) -> void! {
     noun := p.positional(0)
     session_noun := noun == "connect" || noun == "exec" || noun == "cp"
-    if !session_noun && noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" && noun != "known-host" && noun != "import" && noun != "token" && noun != "tunnel" {
+    if !session_noun && noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" && noun != "known-host" && noun != "token" && noun != "tunnel" {
         return error(coded(ERR_USAGE, "unknown command '{noun}'; see `flint help`"))
     }
     if p.positional(1).len() == 0 {
@@ -188,8 +183,6 @@ fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut st
         try cmd_host(p, sec, as_json, c, mut store, src, recents)
     } else if noun == "key" {
         try cmd_key(p, sec, as_json, c, mut store, src, recents, new_libssh_key_inspector())
-    } else if noun == "import" {
-        try cmd_import(p, sec, as_json, c, mut store, src, recents, new_libssh_key_inspector())
     } else if noun == "known-host" {
         try cmd_known_host(p, sec, as_json, c, mut store, src, recents)
     } else if noun == "token" {

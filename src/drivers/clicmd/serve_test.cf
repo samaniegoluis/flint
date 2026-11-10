@@ -17,7 +17,6 @@ test "the app serves vault commands that open no SSH session" {
     assert(servable(parsed(["key", "show", "k"])))
     assert(servable(parsed(["cred", "list"])))
     assert(servable(parsed(["known-host", "rm", "web"])))
-    assert(servable(parsed(["import", "tether", "f"])))
     assert(servable(parsed(["vault", "status"])))
     assert(servable(parsed(["vault", "rename", "x"])))
     assert(!servable(parsed(["host", "test", "web"])))
@@ -35,10 +34,6 @@ test "only writes make the window reload" {
     assert(served_changes_vault(r))
     r.argv = ["host", "list"]
     assert(!served_changes_vault(r))
-    r.argv = ["import", "tether", "f", "--dry-run"]
-    assert(!served_changes_vault(r))
-    r.argv = ["import", "tether", "f"]
-    assert(served_changes_vault(r))
     r.argv = ["vault", "rename", "n"]
     assert(served_changes_vault(r))
 }
@@ -79,7 +74,7 @@ test "session commands are streamed, not run in one exchange" {
 
 test "commands that need the key ask Flint to unlock; the rest do not" {
     // Typed: a literal of literals is not inferred (CF-091).
-    need: [][]str = [["host", "list"], ["connect", "web"], ["exec", "web", "--", "id"], ["vault", "rename", "x"], ["import", "tether", "f"]]
+    need: [][]str = [["host", "list"], ["connect", "web"], ["exec", "web", "--", "id"], ["vault", "rename", "x"]]
     for args in need {
         assert(needs_unlocked_vault(parsed(args)))
     }
@@ -139,8 +134,6 @@ test "each served command needs read, exec on a host, or write" {
     assert_eq(access_need(parsed(["--json", "key", "show", "k"])).action, ACCESS_READ)
     assert_eq(access_need(parsed(["vault", "status"])).action, ACCESS_READ)
     assert_eq(access_need(parsed(["known-host", "list"])).action, ACCESS_READ)
-    assert_eq(access_need(parsed(["import", "tether", "f", "--dry-run"])).action, ACCESS_READ)
-    assert_eq(access_need(parsed(["import", "tether", "f"])).action, ACCESS_WRITE)
     assert_eq(access_need(parsed(["host", "add", "web", "--hostname", "h"])).action, ACCESS_WRITE)
     assert_eq(access_need(parsed(["known-host", "rm", "web"])).action, ACCESS_WRITE)
     assert_eq(access_need(parsed(["vault", "rename", "x"])).action, ACCESS_WRITE)

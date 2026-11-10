@@ -214,31 +214,6 @@ export interface HostTestEvent {
   duration_ms: number;
 }
 
-/** flint import tether (D-034): counts and notes only, never a secret. */
-export interface ImportCounts {
-  groups: number;
-  hosts: number;
-  keys: number;
-  credentials: number;
-  known_hosts: number;
-}
-
-export interface ImportNote {
-  kind: string;
-  name: string;
-  detail: string;
-}
-
-export interface TetherImportReport {
-  file: string;
-  format: number;
-  dry_run: boolean;
-  added: ImportCounts;
-  already_present: ImportCounts;
-  changed: ImportNote[];
-  not_imported: ImportNote[];
-}
-
 // ---- Caller approval (milestone 12) ----------------------------------------------
 
 /** One process of a caller's chain, the `flint` CLI first. */

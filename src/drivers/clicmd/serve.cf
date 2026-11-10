@@ -25,8 +25,8 @@ package clicmd
 // TAG_WAIT frame in a session. A refusal is an ordinary reply or end frame carrying
 // `denied`, `approval_timeout` or `locked`.
 //
-// Prompts for secrets a command needs (`--password`, `--passphrase`, Tether's master
-// password, a host's password at login) are asked on the client's terminal and
+// Prompts for secrets a command needs (`--password`, `--passphrase`, a host's
+// password at login) are asked on the client's terminal and
 // travel towards the app only: no reply ever carries a secret (Principle 6). Once a
 // request is sent, a socket that breaks is an error, never a second attempt.
 
@@ -48,8 +48,7 @@ SERVE_PROTOCOL: i64 = 7
 // Connecting, and sending a request or a reply (Principle 8).
 SERVE_CONNECT_MS: i32 = 1000
 SERVE_SEND_MS: i32 = 5000
-// A whole command, the slowest being an import that derives Tether's key, plus the
-// commands queued before it.
+// A whole command, plus the commands queued before it.
 SERVE_RUN_MS: i32 = 300000
 // A live interactive session sends a heartbeat every RELAY_HEARTBEAT_MS; this much
 // silence means the app stopped answering.
@@ -144,7 +143,7 @@ fn new_request(kind: str, vault: str) -> ServeRequest {
 fn servable(p: ParsedArgs) -> bool {
     noun := p.positional(0)
     verb := p.positional(1)
-    if noun == "group" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "import" || noun == "token" {
+    if noun == "group" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "token" {
         return true
     }
     if noun == "host" {
@@ -160,7 +159,7 @@ fn servable(p: ParsedArgs) -> bool {
 }
 
 // What a command does with the vault, for the app's grants: reading (list, show,
-// status, a dry-run import), running on a host (connect, exec, host test) or changing
+// status), running on a host (connect, exec, host test) or changing
 // the vault (everything else it serves).
 fn access_need(p: ParsedArgs) -> AccessNeed {
     noun := p.positional(0)
@@ -191,9 +190,6 @@ fn access_need(p: ParsedArgs) -> AccessNeed {
         return AccessNeed{ action: ACCESS_TOKEN, host: "" }
     }
     if verb == "list" || verb == "show" || verb == "status" || (noun == "vault" && verb == "unlock") {
-        return AccessNeed{ action: ACCESS_READ, host: "" }
-    }
-    if noun == "import" && p.has_flag("--dry-run") {
         return AccessNeed{ action: ACCESS_READ, host: "" }
     }
     return AccessNeed{ action: ACCESS_WRITE, host: "" }
@@ -247,7 +243,7 @@ fn needs_unlocked_vault(p: ParsedArgs) -> bool {
     if noun == "tunnel" {
         return !is_tunnel_session(p)
     }
-    return noun == "group" || noun == "host" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "import" || noun == "token" || noun == "connect" || noun == "exec" || noun == "cp"
+    return noun == "group" || noun == "host" || noun == "key" || noun == "cred" || noun == "known-host" || noun == "token" || noun == "connect" || noun == "exec" || noun == "cp"
 }
 
 // The host of `<host>:<name>` ("" when it has none).
@@ -318,11 +314,6 @@ fn fill_prompts(p: ParsedArgs, mut sec: SecretInput) -> void! {
     if noun == "key" && verb == "add" && !sec.has_passphrase && p.has_flag("--passphrase") {
         sec.passphrase = try prompt_secret("key passphrase")
         sec.has_passphrase = true
-        return
-    }
-    if noun == "import" && !sec.has_password {
-        sec.password = try prompt_secret("Tether master password")
-        sec.has_password = true
     }
 }
 
@@ -895,16 +886,13 @@ fn app_state_json(state: str, name: str) -> str {
 }
 
 // Whether a served command may have changed the vault, so the window reloads what it
-// shows. Reads (`list`, `show`, `status`, a dry run) do not.
+// shows. Reads (`list`, `show`, `status`) do not.
 fn served_changes_vault(req: ServeRequest) -> bool {
     parsed := parse_cli_args(req.argv) or err {
         return false
     }
     p := parsed
     verb := p.positional(1)
-    if p.positional(0) == "import" {
-        return !p.has_flag("--dry-run")
-    }
     return verb == "add" || verb == "edit" || verb == "rename" || verb == "rm"
 }
 

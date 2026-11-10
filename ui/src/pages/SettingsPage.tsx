@@ -12,7 +12,6 @@ import { Kbd } from '../ui/Kbd';
 import { Picker } from '../ui/Picker';
 import type { Confirm } from './KeysPage';
 import { RenameVault } from '../shell/VaultSwitcher';
-import { ImportTetherDrawer } from './ImportTether';
 import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
 import { AccessSettings } from '../access/AccessSettings';
 
@@ -274,7 +273,6 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
   const { vault, catalog, os, refreshCatalog, notify, closeVault } = useApp();
   const [st, setSt] = useState<VaultStatus | null>(null);
   const [renaming, setRenaming] = useState(false);
-  const [importing, setImporting] = useState(false);
   // Sessions record trusted keys on their worker, and the CLI can change the file:
   // read the catalog again when the page opens, or Known hosts shows a stale list.
   useEffect(() => { refreshCatalog().catch(() => {}); }, [refreshCatalog]);
@@ -334,13 +332,9 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
           </table>
         )}
       </Row>
-      <Row title="Import" desc="Copy the hosts, keys and credentials of a Tether vault into this one.">
-        <div><button className="btn btn-secondary btn-sm" onClick={() => setImporting(true)}><Icon name="file" size="sm" />Import from Tether…</button></div>
-      </Row>
       <Row title="Master password" desc="Changing it is coming in a later version (flint vault passwd).">
         <span className="faint" style={{ fontSize: 'var(--fs-sm)' }}>—</span>
       </Row>
-      {importing && <ImportTetherDrawer onClose={() => setImporting(false)} />}
     </>
   );
 }

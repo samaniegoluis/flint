@@ -201,35 +201,9 @@ check "nothing cached with the keychain off" '[[ "$(echo "$out" | json_get "d[\"
 FLINT_KEYCHAIN=off expect 5 "keychain off and no password: locked" "" -- --vault "$off" host list
 FLINT_KEYCHAIN=off expect 0 "keychain off with --master-stdin works" "$MASTER"$'\n' -- --vault "$off" host list --master-stdin
 
-echo "== import from Tether"
-# A vault written by Tether's own code (scripts/make-tether-fixture.sh).
-imp="$tmp/imp.flint"; tv="$tmp/old.tether"; TPW="tether-fixture-pw"
-cp "$root/src/adapters/vault/testdata/tether-v5.tether" "$tv"
-mkdir -p /tmp/flint-tether-fixture && cp "$root/src/adapters/vault/testdata/tether-legacy-ed25519" /tmp/flint-tether-fixture/id_legacy
-tv_sum="$(shasum "$tv" | cut -d' ' -f1)"
-IM=(--vault "$imp" --master-stdin); IMI="$MASTER"$'\n'
-FLINT_KEYCHAIN=off expect 0 "a vault to import into" "$MASTER"$'\n' -- vault create "$imp" --name Imported --master-stdin
-FLINT_KEYCHAIN=off expect 0 "import tether --dry-run" "$IMI$TPW"$'\n' -- --json import tether "$tv" --password-stdin --dry-run "${IM[@]}"
-check "the dry run counts 8 hosts" '[[ "$(echo "$out" | json_get "d[\"added\"][\"hosts\"]")" == "8" && "$(echo "$out" | json_get "d[\"dry_run\"]")" == "True" ]]'
-FLINT_KEYCHAIN=off expect 0 "the dry run wrote nothing" "$IMI" -- --json host list "${IM[@]}"
-check "no host after the dry run" '[[ "$out" == "[]" ]]'
-FLINT_KEYCHAIN=off expect 6 "a wrong Tether password is wrong_password" "${IMI}not-the-password"$'\n' -- --json import tether "$tv" --password-stdin "${IM[@]}"
-check "the error is JSON on stderr, nothing on stdout" '[[ -z "$out" && "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "wrong_password" ]]'
-FLINT_KEYCHAIN=off expect 3 "a missing Tether file is not_found" "$IMI$TPW"$'\n' -- import tether "$tmp/none.tether" --password-stdin "${IM[@]}"
-FLINT_KEYCHAIN=off expect 7 "a file that is not a Tether vault is invalid" "$IMI$TPW"$'\n' -- import tether "$vault" --password-stdin "${IM[@]}"
-FLINT_KEYCHAIN=off expect 2 "only tether is a source" "" -- import termius "$tv"
-FLINT_KEYCHAIN=off expect 0 "import tether" "$IMI$TPW"$'\n' -- import tether "$tv" --password-stdin "${IM[@]}"
-check "the report names what was added" '[[ "$out" == *"added      5 groups, 8 hosts, 2 keys, 1 credential, 3 known hosts"* ]]'
-check "the report lists the tunnel as not imported" '[[ "$out" == *"Not imported"* && "$out" == *"pve-01: proxmox ui"* && "$out" == *"flint tunnel add"* ]]'
-FLINT_KEYCHAIN=off expect 0 "the imported host keeps its fields" "$IMI" -- --json host show code-box "${IM[@]}"
-check "label, group, tags, command and saved password came over" '[[ "$(echo "$out" | json_get "(d[\"label\"], d[\"group\"], d[\"tags\"], d[\"command\"], d[\"keep_shell\"], d[\"has_password\"])")" == "('"'"'Code Box'"'"', '"'"'Homelab'"'"', ['"'"'dev'"'"', '"'"'home-lab'"'"'], '"'"'herdr'"'"', False, True)" ]]'
-FLINT_KEYCHAIN=off expect 0 "jump host and port came over" "$IMI" -- --json host show pve-01 "${IM[@]}"
-check "pve-01 on 2222 with its stored key" '[[ "$(echo "$out" | json_get "(d[\"port\"], d[\"key\"], d[\"group\"])")" == "(2222, '"'"'homelab-ed25519'"'"', '"'"'Homelab/Proxmox/Nodes'"'"')" ]]'
-FLINT_KEYCHAIN=off expect 0 "known hosts came over" "$IMI" -- --json known-host list "${IM[@]}"
-check "three known hosts in Flint's address form" '[[ "$(echo "$out" | json_get "sorted(k[\"addr\"] for k in d)")" == "['"'"'[pve-01.lan]:2222'"'"', '"'"'codebox.lan'"'"', '"'"'fe80::1'"'"']" ]]'
-FLINT_KEYCHAIN=off expect 0 "a second import adds nothing" "$IMI$TPW"$'\n' -- --json import tether "$tv" --password-stdin "${IM[@]}"
-check "everything is already present" '[[ "$(echo "$out" | json_get "(sum(d[\"added\"].values()), d[\"already_present\"][\"hosts\"])")" == "(0, 9)" ]]'
-check "the Tether file is unchanged" '[[ "$(shasum "$tv" | cut -d" " -f1)" == "$tv_sum" ]]'
+echo "== no import"
+expect 2 "the Tether importer is gone (milestone 24)" "" -- import tether "$tmp/old.tether"
+check "it is an unknown command" '[[ "$err" == *"unknown command '"'"'import'"'"'"* ]]'
 
 echo "== ssh: exec, jump hosts, known hosts"
 P="$FLINT_TEST_SSH_PORT"; P2="$FLINT_TEST_SSH_PORT2"; P3=$((P2 + 1))
@@ -608,16 +582,13 @@ expect 0 "version --json" "" -- --version --json
 check "version is JSON" 'echo "$out" | is_json'
 
 echo "== nothing secret or identifying leaks"
-for secret in "$MASTER" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "$test_key_body" "PRIVATE KEY" "$TPW" "pw-codebox" "pw-ops-cred" "kp-fixture" ${FLINT_TEST_LOGIN_PW:+"$FLINT_TEST_LOGIN_PW"}; do
+for secret in "$MASTER" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "$test_key_body" "PRIVATE KEY" ${FLINT_TEST_LOGIN_PW:+"$FLINT_TEST_LOGIN_PW"}; do
   check "CLI output never shows '${secret:0:24}…'" '! grep -aqF -- "$secret" "$all_out"'
 done
 for f in "$vault" "$work" "$off"; do
   for needle in "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "e2e-hostname-marker" "e2e-user-marker" "e2e-label-marker" "e2e-notes-marker" "e2e-group-marker" "e2e-cred-user" "10.20.30.40" "web-01" "Home Lab" "SQLite format 3" "CREATE TABLE"; do
     check "$(basename "$f") has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$f"'
   done
-done
-for needle in "codebox.lan" "Code Box" "Homelab" "pw-codebox" "kp-fixture" "SQLite format 3"; do
-  check "imp.flint has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$imp"'
 done
 for needle in "127.0.0.1" "localhost" "$test_key_body" "inner" "e2e-tunnel-marker" "e2e-dest-marker" "SQLite format 3"; do
   check "ssh.flint has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$sv"'

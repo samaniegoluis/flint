@@ -190,7 +190,6 @@ fn main() {
         mut a := app
         return rpc_tunnel_stop(params, store, st, mut a)
     }
-    app.bind_raw("import_tether") |params| { return rpc_import_tether(params, c, mut store, inspector, st) }
     app.bind_raw("secret_reveal") |params| { return rpc_secret_reveal(params, c, store, st) }
     app.bind_raw("secret_copy") |params| { return rpc_secret_copy(params, c, store, mut clipboard, st) }
 

@@ -305,8 +305,7 @@ Settings belong to this machine, not to the vault, and save as you change them.
 - **Keyboard shortcuts**: the full map for macOS and Linux. Custom shortcuts are coming
   in a later version.
 - **Vault**: the open vault's file and counts, **Rename**, whether this machine remembers
-  its key, **Lock now**, **Lock after**, the known hosts, each of which you can forget, and **Import from
-  Tether…** ([Moving from Tether](/guides/from-tether/)).
+  its key, **Lock now**, **Lock after**, and the known hosts, each of which you can forget.
 - **Access**: the programs you approved, with what they may do and until when, and
   **Revoke** for each (or all). Grants end when the vault locks or Flint quits. Below
   them, the vault's **tokens** (**Revoke** ends one; **Show ended** lists the expired

@@ -4,7 +4,7 @@
 
 import type {
   AccessAnswer, AccessState, ActivityEntry, AppInfo, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  CopyResult, FileEntry, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
+  CopyResult, FileEntry, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -123,9 +123,6 @@ export const api = {
   /** Tests the editor's unsaved form; the result arrives as a "host:test" event. */
   hostTest: (session: string, target: string, p: HostPatch) =>
     call('host_test', { ...p, session, target, accept_new_host_key: false }),
-  /** Copies a Tether vault into the open vault; `dryRun` only reports (D-034). */
-  importTether: (path: string, password: string, dryRun: boolean) =>
-    call<TetherImportReport>('import_tether', { path, password, dry_run: dryRun }),
   /** The one call that returns a secret (D-029). Keep the value out of logs and state that outlives the field. */
   secretReveal: (kind: 'host' | 'credential', name: string) => call<{ value: string }>('secret_reveal', { kind, name }),
   /** The core puts the password on the clipboard and clears it after 30 s. */

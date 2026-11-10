@@ -405,6 +405,8 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
   libsodium's `crypto_pwhash` cannot compute (it fixes parallelism at 1).
   `src/adapters/vault/tether.cf` calls the reference libargon2 (`@pkg("libargon2")`,
   D-034) for that one derivation.
+- **M24:** the Tether importer and libargon2 are gone (D-065); Flint needs only
+  libsodium's single-lane Argon2id again, so the 4-lane gap no longer affects it.
 - **Ideal:** `ext:crypto/sodium` (or a libsodium-backed `core:crypto/*`).
 
 ### CF-007 · missing · `not adopted`: encrypted SQLite in `ext:db/sqlite`
