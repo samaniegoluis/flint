@@ -12,6 +12,8 @@ Direction **A (Editor)** as the base, plus B's command palette and unlock layout
 | `screens/16e*.{dark,light}.html` | v4 · milestone 15: whole commands (summary + "Show full command", the full-command modal), the activity entry, and activity retention. |
 | `screens/16f*.{dark,light}.html` | v4 · milestone 16: the approval window for `flint cp` (direction, both paths, `-r` and `--force`). |
 | `screens/16g*`, `14d*`, `18*` `.{dark,light}.html` | v5 · milestones 18–20: the approval for a copy between two hosts (18), two file panes in the Files view (19), split terminal panes (20). |
+| `screens/06c*`, `20*`, `16h*` `.{dark,light}.html` | v6 · milestone 23: tunnels in the host editor, the Tunnels view, the toolbar menu, the tab mark, the palette, and the approval window for `flint tunnel up`. |
+| `screens/19*.{dark,light}.html` | Side panel pinned or floating (design message 6, ROADMAP §6): not built in v6; the pin button drawn in the other screens' headers waits for it. |
 | `tokens.css` | **The source of truth.** CSS custom properties keyed by `html[data-theme="dark"\|"light"]`. Import once at the app root. |
 | `flint.css` | The mockups' component classes. It's a reference for your CSS Modules, not production CSS. It uses tokens only. |
 | `components.{dark,light}.html` | The component sheet. |
@@ -233,6 +235,71 @@ The bytes always flow server A → Flint → server B; no key or password is eve
 **Focus in split panes:** the focused pane has an ember border and a tinted header, and the other panes' output is dimmed to 60 %. Either cue alone is weak with busy output or in light mode; together they hold up. Pane numbers 1–4 appear in pane headers, the toolbar badge ("pane 2 of 4") and the Files header.
 
 **Shortcut change:** Split right takes ⌘D, so **Duplicate session moves to ⌥⌘D**.
+
+## Side panel, pinned or floating (ROADMAP §6, screens 19*; not in v6)
+
+**Rule:** one panel and one width for every side view (`--panel-w`, 300 px), with a pin in its header (⌥⌘P).
+
+- **Pinned:** the panel takes the terminal's space, as before.
+- **Floating (default):** the panel opens over the terminal with a strong right border, `--shadow-float` (tuned for each theme) and a 1 px inner edge. It never resizes the terminal; the column badge in the terminal shows this.
+- **Opening and closing a floating panel:**
+  - Hovering a rail icon opens it after about 150 ms. Moving the pointer away hides it after 300–500 ms.
+  - It stays open during a drag, an open context menu, a focused field, or a waiting Replace/Skip question. A "held open · …" chip in the header says which.
+  - Opened from the keyboard, it stays until Esc or a click in the terminal.
+  - Dragging files from the OS onto a rail icon opens it (spring-loaded).
+- **Layout:** the rail always stays docked. Anything wider than the panel floats, including the second file pane, which replaces 14d2's docked 700 px.
+
+| Screen | What it shows |
+|---|---|
+| `19a1`–`19a4` | The pin on Hosts and on Files, pinned and floating. Pinned: filled ember icon, tooltip "Unpin ⌥⌘P". Floating: outlined, tilted icon, tooltip "Pin the panel ⌥⌘P". |
+| `19b` | Floating over a full-width vim, which keeps 160 × 42. |
+| `19c` | Opened by hovering the Files icon (pointer and rail hover state). A context menu keeps it open, and the header chip reads "held open · menu". |
+| `19d1` | Files and the second pane (nas) both floating, with the transfer queue. |
+| `19d2` | Second pane hidden. The Files header shows the chip **⇄ nas · 2 copying**, which brings the pane back. |
+| `19e` | A drag from the OS held over the Files rail icon (ember ring). The panel springs open with the 14b drop zone. |
+| `19f` | Floating over a 2 × 2 split. The header names the pane (badge 2, "pane 2 of 4"), and the focused pane keeps its ember border. None of the panes is resized. |
+| `19g1` / `19g2` | 900 × 600, pinned versus floating. Pinned squeezes the terminal to 66 columns; floating keeps 104. |
+| `19h` | Settings → Appearance → **Side panel: Pinned / Floating**, with Floating as the default. |
+
+**Proposal:** below about 1040 px of window width, the panel floats even when pinned (compare 19g1 and 19g2).
+
+## Tunnels: local port forwards, milestone 23 (screens 06c*, 20*, 16h*)
+
+**Colour:** sapphire (`--info`) marks tunnels everywhere. That covers the Tunnels rail badge, the tunnel mark on tabs and host rows (`.tun-mark`), the count on the toolbar button (`.tcount`), and the Tunnel badge in the approval window.
+
+**Rows:** each tunnel row has a switch, its name, the mapping `127.0.0.1:L → dest:P` in mono, and a live state line. The state line leaves out the local address, because the mapping line above already shows it.
+
+**States:**
+- listening · N connections
+- stopped
+- starting…
+- port L in use · who holds it
+- connection lost · reason
+- not started · login failed
+
+**Retrying:** nothing retries on its own. A lost connection turns every switch of that host off. Flipping a switch logs in again.
+
+| Screen | What it shows |
+|---|---|
+| `06c1` / `06c1b` | The Tunnels section of the host editor: rows with "Open when I connect", edit, remove, and **Add tunnel**. `06c1b` is the empty state, one line saying what a tunnel is. |
+| `06c2a` | Adding a tunnel whose local port another tunnel in the vault already uses. This is a warning, not an error: it can be saved, but only one of them can run at a time. The local side is fixed at `127.0.0.1 :` and has no bind address field. The destination host's placeholder is "localhost". |
+| `06c2b` | Inline errors: a name already used on this host, and a port outside 1–65535. |
+| `20a1` | The Tunnels view, grouped by host. db-primary has no tab and its tunnels have their own session. prod-api-01 has a tab open. redis-01 lost its connection, so all its tunnels stopped, with the reason given. stg-web is blocked because pg already holds port 5432. The view has a filter at the top and a 127.0.0.1-only note at the bottom. |
+| `20a2` | Empty state: what a tunnel is, an example, and where to add one (the host editor). |
+| `20b1–4` | The tunnels' session for a host with no tab, in four states: connecting with steps, password (10a), unknown host key (10c), and auth failed. The cards sit inline in the host's group. |
+| `20c1` / `20c2` | The **Tunnels** button in the session toolbar, with a count when any are up. Its menu has a check per tunnel showing its state, then **Manage tunnels…** (opens 06c). In `20c2` the tunnel's port is taken, and the menu says how to fix it. |
+| `20d1` / `20d2` | A mark on the tab and on the host row, with a tooltip listing the tunnels. When the tab closes, the tunnels stay up: the sidebar still marks the host, and a toast offers "Stop them". |
+| `20e` | The palette: "Connect to db-primary with tunnels", "Start tunnel …", "Stop tunnel …", "Manage tunnels…". The shell equivalent is `flint tunnel up`. |
+| `20f1` / `20f2` | 900 × 600: the Tunnels view floating (per the M19 proposal), and the toolbar with icons only, with the menu open. |
+| `16h1` | Approval for a program that opens a tunnel. It shows the host, then "127.0.0.1:5432 on this Mac → localhost:5432 on db-primary". The Actions row says the grant covers the host's exec scope, so the program could also run commands there. |
+| `16h2` | The same request when port 5432 is already in use on this Mac. A danger strip says so and names the process. **Allow** is disabled, so nobody approves a tunnel that cannot open. |
+
+**Lifecycle (not drawn):**
+- Locking the vault leaves tunnels running, like open terminals.
+- Quitting Flint closes them all.
+- Reconnecting a terminal does not touch them.
+
+**Proposed shortcut:** ⇧⌘T for the Tunnels view.
 
 ## What Flint left out (2026-11-07)
 

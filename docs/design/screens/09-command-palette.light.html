@@ -68,6 +68,8 @@
 <symbol id="i-agent" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12.5h.01M15 12.5h.01M9.5 16h5"/></symbol>
 <symbol id="i-chain" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
 <symbol id="i-shield-key" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><circle cx="12" cy="11" r="2"/><path d="M12 13v3"/></symbol>
+<symbol id="i-tunnel" viewBox="0 0 24 24"><path d="M3 19v-6a9 9 0 0 1 18 0v6"/><path d="M8 19v-5a4 4 0 0 1 8 0v5"/><path d="M2 19h20"/></symbol>
+<symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 3h6l-1 6 4 4H6l4-4z"/><path d="M12 13v8"/></symbol>
 </svg>
 <div class="app" data-theme="light" data-view="hosts" data-os="mac" style="width: 1280px; height: 800px">
 <div style="position: absolute; inset: 0"><div class="chrome" style="position: absolute; inset: 0; font-family: var(--font-ui); color: var(--text-primary)">
@@ -82,6 +84,7 @@
 <nav class="rail" aria-label="Activity bar">
 <button class="rail-btn" data-item="hosts" title="Hosts (⇧⌘H) — click again to hide the sidebar"><svg class="ic" aria-hidden="true"><use href="#i-hosts"></use></svg>Hosts</button>
 <button class="rail-btn" data-item="files" title="Files of the active session (⌘E)"><svg class="ic" aria-hidden="true"><use href="#i-files"></use></svg>Files</button>
+<button class="rail-btn" data-item="tunnels" title="Tunnels (⇧⌘T)"><svg class="ic" aria-hidden="true"><use href="#i-tunnel"></use></svg>Tunnels<span class="rail-badge tun-count" aria-label="3 tunnels running">3</span></button>
 <span class="rail-sep" role="separator"></span>
 <button class="rail-btn" data-item="keys" title="SSH keys (⇧⌘K)"><svg class="ic" aria-hidden="true"><use href="#i-key"></use></svg>Keys</button>
 <button class="rail-btn" data-item="credentials" title="Credentials (⇧⌘C)"><svg class="ic" aria-hidden="true"><use href="#i-cred"></use></svg>Credentials</button>
@@ -96,7 +99,7 @@
 <svg class="ic ic-sm faint" aria-hidden="true"><use href="#i-updown"></use></svg>
 </button>
 <label class="search side-search"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-search"></use></svg><input aria-label="Filter hosts" placeholder="Filter hosts"><span class="kbd" data-mac="⌘P" data-linux="Ctrl+Shift+P"></span></label>
-<div class="side-head"><span class="label">Hosts <span class="count-all">· 18</span></span><button class="icon-btn" aria-label="New host (⌘N)"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-plus"></use></svg></button></div>
+<div class="side-head"><span class="label">Hosts <span class="count-all">· 18</span></span><button class="icon-btn pin-btn" aria-label="Pin the panel (⌥⌘P)"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-pin"></use></svg></button><button class="icon-btn" aria-label="New host (⌘N)"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-plus"></use></svg></button></div>
 
 <div class="tree" role="tree" aria-label="Hosts in Work">
 <button class="ti d0" role="treeitem" aria-expanded="true"><svg class="ic chev" aria-hidden="true"><use href="#i-chev"></use></svg><span class="fsw c-ember"></span><span class="grow">Production</span><span class="count">9</span></button>
@@ -105,7 +108,7 @@
 <button class="ti d2" role="treeitem"><span class="hmark c-ember"></span><span class="host-name grow">prod-api-02</span><span class="sess" aria-label="1 open session"><svg class="ic" aria-hidden="true"><use href="#i-term"></use></svg>1</span></button>
 <button class="ti d2" role="treeitem"><span class="hmark c-ember"></span><span class="host-name grow">prod-api-03</span></button>
 <button class="ti d1" role="treeitem" aria-expanded="true"><svg class="ic chev" aria-hidden="true"><use href="#i-chev"></use></svg><span class="grow">data</span></button>
-<button class="ti d2" role="treeitem"><span class="hmark c-iris"></span><span class="host-name grow">db-primary</span></button>
+<button class="ti d2" role="treeitem"><span class="hmark c-iris"></span><span class="host-name grow">db-primary</span><span class="tun-mark db-tun" aria-label="2 tunnels running"><svg class="ic" aria-hidden="true"><use href="#i-tunnel"></use></svg>2</span><span class="sess db-sess" aria-label="1 open session"><svg class="ic" aria-hidden="true"><use href="#i-term"></use></svg>1</span></button>
 <button class="ti d2" role="treeitem"><span class="hmark c-iris"></span><span class="host-name grow">db-replica</span></button>
 <button class="ti d2" role="treeitem"><span class="hmark"></span><span class="host-name grow">redis-01</span></button>
 <button class="ti d1" role="treeitem"><span class="hmark c-rose"></span><span class="host-name grow">edge-lb-01</span></button>
