@@ -840,6 +840,7 @@
       // By the row's own words too ("start fwd"), not only the tunnel's name.
       await fill('[aria-label="Command palette"] input', 'start fwd');
       await waitFor(() => byText('[role="option"]', 'Start tunnel fwd on local'), 'the palette action');
+      await check(q('[role="option"].hot')?.textContent.includes('Start tunnel fwd on local'), '"start fwd" puts "Start tunnel fwd on local" first, above Connect with tunnels');
       {
         const input = q('[aria-label="Command palette"] input');
         await check(input.spellcheck === false && input.getAttribute('autocorrect') === 'off', 'the palette field has no spelling correction');

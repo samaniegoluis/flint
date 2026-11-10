@@ -141,13 +141,15 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       const hostsWith = new Map<string, number>();
       for (const v of tun.list) {
         const up = v.state === 'listening';
-        const m = fuzzy(q, `${v.name} ${v.host}`) ?? fuzzy(q, `${up ? 'stop' : 'start'} tunnel ${v.name} on ${v.host}`)
-          ?? (String(v.local_port).includes(q) ? { score: 1, positions: [] } : null);
+        const byName = fuzzy(q, `${v.name} ${v.host}`);
+        const byAction = byName ? null : fuzzy(q, `${up ? 'stop' : 'start'} tunnel ${v.name} on ${v.host}`);
+        const m = byName ?? byAction ?? (String(v.local_port).includes(q) ? { score: 1, positions: [] } : null);
         if (!m) continue;
         hostsWith.set(v.host, Math.max(hostsWith.get(v.host) ?? 0, m.score));
         const conns = v.connections === 0 ? 'no connections' : v.connections === 1 ? '1 connection' : `${v.connections} connections`;
         out.push({
-          group: 'tunnels', key: 't:' + v.host + ':' + v.name, score: m.score + 1800,
+          // Asked for by its action ("start web"): above the host's Connect with tunnels.
+          group: 'tunnels', key: 't:' + v.host + ':' + v.name, score: m.score + (byAction ? 1900 : 1800),
           render: () => (
             <>
               <Icon name="tunnel" size="sm" />
