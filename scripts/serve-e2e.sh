@@ -489,6 +489,8 @@ expect 0 "tunnel up again changes nothing" "" -- tunnel up local:fwd
 check "still the one listener" '[[ "$(banner "$TP" 1)" == "SSH-2.0" ]]'
 expect 22 "a port in use fails with port_in_use" "" -- --json tunnel up local:busy
 check "as a JSON error with its code" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "port_in_use" ]]'
+new_caller "" -- tunnel up local:busy
+check "a new caller's tunnel on a taken port is shown as such, and denied" '[[ $status == 15 ]]'
 new_caller "" -- tunnel up local:deny-me
 check "a denied tunnel opens no port" '[[ $status == 15 && "$(banner "$((TP + 1))" 1)" == "closed" ]]'
 new_caller "" -- tunnel up local:nope
@@ -579,7 +581,7 @@ sed 's/^/app: /' "$tmp/app.log" | grep -E "ok |FAILED|checks passed|e2e:|page te
 check "the window checks passed" 'grep -q "^e2e: pass" "$tmp/app.log"'
 check "a click beside the approval window does not deny it" 'grep -q "ok   a click beside the approval window" "$tmp/app.log" && ! grep -q "FAIL a click beside" "$tmp/app.log"'
 check "the approval countdown shows the time left" 'grep -q "ok   the countdown shows the time left" "$tmp/app.log" && ! grep -q "FAIL the countdown" "$tmp/app.log"'
-for what in "the approval window says copy files with the direction, the host and both paths" "a copy proposes running commands on that host" "the approval window names both hosts of a copy between two" "a copy between two hosts proposes a grant for both" "the approval window says how much of a long command is left" "Show full command opens the whole command" "Esc closes the full command and leaves the request waiting" "the approval window names the tunnel, where it listens and what it reaches"; do
+for what in "the approval window says copy files with the direction, the host and both paths" "a copy proposes running commands on that host" "the approval window names both hosts of a copy between two" "a copy between two hosts proposes a grant for both" "the approval window says how much of a long command is left" "Show full command opens the whole command" "Esc closes the full command and leaves the request waiting" "the approval window names the tunnel, where it listens and what it reaches" "the approval window says the port is in use and offers no Allow"; do
   check "$what" 'grep -q "ok   $what" "$tmp/app.log" && ! grep -q "FAIL $what" "$tmp/app.log"'
 done
 check "the socket file is removed when the app quits" '[[ ! -e "$sock" ]]'

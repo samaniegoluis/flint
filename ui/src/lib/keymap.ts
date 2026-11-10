@@ -9,7 +9,7 @@ export type Action =
   | 'newSession' | 'closeTab' | 'reconnect' | 'duplicate' | 'toggleSidebar'
   | 'splitRight' | 'splitDown' | 'focusNextPane' | 'focusPrevPane'
   | 'layout1' | 'layout2' | 'layout3' | 'layout4'
-  | 'viewHosts' | 'viewFiles' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'editHost'
+  | 'viewHosts' | 'viewFiles' | 'viewTunnels' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'editHost'
   | 'collapseAll' | 'expandAll'
   | 'lock' | 'quit' | 'fontBigger' | 'fontSmaller' | 'fontReset' | 'nextRegion' | 'prevRegion'
   | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5' | 'tab6' | 'tab7' | 'tab8' | 'tab9';
@@ -49,6 +49,7 @@ const CHORDS: Record<Action, Chord> = {
   toggleSidebar: { code: 'KeyB', label: 'B' },
   viewHosts: { code: 'KeyH', shifted: true, label: 'H' },
   viewFiles: { code: 'KeyE', label: 'E' },
+  viewTunnels: { code: 'KeyT', shifted: true, label: 'T' },
   viewKeys: { code: 'KeyK', shifted: true, label: 'K' },
   viewCredentials: { code: 'KeyC', shifted: true, label: 'C' },
   settings: { code: 'Comma', label: ',' },
@@ -141,6 +142,7 @@ export const ACTION_TITLES: Record<Action, string> = {
   toggleSidebar: 'Toggle sidebar',
   viewHosts: 'Hosts view',
   viewFiles: 'Files view',
+  viewTunnels: 'Tunnels view',
   viewKeys: 'SSH keys',
   viewCredentials: 'Credentials',
   settings: 'Settings',
@@ -165,7 +167,7 @@ export const SHORTCUT_GROUPS: { title: string; actions: Action[] }[] = [
   { title: 'Vaults', actions: ['switchVault', 'openVault', 'createVault'] },
   { title: 'Sessions', actions: ['newSession', 'closeTab', 'reconnect', 'duplicate', 'tab1', 'tab9'] },
   { title: 'Panes', actions: ['splitRight', 'splitDown', 'focusNextPane', 'focusPrevPane', 'layout1', 'layout2', 'layout3', 'layout4'] },
-  { title: 'Views', actions: ['viewHosts', 'viewFiles', 'viewKeys', 'viewCredentials', 'toggleSidebar'] },
+  { title: 'Views', actions: ['viewHosts', 'viewFiles', 'viewTunnels', 'viewKeys', 'viewCredentials', 'toggleSidebar'] },
   { title: 'Hosts', actions: ['newHost', 'editHost'] },
   { title: 'Terminal', actions: ['fontBigger', 'fontSmaller', 'fontReset'] },
 ];

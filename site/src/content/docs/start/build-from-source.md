@@ -177,11 +177,20 @@ scripts/gui-e2e.sh
 It builds the app and drives its real UI in a hidden WebView against the throwaway
 `sshd`s: creates a vault, adds a key and hosts, trusts a host key, types in the terminal,
 checks the PTY size, reconnects, connects through a jump host, meets a changed host key
-behind a TCP forwarder and replaces it, uses the palette and settings, then locks
+behind a TCP forwarder and replaces it, uses the palette and settings, saves and starts tunnels, then locks
 (with a session that keeps running behind the lock screen, and on a simulated screen lock
 and sleep) and unlocks. It also checks that no password reaches the page and that nothing from the vault
 is readable in its file. It uses its own config folder and `FLINT_KEYCHAIN=off`, so your
 keychain is not touched.
+
+It runs as four short runs, each a fresh launch of the app on its own vault: `terminal`
+(the shell, files, a jump host, tabs, split panes, a changed host key), `vault` (the
+palette, settings, groups, the Tether import, locking), `tunnels` and `vim`. To repeat
+only some of them:
+
+```sh
+FLINT_E2E_ONLY=tunnels,vim scripts/gui-e2e.sh
+```
 
 ### The CLI through the app
 

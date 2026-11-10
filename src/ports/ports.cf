@@ -312,4 +312,12 @@ type TunnelRunner interface {
     // Closes every tunnel of the host and hangs its session up.
     tunnel_release(host_id: str)
     tunnel_live() -> []TunnelLive
+    // Starts on one host take turns (milestone 23): held while a start logs in and
+    // listens, so a second start finds the first's session.
+    tunnel_gate_enter(host_id: str)
+    tunnel_gate_leave(host_id: str)
+    // Whether 127.0.0.1:port cannot be bound now (the approval window says so first).
+    tunnel_port_taken(port: i64) -> bool
+    // Who listens on that port, when this user may see it (design 16h2).
+    tunnel_port_owner(port: i64) -> PortOwner
 }

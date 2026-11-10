@@ -541,3 +541,60 @@ button.picker-row:not(.off) { cursor: pointer; }
 @media (max-width: 1040px) {
   .toolbar .tbtn .tb-l, .toolbar .tbtn .kbd, .toolbar .tb-host { display: none; }
 }
+
+/* ===== M23 · tunnels (local port forwards, design 06c, 20, 16h) ===== */
+.app[data-view="tunnels"] .rail-btn[data-item="tunnels"] { background: var(--accent-subtle); color: var(--accent-text); }
+.app[data-view="tunnels"][data-collapsed="true"] .rail-btn[data-item="tunnels"] { background: none; }
+.tun-count { background: var(--info); }
+.app[data-view="tunnels"] .sidebar[data-for="tunnels"] { display: flex; }
+.app[data-view="tunnels"][data-collapsed="true"] .sidebar { display: none; }
+.app[data-view="tunnels"]:not([data-collapsed="true"]) .main { left: calc(var(--rail-w) + var(--sidebar-w)); }
+/* Host-row and tab marks: a host with tunnels up (sapphire = tunnels everywhere). */
+.tun-mark { display: inline-flex; align-items: center; gap: 3px; height: 16px; padding: 0 5px; border-radius: var(--radius-full); background: var(--info-subtle); color: var(--info); font-family: var(--font-mono); font-size: 10px; flex: none; }
+.tun-mark .ic { width: 10px; height: 10px; stroke-width: 2; }
+.ti .tun-mark { margin-left: auto; }
+.ti .tun-mark + .sess { margin-left: 4px; }
+.tab .tun-mark { margin-left: 2px; }
+/* Tunnels view */
+.tun-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.tun-group { display: flex; flex-direction: column; padding: 2px 0 var(--sp-1); border-bottom: 1px solid var(--border-subtle); }
+.tun-gh { display: flex; align-items: center; gap: var(--sp-2); height: 30px; padding: 0 var(--sp-2) 0 var(--sp-3); font-size: var(--fs-sm); color: var(--text-primary); }
+.tun-gh .gmeta { font-size: var(--fs-xs); color: var(--text-tertiary); white-space: nowrap; }
+.tun { display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: var(--sp-3); row-gap: 0; padding: 3px var(--sp-3) 5px var(--sp-4); align-items: center; border-radius: var(--radius-sm); }
+.tun:hover, .tun.hot { background: var(--surface-hover); }
+.tun > .toggle { grid-row: 1 / span 3; align-self: start; margin-top: 2px; }
+.tun-n { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-primary); }
+.tun-map { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tun-map .arr, .tun-row .arr { color: var(--text-tertiary); padding: 0 2px; }
+.tun-st { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-xs); color: var(--text-tertiary); }
+.tun-st > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tun-st.ok { color: var(--text-secondary); } .tun-st.warn { color: var(--warning); } .tun-st.danger { color: var(--danger); } .tun-st.wait { color: var(--info); }
+.tun-st .dot { width: 7px; height: 7px; }
+.mini-spin { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--border-strong); border-top-color: var(--info); animation: flint-spin 900ms linear infinite; flex: none; }
+.tun-card { margin: var(--sp-1) var(--sp-3) var(--sp-2); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); background: var(--surface-raised); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-1); }
+.tun-card.danger { border-color: var(--danger-border); }
+.tun-foot { flex: none; display: flex; gap: var(--sp-2); align-items: flex-start; padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--border-subtle); font-size: var(--fs-xs); color: var(--text-tertiary); line-height: 1.5; }
+.tun-foot .ic { width: 13px; height: 13px; margin-top: 2px; flex: none; }
+/* Host editor: Tunnels section */
+.tun-sec { padding: var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-raised); display: flex; flex-direction: column; gap: var(--sp-2); }
+.tun-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto auto; gap: var(--sp-3); align-items: center; min-height: 36px; padding: 0 var(--sp-1) 0 var(--sp-3); background: var(--surface-base); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); font-size: var(--fs-sm); }
+.tun-row .nm { font-weight: var(--fw-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tun-row .mp { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tun-row .acts { display: flex; gap: 2px; }
+.port-pre { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-tertiary); white-space: nowrap; }
+.ferr { display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-xs); line-height: 1.45; color: var(--danger); }
+.ferr.warn { color: var(--warning); }
+.ferr .ic { width: 13px; height: 13px; margin-top: 1px; flex: none; }
+/* Menus with checks (toolbar Tunnels menu) */
+.mbox { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--border-strong); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.mbox.on { background: var(--accent); border-color: var(--accent); }
+.mi .mbox.on .ic { color: var(--text-on-accent); width: 12px; height: 12px; stroke-width: 2.4; }
+.tcount { min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--radius-full); background: var(--info); color: var(--surface-base); font-family: var(--font-mono); font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
+/* Approval: tunnel */
+.tn { border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow: hidden; background: var(--surface-base); }
+.tn-ends { display: grid; grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr); align-items: center; gap: var(--sp-2); padding: var(--sp-3); }
+.tn-end { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tn-end .addr { font-family: var(--font-mono); font-size: var(--fs-lg); color: var(--text-primary); overflow-wrap: anywhere; }
+.tn-end .where { font-size: var(--fs-xs); color: var(--text-tertiary); display: flex; align-items: center; gap: 5px; }
+.tn-end .where .ic { width: 12px; height: 12px; }
+.tn .cp-arrow { width: 40px; }

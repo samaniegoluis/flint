@@ -31,10 +31,10 @@ menu bar icon, ⌘Q or the command palette quits it.
 | Area | What it holds |
 |---|---|
 | Title bar | The vault and the active session; the command palette button |
-| Activity bar (left) | **Hosts** and **Files** (both in the sidebar), **Keys**, **Credentials**, and **Settings** at the bottom |
-| Sidebar | **Hosts**: the vault button (switch vaults), a filter, and your hosts in their groups. **Files**: the focused pane's host, over SFTP ([The Files view](/guides/files-view/)) |
+| Activity bar (left) | **Hosts**, **Files** and **Tunnels** (all three in the sidebar; Tunnels counts the ones running), **Keys**, **Credentials**, and **Settings** at the bottom |
+| Sidebar | **Hosts**: the vault button (switch vaults), a filter, and your hosts in their groups. **Files**: the focused pane's host, over SFTP ([The Files view](/guides/files-view/)). **Tunnels**: every tunnel by host, with a switch and its state ([Tunnels](/guides/tunnels/#in-the-app)) |
 | Main area | The tabs, the session toolbar and the terminals: up to four panes in a tab ([Split panes](#split-panes)) |
-| Status bar | Lock state, the number of open sessions, **Lock**, and **Agents: N** while programs you approved may use the vault (it opens Settings → Access, and shows **N waiting** while a request waits and Flint is not in front) |
+| Status bar | Lock state, the number of open sessions, **N tunnels up** while any runs (it opens the Tunnels view), **Lock**, and **Agents: N** while programs you approved may use the vault (it opens Settings → Access, and shows **N waiting** while a request waits and Flint is not in front) |
 
 Click **Hosts** again (or press <kbd>⌘B</kbd>) to hide the sidebar and give the terminal
 the whole width; it stays hidden when you come back to **Hosts** from another view. Drag the sidebar's right edge to make it wider or narrower (200 to 400 px;
@@ -54,6 +54,8 @@ which groups are collapsed in each vault. See [Layout on this machine](#layout-o
   here**, **New subgroup**, **Rename** and **Delete** (only an empty group can be
   deleted).
 - The filter matches aliases, labels, hostnames and tags.
+- A host with tunnels up carries a small tunnel mark with their count; hover it for the
+  list. Its tabs carry the same mark.
 - **Collapse all** and **Expand all** sit beside **New group** at the top of the tree, and
   in the command palette.
 
@@ -135,6 +137,14 @@ exit status, a failed login, a lost connection) with **Reconnect** (<kbd>⌘R</k
 keeps the scrollback. **Duplicate** (<kbd>⌥⌘D</kbd>, <kbd>Ctrl+Alt+D</kbd> on Linux)
 opens another session to the same host in a new tab.
 
+### Tunnels from a session
+
+The session toolbar's **Tunnels** button counts the host's tunnels that are up; its menu
+has a check per tunnel, with its state, and **Manage tunnels…** (the host editor's
+Tunnels section). Connecting to a host starts its tunnels marked *Open when I connect*.
+Tunnels run in a session of their own, so reconnecting or closing the tab leaves them up.
+See [Tunnels](/guides/tunnels/#in-the-app).
+
 ### Split panes
 
 A tab holds up to four panes, each its own SSH session with its own login, scrollback,
@@ -198,6 +208,10 @@ the host in a new pane of that tab ([Split panes](#split-panes)), and while you 
 best matches are also offered as **Open <host> in a new pane**. <kbd>⌘I</kbd> edits the
 host, and <kbd>Tab</kbd> moves between result groups.
 
+While you search, tunnels are offered too: **Start tunnel <name> on <host>**, **Stop
+tunnel …**, **Connect to <host> with tunnels** and **Manage tunnels of <host>…** (see
+[Tunnels](/guides/tunnels/#in-the-app)).
+
 When the search finds a host with an [initial command](/guides/hosts/#run-a-command-on-connect),
 a second row, **Connect without command**, opens it in a new tab with a plain shell, as
 `flint connect --no-command` does. Use it when that program is broken: the command
@@ -260,6 +274,11 @@ A strip shows the direction (*This computer → host*, marked Upload or Download
 **From** and **To** with the whole path on each end, never cut. A folder copy (`-r`) says
 so, and `--force` adds a warning that files already in the destination are replaced. See
 [Copying files](/guides/files/).
+
+`flint tunnel up` shows the host, then `127.0.0.1:<port>` on this machine → the
+destination on the host, and says the grant would also let the program run commands
+there. When that port is already in use here, the window says so, names the program that
+holds it when it runs as you, and **Allow** is off: the tunnel could not open. See [Tunnels](/guides/tunnels/#through-an-agent).
 
 `flint token create` brings up the same window showing the token instead: its name, what
 it allows, which hosts and when it expires. **Allow** (with presence) creates that one

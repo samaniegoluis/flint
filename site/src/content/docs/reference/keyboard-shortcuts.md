@@ -25,6 +25,7 @@ speaks the Kitty keyboard protocol.
 | Toggle the sidebar | ⌘B | Ctrl+Shift+B |
 | Hosts · Keys · Credentials | ⇧⌘H · ⇧⌘K · ⇧⌘C | Ctrl+Alt+Shift+H · K · C |
 | Files view (show or hide) | ⌘E | Ctrl+Shift+E |
+| Tunnels view (show or hide) | ⇧⌘T | Ctrl+Alt+Shift+T |
 | Settings | ⌘, | Ctrl+Shift+, |
 | New host (new key or credential on those pages) | ⌘N | Ctrl+Shift+N |
 | Edit host | ⌘I | Ctrl+Shift+I |

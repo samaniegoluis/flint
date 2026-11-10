@@ -103,6 +103,17 @@
         const title = form.querySelector('h2')?.textContent ?? '';
         const ask = form.querySelector('[data-tunnel-ask]');
         log((/wants to open a tunnel through local/.test(title) && ask?.dataset.tunnelHost === 'local' && /^127\.0\.0\.1:\d+$/.test(ask?.dataset.tunnelLocal ?? '') && /^127\.0\.0\.1:\d+$/.test(ask?.dataset.tunnelDest ?? '') && form.querySelector('[data-action="exec"]')?.checked ? 'ok   ' : 'FAIL ') + 'the approval window names the tunnel, where it listens and what it reaches');
+        if (ask?.dataset.portInUse) {
+          // Design 16h2 (milestone 23): a port already taken has nothing to allow.
+          const allow = form.querySelector('[data-approval-allow]');
+          log((allow?.disabled && form.querySelector('[data-tunnel-port-in-use]') ? 'ok   ' : 'FAIL ') + 'the approval window says the port is in use and offers no Allow');
+          // The test sshd holds it and runs as this user, so the window names it.
+          const owner = form.querySelector('[data-port-owner]')?.textContent ?? '';
+          log((/sshd/.test(owner) && /\(pid \d+\)/.test(form.querySelector('[data-tunnel-port-in-use]')?.textContent ?? '') ? 'ok   ' : 'FAIL ') + 'and names the program that holds it: ' + owner);
+          form.querySelector('[data-approval-deny]').click();
+          log('ok   denied: ' + req);
+          continue;
+        }
       }
       if (req.includes('timeout-me')) { log('ok   left unanswered: ' + req); continue; }
       if (req.includes('long-cmd')) {

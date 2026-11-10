@@ -1936,3 +1936,32 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   C++, one worker thread per host session, called from `src/adapters/ssh/tunnels.cf`.
 - **Ideal:** a `Poller` (or `net.poll(fds, timeout)`) over `TcpListener`, `TcpConn` and raw
   descriptors, with non-blocking `try_read` / `try_write` on `TcpConn`.
+
+### CF-113 · bug · `confirmed`: a generic call's `[]T!` result is typed `[][]T!` when assigned
+- **What happened (c5b1d4b, milestone 23):** in `src/drivers/gui/tunnels.cf`, assigning
+  the result of a generic use case that returns `[]str!` to a declared fallible variable
+  fails to build, and the message names the wrong type:
+  ```cf
+  fn pick[R: TunnelRunner](mut runner: R) -> []str! { return [] }
+  mut picked: []str! = []
+  picked = pick(mut runner)   // cfire/UNHANDLED-RESULT: returns '[][]str!'
+  ```
+  `run_gui_session` in `src/drivers/gui/rpc.cf` stores an `i64!` the same way
+  (`mut result: i64! = 0`, then `.has_value()`) and builds; with a list from a generic
+  call it does not, so the CF-110 gap has no way through here.
+- **Workaround:** a small non-generic helper that returns `[]str!` with `try`, called with
+  an `or err { …; return }` block that diverges.
+- **Ideal:** the assignment type-checks as `[]str!`, as it does for `i64!`.
+
+### CF-114 · missing · `confirmed`: no way to ask which process holds a port
+- **What happened (milestone 23, design 16h2):** when a tunnel's local port is taken, the
+  approval window names the program that holds it (`Python (pid 11121)`). cfire can bind a
+  port to see that it is taken, but `core:os` has no process list and nothing that maps a
+  listening socket to its process: no `libproc` on macOS, and reading `/proc/net/tcp` and
+  every `/proc/<pid>/fd` link by hand needs `readlink` and directory listing of `/proc`,
+  which `core:fs` does not offer for symlinks.
+- **Workaround:** `flint_tunnel::port_owner` in `src/adapters/ssh/native/flint_tunnel.hpp`
+  (`proc_listpids` / `proc_pidfdinfo` on macOS; `/proc/net/tcp{,6}` and `/proc/*/fd` on
+  Linux), called from `tunnel_port_owner` in `src/adapters/ssh/tunnels.cf`.
+- **Ideal:** `net.port_owner(port) -> (name: str, pid: i64)?`, or a process list with each
+  process's sockets in `core:os`; plus `fs.readlink`.

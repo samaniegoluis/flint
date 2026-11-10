@@ -36,6 +36,7 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 import CliDemo from '../../components/CliDemo.astro';
 import AppShot from '../../components/landing/AppShot.astro';
 import FilesShot from '../../components/landing/FilesShot.astro';
+import TunnelsShot from '../../components/landing/TunnelsShot.astro';
 import CfireBand from '../../components/landing/CfireBand.astro';
 import AgentBand from '../../components/landing/AgentBand.astro';
 
@@ -94,6 +95,24 @@ or password put on either server. From a script, the same copies are
 [`flint cp`](/guides/files/). Read [The Files view](/guides/files-view/).
 
 <FilesShot />
+
+## Tunnels to what only listens inside
+
+A database or a panel bound to `localhost` on a server is one switch away. Save a tunnel
+in the host (*Tunnels* in its editor), flip it on in the **Tunnels** view (<kbd>⇧⌘T</kbd>),
+and `127.0.0.1:5432` on your machine reaches Postgres on `db`, over that host's login and
+jump host from the vault: no `ssh -L`, no key on disk, never open to your network. Tick
+*Open when I connect* and it starts with the host's tab, then outlives it. From a shell
+it is the same tunnel:
+
+```sh
+flint tunnel add db pg --local 5432
+flint tunnel up db:pg      # psql -h 127.0.0.1 -p 5432
+```
+
+Read [Tunnels](/guides/tunnels/).
+
+<TunnelsShot />
 
 <AgentBand />
 
@@ -169,7 +188,6 @@ which also says what an unlocked vault does not protect against.
 ## What's next
 
 <ul class="flint-next">
-	<li><strong>Tunnels in the app</strong> A Tunnels view and the host editor's Tunnels section. <code>flint tunnel</code> already saves and runs them.</li>
 	<li><strong>SSH agent</strong> <code>flint agent</code> serves keys from the vault to <code>ssh</code>, <code>git</code> and your editor, with no key on disk.</li>
 	<li><strong>Releases</strong> A signed macOS app, a Linux AppImage and a Homebrew tap.</li>
 </ul>

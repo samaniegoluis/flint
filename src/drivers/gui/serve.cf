@@ -18,6 +18,7 @@ import "../../adapters/crypto"
 import "../../adapters/ipc"
 import "../../adapters/keychain"
 import "../../adapters/process"
+import "../../adapters/ssh"
 import "../../adapters/uievents"
 import "../../adapters/vault"
 import "../../application"
@@ -315,7 +316,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
             return refuse("{err.message()}")
         }
         st.hold()
-        tunnel = tunnel_ask(store, store, parsed.positional(1), alias, tname) or err {
+        tunnel = tunnel_ask(store, store, new_native_tunnels(), parsed.positional(1), alias, tname) or err {
             st.release()
             return refuse("{err.message()}")
         }

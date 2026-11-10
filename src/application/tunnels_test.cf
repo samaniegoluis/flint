@@ -10,10 +10,37 @@ type FakeRunner struct {
     live: []TunnelLive
     busy: []i64
     released: []str
+    // "+host" on entering a host's gate, "-host" on leaving it.
+    gates: []str
 }
 
 fn new_fake_runner() -> FakeRunner {
-    return FakeRunner{ hosts: [], states: [], live: [], busy: [], released: [] }
+    return FakeRunner{ hosts: [], states: [], live: [], busy: [], released: [], gates: [] }
+}
+
+fn (mut self: FakeRunner) tunnel_gate_enter(host_id: str) {
+    self.gates.push("+" + host_id)
+}
+
+fn (mut self: FakeRunner) tunnel_gate_leave(host_id: str) {
+    self.gates.push("-" + host_id)
+}
+
+fn (self: FakeRunner) tunnel_port_taken(port: i64) -> bool {
+    for p in self.busy {
+        if p == port {
+            return true
+        }
+    }
+    return false
+}
+
+// A busy port is held by `postgres`, pid 812, as in design 16h2.
+fn (self: FakeRunner) tunnel_port_owner(port: i64) -> PortOwner {
+    if self.tunnel_port_taken(port) {
+        return PortOwner{ name: "postgres", pid: 812 }
+    }
+    return PortOwner{ name: "", pid: 0 }
 }
 
 fn (self: FakeRunner) tunnel_host_state(host_id: str) -> i64 {
@@ -326,4 +353,103 @@ test "removing a running tunnel, or its host, stops it" {
     _ := try list_tunnels(store, tun, mut runner, "")
     assert_eq(runner.tunnel_host_state(bastion), 0)
     assert_eq(runner.live.len(), 0)
+}
+
+test "every start holds its host's gate, and leaves it on failure too" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    mut runner := new_fake_runner()
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
+    web := host_id_of(store, "web")
+    mut link := web_link()
+    start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts()) or err {}
+    assert_eq(runner.gates.len(), 2)
+    assert_eq(runner.gates[0], "+" + web)
+    assert_eq(runner.gates[1], "-" + web)
+    runner.adopt(web)
+    _ := try start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts())
+    assert_eq(runner.gates.len(), 4)
+    assert_eq(runner.gates[3], "-" + web)
+}
+
+test "a start from the app picks the Open when I connect tunnels, or all, never running ones" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    mut runner := new_fake_runner()
+    mut a := pg_patch("pg", 5432)
+    a.set_open = true
+    a.open_on_connect = true
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", a)
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("redis", 6379))
+    mut b := pg_patch("grafana", 3000)
+    b.set_open = true
+    b.open_on_connect = true
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", b)
+    on_connect := try tunnels_to_start(store, tun, mut runner, "web", false)
+    assert_eq(on_connect.len(), 2)
+    assert_eq(on_connect[0], "grafana")
+    assert_eq(on_connect[1], "pg")
+    assert_eq((try tunnels_to_start(store, tun, mut runner, "web", true)).len(), 3)
+    web := host_id_of(store, "web")
+    runner.adopt(web)
+    mut link := web_link()
+    _ := try start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts())
+    left := try tunnels_to_start(store, tun, mut runner, "web", false)
+    assert_eq(left.len(), 1)
+    assert_eq(left[0], "grafana")
+}
+
+test "the approval card says when the local port is taken, unless this tunnel holds it" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    mut runner := new_fake_runner()
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
+    free := try tunnel_ask(store, tun, runner, "up", "web", "pg")
+    assert(!free.port_in_use)
+    assert_eq(free.port_owner, "")
+    assert_eq(free.local_port, 5432)
+    runner.busy.push(5432)
+    taken := try tunnel_ask(store, tun, runner, "up", "web", "pg")
+    assert(taken.port_in_use)
+    // And by which program.
+    assert_eq(taken.port_owner, "postgres")
+    assert_eq(taken.port_owner_pid, 812)
+    // `down` never says so.
+    assert(!(try tunnel_ask(store, tun, runner, "down", "web", "pg")).port_in_use)
+    runner.busy = []
+    runner.adopt(host_id_of(store, "web"))
+    mut link := web_link()
+    _ := try start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts())
+    runner.busy.push(5432)
+    assert(!(try tunnel_ask(store, tun, runner, "up", "web", "pg")).port_in_use)
+}
+
+test "a start from the app opens each tunnel in turn, and stops at a login that fails" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    mut runner := new_fake_runner()
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
+    _ := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("redis", 6379))
+    runner.adopt(host_id_of(store, "web"))
+    runner.busy.push(6379)
+    mut link := web_link()
+    got := start_tunnels(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", ["pg", "redis"], accept_opts())
+    assert_eq(got.len(), 2)
+    assert_eq(got[0].error, "")
+    assert_eq(error_code_of(got[1].error), ERR_PORT_IN_USE)
+    // A login that fails ends the start there: the second would only ask again.
+    _ := try stop_tunnel(store, tun, mut runner, "web", "pg")
+    mut down := web_link()
+    down.fail_dial = true
+    lost := start_tunnels(crypto, mut store, tun, s, mut down, no_prompter(), mut runner, "web", ["pg", "redis"], accept_opts())
+    assert_eq(lost.len(), 1)
+    assert_eq(error_code_of(lost[0].error), ERR_NETWORK)
 }

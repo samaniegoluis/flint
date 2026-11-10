@@ -12,6 +12,7 @@ import { Kbd } from '../ui/Kbd';
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu';
 import { useSessions } from '../sessions/store';
 import { chordLabel } from '../lib/keymap';
+import { TunnelMark } from '../tunnels/TunnelsMenu';
 
 export interface TreeHandlers {
   connect: (alias: string, newTab: boolean) => void;
@@ -184,6 +185,7 @@ export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer
                 onContextMenu={(e) => hostMenu(r.alias, e)}>
                 <span className={'hmark ' + c.className} style={c.style} />
                 <span className="host-name grow trunc">{r.alias}</span>
+                <TunnelMark host={r.alias} />
                 {n > 0 && <span className="sess" aria-label={`${n} open session${n > 1 ? 's' : ''}`}><Icon name="term" />{n}</span>}
               </button>
             );

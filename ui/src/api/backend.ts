@@ -4,7 +4,7 @@
 
 import type {
   AccessAnswer, AccessState, ActivityEntry, AppInfo, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  CopyResult, FileEntry, KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
+  CopyResult, FileEntry, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -23,6 +23,7 @@ const CODES = [
   'internal', 'usage', 'not_found', 'conflict', 'locked', 'wrong_password', 'invalid',
   'unsupported', 'keychain', 'io', 'host_key', 'auth', 'network', 'timeout',
   'denied', 'approval_timeout', 'not_sudoer', 'sudo_password', 'permission_denied', 'exists', 'not_a_directory',
+  'port_in_use',
 ];
 
 export class FlintError extends Error {
@@ -158,6 +159,16 @@ export const api = {
   /** A chunk (base64) of a file dropped from the OS, staged until it is uploaded (CF-004). */
   filesStage: (drop: string, rel: string, data: string) => call<{ path: string }>('files_stage', { drop, rel, data }),
   filesStageDiscard: (drop: string) => call('files_stage_discard', { id: drop }),
+
+  /** Tunnels (milestone 23): every saved one, with its live state. */
+  tunnelsList: () => call<TunnelView[]>('tunnels_list'),
+  tunnelSave: (t: TunnelSave) => call<TunnelView>('tunnel_save', t),
+  tunnelRm: (host: string, name: string) => call<TunnelView>('tunnel_rm', { host, name }),
+  tunnelStop: (host: string, name: string) => call<TunnelView>('tunnel_stop', { host, name }),
+  /** Starts on a worker; prompts arrive as "session:prompt" under `session`, the end as "tunnel:started".
+   *  No `names`: the host's Open when I connect tunnels, or with `all` every one of them. */
+  tunnelStart: (session: string, host: string, names: string[], all = false) =>
+    call('tunnel_start', { session, host, names, all }),
 };
 
 export function emptyHostPatch(): HostPatch {

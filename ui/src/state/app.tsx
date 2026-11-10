@@ -22,6 +22,8 @@ export interface Toast {
   id: number;
   text: string;
   kind: 'ok' | 'error' | 'info';
+  /** One button on the toast (design 20d2's "Stop them"). */
+  action?: { label: string; run: () => void };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -68,7 +70,7 @@ interface AppApi {
   renameVault: (name: string) => Promise<VaultInfo>;
   refreshCatalog: () => Promise<Catalog>;
   saveSettings: (s: Settings) => Promise<void>;
-  notify: (text: string, kind?: Toast['kind']) => void;
+  notify: (text: string, kind?: Toast['kind'], action?: Toast['action']) => void;
   fail: (err: unknown) => FlintError;
 }
 
@@ -102,10 +104,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const os: Os = info?.os ?? (/mac/i.test(navigator.platform) ? 'mac' : 'linux');
   const dark = settings.theme === 'system' ? sysDark : settings.theme === 'dark';
 
-  const notify = useCallback((text: string, kind: Toast['kind'] = 'ok') => {
+  const notify = useCallback((text: string, kind: Toast['kind'] = 'ok', action?: Toast['action']) => {
     const id = Date.now();
-    setToast({ id, text, kind });
-    window.setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), 4000);
+    setToast({ id, text, kind, action });
+    // A toast with a button stays long enough to reach it.
+    window.setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), action ? 8000 : 4000);
   }, []);
 
   const fail = useCallback((err: unknown) => {

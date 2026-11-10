@@ -1,0 +1,17 @@
+---
+// The Tunnels view on the landing (milestone 23, D-027): taken with the app shots by
+// `npm run shots:gui`, one per theme.
+import { Image } from 'astro:assets';
+import dark from '../../assets/screens/app-tunnels-dark.png';
+import light from '../../assets/screens/app-tunnels-light.png';
+
+const alt =
+	"The Flint desktop app with the Tunnels view open: db's pg tunnel listening on 127.0.0.1:5432 with 2 connections and grafana listening on 127.0.0.1:3000, pgbouncer stopped, and nas's admin tunnel stopped; db's tab is beside it.";
+const sizes = '(min-width: 72rem) 68rem, 100vw';
+---
+
+<figure class="flint-shot not-content">
+	<Image src={dark} alt={alt} widths={[640, 1280, 2560]} sizes={sizes} class="light:sl-hidden" loading="lazy" />
+	<Image src={light} alt={alt} widths={[640, 1280, 2560]} sizes={sizes} class="dark:sl-hidden" loading="lazy" />
+	<figcaption>The Tunnels view: <code>db</code>'s Postgres on <code>127.0.0.1:5432</code>, over its own SSH session, with no tab needed.</figcaption>
+</figure>
