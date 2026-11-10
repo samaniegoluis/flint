@@ -91,6 +91,7 @@ What Tether already does and Flint must not lose.
 | Auto-detect an encrypted key in `flint key add` and prompt for its passphrase | `idea` | Today `--passphrase` must be given |
 | Known hosts behind different jump hosts with the same address (two `10.0.0.12`) share one record: key them by jump chain + address, like OpenSSH's `HostKeyAlias` | `later` | Found in the milestone 02/03 owner review; needs a migration |
 | `flint vault status` says why a vault is locked: `locked (keychain access denied)` after a Keychain Deny | `next` | Today a denied read looks like no cached key (D-020) |
+| The CLI starts the Flint that ships with it, not whichever `Flint.app` macOS finds first; an older app shown a vault at a newer schema names both versions and what to do | `idea` | Found in the M22 owner check (2026-11-10): `build/flint vault open` migrated a copy to schema 7, then the next command started the installed `/Applications/Flint.app` (an older build), whose unlock screen only said "this vault was written by a newer Flint (schema 7)". The CLI could prefer the app next to its own binary (or one whose version matches), and the message could say "this Flint reads schema 6; quit it and open a newer one" |
 
 ## 3. Agents & security (the differentiator)
 
