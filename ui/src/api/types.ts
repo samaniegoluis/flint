@@ -42,8 +42,14 @@ export interface GroupView {
   subgroups: number;
 }
 
+/** `ssh` (every host from before milestone 29) or `rdp`; fixed once the host is added. */
+export type HostType = 'ssh' | 'rdp';
+
 export interface HostView {
   alias: string;
+  type: HostType;
+  /** An RDP host's Windows domain; '' for none. */
+  domain: string;
   label: string;
   hostname: string;
   port: number;
@@ -173,6 +179,9 @@ export interface HostPatch {
   command: string; set_command: boolean;
   keep_shell: boolean; set_keep_shell: boolean;
   sudo_password: string; set_sudo_password: boolean;
+  /** Given only when the host is added: the type is fixed after that. */
+  type: HostType; set_type: boolean;
+  domain: string; set_domain: boolean;
 }
 
 export interface CredPatch {

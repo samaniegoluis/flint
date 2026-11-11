@@ -7,7 +7,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useApp } from '../state/app';
 import { chordLabel } from '../lib/keymap';
 import { colorStyle } from '../lib/colors';
-import { Icon, Logo } from '../ui/Icon';
+import { HostTypeIcon, Icon, Logo } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { MAX_PANES } from '../lib/layout';
 import { sessions, statusLabel, useSessions } from './store';
@@ -63,6 +63,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
                 return (
                   <button key={h.alias} className="mi" style={{ minHeight: 38 }} onClick={() => onConnect(h.alias, false)}>
                     <span className={'hmark ' + c.className} style={c.style} />
+                    <HostTypeIcon type={h.type} size="md" />
                     <span className="mono" style={{ width: 150 }}>{h.alias}</span>
                     <span className="grow faint trunc" style={{ fontSize: 'var(--fs-xs)' }}>{h.group ? h.group.split('/').join(' / ') : h.hostname}</span>
                   </button>
@@ -111,6 +112,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
               onClick={() => sessions.activate(t.id)}
               onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); sessions.closeTab(t.id); } }}>
               <span className={'st ' + st.dot} role="img" aria-label={fp.status} />
+              <HostTypeIcon type="ssh" />
               {fp.alias}
               <TunnelMark host={fp.alias} />
               {n > 1 && <span className="tab-split" title={`${n} panes`}><LayoutIcon layout={t.layout} small />{n}</span>}

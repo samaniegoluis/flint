@@ -42,7 +42,8 @@ revealed, not even in the app: it is only typed for a `sudo` you approved.
 ## Remote desktop (RDP) hosts
 
 A host is an **SSH** host unless you say otherwise. A Windows machine you reach with
-Remote Desktop is an **RDP** host:
+Remote Desktop is an **RDP** host. In the app, **New host** asks for the type first (see
+[the desktop app](/guides/desktop-app/#remote-desktop-rdp-hosts)); from the CLI:
 
 ```sh
 flint host add win-01 --type rdp --hostname 10.20.30.50 --user admin --domain CORP --password

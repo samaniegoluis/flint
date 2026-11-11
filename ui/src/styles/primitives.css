@@ -598,3 +598,31 @@ button.picker-row:not(.off) { cursor: pointer; }
 .tn-end .where { font-size: var(--fs-xs); color: var(--text-tertiary); display: flex; align-items: center; gap: 5px; }
 .tn-end .where .ic { width: 12px; height: 12px; }
 .tn .cp-arrow { width: 40px; }
+
+/* ===== M29 · RDP hosts (design 21*) ===== */
+/* Type glyphs: SSH = prompt, RDP = window. Neutral; the host colour stays the colour mark's job. */
+.htype { width: 12px; height: 12px; flex: none; color: var(--text-tertiary); stroke-width: 2.25; }
+.htype.md { width: 14px; height: 14px; stroke-width: 2.1; }
+.htype.lg { width: 16px; height: 16px; stroke-width: 2; }
+.ti .hmark + .htype { margin-left: -2px; }
+.ti.sel .htype, .ti:hover .htype { color: var(--text-secondary); }
+.tab .htype { margin-left: -2px; }
+.tab.on .htype { color: var(--text-secondary); }
+.type-badge { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 var(--sp-2); border-radius: var(--radius-sm); border: 1px solid var(--border-default); background: var(--surface-base); font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; flex: none; }
+.type-badge .ic { width: 13px; height: 13px; }
+.type-badge .ic.lock { width: 11px; height: 11px; color: var(--text-tertiary); }
+/* New host: type step */
+.type-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); }
+.type-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-5); min-height: 196px; border: 1px solid var(--border-default); border-radius: var(--radius-lg); background: var(--surface-base); text-align: left; color: var(--text-primary); font: inherit; cursor: pointer; }
+.type-card:hover { background: var(--surface-hover); }
+.type-card[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-subtle); background: var(--surface-raised); }
+.tc-ic { width: 52px; height: 52px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; background: var(--surface-active); color: var(--text-primary); }
+.tc-ic .ic { width: 28px; height: 28px; stroke-width: 1.8; }
+.type-card[aria-checked="true"] .tc-ic { background: var(--accent-subtle); color: var(--accent-text); }
+.tc-t { font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.tc-d { font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.5; }
+.tc-x { margin-top: auto; font-size: var(--fs-xs); color: var(--text-tertiary); }
+.tc-k { position: absolute; top: var(--sp-4); right: var(--sp-4); }
+.reserved { display: inline-flex; align-items: center; height: var(--control-h); padding: 0 var(--sp-3); border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); font-size: var(--fs-xs); color: var(--text-disabled); white-space: nowrap; }
+.saved-pw { display: flex; align-items: center; gap: var(--sp-2); height: var(--control-h); padding: 0 var(--sp-1) 0 var(--sp-3); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-base); font-size: var(--fs-sm); }
+.mi.is-disabled { color: var(--text-disabled); cursor: not-allowed; }

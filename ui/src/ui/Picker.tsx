@@ -6,6 +6,8 @@ export interface PickerOption {
   label: ReactNode;
   text: string; // for filtering
   meta?: ReactNode;
+  /** Listed but not choosable, with the reason under its label (design 21b2). */
+  disabled?: string;
 }
 
 // A select field (design: .select + .menu listbox) with a filter and keyboard use.
@@ -47,7 +49,7 @@ export function Picker({ value, options, onChange, icon, placeholder, label, sea
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false); btn.current?.focus(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); setHot(Math.min(shown.length - 1, hot + 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setHot(Math.max(0, hot - 1)); }
-    else if (e.key === 'Enter') { e.preventDefault(); if (shown[hot]) pick(shown[hot].value); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (shown[hot] && !shown[hot].disabled) pick(shown[hot].value); }
   };
 
   return (
@@ -67,9 +69,11 @@ export function Picker({ value, options, onChange, icon, placeholder, label, sea
             </label>
           )}
           {shown.map((o, i) => (
-            <button key={o.value || '∅'} type="button" role="option" aria-selected={o.value === value} className={'mi' + (i === hot ? ' hot' : '')}
-              onMouseEnter={() => setHot(i)} onClick={() => pick(o.value)} autoFocus={!search && i === hot}>
-              <span className="grow trunc">{o.label}</span>
+            <button key={o.value || '∅'} type="button" role="option" aria-selected={o.value === value} aria-disabled={o.disabled ? true : undefined}
+              className={'mi' + (i === hot ? ' hot' : '') + (o.disabled ? ' is-disabled' : '')} title={o.disabled}
+              onMouseEnter={() => setHot(i)} onClick={() => { if (!o.disabled) pick(o.value); }} autoFocus={!search && i === hot}>
+              {o.disabled ? <span className="col grow" style={{ gap: 2, minWidth: 0 }}><span className="trunc">{o.label}</span><span className="hint" style={{ color: 'var(--text-disabled)' }}>{o.disabled}</span></span>
+                : <span className="grow trunc">{o.label}</span>}
               {o.meta && <span className="faint mi-end" style={{ fontSize: 'var(--fs-xs)' }}>{o.meta}</span>}
               {o.value === value && <Icon name="check" size="sm" className="accent-t" />}
             </button>

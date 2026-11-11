@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { shortPath, useApp, vaultInitial, vaultMarkClass } from '../state/app';
 import { buildTree, type TreeRow } from '../lib/tree';
 import { colorStyle } from '../lib/colors';
-import { Icon } from '../ui/Icon';
+import { HostTypeIcon, Icon } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu';
 import { useSessions } from '../sessions/store';
@@ -103,6 +103,18 @@ export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer
   const hostMenu = (alias: string, e: React.MouseEvent) => {
     e.preventDefault();
     h.select(alias);
+    const host = catalog.hosts.find((x) => x.alias === alias);
+    // An RDP host has one session per tab, and no files, tunnels or panes (design 21d1).
+    if (host?.type === 'rdp') {
+      const addr = host.port === 3389 ? host.hostname : `${host.hostname}:${host.port}`;
+      setMenu({ x: e.clientX, y: e.clientY, items: [
+        { label: 'Connect', icon: 'rdp', run: () => h.connect(alias, false) },
+        { label: 'Edit host…', icon: 'edit', hint: chordLabel('editHost', os), run: () => h.editHost(alias) },
+        { label: 'Copy address', icon: 'clip', run: () => { navigator.clipboard?.writeText(addr).catch(() => {}); } },
+        { label: 'Delete host', icon: 'trash', danger: true, sep: true, run: () => h.deleteHost(alias) },
+      ] });
+      return;
+    }
     setMenu({ x: e.clientX, y: e.clientY, items: [
       { label: 'Connect', icon: 'term', run: () => h.connect(alias, false) },
       { label: 'Connect in new tab', icon: 'plus', run: () => h.connect(alias, true) },
@@ -184,6 +196,7 @@ export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer
                 onDoubleClick={() => h.connect(r.alias, false)}
                 onContextMenu={(e) => hostMenu(r.alias, e)}>
                 <span className={'hmark ' + c.className} style={c.style} />
+                <HostTypeIcon type={r.host.type} />
                 <span className="host-name grow trunc">{r.alias}</span>
                 <TunnelMark host={r.alias} />
                 {n > 0 && <span className="sess" aria-label={`${n} open session${n > 1 ? 's' : ''}`}><Icon name="term" />{n}</span>}

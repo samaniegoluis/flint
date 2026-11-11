@@ -42,7 +42,7 @@ const catalog = {
 		subgroups: 0,
 	})),
 	hosts: vault.hosts.map((h) => ({
-		alias: h.alias, label: h.label ?? '', hostname: h.hostname, port: 22, user: h.user ?? '',
+		alias: h.alias, type: h.type ?? 'ssh', domain: h.domain ?? '', label: h.label ?? '', hostname: h.hostname, port: 22, user: h.user ?? '',
 		group: h.group ?? '', tags: h.tags ?? [], color: h.color ?? '', notes: h.notes ?? '',
 		jump: h.jump ?? '', credential: h.credential ?? '', key: h.key ?? '', has_password: Boolean(h.password),
 		command: '', keep_shell: true,
