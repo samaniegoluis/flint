@@ -1,87 +1,198 @@
 package rdp
 
 import "core:os"
+import "core:str"
 import "core:time"
 
-// The live tests need a Windows host: FLINT_RDP_TEST_HOST, _USER and _PASSWORD
-// (Infisical, /ai-agents). Without them they pass without connecting.
-fn live_target() -> RdpTarget {
-    return RdpTarget{
-        host: os.getenv("FLINT_RDP_TEST_HOST"),
-        user: os.getenv("FLINT_RDP_TEST_USER"),
-        password: os.getenv("FLINT_RDP_TEST_PASSWORD"),
-        width: 1024,
-        height: 768,
+// Two servers, each optional (a test passes without connecting when its server is not
+// given):
+// - FreeRDP's sample server on this machine, FLINT_RDP_SAMPLE_PORT (scripts/test.sh
+//   starts one with a throwaway certificate): any user, no NLA, a test picture.
+// - A real Windows host, FLINT_RDP_TEST_HOST, _USER and _PASSWORD (Infisical,
+//   /ai-agents). Input sent there stays harmless: the person's own session may be on
+//   the other side (ROADMAP).
+
+fn sample_target(trusted: str) -> RdpTarget {
+    port := os.getenv("FLINT_RDP_SAMPLE_PORT")
+    mut p: i64 = 0
+    if port.len() > 0 {
+        p = str.parse_i64(port) or 0
     }
+    return RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "sample", width: 1024, height: 768, trusted_fingerprint: trusted }
+}
+
+fn live_target(trusted: str) -> RdpTarget {
+    return RdpTarget{ hostname: os.getenv("FLINT_RDP_TEST_HOST"), port: 3389, user: os.getenv("FLINT_RDP_TEST_USER"), domain: "", password: os.getenv("FLINT_RDP_TEST_PASSWORD"), width: 1024, height: 768, trusted_fingerprint: trusted }
+}
+
+// Connects once with nothing trusted, which stops at the certificate, and returns
+// the certificate's fingerprint.
+fn first_fingerprint(rd: FreeRdpDesktop, tab: str, t: RdpTarget) -> str {
+    mut msg := ""
+    rd.rd_open(tab, t, 15000) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("host_key:"), msg)
+    return rd.rd_presented_cert(tab).fingerprint
+}
+
+fn wait_frame(tab: str) -> str {
+    for i in 0..50 {
+        frame := next_frame(tab, 200) or ""
+        if frame.len() > 16 {
+            return frame
+        }
+    }
+    return ""
+}
+
+fn upper_hex(s: str) -> str {
+    mut res := ""
+    for b in s.bytes() {
+        c := u8(b)
+        if c >= 97 && c <= 102 {
+            res = res + byte_to_str(c - 32)
+        } else {
+            res = res + byte_to_str(c)
+        }
+    }
+    return res
+}
+
+fn le16(s: str, at: usize) -> i64 {
+    b := s.bytes()
+    return i64(u8(b[at])) + i64(u8(b[at + 1])) * 256
 }
 
 test "an address that never answers fails within the timeout" {
+    rd := new_freerdp_desktop()
     // TEST-NET-1 (RFC 5737): routed nowhere, so the dial hangs until the timeout.
-    t := RdpTarget{ host: "192.0.2.1", user: "nobody", password: "never-sent" }
+    t := RdpTarget{ hostname: "192.0.2.1", port: 3389, user: "nobody", domain: "", password: "never-sent", width: 800, height: 600, trusted_fingerprint: "" }
     started := time.now_ms()
     mut msg := ""
-    rdp_open(t, 1500) or err { msg = "{err.message()}" }
+    rd.rd_open("t-dial", t, 1500) or err { msg = "{err.message()}" }
+    rd.rd_close("t-dial")
     elapsed := time.now_ms() - started
     assert(msg.len() > 0, "the dial must fail")
-    assert(elapsed < 4000, "took {elapsed} ms")
+    assert(elapsed < 6000, "took {elapsed} ms")
     assert(msg.starts_with("timeout:") || msg.starts_with("network:"), msg)
     assert(!msg.contains("never-sent"))
 }
 
-test "an RDP target needs an address and a user" {
+test "a closed port is told apart from an unreachable host" {
+    rd := new_freerdp_desktop()
+    // Port 9 (discard) is closed on loopback, so the dial is refused at once.
+    t := RdpTarget{ hostname: "127.0.0.1", port: 9, user: "nobody", domain: "", password: "x", width: 800, height: 600, trusted_fingerprint: "" }
     mut msg := ""
-    rdp_open(RdpTarget{ host: "", user: "x", password: "" }, 1000) or err { msg = "{err.message()}" }
+    rd.rd_open("t-closed", t, 5000) or err { msg = "{err.message()}" }
+    rd.rd_close("t-closed")
+    assert(msg.starts_with("refused:"), msg)
+}
+
+test "an RDP target needs an address and a user" {
+    rd := new_freerdp_desktop()
+    mut msg := ""
+    rd.rd_open("t-bad", RdpTarget{ hostname: "", port: 3389, user: "x", domain: "", password: "", width: 800, height: 600, trusted_fingerprint: "" }, 1000) or err { msg = "{err.message()}" }
     assert(msg.starts_with("invalid:"), msg)
 }
 
-test "a wrong password is an auth error that does not name it" {
-    mut t := live_target()
-    if t.host.len() == 0 {
+test "the sample server's certificate is refused until trusted, then frames and a reconnect at a new size follow" {
+    t := sample_target("")
+    if t.port == 0 {
         return
     }
+    rd := new_freerdp_desktop()
+    fp := first_fingerprint(rd, "t-sample", t)
+    assert_eq(fp.len(), 95)
+    cert := rd.rd_presented_cert("t-sample")
+    assert(cert.subject.contains("flint-test"), cert.subject)
+    // Upper case is the same fingerprint.
+    d := try rd.rd_open("t-sample", sample_target(upper_hex(fp)), 15000)
+    defer rd.rd_close("t-sample")
+    assert(d.frame_port > 0)
+    assert_eq(d.frame_token.len(), 64)
+    frame := wait_frame("t-sample")
+    assert(frame.len() > 16, "no frame in 10 s")
+    assert_eq(le16(frame, 12), d.width)
+    assert_eq(le16(frame, 14), d.height)
+
+    // The frame channel wants its token.
+    bad := try os.command("curl", ["-s", "-o", "/dev/null", "-D", "-", "http://127.0.0.1:{d.frame_port}/next?t=nope"])
+    assert(bad.stdout.starts_with("HTTP/1.1 403"), bad.stdout)
+    good := try os.command("curl", ["-s", "-o", "/dev/null", "-D", "-", "http://127.0.0.1:{d.frame_port}/next?t={d.frame_token}"])
+    assert(good.stdout.starts_with("HTTP/1.1 200"), good.stdout)
+
+    // No Display Control here: the size is kept and reported for a reconnect, which
+    // keeps the frame channel.
+    try rd.rd_resize("t-sample", 800, 600)
+    ev := rd.rd_wait("t-sample", 2000)
+    assert_eq(ev.kind, "resize")
+    assert_eq(ev.width, 800)
+    d2 := try rd.rd_open("t-sample", sample_target(fp), 15000)
+    assert_eq(d2.frame_port, d.frame_port)
+    assert_eq(d2.frame_token, d.frame_token)
+    assert_eq(rd.rd_wait("t-sample", 200).kind, "running")
+    try rd.rd_pointer("t-sample", RdpPointer{ kind: "move", button: 0, x: 10, y: 10, delta: 0 })
+    try rd.rd_key("t-sample", "ShiftLeft", true)
+    try rd.rd_key("t-sample", "ShiftLeft", false)
+    mut msg := ""
+    rd.rd_key("t-sample", "NoSuchKey", true) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid:"), msg)
+}
+
+test "a closed tab ends its wait and refuses input" {
+    t := sample_target("")
+    if t.port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    fp := first_fingerprint(rd, "t-close", t)
+    _ := try rd.rd_open("t-close", sample_target(fp), 15000)
+    rd.rd_close("t-close")
+    ev := rd.rd_wait("t-close", 200)
+    assert_eq(ev.kind, "ended")
+    assert_eq(ev.message, "")
+    mut msg := ""
+    rd.rd_key("t-close", "KeyA", true) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("network:"), msg)
+}
+
+test "a wrong password on a real Windows host is an auth error that does not name it" {
+    mut t := live_target("")
+    if t.hostname.len() == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    fp := first_fingerprint(rd, "t-live-auth", t)
+    t.trusted_fingerprint = fp
     t.password = "wrong-on-purpose-4711"
     mut msg := ""
-    rdp_open(t, 15000) or err { msg = "{err.message()}" }
+    rd.rd_open("t-live-auth", t, 20000) or err { msg = "{err.message()}" }
+    rd.rd_close("t-live-auth")
     assert(msg.starts_with("auth:"), msg)
     assert(!msg.contains("wrong-on-purpose-4711"))
 }
 
-test "connects to a real Windows host and receives a frame of the asked size" {
-    t := live_target()
-    if t.host.len() == 0 {
+test "a real Windows host resizes in place through Display Control" {
+    t := live_target("")
+    if t.hostname.len() == 0 {
         return
     }
-    conn := try rdp_open(t, 15000)
-    defer conn.close()
-    sz := try conn.size()
-    assert_eq(sz.width, 1024)
-    assert_eq(sz.height, 768)
-    assert(sz.fingerprint.len() > 0)
-    mut got := 0
+    rd := new_freerdp_desktop()
+    fp := first_fingerprint(rd, "t-live", t)
+    d := try rd.rd_open("t-live", live_target(fp), 20000)
+    defer rd.rd_close("t-live")
+    assert_eq(d.width, 1024)
+    assert(wait_frame("t-live").len() > 16, "no frame in 10 s")
+    // The channel opens a moment after the desktop.
+    time.sleep_ms(3000)
+    try rd.rd_resize("t-live", 1280, 720)
+    mut resized := false
     for i in 0..50 {
-        frame := try conn.next_frame(200)
-        if frame.len() > 16 {
-            got += 1
+        frame := next_frame("t-live", 200) or ""
+        if frame.len() > 16 && le16(frame, 12) == 1280 && le16(frame, 14) == 720 {
+            resized = true
             break
         }
     }
-    assert(got > 0, "no frame in 10 s")
-    assert(conn.frames_drawn() > 0)
-}
-
-test "the frame channel refuses a request without its token" {
-    t := live_target()
-    if t.host.len() == 0 {
-        return
-    }
-    conn := try rdp_open(t, 15000)
-    defer conn.close()
-    ch := try conn.frame_channel()
-    assert(ch.port > 0)
-    assert_eq(ch.token.len(), 64)
-    // The status line only: curl's -w takes `%{...}`, which a cfire string interpolates.
-    bad := try os.command("curl", ["-s", "-o", "/dev/null", "-D", "-", "http://127.0.0.1:{ch.port}/next?t=nope"])
-    assert(bad.stdout.starts_with("HTTP/1.1 403"), bad.stdout)
-    good := try os.command("curl", ["-s", "-o", "/dev/null", "-D", "-", "http://127.0.0.1:{ch.port}/next?t={ch.token}"])
-    assert(good.stdout.starts_with("HTTP/1.1 200"), good.stdout)
+    assert(resized, "the desktop did not become 1280x720")
+    assert_eq(rd.rd_wait("t-live", 100).kind, "running")
 }

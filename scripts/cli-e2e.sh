@@ -604,6 +604,9 @@ expect 23 "flint cp refuses an RDP host" "$SMI" -- cp "$loc/app.conf" "win:/tmp/
 expect 23 "flint cp between hosts refuses an RDP end" "$SMI" -- cp "local:$rem/app.conf" "win:/tmp/" "${SM[@]}"
 expect 23 "a tunnel on an RDP host is refused" "$SMI" -- tunnel add win rdp-t --local 13389 "${SM[@]}"
 expect 23 "host test refuses an RDP host" "$SMI" -- host test win "${SM[@]}"
+expect 23 "flint connect on an RDP host with no app serving the vault" "$SMI" -- connect win "${SM[@]}"
+check "it says the desktop opens in the Flint app" '[[ "$err" == *"'"'"'win'"'"' is an RDP host: its desktop opens in the Flint app"* ]]'
+
 expect 0 "host rm of an RDP host" "$SMI" -- host rm win2 "${SM[@]}"
 
 echo "== every --json output parses"

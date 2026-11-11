@@ -2139,3 +2139,19 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   includes in the shim.
 - **Ideal:** the prelude keeps `byte` inside `cfire::` (generated code can qualify it), so
   a C header that declares a global `byte` includes cleanly.
+- **Milestone 30:** the shim now also implements the RemoteDesktop port's tabs (one per
+  page id, reconnects that keep the frame channel), the certificate check
+  (`VerifyX509Certificate`), the Display Control channel through `libfreerdp-client3`, and
+  the keyboard layout (Carbon's Text Input Sources on macOS, included before winpr, whose
+  `CreateEvent` macro renames Carbon's own).
+
+### CF-120 · bug · `confirmed`: `cfire test <dir>` reports "No test suites found" when a test file does not compile
+- **Repro (c5b1d4b, macOS) [ran]:** in a package folder with a `_test.cf` that uses a
+  reserved word as a name (`mut out := ""`), `cfire test src/adapters/rdp` prints
+  `✓ No test suites found in src/adapters/rdp` and exits 0. `cfire test
+  src/adapters/rdp/rdp_test.cf` shows the real error (`'out' is a reserved parameter-intent
+  keyword…`). Found in milestone 30.
+- **Impact:** a broken test file looks like a folder with no tests, and a suite run passes.
+  `scripts/test.sh` would have reported the RDP adapter green with none of its tests run.
+- **Workaround:** run a changed test file by its path once before trusting the folder run.
+- **Ideal:** a test file that fails to compile fails the run with its error.

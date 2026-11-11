@@ -46,6 +46,13 @@ On a Windows layout with <kbd>AltGr</kbd> characters on the digits or letters
 types ¡ instead of changing the layout. There, run those actions from the command palette
 or the toolbar's Split menu. <kbd>AltGr</kbd> itself always types its character.
 
+## In a remote desktop tab
+
+Keys go to the remote desktop, by their place on the keyboard. On macOS <kbd>⌘</kbd> is
+sent as <kbd>Ctrl</kbd> (<kbd>⌘C</kbd> is <kbd>Ctrl+C</kbd> on Windows). Flint keeps only
+the command palette (<kbd>⌘K</kbd> · <kbd>Ctrl+Shift+K</kbd>) and **Go to tab 1–9**; the
+rest is in the palette. See [Remote desktop](/guides/remote-desktop/#keyboard-and-mouse).
+
 ## In lists and dialogs
 
 | Where | Keys |

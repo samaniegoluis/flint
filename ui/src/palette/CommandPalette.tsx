@@ -31,7 +31,12 @@ interface Item {
   /** Hosts only: ⇧⌘↵ applies. */
   host?: boolean;
   edit?: () => void;
+  /** Shown greyed with this reason, and does nothing (design 21d2). */
+  disabled?: string;
 }
+
+// What an RDP tab cannot do (design 21d2): files, tunnels and panes are SSH's.
+const SSH_ONLY_ACTIONS: Action[] = ['viewFiles', 'viewTunnels', 'splitRight', 'splitDown', 'focusNextPane', 'layout1', 'layout2', 'layout3', 'layout4', 'duplicate'];
 
 const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'newHost', icon: 'plus' },
@@ -86,8 +91,10 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
   const { tabs, panes, active } = useSessions();
   const tun = useTunnels();
   const activeTab = tabs.find((t) => t.id === active);
-  // A new pane goes into the active tab, while it has room.
-  const canSplit = !!activeTab && activeTab.panes.length < MAX_PANES;
+  // A new pane goes into the active tab, while it has room; a remote desktop's tab
+  // takes none.
+  const rdpTab = panes.find((p) => p.id === activeTab?.focus)?.kind === 'rdp';
+  const canSplit = !!activeTab && activeTab.panes.length < MAX_PANES && !rdpTab;
   const paneNo = activeTab ? activeTab.panes.indexOf(activeTab.focus) + 1 : 0;
   const [q, setQ] = useState('');
   const [group, setGroup] = useState<Group>(hostsOnly ? 'hosts' : 'all');
@@ -219,6 +226,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           group: 'actions', key: 'a:' + a.action, score: (m?.score ?? 0) + 1000,
           render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m?.positions ?? []} /></span>{a.action === 'newSshHost' && <HostTypeIcon type="ssh" size="md" />}{a.action === 'newRdpHost' && <HostTypeIcon type="rdp" size="md" />}{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
           run: () => onAction(a.action),
+          disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? 'SSH hosts only' : undefined,
         });
       }
       for (const r of recents) {
@@ -239,7 +247,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       }
     }
     return out;
-  }, [catalog.hosts, tabs, panes, tun.list, canSplit, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail]);
+  }, [catalog.hosts, tabs, panes, tun.list, canSplit, rdpTab, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail]);
 
   const counts = { hosts: 0, actions: 0, vaults: 0 };
   for (const it of items) counts[it.group === 'tunnels' ? 'actions' : it.group]++;
@@ -256,7 +264,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
     const mod = os === 'mac' ? e.metaKey : e.ctrlKey;
     if (e.key === 'ArrowDown') { e.preventDefault(); setHot(Math.min(shown.length - 1, hot + 1)); scrollHot(hot + 1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setHot(Math.max(0, hot - 1)); scrollHot(hot - 1); }
-    else if (e.key === 'Enter' && current) { e.preventDefault(); finish(() => current.run(mod && e.shiftKey ? 'pane' : mod ? 'tab' : 'open')); }
+    else if (e.key === 'Enter' && current) { e.preventDefault(); if (current.disabled) return; finish(() => current.run(mod && e.shiftKey ? 'pane' : mod ? 'tab' : 'open')); }
     else if (e.key === 'Tab' && !hostsOnly) {
       e.preventDefault();
       const groups: Group[] = ['all', 'hosts', 'actions', 'vaults'];
@@ -299,9 +307,11 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
             return (
               <div key={it.key} style={{ display: 'contents' }}>
                 {header && <div className="menu-label"><span className="label">{it.group[0].toUpperCase() + it.group.slice(1)}</span></div>}
-                <button id={'pi-' + it.key} className={'mi' + (it === current ? ' hot' : '')} role="option" aria-selected={it === current} tabIndex={-1}
-                  style={{ minHeight: 38 }} onMouseMove={() => setHot(i)} onClick={(e) => { const m = os === 'mac' ? e.metaKey : e.ctrlKey; finish(() => it.run(m && e.shiftKey ? 'pane' : m ? 'tab' : 'open')); }}>
+                <button id={'pi-' + it.key} className={'mi' + (it === current ? ' hot' : '') + (it.disabled ? ' is-disabled' : '')} role="option" aria-selected={it === current} aria-disabled={!!it.disabled} tabIndex={-1}
+                  title={it.disabled} data-palette-disabled={it.disabled ? '' : undefined}
+                  style={{ minHeight: 38 }} onMouseMove={() => setHot(i)} onClick={(e) => { if (it.disabled) return; const m = os === 'mac' ? e.metaKey : e.ctrlKey; finish(() => it.run(m && e.shiftKey ? 'pane' : m ? 'tab' : 'open')); }}>
                   {it.render()}
+                  {it.disabled && it === current && <span className="hint">{it.disabled}</span>}
                   {it === current && <Key>↵</Key>}
                 </button>
               </div>

@@ -4,7 +4,7 @@
 
 import type {
   AccessAnswer, AccessState, ActivityEntry, AppInfo, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  CopyResult, FileEntry, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
+  CopyResult, FileEntry, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -138,6 +138,13 @@ export const api = {
   sessionAnswer: (session: string, prompt: string, ok: boolean, value: string) =>
     call('session_answer', { session, prompt, ok, value }),
   sessionClose: (session: string) => call('session_close', { session }),
+
+  /** A remote desktop (milestone 30): connects on a worker; "rdp:ready" and "rdp:state" follow. */
+  rdpOpen: (tab: string, alias: string, width: number, height: number) => call('rdp_open', { tab, alias, width, height }),
+  rdpKey: (tab: string, code: string, down: boolean) => call('rdp_key', { tab, code, down }),
+  rdpPointer: (tab: string, p: RdpPointer) => call('rdp_pointer', { tab, ...p }),
+  rdpResize: (tab: string, width: number, height: number) => call('rdp_resize', { tab, width, height }),
+  rdpClose: (tab: string) => call('rdp_close', { tab }),
 
   /** The Files view (milestone 17): SFTP over a tab's own session (D-053). */
   filesHome: (session: string) => call<{ path: string }>('files_home', { session, path: '' }),

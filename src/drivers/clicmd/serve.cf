@@ -916,3 +916,25 @@ fn served_changes_tokens(req: ServeRequest) -> bool {
     verb := p.positional(1)
     return p.positional(0) == "token" && (verb == "create" || verb == "revoke")
 }
+
+// The end frame of a served `connect` that opened a remote desktop tab.
+fn desktop_opened_frame(alias: str, as_json: bool) -> str {
+    return relay_frame(TAG_END, json.stringify(SessionEndFrame{ exit: 0, stdout: desktop_opened_text(alias, as_json), stderr: "" }))
+}
+
+// The RDP host a served session request opens in the app's window, "" when the request
+// is not `flint connect` on an RDP host.
+fn served_desktop_alias(req: ServeRequest, store: LockedVaultStore) -> str {
+    p := parse_cli_args(req.argv) or {
+        return ""
+    }
+    if p.positional(0) != "connect" || p.positionals.len() != 2 {
+        return ""
+    }
+    alias := p.positional(1)
+    rdp := opens_remote_desktop(store, alias) or false
+    if rdp {
+        return alias
+    }
+    return ""
+}

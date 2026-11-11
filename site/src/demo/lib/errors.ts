@@ -24,6 +24,7 @@ export const ERROR_CODES = [
 	'not_a_directory',
 	'port_in_use',
 	'wrong_host_type',
+	'refused',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

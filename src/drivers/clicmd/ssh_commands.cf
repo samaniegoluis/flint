@@ -67,6 +67,11 @@ fn cmd_connect[M: Terminal, P: Prompter](p: ParsedArgs, sec: SecretInput, as_jso
     opts := try connect_options(p)
     alias := p.positional(1)
     s := try open_target(p, sec, c, mut store, src, recents)
+    // Served by the app, an RDP host's connect opened its tab before this ran
+    // (desktop_opened_frame); here no app serves the vault.
+    if try opens_remote_desktop(store, alias) {
+        return error(desktop_needs_app(alias))
+    }
     mut link := new_ssh_link()
     mut clock := new_system_clock()
     code := try connect_host(c, mut store, s, mut link, prompter, mut term, mut clock, alias, term_name, opts)
@@ -159,4 +164,19 @@ fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut
         return
     }
     return error(coded(ERR_USAGE, "unknown command `flint known-host {verb}`; see `flint help`"))
+}
+
+// `flint connect <rdp-host>` served by the app (milestone 30): the app opened the
+// host's remote desktop tab, and the CLI says so and exits 0.
+type DesktopOpened struct {
+    host:      str  `json:"host"`
+    host_type: str  `json:"type"`
+    opened:    bool `json:"opened"`
+}
+
+fn desktop_opened_text(alias: str, as_json: bool) -> str {
+    if as_json {
+        return json.stringify(DesktopOpened{ host: alias, host_type: HOST_TYPE_RDP, opened: true }) + "\n"
+    }
+    return "Opened {alias} in Flint (remote desktop).\n"
 }

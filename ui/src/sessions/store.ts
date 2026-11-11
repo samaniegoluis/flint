@@ -12,7 +12,7 @@ import { useSyncExternalStore } from 'react';
 import { api, on } from '../api/backend';
 import { InputQueue } from '../lib/inputQueue';
 import { defaultTracks, layoutAfterClose, layoutForSplit, MAX_PANES, type Layout, type SplitDir } from '../lib/layout';
-import type { HostKeyPayload, SessionPromptEvent, SessionStateEvent } from '../api/types';
+import type { DesktopReadyEvent, HostKeyPayload, HostType, RdpStateEvent, SessionPromptEvent, SessionStateEvent } from '../api/types';
 
 export type PaneStatus = 'connecting' | 'prompt' | 'ready' | 'ended';
 
@@ -22,9 +22,23 @@ export interface SessionEnd {
   exit_code: number;
 }
 
-/** One terminal and its SSH session. */
+/** A remote desktop that is up: its size and where its frames are read (D-071). */
+export interface Desktop {
+  width: number;
+  height: number;
+  port: number;
+  token: string;
+}
+
+/**
+ * One terminal and its SSH session, or (milestone 30) one remote desktop: an RDP
+ * pane is alone in its tab, and `session` is the id its connection runs under.
+ */
 export interface Pane {
   id: string;
+  kind: HostType;
+  /** An RDP pane's desktop once it is up. */
+  desktop: Desktop | null;
   /** The tab it belongs to. */
   tab: string;
   alias: string;
@@ -69,6 +83,11 @@ function b64ToBytes(b64: string): Uint8Array {
 
 /** How long a pane's size must hold before the shell is told (see resize). */
 const RESIZE_SETTLE_MS = 120;
+/**
+ * A remote desktop is resized less eagerly: without Display Control each new size is
+ * a reconnect (milestone 30).
+ */
+const DESKTOP_SETTLE_MS = 500;
 
 let seq = 0;
 const mint = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++seq}`;
@@ -79,6 +98,8 @@ class SessionStore {
   private writers = new Map<string, Writer>();
   private pending = new Map<string, Uint8Array[]>();
   private sizes = new Map<string, { cols: number; rows: number }>();
+  /** An RDP pane's area in CSS pixels, from its view. */
+  private areas = new Map<string, { width: number; height: number }>();
   private bySession = new Map<string, string>();
   private started = false;
   private inputs = new InputQueue((session, data) => api.sessionInput(session, data));
@@ -151,11 +172,44 @@ class SessionStore {
       if (ev.kind === 'host_key_changed') this.patch(t.id, { changedKey: ev.host_key });
       else this.patch(t.id, { status: 'prompt', prompt: ev });
     });
+    on<RdpStateEvent>('rdp:state', (ev) => {
+      const paneId = this.bySession.get(ev.tab);
+      const t = this.pane(paneId ?? null);
+      if (!t || t.session !== ev.tab) return;
+      if (ev.state === 'connecting') this.patch(t.id, { status: 'connecting', end: null, prompt: null });
+      else {
+        this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: 0 } });
+        this.bySession.delete(ev.tab);
+      }
+    });
+    on<DesktopReadyEvent>('rdp:ready', (ev) => {
+      const paneId = this.bySession.get(ev.tab);
+      const t = this.pane(paneId ?? null);
+      if (!t || t.session !== ev.tab) return;
+      this.patch(t.id, { status: 'ready', prompt: null, connectedAt: Date.now(), desktop: { width: ev.width, height: ev.height, port: ev.frame_port, token: ev.frame_token } });
+    });
+  }
+
+  // An RDP pane connects once its view has measured it, so the desktop starts at the
+  // tab's size.
+  private connectDesktop(paneId: string) {
+    const t = this.pane(paneId);
+    const area = this.areas.get(paneId);
+    if (!t || !area) return;
+    const session = mint('r');
+    this.bySession.set(session, paneId);
+    this.patch(paneId, { session, status: 'connecting', prompt: null, changedKey: null, end: null, desktop: null });
+    api.rdpOpen(session, t.alias, area.width, area.height).catch((err) => {
+      this.bySession.delete(session);
+      const e = err as { code?: string; message?: string };
+      this.patch(paneId, { status: 'ended', end: { code: e.code ?? 'internal', message: e.message ?? String(err), exit_code: -1 } });
+    });
   }
 
   private connect(paneId: string) {
     const t = this.pane(paneId);
     if (!t) return;
+    if (t.kind === 'rdp') { this.connectDesktop(paneId); return; }
     const session = mint('s');
     this.bySession.set(session, paneId);
     this.patch(paneId, { session, status: 'connecting', prompt: null, changedKey: null, end: null, cwd: '' });
@@ -167,14 +221,14 @@ class SessionStore {
     });
   }
 
-  private newPane(tabId: string, alias: string, noCommand: boolean): Pane {
-    return { id: mint('p'), tab: tabId, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, noCommand, cwd: '' };
+  private newPane(tabId: string, alias: string, noCommand: boolean, kind: HostType = 'ssh'): Pane {
+    return { id: mint('p'), kind, desktop: null, tab: tabId, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, noCommand, cwd: '' };
   }
 
-  /** Opens `alias` in a new tab; returns the new pane's id. */
-  open(alias: string, noCommand = false): string {
+  /** Opens `alias` in a new tab; returns the new pane's id. An RDP host's tab is a remote desktop. */
+  open(alias: string, noCommand = false, kind: HostType = 'ssh'): string {
     const id = mint('t');
-    const pane = this.newPane(id, alias, noCommand);
+    const pane = this.newPane(id, alias, noCommand, kind);
     const tab: Tab = { id, panes: [pane.id], layout: 'cols', focus: pane.id, ...defaultTracks('cols', 1) };
     this.set({ tabs: [...this.snap.tabs, tab], panes: [...this.snap.panes, pane], active: id });
     this.connect(pane.id);
@@ -190,6 +244,8 @@ class SessionStore {
     const tab = this.tab(this.snap.active);
     if (!tab || tab.panes.length >= MAX_PANES) return null;
     const from = this.pane(tab.focus);
+    // A remote desktop is alone in its tab (spec v8: no split panes).
+    if (from?.kind === 'rdp') return null;
     const host = alias ?? from?.alias;
     if (!host) return null;
     const pane = this.newPane(tab.id, host, alias ? noCommand : (from?.noCommand ?? false));
@@ -237,17 +293,53 @@ class SessionStore {
   reconnect(paneId: string) {
     const t = this.pane(paneId);
     if (!t) return;
-    if (t.status !== 'ended' && t.session) api.sessionClose(t.session).catch(() => {});
+    if (t.status !== 'ended' && t.session) this.endSession(t);
     if (t.session) this.bySession.delete(t.session);
-    this.writers.get(paneId)?.(new TextEncoder().encode('\r\n'));
+    if (t.kind === 'ssh') this.writers.get(paneId)?.(new TextEncoder().encode('\r\n'));
     this.connect(paneId);
   }
 
+  private endSession(t: Pane) {
+    if (t.kind === 'rdp') api.rdpClose(t.session).catch(() => {});
+    else api.sessionClose(t.session).catch(() => {});
+  }
+
   private hangUp(t: Pane) {
-    if (t.session && t.status !== 'ended') api.sessionClose(t.session).catch(() => {});
+    if (t.session && t.status !== 'ended') this.endSession(t);
     this.bySession.delete(t.session);
     this.pending.delete(t.id);
     this.sizes.delete(t.id);
+    this.areas.delete(t.id);
+  }
+
+  /** Ends a remote desktop and keeps its tab, which offers to connect again. */
+  disconnect(paneId: string) {
+    const t = this.pane(paneId);
+    if (!t || t.kind !== 'rdp' || !t.session || t.status === 'ended') return;
+    this.endSession(t);
+  }
+
+  /**
+   * An RDP pane's view measured `width` x `height` CSS pixels: the first size opens
+   * the connection; a later one, once it settles, resizes the desktop.
+   */
+  desktopArea(paneId: string, width: number, height: number) {
+    const w = Math.floor(width);
+    const h = Math.floor(height);
+    if (w < 1 || h < 1) return;
+    const prev = this.areas.get(paneId);
+    if (prev && prev.width === w && prev.height === h) return;
+    this.areas.set(paneId, { width: w, height: h });
+    const t = this.pane(paneId);
+    if (!t) return;
+    if (!prev && !t.session) { this.connectDesktop(paneId); return; }
+    clearTimeout(this.resizeTimers.get(paneId));
+    this.resizeTimers.set(paneId, setTimeout(() => {
+      this.resizeTimers.delete(paneId);
+      const p = this.pane(paneId);
+      const area = this.areas.get(paneId);
+      if (p && area && p.session && p.status === 'ready') api.rdpResize(p.session, area.width, area.height).catch(() => {});
+    }, DESKTOP_SETTLE_MS));
   }
 
   /** Closes one pane and hangs up its session; the last pane closes its tab. */
@@ -284,6 +376,7 @@ class SessionStore {
     this.bySession.clear();
     this.pending.clear();
     this.sizes.clear();
+    this.areas.clear();
     this.set({ tabs: [], panes: [], active: null });
   }
 
@@ -348,10 +441,33 @@ export function useSessions(): Snapshot {
 export function statusLabel(t: Pane): { dot: string; meta: string; metaClass: string } {
   if (t.status === 'ready') return { dot: 'st-on', meta: '', metaClass: '' };
   if (t.status === 'prompt') {
-    return { dot: 'st-wait', meta: t.prompt?.kind === 'host_key' ? 'verify host' : 'needs input', metaClass: 'accent-t' };
+    const verify = t.kind === 'rdp' ? 'verify certificate' : 'verify host';
+    return { dot: 'st-wait', meta: t.prompt?.kind === 'host_key' ? verify : 'needs input', metaClass: 'accent-t' };
   }
   if (t.status === 'connecting') return { dot: 'st-wait', meta: 'connecting…', metaClass: 'faint' };
+  if (t.kind === 'rdp') return rdpStatusLabel(t);
   if (t.end?.code === 'host_key' && t.changedKey) return { dot: 'st-fail', meta: 'host key changed', metaClass: 'danger-t' };
   if (t.end?.code) return { dot: 'st-fail', meta: t.end.code === 'auth' ? 'auth failed' : 'disconnected', metaClass: 'danger-t' };
   return { dot: 'st-off', meta: 'closed', metaClass: 'faint' };
+}
+
+/** Why a remote desktop ended, as its tab says it (design 22c). */
+export function rdpEndKind(t: Pane): 'closed' | 'auth' | 'cert-changed' | 'unreachable' | 'timeout' | 'rdp-off' | 'refused' | 'lost' | 'other' {
+  const code = t.end?.code ?? '';
+  if (!code) return 'closed';
+  if (code === 'auth') return 'auth';
+  if (code === 'host_key') return t.changedKey ? 'cert-changed' : 'other';
+  if (code === 'timeout') return 'timeout';
+  if (code === 'refused') return t.end?.message.includes('Remote Desktop port') ? 'rdp-off' : 'refused';
+  if (code === 'network') return t.connectedAt > 0 ? 'lost' : 'unreachable';
+  return 'other';
+}
+
+function rdpStatusLabel(t: Pane): { dot: string; meta: string; metaClass: string } {
+  const k = rdpEndKind(t);
+  const meta: Record<typeof k, string> = {
+    closed: 'disconnected', auth: 'sign-in failed', 'cert-changed': 'certificate changed', unreachable: 'unreachable',
+    timeout: 'timed out', 'rdp-off': 'refused', refused: 'refused', lost: 'disconnected', other: 'failed',
+  };
+  return { dot: k === 'closed' ? 'st-off' : 'st-fail', meta: meta[k], metaClass: k === 'closed' ? 'faint' : 'danger-t' };
 }

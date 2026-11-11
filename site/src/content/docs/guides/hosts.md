@@ -61,9 +61,10 @@ Label, group, tags, colour and notes work as for SSH hosts. An RDP host logs in 
 password only, so `--key`, `--jump`, `--command` and `--sudo-password` are refused for it.
 To change a host's type, remove it and add it again.
 
-Commands that need SSH (`exec`, `cp`, `connect`, `host test`, tunnels, and using it as a
-jump host) refuse an RDP host with `wrong_host_type` (exit 23). Opening the remote desktop
-in a Flint tab is on its way (v8); until then RDP hosts keep their logins in the vault.
+The host opens in a Flint tab: see [Remote desktop](/guides/remote-desktop/).
+`flint connect` asks the app to open that tab. Commands that need SSH (`exec`, `cp`,
+`host test`, tunnels, and using it as a jump host) refuse an RDP host with
+`wrong_host_type` (exit 23).
 
 ## Run a command on connect
 

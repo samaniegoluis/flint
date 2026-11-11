@@ -198,6 +198,37 @@ export interface HostKeyPayload {
   fingerprint: string;
   known_key_type: string;
   known_fingerprint: string;
+  /** An RDP server's certificate (milestone 30); '' for an SSH host key. */
+  subject: string;
+  issuer: string;
+  valid_from: string;
+  valid_to: string;
+}
+
+/** A remote desktop is up (milestone 30): its size and its frame channel (D-071). */
+export interface DesktopReadyEvent {
+  tab: string;
+  width: number;
+  height: number;
+  frame_port: number;
+  frame_token: string;
+}
+
+/** A remote desktop's state; `code` is '' when it was closed on purpose. */
+export interface RdpStateEvent {
+  tab: string;
+  state: 'connecting' | 'ended';
+  code: string;
+  message: string;
+}
+
+/** A pointer event for a remote desktop, in desktop pixels. */
+export interface RdpPointer {
+  kind: 'move' | 'down' | 'up' | 'wheel' | 'hwheel';
+  button: number;
+  x: number;
+  y: number;
+  delta: number;
 }
 
 export interface SessionStateEvent {

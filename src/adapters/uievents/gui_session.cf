@@ -134,10 +134,15 @@ type HostKeyPayload struct {
     fingerprint:       str `json:"fingerprint"`
     known_key_type:    str `json:"known_key_type"`
     known_fingerprint: str `json:"known_fingerprint"`
+    // An RDP certificate's (design 22d1); "" for an SSH host key.
+    subject:           str `json:"subject"`
+    issuer:            str `json:"issuer"`
+    valid_from:        str `json:"valid_from"`
+    valid_to:          str `json:"valid_to"`
 }
 
 fn host_key_payload(q: HostKeyQuestion) -> HostKeyPayload {
-    return HostKeyPayload{ alias: q.alias, addr: q.addr, key_type: q.key_type, fingerprint: q.fingerprint, known_key_type: q.known_key_type, known_fingerprint: q.known_fingerprint }
+    return HostKeyPayload{ alias: q.alias, addr: q.addr, key_type: q.key_type, fingerprint: q.fingerprint, known_key_type: q.known_key_type, known_fingerprint: q.known_fingerprint, subject: q.subject, issuer: q.issuer, valid_from: q.valid_from, valid_to: q.valid_to }
 }
 
 type SessionPrompt struct {
@@ -293,4 +298,28 @@ fn (self: GuiPrompter) prompt_password(user: str, alias: str) -> str! {
         return ""
     }
     return a.value
+}
+
+// ---- DesktopSink port (milestone 30) -----------------------------------------------
+
+// A remote desktop is up: its size and where the page reads its frames. The frame
+// token guards a local channel; it is not a vault secret.
+type DesktopReady struct {
+    tab:         str `json:"tab"`
+    width:       i64 `json:"width"`
+    height:      i64 `json:"height"`
+    frame_port:  i64 `json:"frame_port"`
+    frame_token: str `json:"frame_token"`
+}
+
+type GuiDesktopSink struct {
+    app: webui.App
+}
+
+fn new_gui_desktop_sink(app: webui.App) -> GuiDesktopSink {
+    return GuiDesktopSink{ app: app }
+}
+
+fn (mut self: GuiDesktopSink) desktop_ready(tab: str, d: RdpDesktop) {
+    self.app.emit("rdp:ready", DesktopReady{ tab: tab, width: d.width, height: d.height, frame_port: d.frame_port, frame_token: d.frame_token })
 }

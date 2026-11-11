@@ -1,0 +1,126 @@
+package main
+
+// The RDP tab (milestone 30, design 22): each handler parses its request, calls one
+// use case (application/rdp.cf) and returns (Principle 2).
+//
+// `rdp_open` connects on a worker, like an SSH tab: the certificate and password
+// prompts travel as "session:prompt" events through the mailbox the page minted
+// (the tab's id), "rdp:ready" says the desktop is up and where its frames are, and
+// "rdp:state" ends it with the reason. Input, resizes and closing come back as RPCs.
+// A locked window refuses input and closing, as for SSH tabs (D-043); a locked vault
+// leaves the session running (D-072).
+
+import "ext:webui"
+import "../../adapters/rdp"
+import "../../adapters/uievents"
+import "../../adapters/vault"
+import "../../application"
+import "../../domain"
+
+type RdpOpenReq struct {
+    tab:    str `json:"tab"`
+    alias:  str `json:"alias"`
+    width:  i64 `json:"width"`
+    height: i64 `json:"height"`
+}
+
+type RdpKeyReq struct {
+    tab:  str  `json:"tab"`
+    code: str  `json:"code"`
+    down: bool `json:"down"`
+}
+
+type RdpPointerReq struct {
+    tab:    str `json:"tab"`
+    kind:   str `json:"kind"`
+    button: i64 `json:"button"`
+    x:      i64 `json:"x"`
+    y:      i64 `json:"y"`
+    delta:  i64 `json:"delta"`
+}
+
+type RdpResizeReq struct {
+    tab:    str `json:"tab"`
+    width:  i64 `json:"width"`
+    height: i64 `json:"height"`
+}
+
+type RdpTabReq struct {
+    tab: str `json:"tab"`
+}
+
+type RdpState struct {
+    tab:     str `json:"tab"`
+    state:   str `json:"state"`
+    code:    str `json:"code"`
+    message: str `json:"message"`
+}
+
+fn emit_rdp_state(mut app: webui.App, tab: str, state: str, code: str, message: str) {
+    app.emit("rdp:state", RdpState{ tab: tab, state: state, code: code, message: message })
+}
+
+// Checks a request and opens the tab's mailbox. The caller spawns the worker.
+fn rdp_open_check(params: str, st: GuiState) -> RdpOpenReq! {
+    try st.require_unlocked()
+    req := try parse_req[RdpOpenReq](params)
+    if req.tab.len() == 0 || req.alias.len() == 0 {
+        return error(coded(ERR_INVALID, "a remote desktop needs a tab id and a host alias"))
+    }
+    if gui_session_count() >= MAX_SESSIONS {
+        return error(coded(ERR_CONFLICT, "{MAX_SESSIONS} sessions are open; close one first"))
+    }
+    if !gui_session_open(req.tab, 0, 0) {
+        return error(coded(ERR_CONFLICT, "tab '{req.tab}' already exists"))
+    }
+    return req
+}
+
+// The connection, on a worker, until the tab ends.
+fn run_gui_rdp(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, vs: VaultSession, req: RdpOpenReq) {
+    mut rd := new_freerdp_desktop()
+    prompter := new_gui_prompter(app, req.tab)
+    mut sink := new_gui_desktop_sink(app)
+    open := RdpOpenRequest{ tab: req.tab, alias: req.alias, width: req.width, height: req.height, timeout_ms: RDP_CONNECT_TIMEOUT_MS }
+    run_remote_desktop(c, mut store, vs, mut rd, prompter, mut sink, open) or err {
+        msg := "{err.message()}"
+        emit_rdp_state(mut app, req.tab, "ended", error_code_of(msg), error_text_of(msg))
+        gui_session_drop(req.tab)
+        return
+    }
+    emit_rdp_state(mut app, req.tab, "ended", "", "")
+    gui_session_drop(req.tab)
+}
+
+fn rpc_rdp_key(params: str, st: GuiState) -> str! {
+    try st.require_open_window()
+    req := try parse_req[RdpKeyReq](params)
+    mut rd := new_freerdp_desktop()
+    try send_desktop_key(mut rd, req.tab, req.code, req.down)
+    return ok_json()
+}
+
+fn rpc_rdp_pointer(params: str, st: GuiState) -> str! {
+    try st.require_open_window()
+    req := try parse_req[RdpPointerReq](params)
+    mut rd := new_freerdp_desktop()
+    try send_desktop_pointer(mut rd, req.tab, RdpPointer{ kind: req.kind, button: req.button, x: req.x, y: req.y, delta: req.delta })
+    return ok_json()
+}
+
+fn rpc_rdp_resize(params: str) -> str! {
+    req := try parse_req[RdpResizeReq](params)
+    mut rd := new_freerdp_desktop()
+    try resize_remote_desktop(mut rd, req.tab, req.width, req.height)
+    return ok_json()
+}
+
+// Closing also cancels a prompt the tab is waiting on, and a connection in progress.
+fn rpc_rdp_close(params: str, st: GuiState) -> str! {
+    try st.require_open_window()
+    req := try parse_req[RdpTabReq](params)
+    mut rd := new_freerdp_desktop()
+    close_remote_desktop(mut rd, req.tab)
+    _ := gui_session_close(req.tab)
+    return ok_json()
+}

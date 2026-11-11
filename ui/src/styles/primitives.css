@@ -626,3 +626,11 @@ button.picker-row:not(.off) { cursor: pointer; }
 .reserved { display: inline-flex; align-items: center; height: var(--control-h); padding: 0 var(--sp-3); border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); font-size: var(--fs-xs); color: var(--text-disabled); white-space: nowrap; }
 .saved-pw { display: flex; align-items: center; gap: var(--sp-2); height: var(--control-h); padding: 0 var(--sp-1) 0 var(--sp-3); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-base); font-size: var(--fs-sm); }
 .mi.is-disabled { color: var(--text-disabled); cursor: not-allowed; }
+
+/* A palette row an RDP tab cannot run (design 21d2). */
+.mi.is-disabled { color: var(--text-disabled); cursor: not-allowed; }
+.mi.is-disabled .ic { opacity: 0.5; }
+
+/* The RDP tab (design 22a): the desktop scaled to fit, letterboxed. */
+.rdp-area { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--surface-desk); overflow: hidden; }
+.rdp-canvas { display: block; outline: none; image-rendering: auto; cursor: default; }

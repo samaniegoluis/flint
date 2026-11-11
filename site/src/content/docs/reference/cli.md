@@ -110,7 +110,7 @@ See [Credentials](/guides/credentials/).
 
 | Command | What it does |
 |---|---|
-| `connect <alias>` | Interactive shell, through the host's jump hosts, or the host's initial command (`--no-command` skips it). Exits with the remote shell's status |
+| `connect <alias>` | Interactive shell, through the host's jump hosts, or the host's initial command (`--no-command` skips it). Exits with the remote shell's status. On an RDP host it asks Flint to open the remote desktop tab and exits 0 (see below) |
 | `exec <alias> -- <command>` | Run one command. Streams its stdout and stderr and exits with its status |
 | `exec <alias> --sudo -- <command> [args]` | Run it as root. Flint's window asks you for each one, and Flint types the sudo password. Needs Flint open |
 | `known-host list` | Every recorded server key |
@@ -121,6 +121,11 @@ See [Credentials](/guides/credentials/).
 refused), and `exec` takes `--exec-timeout <secs>` (default 600). With `--json`, `exec`
 prints `{host, exit_code, signal, stdout, stderr, duration_ms}` and `connect` prints
 `{host, exit_code}` after the session. See [Connecting](/guides/connecting/).
+
+`connect` on an [RDP host](/guides/remote-desktop/) never shows a desktop in the
+terminal: with Flint serving the vault it opens the host's tab there, prints `Opened
+<alias> in Flint (remote desktop).` (`{host, type, opened}` with `--json`) and exits 0;
+with no Flint serving it, it fails with `wrong_host_type`.
 
 With `--sudo`, the words after `--` are the command and its arguments, each passed to
 `sudo` as one word, never parsed by a shell (`--sudo -- sh -c '…'` for a pipe). The
@@ -260,7 +265,8 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 20 | `exists` | `cp`: the file is already there; `--force` replaces it |
 | 21 | `not_a_directory` | `cp`: a path that has to be a folder is a file |
 | 22 | `port_in_use` | `tunnel up`: another program already listens on that local port |
-| 23 | `wrong_host_type` | An RDP host given to something only SSH does: `exec`, `cp`, `connect`, `host test`, a tunnel, a jump host |
+| 23 | `wrong_host_type` | An RDP host given to something only SSH does: `exec`, `cp`, `host test`, a tunnel, a jump host; or `connect` on one with no Flint serving the vault |
+| 24 | `refused` | A remote desktop server answered and refused the connection (in the app; no command returns it yet) |
 
 The codes are stable: scripts can rely on them.
 
