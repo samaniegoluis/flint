@@ -23,7 +23,7 @@ is `docs/build-log.md` plus `git log`.
 
 | File | What it holds |
 |---|---|
-| [`docs/spec.md`](docs/spec.md) | The current spec (v7, Paste into the terminal): scope, stack, architecture, **Principles**, milestones. Earlier: [`spec-v1.md`](docs/spec-v1.md) (MVP), [`spec-v2.md`](docs/spec-v2.md), [`spec-v3.md`](docs/spec-v3.md) (Flint holds the vault), [`spec-v4.md`](docs/spec-v4.md) (Files), [`spec-v5.md`](docs/spec-v5.md) (Between servers), [`spec-v6.md`](docs/spec-v6.md) (Tunnels) |
+| [`docs/spec.md`](docs/spec.md) | The current spec (v8, Embedded RDP): scope, stack, architecture, **Principles**, milestones. Earlier: [`spec-v1.md`](docs/spec-v1.md) (MVP), [`spec-v2.md`](docs/spec-v2.md), [`spec-v3.md`](docs/spec-v3.md) (Flint holds the vault), [`spec-v4.md`](docs/spec-v4.md) (Files), [`spec-v5.md`](docs/spec-v5.md) (Between servers), [`spec-v6.md`](docs/spec-v6.md) (Tunnels), [`spec-v7.md`](docs/spec-v7.md) (Paste into the terminal) |
 | [`ROADMAP.md`](ROADMAP.md) | Everything beyond the current spec. The backlog |
 | [`docs/build-log.md`](docs/build-log.md) | One line per finished milestone. The only state |
 | [`docs/decisions.md`](docs/decisions.md) | One-line decision log |
@@ -63,7 +63,7 @@ is `docs/build-log.md` plus `git log`.
 9. **Isolate an unexplained failure before the second attempt.** A test that fails or
    freezes with no known cause is never chased by rerunning a whole suite. Run it alone
    (`FLINT_E2E_ONLY=<step>` for the e2e suites, a name filter for `cfire test`) in a loop
-   of N runs that prints the rate (`scripts/repeat.sh <step> <N>` once M27 adds it), and
+   of N runs that prints the rate (`scripts/repeat.sh <run> <N>`; on macOS the runs use the real window, D-068), and
    iterate there. A fix counts when that loop shows 0 failures in N runs; then the step
    goes back into its run and the full suite runs once to confirm. The measured rate goes
    into the failure's ROADMAP entry (owner, 2026-11-10).

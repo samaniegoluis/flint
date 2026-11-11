@@ -12,16 +12,14 @@
   const KEY = `@@KEY@@`;
   // gui-e2e.sh runs the app once per run, each on a fresh vault and config folder:
   // every run creates the vault and connects to `local`, then does only its own steps.
-  // Short runs keep a hidden page under the point where WebKit stops it (ROADMAP,
-  // "one more tab in the main run freezes the page"), and a freeze fails one run by
-  // name instead of every step after it.
+  // A failure names its run, and one run can be repeated alone (scripts/repeat.sh).
   //   terminal  the shell, files, a jump host, tabs, copy between servers, split panes,
   //             a changed host key
   //   vault     test connection, initial command, palette, settings, known hosts,
   //             sidebar and groups, rename, lock, the tray
   //   tunnels   tunnels in the app (milestone 23)
   //   paste     an image pasted into the terminal lands on the server (milestone 25)
-  //   vim       vim in the terminal (it freezes on macOS at times, ROADMAP)
+  //   vim       vim in the terminal
   const RUN = '@@RUN@@';
   const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim'];
   const MASTER = 'e2e-master-password-42';
@@ -831,6 +829,21 @@
       await runInTerminal(`od -An -tx1 -N8 ${path} | tr -s ' '; echo head-$((6*7))`, 'head-42');
       await check(termText().includes(' 89 50 4e 47 0d 0a 1a 0a'), 'the bytes on the server are the pasted image');
 
+      await setStep('paste: an empty paste event reads the clipboard');
+      // WebKitGTK hands the page a paste event with nothing in it: the core reads the
+      // system clipboard (the run's private board on macOS) and stages the image itself.
+      await window.backend.e2e_clipboard_png({ name: btoa(String.fromCharCode(...pngBytes)) });
+      const nativeRe = /(\/\S*\/\.cache\/flint\/paste\/p-[a-z0-9-]+\/paste\.png)/;
+      await type('/bin/ls -ln ');
+      await pasteData(null, []);
+      const nativePasted = await waitFor(() => fullText().match(nativeRe), 'the path of the image the core read', 20000);
+      await check(true, `an empty paste event pastes the clipboard's image, read by the core (${nativePasted[1]})`);
+      await type('; echo native-$((6*7))');
+      await enter();
+      await waitFor(() => termText().includes('native-42'), 'the ls of the image the core read');
+      await check(new RegExp(`-rw-------@? +1 +\\d+ +\\d+ +${pngBytes.length} `).test(fullText().split('native-42')[0].slice(-400)), `it is on the server, mode 0600, ${pngBytes.length} bytes`);
+      const nativeFolder = nativePasted[1].replace(/\/[^/]+$/, '');
+
       await setStep('paste: text wins');
       const before = pathCount();
       await pasteData('echo text-wins-$((6*7))', [png]);
@@ -848,7 +861,7 @@
       await setStep('paste: the limit is a setting');
       const saved = await window.backend.settings_get({});
       await check(saved.paste_limit_mb === 20, 'the paste limit defaults to 20 MB');
-      await runInTerminal(`rm -rf ${folder}; echo cleaned-$((6*7))`, 'cleaned-42');
+      await runInTerminal(`rm -rf ${folder} ${nativeFolder}; echo cleaned-$((6*7))`, 'cleaned-42');
     }
 
     if (RUN === 'tunnels') {

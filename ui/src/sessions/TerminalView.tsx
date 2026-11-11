@@ -21,7 +21,7 @@ import { sessions } from './store';
 import { parseOsc7 } from '../files/paths';
 import styles from './TerminalView.module.css';
 import { paletteVars, themePalette } from '../lib/terminalThemes';
-import { overLimit, pasteChoice, uploadPaste } from './paste';
+import { discardStaged, overLimit, pasteChoice, pasteStaged, readClipboard, uploadPaste } from './paste';
 
 
 function readVar(name: string, el: Element = document.documentElement): string {
@@ -209,28 +209,49 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     // An image on the clipboard with no text (milestone 25): written on the pane's
     // host, and its path pasted instead. Caught before xterm.js's own paste handler,
     // which would paste nothing. ⌘V on macOS, Ctrl+Shift+V on Linux.
-    const onPaste = (e: ClipboardEvent) => {
-      const choice = pasteChoice(e.clipboardData);
-      if (choice.kind !== 'image') return;
-      e.preventDefault();
-      e.stopPropagation();
+    // `upload` writes the image on the session's host and resolves to the text to paste;
+    // `drop` frees what was staged when it is refused before that.
+    const pasteImage = (file: { name: string; size: number }, upload: (session: string) => Promise<string>, drop: () => void) => {
       const { limit, notify: say } = pasteRef.current;
       const pane = sessions.pane(tabId);
       if (!pane || pane.status !== 'ready' || !pane.session) {
+        drop();
         say('Connect first: the image is pasted on the server', 'error');
         return;
       }
-      const tooBig = overLimit(choice.file, limit);
+      const tooBig = overLimit(file, limit);
       if (tooBig) {
+        drop();
         say(tooBig, 'error');
         return;
       }
       say(`Pasting image to ${pane.alias}…`, 'info');
       const session = pane.session;
-      uploadPaste(session, choice.file).then((text) => {
+      upload(session).then((text) => {
         // The pane may have reconnected or closed meanwhile: paste only into the same session.
         if (alive && sessions.pane(tabId)?.session === session) term.paste(text);
       }).catch((err: { message: string }) => say(`Paste to ${pane.alias} failed: ${err.message}`, 'error'));
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      const choice = pasteChoice(e.clipboardData);
+      if (choice.kind === 'text') return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (choice.kind === 'image') {
+        pasteImage(choice.file, (session) => uploadPaste(session, choice.file), () => {});
+        return;
+      }
+      // WebKitGTK hands the page an empty paste event: the core reads the clipboard.
+      readClipboard().then((r) => {
+        if (!alive) {
+          if (r.kind === 'image') discardStaged(r.image);
+          return;
+        }
+        if (r.kind === 'text') term.paste(r.text);
+        if (r.kind === 'image') {
+          pasteImage({ name: 'The image', size: r.size }, (session) => pasteStaged(session, r.image), () => discardStaged(r.image));
+        }
+      }).catch((err: { message: string }) => pasteRef.current.notify(`Paste failed: ${err.message}`, 'error'));
     };
     term.element?.addEventListener('paste', onPaste, true);
 

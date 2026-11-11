@@ -10,6 +10,7 @@ package main
 import "ext:webui"
 import "core:json"
 import "core:encoding/hex"
+import "core:encoding/base64"
 import "core:fs"
 import "core:os"
 import "core:time"
@@ -40,6 +41,32 @@ fn e2e_timeout_ms() -> i32 {
         return E2E_TIMEOUT_MS
     }
     return i32(ms)
+}
+
+// Whether the end-to-end run on macOS opens the real window (FLINT_GUI_E2E_VISIBLE=1,
+// milestone 27) instead of cfire's offscreen one. The offscreen window sits off every
+// screen and WebKit suspends its page at times (ROADMAP, the gui-e2e freezes); the real
+// one runs the app's own event loop, as on Linux, and a person sees the run.
+fn e2e_visible() -> bool {
+    return os.getenv("FLINT_GUI_E2E_VISIBLE") == "1"
+}
+
+// How often the visible run's cap checks the clock and whether the app is quitting.
+E2E_CAP_TICK_MS: i64 = 200
+
+// The visible run's cap: the offscreen run stops itself at e2e_timeout_ms; app.run()
+// does not, so this worker quits the app then, and the page's missing verdict is named
+// as usual (main.cf). Ends early when the app quits.
+fn run_e2e_cap(st: GuiState, mut app: webui.App) {
+    deadline := time.now_ms() + i64(e2e_timeout_ms())
+    for !st.holder.quitting() {
+        if time.now_ms() >= deadline {
+            write_stderr("flint-gui: the e2e run hit its cap\n")
+            app.quit()
+            return
+        }
+        time.sleep_ms(E2E_CAP_TICK_MS)
+    }
 }
 
 // ---- Requests ---------------------------------------------------------------------
@@ -818,6 +845,19 @@ fn rpc_e2e_report(params: str, mut app: webui.App) -> str! {
 // The headless run's private clipboard, to check an OSC 52 copy. Bound only in that run.
 fn rpc_e2e_clipboard(clip: OsClipboard) -> str! {
     return json.stringify(NameReq{ name: clipboard_read_text(clip.board) })
+}
+
+// Puts a PNG (base64 in `name`) alone on the run's clipboard, as a screenshot tool
+// does, for the paste whose event arrives empty (milestone 25 on Linux).
+fn rpc_e2e_clipboard_png(params: str, clip: OsClipboard) -> str! {
+    req := try parse_req[NameReq](params)
+    png := base64.decode_str(req.name) or err {
+        return error(coded(ERR_INVALID, "not base64"))
+    }
+    if clipboard_copy_png(clip.board, png) != 0 {
+        return error(coded(ERR_IO, "the clipboard refused the image"))
+    }
+    return ok_json()
 }
 
 fn rpc_e2e_log(params: str, mut app: webui.App) -> str! {

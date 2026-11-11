@@ -50,7 +50,34 @@ fn (mut self: OsClipboard) clipboard_copy_text(text: str) -> void! {
     }
 }
 
+// What a paste would take: the clipboard's text, else an image as PNG. Read here
+// because WebKitGTK's paste event reaches the page empty (milestone 25 on Linux).
+fn (mut self: OsClipboard) clipboard_read() -> ClipboardContent! {
+    mut rc: i32 = 0
+    mut text := ""
+    mut mime := ""
+    mut image := ""
+    name := self.board
+    // CFIRE-UPSTREAM: CF-053
+    cpp {
+        rc = flint_clip::read_paste(name, text, mime, image);
+    }
+    if rc == 2 {
+        return error(coded(ERR_IO, "no clipboard is available"))
+    }
+    return ClipboardContent{ text: text, mime: mime, image: image }
+}
+
 // ---- For the tests -----------------------------------------------------------------
+
+fn clipboard_copy_png(board: str, png: str) -> i32 {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-053
+    cpp {
+        rc = flint_clip::copy_png(board, png);
+    }
+    return rc
+}
 
 fn clipboard_read_text(board: str) -> str {
     mut s := ""

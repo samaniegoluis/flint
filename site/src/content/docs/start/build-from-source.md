@@ -173,7 +173,7 @@ cd ui && npm test
 scripts/gui-e2e.sh
 ```
 
-It builds the app and drives its real UI in a hidden WebView against the throwaway
+It builds the app and drives its real UI in its window against the throwaway
 `sshd`s: creates a vault, adds a key and hosts, trusts a host key, types in the terminal,
 checks the PTY size, reconnects, connects through a jump host, meets a changed host key
 behind a TCP forwarder and replaces it, uses the palette and settings, saves and starts tunnels, then locks
@@ -182,14 +182,29 @@ and sleep) and unlocks. It also checks that no password reaches the page and tha
 is readable in its file. It uses its own config folder and `FLINT_KEYCHAIN=off`, so your
 keychain is not touched.
 
-It runs as four short runs, each a fresh launch of the app on its own vault: `terminal`
+It runs as five short runs, each a fresh launch of the app on its own vault: `terminal`
 (the shell, files, a jump host, tabs, split panes, a changed host key), `vault` (the
-palette, settings, groups, locking), `tunnels` and `vim`. To repeat
-only some of them:
+palette, settings, groups, locking), `tunnels`, `paste` (an image pasted into the
+terminal) and `vim`. To repeat only some of them:
 
 ```sh
 FLINT_E2E_ONLY=tunnels,vim scripts/gui-e2e.sh
 ```
+
+On macOS each run opens the app's real window, on screen, and you can watch it click and
+type. Leave it alone until the run ends: covered, or on another Space, the window is
+hidden again. `FLINT_E2E_VISIBLE=0` uses an offscreen WebView instead, with nothing on
+screen; WebKit suspends that page about a second after nothing happens in it, so a check
+that times out there stops the run until its cap instead of failing.
+
+To measure a run that fails now and then, repeat it alone and read its failure rate:
+
+```sh
+scripts/repeat.sh vim 10
+```
+
+It builds the app and starts the `sshd`s once, then launches the run N times and lists
+each failure with the last step its page logged.
 
 ### The CLI through the app
 

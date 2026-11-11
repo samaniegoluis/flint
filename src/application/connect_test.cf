@@ -561,7 +561,7 @@ test "a saved password is revealed or copied only by name, and the copy is clear
     reveal_password(crypto, store, s, "key", "k1") or err { got_code = error_code_of("{err.message()}") }
     assert_eq(got_code, "invalid")
 
-    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
     try copy_password(crypto, store, s, mut clip, "credential", "ops")
     assert_eq(clip.text, "cred-pw")
     assert_eq(clip.clear_after_ms, 30000)
