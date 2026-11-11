@@ -37,7 +37,10 @@ fi
 
 # shellcheck source=bin/env.sh
 source "$here/bin/env.sh"
-cfire build --target x86_64-w64-mingw32
+# The CLI and the app only: build.cf's other targets (milestone 28's RDP spike, on
+# libfreerdp) have no Windows build.
+cfire build --target x86_64-w64-mingw32 flint
+cfire build --target x86_64-w64-mingw32 FlintGui   # by its build.cf variable: "Flint" is the CLI's
 
 out="build/windows/Flint"
 rm -rf "$out"

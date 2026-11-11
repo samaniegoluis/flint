@@ -34,6 +34,31 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
   when only vim fails). gui-e2e **180 pass**, the narrow-window checks included; serve-e2e
   51/51. Milestone 24 removes the Tether import: then `windows/gui-e2e.sh` drops the
   `.tether` fixture and the key in `C:\tmp`.
+- **Merged `main` again (2026-11-11):** milestones 22-25b and 27-29 (tunnels, the Tether
+  importer removed, paste an image, test freezes, the RDP spike and RDP hosts), up to
+  `6e34383`; same cfire `c5b1d4b` + 0001-0009. Windows work in the merge:
+  - **Tunnels** (`ssh/native/flint_tunnel.hpp`, POSIX only on `main`): sockets through
+    `flint_sock`, a loopback socket pair as the worker's wake pipe (WSAPoll waits on
+    sockets only), no `SO_REUSEADDR` on a listener (on Windows it lets another socket
+    share a bound port), the port's holder from `GetExtendedTcpTable` looked up at run
+    time with its rows declared locally (`iphlpapi.h` pulls in `ocidl.h`, which clashes
+    with patch 0004's COM declarations in the app; mingw's `tcpmib.h` lacks the
+    `*_OWNER_PID` rows).
+  - **Paste an image** (`uievents/native/flint_clipboard.hpp`): `read_paste` and
+    `copy_png` on the registered `PNG` clipboard format; a bitmap alone (`CF_DIB`) is not
+    converted, so it pastes nothing.
+  - **Builds:** `windows/build-gui.sh` builds `flint` and `FlintGui` only (the RDP spike
+    needs libfreerdp; `cfire build Flint` picks the CLI, whose build.cf variable is
+    `Flint`). `windows/test-suites.sh` leaves out `src/adapters/rdp` and copies no vault
+    testdata (gone with Tether).
+  - **Checks:** `windows/gui-e2e.sh` runs main's five runs; the tunnels run dials the
+    tunnel on Windows' `127.0.0.1` and a fourth relay holds `127.0.0.1:<port 1>` for the
+    "port in use" check. `windows/cli-smoke.sh` gains the tunnel commands.
+  - **Two shared test fixes went to `main`:** the paste tests built 10 MiB a byte at a
+    time (quadratic, about an hour; `0be0551`), and the paste steps typed while an async
+    prompt redrew, so the `ls` lost the pasted path (`6e34383`).
+  - Owner checks to do in the installed app: a tunnel used by a Windows program; a
+    screenshot (Win+Shift+S) pasted into an SSH session with Ctrl+V.
 - **Owner checks done:** Win+L with the app unlocked locks the vault: after signing back
   in to Windows, Flint asks for the master password. On the owner's own vault in the
   installed app: unlocking with "Remember on this computer" stores a Generic, local-machine
@@ -150,7 +175,8 @@ otherwise.
 
 | Check | Result |
 |---|---|
-| `windows/build-gui.sh` | CLI, app and page build with no change beyond the merge (milestones 20 and 21) |
+| `windows/build-gui.sh` | CLI, app and page build (milestones 20-29 merged; 22-25 needed the Windows work above) |
+| After milestones 22-29 (2026-11-11) | `test-suites.sh` **10 suites, 1239 tests**; `cli-smoke.sh` **60/60** (11 tunnel checks new); `gui-e2e.sh` **275 checks in five runs**: terminal 89, vault 113, tunnels 33, paste 24 (the core reading the real Windows clipboard included), vim 16; `serve-e2e.sh` **51/51** |
 | `windows/test-suites.sh` | **10 suites, 1071 tests pass** on Windows: config 89, crypto 89, fonts 81, ipc 93, keychain 83, process 89, uievents 95, vault 114, application 193, clicmd 145. `ssh` not run (needs sshd on `127.0.0.1` from Windows). First run: ipc, vault and clicmd failed only because "/tmp" from a WSL folder is the WSL share; process had two POSIX-only asserts |
 | `windows/cli-smoke.sh` | 49/49 |
 | `windows/gui-e2e.sh` | **180 pass** after merging milestone 21 (+2: the Files and Hosts views drawn whole over the terminal in a narrow window, on WebView2). The vim run on its own (`FLINT_E2E_ONLY=vim`) fails as before, now by name: `timed out waiting for "vim-42"`, exit 3. **178 pass** after merging milestone 20 (the 25-check split-panes step included). Before that, **155 pass**: 138 + main's milestones 18-19 (two panes, copy between servers, a host key asked inside the pane, Skip) + 2 for the Windows copy and paste keys (none reaches the remote; Ctrl+C over a selection clears it). Skipped as before: vim, the focus trap. A real paste from the Windows clipboard into an SSH session: owner, with Shift+Insert, Ctrl+Shift+V and Ctrl+V, and Ctrl+C over a selection copies without interrupting the remote while Ctrl+C with none still interrupts (2026-11-09). Ctrl+Insert not checked by a person |

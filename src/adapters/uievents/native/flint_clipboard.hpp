@@ -300,6 +300,52 @@ inline bool is_concealed(const std::string&) {
     return f != 0 && ::IsClipboardFormatAvailable(f);
 }
 
+// What a paste would take (milestone 25): the text, else the registered "PNG" format,
+// which browsers and the Snipping Tool put beside their bitmap. A bitmap alone (CF_DIB)
+// is not converted: no image then. 0, or 2 when the clipboard cannot be opened.
+inline int read_paste(const std::string& name, std::string& text, std::string& mime, std::string& data) {
+    text = read_text(name);
+    if (!text.empty()) return 0;
+    UINT png = ::RegisterClipboardFormatW(L"PNG");
+    if (!png || !::IsClipboardFormatAvailable(png)) return 0;
+    if (!open_board()) return 2;
+    if (HANDLE h = ::GetClipboardData(png)) {
+        if (const void* p = ::GlobalLock(h)) {
+            SIZE_T n = ::GlobalSize(h);
+            if (n > 0) {
+                data.assign(static_cast<const char*>(p), static_cast<size_t>(n));
+                mime = "image/png";
+            }
+            ::GlobalUnlock(h);
+        }
+    }
+    ::CloseClipboard();
+    return 0;
+}
+
+// For the tests: puts PNG bytes alone on the clipboard, as the "PNG" format.
+inline int copy_png(const std::string&, const std::string& bytes) {
+    UINT png = ::RegisterClipboardFormatW(L"PNG");
+    if (!png || !open_board()) return 2;
+    int rc = 1;
+    if (::EmptyClipboard()) {
+        HGLOBAL g = ::GlobalAlloc(GMEM_MOVEABLE, bytes.size());
+        if (g) {
+            if (void* p = ::GlobalLock(g)) {
+                std::memcpy(p, bytes.data(), bytes.size());
+                ::GlobalUnlock(g);
+                if (::SetClipboardData(png, g)) {
+                    rc = 0;
+                    g = nullptr;   // the clipboard owns it now
+                }
+            }
+            if (g) ::GlobalFree(g);
+        }
+    }
+    ::CloseClipboard();
+    return rc;
+}
+
 inline void release_board(const std::string&) {}
 
 #elif defined(__linux__)

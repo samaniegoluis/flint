@@ -12,13 +12,15 @@
 #
 # src/adapters/ssh is left out: it wants sshd on 127.0.0.1:2222, which this WSL cannot
 # serve to Windows (see the port guide); cli-smoke.sh and the e2e runs cover SSH.
+# src/adapters/rdp is left out too: milestone 28's RDP spike needs libfreerdp, which has
+# no Windows build here (main checks RDP on Windows at milestone 30).
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 source "$here/bin/env.sh"
 suites=("$@")
 if [[ ${#suites[@]} == 0 ]]; then
-  mapfile -t suites < <(cd "$root" && find src -name '*_test.cf' -not -path '*/.cfire/*' | xargs -n1 dirname | sort -u | grep -v '^src/adapters/ssh$')
+  mapfile -t suites < <(cd "$root" && find src -name '*_test.cf' -not -path '*/.cfire/*' | xargs -n1 dirname | sort -u | grep -v -e '^src/adapters/ssh$' -e '^src/adapters/rdp$')
 fi
 WT="$(wslpath "$(cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r')")/flint-tests"
 rm -rf "$WT"; mkdir -p "$WT"

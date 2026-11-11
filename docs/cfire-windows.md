@@ -420,6 +420,36 @@ fixed · [patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-o
 
 ---
 
+## Upstream at `f611aa2` (0.11.0, 2026-11-10): read, not adopted
+
+> **After the handoff, not sent.** Read on 2026-11-11 from `git diff c5b1d4b f611aa2`,
+> nothing built or run: Flint stays on `c5b1d4b` + 0001-0009 (the owner: the new cfire
+> breaks Flint; `main`'s `docs/cfire-upstream.md` has its own check at `d182f32`). Every
+> line below is **[read]**; each is checked by running in the port guide's next phase.
+
+| ID | Upstream | Where |
+|---|---|---|
+| W-01 | `import cpp` reads `CFIRE_CXX` | `src/clang_bridge.hpp`, `src/build/pch.hpp` |
+| W-02 | test and run binaries get `.exe` for a Windows triple | `src/main.cpp` |
+| W-03 | `os.cwd()` returns `std::string` | `runtime/core/os.hpp` |
+| W-04 | Windows targets link `-static` (and `ws2_32`, `advapi32`, `shell32`) | `src/buildsys.hpp` |
+| W-05 | stdin/stdout/stderr set to `_O_BINARY`: `println` writes `\n` | `runtime/cfire_prelude.hpp` |
+| W-06, W-09, W-10 | its own WebView2 backend: COM declarations when `<WebView2.h>` is missing, `eventtoken.h` when present; no SDK needed. Without `WebView2Loader.dll` it loads the installed runtime's `EmbeddedBrowserWebView.dll` and calls `CreateWebViewEnvironmentWithOptionsInternal`, **an undocumented entry point** a runtime update may change | `runtime/core/webui/windows_webview2.hpp` |
+| W-07 | a `windows-latest` CI job on MSYS2 CLANG64 (green or not: not checked) | `.github/workflows/ci.yml` |
+| W-08 | `*_unix.cf` skipped on Windows | `src/build/package_loader.hpp` |
+| W-11 | `os.args()` from `CommandLineToArgvW`, UTF-8 | `runtime/cfire_prelude.hpp` |
+| W-12, W-13 | PNG or `.ico` window and tray icons; the build file's icon embedded with `windres` | `windows_webview2.hpp`, `src/build/windows_resources.hpp` |
+| W-14 | `fs.exists` sees a reparse point it cannot follow (AF_UNIX) | `runtime/core/fs.hpp` |
+| W-15 | dialog buffers of 32768 characters (`GetOpenFileNameW` still, not `IFileOpenDialog`) | `windows_webview2.hpp` |
+| **W-16** | **open:** `MoveFocus` is declared but never called, and the WndProc has no `WM_SETFOCUS` | `windows_webview2.hpp` |
+
+The port's own Flint workarounds that would go: W-04's static flags, W-09's
+`EventToken.h`, W-10's SDK and `WebView2Loader.dll`, W-13's `.ico` (the port guide,
+"Next phase"). To weigh then: whether Flint ships `WebView2Loader.dll` anyway rather than
+rely on the undocumented fallback.
+
+---
+
 ## Seen along the way, not Windows-specific
 
 Not in this file's scope. They go to `cfire-upstream.md` on Flint's `main` when that
