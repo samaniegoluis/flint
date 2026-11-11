@@ -7,13 +7,7 @@ Direction **A (Editor)** as the base, plus B's command palette and unlock layout
 | Path | What it is |
 |---|---|
 | `screens/NN-screen-name.{dark,light}.html` | One plain HTML file per screen and theme. Open in a browser at ≥ 1280 px wide. |
-| `screens/16*.{dark,light}.html` | v3 · milestones 12a and 12b: caller approval, unlock with a waiting caller, Settings › Access, and the Agents status item. |
-| `screens/17*.{dark,light}.html` | v3 · milestone 13: the approval window as root (`exec --sudo`), the host's sudo password, and Activity with sudo rows. |
-| `screens/16e*.{dark,light}.html` | v4 · milestone 15: whole commands (summary + "Show full command", the full-command modal), the activity entry, and activity retention. |
-| `screens/16f*.{dark,light}.html` | v4 · milestone 16: the approval window for `flint cp` (direction, both paths, `-r` and `--force`). |
-| `screens/16g*`, `14d*`, `18*` `.{dark,light}.html` | v5 · milestones 18–20: the approval for a copy between two hosts (18), two file panes in the Files view (19), split terminal panes (20). |
-| `screens/06c*`, `20*`, `16h*` `.{dark,light}.html` | v6 · milestone 23: tunnels in the host editor, the Tunnels view, the toolbar menu, the tab mark, the palette, and the approval window for `flint tunnel up`. |
-| `screens/19*.{dark,light}.html` | Side panel pinned or floating (design message 6, ROADMAP §6): not built in v6; the pin button drawn in the other screens' headers waits for it. |
+| `screens/v3-*.html` | v3 · milestone 12: caller approval, unlock with a waiting caller, Settings › Access, and the Agents status item. |
 | `tokens.css` | **The source of truth.** CSS custom properties keyed by `html[data-theme="dark"\|"light"]`. Import once at the app root. |
 | `flint.css` | The mockups' component classes. It's a reference for your CSS Modules, not production CSS. It uses tokens only. |
 | `components.{dark,light}.html` | The component sheet. |
@@ -164,7 +158,6 @@ The rule is: **macOS ⌘ → Linux Ctrl+Shift**, and **⇧⌘ → Ctrl+Alt+Shift
 - Clicking outside the card does nothing; only Deny, esc or the countdown deny.
 - Only the box and its label are clickable on options, not the whole row.
 - Deny has initial focus. Allow needs ⌘↵ and then the presence step: Touch ID, polkit, or the master password.
-- **As built:** initial focus goes to the first password field when the window shows one (16a4, 17a2, 17a4 draw it focused), otherwise to Deny. 17a2 draws both the field and Deny focused; only one can be. Deny's ring shows on `:focus`, not only `:focus-visible`, so it is visible however the window was opened.
 
 ## Run as root — v3, milestone 13 (screens 17*)
 
@@ -192,7 +185,7 @@ No grant or token ever covers a root command. Each one needs its own approval wi
 | `16e4a` | Activity (16c5) with **Keep**: 30 days · 90 days · 1 year · No limit, with 90 selected. Rows are buttons with hover and focus states, and commands are clamped to 3 lines. |
 | `16e4b` | Confirm when a shorter period removes entries: "Keep activity for 30 days?" / "412 entries are older than 30 days and will be removed now. This cannot be undone." / Cancel (focused) and **Remove 412 entries** (destructive). |
 
-## flint cp — grant request variant, milestone 16 (screens 16f*)
+## flint cp — grant request variant (screens 16f*)
 
 These are 16a1 with Hosts, Actions (Run commands marked "needed") and Duration unchanged. The header reads "<caller> wants to copy files to <host>" (or "from <host>"). Under the Request line, a transfer block shows:
 - **Direction**, as a strip with a pill for each end and an arrow between them: `This computer → CodeBox` or `CodeBox → This computer`, plus an Upload or Download badge.
@@ -204,8 +197,6 @@ These are 16a1 with Hosts, Actions (Run commands marked "needed") and Duration u
 | `16f1` | Upload a folder (`-r`), with long paths on both ends |
 | `16f2` | Download a single file |
 | `16f3` | Download a folder with `--force`, showing the warning strip |
-
-- **As built:** the window does not connect before it asks, so **To** is the destination as given, with the source's name added when it ends in `/` (a folder, D-054). `.` and a destination without a trailing `/` stay as given: whether they are folders is only known once connected. A remote path is shown as `flint cp` was given it, relative to the login folder when it does not start with `/`.
 
 ## v5 — server to server, and split panes (screens 16g*, 14d*, 18*)
 
@@ -226,17 +217,11 @@ The bytes always flow server A → Flint → server B; no key or password is eve
 | `18f` | Four panes at 900 × 600, with the sidebar collapsed and an icon-only toolbar. |
 | `18g` | Split panes with the Files view. Files follows the focused pane, and its header carries the same pane number badge. |
 
-- **As built (16g, milestone 18, D-058):** the host's colour square is its own colour (none: grey), and its name on the network shows under the alias only when it differs. 16g3's tags come from the caller's live grants when the window opens; a grant that ends while it waits loses its tag. A 16g1 with no grant yet shows no tags.
-
-- **As built (14d, milestone 19, D-059):** the second pane **floats** over the terminal beside the Files view, which keeps its width, instead of widening the docked view to 700 px: the terminal is never resized. Its header carries the hide button (‹) and **One pane**; the role hint (*Flint-only session* / *its tab's session*) sits on its own line under it. While two-pane mode is on, **Copy to another server…** becomes the chip `⇄ <host> · N copying`, which shows a hidden pane again; Esc or a click in the terminal hides it, and the mode, its session and its copies stay. The first pane keeps its 14a layout (no role tag); the queue stays there, a relay row's route `A › B` on a line under the name. ⌘← copies from the second pane back. Left out: 14d5b's **Save to vault** (save a password in the host editor) and 14d5c's **Once** (a host key is trusted or not); a changed host key in the pane says to open a tab on the host.
-
-- **As built (18, milestone 20, D-061):** a single pane keeps v4's frameless terminal; the frame, headers and dividers appear from two panes. The Split menu's layouts are named *Side by side*, *Stacked*, *Grid 2 × 2* and *One large + two small*, and stay disabled until the tab has two panes. Dividers sit in the 4 px gaps and turn ember on hover; they also take the arrow keys. The palette lists *Open <host> in a new pane* for its three best matches while searching. In a narrow window the toolbar keeps its icons only (18f) for every tab, not just split ones.
-
 **Focus in split panes:** the focused pane has an ember border and a tinted header, and the other panes' output is dimmed to 60 %. Either cue alone is weak with busy output or in light mode; together they hold up. Pane numbers 1–4 appear in pane headers, the toolbar badge ("pane 2 of 4") and the Files header.
 
 **Shortcut change:** Split right takes ⌘D, so **Duplicate session moves to ⌥⌘D**.
 
-## Side panel, pinned or floating (ROADMAP §6, screens 19*; not in v6)
+## Side panel, pinned or floating — milestone 19 (screens 19*)
 
 **Rule:** one panel and one width for every side view (`--panel-w`, 300 px), with a pin in its header (⌥⌘P).
 
@@ -301,17 +286,35 @@ The bytes always flow server A → Flint → server B; no key or password is eve
 
 **Proposed shortcut:** ⇧⌘T for the Tunnels view.
 
-## What Flint left out (2026-11-07)
+## Remote desktop (RDP) hosts, v8 (screens 21*, 22*)
 
-The design is adapted to what Flint has; these parts wait on the roadmap.
+**Host type:** chosen in the first step of New host and fixed after that. To change it, remove the host and add it again.
+- The sidebar "+" and the palette's "New host…" open the type step.
+- "New SSH host" and "New RDP host" skip it.
 
-- **14a / 14b (milestone 17)**: a finished download has no **Show in Finder** button yet. An upload onto an existing name asks in its queue row (**Replace** / **Skip**), not in a dialog. Upload picks one file; folders upload by dragging them in. The crosshair is greyed out, with a tooltip, while the shell sends no OSC 7. The status bar has no transfer item.
+**Type glyphs:** `i-ssh` is a prompt and `i-rdp` is a window on a stand. Use them as `.htype` at 12 px (tree, tabs, lists), `.md` at 14 px (palette, menus) and `.lg` at 16 px (editor). They are neutral (text-tertiary) and sit after the colour mark, so the host colour keeps its job. The sapphire monitor icon ("On this Mac", 16h) is a different glyph.
 
-- **16c3 / 16c4**: creating a token from the app. Tokens are made with `flint token create` and approved in the window.
-- Token expiry **Never**, and a token's **Last used** column.
-- Activity's **exit code**, its **approved / revoked** event rows, its **filters**, and the sudo results **Not a sudoer** and **Sudo password refused**. Activity shows Allowed, Denied and Timed out.
-- **17b**: the sudo option **None: ask each time**. Without a password to type (none of the host's, no login password), the window asks for one.
-- **17a1**: the command label says "Command", not "runs exactly as shown": Flint runs `sudo -S -k -p <prompt> --`, and the `sudo` chip says so in its tooltip.
-- **16e2a**: the size line says "1,397 characters", not "runs exactly as shown" (the request is the caller's command line, not what the host runs).
-- **16e3a / 16e3b**: the activity entry has no process chain, grant detail, exit code, duration or sudo result: the log keeps the caller's label, how it was let in, the host, the action and Allowed / Denied / Timed out. A sudo entry's argument chips are read back from the logged command, and shown as text when it was cut.
-- **16e4b**: the confirm is the app's shared one (Cancel as a ghost button).
+| Screen | What it shows |
+|---|---|
+| `21a1` | Type step: two large radio cards, SSH and Remote desktop (RDP). Keyboard: ← → to move, 1 / 2 to pick, ↵ to continue. |
+| `21a2` | Palette entry points: New host… / New SSH host / New RDP host. |
+| `21b1` | RDP host editor. The fixed type badge in the header has a tooltip. Fields: Address, Port (placeholder 3389), User, Domain ("optional, e.g. CORP") with the `DOMAIN\user` / `user@domain` hint. Login is either an own password (Saved · Change · Remove) or a credential. The sections for jump host, initial command, sudo and tunnels are absent. A dashed placeholder in the footer reserves the place of **Test connection** (M30). |
+| `21b2` | Credential picker. Only credentials with a password can be chosen; key-only ones are listed disabled with the reason. |
+| `21b3` | Inline errors: address missing, and port out of range. |
+| `21c1–5` | Glyphs in the tree (a folder mixing both types), in tabs, in sidebar search results, in the palette, in 16a1's Hosts row (the group's hosts listed with glyphs), plus a sizes sheet. |
+| `21d1` | Context menu for an RDP host: Connect, Edit, Duplicate, Copy address, Remove. |
+| `21d2` | Palette on an RDP tab: Files, Tunnels and "Open in a new pane" are greyed; hovering one shows "SSH hosts only". |
+| `22a1` | The RDP tab, connected. The remote is scaled to fit and letterboxed on `--surface-desk`. Slim toolbar: host · user · resolution · scale · latency, then Auto-hide, Full screen (⌃⌘F) and Disconnect. |
+| `22a2` | The toolbar auto-hidden, leaving a small handle at the top edge. |
+| `22b1` | Full screen: no Flint chrome; a connection bar drops down at the top centre (pin, host, resolution, Exit full screen, Disconnect). |
+| `22b2` | Full screen the first time: the bar is collapsed to a tab, and a one-time note says Alt+Tab and the Windows key go to the remote and how to leave. |
+| `22c1` | Connecting, with steps and Cancel. |
+| `22c2–6b` | Failures, one per reason: wrong user or password; certificate changed (→ 22d2); unreachable (VPN hint from the host notes); timed out; refused because Remote Desktop is off; refused because there is no free session (who is signed in). |
+| `22c7` | Connection lost: the last frame is greyed, and Reconnect (M31) brings back the same Windows session. |
+| `22d1` | First connection, the RDP twin of 10c. It shows subject, issuer (self-signed badge), validity and the SHA-256 fingerprint grouped in bytes, with a note that self-signed is normal and where to compare it (`certlm.msc`). Buttons: Trust and connect ⌘↵, Cancel esc. |
+| `22d2` | Certificate changed: a refusal in 10d's tone. Both fingerprints are shown and the old one is struck through. To trust the new one, forget the old one in Settings → Known hosts. There is no button to continue. |
+| `22e1–3` | 900 × 600: 21a, 21b (compact, scrolls) and 22a with an icon-only toolbar. |
+
+**Remote desktop drawing:** the desktop inside the tab stands for remote pixels. It uses a generic wallpaper, taskbar and file manager, with no vendor logos, and is identical in both Flint themes.
+
+**Shortcut:** ⌃⌘F (full screen) is a proposal. It has to be a combination the remote never receives.
