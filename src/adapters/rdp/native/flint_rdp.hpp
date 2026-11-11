@@ -24,6 +24,20 @@
 // Before winpr, which includes <windows.h>: Winsock 2 must come first.
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mstcpip.h>
+// Before winpr too: winpr/wtsapi.h declares its own WTS types unless Windows' header
+// came first (_INC_WTSAPI), and the app's session-lock shim includes Windows' one.
+#include <wtsapi32.h>
+// winpr then takes Windows' header to hold the listener types, as MSVC's does; mingw's
+// has not got them. winpr only names them as pointers, in its WTS function table.
+#if defined(__MINGW32__)
+typedef WCHAR WTSLISTENERNAMEW[WTS_LISTENER_NAME_LENGTH + 1];
+typedef WTSLISTENERNAMEW* PWTSLISTENERNAMEW;
+typedef CHAR WTSLISTENERNAMEA[WTS_LISTENER_NAME_LENGTH + 1];
+typedef WTSLISTENERNAMEA* PWTSLISTENERNAMEA;
+typedef struct flint_WTSLISTENERCONFIGW* PWTSLISTENERCONFIGW;
+typedef struct flint_WTSLISTENERCONFIGA* PWTSLISTENERCONFIGA;
+#endif
 #endif
 
 #if defined(__APPLE__)
@@ -36,6 +50,29 @@
 // winpr declares a global `typedef BYTE byte`, and cfire's prelude a global
 // `using cfire::byte`: renamed while FreeRDP's headers are read (CF-119).
 #define byte flint_winpr_byte
+#if defined(_WIN32)
+// FreeRDP's rail.h names enumerators NIIF_NONE..NIIF_LARGE_ICON, which <shellapi.h>
+// defines as macros. FreeRDP builds with WIN32_LEAN_AND_MEAN and never meets them, but
+// the app's translation unit has the whole <windows.h> (the tray): set them aside while
+// FreeRDP's headers are read.
+#pragma push_macro("NIIF_NONE")
+#pragma push_macro("NIIF_INFO")
+#pragma push_macro("NIIF_WARNING")
+#pragma push_macro("NIIF_ERROR")
+#pragma push_macro("NIIF_NOSOUND")
+#pragma push_macro("NIIF_LARGE_ICON")
+#undef NIIF_NONE
+#undef NIIF_INFO
+#undef NIIF_WARNING
+#undef NIIF_ERROR
+#undef NIIF_NOSOUND
+#undef NIIF_LARGE_ICON
+// FreeRDP is linked static on Windows (windows/bin/freerdp.sh): without these its API
+// macros say dllimport, and the link looks for DLL imports that do not exist. FreeRDP
+// builds itself with them; on a declaration, dllexport is an ordinary reference.
+#define FREERDP_EXPORTS
+#define WINPR_EXPORTS
+#endif
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
 #include <freerdp/client/channels.h>
@@ -53,6 +90,16 @@
 #include <freerdp/error.h>
 #include <winpr/synch.h>
 #include <winpr/wlog.h>
+#if defined(_WIN32)
+#pragma pop_macro("NIIF_NONE")
+#pragma pop_macro("NIIF_INFO")
+#pragma pop_macro("NIIF_WARNING")
+#pragma pop_macro("NIIF_ERROR")
+#pragma pop_macro("NIIF_NOSOUND")
+#pragma pop_macro("NIIF_LARGE_ICON")
+#undef FREERDP_EXPORTS
+#undef WINPR_EXPORTS
+#endif
 #undef byte
 #include <sodium.h>
 
@@ -105,6 +152,16 @@ inline void sock_nodelay(sock_t s) {
     setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&one), sizeof one);
 }
 inline void sock_nonblock(sock_t s) { u_long one = 1; ioctlsocket(s, FIONBIO, &one); }
+// Windows answers a refused connect (RST) by sending the SYN again, twice, so even on
+// loopback a closed port takes ~2 s to fail (measured 2.0-2.4 s): past the probe's wait.
+// With no SYN retransmission the first RST ends the connect, as on macOS and Linux.
+inline void sock_no_syn_retry(sock_t s) {
+    TCP_INITIAL_RTO_PARAMETERS p{};
+    p.Rtt = TCP_INITIAL_RTO_UNSPECIFIED_RTT;
+    p.MaxSynRetransmissions = TCP_INITIAL_RTO_NO_SYN_RETRANSMISSIONS;
+    DWORD n = 0;
+    WSAIoctl(s, SIO_TCP_INITIAL_RTO, &p, sizeof p, nullptr, 0, &n, nullptr, nullptr);
+}
 inline int sock_error() { return WSAGetLastError(); }
 inline bool sock_in_progress(int e) { return e == WSAEWOULDBLOCK || e == WSAEINPROGRESS; }
 inline bool sock_refused_error(int e) { return e == WSAECONNREFUSED; }
@@ -129,6 +186,7 @@ inline void sock_nodelay(sock_t s) {
 #endif
 }
 inline void sock_nonblock(sock_t s) { fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK); }
+inline void sock_no_syn_retry(sock_t) {}
 inline int sock_error() { return errno; }
 inline bool sock_in_progress(int e) { return e == EINPROGRESS; }
 inline bool sock_refused_error(int e) { return e == ECONNREFUSED; }
@@ -440,6 +498,7 @@ inline bool port_refused(const std::string& host, int32_t port, int64_t wait_ms)
         sock_t fd = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (fd == BAD_SOCK) continue;
         sock_nonblock(fd);
+        sock_no_syn_retry(fd);
         int rc = ::connect(fd, ai->ai_addr, static_cast<int>(ai->ai_addrlen));
         int e = rc != 0 ? sock_error() : 0;
         if (rc != 0 && sock_refused_error(e)) refused = true;

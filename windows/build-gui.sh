@@ -5,7 +5,8 @@
 #   build/windows/Flint/
 #     flint.exe            the CLI
 #     flint-app.exe        the desktop app (double-click this, or Flint.lnk)
-#     WebView2Loader.dll   next to the app (cfire W-10)
+#     WebView2Loader.dll   next to the app (cfire W-10); FreeRDP is linked into the app
+#                          (bin/freerdp.sh), so no FreeRDP or OpenSSL DLLs
 #     ui/                  the page, found as ui/ next to the app
 #
 #   windows/build-gui.sh                         # build into build/windows/Flint
@@ -35,10 +36,11 @@ elif [[ ! -f ui/dist/index.html ]]; then
   exit 1
 fi
 
+# FreeRDP 3 for the app's RDP tab (milestone 30), built static once into the sysroot;
+# a no-op once built. The CLI does not link it.
+"$here/bin/freerdp.sh"
 # shellcheck source=bin/env.sh
 source "$here/bin/env.sh"
-# The CLI and the app only: build.cf's other targets (milestone 28's RDP spike, on
-# libfreerdp) have no Windows build.
 cfire build --target x86_64-w64-mingw32 flint
 cfire build --target x86_64-w64-mingw32 FlintGui   # by its build.cf variable: "Flint" is the CLI's
 

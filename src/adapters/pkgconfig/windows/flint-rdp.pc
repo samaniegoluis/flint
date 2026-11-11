@@ -1,0 +1,12 @@
+# CFIRE-UPSTREAM: CF-031, CF-119
+# See ../darwin/flint-rdp.pc. Windows port (windows-port branch only): FreeRDP 3 built
+# static by windows/bin/freerdp.sh (no ffmpeg), so the desktop app links it in whole and
+# ships no FreeRDP DLLs; the CLI never imports src/adapters/rdp. The libraries below are
+# what winpr and FreeRDP call in Windows (known-folder GUIDs, Winsock, SSPI, CredUI,
+# CNG, DbgHelp, the shell, multimedia timers and the printer API of the client channels).
+Name: flint-rdp
+Description: Native RDP shim of Flint's desktop app (Windows)
+Version: 1
+Requires: freerdp-client3 freerdp3 winpr3 libssl libcrypto zlib libsodium
+Cflags: -I${pcfiledir}/../../rdp/native
+Libs: -luuid -lws2_32 -lsecur32 -lcredui -lncrypt -lcrypt32 -lbcrypt -lrpcrt4 -ldbghelp -lshlwapi -lshell32 -lole32 -luser32 -lgdi32 -lwinmm -lwinspool -ladvapi32 -lntdll -luserenv -liphlpapi -lmfplat -lmfuuid -lstrmiids

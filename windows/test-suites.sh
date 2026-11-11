@@ -12,15 +12,18 @@
 #
 # src/adapters/ssh is left out: it wants sshd on 127.0.0.1:2222, which this WSL cannot
 # serve to Windows (see the port guide); cli-smoke.sh and the e2e runs cover SSH.
-# src/adapters/rdp is left out too: milestone 28's RDP spike needs libfreerdp, which has
-# no Windows build here (main checks RDP on Windows at milestone 30).
+# src/adapters/rdp runs on FreeRDP built by bin/freerdp.sh. Its tests against FreeRDP's
+# sample server (FLINT_RDP_SAMPLE_PORT) and a real Windows host (FLINT_RDP_TEST_HOST)
+# return early without them and print PASS: count them as skipped. Neither is set here
+# (no sample server for Windows; the real host is the owner's check).
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
+"$here/bin/freerdp.sh" >/dev/null
 source "$here/bin/env.sh"
 suites=("$@")
 if [[ ${#suites[@]} == 0 ]]; then
-  mapfile -t suites < <(cd "$root" && find src -name '*_test.cf' -not -path '*/.cfire/*' | xargs -n1 dirname | sort -u | grep -v -e '^src/adapters/ssh$' -e '^src/adapters/rdp$')
+  mapfile -t suites < <(cd "$root" && find src -name '*_test.cf' -not -path '*/.cfire/*' | xargs -n1 dirname | sort -u | grep -v -e '^src/adapters/ssh$')
 fi
 WT="$(wslpath "$(cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r')")/flint-tests"
 rm -rf "$WT"; mkdir -p "$WT"
