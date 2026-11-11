@@ -14,6 +14,21 @@ fn paste_here() -> FakeLocal {
     return FakeLocal{ tree: fake_tree([fdir("/stage"), ffile("/stage/image.png", "PNGDATA")]) }
 }
 
+// `mib` MiB of "x" and one more byte: just over a limit of `mib` MB. Built by doubling:
+// appending one byte at a time copies the whole string each time, which took an hour
+// for 10 MiB (seen in the Windows port, 2026-11-11).
+fn mib_and_a_byte(mib: i64) -> str {
+    mut one := "x"
+    for i in 0..20 {
+        one = one + one
+    }
+    mut big := "x"
+    for i in 0..mib {
+        big = big + one
+    }
+    return big
+}
+
 fn paste_req(id: str) -> PasteRequest {
     return PasteRequest{ id: id, local: "/stage/image.png", name: "Captura de pantalla.png", kind: "image/png", limit_mb: 20 }
 }
@@ -75,10 +90,7 @@ test "a /tmp folder someone else made is refused" {
 test "a file over the limit is refused before anything is written" {
     mut host := paste_host()
     mut here := paste_here()
-    mut big := ""
-    for i in 0..(1048576 + 1) {
-        big = big + "x"
-    }
+    big := mib_and_a_byte(1)
     here.tree.nodes.push(ffile("/stage/big.pdf", big))
     mut req := paste_req("d-4")
     req.local = "/stage/big.pdf"
@@ -120,10 +132,7 @@ test "a paste over a session takes the limit from this machine's settings" {
     mut s := default_settings()
     s.paste_limit_mb = 10
     store := FakeSettingsStore{ saved: s }
-    mut big := ""
-    for i in 0..(10 * 1048576 + 1) {
-        big = big + "x"
-    }
+    big := mib_and_a_byte(10)
     here.tree.nodes.push(ffile("/stage/big.png", big))
     mut req := paste_req("d-7")
     req.local = "/stage/big.png"
