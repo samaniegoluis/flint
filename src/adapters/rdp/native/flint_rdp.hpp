@@ -20,6 +20,12 @@
 // settings once the connection is up (D-072).
 #pragma once
 
+#if defined(_WIN32)
+// Before winpr, which includes <windows.h>: Winsock 2 must come first.
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
+
 #if defined(__APPLE__)
 // Before winpr: winpr defines CreateEvent as a macro, which would rename Carbon's own.
 #include <Carbon/Carbon.h>
@@ -49,6 +55,7 @@
 #undef byte
 #include <sodium.h>
 
+#if !defined(_WIN32)
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -57,6 +64,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 #include <cerrno>
 
 #include <algorithm>
@@ -75,6 +83,64 @@
 #include <vector>
 
 namespace flint_rdp {
+
+// ---- Sockets: BSD on macOS and Linux, Winsock on the owner's Windows build ---------
+// (docs/rdp-windows.md). The frame channel and the refused-port probe use only these.
+#if defined(_WIN32)
+using sock_t = SOCKET;
+inline const sock_t BAD_SOCK = INVALID_SOCKET;
+inline bool sock_init() {
+    static const bool ok = [] { WSADATA d; return WSAStartup(MAKEWORD(2, 2), &d) == 0; }();
+    return ok;
+}
+inline void sock_close(sock_t s) { closesocket(s); }
+inline void sock_shutdown(sock_t s) { ::shutdown(s, SD_BOTH); }
+inline void sock_recv_timeout(sock_t s, int ms) {
+    DWORD v = static_cast<DWORD>(ms);
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&v), sizeof v);
+}
+inline void sock_nodelay(sock_t s) {
+    BOOL one = TRUE;
+    setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&one), sizeof one);
+}
+inline void sock_nonblock(sock_t s) { u_long one = 1; ioctlsocket(s, FIONBIO, &one); }
+inline int sock_error() { return WSAGetLastError(); }
+inline bool sock_in_progress(int e) { return e == WSAEWOULDBLOCK || e == WSAEINPROGRESS; }
+inline bool sock_refused_error(int e) { return e == WSAECONNREFUSED; }
+inline int sock_poll(pollfd* p, int n, int ms) { return WSAPoll(p, static_cast<ULONG>(n), ms); }
+inline int sock_send(sock_t s, const char* p, size_t n) { return ::send(s, p, static_cast<int>(n), 0); }
+inline int sock_recv(sock_t s, char* p, size_t n) { return ::recv(s, p, static_cast<int>(n), 0); }
+#else
+using sock_t = int;
+inline const sock_t BAD_SOCK = -1;
+inline bool sock_init() { return true; }
+inline void sock_close(sock_t s) { ::close(s); }
+inline void sock_shutdown(sock_t s) { ::shutdown(s, SHUT_RDWR); }
+inline void sock_recv_timeout(sock_t s, int ms) {
+    timeval tv{ms / 1000, (ms % 1000) * 1000};
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+}
+inline void sock_nodelay(sock_t s) {
+    int one = 1;
+    setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+#if defined(SO_NOSIGPIPE)
+    setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
+#endif
+}
+inline void sock_nonblock(sock_t s) { fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK); }
+inline int sock_error() { return errno; }
+inline bool sock_in_progress(int e) { return e == EINPROGRESS; }
+inline bool sock_refused_error(int e) { return e == ECONNREFUSED; }
+inline int sock_poll(pollfd* p, int n, int ms) { return ::poll(p, static_cast<nfds_t>(n), ms); }
+inline int sock_send(sock_t s, const char* p, size_t n) {
+#if defined(MSG_NOSIGNAL)
+    return static_cast<int>(::send(s, p, n, MSG_NOSIGNAL));
+#else
+    return static_cast<int>(::send(s, p, n, 0));
+#endif
+}
+inline int sock_recv(sock_t s, char* p, size_t n) { return static_cast<int>(::recv(s, p, n, 0)); }
+#endif
 
 // Result codes shared with rdp.cf.
 inline constexpr int RDP_OK = 0;
@@ -144,7 +210,7 @@ struct Tab {
     bool cert_refused = false;
     std::mutex input_mu;  // input is sent from the page's thread
     // Frame channel.
-    int listen_fd = -1;
+    sock_t listen_fd = BAD_SOCK;
     int port = 0;
     std::string token;
     std::thread server;
@@ -362,6 +428,7 @@ inline int classify(UINT32 err) {
 // After a network failure: whether the port actively refused (nothing listens there:
 // Remote Desktop is off or a firewall rejects), as opposed to no answer at all.
 inline bool port_refused(const std::string& host, int32_t port, int64_t wait_ms) {
+    if (!sock_init()) return false;
     addrinfo hints{};
     hints.ai_socktype = SOCK_STREAM;
     addrinfo* res = nullptr;
@@ -369,21 +436,24 @@ inline bool port_refused(const std::string& host, int32_t port, int64_t wait_ms)
     if (getaddrinfo(host.c_str(), p.c_str(), &hints, &res) != 0 || !res) return false;
     bool refused = false;
     for (addrinfo* ai = res; ai; ai = ai->ai_next) {
-        int fd = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-        if (fd < 0) continue;
-        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
-        int rc = ::connect(fd, ai->ai_addr, ai->ai_addrlen);
-        if (rc != 0 && errno == ECONNREFUSED) refused = true;
-        if (rc != 0 && errno == EINPROGRESS) {
-            pollfd pfd{fd, POLLOUT, 0};
-            if (::poll(&pfd, 1, static_cast<int>(wait_ms)) == 1) {
+        sock_t fd = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd == BAD_SOCK) continue;
+        sock_nonblock(fd);
+        int rc = ::connect(fd, ai->ai_addr, static_cast<int>(ai->ai_addrlen));
+        int e = rc != 0 ? sock_error() : 0;
+        if (rc != 0 && sock_refused_error(e)) refused = true;
+        if (rc != 0 && sock_in_progress(e)) {
+            pollfd pfd{};
+            pfd.fd = fd;
+            pfd.events = POLLOUT;
+            if (sock_poll(&pfd, 1, static_cast<int>(wait_ms)) == 1) {
                 int err = 0;
                 socklen_t len = sizeof err;
-                getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
-                if (err == ECONNREFUSED) refused = true;
+                getsockopt(fd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&err), &len);
+                if (sock_refused_error(err)) refused = true;
             }
         }
-        ::close(fd);
+        sock_close(fd);
         if (refused) break;
     }
     freeaddrinfo(res);
@@ -674,7 +744,7 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         freerdp_free(inst);
         return code;
     }
-    if (t->listen_fd < 0 && !start_frame_server(t)) {
+    if (t->listen_fd == BAD_SOCK && !start_frame_server(t)) {
         end_conn(c);
         detail = "the frame channel did not start";
         return RDP_ERR_OTHER;
@@ -941,33 +1011,28 @@ inline int next_frame(const std::string& id, int64_t wait_ms, std::string& out) 
     return take_frame_locked(*t, out);
 }
 
-inline bool send_all(int fd, const char* p, size_t n) {
+inline bool send_all(sock_t fd, const char* p, size_t n) {
     while (n > 0) {
-        ssize_t k = ::send(fd, p, n, 0);
+        int k = sock_send(fd, p, n);
         if (k <= 0) return false;
         p += k; n -= static_cast<size_t>(k);
     }
     return true;
 }
 
-inline void serve_conn(std::shared_ptr<Tab> t, int fd) {
-    timeval tv{5, 0};
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
-    int one = 1;
-    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
-#if defined(SO_NOSIGPIPE)
-    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
-#endif
+inline void serve_conn(std::shared_ptr<Tab> t, sock_t fd) {
+    sock_recv_timeout(fd, 5000);
+    sock_nodelay(fd);
     std::string req;
     char buf[2048];
     // Keep-alive: one request after another on the same connection.
     while (!t->closed.load()) {
         size_t end;
         while ((end = req.find("\r\n\r\n")) == std::string::npos) {
-            ssize_t k = ::recv(fd, buf, sizeof buf, 0);
-            if (k <= 0) { ::close(fd); return; }
+            int k = sock_recv(fd, buf, sizeof buf);
+            if (k <= 0) { sock_close(fd); return; }
             req.append(buf, static_cast<size_t>(k));
-            if (req.size() > 16384) { ::close(fd); return; }
+            if (req.size() > 16384) { sock_close(fd); return; }
         }
         std::string head = req.substr(0, end);
         req.erase(0, end + 4);
@@ -1006,13 +1071,13 @@ inline void serve_conn(std::shared_ptr<Tab> t, int fd) {
                         std::to_string(body.size()) + "\r\n\r\n";
         if (!send_all(fd, r.data(), r.size()) || !send_all(fd, body.data(), body.size())) break;
     }
-    ::close(fd);
+    sock_close(fd);
 }
 
 inline void serve(std::shared_ptr<Tab> t) {
     while (!t->closed.load()) {
-        int fd = ::accept(t->listen_fd, nullptr, nullptr);
-        if (fd < 0) break;
+        sock_t fd = ::accept(t->listen_fd, nullptr, nullptr);
+        if (fd == BAD_SOCK) break;
         std::thread(serve_conn, t, fd).detach();
     }
 }
@@ -1020,20 +1085,20 @@ inline void serve(std::shared_ptr<Tab> t) {
 // Starts the tab's frame channel on 127.0.0.1, with a token of 32 random bytes from
 // libsodium, hex.
 inline bool start_frame_server(std::shared_ptr<Tab> t) {
-    if (sodium_init() < 0) return false;
+    if (sodium_init() < 0 || !sock_init()) return false;
     unsigned char raw[32];
     randombytes_buf(raw, sizeof raw);
     char hex[65];
     sodium_bin2hex(hex, sizeof hex, raw, sizeof raw);
     sodium_memzero(raw, sizeof raw);
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) return false;
+    sock_t fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == BAD_SOCK) return false;
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port = 0;
     if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) != 0 || ::listen(fd, 4) != 0) {
-        ::close(fd);
+        sock_close(fd);
         return false;
     }
     socklen_t len = sizeof addr;
@@ -1077,9 +1142,9 @@ inline void close(const std::string& id) {
         t->conn = nullptr;
     }
     t->cv.notify_all();
-    if (t->listen_fd >= 0) {
-        ::shutdown(t->listen_fd, SHUT_RDWR);
-        ::close(t->listen_fd);
+    if (t->listen_fd != BAD_SOCK) {
+        sock_shutdown(t->listen_fd);
+        sock_close(t->listen_fd);
     }
     if (t->server.joinable()) t->server.join();
     end_conn(c);

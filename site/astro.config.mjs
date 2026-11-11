@@ -56,6 +56,7 @@ export default defineConfig({
 						{ label: 'Copying files', slug: 'guides/files' },
 						{ label: 'The Files view', slug: 'guides/files-view' },
 						{ label: 'Tunnels', slug: 'guides/tunnels' },
+						{ label: 'Remote desktop', slug: 'guides/remote-desktop' },
 						{ label: 'Use Flint with an AI agent', slug: 'guides/ai-agents' },
 					],
 				},
