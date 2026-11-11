@@ -547,7 +547,11 @@ test('an RDP host: --type rdp, port 3389, a domain, refused where only SSH works
 	const ex = flint(w, 'exec win-01 -- uptime');
 	assert.equal(ex.code, 23);
 	assert.ok(ex.err.join('\n').includes("'win-01' is an RDP host; flint exec needs an SSH host"));
-	assert.equal(flint(w, 'connect win-01').code, 23);
+	// connect opens the desktop in the app (milestone 30): the demo vault is unlocked there.
+	const con = flint(w, 'connect win-01');
+	assert.equal(con.code, 0);
+	assert.deepEqual(con.out, ['Opened win-01 in Flint (remote desktop).']);
+	assert.deepEqual(JSON.parse(flint(w, 'connect win-01 --json').out.join('\n')), { host: 'win-01', type: 'rdp', opened: true });
 	assert.equal(flint(w, 'host test win-01').code, 23);
 	assert.equal(flint(w, 'cp ./notes.txt win-01:/tmp/').code, 23);
 	assert.equal(flint(w, 'tunnel add win-01 t --local 13389').code, 23);

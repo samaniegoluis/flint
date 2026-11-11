@@ -39,6 +39,13 @@ Flint asks before it trusts a new server key, records it in the vault, and alway
 hosts are checked the same way, one hop at a time. See
 [Connecting](/guides/connecting/#known-hosts).
 
+A remote desktop server's certificate is checked by Flint, not by FreeRDP: the first one is
+shown with its SHA-256 fingerprint and kept in the vault once you trust it, and a changed
+one is refused before the password is sent, with no way to continue. The password goes to
+FreeRDP only to sign in and is wiped from its memory once the session is up. The desktop's
+frames reach the page over a channel on `127.0.0.1` that answers only requests carrying a
+256-bit random token, made per tab. See [Remote desktop](/guides/remote-desktop/).
+
 ## Access to an unlocked vault: today
 
 The key of an unlocked vault lives in the **running Flint app**. The `flint` CLI never

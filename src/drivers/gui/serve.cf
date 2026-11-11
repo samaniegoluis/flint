@@ -602,5 +602,21 @@ fn serve_session(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Loc
         _ := conn.send(refused_session_frame(coded(ERR_LOCKED, "the vault locked before the command ran"), req), SERVE_SEND_MS) or {}
         return
     }
+    // `flint connect` on an RDP host opens its tab here (milestone 30): the CLI never
+    // shows a desktop. The grant was checked above, as for an SSH session.
+    st.hold()
+    desktop := served_desktop_alias(req, store)
+    st.release()
+    if desktop.len() > 0 {
+        app.emit("rdp:open-request", RdpOpenRequestEvent{ alias: desktop })
+        show_window(mut app)
+        _ := conn.send(desktop_opened_frame(desktop, req.as_json), SERVE_SEND_MS) or {}
+        return
+    }
     run_served_session(conn, req, c, mut store, kc, recents, session, outcome.sudo_typed)
+}
+
+// The CLI asked to open an RDP host's tab (`flint connect`).
+type RdpOpenRequestEvent struct {
+    alias: str `json:"alias"`
 }

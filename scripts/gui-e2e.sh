@@ -3,8 +3,8 @@
 # (scripts/gui-e2e.js) in the app's window against the throwaway sshds of
 # scripts/test.sh: create a vault, add a key and hosts, trust a host key, type in
 # the terminal, reconnect, a jump host, a changed host key behind a TCP forwarder,
-# the palette, settings, lock and unlock, tunnels. It runs as several short runs
-# (below).
+# the palette, settings, lock and unlock, tunnels, and an RDP tab against FreeRDP's
+# sample server (milestone 30). It runs as several short runs (below).
 #
 #   scripts/gui-e2e.sh
 #
@@ -36,7 +36,7 @@ fi
 #                                                (milestone 27, D-068)
 #   scripts/repeat.sh vim 10                     one run N times, with its failure rate
 # Exit status: 0 all passed, 1 a run failed.
-runs=(terminal vault tunnels paste vim)
+runs=(terminal vault tunnels paste rdp vim)
 known=("${runs[@]}")
 if [[ "$(uname -s)" == Darwin ]]; then
   app=(build/gui/Flint.app/Contents/MacOS/Flint)
@@ -55,10 +55,21 @@ if [[ -n "$only" ]]; then
   runs=("${picked[@]}")
   run_vim=1
 fi
+# The rdp run needs FreeRDP's sample server, which scripts/test.sh starts where FreeRDP
+# ships one.
+run_rdp=1
+[[ -n "${FLINT_RDP_SAMPLE_PORT:-}" ]] || run_rdp=0
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-gui-e2e.XXXXXX")"
 fwd_pid=""
-cleanup() { if [[ -n "$fwd_pid" ]]; then kill "$fwd_pid" 2>/dev/null; wait "$fwd_pid" 2>/dev/null || true; fi; rm -rf "$tmp"; }
+rdp2_pid=""
+rfwd_pid=""
+cleanup() {
+  for p in "$fwd_pid" "$rdp2_pid" "$rfwd_pid"; do
+    if [[ -n "$p" ]]; then kill "$p" 2>/dev/null; wait "$p" 2>/dev/null || true; fi
+  done
+  rm -rf "$tmp"
+}
 trap cleanup EXIT
 
 # A TCP forwarder whose first connection reaches sshd 1 and every later one sshd 2:
@@ -67,6 +78,8 @@ port3="${FLINT_TEST_SSH_PORT3:-2224}"
 cat > "$tmp/fwd.py" <<'PY'
 import socket, sys, threading
 listen, first, later = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
+# How many connections go to `first` before the rest go to `later`.
+firsts = int(sys.argv[4]) if len(sys.argv) > 4 else 1
 srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", listen)); srv.listen(8)
 def pipe(a, b):
@@ -82,7 +95,7 @@ def pipe(a, b):
 n = 0
 while True:
     c, _ = srv.accept()
-    u = socket.create_connection(("127.0.0.1", first if n == 0 else later))
+    u = socket.create_connection(("127.0.0.1", first if n < firsts else later))
     n += 1
     threading.Thread(target=pipe, args=(c, u), daemon=True).start()
     threading.Thread(target=pipe, args=(u, c), daemon=True).start()
@@ -90,16 +103,30 @@ PY
 # A free port for the tunnels step (milestone 23).
 tport="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 python3 -I "$tmp/fwd.py" "$port3" "$FLINT_TEST_SSH_PORT" "$FLINT_TEST_SSH_PORT2" & fwd_pid=$!
+# The rdp run: a second sample server with its own certificate, and a forwarder whose
+# first two connections (the certificate prompt, then the trusted connect) reach the
+# first server and every later one the second: one address, a changed certificate.
+rport="${FLINT_RDP_SAMPLE_PORT:-0}"
+rport_fwd=0
+if [[ "$run_rdp" == 1 ]]; then
+  free_port() { python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
+  rport2="$(free_port)"
+  rport_fwd="$(free_port)"
+  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/rdp2.key" -out "$tmp/rdp2.crt" -days 2 -subj "/CN=flint-test-2" 2>/dev/null
+  (cd "$tmp" && WLOG_LEVEL=OFF exec sfreerdp-server --cert="$tmp/rdp2.crt" --key="$tmp/rdp2.key" --port="$rport2" >"$tmp/rdp2.log" 2>&1) & rdp2_pid=$!
+  python3 -I "$tmp/fwd.py" "$rport_fwd" "$rport" "$rport2" 2 & rfwd_pid=$!
+fi
 sleep 0.5
 
 # Writes the page script for one run: $1 vault file, $2 the run's name, $3 output.
 make_script() {
-  E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TPORT="$tport" E2E_RUN="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
+  E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TPORT="$tport" E2E_RPORT="$rport" E2E_RPORT_FWD="$rport_fwd" E2E_RUN="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
 import os, sys
 src = open(sys.argv[1]).read()
 key = open(os.environ["FLINT_TEST_SSH_KEY"]).read().replace("\\", "\\\\").replace("`", "\\`")
 values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_PORT"],
           "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"], "TPORT": os.environ["E2E_TPORT"],
+          "RPORT": os.environ["E2E_RPORT"], "RPORT_FWD": os.environ["E2E_RPORT_FWD"],
           "USER": os.environ["USER"], "KEY": key,
           "RUN": os.environ["E2E_RUN"]}
 for k, v in values.items():
@@ -132,6 +159,10 @@ for r in "${runs[@]}"; do
     echo "gui-e2e: skip the vim run (it fails under Xvfb; FLINT_E2E_VIM=1 runs it)"
     continue
   fi
+  if [[ "$r" == rdp && "$run_rdp" != 1 ]]; then
+    echo "gui-e2e: skip the rdp run (no FreeRDP sample server here)"
+    continue
+  fi
   make_script "$tmp/$r.flint" "$r" "$tmp/$r.js"
   # vim passes in under 30 s; a freeze there then costs a minute, not four.
   cap="${FLINT_E2E_MAIN_MS:-}"
@@ -154,7 +185,7 @@ fi
 # Principle 5: nothing from inside the vault is readable in any run's file.
 for f in "$tmp"/*.flint; do
   [[ -f "$f" ]] || continue
-  for marker in local pwhost e2e-key gui-host-pw-marker 127.0.0.1 codebox.lan "Code Box" pw-codebox through "SQLite format 3"; do
+  for marker in local pwhost e2e-key gui-host-pw-marker 127.0.0.1 codebox.lan "Code Box" pw-codebox through rdp-sample rdp-pw-marker "lab VPN" "SQLite format 3"; do
     if grep -aq -- "$marker" "$f"; then
       echo "gui-e2e: $(basename "$f") contains '$marker' in clear" >&2
       exit 1
@@ -162,6 +193,11 @@ for f in "$tmp"/*.flint; do
   done
 done
 echo "gui-e2e: the vault files hold no clear-text host data"
+# Principle 5: FreeRDP logs server addresses, so the app keeps its log off (D-072).
+if [[ -f "$tmp/rdp.log" ]] && grep -q "com.freerdp" "$tmp/rdp.log"; then
+  echo "gui-e2e: the rdp run's log has FreeRDP lines (addresses in a log)" >&2
+  exit 1
+fi
 # D-030: the layout state holds ids only, never a name from inside the vault. The vault
 # run is the one that makes groups and renames the vault.
 if [[ -f "$tmp/vault.log" ]]; then

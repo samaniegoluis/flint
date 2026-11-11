@@ -35,6 +35,13 @@ speaks the Kitty keyboard protocol.
 | Terminal font size | ⌘+ ⌘− ⌘0 | Ctrl+Shift+= − 0 |
 | Move between regions (leave the terminal) | F6 · ⇧F6 | F6 · Shift+F6 |
 
+## In a remote desktop tab
+
+Keys go to the remote desktop, by their place on the keyboard. On macOS <kbd>⌘</kbd> is
+sent as <kbd>Ctrl</kbd> (<kbd>⌘C</kbd> is <kbd>Ctrl+C</kbd> on Windows). Flint keeps only
+the command palette (<kbd>⌘K</kbd> · <kbd>Ctrl+Shift+K</kbd>) and **Go to tab 1–9**; the
+rest is in the palette. See [Remote desktop](/guides/remote-desktop/#keyboard-and-mouse).
+
 ## In lists and dialogs
 
 | Where | Keys |

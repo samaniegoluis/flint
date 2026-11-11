@@ -943,6 +943,21 @@ class Cmd {
 		if (p.positionals.length !== 2 || p.hasRest) {
 			fail('usage', 'usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]');
 		}
+		// An RDP host (milestone 30): the desktop opens in the app's tab, never here. In
+		// the demo the vault is unlocked in Flint whenever it is not asked for.
+		{
+			const v = this.resolveVault(this.p.value('--vault'));
+			const rdp = v.hosts.find((h) => h.alias.toLowerCase() === p.positional(1).toLowerCase() && h.type === 'rdp');
+			if (rdp) {
+				if (!v.unlocked) {
+					yield* this.openTarget();
+					fail('wrong_host_type', `'${rdp.alias}' is an RDP host: its desktop opens in the Flint app. Open Flint and unlock this vault, then run the command again`);
+				}
+				yield* this.openTarget();
+				this.emit({ host: rdp.alias, type: 'rdp', opened: true }, () => this.say(`Opened ${rdp.alias} in Flint (remote desktop).`));
+				return { code: 0 };
+			}
+		}
 		const { host, user } = yield* this.reach(p.positional(1), false, 'an SSH session');
 		if (host.command && !p.has('--no-command')) {
 			this.io.note(

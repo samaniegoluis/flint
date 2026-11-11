@@ -1,8 +1,8 @@
 package rdp
 
-// An RDP client session over libfreerdp 3, through a native shim
-// (native/flint_rdp.hpp, CF-119). Milestone 28 is a spike: this file is the
-// adapter the spike page drives; milestone 30 puts it behind the RemoteDesktop port.
+// The RemoteDesktop port over libfreerdp 3 (milestone 30, D-070), through a native
+// shim (native/flint_rdp.hpp, CF-119). One tab per page id; frames reach the page
+// through the tab's local frame channel (D-071).
 //
 // Connecting is bounded by an explicit timeout (Principle 8). Errors carry FreeRDP's
 // error name, never the password (Principle 6). Only the desktop app imports this
@@ -12,33 +12,16 @@ package rdp
 import cpp "flint_rdp.hpp" @pkg("flint-rdp")
 import "../../domain"
 
-// Where an RDP session is going and as whom. `password` stays in the core.
-type RdpTarget struct {
-    host: str
-    port: i32 = 3389
-    user: str
-    domain: str
-    password: str
-    width: i32 = 1280
-    height: i32 = 800
+// The engine. Stateless: the tabs live in the shim's registry.
+type FreeRdpDesktop struct {
+    unused: i64
 }
 
-type RdpConn struct {
-    id: i64
+fn new_freerdp_desktop() -> FreeRdpDesktop {
+    return FreeRdpDesktop{ unused: 0 }
 }
 
-// Where the page reads frames from, when the local channel is used.
-type FrameChannel struct {
-    port: i32
-    token: str
-}
-
-type RdpSize struct {
-    width: i32
-    height: i32
-    fingerprint: str
-}
-
+// The shim's result codes as the core's stable error codes.
 fn rdp_error(code: i64, detail: str) -> str {
     if code == 1 {
         return coded(ERR_AUTH, "the server refused the user or password ({detail})")
@@ -50,7 +33,7 @@ fn rdp_error(code: i64, detail: str) -> str {
         return coded(ERR_TIMEOUT, "the server did not answer in time")
     }
     if code == 4 {
-        return coded(ERR_NETWORK, "the server refused the connection ({detail})")
+        return coded(ERR_REFUSED, "the server refused the connection ({detail})")
     }
     if code == 5 {
         return coded(ERR_NETWORK, "the secure connection failed ({detail})")
@@ -58,71 +41,159 @@ fn rdp_error(code: i64, detail: str) -> str {
     if code == 7 {
         return coded(ERR_NETWORK, "the session is closed")
     }
+    if code == 8 {
+        return coded(ERR_HOST_KEY, "the server's certificate is not the trusted one")
+    }
+    if code == 9 {
+        return coded(ERR_REFUSED, "nothing answers on the Remote Desktop port: Remote Desktop may be off, or a firewall blocks it")
+    }
+    if code == 10 {
+        return coded(ERR_NETWORK, "the connection was lost ({detail})")
+    }
+    if code == 11 {
+        return coded(ERR_REFUSED, "the server ended the session: {detail}")
+    }
+    if code == 12 {
+        return coded(ERR_INVALID, "unknown key '{detail}'")
+    }
     return coded(ERR_INTERNAL, "RDP failed ({detail})")
 }
 
-// Connects and logs in (NLA when the server asks for it). Blocks for at most
-// `timeout_ms`.
-fn rdp_open(t: RdpTarget, timeout_ms: i64) -> RdpConn! {
-    if t.host.len() == 0 || t.user.len() == 0 {
+fn (self: FreeRdpDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> RdpDesktop! {
+    if t.hostname.len() == 0 || t.user.len() == 0 {
         return error(coded(ERR_INVALID, "an RDP host needs an address and a user"))
     }
-    mut id: i64 = 0
+    mut rc: i32 = 0
     mut detail := ""
-    host := t.host
+    mut w: i32 = 0
+    mut h: i32 = 0
+    mut port: i32 = 0
+    mut token := ""
+    host := t.hostname
     user := t.user
     dom := t.domain
     pw := t.password
-    port := t.port
-    w := t.width
-    h := t.height
+    trusted := t.trusted_fingerprint
+    rport := i32(t.port)
+    rw := i32(t.width)
+    rh := i32(t.height)
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        id = flint_rdp::open(host, port, user, dom, pw, w, h, timeout_ms, detail);
+        rc = flint_rdp::open(tab, host, rport, user, dom, pw, rw, rh, trusted, timeout_ms, w, h, port, token, detail);
     }
-    if id <= 0 {
-        return error(rdp_error(0 - id, detail))
+    if rc != 0 {
+        return error(rdp_error(i64(rc), detail))
     }
-    return RdpConn{ id: id }
+    return RdpDesktop{ width: i64(w), height: i64(h), frame_port: i64(port), frame_token: token }
 }
 
-fn (self: RdpConn) size() -> RdpSize! {
+fn (self: FreeRdpDesktop) rd_presented_cert(tab: str) -> RdpCert {
+    mut subject := ""
+    mut issuer := ""
+    mut fp := ""
+    mut from := ""
+    mut to := ""
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        flint_rdp::presented_cert(tab, subject, issuer, fp, from, to);
+    }
+    return RdpCert{ subject: subject, issuer: issuer, fingerprint: fp, valid_from: from, valid_to: to }
+}
+
+fn (self: FreeRdpDesktop) rd_resize(tab: str, width: i64, height: i64) -> void! {
+    mut rc: i32 = 0
+    w := i32(width)
+    h := i32(height)
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::resize(tab, w, h);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "resize"))
+    }
+}
+
+fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {
+    mut kind: i32 = 0
+    mut code: i32 = 0
+    mut detail := ""
     mut w: i32 = 0
     mut h: i32 = 0
-    mut fp := ""
-    mut found := false
-    id := self.id
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        found = flint_rdp::size(id, w, h, fp);
+        kind = flint_rdp::wait(tab, wait_ms, code, detail, w, h);
     }
-    if !found {
-        return error(rdp_error(7, ""))
+    if kind == 1 {
+        mut msg := ""
+        if code != 0 {
+            msg = rdp_error(i64(code), detail)
+        }
+        return RdpEvent{ kind: RDP_EVENT_ENDED, message: msg, width: 0, height: 0 }
     }
-    return RdpSize{ width: w, height: h, fingerprint: fp }
+    if kind == 2 {
+        return RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: i64(w), height: i64(h) }
+    }
+    return RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 }
 }
 
-// How many frames FreeRDP has drawn so far.
-fn (self: RdpConn) frames_drawn() -> i64 {
-    mut n: i64 = 0
-    id := self.id
+fn (self: FreeRdpDesktop) rd_key(tab: str, code: str, down: bool) -> void! {
+    mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        n = static_cast<int64_t>(flint_rdp::frames(id));
+        rc = flint_rdp::key(tab, code, down);
     }
-    return n
+    if rc != 0 {
+        return error(rdp_error(i64(rc), code))
+    }
 }
 
-// The region drawn since the last call: a 16-byte header (u32 seq, u16 x, y, w, h,
-// u32 reserved, little-endian) and its RGBA rows. Empty when nothing changed within
-// `wait_ms`.
-fn (self: RdpConn) next_frame(wait_ms: i64) -> str! {
+fn pointer_kind(kind: str) -> i32 {
+    if kind == "down" {
+        return 1
+    }
+    if kind == "up" {
+        return 2
+    }
+    if kind == "wheel" {
+        return 3
+    }
+    if kind == "hwheel" {
+        return 4
+    }
+    return 0
+}
+
+fn (self: FreeRdpDesktop) rd_pointer(tab: str, p: RdpPointer) -> void! {
+    mut rc: i32 = 0
+    kind := pointer_kind(p.kind)
+    button := i32(p.button)
+    x := i32(p.x)
+    y := i32(p.y)
+    delta := i32(p.delta)
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::pointer(tab, kind, button, x, y, delta);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "pointer"))
+    }
+}
+
+fn (self: FreeRdpDesktop) rd_close(tab: str) {
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        flint_rdp::close(tab);
+    }
+}
+
+// The tab's pending frame, waiting up to `wait_ms` (tests; the page reads the frame
+// channel): a 16-byte header and RGBA rows, "" when nothing changed.
+fn next_frame(tab: str, wait_ms: i64) -> str! {
     mut rc: i32 = 0
     mut frame := ""
-    id := self.id
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        rc = flint_rdp::next_frame(id, wait_ms, frame);
+        rc = flint_rdp::next_frame(tab, wait_ms, frame);
     }
     if rc != 0 {
         return error(rdp_error(i64(rc), ""))
@@ -130,65 +201,10 @@ fn (self: RdpConn) next_frame(wait_ms: i64) -> str! {
     return frame
 }
 
-// `flags` are FreeRDP's PTR_FLAGS_* bits.
-fn (self: RdpConn) mouse(flags: i32, x: i32, y: i32) -> void! {
-    mut rc: i32 = 0
-    id := self.id
+// Ends every tab: the app is quitting.
+fn close_all_desktops() {
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        rc = flint_rdp::mouse(id, flags, x, y);
-    }
-    if rc != 0 {
-        return error(rdp_error(i64(rc), "mouse"))
-    }
-}
-
-// A key by its RDP scancode (0x100 marks an extended key).
-fn (self: RdpConn) key(scancode: i32, down: bool) -> void! {
-    mut rc: i32 = 0
-    id := self.id
-    // CFIRE-UPSTREAM: CF-119
-    cpp {
-        rc = flint_rdp::key(id, scancode, down);
-    }
-    if rc != 0 {
-        return error(rdp_error(i64(rc), "key"))
-    }
-}
-
-// A typed UTF-16 code unit, independent of the keyboard layout.
-fn (self: RdpConn) unicode(code_unit: i32, down: bool) -> void! {
-    mut rc: i32 = 0
-    id := self.id
-    // CFIRE-UPSTREAM: CF-119
-    cpp {
-        rc = flint_rdp::unicode(id, code_unit, down);
-    }
-    if rc != 0 {
-        return error(rdp_error(i64(rc), "key"))
-    }
-}
-
-// Starts the local frame channel on 127.0.0.1 (spike option B).
-fn (self: RdpConn) frame_channel() -> FrameChannel! {
-    mut rc: i32 = 0
-    mut port: i32 = 0
-    mut token := ""
-    id := self.id
-    // CFIRE-UPSTREAM: CF-119
-    cpp {
-        rc = flint_rdp::frame_server_start(id, port, token);
-    }
-    if rc != 0 {
-        return error(coded(ERR_IO, "the frame channel did not start"))
-    }
-    return FrameChannel{ port: port, token: token }
-}
-
-fn (self: RdpConn) close() {
-    id := self.id
-    // CFIRE-UPSTREAM: CF-119
-    cpp {
-        flint_rdp::close(id);
+        flint_rdp::close_all();
     }
 }

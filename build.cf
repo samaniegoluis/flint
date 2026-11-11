@@ -18,11 +18,3 @@ var FlintGui = build.Executable("Flint", {
     OutDir:    "build/gui",
     Icon:      "assets/app-icon/Flint.icns",
 })
-
-// Milestone 28's RDP spike (src/drivers/rdpspike): a bare window measuring how frames
-// reach the page. Not shipped; scripts/rdp-spike.sh builds and runs it.
-var FlintRdpSpike = build.Executable("flint-rdp-spike", {
-    Entry:     "src/drivers/rdpspike/main.cf",
-    Subsystem: "gui",
-    OutDir:    "build/rdpspike",
-})

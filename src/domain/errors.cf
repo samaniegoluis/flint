@@ -34,6 +34,9 @@ ERR_NOT_DIR: str = "not_a_directory"
 ERR_PORT_IN_USE: str = "port_in_use"
 // Host type code (milestone 29): an RDP host given to a command that only SSH does.
 ERR_HOST_TYPE: str = "wrong_host_type"
+// Remote desktop code (milestone 30): the server answered and refused the connection
+// (Remote Desktop off, no free session), apart from `network` (not reached at all).
+ERR_REFUSED: str = "refused"
 
 // Builds an error message carrying a stable code.
 fn coded(code: str, msg: str) -> str {
@@ -43,7 +46,7 @@ fn coded(code: str, msg: str) -> str {
 // Every code a driver may see, in exit-code order (exit code = index + 1, except
 // that `internal` is 1).
 fn known_error_codes() -> []str {
-    return [ERR_INTERNAL, ERR_USAGE, ERR_NOT_FOUND, ERR_CONFLICT, ERR_LOCKED, ERR_WRONG_PASSWORD, ERR_INVALID, ERR_UNSUPPORTED, ERR_KEYCHAIN, ERR_IO, ERR_HOST_KEY, ERR_AUTH, ERR_NETWORK, ERR_TIMEOUT, ERR_DENIED, ERR_APPROVAL_TIMEOUT, ERR_NOT_SUDOER, ERR_SUDO_PASSWORD, ERR_PERMISSION, ERR_EXISTS, ERR_NOT_DIR, ERR_PORT_IN_USE, ERR_HOST_TYPE]
+    return [ERR_INTERNAL, ERR_USAGE, ERR_NOT_FOUND, ERR_CONFLICT, ERR_LOCKED, ERR_WRONG_PASSWORD, ERR_INVALID, ERR_UNSUPPORTED, ERR_KEYCHAIN, ERR_IO, ERR_HOST_KEY, ERR_AUTH, ERR_NETWORK, ERR_TIMEOUT, ERR_DENIED, ERR_APPROVAL_TIMEOUT, ERR_NOT_SUDOER, ERR_SUDO_PASSWORD, ERR_PERMISSION, ERR_EXISTS, ERR_NOT_DIR, ERR_PORT_IN_USE, ERR_HOST_TYPE, ERR_REFUSED]
 }
 
 // The code an error message starts with, or `internal` when it carries none.
@@ -108,4 +111,6 @@ test "exit codes are stable" {
     assert_eq(exit_code_for(ERR_EXISTS), 20)
     assert_eq(exit_code_for(ERR_NOT_DIR), 21)
     assert_eq(exit_code_for(ERR_PORT_IN_USE), 22)
+    assert_eq(exit_code_for(ERR_HOST_TYPE), 23)
+    assert_eq(exit_code_for(ERR_REFUSED), 24)
 }

@@ -119,9 +119,9 @@ credential with only an SSH key is listed but cannot be chosen, since RDP signs 
 password. There is no jump host, command on connect, sudo password or tunnels, and no
 **Test connection** yet.
 
-Opening an RDP host (double-click, <kbd>↵</kbd>, the palette) does not open a tab yet:
-Flint says the remote desktop tab is coming and opens no SSH session. See [Remote desktop
-(RDP) hosts](/guides/hosts/#remote-desktop-rdp-hosts) for the CLI.
+Opening an RDP host (double-click, <kbd>↵</kbd>, the palette) opens its desktop in a tab
+of its own: see [Remote desktop](/guides/remote-desktop/). See [Remote desktop (RDP)
+hosts](/guides/hosts/#remote-desktop-rdp-hosts) for the CLI.
 
 **Keys** lists the vault's SSH keys with their type, fingerprint and how many hosts or
 credentials use them. **Add key** takes a pasted private key or a file, plus its

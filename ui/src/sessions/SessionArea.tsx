@@ -14,10 +14,13 @@ import { sessions, statusLabel, useSessions } from './store';
 import { SplitView } from './SplitView';
 import { LayoutIcon, SplitMenu } from './SplitMenu';
 import { TunnelMark, TunnelsButton } from '../tunnels/TunnelsMenu';
+import { desktopScaleLabel, RdpView } from './RdpView';
 
 // Stays mounted while another view (Keys, Credentials, Settings) is shown, with
 // `shown` false: unmounting it disposed every xterm.js terminal and its scrollback.
-export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTunnels, onConnect, onFiles, filesOn }: {
+export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTunnels, onConnect, onFiles, filesOn, onKnownHosts }: {
+  /** Settings → Known hosts (a changed RDP certificate, design 22d2). */
+  onKnownHosts: () => void;
   shown: boolean;
   /** The toolbar's Files button (⌘E): opens or closes the Files view. */
   onFiles: () => void;
@@ -33,6 +36,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
   const { tabs, panes, active } = useSessions();
   const tablist = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState(false);
+  const paneArea = useRef<HTMLDivElement>(null);
   const activeTab = tabs.find((t) => t.id === active);
   // The focused pane of the active tab: the toolbar speaks for it.
   const tab = panes.find((p) => p.id === activeTab?.focus);
@@ -112,7 +116,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
               onClick={() => sessions.activate(t.id)}
               onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); sessions.closeTab(t.id); } }}>
               <span className={'st ' + st.dot} role="img" aria-label={fp.status} />
-              <HostTypeIcon type="ssh" />
+              <HostTypeIcon type={fp.kind} />
               {fp.alias}
               <TunnelMark host={fp.alias} />
               {n > 1 && <span className="tab-split" title={`${n} panes`}><LayoutIcon layout={t.layout} small />{n}</span>}
@@ -125,7 +129,28 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
         })}
         <button className="tab-add" aria-label={`New session (${chordLabel('newSession', os)})`} onClick={() => onPalette(true)}><Icon name="plus" size="sm" /><Kbd action="newSession" /></button>
       </div>
-      {tab && s && activeTab && (
+      {tab && s && activeTab && tab.kind === 'rdp' && (
+        <div className="toolbar" data-rdp-toolbar>
+          <span className={'st ' + s.dot} role="img" aria-label={tab.status} />
+          <span className="mono strong">{tab.alias}</span>
+          {host?.user && <><span className="dotsep">·</span><span className="mono">{host.domain && !host.user.includes('\\') && !host.user.includes('@') ? `${host.domain}\\${host.user}` : host.user}</span></>}
+          <span className="dotsep">·</span>
+          {ready && tab.desktop
+            ? <span className="mono" data-rdp-size>{tab.desktop.width} × {tab.desktop.height}</span>
+            : <span className={s.metaClass || 'faint'}>{s.meta || 'not connected'}</span>}
+          {ready && (() => {
+            const r = paneArea.current?.getBoundingClientRect();
+            const label = r ? desktopScaleLabel(tab, r.width, r.height) : '';
+            return label ? <><span className="dotsep">·</span><span className="faint">{label}</span></> : null;
+          })()}
+          {host && <span className="mono faint trunc tb-host" style={{ marginLeft: 'var(--sp-2)' }}>{host.hostname}:{host.port}</span>}
+          <span className="grow" />
+          {ready
+            ? <button className="tbtn" data-rdp-disconnect title="Disconnect" onClick={() => sessions.disconnect(tab.id)}><Icon name="x" size="sm" /><span className="tb-l">Disconnect</span></button>
+            : <button className="tbtn" title="Close tab" onClick={() => sessions.closeTab(activeTab.id)}><Icon name="x" size="sm" /><span className="tb-l">Close tab</span></button>}
+        </div>
+      )}
+      {tab && s && activeTab && tab.kind !== 'rdp' && (
         <div className="toolbar">
           <span className={'st ' + s.dot} role="img" aria-label={tab.status} />
           <span className="mono strong">{tab.alias}</span>
@@ -147,12 +172,18 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           </span>
         </div>
       )}
-      <div className="pane">
-        {tabs.map((t) => (
-          <div key={t.id} style={{ position: 'absolute', inset: 0, display: t.id === active ? 'block' : 'none' }}>
-            <SplitView tab={t} panes={panes.filter((p) => p.tab === t.id)} shown={shown} active={t.id === active} fontSize={fontSize} onEditHost={onEditHost} />
-          </div>
-        ))}
+      <div className="pane" ref={paneArea}>
+        {tabs.map((t) => {
+          const own = panes.filter((p) => p.tab === t.id);
+          const rdp = own.length === 1 && own[0].kind === 'rdp' ? own[0] : null;
+          return (
+            <div key={t.id} style={{ position: 'absolute', inset: 0, display: t.id === active ? 'block' : 'none' }}>
+              {rdp
+                ? <RdpView pane={rdp} active={shown && t.id === active} onEditHost={onEditHost} onKnownHosts={onKnownHosts} />
+                : <SplitView tab={t} panes={own} shown={shown} active={t.id === active} fontSize={fontSize} onEditHost={onEditHost} />}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
