@@ -1,6 +1,6 @@
 ---
 title: Remote desktop
-description: Open a Windows machine's desktop in a Flint tab, with the login from the vault, its certificate trusted on first use, and the keyboard and mouse sent to it.
+description: Open a Windows machine's desktop in a Flint tab, with the login from the vault, its certificate trusted on first use, the keyboard and mouse sent to it, copy and paste both ways, and a reconnect when the connection drops.
 ---
 
 An [RDP host](/guides/hosts/#remote-desktop-rdp-hosts) opens in a tab of its own, next to
@@ -60,6 +60,17 @@ The toolbar shows the host, the user, the desktop's size and, when it is scaled,
 much. **Disconnect** ends the connection and keeps the tab: your Windows session keeps
 running on the server, and **Connect again** brings you back to it.
 
+## When the connection drops
+
+A tab whose connection drops keeps its last picture, greyed, under **Connection lost**,
+with the reason and the time it happened. Windows keeps your session for a while:
+**Reconnect** (<kbd>⌘R</kbd>, <kbd>Ctrl+Shift+R</kbd> on Linux, or <kbd>↵</kbd>) signs in
+again with the vault's login and brings it back, windows as you left them, within the
+same 30-second limit as a first connection. **Close tab** (<kbd>⌘W</kbd>) ends it.
+
+A network that goes quiet is noticed too: Flint gives up on a connection that answers
+nothing for about 10 seconds, or 20 seconds on macOS while it is sending.
+
 ### Keyboard and mouse
 
 Keys go to Windows by their place on the keyboard, and Windows reads them with **your**
@@ -69,13 +80,50 @@ work as on the remote.
 
 Almost every key belongs to the remote desktop:
 
-- On macOS <kbd>⌘</kbd> is sent as <kbd>Ctrl</kbd>, as Microsoft's Windows App does:
-  <kbd>⌘C</kbd>, <kbd>⌘V</kbd>, <kbd>⌘Z</kbd> and <kbd>⌘W</kbd> act on Windows.
+- On macOS, by default, <kbd>⌘</kbd> is sent as <kbd>Ctrl</kbd>, as Microsoft's Windows
+  App does: <kbd>⌘C</kbd>, <kbd>⌘V</kbd>, <kbd>⌘Z</kbd> and <kbd>⌘W</kbd> act on
+  Windows. <kbd>⌃</kbd> is the Windows key. See [Modifier keys on a
+  Mac](#modifier-keys-on-a-mac) to change that.
 - Flint keeps only the palette (<kbd>⌘K</kbd>, <kbd>Ctrl+Shift+K</kbd> on Linux) and the
-  tab switches (<kbd>⌘1</kbd> … <kbd>⌘9</kbd>). Everything else Flint does is in the
-  palette and the toolbar. <kbd>⌘Q</kbd> and <kbd>⌘Tab</kbd> stay with macOS.
+  tab switches (<kbd>⌘1</kbd> … <kbd>⌘9</kbd>), on <kbd>⌘</kbd> whatever the setting.
+  Everything else Flint does is in the palette and the toolbar. <kbd>⌘Q</kbd>,
+  <kbd>⌘Tab</kbd> and <kbd>⌘Space</kbd> stay with macOS.
 
 The mouse, its buttons and the wheel (vertical and horizontal) go to the desktop.
+
+### Modifier keys on a Mac
+
+**Settings → Remote desktop** (macOS only) sets what each modifier key of this Mac sends
+to Windows, left and right keys apart:
+
+| Key | **Mac** (default) | **Windows** |
+|---|---|---|
+| <kbd>⌃</kbd> Control | Win | Ctrl |
+| <kbd>⌥</kbd> Option, left | Alt | Win |
+| <kbd>⌥</kbd> Option, right | AltGr | Win |
+| <kbd>⌘</kbd> Command, left | Ctrl | Alt |
+| <kbd>⌘</kbd> Command, right | Ctrl | AltGr |
+
+**Mac** works as on a Mac (<kbd>⌘C</kbd> copies); **Windows** puts the keys where a PC
+keyboard has them (<kbd>⌃C</kbd> copies, <kbd>⌥</kbd> opens the Start menu). Changing
+one key in the table makes a **Custom** set from what is shown; each key can send Ctrl,
+Alt, AltGr, Win or nothing (Off). The setting belongs to this computer. Linux and Windows
+have no such setting: a PC keyboard already sends its own keys.
+
+## Copy and paste
+
+Text goes both ways between the desktop and this computer:
+
+- **Copied in Windows**, it is on this computer's clipboard at once: paste it in any app.
+- **Copied here**, it is pasted in Windows as usual (<kbd>⌘V</kbd> with the Mac preset,
+  <kbd>Ctrl+V</kbd> elsewhere). Flint only tells Windows that there is text when the tab
+  takes the keyboard; the text itself travels when you paste in Windows, as `mstsc` and
+  Windows App do. A password you copy with Flint's **Copy** is sent the same way when you
+  paste it there.
+
+While Flint's window is locked, a paste in Windows gets nothing from this computer.
+Line breaks are converted both ways (Windows keeps CRLF). Only text is exchanged: files
+and images are not, yet.
 
 A remote desktop tab has no split panes, and the Files view, tunnels and **Open in a new
 pane** are for SSH hosts: the palette shows them greyed with *SSH hosts only*.
@@ -92,7 +140,7 @@ The tab says why, with **Retry** (<kbd>↵</kbd>), **Edit host** and **Close tab
 | … refused the session: nothing answers on its Remote Desktop port | Remote Desktop is off (Settings → System → Remote Desktop; Windows Home has none) or a firewall rejects it |
 | … refused the session | The server answered and would not open one: all its sessions are in use (Windows 10/11 Pro allows one at a time) |
 | The certificate … has changed | See [The certificate](#the-certificate) |
-| Connection lost | The connection dropped. Your Windows session keeps running for a while; **Connect again** brings it back |
+| Connection lost | The connection dropped. See [When the connection drops](#when-the-connection-drops) |
 
 ## Locking
 
@@ -104,6 +152,5 @@ size, needs the vault unlocked.
 
 ## Not yet
 
-Copy and paste between the desktop and this computer comes next. Full screen, sound, drive
-and printer redirection, several monitors, RD Gateway and RDP through an SSH tunnel are
-planned for later.
+Full screen, files and images over the clipboard, sound, drive and printer redirection,
+several monitors, RD Gateway and RDP through an SSH tunnel are planned for later.

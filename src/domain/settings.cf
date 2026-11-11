@@ -26,7 +26,19 @@ type Settings struct {
     // Milestone 25: the largest image or file a paste into the terminal uploads, in
     // MB (PASTE_LIMITS_MB). Older files read the default.
     paste_limit_mb:     i64  `json:"paste_limit_mb" default:"20"`
+    // Milestone 31 (D-074): what the modifier keys of a Mac keyboard send in an RDP
+    // tab, a preset (RDP_MAC_KEYS); "custom" reads `rdp_mac_custom`, one target per
+    // key ("MetaLeft=ctrl,AltLeft=alt,…", RDP_MAC_KEY_CODES to RDP_KEY_TARGETS); a key
+    // it leaves out keeps the Mac preset's. macOS only; older files read the defaults.
+    rdp_mac_keys:       str  `json:"rdp_mac_keys" default:"mac"`
+    rdp_mac_custom:     str  `json:"rdp_mac_custom" default:""`
 }
+
+RDP_MAC_KEYS: []str = ["mac", "windows", "custom"]
+// The six modifier keys of a Mac keyboard, by their W3C `code`.
+RDP_MAC_KEY_CODES: []str = ["ControlLeft", "ControlRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight"]
+// What each can send: a PC keyboard's Ctrl, Alt, AltGr (right Alt), Windows key, or nothing.
+RDP_KEY_TARGETS: []str = ["ctrl", "alt", "altgr", "win", "off"]
 
 // Terminal colour themes (ui/src/lib/terminalThemes.ts holds the palettes).
 TERM_THEMES: []str = ["default", "catppuccin", "tokyo-night", "aura", "dracula", "nord"]
@@ -43,7 +55,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "" }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {
@@ -92,6 +104,10 @@ fn check_settings(s: Settings) -> void! {
     if !paste_limit_valid(s.paste_limit_mb) {
         return error(coded(ERR_INVALID, "largest file to paste must be 10, 20, 50 or 100 MB"))
     }
+    if !one_of(s.rdp_mac_keys, RDP_MAC_KEYS) {
+        return error(coded(ERR_INVALID, "remote desktop keys must be mac, windows or custom"))
+    }
+    try check_rdp_mac_custom(s.rdp_mac_custom)
     try check_text("terminal font", s.term_font, 128, false)
     // The name ends up in a CSS font-family list, quoted.
     for b in s.term_font.bytes() {
@@ -174,4 +190,44 @@ test "idle lock follows the setting" {
     assert(idle_lock_due(3600000, 0, "1h"))
     assert(!idle_lock_due(999999999, 0, "never"))
     assert_eq(lock_after_ms(""), 0)
+}
+
+// "" or comma-separated `code=target` pairs, each key at most once.
+fn check_rdp_mac_custom(v: str) -> void! {
+    if v.len() == 0 {
+        return
+    }
+    if v.len() > 256 {
+        return error(coded(ERR_INVALID, "custom remote desktop keys are too long"))
+    }
+    mut seen: []str = []
+    for pair in str.split(v, ",") {
+        parts := str.split(pair, "=")
+        if parts.len() != 2 || !one_of(parts[0], RDP_MAC_KEY_CODES) || !one_of(parts[1], RDP_KEY_TARGETS) {
+            return error(coded(ERR_INVALID, "custom remote desktop keys must be pairs such as MetaLeft=ctrl"))
+        }
+        if one_of(parts[0], seen) {
+            return error(coded(ERR_INVALID, "custom remote desktop keys name {parts[0]} twice"))
+        }
+        seen.push(parts[0])
+    }
+}
+
+test "remote desktop keys are a preset and an optional custom table" {
+    mut s := default_settings()
+    assert_eq(s.rdp_mac_keys, "mac")
+    s.rdp_mac_keys = "windows"
+    try check_settings(s)
+    s.rdp_mac_keys = "custom"
+    s.rdp_mac_custom = "ControlLeft=win,ControlRight=off,AltLeft=alt,AltRight=altgr,MetaLeft=ctrl,MetaRight=ctrl"
+    try check_settings(s)
+    mut refused := 0
+    s.rdp_mac_keys = "linux"
+    check_settings(s) or { refused += 1 }
+    s.rdp_mac_keys = "custom"
+    for bad in ["MetaLeft", "MetaLeft=hyper", "Fn=ctrl", "MetaLeft=ctrl,MetaLeft=alt", "MetaLeft=ctrl,", "=ctrl"] {
+        s.rdp_mac_custom = bad
+        check_settings(s) or { refused += 1 }
+    }
+    assert_eq(refused, 7)
 }

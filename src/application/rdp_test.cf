@@ -15,10 +15,25 @@ type FakeDesktop struct {
     keys: []str
     pointers: []RdpPointer
     resizes: []DesktopSize
+    announces: []bool
+    answers: []str
 }
 
 fn new_fake_desktop(fp: str, password: str) -> FakeDesktop {
-    return FakeDesktop{ fp: fp, password: password, opens: [], closed: 0, events: [], waits: 0, keys: [], pointers: [], resizes: [] }
+    return FakeDesktop{ fp: fp, password: password, opens: [], closed: 0, events: [], waits: 0, keys: [], pointers: [], resizes: [], announces: [], answers: [] }
+}
+
+fn (mut self: FakeDesktop) rd_clip_announce(tab: str, has_text: bool) -> void! {
+    self.announces.push(has_text)
+}
+
+// Each answer as "ok <text>" or "fail".
+fn (mut self: FakeDesktop) rd_clip_answer(tab: str, ok: bool, text: str) -> void! {
+    if ok {
+        self.answers.push("ok {text}")
+    } else {
+        self.answers.push("fail")
+    }
 }
 
 fn (mut self: FakeDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> RdpDesktop! {
@@ -66,10 +81,19 @@ fn (mut self: FakeDesktop) rd_close(tab: str) {
 
 type FakeDesktopSink struct {
     ready: []RdpDesktop
+    locked: bool
 }
 
 fn (mut self: FakeDesktopSink) desktop_ready(tab: str, d: RdpDesktop) {
     self.ready.push(d)
+}
+
+fn (self: FakeDesktopSink) desktop_window_open() -> bool {
+    return !self.locked
+}
+
+fn no_clipboard() -> FakeClipboard {
+    return FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
 }
 
 fn trusting() -> FakePrompter {
@@ -227,9 +251,10 @@ test "a watched desktop reconnects at a new size without Display Control and rep
         RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 1025, height: 700 },
         RdpEvent{ kind: RDP_EVENT_ENDED, message: coded(ERR_NETWORK, "the connection was lost"), width: 0, height: 0 },
     ]
-    mut sink := FakeDesktopSink{ ready: [] }
+    mut sink := FakeDesktopSink{ ready: [], locked: false }
+    mut clip0 := no_clipboard()
     mut msg := ""
-    run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, rdp_req("win")) or err { msg = "{err.message()}" }
+    run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, rdp_req("win")) or err { msg = "{err.message()}" }
     assert_eq(msg, "network: the connection was lost")
     assert_eq(sink.ready.len(), 1)
     assert_eq(rd.opens.len(), 2)
@@ -240,14 +265,14 @@ test "a watched desktop reconnects at a new size without Display Control and rep
 
     // Closed on purpose: no error.
     mut quiet := new_fake_desktop("ab:cd", "s3cret")
-    mut sink2 := FakeDesktopSink{ ready: [] }
-    try run_remote_desktop(crypto, mut store, s, mut quiet, no_prompter(), mut sink2, rdp_req("win"))
+    mut sink2 := FakeDesktopSink{ ready: [], locked: false }
+    try run_remote_desktop(crypto, mut store, s, mut quiet, no_prompter(), mut sink2, mut clip0, rdp_req("win"))
     assert_eq(quiet.closed, 1)
 
     // A failed open closes the tab and reports why.
     mut bad := new_fake_desktop("ab:cd", "other")
     msg = ""
-    run_remote_desktop(crypto, mut store, s, mut bad, no_prompter(), mut sink2, rdp_req("win")) or err { msg = "{err.message()}" }
+    run_remote_desktop(crypto, mut store, s, mut bad, no_prompter(), mut sink2, mut clip0, rdp_req("win")) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "auth")
     assert_eq(bad.closed, 1)
 }
@@ -260,8 +285,9 @@ test "a reconnect for a new size is skipped when the vault cannot give the passw
     try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
     mut rd := new_fake_desktop("ab:cd", "typed")
     rd.events = [RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 800, height: 600 }]
-    mut sink := FakeDesktopSink{ ready: [] }
-    try run_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut sink, rdp_req("win"))
+    mut sink := FakeDesktopSink{ ready: [], locked: false }
+    mut clip0 := no_clipboard()
+    try run_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut sink, mut clip0, rdp_req("win"))
     // The typed password is not kept for a reconnect.
     assert_eq(rd.opens.len(), 1)
 }
@@ -283,4 +309,52 @@ test "input and resizes reach the engine once checked" {
     assert_eq(rd.resizes[0].width, 200)
     assert_eq(rd.resizes[0].height, 5000)
     assert_eq(rd.closed, 1)
+}
+
+test "the remote's copies reach this machine's clipboard and its pastes get this machine's text" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    rd.events = [
+        RdpEvent{ kind: RDP_EVENT_CLIP_TEXT, message: "from windows\nline 2", width: 0, height: 0 },
+        RdpEvent{ kind: RDP_EVENT_CLIP_TEXT, message: "", width: 0, height: 0 },
+        RdpEvent{ kind: RDP_EVENT_CLIP_REQUEST, message: "", width: 0, height: 0 },
+    ]
+    mut sink := FakeDesktopSink{ ready: [], locked: false }
+    mut clip := no_clipboard()
+    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip, rdp_req("win"))
+    // The empty copy left the first one in place, and the paste got it back.
+    assert_eq(clip.text, "from windows\nline 2")
+    assert_eq(clip.copies, 1)
+    assert_eq(clip.clear_after_ms, 0)
+    assert_eq(rd.answers.len(), 1)
+    assert_eq(rd.answers[0], "ok from windows\nline 2")
+}
+
+test "a locked window or a clipboard without text answers no paste" {
+    mut rd := new_fake_desktop("", "")
+    mut clip := no_clipboard()
+    clip.text = "secret-ish"
+    answer_remote_paste(mut rd, mut clip, "t1", false)
+    mut empty := no_clipboard()
+    empty.held = ClipboardContent{ text: "", mime: "image/png", image: "PNG" }
+    answer_remote_paste(mut rd, mut empty, "t1", true)
+    assert_eq(rd.answers.len(), 2)
+    assert_eq(rd.answers[0], "fail")
+    assert_eq(rd.answers[1], "fail")
+}
+
+test "the tab announces whether this machine's clipboard holds text, never the text" {
+    mut rd := new_fake_desktop("", "")
+    mut clip := no_clipboard()
+    try announce_desktop_clipboard(mut rd, mut clip, "t1")
+    clip.text = "hello"
+    try announce_desktop_clipboard(mut rd, mut clip, "t1")
+    assert_eq(rd.announces.len(), 2)
+    assert(!rd.announces[0])
+    assert(rd.announces[1])
+    assert_eq(rd.answers.len(), 0)
 }

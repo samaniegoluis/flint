@@ -6,7 +6,8 @@ package main
 // `rdp_open` connects on a worker, like an SSH tab: the certificate and password
 // prompts travel as "session:prompt" events through the mailbox the page minted
 // (the tab's id), "rdp:ready" says the desktop is up and where its frames are, and
-// "rdp:state" ends it with the reason. Input, resizes and closing come back as RPCs.
+// "rdp:state" ends it with the reason. Input, resizes, closing and the clipboard's
+// announcement (milestone 31) come back as RPCs.
 // A locked window refuses input and closing, as for SSH tabs (D-043); a locked vault
 // leaves the session running (D-072).
 
@@ -76,13 +77,29 @@ fn rdp_open_check(params: str, st: GuiState) -> RdpOpenReq! {
     return req
 }
 
+// The page's events for the tab, and whether the window is open to act through
+// (a locked window answers no clipboard request, milestone 31).
+type RdpTabSink struct {
+    events: GuiDesktopSink
+    holder: SessionHolder
+}
+
+fn (mut self: RdpTabSink) desktop_ready(tab: str, d: RdpDesktop) {
+    self.events.desktop_ready(tab, d)
+}
+
+fn (self: RdpTabSink) desktop_window_open() -> bool {
+    return !self.holder.window_locked()
+}
+
 // The connection, on a worker, until the tab ends.
-fn run_gui_rdp(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, vs: VaultSession, req: RdpOpenReq) {
+fn run_gui_rdp(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, vs: VaultSession, holder: SessionHolder, board: OsClipboard, req: RdpOpenReq) {
     mut rd := new_freerdp_desktop()
     prompter := new_gui_prompter(app, req.tab)
-    mut sink := new_gui_desktop_sink(app)
+    mut sink := RdpTabSink{ events: new_gui_desktop_sink(app), holder: holder }
+    mut clip := board
     open := RdpOpenRequest{ tab: req.tab, alias: req.alias, width: req.width, height: req.height, timeout_ms: RDP_CONNECT_TIMEOUT_MS }
-    run_remote_desktop(c, mut store, vs, mut rd, prompter, mut sink, open) or err {
+    run_remote_desktop(c, mut store, vs, mut rd, prompter, mut sink, mut clip, open) or err {
         msg := "{err.message()}"
         emit_rdp_state(mut app, req.tab, "ended", error_code_of(msg), error_text_of(msg))
         gui_session_drop(req.tab)
@@ -122,5 +139,15 @@ fn rpc_rdp_close(params: str, st: GuiState) -> str! {
     mut rd := new_freerdp_desktop()
     close_remote_desktop(mut rd, req.tab)
     _ := gui_session_close(req.tab)
+    return ok_json()
+}
+
+// The tab took the focus: the server learns whether this machine's clipboard holds
+// text (never the text itself, D-074).
+fn rpc_rdp_clipboard_announce(params: str, mut clip: OsClipboard, st: GuiState) -> str! {
+    try st.require_open_window()
+    req := try parse_req[RdpTabReq](params)
+    mut rd := new_freerdp_desktop()
+    try announce_desktop_clipboard(mut rd, mut clip, req.tab)
     return ok_json()
 }

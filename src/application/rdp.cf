@@ -125,8 +125,10 @@ fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](
 // person closed returns, one that ended on its own fails with the reason. A server
 // without Display Control is reconnected at the size the tab asked for, with the
 // password opened again from the vault; when that is not possible now (the vault is
-// locked, the password is not saved) the session keeps its size.
-fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K: DesktopSink](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, mut sink: K, req: RdpOpenRequest) -> void! {
+// locked, the password is not saved) the session keeps its size. The clipboard goes
+// both ways meanwhile (milestone 31, D-074): text the remote copies is written to this
+// machine's clipboard, and this machine's text is sent when the remote pastes.
+fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K: DesktopSink, L: Clipboard](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, mut sink: K, mut clip: L, req: RdpOpenRequest) -> void! {
     d := open_remote_desktop(crypto, mut store, session, mut rd, prompter, req) or err {
         rd.rd_close(req.tab)
         return error("{err.message()}")
@@ -144,7 +146,46 @@ fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K
         if ev.kind == RDP_EVENT_RESIZE {
             try reconnect_at_size(crypto, store, session, mut rd, prompter, req, ev)
         }
+        if ev.kind == RDP_EVENT_CLIP_TEXT {
+            take_remote_copy(mut clip, ev.message)
+        }
+        if ev.kind == RDP_EVENT_CLIP_REQUEST {
+            answer_remote_paste(mut rd, mut clip, req.tab, sink.desktop_window_open())
+        }
     }
+}
+
+// Text the remote copied goes on this machine's clipboard, as plain text (not
+// concealed, never cleared), like a copy from a terminal (OSC 52). An empty copy is
+// left out: it would only wipe what is there.
+fn take_remote_copy[L: Clipboard](mut clip: L, text: str) {
+    if text.len() == 0 {
+        return
+    }
+    clip.clipboard_copy_text(text) or {
+        return
+    }
+}
+
+// The remote pastes: this machine's text is sent, read now, so it is what the person
+// sees on their clipboard. A locked window sends nothing (nobody may act through it),
+// and neither does a clipboard with no text.
+fn answer_remote_paste[R: RemoteDesktop, L: Clipboard](mut rd: R, mut clip: L, tab: str, window_open: bool) {
+    mut text := ""
+    if window_open {
+        got := clip.clipboard_read() or ClipboardContent{ text: "", mime: "", image: "" }
+        text = got.text
+    }
+    rd.rd_clip_answer(tab, text.len() > 0, text) or {
+        return
+    }
+}
+
+// The tab took the focus: the server learns whether this machine's clipboard holds
+// text now, so a paste there can ask for it. The text itself is not sent (D-074).
+fn announce_desktop_clipboard[R: RemoteDesktop, L: Clipboard](mut rd: R, mut clip: L, tab: str) -> void! {
+    got := clip.clipboard_read() or ClipboardContent{ text: "", mime: "", image: "" }
+    try rd.rd_clip_announce(tab, got.text.len() > 0)
 }
 
 // Reconnects a running tab at the size of `ev`. Leaves the session as it is when its

@@ -22,6 +22,7 @@ cleanup() {
   for f in "$tmp"/sshd*.pid; do [[ -f "$f" ]] && kill "$(cat "$f")" 2>/dev/null; done
   # `|| true`: under set -e, the stopped server's status would end the cleanup here.
   [[ -n "${rdp_pid:-}" ]] && { kill "$rdp_pid" 2>/dev/null; wait "$rdp_pid" 2>/dev/null || true; }
+  [[ -n "${clip_pid:-}" ]] && { kill "$clip_pid" 2>/dev/null; wait "$clip_pid" 2>/dev/null || true; }
   [[ -n "${SSH_AGENT_PID:-}" ]] && kill "$SSH_AGENT_PID" 2>/dev/null
   rm -rf "$tmp"
   exit "$st"
@@ -122,6 +123,18 @@ if command -v sfreerdp-server >/dev/null; then
   rdp_pid=$!
   for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$rdp_port") 2>/dev/null && break; sleep 0.1; done
   export FLINT_RDP_SAMPLE_PORT="$rdp_port"
+fi
+
+# Flint's own RDP test server (milestone 31): the clipboard, the keys sent, a drop.
+# Skipped (the tests pass without it) where FreeRDP's server library is missing.
+clip_port="${FLINT_TEST_RDP_CLIP_PORT:-33893}"
+clip_ctl="${FLINT_TEST_RDP_CLIP_CONTROL:-33894}"
+if clip_bin="$("$root/scripts/rdp-testserver.sh")"; then
+  [[ -f "$tmp/rdp.crt" ]] || openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/rdp.key" -out "$tmp/rdp.crt" -days 2 -subj "/CN=flint-test" 2>/dev/null
+  "$clip_bin" --port="$clip_port" --control="$clip_ctl" --cert="$tmp/rdp.crt" --key="$tmp/rdp.key" >"$tmp/rdp-clip.log" 2>&1 &
+  clip_pid=$!
+  for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$clip_port") 2>/dev/null && break; sleep 0.1; done
+  export FLINT_RDP_CLIP_PORT="$clip_port" FLINT_RDP_CLIP_CONTROL="$clip_ctl"
 fi
 
 export FLINT_TEST_SSH_PORT="$port"

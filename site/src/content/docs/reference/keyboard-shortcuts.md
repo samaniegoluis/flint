@@ -38,9 +38,13 @@ speaks the Kitty keyboard protocol.
 ## In a remote desktop tab
 
 Keys go to the remote desktop, by their place on the keyboard. On macOS <kbd>⌘</kbd> is
-sent as <kbd>Ctrl</kbd> (<kbd>⌘C</kbd> is <kbd>Ctrl+C</kbd> on Windows). Flint keeps only
-the command palette (<kbd>⌘K</kbd> · <kbd>Ctrl+Shift+K</kbd>) and **Go to tab 1–9**; the
-rest is in the palette. See [Remote desktop](/guides/remote-desktop/#keyboard-and-mouse).
+sent as <kbd>Ctrl</kbd> by default (<kbd>⌘C</kbd> is <kbd>Ctrl+C</kbd> on Windows); the
+modifier keys can be changed in **Settings → Remote desktop** ([Modifier keys on a
+Mac](/guides/remote-desktop/#modifier-keys-on-a-mac)). Flint keeps only the command
+palette (<kbd>⌘K</kbd> · <kbd>Ctrl+Shift+K</kbd>) and **Go to tab 1–9**; the rest is in
+the palette. On a tab whose connection dropped, **Reconnect** (<kbd>⌘R</kbd> ·
+<kbd>Ctrl+Shift+R</kbd>) and **Close tab** (<kbd>⌘W</kbd> · <kbd>Ctrl+Shift+W</kbd>) work
+as on an SSH tab. See [Remote desktop](/guides/remote-desktop/#keyboard-and-mouse).
 
 ## In lists and dialogs
 

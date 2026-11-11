@@ -2144,6 +2144,12 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   (`VerifyX509Certificate`), the Display Control channel through `libfreerdp-client3`, and
   the keyboard layout (Carbon's Text Input Sources on macOS, included before winpr, whose
   `CreateEvent` macro renames Carbon's own).
+- **Milestone 31:** the clipboard channel (`cliprdr`, a static channel loaded beside
+  `drdynvc`; text only, UTF-16 and CRLF converted in the shim), a `TCPConnect` hook that
+  adds `TCP_RXT_CONNDROPTIME` on macOS, and a test server
+  (`native/testserver/flint_rdp_testserver.cpp`, built by `scripts/rdp-testserver.sh`
+  against `libfreerdp-server3`): FreeRDP's sample server has no clipboard channel, and a
+  server is callbacks on C structs too. It is test code, never linked into Flint.
 
 ### CF-120 · bug · `confirmed`: `cfire test <dir>` reports "No test suites found" when a test file does not compile
 - **Repro (c5b1d4b, macOS) [ran]:** in a package folder with a `_test.cf` that uses a

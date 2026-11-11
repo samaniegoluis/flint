@@ -127,6 +127,7 @@ key = open(os.environ["FLINT_TEST_SSH_KEY"]).read().replace("\\", "\\\\").replac
 values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_PORT"],
           "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"], "TPORT": os.environ["E2E_TPORT"],
           "RPORT": os.environ["E2E_RPORT"], "RPORT_FWD": os.environ["E2E_RPORT_FWD"],
+          "CPORT": os.environ.get("FLINT_RDP_CLIP_PORT", "0"), "CCTL": os.environ.get("FLINT_RDP_CLIP_CONTROL", "0"),
           "USER": os.environ["USER"], "KEY": key,
           "RUN": os.environ["E2E_RUN"]}
 for k, v in values.items():

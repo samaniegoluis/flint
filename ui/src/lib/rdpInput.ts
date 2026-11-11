@@ -3,10 +3,11 @@
 // the remote reads them with this machine's layout, which the core hands to the
 // server at connect time.
 //
-// In an RDP tab almost every key belongs to the remote desktop: on macOS ⌘ is sent as
-// Ctrl, as Windows App does, so ⌘C, ⌘V, ⌘Z and ⌘W act on the remote. Flint keeps
-// only the palette and the tab switches (and ⌘Q, which the OS takes first); every
-// other Flint action is in the palette and the toolbar.
+// In an RDP tab almost every key belongs to the remote desktop. On macOS the modifier
+// keys follow Settings → Remote desktop (milestone 31, D-074): by default ⌘ is sent as
+// Ctrl, as Windows App does, so ⌘C, ⌘V, ⌘Z and ⌘W act on the remote. Flint keeps only
+// the palette and the tab switches (and ⌘Q, which the OS takes first), on ⌘ whatever
+// the preset; every other Flint action is in the palette and the toolbar.
 
 import { actionFor, type Action, type KeyLike, type Os } from './keymap';
 
@@ -21,25 +22,72 @@ export function rdpKeptAction(e: KeyLike, os: Os): Action | null {
   return a && RDP_KEPT_ACTIONS.includes(a) ? a : null;
 }
 
-/** The key sent for a physical key: on macOS ⌘ is Ctrl. */
-export function rdpCode(code: string, os: Os): string {
-  if (os === 'mac' && code === 'MetaLeft') return 'ControlLeft';
-  if (os === 'mac' && code === 'MetaRight') return 'ControlRight';
-  return code;
+/** A Mac keyboard's modifier keys, by their physical `code` (Settings → Remote desktop). */
+export const MAC_MOD_KEYS = ['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'] as const;
+export type MacModKey = (typeof MAC_MOD_KEYS)[number];
+/** What a modifier key sends: a PC keyboard's Ctrl, Alt, AltGr (right Alt), Windows key, or nothing. */
+export type ModTarget = 'ctrl' | 'alt' | 'altgr' | 'win' | 'off';
+export const MOD_TARGETS: ModTarget[] = ['ctrl', 'alt', 'altgr', 'win', 'off'];
+export type ModMap = Record<MacModKey, ModTarget>;
+
+/**
+ * The presets (D-074). **Mac**, the default, as Windows App: ⌘ is Ctrl so ⌘C/⌘V copy
+ * and paste, ⌃ is the Windows key, left ⌥ is Alt and right ⌥ AltGr. **Windows** by
+ * position, as a PC keyboard: ⌃ Ctrl, left ⌥ Win, left ⌘ Alt, right ⌘ AltGr, right ⌥ Win.
+ */
+export const MOD_PRESETS: Record<'mac' | 'windows', ModMap> = {
+  mac: { ControlLeft: 'win', ControlRight: 'win', AltLeft: 'alt', AltRight: 'altgr', MetaLeft: 'ctrl', MetaRight: 'ctrl' },
+  windows: { ControlLeft: 'ctrl', ControlRight: 'ctrl', AltLeft: 'win', AltRight: 'win', MetaLeft: 'alt', MetaRight: 'altgr' },
+};
+
+/** The map a setting gives: a preset, or the custom table over the Mac preset. */
+export function modMapOf(preset: 'mac' | 'windows' | 'custom', custom: string): ModMap {
+  if (preset !== 'custom') return MOD_PRESETS[preset];
+  const m: ModMap = { ...MOD_PRESETS.mac };
+  for (const pair of custom.split(',')) {
+    const [k, v] = pair.split('=');
+    if ((MAC_MOD_KEYS as readonly string[]).includes(k) && (MOD_TARGETS as string[]).includes(v)) m[k as MacModKey] = v as ModTarget;
+  }
+  return m;
+}
+
+/** The custom table as the setting keeps it. */
+export function modMapText(m: ModMap): string {
+  return MAC_MOD_KEYS.map((k) => `${k}=${m[k]}`).join(',');
+}
+
+function targetCode(t: ModTarget, right: boolean): string | null {
+  switch (t) {
+    case 'ctrl': return right ? 'ControlRight' : 'ControlLeft';
+    case 'alt': return 'AltLeft';
+    case 'altgr': return 'AltRight';
+    case 'win': return right ? 'MetaRight' : 'MetaLeft';
+    default: return null;
+  }
+}
+
+/**
+ * The key sent for a physical key, null for none. On macOS the modifier keys follow
+ * `map` (the Mac preset when none is given); a PC keyboard sends every key as it is.
+ */
+export function rdpCode(code: string, os: Os, map: ModMap = MOD_PRESETS.mac): string | null {
+  if (os !== 'mac' || !(MAC_MOD_KEYS as readonly string[]).includes(code)) return code;
+  return targetCode(map[code as MacModKey], code.endsWith('Right'));
 }
 
 /**
  * The keys held down on the remote, so none stays stuck: macOS sends no keyup for a
  * key pressed while ⌘ is held, and a tab that loses the focus (the palette, another
- * window) must let go of everything.
+ * window) must let go of everything. Keys are tracked by what was sent.
  */
 export class HeldKeys {
   private held = new Set<string>();
 
-  constructor(private send: (code: string, down: boolean) => void, private os: Os) {}
+  constructor(private send: (code: string, down: boolean) => void, private os: Os, private map: ModMap = MOD_PRESETS.mac) {}
 
   down(code: string) {
-    const c = rdpCode(code, this.os);
+    const c = rdpCode(code, this.os, this.map);
+    if (!c) return;
     // Caps Lock on macOS reports a keydown when it turns on and a keyup when it
     // turns off: each is one press.
     if (code === 'CapsLock') { this.send(c, true); this.send(c, false); return; }
@@ -48,13 +96,13 @@ export class HeldKeys {
   }
 
   up(code: string) {
-    const c = rdpCode(code, this.os);
-    if (code === 'CapsLock') { this.send(c, true); this.send(c, false); return; }
+    const c = rdpCode(code, this.os, this.map);
+    if (code === 'CapsLock') { if (c) { this.send(c, true); this.send(c, false); } return; }
     if (this.os === 'mac' && (code === 'MetaLeft' || code === 'MetaRight')) {
       // The keys pressed with ⌘ never reported their release.
-      for (const k of [...this.held]) if (k !== c) { this.held.delete(k); this.send(k, false); }
+      for (const k of [...this.held]) if (k !== c && !isModifierSent(k)) { this.held.delete(k); this.send(k, false); }
     }
-    if (!this.held.has(c)) return;
+    if (!c || !this.held.has(c)) return;
     this.held.delete(c);
     this.send(c, false);
   }
@@ -67,6 +115,10 @@ export class HeldKeys {
   get size(): number {
     return this.held.size;
   }
+}
+
+function isModifierSent(code: string): boolean {
+  return code.startsWith('Control') || code.startsWith('Alt') || code.startsWith('Meta') || code.startsWith('Shift');
 }
 
 /** The RDP button of a DOM mouse button (0 main, 1 middle, 2 secondary), or -1. */

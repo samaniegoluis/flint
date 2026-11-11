@@ -127,6 +127,10 @@ export interface Settings {
   lock_after: LockAfter;
   /** Milestone 25: the largest image or file a paste uploads, in MB. */
   paste_limit_mb: PasteLimit;
+  /** Milestone 31 (D-074): what a Mac keyboard's modifier keys send in an RDP tab. */
+  rdp_mac_keys: 'mac' | 'windows' | 'custom';
+  /** The custom table, "MetaLeft=ctrl,AltLeft=alt,…"; a key left out keeps the Mac preset's. */
+  rdp_mac_custom: string;
   /** The app's own record that earlier cached keys were removed (D-048); the core keeps it. */
   keys_cleared?: boolean;
 }

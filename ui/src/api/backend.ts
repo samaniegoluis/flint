@@ -145,6 +145,8 @@ export const api = {
   rdpPointer: (tab: string, p: RdpPointer) => call('rdp_pointer', { tab, ...p }),
   rdpResize: (tab: string, width: number, height: number) => call('rdp_resize', { tab, width, height }),
   rdpClose: (tab: string) => call('rdp_close', { tab }),
+  /** Milestone 31: tells the server whether this machine's clipboard holds text (never the text). */
+  rdpClipboardAnnounce: (tab: string) => call('rdp_clipboard_announce', { tab }),
 
   /** The Files view (milestone 17): SFTP over a tab's own session (D-053). */
   filesHome: (session: string) => call<{ path: string }>('files_home', { session, path: '' }),
