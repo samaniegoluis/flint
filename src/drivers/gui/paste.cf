@@ -6,9 +6,11 @@ package main
 // Like typing, refused while the window is locked (D-043). Not in the activity log,
 // as the window's own copies (D-055).
 
+import "core:json"
 import "../../adapters/config"
 import "../../adapters/process"
 import "../../adapters/ssh"
+import "../../adapters/uievents"
 import "../../application"
 import "../../domain"
 
@@ -33,4 +35,18 @@ fn rpc_terminal_paste(req: TerminalPasteReq, mut stage: FsDropStage, settings: J
     mut local := new_local_fs()
     paste := PasteRequest{ id: req.drop, local: remote_join(stage.stage_folder(req.drop), req.rel), name: req.name, kind: req.kind, limit_mb: 0 }
     return paste_over_session(mut link, mut local, settings, paste)
+}
+
+type ClipboardPasteReq struct {
+    drop: str `json:"drop"`
+    rel:  str `json:"rel"`
+}
+
+// The page's paste event arrived empty (WebKitGTK): the core reads the clipboard and
+// stages an image in the drop the page named, for `terminal_paste` to write. Bound
+// synchronously: GTK's clipboard is read on the UI thread.
+fn rpc_terminal_clipboard_read(params: str, mut clip: OsClipboard, mut stage: FsDropStage, st: GuiState) -> str! {
+    try st.require_open_window()
+    req := try parse_req[ClipboardPasteReq](params)
+    return json.stringify(try stage_clipboard(mut clip, mut stage, req.drop, req.rel))
 }

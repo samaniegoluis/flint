@@ -115,6 +115,36 @@ inline bool is_concealed(const std::string& name) {
     return s != nullptr;
 }
 
+// What a paste would take (milestone 25 on Linux; also built here so one test covers
+// both): the board's text, else its PNG. 0, or 2 when there is no board.
+inline int read_paste(const std::string& name, std::string& text, std::string& mime, std::string& data) {
+    Pool pool;
+    id pb = board(name);
+    if (!pb) return 2;
+    text = read_text(name);
+    if (!text.empty()) return 0;
+    id d = reinterpret_cast<id (*)(id, SEL, id)>(objc_msgSend)(pb, sel("dataForType:"), ns_string("public.png"));
+    if (!d) return 0;
+    auto bytes = reinterpret_cast<const void* (*)(id, SEL)>(objc_msgSend)(d, sel("bytes"));
+    auto len = reinterpret_cast<unsigned long (*)(id, SEL)>(objc_msgSend)(d, sel("length"));
+    if (bytes && len > 0) {
+        data.assign(static_cast<const char*>(bytes), len);
+        mime = "image/png";
+    }
+    return 0;
+}
+
+// For the tests: puts PNG bytes alone on the board.
+inline int copy_png(const std::string& name, const std::string& png) {
+    Pool pool;
+    id pb = board(name);
+    if (!pb) return 2;
+    reinterpret_cast<long (*)(id, SEL)>(objc_msgSend)(pb, sel("clearContents"));
+    id d = reinterpret_cast<id (*)(id, SEL, const void*, unsigned long)>(objc_msgSend)(cls("NSData"), sel("dataWithBytes:length:"), png.data(), png.size());
+    auto set = reinterpret_cast<signed char (*)(id, SEL, id, id)>(objc_msgSend);
+    return set(pb, sel("setData:forType:"), d, ns_string("public.png")) ? 0 : 1;
+}
+
 inline void release_board(const std::string& name) {
     Pool pool;
     id pb = board(name);
@@ -202,6 +232,83 @@ inline std::string read_text(const std::string&) {
     return s;
 }
 
+// What a paste would take, read by the core because WebKitGTK hands the page's paste
+// event neither text nor image (milestone 25 on Linux): the clipboard's text, else an
+// image as PNG (`image/png` as offered, or any image GTK can read, converted). 0, or 2
+// with no display. GTK's waits run a nested main loop: called on the UI thread.
+inline int read_paste(const std::string&, std::string& text, std::string& mime, std::string& data) {
+    if (!gdk_display_get_default()) return 2;
+    GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+    GdkAtom* targets = nullptr;
+    gint n = 0;
+    if (!gtk_clipboard_wait_for_targets(cb, &targets, &n)) return 0;
+    if (gtk_targets_include_text(targets, n)) {
+        gchar* t = gtk_clipboard_wait_for_text(cb);
+        text = t ? t : "";
+        g_free(t);
+        if (!text.empty()) {
+            g_free(targets);
+            return 0;
+        }
+    }
+    GdkAtom png = gdk_atom_intern_static_string("image/png");
+    bool has_png = false;
+    for (gint i = 0; i < n; i++) has_png = has_png || targets[i] == png;
+    bool has_image = gtk_targets_include_image(targets, n, FALSE);
+    g_free(targets);
+    if (has_png) {
+        GtkSelectionData* sd = gtk_clipboard_wait_for_contents(cb, png);
+        if (sd) {
+            gint len = 0;
+            const guchar* p = gtk_selection_data_get_data_with_length(sd, &len);
+            if (p && len > 0) {
+                data.assign(reinterpret_cast<const char*>(p), static_cast<size_t>(len));
+                mime = "image/png";
+            }
+            gtk_selection_data_free(sd);
+            if (!data.empty()) return 0;
+        }
+    }
+    if (has_image) {
+        GdkPixbuf* pb = gtk_clipboard_wait_for_image(cb);
+        if (pb) {
+            gchar* buf = nullptr;
+            gsize len = 0;
+            if (gdk_pixbuf_save_to_buffer(pb, &buf, &len, "png", nullptr, nullptr) && buf && len > 0) {
+                data.assign(buf, len);
+                mime = "image/png";
+            }
+            g_free(buf);
+            g_object_unref(pb);
+        }
+    }
+    return 0;
+}
+
+// For the tests: puts PNG bytes alone on the clipboard.
+struct PngData {
+    std::string png;
+};
+
+inline void png_get_cb(GtkClipboard*, GtkSelectionData* sd, guint, gpointer p) {
+    auto* d = static_cast<PngData*>(p);
+    gtk_selection_data_set(sd, gtk_selection_data_get_target(sd), 8, reinterpret_cast<const guchar*>(d->png.data()), static_cast<gint>(d->png.size()));
+}
+
+inline void png_clear_cb(GtkClipboard*, gpointer p) { delete static_cast<PngData*>(p); }
+
+inline int copy_png(const std::string&, const std::string& png) {
+    if (!gdk_display_get_default()) return 2;
+    static GtkTargetEntry targets[] = {{const_cast<gchar*>("image/png"), 0, 0}};
+    auto* d = new PngData{png};
+    if (!gtk_clipboard_set_with_data(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), targets, 1, png_get_cb, png_clear_cb, d)) {
+        delete d;
+        return 1;
+    }
+    live_seq() = 0;
+    return 0;
+}
+
 inline bool is_concealed(const std::string&) { return live_seq() != 0 && live_concealed(); }
 inline void release_board(const std::string&) {}
 
@@ -212,6 +319,8 @@ inline bool clear_if_unchanged(const std::string&, long) { return false; }
 inline int copy_to(const std::string&, const std::string&, int64_t, bool) { return 2; }
 inline std::string read_text(const std::string&) { return ""; }
 inline bool is_concealed(const std::string&) { return false; }
+inline int read_paste(const std::string&, std::string&, std::string&, std::string&) { return 2; }
+inline int copy_png(const std::string&, const std::string&) { return 2; }
 inline void release_board(const std::string&) {}
 
 #endif

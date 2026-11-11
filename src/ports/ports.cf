@@ -196,6 +196,8 @@ type Clipboard interface {
     clipboard_copy_secret(text: str, clear_after_ms: i64) -> void!
     // Plain text a remote program copied (OSC 52): not concealed, never cleared.
     clipboard_copy_text(text: str) -> void!
+    // What a paste would take: the text, else an image as PNG (milestone 25 on Linux).
+    clipboard_read() -> ClipboardContent!
 }
 
 // A presence check before the owner's Allow takes effect (adapters/uievents,

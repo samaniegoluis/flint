@@ -160,6 +160,10 @@ export const api = {
    *  and returns its path, and the same path escaped for a shell. */
   terminalPaste: (p: { session: string; drop: string; rel: string; name: string; kind: string }) =>
     call<{ path: string; text: string; size: number }>('terminal_paste', p),
+  /** The core reads the clipboard when the page's paste event came empty (WebKitGTK):
+   *  its text, or an image staged in `drop` as `rel` for `terminalPaste`. */
+  terminalClipboardRead: (drop: string, rel: string) =>
+    call<{ kind: 'text' | 'image' | 'none'; text: string; mime: string; size: number }>('terminal_clipboard_read', { drop, rel }),
 
   /** Tunnels (milestone 23): every saved one, with its live state. */
   tunnelsList: () => call<TunnelView[]>('tunnels_list'),

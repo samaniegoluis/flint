@@ -799,6 +799,21 @@
       await runInTerminal(`od -An -tx1 -N8 ${path} | tr -s ' '; echo head-$((6*7))`, 'head-42');
       await check(termText().includes(' 89 50 4e 47 0d 0a 1a 0a'), 'the bytes on the server are the pasted image');
 
+      await setStep('paste: an empty paste event reads the clipboard');
+      // WebKitGTK hands the page a paste event with nothing in it: the core reads the
+      // system clipboard (the run's private board on macOS) and stages the image itself.
+      await window.backend.e2e_clipboard_png({ name: btoa(String.fromCharCode(...pngBytes)) });
+      const nativeRe = /(\/\S*\/\.cache\/flint\/paste\/p-[a-z0-9-]+\/paste\.png)/;
+      await type('/bin/ls -ln ');
+      await pasteData(null, []);
+      const nativePasted = await waitFor(() => fullText().match(nativeRe), 'the path of the image the core read', 20000);
+      await check(true, `an empty paste event pastes the clipboard's image, read by the core (${nativePasted[1]})`);
+      await type('; echo native-$((6*7))');
+      await enter();
+      await waitFor(() => termText().includes('native-42'), 'the ls of the image the core read');
+      await check(new RegExp(`-rw-------@? +1 +\\d+ +\\d+ +${pngBytes.length} `).test(fullText().split('native-42')[0].slice(-400)), `it is on the server, mode 0600, ${pngBytes.length} bytes`);
+      const nativeFolder = nativePasted[1].replace(/\/[^/]+$/, '');
+
       await setStep('paste: text wins');
       const before = pathCount();
       await pasteData('echo text-wins-$((6*7))', [png]);
@@ -816,7 +831,7 @@
       await setStep('paste: the limit is a setting');
       const saved = await window.backend.settings_get({});
       await check(saved.paste_limit_mb === 20, 'the paste limit defaults to 20 MB');
-      await runInTerminal(`rm -rf ${folder}; echo cleaned-$((6*7))`, 'cleaned-42');
+      await runInTerminal(`rm -rf ${folder} ${nativeFolder}; echo cleaned-$((6*7))`, 'cleaned-42');
     }
 
     if (RUN === 'tunnels') {

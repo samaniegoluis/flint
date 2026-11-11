@@ -135,3 +135,40 @@ test "a paste over a session takes the limit from this machine's settings" {
     res := try paste_over_session(mut host, mut here, store, paste_req("d-8"))
     assert(res.path.ends_with("/d-8/Captura-de-pantalla.png"))
 }
+
+test "a paste the webview left empty reads the clipboard: text wins over an image" {
+    mut clip := FakeClipboard{ text: "ls -la", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "image/png", image: "PNG" } }
+    mut stage := FakeDropStage{ appended: [], discarded: [] }
+    got := try stage_clipboard(mut clip, mut stage, "p-1", "clip")
+    assert_eq(got.kind, "text")
+    assert_eq(got.text, "ls -la")
+    assert_eq(stage.appended.len(), 0)
+}
+
+test "a paste the webview left empty stages the clipboard's image" {
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "image/png", image: "\x89PNG-bytes" } }
+    mut stage := FakeDropStage{ appended: [], discarded: [] }
+    got := try stage_clipboard(mut clip, mut stage, "p-2", "clip")
+    assert_eq(got.kind, "image")
+    assert_eq(got.mime, "image/png")
+    assert_eq(got.size, 10)
+    assert_eq(stage.appended.len(), 1)
+    assert_eq(stage.appended[0], "p-2:clip=\x89PNG-bytes")
+}
+
+test "an empty clipboard, or something that is not an image, pastes nothing" {
+    mut stage := FakeDropStage{ appended: [], discarded: [] }
+    mut empty := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
+    assert_eq((try stage_clipboard(mut empty, mut stage, "p-3", "clip")).kind, "none")
+    mut pdf := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "application/pdf", image: "%PDF" } }
+    assert_eq((try stage_clipboard(mut pdf, mut stage, "p-4", "clip")).kind, "none")
+    assert_eq(stage.appended.len(), 0)
+}
+
+test "a clipboard paste needs a valid drop" {
+    mut clip := FakeClipboard{ text: "x", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
+    mut stage := FakeDropStage{ appended: [], discarded: [] }
+    mut code := "ok"
+    stage_clipboard(mut clip, mut stage, "../up", "clip") or err { code = error_code_of("{err.message()}") }
+    assert_eq(code, "invalid")
+}

@@ -188,8 +188,12 @@ the size limit is one row in Settings → Terminal.
 
 ## Open questions
 
-- **A copied file on the three systems**: settled by 25's spike. It also tells whether
-  WebView2 differs from WebKit for screenshots, which the owner then checks on Windows.
+- **A copied file on the three systems**: settled by 25's spike on Zorin (2026-11-10): it
+  does not work on Linux, so it is out of milestone 26 (ROADMAP, `later`). The same run
+  found that on Linux neither a pasted image nor a dropped file reaches the page (ROADMAP
+  §1, "Image paste and file drops do not work on Linux"): the image can be read through
+  Flint's native clipboard shim (CF-053), the drop needs a native handler (CF-004). Milestone 26's
+  plan settles where that work goes. Windows (WebView2) is still to be checked by the owner.
 - **Visible e2e window as the macOS default**: settled by 27's experiment. Linux keeps
   Xvfb.
 - **A host with 2FA or keyboard-interactive auth** asks twice when its terminal and its
