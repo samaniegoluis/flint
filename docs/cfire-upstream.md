@@ -2161,3 +2161,38 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `scripts/test.sh` would have reported the RDP adapter green with none of its tests run.
 - **Workaround:** run a changed test file by its path once before trusting the folder run.
 - **Ideal:** a test file that fails to compile fails the run with its error.
+
+### CF-121 · missing · `confirmed`: no way to turn off the webview's form autofill (Windows)
+- **Seen (owner, Windows 11, Flint's Windows branch on cfire `c5b1d4b` + its Windows patches) [ran]:**
+  registering a second RDP host in the app, the user field offered the user typed in the
+  first. WebView2 is Chromium, and its general autofill is on by default: values typed into
+  the page's inputs are stored in the webview's profile on disk and offered back.
+- **Checked in cfire's source:** `runtime/core/webui/windows_webview2.hpp:519-523` sets only
+  `IsStatusBarEnabled` and `IsWebMessageEnabled` on `ICoreWebView2Settings`;
+  `ICoreWebView2Settings4::put_IsGeneralAutofillEnabled` and `put_IsPasswordAutosaveEnabled`
+  are never called. WKWebView and WebKitGTK have no general autofill.
+- **Impact:** an app that keeps its data encrypted (Flint's vault) leaks what the user types
+  into a plain profile folder (`%LOCALAPPDATA%\…\EBWebView\`).
+- **Workaround:** `autocomplete="off"` on the page's inputs (Chromium may ignore it on a field
+  that looks like a username).
+- **Ideal:** a `webui.App` option for autofill, off by default for an app (not a browser), and
+  password autosave always off.
+
+### CF-122 · missing · `confirmed`: the web inspector and the browser's context menu are on in every build
+- **Seen (owner, Windows 11) [ran]:** right-click in Flint's window shows Edge's menu with
+  *Inspect*, *Reload*, *Print*, *Save as* and *Back*.
+- **Checked in cfire's source:** WebView2 leaves `AreDevToolsEnabled` and
+  `AreDefaultContextMenusEnabled` at their default, on (`windows_webview2.hpp:519-523`);
+  macOS sets `developerExtrasEnabled` to `YES` for every app
+  (`runtime/core/webui/macos_ios.hpp:244`, inside `apply_macos_unthrottled_prefs`);
+  `linux_gtk.hpp` does not touch `enable-developer-extras` (off by default) nor the default
+  context menu.
+- **Impact:** a shipped app opens its own inspector, where the page's state can be read (in
+  Flint, whatever the unlocked vault has shown); *Reload* restarts the UI under open sessions.
+- **Workaround:** the page can cancel `contextmenu` outside text fields; the inspector itself
+  cannot be turned off from the page.
+- **Ideal:** a `webui.App` option, e.g. `devtools: bool`, off by default and applied per
+  backend (`put_AreDevToolsEnabled`, `developerExtrasEnabled`, `enable-developer-extras`),
+  so an app turns it on for development (an environment variable or a debug build). And a
+  way to filter the default context menu (WebView2's `ContextMenuRequested`; WebKit's
+  `context-menu` signal; `WKUIDelegate` on macOS) that keeps copy and paste in text fields.
