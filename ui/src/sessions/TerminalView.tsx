@@ -78,21 +78,44 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
   // that changes font when selected, or nearly vanishes after a font change. Dropping
   // the atlas once the font is in redraws every glyph with it. Cheap: glyphs are
   // drawn again on demand.
+  //
+  // Only a shown terminal is fitted (through `refit`): fitting a hidden one measured
+  // its box under display:none, where "100%" reads as 100 px, and shrank the terminal
+  // to 11x5. A full-screen program's screen (herdr, M31 owner check) was cut to that
+  // and never drawn again, since the shell was told no new size.
   const redrawGlyphs = () => {
     const term = termRef.current;
     if (!term) return;
     try {
       webglRef.current?.clearTextureAtlas();
-      fitRef.current?.fit();
     } catch {
-      // not measurable while hidden
+      // no atlas yet
     }
+    refit();
     term.refresh(0, term.rows - 1);
   };
   // After the next two frames, when a system font (which fires no font-loading
   // event) has been resolved for the new text.
   const redrawGlyphsSoon = () => {
     requestAnimationFrame(() => requestAnimationFrame(redrawGlyphs));
+  };
+  // When the browser takes the WebGL context away, xterm falls back to its DOM
+  // renderer, which starts empty and shows only what changes later. Everything is
+  // drawn again at once, and WebGL comes back when the tab is shown again.
+  const attachWebgl = (term: Terminal) => {
+    if (webglRef.current) return;
+    try {
+      const gl = new WebglAddon();
+      gl.onContextLoss(() => {
+        gl.dispose();
+        if (webglRef.current === gl) webglRef.current = null;
+        requestAnimationFrame(() => term.refresh(0, term.rows - 1));
+      });
+      term.loadAddon(gl);
+      webglRef.current = gl;
+    } catch {
+      webglRef.current = null;
+    }
   };
   const activeRef = useRef(active);
   activeRef.current = active;
@@ -125,17 +148,9 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(screenRef.current!);
-    let webgl: WebglAddon | undefined;
-    try {
-      webgl = new WebglAddon();
-      webgl.onContextLoss(() => { webgl?.dispose(); webgl = undefined; webglRef.current = null; });
-      term.loadAddon(webgl);
-    } catch {
-      webgl = undefined;
-    }
     termRef.current = term;
     fitRef.current = fit;
-    webglRef.current = webgl ?? null;
+    attachWebgl(term);
     // Web fonts (the bundled ones) report when they finish loading; system fonts do not.
     let alive = true;
     const onFontsLoaded = () => { if (alive) redrawGlyphs(); };
@@ -296,7 +311,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       term.textarea?.removeEventListener('compositionend', onCompositionEnd);
       term.element?.removeEventListener('contextmenu', onContextMenu);
       term.element?.removeEventListener('paste', onPaste, true);
-      webgl?.dispose();
+      webglRef.current?.dispose();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -332,6 +347,11 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     // Fitting now measured the wider pane and sent the shell a resize too many,
     // which zsh answered by drawing its prompt again.
     const t = setTimeout(refit, 0);
+    const term = termRef.current;
+    if (term && !webglRef.current) {
+      attachWebgl(term);
+      term.refresh(0, term.rows - 1);
+    }
     if (focus) termRef.current?.focus();
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

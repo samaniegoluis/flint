@@ -110,6 +110,7 @@ fn main() {
     app.bind_raw("rdp_pointer") |params| { return rpc_rdp_pointer(params, st) }
     app.bind_raw("rdp_resize") |params| { return rpc_rdp_resize(params) }
     app.bind_raw("rdp_close") |params| { return rpc_rdp_close(params, st) }
+    app.bind_raw("rdp_clipboard_announce") |params| { return rpc_rdp_clipboard_announce(params, mut clipboard, st) }
     app.bind_raw("window_theme") |params| { return rpc_window_theme(params, mut app) }
     app.bind_raw("dialog_open") |params| { return rpc_dialog_open(params, app) }
     app.bind_raw("dialog_save") |params| { return rpc_dialog_save(params, app) }
@@ -241,6 +242,7 @@ fn main() {
     if e2e {
         app.bind_raw("e2e_clipboard") |params| { return rpc_e2e_clipboard(clipboard) }
         app.bind_raw("e2e_clipboard_png") |params| { return rpc_e2e_clipboard_png(params, clipboard) }
+        app.bind_raw("e2e_clipboard_set") |params| { return rpc_e2e_clipboard_set(params, clipboard) }
         // Stands in for the window's close button with the tray (milestone 14).
         app.bind_raw("e2e_close_window") |params| {
             mut a := app
@@ -280,11 +282,14 @@ fn main() {
             worker_app := app
             worker_store := store
             vs := st.vault_session()
+            holder := st.holder
+            // The system clipboard (the run's private board under gui-e2e).
+            board := clipboard
             emit_rdp_state(mut app, r.tab, "connecting", "", "")
             scope.spawn || {
                 mut a := worker_app
                 mut s := worker_store
-                run_gui_rdp(mut a, c, mut s, vs, r)
+                run_gui_rdp(mut a, c, mut s, vs, holder, board, r)
             }
             return ok_json()
         }

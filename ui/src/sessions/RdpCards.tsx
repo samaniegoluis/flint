@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { HostView } from '../api/types';
 import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
-import { Key } from '../ui/Kbd';
+import { Kbd, Key } from '../ui/Kbd';
 import { RDP_CONNECT_TIMEOUT_S } from '../lib/rdpInput';
 import { rdpEndKind, sessions, type Pane } from './store';
 
@@ -113,6 +113,24 @@ export function RdpCard({ pane, active, onEditHost, onKnownHosts }: {
     );
   }
 
+  // Design 22c7: the session dropped while it was up. The last frame stays, greyed,
+  // under the card; Windows keeps the session for a while, so a reconnect finds it.
+  if (kind === 'lost') {
+    return wrap(
+      <div className="card prompt" role="alert" style={{ width: 460 }} data-rdp-state="lost" onKeyDown={keys}>
+        <div className="prompt-h"><span className="prompt-ic danger"><Icon name="wifi-off" /></span>
+          <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">Connection lost</h2>
+            <span className="mono muted" style={{ fontSize: 'var(--fs-xs)' }} data-rdp-lost-reason>{lostReason(pane)}</span></div></div>
+        <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Your Windows session keeps running on <span className="mono">{pane.alias}</span> for a while. Reconnecting brings you back to it, with your windows as you left them.</p>
+        <div className="row" style={{ gap: 'var(--sp-2)' }}>
+          <button className="btn btn-ghost" onClick={close}>Close tab<Kbd action="closeTab" /></button>
+          <span className="grow" />
+          <button className="btn btn-primary" data-autofocus data-rdp-reconnect onClick={retry}>Reconnect<Kbd action="reconnect" inline /></button>
+        </div>
+      </div>,
+    );
+  }
+
   const text = failureText(kind, pane, host);
   return wrap(
     <div className="card prompt" role="alert" style={{ width: 480 }} data-rdp-state={kind} onKeyDown={keys}>
@@ -125,10 +143,18 @@ export function RdpCard({ pane, active, onEditHost, onKnownHosts }: {
         <button className="btn btn-ghost" onClick={() => onEditHost(pane.alias)}>Edit host</button>
         <button className="btn btn-ghost" onClick={close}>Close tab<Key>esc</Key></button>
         <span className="grow" />
-        <button className="btn btn-primary" data-autofocus onClick={retry}>{kind === 'lost' ? 'Connect again' : 'Retry'}<span className="kbd-in">↵</span></button>
+        <button className="btn btn-primary" data-autofocus onClick={retry}>Retry<span className="kbd-in">↵</span></button>
       </div>
     </div>,
   );
+}
+
+/** "the connection was lost (ERRCONNECT_…) · 10:21": why, and when (design 22c7). */
+export function lostReason(pane: Pane): string {
+  const msg = pane.end?.message ?? '';
+  if (!pane.endedAt) return msg;
+  const at = new Date(pane.endedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return msg ? `${msg} · ${at}` : at;
 }
 
 function failureText(kind: ReturnType<typeof rdpEndKind>, pane: Pane, host: HostView | undefined): { icon: 'lock' | 'wifi-off' | 'clock' | 'shield' | 'alert'; title: string; body: string; hint: string } {
@@ -145,8 +171,6 @@ function failureText(kind: ReturnType<typeof rdpEndKind>, pane: Pane, host: Host
       return { icon: 'wifi-off', title: `${pane.alias} refused the session`, body: "Nothing answers on its Remote Desktop port.", hint: "Turn it on in the machine's Settings → System → Remote Desktop, then retry. On Windows Home it isn't available at all." };
     case 'refused':
       return { icon: 'alert', title: `${pane.alias} refused the session`, body: 'The server answered and would not open a session.', hint: 'All remote sessions may be in use: Windows 10/11 Pro allows one at a time. Ask someone to sign out, or try later.' };
-    case 'lost':
-      return { icon: 'wifi-off', title: 'Connection lost', body: `Your Windows session keeps running on ${pane.alias} for a while; connecting again brings you back to it, with your windows as you left them.`, hint: '' };
     default:
       return { icon: 'alert', title: `Could not connect to ${pane.alias}`, body: 'The connection failed.', hint: '' };
   }

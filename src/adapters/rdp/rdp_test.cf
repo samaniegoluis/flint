@@ -196,3 +196,196 @@ test "a real Windows host resizes in place through Display Control" {
     assert(resized, "the desktop did not become 1280x720")
     assert_eq(rd.rd_wait("t-live", 100).kind, "running")
 }
+
+// ---- Flint's own test server (milestone 31): FLINT_RDP_CLIP_PORT, its control port
+// FLINT_RDP_CLIP_CONTROL (scripts/test.sh starts it; native/testserver).
+
+fn clip_target(trusted: str) -> RdpTarget {
+    port := os.getenv("FLINT_RDP_CLIP_PORT")
+    mut p: i64 = 0
+    if port.len() > 0 {
+        p = str.parse_i64(port) or 0
+    }
+    return RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "x", width: 640, height: 480, trusted_fingerprint: trusted }
+}
+
+// One command to the test server's control port, its one-line answer.
+fn ctl(cmd: str) -> str {
+    port := os.getenv("FLINT_RDP_CLIP_CONTROL")
+    script := "exec 3<>/dev/tcp/127.0.0.1/{port}; printf '%s\\n' \"$1\" >&3; IFS= read -r line <&3; printf '%s' \"$line\""
+    r := os.command("bash", ["-c", script, "ctl", cmd]) or {
+        return "error"
+    }
+    return r.stdout
+}
+
+fn to_hex(s: str) -> str {
+    digits := "0123456789abcdef"
+    d := digits.bytes()
+    mut res := ""
+    for b in s.bytes() {
+        c := u8(b)
+        res = res + byte_to_str(u8(d[usize(c / 16)])) + byte_to_str(u8(d[usize(c % 16)]))
+    }
+    return res
+}
+
+// Waits for an event of `kind` on the tab, skipping `running`.
+fn wait_kind(rd: FreeRdpDesktop, tab: str, kind: str) -> RdpEvent {
+    for i in 0..50 {
+        ev := rd.rd_wait(tab, 200)
+        if ev.kind == kind || ev.kind == "ended" {
+            return ev
+        }
+    }
+    return RdpEvent{ kind: "none", message: "", width: 0, height: 0 }
+}
+
+// Polls the control port until `cmd` answers `want` (the clipboard channel is a few
+// round trips behind the desktop).
+fn ctl_until(cmd: str, want: str) -> str {
+    mut got := ""
+    for i in 0..50 {
+        got = ctl(cmd)
+        if got == want {
+            return got
+        }
+        time.sleep_ms(100)
+    }
+    return got
+}
+
+fn open_clip(rd: FreeRdpDesktop, tab: str) -> RdpDesktop! {
+    fp := first_fingerprint(rd, tab, clip_target(""))
+    d := try rd.rd_open(tab, clip_target(fp), 15000)
+    // The clipboard channel announces itself once the desktop is up.
+    _ := ctl_until("formats", "-")
+    time.sleep_ms(300)
+    return d
+}
+
+test "text copied on the remote arrives here, CRLF as LF" {
+    if clip_target("").port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    _ := try open_clip(rd, "t-clip-in")
+    defer rd.rd_close("t-clip-in")
+    assert_eq(ctl("copy {to_hex("héllo\r\nwörld ✓")}"), "ok")
+    ev := wait_kind(rd, "t-clip-in", "clip_text")
+    assert_eq(ev.kind, "clip_text")
+    assert_eq(ev.message, "héllo\nwörld ✓")
+}
+
+test "text here is only announced, and sent when the remote pastes" {
+    if clip_target("").port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    _ := try open_clip(rd, "t-clip-out")
+    defer rd.rd_close("t-clip-out")
+    assert_eq(ctl("clear"), "ok")
+    try rd.rd_clip_announce("t-clip-out", true)
+    assert_eq(ctl_until("formats", "13"), "13")
+    // Nothing was sent yet: the server has no text until it asks.
+    assert_eq(ctl("pasted"), "-")
+    assert_eq(ctl("paste"), "ok")
+    assert_eq(wait_kind(rd, "t-clip-out", "clip_request").kind, "clip_request")
+    try rd.rd_clip_answer("t-clip-out", true, "a\nb ✓")
+    assert_eq(ctl_until("pasted", to_hex("a\r\nb ✓")), to_hex("a\r\nb ✓"))
+
+    // Refused by the core (a locked window): the server gets a failure.
+    assert_eq(ctl("paste"), "ok")
+    assert_eq(wait_kind(rd, "t-clip-out", "clip_request").kind, "clip_request")
+    try rd.rd_clip_answer("t-clip-out", false, "")
+    assert_eq(ctl_until("pasted", "fail"), "fail")
+
+    // Nothing announced: the adapter refuses on its own, the core is not asked.
+    // FreeRDP before 3.16 or so drops an empty format list after the first one, so the
+    // server may still think there is text (Debian's 3.15); the paste fails either way.
+    try rd.rd_clip_announce("t-clip-out", false)
+    formats := ctl_until("formats", "-")
+    assert(formats == "-" || formats == "13", formats)
+    assert_eq(ctl("paste"), "ok")
+    assert_eq(ctl_until("pasted", "fail"), "fail")
+    assert_eq(rd.rd_wait("t-clip-out", 300).kind, "running")
+}
+
+test "keys reach the server by scancode" {
+    if clip_target("").port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    _ := try open_clip(rd, "t-clip-keys")
+    defer rd.rd_close("t-clip-keys")
+    assert_eq(ctl("clear"), "ok")
+    try rd.rd_key("t-clip-keys", "MetaLeft", true)
+    try rd.rd_key("t-clip-keys", "MetaLeft", false)
+    try rd.rd_key("t-clip-keys", "AltRight", true)
+    try rd.rd_key("t-clip-keys", "AltRight", false)
+    assert_eq(ctl_until("keys", "d:0x15b u:0x15b d:0x138 u:0x138"), "d:0x15b u:0x15b d:0x138 u:0x138")
+}
+
+test "a connection the server drops ends as lost, at once" {
+    if clip_target("").port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    _ := try open_clip(rd, "t-clip-drop")
+    defer rd.rd_close("t-clip-drop")
+    started := time.now_ms()
+    assert_eq(ctl("drop"), "ok")
+    ev := wait_kind(rd, "t-clip-drop", "ended")
+    elapsed := time.now_ms() - started
+    assert_eq(ev.kind, "ended")
+    assert(ev.message.starts_with("network: the connection was lost"), ev.message)
+    assert(elapsed < 5000, "took {elapsed} ms")
+}
+
+// Blocks (`on`) or unblocks (`off`) every packet to and from the test server, as a
+// network that goes away without a word. Only where FLINT_RDP_BLACKHOLE=1: the Linux
+// image run with NET_ADMIN (scripts/linux-check.sh), iptables through sudo.
+fn blackhole(on: bool) -> str {
+    port := os.getenv("FLINT_RDP_CLIP_PORT")
+    mut op := "-D"
+    if on {
+        op = "-I"
+    }
+    script := "pw=\"$FLINT_TEST_LOGIN_PW\"; for d in --sport --dport; do printf '%s\\n' \"$pw\" | sudo -S -p '' iptables {op} INPUT -i lo -p tcp $d {port} -j DROP || exit 1; done"
+    r := os.command("bash", ["-c", script]) or {
+        return "error"
+    }
+    return "{r.exit_code}:{r.stderr}"
+}
+
+test "a network that goes quiet ends the session within 20 s, idle or sending" {
+    if clip_target("").port == 0 || os.getenv("FLINT_RDP_BLACKHOLE") != "1" {
+        return
+    }
+    rd := new_freerdp_desktop()
+    for round in 0..2 {
+        tab := "t-quiet-{round}"
+        _ := try open_clip(rd, tab)
+        assert_eq(blackhole(true), "0:")
+        started := time.now_ms()
+        mut ev := RdpEvent{ kind: "none", message: "", width: 0, height: 0 }
+        for i in 0..300 {
+            if round == 1 {
+                // Data in flight: a key every 100 ms that nothing acknowledges.
+                rd.rd_key(tab, "ShiftLeft", true) or {}
+                rd.rd_key(tab, "ShiftLeft", false) or {}
+            }
+            ev = rd.rd_wait(tab, 100)
+            if ev.kind == "ended" {
+                break
+            }
+        }
+        elapsed := time.now_ms() - started
+        blackhole(false)
+        rd.rd_close(tab)
+        println("quiet network, round {round} (1 = sending): ended after {elapsed} ms: {ev.message}")
+        assert_eq(ev.kind, "ended")
+        assert(ev.message.starts_with("network:"), ev.message)
+        assert(elapsed < 20000, "took {elapsed} ms")
+    }
+}

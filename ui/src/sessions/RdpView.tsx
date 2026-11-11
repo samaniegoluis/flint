@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/backend';
 import { useApp } from '../state/app';
 import { runAction } from '../shell/actions';
-import { fitScale, HeldKeys, parseFrameHeader, rdpButton, rdpKeptAction, toDesktop, WheelAccumulator } from '../lib/rdpInput';
+import { fitScale, HeldKeys, modMapOf, parseFrameHeader, rdpButton, rdpKeptAction, toDesktop, WheelAccumulator } from '../lib/rdpInput';
 import { sessions, type Pane } from './store';
 import { RdpCard } from './RdpCards';
 
@@ -22,7 +22,7 @@ export function RdpView({ pane, active, onEditHost, onKnownHosts }: {
   onEditHost: (alias: string) => void;
   onKnownHosts: () => void;
 }) {
-  const { os } = useApp();
+  const { os, settings } = useApp();
   const area = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [areaSize, setAreaSize] = useState({ width: 0, height: 0 });
@@ -78,15 +78,29 @@ export function RdpView({ pane, active, onEditHost, onKnownHosts }: {
   }, [ready, desk]);
 
   // Input: keys while the canvas has the focus, released when it loses it.
+  // The modifier keys of a Mac keyboard follow Settings → Remote desktop (D-074).
   const held = useRef<HeldKeys | null>(null);
+  const modPreset = settings.rdp_mac_keys;
+  const modCustom = settings.rdp_mac_custom;
   useEffect(() => {
-    held.current = new HeldKeys((code, down) => { if (session) api.rdpKey(session, code, down).catch(() => {}); }, os);
+    held.current = new HeldKeys((code, down) => { if (session) api.rdpKey(session, code, down).catch(() => {}); }, os, modMapOf(modPreset, modCustom));
     return () => { held.current?.releaseAll(); held.current = null; };
-  }, [session, os]);
+  }, [session, os, modPreset, modCustom]);
 
   useEffect(() => {
     if (ready && active) canvas.current?.focus({ preventScroll: true });
   }, [ready, active]);
+
+  // The clipboard (milestone 31, D-074): whenever the desktop takes the keyboard (the
+  // tab, the canvas, the window coming back), the server learns whether this machine's
+  // clipboard holds text, so a paste there can ask for it. The text is sent only then.
+  const announce = () => { if (ready && session) api.rdpClipboardAnnounce(session).catch(() => {}); };
+  useEffect(() => {
+    if (!ready || !active) return;
+    const onWindowFocus = () => { if (document.activeElement === canvas.current) announce(); };
+    window.addEventListener('focus', onWindowFocus);
+    return () => window.removeEventListener('focus', onWindowFocus);
+  });
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const kept = rdpKeptAction(e.nativeEvent, os);
@@ -150,10 +164,10 @@ export function RdpView({ pane, active, onEditHost, onKnownHosts }: {
   const shownH = Math.floor(deskSize.height * scale);
   return (
     <div className="rdp-area" ref={area} data-rdp-pane={pane.id}>
-      <canvas ref={canvas} className="rdp-canvas" tabIndex={0} aria-label={`Remote desktop of ${pane.alias}`}
+      <canvas ref={canvas} className={'rdp-canvas' + (ready ? '' : ' stale')} tabIndex={0} aria-label={`Remote desktop of ${pane.alias}`}
         data-desktop={deskSize.width ? `${deskSize.width}x${deskSize.height}` : ''}
         style={{ width: shownW || 0, height: shownH || 0, visibility: deskSize.width ? 'visible' : 'hidden' }}
-        onKeyDown={onKeyDown} onKeyUp={onKeyUp} onBlur={() => held.current?.releaseAll()}
+        onKeyDown={onKeyDown} onKeyUp={onKeyUp} onFocus={announce} onBlur={() => held.current?.releaseAll()}
         onMouseMove={onMouseMove} onMouseDown={(e) => onMouseButton(e, true)} onMouseUp={(e) => onMouseButton(e, false)}
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()} />
       <RdpCard pane={pane} active={active} onEditHost={onEditHost} onKnownHosts={onKnownHosts} />

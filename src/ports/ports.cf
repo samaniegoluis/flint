@@ -198,6 +198,10 @@ type Clipboard interface {
     clipboard_copy_text(text: str) -> void!
     // What a paste would take: the text, else an image as PNG (milestone 25 on Linux).
     clipboard_read() -> ClipboardContent!
+    // A number that changes whenever anything is copied (macOS' changeCount, GTK's
+    // owner changes), -1 where the system has none. Cheap: an RDP tab checks it a few
+    // times a second (milestone 31).
+    clipboard_change_count() -> i64
 }
 
 // A presence check before the owner's Allow takes effect (adapters/uievents,
@@ -336,6 +340,13 @@ type RemoteDesktop interface {
     rd_wait(tab: str, wait_ms: i64) -> RdpEvent
     rd_key(tab: str, code: str, down: bool) -> void!
     rd_pointer(tab: str, p: RdpPointer) -> void!
+    // Milestone 31 (D-074): tells the server whether this machine's clipboard holds
+    // text, without sending it; the server asks for it when someone pastes there, as
+    // an `rd_wait` event of kind `clip_request`, answered with `rd_clip_answer` (the
+    // text, or a refusal when `ok` is false). The remote's copies arrive as
+    // `clip_text` events.
+    rd_clip_announce(tab: str, has_text: bool) -> void!
+    rd_clip_answer(tab: str, ok: bool, text: str) -> void!
     // Ends the tab's connection (an `rd_open` in progress is cancelled) and its frame
     // channel. A tab with nothing open is left as it is.
     rd_close(tab: str)
@@ -344,4 +355,7 @@ type RemoteDesktop interface {
 // Where a remote desktop tells its driver that it is up (webui events in the app).
 type DesktopSink interface {
     desktop_ready(tab: str, d: RdpDesktop)
+    // Whether someone may act through the window now: a locked window answers no
+    // clipboard request (milestone 31).
+    desktop_window_open() -> bool
 }

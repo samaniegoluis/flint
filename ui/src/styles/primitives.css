@@ -634,3 +634,5 @@ button.picker-row:not(.off) { cursor: pointer; }
 /* The RDP tab (design 22a): the desktop scaled to fit, letterboxed. */
 .rdp-area { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--surface-desk); overflow: hidden; }
 .rdp-canvas { display: block; outline: none; image-rendering: auto; cursor: default; }
+/* The last frame, greyed, under a lost or reconnecting session's card (design 22c7). */
+.rdp-canvas.stale { filter: grayscale(1) brightness(0.55); transition: filter var(--dur-base, 160ms) ease; }

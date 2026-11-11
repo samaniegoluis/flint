@@ -77,7 +77,9 @@ typedef struct flint_WTSLISTENERCONFIGA* PWTSLISTENERCONFIGA;
 #include <freerdp/client.h>
 #include <freerdp/client/channels.h>
 #include <freerdp/client/cmdline.h>
+#include <freerdp/client/cliprdr.h>
 #include <freerdp/client/disp.h>
+#include <freerdp/channels/cliprdr.h>
 #include <freerdp/channels/channels.h>
 #include <freerdp/channels/drdynvc.h>
 #include <freerdp/channels/disp.h>
@@ -88,6 +90,8 @@ typedef struct flint_WTSLISTENERCONFIGA* PWTSLISTENERCONFIGA;
 #include <freerdp/locale/keyboard.h>
 #include <freerdp/settings.h>
 #include <freerdp/error.h>
+#include <freerdp/transport_io.h>
+#include <winpr/string.h>
 #include <winpr/synch.h>
 #include <winpr/wlog.h>
 #if defined(_WIN32)
@@ -220,6 +224,13 @@ inline constexpr int RDP_ERR_UNKNOWN_KEY = 12;
 inline constexpr int EV_RUNNING = 0;
 inline constexpr int EV_ENDED = 1;
 inline constexpr int EV_RESIZE = 2;
+inline constexpr int EV_CLIP_TEXT = 3;     // the remote copied text (in `detail`)
+inline constexpr int EV_CLIP_REQUEST = 4;  // the remote pastes: it wants this machine's text
+
+// The clipboard's text format (CF_UNICODETEXT), the only one Flint exchanges (v8).
+inline constexpr UINT32 CLIP_UNICODE = 13;
+// Text larger than this is not exchanged (either way).
+inline constexpr size_t CLIP_MAX_BYTES = 16u << 20;
 
 struct Tab;
 
@@ -233,6 +244,9 @@ struct Conn {
     // Display Control, once the server opened the channel and sent its caps.
     DispClientContext* disp = nullptr;
     std::atomic<bool> disp_ready{false};
+    // The clipboard channel, once the server said it is ready (Monitor Ready).
+    CliprdrClientContext* clip = nullptr;
+    std::atomic<bool> clip_ready{false};
     // Why the loop ended, read after `ended`.
     UINT32 last_error = 0;
     UINT32 error_info = 0;
@@ -268,6 +282,13 @@ struct Tab {
     Cert presented;
     bool cert_refused = false;
     std::mutex input_mu;  // input is sent from the page's thread
+    // Clipboard (milestone 31, D-074). `local_text`: this machine's clipboard holds
+    // text and was announced to the server; it outlives a reconnect, which announces
+    // it again. The remote's copied text waits here for `wait`; so does its request.
+    bool local_text = false;
+    bool remote_pending = false;
+    std::string remote_text;
+    bool request_pending = false;
     // Frame channel.
     sock_t listen_fd = BAD_SOCK;
     int port = 0;
@@ -354,6 +375,174 @@ inline UINT on_disp_caps(DispClientContext* disp, UINT32 max_monitors, UINT32 a,
     return CHANNEL_RC_OK;
 }
 
+// ---- Clipboard (milestone 31, D-074) ----------------------------------------------
+//
+// Text only, both ways. The remote's copies are fetched at once and wait in the tab for
+// the core, which writes them to this machine's clipboard. This machine's text is only
+// announced (a format list); the server gets it when it asks, that is when someone
+// pastes there, and the core decides then whether to answer. Windows keeps text as
+// CRLF, this machine as LF.
+
+inline std::string crlf_to_lf(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\r' && i + 1 < s.size() && s[i + 1] == '\n') continue;
+        out += s[i];
+    }
+    return out;
+}
+
+inline std::string lf_to_crlf(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + s.size() / 16);
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\n' && (i == 0 || s[i - 1] != '\r')) out += '\r';
+        out += s[i];
+    }
+    return out;
+}
+
+inline UINT clip_send_format_list(CliprdrClientContext* clip, bool has_text) {
+    CLIPRDR_FORMAT f{};
+    f.formatId = CLIP_UNICODE;
+    f.formatName = nullptr;
+    CLIPRDR_FORMAT_LIST list{};
+    list.common.msgType = CB_FORMAT_LIST;
+    list.numFormats = has_text ? 1 : 0;
+    list.formats = has_text ? &f : nullptr;
+    return clip->ClientFormatList(clip, &list);
+}
+
+inline UINT clip_send_data(CliprdrClientContext* clip, bool ok, const std::string& text) {
+    CLIPRDR_FORMAT_DATA_RESPONSE r{};
+    r.common.msgType = CB_FORMAT_DATA_RESPONSE;
+    std::vector<BYTE> data;
+    if (ok) {
+        std::string win = lf_to_crlf(text);
+        size_t n = 0;
+        WCHAR* w = win.empty() ? nullptr : ConvertUtf8NToWCharAlloc(win.data(), win.size(), &n);
+        if (!win.empty() && !w) ok = false;
+        if (ok) {
+            data.assign((n + 1) * sizeof(WCHAR), 0);
+            if (n) std::memcpy(data.data(), w, n * sizeof(WCHAR));
+        }
+        if (w) {
+            sodium_memzero(w, n * sizeof(WCHAR));
+            free(w);
+        }
+        if (!win.empty()) sodium_memzero(win.data(), win.size());
+    }
+    r.common.msgFlags = ok ? CB_RESPONSE_OK : CB_RESPONSE_FAIL;
+    r.common.dataLen = ok ? static_cast<UINT32>(data.size()) : 0;
+    r.requestedFormatData = ok ? data.data() : nullptr;
+    UINT rc = clip->ClientFormatDataResponse(clip, &r);
+    if (!data.empty()) sodium_memzero(data.data(), data.size());
+    return rc;
+}
+
+inline Conn* clip_conn(CliprdrClientContext* clip) { return static_cast<Conn*>(clip->custom); }
+
+inline UINT on_clip_monitor_ready(CliprdrClientContext* clip, const CLIPRDR_MONITOR_READY*) {
+    Conn* c = clip_conn(clip);
+    if (!c) return CHANNEL_RC_OK;
+    CLIPRDR_GENERAL_CAPABILITY_SET general{};
+    general.capabilitySetType = CB_CAPSTYPE_GENERAL;
+    general.capabilitySetLength = CB_CAPSTYPE_GENERAL_LEN;
+    general.version = CB_CAPS_VERSION_2;
+    general.generalFlags = CB_USE_LONG_FORMAT_NAMES;
+    CLIPRDR_CAPABILITIES caps{};
+    caps.common.msgType = CB_CLIP_CAPS;
+    caps.cCapabilitiesSets = 1;
+    caps.capabilitySets = reinterpret_cast<CLIPRDR_CAPABILITY_SET*>(&general);
+    UINT rc = clip->ClientCapabilities(clip, &caps);
+    if (rc != CHANNEL_RC_OK) return rc;
+    bool has_text;
+    {
+        std::lock_guard<std::mutex> g(c->tab->mu);
+        has_text = c->tab->local_text;
+    }
+    // A format list is required here, empty or not, for the server to send its own.
+    rc = clip_send_format_list(clip, has_text);
+    c->clip_ready.store(true);
+    return rc;
+}
+
+inline UINT on_clip_server_caps(CliprdrClientContext*, const CLIPRDR_CAPABILITIES*) { return CHANNEL_RC_OK; }
+
+// The remote copied something: text is fetched now, anything else is ignored.
+inline UINT on_clip_server_format_list(CliprdrClientContext* clip, const CLIPRDR_FORMAT_LIST* list) {
+    Conn* c = clip_conn(clip);
+    CLIPRDR_FORMAT_LIST_RESPONSE r{};
+    r.common.msgType = CB_FORMAT_LIST_RESPONSE;
+    r.common.msgFlags = CB_RESPONSE_OK;
+    UINT rc = clip->ClientFormatListResponse(clip, &r);
+    if (rc != CHANNEL_RC_OK || !c) return rc;
+    {
+        // The server's clipboard is the remote's own now; ours is no longer offered.
+        std::lock_guard<std::mutex> g(c->tab->mu);
+        c->tab->local_text = false;
+    }
+    bool text = false;
+    for (UINT32 i = 0; list && i < list->numFormats; i++) {
+        if (list->formats[i].formatId == CLIP_UNICODE) text = true;
+    }
+    if (!text) return CHANNEL_RC_OK;
+    CLIPRDR_FORMAT_DATA_REQUEST req{};
+    req.common.msgType = CB_FORMAT_DATA_REQUEST;
+    req.requestedFormatId = CLIP_UNICODE;
+    return clip->ClientFormatDataRequest(clip, &req);
+}
+
+inline UINT on_clip_server_format_list_response(CliprdrClientContext*, const CLIPRDR_FORMAT_LIST_RESPONSE*) { return CHANNEL_RC_OK; }
+
+inline UINT on_clip_server_data_response(CliprdrClientContext* clip, const CLIPRDR_FORMAT_DATA_RESPONSE* r) {
+    Conn* c = clip_conn(clip);
+    if (!c || !r || !(r->common.msgFlags & CB_RESPONSE_OK) || !r->requestedFormatData) return CHANNEL_RC_OK;
+    size_t wlen = r->common.dataLen / sizeof(WCHAR);
+    if (wlen * 3 > CLIP_MAX_BYTES) return CHANNEL_RC_OK;
+    std::vector<WCHAR> w(wlen);
+    if (wlen) std::memcpy(w.data(), r->requestedFormatData, wlen * sizeof(WCHAR));
+    while (wlen > 0 && w[wlen - 1] == 0) wlen--;
+    size_t n = 0;
+    char* s = wlen ? ConvertWCharNToUtf8Alloc(w.data(), wlen, &n) : nullptr;
+    std::string text = s ? crlf_to_lf(std::string(s, n)) : std::string();
+    if (s) {
+        sodium_memzero(s, n);
+        free(s);
+    }
+    if (!w.empty()) sodium_memzero(w.data(), w.size() * sizeof(WCHAR));
+    if (wlen && text.empty()) return CHANNEL_RC_OK;
+    Tab* t = c->tab;
+    {
+        std::lock_guard<std::mutex> g(t->mu);
+        if (!t->remote_text.empty()) sodium_memzero(t->remote_text.data(), t->remote_text.size());
+        t->remote_text = std::move(text);
+        t->remote_pending = true;
+    }
+    t->cv.notify_all();
+    return CHANNEL_RC_OK;
+}
+
+// The remote pastes. Only text announced from here is answered, by the core; anything
+// else is refused at once.
+inline UINT on_clip_server_data_request(CliprdrClientContext* clip, const CLIPRDR_FORMAT_DATA_REQUEST* req) {
+    Conn* c = clip_conn(clip);
+    if (!c) return clip_send_data(clip, false, "");
+    Tab* t = c->tab;
+    {
+        std::lock_guard<std::mutex> g(t->mu);
+        if (!req || req->requestedFormatId != CLIP_UNICODE || !t->local_text) {
+            // falls through to the refusal below, outside the lock
+        } else {
+            t->request_pending = true;
+            t->cv.notify_all();
+            return CHANNEL_RC_OK;
+        }
+    }
+    return clip_send_data(clip, false, "");
+}
+
 inline void on_channel_connected(void* context, const ChannelConnectedEventArgs* e) {
     auto* ctx = static_cast<rdpContext*>(context);
     Conn* c = ctx_of(ctx)->conn;
@@ -363,6 +552,16 @@ inline void on_channel_connected(void* context, const ChannelConnectedEventArgs*
         disp->custom = c;
         disp->DisplayControlCaps = on_disp_caps;
         c->disp = disp;
+    } else if (std::strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
+        auto* clip = static_cast<CliprdrClientContext*>(e->pInterface);
+        clip->custom = c;
+        clip->MonitorReady = on_clip_monitor_ready;
+        clip->ServerCapabilities = on_clip_server_caps;
+        clip->ServerFormatList = on_clip_server_format_list;
+        clip->ServerFormatListResponse = on_clip_server_format_list_response;
+        clip->ServerFormatDataResponse = on_clip_server_data_response;
+        clip->ServerFormatDataRequest = on_clip_server_data_request;
+        c->clip = clip;
     }
 }
 
@@ -373,6 +572,9 @@ inline void on_channel_disconnected(void* context, const ChannelDisconnectedEven
     if (std::strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0) {
         c->disp_ready.store(false);
         c->disp = nullptr;
+    } else if (std::strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
+        c->clip_ready.store(false);
+        c->clip = nullptr;
     }
 }
 
@@ -385,8 +587,9 @@ inline BOOL on_pre_connect(freerdp* inst) {
     return TRUE;
 }
 
-// Only the channels Flint uses: the dynamic channel carrier and Display Control
-// (FreeRDP's own loader also asks for device redirection, which Flint leaves out).
+// Only the channels Flint uses: the dynamic channel carrier, Display Control and the
+// clipboard (FreeRDP's own loader also asks for device redirection, which Flint leaves
+// out).
 inline BOOL load_channels(freerdp* inst) {
     rdpContext* ctx = inst->context;
     rdpSettings* st = ctx->settings;
@@ -400,7 +603,11 @@ inline BOOL load_channels(freerdp* inst) {
     PVIRTUALCHANNELENTRY entry = freerdp_channels_load_static_addin_entry(
         DRDYNVC_SVC_CHANNEL_NAME, nullptr, nullptr, FREERDP_ADDIN_CHANNEL_STATIC | FREERDP_ADDIN_CHANNEL_ENTRYEX);
     if (!entry) return FALSE;
-    return freerdp_channels_client_load_ex(ctx->channels, st, reinterpret_cast<PVIRTUALCHANNELENTRYEX>(entry), st) == 0;
+    if (freerdp_channels_client_load_ex(ctx->channels, st, reinterpret_cast<PVIRTUALCHANNELENTRYEX>(entry), st) != 0) return FALSE;
+    PVIRTUALCHANNELENTRY clip = freerdp_channels_load_static_addin_entry(
+        CLIPRDR_SVC_CHANNEL_NAME, nullptr, nullptr, FREERDP_ADDIN_CHANNEL_STATIC | FREERDP_ADDIN_CHANNEL_ENTRYEX);
+    if (!clip) return FALSE;
+    return freerdp_channels_client_load_ex(ctx->channels, st, reinterpret_cast<PVIRTUALCHANNELENTRYEX>(clip), nullptr) == 0;
 }
 
 inline BOOL on_post_connect(freerdp* inst) {
@@ -688,6 +895,32 @@ inline std::shared_ptr<Tab> tab_for(const std::string& id) {
     return t;
 }
 
+// FreeRDP's own TCP dial, with one more socket option where FreeRDP sets none: on
+// macOS (no TCP_USER_TIMEOUT) a connection whose data goes unacknowledged is dropped
+// after 20 s instead of the system's several minutes of retries.
+inline pTCPConnect& default_tcp_connect() { static pTCPConnect f = nullptr; return f; }
+
+inline int connect_tcp(rdpContext* ctx, rdpSettings* st, const char* host, int port, DWORD timeout) {
+    int fd = default_tcp_connect()(ctx, st, host, port, timeout);
+#if defined(__APPLE__) && defined(TCP_RXT_CONNDROPTIME)
+    if (fd >= 0) {
+        int secs = 20;
+        (void)setsockopt(fd, IPPROTO_TCP, TCP_RXT_CONNDROPTIME, &secs, sizeof secs);
+    }
+#endif
+    return fd;
+}
+
+inline void install_tcp_hook(rdpContext* ctx) {
+    const rdpTransportIo* io = freerdp_get_io_callbacks(ctx);
+    if (!io || !io->TCPConnect) return;
+    rdpTransportIo mine = *io;
+    if (io->TCPConnect != connect_tcp) default_tcp_connect() = io->TCPConnect;
+    if (!default_tcp_connect()) return;
+    mine.TCPConnect = connect_tcp;
+    (void)freerdp_set_io_callbacks(ctx, &mine);
+}
+
 // Connects tab `id` (creating it, or replacing its connection), logs in and starts
 // the connection's loop. Returns RDP_OK and the desktop's size and frame channel, or
 // an RDP_ERR_* code; `detail` gets FreeRDP's error name, never a credential.
@@ -710,6 +943,7 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         for (auto& ch : t->trusted) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
         t->presented = Cert{};
         t->cert_refused = false;
+        t->request_pending = false;
     }
     end_conn(old);
 
@@ -755,7 +989,17 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
     freerdp_settings_set_bool(st, FreeRDP_DynamicResolutionUpdate, TRUE);
     freerdp_settings_set_bool(st, FreeRDP_AudioPlayback, FALSE);
     freerdp_settings_set_bool(st, FreeRDP_DeviceRedirection, FALSE);
-    freerdp_settings_set_bool(st, FreeRDP_RedirectClipboard, FALSE);
+    freerdp_settings_set_bool(st, FreeRDP_RedirectClipboard, TRUE);
+    // A connection that goes quiet is noticed (Principle 8): TCP keepalive after 5 s
+    // idle, every 2 s, 3 probes (~11 s); with data in flight, Linux gives up after 9 s
+    // unacknowledged (TCP_USER_TIMEOUT) and macOS after 20 s (connect_tcp below).
+    // These are FreeRDP's defaults, set here so they stay Flint's choice.
+    freerdp_settings_set_bool(st, FreeRDP_TcpKeepAlive, TRUE);
+    freerdp_settings_set_uint32(st, FreeRDP_TcpKeepAliveDelay, 5);
+    freerdp_settings_set_uint32(st, FreeRDP_TcpKeepAliveInterval, 2);
+    freerdp_settings_set_uint32(st, FreeRDP_TcpKeepAliveRetries, 3);
+    freerdp_settings_set_uint32(st, FreeRDP_TcpAckTimeout, 9000);
+    install_tcp_hook(inst->context);
 
     {
         std::lock_guard<std::mutex> g(t->connecting_mu);
@@ -913,7 +1157,7 @@ inline int wait(const std::string& id, int64_t wait_ms, int32_t& code, std::stri
     if (!t || t->closed.load()) return EV_ENDED;
     std::unique_lock<std::mutex> g(t->mu);
     auto pending = [&] {
-        return t->closed.load() || !t->conn || t->conn->ended.load() || t->want_w != 0;
+        return t->closed.load() || !t->conn || t->conn->ended.load() || t->want_w != 0 || t->remote_pending || t->request_pending;
     };
     t->cv.wait_for(g, std::chrono::milliseconds(wait_ms), pending);
     if (t->closed.load()) return EV_ENDED;
@@ -933,7 +1177,49 @@ inline int wait(const std::string& id, int64_t wait_ms, int32_t& code, std::stri
         t->want_h = 0;
         return EV_RESIZE;
     }
+    if (t->remote_pending) {
+        t->remote_pending = false;
+        detail = std::move(t->remote_text);
+        t->remote_text.clear();
+        return EV_CLIP_TEXT;
+    }
+    if (t->request_pending) {
+        return EV_CLIP_REQUEST;
+    }
     return EV_RUNNING;
+}
+
+// This machine's clipboard holds text (or not): told to the server as a format list,
+// now if its clipboard channel is up, else when it is.
+inline int clip_announce(const std::string& id, bool has_text) {
+    auto t = find(id);
+    if (!t || t->closed.load()) return RDP_ERR_CLOSED;
+    std::shared_ptr<Conn> c;
+    {
+        std::lock_guard<std::mutex> g(t->mu);
+        t->local_text = has_text;
+        c = t->conn;
+    }
+    if (!c || c->ended.load() || !c->clip_ready.load() || !c->clip) return RDP_OK;
+    std::lock_guard<std::mutex> g(t->input_mu);
+    return clip_send_format_list(c->clip, has_text) == CHANNEL_RC_OK ? RDP_OK : RDP_ERR_OTHER;
+}
+
+// Answers the server's pending request: the text, or a refusal when `ok` is false.
+inline int clip_answer(const std::string& id, bool ok, const std::string& text) {
+    auto t = find(id);
+    if (!t || t->closed.load()) return RDP_ERR_CLOSED;
+    std::shared_ptr<Conn> c;
+    {
+        std::lock_guard<std::mutex> g(t->mu);
+        if (!t->request_pending) return RDP_OK;
+        t->request_pending = false;
+        c = t->conn;
+    }
+    if (!c || c->ended.load() || !c->clip) return RDP_ERR_CLOSED;
+    if (text.size() > CLIP_MAX_BYTES) ok = false;
+    std::lock_guard<std::mutex> g(t->input_mu);
+    return clip_send_data(c->clip, ok, ok ? text : std::string()) == CHANNEL_RC_OK ? RDP_OK : RDP_ERR_OTHER;
 }
 
 // ---- Input -------------------------------------------------------------------------

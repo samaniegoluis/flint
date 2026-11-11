@@ -1,6 +1,7 @@
 // Settings (design screens 12a–12d): per-machine appearance and terminal settings
 // (saved at once), the keyboard map (read-only; customising it is on the roadmap),
-// and the open vault.
+// the open vault, and on macOS what a Mac keyboard's modifiers send in an RDP tab
+// (milestone 31, D-074; no design screen, built from these sections' parts).
 
 import { useEffect, useState } from 'react';
 import { api } from '../api/backend';
@@ -13,13 +14,15 @@ import { Picker } from '../ui/Picker';
 import type { Confirm } from './KeysPage';
 import { RenameVault } from '../shell/VaultSwitcher';
 import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
+import { MAC_MOD_KEYS, MOD_TARGETS, modMapOf, modMapText, type MacModKey, type ModTarget } from '../lib/rdpInput';
 import { AccessSettings } from '../access/AccessSettings';
 
-export type SettingsSection = 'appearance' | 'terminal' | 'shortcuts' | 'vault' | 'access';
+export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access';
 
 const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
   { id: 'appearance', label: 'Appearance', icon: 'palette' },
   { id: 'terminal', label: 'Terminal', icon: 'term' },
+  { id: 'remote', label: 'Remote desktop', icon: 'rdp' },
   { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'keyboard' },
   { id: 'vault', label: 'Vault', icon: 'lock' },
   { id: 'access', label: 'Access', icon: 'shield-key' },
@@ -31,11 +34,14 @@ export function SettingsPage({ section, setSection, onLock, onConfirm }: {
   onLock: () => void;
   onConfirm: (c: Confirm) => void;
 }) {
+  const { os } = useApp();
+  // Remote desktop holds only the Mac keyboard's modifiers: a PC keyboard already matches.
+  const sections = SECTIONS.filter((s) => s.id !== 'remote' || os === 'mac');
   return (
     <section className="main page" aria-label="Settings" style={{ flexDirection: 'row' }}>
       <nav className="settings-nav" aria-label="Settings sections">
         <span className="label" style={{ padding: '0 var(--sp-2) var(--sp-2)' }}>Settings</span>
-        {SECTIONS.map((s) => (
+        {sections.map((s) => (
           <button key={s.id} className={'nav-i' + (section === s.id ? ' on' : '')} aria-current={section === s.id ? 'page' : undefined} onClick={() => setSection(s.id)}>
             <Icon name={s.icon} size="sm" />{s.label}
           </button>
@@ -45,6 +51,7 @@ export function SettingsPage({ section, setSection, onLock, onConfirm }: {
         <div className="col" style={{ maxWidth: 860 }}>
           {section === 'appearance' && <Appearance />}
           {section === 'terminal' && <TerminalSettings />}
+          {section === 'remote' && os === 'mac' && <RemoteDesktopSettings />}
           {section === 'shortcuts' && <Shortcuts />}
           {section === 'vault' && <VaultSettings onLock={onLock} onConfirm={onConfirm} />}
           {section === 'access' && <AccessSettings onConfirm={onConfirm} />}
@@ -217,6 +224,59 @@ function TerminalSettings() {
           <div className="l"><span className="g">luis</span><span className="d">@</span><span className="b">prod-api-01</span> <span className="c">~/srv/api</span> <span className="m">(main)</span> <span className="pc">❯</span> <span className="cur" /></div>
         </div>
       </Row>
+    </>
+  );
+}
+
+const MOD_KEY_LABELS: Record<MacModKey, string> = {
+  ControlLeft: '⌃ Control (left)', ControlRight: '⌃ Control (right)', AltLeft: '⌥ Option (left)',
+  AltRight: '⌥ Option (right)', MetaLeft: '⌘ Command (left)', MetaRight: '⌘ Command (right)',
+};
+const MOD_TARGET_LABELS: Record<ModTarget, string> = { ctrl: 'Ctrl', alt: 'Alt', altgr: 'AltGr', win: 'Win', off: 'Off' };
+
+// Milestone 31 (D-074): what each modifier key of this Mac sends to Windows. A preset
+// shows its table; changing a key starts a Custom table from what is shown.
+function RemoteDesktopSettings() {
+  const [s, set] = useSetting();
+  const map = modMapOf(s.rdp_mac_keys, s.rdp_mac_custom);
+  const pick = (k: MacModKey, t: ModTarget) => set({ rdp_mac_keys: 'custom', rdp_mac_custom: modMapText({ ...map, [k]: t }) });
+  return (
+    <>
+      <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', marginBottom: 'var(--sp-3)' }}>Remote desktop</h1>
+      <Row title="Modifier keys" desc="What this Mac's modifier keys send in an RDP tab. Set on this computer.">
+        <div className="seg" role="radiogroup" aria-label="Modifier keys preset" data-rdp-keys-preset>
+          {(['mac', 'windows', 'custom'] as const).map((p) => (
+            <button key={p} type="button" role="radio" aria-checked={s.rdp_mac_keys === p} aria-pressed={s.rdp_mac_keys === p} data-preset={p}
+              onClick={() => set(p === 'custom' ? { rdp_mac_keys: 'custom', rdp_mac_custom: modMapText(map) } : { rdp_mac_keys: p })}>
+              {p === 'mac' ? 'Mac' : p === 'windows' ? 'Windows' : 'Custom'}
+            </button>
+          ))}
+        </div>
+        <span className="hint">
+          {s.rdp_mac_keys === 'mac' && <><span className="kbd">⌘C</span> and <span className="kbd">⌘V</span> copy and paste in Windows, as on a Mac; <span className="kbd">⌃</span> is the Windows key.</>}
+          {s.rdp_mac_keys === 'windows' && <>Keys where a PC keyboard has them: <span className="kbd">⌃C</span> and <span className="kbd">⌃V</span> copy and paste; <span className="kbd">⌥</span> is the Windows key.</>}
+          {s.rdp_mac_keys === 'custom' && <>Each key as set below. Choose Mac or Windows to go back to a preset.</>}
+        </span>
+      </Row>
+      <Row title="Each key" desc="Left and right keys apart. Off sends nothing.">
+        <table className="table compact" data-rdp-keys-table>
+          <tbody>
+            {MAC_MOD_KEYS.map((k) => (
+              <tr key={k}>
+                <td className="primary" style={{ whiteSpace: 'nowrap' }}>{MOD_KEY_LABELS[k]}</td>
+                <td>
+                  <div className="seg" role="radiogroup" aria-label={`${MOD_KEY_LABELS[k]} sends`} data-mod-key={k}>
+                    {MOD_TARGETS.map((t) => (
+                      <button key={t} type="button" role="radio" aria-checked={map[k] === t} aria-pressed={map[k] === t} data-target={t} onClick={() => pick(k, t)}>{MOD_TARGET_LABELS[t]}</button>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Row>
+      <div className="callout info"><Icon name="keyboard" size="sm" className="info-t" /><span>Flint's own shortcuts stay on <span className="mono strong">⌘</span> in an RDP tab: the command palette and <span className="mono strong">⌘1</span>–<span className="mono strong">⌘9</span>. Combinations macOS keeps for itself, such as <span className="mono strong">⌘Tab</span> and <span className="mono strong">⌘Space</span>, never reach Windows.</span></div>
     </>
   );
 }

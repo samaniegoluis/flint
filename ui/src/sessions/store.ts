@@ -48,6 +48,8 @@ export interface Pane {
   changedKey: HostKeyPayload | null;
   end: SessionEnd | null;
   connectedAt: number;
+  /** When the session ended (ms), 0 while it runs: an RDP tab's lost card says when (design 22c7). */
+  endedAt: number;
   /** Opened without the host's initial command; a reconnect keeps it that way. */
   noCommand: boolean;
   /** The shell's folder from OSC 7 (milestone 17), "" until it reports one. */
@@ -178,7 +180,7 @@ class SessionStore {
       if (!t || t.session !== ev.tab) return;
       if (ev.state === 'connecting') this.patch(t.id, { status: 'connecting', end: null, prompt: null });
       else {
-        this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: 0 } });
+        this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: 0 }, endedAt: Date.now() });
         this.bySession.delete(ev.tab);
       }
     });
@@ -222,7 +224,7 @@ class SessionStore {
   }
 
   private newPane(tabId: string, alias: string, noCommand: boolean, kind: HostType = 'ssh'): Pane {
-    return { id: mint('p'), kind, desktop: null, tab: tabId, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, noCommand, cwd: '' };
+    return { id: mint('p'), kind, desktop: null, tab: tabId, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, endedAt: 0, noCommand, cwd: '' };
   }
 
   /** Opens `alias` in a new tab; returns the new pane's id. An RDP host's tab is a remote desktop. */

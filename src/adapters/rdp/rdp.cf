@@ -133,7 +133,35 @@ fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {
     if kind == 2 {
         return RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: i64(w), height: i64(h) }
     }
+    if kind == 3 {
+        return RdpEvent{ kind: RDP_EVENT_CLIP_TEXT, message: detail, width: 0, height: 0 }
+    }
+    if kind == 4 {
+        return RdpEvent{ kind: RDP_EVENT_CLIP_REQUEST, message: "", width: 0, height: 0 }
+    }
     return RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 }
+}
+
+fn (self: FreeRdpDesktop) rd_clip_announce(tab: str, has_text: bool) -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::clip_announce(tab, has_text);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "clipboard"))
+    }
+}
+
+fn (self: FreeRdpDesktop) rd_clip_answer(tab: str, ok: bool, text: str) -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::clip_answer(tab, ok, text);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "clipboard"))
+    }
 }
 
 fn (self: FreeRdpDesktop) rd_key(tab: str, code: str, down: bool) -> void! {

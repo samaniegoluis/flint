@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitScale, HeldKeys, parseFrameHeader, rdpCode, rdpKeptAction, toDesktop, WheelAccumulator } from './rdpInput';
+import { fitScale, HeldKeys, MOD_PRESETS, modMapOf, modMapText, parseFrameHeader, rdpCode, rdpKeptAction, toDesktop, WheelAccumulator } from './rdpInput';
 
 const key = (code: string, mods: Partial<{ meta: boolean; ctrl: boolean; alt: boolean; shift: boolean }> = {}) => ({
   code, metaKey: !!mods.meta, ctrlKey: !!mods.ctrl, altKey: !!mods.alt, shiftKey: !!mods.shift,
@@ -21,6 +21,49 @@ describe('RDP input', () => {
     expect(rdpCode('MetaRight', 'mac')).toBe('ControlRight');
     expect(rdpCode('MetaLeft', 'linux')).toBe('MetaLeft');
     expect(rdpCode('KeyA', 'mac')).toBe('KeyA');
+  });
+
+  it('maps a Mac keyboard\'s modifiers by preset (D-074)', () => {
+    const mac = MOD_PRESETS.mac;
+    expect(rdpCode('ControlLeft', 'mac', mac)).toBe('MetaLeft');
+    expect(rdpCode('AltLeft', 'mac', mac)).toBe('AltLeft');
+    expect(rdpCode('AltRight', 'mac', mac)).toBe('AltRight');
+    const win = MOD_PRESETS.windows;
+    expect(['ControlLeft', 'AltLeft', 'MetaLeft', 'MetaRight', 'AltRight'].map((c) => rdpCode(c, 'mac', win)))
+      .toEqual(['ControlLeft', 'MetaLeft', 'AltLeft', 'AltRight', 'MetaRight']);
+    // A PC keyboard sends its keys as they are, whatever the setting.
+    expect(rdpCode('AltLeft', 'linux', win)).toBe('AltLeft');
+    expect(rdpCode('KeyC', 'mac', win)).toBe('KeyC');
+  });
+
+  it('reads a custom table over the Mac preset, and an Off key sends nothing', () => {
+    const m = modMapOf('custom', 'ControlLeft=off,MetaLeft=win,Bogus=ctrl,AltLeft=hyper');
+    expect(m.ControlLeft).toBe('off');
+    expect(m.MetaLeft).toBe('win');
+    expect(m.AltLeft).toBe('alt');
+    expect(m.MetaRight).toBe('ctrl');
+    expect(modMapOf('windows', 'MetaLeft=off')).toEqual(MOD_PRESETS.windows);
+    expect(modMapOf('custom', modMapText(MOD_PRESETS.windows))).toEqual(MOD_PRESETS.windows);
+    const sent: string[] = [];
+    const k = new HeldKeys((c, d) => sent.push(`${c} ${d ? 'down' : 'up'}`), 'mac', m);
+    k.down('ControlLeft');
+    k.up('ControlLeft');
+    expect(sent).toEqual([]);
+  });
+
+  it('copies with ⌃C in the Windows preset, ⌘ held keys still released', () => {
+    const sent: string[] = [];
+    const k = new HeldKeys((c, d) => sent.push(`${c} ${d ? 'down' : 'up'}`), 'mac', MOD_PRESETS.windows);
+    k.down('ControlLeft');
+    k.down('KeyC');
+    k.up('KeyC');
+    k.up('ControlLeft');
+    expect(sent).toEqual(['ControlLeft down', 'KeyC down', 'KeyC up', 'ControlLeft up']);
+    sent.length = 0;
+    k.down('MetaLeft');
+    k.down('KeyS');
+    k.up('MetaLeft');
+    expect(sent).toEqual(['AltLeft down', 'KeyS down', 'KeyS up', 'AltLeft up']);
   });
 
   it('releases the keys macOS never reports up after ⌘, and everything on blur', () => {

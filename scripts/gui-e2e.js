@@ -13,6 +13,10 @@
   // certificate: one address, a changed certificate.
   const RPORT = '@@RPORT@@';
   const RPORT_FWD = '@@RPORT_FWD@@';
+  // Flint's own RDP test server (milestone 31): the clipboard, the keys it received
+  // and a dropped connection, driven over its control port. '0' when it is not running.
+  const CPORT = '@@CPORT@@';
+  const CCTL = '@@CCTL@@';
   const USER = '@@USER@@';
   const KEY = `@@KEY@@`;
   // gui-e2e.sh runs the app once per run, each on a fresh vault and config folder:
@@ -25,7 +29,9 @@
   //   tunnels   tunnels in the app (milestone 23)
   //   paste     an image pasted into the terminal lands on the server (milestone 25)
   //   vim       vim in the terminal
-  //   rdp       an RDP host in a tab against FreeRDP's sample server (milestone 30)
+  //   rdp       an RDP host in a tab against FreeRDP's sample server (milestone 30);
+  //             the clipboard, modifier keys and a dropped session against Flint's own
+  //             test server (milestone 31)
   const RUN = '@@RUN@@';
   const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp'];
   const MASTER = 'e2e-master-password-42';
@@ -946,6 +952,147 @@
       const fps = qa('.fp', activeRegion()).map((e) => e.textContent);
       await check(fps.length === 2 && fps[0] !== fps[1], 'both fingerprints are shown');
       await click('button', 'Close tab');
+
+      if (CPORT !== '0') {
+        await setStep('rdp: text copied on the remote reaches this machine (milestone 31)');
+        const ctl = async (cmd) => (await fetch(`http://127.0.0.1:${CCTL}/${cmd}`, { cache: 'no-store' })).text();
+        const hex = (t) => Array.from(new TextEncoder().encode(t), (b) => b.toString(16).padStart(2, '0')).join('');
+        const clipNow = async () => { const r = await window.backend.e2e_clipboard({}); return (typeof r === 'string' ? JSON.parse(r) : r)?.name; };
+        await addRdp('rdp-clip', CPORT, 'x');
+        await open('rdp-clip');
+        await waitFor(() => rdpState('certificate'), 'the certificate prompt (test server)', 30000);
+        await click('button[type="submit"]', 'Trust and connect');
+        await waitFor(() => q('[data-rdp-size]'), 'the test server desktop', 30000);
+        await ctl('clear');
+        await ctl('copy/' + hex('copied in Windows ✓\r\nline two'));
+        const got = await waitForAsync(async () => ((await clipNow()) === 'copied in Windows ✓\nline two' ? true : null), 'the remote copy on the clipboard', 15000);
+        await check(got, 'text copied on the remote is on this machine\'s clipboard, CRLF as LF');
+
+        await setStep('rdp: text copied here is sent when the remote pastes');
+        await window.backend.e2e_clipboard_set({ name: 'from this Mac\nüñí' });
+        const cv = canvas();
+        cv.blur();
+        cv.focus();
+        const announced = await waitForAsync(async () => ((await ctl('formats')) === '13' ? true : null), 'the clipboard announced', 15000);
+        await check(announced, 'focusing the desktop announces text on the clipboard');
+        await check((await ctl('pasted')) === '-', 'nothing is sent before the remote pastes');
+        await ctl('paste');
+        const pasted = await waitForAsync(async () => ((await ctl('pasted')) === hex('from this Mac\r\nüñí') ? true : null), 'the text at the server', 15000);
+        await check(pasted, 'a paste on the remote gets this machine\'s text, LF as CRLF');
+        // The owner's case (M31 check): a second copy here, the desktop not clicked
+        // again, must reach the next paste instead of the text Windows fetched before.
+        await ctl('clear');
+        await window.backend.e2e_clipboard_set({ name: 'second copy' });
+        const again = await waitForAsync(async () => ((await ctl('formats')) === '13' ? true : null), 'the new copy announced', 15000);
+        await check(again, 'a new copy here is announced with the desktop left as it was');
+        await ctl('paste');
+        const second = await waitForAsync(async () => ((await ctl('pasted')) === hex('second copy') ? true : null), 'the second text at the server', 15000);
+        await check(second, 'the next paste on the remote gets the new text, not the old one');
+
+        await setStep('rdp: modifier keys follow the preset');
+        const press = async (code) => {
+          const c = canvas();
+          c.focus();
+          c.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true }));
+          c.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true, cancelable: true }));
+          await sleep(200);
+        };
+        const keysAfter = async (code) => { await ctl('clear'); await press(code); return waitForAsync(async () => { const k = await ctl('keys'); return k !== '-' ? k : null; }, 'keys at the server', 10000); };
+        if (isMac) {
+          await check((await keysAfter('MetaLeft')) === 'd:0x1d u:0x1d', 'Mac preset: ⌘ sends Ctrl');
+          await check((await keysAfter('ControlLeft')) === 'd:0x15b u:0x15b', 'Mac preset: ⌃ sends the Windows key');
+          await click('.rail-btn', 'Settings');
+          await click('.nav-i', 'Remote desktop');
+          await click('[data-rdp-keys-preset] button[data-preset="windows"]');
+          await waitForAsync(async () => ((await window.backend.settings_get({})).rdp_mac_keys === 'windows' ? true : null), 'the Windows preset saved');
+          await click('[data-mod-key="AltLeft"] button[data-target="off"]');
+          const saved = await waitForAsync(async () => { const st = await window.backend.settings_get({}); return st.rdp_mac_keys === 'custom' ? st : null; }, 'the custom table saved');
+          await check(saved.rdp_mac_custom.includes('AltLeft=off') && saved.rdp_mac_custom.includes('MetaLeft=alt'), 'changing one key starts a custom table from the preset');
+          await click('.rail-btn', 'Hosts');
+          await click('.tab', 'rdp-clip');
+          await waitFor(() => canvas(), 'the desktop again');
+          await check((await keysAfter('MetaLeft')) === 'd:0x38 u:0x38', 'custom from Windows: left ⌘ sends Alt');
+          await check((await keysAfter('ControlLeft')) === 'd:0x1d u:0x1d', 'custom from Windows: ⌃ sends Ctrl');
+          await ctl('clear');
+          await press('AltLeft');
+          await sleep(300);
+          await check((await ctl('keys')) === '-', 'a key set to Off sends nothing');
+        } else {
+          await check((await keysAfter('MetaLeft')) === 'd:0x15b u:0x15b', 'a PC keyboard sends the Windows key as it is');
+        }
+
+        await setStep('rdp: an SSH tab behind the desktop keeps its size and its picture (owner, herdr)');
+        {
+          await click('.tab', 'local');
+          await waitFor(() => activeTerm(), 'the local terminal');
+          await runInTerminal("trap 'echo winch-$(stty size | tr \" \" x)' WINCH; echo armed-$((40+2))", 'armed-42');
+          const before = termText();
+          await click('.tab', 'rdp-clip');
+          await waitFor(() => canvas(), 'the desktop');
+          await sleep(1500);
+          await click('.tab', 'local');
+          await sleep(1500);
+          const after = termText().slice(before.length - 200);
+          const winches = (termText().match(/winch-\d+x\d+/g) || []);
+          log('winches: ' + JSON.stringify(winches));
+          await check(winches.length === 0, `going to the desktop and back sends the shell no resize (${winches.join(', ') || 'none'})`);
+          void after;
+          // A full-screen program's screen survives the trip (owner, herdr): the hidden
+          // terminal was fitted under display:none, shrank to 11x5 and cut the alternate
+          // screen, which nothing drew again since the shell saw no new size.
+          {
+            const sizes = [];
+            const sub = activeTerm().onResize((e) => sizes.push(`${e.cols}x${e.rows}`));
+            await type("printf '\\033[?1049h\\033[20;60Halt-mark-%d' 42; sleep 8; printf '\\033[?1049l'");
+            await enter();
+            await waitFor(() => termText().includes('alt-mark-42'), 'the full-screen mark');
+            await click('.tab', 'rdp-clip');
+            await waitFor(() => canvas(), 'the desktop');
+            await sleep(1500);
+            await click('.tab', 'local');
+            await sleep(300);
+            sub.dispose();
+            await check(sizes.length === 0, `the hidden terminal keeps its size (${sizes.join(', ') || 'no resize'})`);
+            await check(termText().includes('alt-mark-42'), "a full-screen program's screen is still there when the tab comes back");
+            await waitFor(() => !termText().includes('alt-mark-42'), 'the full-screen program done', 15000);
+          }
+          // WebKit may take a hidden terminal's WebGL context while the desktop draws: the
+          // owner saw herdr's screen left blank (M31 check). Lose it on purpose here.
+          {
+            const host = activePane()?.querySelector('.xterm');
+            const glOf = () => [...(host?.querySelectorAll('canvas') ?? [])].map((c) => c.getContext('webgl2')).find((g) => g && !g.isContextLost());
+            const glc = glOf();
+            await check(!!glc, 'the terminal draws with WebGL');
+            // A mark printed now, in view: earlier output may have scrolled away.
+            await runInTerminal('clear; echo drawn-$((50+5))', 'drawn-55');
+            glc?.getExtension('WEBGL_lose_context')?.loseContext();
+            const drawn = await waitFor(() => (host?.querySelector('.xterm-rows')?.textContent ?? '').includes('drawn-55'), 'the terminal drawn again', 5000).catch(() => false);
+            await check(drawn, 'after a lost WebGL context the whole terminal is drawn again');
+            await click('.tab', 'rdp-clip');
+            await waitFor(() => canvas(), 'the desktop again');
+            await sleep(300);
+            await click('.tab', 'local');
+            const back = await waitFor(() => glOf(), 'WebGL back', 5000).catch(() => null);
+            await check(!!back, 'showing the tab again brings WebGL back');
+          }
+          await click('.tab', 'rdp-clip');
+          await waitFor(() => canvas(), 'the desktop again');
+        }
+
+        await setStep('rdp: a dropped session offers to reconnect (design 22c7)');
+        await ctl('drop');
+        await waitFor(() => rdpState('lost'), 'the connection lost card', 20000);
+        await check(canvas().classList.contains('stale'), 'the last frame stays, greyed');
+        await check(/connection was lost/.test(q('[data-rdp-lost-reason]').textContent) && /\d{1,2}:\d{2}/.test(q('[data-rdp-lost-reason]').textContent), 'the card names the reason and the time');
+        await check(byText('.tab', 'disconnected'), 'the tab says disconnected');
+        chord('r', 'KeyR');
+        await waitFor(() => q('[data-rdp-size]') && !q('[data-rdp-state]', activeRegion()), 'the desktop after Reconnect', 30000);
+        await check(!canvas().classList.contains('stale'), 'Reconnect (the reconnect chord) brings the desktop back');
+        await click('.tab.on .tx');
+        await waitFor(() => !byText('.tab', 'rdp-clip'), 'the test server tab closed');
+      } else {
+        log('rdp: no test server (FLINT_RDP_CLIP_PORT), clipboard steps skipped');
+      }
 
       await setStep('rdp: closing the tab ends the session');
       await click('.tab.on .tx');

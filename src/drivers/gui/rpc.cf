@@ -860,6 +860,15 @@ fn rpc_e2e_clipboard_png(params: str, clip: OsClipboard) -> str! {
     return ok_json()
 }
 
+// Puts text (`name`) on the run's clipboard, as a copy in another app does (the RDP
+// clipboard, milestone 31).
+fn rpc_e2e_clipboard_set(params: str, clip: OsClipboard) -> str! {
+    req := try parse_req[NameReq](params)
+    mut board := clip
+    try board.clipboard_copy_text(req.name)
+    return ok_json()
+}
+
 fn rpc_e2e_log(params: str, mut app: webui.App) -> str! {
     req := try parse_req[NameReq](params)
     write_stderr("[page] {req.name}\n")

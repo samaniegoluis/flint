@@ -198,11 +198,16 @@ fn check_rdp_pointer(p: RdpPointer) -> void! {
 }
 
 // What a running session reports while it is watched: still `running`; `ended`, with
-// the reason in `message` ("" when it was closed on purpose); or `resize`, the size
-// the tab asked for when the server has no Display Control, which a reconnect gives.
+// the reason in `message` ("" when it was closed on purpose); `resize`, the size the
+// tab asked for when the server has no Display Control, which a reconnect gives; or a
+// clipboard event.
 RDP_EVENT_RUNNING: str = "running"
 RDP_EVENT_ENDED: str = "ended"
 RDP_EVENT_RESIZE: str = "resize"
+// Milestone 31: the remote copied text (in `message`), or it pastes and asks for this
+// machine's text, which the core answers (D-074).
+RDP_EVENT_CLIP_TEXT: str = "clip_text"
+RDP_EVENT_CLIP_REQUEST: str = "clip_request"
 
 type RdpEvent struct {
     kind: str

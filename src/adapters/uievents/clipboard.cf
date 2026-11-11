@@ -68,6 +68,11 @@ fn (mut self: OsClipboard) clipboard_read() -> ClipboardContent! {
     return ClipboardContent{ text: text, mime: mime, image: image }
 }
 
+// Changes whenever anything is copied; -1 where the system gives no count.
+fn (self: OsClipboard) clipboard_change_count() -> i64 {
+    return clipboard_change_count(self.board)
+}
+
 // ---- For the tests -----------------------------------------------------------------
 
 fn clipboard_copy_png(board: str, png: str) -> i32 {

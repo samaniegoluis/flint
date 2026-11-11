@@ -18,4 +18,8 @@ image="flint-linux-check"
 docker build -t "$image" -f "$root/scripts/linux/Dockerfile" "$root/scripts/linux"
 # The RDP adapter's live tests run when the test host is given (milestone 28):
 #   sec with FLINT_RDP_TEST_HOST FLINT_RDP_TEST_USER FLINT_RDP_TEST_PASSWORD -- scripts/linux-check.sh
-docker run --rm --user root -e FLINT_E2E_VIM -e FLINT_LINUX_STEPS -e FLINT_LINUX_SUITES -e FLINT_RDP_TEST_HOST -e FLINT_RDP_TEST_USER -e FLINT_RDP_TEST_PASSWORD -v "$root:/src:ro" "$image" bash /src/scripts/linux/root.sh
+# The RDP adapter's quiet-network test drops packets with iptables (milestone 31):
+#   FLINT_RDP_BLACKHOLE=1 FLINT_LINUX_STEPS=tests FLINT_LINUX_SUITES=src/adapters/rdp scripts/linux-check.sh
+caps=()
+[[ "${FLINT_RDP_BLACKHOLE:-}" == 1 ]] && caps=(--cap-add NET_ADMIN)
+docker run --rm --user root ${caps[@]+"${caps[@]}"} -e FLINT_E2E_VIM -e FLINT_LINUX_STEPS -e FLINT_LINUX_SUITES -e FLINT_RDP_BLACKHOLE -e FLINT_RDP_TEST_HOST -e FLINT_RDP_TEST_USER -e FLINT_RDP_TEST_PASSWORD -v "$root:/src:ro" "$image" bash /src/scripts/linux/root.sh
