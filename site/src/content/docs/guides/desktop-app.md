@@ -50,7 +50,12 @@ which groups are collapsed in each vault. See [Layout on this machine](#layout-o
   already has an open tab, Flint switches to it; <kbd>⌘↵</kbd> always opens a new tab.
 - <kbd>↑</kbd> <kbd>↓</kbd> move, <kbd>←</kbd> <kbd>→</kbd> collapse and expand groups,
   <kbd>⌘I</kbd> edits the selected host, <kbd>⌫</kbd> deletes it after a confirmation.
-- Right-click a host to connect, edit or delete it. Right-click a group for **New host
+- Each host carries its type after its colour mark: a prompt for an SSH host, a window
+  for a [remote desktop (RDP) host](#remote-desktop-rdp-hosts). The same mark shows in
+  the command palette and on tabs.
+- Right-click a host to connect, edit or delete it. An RDP host's menu has **Connect**,
+  **Edit host…**, **Copy address** and **Delete host**: no new tab, files, tunnels or
+  panes, which are SSH's. Right-click a group for **New host
   here**, **New subgroup**, **Rename** and **Delete** (only an empty group can be
   deleted).
 - The filter matches aliases, labels, hostnames and tags.
@@ -61,7 +66,14 @@ which groups are collapsed in each vault. See [Layout on this machine](#layout-o
 
 ## Hosts, keys and credentials
 
-**New host** (<kbd>⌘N</kbd>) opens the host editor: alias, label, hostname and port,
+**New host** (<kbd>⌘N</kbd>, the sidebar's **+**, or **New host…** in the command palette)
+first asks what kind of host it is: **SSH** or **Remote desktop (RDP)** (<kbd>←</kbd>
+<kbd>→</kbd> or <kbd>1</kbd> <kbd>2</kbd> to choose, <kbd>↵</kbd> to continue). The
+palette's **New SSH host** and **New RDP host** skip that step. The type is fixed once the
+host is added: the editor shows it as a badge, and to change it you remove the host and
+add it again.
+
+The SSH host editor holds: alias, label, hostname and port,
 folder, authentication, user, jump host, a command to run on connect, tags, colour and
 notes. Authentication is one of:
 
@@ -96,6 +108,20 @@ seen asks to be verified inside the editor; a key you trust there is kept, and b
 to the host once you save it. The result appears above the buttons: **Connection
 works** with the address it reached and how long it took, or **Test failed** with the
 reason. A test never asks for a password. `flint host test` does the same in the CLI.
+
+### Remote desktop (RDP) hosts
+
+The RDP host editor holds the alias, label, **Address** and **Port** (3389 when left
+empty), folder, **User**, an optional **Domain** (`DOMAIN\user` and `user@domain` work in
+User too), the login, tags, colour and notes. The login is the host's **Own password**,
+saved in the vault like an SSH host's, or a **Credential** that has a password: a
+credential with only an SSH key is listed but cannot be chosen, since RDP signs in with a
+password. There is no jump host, command on connect, sudo password or tunnels, and no
+**Test connection** yet.
+
+Opening an RDP host (double-click, <kbd>↵</kbd>, the palette) does not open a tab yet:
+Flint says the remote desktop tab is coming and opens no SSH session. See [Remote desktop
+(RDP) hosts](/guides/hosts/#remote-desktop-rdp-hosts) for the CLI.
 
 **Keys** lists the vault's SSH keys with their type, fingerprint and how many hosts or
 credentials use them. **Add key** takes a pasted private key or a file, plus its

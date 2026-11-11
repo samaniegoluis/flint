@@ -101,11 +101,11 @@ test('host list is the CLI table', () => {
 	const r = flint(worldFromSeed(seed), 'host list');
 	assert.equal(r.code, 0);
 	assert.deepEqual(r.out, [
-		'ALIAS    TARGET                GROUP    TAGS',
-		'bastion  jump@bastion.example  -        -',
-		'db       admin@10.0.0.12       prod     postgres',
-		'nas      pi@192.168.1.20       homelab  backup',
-		'web-01   deploy@10.0.0.5       prod     nginx',
+		'ALIAS    TYPE  TARGET                GROUP    TAGS',
+		'bastion  ssh   jump@bastion.example  -        -',
+		'db       ssh   admin@10.0.0.12       prod     postgres',
+		'nas      ssh   pi@192.168.1.20       homelab  backup',
+		'web-01   ssh   deploy@10.0.0.5       prod     nginx',
 	]);
 });
 
@@ -116,7 +116,7 @@ test('host show and --json carry no secret, only has_password', () => {
 	const j = flint(w, 'host show db --json');
 	assert.equal(
 		j.out[0],
-		'{"alias":"db","label":"","hostname":"10.0.0.12","port":22,"user":"admin","group":"prod","tags":["postgres"],"color":"#e8833a","notes":"","jump":"bastion","credential":"","key":"","has_password":true,"has_sudo_password":false,"command":"","keep_shell":true}',
+		'{"alias":"db","label":"","hostname":"10.0.0.12","port":22,"user":"admin","group":"prod","tags":["postgres"],"color":"#e8833a","notes":"","jump":"bastion","credential":"","key":"","has_password":true,"has_sudo_password":false,"command":"","keep_shell":true,"type":"ssh","domain":""}',
 	);
 });
 
@@ -138,7 +138,7 @@ test('host test walks the jump chain, never asks for a password, and prints the 
 test('a host keeps an initial command, shows it, and connect notes it unless --no-command', () => {
 	const w = worldFromSeed(seed);
 	const e = flint(w, 'host edit nas --command htop --json');
-	assert.ok(e.out[0].endsWith('"has_sudo_password":false,"command":"htop","keep_shell":true}'));
+	assert.ok(e.out[0].endsWith('"has_sudo_password":false,"command":"htop","keep_shell":true,"type":"ssh","domain":""}'));
 	assert.ok(flint(w, 'host show nas').out.includes('command        htop (then a login shell)'));
 	flint(w, 'host edit nas --no-keep-shell');
 	assert.ok(flint(w, 'host show nas').out.includes('command        htop (ends the session)'));
@@ -528,4 +528,28 @@ test('the session pipes flint into jq and offers it once as a tip', () => {
 	s.submit('flint host list | grep db');
 	assert.ok(text().includes('zsh: command not found: grep'));
 	assert.equal(s.complete('flint host list --json | j'), 'flint host list --json | jq ');
+});
+
+test('an RDP host: --type rdp, port 3389, a domain, refused where only SSH works', () => {
+	const w = allowed();
+	const a = flint(w, 'host add win-01 --type rdp --hostname 10.0.0.50 --user admin --domain CORP --json');
+	assert.equal(a.code, 0);
+	const v = JSON.parse(a.out[0]);
+	assert.deepEqual([v.type, v.port, v.domain], ['rdp', 3389, 'CORP']);
+	assert.ok(flint(w, 'host list').out.some((l) => /^win-01\s+rdp\s+CORP\\admin@10\.0\.0\.50/.test(l)));
+	assert.ok(flint(w, 'host show win-01').out.includes('domain      CORP'));
+	assert.equal(flint(w, 'host add k --type rdp --hostname x --key laptop').code, 7);
+	assert.equal(flint(w, 'host add v --type vnc --hostname x').code, 7);
+	assert.equal(flint(w, 'host edit web-01 --domain CORP').code, 7);
+	const flip = flint(w, 'host edit win-01 --type ssh');
+	assert.equal(flip.code, 7);
+	assert.ok(flip.err.join('\n').includes('cannot change'));
+	const ex = flint(w, 'exec win-01 -- uptime');
+	assert.equal(ex.code, 23);
+	assert.ok(ex.err.join('\n').includes("'win-01' is an RDP host; flint exec needs an SSH host"));
+	assert.equal(flint(w, 'connect win-01').code, 23);
+	assert.equal(flint(w, 'host test win-01').code, 23);
+	assert.equal(flint(w, 'cp ./notes.txt win-01:/tmp/').code, 23);
+	assert.equal(flint(w, 'tunnel add win-01 t --local 13389').code, 23);
+	assert.equal(flint(w, 'host edit web-01 --jump win-01').code, 23);
 });

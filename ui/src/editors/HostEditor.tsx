@@ -2,11 +2,12 @@
 // a key from the vault, a password, or the SSH agent. A stored password stays hidden
 // unless the person reveals or copies it (D-029); leaving the field empty keeps it.
 // **Test connection** tries the unsaved form (host_test), answering a new host key
-// in the editor itself.
+// in the editor itself. An RDP host has its own editor (RdpHostEditor, design 21b);
+// a new host's type comes from the type step (HostTypeStep, design 21a).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, emptyHostPatch, on, toFlintError } from '../api/backend';
-import type { HostKeyPayload, HostPatch, HostTestEvent, HostView, SessionPromptEvent } from '../api/types';
+import type { HostKeyPayload, HostPatch, HostTestEvent, HostType, HostView, SessionPromptEvent } from '../api/types';
 import { useApp } from '../state/app';
 import { colorHex, colorName, colorStyle, TAG_COLORS } from '../lib/colors';
 import { groupPaths } from '../lib/tree';
@@ -16,6 +17,8 @@ import { Modal } from '../ui/Modal';
 import { Picker } from '../ui/Picker';
 import { PasswordField } from '../ui/PasswordField';
 import { HostTunnels } from '../tunnels/HostTunnels';
+import { RdpHostEditor } from './RdpHostEditor';
+import { TypeBadge } from './TypeBadge';
 
 type TestState =
   | { s: 'idle' }
@@ -36,7 +39,28 @@ function initialMode(h?: HostView): Mode {
   return 'agent';
 }
 
-export function HostEditor({ alias, group, showTunnels = false, onClose, onDelete, onNewCredential }: {
+type EditorProps = {
+  alias: string | null;
+  group: string;
+  /** A new host's type, from the type step; a saved host keeps its own. */
+  type?: HostType;
+  /** Opened for its Tunnels section (Manage tunnels…): scrolled there. */
+  showTunnels?: boolean;
+  onClose: () => void;
+  onDelete: (alias: string) => void;
+  onNewCredential: () => void;
+};
+
+export function HostEditor(props: EditorProps) {
+  const { catalog } = useApp();
+  const host = props.alias ? catalog.hosts.find((h) => h.alias === props.alias) : undefined;
+  if ((host?.type ?? props.type) === 'rdp') {
+    return <RdpHostEditor host={host} group={props.group} onClose={props.onClose} onDelete={props.onDelete} onNewCredential={props.onNewCredential} />;
+  }
+  return <SshHostEditor {...props} />;
+}
+
+function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, onNewCredential }: {
   alias: string | null;
   group: string;
   /** Opened for its Tunnels section (Manage tunnels…): scrolled there. */
@@ -201,8 +225,9 @@ export function HostEditor({ alias, group, showTunnels = false, onClose, onDelet
     <Modal label={host ? `Edit host ${host.alias}` : 'New host'} onClose={onClose} width={680} top={52}>
       <form onSubmit={save} onKeyDown={(e) => { if (e.key === 'Enter' && (os === 'mac' ? e.metaKey : e.ctrlKey)) save(); }} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div className="modal-h">
-          <span className={'hmark ' + c.className} style={{ height: 20, ...c.style }} />
+          {f.color && <span className={'hmark ' + c.className} style={{ height: 20, ...c.style }} />}
           <h2 className="grow">{host ? <>Edit host <span className="mono muted" style={{ fontWeight: 'var(--fw-regular)' }}>{host.alias}</span></> : 'New host'}</h2>
+          <TypeBadge type="ssh" />
           {host && <Kbd action="editHost" />}
           <button type="button" className="icon-btn" aria-label="Close (esc)" onClick={onClose}><Icon name="x" size="sm" /></button>
         </div>
@@ -273,7 +298,7 @@ export function HostEditor({ alias, group, showTunnels = false, onClose, onDelet
               <div className="input"><input id="hu" className="mono" value={f.user} onChange={(e) => set('user', e.target.value)} placeholder={mode === 'credential' ? 'from the credential' : 'root'} /></div></div>
             <div className="field"><span className="flabel">Jump host <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></span>
               <Picker label="Jump host" value={f.jump} onChange={(v) => set('jump', v)} icon="jump" placeholder="None"
-                options={[{ value: '', label: 'None', text: '' }, ...catalog.hosts.filter((h) => h.alias !== host?.alias).map((h) => ({ value: h.alias, text: h.alias, label: <span className="mono">{h.alias}</span>, meta: h.group }))]} /></div>
+                options={[{ value: '', label: 'None', text: '' }, ...catalog.hosts.filter((h) => h.alias !== host?.alias && h.type !== 'rdp').map((h) => ({ value: h.alias, text: h.alias, label: <span className="mono">{h.alias}</span>, meta: h.group }))]} /></div>
           </div>
           <div className="field"><label className="flabel" htmlFor="hc">On connect <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></label>
             <div className="input"><Icon name="term" size="sm" className="faint" /><input id="hc" className="mono" value={f.command} onChange={(e) => set('command', e.target.value)} placeholder="e.g. herdr or tmux new -A -s main" spellCheck={false} autoComplete="off" /></div>

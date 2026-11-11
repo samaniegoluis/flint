@@ -247,3 +247,71 @@ test "the catalog view gathers every list and shows no secret" {
     assert(!json.stringify(view).contains("hunter2-marker"))
     close_vault(mut store)
 }
+
+test "RDP hosts: type, default port, fixed type, password-only logins, refused for SSH work" {
+    mut got_code := "ok"
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    _ := try add_key(crypto, mut store, FakeInspector{ strict: true }, s, "deploy", "PRIVATE d", "")
+    mut keyonly := empty_cred_patch()
+    keyonly.name = "keyonly"
+    keyonly.set_name = true
+    keyonly.user = "u"
+    keyonly.set_user = true
+    keyonly.key = "deploy"
+    keyonly.set_key = true
+    _ := try add_cred(crypto, mut store, s, keyonly)
+    mut withpw := keyonly
+    withpw.name = "domain"
+    withpw.set_key = false
+    withpw.password = "p@ss"
+    withpw.set_password = true
+    _ := try add_cred(crypto, mut store, s, withpw)
+
+    mut p := host_patch("win", "10.0.0.9")
+    p.host_type = "rdp"
+    p.set_host_type = true
+    p.domain = "CORP"
+    p.set_domain = true
+    v := try add_host(crypto, mut store, s, p)
+    assert_eq(v.host_type, "rdp")
+    assert_eq(v.port, 3389)
+    assert_eq(v.domain, "CORP")
+    sv := try add_host(crypto, mut store, s, host_patch("web", "10.0.0.5"))
+    assert_eq(sv.host_type, "ssh")
+    assert_eq(sv.port, 22)
+
+    // The type is chosen once.
+    mut flip := empty_host_patch()
+    flip.host_type = "ssh"
+    flip.set_host_type = true
+    got_code = "ok"
+    edit_host(crypto, mut store, s, "win", flip) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "invalid")
+
+    // A credential with only a key cannot log in to an RDP host.
+    mut cred := empty_host_patch()
+    cred.credential = "keyonly"
+    cred.set_credential = true
+    got_code = "ok"
+    edit_host(crypto, mut store, s, "win", cred) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "invalid")
+    cred.credential = "domain"
+    assert_eq((try edit_host(crypto, mut store, s, "win", cred)).credential, "domain")
+
+    // Work only SSH does is refused with its own code, before anything else runs.
+    got_code = "ok"
+    sudo_ask_for(store, "win", ["true"]) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "wrong_host_type")
+    got_code = "ok"
+    require_ssh_alias(store, "win", "a tunnel") or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "wrong_host_type")
+    try require_ssh_alias(store, "web", "a tunnel")
+    mut jump := empty_host_patch()
+    jump.jump = "win"
+    jump.set_jump = true
+    got_code = "ok"
+    edit_host(crypto, mut store, s, "web", jump) or err { got_code = error_code_of("{err.message()}") }
+    assert_eq(got_code, "wrong_host_type")
+}

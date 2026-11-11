@@ -1,0 +1,176 @@
+package domain
+
+// Host types and the rules of an RDP host (v8, D-070). Plain types and rules, no I/O
+// (Principle 1).
+
+// Every host is one of these. A host saved before v8 is `ssh` (migration 008).
+HOST_TYPE_SSH: str = "ssh"
+HOST_TYPE_RDP: str = "rdp"
+RDP_DEFAULT_PORT: i64 = 3389
+
+// An RDP server's certificate is kept in the known hosts beside SSH host keys, trusted
+// on first use like them (D-019): the address is `rdp://<name>:<port>` (lower-cased),
+// so it never collides with an SSH address, and the key type is this one.
+RDP_CERT_KEY_TYPE: str = "x509"
+
+// The host's type, `ssh` for a host that carries none.
+fn host_type_of(h: Host) -> str {
+    if h.host_type.len() == 0 {
+        return HOST_TYPE_SSH
+    }
+    return h.host_type
+}
+
+fn is_rdp_host(h: Host) -> bool {
+    return host_type_of(h) == HOST_TYPE_RDP
+}
+
+fn check_host_type(t: str) -> void! {
+    if t != HOST_TYPE_SSH && t != HOST_TYPE_RDP {
+        return error(coded(ERR_INVALID, "host type must be 'ssh' or 'rdp', not '{t}'"))
+    }
+}
+
+// The default port of a host type.
+fn default_port_for(t: str) -> i64 {
+    if t == HOST_TYPE_RDP {
+        return RDP_DEFAULT_PORT
+    }
+    return 22
+}
+
+// The rules an RDP host adds to check_host: SSH-only settings are refused, so the
+// vault never holds a value that would silently do nothing.
+fn check_rdp_host(h: Host) -> void! {
+    try check_text("domain", h.domain, 128, false)
+    if !is_rdp_host(h) {
+        if h.domain.len() > 0 {
+            return error(coded(ERR_INVALID, "a domain applies to RDP hosts only"))
+        }
+        return
+    }
+    if h.key_id.len() > 0 {
+        return error(coded(ERR_INVALID, "an RDP host logs in with a password, not an SSH key"))
+    }
+    if h.jump_host_id.len() > 0 {
+        return error(coded(ERR_INVALID, "an RDP host has no jump host"))
+    }
+    if h.initial_command.len() > 0 {
+        return error(coded(ERR_INVALID, "an RDP host has no initial command"))
+    }
+    if h.sudo_password.len() > 0 {
+        return error(coded(ERR_INVALID, "an RDP host has no sudo password"))
+    }
+}
+
+// Refuses an RDP host for something that only SSH does (`exec`, `cp`, a tunnel, a
+// file view, a jump host), with the stable code scripts can test.
+fn require_ssh_host(h: Host, what: str) -> void! {
+    if is_rdp_host(h) {
+        return error(coded(ERR_HOST_TYPE, "'{h.alias}' is an RDP host; {what} needs an SSH host"))
+    }
+}
+
+// The known-hosts address of an RDP server's certificate.
+fn rdp_cert_addr(hostname: str, port: i64) -> str {
+    return "rdp://" + lower_ascii_name(hostname) + ":" + "{port}"
+}
+
+fn lower_ascii_name(s: str) -> str {
+    mut name := ""
+    for b in s.bytes() {
+        c := u8(b)
+        if c >= 65 && c <= 90 {
+            name = name + byte_to_str(c + 32)
+        } else {
+            name = name + byte_to_str(c)
+        }
+    }
+    return name
+}
+
+// Compares the certificate a server presented with the one trusted for its address:
+// HOST_KEY_KNOWN, HOST_KEY_NEW (ask the person) or HOST_KEY_CHANGED (refused, with the
+// reason, D-019).
+fn check_rdp_cert(known: []KnownHost, hostname: str, port: i64, fingerprint: str) -> str {
+    return check_server_key(known, rdp_cert_addr(hostname, port), ServerKey{ key_type: RDP_CERT_KEY_TYPE, fingerprint: fingerprint })
+}
+
+fn sample_rdp_host() -> Host {
+    mut h := sample_host()
+    h.alias = "win-01"
+    h.host_type = HOST_TYPE_RDP
+    h.port = RDP_DEFAULT_PORT
+    h.username = "admin"
+    h.domain = "CORP"
+    return h
+}
+
+test "a host without a type is an SSH host" {
+    h := sample_host()
+    assert_eq(host_type_of(h), "ssh")
+    assert(!is_rdp_host(h))
+    assert(is_rdp_host(sample_rdp_host()))
+}
+
+test "host types are ssh or rdp" {
+    try check_host_type("ssh")
+    try check_host_type("rdp")
+    mut msg := ""
+    check_host_type("vnc") or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid: "))
+    assert_eq(default_port_for("rdp"), 3389)
+    assert_eq(default_port_for("ssh"), 22)
+}
+
+test "an RDP host refuses SSH-only settings" {
+    try check_rdp_host(sample_rdp_host())
+    mut refused := 0
+    mut h := sample_rdp_host()
+    h.key_id = "k1"
+    check_rdp_host(h) or { refused += 1 }
+    h = sample_rdp_host()
+    h.jump_host_id = "j1"
+    check_rdp_host(h) or { refused += 1 }
+    h = sample_rdp_host()
+    h.initial_command = "htop"
+    check_rdp_host(h) or { refused += 1 }
+    h = sample_rdp_host()
+    h.sudo_password = [byte(1)]
+    check_rdp_host(h) or { refused += 1 }
+    assert_eq(refused, 4)
+}
+
+test "a domain applies to RDP hosts only" {
+    mut h := sample_host()
+    h.domain = "CORP"
+    mut msg := ""
+    check_rdp_host(h) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid: "))
+    h = sample_rdp_host()
+    h.domain = "bad\nname"
+    msg = ""
+    check_rdp_host(h) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid: "))
+}
+
+test "an RDP host is refused where only SSH works" {
+    try require_ssh_host(sample_host(), "exec")
+    mut msg := ""
+    require_ssh_host(sample_rdp_host(), "flint exec") or err { msg = "{err.message()}" }
+    assert_eq(msg, "wrong_host_type: 'win-01' is an RDP host; flint exec needs an SSH host")
+    assert_eq(error_code_of(msg), ERR_HOST_TYPE)
+}
+
+test "an RDP certificate is trusted on first use and a changed one is caught" {
+    assert_eq(rdp_cert_addr("Win.Example.org", 3389), "rdp://win.example.org:3389")
+    known: []KnownHost = [
+        KnownHost{ addr: "win.example.org", key_type: "ssh-ed25519", fingerprint: "SHA256:aaa", host_id: "", added_at: "" },
+        KnownHost{ addr: "rdp://win.example.org:3389", key_type: "x509", fingerprint: "AB:CD", host_id: "", added_at: "" },
+    ]
+    assert_eq(check_rdp_cert(known, "WIN.example.org", 3389, "AB:CD"), HOST_KEY_KNOWN)
+    assert_eq(check_rdp_cert(known, "win.example.org", 3389, "EF:01"), HOST_KEY_CHANGED)
+    assert_eq(check_rdp_cert(known, "win.example.org", 3390, "AB:CD"), HOST_KEY_NEW)
+    // The SSH key at the same name is never read as the certificate.
+    assert_eq(check_rdp_cert(known, "other", 3389, "AB:CD"), HOST_KEY_NEW)
+}

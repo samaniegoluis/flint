@@ -21,6 +21,8 @@ import { sessions, useSessions } from '../sessions/store';
 import { LAYOUTS, MAX_PANES, type SplitDir } from '../lib/layout';
 import { focusTerminal } from '../sessions/TerminalView';
 import { HostEditor } from '../editors/HostEditor';
+import { HostTypeStep } from '../editors/HostTypeStep';
+import type { HostType } from '../api/types';
 import { KeysPage, type Confirm } from '../pages/KeysPage';
 import { CredentialsPage } from '../pages/CredentialsPage';
 import { SettingsPage, type SettingsSection } from '../pages/SettingsPage';
@@ -45,7 +47,8 @@ export function Shell() {
   const [palette, setPalette] = useState<{ hostsOnly: boolean; newSession?: boolean; editHost?: boolean } | null>(null);
   const [switcher, setSwitcher] = useState(false);
   const [manage, setManage] = useState(false);
-  const [editor, setEditor] = useState<{ alias: string | null; group: string; tunnels?: boolean } | null>(null);
+  // A new host without a type opens the type step first (design 21a).
+  const [editor, setEditor] = useState<{ alias: string | null; group: string; tunnels?: boolean; type?: HostType } | null>(null);
   const [addingKey, setAddingKey] = useState(false);
   const [credEditing, setCredEditing] = useState<string | null | undefined>(undefined);
   const [section, setSection] = useState<SettingsSection>('appearance');
@@ -190,8 +193,16 @@ export function Shell() {
     openHosts.current = now;
   }, [panes, notify]);
 
+  // An RDP host opens no SSH session: its tab arrives with milestone 30.
+  const rdpNotYet = useCallback((alias: string) => {
+    if (catalog.hosts.find((h) => h.alias === alias)?.type !== 'rdp') return false;
+    notify(`${alias} is a remote desktop (RDP) host. Opening it in a tab is coming in a later version.`, 'info');
+    return true;
+  }, [catalog.hosts, notify]);
+
   // `noCommand` (the palette's "without …" row) always opens its own tab.
   const connect = useCallback((alias: string, newTab: boolean, noCommand = false) => {
+    if (rdpNotYet(alias)) return;
     setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts'));
     if (narrow) setCollapsed(true);
     const open = sessions.get().panes.find((t) => t.alias === alias && t.status !== 'ended' && !t.noCommand);
@@ -202,16 +213,17 @@ export function Shell() {
     const pane = sessions.get().panes.find((p) => p.id === sessions.tab(sessions.get().active)?.focus);
     if (pane && pane.alias === alias) startOnConnect.current.set(pane.id, { alias, all: withTunnels.current });
     withTunnels.current = false;
-  }, [narrow]);
+  }, [narrow, rdpNotYet]);
 
   // A new pane in the active tab (⌘D, ⇧⌘D, the Split menu, the palette's ⇧⌘↵).
   const split = useCallback((dir: SplitDir, alias?: string, noCommand = false) => {
+    if (alias && rdpNotYet(alias)) return;
     setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts'));
     const t = sessions.tab(sessions.get().active);
     if (!t) { if (alias) sessions.open(alias, noCommand); return; }
     if (t.panes.length >= MAX_PANES) { notify(`A tab holds up to ${MAX_PANES} panes`, 'info'); return; }
     sessions.split(dir, alias, noCommand);
-  }, [notify]);
+  }, [notify, rdpNotYet]);
 
   // The key leaves memory; open sessions keep running under the lock screen (D-042).
   const lock = app.lock;
@@ -292,6 +304,10 @@ export function Shell() {
         if (view === 'keys') setAddingKey(true);
         else if (view === 'credentials') setCredEditing(null);
         else setEditor({ alias: null, group: catalog.hosts.find((h) => h.alias === selected)?.group ?? '' });
+        break;
+      case 'newSshHost': case 'newRdpHost':
+        setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts'));
+        setEditor({ alias: null, group: catalog.hosts.find((h) => h.alias === selected)?.group ?? '', type: a === 'newRdpHost' ? 'rdp' : 'ssh' });
         break;
       case 'editHost': {
         const alias = view === 'hosts' && tab && document.activeElement?.closest('.pane') ? tab.alias : selected ?? tab?.alias;
@@ -445,8 +461,11 @@ export function Shell() {
           onSplit={(alias, noCommand) => split('right', alias, noCommand)}
           onEdit={(alias) => setEditor({ alias, group: '' })} onAction={(a) => setTimeout(() => run(a), 0)} />
       )}
-      {editor && (
-        <HostEditor alias={editor.alias} group={editor.group} showTunnels={!!editor.tunnels} onClose={() => setEditor(null)} onDelete={deleteHost}
+      {editor && editor.alias === null && !editor.type && (
+        <HostTypeStep group={editor.group} onClose={() => setEditor(null)} onPick={(type) => setEditor({ ...editor, type })} />
+      )}
+      {editor && (editor.alias !== null || editor.type) && (
+        <HostEditor alias={editor.alias} group={editor.group} type={editor.type} showTunnels={!!editor.tunnels} onClose={() => setEditor(null)} onDelete={deleteHost}
           onNewCredential={() => { setEditor(null); setView('credentials'); setCredEditing(null); }} />
       )}
       {manage && <ManageVaults onClose={() => setManage(false)} />}

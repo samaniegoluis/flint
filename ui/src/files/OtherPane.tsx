@@ -26,7 +26,7 @@ export function ServerPicker({ current, onPick, onClose }: { current: string; on
   const [filter, setFilter] = useState('');
   const [hot, setHot] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
-  const rows = useMemo(() => buildTree(catalog.groups, catalog.hosts, new Set(), filter), [catalog, filter]);
+  const rows = useMemo(() => buildTree(catalog.groups, catalog.hosts.filter((h) => h.type !== 'rdp'), new Set(), filter), [catalog, filter]);
   const pickable = rows.filter((r) => r.kind === 'host' && r.alias !== current);
   const hotAlias = pickable[Math.min(hot, pickable.length - 1)]?.kind === 'host' ? (pickable[Math.min(hot, pickable.length - 1)] as { alias: string }).alias : '';
 

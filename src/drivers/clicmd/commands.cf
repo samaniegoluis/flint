@@ -318,6 +318,14 @@ fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> HostPatch! {
         patch.key = p.flag_value("--key")
         patch.set_key = true
     }
+    if p.has_flag("--type") {
+        patch.host_type = p.flag_value("--type")
+        patch.set_host_type = true
+    }
+    if p.has_flag("--domain") {
+        patch.domain = p.flag_value("--domain")
+        patch.set_domain = true
+    }
     if p.has_flag("--command") {
         patch.command = p.flag_value("--command")
         patch.set_command = true
@@ -353,14 +361,14 @@ fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> HostPatch! {
 }
 
 fn host_field_flags() -> []str {
-    return ["--label", "--hostname", "--port", "--user", "--group", "--tag", "--no-tags", "--color", "--notes", "--jump", "--cred", "--key", "--password", "--password-stdin", "--sudo-password", "--sudo-password-stdin", "--command", "--keep-shell", "--no-keep-shell"]
+    return ["--label", "--hostname", "--port", "--user", "--group", "--tag", "--no-tags", "--color", "--notes", "--jump", "--cred", "--key", "--password", "--password-stdin", "--sudo-password", "--sudo-password-stdin", "--command", "--keep-shell", "--no-keep-shell", "--type", "--domain"]
 }
 
 fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb == "add" {
         try p.allow_flags("host add", host_field_flags())
-        try p.expect_args("host add", 1, "<alias> --hostname <host> [options]")
+        try p.expect_args("host add", 1, "<alias> --hostname <host> [--type ssh|rdp] [options]")
         mut patch := try host_patch_from_flags(p, sec)
         patch.alias = p.positional(2)
         patch.set_alias = true

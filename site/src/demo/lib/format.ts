@@ -19,8 +19,9 @@ export const yesNo = (b: boolean) => (b ? 'yes' : 'no');
 /** `user@host:port`, as host_target. */
 export function hostTarget(h: Host, user = h.user): string {
 	let t = h.hostname;
+	if (user && h.domain) user = `${h.domain}\\${user}`;
 	if (user) t = `${user}@${t}`;
-	if (h.port !== 22) t += `:${h.port}`;
+	if (h.port !== (h.type === 'rdp' ? 3389 : 22)) t += `:${h.port}`;
 	return t;
 }
 

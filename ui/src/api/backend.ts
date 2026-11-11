@@ -183,7 +183,7 @@ export function emptyHostPatch(): HostPatch {
     tags: [], set_tags: false, color: '', set_color: false, notes: '', set_notes: false,
     jump: '', set_jump: false, credential: '', set_credential: false, key: '', set_key: false,
     password: '', set_password: false, command: '', set_command: false, keep_shell: true, set_keep_shell: false,
-    sudo_password: '', set_sudo_password: false,
+    sudo_password: '', set_sudo_password: false, type: 'ssh', set_type: false, domain: '', set_domain: false,
   };
 }
 

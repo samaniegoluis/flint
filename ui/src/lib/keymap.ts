@@ -9,7 +9,7 @@ export type Action =
   | 'newSession' | 'closeTab' | 'reconnect' | 'duplicate' | 'toggleSidebar'
   | 'splitRight' | 'splitDown' | 'focusNextPane' | 'focusPrevPane'
   | 'layout1' | 'layout2' | 'layout3' | 'layout4'
-  | 'viewHosts' | 'viewFiles' | 'viewTunnels' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'editHost'
+  | 'viewHosts' | 'viewFiles' | 'viewTunnels' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'newSshHost' | 'newRdpHost' | 'editHost'
   | 'collapseAll' | 'expandAll'
   | 'lock' | 'quit' | 'fontBigger' | 'fontSmaller' | 'fontReset' | 'nextRegion' | 'prevRegion'
   | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5' | 'tab6' | 'tab7' | 'tab8' | 'tab9';
@@ -54,6 +54,8 @@ const CHORDS: Record<Action, Chord> = {
   viewCredentials: { code: 'KeyC', shifted: true, label: 'C' },
   settings: { code: 'Comma', label: ',' },
   newHost: { code: 'KeyN', label: 'N' },
+  newSshHost: { none: true, code: '', label: '' },
+  newRdpHost: { none: true, code: '', label: '' },
   editHost: { code: 'KeyI', label: 'I' },
   collapseAll: { none: true, code: '', label: '' },
   expandAll: { none: true, code: '', label: '' },
@@ -146,7 +148,9 @@ export const ACTION_TITLES: Record<Action, string> = {
   viewKeys: 'SSH keys',
   viewCredentials: 'Credentials',
   settings: 'Settings',
-  newHost: 'New host',
+  newHost: 'New host…',
+  newSshHost: 'New SSH host',
+  newRdpHost: 'New RDP host',
   editHost: 'Edit host',
   collapseAll: 'Collapse all groups',
   expandAll: 'Expand all groups',

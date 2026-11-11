@@ -261,6 +261,7 @@ fn open_link_in[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: 
     if opts.timeout_secs <= 0 {
         return error(coded(ERR_INVALID, "the connect timeout must be positive"))
     }
+    try require_ssh_host(target, "an SSH session")
     chain := try jump_chain(cat, target)
     // Resolve every user before dialling anything.
     mut users: []str = []
@@ -399,6 +400,7 @@ fn exec_on_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, O: ExecS
     if command.len() == 0 {
         return error(coded(ERR_USAGE, "no command given; use `flint exec <alias> -- <command>`"))
     }
+    try require_ssh_alias(store, alias, "flint exec")
     target := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
     defer link.link_hangup()
     return run_exec(mut link, mut sink, mut clock, target.alias, command, exec_timeout_secs, capture)

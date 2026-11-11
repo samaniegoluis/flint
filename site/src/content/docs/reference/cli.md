@@ -56,7 +56,7 @@ See [Vaults](/guides/vaults/).
 
 | Command | What it does |
 |---|---|
-| `host add <alias> --hostname <host> [flags]` | Add a host |
+| `host add <alias> --hostname <host> [--type ssh\|rdp] [flags]` | Add a host, SSH unless `--type rdp` |
 | `host edit <alias> [flags]` | Change the fields given |
 | `host list [--group <path>] [--tag <tag>]` | List hosts, optionally filtered |
 | `host show <alias>` | One host |
@@ -70,6 +70,13 @@ login password), `--command <cmd>` (run on connect) with `--keep-shell` / `--no-
 `host edit` also takes `--alias <new>`, `--no-tags`, `--no-password` and
 `--no-sudo-password`;
 `--command ""` clears the command. See [Hosts and groups](/guides/hosts/).
+
+An RDP host (`--type rdp`, port 3389 by default) takes `--domain <name>` and logs in with
+`--password` or a `--cred` that has a password; `--key`, `--jump`, `--command` and
+`--sudo-password` are refused for it (`invalid`), and `--domain` for an SSH host. The type
+is fixed once added: `host edit --type` may repeat it, not change it. `host list` shows a
+`TYPE` column, and `--json` a `type` (and `domain`) field on every host. See
+[Remote desktop hosts](/guides/hosts/#remote-desktop-rdp-hosts).
 
 `host test` takes `--timeout` and `--accept-new-host-key` like `connect`, never asks for
 a password, and exits 0 or with the SSH error codes (11 to 14). With `--json` it prints
@@ -253,6 +260,7 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 20 | `exists` | `cp`: the file is already there; `--force` replaces it |
 | 21 | `not_a_directory` | `cp`: a path that has to be a folder is a file |
 | 22 | `port_in_use` | `tunnel up`: another program already listens on that local port |
+| 23 | `wrong_host_type` | An RDP host given to something only SSH does: `exec`, `cp`, `connect`, `host test`, a tunnel, a jump host |
 
 The codes are stable: scripts can rely on them.
 
