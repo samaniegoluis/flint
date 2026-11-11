@@ -114,6 +114,10 @@ export FLINT_TEST_AGENT=1
 rdp_port="${FLINT_TEST_RDP_PORT:-33891}"
 if command -v sfreerdp-server >/dev/null; then
   openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/rdp.key" -out "$tmp/rdp.crt" -days 2 -subj "/CN=flint-test" 2>/dev/null
+  # FreeRDP 3.15's sample server closes every session unless a test_icon.* sits in its
+  # working folder (the Linux image installs one; Homebrew's 3.33 needs none).
+  icons="$(dirname "$(command -v sfreerdp-server)")/../share/sfreerdp-server"
+  [[ -d "$icons" ]] && cp "$icons"/test_icon.* "$tmp"/ 2>/dev/null || true
   (cd "$tmp" && WLOG_LEVEL=OFF exec sfreerdp-server --cert="$tmp/rdp.crt" --key="$tmp/rdp.key" --port="$rdp_port" >"$tmp/rdp.log" 2>&1) &
   rdp_pid=$!
   for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$rdp_port") 2>/dev/null && break; sleep 0.1; done

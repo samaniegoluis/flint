@@ -22,7 +22,8 @@ RUN cmake -S /src/freerdp -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_
         -DWITH_LAME=OFF -DWITH_OPENH264=OFF -DWITH_LIBSYSTEMD=OFF -DWITH_UNICODE_BUILTIN=ON -DWITH_ICU=OFF \
         -DWITH_SWSCALE=OFF -DWITH_WEBVIEW=OFF -DWITH_AAD=OFF -DWITH_CAIRO=OFF -DWITH_JPEG=OFF \
     && cmake --build /build --target sfreerdp-server \
-    && install -D -m 755 /build/server/Sample/sfreerdp-server /out/sfreerdp-server
+    && install -D -m 755 /build/server/Sample/sfreerdp-server /out/sfreerdp-server \
+    && install -D -m 644 -t /out/share/sfreerdp-server /src/freerdp/server/Sample/test_icon.*
 
 FROM debian:trixie
 
@@ -50,6 +51,9 @@ RUN git clone https://github.com/gsandoval/cfire /opt/cfire-src \
     && rm -rf /opt/cfire-src
 
 COPY --from=rdp-sample /out/sfreerdp-server /usr/local/bin/sfreerdp-server
+# 3.15's sample server ends every session in PostConnect when it finds no test_icon.* in
+# its working folder (3.33 does not); scripts/test.sh copies it there.
+COPY --from=rdp-sample /out/share/sfreerdp-server /usr/local/share/sfreerdp-server
 
 RUN useradd --create-home --shell /bin/bash flint
 # A password for the password and keyboard-interactive auth checks (linux-check.sh
