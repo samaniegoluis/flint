@@ -17,5 +17,6 @@ printf "Port 2231\n%s\nPasswordAuthentication no\nKbdInteractiveAuthentication y
 /usr/sbin/sshd -f "$d/a.conf" -E "$d/a.log"
 /usr/sbin/sshd -f "$d/b.conf" -E "$d/b.log"
 exec runuser -u flint -- env HOME=/home/flint \
+  FLINT_RDP_TEST_HOST="${FLINT_RDP_TEST_HOST:-}" FLINT_RDP_TEST_USER="${FLINT_RDP_TEST_USER:-}" FLINT_RDP_TEST_PASSWORD="${FLINT_RDP_TEST_PASSWORD:-}" \
   FLINT_TEST_PW_PORT=2230 FLINT_TEST_KBD_PORT=2231 FLINT_TEST_LOGIN_PW=flint-e2e-login-pw FLINT_E2E_SUDO=1 \
   bash /src/scripts/linux/inside.sh

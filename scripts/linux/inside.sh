@@ -6,7 +6,7 @@
 # serve; default all). FLINT_LINUX_SUITES narrows `tests` to some suites (space-separated
 # paths, default src).
 set -euo pipefail
-steps=",${FLINT_LINUX_STEPS:-tests,cli,gui,serve},"
+steps=",${FLINT_LINUX_STEPS:-tests,cli,gui,serve,rdp},"
 want() { [[ "$steps" == *",$1,"* ]]; }
 cd "$HOME"
 mkdir -p work
@@ -23,6 +23,9 @@ ldd ./build/flint | grep -E "crypto|ssh|sodium|sqlcipher" || true
 echo "== build the desktop app (page from ui/dist, built on the host)"
 scripts/build-gui.sh
 ldd ./build/gui/Flint | grep -E "crypto|ssh|sodium|sqlcipher|webkit" || true
+echo "== FreeRDP: only the RDP spike links it (expect none in flint)"
+! ldd ./build/flint | grep -q freerdp
+ldd ./build/rdpspike/flint-rdp-spike | grep -E "freerdp|winpr" || true
 # A Secret Service for the keychain adapter: gnome-keyring on a private D-Bus session.
 with_keyring() {
   dbus-run-session -- bash -c "printf flint-test | gnome-keyring-daemon --unlock --components=secrets >/dev/null && $1"
@@ -55,3 +58,9 @@ line="$(grep "^serve-e2e: " /tmp/serve-e2e.log | tail -1)"
 [[ "$line" =~ ^serve-e2e:\ ([0-9]+)/([0-9]+)\ checks\ passed && "${BASH_REMATCH[1]}" == "${BASH_REMATCH[2]}" ]]
 fi
 echo "== steps run: ${FLINT_LINUX_STEPS:-all}"
+# Milestone 28's RDP spike under Xvfb: both frame transports against the test host,
+# when one is given (linux-check.sh passes FLINT_RDP_TEST_*).
+if want rdp && [[ -n "${FLINT_RDP_TEST_HOST:-}" ]]; then
+echo "== rdp spike (Xvfb)"
+xvfb-run -a -s "-screen 0 1920x1200x24" scripts/rdp-spike.sh
+fi

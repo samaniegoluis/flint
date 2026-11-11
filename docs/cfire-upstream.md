@@ -739,8 +739,11 @@ The entries below were found while building milestone 01 against cfire `3963814`
   (`src/adapters/vault/sqlcipher.cf`, `src/adapters/ssh/libssh.cf`).
 - **Ideal:** `none` → `nullptr` for raw pointers; a `*mut T` parameter → `T*`.
 
-### CF-020 · bug · `resolved ✓`: identifiers that are C++ keywords break the build
+### CF-020 · bug · `reopened`: identifiers that are C++ keywords break the build
 - **At `466751b`:** C++ keywords are renamed in the generated code.
+- **At `c5b1d4b` (milestone 28) [ran]:** `auto` is not: `auto := os.getenv("X") == "1"` checks
+  cleanly in cfire and fails in clang with `cannot combine with previous 'auto' declaration
+  specifier`. Flint renamed the local (`auto_run`, `src/drivers/rdpspike/main.cf`).
 - **Repro:** `fn main() { short := 3; println("{}", short) }` → clang
   `expected unqualified-id`. The same happens for `short`, `long`, `class`, `template`,
   and so on.

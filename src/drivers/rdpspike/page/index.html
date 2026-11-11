@@ -1,0 +1,173 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Flint RDP spike</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 12px ui-monospace, monospace; }
+  #bar { position: fixed; top: 0; left: 0; right: 0; padding: 4px 8px; background: #000a; z-index: 1; }
+  #screen { display: block; width: 100vw; height: 100vh; object-fit: contain; image-rendering: auto; outline: none; }
+</style>
+</head>
+<body>
+<div id="bar">connecting…</div>
+<canvas id="screen" tabindex="0"></canvas>
+<script>
+// Milestone 28 spike (src/drivers/rdpspike/main.cf): draws an RDP session and measures
+// how frames reach the page. Option A: webui byte events. Option B: a local channel.
+const W = 1920, H = 1080;
+const bar = document.getElementById("bar");
+const canvas = document.getElementById("screen");
+const ctx = canvas.getContext("2d");
+canvas.width = W; canvas.height = H;
+
+const stats = { drawn: 0, bytes: 0, drawMs: 0, lastDrawAt: 0 };
+let mode = "events";
+
+function draw(u8) {
+  if (u8.byteLength < 16) return;
+  const t0 = performance.now();
+  const dv = new DataView(u8.buffer, u8.byteOffset, 16);
+  const x = dv.getUint16(4, true), y = dv.getUint16(6, true);
+  const w = dv.getUint16(8, true), h = dv.getUint16(10, true);
+  const px = new Uint8ClampedArray(u8.buffer, u8.byteOffset + 16, w * h * 4);
+  ctx.putImageData(new ImageData(px, w, h), x, y);
+  const t1 = performance.now();
+  stats.drawn++; stats.bytes += u8.byteLength; stats.drawMs += t1 - t0; stats.lastDrawAt = t1;
+}
+
+async function channelLoop(port, token) {
+  const url = `http://127.0.0.1:${port}/next?t=${token}`;
+  for (;;) {
+    let buf;
+    try { buf = await (await fetch(url, { cache: "no-store" })).arrayBuffer(); }
+    catch (e) { bar.textContent = "channel: " + e; return; }
+    if (buf.byteLength > 16) draw(new Uint8Array(buf));
+  }
+}
+
+// ---- Input -------------------------------------------------------------------------
+const PTR_MOVE = 0x0800, PTR_DOWN = 0x8000, PTR_B1 = 0x1000, PTR_B2 = 0x2000, PTR_B3 = 0x4000, PTR_WHEEL = 0x0200, PTR_WHEEL_NEG = 0x0100;
+function toRemote(ev) {
+  const r = canvas.getBoundingClientRect();
+  const scale = Math.min(r.width / W, r.height / H);
+  const ox = r.left + (r.width - W * scale) / 2, oy = r.top + (r.height - H * scale) / 2;
+  return [Math.round((ev.clientX - ox) / scale), Math.round((ev.clientY - oy) / scale)];
+}
+const button = b => b === 0 ? PTR_B1 : b === 2 ? PTR_B2 : PTR_B3;
+canvas.addEventListener("mousemove", ev => { const [x, y] = toRemote(ev); invoke("spike_mouse", { flags: PTR_MOVE, x, y }); });
+canvas.addEventListener("mousedown", ev => { canvas.focus(); const [x, y] = toRemote(ev); invoke("spike_mouse", { flags: button(ev.button) | PTR_DOWN, x, y }); ev.preventDefault(); });
+canvas.addEventListener("mouseup", ev => { const [x, y] = toRemote(ev); invoke("spike_mouse", { flags: button(ev.button), x, y }); ev.preventDefault(); });
+canvas.addEventListener("contextmenu", ev => ev.preventDefault());
+canvas.addEventListener("wheel", ev => {
+  const [x, y] = toRemote(ev);
+  const up = ev.deltaY < 0;
+  invoke("spike_mouse", { flags: PTR_WHEEL | (up ? 0x78 : PTR_WHEEL_NEG | 0x88), x, y });
+  ev.preventDefault();
+}, { passive: false });
+
+// Set-1 scancodes by KeyboardEvent.code; 0x100 marks an extended key. Enough for the spike.
+const SC = {
+  Escape: 0x01, Digit1: 0x02, Digit2: 0x03, Digit3: 0x04, Digit4: 0x05, Digit5: 0x06, Digit6: 0x07, Digit7: 0x08, Digit8: 0x09, Digit9: 0x0A, Digit0: 0x0B,
+  Minus: 0x0C, Equal: 0x0D, Backspace: 0x0E, Tab: 0x0F, KeyQ: 0x10, KeyW: 0x11, KeyE: 0x12, KeyR: 0x13, KeyT: 0x14, KeyY: 0x15, KeyU: 0x16, KeyI: 0x17, KeyO: 0x18, KeyP: 0x19,
+  BracketLeft: 0x1A, BracketRight: 0x1B, Enter: 0x1C, ControlLeft: 0x1D, KeyA: 0x1E, KeyS: 0x1F, KeyD: 0x20, KeyF: 0x21, KeyG: 0x22, KeyH: 0x23, KeyJ: 0x24, KeyK: 0x25, KeyL: 0x26,
+  Semicolon: 0x27, Quote: 0x28, Backquote: 0x29, ShiftLeft: 0x2A, Backslash: 0x2B, KeyZ: 0x2C, KeyX: 0x2D, KeyC: 0x2E, KeyV: 0x2F, KeyB: 0x30, KeyN: 0x31, KeyM: 0x32,
+  Comma: 0x33, Period: 0x34, Slash: 0x35, ShiftRight: 0x36, AltLeft: 0x38, Space: 0x39, CapsLock: 0x3A,
+  F1: 0x3B, F2: 0x3C, F3: 0x3D, F4: 0x3E, F5: 0x3F, F6: 0x40, F7: 0x41, F8: 0x42, F9: 0x43, F10: 0x44, F11: 0x57, F12: 0x58,
+  ControlRight: 0x11D, AltRight: 0x138, Home: 0x147, ArrowUp: 0x148, PageUp: 0x149, ArrowLeft: 0x14B, ArrowRight: 0x14D, End: 0x14F, ArrowDown: 0x150, PageDown: 0x151,
+  Insert: 0x152, Delete: 0x153, MetaLeft: 0x15B, MetaRight: 0x15C,
+};
+function onKey(ev, down) {
+  ev.preventDefault();
+  const sc = SC[ev.code];
+  if (sc !== undefined) invoke("spike_key", { code: sc, down });
+}
+canvas.addEventListener("keydown", ev => onKey(ev, true));
+canvas.addEventListener("keyup", ev => onKey(ev, false));
+
+// ---- Measurement -------------------------------------------------------------------
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function tap(code) { await invoke("spike_key", { code, down: true }); await invoke("spike_key", { code, down: false }); }
+async function chord(mod, code) {
+  await invoke("spike_key", { code: mod, down: true }); await tap(code);
+  await invoke("spike_key", { code: mod, down: false });
+}
+async function waitDrawAfter(t0, capMs) {
+  const end = t0 + capMs;
+  while (performance.now() < end) {
+    if (stats.lastDrawAt > t0) return stats.lastDrawAt - t0;
+    await new Promise(r => requestAnimationFrame(r));
+  }
+  return capMs;
+}
+async function snapshot(name) {
+  const png = canvas.toDataURL("image/png").split(",")[1];
+  await invoke("spike_snapshot", { name, png });
+}
+const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+
+async function measure() {
+  // Safe on a real session: no text, no Run box, no closing windows. Only the Start
+  // menu (Win, Esc) and Task view (Win+Tab, Esc), which leave nothing behind.
+  const LWIN = 0x15B, ESC = 0x01;
+  await sleep(4000);
+  await snapshot("desktop");
+
+  // Latency: the Start menu opens on Win; time until the next frame is drawn.
+  const lat = [];
+  for (let i = 0; i < 20; i++) {
+    await sleep(500);
+    const t0 = performance.now();
+    await tap(LWIN);
+    lat.push(await waitDrawAfter(t0, 1000));
+    await sleep(500);
+    await tap(ESC);
+  }
+  await sleep(800);
+
+  // Throughput: show and hide the desktop (whole-screen repaints) for 10 s.
+  const before = { ...stats }, eng0 = (await invoke("spike_stats")).drawn;
+  const t0 = performance.now();
+  let toggles = 0;
+  // Task view (Win+Tab) animates the whole screen in and out.
+  while (performance.now() - t0 < 10000) {
+    await chord(LWIN, 0x0F); toggles++; await sleep(700);
+    if (toggles === 3) await snapshot("taskview");
+  }
+  await tap(ESC);
+  await sleep(500);
+  const secs = (performance.now() - t0) / 1000;
+  const eng1 = (await invoke("spike_stats")).drawn;
+  const drawn = stats.drawn - before.drawn;
+  const result = {
+    mode, size: `${W}x${H}`,
+    latency_ms: { median: Math.round(pct(lat, 0.5)), p95: Math.round(pct(lat, 0.95)), max: Math.round(Math.max(...lat)) },
+    throughput: {
+      seconds: +secs.toFixed(1), toggles,
+      frames_drawn_page: drawn, frames_drawn_engine: eng1 - eng0,
+      fps_page: +(drawn / secs).toFixed(1),
+      mb_per_s: +((stats.bytes - before.bytes) / secs / 1e6).toFixed(1),
+      avg_put_image_ms: +((stats.drawMs - before.drawMs) / Math.max(1, drawn)).toFixed(2),
+    },
+  };
+  await invoke("spike_report", { text: "RESULT " + JSON.stringify(result) });
+  await invoke("spike_quit");
+}
+
+(async () => {
+  const cfg = await invoke("spike_config");
+  mode = cfg.mode;
+  bar.textContent = `connecting (${mode})…`;
+  let r;
+  try { r = await invoke("spike_open", { width: W, height: H }); }
+  catch (e) { bar.textContent = "failed: " + e.message; await invoke("spike_report", { text: "RESULT " + JSON.stringify({ mode, error: String(e.message) }) }); if (cfg.auto_run) await invoke("spike_quit"); return; }
+  bar.textContent = `${r.width}x${r.height} · ${mode}`;
+  if (mode === "channel") channelLoop(r.port, r.token);
+  else window.runtime.EventsOn("rdp:frame", draw);
+  setInterval(() => { bar.textContent = `${r.width}x${r.height} · ${mode} · ${stats.drawn} frames · ${(stats.bytes / 1e6).toFixed(0)} MB`; }, 1000);
+  canvas.focus();
+  if (cfg.auto_run) measure();
+})();
+</script>
+</body>
+</html>

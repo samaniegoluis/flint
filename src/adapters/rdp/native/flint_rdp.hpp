@@ -271,6 +271,8 @@ inline int64_t open(const std::string& host, int32_t port, const std::string& us
     freerdp_settings_set_string(st, FreeRDP_Username, user.c_str());
     if (!domain.empty()) freerdp_settings_set_string(st, FreeRDP_Domain, domain.c_str());
     freerdp_settings_set_string(st, FreeRDP_Password, password.c_str());
+    // Without it the server shows its own logon screen after NLA has already passed.
+    freerdp_settings_set_bool(st, FreeRDP_AutoLogonEnabled, TRUE);
     freerdp_settings_set_uint32(st, FreeRDP_DesktopWidth, static_cast<UINT32>(width));
     freerdp_settings_set_uint32(st, FreeRDP_DesktopHeight, static_cast<UINT32>(height));
     freerdp_settings_set_uint32(st, FreeRDP_ColorDepth, 32);
