@@ -18,7 +18,7 @@ type ParsedArgs struct {
 
 // Flags that take a value. `--flag value` and `--flag=value` both work.
 fn value_flags() -> []str {
-    return ["--vault", "--name", "--hostname", "--label", "--port", "--user", "--group", "--tag", "--color", "--notes", "--jump", "--cred", "--key", "--file", "--alias", "--timeout", "--exec-timeout", "--command", "--hosts", "--allow", "--ttl", "--local", "--to"]
+    return ["--vault", "--name", "--hostname", "--label", "--port", "--user", "--group", "--tag", "--color", "--notes", "--jump", "--cred", "--key", "--file", "--alias", "--timeout", "--exec-timeout", "--command", "--hosts", "--allow", "--ttl", "--local", "--to", "--type", "--domain"]
 }
 
 // Flags that take no value.

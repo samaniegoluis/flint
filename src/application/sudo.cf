@@ -57,6 +57,7 @@ fn sudo_ask_for[S: VaultStore](store: S, alias: str, argv: []str) -> SudoAsk! {
     }
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
+    try require_ssh_host(h, "flint exec --sudo")
     user := try auth_user(cat, h)
     return SudoAsk{ host: h.alias, user: user, argv: argv, has_password: has_sudo_secret(cat, h) }
 }

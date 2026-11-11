@@ -15,6 +15,7 @@ MIGRATION_004_SHA256: str = "05c65140fa57a387055c58982a185aa12b1a4d28871ac9499a3
 MIGRATION_005_SHA256: str = "8d77133943706ed50b72cdb9427af697d678168099b8417a5aadecd93886409c"
 MIGRATION_006_SHA256: str = "07733682ec237362bb8a03b714ecb9b8c6e94919e5eb80134b8db21a9d9cff76"
 MIGRATION_007_SHA256: str = "a2dfbc52aeadca07fd769aa3617dd95232529f02a6582e666cac6580f60afb41"
+MIGRATION_008_SHA256: str = "8a9563e7bb167910d4c6bc95d8ca07d1e126d985b72aa6a28ef40f3f0afc75c3"
 
 fn temp_vault_path(name: str) -> str {
     dir := "/tmp/flint-test-" + hex.encode(sha256.random_bytes(8))
@@ -219,6 +220,53 @@ test "migration 005 is frozen" {
 test "migrations 006 and 007 are frozen" {
     assert_eq(sha256.hash_hex(vault_migrations()[5].sql.bytes()), MIGRATION_006_SHA256)
     assert_eq(sha256.hash_hex(vault_migrations()[6].sql.bytes()), MIGRATION_007_SHA256)
+}
+
+test "migration 008 is frozen" {
+    assert_eq(sha256.hash_hex(vault_migrations()[7].sql.bytes()), MIGRATION_008_SHA256)
+}
+
+test "an RDP host round-trips its type and domain, which never leak" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    mut h := marker_host()
+    h.host_type = "rdp"
+    h.port = 3389
+    h.initial_command = ""
+    h.domain = "flint-domain-marker"
+    try store.host_put(h)
+    try store.known_host_put(KnownHost{ addr: "rdp://db01.internal.example.org:3389", key_type: "x509", fingerprint: "AB:CD", host_id: "h1", added_at: "" })
+    hosts := try store.hosts_all()
+    assert_eq(hosts[0].host_type, "rdp")
+    assert_eq(hosts[0].domain, "flint-domain-marker")
+    assert_eq((try store.known_hosts_all())[0].key_type, "x509")
+    store.vault_detach()
+    raw := try fs.read_text(path)
+    assert(!raw.contains("flint-domain-marker"), "the domain must not leak")
+    assert(!raw.contains("rdp://"), "certificate addresses must not leak")
+    try fs.remove(fs.dirname(path))
+}
+
+test "a vault at schema 7 gains the type ssh for every host" {
+    path := temp_vault_path("v.flint")
+    // A schema-7 vault as v6 and v7 wrote it.
+    mut db := try open_cipher_db(path, test_key(7), test_salt_bytes(), true)
+    try db.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+    for i in 0..7 {
+        try db.apply_migration(vault_migrations()[i])
+    }
+    try db.exec("INSERT INTO hosts (id, alias, label, hostname, port, username, color, notes) VALUES ('h1', 'web', '', 'web.example.org', 22, 'u', '', '');")
+    db.close_db()
+    mut store := new_sql_vault_store()
+    try store.vault_attach(path, test_key(7), test_salt_bytes())
+    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "8")
+    hosts := try store.hosts_all()
+    assert_eq(hosts.len(), 1)
+    assert_eq(hosts[0].host_type, "ssh")
+    assert_eq(hosts[0].domain, "")
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
 }
 
 test "migration 003 is frozen" {
@@ -477,7 +525,7 @@ test "a vault at schema 6 gains tunnels that round-trip, stay encrypted and go w
     db.close_db()
     mut store := new_sql_vault_store()
     try store.vault_attach(path, test_key(7), test_salt_bytes())
-    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "7")
+    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "{vault_migrations().len()}")
     assert_eq((try store.tunnels_all()).len(), 0)
     h := marker_host()
     try store.host_put(h)

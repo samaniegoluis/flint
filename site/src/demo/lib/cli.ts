@@ -6,7 +6,7 @@ import { ParsedArgs, parseFlintArgs, parsePort, parseSeconds, wantsJson } from '
 import { dash, fields, hostTarget, json, table, yesNo } from './format.ts';
 import { RemoteShell } from './remote.ts';
 import {
-	VaultOps, credView, hostView, keyView, parsePortText, parseTunnelDestination, serverKeyFor, splitTunnelRef, tokenAllows, tokenReach, tokenStatus, tokenView, utcText,
+	VaultOps, credView, hostView, keyView, parsePortText, requireSshHost, parseTunnelDestination, serverKeyFor, splitTunnelRef, tokenAllows, tokenReach, tokenStatus, tokenView, utcText,
 	type CredPatch, type Host, type HostPatch, type TokenRequest, type TunnelPatch, type TunnelView, type Vault, type World,
 } from './vault.ts';
 
@@ -61,6 +61,10 @@ Hosts
                                         --command runs on connect, then a login
                                         shell (--no-keep-shell: ends the session);
                                         the sudo password defaults to the login one
+  host add <alias> --type rdp --hostname <host> [--port N] [--user U]
+           [--domain D] [--password | --password-stdin | --cred <name>]
+                                        a remote desktop host (port 3389); no
+                                        --key, --jump, --command or sudo password
   host edit <alias> [same flags] [--alias <new>] [--no-tags] [--no-password]
            [--no-sudo-password] [--command ""] [--keep-shell]
   host list [--group <path>] [--tag <tag>] | host show <alias> | host rm <alias>
@@ -460,6 +464,8 @@ class Cmd {
 		if (p.has('--cred')) patch.credential = p.value('--cred');
 		if (p.has('--key')) patch.key = p.value('--key');
 		if (p.has('--command')) patch.command = p.value('--command');
+		if (p.has('--type')) patch.type = p.value('--type');
+		if (p.has('--domain')) patch.domain = p.value('--domain');
 		if (p.has('--keep-shell') && p.has('--no-keep-shell')) {
 			fail('usage', '--keep-shell and --no-keep-shell contradict each other');
 		}
@@ -482,7 +488,7 @@ class Cmd {
 	private static HOST_FLAGS = [
 		'--label', '--hostname', '--port', '--user', '--group', '--tag', '--no-tags', '--color', '--notes',
 		'--jump', '--cred', '--key', '--password', '--password-stdin', '--sudo-password', '--sudo-password-stdin',
-		'--command', '--keep-shell', '--no-keep-shell',
+		'--command', '--keep-shell', '--no-keep-shell', '--type', '--domain',
 	];
 
 	*host(): Run {
@@ -491,7 +497,7 @@ class Cmd {
 		switch (verb) {
 			case 'add': {
 				p.allowFlags('host add', Cmd.HOST_FLAGS);
-				p.expectArgs('host add', 1, '<alias> --hostname <host> [options]');
+				p.expectArgs('host add', 1, '<alias> --hostname <host> [--type ssh|rdp] [options]');
 				const patch = yield* this.hostPatch();
 				patch.alias = p.positional(2);
 				const ops = new VaultOps(yield* this.openTarget());
@@ -516,8 +522,8 @@ class Cmd {
 				this.emit(hosts.map(hostView), () => {
 					if (hosts.length === 0) return this.say('No hosts.');
 					table(
-						['ALIAS', 'TARGET', 'GROUP', 'TAGS'],
-						hosts.map((h) => [h.alias, hostTarget(h), dash(h.group), dash(h.tags.join(', '))]),
+						['ALIAS', 'TYPE', 'TARGET', 'GROUP', 'TAGS'],
+						hosts.map((h) => [h.alias, h.type, hostTarget(h), dash(h.group), dash(h.tags.join(', '))]),
 					).forEach((l) => this.say(l));
 				});
 				return ok;
@@ -528,11 +534,17 @@ class Cmd {
 				const ops = new VaultOps(yield* this.openTarget());
 				const h = ops.findHost(p.positional(2));
 				this.emit(hostView(h), () =>
-					fields(
-						['alias', 'label', 'hostname', 'port', 'user', 'group', 'tags', 'color', 'jump', 'credential', 'key', 'password', 'sudo password', 'command', 'notes'],
-						[h.alias, dash(h.label), h.hostname, `${h.port}`, dash(h.user), dash(h.group), dash(h.tags.join(', ')), dash(h.color),
+					(h.type === 'rdp'
+						? fields(
+							['alias', 'type', 'label', 'hostname', 'port', 'user', 'domain', 'group', 'tags', 'color', 'credential', 'password', 'notes'],
+							[h.alias, h.type, dash(h.label), h.hostname, `${h.port}`, dash(h.user), dash(h.domain), dash(h.group), dash(h.tags.join(', ')), dash(h.color),
+								dash(h.credential), h.hasPassword ? 'set' : 'not set', dash(h.notes)],
+						)
+						: fields(
+						['alias', 'type', 'label', 'hostname', 'port', 'user', 'group', 'tags', 'color', 'jump', 'credential', 'key', 'password', 'sudo password', 'command', 'notes'],
+						[h.alias, h.type, dash(h.label), h.hostname, `${h.port}`, dash(h.user), dash(h.group), dash(h.tags.join(', ')), dash(h.color),
 							dash(h.jump), dash(h.credential), dash(h.key), h.hasPassword ? 'set' : 'not set', h.hasSudoPassword ? 'set' : 'the login password', commandText(h), dash(h.notes)],
-					).forEach((l) => this.say(l)),
+					)).forEach((l) => this.say(l)),
 				);
 				return ok;
 			}
@@ -540,7 +552,7 @@ class Cmd {
 				p.allowFlags('host test', ['--timeout', '--accept-new-host-key']);
 				p.expectArgs('host test', 1, '<alias> [--timeout <secs>] [--accept-new-host-key]');
 				if (p.hasRest) fail('usage', '`flint host test` runs no command; use `flint exec <alias> -- <command>`');
-				const { host, user, hops } = yield* this.reach(p.positional(2), true);
+				const { host, user, hops } = yield* this.reach(p.positional(2), true, 'an SSH session');
 				let target = (user ? user + '@' : '') + host.hostname;
 				if (host.port !== 22) target += `:${host.port}`;
 				const ms = 120 + 64 * hops;
@@ -843,7 +855,7 @@ class Cmd {
 			if (verb === 'up') {
 				const t = ops.findTunnel(alias, name);
 				if (!t.running) {
-					yield* this.reach(alias);
+					yield* this.reach(alias, false, 'a tunnel');
 					ops.startTunnel(alias, name);
 				}
 				view = ops.tunnelView(alias, name, true);
@@ -866,12 +878,13 @@ class Cmd {
 	// ---- connect / exec ----
 
 	/** Walks the jump chain, checks each server key and resolves the login (connect.cf). */
-	private *reach(alias: string, testOnly = false): Generator<Ask, { host: Host; user: string; hops: number }, string> {
+	private *reach(alias: string, testOnly = false, what = 'an SSH session'): Generator<Ask, { host: Host; user: string; hops: number }, string> {
 		const p = this.p;
 		if (p.has('--timeout')) parseSeconds('--timeout', p.value('--timeout'));
 		const v = yield* this.openTarget();
 		const ops = new VaultOps(v);
 		const target = ops.findHost(alias);
+		requireSshHost(target, what);
 		const chain: Host[] = [target];
 		for (let cur = target; cur.jump; ) {
 			const next = v.hosts.find((h) => h.alias.toLowerCase() === cur.jump.toLowerCase());
@@ -930,7 +943,7 @@ class Cmd {
 		if (p.positionals.length !== 2 || p.hasRest) {
 			fail('usage', 'usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]');
 		}
-		const { host, user } = yield* this.reach(p.positional(1));
+		const { host, user } = yield* this.reach(p.positional(1), false, 'an SSH session');
 		if (host.command && !p.has('--no-command')) {
 			this.io.note(
 				`The real flint runs \`${host.command}\` on ${host.alias} now${host.keepShell ? ', then your login shell' : ' and ends the session when it exits'}. The demo opens its shell instead.`,
@@ -952,7 +965,7 @@ class Cmd {
 		const recursive = p.has('-r') || p.has('--recursive');
 		const force = p.has('--force');
 		const hostSide = function* (this: Cmd, alias: string, label: string): Generator<Ask, { side: Side; shell: RemoteShell; alias: string }, string> {
-			const { host, user } = yield* this.reach(alias);
+			const { host, user } = yield* this.reach(alias, false, 'copying files');
 			const shell = new RemoteShell(host.alias, user, host.hostname, () => this.io.now());
 			return { side: { remote: true, label, entry: (a) => shell.entry(a), entries: (a) => shell.entries(a) }, shell, alias: host.alias };
 		};
@@ -1024,11 +1037,11 @@ class Cmd {
 			const v = this.resolveVault(p.value('--vault'));
 			if (!v.unlocked) fail('locked', '`flint exec --sudo` runs only through Flint: open Flint, unlock this vault there, and run it again');
 			const ops = new VaultOps(yield* this.openTarget());
-			ops.findHost(p.positional(1));
+			requireSshHost(ops.findHost(p.positional(1)), 'flint exec --sudo');
 			// Flint's window asks for every sudo command; the demo plays the owner and allows it.
 			if (!this.asJson) this.io.err('Waiting for approval in Flint (flint, started by Terminal)…');
 		}
-		const { host, user } = yield* this.reach(p.positional(1));
+		const { host, user } = yield* this.reach(p.positional(1), false, sudo ? 'flint exec --sudo' : 'flint exec');
 		const shell = new RemoteShell(host.alias, sudo ? 'root' : user, host.hostname, () => this.io.now());
 		const r = shell.run(p.rest.map((w) => (/[\s'"]/.test(w) ? `'${w}'` : w)).join(' '));
 		const code = r.exit ? 0 : r.code;

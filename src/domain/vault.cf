@@ -56,6 +56,10 @@ type Host struct {
     // The password Flint types when sudo asks (`exec --sudo`, milestone 13), sealed
     // like `password`; empty: the login password is used.
     sudo_password: []byte
+    // `ssh` or `rdp` (v8, D-070); "" reads as `ssh`.
+    host_type: str
+    // An RDP host's Windows domain; "" for none and for every SSH host.
+    domain: str
 }
 
 type SshKey struct {
@@ -246,6 +250,8 @@ fn check_host(h: Host) -> void! {
     if h.jump_host_id.len() > 0 && h.jump_host_id == h.id {
         return error(coded(ERR_INVALID, "a host cannot be its own jump host"))
     }
+    try check_host_type(host_type_of(h))
+    try check_rdp_host(h)
 }
 
 // Removes duplicate tags, keeping first occurrences in order.

@@ -126,10 +126,14 @@ fn join_tags(tags: []str) -> str {
 // "host:port", or the user@host:port target M03 will connect to.
 fn host_target(h: HostView) -> str {
     mut t := h.hostname
-    if h.user.len() > 0 {
-        t = h.user + "@" + t
+    mut user := h.user
+    if h.domain.len() > 0 && user.len() > 0 {
+        user = h.domain + "\\" + user
     }
-    if h.port != 22 {
+    if user.len() > 0 {
+        t = user + "@" + t
+    }
+    if h.port != default_port_for(h.host_type) {
         t = t + ":{h.port}"
     }
     return t
@@ -155,8 +159,13 @@ fn print_host(h: HostView) {
     if h.has_sudo_password {
         sudo_pw = "set"
     }
-    print_fields(["alias", "label", "hostname", "port", "user", "group", "tags", "color", "jump", "credential", "key", "password", "sudo password", "command", "notes"],
-        [h.alias, dash_if_empty(h.label), h.hostname, "{h.port}", dash_if_empty(h.user), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags)), dash_if_empty(h.color), dash_if_empty(h.jump), dash_if_empty(h.credential), dash_if_empty(h.key), pw, sudo_pw, command_text(h), dash_if_empty(h.notes)])
+    if h.host_type == HOST_TYPE_RDP {
+        print_fields(["alias", "type", "label", "hostname", "port", "user", "domain", "group", "tags", "color", "credential", "password", "notes"],
+            [h.alias, h.host_type, dash_if_empty(h.label), h.hostname, "{h.port}", dash_if_empty(h.user), dash_if_empty(h.domain), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags)), dash_if_empty(h.color), dash_if_empty(h.credential), pw, dash_if_empty(h.notes)])
+        return
+    }
+    print_fields(["alias", "type", "label", "hostname", "port", "user", "group", "tags", "color", "jump", "credential", "key", "password", "sudo password", "command", "notes"],
+        [h.alias, h.host_type, dash_if_empty(h.label), h.hostname, "{h.port}", dash_if_empty(h.user), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags)), dash_if_empty(h.color), dash_if_empty(h.jump), dash_if_empty(h.credential), dash_if_empty(h.key), pw, sudo_pw, command_text(h), dash_if_empty(h.notes)])
 }
 
 fn print_host_list(hosts: []HostView) {
@@ -166,9 +175,9 @@ fn print_host_list(hosts: []HostView) {
     }
     mut rows: [][]str = []
     for h in hosts {
-        rows.push([h.alias, host_target(h), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags))])
+        rows.push([h.alias, h.host_type, host_target(h), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags))])
     }
-    print_table(["ALIAS", "TARGET", "GROUP", "TAGS"], rows)
+    print_table(["ALIAS", "TYPE", "TARGET", "GROUP", "TAGS"], rows)
 }
 
 fn print_key(k: KeyView) {

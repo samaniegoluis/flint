@@ -744,6 +744,10 @@ The entries below were found while building milestone 01 against cfire `3963814`
 - **At `c5b1d4b` (milestone 28) [ran]:** `auto` is not: `auto := os.getenv("X") == "1"` checks
   cleanly in cfire and fails in clang with `cannot combine with previous 'auto' declaration
   specifier`. Flint renamed the local (`auto_run`, `src/drivers/rdpspike/main.cf`).
+- **Also (milestone 29) [ran]:** a local named like a C++ namespace the generated code uses
+  breaks the same way: `ssh := try add_host(…)` in `src/application/catalog_test.cf`
+  checks cleanly and fails in clang with `'ssh' is not a class, namespace, or enumeration`
+  on a later line that names `ssh::…`. Flint renamed the local (`sv`).
 - **Repro:** `fn main() { short := 3; println("{}", short) }` → clang
   `expected unqualified-id`. The same happens for `short`, `long`, `class`, `template`,
   and so on.

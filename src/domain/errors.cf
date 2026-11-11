@@ -32,6 +32,8 @@ ERR_EXISTS: str = "exists"
 ERR_NOT_DIR: str = "not_a_directory"
 // Tunnel codes (milestone 22), appended likewise.
 ERR_PORT_IN_USE: str = "port_in_use"
+// Host type code (milestone 29): an RDP host given to a command that only SSH does.
+ERR_HOST_TYPE: str = "wrong_host_type"
 
 // Builds an error message carrying a stable code.
 fn coded(code: str, msg: str) -> str {
@@ -41,7 +43,7 @@ fn coded(code: str, msg: str) -> str {
 // Every code a driver may see, in exit-code order (exit code = index + 1, except
 // that `internal` is 1).
 fn known_error_codes() -> []str {
-    return [ERR_INTERNAL, ERR_USAGE, ERR_NOT_FOUND, ERR_CONFLICT, ERR_LOCKED, ERR_WRONG_PASSWORD, ERR_INVALID, ERR_UNSUPPORTED, ERR_KEYCHAIN, ERR_IO, ERR_HOST_KEY, ERR_AUTH, ERR_NETWORK, ERR_TIMEOUT, ERR_DENIED, ERR_APPROVAL_TIMEOUT, ERR_NOT_SUDOER, ERR_SUDO_PASSWORD, ERR_PERMISSION, ERR_EXISTS, ERR_NOT_DIR, ERR_PORT_IN_USE]
+    return [ERR_INTERNAL, ERR_USAGE, ERR_NOT_FOUND, ERR_CONFLICT, ERR_LOCKED, ERR_WRONG_PASSWORD, ERR_INVALID, ERR_UNSUPPORTED, ERR_KEYCHAIN, ERR_IO, ERR_HOST_KEY, ERR_AUTH, ERR_NETWORK, ERR_TIMEOUT, ERR_DENIED, ERR_APPROVAL_TIMEOUT, ERR_NOT_SUDOER, ERR_SUDO_PASSWORD, ERR_PERMISSION, ERR_EXISTS, ERR_NOT_DIR, ERR_PORT_IN_USE, ERR_HOST_TYPE]
 }
 
 // The code an error message starts with, or `internal` when it carries none.

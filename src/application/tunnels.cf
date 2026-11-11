@@ -172,6 +172,7 @@ fn running_tunnels[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tun
 fn tunnel_status[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunnels: U, mut runner: R, alias: str, name: str) -> TunnelView! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
+    try require_ssh_host(h, "a tunnel")
     all := try tunnels.tunnels_all()
     t := try require_tunnel(all, h, name)
     prune_tunnels(all, mut runner)
@@ -212,6 +213,7 @@ fn add_tunnel[C: Crypto, S: VaultStore, U: TunnelStore, R: TunnelRunner](crypto:
     if !p.set_local_port {
         return error(coded(ERR_USAGE, "a tunnel needs a local port (--local)"))
     }
+    try require_ssh_alias(store, alias, "a tunnel")
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
     all := try tunnels.tunnels_all()

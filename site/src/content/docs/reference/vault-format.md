@@ -59,10 +59,10 @@ own transaction; a vault from a newer Flint is refused rather than downgraded.
 | 4 | `tokens` (name, BLAKE2b hash of the secret, scope by group and host id, actions, created, expiry and revocation times; revoked, never deleted) and `activity` (time, caller, how it was allowed, action, host, command, outcome) |
 | 5 | `hosts.sudo_password`: the password `exec --sudo` types, sealed with the secrets key like the host's password; empty means the login password |
 | 6 | `activity.command_cut`: how many bytes of a command past 16 KB were cut (entries from before were cut at 160 characters and say 0). The log's retention in days is the `meta` row `activity_retention_days` (absent: 90) |
-
 | 7 | `tunnels`: local forwards saved in a host (name, local port, destination host and port, open on connect), removed with their host; a name is unique in its host, whatever its case |
+| 8 | `hosts.type` (`ssh` for every host saved before, or `rdp`) and `hosts.domain` (an RDP host's Windows domain). An RDP server's certificate is kept in `known_hosts` under `rdp://<name>:<port>`, beside SSH host keys |
 
-A vault that has been opened by a Flint with migration 7 is refused by older builds.
+A vault that has been opened by a Flint with migration 8 is refused by older builds.
 
 ## The keychain
 

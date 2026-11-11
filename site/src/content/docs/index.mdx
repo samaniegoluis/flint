@@ -8,10 +8,10 @@ hero:
       <div class="flint-term" role="img" aria-label="A terminal: flint host list shows three hosts, flint exec runs uptime on web-01, and flint connect opens db">
         <div class="flint-term-bar" aria-hidden="true"><i></i><i></i><i></i><span>~ — zsh</span></div>
         <pre aria-hidden="true"><span class="p">❯</span> flint host list
-      <span class="d">ALIAS    TARGET                GROUP  TAGS</span>
-      <span class="a">bastion</span>  jump@bastion.example  -      -
-      <span class="a">db</span>       admin@10.0.0.12       prod   postgres
-      <span class="a">web-01</span>   deploy@10.0.0.5       prod   nginx
+      <span class="d">ALIAS    TYPE  TARGET                GROUP  TAGS</span>
+      <span class="a">bastion</span>  ssh   jump@bastion.example  -      -
+      <span class="a">db</span>       ssh   admin@10.0.0.12       prod   postgres
+      <span class="a">web-01</span>   ssh   deploy@10.0.0.5       prod   nginx
       <span class="p">❯</span> flint exec web-01 -- uptime
        10:42:07 up 41 days,  load average: 0.08
       <span class="p">❯</span> flint connect db <span class="d"># via bastion</span>
@@ -74,11 +74,11 @@ or `tmux`. Read [The desktop app](/guides/desktop-app/).
 
 ```sh
 ❯ flint host list
-ALIAS    TARGET                GROUP    TAGS
-bastion  jump@bastion.example  -        -
-db       admin@10.0.0.12       prod     postgres
-nas      pi@192.168.1.20       homelab  backup
-web-01   deploy@10.0.0.5       prod     nginx
+ALIAS    TYPE  TARGET                GROUP    TAGS
+bastion  ssh   jump@bastion.example  -        -
+db       ssh   admin@10.0.0.12       prod     postgres
+nas      ssh   pi@192.168.1.20       homelab  backup
+web-01   ssh   deploy@10.0.0.5       prod     nginx
 ❯ flint connect db
 ```
 

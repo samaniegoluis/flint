@@ -62,7 +62,7 @@ export function tokenize(line: string): Tokens {
 const VALUE_FLAGS = [
 	'--vault', '--name', '--hostname', '--label', '--port', '--user', '--group', '--tag',
 	'--color', '--notes', '--jump', '--cred', '--key', '--file', '--alias', '--timeout',
-	'--exec-timeout', '--command', '--hosts', '--allow', '--ttl', '--local', '--to',
+	'--exec-timeout', '--command', '--hosts', '--allow', '--ttl', '--local', '--to', '--type', '--domain',
 ];
 
 const BOOL_FLAGS = [
