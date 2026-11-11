@@ -56,7 +56,7 @@ test "pump stops after max_reads while the shell stays open" {
 // ---- OSC 52 -------------------------------------------------------------------------
 
 test "osc 52: a clipboard write is decoded and copied as plain text" {
-    mut clip := FakeClipboard{ text: "", clear_after_ms: 99, copies: 0 }
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 99, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
     r := try osc52_copy(mut clip, "c;aGVsbG8gd29ybGQ=")
     assert_eq(r.outcome, "copied")
     assert_eq(r.bytes, 11)
@@ -66,7 +66,7 @@ test "osc 52: a clipboard write is decoded and copied as plain text" {
 }
 
 test "osc 52: an empty selection list means the clipboard, utf-8 survives" {
-    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
     // "héllo ✓" in base64
     r := try osc52_copy(mut clip, ";aMOpbGxvIOKckw==")
     assert_eq(r.outcome, "copied")
@@ -74,7 +74,7 @@ test "osc 52: an empty selection list means the clipboard, utf-8 survives" {
 }
 
 test "osc 52: tmux's 'pc' list copies, primary only is ignored" {
-    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
     a := try osc52_copy(mut clip, "pc;YQ==")
     assert_eq(a.outcome, "copied")
     b := try osc52_copy(mut clip, "p;Yg==")
@@ -84,7 +84,7 @@ test "osc 52: tmux's 'pc' list copies, primary only is ignored" {
 }
 
 test "osc 52: a clipboard query is ignored, never answered" {
-    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
     r := try osc52_copy(mut clip, "c;?")
     assert_eq(r.outcome, "ignored")
     assert_eq(clip.copies, 0)
@@ -92,7 +92,7 @@ test "osc 52: a clipboard query is ignored, never answered" {
 
 test "osc 52: bad input is refused with a stable code" {
     mut got_code := "ok"
-    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0 }
+    mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
     got_code = "ok"
     osc52_copy(mut clip, "no-separator") or err { got_code = error_code_of("{err.message()}") }
     assert_eq(got_code, "invalid")

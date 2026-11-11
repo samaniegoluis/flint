@@ -216,3 +216,12 @@ fuzz "a cleaned name is always safe to write and paste" |name: str| {
     assert(n != "..")
     assert_eq(shell_escape_path(n), n)
 }
+
+// What the system clipboard holds, as a paste would take it: its text, else an image
+// (`image` is the raw bytes of `mime`, "image/png"). Read by the core when the webview's
+// paste event arrives empty, as WebKitGTK's does (milestone 25 on Linux).
+type ClipboardContent struct {
+    text:  str
+    mime:  str
+    image: str
+}

@@ -376,6 +376,16 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
   `"report.pdf"`. **Workaround:** the page reads the dropped files' bytes and stages them on this machine
   through an RPC (`files_stage`, `src/adapters/process/drop_stage.cf`, D-055); no native code. **Ideal:**
   a native drop handler (`NSDraggingDestination` / GTK `drag-data-received`) that reports absolute paths.
+- **At `c5b1d4b` on a real Linux desktop (milestone 25's spike, 2026-11-10):** the
+  workaround does not work there. On Zorin OS 18.1 (GNOME on Wayland, WebKitGTK 2.52.6,
+  through Proxmox's noVNC console) a file dragged from Nautilus or a desktop icon reaches
+  the page as `text/uri-list` (empty value) and `text/html`, with `dataTransfer.files`
+  empty, in a plain WebKit2GTK 4.1 window and in Epiphany; Flint's Files view does not
+  light up and ignores the drop. So on Linux the page gets neither paths nor bytes, and a
+  native GTK drop handler is the only way (ROADMAP §1, "Image paste and file drops do not
+  work on Linux"). The same on GNOME X11 with a real XDND drag from a GTK 3 source
+  that offers only `text/uri-list` (`scripts/paste-probe-x11.sh`), so it is neither
+  Wayland nor the console.
 - **Needed:** SFTP upload by dropping files from Finder or the file manager (roadmap `next`).
 - **Source:** no drop handler in `webui.hpp`. The page cannot get real paths for dropped
   files.
@@ -1093,6 +1103,14 @@ The entries below were found while building milestone 02 against the same cfire 
   Windows) and `BundleId`.
 
 ### CF-053 · missing · `not adopted`: no clipboard API in `ext:webui` (or anywhere in cfire)
+- **Reading too (milestone 25 on Linux, 2026-11-10):** WebKitGTK hands the page's paste
+  event neither text nor image, and `navigator.clipboard.read()` is refused
+  (`NotAllowedError`) because cfire's webview leaves `javascript-can-access-clipboard`
+  off (it returns the image when that setting is on). So the core reads it:
+  `flint_clip::read_paste` (`gtk_clipboard_wait_for_targets` / `_wait_for_text` /
+  `_wait_for_contents("image/png")`, or `_wait_for_image` converted to PNG; NSPasteboard's
+  `public.png` on macOS), behind the `Clipboard` port's `clipboard_read`. **Ideal** gains
+  `clipboard_get_image() -> (mime, bytes)?`, or a webui option to turn that WebKit setting on.
 - **At `43431f2`:** [read] The secret is no longer kept in the app's state map, Linux sets `x-kde-passwordManagerHint`, and the delayed clear runs on the GTK main loop. Still on Linux: the clear (`gtk_clipboard_set_text(cb, "", 0)`) checks only webui's own copy counter, so it also erases whatever another app copied in between. Flint keeps its adapter.
 - **At `466751b`:** `app.clipboard_set_secret` works on macOS, but on Linux it sets no password-manager hint, calls GTK from a background thread to clear, and clears without checking that the clipboard still holds the secret. It also keeps the secret in the app's state map. Flint keeps its adapter.
 - **Repro:** a desktop app that must put text on the system clipboard from the core,

@@ -218,6 +218,10 @@ fn main() {
         mut d := drops
         return rpc_terminal_paste(req, mut d, settings_store, st)
     }
+    app.bind_raw("terminal_clipboard_read") |params| {
+        mut d := drops
+        return rpc_terminal_clipboard_read(params, mut clipboard, mut d, st)
+    }
     app.bind_raw("files_stage_discard") |params| {
         req := try parse_req[FilesIdReq](params)
         mut d := drops
@@ -231,6 +235,7 @@ fn main() {
     app.bind_raw("e2e_log") |params| { return rpc_e2e_log(params, mut app) }
     if e2e {
         app.bind_raw("e2e_clipboard") |params| { return rpc_e2e_clipboard(clipboard) }
+        app.bind_raw("e2e_clipboard_png") |params| { return rpc_e2e_clipboard_png(params, clipboard) }
         // Stands in for the window's close button with the tray (milestone 14).
         app.bind_raw("e2e_close_window") |params| {
             mut a := app

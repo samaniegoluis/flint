@@ -173,3 +173,29 @@ fn paste_over_session[T: SftpTransport, L: LocalFiles, S: SettingsStore](mut sft
     try open_sftp(mut sftp)
     return paste_to_remote(mut sftp, mut local, r)
 }
+
+// What a paste does when the webview's paste event arrived empty (WebKitGTK hands the
+// page neither text nor image): the core reads the clipboard itself. Text wins, as on
+// the page; an image is staged in `drop_id` as `rel`, ready for `paste_to_remote`.
+type ClipboardPaste struct {
+    // "text", "image" or "none".
+    kind: str `json:"kind"`
+    text: str `json:"text"`
+    mime: str `json:"mime"`
+    size: i64 `json:"size"`
+}
+
+fn stage_clipboard[C: Clipboard, D: DropStage](mut clip: C, mut stage: D, drop_id: str, rel: str) -> ClipboardPaste! {
+    if !valid_drop_id(drop_id) || !valid_drop_path(rel) {
+        return error(coded(ERR_INVALID, "a paste needs a drop to stage it in"))
+    }
+    held := try clip.clipboard_read()
+    if held.text.len() > 0 {
+        return ClipboardPaste{ kind: "text", text: held.text, mime: "", size: 0 }
+    }
+    if held.image.len() == 0 || !held.mime.starts_with("image/") {
+        return ClipboardPaste{ kind: "none", text: "", mime: "", size: 0 }
+    }
+    try stage.stage_append(drop_id, rel, held.image)
+    return ClipboardPaste{ kind: "image", text: "", mime: held.mime, size: i64(held.image.len()) }
+}

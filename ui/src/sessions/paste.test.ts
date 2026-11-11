@@ -16,6 +16,11 @@ const png = new File([new Uint8Array([137, 80, 78, 71])], 'image.png', { type: '
 const pdf = new File(['%PDF'], 'report.pdf', { type: 'application/pdf' });
 
 describe('pasteChoice', () => {
+  it('asks the core when the event carries neither text nor an image (WebKitGTK on Linux)', () => {
+    expect(pasteChoice(dt(null, []))).toEqual({ kind: 'native' });
+    expect(pasteChoice(dt('', []))).toEqual({ kind: 'native' });
+    expect(pasteChoice(null)).toEqual({ kind: 'native' });
+  });
   it('pastes an image that comes alone', () => {
     expect(pasteChoice(dt(null, [png]))).toEqual({ kind: 'image', file: png });
   });
@@ -28,7 +33,6 @@ describe('pasteChoice', () => {
   it('leaves plain text and other files to the terminal (files are milestone 26)', () => {
     expect(pasteChoice(dt('ls -la', [])).kind).toBe('text');
     expect(pasteChoice(dt(null, [pdf])).kind).toBe('text');
-    expect(pasteChoice(null).kind).toBe('text');
   });
 });
 

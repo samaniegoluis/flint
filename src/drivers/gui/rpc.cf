@@ -10,6 +10,7 @@ package main
 import "ext:webui"
 import "core:json"
 import "core:encoding/hex"
+import "core:encoding/base64"
 import "core:fs"
 import "core:os"
 import "core:time"
@@ -844,6 +845,19 @@ fn rpc_e2e_report(params: str, mut app: webui.App) -> str! {
 // The headless run's private clipboard, to check an OSC 52 copy. Bound only in that run.
 fn rpc_e2e_clipboard(clip: OsClipboard) -> str! {
     return json.stringify(NameReq{ name: clipboard_read_text(clip.board) })
+}
+
+// Puts a PNG (base64 in `name`) alone on the run's clipboard, as a screenshot tool
+// does, for the paste whose event arrives empty (milestone 25 on Linux).
+fn rpc_e2e_clipboard_png(params: str, clip: OsClipboard) -> str! {
+    req := try parse_req[NameReq](params)
+    png := base64.decode_str(req.name) or err {
+        return error(coded(ERR_INVALID, "not base64"))
+    }
+    if clipboard_copy_png(clip.board, png) != 0 {
+        return error(coded(ERR_IO, "the clipboard refused the image"))
+    }
+    return ok_json()
 }
 
 fn rpc_e2e_log(params: str, mut app: webui.App) -> str! {

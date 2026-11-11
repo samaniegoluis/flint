@@ -57,3 +57,26 @@ test "text a remote program copied (OSC 52) is plain, not concealed" {
     assert(!clipboard_is_concealed(board), "a plain copy is not hidden from clipboard managers")
     clipboard_release(board)
 }
+
+// Milestone 25 on Linux: the core reads what a paste would take. macOS runs it on a
+// private board; Linux needs a display (the Zorin box), and skips without one.
+test "a paste reads the clipboard's text, else its image as PNG" {
+    tag := os.getpid()
+    board := "net.flint.test.clipboard-paste.{tag}"
+    mut c := OsClipboard{ board: board }
+    png := "\x89PNG\r\n\x1a\nflint"
+    if clipboard_copy_png(board, png) == 2 {
+        println("SKIP: no clipboard here (no display)")
+        return
+    }
+    held := try c.clipboard_read()
+    assert_eq(held.text, "")
+    assert_eq(held.mime, "image/png")
+    assert_eq(held.image, png)
+
+    try c.clipboard_copy_text("text wins")
+    after := try c.clipboard_read()
+    assert_eq(after.text, "text wins")
+    assert_eq(after.image, "")
+    clipboard_release(board)
+}

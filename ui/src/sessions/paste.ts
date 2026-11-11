@@ -7,11 +7,15 @@
 import { api, toFlintError } from '../api/backend';
 import { STAGE_CHUNK, bytesToB64 } from '../files/store';
 
-export type PasteChoice = { kind: 'text' } | { kind: 'image'; file: File };
+// `native`: the paste event carried neither text nor an image, as WebKitGTK's does on
+// Linux (an empty event, or empty text in xterm's textarea); the core reads the
+// clipboard itself (`readClipboard`).
+export type PasteChoice = { kind: 'text' } | { kind: 'image'; file: File } | { kind: 'native' };
 
-/** What a paste should do with `dt`: text whenever there is any, else the first image. */
+/** What a paste should do with `dt`: text whenever there is any, else the first image,
+ *  else the core reads the clipboard (`native`). */
 export function pasteChoice(dt: Pick<DataTransfer, 'types' | 'getData' | 'items' | 'files'> | null): PasteChoice {
-  if (!dt) return { kind: 'text' };
+  if (!dt) return { kind: 'native' };
   const types = [...(dt.types ?? [])];
   if (types.includes('text/plain') && dt.getData('text/plain') !== '') return { kind: 'text' };
   for (const item of [...(dt.items ?? [])]) {
@@ -21,7 +25,10 @@ export function pasteChoice(dt: Pick<DataTransfer, 'types' | 'getData' | 'items'
     }
   }
   for (const f of [...(dt.files ?? [])]) if (f.type.startsWith('image/')) return { kind: 'image', file: f };
-  return { kind: 'text' };
+  // Another kind of file (a PDF): left to the terminal, which pastes its name if any
+  // (files are milestone 26). Nothing usable at all: the core reads the clipboard.
+  if ((dt.files?.length ?? 0) > 0) return { kind: 'text' };
+  return { kind: 'native' };
 }
 
 /** Megabytes as the paste limit names them. */
@@ -42,18 +49,55 @@ let seq = 0;
  *  paste: the path, escaped for a shell, and a space after it as a terminal leaves
  *  after a dropped file. Throws a FlintError with the reason. */
 export async function uploadPaste(session: string, file: File): Promise<string> {
-  const drop = `p-${Date.now().toString(36)}-${++seq}`;
-  const rel = 'clip';
+  const drop = newDrop();
   try {
-    if (file.size === 0) await api.filesStage(drop, rel, '');
+    if (file.size === 0) await api.filesStage(drop, CLIP, '');
     for (let off = 0; off < file.size; off += STAGE_CHUNK) {
       const buf = new Uint8Array(await file.slice(off, off + STAGE_CHUNK).arrayBuffer());
-      await api.filesStage(drop, rel, bytesToB64(buf));
+      await api.filesStage(drop, CLIP, bytesToB64(buf));
     }
-    const r = await api.terminalPaste({ session, drop, rel, name: file.name, kind: file.type });
-    return r.text + ' ';
   } catch (err) {
     api.filesStageDiscard(drop).catch(() => {});
+    throw toFlintError(err);
+  }
+  return pasteStaged(session, { drop, name: file.name, mime: file.type });
+}
+
+const CLIP = 'clip';
+const newDrop = () => `p-${Date.now().toString(36)}-${++seq}`;
+
+/** An image the core staged from the clipboard, waiting to be written on a host. */
+export type StagedImage = { drop: string; name: string; mime: string };
+
+export type ClipboardRead = { kind: 'text'; text: string } | { kind: 'image'; image: StagedImage; size: number } | { kind: 'none' };
+
+/** The core reads the clipboard (the paste event came empty, WebKitGTK): its text, or
+ *  an image it stages for `pasteStaged`. Throws a FlintError with the reason. */
+export async function readClipboard(): Promise<ClipboardRead> {
+  const drop = newDrop();
+  try {
+    const r = await api.terminalClipboardRead(drop, CLIP);
+    if (r.kind === 'text') return { kind: 'text', text: r.text };
+    if (r.kind === 'image') return { kind: 'image', image: { drop, name: '', mime: r.mime }, size: r.size };
+    return { kind: 'none' };
+  } catch (err) {
+    api.filesStageDiscard(drop).catch(() => {});
+    throw toFlintError(err);
+  }
+}
+
+/** Drops a staged image that will not be pasted (over the limit, no session). */
+export function discardStaged(image: StagedImage) {
+  api.filesStageDiscard(image.drop).catch(() => {});
+}
+
+/** Has the core write a staged image on `session`'s host and returns the text to
+ *  paste (see `uploadPaste`). The core discards the staged file either way. */
+export async function pasteStaged(session: string, image: StagedImage): Promise<string> {
+  try {
+    const r = await api.terminalPaste({ session, drop: image.drop, rel: CLIP, name: image.name, kind: image.mime });
+    return r.text + ' ';
+  } catch (err) {
     throw toFlintError(err);
   }
 }
