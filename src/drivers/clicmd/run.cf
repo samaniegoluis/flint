@@ -82,17 +82,24 @@ Files
                                         Copy from one host to another, through this
                                         machine (no key or password goes to a host)
 
+Tunnels (local forwards saved in a host; they run in Flint)
+  tunnel add <host> <name> --local <port> [--to <host:port>] [--open-on-connect]
+                                        127.0.0.1:<port> here reaches <host:port> as
+                                        the host sees it (default localhost:<port>)
+  tunnel edit <host>:<name> [--name N] [--local P] [--to D]
+              [--open-on-connect | --no-open-on-connect]
+  tunnel ls [<host>] | tunnel rm <host>:<name>
+  tunnel up <host>:<name> [--timeout <secs>] [--accept-new-host-key]
+                                        Start it in Flint (needs Flint open); it
+                                        keeps running after this command returns
+  tunnel down <host>:<name> | tunnel status [<host>:<name>]
+
 Tokens (for programs Flint cannot ask about: cron, launchd, CI on this machine)
   token create --name <name> --allow read,exec[,write] [--hosts <alias,@group,...> | --all]
                [--ttl 15m|1h|4h|1d|7d|30d|90d]
                                         Flint asks you to approve it; prints the
                                         token once (default --ttl 1d)
   token list | token revoke <id|name>
-
-Import
-  import tether <file> [--password-stdin] [--dry-run]
-                                        Copy a Tether vault into this one (asks for
-                                        Tether's master password); --dry-run reports only
 
 Global flags
   --json            Write JSON to stdout (errors as JSON to stderr)
@@ -115,7 +122,7 @@ them from stdin with the --*-stdin flags.
 fn check_command(p: ParsedArgs) -> void! {
     noun := p.positional(0)
     session_noun := noun == "connect" || noun == "exec" || noun == "cp"
-    if !session_noun && noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" && noun != "known-host" && noun != "import" && noun != "token" {
+    if !session_noun && noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" && noun != "known-host" && noun != "token" && noun != "tunnel" {
         return error(coded(ERR_USAGE, "unknown command '{noun}'; see `flint help`"))
     }
     if p.positional(1).len() == 0 {
@@ -139,7 +146,7 @@ fn wants_help(p: ParsedArgs) -> bool {
 // machine's files, which the CLI reads and writes for the app (milestone 16).
 fn is_session_command(p: ParsedArgs) -> bool {
     noun := p.positional(0)
-    return noun == "connect" || noun == "exec" || noun == "cp" || (noun == "host" && p.positional(1) == "test")
+    return noun == "connect" || noun == "exec" || noun == "cp" || (noun == "host" && p.positional(1) == "test") || is_tunnel_session(p)
 }
 
 // Runs one checked session command against `src`'s vault, on the given terminal,
@@ -149,6 +156,10 @@ fn run_session_command[M: Terminal, P: Prompter, O: ExecSink, L: LocalFiles, K: 
     noun := p.positional(0)
     if noun == "cp" {
         return cmd_cp(p, sec, as_json, c, mut store, src, recents, prompter, mut local, mut progress)
+    }
+    if noun == "tunnel" {
+        try cmd_tunnel_session(p, sec, as_json, c, mut store, src, recents, prompter)
+        return 0
     }
     if noun == "connect" {
         return cmd_connect(p, sec, as_json, c, mut store, src, recents, mut term, prompter, term_name)
@@ -172,12 +183,12 @@ fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut st
         try cmd_host(p, sec, as_json, c, mut store, src, recents)
     } else if noun == "key" {
         try cmd_key(p, sec, as_json, c, mut store, src, recents, new_libssh_key_inspector())
-    } else if noun == "import" {
-        try cmd_import(p, sec, as_json, c, mut store, src, recents, new_libssh_key_inspector())
     } else if noun == "known-host" {
         try cmd_known_host(p, sec, as_json, c, mut store, src, recents)
     } else if noun == "token" {
         try cmd_token(p, sec, as_json, c, mut store, src, recents)
+    } else if noun == "tunnel" {
+        try cmd_tunnel(p, sec, as_json, c, mut store, src, recents)
     } else {
         try cmd_cred(p, sec, as_json, c, mut store, src, recents)
     }

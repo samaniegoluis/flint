@@ -119,11 +119,16 @@ export interface Settings {
   term_theme: 'default' | 'catppuccin' | 'tokyo-night' | 'aura' | 'dracula' | 'nord';
   /** Auto-lock after this long with nobody using the vault (D-042). */
   lock_after: LockAfter;
+  /** Milestone 25: the largest image or file a paste uploads, in MB. */
+  paste_limit_mb: PasteLimit;
   /** The app's own record that earlier cached keys were removed (D-048); the core keeps it. */
   keys_cleared?: boolean;
 }
 
 export type LockAfter = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | 'never';
+/** Settings → Terminal → Largest file to paste (milestone 25). */
+export type PasteLimit = 10 | 20 | 50 | 100;
+export const PASTE_LIMITS: PasteLimit[] = [10, 20, 50, 100];
 
 /** A `flint` command asked this window to unlock a vault; `path` is "" for none. */
 /** The window's own lock (milestone 14): closed to the tray, it opens with the
@@ -214,31 +219,6 @@ export interface HostTestEvent {
   duration_ms: number;
 }
 
-/** flint import tether (D-034): counts and notes only, never a secret. */
-export interface ImportCounts {
-  groups: number;
-  hosts: number;
-  keys: number;
-  credentials: number;
-  known_hosts: number;
-}
-
-export interface ImportNote {
-  kind: string;
-  name: string;
-  detail: string;
-}
-
-export interface TetherImportReport {
-  file: string;
-  format: number;
-  dry_run: boolean;
-  added: ImportCounts;
-  already_present: ImportCounts;
-  changed: ImportNote[];
-  not_imported: ImportNote[];
-}
-
 // ---- Caller approval (milestone 12) ----------------------------------------------
 
 /** One process of a caller's chain, the `flint` CLI first. */
@@ -286,6 +266,58 @@ export interface Approval {
   command: CommandText;
   /** `flint cp` (milestone 16): what is copied where; `direction` is "" otherwise. */
   copy?: CopyAsk;
+  /** `flint tunnel up|down` (milestone 22): `verb` is "" otherwise. */
+  tunnel?: TunnelAsk;
+}
+
+export interface TunnelAsk {
+  verb: 'up' | 'down' | '';
+  host: string;
+  name: string;
+  local_port: number;
+  /** As the host sees it: `localhost:5432`, `db.internal:5432`, `[fd00::5]:443`. */
+  destination: string;
+  /** `up`: 127.0.0.1:<local_port> cannot be bound now (design 16h2, milestone 23). */
+  port_in_use?: boolean;
+  /** With `port_in_use`: the program holding the port and its pid, when Flint may see it ('' for another user's process). */
+  port_owner?: string;
+  port_owner_pid?: number;
+}
+
+/** A saved tunnel and its state (milestone 22, D-063). */
+export interface TunnelView {
+  host: string;
+  name: string;
+  local_port: number;
+  destination: string;
+  open_on_connect: boolean;
+  /** "stopped", "listening" or "connection lost". */
+  state: string;
+  /** `127.0.0.1:<port>` while it listens. */
+  listen: string;
+  connections: number;
+  error: string;
+}
+
+export interface TunnelSave {
+  host: string;
+  /** The tunnel's current name; '' adds one. */
+  target: string;
+  name: string;
+  local_port: number;
+  dest_host: string;
+  dest_port: number;
+  open_on_connect: boolean;
+}
+
+/** The end of a start from the app (milestone 23). */
+export interface TunnelStartedEvent {
+  session: string;
+  host: string;
+  results: { name: string; code: string; message: string }[];
+  /** The login itself failed: every tunnel of the start stayed down. */
+  code: string;
+  message: string;
 }
 
 export interface CopyAsk {

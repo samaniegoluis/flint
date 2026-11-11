@@ -22,6 +22,7 @@ export const ERROR_CODES = [
 	'permission_denied',
 	'exists',
 	'not_a_directory',
+	'port_in_use',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

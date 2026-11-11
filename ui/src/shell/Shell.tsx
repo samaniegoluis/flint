@@ -26,10 +26,12 @@ import { CredentialsPage } from '../pages/CredentialsPage';
 import { SettingsPage, type SettingsSection } from '../pages/SettingsPage';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ApprovalDialog, useAccessState } from '../access/ApprovalDialog';
+import { TunnelsView } from '../tunnels/TunnelsView';
+import { tunnels, upOn, useTunnels } from '../tunnels/store';
 
-type View = 'hosts' | 'files' | 'keys' | 'credentials' | 'settings';
+type View = 'hosts' | 'files' | 'tunnels' | 'keys' | 'credentials' | 'settings';
 // The views that keep the sessions on screen beside a sidebar.
-const SIDE_VIEWS: View[] = ['hosts', 'files'];
+const SIDE_VIEWS: View[] = ['hosts', 'files', 'tunnels'];
 const NARROW = 1040;
 
 export function Shell() {
@@ -40,10 +42,10 @@ export function Shell() {
   const [narrow, setNarrow] = useState(window.innerWidth < NARROW);
   const [collapsed, setCollapsed] = useState(window.innerWidth < NARROW);
   const [selected, setSelected] = useState<string | null>(null);
-  const [palette, setPalette] = useState<{ hostsOnly: boolean; newSession?: boolean } | null>(null);
+  const [palette, setPalette] = useState<{ hostsOnly: boolean; newSession?: boolean; editHost?: boolean } | null>(null);
   const [switcher, setSwitcher] = useState(false);
   const [manage, setManage] = useState(false);
-  const [editor, setEditor] = useState<{ alias: string | null; group: string } | null>(null);
+  const [editor, setEditor] = useState<{ alias: string | null; group: string; tunnels?: boolean } | null>(null);
   const [addingKey, setAddingKey] = useState(false);
   const [credEditing, setCredEditing] = useState<string | null | undefined>(undefined);
   const [section, setSection] = useState<SettingsSection>('appearance');
@@ -51,9 +53,23 @@ export function Shell() {
   const [ask, setAsk] = useState<TextAsk | null>(null);
   const [zoom, setZoom] = useState(0);
   const filterRef = useRef<HTMLInputElement>(null);
+  // Panes whose host's tunnels start once the pane is connected; `all`: every one.
+  const startOnConnect = useRef(new Map<string, { alias: string; all: boolean }>());
+  const withTunnels = useRef(false);
+  // The hosts with an open pane, to tell when a host's last tab closed (design 20d2).
+  const openHosts = useRef(new Set<string>());
   const prevStatus = useRef(new Map<string, string>());
   const { ui, update: updateUi } = useUiState(vault?.path ?? '');
   const access = useAccessState(phase === 'main');
+  const tun = useTunnels();
+  const tunnelsUp = tun.list.filter((v) => v.state === 'listening').length;
+  // Tunnels follow the open vault: listed once it opens, forgotten when another opens.
+  useEffect(() => {
+    tunnels.start();
+    tunnels.reset();
+    if (vault?.path) void tunnels.refresh();
+  }, [vault?.path]);
+  useEffect(() => { if (phase === 'main') void tunnels.refresh(); }, [phase, catalog]);
   const approval = access.state?.pending[0] ?? null;
   const grantCount = access.state?.grants.length ?? 0;
   const waiting = access.state?.pending.length ?? 0;
@@ -150,13 +166,42 @@ export function Shell() {
     }
   }, [panes, tabs, active, os, notify]);
 
+  // A pane that connected starts its host's tunnels; one that ended first starts none.
+  useEffect(() => {
+    for (const [id, want] of startOnConnect.current) {
+      const p = panes.find((x) => x.id === id);
+      if (!p || p.status === 'ended') { startOnConnect.current.delete(id); continue; }
+      if (p.status !== 'ready') continue;
+      startOnConnect.current.delete(id);
+      // Only when one of them is down: no login for tunnels that already run.
+      const own = tunnels.get().list.filter((v) => v.host === want.alias && v.state !== 'listening' && (want.all || v.open_on_connect));
+      if (own.length > 0) tunnels.startTunnels(want.alias, own.map((v) => v.name));
+    }
+    // The last pane of a host closed while its tunnels run: they stay up (design 20d2).
+    const now = new Set(panes.filter((p) => p.status !== 'ended').map((p) => p.alias));
+    for (const alias of openHosts.current) {
+      if (now.has(alias) || panes.some((p) => p.alias === alias)) continue;
+      const up = upOn(tunnels.get().list, alias);
+      if (up.length === 0) continue;
+      const names = up.map((v) => v.name);
+      const list = names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+      notify(`Tab closed. ${list} ${names.length === 1 ? 'is' : 'are'} still up on ${alias}.`, 'info', { label: names.length === 1 ? 'Stop it' : 'Stop them', run: () => { void tunnels.stopHost(alias); } });
+    }
+    openHosts.current = now;
+  }, [panes, notify]);
+
   // `noCommand` (the palette's "without …" row) always opens its own tab.
   const connect = useCallback((alias: string, newTab: boolean, noCommand = false) => {
     setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts'));
     if (narrow) setCollapsed(true);
     const open = sessions.get().panes.find((t) => t.alias === alias && t.status !== 'ended' && !t.noCommand);
-    if (open && !newTab && !noCommand) sessions.focusPane(open.id);
-    else sessions.open(alias, noCommand);
+    if (open && !newTab && !noCommand) { sessions.focusPane(open.id); return; }
+    sessions.open(alias, noCommand);
+    // Connecting starts the host's Open when I connect tunnels once its terminal is in
+    // (D-064): on their own session, so a reconnect or closing the tab leaves them up.
+    const pane = sessions.get().panes.find((p) => p.id === sessions.tab(sessions.get().active)?.focus);
+    if (pane && pane.alias === alias) startOnConnect.current.set(pane.id, { alias, all: withTunnels.current });
+    withTunnels.current = false;
   }, [narrow]);
 
   // A new pane in the active tab (⌘D, ⇧⌘D, the Split menu, the palette's ⇧⌘↵).
@@ -234,6 +279,10 @@ export function Shell() {
         break;
       // Like the rail button: the sidebar stays as it was left (⌘B shows or hides it).
       case 'viewHosts': setView('hosts'); if (!collapsed) setTimeout(() => filterRef.current?.focus(), 0); break;
+      case 'viewTunnels':
+        if (view === 'tunnels' && !collapsed) setSidebarCollapsed(true);
+        else { setView('tunnels'); setSidebarCollapsed(false); setTimeout(() => document.querySelector<HTMLElement>('[data-tunnels-filter]')?.focus(), 0); }
+        break;
       case 'collapseAll': setView('hosts'); setSidebarCollapsed(false); setCollapsedGroups(new Set(catalog.groups.map((g) => g.path))); break;
       case 'expandAll': setView('hosts'); setSidebarCollapsed(false); setCollapsedGroups(new Set()); break;
       case 'viewKeys': setView('keys'); break;
@@ -280,10 +329,10 @@ export function Shell() {
   const anyOverlay = palette || editor || confirm || ask || manage;
   const sessionsOpen = panes.filter((t) => t.status !== 'ended').length;
   const crumb = tab ? <><span>{vault?.name}</span><span className="faint">/</span><span className="mono muted">{tab.alias}</span></> : <span>{vault?.name}</span>;
-  const railBtn = (v: View, icon: 'hosts' | 'files' | 'key' | 'cred' | 'settings', label: string, action: Action) => (
+  const railBtn = (v: View, icon: 'hosts' | 'files' | 'tunnel' | 'key' | 'cred' | 'settings', label: string, action: Action, badge?: React.ReactNode) => (
     <button className={'rail-btn' + (view === v ? (SIDE_VIEWS.includes(v) && collapsed ? ' is-collapsed is-on' : ' is-on') : '')} data-item={v}
       aria-pressed={view === v} title={`${label} (${chordLabel(action, os)})`} onClick={() => showView(v)}>
-      <Icon name={icon} />{label}
+      <Icon name={icon} />{label}{badge}
     </button>
   );
 
@@ -306,6 +355,8 @@ export function Shell() {
       }}>
         {railBtn('hosts', 'hosts', 'Hosts', 'viewHosts')}
         {railBtn('files', 'files', 'Files', 'viewFiles')}
+        {railBtn('tunnels', 'tunnel', 'Tunnels', 'viewTunnels', tunnelsUp > 0
+          ? <span className="rail-badge tun-count" aria-label={`${tunnelsUp} tunnel${tunnelsUp === 1 ? '' : 's'} running`} data-tunnels-badge>{tunnelsUp}</span> : null)}
         <span className="rail-sep" role="separator" />
         {railBtn('keys', 'key', 'Keys', 'viewKeys')}
         {railBtn('credentials', 'cred', 'Credentials', 'viewCredentials')}
@@ -320,6 +371,13 @@ export function Shell() {
             onEditHost={(alias) => setEditor({ alias, group: '' })}
             resizer={narrow ? null : <SidebarResizer width={filesWidth} min={FILES_MIN} max={FILES_MAX} reset={FILES_DEFAULT} clamp={clampFiles} label="Resize the Files sidebar"
               onLive={(w) => document.documentElement.style.setProperty('--sidebar-files-w', w + 'px')} onDone={(w) => updateUi({ files_width: w })} />} />
+        </div>
+      )}
+      {showSidebar && view === 'tunnels' && (
+        <div onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
+          <TunnelsView onEditHost={(alias) => setEditor({ alias, group: '', tunnels: true })} onConnect={(alias) => connect(alias, true)}
+            onPickHost={() => setPalette({ hostsOnly: true, editHost: true })}
+            resizer={narrow ? null : <SidebarResizer width={sidebarWidth} min={SIDEBAR_MIN} max={SIDEBAR_MAX} reset={SIDEBAR_DEFAULT} clamp={clampSidebar} label="Resize the Tunnels sidebar" onLive={(w) => document.documentElement.style.setProperty('--sidebar-w', w + 'px')} onDone={(w) => updateUi({ sidebar_width: w })} />} />
         </div>
       )}
       {showSidebar && view === 'hosts' && (
@@ -353,7 +411,7 @@ export function Shell() {
         </div>
       )}
 
-      <SessionArea shown={sideView} filesOn={view === 'files' && !collapsed} onFiles={() => run('viewFiles')} fontSize={fontSize} onPalette={(h) => setPalette(h ? { hostsOnly: true, newSession: true } : { hostsOnly: false })} onEditHost={(alias) => setEditor({ alias, group: '' })} onConnect={connect} />
+      <SessionArea shown={sideView} filesOn={view === 'files' && !collapsed} onFiles={() => run('viewFiles')} fontSize={fontSize} onPalette={(h) => setPalette(h ? { hostsOnly: true, newSession: true } : { hostsOnly: false })} onEditHost={(alias) => setEditor({ alias, group: '' })} onManageTunnels={(alias) => setEditor({ alias, group: '', tunnels: true })} onConnect={connect} />
       {view === 'keys' && <KeysPage adding={addingKey} setAdding={setAddingKey} onConfirm={setConfirm} />}
       {view === 'credentials' && <CredentialsPage editing={credEditing} setEditing={setCredEditing} onConfirm={setConfirm} />}
       {view === 'settings' && <SettingsPage section={section} setSection={setSection} onLock={() => lock().catch(fail)} onConfirm={setConfirm} />}
@@ -363,6 +421,11 @@ export function Shell() {
         <button className="sb-btn" onClick={() => lock().catch(fail)}>Lock<Kbd action="lock" /></button>
         <span className="sb-item">{sessionsOpen === 0 ? 'No sessions' : `${sessionsOpen} session${sessionsOpen === 1 ? '' : 's'}`}</span>
         {tab && <span className="sb-item mono">{tab.alias}</span>}
+        {tunnelsUp > 0 && (
+          <button className="sb-btn" data-tunnels-status onClick={() => run('viewTunnels')}>
+            <Icon name="tunnel" />{tunnelsUp} tunnel{tunnelsUp === 1 ? '' : 's'} up
+          </button>
+        )}
         {(grantCount > 0 || (waiting > 0 && !focused)) && (
           <button className="sb-btn sb-agents" data-grants onClick={() => { setSection('access'); setView('settings'); }}
             aria-label={`Agents: ${grantCount} active grant${grantCount === 1 ? '' : 's'}${waiting > 0 && !focused ? `, ${waiting} waiting` : ''}. Open Settings, Access`}>
@@ -376,12 +439,14 @@ export function Shell() {
       </footer>
 
       {palette && (
-        <CommandPalette hostsOnly={palette.hostsOnly} newSession={!!palette.newSession} onClose={() => setPalette(null)} onConnect={connect}
+        <CommandPalette hostsOnly={palette.hostsOnly} newSession={!!palette.newSession} pickToEdit={!!palette.editHost} onClose={() => setPalette(null)} onConnect={connect}
+          onConnectWithTunnels={(alias) => { withTunnels.current = true; connect(alias, true); }}
+          onManageTunnels={(alias) => setEditor({ alias, group: '', tunnels: true })}
           onSplit={(alias, noCommand) => split('right', alias, noCommand)}
           onEdit={(alias) => setEditor({ alias, group: '' })} onAction={(a) => setTimeout(() => run(a), 0)} />
       )}
       {editor && (
-        <HostEditor alias={editor.alias} group={editor.group} onClose={() => setEditor(null)} onDelete={deleteHost}
+        <HostEditor alias={editor.alias} group={editor.group} showTunnels={!!editor.tunnels} onClose={() => setEditor(null)} onDelete={deleteHost}
           onNewCredential={() => { setEditor(null); setView('credentials'); setCredEditing(null); }} />
       )}
       {manage && <ManageVaults onClose={() => setManage(false)} />}

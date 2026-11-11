@@ -72,7 +72,7 @@ interface Snapshot {
 }
 
 /** Bytes per staged chunk: one RPC each, base64 on the way. */
-const STAGE_CHUNK = 1 << 20;
+export const STAGE_CHUNK = 1 << 20;
 
 let seq = 0;
 const mint = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++seq}`;
@@ -114,7 +114,7 @@ export function applyProgress(t: Transfer, ev: TransferEvent, now: number, lastA
   return { ...t, bytes: ev.bytes_done, file: ev.file, filesDone: ev.files_done, rate, total };
 }
 
-function bytesToB64(bytes: Uint8Array): string {
+export function bytesToB64(bytes: Uint8Array): string {
   let bin = '';
   const step = 0x8000;
   for (let i = 0; i < bytes.length; i += step) bin += String.fromCharCode(...bytes.subarray(i, i + step));

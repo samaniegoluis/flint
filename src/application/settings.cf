@@ -63,6 +63,11 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     if settings_valid(probe) {
         fixed.lock_after = s.lock_after
     }
+    probe = d
+    probe.paste_limit_mb = s.paste_limit_mb
+    if settings_valid(probe) {
+        fixed.paste_limit_mb = s.paste_limit_mb
+    }
     return fixed
 }
 

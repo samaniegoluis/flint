@@ -21,8 +21,7 @@ if [[ ${#suites[@]} == 0 ]]; then
   mapfile -t suites < <(cd "$root" && find src -name '*_test.cf' -not -path '*/.cfire/*' | xargs -n1 dirname | sort -u | grep -v '^src/adapters/ssh$')
 fi
 WT="$(wslpath "$(cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r')")/flint-tests"
-rm -rf "$WT"; mkdir -p "$WT/src/adapters/vault"
-cp -R "$root/src/adapters/vault/testdata" "$WT/src/adapters/vault/"
+rm -rf "$WT"; mkdir -p "$WT"
 cd "$WT"
 failed=0
 for s in "${suites[@]}"; do

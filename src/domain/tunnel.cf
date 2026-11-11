@@ -1,0 +1,232 @@
+package domain
+
+// Local port forwards saved in a host (spec v6, D-062). A tunnel uses its host's
+// login, credentials and jump hosts; it listens on 127.0.0.1 only and forwards each
+// connection to a destination as the server sees it (`localhost:5432` by default).
+
+import "core:str"
+
+TUNNEL_NAME_MAX: usize = 64
+TUNNEL_DEST_MAX: usize = 253
+
+// What `TunnelStatus` reports for a saved tunnel.
+TUNNEL_STOPPED: str = "stopped"
+TUNNEL_LISTENING: str = "listening"
+TUNNEL_LOST: str = "connection lost"
+
+type Tunnel struct {
+    id: str
+    host_id: str
+    // Unique per host, case-insensitive; names it in `<host>:<name>`.
+    name: str
+    local_port: i64
+    // Resolved by the server: `localhost` is the server itself.
+    dest_host: str
+    dest_port: i64
+    // Started when the host is connected from the app (milestone 23).
+    open_on_connect: bool
+}
+
+// A running tunnel as the runner reports it (adapters/ssh/tunnels.cf).
+type TunnelLive struct {
+    host_id: str
+    tunnel_id: str
+    // False once the host's session was lost (the listener is closed then).
+    up: bool
+    port: i64
+    connections: i64
+    // Connections accepted, and those whose channel the server refused.
+    opened: i64
+    failed: i64
+    // Why the session was lost, or the last channel the server refused ("" for none).
+    error: str
+}
+
+// What the approval window shows for `flint tunnel up|down` (milestone 22): which
+// tunnel, where it listens and what it reaches.
+type TunnelAsk struct {
+    verb:        str `json:"verb"`
+    host:        str `json:"host"`
+    name:        str `json:"name"`
+    local_port:  i64 `json:"local_port"`
+    destination: str `json:"destination"`
+    // `up` only: 127.0.0.1:<local_port> cannot be bound now, so Allow could not open
+    // it (design 16h2, milestone 23).
+    port_in_use: bool `json:"port_in_use"`
+    // With `port_in_use`: the program that holds the port and its pid, when Flint may
+    // see it ("" and 0 for another user's process).
+    port_owner:     str `json:"port_owner"`
+    port_owner_pid: i64 `json:"port_owner_pid"`
+}
+
+fn no_tunnel_ask() -> TunnelAsk {
+    return TunnelAsk{ verb: "", host: "", name: "", local_port: 0, destination: "", port_in_use: false, port_owner: "", port_owner_pid: 0 }
+}
+
+// The program that listens on a local port, as far as this user may look (design
+// 16h2). An empty name: none found (nothing listens, or another user's process).
+type PortOwner struct {
+    name: str
+    pid:  i64
+}
+
+fn tunnel_name_char_ok(c: u8) -> bool {
+    return (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 45 || c == 46 || c == 95
+}
+
+// A tunnel name: 1-64 letters, digits, `-`, `.` or `_` (no `:`, which separates it
+// from the host in `<host>:<name>`).
+fn check_tunnel_name(name: str) -> void! {
+    if name.len() == 0 {
+        return error(coded(ERR_INVALID, "a tunnel needs a name"))
+    }
+    if name.len() > TUNNEL_NAME_MAX {
+        return error(coded(ERR_INVALID, "a tunnel name has at most {TUNNEL_NAME_MAX} characters"))
+    }
+    for i in 0..name.len() {
+        if !tunnel_name_char_ok(name[i]) {
+            return error(coded(ERR_INVALID, "a tunnel name has only letters, digits, '-', '.' and '_'"))
+        }
+    }
+}
+
+fn check_tunnel_port(port: i64, what: str) -> void! {
+    if port < 1 || port > 65535 {
+        return error(coded(ERR_INVALID, "the {what} {port} is not between 1 and 65535"))
+    }
+}
+
+fn check_tunnel_dest_host(host: str) -> void! {
+    if host.len() == 0 {
+        return error(coded(ERR_INVALID, "a tunnel needs a destination host"))
+    }
+    if host.len() > TUNNEL_DEST_MAX {
+        return error(coded(ERR_INVALID, "the destination host has at most {TUNNEL_DEST_MAX} characters"))
+    }
+    for i in 0..host.len() {
+        c := host[i]
+        if c <= 32 || c == 127 || c == 47 || c == 64 {
+            return error(coded(ERR_INVALID, "the destination host has a character a host name cannot have"))
+        }
+    }
+}
+
+fn check_tunnel(t: Tunnel) -> void! {
+    try check_tunnel_name(t.name)
+    try check_tunnel_port(t.local_port, "local port")
+    try check_tunnel_dest_host(t.dest_host)
+    try check_tunnel_port(t.dest_port, "destination port")
+}
+
+// `host:port`, `[v6]:port` with an IPv6 address, as the CLI and the window show it.
+fn tunnel_destination(host: str, port: i64) -> str {
+    if host.contains(":") {
+        return "[{host}]:{port}"
+    }
+    return "{host}:{port}"
+}
+
+fn parse_port_text(text: str, what: str) -> i64! {
+    if text.len() == 0 {
+        return error(coded(ERR_INVALID, "the {what} is missing"))
+    }
+    for i in 0..text.len() {
+        if text[i] < 48 || text[i] > 57 {
+            return error(coded(ERR_INVALID, "the {what} '{text}' is not a number"))
+        }
+    }
+    port := text.parse_i64() or {
+        return error(coded(ERR_INVALID, "the {what} '{text}' is not a number"))
+    }
+    try check_tunnel_port(port, what)
+    return port
+}
+
+// A destination as typed: `5432` (the server itself, `localhost`), `host:5432` or
+// `[::1]:5432`.
+fn parse_tunnel_destination(text: str) -> (str, i64)! {
+    t := str.trim(text)
+    if t.starts_with("[") {
+        close := t.index_of("]")
+        if close < 0 || usize(close) + 1 >= t.len() || t[usize(close) + 1] != 58 {
+            return error(coded(ERR_INVALID, "a destination is host:port, or [address]:port"))
+        }
+        host := t.substr(1, usize(close) - 1)
+        port := try parse_port_text(t.substr(usize(close) + 2), "destination port")
+        try check_tunnel_dest_host(host)
+        return (host, port)
+    }
+    colon := t.last_index_of(":")
+    if colon < 0 {
+        return ("localhost", try parse_port_text(t, "destination port"))
+    }
+    host := t.substr(0, usize(colon))
+    if host.contains(":") {
+        return error(coded(ERR_INVALID, "an IPv6 destination goes in brackets: [address]:port"))
+    }
+    try check_tunnel_dest_host(host)
+    port := try parse_port_text(t.substr(usize(colon) + 1), "destination port")
+    return (host, port)
+}
+
+// `<host>:<name>` as the CLI takes a tunnel.
+fn split_tunnel_ref(text: str) -> (str, str)! {
+    colon := text.last_index_of(":")
+    if colon <= 0 || usize(colon) + 1 >= text.len() {
+        return error(coded(ERR_USAGE, "a tunnel is named <host>:<name>, e.g. db1:postgres"))
+    }
+    return (text.substr(0, usize(colon)), text.substr(usize(colon) + 1))
+}
+
+fn lower_tunnel_name(name: str) -> str {
+    return str.to_lower(name)
+}
+
+test "tunnel names" {
+    try check_tunnel_name("postgres")
+    try check_tunnel_name("pg-15.main_db")
+    mut r := ""
+    check_tunnel_name("db1:pg") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+    r = ""
+    check_tunnel_name("") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+    r = ""
+    check_tunnel_name("a b") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+}
+
+test "destinations parse as port, host:port and [v6]:port" {
+    (h1, p1) := try parse_tunnel_destination("5432")
+    assert_eq(h1, "localhost")
+    assert_eq(p1, 5432)
+    (h2, p2) := try parse_tunnel_destination("db.internal:6379")
+    assert_eq(h2, "db.internal")
+    assert_eq(p2, 6379)
+    (h3, p3) := try parse_tunnel_destination("[fd00::5]:443")
+    assert_eq(h3, "fd00::5")
+    assert_eq(p3, 443)
+    assert_eq(tunnel_destination(h3, p3), "[fd00::5]:443")
+    assert_eq(tunnel_destination(h2, p2), "db.internal:6379")
+    mut r := ""
+    parse_tunnel_destination("db:0") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+    r = ""
+    parse_tunnel_destination("fd00::5:443") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+    r = ""
+    parse_tunnel_destination("db:http") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+}
+
+test "a tunnel reference is host:name" {
+    (h, n) := try split_tunnel_ref("db1:postgres")
+    assert_eq(h, "db1")
+    assert_eq(n, "postgres")
+    mut r := ""
+    split_tunnel_ref("db1") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_USAGE)
+    r = ""
+    split_tunnel_ref("db1:") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_USAGE)
+}

@@ -347,13 +347,46 @@ test('commands that need local files explain themselves instead', () => {
 	const r = flint(worldFromSeed(seed), 'vault create ~/x.flint');
 	assert.equal(r.code, 0);
 	assert.match(r.notes[0], /vault create.*leaves it out/);
-	const imp = flint(worldFromSeed(seed), 'import tether ~/vault.tether --dry-run');
-	assert.equal(imp.code, 0);
-	assert.match(imp.notes[0], /import tether.*leaves it out/);
-	const other = flint(worldFromSeed(seed), 'import termius ~/x');
-	assert.deepEqual(other.err, ["flint: Flint imports from 'tether' only: `flint import tether <file>`"]);
-	assert.equal(other.code, 2);
-	assert.equal(flint(worldFromSeed(seed), 'import tether').code, 2);
+});
+
+test('there is no import command (milestone 24)', () => {
+	const r = flint(worldFromSeed(seed), 'import tether ~/vault.tether');
+	assert.deepEqual(r.err, ["flint: unknown command 'import'; see `flint help`"]);
+	assert.equal(r.code, 2);
+});
+
+// ---- tunnels (milestone 22) ----------------------------------------------------------
+
+test('tunnels are saved in a host and run in Flint, as tunnel_commands.cf', () => {
+	const w = worldFromSeed(seed);
+	let r = flint(w, 'tunnel ls');
+	assert.equal(r.code, 0);
+	assert.ok(r.out[0].startsWith('TUNNEL'));
+	assert.ok(r.out[1].includes('db:postgres') && r.out[1].includes('localhost:5432') && r.out[1].includes('stopped'));
+	r = flint(w, 'tunnel add web-01 app --local 8080 --to 127.0.0.1:3000');
+	assert.deepEqual(r.out, ["Added tunnel 'web-01:app': 127.0.0.1:8080 to 127.0.0.1:3000 as web-01 sees it."]);
+	assert.equal(flint(w, 'tunnel add web-01 APP --local 1').code, 4);
+	assert.equal(flint(w, 'tunnel add web-01 x --local 70000').code, 7);
+	assert.equal(flint(w, 'tunnel add web-01 x').code, 2);
+	assert.equal(flint(w, 'tunnel up web-01').code, 2);
+	r = flint(w, 'tunnel up db:postgres --accept-new-host-key');
+	assert.equal(r.code, 0);
+	assert.deepEqual(r.out, ["Tunnel 'db:postgres' is listening on 127.0.0.1:5432, to localhost:5432 as db sees it. It runs in Flint until `flint tunnel down db:postgres`."]);
+	r = flint(w, 'tunnel status --json');
+	assert.deepEqual(JSON.parse(r.out[0]).map((t: { name: string; state: string }) => [t.name, t.state]), [['postgres', 'listening']]);
+	flint(w, 'tunnel add nas pg --local 5432');
+	r = flint(w, 'tunnel up nas:pg --json --accept-new-host-key');
+	assert.equal(r.code, 22);
+	assert.equal(JSON.parse(r.err[0]).error.code, 'port_in_use');
+	r = flint(w, 'tunnel down db:postgres');
+	assert.deepEqual(r.out, ["Tunnel 'db:postgres' is stopped."]);
+	r = flint(w, 'tunnel rm web-01:app --json');
+	assert.deepEqual(JSON.parse(r.out[0]), { removed: 'tunnel', name: 'web-01:app' });
+	assert.equal(flint(w, 'tunnel rm web-01:app').code, 3);
+	// The Work vault is locked: tunnels need Flint with it unlocked.
+	r = flint(w, '--vault Work tunnel status');
+	assert.equal(r.code, 5);
+	assert.ok(r.err[0].includes('runs only through Flint'));
 });
 
 // ---- the session: prompts, remote shell, tour -------------------------------------
@@ -365,12 +398,12 @@ test('the tour runs end to end on its suggested commands', () => {
 		const run = TOUR_STEPS[i].run;
 		assert.ok(s.chips().includes(run), `step ${i + 1}: its command is not offered as a chip`);
 		s.submit(run);
-		if (i === 3 || i === 5) s.submit('yes'); // trust web-01, then db
-		if (i === 5) {
+		if (i === 3 || i === 5) s.submit('yes'); // trust web-01, then db (its tunnel)
+		if (i === 6) {
 			s.submit('ls');
 			s.submit('cat notes.txt');
 		}
-		if (i === 7) s.submit('pw-typed-in-the-demo');
+		if (i === 8) s.submit('pw-typed-in-the-demo');
 	}
 	assert.equal(s.tourStep, null);
 	const all = text().join('\n');
@@ -436,7 +469,7 @@ test('the shell tokenizer refuses pipes and keeps quotes', () => {
 
 test('the guide always says what to do, with the exact command', () => {
 	const { s, text } = session();
-	assert.deepEqual(s.guide(), { text: 'Step 1/13 · Every command, on one screen:', command: 'flint help' });
+	assert.deepEqual(s.guide(), { text: 'Step 1/14 · Every command, on one screen:', command: 'flint help' });
 	assert.ok(text().includes('#   flint help'), 'the step hint in the log carries its command');
 	s.submit('flint');
 	assert.equal(s.tourStep, 1, '`flint` alone shows the help, so it completes step 1');

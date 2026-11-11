@@ -5,8 +5,7 @@ description: Install the toolchain and native libraries, then build and test Fli
 
 Flint is written in [cfire](https://github.com/gsandoval/cfire) and links these native
 libraries: **libssh** (SSH), **libsodium** (key derivation and encryption),
-**SQLCipher** (the encrypted vault file), **libargon2** (only to read a Tether vault on
-import) and, on Linux, **libsecret** (the keychain). They
+**SQLCipher** (the encrypted vault file) and, on Linux, **libsecret** (the keychain). They
 are found through `pkg-config` and linked dynamically. On macOS the keychain is
 Security.framework.
 
@@ -51,13 +50,13 @@ mv ~/.local/share/cfire ~/.local/share/cfire-old && rm -rf /tmp/cfire_pch_cache
 ### macOS (Homebrew)
 
 ```sh
-brew install libssh libsodium sqlcipher argon2 pkg-config
+brew install libssh libsodium sqlcipher pkg-config
 ```
 
 ### Debian and Ubuntu
 
 ```sh
-sudo apt install libssh-dev libsodium-dev libsqlcipher-dev libargon2-dev libsecret-1-dev pkg-config openssh-server
+sudo apt install libssh-dev libsodium-dev libsqlcipher-dev libsecret-1-dev pkg-config openssh-server
 ```
 
 #### simdjson 4 (Debian, Ubuntu 24.04, Zorin OS 18)
@@ -177,11 +176,20 @@ scripts/gui-e2e.sh
 It builds the app and drives its real UI in a hidden WebView against the throwaway
 `sshd`s: creates a vault, adds a key and hosts, trusts a host key, types in the terminal,
 checks the PTY size, reconnects, connects through a jump host, meets a changed host key
-behind a TCP forwarder and replaces it, uses the palette and settings, then locks
+behind a TCP forwarder and replaces it, uses the palette and settings, saves and starts tunnels, then locks
 (with a session that keeps running behind the lock screen, and on a simulated screen lock
 and sleep) and unlocks. It also checks that no password reaches the page and that nothing from the vault
 is readable in its file. It uses its own config folder and `FLINT_KEYCHAIN=off`, so your
 keychain is not touched.
+
+It runs as four short runs, each a fresh launch of the app on its own vault: `terminal`
+(the shell, files, a jump host, tabs, split panes, a changed host key), `vault` (the
+palette, settings, groups, locking), `tunnels` and `vim`. To repeat
+only some of them:
+
+```sh
+FLINT_E2E_ONLY=tunnels,vim scripts/gui-e2e.sh
+```
 
 ### The CLI through the app
 

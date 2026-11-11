@@ -6,8 +6,8 @@ import { ParsedArgs, parseFlintArgs, parsePort, parseSeconds, wantsJson } from '
 import { dash, fields, hostTarget, json, table, yesNo } from './format.ts';
 import { RemoteShell } from './remote.ts';
 import {
-	VaultOps, credView, hostView, keyView, serverKeyFor, tokenAllows, tokenReach, tokenStatus, tokenView, utcText,
-	type CredPatch, type Host, type HostPatch, type TokenRequest, type Vault, type World,
+	VaultOps, credView, hostView, keyView, parsePortText, parseTunnelDestination, serverKeyFor, splitTunnelRef, tokenAllows, tokenReach, tokenStatus, tokenView, utcText,
+	type CredPatch, type Host, type HostPatch, type TokenRequest, type TunnelPatch, type TunnelView, type Vault, type World,
 } from './vault.ts';
 
 export interface Ask {
@@ -99,17 +99,24 @@ Files
                                         Copy from one host to another, through this
                                         machine (no key or password goes to a host)
 
+Tunnels (local forwards saved in a host; they run in Flint)
+  tunnel add <host> <name> --local <port> [--to <host:port>] [--open-on-connect]
+                                        127.0.0.1:<port> here reaches <host:port> as
+                                        the host sees it (default localhost:<port>)
+  tunnel edit <host>:<name> [--name N] [--local P] [--to D]
+              [--open-on-connect | --no-open-on-connect]
+  tunnel ls [<host>] | tunnel rm <host>:<name>
+  tunnel up <host>:<name> [--timeout <secs>] [--accept-new-host-key]
+                                        Start it in Flint (needs Flint open); it
+                                        keeps running after this command returns
+  tunnel down <host>:<name> | tunnel status [<host>:<name>]
+
 Tokens (for programs Flint cannot ask about: cron, launchd, CI on this machine)
   token create --name <name> --allow read,exec[,write] [--hosts <alias,@group,...> | --all]
                [--ttl 15m|1h|4h|1d|7d|30d|90d]
                                         Flint asks you to approve it; prints the
                                         token once (default --ttl 1d)
   token list | token revoke <id|name>
-
-Import
-  import tether <file> [--password-stdin] [--dry-run]
-                                        Copy a Tether vault into this one (asks for
-                                        Tether's master password); --dry-run reports only
 
 Global flags
   --json            Write JSON to stdout (errors as JSON to stderr)
@@ -134,8 +141,8 @@ export const COMMANDS: Record<string, string[]> = {
 	key: ['add', 'list', 'show', 'rename', 'rm'],
 	cred: ['add', 'edit', 'list', 'show', 'rm'],
 	'known-host': ['list', 'rm'],
-	import: ['tether'],
 	token: ['create', 'list', 'revoke'],
+	tunnel: ['add', 'edit', 'rm', 'ls', 'up', 'down', 'status'],
 	connect: [],
 	exec: [],
 	cp: [],
@@ -201,8 +208,8 @@ function* dispatch(args: string[], world: World, io: Io, asJson: boolean): Run {
 		case 'key': return yield* c.key();
 		case 'cred': return yield* c.cred();
 		case 'known-host': return yield* c.knownHost();
-		case 'import': return c.importVault();
 		case 'token': return yield* c.token();
+		case 'tunnel': return yield* c.tunnel();
 		case 'connect': return yield* c.connect();
 		case 'cp': return yield* c.cp();
 		default: return yield* c.exec();
@@ -555,16 +562,6 @@ class Cmd {
 		fail('usage', `unknown command \`flint host ${verb}\`; see \`flint help\``);
 	}
 
-	// ---- import ----
-
-	importVault(): Outcome {
-		const p = this.p;
-		if (p.positional(1) !== 'tether') fail('usage', "Flint imports from 'tether' only: `flint import tether <file>`");
-		p.allowFlags('import tether', ['--password-stdin', '--dry-run']);
-		p.expectArgs('import tether', 1, '<file> [--password-stdin] [--dry-run]');
-		return this.notInDemo('import tether');
-	}
-
 	// ---- key ----
 
 	*key(): Run {
@@ -755,6 +752,115 @@ class Cmd {
 			return ok;
 		}
 		fail('usage', `unknown command \`flint token ${verb}\`; see \`flint help\``);
+	}
+
+	// ---- tunnel (src/drivers/clicmd/tunnel_commands.cf) ----
+
+	*tunnel(): Run {
+		const p = this.p;
+		const verb = p.positional(1);
+		const ref = (v: TunnelView) => `${v.host}:${v.name}`;
+		const stateText = (v: TunnelView) => (!v.state ? '-' : v.state === 'listening' ? `listening · ${v.connections === 1 ? '1 connection' : `${v.connections} connections`}` : v.state);
+		const list = (rows: TunnelView[]) => {
+			if (rows.length === 0) return this.say('No tunnels.');
+			table(['TUNNEL', 'LOCAL', 'DESTINATION', 'ON CONNECT', 'STATE'], rows.map((v) => [ref(v), `127.0.0.1:${v.local_port}`, v.destination, v.open_on_connect ? 'yes' : '-', stateText(v)])).forEach((l) => this.say(l));
+		};
+		const patch = (): TunnelPatch => {
+			const t: TunnelPatch = {};
+			if (p.has('--name')) t.name = p.value('--name');
+			if (p.has('--local')) t.localPort = parsePortText(p.value('--local'), 'local port');
+			if (p.has('--to')) t.dest = parseTunnelDestination(p.value('--to'));
+			if (p.has('--open-on-connect') && p.has('--no-open-on-connect')) fail('usage', 'pass --open-on-connect or --no-open-on-connect, not both');
+			if (p.has('--open-on-connect')) t.openOnConnect = true;
+			if (p.has('--no-open-on-connect')) t.openOnConnect = false;
+			return t;
+		};
+		if (verb === 'add') {
+			p.allowFlags('tunnel add', ['--local', '--to', '--open-on-connect']);
+			p.expectArgs('tunnel add', 2, '<host> <name> --local <port> [--to <host:port>] [--open-on-connect]');
+			const t = patch();
+			t.name = p.positional(3);
+			const ops = new VaultOps(yield* this.openTarget());
+			const v = ops.addTunnel(p.positional(2), t);
+			this.emit(v, () => this.say(`Added tunnel '${ref(v)}': 127.0.0.1:${v.local_port} to ${v.destination} as ${v.host} sees it.`));
+			return ok;
+		}
+		if (verb === 'edit') {
+			p.allowFlags('tunnel edit', ['--name', '--local', '--to', '--open-on-connect', '--no-open-on-connect']);
+			p.expectArgs('tunnel edit', 1, '<host>:<name> [--name <name>] [--local <port>] [--to <host:port>] [--open-on-connect | --no-open-on-connect]');
+			const [alias, name] = splitTunnelRef(p.positional(2));
+			const t = patch();
+			const ops = new VaultOps(yield* this.openTarget());
+			const v = ops.editTunnel(alias, name, t);
+			this.emit(v, () => this.say(v.state === 'listening'
+				? `Updated tunnel '${ref(v)}'. It keeps running as it was until it is started again.`
+				: `Updated tunnel '${ref(v)}'.`));
+			return ok;
+		}
+		if (verb === 'rm') {
+			p.allowFlags('tunnel rm', []);
+			p.expectArgs('tunnel rm', 1, '<host>:<name>');
+			const [alias, name] = splitTunnelRef(p.positional(2));
+			const ops = new VaultOps(yield* this.openTarget());
+			const v = ops.removeTunnel(alias, name);
+			this.emit({ removed: 'tunnel', name: ref(v) }, () => this.say(`Removed tunnel '${ref(v)}'.`));
+			return ok;
+		}
+		if (verb === 'ls' || verb === 'list') {
+			p.allowFlags('tunnel ls', []);
+			if (p.positionals.length > 3) fail('usage', 'usage: flint tunnel ls [<host>]');
+			const v = yield* this.openTarget();
+			const rows = new VaultOps(v).tunnelViews(p.positional(2), v.unlocked);
+			this.emit(rows, () => list(rows));
+			return ok;
+		}
+		if (verb === 'up' || verb === 'down' || verb === 'status') {
+			if (verb === 'up') {
+				p.allowFlags('tunnel up', ['--timeout', '--accept-new-host-key']);
+				p.expectArgs('tunnel up', 1, '<host>:<name> [--timeout <secs>] [--accept-new-host-key]');
+			} else if (verb === 'down') {
+				p.allowFlags('tunnel down', []);
+				p.expectArgs('tunnel down', 1, '<host>:<name>');
+			} else {
+				p.allowFlags('tunnel status', []);
+				if (p.positionals.length > 3) fail('usage', 'usage: flint tunnel status [<host>:<name>]');
+			}
+			let alias = '', name = '';
+			if (p.positional(2)) [alias, name] = splitTunnelRef(p.positional(2));
+			// A tunnel needs Flint itself (D-062): the demo pretends it is open with the vault unlocked.
+			if (!this.resolveVault(p.value('--vault')).unlocked) {
+				fail('locked', `\`flint tunnel ${verb}\` runs only through Flint, which keeps tunnels running: open Flint, unlock this vault there, and run it again`);
+			}
+			if (p.has('--timeout')) parseSeconds('--timeout', p.value('--timeout'));
+			const v = yield* this.openTarget();
+			const ops = new VaultOps(v);
+			if (verb === 'status' && !alias) {
+				const rows = ops.tunnelViews('', true).filter((t) => t.state !== 'stopped');
+				this.emit(rows, () => (rows.length === 0 ? this.say('No tunnels running.') : list(rows)));
+				return ok;
+			}
+			let view: TunnelView;
+			if (verb === 'up') {
+				const t = ops.findTunnel(alias, name);
+				if (!t.running) {
+					yield* this.reach(alias);
+					ops.startTunnel(alias, name);
+				}
+				view = ops.tunnelView(alias, name, true);
+			} else if (verb === 'down') {
+				ops.findTunnel(alias, name).running = false;
+				view = ops.tunnelView(alias, name, true);
+			} else {
+				view = ops.tunnelView(alias, name, true);
+			}
+			if (this.asJson) this.say(json(view));
+			else if (verb === 'up') this.say(`Tunnel '${ref(view)}' is listening on ${view.listen}, to ${view.destination} as ${view.host} sees it. It runs in Flint until \`flint tunnel down ${ref(view)}\`.`);
+			else if (verb === 'down') this.say(`Tunnel '${ref(view)}' is stopped.`);
+			else fields(['tunnel', 'local', 'destination', 'on connect', 'state', 'error'], [ref(view), `127.0.0.1:${view.local_port}`, view.destination, yesNo(view.open_on_connect), stateText(view), dash(view.error)]).forEach((l) => this.say(l));
+			if (verb === 'up') this.io.note('The demo opens no port. The real Flint listens on 127.0.0.1 and forwards each connection over the host\'s own SSH session, with the login in the vault.', '/guides/tunnels/');
+			return ok;
+		}
+		fail('usage', `unknown command \`flint tunnel ${verb}\`; see \`flint help\``);
 	}
 
 	// ---- connect / exec ----

@@ -21,6 +21,7 @@ import { sessions } from './store';
 import { parseOsc7 } from '../files/paths';
 import styles from './TerminalView.module.css';
 import { paletteVars, themePalette } from '../lib/terminalThemes';
+import { overLimit, pasteChoice, uploadPaste } from './paste';
 
 
 function readVar(name: string, el: Element = document.documentElement): string {
@@ -58,7 +59,10 @@ export function fontStack(family: string): string {
 }
 
 export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string; active: boolean; focus: boolean; fontSize: number }) {
-  const { os, settings, dark } = useApp();
+  const { os, settings, dark, notify } = useApp();
+  // Read by the paste listener, which is set up once.
+  const pasteRef = useRef({ limit: settings.paste_limit_mb, notify });
+  pasteRef.current = { limit: settings.paste_limit_mb, notify };
   const hostRef = useRef<HTMLDivElement>(null);
   // xterm mounts in an inner box with no padding: FitAddon sizes the terminal from
   // its parent's computed height, which under border-box includes the padding, so a
@@ -202,6 +206,34 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     };
     term.element?.addEventListener('contextmenu', onContextMenu);
 
+    // An image on the clipboard with no text (milestone 25): written on the pane's
+    // host, and its path pasted instead. Caught before xterm.js's own paste handler,
+    // which would paste nothing. ⌘V on macOS, Ctrl+Shift+V on Linux.
+    const onPaste = (e: ClipboardEvent) => {
+      const choice = pasteChoice(e.clipboardData);
+      if (choice.kind !== 'image') return;
+      e.preventDefault();
+      e.stopPropagation();
+      const { limit, notify: say } = pasteRef.current;
+      const pane = sessions.pane(tabId);
+      if (!pane || pane.status !== 'ready' || !pane.session) {
+        say('Connect first: the image is pasted on the server', 'error');
+        return;
+      }
+      const tooBig = overLimit(choice.file, limit);
+      if (tooBig) {
+        say(tooBig, 'error');
+        return;
+      }
+      say(`Pasting image to ${pane.alias}…`, 'info');
+      const session = pane.session;
+      uploadPaste(session, choice.file).then((text) => {
+        // The pane may have reconnected or closed meanwhile: paste only into the same session.
+        if (alive && sessions.pane(tabId)?.session === session) term.paste(text);
+      }).catch((err: { message: string }) => say(`Paste to ${pane.alias} failed: ${err.message}`, 'error'));
+    };
+    term.element?.addEventListener('paste', onPaste, true);
+
     const input = term.onData((data) => sessions.input(tabId, data));
     // OSC 52: a remote program (Neovim, tmux, Zellij) sets the clipboard. The core
     // writes it: the webview refuses a clipboard write no click started. Queries are
@@ -242,6 +274,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       sessions.detach(tabId);
       term.textarea?.removeEventListener('compositionend', onCompositionEnd);
       term.element?.removeEventListener('contextmenu', onContextMenu);
+      term.element?.removeEventListener('paste', onPaste, true);
       webgl?.dispose();
       term.dispose();
       termRef.current = null;

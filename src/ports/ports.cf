@@ -73,6 +73,14 @@ type TokenStore interface {
     set_activity_retention(days: i64) -> void!
 }
 
+// Tunnels saved in hosts, in the open vault (adapters/vault, migration 007, milestone
+// 22). Served by the same store as `VaultStore`; removing a host removes its tunnels.
+type TunnelStore interface {
+    tunnels_all() -> []Tunnel!
+    tunnel_put(t: Tunnel) -> void!
+    tunnel_drop(id: str) -> void!
+}
+
 // The OS keychain (adapters/keychain). Holds one master key per vault, by account.
 // `keychain_load` returns an empty slice when there is no entry.
 type Keychain interface {
@@ -145,6 +153,10 @@ type SshTransport interface {
     // app's second Files pane, milestone 19). Only a GUI tab's link can; any other
     // fails with `internal`.
     link_lend() -> void!
+    // Gives the logged-in session to the tunnel runner under `key` (milestone 22): the
+    // runner owns it from then on and hangs it up; this link is left with no hop. Only
+    // a plain link can; any other fails with `internal`.
+    link_hand_over(key: str) -> void!
     link_hangup()
 }
 
@@ -208,17 +220,6 @@ type Clock interface {
     clock_now_ms() -> i64
 }
 
-// A Tether vault file, read for the one-shot import (adapters/vault/tether.cf).
-// `tether_read` opens the file read-only and returns its rows with every secret
-// still sealed. `tether_derive_key` is Tether's Argon2id (4 lanes, which libsodium
-// cannot compute: D-034, libargon2). `tether_read_key_file` reads a private key a
-// Tether host points to on disk.
-type TetherSource interface {
-    tether_read(path: str) -> TetherFile!
-    tether_derive_key(password: str, salt: []byte) -> []byte!
-    tether_read_key_file(path: str) -> str!
-}
-
 // Files on a host over SFTP (adapters/ssh/sftp.cf, milestone 16), on the last hop of
 // an `SshTransport` link that is already logged in. One SFTP channel per link and
 // one open file at a time. Every request is bounded by the link's dial timeout
@@ -241,6 +242,8 @@ type SftpTransport interface {
     // A file, or an empty folder when `folder`.
     sftp_remove(path: str, folder: bool) -> void!
     sftp_mkdir(path: str) -> void!
+    // Sets `path`'s permission bits, as `chmod` (milestone 25).
+    sftp_chmod(path: str, mode: i64) -> void!
     // The absolute form of `path` ("." is the login folder).
     sftp_realpath(path: str) -> str!
     sftp_close()
@@ -282,4 +285,30 @@ type DropStage interface {
 type TransferSink interface {
     transfer_progress(p: TransferProgress)
     transfer_cancelled() -> bool
+}
+
+// Running tunnels (adapters/ssh/tunnels.cf, milestone 22, D-062). A host's tunnels
+// share one SSH session with no terminal, handed over by `link_hand_over` under the
+// host's id; each tunnel is a listener on 127.0.0.1 whose every connection opens its
+// own forward channel. A lost session closes every listener of its host and stays
+// reported until released; nothing redials on its own.
+type TunnelRunner interface {
+    // 0: no session for the host; 1: up; 2: lost.
+    tunnel_host_state(host_id: str) -> i64
+    // Listens on 127.0.0.1:local_port (already listening: nothing changes) and returns
+    // the port. Errors: `port_in_use`, `permission_denied`, `network` (no session).
+    tunnel_listen(host_id: str, tunnel_id: str, local_port: i64, dest_host: str, dest_port: i64) -> i64!
+    // Closes the tunnel and its connections; false when it was not running.
+    tunnel_unlisten(host_id: str, tunnel_id: str) -> bool
+    // Closes every tunnel of the host and hangs its session up.
+    tunnel_release(host_id: str)
+    tunnel_live() -> []TunnelLive
+    // Starts on one host take turns (milestone 23): held while a start logs in and
+    // listens, so a second start finds the first's session.
+    tunnel_gate_enter(host_id: str)
+    tunnel_gate_leave(host_id: str)
+    // Whether 127.0.0.1:port cannot be bound now (the approval window says so first).
+    tunnel_port_taken(port: i64) -> bool
+    // Who listens on that port, when this user may see it (design 16h2).
+    tunnel_port_owner(port: i64) -> PortOwner
 }

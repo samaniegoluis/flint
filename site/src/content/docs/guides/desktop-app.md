@@ -31,10 +31,10 @@ menu bar icon, ⌘Q or the command palette quits it.
 | Area | What it holds |
 |---|---|
 | Title bar | The vault and the active session; the command palette button |
-| Activity bar (left) | **Hosts** and **Files** (both in the sidebar), **Keys**, **Credentials**, and **Settings** at the bottom |
-| Sidebar | **Hosts**: the vault button (switch vaults), a filter, and your hosts in their groups. **Files**: the focused pane's host, over SFTP ([The Files view](/guides/files-view/)) |
+| Activity bar (left) | **Hosts**, **Files** and **Tunnels** (all three in the sidebar; Tunnels counts the ones running), **Keys**, **Credentials**, and **Settings** at the bottom |
+| Sidebar | **Hosts**: the vault button (switch vaults), a filter, and your hosts in their groups. **Files**: the focused pane's host, over SFTP ([The Files view](/guides/files-view/)). **Tunnels**: every tunnel by host, with a switch and its state ([Tunnels](/guides/tunnels/#in-the-app)) |
 | Main area | The tabs, the session toolbar and the terminals: up to four panes in a tab ([Split panes](#split-panes)) |
-| Status bar | Lock state, the number of open sessions, **Lock**, and **Agents: N** while programs you approved may use the vault (it opens Settings → Access, and shows **N waiting** while a request waits and Flint is not in front) |
+| Status bar | Lock state, the number of open sessions, **N tunnels up** while any runs (it opens the Tunnels view), **Lock**, and **Agents: N** while programs you approved may use the vault (it opens Settings → Access, and shows **N waiting** while a request waits and Flint is not in front) |
 
 Click **Hosts** again (or press <kbd>⌘B</kbd>) to hide the sidebar and give the terminal
 the whole width; it stays hidden when you come back to **Hosts** from another view. Drag the sidebar's right edge to make it wider or narrower (200 to 400 px;
@@ -54,6 +54,8 @@ which groups are collapsed in each vault. See [Layout on this machine](#layout-o
   here**, **New subgroup**, **Rename** and **Delete** (only an empty group can be
   deleted).
 - The filter matches aliases, labels, hostnames and tags.
+- A host with tunnels up carries a small tunnel mark with their count; hover it for the
+  list. Its tabs carry the same mark.
 - **Collapse all** and **Expand all** sit beside **New group** at the top of the tree, and
   in the command palette.
 
@@ -135,6 +137,14 @@ exit status, a failed login, a lost connection) with **Reconnect** (<kbd>⌘R</k
 keeps the scrollback. **Duplicate** (<kbd>⌥⌘D</kbd>, <kbd>Ctrl+Alt+D</kbd> on Linux)
 opens another session to the same host in a new tab.
 
+### Tunnels from a session
+
+The session toolbar's **Tunnels** button counts the host's tunnels that are up; its menu
+has a check per tunnel, with its state, and **Manage tunnels…** (the host editor's
+Tunnels section). Connecting to a host starts its tunnels marked *Open when I connect*.
+Tunnels run in a session of their own, so reconnecting or closing the tab leaves them up.
+See [Tunnels](/guides/tunnels/#in-the-app).
+
 ### Split panes
 
 A tab holds up to four panes, each its own SSH session with its own login, scrollback,
@@ -182,6 +192,27 @@ in Zellij lands on your Mac's or Linux desktop's clipboard. Flint only lets a re
 program *write* the clipboard: a request to read it is ignored, so nothing on the server
 can see what you copied. A single copy is limited to 1 MB.
 
+**Paste an image for a program on the server.** Paste a screenshot (<kbd>⌘V</kbd>, or
+<kbd>Ctrl+Shift+V</kbd> on Linux) into a session and Flint uploads it to the server,
+over that pane's own connection, and pastes its path where you are typing. A program
+there that reads images by path, such as Claude Code, gets the picture; a plain shell
+just gets the path, ready for `ls`, `scp` or anything else. Nothing is typed after it, so
+you finish the line and press <kbd>Enter</kbd> yourself.
+
+- The file lands in `~/.cache/flint/paste/<id>/` with its name cleaned up (letters,
+  digits, `.`, `_` and `-`). The folders are readable only by you (mode `0700`) and the
+  file is `0600`. When the home folder cannot hold it, Flint uses `/tmp/flint-<uid>/`,
+  and refuses one there that someone else made.
+- Each paste removes what earlier pastes left there more than a day before. Nothing is
+  removed when the session closes, so a program you left running can still open it.
+- A clipboard with text in it pastes the text, as before, even when it also carries a
+  picture (cells copied from a spreadsheet, for example).
+- Images up to **Settings → Terminal → Largest file to paste** (20 MB unless you change
+  it) are uploaded; a larger one is refused with its size. Use the
+  [Files view](/guides/files-view/) for big files: it shows progress and has no limit.
+- While it uploads, Flint shows *Pasting image to &lt;host&gt;…*; if the upload fails (no
+  SFTP on the server, no permission, a lost connection), it says why.
+
 **Accents and other layouts.** Dead keys (US International, ABC Extended, most ISO
 layouts) and input methods (Japanese, Chinese, Korean) compose as they do in any other
 app: <kbd>'</kbd> <kbd>e</kbd> types `é`, and <kbd>'</kbd> <kbd>s</kbd> types `'s`, not
@@ -199,6 +230,10 @@ palettes <kbd>⌘↵</kbd> opens a host in a new tab. With a tab open, <kbd>⇧�
 the host in a new pane of that tab ([Split panes](#split-panes)), and while you search the
 best matches are also offered as **Open <host> in a new pane**. <kbd>⌘I</kbd> edits the
 host, and <kbd>Tab</kbd> moves between result groups.
+
+While you search, tunnels are offered too: **Start tunnel <name> on <host>**, **Stop
+tunnel …**, **Connect to <host> with tunnels** and **Manage tunnels of <host>…** (see
+[Tunnels](/guides/tunnels/#in-the-app)).
 
 When the search finds a host with an [initial command](/guides/hosts/#run-a-command-on-connect),
 a second row, **Connect without command**, opens it in a new tab with a plain shell, as
@@ -263,6 +298,11 @@ A strip shows the direction (*This computer → host*, marked Upload or Download
 so, and `--force` adds a warning that files already in the destination are replaced. See
 [Copying files](/guides/files/).
 
+`flint tunnel up` shows the host, then `127.0.0.1:<port>` on this machine → the
+destination on the host, and says the grant would also let the program run commands
+there. When that port is already in use here, the window says so, names the program that
+holds it when it runs as you, and **Allow** is off: the tunnel could not open. See [Tunnels](/guides/tunnels/#through-an-agent).
+
 `flint token create` brings up the same window showing the token instead: its name, what
 it allows, which hosts and when it expires. **Allow** (with presence) creates that one
 token; it never becomes a grant, so the next `token create` asks again. See
@@ -283,13 +323,13 @@ Settings belong to this machine, not to the vault, and save as you change them.
   whether to follow the system's reduce-motion setting; reopening the last vault.
 - **Terminal**: the colours (Default, Catppuccin, Tokyo Night, Aura, Dracula or Nord, each
   in a dark and a light variant that follows the app's theme), the font (any monospaced
-  font installed on this machine, or the bundled JetBrains Mono), size, line height and
-  cursor.
+  font installed on this machine, or the bundled JetBrains Mono), size, line height,
+  cursor, and the **largest file to paste** (10, 20, 50 or 100 MB; see
+  [The terminal](#the-terminal)).
 - **Keyboard shortcuts**: the full map for macOS and Linux. Custom shortcuts are coming
   in a later version.
 - **Vault**: the open vault's file and counts, **Rename**, whether this machine remembers
-  its key, **Lock now**, **Lock after**, the known hosts, each of which you can forget, and **Import from
-  Tether…** ([Moving from Tether](/guides/from-tether/)).
+  its key, **Lock now**, **Lock after**, and the known hosts, each of which you can forget.
 - **Access**: the programs you approved, with what they may do and until when, and
   **Revoke** for each (or all). Grants end when the vault locks or Flint quits. Below
   them, the vault's **tokens** (**Revoke** ends one; **Show ended** lists the expired

@@ -405,6 +405,8 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
   libsodium's `crypto_pwhash` cannot compute (it fixes parallelism at 1).
   `src/adapters/vault/tether.cf` calls the reference libargon2 (`@pkg("libargon2")`,
   D-034) for that one derivation.
+- **M24:** the Tether importer and libargon2 are gone (D-065); Flint needs only
+  libsodium's single-lane Argon2id again, so the 4-lane gap no longer affects it.
 - **Ideal:** `ext:crypto/sodium` (or a libsodium-backed `core:crypto/*`).
 
 ### CF-007 · missing · `not adopted`: encrypted SQLite in `ext:db/sqlite`
@@ -1921,3 +1923,47 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   by the landing's screenshot script in Chromium (`FLINT_SHOTS_EXTRA`). No native code.
 - **Ideal:** `platform_set_size` in the headless runner (`setContentSize:` on its
   off-screen window, then the WKWebView's frame), as `app.run()` has it.
+
+
+### CF-112 · missing · `confirmed`: no way to wait on several sockets at once
+- **What happened (c5b1d4b, milestone 22):** a tunnel's worker must wait on its listeners,
+  every accepted connection and the SSH session's socket at once, then move whatever is
+  ready. `ext:net` has `listen_tcp_addr`, `accept` and `read` with a timeout per call, but
+  no poll over a set of descriptors, no non-blocking read or write that says "would block",
+  and no way to add a foreign descriptor (libssh's `ssh_get_fd`) to the wait. One thread
+  per connection would work around the poll but needs a mutex per libssh session shared
+  across threads (CF-026), which cfire cannot hold in a struct either.
+- **Workaround:** `src/adapters/ssh/native/flint_tunnel.hpp`: the listener (bound to
+  127.0.0.1 with `bind`/`listen`), `accept`, `poll` and non-blocking reads and writes in
+  C++, one worker thread per host session, called from `src/adapters/ssh/tunnels.cf`.
+- **Ideal:** a `Poller` (or `net.poll(fds, timeout)`) over `TcpListener`, `TcpConn` and raw
+  descriptors, with non-blocking `try_read` / `try_write` on `TcpConn`.
+
+### CF-113 · bug · `confirmed`: a generic call's `[]T!` result is typed `[][]T!` when assigned
+- **What happened (c5b1d4b, milestone 23):** in `src/drivers/gui/tunnels.cf`, assigning
+  the result of a generic use case that returns `[]str!` to a declared fallible variable
+  fails to build, and the message names the wrong type:
+  ```cf
+  fn pick[R: TunnelRunner](mut runner: R) -> []str! { return [] }
+  mut picked: []str! = []
+  picked = pick(mut runner)   // cfire/UNHANDLED-RESULT: returns '[][]str!'
+  ```
+  `run_gui_session` in `src/drivers/gui/rpc.cf` stores an `i64!` the same way
+  (`mut result: i64! = 0`, then `.has_value()`) and builds; with a list from a generic
+  call it does not, so the CF-110 gap has no way through here.
+- **Workaround:** a small non-generic helper that returns `[]str!` with `try`, called with
+  an `or err { …; return }` block that diverges.
+- **Ideal:** the assignment type-checks as `[]str!`, as it does for `i64!`.
+
+### CF-114 · missing · `confirmed`: no way to ask which process holds a port
+- **What happened (milestone 23, design 16h2):** when a tunnel's local port is taken, the
+  approval window names the program that holds it (`Python (pid 11121)`). cfire can bind a
+  port to see that it is taken, but `core:os` has no process list and nothing that maps a
+  listening socket to its process: no `libproc` on macOS, and reading `/proc/net/tcp` and
+  every `/proc/<pid>/fd` link by hand needs `readlink` and directory listing of `/proc`,
+  which `core:fs` does not offer for symlinks.
+- **Workaround:** `flint_tunnel::port_owner` in `src/adapters/ssh/native/flint_tunnel.hpp`
+  (`proc_listpids` / `proc_pidfdinfo` on macOS; `/proc/net/tcp{,6}` and `/proc/*/fd` on
+  Linux), called from `tunnel_port_owner` in `src/adapters/ssh/tunnels.cf`.
+- **Ideal:** `net.port_owner(port) -> (name: str, pid: i64)?`, or a process list with each
+  process's sockets in `core:os`; plus `fs.readlink`.

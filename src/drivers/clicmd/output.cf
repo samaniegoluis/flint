@@ -286,32 +286,3 @@ fn plural(n: i64, one: str, many: str) -> str {
     return "{n} " + many
 }
 
-fn import_counts_text(c: ImportCounts) -> str {
-    return plural(c.groups, "group", "groups") + ", " + plural(c.hosts, "host", "hosts") + ", " + plural(c.keys, "key", "keys") + ", " + plural(c.credentials, "credential", "credentials") + ", " + plural(c.known_hosts, "known host", "known hosts")
-}
-
-fn print_import_notes(title: str, notes: []ImportNote) {
-    if notes.len() == 0 {
-        return
-    }
-    say("")
-    say("{title} ({notes.len()}):")
-    mut rows: [][]str = []
-    for n in notes {
-        rows.push(["  " + n.kind, n.name, n.detail])
-    }
-    print_table(["  KIND", "NAME", "DETAIL"], rows)
-}
-
-fn print_import_report(r: TetherImportReport, vault_name: str) {
-    if r.dry_run {
-        say("Dry run: nothing was written to '{vault_name}'.")
-        say("  would add  " + import_counts_text(r.added))
-    } else {
-        say("Imported the Tether vault into '{vault_name}'.")
-        say("  added      " + import_counts_text(r.added))
-    }
-    say("  already in " + import_counts_text(r.already_present))
-    print_import_notes("Changed on the way", r.changed)
-    print_import_notes("Not imported", r.not_imported)
-}

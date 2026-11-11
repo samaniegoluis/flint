@@ -36,6 +36,19 @@ step 0 "$M" --master-stdin --json vault status
 step 0 "" vault list
 step 6 "wrong-pass\n" --master-stdin host list
 step 0 "$M" --master-stdin --vault "$W\\vaults\\lab.flint" host show web-01
+echo "== tunnels, with the CLI on its own (milestone 22; a subset of scripts/cli-e2e.sh)"
+step 0 "$M" --master-stdin tunnel ls
+check "no tunnels yet" '[[ "$out" == "No tunnels."* ]]'
+step 0 "$M" --master-stdin tunnel add web-01 pg --local 15432
+check "it names both ends" '[[ "$out" == *"127.0.0.1:15432 to localhost:15432"* ]]'
+step 4 "$M" --master-stdin tunnel add web-01 PG --local 1
+step 0 "$M" --master-stdin --json tunnel edit web-01:pg --name postgres --local 15433
+step 0 "$M" --master-stdin --json tunnel ls web-01
+check "the edit is saved" '[[ "$out" == *"postgres"*"15433"* ]]'
+# Flint is not running here (no flint-app.exe beside this flint.exe): up needs it.
+step 5 "$M" --master-stdin tunnel up web-01:postgres
+step 0 "$M" --master-stdin tunnel rm web-01:postgres
+step 3 "$M" --master-stdin tunnel rm web-01:postgres
 echo "--- files"; ls -la cfg vaults
 
 if [ "${SMOKE_SSH:-1}" = 1 ]; then

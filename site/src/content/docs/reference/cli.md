@@ -137,18 +137,27 @@ files: [{source, target, bytes}], folders, bytes, skipped, duration_ms}`; `direc
 `upload`, `download` or `relay`. Through Flint it needs a grant that runs commands on that
 host, or on both hosts of a copy between two. See [Copying files](/guides/files/).
 
-### Import
+### Tunnels
 
 | Command | What it does |
 |---|---|
-| `import tether <file>` | Copy a Tether vault into the current vault: groups, hosts, keys, credentials and known host keys. Asks for Tether's master password (`--password-stdin` reads it from stdin). `--dry-run` reports without writing |
+| `tunnel add <host> <name> --local <port>` | Save a tunnel in a host: `127.0.0.1:<port>` here reaches `--to <destination>` as the host sees it (`port`, `host:port` or `[address]:port`; default `localhost:<port>`). `--open-on-connect` starts it when you connect in the app |
+| `tunnel edit <host>:<name>` | Change `--name`, `--local`, `--to`, `--open-on-connect` / `--no-open-on-connect` |
+| `tunnel rm <host>:<name>` | Stop it if it runs, then forget it |
+| `tunnel ls [<host>]` | Every saved tunnel, or one host's, with its state when Flint runs the command |
+| `tunnel up <host>:<name>` | Start it in Flint, which keeps it running. Logs in to the host as `connect` does |
+| `tunnel down <host>:<name>` | Stop it and every connection through it |
+| `tunnel status [<host>:<name>]` | One tunnel's state, or every running tunnel |
 
-With `--json` it prints `{file, format, dry_run, added, already_present, changed,
-not_imported}`: `added` and `already_present` count groups, hosts, keys, credentials and
-known hosts; `changed` and `not_imported` list `{kind, name, detail}`. Running it again
-adds only what is missing. A wrong Tether password exits with `wrong_password`, a file
-that is not a Tether vault with `invalid`, a Tether schema Flint does not know with
-`unsupported`. See [Moving from Tether](/guides/from-tether/).
+`up`, `down` and `status` run only through Flint: with Flint closed or the vault locked
+they fail with `locked`, and never ask for the master password. `up` takes `--timeout` and
+`--accept-new-host-key` as `exec` does; through Flint, `up` and `down` need a grant that
+runs commands on the host. A port already in use fails with `port_in_use`. With `--json`,
+a tunnel is `{host, name, local_port, destination, open_on_connect, state, listen,
+connections, error}`, where `state` is `stopped`, `listening` or `connection lost` (empty
+from `ls` when Flint does not run it) and `listen` is `127.0.0.1:<port>` while it listens;
+`ls` and `status` print an array, `rm` prints `{removed, name}`. See
+[Tunnels](/guides/tunnels/).
 
 ### Tokens
 
@@ -224,12 +233,12 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 0 | | Success |
 | 1 | `internal` | An unexpected failure |
 | 2 | `usage` | Bad command line: unknown command or flag, missing argument |
-| 3 | `not_found` | No such vault, host, group, key or credential |
+| 3 | `not_found` | No such vault, host, group, key, credential or tunnel |
 | 4 | `conflict` | Already exists, or still in use |
 | 5 | `locked` | The vault is not unlocked in Flint and no master password was given. With no terminal, Flint's window now asks for it (see [Vaults](/guides/vaults/#flint-holds-the-unlocked-vault)) |
-| 6 | `wrong_password` | The master password (or a Tether vault's, on import) is wrong |
+| 6 | `wrong_password` | The master password is wrong |
 | 7 | `invalid` | A value breaks a rule (alias, port, colour, key format…) |
-| 8 | `unsupported` | The vault was written by a newer Flint, or a Tether vault has a schema Flint does not read |
+| 8 | `unsupported` | The vault was written by a newer Flint |
 | 9 | `keychain` | The OS keychain refused to remove a remembered key (`vault lock`, `vault forget`) |
 | 10 | `io` | The vault or config file could not be read or written |
 | 11 | `host_key` | A server key is unknown and could not be confirmed, or it changed |
@@ -243,6 +252,7 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 19 | `permission_denied` | `cp`: the user may not read that file or write in that folder, here or on the host |
 | 20 | `exists` | `cp`: the file is already there; `--force` replaces it |
 | 21 | `not_a_directory` | `cp`: a path that has to be a folder is a file |
+| 22 | `port_in_use` | `tunnel up`: another program already listens on that local port |
 
 The codes are stable: scripts can rely on them.
 

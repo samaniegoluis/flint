@@ -379,7 +379,7 @@ a tab into up to four terminal panes.
     header says which pane it is showing.
 ```
 
-## Message 6: side panel, pinned or floating (ROADMAP §6, to send)
+## Message 6: side panel, pinned or floating (ROADMAP §6, sent; screens 19* imported 2026-11-10)
 
 Written at milestone 19's close (2026-11-09). The order against milestone 20 (split
 panes) is still the owner's call; these screens are needed either way.
@@ -429,10 +429,11 @@ The rule (owner): one panel and one width for every side view, with a pin.
     think it belongs there and not only on the pin.
 ```
 
-## Message 7: tunnels (v6, milestone 23, to send)
+## Message 7: tunnels (v6, milestone 23, sent 2026-11-10)
 
-Written at v6's planning (2026-11-09, D-062). Send it in the same chat as messages 1-6; it
-is needed before milestone 23 is built.
+Written at v6's planning (2026-11-09, D-062), brought up to date with milestone 22 as built
+(D-063) on 2026-11-10. Send it in the same chat as messages 1-6; it is needed before
+milestone 23 is built.
 
 ```
 Flint follow-up: tunnels (local port forwards, `ssh -L`). Same tokens.css, components and
@@ -451,6 +452,12 @@ db1. The rules (owner):
     tunnels (connecting starts the "Open when I connect" ones; the session toolbar toggles
     each), tunnels only (a Tunnels view in the rail, the palette, or `flint tunnel up`).
   - Local side is always 127.0.0.1, never the LAN: say so, do not offer a bind address.
+  - A lost session (the server went away) stops every tunnel of that host and shows
+    "connection lost" with the reason. Nothing reconnects by itself: the switch tries again.
+  - Locking the vault leaves running tunnels up, like open terminals; quitting Flint closes
+    them all.
+  - Two saved tunnels may share a local port (only one can run at a time): a warning, not
+    an error.
 
 06c · Host editor, Tunnels section (beside 06 and 17b):
   - 06c1 · A list of the host's tunnels, each row "pg · 127.0.0.1:5432 → localhost:5432"
@@ -458,13 +465,16 @@ db1. The rules (owner):
     ports and addresses. Empty state: one line saying what a tunnel is.
   - 06c2 · Adding or editing one: name, local port, destination host (placeholder
     "localhost") and port, the check. Inline errors: a name already used on this host, a
-    port out of range, a local port another tunnel of the vault already uses.
+    port out of range; a warning (not an error) when another tunnel of the vault already
+    uses that local port.
 
 20 · Tunnels in the app:
   - 20a · The Tunnels view (a rail item, same panel width as Hosts): every tunnel grouped by
     host (colour dot and label as in the sidebar), each with a switch and its live state:
     "listening 127.0.0.1:5432 · 2 connections", stopped, starting, "port 5432 in use",
-    "connection lost · retrying". A filter at the top. Both themes.
+    "connection lost · <reason>" (no retrying: the switch is off, flipping it logs in
+    again). A filter at the top. Empty state (no tunnels yet): what a tunnel is and where
+    to add one (the host editor). Both themes.
   - 20b · The tunnels' session connecting for a host with no open tab: the row shows the
     connecting state, then a password prompt or an unknown host key, reusing 10a and 10c
     (as 14d5 did for the second file pane), and an auth-failed state.
@@ -478,7 +488,9 @@ db1. The rules (owner):
     tunnels".
   - 20f · At 900×600 (as 04c): the Tunnels view and the toolbar menu.
 
-16h · Approval window, a program opening a tunnel (a variant of 16a1 and 16f1):
+16h · Approval window, a program opening a tunnel (a variant of 16a1 and 16f1). Today's
+build already names the tunnel, 127.0.0.1:<port> and the destination on 16a's layout;
+this is its proper design:
   - Header: "flint, started by Claude Code wants to open a tunnel". The process chain and
     pid as in 16a1.
   - What it opens, at a glance: the host (label, alias), "127.0.0.1:5432 on this Mac →

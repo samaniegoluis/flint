@@ -100,7 +100,15 @@ const listing = {
 	],
 };
 
-function stub({ catalog, recents, screens, theme, listing, homes }) {
+// The Tunnels view (milestone 23): db's Postgres and Grafana up, one stopped, one on nas.
+const tunnelList = [
+	{ host: 'db', name: 'grafana', local_port: 3000, destination: '10.0.0.5:3000', open_on_connect: true, state: 'listening', listen: '127.0.0.1:3000', connections: 0, error: '' },
+	{ host: 'db', name: 'pg', local_port: 5432, destination: 'localhost:5432', open_on_connect: true, state: 'listening', listen: '127.0.0.1:5432', connections: 2, error: '' },
+	{ host: 'db', name: 'pgbouncer', local_port: 6432, destination: 'localhost:6432', open_on_connect: false, state: 'stopped', listen: '', connections: 0, error: '' },
+	{ host: 'nas', name: 'admin', local_port: 8443, destination: 'localhost:443', open_on_connect: false, state: 'stopped', listen: '', connections: 0, error: '' },
+];
+
+function stub({ catalog, recents, screens, theme, listing, homes, tunnelList }) {
 	const bySession = new Map();
 	const now = Math.floor(Date.now() / 1000);
 	const listeners = new Map();
@@ -167,6 +175,12 @@ function stub({ catalog, recents, screens, theme, listing, homes }) {
 			return new Promise(() => {});
 		},
 		files_cancel: () => ({}),
+		tunnels_list: () => tunnelList,
+		tunnel_start: ({ session, host, names }) => {
+			setTimeout(() => emit('tunnel:started', { session, host, results: names.map((name) => ({ name, code: '', message: '' })), code: '', message: '' }), 50);
+			return {};
+		},
+		tunnel_stop: ({ host, name }) => tunnelList.find((t) => t.host === host && t.name === name),
 	};
 	window.__shotsUploads = ['/Users/me/build/nginx.conf', '/Users/me/build/release-2.4.tar.gz'];
 	window.backend = new Proxy({}, {
@@ -199,7 +213,7 @@ try {
 		const page = await browser.newPage({ viewport: { width: 1280, height: 640 }, deviceScaleFactor: 2, colorScheme: theme });
 		const errors = [];
 		page.on('pageerror', (e) => errors.push(String(e)));
-		await page.addInitScript(stub, { catalog, recents, screens, theme, listing, homes });
+		await page.addInitScript(stub, { catalog, recents, screens, theme, listing, homes, tunnelList });
 		await page.goto(base);
 		const tree = page.getByRole('tree');
 		await tree.waitFor();
@@ -240,6 +254,16 @@ try {
 		await page.locator('[data-files-one-pane]').click();
 		await page.keyboard.press('Meta+e');
 		await page.locator('.tab', { hasText: 'db' }).first().click();
+		// The Tunnels view (20a, milestone 23) beside db's tab, whose toolbar counts them.
+		await page.keyboard.press('Meta+Shift+t');
+		await page.locator('[data-tunnel="pg"]').waitFor();
+		await page.mouse.move(0, 0);
+		await page.waitForTimeout(300);
+		if (errors.length) throw new Error(`page errors (${theme}): ${errors.join('; ')}`);
+		const tunnelsShot = join(outDir, `app-tunnels-${theme}.png`);
+		await page.screenshot({ path: tunnelsShot });
+		console.log(`wrote ${tunnelsShot}`);
+		await page.keyboard.press('Meta+Shift+h');
 		// FLINT_SHOTS_EXTRA=<dir>: more screens for a visual check, not used by the landing.
 		const extra = process.env.FLINT_SHOTS_EXTRA;
 		if (extra) {

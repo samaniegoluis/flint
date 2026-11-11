@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../api/backend';
-import type { LockAfter, Settings, VaultStatus } from '../api/types';
+import { PASTE_LIMITS, type LockAfter, type Settings, type VaultStatus } from '../api/types';
 import { shortPath, useApp, vaultInitial, vaultMarkClass } from '../state/app';
 import { ACTION_TITLES, chordLabel, SHORTCUT_GROUPS } from '../lib/keymap';
 import { Icon, type IconName } from '../ui/Icon';
@@ -12,7 +12,6 @@ import { Kbd } from '../ui/Kbd';
 import { Picker } from '../ui/Picker';
 import type { Confirm } from './KeysPage';
 import { RenameVault } from '../shell/VaultSwitcher';
-import { ImportTetherDrawer } from './ImportTether';
 import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
 import { AccessSettings } from '../access/AccessSettings';
 
@@ -203,6 +202,13 @@ function TerminalSettings() {
           <Toggle on={s.term_cursor_blink} onChange={(v) => set({ term_cursor_blink: v })} label="Blink" />
         </div>
       </Row>
+      <Row title="Largest file to paste" desc="An image pasted into a session is uploaded to the server and its path is pasted, for a program there such as Claude Code. Larger files go through Files. Set on this computer.">
+        <div className="seg" role="radiogroup" aria-label="Largest file to paste">
+          {PASTE_LIMITS.map((mb) => (
+            <button key={mb} type="button" role="radio" aria-checked={s.paste_limit_mb === mb} aria-pressed={s.paste_limit_mb === mb} onClick={() => set({ paste_limit_mb: mb })}>{mb} MB</button>
+          ))}
+        </div>
+      </Row>
       <Row title="Preview" desc="Uses the chosen colours and font.">
         <div className="term" style={{ ...themeVars, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', fontFamily: family, fontSize: s.term_font_size, lineHeight: s.term_line_height / 100 }}>
           <div className="l"><span className="g">luis</span><span className="d">@</span><span className="b">prod-api-01</span> <span className="c">~/srv/api</span> <span className="m">(main)</span> <span className="pc">❯</span> ls</div>
@@ -275,7 +281,6 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
   const { vault, catalog, os, refreshCatalog, notify, closeVault } = useApp();
   const [st, setSt] = useState<VaultStatus | null>(null);
   const [renaming, setRenaming] = useState(false);
-  const [importing, setImporting] = useState(false);
   // Sessions record trusted keys on their worker, and the CLI can change the file:
   // read the catalog again when the page opens, or Known hosts shows a stale list.
   useEffect(() => { refreshCatalog().catch(() => {}); }, [refreshCatalog]);
@@ -335,13 +340,9 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
           </table>
         )}
       </Row>
-      <Row title="Import" desc="Copy the hosts, keys and credentials of a Tether vault into this one.">
-        <div><button className="btn btn-secondary btn-sm" onClick={() => setImporting(true)}><Icon name="file" size="sm" />Import from Tether…</button></div>
-      </Row>
       <Row title="Master password" desc="Changing it is coming in a later version (flint vault passwd).">
         <span className="faint" style={{ fontSize: 'var(--fs-sm)' }}>—</span>
       </Row>
-      {importing && <ImportTetherDrawer onClose={() => setImporting(false)} />}
     </>
   );
 }

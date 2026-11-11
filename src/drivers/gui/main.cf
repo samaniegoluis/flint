@@ -176,7 +176,20 @@ fn main() {
     app.bind_raw("cred_edit") |params| { return rpc_cred_edit(params, c, mut store, st) }
     app.bind_raw("cred_rm") |params| { return rpc_cred_rm(params, mut store, st) }
     app.bind_raw("known_host_rm") |params| { return rpc_known_host_rm(params, mut store, st) }
-    app.bind_raw("import_tether") |params| { return rpc_import_tether(params, c, mut store, inspector, st) }
+    // Tunnels (milestone 23, tunnels.cf).
+    app.bind_raw("tunnels_list") |params| { return rpc_tunnels_list(store, st) }
+    app.bind_raw("tunnel_save") |params| {
+        mut a := app
+        return rpc_tunnel_save(params, c, store, st, mut a)
+    }
+    app.bind_raw("tunnel_rm") |params| {
+        mut a := app
+        return rpc_tunnel_rm(params, store, st, mut a)
+    }
+    app.bind_raw("tunnel_stop") |params| {
+        mut a := app
+        return rpc_tunnel_stop(params, store, st, mut a)
+    }
     app.bind_raw("secret_reveal") |params| { return rpc_secret_reveal(params, c, store, st) }
     app.bind_raw("secret_copy") |params| { return rpc_secret_copy(params, c, store, mut clipboard, st) }
 
@@ -199,6 +212,11 @@ fn main() {
     app.bind_async[FilesStageReq]("files_stage") |req| {
         mut d := drops
         return rpc_files_stage(req, mut d, st)
+    }
+    // Paste into the terminal (paste.cf, milestone 25).
+    app.bind_async[TerminalPasteReq]("terminal_paste") |req| {
+        mut d := drops
+        return rpc_terminal_paste(req, mut d, settings_store, st)
     }
     app.bind_raw("files_stage_discard") |params| {
         req := try parse_req[FilesIdReq](params)
@@ -261,6 +279,27 @@ fn main() {
             }
             return ok_json()
         }
+        app.bind_raw("tunnel_start") |params| {
+            r := tunnel_start_check(params, st) or err {
+                return error("{err.message()}")
+            }
+            worker_app := app
+            worker_store := store
+            vs := st.vault_session()
+            scope.spawn || {
+                mut a := worker_app
+                mut s := worker_store
+                run_tunnel_start(mut a, c, mut s, vs, r)
+            }
+            return ok_json()
+        }
+        // Tells the page when running tunnels change (tunnels.cf).
+        watch_app := app
+        watch_st := st
+        scope.spawn || {
+            mut a := watch_app
+            run_tunnel_watch(watch_st, mut a)
+        }
         // The CLI's way into the vault unlocked here (serve.cf, D-038, D-042): several
         // accept loops on one listener, since a `flint connect` keeps its connection.
         mut listener := start_serving(config_dir)
@@ -319,6 +358,8 @@ fn main() {
         }
         st.holder.set_quitting()
         gui_session_close_all()
+        // Tunnels run in this process only: quitting closes them (D-062).
+        release_all_tunnels()
         listener.close()
     }
     // Waits for an unlock or create still running on a worker, then closes.

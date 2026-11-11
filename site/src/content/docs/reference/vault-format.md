@@ -60,7 +60,9 @@ own transaction; a vault from a newer Flint is refused rather than downgraded.
 | 5 | `hosts.sudo_password`: the password `exec --sudo` types, sealed with the secrets key like the host's password; empty means the login password |
 | 6 | `activity.command_cut`: how many bytes of a command past 16 KB were cut (entries from before were cut at 160 characters and say 0). The log's retention in days is the `meta` row `activity_retention_days` (absent: 90) |
 
-A vault that has been opened by a Flint with migration 6 is refused by older builds.
+| 7 | `tunnels`: local forwards saved in a host (name, local port, destination host and port, open on connect), removed with their host; a name is unique in its host, whatever its case |
+
+A vault that has been opened by a Flint with migration 7 is refused by older builds.
 
 ## The keychain
 

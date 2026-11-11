@@ -1,77 +1,89 @@
-# Flint — v6 Technical Specification: Tunnels
+# Flint — v7 Technical Specification: Paste into the terminal
 
-**Scope of this document:** version 6 only. The versions it builds on are archived in
+**Scope of this document:** version 7 only. The versions it builds on are archived in
 [`spec-v1.md`](./spec-v1.md) (MVP), [`spec-v2.md`](./spec-v2.md) (daily driver),
-[`spec-v3.md`](./spec-v3.md) (Flint holds the vault), [`spec-v4.md`](./spec-v4.md) (Files)
-and [`spec-v5.md`](./spec-v5.md) (Between servers); everything beyond v6 lives in
-[`ROADMAP.md`](../ROADMAP.md). This file is static: a decision that changes goes into
-[`decisions.md`](./decisions.md), which supersedes the line here.
+[`spec-v3.md`](./spec-v3.md) (Flint holds the vault), [`spec-v4.md`](./spec-v4.md) (Files),
+[`spec-v5.md`](./spec-v5.md) (Between servers) and [`spec-v6.md`](./spec-v6.md) (Tunnels);
+everything beyond v7 lives in [`ROADMAP.md`](../ROADMAP.md). This file is static: a
+decision that changes goes into [`decisions.md`](./decisions.md), which supersedes the line
+here.
 
 ## Problem
 
-v5 shipped (milestones 18-20, [`build-log.md`](./build-log.md)): files move between two
-servers through Flint, and a tab splits into up to four panes. Flint still cannot reach a
-service that only listens inside a server:
+v6 shipped (milestones 21-24, [`build-log.md`](./build-log.md)): tunnels saved per host,
+and the Tether importer is gone. The owner now uses Flint every day, and the one thing he
+misses most is Tether's **image paste**:
 
-- **No tunnels.** Reaching `db1`'s Postgres or a panel bound to `localhost` on a server
-  means leaving Flint for `ssh -L` with a key on disk, which the vault was meant to avoid.
-  Tether, which Flint replaces, has local forwards saved per host; Flint is the one gap
-  left in parity with it (ROADMAP §1). An agent cannot open one under a grant either.
-- **Tether's importer has no audience left.** The owner has moved his vault to Flint, and
-  he was Tether's only user. The importer keeps libargon2 and the one exception to P4
-  (D-034) alive for nothing.
-- **v5 left debts in the tests and the layout.** gui-e2e on macOS freezes in its vim step
-  (2 runs in 12 on `main`), a wait that times out late never reports which check failed,
-  and the Files view in a narrow window is drawn behind the terminal.
+- **An agent on a server cannot see the screen.** The owner works with Claude Code running
+  on a server inside a Flint tab: it guides him through something, and he answers with
+  screenshots. Claude Code reads an image (or any file) from a path, but the file has to be
+  *on the server*. Today pasting an image into Flint's terminal does nothing.
+- **Tether did it, unsafely.** It wrote the bytes to `/tmp/tether-<uuid>.<ext>` on the
+  server with default permissions (world-readable), never cleaned them up, and swallowed
+  every error.
+- **Files only arrive through the Files view.** Dropping a PDF or a CSV onto the terminal
+  to hand it to the agent means opening Files, uploading, and typing the path by hand.
+- **Unexplained test freezes cost time.** gui-e2e on macOS freezes in its vim step and
+  after one more tab (M21, M23). Both are worked around, not understood, and each attempt
+  to find them reran a whole suite for ten minutes.
 
-v6 pays the debts first, then adds local port-forward tunnels saved per host, in the core,
-the CLI and the app, and removes the Tether importer.
+v7 makes a pasted image land on the server and its path land in the terminal, does the
+same for files dropped onto the terminal, and hunts the test freezes with the window
+visible.
 
 ## Scope
 
-**In scope (v6), macOS and Linux:**
-- **v5 debts** (milestone 21): the Files view under 1040 px wide drawn with its own
-  background, above the terminal and below the title bar; gui-e2e's vim step isolated so a
-  freeze in it cannot hang the rest of the run; a wait that times out late reports the
-  check that failed. The owner's Zorin check of `Ctrl+Alt+D` and `Ctrl+Alt+1-4` (M20).
-- **Tunnels saved in the host**: a host holds any number of local forwards, each with a
-  name, a local port, a destination as seen from the server (`localhost:5432` by default,
-  or another machine on its network) and *Open when I connect*. A tunnel uses its host's
-  login, credentials and jump hosts; there is no separate tunnel entity (D-062). Stored in
-  the vault through a new migration.
-- **A tunnel runs on its host's own session with no terminal** (the piece built for the
-  second Files pane in M19): one login per host carries all of that host's running
-  tunnels, independent of any tab. Closing a tab, or its session dropping, leaves the
-  tunnels up; a tunnel needs no tab (D-062). The listener binds `127.0.0.1` only.
-- **Three ways to open, all from the same host:** SSH only (connect as today); SSH and
-  tunnels (connecting starts the host's *Open when I connect* tunnels, and the session
-  toolbar's *Tunnels* menu toggles each); tunnels only (the Tunnels view, the palette
-  action *Start tunnel <name> on <host>*, or `flint tunnel up`), with no terminal.
-- **`flint tunnel`**: `add`, `edit`, `rm`, `ls` for the saved tunnels (as `flint host`
-  edits hosts), and `up`, `down`, `status` for running ones, through the app's socket,
-  with `--json` (P7). `up` needs a grant whose `exec` scope covers the host, or one
-  approval window naming the host, the local port and the destination. With the app
-  closed, `up` fails with `locked`: a tunnel needs a process that stays. Every `up` and
-  `down` in the activity log.
-- **Tunnels in the app**: the host editor's *Tunnels* section; a *Tunnels* view in the
-  rail listing every tunnel by host with a switch and its state (`listening
-  127.0.0.1:5432 · 2 connections`, `port in use`, `connection lost`); a mark on a host's
-  tab while it has tunnels up. Needs new Claude Design screens (message 7).
-- **Remove `flint import tether`** (milestone 24): the command, its Settings → Vault entry,
-  libargon2, the Tether fixture and their tests, the docs pages. P4 loses its exception.
+**In scope (v7), macOS and Linux here; Windows checked by the owner** (see below):
+- **Paste an image** (milestone 25): on a paste whose clipboard holds an image and no
+  `text/plain`, Flint writes the image **on the server** over the focused pane's own SFTP
+  session (D-053, D-055; jump hosts included) and pastes its path as text, inside
+  bracketed paste, into that pane. Nothing is typed after it (no Enter). A clipboard that
+  carries text too (spreadsheet cells, an app that puts a picture beside the text) pastes
+  the text. Works the same in split panes: each pane uses its own session.
+- **Where the file lands:** `~/.cache/flint/paste/`, created `0700`, the file `0600`; or
+  `/tmp/flint-<uid>/` at `0700` when the home folder is not writable. The file keeps a
+  cleaned version of its name (a screenshot with no name gets `paste-<time>.png`), inside
+  a short unique sub-folder so two pastes never collide. Each paste removes that folder's
+  entries older than 24 h; nothing is removed at session close (a multiplexed agent may
+  read the path later).
+- **A size limit, set per machine** in Settings → Terminal: *Largest file to paste*, one of
+  10, **20 (default)**, 50 or 100 MB (per-machine state, D-030). Over it, the paste fails
+  with the size and a pointer to the Files view, which has no limit and a progress bar.
+- **Visible progress and errors:** a short notice while it uploads (*Pasting image to
+  codebox…*), and the reason when it fails (no SFTP on the server, permission denied, too
+  large, timeout). Never a silent failure. The upload has the SFTP timeout (P8).
+- **Files dropped onto the terminal** (milestone 26): one or more files of any type dragged
+  from Finder or the file manager onto a pane go the same way, and their paths are pasted
+  separated by spaces, quoted when they need it. Reuses the Files view's drop path
+  (`readDrop`, `files_stage`, D-055). No type filter.
+- **A file copied in Finder or the file manager** (⌘C on a file, then paste in the
+  terminal) goes the same way **only if milestone 25's spike shows it works on macOS,
+  Linux and Windows**: all or none. Otherwise it goes to the roadmap as `later`, and the
+  drop covers files.
+- **Test freezes** (milestone 27): gui-e2e on macOS can run with its window visible
+  (likely the new default there, decided by the experiment); `scripts/repeat.sh` runs one
+  isolated step N times and reports a failure rate; an experiment, hidden against visible,
+  on the vim freeze and the one-more-tab freeze. Time-boxed with the owner: if no cause is
+  found, what was learned is written down and the milestone closes.
 - Docs site, the landing and the CLI demo follow every user-visible change (CLAUDE.md rules
-  5 and 6).
+  5 and 6). v7 adds nothing to the CLI, so the demo should not change.
 
-**Out of scope (v6), tracked in the roadmap:** remote (`-R`) and dynamic (`-D`, SOCKS)
-forwards; a tunnel that runs with the app closed (`flint serve`); binding beyond loopback;
-Flint's own vault export / import (it replaces the Tether importer later); the side panel
-pinned or floating (§6, design message 6); `flint agent`; restoring sessions or tunnels on
-relaunch; Windows; the remote vault (D-050).
+**Windows:** the owner runs Flint on Windows from a branch of his own over a patched cfire,
+whose changes are being folded into cfire upstream; that branch takes everything from
+`main`. Windows stays out of this repo's verification until it merges, but v7's features
+are designed for it too (WebView2 is Chromium, not WebKit: the spike asks what each
+webview gives), and the owner checks them on Windows at each milestone's close.
+
+**Out of scope (v7), tracked in the roadmap:** dropping or pasting folders onto the
+terminal (the Files view takes folders); pasting into the CLI (`flint connect` runs in the
+person's own terminal); recording pastes in the activity log (as the window's own copies,
+D-055); anything that changes with the program on the server (Flint pastes a path, the
+same for Claude Code or a shell); choosing which monitor the e2e window opens on; embedded
+RDP (the next spec); the remote vault; `flint agent`.
 
 ## Stack
 
-Unchanged from v5. Milestone 24 drops **libargon2**, which only the Tether importer used
-(D-034).
+Unchanged from v6.
 
 | Layer | Choice | Why | Rejected |
 |---|---|---|---|
@@ -87,48 +99,46 @@ Unchanged from v5. Milestone 24 drops **libargon2**, which only the Tether impor
 
 ## Architecture
 
-Hexagonal, as in v5. v6 adds tunnels to the domain, a session with no terminal that
-carries a host's tunnels, and a local listener port.
+Hexagonal, as in v6. v7 adds one use case over the SFTP port that already exists; no new
+port, no migration.
 
 ```
- drivers        GUI (webui + React: host editor Tunnels,    socket server   CLI (socket
-                Tunnels view, toolbar menu)                  (in the app)    client)
+ drivers        GUI (webui + React: the terminal's paste    socket server   CLI (socket
+                and drop, Settings → Terminal)               (in the app)    client)
                         │                                         │
- application     use cases: … v5 …, SaveTunnel, StartTunnel, StopTunnel, TunnelStatus
+ application     use cases: … v6 …, PasteToRemote (write a file in the paste folder,
+                 prune entries older than 24 h, return the remote path)
                         │
- domain          … v5 …, Tunnel (host, name, local port, destination, open on connect)
+ domain          … v6 …, paste naming and pruning rules (clean name, unique folder, age)
                         │  ports
- ports           … v5 …, TunnelTransport (forward channel over a link), LocalListener
+ ports           … v6 … (SFTP, unchanged)
                         │
- adapters        … v5 … · libssh direct-tcpip (already used for jump hosts) · TCP listener
+ adapters        … v6 … · drop staging (D-055) reused for the bytes
 ```
 
-Contracts (v5's stand; new ones are marked):
+Contracts (v6's stand; new ones are marked):
 - **Drivers hold no business logic.** A GUI binding, a socket request and a CLI command for
   the same action call the same use case.
 - **Secrets never leave the core in clear text** except to the SSH transport at connect
   time. Drivers see derived flags such as `hasPassword`.
 - **Streaming is out-of-band.** Terminal bytes, transfer progress and tunnel state travel
   through `EventSink` and stdio, never as RPC return values.
-- **Per-machine state lives in the config folder, never in the vault** (D-030).
+- **Per-machine state lives in the config folder, never in the vault** (D-030). The paste
+  size limit is one of these.
 - **Every native C++ shim is an adapter**, tagged with its `CF-NNN` entry.
 - **One holder of an unlocked vault** (v3). Lock zeroes the key and ends every grant.
 - **SFTP rides an SSH session** (D-053, D-055). A transfer is a use case with an id.
 - **A pane is a session, a tab is a layout** (D-061).
-- **(new) A tunnel is a host's, not a tab's.** A host's running tunnels share one session
-  with no terminal, opened on the first `StartTunnel` and hung up when its last tunnel
-  stops. No tab, pane or Files view ever carries a tunnel.
-- **(new) One forward channel per accepted connection.** Each local TCP connection the
-  listener accepts opens its own `direct-tcpip` channel to the destination; closing either
-  side closes both. Stopping a tunnel closes its listener and every live connection.
-- **(new) A listener binds loopback only.** `127.0.0.1` (and `::1` where asked); the
-  address is not configurable in v6.
+- **A tunnel is a host's, not a tab's** (D-062, D-063).
+- **(new) A pasted or dropped file travels over its pane's own session.** It never opens
+  a login of its own and never goes to another pane's host. The page hands over bytes (or
+  a staged local file), the core writes them and returns the path; the page pastes it.
 
 ## Principles
 
 Checkable rules. Every milestone is checked against them before it is closed. Rules marked
 **(owner review)** stop `lean-build` for the owner whenever a diff touches them. Unchanged
-from v5, except P4 once milestone 24 ships.
+from v6, with P4's exception gone (D-065).
 
 1. The domain and application layers import no adapter and no I/O module (`ext:webui`,
    `ext:db/sqlite`, sockets, keychain, files).
@@ -137,9 +147,7 @@ from v5, except P4 once milestone 24 ships.
 3. Native C++ appears only inside `adapters/`, and each block carries
    `// CFIRE-UPSTREAM: CF-NNN` with a matching entry in `docs/cfire-upstream.md`.
 4. **(owner review)** No hand-rolled cryptography. Key derivation, AEAD, hashing of tokens
-   and random secrets go through libsodium only. **One exception (D-034), until milestone
-   24 removes it:** reading a Tether vault derives its key with the reference libargon2,
-   confined to `adapters/vault/tether.cf`.
+   and random secrets go through libsodium only.
 5. **(owner review)** The vault file on disk is encrypted in full. No hostname, user or label
    from inside a vault is ever written in clear text, including in logs. (The recent-vaults
    list keeps each vault's file path and name in clear, D-021.) The vault schema and file
@@ -165,34 +173,26 @@ from v5, except P4 once milestone 24 ships.
 ## Milestones
 
 Each milestone is built **whole** with `lean-build` and verified by the agent. Owner checks
-happen only where a human is required (see `CLAUDE.md`). Progress is recorded in
-`docs/build-log.md`, not here. Numbering continues from v5.
+happen only where a human is required (see `CLAUDE.md`), plus the owner's Windows check at
+each close. Progress is recorded in `docs/build-log.md`, not here. Numbering continues from
+v6.
 
-**Owner walkthroughs use a copy of a vault**: a build with migration 007 writes a vault an
-older Flint refuses.
-
-**Design first:** milestone 23 needs screens the design lacks: the host editor's Tunnels
-section, the Tunnels view, the session toolbar's Tunnels menu, a tab with tunnels up and
-the approval window for `flint tunnel up`. Message 7 in
-[`design-prompt.md`](./design-prompt.md) covers them and is applied to `docs/design/`
-before 23 is built; 22's approval window may use 16a's layout until then.
+**No new design screens:** the upload notice reuses the app's existing notice style, and
+the size limit is one row in Settings → Terminal.
 
 | # | Milestone | Delivers |
 |---|---|---|
-| 21 | **v5 debts** | The Files view in a window under 1040 px wide opens with its own background, above the terminal and below the title bar, checked in the real app at 900 px. gui-e2e's vim step runs on its own (its own page or run), so a freeze in it fails that step by name and the rest of the suite still reports; a wait that times out late reports the failed check instead of an empty verdict (ROADMAP §5, §6). The owner's Zorin check of `Ctrl+Alt+D` and `Ctrl+Alt+1-4` reaching Flint (M20) |
-| 22 | **Tunnels in the core and the CLI** | Migration 007: tunnels per host (name, local port, destination host and port, open on connect), with names unique per host. `SaveTunnel`, `StartTunnel`, `StopTunnel`, `TunnelStatus` over a host's session with no terminal, one `direct-tcpip` channel per accepted connection, a loopback listener, timeouts on dial and channel open (P8), `port_in_use` as a stable error. `flint tunnel add\|edit\|rm\|ls` and `flint tunnel up\|down\|status <host>:<name>` through the socket, `--json`; `up` under a grant whose `exec` scope covers the host, or one approval window naming host, local port and destination; `locked` with the app closed. Every `up` and `down` in the activity log. Starts with a spike: two connections through one tunnel on Zorin's libssh 0.10 while a terminal on the same host runs. Docs, the CLI demo and its tour, the agents guide |
-| 23 | **Tunnels in the app** | The design's tunnel screens: the host editor's *Tunnels* section (add, edit, remove, *Open when I connect*); the *Tunnels* view in the rail with every tunnel by host, a switch and its live state; the session toolbar's *Tunnels* menu with a check per tunnel; connecting a host starts its *Open when I connect* tunnels; the palette actions *Start tunnel <name> on <host>* and *Stop tunnel …*; a mark on a host's tab while it has tunnels up. Prompts for the tunnel session (password, unknown host key) as a connect does. Docs, the landing ("What's next" loses tunnels; a screenshot if it earns a place, asked at plan time), `shots:gui` |
-| 24 | **Remove the Tether importer** | `flint import tether`, its Settings → Vault entry, `adapters/vault/tether.cf`, the domain and application code, libargon2 (build, installer docs, the Linux image), the Tether fixture and tests, and the docs pages go. P4 loses its exception, recorded as a decision that supersedes D-034 (1). The CLI demo and the landing drop any mention. A vault imported from Tether before keeps working: nothing in the vault format depends on the importer |
+| 25 | **Paste an image into the terminal** | Starts with a **spike** on macOS (WKWebView) and Zorin (WebKitGTK), with a page the owner runs on Windows (WebView2): what the paste event gives for a screenshot, an image file copied in Finder, a PDF copied in Finder; and what a drop onto the terminal gives. It settles the order among file, image and text, and whether a copied file is in v7 (all three or none). Then: an image pasted into a pane is written over that pane's SFTP session to the paste folder (`0700`/`0600`, cleaned name, unique sub-folder, `/tmp/flint-<uid>/` fallback), entries older than 24 h pruned on each paste, its path pasted inside bracketed paste; text wins when the clipboard has both. *Largest file to paste* in Settings → Terminal (10 / 20 / 50 / 100 MB, default 20). The upload notice and every failure's reason. Split panes and jump hosts. gui-e2e: a `paste` run of its own. Docs, the landing (a line where it fits, asked at plan time if not clear) |
+| 26 | **Files onto the terminal** | One or more files of any type dropped onto a pane are uploaded the same way and their paths pasted, separated by spaces and quoted when needed; folders are refused with a pointer to the Files view. Built on the Files view's drop staging (D-055). If 25's spike allowed it on all three systems, a file copied in Finder or the file manager pastes the same way, and wins over the file name the clipboard also carries as text. Otherwise that item goes to the roadmap. gui-e2e on the drop. Docs |
+| 27 | **Test freezes** | Time-boxed, with the owner. gui-e2e on macOS runs with its window **visible** (`FLINT_E2E_VISIBLE`, or the default if the experiment says so; hidden stays available). `scripts/repeat.sh <step> <N>` runs one isolated gui-e2e step N times and prints the failure rate. The experiment: the vim step and the one-more-tab run, 10 times hidden against 10 visible, plus a short manual check by the owner. If visible ends the freezes, it becomes the macOS default and the M21/M23 workarounds are reviewed; whatever the result, the rates and findings go into the ROADMAP entries. `repeat.sh` is the tool `CLAUDE.md` rule 9 (unexplained failures are isolated first) relies on |
 
 ## Open questions
 
-- **Locking the vault with tunnels up**: do they stop with the lock (as grants end), or
-  keep running as open terminals do? Settle at 22's plan, after checking what lock does to
-  open sessions today.
-- **A tunnel's session dropping**: the listener stays and the next accepted connection
-  redials, or the tunnel shows `connection lost` and waits for a switch. Settle at 22's
-  plan.
+- **A copied file on the three systems**: settled by 25's spike. It also tells whether
+  WebView2 differs from WebKit for screenshots, which the owner then checks on Windows.
+- **Visible e2e window as the macOS default**: settled by 27's experiment. Linux keeps
+  Xvfb.
 - **A host with 2FA or keyboard-interactive auth** asks twice when its terminal and its
-  tunnels both run (two logins, D-062). Accepted for v6; revisit if it bites.
+  tunnels both run (two logins, D-062). Accepted since v6; revisit if it bites.
 - **Flint's licence.** MIT or Apache-2.0. It also depends on cfire publishing a licence
   (CF-009).

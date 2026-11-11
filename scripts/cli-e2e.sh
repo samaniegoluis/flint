@@ -201,35 +201,9 @@ check "nothing cached with the keychain off" '[[ "$(echo "$out" | json_get "d[\"
 FLINT_KEYCHAIN=off expect 5 "keychain off and no password: locked" "" -- --vault "$off" host list
 FLINT_KEYCHAIN=off expect 0 "keychain off with --master-stdin works" "$MASTER"$'\n' -- --vault "$off" host list --master-stdin
 
-echo "== import from Tether"
-# A vault written by Tether's own code (scripts/make-tether-fixture.sh).
-imp="$tmp/imp.flint"; tv="$tmp/old.tether"; TPW="tether-fixture-pw"
-cp "$root/src/adapters/vault/testdata/tether-v5.tether" "$tv"
-mkdir -p /tmp/flint-tether-fixture && cp "$root/src/adapters/vault/testdata/tether-legacy-ed25519" /tmp/flint-tether-fixture/id_legacy
-tv_sum="$(shasum "$tv" | cut -d' ' -f1)"
-IM=(--vault "$imp" --master-stdin); IMI="$MASTER"$'\n'
-FLINT_KEYCHAIN=off expect 0 "a vault to import into" "$MASTER"$'\n' -- vault create "$imp" --name Imported --master-stdin
-FLINT_KEYCHAIN=off expect 0 "import tether --dry-run" "$IMI$TPW"$'\n' -- --json import tether "$tv" --password-stdin --dry-run "${IM[@]}"
-check "the dry run counts 8 hosts" '[[ "$(echo "$out" | json_get "d[\"added\"][\"hosts\"]")" == "8" && "$(echo "$out" | json_get "d[\"dry_run\"]")" == "True" ]]'
-FLINT_KEYCHAIN=off expect 0 "the dry run wrote nothing" "$IMI" -- --json host list "${IM[@]}"
-check "no host after the dry run" '[[ "$out" == "[]" ]]'
-FLINT_KEYCHAIN=off expect 6 "a wrong Tether password is wrong_password" "${IMI}not-the-password"$'\n' -- --json import tether "$tv" --password-stdin "${IM[@]}"
-check "the error is JSON on stderr, nothing on stdout" '[[ -z "$out" && "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "wrong_password" ]]'
-FLINT_KEYCHAIN=off expect 3 "a missing Tether file is not_found" "$IMI$TPW"$'\n' -- import tether "$tmp/none.tether" --password-stdin "${IM[@]}"
-FLINT_KEYCHAIN=off expect 7 "a file that is not a Tether vault is invalid" "$IMI$TPW"$'\n' -- import tether "$vault" --password-stdin "${IM[@]}"
-FLINT_KEYCHAIN=off expect 2 "only tether is a source" "" -- import termius "$tv"
-FLINT_KEYCHAIN=off expect 0 "import tether" "$IMI$TPW"$'\n' -- import tether "$tv" --password-stdin "${IM[@]}"
-check "the report names what was added" '[[ "$out" == *"added      5 groups, 8 hosts, 2 keys, 1 credential, 3 known hosts"* ]]'
-check "the report lists the tunnel as not imported" '[[ "$out" == *"Not imported"* && "$out" == *"pve-01: proxmox ui"* && "$out" == *"no tunnels yet"* ]]'
-FLINT_KEYCHAIN=off expect 0 "the imported host keeps its fields" "$IMI" -- --json host show code-box "${IM[@]}"
-check "label, group, tags, command and saved password came over" '[[ "$(echo "$out" | json_get "(d[\"label\"], d[\"group\"], d[\"tags\"], d[\"command\"], d[\"keep_shell\"], d[\"has_password\"])")" == "('"'"'Code Box'"'"', '"'"'Homelab'"'"', ['"'"'dev'"'"', '"'"'home-lab'"'"'], '"'"'herdr'"'"', False, True)" ]]'
-FLINT_KEYCHAIN=off expect 0 "jump host and port came over" "$IMI" -- --json host show pve-01 "${IM[@]}"
-check "pve-01 on 2222 with its stored key" '[[ "$(echo "$out" | json_get "(d[\"port\"], d[\"key\"], d[\"group\"])")" == "(2222, '"'"'homelab-ed25519'"'"', '"'"'Homelab/Proxmox/Nodes'"'"')" ]]'
-FLINT_KEYCHAIN=off expect 0 "known hosts came over" "$IMI" -- --json known-host list "${IM[@]}"
-check "three known hosts in Flint's address form" '[[ "$(echo "$out" | json_get "sorted(k[\"addr\"] for k in d)")" == "['"'"'[pve-01.lan]:2222'"'"', '"'"'codebox.lan'"'"', '"'"'fe80::1'"'"']" ]]'
-FLINT_KEYCHAIN=off expect 0 "a second import adds nothing" "$IMI$TPW"$'\n' -- --json import tether "$tv" --password-stdin "${IM[@]}"
-check "everything is already present" '[[ "$(echo "$out" | json_get "(sum(d[\"added\"].values()), d[\"already_present\"][\"hosts\"])")" == "(0, 9)" ]]'
-check "the Tether file is unchanged" '[[ "$(shasum "$tv" | cut -d" " -f1)" == "$tv_sum" ]]'
+echo "== no import"
+expect 2 "the Tether importer is gone (milestone 24)" "" -- import tether "$tmp/old.tether"
+check "it is an unknown command" '[[ "$err" == *"unknown command '"'"'import'"'"'"* ]]'
 
 echo "== ssh: exec, jump hosts, known hosts"
 P="$FLINT_TEST_SSH_PORT"; P2="$FLINT_TEST_SSH_PORT2"; P3=$((P2 + 1))
@@ -566,12 +540,49 @@ check "as a JSON error" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")"
 expect 3 "token revoke of an unknown token: not_found" "$SMI" -- token revoke nightly "${SM[@]}"
 expect 2 "an unknown token verb" "$SMI" -- token frob "${SM[@]}"
 
+echo "== tunnels, with the CLI on its own (milestone 22)"
+expect 0 "tunnel ls on a vault with none" "$SMI" -- tunnel ls "${SM[@]}"
+check "it says there are none" '[[ "$out" == "No tunnels."* ]]'
+expect 0 "tunnel add with the default destination" "$SMI" -- tunnel add local pg --local 15432 "${SM[@]}"
+check "it names both ends" '[[ "$out" == "Added tunnel '"'"'local:pg'"'"': 127.0.0.1:15432 to localhost:15432 as local sees it." ]]'
+expect 0 "tunnel add --to host:port --open-on-connect" "$SMI" -- --json tunnel add local e2e-tunnel-marker --local 16379 --to e2e-dest-marker.internal:6379 --open-on-connect "${SM[@]}"
+check "--json has the destination and open_on_connect" '[[ "$(echo "$out" | json_get "d[\"destination\"], d[\"open_on_connect\"], d[\"local_port\"]")" == "('"'"'e2e-dest-marker.internal:6379'"'"', True, 16379)" ]]'
+expect 4 "a second tunnel of the same name, any case: conflict" "$SMI" -- tunnel add local PG --local 1 "${SM[@]}"
+expect 0 "another host may reuse the name" "$SMI" -- tunnel add inner pg --local 25432 --to 5432 "${SM[@]}"
+expect 7 "a port out of range is invalid" "$SMI" -- tunnel add local big --local 70000 "${SM[@]}"
+expect 7 "a name with a colon is invalid" "$SMI" -- tunnel add local a:b --local 1 "${SM[@]}"
+expect 7 "an IPv6 destination without brackets is invalid" "$SMI" -- tunnel add local v6 --local 1 --to fd00::5:443 "${SM[@]}"
+expect 2 "tunnel add without --local is a usage error" "$SMI" -- tunnel add local nolocal "${SM[@]}"
+expect 3 "a tunnel on an unknown host: not_found" "$SMI" -- tunnel add nohost x --local 1 "${SM[@]}"
+expect 0 "tunnel edit renames and moves the local port" "$SMI" -- --json tunnel edit local:PG --name postgres --local 15433 "${SM[@]}"
+check "the destination stays" '[[ "$(echo "$out" | json_get "d[\"name\"], d[\"local_port\"], d[\"destination\"]")" == "('"'"'postgres'"'"', 15433, '"'"'localhost:15432'"'"')" ]]'
+expect 2 "a tunnel is named host:name" "$SMI" -- tunnel edit local --local 1 "${SM[@]}"
+expect 0 "tunnel ls lists every host's tunnels" "$SMI" -- tunnel ls "${SM[@]}"
+check "the table has its columns and a row per tunnel" '[[ "$out" == "TUNNEL"*"LOCAL"*"DESTINATION"*"ON CONNECT"*"STATE"* && "$(echo "$out" | wc -l | tr -d " ")" == "4" ]]'
+expect 0 "tunnel ls <host> --json" "$SMI" -- --json tunnel ls local "${SM[@]}"
+check "two on local, state unknown without Flint" '[[ "$(echo "$out" | json_get "[(t[\"name\"], t[\"state\"]) for t in d]")" == "[('"'"'e2e-tunnel-marker'"'"', '"'"''"'"'), ('"'"'postgres'"'"', '"'"''"'"')]" ]]'
+expect 5 "tunnel up needs Flint: locked" "$SMI" -- tunnel up local:postgres "${SM[@]}"
+check "it says to open Flint" '[[ "$err" == *"runs only through Flint"* ]]'
+expect 5 "tunnel down needs Flint too" "$SMI" -- --json tunnel down local:postgres "${SM[@]}"
+check "as a JSON error with its code" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "locked" ]]'
+expect 5 "tunnel status needs Flint too" "" -- tunnel status
+expect 2 "tunnel up without host:name is a usage error" "$SMI" -- tunnel up local "${SM[@]}"
+expect 2 "an unknown tunnel verb" "$SMI" -- tunnel frob "${SM[@]}"
+expect 0 "tunnel rm" "$SMI" -- --json tunnel rm local:postgres "${SM[@]}"
+check "--json names what was removed" '[[ "$(echo "$out" | json_get "d[\"removed\"], d[\"name\"]")" == "('"'"'tunnel'"'"', '"'"'local:postgres'"'"')" ]]'
+expect 3 "tunnel rm of an unknown tunnel: not_found" "$SMI" -- tunnel rm local:postgres "${SM[@]}"
+expect 0 "a host removed takes its tunnels" "$SMI" -- host add gone --hostname 127.0.0.9 "${SM[@]}"
+expect 0 "a tunnel on it" "$SMI" -- tunnel add gone t --local 1999 "${SM[@]}"
+expect 0 "host rm" "$SMI" -- host rm gone "${SM[@]}"
+expect 0 "tunnel ls --json" "$SMI" -- --json tunnel ls "${SM[@]}"
+check "its tunnel went with it" '[[ "$(echo "$out" | json_get "sorted(t[\"host\"] + \":\" + t[\"name\"] for t in d)")" == "['"'"'inner:pg'"'"', '"'"'local:e2e-tunnel-marker'"'"']" ]]'
+
 echo "== every --json output parses"
 expect 0 "version --json" "" -- --version --json
 check "version is JSON" 'echo "$out" | is_json'
 
 echo "== nothing secret or identifying leaks"
-for secret in "$MASTER" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "$test_key_body" "PRIVATE KEY" "$TPW" "pw-codebox" "pw-ops-cred" "kp-fixture" ${FLINT_TEST_LOGIN_PW:+"$FLINT_TEST_LOGIN_PW"}; do
+for secret in "$MASTER" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "$test_key_body" "PRIVATE KEY" ${FLINT_TEST_LOGIN_PW:+"$FLINT_TEST_LOGIN_PW"}; do
   check "CLI output never shows '${secret:0:24}…'" '! grep -aqF -- "$secret" "$all_out"'
 done
 for f in "$vault" "$work" "$off"; do
@@ -579,10 +590,7 @@ for f in "$vault" "$work" "$off"; do
     check "$(basename "$f") has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$f"'
   done
 done
-for needle in "codebox.lan" "Code Box" "Homelab" "pw-codebox" "kp-fixture" "SQLite format 3"; do
-  check "imp.flint has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$imp"'
-done
-for needle in "127.0.0.1" "localhost" "$test_key_body" "inner" "SQLite format 3"; do
+for needle in "127.0.0.1" "localhost" "$test_key_body" "inner" "e2e-tunnel-marker" "e2e-dest-marker" "SQLite format 3"; do
   check "ssh.flint has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$sv"'
 done
 check "no journal or WAL file is left next to the vault" '! ls "$tmp"/*.flint-* >/dev/null 2>&1'

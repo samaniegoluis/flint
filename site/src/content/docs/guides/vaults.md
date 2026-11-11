@@ -53,8 +53,8 @@ else asks the app:
 | `flint vault lock` | Locks the vault in Flint and removes any key cached on this machine |
 | `flint vault status` | Shows whether Flint holds the vault unlocked, and what it holds when it does |
 
-A command that needs a secret of its own (`--password`, `--passphrase`, Tether's master
-password, a host's password at login) asks for it in your terminal, and only sends it to
+A command that needs a secret of its own (`--password`, `--passphrase`, a host's
+password at login) asks for it in your terminal, and only sends it to
 Flint. The socket is `flint.sock` in the config folder, usable by you only; Flint closes
 any connection from another user before reading it.
 

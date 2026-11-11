@@ -1,0 +1,886 @@
+// CFIRE-UPSTREAM: CF-005, CF-026, CF-031, CF-112, CF-114
+//
+// Local port forwards (milestone 22, D-062): the registry of hosts whose SSH session
+// carries tunnels, and the one thread per host session that moves their bytes.
+//
+// * A use case logs in with an ordinary link, then hands its hops over (adopt_*): from
+//   then on the registry owns the session and hangs it up (release).
+// * Each tunnel is a listener on 127.0.0.1 (bound by `listen`, in the caller's thread,
+//   so a port in use is an answer, not an event). Every connection it accepts opens
+//   its own direct-tcpip channel to the destination; closing either side closes both.
+// * One worker per host polls the wake pipe, every listener, every connection and the
+//   session's socket, so nothing else ever reads the session (no second reader to
+//   steal its packets, unlike two jump-host pumps on one hop). It sends a keepalive
+//   every `keepalive_secs`; a session that cannot be written, or that hangs up, is
+//   *lost*: every listener and connection closes and the host stays in the registry,
+//   marked lost, until released. Nothing redials on its own (spec v6, settled at plan).
+// * Every libssh call takes the last hop's mutex (SshConn.lock), as everywhere else.
+//   Opening a channel blocks the worker for that one round trip, bounded by the
+//   session's timeout (SSH_OPTIONS_TIMEOUT, Principle 8).
+//
+// cfire has no thread or mutex usable from a struct (CF-026), no top-level cpp block
+// (CF-031), no sockets with accept/poll (CF-112), no SSH (CF-005) and no way to ask
+// which process holds a port (CF-114), hence this header.
+//
+// Windows (windows-port): sockets go through flint_sock (closesocket, WSAPoll, Winsock
+// errors); the wake pipe is a loopback socket pair, since WSAPoll waits on sockets only;
+// listeners take no SO_REUSEADDR (on Windows it lets another socket steal a bound port,
+// and a port with only TIME_WAIT connections binds without it); the port's holder comes
+// from GetExtendedTcpTable.
+#pragma once
+#include "flint_ssh.hpp"
+#include <atomic>
+#include <chrono>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+#if !defined(_WIN32)
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#endif
+#if defined(_WIN32)
+// Windows: winsock2 only (through flint_sock.hpp). Not iphlpapi.h: it pulls in
+// ocidl.h, whose COM declarations clash with cfire's WebView2 header in the app; and
+// mingw's tcpmib.h lacks the *_OWNER_PID rows. port_owner declares the rows it reads
+// and looks GetExtendedTcpTable up at run time.
+#elif defined(__APPLE__)
+#include <libproc.h>
+#include <sys/proc_info.h>
+#else
+#include <cstdlib>
+#include <dirent.h>
+#include <fstream>
+#include <set>
+#include <sstream>
+#include <unistd.h>
+#endif
+
+namespace flint_tunnel {
+
+// listen() results, shared with tunnels.cf.
+constexpr int OK = 0;
+constexpr int PORT_IN_USE = 1;
+constexpr int FAILED = 2;
+constexpr int NO_SESSION = 3;
+constexpr int DENIED = 4;   // a port below 1024 without the right to bind it
+
+struct Conn {
+    int fd = -1;
+    ssh_channel ch = nullptr;
+    std::string out;    // read from the channel, not yet written to the local socket
+};
+
+struct Listener {
+    std::string id;
+    int fd = -1;
+    int port = 0;
+    std::string dest_host;
+    int dest_port = 0;
+    std::vector<Conn> conns;            // the worker's own
+    std::atomic<int> live{0};
+    std::atomic<long long> opened{0};
+    std::atomic<long long> failed{0};
+    std::atomic<bool> stop{false};
+    std::atomic<bool> closed{false};
+    std::string last_error;             // under Host::mtx
+};
+
+struct Hop {
+    ssh_session session = nullptr;
+    int sock = -1;
+    std::shared_ptr<std::mutex> lock;
+};
+
+struct Host {
+    std::string key;
+    std::vector<Hop> hops;
+    std::shared_ptr<flint_ssh::Tunnels> jumps;
+    long long timeout_secs = 10;
+    int keepalive_secs = 30;
+    std::mutex mtx;                     // listeners, lost_why
+    std::vector<std::shared_ptr<Listener>> listeners;
+    std::atomic<bool> stop{false};
+    std::atomic<bool> lost{false};
+    std::string lost_why;
+    int wake[2] = {-1, -1};
+    std::thread worker;
+};
+
+struct Registry {
+    std::mutex mtx;
+    std::map<std::string, std::shared_ptr<Host>> hosts;
+    std::map<std::string, std::shared_ptr<Host>> adopting;
+    // One per host key, held while a start logs in and listens (milestone 23): two
+    // starts on one host (the app's Open when I connect, a CLI `up`) take turns, so
+    // the second finds the first's session instead of replacing it.
+    std::map<std::string, std::shared_ptr<std::mutex>> gates;
+};
+
+inline Registry& registry() {
+    static Registry r;
+    return r;
+}
+
+inline std::shared_ptr<Host> find(const std::string& key) {
+    auto& r = registry();
+    std::lock_guard<std::mutex> g(r.mtx);
+    auto it = r.hosts.find(key);
+    return it == r.hosts.end() ? nullptr : it->second;
+}
+
+inline void set_nonblocking(int fd) { flint_sock::set_nonblocking(fd, true); }
+
+// One poll entry. Windows' pollfd holds a SOCKET, not an int.
+inline pollfd poll_entry(int fd, short events) {
+    pollfd p{};
+#if defined(_WIN32)
+    p.fd = static_cast<SOCKET>(fd);
+#else
+    p.fd = fd;
+#endif
+    p.events = events;
+    return p;
+}
+
+inline int poll_all(std::vector<pollfd>& p, int timeout_ms) {
+#if defined(_WIN32)
+    return ::WSAPoll(p.data(), static_cast<ULONG>(p.size()), timeout_ms);
+#else
+    return ::poll(p.data(), static_cast<nfds_t>(p.size()), timeout_ms);
+#endif
+}
+
+inline int accept_fd(int listener) {
+#if defined(_WIN32)
+    SOCKET s = ::accept(static_cast<SOCKET>(listener), nullptr, nullptr);
+    return s == INVALID_SOCKET ? -1 : static_cast<int>(s);
+#else
+    return ::accept(listener, nullptr, nullptr);
+#endif
+}
+
+// The wake pipe: a pipe on POSIX, a loopback socket pair on Windows (WSAPoll).
+inline bool wake_open(int fds[2]) {
+#if defined(_WIN32)
+    return flint_sock::pair(fds) == 0;
+#else
+    return ::pipe(fds) == 0;
+#endif
+}
+
+inline void wake_close(int fd) {
+#if defined(_WIN32)
+    flint_sock::close(fd);
+#else
+    if (fd >= 0) ::close(fd);
+#endif
+}
+
+inline void wake(Host* h) {
+    if (h->wake[1] >= 0) {
+        char c = 1;
+#if defined(_WIN32)
+        (void)flint_sock::send_some(h->wake[1], &c, 1);
+#else
+        (void)!::write(h->wake[1], &c, 1);
+#endif
+    }
+}
+
+inline void wake_drain(Host* h) {
+    char drain[64];
+#if defined(_WIN32)
+    while (flint_sock::recv_some(h->wake[0], drain, sizeof drain) > 0) {}
+#else
+    while (::read(h->wake[0], drain, sizeof drain) > 0) {}
+#endif
+}
+
+inline std::string socket_error() { return flint_sock::error_text(flint_sock::last_error()); }
+
+#if defined(_WIN32)
+inline bool denied_error(int e) { return e == WSAEACCES; }
+inline bool in_use_error(int e) { return e == WSAEADDRINUSE; }
+#else
+inline bool denied_error(int e) { return e == EACCES || e == EPERM; }
+inline bool in_use_error(int e) { return e == EADDRINUSE; }
+#endif
+
+// ---- The worker -----------------------------------------------------------------
+
+inline void close_conn(Host* h, Conn& c) {
+    if (c.ch) {
+        std::lock_guard<std::mutex> g(*h->hops.back().lock);
+        ssh_channel_close(c.ch);
+        ssh_channel_free(c.ch);
+        c.ch = nullptr;
+    }
+    if (c.fd >= 0) {
+        flint_sock::close(c.fd);
+        c.fd = -1;
+    }
+}
+
+inline void close_listener(Host* h, Listener& l) {
+    for (auto& c : l.conns) close_conn(h, c);
+    l.conns.clear();
+    l.live.store(0);
+    if (l.fd >= 0) {
+        flint_sock::close(l.fd);
+        l.fd = -1;
+    }
+    l.closed.store(true);
+}
+
+// Writes what it can of `c.out` without blocking. False when the socket is gone.
+inline bool flush_out(Conn& c) {
+    while (!c.out.empty()) {
+        int w = flint_sock::send_some(c.fd, c.out.data(), c.out.size());
+        int e = w < 0 ? flint_sock::last_error() : 0;
+        if (w < 0 && flint_sock::interrupted(e)) continue;
+        if (w < 0 && flint_sock::would_block(e)) return true;
+        if (w <= 0) return false;
+        c.out.erase(0, static_cast<size_t>(w));
+    }
+    return true;
+}
+
+// One accepted connection: its own direct-tcpip channel to the destination.
+inline void accept_one(Host* h, Listener& l, int fd) {
+    set_nonblocking(fd);
+    int one = 1;
+    ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&one), sizeof one);
+    ssh_session s = h->hops.back().session;
+    ssh_channel ch = nullptr;
+    std::string err;
+    {
+        std::lock_guard<std::mutex> g(*h->hops.back().lock);
+        ch = ssh_channel_new(s);
+        if (!ch) {
+            err = "out of memory";
+        } else if (ssh_channel_open_forward(ch, l.dest_host.c_str(), l.dest_port, "127.0.0.1", l.port) != SSH_OK) {
+            err = ssh_get_error(s);
+            ssh_channel_free(ch);
+            ch = nullptr;
+        }
+    }
+    if (!ch) {
+        flint_sock::close(fd);
+        l.failed.fetch_add(1);
+        std::lock_guard<std::mutex> g(h->mtx);
+        l.last_error = err;
+        return;
+    }
+    Conn c;
+    c.fd = fd;
+    c.ch = ch;
+    l.conns.push_back(std::move(c));
+    l.opened.fetch_add(1);
+}
+
+// Moves what is waiting on one connection both ways. False once it is over.
+inline bool serve_conn(Host* h, Conn& c, short revents, char* buf, size_t cap) {
+    auto& lock = *h->hops.back().lock;
+    if ((revents & POLLOUT) && !flush_out(c)) return false;
+    if (c.out.empty() && (revents & (POLLIN | POLLHUP | POLLERR))) {
+        int n = flint_sock::recv_some(c.fd, buf, cap);
+        if (n == 0) return false;
+        if (n < 0) {
+            int e = flint_sock::last_error();
+            if (!flint_sock::would_block(e) && !flint_sock::interrupted(e)) return false;
+        }
+        if (n > 0) {
+            std::lock_guard<std::mutex> g(lock);
+            size_t off = 0;
+            while (off < static_cast<size_t>(n)) {
+                int w = ssh_channel_write(c.ch, buf + off, static_cast<uint32_t>(static_cast<size_t>(n) - off));
+                if (w <= 0) return false;
+                off += static_cast<size_t>(w);
+            }
+        }
+    }
+    // Drain the channel while the local socket keeps up; a slow reader leaves the
+    // rest in libssh's buffer, and the SSH window holds the server back.
+    for (int round = 0; round < 16 && c.out.empty(); round++) {
+        int n = 0;
+        bool over = false;
+        {
+            std::lock_guard<std::mutex> g(lock);
+            n = ssh_channel_read_nonblocking(c.ch, buf, static_cast<uint32_t>(cap), 0);
+            over = n == 0 && (ssh_channel_is_eof(c.ch) || ssh_channel_is_closed(c.ch));
+        }
+        if (n < 0 || over) return false;
+        if (n == 0) break;
+        c.out.assign(buf, static_cast<size_t>(n));
+        if (!flush_out(c)) return false;
+    }
+    return true;
+}
+
+inline void mark_lost(Host* h, const std::string& why) {
+    {
+        std::lock_guard<std::mutex> g(h->mtx);
+        h->lost_why = why;
+    }
+    h->lost.store(true);
+}
+
+inline void run(Host* h) {
+    char buf[32768];
+    ssh_session s = h->hops.back().session;
+    auto& lock = *h->hops.back().lock;
+    int sfd = -1;
+    {
+        std::lock_guard<std::mutex> g(lock);
+        sfd = static_cast<int>(ssh_get_fd(s));
+    }
+    using clock = std::chrono::steady_clock;
+    auto last_keepalive = clock::now();
+    while (!h->stop.load() && !h->lost.load()) {
+        std::vector<std::shared_ptr<Listener>> ls;
+        {
+            std::lock_guard<std::mutex> g(h->mtx);
+            ls = h->listeners;
+        }
+        for (auto& l : ls) {
+            if (l->stop.load() && !l->closed.load()) close_listener(h, *l);
+        }
+        // The poll set: wake pipe, listeners, connections, then the session's socket
+        // while some connection can take what it brings.
+        std::vector<pollfd> p;
+        p.push_back(poll_entry(h->wake[0], POLLIN));
+        bool want_session = false;
+        for (auto& l : ls) {
+            if (l->closed.load()) continue;
+            p.push_back(poll_entry(l->fd, POLLIN));
+            for (auto& c : l->conns) {
+                p.push_back(poll_entry(c.fd, static_cast<short>(c.out.empty() ? POLLIN : POLLOUT)));
+                if (c.out.empty()) want_session = true;
+            }
+        }
+        size_t session_at = p.size();
+        if (want_session && sfd >= 0) p.push_back(poll_entry(sfd, POLLIN));
+        int pr = poll_all(p, 100);
+        if (pr < 0 && !flint_sock::interrupted(flint_sock::last_error())) {
+            mark_lost(h, socket_error());
+            break;
+        }
+        if (p[0].revents & POLLIN) wake_drain(h);
+        size_t at = 1;
+        for (auto& l : ls) {
+            if (l->closed.load()) continue;
+            short lrev = p[at++].revents;
+            std::vector<short> crev;
+            for (size_t i = 0; i < l->conns.size(); i++) crev.push_back(p[at++].revents);
+            std::vector<Conn> keep;
+            for (size_t i = 0; i < l->conns.size(); i++) {
+                if (serve_conn(h, l->conns[i], crev[i], buf, sizeof buf)) {
+                    keep.push_back(std::move(l->conns[i]));
+                } else {
+                    close_conn(h, l->conns[i]);
+                }
+            }
+            l->conns = std::move(keep);
+            if (lrev & POLLIN) {
+                for (;;) {
+                    int fd = accept_fd(l->fd);
+                    if (fd < 0) break;
+                    accept_one(h, *l, fd);
+                }
+            }
+            l->live.store(static_cast<int>(l->conns.size()));
+        }
+        if (session_at < p.size() && (p[session_at].revents & (POLLHUP | POLLERR | POLLNVAL))) {
+            mark_lost(h, "the connection was closed");
+            break;
+        }
+        bool connected = true;
+        {
+            std::lock_guard<std::mutex> g(lock);
+            connected = ssh_is_connected(s) != 0;
+        }
+        if (!connected) {
+            std::lock_guard<std::mutex> g(lock);
+            std::string why = ssh_get_error(s);
+            if (why.empty()) why = "the connection was closed";
+            mark_lost(h, why);
+            break;
+        }
+        auto now = clock::now();
+        if (now - last_keepalive >= std::chrono::seconds(h->keepalive_secs)) {
+            int rc = 0;
+            std::string why;
+            {
+                std::lock_guard<std::mutex> g(lock);
+                rc = flint_ssh::send_keepalive(s);
+                if (rc != 0) why = ssh_get_error(s);
+            }
+            if (rc != 0) {
+                mark_lost(h, why.empty() ? "the keepalive could not be sent" : why);
+                break;
+            }
+            last_keepalive = now;
+        }
+    }
+    std::vector<std::shared_ptr<Listener>> ls;
+    {
+        std::lock_guard<std::mutex> g(h->mtx);
+        ls = h->listeners;
+    }
+    for (auto& l : ls) close_listener(h, *l);
+}
+
+// ---- Adopting a logged-in link ---------------------------------------------------
+
+inline void adopt_begin(const std::string& key) {
+    auto& r = registry();
+    std::lock_guard<std::mutex> g(r.mtx);
+    auto h = std::make_shared<Host>();
+    h->key = key;
+    r.adopting[key] = h;
+}
+
+inline void adopt_hop(const std::string& key, ssh_session s, int sock, std::shared_ptr<std::mutex> lock) {
+    auto& r = registry();
+    std::lock_guard<std::mutex> g(r.mtx);
+    auto it = r.adopting.find(key);
+    if (it == r.adopting.end()) return;
+    it->second->hops.push_back(Hop{s, sock, std::move(lock)});
+}
+
+inline void release(const std::string& key);
+
+// Starts the host's worker. False (and the hops hung up) when it cannot.
+inline bool adopt_finish(const std::string& key, std::shared_ptr<flint_ssh::Tunnels> jumps, long long timeout_secs, int keepalive_secs, std::string& err) {
+    std::shared_ptr<Host> h;
+    std::shared_ptr<Host> old;
+    {
+        auto& r = registry();
+        std::lock_guard<std::mutex> g(r.mtx);
+        auto it = r.adopting.find(key);
+        if (it == r.adopting.end()) { err = "nothing to adopt"; return false; }
+        h = it->second;
+        r.adopting.erase(it);
+        auto o = r.hosts.find(key);
+        if (o != r.hosts.end()) old = o->second;
+    }
+    if (old) release(key);
+    h->jumps = std::move(jumps);
+    h->timeout_secs = timeout_secs;
+    h->keepalive_secs = keepalive_secs > 0 ? keepalive_secs : 30;
+    if (h->hops.empty() || !wake_open(h->wake)) {
+        err = h->hops.empty() ? "no session to adopt" : socket_error();
+        return false;
+    }
+    set_nonblocking(h->wake[0]);
+    set_nonblocking(h->wake[1]);
+    {
+        auto& r = registry();
+        std::lock_guard<std::mutex> g(r.mtx);
+        r.hosts[key] = h;
+    }
+    h->worker = std::thread(run, h.get());
+    return true;
+}
+
+// ---- Listening -------------------------------------------------------------------
+
+// Whether something answers on 127.0.0.1:port (to tell a real listener from sockets
+// left in TIME_WAIT on macOS, where SO_REUSEADDR would also let two listeners share
+// the port with one bound to the wildcard address).
+inline bool port_answers(int port) {
+    int fd = flint_sock::open(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return false;
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_port = htons(static_cast<uint16_t>(port));
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    set_nonblocking(fd);
+    int rc = ::connect(fd, reinterpret_cast<sockaddr*>(&a), sizeof a);
+    bool up = rc == 0;
+    if (rc != 0 && flint_sock::in_progress(flint_sock::last_error())) {
+        short rev = 0;
+        if (flint_sock::poll_one(fd, POLLOUT, 500, &rev) > 0) {
+            int so = 0;
+            flint_sock::socklen len = sizeof so;
+            ::getsockopt(fd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so), &len);
+            up = so == 0 && (rev & POLLOUT);
+        }
+    }
+    flint_sock::close(fd);
+    return up;
+}
+
+// A listening socket on 127.0.0.1:port (0: any free port, for tests), non-blocking.
+inline int bind_loopback(int port, int& fd, int& bound, std::string& err) {
+    for (int attempt = 0; attempt < 2; attempt++) {
+        fd = flint_sock::open(AF_INET, SOCK_STREAM, 0);
+        if (fd < 0) { err = socket_error(); return FAILED; }
+        int one = 1;
+#if defined(_WIN32)
+        bool reuse = false;   // see the header: SO_REUSEADDR shares a bound port on Windows
+        (void)attempt;
+#elif defined(__APPLE__)
+        bool reuse = attempt == 1;
+#else
+        bool reuse = true;
+#endif
+        if (reuse) ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&one), sizeof one);
+        sockaddr_in a{};
+        a.sin_family = AF_INET;
+        a.sin_port = htons(static_cast<uint16_t>(port));
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        if (::bind(fd, reinterpret_cast<sockaddr*>(&a), sizeof a) == 0 && ::listen(fd, 64) == 0) {
+            sockaddr_in got{};
+            flint_sock::socklen len = sizeof got;
+            ::getsockname(fd, reinterpret_cast<sockaddr*>(&got), &len);
+            bound = ntohs(got.sin_port);
+            set_nonblocking(fd);
+            return OK;
+        }
+        int why = flint_sock::last_error();
+        flint_sock::close(fd);
+        fd = -1;
+        if (denied_error(why)) { err = flint_sock::error_text(why); return DENIED; }
+        if (!in_use_error(why)) { err = flint_sock::error_text(why); return FAILED; }
+#if defined(_WIN32)
+        err = flint_sock::error_text(why);
+        return PORT_IN_USE;
+#else
+        if (reuse || port == 0 || port_answers(port)) { err = flint_sock::error_text(why); return PORT_IN_USE; }
+#endif
+    }
+    err = "address in use";
+    return PORT_IN_USE;
+}
+
+// Starts tunnel `id` on host `key`: 127.0.0.1:port forwarded to dest:dest_port.
+// `bound` is the port it listens on.
+inline int listen(const std::string& key, const std::string& id, int port, const std::string& dest, int dest_port, int& bound, std::string& err) {
+    auto h = find(key);
+    if (!h || h->lost.load()) { err = "no session"; return NO_SESSION; }
+    {
+        std::lock_guard<std::mutex> g(h->mtx);
+        for (auto& l : h->listeners) {
+            if (l->id == id && !l->closed.load()) { bound = l->port; return OK; }
+        }
+    }
+    int fd = -1;
+    int rc = bind_loopback(port, fd, bound, err);
+    if (rc != OK) return rc;
+    auto l = std::make_shared<Listener>();
+    l->id = id;
+    l->fd = fd;
+    l->port = bound;
+    l->dest_host = dest;
+    l->dest_port = dest_port;
+    {
+        std::lock_guard<std::mutex> g(h->mtx);
+        std::vector<std::shared_ptr<Listener>> keep;
+        for (auto& o : h->listeners) {
+            if (!o->closed.load()) keep.push_back(o);
+        }
+        keep.push_back(l);
+        h->listeners = std::move(keep);
+    }
+    wake(h.get());
+    return OK;
+}
+
+// Stops tunnel `id` on host `key`, its listener and every connection, and waits
+// (bounded) until its port is free. False when it was not running. The worker closes
+// it (it owns the connections); the listener leaves the list only once closed.
+inline bool unlisten(const std::string& key, const std::string& id) {
+    auto h = find(key);
+    if (!h) return false;
+    std::shared_ptr<Listener> l;
+    {
+        std::lock_guard<std::mutex> g(h->mtx);
+        for (auto& o : h->listeners) {
+            if (o->id == id) l = o;
+        }
+    }
+    if (!l) return false;
+    l->stop.store(true);
+    wake(h.get());
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(h->timeout_secs * 2 + 5);
+    while (!l->closed.load() && !h->lost.load() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    {
+        std::lock_guard<std::mutex> g(h->mtx);
+        std::vector<std::shared_ptr<Listener>> keep;
+        for (auto& o : h->listeners) {
+            if (o != l) keep.push_back(o);
+        }
+        h->listeners = std::move(keep);
+    }
+    // A lost session's worker closed every listener on its way out.
+    return true;
+}
+
+// Stops the host's worker and hangs its session up, innermost hop first (as
+// SshLink::link_hangup does).
+inline void release(const std::string& key) {
+    std::shared_ptr<Host> h;
+    {
+        auto& r = registry();
+        std::lock_guard<std::mutex> g(r.mtx);
+        auto it = r.hosts.find(key);
+        if (it == r.hosts.end()) return;
+        h = it->second;
+        r.hosts.erase(it);
+    }
+    h->stop.store(true);
+    wake(h.get());
+    if (h->worker.joinable()) h->worker.join();
+    for (size_t i = h->hops.size(); i > 0; i--) {
+        size_t idx = i - 1;
+        if (h->jumps && idx < h->jumps->list.size()) flint_ssh::close_tunnel(h->jumps->list[idx]);
+        auto& hop = h->hops[idx];
+        std::lock_guard<std::mutex> g(*hop.lock);
+        if (hop.session) {
+            ssh_disconnect(hop.session);
+            ssh_free(hop.session);
+            hop.session = nullptr;
+        }
+        if (hop.sock >= 0) {
+            flint_sock::close(hop.sock);
+            hop.sock = -1;
+        }
+    }
+    if (h->jumps) h->jumps->list.clear();
+    if (h->wake[0] >= 0) wake_close(h->wake[0]);
+    if (h->wake[1] >= 0) wake_close(h->wake[1]);
+}
+
+inline void release_all() {
+    std::vector<std::string> keys;
+    {
+        auto& r = registry();
+        std::lock_guard<std::mutex> g(r.mtx);
+        for (auto& [k, _] : r.hosts) keys.push_back(k);
+    }
+    for (auto& k : keys) release(k);
+}
+
+// ---- State -----------------------------------------------------------------------
+
+// 0: no session for `key`; 1: up; 2: lost.
+inline int host_state(const std::string& key) {
+    auto h = find(key);
+    if (!h) return 0;
+    return h->lost.load() ? 2 : 1;
+}
+
+// One line per tunnel of every host: key \t id \t up(1)|lost(0) \t port \t live \t
+// opened \t failed \t error. Tabs and newlines in an error become spaces.
+inline std::string states() {
+    std::vector<std::shared_ptr<Host>> hs;
+    {
+        auto& r = registry();
+        std::lock_guard<std::mutex> g(r.mtx);
+        for (auto& [_, h] : r.hosts) hs.push_back(h);
+    }
+    std::string out;
+    auto clean = [](std::string s) {
+        for (auto& ch : s) if (ch == '\t' || ch == '\n' || ch == '\r') ch = ' ';
+        return s;
+    };
+    for (auto& h : hs) {
+        std::lock_guard<std::mutex> g(h->mtx);
+        bool lost = h->lost.load();
+        for (auto& l : h->listeners) {
+            std::string err = lost ? h->lost_why : l->last_error;
+            out += h->key + "\t" + l->id + "\t" + (lost ? "0" : "1") + "\t" + std::to_string(l->port) + "\t" +
+                   std::to_string(lost ? 0 : l->live.load()) + "\t" + std::to_string(l->opened.load()) + "\t" +
+                   std::to_string(l->failed.load()) + "\t" + clean(err) + "\n";
+        }
+    }
+    return out;
+}
+
+// ---- Starting, one at a time per host (milestone 23) -------------------------------
+
+inline std::shared_ptr<std::mutex> gate_of(const std::string& key) {
+    auto& r = registry();
+    std::lock_guard<std::mutex> g(r.mtx);
+    auto& m = r.gates[key];
+    if (!m) m = std::make_shared<std::mutex>();
+    return m;
+}
+
+inline void gate_enter(const std::string& key) { gate_of(key)->lock(); }
+inline void gate_leave(const std::string& key) { gate_of(key)->unlock(); }
+
+// Whether 127.0.0.1:port cannot be bound now (something listens there, or the port
+// needs rights this process lacks). Binds and closes at once; listens on nothing.
+inline bool port_taken(int port) {
+    if (port <= 0 || port > 65535) return false;
+    int fd = -1;
+    int bound = 0;
+    std::string err;
+    int rc = bind_loopback(port, fd, bound, err);
+    if (fd >= 0) flint_sock::close(fd);
+    return rc != OK;
+}
+
+// ---- Who holds a port (milestone 23, design 16h2) ---------------------------------
+
+// The process that listens on TCP `port` (on any address), as far as this user may
+// look: its name and pid. False when none is found: nothing listens, or the holder
+// belongs to another user (root, a system service) and the system hides its sockets.
+inline bool port_owner(int port, std::string& name, int& pid) {
+    name.clear();
+    pid = 0;
+    if (port <= 0 || port > 65535) return false;
+#if defined(_WIN32)
+    // The listening TCP sockets of every process, IPv4 then IPv6, with their pid; the
+    // name from the image path, without ".exe" (as the caller chain names programs).
+    // A process this user cannot open (a service, an elevated one) has no name: not
+    // found, as another user's process on macOS and Linux.
+    // MIB_TCPROW_OWNER_PID, MIB_TCP6ROW_OWNER_PID and their tables (Windows ABI).
+    struct Row4 { DWORD state, local_addr, local_port, remote_addr, remote_port, pid; };
+    struct Row6 { UCHAR local_addr[16]; DWORD local_scope, local_port; UCHAR remote_addr[16]; DWORD remote_scope, remote_port, state, pid; };
+    struct Table4 { DWORD count; Row4 rows[1]; };
+    struct Table6 { DWORD count; Row6 rows[1]; };
+    using TableFn = DWORD(WINAPI*)(PVOID, PDWORD, BOOL, ULONG, int, ULONG);
+    constexpr int kOwnerPidListener = 3;   // TCP_TABLE_OWNER_PID_LISTENER (iprtrmib.h)
+    static const TableFn table = [] {
+        HMODULE m = ::LoadLibraryW(L"iphlpapi.dll");
+        return m ? reinterpret_cast<TableFn>(reinterpret_cast<void*>(::GetProcAddress(m, "GetExtendedTcpTable"))) : nullptr;
+    }();
+    if (!table) return false;
+    for (ULONG family : {static_cast<ULONG>(AF_INET), static_cast<ULONG>(AF_INET6)}) {
+        DWORD size = 0;
+        if (table(nullptr, &size, FALSE, family, kOwnerPidListener, 0) != ERROR_INSUFFICIENT_BUFFER) continue;
+        std::vector<unsigned char> buf(size + 1024);
+        size = static_cast<DWORD>(buf.size());
+        if (table(buf.data(), &size, FALSE, family, kOwnerPidListener, 0) != NO_ERROR) continue;
+        DWORD found = 0;
+        if (family == AF_INET) {
+            auto* t = reinterpret_cast<Table4*>(buf.data());
+            for (DWORD i = 0; i < t->count && !found; i++) {
+                if (ntohs(static_cast<u_short>(t->rows[i].local_port)) == port) found = t->rows[i].pid;
+            }
+        } else {
+            auto* t = reinterpret_cast<Table6*>(buf.data());
+            for (DWORD i = 0; i < t->count && !found; i++) {
+                if (ntohs(static_cast<u_short>(t->rows[i].local_port)) == port) found = t->rows[i].pid;
+            }
+        }
+        if (!found) continue;
+        HANDLE proc = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, found);
+        if (!proc) return false;
+        wchar_t path[MAX_PATH * 4];
+        DWORD len = static_cast<DWORD>(sizeof path / sizeof path[0]);
+        BOOL ok = ::QueryFullProcessImageNameW(proc, 0, path, &len);
+        ::CloseHandle(proc);
+        if (!ok || len == 0) return false;
+        std::wstring w(path, len);
+        auto slash = w.find_last_of(L"\\/");
+        if (slash != std::wstring::npos) w = w.substr(slash + 1);
+        if (w.size() > 4 && _wcsicmp(w.c_str() + w.size() - 4, L".exe") == 0) w.resize(w.size() - 4);
+        int n = ::WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
+        name.resize(static_cast<size_t>(n));
+        ::WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), name.data(), n, nullptr, nullptr);
+        pid = static_cast<int>(found);
+        return !name.empty();
+    }
+    return false;
+#elif defined(__APPLE__)
+    int bytes = proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0);
+    if (bytes <= 0) return false;
+    std::vector<pid_t> pids(static_cast<size_t>(bytes) / sizeof(pid_t) + 64);
+    bytes = proc_listpids(PROC_ALL_PIDS, 0, pids.data(), static_cast<int>(pids.size() * sizeof(pid_t)));
+    if (bytes <= 0) return false;
+    size_t n = static_cast<size_t>(bytes) / sizeof(pid_t);
+    for (size_t i = 0; i < n; i++) {
+        pid_t p = pids[i];
+        if (p <= 0) continue;
+        int size = proc_pidinfo(p, PROC_PIDLISTFDS, 0, nullptr, 0);
+        if (size <= 0) continue;   // another user's process: not ours to look into
+        std::vector<proc_fdinfo> fds(static_cast<size_t>(size) / sizeof(proc_fdinfo) + 8);
+        size = proc_pidinfo(p, PROC_PIDLISTFDS, 0, fds.data(), static_cast<int>(fds.size() * sizeof(proc_fdinfo)));
+        if (size <= 0) continue;
+        size_t k = static_cast<size_t>(size) / sizeof(proc_fdinfo);
+        for (size_t j = 0; j < k; j++) {
+            if (fds[j].proc_fdtype != PROX_FDTYPE_SOCKET) continue;
+            socket_fdinfo si{};
+            if (proc_pidfdinfo(p, fds[j].proc_fd, PROC_PIDFDSOCKETINFO, &si, sizeof si) != static_cast<int>(sizeof si)) continue;
+            if (si.psi.soi_kind != SOCKINFO_TCP) continue;
+            const auto& tcp = si.psi.soi_proto.pri_tcp;
+            if (tcp.tcpsi_state != TSI_S_LISTEN) continue;
+            if (ntohs(static_cast<uint16_t>(tcp.tcpsi_ini.insi_lport)) != port) continue;
+            char buf[2 * MAXCOMLEN + 1] = {};
+            if (proc_name(p, buf, sizeof buf) > 0) name = buf;
+            if (name.empty()) {
+                char path[PROC_PIDPATHINFO_MAXSIZE] = {};
+                if (proc_pidpath(p, path, sizeof path) > 0) {
+                    name = path;
+                    auto slash = name.rfind('/');
+                    if (slash != std::string::npos) name = name.substr(slash + 1);
+                }
+            }
+            pid = p;
+            return true;
+        }
+    }
+    return false;
+#else
+    // The listening sockets on that port, by inode, then the process that has one open.
+    std::set<std::string> wanted;
+    for (const char* table : {"/proc/net/tcp", "/proc/net/tcp6"}) {
+        std::ifstream in(table);
+        std::string line;
+        std::getline(in, line);   // the header
+        while (std::getline(in, line)) {
+            std::istringstream f(line);
+            std::string sl, local, remote, st, queues, timer, retr, uid, timeout, inode;
+            if (!(f >> sl >> local >> remote >> st >> queues >> timer >> retr >> uid >> timeout >> inode)) continue;
+            if (st != "0A") continue;   // TCP_LISTEN
+            auto colon = local.rfind(':');
+            if (colon == std::string::npos) continue;
+            if (std::strtol(local.c_str() + colon + 1, nullptr, 16) != port) continue;
+            if (inode != "0") wanted.insert("socket:[" + inode + "]");
+        }
+    }
+    if (wanted.empty()) return false;
+    DIR* procs = ::opendir("/proc");
+    if (!procs) return false;
+    bool found = false;
+    while (!found) {
+        dirent* e = ::readdir(procs);
+        if (!e) break;
+        char* end = nullptr;
+        long p = std::strtol(e->d_name, &end, 10);
+        if (p <= 0 || !end || *end != '\0') continue;
+        std::string dir = std::string("/proc/") + e->d_name + "/fd";
+        DIR* fds = ::opendir(dir.c_str());
+        if (!fds) continue;   // another user's process
+        while (dirent* d = ::readdir(fds)) {
+            if (d->d_name[0] == '.') continue;
+            char target[256];
+            ssize_t len = ::readlink((dir + "/" + d->d_name).c_str(), target, sizeof target - 1);
+            if (len <= 0) continue;
+            target[len] = '\0';
+            if (wanted.count(target)) {
+                std::ifstream comm(std::string("/proc/") + e->d_name + "/comm");
+                std::getline(comm, name);
+                pid = static_cast<int>(p);
+                found = true;
+                break;
+            }
+        }
+        ::closedir(fds);
+    }
+    ::closedir(procs);
+    return found;
+#endif
+}
+
+}  // namespace flint_tunnel

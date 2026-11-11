@@ -65,6 +65,11 @@ fn (mut self: SharedLink) link_lend() -> void! {
     }
 }
 
+// A GUI tab's link keeps its session for its terminal and Files view.
+fn (mut self: SharedLink) link_hand_over(key: str) -> void! {
+    return error(coded(ERR_INTERNAL, "a tab's link cannot hand its session over"))
+}
+
 fn (mut self: SharedLink) link_exec_start(command: str) -> void! {
     try self.inner.link_exec_start(command)
 }

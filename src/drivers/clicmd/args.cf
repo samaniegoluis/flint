@@ -18,12 +18,12 @@ type ParsedArgs struct {
 
 // Flags that take a value. `--flag value` and `--flag=value` both work.
 fn value_flags() -> []str {
-    return ["--vault", "--name", "--hostname", "--label", "--port", "--user", "--group", "--tag", "--color", "--notes", "--jump", "--cred", "--key", "--file", "--alias", "--timeout", "--exec-timeout", "--command", "--hosts", "--allow", "--ttl"]
+    return ["--vault", "--name", "--hostname", "--label", "--port", "--user", "--group", "--tag", "--color", "--notes", "--jump", "--cred", "--key", "--file", "--alias", "--timeout", "--exec-timeout", "--command", "--hosts", "--allow", "--ttl", "--local", "--to"]
 }
 
 // Flags that take no value.
 fn bool_flags() -> []str {
-    return ["--json", "--help", "-h", "--version", "-V", "--master-stdin", "--password", "--password-stdin", "--no-password", "--passphrase", "--passphrase-stdin", "--key-stdin", "--no-tags", "--accept-new-host-key", "--keep-shell", "--no-keep-shell", "--no-command", "--dry-run", "--all", "--sudo", "--sudo-password", "--sudo-password-stdin", "--no-sudo-password", "-r", "--recursive", "--force"]
+    return ["--json", "--help", "-h", "--version", "-V", "--master-stdin", "--password", "--password-stdin", "--no-password", "--passphrase", "--passphrase-stdin", "--key-stdin", "--no-tags", "--accept-new-host-key", "--keep-shell", "--no-keep-shell", "--no-command", "--all", "--sudo", "--sudo-password", "--sudo-password-stdin", "--no-sudo-password", "-r", "--recursive", "--force", "--open-on-connect", "--no-open-on-connect"]
 }
 
 fn list_has(list: []str, item: str) -> bool {

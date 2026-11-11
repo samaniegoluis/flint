@@ -44,7 +44,7 @@ fi
 if want gui; then
 echo "== desktop app end-to-end under Xvfb"
 PATH="$PATH:/usr/sbin" scripts/gui-e2e.sh | tee /tmp/gui-e2e.log
-grep -q "^e2e: pass" /tmp/gui-e2e.log
+grep -q "^gui-e2e: pass" /tmp/gui-e2e.log
 fi
 # The CLI as a client of the running app, the app under Xvfb (scripts/serve-e2e.sh).
 # On a private session bus, so a screensaver signal can be sent to the app safely.

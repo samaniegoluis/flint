@@ -4,7 +4,7 @@
 
 import type {
   AccessAnswer, AccessState, ActivityEntry, AppInfo, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  CopyResult, FileEntry, KnownHostView, RecentView, Settings, TetherImportReport, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
+  CopyResult, FileEntry, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -23,6 +23,7 @@ const CODES = [
   'internal', 'usage', 'not_found', 'conflict', 'locked', 'wrong_password', 'invalid',
   'unsupported', 'keychain', 'io', 'host_key', 'auth', 'network', 'timeout',
   'denied', 'approval_timeout', 'not_sudoer', 'sudo_password', 'permission_denied', 'exists', 'not_a_directory',
+  'port_in_use',
 ];
 
 export class FlintError extends Error {
@@ -122,9 +123,6 @@ export const api = {
   /** Tests the editor's unsaved form; the result arrives as a "host:test" event. */
   hostTest: (session: string, target: string, p: HostPatch) =>
     call('host_test', { ...p, session, target, accept_new_host_key: false }),
-  /** Copies a Tether vault into the open vault; `dryRun` only reports (D-034). */
-  importTether: (path: string, password: string, dryRun: boolean) =>
-    call<TetherImportReport>('import_tether', { path, password, dry_run: dryRun }),
   /** The one call that returns a secret (D-029). Keep the value out of logs and state that outlives the field. */
   secretReveal: (kind: 'host' | 'credential', name: string) => call<{ value: string }>('secret_reveal', { kind, name }),
   /** The core puts the password on the clipboard and clears it after 30 s. */
@@ -158,6 +156,20 @@ export const api = {
   /** A chunk (base64) of a file dropped from the OS, staged until it is uploaded (CF-004). */
   filesStage: (drop: string, rel: string, data: string) => call<{ path: string }>('files_stage', { drop, rel, data }),
   filesStageDiscard: (drop: string) => call('files_stage_discard', { id: drop }),
+  /** Paste into the terminal (milestone 25): writes a staged file on the pane's host
+   *  and returns its path, and the same path escaped for a shell. */
+  terminalPaste: (p: { session: string; drop: string; rel: string; name: string; kind: string }) =>
+    call<{ path: string; text: string; size: number }>('terminal_paste', p),
+
+  /** Tunnels (milestone 23): every saved one, with its live state. */
+  tunnelsList: () => call<TunnelView[]>('tunnels_list'),
+  tunnelSave: (t: TunnelSave) => call<TunnelView>('tunnel_save', t),
+  tunnelRm: (host: string, name: string) => call<TunnelView>('tunnel_rm', { host, name }),
+  tunnelStop: (host: string, name: string) => call<TunnelView>('tunnel_stop', { host, name }),
+  /** Starts on a worker; prompts arrive as "session:prompt" under `session`, the end as "tunnel:started".
+   *  No `names`: the host's Open when I connect tunnels, or with `all` every one of them. */
+  tunnelStart: (session: string, host: string, names: string[], all = false) =>
+    call('tunnel_start', { session, host, names, all }),
 };
 
 export function emptyHostPatch(): HostPatch {

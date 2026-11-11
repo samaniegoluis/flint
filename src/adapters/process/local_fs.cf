@@ -58,7 +58,7 @@ fn (self: LocalFs) local_stat(path: str) -> FileEntry! {
     if rc != 0 {
         return error(local_failure(rc, path, reason))
     }
-    return FileEntry{ name: remote_base(path), path: path, kind: kind, size: size, mtime: mtime, mode: mode }
+    return FileEntry{ name: remote_base(path), path: path, kind: kind, size: size, mtime: mtime, mode: mode, uid: 0 }
 }
 
 // A folder's entries, links not followed, in no particular order.
@@ -84,7 +84,7 @@ fn (self: LocalFs) local_list(path: str) -> []FileEntry! {
     }
     mut entries: []FileEntry = []
     for i, n in names {
-        entries.push(FileEntry{ name: n, path: remote_join(path, n), kind: kinds[i], size: sizes[i], mtime: mtimes[i], mode: modes[i] })
+        entries.push(FileEntry{ name: n, path: remote_join(path, n), kind: kinds[i], size: sizes[i], mtime: mtimes[i], mode: modes[i], uid: 0 })
     }
     return entries
 }

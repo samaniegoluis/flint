@@ -3,7 +3,8 @@
 # real UI (scripts/gui-e2e.js) in a hidden WKWebView against the throwaway sshds of
 # scripts/test.sh: create a vault, add a key and hosts, trust a host key, type in
 # the terminal, reconnect, a jump host, a changed host key behind a TCP forwarder,
-# the palette, settings, lock and unlock.
+# the palette, settings, lock and unlock, tunnels. It runs as several short runs
+# (below).
 #
 #   scripts/gui-e2e.sh
 #
@@ -17,12 +18,16 @@ fi
 cd "$root"
 
 "$root/scripts/build-gui.sh" >/dev/null
-# The vim step runs in a run of its own, after the main one, so a freeze in it (macOS,
-# ROADMAP "gui-e2e on macOS sometimes ends with an empty e2e: line") fails that run by
-# name while the main run still reports. It fails under Xvfb on Linux (ROADMAP, "gui-e2e's
-# vim step"), so there it runs only when FLINT_E2E_VIM=1 asks for it.
-#   FLINT_E2E_ONLY=vim scripts/gui-e2e.sh   runs only the vim run, to repeat it in seconds
-# Exit status: 0 both passed, 1 the main run failed, 3 only the vim run failed.
+# The page script (scripts/gui-e2e.js) is split into short runs, each a launch of the app
+# on a fresh vault and config folder: terminal, vault, tunnels, paste, then vim. A hidden page on
+# macOS stops (WebKit suspends it) once a run opens enough tabs (ROADMAP, "one more tab in
+# the main run freezes the page"); short runs stay under it, and a freeze fails one run by
+# name instead of every step after it. vim freezes on macOS at times and fails under Xvfb
+# on Linux (ROADMAP, "gui-e2e's vim step"), so there it runs only when FLINT_E2E_VIM=1.
+#   FLINT_E2E_ONLY=tunnels scripts/gui-e2e.sh    runs only the named runs (comma-separated)
+#   FLINT_E2E_MAIN_MS=60000 scripts/gui-e2e.sh   caps each run but vim (default: 240 s)
+# Exit status: 0 all passed, 1 a run other than vim failed, 3 only the vim run failed.
+runs=(terminal vault tunnels paste vim)
 if [[ "$(uname -s)" == Darwin ]]; then
   app=(build/gui/Flint.app/Contents/MacOS/Flint)
   run_vim=1
@@ -31,8 +36,14 @@ else
   run_vim="${FLINT_E2E_VIM:-0}"
 fi
 only="${FLINT_E2E_ONLY:-}"
-[[ -z "$only" || "$only" == vim ]] || { echo "gui-e2e: FLINT_E2E_ONLY takes only 'vim'" >&2; exit 2; }
-[[ "$only" != vim ]] || run_vim=1
+if [[ -n "$only" ]]; then
+  IFS=, read -r -a picked <<<"$only"
+  for r in "${picked[@]}"; do
+    [[ " ${runs[*]} " == *" $r "* ]] || { echo "gui-e2e: FLINT_E2E_ONLY takes ${runs[*]}, not '$r'" >&2; exit 2; }
+  done
+  runs=("${picked[@]}")
+  run_vim=1
+fi
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-gui-e2e.XXXXXX")"
 fwd_pid=""
@@ -65,23 +76,21 @@ while True:
     threading.Thread(target=pipe, args=(c, u), daemon=True).start()
     threading.Thread(target=pipe, args=(u, c), daemon=True).start()
 PY
+# A free port for the tunnels step (milestone 23).
+tport="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 python3 -I "$tmp/fwd.py" "$port3" "$FLINT_TEST_SSH_PORT" "$FLINT_TEST_SSH_PORT2" & fwd_pid=$!
 sleep 0.5
 
-# The Tether vault for the import step, written by Tether's own code.
-cp "$root/src/adapters/vault/testdata/tether-v5.tether" "$tmp/old.tether"
-mkdir -p /tmp/flint-tether-fixture && cp "$root/src/adapters/vault/testdata/tether-legacy-ed25519" /tmp/flint-tether-fixture/id_legacy
-
-# Writes the page script for one run: $1 vault file, $2 '1' for the vim run, $3 output.
+# Writes the page script for one run: $1 vault file, $2 the run's name, $3 output.
 make_script() {
-  E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TETHER="$tmp/old.tether" E2E_VIM="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
+  E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TPORT="$tport" E2E_RUN="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
 import os, sys
 src = open(sys.argv[1]).read()
 key = open(os.environ["FLINT_TEST_SSH_KEY"]).read().replace("\\", "\\\\").replace("`", "\\`")
 values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_PORT"],
-          "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"],
-          "USER": os.environ["USER"], "KEY": key, "TETHER": os.environ["E2E_TETHER"],
-          "VIM": os.environ["E2E_VIM"]}
+          "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"], "TPORT": os.environ["E2E_TPORT"],
+          "USER": os.environ["USER"], "KEY": key,
+          "RUN": os.environ["E2E_RUN"]}
 for k, v in values.items():
     src = src.replace("@@" + k + "@@", v)
 open(sys.argv[2], "w").write(src)
@@ -106,49 +115,61 @@ run_app() {
 }
 
 failed=()
-if [[ "$only" != vim ]]; then
-  make_script "$tmp/e2e.flint" 0 "$tmp/e2e.js"
-  run_app main "$tmp/e2e.js" "$tmp/config" "$tmp/run.log" || failed+=(main)
-fi
-if [[ "$run_vim" == 1 ]]; then
-  make_script "$tmp/vim.flint" 1 "$tmp/vim.js"
-  # It passes in under 30 s; a freeze then costs a minute, not four.
-  run_app vim "$tmp/vim.js" "$tmp/config-vim" "$tmp/vim.log" 60000 || failed+=(vim)
-else
-  echo "gui-e2e: skip the vim run (it fails under Xvfb; FLINT_E2E_VIM=1 runs it)"
-fi
-# Exit 1: the main run failed. Exit 3: only the vim run did, so a report can tell the
+for r in "${runs[@]}"; do
+  if [[ "$r" == vim && "$run_vim" != 1 ]]; then
+    echo "gui-e2e: skip the vim run (it fails under Xvfb; FLINT_E2E_VIM=1 runs it)"
+    continue
+  fi
+  make_script "$tmp/$r.flint" "$r" "$tmp/$r.js"
+  # vim passes in under 30 s; a freeze there then costs a minute, not four.
+  cap="${FLINT_E2E_MAIN_MS:-}"
+  [[ "$r" != vim ]] || cap=60000
+  run_app "$r" "$tmp/$r.js" "$tmp/config-$r" "$tmp/$r.log" "$cap" || failed+=("$r")
+done
+summary() {
+  local r n
+  for r in "${runs[@]}"; do
+    [[ -f "$tmp/$r.log" ]] || continue
+    n="$(grep -o '[0-9]* checks passed' "$tmp/$r.log" | tail -1 || true)"
+    echo "gui-e2e: $r: ${n:-no verdict}"
+  done
+}
+summary
+# Exit 1: a run other than vim failed. Exit 3: only vim did, so a report can tell the
 # known vim freeze (ROADMAP) from a new failure. Either way the run is not a pass.
-if [[ " ${failed[*]:-} " == *" main "* ]]; then
-  echo "gui-e2e: FAILED: ${failed[*]:-}" >&2
-  exit 1
-fi
-if [[ "$only" == vim ]]; then
-  [[ ${#failed[@]} -eq 0 ]] || { echo "gui-e2e: FAILED: vim" >&2; exit 3; }
-  echo "gui-e2e: the vim run passed"
-  exit 0
-fi
-# Principle 5: nothing from inside the vault is readable in the file.
-for marker in local pwhost e2e-key gui-host-pw-marker 127.0.0.1 codebox.lan "Code Box" pw-codebox "SQLite format 3"; do
-  if grep -aq -- "$marker" "$tmp/e2e.flint"; then
-    echo "gui-e2e: the vault file contains '$marker' in clear" >&2
+for r in "${failed[@]:-}"; do
+  if [[ -n "$r" && "$r" != vim ]]; then
+    echo "gui-e2e: FAILED: ${failed[*]}" >&2
     exit 1
   fi
 done
-echo "gui-e2e: the vault file holds no clear-text host data"
-# D-030: the layout state holds ids only, never a name from inside the vault.
-ui_state="$tmp/config/ui-state.json"
-[[ -f "$ui_state" ]] || { echo "gui-e2e: no ui-state.json was written" >&2; exit 1; }
-for marker in e2e-grp local pwhost "E2E Renamed"; do
-  if grep -aq -- "$marker" "$ui_state"; then
-    echo "gui-e2e: ui-state.json contains '$marker'" >&2
-    exit 1
-  fi
+# Principle 5: nothing from inside the vault is readable in any run's file.
+for f in "$tmp"/*.flint; do
+  [[ -f "$f" ]] || continue
+  for marker in local pwhost e2e-key gui-host-pw-marker 127.0.0.1 codebox.lan "Code Box" pw-codebox through "SQLite format 3"; do
+    if grep -aq -- "$marker" "$f"; then
+      echo "gui-e2e: $(basename "$f") contains '$marker' in clear" >&2
+      exit 1
+    fi
+  done
 done
-grep -q '"E2E Renamed"' "$tmp/config/vaults.json" || { echo "gui-e2e: the rename did not reach vaults.json" >&2; exit 1; }
-echo "gui-e2e: ui-state.json holds ids only; vaults.json has the new name"
+echo "gui-e2e: the vault files hold no clear-text host data"
+# D-030: the layout state holds ids only, never a name from inside the vault. The vault
+# run is the one that makes groups and renames the vault.
+if [[ -f "$tmp/vault.log" ]]; then
+  ui_state="$tmp/config-vault/ui-state.json"
+  [[ -f "$ui_state" ]] || { echo "gui-e2e: no ui-state.json was written" >&2; exit 1; }
+  for marker in e2e-grp local pwhost "E2E Renamed"; do
+    if grep -aq -- "$marker" "$ui_state"; then
+      echo "gui-e2e: ui-state.json contains '$marker'" >&2
+      exit 1
+    fi
+  done
+  grep -q '"E2E Renamed"' "$tmp/config-vault/vaults.json" || { echo "gui-e2e: the rename did not reach vaults.json" >&2; exit 1; }
+  echo "gui-e2e: ui-state.json holds ids only; vaults.json has the new name"
+fi
 if [[ ${#failed[@]} -gt 0 ]]; then
-  echo "gui-e2e: the main run passed; FAILED: vim" >&2
+  echo "gui-e2e: FAILED: vim" >&2
   exit 3
 fi
 echo "gui-e2e: pass"

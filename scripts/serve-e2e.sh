@@ -458,6 +458,57 @@ check "a token for one of the two hosts is refused (denied)" '[[ $status == 15 &
 expect 0 "token revoke relay-one" "" -- token revoke relay-one
 check "no partial file is left" '[[ -z "$(find "$cpd" -name "*.flint-part")" ]]'
 
+echo "== tunnels through the app (milestone 22)"
+# Connects n times at once to 127.0.0.1:<port> and prints what each one heard first
+# (the second sshd's banner through the tunnel), "closed" when nothing listens, or
+# "silent" when something accepts and says nothing.
+banner() {
+  python3 -I -c 'import socket, sys
+p, n = int(sys.argv[1]), int(sys.argv[2])
+try:
+    ss = [socket.create_connection(("127.0.0.1", p), timeout=5) for _ in range(n)]
+except ConnectionRefusedError:
+    print("closed"); sys.exit(0)
+try:
+    print(",".join(s.recv(7).decode() for s in ss))
+except OSError:
+    print("silent")' "$1" "$2"
+}
+TP="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+P2="$FLINT_TEST_SSH_PORT2"
+expect 0 "tunnel add through the app" "" -- tunnel add local fwd --local "$TP" --to "127.0.0.1:$P2"
+expect 0 "a tunnel the owner will deny" "" -- tunnel add local deny-me --local "$((TP + 1))" --to "127.0.0.1:$P2"
+expect 0 "a tunnel on a port already in use" "" -- tunnel add local busy --local "$P" --to "127.0.0.1:$P2"
+asked_tun_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
+new_caller "" -- tunnel up local:fwd --accept-new-host-key
+check "tunnel up from a new caller asks, then listens" '[[ $status == 0 && "$out" == "Tunnel '"'"'local:fwd'"'"' is listening on 127.0.0.1:$TP, to 127.0.0.1:$P2 as local sees it."* && "$(grep -c "asking the owner to approve" "$tmp/app.log")" -gt $asked_tun_before ]]'
+check "two connections at once reach the destination through it" '[[ "$(banner "$TP" 2)" == "SSH-2.0,SSH-2.0" ]]'
+expect 0 "tunnel status --json" "" -- --json tunnel status local:fwd
+check "it is listening on its port" '[[ "$(echo "$out" | json_get "d[\"state\"], d[\"listen\"]")" == "('"'"'listening'"'"', '"'"'127.0.0.1:$TP'"'"')" ]]'
+expect 0 "tunnel up again changes nothing" "" -- tunnel up local:fwd
+check "still the one listener" '[[ "$(banner "$TP" 1)" == "SSH-2.0" ]]'
+expect 22 "a port in use fails with port_in_use" "" -- --json tunnel up local:busy
+check "as a JSON error with its code" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "port_in_use" ]]'
+new_caller "" -- tunnel up local:busy
+check "a new caller's tunnel on a taken port is shown as such, and denied" '[[ $status == 15 ]]'
+new_caller "" -- tunnel up local:deny-me
+check "a denied tunnel opens no port" '[[ $status == 15 && "$(banner "$((TP + 1))" 1)" == "closed" ]]'
+new_caller "" -- tunnel up local:nope
+check "an unknown tunnel never reaches the window" '[[ $status == 3 ]]'
+expect 0 "tunnel status lists what runs" "" -- tunnel status
+check "fwd, listening, and nothing else" '[[ "$out" == *"local:fwd"*"listening"* && "$out" != *"local:busy"* && "$out" != *"deny-me"* ]]'
+expect 0 "tunnel ls in the app knows the state" "" -- --json tunnel ls local
+check "fwd listening, busy stopped" '[[ "$(echo "$out" | json_get "sorted((t[\"name\"], t[\"state\"]) for t in d)")" == "[('"'"'busy'"'"', '"'"'stopped'"'"'), ('"'"'deny-me'"'"', '"'"'stopped'"'"'), ('"'"'fwd'"'"', '"'"'listening'"'"')]" ]]'
+expect 0 "tunnel down" "" -- tunnel down local:fwd
+check "it says stopped and the port is closed" '[[ "$out" == *"is stopped"* && "$(banner "$TP" 1)" == "closed" ]]'
+expect 0 "tunnel down again is not an error" "" -- --json tunnel down local:fwd
+check "still stopped" '[[ "$(echo "$out" | json_get "d[\"state\"]")" == "stopped" ]]'
+expect 0 "tunnel up through a jump host" "" -- tunnel add tty jumped --local "$((TP + 2))" --to "127.0.0.1:$P2"
+expect 0 "starts" "" -- tunnel up tty:jumped --accept-new-host-key
+check "and reaches the destination through both hops" '[[ "$(banner "$((TP + 2))" 1)" == "SSH-2.0" ]]'
+expect 0 "tunnel rm stops a running tunnel" "" -- tunnel rm tty:jumped
+check "its port closes" '[[ "$(banner "$((TP + 2))" 1)" == "closed" ]]'
+
 echo "== another vault"
 expect 5 "another vault than the app's: locked, with no terminal" "" -- --vault "$other" host list
 check "it names the vault Flint has open" '[[ "$err" == *"Flint has vault"* ]]'
@@ -480,7 +531,10 @@ echo "== a rename, then the stop host"
 expect 0 "vault rename" "" -- vault rename "Served Renamed"
 check "the recent list has the new name" 'grep -q "Served Renamed" "$FLINT_CONFIG_DIR/vaults.json"'
 echo "== lock from the CLI, then a command asks the window to unlock"
+expect 0 "a tunnel up before the lock" "" -- tunnel up local:fwd
 expect 0 "vault lock locks the window" "" -- vault lock
+check "a running tunnel keeps running while the vault is locked" '[[ "$(banner "$TP" 1)" == "SSH-2.0" ]]'
+expect 5 "tunnel status on the locked vault: locked" "" -- tunnel status local:fwd
 expect 0 "vault status: locked" "" -- --json vault status
 check "status says locked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" == "False" ]]'
 # A long command, so the lock screen's request offers "Show full command" (M15, 16e1b).
@@ -527,10 +581,12 @@ sed 's/^/app: /' "$tmp/app.log" | grep -E "ok |FAILED|checks passed|e2e:|page te
 check "the window checks passed" 'grep -q "^e2e: pass" "$tmp/app.log"'
 check "a click beside the approval window does not deny it" 'grep -q "ok   a click beside the approval window" "$tmp/app.log" && ! grep -q "FAIL a click beside" "$tmp/app.log"'
 check "the approval countdown shows the time left" 'grep -q "ok   the countdown shows the time left" "$tmp/app.log" && ! grep -q "FAIL the countdown" "$tmp/app.log"'
-for what in "the approval window says copy files with the direction, the host and both paths" "a copy proposes running commands on that host" "the approval window names both hosts of a copy between two" "a copy between two hosts proposes a grant for both" "the approval window says how much of a long command is left" "Show full command opens the whole command" "Esc closes the full command and leaves the request waiting"; do
+for what in "the approval window says copy files with the direction, the host and both paths" "a copy proposes running commands on that host" "the approval window names both hosts of a copy between two" "a copy between two hosts proposes a grant for both" "the approval window says how much of a long command is left" "Show full command opens the whole command" "Esc closes the full command and leaves the request waiting" "the approval window names the tunnel, where it listens and what it reaches" "the approval window says the port is in use and offers no Allow"; do
   check "$what" 'grep -q "ok   $what" "$tmp/app.log" && ! grep -q "FAIL $what" "$tmp/app.log"'
 done
 check "the socket file is removed when the app quits" '[[ ! -e "$sock" ]]'
+check "quitting Flint closed the tunnel it ran" '[[ "$(banner "$TP" 1)" == "closed" ]]'
+
 expect 5 "with the app gone, the CLI is on its own again: locked" "" -- host list
 
 echo "== with Flint closed, flint starts it on its unlock screen (D-042)"

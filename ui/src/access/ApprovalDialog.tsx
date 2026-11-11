@@ -17,7 +17,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, on, toFlintError } from '../api/backend';
-import type { AccessAction, AccessState, Approval, Catalog, CopyAsk, GrantDuration, PresenceMethod } from '../api/types';
+import type { AccessAction, AccessState, Approval, Catalog, CopyAsk, GrantDuration, PresenceMethod, TunnelAsk } from '../api/types';
 import { Modal } from '../ui/Modal';
 import { Key } from '../ui/Kbd';
 import { useApp } from '../state/app';
@@ -215,11 +215,58 @@ function CopyBlock({ copy, catalog }: { copy: CopyAsk; catalog: Catalog }) {
   );
 }
 
-function kindOf(ap: Approval): 'sudo' | 'token' | 'copy' | 'grant' {
-  return ap.sudo?.host ? 'sudo' : ap.token?.name ? 'token' : ap.copy?.direction ? 'copy' : 'grant';
+/**
+ * `flint tunnel up|down`'s block (design 16h1, milestone 23): the host it goes through,
+ * then this computer's 127.0.0.1 port → the destination as that host sees it. When the
+ * port is already taken (16h2) it says so, and by which program when Flint may see it,
+ * and the window offers no Allow.
+ */
+function TunnelBlock({ tunnel, catalog, os }: { tunnel: TunnelAsk; catalog: Catalog; os: string }) {
+  const up = tunnel.verb === 'up';
+  const listen = `127.0.0.1:${tunnel.local_port}`;
+  const h = findHost(catalog, tunnel.host);
+  const c = colorStyle(h?.color ?? '');
+  const here = os === 'mac' ? 'this Mac' : 'this computer';
+  const taken = up && !!tunnel.port_in_use;
+  const where = h ? `${h.user ? h.user + '@' : ''}${h.hostname}${h.jump ? ' · via ' + h.jump : ''}` : '';
+  return (
+    <div className="tn" data-tunnel-ask data-verb={tunnel.verb} data-tunnel-host={tunnel.host} data-tunnel-local={listen} data-tunnel-dest={tunnel.destination} data-port-in-use={taken || undefined}
+      aria-label={`${up ? 'Open' : 'Stop'} tunnel ${tunnel.name}: ${listen} to ${tunnel.destination} through ${tunnel.host}`}>
+      <div className="cp-dir">
+        <span className="grow row" style={{ gap: 'var(--sp-2)', minWidth: 0 }}>
+          <span className="cp-end"><span className={'sp-dot ' + c.className} style={c.style} /><span className="mono">{tunnel.host}</span></span>
+          {where && <span className="faint mono trunc" style={{ fontSize: 'var(--fs-xs)', fontWeight: 'var(--fw-regular)' }}>{where}</span>}
+        </span>
+        <span className="badge info"><Icon name="tunnel" />{up ? 'Tunnel' : 'Stop tunnel'} <span className="mono" data-tunnel-name>{tunnel.name}</span></span>
+      </div>
+      <div className="tn-ends">
+        <div className="tn-end"><span className="where"><Icon name="monitor" />On {here}{taken && <> · <span className="danger-t">in use</span></>}</span><span className="addr" style={taken ? { color: 'var(--warning)' } : undefined}>{listen}</span></div>
+        {ARROW}
+        <div className="tn-end"><span className="where"><Icon name="hosts" />On {tunnel.host}</span><span className="addr">{tunnel.destination}</span></div>
+      </div>
+      {up && (
+        <div className="cp-notes">
+          <span className="cp-note"><Icon name="shield" className="info-t" />Only {here} can connect: <span className="mono">127.0.0.1</span>, never your network</span>
+          <span className="cp-note"><Icon name="tunnel" className="info-t" />Runs in its own session, with no terminal; stays up until stopped or Flint quits</span>
+        </div>
+      )}
+      {taken && (
+        <div className="cp-force" role="alert" data-tunnel-port-in-use style={{ background: 'var(--danger-subtle)', borderTopColor: 'var(--danger-border)' }}>
+          <Icon name="alert" size="sm" className="danger-t" />
+          {tunnel.port_owner
+            ? <span><span className="strong">Port {tunnel.local_port} is already in use on {here}</span>, by <span className="mono" data-port-owner>{tunnel.port_owner}</span> (pid {tunnel.port_owner_pid}). This tunnel can't open, so there is nothing to allow. Stop that program, or give the tunnel another local port (<span className="mono">flint tunnel edit {tunnel.host}:{tunnel.name} --local …</span>).</span>
+            : <span><span className="strong">Port {tunnel.local_port} is already in use on {here}.</span> This tunnel can't open, so there is nothing to allow. Stop what uses it, or give the tunnel another local port (<span className="mono">flint tunnel edit {tunnel.host}:{tunnel.name} --local …</span>).</span>}
+        </div>
+      )}
+    </div>
+  );
 }
 
-const KIND_LABEL = { sudo: 'Run as root', token: 'Token request', copy: 'Copy files', grant: 'Grant request' };
+function kindOf(ap: Approval): 'sudo' | 'token' | 'copy' | 'tunnel' | 'grant' {
+  return ap.sudo?.host ? 'sudo' : ap.token?.name ? 'token' : ap.copy?.direction ? 'copy' : ap.tunnel?.verb ? 'tunnel' : 'grant';
+}
+
+const KIND_LABEL = { sudo: 'Run as root', token: 'Token request', copy: 'Copy files', tunnel: 'Tunnel', grant: 'Grant request' };
 
 export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   ap: Approval;
@@ -274,6 +321,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   const sudoHost = sudo ? findHost(catalog, sudo.host) : undefined;
   const askSudo = !!sudo && !sudo.has_password;
   const copy = kind === 'copy' && ap.copy ? ap.copy : null;
+  const tunnel = kind === 'tunnel' && ap.tunnel ? ap.tunnel : null;
   // Design 16g3: which of the two hosts the caller's grant already reaches, and which
   // the new grant adds. A grant that ends while the window waits counts as gone.
   const relayEnds = useMemo(() => {
@@ -330,7 +378,9 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   };
   const covers = token !== null || sudo !== null || ((actions[ap.need.action as AccessAction]) && (ap.need.action !== 'write' || scope === 'all'));
   const needLabel = ACTIONS.find((a) => a.value === ap.need.action)?.label ?? ap.need.action;
-  const canAllow = !busy && !(presence === 'password' && !password);
+  // A tunnel whose port is taken cannot open: nothing to allow (design 16h2).
+  const portTaken = !!tunnel && tunnel.verb === 'up' && !!tunnel.port_in_use;
+  const canAllow = !busy && !portTaken && !(presence === 'password' && !password);
   // ⌘↵ (Ctrl+↵ on Linux) allows from anywhere in the window; a plain ↵ in a field
   // submits the form, and on Deny presses Deny.
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -362,6 +412,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                 : token ? ' wants to create a token'
                 : copy && copy.direction === 'relay' ? ' wants to copy files between two servers'
                 : copy ? <> wants to copy files {copy.direction === 'upload' ? 'to' : 'from'} <span className="mono">{copy.host}</span></>
+                : tunnel ? <> wants to {tunnel.verb === 'up' ? 'open' : 'stop'} a tunnel through <span className="mono">{tunnel.host}</span></>
                 : ' wants to use this vault'}
             </h2>
             <span className="chain" title={ap.chain.map((p) => `${p.pid} ${p.exe}`).join('\n')}>
@@ -425,6 +476,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                 {more && <MoreRow more={more} data="approval" onShow={() => setShowCommand(true)} />}
               </div>
               {copy && <CopyBlock copy={copy} catalog={catalog} />}
+              {tunnel && <TunnelBlock tunnel={tunnel} catalog={catalog} os={os} />}
               {token ? (
                 <>
                   <dl className="kv" data-token-ask style={{ margin: 0, gridTemplateColumns: '88px minmax(0, 1fr)' }}>
@@ -472,8 +524,10 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                             <input type="checkbox" data-action={a.value} checked={actions[a.value]} disabled={off}
                               onChange={(e) => setActions({ ...actions, [a.value]: e.target.checked })} />
                             <span className="opt-t">
-                              <span className="opt-l">{a.label}{ap.need.action === a.value && <span className="need">needed</span>}</span>
-                              <span className="hint">{off ? 'Needs Whole vault' : a.hint}</span>
+                              <span className="opt-l">{tunnel && a.value === 'exec' ? 'Run commands and open tunnels' : a.label}{ap.need.action === a.value && <span className="need">needed</span>}</span>
+                              <span className="hint">{off ? 'Needs Whole vault' : tunnel && a.value === 'exec'
+                                ? <>A tunnel needs this host's exec scope, so <span className="strong" style={{ color: 'var(--text-primary)' }}>the program could also run commands on {tunnel.host}</span> while the grant lasts.</>
+                                : a.hint}</span>
                             </span>
                           </label>
                         );
@@ -518,7 +572,8 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
           <span className="grow" />
           <button type="button" className="btn btn-secondary" data-approval-deny data-default-focus disabled={busy} onClick={() => answer(false)}
             {...(focusOn === 'deny' ? { 'data-autofocus': true } : {})}>Deny<Key>esc</Key></button>
-          <button type="submit" className={confirming ? 'btn btn-primary is-active' : 'btn btn-primary'} data-approval-allow disabled={!canAllow} aria-disabled={busy || undefined}>
+          <button type="submit" className={confirming ? 'btn btn-primary is-active' : 'btn btn-primary'} data-approval-allow disabled={!canAllow} aria-disabled={busy || undefined}
+            title={portTaken && tunnel ? `The tunnel can't open: port ${tunnel.local_port} is in use` : undefined}>
             {confirming && presence !== 'password'
               ? <>{presence === 'touchid' && <Icon name="fingerprint" />}Confirm with {presenceLabel(presence)}…</>
               : <>{sudo ? 'Run as root' : 'Allow'}<span className="kbd-in">{allowKey}</span></>}

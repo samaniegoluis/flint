@@ -350,6 +350,8 @@ type Approval struct {
     command:        CommandText  `json:"command"`
     // For `flint cp` (milestone 16): what is copied where.
     copy:           CopyAsk      `json:"copy"`
+    // For `flint tunnel up|down` (milestone 22): the tunnel and both of its ends.
+    tunnel:         TunnelAsk    `json:"tunnel"`
 }
 
 // The app's access state: live grants and the requests waiting for an answer.
@@ -430,7 +432,7 @@ fn asked_every_time(need: AccessNeed) -> bool {
 
 fn new_approval(id: str, vault_id: str, c: Caller, request: str, need: AccessNeed, now_ms: i64) -> Approval {
     a := caller_anchor(c)
-    return Approval{ id: id, vault_id: vault_id, label: caller_label(c), request: request, need: need, chain: c.chain, anchor_pid: a.pid, anchor_started: a.started, created_ms: now_ms, deadline_ms: now_ms + APPROVAL_WAIT_MS, state: APPROVAL_PENDING, token: no_token_ask(), sudo: no_sudo_ask(), command: whole_command(request), copy: no_copy_ask() }
+    return Approval{ id: id, vault_id: vault_id, label: caller_label(c), request: request, need: need, chain: c.chain, anchor_pid: a.pid, anchor_started: a.started, created_ms: now_ms, deadline_ms: now_ms + APPROVAL_WAIT_MS, state: APPROVAL_PENDING, token: no_token_ask(), sudo: no_sudo_ask(), command: whole_command(request), copy: no_copy_ask(), tunnel: no_tunnel_ask() }
 }
 
 // The grant an approval becomes when the owner allows it.

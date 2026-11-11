@@ -22,12 +22,14 @@ export interface Toast {
   id: number;
   text: string;
   kind: 'ok' | 'error' | 'info';
+  /** One button on the toast (design 20d2's "Stop them"). */
+  action?: { label: string; run: () => void };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system', accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
   term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: true, term_theme: 'default',
-  lock_after: '1h',
+  lock_after: '1h', paste_limit_mb: 20,
 };
 
 // How often the page tells the core someone is using the window.
@@ -68,7 +70,7 @@ interface AppApi {
   renameVault: (name: string) => Promise<VaultInfo>;
   refreshCatalog: () => Promise<Catalog>;
   saveSettings: (s: Settings) => Promise<void>;
-  notify: (text: string, kind?: Toast['kind']) => void;
+  notify: (text: string, kind?: Toast['kind'], action?: Toast['action']) => void;
   fail: (err: unknown) => FlintError;
 }
 
@@ -102,10 +104,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const os: Os = info?.os ?? (/mac/i.test(navigator.platform) ? 'mac' : 'linux');
   const dark = settings.theme === 'system' ? sysDark : settings.theme === 'dark';
 
-  const notify = useCallback((text: string, kind: Toast['kind'] = 'ok') => {
+  const notify = useCallback((text: string, kind: Toast['kind'] = 'ok', action?: Toast['action']) => {
     const id = Date.now();
-    setToast({ id, text, kind });
-    window.setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), 4000);
+    setToast({ id, text, kind, action });
+    // A toast with a button stays long enough to reach it.
+    window.setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), action ? 8000 : 4000);
   }, []);
 
   const fail = useCallback((err: unknown) => {
