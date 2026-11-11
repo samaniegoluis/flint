@@ -1,0 +1,476 @@
+---
+// The Releases page (milestone 33, D-078): every version of Flint newest first, read
+// from CHANGELOG.md at build time, so the page cannot drift from the changelog
+// scripts/release.sh writes. Built in the landing's style (D-027), not from Claude Design.
+// Until there are release builds (ROADMAP §7) it offers Build from source instead of
+// downloads.
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import { LinkButton } from '@astrojs/starlight/components';
+import changelog from '../../../CHANGELOG.md?raw';
+import { inline, parseChangelog } from '../releases/changelog.ts';
+
+const releases = parseChangelog(changelog);
+if (releases.length === 0) throw new Error('releases: CHANGELOG.md has no released version');
+
+/** Items shown before a list folds into "Show N more". */
+const VISIBLE = 8;
+
+const fmtDate = (d: string) =>
+	new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+
+/** `**gui:** Text` → a scope tag and the text. */
+function item(text: string): { scope: string | null; html: string } {
+	const m = /^\*\*([\w.-]+):\*\*\s+(.*)$/.exec(text);
+	return m ? { scope: m[1], html: inline(m[2]) } : { scope: null, html: inline(text) };
+}
+---
+
+<StarlightPage
+	frontmatter={{
+		title: 'Releases',
+		description: 'Every version of Flint, newest first: what each one added and fixed.',
+		template: 'splash',
+		prev: false,
+		next: false,
+	}}
+>
+	<div class="flint-releases not-content">
+		<p class="flint-releases__lede">
+			Every version of Flint, newest first: a few lines on what it brings, then what it added and
+			fixed. Versions follow <a href="https://semver.org">SemVer</a>: a new feature bumps the minor
+			version, only fixes the patch.
+		</p>
+
+		<aside class="flint-releases__get" aria-labelledby="flint-releases-get">
+			<div>
+				<p class="flint-releases__kicker">Downloads coming soon</p>
+				<h2 id="flint-releases-get">Build Flint from source</h2>
+				<p>
+					There are no release builds yet. Flint builds on macOS and Linux with cfire and a few
+					native libraries; each version below is a git tag you can check out and build.
+				</p>
+			</div>
+			<LinkButton href="/start/build-from-source/" icon="right-arrow">Build from source</LinkButton>
+		</aside>
+
+		<div class="flint-releases__body">
+			<nav class="flint-releases__nav" aria-label="Versions">
+				<p class="flint-releases__nav-title">Versions</p>
+				<ol>
+					{
+						releases.map((r, i) => (
+							<li>
+								<a href={`#${r.id}`}>
+									<span class="v">{r.version}</span>
+									{i === 0 && <span class="flint-releases__latest">Latest</span>}
+									<span class="d">{r.date}</span>
+								</a>
+							</li>
+						))
+					}
+				</ol>
+			</nav>
+
+			<div class="flint-releases__list">
+				{
+					releases.map((r, i) => (
+						<article class="flint-release" id={r.id} aria-labelledby={`${r.id}-title`}>
+							<header>
+								<h2 id={`${r.id}-title`}>
+									<a href={`#${r.id}`}>{r.version}</a>
+								</h2>
+								{i === 0 && <span class="flint-releases__latest">Latest</span>}
+								<time datetime={r.date}>{fmtDate(r.date)}</time>
+							</header>
+							{r.summary && <p class="flint-release__summary" set:html={inline(r.summary)} />}
+							{r.groups.map((g) => {
+								const items = g.items.map(item);
+								const shown = items.slice(0, VISIBLE);
+								const rest = items.slice(VISIBLE);
+								const li = (x: { scope: string | null; html: string }) => (
+									<li>
+										{x.scope && <span class="flint-release__scope">{x.scope}</span>}
+										<span set:html={x.html} />
+									</li>
+								);
+								return (
+									<section class="flint-release__group" data-group={g.title.toLowerCase()}>
+										<h3>
+											{g.title} <span class="n">{items.length}</span>
+										</h3>
+										<ul>{shown.map(li)}</ul>
+										{rest.length > 0 && (
+											<details>
+												<summary>
+													<span class="more">Show {rest.length} more</span>
+													<span class="less">Show fewer</span>
+												</summary>
+												<ul>{rest.map(li)}</ul>
+											</details>
+										)}
+									</section>
+								);
+							})}
+						</article>
+					))
+				}
+			</div>
+		</div>
+	</div>
+</StarlightPage>
+
+<style>
+	.flint-releases {
+		--rel-gap: 2.5rem;
+	}
+	.flint-releases__lede {
+		color: var(--sl-color-gray-2);
+		font-size: var(--sl-text-lg);
+		line-height: 1.6;
+		max-width: 44rem;
+		margin: 0;
+	}
+	.flint-releases__lede a,
+	.flint-release__summary a,
+	.flint-release li a {
+		color: var(--sl-color-text-accent);
+	}
+
+	/* ---- Build from source, in place of downloads ---- */
+	.flint-releases__get {
+		display: flex;
+		gap: 1.5rem;
+		align-items: center;
+		justify-content: space-between;
+		margin-top: 2rem;
+		padding: 1.5rem 1.75rem;
+		border: 1px solid var(--flint-border);
+		border-radius: 12px;
+		background:
+			radial-gradient(ellipse at 0% 0%, var(--flint-glow), transparent 60%),
+			var(--flint-surface-raised);
+	}
+	.flint-releases__get h2 {
+		font-size: var(--sl-text-xl);
+		color: var(--sl-color-white);
+		margin: 0.15rem 0 0.4rem;
+		line-height: 1.25;
+	}
+	.flint-releases__get p {
+		margin: 0;
+		color: var(--sl-color-gray-3);
+		max-width: 40rem;
+		line-height: 1.55;
+	}
+	.flint-releases__get :global(.sl-link-button) {
+		flex-shrink: 0;
+		margin: 0;
+	}
+	.flint-releases__kicker {
+		font-family: var(--__sl-font-mono);
+		font-size: var(--sl-text-xs);
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--sl-color-accent) !important;
+	}
+
+	/* ---- The versions to jump to, beside the list ---- */
+	.flint-releases__body {
+		display: grid;
+		grid-template-columns: 11rem minmax(0, 1fr);
+		gap: var(--rel-gap);
+		margin-top: 3rem;
+		align-items: start;
+	}
+	.flint-releases__nav {
+		position: sticky;
+		top: calc(var(--sl-nav-height) + 1.5rem);
+	}
+	.flint-releases__nav-title {
+		font-family: var(--__sl-font-mono);
+		font-size: var(--sl-text-xs);
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--sl-color-gray-3);
+		margin: 0 0 0.75rem;
+	}
+	.flint-releases__nav ol {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		border-inline-start: 1px solid var(--flint-border);
+	}
+	.flint-releases__nav a {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.15rem 0.5rem;
+		padding: 0.4rem 0 0.4rem 0.9rem;
+		margin-inline-start: -1px;
+		border-inline-start: 2px solid transparent;
+		text-decoration: none;
+		color: var(--sl-color-gray-2);
+	}
+	.flint-releases__nav a:hover,
+	.flint-releases__nav a[aria-current='true'] {
+		color: var(--sl-color-white);
+		border-inline-start-color: var(--sl-color-accent);
+	}
+	.flint-releases__nav .v {
+		font-family: var(--__sl-font-mono);
+		font-weight: 600;
+	}
+	.flint-releases__nav .d {
+		flex-basis: 100%;
+		font-size: var(--sl-text-xs);
+		color: var(--sl-color-gray-3);
+	}
+	.flint-releases__latest {
+		font-family: var(--__sl-font-mono);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		padding: 0.1rem 0.45rem;
+		border-radius: 999px;
+		color: var(--sl-color-accent-high);
+		background: var(--sl-color-accent-low);
+		border: 1px solid color-mix(in srgb, var(--sl-color-accent) 35%, transparent);
+	}
+
+	/* ---- One release ---- */
+	.flint-releases__list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--rel-gap);
+	}
+	.flint-release {
+		scroll-margin-top: calc(var(--sl-nav-height) + 1.5rem);
+		padding-bottom: var(--rel-gap);
+		border-bottom: 1px solid var(--sl-color-hairline);
+	}
+	.flint-release:last-child {
+		border-bottom: 0;
+	}
+	.flint-release header {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 0.9rem;
+	}
+	.flint-release h2 {
+		margin: 0;
+		font-family: var(--__sl-font-mono);
+		font-size: var(--sl-text-3xl);
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		line-height: 1.1;
+	}
+	.flint-release h2 a {
+		color: var(--sl-color-white);
+		text-decoration: none;
+	}
+	.flint-release h2 a:hover {
+		color: var(--sl-color-text-accent);
+	}
+	.flint-release time {
+		color: var(--sl-color-gray-3);
+		font-size: var(--sl-text-sm);
+	}
+	.flint-release__summary {
+		margin: 1rem 0 0;
+		color: var(--sl-color-gray-1);
+		font-size: var(--sl-text-base);
+		line-height: 1.7;
+		max-width: 46rem;
+	}
+	.flint-release code {
+		font-family: var(--__sl-font-mono);
+		font-size: 0.875em;
+		padding: 0.05em 0.3em;
+		border-radius: 4px;
+		background: var(--sl-color-gray-5);
+		color: var(--sl-color-gray-1);
+		overflow-wrap: anywhere;
+	}
+	.flint-release__group {
+		margin-top: 1.75rem;
+	}
+	.flint-release__group h3 {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0 0 0.6rem;
+		font-size: var(--sl-text-sm);
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--sl-color-white);
+	}
+	.flint-release__group h3::before {
+		content: '';
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 2px;
+		background: var(--group, var(--sl-color-gray-4));
+	}
+	.flint-release__group[data-group='added'] {
+		--group: var(--sl-color-green);
+	}
+	.flint-release__group[data-group='fixed'] {
+		--group: var(--sl-color-blue);
+	}
+	.flint-release__group[data-group='faster'] {
+		--group: var(--sl-color-accent);
+	}
+	.flint-release__group h3 .n {
+		font-family: var(--__sl-font-mono);
+		font-weight: 400;
+		color: var(--sl-color-gray-3);
+		letter-spacing: 0;
+	}
+	.flint-release ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.flint-release li {
+		display: flex;
+		align-items: baseline;
+		gap: 0.6rem;
+		padding: 0.45rem 0;
+		border-top: 1px solid var(--sl-color-hairline);
+		color: var(--sl-color-gray-2);
+		line-height: 1.55;
+	}
+	.flint-release li > span:last-child {
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.flint-release__scope {
+		flex-shrink: 0;
+		min-width: 4.5rem;
+		font-family: var(--__sl-font-mono);
+		font-size: var(--sl-text-xs);
+		color: var(--sl-color-gray-3);
+	}
+	.flint-release details {
+		margin: 0;
+	}
+	.flint-release summary {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		margin-top: 0.5rem;
+		padding: 0.35rem 0.75rem;
+		border: 1px solid var(--flint-border);
+		border-radius: 999px;
+		font-size: var(--sl-text-sm);
+		color: var(--sl-color-gray-2);
+		cursor: pointer;
+		list-style: none;
+	}
+	.flint-release summary::-webkit-details-marker {
+		display: none;
+	}
+	.flint-release summary:hover {
+		color: var(--sl-color-white);
+		background: var(--flint-surface-hover);
+	}
+	.flint-release summary:focus-visible {
+		outline: none;
+		box-shadow: var(--flint-focus);
+	}
+	.flint-release summary::after {
+		content: '▾';
+		font-size: 0.8em;
+	}
+	.flint-release details[open] summary::after {
+		content: '▴';
+	}
+	.flint-release details .less,
+	.flint-release details[open] .more {
+		display: none;
+	}
+	.flint-release details[open] .less {
+		display: inline;
+	}
+	/* The folded items continue the list above them; the button goes below them. */
+	.flint-release details[open] {
+		display: flex;
+		flex-direction: column-reverse;
+		align-items: flex-start;
+	}
+	.flint-release details[open] ul {
+		align-self: stretch;
+	}
+
+	/* ---- Narrow screens: the versions become a row above the list ---- */
+	@media (max-width: 50rem) {
+		.flint-releases__get {
+			flex-direction: column;
+			align-items: flex-start;
+			padding: 1.25rem;
+		}
+		.flint-releases__body {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 1.5rem;
+			margin-top: 2rem;
+		}
+		.flint-releases__nav {
+			position: static;
+		}
+		.flint-releases__nav ol {
+			display: flex;
+			gap: 0.5rem;
+			overflow-x: auto;
+			border: 0;
+			padding-bottom: 0.25rem;
+		}
+		.flint-releases__nav a {
+			flex-wrap: nowrap;
+			white-space: nowrap;
+			margin: 0;
+			padding: 0.35rem 0.75rem;
+			border: 1px solid var(--flint-border);
+			border-radius: 999px;
+		}
+		.flint-releases__nav a:hover {
+			border-color: var(--sl-color-accent);
+		}
+		.flint-releases__nav .d {
+			display: none;
+		}
+		.flint-release h2 {
+			font-size: var(--sl-text-2xl);
+		}
+		.flint-release li {
+			flex-direction: column;
+			gap: 0.1rem;
+		}
+	}
+</style>
+
+<script>
+	// Marks the version in view in the list to jump to. Without JS the list still jumps.
+	const links = new Map<string, HTMLAnchorElement>();
+	document.querySelectorAll<HTMLAnchorElement>('.flint-releases__nav a').forEach((a) => {
+		links.set(a.hash.slice(1), a);
+	});
+	const mark = (id: string) => {
+		links.forEach((a, key) => a.setAttribute('aria-current', String(key === id)));
+	};
+	const seen = new Set<string>();
+	const io = new IntersectionObserver(
+		(entries) => {
+			for (const e of entries) {
+				if (e.isIntersecting) seen.add(e.target.id);
+				else seen.delete(e.target.id);
+			}
+			const first = [...links.keys()].find((id) => seen.has(id));
+			if (first) mark(first);
+		},
+		{ rootMargin: '-20% 0px -60% 0px' },
+	);
+	document.querySelectorAll('.flint-release').forEach((el) => io.observe(el));
+</script>

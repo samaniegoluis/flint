@@ -8,8 +8,9 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "test": "node --test 'src/demo/test/*.test.ts'",
+    "test": "node --test 'src/demo/test/*.test.ts' 'src/releases/*.test.ts'",
     "test:e2e": "node scripts/demo-e2e.mjs",
+    "test:releases": "node scripts/releases-e2e.mjs",
     "shots:gui": "node scripts/gui-shots.mjs"
   },
   "dependencies": {

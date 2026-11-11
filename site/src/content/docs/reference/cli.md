@@ -301,4 +301,4 @@ flint --version --json
 ```
 
 `flint` is the version the binary was built from: a release (`0.1.0`), or a build made
-after one (`0.1.0-4-g83f876b`, four commits later). See the [Changelog](/reference/changelog/).
+after one (`0.1.0-4-g83f876b`, four commits later). What changed in each one is on the [Releases](/releases/) page.
