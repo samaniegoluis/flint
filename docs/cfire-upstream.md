@@ -31,6 +31,39 @@ as is.
 - Each entry gives: what Flint needed, a minimal repro or source pointer, the workaround and
   where it lives, and what an ideal API would look like.
 
+## Status at cfire `d182f32` (2026-11-10): checked, not adopted
+
+cfire `d182f32` is seven commits on `c5b1d4b`: the checker split into modules over an
+interned type lattice, one diagnostics pipeline for the CLI, LSP and MCP, `match` guards and
+or-patterns, generic structs, `sync.Mutex[T]`, `async.Task[T]`, and the WebView2 host and toolchain
+work for Windows. It still reports `0.10.0`. Its commits cite "CF-115..CF-133", which are cfire's own
+backlog items, not Flint's entries of those numbers (CF-108).
+
+**Flint does not build on it and stays on `c5b1d4b` (D-060).** Checked [ran] on a copy of
+Flint at `5156a86`, with `d182f32` built from source in a scratch folder:
+
+- Two syntax changes are now errors and are mechanical: `_ := expr` → `_ = expr`
+  (`cfire/DEPRECATED-DISCARD`, about 205 places) and `cpp::Name` → `cpp.Name`
+  (`cfire/DEPRECATED-SEPARATOR`, 26). Until the first is done, the parser fails on
+  `_ := try f(mut x)` and cascades into about 10,000 false `UNDECLARED-IDENT` errors
+  (CF-118).
+- With both done, checking the two entry points still gives about 50 errors, all from cfire:
+  CF-115 (48), CF-116 (7) and CF-106 (6 in the CLI).
+- `cfire fix` would delete about 600 real `try`s and add imports Flint keeps out (CF-117).
+  Flint still does not run it.
+
+| Status | Entries |
+|---|---|
+| Fixed upstream, rechecked [ran]; Flint moves when it can build | 088 (`==` on an enum), 101 (`{x:.1f}`) |
+| Unchanged, rechecked [ran] | 091, 094, 104, 110 |
+| Unchanged [read] | 109 (`make install` and `install.sh` still write `runtime/VERSION`) |
+| Changed, still failing [ran] | 105 (generic structs parse; codegen fails in clang) |
+| Worse [ran] | 106 (now an error in `cfire check` of a package, exit 1) |
+| **New** | CF-115..CF-118, below |
+
+**Most urgent:** CF-115 and CF-116 block the build; CF-106 and CF-117 make `cfire fix`
+destructive on Flint.
+
 ## Status at cfire `c5b1d4b` (2026-11-09)
 
 cfire `c5b1d4b` (0.10.0) is six commits on `43431f2`: a stricter checker, a new I/O layer
@@ -1630,6 +1663,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   and 3.12) and let an environment variable override it.
 
 ### CF-088 · bug · `confirmed`: `==` on an enum passes `cfire check` and fails in clang
+- **At `d182f32`:** [ran] Fixed: `if w == Mode::Y` builds and runs. Flint compares no enums, so nothing to remove; the entry closes when Flint moves to a build that has it.
 - **At `c5b1d4b`:** [ran] Still passes `cfire check` and fails in clang (`invalid operands to binary expression ('Mode' and 'Mode')`).
 - **Repro (43431f2, also 2d8613d):** `type Mode enum { X, Y }` then
   `w := Mode::Y` / `if w == Mode::Y { … }` → `cfire check` passes; clang:
@@ -1685,6 +1719,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `INTERACTIVE` (64 MiB) by name; an error, not a guess, for out-of-range values.
 
 ### CF-091 · bug · `confirmed`: a nested slice literal with no declared type passes `cfire check` and fails in clang
+- **At `d182f32`:** [ran] Still fails in clang (`auto need = {{"host", "list"}, {"exec", "web"}};`).
 - **At `c5b1d4b`:** [ran] Still fails in clang (`cannot deduce actual type for variable 'need' with type 'auto' from initializer list`).
 - **Repro (43431f2):** `need := [["host", "list"], ["exec", "web"]]` → `cfire check` passes;
   clang: `cannot deduce actual type for variable 'need' with type 'auto' from initializer
@@ -1723,6 +1758,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `UserConsentVerifier`), blocking a worker, never the main thread.
 
 ### CF-094 · bug · `confirmed`: a method call on a string literal passes `cfire check` and fails in clang
+- **At `d182f32`:** [ran] Still fails in clang (`"0123456789abcdef".contains(ch)` lowers as a C string).
 - **At `c5b1d4b`:** [ran] Still fails in clang (`member reference base type 'const char[17]' is not a structure or union`).
 - **Repro (43431f2):** `if "0123456789abcdef".contains(ch) { … }` → `cfire check` passes;
   clang: `member reference base type 'const char[17]' is not a structure or union` (the
@@ -1811,6 +1847,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `T: A + B` (Rust) or interface embedding (Go), checked in the body.
 
 ### CF-101 · bug · `confirmed`: a precision spec (`{x:.1f}`) breaks interpolation
+- **At `d182f32`:** [ran] Fixed: `"{value:.1f}x"` gives `1.5x`. `human_bytes` can use it once Flint moves.
 - **At `c5b1d4b`:** [ran] Still fails in clang (`call to consteval function 'std::basic_format_string<char>::basic_format_string<char[15]>' is not a constant expression`).
 - **Repro (43431f2, macOS):** `value := 1.5` then `return "{value:.1f} {units[u]}"` returns the literal
   text `{value:.1f} {units[u]}`, uninterpolated, with no diagnostic. In `println("a: {value:.1f}")` the same
@@ -1846,6 +1883,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   function is never resolved against a native one.
 
 ### CF-104 · bug · `confirmed`: a `"\0"` string literal is the empty string
+- **At `d182f32`:** [ran] Still true: `nul: str = "\0"` has `len() == 0` and `"a.txt"` contains it.
 - **At `c5b1d4b`:** [ran] Still true for every string: `"a.txt".contains("\0")` prints `true`.
 - **Repro (43431f2, macOS):** `rel.contains("\0")` is true for every string, `"a.txt"` included: the literal
   lowers to `std::string("\0")`, built from a C string, which stops at the NUL and is empty.
@@ -1856,6 +1894,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   embedded NUL survives.
 
 ### CF-105 · missing · `confirmed`: no generic struct, so a port cannot be wrapped as another
+- **At `d182f32`:** [ran] `type Wrap[T: Src] struct { inner: T }` now parses, but a method on it (`fn (self: Wrap[T]) twice() -> i32`) fails in clang (5 errors around the generated `cfire_method_twice` forwarding template).
 - **At `c5b1d4b`:** [ran] Still a parse error (`expected 'struct', 'enum', or 'interface' after type name`).
 - **Repro (43431f2, macOS):** `type Wrap[T: Src] struct { inner: T }` fails with "expected 'struct',
   'enum', or 'interface' after type name". Milestone 18 copies from one host to another by reusing
@@ -1868,6 +1907,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   Wrap[T]) …`), as Go and Rust have.
 
 ### CF-106 · bug · `confirmed`: a false `REDUNDANT-TRY` on calls through a generic interface parameter
+- **At `d182f32`:** [ran] Still reproduces, and is now an error: `cfire check` exits 1. The checker types `store.load()` by looking for a concrete struct method of that name, not through the bound: with `type Mem struct` and `fn (self: Mem) load() -> i32!` in the same package the error goes away, and with `load() -> i32` (not fallible) on `Mem` it comes back, whatever the interface says. Checking a Flint package alone (`src/application`, where no adapter is visible) gives 143 `REDUNDANT-TRY` and 30 `REDUNDANT-OR`; the CLI entry point gives 6, on ports only the GUI implements (`presence_confirm`, `mono_font_families`, `clipboard_copy_secret`). `cfire fix` deletes about 600 `try`s on Flint (CF-117).
 - **Repro (c5b1d4b, macOS):** `type Store interface { save(n: i64) -> void! }` and
   `fn keep[S: Store](store: S) -> void! { try store.save(1) }` → `cfire check`: "'try' used on
   non-fallible expression; remove 'try' (cfire/REDUNDANT-TRY)". The call is fallible and the
@@ -1902,6 +1942,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   when a number is not Flint's.
 
 ### CF-109 · bug · `confirmed`: on macOS the runtime's `VERSION` file breaks every build
+- **At `d182f32`:** [read] Unchanged: `make install` (Makefile line 35) and `docs/install.sh` (line 191) still write `runtime/VERSION`.
 - **Repro (c5b1d4b, macOS):** `CFIRE_VERSION=c5b1d4b sh install.sh` writes
   `~/.cfire/runtime/VERSION` (`0.10.0 c5b1d4b`). The runtime folder is on the include path and
   APFS ignores case, so libc++'s `#include <version>` (from `<fstream>`) reads it:
@@ -1914,6 +1955,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   header has, such as `.cfire-version`).
 
 ### CF-110 · missing · `confirmed`: no way to keep a call's value and its error and go on
+- **At `d182f32`:** [ran] Unchanged: `x := f(-1) or err { println(…); 7 }` is still `cfire/NON-DIVERGING-OR-BLOCK`.
 - **What happened:** from `c5b1d4b` a fallible result cannot be stored or passed on, and a
   binding or assignment `x = f() or err { … }` must leave the block (`NON-DIVERGING-OR-BLOCK`).
   Code that keeps going after a failure and uses the value on success (a copy that records
@@ -1986,3 +2028,89 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   Linux), called from `tunnel_port_owner` in `src/adapters/ssh/tunnels.cf`.
 - **Ideal:** `net.port_owner(port) -> (name: str, pid: i64)?`, or a process list with each
   process's sockets in `core:os`; plus `fs.readlink`.
+
+### CF-115 · bug · `confirmed`: returning a slice from a `[]T!` function is a type mismatch
+- **Repro (d182f32, macOS) [ran]:**
+  ```cf
+  fn many() -> []i32! {
+      mut xs: []i32 = []
+      xs.push(1)
+      return xs   // error: return type mismatch: function 'many' expects '[]i32!', got '[]i32' (cfire/TYPE-MISMATCH)
+  }
+  ```
+  `c5b1d4b` accepts it, builds it and runs it. Returning a plain `i32` from an `i32!`
+  function, or a struct from a `P!` function, is still accepted: only slices fail.
+- **Impact:** 48 places in Flint (`return found`, `return list`, `return key` in the
+  keychain, crypto, config, vault and SFTP adapters and the application views). It blocks
+  `cfire build` of both binaries.
+- **Workaround:** none taken; Flint stays on `c5b1d4b`. `return xs` could be rewritten, but
+  48 detours around a checker regression are not worth writing.
+- **Ideal:** a value of type `T` is assignable to a `T!` return for every `T`, slices
+  included, as before.
+
+### CF-116 · bug · `confirmed`: `json.parse[T](…)` is typed as the bare parameter `T`
+- **Repro (d182f32, macOS) [ran]:**
+  ```cf
+  import "core:json"
+  type P struct { n: i32 `json:"n"` }
+  fn parse(t: str) -> P! {
+      return json.parse[P](t) or { return error("bad") }
+      // error: return type mismatch: function 'parse' expects 'P!', got 'T' (cfire/TYPE-MISMATCH)
+  }
+  ```
+  `c5b1d4b` accepts it and the program parses `{"n":3}`. The checker does not substitute the
+  explicit type argument into the stdlib signature, so the result keeps the name of the
+  type parameter.
+- **Impact:** 7 places in Flint, also blocking the build: `src/adapters/ipc/relay.cf:243`,
+  `src/drivers/clicmd/serve.cf:378` and `:621`, `src/adapters/vault/holder.cf:234`
+  (`json.parse[AccessBook](text) or empty_access_book()`), and `return req` after a parse in
+  `src/drivers/gui/rpc.cf:733`, `:781` and `src/drivers/gui/tunnels.cf:140`.
+- **Workaround:** none taken; Flint stays on `c5b1d4b`.
+- **Ideal:** `json.parse[P](…)` is typed `P!`, and an unresolved type parameter in a
+  result is reported as a checker bug rather than compared as a type.
+
+### CF-117 · bug · `confirmed`: `cfire fix` makes changes that alter behaviour or are not fixes
+- **Repro (d182f32, macOS) [ran]:** `cfire fix` at the root of a clean copy of Flint
+  (`5156a86`) changes 88 files (944 insertions, 806 deletions) and exits 0. Its own output
+  lists 601 "Remove redundant 'try '", 187 discards, 26 separators, 17 imports and 30
+  "Convert '…_*' constants to enum". The copy still does not build afterwards (CF-116).
+  - **It deletes real `try`s** (CF-106): `try store.ui_state_save(cleaned)` becomes
+    `store.ui_state_save(cleaned)`, so a failed write is dropped silently. About 580 net
+    across the use cases.
+  - **It adds imports Flint keeps out on purpose:** `ext:crypto/sodium` in
+    `src/adapters/crypto/sodium.cf` (Flint calls libsodium through `import cpp "sodium.h"`),
+    `core:keychain` in `src/application/session.cf` and its test (Flint has its own keychain
+    adapter, D-044), and `core:net` in a clipboard test and `src/drivers/gui/main.cf`. These
+    are guesses from a name, not missing imports: every one of these files checks cleanly on
+    `c5b1d4b`.
+  - **"Convert to enum" writes comments, not an enum:** above `PASTE_MAX_AGE` in
+    `src/domain/paste.cf` it inserts `// Suggested refactoring: type Paste enum { ... }`
+    three times, for constants that are sizes and ages, not a set of cases.
+- **Impact:** Flint cannot use `cfire fix` even for the mechanical parts. The discard and
+  separator changes it gets right are done with two `sed` lines instead.
+- **Workaround:** Flint never runs `cfire fix` (D-060).
+- **Ideal:** `fix` applies only fix-its marked safe (syntax spelling such as `_ =` and
+  `cpp.`), and a `--rule <code>` flag picks them; a fix-it that removes error handling,
+  adds a module or rewrites declarations is offered in the editor, not applied in bulk.
+
+### CF-118 · bug · `confirmed`: a deprecated `_ :=` before `try … mut x` breaks the parse and floods the output
+- **Repro (d182f32, macOS) [ran]:**
+  ```cf
+  fn take(n: i32, mut got: str) -> bool! { got = "x"; return n > 0 }
+  fn run() -> void! {
+      mut other := ""
+      _ := try take(1, mut other)
+  }
+  ```
+  gives the expected `cfire/DEPRECATED-DISCARD`, and then `expected ':=', got ')'
+  (cfire/SYNTAX)` at the `mut other)`: the parser reads `mut other` as a new declaration.
+  With `_ =` the file checks cleanly. Other argument shapes after `_ := try` fail the same
+  way (`expected type name, got 'open'` inside a struct literal argument).
+- **Impact:** on Flint, the 205 discards produce about 6,700 error lines, 10,500 of them
+  `UNDECLARED-IDENT` for names of other files in the same package and of imported ones
+  (`coded`, `ERR_INVALID`, …): the failed parse drops the rest of the file, and each package
+  is reported again from every importer. The one real cause is hard to see in that output.
+- **Workaround:** replace `_ :=` with `_ =` before checking anything else.
+- **Ideal:** the parser accepts the deprecated form as a discard (so only the deprecation
+  is reported) and a parse error in one file does not show up as undeclared names in its
+  package.
