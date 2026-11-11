@@ -1007,6 +1007,25 @@
           log('winches: ' + JSON.stringify(winches));
           await check(winches.length === 0, `going to the desktop and back sends the shell no resize (${winches.join(', ') || 'none'})`);
           void after;
+          // A full-screen program's screen survives the trip (owner, herdr): the hidden
+          // terminal was fitted under display:none, shrank to 11x5 and cut the alternate
+          // screen, which nothing drew again since the shell saw no new size.
+          {
+            const sizes = [];
+            const sub = activeTerm().onResize((e) => sizes.push(`${e.cols}x${e.rows}`));
+            await type("printf '\\033[?1049h\\033[20;60Halt-mark-%d' 42; sleep 8; printf '\\033[?1049l'");
+            await enter();
+            await waitFor(() => termText().includes('alt-mark-42'), 'the full-screen mark');
+            await click('.tab', 'rdp-clip');
+            await waitFor(() => canvas(), 'the desktop');
+            await sleep(1500);
+            await click('.tab', 'local');
+            await sleep(300);
+            sub.dispose();
+            await check(sizes.length === 0, `the hidden terminal keeps its size (${sizes.join(', ') || 'no resize'})`);
+            await check(termText().includes('alt-mark-42'), "a full-screen program's screen is still there when the tab comes back");
+            await waitFor(() => !termText().includes('alt-mark-42'), 'the full-screen program done', 15000);
+          }
           // WebKit may take a hidden terminal's WebGL context while the desktop draws: the
           // owner saw herdr's screen left blank (M31 check). Lose it on purpose here.
           {
@@ -1014,8 +1033,10 @@
             const glOf = () => [...(host?.querySelectorAll('canvas') ?? [])].map((c) => c.getContext('webgl2')).find((g) => g && !g.isContextLost());
             const glc = glOf();
             await check(!!glc, 'the terminal draws with WebGL');
+            // A mark printed now, in view: earlier output may have scrolled away.
+            await runInTerminal('clear; echo drawn-$((50+5))', 'drawn-55');
             glc?.getExtension('WEBGL_lose_context')?.loseContext();
-            const drawn = await waitFor(() => (host?.querySelector('.xterm-rows')?.textContent ?? '').includes('armed-42'), 'the terminal drawn again', 5000).catch(() => false);
+            const drawn = await waitFor(() => (host?.querySelector('.xterm-rows')?.textContent ?? '').includes('drawn-55'), 'the terminal drawn again', 5000).catch(() => false);
             await check(drawn, 'after a lost WebGL context the whole terminal is drawn again');
             await click('.tab', 'rdp-clip');
             await waitFor(() => canvas(), 'the desktop again');

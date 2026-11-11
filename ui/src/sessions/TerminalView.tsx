@@ -77,15 +77,20 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
   // that changes font when selected, or nearly vanishes after a font change. Dropping
   // the atlas once the font is in redraws every glyph with it. Cheap: glyphs are
   // drawn again on demand.
+  //
+  // Only a shown terminal is fitted (through `refit`): fitting a hidden one measured
+  // its box under display:none, where "100%" reads as 100 px, and shrank the terminal
+  // to 11x5. A full-screen program's screen (herdr, M31 owner check) was cut to that
+  // and never drawn again, since the shell was told no new size.
   const redrawGlyphs = () => {
     const term = termRef.current;
     if (!term) return;
     try {
       webglRef.current?.clearTextureAtlas();
-      fitRef.current?.fit();
     } catch {
-      // not measurable while hidden
+      // no atlas yet
     }
+    refit();
     term.refresh(0, term.rows - 1);
   };
   // After the next two frames, when a system font (which fires no font-loading
@@ -93,9 +98,8 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
   const redrawGlyphsSoon = () => {
     requestAnimationFrame(() => requestAnimationFrame(redrawGlyphs));
   };
-  // WebKit may take a WebGL context away, most often from a hidden terminal while a
-  // remote desktop draws (M31 owner check, herdr): xterm then falls back to its DOM
-  // renderer, which starts empty and showed only what changed later. Everything is
+  // When the browser takes the WebGL context away, xterm falls back to its DOM
+  // renderer, which starts empty and shows only what changes later. Everything is
   // drawn again at once, and WebGL comes back when the tab is shown again.
   const attachWebgl = (term: Terminal) => {
     if (webglRef.current) return;
