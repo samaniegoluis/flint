@@ -991,6 +991,43 @@
           await check((await keysAfter('MetaLeft')) === 'd:0x15b u:0x15b', 'a PC keyboard sends the Windows key as it is');
         }
 
+        await setStep('rdp: an SSH tab behind the desktop keeps its size and its picture (owner, herdr)');
+        {
+          await click('.tab', 'local');
+          await waitFor(() => activeTerm(), 'the local terminal');
+          await runInTerminal("trap 'echo winch-$(stty size | tr \" \" x)' WINCH; echo armed-$((40+2))", 'armed-42');
+          const before = termText();
+          await click('.tab', 'rdp-clip');
+          await waitFor(() => canvas(), 'the desktop');
+          await sleep(1500);
+          await click('.tab', 'local');
+          await sleep(1500);
+          const after = termText().slice(before.length - 200);
+          const winches = (termText().match(/winch-\d+x\d+/g) || []);
+          log('winches: ' + JSON.stringify(winches));
+          await check(winches.length === 0, `going to the desktop and back sends the shell no resize (${winches.join(', ') || 'none'})`);
+          void after;
+          // WebKit may take a hidden terminal's WebGL context while the desktop draws: the
+          // owner saw herdr's screen left blank (M31 check). Lose it on purpose here.
+          {
+            const host = activePane()?.querySelector('.xterm');
+            const glOf = () => [...(host?.querySelectorAll('canvas') ?? [])].map((c) => c.getContext('webgl2')).find((g) => g && !g.isContextLost());
+            const glc = glOf();
+            await check(!!glc, 'the terminal draws with WebGL');
+            glc?.getExtension('WEBGL_lose_context')?.loseContext();
+            const drawn = await waitFor(() => (host?.querySelector('.xterm-rows')?.textContent ?? '').includes('armed-42'), 'the terminal drawn again', 5000).catch(() => false);
+            await check(drawn, 'after a lost WebGL context the whole terminal is drawn again');
+            await click('.tab', 'rdp-clip');
+            await waitFor(() => canvas(), 'the desktop again');
+            await sleep(300);
+            await click('.tab', 'local');
+            const back = await waitFor(() => glOf(), 'WebGL back', 5000).catch(() => null);
+            await check(!!back, 'showing the tab again brings WebGL back');
+          }
+          await click('.tab', 'rdp-clip');
+          await waitFor(() => canvas(), 'the desktop again');
+        }
+
         await setStep('rdp: a dropped session offers to reconnect (design 22c7)');
         await ctl('drop');
         await waitFor(() => rdpState('lost'), 'the connection lost card', 20000);

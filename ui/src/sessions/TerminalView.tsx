@@ -93,6 +93,25 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
   const redrawGlyphsSoon = () => {
     requestAnimationFrame(() => requestAnimationFrame(redrawGlyphs));
   };
+  // WebKit may take a WebGL context away, most often from a hidden terminal while a
+  // remote desktop draws (M31 owner check, herdr): xterm then falls back to its DOM
+  // renderer, which starts empty and showed only what changed later. Everything is
+  // drawn again at once, and WebGL comes back when the tab is shown again.
+  const attachWebgl = (term: Terminal) => {
+    if (webglRef.current) return;
+    try {
+      const gl = new WebglAddon();
+      gl.onContextLoss(() => {
+        gl.dispose();
+        if (webglRef.current === gl) webglRef.current = null;
+        requestAnimationFrame(() => term.refresh(0, term.rows - 1));
+      });
+      term.loadAddon(gl);
+      webglRef.current = gl;
+    } catch {
+      webglRef.current = null;
+    }
+  };
   const activeRef = useRef(active);
   activeRef.current = active;
   const osRef = useRef(os);
@@ -124,17 +143,9 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(screenRef.current!);
-    let webgl: WebglAddon | undefined;
-    try {
-      webgl = new WebglAddon();
-      webgl.onContextLoss(() => { webgl?.dispose(); webgl = undefined; webglRef.current = null; });
-      term.loadAddon(webgl);
-    } catch {
-      webgl = undefined;
-    }
     termRef.current = term;
     fitRef.current = fit;
-    webglRef.current = webgl ?? null;
+    attachWebgl(term);
     // Web fonts (the bundled ones) report when they finish loading; system fonts do not.
     let alive = true;
     const onFontsLoaded = () => { if (alive) redrawGlyphs(); };
@@ -289,7 +300,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       term.textarea?.removeEventListener('compositionend', onCompositionEnd);
       term.element?.removeEventListener('contextmenu', onContextMenu);
       term.element?.removeEventListener('paste', onPaste, true);
-      webgl?.dispose();
+      webglRef.current?.dispose();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -325,6 +336,11 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     // Fitting now measured the wider pane and sent the shell a resize too many,
     // which zsh answered by drawing its prompt again.
     const t = setTimeout(refit, 0);
+    const term = termRef.current;
+    if (term && !webglRef.current) {
+      attachWebgl(term);
+      term.refresh(0, term.rows - 1);
+    }
     if (focus) termRef.current?.focus();
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
