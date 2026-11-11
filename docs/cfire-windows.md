@@ -480,6 +480,10 @@ file is next updated.
 - `app.emit("ping", "pong")` with a string literal does not compile
   (`json::stringify<char[5]>` has no viable overload); a `str` variable works. Seen on
   the Windows target; not yet tried on macOS or Linux.
+- **`cfire build <name>` matches a build.cf variable before an executable's name**
+  (`src/main.cpp`, `has_var_name_match`), without saying so: in Flint `var Flint =
+  build.Executable("flint")` makes `cfire build Flint` build the CLI, not the app named
+  `Flint` (`var FlintGui`). Seen 2026-11-11, after the handoff. [ran]
 
 ## How to reproduce
 
