@@ -39,6 +39,9 @@ tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
 topo_order = false
 sort_commits = "oldest"
 commit_parsers = [
+  # Releases count only the product (D-078): the site and the docs neither bump the
+  # version nor appear in the changelog.
+  { message = "^(feat|fix|perf)\\((site|docs)\\)", skip = true },
   { message = "^feat", group = "<!-- 0 -->Added" },
   { message = "^fix", group = "<!-- 1 -->Fixed" },
   { message = "^perf", group = "<!-- 2 -->Faster" },

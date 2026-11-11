@@ -9,7 +9,7 @@ command -v git-cliff >/dev/null || { echo "release-test: skip (no git-cliff; bre
 
 repo="$(mktemp -d)"
 trap 'rm -rf "$repo"' EXIT
-mkdir -p "$repo/scripts" "$repo/site/src/content/docs/reference"
+mkdir -p "$repo/scripts"
 cp "$root/scripts/release.sh" "$repo/scripts/"
 cp "$root/cliff.toml" "$repo/"
 cd "$repo"
@@ -50,9 +50,7 @@ check "the release commit is the tagged one" '[[ "$(git rev-parse v0.1.0^{commit
 cl="$(cat CHANGELOG.md)"
 check "the changelog has the version and the summary" '[[ "$cl" == *"## 0.1.0 — "* && "$cl" == *"The first one: vaults and SSH."* ]]'
 check "features and fixes are listed, with their scope" '[[ "$cl" == *"**vault:** Open a vault"* && "$cl" == *"### Fixed"* && "$cl" == *"**ssh:** Reconnect after sleep"* ]]'
-pg="$(cat site/src/content/docs/reference/changelog.md)"
-check "the docs page has front matter and the same text, no second title" '[[ "$pg" == "---"*"title: Changelog"* && "$pg" == *"**vault:** Open a vault"* && "$pg" != *"# Changelog"* ]]'
-check "the docs page is in the release commit" '[[ -z "$(git status --porcelain)" ]]'
+check "the changelog is in the release commit" '[[ -z "$(git status --porcelain)" ]]'
 check "docs, tests, chores and other commits are left out" '[[ "$cl" != *"The guide"* && "$cl" != *"More checks"* && "$cl" != *"not conventional"* && "$cl" != *"Start"* ]]'
 
 release
@@ -60,6 +58,10 @@ check "nothing new is nothing to release" '[[ $rc == 1 && "$out" == *"nothing to
 commit "docs: only docs"
 release
 check "docs alone are nothing to release" '[[ $rc == 1 ]]'
+commit "feat(site): a releases page"
+commit "fix(docs): a broken link"
+release
+check "the site and the docs alone are nothing to release (D-078)" '[[ $rc == 1 && "$out" == *"nothing to release"* ]]'
 
 commit "fix(gui): a fix"
 commit "fix(gui): another fix"
@@ -72,6 +74,7 @@ release --apply --summary "A desktop."
 check "a feature bumps the minor: 0.2.0" '[[ $rc == 0 && "$(git describe --tags --match "v*")" == "v0.2.0" ]]'
 cl="$(cat CHANGELOG.md)"
 check "newest first, earlier summaries kept" '[[ "$cl" == *"## 0.2.0"*"A desktop."*"## 0.1.1"*"Two fixes."*"## 0.1.0"*"The first one"* ]]'
+check "the site and the docs are not listed (D-078)" '[[ "$cl" != *"releases page"* && "$cl" != *"broken link"* ]]'
 check "a release lists only its own commits" '[[ "$(sed -n "/## 0.2.0/,/## 0.1.1/p" CHANGELOG.md)" == *"One more"* && "$(sed -n "/## 0.2.0/,/## 0.1.1/p" CHANGELOG.md)" != *"Another fix"* ]]'
 
 commit "docs: polish"

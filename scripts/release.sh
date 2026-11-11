@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cuts a release of Flint (milestone 32, D-077): the next version from the commits since
-# the last release tag, CHANGELOG.md (and the docs site's Changelog page) written again by
-# git-cliff, a commit and the tag.
+# the last release tag, CHANGELOG.md written again by git-cliff, a commit and the tag.
+# The docs site's Releases page reads CHANGELOG.md when the site is built (D-078).
 # It never pushes.
 #
 #   scripts/release.sh                           dry run: the next version and the section
@@ -12,7 +12,8 @@
 #   … --summary-file notes.md                    the summary from a file
 #
 # The version: a `feat` since the last tag bumps the minor (0.1.3 → 0.2.0), only `fix`es
-# the patch (0.1.3 → 0.1.4); the first release is 0.1.0. The summary is a few lines for
+# the patch (0.1.3 → 0.1.4); the first release is 0.1.0. Commits scoped to the site or
+# the docs (`feat(site): …`) do not count and are not listed (D-078). The summary is a few lines for
 # a person, shown above the version's list; it is kept as the annotated tag's message,
 # so every later run writes the same changelog again. Needs git-cliff (brew install
 # git-cliff). lean-build runs this at each milestone's close (CLAUDE.md).
@@ -40,7 +41,7 @@ command -v git-cliff >/dev/null || { echo "release: needs git-cliff (brew instal
 
 last="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
 range="${last:+$last..}HEAD"
-changes="$(git log --format=%s "$range" | grep -cE '^(feat|fix|perf)(\(|!|:)' || true)"
+changes="$(git log --format=%s "$range" | grep -E '^(feat|fix|perf)(\(|!|:)' | grep -cvE '^(feat|fix|perf)\((site|docs)\)' || true)"
 
 if [[ "$changes" == 0 ]]; then
   # git-cliff writes no section for a release with nothing in it.
@@ -78,13 +79,6 @@ fi
 
 git-cliff --tag "$tag" --with-tag-message "$summary" --output CHANGELOG.md 2>/dev/null
 git add CHANGELOG.md
-# The docs site's Changelog page: the same text under Starlight's front matter.
-page="site/src/content/docs/reference/changelog.md"
-if [[ -d "$(dirname "$page")" ]]; then
-  { printf -- '---\ntitle: Changelog\ndescription: What changed in each version of Flint.\n---\n\n'
-    sed '1{/^# /d;}' CHANGELOG.md; } > "$page"
-  git add "$page"
-fi
 git commit -q -m "chore(release): $tag"
 git tag -a "$tag" -m "$summary"
 echo "release: $tag tagged on $(git rev-parse --short HEAD); not pushed:"
