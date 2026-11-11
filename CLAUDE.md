@@ -23,7 +23,7 @@ is `docs/build-log.md` plus `git log`.
 
 | File | What it holds |
 |---|---|
-| [`docs/spec.md`](docs/spec.md) | The current spec (v8, Embedded RDP): scope, stack, architecture, **Principles**, milestones. Earlier: [`spec-v1.md`](docs/spec-v1.md) (MVP), [`spec-v2.md`](docs/spec-v2.md), [`spec-v3.md`](docs/spec-v3.md) (Flint holds the vault), [`spec-v4.md`](docs/spec-v4.md) (Files), [`spec-v5.md`](docs/spec-v5.md) (Between servers), [`spec-v6.md`](docs/spec-v6.md) (Tunnels), [`spec-v7.md`](docs/spec-v7.md) (Paste into the terminal) |
+| [`docs/spec.md`](docs/spec.md) | The current spec (v9, Versions and a faster desktop): scope, stack, architecture, **Principles**, milestones. Earlier: [`spec-v1.md`](docs/spec-v1.md) (MVP), [`spec-v2.md`](docs/spec-v2.md), [`spec-v3.md`](docs/spec-v3.md) (Flint holds the vault), [`spec-v4.md`](docs/spec-v4.md) (Files), [`spec-v5.md`](docs/spec-v5.md) (Between servers), [`spec-v6.md`](docs/spec-v6.md) (Tunnels), [`spec-v7.md`](docs/spec-v7.md) (Paste into the terminal), [`spec-v8.md`](docs/spec-v8.md) (Embedded RDP) |
 | [`ROADMAP.md`](ROADMAP.md) | Everything beyond the current spec. The backlog |
 | [`docs/build-log.md`](docs/build-log.md) | One line per finished milestone. The only state |
 | [`docs/decisions.md`](docs/decisions.md) | One-line decision log |
