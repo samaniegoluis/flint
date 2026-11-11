@@ -225,7 +225,7 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
     <Modal label={host ? `Edit host ${host.alias}` : 'New host'} onClose={onClose} width={680} top={52}>
       <form onSubmit={save} onKeyDown={(e) => { if (e.key === 'Enter' && (os === 'mac' ? e.metaKey : e.ctrlKey)) save(); }} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div className="modal-h">
-          <span className={'hmark ' + c.className} style={{ height: 20, ...c.style }} />
+          {f.color && <span className={'hmark ' + c.className} style={{ height: 20, ...c.style }} />}
           <h2 className="grow">{host ? <>Edit host <span className="mono muted" style={{ fontWeight: 'var(--fw-regular)' }}>{host.alias}</span></> : 'New host'}</h2>
           <TypeBadge type="ssh" />
           {host && <Kbd action="editHost" />}

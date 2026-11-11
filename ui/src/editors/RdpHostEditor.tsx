@@ -123,7 +123,7 @@ export function RdpHostEditor({ host, group, onClose, onDelete, onNewCredential 
     <Modal label={host ? `Edit host ${host.alias}` : 'New RDP host'} onClose={onClose} width={680} top={52}>
       <form data-rdp-editor onSubmit={save} onKeyDown={(e) => { if (e.key === 'Enter' && (os === 'mac' ? e.metaKey : e.ctrlKey)) save(); }} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div className="modal-h">
-          <span className={'hmark ' + c.className} style={{ height: 20, ...c.style }} />
+          {f.color && <span className={'hmark ' + c.className} style={{ height: 20, ...c.style }} />}
           <h2 className="grow">{host ? <>Edit host <span className="mono muted" style={{ fontWeight: 'var(--fw-regular)' }}>{host.alias}</span></> : 'New host'}</h2>
           <TypeBadge type="rdp" />
           {host && <Kbd action="editHost" />}
@@ -153,7 +153,7 @@ export function RdpHostEditor({ host, group, onClose, onDelete, onNewCredential 
               <div className="field"><label className="flabel" htmlFor="ru">User {login === 'credential' && <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· overrides the credential's</span>}</label>
                 <div className="input"><input id="ru" className="mono" value={f.user} onChange={(e) => set('user', e.target.value)} placeholder={login === 'credential' ? 'from the credential' : 'Administrator'} /></div></div>
               <div className="field"><label className="flabel" htmlFor="rd">Domain <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></label>
-                <div className="input"><input id="rd" className="mono" value={f.domain} onChange={(e) => set('domain', e.target.value)} placeholder="optional, e.g. CORP" /></div></div>
+                <div className="input"><input id="rd" className="mono" value={f.domain} onChange={(e) => set('domain', e.target.value)} placeholder="e.g. CORP" /></div></div>
             </div>
             <span className="hint"><span className="mono">DOMAIN\user</span> and <span className="mono">user@domain</span> also work in User.</span>
           </div>
