@@ -774,6 +774,15 @@
       const png = new File([pngBytes], 'Screen Shot e2e.png', { type: 'image/png' });
       const pathRe = /(\/\S*\/\.cache\/flint\/paste\/p-[a-z0-9-]+\/Screen-Shot-e2e\.png)/;
       // The buffer with wrapped rows joined: a long path spans two rows.
+      // Keys typed while the shell redraws its prompt can be lost (an async prompt; seen
+      // on Windows, 2026-11-11: the ls ran without the pasted path). Wait, as a person
+      // would, for the screen to stop changing.
+      const settle = async () => {
+        for (let screen = '', t0 = Date.now(); termText() !== screen && Date.now() - t0 < 10000; ) {
+          screen = termText();
+          await sleep(300);
+        }
+      };
       const fullText = () => {
         const b = activeTerm()?.buffer.active;
         if (!b) return '';
@@ -796,6 +805,7 @@
       const pasted = await waitFor(() => fullText().match(pathRe), 'the pasted path in the prompt', 20000);
       const path = pasted[1];
       await check(true, `the image's path on the server is pasted into the prompt (${path})`);
+      await settle();
       await type('; echo ls-$((6*7))');
       await enter();
       await waitFor(() => termText().includes('ls-42'), 'the ls of the pasted file');
@@ -816,6 +826,7 @@
       await pasteData(null, []);
       const nativePasted = await waitFor(() => fullText().match(nativeRe), 'the path of the image the core read', 20000);
       await check(true, `an empty paste event pastes the clipboard's image, read by the core (${nativePasted[1]})`);
+      await settle();
       await type('; echo native-$((6*7))');
       await enter();
       await waitFor(() => termText().includes('native-42'), 'the ls of the image the core read');
