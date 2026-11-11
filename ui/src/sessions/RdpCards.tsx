@@ -171,7 +171,8 @@ function CertificatePrompt({ pane }: { pane: Pane }) {
           {k.valid_to && <><dt>Valid</dt><dd className="mono">{k.valid_from} → {k.valid_to}</dd></>}
         </dl>
         <div className="col" style={{ gap: 6 }}><span className="flabel">SHA-256 fingerprint</span><div className="fp" data-fingerprint>{groupedFingerprint(k.fingerprint)}</div></div>
-        <span className="hint">Self-signed is normal for Windows hosts and VMs: Windows makes this certificate itself. To compare, run in PowerShell on the server: <span className="mono">{"$c = Get-ChildItem 'Cert:\\LocalMachine\\Remote Desktop'; [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($c.RawData))"}</span></span>
+        <span className="hint">Self-signed is normal for Windows hosts and VMs: Windows makes this certificate itself. To compare, run in PowerShell on the server:</span>
+        <div className="fp" data-cert-command style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{"$c = Get-ChildItem 'Cert:\\LocalMachine\\Remote Desktop'; [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($c.RawData))"}</div>
         <div className="row" style={{ gap: 'var(--sp-2)' }}>
           <button type="button" className="btn btn-ghost" onClick={() => sessions.answer(pane.id, false, '')}>Cancel<Key>esc</Key></button>
           <span className="grow" />
