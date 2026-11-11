@@ -368,7 +368,8 @@ Settings belong to this machine, not to the vault, and save as you change them.
   vault keeps entries: 30 days, 90 days (the default), 1 year or no limit. A shorter
   choice that removes entries says how many and asks first. This setting is in the vault,
   not on this machine, and only this window changes it.
-- **About**: the version this build was made from and the libraries linked into it
+- **About**: the version this build was made from (also at the right of the status bar,
+  which opens this section) and the libraries linked into it
   (libssh, libsodium, SQLite with SQLCipher, FreeRDP). What changed in each version is
   in the [Changelog](/reference/changelog/).
 

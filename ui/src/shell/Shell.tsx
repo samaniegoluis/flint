@@ -38,7 +38,7 @@ const NARROW = 1040;
 
 export function Shell() {
   const app = useApp();
-  const { os, vault, catalog, settings, notify, fail, refreshCatalog, openVaultFile, go, phase } = app;
+  const { os, info, vault, catalog, settings, notify, fail, refreshCatalog, openVaultFile, go, phase } = app;
   const { tabs, panes, active } = useSessions();
   const [view, setView] = useState<View>('hosts');
   const [narrow, setNarrow] = useState(window.innerWidth < NARROW);
@@ -453,6 +453,12 @@ export function Shell() {
         )}
         <span className="grow" />
         {zoom !== 0 && <button className="sb-btn" onClick={() => setZoom(0)} title="Reset terminal font size">{fontSize} px</button>}
+        {info?.version && (
+          <button className="sb-btn sb-version" data-sb-version onClick={() => { setSection('about'); setView('settings'); }}
+            title="Settings → About" aria-label={`Flint ${info.version}. Open Settings, About`}>
+            v{info.version}
+          </button>
+        )}
         <span className="sb-item"><Kbd action="palette" />Commands</span>
       </footer>
 

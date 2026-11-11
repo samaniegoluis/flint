@@ -181,6 +181,8 @@ body { margin: 0; background: var(--surface-desk); }
 .statusbar .sb-item { display: flex; align-items: center; gap: 6px; }
 .statusbar .ic { width: 12px; height: 12px; }
 .sb-update { color: var(--accent-text); }
+/* The build's version (milestone 32): quiet, beside Commands; it opens Settings → About. */
+.sb-btn.sb-version { color: var(--text-tertiary); font-family: var(--font-mono); }
 .sb-btn { display: flex; align-items: center; gap: 6px; height: 20px; padding: 0 6px; border-radius: var(--radius-xs); color: var(--text-secondary); }
 .sb-btn:hover { background: var(--surface-hover); color: var(--text-primary); }
 

@@ -1469,8 +1469,11 @@
       await click('[role="radiogroup"][aria-label="Terminal colours"] button', 'Default');
       await waitFor(() => !q('.set-row .term').style.getPropertyValue('--term-bg'), 'the default palette (tokens) again');
       await check(true, 'Default goes back to the design tokens');
-      await click('.nav-i', 'About');
-      await waitFor(() => q('[data-about-version]'), 'the About section');
+      await check(q('[data-sb-version]')?.textContent.trim() === `v${VERSION}`, `the status bar shows the version (${q('[data-sb-version]')?.textContent.trim()})`);
+      await click('.nav-i', 'Appearance');
+      q('[data-sb-version]').click();
+      await waitFor(() => q('[data-about-version]'), 'the About section from the status bar');
+      await check(q('.nav-i.on')?.textContent.includes('About'), 'the status bar version opens Settings → About');
       await check(q('[data-about-version]').textContent.trim() === `Flint ${VERSION}`, `Settings → About shows the build's version (${q('[data-about-version]').textContent.trim()})`);
       await check([...qa('[data-about-libs] tr')].every((r) => r.cells[1].textContent.trim() !== '—') && /\d/.test(q('[data-about-libs]').textContent), 'About lists the linked libraries with their versions');
       await click('.nav-i', 'Vault');
