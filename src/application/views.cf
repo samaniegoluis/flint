@@ -34,6 +34,10 @@ type HostView struct {
     has_sudo_password: bool `json:"has_sudo_password"`
     command:      str   `json:"command"`
     keep_shell:   bool  `json:"keep_shell"`
+    // `ssh` or `rdp` (milestone 29).
+    host_type:    str   `json:"type"`
+    // An RDP host's Windows domain; "" for none.
+    domain:       str   `json:"domain"`
 }
 
 // What a successful `host test` reports: the host, how many hops were dialled

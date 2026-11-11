@@ -501,3 +501,87 @@ this is its proper design:
     the window says so plainly before Allow, so the person is not asked to approve a
     tunnel that cannot open.
 ```
+
+---
+
+## Message 8: RDP hosts and the RDP tab (v8, milestones 29-30, to send)
+
+Written at milestone 29's plan (2026-11-11, D-070). Send it in the same chat as messages
+1-7. Screens 21a-21d are needed by milestone 29, 22a-22e by milestone 30.
+
+```
+Flint follow-up: remote desktop (RDP) hosts. Same tokens.css, components and dark/light
+pairs as the existing screens. Name the new files 21… and 22…, as below.
+
+Context: Flint v8 adds Windows remote desktops beside SSH. A host now has a type, SSH or
+RDP, chosen when it is created and fixed after (to change it, remove the host and add it
+again). Both types live in the same vault, the same sidebar tree (folders mixed), the same
+search and the same command palette. An RDP session opens in a tab of its own showing the
+remote Windows desktop (one session per tab, never in a split pane); the target feeling
+is "a VM on my own computer", so the tab must also work full screen with Flint's chrome
+out of the way. The owner's hosts: Windows Server, Windows 10/11 Pro and Windows VMs on
+Proxmox, reached directly or over a VPN. Self-signed certificates are the normal case.
+
+An RDP host has: label, address, port (3389 by default), user, an optional Windows domain,
+a login (its own password, or a saved credential that has a password; RDP never uses an
+SSH key), folder, tags, colour and notes. It has no jump host, initial command, sudo
+password or tunnels: those sections must not appear for it.
+
+21a · New host: the first step asks the type. Two large cards side by side, "SSH" (a
+  terminal on a Linux or Unix server) and "Remote desktop (RDP)" (a Windows desktop in a
+  tab), each with its type icon and one line saying what it is. Keyboard: arrows and ↵,
+  1/2 as shortcuts. Entry points: the sidebar "+" and the palette's "New host…" both land
+  here; "New SSH host" / "New RDP host" palette commands skip it.
+
+21b · Host editor for an RDP host (beside 06, same layout and sections where they apply):
+  - The type shown in the header as a fixed badge with its icon (not editable; a tooltip
+    says how to change it).
+  - Connection: label, address, port (placeholder 3389), user, domain (placeholder
+    "optional, e.g. CORP"). One hint: "DOMAIN\user and user@domain also work in User".
+  - Login: own password (Saved · Change · Remove once stored, as 06) or a credential
+    (the picker lists only credentials with a password; one with only a key is shown
+    disabled with the reason).
+  - Folder, tags, colour, notes as 06.
+  - Footer as 06: Save, Cancel, and no "Test connection" until milestone 30 (reserve its
+    place).
+  - Inline errors: address missing, port out of range.
+
+21c · Type icons everywhere a host appears: a small glyph for SSH (a terminal prompt) and
+  for RDP (a monitor or window), readable at 12-16 px in both themes, next to the colour
+  dot without crowding it. Show them in the sidebar tree (a folder holding both types),
+  in search results, in the palette ("Connect to win-01" with the RDP glyph), in the
+  host list of 16a1's Hosts row, and on tabs (an RDP tab vs SSH tabs in one strip).
+
+21d · Sidebar context menu and session toolbar for an RDP host: only what applies
+  (Connect, Edit, Duplicate, Remove; no Files, no Tunnels, no "Open in a new pane").
+  Hovering a greyed SSH-only action in the palette says "SSH hosts only".
+
+22a · The RDP tab, connected: the remote desktop fills the tab's content area, scaled to
+  fit with letterboxing in the graphite background when the ratio differs; a slim tab
+  toolbar (host, resolution, latency, Full screen, Disconnect) that can auto-hide.
+  Show a realistic Windows 11 desktop inside (a generic wallpaper, the taskbar, an
+  Explorer window).
+
+22b · Full screen: the remote desktop takes the whole screen; Flint's chrome is gone except
+  a thin drop-down bar at the top centre (host name, Exit full screen, Disconnect),
+  shown on hover or with a shortcut, in the spirit of mstsc's connection bar. Keys like
+  Alt+Tab and the Windows key go to the remote while in it; say so once, quietly.
+
+22c · States inside the tab (reuse 11a and 11c where they fit): connecting ("Connecting to
+  win-01…", with Cancel); failed, one per reason: wrong user or password, certificate
+  changed, network unreachable, timed out, the server refused (e.g. RDP is not enabled, or
+  too many sessions); each with its reason in plain words and the next action (Edit host,
+  Retry). Connection lost, with Reconnect (milestone 31).
+
+22d · The certificate prompt on first connection (the RDP twin of 10c, the unknown host key
+  dialog): the host, "This server's certificate is not known yet", the certificate's
+  subject and issuer, its validity dates, and its SHA-256 fingerprint in mono grouped for
+  reading; a note that self-signed is normal for Windows hosts and VMs; Trust and connect
+  (⌘↵) and Cancel (esc). Variant: the certificate changed since last time, a refusal in
+  the warning tone of 10c's changed-key screen, with both fingerprints and how to forget
+  the old one (Settings → Known hosts).
+
+22e · At 900×600 (as 04c): 21a, 21b and 22a.
+
+Dark and light for every screen.
+```

@@ -27,7 +27,7 @@ speaks the Kitty keyboard protocol.
 | Files view (show or hide) | ⌘E | Ctrl+Shift+E |
 | Tunnels view (show or hide) | ⇧⌘T | Ctrl+Alt+Shift+T |
 | Settings | ⌘, | Ctrl+Shift+, |
-| New host (new key or credential on those pages) | ⌘N | Ctrl+Shift+N |
+| New host: asks SSH or RDP first (new key or credential on those pages) | ⌘N | Ctrl+Shift+N |
 | Edit host | ⌘I | Ctrl+Shift+I |
 | Lock vault | ⌘L | Ctrl+Shift+L |
 | Quit Flint (closing the window only hides it in the menu bar or tray) | ⌘Q | Ctrl+Shift+Q |

@@ -44,10 +44,17 @@ type HostPatch struct {
     // The password typed for `exec --sudo` (milestone 13); "" removes it.
     sudo_password: str `json:"sudo_password"`
     set_sudo_password: bool `json:"set_sudo_password"`
+    // `ssh` or `rdp` (milestone 29). Chosen when the host is added and fixed after:
+    // an edit may repeat it, never change it.
+    host_type: str `json:"type"`
+    set_host_type: bool `json:"set_type"`
+    // An RDP host's Windows domain; "" for none.
+    domain: str `json:"domain"`
+    set_domain: bool `json:"set_domain"`
 }
 
 fn empty_host_patch() -> HostPatch {
-    return HostPatch{ alias: "", set_alias: false, label: "", set_label: false, hostname: "", set_hostname: false, port: 22, set_port: false, user: "", set_user: false, group: "", set_group: false, tags: [], set_tags: false, color: "", set_color: false, notes: "", set_notes: false, jump: "", set_jump: false, credential: "", set_credential: false, key: "", set_key: false, password: "", set_password: false, command: "", set_command: false, keep_shell: true, set_keep_shell: false, sudo_password: "", set_sudo_password: false }
+    return HostPatch{ alias: "", set_alias: false, label: "", set_label: false, hostname: "", set_hostname: false, port: 22, set_port: false, user: "", set_user: false, group: "", set_group: false, tags: [], set_tags: false, color: "", set_color: false, notes: "", set_notes: false, jump: "", set_jump: false, credential: "", set_credential: false, key: "", set_key: false, password: "", set_password: false, command: "", set_command: false, keep_shell: true, set_keep_shell: false, sudo_password: "", set_sudo_password: false, host_type: "", set_host_type: false, domain: "", set_domain: false }
 }
 
 fn load_catalog[S: VaultStore](store: S) -> Catalog! {
@@ -134,6 +141,8 @@ fn host_view(cat: Catalog, h: Host) -> HostView {
         has_sudo_password: h.sudo_password.len() > 0,
         command: h.initial_command,
         keep_shell: h.keep_shell,
+        host_type: host_type_of(h),
+        domain: h.domain,
     }
 }
 
@@ -201,6 +210,19 @@ fn apply_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: 
     if p.set_keep_shell {
         h.keep_shell = p.keep_shell
     }
+    if p.set_host_type {
+        try check_host_type(p.host_type)
+        if host_index_by_id(cat.hosts, h.id) >= 0 && host_type_of(h) != p.host_type {
+            return error(coded(ERR_INVALID, "'{h.alias}' is an {host_type_of(h)} host; a host's type cannot change (remove it and add it again)"))
+        }
+        h.host_type = p.host_type
+        if !p.set_port && host_index_by_id(cat.hosts, h.id) < 0 {
+            h.port = default_port_for(p.host_type)
+        }
+    }
+    if p.set_domain {
+        h.domain = p.domain
+    }
     // Field rules first, so a bad value is reported before any group is created.
     try check_host(h)
     if p.set_group {
@@ -213,11 +235,14 @@ fn apply_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: 
     if p.set_jump {
         if p.jump.len() == 0 {
             h.jump_host_id = ""
+        } else if is_rdp_host(h) {
+            return error(coded(ERR_INVALID, "an RDP host has no jump host"))
         } else {
             target := try require_host(cat.hosts, p.jump)
             if target.id == h.id {
                 return error(coded(ERR_INVALID, "a host cannot be its own jump host"))
             }
+            try require_ssh_host(target, "a jump host")
             if jump_chain_reaches(cat.hosts, target.id, h.id) {
                 return error(coded(ERR_INVALID, "jump host '{p.jump}' would make a loop"))
             }
@@ -232,12 +257,18 @@ fn apply_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: 
             if idx < 0 {
                 return error(coded(ERR_NOT_FOUND, "no credential '{p.credential}'"))
             }
-            h.credential_id = cat.creds[usize(idx)].id
+            cred := cat.creds[usize(idx)]
+            if is_rdp_host(h) && cred.password.len() == 0 {
+                return error(coded(ERR_INVALID, "credential '{cred.name}' has no password; an RDP host logs in with a password"))
+            }
+            h.credential_id = cred.id
         }
     }
     if p.set_key {
         if p.key.len() == 0 {
             h.key_id = ""
+        } else if is_rdp_host(h) {
+            return error(coded(ERR_INVALID, "an RDP host logs in with a password, not an SSH key"))
         } else {
             idx := key_index_by_name(cat.keys, p.key)
             if idx < 0 {
@@ -252,6 +283,8 @@ fn apply_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: 
     if p.set_sudo_password {
         h.sudo_password = try seal_secret(crypto, session, "hosts", h.id, "sudo_password", p.sudo_password)
     }
+    // Again with every reference resolved.
+    try check_rdp_host(h)
     return h
 }
 
@@ -301,6 +334,12 @@ fn edit_host[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSe
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
     return save_host_patch(crypto, mut store, session, cat, h, p)
+}
+
+// Refuses `alias` when it is an RDP host, before anything is dialled or approved.
+fn require_ssh_alias[S: VaultStore](store: S, alias: str, what: str) -> void! {
+    cat := try load_catalog(store)
+    try require_ssh_host(try require_host(cat.hosts, alias), what)
 }
 
 fn show_host[S: VaultStore](store: S, alias: str) -> HostView! {

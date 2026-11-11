@@ -577,6 +577,35 @@ expect 0 "host rm" "$SMI" -- host rm gone "${SM[@]}"
 expect 0 "tunnel ls --json" "$SMI" -- --json tunnel ls "${SM[@]}"
 check "its tunnel went with it" '[[ "$(echo "$out" | json_get "sorted(t[\"host\"] + \":\" + t[\"name\"] for t in d)")" == "['"'"'inner:pg'"'"', '"'"'local:e2e-tunnel-marker'"'"']" ]]'
 
+echo "== rdp hosts (milestone 29)"
+expect 0 "host add --type rdp with a password on stdin" "$SMI$HOST_PW"$'\n' -- --json host add win --type rdp --hostname e2e-rdp-marker.example --user admin --domain E2E-DOMAIN-MARKER --password-stdin "${SM[@]}"
+check "an RDP host gets port 3389, its type and domain" '[[ "$(echo "$out" | json_get "d[\"type\"], d[\"port\"], d[\"domain\"], d[\"has_password\"]")" == "('"'"'rdp'"'"', 3389, '"'"'E2E-DOMAIN-MARKER'"'"', True)" ]]'
+expect 0 "host show of an RDP host (text)" "$SMI" -- host show win "${SM[@]}"
+check "it shows the type and domain, no SSH-only fields" '[[ "$out" == *"type        rdp"* && "$out" == *"domain      E2E-DOMAIN-MARKER"* && "$out" != *"jump"* && "$out" != *"sudo"* ]]'
+expect 0 "host list (text)" "$SMI" -- host list "${SM[@]}"
+check "the list has a TYPE column and the RDP target" '[[ "$out" == "ALIAS"*"TYPE"*"TARGET"* && "$out" == *"rdp"*"E2E-DOMAIN-MARKER\\admin@e2e-rdp-marker.example"* && "$out" == *"local"*"ssh"* ]]'
+expect 0 "host list --json" "$SMI" -- --json host list "${SM[@]}"
+check "every host has a type" '[[ "$(echo "$out" | json_get "sorted(set(h[\"type\"] for h in d))")" == "['"'"'rdp'"'"', '"'"'ssh'"'"']" ]]'
+expect 0 "an RDP host on another port keeps it" "$SMI" -- --json host add win2 --type rdp --hostname 10.9.9.9 --port 3390 "${SM[@]}"
+check "port 3390" '[[ "$(echo "$out" | json_get "d[\"port\"]")" == "3390" ]]'
+expect 7 "an unknown type is invalid" "$SMI" -- host add vnc1 --type vnc --hostname x "${SM[@]}"
+expect 7 "an RDP host takes no SSH key" "$SMI" -- host add k --type rdp --hostname x --key any "${SM[@]}"
+expect 7 "an RDP host takes no initial command" "$SMI" -- host add c --type rdp --hostname x --command htop "${SM[@]}"
+expect 7 "an RDP host takes no jump host" "$SMI" -- host edit win --jump local "${SM[@]}"
+expect 7 "a domain on an SSH host is invalid" "$SMI" -- host edit local --domain CORP "${SM[@]}"
+expect 7 "a host's type cannot change" "$SMI" -- host edit win --type ssh "${SM[@]}"
+check "it says to remove and add it again" '[[ "$err" == *"cannot change"* ]]'
+expect 0 "repeating the type on edit is fine" "$SMI" -- host edit win --type rdp --label "Windows box" "${SM[@]}"
+expect 23 "an RDP host as a jump host: wrong_host_type" "$SMI" -- --json host edit inner --jump win "${SM[@]}"
+check "as a JSON error with its code" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "wrong_host_type" ]]'
+expect 23 "flint exec refuses an RDP host" "$SMI" -- exec win "${SM[@]}" -- true
+check "it says why" '[[ "$err" == *"'"'"'win'"'"' is an RDP host; flint exec needs an SSH host"* ]]'
+expect 23 "flint cp refuses an RDP host" "$SMI" -- cp "$loc/app.conf" "win:/tmp/" "${SM[@]}"
+expect 23 "flint cp between hosts refuses an RDP end" "$SMI" -- cp "local:$rem/app.conf" "win:/tmp/" "${SM[@]}"
+expect 23 "a tunnel on an RDP host is refused" "$SMI" -- tunnel add win rdp-t --local 13389 "${SM[@]}"
+expect 23 "host test refuses an RDP host" "$SMI" -- host test win "${SM[@]}"
+expect 0 "host rm of an RDP host" "$SMI" -- host rm win2 "${SM[@]}"
+
 echo "== every --json output parses"
 expect 0 "version --json" "" -- --version --json
 check "version is JSON" 'echo "$out" | is_json'
@@ -590,7 +619,7 @@ for f in "$vault" "$work" "$off"; do
     check "$(basename "$f") has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$f"'
   done
 done
-for needle in "127.0.0.1" "localhost" "$test_key_body" "inner" "e2e-tunnel-marker" "e2e-dest-marker" "SQLite format 3"; do
+for needle in "127.0.0.1" "localhost" "$test_key_body" "inner" "e2e-tunnel-marker" "e2e-dest-marker" "e2e-rdp-marker" "E2E-DOMAIN-MARKER" "SQLite format 3"; do
   check "ssh.flint has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$sv"'
 done
 check "no journal or WAL file is left next to the vault" '! ls "$tmp"/*.flint-* >/dev/null 2>&1'

@@ -86,6 +86,14 @@
     await click(`button.select[aria-label="${label}"]`);
     await click('[role="listbox"] .mi', option);
   }
+  // New host opens the type step first (milestone 29, design 21a): SSH, then Continue.
+  async function newSshHost(sel, t) {
+    await click(sel, t);
+    await waitFor(() => q('[data-host-type-step]'), 'the type step');
+    await click('.type-card[data-type="ssh"]');
+    await click('.modal button', 'Continue');
+    await waitFor(() => q('#ha'), 'the SSH host editor');
+  }
   function check(cond, what) {
     if (!cond) throw new Error('check failed: ' + what);
     passed++;
@@ -160,7 +168,7 @@
 
     await setStep('add host');
     await click('.rail-btn', 'Hosts');
-    await click('.btn-primary', 'New host');
+    await newSshHost('.btn-primary', 'New host');
     await fill('#ha', 'local');
     await fill('#hh', '127.0.0.1');
     await fill('#hp', PORT);
@@ -172,7 +180,7 @@
     await check(true, 'a new host appears in the sidebar tree');
 
     await setStep('host with a saved password');
-    await click('.side-head .icon-btn[aria-label^="New host"]');
+    await newSshHost('.side-head .icon-btn[aria-label^="New host"]');
     await fill('#ha', 'pwhost');
     await fill('#hh', '127.0.0.2');
     await click('.seg button', 'Password');
@@ -449,7 +457,7 @@
       await check(true, 'the reconnected session works');
 
       await setStep('jump host');
-      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await newSshHost('.side-head .icon-btn[aria-label^="New host"]');
       await fill('#ha', 'inner');
       await fill('#hh', 'localhost');
       await fill('#hp', PORT2);
@@ -554,7 +562,7 @@
 
         // A host with no open tab: a session with no terminal, its host key asked in the pane (14d5c).
         await click('.rail-btn', 'Hosts');
-        await click('.side-head .icon-btn[aria-label^="New host"]');
+        await newSshHost('.side-head .icon-btn[aria-label^="New host"]');
         await fill('#ha', 'side');
         await fill('#hh', '127.0.0.1');
         await fill('#hp', PORT2);
@@ -716,7 +724,7 @@
       }
 
       await setStep('changed host key');
-      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await newSshHost('.side-head .icon-btn[aria-label^="New host"]');
       await fill('#ha', 'moved');
       await fill('#hh', '127.0.0.1');
       await fill('#hp', PORT3);
@@ -886,7 +894,7 @@
 
       // A host whose address is the tunnel: its shell proves bytes go through.
       await click('.rail-btn', 'Hosts');
-      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await newSshHost('.side-head .icon-btn[aria-label^="New host"]');
       await fill('#ha', 'through');
       await fill('#hh', '127.0.0.1');
       await fill('#hp', TPORT);
@@ -962,7 +970,7 @@
       const isMac = (await window.backend.app_info({})).os === 'mac';
       const shortcut = (key, code) => (document.activeElement ?? document.body).dispatchEvent(
         new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
-      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await newSshHost('.side-head .icon-btn[aria-label^="New host"]');
       await fill('#ha', 'probe');
       // 127.0.0.1, not localhost: on Linux localhost resolves to ::1 first, where the
       // test sshds do not listen. [127.0.0.1]:PORT2 is not known yet (inner went
@@ -1235,6 +1243,105 @@
         await waitForAsync(async () => (await uiState()).sidebar_open === true, 'the open sidebar to be stored');
       } else {
         await log(`skip sidebar open/closed: the window is ${window.innerWidth} px, too narrow to dock it`);
+      }
+
+      await setStep('rdp hosts: type step, editor, glyphs, menu (milestone 29)');
+      {
+        if (!q('.sidebar')) await click('.rail-btn', 'Hosts');
+        const key = (k, code, mods = {}) => (document.activeElement ?? document.body).dispatchEvent(
+          new KeyboardEvent('keydown', { key: k, code, bubbles: true, cancelable: true, ...mods }));
+        const cred = (name, user, keyName, password) => window.backend.cred_add({ name, set_name: true, user, set_user: true,
+          key: keyName, set_key: !!keyName, password, set_password: !!password });
+        await cred('domain-login', 'e2e', '', 'rdp-cred-pw');
+        await cred('deploy', 'deploy', 'e2e-key', '');
+        await click('.side-head .icon-btn[aria-label^="New host"]');
+        await waitFor(() => q('[data-host-type-step]'), 'the type step');
+        await check(q('.type-card[data-type="ssh"]')?.getAttribute('aria-checked') === 'true', 'New host asks the type first, SSH chosen');
+        key('2', 'Digit2');
+        await waitFor(() => q('.type-card[data-type="rdp"]')?.getAttribute('aria-checked') === 'true', 'RDP chosen');
+        key('Enter', 'Enter');
+        await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor');
+        await check(q('[data-type-badge="rdp"]'), '2 then ↵ opens the RDP editor with its fixed type badge');
+        await check(!q('#hc') && !q('[data-sudo-field]') && !byText('.modal .flabel', 'Jump host') && !q('[data-host-tunnels]'),
+          'the RDP editor has no initial command, sudo, jump host or tunnels');
+        await check(!byText('.modal button', 'Test connection') && q('[data-test-reserved]'), 'the RDP editor keeps a place for Test connection, no button yet');
+        await fill('#ra', 'win-e2e');
+        await fill('#rp', '70000');
+        await click('.modal button[type="submit"]', 'Add host');
+        await waitFor(() => hasText('Enter an address'), 'the address error');
+        await check(hasText('Use 1–65535.'), 'a missing address and a bad port are marked on their fields');
+        await fill('#rh', '10.20.0.15');
+        await fill('#rp', '');
+        await fill('#ru', 'e2e');
+        await fill('#rd', 'CORP');
+        await fill('.modal input[aria-label="Password"]', 'rdp-host-pw-marker');
+        await click('.modal button[type="submit"]', 'Add host');
+        await waitFor(() => byText('.tree .ti', 'win-e2e'), 'win-e2e in the tree');
+        const cat = await window.backend.catalog({});
+        const win = cat.hosts.find((h) => h.alias === 'win-e2e');
+        await check(win?.type === 'rdp' && win.port === 3389 && win.domain === 'CORP' && win.user === 'e2e' && win.has_password,
+          `the RDP host is saved with port 3389 and its domain (${JSON.stringify(win)})`);
+        await check(!JSON.stringify(cat).includes('rdp-host-pw-marker'), 'the catalog carries no RDP password (Principle 6)');
+        await check(byText('.tree .ti', 'win-e2e').querySelector('[data-htype="rdp"]') && byText('.tree .ti', 'local').querySelector('[data-htype="ssh"]'),
+          'the tree marks each host with its type');
+
+        await setStep('rdp hosts: credential with a password only');
+        const row = () => byText('.tree .ti', 'win-e2e');
+        const menu = () => { const r = row().getBoundingClientRect(); row().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 5 })); };
+        menu();
+        await waitFor(() => q('[role="menu"]'), 'the context menu');
+        const items = qa('[role="menu"] .mi').map((b) => b.textContent);
+        await check(items.some((t) => t.startsWith('Connect')) && items.some((t) => t.startsWith('Copy address')) && !items.some((t) => t.includes('new tab')),
+          `an RDP host's menu has Connect, Edit, Copy address and Delete, no new tab (${items.join(' | ')})`);
+        await click('[role="menu"] .mi', 'Edit host');
+        await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor (edit)');
+        await click('.modal .seg button', 'Credential');
+        await click('button.select[aria-label="Credential"]');
+        const deploy = await waitFor(() => byText('[role="listbox"] .mi', 'deploy'), 'the key-only credential');
+        await check(deploy.getAttribute('aria-disabled') === 'true' && deploy.textContent.includes('Only has an SSH key'), 'a key-only credential is listed but not choosable');
+        deploy.click();
+        await sleep(60);
+        await click('[role="listbox"] .mi', 'domain-login');
+        await click('.modal button[type="submit"]', 'Save');
+        await waitForAsync(async () => (await window.backend.catalog({})).hosts.find((h) => h.alias === 'win-e2e')?.credential === 'domain-login', 'the credential to be saved');
+        const after = (await window.backend.catalog({})).hosts.find((h) => h.alias === 'win-e2e');
+        await check(!after.has_password, 'switching to a credential removes the host\'s own password');
+
+        await setStep('rdp hosts: connect, palette');
+        const tabsBefore = qa('.tab').length;
+        row().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        await waitFor(() => hasText('remote desktop (RDP) host'), 'the not-yet notice');
+        await sleep(300);
+        await check(qa('.tab').length === tabsBefore, 'opening an RDP host says the tab comes later and opens no SSH session');
+        key('k', 'KeyK', { metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac });
+        await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
+        await fill('[aria-label="Command palette"] input', 'win-e2e');
+        const opt = await waitFor(() => byText('[role="option"]', 'win-e2e'), 'win-e2e in the palette');
+        await check(opt.querySelector('[data-htype="rdp"]') && !byText('[role="option"]', 'win-e2e in a new pane'), 'the palette marks the RDP host and offers no pane for it');
+        await fill('[aria-label="Command palette"] input', 'New RDP host');
+        await waitFor(() => q('[role="option"].hot')?.textContent.includes('New RDP host'), 'New RDP host hot');
+        key('Enter', 'Enter');
+        await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor from the palette');
+        await check(!q('[data-host-type-step]'), 'New RDP host skips the type step');
+        await click('.modal button', 'Cancel');
+        await waitFor(() => !q('.modal'), 'the editor closed');
+        key('k', 'KeyK', { metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac });
+        await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
+        await fill('[aria-label="Command palette"] input', 'New SSH host');
+        await waitFor(() => q('[role="option"].hot')?.textContent.includes('New SSH host'), 'New SSH host hot');
+        key('Enter', 'Enter');
+        await waitFor(() => q('[data-type-badge="ssh"]'), 'the SSH editor from the palette');
+        await check(q('#ha') && !q('[data-host-type-step]'), 'New SSH host skips the type step');
+        await click('.modal button', 'Cancel');
+        await waitFor(() => !q('.modal'), 'the editor closed');
+
+        menu();
+        await click('[role="menu"] .mi', 'Delete host');
+        await click('.modal button', 'Delete host');
+        await waitFor(() => !row(), 'win-e2e gone');
+        await window.backend.cred_rm({ name: 'domain-login' });
+        await window.backend.cred_rm({ name: 'deploy' });
+        await check(true, 'an RDP host is deleted from its menu');
       }
 
       await setStep('rename the vault');

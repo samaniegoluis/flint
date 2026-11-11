@@ -44,6 +44,10 @@ Hosts
                                         --command runs on connect, then a login
                                         shell (--no-keep-shell: ends the session);
                                         the sudo password defaults to the login one
+  host add <alias> --type rdp --hostname <host> [--port N] [--user U]
+           [--domain D] [--password | --password-stdin | --cred <name>]
+                                        a remote desktop host (port 3389); no
+                                        --key, --jump, --command or sudo password
   host edit <alias> [same flags] [--alias <new>] [--no-tags] [--no-password]
            [--no-sudo-password] [--command ""] [--keep-shell]
   host list [--group <path>] [--tag <tag>] | host show <alias> | host rm <alias>

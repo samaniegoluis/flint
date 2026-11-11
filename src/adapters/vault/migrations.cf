@@ -164,6 +164,14 @@ CREATE TABLE tunnels (
 CREATE UNIQUE INDEX tunnels_unique_name ON tunnels (host_id, name COLLATE NOCASE);
 ` })
 
+    // 008: a host type and an RDP host's domain (milestone 29, D-070). Every host
+    // saved before is an SSH host. An RDP server's certificate goes in `known_hosts`
+    // under `rdp://<name>:<port>`, so it needs no table of its own.
+    list.push(Migration{ version: 8, name: "host type", sql: `
+ALTER TABLE hosts ADD COLUMN type TEXT NOT NULL DEFAULT 'ssh';
+ALTER TABLE hosts ADD COLUMN domain TEXT NOT NULL DEFAULT '';
+` })
+
     return list
 }
 

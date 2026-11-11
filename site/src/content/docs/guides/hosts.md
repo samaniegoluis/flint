@@ -39,6 +39,32 @@ only says whether one is set. In the desktop app you can [reveal or copy
 it](/guides/desktop-app/#hosts-keys-and-credentials). The sudo password is never
 revealed, not even in the app: it is only typed for a `sudo` you approved.
 
+## Remote desktop (RDP) hosts
+
+A host is an **SSH** host unless you say otherwise. A Windows machine you reach with
+Remote Desktop is an **RDP** host. In the app, **New host** asks for the type first (see
+[the desktop app](/guides/desktop-app/#remote-desktop-rdp-hosts)); from the CLI:
+
+```sh
+flint host add win-01 --type rdp --hostname 10.20.30.50 --user admin --domain CORP --password
+```
+
+| Flag | Meaning | Default |
+|---|---|---|
+| `--type rdp` | A remote desktop host. Chosen when the host is added, fixed after | `ssh` |
+| `--port <n>` | RDP port | `3389` |
+| `--user <user>` | Windows user. `DOMAIN\user` and `user@domain` work too | none |
+| `--domain <name>` | Windows domain | none |
+| `--password` / `--password-stdin` / `--cred <name>` | The login: its own password, or a credential that has one | none |
+
+Label, group, tags, colour and notes work as for SSH hosts. An RDP host logs in with a
+password only, so `--key`, `--jump`, `--command` and `--sudo-password` are refused for it.
+To change a host's type, remove it and add it again.
+
+Commands that need SSH (`exec`, `cp`, `connect`, `host test`, tunnels, and using it as a
+jump host) refuse an RDP host with `wrong_host_type` (exit 23). Opening the remote desktop
+in a Flint tab is on its way (v8); until then RDP hosts keep their logins in the vault.
+
 ## Run a command on connect
 
 A host can start a program every time you open a shell on it, the way you would type it

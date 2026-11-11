@@ -11,7 +11,7 @@ import { useApp, vaultInitial, vaultMarkClass, shortPath } from '../state/app';
 import { fuzzy, highlight } from '../lib/fuzzy';
 import { ACTION_TITLES, chordLabel, type Action } from '../lib/keymap';
 import { colorStyle } from '../lib/colors';
-import { Icon, type IconName } from '../ui/Icon';
+import { HostTypeIcon, Icon, type IconName } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
 import { useSessions } from '../sessions/store';
@@ -35,6 +35,8 @@ interface Item {
 
 const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'newHost', icon: 'plus' },
+  { action: 'newSshHost', icon: 'plus' },
+  { action: 'newRdpHost', icon: 'plus' },
   { action: 'reconnect', icon: 'reconnect' },
   { action: 'duplicate', icon: 'dup' },
   { action: 'splitRight', icon: 'split' },
@@ -95,6 +97,9 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
   const items = useMemo(() => {
     const out: Item[] = [];
     for (const h of catalog.hosts) {
+      const rdp = h.type === 'rdp';
+      // Adding a tunnel needs an SSH host.
+      if (pickToEdit && rdp) continue;
       const name = fuzzy(q, h.alias);
       const where = h.group ? h.group.split('/').join(' / ') : h.hostname;
       const alt = q ? fuzzy(q, `${h.label} ${h.hostname} ${h.tags.join(' ')} ${h.group}`) : null;
@@ -106,14 +111,15 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
         render: () => (
           <>
             <span className={'hmark ' + c.className} style={c.style} />
+            <HostTypeIcon type={h.type} size="md" />
             <span className="mono" style={{ width: 160, flex: 'none' }}><Hl text={h.alias} positions={name?.positions ?? []} /></span>
             <span className="grow faint trunc" style={{ fontSize: 'var(--fs-xs)' }}>{where}{tabIdx >= 0 ? ` · open in tab ${tabIdx + 1}` : ''}</span>
             <span className="hint">{newSession ? 'New tab' : tabIdx >= 0 ? 'Switch to tab' : 'Connect'}</span>
           </>
         ),
-        run: (mode) => (pickToEdit ? onManageTunnels(h.alias) : mode === 'pane' && canSplit ? onSplit(h.alias) : onConnect(h.alias, mode === 'tab' || newSession)),
+        run: (mode) => (pickToEdit ? onManageTunnels(h.alias) : mode === 'pane' && canSplit && !rdp ? onSplit(h.alias) : onConnect(h.alias, mode === 'tab' || newSession)),
         edit: () => onEdit(h.alias),
-        host: true,
+        host: !rdp,
       });
       // A host with an initial command can be opened without it once, like
       // `flint connect --no-command`: a way in when that program is broken. Offered
@@ -185,6 +191,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
     if (!hostsOnly && canSplit && q) {
       // The best three hosts, as "Open <host> in a new pane" (design 18e).
       const best = catalog.hosts
+        .filter((h) => h.type !== 'rdp')
         .map((h) => ({ h, m: fuzzy(q, h.alias) }))
         .filter((x) => x.m)
         .sort((a, b) => b.m!.score - a.m!.score)
@@ -210,7 +217,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
         if (q && !m) continue;
         out.push({
           group: 'actions', key: 'a:' + a.action, score: (m?.score ?? 0) + 1000,
-          render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m?.positions ?? []} /></span>{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
+          render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m?.positions ?? []} /></span>{a.action === 'newSshHost' && <HostTypeIcon type="ssh" size="md" />}{a.action === 'newRdpHost' && <HostTypeIcon type="rdp" size="md" />}{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
           run: () => onAction(a.action),
         });
       }
@@ -307,7 +314,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           {/* ⌘↵ and ⌘I only act on a host, so they are offered only while one is hot. */}
           {current?.group === 'hosts' && <>
             {!newSession && <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</Key>open in new tab</span>}
-            {canSplit && <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⇧⌘↵' : 'Ctrl+Shift+↵'}</Key>open in a new pane</span>}
+            {canSplit && current.host && <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⇧⌘↵' : 'Ctrl+Shift+↵'}</Key>open in a new pane</span>}
             <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘I' : 'Ctrl+I'}</Key>edit host</span>
           </>}
         </div>

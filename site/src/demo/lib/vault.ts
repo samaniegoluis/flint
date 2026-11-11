@@ -22,6 +22,10 @@ export interface Host {
 	/** The initial command (D-031); '' for a plain shell. */
 	command: string;
 	keepShell: boolean;
+	/** `ssh` or `rdp` (milestone 29); fixed once added. */
+	type: 'ssh' | 'rdp';
+	/** An RDP host's Windows domain; '' for none. */
+	domain: string;
 	/** Local forwards saved in this host (milestone 22); they go with it. */
 	tunnels: Tunnel[];
 }
@@ -133,6 +137,7 @@ export function hostView(h: Host) {
 		group: h.group, tags: h.tags, color: h.color, notes: h.notes, jump: h.jump,
 		credential: h.credential, key: h.key, has_password: h.hasPassword,
 		has_sudo_password: h.hasSudoPassword, command: h.command, keep_shell: h.keepShell,
+		type: h.type, domain: h.domain,
 	};
 }
 
@@ -214,7 +219,7 @@ export function worldFromSeed(seed: any): World {
 				alias: h.alias, label: h.label ?? '', hostname: h.hostname, port: h.port ?? 22, user: h.user ?? '',
 				group: h.group ?? '', tags: h.tags ?? [], color: h.color ?? '', notes: h.notes ?? '',
 				jump: h.jump ?? '', credential: h.credential ?? '', key: h.key ?? '', hasPassword: !!h.password, hasSudoPassword: false,
-				command: h.command ?? '', keepShell: h.keep_shell ?? true,
+				command: h.command ?? '', keepShell: h.keep_shell ?? true, type: h.type ?? 'ssh', domain: h.domain ?? '',
 				tunnels: (h.tunnels ?? []).map((t: any) => ({ name: t.name, localPort: t.local_port, destHost: t.dest_host ?? 'localhost', destPort: t.dest_port ?? t.local_port, openOnConnect: !!t.open_on_connect, running: false })),
 			})),
 			knownHosts: v.known_hosts.map((k: any) => {
@@ -254,6 +259,24 @@ function checkGroupName(name: string): void {
 }
 
 const lower = (s: string) => s.toLowerCase();
+
+/** src/domain/rdp.cf: SSH-only settings are refused on an RDP host, a domain on an SSH host. */
+function checkRdpHost(h: Host): void {
+	checkText('domain', h.domain, 128);
+	if (h.type !== 'rdp') {
+		if (h.domain) fail('invalid', 'a domain applies to RDP hosts only');
+		return;
+	}
+	if (h.key) fail('invalid', 'an RDP host logs in with a password, not an SSH key');
+	if (h.jump) fail('invalid', 'an RDP host has no jump host');
+	if (h.command) fail('invalid', 'an RDP host has no initial command');
+	if (h.hasSudoPassword) fail('invalid', 'an RDP host has no sudo password');
+}
+
+/** An RDP host given to something only SSH does (`wrong_host_type`). */
+export function requireSshHost(h: Host, what: string): void {
+	if (h.type === 'rdp') fail('wrong_host_type', `'${h.alias}' is an RDP host; ${what} needs an SSH host`);
+}
 
 // ---- the vault's use cases ---------------------------------------------------
 
@@ -375,6 +398,15 @@ export class VaultOps {
 		if (patch.sudoPassword !== undefined) h.hasSudoPassword = patch.sudoPassword;
 		if (patch.command !== undefined) h.command = patch.command;
 		if (patch.keepShell !== undefined) h.keepShell = patch.keepShell;
+		if (patch.type !== undefined) {
+			if (patch.type !== 'ssh' && patch.type !== 'rdp') fail('invalid', `host type must be 'ssh' or 'rdp', not '${patch.type}'`);
+			if (!isNew && h.type !== patch.type) {
+				fail('invalid', `'${h.alias}' is an ${h.type} host; a host's type cannot change (remove it and add it again)`);
+			}
+			h.type = patch.type;
+			if (isNew && patch.port === undefined) h.port = patch.type === 'rdp' ? 3389 : 22;
+		}
+		if (patch.domain !== undefined) h.domain = patch.domain;
 		if (isNew) {
 			if (!h.alias) fail('usage', 'a host needs an alias');
 			if (!h.hostname) fail('usage', 'a host needs a hostname (--hostname)');
@@ -388,11 +420,15 @@ export class VaultOps {
 		checkText('initial command', h.command, 1024);
 		if (/[\n\t]/.test(h.command)) fail('invalid', 'initial command must be a single line');
 		h.tags.forEach((t) => checkName('tag', t));
+		checkRdpHost(h);
 		if (patch.jump !== undefined) {
 			if (patch.jump === '') {
 				h.jump = '';
+			} else if (h.type === 'rdp') {
+				fail('invalid', 'an RDP host has no jump host');
 			} else {
 				const j = this.findHost(patch.jump);
+				requireSshHost(j, 'a jump host');
 				if (lower(j.alias) === lower(h.alias)) fail('invalid', 'a host cannot be its own jump host');
 				let cur: Host | undefined = j;
 				for (let n = 0; cur && cur.jump && n < 32; n++) {
@@ -402,15 +438,25 @@ export class VaultOps {
 				h.jump = j.alias;
 			}
 		}
-		if (patch.credential !== undefined) h.credential = patch.credential ? this.findCred(patch.credential).name : '';
-		if (patch.key !== undefined) h.key = patch.key ? this.findKey(patch.key).name : '';
+		if (patch.credential !== undefined) {
+			const c = patch.credential ? this.findCred(patch.credential) : undefined;
+			if (c && h.type === 'rdp' && !c.hasPassword) {
+				fail('invalid', `credential '${c.name}' has no password; an RDP host logs in with a password`);
+			}
+			h.credential = c ? c.name : '';
+		}
+		if (patch.key !== undefined) {
+			if (patch.key && h.type === 'rdp') fail('invalid', 'an RDP host logs in with a password, not an SSH key');
+			h.key = patch.key ? this.findKey(patch.key).name : '';
+		}
 		if (patch.group !== undefined) h.group = patch.group ? this.ensureGroup(patch.group) : '';
 	}
 
 	addHost(patch: HostPatch): Host {
 		const h: Host = {
 			alias: '', label: '', hostname: '', port: 22, user: '', group: '', tags: [], color: '',
-			notes: '', jump: '', credential: '', key: '', hasPassword: false, hasSudoPassword: false, command: '', keepShell: true, tunnels: [],
+			notes: '', jump: '', credential: '', key: '', hasPassword: false, hasSudoPassword: false, command: '', keepShell: true,
+			type: 'ssh', domain: '', tunnels: [],
 		};
 		const groupsBefore = [...this.v.groups];
 		try {
@@ -488,6 +534,7 @@ export class VaultOps {
 	addTunnel(alias: string, p: TunnelPatch): TunnelView {
 		if (p.localPort === undefined) fail('usage', 'a tunnel needs a local port (--local)');
 		const h = this.findHost(alias);
+		requireSshHost(h, 'a tunnel');
 		const q = { ...p, dest: p.dest ?? (['localhost', p.localPort] as [string, number]) };
 		const t = this.applyTunnel(h, { name: '', localPort: 0, destHost: '', destPort: 0, openOnConnect: false, running: false }, q);
 		h.tunnels.push(t);
@@ -701,6 +748,8 @@ export interface HostPatch {
 	sudoPassword?: boolean;
 	command?: string;
 	keepShell?: boolean;
+	type?: string;
+	domain?: string;
 }
 
 export interface CredPatch {
