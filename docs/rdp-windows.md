@@ -3,6 +3,12 @@
 Notes for the owner's Windows branch (milestone 28, D-070, D-071). This repo cannot build
 or run Windows; everything here is to be checked there.
 
+**When:** at the close of milestone 30, not before (owner, 2026-11-11). The spike's frame
+channel uses POSIX sockets and would need the Winsock port twice; milestone 30 makes it an
+`#ifdef _WIN32` pair, and the check then runs on the real RDP tab. v8 does not close
+without it: the owner uses RDP mostly from Windows. Not deferred to cfire's own Windows
+support, which has no date.
+
 ## What the RDP adapter needs
 
 | Need | macOS / Linux here | Windows |
