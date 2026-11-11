@@ -77,3 +77,11 @@ RUN mkdir -p .local/include .local/lib /tmp/sj && cd /tmp/sj \
     && cp simdjson.h /home/flint/.local/include/ \
     && rm -rf /tmp/sj
 ENV CPLUS_INCLUDE_PATH=/home/flint/.local/include LIBRARY_PATH=/home/flint/.local/lib
+
+# iptables for the RDP adapter's quiet-network test (milestone 31): it drops the test
+# server's packets, as a network that goes away, when the container has NET_ADMIN
+# (FLINT_RDP_BLACKHOLE=1 scripts/linux-check.sh). Last, so the layers above stay cached.
+USER root
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends iptables \
+    && rm -rf /var/lib/apt/lists/*
+USER flint

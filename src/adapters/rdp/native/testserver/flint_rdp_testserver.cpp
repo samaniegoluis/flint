@@ -254,7 +254,7 @@ void peer_loop(freerdp_peer* client) {
     if (!freerdp_peer_context_new(client)) { freerdp_peer_free(client); return; }
     pctx(client->context)->peer = &self;
     rdpSettings* st = client->context->settings;
-    rdpPrivateKey* key = freerdp_key_new_from_file_enc(g_key, nullptr);
+    rdpPrivateKey* key = freerdp_key_new_from_file(g_key);
     rdpCertificate* cert = freerdp_certificate_new_from_file(g_cert);
     bool ok = key && cert
         && freerdp_settings_set_pointer_len(st, FreeRDP_RdpServerRsaKey, key, 1)
