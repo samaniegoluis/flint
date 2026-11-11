@@ -183,7 +183,7 @@ the size limit is one row in Settings → Terminal.
 | # | Milestone | Delivers |
 |---|---|---|
 | 25 | **Paste an image into the terminal** | Starts with a **spike** on macOS (WKWebView) and Zorin (WebKitGTK), with a page the owner runs on Windows (WebView2): what the paste event gives for a screenshot, an image file copied in Finder, a PDF copied in Finder; and what a drop onto the terminal gives. It settles the order among file, image and text, and whether a copied file is in v7 (all three or none). Then: an image pasted into a pane is written over that pane's SFTP session to the paste folder (`0700`/`0600`, cleaned name, unique sub-folder, `/tmp/flint-<uid>/` fallback), entries older than 24 h pruned on each paste, its path pasted inside bracketed paste; text wins when the clipboard has both. *Largest file to paste* in Settings → Terminal (10 / 20 / 50 / 100 MB, default 20). The upload notice and every failure's reason. Split panes and jump hosts. gui-e2e: a `paste` run of its own. Docs, the landing (a line where it fits, asked at plan time if not clear) |
-| 26 | **Files onto the terminal** | One or more files of any type dropped onto a pane are uploaded the same way and their paths pasted, separated by spaces and quoted when needed; folders are refused with a pointer to the Files view. Built on the Files view's drop staging (D-055). If 25's spike allowed it on all three systems, a file copied in Finder or the file manager pastes the same way, and wins over the file name the clipboard also carries as text. Otherwise that item goes to the roadmap. gui-e2e on the drop. Docs |
+| 26 | ~~**Files onto the terminal**~~ **Dropped from v7 before it started** (owner, 2026-11-11, D-069): ROADMAP §1, `later`, with the cost of the Linux shim. Was: One or more files of any type dropped onto a pane are uploaded the same way and their paths pasted, separated by spaces and quoted when needed; folders are refused with a pointer to the Files view. Built on the Files view's drop staging (D-055). If 25's spike allowed it on all three systems, a file copied in Finder or the file manager pastes the same way, and wins over the file name the clipboard also carries as text. Otherwise that item goes to the roadmap. gui-e2e on the drop. Docs |
 | 27 | **Test freezes** | Time-boxed, with the owner. gui-e2e on macOS runs with its window **visible** (`FLINT_E2E_VISIBLE`, or the default if the experiment says so; hidden stays available). `scripts/repeat.sh <step> <N>` runs one isolated gui-e2e step N times and prints the failure rate. The experiment: the vim step and the one-more-tab run, 10 times hidden against 10 visible, plus a short manual check by the owner. If visible ends the freezes, it becomes the macOS default and the M21/M23 workarounds are reviewed; whatever the result, the rates and findings go into the ROADMAP entries. `repeat.sh` is the tool `CLAUDE.md` rule 9 (unexplained failures are isolated first) relies on |
 
 ## Open questions
@@ -192,8 +192,8 @@ the size limit is one row in Settings → Terminal.
   does not work on Linux, so it is out of milestone 26 (ROADMAP, `later`). The same run
   found that on Linux neither a pasted image nor a dropped file reaches the page (ROADMAP
   §1, "Image paste and file drops do not work on Linux"): the image can be read through
-  Flint's native clipboard shim (CF-053), the drop needs a native handler (CF-004). Milestone 26's
-  plan settles where that work goes. Windows (WebView2) is still to be checked by the owner.
+  Flint's native clipboard shim (CF-053), the drop needs a native handler (CF-004). Settled
+  2026-11-11: milestone 26 left v7 (D-069); the drop is `later` in the roadmap. Windows (WebView2) is still to be checked by the owner.
 - **Visible e2e window as the macOS default**: settled by 27's experiment. Linux keeps
   Xvfb.
 - **A host with 2FA or keyboard-interactive auth** asks twice when its terminal and its
