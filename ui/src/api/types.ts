@@ -7,6 +7,7 @@ export interface AppInfo {
   libssh: string;
   libsodium: string;
   sqlite: string;
+  freerdp: string;
   e2e: boolean;
 }
 

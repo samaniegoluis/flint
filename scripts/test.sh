@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs every cfire test suite in src/ against a throwaway sshd on 127.0.0.1.
 #
-#   scripts/test.sh            # every suite in src/
+#   scripts/test.sh            # every suite in src/, then scripts/release-test.sh
 #   scripts/test.sh src/adapters/ssh
 #
 # The sshd uses its own host key, user key and config in a temp dir, listens only on
@@ -153,4 +153,8 @@ status=0
 for t in "${targets[@]}"; do
   cfire test "$t" || status=1
 done
+# The release script and cliff.toml (milestone 32), with the whole run only.
+if [[ $# -eq 0 ]]; then
+  "$root/scripts/release-test.sh" || status=1
+fi
 exit "$status"

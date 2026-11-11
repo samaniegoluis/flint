@@ -67,6 +67,7 @@ export default defineConfig({
 						{ label: 'Keyboard shortcuts', slug: 'reference/keyboard-shortcuts' },
 						{ label: 'Vault format', slug: 'reference/vault-format' },
 						{ label: 'Security model', slug: 'reference/security-model' },
+						{ label: 'Changelog', slug: 'reference/changelog' },
 					],
 				},
 			],

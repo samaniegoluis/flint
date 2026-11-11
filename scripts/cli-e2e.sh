@@ -612,6 +612,11 @@ expect 0 "host rm of an RDP host" "$SMI" -- host rm win2 "${SM[@]}"
 echo "== every --json output parses"
 expect 0 "version --json" "" -- --version --json
 check "version is JSON" 'echo "$out" | is_json'
+# The version is git's, read at build time (milestone 32): the build ran scripts/version.sh.
+want_version="$("$root/scripts/version.sh")"
+check "--version --json carries the build's version ($want_version)" '[[ "$(echo "$out" | json_get "d[\"flint\"]")" == "$want_version" ]]'
+expect 0 "version" "" -- --version
+check "--version names it on its first line" '[[ "$(echo "$out" | head -1)" == "flint $want_version" ]]'
 
 echo "== nothing secret or identifying leaks"
 for secret in "$MASTER" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "$test_key_body" "PRIVATE KEY" ${FLINT_TEST_LOGIN_PW:+"$FLINT_TEST_LOGIN_PW"}; do

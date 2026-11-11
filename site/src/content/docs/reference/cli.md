@@ -297,5 +297,8 @@ flint --version --json
 ```
 
 ```json
-{"flint":"0.0.0-dev","libssh":"0.12.2/openssl/zlib","libsodium":"1.0.22","sqlite":"3.54.1 (SQLCipher 4.20.0 community)"}
+{"flint":"0.1.0","libssh":"0.12.2/openssl/zlib","libsodium":"1.0.22","sqlite":"3.54.1 (SQLCipher 4.20.0 community)"}
 ```
+
+`flint` is the version the binary was built from: a release (`0.1.0`), or a build made
+after one (`0.1.0-4-g83f876b`, four commits later). See the [Changelog](/reference/changelog/).

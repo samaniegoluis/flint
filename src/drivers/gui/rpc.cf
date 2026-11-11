@@ -19,13 +19,14 @@ import "../../adapters/crypto"
 import "../../adapters/fonts"
 import "../../adapters/keychain"
 import "../../adapters/process"
+import "../../adapters/rdp"
 import "../../adapters/ssh"
 import "../../adapters/uievents"
 import "../../adapters/vault"
 import "../../application"
 import "../../domain"
+import "../version"
 
-FLINT_VERSION: str = "0.0.0-dev"
 
 // The most sessions open at once; each one holds a worker thread.
 MAX_SESSIONS: i64 = 48
@@ -201,6 +202,7 @@ type AppInfo struct {
     libssh:    str  `json:"libssh"`
     libsodium: str  `json:"libsodium"`
     sqlite:    str  `json:"sqlite"`
+    freerdp:   str  `json:"freerdp"`
     e2e:       bool `json:"e2e"`
 }
 
@@ -345,7 +347,7 @@ fn close_current(mut store: LockedVaultStore, mut st: GuiState) {
 // ---- App and window -------------------------------------------------------------------
 
 fn rpc_app_info(e2e: bool) -> str! {
-    return json.stringify(AppInfo{ version: FLINT_VERSION, os: os_name(), libssh: libssh_version(), libsodium: sodium_version(), sqlite: sqlcipher_version(), e2e: e2e })
+    return json.stringify(AppInfo{ version: version.FLINT_VERSION, os: os_name(), libssh: libssh_version(), libsodium: sodium_version(), sqlite: sqlcipher_version(), freerdp: freerdp_version(), e2e: e2e })
 }
 
 fn rpc_window_theme(params: str, mut app: webui.App) -> str! {

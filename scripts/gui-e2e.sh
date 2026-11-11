@@ -120,7 +120,7 @@ sleep 0.5
 
 # Writes the page script for one run: $1 vault file, $2 the run's name, $3 output.
 make_script() {
-  E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TPORT="$tport" E2E_RPORT="$rport" E2E_RPORT_FWD="$rport_fwd" E2E_RUN="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
+  E2E_VERSION="$("$root/scripts/version.sh")" E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TPORT="$tport" E2E_RPORT="$rport" E2E_RPORT_FWD="$rport_fwd" E2E_RUN="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
 import os, sys
 src = open(sys.argv[1]).read()
 key = open(os.environ["FLINT_TEST_SSH_KEY"]).read().replace("\\", "\\\\").replace("`", "\\`")
@@ -128,7 +128,7 @@ values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_P
           "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"], "TPORT": os.environ["E2E_TPORT"],
           "RPORT": os.environ["E2E_RPORT"], "RPORT_FWD": os.environ["E2E_RPORT_FWD"],
           "CPORT": os.environ.get("FLINT_RDP_CLIP_PORT", "0"), "CCTL": os.environ.get("FLINT_RDP_CLIP_CONTROL", "0"),
-          "USER": os.environ["USER"], "KEY": key,
+          "VERSION": os.environ["E2E_VERSION"], "USER": os.environ["USER"], "KEY": key,
           "RUN": os.environ["E2E_RUN"]}
 for k, v in values.items():
     src = src.replace("@@" + k + "@@", v)

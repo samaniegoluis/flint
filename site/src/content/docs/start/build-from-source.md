@@ -103,14 +103,29 @@ cfire build
 `PKG_CONFIG_PATH`. The adapters reach their native headers, per-OS link flags and libsecret
 through it. Without it, `cfire build` fails to find `flint-native`.
 
-The output lists the library versions that were linked:
+The output names the version and lists the library versions that were linked:
 
 ```text
-flint 0.0.0-dev
+flint 0.1.0-4-g83f876b
   libssh     0.12.2/openssl/zlib
   libsodium  1.0.22
   sqlite     3.54.1 (SQLCipher 4.20.0 community)
 ```
+
+### The version
+
+Every build reads its version from git: `cfire build` runs `scripts/version.sh` first,
+which writes it into `src/drivers/version/version.cf` (generated, not committed).
+
+| You build | The version reads |
+|---|---|
+| A release tag, such as `v0.1.0` | `0.1.0` |
+| Four commits after it | `0.1.0-4-g83f876b` (the last part is the commit) |
+| With uncommitted changes | the same, ending in `-dirty` |
+| Outside git (a source archive) | `0.0.0-dev` |
+
+`FLINT_VERSION=0.1.0 cfire build` sets it by hand, for an archive or a shell with no git.
+The script runs under `sh`: on Windows, build from Git Bash or set `FLINT_VERSION`.
 
 ### The desktop app
 

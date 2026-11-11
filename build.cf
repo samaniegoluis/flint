@@ -2,6 +2,14 @@ package build
 
 import "core:build"
 
+// The version, from git, written to src/drivers/version/version.cf before every build
+// (milestone 32, D-077). No Outputs: cfire runs a command without them every time, and
+// the script rewrites the file only when the version changed.
+// CFIRE-UPSTREAM: CF-123 (core:build documents build.Step; the manifest reads build.Command)
+var Version = build.Command("sh", {
+    Args: ["scripts/version.sh", "--write"],
+})
+
 // The `flint` CLI.
 var Flint = build.Executable("flint", {
     Entry:     "src/drivers/cli/main.cf",

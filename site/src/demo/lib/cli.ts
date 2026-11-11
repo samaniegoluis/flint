@@ -179,9 +179,9 @@ function* dispatch(args: string[], world: World, io: Io, asJson: boolean): Run {
 	const p = parseFlintArgs(args);
 	if (p.has('--version') || p.has('-V')) {
 		if (asJson) {
-			io.out(json({ flint: '0.0.0-dev', libssh: '0.12.2/openssl/zlib', libsodium: '1.0.22', sqlite: '3.54.1 (SQLCipher 4.20.0 community)' }));
+			io.out(json({ flint: '0.1.0', libssh: '0.12.2/openssl/zlib', libsodium: '1.0.22', sqlite: '3.54.1 (SQLCipher 4.20.0 community)' }));
 		} else {
-			io.out('flint 0.0.0-dev');
+			io.out('flint 0.1.0');
 			io.out('  libssh     0.12.2/openssl/zlib');
 			io.out('  libsodium  1.0.22');
 			io.out('  sqlite     3.54.1 (SQLCipher 4.20.0 community)');

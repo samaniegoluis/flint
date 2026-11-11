@@ -16,6 +16,8 @@
   // Flint's own RDP test server (milestone 31): the clipboard, the keys it received
   // and a dropped connection, driven over its control port. '0' when it is not running.
   const CPORT = '@@CPORT@@';
+  // The version the build was made from (scripts/version.sh, milestone 32).
+  const VERSION = '@@VERSION@@';
   const CCTL = '@@CCTL@@';
   const USER = '@@USER@@';
   const KEY = `@@KEY@@`;
@@ -1467,6 +1469,10 @@
       await click('[role="radiogroup"][aria-label="Terminal colours"] button', 'Default');
       await waitFor(() => !q('.set-row .term').style.getPropertyValue('--term-bg'), 'the default palette (tokens) again');
       await check(true, 'Default goes back to the design tokens');
+      await click('.nav-i', 'About');
+      await waitFor(() => q('[data-about-version]'), 'the About section');
+      await check(q('[data-about-version]').textContent.trim() === `Flint ${VERSION}`, `Settings → About shows the build's version (${q('[data-about-version]').textContent.trim()})`);
+      await check([...qa('[data-about-libs] tr')].every((r) => r.cells[1].textContent.trim() !== '—') && /\d/.test(q('[data-about-libs]').textContent), 'About lists the linked libraries with their versions');
       await click('.nav-i', 'Vault');
       await waitFor(() => hasText('Known hosts'), 'the vault settings');
       await check(byText('td', `[127.0.0.1]:${PORT}`), 'known hosts are listed');

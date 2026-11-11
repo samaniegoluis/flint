@@ -236,3 +236,13 @@ fn close_all_desktops() {
         flint_rdp::close_all();
     }
 }
+
+// FreeRDP's version, for Settings → About (milestone 32).
+fn freerdp_version() -> str {
+    mut v := ""
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        v = freerdp_get_version_string();
+    }
+    return v
+}

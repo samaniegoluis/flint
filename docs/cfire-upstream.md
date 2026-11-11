@@ -2196,3 +2196,18 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   so an app turns it on for development (an environment variable or a debug build). And a
   way to filter the default context menu (WebView2's `ContextMenuRequested`; WebKit's
   `context-menu` signal; `WKUIDelegate` on macOS) that keeps copy and paste in text fields.
+
+### CF-123 · bug · `confirmed`: `core:build` documents `build.Step`; the manifest reads `build.Command`
+- **Seen (milestone 32) [ran]:** the reference (`docs/STDLIB_REFERENCE.md:98`,
+  `cfire_stdlib_lookup core:build`) offers `build.Step(name, StepConfig)` for a pre-build
+  command. The manifest parser only recognises a call whose member is `Command`
+  (`src/build/manifest.hpp:250`); `Step` is not matched there. `build.Command("sh", { Args:
+  ["scripts/version.sh", "--write"] })` in Flint's `build.cf` runs before every `cfire build`
+  and `cfire test` (checked: `FLINT_VERSION=9.9.9-probe cfire build Flint` gave
+  `flint 9.9.9-probe`, the next plain build `flint 0.0.0-dev`).
+- **Also undocumented:** a command with no `Outputs` runs on every build
+  (`src/build/deps.hpp:597`), which is what a version stamp needs.
+- **Impact:** a project following the docs gets no pre-build step, silently.
+- **Workaround:** `build.Command`, as Flint does.
+- **Ideal:** one name in the docs and the parser (or both accepted), and "no `Outputs` runs
+  every time" stated in the reference.

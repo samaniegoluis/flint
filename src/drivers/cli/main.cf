@@ -10,8 +10,7 @@ import "../../adapters/process"
 import "../../adapters/ssh"
 import "../../adapters/vault"
 import "../clicmd"
-
-FLINT_VERSION: str = "0.0.0-dev"
+import "../version"
 
 type VersionInfo struct {
     flint:     str `json:"flint"`
@@ -22,7 +21,7 @@ type VersionInfo struct {
 
 fn print_version(as_json: bool) {
     info := VersionInfo{
-        flint: FLINT_VERSION,
+        flint: version.FLINT_VERSION,
         libssh: libssh_version(),
         libsodium: sodium_version(),
         sqlite: sqlcipher_version(),

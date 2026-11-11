@@ -67,6 +67,12 @@ is `docs/build-log.md` plus `git log`.
    iterate there. A fix counts when that loop shows 0 failures in N runs; then the step
    goes back into its run and the full suite runs once to confirm. The measured rate goes
    into the failure's ROADMAP entry (owner, 2026-11-10).
+10. **A release at each milestone's close** (D-077). After `docs: close milestone NN`, run
+    `scripts/release.sh` (a dry run: the next version and its changelog section), write a
+    short summary of the version for a person, and run it again with `--apply --summary`.
+    It commits `CHANGELOG.md` and tags `vX.Y.Z`; it never pushes, so the tag goes up with
+    the branch (`git push origin main vX.Y.Z`) and the merge stays a fast-forward. A
+    milestone with no `feat` or `fix` makes no release.
 
 ## Language
 

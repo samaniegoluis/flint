@@ -17,7 +17,7 @@ import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
 import { MAC_MOD_KEYS, MOD_TARGETS, modMapOf, modMapText, type MacModKey, type ModTarget } from '../lib/rdpInput';
 import { AccessSettings } from '../access/AccessSettings';
 
-export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access';
+export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'about';
 
 const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
   { id: 'appearance', label: 'Appearance', icon: 'palette' },
@@ -26,6 +26,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
   { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'keyboard' },
   { id: 'vault', label: 'Vault', icon: 'lock' },
   { id: 'access', label: 'Access', icon: 'shield-key' },
+  { id: 'about', label: 'About', icon: 'info' },
 ];
 
 export function SettingsPage({ section, setSection, onLock, onConfirm }: {
@@ -55,6 +56,7 @@ export function SettingsPage({ section, setSection, onLock, onConfirm }: {
           {section === 'shortcuts' && <Shortcuts />}
           {section === 'vault' && <VaultSettings onLock={onLock} onConfirm={onConfirm} />}
           {section === 'access' && <AccessSettings onConfirm={onConfirm} />}
+          {section === 'about' && <About />}
         </div>
       </div>
     </section>
@@ -236,6 +238,30 @@ const MOD_TARGET_LABELS: Record<ModTarget, string> = { ctrl: 'Ctrl', alt: 'Alt',
 
 // Milestone 31 (D-074): what each modifier key of this Mac sends to Windows. A preset
 // shows its table; changing a key starts a Custom table from what is shown.
+// The version this build was made from (milestone 32): git's, read at build time.
+function About() {
+  const { info } = useApp();
+  const libs: [string, string | undefined][] = [
+    ['libssh', info?.libssh], ['libsodium', info?.libsodium], ['SQLite', info?.sqlite], ['FreeRDP', info?.freerdp],
+  ];
+  return (
+    <>
+      <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', marginBottom: 'var(--sp-3)' }}>About</h1>
+      <Row title="Version" desc="The version this build of Flint was made from.">
+        <span className="mono strong" data-about-version>Flint {info?.version ?? ''}</span>
+        <span className="hint">What changed in each version is on the Changelog page of Flint's docs. A version with a suffix (<span className="mono">0.1.0-3-gabc1234</span>) is a build made between two releases.</span>
+      </Row>
+      <Row title="Libraries" desc="Linked into this build.">
+        <table className="table compact" data-about-libs>
+          <tbody>
+            {libs.map(([name, v]) => <tr key={name}><td>{name}</td><td className="mono">{v || '—'}</td></tr>)}
+          </tbody>
+        </table>
+      </Row>
+    </>
+  );
+}
+
 function RemoteDesktopSettings() {
   const [s, set] = useSetting();
   const map = modMapOf(s.rdp_mac_keys, s.rdp_mac_custom);
