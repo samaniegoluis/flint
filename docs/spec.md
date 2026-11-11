@@ -26,7 +26,7 @@ stand in the way of using it every day:
   the decision on a second engine for Windows (the RDP ActiveX control, D-070) waits for
   this to be done (D-073).
 
-v9 gives every build a version and a changelog, then makes the desktop as fast as FreeRDP
+v9 gives every build a version and a changelog, shows them on the site, then makes the desktop as fast as FreeRDP
 and the page can make it.
 
 ## Scope
@@ -43,7 +43,13 @@ and the page can make it.
   commits, grouping `feat` and `fix` and leaving out `docs`, `test` and `chore`, each
   version headed by a short summary written for a person. The release step (bump, changelog,
   tag) runs at a milestone's close in `lean-build`, by a script the owner can also run.
-- **A faster desktop** (milestone 33): the RDP graphics pipeline (RDPGFX) with a codec the
+- **A Releases page** (milestone 33): the site shows every version, newest first, with its
+  summary and its *Added* / *Fixed* lists, read from `CHANGELOG.md` when the site is built, a
+  list of versions to jump to and a **Releases** link in the header. Until there are binaries
+  it offers **Build from source** and a *Downloads coming soon* note. Releases count only the
+  product: a commit scoped to the site or the docs neither triggers a release nor appears in
+  the changelog (D-078).
+- **A faster desktop** (milestone 34): the RDP graphics pipeline (RDPGFX) with a codec the
   build's FreeRDP decodes, and the page drawing frames through WebGL instead of
   `putImageData`. Measured against milestone 30's tab before and after (frame rate dragging
   a window, input latency, CPU, bandwidth), with targets set at the milestone's plan. A
@@ -53,11 +59,11 @@ and the page can make it.
 
 **Windows:** as in v8. The owner runs Flint on Windows from his own branch over a patched
 cfire, checks each milestone there at its close, and carries its build changes over
-(milestone 32 leaves a note on how a Windows build gets its version). Milestone 33's result
+(milestone 32 leaves a note on how a Windows build gets its version). Milestone 34's result
 on Windows decides whether the ActiveX engine goes into a later spec (D-070).
 
 **Out of scope (v9), tracked in the roadmap:** GitHub Releases with binaries, CI, installers,
-a downloads page and self-update (§7, `later`); signing and notarization; bundling the
+download buttons and self-update (§7, `later`); signing and notarization; bundling the
 libraries into the app; the immersive full-screen RDP tab and the RDP security review
 (§9, `next`); the RDP ActiveX engine; everything v8 left out.
 
@@ -147,23 +153,24 @@ unchanged.
 Each milestone is built **whole** with `lean-build` and verified by the agent. Owner checks
 happen only where a human is required (see `CLAUDE.md`), plus the owner's Windows check at
 each close. Progress is recorded in `docs/build-log.md`, not here. Numbering continues from
-v8; milestone 33 is the one D-073 approved as "milestone 32" (D-076).
+v8; milestone 34 is the one D-073 approved as "milestone 32" (D-076, renumbered by D-078).
 
 | # | Milestone | Delivers |
 |---|---|---|
 | 32 | **Versions and a changelog** | The version read from git at build time (tag, `git describe` between tags, `0.0.0-dev` with no git) and passed into the CLI and the app; `flint --version` (and `--json`), Settings → About and the docs site show it. A release script: the next version from the commits since the last tag (`feat` → minor, only `fix` → patch, or one given by hand), `CHANGELOG.md` regenerated with git-cliff with a person-written summary on top of the new version, a commit and the tag `vX.Y.Z`; no push. `lean-build`'s close runs it (a note for the skill, not a change to it here). First release `v0.1.0`, its changelog covering the history so far in one section. A note for the owner's Windows build. Unit tests on the bump rule, cli-e2e on `--version`, docs (a "Versions" page or section) and the CLI demo |
-| 33 | **A faster desktop** | Milestone 30's tab measured first at 1920×1080 against the owner's Windows 11 host (frames drawn per second dragging a window and under a whole-screen animation, Start-menu latency, CPU of the app and WebKit, bandwidth), targets set at the plan. The `rdpgfx` channel loaded with a codec the build's FreeRDP decodes (progressive, or AVC/H.264 where FreeRDP is built with it), decoded into the same surface; the page draws through WebGL by region; a server without RDPGFX keeps the bitmap path. The same measurements after, in `decisions.md`. gui-e2e: the desktop still connects, draws, resizes and survives a drop against the test server; the owner checks the feel on his Windows host and on his Windows build. Docs |
+| 33 | **A Releases page** | A `/releases` page on the docs site in the landing's own style (no Claude Design), modelled on ZenNotes' releases page: every version newest first (number, date, the person-written summary, its *Added* / *Fixed* lists, long lists collapsed so `0.1.0`'s does not bury the rest), a list of versions to jump to, a **Releases** link in the site's header, and **Build from source** with a *Downloads coming soon* note in place of downloads. It reads `CHANGELOG.md` at site build time, the one source; `release.sh` stops copying it into `reference/changelog.md`, and Reference → Changelog leads to the new page. `cliff.toml` leaves commits scoped `site` or `docs` out of the changelog and the bump, and `CHANGELOG.md` is written again from the tags. Checked with the site build, a headless check of the page (both themes, phone width, the jump list) and a `release.sh` dry run. No app or CLI change, so no release at its close unless a fix lands |
+| 34 | **A faster desktop** | Milestone 30's tab measured first at 1920×1080 against the owner's Windows 11 host (frames drawn per second dragging a window and under a whole-screen animation, Start-menu latency, CPU of the app and WebKit, bandwidth), targets set at the plan. The `rdpgfx` channel loaded with a codec the build's FreeRDP decodes (progressive, or AVC/H.264 where FreeRDP is built with it), decoded into the same surface; the page draws through WebGL by region; a server without RDPGFX keeps the bitmap path. The same measurements after, in `decisions.md`. gui-e2e: the desktop still connects, draws, resizes and survives a drop against the test server; the owner checks the feel on his Windows host and on his Windows build. Docs |
 
 ## Open questions
 
 - **Codecs on each system's FreeRDP.** Homebrew's, Debian's and the owner's Windows build may
-  differ in AVC/H.264 support (OpenH264, FFmpeg). Settled at milestone 33's plan from what
+  differ in AVC/H.264 support (OpenH264, FFmpeg). Settled at milestone 34's plan from what
   each build reports; progressive needs no external decoder.
 - **RDPGFX against the test server.** Flint's test server (`libfreerdp-server3`, v8) sends
-  bitmap updates; whether it can offer the graphics pipeline for gui-e2e is settled in 33.
+  bitmap updates; whether it can offer the graphics pipeline for gui-e2e is settled in 34.
 - **Where the version shows in the app**: Settings → About if it exists, else the nearest
   place in Settings; settled at milestone 32's plan.
-- **FreeRDP on the owner's Windows branch** (from v8): its result after 33 decides whether
+- **FreeRDP on the owner's Windows branch** (from v8): its result after 34 decides whether
   the ActiveX engine is needed (D-070).
 - **Bundling FreeRDP into a release**: a dynamic system package for now (D-015); bundling
   stays in ROADMAP §7.
