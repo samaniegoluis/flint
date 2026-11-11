@@ -52,6 +52,7 @@
 #include <freerdp/settings.h>
 #include <freerdp/error.h>
 #include <winpr/synch.h>
+#include <winpr/wlog.h>
 #undef byte
 #include <sodium.h>
 
@@ -606,6 +607,17 @@ inline std::map<std::string, bool>& tombstones() {
     return r;
 }
 
+// FreeRDP logs to stderr with the server's address in its lines ("ConnectLayer
+// 10.0.0.5:3389 failed"): Principle 5 keeps a vault's hostnames out of logs, so its log is
+// off unless a person asks for it with FLINT_RDP_DEBUG=1.
+inline void quiet_freerdp_log() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        const char* debug = std::getenv("FLINT_RDP_DEBUG");
+        if (!debug || std::string(debug) != "1") WLog_SetLogLevel(WLog_GetRoot(), WLOG_OFF);
+    });
+}
+
 inline std::shared_ptr<Tab> tab_for(const std::string& id) {
     std::lock_guard<std::mutex> g(registry_mu());
     auto it = registry().find(id);
@@ -624,6 +636,7 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
                 const std::string& domain, const std::string& password, int32_t width, int32_t height,
                 const std::string& trusted, int64_t timeout_ms, int32_t& out_w, int32_t& out_h, int32_t& out_port,
                 std::string& out_token, std::string& detail) {
+    quiet_freerdp_log();
     auto t = tab_for(id);
     if (t->closed.load()) return RDP_ERR_CLOSED;
     // A reconnect: the old connection goes first, so the server never sees two.

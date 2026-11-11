@@ -193,6 +193,11 @@ for f in "$tmp"/*.flint; do
   done
 done
 echo "gui-e2e: the vault files hold no clear-text host data"
+# Principle 5: FreeRDP logs server addresses, so the app keeps its log off (D-072).
+if [[ -f "$tmp/rdp.log" ]] && grep -q "com.freerdp" "$tmp/rdp.log"; then
+  echo "gui-e2e: the rdp run's log has FreeRDP lines (addresses in a log)" >&2
+  exit 1
+fi
 # D-030: the layout state holds ids only, never a name from inside the vault. The vault
 # run is the one that makes groups and renames the vault.
 if [[ -f "$tmp/vault.log" ]]; then
