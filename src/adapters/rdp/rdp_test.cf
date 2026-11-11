@@ -1,0 +1,87 @@
+package rdp
+
+import "core:os"
+import "core:time"
+
+// The live tests need a Windows host: FLINT_RDP_TEST_HOST, _USER and _PASSWORD
+// (Infisical, /ai-agents). Without them they pass without connecting.
+fn live_target() -> RdpTarget {
+    return RdpTarget{
+        host: os.getenv("FLINT_RDP_TEST_HOST"),
+        user: os.getenv("FLINT_RDP_TEST_USER"),
+        password: os.getenv("FLINT_RDP_TEST_PASSWORD"),
+        width: 1024,
+        height: 768,
+    }
+}
+
+test "an address that never answers fails within the timeout" {
+    // TEST-NET-1 (RFC 5737): routed nowhere, so the dial hangs until the timeout.
+    t := RdpTarget{ host: "192.0.2.1", user: "nobody", password: "never-sent" }
+    started := time.now_ms()
+    mut msg := ""
+    rdp_open(t, 1500) or err { msg = "{err.message()}" }
+    elapsed := time.now_ms() - started
+    assert(msg.len() > 0, "the dial must fail")
+    assert(elapsed < 4000, "took {elapsed} ms")
+    assert(msg.starts_with("timeout:") || msg.starts_with("network:"), msg)
+    assert(!msg.contains("never-sent"))
+}
+
+test "an RDP target needs an address and a user" {
+    mut msg := ""
+    rdp_open(RdpTarget{ host: "", user: "x", password: "" }, 1000) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid:"), msg)
+}
+
+test "a wrong password is an auth error that does not name it" {
+    mut t := live_target()
+    if t.host.len() == 0 {
+        return
+    }
+    t.password = "wrong-on-purpose-4711"
+    mut msg := ""
+    rdp_open(t, 15000) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("auth:"), msg)
+    assert(!msg.contains("wrong-on-purpose-4711"))
+}
+
+test "connects to a real Windows host and receives a frame of the asked size" {
+    t := live_target()
+    if t.host.len() == 0 {
+        return
+    }
+    conn := try rdp_open(t, 15000)
+    defer conn.close()
+    sz := try conn.size()
+    assert_eq(sz.width, 1024)
+    assert_eq(sz.height, 768)
+    assert(sz.fingerprint.len() > 0)
+    mut got := 0
+    for i in 0..50 {
+        frame := try conn.next_frame(200)
+        if frame.len() > 16 {
+            got += 1
+            break
+        }
+    }
+    assert(got > 0, "no frame in 10 s")
+    assert(conn.frames_drawn() > 0)
+}
+
+test "the frame channel refuses a request without its token" {
+    t := live_target()
+    if t.host.len() == 0 {
+        return
+    }
+    conn := try rdp_open(t, 15000)
+    defer conn.close()
+    ch := try conn.frame_channel()
+    assert(ch.port > 0)
+    assert_eq(ch.token.len(), 64)
+    // The status line only: curl's -w takes `%{...}`, which a cfire string interpolates.
+    bad := try os.command("curl", ["-s", "-o", "/dev/null", "-D", "-", "http://127.0.0.1:{ch.port}/next?t=nope"])
+    assert(bad.stdout.starts_with("HTTP/1.1 403"), bad.stdout)
+    good := try os.command("curl", ["-s", "-o", "/dev/null", "-D", "-", "http://127.0.0.1:{ch.port}/next?t={ch.token}"])
+    assert(good.stdout.starts_with("HTTP/1.1 200"), good.stdout)
+}

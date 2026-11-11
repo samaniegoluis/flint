@@ -1,0 +1,194 @@
+package rdp
+
+// An RDP client session over libfreerdp 3, through a native shim
+// (native/flint_rdp.hpp, CF-119). Milestone 28 is a spike: this file is the
+// adapter the spike page drives; milestone 30 puts it behind the RemoteDesktop port.
+//
+// Connecting is bounded by an explicit timeout (Principle 8). Errors carry FreeRDP's
+// error name, never the password (Principle 6). Only the desktop app imports this
+// package, so the CLI never links FreeRDP.
+
+// CFIRE-UPSTREAM: CF-119
+import cpp "flint_rdp.hpp" @pkg("flint-rdp")
+import "../../domain"
+
+// Where an RDP session is going and as whom. `password` stays in the core.
+type RdpTarget struct {
+    host: str
+    port: i32 = 3389
+    user: str
+    domain: str
+    password: str
+    width: i32 = 1280
+    height: i32 = 800
+}
+
+type RdpConn struct {
+    id: i64
+}
+
+// Where the page reads frames from, when the local channel is used.
+type FrameChannel struct {
+    port: i32
+    token: str
+}
+
+type RdpSize struct {
+    width: i32
+    height: i32
+    fingerprint: str
+}
+
+fn rdp_error(code: i64, detail: str) -> str {
+    if code == 1 {
+        return coded(ERR_AUTH, "the server refused the user or password ({detail})")
+    }
+    if code == 2 {
+        return coded(ERR_NETWORK, "could not reach the server ({detail})")
+    }
+    if code == 3 {
+        return coded(ERR_TIMEOUT, "the server did not answer in time")
+    }
+    if code == 4 {
+        return coded(ERR_NETWORK, "the server refused the connection ({detail})")
+    }
+    if code == 5 {
+        return coded(ERR_NETWORK, "the secure connection failed ({detail})")
+    }
+    if code == 7 {
+        return coded(ERR_NETWORK, "the session is closed")
+    }
+    return coded(ERR_INTERNAL, "RDP failed ({detail})")
+}
+
+// Connects and logs in (NLA when the server asks for it). Blocks for at most
+// `timeout_ms`.
+fn rdp_open(t: RdpTarget, timeout_ms: i64) -> RdpConn! {
+    if t.host.len() == 0 || t.user.len() == 0 {
+        return error(coded(ERR_INVALID, "an RDP host needs an address and a user"))
+    }
+    mut id: i64 = 0
+    mut detail := ""
+    host := t.host
+    user := t.user
+    dom := t.domain
+    pw := t.password
+    port := t.port
+    w := t.width
+    h := t.height
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        id = flint_rdp::open(host, port, user, dom, pw, w, h, timeout_ms, detail);
+    }
+    if id <= 0 {
+        return error(rdp_error(0 - id, detail))
+    }
+    return RdpConn{ id: id }
+}
+
+fn (self: RdpConn) size() -> RdpSize! {
+    mut w: i32 = 0
+    mut h: i32 = 0
+    mut fp := ""
+    mut found := false
+    id := self.id
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        found = flint_rdp::size(id, w, h, fp);
+    }
+    if !found {
+        return error(rdp_error(7, ""))
+    }
+    return RdpSize{ width: w, height: h, fingerprint: fp }
+}
+
+// How many frames FreeRDP has drawn so far.
+fn (self: RdpConn) frames_drawn() -> i64 {
+    mut n: i64 = 0
+    id := self.id
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        n = static_cast<int64_t>(flint_rdp::frames(id));
+    }
+    return n
+}
+
+// The region drawn since the last call: a 16-byte header (u32 seq, u16 x, y, w, h,
+// u32 reserved, little-endian) and its RGBA rows. Empty when nothing changed within
+// `wait_ms`.
+fn (self: RdpConn) next_frame(wait_ms: i64) -> str! {
+    mut rc: i32 = 0
+    mut frame := ""
+    id := self.id
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::next_frame(id, wait_ms, frame);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), ""))
+    }
+    return frame
+}
+
+// `flags` are FreeRDP's PTR_FLAGS_* bits.
+fn (self: RdpConn) mouse(flags: i32, x: i32, y: i32) -> void! {
+    mut rc: i32 = 0
+    id := self.id
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::mouse(id, flags, x, y);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "mouse"))
+    }
+}
+
+// A key by its RDP scancode (0x100 marks an extended key).
+fn (self: RdpConn) key(scancode: i32, down: bool) -> void! {
+    mut rc: i32 = 0
+    id := self.id
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::key(id, scancode, down);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "key"))
+    }
+}
+
+// A typed UTF-16 code unit, independent of the keyboard layout.
+fn (self: RdpConn) unicode(code_unit: i32, down: bool) -> void! {
+    mut rc: i32 = 0
+    id := self.id
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::unicode(id, code_unit, down);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "key"))
+    }
+}
+
+// Starts the local frame channel on 127.0.0.1 (spike option B).
+fn (self: RdpConn) frame_channel() -> FrameChannel! {
+    mut rc: i32 = 0
+    mut port: i32 = 0
+    mut token := ""
+    id := self.id
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::frame_server_start(id, port, token);
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "the frame channel did not start"))
+    }
+    return FrameChannel{ port: port, token: token }
+}
+
+fn (self: RdpConn) close() {
+    id := self.id
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        flint_rdp::close(id);
+    }
+}
