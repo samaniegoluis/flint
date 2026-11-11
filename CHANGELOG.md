@@ -1,0 +1,150 @@
+# Changelog
+
+What changed in each version of Flint, newest first. Versions follow
+[SemVer](https://semver.org): a release with a new feature bumps the minor version, one
+with only fixes the patch. Written by `scripts/release.sh` from the commit history.
+
+## 0.1.0 — 2026-11-11
+
+The first numbered release of Flint, gathering everything built so far: one encrypted vault (SQLCipher, Argon2id) behind a desktop app and a CLI; SSH sessions in tabs and split panes, with OSC 52 copy and image paste; the Files view and `flint cp` between this machine and servers, or between two servers; saved tunnels; approvals and scoped grants for programs and AI agents that use the CLI; and Windows remote desktops (RDP) in a tab through FreeRDP, with the clipboard both ways and reconnect. From now on every build says which version it is.
+
+### Added
+
+- Scaffold hexagonal layout with libsodium, SQLCipher and libssh adapters
+- Prove an SSH PTY streams to xterm.js in a webui window
+- Verify the Linux build and the webui spike under Xvfb
+- Add the vault core with format v1, SQLCipher store, keychain and use cases
+- Add the flint vault, group, host, key and cred commands
+- Add known hosts (migration 002) and the connect, exec and auth use cases
+- Add the libssh transport with jump-host tunnels, password, agent and exec
+- Add flint connect, flint exec and flint known-host
+- **site:** Adopt Flint's visual identity and an always-visible theme button
+- **core:** GUI session adapters, a thread-safe vault store and per-machine settings
+- **gui:** The Flint desktop app
+- **gui:** The macOS menu bar, with Quit and the Edit shortcuts
+- **gui:** The app icon
+- **site:** An interactive CLI demo on the landing page
+- **site:** Maximize the CLI demo, and wrap long lines as a terminal does
+- **site:** Pipe the demo's JSON into jq, offered as a tip
+- **gui:** ⌘T opens a new session even for a host that already has a tab
+- **core:** Initial command per host, host test and password reveal/copy use cases
+- **cli:** Host test, --command with --keep-shell, connect --no-command
+- **gui:** Test connection, reveal and copy a password, initial command in the host editor
+- **vault:** Vault ids, rename a vault, moved vaults replace their recent entry
+- **gui:** Remembered layout, collapse/expand all, vault rename, terminal colour themes
+- **terminal:** OSC 52 copy, in-order input, dead-key rules under test
+- **import:** Flint import tether copies a Tether vault into the open vault
+- **gui:** Import from Tether in Settings → Vault
+- **ssh:** Send keepalives on idle interactive sessions
+- **gui:** Connect without the initial command from the palette
+- **ipc:** Local Unix socket with peer credentials
+- **gui:** Unlock and create off the UI thread
+- The CLI runs vault commands through the running app
+- Sessions through the app, unlock asked by the CLI, auto-lock
+- **access:** Caller chains and grants in the domain
+- **access:** The socket asks the owner before a caller runs anything
+- **gui:** The approval window and Settings → Access
+- **access:** Unlock and allow the waiting command in one step
+- **access:** Tokens and the activity log in the vault (migration 004)
+- **sudo:** Exec --sudo runs one command as root through Flint (migration 005)
+- **sudo:** The approval window's sudo mode, the host's sudo password, end-to-end checks
+- **ui:** The access views as designed (16*, 17*)
+- Tray with two locks and Remember on this computer (milestone 14)
+- Scripts/install.sh installs the app and the CLI as an everyday copy
+- Whole commands and activity retention by days in the core (milestone 15)
+- **ui:** Show full command, activity detail and retention choice (milestone 15)
+- **ui:** Apply the Claude Design screens for milestone 15 (16e*)
+- **ssh:** SFTP adapter over libssh, sharing the session with a PTY (M16 spike)
+- **files:** Copy use cases over SFTP and the local file system
+- **cli:** Flint cp between this machine and a host, served by the app over the socket
+- **ui:** The approval window says copy files, with direction, host and paths
+- **ui:** Design 16f* for the copy files approval: direction strip, whole paths, -r and --force notes
+- **files:** The Files view's backend over the tab's own session
+- **files:** Stage files dropped from the OS for upload
+- **ui:** The Files view (design 14a-c) beside the session's terminal
+- **cp:** Copy from one host to another through Flint
+- **ui:** Design 16g for the copy between two hosts approval
+- **core:** A Files session with no terminal, and a copy between two lent sessions
+- **ui:** Copy between servers in the Files view (design 14d, D-059)
+- Split panes in a tab
+- Tunnel spike: one forwarder thread per host session over a handed-over link
+- Tunnels saved in hosts (migration 007) and their use cases
+- Flint tunnel add|edit|rm|ls|up|down|status
+- The approval window names a tunnel's two ends; a stopped tunnel frees its port at once
+- Tunnels in the app: host editor section, Tunnels view, toolbar menu, palette, approval 16h
+- The approval window names the program that holds a tunnel's port
+- Remove the Tether importer and libargon2
+- Paste an image into the terminal, written on the server (milestone 25)
+- **e2e:** Run gui-e2e in the real window on macOS, and repeat one run N times (milestone 27)
+- **e2e:** Gui-e2e runs in the real window on macOS by default (milestone 27)
+- **rdp:** Libfreerdp 3 adapter for the RDP spike (milestone 28)
+- **rdp:** Spike app measuring the frame transport (milestone 28)
+- **rdp:** RDP hosts in the vault and the CLI (milestone 29)
+- **ui:** RDP hosts in the app: type step, RDP editor, type glyphs, RDP menu (milestone 29)
+- **rdp:** RemoteDesktop port, open/watch use cases and the FreeRDP tab adapter (milestone 30)
+- **ui:** The RDP tab, and flint connect opens it through the app (milestone 30)
+- **rdp:** Clipboard both ways, a reconnect card and Mac modifier-key presets
+- **version:** The version from git at build time, Settings → About, and a release script
+
+### Fixed
+
+- Build and pass the keychain and CLI checks on Linux
+- Build the SSH link on Linux and check password logins there
+- Negotiate a known host's recorded key type first and re-check migrations under the lock
+- **build:** Build the desktop app into build/gui
+- **gui:** Vim froze the terminal, and the last row was cut off
+- **gui:** Unlock and status bar follow the design
+- **gui:** Default terminal line height 1.0
+- **gui:** The accent setting had no effect in the dark theme
+- **gui:** Terminals lost their scrollback when another view was opened
+- **gui:** Coming back from another view resized the shell twice
+- **site:** The demo's guide stays on screen and always names the exact command
+- **gui:** Esc did not close a dialog whose focus went back to the terminal
+- **gui:** The host label placeholder read like a real value
+- **gui:** The palette offered ⌘I and ⌘↵ on actions, where they do nothing
+- **gui:** Settings → Vault unlocked the open vault again through the keychain
+- **gui:** The host key card got no focus, so ↵ and esc did nothing
+- **gui:** Clicks on a session card went to the terminal behind it
+- **gui:** Known hosts did not show keys trusted in a session
+- **ssh:** Do not read OpenSSH's known_hosts files
+- **gui:** Owner review of milestones 07 and 08
+- **gui:** An import with nothing to add says so in its report too
+- **ssh:** Build against libssh 0.10 (Ubuntu 24.04, Zorin OS 18)
+- **ssh:** Keep the preferred host key type on libssh 0.10
+- **gui:** Open and save file dialogs on Linux
+- **ssh:** Try every address a hostname resolves to
+- **gui:** Redraw terminal glyphs once the font is ready
+- **gui:** Larger logo on the no-sessions screen
+- **gui:** Serve the CLI on a first launch
+- **cli:** No-terminal master password error no longer points at vault unlock
+- **gui:** Coming back to Hosts keeps the sidebar as it was left
+- **gui:** The Hosts shortcut keeps the sidebar as it was left
+- **gui:** Approval window fixes from the owner's walkthrough
+- **access:** Name a revoked or expired token in the activity log; clearer token copy
+- **ui:** Activity caller shows the program's name, with how it was let in below
+- **ui:** Esc leaves the create screen wherever the focus is
+- **ui:** Full command over the lock screen; Allow label as wide as its text
+- **ui:** Activity rows reachable with Tab in WebKit
+- **ui:** Sudo activity entry names the login user from the credential
+- **ui:** The Files breadcrumb keeps the current folder in a narrow panel
+- **ssh:** Split SFTP writes to 32 KB on libssh 0.10
+- **ssh:** Drain the jump-host tunnel instead of one read per poll
+- **ui:** The approval card scrolls its body in a short window
+- **ui:** One copy per ⌘→/⌘← press, Skip reads Skipped, dates on one line
+- Clean glyphs and one resize per split in split panes
+- Draw the sidebar whole over the terminal in a narrow window
+- Gui-e2e.sh no longer aborts on an empty failure list under bash 3.2
+- **ui:** Palette finds tunnels by their action and has no autocorrect
+- **ui:** A palette search by a tunnel's action ranks that tunnel first
+- **paste:** Paste an image into the terminal on Linux (milestone 25b)
+- **ui:** Host editor header aligns when the host has no colour; Domain placeholder without the repeated 'optional'
+- **rdp:** Keep FreeRDP's log off (it names server addresses, Principle 5); FreeRDP's sample server in the Linux image
+- **ui:** The certificate prompt's PowerShell line wraps inside the card; ROADMAP: the Windows key from a Mac
+- **test:** FreeRDP 3.15's sample server in the Linux image gets its test icon
+- **rdp:** Announce a new copy on this machine without waiting for the focus
+- **terminal:** Draw the whole terminal again after a lost WebGL context
+- **terminal:** Never fit a hidden terminal
+- **release:** Keep the blank line between the changelog's header and its first version
+
+
+
