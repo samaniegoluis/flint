@@ -8,7 +8,7 @@
 #   FLINT_LINUX_STEPS=serve scripts/linux-check.sh                  # the build, then serve-e2e only
 #   FLINT_LINUX_STEPS=tests FLINT_LINUX_SUITES=src/adapters/ssh scripts/linux-check.sh
 #
-# Steps: tests, cli, gui, serve, rdp (comma-separated; rdp needs FLINT_RDP_TEST_*). Run them all before closing a milestone.
+# Steps: tests, cli, gui, serve (comma-separated). Run them all before closing a milestone.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 image="flint-linux-check"

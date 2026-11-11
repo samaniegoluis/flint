@@ -1,0 +1,188 @@
+package application
+
+// Remote desktop sessions (v8, milestone 30, D-070): an RDP host opened in a tab
+// through the RemoteDesktop port. The use cases resolve the host's login from the
+// vault, decide on the server's certificate (trust on first use, a changed one
+// refused, D-019) and watch the session until it ends; the engine itself is the
+// adapter's.
+//
+// The password is opened from the vault only to hand it to the engine at connect time
+// (Principle 6): never returned, never in an error. A reconnect for a new size opens
+// it again from the vault, so a session that outlives a lock (D-043) keeps its size
+// rather than a copy of the password.
+
+import "../domain"
+import "../ports"
+
+// How long a connection may take, from the dial to the desktop (Principle 8).
+RDP_CONNECT_TIMEOUT_MS: i64 = 30000
+// How often a watched session is checked when nothing happens.
+RDP_WAIT_MS: i64 = 1000
+
+// A tab asking for a desktop: its id, the host and the tab's size in device pixels.
+type RdpOpenRequest struct {
+    tab: str
+    alias: str
+    width: i64
+    height: i64
+    timeout_ms: i64
+}
+
+// The RDP host `alias` and where its connection goes: the login from the host or its
+// credential, the password opened from the vault (or asked for with `ask` when none is
+// saved; "" without), the trusted certificate.
+fn rdp_target[C: Crypto, S: VaultStore, P: Prompter](crypto: C, store: S, session: VaultSession, prompter: P, alias: str, size: DesktopSize, ask: bool) -> RdpTarget! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    if !is_rdp_host(h) {
+        return error(coded(ERR_HOST_TYPE, "'{h.alias}' is an SSH host; a remote desktop needs an RDP host"))
+    }
+    user := try auth_user(cat, h)
+    mut password := ""
+    if h.password.len() > 0 {
+        password = try open_secret(crypto, session, "hosts", h.id, "password", h.password)
+    } else if h.credential_id.len() > 0 {
+        idx := cred_index_by_id(cat.creds, h.credential_id)
+        if idx >= 0 {
+            cred := cat.creds[usize(idx)]
+            password = try open_secret(crypto, session, "credentials", cred.id, "password", cred.password)
+        }
+    }
+    if password.len() == 0 {
+        if !ask || !prompter.prompt_available() {
+            return error(coded(ERR_AUTH, "'{h.alias}' has no saved password"))
+        }
+        password = try prompter.prompt_password(user, h.alias)
+        if password.len() == 0 {
+            return error(coded(ERR_AUTH, "no password was given for '{h.alias}'"))
+        }
+    }
+    known := try store.known_hosts_all()
+    return RdpTarget{ hostname: h.hostname, port: h.port, user: user, domain: h.domain, password: password, width: size.width, height: size.height, trusted_fingerprint: trusted_rdp_fingerprint(known, h.hostname, h.port) }
+}
+
+// One connection attempt: "" when it opened (`got` holds the desktop), else the error.
+fn rd_try_open[R: RemoteDesktop](mut rd: R, tab: str, t: RdpTarget, timeout_ms: i64, mut got: RdpDesktop) -> str {
+    d := rd.rd_open(tab, t, timeout_ms) or err {
+        return "{err.message()}"
+    }
+    got = d
+    return ""
+}
+
+// Connects tab `req.tab` to the RDP host `req.alias`. A certificate that is not the
+// trusted one stops the first attempt: a new one is shown to the person (design 22d1)
+// and, once trusted, kept in the known hosts and the connection made again; a changed
+// one is refused with the reason (22d2), never continued.
+fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest) -> RdpDesktop! {
+    if req.tab.len() == 0 {
+        return error(coded(ERR_INVALID, "a remote desktop needs a tab id"))
+    }
+    if req.timeout_ms <= 0 {
+        return error(coded(ERR_INVALID, "the connect timeout must be positive"))
+    }
+    size := fit_desktop_size(req.width, req.height)
+    mut t := try rdp_target(crypto, store, session, prompter, req.alias, size, true)
+    mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "" }
+    failure := rd_try_open(mut rd, req.tab, t, req.timeout_ms, mut d)
+    if failure.len() == 0 {
+        return d
+    }
+    if error_code_of(failure) != ERR_HOST_KEY {
+        return error(failure)
+    }
+    cert := rd.rd_presented_cert(req.tab)
+    if cert.fingerprint.len() == 0 {
+        return error(failure)
+    }
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, req.alias)
+    known := try store.known_hosts_all()
+    status := check_rdp_cert(known, h.hostname, h.port, cert.fingerprint)
+    if status == HOST_KEY_CHANGED {
+        old := trusted_rdp_fingerprint(known, h.hostname, h.port)
+        prompter.host_key_changed(rdp_cert_question(h.alias, h.hostname, h.port, cert, old))
+        addr := rdp_cert_addr(h.hostname, h.port)
+        return error(coded(ERR_HOST_KEY, "the certificate of '{h.alias}' ({addr}) has CHANGED; it is now {cert.fingerprint}. Someone may be intercepting the connection. If the server was reinstalled, forget the old one in Settings → Known hosts (or `flint known-host rm {h.alias}`) and connect again"))
+    }
+    if status == HOST_KEY_KNOWN {
+        // The engine refused a certificate the vault trusts: report what it said.
+        return error(failure)
+    }
+    if !prompter.prompt_available() {
+        return error(coded(ERR_HOST_KEY, "the certificate of '{h.alias}' is not trusted yet and nobody can confirm it"))
+    }
+    trusted := try prompter.prompt_host_key(rdp_cert_question(h.alias, h.hostname, h.port, cert, ""))
+    if !trusted {
+        return error(coded(ERR_HOST_KEY, "the certificate of '{h.alias}' was not trusted"))
+    }
+    try store.known_host_put(KnownHost{ addr: rdp_cert_addr(h.hostname, h.port), key_type: RDP_CERT_KEY_TYPE, fingerprint: cert.fingerprint, host_id: h.id, added_at: "" })
+    t.trusted_fingerprint = cert.fingerprint
+    return try rd.rd_open(req.tab, t, req.timeout_ms)
+}
+
+// Opens the desktop, tells the driver, then watches it until it ends: a session the
+// person closed returns, one that ended on its own fails with the reason. A server
+// without Display Control is reconnected at the size the tab asked for, with the
+// password opened again from the vault; when that is not possible now (the vault is
+// locked, the password is not saved) the session keeps its size.
+fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K: DesktopSink](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, mut sink: K, req: RdpOpenRequest) -> void! {
+    d := open_remote_desktop(crypto, mut store, session, mut rd, prompter, req) or err {
+        rd.rd_close(req.tab)
+        return error("{err.message()}")
+    }
+    sink.desktop_ready(req.tab, d)
+    for {
+        ev := rd.rd_wait(req.tab, RDP_WAIT_MS)
+        if ev.kind == RDP_EVENT_ENDED {
+            rd.rd_close(req.tab)
+            if ev.message.len() > 0 {
+                return error(ev.message)
+            }
+            return
+        }
+        if ev.kind == RDP_EVENT_RESIZE {
+            try reconnect_at_size(crypto, store, session, mut rd, prompter, req, ev)
+        }
+    }
+}
+
+// Reconnects a running tab at the size of `ev`. Leaves the session as it is when its
+// login cannot be read now; fails, with the tab closed, when the new connection does.
+fn reconnect_at_size[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: RdpEvent) -> void! {
+    size := fit_desktop_size(ev.width, ev.height)
+    t := rdp_target(crypto, store, session, prompter, req.alias, size, false) or {
+        return
+    }
+    if t.trusted_fingerprint.len() == 0 {
+        return
+    }
+    mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "" }
+    failure := rd_try_open(mut rd, req.tab, t, req.timeout_ms, mut d)
+    if failure.len() > 0 {
+        rd.rd_close(req.tab)
+        return error(failure)
+    }
+}
+
+// The tab now measures `width` x `height` device pixels.
+fn resize_remote_desktop[R: RemoteDesktop](mut rd: R, tab: str, width: i64, height: i64) -> void! {
+    size := fit_desktop_size(width, height)
+    try rd.rd_resize(tab, size.width, size.height)
+}
+
+fn send_desktop_key[R: RemoteDesktop](mut rd: R, tab: str, code: str, down: bool) -> void! {
+    if code.len() == 0 || code.len() > 32 {
+        return error(coded(ERR_INVALID, "a key needs its code"))
+    }
+    try rd.rd_key(tab, code, down)
+}
+
+fn send_desktop_pointer[R: RemoteDesktop](mut rd: R, tab: str, p: RdpPointer) -> void! {
+    try check_rdp_pointer(p)
+    try rd.rd_pointer(tab, p)
+}
+
+fn close_remote_desktop[R: RemoteDesktop](mut rd: R, tab: str) {
+    rd.rd_close(tab)
+}

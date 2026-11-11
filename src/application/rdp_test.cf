@@ -1,0 +1,286 @@
+package application
+
+import "../domain"
+
+// A RemoteDesktop that plays a server: it presents the certificate `fp`, accepts the
+// password `password`, and replays `events` to rd_wait (then reports the session
+// closed). It records every connection and what reached it.
+type FakeDesktop struct {
+    fp: str
+    password: str
+    opens: []RdpTarget
+    closed: i64
+    events: []RdpEvent
+    waits: i64
+    keys: []str
+    pointers: []RdpPointer
+    resizes: []DesktopSize
+}
+
+fn new_fake_desktop(fp: str, password: str) -> FakeDesktop {
+    return FakeDesktop{ fp: fp, password: password, opens: [], closed: 0, events: [], waits: 0, keys: [], pointers: [], resizes: [] }
+}
+
+fn (mut self: FakeDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> RdpDesktop! {
+    self.opens.push(t)
+    if t.trusted_fingerprint != self.fp {
+        return error(coded(ERR_HOST_KEY, "the certificate is not the trusted one"))
+    }
+    if t.password != self.password {
+        return error(coded(ERR_AUTH, "the server refused the user or password"))
+    }
+    return RdpDesktop{ width: t.width, height: t.height, frame_port: 4100, frame_token: "tok" }
+}
+
+fn (self: FakeDesktop) rd_presented_cert(tab: str) -> RdpCert {
+    return RdpCert{ subject: "CN=WIN11", issuer: "CN=WIN11", fingerprint: self.fp, valid_from: "", valid_to: "" }
+}
+
+fn (mut self: FakeDesktop) rd_resize(tab: str, width: i64, height: i64) -> void! {
+    self.resizes.push(DesktopSize{ width: width, height: height })
+}
+
+fn (mut self: FakeDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {
+    self.waits += 1
+    if i64(self.events.len()) >= self.waits {
+        return self.events[usize(self.waits - 1)]
+    }
+    return RdpEvent{ kind: RDP_EVENT_ENDED, message: "", width: 0, height: 0 }
+}
+
+fn (mut self: FakeDesktop) rd_key(tab: str, code: str, down: bool) -> void! {
+    mut d := "up"
+    if down {
+        d = "down"
+    }
+    self.keys.push("{code} {d}")
+}
+
+fn (mut self: FakeDesktop) rd_pointer(tab: str, p: RdpPointer) -> void! {
+    self.pointers.push(p)
+}
+
+fn (mut self: FakeDesktop) rd_close(tab: str) {
+    self.closed += 1
+}
+
+type FakeDesktopSink struct {
+    ready: []RdpDesktop
+}
+
+fn (mut self: FakeDesktopSink) desktop_ready(tab: str, d: RdpDesktop) {
+    self.ready.push(d)
+}
+
+fn trusting() -> FakePrompter {
+    return FakePrompter{ available: true, confirm: true, password: "typed" }
+}
+
+fn rdp_fake(crypto: FakeCrypto, mut store: FakeStore, s: VaultSession, password: str) -> void! {
+    mut p := host_patch("win", "Win11.lan")
+    p.host_type = "rdp"
+    p.set_host_type = true
+    p.user = "luis"
+    p.set_user = true
+    p.domain = "CORP"
+    p.set_domain = true
+    if password.len() > 0 {
+        p.password = password
+        p.set_password = true
+    }
+    _ := try add_host(crypto, mut store, s, p)
+}
+
+fn rdp_req(alias: str) -> RdpOpenRequest {
+    return RdpOpenRequest{ tab: "t1", alias: alias, width: 1601, height: 900, timeout_ms: 5000 }
+}
+
+test "a first RDP connection asks for the certificate, keeps it, and connects with the vault's password" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    d := try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win"))
+    assert_eq(d.width, 1600)
+    assert_eq(d.height, 900)
+    assert_eq(rd.opens.len(), 2)
+    assert_eq(rd.opens[0].trusted_fingerprint, "")
+    assert_eq(rd.opens[1].trusted_fingerprint, "ab:cd")
+    assert_eq(rd.opens[1].user, "luis")
+    assert_eq(rd.opens[1].domain, "CORP")
+    assert_eq(rd.opens[1].password, "s3cret")
+    assert_eq(rd.opens[1].port, 3389)
+    known := try store.known_hosts_all()
+    assert_eq(known.len(), 1)
+    assert_eq(known[0].addr, "rdp://win11.lan:3389")
+    assert_eq(known[0].key_type, "x509")
+    assert_eq(known[0].fingerprint, "ab:cd")
+
+    // The next connection trusts it at once.
+    mut again := new_fake_desktop("ab:cd", "s3cret")
+    _ := try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), rdp_req("win"))
+    assert_eq(again.opens.len(), 1)
+}
+
+test "an RDP certificate not trusted, or with nobody to ask, does not connect" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    mut msg := ""
+    open_remote_desktop(crypto, mut store, s, mut rd, FakePrompter{ available: true, confirm: false, password: "" }, rdp_req("win")) or err { msg = "{err.message()}" }
+    assert_eq(msg, "host_key: the certificate of 'win' was not trusted")
+    assert_eq((try store.known_hosts_all()).len(), 0)
+    msg = ""
+    open_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), rdp_req("win")) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), "host_key")
+}
+
+test "a changed RDP certificate is refused with the reason and nothing is trusted" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "11:22", host_id: "", added_at: "" })
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    mut msg := ""
+    open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win")) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), "host_key")
+    assert(msg.contains("CHANGED"))
+    assert(msg.contains("ab:cd"))
+    assert(!msg.contains("s3cret"))
+    assert_eq(rd.opens.len(), 1)
+    assert_eq(rd.opens[0].trusted_fingerprint, "11:22")
+    known := try store.known_hosts_all()
+    assert_eq(known[0].fingerprint, "11:22")
+}
+
+test "an RDP login uses the credential's password, or asks for one, and failures keep their code" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    mut cp := empty_cred_patch()
+    cp.name = "corp"
+    cp.set_name = true
+    cp.user = "CORP\\admin"
+    cp.set_user = true
+    cp.password = "fromcred"
+    cp.set_password = true
+    _ := try add_cred(crypto, mut store, s, cp)
+    mut p := host_patch("srv", "srv.lan")
+    p.host_type = "rdp"
+    p.set_host_type = true
+    p.credential = "corp"
+    p.set_credential = true
+    _ := try add_host(crypto, mut store, s, p)
+    try rdp_fake(crypto, mut store, s, "")
+    try store.known_host_put(KnownHost{ addr: "rdp://srv.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
+    try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
+
+    mut rd := new_fake_desktop("ab:cd", "fromcred")
+    _ := try open_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), rdp_req("srv"))
+    assert_eq(rd.opens[0].user, "CORP\\admin")
+    assert_eq(rd.opens[0].password, "fromcred")
+
+    // No saved password: asked for, or refused with nobody to ask.
+    mut typed := new_fake_desktop("ab:cd", "typed")
+    _ := try open_remote_desktop(crypto, mut store, s, mut typed, trusting(), rdp_req("win"))
+    assert_eq(typed.opens[0].password, "typed")
+    mut msg := ""
+    open_remote_desktop(crypto, mut store, s, mut typed, no_prompter(), rdp_req("win")) or err { msg = "{err.message()}" }
+    assert_eq(msg, "auth: 'win' has no saved password")
+
+    // A wrong password is `auth`, and never named.
+    mut wrong := new_fake_desktop("ab:cd", "other")
+    msg = ""
+    open_remote_desktop(crypto, mut store, s, mut wrong, no_prompter(), rdp_req("srv")) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), "auth")
+    assert(!msg.contains("fromcred"))
+}
+
+test "only an RDP host opens a remote desktop" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    _ := try add_host(crypto, mut store, s, host_patch("web", "10.0.0.5"))
+    mut rd := new_fake_desktop("ab:cd", "x")
+    mut msg := ""
+    open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("web")) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), "wrong_host_type")
+    assert_eq(rd.opens.len(), 0)
+    msg = ""
+    open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("nope")) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), "not_found")
+}
+
+test "a watched desktop reconnects at a new size without Display Control and reports how it ended" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    rd.events = [
+        RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 },
+        RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 1025, height: 700 },
+        RdpEvent{ kind: RDP_EVENT_ENDED, message: coded(ERR_NETWORK, "the connection was lost"), width: 0, height: 0 },
+    ]
+    mut sink := FakeDesktopSink{ ready: [] }
+    mut msg := ""
+    run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, rdp_req("win")) or err { msg = "{err.message()}" }
+    assert_eq(msg, "network: the connection was lost")
+    assert_eq(sink.ready.len(), 1)
+    assert_eq(rd.opens.len(), 2)
+    assert_eq(rd.opens[1].width, 1024)
+    assert_eq(rd.opens[1].height, 700)
+    assert_eq(rd.opens[1].password, "s3cret")
+    assert_eq(rd.closed, 1)
+
+    // Closed on purpose: no error.
+    mut quiet := new_fake_desktop("ab:cd", "s3cret")
+    mut sink2 := FakeDesktopSink{ ready: [] }
+    try run_remote_desktop(crypto, mut store, s, mut quiet, no_prompter(), mut sink2, rdp_req("win"))
+    assert_eq(quiet.closed, 1)
+
+    // A failed open closes the tab and reports why.
+    mut bad := new_fake_desktop("ab:cd", "other")
+    msg = ""
+    run_remote_desktop(crypto, mut store, s, mut bad, no_prompter(), mut sink2, rdp_req("win")) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), "auth")
+    assert_eq(bad.closed, 1)
+}
+
+test "a reconnect for a new size is skipped when the vault cannot give the password" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "")
+    try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
+    mut rd := new_fake_desktop("ab:cd", "typed")
+    rd.events = [RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 800, height: 600 }]
+    mut sink := FakeDesktopSink{ ready: [] }
+    try run_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut sink, rdp_req("win"))
+    // The typed password is not kept for a reconnect.
+    assert_eq(rd.opens.len(), 1)
+}
+
+test "input and resizes reach the engine once checked" {
+    mut rd := new_fake_desktop("", "")
+    try send_desktop_key(mut rd, "t1", "KeyA", true)
+    try send_desktop_key(mut rd, "t1", "KeyA", false)
+    mut refused := 0
+    send_desktop_key(mut rd, "t1", "", true) or { refused += 1 }
+    try send_desktop_pointer(mut rd, "t1", RdpPointer{ kind: "down", button: 2, x: 5, y: 6, delta: 0 })
+    send_desktop_pointer(mut rd, "t1", RdpPointer{ kind: "fly", button: 0, x: 5, y: 6, delta: 0 }) or { refused += 1 }
+    try resize_remote_desktop(mut rd, "t1", 99, 5000)
+    close_remote_desktop(mut rd, "t1")
+    assert_eq(refused, 2)
+    assert_eq(rd.keys.len(), 2)
+    assert_eq(rd.keys[0], "KeyA down")
+    assert_eq(rd.pointers.len(), 1)
+    assert_eq(rd.resizes[0].width, 200)
+    assert_eq(rd.resizes[0].height, 5000)
+    assert_eq(rd.closed, 1)
+}

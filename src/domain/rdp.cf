@@ -96,6 +96,147 @@ fn check_rdp_cert(known: []KnownHost, hostname: str, port: i64, fingerprint: str
     return check_server_key(known, rdp_cert_addr(hostname, port), ServerKey{ key_type: RDP_CERT_KEY_TYPE, fingerprint: fingerprint })
 }
 
+// ---- A remote desktop session (milestone 30) -------------------------------------
+
+// Display Control takes 200 to 8192 pixels a side and an even width (MS-RDPEDISP);
+// a connection's first size follows the same rule, so every size the tab asks for is
+// one the server accepts.
+RDP_MIN_SIDE: i64 = 200
+RDP_MAX_SIDE: i64 = 8192
+
+type DesktopSize struct {
+    width: i64
+    height: i64
+}
+
+// The size of a desktop for a tab of `width` x `height` device pixels: clamped to
+// what RDP accepts, the width made even.
+fn fit_desktop_size(width: i64, height: i64) -> DesktopSize {
+    mut w := width
+    mut h := height
+    if w < RDP_MIN_SIDE {
+        w = RDP_MIN_SIDE
+    }
+    if w > RDP_MAX_SIDE {
+        w = RDP_MAX_SIDE
+    }
+    if h < RDP_MIN_SIDE {
+        h = RDP_MIN_SIDE
+    }
+    if h > RDP_MAX_SIDE {
+        h = RDP_MAX_SIDE
+    }
+    if w % 2 == 1 {
+        w = w - 1
+    }
+    return DesktopSize{ width: w, height: h }
+}
+
+// Where an RDP connection goes and as whom. `password` never leaves the core except
+// to the engine (Principle 6). Only the certificate whose SHA-256 fingerprint is
+// `trusted_fingerprint` is accepted; "" accepts none, so a first connection always
+// stops at the certificate and the core decides (D-019).
+type RdpTarget struct {
+    hostname: str
+    port: i64
+    user: str
+    domain: str
+    password: str
+    width: i64
+    height: i64
+    trusted_fingerprint: str
+}
+
+// The certificate a server presented. `fingerprint` is its SHA-256, lower-case hex
+// bytes joined by colons; the dates are as the engine reads them.
+type RdpCert struct {
+    subject: str
+    issuer: str
+    fingerprint: str
+    valid_from: str
+    valid_to: str
+}
+
+// A connected desktop: its size, and where the page reads its frames (the local frame
+// channel, D-071). The token guards that channel; it is not a vault secret.
+type RdpDesktop struct {
+    width: i64
+    height: i64
+    frame_port: i64
+    frame_token: str
+}
+
+// A pointer event in desktop pixels. `kind` is one of RDP_POINTER_KINDS; `button` 0
+// is the main button, 1 the middle, 2 the secondary; `delta` is a wheel's notches
+// times 120, positive away from the person (up) or to the right.
+type RdpPointer struct {
+    kind: str
+    button: i64
+    x: i64
+    y: i64
+    delta: i64
+}
+
+RDP_POINTER_KINDS: []str = ["move", "down", "up", "wheel", "hwheel"]
+
+fn check_rdp_pointer(p: RdpPointer) -> void! {
+    mut known := false
+    for k in RDP_POINTER_KINDS {
+        if k == p.kind {
+            known = true
+        }
+    }
+    if !known {
+        return error(coded(ERR_INVALID, "unknown pointer event '{p.kind}'"))
+    }
+    if p.button < 0 || p.button > 2 {
+        return error(coded(ERR_INVALID, "pointer button must be 0, 1 or 2"))
+    }
+    if p.x < 0 || p.y < 0 || p.x >= RDP_MAX_SIDE || p.y >= RDP_MAX_SIDE {
+        return error(coded(ERR_INVALID, "pointer position out of the desktop"))
+    }
+}
+
+// What a running session reports while it is watched: still `running`; `ended`, with
+// the reason in `message` ("" when it was closed on purpose); or `resize`, the size
+// the tab asked for when the server has no Display Control, which a reconnect gives.
+RDP_EVENT_RUNNING: str = "running"
+RDP_EVENT_ENDED: str = "ended"
+RDP_EVENT_RESIZE: str = "resize"
+
+type RdpEvent struct {
+    kind: str
+    message: str
+    width: i64
+    height: i64
+}
+
+// Self-signed: issued by its own subject, the normal case for a Windows host.
+fn rdp_cert_self_signed(c: RdpCert) -> bool {
+    return c.subject.len() > 0 && c.subject == c.issuer
+}
+
+// The question for a certificate, the RDP twin of an SSH host key's (design 22d1,
+// 22d2). `known_fingerprint` is the trusted one when it changed.
+fn rdp_cert_question(alias: str, hostname: str, port: i64, c: RdpCert, known_fingerprint: str) -> HostKeyQuestion {
+    mut known_type := ""
+    if known_fingerprint.len() > 0 {
+        known_type = RDP_CERT_KEY_TYPE
+    }
+    return HostKeyQuestion{ alias: alias, addr: rdp_cert_addr(hostname, port), key_type: RDP_CERT_KEY_TYPE, fingerprint: c.fingerprint, known_key_type: known_type, known_fingerprint: known_fingerprint, subject: c.subject, issuer: c.issuer, valid_from: c.valid_from, valid_to: c.valid_to }
+}
+
+// The fingerprint trusted for an RDP server, "" when none is.
+fn trusted_rdp_fingerprint(known: []KnownHost, hostname: str, port: i64) -> str {
+    addr := rdp_cert_addr(hostname, port)
+    for k in known {
+        if k.addr == addr && k.key_type == RDP_CERT_KEY_TYPE {
+            return k.fingerprint
+        }
+    }
+    return ""
+}
+
 fn sample_rdp_host() -> Host {
     mut h := sample_host()
     h.alias = "win-01"
@@ -173,4 +314,48 @@ test "an RDP certificate is trusted on first use and a changed one is caught" {
     assert_eq(check_rdp_cert(known, "win.example.org", 3390, "AB:CD"), HOST_KEY_NEW)
     // The SSH key at the same name is never read as the certificate.
     assert_eq(check_rdp_cert(known, "other", 3389, "AB:CD"), HOST_KEY_NEW)
+}
+
+test "a desktop size is one RDP accepts" {
+    s := fit_desktop_size(1281, 721)
+    assert_eq(s.width, 1280)
+    assert_eq(s.height, 721)
+    small := fit_desktop_size(10, 0)
+    assert_eq(small.width, 200)
+    assert_eq(small.height, 200)
+    big := fit_desktop_size(9999, 9000)
+    assert_eq(big.width, 8192)
+    assert_eq(big.height, 8192)
+}
+
+test "pointer events are checked" {
+    try check_rdp_pointer(RdpPointer{ kind: "move", button: 0, x: 10, y: 10, delta: 0 })
+    try check_rdp_pointer(RdpPointer{ kind: "wheel", button: 0, x: 0, y: 0, delta: -120 })
+    mut refused := 0
+    check_rdp_pointer(RdpPointer{ kind: "drag", button: 0, x: 0, y: 0, delta: 0 }) or { refused += 1 }
+    check_rdp_pointer(RdpPointer{ kind: "down", button: 3, x: 0, y: 0, delta: 0 }) or { refused += 1 }
+    check_rdp_pointer(RdpPointer{ kind: "move", button: 0, x: -1, y: 0, delta: 0 }) or { refused += 1 }
+    check_rdp_pointer(RdpPointer{ kind: "move", button: 0, x: 0, y: 9000, delta: 0 }) or { refused += 1 }
+    assert_eq(refused, 4)
+}
+
+test "an RDP certificate question carries the certificate and the trusted fingerprint" {
+    c := RdpCert{ subject: "CN=WIN11", issuer: "CN=WIN11", fingerprint: "ab:cd", valid_from: "2026-01-01", valid_to: "2026-07-01" }
+    assert(rdp_cert_self_signed(c))
+    q := rdp_cert_question("win", "Win11.lan", 3389, c, "")
+    assert_eq(q.addr, "rdp://win11.lan:3389")
+    assert_eq(q.key_type, "x509")
+    assert_eq(q.known_key_type, "")
+    assert_eq(q.subject, "CN=WIN11")
+    changed := rdp_cert_question("win", "win11.lan", 3389, c, "ef:01")
+    assert_eq(changed.known_fingerprint, "ef:01")
+    assert_eq(changed.known_key_type, "x509")
+    known: []KnownHost = [
+        KnownHost{ addr: "win11.lan", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" },
+        KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" },
+    ]
+    assert_eq(trusted_rdp_fingerprint(known, "WIN11.lan", 3389), "ab:cd")
+    assert_eq(trusted_rdp_fingerprint(known, "win11.lan", 3390), "")
+    issued := RdpCert{ subject: "CN=a", issuer: "CN=CA", fingerprint: "", valid_from: "", valid_to: "" }
+    assert(!rdp_cert_self_signed(issued))
 }

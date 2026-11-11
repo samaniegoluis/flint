@@ -41,6 +41,11 @@ type HostKeyQuestion struct {
     fingerprint:       str `json:"fingerprint"`
     known_key_type:    str `json:"known_key_type"`
     known_fingerprint: str `json:"known_fingerprint"`
+    // An RDP server's certificate (milestone 30); "" for an SSH host key.
+    subject:           str `json:"subject"`
+    issuer:            str `json:"issuer"`
+    valid_from:        str `json:"valid_from"`
+    valid_to:          str `json:"valid_to"`
 }
 
 // One way to authenticate, tried in order. `kind` is "key", "password" or "agent".

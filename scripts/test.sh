@@ -18,6 +18,7 @@ sshd_bin="$(command -v sshd || echo /usr/sbin/sshd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-sshd.XXXXXX")"
 cleanup() {
   for f in "$tmp"/sshd*.pid; do [[ -f "$f" ]] && kill "$(cat "$f")" 2>/dev/null; done
+  [[ -n "${rdp_pid:-}" ]] && { kill "$rdp_pid" 2>/dev/null; wait "$rdp_pid" 2>/dev/null; }
   [[ -n "${SSH_AGENT_PID:-}" ]] && kill "$SSH_AGENT_PID" 2>/dev/null
   rm -rf "$tmp"
 }
@@ -102,6 +103,18 @@ done
 eval "$(ssh-agent -s -a "$tmp/agent.sock")" >/dev/null
 ssh-add -q "$tmp/user_ed25519" 2>/dev/null
 export FLINT_TEST_AGENT=1
+
+# FreeRDP's sample server, for the RDP adapter's tests (milestone 30): loopback only
+# by its firewall-free port, a throwaway self-signed certificate, any user. Skipped
+# (the tests pass without it) where FreeRDP ships no sample server.
+rdp_port="${FLINT_TEST_RDP_PORT:-33891}"
+if command -v sfreerdp-server >/dev/null; then
+  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/rdp.key" -out "$tmp/rdp.crt" -days 2 -subj "/CN=flint-test" 2>/dev/null
+  (cd "$tmp" && WLOG_LEVEL=OFF exec sfreerdp-server --cert="$tmp/rdp.crt" --key="$tmp/rdp.key" --port="$rdp_port" >"$tmp/rdp.log" 2>&1) &
+  rdp_pid=$!
+  for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$rdp_port") 2>/dev/null && break; sleep 0.1; done
+  export FLINT_RDP_SAMPLE_PORT="$rdp_port"
+fi
 
 export FLINT_TEST_SSH_PORT="$port"
 export FLINT_TEST_SSH_PORT2="$port2"

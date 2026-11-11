@@ -314,3 +314,34 @@ type TunnelRunner interface {
     // Who listens on that port, when this user may see it (design 16h2).
     tunnel_port_owner(port: i64) -> PortOwner
 }
+
+// A remote desktop engine (adapters/rdp, FreeRDP 3, milestone 30, D-070). One
+// connection per tab, keyed by the tab's id; nothing above the adapters knows the
+// engine. Input arrives as Flint's own events (a key's `code` as the W3C UI Events
+// name it, "KeyA", "ControlLeft"; pointer events in desktop pixels) and frames leave
+// through the tab's local frame channel (D-071), which outlives a reconnect.
+type RemoteDesktop interface {
+    // Connects the tab, replacing its connection if it has one, and logs in (NLA when
+    // the server asks). Only `t.trusted_fingerprint` is accepted; any other
+    // certificate fails `host_key` and is kept for `rd_presented_cert`. Bounded by
+    // `timeout_ms` (Principle 8). Errors: `auth`, `network`, `refused`, `timeout`,
+    // `host_key`.
+    rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> RdpDesktop!
+    // The certificate the server presented on the tab's last `rd_open`.
+    rd_presented_cert(tab: str) -> RdpCert
+    // Asks for a new desktop size. With Display Control the server resizes in place;
+    // without it the size is kept and `rd_wait` reports a `resize`.
+    rd_resize(tab: str, width: i64, height: i64) -> void!
+    // Waits up to `wait_ms` for the session to end or to need a reconnect.
+    rd_wait(tab: str, wait_ms: i64) -> RdpEvent
+    rd_key(tab: str, code: str, down: bool) -> void!
+    rd_pointer(tab: str, p: RdpPointer) -> void!
+    // Ends the tab's connection (an `rd_open` in progress is cancelled) and its frame
+    // channel. A tab with nothing open is left as it is.
+    rd_close(tab: str)
+}
+
+// Where a remote desktop tells its driver that it is up (webui events in the app).
+type DesktopSink interface {
+    desktop_ready(tab: str, d: RdpDesktop)
+}
