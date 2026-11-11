@@ -739,8 +739,11 @@ The entries below were found while building milestone 01 against cfire `3963814`
   (`src/adapters/vault/sqlcipher.cf`, `src/adapters/ssh/libssh.cf`).
 - **Ideal:** `none` → `nullptr` for raw pointers; a `*mut T` parameter → `T*`.
 
-### CF-020 · bug · `resolved ✓`: identifiers that are C++ keywords break the build
+### CF-020 · bug · `reopened`: identifiers that are C++ keywords break the build
 - **At `466751b`:** C++ keywords are renamed in the generated code.
+- **At `c5b1d4b` (milestone 28) [ran]:** `auto` is not: `auto := os.getenv("X") == "1"` checks
+  cleanly in cfire and fails in clang with `cannot combine with previous 'auto' declaration
+  specifier`. Flint renamed the local (`auto_run`, `src/drivers/rdpspike/main.cf`).
 - **Repro:** `fn main() { short := 3; println("{}", short) }` → clang
   `expected unqualified-id`. The same happens for `short`, `long`, `class`, `template`,
   and so on.
@@ -2114,3 +2117,21 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** the parser accepts the deprecated form as a discard (so only the deprecation
   is reported) and a parse error in one file does not show up as undeclared names in its
   package.
+
+### CF-119 · missing · `open`: no RDP client; winpr's `byte` clashes with the prelude
+- **What Flint needs (milestone 28):** an RDP client session in the desktop app: connect
+  with NLA, receive the desktop's frames, send keys and the mouse. cfire has no RDP, and a
+  library like libfreerdp 3 works through C callbacks (`PostConnect`, `EndPaint`,
+  `VerifyCertificateEx`) set on a struct, which cfire cannot write.
+- **Workaround:** `src/adapters/rdp/native/flint_rdp.hpp` owns the FreeRDP instance, its
+  event loop thread, the callbacks and a dirty-rectangle queue; `src/adapters/rdp/rdp.cf`
+  calls it from `cpp {}` blocks. Linked through `flint-rdp.pc` (CF-031), so only the app
+  links FreeRDP.
+- **Second gap, repro [ran] (macOS, cfire `c5b1d4b`, FreeRDP 3.33.1):** any `.cf` file with
+  `import cpp "freerdp/freerdp.h"` fails in clang with `winpr/wtypes.h:133: redefinition
+  of 'byte' as different kind of symbol` against `cfire_prelude.hpp:1615: using
+  cfire::byte;`. The prelude puts `byte` in the global namespace, where C libraries keep
+  their own typedefs. **Workaround:** `#define byte flint_winpr_byte` around FreeRDP's
+  includes in the shim.
+- **Ideal:** the prelude keeps `byte` inside `cfire::` (generated code can qualify it), so
+  a C header that declares a global `byte` includes cleanly.

@@ -1,0 +1,9 @@
+# CFIRE-UPSTREAM: CF-031, CF-119
+# The RDP adapter's native shim (libfreerdp 3, milestone 28). Kept apart from
+# flint-native so the CLI never links FreeRDP: only the desktop app imports
+# src/adapters/rdp.
+Name: flint-rdp
+Description: Native RDP shim of Flint's desktop app (darwin)
+Version: 1
+Requires: freerdp3 winpr3 libsodium
+Cflags: -I${pcfiledir}/../../rdp/native
