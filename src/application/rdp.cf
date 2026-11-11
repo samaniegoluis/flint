@@ -165,6 +165,19 @@ fn reconnect_at_size[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](cr
     }
 }
 
+// Whether `flint connect <alias>` opens a remote desktop: the host is an RDP host,
+// whose desktop only the app can show (the CLI never shows one, D-070).
+fn opens_remote_desktop[S: VaultStore](store: S, alias: str) -> bool! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    return is_rdp_host(h)
+}
+
+// The refusal for `flint connect` on an RDP host when no app serves the vault.
+fn desktop_needs_app(alias: str) -> str {
+    return coded(ERR_HOST_TYPE, "'{alias}' is an RDP host: its desktop opens in the Flint app. Open Flint and unlock this vault, then run the command again")
+}
+
 // The tab now measures `width` x `height` device pixels.
 fn resize_remote_desktop[R: RemoteDesktop](mut rd: R, tab: str, width: i64, height: i64) -> void! {
     size := fit_desktop_size(width, height)

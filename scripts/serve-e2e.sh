@@ -285,6 +285,16 @@ check "connect exits with the remote shell status" '[[ "$(echo "$pty_out" | json
 expect 0 "the key trusted on that terminal was recorded in the app's vault" "" -- --json known-host list
 check "localhost is a known host" '[[ "$out" == *"[localhost]:$P"* ]]'
 
+echo "== flint connect on an RDP host opens its tab in the app (milestone 30)"
+expect 0 "add an RDP host" "" -- host add served-win --type rdp --hostname 127.0.0.1 --port 9 --user e2e
+expect 0 "flint connect on an RDP host" "" -- connect served-win
+check "it says the desktop opened in Flint" '[[ "$out" == "Opened served-win in Flint (remote desktop)." ]]'
+expect 0 "flint connect --json on an RDP host" "" -- --json connect served-win
+check "the JSON names the host and its type" '[[ "$(echo "$out" | json_get "d[\"host\"], d[\"type\"], d[\"opened\"]")" == "('"'"'served-win'"'"', '"'"'rdp'"'"', True)" ]]'
+local_run "" -- connect served-win
+check "on its own the CLI refuses it: the desktop opens in the app (23)" '[[ $lstatus == 23 && "$(cat "$tmp/lerr")" == *"opens in the Flint app"* ]]'
+expect 0 "host rm of the RDP host" "" -- host rm served-win
+
 echo "== caller approval (milestone 12, Principle 12)"
 # Under perl, which stays as the parent, each run is a new caller: no grant covers it.
 new_caller() {  # <stdin> -- <flint args...>  ($out, $err, $status)

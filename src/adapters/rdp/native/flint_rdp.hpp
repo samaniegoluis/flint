@@ -72,6 +72,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 namespace flint_rdp {
 
@@ -528,12 +529,20 @@ inline void wipe_password(rdpSettings* st) {
 
 inline bool start_frame_server(std::shared_ptr<Tab> t);
 
+// Tabs closed before their first open began: that open must not connect a desktop
+// nobody shows.
+inline std::map<std::string, bool>& tombstones() {
+    static std::map<std::string, bool> r;
+    return r;
+}
+
 inline std::shared_ptr<Tab> tab_for(const std::string& id) {
     std::lock_guard<std::mutex> g(registry_mu());
     auto it = registry().find(id);
     if (it != registry().end()) return it->second;
     auto t = std::make_shared<Tab>();
     t->id = id;
+    if (tombstones().erase(id) > 0) t->closed.store(true);
     registry()[id] = t;
     return t;
 }
@@ -1047,7 +1056,10 @@ inline void close(const std::string& id) {
     {
         std::lock_guard<std::mutex> g(registry_mu());
         auto it = registry().find(id);
-        if (it == registry().end()) return;
+        if (it == registry().end()) {
+            tombstones()[id] = true;
+            return;
+        }
         t = it->second;
         registry().erase(it);
     }
@@ -1072,6 +1084,16 @@ inline void close(const std::string& id) {
     if (t->server.joinable()) t->server.join();
     end_conn(c);
     if (!t->token.empty()) sodium_memzero(t->token.data(), t->token.size());
+}
+
+// Ends every tab (the app is quitting).
+inline void close_all() {
+    std::vector<std::string> ids;
+    {
+        std::lock_guard<std::mutex> g(registry_mu());
+        for (auto& [id, t] : registry()) ids.push_back(id);
+    }
+    for (auto& id : ids) close(id);
 }
 
 }  // namespace flint_rdp

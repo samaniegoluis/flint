@@ -16,6 +16,7 @@ import "../../adapters/crypto"
 import "../../adapters/fonts"
 import "../../adapters/keychain"
 import "../../adapters/process"
+import "../../adapters/rdp"
 import "../../adapters/ssh"
 import "../../adapters/uievents"
 import "../../adapters/vault"
@@ -105,6 +106,10 @@ fn main() {
     }
 
     app.bind_raw("app_info") |params| { return rpc_app_info(e2e) }
+    app.bind_raw("rdp_key") |params| { return rpc_rdp_key(params, st) }
+    app.bind_raw("rdp_pointer") |params| { return rpc_rdp_pointer(params, st) }
+    app.bind_raw("rdp_resize") |params| { return rpc_rdp_resize(params) }
+    app.bind_raw("rdp_close") |params| { return rpc_rdp_close(params, st) }
     app.bind_raw("window_theme") |params| { return rpc_window_theme(params, mut app) }
     app.bind_raw("dialog_open") |params| { return rpc_dialog_open(params, app) }
     app.bind_raw("dialog_save") |params| { return rpc_dialog_save(params, app) }
@@ -267,6 +272,22 @@ fn main() {
             }
             return ok_json()
         }
+        // The RDP tab (rdp.cf, milestone 30).
+        app.bind_raw("rdp_open") |params| {
+            r := rdp_open_check(params, st) or err {
+                return error("{err.message()}")
+            }
+            worker_app := app
+            worker_store := store
+            vs := st.vault_session()
+            emit_rdp_state(mut app, r.tab, "connecting", "", "")
+            scope.spawn || {
+                mut a := worker_app
+                mut s := worker_store
+                run_gui_rdp(mut a, c, mut s, vs, r)
+            }
+            return ok_json()
+        }
         app.bind_raw("host_test") |params| {
             req := host_test_check(params, st) or err {
                 return error("{err.message()}")
@@ -374,6 +395,8 @@ fn main() {
         }
         st.holder.set_quitting()
         gui_session_close_all()
+        // Remote desktops too (milestone 30).
+        close_all_desktops()
         // Tunnels run in this process only: quitting closes them (D-062).
         release_all_tunnels()
         listener.close()

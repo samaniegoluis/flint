@@ -4,7 +4,7 @@
 
 import { keyTab, pairs } from '../files/pair';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../api/backend';
+import { api, on } from '../api/backend';
 import { useApp } from '../state/app';
 import { actionFor, chordLabel, type Action } from '../lib/keymap';
 import { Icon, Logo } from '../ui/Icon';
@@ -193,37 +193,39 @@ export function Shell() {
     openHosts.current = now;
   }, [panes, notify]);
 
-  // An RDP host opens no SSH session: its tab arrives with milestone 30.
-  const rdpNotYet = useCallback((alias: string) => {
-    if (catalog.hosts.find((h) => h.alias === alias)?.type !== 'rdp') return false;
-    notify(`${alias} is a remote desktop (RDP) host. Opening it in a tab is coming in a later version.`, 'info');
-    return true;
-  }, [catalog.hosts, notify]);
+  const isRdp = useCallback((alias: string) => catalog.hosts.find((h) => h.alias === alias)?.type === 'rdp', [catalog.hosts]);
 
-  // `noCommand` (the palette's "without …" row) always opens its own tab.
+  // `noCommand` (the palette's "without …" row) always opens its own tab. An RDP
+  // host opens a remote desktop tab (milestone 30), one per host unless asked again.
   const connect = useCallback((alias: string, newTab: boolean, noCommand = false) => {
-    if (rdpNotYet(alias)) return;
     setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts'));
     if (narrow) setCollapsed(true);
     const open = sessions.get().panes.find((t) => t.alias === alias && t.status !== 'ended' && !t.noCommand);
     if (open && !newTab && !noCommand) { sessions.focusPane(open.id); return; }
+    if (isRdp(alias)) { sessions.open(alias, false, 'rdp'); return; }
     sessions.open(alias, noCommand);
     // Connecting starts the host's Open when I connect tunnels once its terminal is in
     // (D-064): on their own session, so a reconnect or closing the tab leaves them up.
     const pane = sessions.get().panes.find((p) => p.id === sessions.tab(sessions.get().active)?.focus);
     if (pane && pane.alias === alias) startOnConnect.current.set(pane.id, { alias, all: withTunnels.current });
     withTunnels.current = false;
-  }, [narrow, rdpNotYet]);
+  }, [narrow, isRdp]);
+
+  // `flint connect <rdp-host>` (milestone 30): the CLI never shows a desktop, so the
+  // app opens the host's tab, as a double-click in the tree does.
+  useEffect(() => on<{ alias: string }>('rdp:open-request', (e) => connect(e.alias, false)), [connect]);
 
   // A new pane in the active tab (⌘D, ⇧⌘D, the Split menu, the palette's ⇧⌘↵).
   const split = useCallback((dir: SplitDir, alias?: string, noCommand = false) => {
-    if (alias && rdpNotYet(alias)) return;
+    // A remote desktop opens in a tab of its own, and its tab takes no other pane.
+    if (alias && isRdp(alias)) { connect(alias, true); return; }
     setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts'));
     const t = sessions.tab(sessions.get().active);
     if (!t) { if (alias) sessions.open(alias, noCommand); return; }
+    if (sessions.pane(t.focus)?.kind === 'rdp') { notify('A remote desktop tab has no split panes', 'info'); return; }
     if (t.panes.length >= MAX_PANES) { notify(`A tab holds up to ${MAX_PANES} panes`, 'info'); return; }
     sessions.split(dir, alias, noCommand);
-  }, [notify, rdpNotYet]);
+  }, [notify, isRdp, connect]);
 
   // The key leaves memory; open sessions keep running under the lock screen (D-042).
   const lock = app.lock;
@@ -427,7 +429,7 @@ export function Shell() {
         </div>
       )}
 
-      <SessionArea shown={sideView} filesOn={view === 'files' && !collapsed} onFiles={() => run('viewFiles')} fontSize={fontSize} onPalette={(h) => setPalette(h ? { hostsOnly: true, newSession: true } : { hostsOnly: false })} onEditHost={(alias) => setEditor({ alias, group: '' })} onManageTunnels={(alias) => setEditor({ alias, group: '', tunnels: true })} onConnect={connect} />
+      <SessionArea shown={sideView} filesOn={view === 'files' && !collapsed} onFiles={() => run('viewFiles')} fontSize={fontSize} onPalette={(h) => setPalette(h ? { hostsOnly: true, newSession: true } : { hostsOnly: false })} onEditHost={(alias) => setEditor({ alias, group: '' })} onManageTunnels={(alias) => setEditor({ alias, group: '', tunnels: true })} onConnect={connect} onKnownHosts={() => { setSection('vault'); setView('settings'); }} />
       {view === 'keys' && <KeysPage adding={addingKey} setAdding={setAddingKey} onConfirm={setConfirm} />}
       {view === 'credentials' && <CredentialsPage editing={credEditing} setEditing={setCredEditing} onConfirm={setConfirm} />}
       {view === 'settings' && <SettingsPage section={section} setSection={setSection} onLock={() => lock().catch(fail)} onConfirm={setConfirm} />}

@@ -200,3 +200,11 @@ fn next_frame(tab: str, wait_ms: i64) -> str! {
     }
     return frame
 }
+
+// Ends every tab: the app is quitting.
+fn close_all_desktops() {
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        flint_rdp::close_all();
+    }
+}

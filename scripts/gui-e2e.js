@@ -8,6 +8,11 @@
   const PORT3 = '@@PORT3@@';
   // A free port on 127.0.0.1 for the tunnels step (milestone 23).
   const TPORT = '@@TPORT@@';
+  // FreeRDP's sample server (milestone 30), and a forwarder whose first two
+  // connections reach it and every later one a second sample server with another
+  // certificate: one address, a changed certificate.
+  const RPORT = '@@RPORT@@';
+  const RPORT_FWD = '@@RPORT_FWD@@';
   const USER = '@@USER@@';
   const KEY = `@@KEY@@`;
   // gui-e2e.sh runs the app once per run, each on a fresh vault and config folder:
@@ -20,8 +25,9 @@
   //   tunnels   tunnels in the app (milestone 23)
   //   paste     an image pasted into the terminal lands on the server (milestone 25)
   //   vim       vim in the terminal
+  //   rdp       an RDP host in a tab against FreeRDP's sample server (milestone 30)
   const RUN = '@@RUN@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim'];
+  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp'];
   const MASTER = 'e2e-master-password-42';
   const HOST_PW_MARKER = 'gui-host-pw-marker';
 
@@ -758,6 +764,166 @@
       await check(true, 'replacing the key forgets the old one and asks again');
     }
 
+
+    if (RUN === 'rdp') {
+      await setStep('rdp: first connection asks for the certificate');
+      const isMac = (await window.backend.app_info({})).os === 'mac';
+      const chord = (k, code) => (document.activeElement ?? document.body).dispatchEvent(
+        new KeyboardEvent('keydown', { key: k, code, bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
+      // Through the RDP editor, as a person adds one (the tree reloads on save).
+      const addRdp = async (alias, port, password) => {
+        await click('.side-head .icon-btn[aria-label^="New host"]');
+        await waitFor(() => q('[data-host-type-step]'), 'the type step');
+        await click('.type-card[data-type="rdp"]');
+        await click('.modal button', 'Continue');
+        await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor');
+        await fill('#ra', alias);
+        await fill('#rh', '127.0.0.1');
+        await fill('#rp', String(port));
+        await fill('#ru', 'e2e');
+        await fill('#rd', 'LAB');
+        await fill('.modal input[aria-label="Password"]', password);
+        await click('.modal button[type="submit"]', 'Add host');
+        await waitFor(() => byText('.tree .ti', alias), alias + ' in the tree');
+      };
+      await addRdp('rdp-sample', RPORT, 'rdp-pw-marker');
+      await addRdp('rdp-closed', 9, 'x');
+      await addRdp('rdp-fwd', RPORT_FWD, 'x');
+      const open = async (alias) => {
+        const r = await waitFor(() => byText('.tree .ti', alias), alias + ' in the tree');
+        r.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      };
+      const rdpState = (st) => q(`.tab.on`) && q(`[data-rdp-state="${st}"]`, activeRegion());
+      await open('rdp-sample');
+      await waitFor(() => rdpState('certificate'), 'the certificate prompt', 30000);
+      const fp = q('[data-fingerprint]', activeRegion()).textContent;
+      await check(/^([0-9A-F]{2} ){31}[0-9A-F]{2}$/.test(fp), `the prompt shows the SHA-256 fingerprint grouped in bytes (${fp.slice(0, 11)}…)`);
+      await check(hasText('CN = flint-test') || hasText('CN=flint-test') || hasText('flint-test'), 'the prompt names the certificate subject');
+      await check(byText('.badge', 'self-signed'), 'a self-signed certificate is marked so');
+      await check(byText('.tab', 'verify certificate'), 'the tab is labelled "verify certificate"');
+      await click('button[type="submit"]', 'Trust and connect');
+
+      await setStep('rdp: the desktop is drawn');
+      await waitFor(() => q('[data-rdp-size]'), 'the desktop', 30000);
+      const canvas = () => q('canvas.rdp-canvas', activeRegion());
+      await waitFor(() => canvas()?.dataset.desktop, 'a first frame', 20000);
+      const [dw, dh] = canvas().dataset.desktop.split('x').map(Number);
+      const area = q('.rdp-area', activeRegion()).getBoundingClientRect();
+      await check(Math.abs(dw - Math.floor(area.width)) <= 2 && Math.abs(dh - Math.floor(area.height)) <= 1,
+        `the desktop has the tab's size (${dw}x${dh} for ${Math.floor(area.width)}x${Math.floor(area.height)})`);
+      {
+        const px = canvas().getContext('2d').getImageData(0, 0, dw, dh).data;
+        let lit = 0;
+        for (let i = 0; i < px.length; i += 4 * 97) if (px[i] + px[i + 1] + px[i + 2] > 30) lit++;
+        await check(lit > 50, `the canvas shows the server's picture (${lit} lit samples)`);
+      }
+      const known = (await window.backend.catalog({})).known_hosts;
+      await check(known.some((k) => k.addr === `rdp://127.0.0.1:${RPORT}` && k.key_type === 'x509'), 'the trusted certificate is kept in the vault');
+      await check(q('[data-rdp-toolbar]').textContent.includes('LAB\\e2e'), 'the toolbar names the domain user');
+
+      await setStep('rdp: keyboard and pointer reach the session');
+      {
+        const cv = canvas();
+        const r = cv.getBoundingClientRect();
+        cv.focus();
+        await check(document.activeElement === cv, 'the desktop takes the keyboard focus');
+        cv.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + 20, clientY: r.top + 20 }));
+        cv.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: r.left + 20, clientY: r.top + 20 }));
+        cv.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0, clientX: r.left + 20, clientY: r.top + 20 }));
+        cv.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 120, clientX: r.left + 20, clientY: r.top + 20 }));
+        const kd = new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', bubbles: true, cancelable: true });
+        cv.dispatchEvent(kd);
+        cv.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', code: 'KeyA', bubbles: true, cancelable: true }));
+        await check(kd.defaultPrevented, 'a key on the desktop is taken from the page');
+        // ⌘W (Ctrl+Shift+W on Linux) goes to the remote: the tab stays.
+        const tabs = qa('.tab').length;
+        cv.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', code: 'KeyW', bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
+        await sleep(300);
+        await check(qa('.tab').length === tabs, 'a Flint chord other than the palette goes to the remote desktop');
+        await sleep(300);
+        await check(q('[data-rdp-size]') && !q('[data-rdp-state]', activeRegion()), 'input leaves the session up');
+        // The palette chord still opens the palette, on an RDP tab too.
+        cv.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
+        await waitFor(() => q('[aria-label="Command palette"]'), 'the palette from the desktop');
+        await check(true, 'the palette chord stays Flint\'s on an RDP tab');
+        await fill('[aria-label="Command palette"] input', 'Split right');
+        const split = await waitFor(() => byText('[role="option"]', 'Split right'), 'Split right in the palette');
+        await check(split.getAttribute('aria-disabled') === 'true' && split.title === 'SSH hosts only', 'the palette greys pane actions on an RDP tab: "SSH hosts only"');
+        await fill('[aria-label="Command palette"] input', 'Tunnels view');
+        const tv = await waitFor(() => byText('[role="option"]', 'Tunnels view'), 'Tunnels view in the palette');
+        await check(tv.getAttribute('aria-disabled') === 'true', 'the palette greys the Tunnels view on an RDP tab');
+        q('[aria-label="Command palette"] input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        await waitFor(() => !q('[aria-label="Command palette"]'), 'the palette closed');
+      }
+
+      await setStep('rdp: Files says it is for SSH hosts');
+      await click('.rail-btn', 'Files');
+      await waitFor(() => q('[data-files-rdp]'), 'the Files view on an RDP tab');
+      await check(hasText('Files is for SSH hosts'), 'the Files view says a remote desktop has no files to browse');
+      await click('.rail-btn', 'Hosts');
+
+      await setStep('rdp: the desktop follows the tab size');
+      {
+        const before = canvas().dataset.desktop;
+        chord('b', 'KeyB');
+        await waitFor(() => canvas().dataset.desktop && canvas().dataset.desktop !== before, 'a new desktop size', 30000);
+        const now = canvas().dataset.desktop.split('x').map(Number);
+        const a = q('.rdp-area', activeRegion()).getBoundingClientRect();
+        await check(Math.abs(now[0] - Math.floor(a.width)) <= 2, `a wider tab gets a wider desktop (${before} → ${now.join('x')}), reconnected without Display Control`);
+        await check(q('[data-rdp-size]') && !q('[data-rdp-state]', activeRegion()), 'the session is up after the resize');
+        chord('b', 'KeyB');
+      }
+
+      await setStep('rdp: disconnect and connect again');
+      await click('[data-rdp-disconnect]');
+      await waitFor(() => rdpState('closed'), 'the disconnected card', 20000);
+      await check(byText('.tab', 'disconnected'), 'Disconnect keeps the tab, marked disconnected');
+      await click('button', 'Connect again');
+      await waitFor(() => q('[data-rdp-size]'), 'the desktop again', 30000);
+      await check(!rdpState('certificate'), 'connecting again asks for no certificate');
+
+      await setStep('rdp: the session keeps running under the vault lock (D-072)');
+      {
+        const vaultPath = (await window.backend.vault_status({})).path;
+        await click('.statusbar .sb-btn', 'Lock');
+        await waitFor(() => q('.lock-screen'), 'the lock screen');
+        await fill('#pw', MASTER);
+        await click('button[type="submit"]', 'Unlock');
+        await waitFor(() => !q('.lock-screen'), 'the unlock', 30000);
+        await check(q('[data-rdp-size]') && !q('[data-rdp-state]', activeRegion()), 'the remote desktop is still up after a lock and unlock');
+        void vaultPath;
+      }
+
+      await setStep('rdp: a closed port says Remote Desktop is off');
+      await open('rdp-closed');
+      await waitFor(() => rdpState('rdp-off'), 'the refused card', 30000);
+      await check(hasText('refused the session') && hasText('Remote Desktop'), 'a closed RDP port shows "refused the session" and how to turn Remote Desktop on');
+      await check(byText('.tab', 'refused'), 'the tab says refused');
+      await click('button', 'Close tab');
+
+      await setStep('rdp: a changed certificate is refused');
+      await open('rdp-fwd');
+      await waitFor(() => rdpState('certificate'), 'the certificate prompt (first server)', 30000);
+      await click('button[type="submit"]', 'Trust and connect');
+      await waitFor(() => q('[data-rdp-size]'), 'the forwarded desktop', 30000);
+      await click('[data-rdp-disconnect]');
+      await waitFor(() => rdpState('closed'), 'the disconnected card', 20000);
+      await click('button', 'Connect again');
+      await waitFor(() => rdpState('cert-changed'), 'the changed certificate card', 30000);
+      await check(hasText('has changed') && hasText('Nothing was sent'), 'a changed certificate stops the connection and says nothing was sent');
+      await check(!byText('button', 'Trust and connect') && byText('button', 'Open Known hosts'), 'there is no way to continue, only Known hosts');
+      await check(byText('.tab', 'certificate changed'), 'the tab says certificate changed');
+      const fps = qa('.fp', activeRegion()).map((e) => e.textContent);
+      await check(fps.length === 2 && fps[0] !== fps[1], 'both fingerprints are shown');
+      await click('button', 'Close tab');
+
+      await setStep('rdp: closing the tab ends the session');
+      await click('.tab.on .tx');
+      await waitFor(() => !q('[data-rdp-toolbar]'), 'the RDP tab closed');
+      const cat = await window.backend.catalog({});
+      await check(!JSON.stringify(cat).includes('rdp-pw-marker'), 'no RDP password in the catalog (Principle 6)');
+    }
+
     if (RUN === 'paste') {
       // A paste event as ⌘V hands it: an image file, with or without text beside it.
       const pasteData = async (text, files) => {
@@ -1310,9 +1476,10 @@
         await setStep('rdp hosts: connect, palette');
         const tabsBefore = qa('.tab').length;
         row().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-        await waitFor(() => hasText('remote desktop (RDP) host'), 'the not-yet notice');
-        await sleep(300);
-        await check(qa('.tab').length === tabsBefore, 'opening an RDP host says the tab comes later and opens no SSH session');
+        await waitFor(() => q('[data-rdp-toolbar]'), 'the RDP tab');
+        await check(qa('.tab').length === tabsBefore + 1 && q('.tab.on [data-htype="rdp"]'), 'opening an RDP host opens a remote desktop tab marked RDP');
+        await click('.tab.on .tx');
+        await waitFor(() => qa('.tab').length === tabsBefore, 'the RDP tab closed');
         key('k', 'KeyK', { metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac });
         await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
         await fill('[aria-label="Command palette"] input', 'win-e2e');

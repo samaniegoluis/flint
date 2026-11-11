@@ -17,10 +17,14 @@ sshd_bin="$(command -v sshd || echo /usr/sbin/sshd)"
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-sshd.XXXXXX")"
 cleanup() {
+  # The run's own status, kept through the cleanup.
+  local st=$?
   for f in "$tmp"/sshd*.pid; do [[ -f "$f" ]] && kill "$(cat "$f")" 2>/dev/null; done
-  [[ -n "${rdp_pid:-}" ]] && { kill "$rdp_pid" 2>/dev/null; wait "$rdp_pid" 2>/dev/null; }
+  # `|| true`: under set -e, the stopped server's status would end the cleanup here.
+  [[ -n "${rdp_pid:-}" ]] && { kill "$rdp_pid" 2>/dev/null; wait "$rdp_pid" 2>/dev/null || true; }
   [[ -n "${SSH_AGENT_PID:-}" ]] && kill "$SSH_AGENT_PID" 2>/dev/null
   rm -rf "$tmp"
+  exit "$st"
 }
 trap cleanup EXIT
 

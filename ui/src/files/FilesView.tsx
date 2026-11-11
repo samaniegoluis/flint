@@ -43,7 +43,7 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
   const owner = tab ? layouts.find((t) => t.id === tab.tab) : undefined;
   const paneNo = owner && owner.panes.length > 1 ? owner.panes.indexOf(tab!.id) + 1 : 0;
   const allPairs = usePairs();
-  const ready = tab?.status === 'ready';
+  const ready = tab?.status === 'ready' && tab.kind !== 'rdp';
   const folder = tab ? folders[tab.id] : undefined;
   const [menu, setMenu] = useState<{ x: number; y: number; entry: FileEntry | null } | null>(null);
   const [dragging, setDragging] = useState(0);
@@ -71,7 +71,7 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
   const mine = tab ? transfers.filter((t) => t.tabId === tab.id) : [];
   const copying = mine.filter((t) => t.direction === 'relay' && (t.state === 'running' || t.state === 'queued')).length;
 
-  const pairButton = tab && ready && (pair ? (
+  const pairButton = tab && ready && tab.kind !== 'rdp' && (pair ? (
     <button className={'btn btn-sm ' + (pair.hidden ? 'btn-secondary' : 'btn-ghost')} data-files-pair-chip aria-pressed={!pair.hidden}
       title={pair.hidden ? `Show the ${pair.alias} pane` : `Hide the ${pair.alias} pane (Esc)`}
       onClick={() => pairs.setHidden(tab.id, !pair.hidden)}>
@@ -91,6 +91,20 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
       {ready && <button className="icon-btn" aria-label="Refresh" title="Refresh" data-files-refresh onClick={() => tab && files.refresh(tab.id)}><Icon name="reconnect" size="sm" /></button>}
     </div>
   );
+
+  // A remote desktop has no files to browse (spec v8: SSH hosts only).
+  if (tab?.kind === 'rdp') {
+    return (
+      <aside className="sidebar" data-for="files" aria-label="Files" data-files-empty data-files-rdp>
+        {title}
+        <div className="empty grow" style={{ justifyContent: 'center', padding: 'var(--sp-6)' }}>
+          <span className="empty-ic"><Icon name="files" size="xl" /></span>
+          <span className="strong">Files is for SSH hosts</span>
+          <span style={{ fontSize: 'var(--fs-sm)' }}><span className="mono">{tab.alias}</span> is a remote desktop. Files follows the active tab: switch to an SSH tab to browse its files.</span>
+        </div>
+      </aside>
+    );
+  }
 
   if (!tab || !ready) {
     return (
