@@ -949,6 +949,15 @@
         await ctl('paste');
         const pasted = await waitForAsync(async () => ((await ctl('pasted')) === hex('from this Mac\r\nüñí') ? true : null), 'the text at the server', 15000);
         await check(pasted, 'a paste on the remote gets this machine\'s text, LF as CRLF');
+        // The owner's case (M31 check): a second copy here, the desktop not clicked
+        // again, must reach the next paste instead of the text Windows fetched before.
+        await ctl('clear');
+        await window.backend.e2e_clipboard_set({ name: 'second copy' });
+        const again = await waitForAsync(async () => ((await ctl('formats')) === '13' ? true : null), 'the new copy announced', 15000);
+        await check(again, 'a new copy here is announced with the desktop left as it was');
+        await ctl('paste');
+        const second = await waitForAsync(async () => ((await ctl('pasted')) === hex('second copy') ? true : null), 'the second text at the server', 15000);
+        await check(second, 'the next paste on the remote gets the new text, not the old one');
 
         await setStep('rdp: modifier keys follow the preset');
         const press = async (code) => {

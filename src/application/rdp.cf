@@ -16,8 +16,9 @@ import "../ports"
 
 // How long a connection may take, from the dial to the desktop (Principle 8).
 RDP_CONNECT_TIMEOUT_MS: i64 = 30000
-// How often a watched session is checked when nothing happens.
-RDP_WAIT_MS: i64 = 1000
+// How often a watched session is checked when nothing happens: also how soon a copy
+// on this machine is announced to the server (milestone 31).
+RDP_WAIT_MS: i64 = 250
 
 // A tab asking for a desktop: its id, the host and the tab's size in device pixels.
 type RdpOpenRequest struct {
@@ -134,8 +135,16 @@ fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K
         return error("{err.message()}")
     }
     sink.desktop_ready(req.tab, d)
+    // Something copied here since is announced to the server, never sent until it
+    // pastes: without it, Windows pastes the text it fetched last (D-075).
+    mut seen := clip.clipboard_change_count()
     for {
         ev := rd.rd_wait(req.tab, RDP_WAIT_MS)
+        now := clip.clipboard_change_count()
+        if now != seen && now >= 0 && ev.kind != RDP_EVENT_ENDED {
+            seen = now
+            announce_desktop_clipboard(mut rd, mut clip, req.tab) or {}
+        }
         if ev.kind == RDP_EVENT_ENDED {
             rd.rd_close(req.tab)
             if ev.message.len() > 0 {
@@ -148,6 +157,8 @@ fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K
         }
         if ev.kind == RDP_EVENT_CLIP_TEXT {
             take_remote_copy(mut clip, ev.message)
+            // Our own write is the remote's text: not announced back to it.
+            seen = clip.clipboard_change_count()
         }
         if ev.kind == RDP_EVENT_CLIP_REQUEST {
             answer_remote_paste(mut rd, mut clip, req.tab, sink.desktop_window_open())

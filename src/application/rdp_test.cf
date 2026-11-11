@@ -358,3 +358,66 @@ test "the tab announces whether this machine's clipboard holds text, never the t
     assert(rd.announces[1])
     assert_eq(rd.answers.len(), 0)
 }
+
+// A FakeDesktop whose session copies this machine's clipboard partway through: each
+// wait bumps the fake clipboard, as a person copying in another app.
+test "a copy on this machine is announced to the server, and the remote's own copy is not echoed back" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    // The remote's copy lands here (a change we made), then nothing new happens.
+    rd.events = [
+        RdpEvent{ kind: RDP_EVENT_CLIP_TEXT, message: "from windows", width: 0, height: 0 },
+        RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 },
+    ]
+    mut sink := FakeDesktopSink{ ready: [], locked: false }
+    mut clip := no_clipboard()
+    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip, rdp_req("win"))
+    assert_eq(rd.announces.len(), 0)
+
+    // A copy made here before the session opened is not new; one made after is.
+    mut rd2 := new_fake_desktop("ab:cd", "s3cret")
+    rd2.events = [
+        RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 },
+        RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 },
+    ]
+    mut clip2 := no_clipboard()
+    clip2.text = "old"
+    clip2.copies = 5
+    mut ticking := TickingClipboard{ inner: clip2, at_wait: 1, reads: 0 }
+    try run_remote_desktop(crypto, mut store, s, mut rd2, no_prompter(), mut sink, mut ticking, rdp_req("win"))
+    assert_eq(rd2.announces.len(), 1)
+    assert(rd2.announces[0])
+    assert_eq(rd2.answers.len(), 0)
+}
+
+// A clipboard whose count moves once, after `at_wait` reads of it: a copy made in
+// another app while the session runs.
+type TickingClipboard struct {
+    inner: FakeClipboard
+    at_wait: i64
+    reads: i64
+}
+
+fn (mut self: TickingClipboard) clipboard_copy_secret(text: str, clear_after_ms: i64) -> void! {
+    try self.inner.clipboard_copy_secret(text, clear_after_ms)
+}
+
+fn (mut self: TickingClipboard) clipboard_copy_text(text: str) -> void! {
+    try self.inner.clipboard_copy_text(text)
+}
+
+fn (mut self: TickingClipboard) clipboard_read() -> ClipboardContent! {
+    return try self.inner.clipboard_read()
+}
+
+fn (mut self: TickingClipboard) clipboard_change_count() -> i64 {
+    self.reads += 1
+    if self.reads > self.at_wait {
+        return self.inner.copies + 1
+    }
+    return self.inner.copies
+}

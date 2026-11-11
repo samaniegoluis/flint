@@ -776,6 +776,11 @@ fn (mut self: FakeClipboard) clipboard_copy_text(text: str) -> void! {
     self.copies += 1
 }
 
+// Each copy counts as a change; a test that sets `text` itself bumps `copies`.
+fn (self: FakeClipboard) clipboard_change_count() -> i64 {
+    return self.copies
+}
+
 // What a paste reads: `text`, else `held` (an image), as the test set them.
 fn (mut self: FakeClipboard) clipboard_read() -> ClipboardContent! {
     if self.text.len() > 0 {

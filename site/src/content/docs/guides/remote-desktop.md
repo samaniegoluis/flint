@@ -116,9 +116,9 @@ Text goes both ways between the desktop and this computer:
 
 - **Copied in Windows**, it is on this computer's clipboard at once: paste it in any app.
 - **Copied here**, it is pasted in Windows as usual (<kbd>⌘V</kbd> with the Mac preset,
-  <kbd>Ctrl+V</kbd> elsewhere). Flint only tells Windows that there is text when the tab
-  takes the keyboard; the text itself travels when you paste in Windows, as `mstsc` and
-  Windows App do. A password you copy with Flint's **Copy** is sent the same way when you
+  <kbd>Ctrl+V</kbd> elsewhere). Flint tells Windows that there is new text as soon as you
+  copy it; the text itself travels only when you paste in Windows, as `mstsc` and Windows
+  App do. A password you copy with Flint's **Copy** is sent the same way when you
   paste it there.
 
 While Flint's window is locked, a paste in Windows gets nothing from this computer.
