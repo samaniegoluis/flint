@@ -222,7 +222,7 @@ export interface RdpStats {
   frames_read: number;
   /** 'gfx', 'bitmap', or '' while not connected. */
   pipeline: string;
-  /** The graphics pipeline's last codec ('' on bitmaps). */
+  /** The codecs the graphics pipeline used, comma-separated ('' on bitmaps). */
   codec: string;
   /** This build of FreeRDP decodes H.264. */
   h264: boolean;

@@ -171,8 +171,9 @@ type RdpDesktop struct {
 
 // What a tab's desktop has done since it opened (milestone 34), for the statistics
 // overlay and the benchmark: counters only, nothing that names the host (Principle 5).
-// `pipeline` is "gfx" or "bitmap" ("" while not connected); `codec` the graphics
-// pipeline's last codec ("" on the bitmap path); `h264` whether this build decodes it.
+// `pipeline` is "gfx" or "bitmap" ("" while not connected); `codec` the codecs the
+// graphics pipeline used, comma-separated ("" on the bitmap path); `h264` whether this
+// build decodes it.
 type RdpStats struct {
     updates: i64
     bytes_in: i64

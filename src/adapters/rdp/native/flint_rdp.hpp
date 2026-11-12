@@ -252,7 +252,7 @@ struct Tab {
     std::atomic<uint64_t> st_commands{0};    // RDPGFX surface commands
     std::atomic<uint64_t> st_decode_us{0};   // time spent decoding them
     std::atomic<uint64_t> st_frames_read{0}; // regions taken by the frame channel
-    std::atomic<int32_t> st_codec{-1};       // the last surface command's codec id
+    std::atomic<uint32_t> st_codecs{0};      // codec ids seen, one bit each
     std::atomic<bool> st_gfx{false};         // the graphics pipeline is open
     // Frame channel.
     sock_t listen_fd = BAD_SOCK;
@@ -537,7 +537,7 @@ inline UINT on_gfx_surface_command(RdpgfxClientContext* gfx, const RDPGFX_SURFAC
     Tab* t = c->tab;
     t->st_commands.fetch_add(1, std::memory_order_relaxed);
     t->st_decode_us.fetch_add(static_cast<uint64_t>(us), std::memory_order_relaxed);
-    if (cmd) t->st_codec.store(static_cast<int32_t>(cmd->codecId), std::memory_order_relaxed);
+    if (cmd && cmd->codecId < 32) t->st_codecs.fetch_or(1u << cmd->codecId, std::memory_order_relaxed);
     return rc;
 }
 
@@ -989,7 +989,7 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         t->want_gfx = graphics != "compatible";
     }
     t->st_gfx.store(false);
-    t->st_codec.store(-1);
+    t->st_codecs.store(0);
     end_conn(old);
 
     auto c = std::make_shared<Conn>();
@@ -1300,7 +1300,8 @@ inline const char* codec_name(int32_t id) {
 }
 
 // The tab's counters since it opened. `pipeline`: "gfx" or "bitmap" ("" before the
-// first connection); `codec`: the last surface command's ("" on the bitmap path).
+// first connection); `codec`: the codecs its connection's surface commands used, in
+// codec-id order, comma-separated ("" on the bitmap path).
 inline int stats(const std::string& id, int64_t& updates, int64_t& bytes_in, int64_t& commands, int64_t& decode_us,
                  int64_t& frames_read, std::string& pipeline, std::string& codec, bool& h264) {
     auto t = find(id);
@@ -1316,7 +1317,17 @@ inline int stats(const std::string& id, int64_t& updates, int64_t& bytes_in, int
         connected = t->conn != nullptr;
     }
     pipeline = !connected ? "" : (t->st_gfx.load() ? "gfx" : "bitmap");
-    codec = t->st_gfx.load() ? codec_name(t->st_codec.load()) : "";
+    codec.clear();
+    if (t->st_gfx.load()) {
+        uint32_t seen = t->st_codecs.load();
+        for (int32_t id = 0; id < 32; id++) {
+            if (!(seen & (1u << id))) continue;
+            const char* n = codec_name(id);
+            if (!*n || codec.find(n) != std::string::npos) continue;
+            if (!codec.empty()) codec += ",";
+            codec += n;
+        }
+    }
     h264 = h264_available();
     return RDP_OK;
 }

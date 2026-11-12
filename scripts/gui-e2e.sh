@@ -37,7 +37,8 @@ fi
 #   scripts/repeat.sh vim 10                     one run N times, with its failure rate
 # Exit status: 0 all passed, 1 a run failed.
 runs=(terminal vault tunnels paste rdp vim)
-known=("${runs[@]}")
+# rdpbench (milestone 34) is scripts/rdp-bench.sh's: a real Windows host, named only.
+known=("${runs[@]}" rdpbench)
 if [[ "$(uname -s)" == Darwin ]]; then
   app=(build/gui/Flint.app/Contents/MacOS/Flint)
   run_vim=1
@@ -130,6 +131,11 @@ values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_P
           "CPORT": os.environ.get("FLINT_RDP_CLIP_PORT", "0"), "CCTL": os.environ.get("FLINT_RDP_CLIP_CONTROL", "0"),
           "VERSION": os.environ["E2E_VERSION"], "USER": os.environ["USER"], "KEY": key,
           "RUN": os.environ["E2E_RUN"]}
+# The benchmark's real host, only into its own run's script (milestone 34).
+bench = os.environ["E2E_RUN"] == "rdpbench"
+for k, env in (("BHOST", "FLINT_RDP_TEST_HOST"), ("BUSER", "FLINT_RDP_TEST_USER"), ("BPW", "FLINT_RDP_TEST_PASSWORD")):
+    values[k] = os.environ.get(env, "").replace("\\", "\\\\").replace("'", "\\'") if bench else ""
+values["BMODES"] = os.environ.get("FLINT_BENCH_MODES", "compatible/2d,auto/auto") if bench else ""
 for k, v in values.items():
     src = src.replace("@@" + k + "@@", v)
 open(sys.argv[2], "w").write(src)

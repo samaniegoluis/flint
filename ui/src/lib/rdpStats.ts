@@ -8,9 +8,18 @@ import type { RdpStats } from '../api/types';
 export class FrameMeter {
   frames = 0;
   bytes = 0;
-  add(bytes: number) {
+  /** When the last frames were drawn (performance.now()), newest last. */
+  readonly times: number[] = [];
+  add(bytes: number, at = performance.now()) {
     this.frames += 1;
     this.bytes += bytes;
+    this.times.push(at);
+    if (this.times.length > 64) this.times.shift();
+  }
+  /** When the first frame after `t` was drawn, or null. */
+  firstAfter(t: number): number | null {
+    for (const at of this.times) if (at > t) return at;
+    return null;
   }
 }
 
@@ -52,7 +61,7 @@ export function ratesBetween(a: StatsSample, b: StatsSample): StatsRates {
 
 /** The pipeline and codec as one label: "graphics pipeline · progressive", "bitmaps". */
 export function pipelineLabel(core: RdpStats): string {
-  if (core.pipeline === 'gfx') return core.codec ? `graphics pipeline · ${core.codec}` : 'graphics pipeline';
+  if (core.pipeline === 'gfx') return core.codec ? `graphics pipeline · ${core.codec.split(',').join(', ')}` : 'graphics pipeline';
   if (core.pipeline === 'bitmap') return 'bitmap updates';
   return '';
 }

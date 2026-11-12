@@ -34,8 +34,16 @@
   //   rdp       an RDP host in a tab against FreeRDP's sample server (milestone 30);
   //             the clipboard, modifier keys and a dropped session against Flint's own
   //             test server (milestone 31)
+  //   rdpbench  milestone 34's benchmark against a real Windows host (scripts/rdp-bench.sh,
+  //             never part of the default runs): harmless input only, the Start menu and
+  //             Task view, in each graphics mode
   const RUN = '@@RUN@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp'];
+  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'rdpbench'];
+  // The benchmark's host (rdpbench only; '' otherwise).
+  const BHOST = '@@BHOST@@';
+  const BUSER = '@@BUSER@@';
+  const BPW = '@@BPW@@';
+  const BMODES = '@@BMODES@@';
   const MASTER = 'e2e-master-password-42';
   const HOST_PW_MARKER = 'gui-host-pw-marker';
 
@@ -797,6 +805,10 @@
       await addRdp('rdp-sample', RPORT, 'rdp-pw-marker');
       await addRdp('rdp-closed', 9, 'x');
       await addRdp('rdp-fwd', RPORT_FWD, 'x');
+      // Milestone 34: the sample server's desktop is drawn in 2D (forced); the test
+      // server's below takes this machine's renderer (WebGL on a real GPU). Neither
+      // offers the graphics pipeline (ROADMAP, "RDPGFX in Flint's test server").
+      window.__flintRdpRenderer = '2d';
       const open = async (alias) => {
         const r = await waitFor(() => byText('.tree .ti', alias), alias + ' in the tree');
         r.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -829,6 +841,11 @@
         let lit = 0;
         for (let i = 0; i < px.length; i += 4 * 97) if (px[i] + px[i + 1] + px[i + 2] > 30) lit++;
         await check(lit > 50, `the canvas shows the server's picture (${lit} lit samples)`);
+      }
+      {
+        const tab = q('[data-rdp-session]', activeRegion()).dataset.rdpSession;
+        const st = await window.backend.rdp_stats({ tab });
+        await check(st.pipeline === 'bitmap' && canvas().dataset.renderer === '2d', `a server without the graphics pipeline gets bitmap updates, drawn in 2D (${st.pipeline}, ${canvas().dataset.renderer})`);
       }
       const known = (await window.backend.catalog({})).known_hosts;
       await check(known.some((k) => k.addr === `rdp://127.0.0.1:${RPORT}` && k.key_type === 'x509'), 'the trusted certificate is kept in the vault');
@@ -936,10 +953,13 @@
         const hex = (t) => Array.from(new TextEncoder().encode(t), (b) => b.toString(16).padStart(2, '0')).join('');
         const clipNow = async () => { const r = await window.backend.e2e_clipboard({}); return (typeof r === 'string' ? JSON.parse(r) : r)?.name; };
         await addRdp('rdp-clip', CPORT, 'x');
+        delete window.__flintRdpRenderer;
+        // The desktop drawn with this machine's renderer still shows the server's picture.
         await open('rdp-clip');
         await waitFor(() => rdpState('certificate'), 'the certificate prompt (test server)', 30000);
         await click('button[type="submit"]', 'Trust and connect');
         await waitFor(() => q('[data-rdp-size]'), 'the test server desktop', 30000);
+
         await ctl('clear');
         await ctl('copy/' + hex('copied in Windows ✓\r\nline two'));
         const got = await waitForAsync(async () => ((await clipNow()) === 'copied in Windows ✓\nline two' ? true : null), 'the remote copy on the clipboard', 15000);
@@ -1076,6 +1096,125 @@
       await waitFor(() => !q('[data-rdp-toolbar]'), 'the RDP tab closed');
       const cat = await window.backend.catalog({});
       await check(!JSON.stringify(cat).includes('rdp-pw-marker'), 'no RDP password in the catalog (Principle 6)');
+    }
+
+    if (RUN === 'rdpbench') {
+      // Milestone 34: each mode at 1920x1080 on the real host. The input is harmless
+      // (memory: the session is the owner's real desktop): the Windows key opens and Esc
+      // closes the Start menu; Win+Tab opens Task view, a whole-screen animation.
+      // Each phase logs "bench:" with its window in epoch ms, for scripts/rdp-bench.sh
+      // to put the CPU samples beside it.
+      if (!BHOST) throw new Error('rdpbench needs FLINT_RDP_TEST_HOST, _USER and _PASSWORD');
+      await setStep('rdpbench: add the host');
+      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await waitFor(() => q('[data-host-type-step]'), 'the type step');
+      await click('.type-card[data-type="rdp"]');
+      await click('.modal button', 'Continue');
+      await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor');
+      await fill('#ra', 'bench');
+      await fill('#rh', BHOST);
+      await fill('#ru', BUSER);
+      await fill('.modal input[aria-label="Password"]', BPW);
+      await click('.modal button[type="submit"]', 'Add host');
+      await waitFor(() => byText('.tree .ti', 'bench'), 'the bench host in the tree');
+      const bench = (o) => log('bench: ' + JSON.stringify(o));
+      const median = (xs) => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : 0; };
+      const p95 = (xs) => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.floor(a.length * 0.95))] : 0; };
+      // The window is on screen, so timers are not throttled: a plain timeout, not the
+      // spinning sleep above, which would cost a core in WebKit's content process.
+      const rest = (ms) => new Promise((r) => setTimeout(r, ms));
+      let trusted = false;
+      for (const mode of BMODES.split(',')) {
+        const [graphics, renderer] = mode.split('/');
+        await setStep(`rdpbench: ${mode}`);
+        await click('.rail-btn', 'Settings');
+        await click('.nav-i', 'Remote desktop');
+        await click(`[data-rdp-graphics] button[data-graphics="${graphics}"]`);
+        await waitForAsync(async () => ((await window.backend.settings_get({})).rdp_graphics === graphics ? true : null), `graphics ${graphics} saved`);
+        await click('.rail-btn', 'Hosts');
+        window.__flintRdpRenderer = renderer;
+        const r = await waitFor(() => byText('.tree .ti', 'bench'), 'bench in the tree');
+        r.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        if (!trusted) {
+          await waitFor(() => q('[data-rdp-state="certificate"]', activeRegion()), 'the certificate prompt', 30000);
+          await click('button[type="submit"]', 'Trust and connect');
+          trusted = true;
+        }
+        await waitFor(() => q('[data-rdp-size]'), 'the desktop', 30000);
+        const area = await waitFor(() => q('[data-rdp-session]', activeRegion()), 'the desktop area');
+        const tab = area.dataset.rdpSession;
+        // The size of M28's measurement, whatever the window's: scaled down to fit. Display
+        // Control opens a moment after the desktop, so the size is asked again until it holds.
+        const sized = () => q('canvas.rdp-canvas', activeRegion())?.dataset.desktop === '1920x1080';
+        for (let i = 0; i < 15 && !sized(); i++) {
+          await rest(2000);
+          await window.backend.rdp_resize({ tab, width: 1920, height: 1080 }).catch(() => {});
+        }
+        await waitFor(sized, 'a 1920x1080 desktop', 20000);
+        await rest(3000);
+        const meter = window.__flintE2E.rdpMeter;
+        const key = (code, down) => window.backend.rdp_key({ tab, code, down });
+        const tap = async (code) => { await key(code, true); await key(code, false); };
+        const quiet = async (ms) => { const start = meter.frames; await rest(ms); return meter.frames - start; };
+        const sample = async () => ({ at: performance.now(), drawn: meter.frames, read: meter.bytes, core: await window.backend.rdp_stats({ tab }) });
+        const rates = (a, b) => {
+          const sec = (b.at - a.at) / 1000;
+          const cmds = b.core.commands - a.core.commands;
+          return { fps: +((b.drawn - a.drawn) / sec).toFixed(1), updates: +((b.core.updates - a.core.updates) / sec).toFixed(1),
+            kbps: Math.round(((b.core.bytes_in - a.core.bytes_in) * 8) / 1000 / sec), channelMBps: +((b.read - a.read) / 1e6 / sec).toFixed(1),
+            decodeMs: cmds ? +((b.core.decode_us - a.core.decode_us) / cmds / 1000).toFixed(2) : 0 };
+        };
+        const drawnWith = q('canvas.rdp-canvas', activeRegion()).dataset.renderer;
+
+        // Start-menu latency: the first frame drawn after the key.
+        await setStep(`rdpbench: ${mode}: Start menu latency`);
+        const lat = [];
+        const latFrom = Date.now();
+        for (let i = 0; i < 12; i++) {
+          await quiet(600);
+          const before = meter.frames;
+          const t = performance.now();
+          await tap('MetaLeft');
+          const until = performance.now() + 5000;
+          while (meter.frames === before && performance.now() < until) await rest(20);
+          const first = meter.firstAfter(t);
+          if (first === null) throw new Error('no frame after the Windows key');
+          lat.push(first - t);
+          await rest(900);
+          await tap('Escape');
+        }
+        await rest(1200);
+        const latTo = Date.now();
+
+        // Task view, opened and closed over and over for 8 s.
+        await setStep(`rdpbench: ${mode}: Task view animation`);
+        const animFrom = Date.now();
+        const a = await sample();
+        const end = performance.now() + 8000;
+        while (performance.now() < end) {
+          await key('MetaLeft', true); await tap('Tab'); await key('MetaLeft', false);
+          await rest(700);
+          await tap('Escape');
+          await rest(500);
+        }
+        const b = await sample();
+        const animTo = Date.now();
+        await rest(1500);
+
+        // Idle: nothing happens on the desktop for 5 s.
+        const i0 = await sample();
+        const idleFrom = Date.now();
+        await rest(5000);
+        const i1 = await sample();
+        const idleTo = Date.now();
+        bench({ mode, pipeline: b.core.pipeline, codec: b.core.codec, h264: b.core.h264, renderer: drawnWith,
+          latency: { median: Math.round(median(lat)), p95: Math.round(p95(lat)), from: latFrom, to: latTo },
+          animation: { ...rates(a, b), from: animFrom, to: animTo }, idle: { ...rates(i0, i1), from: idleFrom, to: idleTo } });
+        await check(b.core.pipeline === (graphics === 'compatible' ? 'bitmap' : 'gfx'), `${mode}: the ${graphics} mode uses the expected pipeline (${b.core.pipeline} ${b.core.codec})`);
+        await click('.tab.on .tx');
+        await waitFor(() => !q('[data-rdp-toolbar]'), 'the bench tab closed');
+        await rest(1500);
+      }
     }
 
     if (RUN === 'paste') {

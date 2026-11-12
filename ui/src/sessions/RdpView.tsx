@@ -46,6 +46,11 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
   const [canvasKey, setCanvasKey] = useState(0);
   const forced = useRef<string | null>(null);
   const meter = useRef(new FrameMeter());
+  // gui-e2e's benchmark (run rdpbench) reads the frames drawn.
+  useEffect(() => {
+    const e2e = (window as unknown as { __flintE2E?: Record<string, unknown> }).__flintE2E;
+    if (e2e) e2e.rdpMeter = meter.current;
+  }, []);
   const [rendererKind, setRendererKind] = useState('');
 
   // Settings → Remote desktop → Graphics, for the next connection.
@@ -198,7 +203,7 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
   const shownW = Math.floor(deskSize.width * scale);
   const shownH = Math.floor(deskSize.height * scale);
   return (
-    <div className="rdp-area" ref={area} data-rdp-pane={pane.id}>
+    <div className="rdp-area" ref={area} data-rdp-pane={pane.id} data-rdp-session={session ?? ''}>
       <canvas key={canvasKey} ref={canvas} className={'rdp-canvas' + (ready ? '' : ' stale')} tabIndex={0} aria-label={`Remote desktop of ${pane.alias}`}
         data-desktop={deskSize.width ? `${deskSize.width}x${deskSize.height}` : ''} data-renderer={rendererKind}
         style={{ width: shownW || 0, height: shownH || 0, visibility: deskSize.width ? 'visible' : 'hidden' }}

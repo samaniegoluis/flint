@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chooseRenderer, isSoftwareRenderer } from './deskRenderer';
-import { pipelineLabel, ratesBetween, type StatsSample } from './rdpStats';
+import { FrameMeter, pipelineLabel, ratesBetween, type StatsSample } from './rdpStats';
 import type { RdpStats } from '../api/types';
 
 const core = (p: Partial<RdpStats> = {}): RdpStats => ({ updates: 0, bytes_in: 0, commands: 0, decode_us: 0, frames_read: 0, pipeline: 'gfx', codec: 'progressive', h264: true, ...p });
@@ -20,6 +20,19 @@ describe('RDP drawing', () => {
 });
 
 describe('RDP statistics', () => {
+  it('remembers when frames were drawn, for the latency of the first one after an input', () => {
+    const m = new FrameMeter();
+    m.add(100, 10);
+    m.add(100, 20);
+    m.add(50, 35);
+    expect(m.frames).toBe(3);
+    expect(m.bytes).toBe(250);
+    expect(m.firstAfter(15)).toBe(20);
+    expect(m.firstAfter(35)).toBeNull();
+    for (let i = 0; i < 100; i++) m.add(1, 100 + i);
+    expect(m.times.length).toBe(64);
+  });
+
   it('turns two samples a second apart into rates', () => {
     const a: StatsSample = { at: 1000, drawn: 10, read: 1e6, core: core({ updates: 100, bytes_in: 10_000, commands: 50, decode_us: 5_000 }) };
     const b: StatsSample = { at: 2000, drawn: 40, read: 4e6, core: core({ updates: 130, bytes_in: 135_000, commands: 70, decode_us: 9_000 }) };
@@ -40,6 +53,7 @@ describe('RDP statistics', () => {
   it('names the pipeline and its codec', () => {
     expect(pipelineLabel(core())).toBe('graphics pipeline · progressive');
     expect(pipelineLabel(core({ codec: '' }))).toBe('graphics pipeline');
+    expect(pipelineLabel(core({ codec: 'clearcodec,planar,avc420' }))).toBe('graphics pipeline · clearcodec, planar, avc420');
     expect(pipelineLabel(core({ pipeline: 'bitmap', codec: '' }))).toBe('bitmap updates');
     expect(pipelineLabel(core({ pipeline: '' }))).toBe('');
   });
