@@ -157,11 +157,12 @@ const flush = () => {
   if (pending) post({ type: 'pointer', kind: 'move', button: 0, x: pending.x, y: pending.y, delta: 0 });
   pending = null;
 };
-cv.addEventListener('mousemove', (e) => {
+const move = (e: MouseEvent) => {
   if (!crop.width) return;
   pending = point(e);
   if (!moveFrame) moveFrame = requestAnimationFrame(flush);
-});
+};
+cv.addEventListener('mousemove', move);
 const button = (e: MouseEvent, down: boolean) => {
   if (!crop.width) return;
   const b = rdpButton(e.button);
@@ -169,10 +170,26 @@ const button = (e: MouseEvent, down: boolean) => {
   e.preventDefault();
   if (down) cv.focus({ preventScroll: true });
   if (moveFrame) { cancelAnimationFrame(moveFrame); flush(); }
+  if (!down && e.buttons === 0) followDrag(false);
   const p = point(e);
   post({ type: 'pointer', kind: down ? 'down' : 'up', button: b, x: p.x, y: p.y, delta: 0 });
 };
-cv.addEventListener('mousedown', (e) => button(e, true));
+// A drag that leaves the window (milestone 38): with a button held the system goes on
+// sending the pointer here, past the window's edge, but to the document, not the canvas.
+// Until it is let go, moves and the release are read from the window too, or Windows
+// keeps the button pressed with the pointer stuck at this monitor's edge.
+const offCanvas = (e: MouseEvent) => e.target !== cv;
+const dragMove = (e: MouseEvent) => { if (offCanvas(e)) move(e); };
+const dragUp = (e: MouseEvent) => { if (offCanvas(e)) button(e, false); };
+const followDrag = (on: boolean) => {
+  window.removeEventListener('mousemove', dragMove, true);
+  window.removeEventListener('mouseup', dragUp, true);
+  if (on) {
+    window.addEventListener('mousemove', dragMove, true);
+    window.addEventListener('mouseup', dragUp, true);
+  }
+};
+cv.addEventListener('mousedown', (e) => { followDrag(true); button(e, true); });
 cv.addEventListener('mouseup', (e) => button(e, false));
 cv.addEventListener('contextmenu', (e) => e.preventDefault());
 const wheel = new WheelAccumulator();
