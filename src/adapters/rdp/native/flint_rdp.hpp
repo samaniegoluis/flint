@@ -1315,6 +1315,15 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
     // NSCodec costs nothing with Windows (it does not use it) and is what FreeRDP's
     // own servers, the test server among them, need.
     freerdp_settings_set_bool(st, FreeRDP_NSCodec, TRUE);
+    // Milestone 35: the link's type is auto-detected, as `/network:auto` does, so
+    // Windows measures bandwidth and round trip and sets the pipeline's quality from
+    // them; it also allows the desktop's composition, font smoothing and wallpaper.
+    // Without it FreeRDP sends no type and Windows may treat the link as slow.
+    // Before the graphics settings (milestone 38): applying a connection type turns
+    // the pipeline on in some FreeRDP versions (Debian's 3.15: Compatible came out as
+    // gfx on Linux), so the mode asked for must be set after it.
+    freerdp_set_connection_type(st, CONNECTION_TYPE_AUTODETECT);
+    freerdp_settings_set_bool(st, FreeRDP_NetworkAutoDetect, TRUE);
     // The graphics pipeline (milestone 34): progressive always (FreeRDP decodes it
     // itself), AVC/H.264 only where this build decodes it. The server chooses among
     // what is offered; without RDPGFX it keeps the bitmap updates.
@@ -1328,12 +1337,6 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
     freerdp_settings_set_bool(st, FreeRDP_GfxAVC444, avc ? TRUE : FALSE);
     freerdp_settings_set_bool(st, FreeRDP_GfxAVC444v2, avc ? TRUE : FALSE);
     freerdp_settings_set_bool(st, FreeRDP_GfxThinClient, FALSE);
-    // Milestone 35: the link's type is auto-detected, as `/network:auto` does, so
-    // Windows measures bandwidth and round trip and sets the pipeline's quality from
-    // them; it also allows the desktop's composition, font smoothing and wallpaper.
-    // Without it FreeRDP sends no type and Windows may treat the link as slow.
-    freerdp_set_connection_type(st, CONNECTION_TYPE_AUTODETECT);
-    freerdp_settings_set_bool(st, FreeRDP_NetworkAutoDetect, TRUE);
     freerdp_settings_set_bool(st, FreeRDP_SupportDisplayControl, TRUE);
     freerdp_settings_set_bool(st, FreeRDP_DynamicResolutionUpdate, TRUE);
     freerdp_settings_set_bool(st, FreeRDP_AudioPlayback, FALSE);

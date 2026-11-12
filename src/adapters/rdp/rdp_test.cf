@@ -696,9 +696,12 @@ test "a real Windows host spans two monitors at connect and rearranges in place"
     assert_eq(rd.rd_wait("t-live-mon", 100).kind, "running")
 }
 
-// Milestone 38, a diagnosis: the bitmap path (Compatible) across two monitors, changed
-// through Display Control. Prints, for each view, the frames and the area drawn over a
-// few seconds after the layout, and after a key that opens nothing (Shift).
+// Milestone 38: the bitmap path (Compatible) across two monitors. The layout goes
+// through Display Control where the engine has it for that many monitors (FreeRDP 3.33,
+// macOS); where it does not (Debian's 3.15 in Compatible), `wait` reports a resize
+// carrying the layout and the core reconnects with it (D-090 (6)), done here as the core
+// does. Either way both views must draw. Prints, for each view, the frames and the area
+// drawn over a few seconds, and after a key that opens nothing (Shift).
 test "a real Windows host in Compatible across two monitors keeps drawing each view" {
     t := live_target("")
     if t.hostname.len() == 0 {
@@ -716,6 +719,22 @@ test "a real Windows host in Compatible across two monitors keeps drawing each v
     time.sleep_ms(3000)
     layout := pair_layout(2560, 1440, 393, 1440, 1512, 950)
     try rd.rd_set_layout("t-live-cmp", layout)
+    ev := rd.rd_wait("t-live-cmp", 1000)
+    mut path := "display control"
+    if ev.kind == "resize" {
+        assert_eq(ev.monitors.len(), 2)
+        mut again := live_target(fp)
+        again.graphics = "compatible"
+        again.monitors = layout
+        again.width = ev.width
+        again.height = ev.height
+        _ := try rd.rd_open("t-live-cmp", again, 20000)
+        path = "reconnect"
+    } else {
+        assert_eq(ev.kind, "running")
+    }
+    println("diag: compatible layout through {path}")
+    mut drawn1 := 0
     for round in 0..4 {
         mut n0 := 0
         mut n1 := 0
@@ -735,6 +754,7 @@ test "a real Windows host in Compatible across two monitors keeps drawing each v
                 px1 += le16(f1, 8) * le16(f1, 10)
             }
         }
+        drawn1 += n1
         st := try rd.rd_stats("t-live-cmp")
         println("diag: compatible round {round}: view0 {n0} frames {px0} px ({full0}), view1 {n1} frames {px1} px; updates {st.updates}, pipeline {st.pipeline}")
         if round == 1 {
@@ -742,6 +762,7 @@ test "a real Windows host in Compatible across two monitors keeps drawing each v
             try rd.rd_key("t-live-cmp", "ShiftLeft", false)
         }
     }
+    assert(drawn1 > 0, "the second monitor's view drew nothing")
     assert_eq(rd.rd_wait("t-live-cmp", 100).kind, "running")
 }
 
