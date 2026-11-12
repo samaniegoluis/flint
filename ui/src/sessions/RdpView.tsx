@@ -18,7 +18,7 @@ import { fitScale, HeldKeys, modMapOf, parseFrameHeader, rdpButton, rdpKeptActio
 import { createRenderer, type DeskRenderer } from '../lib/deskRenderer';
 import { FrameMeter, graphicsChoiceLabel } from '../lib/rdpStats';
 import { sessions, type Pane } from './store';
-import { monitors } from './monitors';
+import { cropPoint, monitors } from './monitors';
 import { RdpCard } from './RdpCards';
 import { RdpStatsOverlay } from './RdpStatsOverlay';
 
@@ -192,9 +192,13 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
   const point = (e: React.MouseEvent | React.WheelEvent) => {
     const cv = canvas.current!;
     const r = cv.getBoundingClientRect();
-    const p = toDesktop(e.clientX - r.left, e.clientY - r.top, r.width, r.height, cv.width, cv.height);
-    const o = monitors.mainOffset(pane.id);
-    return { x: p.x + o.x, y: p.y + o.y };
+    const box = monitors.spanBox(pane.id);
+    if (box) {
+      // Not held to this monitor: a drag that leaves it goes on into the next (cropPoint).
+      const o = monitors.mainOffset(pane.id);
+      return cropPoint(e.clientX - r.left, e.clientY - r.top, r.width, r.height, { x: o.x, y: o.y, width: cv.width, height: cv.height }, box);
+    }
+    return toDesktop(e.clientX - r.left, e.clientY - r.top, r.width, r.height, cv.width, cv.height);
   };
   const flushMove = () => {
     moveFrame.current = 0;

@@ -171,6 +171,14 @@ describe('a pointer in an extra window', () => {
   it('lands in its crop of the surface', () => {
     expect(cropPoint(0, 0, 1080, 1920, { x: 0, y: 0, width: 1080, height: 1920 })).toEqual({ x: 0, y: 0 });
     expect(cropPoint(540, 960, 1080, 1920, { x: 2560, y: 360, width: 1080, height: 1920 })).toEqual({ x: 3100, y: 1320 });
-    expect(cropPoint(5000, -3, 1080, 1920, { x: 10, y: 10, width: 1080, height: 1920 })).toEqual({ x: 1089, y: 10 });
+  });
+  it('goes on past its edge into the next monitor, held to the surface', () => {
+    // A laptop under a 2560x1440 monitor, its crop at 393,1440: a drag from it upwards
+    // keeps reaching the monitor above instead of sticking at the laptop's top row.
+    const laptop = { x: 393, y: 1440, width: 1512, height: 950 };
+    expect(cropPoint(100, -300, 1512, 950, laptop, { width: 2560, height: 2390 })).toEqual({ x: 493, y: 1140 });
+    expect(cropPoint(5000, -3000, 1512, 950, laptop, { width: 2560, height: 2390 })).toEqual({ x: 2559, y: 0 });
+    // Without the surface's size, only the protocol's bound.
+    expect(cropPoint(5000, -3, 1080, 1920, { x: 10, y: 10, width: 1080, height: 1920 })).toEqual({ x: 5010, y: 7 });
   });
 });

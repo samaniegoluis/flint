@@ -103,6 +103,12 @@ export class MonitorsStore {
     return this.snap.pane === pane && this.snap.phase !== 'off';
   }
 
+  /** The surface's size while `pane` spans monitors, else null. */
+  spanBox(pane: string): { width: number; height: number } | null {
+    if (!this.spanning(pane) || !this.snap.span) return null;
+    return { width: this.snap.span.width, height: this.snap.span.height };
+  }
+
   /** Where the main window's part lies in the surface: its pointer adds this. */
   mainOffset(pane: string): { x: number; y: number } {
     if (!this.spanning(pane) || !this.snap.span) return { x: 0, y: 0 };
@@ -337,9 +343,19 @@ export function monitorMap(ms: LocalMonitor[], boxW: number, boxH: number, gap =
   return { tiles, width: Math.round((x2 - x1) * s), height: Math.round((y2 - y1) * s) };
 }
 
-/** A pointer in an extra window, in the surface's pixels: its crop's place added. */
-export function cropPoint(x: number, y: number, shownW: number, shownH: number, crop: DesktopRect): { x: number; y: number } {
+/**
+ * A pointer in a window spanning monitors, in the surface's pixels: its crop's place
+ * added. Not held to the crop: while a button is down the system keeps sending the
+ * pointer to the window where the press began, even over the next monitor, so a drag
+ * from one monitor to another (a window moved across) goes on in the surface instead of
+ * sticking at the crop's edge, where Windows took it for a window pushed against the
+ * screen's top. Held to the surface (`box`) when known, else to the protocol's bound;
+ * the engine holds it to the desktop too.
+ */
+export function cropPoint(x: number, y: number, shownW: number, shownH: number, crop: DesktopRect, box?: { width: number; height: number }): { x: number; y: number } {
   const dx = Math.floor((x / Math.max(1, shownW)) * crop.width);
   const dy = Math.floor((y / Math.max(1, shownH)) * crop.height);
-  return { x: crop.x + Math.min(Math.max(0, dx), crop.width - 1), y: crop.y + Math.min(Math.max(0, dy), crop.height - 1) };
+  const maxX = (box ? box.width : 8192) - 1;
+  const maxY = (box ? box.height : 8192) - 1;
+  return { x: Math.min(Math.max(0, crop.x + dx), maxX), y: Math.min(Math.max(0, crop.y + dy), maxY) };
 }
