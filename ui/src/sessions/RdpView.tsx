@@ -18,7 +18,7 @@ import { fitScale, HeldKeys, modMapOf, parseFrameHeader, rdpButton, rdpKeptActio
 import { createRenderer, type DeskRenderer } from '../lib/deskRenderer';
 import { FrameMeter, graphicsChoiceLabel } from '../lib/rdpStats';
 import { sessions, type Pane } from './store';
-import { cropPoint, monitors } from './monitors';
+import { cropPoint, monitors, useMonitors } from './monitors';
 import { RdpCard } from './RdpCards';
 import { RdpStatsOverlay } from './RdpStatsOverlay';
 
@@ -189,7 +189,7 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
   const wheel = useRef(new WheelAccumulator());
   // Spanning monitors (milestone 38), this canvas shows the primary's part of the
   // surface: its pointer lands at that part's place.
-  const point = (e: React.MouseEvent | React.WheelEvent) => {
+  const point = (e: { clientX: number; clientY: number }) => {
     const cv = canvas.current!;
     const r = cv.getBoundingClientRect();
     const box = monitors.spanBox(pane.id);
@@ -206,17 +206,55 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
     pendingMove.current = null;
     if (m && session) api.rdpPointer(session, { kind: 'move', button: 0, x: m.x, y: m.y, delta: 0 }).catch(() => {});
   };
-  const onMouseMove = (e: React.MouseEvent) => {
+  const onMouseMove = (e: { clientX: number; clientY: number; buttons: number }) => {
     if (!ready) return;
     pendingMove.current = point(e);
     if (!moveFrame.current) moveFrame.current = requestAnimationFrame(flushMove);
   };
-  const onMouseButton = (e: React.MouseEvent, down: boolean) => {
+  // A drag that leaves the canvas (milestone 38): with a button held the system goes on
+  // sending the pointer to this page, past the window's edge and over the next monitor,
+  // but to the document, not the canvas. Until the button is let go the page's moves and
+  // the release are read from the window too, or Windows would keep the button pressed
+  // with the pointer stuck at the edge (a window dragged across stuck to the pointer).
+  const dragOff = useRef<(() => void) | null>(null);
+  const followDrag = () => {
+    dragOff.current?.();
+    const off = (e: MouseEvent) => e.target === canvas.current;
+    const move = (e: MouseEvent) => { if (!off(e)) onMouseMove(e); };
+    const up = (e: MouseEvent) => { if (!off(e)) onMouseButton(e, false); };
+    window.addEventListener('mousemove', move, true);
+    window.addEventListener('mouseup', up, true);
+    dragOff.current = () => {
+      window.removeEventListener('mousemove', move, true);
+      window.removeEventListener('mouseup', up, true);
+      dragOff.current = null;
+    };
+  };
+  useEffect(() => () => dragOff.current?.(), []);
+  // Automatic across monitors (milestone 38, D-091): with bitmaps Windows stops drawing
+  // for seconds while a window crosses from one monitor to the other, so a tab in
+  // Automatic takes the pipeline while it spans, and goes back to what its round trip
+  // picks when it leaves. Only on a change, not when the view mounts. Spanning counts
+  // from 'on' (the layout is with the engine, so the reconnect carries it) until 'off':
+  // the re-span after that reconnect passes through 'arranging' and must not count as
+  // leaving.
+  const mon = useMonitors();
+  const mine = mon.pane === pane.id;
+  const wasSpanning = useRef(false);
+  const spanOn = mine && mon.phase === 'on' ? true : !mine || mon.phase === 'off' ? false : wasSpanning.current;
+  useEffect(() => {
+    if (spanOn === wasSpanning.current) return;
+    wasSpanning.current = spanOn;
+    sessions.autoForMonitors(pane.id, spanOn);
+  }, [spanOn, pane.id]);
+  const onMouseButton = (e: { clientX: number; clientY: number; button: number; buttons: number; preventDefault(): void }, down: boolean) => {
     if (!ready || !session) return;
     const b = rdpButton(e.button);
     if (b < 0) return;
     e.preventDefault();
     if (down) canvas.current?.focus({ preventScroll: true });
+    if (down) followDrag();
+    else if (e.buttons === 0) dragOff.current?.();
     if (moveFrame.current) { cancelAnimationFrame(moveFrame.current); flushMove(); }
     const p = point(e);
     api.rdpPointer(session, { kind: down ? 'down' : 'up', button: b, x: p.x, y: p.y, delta: 0 }).catch(() => {});
@@ -242,7 +280,7 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
         onMouseMove={onMouseMove} onMouseDown={(e) => onMouseButton(e, true)} onMouseUp={(e) => onMouseButton(e, false)}
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()} />
       {showStats && ready && session && <RdpStatsOverlay session={session} renderer={rendererKind} meter={meter.current}
-        choice={graphicsChoiceLabel(pane.graphics, pane.desktop?.engine ?? '', pane.desktop?.rttMs ?? -1)} />}
+        choice={graphicsChoiceLabel(pane.graphics, pane.desktop?.engine ?? '', pane.desktop?.rttMs ?? -1, monitors.spanning(pane.id))} />}
       <RdpCard pane={pane} active={active} onEditHost={onEditHost} onKnownHosts={onKnownHosts} />
     </div>
   );

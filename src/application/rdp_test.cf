@@ -539,6 +539,41 @@ test "a graphics switch reconnects the tab in the new mode and later reconnects 
     assert_eq(sink.ready.len(), 1)
 }
 
+// Milestone 38, D-091: on a local network Automatic picks bitmaps, but across monitors
+// the pipeline; the page asks for "auto" again when the desktop spans and when it goes
+// back to one monitor, and each reconnect carries the layout of its moment.
+test "Automatic takes the pipeline across monitors and bitmaps again on one" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    rd.rtt = 1
+    pair := [
+        RdpMonitor{ local_id: "a", x: 0, y: 0, width: 2560, height: 1440, primary: true },
+        RdpMonitor{ local_id: "b", x: 2560, y: 160, width: 1920, height: 1080, primary: false },
+    ]
+    rd.events = [
+        RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: "auto", width: 4480, height: 1440, monitors: pair },
+        RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: "auto", width: 1600, height: 900 },
+    ]
+    mut sink := FakeDesktopSink{ ready: [], locked: false, graphics: [] }
+    mut clip0 := no_clipboard()
+    mut req := rdp_req("win")
+    req.graphics = "auto"
+    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, req)
+    assert_eq(rd.opens.len(), 3)
+    assert_eq(rd.opens[0].graphics, "compatible")
+    assert_eq(rd.opens[1].graphics, "pipeline")
+    assert_eq(rd.opens[1].monitors.len(), 2)
+    assert_eq(rd.opens[2].graphics, "compatible")
+    assert_eq(rd.opens[2].monitors.len(), 0)
+    assert_eq(sink.graphics.len(), 2)
+    assert_eq(sink.graphics[0], "auto as pipeline")
+    assert_eq(sink.graphics[1], "auto as compatible")
+}
+
 test "a graphics switch is refused, the mode kept, when the vault has no saved password" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()

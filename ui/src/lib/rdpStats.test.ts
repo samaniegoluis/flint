@@ -81,4 +81,9 @@ describe('RDP graphics choice (milestone 35)', () => {
     expect(graphicsChoiceLabel('pipeline', 'pipeline', -1)).toBe('Pipeline: graphics pipeline');
     expect(graphicsChoiceLabel('compatible', 'compatible', -1)).toBe('Compatible: bitmaps');
   });
+  it('says Automatic took the pipeline because the desktop spans monitors (milestone 38)', () => {
+    expect(graphicsChoiceLabel('auto', 'pipeline', 1, true)).toBe('Automatic: graphics pipeline · across monitors');
+    expect(graphicsChoiceLabel('auto', 'compatible', 1, true)).toBe('Automatic: bitmaps · local network, 1 ms');
+    expect(graphicsChoiceLabel('compatible', 'compatible', 1, true)).toBe('Compatible: bitmaps');
+  });
 });

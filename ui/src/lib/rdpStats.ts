@@ -98,10 +98,12 @@ export const GRAPHICS_MODES = [
  * What the tab runs and why: "Automatic: bitmaps · local network, 1 ms",
  * "Pipeline", "Compatible: bitmaps". '' before the desktop is up.
  */
-export function graphicsChoiceLabel(mode: string, engine: string, rttMs: number): string {
+export function graphicsChoiceLabel(mode: string, engine: string, rttMs: number, spanning = false): string {
   if (!engine) return '';
   const runs = engine === 'compatible' ? 'bitmaps' : 'graphics pipeline';
   if (mode !== 'auto') return engine === 'compatible' ? 'Compatible: bitmaps' : 'Pipeline: graphics pipeline';
+  // Milestone 38, D-091: across monitors Automatic takes the pipeline whatever the link.
+  if (spanning && engine !== 'compatible') return 'Automatic: graphics pipeline · across monitors';
   if (rttMs < 0) return `Automatic: ${runs} · link not measured`;
   return `Automatic: ${runs} · ${engine === 'compatible' ? 'local network' : 'remote link'}, ${rttMs} ms`;
 }

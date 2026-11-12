@@ -174,15 +174,23 @@ type RdpModeSwitch struct {
 RDP_AUTO_LAN_RTT_MS: i64 = 5
 
 // The mode "auto" stands for, given the dial's round trip (-1: it did not answer, so
-// the pipeline, which is the safe choice on an unknown link).
+// the pipeline, which is the safe choice on an unknown link) and the monitors the
+// desktop spans. Across two or more monitors always the pipeline (milestone 38,
+// D-091): with bitmaps Windows sends nothing for one to several seconds while a window
+// is dragged from one monitor to the other, and after each change of the layout; the
+// pipeline draws through it, as on one monitor.
 ///
 /// ```cf
-/// assert(auto_rdp_graphics(1) == "compatible")
-/// assert(auto_rdp_graphics(5) == "compatible")
-/// assert(auto_rdp_graphics(6) == "pipeline")
-/// assert(auto_rdp_graphics(-1) == "pipeline")
+/// assert(auto_rdp_graphics(1, 0) == "compatible")
+/// assert(auto_rdp_graphics(5, 1) == "compatible")
+/// assert(auto_rdp_graphics(6, 0) == "pipeline")
+/// assert(auto_rdp_graphics(-1, 0) == "pipeline")
+/// assert(auto_rdp_graphics(1, 2) == "pipeline")
 /// ```
-fn auto_rdp_graphics(rtt_ms: i64) -> str {
+fn auto_rdp_graphics(rtt_ms: i64, monitors: i64) -> str {
+    if monitors >= 2 {
+        return "pipeline"
+    }
     if rtt_ms >= 0 && rtt_ms <= RDP_AUTO_LAN_RTT_MS {
         return "compatible"
     }

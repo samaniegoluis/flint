@@ -80,6 +80,9 @@ higher on an office LAN, lower over a slow VPN.
   smoothest there; over a VPN or the internet the graphics pipeline, which needs several
   times less bandwidth. Flint measures the round trip with a few plain TCP connections to
   the server's port just before it connects.
+  Across two monitors it always takes the graphics pipeline, which keeps drawing while a
+  window moves from one monitor to the other: the tab switches when it goes full screen
+  on all monitors and back when it leaves, keeping your Windows session.
 - **Pipeline**: always the graphics pipeline, with the best codec both ends support.
 - **Compatible**: always the classic bitmap updates, as earlier versions of Flint used.
   Try it too if a desktop shows wrong colours or garbled areas.
@@ -162,8 +165,10 @@ Two monitors carry about twice the pixels of one: on a slow link, *Automatic* or
 
 In *Compatible*, Windows takes a few seconds to answer after the desktop changes size or
 monitors (going full screen, checking a monitor): about 3 seconds for one monitor, 5 to 15
-for two, while it sets the session up again. The picture holds still meanwhile; the
-graphics pipeline (*Automatic* away from the local network, or *Pipeline*) answers at once.
+for two, while it sets the session up again, and across two monitors it stops drawing for
+a second or more while a window is dragged from one to the other. The graphics pipeline
+answers at once and draws through a drag, which is why *Automatic* takes it across
+monitors; with *Compatible* chosen by hand the desktop keeps it.
 
 ## When the connection drops
 

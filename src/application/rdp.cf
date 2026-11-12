@@ -79,8 +79,9 @@ fn rdp_target[C: Crypto, S: VaultStore, P: Prompter](crypto: C, store: S, sessio
 }
 
 // "auto" made concrete before the engine sees it (milestone 35, D-083): the link's
-// round trip picks the bitmap updates on a local network and the pipeline elsewhere.
-// Any other mode goes as it is.
+// round trip picks the bitmap updates on a local network and the pipeline elsewhere,
+// and a desktop across monitors always the pipeline (D-091). Any other mode goes as it
+// is.
 fn resolve_rdp_graphics[R: RemoteDesktop](mut rd: R, mut t: RdpTarget) {
     if t.graphics != "auto" {
         t.rtt_ms = -1
@@ -88,7 +89,7 @@ fn resolve_rdp_graphics[R: RemoteDesktop](mut rd: R, mut t: RdpTarget) {
     }
     rtt := rd.rd_probe_rtt(t.hostname, t.port, RDP_PROBE_TIMEOUT_MS)
     t.rtt_ms = rtt
-    t.graphics = auto_rdp_graphics(rtt)
+    t.graphics = auto_rdp_graphics(rtt, t.monitors.len())
 }
 
 // One connection attempt: "" when it opened (`got` holds the desktop), else the error.

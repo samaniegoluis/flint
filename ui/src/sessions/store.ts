@@ -9,11 +9,15 @@
 // in a buffer until the terminal mounts.
 
 import { useSyncExternalStore } from 'react';
+
 import { monitors } from './monitors';
 import { api, on } from '../api/backend';
 import { InputQueue } from '../lib/inputQueue';
 import { defaultTracks, layoutAfterClose, layoutForSplit, MAX_PANES, type Layout, type SplitDir } from '../lib/layout';
 import type { DesktopReadyEvent, HostKeyPayload, HostType, RdpGraphicsEvent, RdpStateEvent, SessionPromptEvent, SessionStateEvent } from '../api/types';
+
+/** The core's RDP_AUTO_LAN_RTT_MS (domain/rdp.cf): a round trip this short is a local network. */
+const RDP_AUTO_LAN_RTT_MS = 5;
 
 export type PaneStatus = 'connecting' | 'prompt' | 'ready' | 'ended';
 
@@ -227,6 +231,25 @@ class SessionStore {
     if (!t || t.kind !== 'rdp' || t.status !== 'ready' || t.graphicsSwitching || t.graphics === graphics) return;
     this.patch(paneId, { graphicsSwitching: true, graphicsNote: '' });
     api.rdpGraphics(t.session, graphics).catch((err) => {
+      const e = err as { message?: string };
+      this.patch(paneId, { graphicsSwitching: false, graphicsNote: e.message ?? String(err) });
+    });
+  }
+
+  /**
+   * Asks Automatic again (milestone 38, D-091): across monitors it takes the graphics
+   * pipeline, on one monitor it goes by the round trip, so a tab in Automatic is
+   * reconnected when it starts or stops spanning and its engine is not what Automatic
+   * would pick now. The Windows session stays, as with any switch.
+   */
+  autoForMonitors(paneId: string, spanning: boolean) {
+    const t = this.pane(paneId);
+    if (!t || t.kind !== 'rdp' || t.status !== 'ready' || t.graphicsSwitching || t.graphics !== 'auto' || !t.desktop) return;
+    const lan = t.desktop.rttMs >= 0 && t.desktop.rttMs <= RDP_AUTO_LAN_RTT_MS;
+    const want = spanning || !lan ? 'pipeline' : 'compatible';
+    if (t.desktop.engine === want) return;
+    this.patch(paneId, { graphicsSwitching: true, graphicsNote: '' });
+    api.rdpGraphics(t.session, 'auto').catch((err) => {
       const e = err as { message?: string };
       this.patch(paneId, { graphicsSwitching: false, graphicsNote: e.message ?? String(err) });
     });
