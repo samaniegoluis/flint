@@ -4,6 +4,16 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.3.0 — 2026-11-12
+
+Remote desktops choose their graphics by the network: on a local network Automatic now sends lossless bitmaps, which feel smoothest there, and over a VPN or the internet the graphics pipeline, which needs far less bandwidth. Each RDP tab can switch between Automatic, Pipeline and Compatible from its toolbar while connected, keeping the Windows session. Windows now measures the link and tunes what it sends, and a desktop that goes quiet is sent once more in full; Stats counts what that re-read finds, to track down the stale blocks the graphics pipeline can still leave.
+
+### Added
+
+- **rdp:** Re-read the desktop after a quiet second, auto-detect the link, switch graphics per tab
+- **rdp:** Automatic, Pipeline and Compatible graphics; Automatic picks by the link's round trip
+
+
 ## 0.2.0 — 2026-11-12
 
 A faster remote desktop. RDP tabs now use the graphics pipeline (progressive, and H.264 where FreeRDP decodes it) and draw through WebGL: about ten times the frames under a whole-screen animation at half the bandwidth, measured against a real Windows 11 host. Settings → Remote desktop → Graphics keeps the old bitmap path as Compatible, and Stats in the tab's toolbar shows frames, bandwidth and codecs. The status bar now shows the version.
