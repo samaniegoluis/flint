@@ -4,9 +4,18 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
-## 0.3.0 — 2026-11-12
+## 0.3.1 — 2026-11-12
 
-Remote desktops choose their graphics by the network: on a local network Automatic now sends lossless bitmaps, which feel smoothest there, and over a VPN or the internet the graphics pipeline, which needs far less bandwidth. Each RDP tab can switch between Automatic, Pipeline and Compatible from its toolbar while connected, keeping the Windows session. Windows now measures the link and tunes what it sends, and a desktop that goes quiet is sent once more in full; Stats counts what that re-read finds, to track down the stale blocks the graphics pipeline can still leave.
+A security pass over the remote desktop. Flint now refuses the old Standard RDP Security, which let a machine on the network skip the certificate check and read the password that signs you in. Passwords, keys and passphrases opened from the vault are wiped from memory as soon as SSH or RDP has them, and so are the keys derived from the master password. The channel that carries the desktop to the window is tighter, and a server that only offers the old security says so plainly.
+
+### Fixed
+
+- **rdp:** Refuse standard RDP security, wipe FreeRDP's backup of the password, harden the frame channel
+- **security:** Wipe vault keys and opened secrets once used
+- **rdp:** Name a server that offers only Standard RDP Security, and document the RDP security review
+
+
+## 0.3.0 — 2026-11-12
 
 ### Added
 
