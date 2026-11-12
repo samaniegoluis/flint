@@ -38,6 +38,14 @@ typedef WTSLISTENERNAMEA* PWTSLISTENERNAMEA;
 typedef struct flint_WTSLISTENERCONFIGW* PWTSLISTENERCONFIGW;
 typedef struct flint_WTSLISTENERCONFIGA* PWTSLISTENERCONFIGA;
 #endif
+// winpr/shell.h (through FreeRDP's clipboard headers, milestone 31) includes <shlobj.h>
+// and <userenv.h> on Windows, which bring <ocidl.h>. cfire's WebView2 backend includes
+// <WebView2.h> inside its own namespace, so in the app <ocidl.h>'s guards are already
+// set and a global include declares nothing (unknown IConnectionPoint, LPITEMIDLIST…);
+// <wbemcli.h> also names Windows' `byte`, renamed below. The clipboard headers need only
+// FILEDESCRIPTORW, as a pointer: skip winpr/shell.h and declare it (shlobj.h's tag).
+#define WINPR_SHELL_H
+typedef struct _FILEDESCRIPTORW FILEDESCRIPTORW;
 #endif
 
 #if defined(__APPLE__)
@@ -897,7 +905,8 @@ inline std::shared_ptr<Tab> tab_for(const std::string& id) {
 
 // FreeRDP's own TCP dial, with one more socket option where FreeRDP sets none: on
 // macOS (no TCP_USER_TIMEOUT) a connection whose data goes unacknowledged is dropped
-// after 20 s instead of the system's several minutes of retries.
+// after 20 s instead of the system's several minutes of retries; on Windows, the
+// keepalive timing and a 9 s retransmission limit FreeRDP does not set there.
 inline pTCPConnect& default_tcp_connect() { static pTCPConnect f = nullptr; return f; }
 
 inline int connect_tcp(rdpContext* ctx, rdpSettings* st, const char* host, int port, DWORD timeout) {
@@ -906,6 +915,22 @@ inline int connect_tcp(rdpContext* ctx, rdpSettings* st, const char* host, int p
     if (fd >= 0) {
         int secs = 20;
         (void)setsockopt(fd, IPPROTO_TCP, TCP_RXT_CONNDROPTIME, &secs, sizeof secs);
+    }
+#elif defined(_WIN32)
+    // FreeRDP sets only SO_KEEPALIVE on Windows, whose own timing is two hours idle,
+    // and has no TCP_USER_TIMEOUT there. The same choices as Linux, by Windows' own
+    // options (Windows 10 1709+): keepalive after 5 s idle, every 2 s, 3 probes; data
+    // left unacknowledged gives up after 9 s (TCP_MAXRT, in seconds).
+    if (fd >= 0) {
+        auto s = static_cast<SOCKET>(fd);
+        DWORD idle = freerdp_settings_get_uint32(st, FreeRDP_TcpKeepAliveDelay);
+        DWORD intvl = freerdp_settings_get_uint32(st, FreeRDP_TcpKeepAliveInterval);
+        DWORD cnt = freerdp_settings_get_uint32(st, FreeRDP_TcpKeepAliveRetries);
+        DWORD maxrt = (freerdp_settings_get_uint32(st, FreeRDP_TcpAckTimeout) + 999) / 1000;
+        (void)setsockopt(s, IPPROTO_TCP, TCP_KEEPIDLE, reinterpret_cast<const char*>(&idle), sizeof idle);
+        (void)setsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL, reinterpret_cast<const char*>(&intvl), sizeof intvl);
+        (void)setsockopt(s, IPPROTO_TCP, TCP_KEEPCNT, reinterpret_cast<const char*>(&cnt), sizeof cnt);
+        (void)setsockopt(s, IPPROTO_TCP, TCP_MAXRT, reinterpret_cast<const char*>(&maxrt), sizeof maxrt);
     }
 #endif
     return fd;
@@ -929,6 +954,13 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
                 const std::string& trusted, int64_t timeout_ms, int32_t& out_w, int32_t& out_h, int32_t& out_port,
                 std::string& out_token, std::string& detail) {
     quiet_freerdp_log();
+    // Winsock before FreeRDP resolves the host: FreeRDP does not start it, and in a
+    // process where nothing else did (the adapter's tests on Windows) every name failed
+    // as ERRCONNECT_DNS_NAME_NOT_FOUND, 127.0.0.1 included. A no-op elsewhere.
+    if (!sock_init()) {
+        detail = "no sockets";
+        return RDP_ERR_OTHER;
+    }
     auto t = tab_for(id);
     if (t->closed.load()) return RDP_ERR_CLOSED;
     // A reconnect: the old connection goes first, so the server never sees two.

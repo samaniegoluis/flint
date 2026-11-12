@@ -37,6 +37,7 @@ Sibling of [`cfire-upstream.md`](cfire-upstream.md), which tracks every other ga
 | [W-14](#w-14) | `fs.exists` is false for an AF_UNIX socket file on Windows | **fixed** | 0008 |
 | [W-15](#w-15) | The Windows file dialogs cut paths at `MAX_PATH` | open | none |
 | [W-16](#w-16) | After Alt+Tab back, the WebView2 does not get the keyboard focus (**after the handoff, not sent**) | **fixed** | 0009 |
+| [W-17](#w-17) | `<WebView2.h>` is included inside `namespace cfire::webui::detail`: a global `<ocidl.h>` or `<shlobj.h>` later declares nothing (**after the handoff, not sent**) | worked around in Flint | none |
 
 **Works on Windows** (ran, not just compiled), with W-01, W-04, W-09 and W-10 worked
 around and patches 0001–0006 applied:
@@ -417,6 +418,38 @@ fixed · [patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-o
   stop). Flint's gui-e2e still passes (180) with it. Checked by a person (a window
   started from WSL never gets the foreground): after Alt+Tab away and back, the terminal
   takes keys and Ctrl+V pastes without a click (2026-11-09).
+
+---
+
+## W-17
+
+**`<WebView2.h>` is included inside a namespace, so later Windows headers declare
+nothing** · [compiled] · worked around in Flint · no patch
+
+> **Found after the handoff** (2026-11-11, merging Flint's milestone 31). Not in the
+> 2026-11-09 package and not sent. Noted here only: check it when cfire ships Windows
+> support.
+
+- **Symptom:** Flint's desktop app stops compiling once a native header of its own
+  includes a Windows header that reaches `<ocidl.h>`: `<userenv.h>`, `<shlobj.h>`,
+  `<iphlpapi.h>`. The errors name the cfire copies: `unknown type name
+  'IConnectionPoint'; did you mean 'cfire::webui::detail::IConnectionPoint'?`, then
+  `SHCOLSTATEF`, `LPCITEMIDLIST`, `TASKOWNERID`. The same header compiles in a test
+  binary that does not import `ext:webui`.
+- **Cause:** `runtime/core/webui/windows_webview2.hpp` (patch 0004) includes
+  `<WebView2.h>` and `<shlwapi.h>` at line ~300, inside `namespace cfire::webui::detail`
+  (opened at line 7). Everything they pull in (`objidl.h`, `ocidl.h`, `propsys.h`,
+  `shobjidl.h`…) is declared in that namespace, and their include guards are set, so a
+  later global include of the same headers is empty and the global names never exist.
+- **Repro:** a `cpp` import in a webui app whose header has `#include <shlobj.h>` and
+  uses `LPITEMIDLIST` (or `IConnectionPoint*`) at global scope.
+- **Fix to make in cfire:** include the Windows SDK headers (`<windows.h>`,
+  `<WebView2.h>`, `<shlwapi.h>`) at global scope at the top of the file, before opening
+  the namespace.
+- **In Flint (adapters only):** the tunnels code declares the `GetExtendedTcpTable` rows
+  itself instead of including `<iphlpapi.h>` (milestone 23 merge), and the RDP shim
+  skips `winpr/shell.h` and declares `FILEDESCRIPTORW` (milestone 31 merge;
+  [`rdp-windows.md`](rdp-windows.md)). Both go once cfire includes them globally.
 
 ---
 

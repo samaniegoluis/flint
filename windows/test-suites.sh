@@ -12,10 +12,12 @@
 #
 # src/adapters/ssh is left out: it wants sshd on 127.0.0.1:2222, which this WSL cannot
 # serve to Windows (see the port guide); cli-smoke.sh and the e2e runs cover SSH.
-# src/adapters/rdp runs on FreeRDP built by bin/freerdp.sh. Its tests against FreeRDP's
-# sample server (FLINT_RDP_SAMPLE_PORT) and a real Windows host (FLINT_RDP_TEST_HOST)
-# return early without them and print PASS: count them as skipped. Neither is set here
-# (no sample server for Windows; the real host is the owner's check).
+# src/adapters/rdp runs on FreeRDP built by bin/freerdp.sh, against two servers that
+# rdp-servers.sh starts as Windows programs on loopback, as scripts/test.sh does on
+# macOS and Linux: FreeRDP's sample server (FLINT_RDP_SAMPLE_PORT) and Flint's own
+# (FLINT_RDP_CLIP_PORT/_CONTROL). Tests against a real Windows host (FLINT_RDP_TEST_HOST,
+# the owner's check) and the quiet network (FLINT_RDP_BLACKHOLE, iptables in the Linux
+# image) return early and print PASS: count them as skipped.
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
@@ -28,9 +30,23 @@ fi
 WT="$(wslpath "$(cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r')")/flint-tests"
 rm -rf "$WT"; mkdir -p "$WT"
 cd "$WT"
+
+source "$here/rdp-servers.sh"
+# A suite killed by its timeout leaves its test .exe running on Windows (interop does
+# not pass the kill on), holding the folder: stop it too.
+stop_all() {
+  rdp_servers_stop
+  powershell.exe -NoProfile -c "Get-Process cfire-test* -EA SilentlyContinue | Stop-Process -Force" >/dev/null 2>&1 || true
+}
+trap stop_all EXIT
+[[ " ${suites[*]} " == *" src/adapters/rdp "* ]] && rdp_servers_start "$WT"
+
 failed=0
 for s in "${suites[@]}"; do
-  out="$(timeout 600 cfire test --target x86_64-w64-mingw32 "$root/$s" 2>&1)"
+  # Each suite's whole output is kept in $WT (<suite>.log) for a failure's details.
+  log="$WT/${s//\//_}.log"
+  timeout -k 5 "${FLINT_SUITE_TIMEOUT:-900}" cfire test --target x86_64-w64-mingw32 "$root/$s" >"$log" 2>&1
+  out="$(cat "$log")"
   summary="$(grep -E '^(PASS|FAIL) \(' <<<"$out" | tail -1)"
   [[ -n "$summary" ]] || summary="FAIL (no summary: $(tail -1 <<<"$out"))"
   echo "$s: $summary"

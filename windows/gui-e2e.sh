@@ -14,7 +14,11 @@
 # `localhost` → 127.0.0.3, the local side of the download (the sshd is not this
 # machine) and Windows paths.
 # The page script runs as the same short runs as scripts/gui-e2e.sh (terminal, vault,
-# tunnels, paste, vim), each a launch of the app on a fresh vault and config folder.
+# tunnels, paste, rdp, vim), each a launch of the app on a fresh vault and config folder.
+# The rdp run talks to RDP test servers that are Windows programs on Windows' 127.0.0.1
+# (rdp-servers.sh: FreeRDP's sample server twice, Flint's own server) and a forwarder
+# (tcp-switch.ps1) for the changed certificate; its script keeps 127.0.0.1. Its clipboard
+# checks write to this machine's clipboard, as on macOS and Linux.
 # vim is off by default, as on Linux, though it passes here since main's f994cb8.
 #   FLINT_E2E_ONLY=tunnels windows/gui-e2e.sh   runs only the named runs (comma-separated)
 #   FLINT_E2E_VIM=1 windows/gui-e2e.sh          adds the vim run
@@ -28,7 +32,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 app_dir="$root/build/windows/Flint"
 [[ -f "$app_dir/flint-app.exe" ]] || { echo "gui-e2e: build it first: windows/build-gui.sh" >&2; exit 1; }
-runs=(terminal vault tunnels paste vim)
+runs=(terminal vault tunnels paste rdp vim)
 run_vim="${FLINT_E2E_VIM:-0}"
 only="${FLINT_E2E_ONLY:-}"
 if [[ -n "$only" ]]; then
@@ -49,6 +53,10 @@ cleanup() {
   for f in "$tmp"/sshd*.pid; do [[ -f "$f" ]] && kill "$(cat "$f")" 2>/dev/null || true; done
   [[ -n "$fwd_pid" ]] && kill "$fwd_pid" 2>/dev/null || true
   powershell.exe -NoProfile -c "foreach (\$p in $P1,$P2,$P3) { Get-NetTCPConnection -LocalAddress 127.0.0.2 -LocalPort \$p -State Listen -ErrorAction SilentlyContinue | % { Stop-Process -Id \$_.OwningProcess -Force -ErrorAction SilentlyContinue } }; Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort $P1 -State Listen -ErrorAction SilentlyContinue | % { Stop-Process -Id \$_.OwningProcess -Force -ErrorAction SilentlyContinue }" >/dev/null 2>&1 || true
+  if [[ -n "${RPORT_FWD:-}" ]]; then
+    rdp_servers_stop
+    powershell.exe -NoProfile -c "Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort $RPORT_FWD -State Listen -ErrorAction SilentlyContinue | % { Stop-Process -Id \$_.OwningProcess -Force -ErrorAction SilentlyContinue }" >/dev/null 2>&1 || true
+  fi
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -130,10 +138,28 @@ TPORT="$(powershell.exe -NoProfile -c '$l = [Net.Sockets.TcpListener]::new([Net.
 rm -rf "$WIN_TMP"; mkdir -p "$WIN_TMP/downloads"
 cp -R "$app_dir" "$WIN_TMP/app"
 
+# The rdp run's servers: the sample server and Flint's own (rdp-servers.sh), a second
+# sample server with its own certificate, and a forwarder whose first two connections
+# (the certificate prompt, then the trusted connect) reach the first and every later
+# one the second.
+RPORT=0; RPORT_FWD=""; CPORT=0; CCTL=0
+if [[ " ${runs[*]} " == *" rdp "* ]]; then
+  source "$here/rdp-servers.sh"
+  mkdir -p "$WIN_TMP/rdp"
+  rdp_servers_start "$WIN_TMP/rdp"
+  rdp_server_sample "$WIN_TMP/rdp" 33895 rdp2
+  RPORT="$FLINT_RDP_SAMPLE_PORT"; CPORT="$FLINT_RDP_CLIP_PORT"; CCTL="$FLINT_RDP_CLIP_CONTROL"; RPORT_FWD=33896
+  setsid nohup powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$here/tcp-switch.ps1")" \
+    -Port "$RPORT_FWD" -First "$RPORT" -Later 33895 -Firsts 2 > "$tmp/switch.log" 2>&1 &
+  for _ in $(seq 1 100); do grep -q '^switch:' "$tmp/switch.log" 2>/dev/null && break; sleep 0.1; done
+  grep -q '^switch:' "$tmp/switch.log" || { echo "gui-e2e: tcp-switch did not start" >&2; cat "$tmp/switch.log" >&2; exit 1; }
+fi
+
 # Writes the page script for one run: $1 the run's name; vault, script and config folder
 # are named after it in $WIN_TMP.
 make_script() {
   E2E_KEY="$tmp/user_ed25519" E2E_W="$W" P1="$P1" P2="$P2" P3="$P3" TPORT="$TPORT" E2E_RUN="$1" \
+    E2E_RPORT="$RPORT" E2E_RPORT_FWD="${RPORT_FWD:-0}" E2E_CPORT="$CPORT" E2E_CCTL="$CCTL" \
     python3 -I - "$root/scripts/gui-e2e.js" "$WIN_TMP/$1.js" <<'PY'
 import os, sys
 src = open(sys.argv[1]).read()
@@ -142,9 +168,14 @@ w = os.environ["E2E_W"]
 run = os.environ["E2E_RUN"]
 values = {"VAULT": w + "/" + run + ".flint", "PORT": os.environ["P1"], "PORT2": os.environ["P2"],
           "PORT3": os.environ["P3"], "TPORT": os.environ["TPORT"], "USER": os.environ["USER"],
-          "KEY": key, "RUN": run}
+          "KEY": key, "RUN": run, "RPORT": os.environ["E2E_RPORT"], "RPORT_FWD": os.environ["E2E_RPORT_FWD"],
+          "CPORT": os.environ["E2E_CPORT"], "CCTL": os.environ["E2E_CCTL"]}
 for k, v in values.items():
     src = src.replace("@@" + k + "@@", v)
+if run == "rdp":
+    # The RDP servers are Windows programs on Windows' 127.0.0.1: no SSH substitutions.
+    open(sys.argv[2], "w").write(src)
+    sys.exit(0)
 src = src.replace("127.0.0.1", "127.0.0.2")
 src = src.replace("fill('#hh', 'localhost')", "fill('#hh', '127.0.0.3')").replace("`[localhost]:${PORT2}`", "`[127.0.0.3]:${PORT2}`")
 # A tunnel listens on Windows' 127.0.0.1: the host through it dials there, and the
@@ -209,7 +240,7 @@ done
 # Principle 5: nothing from inside the vault is readable in any run's file.
 for f in "$WIN_TMP"/*.flint; do
   [[ -f "$f" ]] || continue
-  for marker in local pwhost e2e-key gui-host-pw-marker 127.0.0.2 codebox.lan "Code Box" pw-codebox through "SQLite format 3"; do
+  for marker in local pwhost e2e-key gui-host-pw-marker 127.0.0.2 codebox.lan "Code Box" pw-codebox through rdp-sample rdp-pw-marker "SQLite format 3"; do
     if grep -aq -- "$marker" "$f"; then
       echo "gui-e2e: $(basename "$f") contains '$marker' in clear" >&2
       exit 1
@@ -217,6 +248,11 @@ for f in "$WIN_TMP"/*.flint; do
   done
 done
 echo "gui-e2e: the vault files hold no clear-text host data"
+# Principle 5: FreeRDP logs server addresses, so the app keeps its log off (D-072).
+if [[ -f "$tmp/rdp.log" ]] && grep -q "com.freerdp" "$tmp/rdp.log"; then
+  echo "gui-e2e: the rdp run's log has FreeRDP lines (addresses in a log)" >&2
+  exit 1
+fi
 # D-030: the layout state holds ids only. The vault run makes groups and renames the vault.
 if [[ -f "$tmp/vault.log" ]]; then
   ui_state="$WIN_TMP/config-vault/ui-state.json"

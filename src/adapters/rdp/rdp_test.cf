@@ -212,6 +212,29 @@ fn clip_target(trusted: str) -> RdpTarget {
 // One command to the test server's control port, its one-line answer.
 fn ctl(cmd: str) -> str {
     port := os.getenv("FLINT_RDP_CLIP_CONTROL")
+    // Windows (windows-port): `bash` there is WSL's, which cannot reach Windows'
+    // 127.0.0.1; the same command goes over the control port's HTTP form with the
+    // curl.exe Windows ships: GET /<cmd>[/<arg>].
+    mut windows := false
+    cpp {
+        #if defined(_WIN32)
+        windows = true;
+        #endif
+    }
+    if windows {
+        mut path := ""
+        for b in cmd.bytes() {
+            if u8(b) == 32 {
+                path = path + "/"
+            } else {
+                path = path + byte_to_str(u8(b))
+            }
+        }
+        got := os.command("curl.exe", ["-s", "--max-time", "10", "http://127.0.0.1:{port}/{path}"]) or {
+            return "error"
+        }
+        return got.stdout
+    }
     script := "exec 3<>/dev/tcp/127.0.0.1/{port}; printf '%s\\n' \"$1\" >&3; IFS= read -r line <&3; printf '%s' \"$line\""
     r := os.command("bash", ["-c", script, "ctl", cmd]) or {
         return "error"

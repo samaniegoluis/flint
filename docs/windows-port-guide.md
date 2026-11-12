@@ -15,7 +15,7 @@ by merging `main` into it now and then.
 
 ## Resume here
 
-State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
+State on 2026-11-11 (branch `windows-port-2`, `git log` for the latest commit):
 
 - **Done:** the CLI and the desktop app build and run on Windows 11 on top of `main`
   (`83557b0`, cfire `c5b1d4b`) with cfire patches 0001-0009. Every automated check is
@@ -59,6 +59,28 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
     prompt redrew, so the `ls` lost the pasted path (`6e34383`).
   - Owner checks to do in the installed app: a tunnel used by a Windows program; a
     screenshot (Win+Shift+S) pasted into an SSH session with Ctrl+V.
+- **Merged `main` again (2026-11-11):** milestone 31 (RDP clipboard both ways over
+  `cliprdr`, the *Connection lost* card, Mac modifier presets, Flint's own RDP test
+  server), up to `9ab8a04`; no conflicts; same cfire `c5b1d4b` + 0001-0009. Windows work
+  (details in [`rdp-windows.md`](rdp-windows.md), "Milestone 31 merge"):
+  - **Shim:** Winsock started before FreeRDP resolves (a real bug: in a process where
+    nothing had called `WSAStartup`, every RDP host failed as a DNS error);
+    `winpr/shell.h` skipped, since its `<shlobj.h>`/`<userenv.h>` break the app's build
+    against cfire's WebView2 backend (cfire W-17, after the handoff); keepalive and
+    `TCP_MAXRT` set on Windows in the new `TCPConnect` hook (FreeRDP leaves Windows at
+    two hours).
+  - **RDP test servers on Windows, a first:** `windows/bin/freerdp.sh` also builds
+    FreeRDP's server library and sample server (tests only, no platform server);
+    `windows/rdp-testserver.sh` builds Flint's own server for Windows (Winsock control
+    port); `windows/rdp-servers.sh` starts both on Windows' loopback for
+    `test-suites.sh` and `gui-e2e.sh`, which gains the rdp run (`tcp-switch.ps1` is its
+    changed-certificate forwarder). The adapter's test helper reaches the control port
+    with `curl.exe` on Windows.
+  - `test-suites.sh` keeps each suite's log in `%TEMP%\flint-tests\<suite>.log`, and
+    stops a test `.exe` its timeout left running (interop does not pass the kill on).
+  - **Owner checks to do in the installed app:** `rdp-windows.md`, "What to check on
+    Windows" (items 3-7: layout and AltGr, `flint connect`, the clipboard both ways,
+    a dropped network, mstsc).
 - **Owner checks done:** Win+L with the app unlocked locks the vault: after signing back
   in to Windows, Flint asks for the master password. On the owner's own vault in the
   installed app: unlocking with "Remember on this computer" stores a Generic, local-machine
@@ -83,7 +105,7 @@ State on 2026-11-09 (branch `windows-port-2`, `git log` for the latest commit):
   (shared), so it went to `main` (`f994cb8`) and came here by merge.
   Owner, in the installed app: after Alt+Tab away and back, the terminal takes keys and
   Ctrl+V pastes without a click (2026-11-09).
-- **Owner checks still open:** none.
+- **Owner checks still open:** the RDP tab on a real host, `rdp-windows.md` items 3-7 (milestones 30-31).
 
 **Next phase: when cfire ships Windows support upstream.**
 
@@ -164,7 +186,7 @@ paths (the socket code moved into shared helpers with the same behaviour).
 | App icon | `assets/app-icon/Flint.ico` (new) | From `flint-256.png` (256…16); embedded by cfire W-13 |
 | Windows build and install | `windows/build-gui.sh` (new) | `build/windows/Flint/`: `flint.exe`, `flint-app.exe`, `WebView2Loader.dll`, `ui/`; `--install DIR` copies it and adds `Flint.lnk` |
 | Checks | `windows/gui-e2e.sh`, `windows/serve-e2e.sh` + `serve-page.js` + `new-caller.js` (new), `ssh-relay.ps1 -ListenHost` | The UI e2e and a subset of serve-e2e, on Windows from WSL. `new-caller.js` runs `flint.exe` under `cscript` (`//E:jscript`: the `.js` association may be gone) so the app sees a caller it has not approved, the stand-in for the perl wrapper on Linux |
-| RDP tab (milestone 30) | `windows/bin/freerdp.sh` (new), `pkgconfig/windows/flint-rdp.pc` (new), `rdp/native/flint_rdp.hpp`, `windows/bin/env.sh` | FreeRDP 3.33.1 cross-built **static** with llvm-mingw into `$WIN_SYSROOT/freerdp` (no ffmpeg/SDL/servers/USB/JSON; `-D__STDC_NO_THREADS__`, `USE_UNWIND=OFF`; the two channel helper archives a static install leaves out are copied, `-ldl` dropped from its `.pc`). The app links it in whole: no FreeRDP or OpenSSL DLLs, the CLI has none of it. The shim's Windows fixes are in [`rdp-windows.md`](rdp-windows.md) ("First Windows build"): `wtsapi32.h` first plus the `WTSLISTENER*` types mingw lacks, `NIIF_*` macros set aside, `FREERDP_EXPORTS`/`WINPR_EXPORTS` for a static link, and no SYN retransmission in the refused-port probe |
+| RDP tab (milestones 30-31) | `windows/bin/freerdp.sh` (new), `pkgconfig/windows/flint-rdp.pc` (new), `rdp/native/flint_rdp.hpp`, `windows/bin/env.sh`; tests: `rdp/native/testserver/flint_rdp_testserver.cpp`, `rdp/rdp_test.cf`, `windows/rdp-testserver.sh`, `rdp-servers.sh`, `tcp-switch.ps1` (new) | FreeRDP 3.33.1 cross-built **static** with llvm-mingw into `$WIN_SYSROOT/freerdp` (no ffmpeg/SDL/servers/USB/JSON; `-D__STDC_NO_THREADS__`, `USE_UNWIND=OFF`; the two channel helper archives a static install leaves out are copied, `-ldl` dropped from its `.pc`). The app links it in whole: no FreeRDP or OpenSSL DLLs, the CLI has none of it. The shim's Windows fixes are in [`rdp-windows.md`](rdp-windows.md) ("First Windows build"): `wtsapi32.h` first plus the `WTSLISTENER*` types mingw lacks, `NIIF_*` macros set aside, `FREERDP_EXPORTS`/`WINPR_EXPORTS` for a static link, and no SYN retransmission in the refused-port probe. Milestone 31: `sock_init()` before FreeRDP resolves, `winpr/shell.h` skipped (cfire W-17), keepalive and `TCP_MAXRT` in the `TCPConnect` hook; the test server's control port on Winsock |
 | App start (`serve`) | `drivers/clicmd/serve.cf`, `adapters/process` | `spawn_detached`: `CreateProcessW` with `DETACHED_PROCESS \| CREATE_NEW_PROCESS_GROUP`, no inherited handles, `CREATE_BREAKAWAY_FROM_JOB` when the job allows it; replaces `sh -c … setsid`. The app is `gui\Flint.exe` (build tree) or `flint-app.exe` (install): **`Flint.exe` next to `flint.exe` is the same file** on a case-insensitive file system |
 
 ## Verified on Windows (so far)
@@ -177,6 +199,7 @@ otherwise.
 | Check | Result |
 |---|---|
 | `windows/build-gui.sh` | CLI, app and page build (milestones 20-29 merged; 22-25 needed the Windows work above) |
+| After milestone 31 (2026-11-11) | `test-suites.sh` **11 suites, 1404 tests**: rdp 111 against FreeRDP's sample server and Flint's own server running on Windows (3 return early: two need a real host, one needs iptables); `cli-smoke.sh` **60/60**; `serve-e2e.sh` **51/51**; `gui-e2e.sh` **318 checks in five runs**: terminal 89, vault 113, tunnels 33, paste 24, **rdp 59** (new on Windows). vim and the focus trap skipped as before. `serve-e2e` and `gui-e2e` had not run since milestone 30's merge |
 | After milestones 22-29 (2026-11-11) | `test-suites.sh` **10 suites, 1239 tests**; `cli-smoke.sh` **60/60** (11 tunnel checks new); `gui-e2e.sh` **275 checks in five runs**: terminal 89, vault 113, tunnels 33, paste 24 (the core reading the real Windows clipboard included), vim 16; `serve-e2e.sh` **51/51** |
 | `windows/test-suites.sh` | **10 suites, 1071 tests pass** on Windows: config 89, crypto 89, fonts 81, ipc 93, keychain 83, process 89, uievents 95, vault 114, application 193, clicmd 145. `ssh` not run (needs sshd on `127.0.0.1` from Windows). First run: ipc, vault and clicmd failed only because "/tmp" from a WSL folder is the WSL share; process had two POSIX-only asserts |
 | `windows/cli-smoke.sh` | 49/49 |

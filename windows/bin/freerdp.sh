@@ -6,8 +6,11 @@
 # Why not MSYS2's mingw-w64-clang-x86_64-freerdp: its libfreerdp3.dll imports ffmpeg,
 # whose package closure is 128 packages and 1.3 GB, for video codecs Flint does not use.
 # Built here: the core, the client library and its built-in channels (drdynvc, disp,
-# cliprdr for milestone 31), on the sysroot's OpenSSL and zlib (bin/sysroot.sh). Left
-# out: ffmpeg/swscale, SDL and the native Windows client, servers and samples, USB
+# cliprdr for milestone 31), on the sysroot's OpenSSL and zlib (bin/sysroot.sh); and the
+# server library with its channels and the sample server, for tests only: Flint's own
+# test server (milestone 31, native/testserver) and FreeRDP's sfreerdp-server. Neither is
+# linked into Flint. Left out: ffmpeg/swscale, SDL and the native Windows client, the
+# shadow server, the proxy and the native Windows server, USB
 # redirection (libusb), JSON (Azure AD sign-in), manpages. H.264 (milestone 32) can come
 # from Media Foundation, which ships with Windows (WITH_MEDIA_FOUNDATION).
 #
@@ -16,6 +19,8 @@
 # here, never "latest" at fetch time.
 set -eu
 FREERDP_VERSION=3.33.1
+# Bumped when the build options change, so a sysroot built with the old ones rebuilds.
+FREERDP_STAMP="$FREERDP_VERSION server"
 CMAKE_VERSION=3.31.6
 NINJA_VERSION=1.12.1
 
@@ -25,7 +30,7 @@ R="$SYSROOT/clang64"
 PREFIX="$SYSROOT/freerdp"
 L=$(ls -d "$OPT"/llvm-mingw-* | tail -1)
 
-if [ "$(cat "$PREFIX/VERSION" 2>/dev/null)" = "$FREERDP_VERSION" ]; then
+if [ "$(cat "$PREFIX/VERSION" 2>/dev/null)" = "$FREERDP_STAMP" ]; then
   echo "freerdp ready: $PREFIX ($FREERDP_VERSION)"
   exit 0
 fi
@@ -80,7 +85,7 @@ EOF
   -DOPENSSL_ROOT_DIR="$R" -DOPENSSL_USE_STATIC_LIBS=ON \
   -DWITH_CLIENT=ON -DWITH_CLIENT_COMMON=ON -DWITH_CHANNELS=ON -DWITH_CLIENT_CHANNELS=ON \
   -DWITH_CLIENT_SDL=OFF -DWITH_CLIENT_WINDOWS=OFF -DWITH_CLIENT_INTERFACE=OFF \
-  -DWITH_SERVER=OFF -DWITH_SERVER_CHANNELS=OFF -DWITH_SAMPLE=OFF -DWITH_PROXY=OFF -DWITH_SHADOW=OFF \
+  -DWITH_SERVER=ON -DWITH_SERVER_CHANNELS=ON -DWITH_SAMPLE=ON -DWITH_PROXY=OFF -DWITH_SHADOW=OFF -DWITH_PLATFORM_SERVER=OFF \
   -DWITH_FFMPEG=OFF -DWITH_SWSCALE=OFF -DWITH_DSP_FFMPEG=OFF -DWITH_VIDEO_FFMPEG=OFF \
   -DWITH_CAIRO=OFF -DWITH_JPEG=OFF -DWITH_OPENH264=OFF -DWITH_MEDIA_FOUNDATION=ON \
   -DCHANNEL_URBDRC=OFF -DWITH_JSON_DISABLED=ON -DWITH_AAD=OFF -DWITH_URIPARSER=OFF \
@@ -93,5 +98,5 @@ EOF
 # not got (bin/pc/pkg-config adds Libs.private, since the .exe links -static).
 cp "$BUILD/channels/rdpsnd/common/librdpsnd-common.a" "$BUILD/channels/remdesk/common/libremdesk-common.a" "$PREFIX/lib/"
 sed -i 's/ -ldl//' "$PREFIX/lib/pkgconfig/freerdp-client3.pc"
-echo "$FREERDP_VERSION" > "$PREFIX/VERSION"
+echo "$FREERDP_STAMP" > "$PREFIX/VERSION"
 echo "freerdp ready: $PREFIX ($FREERDP_VERSION)"

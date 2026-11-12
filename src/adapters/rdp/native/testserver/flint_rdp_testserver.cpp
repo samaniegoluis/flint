@@ -20,6 +20,11 @@
 //   drop         closes every client's connection without a goodbye
 //   peers        how many clients are connected
 
+#if defined(_WIN32)
+// Winsock before winpr, which includes <windows.h>.
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#endif
 #include <winpr/crt.h>
 #include <winpr/ssl.h>
 #include <winpr/string.h>
@@ -37,14 +42,30 @@
 #include <freerdp/crypto/certificate.h>
 #include <freerdp/crypto/privatekey.h>
 
+#include <string>
+#if defined(_WIN32)
+using sock_t = SOCKET;
+inline void close_sock(sock_t s) { ::closesocket(s); }
+inline constexpr int SHUT_BOTH = SD_BOTH;
+inline std::string sock_error() { return "WSA error " + std::to_string(WSAGetLastError()); }
+#else
+#include <cerrno>
+#include <cstring>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+using sock_t = int;
+inline void close_sock(sock_t s) { ::close(s); }
+inline constexpr int SHUT_BOTH = SHUT_RDWR;
+inline std::string sock_error() { return std::strerror(errno); }
+#endif
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <set>
@@ -296,7 +317,7 @@ void peer_loop(freerdp_peer* client) {
         if (self.drop.load()) {
             // No Deactivate or Disconnect PDU: the client sees the socket close, as on
             // a network that went away.
-            ::shutdown(client->sockfd, SHUT_RDWR);
+            ::shutdown(static_cast<sock_t>(client->sockfd), SHUT_BOTH);
         } else {
             client->Disconnect(client);
         }
@@ -350,20 +371,27 @@ std::string run(const std::string& line) {
 }
 
 void control(int port) {
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    sock_t fd = ::socket(AF_INET, SOCK_STREAM, 0);
+#if !defined(_WIN32)
+    // On Windows SO_REUSEADDR would let another socket share the bound port.
     int one = 1;
     ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+#endif
     sockaddr_in a{};
     a.sin_family = AF_INET;
     a.sin_port = htons(static_cast<uint16_t>(port));
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     if (::bind(fd, reinterpret_cast<sockaddr*>(&a), sizeof a) != 0 || ::listen(fd, 8) != 0) {
-        std::fprintf(stderr, "control port %d: %s\n", port, std::strerror(errno));
+        std::fprintf(stderr, "control port %d: %s\n", port, sock_error().c_str());
         std::exit(2);
     }
     for (;;) {
-        int c = ::accept(fd, nullptr, nullptr);
+        sock_t c = ::accept(fd, nullptr, nullptr);
+#if defined(_WIN32)
+        if (c == INVALID_SOCKET) continue;
+#else
         if (c < 0) continue;
+#endif
         std::string line;
         char ch;
         while (::recv(c, &ch, 1, 0) == 1 && ch != '\n') if (ch != '\r') line += ch;
@@ -385,8 +413,8 @@ void control(int port) {
         } else {
             out = run(line) + "\n";
         }
-        (void)::send(c, out.data(), out.size(), 0);
-        ::close(c);
+        (void)::send(c, out.data(), static_cast<int>(out.size()), 0);
+        close_sock(c);
     }
 }
 
@@ -406,6 +434,10 @@ int main(int argc, char** argv) {
         return 2;
     }
     if (!std::getenv("FLINT_TESTSERVER_DEBUG")) WLog_SetLogLevel(WLog_GetRoot(), WLOG_OFF);
+#if defined(_WIN32)
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 1;
+#endif
     if (!WTSRegisterWtsApiFunctionTable(FreeRDP_InitWtsApi())) return 1;
     winpr_InitializeSSL(WINPR_SSL_INIT_DEFAULT);
     std::thread(control, ctl).detach();
