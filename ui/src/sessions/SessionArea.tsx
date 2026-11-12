@@ -17,12 +17,15 @@ import { TunnelMark, TunnelsButton } from '../tunnels/TunnelsMenu';
 import { desktopScaleLabel, RdpView } from './RdpView';
 import { GRAPHICS_MODES, graphicsChoiceLabel } from '../lib/rdpStats';
 import { fullScreen, useFullScreen } from './fullscreen';
+import { FullScreenSplit } from './MonitorsUi';
 import { FullScreenBar } from './FullScreenBar';
 import { TabMenu } from './TabMenu';
 
 // Stays mounted while another view (Keys, Credentials, Settings) is shown, with
 // `shown` false: unmounting it disposed every xterm.js terminal and its scrollback.
-export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTunnels, onConnect, onFiles, filesOn, onKnownHosts, fullScreenNoteSeen, onFullScreenNoteSeen }: {
+export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTunnels, onConnect, onFiles, filesOn, onKnownHosts, fullScreenNoteSeen, onFullScreenNoteSeen, monitorsNoteSeen, onMonitorsNoteSeen }: {
+  monitorsNoteSeen: boolean;
+  onMonitorsNoteSeen: () => void;
   /** The first-time note of full screen was shown (design 22b2), and its setter. */
   fullScreenNoteSeen: boolean;
   onFullScreenNoteSeen: () => void;
@@ -173,8 +176,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           {ready && !tab.graphicsSwitching && tab.graphicsNote && <span className="warn-t trunc" data-rdp-graphics-note title={tab.graphicsNote}>Mode not changed</span>}
           {ready && <button className="tbtn" data-rdp-stats-toggle aria-pressed={stats} title="Show what the desktop costs: frames, bandwidth, codec"
             onClick={() => setStats((v) => !v)}><Icon name="info" size="sm" /><span className="tb-l">Stats</span></button>}
-          {ready && <button className="tbtn" data-rdp-fullscreen title={`Full screen (${chordLabel('fullscreen', os)})`}
-            onClick={() => fullScreen.enter(activeTab.id)}><Icon name="expand" size="sm" /><span className="tb-l">Full screen</span><Kbd action="fullscreen" /></button>}
+          {ready && <FullScreenSplit onFullScreen={() => fullScreen.enter(activeTab.id)}
+            onAllMonitors={() => sessions.enterAllMonitors(activeTab.id, (t) => fullScreen.enter(t))} />}
           {ready
             ? <button className="tbtn" data-rdp-disconnect title="Disconnect" onClick={() => sessions.disconnect(tab.id)}><Icon name="x" size="sm" /><span className="tb-l">Disconnect</span></button>
             : <button className="tbtn" title="Close tab" onClick={() => sessions.closeTab(activeTab.id)}><Icon name="x" size="sm" /><span className="tb-l">Close tab</span></button>}
@@ -216,6 +219,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
         })}
         {fs.tab && fs.tab === active && tab?.kind === 'rdp' && (
           <FullScreenBar key={fs.tab} pane={tab} top={fs.top} noteSeen={fullScreenNoteSeen} onNoteSeen={onFullScreenNoteSeen}
+            monitorsNoteSeen={monitorsNoteSeen} onMonitorsNoteSeen={onMonitorsNoteSeen}
+            onSpan={(picks) => sessions.enterAllMonitors(fs.tab!, () => {}, picks)}
             onExit={() => fullScreen.leave()} onDisconnect={() => sessions.disconnect(tab.id)} />
         )}
       </div>
@@ -224,7 +229,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
         const fp = t && panes.find((p) => p.id === t.focus);
         if (!t || !fp) return null;
         return <TabMenu tab={t} pane={fp} x={tabMenu.x} y={tabMenu.y} onClose={() => setTabMenu(null)}
-          onEditHost={() => onEditHost(fp.alias)} onFullScreen={() => fullScreen.enter(t.id)} />;
+          onEditHost={() => onEditHost(fp.alias)} onFullScreen={() => fullScreen.enter(t.id)}
+          onAllMonitors={() => sessions.enterAllMonitors(t.id, (id) => fullScreen.enter(id))} />;
       })()}
     </section>
   );

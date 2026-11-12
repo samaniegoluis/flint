@@ -111,7 +111,62 @@ export interface UiStateView {
   files_width: number;
   /** The full-screen note was shown once (milestone 37, design 22b2). */
   fullscreen_note_seen: boolean;
+  /** Milestone 38: the extra monitors last chosen, and whether 22f4's note was shown. */
+  monitors?: string[];
+  monitors_note_seen?: boolean;
   collapsed: string[];
+}
+
+/** A monitor of this computer (milestone 38): points, origin at the top-left of the primary. */
+export interface LocalMonitor {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: number;
+  primary: boolean;
+  physical: boolean;
+}
+
+/** What "Full screen on all monitors" may offer: `reason` greys it (design 22f1c). */
+export interface MonitorsView {
+  reason: string;
+  monitors: LocalMonitor[];
+  main: string;
+  picks: string[];
+  max: number;
+}
+
+export interface MonitorPick {
+  id: string;
+  width: number;
+  height: number;
+}
+
+export interface RdpMonitor {
+  local_id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  primary: boolean;
+}
+
+export interface DesktopRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** The layout the core sent: each monitor and where its part lies in the one surface. */
+export interface DesktopSpan {
+  monitors: RdpMonitor[];
+  crops: DesktopRect[];
+  width: number;
+  height: number;
 }
 
 export interface Settings {

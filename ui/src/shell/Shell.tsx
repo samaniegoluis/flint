@@ -19,6 +19,7 @@ import { FilesView } from '../files/FilesView';
 import { files as filesStore } from '../files/store';
 import { sessions, useSessions } from '../sessions/store';
 import { fullScreen, useFullScreen } from '../sessions/fullscreen';
+import { monitors } from '../sessions/monitors';
 import { LAYOUTS, MAX_PANES, type SplitDir } from '../lib/layout';
 import { focusTerminal } from '../sessions/TerminalView';
 import { HostEditor } from '../editors/HostEditor';
@@ -162,6 +163,13 @@ export function Shell() {
   // Another tab, a closed tab or another view leaves full screen; so does the lock.
   useEffect(() => { fullScreen.shown(rdpTab); }, [rdpTab]);
   useEffect(() => () => { if (fullScreen.get().tab) fullScreen.leave(); }, []);
+  // Milestone 38: a desktop across monitors ends with full screen; the extra windows'
+  // pages and the monitors' changes reach its store.
+  useEffect(() => { const off = fullScreen.subscribe(() => { if (!fullScreen.get().tab) monitors.leave(); }); return () => { off(); }; }, []);
+  useEffect(() => on<{ id: string; data: string }>('monitor:message', (e) => monitors.message(e.id, e.data)), []);
+  useEffect(() => on<{ id: string }>('monitor:closed', (e) => monitors.windowGone(e.id)), []);
+  useEffect(() => on('monitors:changed', () => { void monitors.screensChanged(); }), []);
+  useEffect(() => { void monitors.refresh(); }, []);
 
   useEffect(() => {
     const onResize = () => {
@@ -320,6 +328,7 @@ export function Shell() {
         break;
       case 'collapseAll': setView('hosts'); setSidebarCollapsed(false); setCollapsedGroups(new Set(catalog.groups.map((g) => g.path))); break;
       case 'fullscreen': fullScreen.toggle(rdpTab); break;
+      case 'fullscreenAll': if (rdpTab) sessions.enterAllMonitors(rdpTab, (t) => fullScreen.enter(t)); break;
       case 'expandAll': setView('hosts'); setSidebarCollapsed(false); setCollapsedGroups(new Set()); break;
       case 'viewKeys': setView('keys'); break;
       case 'viewCredentials': setView('credentials'); break;
@@ -451,7 +460,7 @@ export function Shell() {
         </div>
       )}
 
-      <SessionArea shown={sideView} fullScreenNoteSeen={!!ui?.fullscreen_note_seen} onFullScreenNoteSeen={() => updateUi({ fullscreen_note_seen: true })} filesOn={view === 'files' && !collapsed} onFiles={() => run('viewFiles')} fontSize={fontSize} onPalette={(h) => setPalette(h ? { hostsOnly: true, newSession: true } : { hostsOnly: false })} onEditHost={(alias) => setEditor({ alias, group: '' })} onManageTunnels={(alias) => setEditor({ alias, group: '', tunnels: true })} onConnect={connect} onKnownHosts={() => { setSection('vault'); setView('settings'); }} />
+      <SessionArea shown={sideView} fullScreenNoteSeen={!!ui?.fullscreen_note_seen} onFullScreenNoteSeen={() => updateUi({ fullscreen_note_seen: true })} monitorsNoteSeen={!!ui?.monitors_note_seen} onMonitorsNoteSeen={() => updateUi({ monitors_note_seen: true })} filesOn={view === 'files' && !collapsed} onFiles={() => run('viewFiles')} fontSize={fontSize} onPalette={(h) => setPalette(h ? { hostsOnly: true, newSession: true } : { hostsOnly: false })} onEditHost={(alias) => setEditor({ alias, group: '' })} onManageTunnels={(alias) => setEditor({ alias, group: '', tunnels: true })} onConnect={connect} onKnownHosts={() => { setSection('vault'); setView('settings'); }} />
       {view === 'keys' && <KeysPage adding={addingKey} setAdding={setAddingKey} onConfirm={setConfirm} />}
       {view === 'credentials' && <CredentialsPage editing={credEditing} setEditing={setCredEditing} onConfirm={setConfirm} />}
       {view === 'settings' && <SettingsPage section={section} setSection={setSection} onLock={() => lock().catch(fail)} onConfirm={setConfirm} />}

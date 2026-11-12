@@ -4,7 +4,7 @@
 
 import type {
   AccessAnswer, AccessState, ActivityEntry, AppInfo, RdpStats, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  CopyResult, FileEntry, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
+  CopyResult, DesktopSpan, FileEntry, MonitorPick, MonitorsView, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -146,6 +146,13 @@ export const api = {
   rdpKey: (tab: string, code: string, down: boolean) => call('rdp_key', { tab, code, down }),
   rdpPointer: (tab: string, p: RdpPointer) => call('rdp_pointer', { tab, ...p }),
   rdpResize: (tab: string, width: number, height: number) => call('rdp_resize', { tab, width, height }),
+  /** Milestone 38: the desktop across the chosen monitors, each the size its window measured. */
+  rdpSpan: (tab: string, picks: MonitorPick[]) => call<DesktopSpan>('rdp_span', { tab, picks }),
+  monitorsList: () => call<MonitorsView>('monitors_list'),
+  /** A full-screen window on each extra monitor; others close. Their pages answer as `monitor:message`. */
+  monitorsOpen: (ids: string[]) => call('monitors_open', { ids }),
+  monitorsClose: () => call('monitors_close'),
+  monitorsSend: (id: string, data: unknown) => call('monitors_send', { id, data: JSON.stringify(data) }),
   rdpClose: (tab: string) => call('rdp_close', { tab }),
   /** Milestone 34: the desktop's counters, for the statistics overlay. */
   rdpStats: (tab: string) => call<RdpStats>('rdp_stats', { tab }),

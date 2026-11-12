@@ -45,6 +45,8 @@ fn lock_window(st: GuiState, mut app: webui.App) {
         return
     }
     st.holder.set_window_locked(true)
+    // A desktop across monitors (milestone 38) leaves nothing on the other screens.
+    monitor_windows_close()
     write_stderr("flint-gui: window closed to the tray, locked\n")
     app.emit("window:locked", WindowLocked{ vault: st.vault_session().name })
 }

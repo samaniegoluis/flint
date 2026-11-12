@@ -10,7 +10,7 @@ export type Action =
   | 'splitRight' | 'splitDown' | 'focusNextPane' | 'focusPrevPane'
   | 'layout1' | 'layout2' | 'layout3' | 'layout4'
   | 'viewHosts' | 'viewFiles' | 'viewTunnels' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'newSshHost' | 'newRdpHost' | 'editHost'
-  | 'collapseAll' | 'expandAll' | 'fullscreen'
+  | 'collapseAll' | 'expandAll' | 'fullscreen' | 'fullscreenAll'
   | 'lock' | 'quit' | 'fontBigger' | 'fontSmaller' | 'fontReset' | 'nextRegion' | 'prevRegion'
   | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5' | 'tab6' | 'tab7' | 'tab8' | 'tab9';
 
@@ -62,6 +62,7 @@ const CHORDS: Record<Action, Chord> = {
   collapseAll: { none: true, code: '', label: '' },
   expandAll: { none: true, code: '', label: '' },
   fullscreen: { fullscreen: true, code: 'KeyF', label: 'F' },
+  fullscreenAll: { none: true, code: '', label: '' },
   lock: { code: 'KeyL', label: 'L' },
   quit: { code: 'KeyQ', label: 'Q' },
   fontBigger: { code: 'Equal', label: '+' },
@@ -165,6 +166,7 @@ export const ACTION_TITLES: Record<Action, string> = {
   collapseAll: 'Collapse all groups',
   expandAll: 'Expand all groups',
   fullscreen: 'Full screen',
+  fullscreenAll: 'Full screen on all monitors',
   lock: 'Lock vault',
   quit: 'Quit Flint',
   fontBigger: 'Bigger terminal font',

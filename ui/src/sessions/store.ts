@@ -9,6 +9,7 @@
 // in a buffer until the terminal mounts.
 
 import { useSyncExternalStore } from 'react';
+import { monitors } from './monitors';
 import { api, on } from '../api/backend';
 import { InputQueue } from '../lib/inputQueue';
 import { defaultTracks, layoutAfterClose, layoutForSplit, MAX_PANES, type Layout, type SplitDir } from '../lib/layout';
@@ -194,6 +195,8 @@ class SessionStore {
       if (ev.state === 'connecting') this.patch(t.id, { status: 'connecting', end: null, prompt: null });
       else {
         this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: 0 }, endedAt: Date.now(), graphicsSwitching: false });
+        // Milestone 38: the extra monitors say the connection was lost (22f3b).
+        monitors.lost(t.id);
         this.bySession.delete(ev.tab);
       }
     });
@@ -202,6 +205,8 @@ class SessionStore {
       const t = this.pane(paneId ?? null);
       if (!t || t.session !== ev.tab) return;
       this.patch(t.id, { status: 'ready', prompt: null, connectedAt: Date.now(), desktop: { width: ev.width, height: ev.height, port: ev.frame_port, token: ev.frame_token, engine: ev.graphics, rttMs: ev.rtt_ms } });
+      // Milestone 38: a reconnect comes back on one monitor; a spanning tab spans again.
+      monitors.desktopReady(t.id, { port: ev.frame_port, token: ev.frame_token });
     });
     on<RdpGraphicsEvent>('rdp:graphics', (ev) => {
       const paneId = this.bySession.get(ev.tab);
@@ -376,6 +381,8 @@ class SessionStore {
     const t = this.pane(paneId);
     if (!t) return;
     if (!prev && !t.session) { this.connectDesktop(paneId); return; }
+    // Spanning monitors (milestone 38): the main window's size goes into the layout.
+    if (monitors.spanning(paneId)) { monitors.mainArea(paneId, w, h); return; }
     clearTimeout(this.resizeTimers.get(paneId));
     this.resizeTimers.set(paneId, setTimeout(() => {
       this.resizeTimers.delete(paneId);
@@ -383,6 +390,20 @@ class SessionStore {
       const area = this.areas.get(paneId);
       if (p && area && p.session && p.status === 'ready') api.rdpResize(p.session, area.width, area.height).catch(() => {});
     }, DESKTOP_SETTLE_MS));
+  }
+
+  /**
+   * "Full screen on all monitors" for RDP tab `tabId` (milestone 38): the window goes
+   * full screen on its monitor and the desktop spans the monitors chosen.
+   */
+  enterAllMonitors(tabId: string, enterFullScreen: (tab: string) => void, picks?: string[]) {
+    const tab = this.tab(tabId);
+    const p = tab ? this.pane(tab.focus) : undefined;
+    if (!p || p.kind !== 'rdp' || p.status !== 'ready' || !p.desktop || !p.session) return;
+    const area = this.areas.get(p.id) ?? { width: window.innerWidth, height: window.innerHeight };
+    enterFullScreen(tabId);
+    // The main window's size is the full screen's: its area reports it once it settles.
+    monitors.enter(p.id, p.session, area, { port: p.desktop.port, token: p.desktop.token }, picks).catch(() => {});
   }
 
   /**

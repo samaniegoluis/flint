@@ -1,0 +1,122 @@
+package uievents
+
+// This computer's monitors and the extra monitors' windows (milestone 38, D-089),
+// through a native shim (native/flint_monitors.hpp, CF-126; CF-127 for Windows' DPI):
+// `ext:webui` has one window and lists no screens. The extra windows load
+// `monitor.html`; what they send reaches the page as `monitor:message`.
+
+// CFIRE-UPSTREAM: CF-126, CF-127
+import cpp "flint_monitors.hpp" @pkg("flint-native-gui")
+import "ext:webui"
+import "core:str"
+import "../../domain"
+
+// The Screens port over the shim.
+type OsScreens struct {
+    unused: i64
+}
+
+fn new_os_screens() -> OsScreens {
+    return OsScreens{ unused: 0 }
+}
+
+fn (self: OsScreens) screens_unsupported() -> str {
+    mut why := ""
+    // CFIRE-UPSTREAM: CF-126
+    cpp {
+        why = flint_monitors::unsupported();
+    }
+    return why
+}
+
+fn (self: OsScreens) screens_list() -> []LocalMonitor {
+    mut text := ""
+    // CFIRE-UPSTREAM: CF-126
+    cpp {
+        text = flint_monitors::list_text();
+    }
+    return parse_monitor_lines(text)
+}
+
+fn (self: OsScreens) screens_main() -> str {
+    mut id := ""
+    // CFIRE-UPSTREAM: CF-126
+    cpp {
+        id = flint_monitors::main_id();
+    }
+    return id
+}
+
+// The shim's lines (id, name, x, y, w, h, scale, primary, physical, tab-separated) as
+// monitors; a line that does not read is left out.
+fn parse_monitor_lines(text: str) -> []LocalMonitor {
+    mut res: []LocalMonitor = []
+    for line in str.split(text, "\n") {
+        f := str.split(line, "\t")
+        if f.len() != 9 || f[0].len() == 0 {
+            continue
+        }
+        x := str.parse_i64(f[2]) or { continue }
+        y := str.parse_i64(f[3]) or { continue }
+        w := str.parse_i64(f[4]) or { continue }
+        h := str.parse_i64(f[5]) or { continue }
+        scale := str.parse_i64(f[6]) or { continue }
+        if w <= 0 || h <= 0 {
+            continue
+        }
+        res.push(LocalMonitor{ id: f[0], name: f[1], x: x, y: y, width: w, height: h, scale: scale, primary: f[7] == "1", physical: f[8] == "1" })
+    }
+    return res
+}
+
+// Keeps the app and the page folder for the extra windows. Call once, before the
+// window runs.
+fn monitors_install(app: webui.App, dir: str) {
+    // CFIRE-UPSTREAM: CF-126, CF-127
+    cpp {
+        flint_monitors::install(app, dir);
+    }
+}
+
+// A full-screen window on each monitor of `ids` that has none; windows on monitors
+// not listed close.
+fn monitor_windows_open(ids: []str) {
+    mut text := ""
+    for i, id in ids {
+        if i > 0 {
+            text = text + "\n"
+        }
+        text = text + id
+    }
+    // CFIRE-UPSTREAM: CF-126
+    cpp {
+        flint_monitors::open_text(text);
+    }
+}
+
+fn monitor_windows_close() {
+    // CFIRE-UPSTREAM: CF-126
+    cpp {
+        flint_monitors::close_all();
+    }
+}
+
+// Hands `json` to the window on monitor `id` ("" every window).
+fn monitor_window_send(id: str, json: str) {
+    // CFIRE-UPSTREAM: CF-126
+    cpp {
+        flint_monitors::send(id, json);
+    }
+}
+
+test "the shim's monitor lines read as monitors" {
+    text := "69733382\tDELL U2723QE\t0\t0\t2560\t1440\t100\t1\t0\n2\tLG\t-1080\t-235\t1080\t1920\t100\t0\t0\nbad\tline\n\\\\.\\DISPLAY2\tx\t3840\t0\t1920\t1080\t150\t0\t1\n"
+    ms := parse_monitor_lines(text)
+    assert_eq(ms.len(), 3)
+    assert_eq(ms[0].id, "69733382")
+    assert(ms[0].primary)
+    assert_eq(ms[1].x, -1080)
+    assert_eq(ms[2].scale, 150)
+    assert(ms[2].physical)
+    assert_eq(parse_monitor_lines("").len(), 0)
+}

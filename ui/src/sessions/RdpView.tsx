@@ -18,6 +18,7 @@ import { fitScale, HeldKeys, modMapOf, parseFrameHeader, rdpButton, rdpKeptActio
 import { createRenderer, type DeskRenderer } from '../lib/deskRenderer';
 import { FrameMeter, graphicsChoiceLabel } from '../lib/rdpStats';
 import { sessions, type Pane } from './store';
+import { monitors } from './monitors';
 import { RdpCard } from './RdpCards';
 import { RdpStatsOverlay } from './RdpStatsOverlay';
 
@@ -143,6 +144,27 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
     return () => window.removeEventListener('focus', onWindowFocus);
   });
 
+  // An extra monitor's window (milestone 38) sends its input here: the same keys path
+  // (the Mac's modifiers, the chords Flint keeps, the held keys) and the same pointer.
+  useEffect(() => {
+    if (!ready || !session) return;
+    monitors.setInput(pane.id, {
+      key: (k) => {
+        if (k.down) {
+          const kept = rdpKeptAction(k, os);
+          if (kept) { held.current?.releaseAll(); runAction(kept); return; }
+          held.current?.down(k.code);
+        } else {
+          held.current?.up(k.code);
+        }
+      },
+      pointer: (p) => { api.rdpPointer(session, p).catch(() => {}); },
+      focus: () => { api.rdpClipboardAnnounce(session).catch(() => {}); },
+      blur: () => held.current?.releaseAll(),
+    });
+    return () => monitors.setInput(pane.id, null);
+  }, [ready, session, pane.id, os]);
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     const kept = rdpKeptAction(e.nativeEvent, os);
     if (kept) {
@@ -165,10 +187,14 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
   const pendingMove = useRef<{ x: number; y: number } | null>(null);
   const moveFrame = useRef(0);
   const wheel = useRef(new WheelAccumulator());
+  // Spanning monitors (milestone 38), this canvas shows the primary's part of the
+  // surface: its pointer lands at that part's place.
   const point = (e: React.MouseEvent | React.WheelEvent) => {
     const cv = canvas.current!;
     const r = cv.getBoundingClientRect();
-    return toDesktop(e.clientX - r.left, e.clientY - r.top, r.width, r.height, cv.width, cv.height);
+    const p = toDesktop(e.clientX - r.left, e.clientY - r.top, r.width, r.height, cv.width, cv.height);
+    const o = monitors.mainOffset(pane.id);
+    return { x: p.x + o.x, y: p.y + o.y };
   };
   const flushMove = () => {
     moveFrame.current = 0;

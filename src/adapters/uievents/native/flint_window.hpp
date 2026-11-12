@@ -73,13 +73,22 @@ inline void report(bool on) {
 }
 
 #if defined(__APPLE__) && defined(__OBJC__)
-// Flint has one window; the key or main one, else the first visible one.
+// An extra monitor's window (milestone 38, flint_monitors.hpp): never the main one, and
+// its own full screen is not Flint's.
+inline bool monitor_window(NSWindow* w) {
+    Class c = NSClassFromString(@"FlintMonitorWindow");
+    return w && c && [w isKindOfClass:c];
+}
+
+// Flint's main window; the key or main one, else the first visible one.
 inline NSWindow* main_window() {
     NSWindow* w = [NSApp keyWindow];
+    if (monitor_window(w)) w = nil;
     if (!w) w = [NSApp mainWindow];
+    if (monitor_window(w)) w = nil;
     if (!w) {
         for (NSWindow* c in [NSApp windows]) {
-            if ([c isVisible] && [c canBecomeMainWindow]) { w = c; break; }
+            if (!monitor_window(c) && [c isVisible] && [c canBecomeMainWindow]) { w = c; break; }
         }
     }
     return w;
@@ -175,13 +184,13 @@ inline void install(const cfire::webui::App& app) {
     dispatch_async(dispatch_get_main_queue(), ^{ @autoreleasepool {
         NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
         [nc addObserverForName:NSWindowWillEnterFullScreenNotification object:nil queue:nil
-                    usingBlock:^(NSNotification*) { mac_moving() = true; }];
+                    usingBlock:^(NSNotification* n) { if (!monitor_window(n.object)) mac_moving() = true; }];
         [nc addObserverForName:NSWindowWillExitFullScreenNotification object:nil queue:nil
-                    usingBlock:^(NSNotification*) { mac_moving() = true; }];
+                    usingBlock:^(NSNotification* n) { if (!monitor_window(n.object)) mac_moving() = true; }];
         [nc addObserverForName:NSWindowDidEnterFullScreenNotification object:nil queue:nil
-                    usingBlock:^(NSNotification*) { mac_settled(true); }];
+                    usingBlock:^(NSNotification* n) { if (!monitor_window(n.object)) mac_settled(true); }];
         [nc addObserverForName:NSWindowDidExitFullScreenNotification object:nil queue:nil
-                    usingBlock:^(NSNotification*) { mac_settled(false); }];
+                    usingBlock:^(NSNotification* n) { if (!monitor_window(n.object)) mac_settled(false); }];
     }});
 #endif
 #elif defined(_WIN32)
@@ -253,7 +262,8 @@ inline void set(bool on) {
         GList* tops = gtk_window_list_toplevels();
         for (GList* l = tops; l; l = l->next) {
             GtkWidget* w = GTK_WIDGET(l->data);
-            if (!gtk_widget_get_visible(w)) continue;
+            // An extra monitor's window (milestone 38) keeps its own full screen.
+            if (!gtk_widget_get_visible(w) || g_object_get_data(G_OBJECT(w), "flint-monitor")) continue;
             if (want) gtk_window_fullscreen(GTK_WINDOW(w));
             else gtk_window_unfullscreen(GTK_WINDOW(w));
         }

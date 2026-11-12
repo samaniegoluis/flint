@@ -109,6 +109,12 @@ fn main() {
     app.bind_raw("rdp_key") |params| { return rpc_rdp_key(params, st) }
     app.bind_raw("rdp_pointer") |params| { return rpc_rdp_pointer(params, st) }
     app.bind_raw("rdp_resize") |params| { return rpc_rdp_resize(params) }
+    // Milestone 38: a desktop across monitors (design 22f).
+    app.bind_raw("rdp_span") |params| { return rpc_rdp_span(params, mut ui_state_store, st) }
+    app.bind_raw("monitors_list") |params| { return rpc_monitors_list(ui_state_store) }
+    app.bind_raw("monitors_open") |params| { return rpc_monitors_open(params, st) }
+    app.bind_raw("monitors_close") |params| { return rpc_monitors_close() }
+    app.bind_raw("monitors_send") |params| { return rpc_monitors_send(params) }
     app.bind_raw("rdp_close") |params| { return rpc_rdp_close(params, st) }
     app.bind_raw("rdp_stats") |params| { return rpc_rdp_stats(params) }
     app.bind_raw("rdp_graphics") |params| { return rpc_rdp_graphics(params, st) }
@@ -375,6 +381,8 @@ fn main() {
         install_app_menu("Flint")
         // Full screen (milestone 37): the page hears every change as `window:fullscreen`.
         window_fullscreen_install(app)
+        // The extra monitors' windows (milestone 38) load the same page folder.
+        monitors_install(app, ui_dir)
         // The tray (milestone 14): closing the window keeps Flint serving, with the
         // window locked. The headless end-to-end run keeps the old close.
         if !e2e {

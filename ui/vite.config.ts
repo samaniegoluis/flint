@@ -12,6 +12,10 @@ export default defineConfig({
     emptyOutDir: true,
     assetsInlineLimit: 0,
     chunkSizeWarningLimit: 1200,
+    // Milestone 38: the extra monitors' windows load their own small page.
+    rollupOptions: {
+      input: { main: 'index.html', monitor: 'monitor.html' },
+    },
     // macOS 12 (the app's minimum, Safari 15) and WebKitGTK run ES2022. Vite's
     // default target (Safari 14) lowers `||=`, and esbuild 0.25 lowers xterm.js's
     // `(r ||= {})` in requestMode into an assignment to an undeclared variable: every
