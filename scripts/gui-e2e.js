@@ -1705,6 +1705,25 @@
         };
         const drawnWith = q('canvas.rdp-canvas', activeRegion()).dataset.renderer;
 
+        // Settle: after a change of size or monitors, Windows in Compatible (bitmap updates)
+        // sends nothing for a few seconds while it reactivates the session: 3 s for one
+        // monitor, 4 to more than 13 s for two, measured at the adapter (milestone 38); the
+        // graphics pipeline answers at once. A fixed rest left the first presses inside that
+        // window ("no frame after the Windows key", p95 4 s). The Start menu is tried until
+        // it answers within a second twice in a row, and the time it took is reported.
+        await setStep(`rdpbench: ${mode}: settle`);
+        const settleFrom = performance.now();
+        for (let ok = 0; ok < 2; ) {
+          if (performance.now() - settleFrom > 45000) throw new Error('the desktop did not answer the Windows key within 45 s');
+          const t = performance.now();
+          await tap('MetaLeft');
+          await rest(1000);
+          ok = meter.firstAfter(t) !== null ? ok + 1 : 0;
+          await tap('Escape');
+          await rest(800);
+        }
+        const settleMs = Math.round(performance.now() - settleFrom);
+
         // Start-menu latency: the first frame drawn after the key.
         await setStep(`rdpbench: ${mode}: Start menu latency`);
         const lat = [];
@@ -1746,7 +1765,7 @@
         await rest(5000);
         const i1 = await sample();
         const idleTo = Date.now();
-        bench({ mode, monitors: BMONS || 'window', size, pipeline: b.core.pipeline, codec: b.core.codec, h264: b.core.h264, renderer: drawnWith,
+        bench({ mode, monitors: BMONS || 'window', size, settleMs, pipeline: b.core.pipeline, codec: b.core.codec, h264: b.core.h264, renderer: drawnWith,
           latency: { median: Math.round(median(lat)), p95: Math.round(p95(lat)), from: latFrom, to: latTo },
           animation: { ...rates(a, b), from: animFrom, to: animTo }, idle: { ...rates(i0, i1), from: idleFrom, to: idleTo } });
         // Automatic picks by the round trip (milestone 35): either is right, as long as it says which.

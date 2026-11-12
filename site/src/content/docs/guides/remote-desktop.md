@@ -160,6 +160,11 @@ Windows needs a Pro or Enterprise edition to show a desktop on more than one mon
 Two monitors carry about twice the pixels of one: on a slow link, *Automatic* or
 *Compatible* matters more there (see Graphics).
 
+In *Compatible*, Windows takes a few seconds to answer after the desktop changes size or
+monitors (going full screen, checking a monitor): about 3 seconds for one monitor, 5 to 15
+for two, while it sets the session up again. The picture holds still meanwhile; the
+graphics pipeline (*Automatic* away from the local network, or *Pipeline*) answers at once.
+
 ## When the connection drops
 
 A tab whose connection drops keeps its last picture, greyed, under **Connection lost**,
