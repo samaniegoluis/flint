@@ -235,6 +235,8 @@ test "a real Windows host resizes in place through Display Control" {
     d := try rd.rd_open("t-live", live_target(fp), 20000)
     defer rd.rd_close("t-live")
     assert_eq(d.width, 1024)
+    // Signed in through NLA, FreeRDP's backup of the password was wiped too (M36).
+    assert(creds_wiped("t-live"))
     assert(wait_frame("t-live").len() > 16, "no frame in 10 s")
     // The channel opens a moment after the desktop.
     time.sleep_ms(3000)
