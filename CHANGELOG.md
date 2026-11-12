@@ -4,6 +4,20 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.4.0 — 2026-11-12
+
+A remote desktop can take the whole screen. Full screen, from the RDP toolbar, the tab's menu, the palette or ⌃⌘F (Ctrl+Alt+Enter on Linux and Windows), hides Flint's chrome and gives Windows the screen's size; on macOS it is the system's own full screen in a Space of its own. A bar drops from the top edge to leave or disconnect, and can be pinned. The toolbar now shows the desktop's real size after a resize.
+
+### Added
+
+- **rdp:** An immersive full-screen RDP tab
+
+### Fixed
+
+- **rdp:** The toolbar shows the desktop's size after a resize, not the size it connected at
+- **rdp:** Full screen survives leaving and entering again during macOS's animation
+
+
 ## 0.3.1 — 2026-11-12
 
 A security pass over the remote desktop. Flint now refuses the old Standard RDP Security, which let a machine on the network skip the certificate check and read the password that signs you in. Passwords, keys and passphrases opened from the vault are wiped from memory as soon as SSH or RDP has them, and so are the keys derived from the master password. The channel that carries the desktop to the window is tighter, and a server that only offers the old security says so plainly.
