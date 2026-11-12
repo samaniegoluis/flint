@@ -55,7 +55,9 @@ is `docs/build-log.md` plus `git log`.
    same commit if its place is clear: an existing section it belongs to, a "What's next"
    item that shipped and must leave the list. If it is not clear (a new section, replacing
    something, whether it earns a place at all), ask the owner at plan time. A change to a
-   screen in the landing's app screenshots re-runs `npm run shots:gui` in `site/`.
+   screen in the landing's app screenshots re-runs `npm run shots:gui` in `site/`, and a
+   change to what the landing's app video shows (the palette, a terminal tab, split panes,
+   the lock screen) re-runs `npm run shots:video` (D-086).
 7. **Nothing lives only in chat.** A new feature idea goes into `ROADMAP.md`. A decision that
    is expensive to reverse goes into `docs/decisions.md`.
 8. **Stay in scope.** Work outside the current milestone goes into the roadmap, not into the
