@@ -19,6 +19,7 @@
 #pragma once
 #include "core/webui.hpp"
 #include <atomic>
+#include <cstdio>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -83,6 +84,49 @@ inline NSWindow* main_window() {
     }
     return w;
 }
+
+// macOS animates into and out of full screen, and ignores -toggleFullScreen: while it
+// does: a request made then (leave, then enter again at once) would be lost. So the
+// state asked for is kept and applied once the move under way ends. UI thread only.
+inline bool& mac_moving() {
+    static bool moving = false;
+    return moving;
+}
+
+inline int& mac_wanted() {
+    static int wanted = -1;  // -1 nothing asked, 0 leave, 1 enter
+    return wanted;
+}
+
+inline void mac_apply() {
+    if (mac_moving() || mac_wanted() < 0) return;
+    NSWindow* w = main_window();
+    if (!w) return;
+    bool on = mac_wanted() == 1;
+    mac_wanted() = -1;
+    [w setCollectionBehavior:[w collectionBehavior] | NSWindowCollectionBehaviorFullScreenPrimary];
+    bool now = ([w styleMask] & NSWindowStyleMaskFullScreen) != 0;
+    if (!now) {
+        // Measured outside full screen, where the title bar has its real height.
+        CGFloat title = NSHeight([w frame]) - NSHeight([w contentLayoutRect]);
+        CGFloat menu = [[NSApp mainMenu] menuBarHeight];
+        if (menu <= 0) menu = 24;
+        top_inset().store(static_cast<int>(menu + (title > 0 ? title : 0)));
+    }
+    if (now != on) {
+        fprintf(stderr, "flint-gui: full screen %s\n", on ? "entering" : "leaving");
+        [w toggleFullScreen:nil];
+    }
+}
+
+// After a move ends: AppKit still counts the window as moving inside the Did…
+// notification and drops a toggle made there, so a waiting request goes on the next
+// turn of the run loop.
+inline void mac_settled(bool on) {
+    mac_moving() = false;
+    report(on);
+    dispatch_async(dispatch_get_main_queue(), ^{ mac_apply(); });
+}
 #elif defined(_WIN32)
 struct WinSaved {
     bool saved = false;
@@ -130,10 +174,14 @@ inline void install(const cfire::webui::App& app) {
 #if defined(__OBJC__)
     dispatch_async(dispatch_get_main_queue(), ^{ @autoreleasepool {
         NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+        [nc addObserverForName:NSWindowWillEnterFullScreenNotification object:nil queue:nil
+                    usingBlock:^(NSNotification*) { mac_moving() = true; }];
+        [nc addObserverForName:NSWindowWillExitFullScreenNotification object:nil queue:nil
+                    usingBlock:^(NSNotification*) { mac_moving() = true; }];
         [nc addObserverForName:NSWindowDidEnterFullScreenNotification object:nil queue:nil
-                    usingBlock:^(NSNotification*) { report(true); }];
+                    usingBlock:^(NSNotification*) { mac_settled(true); }];
         [nc addObserverForName:NSWindowDidExitFullScreenNotification object:nil queue:nil
-                    usingBlock:^(NSNotification*) { report(false); }];
+                    usingBlock:^(NSNotification*) { mac_settled(false); }];
     }});
 #endif
 #elif defined(_WIN32)
@@ -171,18 +219,8 @@ inline void set(bool on) {
 #if defined(__APPLE__)
 #if defined(__OBJC__)
     dispatch_async(dispatch_get_main_queue(), ^{ @autoreleasepool {
-        NSWindow* w = main_window();
-        if (!w) return;
-        [w setCollectionBehavior:[w collectionBehavior] | NSWindowCollectionBehaviorFullScreenPrimary];
-        bool now = ([w styleMask] & NSWindowStyleMaskFullScreen) != 0;
-        if (!now) {
-            // Measured outside full screen, where the title bar has its real height.
-            CGFloat title = NSHeight([w frame]) - NSHeight([w contentLayoutRect]);
-            CGFloat menu = [[NSApp mainMenu] menuBarHeight];
-            if (menu <= 0) menu = 24;
-            top_inset().store(static_cast<int>(menu + (title > 0 ? title : 0)));
-        }
-        if (now != on) [w toggleFullScreen:nil];
+        mac_wanted() = on ? 1 : 0;
+        mac_apply();
     }});
 #endif
 #elif defined(_WIN32)

@@ -44,6 +44,8 @@
   const RUN = '@@RUN@@';
   // webgl only: '1' when a person hides the window for the loss (FLINT_E2E_WEBGL_COVER).
   const COVER = '@@COVER@@';
+  // fullscreen only: '1' when the window really goes full screen (FLINT_E2E_NATIVE_FS).
+  const NATIVEFS = '@@NATIVEFS@@';
   const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'rdpbench'];
   // The benchmark's host (rdpbench only; '' otherwise).
   const BHOST = '@@BHOST@@';
@@ -402,7 +404,14 @@
         const a = q('.rdp-area', activeRegion()).getBoundingClientRect();
         return Math.abs(w - Math.floor(a.width)) <= 2 && Math.abs(h - Math.floor(a.height)) <= 2;
       };
+      // Full screen on macOS covers the screen but for a notch's band (MacBooks with one).
+      const coversScreen = () => window.innerWidth === screen.width && window.innerHeight >= screen.height - 40;
       const hover = (el, on) => el.dispatchEvent(new MouseEvent(on ? 'mouseover' : 'mouseout', { bubbles: true, relatedTarget: null }));
+      // A timeline of what the window says, printed with every step (rule 9).
+      {
+        const f0 = performance.now();
+        window.runtime.EventsOn('window:fullscreen', (e) => log(`diag: window:fullscreen ${JSON.stringify(e)} at ${Math.round(performance.now() - f0)} ms, window ${window.innerWidth}x${window.innerHeight}, immersive ${immersive()} (step: ${step})`));
+      }
 
       await setStep('fullscreen: an RDP tab on the test server');
       await click('.side-head .icon-btn[aria-label^="New host"]');
@@ -443,11 +452,24 @@
       await check(note.textContent.includes('Point at the top edge') && note.textContent.includes(chordText), `the first time, a note says how to leave (${note.textContent.trim()})`);
       await check(!!q('[data-fs-tab]') && !q('[data-fs-bar]'), 'the bar starts folded to a tab');
 
+      if (NATIVEFS === '1') {
+        // The window itself: the screen's size once macOS has moved it to its Space.
+        const full = await waitFor(() => coversScreen(), 'the window at the screen\'s size', 10000).catch(() => false);
+        log(`diag: native: window ${window.innerWidth}x${window.innerHeight}, screen ${screen.width}x${screen.height}`);
+        await check(full, `the window is full screen at the screen's size (${window.innerWidth}x${window.innerHeight} of ${screen.width}x${screen.height})`);
+        await waitFor(() => fitsArea(), 'the desktop at the screen size', 30000);
+        await check(true, `the remote desktop takes the screen's size (${canvas().dataset.desktop})`);
+      }
       await setStep('fullscreen: the bar drops from the top edge');
       hover(q('[data-fs-edge]'), true);
       const bar = await waitFor(() => q('[data-fs-bar]'), 'the connection bar');
       await check(bar.textContent.includes('rdp-full') && bar.textContent.includes(canvas().dataset.desktop.replace('x', ' × ')), `the bar names the host and the desktop's size (${bar.textContent.trim().slice(0, 60)})`);
       await check(bar.textContent.includes('Exit full screen') && bar.textContent.includes(chordText) && bar.textContent.includes('Disconnect'), 'the bar offers Exit full screen with its chord, and Disconnect');
+      if (NATIVEFS === '1') {
+        const t = parseInt(bar.style.top, 10);
+        log(`diag: native: the bar drops at ${bar.style.top}`);
+        await check(t > 0, `on macOS the bar drops below the menu bar and title bar (${bar.style.top})`);
+      }
       hover(q('[data-fs-edge]'), false);
       await waitFor(() => !q('[data-fs-bar]'), 'the bar gone after the pointer left', 3000);
       await check(true, 'the bar goes once the pointer leaves');
@@ -463,6 +485,10 @@
       hover(q('[data-fs-edge]'), true);
       await click('[data-fs-exit]');
       await waitFor(() => !immersive(), 'the page back in the window');
+      if (NATIVEFS === '1') {
+        const back = await waitFor(() => !coversScreen(), 'the window back to its size', 10000).catch(() => false);
+        await check(back, `the window leaves full screen (${window.innerWidth}x${window.innerHeight})`);
+      }
       for (const sel of ['.titlebar', '.rail', '.statusbar', '.tabbar', '[data-rdp-toolbar]']) {
         await check(!hiddenEl(sel), `leaving full screen shows ${sel} again`);
       }
@@ -518,11 +544,15 @@
       await check(menu.textContent.includes('Full screen') && menu.textContent.includes(chordText) && menu.textContent.includes('Close tab'), 'the tab menu offers Full screen with its chord');
       await click('[data-tab-menu-item="fullscreen"]');
       await waitFor(() => immersive(), 'the page immersive from the tab menu');
+      const screenSized = coversScreen;
+      if (NATIVEFS === '1') await waitFor(() => screenSized(), 'the window full screen from the tab menu', 10000);
       await window.backend.e2e_window_fullscreen({ on: false });
       await waitFor(() => !immersive(), 'the page back when the OS left full screen');
       await check(!hiddenEl('.titlebar'), 'leaving full screen another way (the green button) brings Flint back');
+      if (NATIVEFS === '1') await waitFor(() => !screenSized(), 'the window out of full screen', 10000);
       await window.backend.e2e_window_fullscreen({ on: true });
-      await waitFor(() => immersive(), 'the page immersive when the OS entered full screen');
+      await waitFor(() => immersive(), 'the page immersive when the OS entered full screen', 10000);
+      if (NATIVEFS === '1') await waitFor(() => screenSized(), 'the window full screen again', 10000);
       await check(true, 'entering full screen another way on an RDP tab makes it immersive, as Windows App');
 
       await setStep('fullscreen: the connection lost keeps full screen, the bar open');

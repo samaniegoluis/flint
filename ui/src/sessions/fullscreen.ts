@@ -24,6 +24,8 @@ export interface FullScreenBackend {
 export class FullScreenStore {
   private snap: FullScreenSnapshot = { window: false, tab: null, top: 0 };
   private listeners = new Set<() => void>();
+  /** A request on its way to the window: an older change heard meanwhile is stale. */
+  private wanted: boolean | null = null;
 
   constructor(private backend: FullScreenBackend) {}
 
@@ -43,12 +45,14 @@ export class FullScreenStore {
 
   /** Full screen for RDP tab `tab`: the page goes immersive at once, the window follows. */
   enter(tab: string) {
+    this.wanted = true;
     this.set({ tab });
-    this.backend.set(true).catch(() => this.set({ tab: null }));
+    this.backend.set(true).catch(() => { this.wanted = null; this.set({ tab: null }); });
   }
 
   /** Leaves full screen: the window and the immersive page. */
   leave() {
+    this.wanted = false;
     this.set({ tab: null });
     this.backend.set(false).catch(() => {});
   }
@@ -64,6 +68,12 @@ export class FullScreenStore {
    * tab shown, immersive, as Windows App does.
    */
   heard(on: boolean, rdpTab: string | null, top = 0) {
+    if (this.wanted !== null) {
+      // The end of an earlier move (macOS animates): the window follows the request
+      // once it settles, so only the answer to the request counts.
+      if (on !== this.wanted) { this.set({ window: on }); return; }
+      this.wanted = null;
+    }
     if (!on) this.set({ window: false, tab: null });
     else this.set({ window: true, tab: this.snap.tab ?? rdpTab, top });
   }

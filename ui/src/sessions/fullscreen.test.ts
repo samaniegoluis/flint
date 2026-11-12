@@ -61,4 +61,21 @@ describe('full screen (milestone 37)', () => {
     await Promise.resolve(); await Promise.resolve();
     expect(f.s.get().tab).toBeNull();
   });
+
+  it('keeps a new request when the end of an earlier move is heard (macOS animates)', () => {
+    const { s, calls } = store();
+    s.enter('t1');
+    s.heard(true, 't1');
+    s.leave();
+    s.enter('t1');
+    // The exit asked first ends now; the window enters again after it.
+    s.heard(false, 't1');
+    expect(s.get().tab).toBe('t1');
+    s.heard(true, 't1');
+    expect(s.get()).toMatchObject({ window: true, tab: 't1' });
+    expect(calls).toEqual([true, false, true]);
+    // With nothing asked, the OS leaving still ends it.
+    s.heard(false, 't1');
+    expect(s.get().tab).toBeNull();
+  });
 });

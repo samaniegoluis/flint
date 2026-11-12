@@ -52,6 +52,12 @@ fn e2e_visible() -> bool {
     return os.getenv("FLINT_GUI_E2E_VISIBLE") == "1"
 }
 
+// The end-to-end run with the OS's real full screen (milestone 37): only a visible
+// window on macOS can go full screen, so it is asked for (FLINT_E2E_NATIVE_FS=1).
+fn e2e_native_fullscreen() -> bool {
+    return os.getenv("FLINT_E2E_NATIVE_FS") == "1"
+}
+
 // How often the visible run's cap checks the clock and whether the app is quitting.
 E2E_CAP_TICK_MS: i64 = 200
 

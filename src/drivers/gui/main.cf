@@ -256,7 +256,12 @@ fn main() {
         // green button, the system's own keys), milestone 37.
         app.bind_raw("e2e_window_fullscreen") |params| {
             req := try parse_req[FullscreenReq](params)
-            window_fullscreen_inject(req.on)
+            // With the real full screen, the window itself moves, as the green button does.
+            if e2e_native_fullscreen() {
+                window_fullscreen_set(req.on)
+            } else {
+                window_fullscreen_inject(req.on)
+            }
             return ok_json()
         }
         // Stands in for the OS's screen lock and sleep (D-042).

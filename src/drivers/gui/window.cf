@@ -102,7 +102,7 @@ fn rpc_app_quit(mut app: webui.App) -> str! {
 fn rpc_window_fullscreen(params: str, e2e: bool) -> str! {
     req := try parse_req[FullscreenReq](params)
     // The headless run's window is hidden and cannot go full screen (CF-111).
-    if e2e {
+    if e2e && !e2e_native_fullscreen() {
         window_fullscreen_inject(req.on)
     } else {
         window_fullscreen_set(req.on)
