@@ -1,7 +1,9 @@
 # Flint on Windows: port guide
 
 What Flint itself needed to build and run on Windows, worked out on an isolated branch
-(WSL2, 2026-11-09). **The branch is not merged and not pushed.** Since `main` moved to
+(WSL2, 2026-11-09). **The branch is never merged into `main`**; since 2026-11-11 it is
+pushed to `origin` so cfire's author can read it (private repository, read access).
+Since `main` moved to
 cfire `c5b1d4b` (D-060), the branch is `main` plus the Windows port and nothing else:
 `windows-port-2` = `origin/main` (`83557b0`) with `windows-port` merged in. When cfire ships
 real Windows support, that diff is the port; this guide is its checklist and the cfire side
@@ -12,6 +14,26 @@ by merging `main` into it now and then.
 |---|---|
 | [`cfire-windows.md`](cfire-windows.md) + `cfire-windows/patches/` | For cfire's author: what cfire lacked on Windows, with patches |
 | This file | For us: what Flint had to change, and the lessons |
+
+## For cfire's author: start here
+
+This branch is Flint's `main` plus what it took to build and run Flint on Windows with
+today's cfire (`c5b1d4b`). It is shared to show what cfire needs, not to be merged.
+
+- **The goal:** a cfire with Windows support that makes this branch's workarounds
+  unnecessary: patches 0001-0009 ([`cfire-windows/patches/`](cfire-windows/patches/))
+  and the shims tagged `// CFIRE-UPSTREAM:` and the `#if defined(_WIN32)` code in
+  `src/adapters/*/native/` that exists only because cfire lacks something.
+- **What cfire lacks on Windows:** [`cfire-windows.md`](cfire-windows.md), one entry per
+  gap (W-01..W-17) with symptom, cause, repro and patch. W-16 and W-17 came after the
+  2026-11-09 package.
+- **What Flint changed, and how it is checked:** this guide, "What Flint changed" and
+  "Verified on Windows"; RDP in [`rdp-windows.md`](rdp-windows.md). The checks run from
+  WSL2 against Windows 11 (`windows/*.sh`).
+- **The rule for the branch:** `main` + Windows only. `main` is merged into it as it
+  moves; nothing else lands here, and it never goes into `main`.
+- **See the whole port at once:** `git diff main...windows-port-2`, or GitHub's compare
+  view `main...windows-port-2`.
 
 ## Resume here
 
@@ -127,7 +149,8 @@ State on 2026-11-11 (branch `windows-port-2`, `git log` for the latest commit):
 5. Update this guide and `cfire-windows.md`, refresh the bundles, reinstall in
    `D:\Programas\Flint`, and ask the owner for the person checks above.
 
-Rules that still hold: the branch stays local (no push, no merge into `main`); one
+Rules that still hold: no merge into `main` (the branch is pushed to `origin` only for
+cfire's author to read; push again after each round); one
 commit per step; test servers start outside the Bash sandbox; never two cfire builds of
 the same package at once.
 
@@ -135,7 +158,7 @@ the same package at once.
 
 | What | Where |
 |---|---|
-| Flint worktree | `~/Personal/Proyectos/cfire/flint-windows`, branch `windows-port-2` (local only). `windows-port` is the history before the merge, kept for reference |
+| Flint worktree | `~/Personal/Proyectos/cfire/flint-windows`, branch `windows-port-2` (pushed to `origin` for reading, never merged into `main`). `windows-port` is the history before the merge, kept for reference |
 | cfire clone | `~/Personal/Proyectos/cfire/cfire-windows` |
 | cfire (patches and Flint) | branch `windows-fixes` = `c5b1d4b` (the commit `main` pins) + patches 0001-0009, installed by hand in `~/.local` (`bin/cfire`, `share/cfire`) |
 | Toolchain | llvm-mingw in `~/.local/opt/llvm-mingw-*`, MSYS2 CLANG64 libraries + WebView2 SDK in `~/.local/opt/win-sysroot` (`windows/bin/sysroot.sh`) |
