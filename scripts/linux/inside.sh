@@ -4,7 +4,8 @@
 #
 # FLINT_LINUX_STEPS picks the steps after the build (comma-separated: tests, cli, gui,
 # serve; default all). FLINT_LINUX_SUITES narrows `tests` to some suites (space-separated
-# paths, default src).
+# paths, default src). FLINT_LINUX_REPEAT="<run> <N>" makes the `gui` step run one
+# gui-e2e run N times with scripts/repeat.sh instead (CLAUDE.md rule 9).
 set -euo pipefail
 steps=",${FLINT_LINUX_STEPS:-tests,cli,gui,serve},"
 want() { [[ "$steps" == *",$1,"* ]]; }
@@ -44,7 +45,11 @@ grep -q "keychain cache: False" /tmp/e2e.log
 fi
 # The desktop app's end-to-end run opens the real GTK window under Xvfb
 # (scripts/gui-e2e.sh).
-if want gui; then
+if want gui && [[ -n "${FLINT_LINUX_REPEAT:-}" ]]; then
+echo "== one desktop run repeated under Xvfb: $FLINT_LINUX_REPEAT"
+# shellcheck disable=SC2086
+PATH="$PATH:/usr/sbin" scripts/repeat.sh $FLINT_LINUX_REPEAT
+elif want gui; then
 echo "== desktop app end-to-end under Xvfb"
 PATH="$PATH:/usr/sbin" scripts/gui-e2e.sh | tee /tmp/gui-e2e.log
 grep -q "^gui-e2e: pass" /tmp/gui-e2e.log

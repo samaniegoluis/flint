@@ -62,13 +62,23 @@ is `docs/build-log.md` plus `git log`.
    is expensive to reverse goes into `docs/decisions.md`.
 8. **Stay in scope.** Work outside the current milestone goes into the roadmap, not into the
    diff.
-9. **Isolate an unexplained failure before the second attempt.** A test that fails or
-   freezes with no known cause is never chased by rerunning a whole suite. Run it alone
-   (`FLINT_E2E_ONLY=<step>` for the e2e suites, a name filter for `cfire test`) in a loop
-   of N runs that prints the rate (`scripts/repeat.sh <run> <N>`; on macOS the runs use the real window, D-068), and
-   iterate there. A fix counts when that loop shows 0 failures in N runs; then the step
-   goes back into its run and the full suite runs once to confirm. The measured rate goes
-   into the failure's ROADMAP entry (owner, 2026-11-10).
+9. **Understand an unexplained failure; never accept it by repetition** (owner,
+   2026-11-10, sharpened 2026-11-12). A test that fails or freezes with no known cause:
+   1. **Read before rerunning.** The failure's own log first: the last step, the last
+      call to the backend, the app's stderr, the timings. Never rerun a whole suite to see
+      whether it happens again, and never take "passed k of N" as a verdict.
+   2. **One diagnosis pass.** If the log does not explain it, make the next failure
+      explain itself: a timeline of the step (`diag:` lines, as the `webgl` run of M35b),
+      in a run small enough to take seconds (`FLINT_E2E_ONLY=<run>`, a name filter
+      for `cfire test`, or the step split into its own run).
+   3. **Then decide with the owner.** Fix it if it is Flint's bug; if it is the test's
+      (focus, a covered window, timing left by the step before), rewrite it: at a lower
+      layer that is deterministic (an adapter or use-case test) with a light check of
+      the wiring left in the e2e; or remove it with a ROADMAP note saying why it failed.
+      A check that sometimes fails stays only with the owner's yes and a note of why.
+   `scripts/repeat.sh <run> <N>` is a tool for two questions only, with a small N: whether
+   a failure is deterministic (likely the change at hand) or intermittent, and whether a
+   fix whose cause is known holds. What was found goes into the failure's ROADMAP entry.
 10. **A release at each milestone's close** (D-077). After `docs: close milestone NN`, run
     `scripts/release.sh` (a dry run: the next version and its changelog section), write a
     short summary of the version for a person, and run it again with `--apply --summary`.
