@@ -9,6 +9,8 @@
 //   ← { type: 'state', state: 'lost' | 'rearranging' }   22f3b, 22f3c
 //   → { type: 'key' | 'pointer' | 'focus' | 'blur', … }   input, sent on by the main page
 //   ← { type: 'probe' } → { type: 'probe', … }   what is drawn, for gui-e2e
+//   ← { type: 'e2e-input', … }   gui-e2e moves the pointer or presses a key here, as a
+//     person would (the input then takes the window's own path)
 
 import '../styles/fonts.css';
 import '../styles/tokens.css';
@@ -106,6 +108,13 @@ window.__flint_monitor = (msg) => {
     void read(Number(msg.port), String(msg.token), Number(msg.view), reading);
   } else if (msg.type === 'state') {
     setState(String(msg.state));
+  } else if (msg.type === 'e2e-input') {
+    if (msg.key) {
+      for (const down of [true, false]) cv.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code: String(msg.key), key: 'a', bubbles: true, cancelable: true }));
+    } else {
+      const r = cv.getBoundingClientRect();
+      cv.dispatchEvent(new MouseEvent('mousemove', { clientX: r.left + Number(msg.x), clientY: r.top + Number(msg.y), bubbles: true }));
+    }
   } else if (msg.type === 'probe') {
     // What is drawn, for gui-e2e: the canvas's size, the frames, and a few pixels.
     let pixels: number[] = [];

@@ -249,12 +249,127 @@ fn desktop_layout(locals: []LocalMonitor, picks: []MonitorPick, main_id: str, ma
         res[i].x = res[i].x - ox
         res[i].y = res[i].y - oy
     }
-    try check_rdp_layout(res)
+    packed := pack_layout(res)
+    try check_rdp_layout(packed)
+    return packed
+}
+
+// Two monitors share an edge: they touch along one axis and overlap along the other.
+fn rects_touch(a: RdpMonitor, b: RdpMonitor) -> bool {
+    along_y := a.y < b.y + b.height && b.y < a.y + a.height
+    along_x := a.x < b.x + b.width && b.x < a.x + a.width
+    return (along_y && (a.x + a.width == b.x || b.x + b.width == a.x)) || (along_x && (a.y + a.height == b.y || b.y + b.height == a.y))
+}
+
+// The gap between two monitors along each axis (0 where they overlap or touch).
+fn gap_x(a: RdpMonitor, b: RdpMonitor) -> i64 {
+    return max_i64(0, max_i64(b.x - (a.x + a.width), a.x - (b.x + b.width)))
+}
+
+fn gap_y(a: RdpMonitor, b: RdpMonitor) -> i64 {
+    return max_i64(0, max_i64(b.y - (a.y + a.height), a.y - (b.y + b.height)))
+}
+
+// Closes the gaps RDP refuses (FreeRDP checks it before connecting, MS-RDPBCGR
+// 2.2.1.3.6.1): every monitor must touch another, all in one group. A window smaller
+// than its monitor (the notch's band, a size made even) leaves a gap where the monitors
+// themselves touch. The primary stays; each other monitor, nearest first, moves against
+// the nearest one already placed, across the gap between them, and slides along that
+// edge only as far as needed for the two to share part of it.
+fn pack_layout(ms: []RdpMonitor) -> []RdpMonitor {
+    mut res := ms
+    if res.len() < 2 {
+        return res
+    }
+    mut placed: []bool = []
+    for i in 0..res.len() {
+        placed.push(i == 0)
+    }
+    for round in 1..res.len() {
+        // The unplaced monitor nearest to a placed one, and that one.
+        mut best := -1
+        mut to := -1
+        mut best_d: i64 = 0
+        for i in 0..res.len() {
+            if placed[i] {
+                continue
+            }
+            for j in 0..res.len() {
+                if !placed[j] {
+                    continue
+                }
+                d := gap_x(res[i], res[j]) + gap_y(res[i], res[j])
+                if best < 0 || d < best_d {
+                    best = i64(i)
+                    to = i64(j)
+                    best_d = d
+                }
+            }
+        }
+        bi := usize(best)
+        p := res[usize(to)]
+        mut m := res[bi]
+        gx := gap_x(m, p)
+        gy := gap_y(m, p)
+        // Across the axis with a gap (the larger one when both have: a diagonal).
+        if gx > 0 && (gy == 0 || gx >= gy) {
+            if m.x >= p.x + p.width {
+                m.x = p.x + p.width
+            } else {
+                m.x = p.x - m.width
+            }
+            // Then along the edge, until they share some of it.
+            m.y = min_i64(max_i64(m.y, p.y - m.height + 1), p.y + p.height - 1)
+        } else if gy > 0 {
+            if m.y >= p.y + p.height {
+                m.y = p.y + p.height
+            } else {
+                m.y = p.y - m.height
+            }
+            m.x = min_i64(max_i64(m.x, p.x - m.width + 1), p.x + p.width - 1)
+        }
+        res[bi] = m
+        placed[bi] = true
+    }
     return res
 }
 
+// Whether every monitor of a layout is reached from the first through shared edges.
+fn layout_connected(ms: []RdpMonitor) -> bool {
+    if ms.len() < 2 {
+        return true
+    }
+    mut seen: []bool = []
+    for i in 0..ms.len() {
+        seen.push(i == 0)
+    }
+    mut grew := true
+    for grew {
+        grew = false
+        for i in 0..ms.len() {
+            if seen[i] {
+                continue
+            }
+            for j in 0..ms.len() {
+                if seen[j] && rects_touch(ms[i], ms[j]) {
+                    seen[i] = true
+                    grew = true
+                    break
+                }
+            }
+        }
+    }
+    for v in seen {
+        if !v {
+            return false
+        }
+    }
+    return true
+}
+
 // A layout RDP accepts: 1 to 16 monitors, the first the primary at 0,0 and the only
-// one, every size one Display Control takes, none overlapping another.
+// one, every size one Display Control takes, none overlapping another, and all joined
+// by shared edges with no gap.
 fn check_rdp_layout(ms: []RdpMonitor) -> void! {
     if ms.len() == 0 || i64(ms.len()) > RDP_MAX_MONITORS {
         return error(coded(ERR_INVALID, "a layout has 1 to {RDP_MAX_MONITORS} monitors"))
@@ -274,6 +389,9 @@ fn check_rdp_layout(ms: []RdpMonitor) -> void! {
                 return error(coded(ERR_INVALID, "two monitors of the layout overlap"))
             }
         }
+    }
+    if !layout_connected(ms) {
+        return error(coded(ERR_INVALID, "the monitors of a layout must touch, with no gap"))
     }
     bounds := layout_bounds(ms)
     if bounds.width > 32766 || bounds.height > 32766 {
@@ -427,8 +545,9 @@ test "a window smaller than its monitor keeps to the monitor's bottom" {
     l := try desktop_layout(owner_desk(), picks, "3", 2)
     assert_eq(l[0].height, 949)
     assert_eq(l[1].x, -524)
-    // The landscape sits right above the laptop's whole frame: 1440 + the 33 kept.
-    assert_eq(l[1].y, -1473)
+    // The landscape sits right on top of the laptop's window: the notch's 33 points
+    // would be a gap, which RDP refuses.
+    assert_eq(l[1].y, -1440)
     try check_rdp_layout(l)
 }
 
@@ -441,7 +560,27 @@ test "an odd width is made even and a measured size never exceeds the frame" {
     l := try desktop_layout(ms, picks, "a", 2)
     assert_eq(l[0].width, 1366)
     assert_eq(l[0].height, 768)
-    assert_eq(l[1].x, 1367)
+    // The pixel lost to an even width is not left as a gap.
+    assert_eq(l[1].x, 1366)
+}
+
+test "a main window smaller than its monitor leaves no gap" {
+    // gui-e2e's window: 1280x800 on a 2560x1440 monitor, the laptop below.
+    picks: []MonitorPick = [MonitorPick{ id: "1", width: 1280, height: 800 }, MonitorPick{ id: "3", width: 1512, height: 949 }]
+    l := try desktop_layout(owner_desk(), picks, "1", 2)
+    assert_eq(l[1].y, 800)
+    assert(l[1].x < 1280)
+    assert(layout_connected(l))
+    // Beside it, a monitor out of reach along the edge slides until they share some.
+    far: []RdpMonitor = [RdpMonitor{ local_id: "a", x: 0, y: 0, width: 800, height: 600, primary: true }, RdpMonitor{ local_id: "b", x: 900, y: 700, width: 400, height: 400, primary: false }]
+    pk := pack_layout(far)
+    assert_eq(pk[1].x, 800)
+    assert_eq(pk[1].y, 599)
+    assert(layout_connected(pk))
+    gapped: []RdpMonitor = [RdpMonitor{ local_id: "a", x: 0, y: 0, width: 800, height: 600, primary: true }, RdpMonitor{ local_id: "b", x: 801, y: 0, width: 400, height: 400, primary: false }]
+    mut msg := ""
+    check_rdp_layout(gapped) or err { msg = "{err.message()}" }
+    assert(msg.contains("gap"), msg)
 }
 
 test "the cap, a duplicate, an unknown monitor and a missing main are refused" {
@@ -534,6 +673,7 @@ fuzz "a layout from any two side-by-side monitors is one RDP accepts" |w1: i64, 
         return
     }
     try check_rdp_layout(l)
+    assert(layout_connected(l))
     crops := layout_crops(l)
     b2 := layout_bounds(l)
     for c in crops {

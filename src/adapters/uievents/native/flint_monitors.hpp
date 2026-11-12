@@ -1,4 +1,4 @@
-// CFIRE-UPSTREAM: CF-126, CF-127
+// CFIRE-UPSTREAM: CF-126, CF-127, CF-128
 //
 // This computer's monitors, and one window per extra monitor for a remote desktop that
 // spans them (milestone 38, D-089). `ext:webui` has one window per App and lists no
@@ -41,6 +41,7 @@
 #import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import <objc/runtime.h>
 #endif
 #elif defined(_WIN32)
 #include <windows.h>
@@ -165,7 +166,7 @@ inline const char* mime_of(const std::string& p) {
 - (void)webView:(WKWebView*)wv stopURLSchemeTask:(id<WKURLSchemeTask>)task { (void)wv; (void)task; }
 @end
 
-@interface FlintMonitorMessages : NSObject <WKScriptMessageHandler>
+@interface FlintMonitorMessages : NSObject <WKScriptMessageHandler, WKNavigationDelegate>
 @property(nonatomic, copy) NSString* flintId;
 @end
 @implementation FlintMonitorMessages
@@ -173,6 +174,16 @@ inline const char* mime_of(const std::string& p) {
     (void)ucc;
     if (![msg.body isKindOfClass:[NSString class]]) return;
     flint_monitors::from_window(std::string([self.flintId UTF8String]), std::string([(NSString*)msg.body UTF8String]));
+}
+// The page's load, on stderr: a page that never loads explains a window that never
+// says it is ready.
+- (void)webView:(WKWebView*)wv didFinishNavigation:(WKNavigation*)nav {
+    (void)wv; (void)nav;
+    fprintf(stderr, "flint-gui: monitors: the page on monitor %s loaded\n", [self.flintId UTF8String]);
+}
+- (void)webView:(WKWebView*)wv didFailProvisionalNavigation:(WKNavigation*)nav withError:(NSError*)err {
+    (void)wv; (void)nav;
+    fprintf(stderr, "flint-gui: monitors: the page on monitor %s failed: %s\n", [self.flintId UTF8String], [[err localizedDescription] UTF8String]);
 }
 @end
 
@@ -295,6 +306,7 @@ inline void open(const std::vector<std::string>& ids) {
         for (const auto& id : want) {
             if (wins().count(id)) continue;
             NSScreen* s = screen_of(id);
+            fprintf(stderr, "flint-gui: monitors: a window on monitor %s%s\n", id.c_str(), s ? "" : " (gone)");
             if (!s) { window_gone(id); continue; }
             NSRect vf = [s visibleFrame];
             FlintMonitorWindow* w = [[FlintMonitorWindow alloc] initWithContentRect:NSInsetRect(vf, 80, 80)
@@ -315,6 +327,8 @@ inline void open(const std::vector<std::string>& ids) {
             WKWebView* v = [[WKWebView alloc] initWithFrame:[[w contentView] bounds] configuration:cfg];
             [v setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
             [w setContentView:v];
+            [v setNavigationDelegate:handler];
+            objc_setAssociatedObject(v, "flintNav", handler, OBJC_ASSOCIATION_RETAIN);
             std::string url = "app://localhost/monitor.html?id=" + id;
             [v loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:[NSString stringWithUTF8String:url.c_str()]]]];
             wins()[id] = MacWin{ w, v };
@@ -745,7 +759,7 @@ inline void close_one(const std::string& id) {
     gtk_widget_destroy(w);
 }
 
-inline int monitor_index(const std::string& id) {
+inline int gdk_monitor_number(const std::string& id) {
     GdkDisplay* d = gdk_display_get_default();
     int n = gdk_display_get_n_monitors(d);
     for (int i = 0; i < n; ++i) {
@@ -764,7 +778,8 @@ inline void open(const std::vector<std::string>& ids) {
         for (auto& id : stale) close_one(id);
         for (const auto& id : want) {
             if (wins().count(id)) continue;
-            int idx = monitor_index(id);
+            int idx = gdk_monitor_number(id);
+            fprintf(stderr, "flint-gui: monitors: a window on monitor %s%s\n", id.c_str(), idx < 0 ? " (gone)" : "");
             if (idx < 0) { window_gone(id); continue; }
             GdkRectangle g;
             gdk_monitor_get_geometry(gdk_display_get_monitor(gdk_display_get_default(), idx), &g);

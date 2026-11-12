@@ -41,8 +41,12 @@ fi
 #   scripts/repeat.sh vim 10                     one run N times, with its failure rate
 # Exit status: 0 all passed, 1 a run failed.
 runs=(terminal vault tunnels paste rdp webgl fullscreen vim)
+# multimon (milestone 38) needs two monitors: on Linux an X display with two (the check's
+# container makes one, FLINT_E2E_MULTIMON_DISPLAY), on macOS a person's own screens with
+# FLINT_E2E_MULTIMON=1 (its windows take a Space on each).
 # rdpbench (milestone 34) is scripts/rdp-bench.sh's: a real Windows host, named only.
-known=("${runs[@]}" rdpbench)
+known=("${runs[@]}" multimon rdpbench)
+if [[ -n "${FLINT_E2E_MULTIMON_DISPLAY:-}" || "${FLINT_E2E_MULTIMON:-}" == 1 ]]; then runs+=(multimon); fi
 if [[ "$(uname -s)" == Darwin ]]; then
   app=(build/gui/Flint.app/Contents/MacOS/Flint)
   run_vim=1
@@ -159,6 +163,7 @@ bench = os.environ["E2E_RUN"] == "rdpbench"
 for k, env in (("BHOST", "FLINT_RDP_TEST_HOST"), ("BUSER", "FLINT_RDP_TEST_USER"), ("BPW", "FLINT_RDP_TEST_PASSWORD")):
     values[k] = os.environ.get(env, "").replace("\\", "\\\\").replace("'", "\\'") if bench else ""
 values["BMODES"] = os.environ.get("FLINT_BENCH_MODES", "compatible/2d,auto/auto") if bench else ""
+values["BMONS"] = os.environ.get("FLINT_BENCH_MONITORS", "") if bench else ""
 for k, v in values.items():
     src = src.replace("@@" + k + "@@", v)
 open(sys.argv[2], "w").write(src)
@@ -193,6 +198,10 @@ for r in "${runs[@]}"; do
     echo "gui-e2e: skip the rdp run (no FreeRDP sample server here)"
     continue
   fi
+  if [[ "$r" == multimon && -z "${FLINT_RDP_CLIP_PORT:-}" ]]; then
+    echo "gui-e2e: skip the multimon run (no Flint RDP test server here)"
+    continue
+  fi
   if [[ "$r" == fullscreen && -z "${FLINT_RDP_CLIP_PORT:-}" ]]; then
     echo "gui-e2e: skip the fullscreen run (no Flint RDP test server here)"
     continue
@@ -201,6 +210,17 @@ for r in "${runs[@]}"; do
   # vim passes in under 30 s; a freeze there then costs a minute, not four.
   cap="${FLINT_E2E_MAIN_MS:-}"
   [[ "$r" != vim ]] || cap=60000
+  if [[ "$r" == multimon && "$(uname -s)" != Darwin ]]; then
+    if [[ -z "${FLINT_E2E_MULTIMON_DISPLAY:-}" ]]; then
+      echo "gui-e2e: skip the multimon run (no X display with two monitors; the Linux check makes one)"
+      continue
+    fi
+    saved=("${app[@]}")
+    app=(timeout 300 env DISPLAY="$FLINT_E2E_MULTIMON_DISPLAY" build/gui/Flint)
+    run_app "$r" "$tmp/$r.js" "$tmp/config-$r" "$tmp/$r.log" "$cap" || failed+=("$r")
+    app=("${saved[@]}")
+    continue
+  fi
   run_app "$r" "$tmp/$r.js" "$tmp/config-$r" "$tmp/$r.log" "$cap" || failed+=("$r")
 done
 summary() {

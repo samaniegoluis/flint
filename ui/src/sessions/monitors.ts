@@ -68,7 +68,12 @@ export class MonitorsStore {
   /** Bumped on every arrangement, so an answer to an older one is dropped. */
   private round = 0;
 
-  constructor(private backend: MonitorsBackend, private timers = { setTimeout, clearTimeout }) {}
+  // The page's timers, called as functions (WebKit refuses `setTimeout` called as a
+  // method of another object: Illegal invocation).
+  constructor(private backend: MonitorsBackend, private timers: { setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout } = {
+    setTimeout: ((fn: () => void, ms?: number) => setTimeout(fn, ms)) as typeof setTimeout,
+    clearTimeout: ((t?: ReturnType<typeof setTimeout>) => clearTimeout(t)) as typeof clearTimeout,
+  }) {}
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);

@@ -7,6 +7,10 @@
 #
 #   sec with FLINT_RDP_TEST_HOST FLINT_RDP_TEST_USER FLINT_RDP_TEST_PASSWORD -- scripts/rdp-bench.sh
 #   FLINT_BENCH_MODES=pipeline/auto scripts/rdp-bench.sh # one mode (graphics/renderer)
+#   FLINT_BENCH_MONITORS=1 …   full screen on this monitor (milestone 38's baseline)
+#   FLINT_BENCH_MONITORS=2 …   full screen across two monitors: the desktop is the
+#                              monitors' box, and the extra window's frames count too
+#                              (needs two monitors; their windows take a Space each)
 #
 # Latency is from sending the Windows key (two RPCs, down and up) to the page drawing
 # the first frame after it.
@@ -61,9 +65,10 @@ def usage(a, b):
     return f"app {app:.0f} %, content {web:.0f} %, gpu {gpu:.0f} %"
 for r in runs:
     a, i, l = r["animation"], r["idle"], r["latency"]
-    print(f"\n== {r['mode']}: {r['pipeline']} {r['codec'] or ''} · drawn {r['renderer']} · h264 {r['h264']}")
+    print(f"\n== {r['mode']} · {r.get('monitors', 'window')} {r.get('size', '1920x1080')}: {r['pipeline']} {r['codec'] or ''} · drawn {r['renderer']} · h264 {r['h264']}")
     print(f"  Start menu    median {l['median']} ms, p95 {l['p95']} ms · CPU {usage(l['from'], l['to'])}")
-    print(f"  Task view     drawn {a['fps']} fps, server {a['updates']} updates/s, {a['kbps']} kbit/s, channel {a['channelMBps']} MB/s, decode {a['decodeMs']} ms · CPU {usage(a['from'], a['to'])}")
+    extra = f" + extra {a['extraFps']} fps" if a.get('extraFps') else ""
+    print(f"  Task view     drawn {a['fps']} fps{extra}, server {a['updates']} updates/s, {a['kbps']} kbit/s, channel {a['channelMBps']} MB/s, decode {a['decodeMs']} ms · CPU {usage(a['from'], a['to'])}")
     print(f"  idle          drawn {i['fps']} fps, {i['kbps']} kbit/s · CPU {usage(i['from'], i['to'])}")
 PY
 exit "$st"

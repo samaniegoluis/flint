@@ -169,7 +169,12 @@ export function Shell() {
   useEffect(() => on<{ id: string; data: string }>('monitor:message', (e) => monitors.message(e.id, e.data)), []);
   useEffect(() => on<{ id: string }>('monitor:closed', (e) => monitors.windowGone(e.id)), []);
   useEffect(() => on('monitors:changed', () => { void monitors.screensChanged(); }), []);
-  useEffect(() => { void monitors.refresh(); }, []);
+  useEffect(() => {
+    void monitors.refresh();
+    // gui-e2e's multimon run reads the store.
+    const e2e = (window as unknown as { __flintE2E?: Record<string, unknown> }).__flintE2E;
+    if (e2e) e2e.monitors = monitors;
+  }, []);
 
   useEffect(() => {
     const onResize = () => {

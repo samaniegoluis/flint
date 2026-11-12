@@ -2276,3 +2276,41 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   events (events addressed to one window or all), with `Window.set_frame`,
   `Window.set_fullscreen(on, monitor)`, borderless; and `webui.screens() -> []Screen` (frame
   and work area in points, top-left origin, scale, rotation, refresh, primary, safe-area top).
+
+### CF-127 · missing · `suspected`: `ext:webui` on Windows declares no per-monitor DPI awareness
+- **Seen (milestone 38) [read]:** neither cfire's runtime (`core/webui/windows_webview2.hpp`)
+  nor the owner's Windows branch (`windows-port-2`) declares DPI awareness: no manifest
+  entry and no `SetProcessDpiAwarenessContext`. A process that does not is scaled by
+  Windows as a bitmap on a monitor whose scale differs from the system's, and
+  `GetDpiForMonitor` reports the system's DPI for every monitor, so a layout across a 100 %
+  and a 150 % monitor cannot be read right. Not run: only the owner tests Windows.
+- **Repro (to confirm on Windows):** two monitors at 100 % and 150 %; a webui app's window
+  on the 150 % one is blurred, and `GetDpiForMonitor` returns 96 for both.
+- **Why Flint needs it:** a remote desktop across monitors (spec v10, milestone 38) reads
+  each monitor's size and scale to tell Windows the layout, and opens a window on each.
+- **Workaround:** `src/adapters/uievents/native/flint_monitors.hpp` calls
+  `SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)` at install,
+  before webui opens its window; the monitors are read in physical pixels with their own
+  scale and the core lays them out in points (`domain/monitors.cf`, `logical_monitors`).
+- **Ideal:** webui declares per-monitor-v2 awareness on Windows (in the manifest or before
+  its first window) and handles `WM_DPICHANGED`, so its window is sharp on every monitor.
+
+### CF-128 · bug · `confirmed`: a function of an `import cpp` header takes over a cfire call of the same name in another package
+- **Seen (milestone 38) [ran, Linux]:** `src/domain/monitors.cf` defines
+  `fn monitor_index(ms: []LocalMonitor, id: str) -> i64`. The `uievents` package imports
+  `flint_monitors.hpp`, whose GTK branch declared `flint_monitors::monitor_index(const
+  std::string&)`. Built on Linux, every call in the domain was lowered as
+  `monitor_index(str(locals), id)`: cfire resolved the name against the C++ function it
+  ingested for another package and cast the first argument to it, so clang failed ("no
+  matching conversion for functional-style cast from '[]LocalMonitor' to 'str'"). On
+  macOS the same tree built, because that branch of the header is not compiled there.
+- **Repro:** a package with `fn f(xs: []T, s: str) -> i64` and calls to it; a second
+  package of the same program with `import cpp "h.hpp"` where `h.hpp` declares
+  `namespace n { inline int f(const std::string&); }`. Build: the first package's calls
+  come out as `f(str(xs), s)`.
+- **Why Flint needs it:** the domain must not depend on what an adapter's C++ header
+  happens to name (Principle 1); a shim added later can break a build on one system only.
+- **Workaround:** the C++ function is named `gdk_monitor_number`, a name no cfire code uses.
+- **Ideal:** names from an `import cpp` header resolve only inside the package that imports
+  it, and only as qualified (`n::f`) or inside `cpp { }` blocks; a cfire function of the
+  same name is never cast to a C++ signature.

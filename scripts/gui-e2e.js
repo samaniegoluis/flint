@@ -38,6 +38,11 @@
   //             (milestone 35b): seconds a repetition with scripts/repeat.sh
   //   fullscreen  an immersive full-screen RDP tab (milestone 37): every way in and out,
   //             the bar, the note, the desktop's size, a lost connection
+  //   multimon  a desktop across monitors (milestone 38): the extra window on a second
+  //             monitor draws its part, its pointer and keys reach the server, the
+  //             popover, a lost connection, leaving. Needs two monitors: Linux runs it
+  //             under Xorg's dummy driver with two outputs, macOS on a person's screens
+  //             with FLINT_E2E_MULTIMON=1
   //   rdpbench  milestone 34's benchmark against a real Windows host (scripts/rdp-bench.sh,
   //             never part of the default runs): harmless input only, the Start menu and
   //             Task view, in each graphics mode
@@ -46,12 +51,15 @@
   const COVER = '@@COVER@@';
   // fullscreen only: '1' when the window really goes full screen (FLINT_E2E_NATIVE_FS).
   const NATIVEFS = '@@NATIVEFS@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'rdpbench'];
+  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'multimon', 'rdpbench'];
   // The benchmark's host (rdpbench only; '' otherwise).
   const BHOST = '@@BHOST@@';
   const BUSER = '@@BUSER@@';
   const BPW = '@@BPW@@';
   const BMODES = '@@BMODES@@';
+  // rdpbench, milestone 38: '' a 1920x1080 desktop in the window; '1' full screen on one
+  // monitor; '2' full screen on all monitors (two), each extra window counted too.
+  const BMONS = '@@BMONS@@';
   const MASTER = 'e2e-master-password-42';
   const HOST_PW_MARKER = 'gui-host-pw-marker';
 
@@ -564,6 +572,167 @@
       await click('[data-fs-exit]');
       await waitFor(() => !immersive(), 'out of full screen');
       await check(!hiddenEl('.tabbar'), 'Exit full screen brings the tabs back');
+    }
+
+    if (RUN === 'multimon') {
+      // Milestone 38 against Flint's test server, whose 64x64 tiles each have a colour
+      // that says where they are (tileColour): a window that draws the wrong part of the
+      // desktop shows the wrong colour. The test server has no Display Control, so each
+      // layout reaches it through the invisible reconnect (D-072 (4)).
+      if (CPORT === '0') throw new Error('the multimon run needs Flint\'s RDP test server (scripts/test.sh starts it)');
+      const ctl = async (cmd) => (await fetch(`http://127.0.0.1:${CCTL}/${cmd}`, { cache: 'no-store' })).text();
+      const isMac = (await window.backend.app_info({})).os === 'mac';
+      const mons = () => window.__flintE2E.monitors;
+      const app = () => q('.app');
+      const immersive = () => app()?.dataset.fullscreen === 'true';
+      const canvas = () => q('canvas.rdp-canvas', activeRegion());
+      const tileColour = (x, y) => { const tx = Math.floor(x / 64), ty = Math.floor(y / 64); return [0x30 + (tx * 37) % 192, 0x30 + (ty * 53) % 192, 0x2e]; };
+      const near = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 3);
+      // Answers from the extra windows' pages, as they reach the main page.
+      const probes = [];
+      window.runtime.EventsOn('monitor:message', (e) => {
+        try { const m = JSON.parse(e.data); if (m.type === 'probe') probes.push({ id: e.id, ...m }); } catch { /* not ours */ }
+        if (!String(e.data).includes('"pointer"')) log(`diag: monitor:message ${e.id} ${String(e.data).slice(0, 160)} (step: ${step})`);
+      });
+      window.runtime.EventsOn('monitor:closed', (e) => log(`diag: monitor:closed ${e.id} (step: ${step})`));
+      const probe = async (id) => {
+        const n = probes.length;
+        await window.backend.monitors_send({ id, data: JSON.stringify({ type: 'probe' }) });
+        return waitFor(() => probes.slice(n).find((p) => p.id === id), `the window on monitor ${id} to answer`, 10000);
+      };
+      const input = (id, msg) => window.backend.monitors_send({ id, data: JSON.stringify({ type: 'e2e-input', ...msg }) });
+      // A timeline of the store, printed with every step (rule 9).
+      {
+        const f0 = performance.now();
+        let last = '';
+        const tick = () => {
+          const m = mons()?.get();
+          const now = m ? `${m.phase} picks=${m.picks.join(',')} span=${m.span ? `${m.span.width}x${m.span.height}` : '-'} err=${m.error}` : 'no store';
+          if (now !== last) { last = now; log(`diag: monitors ${now} at ${Math.round(performance.now() - f0)} ms (step: ${step})`); }
+          setTimeout(tick, 100);
+        };
+        tick();
+      }
+
+      await setStep('multimon: what the system offers');
+      await waitFor(() => mons(), 'the monitors store');
+      const view = await window.backend.monitors_list({});
+      log(`diag: monitors ${JSON.stringify(view)}`);
+      await check(view.monitors.length >= 2 && view.reason === '' && view.max === 2 && view.picks.length === 2 && view.picks[0] === view.main,
+        `two monitors or more, offered, capped at 2, the main one first (${view.monitors.length} monitors, picks ${view.picks.join(',')}, reason '${view.reason}')`);
+      const extra = view.picks[1];
+
+      await setStep('multimon: an RDP tab on the test server');
+      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await waitFor(() => q('[data-host-type-step]'), 'the type step');
+      await click('.type-card[data-type="rdp"]');
+      await click('.modal button', 'Continue');
+      await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor');
+      await fill('#ra', 'rdp-mon');
+      await fill('#rh', '127.0.0.1');
+      await fill('#rp', String(CPORT));
+      await fill('#ru', 'e2e');
+      await fill('.modal input[aria-label="Password"]', 'x');
+      await click('.modal button[type="submit"]', 'Add host');
+      await waitFor(() => byText('.tree .ti', 'rdp-mon'), 'rdp-mon in the tree');
+      byText('.tree .ti', 'rdp-mon').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await waitFor(() => q('.tab.on') && q('[data-rdp-state="certificate"]', activeRegion()), 'the certificate prompt', 30000);
+      await click('button[type="submit"]', 'Trust and connect');
+      await waitFor(() => q('[data-rdp-size]') && canvas()?.dataset.desktop, 'the desktop', 30000);
+
+      await setStep('multimon: the Full screen menu offers all monitors');
+      await click('[data-rdp-fullscreen-menu]');
+      const menu = await waitFor(() => q('[data-fullscreen-menu]'), 'the Full screen menu');
+      const all = await waitFor(() => { const b = q('[data-fullscreen-all]', menu); return b && !b.dataset.reason ? b : null; }, 'all monitors offered');
+      await check(all.textContent.includes('Full screen on all monitors') && all.textContent.includes('2 monitors'), `the menu offers all monitors (${all.textContent.trim()})`);
+      await click('[data-fullscreen-all]');
+      await waitFor(() => immersive(), 'the page immersive');
+      await waitFor(() => mons().get().phase === 'on', 'the desktop across the monitors', 40000);
+      const span = mons().get().span;
+      log(`diag: span ${JSON.stringify(span)}`);
+      await check(span.monitors.length === 2 && span.monitors[0].primary && span.monitors[0].local_id === view.main && span.monitors[1].local_id === extra,
+        `the layout has the main monitor as primary and the extra one (${span.monitors.map((m) => `${m.local_id}@${m.x},${m.y} ${m.width}x${m.height}`).join(' + ')})`);
+      const crop0 = span.crops[0];
+      const crop1 = span.crops[1];
+
+      await setStep('multimon: each window draws its part');
+      await waitFor(() => canvas()?.dataset.desktop === `${crop0.width}x${crop0.height}`, `the main window at its part (${crop0.width}x${crop0.height})`, 30000);
+      await check(true, `the main window draws the primary's part, ${canvas().dataset.desktop}`);
+      {
+        // The canvas is cleared when it takes the new size; the frame follows.
+        const pixel = () => {
+          const copy = document.createElement('canvas');
+          copy.width = crop0.width; copy.height = crop0.height;
+          copy.getContext('2d').drawImage(canvas(), 0, 0);
+          return Array.from(copy.getContext('2d').getImageData(70, 70, 1, 1).data.slice(0, 3));
+        };
+        const want = tileColour(crop0.x + 70, crop0.y + 70);
+        await waitFor(() => near(pixel(), want), 'the main window\'s tile', 10000).catch(() => {});
+        await check(near(pixel(), want), `the main window shows the tile at its crop (${pixel()} for ${want})`);
+      }
+      const wantA = tileColour(crop1.x + 2, crop1.y + 2);
+      const wantB = tileColour(crop1.x + (crop1.width >> 1), crop1.y + (crop1.height >> 1));
+      let p = await waitForAsync(async () => { const r = await probe(extra); return r.frames > 0 && r.width === crop1.width && r.height === crop1.height ? r : null; }, 'the extra window drawing its part', 30000);
+      await check(true, `the extra window draws ${p.width}x${p.height} in ${p.frames} frames (window ${p.inner.join('x')})`);
+      p = await waitForAsync(async () => { const r = await probe(extra); return near(r.pixels.slice(0, 3), wantA) && near(r.pixels.slice(3, 6), wantB) ? r : null; }, 'the extra window\'s tiles', 10000).catch(() => probe(extra));
+      await check(near(p.pixels.slice(0, 3), wantA) && near(p.pixels.slice(3, 6), wantB), `the extra window shows the tiles of its own crop (${p.pixels} for ${wantA},${wantB})`);
+
+      await setStep('multimon: the pointer and the keys of each window');
+      await ctl('clear');
+      await input(extra, { x: 100, y: 130 });
+      const ptr = await waitForAsync(async () => { const r = await ctl('pointer'); return r !== '-' ? r : null; }, 'the server to see the pointer', 10000);
+      await check(ptr === `${crop1.x + 100},${crop1.y + 130}`, `the extra window's pointer lands at its crop (${ptr}, expected ${crop1.x + 100},${crop1.y + 130})`);
+      {
+        const r = canvas().getBoundingClientRect();
+        const sx = crop0.width / r.width, sy = crop0.height / r.height;
+        canvas().dispatchEvent(new MouseEvent('mousemove', { clientX: r.left + 40 / sx, clientY: r.top + 50 / sy, bubbles: true }));
+        const want = `${crop0.x + 40},${crop0.y + 50}`;
+        const got = await waitForAsync(async () => { const v = await ctl('pointer'); return v === want ? v : null; }, 'the main window\'s pointer at its crop', 10000).catch(() => ctl('pointer'));
+        await check(got === want, `the main window's pointer lands at the primary's place (${got}, expected ${want})`);
+      }
+      await input(extra, { key: 'KeyA' });
+      const keys = await waitForAsync(async () => { const k = await ctl('keys'); return k.includes('u:0x1e') ? k : null; }, 'the key to reach the server', 10000);
+      await check(keys.includes('d:0x1e') && keys.includes('u:0x1e'), `a key pressed in the extra window reaches the server (${keys})`);
+
+      await setStep('multimon: the bar and the popover');
+      q('[data-fs-edge]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
+      const bar = await waitFor(() => q('[data-fs-bar]'), 'the connection bar');
+      await check(bar.textContent.includes('2 monitors') && bar.textContent.includes(`${span.width} × ${span.height}`), `the bar says the desktop spans 2 monitors (${bar.textContent.trim().slice(0, 80)})`);
+      await click('[data-fs-monitors]');
+      const pop = await waitFor(() => q('[data-monitors-popover]'), 'the Monitors popover');
+      const tiles = [...pop.querySelectorAll('[data-monitor]')];
+      await check(tiles.length === view.monitors.length && q(`[data-monitor="${view.main}"]`, pop).textContent.includes('Main · taskbar')
+        && q(`[data-monitor="${extra}"]`, pop).getAttribute('aria-checked') === 'true', `the popover maps ${tiles.length} monitors, the main one tagged, the extra one checked`);
+      if (view.monitors.length > 2) {
+        const third = view.monitors.find((m) => !view.picks.includes(m.id)).id;
+        await check(q(`[data-monitor="${third}"]`, pop).classList.contains('cap'), 'a third monitor cannot be checked past the cap');
+      }
+
+      await setStep('multimon: unchecking the extra monitor goes back to one');
+      q(`[data-monitor="${extra}"]`, pop).click();
+      await waitFor(() => mons().get().phase === 'off', 'back to one monitor', 10000);
+      await check(immersive(), 'the main window stays full screen');
+      await waitFor(() => { const d = canvas()?.dataset.desktop; const a = q('.rdp-area', activeRegion()).getBoundingClientRect(); return d && Math.abs(Number(d.split('x')[0]) - Math.floor(a.width)) <= 2 && Math.abs(Number(d.split('x')[1]) - Math.floor(a.height)) <= 2; }, 'the desktop at the main window\'s size', 30000);
+      await check(true, `the desktop is the main window's size again (${canvas().dataset.desktop})`);
+      {
+        const n0 = probes.length;
+        await window.backend.monitors_send({ id: extra, data: JSON.stringify({ type: 'probe' }) });
+        await sleep(1500);
+        await check(!probes.slice(n0).some((x) => x.id === extra), 'the extra window closed (it answers no more)');
+      }
+
+      await setStep('multimon: checking it again spans again; a lost connection says so there');
+      q(`[data-monitor="${extra}"]`, q('[data-monitors-popover]') ?? document).click();
+      await waitFor(() => mons().get().phase === 'on', 'across the monitors again', 40000);
+      await waitForAsync(async () => { const r = await probe(extra); return r.frames > 0 && r.width === crop1.width ? r : null; }, 'the extra window drawing again', 30000);
+      await check(true, 'checking the extra monitor in the popover spans the desktop again');
+      await ctl('drop');
+      p = await waitForAsync(async () => { const r = await probe(extra); return r.state === 'lost' ? r : null; }, 'the extra window to say the connection was lost', 30000);
+      await check(true, 'a lost connection shows "Connection lost — see the main screen" on the extra monitor');
+      await click('[data-fs-exit]');
+      await waitFor(() => !immersive() && mons().get().phase === 'off', 'out of full screen and back to one monitor', 10000);
+      await check(true, 'Exit full screen ends the desktop across monitors');
+      if (isMac) log('diag: macOS: the extra window leaves its Space');
     }
 
     if (RUN === 'vim') {
@@ -1474,24 +1643,59 @@
         await waitFor(() => q('[data-rdp-size]'), 'the desktop', 30000);
         const area = await waitFor(() => q('[data-rdp-session]', activeRegion()), 'the desktop area');
         const tab = area.dataset.rdpSession;
-        // The size of M28's measurement, whatever the window's: scaled down to fit. Display
-        // Control opens a moment after the desktop, so the size is asked again until it holds.
-        const sized = () => q('canvas.rdp-canvas', activeRegion())?.dataset.desktop === '1920x1080';
-        for (let i = 0; i < 15 && !sized(); i++) {
-          await rest(2000);
-          await window.backend.rdp_resize({ tab, width: 1920, height: 1080 }).catch(() => {});
+        // Extra monitors' windows (BMONS 2): their frames, read through their probes.
+        const probes = [];
+        const off = window.runtime.EventsOn('monitor:message', (e) => { try { const m = JSON.parse(e.data); if (m.type === 'probe') probes.push({ id: e.id, ...m }); } catch { /* not ours */ } });
+        let extras = [];
+        const extraFrames = async () => {
+          let n = 0;
+          for (const id of extras) {
+            const k = probes.length;
+            await window.backend.monitors_send({ id, data: JSON.stringify({ type: 'probe' }) });
+            const p = await waitFor(() => probes.slice(k).find((x) => x.id === id), `the window on ${id}`, 5000).catch(() => null);
+            n += p ? p.frames : 0;
+          }
+          return n;
+        };
+        let size = '1920x1080';
+        if (BMONS === '1' || BMONS === '2') {
+          // Full screen (milestone 37), and across the monitors (38): the desktop's size is
+          // the screens', whatever they are; the bench says which.
+          await rest(3000);
+          if (BMONS === '1') {
+            await click('[data-rdp-fullscreen]');
+            await waitFor(() => q('.app')?.dataset.fullscreen === 'true', 'full screen');
+            await rest(6000);
+          } else {
+            await click('[data-rdp-fullscreen-menu]');
+            await click('[data-fullscreen-all]');
+            const mons = () => window.__flintE2E.monitors;
+            await waitFor(() => mons()?.get().phase === 'on', 'the desktop across the monitors', 60000);
+            extras = mons().get().span.monitors.slice(1).map((m) => m.local_id);
+            await rest(4000);
+            size = `${mons().get().span.width}x${mons().get().span.height}`;
+          }
+          if (BMONS === '1') size = q('canvas.rdp-canvas', activeRegion()).dataset.desktop;
+        } else {
+          // The size of M28's measurement, whatever the window's: scaled down to fit. Display
+          // Control opens a moment after the desktop, so the size is asked again until it holds.
+          const sized = () => q('canvas.rdp-canvas', activeRegion())?.dataset.desktop === '1920x1080';
+          for (let i = 0; i < 15 && !sized(); i++) {
+            await rest(2000);
+            await window.backend.rdp_resize({ tab, width: 1920, height: 1080 }).catch(() => {});
+          }
+          await waitFor(sized, 'a 1920x1080 desktop', 20000);
+          await rest(3000);
         }
-        await waitFor(sized, 'a 1920x1080 desktop', 20000);
-        await rest(3000);
         const meter = window.__flintE2E.rdpMeter;
         const key = (code, down) => window.backend.rdp_key({ tab, code, down });
         const tap = async (code) => { await key(code, true); await key(code, false); };
         const quiet = async (ms) => { const start = meter.frames; await rest(ms); return meter.frames - start; };
-        const sample = async () => ({ at: performance.now(), drawn: meter.frames, read: meter.bytes, core: await window.backend.rdp_stats({ tab }) });
+        const sample = async () => ({ at: performance.now(), drawn: meter.frames, extra: await extraFrames(), read: meter.bytes, core: await window.backend.rdp_stats({ tab }) });
         const rates = (a, b) => {
           const sec = (b.at - a.at) / 1000;
           const cmds = b.core.commands - a.core.commands;
-          return { fps: +((b.drawn - a.drawn) / sec).toFixed(1), updates: +((b.core.updates - a.core.updates) / sec).toFixed(1),
+          return { fps: +((b.drawn - a.drawn) / sec).toFixed(1), extraFps: +((b.extra - a.extra) / sec).toFixed(1), updates: +((b.core.updates - a.core.updates) / sec).toFixed(1),
             kbps: Math.round(((b.core.bytes_in - a.core.bytes_in) * 8) / 1000 / sec), channelMBps: +((b.read - a.read) / 1e6 / sec).toFixed(1),
             decodeMs: cmds ? +((b.core.decode_us - a.core.decode_us) / cmds / 1000).toFixed(2) : 0 };
         };
@@ -1538,12 +1742,19 @@
         await rest(5000);
         const i1 = await sample();
         const idleTo = Date.now();
-        bench({ mode, pipeline: b.core.pipeline, codec: b.core.codec, h264: b.core.h264, renderer: drawnWith,
+        bench({ mode, monitors: BMONS || 'window', size, pipeline: b.core.pipeline, codec: b.core.codec, h264: b.core.h264, renderer: drawnWith,
           latency: { median: Math.round(median(lat)), p95: Math.round(p95(lat)), from: latFrom, to: latTo },
           animation: { ...rates(a, b), from: animFrom, to: animTo }, idle: { ...rates(i0, i1), from: idleFrom, to: idleTo } });
         // Automatic picks by the round trip (milestone 35): either is right, as long as it says which.
         const want = graphics === 'compatible' ? 'bitmap' : graphics === 'pipeline' ? 'gfx' : b.core.mode === 'compatible' ? 'bitmap' : 'gfx';
         await check(b.core.pipeline === want, `${mode}: the ${graphics} mode uses the expected pipeline (${b.core.pipeline} ${b.core.codec}, engine ${b.core.mode})`);
+        off();
+        if (q('.app')?.dataset.fullscreen === 'true') {
+          q('[data-fs-edge]')?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
+          await click('[data-fs-exit]');
+          await waitFor(() => q('.app')?.dataset.fullscreen !== 'true', 'out of full screen');
+          await rest(2000);
+        }
         await click('.tab.on .tx');
         await waitFor(() => !q('[data-rdp-toolbar]'), 'the bench tab closed');
         await rest(1500);

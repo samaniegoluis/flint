@@ -6,7 +6,9 @@
 //
 //   flint-rdp-testserver --port=N --control=M --cert=FILE --key=FILE
 //
-// Any user, TLS without NLA, a desktop of one flat colour at the size the client asks.
+// Any user, TLS without NLA, a desktop at the size the client asks, each 64x64 tile in
+// a colour that says where it is (tile_colour), so a test can tell which part of the
+// desktop a window shows (milestone 38).
 // The control port (127.0.0.1:M) takes one command per connection and answers one line;
 // text travels hex-encoded (UTF-8), so any character survives. The same commands are
 // served over HTTP for a page (GET /copy/<hex>, GET /keys; gui-e2e):
@@ -19,6 +21,7 @@
 //   clear        forgets pasted text, formats and keys
 //   drop         closes every client's connection without a goodbye
 //   peers        how many clients are connected
+//   pointer      where the last mouse event landed, "x,y" ("-" for none)
 
 #include <winpr/crt.h>
 #include <winpr/ssl.h>
@@ -64,6 +67,7 @@ std::string g_clip;          // the server's clipboard, UTF-8
 std::string g_pasted = "-";  // the client's last answer
 std::string g_formats;       // the client's last format list
 std::vector<std::string> g_keys;
+std::string g_pointer = "-";
 const char* g_cert = nullptr;
 const char* g_key = nullptr;
 
@@ -162,15 +166,27 @@ UINT on_client_data_response(CliprdrServerContext*, const CLIPRDR_FORMAT_DATA_RE
 
 // ---- Drawing and input -------------------------------------------------------------
 
-// The whole desktop in one flat colour, as uncompressed 64x64 bitmaps.
+// The colour of the 64x64 tile at column `tx`, row `ty`, as the client's RGBA bytes:
+// red from the column, green from the row, blue fixed. gui-e2e's multimon run reads it
+// back (scripts/gui-e2e.js, tileColour).
+inline void tile_colour(UINT32 tx, UINT32 ty, BYTE& r, BYTE& g, BYTE& b) {
+    r = static_cast<BYTE>(0x30 + (tx * 37) % 192);
+    g = static_cast<BYTE>(0x30 + (ty * 53) % 192);
+    b = 0x2e;
+}
+
+// The whole desktop as uncompressed 64x64 bitmaps, each tile in its own colour.
 BOOL draw(freerdp_peer* client) {
     rdpSettings* st = client->context->settings;
     UINT32 w = freerdp_settings_get_uint32(st, FreeRDP_DesktopWidth);
     UINT32 h = freerdp_settings_get_uint32(st, FreeRDP_DesktopHeight);
     std::vector<BYTE> tile(64 * 64 * 4);
-    for (size_t i = 0; i < tile.size(); i += 4) { tile[i] = 0x8a; tile[i + 1] = 0x5c; tile[i + 2] = 0x2e; tile[i + 3] = 0xff; }
     for (UINT32 y = 0; y < h; y += 64) {
         for (UINT32 x = 0; x < w; x += 64) {
+            BYTE r, g, bl;
+            tile_colour(x / 64, y / 64, r, g, bl);
+            // The bitmap's bytes are BGRA.
+            for (size_t i = 0; i < tile.size(); i += 4) { tile[i] = bl; tile[i + 1] = g; tile[i + 2] = r; tile[i + 3] = 0xff; }
             BITMAP_DATA b{};
             b.destLeft = x;
             b.destTop = y;
@@ -203,7 +219,11 @@ BOOL on_keyboard(rdpInput* input, UINT16 flags, UINT8 code) {
 }
 
 BOOL on_unicode(rdpInput*, UINT16, UINT16) { return TRUE; }
-BOOL on_mouse(rdpInput*, UINT16, UINT16, UINT16) { return TRUE; }
+BOOL on_mouse(rdpInput*, UINT16, UINT16 x, UINT16 y) {
+    std::lock_guard<std::mutex> g(g_mu);
+    g_pointer = std::to_string(x) + "," + std::to_string(y);
+    return TRUE;
+}
 BOOL on_ext_mouse(rdpInput*, UINT16, UINT16, UINT16) { return TRUE; }
 BOOL on_sync(rdpInput*, UINT32) { return TRUE; }
 BOOL on_refresh(rdpContext* ctx, BYTE, const RECTANGLE_16*) { return draw(ctx->peer); }
@@ -346,6 +366,7 @@ std::string run(const std::string& line) {
     if (cmd == "clear") { g_pasted = "-"; g_formats.clear(); g_keys.clear(); return "ok"; }
     if (cmd == "drop") { for (Peer* p : g_peers) p->drop.store(true); return "ok"; }
     if (cmd == "peers") return std::to_string(g_peers.size());
+    if (cmd == "pointer") return g_pointer;
     return "unknown";
 }
 

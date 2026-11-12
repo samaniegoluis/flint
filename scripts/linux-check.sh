@@ -23,4 +23,4 @@ docker build -t "$image" -f "$root/scripts/linux/Dockerfile" "$root/scripts/linu
 #   FLINT_RDP_BLACKHOLE=1 FLINT_LINUX_STEPS=tests FLINT_LINUX_SUITES=src/adapters/rdp scripts/linux-check.sh
 caps=()
 [[ "${FLINT_RDP_BLACKHOLE:-}" == 1 ]] && caps=(--cap-add NET_ADMIN)
-docker run --rm --user root ${caps[@]+"${caps[@]}"} -e FLINT_E2E_VIM -e FLINT_LINUX_REPEAT -e FLINT_LINUX_STEPS -e FLINT_LINUX_SUITES -e FLINT_RDP_BLACKHOLE -e FLINT_RDP_TEST_HOST -e FLINT_RDP_TEST_USER -e FLINT_RDP_TEST_PASSWORD -v "$root:/src:ro" "$image" bash /src/scripts/linux/root.sh
+docker run --rm --user root ${caps[@]+"${caps[@]}"} -e FLINT_E2E_VIM -e FLINT_E2E_ONLY -e FLINT_LINUX_REPEAT -e FLINT_LINUX_STEPS -e FLINT_LINUX_SUITES -e FLINT_RDP_BLACKHOLE -e FLINT_RDP_TEST_HOST -e FLINT_RDP_TEST_USER -e FLINT_RDP_TEST_PASSWORD -v "$root:/src:ro" "$image" bash /src/scripts/linux/root.sh

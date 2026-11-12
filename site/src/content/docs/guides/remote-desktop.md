@@ -129,6 +129,37 @@ so **Exit full screen** is one click away.
 Alt+Tab, the Windows key and the other keys your computer keeps for itself still go to
 your computer in full screen; sending them to Windows is planned.
 
+### Across monitors
+
+**Full screen on all monitors** spreads the desktop over two monitors, and Windows sees
+each one as a monitor of its own, at its size and in its place: the taskbar on the main
+one, a window maximized fills one monitor, a portrait monitor stays portrait. Open it
+from the small arrow beside the toolbar's **Full screen**, the tab's menu, or the palette.
+
+- Flint's window stays full screen on the monitor it is on. That one is Windows' main
+  monitor, with the taskbar. The other monitor gets a window of its own with nothing but
+  the desktop.
+- The pointer and the keyboard work in either window. Flint's chords (the palette,
+  leaving full screen) work from both.
+- The **Monitors** button in the connection bar shows your monitors as they are arranged.
+  Check or uncheck one and the desktop rearranges at once: Windows keeps your session and
+  your apps. Flint remembers the choice on this computer. With more than two monitors,
+  pick the two the desktop spans; the main one is always one of them.
+- Leaving full screen, going to another tab, locking or unplugging one of the monitors
+  puts the desktop back on one monitor, at the size of Flint's window.
+- If the connection drops, the other monitor says so and points you to the main one,
+  where the **Connection lost** card offers **Reconnect**.
+
+| System | Across monitors |
+|---|---|
+| macOS | Yes. Each monitor's window takes a Space of its own, so **Displays have separate Spaces** (System Settings → Desktop & Dock) must be on; Flint says so when it is off. |
+| Linux | Yes on X11. On Wayland the menu item says "Not supported on this system yet". |
+| Windows | Not yet: "Not supported on this system yet" until it has been checked on Windows. |
+
+Windows needs a Pro or Enterprise edition to show a desktop on more than one monitor.
+Two monitors carry about twice the pixels of one: on a slow link, *Automatic* or
+*Compatible* matters more there (see Graphics).
+
 ## When the connection drops
 
 A tab whose connection drops keeps its last picture, greyed, under **Connection lost**,
@@ -252,5 +283,5 @@ What Flint does with your password and the connection, and what it leaves as it 
 ## Not yet
 
 Alt+Tab and the Windows key in full screen, files and images over the clipboard, sound,
-drive and printer redirection, several monitors, RD Gateway and RDP through an SSH tunnel
-are planned for later.
+drive and printer redirection, more than two monitors, an RDP tab in a window of its own,
+RD Gateway and RDP through an SSH tunnel are planned for later.
