@@ -9,7 +9,8 @@ package application
 // The password is opened from the vault only to hand it to the engine at connect time
 // (Principle 6): never returned, never in an error. A reconnect for a new size opens
 // it again from the vault, so a session that outlives a lock (D-043) keeps its size
-// rather than a copy of the password.
+// rather than a copy of the password. Each use case wipes the target's password once
+// the engine has it (milestone 36, D-085).
 
 import "../domain"
 import "../ports"
@@ -113,6 +114,7 @@ fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](
     size := fit_desktop_size(req.width, req.height)
     graphics := try rdp_graphics_of(req)
     mut t := try rdp_target(crypto, store, session, prompter, req.alias, size, graphics, true)
+    defer crypto.wipe_text(t.password)
     resolve_rdp_graphics(mut rd, mut t)
     mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "", graphics: "", rtt_ms: -1 }
     failure := rd_try_open(mut rd, req.tab, t, req.timeout_ms, mut d)
@@ -260,6 +262,7 @@ fn reconnect_at_size[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](cr
     t := rdp_target(crypto, store, session, prompter, req.alias, size, graphics, false) or {
         return
     }
+    defer crypto.wipe_text(t.password)
     if t.trusted_fingerprint.len() == 0 {
         return
     }
@@ -288,6 +291,7 @@ fn reconnect_in_mode[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](cr
         }
         return RdpModeSwitch{ why: "the vault cannot give the password now ({error_text_of(msg)})", graphics: "", rtt_ms: -1 }
     }
+    defer crypto.wipe_text(t.password)
     if t.trusted_fingerprint.len() == 0 {
         return RdpModeSwitch{ why: "the server's certificate is not trusted yet", graphics: "", rtt_ms: -1 }
     }

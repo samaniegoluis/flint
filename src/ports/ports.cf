@@ -21,6 +21,12 @@ type Crypto interface {
     digest(data: []byte, out_len: usize) -> []byte!
     // Compares two byte strings in constant time (false when the lengths differ).
     equal(a: []byte, b: []byte) -> bool
+    // Overwrite with zeros, in place, a buffer or a text that held key material or a
+    // secret, once it has been used (milestone 36, D-085). The caller's value IS
+    // changed although the parameter reads as a borrow: an interface method cannot
+    // declare `mut` (CF-124). Best effort: copies cfire made on the way stay.
+    wipe(buf: []byte)
+    wipe_text(text: str)
 }
 
 // The encrypted vault file (adapters/vault, SQLCipher). One vault is open at a time.

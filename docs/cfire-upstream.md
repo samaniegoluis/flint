@@ -2211,3 +2211,18 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Workaround:** `build.Command`, as Flint does.
 - **Ideal:** one name in the docs and the parser (or both accepted), and "no `Outputs` runs
   every time" stated in the reference.
+
+### CF-124 · missing · `confirmed`: an interface method cannot declare a `mut` parameter
+- **Repro (c5b1d4b, macOS) [ran]:** `type Wiper interface { wipe(mut buf: []byte) }` fails with
+  `expected type name, got 'mut'`; `wipe(buf: mut []byte)` fails the same way. A free
+  function or a method on a struct takes `mut` as usual. Found in milestone 36.
+- **Impact:** a port cannot offer an operation that changes the caller's value. Flint's
+  `Crypto` port needs one to wipe a secret in place with `sodium_memzero`: the core may not
+  import the adapter (Principle 1), so the call has to go through the port.
+- **Workaround:** `Crypto.wipe(buf: []byte)` and `wipe_text(text: str)` take a read-only
+  borrow, and the libsodium adapter writes through it with a `const_cast` in a `cpp {}` block
+  (`src/adapters/crypto/sodium.cf`, tagged `CF-124`). Defined behaviour, since the caller's
+  local is never `const`, but the signature lies about what it does, and a fake of the port
+  cannot do the same without native code (Flint's fake records the values instead).
+- **Ideal:** `mut` (and `out`, `move`) accepted on interface method parameters, with the call
+  site's `mut` checked against them as for any function.

@@ -259,3 +259,27 @@ test "the keys earlier Flints cached are removed once per machine" {
     saved := try save_settings(mut settings, page)
     assert(saved.keys_cleared)
 }
+
+test "creating, unlocking and checking a vault wipe the derived keys (milestone 36)" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    recents := new_fake_recents()
+    reset_wiped()
+    s := try create_vault(crypto, mut store, kc, recents, "/v/Wipe.flint", "", "correct horse", false)
+    // The master key, the page key and this copy of the secrets key.
+    assert_eq(WIPED_BUFS, 3)
+    // The session keeps its own copy.
+    assert_eq(s.secrets_key.len(), 32)
+    assert(s.secrets_key[0] != 0 || s.secrets_key[1] != 0)
+
+    store.vault_detach()
+    reset_wiped()
+    back := try unlock_vault(crypto, mut store, kc, recents, "/v/Wipe.flint", "correct horse", false)
+    assert_eq(WIPED_BUFS, 3)
+    assert(back.secrets_key == s.secrets_key)
+
+    reset_wiped()
+    assert(try verify_master_password(crypto, store, back, "correct horse"))
+    assert_eq(WIPED_BUFS, 3)
+}

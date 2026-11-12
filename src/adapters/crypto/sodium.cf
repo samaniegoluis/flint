@@ -170,6 +170,25 @@ fn (self: Sodium) unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte! {
     return plain
 }
 
+// The port's wipe (milestone 36): the caller's buffer is overwritten in place,
+// through a read-only borrow, because an interface method cannot declare `mut`
+// (CF-124). Writing through it is defined: the caller's value is never a constant.
+fn (self: Sodium) wipe(buf: []byte) {
+    // CFIRE-UPSTREAM: CF-124
+    cpp {
+        auto& b = const_cast<std::remove_cvref_t<decltype(buf)>&>(buf);
+        if (!b.empty()) sodium_memzero(cfire::c_arg(b.data()), b.size());
+    }
+}
+
+fn (self: Sodium) wipe_text(text: str) {
+    // CFIRE-UPSTREAM: CF-124
+    cpp {
+        auto& s = const_cast<std::remove_cvref_t<decltype(text)>&>(text);
+        if (!s.empty()) sodium_memzero(s.data(), s.size());
+    }
+}
+
 // Overwrites a buffer that held key material.
 fn wipe(mut buf: []byte) {
     // CFIRE-UPSTREAM: CF-006

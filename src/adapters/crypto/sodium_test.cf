@@ -90,6 +90,40 @@ test "wipe zeroes the buffer" {
     assert(k[0] == 0 && k[1] == 0 && k[2] == 0)
 }
 
+test "the port's wipe zeroes the caller's buffer and text in place" {
+    c := try new_sodium()
+    mut k: []byte = [byte(1), byte(2), byte(3)]
+    c.wipe(k)
+    assert(k[0] == 0 && k[1] == 0 && k[2] == 0)
+    // Long enough to live on the heap, and short enough to sit inside the string.
+    mut long := "a password long enough to be allocated on the heap"
+    mut short := "pw"
+    c.wipe_text(long)
+    c.wipe_text(short)
+    for b in long.bytes() {
+        assert(u8(b) == 0)
+    }
+    for b in short.bytes() {
+        assert(u8(b) == 0)
+    }
+    // Through a generic caller, as the use cases call it.
+    mut t := "secret in a generic"
+    assert(wipe_through_port(c, t))
+    mut empty: []byte = []
+    c.wipe(empty)
+    c.wipe_text("")
+}
+
+fn wipe_through_port[C: Crypto](c: C, text: str) -> bool {
+    c.wipe_text(text)
+    for b in text.bytes() {
+        if u8(b) != 0 {
+            return false
+        }
+    }
+    return true
+}
+
 test "Sodium satisfies the Crypto port" {
     c := try new_sodium()
     assert(port_roundtrip(c))

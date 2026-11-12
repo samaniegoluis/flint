@@ -600,3 +600,35 @@ test "auto picks bitmaps on a local network, keeps its choice on a resize and me
     assert_eq(sink.graphics[0], "pipeline as pipeline")
     assert_eq(sink.graphics[1], "auto as compatible")
 }
+
+test "the vault's password is wiped once the engine has it, on a first connection and a reconnect (milestone 36)" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    reset_wiped()
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    _ := try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win"))
+    assert(was_wiped("s3cret"))
+    // The sealed bytes were opened, then wiped as well.
+    assert(WIPED_BUFS >= 1)
+
+    // A failed connection wipes it too.
+    reset_wiped()
+    mut bad := new_fake_desktop("ab:cd", "other")
+    open_remote_desktop(crypto, mut store, s, mut bad, trusting(), rdp_req("win")) or {}
+    assert(was_wiped("s3cret"))
+
+    // And a reconnect for a new size, opened from the vault again.
+    reset_wiped()
+    mut again := new_fake_desktop("ab:cd", "s3cret")
+    again.events = [
+        RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 1025, height: 700 },
+    ]
+    mut sink := FakeDesktopSink{ ready: [], locked: false, graphics: [] }
+    mut clip0 := no_clipboard()
+    try run_remote_desktop(crypto, mut store, s, mut again, no_prompter(), mut sink, mut clip0, rdp_req("win"))
+    assert_eq(again.opens.len(), 2)
+    assert_eq(WIPED_TEXTS.len(), 2)
+    assert(was_wiped("s3cret"))
+}

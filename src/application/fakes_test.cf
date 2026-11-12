@@ -95,6 +95,34 @@ fn (self: FakeCrypto) unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte
     return p
 }
 
+// What the use cases wiped (milestone 36): the fake cannot overwrite through the
+// port's borrow without native code (CF-124), so it notes each value instead. A test
+// clears both lists first.
+mut WIPED_TEXTS: []str = []
+mut WIPED_BUFS: i64 = 0
+
+fn (self: FakeCrypto) wipe(buf: []byte) {
+    WIPED_BUFS += 1
+}
+
+fn (self: FakeCrypto) wipe_text(text: str) {
+    WIPED_TEXTS.push(text)
+}
+
+fn reset_wiped() {
+    WIPED_TEXTS.clear()
+    WIPED_BUFS = 0
+}
+
+fn was_wiped(text: str) -> bool {
+    for w in WIPED_TEXTS {
+        if w == text {
+            return true
+        }
+    }
+    return false
+}
+
 // ---- Vault store ---------------------------------------------------------------
 
 type FakeStore struct {

@@ -121,8 +121,13 @@ fn create_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
         return error(coded(ERR_CONFLICT, "a file already exists at {path}"))
     }
     salt := crypto.random_bytes(VAULT_SALT_LEN)
+    // The master and page keys are wiped once used, and this copy of the secrets key
+    // once the session holds its own (milestone 36, D-085).
     master := try crypto.derive_key(password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
+    defer crypto.wipe(master)
     (page, secrets) := try derive_vault_keys(crypto, master)
+    defer crypto.wipe(page)
+    defer crypto.wipe(secrets)
     try store.vault_create(path, page, salt)
     try store.vault_set_meta("name", vault_name)
     mut cached := false
@@ -154,11 +159,15 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
             return error(coded(ERR_LOCKED, "the vault at {path} is locked; the master password is needed"))
         }
         master = cached_key
+        crypto.wipe(cached_key)
         from_cache = true
     } else {
         master = try crypto.derive_key(password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
     }
+    defer crypto.wipe(master)
     (page, secrets) := try derive_vault_keys(crypto, master)
+    defer crypto.wipe(page)
+    defer crypto.wipe(secrets)
     store.vault_attach(path, page, salt) or err {
         msg := "{err.message()}"
         if from_cache && error_code_of(msg) == ERR_WRONG_PASSWORD {
@@ -201,7 +210,10 @@ fn verify_master_password[C: Crypto, S: VaultStore](crypto: C, store: S, session
     }
     salt := try store.vault_read_salt(session.path)
     master := try crypto.derive_key(password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
-    (_, secrets) := try derive_vault_keys(crypto, master)
+    defer crypto.wipe(master)
+    (page, secrets) := try derive_vault_keys(crypto, master)
+    defer crypto.wipe(page)
+    defer crypto.wipe(secrets)
     return crypto.equal(secrets, session.secrets_key)
 }
 

@@ -181,8 +181,11 @@ fn try_auth_step[C: Crypto, T: SshTransport](crypto: C, session: VaultSession, c
             return error(coded(ERR_NOT_FOUND, "a linked key no longer exists"))
         }
         k := cat.keys[usize(idx)]
+        // Each opened secret is wiped once the transport has it (milestone 36, D-085).
         private_key := try open_secret(crypto, session, "ssh_keys", k.id, "private_key", k.private_key)
+        defer crypto.wipe_text(private_key)
         passphrase := try open_secret(crypto, session, "ssh_keys", k.id, "passphrase", k.passphrase)
+        defer crypto.wipe_text(passphrase)
         try link.link_auth_key(private_key, passphrase)
         return
     }
@@ -202,6 +205,7 @@ fn try_auth_step[C: Crypto, T: SshTransport](crypto: C, session: VaultSession, c
             }
         }
         password := try open_secret(crypto, session, table, s.ref_id, "password", sealed)
+        defer crypto.wipe_text(password)
         try link.link_auth_password(password)
         return
     }
@@ -226,6 +230,7 @@ fn authenticate_hop[C: Crypto, T: SshTransport, P: Prompter](crypto: C, session:
     }
     if ask_password && prompter.prompt_available() {
         typed := try prompter.prompt_password(user, h.alias)
+        defer crypto.wipe_text(typed)
         if typed.len() > 0 {
             mut accepted := true
             link.link_auth_password(typed) or err {
