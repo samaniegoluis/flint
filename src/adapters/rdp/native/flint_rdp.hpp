@@ -332,6 +332,10 @@ struct Tab {
     int32_t width = 0, height = 0;
     // A size asked for while the server has no Display Control (0: none).
     int32_t want_w = 0, want_h = 0;
+    // A size asked for while a reconnect was under way (milestone 38): the connection
+    // being opened carries the old size or layout, so `open` leaves the request for
+    // `wait` to report, and the core reconnects at that size on one monitor.
+    bool asked_while_opening = false;
     // The certificate check of the connection being opened.
     std::string trusted;
     Cert presented;
@@ -1234,6 +1238,7 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         t->conn = nullptr;
         t->want_w = 0;
         t->want_h = 0;
+        t->asked_while_opening = false;
         t->trusted = trusted;
         for (auto& ch : t->trusted) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
         t->presented = Cert{};
@@ -1427,8 +1432,15 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         t->conn = c;
         t->width = static_cast<int32_t>(inst->context->gdi->width);
         t->height = static_cast<int32_t>(inst->context->gdi->height);
-        t->layout = layout;
-        t->views = views_for(layout);
+        if (t->asked_while_opening) {
+            // Back to one monitor was asked meanwhile: the request stands (want_w, an
+            // empty layout) and `wait` reports it once this connection is up.
+            t->asked_while_opening = false;
+            t->layout.clear();
+        } else {
+            t->layout = layout;
+        }
+        t->views = views_for(t->layout);
         mark_all_locked(*t);
         out_w = t->width;
         out_h = t->height;
@@ -1463,6 +1475,16 @@ inline int resize(const std::string& id, int32_t w, int32_t h) {
     {
         std::lock_guard<std::mutex> g(t->mu);
         c = t->conn;
+        if (!c && t->listen_fd != BAD_SOCK) {
+            // A reconnect is under way (a mode switch, a size): the request waits for
+            // it rather than being lost (milestone 38).
+            t->layout.clear();
+            t->views = views_for(t->layout);
+            t->want_w = w;
+            t->want_h = h;
+            t->asked_while_opening = true;
+            return RDP_OK;
+        }
         if (!c || c->ended.load()) return RDP_ERR_CLOSED;
         const bool spanned = !t->layout.empty();
         if (spanned) {

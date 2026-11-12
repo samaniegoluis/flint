@@ -245,6 +245,7 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
   useEffect(() => {
     if (spanOn === wasSpanning.current) return;
     wasSpanning.current = spanOn;
+    if (!spanOn) sessions.fitDesktopToArea(pane.id);
     sessions.autoForMonitors(pane.id, spanOn);
   }, [spanOn, pane.id]);
   const onMouseButton = (e: { clientX: number; clientY: number; button: number; buttons: number; preventDefault(): void }, down: boolean) => {

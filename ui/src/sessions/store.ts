@@ -394,6 +394,18 @@ class SessionStore {
    * An RDP pane's view measured `width` x `height` CSS pixels: the first size opens
    * the connection; a later one, once it settles, resizes the desktop.
    */
+  /**
+   * Back on one monitor (milestone 38): the desktop takes the area's size as it is
+   * now. Leaving asks for the main window's size measured when the span began, which
+   * may be stale (the full screen still settling then), and the area may not change
+   * again to correct it.
+   */
+  fitDesktopToArea(paneId: string) {
+    const p = this.pane(paneId);
+    const area = this.areas.get(paneId);
+    if (p && area && p.session && p.status === 'ready') api.rdpResize(p.session, area.width, area.height).catch(() => {});
+  }
+
   desktopArea(paneId: string, width: number, height: number) {
     const w = Math.floor(width);
     const h = Math.floor(height);

@@ -607,7 +607,12 @@
         let last = '';
         const tick = () => {
           const m = mons()?.get();
-          const now = m ? `${m.phase} picks=${m.picks.join(',')} span=${m.span ? `${m.span.width}x${m.span.height}` : '-'} err=${m.error}` : 'no store';
+          // The tab's desktop, its area and what Automatic chose (D-091 reconnects it).
+          const cv = document.querySelector('canvas.rdp-canvas');
+          const area = document.querySelector('.rdp-area')?.getBoundingClientRect();
+          const mode = document.querySelector('[title^="Automatic"], [title^="Pipeline"], [title^="Compatible"]')?.getAttribute('title')?.split('.')[0] ?? '';
+          const tab = `desk=${cv?.dataset.desktop ?? '-'} area=${area ? `${Math.floor(area.width)}x${Math.floor(area.height)}` : '-'} mode=${mode}`;
+          const now = m ? `${m.phase} picks=${m.picks.join(',')} span=${m.span ? `${m.span.width}x${m.span.height}` : '-'} err=${m.error} ${tab}` : 'no store';
           if (now !== last) { last = now; log(`diag: monitors ${now} at ${Math.round(performance.now() - f0)} ms (step: ${step})`); }
           setTimeout(tick, 100);
         };
