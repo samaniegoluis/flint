@@ -1,5 +1,6 @@
 package rdp
 
+import "core:fs"
 import "core:os"
 import "core:str"
 import "core:time"
@@ -549,3 +550,149 @@ test "a network that goes quiet ends the session within 20 s, idle or sending" {
 }
 
 
+
+// ---- Monitors (milestone 38) ----------------------------------------------------------
+
+fn pair_layout(w1: i64, h1: i64, x2: i64, y2: i64, w2: i64, h2: i64) -> []RdpMonitor {
+    return [
+        RdpMonitor{ local_id: "a", x: 0, y: 0, width: w1, height: h1, primary: true },
+        RdpMonitor{ local_id: "b", x: x2, y: y2, width: w2, height: h2, primary: false },
+    ]
+}
+
+// The first frame of view `v` that covers it whole (w x h), "" after 10 s.
+fn wait_view(tab: str, v: i64, w: i64, h: i64) -> str {
+    for i in 0..50 {
+        frame := next_frame_view(tab, v, 200) or ""
+        if frame.len() > 16 && le16(frame, 8) == w && le16(frame, 10) == h && le16(frame, 12) == w && le16(frame, 14) == h {
+            return frame
+        }
+    }
+    return ""
+}
+
+fn http_status(url: str) -> str {
+    r := os.command("curl", ["-s", "-o", "/dev/null", "-w", "%{http_code}", "-m", "5", url]) or {
+        return ""
+    }
+    return r.stdout
+}
+
+test "a frame request names its view after the token" {
+    assert_eq(frame_view("GET /next?t=abc HTTP/1.1\r\nHost: x"), 0)
+    assert_eq(frame_view("GET /next?t=abc&v=1 HTTP/1.1\r\nHost: x"), 1)
+    assert_eq(frame_view("GET /next?t=abc&v=12&x=1 HTTP/1.1"), 12)
+    assert_eq(frame_view("GET /next?t=abc&v= HTTP/1.1"), -1)
+    assert_eq(frame_view("GET /next?t=abc&v=1x HTTP/1.1"), -1)
+    assert_eq(frame_view("GET /next?t=abc&v=99999 HTTP/1.1"), -1)
+    // The token is still read up to the first `&`.
+    assert_eq(check_frame_request("GET /next?t=tok&v=1 HTTP/1.1\r\nHost: 127.0.0.1:9", "tok", 9), 0)
+}
+
+test "a layout the shim reads back is the one written, and one RDP refuses is not sent" {
+    l := pair_layout(2560, 1440, -1080, -235, 1080, 1920)
+    back := parse_layout_text(layout_text(l))
+    assert_eq(back.len(), 2)
+    assert_eq(back[1].x, -1080)
+    assert_eq(back[1].y, -235)
+    assert(back[0].primary)
+    assert_eq(parse_layout_text("1,2,3").len(), 0)
+    assert_eq(parse_layout_text("").len(), 0)
+    rd := new_freerdp_desktop()
+    mut msg := ""
+    rd.rd_set_layout("t-none", pair_layout(2560, 1440, 2000, 0, 1080, 1920)) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid:"), msg)
+}
+
+test "a desktop across two monitors serves one view per monitor, each its own crop" {
+    t := sample_target("")
+    if t.port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    fp := first_fingerprint(rd, "t-mon", t)
+    d := try rd.rd_open("t-mon", sample_target(fp), 15000)
+    defer rd.rd_close("t-mon")
+    assert(wait_frame("t-mon").len() > 16, "no frame in 10 s")
+    // No Display Control on the sample server: the layout comes back for a reconnect.
+    layout := pair_layout(512, 768, 512, 0, 512, 768)
+    try rd.rd_set_layout("t-mon", layout)
+    ev := rd.rd_wait("t-mon", 2000)
+    assert_eq(ev.kind, "resize")
+    assert_eq(ev.width, 1024)
+    assert_eq(ev.monitors.len(), 2)
+    assert_eq(ev.monitors[1].x, 512)
+    mut t2 := sample_target(fp)
+    t2.monitors = layout
+    t2.width = 1024
+    t2.height = 768
+    d2 := try rd.rd_open("t-mon", t2, 15000)
+    assert_eq(d2.frame_token, d.frame_token)
+    left := wait_view("t-mon", 0, 512, 768)
+    right := wait_view("t-mon", 1, 512, 768)
+    assert(left.len() > 16, "view 0 drew no whole frame")
+    assert(right.len() > 16, "view 1 drew no whole frame")
+    // (The sample server's picture may be the same in both halves; which part each view
+    // shows is checked on a real desktop, below, and in gui-e2e's multimon run.)
+    base := "http://127.0.0.1:{d.frame_port}/next?t={d.frame_token}"
+    assert_eq(http_status(base + "&v=1"), "200")
+    assert_eq(http_status(base + "&v=2"), "404")
+    assert_eq(http_status(base + "&v=x"), "404")
+    // Back to one monitor: view 1 is gone, view 0 is the whole desktop again.
+    try rd.rd_resize("t-mon", 1024, 768)
+    assert_eq(http_status(base + "&v=1"), "404")
+    whole := wait_view("t-mon", 0, 1024, 768)
+    assert(whole.len() > 16, "view 0 is not the whole desktop again")
+}
+
+// The owner's pair on a real Windows host: the layout at connect, then one monitor and
+// two again through Display Control, the session kept (the spike's probe, D-089). No
+// input is sent. With FLINT_RDP_DUMP_DIR set, each view's first whole frame is written
+// there (view<N>.rgba with its size in the name) for a person to look at.
+test "a real Windows host spans two monitors at connect and rearranges in place" {
+    t := live_target("")
+    if t.hostname.len() == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    fp := first_fingerprint(rd, "t-live-mon", t)
+    layout := pair_layout(2560, 1440, -1080, -235, 1080, 1920)
+    mut lt := live_target(fp)
+    lt.monitors = layout
+    lt.width = 3640
+    lt.height = 1920
+    d := try rd.rd_open("t-live-mon", lt, 20000)
+    defer rd.rd_close("t-live-mon")
+    assert_eq(d.width, 3640)
+    assert_eq(d.height, 1920)
+    main := wait_view("t-live-mon", 0, 2560, 1440)
+    side := wait_view("t-live-mon", 1, 1080, 1920)
+    assert(main.len() > 16, "the primary's view drew no whole frame")
+    assert(side.len() > 16, "the portrait's view drew no whole frame")
+    // The channel opens a moment after the desktop; meanwhile Windows draws, and after a
+    // quiet second each view is read whole again (milestone 35's re-read).
+    time.sleep_ms(4000)
+    dir := os.getenv("FLINT_RDP_DUMP_DIR")
+    if dir.len() > 0 {
+        main2 := wait_view("t-live-mon", 0, 2560, 1440)
+        side2 := wait_view("t-live-mon", 1, 1080, 1920)
+        if main2.len() > 16 && side2.len() > 16 {
+            fs.write_text("{dir}/view0-2560x1440.rgba", main2.substr(16)) or {}
+            fs.write_text("{dir}/view1-1080x1920.rgba", side2.substr(16)) or {}
+        }
+    }
+    try rd.rd_resize("t-live-mon", 1280, 720)
+    mut one := false
+    for i in 0..50 {
+        frame := next_frame_view("t-live-mon", 0, 200) or ""
+        if frame.len() > 16 && le16(frame, 12) == 1280 && le16(frame, 14) == 720 {
+            one = true
+            break
+        }
+    }
+    assert(one, "the desktop did not go back to one monitor of 1280x720")
+    try rd.rd_set_layout("t-live-mon", layout)
+    again := wait_view("t-live-mon", 1, 1080, 1920)
+    assert(again.len() > 16, "the portrait did not come back through Display Control")
+    assert_eq(rd.rd_wait("t-live-mon", 100).kind, "running")
+}

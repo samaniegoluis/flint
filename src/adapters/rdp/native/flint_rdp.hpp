@@ -26,6 +26,13 @@
 // pixels that differ: Stats shows it, and it tells whether a stale block was the
 // shim's (FreeRDP drew it unreported) or the page's (handed out, then lost).
 //
+// Monitors (milestone 38, D-089): a tab may span several monitors, its layout sent at
+// connect (FreeRDP's monitor definitions) or through Display Control without
+// reconnecting. The surface is the box around them; the frame channel then serves one
+// view per monitor (`GET /next?t=<token>&v=<i>`), each with its own crop and its own
+// dirty union, so each window reads its part at its own pace and a slow one never
+// starves another. Without `v` the first view is read, the whole desktop on one monitor.
+//
 // Graphics switch (milestone 35): `set_graphics` asks the core, through `wait`, to
 // reconnect the tab in the other mode at its current size.
 //
@@ -211,6 +218,7 @@ struct Conn {
     // Display Control, once the server opened the channel and sent its caps.
     DispClientContext* disp = nullptr;
     std::atomic<bool> disp_ready{false};
+    std::atomic<uint32_t> disp_max{1};  // monitors Display Control takes (its caps)
     // The clipboard channel, once the server said it is ready (Monitor Ready).
     CliprdrClientContext* clip = nullptr;
     std::atomic<bool> clip_ready{false};
@@ -237,6 +245,76 @@ struct Cert {
     std::string subject, issuer, fingerprint, valid_from, valid_to;
 };
 
+// One reader of the frame channel (milestone 38): a window showing a part of the
+// desktop. `c*` is its crop in desktop pixels (cw == 0: the whole surface); `d*` its
+// pending dirty union inside the crop (dw == 0: nothing pending).
+struct View {
+    int32_t cx = 0, cy = 0, cw = 0, ch = 0;
+    int32_t dx = 0, dy = 0, dw = 0, dh = 0;
+};
+
+// One monitor of a tab's layout, the primary first at 0,0 (domain's check_rdp_layout).
+struct Mon {
+    int32_t x = 0, y = 0, w = 0, h = 0;
+    bool primary = false;
+};
+
+// "x,y,w,h,p;..." as rdp.cf writes it; empty or unreadable: no layout.
+inline std::vector<Mon> parse_layout(const std::string& s) {
+    std::vector<Mon> v;
+    size_t at = 0;
+    while (at < s.size()) {
+        size_t end = s.find(';', at);
+        if (end == std::string::npos) end = s.size();
+        Mon m{};
+        int p = 0;
+        if (std::sscanf(s.substr(at, end - at).c_str(), "%d,%d,%d,%d,%d", &m.x, &m.y, &m.w, &m.h, &p) != 5) return {};
+        m.primary = p != 0;
+        if (m.w <= 0 || m.h <= 0) return {};
+        v.push_back(m);
+        at = end + 1;
+    }
+    if (v.size() > 16) return {};
+    return v;
+}
+
+inline std::string layout_text(const std::vector<Mon>& v) {
+    std::string s;
+    for (size_t i = 0; i < v.size(); ++i) {
+        if (i > 0) s += ";";
+        s += std::to_string(v[i].x) + "," + std::to_string(v[i].y) + "," + std::to_string(v[i].w) + "," +
+             std::to_string(v[i].h) + "," + (v[i].primary ? "1" : "0");
+    }
+    return s;
+}
+
+// The box around a layout's monitors.
+inline void layout_box(const std::vector<Mon>& v, int32_t& x, int32_t& y, int32_t& w, int32_t& h) {
+    if (v.empty()) { x = y = w = h = 0; return; }
+    int32_t x1 = v[0].x, y1 = v[0].y, x2 = v[0].x + v[0].w, y2 = v[0].y + v[0].h;
+    for (const auto& m : v) {
+        x1 = std::min(x1, m.x); y1 = std::min(y1, m.y);
+        x2 = std::max(x2, m.x + m.w); y2 = std::max(y2, m.y + m.h);
+    }
+    x = x1; y = y1; w = x2 - x1; h = y2 - y1;
+}
+
+// One view per monitor, cropped where it lies in the surface; one whole view without
+// a layout.
+inline std::vector<View> views_for(const std::vector<Mon>& layout) {
+    if (layout.size() < 2) return std::vector<View>(1);
+    int32_t bx, by, bw, bh;
+    layout_box(layout, bx, by, bw, bh);
+    std::vector<View> v(layout.size());
+    for (size_t i = 0; i < layout.size(); ++i) {
+        v[i].cx = layout[i].x - bx;
+        v[i].cy = layout[i].y - by;
+        v[i].cw = layout[i].w;
+        v[i].ch = layout[i].h;
+    }
+    return v;
+}
+
 struct Tab {
     std::string id;
     std::mutex mu;               // frames, size, the current connection, events
@@ -246,8 +324,10 @@ struct Tab {
     // While freerdp_connect runs, so close() can cancel it.
     std::mutex connecting_mu;
     freerdp* connecting = nullptr;
-    // Pending dirty union, in framebuffer pixels; empty when dw == 0.
-    int32_t dx = 0, dy = 0, dw = 0, dh = 0;
+    // The frame channel's readers, one per monitor shown (never empty), and the
+    // monitors the desktop spans (empty: one monitor). Under `mu`.
+    std::vector<View> views = std::vector<View>(1);
+    std::vector<Mon> layout;
     uint64_t seq = 0;
     int32_t width = 0, height = 0;
     // A size asked for while the server has no Display Control (0: none).
@@ -311,6 +391,43 @@ inline Context* ctx_of(rdpContext* ctx) { return reinterpret_cast<Context*>(ctx)
 
 // ---- Drawing -------------------------------------------------------------------
 
+// The crop of view `v`: the whole surface when it has none.
+inline void view_crop(const Tab& t, const View& v, int32_t& x, int32_t& y, int32_t& w, int32_t& h) {
+    if (v.cw == 0) { x = 0; y = 0; w = t.width; h = t.height; return; }
+    x = v.cx; y = v.cy; w = v.cw; h = v.ch;
+}
+
+// Adds a changed rectangle to every view it touches. Called with `t.mu` held.
+inline void mark_locked(Tab& t, int32_t x, int32_t y, int32_t w, int32_t h) {
+    for (auto& v : t.views) {
+        int32_t cx, cy, cw, ch;
+        view_crop(t, v, cx, cy, cw, ch);
+        const int32_t ix = std::max(x, cx), iy = std::max(y, cy);
+        const int32_t ix2 = std::min(x + w, cx + cw), iy2 = std::min(y + h, cy + ch);
+        if (ix2 <= ix || iy2 <= iy) continue;
+        if (v.dw == 0) {
+            v.dx = ix; v.dy = iy; v.dw = ix2 - ix; v.dh = iy2 - iy;
+        } else {
+            const int32_t x2 = std::max(v.dx + v.dw, ix2), y2 = std::max(v.dy + v.dh, iy2);
+            v.dx = std::min(v.dx, ix); v.dy = std::min(v.dy, iy);
+            v.dw = x2 - v.dx; v.dh = y2 - v.dy;
+        }
+    }
+    t.seq += 1;
+}
+
+inline void mark_all_locked(Tab& t) { mark_locked(t, 0, 0, t.width, t.height); }
+
+inline bool view_pending(const Tab& t, size_t vi) { return vi < t.views.size() && t.views[vi].dw != 0; }
+
+// Whether pixel x, y is about to go out to some view anyway.
+inline bool pending_at(const Tab& t, int32_t x, int32_t y) {
+    for (const auto& v : t.views) {
+        if (v.dw != 0 && x >= v.dx && x < v.dx + v.dw && y >= v.dy && y < v.dy + v.dh) return true;
+    }
+    return false;
+}
+
 inline BOOL on_begin_paint(rdpContext* ctx) {
     rdpGdi* gdi = ctx->gdi;
     if (!gdi || !gdi->primary || !gdi->primary->hdc || !gdi->primary->hdc->hwnd) return FALSE;
@@ -340,17 +457,7 @@ inline BOOL on_end_paint(rdpContext* ctx) {
     Tab* t = ctx_of(ctx)->tab;
     {
         std::lock_guard<std::mutex> g(t->mu);
-        if (t->dw == 0) {
-            t->dx = x; t->dy = y; t->dw = w; t->dh = h;
-        } else {
-            int32_t x2 = std::max(t->dx + t->dw, x + w);
-            int32_t y2 = std::max(t->dy + t->dh, y + h);
-            t->dx = std::min(t->dx, x);
-            t->dy = std::min(t->dy, y);
-            t->dw = x2 - t->dx;
-            t->dh = y2 - t->dy;
-        }
-        t->seq += 1;
+        mark_locked(*t, x, y, w, h);
         t->last_update = std::chrono::steady_clock::now();
         t->reread_due = true;
     }
@@ -371,8 +478,7 @@ inline BOOL on_desktop_resize(rdpContext* ctx) {
     if (!ok) return FALSE;
     t->width = static_cast<int32_t>(w);
     t->height = static_cast<int32_t>(h);
-    t->dx = 0; t->dy = 0; t->dw = t->width; t->dh = t->height;
-    t->seq += 1;
+    mark_all_locked(*t);
     t->cv.notify_all();
     return TRUE;
 }
@@ -380,8 +486,9 @@ inline BOOL on_desktop_resize(rdpContext* ctx) {
 // ---- Display Control -------------------------------------------------------------
 
 inline UINT on_disp_caps(DispClientContext* disp, UINT32 max_monitors, UINT32 a, UINT32 b) {
-    (void)max_monitors; (void)a; (void)b;
+    (void)a; (void)b;
     auto* c = static_cast<Conn*>(disp->custom);
+    if (c) c->disp_max.store(std::max<UINT32>(1, max_monitors));
     if (c) c->disp_ready.store(true);
     return CHANNEL_RC_OK;
 }
@@ -942,9 +1049,8 @@ inline uint64_t stale_pixels_locked(const Tab& t, rdpGdi* gdi) {
         const uint8_t* a = gdi->primary_buffer + static_cast<size_t>(y) * gdi->stride;
         const uint8_t* b = t.shadow.data() + static_cast<size_t>(y) * row_bytes;
         if (std::memcmp(a, b, row_bytes) == 0) continue;
-        const bool in_rows = t.dw != 0 && y >= t.dy && y < t.dy + t.dh;
         for (int32_t x = 0; x < t.shadow_w; ++x) {
-            if (in_rows && x >= t.dx && x < t.dx + t.dw) continue;
+            if (pending_at(t, x, y)) continue;
             const uint8_t* pa = a + static_cast<size_t>(x) * 4;
             const uint8_t* pb = b + static_cast<size_t>(x) * 4;
             if (pa[0] != pb[0] || pa[1] != pb[1] || pa[2] != pb[2]) n++;
@@ -964,10 +1070,7 @@ inline void quiet_reread(Tab& t, rdpGdi* gdi) {
         t.reread_due = false;
         t.st_stale_px.fetch_add(stale_pixels_locked(t, gdi), std::memory_order_relaxed);
         t.st_rereads.fetch_add(1, std::memory_order_relaxed);
-        t.dx = 0; t.dy = 0;
-        t.dw = static_cast<int32_t>(gdi->width);
-        t.dh = static_cast<int32_t>(gdi->height);
-        t.seq += 1;
+        mark_locked(t, 0, 0, static_cast<int32_t>(gdi->width), static_cast<int32_t>(gdi->height));
     }
     t.cv.notify_all();
 }
@@ -1110,15 +1213,19 @@ inline void install_tcp_hook(rdpContext* ctx) {
 }
 
 // Connects tab `id` (creating it, or replacing its connection), logs in and starts
-// the connection's loop. Returns RDP_OK and the desktop's size and frame channel, or
+// the connection's loop. `layout` (milestone 38) spans the desktop over several
+// monitors ("x,y,w,h,p;...", the primary first at 0,0), `width` x `height` its box;
+// empty for one monitor. Returns RDP_OK and the desktop's size and frame channel, or
 // an RDP_ERR_* code; `detail` gets FreeRDP's error name, never a credential.
 inline int open(const std::string& id, const std::string& host, int32_t port, const std::string& user,
                 const std::string& domain, const std::string& password, int32_t width, int32_t height,
-                const std::string& trusted, const std::string& graphics, int64_t timeout_ms, int32_t& out_w, int32_t& out_h, int32_t& out_port,
+                const std::string& trusted, const std::string& graphics, const std::string& layout_s, int64_t timeout_ms, int32_t& out_w, int32_t& out_h, int32_t& out_port,
                 std::string& out_token, std::string& detail) {
     quiet_freerdp_log();
     auto t = tab_for(id);
     if (t->closed.load()) return RDP_ERR_CLOSED;
+    std::vector<Mon> layout = parse_layout(layout_s);
+    if (layout.size() < 2) layout.clear();
     // A reconnect: the old connection goes first, so the server never sees two.
     std::shared_ptr<Conn> old;
     {
@@ -1174,6 +1281,32 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
     freerdp_settings_set_string(st, FreeRDP_AuthenticationPackageList, "ntlm,!kerberos");
     freerdp_settings_set_uint32(st, FreeRDP_DesktopWidth, static_cast<UINT32>(width));
     freerdp_settings_set_uint32(st, FreeRDP_DesktopHeight, static_cast<UINT32>(height));
+    if (!layout.empty()) {
+        // As xfreerdp's /multimon: the box as the desktop, one entry per monitor, the
+        // primary first at 0,0 (MS-RDPBCGR 2.2.1.3.6.1). Orientation stays landscape
+        // with the size already turned, which Windows takes for a portrait (D-089).
+        // The Monitor Layout PDU only with two or more (some servers freeze on one).
+        int32_t bx, by, bw, bh;
+        layout_box(layout, bx, by, bw, bh);
+        freerdp_settings_set_bool(st, FreeRDP_UseMultimon, TRUE);
+        freerdp_settings_set_bool(st, FreeRDP_ForceMultimon, TRUE);
+        freerdp_settings_set_bool(st, FreeRDP_HasMonitorAttributes, TRUE);
+        freerdp_settings_set_bool(st, FreeRDP_SupportMonitorLayoutPdu, TRUE);
+        freerdp_settings_set_uint32(st, FreeRDP_DesktopWidth, static_cast<UINT32>(bw));
+        freerdp_settings_set_uint32(st, FreeRDP_DesktopHeight, static_cast<UINT32>(bh));
+        freerdp_settings_set_pointer_len(st, FreeRDP_MonitorDefArray, nullptr, layout.size());
+        for (size_t i = 0; i < layout.size(); ++i) {
+            rdpMonitor m{};
+            m.x = layout[i].x; m.y = layout[i].y; m.width = layout[i].w; m.height = layout[i].h;
+            m.is_primary = layout[i].primary ? TRUE : FALSE;
+            m.orig_screen = static_cast<UINT32>(i);
+            m.attributes.orientation = ORIENTATION_LANDSCAPE;
+            m.attributes.desktopScaleFactor = 100;
+            m.attributes.deviceScaleFactor = 100;
+            freerdp_settings_set_pointer_array(st, FreeRDP_MonitorDefArray, i, &m);
+        }
+        freerdp_settings_set_uint32(st, FreeRDP_MonitorCount, static_cast<UINT32>(layout.size()));
+    }
     freerdp_settings_set_uint32(st, FreeRDP_ColorDepth, 32);
     freerdp_settings_set_uint32(st, FreeRDP_KeyboardLayout, local_keyboard_layout());
     freerdp_settings_set_uint32(st, FreeRDP_TcpConnectTimeout, static_cast<UINT32>(timeout_ms));
@@ -1291,8 +1424,9 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         t->conn = c;
         t->width = static_cast<int32_t>(inst->context->gdi->width);
         t->height = static_cast<int32_t>(inst->context->gdi->height);
-        t->dx = 0; t->dy = 0; t->dw = t->width; t->dh = t->height;
-        t->seq += 1;
+        t->layout = layout;
+        t->views = views_for(layout);
+        mark_all_locked(*t);
         out_w = t->width;
         out_h = t->height;
         out_port = t->port;
@@ -1318,6 +1452,7 @@ inline bool presented_cert(const std::string& id, std::string& subject, std::str
 
 // A new size: through Display Control when the server has it, else kept for `wait`
 // to report so the core reconnects.
+// A desktop spanning monitors goes back to one (milestone 38).
 inline int resize(const std::string& id, int32_t w, int32_t h) {
     auto t = find(id);
     if (!t || t->closed.load()) return RDP_ERR_CLOSED;
@@ -1326,7 +1461,14 @@ inline int resize(const std::string& id, int32_t w, int32_t h) {
         std::lock_guard<std::mutex> g(t->mu);
         c = t->conn;
         if (!c || c->ended.load()) return RDP_ERR_CLOSED;
-        if (t->width == w && t->height == h) {
+        const bool spanned = !t->layout.empty();
+        if (spanned) {
+            t->layout.clear();
+            t->views = views_for(t->layout);
+            mark_all_locked(*t);
+            t->cv.notify_all();
+        }
+        if (!spanned && t->width == w && t->height == h) {
             t->want_w = 0;
             t->want_h = 0;
             return RDP_OK;
@@ -1354,6 +1496,54 @@ inline int resize(const std::string& id, int32_t w, int32_t h) {
     return RDP_OK;
 }
 
+// The desktop across the monitors of `layout_s` (milestone 38): the frame channel's
+// views follow at once; the server is told through Display Control when it has it and
+// takes that many monitors, else `wait` reports a resize carrying the layout and the
+// core reconnects with it.
+inline int set_layout(const std::string& id, const std::string& layout_s) {
+    auto t = find(id);
+    if (!t || t->closed.load()) return RDP_ERR_CLOSED;
+    std::vector<Mon> layout = parse_layout(layout_s);
+    if (layout.empty() || !layout[0].primary || layout[0].x != 0 || layout[0].y != 0) return RDP_ERR_OTHER;
+    int32_t bx, by, bw, bh;
+    layout_box(layout, bx, by, bw, bh);
+    std::shared_ptr<Conn> c;
+    {
+        std::lock_guard<std::mutex> g(t->mu);
+        c = t->conn;
+        if (!c || c->ended.load()) return RDP_ERR_CLOSED;
+        t->layout = layout.size() < 2 ? std::vector<Mon>() : layout;
+        t->views = views_for(t->layout);
+        mark_all_locked(*t);
+    }
+    t->cv.notify_all();
+    if (c->disp_ready.load() && c->disp && layout.size() <= c->disp_max.load()) {
+        std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT> L(layout.size());
+        for (size_t i = 0; i < layout.size(); ++i) {
+            auto& l = L[i];
+            l.Flags = layout[i].primary ? DISPLAY_CONTROL_MONITOR_PRIMARY : 0;
+            l.Left = layout[i].x;
+            l.Top = layout[i].y;
+            l.Width = static_cast<UINT32>(layout[i].w);
+            l.Height = static_cast<UINT32>(layout[i].h);
+            l.PhysicalWidth = 0;
+            l.PhysicalHeight = 0;
+            l.Orientation = ORIENTATION_LANDSCAPE;
+            l.DesktopScaleFactor = 100;
+            l.DeviceScaleFactor = 100;
+        }
+        std::lock_guard<std::mutex> g(t->input_mu);
+        return c->disp->SendMonitorLayout(c->disp, static_cast<UINT32>(L.size()), L.data()) == CHANNEL_RC_OK ? RDP_OK : RDP_ERR_OTHER;
+    }
+    {
+        std::lock_guard<std::mutex> g(t->mu);
+        t->want_w = bw;
+        t->want_h = bh;
+    }
+    t->cv.notify_all();
+    return RDP_OK;
+}
+
 // Why a connection that was up has ended.
 inline int end_reason(const Conn& c, std::string& detail) {
     UINT32 info = c.error_info;
@@ -1371,9 +1561,11 @@ inline int end_reason(const Conn& c, std::string& detail) {
 
 // Waits up to `wait_ms`: EV_ENDED (with `code` and `detail`; code 0 when the tab was
 // closed), EV_RESIZE (the size the tab asked for) or EV_RUNNING.
-inline int wait(const std::string& id, int64_t wait_ms, int32_t& code, std::string& detail, int32_t& w, int32_t& h) {
+inline int wait(const std::string& id, int64_t wait_ms, int32_t& code, std::string& detail, int32_t& w, int32_t& h,
+                std::string& layout_out) {
     code = 0;
     detail.clear();
+    layout_out.clear();
     auto t = find(id);
     if (!t || t->closed.load()) return EV_ENDED;
     std::unique_lock<std::mutex> g(t->mu);
@@ -1397,6 +1589,7 @@ inline int wait(const std::string& id, int64_t wait_ms, int32_t& code, std::stri
         h = t->want_h;
         t->want_w = 0;
         t->want_h = 0;
+        layout_out = layout_text(t->layout);
         return EV_RESIZE;
     }
     if (t->remote_pending) {
@@ -1413,6 +1606,7 @@ inline int wait(const std::string& id, int64_t wait_ms, int32_t& code, std::stri
         t->want_graphics.clear();
         w = t->width;
         h = t->height;
+        layout_out = layout_text(t->layout);
         return EV_GRAPHICS;
     }
     return EV_RUNNING;
@@ -1632,28 +1826,35 @@ inline int pointer(const std::string& id, int32_t kind, int32_t button, int32_t 
 
 // ---- Frames ------------------------------------------------------------------------
 
-// Takes the pending dirty region: a 16-byte little-endian header followed by its RGBA
-// rows. `out` is empty when nothing changed. Header: u32 seq, u16 x, y, w, h, then the
-// whole desktop's u16 width and height. Called with `t.mu` held.
-inline int take_frame_locked(Tab& t, std::string& out) {
+// Takes view `vi`'s pending dirty region: a 16-byte little-endian header followed by
+// its RGBA rows. `out` is empty when nothing changed. Header: u32 seq, u16 x, y, w, h
+// in the view's own pixels (from its crop's top-left), then the view's u16 width and
+// height (the whole desktop's for a view without a crop). Called with `t.mu` held.
+// RDP_ERR_OTHER for a view the tab does not have.
+inline int take_frame_locked(Tab& t, size_t vi, std::string& out) {
     out.clear();
     if (t.closed.load()) return RDP_ERR_CLOSED;
-    if (t.dw == 0 || !t.conn || !t.conn->inst || !t.conn->inst->context->gdi) return RDP_OK;
+    if (vi >= t.views.size()) return RDP_ERR_OTHER;
+    View& v = t.views[vi];
+    if (v.dw == 0 || !t.conn || !t.conn->inst || !t.conn->inst->context->gdi) return RDP_OK;
     rdpGdi* gdi = t.conn->inst->context->gdi;
-    int32_t x = t.dx, y = t.dy, w = t.dw, h = t.dh;
+    int32_t x = v.dx, y = v.dy, w = v.dw, h = v.dh;
     // A union drawn before a resize may reach past the new size.
     w = std::min<int32_t>(w, static_cast<int32_t>(gdi->width) - x);
     h = std::min<int32_t>(h, static_cast<int32_t>(gdi->height) - y);
-    t.dw = 0;
+    v.dw = 0;
     if (w <= 0 || h <= 0) return RDP_OK;
+    int32_t cx, cy, cw, ch;
+    view_crop(t, v, cx, cy, cw, ch);
+    if (v.cw == 0) { cw = static_cast<int32_t>(gdi->width); ch = static_cast<int32_t>(gdi->height); }
     t.st_frames_read.fetch_add(1, std::memory_order_relaxed);
     out.resize(16 + static_cast<size_t>(w) * h * 4);
     auto* p = reinterpret_cast<uint8_t*>(out.data());
-    auto put16 = [&](size_t at, uint32_t v) { p[at] = v & 0xff; p[at + 1] = (v >> 8) & 0xff; };
-    auto put32 = [&](size_t at, uint32_t v) { put16(at, v & 0xffff); put16(at + 2, v >> 16); };
+    auto put16 = [&](size_t at, uint32_t val) { p[at] = val & 0xff; p[at + 1] = (val >> 8) & 0xff; };
+    auto put32 = [&](size_t at, uint32_t val) { put16(at, val & 0xffff); put16(at + 2, val >> 16); };
     put32(0, static_cast<uint32_t>(t.seq));
-    put16(4, x); put16(6, y); put16(8, w); put16(10, h);
-    put16(12, gdi->width); put16(14, gdi->height);
+    put16(4, x - cx); put16(6, y - cy); put16(8, w); put16(10, h);
+    put16(12, cw); put16(14, ch);
     const uint32_t stride = gdi->stride;
     const uint8_t* src = gdi->primary_buffer + static_cast<size_t>(y) * stride + static_cast<size_t>(x) * 4;
     uint8_t* dst = p + 16;
@@ -1676,14 +1877,19 @@ inline int take_frame_locked(Tab& t, std::string& out) {
     return RDP_OK;
 }
 
-// Waits up to `wait_ms` for a dirty region, then takes it. For tests; the page reads
-// through the frame channel.
-inline int next_frame(const std::string& id, int64_t wait_ms, std::string& out) {
+// Waits up to `wait_ms` for a dirty region of view `vi`, then takes it. For tests; the
+// page reads through the frame channel.
+inline int next_frame_view(const std::string& id, int32_t vi, int64_t wait_ms, std::string& out) {
     auto t = find(id);
     if (!t) return RDP_ERR_CLOSED;
     std::unique_lock<std::mutex> g(t->mu);
-    t->cv.wait_for(g, std::chrono::milliseconds(wait_ms), [&] { return t->dw != 0 || t->closed.load(); });
-    return take_frame_locked(*t, out);
+    const size_t v = static_cast<size_t>(std::max(0, vi));
+    t->cv.wait_for(g, std::chrono::milliseconds(wait_ms), [&] { return view_pending(*t, v) || t->closed.load(); });
+    return take_frame_locked(*t, v, out);
+}
+
+inline int next_frame(const std::string& id, int64_t wait_ms, std::string& out) {
+    return next_frame_view(id, 0, wait_ms, out);
 }
 
 inline bool send_all(sock_t fd, const char* p, size_t n) {
@@ -1754,6 +1960,24 @@ inline int check_frame_request(const std::string& head, const std::string& token
     return 0;
 }
 
+// The view a request asks for (milestone 38): `&v=<n>` after the token, 0 without it,
+// -1 when it is not a small number.
+inline int frame_view_of(const std::string& head) {
+    const std::string line = head.substr(0, head.find("\r\n"));
+    const size_t sp = line.find(' ', 4);
+    const std::string target = line.substr(0, sp);
+    const size_t at = target.find("&v=");
+    if (at == std::string::npos) return 0;
+    size_t i = at + 3;
+    int v = 0, digits = 0;
+    while (i < target.size() && target[i] >= '0' && target[i] <= '9' && digits < 3) {
+        v = v * 10 + (target[i] - '0');
+        i++; digits++;
+    }
+    if (digits == 0 || (i < target.size() && target[i] != '&')) return -1;
+    return v;
+}
+
 // The CORS header for a request's Origin: empty for a page that is not this machine's.
 inline std::string cors_for(const std::string& head) {
     const std::string origin = header_value(head, "Origin");
@@ -1796,13 +2020,24 @@ inline void serve_conn(std::shared_ptr<Tab> t, sock_t fd) {
             send_all(fd, r.data(), r.size());
             break;
         }
+        const int vi = frame_view_of(head);
         std::string body;
         bool gone;
+        int rc = RDP_OK;
         {
             std::unique_lock<std::mutex> g(t->mu);
-            t->cv.wait_for(g, std::chrono::milliseconds(1000), [&] { return t->dw != 0 || t->closed.load(); });
+            if (vi >= 0) {
+                t->cv.wait_for(g, std::chrono::milliseconds(1000), [&] { return view_pending(*t, static_cast<size_t>(vi)) || t->closed.load() || static_cast<size_t>(vi) >= t->views.size(); });
+            }
             gone = t->closed.load();
-            if (!gone) take_frame_locked(*t, body);
+            if (!gone) rc = vi < 0 ? RDP_ERR_OTHER : take_frame_locked(*t, static_cast<size_t>(vi), body);
+        }
+        if (!gone && rc == RDP_ERR_OTHER) {
+            // A view the tab no longer has (it went back to fewer monitors): that window
+            // stops reading.
+            std::string r = "HTTP/1.1 404 Not Found\r\n" + cors + "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            send_all(fd, r.data(), r.size());
+            break;
         }
         if (gone) {
             std::string r = "HTTP/1.1 410 Gone\r\n" + cors + "Content-Length: 0\r\nConnection: close\r\n\r\n";

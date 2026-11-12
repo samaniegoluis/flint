@@ -11,6 +11,7 @@ package rdp
 // CFIRE-UPSTREAM: CF-119
 import cpp "flint_rdp.hpp" @pkg("flint-rdp")
 import "../../domain"
+import "core:str"
 
 // The engine. Stateless: the tabs live in the shim's registry.
 type FreeRdpDesktop struct {
@@ -80,11 +81,12 @@ fn (self: FreeRdpDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> Rd
     rport := i32(t.port)
     rw := i32(t.width)
     rh := i32(t.height)
+    layout := layout_text(t.monitors)
     // The password goes to the shim straight from the target, never through a local
     // copy here (milestone 36): the caller wipes the target's once this returns.
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        rc = flint_rdp::open(tab, host, rport, user, dom, t.password, rw, rh, trusted, graphics, timeout_ms, w, h, port, token, detail);
+        rc = flint_rdp::open(tab, host, rport, user, dom, t.password, rw, rh, trusted, graphics, layout, timeout_ms, w, h, port, token, detail);
     }
     if rc != 0 {
         return error(rdp_error(i64(rc), detail))
@@ -118,15 +120,66 @@ fn (self: FreeRdpDesktop) rd_resize(tab: str, width: i64, height: i64) -> void! 
     }
 }
 
+// A layout as the shim reads it (milestone 38): "x,y,w,h,p;..." with the primary first.
+fn layout_text(ms: []RdpMonitor) -> str {
+    mut s := ""
+    for i, m in ms {
+        if i > 0 {
+            s = s + ";"
+        }
+        mut p := "0"
+        if m.primary {
+            p = "1"
+        }
+        s = s + "{m.x},{m.y},{m.width},{m.height},{p}"
+    }
+    return s
+}
+
+// The shim's layout text back as monitors; the local ids are not the shim's, so they
+// are left empty (the core keeps them where it needs them).
+fn parse_layout_text(s: str) -> []RdpMonitor {
+    mut res: []RdpMonitor = []
+    if s.len() == 0 {
+        return res
+    }
+    for part in str.split(s, ";") {
+        f := str.split(part, ",")
+        if f.len() != 5 {
+            return []
+        }
+        x := str.parse_i64(f[0]) or { return [] }
+        y := str.parse_i64(f[1]) or { return [] }
+        w := str.parse_i64(f[2]) or { return [] }
+        h := str.parse_i64(f[3]) or { return [] }
+        res.push(RdpMonitor{ local_id: "", x: x, y: y, width: w, height: h, primary: f[4] == "1" })
+    }
+    return res
+}
+
+fn (self: FreeRdpDesktop) rd_set_layout(tab: str, monitors: []RdpMonitor) -> void! {
+    try check_rdp_layout(monitors)
+    mut rc: i32 = 0
+    layout := layout_text(monitors)
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::set_layout(tab, layout);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "layout"))
+    }
+}
+
 fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {
     mut kind: i32 = 0
     mut code: i32 = 0
     mut detail := ""
     mut w: i32 = 0
     mut h: i32 = 0
+    mut layout := ""
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        kind = flint_rdp::wait(tab, wait_ms, code, detail, w, h);
+        kind = flint_rdp::wait(tab, wait_ms, code, detail, w, h, layout);
     }
     if kind == 1 {
         mut msg := ""
@@ -136,7 +189,7 @@ fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {
         return RdpEvent{ kind: RDP_EVENT_ENDED, message: msg, width: 0, height: 0 }
     }
     if kind == 2 {
-        return RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: i64(w), height: i64(h) }
+        return RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
     }
     if kind == 3 {
         return RdpEvent{ kind: RDP_EVENT_CLIP_TEXT, message: detail, width: 0, height: 0 }
@@ -145,7 +198,7 @@ fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {
         return RdpEvent{ kind: RDP_EVENT_CLIP_REQUEST, message: "", width: 0, height: 0 }
     }
     if kind == 5 {
-        return RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: detail, width: i64(w), height: i64(h) }
+        return RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: detail, width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
     }
     return RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 }
 }
@@ -281,6 +334,31 @@ fn next_frame(tab: str, wait_ms: i64) -> str! {
         return error(rdp_error(i64(rc), ""))
     }
     return frame
+}
+
+// View `view`'s pending frame (milestone 38), as next_frame.
+fn next_frame_view(tab: str, view: i64, wait_ms: i64) -> str! {
+    mut rc: i32 = 0
+    mut frame := ""
+    v := i32(view)
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::next_frame_view(tab, v, wait_ms, frame);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "view"))
+    }
+    return frame
+}
+
+// The frame channel's view for a request's head (-1: unreadable).
+fn frame_view(head: str) -> i64 {
+    mut v: i32 = 0
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        v = flint_rdp::frame_view_of(head);
+    }
+    return i64(v)
 }
 
 // Ends every tab: the app is quitting.
