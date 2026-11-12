@@ -12,6 +12,7 @@ package main
 // leaves the session running (D-072).
 
 import "ext:webui"
+import "core:json"
 import "../../adapters/rdp"
 import "../../adapters/uievents"
 import "../../adapters/vault"
@@ -23,6 +24,8 @@ type RdpOpenReq struct {
     alias:  str `json:"alias"`
     width:  i64 `json:"width"`
     height: i64 `json:"height"`
+    // Settings → Remote desktop → Graphics (milestone 34); older pages send none.
+    graphics: str `json:"graphics" default:"auto"`
 }
 
 type RdpKeyReq struct {
@@ -98,7 +101,7 @@ fn run_gui_rdp(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, vs: V
     prompter := new_gui_prompter(app, req.tab)
     mut sink := RdpTabSink{ events: new_gui_desktop_sink(app), holder: holder }
     mut clip := board
-    open := RdpOpenRequest{ tab: req.tab, alias: req.alias, width: req.width, height: req.height, timeout_ms: RDP_CONNECT_TIMEOUT_MS }
+    open := RdpOpenRequest{ tab: req.tab, alias: req.alias, width: req.width, height: req.height, timeout_ms: RDP_CONNECT_TIMEOUT_MS, graphics: req.graphics }
     run_remote_desktop(c, mut store, vs, mut rd, prompter, mut sink, mut clip, open) or err {
         msg := "{err.message()}"
         emit_rdp_state(mut app, req.tab, "ended", error_code_of(msg), error_text_of(msg))
@@ -140,6 +143,13 @@ fn rpc_rdp_close(params: str, st: GuiState) -> str! {
     close_remote_desktop(mut rd, req.tab)
     _ := gui_session_close(req.tab)
     return ok_json()
+}
+
+// The tab's counters (milestone 34): the statistics overlay and the benchmark.
+fn rpc_rdp_stats(params: str) -> str! {
+    req := try parse_req[RdpTabReq](params)
+    rd := new_freerdp_desktop()
+    return json.stringify(try remote_desktop_stats(rd, req.tab))
 }
 
 // The tab took the focus: the server learns whether this machine's clipboard holds

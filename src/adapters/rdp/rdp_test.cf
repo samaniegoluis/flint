@@ -18,11 +18,11 @@ fn sample_target(trusted: str) -> RdpTarget {
     if port.len() > 0 {
         p = str.parse_i64(port) or 0
     }
-    return RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "sample", width: 1024, height: 768, trusted_fingerprint: trusted }
+    return RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "sample", width: 1024, height: 768, trusted_fingerprint: trusted, graphics: "auto" }
 }
 
 fn live_target(trusted: str) -> RdpTarget {
-    return RdpTarget{ hostname: os.getenv("FLINT_RDP_TEST_HOST"), port: 3389, user: os.getenv("FLINT_RDP_TEST_USER"), domain: "", password: os.getenv("FLINT_RDP_TEST_PASSWORD"), width: 1024, height: 768, trusted_fingerprint: trusted }
+    return RdpTarget{ hostname: os.getenv("FLINT_RDP_TEST_HOST"), port: 3389, user: os.getenv("FLINT_RDP_TEST_USER"), domain: "", password: os.getenv("FLINT_RDP_TEST_PASSWORD"), width: 1024, height: 768, trusted_fingerprint: trusted, graphics: "auto" }
 }
 
 // Connects once with nothing trusted, which stops at the certificate, and returns
@@ -65,7 +65,7 @@ fn le16(s: str, at: usize) -> i64 {
 test "an address that never answers fails within the timeout" {
     rd := new_freerdp_desktop()
     // TEST-NET-1 (RFC 5737): routed nowhere, so the dial hangs until the timeout.
-    t := RdpTarget{ hostname: "192.0.2.1", port: 3389, user: "nobody", domain: "", password: "never-sent", width: 800, height: 600, trusted_fingerprint: "" }
+    t := RdpTarget{ hostname: "192.0.2.1", port: 3389, user: "nobody", domain: "", password: "never-sent", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto" }
     started := time.now_ms()
     mut msg := ""
     rd.rd_open("t-dial", t, 1500) or err { msg = "{err.message()}" }
@@ -80,7 +80,7 @@ test "an address that never answers fails within the timeout" {
 test "a closed port is told apart from an unreachable host" {
     rd := new_freerdp_desktop()
     // Port 9 (discard) is closed on loopback, so the dial is refused at once.
-    t := RdpTarget{ hostname: "127.0.0.1", port: 9, user: "nobody", domain: "", password: "x", width: 800, height: 600, trusted_fingerprint: "" }
+    t := RdpTarget{ hostname: "127.0.0.1", port: 9, user: "nobody", domain: "", password: "x", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto" }
     mut msg := ""
     rd.rd_open("t-closed", t, 5000) or err { msg = "{err.message()}" }
     rd.rd_close("t-closed")
@@ -90,7 +90,7 @@ test "a closed port is told apart from an unreachable host" {
 test "an RDP target needs an address and a user" {
     rd := new_freerdp_desktop()
     mut msg := ""
-    rd.rd_open("t-bad", RdpTarget{ hostname: "", port: 3389, user: "x", domain: "", password: "", width: 800, height: 600, trusted_fingerprint: "" }, 1000) or err { msg = "{err.message()}" }
+    rd.rd_open("t-bad", RdpTarget{ hostname: "", port: 3389, user: "x", domain: "", password: "", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto" }, 1000) or err { msg = "{err.message()}" }
     assert(msg.starts_with("invalid:"), msg)
 }
 
@@ -197,6 +197,46 @@ test "a real Windows host resizes in place through Display Control" {
     assert_eq(rd.rd_wait("t-live", 100).kind, "running")
 }
 
+// Milestone 34: Windows offers the graphics pipeline, which "auto" takes; "compatible"
+// keeps the bitmap updates. The codec is the server's choice among those offered.
+test "a real Windows host draws through the graphics pipeline, or bitmaps when asked" {
+    t := live_target("")
+    if t.hostname.len() == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    fp := first_fingerprint(rd, "t-gfx", t)
+    _ := try rd.rd_open("t-gfx", live_target(fp), 20000)
+    assert(wait_frame("t-gfx").len() > 16, "no frame in 10 s")
+    // The pipeline's channel opens a moment after the desktop, as Display Control's.
+    mut st := try rd.rd_stats("t-gfx")
+    for i in 0..50 {
+        if st.pipeline == "gfx" && st.commands > 0 {
+            break
+        }
+        time.sleep_ms(200)
+        st = try rd.rd_stats("t-gfx")
+    }
+    assert_eq(st.pipeline, "gfx")
+    assert(st.commands > 0, "no surface command")
+    assert(st.bytes_in > 0)
+    assert(st.codec.len() > 0)
+    println("graphics pipeline: codec {st.codec}, h264 {st.h264}, {st.commands} commands, {st.bytes_in} bytes")
+    rd.rd_close("t-gfx")
+
+    mut old := live_target(fp)
+    old.graphics = "compatible"
+    _ := try rd.rd_open("t-bitmap", old, 20000)
+    defer rd.rd_close("t-bitmap")
+    assert(wait_frame("t-bitmap").len() > 16, "no frame in 10 s")
+    // Long enough for a pipeline that would open to have opened.
+    time.sleep_ms(3000)
+    st2 := try rd.rd_stats("t-bitmap")
+    assert_eq(st2.pipeline, "bitmap")
+    assert_eq(st2.commands, 0)
+    assert(st2.bytes_in > 0)
+}
+
 // ---- Flint's own test server (milestone 31): FLINT_RDP_CLIP_PORT, its control port
 // FLINT_RDP_CLIP_CONTROL (scripts/test.sh starts it; native/testserver).
 
@@ -206,7 +246,7 @@ fn clip_target(trusted: str) -> RdpTarget {
     if port.len() > 0 {
         p = str.parse_i64(port) or 0
     }
-    return RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "x", width: 640, height: 480, trusted_fingerprint: trusted }
+    return RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "x", width: 640, height: 480, trusted_fingerprint: trusted, graphics: "auto" }
 }
 
 // One command to the test server's control port, its one-line answer.

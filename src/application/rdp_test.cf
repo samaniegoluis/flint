@@ -75,6 +75,10 @@ fn (mut self: FakeDesktop) rd_pointer(tab: str, p: RdpPointer) -> void! {
     self.pointers.push(p)
 }
 
+fn (self: FakeDesktop) rd_stats(tab: str) -> RdpStats! {
+    return RdpStats{ updates: 30, bytes_in: 1000, commands: 12, decode_us: 600, frames_read: 25, pipeline: "gfx", codec: "progressive", h264: false }
+}
+
 fn (mut self: FakeDesktop) rd_close(tab: str) {
     self.closed += 1
 }
@@ -116,7 +120,38 @@ fn rdp_fake(crypto: FakeCrypto, mut store: FakeStore, s: VaultSession, password:
 }
 
 fn rdp_req(alias: str) -> RdpOpenRequest {
-    return RdpOpenRequest{ tab: "t1", alias: alias, width: 1601, height: 900, timeout_ms: 5000 }
+    return RdpOpenRequest{ tab: "t1", alias: alias, width: 1601, height: 900, timeout_ms: 5000, graphics: "" }
+}
+
+test "the graphics choice reaches the engine, empty reads auto and an unknown one is refused" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    _ := try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win"))
+    assert_eq(rd.opens[1].graphics, "auto")
+    mut req := rdp_req("win")
+    req.graphics = "compatible"
+    mut again := new_fake_desktop("ab:cd", "s3cret")
+    _ := try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), req)
+    assert_eq(again.opens[0].graphics, "compatible")
+    req.graphics = "h264"
+    mut msg := ""
+    mut refused := new_fake_desktop("ab:cd", "s3cret")
+    open_remote_desktop(crypto, mut store, s, mut refused, no_prompter(), req) or err { msg = "{err.message()}" }
+    assert(msg.contains("graphics"))
+    assert_eq(refused.opens.len(), 0)
+}
+
+test "a tab's statistics come from the engine" {
+    rd := new_fake_desktop("ab:cd", "s3cret")
+    st := try remote_desktop_stats(rd, "t1")
+    assert_eq(st.pipeline, "gfx")
+    assert_eq(st.codec, "progressive")
+    mut msg := ""
+    remote_desktop_stats(rd, "") or err { msg = "{err.message()}" }
+    assert(msg.contains("tab id"))
 }
 
 test "a first RDP connection asks for the certificate, keeps it, and connects with the vault's password" {

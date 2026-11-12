@@ -36,6 +36,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
   const { tabs, panes, active } = useSessions();
   const tablist = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState(false);
+  // The RDP statistics overlay (milestone 34), for every RDP tab while it is on.
+  const [stats, setStats] = useState(false);
   const paneArea = useRef<HTMLDivElement>(null);
   const activeTab = tabs.find((t) => t.id === active);
   // The focused pane of the active tab: the toolbar speaks for it.
@@ -145,6 +147,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           })()}
           {host && <span className="mono faint trunc tb-host" style={{ marginLeft: 'var(--sp-2)' }}>{host.hostname}:{host.port}</span>}
           <span className="grow" />
+          {ready && <button className="tbtn" data-rdp-stats-toggle aria-pressed={stats} title="Show what the desktop costs: frames, bandwidth, codec"
+            onClick={() => setStats((v) => !v)}><Icon name="info" size="sm" /><span className="tb-l">Stats</span></button>}
           {ready
             ? <button className="tbtn" data-rdp-disconnect title="Disconnect" onClick={() => sessions.disconnect(tab.id)}><Icon name="x" size="sm" /><span className="tb-l">Disconnect</span></button>
             : <button className="tbtn" title="Close tab" onClick={() => sessions.closeTab(activeTab.id)}><Icon name="x" size="sm" /><span className="tb-l">Close tab</span></button>}
@@ -179,7 +183,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           return (
             <div key={t.id} style={{ position: 'absolute', inset: 0, display: t.id === active ? 'block' : 'none' }}>
               {rdp
-                ? <RdpView pane={rdp} active={shown && t.id === active} onEditHost={onEditHost} onKnownHosts={onKnownHosts} />
+                ? <RdpView pane={rdp} active={shown && t.id === active} showStats={stats} onEditHost={onEditHost} onKnownHosts={onKnownHosts} />
                 : <SplitView tab={t} panes={own} shown={shown} active={t.id === active} fontSize={fontSize} onEditHost={onEditHost} />}
             </div>
           );

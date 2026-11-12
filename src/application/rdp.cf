@@ -27,12 +27,25 @@ type RdpOpenRequest struct {
     width: i64
     height: i64
     timeout_ms: i64
+    // RDP_GRAPHICS, from Settings → Remote desktop (milestone 34); "" reads "auto".
+    graphics: str
+}
+
+// The request's graphics choice, checked: "" is "auto".
+fn rdp_graphics_of(req: RdpOpenRequest) -> str! {
+    if req.graphics.len() == 0 {
+        return "auto"
+    }
+    if !one_of(req.graphics, RDP_GRAPHICS) {
+        return error(coded(ERR_INVALID, "remote desktop graphics must be auto or compatible"))
+    }
+    return req.graphics
 }
 
 // The RDP host `alias` and where its connection goes: the login from the host or its
 // credential, the password opened from the vault (or asked for with `ask` when none is
 // saved; "" without), the trusted certificate.
-fn rdp_target[C: Crypto, S: VaultStore, P: Prompter](crypto: C, store: S, session: VaultSession, prompter: P, alias: str, size: DesktopSize, ask: bool) -> RdpTarget! {
+fn rdp_target[C: Crypto, S: VaultStore, P: Prompter](crypto: C, store: S, session: VaultSession, prompter: P, alias: str, size: DesktopSize, graphics: str, ask: bool) -> RdpTarget! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
     if !is_rdp_host(h) {
@@ -59,7 +72,7 @@ fn rdp_target[C: Crypto, S: VaultStore, P: Prompter](crypto: C, store: S, sessio
         }
     }
     known := try store.known_hosts_all()
-    return RdpTarget{ hostname: h.hostname, port: h.port, user: user, domain: h.domain, password: password, width: size.width, height: size.height, trusted_fingerprint: trusted_rdp_fingerprint(known, h.hostname, h.port) }
+    return RdpTarget{ hostname: h.hostname, port: h.port, user: user, domain: h.domain, password: password, width: size.width, height: size.height, trusted_fingerprint: trusted_rdp_fingerprint(known, h.hostname, h.port), graphics: graphics }
 }
 
 // One connection attempt: "" when it opened (`got` holds the desktop), else the error.
@@ -83,7 +96,8 @@ fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](
         return error(coded(ERR_INVALID, "the connect timeout must be positive"))
     }
     size := fit_desktop_size(req.width, req.height)
-    mut t := try rdp_target(crypto, store, session, prompter, req.alias, size, true)
+    graphics := try rdp_graphics_of(req)
+    mut t := try rdp_target(crypto, store, session, prompter, req.alias, size, graphics, true)
     mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "" }
     failure := rd_try_open(mut rd, req.tab, t, req.timeout_ms, mut d)
     if failure.len() == 0 {
@@ -203,7 +217,10 @@ fn announce_desktop_clipboard[R: RemoteDesktop, L: Clipboard](mut rd: R, mut cli
 // login cannot be read now; fails, with the tab closed, when the new connection does.
 fn reconnect_at_size[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: RdpEvent) -> void! {
     size := fit_desktop_size(ev.width, ev.height)
-    t := rdp_target(crypto, store, session, prompter, req.alias, size, false) or {
+    graphics := rdp_graphics_of(req) or {
+        return
+    }
+    t := rdp_target(crypto, store, session, prompter, req.alias, size, graphics, false) or {
         return
     }
     if t.trusted_fingerprint.len() == 0 {
@@ -246,6 +263,14 @@ fn send_desktop_key[R: RemoteDesktop](mut rd: R, tab: str, code: str, down: bool
 fn send_desktop_pointer[R: RemoteDesktop](mut rd: R, tab: str, p: RdpPointer) -> void! {
     try check_rdp_pointer(p)
     try rd.rd_pointer(tab, p)
+}
+
+// What the tab's desktop has done since it opened (milestone 34).
+fn remote_desktop_stats[R: RemoteDesktop](rd: R, tab: str) -> RdpStats! {
+    if tab.len() == 0 {
+        return error(coded(ERR_INVALID, "statistics need a tab id"))
+    }
+    return try rd.rd_stats(tab)
 }
 
 fn close_remote_desktop[R: RemoteDesktop](mut rd: R, tab: str) {

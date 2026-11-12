@@ -192,6 +192,10 @@ class SessionStore {
     });
   }
 
+  // Settings → Remote desktop → Graphics (milestone 34), read when a desktop connects.
+  private desktopGraphics = 'auto';
+  setDesktopGraphics(g: string) { this.desktopGraphics = g; }
+
   // An RDP pane connects once its view has measured it, so the desktop starts at the
   // tab's size.
   private connectDesktop(paneId: string) {
@@ -201,7 +205,7 @@ class SessionStore {
     const session = mint('r');
     this.bySession.set(session, paneId);
     this.patch(paneId, { session, status: 'connecting', prompt: null, changedKey: null, end: null, desktop: null });
-    api.rdpOpen(session, t.alias, area.width, area.height).catch((err) => {
+    api.rdpOpen(session, t.alias, area.width, area.height, this.desktopGraphics).catch((err) => {
       this.bySession.delete(session);
       const e = err as { code?: string; message?: string };
       this.patch(paneId, { status: 'ended', end: { code: e.code ?? 'internal', message: e.message ?? String(err), exit_code: -1 } });

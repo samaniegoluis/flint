@@ -6,19 +6,30 @@
 //
 // The desktop follows the tab's size (in CSS pixels): the store opens the connection
 // at the first size the view measures and resizes it once a new one settles.
+//
+// Milestone 34: frames are drawn through WebGL when the page has a real GPU, else with
+// putImageData (lib/deskRenderer); the statistics overlay shows what the desktop costs.
 
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/backend';
 import { useApp } from '../state/app';
 import { runAction } from '../shell/actions';
 import { fitScale, HeldKeys, modMapOf, parseFrameHeader, rdpButton, rdpKeptAction, toDesktop, WheelAccumulator } from '../lib/rdpInput';
+import { createRenderer, type DeskRenderer } from '../lib/deskRenderer';
+import { FrameMeter } from '../lib/rdpStats';
 import { sessions, type Pane } from './store';
 import { RdpCard } from './RdpCards';
+import { RdpStatsOverlay } from './RdpStatsOverlay';
 
-export function RdpView({ pane, active, onEditHost, onKnownHosts }: {
+/** Tests force a renderer by setting this before the tab opens ('2d' or 'webgl'). */
+declare global { interface Window { __flintRdpRenderer?: string } }
+
+export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
   pane: Pane;
   /** The tab is the one shown: it takes the keyboard. */
   active: boolean;
+  /** The statistics overlay is on (the toolbar's Stats). */
+  showStats: boolean;
   onEditHost: (alias: string) => void;
   onKnownHosts: () => void;
 }) {
@@ -29,6 +40,16 @@ export function RdpView({ pane, active, onEditHost, onKnownHosts }: {
   const [deskSize, setDeskSize] = useState({ width: 0, height: 0 });
   const ready = pane.status === 'ready' && pane.desktop !== null;
   const session = pane.session;
+  // The canvas's renderer, made once per canvas element: a canvas keeps the first kind
+  // of context it hands out, so a lost WebGL context remounts the canvas in 2D.
+  const renderer = useRef<DeskRenderer | null>(null);
+  const [canvasKey, setCanvasKey] = useState(0);
+  const forced = useRef<string | null>(null);
+  const meter = useRef(new FrameMeter());
+  const [rendererKind, setRendererKind] = useState('');
+
+  // Settings → Remote desktop → Graphics, for the next connection.
+  useEffect(() => { sessions.setDesktopGraphics(settings.rdp_graphics); }, [settings.rdp_graphics]);
 
   // The tab's area: the first size opens the connection, later ones resize it.
   useEffect(() => {
@@ -49,8 +70,13 @@ export function RdpView({ pane, active, onEditHost, onKnownHosts }: {
   useEffect(() => {
     if (!ready || !desk) return;
     const cv = canvas.current;
-    const ctx = cv?.getContext('2d', { alpha: false });
-    if (!cv || !ctx) return;
+    if (!cv) return;
+    if (!renderer.current) {
+      renderer.current = createRenderer(cv, forced.current ?? window.__flintRdpRenderer ?? null);
+      setRendererKind(renderer.current?.kind ?? '');
+    }
+    const r0 = renderer.current;
+    if (!r0) return;
     let stop = false;
     const url = `http://127.0.0.1:${desk.port}/next?t=${desk.token}`;
     (async () => {
@@ -66,16 +92,25 @@ export function RdpView({ pane, active, onEditHost, onKnownHosts }: {
         if (stop) break;
         const h = parseFrameHeader(buf);
         if (!h) continue;
+        if (r0.lost()) {
+          // The GPU went away: start again on a new canvas, in 2D.
+          forced.current = '2d';
+          renderer.current = null;
+          setCanvasKey((k) => k + 1);
+          break;
+        }
         if (cv.width !== h.fullW || cv.height !== h.fullH) {
-          cv.width = h.fullW;
-          cv.height = h.fullH;
+          r0.resize(h.fullW, h.fullH);
           setDeskSize({ width: h.fullW, height: h.fullH });
         }
-        ctx.putImageData(new ImageData(new Uint8ClampedArray(buf, 16), h.w, h.h), h.x, h.y);
+        r0.draw(h.x, h.y, h.w, h.h, new Uint8Array(buf, 16));
+        meter.current.add(buf.byteLength);
       }
     })();
     return () => { stop = true; };
-  }, [ready, desk]);
+  }, [ready, desk, canvasKey]);
+
+  useEffect(() => () => { renderer.current?.dispose(); renderer.current = null; }, [canvasKey]);
 
   // Input: keys while the canvas has the focus, released when it loses it.
   // The modifier keys of a Mac keyboard follow Settings → Remote desktop (D-074).
@@ -164,12 +199,13 @@ export function RdpView({ pane, active, onEditHost, onKnownHosts }: {
   const shownH = Math.floor(deskSize.height * scale);
   return (
     <div className="rdp-area" ref={area} data-rdp-pane={pane.id}>
-      <canvas ref={canvas} className={'rdp-canvas' + (ready ? '' : ' stale')} tabIndex={0} aria-label={`Remote desktop of ${pane.alias}`}
-        data-desktop={deskSize.width ? `${deskSize.width}x${deskSize.height}` : ''}
+      <canvas key={canvasKey} ref={canvas} className={'rdp-canvas' + (ready ? '' : ' stale')} tabIndex={0} aria-label={`Remote desktop of ${pane.alias}`}
+        data-desktop={deskSize.width ? `${deskSize.width}x${deskSize.height}` : ''} data-renderer={rendererKind}
         style={{ width: shownW || 0, height: shownH || 0, visibility: deskSize.width ? 'visible' : 'hidden' }}
         onKeyDown={onKeyDown} onKeyUp={onKeyUp} onFocus={announce} onBlur={() => held.current?.releaseAll()}
         onMouseMove={onMouseMove} onMouseDown={(e) => onMouseButton(e, true)} onMouseUp={(e) => onMouseButton(e, false)}
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()} />
+      {showStats && ready && session && <RdpStatsOverlay session={session} renderer={rendererKind} meter={meter.current} />}
       <RdpCard pane={pane} active={active} onEditHost={onEditHost} onKnownHosts={onKnownHosts} />
     </div>
   );

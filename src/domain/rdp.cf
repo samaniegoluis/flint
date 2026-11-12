@@ -145,6 +145,9 @@ type RdpTarget struct {
     width: i64
     height: i64
     trusted_fingerprint: str
+    // RDP_GRAPHICS (milestone 34): "auto" offers the graphics pipeline, "compatible"
+    // keeps the bitmap updates.
+    graphics: str
 }
 
 // The certificate a server presented. `fingerprint` is its SHA-256, lower-case hex
@@ -164,6 +167,21 @@ type RdpDesktop struct {
     height: i64
     frame_port: i64
     frame_token: str
+}
+
+// What a tab's desktop has done since it opened (milestone 34), for the statistics
+// overlay and the benchmark: counters only, nothing that names the host (Principle 5).
+// `pipeline` is "gfx" or "bitmap" ("" while not connected); `codec` the graphics
+// pipeline's last codec ("" on the bitmap path); `h264` whether this build decodes it.
+type RdpStats struct {
+    updates: i64
+    bytes_in: i64
+    commands: i64
+    decode_us: i64
+    frames_read: i64
+    pipeline: str
+    codec: str
+    h264: bool
 }
 
 // A pointer event in desktop pixels. `kind` is one of RDP_POINTER_KINDS; `button` 0

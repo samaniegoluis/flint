@@ -638,3 +638,6 @@ button.picker-row:not(.off) { cursor: pointer; }
 .rdp-canvas { display: block; outline: none; image-rendering: auto; cursor: default; }
 /* The last frame, greyed, under a lost or reconnecting session's card (design 22c7). */
 .rdp-canvas.stale { filter: grayscale(1) brightness(0.55); transition: filter var(--dur-base, 160ms) ease; }
+/* The statistics overlay (milestone 34, no design screen): a quiet panel over the
+   desktop's top right corner that lets the pointer through. */
+.rdp-stats { position: absolute; top: var(--sp-2); right: var(--sp-2); padding: var(--sp-2) var(--sp-3); background: color-mix(in srgb, var(--surface-raised) 88%, transparent); border-radius: var(--radius-md); box-shadow: var(--shadow-popover); font-size: var(--fs-xs); line-height: 1.6; pointer-events: none; min-width: 168px; }

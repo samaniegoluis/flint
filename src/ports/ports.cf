@@ -347,6 +347,9 @@ type RemoteDesktop interface {
     // `clip_text` events.
     rd_clip_announce(tab: str, has_text: bool) -> void!
     rd_clip_answer(tab: str, ok: bool, text: str) -> void!
+    // Milestone 34: the tab's counters since it opened (RdpStats); fails `network`
+    // when the tab is closed.
+    rd_stats(tab: str) -> RdpStats!
     // Ends the tab's connection (an `rd_open` in progress is cancelled) and its frame
     // channel. A tab with nothing open is left as it is.
     rd_close(tab: str)

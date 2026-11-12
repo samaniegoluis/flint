@@ -36,8 +36,9 @@ export function SettingsPage({ section, setSection, onLock, onConfirm }: {
   onConfirm: (c: Confirm) => void;
 }) {
   const { os } = useApp();
-  // Remote desktop holds only the Mac keyboard's modifiers: a PC keyboard already matches.
-  const sections = SECTIONS.filter((s) => s.id !== 'remote' || os === 'mac');
+  // Remote desktop: graphics everywhere (milestone 34); the Mac keyboard's modifiers on
+  // macOS only, where a PC keyboard does not already match.
+  const sections = SECTIONS;
   return (
     <section className="main page" aria-label="Settings" style={{ flexDirection: 'row' }}>
       <nav className="settings-nav" aria-label="Settings sections">
@@ -52,7 +53,7 @@ export function SettingsPage({ section, setSection, onLock, onConfirm }: {
         <div className="col" style={{ maxWidth: 860 }}>
           {section === 'appearance' && <Appearance />}
           {section === 'terminal' && <TerminalSettings />}
-          {section === 'remote' && os === 'mac' && <RemoteDesktopSettings />}
+          {section === 'remote' && <RemoteDesktopSettings mac={os === 'mac'} />}
           {section === 'shortcuts' && <Shortcuts />}
           {section === 'vault' && <VaultSettings onLock={onLock} onConfirm={onConfirm} />}
           {section === 'access' && <AccessSettings onConfirm={onConfirm} />}
@@ -262,13 +263,29 @@ function About() {
   );
 }
 
-function RemoteDesktopSettings() {
+function RemoteDesktopSettings({ mac }: { mac: boolean }) {
   const [s, set] = useSetting();
   const map = modMapOf(s.rdp_mac_keys, s.rdp_mac_custom);
   const pick = (k: MacModKey, t: ModTarget) => set({ rdp_mac_keys: 'custom', rdp_mac_custom: modMapText({ ...map, [k]: t }) });
   return (
     <>
       <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', marginBottom: 'var(--sp-3)' }}>Remote desktop</h1>
+      <Row title="Graphics" desc="How a remote desktop is sent to this computer. Applies to the next connection.">
+        <div className="seg" role="radiogroup" aria-label="Remote desktop graphics" data-rdp-graphics>
+          {(['auto', 'compatible'] as const).map((g) => (
+            <button key={g} type="button" role="radio" aria-checked={s.rdp_graphics === g} aria-pressed={s.rdp_graphics === g} data-graphics={g}
+              onClick={() => set({ rdp_graphics: g })}>
+              {g === 'auto' ? 'Automatic' : 'Compatible'}
+            </button>
+          ))}
+        </div>
+        <span className="hint">
+          {s.rdp_graphics === 'auto'
+            ? <>The graphics pipeline with the best codec both ends support (H.264 where this computer decodes it): smoother, less bandwidth. A server without it gets the classic updates.</>
+            : <>Classic bitmap updates, as earlier versions of Flint used. Try it if the desktop shows wrong colours or garbled areas.</>}
+        </span>
+      </Row>
+      {mac && <>
       <Row title="Modifier keys" desc="What this Mac's modifier keys send in an RDP tab. Set on this computer.">
         <div className="seg" role="radiogroup" aria-label="Modifier keys preset" data-rdp-keys-preset>
           {(['mac', 'windows', 'custom'] as const).map((p) => (
@@ -303,6 +320,7 @@ function RemoteDesktopSettings() {
         </table>
       </Row>
       <div className="callout info"><Icon name="keyboard" size="sm" className="info-t" /><span>Flint's own shortcuts stay on <span className="mono strong">⌘</span> in an RDP tab: the command palette and <span className="mono strong">⌘1</span>–<span className="mono strong">⌘9</span>. Combinations macOS keeps for itself, such as <span className="mono strong">⌘Tab</span> and <span className="mono strong">⌘Space</span>, never reach Windows.</span></div>
+      </>}
     </>
   );
 }

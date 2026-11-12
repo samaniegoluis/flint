@@ -350,9 +350,10 @@ Settings belong to this machine, not to the vault, and save as you change them.
   font installed on this machine, or the bundled JetBrains Mono), size, line height,
   cursor, and the **largest file to paste** (10, 20, 50 or 100 MB; see
   [The terminal](#the-terminal)).
-- **Remote desktop** (macOS only): what this Mac's modifier keys send in an RDP tab, as
-  the **Mac** or **Windows** preset or a **Custom** table. See [Modifier keys on a
-  Mac](/guides/remote-desktop/#modifier-keys-on-a-mac).
+- **Remote desktop**: the **Graphics** a remote desktop uses, **Automatic** or
+  **Compatible** (see [Graphics](/guides/remote-desktop/#graphics)), and on macOS what
+  this Mac's modifier keys send in an RDP tab, as the **Mac** or **Windows** preset or a
+  **Custom** table (see [Modifier keys on a Mac](/guides/remote-desktop/#modifier-keys-on-a-mac)).
 - **Keyboard shortcuts**: the full map for macOS and Linux. Custom shortcuts are coming
   in a later version.
 - **Vault**: the open vault's file and counts, **Rename**, whether this machine remembers

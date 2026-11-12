@@ -132,6 +132,8 @@ export interface Settings {
   rdp_mac_keys: 'mac' | 'windows' | 'custom';
   /** The custom table, "MetaLeft=ctrl,AltLeft=alt,…"; a key left out keeps the Mac preset's. */
   rdp_mac_custom: string;
+  /** Milestone 34: 'auto' offers the graphics pipeline (RDPGFX), 'compatible' keeps bitmap updates. */
+  rdp_graphics: 'auto' | 'compatible';
   /** The app's own record that earlier cached keys were removed (D-048); the core keeps it. */
   keys_cleared?: boolean;
 }
@@ -211,6 +213,21 @@ export interface HostKeyPayload {
 }
 
 /** A remote desktop is up (milestone 30): its size and its frame channel (D-071). */
+/** A remote desktop's counters since its tab opened (milestone 34). */
+export interface RdpStats {
+  updates: number;
+  bytes_in: number;
+  commands: number;
+  decode_us: number;
+  frames_read: number;
+  /** 'gfx', 'bitmap', or '' while not connected. */
+  pipeline: string;
+  /** The graphics pipeline's last codec ('' on bitmaps). */
+  codec: string;
+  /** This build of FreeRDP decodes H.264. */
+  h264: boolean;
+}
+
 export interface DesktopReadyEvent {
   tab: string;
   width: number;

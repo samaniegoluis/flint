@@ -8,6 +8,11 @@
 // size on a server without Display Control) replaces the connection and keeps the
 // tab's frame channel, so the page reads on without noticing.
 //
+// Graphics (milestone 34): with `graphics` "auto" the graphics pipeline (RDPGFX) is
+// offered, with the progressive codec and AVC/H.264 when this build of FreeRDP can
+// decode it; FreeRDP's GDI decodes into the same RGBA surface, so the frames below do
+// not change. "compatible", or a server without RDPGFX, keeps the bitmap updates.
+//
 // Frames: each connection draws into FreeRDP's software GDI as RGBA. Every EndPaint
 // adds its dirty rectangle to the tab's pending union; a reader takes the union (the
 // pixels inside it) and clears it, so a slow reader skips frames instead of queueing
@@ -42,13 +47,17 @@
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/cliprdr.h>
 #include <freerdp/client/disp.h>
+#include <freerdp/client/rdpgfx.h>
 #include <freerdp/channels/cliprdr.h>
 #include <freerdp/channels/channels.h>
 #include <freerdp/channels/drdynvc.h>
 #include <freerdp/channels/disp.h>
+#include <freerdp/channels/rdpgfx.h>
+#include <freerdp/codec/h264.h>
 #include <freerdp/crypto/certificate.h>
 #include <freerdp/event.h>
 #include <freerdp/gdi/gdi.h>
+#include <freerdp/gdi/gfx.h>
 #include <freerdp/input.h>
 #include <freerdp/locale/keyboard.h>
 #include <freerdp/settings.h>
@@ -189,6 +198,10 @@ struct Conn {
     // The clipboard channel, once the server said it is ready (Monitor Ready).
     CliprdrClientContext* clip = nullptr;
     std::atomic<bool> clip_ready{false};
+    // The graphics pipeline, once its channel is open, and the GDI's own surface
+    // command, which Flint's wraps to count and time it.
+    RdpgfxClientContext* gfx = nullptr;
+    pcRdpgfxSurfaceCommand gfx_surface_command = nullptr;
     // Why the loop ended, read after `ended`.
     UINT32 last_error = 0;
     UINT32 error_info = 0;
@@ -231,6 +244,16 @@ struct Tab {
     bool remote_pending = false;
     std::string remote_text;
     bool request_pending = false;
+    // Statistics (milestone 34): counters only, never an address or a name
+    // (Principle 5). Read by `stats`; they outlive a reconnect.
+    bool want_gfx = true;
+    std::atomic<uint64_t> st_updates{0};     // EndPaints: updates the server drew
+    std::atomic<uint64_t> st_bytes_in{0};    // bytes of PDUs received
+    std::atomic<uint64_t> st_commands{0};    // RDPGFX surface commands
+    std::atomic<uint64_t> st_decode_us{0};   // time spent decoding them
+    std::atomic<uint64_t> st_frames_read{0}; // regions taken by the frame channel
+    std::atomic<int32_t> st_codec{-1};       // the last surface command's codec id
+    std::atomic<bool> st_gfx{false};         // the graphics pipeline is open
     // Frame channel.
     sock_t listen_fd = BAD_SOCK;
     int port = 0;
@@ -264,7 +287,13 @@ inline BOOL on_begin_paint(rdpContext* ctx) {
     return TRUE;
 }
 
+// Set while on_desktop_resize holds the tab's lock: with the graphics pipeline,
+// gdi_resize paints (EndPaint) on the same thread, and the resize marks the whole
+// desktop dirty anyway.
+inline thread_local bool in_resize = false;
+
 inline BOOL on_end_paint(rdpContext* ctx) {
+    if (in_resize) return TRUE;
     rdpGdi* gdi = ctx->gdi;
     if (!gdi || !gdi->primary || !gdi->primary->hdc || !gdi->primary->hdc->hwnd) return FALSE;
     HGDI_WND hwnd = gdi->primary->hdc->hwnd;
@@ -289,6 +318,7 @@ inline BOOL on_end_paint(rdpContext* ctx) {
         }
         t->seq += 1;
     }
+    t->st_updates.fetch_add(1, std::memory_order_relaxed);
     t->cv.notify_all();
     return TRUE;
 }
@@ -299,7 +329,10 @@ inline BOOL on_desktop_resize(rdpContext* ctx) {
     UINT32 w = freerdp_settings_get_uint32(st, FreeRDP_DesktopWidth);
     UINT32 h = freerdp_settings_get_uint32(st, FreeRDP_DesktopHeight);
     std::lock_guard<std::mutex> g(t->mu);
-    if (!gdi_resize(ctx->gdi, w, h)) return FALSE;
+    in_resize = true;
+    BOOL ok = gdi_resize(ctx->gdi, w, h);
+    in_resize = false;
+    if (!ok) return FALSE;
     t->width = static_cast<int32_t>(w);
     t->height = static_cast<int32_t>(h);
     t->dx = 0; t->dy = 0; t->dw = t->width; t->dh = t->height;
@@ -485,6 +518,41 @@ inline UINT on_clip_server_data_request(CliprdrClientContext* clip, const CLIPRD
     return clip_send_data(clip, false, "");
 }
 
+// ---- Graphics pipeline (milestone 34) ------------------------------------------------
+
+inline Conn* gfx_conn(RdpgfxClientContext* gfx) {
+    // gdi_graphics_pipeline_init sets `custom` to the GDI.
+    auto* gdi = static_cast<rdpGdi*>(gfx ? gfx->custom : nullptr);
+    if (!gdi || !gdi->context) return nullptr;
+    return ctx_of(gdi->context)->conn;
+}
+
+// FreeRDP's GDI decodes the command; Flint counts it, times it and keeps its codec.
+inline UINT on_gfx_surface_command(RdpgfxClientContext* gfx, const RDPGFX_SURFACE_COMMAND* cmd) {
+    Conn* c = gfx_conn(gfx);
+    if (!c || !c->gfx_surface_command) return ERROR_INTERNAL_ERROR;
+    auto started = std::chrono::steady_clock::now();
+    UINT rc = c->gfx_surface_command(gfx, cmd);
+    auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count();
+    Tab* t = c->tab;
+    t->st_commands.fetch_add(1, std::memory_order_relaxed);
+    t->st_decode_us.fetch_add(static_cast<uint64_t>(us), std::memory_order_relaxed);
+    if (cmd) t->st_codec.store(static_cast<int32_t>(cmd->codecId), std::memory_order_relaxed);
+    return rc;
+}
+
+// Whether this build of FreeRDP can decode AVC/H.264 (FFmpeg, VideoToolbox, Media
+// Foundation or OpenH264, whichever it was built with): only then is it offered.
+inline bool h264_available() {
+    static const bool ok = [] {
+        H264_CONTEXT* h = h264_context_new(FALSE);
+        if (!h) return false;
+        h264_context_free(h);
+        return true;
+    }();
+    return ok;
+}
+
 inline void on_channel_connected(void* context, const ChannelConnectedEventArgs* e) {
     auto* ctx = static_cast<rdpContext*>(context);
     Conn* c = ctx_of(ctx)->conn;
@@ -504,6 +572,13 @@ inline void on_channel_connected(void* context, const ChannelConnectedEventArgs*
         clip->ServerFormatDataResponse = on_clip_server_data_response;
         clip->ServerFormatDataRequest = on_clip_server_data_request;
         c->clip = clip;
+    } else if (std::strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
+        auto* gfx = static_cast<RdpgfxClientContext*>(e->pInterface);
+        if (!ctx->gdi || !gdi_graphics_pipeline_init(ctx->gdi, gfx)) return;
+        c->gfx = gfx;
+        c->gfx_surface_command = gfx->SurfaceCommand;
+        gfx->SurfaceCommand = on_gfx_surface_command;
+        c->tab->st_gfx.store(true);
     }
 }
 
@@ -517,6 +592,13 @@ inline void on_channel_disconnected(void* context, const ChannelDisconnectedEven
     } else if (std::strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
         c->clip_ready.store(false);
         c->clip = nullptr;
+    } else if (std::strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
+        auto* gfx = static_cast<RdpgfxClientContext*>(e->pInterface);
+        if (gfx && c->gfx_surface_command) gfx->SurfaceCommand = c->gfx_surface_command;
+        if (ctx->gdi && gfx) gdi_graphics_pipeline_uninit(ctx->gdi, gfx);
+        c->gfx = nullptr;
+        c->gfx_surface_command = nullptr;
+        c->tab->st_gfx.store(false);
     }
 }
 
@@ -529,9 +611,9 @@ inline BOOL on_pre_connect(freerdp* inst) {
     return TRUE;
 }
 
-// Only the channels Flint uses: the dynamic channel carrier, Display Control and the
-// clipboard (FreeRDP's own loader also asks for device redirection, which Flint leaves
-// out).
+// Only the channels Flint uses: the dynamic channel carrier, Display Control, the
+// graphics pipeline when it is offered, and the clipboard (FreeRDP's own loader also
+// asks for device redirection, which Flint leaves out).
 inline BOOL load_channels(freerdp* inst) {
     rdpContext* ctx = inst->context;
     rdpSettings* st = ctx->settings;
@@ -541,6 +623,10 @@ inline BOOL load_channels(freerdp* inst) {
     std::call_once(registered, [] { freerdp_register_addin_provider(freerdp_channels_load_static_addin_entry, 0); });
     const char* const disp[] = { DISP_CHANNEL_NAME };
     if (!freerdp_client_add_dynamic_channel(st, 1, disp)) return FALSE;
+    if (freerdp_settings_get_bool(st, FreeRDP_SupportGraphicsPipeline)) {
+        const char* const gfx[] = { RDPGFX_CHANNEL_NAME };
+        if (!freerdp_client_add_dynamic_channel(st, 1, gfx)) return FALSE;
+    }
     if (!freerdp_settings_set_bool(st, FreeRDP_SupportDynamicChannels, TRUE)) return FALSE;
     PVIRTUALCHANNELENTRY entry = freerdp_channels_load_static_addin_entry(
         DRDYNVC_SVC_CHANNEL_NAME, nullptr, nullptr, FREERDP_ADDIN_CHANNEL_STATIC | FREERDP_ADDIN_CHANNEL_ENTRYEX);
@@ -852,6 +938,19 @@ inline int connect_tcp(rdpContext* ctx, rdpSettings* st, const char* host, int p
     return fd;
 }
 
+// FreeRDP's own PDU read, counting the bytes received for the statistics.
+inline pTransportRWFkt& default_read_pdu() { static pTransportRWFkt f = nullptr; return f; }
+
+inline int read_pdu(rdpTransport* transport, wStream* s) {
+    int rc = default_read_pdu()(transport, s);
+    if (rc > 0) {
+        rdpContext* ctx = transport_get_context(transport);
+        Tab* t = ctx ? ctx_of(ctx)->tab : nullptr;
+        if (t) t->st_bytes_in.fetch_add(static_cast<uint64_t>(rc), std::memory_order_relaxed);
+    }
+    return rc;
+}
+
 inline void install_tcp_hook(rdpContext* ctx) {
     const rdpTransportIo* io = freerdp_get_io_callbacks(ctx);
     if (!io || !io->TCPConnect) return;
@@ -859,6 +958,8 @@ inline void install_tcp_hook(rdpContext* ctx) {
     if (io->TCPConnect != connect_tcp) default_tcp_connect() = io->TCPConnect;
     if (!default_tcp_connect()) return;
     mine.TCPConnect = connect_tcp;
+    if (io->ReadPdu && io->ReadPdu != read_pdu) default_read_pdu() = io->ReadPdu;
+    if (default_read_pdu()) mine.ReadPdu = read_pdu;
     (void)freerdp_set_io_callbacks(ctx, &mine);
 }
 
@@ -867,7 +968,7 @@ inline void install_tcp_hook(rdpContext* ctx) {
 // an RDP_ERR_* code; `detail` gets FreeRDP's error name, never a credential.
 inline int open(const std::string& id, const std::string& host, int32_t port, const std::string& user,
                 const std::string& domain, const std::string& password, int32_t width, int32_t height,
-                const std::string& trusted, int64_t timeout_ms, int32_t& out_w, int32_t& out_h, int32_t& out_port,
+                const std::string& trusted, const std::string& graphics, int64_t timeout_ms, int32_t& out_w, int32_t& out_h, int32_t& out_port,
                 std::string& out_token, std::string& detail) {
     quiet_freerdp_log();
     auto t = tab_for(id);
@@ -885,7 +986,10 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         t->presented = Cert{};
         t->cert_refused = false;
         t->request_pending = false;
+        t->want_gfx = graphics != "compatible";
     }
+    t->st_gfx.store(false);
+    t->st_codec.store(-1);
     end_conn(old);
 
     auto c = std::make_shared<Conn>();
@@ -926,6 +1030,19 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
     // NSCodec costs nothing with Windows (it does not use it) and is what FreeRDP's
     // own servers, the test server among them, need.
     freerdp_settings_set_bool(st, FreeRDP_NSCodec, TRUE);
+    // The graphics pipeline (milestone 34): progressive always (FreeRDP decodes it
+    // itself), AVC/H.264 only where this build decodes it. The server chooses among
+    // what is offered; without RDPGFX it keeps the bitmap updates.
+    const bool gfx = graphics != "compatible";
+    const bool avc = gfx && h264_available();
+    freerdp_settings_set_bool(st, FreeRDP_SupportGraphicsPipeline, gfx ? TRUE : FALSE);
+    freerdp_settings_set_bool(st, FreeRDP_GfxProgressive, gfx ? TRUE : FALSE);
+    freerdp_settings_set_bool(st, FreeRDP_GfxProgressiveV2, gfx ? TRUE : FALSE);
+    freerdp_settings_set_bool(st, FreeRDP_RemoteFxCodec, gfx ? TRUE : FALSE);
+    freerdp_settings_set_bool(st, FreeRDP_GfxH264, avc ? TRUE : FALSE);
+    freerdp_settings_set_bool(st, FreeRDP_GfxAVC444, avc ? TRUE : FALSE);
+    freerdp_settings_set_bool(st, FreeRDP_GfxAVC444v2, avc ? TRUE : FALSE);
+    freerdp_settings_set_bool(st, FreeRDP_GfxThinClient, FALSE);
     freerdp_settings_set_bool(st, FreeRDP_SupportDisplayControl, TRUE);
     freerdp_settings_set_bool(st, FreeRDP_DynamicResolutionUpdate, TRUE);
     freerdp_settings_set_bool(st, FreeRDP_AudioPlayback, FALSE);
@@ -1163,6 +1280,47 @@ inline int clip_answer(const std::string& id, bool ok, const std::string& text) 
     return clip_send_data(c->clip, ok, ok ? text : std::string()) == CHANNEL_RC_OK ? RDP_OK : RDP_ERR_OTHER;
 }
 
+// ---- Statistics (milestone 34) ----------------------------------------------------
+
+// A codec id's name, as the statistics show it.
+inline const char* codec_name(int32_t id) {
+    switch (id) {
+        case RDPGFX_CODECID_UNCOMPRESSED: return "uncompressed";
+        case RDPGFX_CODECID_CAVIDEO: return "remotefx";
+        case RDPGFX_CODECID_CLEARCODEC: return "clearcodec";
+        case RDPGFX_CODECID_CAPROGRESSIVE: return "progressive";
+        case RDPGFX_CODECID_CAPROGRESSIVE_V2: return "progressive";
+        case RDPGFX_CODECID_PLANAR: return "planar";
+        case RDPGFX_CODECID_AVC420: return "avc420";
+        case RDPGFX_CODECID_AVC444: return "avc444";
+        case RDPGFX_CODECID_AVC444v2: return "avc444";
+        case RDPGFX_CODECID_ALPHA: return "alpha";
+        default: return "";
+    }
+}
+
+// The tab's counters since it opened. `pipeline`: "gfx" or "bitmap" ("" before the
+// first connection); `codec`: the last surface command's ("" on the bitmap path).
+inline int stats(const std::string& id, int64_t& updates, int64_t& bytes_in, int64_t& commands, int64_t& decode_us,
+                 int64_t& frames_read, std::string& pipeline, std::string& codec, bool& h264) {
+    auto t = find(id);
+    if (!t || t->closed.load()) return RDP_ERR_CLOSED;
+    updates = static_cast<int64_t>(t->st_updates.load());
+    bytes_in = static_cast<int64_t>(t->st_bytes_in.load());
+    commands = static_cast<int64_t>(t->st_commands.load());
+    decode_us = static_cast<int64_t>(t->st_decode_us.load());
+    frames_read = static_cast<int64_t>(t->st_frames_read.load());
+    bool connected;
+    {
+        std::lock_guard<std::mutex> g(t->mu);
+        connected = t->conn != nullptr;
+    }
+    pipeline = !connected ? "" : (t->st_gfx.load() ? "gfx" : "bitmap");
+    codec = t->st_gfx.load() ? codec_name(t->st_codec.load()) : "";
+    h264 = h264_available();
+    return RDP_OK;
+}
+
 // ---- Input -------------------------------------------------------------------------
 
 // RDP scancodes (0x100: extended) by W3C UI Events `code`, as a PC keyboard sends them.
@@ -1280,6 +1438,7 @@ inline int take_frame_locked(Tab& t, std::string& out) {
     h = std::min<int32_t>(h, static_cast<int32_t>(gdi->height) - y);
     t.dw = 0;
     if (w <= 0 || h <= 0) return RDP_OK;
+    t.st_frames_read.fetch_add(1, std::memory_order_relaxed);
     out.resize(16 + static_cast<size_t>(w) * h * 4);
     auto* p = reinterpret_cast<uint8_t*>(out.data());
     auto put16 = [&](size_t at, uint32_t v) { p[at] = v & 0xff; p[at + 1] = (v >> 8) & 0xff; };

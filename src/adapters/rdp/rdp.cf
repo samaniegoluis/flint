@@ -74,12 +74,13 @@ fn (self: FreeRdpDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> Rd
     dom := t.domain
     pw := t.password
     trusted := t.trusted_fingerprint
+    graphics := t.graphics
     rport := i32(t.port)
     rw := i32(t.width)
     rh := i32(t.height)
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        rc = flint_rdp::open(tab, host, rport, user, dom, pw, rw, rh, trusted, timeout_ms, w, h, port, token, detail);
+        rc = flint_rdp::open(tab, host, rport, user, dom, pw, rw, rh, trusted, graphics, timeout_ms, w, h, port, token, detail);
     }
     if rc != 0 {
         return error(rdp_error(i64(rc), detail))
@@ -205,6 +206,26 @@ fn (self: FreeRdpDesktop) rd_pointer(tab: str, p: RdpPointer) -> void! {
     if rc != 0 {
         return error(rdp_error(i64(rc), "pointer"))
     }
+}
+
+fn (self: FreeRdpDesktop) rd_stats(tab: str) -> RdpStats! {
+    mut rc: i32 = 0
+    mut updates: i64 = 0
+    mut bytes_in: i64 = 0
+    mut commands: i64 = 0
+    mut decode_us: i64 = 0
+    mut frames_read: i64 = 0
+    mut pipeline := ""
+    mut codec := ""
+    mut h264 := false
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::stats(tab, updates, bytes_in, commands, decode_us, frames_read, pipeline, codec, h264);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "stats"))
+    }
+    return RdpStats{ updates: updates, bytes_in: bytes_in, commands: commands, decode_us: decode_us, frames_read: frames_read, pipeline: pipeline, codec: codec, h264: h264 }
 }
 
 fn (self: FreeRdpDesktop) rd_close(tab: str) {

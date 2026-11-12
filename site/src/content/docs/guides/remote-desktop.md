@@ -60,6 +60,26 @@ The toolbar shows the host, the user, the desktop's size and, when it is scaled,
 much. **Disconnect** ends the connection and keeps the tab: your Windows session keeps
 running on the server, and **Connect again** brings you back to it.
 
+### Graphics
+
+Flint asks Windows for its **graphics pipeline** (RDPGFX), the way `mstsc` and Windows
+App receive a desktop: Windows encodes what changes with a modern codec, H.264 for video
+and moving windows where this computer can decode it, and Flint draws each frame on the
+GPU through WebGL. It is smoother and uses less bandwidth than the classic bitmap
+updates, which a server without the pipeline still gets. On a machine with no usable GPU
+(a VM without graphics acceleration, for example) the page draws in 2D instead.
+
+**Settings → Remote desktop → Graphics** sets it for this computer:
+
+- **Automatic** (default): the graphics pipeline, with the best codec both ends support.
+- **Compatible**: the classic bitmap updates, as earlier versions of Flint used. Try it if
+  a desktop shows wrong colours or garbled areas. It applies to the next connection.
+
+**Stats** in the toolbar shows what the desktop costs, once a second, over its top right
+corner: frames drawn, updates sent by the server, the bandwidth received, the codec and
+how long a frame takes to decode, and whether it is drawn with WebGL. It shows only
+numbers, never the host's name or address.
+
 ## When the connection drops
 
 A tab whose connection drops keeps its last picture, greyed, under **Connection lost**,
@@ -93,7 +113,7 @@ The mouse, its buttons and the wheel (vertical and horizontal) go to the desktop
 
 ### Modifier keys on a Mac
 
-**Settings → Remote desktop** (macOS only) sets what each modifier key of this Mac sends
+**Settings → Remote desktop** sets, on macOS, what each modifier key of this Mac sends
 to Windows, left and right keys apart:
 
 | Key | **Mac** (default) | **Windows** |

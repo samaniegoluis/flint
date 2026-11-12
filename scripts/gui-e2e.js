@@ -820,7 +820,12 @@
       await check(Math.abs(dw - Math.floor(area.width)) <= 2 && Math.abs(dh - Math.floor(area.height)) <= 1,
         `the desktop has the tab's size (${dw}x${dh} for ${Math.floor(area.width)}x${Math.floor(area.height)})`);
       {
-        const px = canvas().getContext('2d').getImageData(0, 0, dw, dh).data;
+        // The desktop canvas may be WebGL (milestone 34): read it through a 2D copy.
+        const copy = document.createElement('canvas');
+        copy.width = dw;
+        copy.height = dh;
+        copy.getContext('2d').drawImage(canvas(), 0, 0);
+        const px = copy.getContext('2d').getImageData(0, 0, dw, dh).data;
         let lit = 0;
         for (let i = 0; i < px.length; i += 4 * 97) if (px[i] + px[i + 1] + px[i + 2] > 30) lit++;
         await check(lit > 50, `the canvas shows the server's picture (${lit} lit samples)`);

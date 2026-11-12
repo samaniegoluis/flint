@@ -3,7 +3,7 @@
 // FlintError so the UI can branch on stable codes (D-018, D-019).
 
 import type {
-  AccessAnswer, AccessState, ActivityEntry, AppInfo, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
+  AccessAnswer, AccessState, ActivityEntry, AppInfo, RdpStats, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
   CopyResult, FileEntry, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
@@ -140,11 +140,13 @@ export const api = {
   sessionClose: (session: string) => call('session_close', { session }),
 
   /** A remote desktop (milestone 30): connects on a worker; "rdp:ready" and "rdp:state" follow. */
-  rdpOpen: (tab: string, alias: string, width: number, height: number) => call('rdp_open', { tab, alias, width, height }),
+  rdpOpen: (tab: string, alias: string, width: number, height: number, graphics: string) => call('rdp_open', { tab, alias, width, height, graphics }),
   rdpKey: (tab: string, code: string, down: boolean) => call('rdp_key', { tab, code, down }),
   rdpPointer: (tab: string, p: RdpPointer) => call('rdp_pointer', { tab, ...p }),
   rdpResize: (tab: string, width: number, height: number) => call('rdp_resize', { tab, width, height }),
   rdpClose: (tab: string) => call('rdp_close', { tab }),
+  /** Milestone 34: the desktop's counters, for the statistics overlay. */
+  rdpStats: (tab: string) => call<RdpStats>('rdp_stats', { tab }),
   /** Milestone 31: tells the server whether this machine's clipboard holds text (never the text). */
   rdpClipboardAnnounce: (tab: string) => call('rdp_clipboard_announce', { tab }),
 
