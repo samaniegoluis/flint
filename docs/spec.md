@@ -1,75 +1,78 @@
-# Flint — v9 Technical Specification: Versions and a faster desktop
+# Flint — v10 Technical Specification: The desktop, finished
 
-**Scope of this document:** version 9 only. The versions it builds on are archived in
+**Scope of this document:** version 10 only. The versions it builds on are archived in
 [`spec-v1.md`](./spec-v1.md) (MVP), [`spec-v2.md`](./spec-v2.md) (daily driver),
 [`spec-v3.md`](./spec-v3.md) (Flint holds the vault), [`spec-v4.md`](./spec-v4.md) (Files),
 [`spec-v5.md`](./spec-v5.md) (Between servers), [`spec-v6.md`](./spec-v6.md) (Tunnels),
-[`spec-v7.md`](./spec-v7.md) (Paste into the terminal) and [`spec-v8.md`](./spec-v8.md)
-(Embedded RDP); everything beyond v9 lives in [`ROADMAP.md`](../ROADMAP.md). This file is
-static: a decision that changes goes into [`decisions.md`](./decisions.md), which supersedes
-the line here.
+[`spec-v7.md`](./spec-v7.md) (Paste into the terminal), [`spec-v8.md`](./spec-v8.md)
+(Embedded RDP) and [`spec-v9.md`](./spec-v9.md) (Versions and a faster desktop); everything
+beyond v10 lives in [`ROADMAP.md`](../ROADMAP.md). This file is static: a decision that
+changes goes into [`decisions.md`](./decisions.md), which supersedes the line here.
 
 ## Problem
 
-v8 shipped (milestones 28-31, [`build-log.md`](./build-log.md)): RDP hosts live in the vault
-and open in a Flint tab through FreeRDP, with the clipboard and reconnect. Two things now
-stand in the way of using it every day:
+v9 shipped (milestones 32-34, `v0.2.0`): every build has a version, the site lists the
+releases, and the RDP tab decodes the graphics pipeline (RDPGFX) and draws through WebGL
+(D-080). The owner uses the RDP tab every day, and his check of milestone 34 (2026-11-12,
+macOS, his real Windows 11) left four things between it and "a VM on my own computer":
 
-- **No build says what it is.** Every binary reports `0.0.0-dev`. The owner builds Flint
-  himself on macOS and on Windows (his own branch, which takes everything from `main`), and
-  cannot tell which version runs on which machine, or what changed between two of them.
-  Nothing records the changes for a person: the history is commits.
-- **The desktop is slower than a native client.** Milestone 28 measured 20-22 frames drawn
-  per second at 1920×1080 against the owner's Windows 11 host, about 29 sent by the server
-  with FreeRDP's default bitmap updates (D-071); `mstsc` and Windows App reach 30-60. The
-  owner's measure of success is the feeling of a VM on his own computer (ROADMAP §9), and
-  the decision on a second engine for Windows (the RDP ActiveX control, D-070) waits for
-  this to be done (D-073).
+- **The graphics mode is not chosen well.** *Automatic* (RDPGFX) drew 32 fps for 32 updates
+  at about 1.6 Mbit/s but left a few stale blocks that only a repaint by Windows cleared;
+  *Compatible* (bitmaps) drew 33/32 at up to 13 Mbit/s and felt smoother, with no blocks.
+  The shim sets no `ConnectionType`, so Windows may be told the link is slow and keep the
+  pipeline's quality low. A real case to cover: the office, 20 Mbit/s over a VPN, where
+  bitmaps at 13 Mbit/s would show. And the mode is a setting: changing it means a new tab.
+- **The RDP path has not had a security pass.** Six risks were noted at milestone 30's
+  close (ROADMAP §9): password copies not wiped from memory, FreeRDP's own NLA copy,
+  CredSSP handing the password to the server, NTLM only, the loopback frame channel guarded
+  only by its token, the certificate trusted on first use.
+- **The desktop always sits inside Flint's window**, with the sidebar and tab strip around
+  it and system keys (Alt+Tab, the Windows key) caught by this machine.
+- **One monitor only.** A desktop cannot cover two screens; a friend of the owner works on
+  a work VM over RDP with two monitors, and the owner's own pair is one landscape and one
+  portrait.
 
-v9 gives every build a version and a changelog, shows them on the site, then makes the desktop as fast as FreeRDP
-and the page can make it.
+v10 finishes the RDP desktop before the remote vault, which becomes v11 (D-081).
 
 ## Scope
 
-**In scope (v9), macOS and Linux here; Windows checked by the owner:**
-- **Versions** (milestone 32): SemVer from `v0.1.0`, one git tag `vX.Y.Z` per release, bumped
-  once per release (not per commit) from the Conventional Commits already in use: a `feat`
-  since the last tag bumps the minor, only `fix`es bump the patch, `1.0.0` by hand when the
-  owner calls Flint stable. The version is set from git at build time: a tagged build shows
-  the tag, a build between tags `git describe`'s form (`0.2.0-3-gabc1234`), a build with no
-  git `0.0.0-dev`. Shown by `flint --version` (and `--json`), the app (Settings → About) and
-  the docs site.
-- **A changelog** (milestone 32): `CHANGELOG.md` generated locally with git-cliff from the
-  commits, grouping `feat` and `fix` and leaving out `docs`, `test` and `chore`, each
-  version headed by a short summary written for a person. The release step (bump, changelog,
-  tag) runs at a milestone's close in `lean-build`, by a script the owner can also run.
-- **A Releases page** (milestone 33): the site shows every version, newest first, with its
-  summary and its *Added* / *Fixed* lists, read from `CHANGELOG.md` when the site is built, a
-  list of versions to jump to and a **Releases** link in the header. Until there are binaries
-  it offers **Build from source** and a *Downloads coming soon* note. Releases count only the
-  product: a commit scoped to the site or the docs neither triggers a release nor appears in
-  the changelog (D-078).
-- **A faster desktop** (milestone 34): the RDP graphics pipeline (RDPGFX) with a codec the
-  build's FreeRDP decodes, and the page drawing frames through WebGL instead of
-  `putImageData`. Measured against milestone 30's tab before and after (frame rate dragging
-  a window, input latency, CPU, bandwidth), with targets set at the milestone's plan. A
-  server without RDPGFX keeps today's bitmap path.
+**In scope (v10), macOS and Linux here; Windows checked by the owner:**
+- **The graphics mode, well chosen** (milestone 35): the stale blocks traced and cleared
+  (a full re-read of the desktop after about a second with no update, which also tells
+  whether Flint or FreeRDP lost the region); `ConnectionType` with network auto-detect so
+  Windows sets the pipeline's quality from the link, measured with `scripts/rdp-bench.sh`
+  and the owner's feel, and *Automatic*'s choice settled from it; a per-tab switch
+  *Automatic* / *Compatible* in the RDP toolbar beside Stats, through the invisible
+  reconnect a resize already uses (D-072 (4)), Settings keeping the default.
+- **The RDP security review** (milestone 36): each of the six risks fixed or accepted in
+  `decisions.md`; the password-wiping fix shared with the SSH side ("Wipe key material
+  from memory", ROADMAP §5).
+- **An immersive full-screen RDP tab** (milestone 37): the window borderless and full
+  screen, sidebar and tab strip hidden, the desktop at the screen's resolution (Display
+  Control), a clear way out (a bar from the top edge or a chord), system keys sent to the
+  remote where the plan finds it affordable.
+- **Two monitors** (milestone 38): starting with a spike on whether `ext:webui` opens one
+  borderless window per monitor on all three systems. If it does, **true multi-monitor**:
+  the remote sees each monitor with its size, position and orientation, each window shows
+  its part. If not, **span** (one window across both screens, one large monitor on the
+  remote; fit for two equal monitors side by side), a `CF-NNN` entry, and true
+  multi-monitor stays `next`.
 - Docs site, the landing and the CLI demo follow every user-visible change (CLAUDE.md rules
-  5 and 6).
+  5 and 6), and a release closes each milestone with a `feat` or `fix` (rule 10).
 
-**Windows:** as in v8. The owner runs Flint on Windows from his own branch over a patched
-cfire, checks each milestone there at its close, and carries its build changes over
-(milestone 32 leaves a note on how a Windows build gets its version). Milestone 34's result
-on Windows decides whether the ActiveX engine goes into a later spec (D-070).
+**Windows:** as in v8 and v9. The owner runs Flint on Windows from his own branch over a
+patched cfire and checks each milestone there at its close. His check of milestone 34 on
+Windows (both modes with Stats, against `mstsc`) feeds milestone 35's plan.
 
-**Out of scope (v9), tracked in the roadmap:** GitHub Releases with binaries, CI, installers,
-download buttons and self-update (§7, `later`); signing and notarization; bundling the
-libraries into the app; the immersive full-screen RDP tab and the RDP security review
-(§9, `next`); the RDP ActiveX engine; everything v8 left out.
+**Out of scope (v10), tracked in the roadmap:** the remote vault (now v11, D-081);
+graphics choices beyond *Automatic* / *Compatible* (an H.264-only setting, a mode per host,
+stepping down by itself); RDPGFX in Flint's test server; more than two monitors; the RDP
+ActiveX engine; a sharp desktop on HiDPI screens; the other RDP extras (audio, drives,
+gateway, RDP through SSH); everything v9 left out.
 
 ## Stack
 
-v8's, plus one row.
+v9's, unchanged.
 
 | Layer | Choice | Why | Rejected |
 |---|---|---|---|
@@ -78,26 +81,30 @@ v8's, plus one row.
 | Frontend | **React + Vite**, CSS Modules + design tokens | Proven in Tether; the frontend is largely portable | Svelte/Solid: no strong reason to switch while the backend is new |
 | Terminal | **xterm.js** (pinned beta + WebGL addon) | Kitty keyboard protocol; WebGL renderer fixes cell sizing | — |
 | SSH | **libssh** via `import cpp` (D-012) | cfire has no SSH. Covers PTY, SFTP, agent, forwarding and known_hosts | libssh2, writing SSH ourselves |
-| RDP | **FreeRDP 3** (`libfreerdp3`, `libwinpr3`) via `import cpp`, core library only, frames drawn by Flint (D-070) | One engine on macOS, Linux and Windows; Apache 2.0; NLA/CredSSP, Display Control, clipboard and graphics pipeline channels | The RDP ActiveX control (Windows only: a later second adapter), handing off to the system client, writing RDP ourselves |
+| RDP | **FreeRDP 3** (`libfreerdp3`, `libwinpr3`) via `import cpp`, core library only, frames drawn by Flint (D-070) | One engine on macOS, Linux and Windows; Apache 2.0; NLA/CredSSP, Display Control, clipboard, graphics pipeline and monitor layout | The RDP ActiveX control (Windows only: a later second adapter), handing off to the system client, writing RDP ourselves |
 | Crypto | **libsodium**: Argon2id + XChaCha20-Poly1305 | Vetted, constant-time, the same primitives as Tether | cfire `core:crypto/aes` (hand-rolled) |
 | Vault store | **SQLite, whole-file encrypted** with SQLCipher (D-013) | Queryable and transactional. No plaintext metadata on a synced disk | Per-field encryption (Tether: leaks metadata), a KeePass-style blob |
 | Keychain | macOS Security.framework, Linux libsecret, via `import cpp` | cfire has no keychain module. Used only by *Remember on this computer* (D-048) | Storing the key in a file |
 | Docs | **Astro + Starlight** | Landing and Docs in one site; Markdown docs written alongside code | Docusaurus, VitePress |
-| **(new) Changelog** | **git-cliff**, run locally (a development tool, not linked) | Reads the Conventional Commits already in use; no GitHub PRs or CI needed, as the owner merges and pushes locally | release-please and semantic-release (they work through PRs or CI), a hand-written changelog |
+| Changelog | **git-cliff**, run locally (a development tool, not linked) | Reads the Conventional Commits already in use; no GitHub PRs or CI needed | release-please and semantic-release, a hand-written changelog |
 
 ## Architecture
 
-Hexagonal, as in v8. v9 adds no port.
+Hexagonal, as in v9. v10 adds no port; the `RemoteDesktop` port may gain operations (a
+mode switch, the monitor layout), each behind the same adapter.
 
-- **The version is a build input, not code.** The build passes the version string it reads
-  from git into both drivers (the CLI and the app); the core takes it as data. Nothing at
-  run time calls git.
-- **Frames keep the local frame channel** (D-071). With RDPGFX the shim decodes into the
-  same RGBA surface and dirty region; what changes is how the page draws it (a WebGL
-  texture updated by region) and what the server sends. Nothing above `adapters/` knows the
-  codec.
+- **Frames keep the local frame channel** (D-071). The re-read after a quiet second marks
+  the whole surface dirty in the shim; nothing above `adapters/` learns why a region
+  arrived. With two monitors the server still sends one surface (the monitors' bounding
+  box); each window draws its part of it.
+- **A mode switch is a reconnect, not a renegotiation.** The codecs are fixed when the
+  graphics channel opens, so the per-tab switch rides D-072 (4)'s reconnect: the Windows
+  session and its apps stay.
+- **Windows and screens are the driver's.** Full screen, the monitor list and one window
+  per monitor are native shims in `adapters/` (likely `CF-NNN`), reached through the GUI
+  driver; the core sees only the desktop size and the monitor layout as data.
 
-Contracts (v8's stand):
+Contracts (v9's stand):
 - **Drivers hold no business logic.** A GUI binding, a socket request and a CLI command for
   the same action call the same use case.
 - **Secrets never leave the core in clear text** except to a transport at connect time
@@ -115,8 +122,8 @@ Contracts (v8's stand):
 ## Principles
 
 Checkable rules. Every milestone is checked against them before it is closed. Rules marked
-**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v8's,
-unchanged.
+**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v9's,
+unchanged. Milestone 36 touches 4 and 6 by design: expect the owner's review there.
 
 1. The domain and application layers import no adapter and no I/O module (`ext:webui`,
    `ext:db/sqlite`, sockets, keychain, files).
@@ -153,25 +160,31 @@ unchanged.
 Each milestone is built **whole** with `lean-build` and verified by the agent. Owner checks
 happen only where a human is required (see `CLAUDE.md`), plus the owner's Windows check at
 each close. Progress is recorded in `docs/build-log.md`, not here. Numbering continues from
-v8; milestone 34 is the one D-073 approved as "milestone 32" (D-076, renumbered by D-078).
+v9. Automated RDP input against the owner's real session stays harmless (no text, no
+shortcuts that open or close anything) until a Windows test VM exists.
 
 | # | Milestone | Delivers |
 |---|---|---|
-| 32 | **Versions and a changelog** | The version read from git at build time (tag, `git describe` between tags, `0.0.0-dev` with no git) and passed into the CLI and the app; `flint --version` (and `--json`), Settings → About and the docs site show it. A release script: the next version from the commits since the last tag (`feat` → minor, only `fix` → patch, or one given by hand), `CHANGELOG.md` regenerated with git-cliff with a person-written summary on top of the new version, a commit and the tag `vX.Y.Z`; no push. `lean-build`'s close runs it (a note for the skill, not a change to it here). First release `v0.1.0`, its changelog covering the history so far in one section. A note for the owner's Windows build. Unit tests on the bump rule, cli-e2e on `--version`, docs (a "Versions" page or section) and the CLI demo |
-| 33 | **A Releases page** | A `/releases` page on the docs site in the landing's own style (no Claude Design), modelled on ZenNotes' releases page: every version newest first (number, date, the person-written summary, its *Added* / *Fixed* lists, long lists collapsed so `0.1.0`'s does not bury the rest), a list of versions to jump to, a **Releases** link in the site's header, and **Build from source** with a *Downloads coming soon* note in place of downloads. It reads `CHANGELOG.md` at site build time, the one source; `release.sh` stops copying it into `reference/changelog.md`, and Reference → Changelog leads to the new page. `cliff.toml` leaves commits scoped `site` or `docs` out of the changelog and the bump, and `CHANGELOG.md` is written again from the tags. Checked with the site build, a headless check of the page (both themes, phone width, the jump list) and a `release.sh` dry run. No app or CLI change, so no release at its close unless a fix lands |
-| 34 | **A faster desktop** | Milestone 30's tab measured first at 1920×1080 against the owner's Windows 11 host (frames drawn per second dragging a window and under a whole-screen animation, Start-menu latency, CPU of the app and WebKit, bandwidth), targets set at the plan. The `rdpgfx` channel loaded with a codec the build's FreeRDP decodes (progressive, or AVC/H.264 where FreeRDP is built with it), decoded into the same surface; the page draws through WebGL by region; a server without RDPGFX keeps the bitmap path. The same measurements after, in `decisions.md`. gui-e2e: the desktop still connects, draws, resizes and survives a drop against the test server; the owner checks the feel on his Windows host and on his Windows build. Docs |
+| 35 | **The graphics mode, well chosen** | In this order. (1) **Stale blocks:** after about a second with no server update the shim marks the whole desktop dirty once; whether that clears the blocks tells Flint from FreeRDP (recorded in `decisions.md`), and the re-read stays as the fix if it was Flint's path. (2) **`ConnectionType`** set with network auto-detect, *Automatic* and *Compatible* measured again with `scripts/rdp-bench.sh` and judged by the owner's feel; *Automatic*'s choice settled from that (the pipeline with better quality, a choice by measured bandwidth and round trip at connect, or *Compatible* as the default), never reconnecting by itself in a loop. (3) **A per-tab switch** *Automatic* / *Compatible* in the RDP toolbar beside Stats, through D-072 (4)'s invisible reconnect (the Windows session kept, the password read again from the vault, unavailable while locked); Settings keeps the default. gui-e2e for the switch and the re-read against the test server; docs (remote-desktop), the landing if the switch earns a line |
+| 36 | **The RDP security review** | The six risks of ROADMAP §9, each fixed or accepted with a reason in `decisions.md`: password copies in cfire and the shim wiped after use (`sodium_memzero`), shared with the SSH side's "Wipe key material from memory"; FreeRDP's NLA copy (what FreeRDP frees and when); CredSSP and whether Restricted Admin or Remote Credential Guard can be offered; NTLM only (Kerberos off since M28); the loopback frame channel (token strength and lifetime, binding, what a local process can learn); trust on first use of the certificate (what a changed certificate shows). Unit tests on what is fixed, a short "Security" section in the remote-desktop docs. Owner review (Principles 4 and 6) |
+| 37 | **An immersive full-screen RDP tab** | *Full screen* from the palette, the tab's menu and a chord: the window goes borderless full screen, sidebar and tab strip hide, the desktop follows the screen's resolution (Display Control). A clear way out (a bar from the top edge, as `mstsc`'s, and a chord), designed first in Claude Design. System keys (Alt+Tab, the Windows key, Ctrl+Esc) sent to the remote through a per-OS low-level hook only if the plan finds it affordable; otherwise left in the roadmap. Full screen in `ext:webui` or a small per-OS shim (Win32, `NSWindow`, GTK) with its `CF-NNN`. gui-e2e for entering and leaving, the owner's feel on macOS and Windows, docs |
+| 38 | **Two monitors** | Starts with a spike: one borderless full-screen window per monitor from `ext:webui` on macOS, Linux and Windows, and each monitor's position, size, orientation and scale read per OS. **If it works:** true multi-monitor, the remote told the monitor layout (FreeRDP's monitor definitions), each window drawing its part of the one surface and mapping its own mouse; mixed orientation (landscape + portrait) and mixed scales handled. **If not:** span (one window across both screens, one large monitor on the remote, for equal monitors side by side), a `CF-NNN` entry, and true multi-monitor stays `next`. Entered from full screen (37). Frames twice as large measured with `rdp-bench.sh`. The owner checks with two monitors; docs |
 
 ## Open questions
 
-- **Codecs on each system's FreeRDP.** Homebrew's, Debian's and the owner's Windows build may
-  differ in AVC/H.264 support (OpenH264, FFmpeg). Settled at milestone 34's plan from what
-  each build reports; progressive needs no external decoder.
-- **RDPGFX against the test server.** Flint's test server (`libfreerdp-server3`, v8) sends
-  bitmap updates; whether it can offer the graphics pipeline for gui-e2e is settled in 34.
-- **Where the version shows in the app**: Settings → About if it exists, else the nearest
-  place in Settings; settled at milestone 32's plan.
-- **FreeRDP on the owner's Windows branch** (from v8): its result after 34 decides whether
-  the ActiveX engine is needed (D-070).
+- **The owner's Windows check of milestone 34** (both modes with Stats, against `mstsc`,
+  AltGr and dead keys, `flint connect`, copy and paste, a cut network, the version in the
+  status bar): its result goes into the build-log and feeds milestone 35's plan.
+- **What *Automatic* should pick**: settled by milestone 35's measurements, not before.
+- **Milestone 35's size**: three parts; if the plan finds it over one sitting, the switch
+  may split into 35b.
+- **System keys in full screen** (37): a low-level keyboard hook on each OS (macOS needs
+  the Accessibility permission) may cost more than the rest of the milestone; settled at
+  its plan.
+- **Multi-window in `ext:webui`** (38): settled by the spike; it decides true multi-monitor
+  or span.
+- **A Windows host only for tests** (ROADMAP §9, `next`): without it the bench measures only
+  the Start menu and Task view; the owner's feel carries 35 and 38.
 - **Bundling FreeRDP into a release**: a dynamic system package for now (D-015); bundling
   stays in ROADMAP §7.
 - **A host with 2FA or keyboard-interactive auth** asks twice when its terminal and its
