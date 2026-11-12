@@ -36,13 +36,15 @@
   //             test server (milestone 31)
   //   webgl     a terminal's lost WebGL context, alone and with a desktop behind it
   //             (milestone 35b): seconds a repetition with scripts/repeat.sh
+  //   fullscreen  an immersive full-screen RDP tab (milestone 37): every way in and out,
+  //             the bar, the note, the desktop's size, a lost connection
   //   rdpbench  milestone 34's benchmark against a real Windows host (scripts/rdp-bench.sh,
   //             never part of the default runs): harmless input only, the Start menu and
   //             Task view, in each graphics mode
   const RUN = '@@RUN@@';
   // webgl only: '1' when a person hides the window for the loss (FLINT_E2E_WEBGL_COVER).
   const COVER = '@@COVER@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'rdpbench'];
+  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'rdpbench'];
   // The benchmark's host (rdpbench only; '' otherwise).
   const BHOST = '@@BHOST@@';
   const BUSER = '@@BUSER@@';
@@ -376,6 +378,162 @@
         // loseAndRedraw checks first that WebGL came back when the tab was shown again.
         await loseAndRedraw('again');
       }
+    }
+
+    if (RUN === 'fullscreen') {
+      // Milestone 37: an immersive full-screen RDP tab against Flint's test server. The
+      // headless window cannot go full screen (CF-111): the core stands in for the OS
+      // and answers `window:fullscreen` at once, so what is checked is the page, the
+      // desktop's size, and every way in and out. The OS's own full screen is the owner's.
+      if (CPORT === '0') throw new Error('the fullscreen run needs Flint\'s RDP test server (scripts/test.sh starts it)');
+      const isMac = (await window.backend.app_info({})).os === 'mac';
+      const ctl = async (cmd) => (await fetch(`http://127.0.0.1:${CCTL}/${cmd}`, { cache: 'no-store' })).text();
+      const app = () => q('.app');
+      const immersive = () => app()?.dataset.fullscreen === 'true';
+      const hiddenEl = (sel) => { const el = q(sel); return !el || el.offsetParent === null || getComputedStyle(el).display === 'none'; };
+      const canvas = () => q('canvas.rdp-canvas', activeRegion());
+      const fsChord = (target) => (target ?? document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', isMac
+        ? { key: 'f', code: 'KeyF', bubbles: true, cancelable: true, metaKey: true, ctrlKey: true }
+        : { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true, ctrlKey: true, altKey: true }));
+      const fitsArea = () => {
+        const d = canvas()?.dataset.desktop;
+        if (!d) return false;
+        const [w, h] = d.split('x').map(Number);
+        const a = q('.rdp-area', activeRegion()).getBoundingClientRect();
+        return Math.abs(w - Math.floor(a.width)) <= 2 && Math.abs(h - Math.floor(a.height)) <= 2;
+      };
+      const hover = (el, on) => el.dispatchEvent(new MouseEvent(on ? 'mouseover' : 'mouseout', { bubbles: true, relatedTarget: null }));
+
+      await setStep('fullscreen: an RDP tab on the test server');
+      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await waitFor(() => q('[data-host-type-step]'), 'the type step');
+      await click('.type-card[data-type="rdp"]');
+      await click('.modal button', 'Continue');
+      await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor');
+      await fill('#ra', 'rdp-full');
+      await fill('#rh', '127.0.0.1');
+      await fill('#rp', String(CPORT));
+      await fill('#ru', 'e2e');
+      await fill('.modal input[aria-label="Password"]', 'x');
+      await click('.modal button[type="submit"]', 'Add host');
+      await waitFor(() => byText('.tree .ti', 'rdp-full'), 'rdp-full in the tree');
+      byText('.tree .ti', 'rdp-full').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await waitFor(() => q('.tab.on') && q('[data-rdp-state="certificate"]', activeRegion()), 'the certificate prompt', 30000);
+      await click('button[type="submit"]', 'Trust and connect');
+      await waitFor(() => q('[data-rdp-size]') && canvas()?.dataset.desktop, 'the desktop', 30000);
+      const before = canvas().dataset.desktop;
+      await check(!immersive() && !q('[data-fs-bar]'), 'a new RDP tab starts in the window, with Flint around it');
+
+      await setStep('fullscreen: the toolbar button, the first time');
+      await click('[data-rdp-fullscreen]');
+      await waitFor(() => immersive(), 'the page immersive');
+      for (const sel of ['.titlebar', '.rail', '.statusbar', '.tabbar', '[data-rdp-toolbar]', '.sidebar']) {
+        await check(hiddenEl(sel), `full screen hides ${sel}`);
+      }
+      {
+        const m = q('.main').getBoundingClientRect();
+        await check(m.left === 0 && m.top === 0 && Math.round(m.width) === window.innerWidth && Math.round(m.height) === window.innerHeight,
+          `the desktop's area is the whole window (${Math.round(m.width)}x${Math.round(m.height)} of ${window.innerWidth}x${window.innerHeight})`);
+      }
+      await waitFor(() => canvas()?.dataset.desktop && canvas().dataset.desktop !== before && fitsArea(), 'the desktop at the full size', 30000);
+      await check(true, `the remote desktop takes the full size (${before} → ${canvas().dataset.desktop})`);
+      await check(q('[data-rdp-size]') === null || !q('[data-rdp-state]', activeRegion()), 'the session stays up');
+      const note = await waitFor(() => q('[data-fs-note]'), 'the first-time note');
+      const chordText = isMac ? '⌃⌘F' : 'Ctrl+Alt+Enter';
+      await check(note.textContent.includes('Point at the top edge') && note.textContent.includes(chordText), `the first time, a note says how to leave (${note.textContent.trim()})`);
+      await check(!!q('[data-fs-tab]') && !q('[data-fs-bar]'), 'the bar starts folded to a tab');
+
+      await setStep('fullscreen: the bar drops from the top edge');
+      hover(q('[data-fs-edge]'), true);
+      const bar = await waitFor(() => q('[data-fs-bar]'), 'the connection bar');
+      await check(bar.textContent.includes('rdp-full') && bar.textContent.includes(canvas().dataset.desktop.replace('x', ' × ')), `the bar names the host and the desktop's size (${bar.textContent.trim().slice(0, 60)})`);
+      await check(bar.textContent.includes('Exit full screen') && bar.textContent.includes(chordText) && bar.textContent.includes('Disconnect'), 'the bar offers Exit full screen with its chord, and Disconnect');
+      hover(q('[data-fs-edge]'), false);
+      await waitFor(() => !q('[data-fs-bar]'), 'the bar gone after the pointer left', 3000);
+      await check(true, 'the bar goes once the pointer leaves');
+      hover(q('[data-fs-edge]'), true);
+      await click('[data-fs-pin]');
+      hover(q('[data-fs-bar]'), false);
+      await sleep(1200);
+      await check(!!q('[data-fs-bar]') && q('[data-fs-pin]').getAttribute('aria-pressed') === 'true', 'a pinned bar stays');
+      await click('[data-fs-pin]');
+
+      await setStep('fullscreen: Exit full screen in the bar');
+      await waitFor(() => !q('[data-fs-bar]'), 'an unpinned bar gone', 3000);
+      hover(q('[data-fs-edge]'), true);
+      await click('[data-fs-exit]');
+      await waitFor(() => !immersive(), 'the page back in the window');
+      for (const sel of ['.titlebar', '.rail', '.statusbar', '.tabbar', '[data-rdp-toolbar]']) {
+        await check(!hiddenEl(sel), `leaving full screen shows ${sel} again`);
+      }
+      await waitFor(() => canvas()?.dataset.desktop === before && fitsArea(), 'the desktop back at the tab size', 30000);
+      await check(true, `the desktop returns to the tab's size (${before})`);
+      await check(!q('[data-rdp-state]', activeRegion()), 'the session is still up');
+      {
+        // The note shows once on this machine (design 22b2), kept in the config folder.
+        const seen = await waitForAsync(async () => ((await window.backend.ui_state_get({})).fullscreen_note_seen ? true : null), 'the note marked seen', 10000).catch(() => false);
+        await check(seen, 'the first-time note is remembered as seen');
+      }
+
+      await setStep('fullscreen: the chord, both ways, kept from the remote');
+      await ctl('clear');
+      canvas().focus();
+      fsChord(canvas());
+      await waitFor(() => immersive(), 'the page immersive from the chord');
+      await sleep(400);
+      await check(!q('[data-fs-note]'), 'the note does not show a second time');
+      canvas().focus();
+      fsChord(canvas());
+      await waitFor(() => !immersive(), 'the page back from the chord');
+      {
+        const keys = await ctl('keys');
+        // The chord's modifiers may reach the remote and be let go; its letter never does.
+        const letter = isMac ? '0x21' : '0x1c';
+        await check(!keys.split(' ').some((k) => k === 'd:' + letter), `the chord's key does not reach the remote (${keys})`);
+      }
+
+      await setStep('fullscreen: the palette, and another tab leaves');
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
+      await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
+      await fill('[aria-label="Command palette"] input', 'Full screen');
+      const fsItem = await waitFor(() => byText('[role="option"]', 'Full screen'), 'Full screen in the palette');
+      await check(fsItem.getAttribute('aria-disabled') !== 'true' && fsItem.textContent.includes(chordText), 'the palette offers Full screen with its chord on an RDP tab');
+      fsItem.click();
+      await waitFor(() => immersive(), 'the page immersive from the palette');
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '1', code: 'Digit1', bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
+      await waitFor(() => !immersive(), 'full screen left for another tab');
+      await check(q('.tab.on')?.textContent.includes('local'), 'going to another tab leaves full screen and shows it');
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
+      await waitFor(() => q('[aria-label="Command palette"]'), 'the palette on the SSH tab');
+      await fill('[aria-label="Command palette"] input', 'Full screen');
+      const greyed = await waitFor(() => byText('[role="option"]', 'Full screen'), 'Full screen in the palette (SSH tab)');
+      await check(greyed.getAttribute('aria-disabled') === 'true' && greyed.title === 'RDP tabs only', 'on an SSH tab the palette greys Full screen: "RDP tabs only"');
+      q('[aria-label="Command palette"] input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await waitFor(() => !q('[aria-label="Command palette"]'), 'the palette closed');
+
+      await setStep('fullscreen: the tab menu, and the OS leaving by its own means');
+      await click('.tab', 'rdp-full');
+      byText('.tab', 'rdp-full').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 60 }));
+      const menu = await waitFor(() => q('[data-tab-menu]'), 'the tab menu');
+      await check(menu.textContent.includes('Full screen') && menu.textContent.includes(chordText) && menu.textContent.includes('Close tab'), 'the tab menu offers Full screen with its chord');
+      await click('[data-tab-menu-item="fullscreen"]');
+      await waitFor(() => immersive(), 'the page immersive from the tab menu');
+      await window.backend.e2e_window_fullscreen({ on: false });
+      await waitFor(() => !immersive(), 'the page back when the OS left full screen');
+      await check(!hiddenEl('.titlebar'), 'leaving full screen another way (the green button) brings Flint back');
+      await window.backend.e2e_window_fullscreen({ on: true });
+      await waitFor(() => immersive(), 'the page immersive when the OS entered full screen');
+      await check(true, 'entering full screen another way on an RDP tab makes it immersive, as Windows App');
+
+      await setStep('fullscreen: the connection lost keeps full screen, the bar open');
+      await waitFor(() => fitsArea() && !q('[data-rdp-state]', activeRegion()), 'the desktop at full size', 30000);
+      await ctl('drop');
+      const lostBar = await waitFor(() => q('[data-fs-bar]') && q('[data-fs-bar]').textContent.includes('disconnected') ? q('[data-fs-bar]') : null, 'the bar open on a lost connection', 30000);
+      await check(immersive() && lostBar.textContent.includes('Exit full screen') && !lostBar.textContent.includes('Disconnect'), 'a lost connection stays full screen with the bar open and Exit full screen');
+      await check(!!byText('button', 'Reconnect'), 'the connection-lost card offers Reconnect');
+      await click('[data-fs-exit]');
+      await waitFor(() => !immersive(), 'out of full screen');
+      await check(!hiddenEl('.tabbar'), 'Exit full screen brings the tabs back');
     }
 
     if (RUN === 'vim') {

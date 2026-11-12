@@ -77,6 +77,8 @@ export const api = {
   windowUnlock: (password: string) => call<WindowState>('window_unlock', { password }),
   /** Quits Flint: the window and the tray, and the CLI's way into the vault. */
   quit: () => call('app_quit'),
+  /** Full screen (milestone 37): the OS's own; the change arrives as `window:fullscreen`. */
+  windowFullscreen: (on: boolean) => call<{ on: boolean }>('window_fullscreen', { on }),
   close: () => call('vault_close'),
   /** Locks the vault: its key leaves memory, open sessions keep running (D-042). */
   lock: () => call('vault_lock'),

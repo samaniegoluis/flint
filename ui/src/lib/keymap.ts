@@ -10,7 +10,7 @@ export type Action =
   | 'splitRight' | 'splitDown' | 'focusNextPane' | 'focusPrevPane'
   | 'layout1' | 'layout2' | 'layout3' | 'layout4'
   | 'viewHosts' | 'viewFiles' | 'viewTunnels' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'newSshHost' | 'newRdpHost' | 'editHost'
-  | 'collapseAll' | 'expandAll'
+  | 'collapseAll' | 'expandAll' | 'fullscreen'
   | 'lock' | 'quit' | 'fontBigger' | 'fontSmaller' | 'fontReset' | 'nextRegion' | 'prevRegion'
   | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5' | 'tab6' | 'tab7' | 'tab8' | 'tab9';
 
@@ -23,6 +23,8 @@ interface Chord {
   shifted?: boolean;
   alt?: boolean;
   bare?: boolean;
+  /** Full screen's own chord (milestone 37): ⌃⌘F on macOS, Ctrl+Alt+Enter elsewhere. */
+  fullscreen?: boolean;
   shiftOnly?: boolean;
   label: string;
 }
@@ -59,6 +61,7 @@ const CHORDS: Record<Action, Chord> = {
   editHost: { code: 'KeyI', label: 'I' },
   collapseAll: { none: true, code: '', label: '' },
   expandAll: { none: true, code: '', label: '' },
+  fullscreen: { fullscreen: true, code: 'KeyF', label: 'F' },
   lock: { code: 'KeyL', label: 'L' },
   quit: { code: 'KeyQ', label: 'Q' },
   fontBigger: { code: 'Equal', label: '+' },
@@ -86,6 +89,12 @@ export interface KeyLike {
 }
 
 function matches(c: Chord, e: KeyLike, os: Os): boolean {
+  if (c.fullscreen) {
+    // macOS's own full-screen chord; elsewhere VMware's, which no terminal or remote
+    // desktop shortcut uses.
+    if (os === 'mac') return e.code === 'KeyF' && e.metaKey && e.ctrlKey && !e.altKey && !e.shiftKey;
+    return (e.code === 'Enter' || e.code === 'NumpadEnter') && e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey;
+  }
   if (c.none || e.code !== c.code) return false;
   if (c.bare) return !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
   if (c.shiftOnly) return e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey;
@@ -111,6 +120,7 @@ export function actionFor(e: KeyLike, os: Os): Action | null {
 export function chordLabel(action: Action, os: Os): string {
   const c = CHORDS[action];
   if (c.none) return '';
+  if (c.fullscreen) return os === 'mac' ? '⌃⌘F' : 'Ctrl+Alt+Enter';
   if (c.bare) return c.label;
   if (c.shiftOnly) return os === 'mac' ? '⇧' + c.label : 'Shift+' + c.label;
   if (c.alt) return (os === 'mac' ? '⌥⌘' : 'Ctrl+Alt+') + c.label;
@@ -154,6 +164,7 @@ export const ACTION_TITLES: Record<Action, string> = {
   editHost: 'Edit host',
   collapseAll: 'Collapse all groups',
   expandAll: 'Expand all groups',
+  fullscreen: 'Full screen',
   lock: 'Lock vault',
   quit: 'Quit Flint',
   fontBigger: 'Bigger terminal font',
@@ -169,7 +180,7 @@ export const ACTION_TITLES: Record<Action, string> = {
 export const SHORTCUT_GROUPS: { title: string; actions: Action[] }[] = [
   { title: 'General', actions: ['palette', 'gotoHost', 'settings', 'lock', 'quit', 'nextRegion', 'prevRegion'] },
   { title: 'Vaults', actions: ['switchVault', 'openVault', 'createVault'] },
-  { title: 'Sessions', actions: ['newSession', 'closeTab', 'reconnect', 'duplicate', 'tab1', 'tab9'] },
+  { title: 'Sessions', actions: ['newSession', 'closeTab', 'reconnect', 'duplicate', 'fullscreen', 'tab1', 'tab9'] },
   { title: 'Panes', actions: ['splitRight', 'splitDown', 'focusNextPane', 'focusPrevPane', 'layout1', 'layout2', 'layout3', 'layout4'] },
   { title: 'Views', actions: ['viewHosts', 'viewFiles', 'viewTunnels', 'viewKeys', 'viewCredentials', 'toggleSidebar'] },
   { title: 'Hosts', actions: ['newHost', 'editHost'] },

@@ -68,3 +68,12 @@ test "the GUI's group paths are stored as ids and survive a rename" {
     assert_eq(back.collapsed.len(), usize(2))
     assert(back.collapsed[0] == "office" || back.collapsed[1] == "office")
 }
+
+test "the full-screen note, once seen, stays seen" {
+    mut store := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+    a := "0123456789abcdef0123456789abcdef"
+    assert(!ui_state_for(store, a).fullscreen_note_seen)
+    _ := try save_ui_state(mut store, a, UiStateView{ sidebar_open: true, sidebar_width: 264, fullscreen_note_seen: true, collapsed: [] })
+    assert(ui_state_for(store, a).fullscreen_note_seen)
+    assert(ui_state_for(store, "").fullscreen_note_seen)
+}

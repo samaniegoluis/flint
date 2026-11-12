@@ -2226,3 +2226,29 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   cannot do the same without native code (Flint's fake records the values instead).
 - **Ideal:** `mut` (and `out`, `move`) accepted on interface method parameters, with the call
   site's `mut` checked against them as for any function.
+
+### CF-125 · missing · `confirmed`: `ext:webui`'s full screen is a toggle that never hears the window
+- **Seen (milestone 37) [read]:** `webui.App.fullscreen()` and the page's
+  `WindowFullscreen()` flip `is_fullscreen` and call the platform's toggle
+  (`core/webui.hpp:336`, `core/webui/bridge.hpp:492`): `-toggleFullScreen:` on macOS
+  (`macos_ios.hpp:610`), `gtk_window_fullscreen`/`unfullscreen` on Linux
+  (`linux_gtk.hpp:256`), nothing on Windows (`windows_webview2.hpp` sets no
+  `platform_fullscreen`). There is no "enter" or "leave", no way to read the window's real
+  state, and no event when it changes another way (the green button, the system's own
+  ⌃⌘F, a window manager's key), so the flag drifts from the window after the first such
+  change.
+- **Repro:** call `app.fullscreen()`, leave full screen with the green button, call it
+  again: the flag says "full screen" and the window enters it a second time instead of
+  leaving, or the other way round; nothing tells the page the window left.
+- **Why Flint needs it:** an RDP tab goes immersive (no chrome) exactly while the window is
+  full screen, whichever way it got there (spec v10, milestone 37).
+- **Workaround:** `src/adapters/uievents/native/flint_window.hpp`: macOS enters or leaves
+  with `-toggleFullScreen:` only when `NSWindowStyleMaskFullScreen` differs and hears
+  `NSWindowDidEnter/ExitFullScreenNotification`; Linux hears `window-state-event`; Windows
+  (built on the owner's branch) switches the style to `WS_POPUP` over the monitor's rectangle
+  and back. Each change reaches the page as `window:fullscreen` through `App.eval`. The shim
+  also measures what macOS reveals over a full-screen window at the top edge (the menu bar
+  and the title bar), which nothing in `ext:webui` exposes.
+- **Ideal:** `App.set_fullscreen(on: bool)`, `App.is_fullscreen() -> bool` read from the
+  window, and a `window:fullscreen` event (`{ on }`) emitted by webui on every change, on
+  all three systems; for macOS, the inset the top edge reveals.

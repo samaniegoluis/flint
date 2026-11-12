@@ -19,7 +19,7 @@ export const FILES_MAX = 480;
 export const FILES_DEFAULT = 340;
 export const clampFiles = (w: number) => Math.round(Math.min(FILES_MAX, Math.max(FILES_MIN, w)));
 
-const DEFAULTS: UiStateView = { sidebar_open: true, sidebar_width: SIDEBAR_DEFAULT, files_width: FILES_DEFAULT, collapsed: [] };
+const DEFAULTS: UiStateView = { sidebar_open: true, sidebar_width: SIDEBAR_DEFAULT, files_width: FILES_DEFAULT, fullscreen_note_seen: false, collapsed: [] };
 
 export function useUiState(vaultPath: string) {
   const [ui, setUi] = useState<UiStateView | null>(null);

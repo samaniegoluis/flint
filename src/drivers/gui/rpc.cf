@@ -101,6 +101,14 @@ type WindowUnlockReq struct {
     password: str `json:"password"`
 }
 
+type FullscreenReq struct {
+    on: bool `json:"on"`
+}
+
+type FullscreenState struct {
+    on: bool `json:"on"`
+}
+
 type DialogReq struct {
     title:        str `json:"title"`
     default_name: str `json:"default_name"`
@@ -117,6 +125,7 @@ type UiStateReq struct {
     sidebar_open:  bool  `json:"sidebar_open"`
     sidebar_width: i64   `json:"sidebar_width"`
     files_width:   i64   `json:"files_width" default:"340"`
+    fullscreen_note_seen: bool `json:"fullscreen_note_seen" default:"false"`
     collapsed:     []str `json:"collapsed"`
 }
 
@@ -397,7 +406,7 @@ fn rpc_ui_state_get(ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState)
 
 fn rpc_ui_state_set(params: str, mut ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState) -> str! {
     req := try parse_req[UiStateReq](params)
-    mut view := UiStateView{ sidebar_open: req.sidebar_open, sidebar_width: req.sidebar_width, files_width: req.files_width, collapsed: req.collapsed }
+    mut view := UiStateView{ sidebar_open: req.sidebar_open, sidebar_width: req.sidebar_width, files_width: req.files_width, fullscreen_note_seen: req.fullscreen_note_seen, collapsed: req.collapsed }
     mut vault := ""
     held := st.vault_session()
     if st.unlocked() && req.vault == held.path {

@@ -52,6 +52,7 @@ const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'layout3', icon: 'split' },
   { action: 'layout4', icon: 'split' },
   { action: 'closeTab', icon: 'x' },
+  { action: 'fullscreen', icon: 'expand' },
   { action: 'viewHosts', icon: 'hosts' },
   { action: 'viewTunnels', icon: 'tunnel' },
   { action: 'viewKeys', icon: 'key' },
@@ -226,7 +227,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           group: 'actions', key: 'a:' + a.action, score: (m?.score ?? 0) + 1000,
           render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m?.positions ?? []} /></span>{a.action === 'newSshHost' && <HostTypeIcon type="ssh" size="md" />}{a.action === 'newRdpHost' && <HostTypeIcon type="rdp" size="md" />}{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
           run: () => onAction(a.action),
-          disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? 'SSH hosts only' : undefined,
+          disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? 'SSH hosts only' : !rdpTab && a.action === 'fullscreen' ? 'RDP tabs only' : undefined,
         });
       }
       for (const r of recents) {

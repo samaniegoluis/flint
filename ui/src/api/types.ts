@@ -109,6 +109,8 @@ export interface UiStateView {
   sidebar_width: number;
   /** The Files view's own width (milestone 17), 200–480. */
   files_width: number;
+  /** The full-screen note was shown once (milestone 37, design 22b2). */
+  fullscreen_note_seen: boolean;
   collapsed: string[];
 }
 

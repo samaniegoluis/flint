@@ -103,6 +103,32 @@ picture to the page once more. If an update was ever lost on the way, a block th
 wrong until Windows repaints it, this puts it right within that second. Stats counts the
 re-reads and the stale pixels they found ("nothing stale" when every update arrived).
 
+## Full screen
+
+**Full screen** turns the window into the remote desktop: Flint's sidebar, tabs, toolbar
+and status bar go, and Windows gets the screen's whole size. Open it from the toolbar's
+**Full screen**, the tab's menu (right-click the tab), the palette, or the chord:
+<kbd>⌃⌘F</kbd> on macOS, <kbd>Ctrl+Alt+Enter</kbd> on Linux and Windows. The chord stays
+Flint's: it never reaches Windows.
+
+- **On macOS** it is the system's own full screen, as Microsoft's Windows App does: the
+  desktop gets a Space of its own, and swiping between Spaces takes you back to your
+  other windows. The green button of the window does the same with an RDP tab shown.
+- **On Linux and Windows** the window covers the whole monitor, with no frame.
+
+Point at the top edge of the screen and the **connection bar** drops down: the host, the
+desktop's size and round trip, **Exit full screen** and **Disconnect**. It goes again when
+the pointer leaves; the pin keeps it open. On macOS the menu bar shows at the top edge
+too, and the connection bar drops below it. The first time, a note says how to leave.
+
+Full screen belongs to one tab. Going to another tab (<kbd>⌘1</kbd> … <kbd>⌘9</kbd>, or
+the palette), locking the vault or closing the tab leaves it. A connection that drops
+stays full screen, with the **Connection lost** card in the middle and the bar held open,
+so **Exit full screen** is one click away.
+
+Alt+Tab, the Windows key and the other keys your computer keeps for itself still go to
+your computer in full screen; sending them to Windows is planned.
+
 ## When the connection drops
 
 A tab whose connection drops keeps its last picture, greyed, under **Connection lost**,
@@ -127,8 +153,9 @@ Almost every key belongs to the remote desktop:
   App does: <kbd>⌘C</kbd>, <kbd>⌘V</kbd>, <kbd>⌘Z</kbd> and <kbd>⌘W</kbd> act on
   Windows. <kbd>⌃</kbd> is the Windows key. See [Modifier keys on a
   Mac](#modifier-keys-on-a-mac) to change that.
-- Flint keeps only the palette (<kbd>⌘K</kbd>, <kbd>Ctrl+Shift+K</kbd> on Linux) and the
-  tab switches (<kbd>⌘1</kbd> … <kbd>⌘9</kbd>), on <kbd>⌘</kbd> whatever the setting.
+- Flint keeps only the palette (<kbd>⌘K</kbd>, <kbd>Ctrl+Shift+K</kbd> on Linux), the
+  tab switches (<kbd>⌘1</kbd> … <kbd>⌘9</kbd>), on <kbd>⌘</kbd> whatever the setting, and
+  [full screen](#full-screen) (<kbd>⌃⌘F</kbd>, <kbd>Ctrl+Alt+Enter</kbd> on Linux).
   Everything else Flint does is in the palette and the toolbar. <kbd>⌘Q</kbd>,
   <kbd>⌘Tab</kbd> and <kbd>⌘Space</kbd> stay with macOS.
 
@@ -224,5 +251,6 @@ What Flint does with your password and the connection, and what it leaves as it 
 
 ## Not yet
 
-Full screen, files and images over the clipboard, sound, drive and printer redirection,
-several monitors, RD Gateway and RDP through an SSH tunnel are planned for later.
+Alt+Tab and the Windows key in full screen, files and images over the clipboard, sound,
+drive and printer redirection, several monitors, RD Gateway and RDP through an SSH tunnel
+are planned for later.

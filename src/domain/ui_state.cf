@@ -15,6 +15,8 @@ type UiState struct {
     sidebar_width: i64            `json:"sidebar_width"`
     // The Files view's own width (milestone 17).
     files_width:   i64            `json:"files_width"`
+    // The full-screen note was shown once (milestone 37, design 22b2).
+    fullscreen_note_seen: bool    `json:"fullscreen_note_seen"`
     vaults:        []VaultUiState `json:"vaults"`
 }
 
@@ -100,7 +102,7 @@ fn clean_collapsed(ids: []str) -> []str {
 // repeated vault and group ids left out, the vault list capped. A hand-edited or
 // partly damaged file therefore loads as the parts of it that still make sense.
 fn clean_ui_state(s: UiState) -> UiState {
-    mut res := UiState{ sidebar_open: s.sidebar_open, sidebar_width: clamp_sidebar_width(s.sidebar_width), files_width: clamp_files_width(s.files_width), vaults: [] }
+    mut res := UiState{ sidebar_open: s.sidebar_open, sidebar_width: clamp_sidebar_width(s.sidebar_width), files_width: clamp_files_width(s.files_width), fullscreen_note_seen: s.fullscreen_note_seen, vaults: [] }
     for v in s.vaults {
         if res.vaults.len() >= UI_STATE_MAX_VAULTS {
             break

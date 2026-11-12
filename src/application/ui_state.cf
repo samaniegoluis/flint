@@ -11,6 +11,7 @@ type UiStateView struct {
     sidebar_open:  bool  `json:"sidebar_open"`
     sidebar_width: i64   `json:"sidebar_width"`
     files_width:   i64   `json:"files_width"`
+    fullscreen_note_seen: bool `json:"fullscreen_note_seen"`
     collapsed:     []str `json:"collapsed"`
 }
 
@@ -31,7 +32,7 @@ fn ui_state_for[U: UiStateStore](store: U, vault: str) -> UiStateView {
             collapsed = v.collapsed
         }
     }
-    return UiStateView{ sidebar_open: s.sidebar_open, sidebar_width: s.sidebar_width, files_width: s.files_width, collapsed: collapsed }
+    return UiStateView{ sidebar_open: s.sidebar_open, sidebar_width: s.sidebar_width, files_width: s.files_width, fullscreen_note_seen: s.fullscreen_note_seen, collapsed: collapsed }
 }
 
 // Stores `view`: the sidebar globally, the collapsed groups under `vault`, which
@@ -39,7 +40,7 @@ fn ui_state_for[U: UiStateStore](store: U, vault: str) -> UiStateView {
 // out of range are clamped and bad ids dropped, as on load.
 fn save_ui_state[U: UiStateStore](mut store: U, vault: str, view: UiStateView) -> UiStateView! {
     current := load_ui_state(store)
-    mut next := UiState{ sidebar_open: view.sidebar_open, sidebar_width: view.sidebar_width, files_width: view.files_width, vaults: [] }
+    mut next := UiState{ sidebar_open: view.sidebar_open, sidebar_width: view.sidebar_width, files_width: view.files_width, fullscreen_note_seen: view.fullscreen_note_seen, vaults: [] }
     if vault.len() > 0 {
         if !is_hex_id(vault) {
             return error(coded(ERR_INVALID, "internal: bad vault id"))
@@ -53,7 +54,7 @@ fn save_ui_state[U: UiStateStore](mut store: U, vault: str, view: UiStateView) -
     }
     cleaned := clean_ui_state(next)
     try store.ui_state_save(cleaned)
-    mut res := UiStateView{ sidebar_open: cleaned.sidebar_open, sidebar_width: cleaned.sidebar_width, files_width: cleaned.files_width, collapsed: [] }
+    mut res := UiStateView{ sidebar_open: cleaned.sidebar_open, sidebar_width: cleaned.sidebar_width, files_width: cleaned.files_width, fullscreen_note_seen: cleaned.fullscreen_note_seen, collapsed: [] }
     if vault.len() > 0 {
         res.collapsed = cleaned.vaults[0].collapsed
     }

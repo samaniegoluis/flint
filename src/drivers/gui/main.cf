@@ -161,6 +161,7 @@ fn main() {
         mut a := app
         return rpc_window_unlock(req, c, store, presence, st, mut a)
     }
+    app.bind_raw("window_fullscreen") |params| { return rpc_window_fullscreen(params, e2e) }
     app.bind_raw("app_quit") |params| {
         mut a := app
         return rpc_app_quit(mut a)
@@ -249,6 +250,13 @@ fn main() {
         app.bind_raw("e2e_close_window") |params| {
             mut a := app
             lock_window(st, mut a)
+            return ok_json()
+        }
+        // Stands in for the OS entering or leaving full screen by its own means (the
+        // green button, the system's own keys), milestone 37.
+        app.bind_raw("e2e_window_fullscreen") |params| {
+            req := try parse_req[FullscreenReq](params)
+            window_fullscreen_inject(req.on)
             return ok_json()
         }
         // Stands in for the OS's screen lock and sleep (D-042).
@@ -360,6 +368,8 @@ fn main() {
             run_lock_timer(mut s, timer_st, mut a)
         }
         install_app_menu("Flint")
+        // Full screen (milestone 37): the page hears every change as `window:fullscreen`.
+        window_fullscreen_install(app)
         // The tray (milestone 14): closing the window keeps Flint serving, with the
         // window locked. The headless end-to-end run keeps the old close.
         if !e2e {

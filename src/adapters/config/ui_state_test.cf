@@ -14,13 +14,14 @@ test "ui state round-trips through an atomic JSON file and survives damage" {
     store := new_json_ui_state_store(dir)
     assert(ui_state_port_check(store))
     a := "0123456789abcdef0123456789abcdef"
-    try store.ui_state_save(UiState{ sidebar_open: false, sidebar_width: 300, vaults: [VaultUiState{ vault: a, collapsed: [a] }] })
+    try store.ui_state_save(UiState{ sidebar_open: false, sidebar_width: 300, fullscreen_note_seen: true, vaults: [VaultUiState{ vault: a, collapsed: [a] }] })
     assert(!fs.exists(dir + "/ui-state.json.tmp"))
     back := try store.ui_state_load()
     assert(!back.sidebar_open)
     assert_eq(back.sidebar_width, i64(300))
     assert_eq(back.vaults[0].collapsed[0], a)
     assert_eq(back.files_width, i64(0))
+    assert(back.fullscreen_note_seen)
 
     // A file written before milestone 17 has no files_width: it loads with the default.
     try fs.write_text(dir + "/ui-state.json", "{\"version\":1,\"sidebar_open\":false,\"sidebar_width\":280,\"vaults\":[]}")
@@ -28,6 +29,8 @@ test "ui state round-trips through an atomic JSON file and survives damage" {
     assert(!old.sidebar_open)
     assert_eq(old.sidebar_width, i64(280))
     assert_eq(old.files_width, FILES_WIDTH_DEFAULT)
+    // ... and none before milestone 37: the full-screen note was not seen.
+    assert(!old.fullscreen_note_seen)
 
     try fs.write_text(dir + "/ui-state.json", "{\"version\":1,\"sidebar_op")
     damaged := try store.ui_state_load()

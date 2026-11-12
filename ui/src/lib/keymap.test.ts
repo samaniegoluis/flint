@@ -66,4 +66,15 @@ describe('keymap', () => {
     expect(actionFor(key('BracketLeft', { ctrl: true, shift: true }), 'linux')).toBe('focusPrevPane');
     expect(chordLabel('focusNextPane', 'linux')).toBe('Ctrl+Shift+]');
   });
+
+  it('has its own full-screen chord, apart from every other (milestone 37)', () => {
+    expect(actionFor(key('KeyF', { meta: true, ctrl: true }), 'mac')).toBe('fullscreen');
+    expect(actionFor(key('KeyF', { meta: true }), 'mac')).toBeNull();
+    expect(actionFor(key('Enter', { ctrl: true, alt: true }), 'linux')).toBe('fullscreen');
+    expect(actionFor(key('NumpadEnter', { ctrl: true, alt: true }), 'linux')).toBe('fullscreen');
+    expect(actionFor(key('Enter', { ctrl: true, alt: true, shift: true }), 'linux')).toBeNull();
+    expect(actionFor(key('Enter', { ctrl: true }), 'linux')).toBeNull();
+    expect(chordLabel('fullscreen', 'mac')).toBe('⌃⌘F');
+    expect(chordLabel('fullscreen', 'linux')).toBe('Ctrl+Alt+Enter');
+  });
 });

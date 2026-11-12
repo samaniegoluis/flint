@@ -38,7 +38,7 @@ fi
 #                                                (milestone 27, D-068)
 #   scripts/repeat.sh vim 10                     one run N times, with its failure rate
 # Exit status: 0 all passed, 1 a run failed.
-runs=(terminal vault tunnels paste rdp webgl vim)
+runs=(terminal vault tunnels paste rdp webgl fullscreen vim)
 # rdpbench (milestone 34) is scripts/rdp-bench.sh's: a real Windows host, named only.
 known=("${runs[@]}" rdpbench)
 if [[ "$(uname -s)" == Darwin ]]; then
@@ -189,6 +189,10 @@ for r in "${runs[@]}"; do
   fi
   if [[ "$r" == rdp && "$run_rdp" != 1 ]]; then
     echo "gui-e2e: skip the rdp run (no FreeRDP sample server here)"
+    continue
+  fi
+  if [[ "$r" == fullscreen && -z "${FLINT_RDP_CLIP_PORT:-}" ]]; then
+    echo "gui-e2e: skip the fullscreen run (no Flint RDP test server here)"
     continue
   fi
   make_script "$tmp/$r.flint" "$r" "$tmp/$r.js"

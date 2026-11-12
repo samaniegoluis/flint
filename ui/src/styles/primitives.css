@@ -643,3 +643,15 @@ button.picker-row:not(.off) { cursor: pointer; }
 /* The statistics overlay (milestone 34, no design screen): a quiet panel over the
    desktop's top right corner that lets the pointer through. */
 .rdp-stats { position: absolute; top: var(--sp-2); right: var(--sp-2); padding: var(--sp-2) var(--sp-3); background: color-mix(in srgb, var(--surface-raised) 88%, transparent); border-radius: var(--radius-md); box-shadow: var(--shadow-popover); font-size: var(--fs-xs); line-height: 1.6; pointer-events: none; min-width: 168px; }
+
+/* Full screen (milestone 37, designs 22b1–22b4): the RDP desktop takes the whole
+   window; a connection bar drops from the top edge. */
+.app[data-fullscreen] .titlebar, .app[data-fullscreen] .rail, .app[data-fullscreen] .statusbar,
+.app[data-fullscreen] .tabbar, .app[data-fullscreen] .toolbar { display: none; }
+.app[data-fullscreen] .main { inset: 0; }
+.fs-edge { position: absolute; top: 0; left: 0; right: 0; height: 4px; z-index: 29; }
+.fs-bar { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: var(--sp-1); height: 36px; padding: 0 var(--sp-1) 0 var(--sp-3); background: var(--surface-overlay); border: 1px solid var(--border-default); border-top: 0; border-radius: 0 0 var(--radius-md) var(--radius-md); box-shadow: var(--shadow-popover); font-size: var(--fs-sm); color: var(--text-primary); white-space: nowrap; }
+.fs-bar .sep { width: 1px; height: 18px; background: var(--border-default); margin: 0 var(--sp-1); }
+.fs-bar .icon-btn.on { color: var(--accent-text); background: var(--accent-subtle); }
+.fs-tab { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 30; width: 72px; height: 6px; border-radius: 0 0 6px 6px; background: var(--surface-overlay); border: 1px solid var(--border-default); border-top: 0; opacity: 0.85; }
+.fs-note { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 29; display: flex; align-items: center; gap: var(--sp-2); padding: 6px var(--sp-3); border-radius: var(--radius-full); background: var(--surface-overlay); border: 1px solid var(--border-default); box-shadow: var(--shadow-popover); font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; pointer-events: none; }

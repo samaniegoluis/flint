@@ -16,10 +16,16 @@ import { LayoutIcon, SplitMenu } from './SplitMenu';
 import { TunnelMark, TunnelsButton } from '../tunnels/TunnelsMenu';
 import { desktopScaleLabel, RdpView } from './RdpView';
 import { GRAPHICS_MODES, graphicsChoiceLabel } from '../lib/rdpStats';
+import { fullScreen, useFullScreen } from './fullscreen';
+import { FullScreenBar } from './FullScreenBar';
+import { TabMenu } from './TabMenu';
 
 // Stays mounted while another view (Keys, Credentials, Settings) is shown, with
 // `shown` false: unmounting it disposed every xterm.js terminal and its scrollback.
-export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTunnels, onConnect, onFiles, filesOn, onKnownHosts }: {
+export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTunnels, onConnect, onFiles, filesOn, onKnownHosts, fullScreenNoteSeen, onFullScreenNoteSeen }: {
+  /** The first-time note of full screen was shown (design 22b2), and its setter. */
+  fullScreenNoteSeen: boolean;
+  onFullScreenNoteSeen: () => void;
   /** Settings → Known hosts (a changed RDP certificate, design 22d2). */
   onKnownHosts: () => void;
   shown: boolean;
@@ -39,6 +45,9 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
   const [menu, setMenu] = useState(false);
   // The RDP statistics overlay (milestone 34), for every RDP tab while it is on.
   const [stats, setStats] = useState(false);
+  // The tab's context menu (design 22b4a): the tab and where it was opened.
+  const [tabMenu, setTabMenu] = useState<{ tab: string; x: number; y: number } | null>(null);
+  const fs = useFullScreen();
   const paneArea = useRef<HTMLDivElement>(null);
   const activeTab = tabs.find((t) => t.id === active);
   // The focused pane of the active tab: the toolbar speaks for it.
@@ -117,6 +126,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
             <button key={t.id} className={'tab' + (on ? ' on' : '')} role="tab" aria-selected={on} tabIndex={on ? 0 : -1}
               aria-label={n > 1 ? `${fp.alias}, ${n} panes` : undefined}
               onClick={() => sessions.activate(t.id)}
+              onContextMenu={(e) => { e.preventDefault(); sessions.activate(t.id); setTabMenu({ tab: t.id, x: e.clientX, y: e.clientY }); }}
               onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); sessions.closeTab(t.id); } }}>
               <span className={'st ' + st.dot} role="img" aria-label={fp.status} />
               <HostTypeIcon type={fp.kind} />
@@ -163,6 +173,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           {ready && !tab.graphicsSwitching && tab.graphicsNote && <span className="warn-t trunc" data-rdp-graphics-note title={tab.graphicsNote}>Mode not changed</span>}
           {ready && <button className="tbtn" data-rdp-stats-toggle aria-pressed={stats} title="Show what the desktop costs: frames, bandwidth, codec"
             onClick={() => setStats((v) => !v)}><Icon name="info" size="sm" /><span className="tb-l">Stats</span></button>}
+          {ready && <button className="tbtn" data-rdp-fullscreen title={`Full screen (${chordLabel('fullscreen', os)})`}
+            onClick={() => fullScreen.enter(activeTab.id)}><Icon name="expand" size="sm" /><span className="tb-l">Full screen</span><Kbd action="fullscreen" /></button>}
           {ready
             ? <button className="tbtn" data-rdp-disconnect title="Disconnect" onClick={() => sessions.disconnect(tab.id)}><Icon name="x" size="sm" /><span className="tb-l">Disconnect</span></button>
             : <button className="tbtn" title="Close tab" onClick={() => sessions.closeTab(activeTab.id)}><Icon name="x" size="sm" /><span className="tb-l">Close tab</span></button>}
@@ -202,7 +214,18 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
             </div>
           );
         })}
+        {fs.tab && fs.tab === active && tab?.kind === 'rdp' && (
+          <FullScreenBar key={fs.tab} pane={tab} top={fs.top} noteSeen={fullScreenNoteSeen} onNoteSeen={onFullScreenNoteSeen}
+            onExit={() => fullScreen.leave()} onDisconnect={() => sessions.disconnect(tab.id)} />
+        )}
       </div>
+      {tabMenu && (() => {
+        const t = tabs.find((x) => x.id === tabMenu.tab);
+        const fp = t && panes.find((p) => p.id === t.focus);
+        if (!t || !fp) return null;
+        return <TabMenu tab={t} pane={fp} x={tabMenu.x} y={tabMenu.y} onClose={() => setTabMenu(null)}
+          onEditHost={() => onEditHost(fp.alias)} onFullScreen={() => fullScreen.enter(t.id)} />;
+      })()}
     </section>
   );
 }
