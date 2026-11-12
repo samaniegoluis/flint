@@ -321,3 +321,18 @@ The bytes always flow server A → Flint → server B; no key or password is eve
 **Remote desktop drawing:** the desktop inside the tab stands for remote pixels. It uses a generic wallpaper, taskbar and file manager, with no vendor logos, and is identical in both Flint themes.
 
 **Shortcut (M37):** ⌃⌘F on macOS; Ctrl+Alt+Enter on Linux and Windows.
+
+### Full screen across monitors (22f)
+
+Flint's window stays full screen on its own monitor, which is Windows' primary and has the taskbar. Each extra monitor gets a chrome-less full-screen window with its part of the same remote desktop. The connection bar lives only on the main monitor.
+
+| Screen | What it shows |
+|---|---|
+| `22f1a` / `22f1b` | Full screen gains a small menu, on the toolbar button (a split button with ⌄) and in the tab's context menu, with two items: "Full screen ⌃⌘F" and "Full screen on all monitors". |
+| `22f1c` | "Full screen on all monitors" disabled, with a one-line reason. Three variants: "Only one monitor connected", "Not supported on this system yet", and on macOS "Turn on 'Displays have separate Spaces' in System Settings → Desktop & Dock". |
+| `22f2a` | The connection bar gains **Monitors**, which opens a to-scale map of this computer's monitors as arranged. The example has a landscape 2560×1440 (main), a portrait 1080×1920 to its left, a laptop 1512×982 below and a 1920×1080 to the right. Checked tiles are in the session. The main tile is always checked and tagged "Main · taskbar". With the cap of 2 reached, the fourth tile is dashed, cannot be checked, and its tooltip says "Up to 2 monitors". |
+| `22f2b` | A change applies at once, and the bar shows "Rearranging the desktop…" with a spinner. |
+| `22f3a` | An extra monitor's window (540 × 960 board for a portrait 1080 × 1920): only the desktop, edge to edge, continuing the main one, with no bar of its own. |
+| `22f3b` | Connection lost on an extra monitor: the last frame is dimmed and a quiet pill says "Connection lost — see the main screen". |
+| `22f3c` | Rearranging on an extra monitor: the last frame is dimmed, with a small spinner. |
+| `22f4` | The one-time note on the main monitor: "The desktop spans 2 monitors. Move the pointer to the top of the main screen for the bar." |

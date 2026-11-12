@@ -672,3 +672,19 @@ button.act-row.sudo.is-focus, button.act-row.sudo:focus-visible { box-shadow: in
 .wd-search svg, .wd-srch svg { width: 16px; height: 16px; flex: none; }
 .mac-menubar { position: absolute; left: 0; right: 0; top: 0; height: 28px; z-index: 31; display: flex; align-items: center; gap: 18px; padding: 0 16px; background: var(--surface-chrome); border-bottom: 1px solid var(--border-subtle); font-family: system-ui, var(--font-ui); font-size: 13px; color: var(--text-primary); }
 .mac-menubar .ic { width: 15px; height: 15px; }
+
+/* ===== 22f · full screen across monitors ===== */
+.mon-pop { position: absolute; z-index: 32; width: 520px; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: var(--radius-lg); box-shadow: var(--shadow-popover); font-size: var(--fs-sm); color: var(--text-primary); }
+.mon-map { position: relative; align-self: center; margin: var(--sp-2) 0; }
+.mon { position: absolute; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 1px; padding: 6px 8px; border-radius: 6px; border: 1.5px solid var(--border-strong); background: var(--surface-base); color: var(--text-secondary); font: inherit; text-align: left; cursor: pointer; overflow: hidden; }
+.mon:hover { border-color: var(--text-tertiary); }
+.mon.on { border-color: var(--accent); background: var(--accent-subtle); color: var(--text-primary); }
+.mon.main { cursor: default; }
+.mon.cap { opacity: 0.5; cursor: not-allowed; border-style: dashed; }
+.mon-chk { position: absolute; top: 6px; left: 8px; width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--border-strong); display: flex; align-items: center; justify-content: center; }
+.mon.on .mon-chk { background: var(--accent); border-color: var(--accent); }
+.mon.on .mon-chk .ic { width: 11px; height: 11px; color: var(--text-on-accent); stroke-width: 2.6; }
+.mon-n { font-size: var(--fs-xs); font-weight: var(--fw-semibold); white-space: nowrap; }
+.mon-s { font-size: 10px; color: var(--text-tertiary); white-space: nowrap; }
+.mon-tag { position: absolute; top: 6px; right: 6px; padding: 1px 6px; border-radius: var(--radius-full); background: var(--accent); color: var(--text-on-accent); font-size: 10px; font-weight: var(--fw-semibold); white-space: nowrap; }
+.ext-card { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); border-radius: var(--radius-full); background: var(--surface-overlay); border: 1px solid var(--border-default); box-shadow: var(--shadow-popover); font-size: var(--fs-sm); color: var(--text-secondary); white-space: nowrap; }
