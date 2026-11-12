@@ -271,6 +271,15 @@ test "a real Windows host draws through the graphics pipeline, or bitmaps when a
     assert(st.bytes_in > 0)
     assert(st.codec.len() > 0)
     println("graphics pipeline: codec {st.codec}, h264 {st.h264}, {st.commands} commands, {st.bytes_in} bytes")
+    // Milestone 35: the link as Windows measured it (auto-detect), once it has.
+    for i in 0..25 {
+        if st.link_kbps > 0 || st.link_rtt_ms > 0 {
+            break
+        }
+        time.sleep_ms(200)
+        st = try rd.rd_stats("t-gfx")
+    }
+    println("link: {st.link_kbps} kbit/s, rtt {st.link_rtt_ms} ms; re-reads {st.rereads}, stale px {st.stale_px}")
     rd.rd_close("t-gfx")
 
     mut old := live_target(fp)
