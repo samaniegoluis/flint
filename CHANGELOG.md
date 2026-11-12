@@ -4,6 +4,20 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.2.0 — 2026-11-12
+
+A faster remote desktop. RDP tabs now use the graphics pipeline (progressive, and H.264 where FreeRDP decodes it) and draw through WebGL: about ten times the frames under a whole-screen animation at half the bandwidth, measured against a real Windows 11 host. Settings → Remote desktop → Graphics keeps the old bitmap path as Compatible, and Stats in the tab's toolbar shows frames, bandwidth and codecs. The status bar now shows the version.
+
+### Added
+
+- **gui:** The version at the right of the status bar, opening Settings → About
+- **rdp:** The graphics pipeline, drawing through WebGL, and desktop statistics
+
+### Fixed
+
+- **ui:** Draw a terminal again a second time after a lost WebGL context
+
+
 ## 0.1.0 — 2026-11-11
 
 The first numbered release of Flint, gathering everything built so far: one encrypted vault (SQLCipher, Argon2id) behind a desktop app and a CLI; SSH sessions in tabs and split panes, with OSC 52 copy and image paste; the Files view and `flint cp` between this machine and servers, or between two servers; saved tunnels; approvals and scoped grants for programs and AI agents that use the CLI; and Windows remote desktops (RDP) in a tab through FreeRDP, with the clipboard both ways and reconnect. From now on every build says which version it is.
