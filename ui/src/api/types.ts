@@ -133,7 +133,7 @@ export interface Settings {
   /** The custom table, "MetaLeft=ctrl,AltLeft=alt,…"; a key left out keeps the Mac preset's. */
   rdp_mac_custom: string;
   /** Milestone 34: 'auto' offers the graphics pipeline (RDPGFX), 'compatible' keeps bitmap updates. */
-  rdp_graphics: 'auto' | 'compatible';
+  rdp_graphics: 'auto' | 'pipeline' | 'compatible';
   /** The app's own record that earlier cached keys were removed (D-048); the core keeps it. */
   keys_cleared?: boolean;
 }
@@ -232,14 +232,18 @@ export interface RdpStats {
   /** The link as the server measured it (auto-detect); 0 until it has. */
   link_kbps: number;
   link_rtt_ms: number;
-  /** The tab's graphics mode: 'auto' or 'compatible'. */
+  /** What the engine connected in: 'pipeline' or 'compatible'. */
   mode: string;
 }
 
 /** A tab's graphics mode after a switch (milestone 35), or why it stayed (`message`). */
 export interface RdpGraphicsEvent {
   tab: string;
+  /** The tab's mode: 'auto', 'pipeline' or 'compatible'. */
   graphics: string;
+  /** What the engine reconnected in, and the round trip Automatic chose by (-1: none). */
+  engine: string;
+  rtt_ms: number;
   message: string;
 }
 
@@ -249,6 +253,10 @@ export interface DesktopReadyEvent {
   height: number;
   frame_port: number;
   frame_token: string;
+  /** Milestone 35: what the engine connected in, 'pipeline' or 'compatible'. */
+  graphics: string;
+  /** The link's round trip Automatic chose by, ms; -1 when not measured. */
+  rtt_ms: number;
 }
 
 /** A remote desktop's state; `code` is '' when it was closed on purpose. */

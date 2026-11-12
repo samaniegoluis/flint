@@ -81,6 +81,10 @@ import socket, sys, threading
 listen, first, later = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
 # How many connections go to `first` before the rest go to `later`.
 firsts = int(sys.argv[4]) if len(sys.argv) > 4 else 1
+# "peek": count only connections whose client speaks first (RDP), so a probe that opens
+# and closes a connection without sending anything (milestone 35's round-trip dial)
+# neither reaches a server nor moves the count.
+peek = len(sys.argv) > 5 and sys.argv[5] == "peek"
 srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", listen)); srv.listen(8)
 def pipe(a, b):
@@ -94,12 +98,27 @@ def pipe(a, b):
         try: s.shutdown(socket.SHUT_RDWR)
         except OSError: pass
 n = 0
-while True:
-    c, _ = srv.accept()
-    u = socket.create_connection(("127.0.0.1", first if n < firsts else later))
-    n += 1
+lock = threading.Lock()
+def serve(c):
+    global n
+    if peek:
+        try:
+            if not c.recv(1, socket.MSG_PEEK):
+                c.close(); return
+        except OSError:
+            c.close(); return
+    with lock:
+        target = first if n < firsts else later
+        n += 1
+    u = socket.create_connection(("127.0.0.1", target))
     threading.Thread(target=pipe, args=(c, u), daemon=True).start()
     threading.Thread(target=pipe, args=(u, c), daemon=True).start()
+while True:
+    c, _ = srv.accept()
+    if peek:
+        threading.Thread(target=serve, args=(c,), daemon=True).start()
+    else:
+        serve(c)
 PY
 # A free port for the tunnels step (milestone 23).
 tport="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
@@ -115,7 +134,7 @@ if [[ "$run_rdp" == 1 ]]; then
   rport_fwd="$(free_port)"
   openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/rdp2.key" -out "$tmp/rdp2.crt" -days 2 -subj "/CN=flint-test-2" 2>/dev/null
   (cd "$tmp" && WLOG_LEVEL=OFF exec sfreerdp-server --cert="$tmp/rdp2.crt" --key="$tmp/rdp2.key" --port="$rport2" >"$tmp/rdp2.log" 2>&1) & rdp2_pid=$!
-  python3 -I "$tmp/fwd.py" "$rport_fwd" "$rport" "$rport2" 2 & rfwd_pid=$!
+  python3 -I "$tmp/fwd.py" "$rport_fwd" "$rport" "$rport2" 2 peek & rfwd_pid=$!
 fi
 sleep 0.5
 

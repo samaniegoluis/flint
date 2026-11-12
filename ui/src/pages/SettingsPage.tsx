@@ -16,6 +16,7 @@ import { RenameVault } from '../shell/VaultSwitcher';
 import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
 import { MAC_MOD_KEYS, MOD_TARGETS, modMapOf, modMapText, type MacModKey, type ModTarget } from '../lib/rdpInput';
 import { AccessSettings } from '../access/AccessSettings';
+import { GRAPHICS_MODES } from '../lib/rdpStats';
 
 export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'about';
 
@@ -272,17 +273,19 @@ function RemoteDesktopSettings({ mac }: { mac: boolean }) {
       <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', marginBottom: 'var(--sp-3)' }}>Remote desktop</h1>
       <Row title="Graphics" desc="How a new remote desktop tab is sent to this computer. Each tab can switch from its toolbar while connected.">
         <div className="seg" role="radiogroup" aria-label="Remote desktop graphics" data-rdp-graphics>
-          {(['auto', 'compatible'] as const).map((g) => (
-            <button key={g} type="button" role="radio" aria-checked={s.rdp_graphics === g} aria-pressed={s.rdp_graphics === g} data-graphics={g}
-              onClick={() => set({ rdp_graphics: g })}>
-              {g === 'auto' ? 'Automatic' : 'Compatible'}
+          {GRAPHICS_MODES.map((g) => (
+            <button key={g.id} type="button" role="radio" aria-checked={s.rdp_graphics === g.id} aria-pressed={s.rdp_graphics === g.id} data-graphics={g.id}
+              onClick={() => set({ rdp_graphics: g.id })}>
+              {g.label}
             </button>
           ))}
         </div>
         <span className="hint">
           {s.rdp_graphics === 'auto'
-            ? <>The graphics pipeline with the best codec both ends support (H.264 where this computer decodes it): smoother, less bandwidth. A server without it gets the classic updates.</>
-            : <>Classic bitmap updates, as earlier versions of Flint used. Try it if the desktop shows wrong colours or garbled areas.</>}
+            ? <>Chosen when the tab connects: lossless bitmaps on a local network, where they feel smoothest, and the graphics pipeline over a VPN or the internet, where it needs far less bandwidth.</>
+            : s.rdp_graphics === 'pipeline'
+              ? <>Always the graphics pipeline, with the best codec both ends support (H.264 where this computer decodes it): the least bandwidth. A server without it gets the classic updates.</>
+              : <>Always the classic bitmap updates, as earlier versions of Flint used: lossless, several times the bandwidth. Try it too if a desktop shows wrong colours or garbled areas.</>}
         </span>
       </Row>
       {mac && <>

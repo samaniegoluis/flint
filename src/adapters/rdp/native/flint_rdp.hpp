@@ -780,6 +780,47 @@ inline bool port_refused(const std::string& host, int32_t port, int64_t wait_ms)
     return refused;
 }
 
+// The round trip of a TCP dial to host:port, in ms: the best of `tries` dials, each
+// opened and closed with nothing sent (milestone 35, the "auto" graphics choice); -1
+// when none answers within `wait_ms` in all.
+inline int64_t dial_rtt_ms(const std::string& host, int32_t port, int64_t wait_ms, int tries) {
+    if (!sock_init()) return -1;
+    addrinfo hints{};
+    hints.ai_socktype = SOCK_STREAM;
+    addrinfo* res = nullptr;
+    std::string p = std::to_string(port);
+    if (getaddrinfo(host.c_str(), p.c_str(), &hints, &res) != 0 || !res) return -1;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_ms);
+    int64_t best_us = -1;
+    for (int i = 0; i < tries; ++i) {
+        auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+        if (left <= 0) break;
+        sock_t fd = ::socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+        if (fd == BAD_SOCK) break;
+        sock_nonblock(fd);
+        auto started = std::chrono::steady_clock::now();
+        int rc = ::connect(fd, res->ai_addr, static_cast<int>(res->ai_addrlen));
+        bool up = rc == 0;
+        if (rc != 0 && sock_in_progress(sock_error())) {
+            pollfd pfd{};
+            pfd.fd = fd;
+            pfd.events = POLLOUT;
+            if (sock_poll(&pfd, 1, static_cast<int>(left)) == 1) {
+                int err = 0;
+                socklen_t len = sizeof err;
+                getsockopt(fd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&err), &len);
+                up = err == 0;
+            }
+        }
+        auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count();
+        sock_close(fd);
+        if (!up) break;
+        if (best_us < 0 || us < best_us) best_us = us;
+    }
+    freeaddrinfo(res);
+    return best_us < 0 ? -1 : (best_us + 999) / 1000;
+}
+
 // This machine's keyboard layout as a Windows layout id (KLID), so the remote session
 // reads the scancodes Flint sends with the same layout. 0 lets FreeRDP pick.
 #if defined(__APPLE__)
@@ -1418,7 +1459,7 @@ inline int stats(const std::string& id, int64_t& updates, int64_t& bytes_in, int
     {
         std::lock_guard<std::mutex> g(t->mu);
         connected = t->conn != nullptr;
-        mode = t->want_gfx ? "auto" : "compatible";
+        mode = t->want_gfx ? "pipeline" : "compatible";
         // What the server measured of the link, once it has (auto-detect, milestone 35).
         if (connected && t->conn->inst && t->conn->inst->context && t->conn->inst->context->autodetect) {
             const rdpAutoDetect* ad = t->conn->inst->context->autodetect;

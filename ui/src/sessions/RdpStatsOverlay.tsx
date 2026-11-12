@@ -12,7 +12,7 @@ import { linkLabel, pipelineLabel, ratesBetween, rereadLabel, type FrameMeter, t
 /** The last second's rates, for the benchmark (scripts/gui-e2e.js, run rdpbench). */
 declare global { interface Window { __flintRdpRates?: StatsRates & { pipeline: string; renderer: string } } }
 
-export function RdpStatsOverlay({ session, renderer, meter }: { session: string; renderer: string; meter: FrameMeter }) {
+export function RdpStatsOverlay({ session, renderer, meter, choice }: { session: string; renderer: string; meter: FrameMeter; choice: string }) {
   const last = useRef<StatsSample | null>(null);
   const [view, setView] = useState<{ rates: StatsRates; core: RdpStats } | null>(null);
 
@@ -47,6 +47,7 @@ export function RdpStatsOverlay({ session, renderer, meter }: { session: string;
       <div><span className="faint">in</span> {r ? formatKbps(r.kbps) : '…'}</div>
       {view && view.core.pipeline === 'gfx' && <div><span className="faint">decode</span> {r!.decodeMs.toFixed(1)} ms</div>}
       {view && linkLabel(view.core) && <div><span className="faint">link</span> <span data-rdp-link>{linkLabel(view.core)}</span></div>}
+      {choice && <div className="faint" data-rdp-choice>{choice}</div>}
       <div className="faint" data-rdp-pipeline>{view ? pipelineLabel(view.core) : ''}</div>
       {view && rereadLabel(view.core) && <div className="faint" data-rdp-rereads>{rereadLabel(view.core)}</div>}
       <div className="faint" data-rdp-renderer>{renderer === 'webgl' ? 'drawn with WebGL' : renderer === '2d' ? 'drawn in 2D' : ''}{view && !view.core.h264 ? ' · no H.264 here' : ''}</div>

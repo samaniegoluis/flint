@@ -32,14 +32,15 @@ type Settings struct {
     // it leaves out keeps the Mac preset's. macOS only; older files read the defaults.
     rdp_mac_keys:       str  `json:"rdp_mac_keys" default:"mac"`
     rdp_mac_custom:     str  `json:"rdp_mac_custom" default:""`
-    // Milestone 34: how an RDP tab asks for its desktop (RDP_GRAPHICS): "auto" offers
-    // the graphics pipeline (RDPGFX), "compatible" keeps the bitmap updates of v8.
-    // Older files read the default.
+    // How a new RDP tab asks for its desktop (RDP_GRAPHICS): "pipeline" offers the
+    // graphics pipeline (RDPGFX, milestone 34), "compatible" keeps the bitmap updates of
+    // v8, "auto" picks one of them at connect by the link's round trip (milestone 35,
+    // auto_rdp_graphics). Older files read the default.
     rdp_graphics:       str  `json:"rdp_graphics" default:"auto"`
 }
 
 RDP_MAC_KEYS: []str = ["mac", "windows", "custom"]
-RDP_GRAPHICS: []str = ["auto", "compatible"]
+RDP_GRAPHICS: []str = ["auto", "pipeline", "compatible"]
 // The six modifier keys of a Mac keyboard, by their W3C `code`.
 RDP_MAC_KEY_CODES: []str = ["ControlLeft", "ControlRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight"]
 // What each can send: a PC keyboard's Ctrl, Alt, AltGr (right Alt), Windows key, or nothing.
@@ -114,7 +115,7 @@ fn check_settings(s: Settings) -> void! {
     }
     try check_rdp_mac_custom(s.rdp_mac_custom)
     if !one_of(s.rdp_graphics, RDP_GRAPHICS) {
-        return error(coded(ERR_INVALID, "remote desktop graphics must be auto or compatible"))
+        return error(coded(ERR_INVALID, "remote desktop graphics must be auto, pipeline or compatible"))
     }
     try check_text("terminal font", s.term_font, 128, false)
     // The name ends up in a CSS font-family list, quoted.

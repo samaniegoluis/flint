@@ -28,6 +28,10 @@ export interface Desktop {
   height: number;
   port: number;
   token: string;
+  /** Milestone 35: what the engine runs, 'pipeline' or 'compatible'. */
+  engine: string;
+  /** The link's round trip Automatic chose by, ms; -1 when not measured. */
+  rttMs: number;
 }
 
 /**
@@ -55,7 +59,7 @@ export interface Pane {
   /** The shell's folder from OSC 7 (milestone 17), "" until it reports one. */
   cwd: string;
   /**
-   * An RDP pane's graphics mode (milestone 35): 'auto' or 'compatible', from Settings
+   * An RDP pane's graphics mode (milestone 35): 'auto', 'pipeline' or 'compatible', from Settings
    * when it connects, then the toolbar's switch for this tab only; '' for SSH.
    */
   graphics: string;
@@ -197,13 +201,14 @@ class SessionStore {
       const paneId = this.bySession.get(ev.tab);
       const t = this.pane(paneId ?? null);
       if (!t || t.session !== ev.tab) return;
-      this.patch(t.id, { status: 'ready', prompt: null, connectedAt: Date.now(), desktop: { width: ev.width, height: ev.height, port: ev.frame_port, token: ev.frame_token } });
+      this.patch(t.id, { status: 'ready', prompt: null, connectedAt: Date.now(), desktop: { width: ev.width, height: ev.height, port: ev.frame_port, token: ev.frame_token, engine: ev.graphics, rttMs: ev.rtt_ms } });
     });
     on<RdpGraphicsEvent>('rdp:graphics', (ev) => {
       const paneId = this.bySession.get(ev.tab);
       const t = this.pane(paneId ?? null);
       if (!t || t.session !== ev.tab) return;
-      this.patch(t.id, { graphics: ev.graphics, graphicsSwitching: false, graphicsNote: ev.message });
+      const desktop = t.desktop && !ev.message ? { ...t.desktop, engine: ev.engine, rttMs: ev.rtt_ms } : t.desktop;
+      this.patch(t.id, { graphics: ev.graphics, graphicsSwitching: false, graphicsNote: ev.message, desktop });
     });
   }
 

@@ -20,10 +20,13 @@ type FakeDesktop struct {
     modes: []str
     // From this connection on (1-based; 0: never) the server cannot be reached.
     fail_from: i64
+    // What rd_probe_rtt answers, and how often it was asked.
+    rtt: i64
+    probes: i64
 }
 
 fn new_fake_desktop(fp: str, password: str) -> FakeDesktop {
-    return FakeDesktop{ fp: fp, password: password, opens: [], closed: 0, events: [], waits: 0, keys: [], pointers: [], resizes: [], announces: [], answers: [], modes: [], fail_from: 0 }
+    return FakeDesktop{ fp: fp, password: password, opens: [], closed: 0, events: [], waits: 0, keys: [], pointers: [], resizes: [], announces: [], answers: [], modes: [], fail_from: 0, rtt: 20, probes: 0 }
 }
 
 fn (mut self: FakeDesktop) rd_clip_announce(tab: str, has_text: bool) -> void! {
@@ -50,7 +53,7 @@ fn (mut self: FakeDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> R
     if t.password != self.password {
         return error(coded(ERR_AUTH, "the server refused the user or password"))
     }
-    return RdpDesktop{ width: t.width, height: t.height, frame_port: 4100, frame_token: "tok" }
+    return RdpDesktop{ width: t.width, height: t.height, frame_port: 4100, frame_token: "tok", graphics: t.graphics, rtt_ms: t.rtt_ms }
 }
 
 fn (self: FakeDesktop) rd_presented_cert(tab: str) -> RdpCert {
@@ -89,6 +92,16 @@ fn (mut self: FakeDesktop) rd_set_graphics(tab: str, graphics: str) -> void! {
     self.modes.push(graphics)
 }
 
+// The round trip the first desktop reported to the sink.
+fn (self: FakeDesktop) ready_rtt(sink: FakeDesktopSink) -> i64 {
+    return sink.ready[0].rtt_ms
+}
+
+fn (mut self: FakeDesktop) rd_probe_rtt(host: str, port: i64, timeout_ms: i64) -> i64 {
+    self.probes += 1
+    return self.rtt
+}
+
 fn (mut self: FakeDesktop) rd_close(tab: str) {
     self.closed += 1
 }
@@ -100,11 +113,11 @@ type FakeDesktopSink struct {
     graphics: []str
 }
 
-fn (mut self: FakeDesktopSink) desktop_graphics(tab: str, graphics: str, message: str) {
-    if message.len() == 0 {
-        self.graphics.push(graphics)
+fn (mut self: FakeDesktopSink) desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch) {
+    if sw.why.len() == 0 {
+        self.graphics.push("{graphics} as {sw.graphics}")
     } else {
-        self.graphics.push("{graphics}: {message}")
+        self.graphics.push("{graphics}: {sw.why}")
     }
 }
 
@@ -143,19 +156,28 @@ fn rdp_req(alias: str) -> RdpOpenRequest {
     return RdpOpenRequest{ tab: "t1", alias: alias, width: 1601, height: 900, timeout_ms: 5000, graphics: "" }
 }
 
-test "the graphics choice reaches the engine, empty reads auto and an unknown one is refused" {
+test "the graphics choice reaches the engine, empty reads auto (resolved by the round trip) and an unknown one is refused" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
     try rdp_fake(crypto, mut store, s, "s3cret")
     mut rd := new_fake_desktop("ab:cd", "s3cret")
     _ := try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win"))
-    assert_eq(rd.opens[1].graphics, "auto")
+    // A 20 ms link: not a local network, so the pipeline.
+    assert_eq(rd.opens[1].graphics, "pipeline")
+    assert_eq(rd.opens[1].rtt_ms, 20)
     mut req := rdp_req("win")
     req.graphics = "compatible"
     mut again := new_fake_desktop("ab:cd", "s3cret")
     _ := try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), req)
     assert_eq(again.opens[0].graphics, "compatible")
+    assert_eq(again.probes, 0)
+    req.graphics = "pipeline"
+    mut forced := new_fake_desktop("ab:cd", "s3cret")
+    forced.rtt = 1
+    _ := try open_remote_desktop(crypto, mut store, s, mut forced, no_prompter(), req)
+    assert_eq(forced.opens[0].graphics, "pipeline")
+    assert_eq(forced.probes, 0)
     req.graphics = "h264"
     mut msg := ""
     mut refused := new_fake_desktop("ab:cd", "s3cret")
@@ -492,14 +514,14 @@ test "a graphics switch reconnects the tab in the new mode and later reconnects 
     mut clip0 := no_clipboard()
     try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, rdp_req("win"))
     assert_eq(rd.opens.len(), 3)
-    assert_eq(rd.opens[0].graphics, "auto")
+    assert_eq(rd.opens[0].graphics, "pipeline")
     assert_eq(rd.opens[1].graphics, "compatible")
     assert_eq(rd.opens[1].width, 1600)
     assert_eq(rd.opens[1].height, 900)
     assert_eq(rd.opens[1].password, "s3cret")
     assert_eq(rd.opens[2].graphics, "compatible")
     assert_eq(sink.graphics.len(), 1)
-    assert_eq(sink.graphics[0], "compatible")
+    assert_eq(sink.graphics[0], "compatible as compatible")
     // One desktop_ready: the page keeps reading the same frame channel.
     assert_eq(sink.ready.len(), 1)
 }
@@ -548,4 +570,33 @@ test "switching graphics checks the mode before it reaches the engine" {
     switch_desktop_graphics(mut rd, "t1", "h264") or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "invalid")
     assert_eq(rd.modes.len(), 1)
+}
+
+test "auto picks bitmaps on a local network, keeps its choice on a resize and measures again when chosen" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    rd.rtt = 1
+    rd.events = [
+        RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 1280, height: 720 },
+        RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: "pipeline", width: 1280, height: 720 },
+        RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: "auto", width: 1280, height: 720 },
+    ]
+    mut sink := FakeDesktopSink{ ready: [], locked: false, graphics: [] }
+    mut clip0 := no_clipboard()
+    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, rdp_req("win"))
+    assert_eq(rd.opens.len(), 4)
+    assert_eq(rd.opens[0].graphics, "compatible")
+    assert_eq(rd.ready_rtt(sink), 1)
+    // The resize keeps what auto chose, without measuring again.
+    assert_eq(rd.opens[1].graphics, "compatible")
+    assert_eq(rd.opens[2].graphics, "pipeline")
+    assert_eq(rd.opens[3].graphics, "compatible")
+    assert_eq(rd.probes, 2)
+    assert_eq(sink.graphics.len(), 2)
+    assert_eq(sink.graphics[0], "pipeline as pipeline")
+    assert_eq(sink.graphics[1], "auto as compatible")
 }

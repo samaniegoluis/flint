@@ -100,8 +100,8 @@ fn (self: RdpTabSink) desktop_window_open() -> bool {
     return !self.holder.window_locked()
 }
 
-fn (mut self: RdpTabSink) desktop_graphics(tab: str, graphics: str, message: str) {
-    self.events.desktop_graphics(tab, graphics, message)
+fn (mut self: RdpTabSink) desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch) {
+    self.events.desktop_graphics(tab, graphics, sw)
 }
 
 // The connection, on a worker, until the tab ends.

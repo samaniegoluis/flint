@@ -6,13 +6,14 @@
 # WebKit's content processes and WebKit's GPU process in each phase.
 #
 #   sec with FLINT_RDP_TEST_HOST FLINT_RDP_TEST_USER FLINT_RDP_TEST_PASSWORD -- scripts/rdp-bench.sh
-#   FLINT_BENCH_MODES=auto/auto scripts/rdp-bench.sh     # one mode (graphics/renderer)
+#   FLINT_BENCH_MODES=pipeline/auto scripts/rdp-bench.sh # one mode (graphics/renderer)
 #
 # Latency is from sending the Windows key (two RPCs, down and up) to the page drawing
 # the first frame after it.
 #
-# Modes: `compatible/2d` is milestone 30's tab (bitmap updates, putImageData); `auto/2d`
-# the graphics pipeline drawn in 2D; `auto/auto` the graphics pipeline drawn with WebGL
+# Modes: `compatible/2d` is milestone 30's tab (bitmap updates, putImageData); `pipeline/2d`
+# the graphics pipeline drawn in 2D; `pipeline/auto` the graphics pipeline drawn with WebGL
+# (milestone 35: `auto/...` is Automatic, which picks by the link's round trip)
 # on a real GPU. The input is harmless (the host may be someone's real session): the
 # Windows key and Esc for the Start menu, Win+Tab and Esc for Task view. macOS: the
 # app's window opens on screen; leave it alone until it ends.
@@ -24,7 +25,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 : "${FLINT_RDP_TEST_HOST:?needs FLINT_RDP_TEST_HOST, _USER and _PASSWORD (Infisical, /ai-agents)}"
-export FLINT_BENCH_MODES="${FLINT_BENCH_MODES:-compatible/2d,auto/2d,auto/auto}"
+export FLINT_BENCH_MODES="${FLINT_BENCH_MODES:-compatible/2d,pipeline/2d,pipeline/auto}"
 out="$(mktemp -d "${TMPDIR:-/tmp}/flint-rdp-bench.XXXXXX")"
 trap 'rm -rf "$out"' EXIT
 

@@ -85,7 +85,7 @@ fn (self: FreeRdpDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> Rd
     if rc != 0 {
         return error(rdp_error(i64(rc), detail))
     }
-    return RdpDesktop{ width: i64(w), height: i64(h), frame_port: i64(port), frame_token: token }
+    return RdpDesktop{ width: i64(w), height: i64(h), frame_port: i64(port), frame_token: token, graphics: graphics, rtt_ms: t.rtt_ms }
 }
 
 fn (self: FreeRdpDesktop) rd_presented_cert(tab: str) -> RdpCert {
@@ -234,6 +234,16 @@ fn (self: FreeRdpDesktop) rd_stats(tab: str) -> RdpStats! {
         return error(rdp_error(i64(rc), "stats"))
     }
     return RdpStats{ updates: updates, bytes_in: bytes_in, commands: commands, decode_us: decode_us, frames_read: frames_read, pipeline: pipeline, codec: codec, h264: h264, rereads: rereads, stale_px: stale_px, link_kbps: link_kbps, link_rtt_ms: link_rtt_ms, mode: mode }
+}
+
+fn (self: FreeRdpDesktop) rd_probe_rtt(host: str, port: i64, timeout_ms: i64) -> i64 {
+    mut ms: i64 = -1
+    p := i32(port)
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        ms = flint_rdp::dial_rtt_ms(host, p, timeout_ms, 3);
+    }
+    return ms
 }
 
 fn (self: FreeRdpDesktop) rd_set_graphics(tab: str, graphics: str) -> void! {

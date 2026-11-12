@@ -75,12 +75,17 @@ higher on an office LAN, lower over a slow VPN.
 
 **Settings → Remote desktop → Graphics** sets the default for new tabs on this computer:
 
-- **Automatic** (default): the graphics pipeline, with the best codec both ends support.
-- **Compatible**: the classic bitmap updates, as earlier versions of Flint used. They are
-  lossless and can feel smoother on a fast local network, at several times the
-  bandwidth. Try it too if a desktop shows wrong colours or garbled areas.
+- **Automatic** (default): chosen when the tab connects. On a local network (a round trip
+  of 5 ms or less to the server) the classic bitmap updates, which are lossless and feel
+  smoothest there; over a VPN or the internet the graphics pipeline, which needs several
+  times less bandwidth. Flint measures the round trip with a few plain TCP connections to
+  the server's port just before it connects.
+- **Pipeline**: always the graphics pipeline, with the best codec both ends support.
+- **Compatible**: always the classic bitmap updates, as earlier versions of Flint used.
+  Try it too if a desktop shows wrong colours or garbled areas.
 
-**Switch a tab while connected** with **Automatic** / **Compatible** in its toolbar. The
+**Switch a tab while connected** with **Automatic** / **Pipeline** / **Compatible** in its
+toolbar; hover it to see what Automatic chose and why. The
 desktop reconnects in that mode in a second or two, at the same size, and your Windows
 session and its apps stay as they were; Settings keeps its default for new tabs. The
 reconnect reads the password from the vault again, so it needs the vault unlocked and a
@@ -90,7 +95,8 @@ toolbar says why.
 **Stats** in the toolbar shows what the desktop costs, once a second, over its top right
 corner: frames drawn, updates sent by the server, the bandwidth received, the link as
 Windows measured it, the codec and how long a frame takes to decode, and whether it is
-drawn with WebGL. It shows only numbers, never the host's name or address.
+drawn with WebGL, and what the tab runs ("Automatic: bitmaps · local network, 1 ms"). It
+shows only numbers, never the host's name or address.
 
 **Re-reads.** About a second after the desktop stops changing, Flint sends the whole
 picture to the page once more. If an update was ever lost on the way, a block that stays

@@ -310,6 +310,9 @@ type DesktopReady struct {
     height:      i64 `json:"height"`
     frame_port:  i64 `json:"frame_port"`
     frame_token: str `json:"frame_token"`
+    // Milestone 35: what the engine connected in, and the round trip "auto" chose by.
+    graphics:    str `json:"graphics"`
+    rtt_ms:      i64 `json:"rtt_ms"`
 }
 
 type GuiDesktopSink struct {
@@ -321,16 +324,18 @@ fn new_gui_desktop_sink(app: webui.App) -> GuiDesktopSink {
 }
 
 fn (mut self: GuiDesktopSink) desktop_ready(tab: str, d: RdpDesktop) {
-    self.app.emit("rdp:ready", DesktopReady{ tab: tab, width: d.width, height: d.height, frame_port: d.frame_port, frame_token: d.frame_token })
+    self.app.emit("rdp:ready", DesktopReady{ tab: tab, width: d.width, height: d.height, frame_port: d.frame_port, frame_token: d.frame_token, graphics: d.graphics, rtt_ms: d.rtt_ms })
 }
 
 // The tab's graphics mode after a switch (milestone 35), or why it stayed.
 type DesktopGraphics struct {
     tab:      str `json:"tab"`
     graphics: str `json:"graphics"`
+    engine:   str `json:"engine"`
+    rtt_ms:   i64 `json:"rtt_ms"`
     message:  str `json:"message"`
 }
 
-fn (mut self: GuiDesktopSink) desktop_graphics(tab: str, graphics: str, message: str) {
-    self.app.emit("rdp:graphics", DesktopGraphics{ tab: tab, graphics: graphics, message: message })
+fn (mut self: GuiDesktopSink) desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch) {
+    self.app.emit("rdp:graphics", DesktopGraphics{ tab: tab, graphics: graphics, engine: sw.graphics, rtt_ms: sw.rtt_ms, message: sw.why })
 }

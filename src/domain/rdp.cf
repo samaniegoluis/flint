@@ -145,9 +145,45 @@ type RdpTarget struct {
     width: i64
     height: i64
     trusted_fingerprint: str
-    // RDP_GRAPHICS (milestone 34): "auto" offers the graphics pipeline, "compatible"
-    // keeps the bitmap updates.
+    // What the engine offers: "pipeline" the graphics pipeline (milestone 34),
+    // "compatible" the bitmap updates. "auto" is resolved by the core before it reaches
+    // the engine (auto_rdp_graphics, milestone 35).
     graphics: str
+    // The link's round trip measured before connecting (rd_probe_rtt), -1 when not
+    // measured; kept for Stats.
+    rtt_ms: i64
+}
+
+// A switch's outcome (milestone 35): `why` is "" when the tab reconnected, in `graphics`
+// ("pipeline" or "compatible") chosen with the round trip `rtt_ms` (-1: not measured).
+type RdpModeSwitch struct {
+    why: str
+    graphics: str
+    rtt_ms: i64
+}
+
+// Milestone 35 (D-083): "auto" takes the bitmap updates on a local network, where they
+// are lossless and felt smoother (owner's check, 2026-11-12), and the graphics pipeline
+// anywhere else (a VPN, the internet), where it uses several times less bandwidth. A
+// local network is told by the round trip of a TCP dial to the RDP port: Windows' own
+// bandwidth estimate reads the same on a LAN and a 20 Mbit/s VPN, and arrives only
+// after connecting.
+RDP_AUTO_LAN_RTT_MS: i64 = 5
+
+// The mode "auto" stands for, given the dial's round trip (-1: it did not answer, so
+// the pipeline, which is the safe choice on an unknown link).
+///
+/// ```cf
+/// assert(auto_rdp_graphics(1) == "compatible")
+/// assert(auto_rdp_graphics(5) == "compatible")
+/// assert(auto_rdp_graphics(6) == "pipeline")
+/// assert(auto_rdp_graphics(-1) == "pipeline")
+/// ```
+fn auto_rdp_graphics(rtt_ms: i64) -> str {
+    if rtt_ms >= 0 && rtt_ms <= RDP_AUTO_LAN_RTT_MS {
+        return "compatible"
+    }
+    return "pipeline"
 }
 
 // The certificate a server presented. `fingerprint` is its SHA-256, lower-case hex
@@ -167,6 +203,10 @@ type RdpDesktop struct {
     height: i64
     frame_port: i64
     frame_token: str
+    // Milestone 35: the mode the engine connected in ("pipeline" or "compatible") and
+    // the round trip "auto" chose it by (-1: not measured).
+    graphics: str
+    rtt_ms: i64
 }
 
 // What a tab's desktop has done since it opened (milestone 34), for the statistics
@@ -176,7 +216,8 @@ type RdpDesktop struct {
 // build decodes it. Milestone 35: `rereads`, the quiet re-reads of the whole desktop,
 // and `stale_px`, the pixels they found differing from what the frame channel had
 // handed out (the engine drew them unreported); `link_kbps` and `link_rtt_ms`, the
-// link as the server measured it (0 until it has); `mode`, the tab's RDP_GRAPHICS.
+// link as the server measured it (0 until it has); `mode`, what the engine connected in
+// ("pipeline" or "compatible").
 type RdpStats struct {
     updates: i64
     bytes_in: i64

@@ -16,7 +16,7 @@ import { useApp } from '../state/app';
 import { runAction } from '../shell/actions';
 import { fitScale, HeldKeys, modMapOf, parseFrameHeader, rdpButton, rdpKeptAction, toDesktop, WheelAccumulator } from '../lib/rdpInput';
 import { createRenderer, type DeskRenderer } from '../lib/deskRenderer';
-import { FrameMeter } from '../lib/rdpStats';
+import { FrameMeter, graphicsChoiceLabel } from '../lib/rdpStats';
 import { sessions, type Pane } from './store';
 import { RdpCard } from './RdpCards';
 import { RdpStatsOverlay } from './RdpStatsOverlay';
@@ -210,7 +210,8 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
         onKeyDown={onKeyDown} onKeyUp={onKeyUp} onFocus={announce} onBlur={() => held.current?.releaseAll()}
         onMouseMove={onMouseMove} onMouseDown={(e) => onMouseButton(e, true)} onMouseUp={(e) => onMouseButton(e, false)}
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()} />
-      {showStats && ready && session && <RdpStatsOverlay session={session} renderer={rendererKind} meter={meter.current} />}
+      {showStats && ready && session && <RdpStatsOverlay session={session} renderer={rendererKind} meter={meter.current}
+        choice={graphicsChoiceLabel(pane.graphics, pane.desktop?.engine ?? '', pane.desktop?.rttMs ?? -1)} />}
       <RdpCard pane={pane} active={active} onEditHost={onEditHost} onKnownHosts={onKnownHosts} />
     </div>
   );

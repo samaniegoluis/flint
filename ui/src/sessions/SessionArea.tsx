@@ -15,6 +15,7 @@ import { SplitView } from './SplitView';
 import { LayoutIcon, SplitMenu } from './SplitMenu';
 import { TunnelMark, TunnelsButton } from '../tunnels/TunnelsMenu';
 import { desktopScaleLabel, RdpView } from './RdpView';
+import { GRAPHICS_MODES, graphicsChoiceLabel } from '../lib/rdpStats';
 
 // Stays mounted while another view (Keys, Credentials, Settings) is shown, with
 // `shown` false: unmounting it disposed every xterm.js terminal and its scrollback.
@@ -149,11 +150,11 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           <span className="grow" />
           {ready && (
             <div className="seg sm" role="radiogroup" aria-label="Graphics for this tab" data-rdp-tab-graphics
-              title={tab.graphicsNote || 'Graphics for this tab: switching reconnects the desktop, your Windows session stays'}>
-              {(['auto', 'compatible'] as const).map((g) => (
-                <button key={g} type="button" role="radio" aria-checked={tab.graphics === g} aria-pressed={tab.graphics === g} data-graphics={g}
-                  disabled={tab.graphicsSwitching} onClick={() => sessions.setGraphics(tab.id, g)}>
-                  {g === 'auto' ? 'Automatic' : 'Compatible'}
+              title={tab.graphicsNote || [graphicsChoiceLabel(tab.graphics, tab.desktop?.engine ?? '', tab.desktop?.rttMs ?? -1), 'Switching reconnects the desktop; your Windows session stays'].filter(Boolean).join('. ')}>
+              {GRAPHICS_MODES.map((g) => (
+                <button key={g.id} type="button" role="radio" aria-checked={tab.graphics === g.id} aria-pressed={tab.graphics === g.id} data-graphics={g.id}
+                  disabled={tab.graphicsSwitching} onClick={() => sessions.setGraphics(tab.id, g.id)}>
+                  {g.label}
                 </button>
               ))}
             </div>

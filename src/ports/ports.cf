@@ -354,6 +354,10 @@ type RemoteDesktop interface {
     // changes on the wire: `rd_wait` reports a `graphics` event and the core
     // reconnects. Fails `network` when the tab is closed.
     rd_set_graphics(tab: str, graphics: str) -> void!
+    // Milestone 35: the round trip of a TCP dial to `host:port`, in ms (the best of a
+    // few), or -1 when it does not answer within `timeout_ms`. Opens and closes plain
+    // TCP connections; sends nothing.
+    rd_probe_rtt(host: str, port: i64, timeout_ms: i64) -> i64
     // Ends the tab's connection (an `rd_open` in progress is cancelled) and its frame
     // channel. A tab with nothing open is left as it is.
     rd_close(tab: str)
@@ -365,7 +369,7 @@ type DesktopSink interface {
     // Whether someone may act through the window now: a locked window answers no
     // clipboard request (milestone 31).
     desktop_window_open() -> bool
-    // Milestone 35: the tab's graphics mode is now `graphics` (`message` ""), or it
-    // stayed as it was and `message` says why.
-    desktop_graphics(tab: str, graphics: str, message: str)
+    // Milestone 35: the tab's graphics mode is now `graphics` (RDP_GRAPHICS), run by the
+    // engine as `sw.graphics` (`sw.why` ""), or it stayed as it was and `sw.why` says why.
+    desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch)
 }

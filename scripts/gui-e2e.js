@@ -911,6 +911,10 @@
         await check(st.rereads > 0 && st.stale_px === 0, `a quiet second re-reads the whole desktop, nothing stale on the sample server (${st.rereads} re-reads, ${st.stale_px} px)`);
         const seg = () => q('[data-rdp-tab-graphics]');
         await check(seg()?.querySelector('[data-graphics="auto"]')?.getAttribute('aria-pressed') === 'true', 'the toolbar shows the tab in Automatic, from Settings');
+        {
+          const first = await window.backend.rdp_stats({ tab: session() });
+          await check(first.mode === 'compatible' && seg().title.includes('local network'), `Automatic picks bitmaps on loopback, a local network (${first.mode}; "${seg().title}")`);
+        }
         const size = canvas().dataset.desktop;
         await click('[data-rdp-tab-graphics] button[data-graphics="compatible"]');
         await waitFor(() => seg()?.querySelector('[data-graphics="compatible"]')?.getAttribute('aria-pressed') === 'true' && !q('[data-rdp-graphics-busy]'), 'the tab in Compatible', 30000);
@@ -918,9 +922,15 @@
         await check(after.mode === 'compatible' && after.pipeline === 'bitmap', `the desktop reconnected in Compatible (${after.mode}, ${after.pipeline})`);
         await check(!q('[data-rdp-graphics-note]') && q('[data-rdp-size]') && !q('[data-rdp-state]', activeRegion()) && canvas().dataset.desktop === size, 'the session stays up at its size after the switch');
         await check((await window.backend.settings_get({})).rdp_graphics === 'auto', 'Settings keeps Automatic as the default');
+        await click('[data-rdp-tab-graphics] button[data-graphics="pipeline"]');
+        await waitFor(() => seg()?.querySelector('[data-graphics="pipeline"]')?.getAttribute('aria-pressed') === 'true' && !q('[data-rdp-graphics-busy]'), 'the tab in Pipeline', 30000);
+        {
+          const p = await window.backend.rdp_stats({ tab: session() });
+          await check(p.mode === 'pipeline' && p.pipeline === 'bitmap', `Pipeline asks for the graphics pipeline; the sample server, without it, sends bitmaps (${p.mode}, ${p.pipeline})`);
+        }
         await click('[data-rdp-tab-graphics] button[data-graphics="auto"]');
         await waitFor(() => seg()?.querySelector('[data-graphics="auto"]')?.getAttribute('aria-pressed') === 'true' && !q('[data-rdp-graphics-busy]'), 'the tab back in Automatic', 30000);
-        await check((await window.backend.rdp_stats({ tab: session() })).mode === 'auto', 'and back to Automatic');
+        await check((await window.backend.rdp_stats({ tab: session() })).mode === 'compatible', 'and back to Automatic, which measures again and picks bitmaps');
       }
 
       await setStep('rdp: disconnect and connect again');
@@ -1232,7 +1242,9 @@
         bench({ mode, pipeline: b.core.pipeline, codec: b.core.codec, h264: b.core.h264, renderer: drawnWith,
           latency: { median: Math.round(median(lat)), p95: Math.round(p95(lat)), from: latFrom, to: latTo },
           animation: { ...rates(a, b), from: animFrom, to: animTo }, idle: { ...rates(i0, i1), from: idleFrom, to: idleTo } });
-        await check(b.core.pipeline === (graphics === 'compatible' ? 'bitmap' : 'gfx'), `${mode}: the ${graphics} mode uses the expected pipeline (${b.core.pipeline} ${b.core.codec})`);
+        // Automatic picks by the round trip (milestone 35): either is right, as long as it says which.
+        const want = graphics === 'compatible' ? 'bitmap' : graphics === 'pipeline' ? 'gfx' : b.core.mode === 'compatible' ? 'bitmap' : 'gfx';
+        await check(b.core.pipeline === want, `${mode}: the ${graphics} mode uses the expected pipeline (${b.core.pipeline} ${b.core.codec}, engine ${b.core.mode})`);
         await click('.tab.on .tx');
         await waitFor(() => !q('[data-rdp-toolbar]'), 'the bench tab closed');
         await rest(1500);

@@ -86,3 +86,22 @@ export function rereadLabel(core: RdpStats): string {
   const stale = core.stale_px ? `${core.stale_px.toLocaleString('en-US')} stale px fixed` : 'nothing stale';
   return `${core.rereads} re-read${core.rereads === 1 ? '' : 's'} · ${stale}`;
 }
+
+/** The graphics modes, as Settings and the RDP toolbar name them (milestone 35). */
+export const GRAPHICS_MODES = [
+  { id: 'auto', label: 'Automatic' },
+  { id: 'pipeline', label: 'Pipeline' },
+  { id: 'compatible', label: 'Compatible' },
+] as const;
+
+/**
+ * What the tab runs and why: "Automatic: bitmaps · local network, 1 ms",
+ * "Pipeline", "Compatible: bitmaps". '' before the desktop is up.
+ */
+export function graphicsChoiceLabel(mode: string, engine: string, rttMs: number): string {
+  if (!engine) return '';
+  const runs = engine === 'compatible' ? 'bitmaps' : 'graphics pipeline';
+  if (mode !== 'auto') return engine === 'compatible' ? 'Compatible: bitmaps' : 'Pipeline: graphics pipeline';
+  if (rttMs < 0) return `Automatic: ${runs} · link not measured`;
+  return `Automatic: ${runs} · ${engine === 'compatible' ? 'local network' : 'remote link'}, ${rttMs} ms`;
+}

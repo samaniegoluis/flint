@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chooseRenderer, isSoftwareRenderer } from './deskRenderer';
-import { FrameMeter, linkLabel, pipelineLabel, ratesBetween, rereadLabel, type StatsSample } from './rdpStats';
+import { FrameMeter, graphicsChoiceLabel, linkLabel, pipelineLabel, ratesBetween, rereadLabel, type StatsSample } from './rdpStats';
 import type { RdpStats } from '../api/types';
 
 const core = (p: Partial<RdpStats> = {}): RdpStats => ({ updates: 0, bytes_in: 0, commands: 0, decode_us: 0, frames_read: 0, pipeline: 'gfx', codec: 'progressive', h264: true, rereads: 0, stale_px: 0, link_kbps: 0, link_rtt_ms: 0, mode: 'auto', ...p });
@@ -69,5 +69,16 @@ describe('RDP link and re-reads (milestone 35)', () => {
     expect(rereadLabel(core())).toBe('');
     expect(rereadLabel(core({ rereads: 1 }))).toBe('1 re-read · nothing stale');
     expect(rereadLabel(core({ rereads: 3, stale_px: 12345 }))).toBe('3 re-reads · 12,345 stale px fixed');
+  });
+});
+
+describe('RDP graphics choice (milestone 35)', () => {
+  it('says what Automatic chose and by which round trip', () => {
+    expect(graphicsChoiceLabel('auto', '', -1)).toBe('');
+    expect(graphicsChoiceLabel('auto', 'compatible', 1)).toBe('Automatic: bitmaps · local network, 1 ms');
+    expect(graphicsChoiceLabel('auto', 'pipeline', 24)).toBe('Automatic: graphics pipeline · remote link, 24 ms');
+    expect(graphicsChoiceLabel('auto', 'pipeline', -1)).toBe('Automatic: graphics pipeline · link not measured');
+    expect(graphicsChoiceLabel('pipeline', 'pipeline', -1)).toBe('Pipeline: graphics pipeline');
+    expect(graphicsChoiceLabel('compatible', 'compatible', -1)).toBe('Compatible: bitmaps');
   });
 });
