@@ -1,14 +1,15 @@
 ---
-// Replaces Starlight's ThemeSelect (D-023): one button that cycles auto → dark → light.
-// It keeps Starlight's storage contract, so ThemeProvider's inline script still applies
-// the stored theme before first paint: the `starlight-theme` key holds 'dark', 'light',
-// or '' for auto.
+// Replaces Starlight's ThemeSelect (D-023, D-087): one button that shows the theme on
+// screen, a moon for dark and a sun for light, and switches to the other. Until it is
+// first clicked the page follows the system's theme (and keeps following it); a click
+// stores the choice. It keeps Starlight's storage contract, so ThemeProvider's inline
+// script still applies the stored theme before first paint: the `starlight-theme` key
+// holds 'dark', 'light', or '' (nothing chosen: the system's).
 import { Icon } from '@astrojs/starlight/components';
 ---
 
 <flint-theme-toggle>
-	<button type="button" class="flint-theme-toggle" aria-label="Theme: auto. Switch to dark">
-		<Icon name="laptop" class="mode auto" />
+	<button type="button" class="flint-theme-toggle" aria-label="Switch to light theme" title="Switch to light theme">
 		<Icon name="moon" class="mode dark" />
 		<Icon name="sun" class="mode light" />
 	</button>
@@ -21,60 +22,64 @@ import { Icon } from '@astrojs/starlight/components';
 		try {
 			stored = localStorage.getItem('starlight-theme') || '';
 		} catch {}
-		const mode = stored === 'dark' || stored === 'light' ? stored : 'auto';
-		document.querySelectorAll('flint-theme-toggle').forEach((el) => el.setAttribute('data-mode', mode));
+		const shown =
+			stored === 'dark' || stored === 'light'
+				? stored
+				: matchMedia('(prefers-color-scheme: light)').matches
+					? 'light'
+					: 'dark';
+		document.querySelectorAll('flint-theme-toggle').forEach((el) => el.setAttribute('data-mode', shown));
 	})();
 </script>
 
 <script>
-	type Mode = 'auto' | 'dark' | 'light';
+	type Theme = 'dark' | 'light';
 	const storageKey = 'starlight-theme';
-	const order: Mode[] = ['auto', 'dark', 'light'];
-	const names: Record<Mode, string> = { auto: 'auto', dark: 'dark', light: 'light' };
 
-	const parse = (v: unknown): Mode => (v === 'dark' || v === 'light' ? v : 'auto');
-
-	function load(): Mode {
+	function stored(): Theme | null {
 		try {
-			return parse(localStorage.getItem(storageKey));
+			const v = localStorage.getItem(storageKey);
+			return v === 'dark' || v === 'light' ? v : null;
 		} catch {
-			return 'auto';
+			return null;
 		}
 	}
 
-	function store(mode: Mode): void {
+	function store(theme: Theme): void {
 		try {
-			localStorage.setItem(storageKey, mode === 'auto' ? '' : mode);
+			localStorage.setItem(storageKey, theme);
 		} catch {}
 	}
 
-	const systemScheme = (): 'dark' | 'light' =>
+	const systemScheme = (): Theme =>
 		matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 
-	function apply(mode: Mode): void {
-		document.documentElement.dataset.theme = mode === 'auto' ? systemScheme() : mode;
-		const next = order[(order.indexOf(mode) + 1) % order.length];
+	const shown = (): Theme => stored() ?? systemScheme();
+
+	function apply(theme: Theme): void {
+		document.documentElement.dataset.theme = theme;
+		const label = `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`;
 		document.querySelectorAll('flint-theme-toggle').forEach((el) => {
-			el.setAttribute('data-mode', mode);
-			el.querySelector('button')?.setAttribute(
-				'aria-label',
-				`Theme: ${names[mode]}. Switch to ${names[next]}`
-			);
+			el.setAttribute('data-mode', theme);
+			const button = el.querySelector('button');
+			button?.setAttribute('aria-label', label);
+			button?.setAttribute('title', label);
 		});
 	}
 
+	// Nothing chosen yet: the page keeps following the system.
 	matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
-		if (load() === 'auto') apply('auto');
+		if (!stored()) apply(systemScheme());
 	});
 
 	class FlintThemeToggle extends HTMLElement {
 		constructor() {
 			super();
-			apply(load());
+			apply(shown());
 			this.querySelector('button')?.addEventListener('click', () => {
-				const mode = order[(order.indexOf(load()) + 1) % order.length];
-				store(mode);
-				apply(mode);
+				const next: Theme = shown() === 'dark' ? 'light' : 'dark';
+				store(next);
+				apply(next);
 			});
 		}
 	}
@@ -114,8 +119,8 @@ import { Icon } from '@astrojs/starlight/components';
 	.flint-theme-toggle :global(.mode) {
 		display: none;
 	}
-	flint-theme-toggle:not([data-mode]) :global(.auto),
-	flint-theme-toggle[data-mode='auto'] :global(.auto),
+	/* Before any script runs (none at all without JavaScript): the dark default. */
+	flint-theme-toggle:not([data-mode]) :global(.dark),
 	flint-theme-toggle[data-mode='dark'] :global(.dark),
 	flint-theme-toggle[data-mode='light'] :global(.light) {
 		display: block;

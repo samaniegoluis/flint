@@ -167,6 +167,29 @@ try {
 		await page.close();
 	}
 
+	// ---- the theme button (ThemeToggle.astro, D-087) ----
+	// The system's theme until a click; the icon shows the theme on screen.
+	{
+		const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' });
+		const page = await ctx.newPage();
+		await page.goto(base);
+		const btn = page.locator('.flint-theme-toggle');
+		const theme = () => page.locator('html').getAttribute('data-theme');
+		check((await theme()) === 'dark' && (await btn.locator('.dark').isVisible()), 'theme: a dark system shows the dark page and the moon');
+		check((await btn.getAttribute('title')) === 'Switch to light theme', 'theme: the button says what it does');
+		await page.emulateMedia({ colorScheme: 'light' });
+		await page.waitForTimeout(100);
+		check((await theme()) === 'light' && (await btn.locator('.light').isVisible()), 'theme: with nothing chosen it follows the system when that changes');
+		await btn.click();
+		check((await theme()) === 'dark' && (await page.evaluate(() => localStorage.getItem('starlight-theme'))) === 'dark', 'theme: a click switches and stores the choice');
+		await page.emulateMedia({ colorScheme: 'light' });
+		await page.reload();
+		check((await theme()) === 'dark' && (await btn.locator('.dark').isVisible()), 'theme: the choice outlives a reload and the system');
+		await btn.click();
+		check((await theme()) === 'light' && (await btn.getAttribute('aria-label')) === 'Switch to dark theme', 'theme: a second click goes back to light');
+		await ctx.close();
+	}
+
 	// ---- the app's video (AppVideo.astro) ----
 	// Fetched only once half in view, then played; the theme and the width pick the file.
 	const videoRun = async (label, options, theme) => {
