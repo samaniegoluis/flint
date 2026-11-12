@@ -19,6 +19,16 @@
 // them (D-071). The local channel is a minimal HTTP/1.1 server on 127.0.0.1 serving
 // `GET /next?t=<token>` as a long poll, the token 32 random bytes from libsodium.
 //
+// Quiet re-read (milestone 35): when about a second passes with no update after some,
+// the run loop marks the whole desktop dirty once, so an area FreeRDP drew without
+// reporting it (or a region the page lost) is sent again. Before it does, it compares
+// what the frame channel handed out (`shadow`) with FreeRDP's surface and counts the
+// pixels that differ: Stats shows it, and it tells whether a stale block was the
+// shim's (FreeRDP drew it unreported) or the page's (handed out, then lost).
+//
+// Graphics switch (milestone 35): `set_graphics` asks the core, through `wait`, to
+// reconnect the tab in the other mode at its current size.
+//
 // The certificate is always checked here, never by FreeRDP's own store: only the
 // fingerprint the core trusts is accepted, anything else is refused and kept for the
 // core to decide on (trust on first use, D-019). The password is wiped from FreeRDP's
@@ -177,6 +187,10 @@ inline constexpr int EV_ENDED = 1;
 inline constexpr int EV_RESIZE = 2;
 inline constexpr int EV_CLIP_TEXT = 3;     // the remote copied text (in `detail`)
 inline constexpr int EV_CLIP_REQUEST = 4;  // the remote pastes: it wants this machine's text
+inline constexpr int EV_GRAPHICS = 5;      // reconnect in the mode in `detail`, at w x h
+
+// A quiet second with no update, after some, before the whole desktop is read again.
+inline constexpr int64_t REREAD_QUIET_MS = 1000;
 
 // The clipboard's text format (CF_UNICODETEXT), the only one Flint exchanges (v8).
 inline constexpr UINT32 CLIP_UNICODE = 13;
@@ -254,6 +268,16 @@ struct Tab {
     std::atomic<uint64_t> st_frames_read{0}; // regions taken by the frame channel
     std::atomic<uint32_t> st_codecs{0};      // codec ids seen, one bit each
     std::atomic<bool> st_gfx{false};         // the graphics pipeline is open
+    std::atomic<uint64_t> st_rereads{0};     // quiet re-reads of the whole desktop
+    std::atomic<uint64_t> st_stale_px{0};    // pixels they found differing from what was handed out
+    // Quiet re-read (milestone 35), under `mu`: the last update, whether one came since
+    // the last re-read, and a copy of the surface as the frame channel handed it out.
+    std::chrono::steady_clock::time_point last_update{};
+    bool reread_due = false;
+    std::vector<uint8_t> shadow;
+    int32_t shadow_w = 0, shadow_h = 0;
+    // A graphics mode the page asked for, waiting for `wait` ("": none).
+    std::string want_graphics;
     // Frame channel.
     sock_t listen_fd = BAD_SOCK;
     int port = 0;
@@ -317,6 +341,8 @@ inline BOOL on_end_paint(rdpContext* ctx) {
             t->dh = y2 - t->dy;
         }
         t->seq += 1;
+        t->last_update = std::chrono::steady_clock::now();
+        t->reread_due = true;
     }
     t->st_updates.fetch_add(1, std::memory_order_relaxed);
     t->cv.notify_all();
@@ -854,6 +880,47 @@ inline uint32_t local_keyboard_layout() {
 #pragma GCC diagnostic pop
 }
 
+// Pixels of `gdi`'s surface that differ from what the frame channel handed out, outside
+// the pending dirty region (it is about to go out anyway). Alpha is left out. Called
+// with `t.mu` held, on the connection's own thread, so FreeRDP is not drawing.
+inline uint64_t stale_pixels_locked(const Tab& t, rdpGdi* gdi) {
+    if (t.shadow_w != static_cast<int32_t>(gdi->width) || t.shadow_h != static_cast<int32_t>(gdi->height)) return 0;
+    uint64_t n = 0;
+    const size_t row_bytes = static_cast<size_t>(t.shadow_w) * 4;
+    for (int32_t y = 0; y < t.shadow_h; ++y) {
+        const uint8_t* a = gdi->primary_buffer + static_cast<size_t>(y) * gdi->stride;
+        const uint8_t* b = t.shadow.data() + static_cast<size_t>(y) * row_bytes;
+        if (std::memcmp(a, b, row_bytes) == 0) continue;
+        const bool in_rows = t.dw != 0 && y >= t.dy && y < t.dy + t.dh;
+        for (int32_t x = 0; x < t.shadow_w; ++x) {
+            if (in_rows && x >= t.dx && x < t.dx + t.dw) continue;
+            const uint8_t* pa = a + static_cast<size_t>(x) * 4;
+            const uint8_t* pb = b + static_cast<size_t>(x) * 4;
+            if (pa[0] != pb[0] || pa[1] != pb[1] || pa[2] != pb[2]) n++;
+        }
+    }
+    return n;
+}
+
+// After a quiet second that followed some updates: counts the stale pixels, then marks
+// the whole desktop dirty once (milestone 35).
+inline void quiet_reread(Tab& t, rdpGdi* gdi) {
+    if (!gdi || !gdi->primary_buffer) return;
+    {
+        std::lock_guard<std::mutex> g(t.mu);
+        if (!t.reread_due) return;
+        if (std::chrono::steady_clock::now() - t.last_update < std::chrono::milliseconds(REREAD_QUIET_MS)) return;
+        t.reread_due = false;
+        t.st_stale_px.fetch_add(stale_pixels_locked(t, gdi), std::memory_order_relaxed);
+        t.st_rereads.fetch_add(1, std::memory_order_relaxed);
+        t.dx = 0; t.dy = 0;
+        t.dw = static_cast<int32_t>(gdi->width);
+        t.dh = static_cast<int32_t>(gdi->height);
+        t.seq += 1;
+    }
+    t.cv.notify_all();
+}
+
 // The loop of one connection: FreeRDP's events until it ends or is stopped.
 inline void run_loop(std::shared_ptr<Conn> c) {
     HANDLE handles[MAXIMUM_WAIT_OBJECTS] = {};
@@ -865,6 +932,7 @@ inline void run_loop(std::shared_ptr<Conn> c) {
         if (st == WAIT_FAILED) break;
         if (!freerdp_check_event_handles(ctx)) break;
         if (freerdp_shall_disconnect_context(ctx)) break;
+        quiet_reread(*c->tab, ctx->gdi);
     }
     c->last_error = freerdp_get_last_error(ctx);
     c->error_info = freerdp_error_info(c->inst);
@@ -987,6 +1055,8 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         t->cert_refused = false;
         t->request_pending = false;
         t->want_gfx = graphics != "compatible";
+        t->want_graphics.clear();
+        t->reread_due = false;
     }
     t->st_gfx.store(false);
     t->st_codecs.store(0);
@@ -1043,6 +1113,12 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
     freerdp_settings_set_bool(st, FreeRDP_GfxAVC444, avc ? TRUE : FALSE);
     freerdp_settings_set_bool(st, FreeRDP_GfxAVC444v2, avc ? TRUE : FALSE);
     freerdp_settings_set_bool(st, FreeRDP_GfxThinClient, FALSE);
+    // Milestone 35: the link's type is auto-detected, as `/network:auto` does, so
+    // Windows measures bandwidth and round trip and sets the pipeline's quality from
+    // them; it also allows the desktop's composition, font smoothing and wallpaper.
+    // Without it FreeRDP sends no type and Windows may treat the link as slow.
+    freerdp_set_connection_type(st, CONNECTION_TYPE_AUTODETECT);
+    freerdp_settings_set_bool(st, FreeRDP_NetworkAutoDetect, TRUE);
     freerdp_settings_set_bool(st, FreeRDP_SupportDisplayControl, TRUE);
     freerdp_settings_set_bool(st, FreeRDP_DynamicResolutionUpdate, TRUE);
     freerdp_settings_set_bool(st, FreeRDP_AudioPlayback, FALSE);
@@ -1215,7 +1291,8 @@ inline int wait(const std::string& id, int64_t wait_ms, int32_t& code, std::stri
     if (!t || t->closed.load()) return EV_ENDED;
     std::unique_lock<std::mutex> g(t->mu);
     auto pending = [&] {
-        return t->closed.load() || !t->conn || t->conn->ended.load() || t->want_w != 0 || t->remote_pending || t->request_pending;
+        return t->closed.load() || !t->conn || t->conn->ended.load() || t->want_w != 0 || t->remote_pending || t->request_pending ||
+               !t->want_graphics.empty();
     };
     t->cv.wait_for(g, std::chrono::milliseconds(wait_ms), pending);
     if (t->closed.load()) return EV_ENDED;
@@ -1244,7 +1321,28 @@ inline int wait(const std::string& id, int64_t wait_ms, int32_t& code, std::stri
     if (t->request_pending) {
         return EV_CLIP_REQUEST;
     }
+    if (!t->want_graphics.empty()) {
+        detail = std::move(t->want_graphics);
+        t->want_graphics.clear();
+        w = t->width;
+        h = t->height;
+        return EV_GRAPHICS;
+    }
     return EV_RUNNING;
+}
+
+// The page asks for the tab in another graphics mode: `wait` reports it and the core
+// reconnects (milestone 35). Nothing happens on the wire here.
+inline int set_graphics(const std::string& id, const std::string& mode) {
+    auto t = find(id);
+    if (!t || t->closed.load()) return RDP_ERR_CLOSED;
+    {
+        std::lock_guard<std::mutex> g(t->mu);
+        if (!t->conn || t->conn->ended.load()) return RDP_ERR_CLOSED;
+        t->want_graphics = mode;
+    }
+    t->cv.notify_all();
+    return RDP_OK;
 }
 
 // This machine's clipboard holds text (or not): told to the server as a format list,
@@ -1303,7 +1401,8 @@ inline const char* codec_name(int32_t id) {
 // first connection); `codec`: the codecs its connection's surface commands used, in
 // codec-id order, comma-separated ("" on the bitmap path).
 inline int stats(const std::string& id, int64_t& updates, int64_t& bytes_in, int64_t& commands, int64_t& decode_us,
-                 int64_t& frames_read, std::string& pipeline, std::string& codec, bool& h264) {
+                 int64_t& frames_read, std::string& pipeline, std::string& codec, bool& h264, int64_t& rereads,
+                 int64_t& stale_px, int64_t& link_kbps, int64_t& link_rtt_ms, std::string& mode) {
     auto t = find(id);
     if (!t || t->closed.load()) return RDP_ERR_CLOSED;
     updates = static_cast<int64_t>(t->st_updates.load());
@@ -1311,10 +1410,21 @@ inline int stats(const std::string& id, int64_t& updates, int64_t& bytes_in, int
     commands = static_cast<int64_t>(t->st_commands.load());
     decode_us = static_cast<int64_t>(t->st_decode_us.load());
     frames_read = static_cast<int64_t>(t->st_frames_read.load());
+    rereads = static_cast<int64_t>(t->st_rereads.load());
+    stale_px = static_cast<int64_t>(t->st_stale_px.load());
+    link_kbps = 0;
+    link_rtt_ms = 0;
     bool connected;
     {
         std::lock_guard<std::mutex> g(t->mu);
         connected = t->conn != nullptr;
+        mode = t->want_gfx ? "auto" : "compatible";
+        // What the server measured of the link, once it has (auto-detect, milestone 35).
+        if (connected && t->conn->inst && t->conn->inst->context && t->conn->inst->context->autodetect) {
+            const rdpAutoDetect* ad = t->conn->inst->context->autodetect;
+            link_kbps = static_cast<int64_t>(ad->netCharBandwidth);
+            link_rtt_ms = static_cast<int64_t>(ad->netCharAverageRTT);
+        }
     }
     pipeline = !connected ? "" : (t->st_gfx.load() ? "gfx" : "bitmap");
     codec.clear();
@@ -1460,8 +1570,17 @@ inline int take_frame_locked(Tab& t, std::string& out) {
     const uint32_t stride = gdi->stride;
     const uint8_t* src = gdi->primary_buffer + static_cast<size_t>(y) * stride + static_cast<size_t>(x) * 4;
     uint8_t* dst = p + 16;
+    // The shadow follows the surface's size; a new size starts it blank.
+    if (t.shadow_w != static_cast<int32_t>(gdi->width) || t.shadow_h != static_cast<int32_t>(gdi->height)) {
+        t.shadow_w = static_cast<int32_t>(gdi->width);
+        t.shadow_h = static_cast<int32_t>(gdi->height);
+        t.shadow.assign(static_cast<size_t>(t.shadow_w) * t.shadow_h * 4, 0);
+    }
+    uint8_t* shadow = t.shadow.data() + (static_cast<size_t>(y) * t.shadow_w + x) * 4;
     for (int32_t row = 0; row < h; ++row) {
         std::memcpy(dst, src, static_cast<size_t>(w) * 4);
+        std::memcpy(shadow, src, static_cast<size_t>(w) * 4);
+        shadow += static_cast<size_t>(t.shadow_w) * 4;
         // RGBA32 in FreeRDP leaves alpha at 0 on some codecs; the canvas needs 255.
         for (int32_t i = 0; i < w; ++i) dst[i * 4 + 3] = 0xff;
         dst += static_cast<size_t>(w) * 4;

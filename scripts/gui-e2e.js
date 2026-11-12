@@ -904,6 +904,25 @@
         chord('b', 'KeyB');
       }
 
+      await setStep('rdp: a quiet second re-reads the desktop, and the mode switches for this tab (milestone 35)');
+      {
+        const session = () => q('[data-rdp-session]', activeRegion()).dataset.rdpSession;
+        const st = await waitForAsync(async () => { const x = await window.backend.rdp_stats({ tab: session() }); return x.rereads > 0 ? x : null; }, 'a quiet re-read', 15000);
+        await check(st.rereads > 0 && st.stale_px === 0, `a quiet second re-reads the whole desktop, nothing stale on the sample server (${st.rereads} re-reads, ${st.stale_px} px)`);
+        const seg = () => q('[data-rdp-tab-graphics]');
+        await check(seg()?.querySelector('[data-graphics="auto"]')?.getAttribute('aria-pressed') === 'true', 'the toolbar shows the tab in Automatic, from Settings');
+        const size = canvas().dataset.desktop;
+        await click('[data-rdp-tab-graphics] button[data-graphics="compatible"]');
+        await waitFor(() => seg()?.querySelector('[data-graphics="compatible"]')?.getAttribute('aria-pressed') === 'true' && !q('[data-rdp-graphics-busy]'), 'the tab in Compatible', 30000);
+        const after = await window.backend.rdp_stats({ tab: session() });
+        await check(after.mode === 'compatible' && after.pipeline === 'bitmap', `the desktop reconnected in Compatible (${after.mode}, ${after.pipeline})`);
+        await check(!q('[data-rdp-graphics-note]') && q('[data-rdp-size]') && !q('[data-rdp-state]', activeRegion()) && canvas().dataset.desktop === size, 'the session stays up at its size after the switch');
+        await check((await window.backend.settings_get({})).rdp_graphics === 'auto', 'Settings keeps Automatic as the default');
+        await click('[data-rdp-tab-graphics] button[data-graphics="auto"]');
+        await waitFor(() => seg()?.querySelector('[data-graphics="auto"]')?.getAttribute('aria-pressed') === 'true' && !q('[data-rdp-graphics-busy]'), 'the tab back in Automatic', 30000);
+        await check((await window.backend.rdp_stats({ tab: session() })).mode === 'auto', 'and back to Automatic');
+      }
+
       await setStep('rdp: disconnect and connect again');
       await click('[data-rdp-disconnect]');
       await waitFor(() => rdpState('closed'), 'the disconnected card', 20000);

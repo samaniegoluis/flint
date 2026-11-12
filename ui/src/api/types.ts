@@ -226,6 +226,21 @@ export interface RdpStats {
   codec: string;
   /** This build of FreeRDP decodes H.264. */
   h264: boolean;
+  /** Milestone 35: quiet re-reads of the whole desktop, and the pixels they found stale. */
+  rereads: number;
+  stale_px: number;
+  /** The link as the server measured it (auto-detect); 0 until it has. */
+  link_kbps: number;
+  link_rtt_ms: number;
+  /** The tab's graphics mode: 'auto' or 'compatible'. */
+  mode: string;
+}
+
+/** A tab's graphics mode after a switch (milestone 35), or why it stayed (`message`). */
+export interface RdpGraphicsEvent {
+  tab: string;
+  graphics: string;
+  message: string;
 }
 
 export interface DesktopReadyEvent {

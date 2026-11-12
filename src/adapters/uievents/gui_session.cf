@@ -323,3 +323,14 @@ fn new_gui_desktop_sink(app: webui.App) -> GuiDesktopSink {
 fn (mut self: GuiDesktopSink) desktop_ready(tab: str, d: RdpDesktop) {
     self.app.emit("rdp:ready", DesktopReady{ tab: tab, width: d.width, height: d.height, frame_port: d.frame_port, frame_token: d.frame_token })
 }
+
+// The tab's graphics mode after a switch (milestone 35), or why it stayed.
+type DesktopGraphics struct {
+    tab:      str `json:"tab"`
+    graphics: str `json:"graphics"`
+    message:  str `json:"message"`
+}
+
+fn (mut self: GuiDesktopSink) desktop_graphics(tab: str, graphics: str, message: str) {
+    self.app.emit("rdp:graphics", DesktopGraphics{ tab: tab, graphics: graphics, message: message })
+}

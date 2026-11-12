@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/backend';
 import type { RdpStats } from '../api/types';
-import { pipelineLabel, ratesBetween, type FrameMeter, type StatsRates, type StatsSample } from '../lib/rdpStats';
+import { linkLabel, pipelineLabel, ratesBetween, rereadLabel, type FrameMeter, type StatsRates, type StatsSample } from '../lib/rdpStats';
 
 /** The last second's rates, for the benchmark (scripts/gui-e2e.js, run rdpbench). */
 declare global { interface Window { __flintRdpRates?: StatsRates & { pipeline: string; renderer: string } } }
@@ -46,7 +46,9 @@ export function RdpStatsOverlay({ session, renderer, meter }: { session: string;
       <div><span className="faint">server</span> {r ? r.updates.toFixed(0) : '…'} updates/s</div>
       <div><span className="faint">in</span> {r ? formatKbps(r.kbps) : '…'}</div>
       {view && view.core.pipeline === 'gfx' && <div><span className="faint">decode</span> {r!.decodeMs.toFixed(1)} ms</div>}
+      {view && linkLabel(view.core) && <div><span className="faint">link</span> <span data-rdp-link>{linkLabel(view.core)}</span></div>}
       <div className="faint" data-rdp-pipeline>{view ? pipelineLabel(view.core) : ''}</div>
+      {view && rereadLabel(view.core) && <div className="faint" data-rdp-rereads>{rereadLabel(view.core)}</div>}
       <div className="faint" data-rdp-renderer>{renderer === 'webgl' ? 'drawn with WebGL' : renderer === '2d' ? 'drawn in 2D' : ''}{view && !view.core.h264 ? ' · no H.264 here' : ''}</div>
     </div>
   );

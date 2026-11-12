@@ -111,6 +111,7 @@ fn main() {
     app.bind_raw("rdp_resize") |params| { return rpc_rdp_resize(params) }
     app.bind_raw("rdp_close") |params| { return rpc_rdp_close(params, st) }
     app.bind_raw("rdp_stats") |params| { return rpc_rdp_stats(params) }
+    app.bind_raw("rdp_graphics") |params| { return rpc_rdp_graphics(params, st) }
     app.bind_raw("rdp_clipboard_announce") |params| { return rpc_rdp_clipboard_announce(params, mut clipboard, st) }
     app.bind_raw("window_theme") |params| { return rpc_window_theme(params, mut app) }
     app.bind_raw("dialog_open") |params| { return rpc_dialog_open(params, app) }

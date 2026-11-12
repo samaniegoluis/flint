@@ -140,6 +140,9 @@ fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {
     if kind == 4 {
         return RdpEvent{ kind: RDP_EVENT_CLIP_REQUEST, message: "", width: 0, height: 0 }
     }
+    if kind == 5 {
+        return RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: detail, width: i64(w), height: i64(h) }
+    }
     return RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 }
 }
 
@@ -218,14 +221,30 @@ fn (self: FreeRdpDesktop) rd_stats(tab: str) -> RdpStats! {
     mut pipeline := ""
     mut codec := ""
     mut h264 := false
+    mut rereads: i64 = 0
+    mut stale_px: i64 = 0
+    mut link_kbps: i64 = 0
+    mut link_rtt_ms: i64 = 0
+    mut mode := ""
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        rc = flint_rdp::stats(tab, updates, bytes_in, commands, decode_us, frames_read, pipeline, codec, h264);
+        rc = flint_rdp::stats(tab, updates, bytes_in, commands, decode_us, frames_read, pipeline, codec, h264, rereads, stale_px, link_kbps, link_rtt_ms, mode);
     }
     if rc != 0 {
         return error(rdp_error(i64(rc), "stats"))
     }
-    return RdpStats{ updates: updates, bytes_in: bytes_in, commands: commands, decode_us: decode_us, frames_read: frames_read, pipeline: pipeline, codec: codec, h264: h264 }
+    return RdpStats{ updates: updates, bytes_in: bytes_in, commands: commands, decode_us: decode_us, frames_read: frames_read, pipeline: pipeline, codec: codec, h264: h264, rereads: rereads, stale_px: stale_px, link_kbps: link_kbps, link_rtt_ms: link_rtt_ms, mode: mode }
+}
+
+fn (self: FreeRdpDesktop) rd_set_graphics(tab: str, graphics: str) -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::set_graphics(tab, graphics);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "graphics"))
+    }
 }
 
 fn (self: FreeRdpDesktop) rd_close(tab: str) {

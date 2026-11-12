@@ -197,6 +197,55 @@ test "a real Windows host resizes in place through Display Control" {
     assert_eq(rd.rd_wait("t-live", 100).kind, "running")
 }
 
+// Milestone 35: after a quiet second the whole desktop is read again, once, and the
+// re-read compares it with what was handed out; a switch of graphics mode is reported
+// to the core by rd_wait, at the desktop's current size.
+test "a quiet second re-reads the whole desktop once, and a graphics switch reaches rd_wait" {
+    t := sample_target("")
+    if t.port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    fp := first_fingerprint(rd, "t-quiet", t)
+    d := try rd.rd_open("t-quiet", sample_target(fp), 15000)
+    defer rd.rd_close("t-quiet")
+    assert(wait_frame("t-quiet").len() > 16, "no frame in 10 s")
+    // Drain until the server goes quiet, then the re-read: the whole desktop.
+    mut whole := ""
+    for i in 0..40 {
+        frame := next_frame("t-quiet", 300) or ""
+        if frame.len() > 16 && le16(frame, 8) == d.width && le16(frame, 10) == d.height {
+            st := try rd.rd_stats("t-quiet")
+            if st.rereads > 0 {
+                whole = frame
+                break
+            }
+        }
+    }
+    assert(whole.len() > 16, "no re-read of the whole desktop")
+    assert_eq(le16(whole, 4), 0)
+    assert_eq(le16(whole, 6), 0)
+    st := try rd.rd_stats("t-quiet")
+    assert(st.rereads >= 1)
+    // Every pixel the sample server drew was reported: nothing stale.
+    assert_eq(st.stale_px, 0)
+    assert_eq(st.mode, "auto")
+    // Once per quiet spell: nothing more while the server stays quiet.
+    again := next_frame("t-quiet", 1500) or ""
+    assert_eq(again.len(), 0)
+
+    try rd.rd_set_graphics("t-quiet", "compatible")
+    ev := rd.rd_wait("t-quiet", 2000)
+    assert_eq(ev.kind, "graphics")
+    assert_eq(ev.message, "compatible")
+    assert_eq(ev.width, d.width)
+    assert_eq(ev.height, d.height)
+    assert_eq(rd.rd_wait("t-quiet", 100).kind, "running")
+    mut msg := ""
+    rd.rd_set_graphics("t-none", "compatible") or err { msg = "{err.message()}" }
+    assert(msg.starts_with("network:"), msg)
+}
+
 // Milestone 34: Windows offers the graphics pipeline, which "auto" takes; "compatible"
 // keeps the bitmap updates. The codec is the server's choice among those offered.
 test "a real Windows host draws through the graphics pipeline, or bitmaps when asked" {

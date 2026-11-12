@@ -49,6 +49,11 @@ type RdpResizeReq struct {
     height: i64 `json:"height"`
 }
 
+type RdpGraphicsReq struct {
+    tab:      str `json:"tab"`
+    graphics: str `json:"graphics"`
+}
+
 type RdpTabReq struct {
     tab: str `json:"tab"`
 }
@@ -93,6 +98,10 @@ fn (mut self: RdpTabSink) desktop_ready(tab: str, d: RdpDesktop) {
 
 fn (self: RdpTabSink) desktop_window_open() -> bool {
     return !self.holder.window_locked()
+}
+
+fn (mut self: RdpTabSink) desktop_graphics(tab: str, graphics: str, message: str) {
+    self.events.desktop_graphics(tab, graphics, message)
 }
 
 // The connection, on a worker, until the tab ends.
@@ -142,6 +151,18 @@ fn rpc_rdp_close(params: str, st: GuiState) -> str! {
     mut rd := new_freerdp_desktop()
     close_remote_desktop(mut rd, req.tab)
     _ := gui_session_close(req.tab)
+    return ok_json()
+}
+
+// The tab in another graphics mode (milestone 35): the session reconnects with the
+// password read again from the vault, so the window and the vault must be open; the
+// result arrives as "rdp:graphics".
+fn rpc_rdp_graphics(params: str, st: GuiState) -> str! {
+    try st.require_open_window()
+    try st.require_unlocked()
+    req := try parse_req[RdpGraphicsReq](params)
+    mut rd := new_freerdp_desktop()
+    try switch_desktop_graphics(mut rd, req.tab, req.graphics)
     return ok_json()
 }
 

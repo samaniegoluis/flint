@@ -147,6 +147,19 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           })()}
           {host && <span className="mono faint trunc tb-host" style={{ marginLeft: 'var(--sp-2)' }}>{host.hostname}:{host.port}</span>}
           <span className="grow" />
+          {ready && (
+            <div className="seg sm" role="radiogroup" aria-label="Graphics for this tab" data-rdp-tab-graphics
+              title={tab.graphicsNote || 'Graphics for this tab: switching reconnects the desktop, your Windows session stays'}>
+              {(['auto', 'compatible'] as const).map((g) => (
+                <button key={g} type="button" role="radio" aria-checked={tab.graphics === g} aria-pressed={tab.graphics === g} data-graphics={g}
+                  disabled={tab.graphicsSwitching} onClick={() => sessions.setGraphics(tab.id, g)}>
+                  {g === 'auto' ? 'Automatic' : 'Compatible'}
+                </button>
+              ))}
+            </div>
+          )}
+          {ready && tab.graphicsSwitching && <span className="faint" data-rdp-graphics-busy>Reconnecting…</span>}
+          {ready && !tab.graphicsSwitching && tab.graphicsNote && <span className="warn-t trunc" data-rdp-graphics-note title={tab.graphicsNote}>Mode not changed</span>}
           {ready && <button className="tbtn" data-rdp-stats-toggle aria-pressed={stats} title="Show what the desktop costs: frames, bandwidth, codec"
             onClick={() => setStats((v) => !v)}><Icon name="info" size="sm" /><span className="tb-l">Stats</span></button>}
           {ready

@@ -173,7 +173,10 @@ type RdpDesktop struct {
 // overlay and the benchmark: counters only, nothing that names the host (Principle 5).
 // `pipeline` is "gfx" or "bitmap" ("" while not connected); `codec` the codecs the
 // graphics pipeline used, comma-separated ("" on the bitmap path); `h264` whether this
-// build decodes it.
+// build decodes it. Milestone 35: `rereads`, the quiet re-reads of the whole desktop,
+// and `stale_px`, the pixels they found differing from what the frame channel had
+// handed out (the engine drew them unreported); `link_kbps` and `link_rtt_ms`, the
+// link as the server measured it (0 until it has); `mode`, the tab's RDP_GRAPHICS.
 type RdpStats struct {
     updates: i64
     bytes_in: i64
@@ -183,6 +186,11 @@ type RdpStats struct {
     pipeline: str
     codec: str
     h264: bool
+    rereads: i64
+    stale_px: i64
+    link_kbps: i64
+    link_rtt_ms: i64
+    mode: str
 }
 
 // A pointer event in desktop pixels. `kind` is one of RDP_POINTER_KINDS; `button` 0
@@ -227,6 +235,9 @@ RDP_EVENT_RESIZE: str = "resize"
 // machine's text, which the core answers (D-074).
 RDP_EVENT_CLIP_TEXT: str = "clip_text"
 RDP_EVENT_CLIP_REQUEST: str = "clip_request"
+// Milestone 35: the tab asked for another graphics mode (RDP_GRAPHICS, in `message`),
+// which a reconnect at the desktop's current size (`width` x `height`) gives.
+RDP_EVENT_GRAPHICS: str = "graphics"
 
 type RdpEvent struct {
     kind: str

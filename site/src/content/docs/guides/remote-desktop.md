@@ -69,16 +69,33 @@ GPU through WebGL. It is smoother and uses less bandwidth than the classic bitma
 updates, which a server without the pipeline still gets. On a machine with no usable GPU
 (a VM without graphics acceleration, for example) the page draws in 2D instead.
 
-**Settings → Remote desktop → Graphics** sets it for this computer:
+Flint also asks Windows to **measure the link** (network auto-detect, as `mstsc` does), so
+Windows sets the quality of what it sends from the bandwidth and round trip it measured:
+higher on an office LAN, lower over a slow VPN.
+
+**Settings → Remote desktop → Graphics** sets the default for new tabs on this computer:
 
 - **Automatic** (default): the graphics pipeline, with the best codec both ends support.
-- **Compatible**: the classic bitmap updates, as earlier versions of Flint used. Try it if
-  a desktop shows wrong colours or garbled areas. It applies to the next connection.
+- **Compatible**: the classic bitmap updates, as earlier versions of Flint used. They are
+  lossless and can feel smoother on a fast local network, at several times the
+  bandwidth. Try it too if a desktop shows wrong colours or garbled areas.
+
+**Switch a tab while connected** with **Automatic** / **Compatible** in its toolbar. The
+desktop reconnects in that mode in a second or two, at the same size, and your Windows
+session and its apps stay as they were; Settings keeps its default for new tabs. The
+reconnect reads the password from the vault again, so it needs the vault unlocked and a
+saved password: with a password typed at connect time the tab keeps its mode and the
+toolbar says why.
 
 **Stats** in the toolbar shows what the desktop costs, once a second, over its top right
-corner: frames drawn, updates sent by the server, the bandwidth received, the codec and
-how long a frame takes to decode, and whether it is drawn with WebGL. It shows only
-numbers, never the host's name or address.
+corner: frames drawn, updates sent by the server, the bandwidth received, the link as
+Windows measured it, the codec and how long a frame takes to decode, and whether it is
+drawn with WebGL. It shows only numbers, never the host's name or address.
+
+**Re-reads.** About a second after the desktop stops changing, Flint sends the whole
+picture to the page once more. If an update was ever lost on the way, a block that stays
+wrong until Windows repaints it, this puts it right within that second. Stats counts the
+re-reads and the stale pixels they found ("nothing stale" when every update arrived).
 
 ## When the connection drops
 

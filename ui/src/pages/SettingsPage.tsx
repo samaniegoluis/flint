@@ -270,7 +270,7 @@ function RemoteDesktopSettings({ mac }: { mac: boolean }) {
   return (
     <>
       <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', marginBottom: 'var(--sp-3)' }}>Remote desktop</h1>
-      <Row title="Graphics" desc="How a remote desktop is sent to this computer. Applies to the next connection.">
+      <Row title="Graphics" desc="How a new remote desktop tab is sent to this computer. Each tab can switch from its toolbar while connected.">
         <div className="seg" role="radiogroup" aria-label="Remote desktop graphics" data-rdp-graphics>
           {(['auto', 'compatible'] as const).map((g) => (
             <button key={g} type="button" role="radio" aria-checked={s.rdp_graphics === g} aria-pressed={s.rdp_graphics === g} data-graphics={g}

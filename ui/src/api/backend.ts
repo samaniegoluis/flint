@@ -147,6 +147,7 @@ export const api = {
   rdpClose: (tab: string) => call('rdp_close', { tab }),
   /** Milestone 34: the desktop's counters, for the statistics overlay. */
   rdpStats: (tab: string) => call<RdpStats>('rdp_stats', { tab }),
+  rdpGraphics: (tab: string, graphics: string) => call('rdp_graphics', { tab, graphics }),
   /** Milestone 31: tells the server whether this machine's clipboard holds text (never the text). */
   rdpClipboardAnnounce: (tab: string) => call('rdp_clipboard_announce', { tab }),
 

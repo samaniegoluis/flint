@@ -65,3 +65,24 @@ export function pipelineLabel(core: RdpStats): string {
   if (core.pipeline === 'bitmap') return 'bitmap updates';
   return '';
 }
+
+/**
+ * The link as the server measured it (milestone 35, `ConnectionType` auto-detect):
+ * "20.0 Mbit/s · 12 ms", or '' until the server has measured it.
+ */
+export function linkLabel(core: RdpStats): string {
+  if (!core.link_kbps && !core.link_rtt_ms) return '';
+  const bw = core.link_kbps >= 1000 ? `${(core.link_kbps / 1000).toFixed(1)} Mbit/s` : `${core.link_kbps} kbit/s`;
+  return core.link_rtt_ms ? `${bw} · ${core.link_rtt_ms} ms` : bw;
+}
+
+/**
+ * The quiet re-reads (milestone 35): how many, and the pixels they found differing from
+ * what the page had been handed. Stale pixels mean FreeRDP drew an area without
+ * reporting it; the re-read sends it.
+ */
+export function rereadLabel(core: RdpStats): string {
+  if (!core.rereads) return '';
+  const stale = core.stale_px ? `${core.stale_px.toLocaleString('en-US')} stale px fixed` : 'nothing stale';
+  return `${core.rereads} re-read${core.rereads === 1 ? '' : 's'} · ${stale}`;
+}

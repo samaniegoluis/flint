@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { chooseRenderer, isSoftwareRenderer } from './deskRenderer';
-import { FrameMeter, pipelineLabel, ratesBetween, type StatsSample } from './rdpStats';
+import { FrameMeter, linkLabel, pipelineLabel, ratesBetween, rereadLabel, type StatsSample } from './rdpStats';
 import type { RdpStats } from '../api/types';
 
-const core = (p: Partial<RdpStats> = {}): RdpStats => ({ updates: 0, bytes_in: 0, commands: 0, decode_us: 0, frames_read: 0, pipeline: 'gfx', codec: 'progressive', h264: true, ...p });
+const core = (p: Partial<RdpStats> = {}): RdpStats => ({ updates: 0, bytes_in: 0, commands: 0, decode_us: 0, frames_read: 0, pipeline: 'gfx', codec: 'progressive', h264: true, rereads: 0, stale_px: 0, link_kbps: 0, link_rtt_ms: 0, mode: 'auto', ...p });
 
 describe('RDP drawing', () => {
   it('uses WebGL only on a real GPU, unless a test forces a renderer', () => {
@@ -56,5 +56,18 @@ describe('RDP statistics', () => {
     expect(pipelineLabel(core({ codec: 'clearcodec,planar,avc420' }))).toBe('graphics pipeline · clearcodec, planar, avc420');
     expect(pipelineLabel(core({ pipeline: 'bitmap', codec: '' }))).toBe('bitmap updates');
     expect(pipelineLabel(core({ pipeline: '' }))).toBe('');
+  });
+});
+
+describe('RDP link and re-reads (milestone 35)', () => {
+  it('shows the measured link only once the server has measured it', () => {
+    expect(linkLabel(core())).toBe('');
+    expect(linkLabel(core({ link_kbps: 20000, link_rtt_ms: 12 }))).toBe('20.0 Mbit/s · 12 ms');
+    expect(linkLabel(core({ link_kbps: 800 }))).toBe('800 kbit/s');
+  });
+  it('counts re-reads and the stale pixels they fixed', () => {
+    expect(rereadLabel(core())).toBe('');
+    expect(rereadLabel(core({ rereads: 1 }))).toBe('1 re-read · nothing stale');
+    expect(rereadLabel(core({ rereads: 3, stale_px: 12345 }))).toBe('3 re-reads · 12,345 stale px fixed');
   });
 });

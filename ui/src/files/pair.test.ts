@@ -4,7 +4,7 @@ import { folderLabel } from './FileList';
 import type { Pane } from '../sessions/store';
 
 const tab = (id: string, p: Partial<Pane>): Pane => ({
-  id, kind: 'ssh', desktop: null, tab: 't-' + id, alias: 'db', session: 's-' + id, status: 'ready', prompt: null, changedKey: null, end: null, connectedAt: 1, endedAt: 0, noCommand: false, cwd: '', ...p,
+  id, kind: 'ssh', desktop: null, tab: 't-' + id, alias: 'db', session: 's-' + id, status: 'ready', prompt: null, changedKey: null, end: null, connectedAt: 1, endedAt: 0, noCommand: false, cwd: '', graphics: '', graphicsSwitching: false, graphicsNote: '', ...p,
 });
 const pair = (p: Partial<Pair>): Pair => ({
   tabId: 't1', alias: 'db', session: 's-old', own: false, otherTab: 't2', status: 'ready', prompt: null, changedKey: null, end: null, hidden: false, ...p,
