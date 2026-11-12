@@ -109,6 +109,11 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
         gl.dispose();
         if (webglRef.current === gl) webglRef.current = null;
         requestAnimationFrame(() => term.refresh(0, term.rows - 1));
+        // The DOM renderer has been seen to keep its rows empty after the first
+        // refresh (gui-e2e rdp, 7 of 25 runs, M34): draw everything once more.
+        setTimeout(() => {
+          if (termRef.current === term) term.refresh(0, term.rows - 1);
+        }, 250);
       });
       term.loadAddon(gl);
       webglRef.current = gl;

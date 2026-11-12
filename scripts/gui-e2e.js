@@ -1064,7 +1064,10 @@
             await runInTerminal('clear; echo drawn-$((50+5))', 'drawn-55');
             glc?.getExtension('WEBGL_lose_context')?.loseContext();
             const drawn = await waitFor(() => (host?.querySelector('.xterm-rows')?.textContent ?? '').includes('drawn-55'), 'the terminal drawn again', 5000).catch(() => false);
-            await check(drawn, 'after a lost WebGL context the whole terminal is drawn again');
+            // On a failure, the renderer's state: paused/needs-full-refresh, DOM rows, the
+            // terminal's size, whether the buffer has the mark, the rows' box.
+            const diag = `D ${activeTerm()?._core?._renderService?._isPaused}/${activeTerm()?._core?._renderService?._needsFullRefresh} n=${host?.querySelector('.xterm-rows')?.children.length} r=${activeTerm()?.rows} c=${activeTerm()?.cols} buf=${termText().includes('drawn-55')} cw=${host?.querySelector('.xterm-rows')?.offsetWidth}x${host?.querySelector('.xterm-rows')?.offsetHeight}`;
+            await check(drawn, `after a lost WebGL context the whole terminal is drawn again (${diag})`);
             await click('.tab', 'rdp-clip');
             await waitFor(() => canvas(), 'the desktop again');
             await sleep(300);
