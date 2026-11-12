@@ -152,6 +152,9 @@ type RdpTarget struct {
     // The link's round trip measured before connecting (rd_probe_rtt), -1 when not
     // measured; kept for Stats.
     rtt_ms: i64
+    // Milestone 38: the monitors the desktop spans (check_rdp_layout), empty for one
+    // monitor of `width` x `height`; then `width` x `height` is the layout's bounds.
+    monitors: []RdpMonitor
 }
 
 // A switch's outcome (milestone 35): `why` is "" when the tab reconnected, in `graphics`
@@ -285,6 +288,9 @@ type RdpEvent struct {
     message: str
     width: i64
     height: i64
+    // Milestone 38: with `resize` and `graphics`, the layout the reconnect keeps
+    // (empty: one monitor of `width` x `height`).
+    monitors: []RdpMonitor
 }
 
 // Self-signed: issued by its own subject, the normal case for a Windows host.

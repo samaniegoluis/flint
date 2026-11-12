@@ -342,6 +342,13 @@ type RemoteDesktop interface {
     // Asks for a new desktop size. With Display Control the server resizes in place;
     // without it the size is kept and `rd_wait` reports a `resize`.
     rd_resize(tab: str, width: i64, height: i64) -> void!
+    // Milestone 38 (D-089): the desktop across several monitors, `monitors` a layout
+    // check_rdp_layout accepts (the primary first, at 0,0). With Display Control the
+    // server rearranges in place, the session kept; without it `rd_wait` reports a
+    // `resize` carrying the layout, which a reconnect gives. From here on the frame
+    // channel serves one view per monitor (layout_crops' order), and `rd_resize` goes
+    // back to one monitor.
+    rd_set_layout(tab: str, monitors: []RdpMonitor) -> void!
     // Waits up to `wait_ms` for the session to end or to need a reconnect.
     rd_wait(tab: str, wait_ms: i64) -> RdpEvent
     rd_key(tab: str, code: str, down: bool) -> void!
@@ -367,6 +374,17 @@ type RemoteDesktop interface {
     // Ends the tab's connection (an `rd_open` in progress is cancelled) and its frame
     // channel. A tab with nothing open is left as it is.
     rd_close(tab: str)
+}
+
+// This computer's monitors (milestone 38, D-089): native per system in the desktop app
+// (CF-126); the CLI has none.
+type Screens interface {
+    // "" when a desktop can span monitors on this system, else why not, in the words
+    // the page shows ("Not supported on this system yet").
+    screens_unsupported() -> str
+    screens_list() -> []LocalMonitor
+    // The monitor Flint's main window is on ("" when unknown).
+    screens_main() -> str
 }
 
 // Where a remote desktop tells its driver that it is up (webui events in the app).

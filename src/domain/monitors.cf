@@ -1,0 +1,542 @@
+package domain
+
+// Several monitors in one remote desktop (milestone 38, D-089). Plain types and rules,
+// no I/O (Principle 1): the monitors this computer has, which of them a desktop spans,
+// and the layout the remote is told, where Windows sees each monitor with its size and
+// position (its taskbar on the primary, maximize per monitor).
+//
+// Built for N monitors, released for MAX_MONITORS: the windows, the layout and the
+// frame crops are lists, never a fixed pair (D-089 (5)).
+
+// How many monitors a desktop may span in this release. RDP allows 16.
+MAX_MONITORS: i64 = 2
+RDP_MAX_MONITORS: i64 = 16
+
+// A monitor of this computer, as its system reports it. The frame is in logical points
+// (CSS pixels), origin at the top-left of the system's primary display, y down; on
+// Windows, where a process aware of each monitor's DPI is given physical pixels, the
+// frame is physical and `physical` is set (logical_monitors converts it). `scale` is
+// the monitor's scale in percent (100, 150, 200). `id` is the system's own and stable
+// while the monitor stays connected; it names no vault data (Principle 5).
+type LocalMonitor struct {
+    id: str
+    name: str
+    x: i64
+    y: i64
+    width: i64
+    height: i64
+    scale: i64
+    primary: bool
+    physical: bool
+}
+
+// A monitor chosen for the desktop, with the size its window measured once it was
+// shown full screen there (CSS pixels): smaller than the monitor's frame where the
+// system keeps part of it (the notch's band in macOS's full screen). 0 x 0 takes the
+// frame.
+type MonitorPick struct {
+    id: str
+    width: i64
+    height: i64
+}
+
+// One monitor of the remote's layout, in desktop pixels at 100 %: the primary at 0,0,
+// the others placed around it as they are here. `local_id` is the monitor of this
+// computer that shows it. Orientation is always landscape with the size already
+// turned, which Windows accepts for a portrait monitor (D-089 (1)).
+type RdpMonitor struct {
+    local_id: str
+    x: i64
+    y: i64
+    width: i64
+    height: i64
+    primary: bool
+}
+
+// A rectangle of the desktop's one surface, in its pixels from its top-left.
+type DesktopRect struct {
+    x: i64
+    y: i64
+    width: i64
+    height: i64
+}
+
+fn abs_i64(v: i64) -> i64 {
+    if v < 0 {
+        return 0 - v
+    }
+    return v
+}
+
+fn min_i64(a: i64, b: i64) -> i64 {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+fn max_i64(a: i64, b: i64) -> i64 {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+fn monitor_index(ms: []LocalMonitor, id: str) -> i64 {
+    for i, m in ms {
+        if m.id == id {
+            return i64(i)
+        }
+    }
+    return -1
+}
+
+fn scale_of(m: LocalMonitor) -> i64 {
+    if m.scale <= 0 {
+        return 100
+    }
+    return m.scale
+}
+
+// The monitors with their frames in logical points. A physical frame (Windows) is
+// divided by its own scale, and each monitor is placed against a neighbour already
+// placed, starting from `main_id`'s: monitors that touch here touch in points too,
+// whatever their scales, as Windows itself lays out a DPI-unaware view. A monitor that
+// touches none is placed by its offset from the main one at the main one's scale.
+fn logical_monitors(ms: []LocalMonitor, main_id: str) -> []LocalMonitor {
+    mut any_physical := false
+    for m in ms {
+        if m.physical {
+            any_physical = true
+        }
+    }
+    if !any_physical {
+        return ms
+    }
+    mut res: []LocalMonitor = []
+    mut placed: []bool = []
+    for m in ms {
+        mut l := m
+        l.width = m.width * 100 / scale_of(m)
+        l.height = m.height * 100 / scale_of(m)
+        l.physical = false
+        res.push(l)
+        placed.push(false)
+    }
+    mut main := monitor_index(ms, main_id)
+    if main < 0 {
+        main = 0
+    }
+    if ms.len() == 0 {
+        return res
+    }
+    placed[usize(main)] = true
+    mut progress := true
+    for progress {
+        progress = false
+        for i in 0..ms.len() {
+            if placed[i] {
+                continue
+            }
+            m := ms[i]
+            for j in 0..ms.len() {
+                if !placed[j] || placed[i] {
+                    continue
+                }
+                p := ms[j]
+                lp := res[j]
+                ps := scale_of(p)
+                // Shares an edge: right, left, below or above `p`, overlapping along it.
+                along_y := m.y < p.y + p.height && p.y < m.y + m.height
+                along_x := m.x < p.x + p.width && p.x < m.x + m.width
+                if along_y && m.x == p.x + p.width {
+                    res[i].x = lp.x + lp.width
+                    res[i].y = lp.y + (m.y - p.y) * 100 / ps
+                    placed[i] = true
+                } else if along_y && m.x + m.width == p.x {
+                    res[i].x = lp.x - res[i].width
+                    res[i].y = lp.y + (m.y - p.y) * 100 / ps
+                    placed[i] = true
+                } else if along_x && m.y == p.y + p.height {
+                    res[i].y = lp.y + lp.height
+                    res[i].x = lp.x + (m.x - p.x) * 100 / ps
+                    placed[i] = true
+                } else if along_x && m.y + m.height == p.y {
+                    res[i].y = lp.y - res[i].height
+                    res[i].x = lp.x + (m.x - p.x) * 100 / ps
+                    placed[i] = true
+                }
+                if placed[i] {
+                    progress = true
+                }
+            }
+        }
+    }
+    mm := ms[usize(main)]
+    ms_scale := scale_of(mm)
+    for i in 0..ms.len() {
+        if !placed[i] {
+            res[i].x = res[usize(main)].x + (ms[i].x - mm.x) * 100 / ms_scale
+            res[i].y = res[usize(main)].y + (ms[i].y - mm.y) * 100 / ms_scale
+        }
+    }
+    return res
+}
+
+fn rects_overlap(a: RdpMonitor, b: RdpMonitor) -> bool {
+    return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+}
+
+// The layout a desktop over `picks` tells the remote: one monitor per pick, in the
+// picks' order with `main_id`'s first (it is the primary, where Flint's window is).
+// Each is the size its window measured, kept at the bottom of its monitor's frame (the
+// band macOS keeps is at the top), made a size RDP accepts; the primary is moved to
+// 0,0 and the others keep their places around it.
+fn desktop_layout(locals: []LocalMonitor, picks: []MonitorPick, main_id: str, max: i64) -> []RdpMonitor! {
+    if picks.len() == 0 {
+        return error(coded(ERR_INVALID, "a desktop needs at least one monitor"))
+    }
+    mut cap := max
+    if cap > RDP_MAX_MONITORS {
+        cap = RDP_MAX_MONITORS
+    }
+    if i64(picks.len()) > cap {
+        return error(coded(ERR_INVALID, "a desktop spans at most {cap} monitors"))
+    }
+    for i in 0..picks.len() {
+        for j in 0..i {
+            if picks[i].id == picks[j].id {
+                return error(coded(ERR_INVALID, "a monitor is chosen twice"))
+            }
+        }
+        if monitor_index(locals, picks[i].id) < 0 {
+            return error(coded(ERR_NOT_FOUND, "a chosen monitor is no longer connected"))
+        }
+    }
+    mut main_pick := -1
+    for i, p in picks {
+        if p.id == main_id {
+            main_pick = i64(i)
+        }
+    }
+    if main_pick < 0 {
+        return error(coded(ERR_INVALID, "the monitor Flint's window is on must be one of the desktop's"))
+    }
+    logical := logical_monitors(locals, main_id)
+    mut order: []MonitorPick = [picks[usize(main_pick)]]
+    for i, p in picks {
+        if i64(i) != main_pick {
+            order.push(p)
+        }
+    }
+    mut res: []RdpMonitor = []
+    for p in order {
+        f := logical[usize(monitor_index(logical, p.id))]
+        mut w := f.width
+        mut h := f.height
+        if p.width > 0 && p.width < w {
+            w = p.width
+        }
+        if p.height > 0 && p.height < h {
+            h = p.height
+        }
+        size := fit_desktop_size(w, h)
+        res.push(RdpMonitor{ local_id: p.id, x: f.x, y: f.y + f.height - h, width: size.width, height: size.height, primary: p.id == main_id })
+    }
+    ox := res[0].x
+    oy := res[0].y
+    for i in 0..res.len() {
+        res[i].x = res[i].x - ox
+        res[i].y = res[i].y - oy
+    }
+    try check_rdp_layout(res)
+    return res
+}
+
+// A layout RDP accepts: 1 to 16 monitors, the first the primary at 0,0 and the only
+// one, every size one Display Control takes, none overlapping another.
+fn check_rdp_layout(ms: []RdpMonitor) -> void! {
+    if ms.len() == 0 || i64(ms.len()) > RDP_MAX_MONITORS {
+        return error(coded(ERR_INVALID, "a layout has 1 to {RDP_MAX_MONITORS} monitors"))
+    }
+    if !ms[0].primary || ms[0].x != 0 || ms[0].y != 0 {
+        return error(coded(ERR_INVALID, "a layout's first monitor is the primary, at 0,0"))
+    }
+    for i, m in ms {
+        if i > 0 && m.primary {
+            return error(coded(ERR_INVALID, "a layout has one primary monitor"))
+        }
+        if m.width < RDP_MIN_SIDE || m.width > RDP_MAX_SIDE || m.height < RDP_MIN_SIDE || m.height > RDP_MAX_SIDE || m.width % 2 == 1 {
+            return error(coded(ERR_INVALID, "a monitor of {m.width}x{m.height} is not a size RDP accepts"))
+        }
+        for j in 0..i {
+            if rects_overlap(m, ms[j]) {
+                return error(coded(ERR_INVALID, "two monitors of the layout overlap"))
+            }
+        }
+    }
+    bounds := layout_bounds(ms)
+    if bounds.width > 32766 || bounds.height > 32766 {
+        return error(coded(ERR_INVALID, "the monitors span more than RDP's desktop allows"))
+    }
+}
+
+// The desktop's one surface: the box around every monitor.
+fn layout_bounds(ms: []RdpMonitor) -> DesktopRect {
+    if ms.len() == 0 {
+        return DesktopRect{ x: 0, y: 0, width: 0, height: 0 }
+    }
+    mut x1 := ms[0].x
+    mut y1 := ms[0].y
+    mut x2 := ms[0].x + ms[0].width
+    mut y2 := ms[0].y + ms[0].height
+    for m in ms {
+        x1 = min_i64(x1, m.x)
+        y1 = min_i64(y1, m.y)
+        x2 = max_i64(x2, m.x + m.width)
+        y2 = max_i64(y2, m.y + m.height)
+    }
+    return DesktopRect{ x: x1, y: y1, width: x2 - x1, height: y2 - y1 }
+}
+
+// Where each monitor's part lies in the surface, in the layout's order: what its
+// window draws and where its pointer lands.
+fn layout_crops(ms: []RdpMonitor) -> []DesktopRect {
+    b := layout_bounds(ms)
+    mut res: []DesktopRect = []
+    for m in ms {
+        res.push(DesktopRect{ x: m.x - b.x, y: m.y - b.y, width: m.width, height: m.height })
+    }
+    return res
+}
+
+// The length two monitors' frames share along an edge they touch (0: none).
+fn shared_edge(a: LocalMonitor, b: LocalMonitor) -> i64 {
+    if a.x + a.width == b.x || b.x + b.width == a.x {
+        return max_i64(0, min_i64(a.y + a.height, b.y + b.height) - max_i64(a.y, b.y))
+    }
+    if a.y + a.height == b.y || b.y + b.height == a.y {
+        return max_i64(0, min_i64(a.x + a.width, b.x + b.width) - max_i64(a.x, b.x))
+    }
+    return 0
+}
+
+// The monitors a desktop spans when nobody chose (or the choice is gone): the main
+// one first, then those remembered from the last choice that are still connected, then
+// the main one's neighbours by the longest shared edge, then the nearest; at most
+// `max`. Ids in that order.
+fn default_monitor_picks(locals: []LocalMonitor, main_id: str, remembered: []str, max: i64) -> []str {
+    mut res: []str = []
+    mi := monitor_index(locals, main_id)
+    if mi < 0 || max <= 0 {
+        return res
+    }
+    res.push(main_id)
+    for id in remembered {
+        if i64(res.len()) >= max {
+            return res
+        }
+        if monitor_index(locals, id) >= 0 && !str_in(res, id) {
+            res.push(id)
+        }
+    }
+    logical := logical_monitors(locals, main_id)
+    main := logical[usize(mi)]
+    for i64(res.len()) < max {
+        mut best := -1
+        mut best_edge: i64 = -1
+        mut best_dist: i64 = 0
+        for i, m in logical {
+            if str_in(res, m.id) {
+                continue
+            }
+            edge := shared_edge(main, m)
+            dist := abs_i64((m.x + m.width / 2) - (main.x + main.width / 2)) + abs_i64((m.y + m.height / 2) - (main.y + main.height / 2))
+            if best < 0 || edge > best_edge || (edge == best_edge && dist < best_dist) {
+                best = i64(i)
+                best_edge = edge
+                best_dist = dist
+            }
+        }
+        if best < 0 {
+            return res
+        }
+        res.push(logical[usize(best)].id)
+    }
+    return res
+}
+
+fn str_in(xs: []str, s: str) -> bool {
+    for x in xs {
+        if x == s {
+            return true
+        }
+    }
+    return false
+}
+
+// ---- Tests --------------------------------------------------------------------------
+
+// The owner's desk: a landscape 2560x1440 (the system's primary), a portrait
+// 1080x1920 to its left, a laptop 1512x982 at 2x below the landscape, a fourth to its
+// right.
+fn owner_desk() -> []LocalMonitor {
+    return [
+        LocalMonitor{ id: "1", name: "DELL", x: 0, y: 0, width: 2560, height: 1440, scale: 100, primary: true, physical: false },
+        LocalMonitor{ id: "2", name: "LG", x: -1080, y: -235, width: 1080, height: 1920, scale: 100, primary: false, physical: false },
+        LocalMonitor{ id: "3", name: "Built-in", x: 524, y: 1440, width: 1512, height: 982, scale: 200, primary: false, physical: false },
+        LocalMonitor{ id: "4", name: "HP", x: 2560, y: 360, width: 1920, height: 1080, scale: 100, primary: false, physical: false },
+    ]
+}
+
+test "the owner's landscape and portrait are laid out as they stand" {
+    picks: []MonitorPick = [MonitorPick{ id: "1", width: 0, height: 0 }, MonitorPick{ id: "2", width: 0, height: 0 }]
+    l := try desktop_layout(owner_desk(), picks, "1", 2)
+    assert_eq(l.len(), 2)
+    assert_eq(l[0].local_id, "1")
+    assert(l[0].primary)
+    assert_eq(l[0].x, 0)
+    assert_eq(l[0].width, 2560)
+    assert_eq(l[1].x, -1080)
+    assert_eq(l[1].y, -235)
+    assert_eq(l[1].height, 1920)
+    b := layout_bounds(l)
+    // The spike's desktop for this pair (D-089).
+    assert_eq(b.width, 3640)
+    assert_eq(b.height, 1920)
+    crops := layout_crops(l)
+    assert_eq(crops[0].x, 1080)
+    assert_eq(crops[0].y, 235)
+    assert_eq(crops[1].x, 0)
+    assert_eq(crops[1].y, 0)
+}
+
+test "the main monitor is the primary even when the system's is another" {
+    picks: []MonitorPick = [MonitorPick{ id: "1", width: 0, height: 0 }, MonitorPick{ id: "2", width: 0, height: 0 }]
+    l := try desktop_layout(owner_desk(), picks, "2", 2)
+    assert_eq(l[0].local_id, "2")
+    assert_eq(l[0].x, 0)
+    assert_eq(l[0].y, 0)
+    assert_eq(l[1].x, 1080)
+    assert_eq(l[1].y, 235)
+}
+
+test "a window smaller than its monitor keeps to the monitor's bottom" {
+    // macOS's full screen on the notched laptop leaves 1512x949.
+    picks: []MonitorPick = [MonitorPick{ id: "3", width: 1512, height: 949 }, MonitorPick{ id: "1", width: 2560, height: 1440 }]
+    l := try desktop_layout(owner_desk(), picks, "3", 2)
+    assert_eq(l[0].height, 949)
+    assert_eq(l[1].x, -524)
+    // The landscape sits right above the laptop's whole frame: 1440 + the 33 kept.
+    assert_eq(l[1].y, -1473)
+    try check_rdp_layout(l)
+}
+
+test "an odd width is made even and a measured size never exceeds the frame" {
+    ms: []LocalMonitor = [
+        LocalMonitor{ id: "a", name: "", x: 0, y: 0, width: 1367, height: 768, scale: 100, primary: true, physical: false },
+        LocalMonitor{ id: "b", name: "", x: 1367, y: 0, width: 1920, height: 1080, scale: 100, primary: false, physical: false },
+    ]
+    picks: []MonitorPick = [MonitorPick{ id: "a", width: 5000, height: 5000 }, MonitorPick{ id: "b", width: 0, height: 0 }]
+    l := try desktop_layout(ms, picks, "a", 2)
+    assert_eq(l[0].width, 1366)
+    assert_eq(l[0].height, 768)
+    assert_eq(l[1].x, 1367)
+}
+
+test "the cap, a duplicate, an unknown monitor and a missing main are refused" {
+    desk := owner_desk()
+    mut msgs: []str = []
+    three: []MonitorPick = [MonitorPick{ id: "1", width: 0, height: 0 }, MonitorPick{ id: "2", width: 0, height: 0 }, MonitorPick{ id: "4", width: 0, height: 0 }]
+    desktop_layout(desk, three, "1", 2) or err { msgs.push("{err.message()}") }
+    twice: []MonitorPick = [MonitorPick{ id: "1", width: 0, height: 0 }, MonitorPick{ id: "1", width: 0, height: 0 }]
+    desktop_layout(desk, twice, "1", 2) or err { msgs.push("{err.message()}") }
+    gone: []MonitorPick = [MonitorPick{ id: "1", width: 0, height: 0 }, MonitorPick{ id: "9", width: 0, height: 0 }]
+    desktop_layout(desk, gone, "1", 2) or err { msgs.push("{err.message()}") }
+    nomain: []MonitorPick = [MonitorPick{ id: "2", width: 0, height: 0 }]
+    desktop_layout(desk, nomain, "1", 2) or err { msgs.push("{err.message()}") }
+    no_picks: []MonitorPick = []
+    desktop_layout(desk, no_picks, "1", 2) or err { msgs.push("{err.message()}") }
+    assert_eq(msgs.len(), 5)
+    assert_eq(error_code_of(msgs[2]), ERR_NOT_FOUND)
+    // Built for N: the same three are a layout once the cap allows them.
+    l := try desktop_layout(desk, three, "1", 3)
+    assert_eq(l.len(), 3)
+    assert_eq(l[2].x, 2560)
+    assert_eq(l[2].y, 360)
+}
+
+test "physical frames at mixed scales touch in points as they touch in pixels" {
+    // Windows: a 4K at 150 % as primary and a 1920x1080 at 100 % to its right, aligned
+    // at the top, in physical pixels.
+    ms: []LocalMonitor = [
+        LocalMonitor{ id: "A", name: "", x: 0, y: 0, width: 3840, height: 2160, scale: 150, primary: true, physical: true },
+        LocalMonitor{ id: "B", name: "", x: 3840, y: 300, width: 1920, height: 1080, scale: 100, primary: false, physical: true },
+    ]
+    lg := logical_monitors(ms, "A")
+    assert_eq(lg[0].width, 2560)
+    assert_eq(lg[0].height, 1440)
+    assert_eq(lg[1].x, 2560)
+    assert_eq(lg[1].y, 200)
+    assert_eq(lg[1].width, 1920)
+    picks: []MonitorPick = [MonitorPick{ id: "A", width: 0, height: 0 }, MonitorPick{ id: "B", width: 0, height: 0 }]
+    l := try desktop_layout(ms, picks, "A", 2)
+    assert_eq(l[1].x, 2560)
+    assert(!rects_overlap(l[0], l[1]))
+    // From the other side: B the main one, A placed to its left.
+    lb := logical_monitors(ms, "B")
+    assert_eq(lb[0].x, lb[1].x - 2560)
+    assert_eq(lb[0].y, lb[1].y - 300)
+}
+
+test "a layout RDP would refuse is caught" {
+    ok: []RdpMonitor = [RdpMonitor{ local_id: "a", x: 0, y: 0, width: 1920, height: 1080, primary: true }, RdpMonitor{ local_id: "b", x: 1920, y: 0, width: 1080, height: 1920, primary: false }]
+    try check_rdp_layout(ok)
+    mut refused := 0
+    overlap: []RdpMonitor = [RdpMonitor{ local_id: "a", x: 0, y: 0, width: 1920, height: 1080, primary: true }, RdpMonitor{ local_id: "b", x: 1900, y: 0, width: 1080, height: 1920, primary: false }]
+    check_rdp_layout(overlap) or { refused += 1 }
+    two_primaries: []RdpMonitor = [RdpMonitor{ local_id: "a", x: 0, y: 0, width: 1920, height: 1080, primary: true }, RdpMonitor{ local_id: "b", x: 1920, y: 0, width: 1080, height: 1920, primary: true }]
+    check_rdp_layout(two_primaries) or { refused += 1 }
+    moved: []RdpMonitor = [RdpMonitor{ local_id: "a", x: 10, y: 0, width: 1920, height: 1080, primary: true }]
+    check_rdp_layout(moved) or { refused += 1 }
+    odd: []RdpMonitor = [RdpMonitor{ local_id: "a", x: 0, y: 0, width: 1921, height: 1080, primary: true }]
+    check_rdp_layout(odd) or { refused += 1 }
+    empty: []RdpMonitor = []
+    check_rdp_layout(empty) or { refused += 1 }
+    assert_eq(refused, 5)
+}
+
+test "the default monitors are the main one, the remembered, then the nearest neighbour" {
+    desk := owner_desk()
+    nothing: []str = []
+    // The landscape shares 1440 with the portrait, 1080 with the HP, 1512 with the laptop.
+    d := default_monitor_picks(desk, "1", nothing, 2)
+    assert_eq(d.len(), 2)
+    assert_eq(d[0], "1")
+    assert_eq(d[1], "3")
+    remembered: []str = ["9", "2"]
+    r := default_monitor_picks(desk, "1", remembered, 2)
+    assert_eq(r[1], "2")
+    all := default_monitor_picks(desk, "1", nothing, 16)
+    assert_eq(all.len(), 4)
+    one := default_monitor_picks(desk, "1", nothing, 1)
+    assert_eq(one.len(), 1)
+    assert_eq(default_monitor_picks(desk, "7", nothing, 2).len(), 0)
+}
+
+fuzz "a layout from any two side-by-side monitors is one RDP accepts" |w1: i64, h1: i64, w2: i64, h2: i64, dy: i64| {
+    a := LocalMonitor{ id: "a", name: "", x: 0, y: 0, width: 200 + abs_i64(w1 % 7000), height: 200 + abs_i64(h1 % 7000), scale: 100, primary: true, physical: false }
+    b := LocalMonitor{ id: "b", name: "", x: a.width, y: dy % 3000, width: 200 + abs_i64(w2 % 7000), height: 200 + abs_i64(h2 % 7000), scale: 100, primary: false, physical: false }
+    ms: []LocalMonitor = [a, b]
+    picks: []MonitorPick = [MonitorPick{ id: "b", width: 0, height: 0 }, MonitorPick{ id: "a", width: 0, height: 0 }]
+    l := desktop_layout(ms, picks, "b", 2) or {
+        assert(false)
+        return
+    }
+    try check_rdp_layout(l)
+    crops := layout_crops(l)
+    b2 := layout_bounds(l)
+    for c in crops {
+        assert(c.x >= 0 && c.y >= 0 && c.x + c.width <= b2.width && c.y + c.height <= b2.height)
+    }
+}

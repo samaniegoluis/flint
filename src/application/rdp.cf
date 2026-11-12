@@ -252,6 +252,22 @@ fn announce_desktop_clipboard[R: RemoteDesktop, L: Clipboard](mut rd: R, mut cli
     try rd.rd_clip_announce(tab, got.text.len() > 0)
 }
 
+// A reconnect keeps the monitors the desktop spans (milestone 38): the target takes the
+// layout and its bounds as its size. A layout RDP would refuse is left out (one
+// monitor at the size asked), never sent.
+fn with_layout(mut t: RdpTarget, monitors: []RdpMonitor) {
+    if monitors.len() == 0 {
+        return
+    }
+    check_rdp_layout(monitors) or {
+        return
+    }
+    b := layout_bounds(monitors)
+    t.monitors = monitors
+    t.width = b.width
+    t.height = b.height
+}
+
 // Reconnects a running tab at the size of `ev`. Leaves the session as it is when its
 // login cannot be read now; fails, with the tab closed, when the new connection does.
 fn reconnect_at_size[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: RdpEvent) -> void! {
@@ -259,13 +275,14 @@ fn reconnect_at_size[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](cr
     graphics := rdp_graphics_of(req) or {
         return
     }
-    t := rdp_target(crypto, store, session, prompter, req.alias, size, graphics, false) or {
+    mut t := rdp_target(crypto, store, session, prompter, req.alias, size, graphics, false) or {
         return
     }
     defer crypto.wipe_text(t.password)
     if t.trusted_fingerprint.len() == 0 {
         return
     }
+    with_layout(mut t, ev.monitors)
     mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "", graphics: "", rtt_ms: -1 }
     failure := rd_try_open(mut rd, req.tab, t, req.timeout_ms, mut d)
     if failure.len() > 0 {
@@ -295,6 +312,7 @@ fn reconnect_in_mode[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](cr
     if t.trusted_fingerprint.len() == 0 {
         return RdpModeSwitch{ why: "the server's certificate is not trusted yet", graphics: "", rtt_ms: -1 }
     }
+    with_layout(mut t, ev.monitors)
     resolve_rdp_graphics(mut rd, mut t)
     mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "", graphics: "", rtt_ms: -1 }
     failure := rd_try_open(mut rd, req.tab, t, req.timeout_ms, mut d)

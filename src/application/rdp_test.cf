@@ -15,6 +15,8 @@ type FakeDesktop struct {
     keys: []str
     pointers: []RdpPointer
     resizes: []DesktopSize
+    // Each layout asked for, as its monitors' local ids joined by ",".
+    layouts: []str
     announces: []bool
     answers: []str
     modes: []str
@@ -62,6 +64,17 @@ fn (self: FakeDesktop) rd_presented_cert(tab: str) -> RdpCert {
 
 fn (mut self: FakeDesktop) rd_resize(tab: str, width: i64, height: i64) -> void! {
     self.resizes.push(DesktopSize{ width: width, height: height })
+}
+
+fn (mut self: FakeDesktop) rd_set_layout(tab: str, monitors: []RdpMonitor) -> void! {
+    mut ids := ""
+    for i, m in monitors {
+        if i > 0 {
+            ids = ids + ","
+        }
+        ids = ids + m.local_id
+    }
+    self.layouts.push(ids)
 }
 
 fn (mut self: FakeDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {

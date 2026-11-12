@@ -17,6 +17,10 @@ type UiState struct {
     files_width:   i64            `json:"files_width"`
     // The full-screen note was shown once (milestone 37, design 22b2).
     fullscreen_note_seen: bool    `json:"fullscreen_note_seen"`
+    // Milestone 38: the monitors last chosen for a desktop across monitors (the
+    // system's own ids, D-089), and whether its first-time note was shown (22f4).
+    monitors:      []str          `json:"monitors"`
+    monitors_note_seen: bool      `json:"monitors_note_seen"`
     vaults:        []VaultUiState `json:"vaults"`
 }
 
@@ -75,6 +79,33 @@ fn clamp_files_width(w: i64) -> i64 {
     return w
 }
 
+// A monitor id as a system gives it (a number on macOS, a connector or device name on
+// Linux and Windows): printable ASCII, at most 64 bytes; at most RDP_MAX_MONITORS kept.
+UI_STATE_MAX_MONITOR_ID: usize = 64
+
+fn clean_monitor_ids(ids: []str) -> []str {
+    mut res: []str = []
+    for id in ids {
+        if i64(res.len()) >= RDP_MAX_MONITORS {
+            break
+        }
+        if id.len() == 0 || id.len() > UI_STATE_MAX_MONITOR_ID {
+            continue
+        }
+        mut ok := true
+        for b in id.bytes() {
+            c := u8(b)
+            if c < 32 || c > 126 {
+                ok = false
+            }
+        }
+        if ok && !str_in(res, id) {
+            res.push(id)
+        }
+    }
+    return res
+}
+
 // Only valid, distinct ids, at most UI_STATE_MAX_COLLAPSED of them.
 fn clean_collapsed(ids: []str) -> []str {
     mut res: []str = []
@@ -102,7 +133,7 @@ fn clean_collapsed(ids: []str) -> []str {
 // repeated vault and group ids left out, the vault list capped. A hand-edited or
 // partly damaged file therefore loads as the parts of it that still make sense.
 fn clean_ui_state(s: UiState) -> UiState {
-    mut res := UiState{ sidebar_open: s.sidebar_open, sidebar_width: clamp_sidebar_width(s.sidebar_width), files_width: clamp_files_width(s.files_width), fullscreen_note_seen: s.fullscreen_note_seen, vaults: [] }
+    mut res := UiState{ sidebar_open: s.sidebar_open, sidebar_width: clamp_sidebar_width(s.sidebar_width), files_width: clamp_files_width(s.files_width), fullscreen_note_seen: s.fullscreen_note_seen, monitors: clean_monitor_ids(s.monitors), monitors_note_seen: s.monitors_note_seen, vaults: [] }
     for v in s.vaults {
         if res.vaults.len() >= UI_STATE_MAX_VAULTS {
             break
@@ -138,6 +169,19 @@ test "ui state is cleaned, not refused" {
     assert_eq(c.vaults[0].collapsed.len(), usize(1))
     assert_eq(c.vaults[0].collapsed[0], b)
     assert_eq(clamp_sidebar_width(10), SIDEBAR_WIDTH_MIN)
+}
+
+test "remembered monitor ids are kept only when they read as ids" {
+    mut long := ""
+    for i in 0..65 {
+        long = long + "x"
+    }
+    c := clean_monitor_ids(["69733382", "DP-1", "69733382", "", "bad\nid", long, "\\\\.\\DISPLAY2"])
+    assert_eq(c.len(), usize(3))
+    assert_eq(c[1], "DP-1")
+    s := clean_ui_state(UiState{ sidebar_open: true, sidebar_width: 264, monitors: ["1", "1", "2"], monitors_note_seen: true, vaults: [] })
+    assert_eq(s.monitors.len(), usize(2))
+    assert(s.monitors_note_seen)
 }
 
 test "the Files view's width is clamped, and 0 is the default" {

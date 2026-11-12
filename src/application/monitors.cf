@@ -1,0 +1,73 @@
+package application
+
+// A remote desktop across several monitors (milestone 38, D-089). The page asks which
+// monitors it may span and with which by default, opens a window on each, measures
+// them, and asks for the layout; the core checks the choice, tells the engine through
+// Display Control and remembers it for next time (per machine, D-030).
+
+import "../domain"
+import "../ports"
+
+// What the page needs before offering "Full screen on all monitors" (design 22f1, 22f2):
+// `reason` is "" when it can, else the line shown on the greyed item; `picks` the
+// monitors chosen by default, the main one first; `max` the cap (D-089 (5)).
+type MonitorsView struct {
+    reason: str `json:"reason"`
+    monitors: []LocalMonitor `json:"monitors"`
+    main: str `json:"main"`
+    picks: []str `json:"picks"`
+    max: i64 `json:"max"`
+}
+
+MONITORS_ONLY_ONE: str = "Only one monitor connected"
+
+// The monitors, why the desktop cannot span them here (if it cannot), and the default
+// choice: the remembered monitors that are still connected, else the main one's
+// nearest neighbours.
+fn desktop_monitors[M: Screens, U: UiStateStore](screens: M, ui: U) -> MonitorsView {
+    list := screens.screens_list()
+    main := screens.screens_main()
+    mut reason := screens.screens_unsupported()
+    if reason.len() == 0 && list.len() < 2 {
+        reason = MONITORS_ONLY_ONE
+    }
+    s := load_ui_state(ui)
+    return MonitorsView{ reason: reason, monitors: list, main: main, picks: default_monitor_picks(list, main, s.monitors, MAX_MONITORS), max: MAX_MONITORS }
+}
+
+// The layout the page draws: each monitor, where its part lies in the one surface,
+// and the surface's size.
+type DesktopSpan struct {
+    monitors: []RdpMonitor `json:"monitors"`
+    crops: []DesktopRect `json:"crops"`
+    width: i64 `json:"width"`
+    height: i64 `json:"height"`
+}
+
+// Spans tab `tab`'s desktop over `picks` (each with the size its window measured),
+// the main window's monitor the primary. Refused where this system cannot, past the
+// cap, or for a monitor that is gone. The extra monitors are remembered for next time;
+// failing to write that never fails the span.
+fn span_remote_desktop[R: RemoteDesktop, M: Screens, U: UiStateStore](mut rd: R, screens: M, mut ui: U, tab: str, picks: []MonitorPick) -> DesktopSpan! {
+    if tab.len() == 0 {
+        return error(coded(ERR_INVALID, "a remote desktop needs a tab id"))
+    }
+    reason := screens.screens_unsupported()
+    if reason.len() > 0 {
+        return error(coded(ERR_UNSUPPORTED, reason))
+    }
+    main := screens.screens_main()
+    layout := try desktop_layout(screens.screens_list(), picks, main, MAX_MONITORS)
+    try rd.rd_set_layout(tab, layout)
+    mut extra: []str = []
+    for m in layout {
+        if !m.primary {
+            extra.push(m.local_id)
+        }
+    }
+    mut s := load_ui_state(ui)
+    s.monitors = extra
+    ui.ui_state_save(clean_ui_state(s)) or {}
+    b := layout_bounds(layout)
+    return DesktopSpan{ monitors: layout, crops: layout_crops(layout), width: b.width, height: b.height }
+}

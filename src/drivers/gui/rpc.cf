@@ -132,6 +132,8 @@ type UiStateReq struct {
     sidebar_width: i64   `json:"sidebar_width"`
     files_width:   i64   `json:"files_width" default:"340"`
     fullscreen_note_seen: bool `json:"fullscreen_note_seen" default:"false"`
+    monitors:      []str `json:"monitors"`
+    monitors_note_seen: bool `json:"monitors_note_seen" default:"false"`
     collapsed:     []str `json:"collapsed"`
 }
 
@@ -412,7 +414,7 @@ fn rpc_ui_state_get(ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState)
 
 fn rpc_ui_state_set(params: str, mut ui: JsonUiStateStore, store: LockedVaultStore, st: GuiState) -> str! {
     req := try parse_req[UiStateReq](params)
-    mut view := UiStateView{ sidebar_open: req.sidebar_open, sidebar_width: req.sidebar_width, files_width: req.files_width, fullscreen_note_seen: req.fullscreen_note_seen, collapsed: req.collapsed }
+    mut view := UiStateView{ sidebar_open: req.sidebar_open, sidebar_width: req.sidebar_width, files_width: req.files_width, fullscreen_note_seen: req.fullscreen_note_seen, monitors: req.monitors, monitors_note_seen: req.monitors_note_seen, collapsed: req.collapsed }
     mut vault := ""
     held := st.vault_session()
     if st.unlocked() && req.vault == held.path {
