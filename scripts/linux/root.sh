@@ -32,6 +32,7 @@ if command -v Xorg >/dev/null && [[ -f /usr/lib/xorg/modules/drivers/dummy_drv.s
     && xrandr --fb 3640x1920 --output DUMMY0 --mode P --pos 0x0 --output DUMMY1 --mode L --pos 1080x235 --primary; then
     mm_display=:78
   fi
+  echo "== the two-monitor display (multimon run): $(xrandr --listmonitors 2>&1 | tr '\n' ' ')"
   unset DISPLAY
 fi
 exec runuser -u flint -- env HOME=/home/flint FLINT_E2E_MULTIMON_DISPLAY="$mm_display" FLINT_E2E_ONLY="${FLINT_E2E_ONLY:-}" FLINT_E2E_VIM="${FLINT_E2E_VIM:-}" \

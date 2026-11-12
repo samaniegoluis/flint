@@ -112,8 +112,11 @@ window.__flint_monitor = (msg) => {
     if (msg.key) {
       for (const down of [true, false]) cv.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code: String(msg.key), key: 'a', bubbles: true, cancelable: true }));
     } else {
+      // A click: it goes out at once, where a move waits for the next frame.
       const r = cv.getBoundingClientRect();
-      cv.dispatchEvent(new MouseEvent('mousemove', { clientX: r.left + Number(msg.x), clientY: r.top + Number(msg.y), bubbles: true }));
+      const at = { clientX: r.left + Number(msg.x), clientY: r.top + Number(msg.y), bubbles: true, button: 0 };
+      cv.dispatchEvent(new MouseEvent('mousedown', at));
+      cv.dispatchEvent(new MouseEvent('mouseup', at));
     }
   } else if (msg.type === 'probe') {
     // What is drawn, for gui-e2e: the canvas's size, the frames, and a few pixels.

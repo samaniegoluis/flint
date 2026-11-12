@@ -215,6 +215,7 @@ for r in "${runs[@]}"; do
       echo "gui-e2e: skip the multimon run (no X display with two monitors; the Linux check makes one)"
       continue
     fi
+    echo "gui-e2e: multimon on $FLINT_E2E_MULTIMON_DISPLAY: $(DISPLAY="$FLINT_E2E_MULTIMON_DISPLAY" xrandr --listmonitors 2>&1 | tr '\n' ' ')"
     saved=("${app[@]}")
     app=(timeout 300 env DISPLAY="$FLINT_E2E_MULTIMON_DISPLAY" build/gui/Flint)
     run_app "$r" "$tmp/$r.js" "$tmp/config-$r" "$tmp/$r.log" "$cap" || failed+=("$r")

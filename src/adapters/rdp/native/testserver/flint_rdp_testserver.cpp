@@ -18,7 +18,7 @@
 //   pasted       the text the client sent last, "-" for none, "fail" for a refusal
 //   formats      the format ids the client announced last, comma-separated
 //   keys         the keys received, "d:0x1d u:0x1d …" (0x100: extended)
-//   clear        forgets pasted text, formats and keys
+//   clear        forgets pasted text, formats, keys and the pointer
 //   drop         closes every client's connection without a goodbye
 //   peers        how many clients are connected
 //   pointer      where the last mouse event landed, "x,y" ("-" for none)
@@ -363,7 +363,7 @@ std::string run(const std::string& line) {
         for (auto& k : g_keys) { if (!out.empty()) out += " "; out += k; }
         return out.empty() ? "-" : out;
     }
-    if (cmd == "clear") { g_pasted = "-"; g_formats.clear(); g_keys.clear(); return "ok"; }
+    if (cmd == "clear") { g_pasted = "-"; g_formats.clear(); g_keys.clear(); g_pointer = "-"; return "ok"; }
     if (cmd == "drop") { for (Peer* p : g_peers) p->drop.store(true); return "ok"; }
     if (cmd == "peers") return std::to_string(g_peers.size());
     if (cmd == "pointer") return g_pointer;

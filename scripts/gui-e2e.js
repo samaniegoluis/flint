@@ -685,7 +685,11 @@
       {
         const r = canvas().getBoundingClientRect();
         const sx = crop0.width / r.width, sy = crop0.height / r.height;
-        canvas().dispatchEvent(new MouseEvent('mousemove', { clientX: r.left + 40 / sx, clientY: r.top + 50 / sy, bubbles: true }));
+        // A click goes out at once; a move waits for the next animation frame.
+        const at = { clientX: r.left + 40 / sx, clientY: r.top + 50 / sy, bubbles: true, button: 0 };
+        await ctl('clear');
+        canvas().dispatchEvent(new MouseEvent('mousedown', at));
+        canvas().dispatchEvent(new MouseEvent('mouseup', at));
         const want = `${crop0.x + 40},${crop0.y + 50}`;
         const got = await waitForAsync(async () => { const v = await ctl('pointer'); return v === want ? v : null; }, 'the main window\'s pointer at its crop', 10000).catch(() => ctl('pointer'));
         await check(got === want, `the main window's pointer lands at the primary's place (${got}, expected ${want})`);
