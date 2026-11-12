@@ -28,6 +28,8 @@ fi
 # failure names its run and one run can be repeated alone. vim fails under Xvfb on Linux
 # (ROADMAP, "gui-e2e's vim step"), so there it runs only when FLINT_E2E_VIM=1.
 #   FLINT_E2E_ONLY=tunnels scripts/gui-e2e.sh    runs only the named runs (comma-separated)
+#   FLINT_E2E_WEBGL_COVER=1 FLINT_E2E_ONLY=webgl  a person hides the window (⌘H) for the
+#                                                 webgl run's loss, as the window asks
 #   FLINT_E2E_MAIN_MS=60000 scripts/gui-e2e.sh   caps each run but vim (default: 240 s)
 #   FLINT_E2E_VISIBLE=0 scripts/gui-e2e.sh       macOS: cfire's offscreen WebView instead of
 #                                                the window. WebKit suspends that page about
@@ -36,7 +38,7 @@ fi
 #                                                (milestone 27, D-068)
 #   scripts/repeat.sh vim 10                     one run N times, with its failure rate
 # Exit status: 0 all passed, 1 a run failed.
-runs=(terminal vault tunnels paste rdp vim)
+runs=(terminal vault tunnels paste rdp webgl vim)
 # rdpbench (milestone 34) is scripts/rdp-bench.sh's: a real Windows host, named only.
 known=("${runs[@]}" rdpbench)
 if [[ "$(uname -s)" == Darwin ]]; then
@@ -149,7 +151,7 @@ values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_P
           "RPORT": os.environ["E2E_RPORT"], "RPORT_FWD": os.environ["E2E_RPORT_FWD"],
           "CPORT": os.environ.get("FLINT_RDP_CLIP_PORT", "0"), "CCTL": os.environ.get("FLINT_RDP_CLIP_CONTROL", "0"),
           "VERSION": os.environ["E2E_VERSION"], "USER": os.environ["USER"], "KEY": key,
-          "RUN": os.environ["E2E_RUN"]}
+          "RUN": os.environ["E2E_RUN"], "COVER": os.environ.get("FLINT_E2E_WEBGL_COVER", "0")}
 # The benchmark's real host, only into its own run's script (milestone 34).
 bench = os.environ["E2E_RUN"] == "rdpbench"
 for k, env in (("BHOST", "FLINT_RDP_TEST_HOST"), ("BUSER", "FLINT_RDP_TEST_USER"), ("BPW", "FLINT_RDP_TEST_PASSWORD")):

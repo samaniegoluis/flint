@@ -39,13 +39,19 @@ for i in $(seq 1 "$n"); do
     cat "$out/$i.log" >&2
     exit 2
   fi
+  # A run may log "diag: …" lines (the webgl run's timeline): shown for every repetition.
+  diag="$(grep -o '\[page\] diag: .*' "$out/$i.log" | sed 's/^\[page\] /  /' || true)"
   if [[ $st -eq 0 ]]; then
     echo "repeat: $run $i/$n: pass (${dt} s)"
   else
     fails=$(( fails + 1 ))
     verdict="$(grep '^e2e: ' "$out/$i.log" | tail -1 | cut -c1-240)"
     echo "repeat: $run $i/$n: FAIL (${dt} s) ${verdict:-no e2e line}"
+    # The failure's whole log, kept after the run (the rest of $out is removed).
+    keep="${TMPDIR:-/tmp}/flint-repeat-fail-$run-$$-$i.log"
+    cp "$out/$i.log" "$keep" && echo "  log: $keep"
   fi
+  [[ -z "$diag" ]] || echo "$diag"
 done
 echo "repeat: $run ($mode): $fails/$n failed ($(( fails * 100 / n )) %), $(( total_s / n )) s a run on average"
 [[ $fails -eq 0 ]]

@@ -108,12 +108,9 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       gl.onContextLoss(() => {
         gl.dispose();
         if (webglRef.current === gl) webglRef.current = null;
+        // A hidden window draws nothing (WebKit stops requestAnimationFrame): this runs
+        // and the rows fill when the window is seen again (M35b).
         requestAnimationFrame(() => term.refresh(0, term.rows - 1));
-        // The DOM renderer has been seen to keep its rows empty after the first
-        // refresh (gui-e2e rdp, 7 of 25 runs, M34): draw everything once more.
-        setTimeout(() => {
-          if (termRef.current === term) term.refresh(0, term.rows - 1);
-        }, 250);
       });
       term.loadAddon(gl);
       webglRef.current = gl;

@@ -34,11 +34,15 @@
   //   rdp       an RDP host in a tab against FreeRDP's sample server (milestone 30);
   //             the clipboard, modifier keys and a dropped session against Flint's own
   //             test server (milestone 31)
+  //   webgl     a terminal's lost WebGL context, alone and with a desktop behind it
+  //             (milestone 35b): seconds a repetition with scripts/repeat.sh
   //   rdpbench  milestone 34's benchmark against a real Windows host (scripts/rdp-bench.sh,
   //             never part of the default runs): harmless input only, the Start menu and
   //             Task view, in each graphics mode
   const RUN = '@@RUN@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'rdpbench'];
+  // webgl only: '1' when a person hides the window for the loss (FLINT_E2E_WEBGL_COVER).
+  const COVER = '@@COVER@@';
+  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'rdpbench'];
   // The benchmark's host (rdpbench only; '' otherwise).
   const BHOST = '@@BHOST@@';
   const BUSER = '@@BUSER@@';
@@ -244,6 +248,134 @@
       const screen = term.element.querySelector('.xterm-screen').getBoundingClientRect();
       await check(screen.bottom <= box.bottom + 0.5 && screen.right <= box.right + 0.5,
         `the terminal's rows fit inside the pane (screen ${Math.round(screen.height)} px, box ${Math.round(box.height)} px)`);
+    }
+
+    if (RUN === 'webgl') {
+      // The page's visibility over the whole run (WebKit suspends a hidden page, D-068).
+      {
+        const v0 = performance.now();
+        document.addEventListener('visibilitychange', () => log(`diag: visibility ${document.visibilityState} at ${Math.round(performance.now() - v0)} ms (step: ${step})`));
+      }
+      // Milestone 35b: the lost-WebGL-context check, alone, so a repetition takes
+      // seconds (ROADMAP §6). WebKit may take a hidden terminal's WebGL context while a
+      // desktop draws (the owner's herdr screen, M31). Every step is stamped in ms from
+      // the loss and printed, pass or fail, so one failure shows where the time goes.
+      const loseAndRedraw = async (label) => {
+        await waitFor(() => activeTerm(), 'the local terminal');
+        const host = activePane()?.querySelector('.xterm');
+        const glOf = () => [...(host?.querySelectorAll('canvas') ?? [])].map((c) => c.getContext('webgl2')).find((g) => g && !g.isContextLost());
+        const glc = await waitFor(() => glOf(), 'the terminal drawing with WebGL', 5000).catch(() => null);
+        await check(!!glc, `${label}: the terminal draws with WebGL`);
+        const mark = `drawn-${label}-$((50+5))`;
+        const want = `drawn-${label}-55`;
+        await runInTerminal(`clear; echo ${mark}`, want);
+        const term = activeTerm();
+        const t0 = performance.now();
+        const ev = [];
+        const stamp = (n) => ev.push(`${n}@${Math.round(performance.now() - t0)}`);
+        glc.canvas.addEventListener('webglcontextlost', () => stamp('lost'), { once: true });
+        glc.canvas.addEventListener('webglcontextrestored', () => stamp('restored'), { once: true });
+        const refresh = term.refresh.bind(term);
+        term.refresh = (a, b) => { stamp(`refresh(${a}-${b})`); return refresh(a, b); };
+        let rowsSeen = false;
+        let textSeen = false;
+        const watch = () => {
+          const rows = host?.querySelector('.xterm-rows');
+          if (rows && !rowsSeen) { rowsSeen = true; stamp(`dom-rows(n=${rows.children.length})`); }
+          if (rows && !textSeen && (rows.textContent ?? '').includes(want)) { textSeen = true; stamp('dom-text'); }
+        };
+        const mo = new MutationObserver(watch);
+        mo.observe(host, { childList: true, subtree: true, characterData: true });
+        // requestAnimationFrame's pulse: frames counted, gaps over 500 ms stamped.
+        let frames = 0;
+        let lastFrame = performance.now();
+        let pulsing = true;
+        const tick = (t) => {
+          frames++;
+          if (t - lastFrame > 500) stamp(`raf-gap(${Math.round(t - lastFrame)})`);
+          lastFrame = t;
+          if (pulsing) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+        // Guided by a person (FLINT_E2E_WEBGL_COVER=1, label "alone"): the context is lost
+        // while the window is hidden, as when a covered window loses it in daily use.
+        let banner = null;
+        if (COVER === '1' && label === 'alone') {
+          banner = document.createElement('div');
+          banner.style.cssText = 'position:fixed;inset:auto 20px 20px 20px;z-index:99999;padding:24px;font:600 22px system-ui;background:#c2410c;color:#fff;border-radius:12px';
+          banner.textContent = 'Test: press ⌘H now to hide Flint. Wait 10 seconds, then click Flint in the Dock.';
+          document.body.appendChild(banner);
+          await waitFor(() => document.visibilityState === 'hidden', 'the window hidden by the person', 120000);
+          banner.remove();
+          stamp('hidden-by-person');
+        }
+        glc.getExtension('WEBGL_lose_context')?.loseContext();
+        const drawnIn = (ms) => waitFor(() => (host?.querySelector('.xterm-rows')?.textContent ?? '').includes(want), 'the terminal drawn again', ms).then(() => true, () => false);
+        // WebKit stops drawing a hidden page (a covered or minimised window, D-068): no
+        // requestAnimationFrame, so xterm's DOM renderer draws nothing until the window is
+        // seen again. What matters is the terminal drawn once it is: while hidden, wait
+        // for the window to come back (a person uncovering it), then give it 5 s.
+        if (COVER === '1' && label === 'alone') {
+          // Wait for the window to be shown again, then give the terminal 5 s.
+          await waitFor(() => document.visibilityState === 'visible', 'the window shown again', 120000);
+          stamp(`shown(drawn-before=${(host?.querySelector('.xterm-rows')?.textContent ?? '').includes(want)})`);
+        }
+        let drawn = await drawnIn(5000);
+        if (!drawn && document.visibilityState === 'hidden') {
+          stamp('hidden');
+          log(`diag: ${label}: the window is hidden (covered?); the check waits up to 60 s for it to be drawn or seen`);
+          const has = () => (host?.querySelector('.xterm-rows')?.textContent ?? '').includes(want);
+          await waitFor(() => has() || document.visibilityState === 'visible', 'drawn or seen again', 60000).catch(() => null);
+          if (has()) drawn = true;
+          else if (document.visibilityState === 'visible') { stamp('visible'); drawn = await drawnIn(5000); }
+        }
+        const diag = `D ${term._core?._renderService?._isPaused}/${term._core?._renderService?._needsFullRefresh} n=${host?.querySelector('.xterm-rows')?.children.length} r=${term.rows} c=${term.cols} buf=${termText().includes(want)} cw=${host?.querySelector('.xterm-rows')?.offsetWidth}x${host?.querySelector('.xterm-rows')?.offsetHeight} vis=${document.visibilityState} focus=${document.hasFocus()}`;
+        // On a failure, keep watching a while longer: drawn late, or never.
+        const late = drawn ? true : await drawnIn(10000);
+        mo.disconnect();
+        pulsing = false;
+        stamp(`frames=${frames},last@${Math.round(lastFrame - t0)}`);
+        term.refresh = refresh;
+        log(`diag: ${label}: ${ev.join(' ')}${drawn ? '' : late ? ' (drawn late)' : ' (never drawn)'} | ${diag}`);
+        if (!drawn && document.visibilityState === 'hidden') {
+          throw new Error(`${label}: the window stayed hidden (covered or minimised) for 60 s, so nothing could be drawn: leave the test window uncovered (${ev.join(' ')})`);
+        }
+        await check(drawn, `${label}: after a lost WebGL context the whole terminal is drawn again within 5 s of being seen (${ev.join(' ')} | ${diag})`);
+      };
+
+      await setStep('webgl: the context lost with nothing else drawing');
+      await loseAndRedraw('alone');
+      if (CPORT !== '0') {
+        await setStep('webgl: the context lost while a desktop draws behind');
+        await click('.side-head .icon-btn[aria-label^="New host"]');
+        await waitFor(() => q('[data-host-type-step]'), 'the type step');
+        await click('.type-card[data-type="rdp"]');
+        await click('.modal button', 'Continue');
+        await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor');
+        await fill('#ra', 'rdp-clip');
+        await fill('#rh', '127.0.0.1');
+        await fill('#rp', String(CPORT));
+        await fill('#ru', 'e2e');
+        await fill('#rd', 'LAB');
+        await fill('.modal input[aria-label="Password"]', 'x');
+        await click('.modal button[type="submit"]', 'Add host');
+        await waitFor(() => byText('.tree .ti', 'rdp-clip'), 'rdp-clip in the tree');
+        byText('.tree .ti', 'rdp-clip').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        await waitFor(() => q('.tab.on') && q('[data-rdp-state="certificate"]', activeRegion()), 'the certificate prompt (test server)', 30000);
+        await click('button[type="submit"]', 'Trust and connect');
+        const canvas = () => q('canvas.rdp-canvas', activeRegion());
+        await waitFor(() => canvas()?.dataset.desktop, 'the test server desktop', 30000);
+        // The terminal hidden behind the desktop, as in the rdp run, then shown again.
+        await sleep(1500);
+        await click('.tab', 'local');
+        await loseAndRedraw('desktop');
+        await click('.tab', 'rdp-clip');
+        await waitFor(() => canvas(), 'the desktop again');
+        await sleep(300);
+        await click('.tab', 'local');
+        // loseAndRedraw checks first that WebGL came back when the tab was shown again.
+        await loseAndRedraw('again');
+      }
     }
 
     if (RUN === 'vim') {
@@ -1082,28 +1214,7 @@
             await check(termText().includes('alt-mark-42'), "a full-screen program's screen is still there when the tab comes back");
             await waitFor(() => !termText().includes('alt-mark-42'), 'the full-screen program done', 15000);
           }
-          // WebKit may take a hidden terminal's WebGL context while the desktop draws: the
-          // owner saw herdr's screen left blank (M31 check). Lose it on purpose here.
-          {
-            const host = activePane()?.querySelector('.xterm');
-            const glOf = () => [...(host?.querySelectorAll('canvas') ?? [])].map((c) => c.getContext('webgl2')).find((g) => g && !g.isContextLost());
-            const glc = glOf();
-            await check(!!glc, 'the terminal draws with WebGL');
-            // A mark printed now, in view: earlier output may have scrolled away.
-            await runInTerminal('clear; echo drawn-$((50+5))', 'drawn-55');
-            glc?.getExtension('WEBGL_lose_context')?.loseContext();
-            const drawn = await waitFor(() => (host?.querySelector('.xterm-rows')?.textContent ?? '').includes('drawn-55'), 'the terminal drawn again', 5000).catch(() => false);
-            // On a failure, the renderer's state: paused/needs-full-refresh, DOM rows, the
-            // terminal's size, whether the buffer has the mark, the rows' box.
-            const diag = `D ${activeTerm()?._core?._renderService?._isPaused}/${activeTerm()?._core?._renderService?._needsFullRefresh} n=${host?.querySelector('.xterm-rows')?.children.length} r=${activeTerm()?.rows} c=${activeTerm()?.cols} buf=${termText().includes('drawn-55')} cw=${host?.querySelector('.xterm-rows')?.offsetWidth}x${host?.querySelector('.xterm-rows')?.offsetHeight}`;
-            await check(drawn, `after a lost WebGL context the whole terminal is drawn again (${diag})`);
-            await click('.tab', 'rdp-clip');
-            await waitFor(() => canvas(), 'the desktop again');
-            await sleep(300);
-            await click('.tab', 'local');
-            const back = await waitFor(() => glOf(), 'WebGL back', 5000).catch(() => null);
-            await check(!!back, 'showing the tab again brings WebGL back');
-          }
+          // The lost-WebGL-context check (M31) is the webgl run's (milestone 35b).
           await click('.tab', 'rdp-clip');
           await waitFor(() => canvas(), 'the desktop again');
         }
