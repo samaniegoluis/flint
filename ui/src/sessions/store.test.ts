@@ -13,7 +13,7 @@ vi.mock('../api/backend', () => ({
   },
 }));
 
-const { sessions } = await import('./store');
+const { sessions, rdpEndKind } = await import('./store');
 
 const tab = () => sessions.tab(sessions.get().active)!;
 
@@ -107,5 +107,17 @@ describe('tabs of panes', () => {
     sessions.setTracks(tab().id, 'cols', [0.7, 0.3]);
     sessions.setLayout('rows');
     expect(tab()).toMatchObject({ layout: 'rows', cols: [1], rows: [1, 1] });
+  });
+});
+
+describe('why a remote desktop ended', () => {
+  const ended = (code: string, message: string, connectedAt = 0) =>
+    ({ end: { code, message }, connectedAt } as unknown as Parameters<typeof rdpEndKind>[0]);
+
+  it('tells a server with only Standard RDP Security from other refusals (milestone 36)', () => {
+    expect(rdpEndKind(ended('refused', 'refused: the server offers only Standard RDP Security, where no certificate protects the password; Flint refuses it'))).toBe('legacy-security');
+    expect(rdpEndKind(ended('refused', 'refused: nothing answers on the Remote Desktop port: Remote Desktop may be off'))).toBe('rdp-off');
+    expect(rdpEndKind(ended('refused', 'refused: the server ended the session'))).toBe('refused');
+    expect(rdpEndKind(ended('network', 'network: lost', 5))).toBe('lost');
   });
 });

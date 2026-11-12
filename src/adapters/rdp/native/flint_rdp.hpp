@@ -181,6 +181,7 @@ inline constexpr int RDP_ERR_PORT_CLOSED = 9;
 inline constexpr int RDP_ERR_LOST = 10;
 inline constexpr int RDP_ERR_ENDED = 11;
 inline constexpr int RDP_ERR_UNKNOWN_KEY = 12;
+inline constexpr int RDP_ERR_LEGACY_SECURITY = 13;
 
 // Events of `wait`.
 inline constexpr int EV_RUNNING = 0;
@@ -220,6 +221,10 @@ struct Conn {
     // Why the loop ended, read after `ended`.
     UINT32 last_error = 0;
     UINT32 error_info = 0;
+    // The server's answer to the connection request offered only Standard RDP Security
+    // (milestone 36): told apart from a network failure when the connect fails.
+    std::atomic<bool> x224_seen{false};
+    std::atomic<bool> legacy_only{false};
 };
 
 struct Context {
@@ -1064,12 +1069,30 @@ inline int connect_tcp(rdpContext* ctx, rdpSettings* st, const char* host, int p
 // FreeRDP's own PDU read, counting the bytes received for the statistics.
 inline pTransportRWFkt& default_read_pdu() { static pTransportRWFkt f = nullptr; return f; }
 
+// Whether the server's X.224 Connection Confirm (the first PDU) leaves only Standard
+// RDP Security: no negotiation data, a response choosing it (PROTOCOL_RDP, 0), or a
+// failure saying SSL_NOT_ALLOWED_BY_SERVER (2). [MS-RDPBCGR] 2.2.1.2.
+inline bool legacy_only_answer(const uint8_t* b, size_t n) {
+    if (n < 11 || b[0] != 0x03 || (b[5] & 0xf0) != 0xd0) return false;
+    if (b[4] == 6) return true;
+    if (n < 19) return false;
+    const uint32_t v = static_cast<uint32_t>(b[15]) | (static_cast<uint32_t>(b[16]) << 8) |
+                       (static_cast<uint32_t>(b[17]) << 16) | (static_cast<uint32_t>(b[18]) << 24);
+    if (b[11] == 0x02) return v == 0;
+    if (b[11] == 0x03) return v == 2;
+    return false;
+}
+
 inline int read_pdu(rdpTransport* transport, wStream* s) {
     int rc = default_read_pdu()(transport, s);
     if (rc > 0) {
         rdpContext* ctx = transport_get_context(transport);
         Tab* t = ctx ? ctx_of(ctx)->tab : nullptr;
         if (t) t->st_bytes_in.fetch_add(static_cast<uint64_t>(rc), std::memory_order_relaxed);
+        Conn* c = ctx ? ctx_of(ctx)->conn : nullptr;
+        if (c && !c->x224_seen.exchange(true)) {
+            c->legacy_only.store(legacy_only_answer(Stream_Buffer(s), static_cast<size_t>(rc)));
+        }
     }
     return rc;
 }
@@ -1243,6 +1266,9 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         } else if (refused_cert) {
             code = RDP_ERR_CERT;
             detail = "the certificate is not the trusted one";
+        } else if (c->legacy_only.load()) {
+            code = RDP_ERR_LEGACY_SECURITY;
+            detail = "Standard RDP Security";
         } else if (elapsed >= std::chrono::milliseconds(timeout_ms) - std::chrono::milliseconds(50)) {
             code = RDP_ERR_TIMEOUT;
             detail = "no answer within the timeout";

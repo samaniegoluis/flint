@@ -56,6 +56,9 @@ fn rdp_error(code: i64, detail: str) -> str {
     if code == 12 {
         return coded(ERR_INVALID, "unknown key '{detail}'")
     }
+    if code == 13 {
+        return coded(ERR_REFUSED, "the server offers only Standard RDP Security, where no certificate protects the password; Flint refuses it. Set the server to require SSL (TLS) or Network Level Authentication")
+    }
     return coded(ERR_INTERNAL, "RDP failed ({detail})")
 }
 

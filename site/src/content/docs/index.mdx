@@ -180,7 +180,7 @@ See the [CLI reference](/reference/cli/).
 	</Card>
 	<Card title="Secrets sealed twice" icon="approve-check">
 		Passwords, private keys and passphrases are sealed again with XChaCha20-Poly1305,
-		each bound to its own field, and opened only to connect.
+		each bound to its own field, opened only to connect and wiped from memory once used.
 	</Card>
 	<Card title="Flint holds the key" icon="laptop">
 		The vault key comes from Argon2id and lives in the running app. The CLI and your

@@ -169,6 +169,8 @@ function failureText(kind: ReturnType<typeof rdpEndKind>, pane: Pane, host: Host
       return { icon: 'clock', title: `${pane.alias} didn't answer`, body: `No reply on ${addr} within ${RDP_CONNECT_TIMEOUT_S} s.`, hint: 'The machine may be asleep or off, or a firewall drops RDP. On a Proxmox VM, check that it is running.' };
     case 'rdp-off':
       return { icon: 'wifi-off', title: `${pane.alias} refused the session`, body: "Nothing answers on its Remote Desktop port.", hint: "Turn it on in the machine's Settings → System → Remote Desktop, then retry. On Windows Home it isn't available at all." };
+    case 'legacy-security':
+      return { icon: 'shield', title: `${pane.alias} needs a safer connection`, body: 'It offers only the old Standard RDP Security, where no certificate protects your password, so Flint did not sign in.', hint: "On the server, set Require use of specific security layer for remote connections to SSL or Negotiate (Group Policy → Remote Desktop Session Host → Security), then retry." };
     case 'refused':
       return { icon: 'alert', title: `${pane.alias} refused the session`, body: 'The server answered and would not open a session.', hint: 'All remote sessions may be in use: Windows 10/11 Pro allows one at a time. Ask someone to sign out, or try later.' };
     default:

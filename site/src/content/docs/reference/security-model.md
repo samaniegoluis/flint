@@ -41,10 +41,20 @@ hosts are checked the same way, one hop at a time. See
 
 A remote desktop server's certificate is checked by Flint, not by FreeRDP: the first one is
 shown with its SHA-256 fingerprint and kept in the vault once you trust it, and a changed
-one is refused before the password is sent, with no way to continue. The password goes to
-FreeRDP only to sign in and is wiped from its memory once the session is up. The desktop's
-frames reach the page over a channel on `127.0.0.1` that answers only requests carrying a
-256-bit random token, made per tab. See [Remote desktop](/guides/remote-desktop/).
+one is refused before the password is sent, with no way to continue. The old *Standard RDP
+Security*, where no certificate is checked, is refused. The password goes to FreeRDP only
+to sign in and is wiped from its memory once the session is up. The desktop's frames reach
+the page over a channel on `127.0.0.1` that answers only requests carrying a 256-bit random
+token, made per tab, sent to that port by number, and readable by no other web page. See
+[Remote desktop → Security](/guides/remote-desktop/#security).
+
+## Secrets leave memory once used
+
+A password, key or passphrase opened from the vault is overwritten as soon as SSH or RDP
+has it, and so are the bytes it was opened from; the keys derived from the master password
+are overwritten once the vault has been opened with them. Locking wipes the vault's key
+itself. This is done with libsodium's `sodium_memzero`, and it is best effort: the
+libraries Flint hands a secret to keep their own copy while they need it.
 
 ## Access to an unlocked vault: today
 

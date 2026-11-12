@@ -156,7 +156,7 @@ test "a server that answers with standard RDP security is refused before any cre
     mut msg := ""
     rd.rd_open("t-downgrade", t, 10000) or err { msg = "{err.message()}" }
     rd.rd_close("t-downgrade")
-    assert(msg.len() > 0, "the connection must fail")
+    assert(msg.starts_with("refused: the server offers only Standard RDP Security"), msg)
     assert(!msg.contains("downgrade-secret-4711"), msg)
     // Nothing follows the answer: no MCS connect, so no auto-logon password.
     assert_eq(downgrade_server_result(), 0)
