@@ -107,6 +107,7 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
         if (cv.width !== h.fullW || cv.height !== h.fullH) {
           r0.resize(h.fullW, h.fullH);
           setDeskSize({ width: h.fullW, height: h.fullH });
+          sessions.desktopDrawn(pane.id, h.fullW, h.fullH);
         }
         r0.draw(h.x, h.y, h.w, h.h, new Uint8Array(buf, 16));
         meter.current.add(buf.byteLength);

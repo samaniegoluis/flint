@@ -385,6 +385,16 @@ class SessionStore {
     }, DESKTOP_SETTLE_MS));
   }
 
+  /**
+   * The desktop's size as its frames arrive: a resize (or full screen) changes it after
+   * the connect, and the toolbar and the full-screen bar say the size drawn.
+   */
+  desktopDrawn(paneId: string, width: number, height: number) {
+    const d = this.pane(paneId)?.desktop;
+    if (!d || (d.width === width && d.height === height)) return;
+    this.patch(paneId, { desktop: { ...d, width, height } });
+  }
+
   /** Closes one pane and hangs up its session; the last pane closes its tab. */
   close(paneId: string) {
     const t = this.pane(paneId);
