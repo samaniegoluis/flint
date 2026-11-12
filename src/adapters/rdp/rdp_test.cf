@@ -696,3 +696,52 @@ test "a real Windows host spans two monitors at connect and rearranges in place"
     assert(again.len() > 16, "the portrait did not come back through Display Control")
     assert_eq(rd.rd_wait("t-live-mon", 100).kind, "running")
 }
+
+// Milestone 38, a diagnosis: the bitmap path (Compatible) across two monitors, changed
+// through Display Control. Prints, for each view, the frames and the area drawn over a
+// few seconds after the layout, and after a key that opens nothing (Shift).
+test "a real Windows host in Compatible across two monitors keeps drawing each view" {
+    t := live_target("")
+    if t.hostname.len() == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    fp := first_fingerprint(rd, "t-live-cmp", t)
+    mut lt := live_target(fp)
+    lt.graphics = "compatible"
+    lt.width = 2560
+    lt.height = 1440
+    d := try rd.rd_open("t-live-cmp", lt, 20000)
+    defer rd.rd_close("t-live-cmp")
+    assert(wait_frame("t-live-cmp").len() > 16, "no frame in 10 s")
+    time.sleep_ms(3000)
+    layout := pair_layout(2560, 1440, 393, 1440, 1512, 950)
+    try rd.rd_set_layout("t-live-cmp", layout)
+    for round in 0..4 {
+        mut n0 := 0
+        mut n1 := 0
+        mut px0: i64 = 0
+        mut px1: i64 = 0
+        mut full0 := ""
+        for i in 0..20 {
+            f0 := next_frame_view("t-live-cmp", 0, 50) or ""
+            if f0.len() > 16 {
+                n0 += 1
+                px0 += le16(f0, 8) * le16(f0, 10)
+                full0 = "{le16(f0, 12)}x{le16(f0, 14)}"
+            }
+            f1 := next_frame_view("t-live-cmp", 1, 50) or ""
+            if f1.len() > 16 {
+                n1 += 1
+                px1 += le16(f1, 8) * le16(f1, 10)
+            }
+        }
+        st := try rd.rd_stats("t-live-cmp")
+        println("diag: compatible round {round}: view0 {n0} frames {px0} px ({full0}), view1 {n1} frames {px1} px; updates {st.updates}, pipeline {st.pipeline}")
+        if round == 1 {
+            try rd.rd_key("t-live-cmp", "ShiftLeft", true)
+            try rd.rd_key("t-live-cmp", "ShiftLeft", false)
+        }
+    }
+    assert_eq(rd.rd_wait("t-live-cmp", 100).kind, "running")
+}
