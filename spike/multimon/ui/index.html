@@ -1,0 +1,117 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Multi-monitor spike</title>
+<style>
+  body { font: 13px -apple-system, system-ui, sans-serif; background: #111418; color: #dde; margin: 16px; }
+  table { border-collapse: collapse; margin: 8px 0; } td, th { border: 1px solid #333; padding: 3px 6px; text-align: right; }
+  th { background: #1c2128; } button { margin: 2px; } #map { background: #0a0c10; border: 1px solid #333; }
+  pre { background: #0a0c10; padding: 8px; max-height: 220px; overflow: auto; }
+  #fps { position: fixed; top: 8px; right: 16px; font-size: 18px; }
+</style></head>
+<body>
+<h2>Multi-monitor spike (main window, ext:webui)</h2>
+<div id="fps"></div>
+<div><button onclick="refresh()">Read monitors</button> <span id="info"></span></div>
+<table id="t"></table>
+<canvas id="map" width="900" height="260"></canvas>
+<p>Second window on monitor <select id="mon"></select>
+  <button onclick="openSecond('borderless')">borderless over the screen</button>
+  <button onclick="openSecond('native')">system full screen</button>
+  <button onclick="openSecond('window')">plain window</button>
+  <button onclick="backend.close_second()">close it</button>
+  <button onclick="ping()">ping it</button></p>
+<p>Main window to monitor <select id="mon2"></select>
+  <button onclick="placeMain('native')">system full screen (toggle)</button>
+  <button onclick="placeMain('window')">plain window</button></p>
+<p>RDP layout (CSS px = points, primary at 0,0 = the monitor holding the main window):</p>
+<pre id="layout"></pre>
+<pre id="log"></pre>
+<canvas id="anim" width="300" height="60"></canvas>
+<script>
+const log = (m) => { const el = document.getElementById('log'); el.textContent = `${new Date().toISOString().slice(11,23)} ${m}\n` + el.textContent; backend.log(m); };
+let mons = [];
+async function refresh() {
+  mons = await backend.monitors();
+  const t = document.getElementById('t');
+  const cols = Object.keys(mons[0] || {});
+  t.innerHTML = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>' +
+    mons.map(m => '<tr>' + cols.map(c => `<td>${JSON.stringify(m[c])}</td>`).join('') + '</tr>').join('');
+  for (const id of ['mon', 'mon2']) document.getElementById(id).innerHTML = mons.map(m => `<option value="${m.index}">${m.index}: ${m.name} ${m.w}×${m.h}</option>`).join('');
+  document.getElementById('info').textContent = `window.devicePixelRatio=${devicePixelRatio} screen=${screen.width}×${screen.height} at (${screen.availLeft ?? '?'},${screen.availTop ?? '?'})`;
+  draw(); layout();
+}
+function draw() {
+  const c = document.getElementById('map'), g = c.getContext('2d');
+  g.clearRect(0, 0, c.width, c.height);
+  const minX = Math.min(...mons.map(m => m.x)), minY = Math.min(...mons.map(m => m.y));
+  const maxX = Math.max(...mons.map(m => m.x + m.w)), maxY = Math.max(...mons.map(m => m.y + m.h));
+  const k = Math.min((c.width - 20) / (maxX - minX), (c.height - 20) / (maxY - minY));
+  for (const m of mons) {
+    const x = 10 + (m.x - minX) * k, y = 10 + (m.y - minY) * k;
+    g.strokeStyle = m.main_window_here ? '#6cf' : '#888'; g.strokeRect(x, y, m.w * k, m.h * k);
+    if (m.notch_top) { g.fillStyle = '#633'; g.fillRect(x, y, m.w * k, m.notch_top * k); }
+    g.fillStyle = '#dde'; g.fillText(`${m.index} ${m.name} ${m.w}×${m.h} @${m.scale}x rot ${m.rotation}`, x + 4, y + 14);
+  }
+}
+// What FreeRDP would be told: rdpMonitor {x, y, width, height, is_primary} plus
+// attributes {orientation, desktopScaleFactor, deviceScaleFactor, physical mm}.
+function layout() {
+  const p = mons.find(m => m.main_window_here) || mons.find(m => m.primary) || mons[0];
+  const defs = mons.map(m => ({ x: m.x - p.x, y: m.y - p.y, w: m.w & ~1, h: m.h, primary: m === p,
+    orientation: m.rotation ?? (m.w >= m.h ? 0 : 90), scale: Math.round(m.scale * 100), mm: [m.mm_w, m.mm_h], notch: m.notch_top || 0 }));
+  document.getElementById('layout').textContent = JSON.stringify(defs) + '\n' +
+    defs.map(d => `${d.x},${d.y},${d.w},${d.h},${d.primary ? 1 : 0},${d.orientation},${d.scale}`).join(';');
+  window.__layout = defs;
+}
+async function openSecond(mode) { const index = +document.getElementById('mon').value; await backend.open_second({ index, mode }); }
+async function placeMain(mode) { const index = +document.getElementById('mon2').value; await backend.place_main({ index, mode }); }
+function ping() { backend.to_second({ t: performance.now(), from: 'main' }); }
+runtime.EventsOn('second:msg', (m) => {
+  if (m.kind === 'pong') log(`pong from second: round trip ${(performance.now() - m.t).toFixed(1)} ms`);
+  else log('second → main: ' + JSON.stringify(m));
+});
+runtime.EventsOn('second:placed', (m) => log('second placed ' + JSON.stringify(m)));
+runtime.EventsOn('second:closed', () => log('second closed'));
+// This window's own frame rate, to see whether either window throttles the other.
+let frames = 0, last = performance.now();
+const ac = document.getElementById('anim').getContext('2d');
+(function tick(now) {
+  frames++; ac.fillStyle = `hsl(${(now / 5) % 360},60%,40%)`; ac.fillRect(0, 0, 300, 60);
+  if (now - last >= 1000) { document.getElementById('fps').textContent = `main ${frames} fps`; frames = 0; last = now; }
+  requestAnimationFrame(tick);
+})(performance.now());
+let lastStat = null;
+runtime.EventsOn('second:msg', (m) => { if (m.kind === 'stat') lastStat = m; });
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// SPIKE_AUTO=<monitor index>: every mode on that monitor, then the main window and the
+// second one full screen at once on two monitors (SPIKE_AUTO_MAIN=<index>).
+async function auto(spec) {
+  const [idx, mainIdx] = spec.split(',').map(Number);
+  log('AUTO monitors ' + JSON.stringify(mons));
+  log('AUTO layout ' + JSON.stringify(window.__layout));
+  for (const mode of ['window', 'borderless', 'native']) {
+    lastStat = null;
+    await backend.open_second({ index: idx, mode });
+    await sleep(mode === 'native' ? 5000 : 3000);
+    const rtts = [];
+    for (let i = 0; i < 5; i++) {
+      const t0 = performance.now();
+      const p = new Promise(r => { const off = runtime.EventsOn('second:msg', (m) => { if (m.kind === 'pong') { off(); r(); } }); });
+      backend.to_second({ t: t0 }); await p; rtts.push(+(performance.now() - t0).toFixed(1));
+    }
+    log(`AUTO mode=${mode} stat=${JSON.stringify(lastStat)} rtt_ms=${rtts}`);
+    if (mode === 'native') { await backend.open_second({ index: idx, mode: 'window' }); await sleep(2000); }
+  }
+  if (!isNaN(mainIdx)) {
+    await backend.open_second({ index: idx, mode: 'borderless' });
+    await backend.place_main({ index: mainIdx, mode: 'native' });
+    await sleep(5000);
+    log(`AUTO both: main native on ${mainIdx}, second borderless on ${idx}: second=${JSON.stringify(lastStat)} main_fps=${document.getElementById('fps').textContent} main=${innerWidth}x${innerHeight} vis=${document.visibilityState}`);
+    await backend.place_main({ index: mainIdx, mode: 'native' });  // toggles back
+    await sleep(3000);
+  }
+  await backend.close_second();
+  log('AUTO done');
+}
+refresh().then(async () => { const a = await backend.auto(); if (a) auto(a); });
+</script>
+</body></html>

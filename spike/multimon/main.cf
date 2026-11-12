@@ -1,0 +1,83 @@
+package main
+
+// THROWAWAY SPIKE (milestone 38). ext:webui's one window plus a second native window
+// from spike_multimon.hpp: the monitors as each OS reports them, the second window
+// borderless, in the system's full screen or as a plain window on any monitor, and
+// messages both ways through the process. Nothing here is product code.
+//
+//   ./run.sh            # build and open (macOS); scripts in this folder for Linux
+
+import cpp "spike_multimon.hpp" @pkg("spike-multimon")
+import "ext:webui"
+import "core:fs"
+import "core:os"
+
+type PlaceReq struct {
+    index: i32 `json:"index"`
+    mode: str `json:"mode"`
+}
+
+fn ui_dir() -> str {
+    if fs.exists("ui/index.html") {
+        return "ui"
+    }
+    return "spike/multimon/ui"
+}
+
+fn monitors() -> str {
+    mut res := "[]"
+    cpp {
+        res = spike_mm::monitors_json();
+    }
+    return res
+}
+
+fn open_second(index: i32, mode: str) {
+    cpp {
+        spike_mm::open_second(index, mode);
+    }
+}
+
+fn place_main(index: i32, mode: str) {
+    cpp {
+        spike_mm::place_main(index, mode);
+    }
+}
+
+fn close_second() {
+    cpp {
+        spike_mm::close_second();
+    }
+}
+
+fn to_second(json: str) {
+    cpp {
+        spike_mm::to_second(json);
+    }
+}
+
+fn install(app: webui.App, dir: str) {
+    cpp {
+        spike_mm::install(app, dir);
+    }
+}
+
+fn main() {
+    dir := ui_dir()
+    mut app := webui.new_app("Flint multi-monitor spike", 1100, 760)
+    app.serve_dir(dir)
+    install(app, dir)
+    app.bind_raw("monitors") |params| { return monitors() }
+    app.bind[PlaceReq]("open_second") |req| { open_second(req.index, req.mode) }
+    app.bind[PlaceReq]("place_main") |req| { place_main(req.index, req.mode) }
+    app.bind_raw("close_second") |params| { close_second() }
+    app.bind_raw("to_second") |params| { to_second(params) }
+    app.bind_raw("auto") |params| {
+        v := os.getenv("SPIKE_AUTO")
+        return "\"{v}\""
+    }
+    app.bind_raw("log") |params| {
+        eprintln("spike: {params}")
+    }
+    app.run()
+}

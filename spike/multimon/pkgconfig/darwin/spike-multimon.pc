@@ -1,0 +1,6 @@
+# Throwaway spike (milestone 38).
+Name: spike-multimon
+Description: Multi-monitor spike shim (macOS)
+Version: 1
+Cflags: -I${pcfiledir}/../../native
+Libs: -framework AppKit -framework WebKit -framework CoreGraphics

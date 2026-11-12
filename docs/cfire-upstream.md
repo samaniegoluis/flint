@@ -2252,3 +2252,27 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `App.set_fullscreen(on: bool)`, `App.is_fullscreen() -> bool` read from the
   window, and a `window:fullscreen` event (`{ on }`) emitted by webui on every change, on
   all three systems; for macOS, the inset the top edge reveals.
+
+### CF-126 · missing · `confirmed`: `ext:webui` has one window per `App` and no list of screens
+- **Seen (milestone 38 spike) [read, ran]:** an `App` owns exactly one native window and one
+  web view (`run_macos_app`, `run_linux_webkitgtk`, `run_win32_webview2`); its `AppState`
+  (the app:// files, the RPC table, the event target `platform_eval`) is private, so a second
+  window cannot share the page's RPC or events, and a page's RPC reply always goes to the
+  first window. Nothing reports the screens (position, size, scale, rotation, the notch's
+  inset). A second `App` would start a second run loop.
+- **Repro:** `spike/multimon` (`./run.sh`, `SPIKE_AUTO=1,0`): the second window had to be
+  built natively (`spike/multimon/native/spike_multimon.hpp`) with its own app:// handler
+  on macOS (the default WebKitWebContext's handler serves it on Linux) and its own script
+  message handler; replies reach it only through that shim.
+- **Why Flint needs it:** two monitors (spec v10, milestone 38): one borderless or full-screen
+  window per monitor, each drawing its part of the remote desktop and sending its own mouse;
+  later an RDP tab in a window of its own.
+- **Workaround:** a native shim in `adapters/` (macOS `NSWindow` + `WKWebView`, Linux
+  `GtkWindow` + `WebKitWebView`, Windows an `HWND` + a WebView2 controller) whose page talks
+  to the process through its own message handler, relayed to the main page; the monitors read
+  per OS (`NSScreen` + CoreGraphics, `GdkMonitor`, `EnumDisplayMonitors` +
+  `GetDpiForMonitor`).
+- **Ideal:** `App.new_window(url, opts) -> Window` sharing the app's files, RPC table and
+  events (events addressed to one window or all), with `Window.set_frame`,
+  `Window.set_fullscreen(on, monitor)`, borderless; and `webui.screens() -> []Screen` (frame
+  and work area in points, top-left origin, scale, rotation, refresh, primary, safe-area top).
