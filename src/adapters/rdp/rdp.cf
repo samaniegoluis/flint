@@ -72,15 +72,16 @@ fn (self: FreeRdpDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> Rd
     host := t.hostname
     user := t.user
     dom := t.domain
-    pw := t.password
     trusted := t.trusted_fingerprint
     graphics := t.graphics
     rport := i32(t.port)
     rw := i32(t.width)
     rh := i32(t.height)
+    // The password goes to the shim straight from the target, never through a local
+    // copy here (milestone 36): the caller wipes the target's once this returns.
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        rc = flint_rdp::open(tab, host, rport, user, dom, pw, rw, rh, trusted, graphics, timeout_ms, w, h, port, token, detail);
+        rc = flint_rdp::open(tab, host, rport, user, dom, t.password, rw, rh, trusted, graphics, timeout_ms, w, h, port, token, detail);
     }
     if rc != 0 {
         return error(rdp_error(i64(rc), detail))
@@ -295,4 +296,59 @@ fn freerdp_version() -> str {
         v = freerdp_get_version_string();
     }
     return v
+}
+
+// ---- For the tests (milestone 36) ---------------------------------------------------
+
+// Whether tab `tab`'s last open also wiped FreeRDP's backup of the password.
+fn creds_wiped(tab: str) -> bool {
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        ok = flint_rdp::creds_wiped(tab);
+    }
+    return ok
+}
+
+// A server on loopback that answers by choosing standard RDP security (a downgrade);
+// returns its port, 0 when it could not start.
+fn downgrade_server_start() -> i64 {
+    mut port: i32 = 0
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        port = flint_rdp::downgrade_server_start();
+    }
+    return i64(port)
+}
+
+// What the downgrade server's client sent after the answer (-1: it never got there).
+fn downgrade_server_result() -> i64 {
+    mut n: i64 = 0
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        n = flint_rdp::downgrade_server_result();
+    }
+    return n
+}
+
+// The frame channel's verdict on a request's head: 0 authorised, 1 wrong or missing
+// token, 2 wrong Host.
+fn check_frame_request(head: str, token: str, port: i64) -> i64 {
+    mut rc: i32 = 0
+    p := i32(port)
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::check_frame_request(head, token, p);
+    }
+    return i64(rc)
+}
+
+// The CORS header the frame channel answers a request's head with ("" for none).
+fn frame_cors(head: str) -> str {
+    mut h := ""
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        h = flint_rdp::cors_for(head);
+    }
+    return h
 }

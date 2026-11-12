@@ -92,6 +92,7 @@
 #include <cerrno>
 
 #include <algorithm>
+#include <cctype>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -278,11 +279,15 @@ struct Tab {
     int32_t shadow_w = 0, shadow_h = 0;
     // A graphics mode the page asked for, waiting for `wait` ("": none).
     std::string want_graphics;
+    // Whether the last open wiped the password from FreeRDP's backup of the settings
+    // too (milestone 36): for the tests.
+    std::atomic<bool> creds_wiped{false};
     // Frame channel.
     sock_t listen_fd = BAD_SOCK;
     int port = 0;
     std::string token;
     std::thread server;
+    std::atomic<int> serving{0};  // frame-channel connections open now
 };
 
 inline std::mutex& registry_mu() { static std::mutex m; return m; }
@@ -994,10 +999,19 @@ inline void end_conn(std::shared_ptr<Conn> c) {
     c->inst = nullptr;
 }
 
-inline void wipe_password(rdpSettings* st) {
+// Wipes the password from the connection's settings and from FreeRDP's own backup
+// of them (milestone 36, D-085). `freerdp_connect` clones the settings, password and
+// all, into a backup it keeps for the whole session (`originalSettings`, for a
+// redirect or its own reconnect); persisting the now empty credentials replaces that
+// copy, and FreeRDP zeroes a string it frees. Returns whether the backup was wiped.
+// The NLA module's copy (the identity and NTLM's hashes) stays until the connection
+// is freed, where FreeRDP zeroes it: no public call frees it sooner (D-085).
+inline bool wipe_password(rdpContext* ctx) {
+    rdpSettings* st = ctx->settings;
     const char* pw = freerdp_settings_get_string(st, FreeRDP_Password);
     if (pw) sodium_memzero(const_cast<char*>(pw), std::strlen(pw));
     freerdp_settings_set_string(st, FreeRDP_Password, nullptr);
+    return freerdp_persist_credentials(ctx) == TRUE;
 }
 
 inline bool start_frame_server(std::shared_ptr<Tab> t);
@@ -1129,6 +1143,10 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
     freerdp_settings_set_string(st, FreeRDP_Password, password.c_str());
     // Without it the server shows its own logon screen after NLA has already passed.
     freerdp_settings_set_bool(st, FreeRDP_AutoLogonEnabled, TRUE);
+    // Only TLS or NLA (milestone 36, D-085). The negotiation is not authenticated, so a
+    // machine in the middle could answer "standard RDP security", where no X.509
+    // certificate is checked and the auto-logon password goes under keys it chose.
+    freerdp_settings_set_bool(st, FreeRDP_RdpSecurity, FALSE);
     // Kerberos first stalls on a user written as an e-mail address (M28): NTLM only.
     freerdp_settings_set_string(st, FreeRDP_AuthenticationPackageList, "ntlm,!kerberos");
     freerdp_settings_set_uint32(st, FreeRDP_DesktopWidth, static_cast<UINT32>(width));
@@ -1203,7 +1221,9 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         std::lock_guard<std::mutex> g(t->connecting_mu);
         t->connecting = nullptr;
     }
-    wipe_password(st);
+    // `rdp` is null when the context failed before its core was made: nothing to back up.
+    const bool wiped = inst->context->rdp ? wipe_password(inst->context) : false;
+    t->creds_wiped.store(wiped);
     if (ok && t->closed.load()) {
         freerdp_disconnect(inst);
         ok = FALSE;
@@ -1649,7 +1669,81 @@ inline bool send_all(sock_t fd, const char* p, size_t n) {
     return true;
 }
 
+// The frame channel's checks on one request (milestone 36, D-085), kept apart so the
+// tests can call them. The token is read only from the request line
+// (`GET /next?t=<token> HTTP/1.1`); `Host` must name this loopback port, so a page
+// that rebinds its own name to 127.0.0.1 is refused; `Origin` is echoed back only
+// when it is the app's own page (`app://localhost`) or another page on this machine
+// (a `localhost` or 127.0.0.1 origin: the development server, WebView2's virtual
+// hosts), so no other web page may read a response even holding the token.
+inline std::string header_value(const std::string& head, const std::string& name) {
+    size_t at = 0;
+    while ((at = head.find("\r\n", at)) != std::string::npos) {
+        at += 2;
+        if (head.size() - at < name.size() + 1) break;
+        bool same = true;
+        for (size_t i = 0; i < name.size() && same; i++) {
+            same = std::tolower(static_cast<unsigned char>(head[at + i])) == std::tolower(static_cast<unsigned char>(name[i]));
+        }
+        if (!same || head[at + name.size()] != ':') continue;
+        size_t v = at + name.size() + 1;
+        size_t end = head.find("\r\n", v);
+        std::string val = head.substr(v, end == std::string::npos ? std::string::npos : end - v);
+        while (!val.empty() && (val.front() == ' ' || val.front() == '\t')) val.erase(0, 1);
+        while (!val.empty() && (val.back() == ' ' || val.back() == '\t')) val.pop_back();
+        return val;
+    }
+    return "";
+}
+
+inline bool local_origin(const std::string& origin) {
+    if (origin == "app://localhost") return true;
+    for (const char* scheme : {"http://", "https://"}) {
+        const std::string p = scheme;
+        if (origin.rfind(p, 0) != 0) continue;
+        std::string host = origin.substr(p.size());
+        auto colon = host.find(':');
+        if (colon != std::string::npos) host = host.substr(0, colon);
+        if (host.find('/') != std::string::npos) return false;
+        if (host == "localhost" || host == "127.0.0.1") return true;
+        const std::string suffix = ".localhost";
+        if (host.size() > suffix.size() && host.compare(host.size() - suffix.size(), suffix.size(), suffix) == 0) return true;
+    }
+    return false;
+}
+
+// 0: authorised; 1: wrong or missing token; 2: wrong Host.
+inline int check_frame_request(const std::string& head, const std::string& token, int port) {
+    const std::string host = header_value(head, "Host");
+    if (host != "127.0.0.1:" + std::to_string(port)) return 2;
+    const std::string start = "GET /next?t=";
+    if (token.empty() || head.rfind(start, 0) != 0) return 1;
+    const size_t line_end = head.find("\r\n");
+    const std::string line = head.substr(0, line_end);
+    const size_t at = start.size();
+    const size_t stop = line.find_first_of(" &", at);
+    if (stop == std::string::npos) return 1;
+    const std::string tok = line.substr(at, stop - at);
+    if (tok.size() != token.size() || sodium_memcmp(tok.data(), token.data(), tok.size()) != 0) return 1;
+    return 0;
+}
+
+// The CORS header for a request's Origin: empty for a page that is not this machine's.
+inline std::string cors_for(const std::string& head) {
+    const std::string origin = header_value(head, "Origin");
+    if (!local_origin(origin)) return "";
+    return "Access-Control-Allow-Origin: " + origin + "\r\nVary: Origin\r\n";
+}
+
+// At most this many frame-channel connections at once per tab: the page keeps one or
+// two; a local process opening more is turned away rather than given a thread each.
+inline constexpr int FRAME_CONNS_MAX = 8;
+
 inline void serve_conn(std::shared_ptr<Tab> t, sock_t fd) {
+    struct Count {
+        Tab* t;
+        ~Count() { t->serving.fetch_sub(1); }
+    } count{t.get()};
     sock_recv_timeout(fd, 5000);
     sock_nodelay(fd);
     std::string req;
@@ -1665,20 +1759,13 @@ inline void serve_conn(std::shared_ptr<Tab> t, sock_t fd) {
         }
         std::string head = req.substr(0, end);
         req.erase(0, end + 4);
-        const std::string cors = "Access-Control-Allow-Origin: *\r\n";
+        const std::string cors = cors_for(head);
         if (head.rfind("OPTIONS ", 0) == 0) {
             std::string r = "HTTP/1.1 204 No Content\r\n" + cors + "Access-Control-Allow-Methods: GET\r\nContent-Length: 0\r\n\r\n";
             if (!send_all(fd, r.data(), r.size())) break;
             continue;
         }
-        bool authorised = false;
-        auto tpos = head.find("t=");
-        if (tpos != std::string::npos) {
-            std::string tok = head.substr(tpos + 2, t->token.size());
-            authorised = !t->token.empty() && tok.size() == t->token.size() &&
-                         sodium_memcmp(tok.data(), t->token.data(), tok.size()) == 0;
-        }
-        if (!authorised) {
+        if (check_frame_request(head, t->token, t->port) != 0) {
             std::string r = "HTTP/1.1 403 Forbidden\r\n" + cors + "Content-Length: 0\r\nConnection: close\r\n\r\n";
             send_all(fd, r.data(), r.size());
             break;
@@ -1707,6 +1794,11 @@ inline void serve(std::shared_ptr<Tab> t) {
     while (!t->closed.load()) {
         sock_t fd = ::accept(t->listen_fd, nullptr, nullptr);
         if (fd == BAD_SOCK) break;
+        if (t->serving.fetch_add(1) >= FRAME_CONNS_MAX) {
+            t->serving.fetch_sub(1);
+            sock_close(fd);
+            continue;
+        }
         std::thread(serve_conn, t, fd).detach();
     }
 }
@@ -1778,6 +1870,95 @@ inline void close(const std::string& id) {
     if (t->server.joinable()) t->server.join();
     end_conn(c);
     if (!t->token.empty()) sodium_memzero(t->token.data(), t->token.size());
+}
+
+// ---- For the tests (milestone 36) ---------------------------------------------------
+
+// Whether tab `id`'s last open also wiped FreeRDP's backup of the password.
+inline bool creds_wiped(const std::string& id) {
+    auto t = find(id);
+    return t && t->creds_wiped.load();
+}
+
+// A server that answers the X.224 connection request by choosing standard RDP
+// security, as a machine in the middle would to downgrade the connection, then counts
+// what the client sends next (an MCS connect, with the auto-logon password soon
+// after) until it closes or 3 s pass. `downgrade_server_start` returns its port.
+struct DowngradeServer {
+    std::mutex mu;
+    std::condition_variable cv;
+    bool done = false;
+    int64_t bytes_after = -1;  // bytes the client sent after the answer
+    std::thread th;
+};
+inline DowngradeServer& downgrade_server() { static DowngradeServer d; return d; }
+
+inline int32_t downgrade_server_start() {
+    if (!sock_init()) return 0;
+    auto& d = downgrade_server();
+    if (d.th.joinable()) d.th.join();
+    {
+        std::lock_guard<std::mutex> g(d.mu);
+        d.done = false;
+        d.bytes_after = -1;
+    }
+    sock_t fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == BAD_SOCK) return 0;
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) != 0 || ::listen(fd, 1) != 0) {
+        sock_close(fd);
+        return 0;
+    }
+    socklen_t len = sizeof addr;
+    getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len);
+    d.th = std::thread([fd] {
+        auto& d = downgrade_server();
+        int64_t after = -1;
+        sock_t c = ::accept(fd, nullptr, nullptr);
+        sock_close(fd);
+        if (c != BAD_SOCK) {
+            sock_recv_timeout(c, 3000);
+            // The TPKT header gives the request's length.
+            std::string req;
+            char buf[512];
+            while (req.size() < 4 || req.size() < static_cast<size_t>((static_cast<uint8_t>(req[2]) << 8) | static_cast<uint8_t>(req[3]))) {
+                int k = sock_recv(c, buf, sizeof buf);
+                if (k <= 0) break;
+                req.append(buf, static_cast<size_t>(k));
+            }
+            // TPKT, X.224 Connection Confirm, RDP_NEG_RSP choosing PROTOCOL_RDP (0).
+            const unsigned char cc[19] = {0x03, 0x00, 0x00, 0x13, 0x0e, 0xd0, 0x00, 0x00, 0x12, 0x34, 0x00,
+                                          0x02, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00};
+            if (req.size() >= 4 && send_all(c, reinterpret_cast<const char*>(cc), sizeof cc)) {
+                after = 0;
+                for (;;) {
+                    int k = sock_recv(c, buf, sizeof buf);
+                    if (k <= 0) break;
+                    after += k;
+                }
+            }
+            sock_close(c);
+        }
+        std::lock_guard<std::mutex> g(d.mu);
+        d.bytes_after = after;
+        d.done = true;
+        d.cv.notify_all();
+    });
+    return static_cast<int32_t>(ntohs(addr.sin_port));
+}
+
+// Waits for the downgrade server's client to go, then returns what it sent after the
+// answer (-1: it never got that far).
+inline int64_t downgrade_server_result() {
+    auto& d = downgrade_server();
+    {
+        std::unique_lock<std::mutex> g(d.mu);
+        d.cv.wait_for(g, std::chrono::seconds(10), [&] { return d.done; });
+    }
+    if (d.th.joinable()) d.th.join();
+    return d.bytes_after;
 }
 
 // Ends every tab (the app is quitting).

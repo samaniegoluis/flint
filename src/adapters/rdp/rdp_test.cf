@@ -117,8 +117,16 @@ test "the sample server's certificate is refused until trusted, then frames and 
     // The frame channel wants its token.
     bad := try os.command("curl", ["-s", "-o", "/dev/null", "-D", "-", "http://127.0.0.1:{d.frame_port}/next?t=nope"])
     assert(bad.stdout.starts_with("HTTP/1.1 403"), bad.stdout)
-    good := try os.command("curl", ["-s", "-o", "/dev/null", "-D", "-", "http://127.0.0.1:{d.frame_port}/next?t={d.frame_token}"])
+    good := try os.command("curl", ["-s", "-o", "/dev/null", "-D", "-", "-H", "Origin: app://localhost", "http://127.0.0.1:{d.frame_port}/next?t={d.frame_token}"])
     assert(good.stdout.starts_with("HTTP/1.1 200"), good.stdout)
+    assert(good.stdout.contains("Access-Control-Allow-Origin: app://localhost"), good.stdout)
+    // Milestone 36: a name rebound to 127.0.0.1 is refused even with the token, and
+    // another web page gets no CORS header to read the answer with.
+    rebound := try os.command("curl", ["-s", "-o", "/dev/null", "-D", "-", "-H", "Host: evil.example:{d.frame_port}", "http://127.0.0.1:{d.frame_port}/next?t={d.frame_token}"])
+    assert(rebound.stdout.starts_with("HTTP/1.1 403"), rebound.stdout)
+    foreign := try os.command("curl", ["-s", "-o", "/dev/null", "-D", "-", "-H", "Origin: https://evil.example", "http://127.0.0.1:{d.frame_port}/next?t={d.frame_token}"])
+    assert(foreign.stdout.starts_with("HTTP/1.1 200"), foreign.stdout)
+    assert(!foreign.stdout.contains("Access-Control-Allow-Origin"), foreign.stdout)
 
     // No Display Control here: the size is kept and reported for a reconnect, which
     // keeps the frame channel.
@@ -129,6 +137,8 @@ test "the sample server's certificate is refused until trusted, then frames and 
     d2 := try rd.rd_open("t-sample", sample_target(fp), 15000)
     assert_eq(d2.frame_port, d.frame_port)
     assert_eq(d2.frame_token, d.frame_token)
+    // FreeRDP's backup of the settings lost the password too (milestone 36).
+    assert(creds_wiped("t-sample"))
     assert_eq(rd.rd_wait("t-sample", 200).kind, "running")
     try rd.rd_pointer("t-sample", RdpPointer{ kind: "move", button: 0, x: 10, y: 10, delta: 0 })
     try rd.rd_key("t-sample", "ShiftLeft", true)
@@ -136,6 +146,50 @@ test "the sample server's certificate is refused until trusted, then frames and 
     mut msg := ""
     rd.rd_key("t-sample", "NoSuchKey", true) or err { msg = "{err.message()}" }
     assert(msg.starts_with("invalid:"), msg)
+}
+
+test "a server that answers with standard RDP security is refused before any credential" {
+    port := downgrade_server_start()
+    assert(port > 0)
+    rd := new_freerdp_desktop()
+    t := RdpTarget{ hostname: "127.0.0.1", port: port, user: "nobody", domain: "", password: "downgrade-secret-4711", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto", rtt_ms: -1 }
+    mut msg := ""
+    rd.rd_open("t-downgrade", t, 10000) or err { msg = "{err.message()}" }
+    rd.rd_close("t-downgrade")
+    assert(msg.len() > 0, "the connection must fail")
+    assert(!msg.contains("downgrade-secret-4711"), msg)
+    // Nothing follows the answer: no MCS connect, so no auto-logon password.
+    assert_eq(downgrade_server_result(), 0)
+}
+
+test "the frame channel reads its token only from the request line and wants its own Host" {
+    tok := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    ok := "GET /next?t={tok} HTTP/1.1\r\nHost: 127.0.0.1:5000\r\nOrigin: app://localhost"
+    assert_eq(check_frame_request(ok, tok, 5000), 0)
+    // Wrong port in Host, a rebound name, no Host.
+    assert_eq(check_frame_request("GET /next?t={tok} HTTP/1.1\r\nHost: 127.0.0.1:5001", tok, 5000), 2)
+    assert_eq(check_frame_request("GET /next?t={tok} HTTP/1.1\r\nHost: evil.example:5000", tok, 5000), 2)
+    assert_eq(check_frame_request("GET /next?t={tok} HTTP/1.1", tok, 5000), 2)
+    // The token in a header, not the request line.
+    assert_eq(check_frame_request("GET /next HTTP/1.1\r\nHost: 127.0.0.1:5000\r\nX-A: t={tok}", tok, 5000), 1)
+    // A prefix of the token, a longer one, another path, an empty channel token.
+    assert_eq(check_frame_request("GET /next?t=abcd HTTP/1.1\r\nHost: 127.0.0.1:5000", tok, 5000), 1)
+    assert_eq(check_frame_request("GET /next?t={tok}00 HTTP/1.1\r\nHost: 127.0.0.1:5000", tok, 5000), 1)
+    assert_eq(check_frame_request("GET /other?t={tok} HTTP/1.1\r\nHost: 127.0.0.1:5000", tok, 5000), 1)
+    assert_eq(check_frame_request("GET /next?t= HTTP/1.1\r\nHost: 127.0.0.1:5000", "", 5000), 1)
+    // Header names in any case.
+    assert_eq(check_frame_request("GET /next?t={tok} HTTP/1.1\r\nhost:127.0.0.1:5000", tok, 5000), 0)
+}
+
+test "the frame channel answers CORS only to pages on this machine" {
+    assert_eq(frame_cors("GET / HTTP/1.1\r\nOrigin: app://localhost"), "Access-Control-Allow-Origin: app://localhost\r\nVary: Origin\r\n")
+    assert(frame_cors("GET / HTTP/1.1\r\nOrigin: http://localhost:5173").len() > 0)
+    assert(frame_cors("GET / HTTP/1.1\r\nOrigin: https://app.localhost").len() > 0)
+    assert(frame_cors("GET / HTTP/1.1\r\nOrigin: http://127.0.0.1:8080").len() > 0)
+    assert_eq(frame_cors("GET / HTTP/1.1\r\nOrigin: https://evil.example"), "")
+    assert_eq(frame_cors("GET / HTTP/1.1\r\nOrigin: https://localhost.evil.example"), "")
+    assert_eq(frame_cors("GET / HTTP/1.1\r\nOrigin: null"), "")
+    assert_eq(frame_cors("GET / HTTP/1.1"), "")
 }
 
 test "a closed tab ends its wait and refuses input" {
