@@ -7,8 +7,11 @@
 
 <p align="center">
   <img alt="Status: preview" src="https://img.shields.io/badge/status-preview-orange">
-  <img alt="Version" src="https://img.shields.io/github/v/tag/samaniegoluis/flint?label=version">
+  <img alt="Version" src="https://img.shields.io/github/v/tag/samaniegoluis/flint?sort=semver&label=version">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey">
+  <a href="https://github.com/gsandoval/cfire"><img alt="Built with cfire" src="https://img.shields.io/badge/built%20with-cfire-e8590c"></a>
+  <br>
+  <img alt="Last commit" src="https://img.shields.io/github/last-commit/samaniegoluis/flint">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue">
 </p>
 
