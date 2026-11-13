@@ -2,24 +2,29 @@
 # End-to-end checks of flint-vault-server (milestone 42, D-097): the real binary on a
 # loopback port with a throwaway data folder, driven by curl and by raw sockets (a
 # client that stalls, a body cut short). Builds the server first unless
-# FLINT_SERVER_BIN names one.
+# FLINT_SERVER_BIN names one. With FLINT_SERVER_IMAGE, the same checks run against that
+# Docker image instead (scripts/server-image.sh builds it).
 #
 #   scripts/server-e2e.sh
+#   FLINT_SERVER_IMAGE=ghcr.io/samaniegoluis/flint-vault-server:latest scripts/server-e2e.sh
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=/dev/null
 source "$root/scripts/env.sh"
 bin="${FLINT_SERVER_BIN:-$root/build/flint-vault-server}"
-if [[ -z "${FLINT_SERVER_BIN:-}" ]]; then
-  (cd "$root" && cfire build >/dev/null)
+image="${FLINT_SERVER_IMAGE:-}"
+if [[ -z "${FLINT_SERVER_BIN:-}" && -z "$image" ]]; then
+  (cd "$root" && cfire build flint-vault-server >/dev/null)
 fi
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-server-e2e.XXXXXX")"
 pids=()
+containers=()
 cleanup() {
   local st=$?
   for p in "${pids[@]+"${pids[@]}"}"; do kill "$p" 2>/dev/null || true; done
+  for c in "${containers[@]+"${containers[@]}"}"; do docker rm -f "$c" >/dev/null 2>&1 || true; done
   rm -rf "$tmp"
   exit "$st"
 }
@@ -37,7 +42,23 @@ check() {  # <name> <expected> <actual>
 
 free_port() { python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
 
-tokens="$("$bin" token --json)"
+# run_server <env...> -- <args...>: the server binary, here or in a throwaway container.
+run_server() {
+  local envs=()
+  while [[ "$1" != "--" ]]; do envs+=("$1"); shift; done
+  shift
+  if [[ -n "$image" ]]; then
+    local eargs=()
+    for e in "${envs[@]+"${envs[@]}"}"; do
+      case "$e" in -u) ;; FLINT_*) eargs+=(-e "$e") ;; esac
+    done
+    docker run --rm "${eargs[@]+"${eargs[@]}"}" "$image" "$@"
+  else
+    env "${envs[@]+"${envs[@]}"}" "$bin" "$@"
+  fi
+}
+
+tokens="$(run_server -- token --json)"
 token="$(python3 -I -c 'import json,sys; print(json.loads(sys.argv[1])["token"])' "$tokens")"
 hash="$(python3 -I -c 'import json,sys; print(json.loads(sys.argv[1])["hash"])' "$tokens")"
 check "token is 64 hex" "64" "${#token}"
@@ -47,15 +68,59 @@ start() {
   local name="$1"; shift
   port="$(free_port)"
   mkdir -p "$tmp/$name"
-  env "$@" FLINT_VAULT_LISTEN="127.0.0.1:$port" FLINT_VAULT_DATA="$tmp/$name/data" \
-    "$bin" serve >"$tmp/$name/log" 2>&1 &
-  pids+=($!)
+  if [[ -n "$image" ]]; then
+    local eargs=()
+    for e in "$@"; do eargs+=(-e "$e"); done
+    local c="flint-server-e2e-$name-$$"
+    docker run -d --name "$c" -p "127.0.0.1:$port:8787" "${eargs[@]}" "$image" >/dev/null
+    containers+=("$c")
+    # The container's log, copied into the file the checks read.
+    (docker logs -f "$c" >"$tmp/$name/log" 2>&1 &)
+  else
+    env "$@" FLINT_VAULT_LISTEN="127.0.0.1:$port" FLINT_VAULT_DATA="$tmp/$name/data" \
+      "$bin" serve >"$tmp/$name/log" 2>&1 &
+    pids+=($!)
+  fi
   url="http://127.0.0.1:$port/v1/vault"
-  for _ in $(seq 50); do
+  for _ in $(seq 100); do
     grep -q listening "$tmp/$name/log" 2>/dev/null && return 0
     sleep 0.1
   done
   echo "server $name did not start:"; cat "$tmp/$name/log"; exit 1
+}
+
+# in_server <name> <args...>: a server subcommand over that server's data folder.
+in_server() {
+  local name="$1"; shift
+  if [[ -n "$image" ]]; then
+    docker exec "flint-server-e2e-$name-$$" flint-vault-server "$@"
+  else
+    FLINT_VAULT_DATA="$tmp/$name/data" "$bin" "$@"
+  fi
+}
+
+# file_mode <name> <path in the data folder>
+file_mode() {
+  if [[ -n "$image" ]]; then
+    docker exec "flint-server-e2e-$1-$$" stat -c %a "/data/$2"
+  else
+    # GNU stat first: on Linux `stat -f` is the file system's status and succeeds.
+    stat -c %a "$tmp/$1/data/$2" 2>/dev/null || stat -f %Lp "$tmp/$1/data/$2"
+  fi
+}
+
+# stop_server <name>: SIGTERM; the exit status lands in $stopped (not run in a subshell,
+# which could not wait for the server).
+stop_server() {
+  if [[ -n "$image" ]]; then
+    local c="flint-server-e2e-$1-$$"
+    docker stop -t 10 "$c" >/dev/null
+    stopped="$(docker inspect -f '{{.State.ExitCode}}' "$c")"
+  else
+    kill -TERM "${pids[0]}"
+    set +e; wait "${pids[0]}"; stopped=$?; set -e
+    pids=("${pids[@]:1}")
+  fi
 }
 
 vid="00112233445566778899aabbccddeeff"
@@ -68,9 +133,9 @@ header() {  # <name> <curl args...>: the value of one response header
 
 # --- refused at start ---------------------------------------------------------------
 set +e
-FLINT_VAULT_TOKEN=short "$bin" serve >/dev/null 2>"$tmp/short.err"; rc=$?
-FLINT_VAULT_TOKEN="$token" FLINT_VAULT_TOKEN_HASH="$hash" "$bin" serve >/dev/null 2>"$tmp/both.err"; rc2=$?
-env -u FLINT_VAULT_TOKEN -u FLINT_VAULT_TOKEN_HASH "$bin" serve >/dev/null 2>"$tmp/none.err"; rc3=$?
+run_server FLINT_VAULT_TOKEN=short -- serve >/dev/null 2>"$tmp/short.err"; rc=$?
+run_server FLINT_VAULT_TOKEN="$token" FLINT_VAULT_TOKEN_HASH="$hash" -- serve >/dev/null 2>"$tmp/both.err"; rc2=$?
+run_server -u FLINT_VAULT_TOKEN -u FLINT_VAULT_TOKEN_HASH -- serve >/dev/null 2>"$tmp/none.err"; rc3=$?
 set -e
 check "a short token is refused at start" "1" "$([[ $rc -ne 0 ]] && grep -c 'shorter than 32' "$tmp/short.err")"
 check "token and hash together are refused" "1" "$([[ $rc2 -ne 0 ]] && grep -c 'not both' "$tmp/both.err")"
@@ -145,13 +210,11 @@ check "429 says when to come back" "1" "$([[ "$(header Retry-After "${auth[@]}" 
 check "the log never holds the token" "0" "$(grep -c "$token" "$tmp/main/log" || true)"
 check "the log never holds the file" "0" "$(grep -c 'MARKER-BLOB' "$tmp/main/log" || true)"
 check "the log has a line per request" "1" "$([[ $(grep -c ' /v1/vault ' "$tmp/main/log") -gt 100 ]] && echo 1)"
-check "stored files are owner-only" "600" "$(stat -f %Lp "$tmp/main/data/versions/1.blob" 2>/dev/null || stat -c %a "$tmp/main/data/versions/1.blob")"
+check "stored files are owner-only" "600" "$(file_mode main versions/1.blob)"
 
 # SIGTERM ends it cleanly.
-kill -TERM "${pids[0]}"
-set +e; wait "${pids[0]}"; rc=$?; set -e
-check "SIGTERM stops the server with 0" "0" "$rc"
-pids=("${pids[@]:1}")
+stop_server main
+check "SIGTERM stops the server with 0" "0" "$stopped"
 
 # --- lockout per client, behind a trusted proxy ---------------------------------------------
 start proxy FLINT_VAULT_TOKEN="$token" FLINT_VAULT_TRUST_PROXY=1
@@ -161,7 +224,6 @@ check "another client behind the same proxy is not" "404" "$(status -H 'X-Forwar
 check "the log names the client by its forwarded address" "1" "$(grep -c '203.0.113.9 GET /v1/vault 401 .*locked out' "$tmp/proxy/log")"
 
 # --- the history: ten versions kept, and restore --------------------------------------------
-data="$tmp/proxy/data"
 xff=(-H 'X-Forwarded-For: 192.0.2.1')
 printf 'v1' >"$tmp/h.bin"
 status -X PUT "${auth[@]}" "${xff[@]}" -H 'If-None-Match: *' -H "X-Flint-Vault-Id: $vid" --data-binary @"$tmp/h.bin" "$url" >/dev/null
@@ -169,14 +231,14 @@ for n in $(seq 2 13); do
   printf "v$n" >"$tmp/h.bin"
   status -X PUT "${auth[@]}" "${xff[@]}" -H "If-Match: \"$((n - 1))\"" -H "X-Flint-Vault-Id: $vid" --data-binary @"$tmp/h.bin" "$url" >/dev/null
 done
-listed="$(FLINT_VAULT_DATA="$data" "$bin" versions --json | python3 -I -c 'import json,sys; v=json.load(sys.stdin); print(len(v), v[0]["version"], v[-1]["version"])')"
+listed="$(in_server proxy versions --json | python3 -I -c 'import json,sys; v=json.load(sys.stdin); print(len(v), v[0]["version"], v[-1]["version"])')"
 check "ten versions are kept, 13 down to 4" "10 13 4" "$listed"
-check "versions prints a table" "1" "$(FLINT_VAULT_DATA="$data" "$bin" versions | grep -c "^      4 ")"
-FLINT_VAULT_DATA="$data" "$bin" restore 5 >"$tmp/restore.out"
+check "versions prints a table" "1" "$(in_server proxy versions | grep -c "^      4 ")"
+in_server proxy restore 5 >"$tmp/restore.out"
 check "restore says what it did" "1" "$(grep -c 'version 5 is now version 14' "$tmp/restore.out")"
 check "the server serves the restored file as version 14" '"14" v5' "$(header ETag "${auth[@]}" "${xff[@]}" "$url") $(curl -s -m 5 "${auth[@]}" "${xff[@]}" "$url")"
 set +e
-FLINT_VAULT_DATA="$data" "$bin" restore 2 >/dev/null 2>"$tmp/restore.err"; rc=$?
+in_server proxy restore 2 >/dev/null 2>"$tmp/restore.err"; rc=$?
 set -e
 check "a version no longer kept cannot be restored" "1" "$([[ $rc -ne 0 ]] && grep -c 'not kept' "$tmp/restore.err")"
 check "a machine that had version 13 gets 409 after the restore" "409" "$(status -X PUT "${auth[@]}" "${xff[@]}" -H 'If-Match: "13"' -H "X-Flint-Vault-Id: $vid" --data-binary @"$tmp/h.bin" "$url")"

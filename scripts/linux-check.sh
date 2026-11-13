@@ -9,7 +9,7 @@
 #   FLINT_LINUX_STEPS=tests FLINT_LINUX_SUITES=src/adapters/ssh scripts/linux-check.sh
 #   FLINT_LINUX_STEPS=gui FLINT_LINUX_REPEAT="rdp 10" scripts/linux-check.sh   # rule 9
 #
-# Steps: tests, cli, gui, serve (comma-separated). Run them all before closing a milestone.
+# Steps: tests, cli, gui, serve, server (comma-separated). Run them all before closing a milestone.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 image="flint-linux-check"

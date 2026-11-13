@@ -150,6 +150,22 @@ plain words: it saves the vault key in the OS keychain so Flint reopens without 
 master password. Without it no key is written there; the keys earlier versions cached on
 every unlock are removed once.
 
+## The remote vault server
+
+[`flint-vault-server`](/guides/vault-server/) stores the vault file exactly as Flint
+uploads it, encrypted in full, with a version and the vault's id. It never receives the
+master password or any key and never opens the file, so whoever holds the server or its
+token reads only ciphertext; your master password is then what stands against an offline
+attack, which is why Flint asks for a strong one before it connects.
+
+The token says who may talk to the server. The server can keep only its BLAKE2b hash
+(libsodium), compares it in constant time, refuses a short one at start, and locks a
+client out after 10 wrong tokens in 10 minutes. Every request has a size cap and a
+deadline, and each client a rate limit. The log never holds a token, a header's value or
+the file. A stolen token can still upload, so the server keeps the last 10 versions and
+any of them can be [restored](/guides/vault-server/#restore-an-older-version); a machine
+never replaces its own copy with a download, it merges it.
+
 ## Next
 
 Windows (a named pipe and Windows Hello), a headless `flint serve`, and a Keychain item

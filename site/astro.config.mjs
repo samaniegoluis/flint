@@ -49,6 +49,7 @@ export default defineConfig({
 					items: [
 						{ label: 'The desktop app', slug: 'guides/desktop-app' },
 						{ label: 'Vaults', slug: 'guides/vaults' },
+						{ label: 'Self-host a remote vault', slug: 'guides/vault-server' },
 						{ label: 'Hosts and groups', slug: 'guides/hosts' },
 						{ label: 'SSH keys', slug: 'guides/keys' },
 						{ label: 'Credentials', slug: 'guides/credentials' },

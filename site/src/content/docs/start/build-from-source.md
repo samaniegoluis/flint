@@ -99,6 +99,10 @@ cfire build
 ./build/flint --version
 ```
 
+`cfire build` makes all three programs: the `flint` CLI, the desktop app in `build/gui/`,
+and [`flint-vault-server`](/guides/vault-server/) in `build/`. `cfire build flint-vault-server`
+makes the server alone; it needs libsodium and nothing else.
+
 `scripts/env.sh` adds Flint's own pkg-config folder (`src/adapters/pkgconfig/<os>/`) to
 `PKG_CONFIG_PATH`. The adapters reach their native headers, per-OS link flags and libsecret
 through it. Without it, `cfire build` fails to find `flint-native`.
