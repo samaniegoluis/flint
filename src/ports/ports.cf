@@ -76,6 +76,15 @@ type VaultStore interface {
     vault_rekey_commit(path: str, page_key: []byte, salt: []byte) -> void!
     activity_rekey_commit(key: []byte) -> void!
     vault_rekey_abort(path: str)
+    // Milestone 41 (D-093, D-096): every write stamps its row and every delete leaves
+    // a tombstone. `vault_records` reads every synced row with its stamp, and the
+    // tombstones; `vault_replace_records` puts a merge's result in their place, each
+    // row keeping its stamp (inside `vault_begin` / `vault_commit`).
+    vault_records() -> VaultRecords!
+    vault_replace_records(r: VaultRecords) -> void!
+    // Opens a conflict copy of a vault to merge, read through a private copy so the
+    // file at `path` is never changed; `vault_detach` closes and removes it.
+    vault_attach_copy(path: str, page_key: []byte, salt: []byte) -> void!
 }
 
 // Tokens, in the open vault (adapters/vault, migration 004, milestone 12b), and the

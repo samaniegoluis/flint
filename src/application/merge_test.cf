@@ -1,0 +1,119 @@
+package application
+
+// Merging a conflict copy of the open vault (milestone 41).
+
+import "../domain"
+
+COPY_PATH: str = "/sync/Lab (conflict copy).flint"
+
+// A conflict copy of `store`'s vault: the same file key and salt, the same id.
+fn conflict_copy(store: FakeStore, id: str) -> FakeStore {
+    mut c := new_fake_store()
+    c.file_path = COPY_PATH
+    c.file_salt = store.file_salt
+    c.file_key = store.file_key
+    c.meta_keys = ["format", VAULT_META_ID]
+    c.meta_values = ["1", id]
+    c.groups = store.groups
+    c.hosts = store.hosts
+    c.keys = store.keys
+    c.creds = store.creds
+    return c
+}
+
+fn merge_fixture(crypto: FakeCrypto, mut store: FakeStore, kc: FakeKeychain, remember: bool) -> VaultSession! {
+    s := try create_vault(crypto, mut store, kc, new_fake_recents(), "/v/Lab.flint", "", "correct horse", remember)
+    _ := try add_host(crypto, mut store, s, host_patch("web", "10.0.0.5"))
+    store.hosts[0].updated_at = 100
+    return s
+}
+
+test "a conflict copy's changes go into the vault, reported, and the copy is closed" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    s := try merge_fixture(crypto, mut store, kc, false)
+    mut copy := conflict_copy(store, s.id)
+    // There: web edited later, and a host added.
+    copy.hosts[0].port = 2222
+    copy.hosts[0].updated_at = 200
+    mut db := copy.hosts[0]
+    db.id = "dbid"
+    db.alias = "db"
+    db.updated_at = 150
+    copy.hosts.push(db)
+
+    got := try merge_vault_copy(crypto, mut store, mut copy, kc, s, COPY_PATH, "correct horse")
+    assert_eq(got.copy, COPY_PATH)
+    assert_eq(got.name, "Lab")
+    assert_eq(got.report.added, 1)
+    assert_eq(got.report.updated, 1)
+    assert_eq(store.replaced, 1)
+    assert_eq(store.hosts.len(), 2)
+    for h in store.hosts {
+        if h.alias == "web" {
+            assert_eq(h.port, 2222)
+        }
+    }
+    assert(!copy.copy_open, "the copy is closed")
+    assert(store.attached, "the vault stays open")
+}
+
+test "a remembered key opens the copy with no password; without one it is needed" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    s := try merge_fixture(crypto, mut store, kc, true)
+    mut copy := conflict_copy(store, s.id)
+    got := try merge_vault_copy(crypto, mut store, mut copy, kc, s, COPY_PATH, "")
+    assert_eq(got.report.added + got.report.updated + got.report.removed, 0)
+
+    mut store2 := new_fake_store()
+    s2 := try merge_fixture(crypto, mut store2, kc, false)
+    try forget_vault_key(store2, kc, s2.path)
+    mut copy2 := conflict_copy(store2, s2.id)
+    mut msg := ""
+    merge_vault_copy(crypto, mut store2, mut copy2, kc, s2, COPY_PATH, "") or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_LOCKED)
+}
+
+test "the vault itself, another vault and another password are refused, and nothing changes" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    s := try merge_fixture(crypto, mut store, kc, false)
+
+    mut copy := conflict_copy(store, s.id)
+    mut msg := ""
+    merge_vault_copy(crypto, mut store, mut copy, kc, s, s.path, "correct horse") or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_INVALID)
+    assert(msg.contains("the vault itself"))
+
+    mut other := conflict_copy(store, "ffffffffffffffffffffffffffffffff")
+    msg = ""
+    merge_vault_copy(crypto, mut store, mut other, kc, s, COPY_PATH, "correct horse") or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_INVALID)
+    assert(msg.contains("another vault"))
+    assert(!other.copy_open)
+
+    // The copy has a salt of its own: a password changed on the other machine.
+    mut rekeyed := conflict_copy(store, s.id)
+    rekeyed.file_salt = crypto.random_bytes(VAULT_SALT_LEN)
+    msg = ""
+    merge_vault_copy(crypto, mut store, mut rekeyed, kc, s, COPY_PATH, "correct horse") or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_INVALID)
+    assert(msg.contains("another master password"))
+    assert_eq(store.replaced, 0)
+}
+
+test "a copy from before milestone 40, with no id in meta, is known by its salt" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    mut s := try merge_fixture(crypto, mut store, kc, false)
+    salt := try store.vault_read_salt(s.path)
+    s.id = try salt_vault_id(crypto, salt)
+    mut copy := conflict_copy(store, "")
+    _ := try merge_vault_copy(crypto, mut store, mut copy, kc, s, COPY_PATH, "correct horse")
+    assert_eq(store.replaced, 1)
+}

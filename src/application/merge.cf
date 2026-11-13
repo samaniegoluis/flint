@@ -1,0 +1,73 @@
+package application
+
+// Merging a conflict copy of the open vault (milestone 41, D-093, D-096): `flint vault
+// merge <copy.flint>`. A cloud folder that saw two machines change the vault apart
+// keeps one as the vault and the other as a copy beside it; this puts the copy's
+// changes into the vault, record by record (domain/merge.cf), and reports them.
+//
+// The copy must be the same vault under the same master password: the same id and
+// the same secrets key, so its sealed fields move as they are and nothing is opened
+// or sealed again. Its master key comes from the keychain (Remember on this
+// computer) or from the password typed for this command, never from anything else
+// (Principle 11). It is opened through a private copy of it, so the file a person
+// handed in is only read, and the open vault changes in one transaction.
+
+import "../domain"
+import "../ports"
+
+// What `vault merge` reports: the vault, the copy merged into it, and what changed.
+type MergeOutcome struct {
+    path:   str         `json:"path"`
+    name:   str         `json:"name"`
+    copy:   str         `json:"copy"`
+    report: MergeReport `json:"report"`
+}
+
+// Merges the vault at `copy_path` into the open vault (`store`, `session`), through
+// `copy`, a store of its own for the copy. `password` is the master password typed
+// for this command; empty, the key this computer remembers for the copy is used.
+fn merge_vault_copy[C: Crypto, S: VaultStore, P: VaultStore, K: Keychain](crypto: C, mut store: S, mut copy: P, keychain: K, session: VaultSession, copy_path: str, password: str) -> MergeOutcome! {
+    try check_absolute(copy_path)
+    if copy_path == session.path {
+        return error(coded(ERR_INVALID, "{copy_path} is the vault itself; name the conflict copy to merge into it"))
+    }
+    salt := try copy.vault_read_salt(copy_path)
+    mut master: []byte = []
+    if password.len() == 0 {
+        cached := keychain.keychain_load(vault_account(salt)) or []
+        if cached.len() != VAULT_KEY_LEN {
+            return error(coded(ERR_LOCKED, "the master password is needed to open {copy_path}"))
+        }
+        master = cached
+        crypto.wipe(cached)
+    } else {
+        master = try crypto.derive_key(password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
+    }
+    defer crypto.wipe(master)
+    (page, secrets) := try derive_vault_keys(crypto, master)
+    defer crypto.wipe(page)
+    defer crypto.wipe(secrets)
+    if !crypto.equal(secrets, session.secrets_key) {
+        return error(coded(ERR_INVALID, "{copy_path} has another master password than vault '{session.name}' (changed on another machine?); give it the same password first, or merge in the other direction"))
+    }
+    try copy.vault_attach_copy(copy_path, page, salt)
+    defer copy.vault_detach()
+    // A copy from before milestone 40 has no id in meta yet: it had the one of its salt.
+    mut copy_id := try copy.vault_get_meta(VAULT_META_ID)
+    if copy_id.len() == 0 {
+        copy_id = try salt_vault_id(crypto, salt)
+    }
+    if copy_id != session.id {
+        return error(coded(ERR_INVALID, "{copy_path} is another vault, not a copy of '{session.name}'"))
+    }
+    theirs := try copy.vault_records()
+    mine := try store.vault_records()
+    merged := merge_vaults(mine, theirs)
+    try store.vault_begin()
+    store.vault_replace_records(merged.records) or err {
+        store.vault_rollback()
+        return error("{err.message()}")
+    }
+    try store.vault_commit()
+    return MergeOutcome{ path: session.path, name: session.name, copy: copy_path, report: merged.report }
+}

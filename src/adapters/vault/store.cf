@@ -20,13 +20,25 @@ type SqlVaultStore struct {
     // was prepared; a commit refuses when either moved since.
     rekey_mark: i64
     act_rekey_mark: i64
+    // Milestone 41 (sync.cf): where a conflict copy is copied to be opened, and the
+    // copy itself while it is open (removed at detach).
+    work_dir: str
+    copy_path: str
 }
 
 // `act_dir` is where activity files live: `<config folder>/activity` in the app and
 // the CLI (`new_locked_vault_store`), set by a test that needs one. Empty: the store
 // has none, and `activity_attach` fails.
 fn new_sql_vault_store() -> SqlVaultStore {
-    return SqlVaultStore{ handle: none, act_handle: none, act_path: "", act_dir: "", rekey_mark: -1, act_rekey_mark: -1 }
+    return SqlVaultStore{ handle: none, act_handle: none, act_path: "", act_dir: "", rekey_mark: -1, act_rekey_mark: -1, work_dir: "", copy_path: "" }
+}
+
+// A store that opens conflict copies to merge (`vault_attach_copy`, milestone 41),
+// through private copies in `work_dir`: the config folder.
+fn new_copy_vault_store(work_dir: str) -> SqlVaultStore {
+    mut s := new_sql_vault_store()
+    s.work_dir = work_dir
+    return s
 }
 
 // A view of the open connection; it does not own the handle.
@@ -105,6 +117,7 @@ fn (mut self: SqlVaultStore) vault_detach() {
         db.close_db()
     }
     self.handle = none
+    self.drop_copy()
 }
 
 fn (self: SqlVaultStore) require_open() -> void! {
@@ -153,29 +166,36 @@ fn (self: SqlVaultStore) vault_rollback() {
 
 fn (self: SqlVaultStore) groups_all() -> []Group! {
     try self.require_open()
-    res := try self.conn().query_cells("SELECT id, ifnull(parent_id, ''), name FROM groups ORDER BY name COLLATE NOCASE;", [])
+    res := try self.conn().query_cells("SELECT id, ifnull(parent_id, ''), name, updated_at FROM groups ORDER BY name COLLATE NOCASE;", [])
     mut list: []Group = []
     for r in res {
-        list.push(Group{ id: cell_str(r[0]), parent_id: cell_str(r[1]), name: cell_str(r[2]) })
+        list.push(Group{ id: cell_str(r[0]), parent_id: cell_str(r[1]), name: cell_str(r[2]), updated_at: cell_i64(r[3]) })
     }
     return list
 }
 
+// Every put stamps the row (`next_stamp`) and lifts a tombstone of its id; every drop
+// leaves one (milestone 41, sync.cf).
 fn (self: SqlVaultStore) group_put(g: Group) -> void! {
     try self.require_open()
-    try self.conn().run_sql("INSERT INTO groups (id, parent_id, name) VALUES (?1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET parent_id = excluded.parent_id, name = excluded.name;", [sql_text(g.id), sql_ref(g.parent_id), sql_text(g.name)])
+    try self.group_write(g, try self.next_stamp(MERGE_KIND_GROUP, g.id))
+    try self.unbury(MERGE_KIND_GROUP, g.id)
+}
+
+fn (self: SqlVaultStore) group_write(g: Group, stamp: i64) -> void! {
+    try self.conn().run_sql("INSERT INTO groups (id, parent_id, name, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO UPDATE SET parent_id = excluded.parent_id, name = excluded.name, updated_at = excluded.updated_at;", [sql_text(g.id), sql_ref(g.parent_id), sql_text(g.name), sql_int(stamp)])
 }
 
 fn (self: SqlVaultStore) group_drop(id: str) -> void! {
     try self.require_open()
-    try self.conn().run_sql("DELETE FROM groups WHERE id = ?1;", [sql_text(id)])
+    try self.drop_buried(MERGE_KIND_GROUP, id)
 }
 
 // ---- Hosts -------------------------------------------------------------------
 
 fn (self: SqlVaultStore) hosts_all() -> []Host! {
     try self.require_open()
-    res := try self.conn().query_cells("SELECT id, alias, label, hostname, port, username, ifnull(group_id, ''), color, notes, ifnull(jump_host_id, ''), ifnull(credential_id, ''), ifnull(key_id, ''), password, initial_command, keep_shell, sudo_password, type, domain FROM hosts ORDER BY alias COLLATE NOCASE;", [])
+    res := try self.conn().query_cells("SELECT id, alias, label, hostname, port, username, ifnull(group_id, ''), color, notes, ifnull(jump_host_id, ''), ifnull(credential_id, ''), ifnull(key_id, ''), password, initial_command, keep_shell, sudo_password, type, domain, updated_at FROM hosts ORDER BY alias COLLATE NOCASE;", [])
     tag_res := try self.conn().query_cells("SELECT host_id, tag FROM host_tags ORDER BY host_id, position;", [])
     mut tags_by_host: map[str][]str = {}
     for t in tag_res {
@@ -212,6 +232,7 @@ fn (self: SqlVaultStore) hosts_all() -> []Host! {
                 sudo_password: cell_bytes(r[15]),
                 host_type: cell_str(r[16]),
                 domain: cell_str(r[17]),
+                updated_at: cell_i64(r[18]),
         })
     }
     return list
@@ -226,12 +247,17 @@ fn bool_int(b: bool) -> i64 {
 
 fn (self: SqlVaultStore) host_put(h: Host) -> void! {
     try self.require_open()
-    try self.conn().run_sql("INSERT INTO hosts (id, alias, label, hostname, port, username, group_id, color, notes, jump_host_id, credential_id, key_id, password, initial_command, keep_shell, sudo_password, type, domain) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18) ON CONFLICT(id) DO UPDATE SET alias = excluded.alias, label = excluded.label, hostname = excluded.hostname, port = excluded.port, username = excluded.username, group_id = excluded.group_id, color = excluded.color, notes = excluded.notes, jump_host_id = excluded.jump_host_id, credential_id = excluded.credential_id, key_id = excluded.key_id, password = excluded.password, initial_command = excluded.initial_command, keep_shell = excluded.keep_shell, sudo_password = excluded.sudo_password, type = excluded.type, domain = excluded.domain;", [
+    try self.host_write(h, try self.next_stamp(MERGE_KIND_HOST, h.id))
+    try self.unbury(MERGE_KIND_HOST, h.id)
+}
+
+fn (self: SqlVaultStore) host_write(h: Host, stamp: i64) -> void! {
+    try self.conn().run_sql("INSERT INTO hosts (id, alias, label, hostname, port, username, group_id, color, notes, jump_host_id, credential_id, key_id, password, initial_command, keep_shell, sudo_password, type, domain, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19) ON CONFLICT(id) DO UPDATE SET alias = excluded.alias, label = excluded.label, hostname = excluded.hostname, port = excluded.port, username = excluded.username, group_id = excluded.group_id, color = excluded.color, notes = excluded.notes, jump_host_id = excluded.jump_host_id, credential_id = excluded.credential_id, key_id = excluded.key_id, password = excluded.password, initial_command = excluded.initial_command, keep_shell = excluded.keep_shell, sudo_password = excluded.sudo_password, type = excluded.type, domain = excluded.domain, updated_at = excluded.updated_at;", [
             sql_text(h.id), sql_text(h.alias), sql_text(h.label), sql_text(h.hostname), sql_int(h.port),
             sql_text(h.username), sql_ref(h.group_id), sql_text(h.color), sql_text(h.notes),
             sql_ref(h.jump_host_id), sql_ref(h.credential_id), sql_ref(h.key_id), sql_blob(h.password),
             sql_text(h.initial_command), sql_int(bool_int(h.keep_shell)), sql_blob(h.sudo_password),
-            sql_text(host_type_of(h)), sql_text(h.domain),
+            sql_text(host_type_of(h)), sql_text(h.domain), sql_int(stamp),
     ])
     try self.conn().run_sql("DELETE FROM host_tags WHERE host_id = ?1;", [sql_text(h.id)])
     for i, t in h.tags {
@@ -239,67 +265,78 @@ fn (self: SqlVaultStore) host_put(h: Host) -> void! {
     }
 }
 
+// The host's tunnels go with it (ON DELETE CASCADE), each leaving its tombstone.
 fn (self: SqlVaultStore) host_drop(id: str) -> void! {
     try self.require_open()
-    try self.conn().run_sql("DELETE FROM hosts WHERE id = ?1;", [sql_text(id)])
+    try self.drop_buried(MERGE_KIND_HOST, id)
 }
 
 // ---- SSH keys ----------------------------------------------------------------
 
 fn (self: SqlVaultStore) keys_all() -> []SshKey! {
     try self.require_open()
-    res := try self.conn().query_cells("SELECT id, name, key_type, public_key, fingerprint, private_key, passphrase FROM ssh_keys ORDER BY name COLLATE NOCASE;", [])
+    res := try self.conn().query_cells("SELECT id, name, key_type, public_key, fingerprint, private_key, passphrase, updated_at FROM ssh_keys ORDER BY name COLLATE NOCASE;", [])
     mut list: []SshKey = []
     for r in res {
-        list.push(SshKey{ id: cell_str(r[0]), name: cell_str(r[1]), key_type: cell_str(r[2]), public_key: cell_str(r[3]), fingerprint: cell_str(r[4]), private_key: cell_bytes(r[5]), passphrase: cell_bytes(r[6]) })
+        list.push(SshKey{ id: cell_str(r[0]), name: cell_str(r[1]), key_type: cell_str(r[2]), public_key: cell_str(r[3]), fingerprint: cell_str(r[4]), private_key: cell_bytes(r[5]), passphrase: cell_bytes(r[6]), updated_at: cell_i64(r[7]) })
     }
     return list
 }
 
 fn (self: SqlVaultStore) key_put(k: SshKey) -> void! {
     try self.require_open()
-    try self.conn().run_sql("INSERT INTO ssh_keys (id, name, key_type, public_key, fingerprint, private_key, passphrase) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET name = excluded.name, key_type = excluded.key_type, public_key = excluded.public_key, fingerprint = excluded.fingerprint, private_key = excluded.private_key, passphrase = excluded.passphrase;", [
-            sql_text(k.id), sql_text(k.name), sql_text(k.key_type), sql_text(k.public_key), sql_text(k.fingerprint), sql_blob(k.private_key), sql_blob(k.passphrase),
+    try self.key_write(k, try self.next_stamp(MERGE_KIND_KEY, k.id))
+    try self.unbury(MERGE_KIND_KEY, k.id)
+}
+
+fn (self: SqlVaultStore) key_write(k: SshKey, stamp: i64) -> void! {
+    try self.conn().run_sql("INSERT INTO ssh_keys (id, name, key_type, public_key, fingerprint, private_key, passphrase, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(id) DO UPDATE SET name = excluded.name, key_type = excluded.key_type, public_key = excluded.public_key, fingerprint = excluded.fingerprint, private_key = excluded.private_key, passphrase = excluded.passphrase, updated_at = excluded.updated_at;", [
+            sql_text(k.id), sql_text(k.name), sql_text(k.key_type), sql_text(k.public_key), sql_text(k.fingerprint), sql_blob(k.private_key), sql_blob(k.passphrase), sql_int(stamp),
     ])
 }
 
 fn (self: SqlVaultStore) key_drop(id: str) -> void! {
     try self.require_open()
-    try self.conn().run_sql("DELETE FROM ssh_keys WHERE id = ?1;", [sql_text(id)])
+    try self.drop_buried(MERGE_KIND_KEY, id)
 }
 
 // ---- Credentials -------------------------------------------------------------
 
 fn (self: SqlVaultStore) creds_all() -> []Credential! {
     try self.require_open()
-    res := try self.conn().query_cells("SELECT id, name, username, ifnull(key_id, ''), password FROM credentials ORDER BY name COLLATE NOCASE;", [])
+    res := try self.conn().query_cells("SELECT id, name, username, ifnull(key_id, ''), password, updated_at FROM credentials ORDER BY name COLLATE NOCASE;", [])
     mut list: []Credential = []
     for r in res {
-        list.push(Credential{ id: cell_str(r[0]), name: cell_str(r[1]), username: cell_str(r[2]), key_id: cell_str(r[3]), password: cell_bytes(r[4]) })
+        list.push(Credential{ id: cell_str(r[0]), name: cell_str(r[1]), username: cell_str(r[2]), key_id: cell_str(r[3]), password: cell_bytes(r[4]), updated_at: cell_i64(r[5]) })
     }
     return list
 }
 
 fn (self: SqlVaultStore) cred_put(c: Credential) -> void! {
     try self.require_open()
-    try self.conn().run_sql("INSERT INTO credentials (id, name, username, key_id, password) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET name = excluded.name, username = excluded.username, key_id = excluded.key_id, password = excluded.password;", [
-            sql_text(c.id), sql_text(c.name), sql_text(c.username), sql_ref(c.key_id), sql_blob(c.password),
+    try self.cred_write(c, try self.next_stamp(MERGE_KIND_CRED, c.id))
+    try self.unbury(MERGE_KIND_CRED, c.id)
+}
+
+fn (self: SqlVaultStore) cred_write(c: Credential, stamp: i64) -> void! {
+    try self.conn().run_sql("INSERT INTO credentials (id, name, username, key_id, password, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO UPDATE SET name = excluded.name, username = excluded.username, key_id = excluded.key_id, password = excluded.password, updated_at = excluded.updated_at;", [
+            sql_text(c.id), sql_text(c.name), sql_text(c.username), sql_ref(c.key_id), sql_blob(c.password), sql_int(stamp),
     ])
 }
 
 fn (self: SqlVaultStore) cred_drop(id: str) -> void! {
     try self.require_open()
-    try self.conn().run_sql("DELETE FROM credentials WHERE id = ?1;", [sql_text(id)])
+    try self.drop_buried(MERGE_KIND_CRED, id)
 }
 
 // ---- Known hosts ---------------------------------------------------------------
 
 fn (self: SqlVaultStore) known_hosts_all() -> []KnownHost! {
     try self.require_open()
-    res := try self.conn().query_cells("SELECT addr, key_type, fingerprint, ifnull(host_id, ''), added_at FROM known_hosts ORDER BY addr COLLATE NOCASE;", [])
+    res := try self.conn().query_cells("SELECT addr, key_type, fingerprint, ifnull(host_id, ''), added_at, updated_at FROM known_hosts ORDER BY addr COLLATE NOCASE;", [])
     mut list: []KnownHost = []
     for r in res {
-        list.push(KnownHost{ addr: cell_str(r[0]), key_type: cell_str(r[1]), fingerprint: cell_str(r[2]), host_id: cell_str(r[3]), added_at: cell_str(r[4]) })
+        list.push(KnownHost{ addr: cell_str(r[0]), key_type: cell_str(r[1]), fingerprint: cell_str(r[2]), host_id: cell_str(r[3]), added_at: cell_str(r[4]), updated_at: cell_i64(r[5]) })
     }
     return list
 }
@@ -308,38 +345,52 @@ fn (self: SqlVaultStore) known_hosts_all() -> []KnownHost! {
 // in UTC, when the row is written.
 fn (self: SqlVaultStore) known_host_put(k: KnownHost) -> void! {
     try self.require_open()
-    try self.conn().run_sql("INSERT INTO known_hosts (addr, key_type, fingerprint, host_id, added_at) VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) ON CONFLICT(addr) DO UPDATE SET key_type = excluded.key_type, fingerprint = excluded.fingerprint, host_id = excluded.host_id, added_at = excluded.added_at;", [
-            sql_text(k.addr), sql_text(k.key_type), sql_text(k.fingerprint), sql_ref(k.host_id),
+    stamp := try self.next_stamp(MERGE_KIND_KNOWN_HOST, k.addr)
+    try self.conn().run_sql("INSERT INTO known_hosts (addr, key_type, fingerprint, host_id, added_at, updated_at) VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?5) ON CONFLICT(addr) DO UPDATE SET key_type = excluded.key_type, fingerprint = excluded.fingerprint, host_id = excluded.host_id, added_at = excluded.added_at, updated_at = excluded.updated_at;", [
+            sql_text(k.addr), sql_text(k.key_type), sql_text(k.fingerprint), sql_ref(k.host_id), sql_int(stamp),
+    ])
+    try self.unbury(MERGE_KIND_KNOWN_HOST, k.addr)
+}
+
+// A merged known host keeps its `added_at` (sync.cf).
+fn (self: SqlVaultStore) known_host_write(k: KnownHost) -> void! {
+    try self.conn().run_sql("INSERT INTO known_hosts (addr, key_type, fingerprint, host_id, added_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6);", [
+            sql_text(k.addr), sql_text(k.key_type), sql_text(k.fingerprint), sql_ref(k.host_id), sql_text(k.added_at), sql_int(k.updated_at),
     ])
 }
 
 fn (self: SqlVaultStore) known_host_drop(addr: str) -> void! {
     try self.require_open()
-    try self.conn().run_sql("DELETE FROM known_hosts WHERE addr = ?1;", [sql_text(addr)])
+    try self.drop_buried(MERGE_KIND_KNOWN_HOST, addr)
 }
 
 // ---- Tunnels (migration 007) -------------------------------------------------------
 
 fn (self: SqlVaultStore) tunnels_all() -> []Tunnel! {
     try self.require_open()
-    res := try self.conn().query_cells("SELECT id, host_id, name, local_port, dest_host, dest_port, open_on_connect FROM tunnels ORDER BY host_id, name COLLATE NOCASE;", [])
+    res := try self.conn().query_cells("SELECT id, host_id, name, local_port, dest_host, dest_port, open_on_connect, updated_at FROM tunnels ORDER BY host_id, name COLLATE NOCASE;", [])
     mut list: []Tunnel = []
     for r in res {
-        list.push(Tunnel{ id: cell_str(r[0]), host_id: cell_str(r[1]), name: cell_str(r[2]), local_port: cell_i64(r[3]), dest_host: cell_str(r[4]), dest_port: cell_i64(r[5]), open_on_connect: cell_i64(r[6]) != 0 })
+        list.push(Tunnel{ id: cell_str(r[0]), host_id: cell_str(r[1]), name: cell_str(r[2]), local_port: cell_i64(r[3]), dest_host: cell_str(r[4]), dest_port: cell_i64(r[5]), open_on_connect: cell_i64(r[6]) != 0, updated_at: cell_i64(r[7]) })
     }
     return list
 }
 
 fn (self: SqlVaultStore) tunnel_put(t: Tunnel) -> void! {
     try self.require_open()
-    try self.conn().run_sql("INSERT INTO tunnels (id, host_id, name, local_port, dest_host, dest_port, open_on_connect) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET host_id = excluded.host_id, name = excluded.name, local_port = excluded.local_port, dest_host = excluded.dest_host, dest_port = excluded.dest_port, open_on_connect = excluded.open_on_connect;", [
-            sql_text(t.id), sql_text(t.host_id), sql_text(t.name), sql_int(t.local_port), sql_text(t.dest_host), sql_int(t.dest_port), sql_int(bool_int(t.open_on_connect)),
+    try self.tunnel_write(t, try self.next_stamp(MERGE_KIND_TUNNEL, t.id))
+    try self.unbury(MERGE_KIND_TUNNEL, t.id)
+}
+
+fn (self: SqlVaultStore) tunnel_write(t: Tunnel, stamp: i64) -> void! {
+    try self.conn().run_sql("INSERT INTO tunnels (id, host_id, name, local_port, dest_host, dest_port, open_on_connect, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(id) DO UPDATE SET host_id = excluded.host_id, name = excluded.name, local_port = excluded.local_port, dest_host = excluded.dest_host, dest_port = excluded.dest_port, open_on_connect = excluded.open_on_connect, updated_at = excluded.updated_at;", [
+            sql_text(t.id), sql_text(t.host_id), sql_text(t.name), sql_int(t.local_port), sql_text(t.dest_host), sql_int(t.dest_port), sql_int(bool_int(t.open_on_connect)), sql_int(stamp),
     ])
 }
 
 fn (self: SqlVaultStore) tunnel_drop(id: str) -> void! {
     try self.require_open()
-    try self.conn().run_sql("DELETE FROM tunnels WHERE id = ?1;", [sql_text(id)])
+    try self.drop_buried(MERGE_KIND_TUNNEL, id)
 }
 
 // ---- Tokens and the activity log (migration 004) ----------------------------------
@@ -370,20 +421,25 @@ fn sql_bool(b: bool) -> SqlCell {
 
 fn (self: SqlVaultStore) tokens_all() -> []Token! {
     try self.require_open()
-    res := try self.conn().query_cells("SELECT id, name, hash, scope_all, scope_groups, scope_hosts, allow_read, allow_exec, allow_write, created_at, expires_at, revoked_at FROM tokens ORDER BY created_at, id;", [])
+    res := try self.conn().query_cells("SELECT id, name, hash, scope_all, scope_groups, scope_hosts, allow_read, allow_exec, allow_write, created_at, expires_at, revoked_at, updated_at FROM tokens ORDER BY created_at, id;", [])
     mut list: []Token = []
     for r in res {
         scope := AccessScope{ all: cell_i64(r[3]) != 0, groups: split_ids(cell_str(r[4])), hosts: split_ids(cell_str(r[5])) }
-        list.push(Token{ id: cell_str(r[0]), name: cell_str(r[1]), hash: cell_str(r[2]), scope: scope, read: cell_i64(r[6]) != 0, exec: cell_i64(r[7]) != 0, write: cell_i64(r[8]) != 0, created_at: cell_i64(r[9]), expires_at: cell_i64(r[10]), revoked_at: cell_i64(r[11]) })
+        list.push(Token{ id: cell_str(r[0]), name: cell_str(r[1]), hash: cell_str(r[2]), scope: scope, read: cell_i64(r[6]) != 0, exec: cell_i64(r[7]) != 0, write: cell_i64(r[8]) != 0, created_at: cell_i64(r[9]), expires_at: cell_i64(r[10]), revoked_at: cell_i64(r[11]), updated_at: cell_i64(r[12]) })
     }
     return list
 }
 
 fn (self: SqlVaultStore) token_put(t: Token) -> void! {
     try self.require_open()
-    try self.conn().run_sql("INSERT INTO tokens (id, name, hash, scope_all, scope_groups, scope_hosts, allow_read, allow_exec, allow_write, created_at, expires_at, revoked_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) ON CONFLICT(id) DO UPDATE SET name = excluded.name, hash = excluded.hash, scope_all = excluded.scope_all, scope_groups = excluded.scope_groups, scope_hosts = excluded.scope_hosts, allow_read = excluded.allow_read, allow_exec = excluded.allow_exec, allow_write = excluded.allow_write, created_at = excluded.created_at, expires_at = excluded.expires_at, revoked_at = excluded.revoked_at;", [
+    try self.token_write(t, try self.next_stamp(MERGE_KIND_TOKEN, t.id))
+    try self.unbury(MERGE_KIND_TOKEN, t.id)
+}
+
+fn (self: SqlVaultStore) token_write(t: Token, stamp: i64) -> void! {
+    try self.conn().run_sql("INSERT INTO tokens (id, name, hash, scope_all, scope_groups, scope_hosts, allow_read, allow_exec, allow_write, created_at, expires_at, revoked_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) ON CONFLICT(id) DO UPDATE SET name = excluded.name, hash = excluded.hash, scope_all = excluded.scope_all, scope_groups = excluded.scope_groups, scope_hosts = excluded.scope_hosts, allow_read = excluded.allow_read, allow_exec = excluded.allow_exec, allow_write = excluded.allow_write, created_at = excluded.created_at, expires_at = excluded.expires_at, revoked_at = excluded.revoked_at, updated_at = excluded.updated_at;", [
             sql_text(t.id), sql_text(t.name), sql_text(t.hash), sql_bool(t.scope.all), sql_text(join_ids(t.scope.groups)), sql_text(join_ids(t.scope.hosts)),
-            sql_bool(t.read), sql_bool(t.exec), sql_bool(t.write), sql_int(t.created_at), sql_int(t.expires_at), sql_int(t.revoked_at),
+            sql_bool(t.read), sql_bool(t.exec), sql_bool(t.write), sql_int(t.created_at), sql_int(t.expires_at), sql_int(t.revoked_at), sql_int(stamp),
     ])
 }
 

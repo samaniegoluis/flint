@@ -339,3 +339,21 @@ fn (mut self: LockedVaultStore) vault_rekey_abort(path: str) {
     inner.vault_rekey_abort(path)
     self.leave_with(inner)
 }
+
+fn (self: LockedVaultStore) vault_records() -> VaultRecords! {
+    inner := self.enter()
+    defer self.leave()
+    return inner.vault_records()
+}
+
+fn (self: LockedVaultStore) vault_replace_records(r: VaultRecords) -> void! {
+    inner := self.enter()
+    defer self.leave()
+    return inner.vault_replace_records(r)
+}
+
+// The app and the CLI merge a copy through a `new_copy_vault_store`, never through
+// the shared connection.
+fn (mut self: LockedVaultStore) vault_attach_copy(path: str, page_key: []byte, salt: []byte) -> void! {
+    return error(coded(ERR_INTERNAL, "a conflict copy opens in a store of its own"))
+}

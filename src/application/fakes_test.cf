@@ -154,10 +154,17 @@ type FakeStore struct {
     rk_secrets: VaultSecrets
     rk_act: bool
     rk_fail: str
+    // Milestone 41: the tokens and tombstones `vault_records` reads (the fake's
+    // drops leave none), how many times a merge replaced the records, and whether
+    // this store holds a conflict copy (`vault_attach_copy`).
+    rec_tokens: []Token
+    tombs: []Tombstone
+    replaced: i64
+    copy_open: bool
 }
 
 fn new_fake_store() -> FakeStore {
-    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "" }
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "", rec_tokens: [], tombs: [], replaced: 0, copy_open: false }
 }
 
 fn (self: FakeStore) vault_file_exists(path: str) -> bool {
@@ -196,6 +203,31 @@ fn (mut self: FakeStore) vault_attach(path: str, page_key: []byte, salt: []byte)
 fn (mut self: FakeStore) vault_detach() {
     self.attached = false
     self.act_id = ""
+    self.copy_open = false
+}
+
+// Like the SQL store: a conflict copy opens with its key, read through a copy.
+fn (mut self: FakeStore) vault_attach_copy(path: str, page_key: []byte, salt: []byte) -> void! {
+    try self.vault_attach(path, page_key, salt)
+    self.copy_open = true
+}
+
+fn (self: FakeStore) vault_records() -> VaultRecords! {
+    try self.need_attached()
+    return VaultRecords{ groups: self.groups, hosts: self.hosts, keys: self.keys, creds: self.creds, known_hosts: self.known, tunnels: self.tunnels, tokens: self.rec_tokens, tombstones: self.tombs }
+}
+
+fn (mut self: FakeStore) vault_replace_records(r: VaultRecords) -> void! {
+    try self.need_attached()
+    self.groups = r.groups
+    self.hosts = r.hosts
+    self.keys = r.keys
+    self.creds = r.creds
+    self.known = r.known_hosts
+    self.tunnels = r.tunnels
+    self.rec_tokens = r.tokens
+    self.tombs = r.tombstones
+    self.replaced += 1
 }
 
 fn (mut self: FakeStore) activity_attach(vault_id: str, key: []byte, new_salt: []byte) -> void! {

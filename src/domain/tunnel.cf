@@ -25,6 +25,9 @@ type Tunnel struct {
     dest_port: i64
     // Started when the host is connected from the app (milestone 23).
     open_on_connect: bool
+    // When the record was last written, Unix milliseconds, set by the store (milestone
+    // 41, D-096): the per-record merge keeps the newer. 0 for a row never written since.
+    updated_at: i64
 }
 
 // A running tunnel as the runner reports it (adapters/ssh/tunnels.cf).

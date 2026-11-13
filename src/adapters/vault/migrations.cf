@@ -188,6 +188,27 @@ ALTER TABLE activity RENAME TO activity_moving;
 INSERT OR IGNORE INTO meta (key, value) VALUES ('vault_id', '');
 ` })
 
+    // 011: a sync-ready vault (milestone 41, D-093, D-096). Every synced row records
+    // when it was last written (Unix milliseconds; 0 for a row not written since),
+    // and a deleted row leaves a tombstone, so two copies of the vault merge record by
+    // record. Host tags go with their host. Tombstones hold only kinds, ids (random,
+    // or a known host's address) and times.
+    list.push(Migration{ version: 11, name: "sync stamps and tombstones", sql: `
+ALTER TABLE groups ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE hosts ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ssh_keys ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE credentials ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE known_hosts ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tunnels ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tokens ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE tombstones (
+    kind TEXT NOT NULL,
+    id TEXT NOT NULL,
+    deleted_at INTEGER NOT NULL,
+    PRIMARY KEY (kind, id)
+);
+` })
+
     return list
 }
 

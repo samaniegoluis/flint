@@ -2374,3 +2374,31 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   tagged `// CFIRE-UPSTREAM: CF-133`.
 - **Ideal:** the tuple is built as the declared return type (`std::tuple<f64,
   std::vector<i64>>{1.0, {}}`), as CF-091 asks for nested literals.
+
+### CF-134 · bug · `confirmed`: a generic method does not compile
+- **Seen (milestone 41) [ran, macOS, `c5b1d4b`]:** the merge report's diff
+  (`src/domain/merge.cf`), one method for every kind of record.
+- **Repro:** `type R struct { n: i64 }` and `fn (mut self: R) add[T: I](xs: []T) { ... }`
+  with any interface `I`: passes `cfire check`, then clang fails on the forward
+  declaration: "use of undeclared identifier 'T'" (`inline auto R__add(R& self, const []T&
+  xs)`, with no `template <typename T>` and the slice type left unlowered).
+- **Why Flint needs it:** a method that works on any record kind reads best on the value
+  it fills.
+- **Workaround:** a free generic function taking the receiver as `mut self`
+  (`report_diff[T](mut r, ...)`), tagged `// CFIRE-UPSTREAM: CF-134`.
+- **Ideal:** a generic method lowers to a member template (or the free function form it
+  already uses, with its `template` line), or the checker rejects it.
+
+### CF-135 · bug · `confirmed`: `for k, v in m` over a map does not compile
+- **Seen (milestone 41) [ran, macOS, `c5b1d4b`]:** walking the names, groups and
+  tombstones the merge collects (`src/domain/merge.cf`).
+- **Repro:** `mut m: map[str]i64 = {}; m["a"] = 1; for k, v in m { println("{k} {v}") }`
+  passes `cfire check` and lowers as a slice loop, `for (std::size_t k = 0; k < m.size();
+  ++k)` with `v = m[k]`: clang fails ("no viable overloaded operator[]" with a `size_t`
+  key). `for k, _ in m` lowers the same way. There is no `keys()` either.
+- **Why Flint needs it:** grouping by a key and then visiting each group is the common
+  shape of a map.
+- **Workaround:** a slice of the keys kept beside the map, in insertion order, and sorted
+  where the order matters, tagged `// CFIRE-UPSTREAM: CF-135`.
+- **Ideal:** `for k, v in m` lowers to `for (const auto& [k, v] : m)`, and `m.keys()`
+  exists; or the checker rejects the loop over a map with that fix-it.

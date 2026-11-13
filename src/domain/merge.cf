@@ -1,0 +1,864 @@
+package domain
+
+// The per-record merge of two copies of one vault (milestone 41, D-093, D-096). Pure:
+// two record sets in, one out, plus a report of what it changed in the local copy.
+// Its users: `flint vault merge` on a cloud folder's conflict copy (41), and the sync
+// after a `409` (43).
+//
+// Every synced record carries `updated_at` (Unix milliseconds, set by the store on
+// each write) and a deleted one leaves a tombstone (`kind`, `id`, `deleted_at`). For
+// each record:
+//   - changed on both sides: the newer `updated_at` wins; equal times are settled by
+//     the content (the same on both machines, so the merge is symmetric);
+//   - a tombstone at least as new as every live version wins, and the record is gone;
+//   - anything else is kept, shown in the client or not (revoked tokens, known hosts
+//     of no saved host).
+// Then the vault's own rules are restored: a name taken twice keeps the record
+// written first and renames the other (`web-01-2`; a group `Prod (2)`), a reference
+// to a record gone is cleared, a tunnel whose host is gone goes too, and a loop of
+// groups is cut. A record the merge itself changed gets a time one past its own, so
+// the change wins when the other copy merges it back.
+
+import "core:str"
+import "core:sort"
+import "core:encoding/hex"
+
+MERGE_KIND_GROUP: str = "group"
+MERGE_KIND_HOST: str = "host"
+MERGE_KIND_KEY: str = "key"
+MERGE_KIND_CRED: str = "credential"
+MERGE_KIND_KNOWN_HOST: str = "known_host"
+MERGE_KIND_TUNNEL: str = "tunnel"
+MERGE_KIND_TOKEN: str = "token"
+
+// A deleted record, kept as a marker so a copy that still holds it learns it is gone.
+// `id` is the record's id (a known host's address).
+type Tombstone struct {
+    kind: str
+    id: str
+    deleted_at: i64
+}
+
+// Every synced row of a vault, with its tombstones.
+type VaultRecords struct {
+    groups: []Group
+    hosts: []Host
+    keys: []SshKey
+    creds: []Credential
+    known_hosts: []KnownHost
+    tunnels: []Tunnel
+    tokens: []Token
+    tombstones: []Tombstone
+}
+
+// One line of the report. `change` is `added`, `updated` or `removed` (what the merge
+// did to the local copy), or one of the vault's rules at work: `renamed` (`detail`
+// holds the name it had), `unlinked` (`detail` names the reference cleared), `cut`
+// (a group loop broken) or `dropped` (a tunnel of a host gone). `name` is the record
+// as a person knows it: an alias, a name, an address, `host:tunnel`. Never a secret.
+type MergeChange struct {
+    kind:   str `json:"kind"`
+    name:   str `json:"name"`
+    change: str `json:"change"`
+    detail: str `json:"detail"`
+}
+
+type MergeReport struct {
+    added:   i64           `json:"added"`
+    updated: i64           `json:"updated"`
+    removed: i64           `json:"removed"`
+    changes: []MergeChange `json:"changes"`
+    // The vault's rules at work (renamed, unlinked, cut, dropped).
+    notes:   []MergeChange `json:"notes"`
+}
+
+type MergeResult struct {
+    records: VaultRecords
+    report: MergeReport
+}
+
+// ---- The records as the merge sees them ----------------------------------------
+
+type MergeRecord interface {
+    merge_id() -> str
+    merge_stamp() -> i64
+    // Every field but the time, in one string: equal content, equal print. Also the
+    // tie-break between two versions written in the same millisecond.
+    merge_print() -> str
+}
+
+fn print_join(parts: []str) -> str {
+    return str.join(parts, "\x1f")
+}
+
+fn print_bytes(b: []byte) -> str {
+    return hex.encode(b)
+}
+
+fn print_bool(b: bool) -> str {
+    if b {
+        return "1"
+    }
+    return "0"
+}
+
+fn (self: Group) merge_id() -> str { return self.id }
+fn (self: Group) merge_stamp() -> i64 { return self.updated_at }
+fn (self: Group) merge_print() -> str {
+    return print_join([self.parent_id, self.name])
+}
+
+fn (self: Host) merge_id() -> str { return self.id }
+fn (self: Host) merge_stamp() -> i64 { return self.updated_at }
+fn (self: Host) merge_print() -> str {
+    return print_join([self.alias, self.label, self.hostname, "{self.port}", self.username, self.group_id,
+            str.join(self.tags, "\x1e"), self.color, self.notes, self.jump_host_id, self.credential_id,
+            self.key_id, print_bytes(self.password), self.initial_command, print_bool(self.keep_shell),
+            print_bytes(self.sudo_password), self.host_type, self.domain])
+}
+
+fn (self: SshKey) merge_id() -> str { return self.id }
+fn (self: SshKey) merge_stamp() -> i64 { return self.updated_at }
+fn (self: SshKey) merge_print() -> str {
+    return print_join([self.name, self.key_type, self.public_key, self.fingerprint, print_bytes(self.private_key), print_bytes(self.passphrase)])
+}
+
+fn (self: Credential) merge_id() -> str { return self.id }
+fn (self: Credential) merge_stamp() -> i64 { return self.updated_at }
+fn (self: Credential) merge_print() -> str {
+    return print_join([self.name, self.username, self.key_id, print_bytes(self.password)])
+}
+
+// A known host's id is its address (the table's key).
+fn (self: KnownHost) merge_id() -> str { return self.addr }
+fn (self: KnownHost) merge_stamp() -> i64 { return self.updated_at }
+fn (self: KnownHost) merge_print() -> str {
+    return print_join([self.key_type, self.fingerprint, self.host_id, self.added_at])
+}
+
+fn (self: Tunnel) merge_id() -> str { return self.id }
+fn (self: Tunnel) merge_stamp() -> i64 { return self.updated_at }
+fn (self: Tunnel) merge_print() -> str {
+    return print_join([self.host_id, self.name, "{self.local_port}", self.dest_host, "{self.dest_port}", print_bool(self.open_on_connect)])
+}
+
+fn (self: Token) merge_id() -> str { return self.id }
+fn (self: Token) merge_stamp() -> i64 { return self.updated_at }
+fn (self: Token) merge_print() -> str {
+    return print_join([self.name, self.hash, print_bool(self.scope.all), str.join(self.scope.groups, ","), str.join(self.scope.hosts, ","),
+            print_bool(self.read), print_bool(self.exec), print_bool(self.write), "{self.created_at}", "{self.expires_at}", "{self.revoked_at}"])
+}
+
+// ---- Choosing each record's version ----------------------------------------------
+
+// The outcome for one id: which side's version lives (`side` 0 local, 1 other, -1
+// none: gone), and the tombstone time to keep when it is gone.
+type MergePick struct {
+    id: str
+    li: i64
+    oi: i64
+    side: i64
+    dead_at: i64
+}
+
+// The newest tombstone of each id of one kind, from both sides; `ids` lists the map's
+// keys (a map is not iterated).
+// CFIRE-UPSTREAM: CF-135
+type TombTimes struct {
+    ids: []str
+    at: map[str]i64
+}
+
+fn tombstone_times(kind: str, a: []Tombstone, b: []Tombstone) -> TombTimes {
+    mut times := TombTimes{ ids: [], at: {} }
+    for t in a {
+        times.add(kind, t)
+    }
+    for t in b {
+        times.add(kind, t)
+    }
+    return times
+}
+
+fn (mut self: TombTimes) add(kind: str, t: Tombstone) {
+    if t.kind != kind {
+        return
+    }
+    if !self.at.contains(t.id) {
+        self.ids.push(t.id)
+        self.at[t.id] = t.deleted_at
+    } else if self.at[t.id] < t.deleted_at {
+        self.at[t.id] = t.deleted_at
+    }
+}
+
+// Decides every id of one kind, in id order.
+fn merge_picks[T: MergeRecord](local: []T, other: []T, tombs: TombTimes) -> []MergePick {
+    mut ids: []str = []
+    mut lidx: map[str]i64 = {}
+    mut oidx: map[str]i64 = {}
+    for i, r in local {
+        lidx[r.merge_id()] = i64(i)
+        ids.push(r.merge_id())
+    }
+    for i, r in other {
+        oidx[r.merge_id()] = i64(i)
+        if !lidx.contains(r.merge_id()) {
+            ids.push(r.merge_id())
+        }
+    }
+    for id in tombs.ids {
+        if !lidx.contains(id) && !oidx.contains(id) {
+            ids.push(id)
+        }
+    }
+    sort.slice(mut ids)
+    mut picks: []MergePick = []
+    for id in ids {
+        mut p := MergePick{ id: id, li: -1, oi: -1, side: -1, dead_at: 0 }
+        if lidx.contains(id) {
+            p.li = lidx[id]
+        }
+        if oidx.contains(id) {
+            p.oi = oidx[id]
+        }
+        mut stamp: i64 = 0
+        if p.li >= 0 && p.oi >= 0 {
+            l := local[usize(p.li)]
+            o := other[usize(p.oi)]
+            if o.merge_stamp() > l.merge_stamp() {
+                p.side = 1
+            } else if o.merge_stamp() < l.merge_stamp() {
+                p.side = 0
+            } else if o.merge_print() > l.merge_print() {
+                // Written in the same millisecond on both machines: the content
+                // decides, so both machines keep the same one.
+                p.side = 1
+            } else {
+                p.side = 0
+            }
+            stamp = l.merge_stamp()
+            if p.side == 1 {
+                stamp = o.merge_stamp()
+            }
+        } else if p.li >= 0 {
+            p.side = 0
+            stamp = local[usize(p.li)].merge_stamp()
+        } else if p.oi >= 0 {
+            p.side = 1
+            stamp = other[usize(p.oi)].merge_stamp()
+        }
+        // CFIRE-UPSTREAM: CF-130
+        dead := tombs.at.get(id) or -1
+        if tombs.at.contains(id) && (p.side < 0 || dead >= stamp) {
+            p.side = -1
+            p.dead_at = dead
+        }
+        picks.push(p)
+    }
+    return picks
+}
+
+// ---- The merge -----------------------------------------------------------------
+
+// Builds the report and the merged set as the merge goes.
+type MergeWork struct {
+    records: VaultRecords
+    notes: []MergeChange
+}
+
+fn (mut self: MergeWork) note(kind: str, name: str, change: str, detail: str) {
+    self.notes.push(MergeChange{ kind: kind, name: name, change: change, detail: detail })
+}
+
+fn (mut self: MergeWork) bury(kind: str, id: str, at: i64) {
+    self.records.tombstones.push(Tombstone{ kind: kind, id: id, deleted_at: at })
+}
+
+fn live_ids_groups(list: []Group) -> map[str]bool {
+    mut m: map[str]bool = {}
+    for g in list {
+        m[g.id] = true
+    }
+    return m
+}
+
+// Merges `other` (a conflict copy, or the server's copy) into `local`. Both must be
+// copies of the same vault: same secrets key, so sealed fields move as they are.
+fn merge_vaults(local: VaultRecords, other: VaultRecords) -> MergeResult {
+    mut w := MergeWork{ records: VaultRecords{}, notes: [] }
+
+    // Groups.
+    for p in merge_picks(local.groups, other.groups, tombstone_times(MERGE_KIND_GROUP, local.tombstones, other.tombstones)) {
+        if p.side == 0 {
+            w.records.groups.push(local.groups[usize(p.li)])
+        } else if p.side == 1 {
+            w.records.groups.push(other.groups[usize(p.oi)])
+        } else {
+            w.bury(MERGE_KIND_GROUP, p.id, p.dead_at)
+        }
+    }
+    // Keys.
+    for p in merge_picks(local.keys, other.keys, tombstone_times(MERGE_KIND_KEY, local.tombstones, other.tombstones)) {
+        if p.side == 0 {
+            w.records.keys.push(local.keys[usize(p.li)])
+        } else if p.side == 1 {
+            w.records.keys.push(other.keys[usize(p.oi)])
+        } else {
+            w.bury(MERGE_KIND_KEY, p.id, p.dead_at)
+        }
+    }
+    // Credentials.
+    for p in merge_picks(local.creds, other.creds, tombstone_times(MERGE_KIND_CRED, local.tombstones, other.tombstones)) {
+        if p.side == 0 {
+            w.records.creds.push(local.creds[usize(p.li)])
+        } else if p.side == 1 {
+            w.records.creds.push(other.creds[usize(p.oi)])
+        } else {
+            w.bury(MERGE_KIND_CRED, p.id, p.dead_at)
+        }
+    }
+    // Hosts.
+    for p in merge_picks(local.hosts, other.hosts, tombstone_times(MERGE_KIND_HOST, local.tombstones, other.tombstones)) {
+        if p.side == 0 {
+            w.records.hosts.push(local.hosts[usize(p.li)])
+        } else if p.side == 1 {
+            w.records.hosts.push(other.hosts[usize(p.oi)])
+        } else {
+            w.bury(MERGE_KIND_HOST, p.id, p.dead_at)
+        }
+    }
+    // Tunnels.
+    for p in merge_picks(local.tunnels, other.tunnels, tombstone_times(MERGE_KIND_TUNNEL, local.tombstones, other.tombstones)) {
+        if p.side == 0 {
+            w.records.tunnels.push(local.tunnels[usize(p.li)])
+        } else if p.side == 1 {
+            w.records.tunnels.push(other.tunnels[usize(p.oi)])
+        } else {
+            w.bury(MERGE_KIND_TUNNEL, p.id, p.dead_at)
+        }
+    }
+    // Known hosts.
+    for p in merge_picks(local.known_hosts, other.known_hosts, tombstone_times(MERGE_KIND_KNOWN_HOST, local.tombstones, other.tombstones)) {
+        if p.side == 0 {
+            w.records.known_hosts.push(local.known_hosts[usize(p.li)])
+        } else if p.side == 1 {
+            w.records.known_hosts.push(other.known_hosts[usize(p.oi)])
+        } else {
+            w.bury(MERGE_KIND_KNOWN_HOST, p.id, p.dead_at)
+        }
+    }
+    // Tokens (revoked, never deleted; a tombstone is honoured all the same).
+    for p in merge_picks(local.tokens, other.tokens, tombstone_times(MERGE_KIND_TOKEN, local.tombstones, other.tombstones)) {
+        if p.side == 0 {
+            w.records.tokens.push(local.tokens[usize(p.li)])
+        } else if p.side == 1 {
+            w.records.tokens.push(other.tokens[usize(p.oi)])
+        } else {
+            w.bury(MERGE_KIND_TOKEN, p.id, p.dead_at)
+        }
+    }
+
+    w.fix_groups()
+    w.fix_keys_and_creds()
+    w.fix_hosts()
+    w.fix_tunnels()
+    w.fix_known_hosts()
+
+    report := merge_report(local, w.records, w.notes)
+    return MergeResult{ records: w.records, report: report }
+}
+
+// ---- The vault's rules, restored -------------------------------------------------
+
+// Lower-case, for names compared as the vault's indexes compare them (NOCASE).
+fn fold(s: str) -> str {
+    return str.to_lower(s)
+}
+
+// Records sharing a name: who keeps it. The one written first (the older time), then
+// the smaller id: the same answer on both machines.
+fn first_written(a_stamp: i64, a_id: str, b_stamp: i64, b_id: str) -> bool {
+    if a_stamp != b_stamp {
+        return a_stamp < b_stamp
+    }
+    return a_id < b_id
+}
+
+// `name` with ` (n)` or `-n` added, cut so the whole fits in `max` bytes.
+fn suffixed_name(name: str, n: i64, spaced: bool, max: usize) -> str {
+    mut tail := "-{n}"
+    if spaced {
+        tail = " ({n})"
+    }
+    mut base := name
+    if base.len() + tail.len() > max {
+        base = str_cut_utf8(base, max - tail.len())
+        if spaced {
+            base = str_trim_spaces(base)
+        }
+    }
+    return base + tail
+}
+
+// The longest prefix of `s` of at most `max` bytes that ends on a UTF-8 boundary.
+fn str_cut_utf8(s: str, max: usize) -> str {
+    if s.len() <= max {
+        return s
+    }
+    mut end := max
+    bytes := s.bytes()
+    for end > 0 && (u8(bytes[end]) & 192) == 128 {
+        end -= 1
+    }
+    return s.substr(0, end)
+}
+
+// The first free name for a record that lost `name`: none of `taken` (keys are
+// `prefix` + the folded name).
+fn free_name(name: str, prefix: str, taken: map[str]bool, spaced: bool, max: usize) -> str {
+    mut n: i64 = 2
+    for true {
+        candidate := suffixed_name(name, n, spaced, max)
+        if !taken.contains(prefix + fold(candidate)) {
+            return candidate
+        }
+        n += 1
+    }
+    return name
+}
+
+// Order of indices into a list by (time, id): the record written first comes first,
+// so it keeps a name the others share.
+type StampOrder struct {
+    stamp: i64
+    id: str
+    idx: i64
+}
+
+fn order_first(list: []StampOrder) -> []i64 {
+    mut sorted := list
+    // A small insertion sort: names collide rarely and lists are short.
+    for i in 1..sorted.len() {
+        mut j := i
+        for j > 0 && first_written(sorted[j].stamp, sorted[j].id, sorted[j - 1].stamp, sorted[j - 1].id) {
+            tmp := sorted[j]
+            sorted[j] = sorted[j - 1]
+            sorted[j - 1] = tmp
+            j -= 1
+        }
+    }
+    mut idx: []i64 = []
+    for s in sorted {
+        idx.push(s.idx)
+    }
+    return idx
+}
+
+fn (mut self: MergeWork) fix_groups() {
+    live := live_ids_groups(self.records.groups)
+    mut by_id: map[str]i64 = {}
+    for i, g in self.records.groups {
+        by_id[g.id] = i64(i)
+    }
+    // A parent gone: the group moves to the top.
+    for i in 0..self.records.groups.len() {
+        g := self.records.groups[i]
+        if g.parent_id.len() > 0 && !live.contains(g.parent_id) {
+            self.records.groups[i].parent_id = ""
+            self.records.groups[i].updated_at = g.updated_at + 1
+            self.note(MERGE_KIND_GROUP, g.name, "unlinked", "parent group removed")
+        }
+    }
+    // A loop (A moved under B on one machine, B under A on the other): the group in
+    // it written last moves to the top.
+    for i in 0..self.records.groups.len() {
+        mut seen: map[str]bool = {}
+        mut chain: []str = []
+        mut cur := self.records.groups[i].id
+        mut in_loop := false
+        for cur.len() > 0 && by_id.contains(cur) {
+            if seen.contains(cur) {
+                in_loop = cur == self.records.groups[i].id
+                break
+            }
+            seen[cur] = true
+            chain.push(cur)
+            cur = self.records.groups[usize(by_id[cur])].parent_id
+        }
+        if !in_loop {
+            continue
+        }
+        // The loop's members are `chain`; cut at the latest written.
+        mut cut: i64 = -1
+        for id in chain {
+            k := by_id[id]
+            if cut < 0 || first_written(self.records.groups[usize(cut)].updated_at, self.records.groups[usize(cut)].id, self.records.groups[usize(k)].updated_at, self.records.groups[usize(k)].id) {
+                cut = k
+            }
+        }
+        cg := self.records.groups[usize(cut)]
+        self.records.groups[usize(cut)].parent_id = ""
+        self.records.groups[usize(cut)].updated_at = cg.updated_at + 1
+        self.note(MERGE_KIND_GROUP, cg.name, "cut", "moved to the top to break a loop of groups")
+    }
+    // A name taken twice under one parent.
+    mut by_name: map[str][]StampOrder = {}
+    // CFIRE-UPSTREAM: CF-135 (the map's keys, kept beside it)
+    mut name_keys: []str = []
+    for i, g in self.records.groups {
+        k := g.parent_id + "/" + fold(g.name)
+        if !by_name.contains(k) {
+            by_name[k] = []
+            name_keys.push(k)
+        }
+        by_name[k].push(StampOrder{ stamp: g.updated_at, id: g.id, idx: i64(i) })
+    }
+    mut taken: map[str]bool = {}
+    for g in self.records.groups {
+        taken[g.parent_id + "/" + fold(g.name)] = true
+    }
+    sort.slice(mut name_keys)
+    for key in name_keys {
+        list := by_name[key]
+        if list.len() < 2 {
+            continue
+        }
+        order := order_first(list)
+        for n in 1..order.len() {
+            i := usize(order[n])
+            g := self.records.groups[i]
+            name := free_name(g.name, g.parent_id + "/", taken, true, 64)
+            taken[g.parent_id + "/" + fold(name)] = true
+            self.records.groups[i].name = name
+            self.records.groups[i].updated_at = g.updated_at + 1
+            self.note(MERGE_KIND_GROUP, name, "renamed", "was {g.name}")
+        }
+    }
+}
+
+// Renames the later of each name taken twice in a flat namespace. `names` and
+// `stamps` are parallel to the list; the new names are returned in place.
+fn unique_names(names: []str, stamps: []i64, ids: []str, spaced: bool, max: usize) -> []str {
+    mut result := names
+    mut by_name: map[str][]StampOrder = {}
+    mut taken: map[str]bool = {}
+    // CFIRE-UPSTREAM: CF-135 (the map's keys, kept beside it)
+    mut keys: []str = []
+    for i, n in names {
+        k := fold(n)
+        taken[k] = true
+        if !by_name.contains(k) {
+            by_name[k] = []
+            keys.push(k)
+        }
+        by_name[k].push(StampOrder{ stamp: stamps[i], id: ids[i], idx: i64(i) })
+    }
+    // In name order, so the second of two clashes never takes the first's new name
+    // differently on two machines.
+    sort.slice(mut keys)
+    for k in keys {
+        list := by_name[k]
+        if list.len() < 2 {
+            continue
+        }
+        order := order_first(list)
+        for n in 1..order.len() {
+            i := usize(order[n])
+            name := free_name(names[i], "", taken, spaced, max)
+            taken[fold(name)] = true
+            result[i] = name
+        }
+    }
+    return result
+}
+
+fn (mut self: MergeWork) fix_keys_and_creds() {
+    // Key names.
+    mut names: []str = []
+    mut stamps: []i64 = []
+    mut ids: []str = []
+    for k in self.records.keys {
+        names.push(k.name)
+        stamps.push(k.updated_at)
+        ids.push(k.id)
+    }
+    fixed := unique_names(names, stamps, ids, false, 64)
+    mut keys_live: map[str]bool = {}
+    for i in 0..self.records.keys.len() {
+        k := self.records.keys[i]
+        keys_live[k.id] = true
+        if fixed[i] != k.name {
+            self.records.keys[i].name = fixed[i]
+            self.records.keys[i].updated_at = k.updated_at + 1
+            self.note(MERGE_KIND_KEY, fixed[i], "renamed", "was {k.name}")
+        }
+    }
+    // Credentials: a key gone, then names.
+    for i in 0..self.records.creds.len() {
+        c := self.records.creds[i]
+        if c.key_id.len() > 0 && !keys_live.contains(c.key_id) {
+            self.records.creds[i].key_id = ""
+            self.records.creds[i].updated_at = c.updated_at + 1
+            self.note(MERGE_KIND_CRED, c.name, "unlinked", "its SSH key was removed")
+        }
+    }
+    names = []
+    stamps = []
+    ids = []
+    for c in self.records.creds {
+        names.push(c.name)
+        stamps.push(c.updated_at)
+        ids.push(c.id)
+    }
+    cfixed := unique_names(names, stamps, ids, false, 64)
+    for i in 0..self.records.creds.len() {
+        c := self.records.creds[i]
+        if cfixed[i] != c.name {
+            self.records.creds[i].name = cfixed[i]
+            self.records.creds[i].updated_at = c.updated_at + 1
+            self.note(MERGE_KIND_CRED, cfixed[i], "renamed", "was {c.name}")
+        }
+    }
+}
+
+fn (mut self: MergeWork) fix_hosts() {
+    groups := live_ids_groups(self.records.groups)
+    mut keys: map[str]bool = {}
+    for k in self.records.keys {
+        keys[k.id] = true
+    }
+    mut creds: map[str]bool = {}
+    for c in self.records.creds {
+        creds[c.id] = true
+    }
+    mut hosts: map[str]bool = {}
+    for h in self.records.hosts {
+        hosts[h.id] = true
+    }
+    for i in 0..self.records.hosts.len() {
+        h := self.records.hosts[i]
+        mut gone: []str = []
+        if h.group_id.len() > 0 && !groups.contains(h.group_id) {
+            self.records.hosts[i].group_id = ""
+            gone.push("its group")
+        }
+        if h.jump_host_id.len() > 0 && !hosts.contains(h.jump_host_id) {
+            self.records.hosts[i].jump_host_id = ""
+            gone.push("its jump host")
+        }
+        if h.credential_id.len() > 0 && !creds.contains(h.credential_id) {
+            self.records.hosts[i].credential_id = ""
+            gone.push("its credential")
+        }
+        if h.key_id.len() > 0 && !keys.contains(h.key_id) {
+            self.records.hosts[i].key_id = ""
+            gone.push("its SSH key")
+        }
+        if gone.len() > 0 {
+            self.records.hosts[i].updated_at = h.updated_at + 1
+            self.note(MERGE_KIND_HOST, h.alias, "unlinked", str.join(gone, ", ") + " removed")
+        }
+    }
+    mut names: []str = []
+    mut stamps: []i64 = []
+    mut ids: []str = []
+    for h in self.records.hosts {
+        names.push(h.alias)
+        stamps.push(h.updated_at)
+        ids.push(h.id)
+    }
+    fixed := unique_names(names, stamps, ids, false, 64)
+    for i in 0..self.records.hosts.len() {
+        h := self.records.hosts[i]
+        if fixed[i] != h.alias {
+            self.records.hosts[i].alias = fixed[i]
+            self.records.hosts[i].updated_at = h.updated_at + 1
+            self.note(MERGE_KIND_HOST, fixed[i], "renamed", "was {h.alias}")
+        }
+    }
+}
+
+fn host_alias_of(hosts: []Host, id: str) -> str {
+    for h in hosts {
+        if h.id == id {
+            return h.alias
+        }
+    }
+    return id
+}
+
+fn (mut self: MergeWork) fix_tunnels() {
+    mut hosts: map[str]i64 = {}
+    for h in self.records.hosts {
+        hosts[h.id] = h.updated_at
+    }
+    mut dead_at: map[str]i64 = {}
+    for t in self.records.tombstones {
+        if t.kind == MERGE_KIND_HOST {
+            dead_at[t.id] = t.deleted_at
+        }
+    }
+    // A host gone takes its tunnels.
+    mut kept: []Tunnel = []
+    for t in self.records.tunnels {
+        if hosts.contains(t.host_id) {
+            kept.push(t)
+            continue
+        }
+        mut at := t.updated_at + 1
+        if dead_at.contains(t.host_id) && dead_at[t.host_id] > at {
+            at = dead_at[t.host_id]
+        }
+        self.bury(MERGE_KIND_TUNNEL, t.id, at)
+        self.note(MERGE_KIND_TUNNEL, t.name, "dropped", "its host was removed")
+    }
+    self.records.tunnels = kept
+    // Names, unique per host.
+    mut by_host: map[str][]i64 = {}
+    // CFIRE-UPSTREAM: CF-135 (the map's keys, kept beside it)
+    mut host_ids: []str = []
+    for i, t in self.records.tunnels {
+        if !by_host.contains(t.host_id) {
+            by_host[t.host_id] = []
+            host_ids.push(t.host_id)
+        }
+        by_host[t.host_id].push(i64(i))
+    }
+    for host_id in host_ids {
+        idx := by_host[host_id]
+        if idx.len() < 2 {
+            continue
+        }
+        mut names: []str = []
+        mut stamps: []i64 = []
+        mut ids: []str = []
+        for i in idx {
+            t := self.records.tunnels[usize(i)]
+            names.push(t.name)
+            stamps.push(t.updated_at)
+            ids.push(t.id)
+        }
+        fixed := unique_names(names, stamps, ids, false, TUNNEL_NAME_MAX)
+        for n, i in idx {
+            t := self.records.tunnels[usize(i)]
+            if fixed[n] != t.name {
+                self.records.tunnels[usize(i)].name = fixed[n]
+                self.records.tunnels[usize(i)].updated_at = t.updated_at + 1
+                self.note(MERGE_KIND_TUNNEL, host_alias_of(self.records.hosts, host_id) + ":" + fixed[n], "renamed", "was {t.name}")
+            }
+        }
+    }
+}
+
+fn (mut self: MergeWork) fix_known_hosts() {
+    mut hosts: map[str]bool = {}
+    for h in self.records.hosts {
+        hosts[h.id] = true
+    }
+    // A saved host gone: the key stays, tied to no host (as deleting a host does).
+    for i in 0..self.records.known_hosts.len() {
+        k := self.records.known_hosts[i]
+        if k.host_id.len() > 0 && !hosts.contains(k.host_id) {
+            self.records.known_hosts[i].host_id = ""
+            self.records.known_hosts[i].updated_at = k.updated_at + 1
+        }
+    }
+}
+
+// ---- The report --------------------------------------------------------------------
+
+// What `merged` changes in `local`, record by record, in kind order.
+fn merge_report(local: VaultRecords, merged: VaultRecords, notes: []MergeChange) -> MergeReport {
+    mut r := MergeReport{ added: 0, updated: 0, removed: 0, changes: [], notes: notes }
+    report_diff(mut r, MERGE_KIND_GROUP, local.groups, merged.groups, group_names(local.groups), group_names(merged.groups))
+    report_diff(mut r, MERGE_KIND_HOST, local.hosts, merged.hosts, host_names(local.hosts), host_names(merged.hosts))
+    report_diff(mut r, MERGE_KIND_KEY, local.keys, merged.keys, key_names(local.keys), key_names(merged.keys))
+    report_diff(mut r, MERGE_KIND_CRED, local.creds, merged.creds, cred_names(local.creds), cred_names(merged.creds))
+    report_diff(mut r, MERGE_KIND_KNOWN_HOST, local.known_hosts, merged.known_hosts, known_names(local.known_hosts), known_names(merged.known_hosts))
+    report_diff(mut r, MERGE_KIND_TUNNEL, local.tunnels, merged.tunnels, tunnel_names(local.tunnels, local.hosts), tunnel_names(merged.tunnels, merged.hosts))
+    report_diff(mut r, MERGE_KIND_TOKEN, local.tokens, merged.tokens, token_names(local.tokens), token_names(merged.tokens))
+    return r
+}
+
+// CFIRE-UPSTREAM: CF-134 (a free function: a generic method does not compile)
+fn report_diff[T: MergeRecord](mut self: MergeReport, kind: str, before: []T, after: []T, before_names: []str, after_names: []str) {
+    mut old: map[str]i64 = {}
+    for i, r in before {
+        old[r.merge_id()] = i64(i)
+    }
+    mut now: map[str]bool = {}
+    for i, r in after {
+        id := r.merge_id()
+        now[id] = true
+        if !old.contains(id) {
+            self.added += 1
+            self.changes.push(MergeChange{ kind: kind, name: after_names[i], change: "added", detail: "" })
+        } else if before[usize(old[id])].merge_print() != r.merge_print() {
+            self.updated += 1
+            self.changes.push(MergeChange{ kind: kind, name: after_names[i], change: "updated", detail: "" })
+        }
+    }
+    for i, r in before {
+        if !now.contains(r.merge_id()) {
+            self.removed += 1
+            self.changes.push(MergeChange{ kind: kind, name: before_names[i], change: "removed", detail: "" })
+        }
+    }
+}
+
+fn group_names(list: []Group) -> []str {
+    mut names: []str = []
+    for g in list {
+        names.push(g.name)
+    }
+    return names
+}
+
+fn host_names(list: []Host) -> []str {
+    mut names: []str = []
+    for h in list {
+        names.push(h.alias)
+    }
+    return names
+}
+
+fn key_names(list: []SshKey) -> []str {
+    mut names: []str = []
+    for k in list {
+        names.push(k.name)
+    }
+    return names
+}
+
+fn cred_names(list: []Credential) -> []str {
+    mut names: []str = []
+    for c in list {
+        names.push(c.name)
+    }
+    return names
+}
+
+fn known_names(list: []KnownHost) -> []str {
+    mut names: []str = []
+    for k in list {
+        names.push(k.addr)
+    }
+    return names
+}
+
+fn tunnel_names(list: []Tunnel, hosts: []Host) -> []str {
+    mut names: []str = []
+    for t in list {
+        names.push(host_alias_of(hosts, t.host_id) + ":" + t.name)
+    }
+    return names
+}
+
+fn token_names(list: []Token) -> []str {
+    mut names: []str = []
+    for t in list {
+        names.push(t.name)
+    }
+    return names
+}

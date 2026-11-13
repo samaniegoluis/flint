@@ -36,6 +36,9 @@ type Group struct {
     id: str
     parent_id: str
     name: str
+    // When the record was last written, Unix milliseconds, set by the store (milestone
+    // 41, D-096): the per-record merge keeps the newer. 0 for a row never written since.
+    updated_at: i64
 }
 
 type Host struct {
@@ -65,6 +68,9 @@ type Host struct {
     host_type: str
     // An RDP host's Windows domain; "" for none and for every SSH host.
     domain: str
+    // When the record was last written, Unix milliseconds, set by the store (milestone
+    // 41, D-096): the per-record merge keeps the newer. 0 for a row never written since.
+    updated_at: i64
 }
 
 type SshKey struct {
@@ -75,6 +81,9 @@ type SshKey struct {
     fingerprint: str
     private_key: []byte
     passphrase: []byte
+    // When the record was last written, Unix milliseconds, set by the store (milestone
+    // 41, D-096): the per-record merge keeps the newer. 0 for a row never written since.
+    updated_at: i64
 }
 
 type Credential struct {
@@ -83,6 +92,9 @@ type Credential struct {
     username: str
     key_id: str
     password: []byte
+    // When the record was last written, Unix milliseconds, set by the store (milestone
+    // 41, D-096): the per-record merge keeps the newer. 0 for a row never written since.
+    updated_at: i64
 }
 
 // Every row of a vault, loaded together so ids resolve to names.

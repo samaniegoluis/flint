@@ -1,0 +1,170 @@
+package vault
+
+// A sync-ready vault (milestone 41, D-093, D-096): the stamps and tombstones every
+// write leaves (migration 011), every synced row read at once for the merge, the
+// merged set written back, and a conflict copy opened through a private copy of its
+// own so the file a person handed in is never changed.
+
+import "core:fs"
+import "core:encoding/hex"
+import "core:crypto/sha256"
+import "../../domain"
+
+// Unix milliseconds, from SQLite's clock (the machine's).
+NOW_MS_SQL: str = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)"
+
+// The table and key column of each kind, for the statements that name them. Only
+// these constants are ever put into SQL text; values go in as parameters.
+fn kind_table(kind: str) -> (str, str) {
+    if kind == MERGE_KIND_GROUP {
+        return ("groups", "id")
+    }
+    if kind == MERGE_KIND_HOST {
+        return ("hosts", "id")
+    }
+    if kind == MERGE_KIND_KEY {
+        return ("ssh_keys", "id")
+    }
+    if kind == MERGE_KIND_CRED {
+        return ("credentials", "id")
+    }
+    if kind == MERGE_KIND_KNOWN_HOST {
+        return ("known_hosts", "addr")
+    }
+    if kind == MERGE_KIND_TUNNEL {
+        return ("tunnels", "id")
+    }
+    return ("tokens", "id")
+}
+
+// The time a write of `id` records: now, or later than the row's last write and its
+// tombstone if the clock is behind them, so a write always reads as newer than what
+// it replaces.
+fn (self: SqlVaultStore) next_stamp(kind: str, id: str) -> i64! {
+    (table, key) := kind_table(kind)
+    res := try self.conn().query_cells("SELECT max(" + NOW_MS_SQL + ", ifnull((SELECT updated_at FROM " + table + " WHERE " + key + " = ?1), 0) + 1, ifnull((SELECT deleted_at FROM tombstones WHERE kind = ?2 AND id = ?1), 0) + 1);", [sql_text(id), sql_text(kind)])
+    return cell_i64(res[0][0])
+}
+
+// A record written again is no longer deleted.
+fn (self: SqlVaultStore) unbury(kind: str, id: str) -> void! {
+    try self.conn().run_sql("DELETE FROM tombstones WHERE kind = ?1 AND id = ?2;", [sql_text(kind), sql_text(id)])
+}
+
+// Records `id`'s tombstone, later than its last write, and deletes the row, in one
+// savepoint. A host's tunnels (deleted with it by the foreign key) get theirs too.
+fn (self: SqlVaultStore) drop_buried(kind: str, id: str) -> void! {
+    try self.conn().exec("SAVEPOINT drop_buried;")
+    self.bury_and_delete(kind, id) or err {
+        _ := self.conn().exec("ROLLBACK TO drop_buried;")
+        _ := self.conn().exec("RELEASE drop_buried;")
+        return error("{err.message()}")
+    }
+    try self.conn().exec("RELEASE drop_buried;")
+}
+
+fn (self: SqlVaultStore) bury_and_delete(kind: str, id: str) -> void! {
+    (table, key) := kind_table(kind)
+    if kind == MERGE_KIND_HOST {
+        try self.conn().run_sql("INSERT INTO tombstones (kind, id, deleted_at) SELECT ?1, id, max(" + NOW_MS_SQL + ", updated_at + 1) FROM tunnels WHERE host_id = ?2 ON CONFLICT(kind, id) DO UPDATE SET deleted_at = excluded.deleted_at;", [sql_text(MERGE_KIND_TUNNEL), sql_text(id)])
+    }
+    try self.conn().run_sql("INSERT INTO tombstones (kind, id, deleted_at) VALUES (?1, ?2, max(" + NOW_MS_SQL + ", ifnull((SELECT updated_at FROM " + table + " WHERE " + key + " = ?2), 0) + 1)) ON CONFLICT(kind, id) DO UPDATE SET deleted_at = excluded.deleted_at;", [sql_text(kind), sql_text(id)])
+    try self.conn().run_sql("DELETE FROM " + table + " WHERE " + key + " = ?1;", [sql_text(id)])
+}
+
+fn (self: SqlVaultStore) tombstones_all() -> []Tombstone! {
+    try self.require_open()
+    res := try self.conn().query_cells("SELECT kind, id, deleted_at FROM tombstones ORDER BY kind, id;", [])
+    mut list: []Tombstone = []
+    for r in res {
+        list.push(Tombstone{ kind: cell_str(r[0]), id: cell_str(r[1]), deleted_at: cell_i64(r[2]) })
+    }
+    return list
+}
+
+// Every synced row of the open vault, with its stamp, and the tombstones.
+fn (self: SqlVaultStore) vault_records() -> VaultRecords! {
+    return VaultRecords{
+            groups: try self.groups_all(),
+            hosts: try self.hosts_all(),
+            keys: try self.keys_all(),
+            creds: try self.creds_all(),
+            known_hosts: try self.known_hosts_all(),
+            tunnels: try self.tunnels_all(),
+            tokens: try self.tokens_all(),
+            tombstones: try self.tombstones_all(),
+    }
+}
+
+// Replaces every synced row and tombstone with `r`, each row keeping the stamp it
+// carries (a merge's result). Call inside `vault_begin` / `vault_commit`: foreign keys
+// are checked at the commit, so the order rows go in does not matter.
+fn (self: SqlVaultStore) vault_replace_records(r: VaultRecords) -> void! {
+    try self.require_open()
+    try self.conn().exec("PRAGMA defer_foreign_keys = ON;")
+    try self.conn().exec("DELETE FROM tunnels; DELETE FROM host_tags; DELETE FROM known_hosts; DELETE FROM hosts; DELETE FROM credentials; DELETE FROM ssh_keys; DELETE FROM groups; DELETE FROM tokens; DELETE FROM tombstones;")
+    for g in r.groups {
+        try self.group_write(g, g.updated_at)
+    }
+    for k in r.keys {
+        try self.key_write(k, k.updated_at)
+    }
+    for c in r.creds {
+        try self.cred_write(c, c.updated_at)
+    }
+    for h in r.hosts {
+        try self.host_write(h, h.updated_at)
+    }
+    for t in r.tunnels {
+        try self.tunnel_write(t, t.updated_at)
+    }
+    for k in r.known_hosts {
+        try self.known_host_write(k)
+    }
+    for t in r.tokens {
+        try self.token_write(t, t.updated_at)
+    }
+    for t in r.tombstones {
+        try self.conn().run_sql("INSERT INTO tombstones (kind, id, deleted_at) VALUES (?1, ?2, ?3) ON CONFLICT(kind, id) DO UPDATE SET deleted_at = max(deleted_at, excluded.deleted_at);", [sql_text(t.kind), sql_text(t.id), sql_int(t.deleted_at)])
+    }
+}
+
+// Opens a conflict copy of a vault through a private copy of it in `work_dir`
+// (0600, removed by `vault_detach`), brought up to this build's migrations there:
+// the file at `path`, maybe in a cloud folder, is only read.
+fn (mut self: SqlVaultStore) vault_attach_copy(path: str, page_key: []byte, salt: []byte) -> void! {
+    if !fs.exists(path) {
+        return error(coded(ERR_NOT_FOUND, "no file at {path}"))
+    }
+    if self.work_dir.len() == 0 {
+        return error(coded(ERR_INTERNAL, "no folder for the copy to merge"))
+    }
+    self.vault_detach()
+    work := self.work_dir + "/merge-" + hex.encode(sha256.random_bytes(8)) + ".flint"
+    fs.copy_file(path, work) or err {
+        return error(coded(ERR_IO, "cannot read {path}"))
+    }
+    self.copy_path = work
+    set_mode_and_sync(work, 384, "") or err {
+        self.vault_detach()
+        return error("{err.message()}")
+    }
+    db := open_cipher_db(work, page_key, salt, false) or err {
+        self.vault_detach()
+        return error("{err.message()}")
+    }
+    self.adopt(db)
+    self.conn().migrate() or err {
+        self.vault_detach()
+        return error("{err.message()}")
+    }
+}
+
+// Removes the private copy `vault_attach_copy` made, if any.
+fn (mut self: SqlVaultStore) drop_copy() {
+    if self.copy_path.len() > 0 {
+        _ := fs.remove(self.copy_path)
+        _ := fs.remove(self.copy_path + "-journal")
+        self.copy_path = ""
+    }
+}

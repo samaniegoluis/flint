@@ -94,8 +94,38 @@ own transaction; a vault from a newer Flint is refused rather than downgraded.
 | 8 | `hosts.type` (`ssh` for every host saved before, or `rdp`) and `hosts.domain` (an RDP host's Windows domain). An RDP server's certificate is kept in `known_hosts` under `rdp://<name>:<port>`, beside SSH host keys |
 | 9 | The activity log leaves the vault: `activity` is renamed `activity_moving`, and at the same unlock its rows (with their ids) and the `meta` row `activity_retention_days` are copied into this machine's [activity file](#the-activity-file), then dropped from the vault. A move cut short is finished at the next unlock, with no duplicate |
 | 10 | The `meta` row `vault_id`, empty: the next unlock writes the id the vault already had (a hash of its salt), and a new vault gets a random one. A new master password keeps it |
+| 11 | `updated_at` on groups, hosts, SSH keys, credentials, known hosts, tunnels and tokens (when the row was last written, in Unix milliseconds; 0 for a row not written since), and `tombstones` (kind, id and time of each deleted row), so two copies of a vault [merge record by record](#two-copies-of-one-vault) |
 
-A vault that has been opened by a Flint with migration 10 is refused by older builds.
+A vault that has been opened by a Flint with migration 11 is refused by older builds.
+
+## Two copies of one vault
+
+Every write records when it happened, and every delete leaves a **tombstone**: the kind
+of record, its id (a random id, or a known host's address) and the time. Nothing else of
+the deleted row is kept, so a removed password is gone from the file. A host's tags go
+with the host, and removing a host leaves a tombstone for each of its tunnels.
+
+With those, two copies of the same vault, changed apart (a cloud folder's conflict copy,
+or later a remote vault), merge record by record:
+
+- A record changed on both sides keeps the **newer** write. Two writes of the same
+  millisecond are settled by their content, so both machines keep the same one.
+- A delete at least as new as every edit of the record wins; an edit after the delete
+  brings the record back.
+- Every other record is kept, whether Flint shows it or not (revoked tokens, keys of
+  servers no saved host points to).
+- Then the vault's own rules: a name taken on both sides (an alias, a key or credential
+  name, a tunnel name in its host) is kept by the record written first, and the other is
+  renamed `web-01-2` (a group, `Prod (2)`). A reference to a record gone (a host's group,
+  jump host, credential or key; a credential's key) is cleared, a tunnel whose host is
+  gone goes too, and two groups moved under each other are cut apart at the one moved
+  last. A record the merge changed this way reads as written just after its last write,
+  so the change carries over when the other copy merges back.
+
+Both copies must be the same vault (the same id) under the same master password: sealed
+secrets move from one to the other as they are, and nothing is decrypted to merge. The
+times are each machine's clock: a machine whose clock is far off can win an edit it made
+earlier. A write never records a time older than the one it replaces.
 
 ## The keychain
 
