@@ -597,9 +597,10 @@ done
 check "the socket file is removed when the app quits" '[[ ! -e "$sock" ]]'
 # Milestone 39 (D-094): the log lives in this machine's activity file, never in the vault.
 act_files=("$FLINT_CONFIG_DIR"/activity/*.db)
-check "the activity log is a file of this machine's, in the config folder" '[[ ${#act_files[@]} -eq 1 && -s "${act_files[0]}" ]]'
-check "the activity folder is owner-only (0700) and its file 0600" '[[ "$(file_mode "$FLINT_CONFIG_DIR/activity")" == "700" && "$(file_mode "${act_files[0]}")" == "600" ]]'
-check "the activity file and its backup are encrypted" '! grep -qa "long-cmd-end" "${act_files[0]}" && [[ -s "$tmp/activity-backup.db" ]] && ! grep -qa "long-cmd-end" "$tmp/activity-backup.db" && ! grep -qa "SQLite format" "$tmp/activity-backup.db"'
+# One file per vault opened here: "Served" and "Other".
+check "the activity log is a file of this machine's per vault, in the config folder" '[[ ${#act_files[@]} -eq 2 && -s "${act_files[0]}" && -s "${act_files[1]}" ]]'
+check "the activity folder is owner-only (0700) and its files 0600" '[[ "$(file_mode "$FLINT_CONFIG_DIR/activity")" == "700" && "$(file_mode "${act_files[0]}")" == "600" && "$(file_mode "${act_files[1]}")" == "600" ]]'
+check "the activity files and the backup are encrypted" '! grep -qa "long-cmd-end" "${act_files[@]}" && [[ -s "$tmp/activity-backup.db" ]] && ! grep -qa "long-cmd-end" "$tmp/activity-backup.db" && ! grep -qa "SQLite format" "$tmp/activity-backup.db"'
 check "quitting Flint closed the tunnel it ran" '[[ "$(banner "$TP" 1)" == "closed" ]]'
 
 expect 5 "with the app gone, the CLI is on its own again: locked" "" -- host list
