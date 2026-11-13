@@ -450,6 +450,32 @@ nothing** · [compiled] · worked around in Flint · no patch
   itself instead of including `<iphlpapi.h>` (milestone 23 merge), and the RDP shim
   skips `winpr/shell.h` and declares `FILEDESCRIPTORW` (milestone 31 merge;
   [`rdp-windows.md`](rdp-windows.md)). Both go once cfire includes them globally.
+  The two-monitor shim (milestone 38 merge) takes the WebView2 types and the handler
+  template from `cfire::webui::detail` (`wv2_handler`, `wv2_iid`, `wv2_load_loader`):
+  with the headers global, it would include `<WebView2.h>` itself.
+
+---
+
+## W-18
+
+**A cfire identifier that a Windows header defines as a macro vanishes** · [compiled] ·
+worked around in Flint · no patch
+
+> **Found after the handoff** (2026-11-13, merging Flint's milestones 32-42). Not sent.
+> Noted here only: check it when cfire ships Windows support.
+
+- **Symptom:** `far: []RdpMonitor = [...]` in a test of `src/domain/monitors.cf` fails to
+  compile for `x86_64-w64-mingw32` only: `error: expected unqualified-id`, then the
+  next use of `far` finds no variable.
+- **Cause:** cfire emits the name as written, and `<windows.h>` (`minwindef.h`) has
+  `#define far` (and `near`; `rpcndr.h` has `small` and `hyper`; `objbase.h` has
+  `interface`), so the declaration loses its name. Any translation unit that ends up
+  including `windows.h` (here through cfire's own webui and Flint's shims) is exposed.
+- **Repro:** `fn main() { far := 1; println("{far}") }` in a package with a `cpp`
+  import that includes `<windows.h>`, built with `--target x86_64-w64-mingw32`.
+- **Fix to make in cfire:** mangle identifiers that collide with known Windows macros
+  (as with C++ keywords), or `#undef` them after including the Windows headers.
+- **In Flint:** the variable is called `apart`.
 
 ---
 

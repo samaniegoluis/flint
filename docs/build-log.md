@@ -4,6 +4,13 @@ One line per finished milestone, appended by `lean-build`. This is the project's
 state file: the next milestone to build is the first one in `docs/spec.md` not listed here.
 The Model column (`opus`, `opusplan`, …) lets the owner compare models across milestones.
 
+**On Windows (branch `windows-port-2` only, not `main`):** milestones up to 42 (v0.9.0)
+are merged there and checked on Windows 11 [ran] on 2026-11-13: suites 12 / 1729 tests,
+`cli-smoke` 84/84, `serve-e2e` 63/63, `gui-e2e` 404 checks in seven runs plus multimon
+33 on three monitors. Still for a person: H.264 and NLA against a real Windows host, and
+the multimon feel before it is turned on there (D-089). Details in that branch's
+`docs/windows-port-guide.md`.
+
 | Date | Milestone | Model | Duration | Owner stops | Commits | Notes |
 |---|---|---|---|---|---|---|
 | 2026-11-05 | 01 Scaffold + risk spike | opus | ~40 min | 1 (P4/P5 review at close) | 5 | libssh + libsodium + SQLCipher linked on macOS and Linux (one libcrypto each); SSH PTY → xterm.js proven headless on macOS and under Xvfb on Linux; 19 new cfire gaps (CF-012..CF-030), CF-017 (no package namespaces) is the one that shapes the code |

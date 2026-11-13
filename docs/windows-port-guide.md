@@ -37,7 +37,7 @@ today's cfire (`c5b1d4b`). It is shared to show what cfire needs, not to be merg
 
 ## Resume here
 
-State on 2026-11-11 (branch `windows-port-2`, `git log` for the latest commit):
+State on 2026-11-13 (branch `windows-port-2`, `git log` for the latest commit):
 
 - **Done:** the CLI and the desktop app build and run on Windows 11 on top of `main`
   (`83557b0`, cfire `c5b1d4b`) with cfire patches 0001-0009. Every automated check is
@@ -103,6 +103,43 @@ State on 2026-11-11 (branch `windows-port-2`, `git log` for the latest commit):
   - **Owner checks to do in the installed app:** `rdp-windows.md`, "What to check on
     Windows" (items 3-7: layout and AltGr, `flint connect`, the clipboard both ways,
     a dropped network, mstsc).
+- **Merged `main` again (2026-11-13):** milestones 32-42 (v0.9.0: versions, the RDP
+  graphics pipeline and modes, the RDP security review, full screen, two monitors, the
+  activity log out of the vault, change the master password, the per-record merge,
+  `flint-vault-server`), 103 commits from `9ab8a04` to `6e9cdf0`; one conflict
+  (`flint_fs.hpp`); same cfire `c5b1d4b` + 0001-0009. Windows work:
+  - **Files (`process/native/flint_fs.hpp`):** `chmod_path` and `sync_dir` are no-ops
+    (no permission bits: the profile's ACL keeps files private; a folder cannot be
+    flushed), `rename_path` writes through instead (`MOVEFILE_WRITE_THROUGH`),
+    `real_path` resolves links and junctions with `GetFinalPathNameByHandleW` (`\\?\`
+    and `\\?\UNC\` dropped), `rename_retrying` tries for a second (an antivirus or the
+    indexer holding a fresh file).
+  - **Re-key (`vault/rekey.cf`, milestone 40):** Windows cannot rename over an open
+    file, so the vault's and the activity file's commits close the connection, rename
+    and reopen. The store keeps no old key, so a rename that still fails leaves the old
+    vault whole on disk and locked (`ERR_LOCKED`: unlock with the current password).
+    Closes ROADMAP §4's "Windows: a vault re-key renames over the open file".
+  - **Two monitors (`uievents/native/flint_monitors.hpp`, milestone 38):** the Windows
+    half, written on main and never compiled, now builds on cfire's own WebView2 helpers
+    (W-17; WRL's `Callback` is MSVC-only), with `GetDpiForMonitor` and
+    `SetProcessDpiAwarenessContext` looked up at run time. `VERIFIED` stays false until
+    the owner has looked (D-089), though the multimon run passed with it on.
+  - **`vault merge` named the vault in other letter case (found here, belongs on main):**
+    the use case compares the text, so the vault merged into itself; the CLI now
+    compares with `same_file_path` first. macOS's case-insensitive APFS has the same
+    hole.
+  - **Tests:** `far` is a `windows.h` macro (a test variable renamed; W-18); POSIX mode
+    asserts skipped on Windows; the symlink test skips without Developer Mode (a
+    junction covers it in `serve-e2e.sh`); `flint-vault-server`'s packages left out of
+    `test-suites.sh` (it runs in Docker); `gui-e2e.sh` gains the webgl, fullscreen and
+    multimon runs and `tcp-switch.ps1` a `-Peek` mode; monitor ids (`\\.\DISPLAYn`)
+    escaped with `CSS.escape` in `scripts/gui-e2e.js` (belongs on main too).
+  - **Still for a person:** H.264 (FreeRDP built without ffmpeg, so AVC is likely off)
+    and NLA against the owner's Windows 11 host; the multimon feel on the owner's desk,
+    then `VERIFIED = true`; Developer Mode for the symlink test (optional).
+  - **Unexplained, instrumented:** one `cli-smoke.sh` run stopped at "relay did not
+    start" with an empty log after 10 s; alone it starts in 1.3 s and the next full run
+    passed; a `diag:` line now times it.
 - **Owner checks done:** Win+L with the app unlocked locks the vault: after signing back
   in to Windows, Flint asks for the master password. On the owner's own vault in the
   installed app: unlocking with "Remember on this computer" stores a Generic, local-machine
@@ -222,6 +259,7 @@ otherwise.
 | Check | Result |
 |---|---|
 | `windows/build-gui.sh` | CLI, app and page build (milestones 20-29 merged; 22-25 needed the Windows work above) |
+| After milestones 32-42 (2026-11-13) | `test-suites.sh` **12 suites, 1729 tests** (rdp 146, vault 173; the server's packages left out); `cli-smoke.sh` **84/84** (`--version`, `vault passwd`, `vault merge` new); `serve-e2e.sh` **63/63** (merge and passwd refused while the app holds the vault: by path, upper case, a junction; activity files encrypted); `gui-e2e.sh` **404 checks in seven runs**: terminal 89, vault 124 (Change master password in Settings), tunnels 33, paste 24, rdp 65, **webgl 20**, **fullscreen 49**; **multimon 33** on three monitors with `VERIFIED` on for that run only. vim and the focus trap skipped as before |
 | After milestone 31 (2026-11-11) | `test-suites.sh` **11 suites, 1404 tests**: rdp 111 against FreeRDP's sample server and Flint's own server running on Windows (3 return early: two need a real host, one needs iptables); `cli-smoke.sh` **60/60**; `serve-e2e.sh` **51/51**; `gui-e2e.sh` **318 checks in five runs**: terminal 89, vault 113, tunnels 33, paste 24, **rdp 59** (new on Windows). vim and the focus trap skipped as before. `serve-e2e` and `gui-e2e` had not run since milestone 30's merge |
 | After milestones 22-29 (2026-11-11) | `test-suites.sh` **10 suites, 1239 tests**; `cli-smoke.sh` **60/60** (11 tunnel checks new); `gui-e2e.sh` **275 checks in five runs**: terminal 89, vault 113, tunnels 33, paste 24 (the core reading the real Windows clipboard included), vim 16; `serve-e2e.sh` **51/51** |
 | `windows/test-suites.sh` | **10 suites, 1071 tests pass** on Windows: config 89, crypto 89, fonts 81, ipc 93, keychain 83, process 89, uievents 95, vault 114, application 193, clicmd 145. `ssh` not run (needs sshd on `127.0.0.1` from Windows). First run: ipc, vault and clicmd failed only because "/tmp" from a WSL folder is the WSL share; process had two POSIX-only asserts |
