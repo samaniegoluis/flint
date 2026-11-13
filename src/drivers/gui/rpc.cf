@@ -124,6 +124,21 @@ type NameReq struct {
     name: str `json:"name"`
 }
 
+// Settings → Vault → Change master password (milestone 40).
+type PasswdReq struct {
+    current:  str `json:"current"`
+    password: str `json:"password"`
+}
+
+type PasswdReply struct {
+    remembered: bool             `json:"remembered"`
+    strength:   PasswordStrength `json:"strength"`
+}
+
+type StrengthReq struct {
+    password: str `json:"password"`
+}
+
 // The page's layout state, with the vault it was read for: a write that arrives
 // after the page switched vaults must not land on the new one.
 type UiStateReq struct {
@@ -605,6 +620,34 @@ fn rpc_vault_rename(params: str, mut store: LockedVaultStore, recents: JsonRecen
     s := try rename_vault(mut store, recents, st.vault_session(), req.name)
     st.adopt(s)
     return json.stringify(session_info(s))
+}
+
+// Changes the open vault's master password (milestone 40, D-095). On a worker: two
+// Argon2id runs. The socket waits (`hold`) so no command lands between the copy and
+// its rename; the new session replaces the old one, whose key the holder wipes.
+fn rpc_vault_passwd(req: PasswdReq, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, mut st: GuiState) -> PasswdReply! {
+    defer c.wipe_text(req.current)
+    defer c.wipe_text(req.password)
+    st.hold()
+    defer st.release()
+    try st.require_unlocked()
+    old := st.vault_session()
+    strength := password_strength(req.password, old.name)
+    s := try change_master_password(c, mut store, kc, old, req.current, req.password)
+    st.holder.set_remembered(s.path, s.cached)
+    st.adopt(s)
+    return PasswdReply{ remembered: s.cached, strength: strength }
+}
+
+// The strength of a master password being typed (no secret leaves: a score, a label
+// and generic advice). With a vault open, its name counts as a common word.
+fn rpc_password_strength(params: str, st: GuiState) -> str! {
+    req := try parse_req[StrengthReq](params)
+    mut name := ""
+    if st.unlocked() {
+        name = st.vault_session().name
+    }
+    return json.stringify(password_strength(req.password, name))
 }
 
 fn rpc_vault_status(mut store: LockedVaultStore, st: GuiState) -> str! {

@@ -39,6 +39,7 @@ terminal, Flint's window asks instead ([Vaults](/guides/vaults/#flint-holds-the-
 | `vault unlock` | Ask Flint to unlock the vault (starting it if needed), and wait up to 2 minutes |
 | `vault lock` | Lock the vault in Flint, and remove its key if this machine remembers it |
 | `vault rename <new-name>` | Rename the vault (with `--vault`, another one); the file keeps its name and place |
+| `vault passwd` | Change the master password: asks for the current one, then the new one twice, and prints its strength. Refused (`conflict`) while Flint holds the vault unlocked: use **Settings → Vault** there |
 | `vault forget <name\|path>` | Drop a vault from the recent list; the file is kept |
 
 See [Vaults](/guides/vaults/).
@@ -207,10 +208,11 @@ in the job's own environment, from its secret store.
 When a command takes several secrets on stdin, they are read in this order:
 
 1. The master password line (`--master-stdin`)
-2. The password line (`--password-stdin`)
-3. The sudo password line (`--sudo-password-stdin`)
-4. The passphrase line (`--passphrase-stdin`)
-5. The private key, which takes the rest of stdin (`--key-stdin`)
+2. The new master password line (`--new-master-stdin`, `vault passwd` only)
+3. The password line (`--password-stdin`)
+4. The sudo password line (`--sudo-password-stdin`)
+5. The passphrase line (`--passphrase-stdin`)
+6. The private key, which takes the rest of stdin (`--key-stdin`)
 
 ```sh
 printf '%s\n%s\n' "$MASTER" "$HOST_PASSWORD" |

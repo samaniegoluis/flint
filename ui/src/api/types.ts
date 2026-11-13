@@ -25,6 +25,16 @@ export interface VaultInfo {
   cached: boolean;
 }
 
+/** The core's estimate of a master password (milestone 40): zxcvbn's 0-4 score. */
+export interface PasswordStrength {
+  score: 0 | 1 | 2 | 3 | 4;
+  label: string;
+  /** Strong enough for a remote vault (3 or more). */
+  sync_ok: boolean;
+  warning: string;
+  suggestions: string[];
+}
+
 export interface VaultStatus {
   path: string;
   name: string;

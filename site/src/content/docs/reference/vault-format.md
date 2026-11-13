@@ -20,9 +20,11 @@ encrypted.
 
 Outside the vault file, the [list of recent vaults](/guides/vaults/#the-vault-list) in
 your config folder holds each vault's path and name in clear text, so `flint vault list`
-works while every vault is locked, and a **vault id**: 128 bits of a BLAKE2b hash of the
-salt, which is already in clear at the start of the file. The id recognises a vault after
-its file moves, and keys the desktop app's layout state (`ui-state.json`, which holds only
+works while every vault is locked, and a **vault id**: 128 random bits, kept inside the
+vault in the `meta` row `vault_id` (migration 10), so a new master password and salt
+leave it as it was. A vault from before migration 10 keeps the id it had, a BLAKE2b hash
+of its salt. The id recognises a vault after its file moves, names its activity file and
+keys the desktop app's layout state (`ui-state.json`, which holds only
 that id and random group ids). Nothing from inside a vault is ever written there. While a
 change is being written, SQLite keeps a rollback journal next to the file, encrypted as
 well, and deletes it when the change commits.
@@ -37,7 +39,9 @@ not rewritten on another machine. The file has its own random salt in its first 
 and is encrypted with its own key, derived from the vault's master key (below), so it
 opens only while its vault is unlocked. **Back up activity…** copies it as it is, still
 encrypted. A file the key no longer opens is kept beside it as `<id>.db.unreadable`
-and a new log begins.
+and a new log begins, unless a re-encrypted copy of it waits beside it (`<id>.db.new`, left
+by a master password change cut short, below) that the key opens: that copy takes its
+place.
 
 ## Keys
 
@@ -58,6 +62,20 @@ activity key = crypto_kdf(master key, 3, "flintvlt")      the activity file's pa
   with XChaCha20-Poly1305 (libsodium). Each sealed value is bound to its row and field,
   so it cannot be moved to another host or field. Secrets are only decrypted to connect.
 
+## A new master password
+
+`flint vault passwd` and **Settings → Vault → Change master password…** draw a new salt and
+derive new keys from the new password. Flint then writes a complete copy of the vault
+beside it, `<vault>.rekey` (SQLCipher's `sqlcipher_export` under the new page key), seals
+every secret again under the new secrets key inside that copy, and checks it opens. The
+activity file gets the same treatment (`<id>.db.new`). The copy is renamed over the vault:
+before that rename the old vault is whole, after it the new one is. The activity copy is
+renamed next. A copy left by a change that never reached its rename is removed at the
+next unlock.
+
+With **Remember on this computer** on, the new master key is saved under the new salt's
+keychain account before the rename and the old account is deleted after it.
+
 ## Schema
 
 The tables inside the encrypted file change only through numbered migrations, which
@@ -75,14 +93,16 @@ own transaction; a vault from a newer Flint is refused rather than downgraded.
 | 7 | `tunnels`: local forwards saved in a host (name, local port, destination host and port, open on connect), removed with their host; a name is unique in its host, whatever its case |
 | 8 | `hosts.type` (`ssh` for every host saved before, or `rdp`) and `hosts.domain` (an RDP host's Windows domain). An RDP server's certificate is kept in `known_hosts` under `rdp://<name>:<port>`, beside SSH host keys |
 | 9 | The activity log leaves the vault: `activity` is renamed `activity_moving`, and at the same unlock its rows (with their ids) and the `meta` row `activity_retention_days` are copied into this machine's [activity file](#the-activity-file), then dropped from the vault. A move cut short is finished at the next unlock, with no duplicate |
+| 10 | The `meta` row `vault_id`, empty: the next unlock writes the id the vault already had (a hash of its salt), and a new vault gets a random one. A new master password keeps it |
 
-A vault that has been opened by a Flint with migration 9 is refused by older builds.
+A vault that has been opened by a Flint with migration 10 is refused by older builds.
 
 ## The keychain
 
 With **Remember on this computer** ticked at unlock (off by default), the master key, not
 the password, is what Flint keeps in the OS keychain. It is stored
-as a generic password with service `Flint` and account `vault-<salt in hex>`. On macOS
+as a generic password with service `Flint` and account `vault-<salt in hex>` (a new master
+password moves it to the new salt's account). On macOS
 it goes in your login keychain, which does not sync to iCloud. On Linux it goes in the
 Secret Service's default collection. Unticking the box, **Forget on this device** and
 `flint vault lock` delete it.

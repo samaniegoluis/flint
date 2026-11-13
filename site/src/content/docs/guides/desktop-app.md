@@ -358,7 +358,9 @@ Settings belong to this machine, not to the vault, and save as you change them.
 - **Keyboard shortcuts**: the full map for macOS and Linux. Custom shortcuts are coming
   in a later version.
 - **Vault**: the open vault's file and counts, **Rename**, whether this machine remembers
-  its key, **Lock now**, **Lock after**, and the known hosts, each of which you can forget.
+  its key, **Lock now**, **Lock after**, the known hosts, each of which you can forget,
+  and **Change master password…**, with the new password's strength shown as you type
+  (see [Change the master password](/guides/vaults/#change-the-master-password)).
 - **Access**: the programs you approved, with what they may do and until when, and
   **Revoke** for each (or all). Grants end when the vault locks or Flint quits. Below
   them, the vault's **tokens** (**Revoke** ends one; **Show ended** lists the expired
@@ -385,7 +387,7 @@ Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults 
 The sidebar (open or closed, and its width) and the collapsed groups of each vault are
 kept in `ui-state.json` in the same config folder, not in the vault: a vault synced
 between machines is not rewritten each time you fold a group, and each machine keeps its
-own layout. The file holds only ids: a vault is named by a hash of its salt, and a group
+own layout. The file holds only ids: a vault is named by its id (kept inside it), and a group
 by its random id, so it never contains a vault, group or host name. A vault that is moved
 or renamed keeps its layout, and so does a renamed group. If the file is damaged, Flint
 starts from the default layout.

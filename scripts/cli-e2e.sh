@@ -194,6 +194,33 @@ mv "$moved" "$work"
 expect 0 "the vault is back where it was" "$MI" -- vault open "$work" "${M[@]}"
 expect 0 "and renamed back" "$MI" -- vault rename work "${M[@]}"
 
+echo "== vault passwd (milestone 40)"
+pw="$tmp/pw.flint"
+NEW_MASTER="gravel onion tundra quartz"
+expect 0 "a vault for passwd" "$MASTER"$'\n' -- vault create "$pw" --name "PW" --master-stdin
+expect 0 "a host with a password in it" "$MASTER"$'\n'"$HOST_PW"$'\n' -- --vault "$pw" host add pw-host --hostname 10.9.9.9 --password-stdin --master-stdin
+pw_id() { python3 -c 'import json,sys; print([v["id"] for v in json.load(open(sys.argv[1]))["vaults"] if v["path"]==sys.argv[2]][0])' "$FLINT_CONFIG_DIR/vaults.json" "$pw"; }
+id_before="$(pw_id)"
+salt_before="$(head -c 16 "$pw" | od -An -tx1 | tr -d ' \n')"
+expect 0 "vault passwd" "$MASTER"$'\n'"$NEW_MASTER"$'\n' -- --json --vault "$pw" vault passwd --master-stdin --new-master-stdin
+check "it reports the vault and a strong password" '[[ "$(echo "$out" | json_get "d[\"name\"]")" == "PW" && "$(echo "$out" | json_get "d[\"strength\"][\"sync_ok\"]")" == "True" && "$(echo "$out" | json_get "d[\"strength\"][\"score\"]")" -ge 3 ]]'
+check "the vault has a new salt" '[[ "$(head -c 16 "$pw" | od -An -tx1 | tr -d " \n")" != "$salt_before" ]]'
+check "no re-keyed copy is left beside it" '[[ ! -e "$pw.rekey" ]] && ! ls "$FLINT_CONFIG_DIR"/activity/*.new >/dev/null 2>&1'
+expect 6 "the old master password no longer opens it" "$MASTER"$'\n' -- --vault "$pw" host list --master-stdin
+expect 0 "the new one does, and the host keeps its password" "$NEW_MASTER"$'\n' -- --json --vault "$pw" host show pw-host --master-stdin
+check "the host still has its password" '[[ "$(echo "$out" | json_get "d[\"has_password\"]")" == "True" ]]'
+check "the vault keeps its id, so its recent entry and activity file" '[[ "$(pw_id)" == "$id_before" && -f "$FLINT_CONFIG_DIR/activity/$id_before.db" ]]'
+expect 6 "a wrong current password changes nothing" "wrong horse battery"$'\n'"$MASTER"$'\n' -- --vault "$pw" vault passwd --master-stdin --new-master-stdin
+expect 7 "the same password again is refused" "$NEW_MASTER"$'\n'"$NEW_MASTER"$'\n' -- --vault "$pw" vault passwd --master-stdin --new-master-stdin
+expect 7 "a short new password is refused" "$NEW_MASTER"$'\n'"short"$'\n' -- --vault "$pw" vault passwd --master-stdin --new-master-stdin
+check "it names the minimum" '[[ "$err" == *"at least 8 characters"* ]]'
+expect 2 "--master-stdin needs --new-master-stdin" "$NEW_MASTER"$'\n' -- --vault "$pw" vault passwd --master-stdin
+expect 2 "passwd takes no argument" "" -- vault passwd extra
+expect 0 "a weak new password is taken, with a warning" "$NEW_MASTER"$'\n'"monkey2026"$'\n' -- --vault "$pw" vault passwd --master-stdin --new-master-stdin
+check "the warning says a remote vault needs Strong" '[[ "$err" == *"too weak for a remote vault"* && "$out" == *"Strength: Weak (1 of 4)."* ]]'
+expect 0 "and back to a strong one" "monkey2026"$'\n'"$NEW_MASTER"$'\n' -- --vault "$pw" vault passwd --master-stdin --new-master-stdin
+expect 0 "it still opens" "$NEW_MASTER"$'\n' -- --vault "$pw" vault status --master-stdin
+
 echo "== keychain turned off"
 off="$tmp/off.flint"
 FLINT_KEYCHAIN=off expect 0 "create with the keychain off" "$MASTER"$'\n' -- --json vault create "$off" --master-stdin
@@ -619,10 +646,10 @@ expect 0 "version" "" -- --version
 check "--version names it on its first line" '[[ "$(echo "$out" | head -1)" == "flint $want_version" ]]'
 
 echo "== nothing secret or identifying leaks"
-for secret in "$MASTER" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "$test_key_body" "PRIVATE KEY" ${FLINT_TEST_LOGIN_PW:+"$FLINT_TEST_LOGIN_PW"}; do
+for secret in "$MASTER" "$NEW_MASTER" "monkey2026" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "$test_key_body" "PRIVATE KEY" ${FLINT_TEST_LOGIN_PW:+"$FLINT_TEST_LOGIN_PW"}; do
   check "CLI output never shows '${secret:0:24}…'" '! grep -aqF -- "$secret" "$all_out"'
 done
-for f in "$vault" "$work" "$off"; do
+for f in "$vault" "$work" "$off" "$pw"; do
   for needle in "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "e2e-hostname-marker" "e2e-user-marker" "e2e-label-marker" "e2e-notes-marker" "e2e-group-marker" "e2e-cred-user" "10.20.30.40" "web-01" "Home Lab" "SQLite format 3" "CREATE TABLE"; do
     check "$(basename "$f") has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$f"'
   done

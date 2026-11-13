@@ -149,7 +149,7 @@ try {
 		check(await page.evaluate(() => document.activeElement?.id !== 'cli-demo-input'), 'phone: no keyboard pops up on open');
 		await page.locator('.cli-demo__chip', { hasText: 'flint help' }).tap();
 		await page.locator('.cli-demo__chip', { hasText: 'flint host list' }).tap();
-		check((await logText(page)).includes('bastion  jump@bastion.example'), 'phone: tapping a chip runs it');
+		check((await logText(page)).includes('bastion  ssh   jump@bastion.example'), 'phone: tapping a chip runs it');
 		check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'phone: still no horizontal page scroll');
 		if (shots) await page.screenshot({ path: join(shots, 'demo-phone.png') });
 		await ctx.close();

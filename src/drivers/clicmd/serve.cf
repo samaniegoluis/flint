@@ -703,6 +703,18 @@ fn locked_error(target: RecentVault, st: AppState) -> str {
     return coded(ERR_LOCKED, "vault '{target.name}' is locked and Flint could not be started; open Flint and unlock it, or pass --master-stdin")
 }
 
+// Whether the running Flint holds `target` unlocked (false when it is not running).
+// Asks nothing of the person and never starts Flint.
+fn app_holds_unlocked(target: RecentVault) -> bool {
+    mut conn := dial_app()
+    if !conn.open {
+        return false
+    }
+    defer conn.close()
+    st := ask_app_state(conn, "status", target.path, "") or AppState{ state: APP_LOCKED, name: "" }
+    return st.state == APP_UNLOCKED
+}
+
 // `flint vault unlock`: Flint holds the key, so unlocking means asking Flint. Waits
 // for the person to unlock there.
 fn cmd_vault_unlock_app(p: ParsedArgs, as_json: bool) -> void! {
@@ -779,7 +791,7 @@ fn served_secrets(req: ServeRequest) -> SecretInput {
         passphrase: req.secrets.passphrase, has_passphrase: req.secrets.has_passphrase,
         key_text: req.secrets.key_text, has_key: req.secrets.has_key,
         sudo_password: req.secrets.sudo_password, has_sudo_password: req.secrets.has_sudo_password,
-        in_app: true, sudo_typed: "",
+        in_app: true, sudo_typed: "", new_master: "", has_new_master: false,
     }
 }
 

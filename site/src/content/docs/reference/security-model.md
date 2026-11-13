@@ -17,7 +17,11 @@ without the master password:
 - passwords, private keys and passphrases are **sealed again** with XChaCha20-Poly1305,
   each bound to its own field, and opened only to connect;
 - the key comes from the master password through **Argon2id** (256 MiB), so guessing it is
-  slow.
+  slow;
+- a weak master password can be replaced (`flint vault passwd`, **Settings → Vault**): the
+  vault is re-encrypted under a new salt and key in one rename, so a copy taken before the
+  change still opens only with the old password. Flint shows a strength estimate as you
+  type it, and a remote vault will need **Strong** (3 of 4) or better.
 
 [Vault format](/reference/vault-format/) has the details.
 

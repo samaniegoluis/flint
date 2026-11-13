@@ -100,8 +100,16 @@ fn change_master_password[C: Crypto, S: VaultStore, K: Keychain](crypto: C, mut 
     // The new key reaches the keychain before the commit point: a crash after it
     // leaves an entry for a salt no file has, never a remembered vault with none.
     new_account := vault_account(salt)
+    // Remembered on this computer: the session says so in the app; the CLI, which
+    // unlocked with the typed password, finds out from the keychain.
+    mut remembered := session.cached
+    if !remembered {
+        held := keychain.keychain_load(vault_account(old_salt)) or []
+        remembered = held.len() == VAULT_KEY_LEN
+        crypto.wipe(held)
+    }
     mut cached := false
-    if session.cached {
+    if remembered {
         cached = true
         keychain.keychain_save(new_account, master) or {
             cached = false

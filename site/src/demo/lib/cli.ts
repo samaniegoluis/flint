@@ -46,6 +46,7 @@ Vaults
   vault unlock                          Ask Flint to unlock the vault, and wait
   vault lock                            Lock the vault in Flint; remove any cached key
   vault rename <new-name>               Rename the vault (its file is not moved)
+  vault passwd [--new-master-stdin]     Change the master password (asks for both)
   vault forget <name|path>              Drop a vault from the recent list
 
 Groups
@@ -139,7 +140,7 @@ them from stdin with the --*-stdin flags.`;
 
 /** Every `flint <noun> <verb>` the demo runs, for Tab completion and the coverage test. */
 export const COMMANDS: Record<string, string[]> = {
-	vault: ['create', 'open', 'list', 'use', 'status', 'unlock', 'lock', 'rename', 'forget'],
+	vault: ['create', 'open', 'list', 'use', 'status', 'unlock', 'lock', 'rename', 'passwd', 'forget'],
 	group: ['add', 'list', 'rename', 'rm'],
 	host: ['add', 'edit', 'list', 'show', 'test', 'rm'],
 	key: ['add', 'list', 'show', 'rename', 'rm'],
@@ -159,7 +160,7 @@ function commandText(h: Host): string {
 	return h.command + (h.keepShell ? ' (then a login shell)' : ' (ends the session)');
 }
 
-const STDIN_FLAGS = ['--master-stdin', '--password-stdin', '--passphrase-stdin', '--key-stdin'];
+const STDIN_FLAGS = ['--master-stdin', '--new-master-stdin', '--password-stdin', '--passphrase-stdin', '--key-stdin'];
 const REFERENCE = '/reference/cli/';
 
 /** Runs `flint <args>`. */
@@ -390,6 +391,25 @@ class Cmd {
 				if (this.world.current === old) this.world.current = name;
 				v.name = name;
 				this.emit(info(v), () => this.say(`Renamed vault '${old}' to '${name}'.`));
+				return ok;
+			}
+			case 'passwd': {
+				// cmd_vault_passwd (milestone 40): refused while Flint holds the vault unlocked.
+				p.allowFlags('vault passwd', ['--new-master-stdin']);
+				p.expectArgs('vault passwd', 0, '[--vault <name|path>] [--master-stdin --new-master-stdin]');
+				const v = this.resolveVault(p.value('--vault'));
+				if (v.unlocked) {
+					fail('conflict', `Flint has vault '${v.name}' unlocked; change its master password there (Settings → Vault), or lock it in Flint first`);
+				}
+				const current = yield* this.secret(`Current master password for '${v.name}'`);
+				if (current.length === 0) fail('wrong_password', 'the password is wrong or the file is not a Flint vault');
+				const next = yield* this.secret('new master password');
+				const again = yield* this.secret('Repeat the new master password');
+				if (next !== again) fail('invalid', 'the two entries do not match');
+				if (next.length < 8) fail('invalid', 'the new master password must be at least 8 characters');
+				if (next === current) fail('invalid', 'the new master password is the same as the current one');
+				this.say(`Changed the master password of vault '${v.name}'.`);
+				this.io.note('flint (demo): Flint would print the new password\'s strength here (0 to 4, a zxcvbn estimate) and warn under Strong, which a remote vault will need.');
 				return ok;
 			}
 			case 'forget': {

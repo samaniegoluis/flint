@@ -4,7 +4,7 @@
 
 import type {
   AccessAnswer, AccessState, ActivityEntry, AppInfo, RdpStats, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  CopyResult, DesktopSpan, FileEntry, MonitorPick, MonitorsView, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
+  CopyResult, DesktopSpan, FileEntry, MonitorPick, MonitorsView, PasswordStrength, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -108,6 +108,11 @@ export const api = {
   forget: (path: string) => call('vault_forget', { path }),
   status: () => call<VaultStatus>('vault_status'),
   rename: (name: string) => call<VaultInfo>('vault_rename', { name }),
+  /** Re-keys the open vault (milestone 40): two Argon2id runs, a few seconds. */
+  passwd: (current: string, password: string) =>
+    call<{ remembered: boolean; strength: PasswordStrength }>('vault_passwd', { current, password }),
+  /** The core's strength estimate of a password being typed; never stored. */
+  passwordStrength: (password: string) => call<PasswordStrength>('password_strength', { password }),
 
   catalog: () => call<Catalog>('catalog'),
   groupAdd: (path: string) => call<GroupView>('group_add', { path }),

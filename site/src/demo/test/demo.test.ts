@@ -235,6 +235,21 @@ test('vault rename renames the current vault and refuses a name in use', () => {
 	assert.equal(flint(w, 'vault rename').code, 2);
 });
 
+test('vault passwd asks for both passwords, and is refused while Flint holds the vault', () => {
+	const w = worldFromSeed(seed);
+	const held = flint(w, 'vault passwd');
+	assert.equal(held.code, 4);
+	assert.ok(held.err.some((l) => l.includes("Flint has vault 'Demo' unlocked; change its master password there")));
+	const ok = flint(w, 'vault passwd --vault Work', ['old-pass', 'gravel onion tundra', 'gravel onion tundra']);
+	assert.equal(ok.code, 0);
+	assert.deepEqual(ok.asks, ["Current master password for 'Work': ", 'new master password: ', 'Repeat the new master password: ']);
+	assert.deepEqual(ok.out, ["Changed the master password of vault 'Work'."]);
+	assert.equal(flint(w, 'vault passwd --vault Work', ['old-pass', 'short', 'short']).code, 7);
+	assert.equal(flint(w, 'vault passwd --vault Work', ['old-pass', 'gravel onion', 'other words']).code, 7);
+	assert.equal(flint(w, 'vault passwd --vault Work --master-stdin').code, 2);
+	assert.equal(flint(w, 'vault passwd extra').code, 2);
+});
+
 test('token create is approved in Flint, prints the token once, and list and revoke follow the CLI', () => {
 	const w = worldFromSeed(seed);
 	const made = flint(w, 'token create --name nightly --allow exec --hosts nas,@prod --ttl 30d');

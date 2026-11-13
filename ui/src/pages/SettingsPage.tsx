@@ -13,6 +13,7 @@ import { Kbd } from '../ui/Kbd';
 import { Picker } from '../ui/Picker';
 import type { Confirm } from './KeysPage';
 import { RenameVault } from '../shell/VaultSwitcher';
+import { ChangeMasterPassword } from './ChangeMasterPassword';
 import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
 import { MAC_MOD_KEYS, MOD_TARGETS, modMapOf, modMapText, type MacModKey, type ModTarget } from '../lib/rdpInput';
 import { AccessSettings } from '../access/AccessSettings';
@@ -387,10 +388,12 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
   const { vault, catalog, os, refreshCatalog, notify, closeVault } = useApp();
   const [st, setSt] = useState<VaultStatus | null>(null);
   const [renaming, setRenaming] = useState(false);
+  const [changing, setChanging] = useState(false);
+  const [changed, setChanged] = useState(0);
   // Sessions record trusted keys on their worker, and the CLI can change the file:
   // read the catalog again when the page opens, or Known hosts shows a stale list.
   useEffect(() => { refreshCatalog().catch(() => {}); }, [refreshCatalog]);
-  useEffect(() => { api.status().then(setSt).catch(() => {}); }, [catalog]);
+  useEffect(() => { api.status().then(setSt).catch(() => {}); }, [catalog, changed]);
   if (!vault) return null;
   const keychain = os === 'mac' ? 'macOS Keychain' : 'the Secret Service keyring';
   return (
@@ -446,9 +449,10 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
           </table>
         )}
       </Row>
-      <Row title="Master password" desc="Changing it is coming in a later version (flint vault passwd).">
-        <span className="faint" style={{ fontSize: 'var(--fs-sm)' }}>—</span>
+      <Row title="Master password" desc="Opens the vault and seals its saved passwords and keys. Changing it re-encrypts the vault; the CLI's flint vault passwd does the same.">
+        <div className="row"><button className="btn btn-secondary btn-sm" onClick={() => setChanging(true)}>Change master password…</button></div>
       </Row>
+      {changing && <ChangeMasterPassword onClose={() => { setChanging(false); setChanged((n) => n + 1); }} />}
     </>
   );
 }

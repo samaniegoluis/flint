@@ -196,6 +196,12 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         }
         return
     }
+    if verb == "passwd" {
+        try p.allow_flags("vault passwd", ["--new-master-stdin"])
+        try p.expect_args("vault passwd", 0, "[--vault <name|path>] [--master-stdin --new-master-stdin]")
+        try cmd_vault_passwd(p, sec, as_json, c, mut store, src, recents)
+        return
+    }
     if verb == "forget" {
         try p.allow_flags("vault forget", [])
         try p.expect_args("vault forget", 1, "<name|path>")
@@ -212,6 +218,56 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         return
     }
     return error(coded(ERR_USAGE, "unknown command `flint vault {verb}`; see `flint help`"))
+}
+
+// What `vault passwd --json` prints: the vault, whether this machine still remembers
+// it, and the new password's strength (never the password).
+type PasswdReport struct {
+    path:       str              `json:"path"`
+    name:       str              `json:"name"`
+    remembered: bool             `json:"remembered"`
+    strength:   PasswordStrength `json:"strength"`
+}
+
+// `flint vault passwd` (milestone 40, D-095): the current master password, then the
+// new one twice (or both on stdin, one per line). Refused while the app holds the
+// vault unlocked: one holder of an unlocked vault (v3); Settings → Vault changes it
+// there.
+fn cmd_vault_passwd(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+    target := try resolve_vault(recents, vault_selector(p))
+    if src.served || app_holds_unlocked(target) {
+        return error(coded(ERR_CONFLICT, "Flint has vault '{target.name}' unlocked; change its master password there (Settings → Vault), or lock it in Flint first"))
+    }
+    if sec.has_master != sec.has_new_master {
+        return error(coded(ERR_USAGE, "pass both --master-stdin and --new-master-stdin, or neither to be asked"))
+    }
+    mut current := sec.master
+    if !sec.has_master {
+        current = try prompt_secret("Current master password for '{target.name}'")
+    }
+    session := try unlock_vault(c, mut store, src.kc, recents, target.path, current, false)
+    mut next_password := sec.new_master
+    if !sec.has_new_master {
+        next_password = try prompt_new_secret("new master password")
+    }
+    strength := password_strength(next_password, session.name)
+    next := try change_master_password(c, mut store, src.kc, session, current, next_password)
+    if as_json {
+        say(json.stringify(PasswdReport{ path: next.path, name: next.name, remembered: next.cached, strength: strength }))
+        return
+    }
+    say("Changed the master password of vault '{next.name}'.")
+    say("Strength: {strength.label} ({strength.score} of 4).")
+    if !strength.sync_ok {
+        mut why := ""
+        if strength.warning.len() > 0 {
+            why = " {strength.warning}."
+        }
+        write_stderr("warning: this password is too weak for a remote vault, which needs Strong (3 of 4).{why}\n")
+    }
+    if next.cached {
+        say("This computer still remembers it.")
+    }
 }
 
 // ---- group ---------------------------------------------------------------------

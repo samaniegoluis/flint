@@ -2426,6 +2426,42 @@
       await waitFor(() => byText('button', 'Rename…'), 'the vault settings');
       await check(!hasText('Import from Tether'), 'Settings → Vault offers no Tether import (milestone 24)');
 
+      await setStep('change the master password (milestone 40)');
+      {
+        const NEW_MASTER = 'gravel onion tundra quartz';
+        const idBefore = (await window.backend.vault_recents({}))[0];
+        const catalogBefore = await window.backend.catalog({});
+        await click('button', 'Change master password…');
+        await waitFor(() => q('.modal #cmp-current'), 'the change dialog');
+        await fill('#cmp-new', 'monkey2026');
+        await waitFor(() => q('[data-testid="strength-label"]')?.textContent === 'Weak', 'the estimate of a weak password', 5000);
+        await check(q('[data-testid="strength-advice"]')?.textContent.includes('A remote vault will need Strong'), 'a weak password is shown as weak, with the remote vault\'s need');
+        await check(q('.modal button[type="submit"]').disabled, 'nothing to submit without the current password and the confirmation');
+        await fill('#cmp-new', NEW_MASTER);
+        await waitFor(() => q('[data-testid="strength-label"]')?.textContent === 'Very strong', 'the estimate of a strong password', 5000);
+        await fill('#cmp-new2', NEW_MASTER);
+        await fill('#cmp-current', 'not-the-master-password');
+        await click('.modal button[type="submit"]', 'Change password');
+        await waitFor(() => hasText('The current master password is wrong.'), 'the wrong current password', 30000);
+        await check(!!q('.modal #cmp-current'), 'a wrong current password keeps the dialog open');
+        await fill('#cmp-current', MASTER);
+        await click('.modal button[type="submit"]', 'Change password');
+        await waitFor(() => !q('.modal #cmp-current') && hasText('Master password changed'), 'the change to finish', 60000);
+        await check(true, 'the master password changes from Settings → Vault');
+        const after = await window.backend.catalog({});
+        await check(after.hosts.length === catalogBefore.hosts.length, 'the vault still reads, with every host');
+        await check((await window.backend.vault_recents({}))[0].path === idBefore.path, 'the vault keeps its place in the list');
+        // And back, so the steps below unlock with MASTER.
+        await click('button', 'Change master password…');
+        await waitFor(() => q('.modal #cmp-current'), 'the change dialog again');
+        await fill('#cmp-current', NEW_MASTER);
+        await fill('#cmp-new', MASTER);
+        await fill('#cmp-new2', MASTER);
+        await click('.modal button[type="submit"]', 'Change password');
+        await waitFor(() => !q('.modal #cmp-current') && !hasText('The current master password is wrong.'), 'the change back to finish', 60000);
+        await check(true, 'the new password is the vault\'s: it changes back with it');
+      }
+
       await setStep('lock');
       // A session that must keep running under the lock screen (D-042).
       await click('.rail-btn', 'Hosts');
