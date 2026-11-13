@@ -32,13 +32,17 @@ here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 app_dir="$root/build/windows/Flint"
 [[ -f "$app_dir/flint-app.exe" ]] || { echo "gui-e2e: build it first: windows/build-gui.sh" >&2; exit 1; }
-runs=(terminal vault tunnels paste rdp vim)
+runs=(terminal vault tunnels paste rdp webgl fullscreen vim)
+# multimon (milestone 38) needs two monitors: FLINT_E2E_MULTIMON=1 on a desk with two, or
+# FLINT_E2E_ONLY=multimon. rdpbench (milestone 34) is scripts/rdp-bench.sh's, not run here.
+known=("${runs[@]}" multimon)
+if [[ "${FLINT_E2E_MULTIMON:-}" == 1 ]]; then runs+=(multimon); fi
 run_vim="${FLINT_E2E_VIM:-0}"
 only="${FLINT_E2E_ONLY:-}"
 if [[ -n "$only" ]]; then
   IFS=, read -r -a picked <<<"$only"
   for r in "${picked[@]}"; do
-    [[ " ${runs[*]} " == *" $r "* ]] || { echo "gui-e2e: FLINT_E2E_ONLY takes ${runs[*]}, not '$r'" >&2; exit 2; }
+    [[ " ${known[*]} " == *" $r "* ]] || { echo "gui-e2e: FLINT_E2E_ONLY takes ${known[*]}, not '$r'" >&2; exit 2; }
   done
   runs=("${picked[@]}")
   run_vim=1
@@ -143,14 +147,14 @@ cp -R "$app_dir" "$WIN_TMP/app"
 # (the certificate prompt, then the trusted connect) reach the first and every later
 # one the second.
 RPORT=0; RPORT_FWD=""; CPORT=0; CCTL=0
-if [[ " ${runs[*]} " == *" rdp "* ]]; then
+if [[ " ${runs[*]} " =~ \ (rdp|webgl|fullscreen|multimon)\  ]]; then
   source "$here/rdp-servers.sh"
   mkdir -p "$WIN_TMP/rdp"
   rdp_servers_start "$WIN_TMP/rdp"
   rdp_server_sample "$WIN_TMP/rdp" 33895 rdp2
   RPORT="$FLINT_RDP_SAMPLE_PORT"; CPORT="$FLINT_RDP_CLIP_PORT"; CCTL="$FLINT_RDP_CLIP_CONTROL"; RPORT_FWD=33896
   setsid nohup powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$here/tcp-switch.ps1")" \
-    -Port "$RPORT_FWD" -First "$RPORT" -Later 33895 -Firsts 2 > "$tmp/switch.log" 2>&1 &
+    -Port "$RPORT_FWD" -First "$RPORT" -Later 33895 -Firsts 2 -Peek > "$tmp/switch.log" 2>&1 &
   for _ in $(seq 1 100); do grep -q '^switch:' "$tmp/switch.log" 2>/dev/null && break; sleep 0.1; done
   grep -q '^switch:' "$tmp/switch.log" || { echo "gui-e2e: tcp-switch did not start" >&2; cat "$tmp/switch.log" >&2; exit 1; }
 fi
@@ -158,7 +162,7 @@ fi
 # Writes the page script for one run: $1 the run's name; vault, script and config folder
 # are named after it in $WIN_TMP.
 make_script() {
-  E2E_KEY="$tmp/user_ed25519" E2E_W="$W" P1="$P1" P2="$P2" P3="$P3" TPORT="$TPORT" E2E_RUN="$1" \
+  E2E_VERSION="$("$root/scripts/version.sh")" E2E_KEY="$tmp/user_ed25519" E2E_W="$W" P1="$P1" P2="$P2" P3="$P3" TPORT="$TPORT" E2E_RUN="$1" \
     E2E_RPORT="$RPORT" E2E_RPORT_FWD="${RPORT_FWD:-0}" E2E_CPORT="$CPORT" E2E_CCTL="$CCTL" \
     python3 -I - "$root/scripts/gui-e2e.js" "$WIN_TMP/$1.js" <<'PY'
 import os, sys
@@ -169,10 +173,13 @@ run = os.environ["E2E_RUN"]
 values = {"VAULT": w + "/" + run + ".flint", "PORT": os.environ["P1"], "PORT2": os.environ["P2"],
           "PORT3": os.environ["P3"], "TPORT": os.environ["TPORT"], "USER": os.environ["USER"],
           "KEY": key, "RUN": run, "RPORT": os.environ["E2E_RPORT"], "RPORT_FWD": os.environ["E2E_RPORT_FWD"],
-          "CPORT": os.environ["E2E_CPORT"], "CCTL": os.environ["E2E_CCTL"]}
+          "CPORT": os.environ["E2E_CPORT"], "CCTL": os.environ["E2E_CCTL"], "VERSION": os.environ["E2E_VERSION"],
+          "COVER": os.environ.get("FLINT_E2E_WEBGL_COVER", "0"), "NATIVEFS": "0",
+          # The benchmark's real host (milestone 34) is scripts/rdp-bench.sh's: empty here.
+          "BHOST": "", "BUSER": "", "BPW": "", "BMODES": "", "BMONS": ""}
 for k, v in values.items():
     src = src.replace("@@" + k + "@@", v)
-if run == "rdp":
+if run in ("rdp", "webgl", "fullscreen", "multimon"):
     # The RDP servers are Windows programs on Windows' 127.0.0.1: no SSH substitutions.
     open(sys.argv[2], "w").write(src)
     sys.exit(0)

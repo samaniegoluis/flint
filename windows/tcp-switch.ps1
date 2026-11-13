@@ -3,8 +3,12 @@
 # windows/gui-e2e.sh uses it for a changed certificate, as scripts/gui-e2e.sh's fwd.py
 # does on macOS and Linux (a Windows program here: the servers listen on Windows).
 #
-#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File tcp-switch.ps1 -Port 40000 -First 33891 -Later 33895 -Firsts 2
-param([int]$Port, [int]$First, [int]$Later, [int]$Firsts = 1)
+# With -Peek, only connections whose client speaks first (RDP) are counted, so a probe
+# that opens and closes one without sending anything (milestone 35's round-trip dial)
+# neither reaches a server nor moves the count, as fwd.py's "peek".
+#
+#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File tcp-switch.ps1 -Port 40000 -First 33891 -Later 33895 -Firsts 2 [-Peek]
+param([int]$Port, [int]$First, [int]$Later, [int]$Firsts = 1, [switch]$Peek)
 
 Add-Type -TypeDefinition @"
 using System;
@@ -13,17 +17,31 @@ using System.Net.Sockets;
 using System.Threading.Tasks;
 
 public static class TcpSwitch {
-    public static void Run(int port, int first, int later, int firsts) {
+    static readonly object Gate = new object();
+    static int n = 0;
+
+    public static void Run(int port, int first, int later, int firsts, bool peek) {
         var listener = new TcpListener(IPAddress.Loopback, port);
         listener.Start();
         Console.WriteLine("switch: 127.0.0.1:" + port + " -> " + first + " x" + firsts + ", then " + later);
         Console.Out.Flush();
-        int n = 0;
         while (true) {
             var client = listener.AcceptTcpClient();
-            int target = n < firsts ? first : later;
-            n++;
-            Task.Run(() => Serve(client, target));
+            if (!peek) {
+                int target;
+                lock (Gate) { target = n < firsts ? first : later; n++; }
+                Task.Run(() => Serve(client, target));
+                continue;
+            }
+            Task.Run(() => {
+                try {
+                    var one = new byte[1];
+                    if (client.Client.Receive(one, 0, 1, SocketFlags.Peek) == 0) { client.Close(); return; }
+                } catch { try { client.Close(); } catch {} return; }
+                int target;
+                lock (Gate) { target = n < firsts ? first : later; n++; }
+                Serve(client, target);
+            });
         }
     }
 
@@ -52,4 +70,4 @@ public static class TcpSwitch {
 }
 "@
 
-[TcpSwitch]::Run($Port, $First, $Later, $Firsts)
+[TcpSwitch]::Run($Port, $First, $Later, $Firsts, $Peek.IsPresent)
