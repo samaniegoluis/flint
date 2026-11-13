@@ -572,8 +572,8 @@ test "a main window smaller than its monitor leaves no gap" {
     assert(l[1].x < 1280)
     assert(layout_connected(l))
     // Beside it, a monitor out of reach along the edge slides until they share some.
-    far: []RdpMonitor = [RdpMonitor{ local_id: "a", x: 0, y: 0, width: 800, height: 600, primary: true }, RdpMonitor{ local_id: "b", x: 900, y: 700, width: 400, height: 400, primary: false }]
-    pk := pack_layout(far)
+    apart: []RdpMonitor = [RdpMonitor{ local_id: "a", x: 0, y: 0, width: 800, height: 600, primary: true }, RdpMonitor{ local_id: "b", x: 900, y: 700, width: 400, height: 400, primary: false }]
+    pk := pack_layout(apart)
     assert_eq(pk[1].x, 800)
     assert_eq(pk[1].y, 599)
     assert(layout_connected(pk))
