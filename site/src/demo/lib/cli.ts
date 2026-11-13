@@ -48,6 +48,11 @@ Vaults
   vault rename <new-name>               Rename the vault (its file is not moved)
   vault passwd [--new-master-stdin]     Change the master password (asks for both)
   vault merge <copy.flint>              Merge a conflict copy of the vault into it
+  vault connect <url> [--token-stdin]   Keep the vault in step with a flint-vault-server
+                                        (asks for its token and the master password)
+  vault connect <url> --to <path>       Download the server's vault to a new file here
+  vault sync [--new-master-stdin]       Sync now (Flint also syncs on its own)
+  vault disconnect                      Stop syncing on this machine; the file stays
   vault forget <name|path>              Drop a vault from the recent list
 
 Groups
@@ -141,7 +146,7 @@ them from stdin with the --*-stdin flags.`;
 
 /** Every `flint <noun> <verb>` the demo runs, for Tab completion and the coverage test. */
 export const COMMANDS: Record<string, string[]> = {
-	vault: ['create', 'open', 'list', 'use', 'status', 'unlock', 'lock', 'rename', 'passwd', 'merge', 'forget'],
+	vault: ['create', 'open', 'list', 'use', 'status', 'unlock', 'lock', 'rename', 'passwd', 'merge', 'connect', 'sync', 'disconnect', 'forget'],
 	group: ['add', 'list', 'rename', 'rm'],
 	host: ['add', 'edit', 'list', 'show', 'test', 'rm'],
 	key: ['add', 'list', 'show', 'rename', 'rm'],
@@ -161,7 +166,7 @@ function commandText(h: Host): string {
 	return h.command + (h.keepShell ? ' (then a login shell)' : ' (ends the session)');
 }
 
-const STDIN_FLAGS = ['--master-stdin', '--new-master-stdin', '--password-stdin', '--passphrase-stdin', '--key-stdin'];
+const STDIN_FLAGS = ['--master-stdin', '--new-master-stdin', '--token-stdin', '--password-stdin', '--passphrase-stdin', '--key-stdin'];
 const REFERENCE = '/reference/cli/';
 
 /** Runs `flint <args>`. */
@@ -343,15 +348,20 @@ class Cmd {
 					groups: n(v.groups.length), hosts: n(v.hosts.length), keys: n(v.keys.length), credentials: n(v.creds.length),
 					// Set in the app only (D-052); the demo's vaults keep the default.
 					activity_days: v.unlocked ? 90 : -1,
+					remote: remoteStatus(v, this.io.now()),
 				};
+				// remote_status_fields (milestone 43).
+				const [rn, rv] = v.remote
+					? [['remote', 'version', 'last sync', 'waiting'], [v.remote.url, `${v.remote.version}`, 'just now', 'nothing']]
+					: [['remote'], ['none (a local vault; `flint vault connect <url>` to sync it)']];
 				this.emit(st, () => {
 					if (!v.unlocked) {
-						fields(['vault', 'path', 'state'], [v.name, v.path, 'locked (unlock it in Flint, or pass --master-stdin)']).forEach((l) => this.say(l));
+						fields(['vault', 'path', 'state', ...rn], [v.name, v.path, 'locked (unlock it in Flint, or pass --master-stdin)', ...rv]).forEach((l) => this.say(l));
 						return;
 					}
 					fields(
-						['vault', 'path', 'state', 'groups', 'hosts', 'keys', 'credentials', 'activity'],
-						[v.name, v.path, 'unlocked in Flint', `${st.groups}`, `${st.hosts}`, `${st.keys}`, `${st.credentials}`, 'kept 90 days'],
+						['vault', 'path', 'state', 'groups', 'hosts', 'keys', 'credentials', 'activity', ...rn],
+						[v.name, v.path, 'unlocked in Flint', `${st.groups}`, `${st.hosts}`, `${st.keys}`, `${st.credentials}`, 'kept 90 days', ...rv],
 					).forEach((l) => this.say(l));
 				});
 				return ok;
@@ -464,6 +474,51 @@ class Cmd {
 					table(['CHANGE', 'KIND', 'NAME'], rows).forEach((l) => this.say(l));
 					this.say('The copy was not changed; delete it once the vault looks right.');
 				});
+				return ok;
+			}
+			case 'connect': {
+				// cmd_vault_connect (milestone 43). The demo has no network: a connect to a
+				// well-formed https:// URL is pretended to reach an empty server.
+				p.allowFlags('vault connect', ['--to', '--token-stdin']);
+				p.expectArgs('vault connect', 1, '<url> [--to <path>] [--token-stdin]');
+				const to = p.value('--to');
+				const v = to ? undefined : this.resolveVault(p.value('--vault'));
+				if (v && v.unlocked) fail('conflict', `Flint has vault '${v.name}' unlocked; lock it in Flint first, then connect it`);
+				const token = yield* this.secret('Server token');
+				const pw = yield { label: `Master password for '${v ? v.name : 'vault'}': `, secret: true };
+				const base = checkRemoteUrl(p.positional(2));
+				if (token.trim().length === 0) fail('usage', "the server's token is needed");
+				if (pw.length === 0) fail('usage', "the vault's master password is needed");
+				if (to) fail('not_found', `the server at ${base} holds no vault yet: connect one from a machine that has it (\`flint vault connect ${base}\`)`);
+				if (v!.remote) fail('conflict', `vault '${v!.name}' is already connected to ${v!.remote.url}; run \`flint vault disconnect\` first`);
+				v!.remote = { url: base, version: 1 };
+				const got = syncOutcome(v!, 'uploaded', true);
+				this.emit(got, () => {
+					this.say(`Connected vault '${v!.name}' to ${base} and uploaded it (version 1).`);
+					this.say(`On another machine: \`flint vault connect ${base} --to <path>\`.`);
+				});
+				this.io.note('flint (demo): no server is reached here. Run your own, then connect for real.', '/guides/remote-vault/');
+				return ok;
+			}
+			case 'sync': {
+				p.allowFlags('vault sync', ['--new-master-stdin']);
+				p.expectArgs('vault sync', 0, '[--vault <name|path>]');
+				const v = yield* this.openTarget();
+				if (!v.remote) fail('not_found', 'this vault is not connected to a server on this machine: run `flint vault connect <url>`');
+				const got = syncOutcome(v, 'in_step', false);
+				this.emit(got, () => this.say(`Vault '${v.name}' is in step with ${v.remote!.url} (version ${v.remote!.version}).`));
+				return ok;
+			}
+			case 'disconnect': {
+				p.allowFlags('vault disconnect', []);
+				p.expectArgs('vault disconnect', 0, '[--vault <name|path>]');
+				const v = this.resolveVault(p.value('--vault'));
+				if (!v.remote) fail('not_found', 'this vault is not connected to a server on this machine: run `flint vault connect <url>`');
+				const url = v.remote.url;
+				v.remote = undefined;
+				this.emit({ path: v.path, url }, () =>
+					this.say(`Vault '${v.name}' no longer syncs with ${url} on this machine. The vault file and the server's copy were not touched.`),
+				);
 				return ok;
 			}
 			case 'forget': {
@@ -1156,6 +1211,46 @@ function isRemoteArg(a: string): boolean {
 	if (colon <= 0) return false;
 	const slash = a.indexOf('/');
 	return slash < 0 || colon < slash;
+}
+
+/** check_remote_url (src/domain/sync.cf): https, or http to this machine only. */
+function checkRemoteUrl(raw: string): string {
+	const u = raw.trim();
+	const lower = u.toLowerCase();
+	let rest = '';
+	let secure = false;
+	if (lower.startsWith('https://')) {
+		rest = u.slice(8);
+		secure = true;
+	} else if (lower.startsWith('http://')) {
+		rest = u.slice(7);
+	} else {
+		fail('invalid', "the server's URL must start with https://");
+	}
+	if (rest.includes('?') || rest.includes('#')) fail('invalid', "the server's URL takes no query or fragment");
+	rest = rest.replace(/\/+$/, '').replace(/\/v1\/vault$/, '').replace(/\/+$/, '');
+	const authority = rest.split('/')[0];
+	if (authority.length === 0) fail('invalid', "the server's URL names no host");
+	if (authority.includes('@')) fail('invalid', 'put the token in the keychain, not in the URL');
+	const host = authority.startsWith('[') ? authority.slice(0, authority.indexOf(']') + 1) : authority.split(':')[0];
+	const loopback = ['localhost', '[::1]'].includes(host.toLowerCase()) || /^127\.\d+\.\d+\.\d+$/.test(host);
+	if (!secure && !loopback) fail('invalid', `plain http:// is allowed only to this machine (localhost); use https:// for ${host}`);
+	return (secure ? 'https://' : 'http://') + rest;
+}
+
+/** RemoteStatus (src/application/sync.cf). */
+function remoteStatus(v: Vault, now: Date) {
+	if (!v.remote) return { connected: false, url: '', version: 0, last_sync: 0, last_attempt: 0, last_error: '', pending: false };
+	const t = Math.floor(now.getTime() / 1000) * 1000;
+	return { connected: true, url: v.remote.url, version: v.remote.version, last_sync: t, last_attempt: t, last_error: '', pending: false };
+}
+
+/** SyncOutcome (src/application/sync.cf). */
+function syncOutcome(v: Vault, result: string, uploaded: boolean) {
+	return {
+		path: v.path, name: v.name, url: v.remote!.url, result, version: v.remote!.version, uploaded,
+		report: { added: 0, updated: 0, removed: 0, changes: [], notes: [] }, rekeyed: false,
+	};
 }
 
 /** One line of `vault merge`'s report (MergeChange in src/domain/merge.cf). */

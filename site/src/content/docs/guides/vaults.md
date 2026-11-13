@@ -198,7 +198,9 @@ What changes and what stays:
 - **Remember on this computer** stays on if it was on: the new key replaces the old one
   in the keychain.
 - Other machines that use the vault through a synced folder need the new password the
-  next time they open it.
+  next time they open it. A vault [connected to a server](/guides/remote-vault/#a-master-password-changed-on-another-machine)
+  changes it only in step with the server, and its other machines are asked for the new
+  one at their next sync.
 
 Flint writes the re-encrypted vault as a copy next to it (`home.flint.rekey`) and only
 then puts it in place, in one rename. If the computer stops halfway, the vault on disk is
@@ -219,6 +221,10 @@ password), never anything from inside a vault:
 Set `FLINT_CONFIG_DIR` to use another folder.
 
 ## Syncing a vault
+
+To keep a vault in step on several machines, connect it to a server you run:
+[Sync a vault across machines](/guides/remote-vault/). The rest of this section is for a
+vault kept in a cloud folder instead.
 
 A vault is a single file, written with a rollback journal that is removed after each
 change, so a sync client only ever sees the `.flint` file. If two machines change the

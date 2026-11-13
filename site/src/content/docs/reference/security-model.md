@@ -166,6 +166,21 @@ the file. A stolen token can still upload, so the server keeps the last 10 versi
 any of them can be [restored](/guides/vault-server/#restore-an-older-version); a machine
 never replaces its own copy with a download, it merges it.
 
+On each machine ([Sync a vault across machines](/guides/remote-vault/)):
+
+- The token lives in the OS keychain, apart from the vault's key (which the CLI never
+  reads from it), and travels only to the server, in the `Authorization` header. It is
+  never printed, logged, written to the config folder or part of an error.
+- Flint refuses `http://` for any server but this machine, follows no redirect, and
+  bounds every request (10 s to connect, 2 minutes in all, 64 MiB at most).
+- A vault connects only with a **Strong** master password, typed for that command.
+- A downloaded copy is opened with the vault's key through a private file (`0600`) in the
+  config folder and must carry the vault's id; then it is merged into the vault in one
+  transaction, never written over it. An upload names the version it merged
+  (`If-Match`), so a machine never uploads over a change it has not seen.
+- `remotes.json` holds the vault's path and id, the server's URL, a version and a hash
+  of the encrypted file: nothing from inside the vault.
+
 ## Next
 
 Windows (a named pipe and Windows Hello), a headless `flint serve`, and a Keychain item

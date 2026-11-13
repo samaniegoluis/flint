@@ -98,6 +98,8 @@ export interface Vault {
 	/** A cloud folder's conflict copy of this vault (milestone 41): what the other machine
 	 * changed, for `vault merge`. */
 	conflictCopy?: ConflictCopy;
+	/** Its server (milestone 43): set by `vault connect`, gone at `vault disconnect`. */
+	remote?: { url: string; version: number };
 }
 
 export interface ConflictCopy {

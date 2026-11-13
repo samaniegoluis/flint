@@ -35,15 +35,19 @@ terminal, Flint's window asks instead ([Vaults](/guides/vaults/#flint-holds-the-
 | `vault open <path>` | Open an existing vault and make it current |
 | `vault list` | Recent vaults, current one first |
 | `vault use <name\|path>` | Make a recent vault current |
-| `vault status` | Path, lock state, counts, and how long the activity log keeps entries (set in the app, **Settings → Access**) |
+| `vault status` | Path, lock state, counts, how long the activity log keeps entries (set in the app, **Settings → Access**), and the vault's server: the version last merged, the last sync, and whether changes wait to be uploaded |
 | `vault unlock` | Ask Flint to unlock the vault (starting it if needed), and wait up to 2 minutes |
 | `vault lock` | Lock the vault in Flint, and remove its key if this machine remembers it |
 | `vault rename <new-name>` | Rename the vault (with `--vault`, another one); the file keeps its name and place |
 | `vault passwd` | Change the master password: asks for the current one, then the new one twice, and prints its strength. Refused (`conflict`) while Flint holds the vault unlocked: use **Settings → Vault** there |
 | `vault merge <copy.flint>` | Merge a conflict copy of the vault (a cloud folder's) into it, record by record, and print what changed. The copy must be the same vault under the same master password, and is only read. Refused (`conflict`) while Flint holds the vault unlocked. See [Syncing a vault](/guides/vaults/#syncing-a-vault) |
+| `vault connect <url> [--token-stdin]` | Connect the vault to a [`flint-vault-server`](/guides/vault-server/) and keep it in step: asks for the server's token (kept in the OS keychain) and the master password, which must be **Strong**. An empty server gets the vault; one holding the same vault is merged with it; one holding another vault is refused (`conflict`). `http://` only to `localhost`. Refused (`conflict`) while Flint holds the vault unlocked |
+| `vault connect <url> --to <path>` | Download the vault the server holds to a new file at `<path>`, connected. Opens it with the master password first; a taken path is refused (`exists`) |
+| `vault sync [--new-master-stdin]` | Sync now: merge the server's changes, upload this machine's. When the master password was changed on another machine, asks for the new one (or reads it from stdin). Runs in Flint when it holds the vault. Without the app, a command that changes a connected vault syncs it on its own |
+| `vault disconnect` | Stop syncing the vault on this machine and forget the token; the file and the server's copy are kept |
 | `vault forget <name\|path>` | Drop a vault from the recent list; the file is kept |
 
-See [Vaults](/guides/vaults/).
+See [Vaults](/guides/vaults/) and [Sync a vault across machines](/guides/remote-vault/).
 
 ### Groups
 
@@ -209,11 +213,12 @@ in the job's own environment, from its secret store.
 When a command takes several secrets on stdin, they are read in this order:
 
 1. The master password line (`--master-stdin`)
-2. The new master password line (`--new-master-stdin`, `vault passwd` only)
-3. The password line (`--password-stdin`)
-4. The sudo password line (`--sudo-password-stdin`)
-5. The passphrase line (`--passphrase-stdin`)
-6. The private key, which takes the rest of stdin (`--key-stdin`)
+2. The new master password line (`--new-master-stdin`, `vault passwd` and `vault sync`)
+3. The server's token line (`--token-stdin`, `vault connect` only)
+4. The password line (`--password-stdin`)
+5. The sudo password line (`--sudo-password-stdin`)
+6. The passphrase line (`--passphrase-stdin`)
+7. The private key, which takes the rest of stdin (`--key-stdin`)
 
 ```sh
 printf '%s\n%s\n' "$MASTER" "$HOST_PASSWORD" |
@@ -249,27 +254,27 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 1 | `internal` | An unexpected failure |
 | 2 | `usage` | Bad command line: unknown command or flag, missing argument |
 | 3 | `not_found` | No such vault, host, group, key, credential or tunnel |
-| 4 | `conflict` | Already exists, or still in use |
+| 4 | `conflict` | Already exists, or still in use; a vault server that holds another vault |
 | 5 | `locked` | The vault is not unlocked in Flint and no master password was given. With no terminal, Flint's window now asks for it (see [Vaults](/guides/vaults/#flint-holds-the-unlocked-vault)) |
 | 6 | `wrong_password` | The master password is wrong |
 | 7 | `invalid` | A value breaks a rule (alias, port, colour, key format…) |
 | 8 | `unsupported` | The vault was written by a newer Flint |
-| 9 | `keychain` | The OS keychain refused to remove a remembered key (`vault lock`, `vault forget`) |
+| 9 | `keychain` | The OS keychain refused to remove a remembered key (`vault lock`, `vault forget`), or to keep a vault server's token (`vault connect`) |
 | 10 | `io` | The vault or config file could not be read or written |
 | 11 | `host_key` | A server key is unknown and could not be confirmed, or it changed |
-| 12 | `auth` | The server accepted none of the auth methods |
-| 13 | `network` | A host could not be reached, or the connection dropped |
-| 14 | `timeout` | `flint exec` ran past `--exec-timeout` |
+| 12 | `auth` | The server accepted none of the auth methods; a vault server refused the token |
+| 13 | `network` | A host or vault server could not be reached, or the connection dropped |
+| 14 | `timeout` | `flint exec` ran past `--exec-timeout`; a vault server did not answer in time |
 | 15 | `denied` | The owner denied this program in Flint's window, or its grant or token does not cover the command; a token that is revoked, expired or wrong (see [Approve a program](/guides/ai-agents/#approve-a-program)) |
 | 16 | `approval_timeout` | Nobody answered Flint's approval window within two minutes |
 | 17 | `not_sudoer` | `exec --sudo`: the host's login user may not use `sudo` |
 | 18 | `sudo_password` | `exec --sudo`: sudo refused the password Flint typed, or Flint has none for that host |
 | 19 | `permission_denied` | `cp`: the user may not read that file or write in that folder, here or on the host |
-| 20 | `exists` | `cp`: the file is already there; `--force` replaces it |
+| 20 | `exists` | `cp`: the file is already there; `--force` replaces it. `vault connect --to`: a file is already at that path |
 | 21 | `not_a_directory` | `cp`: a path that has to be a folder is a file |
 | 22 | `port_in_use` | `tunnel up`: another program already listens on that local port |
 | 23 | `wrong_host_type` | An RDP host given to something only SSH does: `exec`, `cp`, `host test`, a tunnel, a jump host; or `connect` on one with no Flint serving the vault |
-| 24 | `refused` | A remote desktop server answered and refused the connection (in the app; no command returns it yet) |
+| 24 | `refused` | A remote desktop server answered and refused the connection (in the app); a vault server refused a request for another reason (rate limit, size cap, a server error) |
 
 The codes are stable: scripts can rely on them.
 

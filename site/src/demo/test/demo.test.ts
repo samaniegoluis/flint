@@ -199,7 +199,7 @@ test('host add asks for the password with echo off and never prints it', () => {
 test('a vault not unlocked in Flint asks for its master password for each command', () => {
 	const w = worldFromSeed(seed);
 	flint(w, 'vault use Work');
-	assert.deepEqual(flint(w, 'vault status').out, ['vault  Work', 'path   /home/you/OneDrive/work.flint', 'state  locked (unlock it in Flint, or pass --master-stdin)']);
+	assert.deepEqual(flint(w, 'vault status').out, ['vault   Work', 'path    /home/you/OneDrive/work.flint', 'state   locked (unlock it in Flint, or pass --master-stdin)', 'remote  none (a local vault; `flint vault connect <url>` to sync it)']);
 	const first = flint(w, 'host list', ['any password']);
 	assert.deepEqual(first.asks, ["Master password for 'Work': "]);
 	assert.equal(first.out.length, 3);
@@ -209,7 +209,7 @@ test('a vault not unlocked in Flint asks for its master password for each comman
 test('vault status says how long the activity log keeps entries', () => {
 	const w = worldFromSeed(seed);
 	const st = flint(w, 'vault status');
-	assert.equal(st.out[st.out.length - 1], 'activity     kept 90 days');
+	assert.equal(st.out[st.out.length - 2], 'activity     kept 90 days');
 	assert.ok(flint(w, 'vault status --json').out[0].includes('"activity_days":90'));
 });
 
@@ -248,6 +248,26 @@ test('vault passwd asks for both passwords, and is refused while Flint holds the
 	assert.equal(flint(w, 'vault passwd --vault Work', ['old-pass', 'gravel onion', 'other words']).code, 7);
 	assert.equal(flint(w, 'vault passwd --vault Work --master-stdin').code, 2);
 	assert.equal(flint(w, 'vault passwd extra').code, 2);
+});
+
+test('vault connect asks for the token and the master password, refuses plain http, and shows in status', () => {
+	const w = worldFromSeed(seed);
+	const held = flint(w, 'vault connect https://vault.example.com');
+	assert.equal(held.code, 4);
+	assert.ok(held.err.some((l) => l.includes("Flint has vault 'Demo' unlocked; lock it in Flint first, then connect it")));
+	assert.equal(flint(w, '--vault Work vault connect http://vault.example.com', ['tok', 'pw']).code, 7);
+	const ok = flint(w, '--vault Work vault connect https://vault.example.com/', ['tok', 'pw']);
+	assert.equal(ok.code, 0);
+	assert.deepEqual(ok.asks, ['Server token: ', "Master password for 'Work': "]);
+	assert.equal(ok.out[0], "Connected vault 'Work' to https://vault.example.com and uploaded it (version 1).");
+	assert.ok(!ok.out.join('').includes('tok'));
+	assert.equal(flint(w, '--vault Work vault connect https://vault.example.com', ['tok', 'pw']).code, 4);
+	const st = flint(w, '--vault Work vault status --json');
+	assert.ok(st.out[0].includes('"remote":{"connected":true,"url":"https://vault.example.com"'));
+	assert.deepEqual(flint(w, '--vault Work vault sync', ['pw']).out, ["Vault 'Work' is in step with https://vault.example.com (version 1)."]);
+	assert.deepEqual(flint(w, '--vault Work vault disconnect').out, ["Vault 'Work' no longer syncs with https://vault.example.com on this machine. The vault file and the server's copy were not touched."]);
+	assert.equal(flint(w, '--vault Work vault sync', ['pw']).code, 3);
+	assert.equal(flint(w, 'vault connect https://vault.example.com --to /home/you/home.flint', ['tok', 'pw']).code, 3);
 });
 
 test('vault merge puts a conflict copy into a locked vault, reports it, and is refused while Flint holds the vault', () => {
