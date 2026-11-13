@@ -202,6 +202,12 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try cmd_vault_passwd(p, sec, as_json, c, mut store, src, recents)
         return
     }
+    if verb == "merge" {
+        try p.allow_flags("vault merge", [])
+        try p.expect_args("vault merge", 1, "<copy.flint>")
+        try cmd_vault_merge(p, sec, as_json, c, mut store, src, recents)
+        return
+    }
     if verb == "forget" {
         try p.allow_flags("vault forget", [])
         try p.expect_args("vault forget", 1, "<name|path>")
@@ -268,6 +274,27 @@ fn cmd_vault_passwd(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, m
     if next.cached {
         say("This computer still remembers it.")
     }
+}
+
+// `flint vault merge <copy.flint>` (milestone 41, D-096): merges a conflict copy of
+// the vault (a cloud folder's) into it, record by record, and prints what changed.
+// The master password typed for this command opens both (Principle 11). Refused while
+// the app holds the vault unlocked: one holder of an unlocked vault (v3).
+fn cmd_vault_merge(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+    target := try resolve_vault(recents, vault_selector(p))
+    if src.served || app_holds_unlocked(target) {
+        return error(coded(ERR_CONFLICT, "Flint has vault '{target.name}' unlocked; lock it in Flint first, then merge"))
+    }
+    copy_path := absolute_path(p.positional(2))
+    password := try master_password_for(sec, target.name)
+    session := try unlock_vault(c, mut store, src.kc, recents, target.path, password, false)
+    mut copy := new_copy_vault_store(flint_config_dir())
+    got := try merge_vault_copy(c, mut store, mut copy, src.kc, session, copy_path, password)
+    if as_json {
+        say(json.stringify(got))
+        return
+    }
+    print_merge(got)
 }
 
 // ---- group ---------------------------------------------------------------------

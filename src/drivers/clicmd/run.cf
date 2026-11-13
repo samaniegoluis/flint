@@ -30,6 +30,7 @@ Vaults
   vault lock                            Lock the vault in Flint; remove any cached key
   vault rename <new-name>               Rename the vault (its file is not moved)
   vault passwd [--new-master-stdin]     Change the master password (asks for both)
+  vault merge <copy.flint>              Merge a conflict copy of the vault into it
   vault forget <name|path>              Drop a vault from the recent list
 
 Groups

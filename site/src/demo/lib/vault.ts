@@ -95,6 +95,19 @@ export interface Vault {
 	knownHosts: KnownHost[];
 	/** Tokens (milestone 12b): revoked, never deleted. The demo keeps no hash: nothing is real. */
 	tokens: Token[];
+	/** A cloud folder's conflict copy of this vault (milestone 41): what the other machine
+	 * changed, for `vault merge`. */
+	conflictCopy?: ConflictCopy;
+}
+
+export interface ConflictCopy {
+	path: string;
+	/** Hosts the other machine added. */
+	added: Host[];
+	/** Aliases the other machine removed. */
+	removed: string[];
+	/** Merged once: merging again changes nothing. */
+	merged: boolean;
 }
 
 export interface Token {
@@ -215,19 +228,28 @@ export function worldFromSeed(seed: any): World {
 				name: k.name, type: k.type, fingerprint: k.fingerprint, publicKey: k.public_key, hasPassphrase: k.has_passphrase,
 			})),
 			creds: v.creds.map((c: any) => ({ name: c.name, user: c.user, key: c.key ?? '', hasPassword: !!c.password })),
-			hosts: v.hosts.map((h: any) => ({
-				alias: h.alias, label: h.label ?? '', hostname: h.hostname, port: h.port ?? 22, user: h.user ?? '',
-				group: h.group ?? '', tags: h.tags ?? [], color: h.color ?? '', notes: h.notes ?? '',
-				jump: h.jump ?? '', credential: h.credential ?? '', key: h.key ?? '', hasPassword: !!h.password, hasSudoPassword: false,
-				command: h.command ?? '', keepShell: h.keep_shell ?? true, type: h.type ?? 'ssh', domain: h.domain ?? '',
-				tunnels: (h.tunnels ?? []).map((t: any) => ({ name: t.name, localPort: t.local_port, destHost: t.dest_host ?? 'localhost', destPort: t.dest_port ?? t.local_port, openOnConnect: !!t.open_on_connect, running: false })),
-			})),
+			hosts: v.hosts.map(hostFromSeed),
 			knownHosts: v.known_hosts.map((k: any) => {
 				const sk = serverKeyFor(k.addr);
 				return { addr: k.addr, keyType: sk.type, fingerprint: sk.fingerprint, addedAt: k.added_at };
 			}),
 			tokens: [],
+			conflictCopy: v.conflict_copy
+				? { path: v.conflict_copy.path, added: v.conflict_copy.added.map(hostFromSeed), removed: [...v.conflict_copy.removed], merged: false }
+				: undefined,
 		})),
+	};
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hostFromSeed(h: any): Host {
+	return {
+		alias: h.alias, label: h.label ?? '', hostname: h.hostname, port: h.port ?? 22, user: h.user ?? '',
+		group: h.group ?? '', tags: h.tags ?? [], color: h.color ?? '', notes: h.notes ?? '',
+		jump: h.jump ?? '', credential: h.credential ?? '', key: h.key ?? '', hasPassword: !!h.password, hasSudoPassword: false,
+		command: h.command ?? '', keepShell: h.keep_shell ?? true, type: h.type ?? 'ssh', domain: h.domain ?? '',
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		tunnels: (h.tunnels ?? []).map((t: any) => ({ name: t.name, localPort: t.local_port, destHost: t.dest_host ?? 'localhost', destPort: t.dest_port ?? t.local_port, openOnConnect: !!t.open_on_connect, running: false })),
 	};
 }
 

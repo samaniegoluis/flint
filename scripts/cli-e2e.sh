@@ -221,6 +221,40 @@ check "the warning says a remote vault needs Strong" '[[ "$err" == *"too weak fo
 expect 0 "and back to a strong one" "monkey2026"$'\n'"$NEW_MASTER"$'\n' -- --vault "$pw" vault passwd --master-stdin --new-master-stdin
 expect 0 "it still opens" "$NEW_MASTER"$'\n' -- --vault "$pw" vault status --master-stdin
 
+echo "== vault merge: a cloud folder's conflict copy (milestone 41)"
+mg="$tmp/mg.flint"
+mgc="$tmp/mg (conflict copy).flint"
+expect 0 "a vault to merge into" "$MASTER"$'\n' -- vault create "$mg" --name "MG" --master-stdin
+expect 0 "a host with a password" "$MASTER"$'\n'"$HOST_PW"$'\n' -- --vault "$mg" host add shared --hostname 10.7.7.1 --password-stdin --master-stdin
+expect 0 "a host to remove on the other side" "$MASTER"$'\n' -- --vault "$mg" host add gone --hostname 10.7.7.2 --master-stdin
+cp "$mg" "$mgc"
+expect 0 "here: an edit" "$MASTER"$'\n' -- --vault "$mg" host edit shared --port 2201 --master-stdin
+expect 0 "here: a new host api" "$MASTER"$'\n' -- --vault "$mg" host add api --hostname 10.7.7.3 --master-stdin
+expect 0 "there: another api, later, with a password" "$MASTER"$'\n'"$CRED_PW"$'\n' -- --vault "$mgc" host add api --hostname 10.7.7.4 --password-stdin --master-stdin
+expect 0 "there: a host removed" "$MASTER"$'\n' -- --vault "$mgc" host rm gone --master-stdin
+expect 0 "there: a new host db" "$MASTER"$'\n' -- --vault "$mgc" host add db --hostname 10.7.7.5 --master-stdin
+copy_sum="$(shasum "$mgc")"
+expect 0 "vault merge" "$MASTER"$'\n' -- --json --vault "$mg" vault merge "$mgc" --master-stdin
+check "it reports 2 added and 1 removed" '[[ "$(echo "$out" | json_get "(d[\"report\"][\"added\"], d[\"report\"][\"removed\"])")" == "(2, 1)" ]]'
+check "the alias taken twice is renamed and reported" '[[ "$(echo "$out" | json_get "[(n[\"change\"], n[\"name\"], n[\"detail\"]) for n in d[\"report\"][\"notes\"]]")" == "[('"'"'renamed'"'"', '"'"'api-2'"'"', '"'"'was api'"'"')]" ]]'
+check "the copy was only read" '[[ "$(shasum "$mgc")" == "$copy_sum" ]]'
+check "no private copy is left in the config folder" '! ls "$FLINT_CONFIG_DIR"/merge-* >/dev/null 2>&1'
+expect 0 "the merged hosts" "$MASTER"$'\n' -- --json --vault "$mg" host list --master-stdin
+check "both sides' changes are in" '[[ "$(echo "$out" | json_get "sorted((h[\"alias\"], h[\"port\"]) for h in d)")" == "[('"'"'api'"'"', 22), ('"'"'api-2'"'"', 22), ('"'"'db'"'"', 22), ('"'"'shared'"'"', 2201)]" ]]'
+expect 0 "the copy's host keeps its password" "$MASTER"$'\n' -- --json --vault "$mg" host show api-2 --master-stdin
+check "has_password" '[[ "$(echo "$out" | json_get "d[\"has_password\"]")" == "True" ]]'
+expect 0 "merging the copy again changes nothing" "$MASTER"$'\n' -- --vault "$mg" vault merge "$mgc" --master-stdin
+check "it says so" '[[ "$out" == "Nothing to merge"* ]]'
+expect 7 "the vault itself is refused" "$MASTER"$'\n' -- --vault "$mg" vault merge "$mg" --master-stdin
+expect 3 "a missing copy" "$MASTER"$'\n' -- --vault "$mg" vault merge "$tmp/nope.flint" --master-stdin
+expect 2 "merge needs the copy" "" -- vault merge
+expect 7 "another vault is refused" "$MASTER"$'\n' -- --vault "$mg" vault merge "$vault" --master-stdin
+check "it says it is another vault" '[[ "$err" == *"is another vault"* ]]'
+# A new master password opens and re-seals every secret: the merged ones open.
+expect 0 "every merged secret opens (passwd re-seals them all)" "$MASTER"$'\n'"$NEW_MASTER"$'\n' -- --vault "$mg" vault passwd --master-stdin --new-master-stdin
+expect 6 "a copy under the old password does not open" "$NEW_MASTER"$'\n' -- --vault "$mg" vault merge "$mgc" --master-stdin
+check "it says why it may not" '[[ "$err" == *"its password was changed on another machine"* ]]'
+
 echo "== keychain turned off"
 off="$tmp/off.flint"
 FLINT_KEYCHAIN=off expect 0 "create with the keychain off" "$MASTER"$'\n' -- --json vault create "$off" --master-stdin
@@ -649,7 +683,7 @@ echo "== nothing secret or identifying leaks"
 for secret in "$MASTER" "$NEW_MASTER" "monkey2026" "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "$test_key_body" "PRIVATE KEY" ${FLINT_TEST_LOGIN_PW:+"$FLINT_TEST_LOGIN_PW"}; do
   check "CLI output never shows '${secret:0:24}…'" '! grep -aqF -- "$secret" "$all_out"'
 done
-for f in "$vault" "$work" "$off" "$pw"; do
+for f in "$vault" "$work" "$off" "$pw" "$mg" "$mgc"; do
   for needle in "$HOST_PW" "$CRED_PW" "$PASSPHRASE" "$key_body" "e2e-hostname-marker" "e2e-user-marker" "e2e-label-marker" "e2e-notes-marker" "e2e-group-marker" "e2e-cred-user" "10.20.30.40" "web-01" "Home Lab" "SQLite format 3" "CREATE TABLE"; do
     check "$(basename "$f") has no clear-text '${needle:0:24}'" '! grep -aqF -- "$needle" "$f"'
   done

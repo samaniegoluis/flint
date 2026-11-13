@@ -40,6 +40,7 @@ terminal, Flint's window asks instead ([Vaults](/guides/vaults/#flint-holds-the-
 | `vault lock` | Lock the vault in Flint, and remove its key if this machine remembers it |
 | `vault rename <new-name>` | Rename the vault (with `--vault`, another one); the file keeps its name and place |
 | `vault passwd` | Change the master password: asks for the current one, then the new one twice, and prints its strength. Refused (`conflict`) while Flint holds the vault unlocked: use **Settings → Vault** there |
+| `vault merge <copy.flint>` | Merge a conflict copy of the vault (a cloud folder's) into it, record by record, and print what changed. The copy must be the same vault under the same master password, and is only read. Refused (`conflict`) while Flint holds the vault unlocked. See [Syncing a vault](/guides/vaults/#syncing-a-vault) |
 | `vault forget <name\|path>` | Drop a vault from the recent list; the file is kept |
 
 See [Vaults](/guides/vaults/).

@@ -221,6 +221,44 @@ Set `FLINT_CONFIG_DIR` to use another folder.
 ## Syncing a vault
 
 A vault is a single file, written with a rollback journal that is removed after each
-change, so a sync client only ever sees the `.flint` file. Flint does not merge changes:
-if two machines change the vault before it syncs, your sync client keeps one version and
-usually sets the other aside as a conflict copy.
+change, so a sync client only ever sees the `.flint` file. If two machines change the
+vault before it syncs, your sync client keeps one version and usually sets the other
+aside as a **conflict copy** (`home (conflict copy).flint`, `home (1).flint`, depending
+on the client). Merge it back into the vault:
+
+```sh
+flint vault merge "~/Dropbox/home (conflict copy).flint"
+```
+
+```text
+Merged /Users/me/Dropbox/home (conflict copy).flint into vault 'home': 2 added, 1 updated, 1 removed.
+CHANGE   KIND  NAME
+added    host  db
+added    host  api-2
+updated  host  web
+removed  host  old
+renamed  host  api-2 (was api)
+The copy was not changed; delete it once the vault looks right.
+```
+
+Flint asks for the master password and merges record by record: a host, key, credential,
+tunnel or known host changed on both machines keeps the later change, one removed on a
+machine stays removed unless the other changed it afterwards, and everything else from
+both sides is kept. When both machines added a host with the same alias, the one added
+first keeps it and the other becomes `api-2`; the list says so. The details are in
+[Vault format](/reference/vault-format/#two-copies-of-one-vault).
+
+- The copy must be the **same vault under the same master password**. A copy of another
+  vault is refused, and so is one that no longer opens with this password (it was changed
+  on one machine and not the other): open the copy with its own password and change it to
+  match first.
+- The copy is only read. Flint opens a private copy of it in its config folder and
+  removes it when the merge ends, so the merge itself never sets off your sync client.
+  Once the vault looks right, delete the conflict copy yourself.
+- While Flint holds the vault unlocked, `flint vault merge` is refused: lock it in Flint,
+  merge, then unlock it again.
+- `--json` prints the same report: counts, one entry per record changed, and the renames
+  and cleared references in `notes`.
+
+The merge relies on each machine's clock. A machine whose clock is far behind can lose an
+edit made after another machine's.

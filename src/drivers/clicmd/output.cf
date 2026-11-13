@@ -295,3 +295,29 @@ fn plural(n: i64, one: str, many: str) -> str {
     return "{n} " + many
 }
 
+// The kind of a merged record, as `vault merge` names it.
+fn merge_kind_label(kind: str) -> str {
+    if kind == "known_host" {
+        return "known host"
+    }
+    return kind
+}
+
+// What `vault merge` did, one line per record, the vault's rules last.
+fn print_merge(got: MergeOutcome) {
+    r := got.report
+    if r.added + r.updated + r.removed == 0 && r.notes.len() == 0 {
+        say("Nothing to merge: vault '{got.name}' already has every change in {got.copy}.")
+        return
+    }
+    say("Merged {got.copy} into vault '{got.name}': {r.added} added, {r.updated} updated, {r.removed} removed.")
+    mut rows: [][]str = []
+    for ch in r.changes {
+        rows.push([ch.change, merge_kind_label(ch.kind), ch.name])
+    }
+    for ch in r.notes {
+        rows.push([ch.change, merge_kind_label(ch.kind), "{ch.name} ({ch.detail})"])
+    }
+    print_table(["CHANGE", "KIND", "NAME"], rows)
+    say("The copy was not changed; delete it once the vault looks right.")
+}

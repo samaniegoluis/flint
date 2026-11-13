@@ -101,8 +101,8 @@ test "the vault itself, another vault and another password are refused, and noth
     rekeyed.file_salt = crypto.random_bytes(VAULT_SALT_LEN)
     msg = ""
     merge_vault_copy(crypto, mut store, mut rekeyed, kc, s, COPY_PATH, "correct horse") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_INVALID)
-    assert(msg.contains("another master password"))
+    assert_eq(error_code_of(msg), ERR_WRONG_PASSWORD)
+    assert(msg.contains("its password was changed on another machine"))
     assert_eq(store.replaced, 0)
 }
 

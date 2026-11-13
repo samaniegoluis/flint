@@ -178,7 +178,8 @@ See the [CLI reference](/reference/cli/).
 <CardGrid>
 	<Card title="The whole file is encrypted" icon="seti:lock">
 		Hostnames, users, notes and known host keys are encrypted too, not only passwords
-		(SQLCipher, AES-256). Put the vault in any cloud-synced folder, and change its master
+		(SQLCipher, AES-256). Put the vault in any cloud-synced folder, merge a conflict copy
+		back record by record with <code>flint vault merge</code>, and change its master
 		password whenever you like: Flint shows how strong the new one is.
 	</Card>
 	<Card title="Secrets sealed twice" icon="approve-check">

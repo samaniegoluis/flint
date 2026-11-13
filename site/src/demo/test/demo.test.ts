@@ -250,6 +250,26 @@ test('vault passwd asks for both passwords, and is refused while Flint holds the
 	assert.equal(flint(w, 'vault passwd extra').code, 2);
 });
 
+test('vault merge puts a conflict copy into a locked vault, reports it, and is refused while Flint holds the vault', () => {
+	const w = worldFromSeed(seed);
+	const copy = '/home/you/OneDrive/work (conflict copy).flint';
+	const held = flint(w, `vault merge "${copy}"`);
+	assert.equal(held.code, 4);
+	assert.ok(held.err.some((l) => l.includes("Flint has vault 'Demo' unlocked; lock it in Flint first, then merge")));
+	const merged = flint(w, `vault merge --vault Work "${copy}"`, ['pw']);
+	assert.equal(merged.code, 0);
+	assert.deepEqual(merged.asks, ["Master password for 'Work': "]);
+	assert.equal(merged.out[0], `Merged ${copy} into vault 'Work': 2 added, 0 updated, 1 removed.`);
+	assert.ok(merged.out.some((l) => /^renamed\s+host\s+runner-2-2 \(was runner-2\)$/.test(l)));
+	assert.equal(merged.out.at(-1), 'The copy was not changed; delete it once the vault looks right.');
+	const again = flint(w, `vault merge --vault Work "${copy}" --json`, ['pw']);
+	assert.equal(again.code, 0);
+	assert.ok(again.out[0].includes('"report":{"added":0,"updated":0,"removed":0,"changes":[],"notes":[]}'));
+	assert.equal(flint(w, 'vault merge --vault Work /home/you/OneDrive/work.flint', ['pw']).code, 7);
+	assert.equal(flint(w, 'vault merge --vault Work nope.flint', ['pw']).code, 3);
+	assert.equal(flint(w, 'vault merge').code, 2);
+});
+
 test('token create is approved in Flint, prints the token once, and list and revoke follow the CLI', () => {
 	const w = worldFromSeed(seed);
 	const made = flint(w, 'token create --name nightly --allow exec --hosts nas,@prod --ttl 30d');
