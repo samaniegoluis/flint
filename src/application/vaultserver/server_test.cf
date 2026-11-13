@@ -1,0 +1,344 @@
+package vaultserver
+
+// The server's use cases over a store in memory (milestone 42, D-097).
+
+import "core:encoding/hex"
+import "core:str"
+import "core:json"
+import "../../domain"
+import "../../ports"
+
+// Not a real hash or a constant-time compare: the tests need only distinct digests.
+type TestCrypto struct {
+    seed: u8
+}
+
+fn (self: TestCrypto) random_bytes(n: usize) -> []byte {
+    mut b := make([]byte, n)
+    for i in 0..n {
+        b[i] = byte(u8(i) * 7 + self.seed)
+    }
+    return b
+}
+
+fn (self: TestCrypto) derive_key(password: str, salt: []byte, ops: u64, mem_bytes: usize) -> []byte! {
+    return error("unused")
+}
+
+fn (self: TestCrypto) derive_subkey(master: []byte, id: u64, kdf_context: str) -> []byte! {
+    return error("unused")
+}
+
+fn (self: TestCrypto) seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte! {
+    return error("unused")
+}
+
+fn (self: TestCrypto) unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte! {
+    return error("unused")
+}
+
+fn (self: TestCrypto) digest(data: []byte, out_len: usize) -> []byte! {
+    mut res := make([]byte, out_len)
+    for i, b in data {
+        j := i % out_len
+        res[j] = byte(u8(u8(res[j]) * 31 + u8(b) + u8(i)))
+    }
+    return res
+}
+
+fn (self: TestCrypto) equal(a: []byte, b: []byte) -> bool {
+    if a.len() != b.len() {
+        return false
+    }
+    for i in 0..a.len() {
+        if a[i] != b[i] {
+            return false
+        }
+    }
+    return true
+}
+
+fn (self: TestCrypto) wipe(buf: []byte) {
+}
+
+fn (self: TestCrypto) wipe_text(text: str) {
+}
+
+// Versions in memory; `race` makes the next write find another writer first.
+type MemStore struct {
+    versions: []BlobVersion
+    datas:    []str
+    race:     bool
+    fail:     bool
+}
+
+fn (self: MemStore) blob_head() -> BlobVersion! {
+    if self.fail {
+        return error(coded(ERR_IO, "disk gone"))
+    }
+    if self.versions.len() == 0 {
+        return BlobVersion{ version: 0, vault_id: "", size: 0, stored_at: 0 }
+    }
+    return self.versions[self.versions.len() - 1]
+}
+
+fn (self: MemStore) blob_read(version: i64) -> str! {
+    for i in 0..self.versions.len() {
+        if self.versions[i].version == version {
+            return self.datas[i]
+        }
+    }
+    return error(coded(ERR_NOT_FOUND, "no version {version}"))
+}
+
+fn (mut self: MemStore) blob_write(version: i64, vault_id: str, data: str, now_ms: i64) -> void! {
+    if self.race {
+        self.race = false
+        self.versions.push(BlobVersion{ version: version, vault_id: vault_id, size: 1, stored_at: now_ms })
+        self.datas.push("other")
+        return error(coded(ERR_CONFLICT, "another writer"))
+    }
+    self.versions.push(BlobVersion{ version: version, vault_id: vault_id, size: i64(data.len()), stored_at: now_ms })
+    self.datas.push(data)
+}
+
+fn (self: MemStore) blob_versions() -> []BlobVersion! {
+    mut newest: []BlobVersion = []
+    for k in 0..self.versions.len() {
+        newest.push(self.versions[self.versions.len() - 1 - k])
+    }
+    return newest
+}
+
+fn new_mem_store() -> MemStore {
+    return MemStore{ versions: [], datas: [], race: false, fail: false }
+}
+
+TOKEN: str = "0123456789abcdef0123456789abcdef0123456789abcdef"
+VID: str = "00112233445566778899aabbccddeeff"
+VID2: str = "ffeeddccbbaa99887766554433221100"
+
+fn test_config() -> ServerConfig {
+    crypto := TestCrypto{ seed: 1 }
+    return server_config_from(crypto, TOKEN, "", 1000) or err {
+        assert(false)
+        return ServerConfig{ token_hash: [], max_body: 0 }
+    }
+}
+
+fn rq(method: str, if_match: str, body: str) -> ServerRequest {
+    return ServerRequest{ method: method, path: SERVER_VAULT_PATH, client: "10.0.0.1", authorization: "Bearer " + TOKEN, if_match: if_match, if_none_match: "", vault_id: VID, body: body }
+}
+
+fn first_upload(body: str) -> ServerRequest {
+    mut r := rq("PUT", "", body)
+    r.if_none_match = "*"
+    return r
+}
+
+test "the token or only its hash configures the server, never both and never a short one" {
+    crypto := TestCrypto{ seed: 1 }
+    from_token := try server_config_from(crypto, TOKEN, "", 10)
+    h := try server_token_hash(crypto, TOKEN)
+    from_hash := try server_config_from(crypto, "", hex.encode(h), 10)
+    assert(crypto.equal(from_token.token_hash, from_hash.token_hash))
+    mut codes: []str = []
+    server_config_from(crypto, TOKEN, hex.encode(h), 10) or err {
+        codes.push(error_code_of(err.message()))
+    }
+    server_config_from(crypto, "", "", 10) or err {
+        codes.push(error_code_of(err.message()))
+    }
+    server_config_from(crypto, "too-short", "", 10) or err {
+        codes.push(error_code_of(err.message()))
+    }
+    server_config_from(crypto, "", "ABCD", 10) or err {
+        codes.push(error_code_of(err.message()))
+    }
+    server_config_from(crypto, "", str.to_upper(hex.encode(h)), 10) or err {
+        codes.push(error_code_of(err.message()))
+    }
+    assert_eq(codes.len(), usize(5))
+    assert_eq(codes[0], ERR_USAGE)
+    assert_eq(codes[1], ERR_USAGE)
+    assert_eq(codes[2], ERR_INVALID)
+    assert_eq(codes[3], ERR_INVALID)
+}
+
+test "a new token is 64 hex characters and its hash configures the server" {
+    crypto := TestCrypto{ seed: 3 }
+    pair := try new_server_token(crypto)
+    assert_eq(pair.token.len(), usize(64))
+    assert_eq(pair.hash.len(), usize(64))
+    cfg := try server_config_from(crypto, "", pair.hash, 10)
+    assert(token_matches(crypto, cfg, "Bearer " + pair.token))
+}
+
+test "no token, a wrong token or another scheme gets 401, and nothing is read" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    store.fail = true
+    mut gate := new_server_gate()
+    auths: []str = ["", "Bearer ", "Bearer wrong", "Basic " + TOKEN, TOKEN, "bearer " + TOKEN]
+    for auth in auths {
+        mut r := rq("GET", "", "")
+        r.authorization = auth
+        reply := serve_vault_request(crypto, mut store, mut gate, cfg, r, 1000)
+        assert_eq(reply.status, i32(401))
+        assert(!reply.body.contains(TOKEN))
+    }
+}
+
+test "repeated bad tokens lock the client out, even with the right token after" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    for i in 0..GATE_BAD_MAX {
+        mut r := rq("GET", "", "")
+        r.authorization = "Bearer nope"
+        _ := serve_vault_request(crypto, mut store, mut gate, cfg, r, 1000)
+    }
+    reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 2000)
+    assert_eq(reply.status, i32(429))
+    assert_eq(reply.retry_after_s, (GATE_LOCKOUT_MS - 1000 + 999) / 1000)
+    mut other := rq("GET", "", "")
+    other.client = "10.0.0.2"
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, other, 2000).status, i32(404))
+}
+
+test "an empty server answers 404, then the first upload is version 1" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 1).status, i32(404))
+    up := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("blob-1"), 2)
+    assert_eq(up.status, i32(200))
+    assert_eq(up.version, i64(1))
+    assert_eq(up.body, json.stringify(VersionBody{ version: 1 }))
+    got := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 3)
+    assert_eq(got.status, i32(200))
+    assert_eq(got.body, "blob-1")
+    assert_eq(got.version, i64(1))
+    assert_eq(got.vault_id, VID)
+    assert_eq(got.content_type, "application/octet-stream")
+}
+
+test "an upload over a version not merged gets 409 with the newest version" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1)
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "b"), 2).version, i64(2))
+    // The second machine still saw version 1.
+    late := serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "c"), 3)
+    assert_eq(late.status, i32(409))
+    assert_eq(late.version, i64(2))
+    // A first upload where a vault already is conflicts too.
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("d"), 4).status, i32(409))
+    // Nothing was stored by either.
+    assert_eq(store.versions.len(), usize(2))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 5).body, "b")
+}
+
+test "an upload of another vault is refused with 412" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1)
+    mut r := rq("PUT", "\"1\"", "x")
+    r.vault_id = VID2
+    reply := serve_vault_request(crypto, mut store, mut gate, cfg, r, 2)
+    assert_eq(reply.status, i32(412))
+    assert_eq(reply.vault_id, VID)
+    assert_eq(store.versions.len(), usize(1))
+}
+
+test "an upload without a precondition, a vault id or a body is refused" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "", "a"), 1).status, i32(428))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"x\"", "a"), 1).status, i32(400))
+    mut no_id := first_upload("a")
+    no_id.vault_id = ""
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, no_id, 1).status, i32(400))
+    mut upper := first_upload("a")
+    upper.vault_id = "00112233445566778899AABBCCDDEEFF"
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, upper, 1).status, i32(400))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, first_upload(""), 1).status, i32(400))
+    mut big := ""
+    for i in 0..1001 {
+        big += "x"
+    }
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, first_upload(big), 1).status, i32(413))
+    assert_eq(store.versions.len(), usize(0))
+}
+
+test "another path gets 404 and another method 405, after the token" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    mut p := rq("GET", "", "")
+    p.path = "/v1/vaults"
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, p, 1).status, i32(404))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("DELETE", "", ""), 1).status, i32(405))
+    mut anon := rq("DELETE", "", "")
+    anon.authorization = ""
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, anon, 1).status, i32(401))
+}
+
+test "a version stored first by another writer turns into 409" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1)
+    store.race = true
+    reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "b"), 2)
+    assert_eq(reply.status, i32(409))
+    assert_eq(reply.version, i64(2))
+}
+
+test "a store that fails answers 500 without its reason" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    store.fail = true
+    mut gate := new_server_gate()
+    reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 1)
+    assert_eq(reply.status, i32(500))
+    assert(!reply.body.contains("disk gone"))
+}
+
+test "restore makes a kept version the newest as a new version" {
+    mut store := new_mem_store()
+    try store.blob_write(1, VID, "one", 10)
+    try store.blob_write(2, VID, "two", 20)
+    try store.blob_write(3, VID, "three", 30)
+    v := try restore_vault_version(mut store, 1, 40)
+    assert_eq(v.version, i64(4))
+    assert_eq(try store.blob_read(4), "one")
+    assert_eq((try store.blob_head()).vault_id, VID)
+    mut codes: []str = []
+    restore_vault_version(mut store, 4, 50) or err {
+        codes.push(error_code_of(err.message()))
+    }
+    restore_vault_version(mut store, 9, 50) or err {
+        codes.push(error_code_of(err.message()))
+    }
+    mut empty := new_mem_store()
+    restore_vault_version(mut empty, 1, 50) or err {
+        codes.push(error_code_of(err.message()))
+    }
+    assert_eq(codes.len(), usize(3))
+    assert_eq(codes[0], ERR_INVALID)
+    assert_eq(codes[1], ERR_NOT_FOUND)
+    assert_eq(codes[2], ERR_NOT_FOUND)
+}

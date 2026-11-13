@@ -427,3 +427,17 @@ type DesktopSink interface {
     // engine as `sw.graphics` (`sw.why` ""), or it stayed as it was and `sw.why` says why.
     desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch)
 }
+
+// The remote vault server's versions of one vault (adapters/serverstore, milestone 42,
+// D-097): each upload stored whole and as it came, encrypted, next to its version and
+// the vault id; the newest SERVER_VERSIONS_KEPT kept. Version 0 means none stored yet.
+// Errors carry `not_found`, `io` or `conflict` (a store held by another writer).
+type BlobStore interface {
+    blob_head() -> BlobVersion!
+    blob_read(version: i64) -> str!
+    // Stores `data` as `version` and makes it the head; the caller has checked that
+    // it follows the head. Prunes what is past the kept history.
+    blob_write(version: i64, vault_id: str, data: str, now_ms: i64) -> void!
+    // Newest first.
+    blob_versions() -> []BlobVersion!
+}

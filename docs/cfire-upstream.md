@@ -2415,3 +2415,71 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Workaround:** `real_path` over `realpath(3)` in `src/adapters/process/native/
   flint_fs.hpp`, and `::symlink` in a test, tagged `// CFIRE-UPSTREAM: CF-136`.
 - **Ideal:** `fs.real_path(path) -> str!` and `fs.symlink(target, link) -> void!`.
+
+### CF-137 · bug · `confirmed`: `HttpServer` has no request deadline and a fixed body cap
+- **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** `read_http_request`
+  (`core/net/http.hpp:392`) reads with the accepted socket's fixed 2 s idle timeout per
+  read and no total deadline: a client sending one byte every 1.5 s held a request open
+  for 30 s. A body that stops early (`Content-Length: 1000`, 10 bytes sent, then silence)
+  reaches the handler as a complete 10-byte body after 2 s. The body cap is a hard-coded
+  10 MB and an oversized body is answered `400`, not `413`; neither is configurable from
+  `make_server`.
+- **Repro:** `make_server(0)`, a `put` route that prints `req.body.len()`, then from Python
+  send the headers with `Content-Length: 1000` and 10 bytes; the handler prints `len=10`.
+- **Why Flint needs it:** `flint-vault-server` must bound every request (Principle 8) and
+  must never store a truncated vault upload.
+- **Workaround:** the server runs its own accept loop on `core:net` (`listen_tcp_addr`,
+  `poll`, `read_text`) with header and request deadlines, its own cap answered `413`, and
+  `http.parse_request` + `Router.dispatch` (`src/drivers/vault-server/listen.cf`), tagged
+  `// CFIRE-UPSTREAM: CF-137`.
+- **Ideal:** `make_server(port, ServerOptions{ header_timeout_ms, request_timeout_ms,
+  max_body })`, `413` above the cap, and an error (not a short body) when the body ends
+  before `Content-Length`.
+
+### CF-138 · missing · `confirmed`: no way to run work on another thread from cfire
+- **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** `HttpServer` serves one
+  connection at a time on its single worker thread; while one client dripped its body,
+  a second `GET` waited 29.6 s. cfire has channels and mutexes (`core:sync`) but no
+  `spawn`/`go` to start a thread, so a server cannot hand a connection to a worker.
+- **Why Flint needs it:** one slow or hostile client stalls every other one until its
+  deadline.
+- **Workaround:** none in cfire; the vault server stays single-threaded with tight
+  deadlines (D-097). Flint's other threads live in native shims (`flint_ssh.hpp`,
+  `flint_tunnel.hpp`, `flint_rdp.hpp`).
+- **Ideal:** `spawn(fn)` returning a joinable handle, or a worker pool in `HttpServer`.
+
+### CF-139 · missing · `confirmed`: an accepted connection has no peer address
+- **Seen (milestone 42 spike) [read, `c5b1d4b`]:** `http.Request` carries no client address
+  and an accepted `TcpConn` has an empty endpoint (`TcpListener::accept`).
+- **Why Flint needs it:** the vault server limits rate and locks out repeated bad tokens
+  per client.
+- **Workaround:** `getpeername(2)` over `conn.fd()` in `src/adapters/netpeer/`, tagged
+  `// CFIRE-UPSTREAM: CF-139`.
+- **Ideal:** `fn (c: TcpConn) peer_addr() -> str` and `req.remote_addr`.
+
+### CF-140 · bug · `confirmed`: a chunked request body reaches the handler undecoded
+- **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** `curl -X PUT -H 'Transfer-Encoding:
+  chunked' --data-binary @file` hands the handler the chunk framing (`req.body[0]` is the
+  first hex digit of the chunk size) as if it were the body. The client side decodes
+  chunked responses (`decode_chunked_body`); the server side does not.
+- **Workaround:** the vault server answers `411` to any request with `Transfer-Encoding`.
+- **Ideal:** decode chunked request bodies under the same cap, or answer `411` itself.
+
+### CF-141 · improvement · `confirmed`: `make_server` binds only `0.0.0.0`; `Router.put` undocumented
+- **Seen (milestone 42 spike) [read, `c5b1d4b`]:** `make_server(port)` calls `listen_tcp`,
+  which binds every interface; a bare server behind a local reverse proxy wants
+  `127.0.0.1`. `Router.put` (and `handle`) exist and work but are not in the stdlib docs.
+- **Workaround:** `net.listen_tcp_addr(host, port)` in the vault server's own loop (CF-137).
+- **Ideal:** `make_server(port, host = "0.0.0.0")`; document `put`, `delete`, `handle`.
+
+### CF-142 · bug · `confirmed`: `http.request` with headers does not compile
+- **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** passing a `map[str]str` variable as
+  `headers` to `http.request` / `http.get` fails in C++: the runtime takes
+  `std::unordered_map<str, str>` and cfire's map is `cfire::Map<str, str>`. A map literal
+  in the same place lowers to a designated initializer (`{.If-Match = …}`) and fails too.
+- **Repro:** `mut h: map[str]str = {}`, `h["If-Match"] = "1"`,
+  `try http.request("PUT", url, body, "application/octet-stream", h)`.
+- **Why Flint needs it:** milestone 43's `VaultRemote` sends `Authorization`, `If-Match` and
+  the vault id on every request. Not blocking 42 (its tests drive the server with `curl`
+  and raw sockets).
+- **Ideal:** the runtime takes `cfire::Map`, and a map literal argument lowers to a map.
