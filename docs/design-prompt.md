@@ -654,8 +654,10 @@ alarm. The rules (owner):
     and the server holding no vault yet ("This server is empty. Connect it from a machine
     that already has the vault: Settings → Vault → Connect to a server").
   - 23a3 · The vault found: the server cannot read it, so only "A vault was found", its
-    size and version (its name appears once it opens); the master password of that
-    vault; where to keep the
+    size and version (its name appears once it opens). A server may hold several vaults
+    (milestone 45, D-101): then a short list to pick one, each row an id (short, mono),
+    size, version and last change; the name shows once it opens. Then the master
+    password of that vault; where to keep the
     local copy (folder picker and file name, as 02); "Remember on this computer" as 03.
     Errors: wrong master password, a file already exists there.
   - 23a4 · Downloading and opening: one progress line, then straight into the main shell
