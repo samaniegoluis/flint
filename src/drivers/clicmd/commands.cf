@@ -286,6 +286,11 @@ fn cmd_vault_merge(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mu
         return error(coded(ERR_CONFLICT, "Flint has vault '{target.name}' unlocked; lock it in Flint first, then merge"))
     }
     copy_path := absolute_path(p.positional(2))
+    // The use case compares the text; the same file may be named another way (letter
+    // case on Windows and macOS, a symbolic link), and that is the vault itself too.
+    if same_file_path(copy_path, target.path) {
+        return error(coded(ERR_INVALID, "{copy_path} is the vault itself; name the conflict copy to merge into it"))
+    }
     password := try master_password_for(sec, target.name)
     session := try unlock_vault(c, mut store, src.kc, recents, target.path, password, false)
     mut copy := new_copy_vault_store(flint_config_dir())

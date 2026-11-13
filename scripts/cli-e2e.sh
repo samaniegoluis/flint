@@ -246,6 +246,9 @@ check "has_password" '[[ "$(echo "$out" | json_get "d[\"has_password\"]")" == "T
 expect 0 "merging the copy again changes nothing" "$MASTER"$'\n' -- --vault "$mg" vault merge "$mgc" --master-stdin
 check "it says so" '[[ "$out" == "Nothing to merge"* ]]'
 expect 7 "the vault itself is refused" "$MASTER"$'\n' -- --vault "$mg" vault merge "$mg" --master-stdin
+ln -s "$tmp" "$tmp/mg-link"
+expect 7 "the vault itself, named through a symbolic link, is refused too" "$MASTER"$'\n' -- --vault "$mg" vault merge "$tmp/mg-link/mg.flint" --master-stdin
+check "it says it is the vault itself" '[[ "$err" == *"is the vault itself"* ]]'
 expect 3 "a missing copy" "$MASTER"$'\n' -- --vault "$mg" vault merge "$tmp/nope.flint" --master-stdin
 expect 2 "merge needs the copy" "" -- vault merge
 expect 7 "another vault is refused" "$MASTER"$'\n' -- --vault "$mg" vault merge "$vault" --master-stdin
