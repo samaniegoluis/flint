@@ -49,6 +49,8 @@ cleanup() {
   FLINT_CONFIG_DIR="$tmp/a" "$flint" --vault "$VA" vault disconnect >/dev/null 2>&1
   FLINT_CONFIG_DIR="$tmp/b" "$flint" --vault "$VB" vault disconnect >/dev/null 2>&1
   stop_server
+  # FLINT_E2E_KEEP=<dir> keeps the app's and the server's logs for a look.
+  if [[ -n "${FLINT_E2E_KEEP:-}" ]]; then cp "$tmp/app.log" "$tmp/server.log" "$all_out" "$FLINT_E2E_KEEP/" 2>/dev/null; fi
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -154,7 +156,12 @@ PW="$NEW_PW"
 check "both have mail" '[[ "$(aliases a "$VA")" == "$(aliases b "$VB")" && "$(aliases b "$VB")" == *mail* ]]'
 
 echo "== the app keeps a connected vault in step (its sync loop)"
-if [[ "${FLINT_SYNC_E2E_APP:-1}" == 1 ]]; then
+# On macOS the token the CLI saved is behind a system dialog when Flint.app reads it
+# (D-099: unsigned builds), so the app's part runs there only with
+# FLINT_SYNC_E2E_APP=1 and a person to answer it; on Linux always.
+app_default=1
+[[ "$(uname -s)" == Darwin ]] && app_default=0
+if [[ "${FLINT_SYNC_E2E_APP:-$app_default}" == 1 ]]; then
   "$root/scripts/build-gui.sh" >/dev/null || { echo "sync-e2e: app build failed" >&2; exit 1; }
   if [[ "$(uname -s)" == Darwin ]]; then app=(build/gui/Flint.app/Contents/MacOS/Flint); else app=(timeout 200 xvfb-run -a build/gui/Flint); fi
   # The page unlocks A's vault, then listens until the CLI adds `stop-app`, and
@@ -170,7 +177,11 @@ if [[ "${FLINT_SYNC_E2E_APP:-1}" == 1 ]]; then
     ch.port2.postMessage(0);
   });
   const seen = [];
-  window.runtime.EventsOn('vault:sync', (e) => seen.push(e.state + (e.code ? ':' + e.code : '')));
+  const t0p = Date.now();
+  window.runtime.EventsOn('vault:sync', (e) => {
+    seen.push(e.state + (e.code ? ':' + e.code : ''));
+    window.backend.e2e_log({ name: 'diag: +' + (Date.now() - t0p) + ' ms vault:sync ' + e.state + ' v' + e.version });
+  });
   const patch = (alias, hostname) => ({ alias, set_alias: true, label: '', set_label: false, hostname, set_hostname: true,
     port: 22, set_port: false, user: '', set_user: false, group: '', set_group: false, tags: [], set_tags: false,
     color: '', set_color: false, notes: '', set_notes: false, jump: '', set_jump: false, credential: '', set_credential: false,
@@ -193,6 +204,7 @@ if [[ "${FLINT_SYNC_E2E_APP:-1}" == 1 ]]; then
     // A change made in the app: the loop uploads it once it settles.
     await sleep(1500);
     await window.backend.host_add(patch('app-made', '10.0.3.3'));
+    await window.backend.e2e_log({ name: 'diag: +' + (Date.now() - t0p) + ' ms app-made added' });
     // Another machine's change: merged on the loop's own, by the 60 s interval.
     const start = Date.now();
     while (!(await has('from-b'))) {
@@ -207,8 +219,9 @@ if [[ "${FLINT_SYNC_E2E_APP:-1}" == 1 ]]; then
   window.runtime.Quit();
 })();
 JS
-  FLINT_CONFIG_DIR="$short" FLINT_GUI_E2E="$tmp/app.js" "${app[@]}" >"$tmp/app.log" 2>&1 &
+  FLINT_SYNC_DIAG=1 FLINT_CONFIG_DIR="$short" FLINT_GUI_E2E="$tmp/app.js" "${app[@]}" >"$tmp/app.log" 2>&1 &
   app_pid=$!
+  app_t0=$(date +%s)
   got_it=""
   for _ in $(seq 1 30); do
     sleep 1
@@ -216,14 +229,18 @@ JS
     [[ "$(aliases b "$VB")" == *app-made* ]] && { got_it=1; break; }
   done
   check "the app uploaded its change within seconds" '[[ -n "$got_it" ]]'
+  echo "diag: +$(( $(date +%s) - app_t0 )) s since the app started: B adds from-b"
   on b 0 "B adds a host" "$PW"$'\n' -- --vault "$VB" host add from-b --hostname 10.0.4.4 --master-stdin
+  echo "diag: +$(( $(date +%s) - app_t0 )) s: B's add returned ($(grep -c 'PUT /v1/vault 200' "$tmp/server.log") uploads so far)"
   wait "$app_pid"; app_pid=""
   check "the app merged B's change on its own (within the 60 s interval)" 'grep -q "^e2e: pass" "$tmp/app.log"'
   check "the app reported its syncs to the page" 'grep -q "heard .*uploaded" "$tmp/app.log" && grep -q "heard .*merged" "$tmp/app.log"'
   check "the token is not in the app's log" '! grep -q "$TOKEN" "$tmp/app.log"'
-  grep -q "^e2e: pass" "$tmp/app.log" || { echo "---- app log"; grep -v '^\s*$' "$tmp/app.log" | tail -30; }
+  grep -q "^e2e: pass" "$tmp/app.log" || { echo "---- app log"; grep -v '^\s*$' "$tmp/app.log" | grep -v 'diag: sync tick' | tail -30; echo "---- loop ticks (first 6, last 6)"; grep 'diag: sync tick' "$tmp/app.log" | head -6; grep 'diag: sync tick' "$tmp/app.log" | tail -6; grep -c 'diag: sync tick' "$tmp/app.log"; echo "---- server log"; tail -15 "$tmp/server.log"; }
   cp "$short/remotes.json" "$tmp/a/remotes.json"
   rm -rf "$short"
+else
+  echo "skip  the app's part (macOS: FLINT_SYNC_E2E_APP=1 with someone to answer the keychain dialog, D-099)"
 fi
 
 echo "== disconnect"

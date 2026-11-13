@@ -161,3 +161,7 @@ is, and so does the server's copy and every other machine's.
 
 Without an OS keychain (`FLINT_KEYCHAIN=off`, or a Linux machine with no Secret Service),
 `vault connect` is refused: the token is never kept in a file.
+
+On macOS, the first time the desktop app reads a token the CLI saved, macOS asks whether
+Flint may use it: choose **Always Allow**. Until Flint's builds are signed, the question
+comes back after each update; until it is answered, the app's sync waits.

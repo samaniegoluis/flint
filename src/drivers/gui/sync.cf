@@ -12,6 +12,7 @@ import "ext:webui"
 import "core:json"
 import "core:sync"
 import "core:time"
+import "core:os"
 import "../../adapters/config"
 import "../../adapters/crypto"
 import "../../adapters/keychain"
@@ -51,6 +52,9 @@ fn run_sync_loop(c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, setting
     links := new_json_remote_link_store(flint_config_dir())
     remote := new_http_vault_remote()
     mut clock := new_sync_clock()
+    // FLINT_SYNC_DIAG=1: one stderr line per tick with what the loop saw (paths are
+    // the vault's file path, already in the recents list; nothing from inside it).
+    diag := os.getenv("FLINT_SYNC_DIAG") == "1"
     for !st.holder.quitting() {
         hint := st.sync_hints.recv_timeout(SYNC_TICK_MS) or ""
         if !st.unlocked() {
@@ -58,13 +62,21 @@ fn run_sync_loop(c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, setting
             continue
         }
         session := st.vault_session()
-        if !remote_connected(links, session.path) {
+        connected := remote_connected(links, session.path)
+        if !connected {
+            if diag {
+                write_stderr("flint-gui: diag: sync tick at {time.now_ms()}: {session.path} not connected\n")
+            }
             continue
         }
         interval := (load_settings(settings_store) or default_settings()).sync_interval
         pending := remote_pending(c, store, links, session.path)
         now := time.now_ms()
-        if !sync_due(mut clock, session.path, now, pending, interval, hint) {
+        due := sync_due(mut clock, session.path, now, pending, interval, hint)
+        if diag {
+            write_stderr("flint-gui: diag: sync tick at {now}: pending {pending} hint '{hint}' due {due}\n")
+        }
+        if !due {
             continue
         }
         mut s := session
