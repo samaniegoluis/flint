@@ -2327,3 +2327,50 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   tagged `// CFIRE-UPSTREAM: CF-129`.
 - **Ideal:** a method call on a string literal lowers the literal to `std::string` (or a
   `std::string_view` with the same methods), as a `str` local does.
+
+### CF-130 · bug · `confirmed`: indexing a map passed as a parameter does not compile
+- **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** the strength estimate's word lists
+  (`src/domain/strength.cf`) are a `map[str]i64` read by functions that take them as a
+  plain (read-only) parameter.
+- **Repro:** `fn get(m: map[str]i64, k: str) -> i64 { return m[k] }` passes `cfire check`
+  and fails in clang: "no viable overloaded operator[] for type 'const cfire::Map<str,
+  i64>'": `Map::operator[]` inserts a missing key, so it has no `const` overload.
+- **Why Flint needs it:** a borrowed map is the default intent; reading one by key is the
+  common case.
+- **Workaround:** `m.get(k) or 0` (`Map::get` is `const`), tagged
+  `// CFIRE-UPSTREAM: CF-130`.
+- **Ideal:** `m[k]` on a read-only map lowers to a `const` lookup (a missing key a runtime
+  error, as an index out of range is), or the checker rejects it with the `get` fix-it.
+
+### CF-131 · bug · `confirmed`: a slice of a `[]T` passes to no `[]T` parameter
+- **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** `uppercase_variations(pw[i..j + 1])`
+  in `src/domain/strength.cf`.
+- **Repro:** `fn total(xs: []u8) -> i64 { return i64(xs.len()) }`, then
+  `total(xs[1..3])` with `xs: []u8`: passes `cfire check`, fails in clang ("no known
+  conversion from '&[]unsigned char' to 'const []u8'"). The slice is a span, the
+  parameter a `const std::vector&`. The same as CF-060 for `str`, but with no checker
+  error or fix-it.
+- **Workaround:** a copy by a helper (`sub_bytes(xs, from, to)`), tagged
+  `// CFIRE-UPSTREAM: CF-131`.
+- **Ideal:** as CF-060: a read-only `[]T` parameter takes a slice (lowered to a span), or
+  the checker says to copy it.
+
+### CF-132 · bug · `confirmed`: `xs.insert(i, x)` on a slice does not compile
+- **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** building the strength estimate's
+  match sequence backwards (`seq.insert(0, m)`).
+- **Repro:** `mut xs: []i64 = [2, 3]; xs.insert(0, 1)` passes `cfire check` and lowers to
+  `std::vector::insert(0, 1)`, which takes an iterator: "no matching member function for
+  call to 'insert'".
+- **Workaround:** push, then reverse the slice by hand, tagged `// CFIRE-UPSTREAM: CF-132`.
+- **Ideal:** `insert(index, value)` lowers to `insert(begin() + index, value)` with a bounds
+  check, or the checker rejects the call.
+
+### CF-133 · bug · `confirmed`: a tuple with an empty slice literal does not compile
+- **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** `return (1.0, [])` from a function
+  typed `-> (f64, []StrengthMatch)`.
+- **Repro:** `fn pair() -> (f64, []i64) { return (1.0, []) }` passes `cfire check` and
+  lowers to `std::make_tuple(1.0, {})`, which cannot deduce the second type.
+- **Workaround:** a typed local (`none_yet: []StrengthMatch = []`) returned in the tuple,
+  tagged `// CFIRE-UPSTREAM: CF-133`.
+- **Ideal:** the tuple is built as the declared return type (`std::tuple<f64,
+  std::vector<i64>>{1.0, {}}`), as CF-091 asks for nested literals.
