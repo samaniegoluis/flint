@@ -3,7 +3,7 @@
 # container: build, tests, CLI end-to-end and the desktop app under Xvfb.
 #
 # FLINT_LINUX_STEPS picks the steps after the build (comma-separated: tests, cli, gui,
-# serve, server; default all). FLINT_LINUX_SUITES narrows `tests` to some suites (space-separated
+# serve, server, sync; default all). FLINT_LINUX_SUITES narrows `tests` to some suites (space-separated
 # paths, default src). FLINT_LINUX_REPEAT="<run> <N>" makes the `gui` step run one
 # gui-e2e run N times with scripts/repeat.sh instead (CLAUDE.md rule 9).
 set -euo pipefail
