@@ -4,6 +4,17 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.7.0 — 2026-11-13
+
+Change your vault's master password, from the CLI (flint vault passwd) or Settings → Vault, with a strength estimate shown as you type. The vault is re-encrypted under a new key in one rename, so a crash never leaves it unreadable, and it keeps its place in the list, its layout and its activity log.
+
+### Added
+
+- **domain:** A strength estimate for master passwords, a reduced zxcvbn in pure cfire (milestone 40)
+- **vault:** Change the master password, re-keying the vault and its activity file by copy and rename (milestone 40)
+- **vault:** Flint vault passwd and Change master password in Settings → Vault, with the strength shown (milestone 40)
+
+
 ## 0.6.0 — 2026-11-13
 
 The activity log now lives on each computer, in an encrypted file of its own beside Flint's settings, never inside the vault, so a vault that syncs no longer carries it or changes on every command. Existing entries move over at the first unlock, and Settings → Access can back the log up, still encrypted. The first step towards a vault shared between machines.
