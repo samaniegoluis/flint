@@ -721,15 +721,15 @@
       await click('[data-fs-monitors]');
       const pop = await waitFor(() => q('[data-monitors-popover]'), 'the Monitors popover');
       const tiles = [...pop.querySelectorAll('[data-monitor]')];
-      await check(tiles.length === view.monitors.length && q(`[data-monitor="${view.main}"]`, pop).textContent.includes('Main · taskbar')
-        && q(`[data-monitor="${extra}"]`, pop).getAttribute('aria-checked') === 'true', `the popover maps ${tiles.length} monitors, the main one tagged, the extra one checked`);
+      await check(tiles.length === view.monitors.length && q(`[data-monitor="${CSS.escape(view.main)}"]`, pop).textContent.includes('Main · taskbar')
+        && q(`[data-monitor="${CSS.escape(extra)}"]`, pop).getAttribute('aria-checked') === 'true', `the popover maps ${tiles.length} monitors, the main one tagged, the extra one checked`);
       if (view.monitors.length > 2) {
         const third = view.monitors.find((m) => !view.picks.includes(m.id)).id;
-        await check(q(`[data-monitor="${third}"]`, pop).classList.contains('cap'), 'a third monitor cannot be checked past the cap');
+        await check(q(`[data-monitor="${CSS.escape(third)}"]`, pop).classList.contains('cap'), 'a third monitor cannot be checked past the cap');
       }
 
       await setStep('multimon: unchecking the extra monitor goes back to one');
-      q(`[data-monitor="${extra}"]`, pop).click();
+      q(`[data-monitor="${CSS.escape(extra)}"]`, pop).click();
       await waitFor(() => mons().get().phase === 'off', 'back to one monitor', 10000);
       await check(immersive(), 'the main window stays full screen');
       await waitFor(() => { const d = canvas()?.dataset.desktop; const a = q('.rdp-area', activeRegion()).getBoundingClientRect(); return d && Math.abs(Number(d.split('x')[0]) - Math.floor(a.width)) <= 2 && Math.abs(Number(d.split('x')[1]) - Math.floor(a.height)) <= 2; }, 'the desktop at the main window\'s size', 30000);
@@ -742,7 +742,7 @@
       }
 
       await setStep('multimon: checking it again spans again; a lost connection says so there');
-      q(`[data-monitor="${extra}"]`, q('[data-monitors-popover]') ?? document).click();
+      q(`[data-monitor="${CSS.escape(extra)}"]`, q('[data-monitors-popover]') ?? document).click();
       await waitFor(() => mons().get().phase === 'on', 'across the monitors again', 40000);
       await waitForAsync(async () => { const r = await probe(extra); return r.frames > 0 && r.width === crop1.width ? r : null; }, 'the extra window drawing again', 30000);
       await check(true, 'checking the extra monitor in the popover spans the desktop again');

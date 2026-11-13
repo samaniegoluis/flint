@@ -72,15 +72,15 @@ from this file alone.
 
 ## Stage 3: RDP and the desktop (milestones 32-38) → push
 
-- [ ] M32: Settings → About shows the version and the libraries (FreeRDP) [ran]
-- [ ] M34/35: RDPGFX progressive; H.264 likely absent (FreeRDP built without ffmpeg):
+- [x] M32: Settings → About shows the version and the libraries (FreeRDP) [ran]
+- [x] M34/35: RDPGFX progressive; H.264 likely absent (FreeRDP built without ffmpeg):
       Automatic must fall back cleanly; Stats overlay; WebGL renderer in WebView2 [ran]
 - [ ] M36: TLS/NLA against the owner's Windows 11; Standard RDP Security refused; frame
       channel `Host`/CORS (`https://app.localhost` passes as `*.localhost`) [ran]
-- [ ] M37: full screen from the toolbar, tab menu, palette; chord Ctrl+Alt+Enter vs AltGr [ran]
-- [ ] M38: two monitors, `flint_monitors.hpp` `_WIN32` (HWND + WebView2 per extra monitor).
+- [x] M37: full screen from the toolbar, tab menu, palette; chord Ctrl+Alt+Enter vs AltGr [ran]
+- [x] M38: two monitors, `flint_monitors.hpp` `_WIN32` (HWND + WebView2 per extra monitor).
       Needs the owner's monitors. If stuck: "not supported on this system yet" (D-089)
-- [ ] `windows/rdp-servers.sh` with the changed test server; `windows/gui-e2e.sh` with the new
+- [x] `windows/rdp-servers.sh` with the changed test server; `windows/gui-e2e.sh` with the new
       runs (fullscreen, monitors, webgl, passwd); green
 - [ ] Commit + push
 
@@ -128,3 +128,19 @@ from this file alone.
 - Unexplained, instrumented: one `cli-smoke.sh` run stopped at "relay did not start"
   with an empty relay log (>10 s); alone the relay starts in 1.3 s, and the next full run
   passed. A `diag:` line now prints the relay's start time and whether PowerShell lives.
+- Stage 3 [ran]: `gui-e2e.sh` (built at `dbc25a4`, so the page's version check matches)
+  terminal 89, vault 124 (incl. Settings → Vault → Change master password with the app
+  holding the vault), tunnels 33, paste 24, rdp 65 (the sample server has no graphics
+  pipeline: bitmaps, 2D), webgl 20, fullscreen 49 (Ctrl+Alt+Enter) = 404, all passed.
+  The focus-trap check is logged as skipped (WSL-started windows do not get the
+  foreground), as before.
+- **multimon [ran] 33/33** on this desk's three monitors (1920x1080 main, a 1080x1920
+  portrait at -1080,-65, another 1920x1080), with a build whose `VERIFIED` was true for
+  the run only: the extra window on the portrait drew its 1080x1920 crop, pointer and
+  keys reached the test server, the bar and the popover (third monitor capped), back to
+  one and span again. Committed `VERIFIED` stays **false**: D-089 turns Windows on after
+  the owner's own look. The first try failed in the test, not in Flint: Windows'
+  monitor ids (`\\.\DISPLAY2`) went unescaped into a CSS selector; `CSS.escape` fixes it
+  (`scripts/gui-e2e.js`, belongs on main too).
+- Not checked by a person yet: M34's H.264 (FreeRDP built without ffmpeg) against the
+  owner's Windows 11 host, M36's NLA against it, the multimon feel.
