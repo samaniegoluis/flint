@@ -58,12 +58,18 @@ type VaultStore interface {
     known_hosts_all() -> []KnownHost!
     known_host_put(k: KnownHost) -> void!
     known_host_drop(addr: str) -> void!
+    // Milestone 39 (D-094): opens this machine's activity file for the open vault,
+    // named by its id and encrypted with `key` (VAULT_SUBKEY_ACTIVITY); a new file
+    // takes `new_salt`. Moves in, once, the log an older vault still holds.
+    // `vault_detach` closes it with the vault.
+    activity_attach(vault_id: str, key: []byte, new_salt: []byte) -> void!
 }
 
-// Tokens and the activity log, in the open vault (adapters/vault, migration 004,
-// milestone 12b). Served by the same store as `VaultStore`. Tokens are revoked, never
-// deleted. `activity_add` drops the oldest entries beyond `keep`; `activity_page`
-// returns the newest entries with an id below `before_id` (0: from the newest).
+// Tokens, in the open vault (adapters/vault, migration 004, milestone 12b), and the
+// activity log, in this machine's activity file (milestone 39, D-094). Served by the
+// same store as `VaultStore`. Tokens are revoked, never deleted. `activity_add` drops
+// the oldest entries beyond `keep`; `activity_page` returns the newest entries with an
+// id below `before_id` (0: from the newest). The retention is this machine's.
 type TokenStore interface {
     tokens_all() -> []Token!
     token_put(t: Token) -> void!
@@ -74,9 +80,11 @@ type TokenStore interface {
     activity_prune(keep: ActivityKeep) -> i64!
     // How many entries are older than `since_at` (Unix seconds).
     activity_count_before(since_at: i64) -> i64!
-    // The vault's retention in days (0: no limit; -1: never set).
+    // The retention in days (0: no limit; -1: never set).
     activity_retention() -> i64!
     set_activity_retention(days: i64) -> void!
+    // Copies the activity file, still encrypted, to `dest` (replaced if there).
+    activity_backup(dest: str) -> void!
 }
 
 // Tunnels saved in hosts, in the open vault (adapters/vault, migration 007, milestone

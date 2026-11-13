@@ -84,9 +84,9 @@ fn main() {
         return
     }
     c := sodium_ok
-    mut store := new_locked_vault_store()
-    kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
     config_dir := flint_config_dir()
+    mut store := new_locked_vault_store(config_dir + "/activity")
+    kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
     recents := new_json_recent_store(config_dir)
     mut settings_store := new_json_settings_store(config_dir)
     mut ui_state_store := new_json_ui_state_store(config_dir)
@@ -155,6 +155,7 @@ fn main() {
     app.bind_raw("activity_retention") |params| { return rpc_activity_retention(st, store) }
     app.bind_raw("activity_retention_preview") |params| { return rpc_activity_retention_preview(params, st, store) }
     app.bind_raw("activity_retention_set") |params| { return rpc_activity_retention_set(params, st, store, mut app) }
+    app.bind_raw("activity_backup") |params| { return rpc_activity_backup(params, st, store) }
     // On a worker: Touch ID and polkit block until the person answers.
     app.bind_async[AccessAnswer]("access_answer") |req| {
         mut a := app

@@ -2,7 +2,9 @@
 // until they expire, the vault locks or the app quits; each can be ended now.
 // Milestone 12b adds the vault's tokens (revoke only: `flint token create` makes
 // them, approved in the window) and the activity log: what callers were allowed to
-// run or refused, newest first. Reads are not logged.
+// run or refused, newest first. Reads are not logged. From milestone 39 the log is
+// this computer's, in a file of its own beside the vault, never synced; it can be
+// backed up as it is (still encrypted).
 
 import { useCallback, useEffect, useState } from 'react';
 import { api, on, toFlintError } from '../api/backend';
@@ -212,6 +214,19 @@ function RetentionChoice({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
   );
 }
 
+function ActivityBackup() {
+  const { notify, fail } = useApp();
+  const backup = async () => {
+    try {
+      const { path } = await api.dialogSave('Back up activity', 'Flint activity.db');
+      if (!path) return;
+      await api.activityBackup(path);
+      notify('Activity backed up, still encrypted');
+    } catch (e) { fail(toFlintError(e)); }
+  };
+  return <button className="btn btn-ghost btn-sm" data-activity-backup onClick={backup}>Back up activity…</button>;
+}
+
 function ActivitySection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [more, setMore] = useState(false);
@@ -264,8 +279,9 @@ function ActivitySection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
         </div>
       )}
       <div className="row" style={{ paddingTop: 'var(--sp-3)', gap: 'var(--sp-3)' }}>
-        <span className="hint grow">Allowed reads (list, show) are not recorded. Command output and sudo passwords never are. Kept in the vault; only this window changes how long.</span>
+        <span className="hint grow" data-activity-where>Allowed reads (list, show) are not recorded. Command output and sudo passwords never are. Kept on this computer, encrypted and apart from the vault, so it never syncs; only this window changes how long.</span>
         {more && <button className="btn btn-ghost btn-sm" data-activity-more onClick={loadMore}>Load more</button>}
+        <ActivityBackup />
       </div>
       {open && <ActivityDetail e={open} onClose={() => setOpen(null)} />}
     </section>

@@ -6,6 +6,7 @@
 // mutex type (CF-026) and no top-level cpp block for this struct (CF-031).
 #pragma once
 #include <mutex>
+#include <string>
 
 struct sqlite3;
 
@@ -14,6 +15,11 @@ namespace flint_vault {
 struct VaultCell {
     std::recursive_mutex mtx;
     sqlite3* handle = nullptr;
+    // Milestone 39 (D-094): this machine's activity file for the open vault, its
+    // path, and the folder such files live in.
+    sqlite3* act_handle = nullptr;
+    std::string act_path;
+    std::string act_dir;
 };
 
 } // namespace flint_vault

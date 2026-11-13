@@ -6,8 +6,10 @@ package domain
 //
 // The first 16 bytes of a vault file are the Argon2id salt (SQLCipher stores the
 // salt it is given there). Everything after them is SQLCipher pages. The Argon2id
-// output is the vault's master key; two subkeys are derived from it with libsodium
-// crypto_kdf: one is the SQLCipher page key, the other seals secret values.
+// output is the vault's master key; subkeys are derived from it with libsodium
+// crypto_kdf: the SQLCipher page key, the key that seals secret values, and (from
+// milestone 39, D-094) the page key of this machine's activity file, which lives
+// outside the vault so a synced vault never carries the log.
 // The numbers are pinned here, not taken from libsodium's *_MODERATE macros, so a
 // libsodium upgrade can never change how an existing vault is opened.
 
@@ -19,6 +21,7 @@ VAULT_ARGON2_MEM: usize = 268435456
 VAULT_KDF_CONTEXT: str = "flintvlt"
 VAULT_SUBKEY_PAGE: u64 = 1
 VAULT_SUBKEY_SECRETS: u64 = 2
+VAULT_SUBKEY_ACTIVITY: u64 = 3
 
 // ---- Entities ----------------------------------------------------------------
 //

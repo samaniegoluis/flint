@@ -102,6 +102,8 @@ export const api = {
   /** How many entries a retention of `days` would remove now. */
   activityRetentionPreview: (days: RetentionDays) => call<{ days: RetentionDays; remove: number }>('activity_retention_preview', { days }),
   activityRetentionSet: (days: RetentionDays) => call<{ days: RetentionDays; label: string; removed: number }>('activity_retention_set', { days }),
+  /** Copies this computer's activity file, still encrypted, to `path` (milestone 39). */
+  activityBackup: (path: string) => call('activity_backup', { path }),
   forgetKey: (path: string) => call('vault_forget_key', { path }),
   forget: (path: string) => call('vault_forget', { path }),
   status: () => call<VaultStatus>('vault_status'),

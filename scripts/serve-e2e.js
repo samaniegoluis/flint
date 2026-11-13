@@ -292,6 +292,15 @@
         await check(after.length === log2.length, 'shortening it with nothing that old removes nothing');
         q('[data-retention-days="90"]')?.click();
         await waitFor(() => q('[data-retention-days="90"]')?.getAttribute('aria-checked') === 'true', 'the 90-day retention again', 5000);
+        // Milestone 39: the log is this computer's, and it backs up as it is (the save
+        // dialog is the OS's: its path goes straight to the RPC it leads to).
+        await check(/never syncs/.test(q('[data-activity-where]')?.textContent ?? ''), 'Settings says the activity is kept on this computer and never syncs');
+        await check(!!q('[data-activity-backup]'), 'Settings offers Back up activity');
+        await window.backend.activity_backup({ path: '@@TMP@@/activity-backup.db' });
+        await check(true, 'Back up activity writes the file');
+        let refused = '';
+        await window.backend.activity_backup({ path: 'relative.db' }).catch((err) => { refused = String(err); });
+        await check(/absolute/.test(refused), 'a backup to a relative path is refused');
       }
       await check(!q('[data-token="nightly"]'), 'a revoked token is hidden until asked for');
       q('[data-tokens-ended]')?.click();

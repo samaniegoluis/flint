@@ -267,8 +267,9 @@ test "creating, unlocking and checking a vault wipe the derived keys (milestone 
     recents := new_fake_recents()
     reset_wiped()
     s := try create_vault(crypto, mut store, kc, recents, "/v/Wipe.flint", "", "correct horse", false)
-    // The master key, the page key and this copy of the secrets key.
-    assert_eq(WIPED_BUFS, 3)
+    // The master key, the page key, this copy of the secrets key, and the activity
+    // file's key (milestone 39).
+    assert_eq(WIPED_BUFS, 4)
     // The session keeps its own copy.
     assert_eq(s.secrets_key.len(), 32)
     assert(s.secrets_key[0] != 0 || s.secrets_key[1] != 0)
@@ -276,10 +277,28 @@ test "creating, unlocking and checking a vault wipe the derived keys (milestone 
     store.vault_detach()
     reset_wiped()
     back := try unlock_vault(crypto, mut store, kc, recents, "/v/Wipe.flint", "correct horse", false)
-    assert_eq(WIPED_BUFS, 3)
+    assert_eq(WIPED_BUFS, 4)
     assert(back.secrets_key == s.secrets_key)
 
     reset_wiped()
     assert(try verify_master_password(crypto, store, back, "correct horse"))
     assert_eq(WIPED_BUFS, 3)
+}
+
+test "create and unlock open the machine's activity file with a key of its own" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    recents := new_fake_recents()
+    s := try create_vault(crypto, mut store, kc, recents, "/v/Home Lab.flint", "", "correct horse", false)
+    assert_eq(store.act_id, s.id)
+    assert_eq(store.act_key.len(), 32)
+    assert(store.act_key != s.secrets_key, "the activity key is not the secrets key")
+    assert(store.act_key != store.file_key, "the activity key is not the page key")
+    created_key := store.act_key
+    store.vault_detach()
+    assert_eq(store.act_id, "")
+    again := try unlock_vault(crypto, mut store, kc, recents, "/v/Home Lab.flint", "correct horse", false)
+    assert_eq(store.act_id, again.id)
+    assert(store.act_key == created_key, "the same vault derives the same activity key")
 }

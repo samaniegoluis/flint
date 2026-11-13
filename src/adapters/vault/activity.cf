@@ -1,0 +1,307 @@
+package vault
+
+// This machine's activity log (milestone 39, D-094): a second SQLCipher file per
+// vault, `<config folder>/activity/<vault id>.db`, encrypted with its own page key
+// (VAULT_SUBKEY_ACTIVITY) and never beside the `.flint`, so a vault that syncs (a
+// cloud folder, the remote vault of spec v11) never carries it. The folder is 0700
+// and each file 0600. Every activity call of the `TokenStore` port lands here.
+//
+// A vault from before keeps its rows until they are moved: migration 009 renames
+// its `activity` table to `activity_moving`, and `activity_attach` copies those rows
+// (with their ids) and the retention into the file in one transaction, then drops
+// the table from the vault. A failure between the two leaves the rows in the vault,
+// and the next attach copies them again; the ids make the copy a no-op the second
+// time.
+
+// CFIRE-UPSTREAM: CF-099, CF-031
+import cpp "flint_fs.hpp" @pkg("flint-native")
+
+import "core:fs"
+import "core:str"
+import "../../domain"
+
+// The activity file's own schema, numbered apart from the vault's. Append-only, as
+// the vault's (Principle 10).
+fn activity_migrations() -> []Migration {
+    mut list: []Migration = []
+    list.push(Migration{ version: 1, name: "activity log", sql: `
+CREATE TABLE meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    caller TEXT NOT NULL,
+    via TEXT NOT NULL,
+    token_id TEXT NOT NULL DEFAULT '',
+    action TEXT NOT NULL,
+    host TEXT NOT NULL DEFAULT '',
+    command TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    command_cut INTEGER NOT NULL DEFAULT 0
+);
+` })
+    return list
+}
+
+// A view of the activity file's connection; it does not own the handle.
+fn (self: SqlVaultStore) act() -> CipherDb {
+    return CipherDb{ handle: self.act_handle }
+}
+
+fn (self: SqlVaultStore) require_activity() -> void! {
+    if !self.act().is_open() {
+        return error(coded(ERR_LOCKED, "no vault is unlocked"))
+    }
+}
+
+fn (mut self: SqlVaultStore) activity_close() {
+    mut db := self.act()
+    if db.is_open() {
+        db.close_db()
+    }
+    self.act_handle = none
+    self.act_path = ""
+}
+
+// A vault id is 32 hex digits (application/session.cf); anything else would name a
+// file outside the folder.
+fn activity_id_ok(id: str) -> bool {
+    if id.len() != 32 {
+        return false
+    }
+    // A literal's method does not compile (CF-129): the digits go in a `str` first.
+    // CFIRE-UPSTREAM: CF-129
+    digits: str = "0123456789abcdef"
+    for i in 0..id.len() {
+        if !digits.contains(id.substr(i, 1)) {
+            return false
+        }
+    }
+    return true
+}
+
+fn (mut self: SqlVaultStore) activity_attach(vault_id: str, key: []byte, new_salt: []byte) -> void! {
+    try self.require_open()
+    if self.act_dir.len() == 0 {
+        return error("internal: this store has no activity folder")
+    }
+    if !activity_id_ok(vault_id) {
+        return error("internal: bad vault id")
+    }
+    self.activity_close()
+    dir := self.act_dir
+    path := dir + "/" + vault_id + ".db"
+    mut rc: i32 = 0
+    mut reason := ""
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        std::string err;
+        rc = flint_fs::make_dirs(dir, 0700, err);
+        reason = err;
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "cannot create {dir}: {reason}"))
+    }
+    db := try self.activity_open_or_restart(path, key, new_salt)
+    self.act_handle = db.handle
+    self.act_path = path
+    self.activity_move_in() or err {
+        self.activity_close()
+        return error("{err.message()}")
+    }
+}
+
+// A file this key does not open (left by a vault that was replaced under the same
+// salt) is kept aside, never deleted, and a new log is started.
+fn (self: SqlVaultStore) activity_open_or_restart(path: str, key: []byte, new_salt: []byte) -> CipherDb! {
+    db := self.activity_open(path, key, new_salt) or err {
+        msg := "{err.message()}"
+        if error_code_of(msg) != ERR_WRONG_PASSWORD {
+            return error(msg)
+        }
+        aside := path + ".unreadable"
+        _ := fs.remove(aside)
+        fs.rename(path, aside) or err2 {
+            return error(coded(ERR_IO, "cannot move {path} aside"))
+        }
+        return self.activity_open(path, key, new_salt)
+    }
+    return db
+}
+
+// Opens (or creates, 0600, with `new_salt`) the file at `path` and brings it up to
+// the latest activity migration.
+fn (self: SqlVaultStore) activity_open(path: str, key: []byte, new_salt: []byte) -> CipherDb! {
+    mut salt := new_salt
+    create := !fs.exists(path)
+    if create {
+        mut rc: i32 = 0
+        mut reason := ""
+        // CFIRE-UPSTREAM: CF-099
+        cpp {
+            std::string err;
+            rc = flint_fs::append_file(path, "", err);
+            reason = err;
+        }
+        if rc != 0 {
+            return error(coded(ERR_IO, "cannot create {path}: {reason}"))
+        }
+    } else {
+        salt = try self.vault_read_salt(path)
+    }
+    mut db := open_cipher_db(path, key, salt, true) or err {
+        if create {
+            _ := fs.remove(path)
+        }
+        return error("{err.message()}")
+    }
+    db.migrate_list(activity_migrations(), "activity file") or err {
+        db.close_db()
+        return error("{err.message()}")
+    }
+    return db
+}
+
+// Moves the rows and the retention an older vault still holds (`activity_moving`,
+// migration 009) into the activity file, then drops them from the vault.
+fn (self: SqlVaultStore) activity_move_in() -> void! {
+    found := try self.conn().query_cells("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'activity_moving';", [])
+    if cell_i64(found[0][0]) == 0 {
+        return
+    }
+    rows := try self.conn().query_cells("SELECT id, at, caller, via, token_id, action, host, command, outcome, command_cut FROM activity_moving ORDER BY id;", [])
+    retention := try self.vault_get_meta("activity_retention_days")
+    try self.act().exec("BEGIN IMMEDIATE;")
+    self.activity_copy(rows, retention) or err {
+        _ := self.act().exec("ROLLBACK;")
+        return error("{err.message()}")
+    }
+    try self.act().exec("COMMIT;")
+    try self.conn().exec("BEGIN IMMEDIATE;")
+    self.conn().exec("DROP TABLE IF EXISTS activity_moving; DELETE FROM meta WHERE key = 'activity_retention_days';") or err {
+        _ := self.conn().exec("ROLLBACK;")
+        return error("io: cannot finish moving the activity log: {err.message()}")
+    }
+    try self.conn().exec("COMMIT;")
+}
+
+fn (self: SqlVaultStore) activity_copy(rows: [][]SqlCell, retention: str) -> void! {
+    for r in rows {
+        try self.act().run_sql("INSERT OR IGNORE INTO activity (id, at, caller, via, token_id, action, host, command, outcome, command_cut) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10);", r)
+    }
+    if retention.len() > 0 {
+        try self.act().run_sql("INSERT OR IGNORE INTO meta (key, value) VALUES ('activity_retention_days', ?1);", [sql_text(retention)])
+    }
+}
+
+// The insert and the prune in one savepoint, so a reader never sees a log that is
+// half pruned.
+fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> void! {
+    try self.require_activity()
+    try self.act().exec("SAVEPOINT activity_add;")
+    self.activity_insert(e, keep) or err {
+        _ := self.act().exec("ROLLBACK TO activity_add;")
+        _ := self.act().exec("RELEASE activity_add;")
+        return error("{err.message()}")
+    }
+    try self.act().exec("RELEASE activity_add;")
+}
+
+fn (self: SqlVaultStore) activity_insert(e: ActivityEntry, keep: ActivityKeep) -> void! {
+    try self.act().run_sql("INSERT INTO activity (at, caller, via, token_id, action, host, command, outcome, command_cut) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);", [
+            sql_int(e.at), sql_text(e.caller), sql_text(e.via), sql_text(e.token), sql_text(e.action), sql_text(e.host), sql_text(e.command), sql_text(e.outcome), sql_int(e.cut),
+    ])
+    _ := try self.activity_trim(keep)
+}
+
+// Deletes what `keep` no longer covers: entries older than `since_at`, then the
+// oldest ones while the log is over `max_bytes`. The newest entry always stays.
+fn (self: SqlVaultStore) activity_trim(keep: ActivityKeep) -> i64! {
+    before := try self.activity_count()
+    if keep.since_at > 0 {
+        try self.act().run_sql("DELETE FROM activity WHERE at < ?1 AND id < (SELECT max(id) FROM activity);", [sql_int(keep.since_at)])
+    }
+    if keep.max_bytes > 0 {
+        size := try self.activity_bytes()
+        if size > keep.max_bytes {
+            // The newest rows that fit; everything older goes.
+            res := try self.act().query_cells("SELECT id FROM (SELECT id, sum(length(caller) + length(command) + length(host) + length(token_id) + ?1) OVER (ORDER BY id DESC) AS total FROM activity) WHERE total > ?2 ORDER BY id DESC LIMIT 1;", [sql_int(ACTIVITY_ROW_BYTES), sql_int(keep.max_bytes)])
+            if res.len() > 0 {
+                try self.act().run_sql("DELETE FROM activity WHERE id <= ?1 AND id < (SELECT max(id) FROM activity);", [sql_int(cell_i64(res[0][0]))])
+            }
+        }
+    }
+    after := try self.activity_count()
+    return before - after
+}
+
+fn (self: SqlVaultStore) activity_count() -> i64! {
+    res := try self.act().query_cells("SELECT count(*) FROM activity;", [])
+    return cell_i64(res[0][0])
+}
+
+fn (self: SqlVaultStore) activity_bytes() -> i64! {
+    res := try self.act().query_cells("SELECT ifnull(sum(length(caller) + length(command) + length(host) + length(token_id) + ?1), 0) FROM activity;", [sql_int(ACTIVITY_ROW_BYTES)])
+    return cell_i64(res[0][0])
+}
+
+fn (self: SqlVaultStore) activity_prune(keep: ActivityKeep) -> i64! {
+    try self.require_activity()
+    try self.act().exec("SAVEPOINT activity_prune;")
+    done := self.activity_trim(keep) or err {
+        _ := self.act().exec("ROLLBACK TO activity_prune;")
+        _ := self.act().exec("RELEASE activity_prune;")
+        return error("{err.message()}")
+    }
+    try self.act().exec("RELEASE activity_prune;")
+    return done
+}
+
+fn (self: SqlVaultStore) activity_count_before(since_at: i64) -> i64! {
+    try self.require_activity()
+    res := try self.act().query_cells("SELECT count(*) FROM activity WHERE at < ?1;", [sql_int(since_at)])
+    return cell_i64(res[0][0])
+}
+
+fn (self: SqlVaultStore) activity_retention() -> i64! {
+    try self.require_activity()
+    res := try self.act().query_cells("SELECT value FROM meta WHERE key = 'activity_retention_days';", [])
+    if res.len() == 0 {
+        return -1
+    }
+    return cell_str(res[0][0]).parse_i64() or -1
+}
+
+fn (self: SqlVaultStore) set_activity_retention(days: i64) -> void! {
+    try self.require_activity()
+    try self.act().run_sql("INSERT INTO meta (key, value) VALUES ('activity_retention_days', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value;", [sql_text("{days}")])
+}
+
+fn (self: SqlVaultStore) activity_page(before_id: i64, limit: i64) -> []ActivityEntry! {
+    try self.require_activity()
+    mut before := before_id
+    if before <= 0 {
+        before = 9223372036854775807
+    }
+    res := try self.act().query_cells("SELECT id, at, caller, via, token_id, action, host, command, outcome, command_cut FROM activity WHERE id < ?1 ORDER BY id DESC LIMIT ?2;", [sql_int(before), sql_int(limit)])
+    mut list: []ActivityEntry = []
+    for r in res {
+        list.push(ActivityEntry{ id: cell_i64(r[0]), at: cell_i64(r[1]), caller: cell_str(r[2]), via: cell_str(r[3]), token: cell_str(r[4]), action: cell_str(r[5]), host: cell_str(r[6]), command: cell_str(r[7]), outcome: cell_str(r[8]), cut: cell_i64(r[9]) })
+    }
+    return list
+}
+
+// Copies the file as it is, still encrypted. Every write to it is a whole statement
+// under the store's lock and the journal is `DELETE`, so between two calls the file
+// on disk is complete.
+fn (self: SqlVaultStore) activity_backup(dest: str) -> void! {
+    try self.require_activity()
+    if dest == self.act_path || str.starts_with(dest, self.act_dir + "/") {
+        return error(coded(ERR_INVALID, "choose a place outside Flint's own folder"))
+    }
+    fs.copy_file(self.act_path, dest) or err {
+        return error(coded(ERR_IO, "cannot write {dest}"))
+    }
+}

@@ -196,6 +196,16 @@ fn set_activity_retention_days[T: TokenStore](mut tokens: T, days: i64, now_s: i
     return tokens.activity_prune(activity_keep(days, now_s))
 }
 
+// Copies this machine's activity file, still encrypted, to `dest` (Settings →
+// Activity → Back up activity…, milestone 39). No export format: the copy opens only
+// with the vault's key.
+fn backup_activity[T: TokenStore](tokens: T, dest: str) -> void! {
+    if !dest.starts_with("/") {
+        return error(coded(ERR_INVALID, "the backup path must be absolute"))
+    }
+    try tokens.activity_backup(dest)
+}
+
 // The newest entries before `before_id` (0: the newest), at most `limit` (1-500).
 fn list_activity[T: TokenStore](tokens: T, before_id: i64, limit: i64) -> []ActivityEntry! {
     mut n := limit

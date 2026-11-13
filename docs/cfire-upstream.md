@@ -2314,3 +2314,16 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** names from an `import cpp` header resolve only inside the package that imports
   it, and only as qualified (`n::f`) or inside `cpp { }` blocks; a cfire function of the
   same name is never cast to a C++ signature.
+
+### CF-129 · bug · `confirmed`: a method called on a string literal does not compile
+- **Seen (milestone 39) [ran, macOS, `c5b1d4b`]:** `if !"0123456789abcdef".contains(id.substr(i, 1)) { … }`
+  in `src/adapters/vault/activity.cf` passes `cfire check` and fails in clang: "member
+  reference base type 'const char[17]' is not a structure or union". The literal lowers to
+  a bare C string, so `.contains` lands on a `const char[]`.
+- **Repro:** `fn f(c: str) -> bool { return "abc".contains(c) }`, then `cfire build`.
+- **Why Flint needs it:** small membership checks read best on the literal; the checker
+  accepting what clang rejects turns a type error into a C++ error message.
+- **Workaround:** the literal assigned to a `str` local first (`digits: str = "…"`),
+  tagged `// CFIRE-UPSTREAM: CF-129`.
+- **Ideal:** a method call on a string literal lowers the literal to `std::string` (or a
+  `std::string_view` with the same methods), as a `str` local does.

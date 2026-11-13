@@ -132,9 +132,9 @@ check "the app creates the config folder and serves on a first launch" '[[ -S "$
 wait "$fresh_pid"
 
 echo "== the app"
-E2E_MASTER="$MASTER" python3 -I - "$root/scripts/serve-e2e.js" "$tmp/serve-e2e.js" <<'PY'
+E2E_MASTER="$MASTER" E2E_TMP="$tmp" python3 -I - "$root/scripts/serve-e2e.js" "$tmp/serve-e2e.js" <<'PY'
 import os, sys
-src = open(sys.argv[1]).read().replace("@@MASTER@@", os.environ["E2E_MASTER"])
+src = open(sys.argv[1]).read().replace("@@MASTER@@", os.environ["E2E_MASTER"]).replace("@@TMP@@", os.environ["E2E_TMP"])
 open(sys.argv[2], "w").write(src)
 PY
 FLINT_GUI_E2E="$tmp/serve-e2e.js" "${app[@]}" >"$tmp/app.log" 2>&1 &
@@ -595,6 +595,11 @@ for what in "the approval window says copy files with the direction, the host an
   check "$what" 'grep -q "ok   $what" "$tmp/app.log" && ! grep -q "FAIL $what" "$tmp/app.log"'
 done
 check "the socket file is removed when the app quits" '[[ ! -e "$sock" ]]'
+# Milestone 39 (D-094): the log lives in this machine's activity file, never in the vault.
+act_files=("$FLINT_CONFIG_DIR"/activity/*.db)
+check "the activity log is a file of this machine's, in the config folder" '[[ ${#act_files[@]} -eq 1 && -s "${act_files[0]}" ]]'
+check "the activity folder is owner-only (0700) and its file 0600" '[[ "$(file_mode "$FLINT_CONFIG_DIR/activity")" == "700" && "$(file_mode "${act_files[0]}")" == "600" ]]'
+check "the activity file and its backup are encrypted" '! grep -qa "long-cmd-end" "${act_files[0]}" && [[ -s "$tmp/activity-backup.db" ]] && ! grep -qa "long-cmd-end" "$tmp/activity-backup.db" && ! grep -qa "SQLite format" "$tmp/activity-backup.db"'
 check "quitting Flint closed the tunnel it ran" '[[ "$(banner "$TP" 1)" == "closed" ]]'
 
 expect 5 "with the app gone, the CLI is on its own again: locked" "" -- host list

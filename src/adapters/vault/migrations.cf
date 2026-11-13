@@ -172,17 +172,30 @@ ALTER TABLE hosts ADD COLUMN type TEXT NOT NULL DEFAULT 'ssh';
 ALTER TABLE hosts ADD COLUMN domain TEXT NOT NULL DEFAULT '';
 ` })
 
+    // 009: the activity log leaves the vault (milestone 39, D-094) for this machine's
+    // activity file (activity.cf). Renamed, not dropped, so no row is lost before it
+    // is copied: `activity_attach` moves the rows and the retention, then drops the
+    // table.
+    list.push(Migration{ version: 9, name: "activity log moves out", sql: `
+ALTER TABLE activity RENAME TO activity_moving;
+` })
+
     return list
 }
 
-// Brings the open database up to the latest migration, one transaction per step.
+// Brings the open vault up to the latest migration, one transaction per step.
 fn (self: CipherDb) migrate() -> void! {
+    return self.migrate_list(vault_migrations(), "vault")
+}
+
+// Brings the open database up to the last of `list` (the vault's, or the activity
+// file's, milestone 39); `what` names it in the error for a newer schema.
+fn (self: CipherDb) migrate_list(list: []Migration, what: str) -> void! {
     // Bootstrap: the ledger itself is not a migration.
     try self.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
     current := try self.schema_version()
-    list := vault_migrations()
     if current > list[list.len() - 1].version {
-        return error("unsupported: this vault was written by a newer Flint (schema {current})")
+        return error("unsupported: this {what} was written by a newer Flint (schema {current})")
     }
     for m in list {
         if m.version > current {

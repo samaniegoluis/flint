@@ -27,12 +27,25 @@ that id and random group ids). Nothing from inside a vault is ever written there
 change is being written, SQLite keeps a rollback journal next to the file, encrypted as
 well, and deletes it when the change commits.
 
+## The activity file
+
+The [activity log](/reference/security-model/#approving-callers) is not in the vault. Each
+machine keeps its own, in a second SQLCipher file in the config folder:
+`activity/<vault id>.db`, the folder owner-only (0700) and the file 0600. A vault that
+syncs, through a cloud folder or later a remote vault, never carries it, and the log is
+not rewritten on another machine. The file has its own random salt in its first 16 bytes
+and is encrypted with its own key, derived from the vault's master key (below), so it
+opens only while its vault is unlocked. **Back up activity…** copies it as it is, still
+encrypted. A file the key no longer opens is kept beside it as `<id>.db.unreadable`
+and a new log begins.
+
 ## Keys
 
 ```text
 master key  = Argon2id(master password, salt)      ops 3, memory 256 MiB
-page key    = crypto_kdf(master key, 1, "flintvlt")
-secrets key = crypto_kdf(master key, 2, "flintvlt")
+page key     = crypto_kdf(master key, 1, "flintvlt")
+secrets key  = crypto_kdf(master key, 2, "flintvlt")
+activity key = crypto_kdf(master key, 3, "flintvlt")      the activity file's page key
 ```
 
 - **Argon2id** and **crypto_kdf** come from [libsodium](https://libsodium.org). The
@@ -61,8 +74,9 @@ own transaction; a vault from a newer Flint is refused rather than downgraded.
 | 6 | `activity.command_cut`: how many bytes of a command past 16 KB were cut (entries from before were cut at 160 characters and say 0). The log's retention in days is the `meta` row `activity_retention_days` (absent: 90) |
 | 7 | `tunnels`: local forwards saved in a host (name, local port, destination host and port, open on connect), removed with their host; a name is unique in its host, whatever its case |
 | 8 | `hosts.type` (`ssh` for every host saved before, or `rdp`) and `hosts.domain` (an RDP host's Windows domain). An RDP server's certificate is kept in `known_hosts` under `rdp://<name>:<port>`, beside SSH host keys |
+| 9 | The activity log leaves the vault: `activity` is renamed `activity_moving`, and at the same unlock its rows (with their ids) and the `meta` row `activity_retention_days` are copied into this machine's [activity file](#the-activity-file), then dropped from the vault. A move cut short is finished at the next unlock, with no duplicate |
 
-A vault that has been opened by a Flint with migration 8 is refused by older builds.
+A vault that has been opened by a Flint with migration 9 is refused by older builds.
 
 ## The keychain
 

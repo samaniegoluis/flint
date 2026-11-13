@@ -205,7 +205,7 @@ fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut st
 // a cached key (`vault lock`, `vault forget`).
 fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
     c := try new_sodium()
-    mut store := new_locked_vault_store()
+    mut store := new_locked_vault_store(flint_config_dir() + "/activity")
     verb := p.positional(1)
     removes_key := p.positional(0) == "vault" && (verb == "lock" || verb == "forget")
     kc := new_os_keychain(removes_key && os.getenv("FLINT_KEYCHAIN") != "off")

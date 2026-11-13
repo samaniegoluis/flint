@@ -11,6 +11,13 @@ type FakeTokenStore struct {
     retention: i64
 }
 
+// Fails for a path naming "unwritable", as a full disk would.
+fn (self: FakeTokenStore) activity_backup(dest: str) -> void! {
+    if dest.contains("unwritable") {
+        return error(coded(ERR_IO, "cannot write {dest}"))
+    }
+}
+
 fn new_fake_token_store() -> FakeTokenStore {
     return FakeTokenStore{ tokens: [], activity: [], next_id: 1, retention: -1 }
 }
@@ -233,4 +240,15 @@ test "retention is set per vault, counted before and pruned at once" {
     assert_eq(try prune_activity(mut tokens, 426 * 86400), 1)
     set_activity_retention_days(mut tokens, 45, now) or { refused += 1 }
     assert_eq(refused, 2)
+}
+
+test "an activity backup goes to an absolute path, and its failure is reported" {
+    t := new_fake_token_store()
+    try backup_activity(t, "/tmp/flint-activity-backup.db")
+    mut code := ""
+    backup_activity(t, "relative.db") or err { code = error_code_of("{err.message()}") }
+    assert_eq(code, ERR_INVALID)
+    code = ""
+    backup_activity(t, "/unwritable/a.db") or err { code = error_code_of("{err.message()}") }
+    assert_eq(code, ERR_IO)
 }

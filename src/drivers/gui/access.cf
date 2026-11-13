@@ -272,3 +272,18 @@ fn rpc_activity_retention_set(params: str, st: GuiState, store: LockedVaultStore
     app.emit("activity:added", ActivityAdded{ outcome: "" })
     return json.stringify(RetentionSet{ days: req.days, label: retention_label(req.days), removed: removed })
 }
+
+type ActivityBackupReq struct {
+    path: str `json:"path"`
+}
+
+// Settings → Activity → Back up activity… (milestone 39): the path the save dialog
+// returned; the file is copied still encrypted.
+fn rpc_activity_backup(params: str, st: GuiState, store: LockedVaultStore) -> str! {
+    req := try parse_req[ActivityBackupReq](params)
+    st.hold()
+    defer st.release()
+    try st.require_unlocked()
+    try backup_activity(store, req.path)
+    return ok_json()
+}

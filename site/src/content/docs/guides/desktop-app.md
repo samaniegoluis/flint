@@ -367,9 +367,11 @@ Settings belong to this machine, not to the vault, and save as you change them.
   more**. Allowed reads are not recorded; refused ones are. Click an entry, or press
   <kbd>Enter</kbd> on it, for its detail: the exact time with seconds, the caller, how it
   was allowed, the host and the whole command, with **Copy**. **Keep** sets how long the
-  vault keeps entries: 30 days, 90 days (the default), 1 year or no limit. A shorter
-  choice that removes entries says how many and asks first. This setting is in the vault,
-  not on this machine, and only this window changes it.
+  log keeps entries: 30 days, 90 days (the default), 1 year or no limit. A shorter
+  choice that removes entries says how many and asks first. The log and this setting
+  are this computer's: kept encrypted in Flint's config folder, never in the vault, so
+  they never sync. Only this window changes the setting. **Back up
+  activity…** saves a copy of the log's file, still encrypted, where you choose.
 - **About**: the version this build was made from (also at the right of the status bar,
   which opens this section) and the libraries linked into it
   (libssh, libsodium, SQLite with SQLCipher, FreeRDP). What changed in each version is

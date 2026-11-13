@@ -14,11 +14,14 @@ type LockedVaultStore struct {
     cell: shared[cpp::flint_vault::VaultCell]
 }
 
-fn new_locked_vault_store() -> LockedVaultStore {
+// `act_dir`: where this machine's activity files live (milestone 39), the config
+// folder's `activity`.
+fn new_locked_vault_store(act_dir: str) -> LockedVaultStore {
     mut s := LockedVaultStore{}
     // CFIRE-UPSTREAM: CF-026
     cpp {
         s.cell = std::make_shared<flint_vault::VaultCell>();
+        s.cell->act_dir = act_dir;
     }
     return s
 }
@@ -30,6 +33,9 @@ fn (self: LockedVaultStore) enter() -> SqlVaultStore {
     cpp {
         self.cell->mtx.lock();
         inner.handle = self.cell->handle;
+        inner.act_handle = self.cell->act_handle;
+        inner.act_path = self.cell->act_path;
+        inner.act_dir = self.cell->act_dir;
     }
     return inner
 }
@@ -46,6 +52,8 @@ fn (self: LockedVaultStore) leave_with(inner: SqlVaultStore) {
     // CFIRE-UPSTREAM: CF-026
     cpp {
         self.cell->handle = inner.handle;
+        self.cell->act_handle = inner.act_handle;
+        self.cell->act_path = inner.act_path;
         self.cell->mtx.unlock();
     }
 }
@@ -281,4 +289,17 @@ fn (self: LockedVaultStore) set_activity_retention(days: i64) -> void! {
     inner := self.enter()
     defer self.leave()
     return inner.set_activity_retention(days)
+}
+
+fn (mut self: LockedVaultStore) activity_attach(vault_id: str, key: []byte, new_salt: []byte) -> void! {
+    mut inner := self.enter()
+    defer self.leave_with(inner)
+    return inner.activity_attach(vault_id, key, new_salt)
+}
+
+// Holds the mutex for the copy, so no write lands in the middle of it.
+fn (self: LockedVaultStore) activity_backup(dest: str) -> void! {
+    inner := self.enter()
+    defer self.leave()
+    return inner.activity_backup(dest)
 }

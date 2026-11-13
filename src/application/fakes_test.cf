@@ -144,10 +144,13 @@ type FakeStore struct {
     snap_known: []KnownHost
     tunnels: []Tunnel
     snap_tunnels: []Tunnel
+    // Milestone 39: the vault id and key the last activity_attach was given.
+    act_id: str
+    act_key: []byte
 }
 
 fn new_fake_store() -> FakeStore {
-    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [] }
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [] }
 }
 
 fn (self: FakeStore) vault_file_exists(path: str) -> bool {
@@ -185,6 +188,16 @@ fn (mut self: FakeStore) vault_attach(path: str, page_key: []byte, salt: []byte)
 
 fn (mut self: FakeStore) vault_detach() {
     self.attached = false
+    self.act_id = ""
+}
+
+fn (mut self: FakeStore) activity_attach(vault_id: str, key: []byte, new_salt: []byte) -> void! {
+    try self.need_attached()
+    if key.len() != 32 || new_salt.len() != 16 {
+        return error("internal: bad activity key or salt")
+    }
+    self.act_id = vault_id
+    self.act_key = key
 }
 
 fn (self: FakeStore) need_attached() -> void! {
