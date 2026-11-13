@@ -1,0 +1,41 @@
+package config
+
+// The `RemoteLinkStore` port (milestone 43): `remotes.json` in the config folder, the
+// vaults this machine syncs with a server. Each entry holds the vault's file path and
+// id, the server's URL, the version last merged and a hash of the encrypted file:
+// nothing from inside a vault (Principle 5), and never the token, which lives in the
+// OS keychain (Principle 6).
+
+import "core:fs"
+import "core:json"
+import "../../domain"
+
+type RemotesFile struct {
+    version: i64          `json:"version"`
+    vaults:  []RemoteLink `json:"vaults"`
+}
+
+type JsonRemoteLinkStore struct {
+    path: str
+}
+
+fn new_json_remote_link_store(dir: str) -> JsonRemoteLinkStore {
+    return JsonRemoteLinkStore{ path: dir + "/remotes.json" }
+}
+
+fn (self: JsonRemoteLinkStore) links_load() -> []RemoteLink! {
+    if !fs.exists(self.path) {
+        return []
+    }
+    text := fs.read_text(self.path) or err {
+        return error(coded(ERR_IO, "cannot read {self.path}"))
+    }
+    f := json.parse[RemotesFile](text) or err {
+        return error(coded(ERR_INVALID, "{self.path} is not a remotes file"))
+    }
+    return f.vaults
+}
+
+fn (self: JsonRemoteLinkStore) links_save(list: []RemoteLink) -> void! {
+    try write_file_atomic(self.path, json.stringify(RemotesFile{ version: 1, vaults: list }))
+}

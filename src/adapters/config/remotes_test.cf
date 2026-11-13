@@ -1,0 +1,24 @@
+package config
+
+import "core:fs"
+import "core:crypto/sha256"
+import "../../domain"
+
+test "remotes.json keeps each connected vault's link, and nothing else" {
+    dir := "/tmp/flint-remotes-" + sha256.random_hex(8)
+    defer { _ := fs.remove(dir) }
+    s := new_json_remote_link_store(dir)
+    assert_eq((try s.links_load()).len(), usize(0))
+    l := RemoteLink{ path: "/v/Lab.flint", vault_id: "00112233445566778899aabbccddeeff", url: "https://vault.example.com", version: 7, synced_hash: "ab", last_sync: 5, last_attempt: 6, last_error: "" }
+    try s.links_save([l])
+    got := try s.links_load()
+    assert_eq(got.len(), usize(1))
+    assert_eq(got[0].url, "https://vault.example.com")
+    assert_eq(got[0].version, i64(7))
+    text := try fs.read_text(dir + "/remotes.json")
+    assert(!text.contains("token"))
+    try fs.write_text(dir + "/remotes.json", "nope")
+    mut msg := ""
+    s.links_load() or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid"))
+}

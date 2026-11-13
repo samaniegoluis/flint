@@ -207,3 +207,51 @@ test "a vault at schema 10 gains stamps of 0 and an empty tombstone table" {
     store.vault_detach()
     try fs.remove(fs.dirname(path))
 }
+
+test "a downloaded copy opens with the open vault's own key, through a private file" {
+    path := temp_vault_path("v.flint")
+    work := fs.dirname(path) + "/work"
+    try fs.mkdir_all(work)
+    mut store := new_sql_vault_store()
+    store.work_dir = work
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try store.host_put(marker_host())
+    try store.vault_set_meta(VAULT_META_ID, "00112233445566778899aabbccddeeff")
+    data := try store.vault_file_bytes(path)
+    assert_eq(try vault_blob_salt(data), test_salt_bytes())
+    got := try store.vault_blob_records(data, [], [])
+    assert_eq(got.records.hosts.len(), 1)
+    assert_eq(got.vault_id, "00112233445566778899aabbccddeeff")
+    assert_eq((try fs.list_dir(work)).len(), 0)
+    // Another key: refused, nothing left behind, the vault still open.
+    mut msg := ""
+    store.vault_blob_records(data, test_key(8), test_salt_bytes()) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_WRONG_PASSWORD)
+    assert_eq((try fs.list_dir(work)).len(), 0)
+    assert_eq((try store.hosts_all()).len(), 1)
+    // Detached, the store holds no key to open a copy with.
+    store.vault_detach()
+    msg = ""
+    store.vault_blob_records(data, [], []) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_LOCKED)
+    try fs.remove(fs.dirname(path))
+}
+
+test "a vault downloaded as a new file is written 0600 and opens; a taken path is refused" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try store.host_put(marker_host())
+    data := try store.vault_file_bytes(path)
+    store.vault_detach()
+    next := fs.dirname(path) + "/down.flint"
+    try store.vault_write_new(next, data)
+    assert(!fs.exists(next + ".download"))
+    try store.vault_attach(next, test_key(7), test_salt_bytes())
+    assert_eq((try store.hosts_all()).len(), 1)
+    store.vault_detach()
+    mut msg := ""
+    store.vault_write_new(next, data) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_EXISTS)
+    try fs.remove(fs.dirname(path))
+}

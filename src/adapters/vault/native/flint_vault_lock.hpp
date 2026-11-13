@@ -5,9 +5,11 @@
 // GUI's UI thread and its session workers use one connection in turn. cfire has no
 // mutex type (CF-026) and no top-level cpp block for this struct (CF-031).
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <vector>
 
 struct sqlite3;
 
@@ -24,6 +26,9 @@ struct VaultCell {
     // Milestone 40: the connections' change counts at a re-key's prepare.
     int64_t rekey_mark = -1;
     int64_t act_rekey_mark = -1;
+    // Milestone 43: the key and salt the connection was opened with (store.cf).
+    std::vector<std::byte> open_key;
+    std::vector<std::byte> open_salt;
 };
 
 } // namespace flint_vault

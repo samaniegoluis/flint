@@ -244,6 +244,30 @@ test "an upload over a version not merged gets 409 with the newest version" {
     assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 5, 5).body, "b")
 }
 
+test "a GET naming the newest version gets 304 with no body; an older one gets the file" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "b"), 2, 2)
+    mut same := rq("GET", "", "")
+    same.if_none_match = "\"2\""
+    r := serve_vault_request(crypto, mut store, mut gate, cfg, same, 3, 3)
+    assert_eq(r.status, i32(304))
+    assert_eq(r.body, "")
+    assert_eq(r.version, i64(2))
+    mut old := rq("GET", "", "")
+    old.if_none_match = "\"1\""
+    o := serve_vault_request(crypto, mut store, mut gate, cfg, old, 4, 4)
+    assert_eq(o.status, i32(200))
+    assert_eq(o.body, "b")
+    // Still behind the token.
+    mut bad := same
+    bad.authorization = "Bearer nope"
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, bad, 5, 5).status, i32(401))
+}
+
 test "an upload of another vault is refused with 412" {
     crypto := TestCrypto{ seed: 1 }
     cfg := test_config()

@@ -85,6 +85,15 @@ type VaultStore interface {
     // Opens a conflict copy of a vault to merge, read through a private copy so the
     // file at `path` is never changed; `vault_detach` closes and removes it.
     vault_attach_copy(path: str, page_key: []byte, salt: []byte) -> void!
+    // Milestone 43 (the remote vault): the vault file at `path` as it is on disk, read
+    // while no write is under way, to upload or to hash.
+    vault_file_bytes(path: str) -> []byte!
+    // Opens `data`, a copy of the vault downloaded from its server, through a private
+    // file of its own, with `page_key` and `salt` (empty: the open vault's own key),
+    // and reads its records and id; `wrong_password` when the key does not open it.
+    vault_blob_records(data: []byte, page_key: []byte, salt: []byte) -> BlobRecords!
+    // Writes `data` as a new vault file at `path` (0600); `exists` when a file is there.
+    vault_write_new(path: str, data: []byte) -> void!
 }
 
 // Tokens, in the open vault (adapters/vault, migration 004, milestone 12b), and the
@@ -115,6 +124,26 @@ type TunnelStore interface {
     tunnels_all() -> []Tunnel!
     tunnel_put(t: Tunnel) -> void!
     tunnel_drop(id: str) -> void!
+}
+
+// A remote vault server, protocol /v1 (adapters/vaultremote, milestone 43). `url` is
+// the vault resource (remote_vault_url). Every request has a deadline (Principle 8)
+// and carries only the token, a version, the vault id and the encrypted file
+// (Principle 13). Errors: `network` or `timeout` (not reached), `auth` (the token
+// refused, or the client locked out), `conflict` (the server holds another vault),
+// `refused` (any other refusal: rate limit, size cap, server error).
+type VaultRemote interface {
+    // `known_version` above 0 asks for the file only if the server has another.
+    remote_get(url: str, token: str, known_version: i64) -> RemoteVault!
+    // `base_version` 0 is the first upload (`If-None-Match: *`).
+    remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored!
+}
+
+// What this machine remembers about each connected vault (adapters/config,
+// `remotes.json`, milestone 43).
+type RemoteLinkStore interface {
+    links_load() -> []RemoteLink!
+    links_save(list: []RemoteLink) -> void!
 }
 
 // The OS keychain (adapters/keychain). Holds one master key per vault, by account.

@@ -153,7 +153,7 @@ fn (mut self: SqlVaultStore) vault_attach_copy(path: str, page_key: []byte, salt
         self.vault_detach()
         return error("{err.message()}")
     }
-    self.adopt(db)
+    self.adopt(db, page_key, salt)
     self.conn().migrate() or err {
         self.vault_detach()
         return error("{err.message()}")
@@ -167,4 +167,87 @@ fn (mut self: SqlVaultStore) drop_copy() {
         _ := fs.remove(self.copy_path + "-journal")
         self.copy_path = ""
     }
+}
+
+// ---- The remote vault (milestone 43) --------------------------------------------
+
+// Where a downloaded copy is written to be opened: the copy store's folder, or the
+// config folder the activity files live under.
+fn (self: SqlVaultStore) scratch_dir() -> str! {
+    if self.work_dir.len() > 0 {
+        return self.work_dir
+    }
+    if self.act_dir.len() > 0 {
+        return fs.dirname(self.act_dir)
+    }
+    return error(coded(ERR_INTERNAL, "no folder for a downloaded copy"))
+}
+
+// The vault file as it is on disk. Through LockedVaultStore it is read holding the
+// store's mutex, so never in the middle of a transaction.
+fn (self: SqlVaultStore) vault_file_bytes(path: str) -> []byte! {
+    return fs.read_bytes(path) or err {
+        return error(coded(ERR_IO, "cannot read {path}"))
+    }
+}
+
+// Opens a copy downloaded from the vault's server through a private file (0600,
+// removed after), with `page_key` and `salt`, or with the open vault's own when they
+// are empty, and reads its records and id. The open vault is not touched.
+fn (self: SqlVaultStore) vault_blob_records(data: []byte, page_key: []byte, salt: []byte) -> BlobRecords! {
+    mut key := page_key
+    mut s := salt
+    if key.len() == 0 {
+        key = self.open_key
+        s = self.open_salt
+    }
+    if key.len() == 0 {
+        return error(coded(ERR_LOCKED, "no vault is unlocked"))
+    }
+    dir := try self.scratch_dir()
+    fs.mkdir_all(dir) or err {
+        return error(coded(ERR_IO, "cannot create {dir}"))
+    }
+    work := dir + "/remote-" + hex.encode(sha256.random_bytes(8)) + ".flint"
+    defer {
+        _ := fs.remove(work)
+        _ := fs.remove(work + "-journal")
+    }
+    fs.write_bytes(work, data) or err {
+        return error(coded(ERR_IO, "cannot write a private copy in {dir}"))
+    }
+    try set_mode_and_sync(work, 384, "")
+    db := try open_cipher_db(work, key, s, false)
+    mut blob := new_sql_vault_store()
+    blob.adopt(db, key, s)
+    defer blob.vault_detach()
+    try blob.conn().migrate()
+    records := try blob.vault_records()
+    id := try blob.vault_get_meta(VAULT_META_ID)
+    return BlobRecords{ vault_id: id, records: records }
+}
+
+// Writes a vault downloaded from its server as a new file at `path` (0600).
+fn (self: SqlVaultStore) vault_write_new(path: str, data: []byte) -> void! {
+    if fs.exists(path) {
+        return error(coded(ERR_EXISTS, "a file already exists at {path}"))
+    }
+    dir := fs.dirname(path)
+    if dir.len() > 0 && !fs.is_dir(dir) {
+        return error(coded(ERR_NOT_FOUND, "no folder {dir}"))
+    }
+    tmp := path + ".download"
+    fs.write_bytes(tmp, data) or err {
+        _ := fs.remove(tmp)
+        return error(coded(ERR_IO, "cannot write {path}"))
+    }
+    set_mode_and_sync(tmp, 384, "") or err {
+        _ := fs.remove(tmp)
+        return error("{err.message()}")
+    }
+    fs.rename(tmp, path) or err {
+        _ := fs.remove(tmp)
+        return error(coded(ERR_IO, "cannot write {path}"))
+    }
+    _ := sync_folder(dir)
 }

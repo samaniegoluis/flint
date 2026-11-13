@@ -24,13 +24,19 @@ type SqlVaultStore struct {
     // copy itself while it is open (removed at detach).
     work_dir: str
     copy_path: str
+    // Milestone 43: the page key and salt the open connection was opened with, so a
+    // copy downloaded from the vault's server opens with them (vault_blob_records).
+    // SQLCipher holds the same key for as long as the connection is open; wiped at
+    // detach.
+    open_key: []byte
+    open_salt: []byte
 }
 
 // `act_dir` is where activity files live: `<config folder>/activity` in the app and
 // the CLI (`new_locked_vault_store`), set by a test that needs one. Empty: the store
 // has none, and `activity_attach` fails.
 fn new_sql_vault_store() -> SqlVaultStore {
-    return SqlVaultStore{ handle: none, act_handle: none, act_path: "", act_dir: "", rekey_mark: -1, act_rekey_mark: -1, work_dir: "", copy_path: "" }
+    return SqlVaultStore{ handle: none, act_handle: none, act_path: "", act_dir: "", rekey_mark: -1, act_rekey_mark: -1, work_dir: "", copy_path: "", open_key: [], open_salt: [] }
 }
 
 // A store that opens conflict copies to merge (`vault_attach_copy`, milestone 41),
@@ -46,8 +52,26 @@ fn (self: SqlVaultStore) conn() -> CipherDb {
     return CipherDb{ handle: self.handle }
 }
 
-fn (mut self: SqlVaultStore) adopt(db: CipherDb) {
+fn (mut self: SqlVaultStore) adopt(db: CipherDb, key: []byte, salt: []byte) {
     self.handle = db.handle
+    wipe_bytes(mut self.open_key)
+    self.open_key = copy_of_bytes(key)
+    self.open_salt = copy_of_bytes(salt)
+}
+
+fn copy_of_bytes(b: []byte) -> []byte {
+    mut c: []byte = []
+    for x in b {
+        c.push(x)
+    }
+    return c
+}
+
+fn wipe_bytes(mut b: []byte) {
+    for i in 0..b.len() {
+        b[i] = byte(0)
+    }
+    b.clear()
 }
 
 fn (self: SqlVaultStore) vault_file_exists(path: str) -> bool {
@@ -85,7 +109,7 @@ fn (mut self: SqlVaultStore) vault_create(path: str, page_key: []byte, salt: []b
         return error(coded(ERR_NOT_FOUND, "the folder {dir} does not exist"))
     }
     self.vault_detach()
-    self.adopt(try open_cipher_db(path, page_key, salt, true))
+    self.adopt(try open_cipher_db(path, page_key, salt, true), page_key, salt)
     self.conn().migrate() or err {
         self.vault_detach()
         _ := fs.remove(path)
@@ -103,7 +127,7 @@ fn (mut self: SqlVaultStore) vault_attach(path: str, page_key: []byte, salt: []b
     if fs.exists(path + REKEY_SUFFIX) {
         _ := fs.remove(path + REKEY_SUFFIX)
     }
-    self.adopt(try open_cipher_db(path, page_key, salt, false))
+    self.adopt(try open_cipher_db(path, page_key, salt, false), page_key, salt)
     self.conn().migrate() or err {
         self.vault_detach()
         return error("{err.message()}")
@@ -117,6 +141,8 @@ fn (mut self: SqlVaultStore) vault_detach() {
         db.close_db()
     }
     self.handle = none
+    wipe_bytes(mut self.open_key)
+    self.open_salt.clear()
     self.drop_copy()
 }
 

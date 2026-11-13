@@ -235,7 +235,7 @@ fn (mut self: SqlVaultStore) vault_rekey_commit(path: str, page_key: []byte, sal
     mut old := self.conn()
     old.close_db()
     self.handle = none
-    self.adopt(try open_cipher_db(path, page_key, salt, false))
+    self.adopt(try open_cipher_db(path, page_key, salt, false), page_key, salt)
 }
 
 fn (mut self: SqlVaultStore) activity_rekey_commit(key: []byte) -> void! {

@@ -31,7 +31,7 @@ ARG CFIRE_COMMIT=c5b1d4bd09f7b1b07a3f855a095389f5cd3df332
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         clang make git curl ca-certificates pkg-config \
-        libssh-dev libsodium-dev libsqlcipher-dev libsimdjson-dev libsecret-1-dev \
+        libssh-dev libcurl4-openssl-dev libsodium-dev libsqlcipher-dev libsimdjson-dev libsecret-1-dev \
         libwebkit2gtk-4.1-dev libgtk-3-dev \
         freerdp3-dev \
         openssh-server openssh-client xvfb xauth \

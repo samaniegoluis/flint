@@ -1,0 +1,193 @@
+package domain
+
+// The remote vault, the client's side (milestone 43, D-050, D-092, D-097): which
+// server URLs a vault may sync with, what this machine remembers about a vault's
+// link to its server, and whether a merge left anything the server lacks.
+
+import "core:str"
+
+// The one resource of protocol v1 (the server's SERVER_VAULT_PATH).
+REMOTE_VAULT_PATH: str = "/v1/vault"
+
+// Seconds between checks for another machine's changes while the app holds the
+// vault unlocked (Settings `sync_interval`); 0 checks only at unlock, after a change,
+// when the window comes back and on demand (D-098).
+SYNC_INTERVALS: []i64 = [0, 60, 300, 900]
+SYNC_INTERVAL_DEFAULT: i64 = 60
+
+// What this machine remembers about one vault's link to its server, in the config
+// folder (`remotes.json`, D-030). Nothing from inside the vault: its path, its id,
+// the server's URL, the version last merged and a hash of the encrypted file as it
+// was then. The token is in the OS keychain, never here.
+type RemoteLink struct {
+    path:        str `json:"path"`
+    vault_id:    str `json:"vault_id"`
+    url:         str `json:"url"`
+    // The server's version this copy last merged or uploaded; 0 before the first.
+    version:     i64 `json:"version"`
+    // BLAKE2b-256 (hex) of the vault file right after the last sync: a file that
+    // hashes otherwise holds changes the server does not have yet.
+    synced_hash: str `json:"synced_hash"`
+    // Unix milliseconds of the last sync that reached the server, and of the last
+    // attempt; `last_error` is the last attempt's error ("" when it worked).
+    last_sync:    i64 `json:"last_sync"`
+    last_attempt: i64 `json:"last_attempt"`
+    last_error:   str `json:"last_error"`
+}
+
+// What a GET of the vault brought back. `found` is false while the server holds no
+// vault yet (404 empty); `changed` is false when it still holds `known_version` (304),
+// and then `data` is empty.
+type RemoteVault struct {
+    found:    bool
+    changed:  bool
+    version:  i64
+    vault_id: str
+    data:     []byte
+}
+
+// What an upload brought back: `stored` with the new `version`, or not stored because
+// another machine uploaded first (409), `version` then being the server's newest.
+type RemoteStored struct {
+    stored:  bool
+    version: i64
+}
+
+// A blob downloaded from the server, opened: its records and the vault id in it.
+type BlobRecords struct {
+    vault_id: str
+    records:  VaultRecords
+}
+
+// Whether `host` (without its port) is this machine, the one place plain http may go.
+fn is_loopback_host(host: str) -> bool {
+    h := str.to_lower(host)
+    if h == "localhost" || h == "[::1]" {
+        return true
+    }
+    // 127.0.0.0/8, written as four numbers.
+    if !h.starts_with("127.") {
+        return false
+    }
+    mut dots := 0
+    for b in h.bytes() {
+        c := u8(b)
+        if c == 46 {
+            dots += 1
+        } else if !is_digit_byte(c) {
+            return false
+        }
+    }
+    return dots == 3
+}
+
+// The server's base URL, cleaned: `https://` (or `http://` to this machine only,
+// Principle 14), no path but an optional `/v1/vault` (dropped), no query, no user
+// in it, no trailing slash.
+fn check_remote_url(raw: str) -> str! {
+    mut u := str.trim(raw)
+    mut rest := ""
+    mut secure := false
+    if str.to_lower(u).starts_with("https://") {
+        rest = u.substr(8)
+        secure = true
+    } else if str.to_lower(u).starts_with("http://") {
+        rest = u.substr(7)
+    } else {
+        return error(coded(ERR_INVALID, "the server's URL must start with https://"))
+    }
+    if rest.contains("?") || rest.contains("#") {
+        return error(coded(ERR_INVALID, "the server's URL takes no query or fragment"))
+    }
+    for rest.ends_with("/") {
+        rest = rest.substr(0, rest.len() - 1)
+    }
+    if rest.ends_with(REMOTE_VAULT_PATH) {
+        rest = rest.substr(0, rest.len() - REMOTE_VAULT_PATH.len())
+    }
+    for rest.ends_with("/") {
+        rest = rest.substr(0, rest.len() - 1)
+    }
+    mut authority := rest
+    slash := rest.index_of("/")
+    if slash >= 0 {
+        authority = rest.substr(0, usize(slash))
+    }
+    if authority.len() == 0 {
+        return error(coded(ERR_INVALID, "the server's URL names no host"))
+    }
+    if authority.contains("@") {
+        return error(coded(ERR_INVALID, "put the token in the keychain, not in the URL"))
+    }
+    if rest.contains(" ") {
+        return error(coded(ERR_INVALID, "the server's URL has a space in it"))
+    }
+    mut host := authority
+    if host.starts_with("[") {
+        close := host.index_of("]")
+        if close > 0 {
+            host = host.substr(0, usize(close) + 1)
+        }
+    } else {
+        colon := host.index_of(":")
+        if colon >= 0 {
+            host = host.substr(0, usize(colon))
+        }
+    }
+    if !secure && !is_loopback_host(host) {
+        return error(coded(ERR_INVALID, "plain http:// is allowed only to this machine (localhost); use https:// for {host}"))
+    }
+    if secure {
+        return "https://" + rest
+    }
+    return "http://" + rest
+}
+
+// The URL of the vault resource on the server at `base` (check_remote_url's).
+fn remote_vault_url(base: str) -> str {
+    return base + REMOTE_VAULT_PATH
+}
+
+// The Argon2id salt of a vault file: its first 16 bytes, where SQLCipher keeps it.
+fn vault_blob_salt(data: []byte) -> []byte! {
+    if data.len() < VAULT_SALT_LEN + 1 {
+        return error(coded(ERR_INVALID, "the server's copy is not a Flint vault"))
+    }
+    mut salt: []byte = []
+    for i in 0..VAULT_SALT_LEN {
+        salt.push(data[i])
+    }
+    return salt
+}
+
+// Whether `merged` holds anything `theirs` lacks: a record added, changed or removed.
+// A merge that only took the server's changes leaves nothing to upload, so two
+// machines in step never hand each other empty versions.
+fn merge_adds_to(theirs: VaultRecords, merged: VaultRecords) -> bool {
+    r := merge_report(theirs, merged, [])
+    return r.added + r.updated + r.removed > 0
+}
+
+// The link for `path`, by index; -1 when the vault is not connected here.
+fn find_remote_link(links: []RemoteLink, path: str) -> i64 {
+    for i, l in links {
+        if l.path == path {
+            return i64(i)
+        }
+    }
+    return -1
+}
+
+// The keychain account that holds a connected vault's server token.
+fn remote_token_account(vault_id: str) -> str {
+    return "remote-token:" + vault_id
+}
+
+fn valid_sync_interval(seconds: i64) -> bool {
+    for s in SYNC_INTERVALS {
+        if s == seconds {
+            return true
+        }
+    }
+    return false
+}
