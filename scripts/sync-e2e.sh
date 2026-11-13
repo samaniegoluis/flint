@@ -78,6 +78,7 @@ check() {
   checks=$((checks + 1))
   if eval "$2"; then echo "ok    $1"; else failures=$((failures + 1)); echo "FAIL  $1"; fi
 }
+file_mode() { if [[ "$(uname -s)" == Darwin ]]; then stat -f '%Lp' "$1"; else stat -c '%a' "$1"; fi; }
 json_get() { python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(eval(sys.argv[1], {"d": d}))' "$1"; }
 aliases() { printf '%s\n' "$PW" | FLINT_CONFIG_DIR="$tmp/$1" no_tty "$flint" --json --vault "$2" host list --master-stdin | python3 -c 'import json,sys; print(" ".join(sorted(h["alias"] for h in json.load(sys.stdin))))'; }
 
@@ -106,7 +107,7 @@ check "uploaded as version 1" '[[ "$(echo "$out" | json_get "d[\"result\"] + str
 on a 4 "connecting again is refused" "$PW"$'\n'"$TOKEN"$'\n' -- --vault "$VA" vault connect "$url" --master-stdin --token-stdin
 on b 0 "download to a new file" "$PW"$'\n'"$TOKEN"$'\n' -- --json vault connect "$url" --to "$VB" --master-stdin --token-stdin
 check "downloaded version 1" '[[ "$(echo "$out" | json_get "d[\"result\"] + str(d[\"version\"])")" == "downloaded1" ]]'
-check "B's file is 0600" '[[ "$(stat -f %Lp "$VB" 2>/dev/null || stat -c %a "$VB")" == "600" ]]'
+check "B's file is 0600" '[[ "$(file_mode "$VB")" == "600" ]]'
 on b 20 "a taken path is refused" "$PW"$'\n'"$TOKEN"$'\n' -- vault connect "$url" --to "$VB" --master-stdin --token-stdin
 check "B has A's host" '[[ "$(aliases b "$VB")" == "web" ]]'
 on b 0 "B in step" "$PW"$'\n' -- --vault "$VB" vault sync --master-stdin
