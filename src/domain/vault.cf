@@ -22,6 +22,8 @@ VAULT_KDF_CONTEXT: str = "flintvlt"
 VAULT_SUBKEY_PAGE: u64 = 1
 VAULT_SUBKEY_SECRETS: u64 = 2
 VAULT_SUBKEY_ACTIVITY: u64 = 3
+// The `meta` key of the vault's stable id (migration 010, D-095).
+VAULT_META_ID: str = "vault_id"
 
 // ---- Entities ----------------------------------------------------------------
 //
@@ -91,6 +93,15 @@ type Catalog struct {
     creds: []Credential
 }
 
+// Every sealed secret of a vault, re-sealed under a new secrets key (milestone 40):
+// the hosts, keys and credentials with their secret fields; the other fields are not
+// read.
+type VaultSecrets struct {
+    hosts: []Host
+    keys: []SshKey
+    creds: []Credential
+}
+
 // What a private key reveals once parsed: safe to show.
 type KeyInfo struct {
     key_type: str
@@ -99,7 +110,7 @@ type KeyInfo struct {
 }
 
 // A vault this machine has opened. Kept in a local config file, outside the vault.
-// `id` is the vault's id (a hash of its salt, D-030), empty until the vault is next
+// `id` is the vault's id (D-030, kept in the vault from milestone 40, D-095), empty until the vault is next
 // unlocked: it is how a moved vault's stale entry is recognised and replaced.
 type RecentVault struct {
     path: str `json:"path"`

@@ -63,6 +63,19 @@ type VaultStore interface {
     // takes `new_salt`. Moves in, once, the log an older vault still holds.
     // `vault_detach` closes it with the vault.
     activity_attach(vault_id: str, key: []byte, new_salt: []byte) -> void!
+    // Milestone 40 (D-095): a new master password. `vault_rekey_prepare` writes a copy
+    // of the open vault under the new page key and salt, with `secrets` (every host,
+    // key and credential, re-sealed under the new secrets key) in place of the old
+    // ones; `activity_rekey_prepare` copies the activity file under its new key.
+    // Nothing changes until `vault_rekey_commit` puts the vault copy in place (the
+    // commit point) and opens it, then `activity_rekey_commit` does the same for the
+    // activity copy. A commit fails `conflict` when the vault changed since its
+    // prepare. `vault_rekey_abort` removes the copies a prepare left.
+    vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: VaultSecrets) -> void!
+    activity_rekey_prepare(key: []byte, new_salt: []byte) -> void!
+    vault_rekey_commit(path: str, page_key: []byte, salt: []byte) -> void!
+    activity_rekey_commit(key: []byte) -> void!
+    vault_rekey_abort(path: str)
 }
 
 // Tokens, in the open vault (adapters/vault, migration 004, milestone 12b), and the

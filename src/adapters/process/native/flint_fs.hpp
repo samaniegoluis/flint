@@ -164,6 +164,28 @@ inline int rename_path(const std::string& from, const std::string& to, std::stri
     return OK;
 }
 
+// Milestone 40: a re-keyed vault copy gets the vault's own permission bits.
+inline int chmod_path(const std::string& path, mode_t mode, std::string& err) {
+    if (::chmod(path.c_str(), mode) != 0) {
+        err = std::strerror(errno);
+        return map_errno(errno);
+    }
+    return OK;
+}
+
+// Flushes a folder, so a rename into it is on disk (milestone 40).
+inline int sync_dir(const std::string& path, std::string& err) {
+    int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        err = std::strerror(errno);
+        return map_errno(errno);
+    }
+    int rc = ::fsync(fd) == 0 ? OK : map_errno(errno);
+    if (rc != OK) err = std::strerror(errno);
+    ::close(fd);
+    return rc;
+}
+
 // A file, or an empty folder.
 inline int remove_path(const std::string& path, std::string& err) {
     struct stat st;

@@ -36,6 +36,8 @@ fn (self: LockedVaultStore) enter() -> SqlVaultStore {
         inner.act_handle = self.cell->act_handle;
         inner.act_path = self.cell->act_path;
         inner.act_dir = self.cell->act_dir;
+        inner.rekey_mark = self.cell->rekey_mark;
+        inner.act_rekey_mark = self.cell->act_rekey_mark;
     }
     return inner
 }
@@ -54,6 +56,8 @@ fn (self: LockedVaultStore) leave_with(inner: SqlVaultStore) {
         self.cell->handle = inner.handle;
         self.cell->act_handle = inner.act_handle;
         self.cell->act_path = inner.act_path;
+        self.cell->rekey_mark = inner.rekey_mark;
+        self.cell->act_rekey_mark = inner.act_rekey_mark;
         self.cell->mtx.unlock();
     }
 }
@@ -302,4 +306,36 @@ fn (self: LockedVaultStore) activity_backup(dest: str) -> void! {
     inner := self.enter()
     defer self.leave()
     return inner.activity_backup(dest)
+}
+
+// Milestone 40: a new master password (rekey.cf). Each step holds the mutex; a write
+// between prepare and commit makes the commit fail `conflict`.
+fn (mut self: LockedVaultStore) vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: VaultSecrets) -> void! {
+    mut inner := self.enter()
+    defer self.leave_with(inner)
+    return inner.vault_rekey_prepare(path, page_key, salt, secrets)
+}
+
+fn (mut self: LockedVaultStore) activity_rekey_prepare(key: []byte, new_salt: []byte) -> void! {
+    mut inner := self.enter()
+    defer self.leave_with(inner)
+    return inner.activity_rekey_prepare(key, new_salt)
+}
+
+fn (mut self: LockedVaultStore) vault_rekey_commit(path: str, page_key: []byte, salt: []byte) -> void! {
+    mut inner := self.enter()
+    defer self.leave_with(inner)
+    return inner.vault_rekey_commit(path, page_key, salt)
+}
+
+fn (mut self: LockedVaultStore) activity_rekey_commit(key: []byte) -> void! {
+    mut inner := self.enter()
+    defer self.leave_with(inner)
+    return inner.activity_rekey_commit(key)
+}
+
+fn (mut self: LockedVaultStore) vault_rekey_abort(path: str) {
+    mut inner := self.enter()
+    inner.vault_rekey_abort(path)
+    self.leave_with(inner)
 }

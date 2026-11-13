@@ -115,20 +115,44 @@ fn (mut self: SqlVaultStore) activity_attach(vault_id: str, key: []byte, new_sal
 
 // A file this key does not open (left by a vault that was replaced under the same
 // salt) is kept aside, never deleted, and a new log is started.
+//
+// A password change that stopped between its two renames (rekey.cf) left the
+// re-keyed copy, `<id>.db.new`, beside the old file: when the key opens the copy
+// and not the file, the copy takes its place. When the key opens the file, a copy
+// beside it is from a change that never reached the vault's rename, and goes.
 fn (self: SqlVaultStore) activity_open_or_restart(path: str, key: []byte, new_salt: []byte) -> CipherDb! {
+    pending := path + ACTIVITY_REKEY_SUFFIX
     db := self.activity_open(path, key, new_salt) or err {
         msg := "{err.message()}"
         if error_code_of(msg) != ERR_WRONG_PASSWORD {
             return error(msg)
         }
-        aside := path + ".unreadable"
-        _ := fs.remove(aside)
-        fs.rename(path, aside) or err2 {
-            return error(coded(ERR_IO, "cannot move {path} aside"))
+        if fs.exists(pending) {
+            salt := try self.vault_read_salt(pending)
+            mut probe := open_cipher_db(pending, key, salt, false) or {
+                return self.activity_set_aside(path, key, new_salt)
+            }
+            probe.close_db()
+            fs.rename(pending, path) or err3 {
+                return error(coded(ERR_IO, "cannot put {pending} in place"))
+            }
+            return self.activity_open(path, key, new_salt)
         }
-        return self.activity_open(path, key, new_salt)
+        return self.activity_set_aside(path, key, new_salt)
+    }
+    if fs.exists(pending) {
+        _ := fs.remove(pending)
     }
     return db
+}
+
+fn (self: SqlVaultStore) activity_set_aside(path: str, key: []byte, new_salt: []byte) -> CipherDb! {
+    aside := path + ".unreadable"
+    _ := fs.remove(aside)
+    fs.rename(path, aside) or err2 {
+        return error(coded(ERR_IO, "cannot move {path} aside"))
+    }
+    return self.activity_open(path, key, new_salt)
 }
 
 // Opens (or creates, 0600, with `new_salt`) the file at `path` and brings it up to

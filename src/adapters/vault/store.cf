@@ -16,13 +16,17 @@ type SqlVaultStore struct {
     act_handle: *mut cpp::sqlite3
     act_path: str
     act_dir: str
+    // Milestone 40 (rekey.cf): the connections' change counts when a re-keyed copy
+    // was prepared; a commit refuses when either moved since.
+    rekey_mark: i64
+    act_rekey_mark: i64
 }
 
 // `act_dir` is where activity files live: `<config folder>/activity` in the app and
 // the CLI (`new_locked_vault_store`), set by a test that needs one. Empty: the store
 // has none, and `activity_attach` fails.
 fn new_sql_vault_store() -> SqlVaultStore {
-    return SqlVaultStore{ handle: none, act_handle: none, act_path: "", act_dir: "" }
+    return SqlVaultStore{ handle: none, act_handle: none, act_path: "", act_dir: "", rekey_mark: -1, act_rekey_mark: -1 }
 }
 
 // A view of the open connection; it does not own the handle.
@@ -82,6 +86,11 @@ fn (mut self: SqlVaultStore) vault_attach(path: str, page_key: []byte, salt: []b
         return error(coded(ERR_NOT_FOUND, "no vault file at {path}"))
     }
     self.vault_detach()
+    // A re-keyed copy left by a password change that never reached its rename
+    // (rekey.cf): the vault itself is whole, the copy is of no use.
+    if fs.exists(path + REKEY_SUFFIX) {
+        _ := fs.remove(path + REKEY_SUFFIX)
+    }
     self.adopt(try open_cipher_db(path, page_key, salt, false))
     self.conn().migrate() or err {
         self.vault_detach()

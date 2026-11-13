@@ -17,6 +17,7 @@ MIGRATION_006_SHA256: str = "07733682ec237362bb8a03b714ecb9b8c6e94919e5eb80134b8
 MIGRATION_007_SHA256: str = "a2dfbc52aeadca07fd769aa3617dd95232529f02a6582e666cac6580f60afb41"
 MIGRATION_008_SHA256: str = "8a9563e7bb167910d4c6bc95d8ca07d1e126d985b72aa6a28ef40f3f0afc75c3"
 MIGRATION_009_SHA256: str = "e91dbaa118d11d978767535da9951c247398934df22b6bd145dbaed7bf4fe493"
+MIGRATION_010_SHA256: str = "d1a8646c794f875081914aa4aec21ad6bed5c674b44083e603525df364ace1c6"
 
 fn temp_vault_path(name: str) -> str {
     dir := "/tmp/flint-test-" + hex.encode(sha256.random_bytes(8))
@@ -238,6 +239,10 @@ test "migrations 006 and 007 are frozen" {
 
 test "migration 009 is frozen" {
     assert_eq(sha256.hash_hex(vault_migrations()[8].sql.bytes()), MIGRATION_009_SHA256)
+}
+
+test "migration 010 is frozen" {
+    assert_eq(sha256.hash_hex(vault_migrations()[9].sql.bytes()), MIGRATION_010_SHA256)
 }
 
 test "migration 008 is frozen" {
@@ -717,5 +722,148 @@ test "an activity backup is the encrypted file, opened only with its key" {
     mut wrong := ""
     open_cipher_db(dest, test_key(9), test_salt_bytes(), false) or err { wrong = "{err.message()}" }
     assert_eq(error_code_of(wrong), ERR_WRONG_PASSWORD)
+    try fs.remove(fs.dirname(path))
+}
+
+// ---- Milestone 40: a new master password (rekey.cf) ----------------------------
+
+fn other_salt() -> []byte {
+    mut s := make([]byte, 16)
+    for i in 0..16 {
+        s[i] = byte(40 + i)
+    }
+    return s
+}
+
+fn resealed(store: SqlVaultStore) -> VaultSecrets! {
+    mut out_s := VaultSecrets{ hosts: [], keys: [], creds: [] }
+    for h0 in try store.hosts_all() {
+        mut h := h0
+        h.password = [byte(9), byte(9)]
+        h.sudo_password = [byte(8)]
+        out_s.hosts.push(h)
+    }
+    return out_s
+}
+
+test "a re-key writes a copy under the new key, and its rename is the commit point" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try attach_test_activity(mut store, path, 8)
+    try store.host_put(marker_host())
+    try store.vault_set_meta(VAULT_META_ID, TEST_VAULT_ID)
+    try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    secrets := try resealed(store)
+
+    try store.vault_rekey_prepare(path, test_key(17), other_salt(), secrets)
+    try store.activity_rekey_prepare(test_key(18), other_salt())
+    copy := path + REKEY_SUFFIX
+    assert(fs.exists(copy))
+    // Before the commit, the vault on disk is the old one.
+    assert(try store.vault_read_salt(path) == test_salt_bytes())
+    raw := try fs.read_text(copy)
+    assert(!raw.contains("flint-alias-marker"), "the copy is encrypted")
+    assert_eq(file_mode(copy), file_mode(path))
+
+    try store.vault_rekey_commit(path, test_key(17), other_salt())
+    try store.activity_rekey_commit(test_key(18))
+    assert(!fs.exists(copy))
+    assert(try store.vault_read_salt(path) == other_salt())
+    // The open store already reads the new file.
+    hosts := try store.hosts_all()
+    assert_eq(hosts[0].alias, "flint-alias-marker")
+    assert(hosts[0].password == [byte(9), byte(9)])
+    assert_eq(try store.vault_get_meta(VAULT_META_ID), TEST_VAULT_ID)
+    assert_eq((try store.activity_page(0, 10)).len(), 1)
+    store.vault_detach()
+
+    // The old key opens neither file; the new keys open both.
+    mut wrong := ""
+    store.vault_attach(path, test_key(7), test_salt_bytes()) or err { wrong = "{err.message()}" }
+    assert_eq(error_code_of(wrong), ERR_WRONG_PASSWORD)
+    try store.vault_attach(path, test_key(17), other_salt())
+    try store.activity_attach(TEST_VAULT_ID, test_key(18), test_salt_bytes())
+    assert_eq((try store.activity_page(0, 10)).len(), 1, "the log came through")
+    assert(!fs.exists(activity_file(path) + ".unreadable"))
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "a re-key refuses a vault that changed after its prepare, and an abort removes the copies" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try attach_test_activity(mut store, path, 8)
+    try store.host_put(marker_host())
+    secrets := try resealed(store)
+    try store.vault_rekey_prepare(path, test_key(17), other_salt(), secrets)
+    try store.activity_rekey_prepare(test_key(18), other_salt())
+    mut h := marker_host()
+    h.id = "h2"
+    h.alias = "added-meanwhile"
+    try store.host_put(h)
+    mut got := ""
+    store.vault_rekey_commit(path, test_key(17), other_salt()) or err { got = "{err.message()}" }
+    assert_eq(error_code_of(got), ERR_CONFLICT)
+    store.vault_rekey_abort(path)
+    assert(!fs.exists(path + REKEY_SUFFIX))
+    assert(!fs.exists(activity_file(path) + ACTIVITY_REKEY_SUFFIX))
+    assert_eq((try store.hosts_all()).len(), 2, "the old vault is open and whole")
+    assert(try store.vault_read_salt(path) == test_salt_bytes())
+
+    // Secrets for fewer rows than the vault holds are refused at prepare.
+    mut short := ""
+    store.vault_rekey_prepare(path, test_key(17), other_salt(), secrets) or err { short = "{err.message()}" }
+    assert_eq(error_code_of(short), ERR_CONFLICT)
+    assert(!fs.exists(path + REKEY_SUFFIX))
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "a change cut short leaves files that open: a stale copy goes, a pending activity copy is taken" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try attach_test_activity(mut store, path, 8)
+    try store.host_put(marker_host())
+    try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    secrets := try resealed(store)
+
+    // Cut before the vault's rename: the old vault opens and the copies go.
+    try store.vault_rekey_prepare(path, test_key(17), other_salt(), secrets)
+    try store.activity_rekey_prepare(test_key(18), other_salt())
+    store.vault_detach()
+    try store.vault_attach(path, test_key(7), test_salt_bytes())
+    assert(!fs.exists(path + REKEY_SUFFIX))
+    try store.activity_attach(TEST_VAULT_ID, test_key(8), test_salt_bytes())
+    assert(!fs.exists(activity_file(path) + ACTIVITY_REKEY_SUFFIX))
+    assert_eq((try store.activity_page(0, 10)).len(), 1)
+
+    // Cut between the two renames: the new vault opens, and the activity copy is
+    // taken at its attach instead of a new log.
+    try store.vault_rekey_prepare(path, test_key(17), other_salt(), secrets)
+    try store.activity_rekey_prepare(test_key(18), other_salt())
+    try store.vault_rekey_commit(path, test_key(17), other_salt())
+    store.vault_detach()
+    try store.vault_attach(path, test_key(17), other_salt())
+    try store.activity_attach(TEST_VAULT_ID, test_key(18), test_salt_bytes())
+    assert_eq((try store.activity_page(0, 10)).len(), 1, "the log is the re-keyed copy")
+    assert(!fs.exists(activity_file(path) + ACTIVITY_REKEY_SUFFIX))
+    assert(!fs.exists(activity_file(path) + ".unreadable"))
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "migration 010 leaves an empty vault id for the first unlock to write" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    assert_eq(try store.vault_get_meta(VAULT_META_ID), "")
+    try store.vault_set_meta(VAULT_META_ID, TEST_VAULT_ID)
+    store.vault_detach()
+    try store.vault_attach(path, test_key(7), test_salt_bytes())
+    assert_eq(try store.vault_get_meta(VAULT_META_ID), TEST_VAULT_ID, "a migration never overwrites it")
+    store.vault_detach()
     try fs.remove(fs.dirname(path))
 }

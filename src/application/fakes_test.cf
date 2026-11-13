@@ -147,10 +147,17 @@ type FakeStore struct {
     // Milestone 39: the vault id and key the last activity_attach was given.
     act_id: str
     act_key: []byte
+    // Milestone 40: a prepared re-key, and the step that fails on purpose
+    // ("prepare", "activity", "commit"; "" for none).
+    rk_key: []byte
+    rk_salt: []byte
+    rk_secrets: VaultSecrets
+    rk_act: bool
+    rk_fail: str
 }
 
 fn new_fake_store() -> FakeStore {
-    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [] }
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "" }
 }
 
 fn (self: FakeStore) vault_file_exists(path: str) -> bool {
@@ -198,6 +205,45 @@ fn (mut self: FakeStore) activity_attach(vault_id: str, key: []byte, new_salt: [
     }
     self.act_id = vault_id
     self.act_key = key
+}
+
+fn (mut self: FakeStore) vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: VaultSecrets) -> void! {
+    try self.need_attached()
+    if self.rk_fail == "prepare" {
+        return error(coded(ERR_IO, "disk full"))
+    }
+    self.rk_key = page_key
+    self.rk_salt = salt
+    self.rk_secrets = secrets
+}
+
+fn (mut self: FakeStore) activity_rekey_prepare(key: []byte, new_salt: []byte) -> void! {
+    if self.rk_fail == "activity" {
+        return error(coded(ERR_IO, "disk full"))
+    }
+    self.rk_act = true
+}
+
+fn (mut self: FakeStore) vault_rekey_commit(path: str, page_key: []byte, salt: []byte) -> void! {
+    if self.rk_fail == "commit" || self.rk_key.len() == 0 {
+        return error(coded(ERR_CONFLICT, "the vault changed"))
+    }
+    self.file_key = self.rk_key
+    self.file_salt = self.rk_salt
+    self.hosts = self.rk_secrets.hosts
+    self.keys = self.rk_secrets.keys
+    self.creds = self.rk_secrets.creds
+    self.rk_key = []
+}
+
+fn (mut self: FakeStore) activity_rekey_commit(key: []byte) -> void! {
+    self.act_key = key
+    self.rk_act = false
+}
+
+fn (mut self: FakeStore) vault_rekey_abort(path: str) {
+    self.rk_key = []
+    self.rk_act = false
 }
 
 fn (self: FakeStore) need_attached() -> void! {

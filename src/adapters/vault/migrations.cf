@@ -180,6 +180,14 @@ ALTER TABLE hosts ADD COLUMN domain TEXT NOT NULL DEFAULT '';
 ALTER TABLE activity RENAME TO activity_moving;
 ` })
 
+    // 010: the vault's id is kept inside it (milestone 40, D-095), so it survives a
+    // new master password and salt. Empty here: the unlock that sees it empty writes
+    // the id the vault already had (a hash of its salt, D-033), and a new vault gets
+    // a random one (application/session.cf). Nothing per machine is renamed.
+    list.push(Migration{ version: 10, name: "vault id in meta", sql: `
+INSERT OR IGNORE INTO meta (key, value) VALUES ('vault_id', '');
+` })
+
     return list
 }
 

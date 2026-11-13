@@ -1,0 +1,122 @@
+package application
+
+// Changing the master password (milestone 40, D-095): `flint vault passwd` and
+// Settings → Vault → Change master password.
+//
+// A new salt and a new master key (Argon2id), so a new page key, secrets key and
+// activity key; every sealed secret re-sealed under the new secrets key; the vault and
+// this machine's activity file re-encrypted as copies, then put in place by rename
+// (adapters/vault/rekey.cf). Until the vault's rename the old vault is whole; after it
+// the new one is. The vault's id lives inside it (migration 010), so its recent entry,
+// UI state and activity file keep their names. Remember on this computer moves to the
+// keychain account of the new salt (D-017).
+
+import "../domain"
+import "../ports"
+
+// How strong `password` is, with the vault's name counted as a common word: what
+// the person sees while typing a new master password. Not cryptography.
+fn password_strength(password: str, vault_name: str) -> PasswordStrength {
+    mut words: []str = ["flint"]
+    if vault_name.len() > 0 {
+        words.push(vault_name)
+    }
+    return estimate_password_strength(password, words)
+}
+
+// Every host, key and credential of the open vault with its secrets re-sealed under
+// `next` (a session holding the new secrets key). The opened values are wiped once
+// sealed again.
+fn resealed_secrets[C: Crypto, S: VaultStore](crypto: C, store: S, session: VaultSession, next: VaultSession) -> VaultSecrets! {
+    mut out_s := VaultSecrets{ hosts: [], keys: [], creds: [] }
+    for h0 in try store.hosts_all() {
+        mut h := h0
+        h.password = try reseal(crypto, session, next, "hosts", h.id, "password", h0.password)
+        h.sudo_password = try reseal(crypto, session, next, "hosts", h.id, "sudo_password", h0.sudo_password)
+        out_s.hosts.push(h)
+    }
+    for k0 in try store.keys_all() {
+        mut k := k0
+        k.private_key = try reseal(crypto, session, next, "ssh_keys", k.id, "private_key", k0.private_key)
+        k.passphrase = try reseal(crypto, session, next, "ssh_keys", k.id, "passphrase", k0.passphrase)
+        out_s.keys.push(k)
+    }
+    for c0 in try store.creds_all() {
+        mut c := c0
+        c.password = try reseal(crypto, session, next, "credentials", c.id, "password", c0.password)
+        out_s.creds.push(c)
+    }
+    return out_s
+}
+
+fn reseal[C: Crypto](crypto: C, session: VaultSession, next: VaultSession, table: str, id: str, field: str, sealed: []byte) -> []byte! {
+    if sealed.len() == 0 {
+        return []
+    }
+    plain := try open_secret(crypto, session, table, id, field, sealed)
+    defer crypto.wipe_text(plain)
+    return try seal_secret(crypto, next, table, id, field, plain)
+}
+
+// Changes the master password of the vault `session` holds, open in `store`.
+// `current` must be its master password now; `new_password` needs 8 characters and
+// must differ from it. Returns the session to hold from now on (same path, name and
+// id, the new secrets key). Any failure before the vault's rename leaves the vault,
+// the activity file and the keychain as they were.
+fn change_master_password[C: Crypto, S: VaultStore, K: Keychain](crypto: C, mut store: S, keychain: K, session: VaultSession, current: str, new_password: str) -> VaultSession! {
+    if session.secrets_key.len() == 0 {
+        return error(coded(ERR_LOCKED, "the vault is locked"))
+    }
+    if !(try verify_master_password(crypto, store, session, current)) {
+        return error(coded(ERR_WRONG_PASSWORD, "the current master password is wrong"))
+    }
+    if new_password.len() < MIN_MASTER_PASSWORD_LEN {
+        return error(coded(ERR_INVALID, "the new master password must be at least {MIN_MASTER_PASSWORD_LEN} characters"))
+    }
+    if new_password == current {
+        return error(coded(ERR_INVALID, "the new master password is the same as the current one"))
+    }
+    old_salt := try store.vault_read_salt(session.path)
+    salt := crypto.random_bytes(VAULT_SALT_LEN)
+    master := try crypto.derive_key(new_password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
+    defer crypto.wipe(master)
+    (page, secrets) := try derive_vault_keys(crypto, master)
+    defer crypto.wipe(page)
+    defer crypto.wipe(secrets)
+    act_key := try crypto.derive_subkey(master, VAULT_SUBKEY_ACTIVITY, VAULT_KDF_CONTEXT)
+    defer crypto.wipe(act_key)
+    next := VaultSession{ path: session.path, name: session.name, id: session.id, secrets_key: secrets, cached: false }
+    defer crypto.wipe(next.secrets_key)
+
+    rows := try resealed_secrets(crypto, store, session, next)
+    store.vault_rekey_prepare(session.path, page, salt, rows) or err {
+        store.vault_rekey_abort(session.path)
+        return error("{err.message()}")
+    }
+    store.activity_rekey_prepare(act_key, crypto.random_bytes(VAULT_SALT_LEN)) or err {
+        store.vault_rekey_abort(session.path)
+        return error("{err.message()}")
+    }
+    // The new key reaches the keychain before the commit point: a crash after it
+    // leaves an entry for a salt no file has, never a remembered vault with none.
+    new_account := vault_account(salt)
+    mut cached := false
+    if session.cached {
+        cached = true
+        keychain.keychain_save(new_account, master) or {
+            cached = false
+        }
+    }
+    store.vault_rekey_commit(session.path, page, salt) or err {
+        store.vault_rekey_abort(session.path)
+        if cached {
+            _ := keychain.keychain_forget(new_account)
+        }
+        return error("{err.message()}")
+    }
+    // From here the new password is the vault's. An activity file left behind is
+    // taken at the next unlock (adapters/vault/activity.cf).
+    _ := store.activity_rekey_commit(act_key)
+    _ := keychain.keychain_forget(vault_account(old_salt))
+    return VaultSession{ path: session.path, name: session.name, id: session.id, secrets_key: secrets, cached: cached }
+}

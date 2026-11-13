@@ -56,16 +56,28 @@ fn vault_account(salt: []byte) -> str {
     return "vault-" + hex.encode(salt)
 }
 
-// A vault's id: 128 bits of a BLAKE2b digest of its salt, as hex (D-030). The salt
-// is already in clear in the file header and unique per vault, so the id names the
-// vault wherever its file moves, without telling anything about what is inside it.
-// Used as the key of its UI state and to recognise its recent entry after a move.
-fn vault_id[C: Crypto](crypto: C, salt: []byte) -> str! {
+// The id a vault had before milestone 40: 128 bits of a BLAKE2b digest of its salt,
+// as hex (D-030, D-033). From milestone 40 the id lives in the vault's `meta`
+// (D-095), so a new salt (a new master password) keeps it: `vault_stable_id`.
+fn salt_vault_id[C: Crypto](crypto: C, salt: []byte) -> str! {
     mut data := []byte("flint/vault-id/v1:")
     for b in salt {
         data.push(b)
     }
     return hex.encode(try crypto.digest(data, 16))
+}
+
+// The open vault's id (D-095), the key of its UI state, its activity file and its
+// recent entry: the one in `meta`, or, the first time a vault from before milestone
+// 40 is unlocked, the id it already had, written there so it stays.
+fn vault_stable_id[C: Crypto, S: VaultStore](crypto: C, mut store: S, salt: []byte) -> str! {
+    id := try store.vault_get_meta(VAULT_META_ID)
+    if id.len() > 0 {
+        return id
+    }
+    old := try salt_vault_id(crypto, salt)
+    try store.vault_set_meta(VAULT_META_ID, old)
+    return old
 }
 
 fn session_info(s: VaultSession) -> VaultInfo {
@@ -138,7 +150,8 @@ fn create_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     defer crypto.wipe(secrets)
     try store.vault_create(path, page, salt)
     try store.vault_set_meta("name", vault_name)
-    id := try vault_id(crypto, salt)
+    id := hex.encode(crypto.random_bytes(16))
+    try store.vault_set_meta(VAULT_META_ID, id)
     attach_activity(crypto, mut store, id, master) or err {
         store.vault_detach()
         return error("{err.message()}")
@@ -197,7 +210,10 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
         store.vault_detach()
         return error(coded(ERR_UNSUPPORTED, "vault format {format} is not supported"))
     }
-    id := try vault_id(crypto, salt)
+    id := vault_stable_id(crypto, mut store, salt) or err {
+        store.vault_detach()
+        return error("{err.message()}")
+    }
     attach_activity(crypto, mut store, id, master) or err {
         store.vault_detach()
         return error("{err.message()}")
