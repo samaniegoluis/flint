@@ -4,6 +4,15 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.6.0 — 2026-11-13
+
+The activity log now lives on each computer, in an encrypted file of its own beside Flint's settings, never inside the vault, so a vault that syncs no longer carries it or changes on every command. Existing entries move over at the first unlock, and Settings → Access can back the log up, still encrypted. The first step towards a vault shared between machines.
+
+### Added
+
+- **activity:** The activity log leaves the vault for a file of this machine's (milestone 39)
+
+
 ## 0.5.0 — 2026-11-13
 
 A remote desktop can now span two monitors: Full screen on all monitors opens the desktop on the main monitor, with the taskbar, and on a second one, and the Monitors button picks which and rearranges them live, keeping your Windows session. Windows sees each monitor, so windows maximise per monitor and move from one to the other. Automatic switches to the graphics pipeline while the desktop spans monitors, where it keeps drawing as a window crosses. Available on macOS and on Linux with X11; Windows comes once it has been checked there. Also fixed: Compatible now really uses bitmaps on Linux.
