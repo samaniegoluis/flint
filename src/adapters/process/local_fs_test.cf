@@ -65,13 +65,24 @@ test "two spellings of one file through a symbolic link are the same path" {
     try fs.write_text(dir + "/real/v.flint", "x")
     link := dir + "/link"
     mut rc: i32 = 0
+    mut windows := false
     // CFIRE-UPSTREAM: CF-136 (no symlink in core:fs either)
     cpp {
-        rc = ::symlink((dir + "/real").c_str(), link.c_str());
+        std::string err;
+        rc = flint_fs::make_symlink(dir + "/real", link, true, err);
+        windows = flint_fs::WINDOWS;
+    }
+    if rc != 0 && windows {
+        // Windows makes symbolic links only with Developer Mode or as an administrator.
+        println("SKIP: no symbolic link without Developer Mode")
+        try fs.remove(dir)
+        return
     }
     assert_eq(rc, 0)
     assert(same_file_path(link + "/v.flint", dir + "/real/v.flint"))
-    assert(local_real_path(link + "/v.flint").ends_with("/real/v.flint"))
+    // Windows answers with its own separator.
+    resolved := local_real_path(link + "/v.flint")
+    assert(resolved.ends_with("/real/v.flint") || resolved.ends_with("\\real\\v.flint"), resolved)
     assert(!same_file_path(link + "/v.flint", dir + "/real/w.flint"))
     // A path that does not exist comes back as given.
     assert_eq(local_real_path(dir + "/nope/x.flint"), dir + "/nope/x.flint")

@@ -33,6 +33,12 @@ constexpr int FAILURE = 4;
 constexpr int NOT_DIR = 6;
 constexpr int IS_DIR = 7;
 
+#if defined(_WIN32)
+inline constexpr bool WINDOWS = true;
+#else
+inline constexpr bool WINDOWS = false;
+#endif
+
 struct Entry {
     std::string name;
     std::string kind;
@@ -253,6 +259,28 @@ inline std::string real_path(const std::string& path) {
     if (buf.rfind(L"\\\\?\\UNC\\", 0) == 0) buf = L"\\\\" + buf.substr(8);
     else if (buf.rfind(L"\\\\?\\", 0) == 0) buf = buf.substr(4);
     return utf8(buf.c_str());
+}
+
+// rename_path, tried for up to a second: an antivirus or the search indexer may hold a
+// file that was just written for a moment (milestone 40's re-key on Windows).
+inline int rename_retrying(const std::string& from, const std::string& to, std::string& err) {
+    int rc = OK;
+    for (int i = 0; i < 10; i++) {
+        err.clear();
+        rc = rename_path(from, to, err);
+        if (rc == OK) return OK;
+        ::Sleep(100);
+    }
+    return rc;
+}
+
+// A symbolic link at `link` to `target` (tests). Without Developer Mode or an
+// administrator, Windows refuses: the caller skips.
+inline int make_symlink(const std::string& target, const std::string& link, bool dir, std::string& err) {
+    DWORD flags = 0x2; // SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE
+    if (dir) flags |= SYMBOLIC_LINK_FLAG_DIRECTORY;
+    if (!::CreateSymbolicLinkW(wide(link).c_str(), wide(target).c_str(), flags)) return fail_win(err);
+    return OK;
 }
 
 inline int remove_path(const std::string& path, std::string& err) {
@@ -512,6 +540,20 @@ inline std::string real_path(const std::string& path) {
     char real[PATH_MAX];
     if (::realpath(path.c_str(), real)) return std::string(real);
     return path;
+}
+
+// POSIX renames over an open file, so one try (Windows retries).
+inline int rename_retrying(const std::string& from, const std::string& to, std::string& err) {
+    return rename_path(from, to, err);
+}
+
+// A symbolic link at `link` to `target` (tests).
+inline int make_symlink(const std::string& target, const std::string& link, bool, std::string& err) {
+    if (::symlink(target.c_str(), link.c_str()) != 0) {
+        err = std::strerror(errno);
+        return map_errno(errno);
+    }
+    return OK;
 }
 
 #endif

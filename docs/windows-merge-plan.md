@@ -31,8 +31,8 @@ from this file alone.
 
 ## Stage 1: merge, build, suites → push
 
-- [ ] `git merge main` in `~/Personal/Proyectos/cfire/flint-windows`
-- [ ] Resolve `flint_fs.hpp`: main's `chmod_path`, `sync_dir`, `real_path` go inside the
+- [x] `git merge main` in `~/Personal/Proyectos/cfire/flint-windows`
+- [x] Resolve `flint_fs.hpp`: main's `chmod_path`, `sync_dir`, `real_path` go inside the
       POSIX block; Windows versions inside `_WIN32`:
   - `chmod_path`: no-op returning `OK` (the profile's ACLs protect the file)
   - `sync_dir`: no-op returning `OK`; `rename_path` gains `MOVEFILE_WRITE_THROUGH`
@@ -40,21 +40,21 @@ from this file alone.
     `GetFinalPathNameByHandleW`; strip `\\?\`, turn `\\?\UNC\` into `\\`; the path as
     given when it does not exist
   - `mode_t` in the signatures: check that it exists under llvm-mingw, else `int`
-- [ ] Read the auto-merged `flint_rdp.hpp` for the branch's `_WIN32` fixes (`sock_init`,
+- [x] Read the auto-merged `flint_rdp.hpp` for the branch's `_WIN32` fixes (`sock_init`,
       `winpr/shell.h`, keepalive/`TCP_MAXRT`) still in place
-- [ ] Merge commit
-- [ ] `windows/build-gui.sh`: `flint.exe` + `Flint.exe` compile (`flint_window.hpp` and
+- [x] Merge commit
+- [x] `windows/build-gui.sh`: `flint.exe` + `Flint.exe` compile (`flint_window.hpp` and
       `flint_monitors.hpp` `_WIN32` code was never compiled: fix to compile, or stub
       monitors per D-089 if it takes long)
-- [ ] `build.cf`'s `FlintVaultServer`: confirm Windows builds skip it (no Windows build;
+- [x] `build.cf`'s `FlintVaultServer`: confirm Windows builds skip it (no Windows build;
       it runs in Docker)
-- [ ] `windows/test-suites.sh`: add the new packages, leave out `serverfs`,
+- [x] `windows/test-suites.sh`: add the new packages, leave out `serverfs`,
       `application/vaultserver`, `drivers/vault-server` (POSIX sockets); all green
-- [ ] Commit + push
+- [x] Commit + push
 
 ## Stage 2: the vault on Windows (milestones 39-41) → push
 
-- [ ] **Re-key (M40), `src/adapters/vault/rekey.cf`:** close the connection, rename the copy
+- [x] **Re-key (M40), `src/adapters/vault/rekey.cf`:** close the connection, rename the copy
       over the vault, reopen; when the rename fails, reopen the old file. Same for the
       activity file (`activity_rekey_commit`). Close ROADMAP §4 "Windows: a vault re-key
       renames over the open file"
@@ -102,3 +102,15 @@ from this file alone.
 ## Log
 
 - 2026-11-13: plan written; trial merge shows one conflict.
+- 2026-11-13, stage 1: merged (`55892f2`); `flint_fs.hpp` resolved (`chmod_path`, `sync_dir`
+  no-ops; `rename_path` write-through; `real_path` by `GetFinalPathNameByHandleW`).
+  Build fixes: `far` is a `windows.h` macro (test variable renamed);
+  `flint_monitors.hpp`'s Windows half rewritten on cfire's own WebView2 helpers (W-17,
+  no WRL `Callback` with mingw; `GetDpiForMonitor`/`SetProcessDpiAwarenessContext` at run
+  time). `flint.exe --version` [ran]: 0.9.0. `build-gui.sh` builds only `flint` and
+  `FlintGui`, so the vault server is never built here.
+- Suites [ran]: 12 suites green after: the re-key closes, renames (retried ~1 s) and
+  reopens on Windows (vault and activity file; a rename that still fails leaves the old
+  vault whole and locked, `ERR_LOCKED`: the store holds no old key); POSIX mode asserts
+  skipped on Windows; the symlink test uses `flint_fs::make_symlink` and **skips without
+  Developer Mode** (off on this machine): `real_path` through a link is not yet [ran].

@@ -679,6 +679,7 @@ test "the activity file is private, closes with the vault, and a key it refuses 
     try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     mut mode: i64 = 0
     mut dir_mode: i64 = 0
+    mut windows := false
     file := activity_file(path)
     folder := fs.dirname(file)
     // CFIRE-UPSTREAM: CF-099
@@ -686,9 +687,13 @@ test "the activity file is private, closes with the vault, and a key it refuses 
         struct stat st{};
         if (::stat(file.c_str(), &st) == 0) mode = st.st_mode & 0777;
         if (::stat(folder.c_str(), &st) == 0) dir_mode = st.st_mode & 0777;
+        windows = flint_fs::WINDOWS;
     }
-    assert_eq(mode, i64(384))
-    assert_eq(dir_mode, i64(448))
+    // Windows has no permission bits: the profile folder's ACL keeps the file private.
+    if !windows {
+        assert_eq(mode, i64(384))
+        assert_eq(dir_mode, i64(448))
+    }
     store.vault_detach()
     mut closed := ""
     store.activity_page(0, 1) or err { closed = "{err.message()}" }

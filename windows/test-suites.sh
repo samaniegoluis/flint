@@ -12,6 +12,9 @@
 #
 # src/adapters/ssh is left out: it wants sshd on 127.0.0.1:2222, which this WSL cannot
 # serve to Windows (see the port guide); cli-smoke.sh and the e2e runs cover SSH.
+# flint-vault-server's packages (src/adapters/serverfs, src/application/vaultserver,
+# src/drivers/vault-server) are left out too: the server runs in Docker, never on
+# Windows, and its shim is POSIX sockets (milestone 42).
 # src/adapters/rdp runs on FreeRDP built by bin/freerdp.sh, against two servers that
 # rdp-servers.sh starts as Windows programs on loopback, as scripts/test.sh does on
 # macOS and Linux: FreeRDP's sample server (FLINT_RDP_SAMPLE_PORT) and Flint's own
@@ -25,7 +28,7 @@ root="$(cd "$here/.." && pwd)"
 source "$here/bin/env.sh"
 suites=("$@")
 if [[ ${#suites[@]} == 0 ]]; then
-  mapfile -t suites < <(cd "$root" && find src -name '*_test.cf' -not -path '*/.cfire/*' | xargs -n1 dirname | sort -u | grep -v -e '^src/adapters/ssh$')
+  mapfile -t suites < <(cd "$root" && find src -name '*_test.cf' -not -path '*/.cfire/*' | xargs -n1 dirname | sort -u | grep -v -e '^src/adapters/ssh$' -e '^src/adapters/serverfs$' -e '^src/application/vaultserver$' -e '^src/drivers/vault-server$')
 fi
 WT="$(wslpath "$(cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r')")/flint-tests"
 rm -rf "$WT"; mkdir -p "$WT"

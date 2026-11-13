@@ -81,6 +81,29 @@ fn sync_folder(dir: str) -> void! {
     }
 }
 
+fn on_windows() -> bool {
+    mut w := false
+    cpp {
+        w = flint_fs::WINDOWS;
+    }
+    return w
+}
+
+// The copy renamed over a file no connection holds (Windows), retried for a moment.
+fn replace_closed(from: str, to: str) -> void! {
+    mut rc: i32 = 0
+    mut reason := ""
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        std::string err;
+        rc = flint_fs::rename_retrying(from, to, err);
+        reason = err;
+    }
+    if rc != 0 {
+        return error(reason)
+    }
+}
+
 // Creates an empty file at `path`, 0600, failing if one is there.
 fn create_empty_private(path: str) -> void! {
     if fs.exists(path) {
@@ -221,10 +244,24 @@ fn (mut self: SqlVaultStore) vault_rekey_commit(path: str, page_key: []byte, sal
     if !fs.exists(src) || self.conn().total_changes() != self.rekey_mark || (self.act().is_open() && self.act().total_changes() != self.act_rekey_mark) {
         return error(coded(ERR_CONFLICT, "the vault changed while its password was being changed; try again"))
     }
+    if on_windows() {
+        // Windows cannot rename over an open file: the old connection closes first. The
+        // store holds no old key to reopen with, so a rename that still fails leaves the
+        // old vault whole on disk and locked; unlocking takes the current password.
+        mut prev := self.conn()
+        prev.close_db()
+        self.handle = none
+        replace_closed(src, path) or err {
+            self.vault_detach()
+            return error(coded(ERR_LOCKED, "cannot put the new vault in place ({err.message()}); the vault is unchanged and locked: unlock it with the current master password"))
+        }
+        self.adopt(try open_cipher_db(path, page_key, salt, false))
+        return
+    }
     // Renamed while the old file is still open: if the rename fails, nothing has
     // changed and the store keeps working on the old vault. The old connection then
     // holds a file no longer in the folder, and is closed. (Windows cannot rename over
-    // an open file: its port closes first.)
+    // an open file: it closes first, above.)
     fs.rename(src, path) or err {
         return error(coded(ERR_IO, "cannot put the new vault in place: {err.message()}"))
     }
@@ -242,13 +279,22 @@ fn (mut self: SqlVaultStore) activity_rekey_commit(key: []byte) -> void! {
     try self.require_activity()
     path := self.act_path
     src := path + ACTIVITY_REKEY_SUFFIX
-    // As the vault: renamed first, so a failure leaves the old file open and the
-    // copy beside it, which the next unlock takes (activity.cf).
-    fs.rename(src, path) or err {
-        return error(coded(ERR_IO, "cannot put the new activity file in place: {err.message()}"))
+    if on_windows() {
+        // Closed first, as the vault. A failed rename leaves the copy beside the old
+        // file, which the next unlock takes (activity.cf); until then no activity.
+        self.activity_close()
+        replace_closed(src, path) or err {
+            return error(coded(ERR_IO, "cannot put the new activity file in place: {err.message()}"))
+        }
+    } else {
+        // As the vault: renamed first, so a failure leaves the old file open and the
+        // copy beside it, which the next unlock takes (activity.cf).
+        fs.rename(src, path) or err {
+            return error(coded(ERR_IO, "cannot put the new activity file in place: {err.message()}"))
+        }
+        _ := sync_folder(self.act_dir)
+        self.activity_close()
     }
-    _ := sync_folder(self.act_dir)
-    self.activity_close()
     salt := try self.vault_read_salt(path)
     db := try open_cipher_db(path, key, salt, false)
     self.act_handle = db.handle
