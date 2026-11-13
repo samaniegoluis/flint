@@ -4,6 +4,20 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.8.0 — 2026-11-13
+
+When a cloud folder keeps two versions of your vault, flint vault merge puts the conflict copy back into it record by record: both machines' changes are kept, the later edit wins, deletions carry over, and an alias added on both sides is renamed and reported. The copy is only read. Every record now remembers when it was written and deleted records leave a marker, which is what the remote vault will merge with. Also fixed: a vault reached through a linked folder (macOS's /tmp, a linked Dropbox) is now recognised as the one Flint holds, so vault passwd and vault merge are refused while it is unlocked there.
+
+### Added
+
+- **vault:** Stamps and tombstones on every synced record, and the per-record merge (milestone 41)
+- **cli:** Flint vault merge, a cloud folder's conflict copy merged into the vault (milestone 41)
+
+### Fixed
+
+- **serve:** The vault the app holds, named through a symbolic link, is the vault it holds (milestone 41)
+
+
 ## 0.7.0 — 2026-11-13
 
 Change your vault's master password, from the CLI (flint vault passwd) or Settings → Vault, with a strength estimate shown as you type. The vault is re-encrypted under a new key in one rename, so a crash never leaves it unreadable, and it keeps its place in the list, its layout and its activity log.
