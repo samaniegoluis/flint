@@ -7,7 +7,7 @@
 # paths, default src). FLINT_LINUX_REPEAT="<run> <N>" makes the `gui` step run one
 # gui-e2e run N times with scripts/repeat.sh instead (CLAUDE.md rule 9).
 set -euo pipefail
-steps=",${FLINT_LINUX_STEPS:-tests,cli,gui,serve,server},"
+steps=",${FLINT_LINUX_STEPS:-tests,cli,gui,serve,server,sync},"
 want() { [[ "$steps" == *",$1,"* ]]; }
 cd "$HOME"
 mkdir -p work
@@ -70,5 +70,13 @@ if want server; then
 echo "== vault server end-to-end"
 FLINT_SERVER_BIN=./build/flint-vault-server scripts/server-e2e.sh | tee /tmp/server-e2e.log
 grep -q "^server-e2e: [0-9]* passed, 0 failed" /tmp/server-e2e.log
+fi
+# The remote vault from the CLI and the app's sync loop (milestone 43): the server on
+# loopback, two config folders as two machines, tokens in gnome-keyring, the app
+# under Xvfb.
+if want sync; then
+echo "== remote vault sync end-to-end"
+with_keyring "scripts/sync-e2e.sh" | tee /tmp/sync-e2e.log
+grep -q "^sync-e2e: [0-9]* passed, 0 failed" /tmp/sync-e2e.log
 fi
 echo "== steps run: ${FLINT_LINUX_STEPS:-all}"
