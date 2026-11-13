@@ -6,6 +6,8 @@
 // block for helpers (CF-031).
 #pragma once
 #include <cerrno>
+#include <climits>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <fcntl.h>
@@ -218,10 +220,39 @@ inline int close_file(int fd, bool sync, std::string& err) {
     return rc;
 }
 
-// Replaces `to` when it exists, as POSIX rename does (CRT rename refuses).
+// Replaces `to` when it exists, as POSIX rename does (CRT rename refuses). Write-through:
+// the move is on disk when it returns, which stands in for sync_dir on POSIX.
 inline int rename_path(const std::string& from, const std::string& to, std::string& err) {
-    if (!::MoveFileExW(wide(from).c_str(), wide(to).c_str(), MOVEFILE_REPLACE_EXISTING)) return fail_win(err);
+    if (!::MoveFileExW(wide(from).c_str(), wide(to).c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return fail_win(err);
     return OK;
+}
+
+// Milestone 40: POSIX permission bits do not exist here; the file inherits the ACL of
+// the user's profile folder, which only that user (and administrators) can read.
+inline int chmod_path(const std::string&, mode_t, std::string&) { return OK; }
+
+// Milestone 40: a folder cannot be flushed on Windows; rename_path writes through instead.
+inline int sync_dir(const std::string&, std::string&) { return OK; }
+
+// The path with every link and junction resolved (milestone 41, CF-136), or the path as
+// given when it does not exist or cannot be resolved. `\\?\` is dropped, and
+// `\\?\UNC\server\share` becomes `\\server\share`.
+inline std::string real_path(const std::string& path) {
+    HANDLE h = ::CreateFileW(wide(path).c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return path;
+    std::wstring buf(MAX_PATH, L'\0');
+    DWORD n = ::GetFinalPathNameByHandleW(h, buf.data(), static_cast<DWORD>(buf.size()), FILE_NAME_NORMALIZED);
+    if (n >= buf.size()) {
+        buf.assign(n + 1, L'\0');
+        n = ::GetFinalPathNameByHandleW(h, buf.data(), static_cast<DWORD>(buf.size()), FILE_NAME_NORMALIZED);
+    }
+    ::CloseHandle(h);
+    if (n == 0 || n >= buf.size()) return path;
+    buf.resize(n);
+    if (buf.rfind(L"\\\\?\\UNC\\", 0) == 0) buf = L"\\\\" + buf.substr(8);
+    else if (buf.rfind(L"\\\\?\\", 0) == 0) buf = buf.substr(4);
+    return utf8(buf.c_str());
 }
 
 inline int remove_path(const std::string& path, std::string& err) {
@@ -394,6 +425,28 @@ inline int rename_path(const std::string& from, const std::string& to, std::stri
     return OK;
 }
 
+// Milestone 40: a re-keyed vault copy gets the vault's own permission bits.
+inline int chmod_path(const std::string& path, mode_t mode, std::string& err) {
+    if (::chmod(path.c_str(), mode) != 0) {
+        err = std::strerror(errno);
+        return map_errno(errno);
+    }
+    return OK;
+}
+
+// Flushes a folder, so a rename into it is on disk (milestone 40).
+inline int sync_dir(const std::string& path, std::string& err) {
+    int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        err = std::strerror(errno);
+        return map_errno(errno);
+    }
+    int rc = ::fsync(fd) == 0 ? OK : map_errno(errno);
+    if (rc != OK) err = std::strerror(errno);
+    ::close(fd);
+    return rc;
+}
+
 // A file, or an empty folder.
 inline int remove_path(const std::string& path, std::string& err) {
     struct stat st;
@@ -451,6 +504,14 @@ inline int append_file(const std::string& path, const std::string& data, std::st
     }
     ::close(fd);
     return OK;
+}
+
+// The path with every symbolic link resolved (realpath(3), milestone 41, CF-136), or
+// the path as given when it does not exist or cannot be resolved.
+inline std::string real_path(const std::string& path) {
+    char real[PATH_MAX];
+    if (::realpath(path.c_str(), real)) return std::string(real);
+    return path;
 }
 
 #endif

@@ -1,0 +1,231 @@
+package serverfs
+
+// The `BlobStore` port as files in one folder, the server's volume (milestone 42,
+// D-097):
+//
+//   <dir>/head.json             the newest version: number, vault id, size, time
+//   <dir>/versions/<n>.blob     each version's file, as it was uploaded (encrypted)
+//   <dir>/versions/<n>.json     its number, vault id, size and time
+//   <dir>/.lock                 a folder, held while a version is written
+//
+// A version is written to `.tmp` files flushed to disk, renamed into place, and only
+// then named by `head.json`, so a crash or a copy taken meanwhile never sees half a
+// version. The lock keeps `flint-vault-server restore` and the running server from
+// writing the same number; a lock older than STORE_LOCK_STALE_MS is taken as left by
+// a process that died.
+
+// CFIRE-UPSTREAM: CF-143, CF-031
+import cpp "flint_server.hpp" @pkg("flint-server-native")
+
+import "core:fs"
+import "core:json"
+import "core:time"
+import "../../domain"
+
+STORE_LOCK_STALE_MS: i64 = 30000
+
+type FileBlobStore struct {
+    dir: str
+}
+
+// Opens (or starts) the store in `dir`.
+fn new_file_blob_store(dir: str) -> FileBlobStore! {
+    if dir.len() == 0 {
+        return error(coded(ERR_USAGE, "the data folder is not set"))
+    }
+    fs.mkdir_all(dir + "/versions") or err {
+        return error(coded(ERR_IO, "cannot create {dir}/versions"))
+    }
+    return FileBlobStore{ dir: dir }
+}
+
+fn (self: FileBlobStore) version_path(version: i64, ext: str) -> str {
+    return "{self.dir}/versions/{version}.{ext}"
+}
+
+fn write_synced(path: str, data: str) -> void! {
+    mut rc: i32 = 0
+    mut reason := ""
+    // CFIRE-UPSTREAM: CF-143
+    cpp {
+        rc = flint_server::write_synced(path, data, reason);
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "cannot write {path}: {reason}"))
+    }
+}
+
+fn sync_folder(path: str) -> void! {
+    mut rc: i32 = 0
+    mut reason := ""
+    // CFIRE-UPSTREAM: CF-143
+    cpp {
+        rc = flint_server::sync_dir(path, reason);
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "cannot flush {path}: {reason}"))
+    }
+}
+
+// Writes `data` beside `path`, flushed, then renames it over `path`.
+fn replace_synced(path: str, data: str) -> void! {
+    tmp := path + ".tmp"
+    write_synced(tmp, data) or err {
+        _ := fs.remove(tmp)
+        return error(err.message())
+    }
+    fs.rename(tmp, path) or err {
+        _ := fs.remove(tmp)
+        return error(coded(ERR_IO, "cannot replace {path}"))
+    }
+}
+
+fn (self: FileBlobStore) blob_head() -> BlobVersion! {
+    path := self.dir + "/head.json"
+    if !fs.exists(path) {
+        return BlobVersion{ version: 0, vault_id: "", size: 0, stored_at: 0 }
+    }
+    text := fs.read_text(path) or err {
+        return error(coded(ERR_IO, "cannot read {path}"))
+    }
+    return json.parse[BlobVersion](text) or err {
+        return error(coded(ERR_IO, "{path} is not a version record"))
+    }
+}
+
+fn (self: FileBlobStore) blob_read(version: i64) -> str! {
+    path := self.version_path(version, "blob")
+    if !fs.exists(path) {
+        return error(coded(ERR_NOT_FOUND, "version {version} is not kept"))
+    }
+    return fs.read_text(path) or err {
+        return error(coded(ERR_IO, "cannot read {path}"))
+    }
+}
+
+// Takes the lock, or says another writer holds it.
+fn (self: FileBlobStore) store_lock() -> void! {
+    lock := self.dir + "/.lock"
+    for attempt in 0..2 {
+        mut rc: i32 = 0
+        mut reason := ""
+        // CFIRE-UPSTREAM: CF-143
+        cpp {
+            rc = flint_server::make_dir_exclusive(lock, reason);
+        }
+        if rc == 0 {
+            return
+        }
+        if rc != 3 {
+            return error(coded(ERR_IO, "cannot create {lock}: {reason}"))
+        }
+        mut mtime: i64 = -1
+        // CFIRE-UPSTREAM: CF-143
+        cpp {
+            mtime = flint_server::mtime_ms(lock);
+        }
+        if mtime < 0 || time.now().unix_millis() - mtime < STORE_LOCK_STALE_MS {
+            return error(coded(ERR_CONFLICT, "another writer holds {lock}"))
+        }
+        _ := fs.remove(lock)
+    }
+    return error(coded(ERR_CONFLICT, "another writer holds {lock}"))
+}
+
+fn (self: FileBlobStore) store_unlock() {
+    _ := fs.remove(self.dir + "/.lock")
+}
+
+fn (mut self: FileBlobStore) blob_write(version: i64, vault_id: str, data: str, now_ms: i64) -> void! {
+    try self.store_lock()
+    defer {
+        self.store_unlock()
+    }
+    // Under the lock: the version must still follow the head.
+    head := try self.blob_head()
+    if head.version != version - 1 {
+        return error(coded(ERR_CONFLICT, "version {head.version} was stored meanwhile"))
+    }
+    rec := BlobVersion{ version: version, vault_id: vault_id, size: i64(data.len()), stored_at: now_ms }
+    meta := json.stringify(rec)
+    try replace_synced(self.version_path(version, "blob"), data)
+    try replace_synced(self.version_path(version, "json"), meta)
+    try sync_folder(self.dir + "/versions")
+    try replace_synced(self.dir + "/head.json", meta)
+    try sync_folder(self.dir)
+    self.prune(version)
+}
+
+// Removes the versions past the kept history, and `.tmp` files a crash left behind.
+fn (self: FileBlobStore) prune(head: i64) {
+    names := fs.list_dir(self.dir + "/versions") or err {
+        return
+    }
+    for name in names {
+        if name.ends_with(".tmp") {
+            _ := fs.remove("{self.dir}/versions/{name}")
+            continue
+        }
+        n := version_of_name(name)
+        if n > 0 && n <= head - SERVER_VERSIONS_KEPT {
+            _ := fs.remove("{self.dir}/versions/{name}")
+        }
+    }
+}
+
+// "12.blob" or "12.json" -> 12; -1 otherwise.
+fn version_of_name(name: str) -> i64 {
+    mut stem := ""
+    if name.ends_with(".blob") || name.ends_with(".json") {
+        stem = name.substr(0, name.len() - 5)
+    }
+    return parse_version_tag(stem)
+}
+
+fn (self: FileBlobStore) blob_versions() -> []BlobVersion! {
+    head := try self.blob_head()
+    names := fs.list_dir(self.dir + "/versions") or err {
+        return error(coded(ERR_IO, "cannot list {self.dir}/versions"))
+    }
+    mut found: []BlobVersion = []
+    for name in names {
+        if !name.ends_with(".json") {
+            continue
+        }
+        n := version_of_name(name)
+        // A version past the head was cut short by a crash before it was named.
+        if n < 1 || n > head.version || !fs.exists(self.version_path(n, "blob")) {
+            continue
+        }
+        text := fs.read_text("{self.dir}/versions/{name}") or err {
+            continue
+        }
+        v := json.parse[BlobVersion](text) or err {
+            continue
+        }
+        found.push(v)
+    }
+    // Newest first (list_dir sorts by name, so "10" comes before "9").
+    mut newest: []BlobVersion = []
+    for k in 0..found.len() {
+        mut best: usize = 0
+        for i in 0..found.len() {
+            if found[i].version > found[best].version {
+                best = i
+            }
+        }
+        newest.push(found[best])
+        found[best].version = -1
+    }
+    return newest
+}
+
+// The address of the other end of an accepted connection, or "".
+fn peer_address(fd: i32) -> str {
+    mut addr := ""
+    // CFIRE-UPSTREAM: CF-139
+    cpp {
+        addr = flint_server::peer_address(fd);
+    }
+    return addr
+}

@@ -17,7 +17,11 @@ without the master password:
 - passwords, private keys and passphrases are **sealed again** with XChaCha20-Poly1305,
   each bound to its own field, and opened only to connect;
 - the key comes from the master password through **Argon2id** (256 MiB), so guessing it is
-  slow.
+  slow;
+- a weak master password can be replaced (`flint vault passwd`, **Settings → Vault**): the
+  vault is re-encrypted under a new salt and key in one rename, so a copy taken before the
+  change still opens only with the old password. Flint shows a strength estimate as you
+  type it, and a remote vault will need **Strong** (3 of 4) or better.
 
 [Vault format](/reference/vault-format/) has the details.
 
@@ -41,10 +45,20 @@ hosts are checked the same way, one hop at a time. See
 
 A remote desktop server's certificate is checked by Flint, not by FreeRDP: the first one is
 shown with its SHA-256 fingerprint and kept in the vault once you trust it, and a changed
-one is refused before the password is sent, with no way to continue. The password goes to
-FreeRDP only to sign in and is wiped from its memory once the session is up. The desktop's
-frames reach the page over a channel on `127.0.0.1` that answers only requests carrying a
-256-bit random token, made per tab. See [Remote desktop](/guides/remote-desktop/).
+one is refused before the password is sent, with no way to continue. The old *Standard RDP
+Security*, where no certificate is checked, is refused. The password goes to FreeRDP only
+to sign in and is wiped from its memory once the session is up. The desktop's frames reach
+the page over a channel on `127.0.0.1` that answers only requests carrying a 256-bit random
+token, made per tab, sent to that port by number, and readable by no other web page. See
+[Remote desktop → Security](/guides/remote-desktop/#security).
+
+## Secrets leave memory once used
+
+A password, key or passphrase opened from the vault is overwritten as soon as SSH or RDP
+has it, and so are the bytes it was opened from; the keys derived from the master password
+are overwritten once the vault has been opened with them. Locking wipes the vault's key
+itself. This is done with libsodium's `sodium_memzero`, and it is best effort: the
+libraries Flint hands a secret to keep their own copy while they need it.
 
 ## Access to an unlocked vault: today
 
@@ -91,14 +105,17 @@ agent cannot turn its hour into a month. A request with `FLINT_TOKEN` is decided
 token alone and refused at once outside its scope, after it expires (90 days at most) or
 once revoked. A token never unlocks the vault.
 
-The **activity log**, in the vault, records every command a caller ran or changed through
-Flint and every request refused: when, which program (and token), the host and the
-whole command (up to 16 KB), never a flag's value or a secret. Allowed reads are not
-recorded, so a synced vault is not rewritten by every `host list`. It keeps entries for
-30 days, 90 days (the default), 1 year or with no limit, set per vault in **Settings →
-Access** and nowhere else: no CLI command changes it, so a program allowed to change
-the vault cannot shorten the record of what it did. Past about 50 MB the oldest entries
-go whatever the setting. Read it in **Settings → Access**.
+The **activity log** records every command a caller ran or changed through Flint and
+every request refused: when, which program (and token), the host and the whole command
+(up to 16 KB), never a flag's value or a secret. Allowed reads are not recorded. It is
+**this machine's**: a [file of its own](/reference/vault-format/#the-activity-file) in the
+config folder, encrypted with a key derived from the vault's, and never inside the vault,
+so a vault that syncs carries no log and is not rewritten on every `flint exec`. It
+keeps entries for 30 days, 90 days (the default), 1 year or with no limit, set on each
+machine in **Settings → Access** and nowhere else: no CLI command changes it, so a
+program allowed to change the vault cannot shorten the record of what it did. Past about
+50 MB the oldest entries go whatever the setting. Read it, or **Back up activity…** (a
+copy of the file, still encrypted), in **Settings → Access**.
 
 **What you approve is what runs.** The approval window shows the command read from the
 arguments Flint is about to run, not from words the program sends to describe itself, and
@@ -132,6 +149,22 @@ wipes the key and ends every grant.
 plain words: it saves the vault key in the OS keychain so Flint reopens without the
 master password. Without it no key is written there; the keys earlier versions cached on
 every unlock are removed once.
+
+## The remote vault server
+
+[`flint-vault-server`](/guides/vault-server/) stores the vault file exactly as Flint
+uploads it, encrypted in full, with a version and the vault's id. It never receives the
+master password or any key and never opens the file, so whoever holds the server or its
+token reads only ciphertext; your master password is then what stands against an offline
+attack, which is why Flint asks for a strong one before it connects.
+
+The token says who may talk to the server. The server can keep only its BLAKE2b hash
+(libsodium), compares it in constant time, refuses a short one at start, and locks a
+client out after 10 wrong tokens in 10 minutes. Every request has a size cap and a
+deadline, and each client a rate limit. The log never holds a token, a header's value or
+the file. A stolen token can still upload, so the server keeps the last 10 versions and
+any of them can be [restored](/guides/vault-server/#restore-an-older-version); a machine
+never replaces its own copy with a download, it merges it.
 
 ## Next
 

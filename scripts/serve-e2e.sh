@@ -132,9 +132,9 @@ check "the app creates the config folder and serves on a first launch" '[[ -S "$
 wait "$fresh_pid"
 
 echo "== the app"
-E2E_MASTER="$MASTER" python3 -I - "$root/scripts/serve-e2e.js" "$tmp/serve-e2e.js" <<'PY'
+E2E_MASTER="$MASTER" E2E_TMP="$tmp" python3 -I - "$root/scripts/serve-e2e.js" "$tmp/serve-e2e.js" <<'PY'
 import os, sys
-src = open(sys.argv[1]).read().replace("@@MASTER@@", os.environ["E2E_MASTER"])
+src = open(sys.argv[1]).read().replace("@@MASTER@@", os.environ["E2E_MASTER"]).replace("@@TMP@@", os.environ["E2E_TMP"])
 open(sys.argv[2], "w").write(src)
 PY
 FLINT_GUI_E2E="$tmp/serve-e2e.js" "${app[@]}" >"$tmp/app.log" 2>&1 &
@@ -527,6 +527,16 @@ expect 0 "make the served vault current again" "" -- vault use "$vault"
 expect 0 "vault unlock: Flint already holds it" "" -- vault unlock
 check "it says so" '[[ "$out" == *"in Flint"* ]]'
 
+echo "== the held vault named through a symbolic link is the held vault (milestone 41)"
+ln -s "$tmp" "$tmp/link"
+expect 0 "a served command through the link" "" -- --vault "$tmp/link/served.flint" --json vault status
+check "it is the app's vault, unlocked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" == "True" ]]'
+expect 4 "vault merge through the link is refused while the app holds it" "$MASTER"$'\n' -- --vault "$tmp/link/served.flint" vault merge "$other" --master-stdin
+check "it says to lock it first" '[[ "$err" == *"lock it in Flint first"* ]]'
+expect 4 "and so is vault passwd" "$MASTER"$'\n'"$MASTER-2"$'\n' -- --vault "$tmp/link/served.flint" vault passwd --master-stdin --new-master-stdin
+expect 4 "vault merge by its own path too" "$MASTER"$'\n' -- vault merge "$other" --master-stdin
+expect 0 "make the served vault current again" "" -- vault use "$vault"
+
 echo "== a second launch of Flint shows the running one and exits (milestone 14)"
 second_start=$(date +%s)
 second_status=0
@@ -595,6 +605,12 @@ for what in "the approval window says copy files with the direction, the host an
   check "$what" 'grep -q "ok   $what" "$tmp/app.log" && ! grep -q "FAIL $what" "$tmp/app.log"'
 done
 check "the socket file is removed when the app quits" '[[ ! -e "$sock" ]]'
+# Milestone 39 (D-094): the log lives in this machine's activity file, never in the vault.
+act_files=("$FLINT_CONFIG_DIR"/activity/*.db)
+# One file per vault opened here: "Served" and "Other".
+check "the activity log is a file of this machine's per vault, in the config folder" '[[ ${#act_files[@]} -eq 2 && -s "${act_files[0]}" && -s "${act_files[1]}" ]]'
+check "the activity folder is owner-only (0700) and its files 0600" '[[ "$(file_mode "$FLINT_CONFIG_DIR/activity")" == "700" && "$(file_mode "${act_files[0]}")" == "600" && "$(file_mode "${act_files[1]}")" == "600" ]]'
+check "the activity files and the backup are encrypted" '! grep -qa "long-cmd-end" "${act_files[@]}" && [[ -s "$tmp/activity-backup.db" ]] && ! grep -qa "long-cmd-end" "$tmp/activity-backup.db" && ! grep -qa "SQLite format" "$tmp/activity-backup.db"'
 check "quitting Flint closed the tunnel it ran" '[[ "$(banner "$TP" 1)" == "closed" ]]'
 
 expect 5 "with the app gone, the CLI is on its own again: locked" "" -- host list

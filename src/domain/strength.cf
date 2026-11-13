@@ -1,0 +1,1333 @@
+package domain
+
+// How hard a master password is to guess (milestone 40, D-095): a reduced port of
+// zxcvbn 4.4.2 (MIT, (c) 2012-2016 Dan Wheeler and Dropbox, Inc.), pure cfire. It
+// is an estimate shown to a person, not cryptography (Principle 4): the key still
+// comes from Argon2id.
+//
+// The password is cut into the patterns an attacker tries first (common passwords
+// and words, also reversed or with l33t substitutions; rows of keys on a QWERTY
+// keyboard; repeats; sequences; recent years; dates), each with a number of guesses,
+// and the cheapest sequence of patterns that covers it gives the password's guesses.
+// The score is zxcvbn's: 0 below 10^3 guesses, 1 below 10^6, 2 below 10^8, 3 below
+// 10^10 and 4 from there. A vault leaves the machine (milestone 43) only with 3 or
+// more (STRENGTH_MIN_SCORE_TO_SYNC); `vault passwd` warns below it.
+//
+// Bytes are characters: a byte outside ASCII counts as an unknown character, which
+// can only make the estimate more cautious. Only the first STRENGTH_MAX_LEN bytes are
+// read; past them every password scores 4 anyway.
+
+import "core:str"
+
+STRENGTH_MIN_SCORE_TO_SYNC: i64 = 3
+STRENGTH_MAX_LEN: usize = 100
+STRENGTH_REFERENCE_YEAR: i64 = 2026
+
+STRENGTH_BRUTEFORCE_CARDINALITY: f64 = 10.0
+STRENGTH_MIN_GUESSES_BEFORE_GROWING_SEQUENCE: f64 = 10000.0
+STRENGTH_MIN_SUBMATCH_GUESSES_SINGLE_CHAR: f64 = 10.0
+STRENGTH_MIN_SUBMATCH_GUESSES_MULTI_CHAR: f64 = 50.0
+STRENGTH_MIN_YEAR_SPACE: i64 = 20
+// Far above the top score; keeps every product finite.
+STRENGTH_MAX_GUESSES: f64 = 1000000000000000000000000000000.0
+
+// What a person sees while typing a new master password.
+type PasswordStrength struct {
+    // 0 (very weak) to 4 (very strong).
+    score:       i64   `json:"score"`
+    label:       str   `json:"label"`
+    // Whether the vault may be connected to a remote vault with it (score 3 or more).
+    sync_ok:     bool  `json:"sync_ok"`
+    // Why it is weak ("" when nothing stands out), and what would help.
+    warning:     str   `json:"warning"`
+    suggestions: []str `json:"suggestions"`
+}
+
+// One pattern found in the password, over bytes i..j inclusive.
+type StrengthMatch struct {
+    pattern:  str
+    i:        i64
+    j:        i64
+    guesses:  f64
+    // dictionary: which list; regex: `recent_year`.
+    kind:     str
+    rank:     i64
+    l33t:     bool
+    reversed: bool
+    upper:    i64
+    // spatial: how many times the row changes direction.
+    turns:    i64
+    // repeat: the length of the repeated part.
+    base_len: i64
+}
+
+// The word lists, each word with its best rank and the list it came from.
+type StrengthWords struct {
+    rank: map[str]i64
+    kind: map[str]str
+}
+
+fn strength_label(score: i64) -> str {
+    if score <= 0 {
+        return "Very weak"
+    }
+    if score == 1 {
+        return "Weak"
+    }
+    if score == 2 {
+        return "Fair"
+    }
+    if score == 3 {
+        return "Strong"
+    }
+    return "Very strong"
+}
+
+fn strength_score(guesses: f64) -> i64 {
+    // zxcvbn's DELTA of 5 keeps a password right at a threshold from rounding up.
+    if guesses < 1000.0 + 5.0 {
+        return 0
+    }
+    if guesses < 1000000.0 + 5.0 {
+        return 1
+    }
+    if guesses < 100000000.0 + 5.0 {
+        return 2
+    }
+    if guesses < 10000000000.0 + 5.0 {
+        return 3
+    }
+    return 4
+}
+
+// Estimates `password`. `user_words` (the vault's name, for one) count as the most
+// common words of all: a password built from them is guessed first.
+fn estimate_password_strength(password: str, user_words: []str) -> PasswordStrength {
+    mut pw := password
+    if pw.len() > STRENGTH_MAX_LEN {
+        pw = pw.substr(0, STRENGTH_MAX_LEN)
+    }
+    words := strength_word_lists(user_words)
+    (guesses, seq) := strength_guesses(pw, words)
+    score := strength_score(guesses)
+    mut res := PasswordStrength{ score: score, label: strength_label(score), sync_ok: score >= STRENGTH_MIN_SCORE_TO_SYNC, warning: "", suggestions: [] }
+    strength_feedback(mut res, pw, seq)
+    return res
+}
+
+// ---- Word lists -----------------------------------------------------------------
+
+fn add_strength_words(mut w: StrengthWords, kind: str, chunks: []str) {
+    mut r: i64 = 0
+    for c in chunks {
+        for word in str.split(c, " ") {
+            if word.len() == 0 {
+                continue
+            }
+            r += 1
+            if !w.rank.contains(word) || (w.rank.get(word) or 0) > r {
+                w.rank[word] = r
+                w.kind[word] = kind
+            }
+        }
+    }
+}
+
+fn strength_word_lists(user_words: []str) -> StrengthWords {
+    mut w := StrengthWords{ rank: {}, kind: {} }
+    mut mine: []str = []
+    for u in user_words {
+        for part in str.split(str.to_lower(u), " ") {
+            if part.len() > 0 {
+                mine.push(part)
+            }
+        }
+    }
+    add_strength_words(mut w, "user_inputs", [str.join(mine, " ")])
+    add_strength_words(mut w, "passwords", strength_words_passwords())
+    add_strength_words(mut w, "english_wikipedia", strength_words_english_wikipedia())
+    add_strength_words(mut w, "us_tv_and_film", strength_words_us_tv_and_film())
+    add_strength_words(mut w, "surnames", strength_words_surnames())
+    add_strength_words(mut w, "female_names", strength_words_female_names())
+    add_strength_words(mut w, "male_names", strength_words_male_names())
+    return w
+}
+
+// ---- Small helpers --------------------------------------------------------------
+
+fn pw_bytes(s: str) -> []u8 {
+    mut out_b: []u8 = []
+    for b in s.bytes() {
+        out_b.push(u8(b))
+    }
+    return out_b
+}
+
+// A copy of b[from..to] (CFIRE-UPSTREAM: CF-131: a slice passes to no `[]u8` parameter).
+fn sub_bytes(b: []u8, from: usize, to: usize) -> []u8 {
+    mut out_b: []u8 = []
+    for k in from..to {
+        out_b.push(b[k])
+    }
+    return out_b
+}
+
+fn bytes_str(b: []u8) -> str {
+    mut s := ""
+    for c in b {
+        s.push_back(char(c))
+    }
+    return s
+}
+
+fn is_upper_byte(c: u8) -> bool {
+    return c >= 65 && c <= 90
+}
+
+fn is_lower_byte(c: u8) -> bool {
+    return c >= 97 && c <= 122
+}
+
+fn is_digit_byte(c: u8) -> bool {
+    return c >= 48 && c <= 57
+}
+
+fn lower_byte(c: u8) -> u8 {
+    if is_upper_byte(c) {
+        return c + 32
+    }
+    return c
+}
+
+fn n_choose_k(n0: i64, k: i64) -> f64 {
+    if k > n0 {
+        return 0.0
+    }
+    if k == 0 {
+        return 1.0
+    }
+    mut n := n0
+    mut r: f64 = 1.0
+    for d in 1..=k {
+        r = r * f64(n)
+        r = r / f64(d)
+        n -= 1
+    }
+    return r
+}
+
+fn pow_f64(base: f64, exp: i64) -> f64 {
+    mut r: f64 = 1.0
+    for _ in 0..exp {
+        r = r * base
+        if r > STRENGTH_MAX_GUESSES {
+            return STRENGTH_MAX_GUESSES
+        }
+    }
+    return r
+}
+
+fn factorial_f64(n: i64) -> f64 {
+    mut f: f64 = 1.0
+    for i in 2..=n {
+        f = f * f64(i)
+    }
+    return f
+}
+
+fn cap_guesses(g: f64) -> f64 {
+    if g > STRENGTH_MAX_GUESSES {
+        return STRENGTH_MAX_GUESSES
+    }
+    return g
+}
+
+fn new_match(pattern: str, i: i64, j: i64, guesses: f64) -> StrengthMatch {
+    return StrengthMatch{ pattern: pattern, i: i, j: j, guesses: cap_guesses(guesses), kind: "", rank: 0, l33t: false, reversed: false, upper: 0, turns: 0, base_len: 0 }
+}
+
+// ---- Dictionary -----------------------------------------------------------------
+
+// zxcvbn's uppercase_variations: lowercase is free, a capital first or last letter or
+// all capitals double the space, any other mix counts its arrangements.
+fn uppercase_variations(token: []u8) -> f64 {
+    mut up: i64 = 0
+    mut low: i64 = 0
+    for c in token {
+        if is_upper_byte(c) {
+            up += 1
+        } else if is_lower_byte(c) {
+            low += 1
+        }
+    }
+    if up == 0 {
+        return 1.0
+    }
+    n := token.len()
+    if n >= 2 {
+        mut rest_upper := false
+        for k in 1..n {
+            if is_upper_byte(token[k]) {
+                rest_upper = true
+            }
+        }
+        if is_upper_byte(token[0]) && !rest_upper {
+            return 2.0
+        }
+        mut head_upper := false
+        for k in 0..n - 1 {
+            if is_upper_byte(token[k]) {
+                head_upper = true
+            }
+        }
+        if is_upper_byte(token[n - 1]) && !head_upper {
+            return 2.0
+        }
+    }
+    if low == 0 {
+        return 2.0
+    }
+    mut v: f64 = 0.0
+    lim := min_i64(up, low)
+    for k in 1..=lim {
+        v = v + n_choose_k(up + low, k)
+    }
+    return v
+}
+
+// Every word of `w` inside `lower` (already lowercase), with its rank.
+fn dictionary_matches(lower: []u8, w: StrengthWords) -> []StrengthMatch {
+    mut list: []StrengthMatch = []
+    n := lower.len()
+    s := bytes_str(lower)
+    for i in 0..n {
+        for j in i..n {
+            word := s.substr(i, j - i + 1)
+            if w.rank.contains(word) {
+                mut m := new_match("dictionary", i64(i), i64(j), f64(w.rank.get(word) or 0))
+                m.rank = w.rank.get(word) or 0
+                m.kind = w.kind.get(word) or ""
+                list.push(m)
+            }
+        }
+    }
+    return list
+}
+
+fn dictionary_match_all(pw: []u8, lower: []u8, w: StrengthWords) -> []StrengthMatch {
+    mut list: []StrengthMatch = []
+    for m0 in dictionary_matches(lower, w) {
+        mut m := m0
+        m.upper = i64(uppercase_variations(sub_bytes(pw, usize(m.i), usize(m.j) + 1)))
+        m.guesses = cap_guesses(f64(m.rank) * uppercase_variations(sub_bytes(pw, usize(m.i), usize(m.j) + 1)))
+        list.push(m)
+    }
+    // Reversed: "drowssap".
+    n := lower.len()
+    mut rev: []u8 = []
+    for k in 0..n {
+        rev.push(lower[n - 1 - k])
+    }
+    for m0 in dictionary_matches(rev, w) {
+        mut m := m0
+        i := i64(n) - 1 - m0.j
+        j := i64(n) - 1 - m0.i
+        m.i = i
+        m.j = j
+        m.reversed = true
+        m.guesses = cap_guesses(f64(m.rank) * uppercase_variations(sub_bytes(pw, usize(i), usize(j) + 1)) * 2.0)
+        list.push(m)
+    }
+    return list
+}
+
+// The l33t table: each substitute and the letters it may stand for.
+fn l33t_letters(c: u8) -> []u8 {
+    if c == 52 || c == 64 {
+        return [97]            // 4 @ -> a
+    }
+    if c == 56 {
+        return [98]            // 8 -> b
+    }
+    if c == 40 || c == 123 || c == 91 || c == 60 {
+        return [99]            // ( { [ < -> c
+    }
+    if c == 51 {
+        return [101]           // 3 -> e
+    }
+    if c == 54 {
+        return [103]           // 6 -> g
+    }
+    if c == 57 {
+        return [103]           // 9 -> g
+    }
+    if c == 49 || c == 124 {
+        return [105, 108]      // 1 | -> i l
+    }
+    if c == 33 {
+        return [105]           // ! -> i
+    }
+    if c == 55 {
+        return [108, 116]      // 7 -> l t
+    }
+    if c == 48 {
+        return [111]           // 0 -> o
+    }
+    if c == 36 || c == 53 {
+        return [115]           // $ 5 -> s
+    }
+    if c == 43 {
+        return [116]           // + -> t
+    }
+    if c == 37 {
+        return [120]           // % -> x
+    }
+    if c == 50 {
+        return [122]           // 2 -> z
+    }
+    return []
+}
+
+// zxcvbn's l33t_variations for one substitution set (`subs`: substitute, letter).
+fn l33t_variations(token_lower: []u8, subs: [][]u8) -> f64 {
+    mut v: f64 = 1.0
+    for sub in subs {
+        mut s: i64 = 0
+        mut u: i64 = 0
+        for c in token_lower {
+            if c == sub[0] {
+                s += 1
+            } else if c == sub[1] {
+                u += 1
+            }
+        }
+        if s == 0 || u == 0 {
+            v = v * 2.0
+        } else {
+            lim := min_i64(u, s)
+            mut p: f64 = 0.0
+            for k in 1..=lim {
+                p = p + n_choose_k(u + s, k)
+            }
+            v = v * p
+        }
+    }
+    return v
+}
+
+// Words with substitutions: "p@ssw0rd". Every way to read the ambiguous substitutes
+// (1, | and 7) is tried; there are eight at most.
+fn l33t_match_all(pw: []u8, lower: []u8, w: StrengthWords) -> []StrengthMatch {
+    mut list: []StrengthMatch = []
+    // The substitutes present, each once.
+    mut present: []u8 = []
+    for c in lower {
+        if l33t_letters(c).len() > 0 {
+            mut seen := false
+            for p in present {
+                if p == c {
+                    seen = true
+                }
+            }
+            if !seen {
+                present.push(c)
+            }
+        }
+    }
+    if present.len() == 0 {
+        return list
+    }
+    // Each assignment picks one letter per substitute.
+    mut assignments: [][]u8 = [[]]
+    for p in present {
+        mut next: [][]u8 = []
+        for a in assignments {
+            for letter in l33t_letters(p) {
+                mut b := a
+                b.push(letter)
+                next.push(b)
+            }
+        }
+        assignments = next
+    }
+    for a in assignments {
+        mut subbed: []u8 = []
+        for c in lower {
+            mut t := c
+            for k in 0..present.len() {
+                if present[k] == c {
+                    t = a[k]
+                }
+            }
+            subbed.push(t)
+        }
+        for m0 in dictionary_matches(subbed, w) {
+            if m0.j <= m0.i {
+                continue
+            }
+            tok := sub_bytes(lower, usize(m0.i), usize(m0.j) + 1)
+            mut subs: [][]u8 = []
+            for k in 0..present.len() {
+                mut used := false
+                for c in tok {
+                    if c == present[k] {
+                        used = true
+                    }
+                }
+                if used {
+                    subs.push([present[k], a[k]])
+                }
+            }
+            if subs.len() == 0 {
+                continue
+            }
+            mut m := m0
+            m.l33t = true
+            m.guesses = cap_guesses(f64(m.rank) * uppercase_variations(sub_bytes(pw, usize(m.i), usize(m.j) + 1)) * l33t_variations(tok, subs))
+            list.push(m)
+        }
+    }
+    return list
+}
+
+// ---- Rows of keys (QWERTY) ------------------------------------------------------
+
+// The keyboard as zxcvbn's slanted QWERTY graph: each key is its unshifted and its
+// shifted character, rows offset so that "q" sits below "1" and "2".
+fn qwerty_rows() -> []str {
+    row1: str = `qQwWeErRtTyYuUiIoOpP[{]}\|`
+    row2: str = `aAsSdDfFgGhHjJkKlL;:'"`
+    row3: str = `zZxXcCvVbBnNmM,<.>/?`
+    return ["`~1!2@3#4$5%6^7&8*9(0)-_=+", row1, row2, row3]
+}
+
+fn qwerty_offset(row: i64) -> i64 {
+    if row == 0 {
+        return 0
+    }
+    return 1
+}
+
+// The two characters of the key at slanted position (x, y), or [] when there is none.
+fn qwerty_key_at(rows: []str, x: i64, y: i64) -> []u8 {
+    if y < 0 || y >= i64(rows.len()) {
+        return []
+    }
+    col := x - qwerty_offset(y)
+    row := pw_bytes(rows[usize(y)])
+    if col < 0 || col * 2 + 1 >= i64(row.len()) {
+        return []
+    }
+    return [row[usize(col * 2)], row[usize(col * 2 + 1)]]
+}
+
+// The slanted position of `c` ((-1, -1) when it is not on the keyboard).
+fn qwerty_pos(rows: []str, c: u8) -> (i64, i64) {
+    for y in 0..rows.len() {
+        row := pw_bytes(rows[y])
+        for k in 0..row.len() {
+            if row[k] == c {
+                return (i64(k / 2) + qwerty_offset(i64(y)), i64(y))
+            }
+        }
+    }
+    return (-1, -1)
+}
+
+// The six neighbours of a key, in zxcvbn's order: left, upper left, upper right,
+// right, lower right, lower left.
+fn qwerty_neighbours(rows: []str, x: i64, y: i64) -> [][]u8 {
+    return [qwerty_key_at(rows, x - 1, y), qwerty_key_at(rows, x, y - 1), qwerty_key_at(rows, x + 1, y - 1), qwerty_key_at(rows, x + 1, y), qwerty_key_at(rows, x, y + 1), qwerty_key_at(rows, x - 1, y + 1)]
+}
+
+// zxcvbn's KEYBOARD_STARTING_POSITIONS (one per character) and average degree.
+fn qwerty_stats(rows: []str) -> (f64, f64) {
+    mut keys: i64 = 0
+    mut degree: i64 = 0
+    for y in 0..rows.len() {
+        row := pw_bytes(rows[y])
+        for k in 0..row.len() / 2 {
+            x := i64(k) + qwerty_offset(i64(y))
+            mut d: i64 = 0
+            for nb in qwerty_neighbours(rows, x, i64(y)) {
+                if nb.len() > 0 {
+                    d += 1
+                }
+            }
+            keys += 2
+            degree += 2 * d
+        }
+    }
+    return (f64(keys), f64(degree) / f64(keys))
+}
+
+fn is_shifted_byte(rows: []str, c: u8) -> bool {
+    for row in rows {
+        b := pw_bytes(row)
+        for k in 0..b.len() / 2 {
+            if b[k * 2 + 1] == c {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+fn spatial_guesses(len: i64, turns: i64, shifted: i64, starts: f64, degree: f64) -> f64 {
+    mut g: f64 = 0.0
+    for i in 2..=len {
+        possible := min_i64(turns, i - 1)
+        for j in 1..=possible {
+            g = g + n_choose_k(i - 1, j - 1) * starts * pow_f64(degree, j)
+        }
+    }
+    if shifted > 0 {
+        unshifted := len - shifted
+        if unshifted == 0 {
+            g = g * 2.0
+        } else {
+            lim := min_i64(shifted, unshifted)
+            mut v: f64 = 0.0
+            for i in 1..=lim {
+                v = v + n_choose_k(shifted + unshifted, i)
+            }
+            g = g * v
+        }
+    }
+    return g
+}
+
+// Runs of three or more neighbouring keys: "qwerty", "zxcvbn", "1qaz".
+fn spatial_match_all(pw: []u8) -> []StrengthMatch {
+    mut list: []StrengthMatch = []
+    rows := qwerty_rows()
+    (starts, degree) := qwerty_stats(rows)
+    n := i64(pw.len())
+    mut i: i64 = 0
+    for i < n - 1 {
+        mut j := i + 1
+        mut last_dir: i64 = -1
+        mut turns: i64 = 0
+        mut shifted: i64 = 0
+        if is_shifted_byte(rows, pw[usize(i)]) {
+            shifted = 1
+        }
+        for {
+            mut found := false
+            if j < n {
+                (x, y) := qwerty_pos(rows, pw[usize(j - 1)])
+                if y >= 0 {
+                    cur := pw[usize(j)]
+                    nbs := qwerty_neighbours(rows, x, y)
+                    for d in 0..nbs.len() {
+                        nb := nbs[d]
+                        if !found && nb.len() == 2 && (nb[0] == cur || nb[1] == cur) {
+                            found = true
+                            if nb[1] == cur && nb[0] != cur {
+                                shifted += 1
+                            }
+                            if last_dir != i64(d) {
+                                turns += 1
+                                last_dir = i64(d)
+                            }
+                        }
+                    }
+                }
+            }
+            if found {
+                j += 1
+            } else {
+                if j - i > 2 {
+                    mut m := new_match("spatial", i, j - 1, spatial_guesses(j - i, turns, shifted, starts, degree))
+                    m.turns = turns
+                    list.push(m)
+                }
+                i = j
+                break
+            }
+        }
+    }
+    return list
+}
+
+// ---- Repeats --------------------------------------------------------------------
+
+// The longest run of a repeated part starting at `i` ("abcabc", "aaaa"): its total
+// length and the length of the smallest part (0, 0 when nothing repeats there).
+fn longest_repeat_at(pw: []u8, i: usize) -> (usize, usize) {
+    n := pw.len()
+    mut best_total: usize = 0
+    for p in 1..=(n - i) / 2 {
+        mut count: usize = 1
+        for i + (count + 1) * p <= n {
+            mut same := true
+            for k in 0..p {
+                if pw[i + k] != pw[i + count * p + k] {
+                    same = false
+                    break
+                }
+            }
+            if !same {
+                break
+            }
+            count += 1
+        }
+        if count >= 2 && count * p > best_total {
+            best_total = count * p
+        }
+    }
+    if best_total == 0 {
+        return (0, 0)
+    }
+    // The smallest part that makes up the whole run.
+    for p in 1..=best_total / 2 {
+        if best_total % p == 0 {
+            mut ok := true
+            for k in p..best_total {
+                if pw[i + k] != pw[i + k - p] {
+                    ok = false
+                    break
+                }
+            }
+            if ok {
+                return (best_total, p)
+            }
+        }
+    }
+    return (best_total, best_total)
+}
+
+fn repeat_match_all(pw: []u8, w: StrengthWords) -> []StrengthMatch {
+    mut list: []StrengthMatch = []
+    n := pw.len()
+    mut i: usize = 0
+    for i + 1 < n {
+        (total, base) := longest_repeat_at(pw, i)
+        if total == 0 {
+            i += 1
+            continue
+        }
+        (base_guesses, _) := strength_guesses(bytes_str(sub_bytes(pw, i, i + base)), w)
+        mut m := new_match("repeat", i64(i), i64(i + total - 1), base_guesses * f64(total / base))
+        m.base_len = i64(base)
+        list.push(m)
+        i += total
+    }
+    return list
+}
+
+// ---- Sequences ------------------------------------------------------------------
+
+fn sequence_guesses(token: []u8, ascending: bool) -> f64 {
+    first := token[0]
+    mut base: f64 = 26.0
+    if first == 97 || first == 65 || first == 122 || first == 90 || first == 48 || first == 49 || first == 57 {
+        base = 4.0
+    } else if is_digit_byte(first) {
+        base = 10.0
+    }
+    if !ascending {
+        base = base * 2.0
+    }
+    return base * f64(token.len())
+}
+
+// Runs with one step between characters: "abcd", "9753", "ZYX".
+fn sequence_match_all(pw: []u8) -> []StrengthMatch {
+    mut list: []StrengthMatch = []
+    n := i64(pw.len())
+    if n < 2 {
+        return list
+    }
+    mut i: i64 = 0
+    mut last: i64 = i64(pw[1]) - i64(pw[0])
+    for k in 2..=n {
+        mut delta: i64 = 0
+        if k < n {
+            delta = i64(pw[usize(k)]) - i64(pw[usize(k - 1)])
+            if delta == last {
+                continue
+            }
+        }
+        j := k - 1
+        mut ad := last
+        if ad < 0 {
+            ad = -ad
+        }
+        if (j - i > 1 || ad == 1) && ad > 0 && ad <= 5 {
+            list.push(new_match("sequence", i, j, sequence_guesses(sub_bytes(pw, usize(i), usize(j) + 1), last > 0)))
+        }
+        i = j
+        last = delta
+    }
+    return list
+}
+
+// ---- Years and dates ------------------------------------------------------------
+
+fn digits_value(pw: []u8, from: usize, to: usize) -> i64 {
+    mut v: i64 = 0
+    for k in from..to {
+        v = v * 10 + i64(pw[k]) - 48
+    }
+    return v
+}
+
+fn all_digits(pw: []u8, from: usize, to: usize) -> bool {
+    for k in from..to {
+        if !is_digit_byte(pw[k]) {
+            return false
+        }
+    }
+    return true
+}
+
+// 1900-2029: zxcvbn's recent_year, brought to this decade.
+fn year_match_all(pw: []u8) -> []StrengthMatch {
+    mut list: []StrengthMatch = []
+    n := pw.len()
+    if n < 4 {
+        return list
+    }
+    for i in 0..=n - 4 {
+        if all_digits(pw, i, i + 4) {
+            y := digits_value(pw, i, i + 4)
+            if (y >= 1900 && y <= 1999) || (y >= 2000 && y <= 2029) {
+                mut space := y - STRENGTH_REFERENCE_YEAR
+                if space < 0 {
+                    space = -space
+                }
+                if space < STRENGTH_MIN_YEAR_SPACE {
+                    space = STRENGTH_MIN_YEAR_SPACE
+                }
+                mut m := new_match("regex", i64(i), i64(i + 3), f64(space))
+                m.kind = "recent_year"
+                list.push(m)
+            }
+        }
+    }
+    return list
+}
+
+fn two_to_four_digit_year(y: i64) -> i64 {
+    if y > 99 {
+        return y
+    }
+    if y > 50 {
+        return y + 1900
+    }
+    return y + 2000
+}
+
+fn ints_to_dm(a: i64, b: i64) -> bool {
+    return (a >= 1 && a <= 31 && b >= 1 && b <= 12) || (b >= 1 && b <= 31 && a >= 1 && a <= 12)
+}
+
+// zxcvbn's map_ints_to_dmy: the year of three numbers read as a date, or -1.
+fn ints_to_year(a: i64, b: i64, c: i64) -> i64 {
+    if b > 31 || b <= 0 {
+        return -1
+    }
+    mut over12 := 0
+    mut over31 := 0
+    mut under1 := 0
+    for v in [a, b, c] {
+        if (v > 99 && v < 1000) || v > 2050 {
+            return -1
+        }
+        if v > 31 {
+            over31 += 1
+        }
+        if v > 12 {
+            over12 += 1
+        }
+        if v <= 0 {
+            under1 += 1
+        }
+    }
+    if over31 >= 2 || over12 == 3 || under1 >= 2 {
+        return -1
+    }
+    // A four-digit year last, then first.
+    if c >= 1000 && c <= 2050 {
+        if ints_to_dm(a, b) {
+            return c
+        }
+        return -1
+    }
+    if a >= 1000 && a <= 2050 {
+        if ints_to_dm(b, c) {
+            return a
+        }
+        return -1
+    }
+    if ints_to_dm(a, b) {
+        return two_to_four_digit_year(c)
+    }
+    if ints_to_dm(b, c) {
+        return two_to_four_digit_year(a)
+    }
+    return -1
+}
+
+fn date_guesses(year: i64, separator: bool) -> f64 {
+    mut space := year - STRENGTH_REFERENCE_YEAR
+    if space < 0 {
+        space = -space
+    }
+    if space < STRENGTH_MIN_YEAR_SPACE {
+        space = STRENGTH_MIN_YEAR_SPACE
+    }
+    mut g := f64(space) * 365.0
+    if separator {
+        g = g * 4.0
+    }
+    return g
+}
+
+// Where a date of `len` digits with no separator may be cut (zxcvbn's DATE_SPLITS).
+fn date_splits(len: usize) -> [][]usize {
+    if len == 4 {
+        return [[1, 2], [2, 3]]
+    }
+    if len == 5 {
+        return [[1, 3], [2, 3]]
+    }
+    if len == 6 {
+        return [[1, 2], [2, 4], [4, 5]]
+    }
+    if len == 7 {
+        return [[1, 3], [2, 3], [4, 5], [4, 6]]
+    }
+    return [[2, 4], [4, 6]]
+}
+
+fn is_date_separator(c: u8) -> bool {
+    return c == 32 || c == 47 || c == 92 || c == 95 || c == 46 || c == 45
+}
+
+// Dates: "13051987", "1987-05-13", "5.13.87".
+fn date_match_all(pw: []u8) -> []StrengthMatch {
+    mut found: []StrengthMatch = []
+    n := pw.len()
+    // No separator: 4 to 8 digits.
+    for i in 0..n {
+        for len in 4..=8 {
+            if i + len > n || !all_digits(pw, i, i + len) {
+                continue
+            }
+            mut best: i64 = -1
+            mut best_dist: i64 = 0
+            for sp in date_splits(len) {
+                y := ints_to_year(digits_value(pw, i, i + sp[0]), digits_value(pw, i + sp[0], i + sp[1]), digits_value(pw, i + sp[1], i + len))
+                if y < 0 {
+                    continue
+                }
+                mut dist := y - STRENGTH_REFERENCE_YEAR
+                if dist < 0 {
+                    dist = -dist
+                }
+                if best < 0 || dist < best_dist {
+                    best = y
+                    best_dist = dist
+                }
+            }
+            if best >= 0 {
+                found.push(new_match("date", i64(i), i64(i + len - 1), date_guesses(best, false)))
+            }
+        }
+    }
+    // With a separator, the same one twice: 1-4 digits, 1-2, 1-4.
+    for i in 0..n {
+        for len in 6..=10 {
+            if i + len > n {
+                continue
+            }
+            // Find the two separators.
+            mut s1: usize = 0
+            mut s2: usize = 0
+            mut seps := 0
+            mut ok := true
+            for k in i..i + len {
+                if is_digit_byte(pw[k]) {
+                    continue
+                }
+                if !is_date_separator(pw[k]) {
+                    ok = false
+                    break
+                }
+                seps += 1
+                if seps == 1 {
+                    s1 = k
+                } else if seps == 2 {
+                    s2 = k
+                }
+            }
+            if !ok || seps != 2 || pw[s1] != pw[s2] {
+                continue
+            }
+            l1 := s1 - i
+            l2 := s2 - s1 - 1
+            l3 := i + len - s2 - 1
+            if l1 < 1 || l1 > 4 || l2 < 1 || l2 > 2 || l3 < 1 || l3 > 4 {
+                continue
+            }
+            y := ints_to_year(digits_value(pw, i, s1), digits_value(pw, s1 + 1, s2), digits_value(pw, s2 + 1, i + len))
+            if y >= 0 {
+                found.push(new_match("date", i64(i), i64(i + len - 1), date_guesses(y, true)))
+            }
+        }
+    }
+    // A date inside a longer date is not a match of its own.
+    mut list: []StrengthMatch = []
+    for a in 0..found.len() {
+        mut inside := false
+        for b in 0..found.len() {
+            if a != b && found[b].i <= found[a].i && found[b].j >= found[a].j && (found[b].i != found[a].i || found[b].j != found[a].j) {
+                inside = true
+            }
+        }
+        if !inside {
+            list.push(found[a])
+        }
+    }
+    return list
+}
+
+// ---- The cheapest sequence ------------------------------------------------------
+
+fn omnimatch(pw: []u8, w: StrengthWords) -> []StrengthMatch {
+    mut lower: []u8 = []
+    for c in pw {
+        lower.push(lower_byte(c))
+    }
+    mut all: []StrengthMatch = []
+    for m in dictionary_match_all(pw, lower, w) {
+        all.push(m)
+    }
+    for m in l33t_match_all(pw, lower, w) {
+        all.push(m)
+    }
+    for m in spatial_match_all(pw) {
+        all.push(m)
+    }
+    for m in repeat_match_all(pw, w) {
+        all.push(m)
+    }
+    for m in sequence_match_all(pw) {
+        all.push(m)
+    }
+    for m in year_match_all(pw) {
+        all.push(m)
+    }
+    for m in date_match_all(pw) {
+        all.push(m)
+    }
+    return all
+}
+
+// A match's guesses as the search counts them: a part of a longer password is never
+// cheaper than 10 (one character) or 50.
+fn counted_guesses(m: StrengthMatch, n: i64) -> f64 {
+    if m.j - m.i + 1 >= n {
+        return m.guesses
+    }
+    mut least := STRENGTH_MIN_SUBMATCH_GUESSES_MULTI_CHAR
+    if m.j == m.i {
+        least = STRENGTH_MIN_SUBMATCH_GUESSES_SINGLE_CHAR
+    }
+    if m.guesses < least {
+        return least
+    }
+    return m.guesses
+}
+
+fn bruteforce_match(i: i64, j: i64) -> StrengthMatch {
+    len := j - i + 1
+    mut g := pow_f64(STRENGTH_BRUTEFORCE_CARDINALITY, len)
+    mut least := STRENGTH_MIN_SUBMATCH_GUESSES_MULTI_CHAR + 1.0
+    if len == 1 {
+        least = STRENGTH_MIN_SUBMATCH_GUESSES_SINGLE_CHAR + 1.0
+    }
+    if g < least {
+        g = least
+    }
+    return new_match("bruteforce", i, j, g)
+}
+
+// The best sequence of length l covering bytes 0..k: its last match, the product of
+// its guesses and the score zxcvbn minimises, l! * product + 10000^(l-1).
+type StrengthStep struct {
+    l:     i64
+    m:     StrengthMatch
+    pi:    f64
+    g:     f64
+}
+
+// One row per end byte k: the best sequences ending there, one per length.
+fn step_update(mut opt: [][]StrengthStep, m: StrengthMatch, l: i64, n: i64) {
+    k := usize(m.j)
+    mut pi := counted_guesses(m, n)
+    if l > 1 {
+        mut prev_pi: f64 = -1.0
+        for s in opt[usize(m.i - 1)] {
+            if s.l == l - 1 {
+                prev_pi = s.pi
+            }
+        }
+        if prev_pi < 0.0 {
+            return
+        }
+        pi = cap_guesses(pi * prev_pi)
+    }
+    g := cap_guesses(factorial_f64(l) * pi + pow_f64(STRENGTH_MIN_GUESSES_BEFORE_GROWING_SEQUENCE, l - 1))
+    for s in opt[k] {
+        if s.l <= l && s.g <= g {
+            return
+        }
+    }
+    mut row: []StrengthStep = []
+    for s in opt[k] {
+        if s.l != l {
+            row.push(s)
+        }
+    }
+    row.push(StrengthStep{ l: l, m: m, pi: pi, g: g })
+    opt[k] = row
+}
+
+// The password's guesses and the matches of the cheapest way to make it.
+fn strength_guesses(password: str, w: StrengthWords) -> (f64, []StrengthMatch) {
+    pw := pw_bytes(password)
+    n := i64(pw.len())
+    if n == 0 {
+        // CFIRE-UPSTREAM: CF-133 (an empty slice literal in a tuple does not compile)
+        none_yet: []StrengthMatch = []
+        return (1.0, none_yet)
+    }
+    matches := omnimatch(pw, w)
+    mut opt: [][]StrengthStep = []
+    for _ in 0..n {
+        opt.push([])
+    }
+    for k in 0..n {
+        for m in matches {
+            if m.j != k {
+                continue
+            }
+            if m.i > 0 {
+                mut lens: []i64 = []
+                for s in opt[usize(m.i - 1)] {
+                    lens.push(s.l)
+                }
+                for l in lens {
+                    step_update(mut opt, m, l + 1, n)
+                }
+            } else {
+                step_update(mut opt, m, 1, n)
+            }
+        }
+        // Bruteforce over 0..k, or after a sequence that does not end in bruteforce.
+        step_update(mut opt, bruteforce_match(0, k), 1, n)
+        for i in 1..=k {
+            bf := bruteforce_match(i, k)
+            mut prev: []StrengthStep = []
+            for s in opt[usize(i - 1)] {
+                prev.push(s)
+            }
+            for s in prev {
+                if s.m.pattern != "bruteforce" {
+                    step_update(mut opt, bf, s.l + 1, n)
+                }
+            }
+        }
+    }
+    // Unwind the cheapest sequence over the whole password.
+    mut best_l: i64 = 0
+    mut best_g: f64 = 0.0
+    for s in opt[usize(n - 1)] {
+        if best_l == 0 || s.g < best_g {
+            best_l = s.l
+            best_g = s.g
+        }
+    }
+    // Collected from the end, then reversed (CFIRE-UPSTREAM: CF-132: no `insert`).
+    mut back: []StrengthMatch = []
+    mut k := n - 1
+    mut l := best_l
+    for k >= 0 && l > 0 {
+        mut found := false
+        for s in opt[usize(k)] {
+            if !found && s.l == l {
+                back.push(s.m)
+                k = s.m.i - 1
+                found = true
+            }
+        }
+        if !found {
+            break
+        }
+        l -= 1
+    }
+    mut seq: []StrengthMatch = []
+    for idx in 0..back.len() {
+        seq.push(back[back.len() - 1 - idx])
+    }
+    return (best_g, seq)
+}
+
+// ---- What to tell the person ----------------------------------------------------
+
+fn strength_feedback(mut res: PasswordStrength, pw: str, seq: []StrengthMatch) {
+    if pw.len() == 0 {
+        res.suggestions = ["Use a few words, avoid common phrases", "No need for symbols, digits, or uppercase letters"]
+        return
+    }
+    if res.score > 2 || seq.len() == 0 {
+        return
+    }
+    mut longest := seq[0]
+    for m in seq {
+        if m.j - m.i > longest.j - longest.i {
+            longest = m
+        }
+    }
+    sole := seq.len() == 1
+    mut suggestions: []str = ["Add another word or two. Uncommon words are better."]
+    if longest.pattern == "dictionary" {
+        if longest.kind == "passwords" {
+            if sole && !longest.l33t && !longest.reversed {
+                if longest.rank <= 10 {
+                    res.warning = "This is a top-10 common password"
+                } else if longest.rank <= 100 {
+                    res.warning = "This is a top-100 common password"
+                } else {
+                    res.warning = "This is a very common password"
+                }
+            } else if longest.guesses <= 10000.0 {
+                res.warning = "This is similar to a commonly used password"
+            }
+        } else if longest.kind == "english_wikipedia" || longest.kind == "us_tv_and_film" || longest.kind == "user_inputs" {
+            if sole {
+                res.warning = "A word by itself is easy to guess"
+            }
+        } else {
+            if sole {
+                res.warning = "Names and surnames by themselves are easy to guess"
+            } else {
+                res.warning = "Common names and surnames are easy to guess"
+            }
+        }
+        token := sub_bytes(pw_bytes(pw), usize(longest.i), usize(longest.j) + 1)
+        if uppercase_variations(token) == 2.0 && is_upper_byte(token[0]) {
+            suggestions.push("Capitalization doesn't help very much")
+        }
+        if longest.reversed && longest.j - longest.i >= 3 {
+            suggestions.push("Reversed words aren't much harder to guess")
+        }
+        if longest.l33t {
+            suggestions.push("Predictable substitutions like '@' instead of 'a' don't help very much")
+        }
+    } else if longest.pattern == "spatial" {
+        if longest.turns == 1 {
+            res.warning = "Straight rows of keys are easy to guess"
+        } else {
+            res.warning = "Short keyboard patterns are easy to guess"
+        }
+        suggestions.push("Use a longer keyboard pattern with more turns")
+    } else if longest.pattern == "repeat" {
+        if longest.base_len == 1 {
+            res.warning = "Repeats like \"aaa\" are easy to guess"
+        } else {
+            res.warning = "Repeats like \"abcabcabc\" are only slightly harder to guess than \"abc\""
+        }
+        suggestions.push("Avoid repeated words and characters")
+    } else if longest.pattern == "sequence" {
+        res.warning = "Sequences like abc or 6543 are easy to guess"
+        suggestions.push("Avoid sequences")
+    } else if longest.pattern == "regex" {
+        res.warning = "Recent years are easy to guess"
+        suggestions.push("Avoid recent years")
+    } else if longest.pattern == "date" {
+        res.warning = "Dates are often easy to guess"
+        suggestions.push("Avoid dates and years that are associated with you")
+    }
+    res.suggestions = suggestions
+}
+
+// ---- Tests ----------------------------------------------------------------------
+
+fn score_of(pw: str) -> i64 {
+    return estimate_password_strength(pw, []).score
+}
+
+test "common passwords score 0" {
+    for pw in ["password", "123456", "qwerty", "letmein", "iloveyou", "Password1", "p@ssw0rd", "drowssap", "aaaaaaaa", "abcdefgh", "12345678"] {
+        if score_of(pw) != 0 {
+            println("{pw}: {score_of(pw)}")
+        }
+        assert_eq(score_of(pw), 0)
+    }
+}
+
+test "the warning names the pattern" {
+    assert_eq(estimate_password_strength("password", []).warning, "This is a top-10 common password")
+    assert_eq(estimate_password_strength("tyuiop[]", []).warning, "Straight rows of keys are easy to guess")
+    assert_eq(estimate_password_strength("zzzzzzzzzz", []).warning, "Repeats like \"aaa\" are easy to guess")
+    assert_eq(estimate_password_strength("19870513", []).warning, "Dates are often easy to guess")
+    assert_eq(estimate_password_strength("", []).score, 0)
+    assert_eq(estimate_password_strength("", []).suggestions.len(), 2)
+}
+
+test "long passphrases and random strings score 3 or 4" {
+    for pw in ["correct horse battery staple", "vY7#qL2!mZ9@", "gravel-onion-tundra-27", "9fK2mQx7Lp4w"] {
+        if score_of(pw) < 3 {
+            println("{pw}: {score_of(pw)}")
+        }
+        assert(score_of(pw) >= 3)
+    }
+    assert_eq(score_of("correct horse battery staple"), 4)
+}
+
+test "a few words or patterns sit in between" {
+    assert(score_of("monkey2026") <= 2)
+    assert(score_of("Summer2026!") <= 2)
+    assert(score_of("abcabcabcabc") <= 1)
+    // zxcvbn 4.4.2 scores xkcd's example 2 as well.
+    assert_eq(score_of("Tr0ub4dour&3"), 2)
+}
+
+test "the vault's name counts as a common word" {
+    plain := estimate_password_strength("homelabzeta", []).score
+    named := estimate_password_strength("homelabzeta", ["Homelab Zeta"]).score
+    assert(named < plain)
+}
+
+test "sync needs a score of 3" {
+    assert(!estimate_password_strength("monkey2026", []).sync_ok)
+    assert(estimate_password_strength("correct horse battery staple", []).sync_ok)
+    assert_eq(strength_label(0), "Very weak")
+    assert_eq(strength_label(4), "Very strong")
+}
+
+test "the qwerty graph matches zxcvbn's" {
+    rows := qwerty_rows()
+    (starts, degree) := qwerty_stats(rows)
+    assert_eq(i64(starts), 94)
+    // zxcvbn 4.4.2's KEYBOARD_AVERAGE_DEGREE is 4.595744680851064.
+    assert(degree > 4.59 && degree < 4.60)
+    (x, y) := qwerty_pos(rows, 113)
+    nb := qwerty_neighbours(rows, x, y)
+    assert_eq(nb[0].len(), 0)
+    assert_eq(bytes_str(nb[1]), "1!")
+    assert_eq(bytes_str(nb[2]), "2@")
+    assert_eq(bytes_str(nb[4]), "aA")
+}
+
+fuzz "the estimate never fails and stays in range" |s: str| {
+    r := estimate_password_strength(s, ["vault"])
+    assert(r.score >= 0 && r.score <= 4)
+    // A longer password made by appending is never weaker by more than one step.
+    r2 := estimate_password_strength(s + "Kq7#", ["vault"])
+    assert(r2.score + 1 >= r.score)
+}

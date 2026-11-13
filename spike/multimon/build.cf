@@ -1,0 +1,10 @@
+package build
+
+import "core:build"
+
+// Throwaway milestone-38 spike: a second native window per monitor next to ext:webui's.
+var Spike = build.Executable("flint-multimon-spike", {
+    Entry:     "main.cf",
+    Subsystem: "gui",
+    OutDir:    "build",
+})

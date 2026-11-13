@@ -181,6 +181,8 @@ body { margin: 0; background: var(--surface-desk); }
 .statusbar .sb-item { display: flex; align-items: center; gap: 6px; }
 .statusbar .ic { width: 12px; height: 12px; }
 .sb-update { color: var(--accent-text); }
+/* The build's version (milestone 32): quiet, beside Commands; it opens Settings → About. */
+.sb-btn.sb-version { color: var(--text-tertiary); font-family: var(--font-mono); }
 .sb-btn { display: flex; align-items: center; gap: 6px; height: 20px; padding: 0 6px; border-radius: var(--radius-xs); color: var(--text-secondary); }
 .sb-btn:hover { background: var(--surface-hover); color: var(--text-primary); }
 
@@ -237,6 +239,8 @@ body { margin: 0; background: var(--surface-desk); }
 .seg button:hover { color: var(--text-primary); }
 .seg button[aria-pressed="true"] { background: var(--surface-active); color: var(--text-primary); box-shadow: var(--shadow-1); }
 .seg.full { display: flex; } .seg.full button { flex: 1; }
+.seg.sm button { height: 22px; padding: 0 var(--sp-2); font-size: var(--fs-xs); }
+.seg button[disabled] { color: var(--text-disabled); cursor: progress; }
 
 /* Select / menus / popovers */
 .select { height: var(--control-h); display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2) 0 var(--sp-3); background: var(--surface-sunken); border: 1px solid var(--border-default); border-radius: var(--radius-sm); width: 100%; }
@@ -636,3 +640,40 @@ button.picker-row:not(.off) { cursor: pointer; }
 .rdp-canvas { display: block; outline: none; image-rendering: auto; cursor: default; }
 /* The last frame, greyed, under a lost or reconnecting session's card (design 22c7). */
 .rdp-canvas.stale { filter: grayscale(1) brightness(0.55); transition: filter var(--dur-base, 160ms) ease; }
+/* The statistics overlay (milestone 34, no design screen): a quiet panel over the
+   desktop's top right corner that lets the pointer through. */
+.rdp-stats { position: absolute; top: var(--sp-2); right: var(--sp-2); padding: var(--sp-2) var(--sp-3); background: color-mix(in srgb, var(--surface-raised) 88%, transparent); border-radius: var(--radius-md); box-shadow: var(--shadow-popover); font-size: var(--fs-xs); line-height: 1.6; pointer-events: none; min-width: 168px; }
+
+/* Full screen (milestone 37, designs 22b1–22b4): the RDP desktop takes the whole
+   window; a connection bar drops from the top edge. */
+.app[data-fullscreen] .titlebar, .app[data-fullscreen] .rail, .app[data-fullscreen] .statusbar,
+.app[data-fullscreen] .tabbar, .app[data-fullscreen] .toolbar { display: none; }
+.app[data-fullscreen] .main { inset: 0; }
+.fs-edge { position: absolute; top: 0; left: 0; right: 0; height: 4px; z-index: 29; }
+.fs-bar { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: var(--sp-1); height: 36px; padding: 0 var(--sp-1) 0 var(--sp-3); background: var(--surface-overlay); border: 1px solid var(--border-default); border-top: 0; border-radius: 0 0 var(--radius-md) var(--radius-md); box-shadow: var(--shadow-popover); font-size: var(--fs-sm); color: var(--text-primary); white-space: nowrap; }
+.fs-bar .sep { width: 1px; height: 18px; background: var(--border-default); margin: 0 var(--sp-1); }
+.fs-bar .icon-btn.on { color: var(--accent-text); background: var(--accent-subtle); }
+.fs-tab { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 30; width: 72px; height: 6px; border-radius: 0 0 6px 6px; background: var(--surface-overlay); border: 1px solid var(--border-default); border-top: 0; opacity: 0.85; }
+.fs-note { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 29; display: flex; align-items: center; gap: var(--sp-2); padding: 6px var(--sp-3); border-radius: var(--radius-full); background: var(--surface-overlay); border: 1px solid var(--border-default); box-shadow: var(--shadow-popover); font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; pointer-events: none; }
+
+/* A desktop across monitors (milestone 38, designs 22f1–22f4), from the design's flint.css. */
+.mon-anchor { position: relative; display: flex; }
+.mon-pop { position: absolute; z-index: 32; width: 520px; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: var(--radius-lg); box-shadow: var(--shadow-popover); font-size: var(--fs-sm); color: var(--text-primary); }
+.mon-map { position: relative; align-self: center; margin: var(--sp-2) 0; }
+.mon { position: absolute; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 1px; padding: 6px 8px; border-radius: 6px; border: 1.5px solid var(--border-strong); background: var(--surface-base); color: var(--text-secondary); font: inherit; text-align: left; cursor: pointer; overflow: hidden; }
+.mon:hover { border-color: var(--text-tertiary); }
+.mon.on { border-color: var(--accent); background: var(--accent-subtle); color: var(--text-primary); }
+.mon.main { cursor: default; }
+.mon.cap { opacity: 0.5; cursor: not-allowed; border-style: dashed; }
+.mon-chk { position: absolute; top: 6px; left: 8px; width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--border-strong); display: flex; align-items: center; justify-content: center; }
+.mon.on .mon-chk { background: var(--accent); border-color: var(--accent); }
+.mon.on .mon-chk .ic { width: 11px; height: 11px; color: var(--text-on-accent); stroke-width: 2.6; }
+.mon-n { font-size: var(--fs-xs); font-weight: var(--fw-semibold); white-space: nowrap; }
+.mon-s { font-size: 10px; color: var(--text-tertiary); white-space: nowrap; }
+.mon-tag { position: absolute; top: 6px; right: 6px; padding: 1px 6px; border-radius: var(--radius-full); background: var(--accent); color: var(--text-on-accent); font-size: 10px; font-weight: var(--fw-semibold); white-space: nowrap; }
+.ext-card { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); border-radius: var(--radius-full); background: var(--surface-overlay); border: 1px solid var(--border-default); box-shadow: var(--shadow-popover); font-size: var(--fs-sm); color: var(--text-secondary); white-space: nowrap; }
+.mon-map .mon .mon-chk .ic { width: 11px; height: 11px; }
+/* An extra monitor's window (22f3): the desktop edge to edge, dimmed under its card. */
+.mon-page { position: fixed; inset: 0; background: #000; overflow: hidden; }
+.mon-page canvas { position: absolute; left: 0; top: 0; display: block; outline: none; cursor: default; }
+.mon-page.dim canvas { filter: grayscale(1) brightness(0.55); transition: filter var(--dur-base, 160ms) ease; }

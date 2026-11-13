@@ -7,6 +7,7 @@ export interface AppInfo {
   libssh: string;
   libsodium: string;
   sqlite: string;
+  freerdp: string;
   e2e: boolean;
 }
 
@@ -22,6 +23,16 @@ export interface VaultInfo {
   name: string;
   format: number;
   cached: boolean;
+}
+
+/** The core's estimate of a master password (milestone 40): zxcvbn's 0-4 score. */
+export interface PasswordStrength {
+  score: 0 | 1 | 2 | 3 | 4;
+  label: string;
+  /** Strong enough for a remote vault (3 or more). */
+  sync_ok: boolean;
+  warning: string;
+  suggestions: string[];
 }
 
 export interface VaultStatus {
@@ -108,7 +119,64 @@ export interface UiStateView {
   sidebar_width: number;
   /** The Files view's own width (milestone 17), 200–480. */
   files_width: number;
+  /** The full-screen note was shown once (milestone 37, design 22b2). */
+  fullscreen_note_seen: boolean;
+  /** Milestone 38: the extra monitors last chosen, and whether 22f4's note was shown. */
+  monitors?: string[];
+  monitors_note_seen?: boolean;
   collapsed: string[];
+}
+
+/** A monitor of this computer (milestone 38): points, origin at the top-left of the primary. */
+export interface LocalMonitor {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale: number;
+  primary: boolean;
+  physical: boolean;
+}
+
+/** What "Full screen on all monitors" may offer: `reason` greys it (design 22f1c). */
+export interface MonitorsView {
+  reason: string;
+  monitors: LocalMonitor[];
+  main: string;
+  picks: string[];
+  max: number;
+}
+
+export interface MonitorPick {
+  id: string;
+  width: number;
+  height: number;
+}
+
+export interface RdpMonitor {
+  local_id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  primary: boolean;
+}
+
+export interface DesktopRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** The layout the core sent: each monitor and where its part lies in the one surface. */
+export interface DesktopSpan {
+  monitors: RdpMonitor[];
+  crops: DesktopRect[];
+  width: number;
+  height: number;
 }
 
 export interface Settings {
@@ -131,6 +199,8 @@ export interface Settings {
   rdp_mac_keys: 'mac' | 'windows' | 'custom';
   /** The custom table, "MetaLeft=ctrl,AltLeft=alt,…"; a key left out keeps the Mac preset's. */
   rdp_mac_custom: string;
+  /** Milestone 34: 'auto' offers the graphics pipeline (RDPGFX), 'compatible' keeps bitmap updates. */
+  rdp_graphics: 'auto' | 'pipeline' | 'compatible';
   /** The app's own record that earlier cached keys were removed (D-048); the core keeps it. */
   keys_cleared?: boolean;
 }
@@ -210,12 +280,50 @@ export interface HostKeyPayload {
 }
 
 /** A remote desktop is up (milestone 30): its size and its frame channel (D-071). */
+/** A remote desktop's counters since its tab opened (milestone 34). */
+export interface RdpStats {
+  updates: number;
+  bytes_in: number;
+  commands: number;
+  decode_us: number;
+  frames_read: number;
+  /** 'gfx', 'bitmap', or '' while not connected. */
+  pipeline: string;
+  /** The codecs the graphics pipeline used, comma-separated ('' on bitmaps). */
+  codec: string;
+  /** This build of FreeRDP decodes H.264. */
+  h264: boolean;
+  /** Milestone 35: quiet re-reads of the whole desktop, and the pixels they found stale. */
+  rereads: number;
+  stale_px: number;
+  /** The link as the server measured it (auto-detect); 0 until it has. */
+  link_kbps: number;
+  link_rtt_ms: number;
+  /** What the engine connected in: 'pipeline' or 'compatible'. */
+  mode: string;
+}
+
+/** A tab's graphics mode after a switch (milestone 35), or why it stayed (`message`). */
+export interface RdpGraphicsEvent {
+  tab: string;
+  /** The tab's mode: 'auto', 'pipeline' or 'compatible'. */
+  graphics: string;
+  /** What the engine reconnected in, and the round trip Automatic chose by (-1: none). */
+  engine: string;
+  rtt_ms: number;
+  message: string;
+}
+
 export interface DesktopReadyEvent {
   tab: string;
   width: number;
   height: number;
   frame_port: number;
   frame_token: string;
+  /** Milestone 35: what the engine connected in, 'pipeline' or 'compatible'. */
+  graphics: string;
+  /** The link's round trip Automatic chose by, ms; -1 when not measured. */
+  rtt_ms: number;
 }
 
 /** A remote desktop's state; `code` is '' when it was closed on purpose. */

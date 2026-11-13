@@ -19,6 +19,9 @@ type KnownHost struct {
     fingerprint: str
     host_id: str
     added_at: str
+    // When the record was last written, Unix milliseconds, set by the store (milestone
+    // 41, D-096): the per-record merge keeps the newer. 0 for a row never written since.
+    updated_at: i64
 }
 
 // What a server presented during the handshake.

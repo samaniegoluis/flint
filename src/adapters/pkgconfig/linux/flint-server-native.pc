@@ -1,0 +1,7 @@
+# CFIRE-UPSTREAM: CF-031
+# The vault server's native shim (milestone 42). Apart from flint-native, which
+# requires libssh (and on Linux libsecret): flint-vault-server links libsodium alone.
+Name: flint-server-native
+Description: Native shim for flint-vault-server's store and listener
+Version: 1
+Cflags: -I${pcfiledir}/../../serverfs/native

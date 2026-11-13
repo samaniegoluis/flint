@@ -1,0 +1,316 @@
+package domain
+
+// The per-record merge (milestone 41, D-093, D-096): one table test per rule, then
+// properties over random pairs of copies.
+
+import "core:sort"
+
+fn mh(id: str, alias: str, at: i64) -> Host {
+    return Host{ id: id, alias: alias, label: "", hostname: "{alias}.example", port: 22, username: "me", tags: [], color: "", notes: "", password: [], sudo_password: [], host_type: "ssh", updated_at: at }
+}
+
+fn mg(id: str, parent: str, name: str, at: i64) -> Group {
+    return Group{ id: id, parent_id: parent, name: name, updated_at: at }
+}
+
+fn mt(kind: str, id: str, at: i64) -> Tombstone {
+    return Tombstone{ kind: kind, id: id, deleted_at: at }
+}
+
+fn host_by_id(r: VaultRecords, id: str) -> Host {
+    for h in r.hosts {
+        if h.id == id {
+            return h
+        }
+    }
+    return Host{ id: "", alias: "", tags: [], password: [], sudo_password: [] }
+}
+
+fn has_tomb(r: VaultRecords, kind: str, id: str) -> bool {
+    for t in r.tombstones {
+        if t.kind == kind && t.id == id {
+            return true
+        }
+    }
+    return false
+}
+
+fn count_change(rep: MergeReport, change: str) -> i64 {
+    mut n: i64 = 0
+    for c in rep.changes {
+        if c.change == change {
+            n += 1
+        }
+    }
+    for c in rep.notes {
+        if c.change == change {
+            n += 1
+        }
+    }
+    return n
+}
+
+test "merge: two equal copies change nothing" {
+    a := VaultRecords{ groups: [mg("g1", "", "Prod", 5)], hosts: [mh("h1", "web-01", 10), mh("h2", "db-01", 20)] }
+    res := merge_vaults(a, a)
+    assert_eq(res.report.added + res.report.updated + res.report.removed, 0)
+    assert_eq(res.report.notes.len(), 0)
+    assert_eq(res.records.hosts.len(), 2)
+}
+
+test "merge: a record changed on both sides keeps the newer" {
+    mut mine := mh("h1", "web-01", 100)
+    mine.port = 2201
+    mut theirs := mh("h1", "web-01", 200)
+    theirs.port = 2202
+    res := merge_vaults(VaultRecords{ hosts: [mine] }, VaultRecords{ hosts: [theirs] })
+    assert_eq(host_by_id(res.records, "h1").port, 2202)
+    assert_eq(res.report.updated, 1)
+    assert_eq(res.report.changes[0].name, "web-01")
+    // The other way round, the local one is newer and stays: nothing to report.
+    back := merge_vaults(VaultRecords{ hosts: [theirs] }, VaultRecords{ hosts: [mine] })
+    assert_eq(host_by_id(back.records, "h1").port, 2202)
+    assert_eq(back.report.updated, 0)
+}
+
+test "merge: two versions of the same millisecond settle the same way on both machines" {
+    mut a := mh("h1", "web-01", 100)
+    a.port = 1
+    mut b := mh("h1", "web-01", 100)
+    b.port = 2
+    one := merge_vaults(VaultRecords{ hosts: [a] }, VaultRecords{ hosts: [b] })
+    two := merge_vaults(VaultRecords{ hosts: [b] }, VaultRecords{ hosts: [a] })
+    assert_eq(host_by_id(one.records, "h1").port, host_by_id(two.records, "h1").port)
+}
+
+test "merge: a tombstone newer than an edit wins, an edit newer than a tombstone lives" {
+    local := VaultRecords{ hosts: [mh("h1", "web-01", 100), mh("h2", "db-01", 300)] }
+    other := VaultRecords{ tombstones: [mt(MERGE_KIND_HOST, "h1", 200), mt(MERGE_KIND_HOST, "h2", 250)] }
+    res := merge_vaults(local, other)
+    assert_eq(res.records.hosts.len(), 1)
+    assert_eq(res.records.hosts[0].id, "h2")
+    assert(has_tomb(res.records, MERGE_KIND_HOST, "h1"))
+    assert(!has_tomb(res.records, MERGE_KIND_HOST, "h2"))
+    assert_eq(res.report.removed, 1)
+    assert_eq(res.report.changes[0].name, "web-01")
+    // Deleted here, edited there after: the record comes back.
+    back := merge_vaults(VaultRecords{ tombstones: [mt(MERGE_KIND_HOST, "h2", 250)] }, VaultRecords{ hosts: [mh("h2", "db-01", 300)] })
+    assert_eq(back.records.hosts.len(), 1)
+    assert_eq(back.report.added, 1)
+    assert_eq(back.records.tombstones.len(), 0)
+}
+
+test "merge: records the client does not show are kept" {
+    revoked := Token{ id: "t1", name: "old agent", scope: AccessScope{ all: true, groups: [], hosts: [] }, created_at: 1, expires_at: 2, revoked_at: 2, updated_at: 50 }
+    loose := KnownHost{ addr: "[10.0.0.9]:2222", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "2026-01-01T00:00:00Z", updated_at: 40 }
+    res := merge_vaults(VaultRecords{}, VaultRecords{ known_hosts: [loose], tokens: [revoked] })
+    assert_eq(res.records.tokens.len(), 1)
+    assert_eq(res.records.tokens[0].revoked_at, 2)
+    assert_eq(res.records.known_hosts.len(), 1)
+    assert_eq(res.report.added, 2)
+}
+
+test "merge: an alias created on both sides keeps the first and renames the second" {
+    local := VaultRecords{ hosts: [mh("aaa", "web-01", 300)] }
+    other := VaultRecords{ hosts: [mh("bbb", "WEB-01", 200)] }
+    res := merge_vaults(local, other)
+    // bbb was written first: it keeps the alias, the local one is renamed.
+    assert_eq(host_by_id(res.records, "bbb").alias, "WEB-01")
+    renamed := host_by_id(res.records, "aaa")
+    assert_eq(renamed.alias, "web-01-2")
+    assert_eq(renamed.updated_at, 301)
+    assert_eq(count_change(res.report, "renamed"), 1)
+    assert_eq(res.report.notes[0].detail, "was web-01")
+    // The same on the other machine.
+    back := merge_vaults(other, local)
+    assert_eq(host_by_id(back.records, "aaa").alias, "web-01-2")
+    // A third copy with the same alias takes the next free one.
+    third := merge_vaults(res.records, VaultRecords{ hosts: [mh("ccc", "web-01", 400)] })
+    assert_eq(host_by_id(third.records, "ccc").alias, "web-01-3")
+}
+
+test "merge: a name renamed past 64 characters is cut to fit" {
+    long := "a234567890123456789012345678901234567890123456789012345678901234"
+    res := merge_vaults(VaultRecords{ hosts: [mh("aaa", long, 1)] }, VaultRecords{ hosts: [mh("bbb", long, 2)] })
+    alias := host_by_id(res.records, "bbb").alias
+    assert_eq(alias.len(), 64)
+    assert(alias.ends_with("-2"))
+}
+
+test "merge: a group name taken twice under one parent becomes Name (2)" {
+    res := merge_vaults(VaultRecords{ groups: [mg("g1", "", "Prod", 1)] }, VaultRecords{ groups: [mg("g2", "", "prod", 2), mg("g3", "g1", "Prod", 3)] })
+    mut names: []str = []
+    for g in res.records.groups {
+        names.push(g.id + "=" + g.name)
+    }
+    sort.slice(mut names)
+    // g3 lives under g1: its name is free there.
+    assert_eq(names, ["g1=Prod", "g2=prod (2)", "g3=Prod"])
+}
+
+test "merge: a reference to a record gone is cleared and reported" {
+    mut h := mh("h1", "web-01", 100)
+    h.credential_id = "c1"
+    h.group_id = "g1"
+    h.jump_host_id = "h9"
+    local := VaultRecords{ groups: [mg("g1", "", "Prod", 50)], hosts: [h], creds: [Credential{ id: "c1", name: "deploy", username: "d", key_id: "", password: [], updated_at: 50 }] }
+    other := VaultRecords{ tombstones: [mt(MERGE_KIND_CRED, "c1", 90), mt(MERGE_KIND_GROUP, "g1", 90)] }
+    res := merge_vaults(local, other)
+    got := host_by_id(res.records, "h1")
+    assert_eq(got.credential_id, "")
+    assert_eq(got.group_id, "")
+    assert_eq(got.jump_host_id, "")
+    assert_eq(got.updated_at, 101)
+    assert_eq(count_change(res.report, "unlinked"), 1)
+    assert_eq(res.report.notes[0].detail, "its group, its jump host, its credential removed")
+}
+
+test "merge: a tunnel whose host is gone goes too" {
+    tun := Tunnel{ id: "t1", host_id: "h1", name: "pg", local_port: 5432, dest_host: "localhost", dest_port: 5432, updated_at: 500 }
+    local := VaultRecords{ hosts: [mh("h1", "db-01", 100)], tunnels: [tun] }
+    other := VaultRecords{ tombstones: [mt(MERGE_KIND_HOST, "h1", 200)] }
+    res := merge_vaults(local, other)
+    assert_eq(res.records.tunnels.len(), 0)
+    assert(has_tomb(res.records, MERGE_KIND_TUNNEL, "t1"))
+    assert_eq(count_change(res.report, "dropped"), 1)
+    assert_eq(res.report.removed, 2)
+}
+
+test "merge: a loop of groups is cut at the group moved last" {
+    // Here A moved under B; there B moved under A, later.
+    res := merge_vaults(VaultRecords{ groups: [mg("ga", "gb", "A", 10), mg("gb", "", "B", 1)] }, VaultRecords{ groups: [mg("ga", "", "A", 1), mg("gb", "ga", "B", 20)] })
+    mut parents: []str = []
+    for g in res.records.groups {
+        parents.push(g.id + "<" + g.parent_id)
+    }
+    sort.slice(mut parents)
+    assert_eq(parents, ["ga<gb", "gb<"])
+    assert_eq(count_change(res.report, "cut"), 1)
+}
+
+test "merge: the key of a credential gone is cleared" {
+    c := Credential{ id: "c1", name: "deploy", username: "d", key_id: "k1", password: [], updated_at: 5 }
+    res := merge_vaults(VaultRecords{ keys: [SshKey{ id: "k1", name: "id", key_type: "ed25519", public_key: "", fingerprint: "", private_key: [], passphrase: [], updated_at: 1 }], creds: [c] }, VaultRecords{ tombstones: [mt(MERGE_KIND_KEY, "k1", 9)] })
+    assert_eq(res.records.creds[0].key_id, "")
+    assert_eq(res.records.keys.len(), 0)
+}
+
+// ---- Properties over random copies -------------------------------------------------
+
+// A small deterministic generator (an LCG), so a failing seed replays.
+type MergeGen struct {
+    state: u64
+}
+
+fn (mut self: MergeGen) next(n: i64) -> i64 {
+    self.state = self.state * 6364136223846793005 + 1442695040888963407
+    return i64((self.state >> 33) % u64(n))
+}
+
+// One copy: a few of six hosts, groups, tunnels and tombstones, with aliases from a
+// pool of three so clashes are common, and times from a narrow range so ties are too.
+fn gen_copy(mut g: MergeGen) -> VaultRecords {
+    mut r := VaultRecords{}
+    aliases: []str = ["web", "db", "cache"]
+    group_names: []str = ["Prod", "prod", "Lab"]
+    tunnel_names: []str = ["pg", "PG"]
+    for gi in 0..3 {
+        if g.next(3) > 0 {
+            mut parent := ""
+            if g.next(3) == 0 {
+                parent = "g{g.next(3)}"
+            }
+            r.groups.push(mg("g{gi}", parent, group_names[usize(g.next(3))], g.next(8)))
+        } else if g.next(2) == 0 {
+            r.tombstones.push(mt(MERGE_KIND_GROUP, "g{gi}", g.next(8)))
+        }
+    }
+    for hi in 0..6 {
+        k := g.next(4)
+        if k == 0 {
+            r.tombstones.push(mt(MERGE_KIND_HOST, "h{hi}", g.next(8)))
+        } else if k > 1 {
+            mut h := mh("h{hi}", aliases[usize(g.next(3))], g.next(8))
+            h.port = g.next(3)
+            if g.next(2) == 0 {
+                h.group_id = "g{g.next(3)}"
+            }
+            if g.next(3) == 0 {
+                h.jump_host_id = "h{g.next(6)}"
+            }
+            r.hosts.push(h)
+            if g.next(2) == 0 {
+                r.tunnels.push(Tunnel{ id: "t{hi}", host_id: h.id, name: tunnel_names[usize(g.next(2))], local_port: 1, dest_host: "localhost", dest_port: 2, updated_at: g.next(8) })
+            }
+        }
+    }
+    return r
+}
+
+fn record_prints(r: VaultRecords) -> []str {
+    mut lines: []str = []
+    for x in r.groups {
+        lines.push("g:" + x.id + ":" + x.merge_print() + ":{x.updated_at}")
+    }
+    for x in r.hosts {
+        lines.push("h:" + x.id + ":" + x.merge_print() + ":{x.updated_at}")
+    }
+    for x in r.tunnels {
+        lines.push("t:" + x.id + ":" + x.merge_print() + ":{x.updated_at}")
+    }
+    for t in r.tombstones {
+        lines.push("x:" + t.kind + ":" + t.id + ":{t.deleted_at}")
+    }
+    sort.slice(mut lines)
+    return lines
+}
+
+fn folded_unique(names: []str) -> bool {
+    mut seen: map[str]bool = {}
+    for n in names {
+        if seen.contains(fold(n)) {
+            return false
+        }
+        seen[fold(n)] = true
+    }
+    return true
+}
+
+fuzz "merge: symmetric, convergent and rule-keeping on random copies" |seed: i64| {
+    mut g := MergeGen{ state: u64(seed) }
+    a := gen_copy(mut g)
+    b := gen_copy(mut g)
+    ab := merge_vaults(a, b)
+    ba := merge_vaults(b, a)
+    // Both machines end with the same vault.
+    assert_eq(record_prints(ab.records), record_prints(ba.records))
+    // Merging either copy, or the result itself, back into the result changes nothing.
+    again := merge_vaults(ab.records, a)
+    assert_eq(again.report.added + again.report.updated + again.report.removed, 0)
+    assert_eq(merge_vaults(ab.records, b).report.changes.len(), 0)
+    assert_eq(merge_vaults(ab.records, ab.records).report.notes.len(), 0)
+    // The vault's rules hold.
+    assert(folded_unique(host_names(ab.records.hosts)))
+    mut live: map[str]bool = {}
+    for h in ab.records.hosts {
+        live[h.id] = true
+    }
+    for t in ab.records.tunnels {
+        assert(live.contains(t.host_id))
+    }
+    for h in ab.records.hosts {
+        assert(h.jump_host_id.len() == 0 || live.contains(h.jump_host_id))
+    }
+    // Nothing is lost without a tombstone at least as new: every host live on a side
+    // is live in the result, or a tombstone covers it.
+    for h in a.hosts {
+        assert(live.contains(h.id) || has_tomb(ab.records, MERGE_KIND_HOST, h.id))
+    }
+    for h in b.hosts {
+        assert(live.contains(h.id) || has_tomb(ab.records, MERGE_KIND_HOST, h.id))
+    }
+    // No id is both live and buried.
+    for h in ab.records.hosts {
+        assert(!has_tomb(ab.records, MERGE_KIND_HOST, h.id))
+    }
+}

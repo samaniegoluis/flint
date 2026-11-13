@@ -84,9 +84,9 @@ fn main() {
         return
     }
     c := sodium_ok
-    mut store := new_locked_vault_store()
-    kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
     config_dir := flint_config_dir()
+    mut store := new_locked_vault_store(config_dir + "/activity")
+    kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
     recents := new_json_recent_store(config_dir)
     mut settings_store := new_json_settings_store(config_dir)
     mut ui_state_store := new_json_ui_state_store(config_dir)
@@ -109,7 +109,15 @@ fn main() {
     app.bind_raw("rdp_key") |params| { return rpc_rdp_key(params, st) }
     app.bind_raw("rdp_pointer") |params| { return rpc_rdp_pointer(params, st) }
     app.bind_raw("rdp_resize") |params| { return rpc_rdp_resize(params) }
+    // Milestone 38: a desktop across monitors (design 22f).
+    app.bind_raw("rdp_span") |params| { return rpc_rdp_span(params, mut ui_state_store, st) }
+    app.bind_raw("monitors_list") |params| { return rpc_monitors_list(ui_state_store) }
+    app.bind_raw("monitors_open") |params| { return rpc_monitors_open(params, st) }
+    app.bind_raw("monitors_close") |params| { return rpc_monitors_close() }
+    app.bind_raw("monitors_send") |params| { return rpc_monitors_send(params) }
     app.bind_raw("rdp_close") |params| { return rpc_rdp_close(params, st) }
+    app.bind_raw("rdp_stats") |params| { return rpc_rdp_stats(params) }
+    app.bind_raw("rdp_graphics") |params| { return rpc_rdp_graphics(params, st) }
     app.bind_raw("rdp_clipboard_announce") |params| { return rpc_rdp_clipboard_announce(params, mut clipboard, st) }
     app.bind_raw("window_theme") |params| { return rpc_window_theme(params, mut app) }
     app.bind_raw("dialog_open") |params| { return rpc_dialog_open(params, app) }
@@ -133,6 +141,12 @@ fn main() {
         mut g := st
         return rpc_vault_create(req, c, mut s, kc, recents, mut g)
     }
+    app.bind_async[PasswdReq]("vault_passwd") |req| {
+        mut s := store
+        mut g := st
+        return rpc_vault_passwd(req, c, mut s, kc, mut g)
+    }
+    app.bind_raw("password_strength") |params| { return rpc_password_strength(params, st) }
     app.bind_raw("vault_close") |params| { return rpc_vault_close(mut store, mut st) }
     app.bind_raw("vault_lock") |params| { return rpc_vault_lock(mut store, st, mut app) }
     app.bind_raw("activity") |params| { return rpc_activity(st) }
@@ -147,6 +161,7 @@ fn main() {
     app.bind_raw("activity_retention") |params| { return rpc_activity_retention(st, store) }
     app.bind_raw("activity_retention_preview") |params| { return rpc_activity_retention_preview(params, st, store) }
     app.bind_raw("activity_retention_set") |params| { return rpc_activity_retention_set(params, st, store, mut app) }
+    app.bind_raw("activity_backup") |params| { return rpc_activity_backup(params, st, store) }
     // On a worker: Touch ID and polkit block until the person answers.
     app.bind_async[AccessAnswer]("access_answer") |req| {
         mut a := app
@@ -159,6 +174,7 @@ fn main() {
         mut a := app
         return rpc_window_unlock(req, c, store, presence, st, mut a)
     }
+    app.bind_raw("window_fullscreen") |params| { return rpc_window_fullscreen(params, e2e) }
     app.bind_raw("app_quit") |params| {
         mut a := app
         return rpc_app_quit(mut a)
@@ -247,6 +263,18 @@ fn main() {
         app.bind_raw("e2e_close_window") |params| {
             mut a := app
             lock_window(st, mut a)
+            return ok_json()
+        }
+        // Stands in for the OS entering or leaving full screen by its own means (the
+        // green button, the system's own keys), milestone 37.
+        app.bind_raw("e2e_window_fullscreen") |params| {
+            req := try parse_req[FullscreenReq](params)
+            // With the real full screen, the window itself moves, as the green button does.
+            if e2e_native_fullscreen() {
+                window_fullscreen_set(req.on)
+            } else {
+                window_fullscreen_inject(req.on)
+            }
             return ok_json()
         }
         // Stands in for the OS's screen lock and sleep (D-042).
@@ -358,6 +386,10 @@ fn main() {
             run_lock_timer(mut s, timer_st, mut a)
         }
         install_app_menu("Flint")
+        // Full screen (milestone 37): the page hears every change as `window:fullscreen`.
+        window_fullscreen_install(app)
+        // The extra monitors' windows (milestone 38) load the same page folder.
+        monitors_install(app, ui_dir)
         // The tray (milestone 14): closing the window keeps Flint serving, with the
         // window locked. The headless end-to-end run keeps the old close.
         if !e2e {

@@ -60,6 +60,116 @@ The toolbar shows the host, the user, the desktop's size and, when it is scaled,
 much. **Disconnect** ends the connection and keeps the tab: your Windows session keeps
 running on the server, and **Connect again** brings you back to it.
 
+### Graphics
+
+Flint asks Windows for its **graphics pipeline** (RDPGFX), the way `mstsc` and Windows
+App receive a desktop: Windows encodes what changes with a modern codec, H.264 for video
+and moving windows where this computer can decode it, and Flint draws each frame on the
+GPU through WebGL. It is smoother and uses less bandwidth than the classic bitmap
+updates, which a server without the pipeline still gets. On a machine with no usable GPU
+(a VM without graphics acceleration, for example) the page draws in 2D instead.
+
+Flint also asks Windows to **measure the link** (network auto-detect, as `mstsc` does), so
+Windows sets the quality of what it sends from the bandwidth and round trip it measured:
+higher on an office LAN, lower over a slow VPN.
+
+**Settings → Remote desktop → Graphics** sets the default for new tabs on this computer:
+
+- **Automatic** (default): chosen when the tab connects. On a local network (a round trip
+  of 5 ms or less to the server) the classic bitmap updates, which are lossless and feel
+  smoothest there; over a VPN or the internet the graphics pipeline, which needs several
+  times less bandwidth. Flint measures the round trip with a few plain TCP connections to
+  the server's port just before it connects.
+  Across two monitors it always takes the graphics pipeline, which keeps drawing while a
+  window moves from one monitor to the other: the tab switches when it goes full screen
+  on all monitors and back when it leaves, keeping your Windows session.
+- **Pipeline**: always the graphics pipeline, with the best codec both ends support.
+- **Compatible**: always the classic bitmap updates, as earlier versions of Flint used.
+  Try it too if a desktop shows wrong colours or garbled areas.
+
+**Switch a tab while connected** with **Automatic** / **Pipeline** / **Compatible** in its
+toolbar; hover it to see what Automatic chose and why. The
+desktop reconnects in that mode in a second or two, at the same size, and your Windows
+session and its apps stay as they were; Settings keeps its default for new tabs. The
+reconnect reads the password from the vault again, so it needs the vault unlocked and a
+saved password: with a password typed at connect time the tab keeps its mode and the
+toolbar says why.
+
+**Stats** in the toolbar shows what the desktop costs, once a second, over its top right
+corner: frames drawn, updates sent by the server, the bandwidth received, the link as
+Windows measured it, the codec and how long a frame takes to decode, and whether it is
+drawn with WebGL, and what the tab runs ("Automatic: bitmaps · local network, 1 ms"). It
+shows only numbers, never the host's name or address.
+
+**Re-reads.** About a second after the desktop stops changing, Flint sends the whole
+picture to the page once more. If an update was ever lost on the way, a block that stays
+wrong until Windows repaints it, this puts it right within that second. Stats counts the
+re-reads and the stale pixels they found ("nothing stale" when every update arrived).
+
+## Full screen
+
+**Full screen** turns the window into the remote desktop: Flint's sidebar, tabs, toolbar
+and status bar go, and Windows gets the screen's whole size. Open it from the toolbar's
+**Full screen**, the tab's menu (right-click the tab), the palette, or the chord:
+<kbd>⌃⌘F</kbd> on macOS, <kbd>Ctrl+Alt+Enter</kbd> on Linux and Windows. The chord stays
+Flint's: it never reaches Windows.
+
+- **On macOS** it is the system's own full screen, as Microsoft's Windows App does: the
+  desktop gets a Space of its own, and swiping between Spaces takes you back to your
+  other windows. The green button of the window does the same with an RDP tab shown.
+- **On Linux and Windows** the window covers the whole monitor, with no frame.
+
+Point at the top edge of the screen and the **connection bar** drops down: the host, the
+desktop's size and round trip, **Exit full screen** and **Disconnect**. It goes again when
+the pointer leaves; the pin keeps it open. On macOS the menu bar shows at the top edge
+too, and the connection bar drops below it. The first time, a note says how to leave.
+
+Full screen belongs to one tab. Going to another tab (<kbd>⌘1</kbd> … <kbd>⌘9</kbd>, or
+the palette), locking the vault or closing the tab leaves it. A connection that drops
+stays full screen, with the **Connection lost** card in the middle and the bar held open,
+so **Exit full screen** is one click away.
+
+Alt+Tab, the Windows key and the other keys your computer keeps for itself still go to
+your computer in full screen; sending them to Windows is planned.
+
+### Across monitors
+
+**Full screen on all monitors** spreads the desktop over two monitors, and Windows sees
+each one as a monitor of its own, at its size and in its place: the taskbar on the main
+one, a window maximized fills one monitor, a portrait monitor stays portrait. Open it
+from the small arrow beside the toolbar's **Full screen**, the tab's menu, or the palette.
+
+- Flint's window stays full screen on the monitor it is on. That one is Windows' main
+  monitor, with the taskbar. The other monitor gets a window of its own with nothing but
+  the desktop.
+- The pointer and the keyboard work in either window. Flint's chords (the palette,
+  leaving full screen) work from both.
+- The **Monitors** button in the connection bar shows your monitors as they are arranged.
+  Check or uncheck one and the desktop rearranges at once: Windows keeps your session and
+  your apps. Flint remembers the choice on this computer. With more than two monitors,
+  pick the two the desktop spans; the main one is always one of them.
+- Leaving full screen, going to another tab, locking or unplugging one of the monitors
+  puts the desktop back on one monitor, at the size of Flint's window.
+- If the connection drops, the other monitor says so and points you to the main one,
+  where the **Connection lost** card offers **Reconnect**.
+
+| System | Across monitors |
+|---|---|
+| macOS | Yes. Each monitor's window takes a Space of its own, so **Displays have separate Spaces** (System Settings → Desktop & Dock) must be on; Flint says so when it is off. |
+| Linux | Yes on X11. On Wayland the menu item says "Not supported on this system yet". |
+| Windows | Not yet: "Not supported on this system yet" until it has been checked on Windows. |
+
+Windows needs a Pro or Enterprise edition to show a desktop on more than one monitor.
+Two monitors carry about twice the pixels of one: on a slow link, *Automatic* or
+*Compatible* matters more there (see Graphics).
+
+In *Compatible*, Windows takes a few seconds to answer after the desktop changes size or
+monitors (going full screen, checking a monitor): about 3 seconds for one monitor, 5 to 15
+for two, while it sets the session up again, and across two monitors it stops drawing for
+a second or more while a window is dragged from one to the other. The graphics pipeline
+answers at once and draws through a drag, which is why *Automatic* takes it across
+monitors; with *Compatible* chosen by hand the desktop keeps it.
+
 ## When the connection drops
 
 A tab whose connection drops keeps its last picture, greyed, under **Connection lost**,
@@ -84,8 +194,9 @@ Almost every key belongs to the remote desktop:
   App does: <kbd>⌘C</kbd>, <kbd>⌘V</kbd>, <kbd>⌘Z</kbd> and <kbd>⌘W</kbd> act on
   Windows. <kbd>⌃</kbd> is the Windows key. See [Modifier keys on a
   Mac](#modifier-keys-on-a-mac) to change that.
-- Flint keeps only the palette (<kbd>⌘K</kbd>, <kbd>Ctrl+Shift+K</kbd> on Linux) and the
-  tab switches (<kbd>⌘1</kbd> … <kbd>⌘9</kbd>), on <kbd>⌘</kbd> whatever the setting.
+- Flint keeps only the palette (<kbd>⌘K</kbd>, <kbd>Ctrl+Shift+K</kbd> on Linux), the
+  tab switches (<kbd>⌘1</kbd> … <kbd>⌘9</kbd>), on <kbd>⌘</kbd> whatever the setting, and
+  [full screen](#full-screen) (<kbd>⌃⌘F</kbd>, <kbd>Ctrl+Alt+Enter</kbd> on Linux).
   Everything else Flint does is in the palette and the toolbar. <kbd>⌘Q</kbd>,
   <kbd>⌘Tab</kbd> and <kbd>⌘Space</kbd> stay with macOS.
 
@@ -93,7 +204,7 @@ The mouse, its buttons and the wheel (vertical and horizontal) go to the desktop
 
 ### Modifier keys on a Mac
 
-**Settings → Remote desktop** (macOS only) sets what each modifier key of this Mac sends
+**Settings → Remote desktop** sets, on macOS, what each modifier key of this Mac sends
 to Windows, left and right keys apart:
 
 | Key | **Mac** (default) | **Windows** |
@@ -139,6 +250,7 @@ The tab says why, with **Retry** (<kbd>↵</kbd>), **Edit host** and **Close tab
 | … didn't answer | Nothing came back within 30 seconds: the machine is asleep or off, or a firewall drops RDP |
 | … refused the session: nothing answers on its Remote Desktop port | Remote Desktop is off (Settings → System → Remote Desktop; Windows Home has none) or a firewall rejects it |
 | … refused the session | The server answered and would not open one: all its sessions are in use (Windows 10/11 Pro allows one at a time) |
+| … needs a safer connection | The server offers only the old *Standard RDP Security*, which Flint refuses (see [Security](#security)). On the server, set *Require use of specific security layer for remote connections* to SSL or Negotiate |
 | The certificate … has changed | See [The certificate](#the-certificate) |
 | Connection lost | The connection dropped. See [When the connection drops](#when-the-connection-drops) |
 
@@ -146,11 +258,40 @@ The tab says why, with **Retry** (<kbd>↵</kbd>), **Edit host** and **Close tab
 
 Locking the vault (or Flint locking itself when idle, or with the screen) leaves an open
 remote desktop running behind the lock screen, as SSH sessions do: the session holds no
-key of the vault, and Flint wipes the password from FreeRDP's memory once it is signed in.
+key of the vault, and Flint wipes the password from its memory and FreeRDP's once it is
+signed in (see [Security](#security)).
 Typing into it waits until you unlock. A new connection, or a reconnect to follow a new
 size, needs the vault unlocked.
 
+## Security
+
+What Flint does with your password and the connection, and what it leaves as it is:
+
+- **Only TLS or Network Level Authentication.** Flint refuses the old *Standard RDP
+  Security*, which any Windows since Vista can avoid: in it no certificate is checked, so a
+  machine in the middle could ask for it and read the password that signs you in.
+- **The certificate is trusted on first use** and a changed one is refused (see
+  [The certificate](#the-certificate)). Compare the fingerprint on the server the first
+  time: that check is what makes the rest hold. Windows renews its self-signed certificate
+  every few months, so expect to see a change now and then, and compare it again.
+- **The password stays in memory only while it is used.** Flint opens it from the vault to
+  sign in, then overwrites every copy it holds and FreeRDP's two copies of its settings.
+  FreeRDP's sign-in module keeps its own until the connection ends, and wipes it then. A
+  reconnect opens it from the vault again.
+- **Windows gets your password.** As with Microsoft's own client, Network Level
+  Authentication hands the password to the server, so a single sign-on to the network
+  (shared folders, mail) works inside the session. Use it with machines you trust as much
+  as your password. *Restricted Admin* mode, which sends none, is planned.
+- **Sign-in uses NTLM, not Kerberos.** Kerberos stalls with a user written as an e-mail
+  address, and a computer outside a domain has none. NTLM is bound to the checked
+  certificate, so it is safe from a machine in the middle.
+- **Frames stay on this computer.** The desktop reaches Flint's window over `127.0.0.1`,
+  through a channel that answers only a request carrying the tab's 256-bit random token,
+  addressed to that port by its number (not by a name a web page could point there), and
+  lets no other web page read its answers.
+
 ## Not yet
 
-Full screen, files and images over the clipboard, sound, drive and printer redirection,
-several monitors, RD Gateway and RDP through an SSH tunnel are planned for later.
+Alt+Tab and the Windows key in full screen, files and images over the clipboard, sound,
+drive and printer redirection, more than two monitors, an RDP tab in a window of its own,
+RD Gateway and RDP through an SSH tunnel are planned for later.

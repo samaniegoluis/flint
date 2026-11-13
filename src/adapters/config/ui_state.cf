@@ -19,6 +19,7 @@ type UiStateFile struct {
     sidebar_open:  bool           `json:"sidebar_open"`
     sidebar_width: i64            `json:"sidebar_width"`
     files_width:   i64            `json:"files_width" default:"340"`
+    fullscreen_note_seen: bool    `json:"fullscreen_note_seen" default:"false"`
     vaults:        []UiVaultEntry `json:"vaults"`
 }
 
@@ -41,7 +42,7 @@ fn (self: JsonUiStateStore) ui_state_load() -> UiState! {
     parsed := json.parse[UiStateFile](text) or err {
         return default_ui_state()
     }
-    mut s := UiState{ sidebar_open: parsed.sidebar_open, sidebar_width: parsed.sidebar_width, files_width: parsed.files_width, vaults: [] }
+    mut s := UiState{ sidebar_open: parsed.sidebar_open, sidebar_width: parsed.sidebar_width, files_width: parsed.files_width, fullscreen_note_seen: parsed.fullscreen_note_seen, vaults: [] }
     for v in parsed.vaults {
         s.vaults.push(VaultUiState{ vault: v.vault, collapsed: v.collapsed })
     }
@@ -49,7 +50,7 @@ fn (self: JsonUiStateStore) ui_state_load() -> UiState! {
 }
 
 fn (self: JsonUiStateStore) ui_state_save(s: UiState) -> void! {
-    mut file := UiStateFile{ version: 1, sidebar_open: s.sidebar_open, sidebar_width: s.sidebar_width, files_width: s.files_width, vaults: [] }
+    mut file := UiStateFile{ version: 1, sidebar_open: s.sidebar_open, sidebar_width: s.sidebar_width, files_width: s.files_width, fullscreen_note_seen: s.fullscreen_note_seen, vaults: [] }
     for v in s.vaults {
         file.vaults.push(UiVaultEntry{ vault: v.vault, collapsed: v.collapsed })
     }

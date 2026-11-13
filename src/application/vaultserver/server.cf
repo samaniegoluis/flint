@@ -1,0 +1,279 @@
+package vaultserver
+
+// The remote vault server's use cases (milestone 42, D-097): one request in, one reply
+// out, and the server's own commands (`token`, `versions`, `restore`). A package of
+// its own so `flint-vault-server` builds without the client's use cases.
+//
+// Principle 13: the server receives only the encrypted vault file, its version, the
+// vault id and the bearer token. It never opens the file, keeps only a hash of the
+// token, compares it in constant time through libsodium (the `Crypto` port), and no
+// reply or note carries the token or the file's bytes beyond the GET that asks for them.
+
+import "core:encoding/hex"
+import "core:json"
+import "core:str"
+import "../../domain"
+import "../../ports"
+
+// The one resource of protocol v1.
+SERVER_VAULT_PATH: str = "/v1/vault"
+// The default cap on an upload, in bytes. A vault with a few hundred hosts is well
+// under a megabyte.
+SERVER_MAX_BODY_DEFAULT: i64 = 33554432
+// BLAKE2b-256 of the token, prefixed so the hash names this use alone.
+SERVER_TOKEN_HASH_LEN: usize = 32
+SERVER_TOKEN_CONTEXT: str = "flint/vault-server-token/v1:"
+// `flint-vault-server token`: 32 random bytes, as hex.
+SERVER_TOKEN_BYTES: usize = 32
+
+// What the HTTP driver read from one request. Header values as they came.
+type ServerRequest struct {
+    method:        str
+    path:          str
+    // The client's address, for the gate and the log.
+    client:        str
+    authorization: str
+    if_match:      str
+    if_none_match: str
+    vault_id:      str
+    body:          str
+}
+
+// What the driver writes back.
+type ServerReply struct {
+    status:        i32
+    // The vault file for a GET; a JSON object otherwise.
+    body:          str
+    // `application/octet-stream` for the file, `application/json` otherwise.
+    content_type:  str
+    // Sent as `ETag` when above 0.
+    version:       i64
+    // Sent as `X-Flint-Vault-Id` when not empty.
+    vault_id:      str
+    // Sent as `Retry-After` (seconds) when above 0.
+    retry_after_s: i64
+    // For the log: a short code, never a secret.
+    note:          str
+}
+
+type ServerConfig struct {
+    token_hash: []byte
+    max_body:   i64
+}
+
+type ErrorBody struct {
+    error:   str `json:"error"`
+    message: str `json:"message"`
+}
+
+type VersionBody struct {
+    version: i64 `json:"version"`
+}
+
+fn json_reply(status: i32, code: str, message: str) -> ServerReply {
+    body := json.stringify(ErrorBody{ error: code, message: message })
+    return ServerReply{ status: status, body: body, content_type: "application/json", version: 0, vault_id: "", retry_after_s: 0, note: code }
+}
+
+fn server_token_hash[C: Crypto](crypto: C, token: str) -> []byte! {
+    mut data := []byte(SERVER_TOKEN_CONTEXT)
+    for b in token.bytes() {
+        data.push(b)
+    }
+    h := try crypto.digest(data, SERVER_TOKEN_HASH_LEN)
+    crypto.wipe(data)
+    return h
+}
+
+// A new token and the hash to set on the server instead of it.
+type NewServerToken struct {
+    token: str
+    hash:  str
+}
+
+fn new_server_token[C: Crypto](crypto: C) -> NewServerToken! {
+    raw := crypto.random_bytes(SERVER_TOKEN_BYTES)
+    token := hex.encode(raw)
+    crypto.wipe(raw)
+    h := try server_token_hash(crypto, token)
+    return NewServerToken{ token: token, hash: hex.encode(h) }
+}
+
+// The server's configuration from its environment: the token (`FLINT_VAULT_TOKEN`) or
+// only its hash (`FLINT_VAULT_TOKEN_HASH`), never both; a short token refused.
+fn server_config_from[C: Crypto](crypto: C, token: str, token_hash_hex: str, max_body: i64) -> ServerConfig! {
+    if token.len() > 0 && token_hash_hex.len() > 0 {
+        return error(coded(ERR_USAGE, "set FLINT_VAULT_TOKEN or FLINT_VAULT_TOKEN_HASH, not both"))
+    }
+    if max_body < 1 {
+        return error(coded(ERR_USAGE, "the upload cap must be at least one byte"))
+    }
+    if token.len() > 0 {
+        try check_server_token(token)
+        h := try server_token_hash(crypto, token)
+        return ServerConfig{ token_hash: h, max_body: max_body }
+    }
+    if token_hash_hex.len() > 0 {
+        t := str.trim(token_hash_hex)
+        if t.len() != SERVER_TOKEN_HASH_LEN * 2 || !is_lower_hex(t) {
+            return error(coded(ERR_INVALID, "FLINT_VAULT_TOKEN_HASH must be the 64 hex characters `flint-vault-server token` printed"))
+        }
+        h := hex.decode(t) or err {
+            return error(coded(ERR_INVALID, "FLINT_VAULT_TOKEN_HASH is not hex"))
+        }
+        return ServerConfig{ token_hash: h, max_body: max_body }
+    }
+    return error(coded(ERR_USAGE, "set FLINT_VAULT_TOKEN (or FLINT_VAULT_TOKEN_HASH): make one with `flint-vault-server token`"))
+}
+
+fn is_lower_hex(s: str) -> bool {
+    for b in s.bytes() {
+        c := u8(b)
+        if !is_digit_byte(c) && !(c >= 97 && c <= 102) {
+            return false
+        }
+    }
+    return true
+}
+
+// Whether `authorization` carries the server's token, compared in constant time.
+fn token_matches[C: Crypto](crypto: C, cfg: ServerConfig, authorization: str) -> bool {
+    if !authorization.starts_with("Bearer ") {
+        return false
+    }
+    presented := str.trim(authorization.substr(7))
+    if presented.len() == 0 {
+        return false
+    }
+    h := server_token_hash(crypto, presented) or err {
+        return false
+    }
+    return crypto.equal(h, cfg.token_hash)
+}
+
+// One request: the gate, the token, then the route. `now_ms` is the monotonic clock
+// (the gate's windows), `wall_ms` the Unix time a stored version is stamped with.
+fn serve_vault_request[C: Crypto, B: BlobStore](crypto: C, mut store: B, mut gate: ServerGate, cfg: ServerConfig, req: ServerRequest, now_ms: i64, wall_ms: i64) -> ServerReply {
+    wait_ms := gate.gate_admit(req.client, now_ms)
+    if wait_ms > 0 {
+        mut r := json_reply(429, "too_many_requests", "wait before trying again")
+        r.retry_after_s = (wait_ms + 999) / 1000
+        return r
+    }
+    if !token_matches(crypto, cfg, req.authorization) {
+        locked := gate.gate_bad_token(req.client, now_ms)
+        mut r := json_reply(401, "unauthorized", "a valid bearer token is required")
+        if locked {
+            r.note = "unauthorized, client locked out"
+        }
+        return r
+    }
+    if req.path != SERVER_VAULT_PATH {
+        return json_reply(404, "not_found", "no such resource")
+    }
+    if req.method == "GET" {
+        return get_vault(mut store)
+    }
+    if req.method == "PUT" {
+        return put_vault(mut store, cfg, req, wall_ms)
+    }
+    return json_reply(405, "method_not_allowed", "use GET or PUT")
+}
+
+fn get_vault[B: BlobStore](mut store: B) -> ServerReply {
+    head := store.blob_head() or err {
+        return json_reply(500, "io", "the server could not read its store")
+    }
+    if head.version == 0 {
+        return json_reply(404, "empty", "the server holds no vault yet")
+    }
+    data := store.blob_read(head.version) or err {
+        return json_reply(500, "io", "the server could not read its store")
+    }
+    return ServerReply{ status: 200, body: data, content_type: "application/octet-stream", version: head.version, vault_id: head.vault_id, retry_after_s: 0, note: "" }
+}
+
+fn put_vault[B: BlobStore](mut store: B, cfg: ServerConfig, req: ServerRequest, wall_ms: i64) -> ServerReply {
+    if !valid_vault_id(req.vault_id) {
+        return json_reply(400, "bad_vault_id", "X-Flint-Vault-Id must be the vault's 32-character id")
+    }
+    if req.body.len() == 0 {
+        return json_reply(400, "empty_body", "the upload is empty")
+    }
+    if i64(req.body.len()) > cfg.max_body {
+        return json_reply(413, "too_large", "the upload is over the server's cap")
+    }
+    mut expected: i64 = -1
+    if str.trim(req.if_none_match) == "*" {
+        expected = 0
+    } else if req.if_match.len() > 0 {
+        expected = parse_version_tag(req.if_match)
+        if expected < 1 {
+            return json_reply(400, "bad_if_match", "If-Match must name a version")
+        }
+    } else {
+        return json_reply(428, "precondition_required", "send If-Match with the version you merged, or If-None-Match: * for the first upload")
+    }
+    head := store.blob_head() or err {
+        return json_reply(500, "io", "the server could not read its store")
+    }
+    if head.version > 0 && head.vault_id != req.vault_id {
+        mut r := json_reply(412, "other_vault", "the server holds another vault")
+        r.vault_id = head.vault_id
+        return r
+    }
+    if expected != head.version {
+        return conflict_reply(head.version)
+    }
+    store.blob_write(head.version + 1, req.vault_id, req.body, wall_ms) or err {
+        // Another writer (`flint-vault-server restore`) stored a version first.
+        if error_code_of(err.message()) == ERR_CONFLICT {
+            now_head := store.blob_head() or err2 {
+                return json_reply(500, "io", "the server could not read its store")
+            }
+            return conflict_reply(now_head.version)
+        }
+        return json_reply(500, "io", "the server could not write its store")
+    }
+    n := head.version + 1
+    return ServerReply{ status: 200, body: json.stringify(VersionBody{ version: n }), content_type: "application/json", version: n, vault_id: req.vault_id, retry_after_s: 0, note: "" }
+}
+
+fn conflict_reply(version: i64) -> ServerReply {
+    mut r := json_reply(409, "conflict", "another machine uploaded first: download, merge and upload again")
+    r.version = version
+    return r
+}
+
+// `flint-vault-server versions`: what the store keeps, newest first.
+fn list_vault_versions[B: BlobStore](mut store: B) -> []BlobVersion! {
+    return try store.blob_versions()
+}
+
+// `flint-vault-server restore <n>`: a kept version becomes the newest again, as a new
+// version, so every machine downloads it and merges it into its own copy (D-097).
+fn restore_vault_version[B: BlobStore](mut store: B, version: i64, now_ms: i64) -> BlobVersion! {
+    head := try store.blob_head()
+    if head.version == 0 {
+        return error(coded(ERR_NOT_FOUND, "the server holds no vault yet"))
+    }
+    if version == head.version {
+        return error(coded(ERR_INVALID, "version {version} is already the newest"))
+    }
+    kept := try store.blob_versions()
+    mut found := false
+    mut v := BlobVersion{ version: 0, vault_id: "", size: 0, stored_at: 0 }
+    for k in kept {
+        if k.version == version {
+            v = k
+            found = true
+        }
+    }
+    if !found {
+        return error(coded(ERR_NOT_FOUND, "version {version} is not kept: run `flint-vault-server versions`"))
+    }
+    data := try store.blob_read(version)
+    n := head.version + 1
+    try store.blob_write(n, v.vault_id, data, now_ms)
+    return BlobVersion{ version: n, vault_id: v.vault_id, size: i64(data.len()), stored_at: now_ms }
+}

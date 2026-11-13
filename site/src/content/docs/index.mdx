@@ -34,7 +34,7 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 import CliDemo from '../../components/CliDemo.astro';
-import AppShot from '../../components/landing/AppShot.astro';
+import AppVideo from '../../components/landing/AppVideo.astro';
 import FilesShot from '../../components/landing/FilesShot.astro';
 import TunnelsShot from '../../components/landing/TunnelsShot.astro';
 import CfireBand from '../../components/landing/CfireBand.astro';
@@ -52,7 +52,7 @@ no release builds yet: [build it from source](/start/build-from-source/).
 The desktop app and the `flint` command are two front ends over the same core and the
 same vault file. A host you add in one shows up in the other, with the same alias.
 
-<AppShot />
+<AppVideo />
 
 <div class="flint-split">
 <div>
@@ -119,9 +119,13 @@ Read [Tunnels](/guides/tunnels/).
 
 A Windows machine is a host too. Save it as an **RDP** host, with its password or a
 credential from the vault, and it opens in a Flint tab next to your SSH sessions: the
-desktop at the tab's size, following it as you resize, your keyboard layout, and on macOS
+desktop at the tab's size, following it as you resize, sent through Windows' graphics
+pipeline (H.264 where your computer decodes it) and drawn on the GPU, or as lossless bitmaps
+on your local network, chosen by the link (switch per tab, the session stays), your keyboard layout, and on macOS
 <kbd>⌘</kbd> sent as <kbd>Ctrl</kbd> (or keys where a PC has them, your choice). Text
-copied there pastes here and the other way round, and a dropped connection is one
+copied there pastes here and the other way round, <kbd>⌃⌘F</kbd> turns the window into
+the desktop, full screen in a Space of its own on macOS or across two monitors that Windows
+sees as two (macOS and Linux), and a dropped connection is one
 **Reconnect** away from the same Windows session. Its certificate is shown the first time
 and checked on every connection after, like an SSH host key; a changed one is refused
 before the password leaves your machine. From a shell, `flint connect win-01` opens that
@@ -174,11 +178,13 @@ See the [CLI reference](/reference/cli/).
 <CardGrid>
 	<Card title="The whole file is encrypted" icon="seti:lock">
 		Hostnames, users, notes and known host keys are encrypted too, not only passwords
-		(SQLCipher, AES-256). Put the vault in any cloud-synced folder.
+		(SQLCipher, AES-256). Put the vault in any cloud-synced folder, merge a conflict copy
+		back record by record with <code>flint vault merge</code>, and change its master
+		password whenever you like: Flint shows how strong the new one is.
 	</Card>
 	<Card title="Secrets sealed twice" icon="approve-check">
 		Passwords, private keys and passphrases are sealed again with XChaCha20-Poly1305,
-		each bound to its own field, and opened only to connect.
+		each bound to its own field, opened only to connect and wiped from memory once used.
 	</Card>
 	<Card title="Flint holds the key" icon="laptop">
 		The vault key comes from Argon2id and lives in the running app. The CLI and your
@@ -201,6 +207,7 @@ which also says what an unlocked vault does not protect against.
 ## What's next
 
 <ul class="flint-next">
+	<li><strong>Your vault on every machine</strong> A server you run keeps one encrypted copy in step between your machines, merged record by record; it never sees your password. <a href="/guides/vault-server/">The server</a> is ready; Flint connects to it next.</li>
 	<li><strong>SSH agent</strong> <code>flint agent</code> serves keys from the vault to <code>ssh</code>, <code>git</code> and your editor, with no key on disk.</li>
 	<li><strong>Releases</strong> A signed macOS app, a Linux AppImage and a Homebrew tap.</li>
 </ul>

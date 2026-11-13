@@ -169,11 +169,47 @@ To move a vault, move its file (in Finder, a file manager or with `mv`) and open
 its new place: Flint recognises it and replaces the old entry in the list instead of
 keeping a dead one.
 
+## Change the master password
+
+```sh
+flint vault passwd                 # the current vault
+flint --vault work vault passwd    # another one
+```
+
+Flint asks for the current master password, then the new one twice, and prints how
+strong the new one is, from **Very weak** (0) to **Very strong** (4). The estimate is
+[zxcvbn](https://github.com/dropbox/zxcvbn)'s, run inside Flint: common passwords, words
+and names (also reversed or with `@` for `a`), rows of keys, repeats, sequences, years
+and dates all count as easy to guess, and so does the vault's own name. Any password of 8
+characters or more is accepted, but under **Strong** (3) Flint warns you: a vault shared
+through a remote vault will need at least that.
+
+In the desktop app it is **Change master password…** in **Settings → Vault**, with the
+estimate shown as you type. While the app holds the vault unlocked, `flint vault passwd`
+is refused and points you there, so two programs never re-key one vault at once.
+
+What changes and what stays:
+
+- The vault gets a new salt and a new key. Every saved password, private key and
+  passphrase is sealed again under the new key, and this machine's activity file is
+  re-encrypted with it.
+- The vault keeps its **id**, so its place in the vault list, the app's layout and its
+  activity log stay with it.
+- **Remember on this computer** stays on if it was on: the new key replaces the old one
+  in the keychain.
+- Other machines that use the vault through a synced folder need the new password the
+  next time they open it.
+
+Flint writes the re-encrypted vault as a copy next to it (`home.flint.rekey`) and only
+then puts it in place, in one rename. If the computer stops halfway, the vault on disk is
+either the old one, which opens with the old password, or the new one; a leftover copy is
+removed the next time the vault is unlocked.
+
 ## The vault list
 
 The list lives in a small file in your config folder. It holds file paths, vault names and
-a vault id (a hash of the vault's salt, which is already in clear at the start of the
-file), never anything from inside a vault:
+each vault's id (a random number kept inside the vault, so it survives a new master
+password), never anything from inside a vault:
 
 | OS | Location |
 |---|---|
@@ -185,6 +221,44 @@ Set `FLINT_CONFIG_DIR` to use another folder.
 ## Syncing a vault
 
 A vault is a single file, written with a rollback journal that is removed after each
-change, so a sync client only ever sees the `.flint` file. Flint does not merge changes:
-if two machines change the vault before it syncs, your sync client keeps one version and
-usually sets the other aside as a conflict copy.
+change, so a sync client only ever sees the `.flint` file. If two machines change the
+vault before it syncs, your sync client keeps one version and usually sets the other
+aside as a **conflict copy** (`home (conflict copy).flint`, `home (1).flint`, depending
+on the client). Merge it back into the vault:
+
+```sh
+flint vault merge "~/Dropbox/home (conflict copy).flint"
+```
+
+```text
+Merged /Users/me/Dropbox/home (conflict copy).flint into vault 'home': 2 added, 1 updated, 1 removed.
+CHANGE   KIND  NAME
+added    host  db
+added    host  api-2
+updated  host  web
+removed  host  old
+renamed  host  api-2 (was api)
+The copy was not changed; delete it once the vault looks right.
+```
+
+Flint asks for the master password and merges record by record: a host, key, credential,
+tunnel or known host changed on both machines keeps the later change, one removed on a
+machine stays removed unless the other changed it afterwards, and everything else from
+both sides is kept. When both machines added a host with the same alias, the one added
+first keeps it and the other becomes `api-2`; the list says so. The details are in
+[Vault format](/reference/vault-format/#two-copies-of-one-vault).
+
+- The copy must be the **same vault under the same master password**. A copy of another
+  vault is refused, and so is one that no longer opens with this password (it was changed
+  on one machine and not the other): open the copy with its own password and change it to
+  match first.
+- The copy is only read. Flint opens a private copy of it in its config folder and
+  removes it when the merge ends, so the merge itself never sets off your sync client.
+  Once the vault looks right, delete the conflict copy yourself.
+- While Flint holds the vault unlocked, `flint vault merge` is refused: lock it in Flint,
+  merge, then unlock it again.
+- `--json` prints the same report: counts, one entry per record changed, and the renames
+  and cleared references in `notes`.
+
+The merge relies on each machine's clock. A machine whose clock is far behind can lose an
+edit made after another machine's.

@@ -56,16 +56,28 @@ fn vault_account(salt: []byte) -> str {
     return "vault-" + hex.encode(salt)
 }
 
-// A vault's id: 128 bits of a BLAKE2b digest of its salt, as hex (D-030). The salt
-// is already in clear in the file header and unique per vault, so the id names the
-// vault wherever its file moves, without telling anything about what is inside it.
-// Used as the key of its UI state and to recognise its recent entry after a move.
-fn vault_id[C: Crypto](crypto: C, salt: []byte) -> str! {
+// The id a vault had before milestone 40: 128 bits of a BLAKE2b digest of its salt,
+// as hex (D-030, D-033). From milestone 40 the id lives in the vault's `meta`
+// (D-095), so a new salt (a new master password) keeps it: `vault_stable_id`.
+fn salt_vault_id[C: Crypto](crypto: C, salt: []byte) -> str! {
     mut data := []byte("flint/vault-id/v1:")
     for b in salt {
         data.push(b)
     }
     return hex.encode(try crypto.digest(data, 16))
+}
+
+// The open vault's id (D-095), the key of its UI state, its activity file and its
+// recent entry: the one in `meta`, or, the first time a vault from before milestone
+// 40 is unlocked, the id it already had, written there so it stays.
+fn vault_stable_id[C: Crypto, S: VaultStore](crypto: C, mut store: S, salt: []byte) -> str! {
+    id := try store.vault_get_meta(VAULT_META_ID)
+    if id.len() > 0 {
+        return id
+    }
+    old := try salt_vault_id(crypto, salt)
+    try store.vault_set_meta(VAULT_META_ID, old)
+    return old
 }
 
 fn session_info(s: VaultSession) -> VaultInfo {
@@ -98,6 +110,14 @@ fn check_absolute(path: str) -> void! {
     }
 }
 
+// Opens this machine's activity file for the vault the store just opened (milestone
+// 39, D-094), keyed by its own subkey of `master`, which is wiped once used.
+fn attach_activity[C: Crypto, S: VaultStore](crypto: C, mut store: S, id: str, master: []byte) -> void! {
+    key := try crypto.derive_subkey(master, VAULT_SUBKEY_ACTIVITY, VAULT_KDF_CONTEXT)
+    defer crypto.wipe(key)
+    try store.activity_attach(id, key, crypto.random_bytes(VAULT_SALT_LEN))
+}
+
 fn derive_vault_keys[C: Crypto](crypto: C, master: []byte) -> ([]byte, []byte)! {
     page := try crypto.derive_subkey(master, VAULT_SUBKEY_PAGE, VAULT_KDF_CONTEXT)
     secrets := try crypto.derive_subkey(master, VAULT_SUBKEY_SECRETS, VAULT_KDF_CONTEXT)
@@ -121,10 +141,21 @@ fn create_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
         return error(coded(ERR_CONFLICT, "a file already exists at {path}"))
     }
     salt := crypto.random_bytes(VAULT_SALT_LEN)
+    // The master and page keys are wiped once used, and this copy of the secrets key
+    // once the session holds its own (milestone 36, D-085).
     master := try crypto.derive_key(password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
+    defer crypto.wipe(master)
     (page, secrets) := try derive_vault_keys(crypto, master)
+    defer crypto.wipe(page)
+    defer crypto.wipe(secrets)
     try store.vault_create(path, page, salt)
     try store.vault_set_meta("name", vault_name)
+    id := hex.encode(crypto.random_bytes(16))
+    try store.vault_set_meta(VAULT_META_ID, id)
+    attach_activity(crypto, mut store, id, master) or err {
+        store.vault_detach()
+        return error("{err.message()}")
+    }
     mut cached := false
     if remember {
         cached = true
@@ -132,7 +163,6 @@ fn create_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
             cached = false
         }
     }
-    id := try vault_id(crypto, salt)
     try touch_recent(recents, RecentVault{ path: path, name: vault_name, id: id })
     return VaultSession{ path: path, name: vault_name, id: id, secrets_key: secrets, cached: cached }
 }
@@ -154,11 +184,15 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
             return error(coded(ERR_LOCKED, "the vault at {path} is locked; the master password is needed"))
         }
         master = cached_key
+        crypto.wipe(cached_key)
         from_cache = true
     } else {
         master = try crypto.derive_key(password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
     }
+    defer crypto.wipe(master)
     (page, secrets) := try derive_vault_keys(crypto, master)
+    defer crypto.wipe(page)
+    defer crypto.wipe(secrets)
     store.vault_attach(path, page, salt) or err {
         msg := "{err.message()}"
         if from_cache && error_code_of(msg) == ERR_WRONG_PASSWORD {
@@ -176,6 +210,14 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
         store.vault_detach()
         return error(coded(ERR_UNSUPPORTED, "vault format {format} is not supported"))
     }
+    id := vault_stable_id(crypto, mut store, salt) or err {
+        store.vault_detach()
+        return error("{err.message()}")
+    }
+    attach_activity(crypto, mut store, id, master) or err {
+        store.vault_detach()
+        return error("{err.message()}")
+    }
     mut cached := from_cache
     if !from_cache && remember {
         cached = true
@@ -187,7 +229,6 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     if name.len() == 0 {
         name = vault_name_from_path(path)
     }
-    id := try vault_id(crypto, salt)
     try touch_recent(recents, RecentVault{ path: path, name: name, id: id })
     return VaultSession{ path: path, name: name, id: id, secrets_key: secrets, cached: cached }
 }
@@ -201,7 +242,10 @@ fn verify_master_password[C: Crypto, S: VaultStore](crypto: C, store: S, session
     }
     salt := try store.vault_read_salt(session.path)
     master := try crypto.derive_key(password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
-    (_, secrets) := try derive_vault_keys(crypto, master)
+    defer crypto.wipe(master)
+    (page, secrets) := try derive_vault_keys(crypto, master)
+    defer crypto.wipe(page)
+    defer crypto.wipe(secrets)
     return crypto.equal(secrets, session.secrets_key)
 }
 

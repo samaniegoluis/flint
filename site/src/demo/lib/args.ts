@@ -66,7 +66,7 @@ const VALUE_FLAGS = [
 ];
 
 const BOOL_FLAGS = [
-	'--json', '--help', '-h', '--version', '-V', '--master-stdin', '--password',
+	'--json', '--help', '-h', '--version', '-V', '--master-stdin', '--new-master-stdin', '--password',
 	'--password-stdin', '--no-password', '--passphrase', '--passphrase-stdin', '--key-stdin',
 	'--no-tags', '--accept-new-host-key', '--keep-shell', '--no-keep-shell', '--no-command', '--all',
 	'--sudo', '--sudo-password', '--sudo-password-stdin', '--no-sudo-password', '-r', '--recursive', '--force',

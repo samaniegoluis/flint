@@ -16,6 +16,8 @@
   // Flint's own RDP test server (milestone 31): the clipboard, the keys it received
   // and a dropped connection, driven over its control port. '0' when it is not running.
   const CPORT = '@@CPORT@@';
+  // The version the build was made from (scripts/version.sh, milestone 32).
+  const VERSION = '@@VERSION@@';
   const CCTL = '@@CCTL@@';
   const USER = '@@USER@@';
   const KEY = `@@KEY@@`;
@@ -32,8 +34,32 @@
   //   rdp       an RDP host in a tab against FreeRDP's sample server (milestone 30);
   //             the clipboard, modifier keys and a dropped session against Flint's own
   //             test server (milestone 31)
+  //   webgl     a terminal's lost WebGL context, alone and with a desktop behind it
+  //             (milestone 35b): seconds a repetition with scripts/repeat.sh
+  //   fullscreen  an immersive full-screen RDP tab (milestone 37): every way in and out,
+  //             the bar, the note, the desktop's size, a lost connection
+  //   multimon  a desktop across monitors (milestone 38): the extra window on a second
+  //             monitor draws its part, its pointer and keys reach the server, the
+  //             popover, a lost connection, leaving. Needs two monitors: Linux runs it
+  //             under Xorg's dummy driver with two outputs, macOS on a person's screens
+  //             with FLINT_E2E_MULTIMON=1
+  //   rdpbench  milestone 34's benchmark against a real Windows host (scripts/rdp-bench.sh,
+  //             never part of the default runs): harmless input only, the Start menu and
+  //             Task view, in each graphics mode
   const RUN = '@@RUN@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp'];
+  // webgl only: '1' when a person hides the window for the loss (FLINT_E2E_WEBGL_COVER).
+  const COVER = '@@COVER@@';
+  // fullscreen only: '1' when the window really goes full screen (FLINT_E2E_NATIVE_FS).
+  const NATIVEFS = '@@NATIVEFS@@';
+  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'multimon', 'rdpbench'];
+  // The benchmark's host (rdpbench only; '' otherwise).
+  const BHOST = '@@BHOST@@';
+  const BUSER = '@@BUSER@@';
+  const BPW = '@@BPW@@';
+  const BMODES = '@@BMODES@@';
+  // rdpbench, milestone 38: '' a 1920x1080 desktop in the window; '1' full screen on one
+  // monitor; '2' full screen on all monitors (two), each extra window counted too.
+  const BMONS = '@@BMONS@@';
   const MASTER = 'e2e-master-password-42';
   const HOST_PW_MARKER = 'gui-host-pw-marker';
 
@@ -234,6 +260,499 @@
       const screen = term.element.querySelector('.xterm-screen').getBoundingClientRect();
       await check(screen.bottom <= box.bottom + 0.5 && screen.right <= box.right + 0.5,
         `the terminal's rows fit inside the pane (screen ${Math.round(screen.height)} px, box ${Math.round(box.height)} px)`);
+    }
+
+    if (RUN === 'webgl') {
+      // The page's visibility over the whole run (WebKit suspends a hidden page, D-068).
+      {
+        const v0 = performance.now();
+        document.addEventListener('visibilitychange', () => log(`diag: visibility ${document.visibilityState} at ${Math.round(performance.now() - v0)} ms (step: ${step})`));
+      }
+      // Milestone 35b: the lost-WebGL-context check, alone, so a repetition takes
+      // seconds (ROADMAP §6). WebKit may take a hidden terminal's WebGL context while a
+      // desktop draws (the owner's herdr screen, M31). Every step is stamped in ms from
+      // the loss and printed, pass or fail, so one failure shows where the time goes.
+      const loseAndRedraw = async (label) => {
+        await waitFor(() => activeTerm(), 'the local terminal');
+        const host = activePane()?.querySelector('.xterm');
+        const glOf = () => [...(host?.querySelectorAll('canvas') ?? [])].map((c) => c.getContext('webgl2')).find((g) => g && !g.isContextLost());
+        const glc = await waitFor(() => glOf(), 'the terminal drawing with WebGL', 5000).catch(() => null);
+        await check(!!glc, `${label}: the terminal draws with WebGL`);
+        const mark = `drawn-${label}-$((50+5))`;
+        const want = `drawn-${label}-55`;
+        await runInTerminal(`clear; echo ${mark}`, want);
+        const term = activeTerm();
+        const t0 = performance.now();
+        const ev = [];
+        const stamp = (n) => ev.push(`${n}@${Math.round(performance.now() - t0)}`);
+        glc.canvas.addEventListener('webglcontextlost', () => stamp('lost'), { once: true });
+        glc.canvas.addEventListener('webglcontextrestored', () => stamp('restored'), { once: true });
+        const refresh = term.refresh.bind(term);
+        term.refresh = (a, b) => { stamp(`refresh(${a}-${b})`); return refresh(a, b); };
+        let rowsSeen = false;
+        let textSeen = false;
+        const watch = () => {
+          const rows = host?.querySelector('.xterm-rows');
+          if (rows && !rowsSeen) { rowsSeen = true; stamp(`dom-rows(n=${rows.children.length})`); }
+          if (rows && !textSeen && (rows.textContent ?? '').includes(want)) { textSeen = true; stamp('dom-text'); }
+        };
+        const mo = new MutationObserver(watch);
+        mo.observe(host, { childList: true, subtree: true, characterData: true });
+        // requestAnimationFrame's pulse: frames counted, gaps over 500 ms stamped.
+        let frames = 0;
+        let lastFrame = performance.now();
+        let pulsing = true;
+        const tick = (t) => {
+          frames++;
+          if (t - lastFrame > 500) stamp(`raf-gap(${Math.round(t - lastFrame)})`);
+          lastFrame = t;
+          if (pulsing) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+        // Guided by a person (FLINT_E2E_WEBGL_COVER=1, label "alone"): the context is lost
+        // while the window is hidden, as when a covered window loses it in daily use.
+        let banner = null;
+        if (COVER === '1' && label === 'alone') {
+          banner = document.createElement('div');
+          banner.style.cssText = 'position:fixed;inset:auto 20px 20px 20px;z-index:99999;padding:24px;font:600 22px system-ui;background:#c2410c;color:#fff;border-radius:12px';
+          banner.textContent = 'Test: press ⌘H now to hide Flint. Wait 10 seconds, then click Flint in the Dock.';
+          document.body.appendChild(banner);
+          await waitFor(() => document.visibilityState === 'hidden', 'the window hidden by the person', 120000);
+          banner.remove();
+          stamp('hidden-by-person');
+        }
+        glc.getExtension('WEBGL_lose_context')?.loseContext();
+        const drawnIn = (ms) => waitFor(() => (host?.querySelector('.xterm-rows')?.textContent ?? '').includes(want), 'the terminal drawn again', ms).then(() => true, () => false);
+        // WebKit stops drawing a hidden page (a covered or minimised window, D-068): no
+        // requestAnimationFrame, so xterm's DOM renderer draws nothing until the window is
+        // seen again. What matters is the terminal drawn once it is: while hidden, wait
+        // for the window to come back (a person uncovering it), then give it 5 s.
+        if (COVER === '1' && label === 'alone') {
+          // Wait for the window to be shown again, then give the terminal 5 s.
+          await waitFor(() => document.visibilityState === 'visible', 'the window shown again', 120000);
+          stamp(`shown(drawn-before=${(host?.querySelector('.xterm-rows')?.textContent ?? '').includes(want)})`);
+        }
+        let drawn = await drawnIn(5000);
+        if (!drawn && document.visibilityState === 'hidden') {
+          stamp('hidden');
+          log(`diag: ${label}: the window is hidden (covered?); the check waits up to 60 s for it to be drawn or seen`);
+          const has = () => (host?.querySelector('.xterm-rows')?.textContent ?? '').includes(want);
+          await waitFor(() => has() || document.visibilityState === 'visible', 'drawn or seen again', 60000).catch(() => null);
+          if (has()) drawn = true;
+          else if (document.visibilityState === 'visible') { stamp('visible'); drawn = await drawnIn(5000); }
+        }
+        const diag = `D ${term._core?._renderService?._isPaused}/${term._core?._renderService?._needsFullRefresh} n=${host?.querySelector('.xterm-rows')?.children.length} r=${term.rows} c=${term.cols} buf=${termText().includes(want)} cw=${host?.querySelector('.xterm-rows')?.offsetWidth}x${host?.querySelector('.xterm-rows')?.offsetHeight} vis=${document.visibilityState} focus=${document.hasFocus()}`;
+        // On a failure, keep watching a while longer: drawn late, or never.
+        const late = drawn ? true : await drawnIn(10000);
+        mo.disconnect();
+        pulsing = false;
+        stamp(`frames=${frames},last@${Math.round(lastFrame - t0)}`);
+        term.refresh = refresh;
+        log(`diag: ${label}: ${ev.join(' ')}${drawn ? '' : late ? ' (drawn late)' : ' (never drawn)'} | ${diag}`);
+        if (!drawn && document.visibilityState === 'hidden') {
+          throw new Error(`${label}: the window stayed hidden (covered or minimised) for 60 s, so nothing could be drawn: leave the test window uncovered (${ev.join(' ')})`);
+        }
+        await check(drawn, `${label}: after a lost WebGL context the whole terminal is drawn again within 5 s of being seen (${ev.join(' ')} | ${diag})`);
+      };
+
+      await setStep('webgl: the context lost with nothing else drawing');
+      await loseAndRedraw('alone');
+      if (CPORT !== '0') {
+        await setStep('webgl: the context lost while a desktop draws behind');
+        await click('.side-head .icon-btn[aria-label^="New host"]');
+        await waitFor(() => q('[data-host-type-step]'), 'the type step');
+        await click('.type-card[data-type="rdp"]');
+        await click('.modal button', 'Continue');
+        await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor');
+        await fill('#ra', 'rdp-clip');
+        await fill('#rh', '127.0.0.1');
+        await fill('#rp', String(CPORT));
+        await fill('#ru', 'e2e');
+        await fill('#rd', 'LAB');
+        await fill('.modal input[aria-label="Password"]', 'x');
+        await click('.modal button[type="submit"]', 'Add host');
+        await waitFor(() => byText('.tree .ti', 'rdp-clip'), 'rdp-clip in the tree');
+        byText('.tree .ti', 'rdp-clip').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        await waitFor(() => q('.tab.on') && q('[data-rdp-state="certificate"]', activeRegion()), 'the certificate prompt (test server)', 30000);
+        await click('button[type="submit"]', 'Trust and connect');
+        const canvas = () => q('canvas.rdp-canvas', activeRegion());
+        await waitFor(() => canvas()?.dataset.desktop, 'the test server desktop', 30000);
+        // The terminal hidden behind the desktop, as in the rdp run, then shown again.
+        await sleep(1500);
+        await click('.tab', 'local');
+        await loseAndRedraw('desktop');
+        await click('.tab', 'rdp-clip');
+        await waitFor(() => canvas(), 'the desktop again');
+        await sleep(300);
+        await click('.tab', 'local');
+        // loseAndRedraw checks first that WebGL came back when the tab was shown again.
+        await loseAndRedraw('again');
+      }
+    }
+
+    if (RUN === 'fullscreen') {
+      // Milestone 37: an immersive full-screen RDP tab against Flint's test server. The
+      // headless window cannot go full screen (CF-111): the core stands in for the OS
+      // and answers `window:fullscreen` at once, so what is checked is the page, the
+      // desktop's size, and every way in and out. The OS's own full screen is the owner's.
+      if (CPORT === '0') throw new Error('the fullscreen run needs Flint\'s RDP test server (scripts/test.sh starts it)');
+      const isMac = (await window.backend.app_info({})).os === 'mac';
+      const ctl = async (cmd) => (await fetch(`http://127.0.0.1:${CCTL}/${cmd}`, { cache: 'no-store' })).text();
+      const app = () => q('.app');
+      const immersive = () => app()?.dataset.fullscreen === 'true';
+      const hiddenEl = (sel) => { const el = q(sel); return !el || el.offsetParent === null || getComputedStyle(el).display === 'none'; };
+      const canvas = () => q('canvas.rdp-canvas', activeRegion());
+      const fsChord = (target) => (target ?? document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', isMac
+        ? { key: 'f', code: 'KeyF', bubbles: true, cancelable: true, metaKey: true, ctrlKey: true }
+        : { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true, ctrlKey: true, altKey: true }));
+      const fitsArea = () => {
+        const d = canvas()?.dataset.desktop;
+        if (!d) return false;
+        const [w, h] = d.split('x').map(Number);
+        const a = q('.rdp-area', activeRegion()).getBoundingClientRect();
+        return Math.abs(w - Math.floor(a.width)) <= 2 && Math.abs(h - Math.floor(a.height)) <= 2;
+      };
+      // Full screen on macOS covers the screen but for a notch's band (MacBooks with one).
+      const coversScreen = () => window.innerWidth === screen.width && window.innerHeight >= screen.height - 40;
+      const hover = (el, on) => el.dispatchEvent(new MouseEvent(on ? 'mouseover' : 'mouseout', { bubbles: true, relatedTarget: null }));
+      // A timeline of what the window says, printed with every step (rule 9).
+      {
+        const f0 = performance.now();
+        window.runtime.EventsOn('window:fullscreen', (e) => log(`diag: window:fullscreen ${JSON.stringify(e)} at ${Math.round(performance.now() - f0)} ms, window ${window.innerWidth}x${window.innerHeight}, immersive ${immersive()} (step: ${step})`));
+      }
+
+      await setStep('fullscreen: an RDP tab on the test server');
+      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await waitFor(() => q('[data-host-type-step]'), 'the type step');
+      await click('.type-card[data-type="rdp"]');
+      await click('.modal button', 'Continue');
+      await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor');
+      await fill('#ra', 'rdp-full');
+      await fill('#rh', '127.0.0.1');
+      await fill('#rp', String(CPORT));
+      await fill('#ru', 'e2e');
+      await fill('.modal input[aria-label="Password"]', 'x');
+      await click('.modal button[type="submit"]', 'Add host');
+      await waitFor(() => byText('.tree .ti', 'rdp-full'), 'rdp-full in the tree');
+      byText('.tree .ti', 'rdp-full').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await waitFor(() => q('.tab.on') && q('[data-rdp-state="certificate"]', activeRegion()), 'the certificate prompt', 30000);
+      await click('button[type="submit"]', 'Trust and connect');
+      await waitFor(() => q('[data-rdp-size]') && canvas()?.dataset.desktop, 'the desktop', 30000);
+      const before = canvas().dataset.desktop;
+      await check(!immersive() && !q('[data-fs-bar]'), 'a new RDP tab starts in the window, with Flint around it');
+
+      await setStep('fullscreen: the toolbar button, the first time');
+      await click('[data-rdp-fullscreen]');
+      await waitFor(() => immersive(), 'the page immersive');
+      for (const sel of ['.titlebar', '.rail', '.statusbar', '.tabbar', '[data-rdp-toolbar]', '.sidebar']) {
+        await check(hiddenEl(sel), `full screen hides ${sel}`);
+      }
+      {
+        const m = q('.main').getBoundingClientRect();
+        await check(m.left === 0 && m.top === 0 && Math.round(m.width) === window.innerWidth && Math.round(m.height) === window.innerHeight,
+          `the desktop's area is the whole window (${Math.round(m.width)}x${Math.round(m.height)} of ${window.innerWidth}x${window.innerHeight})`);
+      }
+      await waitFor(() => canvas()?.dataset.desktop && canvas().dataset.desktop !== before && fitsArea(), 'the desktop at the full size', 30000);
+      await check(true, `the remote desktop takes the full size (${before} → ${canvas().dataset.desktop})`);
+      await check(q('[data-rdp-size]') === null || !q('[data-rdp-state]', activeRegion()), 'the session stays up');
+      const note = await waitFor(() => q('[data-fs-note]'), 'the first-time note');
+      const chordText = isMac ? '⌃⌘F' : 'Ctrl+Alt+Enter';
+      await check(note.textContent.includes('Point at the top edge') && note.textContent.includes(chordText), `the first time, a note says how to leave (${note.textContent.trim()})`);
+      await check(!!q('[data-fs-tab]') && !q('[data-fs-bar]'), 'the bar starts folded to a tab');
+
+      if (NATIVEFS === '1') {
+        // The window itself: the screen's size once macOS has moved it to its Space.
+        const full = await waitFor(() => coversScreen(), 'the window at the screen\'s size', 10000).catch(() => false);
+        log(`diag: native: window ${window.innerWidth}x${window.innerHeight}, screen ${screen.width}x${screen.height}`);
+        await check(full, `the window is full screen at the screen's size (${window.innerWidth}x${window.innerHeight} of ${screen.width}x${screen.height})`);
+        await waitFor(() => fitsArea(), 'the desktop at the screen size', 30000);
+        await check(true, `the remote desktop takes the screen's size (${canvas().dataset.desktop})`);
+      }
+      await setStep('fullscreen: the bar drops from the top edge');
+      hover(q('[data-fs-edge]'), true);
+      const bar = await waitFor(() => q('[data-fs-bar]'), 'the connection bar');
+      await check(bar.textContent.includes('rdp-full') && bar.textContent.includes(canvas().dataset.desktop.replace('x', ' × ')), `the bar names the host and the desktop's size (${bar.textContent.trim().slice(0, 60)})`);
+      await check(bar.textContent.includes('Exit full screen') && bar.textContent.includes(chordText) && bar.textContent.includes('Disconnect'), 'the bar offers Exit full screen with its chord, and Disconnect');
+      if (NATIVEFS === '1') {
+        const t = parseInt(bar.style.top, 10);
+        log(`diag: native: the bar drops at ${bar.style.top}`);
+        await check(t > 0, `on macOS the bar drops below the menu bar and title bar (${bar.style.top})`);
+      }
+      hover(q('[data-fs-edge]'), false);
+      await waitFor(() => !q('[data-fs-bar]'), 'the bar gone after the pointer left', 3000);
+      await check(true, 'the bar goes once the pointer leaves');
+      hover(q('[data-fs-edge]'), true);
+      await click('[data-fs-pin]');
+      hover(q('[data-fs-bar]'), false);
+      await sleep(1200);
+      await check(!!q('[data-fs-bar]') && q('[data-fs-pin]').getAttribute('aria-pressed') === 'true', 'a pinned bar stays');
+      await click('[data-fs-pin]');
+
+      await setStep('fullscreen: Exit full screen in the bar');
+      await waitFor(() => !q('[data-fs-bar]'), 'an unpinned bar gone', 3000);
+      hover(q('[data-fs-edge]'), true);
+      await click('[data-fs-exit]');
+      await waitFor(() => !immersive(), 'the page back in the window');
+      if (NATIVEFS === '1') {
+        const back = await waitFor(() => !coversScreen(), 'the window back to its size', 10000).catch(() => false);
+        await check(back, `the window leaves full screen (${window.innerWidth}x${window.innerHeight})`);
+      }
+      for (const sel of ['.titlebar', '.rail', '.statusbar', '.tabbar', '[data-rdp-toolbar]']) {
+        await check(!hiddenEl(sel), `leaving full screen shows ${sel} again`);
+      }
+      await waitFor(() => canvas()?.dataset.desktop === before && fitsArea(), 'the desktop back at the tab size', 30000);
+      await check(true, `the desktop returns to the tab's size (${before})`);
+      await check(!q('[data-rdp-state]', activeRegion()), 'the session is still up');
+      {
+        // The note shows once on this machine (design 22b2), kept in the config folder.
+        const seen = await waitForAsync(async () => ((await window.backend.ui_state_get({})).fullscreen_note_seen ? true : null), 'the note marked seen', 10000).catch(() => false);
+        await check(seen, 'the first-time note is remembered as seen');
+      }
+
+      await setStep('fullscreen: the chord, both ways, kept from the remote');
+      await ctl('clear');
+      canvas().focus();
+      fsChord(canvas());
+      await waitFor(() => immersive(), 'the page immersive from the chord');
+      await sleep(400);
+      await check(!q('[data-fs-note]'), 'the note does not show a second time');
+      canvas().focus();
+      fsChord(canvas());
+      await waitFor(() => !immersive(), 'the page back from the chord');
+      {
+        const keys = await ctl('keys');
+        // The chord's modifiers may reach the remote and be let go; its letter never does.
+        const letter = isMac ? '0x21' : '0x1c';
+        await check(!keys.split(' ').some((k) => k === 'd:' + letter), `the chord's key does not reach the remote (${keys})`);
+      }
+
+      await setStep('fullscreen: the palette, and another tab leaves');
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
+      await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
+      await fill('[aria-label="Command palette"] input', 'Full screen');
+      const fsItem = await waitFor(() => byText('[role="option"]', 'Full screen'), 'Full screen in the palette');
+      await check(fsItem.getAttribute('aria-disabled') !== 'true' && fsItem.textContent.includes(chordText), 'the palette offers Full screen with its chord on an RDP tab');
+      fsItem.click();
+      await waitFor(() => immersive(), 'the page immersive from the palette');
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '1', code: 'Digit1', bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
+      await waitFor(() => !immersive(), 'full screen left for another tab');
+      await check(q('.tab.on')?.textContent.includes('local'), 'going to another tab leaves full screen and shows it');
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', bubbles: true, cancelable: true, metaKey: isMac, ctrlKey: !isMac, shiftKey: !isMac }));
+      await waitFor(() => q('[aria-label="Command palette"]'), 'the palette on the SSH tab');
+      await fill('[aria-label="Command palette"] input', 'Full screen');
+      const greyed = await waitFor(() => byText('[role="option"]', 'Full screen'), 'Full screen in the palette (SSH tab)');
+      await check(greyed.getAttribute('aria-disabled') === 'true' && greyed.title === 'RDP tabs only', 'on an SSH tab the palette greys Full screen: "RDP tabs only"');
+      q('[aria-label="Command palette"] input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await waitFor(() => !q('[aria-label="Command palette"]'), 'the palette closed');
+
+      await setStep('fullscreen: the tab menu, and the OS leaving by its own means');
+      await click('.tab', 'rdp-full');
+      byText('.tab', 'rdp-full').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 60 }));
+      const menu = await waitFor(() => q('[data-tab-menu]'), 'the tab menu');
+      await check(menu.textContent.includes('Full screen') && menu.textContent.includes(chordText) && menu.textContent.includes('Close tab'), 'the tab menu offers Full screen with its chord');
+      await click('[data-tab-menu-item="fullscreen"]');
+      await waitFor(() => immersive(), 'the page immersive from the tab menu');
+      const screenSized = coversScreen;
+      if (NATIVEFS === '1') await waitFor(() => screenSized(), 'the window full screen from the tab menu', 10000);
+      await window.backend.e2e_window_fullscreen({ on: false });
+      await waitFor(() => !immersive(), 'the page back when the OS left full screen');
+      await check(!hiddenEl('.titlebar'), 'leaving full screen another way (the green button) brings Flint back');
+      if (NATIVEFS === '1') await waitFor(() => !screenSized(), 'the window out of full screen', 10000);
+      await window.backend.e2e_window_fullscreen({ on: true });
+      await waitFor(() => immersive(), 'the page immersive when the OS entered full screen', 10000);
+      if (NATIVEFS === '1') await waitFor(() => screenSized(), 'the window full screen again', 10000);
+      await check(true, 'entering full screen another way on an RDP tab makes it immersive, as Windows App');
+
+      await setStep('fullscreen: the connection lost keeps full screen, the bar open');
+      await waitFor(() => fitsArea() && !q('[data-rdp-state]', activeRegion()), 'the desktop at full size', 30000);
+      await ctl('drop');
+      const lostBar = await waitFor(() => q('[data-fs-bar]') && q('[data-fs-bar]').textContent.includes('disconnected') ? q('[data-fs-bar]') : null, 'the bar open on a lost connection', 30000);
+      await check(immersive() && lostBar.textContent.includes('Exit full screen') && !lostBar.textContent.includes('Disconnect'), 'a lost connection stays full screen with the bar open and Exit full screen');
+      await check(!!byText('button', 'Reconnect'), 'the connection-lost card offers Reconnect');
+      await click('[data-fs-exit]');
+      await waitFor(() => !immersive(), 'out of full screen');
+      await check(!hiddenEl('.tabbar'), 'Exit full screen brings the tabs back');
+    }
+
+    if (RUN === 'multimon') {
+      // Milestone 38 against Flint's test server, whose 64x64 tiles each have a colour
+      // that says where they are (tileColour): a window that draws the wrong part of the
+      // desktop shows the wrong colour. The test server has no Display Control, so each
+      // layout reaches it through the invisible reconnect (D-072 (4)).
+      if (CPORT === '0') throw new Error('the multimon run needs Flint\'s RDP test server (scripts/test.sh starts it)');
+      const ctl = async (cmd) => (await fetch(`http://127.0.0.1:${CCTL}/${cmd}`, { cache: 'no-store' })).text();
+      const isMac = (await window.backend.app_info({})).os === 'mac';
+      const mons = () => window.__flintE2E.monitors;
+      const app = () => q('.app');
+      const immersive = () => app()?.dataset.fullscreen === 'true';
+      const canvas = () => q('canvas.rdp-canvas', activeRegion());
+      const tileColour = (x, y) => { const tx = Math.floor(x / 64), ty = Math.floor(y / 64); return [0x30 + (tx * 37) % 192, 0x30 + (ty * 53) % 192, 0x2e]; };
+      const near = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 3);
+      // Answers from the extra windows' pages, as they reach the main page.
+      const probes = [];
+      window.runtime.EventsOn('monitor:message', (e) => {
+        try { const m = JSON.parse(e.data); if (m.type === 'probe') probes.push({ id: e.id, ...m }); } catch { /* not ours */ }
+        if (!String(e.data).includes('"pointer"')) log(`diag: monitor:message ${e.id} ${String(e.data).slice(0, 160)} (step: ${step})`);
+      });
+      window.runtime.EventsOn('monitor:closed', (e) => log(`diag: monitor:closed ${e.id} (step: ${step})`));
+      const probe = async (id) => {
+        const n = probes.length;
+        await window.backend.monitors_send({ id, data: JSON.stringify({ type: 'probe' }) });
+        return waitFor(() => probes.slice(n).find((p) => p.id === id), `the window on monitor ${id} to answer`, 10000);
+      };
+      const input = (id, msg) => window.backend.monitors_send({ id, data: JSON.stringify({ type: 'e2e-input', ...msg }) });
+      // A timeline of the store, printed with every step (rule 9).
+      {
+        const f0 = performance.now();
+        let last = '';
+        const tick = () => {
+          const m = mons()?.get();
+          // The tab's desktop, its area and what Automatic chose (D-091 reconnects it).
+          const cv = document.querySelector('canvas.rdp-canvas');
+          const area = document.querySelector('.rdp-area')?.getBoundingClientRect();
+          const mode = document.querySelector('[title^="Automatic"], [title^="Pipeline"], [title^="Compatible"]')?.getAttribute('title')?.split('.')[0] ?? '';
+          const tab = `desk=${cv?.dataset.desktop ?? '-'} area=${area ? `${Math.floor(area.width)}x${Math.floor(area.height)}` : '-'} mode=${mode}`;
+          const now = m ? `${m.phase} picks=${m.picks.join(',')} span=${m.span ? `${m.span.width}x${m.span.height}` : '-'} err=${m.error} ${tab}` : 'no store';
+          if (now !== last) { last = now; log(`diag: monitors ${now} at ${Math.round(performance.now() - f0)} ms (step: ${step})`); }
+          setTimeout(tick, 100);
+        };
+        tick();
+      }
+
+      await setStep('multimon: what the system offers');
+      await waitFor(() => mons(), 'the monitors store');
+      const view = await window.backend.monitors_list({});
+      log(`diag: monitors ${JSON.stringify(view)}`);
+      await check(view.monitors.length >= 2 && view.reason === '' && view.max === 2 && view.picks.length === 2 && view.picks[0] === view.main,
+        `two monitors or more, offered, capped at 2, the main one first (${view.monitors.length} monitors, picks ${view.picks.join(',')}, reason '${view.reason}')`);
+      const extra = view.picks[1];
+
+      await setStep('multimon: an RDP tab on the test server');
+      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await waitFor(() => q('[data-host-type-step]'), 'the type step');
+      await click('.type-card[data-type="rdp"]');
+      await click('.modal button', 'Continue');
+      await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor');
+      await fill('#ra', 'rdp-mon');
+      await fill('#rh', '127.0.0.1');
+      await fill('#rp', String(CPORT));
+      await fill('#ru', 'e2e');
+      await fill('.modal input[aria-label="Password"]', 'x');
+      await click('.modal button[type="submit"]', 'Add host');
+      await waitFor(() => byText('.tree .ti', 'rdp-mon'), 'rdp-mon in the tree');
+      byText('.tree .ti', 'rdp-mon').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await waitFor(() => q('.tab.on') && q('[data-rdp-state="certificate"]', activeRegion()), 'the certificate prompt', 30000);
+      await click('button[type="submit"]', 'Trust and connect');
+      await waitFor(() => q('[data-rdp-size]') && canvas()?.dataset.desktop, 'the desktop', 30000);
+
+      await setStep('multimon: the Full screen menu offers all monitors');
+      await click('[data-rdp-fullscreen-menu]');
+      const menu = await waitFor(() => q('[data-fullscreen-menu]'), 'the Full screen menu');
+      const all = await waitFor(() => { const b = q('[data-fullscreen-all]', menu); return b && !b.dataset.reason ? b : null; }, 'all monitors offered');
+      await check(all.textContent.includes('Full screen on all monitors') && all.textContent.includes('2 monitors'), `the menu offers all monitors (${all.textContent.trim()})`);
+      await click('[data-fullscreen-all]');
+      await waitFor(() => immersive(), 'the page immersive');
+      await waitFor(() => mons().get().phase === 'on', 'the desktop across the monitors', 40000);
+      // The span may be computed while the main window's full screen is still growing;
+      // the new size spans again a moment later (seen on Linux: a 948x666 main part,
+      // then 1080x800). The checks below read the settled span: unchanged for a second.
+      let seen = '';
+      let since = performance.now();
+      const settled = () => {
+        const m = mons().get();
+        const now = m.phase === 'on' && m.span ? JSON.stringify(m.span) : '';
+        if (now !== seen) { seen = now; since = performance.now(); return null; }
+        return now && performance.now() - since >= 1000 ? m.span : null;
+      };
+      const span = await waitFor(settled, 'the span to settle', 15000);
+      log(`diag: span ${JSON.stringify(span)}`);
+      await check(span.monitors.length === 2 && span.monitors[0].primary && span.monitors[0].local_id === view.main && span.monitors[1].local_id === extra,
+        `the layout has the main monitor as primary and the extra one (${span.monitors.map((m) => `${m.local_id}@${m.x},${m.y} ${m.width}x${m.height}`).join(' + ')})`);
+      const crop0 = span.crops[0];
+      const crop1 = span.crops[1];
+
+      await setStep('multimon: each window draws its part');
+      await waitFor(() => canvas()?.dataset.desktop === `${crop0.width}x${crop0.height}`, `the main window at its part (${crop0.width}x${crop0.height})`, 30000);
+      await check(true, `the main window draws the primary's part, ${canvas().dataset.desktop}`);
+      {
+        // The canvas is cleared when it takes the new size; the frame follows.
+        const pixel = () => {
+          const copy = document.createElement('canvas');
+          copy.width = crop0.width; copy.height = crop0.height;
+          copy.getContext('2d').drawImage(canvas(), 0, 0);
+          return Array.from(copy.getContext('2d').getImageData(70, 70, 1, 1).data.slice(0, 3));
+        };
+        const want = tileColour(crop0.x + 70, crop0.y + 70);
+        await waitFor(() => near(pixel(), want), 'the main window\'s tile', 10000).catch(() => {});
+        await check(near(pixel(), want), `the main window shows the tile at its crop (${pixel()} for ${want})`);
+      }
+      const wantA = tileColour(crop1.x + 2, crop1.y + 2);
+      const wantB = tileColour(crop1.x + (crop1.width >> 1), crop1.y + (crop1.height >> 1));
+      let p = await waitForAsync(async () => { const r = await probe(extra); return r.frames > 0 && r.width === crop1.width && r.height === crop1.height ? r : null; }, 'the extra window drawing its part', 30000);
+      await check(true, `the extra window draws ${p.width}x${p.height} in ${p.frames} frames (window ${p.inner.join('x')})`);
+      p = await waitForAsync(async () => { const r = await probe(extra); return near(r.pixels.slice(0, 3), wantA) && near(r.pixels.slice(3, 6), wantB) ? r : null; }, 'the extra window\'s tiles', 10000).catch(() => probe(extra));
+      await check(near(p.pixels.slice(0, 3), wantA) && near(p.pixels.slice(3, 6), wantB), `the extra window shows the tiles of its own crop (${p.pixels} for ${wantA},${wantB})`);
+
+      await setStep('multimon: the pointer and the keys of each window');
+      await ctl('clear');
+      await input(extra, { x: 100, y: 130 });
+      const ptr = await waitForAsync(async () => { const r = await ctl('pointer'); return r !== '-' ? r : null; }, 'the server to see the pointer', 10000);
+      await check(ptr === `${crop1.x + 100},${crop1.y + 130}`, `the extra window's pointer lands at its crop (${ptr}, expected ${crop1.x + 100},${crop1.y + 130})`);
+      {
+        const r = canvas().getBoundingClientRect();
+        const sx = crop0.width / r.width, sy = crop0.height / r.height;
+        // A click goes out at once; a move waits for the next animation frame.
+        const at = { clientX: r.left + 40 / sx, clientY: r.top + 50 / sy, bubbles: true, button: 0 };
+        await ctl('clear');
+        canvas().dispatchEvent(new MouseEvent('mousedown', at));
+        canvas().dispatchEvent(new MouseEvent('mouseup', at));
+        const want = `${crop0.x + 40},${crop0.y + 50}`;
+        const got = await waitForAsync(async () => { const v = await ctl('pointer'); return v === want ? v : null; }, 'the main window\'s pointer at its crop', 10000).catch(() => ctl('pointer'));
+        await check(got === want, `the main window's pointer lands at the primary's place (${got}, expected ${want})`);
+      }
+      await input(extra, { key: 'KeyA' });
+      const keys = await waitForAsync(async () => { const k = await ctl('keys'); return k.includes('u:0x1e') ? k : null; }, 'the key to reach the server', 10000);
+      await check(keys.includes('d:0x1e') && keys.includes('u:0x1e'), `a key pressed in the extra window reaches the server (${keys})`);
+
+      await setStep('multimon: the bar and the popover');
+      q('[data-fs-edge]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
+      const bar = await waitFor(() => q('[data-fs-bar]'), 'the connection bar');
+      await check(bar.textContent.includes('2 monitors') && bar.textContent.includes(`${span.width} × ${span.height}`), `the bar says the desktop spans 2 monitors (${bar.textContent.trim().slice(0, 80)})`);
+      await click('[data-fs-monitors]');
+      const pop = await waitFor(() => q('[data-monitors-popover]'), 'the Monitors popover');
+      const tiles = [...pop.querySelectorAll('[data-monitor]')];
+      await check(tiles.length === view.monitors.length && q(`[data-monitor="${view.main}"]`, pop).textContent.includes('Main · taskbar')
+        && q(`[data-monitor="${extra}"]`, pop).getAttribute('aria-checked') === 'true', `the popover maps ${tiles.length} monitors, the main one tagged, the extra one checked`);
+      if (view.monitors.length > 2) {
+        const third = view.monitors.find((m) => !view.picks.includes(m.id)).id;
+        await check(q(`[data-monitor="${third}"]`, pop).classList.contains('cap'), 'a third monitor cannot be checked past the cap');
+      }
+
+      await setStep('multimon: unchecking the extra monitor goes back to one');
+      q(`[data-monitor="${extra}"]`, pop).click();
+      await waitFor(() => mons().get().phase === 'off', 'back to one monitor', 10000);
+      await check(immersive(), 'the main window stays full screen');
+      await waitFor(() => { const d = canvas()?.dataset.desktop; const a = q('.rdp-area', activeRegion()).getBoundingClientRect(); return d && Math.abs(Number(d.split('x')[0]) - Math.floor(a.width)) <= 2 && Math.abs(Number(d.split('x')[1]) - Math.floor(a.height)) <= 2; }, 'the desktop at the main window\'s size', 30000);
+      await check(true, `the desktop is the main window's size again (${canvas().dataset.desktop})`);
+      {
+        const n0 = probes.length;
+        await window.backend.monitors_send({ id: extra, data: JSON.stringify({ type: 'probe' }) });
+        await sleep(1500);
+        await check(!probes.slice(n0).some((x) => x.id === extra), 'the extra window closed (it answers no more)');
+      }
+
+      await setStep('multimon: checking it again spans again; a lost connection says so there');
+      q(`[data-monitor="${extra}"]`, q('[data-monitors-popover]') ?? document).click();
+      await waitFor(() => mons().get().phase === 'on', 'across the monitors again', 40000);
+      await waitForAsync(async () => { const r = await probe(extra); return r.frames > 0 && r.width === crop1.width ? r : null; }, 'the extra window drawing again', 30000);
+      await check(true, 'checking the extra monitor in the popover spans the desktop again');
+      await ctl('drop');
+      p = await waitForAsync(async () => { const r = await probe(extra); return r.state === 'lost' ? r : null; }, 'the extra window to say the connection was lost', 30000);
+      await check(true, 'a lost connection shows "Connection lost — see the main screen" on the extra monitor');
+      await click('[data-fs-exit]');
+      await waitFor(() => !immersive() && mons().get().phase === 'off', 'out of full screen and back to one monitor', 10000);
+      await check(true, 'Exit full screen ends the desktop across monitors');
+      if (isMac) log('diag: macOS: the extra window leaves its Space');
     }
 
     if (RUN === 'vim') {
@@ -825,6 +1344,10 @@
       await addRdp('rdp-sample', RPORT, 'rdp-pw-marker');
       await addRdp('rdp-closed', 9, 'x');
       await addRdp('rdp-fwd', RPORT_FWD, 'x');
+      // Milestone 34: the sample server's desktop is drawn in 2D (forced); the test
+      // server's below takes this machine's renderer (WebGL on a real GPU). Neither
+      // offers the graphics pipeline (ROADMAP, "RDPGFX in Flint's test server").
+      window.__flintRdpRenderer = '2d';
       const open = async (alias) => {
         const r = await waitFor(() => byText('.tree .ti', alias), alias + ' in the tree');
         r.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -848,10 +1371,20 @@
       await check(Math.abs(dw - Math.floor(area.width)) <= 2 && Math.abs(dh - Math.floor(area.height)) <= 1,
         `the desktop has the tab's size (${dw}x${dh} for ${Math.floor(area.width)}x${Math.floor(area.height)})`);
       {
-        const px = canvas().getContext('2d').getImageData(0, 0, dw, dh).data;
+        // The desktop canvas may be WebGL (milestone 34): read it through a 2D copy.
+        const copy = document.createElement('canvas');
+        copy.width = dw;
+        copy.height = dh;
+        copy.getContext('2d').drawImage(canvas(), 0, 0);
+        const px = copy.getContext('2d').getImageData(0, 0, dw, dh).data;
         let lit = 0;
         for (let i = 0; i < px.length; i += 4 * 97) if (px[i] + px[i + 1] + px[i + 2] > 30) lit++;
         await check(lit > 50, `the canvas shows the server's picture (${lit} lit samples)`);
+      }
+      {
+        const tab = q('[data-rdp-session]', activeRegion()).dataset.rdpSession;
+        const st = await window.backend.rdp_stats({ tab });
+        await check(st.pipeline === 'bitmap' && canvas().dataset.renderer === '2d', `a server without the graphics pipeline gets bitmap updates, drawn in 2D (${st.pipeline}, ${canvas().dataset.renderer})`);
       }
       const known = (await window.backend.catalog({})).known_hosts;
       await check(known.some((k) => k.addr === `rdp://127.0.0.1:${RPORT}` && k.key_type === 'x509'), 'the trusted certificate is kept in the vault');
@@ -910,6 +1443,35 @@
         chord('b', 'KeyB');
       }
 
+      await setStep('rdp: a quiet second re-reads the desktop, and the mode switches for this tab (milestone 35)');
+      {
+        const session = () => q('[data-rdp-session]', activeRegion()).dataset.rdpSession;
+        const st = await waitForAsync(async () => { const x = await window.backend.rdp_stats({ tab: session() }); return x.rereads > 0 ? x : null; }, 'a quiet re-read', 15000);
+        await check(st.rereads > 0 && st.stale_px === 0, `a quiet second re-reads the whole desktop, nothing stale on the sample server (${st.rereads} re-reads, ${st.stale_px} px)`);
+        const seg = () => q('[data-rdp-tab-graphics]');
+        await check(seg()?.querySelector('[data-graphics="auto"]')?.getAttribute('aria-pressed') === 'true', 'the toolbar shows the tab in Automatic, from Settings');
+        {
+          const first = await window.backend.rdp_stats({ tab: session() });
+          await check(first.mode === 'compatible' && seg().title.includes('local network'), `Automatic picks bitmaps on loopback, a local network (${first.mode}; "${seg().title}")`);
+        }
+        const size = canvas().dataset.desktop;
+        await click('[data-rdp-tab-graphics] button[data-graphics="compatible"]');
+        await waitFor(() => seg()?.querySelector('[data-graphics="compatible"]')?.getAttribute('aria-pressed') === 'true' && !q('[data-rdp-graphics-busy]'), 'the tab in Compatible', 30000);
+        const after = await window.backend.rdp_stats({ tab: session() });
+        await check(after.mode === 'compatible' && after.pipeline === 'bitmap', `the desktop reconnected in Compatible (${after.mode}, ${after.pipeline})`);
+        await check(!q('[data-rdp-graphics-note]') && q('[data-rdp-size]') && !q('[data-rdp-state]', activeRegion()) && canvas().dataset.desktop === size, 'the session stays up at its size after the switch');
+        await check((await window.backend.settings_get({})).rdp_graphics === 'auto', 'Settings keeps Automatic as the default');
+        await click('[data-rdp-tab-graphics] button[data-graphics="pipeline"]');
+        await waitFor(() => seg()?.querySelector('[data-graphics="pipeline"]')?.getAttribute('aria-pressed') === 'true' && !q('[data-rdp-graphics-busy]'), 'the tab in Pipeline', 30000);
+        {
+          const p = await window.backend.rdp_stats({ tab: session() });
+          await check(p.mode === 'pipeline' && p.pipeline === 'bitmap', `Pipeline asks for the graphics pipeline; the sample server, without it, sends bitmaps (${p.mode}, ${p.pipeline})`);
+        }
+        await click('[data-rdp-tab-graphics] button[data-graphics="auto"]');
+        await waitFor(() => seg()?.querySelector('[data-graphics="auto"]')?.getAttribute('aria-pressed') === 'true' && !q('[data-rdp-graphics-busy]'), 'the tab back in Automatic', 30000);
+        await check((await window.backend.rdp_stats({ tab: session() })).mode === 'compatible', 'and back to Automatic, which measures again and picks bitmaps');
+      }
+
       await setStep('rdp: disconnect and connect again');
       await click('[data-rdp-disconnect]');
       await waitFor(() => rdpState('closed'), 'the disconnected card', 20000);
@@ -959,10 +1521,13 @@
         const hex = (t) => Array.from(new TextEncoder().encode(t), (b) => b.toString(16).padStart(2, '0')).join('');
         const clipNow = async () => { const r = await window.backend.e2e_clipboard({}); return (typeof r === 'string' ? JSON.parse(r) : r)?.name; };
         await addRdp('rdp-clip', CPORT, 'x');
+        delete window.__flintRdpRenderer;
+        // The desktop drawn with this machine's renderer still shows the server's picture.
         await open('rdp-clip');
         await waitFor(() => rdpState('certificate'), 'the certificate prompt (test server)', 30000);
         await click('button[type="submit"]', 'Trust and connect');
         await waitFor(() => q('[data-rdp-size]'), 'the test server desktop', 30000);
+
         await ctl('clear');
         await ctl('copy/' + hex('copied in Windows ✓\r\nline two'));
         const got = await waitForAsync(async () => ((await clipNow()) === 'copied in Windows ✓\nline two' ? true : null), 'the remote copy on the clipboard', 15000);
@@ -1056,25 +1621,7 @@
             await check(termText().includes('alt-mark-42'), "a full-screen program's screen is still there when the tab comes back");
             await waitFor(() => !termText().includes('alt-mark-42'), 'the full-screen program done', 15000);
           }
-          // WebKit may take a hidden terminal's WebGL context while the desktop draws: the
-          // owner saw herdr's screen left blank (M31 check). Lose it on purpose here.
-          {
-            const host = activePane()?.querySelector('.xterm');
-            const glOf = () => [...(host?.querySelectorAll('canvas') ?? [])].map((c) => c.getContext('webgl2')).find((g) => g && !g.isContextLost());
-            const glc = glOf();
-            await check(!!glc, 'the terminal draws with WebGL');
-            // A mark printed now, in view: earlier output may have scrolled away.
-            await runInTerminal('clear; echo drawn-$((50+5))', 'drawn-55');
-            glc?.getExtension('WEBGL_lose_context')?.loseContext();
-            const drawn = await waitFor(() => (host?.querySelector('.xterm-rows')?.textContent ?? '').includes('drawn-55'), 'the terminal drawn again', 5000).catch(() => false);
-            await check(drawn, 'after a lost WebGL context the whole terminal is drawn again');
-            await click('.tab', 'rdp-clip');
-            await waitFor(() => canvas(), 'the desktop again');
-            await sleep(300);
-            await click('.tab', 'local');
-            const back = await waitFor(() => glOf(), 'WebGL back', 5000).catch(() => null);
-            await check(!!back, 'showing the tab again brings WebGL back');
-          }
+          // The lost-WebGL-context check (M31) is the webgl run's (milestone 35b).
           await click('.tab', 'rdp-clip');
           await waitFor(() => canvas(), 'the desktop again');
         }
@@ -1099,6 +1646,188 @@
       await waitFor(() => !q('[data-rdp-toolbar]'), 'the RDP tab closed');
       const cat = await window.backend.catalog({});
       await check(!JSON.stringify(cat).includes('rdp-pw-marker'), 'no RDP password in the catalog (Principle 6)');
+    }
+
+    if (RUN === 'rdpbench') {
+      // Milestone 34: each mode at 1920x1080 on the real host. The input is harmless
+      // (memory: the session is the owner's real desktop): the Windows key opens and Esc
+      // closes the Start menu; Win+Tab opens Task view, a whole-screen animation.
+      // Each phase logs "bench:" with its window in epoch ms, for scripts/rdp-bench.sh
+      // to put the CPU samples beside it.
+      if (!BHOST) throw new Error('rdpbench needs FLINT_RDP_TEST_HOST, _USER and _PASSWORD');
+      await setStep('rdpbench: add the host');
+      await click('.side-head .icon-btn[aria-label^="New host"]');
+      await waitFor(() => q('[data-host-type-step]'), 'the type step');
+      await click('.type-card[data-type="rdp"]');
+      await click('.modal button', 'Continue');
+      await waitFor(() => q('[data-rdp-editor]'), 'the RDP editor');
+      await fill('#ra', 'bench');
+      await fill('#rh', BHOST);
+      await fill('#ru', BUSER);
+      await fill('.modal input[aria-label="Password"]', BPW);
+      await click('.modal button[type="submit"]', 'Add host');
+      await waitFor(() => byText('.tree .ti', 'bench'), 'the bench host in the tree');
+      const bench = (o) => log('bench: ' + JSON.stringify(o));
+      const median = (xs) => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : 0; };
+      const p95 = (xs) => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.floor(a.length * 0.95))] : 0; };
+      // The window is on screen, so timers are not throttled: a plain timeout, not the
+      // spinning sleep above, which would cost a core in WebKit's content process.
+      const rest = (ms) => new Promise((r) => setTimeout(r, ms));
+      let trusted = false;
+      for (const mode of BMODES.split(',')) {
+        const [graphics, renderer] = mode.split('/');
+        await setStep(`rdpbench: ${mode}`);
+        await click('.rail-btn', 'Settings');
+        await click('.nav-i', 'Remote desktop');
+        await click(`[data-rdp-graphics] button[data-graphics="${graphics}"]`);
+        await waitForAsync(async () => ((await window.backend.settings_get({})).rdp_graphics === graphics ? true : null), `graphics ${graphics} saved`);
+        await click('.rail-btn', 'Hosts');
+        window.__flintRdpRenderer = renderer;
+        const r = await waitFor(() => byText('.tree .ti', 'bench'), 'bench in the tree');
+        r.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        if (!trusted) {
+          await waitFor(() => q('[data-rdp-state="certificate"]', activeRegion()), 'the certificate prompt', 30000);
+          await click('button[type="submit"]', 'Trust and connect');
+          trusted = true;
+        }
+        await waitFor(() => q('[data-rdp-size]'), 'the desktop', 30000);
+        const area = await waitFor(() => q('[data-rdp-session]', activeRegion()), 'the desktop area');
+        const tab = area.dataset.rdpSession;
+        // Extra monitors' windows (BMONS 2): their frames, read through their probes.
+        const probes = [];
+        const off = window.runtime.EventsOn('monitor:message', (e) => { try { const m = JSON.parse(e.data); if (m.type === 'probe') probes.push({ id: e.id, ...m }); } catch { /* not ours */ } });
+        let extras = [];
+        const extraFrames = async () => {
+          let n = 0;
+          for (const id of extras) {
+            const k = probes.length;
+            await window.backend.monitors_send({ id, data: JSON.stringify({ type: 'probe' }) });
+            const p = await waitFor(() => probes.slice(k).find((x) => x.id === id), `the window on ${id}`, 5000).catch(() => null);
+            n += p ? p.frames : 0;
+          }
+          return n;
+        };
+        let size = '1920x1080';
+        if (BMONS === '1' || BMONS === '2') {
+          // Full screen (milestone 37), and across the monitors (38): the desktop's size is
+          // the screens', whatever they are; the bench says which.
+          await rest(3000);
+          if (BMONS === '1') {
+            await click('[data-rdp-fullscreen]');
+            await waitFor(() => q('.app')?.dataset.fullscreen === 'true', 'full screen');
+            await rest(6000);
+          } else {
+            await click('[data-rdp-fullscreen-menu]');
+            await click('[data-fullscreen-all]');
+            const mons = () => window.__flintE2E.monitors;
+            await waitFor(() => mons()?.get().phase === 'on', 'the desktop across the monitors', 60000);
+            extras = mons().get().span.monitors.slice(1).map((m) => m.local_id);
+            await rest(4000);
+            size = `${mons().get().span.width}x${mons().get().span.height}`;
+          }
+          if (BMONS === '1') size = q('canvas.rdp-canvas', activeRegion()).dataset.desktop;
+        } else {
+          // The size of M28's measurement, whatever the window's: scaled down to fit. Display
+          // Control opens a moment after the desktop, so the size is asked again until it holds.
+          const sized = () => q('canvas.rdp-canvas', activeRegion())?.dataset.desktop === '1920x1080';
+          for (let i = 0; i < 15 && !sized(); i++) {
+            await rest(2000);
+            await window.backend.rdp_resize({ tab, width: 1920, height: 1080 }).catch(() => {});
+          }
+          await waitFor(sized, 'a 1920x1080 desktop', 20000);
+          await rest(3000);
+        }
+        const meter = window.__flintE2E.rdpMeter;
+        const key = (code, down) => window.backend.rdp_key({ tab, code, down });
+        const tap = async (code) => { await key(code, true); await key(code, false); };
+        const quiet = async (ms) => { const start = meter.frames; await rest(ms); return meter.frames - start; };
+        const sample = async () => ({ at: performance.now(), drawn: meter.frames, extra: await extraFrames(), read: meter.bytes, core: await window.backend.rdp_stats({ tab }) });
+        const rates = (a, b) => {
+          const sec = (b.at - a.at) / 1000;
+          const cmds = b.core.commands - a.core.commands;
+          return { fps: +((b.drawn - a.drawn) / sec).toFixed(1), extraFps: +((b.extra - a.extra) / sec).toFixed(1), updates: +((b.core.updates - a.core.updates) / sec).toFixed(1),
+            kbps: Math.round(((b.core.bytes_in - a.core.bytes_in) * 8) / 1000 / sec), channelMBps: +((b.read - a.read) / 1e6 / sec).toFixed(1),
+            decodeMs: cmds ? +((b.core.decode_us - a.core.decode_us) / cmds / 1000).toFixed(2) : 0 };
+        };
+        const drawnWith = q('canvas.rdp-canvas', activeRegion()).dataset.renderer;
+
+        // Settle: after a change of size or monitors, Windows in Compatible (bitmap updates)
+        // sends nothing for a few seconds while it reactivates the session: 3 s for one
+        // monitor, 4 to more than 13 s for two, measured at the adapter (milestone 38); the
+        // graphics pipeline answers at once. A fixed rest left the first presses inside that
+        // window ("no frame after the Windows key", p95 4 s). The Start menu is tried until
+        // it answers within a second twice in a row, and the time it took is reported.
+        await setStep(`rdpbench: ${mode}: settle`);
+        const settleFrom = performance.now();
+        for (let ok = 0; ok < 2; ) {
+          if (performance.now() - settleFrom > 45000) throw new Error('the desktop did not answer the Windows key within 45 s');
+          const t = performance.now();
+          await tap('MetaLeft');
+          await rest(1000);
+          ok = meter.firstAfter(t) !== null ? ok + 1 : 0;
+          await tap('Escape');
+          await rest(800);
+        }
+        const settleMs = Math.round(performance.now() - settleFrom);
+
+        // Start-menu latency: the first frame drawn after the key.
+        await setStep(`rdpbench: ${mode}: Start menu latency`);
+        const lat = [];
+        const latFrom = Date.now();
+        for (let i = 0; i < 12; i++) {
+          await quiet(600);
+          const before = meter.frames;
+          const t = performance.now();
+          await tap('MetaLeft');
+          const until = performance.now() + 5000;
+          while (meter.frames === before && performance.now() < until) await rest(20);
+          const first = meter.firstAfter(t);
+          if (first === null) throw new Error('no frame after the Windows key');
+          lat.push(first - t);
+          await rest(900);
+          await tap('Escape');
+        }
+        await rest(1200);
+        const latTo = Date.now();
+
+        // Task view, opened and closed over and over for 8 s.
+        await setStep(`rdpbench: ${mode}: Task view animation`);
+        const animFrom = Date.now();
+        const a = await sample();
+        const end = performance.now() + 8000;
+        while (performance.now() < end) {
+          await key('MetaLeft', true); await tap('Tab'); await key('MetaLeft', false);
+          await rest(700);
+          await tap('Escape');
+          await rest(500);
+        }
+        const b = await sample();
+        const animTo = Date.now();
+        await rest(1500);
+
+        // Idle: nothing happens on the desktop for 5 s.
+        const i0 = await sample();
+        const idleFrom = Date.now();
+        await rest(5000);
+        const i1 = await sample();
+        const idleTo = Date.now();
+        bench({ mode, monitors: BMONS || 'window', size, settleMs, pipeline: b.core.pipeline, codec: b.core.codec, h264: b.core.h264, renderer: drawnWith,
+          latency: { median: Math.round(median(lat)), p95: Math.round(p95(lat)), from: latFrom, to: latTo },
+          animation: { ...rates(a, b), from: animFrom, to: animTo }, idle: { ...rates(i0, i1), from: idleFrom, to: idleTo } });
+        // Automatic picks by the round trip (milestone 35): either is right, as long as it says which.
+        const want = graphics === 'compatible' ? 'bitmap' : graphics === 'pipeline' ? 'gfx' : b.core.mode === 'compatible' ? 'bitmap' : 'gfx';
+        await check(b.core.pipeline === want, `${mode}: the ${graphics} mode uses the expected pipeline (${b.core.pipeline} ${b.core.codec}, engine ${b.core.mode})`);
+        off();
+        if (q('.app')?.dataset.fullscreen === 'true') {
+          q('[data-fs-edge]')?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: null }));
+          await click('[data-fs-exit]');
+          await waitFor(() => q('.app')?.dataset.fullscreen !== 'true', 'out of full screen');
+          await rest(2000);
+        }
+        await click('.tab.on .tx');
+        await waitFor(() => !q('[data-rdp-toolbar]'), 'the bench tab closed');
+        await rest(1500);
+      }
     }
 
     if (RUN === 'paste') {
@@ -1497,6 +2226,13 @@
       await click('[role="radiogroup"][aria-label="Terminal colours"] button', 'Default');
       await waitFor(() => !q('.set-row .term').style.getPropertyValue('--term-bg'), 'the default palette (tokens) again');
       await check(true, 'Default goes back to the design tokens');
+      await check(q('[data-sb-version]')?.textContent.trim() === `v${VERSION}`, `the status bar shows the version (${q('[data-sb-version]')?.textContent.trim()})`);
+      await click('.nav-i', 'Appearance');
+      q('[data-sb-version]').click();
+      await waitFor(() => q('[data-about-version]'), 'the About section from the status bar');
+      await check(q('.nav-i.on')?.textContent.includes('About'), 'the status bar version opens Settings → About');
+      await check(q('[data-about-version]').textContent.trim() === `Flint ${VERSION}`, `Settings → About shows the build's version (${q('[data-about-version]').textContent.trim()})`);
+      await check([...qa('[data-about-libs] tr')].every((r) => r.cells[1].textContent.trim() !== '—') && /\d/.test(q('[data-about-libs]').textContent), 'About lists the linked libraries with their versions');
       await click('.nav-i', 'Vault');
       await waitFor(() => hasText('Known hosts'), 'the vault settings');
       await check(byText('td', `[127.0.0.1]:${PORT}`), 'known hosts are listed');
@@ -1719,6 +2455,42 @@
       await click('.nav-i', 'Vault');
       await waitFor(() => byText('button', 'Rename…'), 'the vault settings');
       await check(!hasText('Import from Tether'), 'Settings → Vault offers no Tether import (milestone 24)');
+
+      await setStep('change the master password (milestone 40)');
+      {
+        const NEW_MASTER = 'gravel onion tundra quartz';
+        const idBefore = (await window.backend.vault_recents({}))[0];
+        const catalogBefore = await window.backend.catalog({});
+        await click('button', 'Change master password…');
+        await waitFor(() => q('.modal #cmp-current'), 'the change dialog');
+        await fill('#cmp-new', 'monkey2026');
+        await waitFor(() => q('[data-testid="strength-label"]')?.textContent === 'Weak', 'the estimate of a weak password', 5000);
+        await check(q('[data-testid="strength-advice"]')?.textContent.includes('A remote vault will need Strong'), 'a weak password is shown as weak, with the remote vault\'s need');
+        await check(q('.modal button[type="submit"]').disabled, 'nothing to submit without the current password and the confirmation');
+        await fill('#cmp-new', NEW_MASTER);
+        await waitFor(() => q('[data-testid="strength-label"]')?.textContent === 'Very strong', 'the estimate of a strong password', 5000);
+        await fill('#cmp-new2', NEW_MASTER);
+        await fill('#cmp-current', 'not-the-master-password');
+        await click('.modal button[type="submit"]', 'Change password');
+        await waitFor(() => hasText('The current master password is wrong.'), 'the wrong current password', 30000);
+        await check(!!q('.modal #cmp-current'), 'a wrong current password keeps the dialog open');
+        await fill('#cmp-current', MASTER);
+        await click('.modal button[type="submit"]', 'Change password');
+        await waitFor(() => !q('.modal #cmp-current') && hasText('Master password changed'), 'the change to finish', 60000);
+        await check(true, 'the master password changes from Settings → Vault');
+        const after = await window.backend.catalog({});
+        await check(after.hosts.length === catalogBefore.hosts.length, 'the vault still reads, with every host');
+        await check((await window.backend.vault_recents({}))[0].path === idBefore.path, 'the vault keeps its place in the list');
+        // And back, so the steps below unlock with MASTER.
+        await click('button', 'Change master password…');
+        await waitFor(() => q('.modal #cmp-current'), 'the change dialog again');
+        await fill('#cmp-current', NEW_MASTER);
+        await fill('#cmp-new', MASTER);
+        await fill('#cmp-new2', MASTER);
+        await click('.modal button[type="submit"]', 'Change password');
+        await waitFor(() => !q('.modal #cmp-current') && !hasText('The current master password is wrong.'), 'the change back to finish', 60000);
+        await check(true, 'the new password is the vault\'s: it changes back with it');
+      }
 
       await setStep('lock');
       // A session that must keep running under the lock screen (D-042).

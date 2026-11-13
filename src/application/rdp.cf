@@ -9,7 +9,8 @@ package application
 // The password is opened from the vault only to hand it to the engine at connect time
 // (Principle 6): never returned, never in an error. A reconnect for a new size opens
 // it again from the vault, so a session that outlives a lock (D-043) keeps its size
-// rather than a copy of the password.
+// rather than a copy of the password. Each use case wipes the target's password once
+// the engine has it (milestone 36, D-085).
 
 import "../domain"
 import "../ports"
@@ -19,6 +20,8 @@ RDP_CONNECT_TIMEOUT_MS: i64 = 30000
 // How often a watched session is checked when nothing happens: also how soon a copy
 // on this machine is announced to the server (milestone 31).
 RDP_WAIT_MS: i64 = 250
+// How long "auto" may spend measuring the link before it connects (Principle 8).
+RDP_PROBE_TIMEOUT_MS: i64 = 1500
 
 // A tab asking for a desktop: its id, the host and the tab's size in device pixels.
 type RdpOpenRequest struct {
@@ -27,12 +30,25 @@ type RdpOpenRequest struct {
     width: i64
     height: i64
     timeout_ms: i64
+    // RDP_GRAPHICS, from Settings → Remote desktop (milestone 34); "" reads "auto".
+    graphics: str
+}
+
+// The request's graphics choice, checked: "" is "auto".
+fn rdp_graphics_of(req: RdpOpenRequest) -> str! {
+    if req.graphics.len() == 0 {
+        return "auto"
+    }
+    if !one_of(req.graphics, RDP_GRAPHICS) {
+        return error(coded(ERR_INVALID, "remote desktop graphics must be auto, pipeline or compatible"))
+    }
+    return req.graphics
 }
 
 // The RDP host `alias` and where its connection goes: the login from the host or its
 // credential, the password opened from the vault (or asked for with `ask` when none is
 // saved; "" without), the trusted certificate.
-fn rdp_target[C: Crypto, S: VaultStore, P: Prompter](crypto: C, store: S, session: VaultSession, prompter: P, alias: str, size: DesktopSize, ask: bool) -> RdpTarget! {
+fn rdp_target[C: Crypto, S: VaultStore, P: Prompter](crypto: C, store: S, session: VaultSession, prompter: P, alias: str, size: DesktopSize, graphics: str, ask: bool) -> RdpTarget! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
     if !is_rdp_host(h) {
@@ -59,7 +75,21 @@ fn rdp_target[C: Crypto, S: VaultStore, P: Prompter](crypto: C, store: S, sessio
         }
     }
     known := try store.known_hosts_all()
-    return RdpTarget{ hostname: h.hostname, port: h.port, user: user, domain: h.domain, password: password, width: size.width, height: size.height, trusted_fingerprint: trusted_rdp_fingerprint(known, h.hostname, h.port) }
+    return RdpTarget{ hostname: h.hostname, port: h.port, user: user, domain: h.domain, password: password, width: size.width, height: size.height, trusted_fingerprint: trusted_rdp_fingerprint(known, h.hostname, h.port), graphics: graphics, rtt_ms: -1 }
+}
+
+// "auto" made concrete before the engine sees it (milestone 35, D-083): the link's
+// round trip picks the bitmap updates on a local network and the pipeline elsewhere,
+// and a desktop across monitors always the pipeline (D-091). Any other mode goes as it
+// is.
+fn resolve_rdp_graphics[R: RemoteDesktop](mut rd: R, mut t: RdpTarget) {
+    if t.graphics != "auto" {
+        t.rtt_ms = -1
+        return
+    }
+    rtt := rd.rd_probe_rtt(t.hostname, t.port, RDP_PROBE_TIMEOUT_MS)
+    t.rtt_ms = rtt
+    t.graphics = auto_rdp_graphics(rtt, t.monitors.len())
 }
 
 // One connection attempt: "" when it opened (`got` holds the desktop), else the error.
@@ -83,8 +113,11 @@ fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](
         return error(coded(ERR_INVALID, "the connect timeout must be positive"))
     }
     size := fit_desktop_size(req.width, req.height)
-    mut t := try rdp_target(crypto, store, session, prompter, req.alias, size, true)
-    mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "" }
+    graphics := try rdp_graphics_of(req)
+    mut t := try rdp_target(crypto, store, session, prompter, req.alias, size, graphics, true)
+    defer crypto.wipe_text(t.password)
+    resolve_rdp_graphics(mut rd, mut t)
+    mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "", graphics: "", rtt_ms: -1 }
     failure := rd_try_open(mut rd, req.tab, t, req.timeout_ms, mut d)
     if failure.len() == 0 {
         return d
@@ -135,6 +168,15 @@ fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K
         return error("{err.message()}")
     }
     sink.desktop_ready(req.tab, d)
+    // The tab's request as it stands: a graphics switch (milestone 35) changes its mode
+    // for every reconnect after it.
+    mut cur := req
+    if cur.graphics.len() == 0 {
+        cur.graphics = "auto"
+    }
+    // What the engine runs: "auto" resolved once, kept by a reconnect for a new size so
+    // the mode does not change under the person.
+    mut engine := d.graphics
     // Something copied here since is announced to the server, never sent until it
     // pastes: without it, Windows pastes the text it fetched last (D-075).
     mut seen := clip.clipboard_change_count()
@@ -153,7 +195,19 @@ fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K
             return
         }
         if ev.kind == RDP_EVENT_RESIZE {
-            try reconnect_at_size(crypto, store, session, mut rd, prompter, req, ev)
+            mut sized := cur
+            sized.graphics = engine
+            try reconnect_at_size(crypto, store, session, mut rd, prompter, sized, ev)
+        }
+        if ev.kind == RDP_EVENT_GRAPHICS {
+            mut next := cur
+            next.graphics = ev.message
+            sw := try reconnect_in_mode(crypto, store, session, mut rd, prompter, next, ev)
+            if sw.why.len() == 0 {
+                cur = next
+                engine = sw.graphics
+            }
+            sink.desktop_graphics(req.tab, cur.graphics, sw)
         }
         if ev.kind == RDP_EVENT_CLIP_TEXT {
             take_remote_copy(mut clip, ev.message)
@@ -199,22 +253,84 @@ fn announce_desktop_clipboard[R: RemoteDesktop, L: Clipboard](mut rd: R, mut cli
     try rd.rd_clip_announce(tab, got.text.len() > 0)
 }
 
+// A reconnect keeps the monitors the desktop spans (milestone 38): the target takes the
+// layout and its bounds as its size. A layout RDP would refuse is left out (one
+// monitor at the size asked), never sent.
+fn with_layout(mut t: RdpTarget, monitors: []RdpMonitor) {
+    if monitors.len() == 0 {
+        return
+    }
+    check_rdp_layout(monitors) or {
+        return
+    }
+    b := layout_bounds(monitors)
+    t.monitors = monitors
+    t.width = b.width
+    t.height = b.height
+}
+
 // Reconnects a running tab at the size of `ev`. Leaves the session as it is when its
 // login cannot be read now; fails, with the tab closed, when the new connection does.
 fn reconnect_at_size[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: RdpEvent) -> void! {
     size := fit_desktop_size(ev.width, ev.height)
-    t := rdp_target(crypto, store, session, prompter, req.alias, size, false) or {
+    graphics := rdp_graphics_of(req) or {
         return
     }
+    mut t := rdp_target(crypto, store, session, prompter, req.alias, size, graphics, false) or {
+        return
+    }
+    defer crypto.wipe_text(t.password)
     if t.trusted_fingerprint.len() == 0 {
         return
     }
-    mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "" }
+    with_layout(mut t, ev.monitors)
+    mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "", graphics: "", rtt_ms: -1 }
     failure := rd_try_open(mut rd, req.tab, t, req.timeout_ms, mut d)
     if failure.len() > 0 {
         rd.rd_close(req.tab)
         return error(failure)
     }
+}
+
+// Reconnects a running tab in the graphics mode of `req` at the size of `ev`
+// (milestone 35), through the same reconnect as a new size: the Windows session and its
+// apps stay; "auto" measures the link again. Returns the mode it reconnected in, or why
+// it did not (the tab keeps its mode); fails, with the tab closed, when the new
+// connection does.
+fn reconnect_in_mode[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: RdpEvent) -> RdpModeSwitch! {
+    graphics := rdp_graphics_of(req) or err {
+        return RdpModeSwitch{ why: error_text_of("{err.message()}"), graphics: "", rtt_ms: -1 }
+    }
+    size := fit_desktop_size(ev.width, ev.height)
+    mut t := rdp_target(crypto, store, session, prompter, req.alias, size, graphics, false) or err {
+        msg := "{err.message()}"
+        if error_code_of(msg) == ERR_AUTH {
+            return RdpModeSwitch{ why: "the password is not saved in the vault, so the desktop cannot reconnect in another mode", graphics: "", rtt_ms: -1 }
+        }
+        return RdpModeSwitch{ why: "the vault cannot give the password now ({error_text_of(msg)})", graphics: "", rtt_ms: -1 }
+    }
+    defer crypto.wipe_text(t.password)
+    if t.trusted_fingerprint.len() == 0 {
+        return RdpModeSwitch{ why: "the server's certificate is not trusted yet", graphics: "", rtt_ms: -1 }
+    }
+    with_layout(mut t, ev.monitors)
+    resolve_rdp_graphics(mut rd, mut t)
+    mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "", graphics: "", rtt_ms: -1 }
+    failure := rd_try_open(mut rd, req.tab, t, req.timeout_ms, mut d)
+    if failure.len() > 0 {
+        rd.rd_close(req.tab)
+        return error(failure)
+    }
+    return RdpModeSwitch{ why: "", graphics: t.graphics, rtt_ms: t.rtt_ms }
+}
+
+// The page asks for its tab in another graphics mode (milestone 35): checked here, then
+// the watched session reconnects (run_remote_desktop).
+fn switch_desktop_graphics[R: RemoteDesktop](mut rd: R, tab: str, graphics: str) -> void! {
+    if !one_of(graphics, RDP_GRAPHICS) {
+        return error(coded(ERR_INVALID, "remote desktop graphics must be auto, pipeline or compatible"))
+    }
+    try rd.rd_set_graphics(tab, graphics)
 }
 
 // Whether `flint connect <alias>` opens a remote desktop: the host is an RDP host,
@@ -246,6 +362,14 @@ fn send_desktop_key[R: RemoteDesktop](mut rd: R, tab: str, code: str, down: bool
 fn send_desktop_pointer[R: RemoteDesktop](mut rd: R, tab: str, p: RdpPointer) -> void! {
     try check_rdp_pointer(p)
     try rd.rd_pointer(tab, p)
+}
+
+// What the tab's desktop has done since it opened (milestone 34).
+fn remote_desktop_stats[R: RemoteDesktop](rd: R, tab: str) -> RdpStats! {
+    if tab.len() == 0 {
+        return error(coded(ERR_INVALID, "statistics need a tab id"))
+    }
+    return try rd.rd_stats(tab)
 }
 
 fn close_remote_desktop[R: RemoteDesktop](mut rd: R, tab: str) {

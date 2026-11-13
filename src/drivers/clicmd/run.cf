@@ -29,6 +29,8 @@ Vaults
   vault unlock                          Ask Flint to unlock the vault, and wait
   vault lock                            Lock the vault in Flint; remove any cached key
   vault rename <new-name>               Rename the vault (its file is not moved)
+  vault passwd [--new-master-stdin]     Change the master password (asks for both)
+  vault merge <copy.flint>              Merge a conflict copy of the vault into it
   vault forget <name|path>              Drop a vault from the recent list
 
 Groups
@@ -205,7 +207,7 @@ fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut st
 // a cached key (`vault lock`, `vault forget`).
 fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
     c := try new_sodium()
-    mut store := new_locked_vault_store()
+    mut store := new_locked_vault_store(flint_config_dir() + "/activity")
     verb := p.positional(1)
     removes_key := p.positional(0) == "vault" && (verb == "lock" || verb == "forget")
     kc := new_os_keychain(removes_key && os.getenv("FLINT_KEYCHAIN") != "off")

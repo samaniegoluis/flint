@@ -7,8 +7,9 @@
 #   scripts/linux-check.sh                                          # everything
 #   FLINT_LINUX_STEPS=serve scripts/linux-check.sh                  # the build, then serve-e2e only
 #   FLINT_LINUX_STEPS=tests FLINT_LINUX_SUITES=src/adapters/ssh scripts/linux-check.sh
+#   FLINT_LINUX_STEPS=gui FLINT_LINUX_REPEAT="rdp 10" scripts/linux-check.sh   # rule 9
 #
-# Steps: tests, cli, gui, serve (comma-separated). Run them all before closing a milestone.
+# Steps: tests, cli, gui, serve, server (comma-separated). Run them all before closing a milestone.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 image="flint-linux-check"
@@ -22,4 +23,4 @@ docker build -t "$image" -f "$root/scripts/linux/Dockerfile" "$root/scripts/linu
 #   FLINT_RDP_BLACKHOLE=1 FLINT_LINUX_STEPS=tests FLINT_LINUX_SUITES=src/adapters/rdp scripts/linux-check.sh
 caps=()
 [[ "${FLINT_RDP_BLACKHOLE:-}" == 1 ]] && caps=(--cap-add NET_ADMIN)
-docker run --rm --user root ${caps[@]+"${caps[@]}"} -e FLINT_E2E_VIM -e FLINT_LINUX_STEPS -e FLINT_LINUX_SUITES -e FLINT_RDP_BLACKHOLE -e FLINT_RDP_TEST_HOST -e FLINT_RDP_TEST_USER -e FLINT_RDP_TEST_PASSWORD -v "$root:/src:ro" "$image" bash /src/scripts/linux/root.sh
+docker run --rm --user root ${caps[@]+"${caps[@]}"} -e FLINT_E2E_VIM -e FLINT_E2E_ONLY -e FLINT_LINUX_REPEAT -e FLINT_LINUX_STEPS -e FLINT_LINUX_SUITES -e FLINT_RDP_BLACKHOLE -e FLINT_RDP_TEST_HOST -e FLINT_RDP_TEST_USER -e FLINT_RDP_TEST_PASSWORD -v "$root:/src:ro" "$image" bash /src/scripts/linux/root.sh

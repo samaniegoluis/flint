@@ -211,7 +211,9 @@ to `~/.ssh/authorized_keys`. Ways to narrow it:
   changed through Flint, and every request refused or left to time out, newest first.
   Commands run as root carry a `root` badge. Click an entry, or press Enter on it, for the
   whole command (up to 16 KB) with the exact time and the full caller chain. Entries are
-  kept 90 days unless you choose 30 days, 1 year or no limit there.
+  kept 90 days unless you choose 30 days, 1 year or no limit there. Each computer keeps
+  its own log, encrypted and outside the vault, so it never syncs; **Back up activity…**
+  copies it as it is.
 - **Read the whole command before you allow it.** A long `flint exec` shows its first line
   in the approval window with **Show full command**; what it shows is read from the
   arguments Flint will run.

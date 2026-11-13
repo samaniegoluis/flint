@@ -1,0 +1,25 @@
+# flint-vault-server with Docker Compose (milestone 42). Make a token first and keep
+# only its hash here:
+#
+#   docker run --rm ghcr.io/samaniegoluis/flint-vault-server token
+#
+# then put the hash in .env beside this file (FLINT_VAULT_TOKEN_HASH=...) and give the
+# token to Flint when it connects. TLS comes from a reverse proxy in front of port 8787
+# (Dokploy, Nginx Proxy Manager, Caddy): see "Self-host a remote vault" in the docs.
+services:
+  flint-vault-server:
+    image: ghcr.io/samaniegoluis/flint-vault-server:latest
+    init: true
+    restart: unless-stopped
+    environment:
+      FLINT_VAULT_TOKEN_HASH: ${FLINT_VAULT_TOKEN_HASH:?make one with the token command above}
+      # 1 only when a reverse proxy you run sits in front: the lockout then counts each
+      # client by the address the proxy forwards, not the proxy's own.
+      FLINT_VAULT_TRUST_PROXY: ${FLINT_VAULT_TRUST_PROXY:-0}
+    ports:
+      - "8787:8787"
+    volumes:
+      - flint-vault-data:/data
+
+volumes:
+  flint-vault-data:

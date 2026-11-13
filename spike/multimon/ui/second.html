@@ -1,0 +1,38 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Second window</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #eee; font: 16px -apple-system, system-ui, sans-serif; overflow: hidden; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #hud { position: absolute; top: 40px; left: 40px; background: #000a; padding: 12px; white-space: pre; }
+</style></head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<script>
+// A full-size canvas redrawn every frame (stands in for the RDP surface), the mouse
+// position in this window's own coordinates, and a pong to the main window's ping.
+const send = (o) => window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.spike2.postMessage(JSON.stringify(o));
+const c = document.getElementById('c'), g = c.getContext('2d'), hud = document.getElementById('hud');
+let frames = 0, last = performance.now(), fps = 0, mouse = '-', keys = '-';
+function size() { c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio; }
+addEventListener('resize', size); size();
+addEventListener('mousemove', (e) => { mouse = `${e.clientX},${e.clientY} (screen ${e.screenX},${e.screenY})`; });
+addEventListener('keydown', (e) => { keys = `${e.code} ${e.key}`; send({ kind: 'key', code: e.code }); });
+addEventListener('mousedown', (e) => send({ kind: 'click', x: e.clientX, y: e.clientY }));
+window.__spike_from_main = (m) => send({ kind: 'pong', t: m.t });
+(function tick(now) {
+  frames++;
+  const w = c.width, h = c.height, x = (now / 3) % w;
+  g.fillStyle = '#0b1a2a'; g.fillRect(0, 0, w, h);
+  g.fillStyle = `hsl(${(now / 5) % 360},70%,50%)`; g.fillRect(x, 0, 120 * devicePixelRatio, h);
+  g.strokeStyle = '#f80'; g.lineWidth = 4; g.strokeRect(2, 2, w - 4, h - 4);  // the edges must all show
+  if (now - last >= 1000) {
+    fps = frames; frames = 0; last = now;
+    send({ kind: 'stat', fps, inner: [innerWidth, innerHeight], dpr: devicePixelRatio, screen: [screen.width, screen.height], focus: document.hasFocus(), vis: document.visibilityState });
+  }
+  hud.textContent = `second window\n${innerWidth}×${innerHeight} css @${devicePixelRatio}x  screen ${screen.width}×${screen.height}\n${fps} fps  focus ${document.hasFocus()}  ${document.visibilityState}\nmouse ${mouse}\nkey ${keys}`;
+  requestAnimationFrame(tick);
+})(performance.now());
+send({ kind: 'hello', href: location.href });
+</script>
+</body></html>

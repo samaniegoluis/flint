@@ -35,7 +35,15 @@
 				{ "alias": "runner-1", "hostname": "ci-runner-1.internal", "group": "ci", "tags": ["ci"], "credential": "build" },
 				{ "alias": "runner-2", "hostname": "ci-runner-2.internal", "group": "ci", "tags": ["ci"], "credential": "build" }
 			],
-			"known_hosts": []
+			"known_hosts": [],
+			"conflict_copy": {
+				"path": "/home/you/OneDrive/work (conflict copy).flint",
+				"added": [
+					{ "alias": "runner-3", "hostname": "ci-runner-3.internal", "group": "ci", "tags": ["ci"], "credential": "build" },
+					{ "alias": "runner-2", "hostname": "ci-runner-2b.internal", "group": "ci", "tags": ["ci"], "credential": "build" }
+				],
+				"removed": ["runner-1"]
+			}
 		}
 	]
 }

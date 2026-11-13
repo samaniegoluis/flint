@@ -46,6 +46,8 @@ type Token struct {
     expires_at: i64         `json:"expires_at"`
     // 0 while not revoked.
     revoked_at: i64         `json:"revoked_at"`
+    // Unix milliseconds of the last write (milestone 41, D-096).
+    updated_at: i64         `json:"updated_at"`
 }
 
 // A token's text split in two. `ok` is false for anything not shaped like one.

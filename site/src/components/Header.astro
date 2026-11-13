@@ -1,12 +1,15 @@
 ---
 // Starlight's Header with one change (D-023): the theme button sits outside the group
 // that Starlight hides below 50rem, so it is reachable on phones, including on pages
-// with no sidebar (the landing), where there is no mobile menu.
+// with no sidebar (the landing), where there is no mobile menu. The Releases link
+// (milestone 33) sits beside it, on every screen size.
 import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
 import Search from '@astrojs/starlight/components/Search.astro';
 import SiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
 import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
 import ThemeToggle from './ThemeToggle.astro';
+
+const onReleases = Astro.url.pathname.replace(/\/$/, '') === '/releases';
 ---
 
 <div class="header">
@@ -14,6 +17,7 @@ import ThemeToggle from './ThemeToggle.astro';
 	<div class="sl-flex print:hidden"><Search /></div>
 	<div class="sl-flex print:hidden right-group">
 		<div class="sl-hidden md:sl-flex social-icons"><SocialIcons /></div>
+		<a class="flint-header-link" href="/releases/" aria-current={onReleases ? 'page' : undefined}>Releases</a>
 		<ThemeToggle />
 		<div class="sl-hidden md:sl-flex"><LanguageSelect /></div>
 	</div>
@@ -33,6 +37,26 @@ import ThemeToggle from './ThemeToggle.astro';
 		padding: 0.25rem;
 		margin: -0.25rem;
 		min-width: 0;
+	}
+
+	.flint-header-link {
+		font-size: var(--sl-text-sm);
+		font-weight: 500;
+		color: var(--sl-color-gray-2);
+		text-decoration: none;
+		white-space: nowrap;
+		padding: 0.25rem 0.1rem;
+		border-bottom: 2px solid transparent;
+	}
+	.flint-header-link:hover,
+	.flint-header-link[aria-current='page'] {
+		color: var(--sl-color-white);
+		border-bottom-color: var(--sl-color-accent);
+	}
+	.flint-header-link:focus-visible {
+		outline: none;
+		border-radius: 4px;
+		box-shadow: var(--flint-focus);
 	}
 
 	.right-group,

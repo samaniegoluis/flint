@@ -1,0 +1,126 @@
+---
+// The desktop app on the landing (D-027): a short looping video recorded from the real UI
+// build over the CLI demo's vault by `npm run shots:video`, one per theme (Starlight's
+// light:/dark:sl-hidden classes show the one that matches the page) and two cuts, a
+// desktop one and a narrow one for phones (≤ 640 px). The poster is the video's first
+// frame, so the page shows a still until the video plays. Nothing is downloaded but the
+// poster until the figure is half in view; it plays there and pauses when it leaves. With
+// reduced motion, or without JavaScript, the poster stays. The shortcuts pressed show as
+// keycaps under the video, timed from the recording's timeline.
+import { getImage } from 'astro:assets';
+import darkDesktopPoster from '../../assets/video/app-dark-desktop.png';
+import darkMobilePoster from '../../assets/video/app-dark-mobile.png';
+import lightDesktopPoster from '../../assets/video/app-light-desktop.png';
+import lightMobilePoster from '../../assets/video/app-light-mobile.png';
+import darkDesktopWebm from '../../assets/video/app-dark-desktop.webm?url';
+import darkDesktopMp4 from '../../assets/video/app-dark-desktop.mp4?url';
+import darkMobileWebm from '../../assets/video/app-dark-mobile.webm?url';
+import darkMobileMp4 from '../../assets/video/app-dark-mobile.mp4?url';
+import lightDesktopWebm from '../../assets/video/app-light-desktop.webm?url';
+import lightDesktopMp4 from '../../assets/video/app-light-desktop.mp4?url';
+import lightMobileWebm from '../../assets/video/app-light-mobile.webm?url';
+import lightMobileMp4 from '../../assets/video/app-light-mobile.mp4?url';
+import darkDesktopKeys from '../../assets/video/app-dark-desktop.json';
+import darkMobileKeys from '../../assets/video/app-dark-mobile.json';
+import lightDesktopKeys from '../../assets/video/app-light-desktop.json';
+import lightMobileKeys from '../../assets/video/app-light-mobile.json';
+
+const alt =
+	'The Flint desktop app: the Demo vault’s host tree with the prod and homelab groups, and a shell on db reached through bastion. The video opens web-01 from the command palette, runs a command, splits the tab, closes both panes, then locks and unlocks the vault.';
+const narrow = '(max-width: 640px)';
+const webp = async (src: ImageMetadata) => (await getImage({ src, format: 'webp', width: src.width })).src;
+const themes = [
+	{
+		theme: 'dark', hide: 'light:sl-hidden',
+		poster: { desktop: await webp(darkDesktopPoster), mobile: await webp(darkMobilePoster) },
+		desktop: { webm: darkDesktopWebm, mp4: darkDesktopMp4, keys: darkDesktopKeys.keys },
+		mobile: { webm: darkMobileWebm, mp4: darkMobileMp4, keys: darkMobileKeys.keys },
+	},
+	{
+		theme: 'light', hide: 'dark:sl-hidden',
+		poster: { desktop: await webp(lightDesktopPoster), mobile: await webp(lightMobilePoster) },
+		desktop: { webm: lightDesktopWebm, mp4: lightDesktopMp4, keys: lightDesktopKeys.keys },
+		mobile: { webm: lightMobileWebm, mp4: lightMobileMp4, keys: lightMobileKeys.keys },
+	},
+];
+---
+
+<figure class="flint-shot flint-video not-content">
+	{
+		themes.map((t) => (
+			<div class={`flint-video-stage ${t.hide}`} data-flint-video={t.theme} data-keys-desktop={JSON.stringify(t.desktop.keys)} data-keys-mobile={JSON.stringify(t.mobile.keys)}>
+				<picture>
+					<source media={narrow} srcset={t.poster.mobile} type="image/webp" />
+					<img src={t.poster.desktop} alt={alt} loading="lazy" decoding="async" />
+				</picture>
+				<video muted loop playsinline preload="none" aria-hidden="true" tabindex="-1">
+					<source media={narrow} src={t.mobile.webm} type="video/webm" />
+					<source media={narrow} src={t.mobile.mp4} type="video/mp4" />
+					<source src={t.desktop.webm} type="video/webm" />
+					<source src={t.desktop.mp4} type="video/mp4" />
+				</video>
+				<button type="button" class="flint-video-toggle" aria-label="Pause the video" hidden>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3h2v10H5zM9 3h2v10H9z" /></svg>
+				</button>
+			</div>
+		))
+	}
+	<div class="flint-video-keys" aria-hidden="true"></div>
+	<figcaption>The desktop app: <code>db</code> is reached through the jump host <code>bastion</code>; <code>web-01</code> opens from the command palette and splits into two panes.</figcaption>
+</figure>
+
+<script>
+	const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+	type Key = { t: number; key: string };
+	const pause = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3h2v10H5zM9 3h2v10H9z"/></svg>';
+	const play = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3l8 5-8 5z"/></svg>';
+
+	for (const stage of document.querySelectorAll<HTMLElement>('[data-flint-video]')) {
+		const video = stage.querySelector('video')!;
+		const toggle = stage.querySelector<HTMLButtonElement>('.flint-video-toggle')!;
+		const caps = stage.parentElement!.querySelector<HTMLElement>('.flint-video-keys')!;
+		let visible = false;
+		let stopped = false;
+		let frame = 0;
+		// The cut playing is the one the <source> media picked when the video loaded.
+		const keys = (): Key[] => JSON.parse((video.currentSrc.includes('-mobile') ? stage.dataset.keysMobile : stage.dataset.keysDesktop) ?? '[]');
+
+		const sync = () => {
+			if (visible && !stopped && !reduce.matches) video.play().catch(() => {});
+			else video.pause();
+		};
+		// Each shortcut stays up for 0.9 s after it was pressed.
+		const draw = () => {
+			const t = video.currentTime;
+			const live = keys().filter((k) => t >= k.t && t < k.t + 0.9).map((k) => k.key).join('\u0000');
+			if (caps.dataset.live !== live) {
+				caps.dataset.live = live;
+				caps.replaceChildren(...(live ? live.split('\u0000') : []).map((k) => Object.assign(document.createElement('kbd'), { textContent: k })));
+			}
+			frame = requestAnimationFrame(draw);
+		};
+
+		video.addEventListener('playing', () => {
+			stage.classList.add('playing');
+			toggle.hidden = false;
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(draw);
+		});
+		video.addEventListener('pause', () => cancelAnimationFrame(frame));
+		toggle.addEventListener('click', () => {
+			stopped = !stopped;
+			toggle.innerHTML = stopped ? play : pause;
+			toggle.setAttribute('aria-label', stopped ? 'Play the video' : 'Pause the video');
+			sync();
+		});
+		reduce.addEventListener('change', sync);
+		// A stage hidden by the page's theme never intersects, so only the shown one plays.
+		new IntersectionObserver(
+			([entry]) => {
+				visible = entry.isIntersecting && entry.intersectionRatio >= 0.5;
+				sync();
+			},
+			{ threshold: [0, 0.5] },
+		).observe(stage);
+	}
+</script>

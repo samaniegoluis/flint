@@ -9,10 +9,15 @@
 // in a buffer until the terminal mounts.
 
 import { useSyncExternalStore } from 'react';
+
+import { monitors } from './monitors';
 import { api, on } from '../api/backend';
 import { InputQueue } from '../lib/inputQueue';
 import { defaultTracks, layoutAfterClose, layoutForSplit, MAX_PANES, type Layout, type SplitDir } from '../lib/layout';
-import type { DesktopReadyEvent, HostKeyPayload, HostType, RdpStateEvent, SessionPromptEvent, SessionStateEvent } from '../api/types';
+import type { DesktopReadyEvent, HostKeyPayload, HostType, RdpGraphicsEvent, RdpStateEvent, SessionPromptEvent, SessionStateEvent } from '../api/types';
+
+/** The core's RDP_AUTO_LAN_RTT_MS (domain/rdp.cf): a round trip this short is a local network. */
+const RDP_AUTO_LAN_RTT_MS = 5;
 
 export type PaneStatus = 'connecting' | 'prompt' | 'ready' | 'ended';
 
@@ -28,6 +33,10 @@ export interface Desktop {
   height: number;
   port: number;
   token: string;
+  /** Milestone 35: what the engine runs, 'pipeline' or 'compatible'. */
+  engine: string;
+  /** The link's round trip Automatic chose by, ms; -1 when not measured. */
+  rttMs: number;
 }
 
 /**
@@ -54,6 +63,15 @@ export interface Pane {
   noCommand: boolean;
   /** The shell's folder from OSC 7 (milestone 17), "" until it reports one. */
   cwd: string;
+  /**
+   * An RDP pane's graphics mode (milestone 35): 'auto', 'pipeline' or 'compatible', from Settings
+   * when it connects, then the toolbar's switch for this tab only; '' for SSH.
+   */
+  graphics: string;
+  /** A switch is reconnecting the desktop. */
+  graphicsSwitching: boolean;
+  /** Why the last switch did not happen, '' when it did. */
+  graphicsNote: string;
 }
 
 /** A tab: one to four panes in a layout. */
@@ -180,7 +198,9 @@ class SessionStore {
       if (!t || t.session !== ev.tab) return;
       if (ev.state === 'connecting') this.patch(t.id, { status: 'connecting', end: null, prompt: null });
       else {
-        this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: 0 }, endedAt: Date.now() });
+        this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: 0 }, endedAt: Date.now(), graphicsSwitching: false });
+        // Milestone 38: the extra monitors say the connection was lost (22f3b).
+        monitors.lost(t.id);
         this.bySession.delete(ev.tab);
       }
     });
@@ -188,9 +208,56 @@ class SessionStore {
       const paneId = this.bySession.get(ev.tab);
       const t = this.pane(paneId ?? null);
       if (!t || t.session !== ev.tab) return;
-      this.patch(t.id, { status: 'ready', prompt: null, connectedAt: Date.now(), desktop: { width: ev.width, height: ev.height, port: ev.frame_port, token: ev.frame_token } });
+      this.patch(t.id, { status: 'ready', prompt: null, connectedAt: Date.now(), desktop: { width: ev.width, height: ev.height, port: ev.frame_port, token: ev.frame_token, engine: ev.graphics, rttMs: ev.rtt_ms } });
+      // Milestone 38: a reconnect comes back on one monitor; a spanning tab spans again.
+      monitors.desktopReady(t.id, { port: ev.frame_port, token: ev.frame_token });
+    });
+    on<RdpGraphicsEvent>('rdp:graphics', (ev) => {
+      const paneId = this.bySession.get(ev.tab);
+      const t = this.pane(paneId ?? null);
+      if (!t || t.session !== ev.tab) return;
+      const desktop = t.desktop && !ev.message ? { ...t.desktop, engine: ev.engine, rttMs: ev.rtt_ms } : t.desktop;
+      this.patch(t.id, { graphics: ev.graphics, graphicsSwitching: false, graphicsNote: ev.message, desktop });
     });
   }
+
+  /**
+   * Switches an RDP pane's graphics mode while connected (milestone 35): the core
+   * reconnects the desktop in that mode, keeping the Windows session; Settings keeps
+   * the default for new tabs.
+   */
+  setGraphics(paneId: string, graphics: string) {
+    const t = this.pane(paneId);
+    if (!t || t.kind !== 'rdp' || t.status !== 'ready' || t.graphicsSwitching || t.graphics === graphics) return;
+    this.patch(paneId, { graphicsSwitching: true, graphicsNote: '' });
+    api.rdpGraphics(t.session, graphics).catch((err) => {
+      const e = err as { message?: string };
+      this.patch(paneId, { graphicsSwitching: false, graphicsNote: e.message ?? String(err) });
+    });
+  }
+
+  /**
+   * Asks Automatic again (milestone 38, D-091): across monitors it takes the graphics
+   * pipeline, on one monitor it goes by the round trip, so a tab in Automatic is
+   * reconnected when it starts or stops spanning and its engine is not what Automatic
+   * would pick now. The Windows session stays, as with any switch.
+   */
+  autoForMonitors(paneId: string, spanning: boolean) {
+    const t = this.pane(paneId);
+    if (!t || t.kind !== 'rdp' || t.status !== 'ready' || t.graphicsSwitching || t.graphics !== 'auto' || !t.desktop) return;
+    const lan = t.desktop.rttMs >= 0 && t.desktop.rttMs <= RDP_AUTO_LAN_RTT_MS;
+    const want = spanning || !lan ? 'pipeline' : 'compatible';
+    if (t.desktop.engine === want) return;
+    this.patch(paneId, { graphicsSwitching: true, graphicsNote: '' });
+    api.rdpGraphics(t.session, 'auto').catch((err) => {
+      const e = err as { message?: string };
+      this.patch(paneId, { graphicsSwitching: false, graphicsNote: e.message ?? String(err) });
+    });
+  }
+
+  // Settings → Remote desktop → Graphics (milestone 34), read when a desktop connects.
+  private desktopGraphics = 'auto';
+  setDesktopGraphics(g: string) { this.desktopGraphics = g; }
 
   // An RDP pane connects once its view has measured it, so the desktop starts at the
   // tab's size.
@@ -200,8 +267,10 @@ class SessionStore {
     if (!t || !area) return;
     const session = mint('r');
     this.bySession.set(session, paneId);
-    this.patch(paneId, { session, status: 'connecting', prompt: null, changedKey: null, end: null, desktop: null });
-    api.rdpOpen(session, t.alias, area.width, area.height).catch((err) => {
+    // A reconnect keeps the tab's own mode; a new tab takes Settings'.
+    const graphics = t.graphics || this.desktopGraphics;
+    this.patch(paneId, { session, status: 'connecting', prompt: null, changedKey: null, end: null, desktop: null, graphics, graphicsSwitching: false, graphicsNote: '' });
+    api.rdpOpen(session, t.alias, area.width, area.height, graphics).catch((err) => {
       this.bySession.delete(session);
       const e = err as { code?: string; message?: string };
       this.patch(paneId, { status: 'ended', end: { code: e.code ?? 'internal', message: e.message ?? String(err), exit_code: -1 } });
@@ -224,7 +293,7 @@ class SessionStore {
   }
 
   private newPane(tabId: string, alias: string, noCommand: boolean, kind: HostType = 'ssh'): Pane {
-    return { id: mint('p'), kind, desktop: null, tab: tabId, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, endedAt: 0, noCommand, cwd: '' };
+    return { id: mint('p'), kind, desktop: null, tab: tabId, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, endedAt: 0, noCommand, cwd: '', graphics: '', graphicsSwitching: false, graphicsNote: '' };
   }
 
   /** Opens `alias` in a new tab; returns the new pane's id. An RDP host's tab is a remote desktop. */
@@ -325,6 +394,18 @@ class SessionStore {
    * An RDP pane's view measured `width` x `height` CSS pixels: the first size opens
    * the connection; a later one, once it settles, resizes the desktop.
    */
+  /**
+   * Back on one monitor (milestone 38): the desktop takes the area's size as it is
+   * now. Leaving asks for the main window's size measured when the span began, which
+   * may be stale (the full screen still settling then), and the area may not change
+   * again to correct it.
+   */
+  fitDesktopToArea(paneId: string) {
+    const p = this.pane(paneId);
+    const area = this.areas.get(paneId);
+    if (p && area && p.session && p.status === 'ready') api.rdpResize(p.session, area.width, area.height).catch(() => {});
+  }
+
   desktopArea(paneId: string, width: number, height: number) {
     const w = Math.floor(width);
     const h = Math.floor(height);
@@ -335,6 +416,8 @@ class SessionStore {
     const t = this.pane(paneId);
     if (!t) return;
     if (!prev && !t.session) { this.connectDesktop(paneId); return; }
+    // Spanning monitors (milestone 38): the main window's size goes into the layout.
+    if (monitors.spanning(paneId)) { monitors.mainArea(paneId, w, h); return; }
     clearTimeout(this.resizeTimers.get(paneId));
     this.resizeTimers.set(paneId, setTimeout(() => {
       this.resizeTimers.delete(paneId);
@@ -342,6 +425,30 @@ class SessionStore {
       const area = this.areas.get(paneId);
       if (p && area && p.session && p.status === 'ready') api.rdpResize(p.session, area.width, area.height).catch(() => {});
     }, DESKTOP_SETTLE_MS));
+  }
+
+  /**
+   * "Full screen on all monitors" for RDP tab `tabId` (milestone 38): the window goes
+   * full screen on its monitor and the desktop spans the monitors chosen.
+   */
+  enterAllMonitors(tabId: string, enterFullScreen: (tab: string) => void, picks?: string[]) {
+    const tab = this.tab(tabId);
+    const p = tab ? this.pane(tab.focus) : undefined;
+    if (!p || p.kind !== 'rdp' || p.status !== 'ready' || !p.desktop || !p.session) return;
+    const area = this.areas.get(p.id) ?? { width: window.innerWidth, height: window.innerHeight };
+    enterFullScreen(tabId);
+    // The main window's size is the full screen's: its area reports it once it settles.
+    monitors.enter(p.id, p.session, area, { port: p.desktop.port, token: p.desktop.token }, picks).catch(() => {});
+  }
+
+  /**
+   * The desktop's size as its frames arrive: a resize (or full screen) changes it after
+   * the connect, and the toolbar and the full-screen bar say the size drawn.
+   */
+  desktopDrawn(paneId: string, width: number, height: number) {
+    const d = this.pane(paneId)?.desktop;
+    if (!d || (d.width === width && d.height === height)) return;
+    this.patch(paneId, { desktop: { ...d, width, height } });
   }
 
   /** Closes one pane and hangs up its session; the last pane closes its tab. */
@@ -454,13 +561,18 @@ export function statusLabel(t: Pane): { dot: string; meta: string; metaClass: st
 }
 
 /** Why a remote desktop ended, as its tab says it (design 22c). */
-export function rdpEndKind(t: Pane): 'closed' | 'auth' | 'cert-changed' | 'unreachable' | 'timeout' | 'rdp-off' | 'refused' | 'lost' | 'other' {
+export function rdpEndKind(t: Pane): 'closed' | 'auth' | 'cert-changed' | 'unreachable' | 'timeout' | 'rdp-off' | 'legacy-security' | 'refused' | 'lost' | 'other' {
   const code = t.end?.code ?? '';
   if (!code) return 'closed';
   if (code === 'auth') return 'auth';
   if (code === 'host_key') return t.changedKey ? 'cert-changed' : 'other';
   if (code === 'timeout') return 'timeout';
-  if (code === 'refused') return t.end?.message.includes('Remote Desktop port') ? 'rdp-off' : 'refused';
+  if (code === 'refused') {
+    const msg = t.end?.message ?? '';
+    if (msg.includes('Remote Desktop port')) return 'rdp-off';
+    if (msg.includes('Standard RDP Security')) return 'legacy-security';
+    return 'refused';
+  }
   if (code === 'network') return t.connectedAt > 0 ? 'lost' : 'unreachable';
   return 'other';
 }
@@ -469,7 +581,7 @@ function rdpStatusLabel(t: Pane): { dot: string; meta: string; metaClass: string
   const k = rdpEndKind(t);
   const meta: Record<typeof k, string> = {
     closed: 'disconnected', auth: 'sign-in failed', 'cert-changed': 'certificate changed', unreachable: 'unreachable',
-    timeout: 'timed out', 'rdp-off': 'refused', refused: 'refused', lost: 'disconnected', other: 'failed',
+    timeout: 'timed out', 'rdp-off': 'refused', 'legacy-security': 'refused', refused: 'refused', lost: 'disconnected', other: 'failed',
   };
   return { dot: k === 'closed' ? 'st-off' : 'st-fail', meta: meta[k], metaClass: k === 'closed' ? 'faint' : 'danger-t' };
 }

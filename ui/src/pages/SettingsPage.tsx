@@ -13,11 +13,13 @@ import { Kbd } from '../ui/Kbd';
 import { Picker } from '../ui/Picker';
 import type { Confirm } from './KeysPage';
 import { RenameVault } from '../shell/VaultSwitcher';
+import { ChangeMasterPassword } from './ChangeMasterPassword';
 import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
 import { MAC_MOD_KEYS, MOD_TARGETS, modMapOf, modMapText, type MacModKey, type ModTarget } from '../lib/rdpInput';
 import { AccessSettings } from '../access/AccessSettings';
+import { GRAPHICS_MODES } from '../lib/rdpStats';
 
-export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access';
+export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'about';
 
 const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
   { id: 'appearance', label: 'Appearance', icon: 'palette' },
@@ -26,6 +28,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
   { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'keyboard' },
   { id: 'vault', label: 'Vault', icon: 'lock' },
   { id: 'access', label: 'Access', icon: 'shield-key' },
+  { id: 'about', label: 'About', icon: 'info' },
 ];
 
 export function SettingsPage({ section, setSection, onLock, onConfirm }: {
@@ -35,8 +38,9 @@ export function SettingsPage({ section, setSection, onLock, onConfirm }: {
   onConfirm: (c: Confirm) => void;
 }) {
   const { os } = useApp();
-  // Remote desktop holds only the Mac keyboard's modifiers: a PC keyboard already matches.
-  const sections = SECTIONS.filter((s) => s.id !== 'remote' || os === 'mac');
+  // Remote desktop: graphics everywhere (milestone 34); the Mac keyboard's modifiers on
+  // macOS only, where a PC keyboard does not already match.
+  const sections = SECTIONS;
   return (
     <section className="main page" aria-label="Settings" style={{ flexDirection: 'row' }}>
       <nav className="settings-nav" aria-label="Settings sections">
@@ -51,10 +55,11 @@ export function SettingsPage({ section, setSection, onLock, onConfirm }: {
         <div className="col" style={{ maxWidth: 860 }}>
           {section === 'appearance' && <Appearance />}
           {section === 'terminal' && <TerminalSettings />}
-          {section === 'remote' && os === 'mac' && <RemoteDesktopSettings />}
+          {section === 'remote' && <RemoteDesktopSettings mac={os === 'mac'} />}
           {section === 'shortcuts' && <Shortcuts />}
           {section === 'vault' && <VaultSettings onLock={onLock} onConfirm={onConfirm} />}
           {section === 'access' && <AccessSettings onConfirm={onConfirm} />}
+          {section === 'about' && <About />}
         </div>
       </div>
     </section>
@@ -236,13 +241,55 @@ const MOD_TARGET_LABELS: Record<ModTarget, string> = { ctrl: 'Ctrl', alt: 'Alt',
 
 // Milestone 31 (D-074): what each modifier key of this Mac sends to Windows. A preset
 // shows its table; changing a key starts a Custom table from what is shown.
-function RemoteDesktopSettings() {
+// The version this build was made from (milestone 32): git's, read at build time.
+function About() {
+  const { info } = useApp();
+  const libs: [string, string | undefined][] = [
+    ['libssh', info?.libssh], ['libsodium', info?.libsodium], ['SQLite', info?.sqlite], ['FreeRDP', info?.freerdp],
+  ];
+  return (
+    <>
+      <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', marginBottom: 'var(--sp-3)' }}>About</h1>
+      <Row title="Version" desc="The version this build of Flint was made from.">
+        <span className="mono strong" data-about-version>Flint {info?.version ?? ''}</span>
+        <span className="hint">What changed in each version is on the Changelog page of Flint's docs. A version with a suffix (<span className="mono">0.1.0-3-gabc1234</span>) is a build made between two releases.</span>
+      </Row>
+      <Row title="Libraries" desc="Linked into this build.">
+        <table className="table compact" data-about-libs>
+          <tbody>
+            {libs.map(([name, v]) => <tr key={name}><td>{name}</td><td className="mono">{v || '—'}</td></tr>)}
+          </tbody>
+        </table>
+      </Row>
+    </>
+  );
+}
+
+function RemoteDesktopSettings({ mac }: { mac: boolean }) {
   const [s, set] = useSetting();
   const map = modMapOf(s.rdp_mac_keys, s.rdp_mac_custom);
   const pick = (k: MacModKey, t: ModTarget) => set({ rdp_mac_keys: 'custom', rdp_mac_custom: modMapText({ ...map, [k]: t }) });
   return (
     <>
       <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', marginBottom: 'var(--sp-3)' }}>Remote desktop</h1>
+      <Row title="Graphics" desc="How a new remote desktop tab is sent to this computer. Each tab can switch from its toolbar while connected.">
+        <div className="seg" role="radiogroup" aria-label="Remote desktop graphics" data-rdp-graphics>
+          {GRAPHICS_MODES.map((g) => (
+            <button key={g.id} type="button" role="radio" aria-checked={s.rdp_graphics === g.id} aria-pressed={s.rdp_graphics === g.id} data-graphics={g.id}
+              onClick={() => set({ rdp_graphics: g.id })}>
+              {g.label}
+            </button>
+          ))}
+        </div>
+        <span className="hint">
+          {s.rdp_graphics === 'auto'
+            ? <>Chosen when the tab connects: lossless bitmaps on a local network, where they feel smoothest, and the graphics pipeline over a VPN or the internet, where it needs far less bandwidth.</>
+            : s.rdp_graphics === 'pipeline'
+              ? <>Always the graphics pipeline, with the best codec both ends support (H.264 where this computer decodes it): the least bandwidth. A server without it gets the classic updates.</>
+              : <>Always the classic bitmap updates, as earlier versions of Flint used: lossless, several times the bandwidth. Try it too if a desktop shows wrong colours or garbled areas.</>}
+        </span>
+      </Row>
+      {mac && <>
       <Row title="Modifier keys" desc="What this Mac's modifier keys send in an RDP tab. Set on this computer.">
         <div className="seg" role="radiogroup" aria-label="Modifier keys preset" data-rdp-keys-preset>
           {(['mac', 'windows', 'custom'] as const).map((p) => (
@@ -277,6 +324,7 @@ function RemoteDesktopSettings() {
         </table>
       </Row>
       <div className="callout info"><Icon name="keyboard" size="sm" className="info-t" /><span>Flint's own shortcuts stay on <span className="mono strong">⌘</span> in an RDP tab: the command palette and <span className="mono strong">⌘1</span>–<span className="mono strong">⌘9</span>. Combinations macOS keeps for itself, such as <span className="mono strong">⌘Tab</span> and <span className="mono strong">⌘Space</span>, never reach Windows.</span></div>
+      </>}
     </>
   );
 }
@@ -341,10 +389,12 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
   const { vault, catalog, os, refreshCatalog, notify, closeVault } = useApp();
   const [st, setSt] = useState<VaultStatus | null>(null);
   const [renaming, setRenaming] = useState(false);
+  const [changing, setChanging] = useState(false);
+  const [changed, setChanged] = useState(0);
   // Sessions record trusted keys on their worker, and the CLI can change the file:
   // read the catalog again when the page opens, or Known hosts shows a stale list.
   useEffect(() => { refreshCatalog().catch(() => {}); }, [refreshCatalog]);
-  useEffect(() => { api.status().then(setSt).catch(() => {}); }, [catalog]);
+  useEffect(() => { api.status().then(setSt).catch(() => {}); }, [catalog, changed]);
   if (!vault) return null;
   const keychain = os === 'mac' ? 'macOS Keychain' : os === 'windows' ? 'Windows Credential Manager' : 'the Secret Service keyring';
   return (
@@ -400,9 +450,10 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
           </table>
         )}
       </Row>
-      <Row title="Master password" desc="Changing it is coming in a later version (flint vault passwd).">
-        <span className="faint" style={{ fontSize: 'var(--fs-sm)' }}>—</span>
+      <Row title="Master password" desc="Opens the vault and seals its saved passwords and keys. Changing it re-encrypts the vault; the CLI's flint vault passwd does the same.">
+        <div className="row"><button className="btn btn-secondary btn-sm" onClick={() => setChanging(true)}>Change master password…</button></div>
       </Row>
+      {changing && <ChangeMasterPassword onClose={() => { setChanging(false); setChanged((n) => n + 1); }} />}
     </>
   );
 }

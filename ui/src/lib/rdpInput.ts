@@ -14,7 +14,7 @@ import { actionFor, type Action, type KeyLike, type Os } from './keymap';
 /** The core's connect timeout (application/rdp.cf, RDP_CONNECT_TIMEOUT_MS), as the tab says it. */
 export const RDP_CONNECT_TIMEOUT_S = 30;
 
-export const RDP_KEPT_ACTIONS: Action[] = ['palette', 'quit', 'tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7', 'tab8', 'tab9'];
+export const RDP_KEPT_ACTIONS: Action[] = ['palette', 'quit', 'fullscreen', 'tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7', 'tab8', 'tab9'];
 
 /** The Flint action a key press keeps in an RDP tab, or null when it goes to the remote. */
 export function rdpKeptAction(e: KeyLike, os: Os): Action | null {

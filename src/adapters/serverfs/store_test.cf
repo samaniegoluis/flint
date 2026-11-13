@@ -1,0 +1,158 @@
+package serverfs
+
+// The server's store on disk (milestone 42, D-097).
+
+import "core:fs"
+import "core:os"
+import "core:time"
+import "core:str"
+import "../../ports"
+
+VID: str = "00112233445566778899aabbccddeeff"
+
+fn temp_store_dir(name: str) -> str {
+    mut base := os.getenv("TMPDIR")
+    if base.len() == 0 {
+        base = "/tmp"
+    }
+    dir := base + "/flint-serverfs-{name}-{time.now_ms()}"
+    _ := fs.remove(dir)
+    return dir
+}
+
+// Every byte value, so the store is shown to keep a file exactly.
+fn every_byte() -> str {
+    mut b := make([]byte, 512)
+    for i in 0..512 {
+        b[i] = byte(u8(i % 256))
+    }
+    return str(b)
+}
+
+fn uses_port[B: BlobStore](mut b: B) -> i64 {
+    h := b.blob_head() or err {
+        return -1
+    }
+    return h.version
+}
+
+test "an empty store has version 0, and a write becomes the head" {
+    dir := temp_store_dir("head")
+    defer {
+        _ := fs.remove(dir)
+    }
+    mut s := try new_file_blob_store(dir)
+    assert_eq(uses_port(mut s), i64(0))
+    data := every_byte()
+    try s.blob_write(1, VID, data, 1234)
+    head := try s.blob_head()
+    assert_eq(head.version, i64(1))
+    assert_eq(head.vault_id, VID)
+    assert_eq(head.size, i64(512))
+    assert_eq(head.stored_at, i64(1234))
+    assert(try s.blob_read(1) == data)
+    // Reopened, it is the same store.
+    s2 := try new_file_blob_store(dir)
+    assert_eq((try s2.blob_head()).version, i64(1))
+    assert(!fs.exists(dir + "/.lock"))
+}
+
+test "a write that does not follow the head is refused" {
+    dir := temp_store_dir("follow")
+    defer {
+        _ := fs.remove(dir)
+    }
+    mut s := try new_file_blob_store(dir)
+    try s.blob_write(1, VID, "a", 1)
+    mut code := ""
+    s.blob_write(1, VID, "b", 2) or err {
+        code = error_code_of(err.message())
+    }
+    assert_eq(code, ERR_CONFLICT)
+    s.blob_write(3, VID, "b", 2) or err {
+        code = "again " + error_code_of(err.message())
+    }
+    assert_eq(code, "again " + ERR_CONFLICT)
+    assert_eq(try s.blob_read(1), "a")
+}
+
+test "the newest ten versions are kept, newest first" {
+    dir := temp_store_dir("prune")
+    defer {
+        _ := fs.remove(dir)
+    }
+    mut s := try new_file_blob_store(dir)
+    for n in 1..=13 {
+        try s.blob_write(n, VID, "v{n}", n * 10)
+    }
+    kept := try s.blob_versions()
+    assert_eq(i64(kept.len()), SERVER_VERSIONS_KEPT)
+    assert_eq(kept[0].version, i64(13))
+    assert_eq(kept[9].version, i64(4))
+    assert(!fs.exists(dir + "/versions/3.blob"))
+    assert(!fs.exists(dir + "/versions/3.json"))
+    assert_eq(try s.blob_read(4), "v4")
+    mut code := ""
+    s.blob_read(3) or err {
+        code = error_code_of(err.message())
+    }
+    assert_eq(code, ERR_NOT_FOUND)
+}
+
+test "a version cut short past the head and a stray tmp file are not listed" {
+    dir := temp_store_dir("crash")
+    defer {
+        _ := fs.remove(dir)
+    }
+    mut s := try new_file_blob_store(dir)
+    try s.blob_write(1, VID, "one", 1)
+    // A crash after writing version 2's files but before the head named it.
+    try fs.write_text(dir + "/versions/2.blob", "half")
+    try fs.write_text(dir + "/versions/2.json", "\{\}")
+    try fs.write_text(dir + "/versions/5.blob.tmp", "x")
+    kept := try s.blob_versions()
+    assert_eq(kept.len(), usize(1))
+    // The next write takes number 2 over the leftovers and clears the tmp file.
+    try s.blob_write(2, VID, "two", 2)
+    assert_eq(try s.blob_read(2), "two")
+    assert(!fs.exists(dir + "/versions/5.blob.tmp"))
+}
+
+test "a held lock refuses a writer, and a stale one is taken" {
+    dir := temp_store_dir("lock")
+    defer {
+        _ := fs.remove(dir)
+    }
+    mut s := try new_file_blob_store(dir)
+    try fs.mkdir_all(dir + "/.lock")
+    mut code := ""
+    s.blob_write(1, VID, "a", 1) or err {
+        code = error_code_of(err.message())
+    }
+    assert_eq(code, ERR_CONFLICT)
+    assert_eq((try s.blob_head()).version, i64(0))
+    // A lock older than the stale limit: left by a process that died.
+    _ := os.command("touch", ["-t", "202001010000", dir + "/.lock"])
+    try s.blob_write(1, VID, "a", 1)
+    assert_eq((try s.blob_head()).version, i64(1))
+}
+
+test "the files are written owner-only" {
+    dir := temp_store_dir("mode")
+    defer {
+        _ := fs.remove(dir)
+    }
+    mut s := try new_file_blob_store(dir)
+    try s.blob_write(1, VID, "a", 1)
+    r := try os.command("stat", ["-c", "%a", dir + "/versions/1.blob"])
+    r2 := try os.command("stat", ["-f", "%Lp", dir + "/versions/1.blob"])
+    mut mode := r2.stdout
+    if r.exit_code == 0 {
+        mode = r.stdout
+    }
+    assert_eq(str.trim(mode), "600")
+}
+
+test "a connection's peer address is read from its socket" {
+    assert_eq(peer_address(-1), "")
+}

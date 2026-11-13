@@ -58,3 +58,22 @@ test "local files: write, stat, list, read, rename, remove, with stable codes" {
     try l.local_remove(dir + "/sub/b.bin")
     try l.local_remove(dir + "/sub")
 }
+
+test "two spellings of one file through a symbolic link are the same path" {
+    dir := "/tmp/flint-realpath-" + "{time.now_ms()}"
+    try fs.mkdir_all(dir + "/real")
+    try fs.write_text(dir + "/real/v.flint", "x")
+    link := dir + "/link"
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-136 (no symlink in core:fs either)
+    cpp {
+        rc = ::symlink((dir + "/real").c_str(), link.c_str());
+    }
+    assert_eq(rc, 0)
+    assert(same_file_path(link + "/v.flint", dir + "/real/v.flint"))
+    assert(local_real_path(link + "/v.flint").ends_with("/real/v.flint"))
+    assert(!same_file_path(link + "/v.flint", dir + "/real/w.flint"))
+    // A path that does not exist comes back as given.
+    assert_eq(local_real_path(dir + "/nope/x.flint"), dir + "/nope/x.flint")
+    try fs.remove(dir)
+}

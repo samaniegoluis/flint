@@ -1,0 +1,46 @@
+package uievents
+
+// The window's full screen (milestone 37), through a native shim
+// (native/flint_window.hpp, CF-125): `ext:webui` only toggles a flag and never hears
+// the window leave full screen another way. The page learns every change from the
+// `window:fullscreen` event, sent by the shim on the UI thread.
+
+// CFIRE-UPSTREAM: CF-125, CF-031
+import cpp "flint_window.hpp" @pkg("flint-native-gui")
+import "ext:webui"
+
+// Starts hearing the window's full-screen state for `app`'s page. Call once, before
+// the window runs.
+fn window_fullscreen_install(app: webui.App) {
+    // CFIRE-UPSTREAM: CF-125
+    cpp {
+        flint_window::install(app);
+    }
+}
+
+// Enters or leaves full screen; nothing happens when the window already is so.
+fn window_fullscreen_set(on: bool) {
+    // CFIRE-UPSTREAM: CF-125
+    cpp {
+        flint_window::set(on);
+    }
+}
+
+// Stands in for the OS in the headless end-to-end run: the page hears that the window
+// entered or left full screen, and no window moves.
+fn window_fullscreen_inject(on: bool) {
+    // CFIRE-UPSTREAM: CF-125
+    cpp {
+        flint_window::inject(on);
+    }
+}
+
+// Whether the window is full screen, as last heard from the OS.
+fn window_fullscreen_on() -> bool {
+    mut on := false
+    // CFIRE-UPSTREAM: CF-125
+    cpp {
+        on = flint_window::is_on();
+    }
+    return on
+}

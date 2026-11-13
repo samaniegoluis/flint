@@ -35,6 +35,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         libwebkit2gtk-4.1-dev libgtk-3-dev \
         freerdp3-dev \
         openssh-server openssh-client xvfb xauth \
+        xserver-xorg-core xserver-xorg-video-dummy x11-xserver-utils \
         gnome-keyring dbus python3 perl sudo openssl \
         vim \
     && rm -rf /var/lib/apt/lists/*

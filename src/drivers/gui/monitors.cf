@@ -1,0 +1,80 @@
+package main
+
+// A remote desktop across monitors (milestone 38, design 22f): the monitors and the
+// default choice, the extra monitors' windows, what passes between the page and them,
+// and the layout. Each handler parses its request and calls one use case or one window
+// operation (Principle 2).
+
+import "ext:webui"
+import "core:json"
+import "../../adapters/rdp"
+import "../../adapters/uievents"
+import "../../adapters/vault"
+import "../../application"
+import "../../domain"
+
+type MonitorIdsReq struct {
+    ids: []str `json:"ids"`
+}
+
+type MonitorSendReq struct {
+    id:   str `json:"id"`
+    data: str `json:"data"`
+}
+
+type MonitorPickReq struct {
+    id:     str `json:"id"`
+    width:  i64 `json:"width"`
+    height: i64 `json:"height"`
+}
+
+type RdpSpanReq struct {
+    tab:   str              `json:"tab"`
+    picks: []MonitorPickReq `json:"picks"`
+}
+
+fn rpc_monitors_list(ui: JsonUiStateStore) -> str! {
+    return json.stringify(desktop_monitors(new_os_screens(), ui))
+}
+
+// Opens a window on each extra monitor (never the main window's).
+fn rpc_monitors_open(params: str, st: GuiState) -> str! {
+    try st.require_open_window()
+    req := try parse_req[MonitorIdsReq](params)
+    if i64(req.ids.len()) >= MAX_MONITORS {
+        return error(coded(ERR_INVALID, "at most {MAX_MONITORS - 1} extra monitors"))
+    }
+    monitor_windows_open(req.ids)
+    return ok_json()
+}
+
+fn rpc_monitors_close() -> str! {
+    monitor_windows_close()
+    return ok_json()
+}
+
+// What the page hands an extra window: its frame channel and crop, or a state to show.
+fn rpc_monitors_send(params: str) -> str! {
+    req := try parse_req[MonitorSendReq](params)
+    if req.data.len() > 65536 {
+        return error(coded(ERR_INVALID, "a message to a monitor window is too long"))
+    }
+    // The page's own JSON, passed as a value: anything else is refused here.
+    parsed := json.parse_dynamic(req.data) or {
+        return error(coded(ERR_INVALID, "a message to a monitor window must be JSON"))
+    }
+    monitor_window_send(req.id, json.stringify_dynamic(parsed))
+    return ok_json()
+}
+
+fn rpc_rdp_span(params: str, mut ui: JsonUiStateStore, st: GuiState) -> str! {
+    try st.require_open_window()
+    req := try parse_req[RdpSpanReq](params)
+    mut picks: []MonitorPick = []
+    for p in req.picks {
+        picks.push(MonitorPick{ id: p.id, width: p.width, height: p.height })
+    }
+    mut rd := new_freerdp_desktop()
+    span := try span_remote_desktop(mut rd, new_os_screens(), mut ui, req.tab, picks)
+    return json.stringify(span)
+}

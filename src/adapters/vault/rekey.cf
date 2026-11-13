@@ -1,0 +1,266 @@
+package vault
+
+// A new master password (milestone 40, D-095): the open vault and this machine's
+// activity file re-encrypted with new keys, so that a crash at any point leaves a
+// file that opens.
+//
+// `vault_rekey_prepare` writes a whole new vault beside the old one,
+// `<vault>.flint.rekey`: `sqlcipher_export` copies every page under the new page key
+// and salt, then the given sealed secrets (re-sealed by the application under the new
+// secrets key) replace the old ones in the copy, which is closed. Nothing has
+// changed yet. `activity_rekey_prepare` does the same for the activity file
+// (`<id>.db.new`). `vault_rekey_commit` renames the copy over the vault (the commit
+// point: before it the old vault is whole, after it the new one) and opens it;
+// `activity_rekey_commit` renames the activity copy. A crash between the two renames
+// leaves `<id>.db.new` beside an activity file the new key does not open: the next
+// unlock takes the copy (activity.cf). `vault_rekey_abort` removes both copies.
+//
+// A write to the vault or the activity file between prepare and commit would be lost
+// with the old file, so commit refuses (`conflict`) when the connection made any
+// change since prepare (`sqlite3_total_changes`), and the person tries again.
+
+import "core:fs"
+import "core:encoding/hex"
+import cpp "flint_fs.hpp" @pkg("flint-native")
+import cpp "sqlite3.h" @pkg("sqlcipher")
+import "../../domain"
+
+REKEY_SUFFIX: str = ".rekey"
+ACTIVITY_REKEY_SUFFIX: str = ".new"
+
+// How many rows the connection has changed since it opened.
+fn (self: CipherDb) total_changes() -> i64 {
+    mut n: i64 = 0
+    // CFIRE-UPSTREAM: CF-007
+    cpp {
+        n = self.handle ? static_cast<int64_t>(sqlite3_total_changes64(self.handle)) : 0;
+    }
+    return n
+}
+
+// The permission bits of `path` (0600 when it cannot be read).
+fn file_mode(path: str) -> i64 {
+    mut mode: i64 = 384
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        flint_fs::Entry e;
+        std::string err;
+        if (flint_fs::stat_path(path, true, e, err) == flint_fs::OK) mode = e.mode;
+    }
+    return mode
+}
+
+// Sets `path`'s permission bits, then flushes `path`'s folder, so a rename into it
+// survives a power cut.
+fn set_mode_and_sync(path: str, mode: i64, sync_dir: str) -> void! {
+    mut rc: i32 = 0
+    mut reason := ""
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        std::string err;
+        rc = flint_fs::chmod_path(path, static_cast<mode_t>(mode), err);
+        if (rc == flint_fs::OK && !sync_dir.empty()) rc = flint_fs::sync_dir(sync_dir, err);
+        reason = err;
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "cannot finish {path}: {reason}"))
+    }
+}
+
+fn sync_folder(dir: str) -> void! {
+    mut rc: i32 = 0
+    mut reason := ""
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        std::string err;
+        rc = flint_fs::sync_dir(dir, err);
+        reason = err;
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "cannot flush {dir}: {reason}"))
+    }
+}
+
+// Creates an empty file at `path`, 0600, failing if one is there.
+fn create_empty_private(path: str) -> void! {
+    if fs.exists(path) {
+        _ := fs.remove(path)
+    }
+    mut rc: i32 = 0
+    mut reason := ""
+    // CFIRE-UPSTREAM: CF-099
+    cpp {
+        std::string err;
+        rc = flint_fs::append_file(path, "", err);
+        reason = err;
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, "cannot create {path}: {reason}"))
+    }
+}
+
+// Copies every page of the database open in `src` into the new file `dest`, keyed
+// with `key` and `salt`, then checks that `dest` opens with them. The key text is
+// overwritten once used.
+fn export_rekeyed(src: CipherDb, dest: str, key: []byte, salt: []byte) -> void! {
+    try create_empty_private(dest)
+    mut key_text := "x'" + hex.encode(key) + hex.encode(salt) + "'"
+    mut rc: i32 = 0
+    mut reason := ""
+    // CFIRE-UPSTREAM: CF-007
+    cpp {
+        sqlite3_stmt* st = nullptr;
+        rc = sqlite3_prepare_v2(src.handle, "ATTACH DATABASE ?1 AS rekey KEY ?2;", -1, &st, nullptr);
+        if (rc == SQLITE_OK) {
+            sqlite3_bind_text(st, 1, dest.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 2, key_text.c_str(), -1, SQLITE_TRANSIENT);
+            rc = sqlite3_step(st);
+            if (rc == SQLITE_DONE) rc = SQLITE_OK;
+        }
+        if (st) sqlite3_finalize(st);
+        std::fill(key_text.begin(), key_text.end(), '\0');
+        if (rc == SQLITE_OK) {
+            std::string pinned = "PRAGMA rekey.cipher_page_size = " + CIPHER_PAGE_SIZE + "; PRAGMA rekey.cipher_hmac_algorithm = " + CIPHER_HMAC_ALGORITHM + "; PRAGMA rekey.cipher_kdf_algorithm = " + CIPHER_KDF_ALGORITHM + "; PRAGMA rekey.kdf_iter = " + CIPHER_KDF_ITER + ";";
+            rc = sqlite3_exec(src.handle, pinned.c_str(), nullptr, nullptr, nullptr);
+            if (rc == SQLITE_OK) rc = sqlite3_exec(src.handle, "SELECT sqlcipher_export('rekey');", nullptr, nullptr, nullptr);
+            if (rc != SQLITE_OK) reason = sqlite3_errmsg(src.handle);
+            sqlite3_exec(src.handle, "DETACH DATABASE rekey;", nullptr, nullptr, nullptr);
+        } else {
+            reason = sqlite3_errmsg(src.handle);
+        }
+    }
+    if rc != 0 {
+        _ := fs.remove(dest)
+        return error(coded(ERR_IO, "cannot write the re-keyed copy: {reason}"))
+    }
+    // The copy must open with the new key before anything relies on it.
+    mut check := open_cipher_db(dest, key, salt, false) or err {
+        _ := fs.remove(dest)
+        return error(coded(ERR_IO, "the re-keyed copy does not open: {err.message()}"))
+    }
+    check.close_db()
+}
+
+// Replaces the secret columns of every row in the copy at `dest` with `secrets`, in
+// one transaction. Every row of each table must be named once: a row left with a
+// secret sealed under the old key would never open again.
+fn write_secrets(dest: str, key: []byte, salt: []byte, secrets: VaultSecrets) -> void! {
+    mut db := try open_cipher_db(dest, key, salt, false)
+    defer db.close_db()
+    try db.exec("BEGIN IMMEDIATE;")
+    write_secret_rows(db, secrets) or err {
+        _ := db.exec("ROLLBACK;")
+        return error("{err.message()}")
+    }
+    try db.exec("COMMIT;")
+}
+
+fn count_rows(db: CipherDb, table: str) -> i64! {
+    res := try db.query_cells("SELECT count(*) FROM " + table + ";", [])
+    return cell_i64(res[0][0])
+}
+
+fn write_secret_rows(db: CipherDb, secrets: VaultSecrets) -> void! {
+    hosts := try count_rows(db, "hosts")
+    keys := try count_rows(db, "ssh_keys")
+    creds := try count_rows(db, "credentials")
+    if hosts != i64(secrets.hosts.len()) || keys != i64(secrets.keys.len()) || creds != i64(secrets.creds.len()) {
+        return error(coded(ERR_CONFLICT, "the vault changed while its password was being changed; try again"))
+    }
+    for h in secrets.hosts {
+        try db.run_sql("UPDATE hosts SET password = ?2, sudo_password = ?3 WHERE id = ?1;", [sql_text(h.id), sql_blob(h.password), sql_blob(h.sudo_password)])
+        try db.require_one_change(h.id)
+    }
+    for k in secrets.keys {
+        try db.run_sql("UPDATE ssh_keys SET private_key = ?2, passphrase = ?3 WHERE id = ?1;", [sql_text(k.id), sql_blob(k.private_key), sql_blob(k.passphrase)])
+        try db.require_one_change(k.id)
+    }
+    for c in secrets.creds {
+        try db.run_sql("UPDATE credentials SET password = ?2 WHERE id = ?1;", [sql_text(c.id), sql_blob(c.password)])
+        try db.require_one_change(c.id)
+    }
+}
+
+fn (self: CipherDb) require_one_change(id: str) -> void! {
+    mut n: i64 = 0
+    // CFIRE-UPSTREAM: CF-007
+    cpp {
+        n = static_cast<int64_t>(sqlite3_changes64(self.handle));
+    }
+    if n != 1 {
+        return error(coded(ERR_CONFLICT, "the vault changed while its password was being changed; try again"))
+    }
+}
+
+fn (mut self: SqlVaultStore) vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: VaultSecrets) -> void! {
+    try self.require_open()
+    dest := path + REKEY_SUFFIX
+    try export_rekeyed(self.conn(), dest, page_key, salt)
+    write_secrets(dest, page_key, salt, secrets) or err {
+        _ := fs.remove(dest)
+        return error("{err.message()}")
+    }
+    set_mode_and_sync(dest, file_mode(path), "") or err {
+        _ := fs.remove(dest)
+        return error("{err.message()}")
+    }
+    self.rekey_mark = self.conn().total_changes()
+}
+
+fn (mut self: SqlVaultStore) activity_rekey_prepare(key: []byte, new_salt: []byte) -> void! {
+    try self.require_activity()
+    dest := self.act_path + ACTIVITY_REKEY_SUFFIX
+    try export_rekeyed(self.act(), dest, key, new_salt)
+    self.act_rekey_mark = self.act().total_changes()
+}
+
+// The commit point. The open vault is closed, the copy renamed over it and opened.
+fn (mut self: SqlVaultStore) vault_rekey_commit(path: str, page_key: []byte, salt: []byte) -> void! {
+    try self.require_open()
+    src := path + REKEY_SUFFIX
+    if !fs.exists(src) || self.conn().total_changes() != self.rekey_mark || (self.act().is_open() && self.act().total_changes() != self.act_rekey_mark) {
+        return error(coded(ERR_CONFLICT, "the vault changed while its password was being changed; try again"))
+    }
+    // Renamed while the old file is still open: if the rename fails, nothing has
+    // changed and the store keeps working on the old vault. The old connection then
+    // holds a file no longer in the folder, and is closed. (Windows cannot rename over
+    // an open file: its port closes first.)
+    fs.rename(src, path) or err {
+        return error(coded(ERR_IO, "cannot put the new vault in place: {err.message()}"))
+    }
+    dir := fs.dirname(path)
+    if dir.len() > 0 {
+        _ := sync_folder(dir)
+    }
+    mut old := self.conn()
+    old.close_db()
+    self.handle = none
+    self.adopt(try open_cipher_db(path, page_key, salt, false))
+}
+
+fn (mut self: SqlVaultStore) activity_rekey_commit(key: []byte) -> void! {
+    try self.require_activity()
+    path := self.act_path
+    src := path + ACTIVITY_REKEY_SUFFIX
+    // As the vault: renamed first, so a failure leaves the old file open and the
+    // copy beside it, which the next unlock takes (activity.cf).
+    fs.rename(src, path) or err {
+        return error(coded(ERR_IO, "cannot put the new activity file in place: {err.message()}"))
+    }
+    _ := sync_folder(self.act_dir)
+    self.activity_close()
+    salt := try self.vault_read_salt(path)
+    db := try open_cipher_db(path, key, salt, false)
+    self.act_handle = db.handle
+    self.act_path = path
+}
+
+// Removes what a prepare left; the open files are untouched.
+fn (mut self: SqlVaultStore) vault_rekey_abort(path: str) {
+    if path.len() > 0 && fs.exists(path + REKEY_SUFFIX) {
+        _ := fs.remove(path + REKEY_SUFFIX)
+    }
+    if self.act_path.len() > 0 && fs.exists(self.act_path + ACTIVITY_REKEY_SUFFIX) {
+        _ := fs.remove(self.act_path + ACTIVITY_REKEY_SUFFIX)
+    }
+}

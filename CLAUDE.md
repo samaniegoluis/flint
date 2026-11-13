@@ -23,7 +23,7 @@ is `docs/build-log.md` plus `git log`.
 
 | File | What it holds |
 |---|---|
-| [`docs/spec.md`](docs/spec.md) | The current spec (v8, Embedded RDP): scope, stack, architecture, **Principles**, milestones. Earlier: [`spec-v1.md`](docs/spec-v1.md) (MVP), [`spec-v2.md`](docs/spec-v2.md), [`spec-v3.md`](docs/spec-v3.md) (Flint holds the vault), [`spec-v4.md`](docs/spec-v4.md) (Files), [`spec-v5.md`](docs/spec-v5.md) (Between servers), [`spec-v6.md`](docs/spec-v6.md) (Tunnels), [`spec-v7.md`](docs/spec-v7.md) (Paste into the terminal) |
+| [`docs/spec.md`](docs/spec.md) | The current spec (v11, Your vault on every machine): scope, stack, architecture, **Principles**, milestones. Earlier: [`spec-v1.md`](docs/spec-v1.md) (MVP), [`spec-v2.md`](docs/spec-v2.md), [`spec-v3.md`](docs/spec-v3.md) (Flint holds the vault), [`spec-v4.md`](docs/spec-v4.md) (Files), [`spec-v5.md`](docs/spec-v5.md) (Between servers), [`spec-v6.md`](docs/spec-v6.md) (Tunnels), [`spec-v7.md`](docs/spec-v7.md) (Paste into the terminal), [`spec-v8.md`](docs/spec-v8.md) (Embedded RDP), [`spec-v9.md`](docs/spec-v9.md) (Versions and a faster desktop), [`spec-v10.md`](docs/spec-v10.md) (The desktop, finished) |
 | [`ROADMAP.md`](ROADMAP.md) | Everything beyond the current spec. The backlog |
 | [`docs/build-log.md`](docs/build-log.md) | One line per finished milestone. The only state |
 | [`docs/decisions.md`](docs/decisions.md) | One-line decision log |
@@ -55,18 +55,36 @@ is `docs/build-log.md` plus `git log`.
    same commit if its place is clear: an existing section it belongs to, a "What's next"
    item that shipped and must leave the list. If it is not clear (a new section, replacing
    something, whether it earns a place at all), ask the owner at plan time. A change to a
-   screen in the landing's app screenshots re-runs `npm run shots:gui` in `site/`.
+   screen in the landing's app screenshots re-runs `npm run shots:gui` in `site/`, and a
+   change to what the landing's app video shows (the palette, a terminal tab, split panes,
+   the lock screen) re-runs `npm run shots:video` (D-086).
 7. **Nothing lives only in chat.** A new feature idea goes into `ROADMAP.md`. A decision that
    is expensive to reverse goes into `docs/decisions.md`.
 8. **Stay in scope.** Work outside the current milestone goes into the roadmap, not into the
    diff.
-9. **Isolate an unexplained failure before the second attempt.** A test that fails or
-   freezes with no known cause is never chased by rerunning a whole suite. Run it alone
-   (`FLINT_E2E_ONLY=<step>` for the e2e suites, a name filter for `cfire test`) in a loop
-   of N runs that prints the rate (`scripts/repeat.sh <run> <N>`; on macOS the runs use the real window, D-068), and
-   iterate there. A fix counts when that loop shows 0 failures in N runs; then the step
-   goes back into its run and the full suite runs once to confirm. The measured rate goes
-   into the failure's ROADMAP entry (owner, 2026-11-10).
+9. **Understand an unexplained failure; never accept it by repetition** (owner,
+   2026-11-10, sharpened 2026-11-12). A test that fails or freezes with no known cause:
+   1. **Read before rerunning.** The failure's own log first: the last step, the last
+      call to the backend, the app's stderr, the timings. Never rerun a whole suite to see
+      whether it happens again, and never take "passed k of N" as a verdict.
+   2. **One diagnosis pass.** If the log does not explain it, make the next failure
+      explain itself: a timeline of the step (`diag:` lines, as the `webgl` run of M35b),
+      in a run small enough to take seconds (`FLINT_E2E_ONLY=<run>`, a name filter
+      for `cfire test`, or the step split into its own run).
+   3. **Then decide with the owner.** Fix it if it is Flint's bug; if it is the test's
+      (focus, a covered window, timing left by the step before), rewrite it: at a lower
+      layer that is deterministic (an adapter or use-case test) with a light check of
+      the wiring left in the e2e; or remove it with a ROADMAP note saying why it failed.
+      A check that sometimes fails stays only with the owner's yes and a note of why.
+   `scripts/repeat.sh <run> <N>` is a tool for two questions only, with a small N: whether
+   a failure is deterministic (likely the change at hand) or intermittent, and whether a
+   fix whose cause is known holds. What was found goes into the failure's ROADMAP entry.
+10. **A release at each milestone's close** (D-077). After `docs: close milestone NN`, run
+    `scripts/release.sh` (a dry run: the next version and its changelog section), write a
+    short summary of the version for a person, and run it again with `--apply --summary`.
+    It commits `CHANGELOG.md` and tags `vX.Y.Z`; it never pushes, so the tag goes up with
+    the branch (`git push origin main vX.Y.Z`) and the merge stays a fast-forward. A
+    milestone with no `feat` or `fix` makes no release.
 
 ## Language
 

@@ -3,10 +3,11 @@
 # container: build, tests, CLI end-to-end and the desktop app under Xvfb.
 #
 # FLINT_LINUX_STEPS picks the steps after the build (comma-separated: tests, cli, gui,
-# serve; default all). FLINT_LINUX_SUITES narrows `tests` to some suites (space-separated
-# paths, default src).
+# serve, server; default all). FLINT_LINUX_SUITES narrows `tests` to some suites (space-separated
+# paths, default src). FLINT_LINUX_REPEAT="<run> <N>" makes the `gui` step run one
+# gui-e2e run N times with scripts/repeat.sh instead (CLAUDE.md rule 9).
 set -euo pipefail
-steps=",${FLINT_LINUX_STEPS:-tests,cli,gui,serve},"
+steps=",${FLINT_LINUX_STEPS:-tests,cli,gui,serve,server},"
 want() { [[ "$steps" == *",$1,"* ]]; }
 cd "$HOME"
 mkdir -p work
@@ -23,6 +24,9 @@ ldd ./build/flint | grep -E "crypto|ssh|sodium|sqlcipher" || true
 echo "== build the desktop app (page from ui/dist, built on the host)"
 scripts/build-gui.sh
 ldd ./build/gui/Flint | grep -E "crypto|ssh|sodium|sqlcipher|webkit" || true
+echo "== flint-vault-server links libsodium alone (milestone 42)"
+ldd ./build/flint-vault-server
+! ldd ./build/flint-vault-server | grep -q -E "ssh|sqlcipher|freerdp|webkit|secret"
 echo "== FreeRDP: only the desktop app links it (expect none in flint)"
 ! ldd ./build/flint | grep -q freerdp
 ldd ./build/gui/Flint | grep -E "freerdp|winpr" || true
@@ -44,7 +48,11 @@ grep -q "keychain cache: False" /tmp/e2e.log
 fi
 # The desktop app's end-to-end run opens the real GTK window under Xvfb
 # (scripts/gui-e2e.sh).
-if want gui; then
+if want gui && [[ -n "${FLINT_LINUX_REPEAT:-}" ]]; then
+echo "== one desktop run repeated under Xvfb: $FLINT_LINUX_REPEAT"
+# shellcheck disable=SC2086
+PATH="$PATH:/usr/sbin" scripts/repeat.sh $FLINT_LINUX_REPEAT
+elif want gui; then
 echo "== desktop app end-to-end under Xvfb"
 PATH="$PATH:/usr/sbin" scripts/gui-e2e.sh | tee /tmp/gui-e2e.log
 grep -q "^gui-e2e: pass" /tmp/gui-e2e.log
@@ -56,5 +64,11 @@ echo "== CLI through the running app under Xvfb (screensaver signals on a privat
 dbus-run-session -- env FLINT_TEST_PRIVATE_DBUS=1 scripts/serve-e2e.sh | tee /tmp/serve-e2e.log
 line="$(grep "^serve-e2e: " /tmp/serve-e2e.log | tail -1)"
 [[ "$line" =~ ^serve-e2e:\ ([0-9]+)/([0-9]+)\ checks\ passed && "${BASH_REMATCH[1]}" == "${BASH_REMATCH[2]}" ]]
+fi
+# The remote vault server, the real binary on loopback (scripts/server-e2e.sh).
+if want server; then
+echo "== vault server end-to-end"
+FLINT_SERVER_BIN=./build/flint-vault-server scripts/server-e2e.sh | tee /tmp/server-e2e.log
+grep -q "^server-e2e: [0-9]* passed, 0 failed" /tmp/server-e2e.log
 fi
 echo "== steps run: ${FLINT_LINUX_STEPS:-all}"

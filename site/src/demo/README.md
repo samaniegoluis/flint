@@ -31,5 +31,7 @@ reference gain something the demo lacks.
 
 The seed vault also feeds the rest of the landing (D-027): the `host list` and `exec --json`
 blocks in `src/content/docs/index.mdx` must match what the demo prints (`npm test` checks
-it), and `npm run shots:gui` captures the desktop app over the same vault. After changing
-the seed, update those blocks and retake the screenshots.
+it), and `npm run shots:gui` and `npm run shots:video` capture the desktop app over the
+same vault (screenshots of the Files and Tunnels views; the app's video, D-086), through the
+stub in `scripts/app-stub.mjs`. After changing the seed, update those blocks and retake the
+screenshots and the video.

@@ -39,6 +39,8 @@ terminal, Flint's window asks instead ([Vaults](/guides/vaults/#flint-holds-the-
 | `vault unlock` | Ask Flint to unlock the vault (starting it if needed), and wait up to 2 minutes |
 | `vault lock` | Lock the vault in Flint, and remove its key if this machine remembers it |
 | `vault rename <new-name>` | Rename the vault (with `--vault`, another one); the file keeps its name and place |
+| `vault passwd` | Change the master password: asks for the current one, then the new one twice, and prints its strength. Refused (`conflict`) while Flint holds the vault unlocked: use **Settings → Vault** there |
+| `vault merge <copy.flint>` | Merge a conflict copy of the vault (a cloud folder's) into it, record by record, and print what changed. The copy must be the same vault under the same master password, and is only read. Refused (`conflict`) while Flint holds the vault unlocked. See [Syncing a vault](/guides/vaults/#syncing-a-vault) |
 | `vault forget <name\|path>` | Drop a vault from the recent list; the file is kept |
 
 See [Vaults](/guides/vaults/).
@@ -207,10 +209,11 @@ in the job's own environment, from its secret store.
 When a command takes several secrets on stdin, they are read in this order:
 
 1. The master password line (`--master-stdin`)
-2. The password line (`--password-stdin`)
-3. The sudo password line (`--sudo-password-stdin`)
-4. The passphrase line (`--passphrase-stdin`)
-5. The private key, which takes the rest of stdin (`--key-stdin`)
+2. The new master password line (`--new-master-stdin`, `vault passwd` only)
+3. The password line (`--password-stdin`)
+4. The sudo password line (`--sudo-password-stdin`)
+5. The passphrase line (`--passphrase-stdin`)
+6. The private key, which takes the rest of stdin (`--key-stdin`)
 
 ```sh
 printf '%s\n%s\n' "$MASTER" "$HOST_PASSWORD" |
@@ -297,5 +300,8 @@ flint --version --json
 ```
 
 ```json
-{"flint":"0.0.0-dev","libssh":"0.12.2/openssl/zlib","libsodium":"1.0.22","sqlite":"3.54.1 (SQLCipher 4.20.0 community)"}
+{"flint":"0.1.0","libssh":"0.12.2/openssl/zlib","libsodium":"1.0.22","sqlite":"3.54.1 (SQLCipher 4.20.0 community)"}
 ```
+
+`flint` is the version the binary was built from: a release (`0.1.0`), or a build made
+after one (`0.1.0-4-g83f876b`, four commits later). What changed in each one is on the [Releases](/releases/) page.

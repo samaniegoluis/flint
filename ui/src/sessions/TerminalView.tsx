@@ -109,6 +109,8 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       gl.onContextLoss(() => {
         gl.dispose();
         if (webglRef.current === gl) webglRef.current = null;
+        // A hidden window draws nothing (WebKit stops requestAnimationFrame): this runs
+        // and the rows fill when the window is seen again (M35b).
         requestAnimationFrame(() => term.refresh(0, term.rows - 1));
       });
       term.loadAddon(gl);

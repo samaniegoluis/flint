@@ -15,6 +15,7 @@ import { HostTypeIcon, Icon, type IconName } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
 import { useSessions } from '../sessions/store';
+import { useMonitors } from '../sessions/monitors';
 import { MAX_PANES } from '../lib/layout';
 import { tunnels, useTunnels } from '../tunnels/store';
 
@@ -52,6 +53,8 @@ const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'layout3', icon: 'split' },
   { action: 'layout4', icon: 'split' },
   { action: 'closeTab', icon: 'x' },
+  { action: 'fullscreen', icon: 'expand' },
+  { action: 'fullscreenAll', icon: 'monitors' },
   { action: 'viewHosts', icon: 'hosts' },
   { action: 'viewTunnels', icon: 'tunnel' },
   { action: 'viewKeys', icon: 'key' },
@@ -94,6 +97,9 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
   // A new pane goes into the active tab, while it has room; a remote desktop's tab
   // takes none.
   const rdpTab = panes.find((p) => p.id === activeTab?.focus)?.kind === 'rdp';
+  // Milestone 38: why "Full screen on all monitors" is greyed here, if it is (22f1c).
+  const monitorsView = useMonitors().view;
+  const monitorsReason = monitorsView ? monitorsView.reason : 'Only one monitor connected';
   const canSplit = !!activeTab && activeTab.panes.length < MAX_PANES && !rdpTab;
   const paneNo = activeTab ? activeTab.panes.indexOf(activeTab.focus) + 1 : 0;
   const [q, setQ] = useState('');
@@ -226,7 +232,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           group: 'actions', key: 'a:' + a.action, score: (m?.score ?? 0) + 1000,
           render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m?.positions ?? []} /></span>{a.action === 'newSshHost' && <HostTypeIcon type="ssh" size="md" />}{a.action === 'newRdpHost' && <HostTypeIcon type="rdp" size="md" />}{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
           run: () => onAction(a.action),
-          disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? 'SSH hosts only' : undefined,
+          disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? 'SSH hosts only' : !rdpTab && (a.action === 'fullscreen' || a.action === 'fullscreenAll') ? 'RDP tabs only' : a.action === 'fullscreenAll' && monitorsReason ? monitorsReason : undefined,
         });
       }
       for (const r of recents) {
@@ -247,7 +253,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       }
     }
     return out;
-  }, [catalog.hosts, tabs, panes, tun.list, canSplit, rdpTab, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail]);
+  }, [catalog.hosts, tabs, panes, tun.list, canSplit, rdpTab, monitorsReason, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail]);
 
   const counts = { hosts: 0, actions: 0, vaults: 0 };
   for (const it of items) counts[it.group === 'tunnels' ? 'actions' : it.group]++;

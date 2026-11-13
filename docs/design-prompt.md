@@ -583,5 +583,23 @@ password or tunnels: those sections must not appear for it.
 
 22e · At 900×600 (as 04c): 21a, 21b and 22a.
 
+22f · Multiple monitors (milestone 38, D-089; follows 22b). An RDP tab can go full screen
+  across two monitors: Flint's window stays in full screen on its own monitor (Windows'
+  primary, with the taskbar), and each extra monitor shows a chrome-less full-screen
+  window with its part of the same remote desktop.
+  22f1 · Entering: the RDP toolbar's Full screen button gains a small menu, "Full screen"
+  and "Full screen on all monitors"; the same two items in the tab's context menu
+  (22b4a). Disabled variants with a one-line reason: "Only one monitor connected", "Not
+  supported on this system yet", and on macOS "Turn on 'Displays have separate Spaces'".
+  22f2 · The connection bar gains "Monitors": a popover with a to-scale map of this
+  computer's monitors as arranged, each a tile with its name and size; checked tiles are
+  in the session. The main one is always checked, tagged "Main · taskbar". A cap: "Up to
+  2 monitors". A change applies at once ("Rearranging the desktop…" on the bar).
+  22f3 · An extra monitor's window: just the desktop, edge to edge, no bar of its own.
+  States: drawing; connection lost (dimmed, "Connection lost — see the main screen");
+  rearranging (dimmed, a small spinner).
+  22f4 · The first-time note, once: "The desktop spans N monitors. Move the pointer to the
+  top of the main screen for the bar."
+
 Dark and light for every screen.
 ```

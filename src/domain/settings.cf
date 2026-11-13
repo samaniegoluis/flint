@@ -32,9 +32,15 @@ type Settings struct {
     // it leaves out keeps the Mac preset's. macOS only; older files read the defaults.
     rdp_mac_keys:       str  `json:"rdp_mac_keys" default:"mac"`
     rdp_mac_custom:     str  `json:"rdp_mac_custom" default:""`
+    // How a new RDP tab asks for its desktop (RDP_GRAPHICS): "pipeline" offers the
+    // graphics pipeline (RDPGFX, milestone 34), "compatible" keeps the bitmap updates of
+    // v8, "auto" picks one of them at connect by the link's round trip (milestone 35,
+    // auto_rdp_graphics). Older files read the default.
+    rdp_graphics:       str  `json:"rdp_graphics" default:"auto"`
 }
 
 RDP_MAC_KEYS: []str = ["mac", "windows", "custom"]
+RDP_GRAPHICS: []str = ["auto", "pipeline", "compatible"]
 // The six modifier keys of a Mac keyboard, by their W3C `code`.
 RDP_MAC_KEY_CODES: []str = ["ControlLeft", "ControlRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight"]
 // What each can send: a PC keyboard's Ctrl, Alt, AltGr (right Alt), Windows key, or nothing.
@@ -55,7 +61,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "" }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto" }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {
@@ -108,6 +114,9 @@ fn check_settings(s: Settings) -> void! {
         return error(coded(ERR_INVALID, "remote desktop keys must be mac, windows or custom"))
     }
     try check_rdp_mac_custom(s.rdp_mac_custom)
+    if !one_of(s.rdp_graphics, RDP_GRAPHICS) {
+        return error(coded(ERR_INVALID, "remote desktop graphics must be auto, pipeline or compatible"))
+    }
     try check_text("terminal font", s.term_font, 128, false)
     // The name ends up in a CSS font-family list, quoted.
     for b in s.term_font.bytes() {
@@ -230,4 +239,17 @@ test "remote desktop keys are a preset and an optional custom table" {
         check_settings(s) or { refused += 1 }
     }
     assert_eq(refused, 7)
+}
+
+test "remote desktop graphics are auto or compatible" {
+    mut s := default_settings()
+    assert_eq(s.rdp_graphics, "auto")
+    s.rdp_graphics = "compatible"
+    try check_settings(s)
+    mut refused := 0
+    for bad in ["", "h264", "AUTO"] {
+        s.rdp_graphics = bad
+        check_settings(s) or { refused += 1 }
+    }
+    assert_eq(refused, 3)
 }

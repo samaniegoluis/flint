@@ -68,6 +68,11 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     if settings_valid(probe) {
         fixed.paste_limit_mb = s.paste_limit_mb
     }
+    probe = d
+    probe.rdp_graphics = s.rdp_graphics
+    if settings_valid(probe) {
+        fixed.rdp_graphics = s.rdp_graphics
+    }
     return fixed
 }
 

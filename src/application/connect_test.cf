@@ -628,3 +628,18 @@ test "a Files pane's session that fails to log in never lends it" {
     }
     assert_eq(term.raw_entered, 0)
 }
+
+test "vault secrets an SSH login used are wiped once the transport has them (milestone 36)" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    reset_wiped()
+    mut link := new_fake_link()
+    link.good_password = "host-pw"
+    link.good_key = "PRIVATE one"
+    _ := try open_link(crypto, mut store, s, mut link, no_prompter(), "web", accept_opts())
+    assert(was_wiped("host-pw"))
+    assert(was_wiped("PRIVATE one"))
+    // Every sealed value opened was wiped as bytes too.
+    assert(WIPED_BUFS >= 2)
+}

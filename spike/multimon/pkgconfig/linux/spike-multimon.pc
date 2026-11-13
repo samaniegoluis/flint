@@ -1,0 +1,6 @@
+# Throwaway spike (milestone 38).
+Name: spike-multimon
+Description: Multi-monitor spike shim (Linux)
+Version: 1
+Requires: gtk+-3.0 webkit2gtk-4.1
+Cflags: -I${pcfiledir}/../../native

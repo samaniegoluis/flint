@@ -1,0 +1,144 @@
+package application
+
+import "../domain"
+
+// A vault with a host holding a password and a sudo password, and a credential.
+fn passwd_fixture(crypto: FakeCrypto, mut store: FakeStore, kc: FakeKeychain, remember: bool) -> VaultSession! {
+    s := try create_vault(crypto, mut store, kc, new_fake_recents(), "/v/Lab.flint", "", "correct horse", remember)
+    mut web := host_patch("web", "10.0.0.5")
+    web.password = "hunter2!"
+    web.set_password = true
+    web.sudo_password = "root-pw"
+    web.set_sudo_password = true
+    _ := try add_host(crypto, mut store, s, web)
+    _ := try add_cred(crypto, mut store, s, CredPatch{ name: "ops", set_name: true, user: "ops", set_user: true, key: "", set_key: false, password: "cred-pw", set_password: true })
+    return s
+}
+
+fn host_secret(crypto: FakeCrypto, store: FakeStore, s: VaultSession, field: str) -> str! {
+    h := (try store.hosts_all())[0]
+    if field == "password" {
+        return try open_secret(crypto, s, "hosts", h.id, field, h.password)
+    }
+    return try open_secret(crypto, s, "hosts", h.id, field, h.sudo_password)
+}
+
+test "a new master password re-keys the vault and re-seals every secret" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    s := try passwd_fixture(crypto, mut store, kc, false)
+    old_salt := try store.vault_read_salt(s.path)
+
+    next := try change_master_password(crypto, mut store, kc, s, "correct horse", "gravel onion tundra")
+    assert_eq(next.id, s.id, "the id survives")
+    assert_eq(next.path, s.path)
+    assert(next.secrets_key != s.secrets_key)
+    assert(try store.vault_read_salt(s.path) != old_salt, "a new salt")
+    assert_eq(try host_secret(crypto, store, next, "password"), "hunter2!")
+    assert_eq(try host_secret(crypto, store, next, "sudo_password"), "root-pw")
+    c := (try store.creds_all())[0]
+    assert_eq(try open_secret(crypto, next, "credentials", c.id, "password", c.password), "cred-pw")
+    // The old key opens nothing any more.
+    mut stale := false
+    host_secret(crypto, store, s, "password") or { stale = true }
+    assert(stale)
+
+    // The new password unlocks; the old one does not.
+    store.vault_detach()
+    mut wrong := ""
+    unlock_vault(crypto, mut store, kc, new_fake_recents(), s.path, "correct horse", false) or err { wrong = "{err.message()}" }
+    assert_eq(error_code_of(wrong), "wrong_password")
+    back := try unlock_vault(crypto, mut store, kc, new_fake_recents(), s.path, "gravel onion tundra", false)
+    assert_eq(back.id, s.id)
+    assert(back.secrets_key == next.secrets_key)
+    assert_eq(store.act_id, s.id, "the activity file keeps its name")
+}
+
+test "the current password must be right and the new one new and long enough" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    s := try passwd_fixture(crypto, mut store, kc, false)
+    salt := try store.vault_read_salt(s.path)
+    // CFIRE-UPSTREAM: CF-091 (a nested slice literal needs its type)
+    cases: [][]str = [["wrong horse", "gravel onion tundra", "wrong_password"], ["correct horse", "short", "invalid"], ["correct horse", "correct horse", "invalid"]]
+    for c in cases {
+        mut got := ""
+        change_master_password(crypto, mut store, kc, s, c[0], c[1]) or err { got = "{err.message()}" }
+        assert_eq(error_code_of(got), c[2])
+    }
+    assert(try store.vault_read_salt(s.path) == salt, "nothing changed")
+    mut locked := ""
+    change_master_password(crypto, mut store, kc, VaultSession{ path: s.path, name: s.name, id: s.id, secrets_key: [], cached: false }, "correct horse", "gravel onion tundra") or err { locked = "{err.message()}" }
+    assert_eq(error_code_of(locked), "locked")
+}
+
+test "a failure before the commit point leaves the vault and the keychain as they were" {
+    for step in ["prepare", "activity", "commit"] {
+        crypto := FakeCrypto{ derive_calls: 0 }
+        mut store := new_fake_store()
+        kc := new_fake_keychain()
+        s := try passwd_fixture(crypto, mut store, kc, true)
+        salt := try store.vault_read_salt(s.path)
+        store.rk_fail = step
+        mut got := ""
+        change_master_password(crypto, mut store, kc, s, "correct horse", "gravel onion tundra") or err { got = "{err.message()}" }
+        assert(got.len() > 0)
+        assert(try store.vault_read_salt(s.path) == salt)
+        assert_eq(try host_secret(crypto, store, s, "password"), "hunter2!")
+        assert_eq(store.rk_key.len(), usize(0), "the copy is removed")
+        // The remembered key is still the old one, under the old account only.
+        assert_eq((try kc.keychain_load(vault_account(salt))).len(), VAULT_KEY_LEN)
+        store.vault_detach()
+        again := try unlock_vault(crypto, mut store, kc, new_fake_recents(), s.path, "", false)
+        assert(again.secrets_key == s.secrets_key)
+    }
+}
+
+test "Remember on this computer moves to the new salt's keychain account" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    s := try passwd_fixture(crypto, mut store, kc, true)
+    old := vault_account(try store.vault_read_salt(s.path))
+    next := try change_master_password(crypto, mut store, kc, s, "correct horse", "gravel onion tundra")
+    assert(next.cached)
+    assert_eq((try kc.keychain_load(old)).len(), usize(0), "the old entry is gone")
+    store.vault_detach()
+    back := try unlock_vault(crypto, mut store, kc, new_fake_recents(), s.path, "", false)
+    assert(back.secrets_key == next.secrets_key, "unlocked from the keychain")
+
+    // Not remembered: nothing reaches the keychain.
+    mut store2 := new_fake_store()
+    kc2 := new_fake_keychain()
+    s2 := try passwd_fixture(crypto, mut store2, kc2, false)
+    next2 := try change_master_password(crypto, mut store2, kc2, s2, "correct horse", "gravel onion tundra")
+    assert(!next2.cached)
+    assert_eq((try kc2.keychain_load(vault_account(try store2.vault_read_salt(s2.path)))).len(), usize(0))
+}
+
+test "a vault from before milestone 40 keeps the id it had" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    s := try create_vault(crypto, mut store, kc, new_fake_recents(), "/v/Old.flint", "", "correct horse", false)
+    assert(is_hex_id(s.id))
+    // As migration 010 leaves an older vault: the row there, empty.
+    try store.vault_set_meta(VAULT_META_ID, "")
+    salt := try store.vault_read_salt(s.path)
+    store.vault_detach()
+    back := try unlock_vault(crypto, mut store, kc, new_fake_recents(), s.path, "correct horse", false)
+    assert_eq(back.id, try salt_vault_id(crypto, salt))
+    assert_eq(try store.vault_get_meta(VAULT_META_ID), back.id, "written so it stays")
+    next := try change_master_password(crypto, mut store, kc, back, "correct horse", "gravel onion tundra")
+    store.vault_detach()
+    again := try unlock_vault(crypto, mut store, kc, new_fake_recents(), s.path, "gravel onion tundra", false)
+    assert_eq(again.id, back.id)
+    assert(again.id != (try salt_vault_id(crypto, try store.vault_read_salt(s.path))), "no longer the new salt's")
+}
+
+test "the strength estimate counts the vault's name" {
+    assert(password_strength("homelabzeta", "Homelab Zeta").score < password_strength("homelabzeta", "").score)
+    assert(!password_strength("flint2026", "").sync_ok)
+}

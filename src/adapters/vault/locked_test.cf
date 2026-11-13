@@ -1,12 +1,14 @@
 package vault
 
+import "core:fs"
 import "../../ports"
 import "../../domain"
 
 test "LockedVaultStore shares one connection between copies and threads" {
     path := temp_vault_path("locked.flint")
-    mut store := new_locked_vault_store()
+    mut store := new_locked_vault_store(fs.dirname(path) + "/activity")
     try store.vault_create(path, test_key(9), test_salt_bytes())
+    try store.activity_attach(TEST_VAULT_ID, test_key(8), test_salt_bytes())
     assert(store_port_check(mut store))
     // A copy sees the connection the original opened.
     worker_copy := store
@@ -16,6 +18,9 @@ test "LockedVaultStore shares one connection between copies and threads" {
         scope.spawn || {
             mut w := worker_copy
             for i in 0..40 {
+                mut logged := ""
+                w.activity_add(marker_entry(i64(i)), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES }) or err { logged = "{err.message()}" }
+                assert(logged.len() == 0)
                 mut put := ""
                 w.known_host_put(KnownHost{ addr: "w{i}", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" }) or err { put = "{err.message()}" }
                 assert(put.len() == 0)
@@ -29,6 +34,7 @@ test "LockedVaultStore shares one connection between copies and threads" {
     }
     assert_eq((try store.groups_all()).len(), usize(40))
     assert_eq((try store.known_hosts_all()).len(), usize(40))
+    assert_eq((try store.activity_page(0, 100)).len(), usize(40))
 
     // A rolled-back transaction leaves nothing and releases the lock.
     try store.vault_begin()
@@ -41,4 +47,7 @@ test "LockedVaultStore shares one connection between copies and threads" {
     mut after := ""
     worker_copy.hosts_all() or err { after = "{err.message()}" }
     assert(after.len() > 0)
+    mut act_after := ""
+    worker_copy.activity_page(0, 1) or err { act_after = "{err.message()}" }
+    assert(act_after.len() > 0)
 }

@@ -2,6 +2,14 @@ package build
 
 import "core:build"
 
+// The version, from git, written to src/drivers/version/version.cf before every build
+// (milestone 32, D-077). No Outputs: cfire runs a command without them every time, and
+// the script rewrites the file only when the version changed.
+// CFIRE-UPSTREAM: CF-123 (core:build documents build.Step; the manifest reads build.Command)
+var Version = build.Command("sh", {
+    Args: ["scripts/version.sh", "--write"],
+})
+
 // The `flint` CLI.
 var Flint = build.Executable("flint", {
     Entry:     "src/drivers/cli/main.cf",
@@ -17,4 +25,12 @@ var FlintGui = build.Executable("Flint", {
     Subsystem: "gui",
     OutDir:    "build/gui",
     Icon:      "assets/app-icon/Flint.icns",
+})
+
+// The remote vault server (milestone 42, D-092): a third binary that links libsodium
+// alone, never libssh, FreeRDP or SQLCipher. scripts/server-image.sh builds its image.
+var FlintVaultServer = build.Executable("flint-vault-server", {
+    Entry:     "src/drivers/vault-server/main.cf",
+    Subsystem: "console",
+    OutDir:    "build",
 })

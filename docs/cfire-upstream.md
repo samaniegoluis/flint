@@ -2196,3 +2196,323 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   so an app turns it on for development (an environment variable or a debug build). And a
   way to filter the default context menu (WebView2's `ContextMenuRequested`; WebKit's
   `context-menu` signal; `WKUIDelegate` on macOS) that keeps copy and paste in text fields.
+
+### CF-123 · bug · `confirmed`: `core:build` documents `build.Step`; the manifest reads `build.Command`
+- **Seen (milestone 32) [ran]:** the reference (`docs/STDLIB_REFERENCE.md:98`,
+  `cfire_stdlib_lookup core:build`) offers `build.Step(name, StepConfig)` for a pre-build
+  command. The manifest parser only recognises a call whose member is `Command`
+  (`src/build/manifest.hpp:250`); `Step` is not matched there. `build.Command("sh", { Args:
+  ["scripts/version.sh", "--write"] })` in Flint's `build.cf` runs before every `cfire build`
+  and `cfire test` (checked: `FLINT_VERSION=9.9.9-probe cfire build Flint` gave
+  `flint 9.9.9-probe`, the next plain build `flint 0.0.0-dev`).
+- **Also undocumented:** a command with no `Outputs` runs on every build
+  (`src/build/deps.hpp:597`), which is what a version stamp needs.
+- **Impact:** a project following the docs gets no pre-build step, silently.
+- **Workaround:** `build.Command`, as Flint does.
+- **Ideal:** one name in the docs and the parser (or both accepted), and "no `Outputs` runs
+  every time" stated in the reference.
+
+### CF-124 · missing · `confirmed`: an interface method cannot declare a `mut` parameter
+- **Repro (c5b1d4b, macOS) [ran]:** `type Wiper interface { wipe(mut buf: []byte) }` fails with
+  `expected type name, got 'mut'`; `wipe(buf: mut []byte)` fails the same way. A free
+  function or a method on a struct takes `mut` as usual. Found in milestone 36.
+- **Impact:** a port cannot offer an operation that changes the caller's value. Flint's
+  `Crypto` port needs one to wipe a secret in place with `sodium_memzero`: the core may not
+  import the adapter (Principle 1), so the call has to go through the port.
+- **Workaround:** `Crypto.wipe(buf: []byte)` and `wipe_text(text: str)` take a read-only
+  borrow, and the libsodium adapter writes through it with a `const_cast` in a `cpp {}` block
+  (`src/adapters/crypto/sodium.cf`, tagged `CF-124`). Defined behaviour, since the caller's
+  local is never `const`, but the signature lies about what it does, and a fake of the port
+  cannot do the same without native code (Flint's fake records the values instead).
+- **Ideal:** `mut` (and `out`, `move`) accepted on interface method parameters, with the call
+  site's `mut` checked against them as for any function.
+
+### CF-125 · missing · `confirmed`: `ext:webui`'s full screen is a toggle that never hears the window
+- **Seen (milestone 37) [read]:** `webui.App.fullscreen()` and the page's
+  `WindowFullscreen()` flip `is_fullscreen` and call the platform's toggle
+  (`core/webui.hpp:336`, `core/webui/bridge.hpp:492`): `-toggleFullScreen:` on macOS
+  (`macos_ios.hpp:610`), `gtk_window_fullscreen`/`unfullscreen` on Linux
+  (`linux_gtk.hpp:256`), nothing on Windows (`windows_webview2.hpp` sets no
+  `platform_fullscreen`). There is no "enter" or "leave", no way to read the window's real
+  state, and no event when it changes another way (the green button, the system's own
+  ⌃⌘F, a window manager's key), so the flag drifts from the window after the first such
+  change.
+- **Repro:** call `app.fullscreen()`, leave full screen with the green button, call it
+  again: the flag says "full screen" and the window enters it a second time instead of
+  leaving, or the other way round; nothing tells the page the window left.
+- **Why Flint needs it:** an RDP tab goes immersive (no chrome) exactly while the window is
+  full screen, whichever way it got there (spec v10, milestone 37).
+- **Workaround:** `src/adapters/uievents/native/flint_window.hpp`: macOS enters or leaves
+  with `-toggleFullScreen:` only when `NSWindowStyleMaskFullScreen` differs and hears
+  `NSWindowDidEnter/ExitFullScreenNotification`; Linux hears `window-state-event`; Windows
+  (built on the owner's branch) switches the style to `WS_POPUP` over the monitor's rectangle
+  and back. Each change reaches the page as `window:fullscreen` through `App.eval`. The shim
+  also measures what macOS reveals over a full-screen window at the top edge (the menu bar
+  and the title bar), which nothing in `ext:webui` exposes.
+- **Ideal:** `App.set_fullscreen(on: bool)`, `App.is_fullscreen() -> bool` read from the
+  window, and a `window:fullscreen` event (`{ on }`) emitted by webui on every change, on
+  all three systems; for macOS, the inset the top edge reveals.
+
+### CF-126 · missing · `confirmed`: `ext:webui` has one window per `App` and no list of screens
+- **Seen (milestone 38 spike) [read, ran]:** an `App` owns exactly one native window and one
+  web view (`run_macos_app`, `run_linux_webkitgtk`, `run_win32_webview2`); its `AppState`
+  (the app:// files, the RPC table, the event target `platform_eval`) is private, so a second
+  window cannot share the page's RPC or events, and a page's RPC reply always goes to the
+  first window. Nothing reports the screens (position, size, scale, rotation, the notch's
+  inset). A second `App` would start a second run loop.
+- **Repro:** `spike/multimon` (`./run.sh`, `SPIKE_AUTO=1,0`): the second window had to be
+  built natively (`spike/multimon/native/spike_multimon.hpp`) with its own app:// handler
+  on macOS (the default WebKitWebContext's handler serves it on Linux) and its own script
+  message handler; replies reach it only through that shim.
+- **Why Flint needs it:** two monitors (spec v10, milestone 38): one borderless or full-screen
+  window per monitor, each drawing its part of the remote desktop and sending its own mouse;
+  later an RDP tab in a window of its own.
+- **Workaround:** a native shim in `adapters/` (macOS `NSWindow` + `WKWebView`, Linux
+  `GtkWindow` + `WebKitWebView`, Windows an `HWND` + a WebView2 controller) whose page talks
+  to the process through its own message handler, relayed to the main page; the monitors read
+  per OS (`NSScreen` + CoreGraphics, `GdkMonitor`, `EnumDisplayMonitors` +
+  `GetDpiForMonitor`).
+- **Ideal:** `App.new_window(url, opts) -> Window` sharing the app's files, RPC table and
+  events (events addressed to one window or all), with `Window.set_frame`,
+  `Window.set_fullscreen(on, monitor)`, borderless; and `webui.screens() -> []Screen` (frame
+  and work area in points, top-left origin, scale, rotation, refresh, primary, safe-area top).
+
+### CF-127 · missing · `suspected`: `ext:webui` on Windows declares no per-monitor DPI awareness
+- **Seen (milestone 38) [read]:** neither cfire's runtime (`core/webui/windows_webview2.hpp`)
+  nor the owner's Windows branch (`windows-port-2`) declares DPI awareness: no manifest
+  entry and no `SetProcessDpiAwarenessContext`. A process that does not is scaled by
+  Windows as a bitmap on a monitor whose scale differs from the system's, and
+  `GetDpiForMonitor` reports the system's DPI for every monitor, so a layout across a 100 %
+  and a 150 % monitor cannot be read right. Not run: only the owner tests Windows.
+- **Repro (to confirm on Windows):** two monitors at 100 % and 150 %; a webui app's window
+  on the 150 % one is blurred, and `GetDpiForMonitor` returns 96 for both.
+- **Why Flint needs it:** a remote desktop across monitors (spec v10, milestone 38) reads
+  each monitor's size and scale to tell Windows the layout, and opens a window on each.
+- **Workaround:** `src/adapters/uievents/native/flint_monitors.hpp` calls
+  `SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)` at install,
+  before webui opens its window; the monitors are read in physical pixels with their own
+  scale and the core lays them out in points (`domain/monitors.cf`, `logical_monitors`).
+- **Ideal:** webui declares per-monitor-v2 awareness on Windows (in the manifest or before
+  its first window) and handles `WM_DPICHANGED`, so its window is sharp on every monitor.
+
+### CF-128 · bug · `confirmed`: a function of an `import cpp` header takes over a cfire call of the same name in another package
+- **Seen (milestone 38) [ran, Linux]:** `src/domain/monitors.cf` defines
+  `fn monitor_index(ms: []LocalMonitor, id: str) -> i64`. The `uievents` package imports
+  `flint_monitors.hpp`, whose GTK branch declared `flint_monitors::monitor_index(const
+  std::string&)`. Built on Linux, every call in the domain was lowered as
+  `monitor_index(str(locals), id)`: cfire resolved the name against the C++ function it
+  ingested for another package and cast the first argument to it, so clang failed ("no
+  matching conversion for functional-style cast from '[]LocalMonitor' to 'str'"). On
+  macOS the same tree built, because that branch of the header is not compiled there.
+- **Repro:** a package with `fn f(xs: []T, s: str) -> i64` and calls to it; a second
+  package of the same program with `import cpp "h.hpp"` where `h.hpp` declares
+  `namespace n { inline int f(const std::string&); }`. Build: the first package's calls
+  come out as `f(str(xs), s)`.
+- **Why Flint needs it:** the domain must not depend on what an adapter's C++ header
+  happens to name (Principle 1); a shim added later can break a build on one system only.
+- **Workaround:** the C++ function is named `gdk_monitor_number`, a name no cfire code uses.
+- **Ideal:** names from an `import cpp` header resolve only inside the package that imports
+  it, and only as qualified (`n::f`) or inside `cpp { }` blocks; a cfire function of the
+  same name is never cast to a C++ signature.
+
+### CF-129 · bug · `confirmed`: a method called on a string literal does not compile
+- **Seen (milestone 39) [ran, macOS, `c5b1d4b`]:** `if !"0123456789abcdef".contains(id.substr(i, 1)) { … }`
+  in `src/adapters/vault/activity.cf` passes `cfire check` and fails in clang: "member
+  reference base type 'const char[17]' is not a structure or union". The literal lowers to
+  a bare C string, so `.contains` lands on a `const char[]`.
+- **Repro:** `fn f(c: str) -> bool { return "abc".contains(c) }`, then `cfire build`.
+- **Why Flint needs it:** small membership checks read best on the literal; the checker
+  accepting what clang rejects turns a type error into a C++ error message.
+- **Workaround:** the literal assigned to a `str` local first (`digits: str = "…"`),
+  tagged `// CFIRE-UPSTREAM: CF-129`.
+- **Ideal:** a method call on a string literal lowers the literal to `std::string` (or a
+  `std::string_view` with the same methods), as a `str` local does.
+
+### CF-130 · bug · `confirmed`: indexing a map passed as a parameter does not compile
+- **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** the strength estimate's word lists
+  (`src/domain/strength.cf`) are a `map[str]i64` read by functions that take them as a
+  plain (read-only) parameter.
+- **Repro:** `fn get(m: map[str]i64, k: str) -> i64 { return m[k] }` passes `cfire check`
+  and fails in clang: "no viable overloaded operator[] for type 'const cfire::Map<str,
+  i64>'": `Map::operator[]` inserts a missing key, so it has no `const` overload.
+- **Why Flint needs it:** a borrowed map is the default intent; reading one by key is the
+  common case.
+- **Workaround:** `m.get(k) or 0` (`Map::get` is `const`), tagged
+  `// CFIRE-UPSTREAM: CF-130`.
+- **Ideal:** `m[k]` on a read-only map lowers to a `const` lookup (a missing key a runtime
+  error, as an index out of range is), or the checker rejects it with the `get` fix-it.
+
+### CF-131 · bug · `confirmed`: a slice of a `[]T` passes to no `[]T` parameter
+- **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** `uppercase_variations(pw[i..j + 1])`
+  in `src/domain/strength.cf`.
+- **Repro:** `fn total(xs: []u8) -> i64 { return i64(xs.len()) }`, then
+  `total(xs[1..3])` with `xs: []u8`: passes `cfire check`, fails in clang ("no known
+  conversion from '&[]unsigned char' to 'const []u8'"). The slice is a span, the
+  parameter a `const std::vector&`. The same as CF-060 for `str`, but with no checker
+  error or fix-it.
+- **Workaround:** a copy by a helper (`sub_bytes(xs, from, to)`), tagged
+  `// CFIRE-UPSTREAM: CF-131`.
+- **Ideal:** as CF-060: a read-only `[]T` parameter takes a slice (lowered to a span), or
+  the checker says to copy it.
+
+### CF-132 · bug · `confirmed`: `xs.insert(i, x)` on a slice does not compile
+- **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** building the strength estimate's
+  match sequence backwards (`seq.insert(0, m)`).
+- **Repro:** `mut xs: []i64 = [2, 3]; xs.insert(0, 1)` passes `cfire check` and lowers to
+  `std::vector::insert(0, 1)`, which takes an iterator: "no matching member function for
+  call to 'insert'".
+- **Workaround:** push, then reverse the slice by hand, tagged `// CFIRE-UPSTREAM: CF-132`.
+- **Ideal:** `insert(index, value)` lowers to `insert(begin() + index, value)` with a bounds
+  check, or the checker rejects the call.
+
+### CF-133 · bug · `confirmed`: a tuple with an empty slice literal does not compile
+- **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** `return (1.0, [])` from a function
+  typed `-> (f64, []StrengthMatch)`.
+- **Repro:** `fn pair() -> (f64, []i64) { return (1.0, []) }` passes `cfire check` and
+  lowers to `std::make_tuple(1.0, {})`, which cannot deduce the second type.
+- **Workaround:** a typed local (`none_yet: []StrengthMatch = []`) returned in the tuple,
+  tagged `// CFIRE-UPSTREAM: CF-133`.
+- **Ideal:** the tuple is built as the declared return type (`std::tuple<f64,
+  std::vector<i64>>{1.0, {}}`), as CF-091 asks for nested literals.
+
+### CF-134 · bug · `confirmed`: a generic method does not compile
+- **Seen (milestone 41) [ran, macOS, `c5b1d4b`]:** the merge report's diff
+  (`src/domain/merge.cf`), one method for every kind of record.
+- **Repro:** `type R struct { n: i64 }` and `fn (mut self: R) add[T: I](xs: []T) { ... }`
+  with any interface `I`: passes `cfire check`, then clang fails on the forward
+  declaration: "use of undeclared identifier 'T'" (`inline auto R__add(R& self, const []T&
+  xs)`, with no `template <typename T>` and the slice type left unlowered).
+- **Why Flint needs it:** a method that works on any record kind reads best on the value
+  it fills.
+- **Workaround:** a free generic function taking the receiver as `mut self`
+  (`report_diff[T](mut r, ...)`), tagged `// CFIRE-UPSTREAM: CF-134`.
+- **Ideal:** a generic method lowers to a member template (or the free function form it
+  already uses, with its `template` line), or the checker rejects it.
+
+### CF-135 · bug · `confirmed`: `for k, v in m` over a map does not compile
+- **Seen (milestone 41) [ran, macOS, `c5b1d4b`]:** walking the names, groups and
+  tombstones the merge collects (`src/domain/merge.cf`).
+- **Repro:** `mut m: map[str]i64 = {}; m["a"] = 1; for k, v in m { println("{k} {v}") }`
+  passes `cfire check` and lowers as a slice loop, `for (std::size_t k = 0; k < m.size();
+  ++k)` with `v = m[k]`: clang fails ("no viable overloaded operator[]" with a `size_t`
+  key). `for k, _ in m` lowers the same way. There is no `keys()` either.
+- **Why Flint needs it:** grouping by a key and then visiting each group is the common
+  shape of a map.
+- **Workaround:** a slice of the keys kept beside the map, in insertion order, and sorted
+  where the order matters, tagged `// CFIRE-UPSTREAM: CF-135`.
+- **Ideal:** `for k, v in m` lowers to `for (const auto& [k, v] : m)`, and `m.keys()`
+  exists; or the checker rejects the loop over a map with that fix-it.
+
+### CF-136 · missing · `confirmed`: `core:fs` has no realpath (and no symlink)
+- **Seen (milestone 41) [ran, macOS, `c5b1d4b`]:** the app compares the vault a CLI
+  command names with the one it holds, as text; `/tmp/fp/lab.flint` and
+  `/private/tmp/fp/lab.flint` (macOS's `/tmp` is a link) were two vaults, so `vault merge`
+  and `vault passwd` went ahead while the app held the vault unlocked.
+- **Repro:** there is no `fs.real_path` / `fs.canonical`; `std::filesystem::canonical`
+  exists in the C++ it lowers to. A test that needs a link has no `fs.symlink`.
+- **Why Flint needs it:** a file's identity through links (cloud folders are often linked
+  into the home folder).
+- **Workaround:** `real_path` over `realpath(3)` in `src/adapters/process/native/
+  flint_fs.hpp`, and `::symlink` in a test, tagged `// CFIRE-UPSTREAM: CF-136`.
+- **Ideal:** `fs.real_path(path) -> str!` and `fs.symlink(target, link) -> void!`.
+
+### CF-137 · bug · `confirmed`: `HttpServer` has no request deadline and a fixed body cap
+- **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** `read_http_request`
+  (`core/net/http.hpp:392`) reads with the accepted socket's fixed 2 s idle timeout per
+  read and no total deadline: a client sending one byte every 1.5 s held a request open
+  for 30 s. A body that stops early (`Content-Length: 1000`, 10 bytes sent, then silence)
+  reaches the handler as a complete 10-byte body after 2 s. The body cap is a hard-coded
+  10 MB and an oversized body is answered `400`, not `413`; neither is configurable from
+  `make_server`.
+- **Repro:** `make_server(0)`, a `put` route that prints `req.body.len()`, then from Python
+  send the headers with `Content-Length: 1000` and 10 bytes; the handler prints `len=10`.
+- **Why Flint needs it:** `flint-vault-server` must bound every request (Principle 8) and
+  must never store a truncated vault upload.
+- **Workaround:** the server runs its own accept loop on `core:net` (`listen_tcp_addr`,
+  `poll`, `read_text`) with header and request deadlines, its own cap answered `413`, and
+  `http.parse_request` + `Router.dispatch` (`src/drivers/vault-server/listen.cf`), tagged
+  `// CFIRE-UPSTREAM: CF-137`.
+- **Ideal:** `make_server(port, ServerOptions{ header_timeout_ms, request_timeout_ms,
+  max_body })`, `413` above the cap, and an error (not a short body) when the body ends
+  before `Content-Length`.
+
+### CF-138 · missing · `confirmed`: no way to run work on another thread from cfire
+- **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** `HttpServer` serves one
+  connection at a time on its single worker thread; while one client dripped its body,
+  a second `GET` waited 29.6 s. cfire has channels and mutexes (`core:sync`) but no
+  `spawn`/`go` to start a thread, so a server cannot hand a connection to a worker.
+- **Why Flint needs it:** one slow or hostile client stalls every other one until its
+  deadline.
+- **Workaround:** none in cfire; the vault server stays single-threaded with tight
+  deadlines (D-097). Flint's other threads live in native shims (`flint_ssh.hpp`,
+  `flint_tunnel.hpp`, `flint_rdp.hpp`).
+- **Ideal:** `spawn(fn)` returning a joinable handle, or a worker pool in `HttpServer`.
+
+### CF-139 · missing · `confirmed`: an accepted connection has no peer address
+- **Seen (milestone 42 spike) [read, `c5b1d4b`]:** `http.Request` carries no client address
+  and an accepted `TcpConn` has an empty endpoint (`TcpListener::accept`).
+- **Why Flint needs it:** the vault server limits rate and locks out repeated bad tokens
+  per client.
+- **Workaround:** `getpeername(2)` over `conn.fd()` in `src/adapters/netpeer/`, tagged
+  `// CFIRE-UPSTREAM: CF-139`.
+- **Ideal:** `fn (c: TcpConn) peer_addr() -> str` and `req.remote_addr`.
+
+### CF-140 · bug · `confirmed`: a chunked request body reaches the handler undecoded
+- **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** `curl -X PUT -H 'Transfer-Encoding:
+  chunked' --data-binary @file` hands the handler the chunk framing (`req.body[0]` is the
+  first hex digit of the chunk size) as if it were the body. The client side decodes
+  chunked responses (`decode_chunked_body`); the server side does not.
+- **Workaround:** the vault server answers `411` to any request with `Transfer-Encoding`.
+- **Ideal:** decode chunked request bodies under the same cap, or answer `411` itself.
+
+### CF-141 · improvement · `confirmed`: `make_server` binds only `0.0.0.0`; `Router.put` undocumented
+- **Seen (milestone 42 spike) [read, `c5b1d4b`]:** `make_server(port)` calls `listen_tcp`,
+  which binds every interface; a bare server behind a local reverse proxy wants
+  `127.0.0.1`. `Router.put` (and `handle`) exist and work but are not in the stdlib docs.
+- **Workaround:** `net.listen_tcp_addr(host, port)` in the vault server's own loop (CF-137).
+- **Ideal:** `make_server(port, host = "0.0.0.0")`; document `put`, `delete`, `handle`.
+
+### CF-142 · bug · `confirmed`: `http.request` with headers does not compile
+- **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** passing a `map[str]str` variable as
+  `headers` to `http.request` / `http.get` fails in C++: the runtime takes
+  `std::unordered_map<str, str>` and cfire's map is `cfire::Map<str, str>`. A map literal
+  in the same place lowers to a designated initializer (`{.If-Match = …}`) and fails too.
+- **Repro:** `mut h: map[str]str = {}`, `h["If-Match"] = "1"`,
+  `try http.request("PUT", url, body, "application/octet-stream", h)`.
+- **Why Flint needs it:** milestone 43's `VaultRemote` sends `Authorization`, `If-Match` and
+  the vault id on every request. Not blocking 42 (its tests drive the server with `curl`
+  and raw sockets).
+- **Ideal:** the runtime takes `cfire::Map`, and a map literal argument lowers to a map.
+
+### CF-143 · missing · `confirmed`: `core:fs` has no fsync; `File.flush` does nothing
+- **Seen (milestone 42) [read, `c5b1d4b`]:** `File::flush` (`core/fs.hpp:417`) returns success
+  without touching the file; there is no `fsync` or `sync_dir`. A temp file + rename is
+  atomic against a crash of the process, not of the machine: the rename can reach the disk
+  before the data.
+- **Why Flint needs it:** the vault server stores each upload so a power cut leaves the
+  previous version whole (Principle 14 on the server side).
+- **Workaround:** `write_synced` and `sync_dir` in `src/adapters/serverfs/native/
+  flint_server.hpp`, tagged `// CFIRE-UPSTREAM: CF-143` (the client side has its own in
+  `flint_fs.hpp`, milestone 40).
+- **Ideal:** `fs.write_atomic(path, data)` (temp, fsync, rename, fsync the folder), or
+  `File.sync()` and `fs.sync_dir(path)`.
+
+### CF-144 · bug · `confirmed`: `cfire test` passes a folder whose test file does not parse
+- **Seen (milestone 42) [ran, macOS, `c5b1d4b`]:** with a syntax error in a `_test.cf` file
+  (`out` as a variable name, an `if` used as an expression, `pair.0`), `cfire test <dir>`
+  prints `✓ No test suites found in <dir>` and exits 0. A suite that stops compiling reads
+  as a suite with nothing to run, and `scripts/test.sh` would count it as passed.
+- **Repro:** a folder with `package p` and `test "t" { x := if true { 1 } else { 2 } }`;
+  `cfire test <folder>; echo $?` prints the line above and `0`.
+- **Workaround:** none; Flint reads the count of tests run, not only the exit status, when a
+  suite is new.
+- **Ideal:** a parse error in any `.cf` file of the folder fails `cfire test` with the
+  diagnostic, as `cfire check` does.
+
+### CF-145 · bug · `confirmed`: `\u{0}` in a string literal ends the string
+- **Seen (milestone 42) [ran, macOS, `c5b1d4b`]:** `"ab\u{0}de"` has length 2 at run time:
+  the literal lowers to a C string and the `str` built from it stops at the NUL. A test
+  that sent `Content-Length: 5` with that body timed out waiting for the last 3 bytes.
+- **Workaround:** test data with a NUL byte is built from a `[]byte` (`str(bytes)`).
+- **Ideal:** a literal with an embedded NUL lowers to `std::string(ptr, len)` (or a `""s`
+  literal), so `len()` counts every byte.

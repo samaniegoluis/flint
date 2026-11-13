@@ -18,6 +18,8 @@ import { clampFiles, clampSidebar, FILES_DEFAULT, FILES_MAX, FILES_MIN, SIDEBAR_
 import { FilesView } from '../files/FilesView';
 import { files as filesStore } from '../files/store';
 import { sessions, useSessions } from '../sessions/store';
+import { fullScreen, useFullScreen } from '../sessions/fullscreen';
+import { monitors } from '../sessions/monitors';
 import { LAYOUTS, MAX_PANES, type SplitDir } from '../lib/layout';
 import { focusTerminal } from '../sessions/TerminalView';
 import { HostEditor } from '../editors/HostEditor';
@@ -38,7 +40,7 @@ const NARROW = 1040;
 
 export function Shell() {
   const app = useApp();
-  const { os, vault, catalog, settings, notify, fail, refreshCatalog, openVaultFile, go, phase } = app;
+  const { os, info, vault, catalog, settings, notify, fail, refreshCatalog, openVaultFile, go, phase } = app;
   const { tabs, panes, active } = useSessions();
   const [view, setView] = useState<View>('hosts');
   const [narrow, setNarrow] = useState(window.innerWidth < NARROW);
@@ -128,7 +130,11 @@ export function Shell() {
   // The active tab's focused pane: the Files view, the title and the status bar follow it.
   const tab = panes.find((p) => p.id === tabs.find((t) => t.id === active)?.focus);
   const sideView = SIDE_VIEWS.includes(view);
-  const showSidebar = sideView && !collapsed;
+  // Full screen (milestone 37) belongs to the RDP tab shown in the sessions area.
+  const rdpTab = sideView && tab?.kind === 'rdp' ? active : null;
+  const fs = useFullScreen();
+  const immersive = !!fs.tab;
+  const showSidebar = sideView && !collapsed && !immersive;
 
   // The design's layout rules key off the root's data-view and data-collapsed: the
   // main area starts after the rail, plus the sidebar when it is docked.
@@ -141,6 +147,34 @@ export function Shell() {
     root.dataset.narrow = String(narrow);
     return () => { delete root.dataset.view; delete root.dataset.collapsed; delete root.dataset.narrow; };
   }, [view, collapsed, narrow]);
+
+  // Immersive: the design's .app[data-fullscreen] hides every piece of Flint's chrome.
+  useEffect(() => {
+    const root = document.querySelector<HTMLElement>('.app');
+    if (!root) return;
+    if (immersive) root.dataset.fullscreen = 'true';
+    else delete root.dataset.fullscreen;
+    return () => { delete root.dataset.fullscreen; };
+  }, [immersive]);
+  // The window's state, from the OS: the green button or the system's own keys too.
+  const rdpTabRef = useRef(rdpTab);
+  rdpTabRef.current = rdpTab;
+  useEffect(() => on<{ on: boolean; top?: number }>('window:fullscreen', (e) => fullScreen.heard(!!e.on, rdpTabRef.current, e.top ?? 0)), []);
+  // Another tab, a closed tab or another view leaves full screen; so does the lock.
+  useEffect(() => { fullScreen.shown(rdpTab); }, [rdpTab]);
+  useEffect(() => () => { if (fullScreen.get().tab) fullScreen.leave(); }, []);
+  // Milestone 38: a desktop across monitors ends with full screen; the extra windows'
+  // pages and the monitors' changes reach its store.
+  useEffect(() => { const off = fullScreen.subscribe(() => { if (!fullScreen.get().tab) monitors.leave(); }); return () => { off(); }; }, []);
+  useEffect(() => on<{ id: string; data: string }>('monitor:message', (e) => monitors.message(e.id, e.data)), []);
+  useEffect(() => on<{ id: string }>('monitor:closed', (e) => monitors.windowGone(e.id)), []);
+  useEffect(() => on('monitors:changed', () => { void monitors.screensChanged(); }), []);
+  useEffect(() => {
+    void monitors.refresh();
+    // gui-e2e's multimon run reads the store.
+    const e2e = (window as unknown as { __flintE2E?: Record<string, unknown> }).__flintE2E;
+    if (e2e) e2e.monitors = monitors;
+  }, []);
 
   useEffect(() => {
     const onResize = () => {
@@ -298,6 +332,8 @@ export function Shell() {
         else { setView('tunnels'); setSidebarCollapsed(false); setTimeout(() => document.querySelector<HTMLElement>('[data-tunnels-filter]')?.focus(), 0); }
         break;
       case 'collapseAll': setView('hosts'); setSidebarCollapsed(false); setCollapsedGroups(new Set(catalog.groups.map((g) => g.path))); break;
+      case 'fullscreen': fullScreen.toggle(rdpTab); break;
+      case 'fullscreenAll': if (rdpTab) sessions.enterAllMonitors(rdpTab, (t) => fullScreen.enter(t)); break;
       case 'expandAll': setView('hosts'); setSidebarCollapsed(false); setCollapsedGroups(new Set()); break;
       case 'viewKeys': setView('keys'); break;
       case 'viewCredentials': setView('credentials'); break;
@@ -325,7 +361,7 @@ export function Shell() {
       case 'prevRegion': cycleRegion(-1); break;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, tab, view, collapsed, selected, catalog.hosts, catalog.groups, connect, split, lock, openVaultFile, fail, go, setSidebarCollapsed, setCollapsedGroups]);
+  }, [active, tab, rdpTab, view, collapsed, selected, catalog.hosts, catalog.groups, connect, split, lock, openVaultFile, fail, go, setSidebarCollapsed, setCollapsedGroups]);
 
   useEffect(() => {
     setActionHandler(run);
@@ -429,7 +465,7 @@ export function Shell() {
         </div>
       )}
 
-      <SessionArea shown={sideView} filesOn={view === 'files' && !collapsed} onFiles={() => run('viewFiles')} fontSize={fontSize} onPalette={(h) => setPalette(h ? { hostsOnly: true, newSession: true } : { hostsOnly: false })} onEditHost={(alias) => setEditor({ alias, group: '' })} onManageTunnels={(alias) => setEditor({ alias, group: '', tunnels: true })} onConnect={connect} onKnownHosts={() => { setSection('vault'); setView('settings'); }} />
+      <SessionArea shown={sideView} fullScreenNoteSeen={!!ui?.fullscreen_note_seen} onFullScreenNoteSeen={() => updateUi({ fullscreen_note_seen: true })} monitorsNoteSeen={!!ui?.monitors_note_seen} onMonitorsNoteSeen={() => updateUi({ monitors_note_seen: true })} filesOn={view === 'files' && !collapsed} onFiles={() => run('viewFiles')} fontSize={fontSize} onPalette={(h) => setPalette(h ? { hostsOnly: true, newSession: true } : { hostsOnly: false })} onEditHost={(alias) => setEditor({ alias, group: '' })} onManageTunnels={(alias) => setEditor({ alias, group: '', tunnels: true })} onConnect={connect} onKnownHosts={() => { setSection('vault'); setView('settings'); }} />
       {view === 'keys' && <KeysPage adding={addingKey} setAdding={setAddingKey} onConfirm={setConfirm} />}
       {view === 'credentials' && <CredentialsPage editing={credEditing} setEditing={setCredEditing} onConfirm={setConfirm} />}
       {view === 'settings' && <SettingsPage section={section} setSection={setSection} onLock={() => lock().catch(fail)} onConfirm={setConfirm} />}
@@ -453,6 +489,12 @@ export function Shell() {
         )}
         <span className="grow" />
         {zoom !== 0 && <button className="sb-btn" onClick={() => setZoom(0)} title="Reset terminal font size">{fontSize} px</button>}
+        {info?.version && (
+          <button className="sb-btn sb-version" data-sb-version onClick={() => { setSection('about'); setView('settings'); }}
+            title="Settings → About" aria-label={`Flint ${info.version}. Open Settings, About`}>
+            v{info.version}
+          </button>
+        )}
         <span className="sb-item"><Kbd action="palette" />Commands</span>
       </footer>
 

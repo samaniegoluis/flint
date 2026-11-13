@@ -95,6 +95,34 @@ fn (self: FakeCrypto) unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte
     return p
 }
 
+// What the use cases wiped (milestone 36): the fake cannot overwrite through the
+// port's borrow without native code (CF-124), so it notes each value instead. A test
+// clears both lists first.
+mut WIPED_TEXTS: []str = []
+mut WIPED_BUFS: i64 = 0
+
+fn (self: FakeCrypto) wipe(buf: []byte) {
+    WIPED_BUFS += 1
+}
+
+fn (self: FakeCrypto) wipe_text(text: str) {
+    WIPED_TEXTS.push(text)
+}
+
+fn reset_wiped() {
+    WIPED_TEXTS.clear()
+    WIPED_BUFS = 0
+}
+
+fn was_wiped(text: str) -> bool {
+    for w in WIPED_TEXTS {
+        if w == text {
+            return true
+        }
+    }
+    return false
+}
+
 // ---- Vault store ---------------------------------------------------------------
 
 type FakeStore struct {
@@ -116,10 +144,27 @@ type FakeStore struct {
     snap_known: []KnownHost
     tunnels: []Tunnel
     snap_tunnels: []Tunnel
+    // Milestone 39: the vault id and key the last activity_attach was given.
+    act_id: str
+    act_key: []byte
+    // Milestone 40: a prepared re-key, and the step that fails on purpose
+    // ("prepare", "activity", "commit"; "" for none).
+    rk_key: []byte
+    rk_salt: []byte
+    rk_secrets: VaultSecrets
+    rk_act: bool
+    rk_fail: str
+    // Milestone 41: the tokens and tombstones `vault_records` reads (the fake's
+    // drops leave none), how many times a merge replaced the records, and whether
+    // this store holds a conflict copy (`vault_attach_copy`).
+    rec_tokens: []Token
+    tombs: []Tombstone
+    replaced: i64
+    copy_open: bool
 }
 
 fn new_fake_store() -> FakeStore {
-    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [] }
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "", rec_tokens: [], tombs: [], replaced: 0, copy_open: false }
 }
 
 fn (self: FakeStore) vault_file_exists(path: str) -> bool {
@@ -157,6 +202,80 @@ fn (mut self: FakeStore) vault_attach(path: str, page_key: []byte, salt: []byte)
 
 fn (mut self: FakeStore) vault_detach() {
     self.attached = false
+    self.act_id = ""
+    self.copy_open = false
+}
+
+// Like the SQL store: a conflict copy opens with its key, read through a copy.
+fn (mut self: FakeStore) vault_attach_copy(path: str, page_key: []byte, salt: []byte) -> void! {
+    try self.vault_attach(path, page_key, salt)
+    self.copy_open = true
+}
+
+fn (self: FakeStore) vault_records() -> VaultRecords! {
+    try self.need_attached()
+    return VaultRecords{ groups: self.groups, hosts: self.hosts, keys: self.keys, creds: self.creds, known_hosts: self.known, tunnels: self.tunnels, tokens: self.rec_tokens, tombstones: self.tombs }
+}
+
+fn (mut self: FakeStore) vault_replace_records(r: VaultRecords) -> void! {
+    try self.need_attached()
+    self.groups = r.groups
+    self.hosts = r.hosts
+    self.keys = r.keys
+    self.creds = r.creds
+    self.known = r.known_hosts
+    self.tunnels = r.tunnels
+    self.rec_tokens = r.tokens
+    self.tombs = r.tombstones
+    self.replaced += 1
+}
+
+fn (mut self: FakeStore) activity_attach(vault_id: str, key: []byte, new_salt: []byte) -> void! {
+    try self.need_attached()
+    if key.len() != 32 || new_salt.len() != 16 {
+        return error("internal: bad activity key or salt")
+    }
+    self.act_id = vault_id
+    self.act_key = key
+}
+
+fn (mut self: FakeStore) vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: VaultSecrets) -> void! {
+    try self.need_attached()
+    if self.rk_fail == "prepare" {
+        return error(coded(ERR_IO, "disk full"))
+    }
+    self.rk_key = page_key
+    self.rk_salt = salt
+    self.rk_secrets = secrets
+}
+
+fn (mut self: FakeStore) activity_rekey_prepare(key: []byte, new_salt: []byte) -> void! {
+    if self.rk_fail == "activity" {
+        return error(coded(ERR_IO, "disk full"))
+    }
+    self.rk_act = true
+}
+
+fn (mut self: FakeStore) vault_rekey_commit(path: str, page_key: []byte, salt: []byte) -> void! {
+    if self.rk_fail == "commit" || self.rk_key.len() == 0 {
+        return error(coded(ERR_CONFLICT, "the vault changed"))
+    }
+    self.file_key = self.rk_key
+    self.file_salt = self.rk_salt
+    self.hosts = self.rk_secrets.hosts
+    self.keys = self.rk_secrets.keys
+    self.creds = self.rk_secrets.creds
+    self.rk_key = []
+}
+
+fn (mut self: FakeStore) activity_rekey_commit(key: []byte) -> void! {
+    self.act_key = key
+    self.rk_act = false
+}
+
+fn (mut self: FakeStore) vault_rekey_abort(path: str) {
+    self.rk_key = []
+    self.rk_act = false
 }
 
 fn (self: FakeStore) need_attached() -> void! {

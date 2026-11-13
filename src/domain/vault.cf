@@ -6,8 +6,10 @@ package domain
 //
 // The first 16 bytes of a vault file are the Argon2id salt (SQLCipher stores the
 // salt it is given there). Everything after them is SQLCipher pages. The Argon2id
-// output is the vault's master key; two subkeys are derived from it with libsodium
-// crypto_kdf: one is the SQLCipher page key, the other seals secret values.
+// output is the vault's master key; subkeys are derived from it with libsodium
+// crypto_kdf: the SQLCipher page key, the key that seals secret values, and (from
+// milestone 39, D-094) the page key of this machine's activity file, which lives
+// outside the vault so a synced vault never carries the log.
 // The numbers are pinned here, not taken from libsodium's *_MODERATE macros, so a
 // libsodium upgrade can never change how an existing vault is opened.
 
@@ -19,6 +21,9 @@ VAULT_ARGON2_MEM: usize = 268435456
 VAULT_KDF_CONTEXT: str = "flintvlt"
 VAULT_SUBKEY_PAGE: u64 = 1
 VAULT_SUBKEY_SECRETS: u64 = 2
+VAULT_SUBKEY_ACTIVITY: u64 = 3
+// The `meta` key of the vault's stable id (migration 010, D-095).
+VAULT_META_ID: str = "vault_id"
 
 // ---- Entities ----------------------------------------------------------------
 //
@@ -31,6 +36,9 @@ type Group struct {
     id: str
     parent_id: str
     name: str
+    // When the record was last written, Unix milliseconds, set by the store (milestone
+    // 41, D-096): the per-record merge keeps the newer. 0 for a row never written since.
+    updated_at: i64
 }
 
 type Host struct {
@@ -60,6 +68,9 @@ type Host struct {
     host_type: str
     // An RDP host's Windows domain; "" for none and for every SSH host.
     domain: str
+    // When the record was last written, Unix milliseconds, set by the store (milestone
+    // 41, D-096): the per-record merge keeps the newer. 0 for a row never written since.
+    updated_at: i64
 }
 
 type SshKey struct {
@@ -70,6 +81,9 @@ type SshKey struct {
     fingerprint: str
     private_key: []byte
     passphrase: []byte
+    // When the record was last written, Unix milliseconds, set by the store (milestone
+    // 41, D-096): the per-record merge keeps the newer. 0 for a row never written since.
+    updated_at: i64
 }
 
 type Credential struct {
@@ -78,11 +92,23 @@ type Credential struct {
     username: str
     key_id: str
     password: []byte
+    // When the record was last written, Unix milliseconds, set by the store (milestone
+    // 41, D-096): the per-record merge keeps the newer. 0 for a row never written since.
+    updated_at: i64
 }
 
 // Every row of a vault, loaded together so ids resolve to names.
 type Catalog struct {
     groups: []Group
+    hosts: []Host
+    keys: []SshKey
+    creds: []Credential
+}
+
+// Every sealed secret of a vault, re-sealed under a new secrets key (milestone 40):
+// the hosts, keys and credentials with their secret fields; the other fields are not
+// read.
+type VaultSecrets struct {
     hosts: []Host
     keys: []SshKey
     creds: []Credential
@@ -96,7 +122,7 @@ type KeyInfo struct {
 }
 
 // A vault this machine has opened. Kept in a local config file, outside the vault.
-// `id` is the vault's id (a hash of its salt, D-030), empty until the vault is next
+// `id` is the vault's id (D-030, kept in the vault from milestone 40, D-095), empty until the vault is next
 // unlocked: it is how a moved vault's stale entry is recognised and replaced.
 type RecentVault struct {
     path: str `json:"path"`

@@ -3,8 +3,8 @@
 // FlintError so the UI can branch on stable codes (D-018, D-019).
 
 import type {
-  AccessAnswer, AccessState, ActivityEntry, AppInfo, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  CopyResult, FileEntry, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
+  AccessAnswer, AccessState, ActivityEntry, AppInfo, RdpStats, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
+  CopyResult, DesktopSpan, FileEntry, MonitorPick, MonitorsView, PasswordStrength, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -77,6 +77,8 @@ export const api = {
   windowUnlock: (password: string) => call<WindowState>('window_unlock', { password }),
   /** Quits Flint: the window and the tray, and the CLI's way into the vault. */
   quit: () => call('app_quit'),
+  /** Full screen (milestone 37): the OS's own; the change arrives as `window:fullscreen`. */
+  windowFullscreen: (on: boolean) => call<{ on: boolean }>('window_fullscreen', { on }),
   close: () => call('vault_close'),
   /** Locks the vault: its key leaves memory, open sessions keep running (D-042). */
   lock: () => call('vault_lock'),
@@ -100,10 +102,17 @@ export const api = {
   /** How many entries a retention of `days` would remove now. */
   activityRetentionPreview: (days: RetentionDays) => call<{ days: RetentionDays; remove: number }>('activity_retention_preview', { days }),
   activityRetentionSet: (days: RetentionDays) => call<{ days: RetentionDays; label: string; removed: number }>('activity_retention_set', { days }),
+  /** Copies this computer's activity file, still encrypted, to `path` (milestone 39). */
+  activityBackup: (path: string) => call('activity_backup', { path }),
   forgetKey: (path: string) => call('vault_forget_key', { path }),
   forget: (path: string) => call('vault_forget', { path }),
   status: () => call<VaultStatus>('vault_status'),
   rename: (name: string) => call<VaultInfo>('vault_rename', { name }),
+  /** Re-keys the open vault (milestone 40): two Argon2id runs, a few seconds. */
+  passwd: (current: string, password: string) =>
+    call<{ remembered: boolean; strength: PasswordStrength }>('vault_passwd', { current, password }),
+  /** The core's strength estimate of a password being typed; never stored. */
+  passwordStrength: (password: string) => call<PasswordStrength>('password_strength', { password }),
 
   catalog: () => call<Catalog>('catalog'),
   groupAdd: (path: string) => call<GroupView>('group_add', { path }),
@@ -140,11 +149,21 @@ export const api = {
   sessionClose: (session: string) => call('session_close', { session }),
 
   /** A remote desktop (milestone 30): connects on a worker; "rdp:ready" and "rdp:state" follow. */
-  rdpOpen: (tab: string, alias: string, width: number, height: number) => call('rdp_open', { tab, alias, width, height }),
+  rdpOpen: (tab: string, alias: string, width: number, height: number, graphics: string) => call('rdp_open', { tab, alias, width, height, graphics }),
   rdpKey: (tab: string, code: string, down: boolean) => call('rdp_key', { tab, code, down }),
   rdpPointer: (tab: string, p: RdpPointer) => call('rdp_pointer', { tab, ...p }),
   rdpResize: (tab: string, width: number, height: number) => call('rdp_resize', { tab, width, height }),
+  /** Milestone 38: the desktop across the chosen monitors, each the size its window measured. */
+  rdpSpan: (tab: string, picks: MonitorPick[]) => call<DesktopSpan>('rdp_span', { tab, picks }),
+  monitorsList: () => call<MonitorsView>('monitors_list'),
+  /** A full-screen window on each extra monitor; others close. Their pages answer as `monitor:message`. */
+  monitorsOpen: (ids: string[]) => call('monitors_open', { ids }),
+  monitorsClose: () => call('monitors_close'),
+  monitorsSend: (id: string, data: unknown) => call('monitors_send', { id, data: JSON.stringify(data) }),
   rdpClose: (tab: string) => call('rdp_close', { tab }),
+  /** Milestone 34: the desktop's counters, for the statistics overlay. */
+  rdpStats: (tab: string) => call<RdpStats>('rdp_stats', { tab }),
+  rdpGraphics: (tab: string, graphics: string) => call('rdp_graphics', { tab, graphics }),
   /** Milestone 31: tells the server whether this machine's clipboard holds text (never the text). */
   rdpClipboardAnnounce: (tab: string) => call('rdp_clipboard_announce', { tab }),
 

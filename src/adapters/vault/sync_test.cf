@@ -1,0 +1,209 @@
+package vault
+
+// A sync-ready vault (milestone 41, migration 011): stamps, tombstones, the records
+// read and replaced whole, and a conflict copy opened without being changed.
+
+import "core:fs"
+import "core:crypto/sha256"
+import "../../domain"
+
+MIGRATION_011_SHA256: str = "196536cfb051ae4f021d7c13d8c2d791aa4ba6a2c7de3b3a693c072cac95d5c1"
+
+test "migration 011 is frozen" {
+    assert_eq(sha256.hash_hex(vault_migrations()[10].sql.bytes()), MIGRATION_011_SHA256)
+}
+
+fn stamp_of(store: SqlVaultStore, table: str, id: str) -> i64! {
+    res := try store.conn().query_cells("SELECT updated_at FROM " + table + " WHERE id = ?1;", [sql_text(id)])
+    return cell_i64(res[0][0])
+}
+
+fn tomb_at(store: SqlVaultStore, kind: str, id: str) -> i64! {
+    res := try store.conn().query_cells("SELECT ifnull((SELECT deleted_at FROM tombstones WHERE kind = ?1 AND id = ?2), -1);", [sql_text(kind), sql_text(id)])
+    return cell_i64(res[0][0])
+}
+
+test "every write stamps its row, later each time, even with the clock behind" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try store.host_put(marker_host())
+    first := try stamp_of(store, "hosts", "h1")
+    // Today, in milliseconds: after 2026-01-01.
+    assert(first > 1767225600000)
+    try store.host_put(marker_host())
+    second := try stamp_of(store, "hosts", "h1")
+    assert(second > first)
+    // A stamp from the future (another machine's clock ahead): the next write is
+    // still later.
+    try store.conn().run_sql("UPDATE hosts SET updated_at = ?1 WHERE id = 'h1';", [sql_int(9000000000000)])
+    try store.host_put(marker_host())
+    assert_eq(try stamp_of(store, "hosts", "h1"), 9000000000001)
+    // Every synced kind is stamped and read back with it.
+    try store.group_put(Group{ id: "g1", parent_id: "", name: "Prod" })
+    try store.key_put(SshKey{ id: "k1", name: "id", key_type: "ed25519", public_key: "p", fingerprint: "f", private_key: [byte(1)], passphrase: [] })
+    try store.cred_put(Credential{ id: "c1", name: "ops", username: "deploy", key_id: "k1", password: [] })
+    try store.tunnel_put(Tunnel{ id: "t1", host_id: "h1", name: "pg", local_port: 5432, dest_host: "localhost", dest_port: 5432 })
+    try store.known_host_put(KnownHost{ addr: "db01", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "h1", added_at: "" })
+    try store.token_put(marker_token("tk1", "agent", 0))
+    r := try store.vault_records()
+    assert(r.groups[0].updated_at > first)
+    assert(r.keys[0].updated_at > first)
+    assert(r.creds[0].updated_at > first)
+    assert(r.tunnels[0].updated_at > first)
+    assert(r.known_hosts[0].updated_at > first)
+    assert(r.tokens[0].updated_at > first)
+    assert_eq(r.hosts[0].updated_at, 9000000000001)
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "a delete leaves a tombstone later than the row, a host's tunnels theirs, and a put lifts it" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try store.host_put(marker_host())
+    try store.tunnel_put(Tunnel{ id: "t1", host_id: "h1", name: "pg", local_port: 5432, dest_host: "localhost", dest_port: 5432 })
+    try store.conn().run_sql("UPDATE hosts SET updated_at = ?1 WHERE id = 'h1';", [sql_int(9000000000000)])
+    try store.host_drop("h1")
+    assert_eq((try store.hosts_all()).len(), 0)
+    assert_eq((try store.tunnels_all()).len(), 0)
+    assert_eq(try tomb_at(store, MERGE_KIND_HOST, "h1"), 9000000000001)
+    assert(try tomb_at(store, MERGE_KIND_TUNNEL, "t1") > 0)
+    // Written again: alive, no tombstone, and newer than the tombstone was.
+    try store.host_put(marker_host())
+    assert_eq(try tomb_at(store, MERGE_KIND_HOST, "h1"), -1)
+    assert_eq(try stamp_of(store, "hosts", "h1"), 9000000000002)
+    // Each kind's drop leaves one.
+    try store.group_put(Group{ id: "g1", parent_id: "", name: "Prod" })
+    try store.group_drop("g1")
+    try store.key_put(SshKey{ id: "k1", name: "id", key_type: "ed25519", public_key: "p", fingerprint: "f", private_key: [byte(1)], passphrase: [] })
+    try store.key_drop("k1")
+    try store.cred_put(Credential{ id: "c1", name: "ops", username: "deploy", key_id: "", password: [] })
+    try store.cred_drop("c1")
+    try store.known_host_put(KnownHost{ addr: "db01", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" })
+    try store.known_host_drop("db01")
+    tombs := try store.tombstones_all()
+    mut kinds: []str = []
+    for t in tombs {
+        kinds.push(t.kind)
+    }
+    assert_eq(kinds, ["credential", "group", "key", "known_host", "tunnel"])
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "records replaced whole keep their stamps, in any order of references" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try store.host_put(Host{ id: "old", alias: "gone", label: "", hostname: "x", port: 22, username: "u", tags: [], color: "", notes: "", password: [], sudo_password: [] })
+    // A child group before its parent, a host before its jump host: foreign keys are
+    // checked at the commit.
+    mut web := marker_host()
+    web.id = "h2"
+    web.alias = "web"
+    web.group_id = "g2"
+    web.jump_host_id = "h3"
+    web.credential_id = "c1"
+    web.updated_at = 500
+    mut jump := marker_host()
+    jump.id = "h3"
+    jump.alias = "jump"
+    jump.updated_at = 600
+    r := VaultRecords{
+            groups: [Group{ id: "g2", parent_id: "g1", name: "Child", updated_at: 20 }, Group{ id: "g1", parent_id: "", name: "Top", updated_at: 10 }],
+            hosts: [web, jump],
+            keys: [SshKey{ id: "k1", name: "id", key_type: "ed25519", public_key: "p", fingerprint: "f", private_key: [byte(9)], passphrase: [], updated_at: 30 }],
+            creds: [Credential{ id: "c1", name: "ops", username: "deploy", key_id: "k1", password: [byte(8)], updated_at: 40 }],
+            known_hosts: [KnownHost{ addr: "web", key_type: "ssh-ed25519", fingerprint: "SHA256:y", host_id: "h2", added_at: "2026-01-02T03:04:05Z", updated_at: 50 }],
+            tunnels: [Tunnel{ id: "t1", host_id: "h2", name: "pg", local_port: 1, dest_host: "localhost", dest_port: 2, updated_at: 60 }],
+            tokens: [marker_token("tk1", "agent", 7)],
+            tombstones: [Tombstone{ kind: MERGE_KIND_HOST, id: "old", deleted_at: 70 }],
+    }
+    try store.vault_begin()
+    try store.vault_replace_records(r)
+    try store.vault_commit()
+    back := try store.vault_records()
+    assert_eq(back.groups.len(), 2)
+    assert_eq(back.hosts.len(), 2)
+    assert_eq(try stamp_of(store, "hosts", "h2"), 500)
+    assert_eq(try stamp_of(store, "groups", "g2"), 20)
+    assert_eq(back.known_hosts[0].added_at, "2026-01-02T03:04:05Z")
+    assert_eq(back.known_hosts[0].updated_at, 50)
+    assert_eq(back.tunnels[0].updated_at, 60)
+    assert_eq(back.tokens[0].revoked_at, 7)
+    assert_eq(back.tombstones.len(), 1)
+    assert_eq(back.tombstones[0].deleted_at, 70)
+    for h in back.hosts {
+        if h.id == "h2" {
+            assert_eq(h.tags, marker_host().tags)
+            assert(h.password == marker_host().password)
+        }
+    }
+    // A set whose references do not hold is refused at the commit, and nothing changes.
+    mut broken := r
+    broken.hosts[0].credential_id = "nope"
+    try store.vault_begin()
+    mut refused := false
+    store.vault_replace_records(broken) or {
+        refused = true
+    }
+    store.vault_commit() or {
+        refused = true
+    }
+    if !refused {
+        store.vault_rollback()
+    }
+    assert(refused)
+    assert_eq((try store.vault_records()).hosts.len(), 2)
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "a conflict copy opens through a private copy and is never changed" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    try store.host_put(marker_host())
+    store.vault_detach()
+    before := sha256.hash_hex(try fs.read_bytes(path))
+    work := fs.dirname(path) + "/work"
+    try fs.mkdir_all(work)
+    mut copy := new_copy_vault_store(work)
+    try copy.vault_attach_copy(path, test_key(7), test_salt_bytes())
+    assert_eq((try copy.hosts_all()).len(), 1)
+    assert_eq((try fs.list_dir(work)).len(), 1)
+    copy.vault_detach()
+    assert_eq((try fs.list_dir(work)).len(), 0)
+    assert_eq(sha256.hash_hex(try fs.read_bytes(path)), before)
+    // A wrong key: refused, and no copy is left behind.
+    mut refused := false
+    copy.vault_attach_copy(path, test_key(8), test_salt_bytes()) or err {
+        refused = true
+        assert(error_code_of("{err.message()}") == ERR_WRONG_PASSWORD)
+    }
+    assert(refused)
+    assert_eq((try fs.list_dir(work)).len(), 0)
+    try fs.remove(fs.dirname(path))
+}
+
+test "a vault at schema 10 gains stamps of 0 and an empty tombstone table" {
+    path := temp_vault_path("v.flint")
+    mut db := try open_cipher_db(path, test_key(7), test_salt_bytes(), true)
+    try db.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+    for i in 0..10 {
+        try db.apply_migration(vault_migrations()[i])
+    }
+    try db.exec("INSERT INTO hosts (id, alias, label, hostname, port, username, color, notes) VALUES ('h1', 'web', '', 'web.example.org', 22, 'u', '', '');")
+    db.close_db()
+    mut store := new_sql_vault_store()
+    store.act_dir = fs.dirname(path) + "/activity"
+    try store.vault_attach(path, test_key(7), test_salt_bytes())
+    r := try store.vault_records()
+    assert_eq(r.hosts.len(), 1)
+    assert_eq(r.hosts[0].updated_at, 0)
+    assert_eq(r.tombstones.len(), 0)
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}

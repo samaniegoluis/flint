@@ -45,6 +45,8 @@ fn lock_window(st: GuiState, mut app: webui.App) {
         return
     }
     st.holder.set_window_locked(true)
+    // A desktop across monitors (milestone 38) leaves nothing on the other screens.
+    monitor_windows_close()
     write_stderr("flint-gui: window closed to the tray, locked\n")
     app.emit("window:locked", WindowLocked{ vault: st.vault_session().name })
 }
@@ -94,4 +96,18 @@ fn rpc_window_unlock(req: WindowUnlockReq, c: Sodium, store: LockedVaultStore, p
 fn rpc_app_quit(mut app: webui.App) -> str! {
     quit_app(mut app)
     return ok_json()
+}
+
+// Full screen (milestone 37): asks the window to enter or leave it and returns the state
+// last heard from the OS. The change itself arrives as `window:fullscreen` once the
+// window has moved (macOS animates into its own Space).
+fn rpc_window_fullscreen(params: str, e2e: bool) -> str! {
+    req := try parse_req[FullscreenReq](params)
+    // The headless run's window is hidden and cannot go full screen (CF-111).
+    if e2e && !e2e_native_fullscreen() {
+        window_fullscreen_inject(req.on)
+    } else {
+        window_fullscreen_set(req.on)
+    }
+    return json.stringify(FullscreenState{ on: window_fullscreen_on() })
 }

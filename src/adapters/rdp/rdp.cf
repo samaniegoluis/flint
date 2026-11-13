@@ -11,6 +11,7 @@ package rdp
 // CFIRE-UPSTREAM: CF-119
 import cpp "flint_rdp.hpp" @pkg("flint-rdp")
 import "../../domain"
+import "core:str"
 
 // The engine. Stateless: the tabs live in the shim's registry.
 type FreeRdpDesktop struct {
@@ -56,6 +57,9 @@ fn rdp_error(code: i64, detail: str) -> str {
     if code == 12 {
         return coded(ERR_INVALID, "unknown key '{detail}'")
     }
+    if code == 13 {
+        return coded(ERR_REFUSED, "the server offers only Standard RDP Security, where no certificate protects the password; Flint refuses it. Set the server to require SSL (TLS) or Network Level Authentication")
+    }
     return coded(ERR_INTERNAL, "RDP failed ({detail})")
 }
 
@@ -72,19 +76,22 @@ fn (self: FreeRdpDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> Rd
     host := t.hostname
     user := t.user
     dom := t.domain
-    pw := t.password
     trusted := t.trusted_fingerprint
+    graphics := t.graphics
     rport := i32(t.port)
     rw := i32(t.width)
     rh := i32(t.height)
+    layout := layout_text(t.monitors)
+    // The password goes to the shim straight from the target, never through a local
+    // copy here (milestone 36): the caller wipes the target's once this returns.
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        rc = flint_rdp::open(tab, host, rport, user, dom, pw, rw, rh, trusted, timeout_ms, w, h, port, token, detail);
+        rc = flint_rdp::open(tab, host, rport, user, dom, t.password, rw, rh, trusted, graphics, layout, timeout_ms, w, h, port, token, detail);
     }
     if rc != 0 {
         return error(rdp_error(i64(rc), detail))
     }
-    return RdpDesktop{ width: i64(w), height: i64(h), frame_port: i64(port), frame_token: token }
+    return RdpDesktop{ width: i64(w), height: i64(h), frame_port: i64(port), frame_token: token, graphics: graphics, rtt_ms: t.rtt_ms }
 }
 
 fn (self: FreeRdpDesktop) rd_presented_cert(tab: str) -> RdpCert {
@@ -113,15 +120,66 @@ fn (self: FreeRdpDesktop) rd_resize(tab: str, width: i64, height: i64) -> void! 
     }
 }
 
+// A layout as the shim reads it (milestone 38): "x,y,w,h,p;..." with the primary first.
+fn layout_text(ms: []RdpMonitor) -> str {
+    mut s := ""
+    for i, m in ms {
+        if i > 0 {
+            s = s + ";"
+        }
+        mut p := "0"
+        if m.primary {
+            p = "1"
+        }
+        s = s + "{m.x},{m.y},{m.width},{m.height},{p}"
+    }
+    return s
+}
+
+// The shim's layout text back as monitors; the local ids are not the shim's, so they
+// are left empty (the core keeps them where it needs them).
+fn parse_layout_text(s: str) -> []RdpMonitor {
+    mut res: []RdpMonitor = []
+    if s.len() == 0 {
+        return res
+    }
+    for part in str.split(s, ";") {
+        f := str.split(part, ",")
+        if f.len() != 5 {
+            return []
+        }
+        x := str.parse_i64(f[0]) or { return [] }
+        y := str.parse_i64(f[1]) or { return [] }
+        w := str.parse_i64(f[2]) or { return [] }
+        h := str.parse_i64(f[3]) or { return [] }
+        res.push(RdpMonitor{ local_id: "", x: x, y: y, width: w, height: h, primary: f[4] == "1" })
+    }
+    return res
+}
+
+fn (self: FreeRdpDesktop) rd_set_layout(tab: str, monitors: []RdpMonitor) -> void! {
+    try check_rdp_layout(monitors)
+    mut rc: i32 = 0
+    layout := layout_text(monitors)
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::set_layout(tab, layout);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "layout"))
+    }
+}
+
 fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {
     mut kind: i32 = 0
     mut code: i32 = 0
     mut detail := ""
     mut w: i32 = 0
     mut h: i32 = 0
+    mut layout := ""
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        kind = flint_rdp::wait(tab, wait_ms, code, detail, w, h);
+        kind = flint_rdp::wait(tab, wait_ms, code, detail, w, h, layout);
     }
     if kind == 1 {
         mut msg := ""
@@ -131,13 +189,16 @@ fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {
         return RdpEvent{ kind: RDP_EVENT_ENDED, message: msg, width: 0, height: 0 }
     }
     if kind == 2 {
-        return RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: i64(w), height: i64(h) }
+        return RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
     }
     if kind == 3 {
         return RdpEvent{ kind: RDP_EVENT_CLIP_TEXT, message: detail, width: 0, height: 0 }
     }
     if kind == 4 {
         return RdpEvent{ kind: RDP_EVENT_CLIP_REQUEST, message: "", width: 0, height: 0 }
+    }
+    if kind == 5 {
+        return RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: detail, width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
     }
     return RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 }
 }
@@ -207,6 +268,52 @@ fn (self: FreeRdpDesktop) rd_pointer(tab: str, p: RdpPointer) -> void! {
     }
 }
 
+fn (self: FreeRdpDesktop) rd_stats(tab: str) -> RdpStats! {
+    mut rc: i32 = 0
+    mut updates: i64 = 0
+    mut bytes_in: i64 = 0
+    mut commands: i64 = 0
+    mut decode_us: i64 = 0
+    mut frames_read: i64 = 0
+    mut pipeline := ""
+    mut codec := ""
+    mut h264 := false
+    mut rereads: i64 = 0
+    mut stale_px: i64 = 0
+    mut link_kbps: i64 = 0
+    mut link_rtt_ms: i64 = 0
+    mut mode := ""
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::stats(tab, updates, bytes_in, commands, decode_us, frames_read, pipeline, codec, h264, rereads, stale_px, link_kbps, link_rtt_ms, mode);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "stats"))
+    }
+    return RdpStats{ updates: updates, bytes_in: bytes_in, commands: commands, decode_us: decode_us, frames_read: frames_read, pipeline: pipeline, codec: codec, h264: h264, rereads: rereads, stale_px: stale_px, link_kbps: link_kbps, link_rtt_ms: link_rtt_ms, mode: mode }
+}
+
+fn (self: FreeRdpDesktop) rd_probe_rtt(host: str, port: i64, timeout_ms: i64) -> i64 {
+    mut ms: i64 = -1
+    p := i32(port)
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        ms = flint_rdp::dial_rtt_ms(host, p, timeout_ms, 3);
+    }
+    return ms
+}
+
+fn (self: FreeRdpDesktop) rd_set_graphics(tab: str, graphics: str) -> void! {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::set_graphics(tab, graphics);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "graphics"))
+    }
+}
+
 fn (self: FreeRdpDesktop) rd_close(tab: str) {
     // CFIRE-UPSTREAM: CF-119
     cpp {
@@ -229,10 +336,100 @@ fn next_frame(tab: str, wait_ms: i64) -> str! {
     return frame
 }
 
+// View `view`'s pending frame (milestone 38), as next_frame.
+fn next_frame_view(tab: str, view: i64, wait_ms: i64) -> str! {
+    mut rc: i32 = 0
+    mut frame := ""
+    v := i32(view)
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::next_frame_view(tab, v, wait_ms, frame);
+    }
+    if rc != 0 {
+        return error(rdp_error(i64(rc), "view"))
+    }
+    return frame
+}
+
+// The frame channel's view for a request's head (-1: unreadable).
+fn frame_view(head: str) -> i64 {
+    mut v: i32 = 0
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        v = flint_rdp::frame_view_of(head);
+    }
+    return i64(v)
+}
+
 // Ends every tab: the app is quitting.
 fn close_all_desktops() {
     // CFIRE-UPSTREAM: CF-119
     cpp {
         flint_rdp::close_all();
     }
+}
+
+// FreeRDP's version, for Settings → About (milestone 32).
+fn freerdp_version() -> str {
+    mut v := ""
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        v = freerdp_get_version_string();
+    }
+    return v
+}
+
+// ---- For the tests (milestone 36) ---------------------------------------------------
+
+// Whether tab `tab`'s last open also wiped FreeRDP's backup of the password.
+fn creds_wiped(tab: str) -> bool {
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        ok = flint_rdp::creds_wiped(tab);
+    }
+    return ok
+}
+
+// A server on loopback that answers by choosing standard RDP security (a downgrade);
+// returns its port, 0 when it could not start.
+fn downgrade_server_start() -> i64 {
+    mut port: i32 = 0
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        port = flint_rdp::downgrade_server_start();
+    }
+    return i64(port)
+}
+
+// What the downgrade server's client sent after the answer (-1: it never got there).
+fn downgrade_server_result() -> i64 {
+    mut n: i64 = 0
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        n = flint_rdp::downgrade_server_result();
+    }
+    return n
+}
+
+// The frame channel's verdict on a request's head: 0 authorised, 1 wrong or missing
+// token, 2 wrong Host.
+fn check_frame_request(head: str, token: str, port: i64) -> i64 {
+    mut rc: i32 = 0
+    p := i32(port)
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        rc = flint_rdp::check_frame_request(head, token, p);
+    }
+    return i64(rc)
+}
+
+// The CORS header the frame channel answers a request's head with ("" for none).
+fn frame_cors(head: str) -> str {
+    mut h := ""
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        h = flint_rdp::cors_for(head);
+    }
+    return h
 }

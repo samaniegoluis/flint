@@ -24,7 +24,7 @@ function check(ok, what) {
 	console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`);
 }
 
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.json': 'application/json' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.json': 'application/json', '.webp': 'image/webp', '.webm': 'video/webm', '.mp4': 'video/mp4' };
 const server = createServer((req, res) => {
 	let path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname)).replace(/^(\.\.[/\\])+/, '');
 	let file = join(dist, path);
@@ -149,7 +149,7 @@ try {
 		check(await page.evaluate(() => document.activeElement?.id !== 'cli-demo-input'), 'phone: no keyboard pops up on open');
 		await page.locator('.cli-demo__chip', { hasText: 'flint help' }).tap();
 		await page.locator('.cli-demo__chip', { hasText: 'flint host list' }).tap();
-		check((await logText(page)).includes('bastion  jump@bastion.example'), 'phone: tapping a chip runs it');
+		check((await logText(page)).includes('bastion  ssh   jump@bastion.example'), 'phone: tapping a chip runs it');
 		check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'phone: still no horizontal page scroll');
 		if (shots) await page.screenshot({ path: join(shots, 'demo-phone.png') });
 		await ctx.close();
@@ -167,6 +167,93 @@ try {
 		await page.close();
 	}
 
+	// ---- the theme button (ThemeToggle.astro, D-087) ----
+	// The system's theme until a click; the icon shows the theme on screen.
+	{
+		const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'dark' });
+		const page = await ctx.newPage();
+		await page.goto(base);
+		const btn = page.locator('.flint-theme-toggle');
+		const theme = () => page.locator('html').getAttribute('data-theme');
+		check((await theme()) === 'dark' && (await btn.locator('.dark').isVisible()), 'theme: a dark system shows the dark page and the moon');
+		check((await btn.getAttribute('title')) === 'Switch to light theme', 'theme: the button says what it does');
+		await page.emulateMedia({ colorScheme: 'light' });
+		await page.waitForTimeout(100);
+		check((await theme()) === 'light' && (await btn.locator('.light').isVisible()), 'theme: with nothing chosen it follows the system when that changes');
+		await btn.click();
+		check((await theme()) === 'dark' && (await page.evaluate(() => localStorage.getItem('starlight-theme'))) === 'dark', 'theme: a click switches and stores the choice');
+		await page.emulateMedia({ colorScheme: 'light' });
+		await page.reload();
+		check((await theme()) === 'dark' && (await btn.locator('.dark').isVisible()), 'theme: the choice outlives a reload and the system');
+		await btn.click();
+		check((await theme()) === 'light' && (await btn.getAttribute('aria-label')) === 'Switch to dark theme', 'theme: a second click goes back to light');
+		await ctx.close();
+	}
+
+	// ---- the app's video (AppVideo.astro) ----
+	// Fetched only once half in view, then played; the theme and the width pick the file.
+	const videoRun = async (label, options, theme) => {
+		const ctx = await browser.newContext(options);
+		const page = await ctx.newPage();
+		const errors = [];
+		page.on('pageerror', (e) => errors.push(String(e)));
+		const fetched = [];
+		page.on('request', (r) => { if (/\.(webm|mp4)$/.test(new URL(r.url()).pathname)) fetched.push(new URL(r.url()).pathname); });
+		if (theme) {
+			await page.goto(base);
+			await page.evaluate((t) => localStorage.setItem('starlight-theme', t), theme);
+		}
+		await page.goto(base);
+		await page.waitForTimeout(800);
+		check(fetched.length === 0, `${label}: no video is fetched before the figure is in view`);
+		const stage = page.locator(`[data-flint-video="${theme ?? 'dark'}"]`);
+		await stage.scrollIntoViewIfNeeded();
+		return { ctx, page, stage, fetched, errors };
+	};
+	{
+		const { ctx, page, stage, fetched, errors } = await videoRun('video desktop', { viewport: { width: 1280, height: 800 }, colorScheme: 'dark' });
+		await page.locator('[data-flint-video="dark"].playing').waitFor({ timeout: 10000 });
+		const src = await stage.locator('video').evaluate((v) => v.currentSrc);
+		check(/app-dark-desktop\.[^/]+\.webm$/.test(src), `video desktop: plays the dark desktop WebM (${src.split('/').pop()})`);
+		check(fetched.every((f) => f.includes('app-dark-desktop')), 'video desktop: fetches only that file');
+		await page.locator('.flint-video-keys kbd', { hasText: '⌘K' }).waitFor({ timeout: 6000 });
+		check(true, 'video desktop: the ⌘K keycap shows when it is pressed');
+		await stage.locator('.flint-video-toggle').click();
+		check(await stage.locator('video').evaluate((v) => v.paused), 'video desktop: the button pauses it');
+		// Resumed while scrolled away (a click() would scroll the button back into view).
+		await page.evaluate(() => scrollTo(0, 0));
+		await stage.locator('.flint-video-toggle').evaluate((b) => b.click());
+		await page.waitForTimeout(400);
+		check(await stage.locator('video').evaluate((v) => v.paused), 'video desktop: out of view it stays paused');
+		check(errors.length === 0, `video desktop: no page errors ${errors.join('; ')}`);
+		if (shots) await page.screenshot({ path: join(shots, 'video-desktop.png') });
+		await ctx.close();
+	}
+	{
+		const { ctx, page, stage, fetched } = await videoRun('video light', { viewport: { width: 1280, height: 800 }, colorScheme: 'light' }, 'light');
+		await page.locator('[data-flint-video="light"].playing').waitFor({ timeout: 10000 });
+		check(fetched.length > 0 && fetched.every((f) => f.includes('app-light-desktop')), 'video light: plays the light desktop file only');
+		check(await page.locator('[data-flint-video="dark"] video').evaluate((v) => v.paused && v.readyState === 0), 'video light: the dark one is never loaded');
+		await ctx.close();
+		void stage;
+	}
+	{
+		const { ctx, page, stage, fetched } = await videoRun('video phone', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: 'dark' });
+		await page.locator('[data-flint-video="dark"].playing').waitFor({ timeout: 10000 });
+		check(fetched.length > 0 && fetched.every((f) => f.includes('app-dark-mobile')), 'video phone: plays the narrow cut');
+		const box = await stage.boundingBox();
+		check(box && Math.abs(box.width / box.height - 680 / 900) < 0.02, 'video phone: the figure takes the narrow cut\'s shape');
+		check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'video phone: no horizontal page scroll');
+		if (shots) await page.screenshot({ path: join(shots, 'video-phone.png') });
+		await ctx.close();
+	}
+	{
+		const { ctx, page, stage, fetched } = await videoRun('video reduced motion', { viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce', colorScheme: 'dark' });
+		await page.waitForTimeout(1500);
+		check(fetched.length === 0 && (await stage.locator('img').isVisible()), 'video reduced motion: the poster stays, nothing plays');
+		await ctx.close();
+	}
+
 	// ---- without JavaScript: the static hero only ----
 	{
 		const ctx = await browser.newContext({ javaScriptEnabled: false });
@@ -174,6 +261,7 @@ try {
 		await page.goto(base);
 		check(!(await page.getByRole('link', { name: 'Try the CLI' }).isVisible()), 'no JS: the button is hidden');
 		check(await page.locator('.hero .flint-term').isVisible(), 'no JS: the static hero terminal stays');
+		check(await page.locator('[data-flint-video="dark"] img').isVisible(), 'no JS: the app video\'s poster shows');
 		await ctx.close();
 	}
 } finally {

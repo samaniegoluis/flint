@@ -9,6 +9,8 @@ describe('RDP input', () => {
   it('keeps only the palette and tab switches; every other chord goes to the remote', () => {
     expect(rdpKeptAction(key('KeyK', { meta: true }), 'mac')).toBe('palette');
     expect(rdpKeptAction(key('Digit2', { meta: true }), 'mac')).toBe('tab2');
+    expect(rdpKeptAction(key('KeyF', { meta: true, ctrl: true }), 'mac')).toBe('fullscreen');
+    expect(rdpKeptAction(key('Enter', { ctrl: true, alt: true }), 'linux')).toBe('fullscreen');
     expect(rdpKeptAction(key('KeyW', { meta: true }), 'mac')).toBeNull();
     expect(rdpKeptAction(key('KeyC', { meta: true }), 'mac')).toBeNull();
     expect(rdpKeptAction(key('KeyT', { meta: true, shift: true }), 'mac')).toBeNull();

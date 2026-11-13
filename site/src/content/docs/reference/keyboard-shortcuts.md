@@ -18,6 +18,7 @@ speaks the Kitty keyboard protocol.
 | Close the focused pane (the last one closes the tab) | ⌘W | Ctrl+Shift+W |
 | Go to tab 1–9 | ⌘1 … ⌘9 | Ctrl+Shift+1 … 9 |
 | Reconnect | ⌘R | Ctrl+Shift+R |
+| Full screen (an RDP tab) | ⌃⌘F | Ctrl+Alt+Enter |
 | Duplicate session (a new tab on the same host) | ⌥⌘D | Ctrl+Alt+D |
 | Split right · split down | ⌘D · ⇧⌘D | Ctrl+Shift+D · Ctrl+Alt+Shift+D |
 | Focus the next · previous pane | ⌘] · ⌘[ | Ctrl+Shift+] · Ctrl+Shift+[ |
@@ -52,8 +53,8 @@ Keys go to the remote desktop, by their place on the keyboard. On macOS <kbd>⌘
 sent as <kbd>Ctrl</kbd> by default (<kbd>⌘C</kbd> is <kbd>Ctrl+C</kbd> on Windows); the
 modifier keys can be changed in **Settings → Remote desktop** ([Modifier keys on a
 Mac](/guides/remote-desktop/#modifier-keys-on-a-mac)). Flint keeps only the command
-palette (<kbd>⌘K</kbd> · <kbd>Ctrl+Shift+K</kbd>) and **Go to tab 1–9**; the rest is in
-the palette. On a tab whose connection dropped, **Reconnect** (<kbd>⌘R</kbd> ·
+palette (<kbd>⌘K</kbd> · <kbd>Ctrl+Shift+K</kbd>), **Go to tab 1–9** and **Full screen**
+(<kbd>⌃⌘F</kbd> · <kbd>Ctrl+Alt+Enter</kbd>, both ways); the rest is in the palette. On a tab whose connection dropped, **Reconnect** (<kbd>⌘R</kbd> ·
 <kbd>Ctrl+Shift+R</kbd>) and **Close tab** (<kbd>⌘W</kbd> · <kbd>Ctrl+Shift+W</kbd>) work
 as on an SSH tab. See [Remote desktop](/guides/remote-desktop/#keyboard-and-mouse).
 

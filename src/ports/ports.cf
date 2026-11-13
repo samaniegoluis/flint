@@ -21,6 +21,12 @@ type Crypto interface {
     digest(data: []byte, out_len: usize) -> []byte!
     // Compares two byte strings in constant time (false when the lengths differ).
     equal(a: []byte, b: []byte) -> bool
+    // Overwrite with zeros, in place, a buffer or a text that held key material or a
+    // secret, once it has been used (milestone 36, D-085). The caller's value IS
+    // changed although the parameter reads as a borrow: an interface method cannot
+    // declare `mut` (CF-124). Best effort: copies cfire made on the way stay.
+    wipe(buf: []byte)
+    wipe_text(text: str)
 }
 
 // The encrypted vault file (adapters/vault, SQLCipher). One vault is open at a time.
@@ -52,12 +58,40 @@ type VaultStore interface {
     known_hosts_all() -> []KnownHost!
     known_host_put(k: KnownHost) -> void!
     known_host_drop(addr: str) -> void!
+    // Milestone 39 (D-094): opens this machine's activity file for the open vault,
+    // named by its id and encrypted with `key` (VAULT_SUBKEY_ACTIVITY); a new file
+    // takes `new_salt`. Moves in, once, the log an older vault still holds.
+    // `vault_detach` closes it with the vault.
+    activity_attach(vault_id: str, key: []byte, new_salt: []byte) -> void!
+    // Milestone 40 (D-095): a new master password. `vault_rekey_prepare` writes a copy
+    // of the open vault under the new page key and salt, with `secrets` (every host,
+    // key and credential, re-sealed under the new secrets key) in place of the old
+    // ones; `activity_rekey_prepare` copies the activity file under its new key.
+    // Nothing changes until `vault_rekey_commit` puts the vault copy in place (the
+    // commit point) and opens it, then `activity_rekey_commit` does the same for the
+    // activity copy. A commit fails `conflict` when the vault changed since its
+    // prepare. `vault_rekey_abort` removes the copies a prepare left.
+    vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: VaultSecrets) -> void!
+    activity_rekey_prepare(key: []byte, new_salt: []byte) -> void!
+    vault_rekey_commit(path: str, page_key: []byte, salt: []byte) -> void!
+    activity_rekey_commit(key: []byte) -> void!
+    vault_rekey_abort(path: str)
+    // Milestone 41 (D-093, D-096): every write stamps its row and every delete leaves
+    // a tombstone. `vault_records` reads every synced row with its stamp, and the
+    // tombstones; `vault_replace_records` puts a merge's result in their place, each
+    // row keeping its stamp (inside `vault_begin` / `vault_commit`).
+    vault_records() -> VaultRecords!
+    vault_replace_records(r: VaultRecords) -> void!
+    // Opens a conflict copy of a vault to merge, read through a private copy so the
+    // file at `path` is never changed; `vault_detach` closes and removes it.
+    vault_attach_copy(path: str, page_key: []byte, salt: []byte) -> void!
 }
 
-// Tokens and the activity log, in the open vault (adapters/vault, migration 004,
-// milestone 12b). Served by the same store as `VaultStore`. Tokens are revoked, never
-// deleted. `activity_add` drops the oldest entries beyond `keep`; `activity_page`
-// returns the newest entries with an id below `before_id` (0: from the newest).
+// Tokens, in the open vault (adapters/vault, migration 004, milestone 12b), and the
+// activity log, in this machine's activity file (milestone 39, D-094). Served by the
+// same store as `VaultStore`. Tokens are revoked, never deleted. `activity_add` drops
+// the oldest entries beyond `keep`; `activity_page` returns the newest entries with an
+// id below `before_id` (0: from the newest). The retention is this machine's.
 type TokenStore interface {
     tokens_all() -> []Token!
     token_put(t: Token) -> void!
@@ -68,9 +102,11 @@ type TokenStore interface {
     activity_prune(keep: ActivityKeep) -> i64!
     // How many entries are older than `since_at` (Unix seconds).
     activity_count_before(since_at: i64) -> i64!
-    // The vault's retention in days (0: no limit; -1: never set).
+    // The retention in days (0: no limit; -1: never set).
     activity_retention() -> i64!
     set_activity_retention(days: i64) -> void!
+    // Copies the activity file, still encrypted, to `dest` (replaced if there).
+    activity_backup(dest: str) -> void!
 }
 
 // Tunnels saved in hosts, in the open vault (adapters/vault, migration 007, milestone
@@ -336,6 +372,13 @@ type RemoteDesktop interface {
     // Asks for a new desktop size. With Display Control the server resizes in place;
     // without it the size is kept and `rd_wait` reports a `resize`.
     rd_resize(tab: str, width: i64, height: i64) -> void!
+    // Milestone 38 (D-089): the desktop across several monitors, `monitors` a layout
+    // check_rdp_layout accepts (the primary first, at 0,0). With Display Control the
+    // server rearranges in place, the session kept; without it `rd_wait` reports a
+    // `resize` carrying the layout, which a reconnect gives. From here on the frame
+    // channel serves one view per monitor (layout_crops' order), and `rd_resize` goes
+    // back to one monitor.
+    rd_set_layout(tab: str, monitors: []RdpMonitor) -> void!
     // Waits up to `wait_ms` for the session to end or to need a reconnect.
     rd_wait(tab: str, wait_ms: i64) -> RdpEvent
     rd_key(tab: str, code: str, down: bool) -> void!
@@ -347,9 +390,31 @@ type RemoteDesktop interface {
     // `clip_text` events.
     rd_clip_announce(tab: str, has_text: bool) -> void!
     rd_clip_answer(tab: str, ok: bool, text: str) -> void!
+    // Milestone 34: the tab's counters since it opened (RdpStats); fails `network`
+    // when the tab is closed.
+    rd_stats(tab: str) -> RdpStats!
+    // Milestone 35: asks for the tab in another graphics mode (RDP_GRAPHICS). Nothing
+    // changes on the wire: `rd_wait` reports a `graphics` event and the core
+    // reconnects. Fails `network` when the tab is closed.
+    rd_set_graphics(tab: str, graphics: str) -> void!
+    // Milestone 35: the round trip of a TCP dial to `host:port`, in ms (the best of a
+    // few), or -1 when it does not answer within `timeout_ms`. Opens and closes plain
+    // TCP connections; sends nothing.
+    rd_probe_rtt(host: str, port: i64, timeout_ms: i64) -> i64
     // Ends the tab's connection (an `rd_open` in progress is cancelled) and its frame
     // channel. A tab with nothing open is left as it is.
     rd_close(tab: str)
+}
+
+// This computer's monitors (milestone 38, D-089): native per system in the desktop app
+// (CF-126); the CLI has none.
+type Screens interface {
+    // "" when a desktop can span monitors on this system, else why not, in the words
+    // the page shows ("Not supported on this system yet").
+    screens_unsupported() -> str
+    screens_list() -> []LocalMonitor
+    // The monitor Flint's main window is on ("" when unknown).
+    screens_main() -> str
 }
 
 // Where a remote desktop tells its driver that it is up (webui events in the app).
@@ -358,4 +423,21 @@ type DesktopSink interface {
     // Whether someone may act through the window now: a locked window answers no
     // clipboard request (milestone 31).
     desktop_window_open() -> bool
+    // Milestone 35: the tab's graphics mode is now `graphics` (RDP_GRAPHICS), run by the
+    // engine as `sw.graphics` (`sw.why` ""), or it stayed as it was and `sw.why` says why.
+    desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch)
+}
+
+// The remote vault server's versions of one vault (adapters/serverstore, milestone 42,
+// D-097): each upload stored whole and as it came, encrypted, next to its version and
+// the vault id; the newest SERVER_VERSIONS_KEPT kept. Version 0 means none stored yet.
+// Errors carry `not_found`, `io` or `conflict` (a store held by another writer).
+type BlobStore interface {
+    blob_head() -> BlobVersion!
+    blob_read(version: i64) -> str!
+    // Stores `data` as `version` and makes it the head; the caller has checked that
+    // it follows the head. Prunes what is past the kept history.
+    blob_write(version: i64, vault_id: str, data: str, now_ms: i64) -> void!
+    // Newest first.
+    blob_versions() -> []BlobVersion!
 }

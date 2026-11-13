@@ -28,6 +28,10 @@ fi
 # failure names its run and one run can be repeated alone. vim fails under Xvfb on Linux
 # (ROADMAP, "gui-e2e's vim step"), so there it runs only when FLINT_E2E_VIM=1.
 #   FLINT_E2E_ONLY=tunnels scripts/gui-e2e.sh    runs only the named runs (comma-separated)
+#   FLINT_E2E_WEBGL_COVER=1 FLINT_E2E_ONLY=webgl  a person hides the window (⌘H) for the
+#                                                 webgl run's loss, as the window asks
+#   FLINT_E2E_NATIVE_FS=1 FLINT_E2E_ONLY=fullscreen  macOS: the fullscreen run asks for the
+#                                                system's real full screen (a Space)
 #   FLINT_E2E_MAIN_MS=60000 scripts/gui-e2e.sh   caps each run but vim (default: 240 s)
 #   FLINT_E2E_VISIBLE=0 scripts/gui-e2e.sh       macOS: cfire's offscreen WebView instead of
 #                                                the window. WebKit suspends that page about
@@ -36,8 +40,13 @@ fi
 #                                                (milestone 27, D-068)
 #   scripts/repeat.sh vim 10                     one run N times, with its failure rate
 # Exit status: 0 all passed, 1 a run failed.
-runs=(terminal vault tunnels paste rdp vim)
-known=("${runs[@]}")
+runs=(terminal vault tunnels paste rdp webgl fullscreen vim)
+# multimon (milestone 38) needs two monitors: on Linux an X display with two (the check's
+# container makes one, FLINT_E2E_MULTIMON_DISPLAY), on macOS a person's own screens with
+# FLINT_E2E_MULTIMON=1 (its windows take a Space on each).
+# rdpbench (milestone 34) is scripts/rdp-bench.sh's: a real Windows host, named only.
+known=("${runs[@]}" multimon rdpbench)
+if [[ -n "${FLINT_E2E_MULTIMON_DISPLAY:-}" || "${FLINT_E2E_MULTIMON:-}" == 1 ]]; then runs+=(multimon); fi
 if [[ "$(uname -s)" == Darwin ]]; then
   app=(build/gui/Flint.app/Contents/MacOS/Flint)
   run_vim=1
@@ -80,6 +89,10 @@ import socket, sys, threading
 listen, first, later = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
 # How many connections go to `first` before the rest go to `later`.
 firsts = int(sys.argv[4]) if len(sys.argv) > 4 else 1
+# "peek": count only connections whose client speaks first (RDP), so a probe that opens
+# and closes a connection without sending anything (milestone 35's round-trip dial)
+# neither reaches a server nor moves the count.
+peek = len(sys.argv) > 5 and sys.argv[5] == "peek"
 srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(("127.0.0.1", listen)); srv.listen(8)
 def pipe(a, b):
@@ -93,12 +106,27 @@ def pipe(a, b):
         try: s.shutdown(socket.SHUT_RDWR)
         except OSError: pass
 n = 0
-while True:
-    c, _ = srv.accept()
-    u = socket.create_connection(("127.0.0.1", first if n < firsts else later))
-    n += 1
+lock = threading.Lock()
+def serve(c):
+    global n
+    if peek:
+        try:
+            if not c.recv(1, socket.MSG_PEEK):
+                c.close(); return
+        except OSError:
+            c.close(); return
+    with lock:
+        target = first if n < firsts else later
+        n += 1
+    u = socket.create_connection(("127.0.0.1", target))
     threading.Thread(target=pipe, args=(c, u), daemon=True).start()
     threading.Thread(target=pipe, args=(u, c), daemon=True).start()
+while True:
+    c, _ = srv.accept()
+    if peek:
+        threading.Thread(target=serve, args=(c,), daemon=True).start()
+    else:
+        serve(c)
 PY
 # A free port for the tunnels step (milestone 23).
 tport="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
@@ -114,13 +142,13 @@ if [[ "$run_rdp" == 1 ]]; then
   rport_fwd="$(free_port)"
   openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/rdp2.key" -out "$tmp/rdp2.crt" -days 2 -subj "/CN=flint-test-2" 2>/dev/null
   (cd "$tmp" && WLOG_LEVEL=OFF exec sfreerdp-server --cert="$tmp/rdp2.crt" --key="$tmp/rdp2.key" --port="$rport2" >"$tmp/rdp2.log" 2>&1) & rdp2_pid=$!
-  python3 -I "$tmp/fwd.py" "$rport_fwd" "$rport" "$rport2" 2 & rfwd_pid=$!
+  python3 -I "$tmp/fwd.py" "$rport_fwd" "$rport" "$rport2" 2 peek & rfwd_pid=$!
 fi
 sleep 0.5
 
 # Writes the page script for one run: $1 vault file, $2 the run's name, $3 output.
 make_script() {
-  E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TPORT="$tport" E2E_RPORT="$rport" E2E_RPORT_FWD="$rport_fwd" E2E_RUN="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
+  E2E_VERSION="$("$root/scripts/version.sh")" E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TPORT="$tport" E2E_RPORT="$rport" E2E_RPORT_FWD="$rport_fwd" E2E_RUN="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
 import os, sys
 src = open(sys.argv[1]).read()
 key = open(os.environ["FLINT_TEST_SSH_KEY"]).read().replace("\\", "\\\\").replace("`", "\\`")
@@ -128,8 +156,14 @@ values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_P
           "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"], "TPORT": os.environ["E2E_TPORT"],
           "RPORT": os.environ["E2E_RPORT"], "RPORT_FWD": os.environ["E2E_RPORT_FWD"],
           "CPORT": os.environ.get("FLINT_RDP_CLIP_PORT", "0"), "CCTL": os.environ.get("FLINT_RDP_CLIP_CONTROL", "0"),
-          "USER": os.environ["USER"], "KEY": key,
-          "RUN": os.environ["E2E_RUN"]}
+          "VERSION": os.environ["E2E_VERSION"], "USER": os.environ["USER"], "KEY": key,
+          "RUN": os.environ["E2E_RUN"], "COVER": os.environ.get("FLINT_E2E_WEBGL_COVER", "0"), "NATIVEFS": os.environ.get("FLINT_E2E_NATIVE_FS", "0")}
+# The benchmark's real host, only into its own run's script (milestone 34).
+bench = os.environ["E2E_RUN"] == "rdpbench"
+for k, env in (("BHOST", "FLINT_RDP_TEST_HOST"), ("BUSER", "FLINT_RDP_TEST_USER"), ("BPW", "FLINT_RDP_TEST_PASSWORD")):
+    values[k] = os.environ.get(env, "").replace("\\", "\\\\").replace("'", "\\'") if bench else ""
+values["BMODES"] = os.environ.get("FLINT_BENCH_MODES", "compatible/2d,auto/auto") if bench else ""
+values["BMONS"] = os.environ.get("FLINT_BENCH_MONITORS", "") if bench else ""
 for k, v in values.items():
     src = src.replace("@@" + k + "@@", v)
 open(sys.argv[2], "w").write(src)
@@ -164,10 +198,30 @@ for r in "${runs[@]}"; do
     echo "gui-e2e: skip the rdp run (no FreeRDP sample server here)"
     continue
   fi
+  if [[ "$r" == multimon && -z "${FLINT_RDP_CLIP_PORT:-}" ]]; then
+    echo "gui-e2e: skip the multimon run (no Flint RDP test server here)"
+    continue
+  fi
+  if [[ "$r" == fullscreen && -z "${FLINT_RDP_CLIP_PORT:-}" ]]; then
+    echo "gui-e2e: skip the fullscreen run (no Flint RDP test server here)"
+    continue
+  fi
   make_script "$tmp/$r.flint" "$r" "$tmp/$r.js"
   # vim passes in under 30 s; a freeze there then costs a minute, not four.
   cap="${FLINT_E2E_MAIN_MS:-}"
   [[ "$r" != vim ]] || cap=60000
+  if [[ "$r" == multimon && "$(uname -s)" != Darwin ]]; then
+    if [[ -z "${FLINT_E2E_MULTIMON_DISPLAY:-}" ]]; then
+      echo "gui-e2e: skip the multimon run (no X display with two monitors; the Linux check makes one)"
+      continue
+    fi
+    echo "gui-e2e: multimon on $FLINT_E2E_MULTIMON_DISPLAY: $(DISPLAY="$FLINT_E2E_MULTIMON_DISPLAY" xrandr --listmonitors 2>&1 | tr '\n' ' ')"
+    saved=("${app[@]}")
+    app=(timeout 300 env DISPLAY="$FLINT_E2E_MULTIMON_DISPLAY" build/gui/Flint)
+    run_app "$r" "$tmp/$r.js" "$tmp/config-$r" "$tmp/$r.log" "$cap" || failed+=("$r")
+    app=("${saved[@]}")
+    continue
+  fi
   run_app "$r" "$tmp/$r.js" "$tmp/config-$r" "$tmp/$r.log" "$cap" || failed+=("$r")
 done
 summary() {

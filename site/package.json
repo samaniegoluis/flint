@@ -8,9 +8,11 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "test": "node --test 'src/demo/test/*.test.ts'",
+    "test": "node --test 'src/demo/test/*.test.ts' 'src/releases/*.test.ts'",
     "test:e2e": "node scripts/demo-e2e.mjs",
-    "shots:gui": "node scripts/gui-shots.mjs"
+    "test:releases": "node scripts/releases-e2e.mjs",
+    "shots:gui": "node scripts/gui-shots.mjs",
+    "shots:video": "node scripts/app-video.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "0.42.9",

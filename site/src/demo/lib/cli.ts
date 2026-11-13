@@ -46,6 +46,8 @@ Vaults
   vault unlock                          Ask Flint to unlock the vault, and wait
   vault lock                            Lock the vault in Flint; remove any cached key
   vault rename <new-name>               Rename the vault (its file is not moved)
+  vault passwd [--new-master-stdin]     Change the master password (asks for both)
+  vault merge <copy.flint>              Merge a conflict copy of the vault into it
   vault forget <name|path>              Drop a vault from the recent list
 
 Groups
@@ -139,7 +141,7 @@ them from stdin with the --*-stdin flags.`;
 
 /** Every `flint <noun> <verb>` the demo runs, for Tab completion and the coverage test. */
 export const COMMANDS: Record<string, string[]> = {
-	vault: ['create', 'open', 'list', 'use', 'status', 'unlock', 'lock', 'rename', 'forget'],
+	vault: ['create', 'open', 'list', 'use', 'status', 'unlock', 'lock', 'rename', 'passwd', 'merge', 'forget'],
 	group: ['add', 'list', 'rename', 'rm'],
 	host: ['add', 'edit', 'list', 'show', 'test', 'rm'],
 	key: ['add', 'list', 'show', 'rename', 'rm'],
@@ -159,7 +161,7 @@ function commandText(h: Host): string {
 	return h.command + (h.keepShell ? ' (then a login shell)' : ' (ends the session)');
 }
 
-const STDIN_FLAGS = ['--master-stdin', '--password-stdin', '--passphrase-stdin', '--key-stdin'];
+const STDIN_FLAGS = ['--master-stdin', '--new-master-stdin', '--password-stdin', '--passphrase-stdin', '--key-stdin'];
 const REFERENCE = '/reference/cli/';
 
 /** Runs `flint <args>`. */
@@ -179,9 +181,9 @@ function* dispatch(args: string[], world: World, io: Io, asJson: boolean): Run {
 	const p = parseFlintArgs(args);
 	if (p.has('--version') || p.has('-V')) {
 		if (asJson) {
-			io.out(json({ flint: '0.0.0-dev', libssh: '0.12.2/openssl/zlib', libsodium: '1.0.22', sqlite: '3.54.1 (SQLCipher 4.20.0 community)' }));
+			io.out(json({ flint: '0.1.0', libssh: '0.12.2/openssl/zlib', libsodium: '1.0.22', sqlite: '3.54.1 (SQLCipher 4.20.0 community)' }));
 		} else {
-			io.out('flint 0.0.0-dev');
+			io.out('flint 0.1.0');
 			io.out('  libssh     0.12.2/openssl/zlib');
 			io.out('  libsodium  1.0.22');
 			io.out('  sqlite     3.54.1 (SQLCipher 4.20.0 community)');
@@ -390,6 +392,78 @@ class Cmd {
 				if (this.world.current === old) this.world.current = name;
 				v.name = name;
 				this.emit(info(v), () => this.say(`Renamed vault '${old}' to '${name}'.`));
+				return ok;
+			}
+			case 'passwd': {
+				// cmd_vault_passwd (milestone 40): refused while Flint holds the vault unlocked.
+				p.allowFlags('vault passwd', ['--new-master-stdin']);
+				p.expectArgs('vault passwd', 0, '[--vault <name|path>] [--master-stdin --new-master-stdin]');
+				const v = this.resolveVault(p.value('--vault'));
+				if (v.unlocked) {
+					fail('conflict', `Flint has vault '${v.name}' unlocked; change its master password there (Settings → Vault), or lock it in Flint first`);
+				}
+				const current = yield* this.secret(`Current master password for '${v.name}'`);
+				if (current.length === 0) fail('wrong_password', 'the password is wrong or the file is not a Flint vault');
+				const next = yield* this.secret('new master password');
+				const again = yield* this.secret('Repeat the new master password');
+				if (next !== again) fail('invalid', 'the two entries do not match');
+				if (next.length < 8) fail('invalid', 'the new master password must be at least 8 characters');
+				if (next === current) fail('invalid', 'the new master password is the same as the current one');
+				this.say(`Changed the master password of vault '${v.name}'.`);
+				this.io.note('flint (demo): Flint would print the new password\'s strength here (0 to 4, a zxcvbn estimate) and warn under Strong, which a remote vault will need.');
+				return ok;
+			}
+			case 'merge': {
+				// cmd_vault_merge (milestone 41): refused while Flint holds the vault unlocked.
+				p.allowFlags('vault merge', []);
+				p.expectArgs('vault merge', 1, '<copy.flint>');
+				const v = this.resolveVault(p.value('--vault'));
+				if (v.unlocked) fail('conflict', `Flint has vault '${v.name}' unlocked; lock it in Flint first, then merge`);
+				const arg = p.positional(2);
+				const path = arg.startsWith('/') ? arg : LOCAL_CWD + '/' + arg.replace(/^\.\//, '');
+				const pw = yield { label: `Master password for '${v.name}': `, secret: true };
+				if (pw.length === 0) fail('wrong_password', 'the password is wrong or the file is not a Flint vault');
+				if (path === v.path) fail('invalid', `${path} is the vault itself; name the conflict copy to merge into it`);
+				const copy = v.conflictCopy;
+				if (!copy || copy.path !== path) fail('not_found', `no vault file at ${path}`);
+				const report = { added: 0, updated: 0, removed: 0, changes: [] as MergeLine[], notes: [] as MergeLine[] };
+				if (!copy.merged) {
+					copy.merged = true;
+					for (const alias of copy.removed) {
+						if (!v.hosts.some((h) => h.alias === alias)) continue;
+						v.hosts = v.hosts.filter((h) => h.alias !== alias);
+						report.removed++;
+						report.changes.push({ kind: 'host', name: alias, change: 'removed', detail: '' });
+					}
+					for (const added of copy.added) {
+						const h = { ...added, tags: [...added.tags], tunnels: [] };
+						const taken = (a: string) => v.hosts.some((o) => o.alias.toLowerCase() === a.toLowerCase());
+						if (taken(h.alias)) {
+							// The record written first keeps the alias: here, this vault's.
+							let n = 2;
+							while (taken(`${added.alias}-${n}`)) n++;
+							h.alias = `${added.alias}-${n}`;
+							report.notes.push({ kind: 'host', name: h.alias, change: 'renamed', detail: `was ${added.alias}` });
+						}
+						v.hosts.push(h);
+						report.added++;
+						report.changes.push({ kind: 'host', name: h.alias, change: 'added', detail: '' });
+					}
+				}
+				const got = { path: v.path, name: v.name, copy: path, report };
+				this.emit(got, () => {
+					if (report.added + report.updated + report.removed === 0 && report.notes.length === 0) {
+						this.say(`Nothing to merge: vault '${v.name}' already has every change in ${path}.`);
+						return;
+					}
+					this.say(`Merged ${path} into vault '${v.name}': ${report.added} added, ${report.updated} updated, ${report.removed} removed.`);
+					const rows = [
+						...report.changes.map((c) => [c.change, c.kind, c.name]),
+						...report.notes.map((c) => [c.change, c.kind, `${c.name} (${c.detail})`]),
+					];
+					table(['CHANGE', 'KIND', 'NAME'], rows).forEach((l) => this.say(l));
+					this.say('The copy was not changed; delete it once the vault looks right.');
+				});
 				return ok;
 			}
 			case 'forget': {
@@ -1082,6 +1156,14 @@ function isRemoteArg(a: string): boolean {
 	if (colon <= 0) return false;
 	const slash = a.indexOf('/');
 	return slash < 0 || colon < slash;
+}
+
+/** One line of `vault merge`'s report (MergeChange in src/domain/merge.cf). */
+interface MergeLine {
+	kind: string;
+	name: string;
+	change: string;
+	detail: string;
 }
 
 /** The demo's own machine: a small read-only folder you run flint in. */

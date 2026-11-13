@@ -1,0 +1,7 @@
+# The image needs build.cf, two scripts and src/ (see the Dockerfile's COPY lines).
+**
+!build.cf
+!scripts/version.sh
+!src/**
+**/.cfire
+src/drivers/version/version.cf
