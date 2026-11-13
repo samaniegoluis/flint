@@ -653,7 +653,18 @@
       await click('[data-fullscreen-all]');
       await waitFor(() => immersive(), 'the page immersive');
       await waitFor(() => mons().get().phase === 'on', 'the desktop across the monitors', 40000);
-      const span = mons().get().span;
+      // The span may be computed while the main window's full screen is still growing;
+      // the new size spans again a moment later (seen on Linux: a 948x666 main part,
+      // then 1080x800). The checks below read the settled span: unchanged for a second.
+      let seen = '';
+      let since = performance.now();
+      const settled = () => {
+        const m = mons().get();
+        const now = m.phase === 'on' && m.span ? JSON.stringify(m.span) : '';
+        if (now !== seen) { seen = now; since = performance.now(); return null; }
+        return now && performance.now() - since >= 1000 ? m.span : null;
+      };
+      const span = await waitFor(settled, 'the span to settle', 15000);
       log(`diag: span ${JSON.stringify(span)}`);
       await check(span.monitors.length === 2 && span.monitors[0].primary && span.monitors[0].local_id === view.main && span.monitors[1].local_id === extra,
         `the layout has the main monitor as primary and the extra one (${span.monitors.map((m) => `${m.local_id}@${m.x},${m.y} ${m.width}x${m.height}`).join(' + ')})`);
