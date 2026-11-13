@@ -237,6 +237,7 @@ check "versions prints a table" "1" "$(in_server proxy versions | grep -c "^    
 in_server proxy restore 5 >"$tmp/restore.out"
 check "restore says what it did" "1" "$(grep -c 'version 5 is now version 14' "$tmp/restore.out")"
 check "the server serves the restored file as version 14" '"14" v5' "$(header ETag "${auth[@]}" "${xff[@]}" "$url") $(curl -s -m 5 "${auth[@]}" "${xff[@]}" "$url")"
+check "restore --json names the new version" "15" "$(in_server proxy restore 6 --json | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
 set +e
 in_server proxy restore 2 >/dev/null 2>"$tmp/restore.err"; rc=$?
 set -e

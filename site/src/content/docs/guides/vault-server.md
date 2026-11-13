@@ -177,7 +177,7 @@ VERSION  STORED (UTC)              SIZE      VAULT
 docker exec <container> flint-vault-server restore 41
 ```
 
-`restore` stores version 41 again as version 43. Every machine downloads it at its next
+`restore` stores version 41 again as version 43 (`--json` prints its record). Every machine downloads it at its next
 sync and **merges** it into its own copy, so this repairs a bad upload (a damaged file,
 or an upload made with a stolen token) without losing what your machines hold. It does
 not undo your own later edits: the merge keeps the newer change of each record.

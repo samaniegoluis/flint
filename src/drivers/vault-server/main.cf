@@ -7,7 +7,7 @@ package main
 //   flint-vault-server [serve]          serve, configured by the environment
 //   flint-vault-server token [--json]   a new token, and the hash to set instead of it
 //   flint-vault-server versions [--json]  the kept versions, newest first
-//   flint-vault-server restore <n>      make a kept version the newest again
+//   flint-vault-server restore <n> [--json]  make a kept version the newest again
 //   flint-vault-server --version
 //
 // Environment: FLINT_VAULT_TOKEN or FLINT_VAULT_TOKEN_HASH, FLINT_VAULT_DATA (the data
@@ -26,7 +26,7 @@ import "../version"
 DEFAULT_LISTEN: str = "0.0.0.0:8787"
 DEFAULT_DATA: str = "./flint-vault-data"
 
-USAGE: str = "usage: flint-vault-server [serve | token [--json] | versions [--json] | restore <version> | --version]"
+USAGE: str = "usage: flint-vault-server [serve | token [--json] | versions [--json] | restore <version> [--json] | --version]"
 
 fn log_line(s: str) {
     eprintln("flint-vault-server: {s}")
@@ -128,13 +128,17 @@ fn cmd_versions(as_json: bool) -> void! {
     }
 }
 
-fn cmd_restore(arg: str) -> void! {
+fn cmd_restore(arg: str, as_json: bool) -> void! {
     n := parse_version_tag(arg)
     if n < 1 {
         return error(coded(ERR_USAGE, "restore takes a version number from `flint-vault-server versions`"))
     }
     mut store := try data_store()
     v := try restore_vault_version(mut store, n, time.now().unix_millis())
+    if as_json {
+        println(json.stringify(v))
+        return
+    }
     println("version {n} is now version {v.version}, the newest: every machine merges it at its next sync")
 }
 
@@ -184,7 +188,7 @@ fn main() {
         return
     }
     if cmd == "restore" && words.len() == 2 {
-        cmd_restore(words[1]) or err {
+        cmd_restore(words[1], as_json) or err {
             fail(err.message())
         }
         return
