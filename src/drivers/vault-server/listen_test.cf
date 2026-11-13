@@ -1,0 +1,114 @@
+package main
+
+// The server's own request reader over a socket pair, and the mapping of a reply to
+// HTTP (milestone 42, D-097). scripts/server-e2e.sh drives the real binary.
+
+import "core:net"
+import "core:net/http"
+
+fn read_from(raw: str, max_body: i64, close_after: bool) -> ReadOutcome {
+    return read_pair(raw, max_body, close_after) or err {
+        assert(false)
+        return early(0, "no pair")
+    }
+}
+
+fn read_pair(raw: str, max_body: i64, close_after: bool) -> ReadOutcome! {
+    (c0, s0) := try net.socketpair()
+    mut client := move c0
+    mut server := move s0
+    _ := try client.write_text(raw)
+    if close_after {
+        client.close()
+    }
+    o := read_request(mut server, max_body)
+    client.close()
+    server.close()
+    return o
+}
+
+test "a whole request is read, with its body exact" {
+    o := read_from("PUT /v1/vault HTTP/1.1\r\nHost: x\r\nIf-Match: \"3\"\r\nContent-Length: 5\r\n\r\nab\u{1}de", 100, false)
+    assert_eq(o.status, i32(0))
+    assert(!o.drop)
+    assert_eq(o.method, "PUT")
+    assert_eq(o.path, "/v1/vault")
+    assert_eq(o.body.len(), usize(5))
+    assert_eq(o.headers.header("if-match"), "\"3\"")
+}
+
+test "a GET needs no length, and bytes past the length are ignored" {
+    o := read_from("GET /v1/vault HTTP/1.1\r\nHost: x\r\n\r\n", 100, false)
+    assert_eq(o.status, i32(0))
+    assert_eq(o.body, "")
+    o2 := read_from("PUT /v1/vault HTTP/1.1\r\nContent-Length: 2\r\n\r\nabcdef", 100, false)
+    assert_eq(o2.body, "ab")
+}
+
+test "a chunked body, a PUT with no length and one over the cap are refused before the body" {
+    assert_eq(read_from("PUT /v1/vault HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n", 100, false).status, i32(411))
+    assert_eq(read_from("PUT /v1/vault HTTP/1.1\r\n\r\n", 100, false).status, i32(411))
+    assert_eq(read_from("PUT /v1/vault HTTP/1.1\r\nContent-Length: 101\r\n\r\n", 100, false).status, i32(413))
+    assert_eq(read_from("PUT /v1/vault HTTP/1.1\r\nContent-Length: -4\r\n\r\n", 100, false).status, i32(400))
+}
+
+test "a body cut short is dropped, never handed on" {
+    o := read_from("PUT /v1/vault HTTP/1.1\r\nContent-Length: 50\r\n\r\nonly ten b", 100, true)
+    assert(o.drop)
+    assert_eq(o.note, "body_cut_short")
+}
+
+test "a connection closed before a request is dropped quietly" {
+    o := read_from("", 100, true)
+    assert(o.drop)
+}
+
+test "the client is the peer, or the last forwarded address behind a trusted proxy" {
+    mut req := try http.parse_request("GET / HTTP/1.1\r\nX-Forwarded-For: 198.51.100.7, 203.0.113.9\r\n\r\n")
+    assert_eq(client_of("10.0.0.2", req, false), "10.0.0.2")
+    assert_eq(client_of("10.0.0.2", req, true), "203.0.113.9")
+    plain := try http.parse_request("GET / HTTP/1.1\r\n\r\n")
+    assert_eq(client_of("10.0.0.2", plain, true), "10.0.0.2")
+    assert_eq(client_of("", plain, false), "unknown")
+}
+
+test "a reply carries its version, vault id and waits as headers" {
+    r := ServerReply{ status: 200, body: "x", content_type: "application/octet-stream", version: 7, vault_id: "00112233445566778899aabbccddeeff", retry_after_s: 0, note: "" }
+    resp := to_http_response(r)
+    assert_eq(resp.header("etag"), "\"7\"")
+    assert_eq(resp.header("x-flint-vault-id"), "00112233445566778899aabbccddeeff")
+    assert_eq(resp.header("content-type"), "application/octet-stream")
+    assert_eq(resp.header("cache-control"), "no-store")
+    mut wait := json_reply(429, "too_many_requests", "wait")
+    wait.retry_after_s = 30
+    w := to_http_response(wait)
+    assert_eq(w.header("retry-after"), "30")
+    assert(w.to_http_wire().starts_with("HTTP/1.1 429 Too Many Requests\r\n"))
+    assert_eq(to_http_response(json_reply(401, "unauthorized", "x")).header("www-authenticate"), "Bearer")
+    assert_eq(to_http_response(json_reply(405, "method_not_allowed", "x")).header("allow"), "GET, PUT")
+}
+
+test "a path is logged printable and short" {
+    assert_eq(loggable("/v1/vault\r\nX-Evil: 1"), "/v1/vaultX-Evil: 1")
+    mut long := ""
+    for i in 0..200 {
+        long += "a"
+    }
+    assert_eq(loggable(long).len(), usize(80))
+}
+
+test "the listen address splits into host and port" {
+    o := try listen_parts("0.0.0.0:8787")
+    assert_eq(o.host, "0.0.0.0")
+    assert_eq(o.port, u16(8787))
+    o6 := try listen_parts("[::1]:9000")
+    assert_eq(o6.host, "::1")
+    mut bad := 0
+    listen_parts("8787") or err {
+        bad += 1
+    }
+    listen_parts("host:99999") or err {
+        bad += 1
+    }
+    assert_eq(bad, 2)
+}

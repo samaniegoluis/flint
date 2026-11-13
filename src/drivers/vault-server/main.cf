@@ -1,0 +1,193 @@
+package main
+
+// flint-vault-server (milestone 42, D-092, D-097): keeps one person's vault file, as it
+// is (encrypted in full), with a version, for the machines that sync it. It never holds
+// the key and never opens the file (Principle 13).
+//
+//   flint-vault-server [serve]          serve, configured by the environment
+//   flint-vault-server token [--json]   a new token, and the hash to set instead of it
+//   flint-vault-server versions [--json]  the kept versions, newest first
+//   flint-vault-server restore <n>      make a kept version the newest again
+//   flint-vault-server --version
+//
+// Environment: FLINT_VAULT_TOKEN or FLINT_VAULT_TOKEN_HASH, FLINT_VAULT_DATA (the data
+// folder), FLINT_VAULT_LISTEN (host:port), FLINT_VAULT_MAX_BYTES, FLINT_VAULT_TRUST_PROXY.
+
+import "core:json"
+import "core:os"
+import "core:str"
+import "core:time"
+import "../../domain"
+import "../../application/vaultserver"
+import "../../adapters/crypto"
+import "../../adapters/serverfs"
+import "../version"
+
+DEFAULT_LISTEN: str = "0.0.0.0:8787"
+DEFAULT_DATA: str = "./flint-vault-data"
+
+USAGE: str = "usage: flint-vault-server [serve | token [--json] | versions [--json] | restore <version> | --version]"
+
+fn log_line(s: str) {
+    eprintln("flint-vault-server: {s}")
+}
+
+fn fail(msg: str) {
+    eprintln("flint-vault-server: {error_text_of(msg)}")
+    os.exit(exit_code_for(error_code_of(msg)))
+}
+
+fn on_stop(sig: i32) {
+    log_line("stopping (signal {sig})")
+    os.exit(0)
+}
+
+type TokenOut struct {
+    token: str `json:"token"`
+    hash:  str `json:"hash"`
+}
+
+fn listen_parts(spec: str) -> ServeOptions! {
+    colon := str.last_index_of(spec, ":")
+    if colon <= 0 {
+        return error(coded(ERR_USAGE, "FLINT_VAULT_LISTEN must be host:port, such as 0.0.0.0:8787"))
+    }
+    mut host := spec.substr(0, usize(colon))
+    if host.starts_with("[") && host.ends_with("]") {
+        host = host.substr(1, host.len() - 2)
+    }
+    port := parse_version_tag(spec.substr(usize(colon) + 1))
+    if port < 1 || port > 65535 {
+        return error(coded(ERR_USAGE, "FLINT_VAULT_LISTEN has no valid port"))
+    }
+    return ServeOptions{ host: host, port: u16(port), data_dir: "", trust_proxy: false }
+}
+
+fn cmd_serve() -> void! {
+    sodium := try new_sodium()
+    mut max_body := SERVER_MAX_BODY_DEFAULT
+    max_text := os.getenv("FLINT_VAULT_MAX_BYTES")
+    if max_text.len() > 0 {
+        max_body = parse_version_tag(max_text)
+        if max_body < 1 {
+            return error(coded(ERR_USAGE, "FLINT_VAULT_MAX_BYTES must be a number of bytes"))
+        }
+    }
+    cfg := try server_config_from(sodium, os.getenv("FLINT_VAULT_TOKEN"), os.getenv("FLINT_VAULT_TOKEN_HASH"), max_body)
+    mut opts := try listen_parts(os.getenv("FLINT_VAULT_LISTEN", DEFAULT_LISTEN))
+    opts.data_dir = os.getenv("FLINT_VAULT_DATA", DEFAULT_DATA)
+    trust := os.getenv("FLINT_VAULT_TRUST_PROXY")
+    opts.trust_proxy = trust == "1" || trust == "true"
+    os.on_signal(15, on_stop)
+    os.on_signal(2, on_stop)
+    try serve_forever(sodium, cfg, opts)
+}
+
+fn cmd_token(as_json: bool) -> void! {
+    sodium := try new_sodium()
+    t := try new_server_token(sodium)
+    if as_json {
+        println(json.stringify(TokenOut{ token: t.token, hash: t.hash }))
+        return
+    }
+    println("token  {t.token}")
+    println("hash   {t.hash}")
+    eprintln("")
+    eprintln("Give the token to Flint when it connects (shown this once). On the server, set")
+    eprintln("FLINT_VAULT_TOKEN to the token, or FLINT_VAULT_TOKEN_HASH to the hash to keep only")
+    eprintln("the hash there.")
+}
+
+fn data_store() -> FileBlobStore! {
+    return try new_file_blob_store(os.getenv("FLINT_VAULT_DATA", DEFAULT_DATA))
+}
+
+fn pad_left(s: str, width: usize) -> str {
+    mut out_s := s
+    for out_s.len() < width {
+        out_s = " " + out_s
+    }
+    return out_s
+}
+
+fn cmd_versions(as_json: bool) -> void! {
+    mut store := try data_store()
+    kept := try list_vault_versions(mut store)
+    if as_json {
+        println(json.stringify(kept))
+        return
+    }
+    if kept.len() == 0 {
+        eprintln("no vault stored yet")
+        return
+    }
+    println("VERSION  STORED (UTC)              SIZE      VAULT")
+    for v in kept {
+        stored := time.unix(v.stored_at / 1000).format_rfc3339()
+        println(pad_left("{v.version}", 7) + "  " + stored + "    " + pad_left("{v.size}", 8) + "  " + v.vault_id)
+    }
+}
+
+fn cmd_restore(arg: str) -> void! {
+    n := parse_version_tag(arg)
+    if n < 1 {
+        return error(coded(ERR_USAGE, "restore takes a version number from `flint-vault-server versions`"))
+    }
+    mut store := try data_store()
+    v := try restore_vault_version(mut store, n, time.now().unix_millis())
+    println("version {n} is now version {v.version}, the newest: every machine merges it at its next sync")
+}
+
+fn main() {
+    all := os.args()
+    mut args: []str = []
+    for i in 1..all.len() {
+        args.push(all[i])
+    }
+    mut as_json := false
+    mut words: []str = []
+    for a in args {
+        if a == "--json" {
+            as_json = true
+        } else {
+            words.push(a)
+        }
+    }
+    if words.len() > 0 && (words[0] == "--version" || words[0] == "-V" || words[0] == "version") {
+        println("flint-vault-server {FLINT_VERSION}")
+        return
+    }
+    if words.len() > 0 && (words[0] == "--help" || words[0] == "-h" || words[0] == "help") {
+        println(USAGE)
+        return
+    }
+    mut cmd := "serve"
+    if words.len() > 0 {
+        cmd = words[0]
+    }
+    if cmd == "serve" && words.len() <= 1 {
+        cmd_serve() or err {
+            fail(err.message())
+        }
+        return
+    }
+    if cmd == "token" && words.len() == 1 {
+        cmd_token(as_json) or err {
+            fail(err.message())
+        }
+        return
+    }
+    if cmd == "versions" && words.len() == 1 {
+        cmd_versions(as_json) or err {
+            fail(err.message())
+        }
+        return
+    }
+    if cmd == "restore" && words.len() == 2 {
+        cmd_restore(words[1]) or err {
+            fail(err.message())
+        }
+        return
+    }
+    fail(coded(ERR_USAGE, USAGE))
+}

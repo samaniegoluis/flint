@@ -184,7 +184,7 @@ test "no token, a wrong token or another scheme gets 401, and nothing is read" {
     for auth in auths {
         mut r := rq("GET", "", "")
         r.authorization = auth
-        reply := serve_vault_request(crypto, mut store, mut gate, cfg, r, 1000)
+        reply := serve_vault_request(crypto, mut store, mut gate, cfg, r, 1000, 1000)
         assert_eq(reply.status, i32(401))
         assert(!reply.body.contains(TOKEN))
     }
@@ -198,14 +198,14 @@ test "repeated bad tokens lock the client out, even with the right token after" 
     for i in 0..GATE_BAD_MAX {
         mut r := rq("GET", "", "")
         r.authorization = "Bearer nope"
-        _ := serve_vault_request(crypto, mut store, mut gate, cfg, r, 1000)
+        _ := serve_vault_request(crypto, mut store, mut gate, cfg, r, 1000, 1000)
     }
-    reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 2000)
+    reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 2000, 2000)
     assert_eq(reply.status, i32(429))
     assert_eq(reply.retry_after_s, (GATE_LOCKOUT_MS - 1000 + 999) / 1000)
     mut other := rq("GET", "", "")
     other.client = "10.0.0.2"
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, other, 2000).status, i32(404))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, other, 2000, 2000).status, i32(404))
 }
 
 test "an empty server answers 404, then the first upload is version 1" {
@@ -213,12 +213,12 @@ test "an empty server answers 404, then the first upload is version 1" {
     cfg := test_config()
     mut store := new_mem_store()
     mut gate := new_server_gate()
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 1).status, i32(404))
-    up := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("blob-1"), 2)
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 1, 1).status, i32(404))
+    up := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("blob-1"), 2, 2)
     assert_eq(up.status, i32(200))
     assert_eq(up.version, i64(1))
     assert_eq(up.body, json.stringify(VersionBody{ version: 1 }))
-    got := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 3)
+    got := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 3, 3)
     assert_eq(got.status, i32(200))
     assert_eq(got.body, "blob-1")
     assert_eq(got.version, i64(1))
@@ -231,17 +231,17 @@ test "an upload over a version not merged gets 409 with the newest version" {
     cfg := test_config()
     mut store := new_mem_store()
     mut gate := new_server_gate()
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1)
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "b"), 2).version, i64(2))
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "b"), 2, 2).version, i64(2))
     // The second machine still saw version 1.
-    late := serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "c"), 3)
+    late := serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "c"), 3, 3)
     assert_eq(late.status, i32(409))
     assert_eq(late.version, i64(2))
     // A first upload where a vault already is conflicts too.
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("d"), 4).status, i32(409))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("d"), 4, 4).status, i32(409))
     // Nothing was stored by either.
     assert_eq(store.versions.len(), usize(2))
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 5).body, "b")
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 5, 5).body, "b")
 }
 
 test "an upload of another vault is refused with 412" {
@@ -249,10 +249,10 @@ test "an upload of another vault is refused with 412" {
     cfg := test_config()
     mut store := new_mem_store()
     mut gate := new_server_gate()
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1)
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
     mut r := rq("PUT", "\"1\"", "x")
     r.vault_id = VID2
-    reply := serve_vault_request(crypto, mut store, mut gate, cfg, r, 2)
+    reply := serve_vault_request(crypto, mut store, mut gate, cfg, r, 2, 2)
     assert_eq(reply.status, i32(412))
     assert_eq(reply.vault_id, VID)
     assert_eq(store.versions.len(), usize(1))
@@ -263,20 +263,20 @@ test "an upload without a precondition, a vault id or a body is refused" {
     cfg := test_config()
     mut store := new_mem_store()
     mut gate := new_server_gate()
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "", "a"), 1).status, i32(428))
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"x\"", "a"), 1).status, i32(400))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "", "a"), 1, 1).status, i32(428))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"x\"", "a"), 1, 1).status, i32(400))
     mut no_id := first_upload("a")
     no_id.vault_id = ""
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, no_id, 1).status, i32(400))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, no_id, 1, 1).status, i32(400))
     mut upper := first_upload("a")
     upper.vault_id = "00112233445566778899AABBCCDDEEFF"
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, upper, 1).status, i32(400))
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, first_upload(""), 1).status, i32(400))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, upper, 1, 1).status, i32(400))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, first_upload(""), 1, 1).status, i32(400))
     mut big := ""
     for i in 0..1001 {
         big += "x"
     }
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, first_upload(big), 1).status, i32(413))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, first_upload(big), 1, 1).status, i32(413))
     assert_eq(store.versions.len(), usize(0))
 }
 
@@ -287,11 +287,11 @@ test "another path gets 404 and another method 405, after the token" {
     mut gate := new_server_gate()
     mut p := rq("GET", "", "")
     p.path = "/v1/vaults"
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, p, 1).status, i32(404))
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("DELETE", "", ""), 1).status, i32(405))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, p, 1, 1).status, i32(404))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("DELETE", "", ""), 1, 1).status, i32(405))
     mut anon := rq("DELETE", "", "")
     anon.authorization = ""
-    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, anon, 1).status, i32(401))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, anon, 1, 1).status, i32(401))
 }
 
 test "a version stored first by another writer turns into 409" {
@@ -299,9 +299,9 @@ test "a version stored first by another writer turns into 409" {
     cfg := test_config()
     mut store := new_mem_store()
     mut gate := new_server_gate()
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1)
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
     store.race = true
-    reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "b"), 2)
+    reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "b"), 2, 2)
     assert_eq(reply.status, i32(409))
     assert_eq(reply.version, i64(2))
 }
@@ -312,7 +312,7 @@ test "a store that fails answers 500 without its reason" {
     mut store := new_mem_store()
     store.fail = true
     mut gate := new_server_gate()
-    reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 1)
+    reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 1, 1)
     assert_eq(reply.status, i32(500))
     assert(!reply.body.contains("disk gone"))
 }

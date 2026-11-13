@@ -1,0 +1,271 @@
+package main
+
+// flint-vault-server's own accept loop over core:net (milestone 42, D-097). Each
+// request is read under a deadline for its headers and one for the whole request, its
+// body capped and required whole, then mapped to one call of the use case and back.
+// One request at a time: cfire cannot start a thread (CF-138), so the deadlines are
+// what bounds a slow or hostile client (Principle 8).
+// CFIRE-UPSTREAM: CF-137 (core:net/http's server has no deadline and a fixed cap),
+// CF-140 (chunked bodies), CF-141 (no listen address)
+
+import "core:net"
+import "core:net/http"
+import "core:str"
+import "core:time"
+import "../../domain"
+import "../../ports"
+import "../../application/vaultserver"
+import "../../adapters/serverfs"
+
+HEADER_TIMEOUT_MS: i64 = 10000
+REQUEST_TIMEOUT_MS: i64 = 60000
+WRITE_TIMEOUT_MS: i32 = 30000
+HEADER_MAX_BYTES: usize = 65536
+READ_CHUNK: usize = 65536
+
+// What reading one request came to: a request, a status to answer at once, or a
+// connection to drop with no answer (closed before a request, or nothing to say).
+type ReadOutcome struct {
+    status:   i32
+    note:     str
+    method:   str
+    path:     str
+    headers:  http.Request
+    body:     str
+    drop:     bool
+}
+
+fn early(status: i32, note: str) -> ReadOutcome {
+    return ReadOutcome{ status: status, note: note, method: "", path: "", headers: http.Request{}, body: "", drop: false }
+}
+
+fn read_request(mut conn: net.TcpConn, max_body: i64) -> ReadOutcome {
+    start := time.now_ms()
+    mut raw := ""
+    mut head_end: i64 = -1
+    for {
+        head_end = str.index_of(raw, "\r\n\r\n")
+        if head_end >= 0 {
+            break
+        }
+        if raw.len() > HEADER_MAX_BYTES {
+            return early(431, "headers_too_large")
+        }
+        left := start + HEADER_TIMEOUT_MS - time.now_ms()
+        if left <= 0 || !conn.poll(left) {
+            if raw.len() == 0 {
+                return ReadOutcome{ status: 0, note: "idle", method: "", path: "", headers: http.Request{}, body: "", drop: true }
+            }
+            return early(408, "header_timeout")
+        }
+        chunk := conn.read_text(READ_CHUNK) or err {
+            return ReadOutcome{ status: 0, note: "read_error", method: "", path: "", headers: http.Request{}, body: "", drop: true }
+        }
+        if chunk.len() == 0 {
+            return ReadOutcome{ status: 0, note: "closed", method: "", path: "", headers: http.Request{}, body: "", drop: true }
+        }
+        raw += chunk
+    }
+    head := raw.substr(0, usize(head_end) + 4)
+    req := http.parse_request(head) or err {
+        return early(400, "bad_request")
+    }
+    if req.header("transfer-encoding").len() > 0 {
+        return early(411, "chunked_refused")
+    }
+    cl_text := str.trim(req.header("content-length"))
+    mut length: i64 = 0
+    if cl_text.len() > 0 {
+        length = parse_version_tag(cl_text)
+        if length < 0 && cl_text != "0" {
+            return early(400, "bad_content_length")
+        }
+        if length < 0 {
+            length = 0
+        }
+    } else if req.method == "PUT" {
+        return early(411, "length_required")
+    }
+    if length > max_body {
+        return early(413, "too_large")
+    }
+    mut body := raw.substr(usize(head_end) + 4)
+    for i64(body.len()) < length {
+        left := start + REQUEST_TIMEOUT_MS - time.now_ms()
+        if left <= 0 || !conn.poll(left) {
+            return early(408, "body_timeout")
+        }
+        want := length - i64(body.len())
+        mut n := READ_CHUNK
+        if want < i64(n) {
+            n = usize(want)
+        }
+        chunk := conn.read_text(n) or err {
+            return ReadOutcome{ status: 0, note: "read_error", method: "", path: "", headers: http.Request{}, body: "", drop: true }
+        }
+        if chunk.len() == 0 {
+            // The client went away before its body was whole: nothing is stored.
+            return ReadOutcome{ status: 0, note: "body_cut_short", method: "", path: "", headers: http.Request{}, body: "", drop: true }
+        }
+        body += chunk
+    }
+    if i64(body.len()) > length {
+        body = body.substr(0, usize(length))
+    }
+    return ReadOutcome{ status: 0, note: "", method: req.method, path: req.path, headers: req, body: body, drop: false }
+}
+
+// The client the gate and the log know: the socket's peer, or, behind a reverse proxy
+// the person trusts, the address that proxy appended last to X-Forwarded-For.
+fn client_of(peer: str, req: http.Request, trust_proxy: bool) -> str {
+    if trust_proxy {
+        fwd := req.header("x-forwarded-for")
+        if fwd.len() > 0 {
+            parts := str.split(fwd, ",")
+            last := str.trim(parts[parts.len() - 1])
+            if last.len() > 0 && last.len() <= 64 {
+                return last
+            }
+        }
+    }
+    if peer.len() == 0 {
+        return "unknown"
+    }
+    return peer
+}
+
+fn to_server_request(o: ReadOutcome, client: str) -> ServerRequest {
+    h := o.headers
+    return ServerRequest{ method: o.method, path: o.path, client: client, authorization: h.header("authorization"), if_match: h.header("if-match"), if_none_match: h.header("if-none-match"), vault_id: h.header("x-flint-vault-id"), body: o.body }
+}
+
+// Reason phrases core:net/http does not know (it sends "Error" for them).
+fn reason_phrase(status: i32) -> str {
+    if status == 408 {
+        return "Request Timeout"
+    } else if status == 411 {
+        return "Length Required"
+    } else if status == 412 {
+        return "Precondition Failed"
+    } else if status == 413 {
+        return "Content Too Large"
+    } else if status == 428 {
+        return "Precondition Required"
+    } else if status == 429 {
+        return "Too Many Requests"
+    } else if status == 431 {
+        return "Request Header Fields Too Large"
+    }
+    return ""
+}
+
+fn to_http_response(r: ServerReply) -> http.Response {
+    mut resp := http.Response.text(r.status, r.body)
+    reason := reason_phrase(r.status)
+    if reason.len() > 0 {
+        resp.status_text = reason
+    }
+    resp.set_header("Content-Type", r.content_type)
+    resp.set_header("Cache-Control", "no-store")
+    if r.version > 0 {
+        resp.set_header("ETag", version_tag(r.version))
+    }
+    if r.vault_id.len() > 0 {
+        resp.set_header("X-Flint-Vault-Id", r.vault_id)
+    }
+    if r.retry_after_s > 0 {
+        resp.set_header("Retry-After", "{r.retry_after_s}")
+    }
+    if r.status == 401 {
+        resp.set_header("WWW-Authenticate", "Bearer")
+    }
+    if r.status == 405 {
+        resp.set_header("Allow", "GET, PUT")
+    }
+    return resp
+}
+
+// A reply for a request refused before it reached the use case.
+fn early_reply(status: i32, note: str) -> ServerReply {
+    mut message := "the request was refused"
+    if status == 408 {
+        message = "the request took too long"
+    } else if status == 411 {
+        message = "send the upload with Content-Length, not chunked"
+    } else if status == 413 {
+        message = "the upload is over the server's cap"
+    } else if status == 431 {
+        message = "the request headers are too large"
+    } else if status == 400 {
+        message = "the request could not be read"
+    }
+    return json_reply(status, note, message)
+}
+
+// A path as the log shows it: printable ASCII, at most 80 characters.
+fn loggable(s: str) -> str {
+    mut b: []byte = []
+    for c in s.bytes() {
+        v := u8(c)
+        if v >= 32 && v < 127 && b.len() < 80 {
+            b.push(c)
+        }
+    }
+    return str(b)
+}
+
+type ServeOptions struct {
+    host:        str
+    port:        u16
+    data_dir:    str
+    trust_proxy: bool
+}
+
+// Serves until the process ends. One line per request on stderr: never a header's
+// value, a token or a body (Principle 13).
+fn serve_forever[C: Crypto](crypto: C, cfg: ServerConfig, opts: ServeOptions) -> void! {
+    mut store := try new_file_blob_store(opts.data_dir)
+    mut gate := new_server_gate()
+    mut ln := net.listen_tcp_addr(opts.host, opts.port) or err {
+        return error(coded(ERR_PORT_IN_USE, "cannot listen on {opts.host}:{opts.port}"))
+    }
+    head := try store.blob_head()
+    log_line("listening on {opts.host}:{ln.port()}, data in {opts.data_dir}, version {head.version}")
+    for {
+        mut conn := ln.accept() or err {
+            continue
+        }
+        serve_one(crypto, cfg, opts, mut store, mut gate, mut conn)
+        conn.close()
+    }
+}
+
+fn serve_one[C: Crypto](crypto: C, cfg: ServerConfig, opts: ServeOptions, mut store: FileBlobStore, mut gate: ServerGate, mut conn: net.TcpConn) {
+    started := time.now_ms()
+    peer := peer_address(conn.fd())
+    o := read_request(mut conn, cfg.max_body)
+    if o.drop {
+        return
+    }
+    mut reply := early_reply(o.status, o.note)
+    mut client := peer
+    mut method := "-"
+    mut path := "-"
+    if o.status == 0 {
+        client = client_of(peer, o.headers, opts.trust_proxy)
+        method = loggable(o.method)
+        path = loggable(o.path)
+        reply = serve_vault_request(crypto, mut store, mut gate, cfg, to_server_request(o, client), time.now_ms(), time.now().unix_millis())
+    }
+    conn.set_timeout_ms(WRITE_TIMEOUT_MS)
+    resp := to_http_response(reply)
+    _ := conn.write_text(resp.to_http_wire()) or err {
+        log_line("{client} {method} {path} {reply.status} write failed")
+        return
+    }
+    mut tail := ""
+    if reply.note.len() > 0 {
+        tail = " " + reply.note
+    }
+    log_line("{client} {method} {path} {reply.status} {time.now_ms() - started}ms{tail}")
+}

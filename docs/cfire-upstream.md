@@ -2483,3 +2483,36 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   the vault id on every request. Not blocking 42 (its tests drive the server with `curl`
   and raw sockets).
 - **Ideal:** the runtime takes `cfire::Map`, and a map literal argument lowers to a map.
+
+### CF-143 · missing · `confirmed`: `core:fs` has no fsync; `File.flush` does nothing
+- **Seen (milestone 42) [read, `c5b1d4b`]:** `File::flush` (`core/fs.hpp:417`) returns success
+  without touching the file; there is no `fsync` or `sync_dir`. A temp file + rename is
+  atomic against a crash of the process, not of the machine: the rename can reach the disk
+  before the data.
+- **Why Flint needs it:** the vault server stores each upload so a power cut leaves the
+  previous version whole (Principle 14 on the server side).
+- **Workaround:** `write_synced` and `sync_dir` in `src/adapters/serverfs/native/
+  flint_server.hpp`, tagged `// CFIRE-UPSTREAM: CF-143` (the client side has its own in
+  `flint_fs.hpp`, milestone 40).
+- **Ideal:** `fs.write_atomic(path, data)` (temp, fsync, rename, fsync the folder), or
+  `File.sync()` and `fs.sync_dir(path)`.
+
+### CF-144 · bug · `confirmed`: `cfire test` passes a folder whose test file does not parse
+- **Seen (milestone 42) [ran, macOS, `c5b1d4b`]:** with a syntax error in a `_test.cf` file
+  (`out` as a variable name, an `if` used as an expression, `pair.0`), `cfire test <dir>`
+  prints `✓ No test suites found in <dir>` and exits 0. A suite that stops compiling reads
+  as a suite with nothing to run, and `scripts/test.sh` would count it as passed.
+- **Repro:** a folder with `package p` and `test "t" { x := if true { 1 } else { 2 } }`;
+  `cfire test <folder>; echo $?` prints the line above and `0`.
+- **Workaround:** none; Flint reads the count of tests run, not only the exit status, when a
+  suite is new.
+- **Ideal:** a parse error in any `.cf` file of the folder fails `cfire test` with the
+  diagnostic, as `cfire check` does.
+
+### CF-145 · bug · `confirmed`: `\u{0}` in a string literal ends the string
+- **Seen (milestone 42) [ran, macOS, `c5b1d4b`]:** `"ab\u{0}de"` has length 2 at run time:
+  the literal lowers to a C string and the `str` built from it stops at the NUL. A test
+  that sent `Content-Length: 5` with that body timed out waiting for the last 3 bytes.
+- **Workaround:** test data with a NUL byte is built from a `[]byte` (`str(bytes)`).
+- **Ideal:** a literal with an embedded NUL lowers to `std::string(ptr, len)` (or a `""s`
+  literal), so `len()` counts every byte.

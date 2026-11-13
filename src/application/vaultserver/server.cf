@@ -151,8 +151,9 @@ fn token_matches[C: Crypto](crypto: C, cfg: ServerConfig, authorization: str) ->
     return crypto.equal(h, cfg.token_hash)
 }
 
-// One request: the gate, the token, then the route.
-fn serve_vault_request[C: Crypto, B: BlobStore](crypto: C, mut store: B, mut gate: ServerGate, cfg: ServerConfig, req: ServerRequest, now_ms: i64) -> ServerReply {
+// One request: the gate, the token, then the route. `now_ms` is the monotonic clock
+// (the gate's windows), `wall_ms` the Unix time a stored version is stamped with.
+fn serve_vault_request[C: Crypto, B: BlobStore](crypto: C, mut store: B, mut gate: ServerGate, cfg: ServerConfig, req: ServerRequest, now_ms: i64, wall_ms: i64) -> ServerReply {
     wait_ms := gate.gate_admit(req.client, now_ms)
     if wait_ms > 0 {
         mut r := json_reply(429, "too_many_requests", "wait before trying again")
@@ -174,7 +175,7 @@ fn serve_vault_request[C: Crypto, B: BlobStore](crypto: C, mut store: B, mut gat
         return get_vault(mut store)
     }
     if req.method == "PUT" {
-        return put_vault(mut store, cfg, req, now_ms)
+        return put_vault(mut store, cfg, req, wall_ms)
     }
     return json_reply(405, "method_not_allowed", "use GET or PUT")
 }
@@ -192,7 +193,7 @@ fn get_vault[B: BlobStore](mut store: B) -> ServerReply {
     return ServerReply{ status: 200, body: data, content_type: "application/octet-stream", version: head.version, vault_id: head.vault_id, retry_after_s: 0, note: "" }
 }
 
-fn put_vault[B: BlobStore](mut store: B, cfg: ServerConfig, req: ServerRequest, now_ms: i64) -> ServerReply {
+fn put_vault[B: BlobStore](mut store: B, cfg: ServerConfig, req: ServerRequest, wall_ms: i64) -> ServerReply {
     if !valid_vault_id(req.vault_id) {
         return json_reply(400, "bad_vault_id", "X-Flint-Vault-Id must be the vault's 32-character id")
     }
@@ -224,7 +225,7 @@ fn put_vault[B: BlobStore](mut store: B, cfg: ServerConfig, req: ServerRequest, 
     if expected != head.version {
         return conflict_reply(head.version)
     }
-    store.blob_write(head.version + 1, req.vault_id, req.body, now_ms) or err {
+    store.blob_write(head.version + 1, req.vault_id, req.body, wall_ms) or err {
         // Another writer (`flint-vault-server restore`) stored a version first.
         if error_code_of(err.message()) == ERR_CONFLICT {
             now_head := store.blob_head() or err2 {
