@@ -59,7 +59,7 @@ fn open_target(p: ParsedArgs, sec: SecretInput, c: Sodium, mut store: LockedVaul
     target := try resolve_vault(recents, vault_selector(p))
     if src.served {
         // The app checked the target before running the command; this is a guard.
-        if target.path != src.session.path {
+        if !same_file_path(target.path, src.session.path) {
             return error(coded(ERR_INTERNAL, "the app serves another vault than {target.path}"))
         }
         return src.session
@@ -143,7 +143,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try p.expect_args("vault status", 0, "[--vault <name|path>]")
         target := try resolve_vault(recents, vault_selector(p))
         mut st := VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1 }
-        if src.served && target.path == src.session.path {
+        if src.served && same_file_path(target.path, src.session.path) {
             // Unlocked in the app: counts from the open store, no keychain read.
             st = try open_vault_status(store, store, src.session)
         } else {

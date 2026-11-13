@@ -156,8 +156,14 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
     text := conn.recv(SERVE_SEND_MS) or {
         return
     }
-    req := parse_serve_request(text) or {
+    mut req := parse_serve_request(text) or {
         return
+    }
+    // The vault the app holds, named through a symbolic link (`/tmp` for
+    // `/private/tmp`, a linked cloud folder) is the vault the app holds: every check
+    // below compares paths as text.
+    if st.unlocked() && same_file_path(req.vault, st.vault_session().path) {
+        req.vault = st.vault_session().path
     }
     // A command from the CLI is someone using the vault.
     st.holder.touch(time.now_ms())

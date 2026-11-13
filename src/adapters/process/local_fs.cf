@@ -23,6 +23,23 @@ fn new_local_fs() -> LocalFs {
     return LocalFs{ fd: -1, writing: false }
 }
 
+// `path` with every symbolic link resolved, or as given when it does not exist: how
+// two spellings of one file (`/tmp/a.flint`, `/private/tmp/a.flint`) are known to be
+// the same vault (milestone 41).
+fn local_real_path(path: str) -> str {
+    mut real := path
+    // CFIRE-UPSTREAM: CF-136
+    cpp {
+        real = flint_fs::real_path(path);
+    }
+    return real
+}
+
+// Whether `a` and `b` name the same file, through any symbolic links.
+fn same_file_path(a: str, b: str) -> bool {
+    return a == b || local_real_path(a) == local_real_path(b)
+}
+
 fn local_failure(rc: i32, path: str, reason: str) -> str {
     if rc == 1 {
         return coded(ERR_NOT_FOUND, "{path}: no such file or folder")

@@ -6,6 +6,8 @@
 // block for helpers (CF-031).
 #pragma once
 #include <cerrno>
+#include <climits>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <dirent.h>
@@ -243,6 +245,14 @@ inline int append_file(const std::string& path, const std::string& data, std::st
     }
     ::close(fd);
     return OK;
+}
+
+// The path with every symbolic link resolved (realpath(3), milestone 41, CF-136), or
+// the path as given when it does not exist or cannot be resolved.
+inline std::string real_path(const std::string& path) {
+    char real[PATH_MAX];
+    if (::realpath(path.c_str(), real)) return std::string(real);
+    return path;
 }
 
 }  // namespace flint_fs

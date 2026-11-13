@@ -2402,3 +2402,16 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   where the order matters, tagged `// CFIRE-UPSTREAM: CF-135`.
 - **Ideal:** `for k, v in m` lowers to `for (const auto& [k, v] : m)`, and `m.keys()`
   exists; or the checker rejects the loop over a map with that fix-it.
+
+### CF-136 · missing · `confirmed`: `core:fs` has no realpath (and no symlink)
+- **Seen (milestone 41) [ran, macOS, `c5b1d4b`]:** the app compares the vault a CLI
+  command names with the one it holds, as text; `/tmp/fp/lab.flint` and
+  `/private/tmp/fp/lab.flint` (macOS's `/tmp` is a link) were two vaults, so `vault merge`
+  and `vault passwd` went ahead while the app held the vault unlocked.
+- **Repro:** there is no `fs.real_path` / `fs.canonical`; `std::filesystem::canonical`
+  exists in the C++ it lowers to. A test that needs a link has no `fs.symlink`.
+- **Why Flint needs it:** a file's identity through links (cloud folders are often linked
+  into the home folder).
+- **Workaround:** `real_path` over `realpath(3)` in `src/adapters/process/native/
+  flint_fs.hpp`, and `::symlink` in a test, tagged `// CFIRE-UPSTREAM: CF-136`.
+- **Ideal:** `fs.real_path(path) -> str!` and `fs.symlink(target, link) -> void!`.
