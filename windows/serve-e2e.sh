@@ -101,6 +101,9 @@ sock_exists() { [[ -e "$WIN_TMP/cfg/flint.sock" ]]; }
 
 echo "== the CLI on its own"
 expect 0 "create the vault" "$MASTER"$'\n'"$MASTER"$'\n' -- vault create "$vault" --name "Served Renamed" --master-stdin
+other="$W\\other.flint"
+expect 0 "a second vault, to merge from (milestone 41)" "$MASTER"$'\n'"$MASTER"$'\n' -- vault create "$other" --name "Other" --master-stdin
+expect 0 "the served vault is current again" "" -- vault use "$vault"
 expect 0 "add a host before the app starts" "$MASTER"$'\n' -- host add local-web --hostname 10.0.0.5 --user deploy --master-stdin
 expect 0 "add the test key" "$MASTER"$'\n' -- key add tkey --file "$W\\id_test" --master-stdin
 expect 0 "add an SSH host" "$MASTER"$'\n' -- host add local --hostname 127.0.0.2 --port "$P" --user "$USER" --key tkey --master-stdin
@@ -184,6 +187,22 @@ grep -q "denied: .*deny-me" "$tmp/app.log" && echo "ok    the window denied it" 
 echo "== a second launch shows the running Flint and exits"
 timeout 60 timeout 60 "$WIN_TMP/app/flint-app.exe" > "$tmp/second.log" 2>&1
 check "the second launch exits at once, saying so" 'grep -q "already running" "$tmp/second.log"'
+
+echo "== the held vault, however it is named, is the held vault (milestones 40-41)"
+expect 4 "vault merge is refused while the app holds the vault" "$MASTER"$'\n' -- vault merge "$other" --master-stdin
+check "it says to lock it first" '[[ "$err" == *"lock it in Flint first"* ]]'
+expect 4 "and so is vault passwd" "$MASTER"$'\n'"$MASTER-2"$'\n' -- vault passwd --master-stdin --new-master-stdin
+expect 4 "named in other letter case, it is still the held vault" "$MASTER"$'\n' -- --vault "${vault^^}" vault merge "$other" --master-stdin
+# A junction (mklink /J) needs no Developer Mode, unlike a symbolic link.
+cmd.exe /c mklink /J "$W\\jn" "$W" >/dev/null 2>&1
+check "a junction to the folder" '[[ -d "$WIN_TMP/jn" ]]'
+expect 0 "a served command through the junction" "" -- --vault "$W\\jn\\served.flint" --json vault status
+check "it is the app's vault, unlocked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" == "True" ]]'
+expect 4 "vault merge through the junction is refused" "$MASTER"$'\n' -- --vault "$W\\jn\\served.flint" vault merge "$other" --master-stdin
+cmd.exe /c rmdir "$W\\jn" >/dev/null 2>&1
+act_files=("$WIN_TMP"/cfg/activity/*.db)
+check "the activity log is a file per vault in the config folder (milestone 39)" '[[ ${#act_files[@]} -ge 1 && -s "${act_files[0]}" ]]'
+check "the activity files are encrypted" '! grep -qa "SQLite format" "${act_files[@]}"'
 
 echo "== the stop host: the app quits"
 expect 0 "add the stop host" "" -- host add e2e-stop --hostname 10.0.0.9

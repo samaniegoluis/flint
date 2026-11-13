@@ -58,17 +58,17 @@ from this file alone.
       over the vault, reopen; when the rename fails, reopen the old file. Same for the
       activity file (`activity_rekey_commit`). Close ROADMAP §4 "Windows: a vault re-key
       renames over the open file"
-- [ ] `vault passwd` from the CLI, and Settings → Vault → Change master password in the app,
+- [x] `vault passwd` from the CLI, and Settings → Vault → Change master password in the app,
       with the app holding the vault [ran]
-- [ ] Activity file (M39): `<config>/activity/<vault id>.db` created; migration 009 on a
+- [x] Activity file (M39): `<config>/activity/<vault id>.db` created; migration 009 on a
       vault from before [ran]
-- [ ] `real_path` (M41): `vault merge` / `vault passwd` refused while the app holds the vault,
+- [x] `real_path` (M41): `vault merge` / `vault passwd` refused while the app holds the vault,
       through a symbolic link too (needs Developer Mode or admin) and a different letter case
-- [ ] Same-path compare: case-insensitive on Windows?
-- [ ] `vault merge` with a conflict copy [ran]
-- [ ] `windows/cli-smoke.sh`: `--version`, `vault passwd`, `vault merge` cases; green
-- [ ] `windows/serve-e2e.sh` green
-- [ ] Commit + push
+- [x] Same-path compare: case-insensitive on Windows?
+- [x] `vault merge` with a conflict copy [ran]
+- [x] `windows/cli-smoke.sh`: `--version`, `vault passwd`, `vault merge` cases; green
+- [x] `windows/serve-e2e.sh` green
+- [x] Commit + push
 
 ## Stage 3: RDP and the desktop (milestones 32-38) → push
 
@@ -114,3 +114,17 @@ from this file alone.
   vault whole and locked, `ERR_LOCKED`: the store holds no old key); POSIX mode asserts
   skipped on Windows; the symlink test uses `flint_fs::make_symlink` and **skips without
   Developer Mode** (off on this machine): `real_path` through a link is not yet [ran].
+- Stage 2 [ran]: `cli-smoke.sh` 84/84 (new: `--version`, `vault passwd` x4 incl. a weak
+  password and a wrong current one, `vault merge`, the vault itself refused in other
+  letter case); `serve-e2e.sh` 63/63 (new: with the app holding the vault, `vault merge`
+  and `vault passwd` refused by its path, in upper case and through a junction, which
+  needs no Developer Mode; activity files present and encrypted).
+- **Found on Windows, belongs on main:** `vault merge` compared the copy's path as text,
+  so the vault named in other letter case merged into itself (exit 0). The CLI now checks
+  `same_file_path` first (`src/drivers/clicmd/commands.cf`). macOS (case-insensitive
+  APFS) has the same hole.
+- Cases not checked: the app's Settings → Change master password (stage 3, gui-e2e or
+  the owner); `chmod`/folder flush are no-ops by design.
+- Unexplained, instrumented: one `cli-smoke.sh` run stopped at "relay did not start"
+  with an empty relay log (>10 s); alone the relay starts in 1.3 s, and the next full run
+  passed. A `diag:` line now prints the relay's start time and whether PowerShell lives.

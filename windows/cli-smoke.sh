@@ -49,6 +49,41 @@ check "the edit is saved" '[[ "$out" == *"postgres"*"15433"* ]]'
 step 5 "$M" --master-stdin tunnel up web-01:postgres
 step 0 "$M" --master-stdin tunnel rm web-01:postgres
 step 3 "$M" --master-stdin tunnel rm web-01:postgres
+echo "== version (milestone 32)"
+step 0 "" --version
+check "the first line names the build's version" '[[ "$(head -1 <<<"$out" | tr -d "\r")" == "flint $("$here/../scripts/version.sh")" ]]'
+
+echo "== vault passwd on Windows (milestone 40; a subset of scripts/cli-e2e.sh)"
+N='gravel onion tundra quartz\n'
+PW="$W\\vaults\\pw.flint"; pw="$WIN_TMP/vaults/pw.flint"
+step 0 "$M" --master-stdin vault create "$PW" --name PW
+step 0 "${M}host-secret-1\n" --master-stdin --vault "$PW" host add pw-host --hostname 10.9.9.9 --password-stdin
+salt_before="$(head -c 16 "$pw" | od -An -tx1 | tr -d ' \n')"
+step 0 "$M$N" --json --vault "$PW" vault passwd --master-stdin --new-master-stdin
+check "the vault has a new salt" '[[ "$(head -c 16 "$pw" | od -An -tx1 | tr -d " \n")" != "$salt_before" ]]'
+check "no re-keyed copy is left beside it" '[[ ! -e "$pw.rekey" ]] && ! ls cfg/activity/*.new >/dev/null 2>&1'
+step 6 "$M" --master-stdin --vault "$PW" host list
+step 0 "$N" --json --master-stdin --vault "$PW" host show pw-host
+check "the host keeps its password" '[[ "$out" == *"\"has_password\": true"* || "$out" == *"\"has_password\":true"* ]]'
+step 6 "wrong horse battery\n$M" --vault "$PW" vault passwd --master-stdin --new-master-stdin
+step 0 "${N}monkey2026\n" --vault "$PW" vault passwd --master-stdin --new-master-stdin
+check "a weak password is taken with a warning" '[[ "$out" == *"too weak for a remote vault"* ]]'
+step 0 "monkey2026\n$N" --vault "$PW" vault passwd --master-stdin --new-master-stdin
+step 0 "$N" --master-stdin --vault "$PW" vault status
+
+echo "== vault merge on Windows (milestone 41; a subset of scripts/cli-e2e.sh)"
+MG="$W\\vaults\\mg.flint"; MGC="$W\\vaults\\mg (conflict copy).flint"
+step 0 "$M" --master-stdin vault create "$MG" --name MG
+step 0 "$M" --master-stdin --vault "$MG" host add shared --hostname 10.7.7.1
+cp "$WIN_TMP/vaults/mg.flint" "$WIN_TMP/vaults/mg (conflict copy).flint"
+step 0 "$M" --master-stdin --vault "$MG" host edit shared --port 2201
+step 0 "$M" --master-stdin --vault "$MGC" host add db --hostname 10.7.7.5
+step 0 "$M" --json --master-stdin --vault "$MG" vault merge "$MGC"
+step 0 "$M" --json --master-stdin --vault "$MG" host list
+check "both sides' changes are in" '[[ "$out" == *"2201"* && "$out" == *"\"db\""* ]]'
+step 7 "$M" --master-stdin --vault "$MG" vault merge "$MG"
+step 7 "$M" --master-stdin --vault "$MG" vault merge "$W\\VAULTS\\MG.FLINT"
+
 echo "--- files"; ls -la cfg vaults
 
 if [ "${SMOKE_SSH:-1}" = 1 ]; then
@@ -90,8 +125,11 @@ CFG
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$here/ssh-relay.ps1")" \
     -Port "$RELAY_PORT" -TargetHost 127.0.0.2 -Target 2222 -Distro "$WSL_DISTRO_NAME" > "$tmp/relay.log" 2>&1 &
   relay_pid=$!
+  relay_t0=$SECONDS
   for _ in $(seq 1 100); do grep -q '^relay:' "$tmp/relay.log" 2>/dev/null && break; sleep 0.1; done
-  grep -q '^relay:' "$tmp/relay.log" || { echo "relay did not start"; cat "$tmp/relay.log"; exit 1; }
+  # diag: once it took over 10 s with nothing in its log (2026-11-13); alone it takes ~1.3 s.
+  echo "diag: relay after $((SECONDS - relay_t0)) s; powershell alive: $(kill -0 "$relay_pid" 2>/dev/null && echo yes || echo no)"
+  grep -q '^relay:' "$tmp/relay.log" || { echo "relay did not start"; cat "$tmp/relay.log"; powershell.exe -NoProfile -c "Get-NetTCPConnection -LocalPort $RELAY_PORT -EA SilentlyContinue | Select LocalAddress,State,OwningProcess" 2>&1 | tr -d '\r'; exit 1; }
 
   cp "$tmp/user_ed25519" "$WIN_TMP/user_ed25519"
   rem="$tmp/remote"; mkdir -p "$rem/locked"; chmod 555 "$rem/locked"
