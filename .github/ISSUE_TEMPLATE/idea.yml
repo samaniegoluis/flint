@@ -1,0 +1,22 @@
+name: Idea
+description: Suggest something Flint could do.
+labels: [idea]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are read, though not all can be built. Please check the [roadmap](https://github.com/samaniegoluis/flint/blob/main/ROADMAP.md) first: it may already be planned.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like
+      description: How Flint could solve it. Other tools that do it well are useful context.
+    validations:
+      required: true

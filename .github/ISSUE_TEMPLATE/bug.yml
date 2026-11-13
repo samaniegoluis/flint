@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in Flint does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Never paste a password, a private key, a token or a vault file here.
+        For a security problem, use [a private report](https://github.com/samaniegoluis/flint/security/advisories/new) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. flint host add …
+        2. flint connect …
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options:
+        - Desktop app
+        - CLI
+        - Both
+        - flint-vault-server
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Flint version
+      description: The output of `flint --version` (the first line is enough).
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: macOS 26.1, Ubuntu 24.04, …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output or logs
+      description: Error messages, `--json` output, screenshots. Remove anything private first.
+      render: text
