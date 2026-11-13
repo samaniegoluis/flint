@@ -4,6 +4,18 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.9.0 — 2026-11-13
+
+flint-vault-server is here: a small server you run yourself, in Docker or as a bare binary, that keeps one encrypted copy of your vault for all your machines. It stores the file exactly as Flint uploads it, with a version number, and never sees your master password or any key; it checks a bearer token in constant time, limits each client's rate, locks out repeated wrong tokens, and keeps the last 10 versions, any of which can be restored. The new docs page Self-host a remote vault covers Docker, Dokploy, a reverse proxy for TLS, backups and restores. Connecting Flint to it comes in the next release.
+
+### Added
+
+- **server:** The remote vault server's rules and use cases, with the core:net/http spike's gaps (milestone 42)
+- **server:** Flint-vault-server, its file store and its own deadlined accept loop (milestone 42)
+- **server:** The Docker image, a compose file and Self-host a remote vault (milestone 42)
+- **server:** Restore --json (milestone 42)
+
+
 ## 0.8.0 — 2026-11-13
 
 When a cloud folder keeps two versions of your vault, flint vault merge puts the conflict copy back into it record by record: both machines' changes are kept, the later edit wins, deletions carry over, and an alias added on both sides is renamed and reported. The copy is only read. Every record now remembers when it was written and deleted records leave a marker, which is what the remote vault will merge with. Also fixed: a vault reached through a linked folder (macOS's /tmp, a linked Dropbox) is now recognised as the one Flint holds, so vault passwd and vault merge are refused while it is unlocked there.
