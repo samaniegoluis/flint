@@ -60,6 +60,10 @@ type RemoteStatus struct {
     pending:      bool `json:"pending"`
 }
 
+fn no_remote_status() -> RemoteStatus {
+    return RemoteStatus{ connected: false, url: "", version: 0, last_sync: 0, last_attempt: 0, last_error: "", pending: false }
+}
+
 fn empty_merge_report() -> MergeReport {
     return MergeReport{ added: 0, updated: 0, removed: 0, changes: [], notes: [] }
 }
@@ -160,7 +164,7 @@ fn str_trim_all(s: str) -> str {
 // vault's and strong enough. An empty server gets this vault; a server holding this
 // vault already (connected from another machine) is merged with it; a server holding
 // another vault is refused. The token goes to the keychain, the link to `links`.
-fn connect_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: Keychain](crypto: C, mut store: S, links: L, remote: R, keychain: K, mut session: VaultSession, url: str, token: str, password: str, now_ms: i64) -> SyncOutcome! {
+fn connect_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: Keychain, T: Keychain](crypto: C, mut store: S, links: L, remote: R, keychain: K, tokens: T, mut session: VaultSession, url: str, token: str, password: str, now_ms: i64) -> SyncOutcome! {
     base := try check_connect_inputs(url, token, password, session.name)
     if !(try verify_master_password(crypto, store, session, password)) {
         return error(coded(ERR_WRONG_PASSWORD, "that is not the master password of vault '{session.name}'"))
@@ -177,15 +181,15 @@ fn connect_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, 
     if got.found && got.vault_id != session.id {
         return error(coded(ERR_CONFLICT, "the server at {base} holds another vault; a server keeps one vault (use another server, or download that vault with `flint vault connect {base} --to <path>`)"))
     }
-    try save_token(keychain, session.id, clean_token)
+    try save_token(tokens, session.id, clean_token)
     link := RemoteLink{ path: session.path, vault_id: session.id, url: base, version: 0, synced_hash: "", last_sync: 0, last_attempt: 0, last_error: "" }
     save_link(links, link) or err {
-        _ := keychain.keychain_forget(remote_token_account(session.id))
+        _ := tokens.keychain_forget(remote_token_account(session.id))
         return error("{err.message()}")
     }
-    res := sync_vault(crypto, mut store, links, remote, keychain, mut session, "", now_ms) or err {
+    res := sync_vault(crypto, mut store, links, remote, keychain, tokens, mut session, "", now_ms) or err {
         _ := drop_link(links, session.path)
-        _ := keychain.keychain_forget(remote_token_account(session.id))
+        _ := tokens.keychain_forget(remote_token_account(session.id))
         return error("{err.message()}")
     }
     return res
@@ -195,7 +199,7 @@ fn connect_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, 
 // new vault file at `path`, opened with `password` (its master password, typed for
 // this command), and connects it. Returns the session of the new vault, unlocked in
 // `store`.
-fn download_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: Keychain, P: RecentStore](crypto: C, mut store: S, links: L, remote: R, keychain: K, recents: P, url: str, token: str, password: str, path: str, now_ms: i64) -> VaultSession! {
+fn download_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: Keychain, T: Keychain, P: RecentStore](crypto: C, mut store: S, links: L, remote: R, keychain: K, tokens: T, recents: P, url: str, token: str, password: str, path: str, now_ms: i64) -> VaultSession! {
     try check_absolute(path)
     base := try check_connect_inputs(url, token, password, vault_name_from_path(path))
     if store.vault_file_exists(path) {
@@ -226,12 +230,12 @@ fn download_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote,
     if session.id != got.vault_id {
         return error(coded(ERR_INVALID, "the server named vault {got.vault_id}, and the file it sent is vault {session.id}"))
     }
-    try save_token(keychain, session.id, clean_token)
+    try save_token(tokens, session.id, clean_token)
     data := try store.vault_file_bytes(path)
     h := try file_hash(crypto, data)
     link := RemoteLink{ path: path, vault_id: session.id, url: base, version: got.version, synced_hash: h, last_sync: now_ms, last_attempt: now_ms, last_error: "" }
     save_link(links, link) or err {
-        _ := keychain.keychain_forget(remote_token_account(session.id))
+        _ := tokens.keychain_forget(remote_token_account(session.id))
         return error("{err.message()}")
     }
     return session
@@ -239,10 +243,10 @@ fn download_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote,
 
 // `flint vault disconnect`: this machine stops syncing the vault at `path`. The vault
 // file stays as it is, and so does the server's copy; the token leaves the keychain.
-fn disconnect_remote[L: RemoteLinkStore, K: Keychain](links: L, keychain: K, path: str) -> RemoteLink! {
+fn disconnect_remote[L: RemoteLinkStore, T: Keychain](links: L, tokens: T, path: str) -> RemoteLink! {
     link := try load_link(links, path)
     _ := try drop_link(links, path)
-    _ := keychain.keychain_forget(remote_token_account(link.vault_id))
+    _ := tokens.keychain_forget(remote_token_account(link.vault_id))
     return link
 }
 
@@ -252,7 +256,7 @@ fn remote_status[C: Crypto, S: VaultStore, L: RemoteLinkStore](crypto: C, store:
     list := try links.links_load()
     i := find_remote_link(list, path)
     if i < 0 {
-        return RemoteStatus{ connected: false, url: "", version: 0, last_sync: 0, last_attempt: 0, last_error: "", pending: false }
+        return no_remote_status()
     }
     l := list[usize(i)]
     mut pending := true
@@ -286,12 +290,14 @@ fn remote_connected[L: RemoteLinkStore](links: L, path: str) -> bool {
 // server copy that does not open with this vault's key is opened with it, and the
 // vault here is re-keyed to it first (`session` then holds the new keys). Empty, such
 // a copy fails `wrong_password`, and nothing changes here.
-fn sync_vault[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: Keychain](crypto: C, mut store: S, links: L, remote: R, keychain: K, mut session: VaultSession, new_password: str, now_ms: i64) -> SyncOutcome! {
-    if session.secrets_key.len() == 0 {
-        return error(coded(ERR_LOCKED, "the vault is locked; a sync merges with its key"))
+fn sync_vault[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: Keychain, T: Keychain](crypto: C, mut store: S, links: L, remote: R, keychain: K, tokens: T, mut session: VaultSession, new_password: str, now_ms: i64) -> SyncOutcome! {
+    // The store holds the key a merge opens the server's copy with; re-keying to a
+    // password set on another machine also needs the session's secrets key.
+    if new_password.len() > 0 && session.secrets_key.len() == 0 {
+        return error(coded(ERR_LOCKED, "the vault is locked; unlock it to take the new master password"))
     }
     mut link := try load_link(links, session.path)
-    res := sync_rounds(crypto, mut store, links, remote, keychain, mut session, mut link, new_password, now_ms) or err {
+    res := sync_rounds(crypto, mut store, links, remote, keychain, tokens, mut session, mut link, new_password, now_ms) or err {
         msg := "{err.message()}"
         mut failed := load_link(links, session.path) or link
         failed.last_attempt = now_ms
@@ -302,8 +308,43 @@ fn sync_vault[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: K
     return res
 }
 
-fn sync_rounds[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: Keychain](crypto: C, mut store: S, links: L, remote: R, keychain: K, mut session: VaultSession, mut link: RemoteLink, new_password: str, now_ms: i64) -> SyncOutcome! {
-    token := try load_token(keychain, link.vault_id)
+// A sync after a command changed the vault, from the CLI on its own: the vault is open
+// in `store` for the command, under the master password typed for it. Nothing to do
+// when the vault is not connected or holds nothing new; a failure is the caller's to
+// report (the change waits for the next sync).
+fn sync_if_pending[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: Keychain, T: Keychain](crypto: C, mut store: S, links: L, remote: R, keychain: K, tokens: T, path: str, name: str, now_ms: i64) -> bool! {
+    if !remote_pending(crypto, store, links, path) {
+        return false
+    }
+    link := try load_link(links, path)
+    mut session := VaultSession{ path: path, name: name, id: link.vault_id, secrets_key: [], cached: false }
+    _ := try sync_vault(crypto, mut store, links, remote, keychain, tokens, mut session, "", now_ms)
+    return true
+}
+
+// A new master password for a vault that may be connected (milestone 43): synced
+// first, so no other machine's change made under the old password waits on the
+// server (it would not open here afterwards), then changed, then uploaded. A
+// connected vault that cannot reach its server keeps its password.
+fn change_master_password_synced[C: Crypto, S: VaultStore, K: Keychain, L: RemoteLinkStore, R: VaultRemote, T: Keychain](crypto: C, mut store: S, keychain: K, links: L, remote: R, tokens: T, session: VaultSession, current: str, new_password: str, now_ms: i64) -> VaultSession! {
+    connected := remote_connected(links, session.path)
+    if connected {
+        mut s := session
+        sync_vault(crypto, mut store, links, remote, keychain, tokens, mut s, "", now_ms) or err {
+            return error("{err.message()} (a connected vault changes its master password only in step with its server)")
+        }
+    }
+    next := try change_master_password(crypto, mut store, keychain, session, current, new_password)
+    if connected {
+        mut n := next
+        // The change is made; an upload that fails now waits like any other change.
+        _ := sync_vault(crypto, mut store, links, remote, keychain, tokens, mut n, "", now_ms)
+    }
+    return next
+}
+
+fn sync_rounds[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: Keychain, T: Keychain](crypto: C, mut store: S, links: L, remote: R, keychain: K, tokens: T, mut session: VaultSession, mut link: RemoteLink, new_password: str, now_ms: i64) -> SyncOutcome! {
+    token := try load_token(tokens, link.vault_id)
     url := remote_vault_url(link.url)
     mut res := SyncOutcome{ path: session.path, name: session.name, url: link.url, result: SYNC_IN_STEP, version: link.version, uploaded: false, report: empty_merge_report(), rekeyed: false }
     for round in 0..SYNC_ROUNDS {

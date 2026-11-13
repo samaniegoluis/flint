@@ -153,7 +153,7 @@ fn servable(p: ParsedArgs) -> bool {
         return !is_tunnel_session(p)
     }
     if noun == "vault" {
-        return verb == "status" || verb == "rename"
+        return verb == "status" || verb == "rename" || verb == "sync"
     }
     return false
 }
@@ -236,7 +236,7 @@ fn refused_session_frame(msg: str, req: ServeRequest) -> str {
 fn needs_unlocked_vault(p: ParsedArgs) -> bool {
     noun := p.positional(0)
     if noun == "vault" {
-        return p.positional(1) == "rename"
+        return p.positional(1) == "rename" || p.positional(1) == "sync"
     }
     // `tunnel up|down|status` need Flint itself, not just its key: they fail `locked`
     // at once rather than start Flint (D-062).
@@ -792,6 +792,7 @@ fn served_secrets(req: ServeRequest) -> SecretInput {
         key_text: req.secrets.key_text, has_key: req.secrets.has_key,
         sudo_password: req.secrets.sudo_password, has_sudo_password: req.secrets.has_sudo_password,
         in_app: true, sudo_typed: "", new_master: "", has_new_master: false,
+        token: "", has_token: false,
     }
 }
 

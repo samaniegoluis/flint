@@ -73,6 +73,11 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     if settings_valid(probe) {
         fixed.rdp_graphics = s.rdp_graphics
     }
+    probe = d
+    probe.sync_interval = s.sync_interval
+    if settings_valid(probe) {
+        fixed.sync_interval = s.sync_interval
+    }
     return fixed
 }
 

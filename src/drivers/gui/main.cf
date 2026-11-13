@@ -124,6 +124,7 @@ fn main() {
     app.bind_raw("dialog_save") |params| { return rpc_dialog_save(params, app) }
     app.bind_raw("settings_get") |params| { return rpc_settings_get(settings_store) }
     app.bind_raw("settings_set") |params| { return rpc_settings_set(params, mut settings_store, st) }
+    app.bind_raw("vault_sync_hint") |params| { return rpc_vault_sync_hint(params, st) }
     app.bind_raw("fonts_mono") |params| { return rpc_fonts_mono(font_catalog) }
     app.bind_raw("ui_state_get") |params| { return rpc_ui_state_get(ui_state_store, store, st) }
     app.bind_raw("ui_state_set") |params| { return rpc_ui_state_set(params, mut ui_state_store, store, st) }
@@ -374,6 +375,16 @@ fn main() {
                     run_accept_loop(loop_listener, c, mut s, kc, recents, loop_st, mut a)
                 }
             }
+        }
+        // The remote vault (milestone 43, sync.cf): a connected vault kept in step.
+        sync_store := store
+        sync_app := app
+        sync_st := st
+        sync_settings := settings_store
+        scope.spawn || {
+            mut s := sync_store
+            mut a := sync_app
+            run_sync_loop(c, mut s, kc, sync_settings, sync_st, mut a)
         }
         // Auto-lock: idle time, screen lock and sleep.
         write_stderr("flint-gui: locks on idle, {system_events_start()}\n")

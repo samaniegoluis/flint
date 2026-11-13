@@ -142,12 +142,15 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try p.allow_flags("vault status", [])
         try p.expect_args("vault status", 0, "[--vault <name|path>]")
         target := try resolve_vault(recents, vault_selector(p))
-        mut st := VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1 }
+        mut st := VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1, remote: no_remote_status() }
         if src.served && same_file_path(target.path, src.session.path) {
             // Unlocked in the app: counts from the open store, no keychain read.
             st = try open_vault_status(store, store, src.session)
         } else {
             st = try vault_status(c, mut store, src.kc, recents, target.path, target.name)
+        }
+        if st.exists {
+            st.remote = try remote_status(c, store, remote_links(), target.path)
         }
         if as_json {
             say(json.stringify(st))
@@ -208,6 +211,24 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try cmd_vault_merge(p, sec, as_json, c, mut store, src, recents)
         return
     }
+    if verb == "connect" {
+        try p.allow_flags("vault connect", ["--to", "--token-stdin"])
+        try p.expect_args("vault connect", 1, "<url> [--to <path>] [--token-stdin]")
+        try cmd_vault_connect(p, sec, as_json, c, mut store, src, recents)
+        return
+    }
+    if verb == "sync" {
+        try p.allow_flags("vault sync", ["--new-master-stdin"])
+        try p.expect_args("vault sync", 0, "[--vault <name|path>]")
+        try cmd_vault_sync(p, sec, as_json, c, mut store, src, recents)
+        return
+    }
+    if verb == "disconnect" {
+        try p.allow_flags("vault disconnect", [])
+        try p.expect_args("vault disconnect", 0, "[--vault <name|path>]")
+        try cmd_vault_disconnect(p, as_json, recents)
+        return
+    }
     if verb == "forget" {
         try p.allow_flags("vault forget", [])
         try p.expect_args("vault forget", 1, "<name|path>")
@@ -257,7 +278,7 @@ fn cmd_vault_passwd(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, m
         next_password = try prompt_new_secret("new master password")
     }
     strength := password_strength(next_password, session.name)
-    next := try change_master_password(c, mut store, src.kc, session, current, next_password)
+    next := try change_master_password_synced(c, mut store, src.kc, remote_links(), new_http_vault_remote(), token_keychain(), session, current, next_password, wall_ms())
     if as_json {
         say(json.stringify(PasswdReport{ path: next.path, name: next.name, remembered: next.cached, strength: strength }))
         return

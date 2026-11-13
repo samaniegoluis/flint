@@ -201,6 +201,8 @@ export interface Settings {
   rdp_mac_custom: string;
   /** Milestone 34: 'auto' offers the graphics pipeline (RDPGFX), 'compatible' keeps bitmap updates. */
   rdp_graphics: 'auto' | 'pipeline' | 'compatible';
+  /** Milestone 43: seconds between checks of a connected vault's server (0, 60, 300, 900); 0 syncs on events only. */
+  sync_interval: number;
   /** The app's own record that earlier cached keys were removed (D-048); the core keeps it. */
   keys_cleared?: boolean;
 }

@@ -30,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system', accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
   term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: true, term_theme: 'default',
   lock_after: '1h', paste_limit_mb: 20, rdp_mac_keys: 'mac', rdp_mac_custom: '', rdp_graphics: 'auto',
+  sync_interval: 60,
 };
 
 // How often the page tells the core someone is using the window.
@@ -244,8 +245,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  // A command from the `flint` CLI ran against this vault in the app (D-038): show
-  // what it changed.
+  // A connected vault (milestone 43): the window coming back tells the app's sync loop
+  // to look at the server (it does when the last check is a while ago).
+  useEffect(() => {
+    if (!vault) return;
+    const hint = () => { if (document.visibilityState === 'visible') api.syncHint('focus').catch(() => {}); };
+    window.addEventListener('focus', hint);
+    document.addEventListener('visibilitychange', hint);
+    return () => {
+      window.removeEventListener('focus', hint);
+      document.removeEventListener('visibilitychange', hint);
+    };
+  }, [vault]);
+
+  // A command from the `flint` CLI ran against this vault in the app (D-038), or a
+  // sync merged another machine's changes (milestone 43): show what it changed.
   useEffect(() => on<{ path: string; name: string }>('vault:changed', (e) => {
     if (!vault || e.path !== vault.path) return;
     if (e.name !== vault.name) setVault({ ...vault, name: e.name });

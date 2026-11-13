@@ -238,8 +238,15 @@ fn print_status(st: VaultStatus) {
         print_fields(["vault", "path", "state"], [st.name, st.path, "missing (no file at this path)"])
         return
     }
+    (rnames, rvalues) := remote_status_fields(st.remote)
     if !st.unlocked {
-        print_fields(["vault", "path", "state"], [st.name, st.path, "locked (unlock it in Flint, or pass --master-stdin)"])
+        mut lf: []str = ["vault", "path", "state"]
+        mut lv: []str = [st.name, st.path, "locked (unlock it in Flint, or pass --master-stdin)"]
+        for i, n in rnames {
+            lf.push(n)
+            lv.push(rvalues[i])
+        }
+        print_fields(lf, lv)
         return
     }
     mut fields: []str = ["vault", "path", "state", "groups", "hosts", "keys", "credentials"]
@@ -252,6 +259,10 @@ fn print_status(st: VaultStatus) {
         } else {
             values.push("kept {retention_label(st.activity_days)}")
         }
+    }
+    for i, n in rnames {
+        fields.push(n)
+        values.push(rvalues[i])
     }
     print_fields(fields, values)
 }

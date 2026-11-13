@@ -191,3 +191,86 @@ fn valid_sync_interval(seconds: i64) -> bool {
     }
     return false
 }
+
+// ---- When the app syncs (milestone 43, D-098) ------------------------------------
+
+// A change waits this long for the next one before it is uploaded, so a burst of
+// edits (an import, a few hosts in a row) makes one upload.
+SYNC_BATCH_MS: i64 = 3000
+// The window coming back syncs only when the last check is older than this.
+SYNC_FOCUS_MS: i64 = 15000
+// After a failure, automatic attempts back off from this, doubling, up to the cap.
+SYNC_BACKOFF_MS: i64 = 30000
+SYNC_BACKOFF_MAX_MS: i64 = 900000
+
+// Why the app was told to look: the window came back, or the person asked.
+SYNC_HINT_FOCUS: str = "focus"
+SYNC_HINT_NOW: str = "now"
+
+// What the app's sync loop remembers between its ticks. Times are its monotonic clock.
+type SyncClock struct {
+    // The vault the last check was for ("" before the first): another one, or the
+    // same one unlocked again, is checked at once.
+    path: str
+    last_check: i64
+    // When the vault was first seen holding changes the server lacks (0: none).
+    pending_since: i64
+    // Failed attempts in a row.
+    failures: i64
+}
+
+fn new_sync_clock() -> SyncClock {
+    return SyncClock{ path: "", last_check: 0, pending_since: 0, failures: 0 }
+}
+
+// Whether the app syncs now: at unlock, on demand, when the window comes back after a
+// while, once a change has settled, or when the interval has passed. After failures,
+// once the back-off has passed and never sooner, unless asked. Updates
+// `pending_since`.
+fn sync_due(mut clock: SyncClock, path: str, now: i64, pending: bool, interval_s: i64, hint: str) -> bool {
+    if pending {
+        if clock.pending_since == 0 {
+            clock.pending_since = now
+        }
+    } else {
+        clock.pending_since = 0
+    }
+    if hint == SYNC_HINT_NOW {
+        return true
+    }
+    if path != clock.path {
+        return true
+    }
+    if clock.failures > 0 {
+        mut wait := SYNC_BACKOFF_MS
+        for i in 1..clock.failures {
+            if wait < SYNC_BACKOFF_MAX_MS {
+                wait = wait * 2
+            }
+        }
+        if wait > SYNC_BACKOFF_MAX_MS {
+            wait = SYNC_BACKOFF_MAX_MS
+        }
+        // Waited long enough: try again.
+        return now - clock.last_check >= wait
+    }
+    if hint == SYNC_HINT_FOCUS && now - clock.last_check >= SYNC_FOCUS_MS {
+        return true
+    }
+    if pending && now - clock.pending_since >= SYNC_BATCH_MS {
+        return true
+    }
+    return interval_s > 0 && now - clock.last_check >= interval_s * 1000
+}
+
+// Records a sync's outcome on the clock.
+fn sync_checked(mut clock: SyncClock, path: str, now: i64, ok: bool) {
+    clock.path = path
+    clock.last_check = now
+    if ok {
+        clock.failures = 0
+        clock.pending_since = 0
+    } else {
+        clock.failures += 1
+    }
+}

@@ -54,3 +54,42 @@ test "sync intervals" {
     assert(!valid_sync_interval(1))
     assert_eq(remote_token_account("ab"), "remote-token:ab")
 }
+
+test "the app syncs at unlock, on demand, after a change settles, on focus and by interval" {
+    mut c := new_sync_clock()
+    assert(sync_due(mut c, "/v", 1000, false, 60, ""), "first unlock")
+    sync_checked(mut c, "/v", 1000, true)
+    assert(!sync_due(mut c, "/v", 2000, false, 60, ""))
+    // A change waits for the batch.
+    assert(!sync_due(mut c, "/v", 3000, true, 60, ""))
+    assert(!sync_due(mut c, "/v", 5000, true, 60, ""))
+    assert(sync_due(mut c, "/v", 6000, true, 60, ""))
+    sync_checked(mut c, "/v", 6000, true)
+    // Focus soon after a check does nothing; later it syncs.
+    assert(!sync_due(mut c, "/v", 10000, false, 60, SYNC_HINT_FOCUS))
+    assert(sync_due(mut c, "/v", 21000, false, 60, SYNC_HINT_FOCUS))
+    // The interval, and 0 turning it off.
+    assert(sync_due(mut c, "/v", 66000, false, 60, ""))
+    assert(!sync_due(mut c, "/v", 999999, false, 0, ""))
+    assert(sync_due(mut c, "/v", 7000, false, 0, SYNC_HINT_NOW))
+    // Another vault: at once.
+    assert(sync_due(mut c, "/w", 7000, false, 0, ""))
+}
+
+test "failures back off, doubling to a cap; asking still syncs" {
+    mut c := new_sync_clock()
+    sync_checked(mut c, "/v", 0, false)
+    assert(!sync_due(mut c, "/v", 29000, true, 60, ""))
+    assert(sync_due(mut c, "/v", 31000, true, 60, ""))
+    sync_checked(mut c, "/v", 31000, false)
+    assert(!sync_due(mut c, "/v", 31000 + 59000, true, 60, ""))
+    assert(sync_due(mut c, "/v", 31000 + 61000, true, 60, ""))
+    for i in 0..10 {
+        sync_checked(mut c, "/v", 0, false)
+    }
+    assert(!sync_due(mut c, "/v", 899000, true, 60, ""))
+    assert(sync_due(mut c, "/v", 901000, true, 60, ""))
+    assert(sync_due(mut c, "/v", 1, true, 60, SYNC_HINT_NOW))
+    sync_checked(mut c, "/v", 2, true)
+    assert_eq(c.failures, 0)
+}

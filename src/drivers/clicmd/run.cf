@@ -31,6 +31,11 @@ Vaults
   vault rename <new-name>               Rename the vault (its file is not moved)
   vault passwd [--new-master-stdin]     Change the master password (asks for both)
   vault merge <copy.flint>              Merge a conflict copy of the vault into it
+  vault connect <url> [--token-stdin]   Keep the vault in step with a flint-vault-server
+                                        (asks for its token and the master password)
+  vault connect <url> --to <path>       Download the server's vault to a new file here
+  vault sync [--new-master-stdin]       Sync now (Flint also syncs on its own)
+  vault disconnect                      Stop syncing on this machine; the file stays
   vault forget <name|path>              Drop a vault from the recent list
 
 Groups
@@ -225,6 +230,10 @@ fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
         status = run_session_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents, mut term, new_tty_prompter(), mut sink, mut local, mut progress, term_name)
     } else {
         status = run_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents)
+    }
+    // Milestone 43: a connected vault this command changed goes to its server now.
+    if status.has_value() {
+        sync_after_command(p, c, mut store, kc, recents)
     }
     store.vault_detach()
     return status

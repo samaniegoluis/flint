@@ -37,6 +37,10 @@ type Settings struct {
     // v8, "auto" picks one of them at connect by the link's round trip (milestone 35,
     // auto_rdp_graphics). Older files read the default.
     rdp_graphics:       str  `json:"rdp_graphics" default:"auto"`
+    // Milestone 43 (D-098): seconds between the app's checks for another machine's
+    // changes to a connected vault (SYNC_INTERVALS); 0 checks only at unlock, after a
+    // change, when the window comes back and on demand. Older files read the default.
+    sync_interval:      i64  `json:"sync_interval" default:"60"`
 }
 
 RDP_MAC_KEYS: []str = ["mac", "windows", "custom"]
@@ -61,7 +65,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto" }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {
@@ -114,6 +118,9 @@ fn check_settings(s: Settings) -> void! {
         return error(coded(ERR_INVALID, "remote desktop keys must be mac, windows or custom"))
     }
     try check_rdp_mac_custom(s.rdp_mac_custom)
+    if !valid_sync_interval(s.sync_interval) {
+        return error(coded(ERR_INVALID, "sync interval must be 0 (off), 60, 300 or 900 seconds"))
+    }
     if !one_of(s.rdp_graphics, RDP_GRAPHICS) {
         return error(coded(ERR_INVALID, "remote desktop graphics must be auto, pipeline or compatible"))
     }

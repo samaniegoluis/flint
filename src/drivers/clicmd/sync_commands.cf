@@ -1,0 +1,229 @@
+package clicmd
+
+// The remote vault from the CLI (milestone 43): `vault connect`, `vault sync`,
+// `vault disconnect`, the remote in `vault status`, and the sync after a command that
+// changed a connected vault. Each parses its input, calls one use case
+// (application/sync.cf) and formats the result (Principle 2).
+//
+// The server's token is kept in the OS keychain (never in the config folder, never
+// printed); the vault's own key never is, by the CLI (Principle 11): the token's
+// keychain is a second one, apart from `src.kc`.
+
+import "core:os"
+import "core:time"
+import "core:json"
+import "../../adapters/config"
+import "../../adapters/crypto"
+import "../../adapters/keychain"
+import "../../adapters/vault"
+import "../../adapters/vaultremote"
+import "../../application"
+import "../../domain"
+
+fn wall_ms() -> i64 {
+    return time.unix_seconds() * 1000
+}
+
+fn token_keychain() -> OsKeychain {
+    return new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
+}
+
+fn remote_links() -> JsonRemoteLinkStore {
+    return new_json_remote_link_store(flint_config_dir())
+}
+
+// The server's token: stdin with --token-stdin, else typed on the terminal.
+fn server_token_for(sec: SecretInput) -> str! {
+    if sec.has_token {
+        return sec.token
+    }
+    if !has_terminal() {
+        return error(coded(ERR_USAGE, "no terminal to type the server's token; pass it with --token-stdin"))
+    }
+    return read_secret_line("Server token: ")
+}
+
+// `flint vault connect <url> [--to <path>]`.
+fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+    url := p.positional(2)
+    to := p.flag_value("--to")
+    links := remote_links()
+    remote := new_http_vault_remote()
+    tokens := token_keychain()
+    if to.len() > 0 {
+        path := absolute_path(to)
+        token := try server_token_for(sec)
+        password := try master_password_for(sec, vault_name_from_path(path))
+        s := try download_remote(c, mut store, links, remote, src.kc, tokens, recents, url, token, password, path, wall_ms())
+        st := try remote_status(c, store, links, s.path)
+        if as_json {
+            say(json.stringify(SyncOutcome{ path: s.path, name: s.name, url: st.url, result: "downloaded", version: st.version, uploaded: false, report: empty_merge_report(), rekeyed: false }))
+            return
+        }
+        say("Downloaded vault '{s.name}' from {st.url} to {s.path} (version {st.version}).")
+        say("It is connected: changes on this machine and on the server's other machines stay in step.")
+        return
+    }
+    target := try resolve_vault(recents, vault_selector(p))
+    if src.served || app_holds_unlocked(target) {
+        return error(coded(ERR_CONFLICT, "Flint has vault '{target.name}' unlocked; lock it in Flint first, then connect it"))
+    }
+    token := try server_token_for(sec)
+    password := try master_password_for(sec, target.name)
+    mut session := try unlock_vault(c, mut store, src.kc, recents, target.path, password, false)
+    got := try connect_remote(c, mut store, links, remote, src.kc, tokens, mut session, url, token, password, wall_ms())
+    if as_json {
+        say(json.stringify(got))
+        return
+    }
+    if got.result == SYNC_MERGED {
+        say("Connected vault '{got.name}' to {got.url}: the server already held it, and the two copies were merged (version {got.version}).")
+        print_sync_report(got.report)
+    } else {
+        say("Connected vault '{got.name}' to {got.url} and uploaded it (version {got.version}).")
+    }
+    say("On another machine: `flint vault connect {got.url} --to <path>`.")
+}
+
+// `flint vault sync`: in the app when it holds the vault, else with the master
+// password typed for this command. A password changed on another machine is asked
+// for (or read with --new-master-stdin) and taken.
+fn cmd_vault_sync(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+    links := remote_links()
+    remote := new_http_vault_remote()
+    tokens := token_keychain()
+    mut session := try open_target(p, sec, c, mut store, src, recents)
+    got := sync_vault(c, mut store, links, remote, src.kc, tokens, mut session, "", wall_ms()) or err {
+        msg := "{err.message()}"
+        if error_code_of(msg) != ERR_WRONG_PASSWORD || !msg.contains("changed on another machine") {
+            return error(msg)
+        }
+        if src.served {
+            return error(coded(ERR_WRONG_PASSWORD, "the vault's master password was changed on another machine; lock vault '{session.name}' in Flint and run `flint vault sync` here to type the new one"))
+        }
+        mut next_password := sec.new_master
+        if !sec.has_new_master {
+            if !has_terminal() {
+                return error(coded(ERR_WRONG_PASSWORD, "the vault's master password was changed on another machine; pass the new one with --new-master-stdin"))
+            }
+            write_stderr("The master password of vault '{session.name}' was changed on another machine.\n")
+            next_password = try read_secret_line("New master password: ")
+        }
+        again := try sync_vault(c, mut store, links, remote, src.kc, tokens, mut session, next_password, wall_ms())
+        print_sync(again, as_json)
+        return
+    }
+    print_sync(got, as_json)
+}
+
+fn print_sync(got: SyncOutcome, as_json: bool) {
+    if as_json {
+        say(json.stringify(got))
+        return
+    }
+    if got.rekeyed {
+        say("Vault '{got.name}' now opens with the master password set on another machine.")
+    }
+    if got.result == SYNC_IN_STEP {
+        say("Vault '{got.name}' is in step with {got.url} (version {got.version}).")
+        return
+    }
+    if got.result == SYNC_UPLOADED {
+        say("Uploaded vault '{got.name}' to {got.url} (version {got.version}).")
+        return
+    }
+    r := got.report
+    mut up := ""
+    if got.uploaded {
+        up = ", and this machine's changes uploaded"
+    }
+    say("Synced vault '{got.name}' with {got.url}: {r.added} added, {r.updated} updated, {r.removed} removed here{up} (version {got.version}).")
+    print_sync_report(r)
+}
+
+fn print_sync_report(r: MergeReport) {
+    mut rows: [][]str = []
+    for ch in r.changes {
+        rows.push([ch.change, merge_kind_label(ch.kind), ch.name])
+    }
+    for ch in r.notes {
+        rows.push([ch.change, merge_kind_label(ch.kind), "{ch.name} ({ch.detail})"])
+    }
+    if rows.len() > 0 {
+        print_table(["CHANGE", "KIND", "NAME"], rows)
+    }
+}
+
+// What `vault disconnect --json` prints.
+type DisconnectNote struct {
+    path: str `json:"path"`
+    url:  str `json:"url"`
+}
+
+// `flint vault disconnect`: no key needed; the vault file and the server's copy stay.
+fn cmd_vault_disconnect(p: ParsedArgs, as_json: bool, recents: JsonRecentStore) -> void! {
+    target := try resolve_vault(recents, vault_selector(p))
+    gone := try disconnect_remote(remote_links(), token_keychain(), target.path)
+    if as_json {
+        say(json.stringify(DisconnectNote{ path: target.path, url: gone.url }))
+        return
+    }
+    say("Vault '{target.name}' no longer syncs with {gone.url} on this machine. The vault file and the server's copy were not touched.")
+}
+
+// "3 min ago" for a Unix-millisecond time.
+fn ago_label(ms: i64) -> str {
+    if ms <= 0 {
+        return "never"
+    }
+    secs := time.unix_seconds() - ms / 1000
+    if secs < 60 {
+        return "just now"
+    }
+    if secs < 3600 {
+        return "{secs / 60} min ago"
+    }
+    if secs < 172800 {
+        return "{secs / 3600} h ago"
+    }
+    return "{secs / 86400} days ago"
+}
+
+fn remote_status_fields(r: RemoteStatus) -> ([]str, []str) {
+    if !r.connected {
+        n: []str = ["remote"]
+        v: []str = ["none (a local vault; `flint vault connect <url>` to sync it)"]
+        return (n, v)
+    }
+    mut waits := "nothing"
+    if r.pending {
+        waits = "changes on this machine, to upload"
+    }
+    mut names: []str = ["remote", "version", "last sync", "waiting"]
+    mut values: []str = [r.url, "{r.version}", ago_label(r.last_sync), waits]
+    if r.last_error.len() > 0 && r.last_attempt >= r.last_sync {
+        names.push("last attempt")
+        values.push("{ago_label(r.last_attempt)}: {r.last_error}")
+    }
+    return (names, values)
+}
+
+// After a command run here (not in the app) left a connected vault with changes
+// its server lacks: sync it now. A failure is a warning; the change waits for the
+// next sync (Principle 14: nothing is lost by waiting).
+fn sync_after_command(p: ParsedArgs, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore) {
+    if p.positional(0) == "vault" {
+        verb := p.positional(1)
+        if verb != "rename" && verb != "merge" {
+            return
+        }
+    }
+    target := resolve_vault(recents, vault_selector(p)) or err {
+        return
+    }
+    synced := sync_if_pending(c, mut store, remote_links(), new_http_vault_remote(), kc, token_keychain(), target.path, target.name, wall_ms()) or err {
+        write_stderr("warning: vault '{target.name}' could not sync with its server, and its change waits for the next sync: {err.message()}\n")
+        return
+    }
+    _ := synced
+}

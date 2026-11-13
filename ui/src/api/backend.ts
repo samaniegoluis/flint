@@ -60,6 +60,8 @@ export const api = {
   dialogSave: (title: string, defaultName: string) => call<{ path: string }>('dialog_save', { title, default_name: defaultName }),
   settingsGet: () => call<Settings>('settings_get'),
   settingsSet: (s: Settings) => call<Settings>('settings_set', s),
+  /** Milestone 43: tells the app's sync loop to look at a connected vault's server. */
+  syncHint: (reason: 'focus' | 'now') => call('vault_sync_hint', { reason }),
   fonts: () => call<{ fonts: string[] }>('fonts_mono'),
   uiStateGet: () => call<UiStateView>('ui_state_get'),
   uiStateSet: (s: UiStateView & { vault: string }) => call<UiStateView>('ui_state_set', s),

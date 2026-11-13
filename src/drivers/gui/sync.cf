@@ -1,0 +1,88 @@
+package main
+
+// The app keeps a connected vault in step with its server (milestone 43, D-098): a
+// loop on its own thread that wakes every SYNC_TICK_MS, or at once when the page says
+// the window came back or the person asked, and syncs when domain's `sync_due` says
+// so. It never runs while the vault is locked (no key to merge with: the changes
+// wait for the next unlock). What happened goes to the page as `vault:sync`, and a
+// merge that changed the vault as `vault:changed`, so the lists show it. The sync's
+// state and Settings come with milestone 44.
+
+import "ext:webui"
+import "core:json"
+import "core:sync"
+import "core:time"
+import "../../adapters/config"
+import "../../adapters/crypto"
+import "../../adapters/keychain"
+import "../../adapters/vault"
+import "../../adapters/vaultremote"
+import "../../application"
+import "../../domain"
+
+SYNC_TICK_MS: i64 = 2000
+
+// What the page hears after each sync the app runs.
+type SyncEvent struct {
+    path:    str         `json:"path"`
+    // SYNC_IN_STEP, SYNC_UPLOADED, SYNC_MERGED, or "error".
+    state:   str         `json:"state"`
+    version: i64         `json:"version"`
+    report:  MergeReport `json:"report"`
+    // The error's code and message when `state` is "error" (never a secret).
+    code:    str         `json:"code"`
+    message: str         `json:"message"`
+}
+
+type SyncHintReq struct {
+    reason: str `json:"reason"`
+}
+
+// The page tells the loop to look (`focus` when the window came back, `now`).
+fn rpc_vault_sync_hint(params: str, st: GuiState) -> str! {
+    req := try parse_req[SyncHintReq](params)
+    if req.reason == SYNC_HINT_FOCUS || req.reason == SYNC_HINT_NOW {
+        st.sync_hints.send(req.reason)
+    }
+    return ok_json()
+}
+
+fn run_sync_loop(c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, settings_store: JsonSettingsStore, st: GuiState, mut app: webui.App) {
+    links := new_json_remote_link_store(flint_config_dir())
+    remote := new_http_vault_remote()
+    mut clock := new_sync_clock()
+    for !st.holder.quitting() {
+        hint := st.sync_hints.recv_timeout(SYNC_TICK_MS) or ""
+        if !st.unlocked() {
+            clock.path = ""
+            continue
+        }
+        session := st.vault_session()
+        if !remote_connected(links, session.path) {
+            continue
+        }
+        interval := (load_settings(settings_store) or default_settings()).sync_interval
+        pending := remote_pending(c, store, links, session.path)
+        now := time.now_ms()
+        if !sync_due(mut clock, session.path, now, pending, interval, hint) {
+            continue
+        }
+        mut s := session
+        got := sync_vault(c, mut store, links, remote, kc, kc, mut s, "", time.unix_seconds() * 1000) or err {
+            msg := "{err.message()}"
+            sync_checked(mut clock, session.path, time.now_ms(), false)
+            write_stderr("flint-gui: sync failed ({error_code_of(msg)})\n")
+            app.emit("vault:sync", SyncEvent{ path: session.path, state: "error", version: 0, report: empty_merge_report(), code: error_code_of(msg), message: msg })
+            continue
+        }
+        sync_checked(mut clock, session.path, time.now_ms(), true)
+        if got.result != SYNC_IN_STEP {
+            write_stderr("flint-gui: synced ({got.result}, version {got.version})\n")
+        }
+        app.emit("vault:sync", SyncEvent{ path: session.path, state: got.result, version: got.version, report: got.report, code: "", message: "" })
+        r := got.report
+        if r.added + r.updated + r.removed > 0 || r.notes.len() > 0 {
+            app.emit("vault:changed", VaultChanged{ path: session.path, name: st.vault_session().name })
+        }
+    }
+}
