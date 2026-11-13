@@ -4,6 +4,25 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.5.0 — 2026-11-13
+
+A remote desktop can now span two monitors: Full screen on all monitors opens the desktop on the main monitor, with the taskbar, and on a second one, and the Monitors button picks which and rearranges them live, keeping your Windows session. Windows sees each monitor, so windows maximise per monitor and move from one to the other. Automatic switches to the graphics pipeline while the desktop spans monitors, where it keeps drawing as a window crosses. Available on macOS and on Linux with X11; Windows comes once it has been checked there. Also fixed: Compatible now really uses bitmaps on Linux.
+
+### Added
+
+- **rdp:** Monitor layouts in the core: the desktop across monitors, kept by a reconnect (milestone 38)
+- **rdp:** The frame channel serves one view per monitor, and the layout reaches FreeRDP (milestone 38)
+- **rdp:** Full screen on all monitors: a window per extra monitor drawing its part (milestone 38)
+- **rdp:** Automatic takes the graphics pipeline across monitors (milestone 38, D-091)
+
+### Fixed
+
+- **rdp:** A drag across monitors goes on into the next one instead of sticking at the edge (milestone 38)
+- **rdp:** A drag that leaves the window keeps its moves and its release (milestone 38)
+- **rdp:** Compatible draws bitmaps on Linux too: the connection type goes before the graphics settings (milestone 38)
+- **rdp:** Going back to one monitor during a reconnect is kept, at the area's size (milestone 38)
+
+
 ## 0.4.0 — 2026-11-12
 
 A remote desktop can take the whole screen. Full screen, from the RDP toolbar, the tab's menu, the palette or ⌃⌘F (Ctrl+Alt+Enter on Linux and Windows), hides Flint's chrome and gives Windows the screen's size; on macOS it is the system's own full screen in a Space of its own. A bar drops from the top edge to leave or disconnect, and can be pinned. The toolbar now shows the desktop's real size after a resize.
