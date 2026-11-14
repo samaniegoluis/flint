@@ -91,9 +91,12 @@ reports an empty `signal`: 0.10 does not give its name.
 
 ## 3. Build
 
-From the repository root:
+Get the source from [GitHub](https://github.com/samaniegoluis/flint) and build from the
+repository root:
 
 ```sh
+git clone https://github.com/samaniegoluis/flint.git
+cd flint
 . scripts/env.sh
 cfire build
 ./build/flint --version

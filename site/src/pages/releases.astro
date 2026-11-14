@@ -6,6 +6,7 @@
 // downloads.
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 import { LinkButton } from '@astrojs/starlight/components';
+import { repoUrl } from '../repo';
 import changelog from '../../../CHANGELOG.md?raw';
 import { inline, parseChangelog } from '../releases/changelog.ts';
 
@@ -47,7 +48,8 @@ function item(text: string): { scope: string | null; html: string } {
 				<h2 id="flint-releases-get">Build Flint from source</h2>
 				<p>
 					There are no release builds yet. Flint builds on macOS and Linux with cfire and a few
-					native libraries; each version below is a git tag you can check out and build.
+					native libraries; each version below is a <a href={`${repoUrl}/tags`}>git tag</a> you can
+					check out and build.
 				</p>
 			</div>
 			<LinkButton href="/start/build-from-source/" icon="right-arrow">Build from source</LinkButton>
@@ -149,6 +151,9 @@ function item(text: string): { scope: string | null; html: string } {
 		background:
 			radial-gradient(ellipse at 0% 0%, var(--flint-glow), transparent 60%),
 			var(--flint-surface-raised);
+	}
+	.flint-releases__get p a {
+		color: var(--sl-color-text-accent);
 	}
 	.flint-releases__get h2 {
 		font-size: var(--sl-text-xl);

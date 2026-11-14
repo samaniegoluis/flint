@@ -3,13 +3,15 @@
 // that Starlight hides below 50rem, so it is reachable on phones, including on pages
 // with no sidebar (the landing), where there is no mobile menu. The Releases link
 // (milestone 33) sits beside it, on every screen size. The width button (normal or wide
-// view) sits before it on docs pages.
+// view) sits before it on docs pages, and the GitHub button after Releases (on phones,
+// in the menu on pages that have one).
 import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
 import Search from '@astrojs/starlight/components/Search.astro';
 import SiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
 import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
 import ThemeToggle from './ThemeToggle.astro';
 import WidthToggle from './WidthToggle.astro';
+import GitHubLink from './GitHubLink.astro';
 
 const onReleases = Astro.url.pathname.replace(/\/$/, '') === '/releases';
 ---
@@ -20,6 +22,7 @@ const onReleases = Astro.url.pathname.replace(/\/$/, '') === '/releases';
 	<div class="sl-flex print:hidden right-group">
 		<div class="sl-hidden md:sl-flex social-icons"><SocialIcons /></div>
 		<a class="flint-header-link" href="/releases/" aria-current={onReleases ? 'page' : undefined}>Releases</a>
+		<div class="github-slot sl-flex"><GitHubLink /></div>
 		<WidthToggle />
 		<ThemeToggle />
 		<div class="sl-hidden md:sl-flex"><LanguageSelect /></div>
@@ -66,6 +69,13 @@ const onReleases = Astro.url.pathname.replace(/\/$/, '') === '/releases';
 	.social-icons {
 		gap: 1rem;
 		align-items: center;
+	}
+	/* Phones, on pages with a sidebar: the GitHub button moves into the menu (beside the
+	   menu button there is no room for it and the whole site title). */
+	@media (max-width: 49.99rem) {
+		:global(:root[data-has-sidebar]) .github-slot {
+			display: none;
+		}
 	}
 	.social-icons:not(:empty)::after {
 		content: '';
