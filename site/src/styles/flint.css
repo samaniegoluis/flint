@@ -731,8 +731,8 @@
 
 /* The wide view (WidthToggle), the default: on docs pages the content column, prose
    included, fills the space between the two sidebars instead of Starlight's 45rem cap, up
-   to 90rem, past which it stays centred (very wide monitors). The normal view, chosen with
+   to 110rem, past which it stays centred (very wide monitors). The normal view, chosen with
    the button, keeps Starlight's layout. The splash landing has no sidebar and is untouched. */
 :root[data-has-sidebar]:not([data-width='normal']) {
-	--sl-content-width: min(100%, 90rem);
+	--sl-content-width: min(100%, 110rem);
 }
