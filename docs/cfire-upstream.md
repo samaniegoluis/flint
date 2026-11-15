@@ -2555,3 +2555,17 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   spelling a reader expects for an explicit copy.
 - **Workaround:** `copy_of_bytes` in `src/adapters/vault/store.cf`.
 - **Ideal:** `clone()` on slices, or a diagnostic pointing at plain assignment.
+
+### CF-149 · bug · `confirmed`: a macOS build's minimum version is the build machine's, not `LSMinimumSystemVersion`
+- **Seen (2026-11-15) [ran, macOS 27.2 → 27.1, `c5b1d4b`]:** `Flint.app` built on macOS 27.2
+  would not open on another Mac with 27.1 ("can't be used with this version of macOS").
+  cfire writes `LSMinimumSystemVersion` 12.0 in `Info.plist`, but passes no deployment target
+  to clang, which takes the SDK's: `vtool -show-build Flint.app/Contents/MacOS/Flint` shows
+  `minos 27.2`, `sdk 27.2`. The same holds for a console executable (`flint`).
+- **Repro:** `cfire build` any `build.Executable` on macOS, then `vtool -show-build <binary>`.
+- **Workaround:** none in Flint yet (no release build). By hand on the other Mac:
+  `vtool -set-build-version macos 27.0 27.2 -replace -output <bin> <bin>`, then ad-hoc
+  signing again. `MACOSX_DEPLOYMENT_TARGET` before `cfire build` is untested.
+- **Ideal:** pass `-mmacosx-version-min` to compile and link, equal to the bundle's
+  `LSMinimumSystemVersion`, with a `MinMacOS`-style field on `build.Executable` to set both
+  (and a diagnostic when a linked library's `minos` is newer).
