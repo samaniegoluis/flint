@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { baseName, crumbs, humanSize, humanTime, joinPath, parentPath, parseOsc7, sortEntries, validName } from './paths';
+import { baseName, crumbs, humanSize, humanTime, joinPath, parentPath, parseOsc7, resolveTypedPath, sortEntries, validName } from './paths';
 import type { FileEntry } from '../api/types';
 
 describe('parseOsc7', () => {
@@ -60,5 +60,37 @@ describe('the list', () => {
     expect(humanTime(at(new Date(2026, 10, 8, 9, 5)), now)).toBe('09:05');
     expect(humanTime(at(new Date(2026, 9, 12)), now)).toBe('12 Oct');
     expect(humanTime(at(new Date(2024, 9, 12)), now)).toBe('12 Oct 2024');
+  });
+});
+
+describe('resolveTypedPath', () => {
+  const r = (t: string, from = '/srv/app', home = '/home/me') => resolveTypedPath(t, from, home);
+  it('takes an absolute path as it is, tidied', () => {
+    expect(r('/etc/nginx')).toBe('/etc/nginx');
+    expect(r('  /var//log/./nginx/  ')).toBe('/var/log/nginx');
+    expect(r('/')).toBe('/');
+    expect(r('/a/../../b')).toBe('/b');
+  });
+  it('resolves ~ against the login folder', () => {
+    expect(r('~')).toBe('/home/me');
+    expect(r('~/logs/../src')).toBe('/home/me/src');
+    expect(r('~', '/srv', '')).toBeNull();
+    expect(r('~other')).toBe('/srv/app/~other');
+  });
+  it('resolves a relative name against the folder shown', () => {
+    expect(r('releases/2')).toBe('/srv/app/releases/2');
+    expect(r('..')).toBe('/srv');
+    expect(r('../../..')).toBe('/');
+    expect(r('x', '/')).toBe('/x');
+  });
+  it('drops the quotes of a pasted path', () => {
+    expect(r('"/opt/my app"')).toBe('/opt/my app');
+    expect(r("'~/a'")).toBe('/home/me/a');
+  });
+  it('has nothing to go to when empty', () => {
+    expect(r('')).toBeNull();
+    expect(r('   ')).toBeNull();
+    expect(r('""')).toBeNull();
+    expect(r('/a\0b')).toBeNull();
   });
 });

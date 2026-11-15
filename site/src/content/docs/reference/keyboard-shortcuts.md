@@ -52,7 +52,7 @@ as on an SSH tab. See [Remote desktop](/guides/remote-desktop/#keyboard-and-mous
 | Where | Keys |
 |---|---|
 | Host tree | ↑ ↓ move · ← → collapse or expand · ↵ connect · ⌘↵ new tab · ⌘I edit · ⌫ delete |
-| Files list | ↑ ↓ move · ↵ open a folder, rename a file · ⌘↑ up one folder · ⌘↓ download · ⌘⌫ delete · context-menu key for the menu |
+| Files list | ↑ ↓ move · ↵ open a folder, rename a file · ⌘↑ up one folder · ⇧⌘G (or `/`, `~`) type a path · ⌘↓ download · ⌘⌫ delete · context-menu key for the menu |
 | Files with two servers | ⌘→ copy to the second pane's server · ⌘← (in the second pane) copy back to the first · esc hide the second pane |
 | Command palette | ↑ ↓ move · ↵ open · ⌘↵ new tab · ⇧⌘↵ new pane · ⌘I edit host · Tab next group · esc close |
 | Divider between panes | ← → or ↑ ↓ resize · double-click to even out |

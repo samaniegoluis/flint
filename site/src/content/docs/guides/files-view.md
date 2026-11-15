@@ -21,6 +21,15 @@ When the active tab is not connected, the view says so and offers **Reconnect** 
 
 - **..** and <kbd>⌘↑</kbd> go up one folder; double-click a folder (or select it and
   press <kbd>↵</kbd>) to open it. The breadcrumb takes you to any folder above.
+- To **go straight to a path**, click the current folder in the path bar (or its empty
+  part), or press <kbd>⇧⌘G</kbd> (<kbd>Ctrl+Shift+G</kbd> on Linux and Windows) in the
+  list: the breadcrumb becomes a field holding the path. Type or paste one and press
+  <kbd>↵</kbd>. It takes an absolute path (`/var/log/nginx`), `~` and `~/logs` for the
+  login folder, or a name inside the folder shown (`releases/2`, `..`). A file's path
+  opens its folder with the file selected. Typing <kbd>/</kbd> or <kbd>~</kbd> in the
+  list starts a path too. A path that cannot be opened says why and leaves the field
+  open to correct it; <kbd>Esc</kbd> brings the breadcrumb back. The second pane of
+  [Copying between two servers](#copying-between-two-servers) has the same field.
 - The list shows folders first, then files, with their size and when they changed.
   **Refresh** in the header lists the folder again.
 - The crosshair at the end of the path bar goes to **the terminal's current folder**. It

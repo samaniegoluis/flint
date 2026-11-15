@@ -898,6 +898,45 @@
         q('[data-files-list]').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', code: 'ArrowUp', bubbles: true, cancelable: true, metaKey: mac, ctrlKey: !mac, shiftKey: !mac }));
         await waitFor(() => aside()?.dataset.filesPath === dir, 'back up one folder');
         await check(q('[data-file="made"].sel'), 'the up chord climbs one folder and selects where it came from');
+        {
+          // A path typed or pasted in the path bar: the Go to folder chord, `/` in the
+          // list, or a click on the current folder turn the breadcrumb into a field.
+          const list = () => q('[data-files-list]');
+          const field = () => q('[data-files-path-input]');
+          const enter = (k) => field().dispatchEvent(new KeyboardEvent('keydown', { key: k, code: k, bubbles: true, cancelable: true }));
+          list().focus();
+          list().dispatchEvent(new KeyboardEvent('keydown', { key: 'G', code: 'KeyG', bubbles: true, cancelable: true, shiftKey: true, metaKey: mac, ctrlKey: !mac }));
+          await waitFor(() => field(), 'the path field');
+          await check(field().value === dir && !q('[data-files-crumbs]'), 'the Go to folder chord turns the breadcrumb into a field holding the path');
+          await fill('[data-files-path-input]', `  ${dir}//made/  `);
+          enter('Enter');
+          await waitFor(() => aside()?.dataset.filesPath === dir + '/made' && !field(), 'the typed folder');
+          await check(q('[data-files-crumbs] .cur-c')?.textContent === 'made', 'a path typed in the field goes there, and the breadcrumb comes back');
+          list().focus();
+          list().dispatchEvent(new KeyboardEvent('keydown', { key: '/', code: 'Slash', bubbles: true, cancelable: true }));
+          await waitFor(() => field(), 'the path field from a slash');
+          await check(field().value === '/', 'a slash typed in the list starts a path in the field');
+          await fill('[data-files-path-input]', `${dir}/b.txt`);
+          enter('Enter');
+          await waitFor(() => aside()?.dataset.filesPath === dir && q('[data-file="b.txt"].sel'), "the file's folder");
+          await check(!field(), "a file's path opens its folder with the file selected");
+          q('[data-files-crumbs] .cur-c').click();
+          await waitFor(() => field(), 'the path field from a click');
+          await fill('[data-files-path-input]', `${dir}/no-such-folder`);
+          enter('Enter');
+          await waitFor(() => field()?.getAttribute('aria-invalid') === 'true', 'the field marked as wrong');
+          await check(aside()?.dataset.filesPath === dir && q('[data-file="b.txt"]'), 'a path that does not exist keeps the folder shown and the field open');
+          await fill('[data-files-path-input]', 'made/../made');
+          enter('Enter');
+          await waitFor(() => aside()?.dataset.filesPath === dir + '/made' && !field(), 'the relative folder');
+          q('[data-files-crumbs] .cur-c').click();
+          await waitFor(() => field(), 'the path field again');
+          enter('Escape');
+          await waitFor(() => !field() && q('[data-files-crumbs]'), 'the breadcrumb back');
+          await check(aside()?.dataset.filesPath === dir + '/made', 'Esc leaves the field and the folder as they were');
+          q('[data-files-crumbs] button[title="' + dir + '"]').click();
+          await waitFor(() => aside()?.dataset.filesPath === dir, 'back in the scratch folder');
+        }
         // A drop from the OS: the page stages the bytes, then uploads them (CF-004).
         const dt = new DataTransfer();
         dt.items.add(new File(['dropped-bytes-42\n'], 'dropped.txt', { type: 'text/plain' }));
@@ -1044,7 +1083,23 @@
         };
         await waitFor(() => pane().querySelector(`[data-file="${name}"]`), 'the scratch folder in the second pane');
         await into(name, base);
-        await into('dst', base + '/dst');
+        {
+          // The second pane's path bar takes a typed path too; Esc in the field closes
+          // the field, not the pane.
+          const field = () => pane().querySelector('[data-files-pane-path-input]');
+          const key = (k) => field().dispatchEvent(new KeyboardEvent('keydown', { key: k, code: k, bubbles: true, cancelable: true }));
+          pane().querySelector('[data-files-pane-crumbs] .cur-c').click();
+          await waitFor(() => field(), "the second pane's path field");
+          key('Escape');
+          await waitFor(() => !field(), "the second pane's breadcrumb back");
+          await check(pane() && pane().dataset.filesPath === base, 'Esc in the second pane’s path field closes the field and keeps the pane');
+          pane().querySelector('[data-files-pane-crumbs] .cur-c').click();
+          await waitFor(() => field(), "the second pane's path field again");
+          setValue(field(), base + '/dst');
+          key('Enter');
+          await waitFor(() => pane().dataset.filesPath === base + '/dst' && !field(), 'the second pane in the typed folder');
+          await check(true, 'a path typed in the second pane goes there');
+        }
         // 14d3a: drag a file from the first pane onto the second.
         const drag = async (row, target) => {
           const dt = new DataTransfer();

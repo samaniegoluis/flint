@@ -474,6 +474,11 @@ button.act-row.sudo.is-focus, button.act-row.sudo:focus-visible { box-shadow: in
 .crumbs .crumb:first-child { flex: none; }
 .crumbs .crumb.crumb-last { flex: 0 0 auto; max-width: 100%; }
 .crumbs .crumb > button, .crumbs .crumb > .cur-c { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.crumbs.can-edit { cursor: text; align-self: stretch; }
+.crumbs.can-edit button { cursor: pointer; }
+.crumbs-input { min-width: 0; height: 24px; padding: 0 var(--sp-2); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-primary); background: var(--surface-sunken); border: 1px solid var(--accent); border-radius: var(--radius-sm); outline: none; box-shadow: var(--focus-glow); }
+.crumbs-input.is-bad { border-color: var(--danger); }
+.crumbs-input::placeholder { color: var(--text-tertiary); }
 .frow { height: 28px; display: grid; grid-template-columns: minmax(0, 1fr) 60px 84px; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3); font-size: var(--fs-sm); color: var(--text-secondary); }
 .frow:hover { background: var(--surface-hover); }
 .frow.sel { background: var(--surface-active); color: var(--text-primary); }
