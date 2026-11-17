@@ -236,12 +236,22 @@ if [[ "${FLINT_SYNC_E2E_APP:-$app_default}" == 1 ]]; then
     const q = (sel) => document.querySelector(sel);
     const t0 = Date.now();
     while (!q('#pw')) { if (Date.now() - t0 > 30000) throw new Error('no unlock screen'); await sleep(100); }
+    await window.backend.e2e_log({ name: 'diag: +' + (Date.now() - t0p) + ' ms unlock screen: ' + document.body.textContent.replace(/\s+/g, ' ').slice(0, 160) });
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(q('#pw'), '$NEW_PW');
     q('#pw').dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(50);
     q('button[type="submit"]').click();
     for (;;) {
-      try { await window.backend.catalog({}); break; } catch (e) { if (Date.now() - t0 > 30000) throw new Error('not unlocked: ' + e); }
+      try {
+        await window.backend.catalog({});
+        await window.backend.e2e_log({ name: 'diag: +' + (Date.now() - t0p) + ' ms unlocked' });
+        break;
+      } catch (e) {
+        if (Date.now() - t0 > 30000) {
+          await window.backend.e2e_log({ name: 'diag: +' + (Date.now() - t0p) + ' ms still locked; page: ' + document.body.textContent.replace(/\s+/g, ' ').slice(0, 300) });
+          throw new Error('not unlocked: ' + e);
+        }
+      }
       await sleep(100);
     }
     // A change made in the app: the loop uploads it once it settles.
@@ -254,6 +264,10 @@ if [[ "${FLINT_SYNC_E2E_APP:-$app_default}" == 1 ]]; then
       if (Date.now() - start > 100000) throw new Error('no from-b after 100 s; heard ' + seen.join(','));
       await sleep(250);
     }
+    // The catalog shows B's host once the merge is saved, a moment before the loop's
+    // vault:sync event for that sync arrives: wait for the event too.
+    const merged = Date.now();
+    while (!seen.includes('merged') && Date.now() - merged < 10000) await sleep(100);
     await window.backend.e2e_log({ name: 'heard ' + seen.join(',') });
     await window.backend.e2e_report({ ok: true, detail: '' });
   } catch (e) {
