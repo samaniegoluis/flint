@@ -255,7 +255,7 @@ fn (mut self: SqlVaultStore) vault_rekey_commit(path: str, page_key: []byte, sal
             self.vault_detach()
             return error(coded(ERR_LOCKED, "cannot put the new vault in place ({err.message()}); the vault is unchanged and locked: unlock it with the current master password"))
         }
-        self.adopt(try open_cipher_db(path, page_key, salt, false))
+        self.adopt(try open_cipher_db(path, page_key, salt, false), page_key, salt)
         return
     }
     // Renamed while the old file is still open: if the rename fails, nothing has

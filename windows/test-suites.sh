@@ -21,6 +21,8 @@
 # (FLINT_RDP_CLIP_PORT/_CONTROL). Tests against a real Windows host (FLINT_RDP_TEST_HOST,
 # the owner's check) and the quiet network (FLINT_RDP_BLACKHOLE, iptables in the Linux
 # image) return early and print PASS: count them as skipped.
+# src/adapters/vaultremote (milestone 43) runs against the Linux flint-vault-server in
+# WSL, reached through a relay on Windows' loopback (vault-server.sh).
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
@@ -35,14 +37,17 @@ rm -rf "$WT"; mkdir -p "$WT"
 cd "$WT"
 
 source "$here/rdp-servers.sh"
+source "$here/vault-server.sh"
 # A suite killed by its timeout leaves its test .exe running on Windows (interop does
 # not pass the kill on), holding the folder: stop it too.
 stop_all() {
   rdp_servers_stop
+  vault_server_stop
   powershell.exe -NoProfile -c "Get-Process cfire-test* -EA SilentlyContinue | Stop-Process -Force" >/dev/null 2>&1 || true
 }
 trap stop_all EXIT
 [[ " ${suites[*]} " == *" src/adapters/rdp "* ]] && rdp_servers_start "$WT"
+[[ " ${suites[*]} " == *" src/adapters/vaultremote "* ]] && { vault_server_start "$WT" || exit 1; }
 
 failed=0
 for s in "${suites[@]}"; do
