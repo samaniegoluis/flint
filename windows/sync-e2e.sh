@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/sync-e2e.sh on Windows (milestones 43-44): the Windows flint.exe and
+# scripts/sync-e2e.sh on Windows (milestones 43-45): the Windows flint.exe and
 # flint-app.exe against the Linux flint-vault-server in WSL (vault-server.sh, behind a
 # relay on Windows' loopback), two config folders as two machines, the app's sync loop
 # and the app connecting on its own. The tokens go to Windows Credential Manager, read by
@@ -18,6 +18,10 @@
 #   stopping it for the offline part stops its relay too.
 # - `no_tty` is `timeout 120`: a Windows process started from WSL has no console window,
 #   so flint.exe never prompts on CONIN$ (the port guide, "Terminal").
+# - The check of the old single-vault path asks with curl.exe: WSL's curl cannot reach
+#   the relay on Windows' loopback.
+# - FLINT_KEYCHAIN_SERVICE crosses with WSLENV, so B's tokens go under a service of
+#   their own in Credential Manager, as on main.
 # - The two checks of a vault file's 0600 mode are skipped: Windows has no POSIX modes;
 #   the file takes its folder's ACL (the port guide, "Local files").
 # - The app is flint-app.exe from a copy of build/windows/Flint, under `timeout 200`.
@@ -61,7 +65,7 @@ sub('''tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-sync-e2e.XXXXXX")"
 export FLINT_APP=off
 ''', '''tmp="$SYNC_WIN_TMP/run"
 export FLINT_APP=off
-export WSLENV="FLINT_CONFIG_DIR:FLINT_KEYCHAIN:FLINT_APP:FLINT_SYNC_DIAG:FLINT_GUI_E2E"
+export WSLENV="FLINT_CONFIG_DIR:FLINT_KEYCHAIN:FLINT_KEYCHAIN_SERVICE:FLINT_APP:FLINT_SYNC_DIAG:FLINT_GUI_E2E"
 # Every flint.exe here must get its own config folder: one that does not would work in
 # the person's real one (%APPDATA%\\Flint). Checked once through cmd.exe before any run.
 seen="$(cd "$tmp" && FLINT_CONFIG_DIR="$(wp "$tmp/probe")" FLINT_APP=off cmd.exe /c 'echo %FLINT_CONFIG_DIR%^|%FLINT_APP%' 2>/dev/null | tr -d '\\r')"
@@ -92,10 +96,13 @@ win_app() {
 sub('''  FLINT_CONFIG_DIR="$tmp/a" "$flint" --vault "$VA" vault disconnect''',
     '''  powershell.exe -NoProfile -c "Get-Process flint-app -EA SilentlyContinue | ? { \\$_.Path -like '*\\\\flint-sync\\\\app\\\\*' } | Stop-Process -Force" >/dev/null 2>&1
   FLINT_CONFIG_DIR="$tmp/a" no_tty "$flint" --vault "$VA" vault disconnect''')
-sub('''  FLINT_CONFIG_DIR="$tmp/b" "$flint" --vault "$VB" vault disconnect''',
-    '''  FLINT_CONFIG_DIR="$tmp/b" no_tty "$flint" --vault "$VB" vault disconnect''')
+sub('''  FLINT_CONFIG_DIR="$tmp/b" FLINT_KEYCHAIN_SERVICE="$(kc_service b)" "$flint" --vault "$VB" vault disconnect''',
+    '''  FLINT_CONFIG_DIR="$tmp/b" FLINT_KEYCHAIN_SERVICE="$(kc_service b)" no_tty "$flint" --vault "$VB" vault disconnect''')
 sub('''  out="$(cat "$tmp/out")"; err="$(cat "$tmp/err")"''',
     '''  out="$(tr -d '\\r' < "$tmp/out")"; err="$(tr -d '\\r' < "$tmp/err")"''')
+# The server is reached through the relay on Windows' loopback, which WSL's curl cannot
+# reach (the relay listens on Windows only): the old-path check asks with curl.exe.
+sub('''"$(curl -s -o /dev/null -w "%{http_code}"''', '''"$(curl.exe -s -o NUL -w "%{http_code}"''')
 sub('''! grep -q "$VA" "$tmp/a/remotes.json"''', '''! grep -q "$(wp "$VA")" "$tmp/a/remotes.json"''')
 src, n = re.subn(r'check "([^"]*) is 0600" [^\n]*',
                  r'echo "skip  \1 is 0600 (Windows: no POSIX modes; the file takes the ACL of its folder)"', src)

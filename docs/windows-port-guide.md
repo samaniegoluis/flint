@@ -39,12 +39,11 @@ today's cfire (`c5b1d4b`). It is shared to show what cfire needs, not to be merg
 
 State on 2026-11-17 (branch `windows-port-2`, `git log` for the latest commit):
 
-- **Latest:** `main` at `f2c4508` (v0.11.0, milestones 43-44: the remote vault) merged and
-  green on Windows, the remote vault client on libcurl over Schannel; installed in
-  `D:\Programas\Flint`. Two fixes found here belong on `main` (the owner decides):
-  `67784e7` (a disconnected vault reconnected by a sync in flight) and `cce606a`
-  (`scripts/sync-e2e.sh` waits for the loop's merged event). Owner check open: Connect
-  remote vault in the installed app against the real server.
+- **Latest:** `main` at `8169457` (v0.12.1, milestone 45: several vaults on one server)
+  merged and green on Windows; installed in `D:\Programas\Flint`. The two fixes found
+  here in the round before are now on `main` (`6479d98`/`8169457` and `c23f95c`). Owner
+  check open: Connect remote vault in the installed app against the real server (now
+  with the server's list of vaults and a label).
 
 - **Done:** the CLI and the desktop app build and run on Windows 11 on top of `main`
   (`83557b0`, cfire `c5b1d4b`) with cfire patches 0001-0009. Every automated check is
@@ -183,6 +182,21 @@ State on 2026-11-17 (branch `windows-port-2`, `git log` for the latest commit):
   - **Unexplained, instrumented:** one sync-e2e run where the app stayed locked 30 s
     after the page submitted the password, while B's CLI syncs took 8x their usual time;
     `diag:` lines now time the unlock and show the page. Not seen in the runs after.
+- **Merged `main` again (2026-11-17):** milestone 45 (v0.12.0 and v0.12.1: several
+  vaults on one server, each with a label; the server's list before any password;
+  `vault connect --label/--list/--id`), up to `8169457`; one conflict
+  (`src/application/sync_test.cf`, main's side: the disconnect-while-syncing test went
+  to `main` and follows milestone 45's API); same cfire. **No native code changed**, so
+  nothing to port: the new code is the server (not on Windows), pure cfire in domain and
+  application, the UI, and `FLINT_KEYCHAIN_SERVICE` read in `keychain.cf`. Windows work,
+  all in `windows/sync-e2e.sh`:
+  - The cleanup's `vault disconnect` of B now carries `FLINT_KEYCHAIN_SERVICE`: its
+    rewrite follows, and the variable crosses with `WSLENV`, so B's tokens go under a
+    service of their own in Credential Manager, as on `main`.
+  - The new check of the old single-vault path (`410`) asked with WSL's `curl`, which
+    cannot reach the relay on Windows' loopback (timed out): it asks with `curl.exe`.
+  - No credential left by the run: the one `Flint/vault-…` in Credential Manager after
+    it is the owner's own vault (its id is that file's header).
 - **Owner checks done:** Win+L with the app unlocked locks the vault: after signing back
   in to Windows, Flint asks for the master password. On the owner's own vault in the
   installed app: unlocking with "Remember on this computer" stores a Generic, local-machine
@@ -304,6 +318,7 @@ otherwise.
 |---|---|
 | `windows/build-gui.sh` | CLI, app and page build (milestones 20-29 merged; 22-25 needed the Windows work above) |
 | After milestones 43-44 (2026-11-17) | `test-suites.sh` **13 suites, 2107 tests** (application 319 + vaultserver 140, now counted together; vaultremote 129 against the Linux server through the relay); `cli-smoke.sh` **84/84**; `serve-e2e.sh` **63/63**; `gui-e2e.sh` seven runs: terminal 97, vault 124, tunnels 33, paste 24, rdp 65, webgl 20, fullscreen 49; **`sync-e2e.sh` 81/81** (two of its checks, the vault files' 0600 mode, skipped: no POSIX modes). Installed in `D:\Programas\Flint` (`0.11.0-54-gcce606a`) |
+| After milestone 45 (2026-11-17) | `test-suites.sh` **13 suites, 2138 tests** (application 471 in two suites, vaultremote 132, keychain 129); `cli-smoke.sh` **84/84**; `serve-e2e.sh` **63/63**; `gui-e2e.sh` seven runs: terminal 97, vault 124, tunnels 33, paste 24, rdp 65, webgl 20, fullscreen 49; **`sync-e2e.sh` 108/108** (the second vault with a label, the list, download by id prefix, the app choosing from a list of two; the two 0600 checks skipped). Installed in `D:\Programas\Flint` |
 | After milestones 32-42 (2026-11-13) | `test-suites.sh` **12 suites, 1729 tests** (rdp 146, vault 173; the server's packages left out); `cli-smoke.sh` **84/84** (`--version`, `vault passwd`, `vault merge` new); `serve-e2e.sh` **63/63** (merge and passwd refused while the app holds the vault: by path, upper case, a junction; activity files encrypted); `gui-e2e.sh` **404 checks in seven runs**: terminal 89, vault 124 (Change master password in Settings), tunnels 33, paste 24, rdp 65, **webgl 20**, **fullscreen 49**; **multimon 33** on three monitors with `VERIFIED` on for that run only. vim and the focus trap skipped as before |
 | After milestone 31 (2026-11-11) | `test-suites.sh` **11 suites, 1404 tests**: rdp 111 against FreeRDP's sample server and Flint's own server running on Windows (3 return early: two need a real host, one needs iptables); `cli-smoke.sh` **60/60**; `serve-e2e.sh` **51/51**; `gui-e2e.sh` **318 checks in five runs**: terminal 89, vault 113, tunnels 33, paste 24, **rdp 59** (new on Windows). vim and the focus trap skipped as before. `serve-e2e` and `gui-e2e` had not run since milestone 30's merge |
 | After milestones 22-29 (2026-11-11) | `test-suites.sh` **10 suites, 1239 tests**; `cli-smoke.sh` **60/60** (11 tunnel checks new); `gui-e2e.sh` **275 checks in five runs**: terminal 89, vault 113, tunnels 33, paste 24 (the core reading the real Windows clipboard included), vim 16; `serve-e2e.sh` **51/51** |
