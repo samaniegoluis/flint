@@ -628,8 +628,8 @@ e.g. "web-01-2") and uploads the result. Nothing is ever lost, so a merge is new
 alarm. The rules (owner):
   - A server keeps one vault today; a later version lets one server keep several, each
     under its id (23a3 leaves room for the choice). Its address must be https://
-    (http:// only for localhost). It is reached with a token (a long random string the server printed); the
-    token is a secret: typed or pasted once, kept in the OS keychain, never shown again,
+    (http:// only for localhost). It is reached with a token (a long random string
+    the server printed); the token is a secret: typed or pasted once, kept in the OS keychain, never shown again,
     only "Saved in the keychain" and Replace.
   - A vault may only go to a server with a Strong master password (3 of 4 on the strength
     meter Flint already shows in Change master password). A weaker one is refused with a
@@ -673,14 +673,14 @@ alarm. The rules (owner):
     already held this same vault ("Merged with the server's copy", the merge summary as
     23e), it holds another vault (refused for now: "This server already keeps a different
     vault").
-  - 23b4 · Replace token (a modal from 23b3): one password field with a paste button,
-    "Replace". Flint checks the new token against the server before the old one is
-    dropped; a refused token is an inline error and the old one stays.
   - 23b3 · Connected: the address (mono), state as in 23c with its last sync time
     ("In step · 2 min ago"), version number (faint), "Sync now", "Check every" (Only on
     changes and at unlock · 1 min · 5 min · 15 min), "Replace token…", and "Disconnect…"
     (a confirm: the local copy stays as it is and keeps working, the server keeps its
     copy, nothing is deleted).
+  - 23b4 · Replace token (a modal from 23b3): one password field with a paste button,
+    "Replace". Flint checks the new token against the server before the old one is
+    dropped; a refused token is an inline error and the old one stays.
 
 23c · The sync's state in the status bar (beside the lock state, as 16d placed the agents'
   item): a small cloud glyph plus a word, each state at a glance:
