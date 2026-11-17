@@ -4,7 +4,7 @@
 
 import type {
   AccessAnswer, AccessState, ActivityEntry, AppInfo, RdpStats, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  CopyResult, DesktopSpan, FileEntry, MonitorPick, MonitorsView, PasswordStrength, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
+  CopyResult, DesktopSpan, RemoteLinkView, RemoteProbe, RemoteStatus, SyncOutcome, FileEntry, MonitorPick, MonitorsView, PasswordStrength, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -23,7 +23,7 @@ const CODES = [
   'internal', 'usage', 'not_found', 'conflict', 'locked', 'wrong_password', 'invalid',
   'unsupported', 'keychain', 'io', 'host_key', 'auth', 'network', 'timeout',
   'denied', 'approval_timeout', 'not_sudoer', 'sudo_password', 'permission_denied', 'exists', 'not_a_directory',
-  'port_in_use',
+  'port_in_use', 'refused',
 ];
 
 export class FlintError extends Error {
@@ -60,6 +60,8 @@ export const api = {
   dialogSave: (title: string, defaultName: string) => call<{ path: string }>('dialog_save', { title, default_name: defaultName }),
   settingsGet: () => call<Settings>('settings_get'),
   settingsSet: (s: Settings) => call<Settings>('settings_set', s),
+  /** Milestone 43: tells the app's sync loop to look at a connected vault's server. */
+  syncHint: (reason: 'focus' | 'now') => call('vault_sync_hint', { reason }),
   fonts: () => call<{ fonts: string[] }>('fonts_mono'),
   uiStateGet: () => call<UiStateView>('ui_state_get'),
   uiStateSet: (s: UiStateView & { vault: string }) => call<UiStateView>('ui_state_set', s),
@@ -111,6 +113,22 @@ export const api = {
   /** Re-keys the open vault (milestone 40): two Argon2id runs, a few seconds. */
   passwd: (current: string, password: string) =>
     call<{ remembered: boolean; strength: PasswordStrength }>('vault_passwd', { current, password }),
+  /** Milestone 44: where a vault stands with its server (no key, no network). */
+  remoteStatus: (path: string) => call<RemoteStatus>('vault_remote_status', { path }),
+  /** The vaults connected on this machine, by path (the cloud mark, design 23d). */
+  remotes: () => call<{ links: RemoteLinkView[] }>('vault_remotes'),
+  /** What a server holds, before any master password (design 23a). */
+  remoteProbe: (url: string, token: string) => call<RemoteProbe>('vault_remote_probe', { url, token }),
+  /** Downloads the server's vault to a new file and opens it in this window. */
+  remoteDownload: (url: string, token: string, password: string, path: string, remember: boolean) =>
+    call<VaultInfo>('vault_remote_download', { url, token, password, path, remember }),
+  /** Connects the open vault to a server (design 23b2). */
+  remoteConnect: (url: string, token: string, password: string) => call<SyncOutcome>('vault_remote_connect', { url, token, password }),
+  /** Syncs the open vault now; `newPassword` is one set on another machine (23f). */
+  syncNow: (newPassword = '') => call<SyncOutcome>('vault_sync_now', { new_password: newPassword }),
+  /** A new server token for the open vault, tried against the server first (23b4). */
+  remoteToken: (token: string) => call<{ path: string; url: string }>('vault_remote_token', { token }),
+  remoteDisconnect: () => call<{ path: string; url: string }>('vault_remote_disconnect'),
   /** The core's strength estimate of a password being typed; never stored. */
   passwordStrength: (password: string) => call<PasswordStrength>('password_strength', { password }),
 

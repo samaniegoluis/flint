@@ -48,6 +48,8 @@ type VaultStatus struct {
     // How many days the activity log keeps (0: no limit; -1: unknown, the vault is
     // not unlocked here). Milestone 15.
     activity_days: i64 `json:"activity_days"`
+    // Milestone 43: its server, when this machine syncs it with one.
+    remote: RemoteStatus `json:"remote"`
 }
 
 // The keychain account of a vault: its salt, which is unique per vault and already
@@ -288,7 +290,7 @@ fn lock_vault[S: VaultStore, K: Keychain](mut store: S, keychain: K, path: str) 
 // Reports a vault without asking for its password: counts appear only when the
 // keychain holds its key.
 fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C, mut store: S, keychain: K, recents: R, path: str, name: str) -> VaultStatus! {
-    mut st := VaultStatus{ path: path, name: name, exists: store.vault_file_exists(path), unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1 }
+    mut st := VaultStatus{ path: path, name: name, exists: store.vault_file_exists(path), unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1, remote: no_remote_status() }
     if !st.exists {
         return st
     }
@@ -318,6 +320,7 @@ fn open_vault_status[S: VaultStore, T: TokenStore](store: S, tokens: T, session:
         hosts: i64((try store.hosts_all()).len()),
         keys: i64((try store.keys_all()).len()),
         credentials: i64((try store.creds_all()).len()),
+        remote: no_remote_status(),
     }
 }
 

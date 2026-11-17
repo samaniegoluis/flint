@@ -16,7 +16,7 @@ import { api, FlintError, on, toFlintError } from '../api/backend';
 import type { AppInfo, Catalog, LockReason, RecentView, Settings, UnlockRequest, VaultInfo, WindowState } from '../api/types';
 import type { Os } from '../lib/keymap';
 
-export type Phase = 'boot' | 'welcome' | 'create' | 'unlock' | 'main' | 'locked';
+export type Phase = 'boot' | 'welcome' | 'create' | 'connect' | 'unlock' | 'main' | 'locked';
 
 export interface Toast {
   id: number;
@@ -30,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system', accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
   term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: true, term_theme: 'default',
   lock_after: '1h', paste_limit_mb: 20, rdp_mac_keys: 'mac', rdp_mac_custom: '', rdp_graphics: 'auto',
+  sync_interval: 60,
 };
 
 // How often the page tells the core someone is using the window.
@@ -64,6 +65,8 @@ interface AppApi {
   refreshRecents: () => Promise<RecentView[]>;
   unlock: (path: string, password: string, allow?: boolean, remember?: boolean) => Promise<VaultInfo>;
   create: (path: string, name: string, password: string, remember?: boolean) => Promise<VaultInfo>;
+  /** Connect remote vault (milestone 44): the server's vault downloaded to `path` and opened. */
+  download: (url: string, token: string, password: string, path: string, remember: boolean) => Promise<VaultInfo>;
   closeVault: () => Promise<void>;
   openVaultFile: () => Promise<void>;
   switchTo: (r: RecentView) => Promise<void>;
@@ -181,6 +184,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return v;
   }, [enter]);
 
+  const download = useCallback(async (url: string, token: string, password: string, path: string, remember: boolean) => {
+    const v = await api.remoteDownload(url, token, password, path, remember);
+    await enter(v);
+    return v;
+  }, [enter]);
+
   const closeVault = useCallback(async () => {
     await api.close();
     const list = await refreshRecents();
@@ -244,8 +253,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  // A command from the `flint` CLI ran against this vault in the app (D-038): show
-  // what it changed.
+  // A connected vault (milestone 43): the window coming back tells the app's sync loop
+  // to look at the server (it does when the last check is a while ago).
+  useEffect(() => {
+    if (!vault) return;
+    const hint = () => { if (document.visibilityState === 'visible') api.syncHint('focus').catch(() => {}); };
+    window.addEventListener('focus', hint);
+    document.addEventListener('visibilitychange', hint);
+    return () => {
+      window.removeEventListener('focus', hint);
+      document.removeEventListener('visibilitychange', hint);
+    };
+  }, [vault]);
+
+  // A command from the `flint` CLI ran against this vault in the app (D-038), or a
+  // sync merged another machine's changes (milestone 43): show what it changed.
   useEffect(() => on<{ path: string; name: string }>('vault:changed', (e) => {
     if (!vault || e.path !== vault.path) return;
     if (e.name !== vault.name) setVault({ ...vault, name: e.name });
@@ -357,11 +379,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppApi>(() => ({
     info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError,
     lockReason, unlockRequest, dismissUnlockRequest, lock, windowLock, openWindow,
-    go: setPhase, setTarget, refreshRecents, unlock, create, closeVault, openVaultFile, switchTo, renameVault,
+    go: setPhase, setTarget, refreshRecents, unlock, create, download, closeVault, openVaultFile, switchTo, renameVault,
     refreshCatalog, saveSettings, notify, fail,
   }), [info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError,
     lockReason, unlockRequest, dismissUnlockRequest, lock, windowLock, openWindow, refreshRecents,
-    unlock, create, closeVault, openVaultFile, switchTo, renameVault, refreshCatalog, saveSettings, notify, fail]);
+    unlock, create, download, closeVault, openVaultFile, switchTo, renameVault, refreshCatalog, saveSettings, notify, fail]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

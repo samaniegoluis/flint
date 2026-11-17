@@ -11,9 +11,11 @@ in the other, and a server key trusted in one is trusted in both.
 With no vault yet, Flint shows the welcome screen:
 
 - **Create a new vault**: a name, where to save the file, and a master password (at
-  least 8 characters). Put the file in a synced folder (iCloud Drive, Dropbox,
-  Syncthing) to use it on several machines.
+  least 8 characters).
 - **Open a vault file…**: pick an existing `.flint` file.
+- **Connect to a remote vault** (<kbd>⌥⌘O</kbd>): download a vault kept on your own
+  [`flint-vault-server`](/guides/vault-server/) and keep it in step with your other
+  machines ([Sync a vault across machines](/guides/remote-vault/#add-another-machine)).
 
 After that, Flint reopens the last vault on every launch and asks for its master
 password, or opens it without a prompt if you ticked **Remember on this computer** at
@@ -269,7 +271,8 @@ stays saved, and **Reconnect** in that tab keeps skipping it.
 ## Vaults
 
 The vault button at the top of the sidebar (<kbd>⇧⌘O</kbd>) lists your recent vaults,
-with **Open vault…**, **Create vault…** and **Manage vaults…**. Switching vaults closes
+with **Open vault…**, **Create vault…**, **Connect to a remote vault…** and **Manage
+vaults…**. A cloud marks the vaults kept in step by a server. Switching vaults closes
 the sessions of the current one. **Manage vaults** can forget a vault's remembered key on
 this machine, or remove it from the list; the file itself is never deleted. It also has
 **Rename** for the open vault, as does **Settings → Vault**: the name changes inside the
@@ -361,7 +364,9 @@ Settings belong to this machine, not to the vault, and save as you change them.
   in a later version.
 - **Vault**: the open vault's file and counts, **Rename**, whether this machine remembers
   its key, **Lock now**, **Lock after**, the known hosts, each of which you can forget,
-  and **Change master password…**, with the new password's strength shown as you type
+  its **Server** (connect, Sync now, Check every, Replace token, Disconnect; see
+  [Sync a vault across machines](/guides/remote-vault/)), and **Change master
+  password…**, with the new password's strength shown as you type
   (see [Change the master password](/guides/vaults/#change-the-master-password)).
 - **Access**: the programs you approved, with what they may do and until when, and
   **Revoke** for each (or all). Grants end when the vault locks or Flint quits. Below

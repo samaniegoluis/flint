@@ -49,6 +49,7 @@ export default defineConfig({
 					items: [
 						{ label: 'The desktop app', slug: 'guides/desktop-app' },
 						{ label: 'Vaults', slug: 'guides/vaults' },
+						{ label: 'Sync a vault across machines', slug: 'guides/remote-vault' },
 						{ label: 'Self-host a remote vault', slug: 'guides/vault-server' },
 						{ label: 'Hosts and groups', slug: 'guides/hosts' },
 						{ label: 'SSH keys', slug: 'guides/keys' },

@@ -336,3 +336,45 @@ Flint's window stays full screen on its own monitor, which is Windows' primary a
 | `22f3b` | Connection lost on an extra monitor: the last frame is dimmed and a quiet pill says "Connection lost — see the main screen". |
 | `22f3c` | Rearranging on an extra monitor: the last frame is dimmed, with a small spinner. |
 | `22f4` | The one-time note on the main monitor: "The desktop spans 2 monitors. Move the pointer to the top of the main screen for the bar." |
+
+## A vault kept in step by your own server, v9 (01 and 12d updated; screens 23*)
+
+Every machine keeps a full copy of the vault and works offline. An optional server the person runs (flint-vault-server) keeps the copies in step. It stores only the encrypted file and a version number, never the key.
+
+**Sync item in the status bar (23c):** a cloud glyph plus a word, placed right after "Unlocked · Keychain". It is quiet by default. The states:
+- **In step:** neutral, with a tooltip giving the last sync.
+- **Syncing:** the cloud pulses softly. With reduced motion, the pulse is off.
+- **Waiting · N:** a neutral dot.
+- **Offline:** a neutral crossed cloud. Offline is normal, never red.
+- **Merged:** sapphire. Click to open 23e.
+- **Needs the new password:** warning. Click to open 23f.
+- **Needs attention:** warning. Click to open Settings → Server.
+
+Clicking the item opens a popover with the state, last sync, server, version, **Sync now** and **Server settings…**. A vault that isn't connected shows nothing.
+
+| Screen | What it shows |
+|---|---|
+| `01` | Welcome gets a third card, **Connect to a remote vault** (server icon, ⌥⌘O, a proposal). The iCloud/Dropbox footnote now points to your own server. |
+| `12d` | Settings → Vault gets a **Server** section above Lock (not connected: one line and **Connect to a server…**). |
+| `23a1` | Step 1: server address (placeholder `https://vault.example.com`) and token (password field plus Paste), and "No server yet? Self-host one in a few minutes". |
+| `23a2a–f` | Inline check failures: http refused (allowed only for localhost); unreachable; not a Flint vault server; wrong token; too many attempts (warning, try again in N min); empty server (info callout: connect it from a machine that has the vault). |
+| `23a3` | Step 2: "A vault was found", showing size and version only; its name appears once it opens. Then the master password, where to keep the local copy, and Remember on this computer. |
+| `23a3b` / `23a3c` | Errors: wrong master password; a file already exists at that path (Flint never overwrites). |
+| `23a4` | A single progress line, then straight into the main shell. |
+| `23b1` | The Server section, not connected. |
+| `23b2a` | The Connect modal with a Fair password: Connect is disabled, and the message is "A vault on a server needs a Strong password — Change master password…". |
+| `23b2b` | The Connect modal, ready to connect. |
+| `23b2c` | Outcome: the server was empty, so the vault was uploaded and other machines can connect now. |
+| `23b2d` | Outcome: merged with the server's copy, with the merge summary as in 23e. |
+| `23b2e` | Outcome: refused, because the server keeps a different vault. |
+| `23b3` | The Server section, connected: address in mono, "In step · 2 min ago", version (faint), Sync now, Check every (Only on changes and at unlock · 1 min · 5 min · 15 min), token "Saved in the keychain", Replace token…, Disconnect…. |
+| `23b3b` | The Disconnect confirm: nothing is deleted. The local copy keeps working, the server keeps its copy, and the token leaves the keychain. |
+| `23c1` | Every state of the status bar item, as a sheet. |
+| `23c2` / `23c3` | The popover, In step and Needs attention (which offers Replace token…). |
+| `23d1` / `23d2` | A cloud mark on connected vaults in the vault switcher and in Welcome's recents, with the server address in the tooltip. |
+| `23e1` | The toast "Changes from another machine: 2 hosts added, 1 updated" with Details. |
+| `23e2` | The details: changes grouped as Hosts, Credentials, SSH keys, Tunnels, Tokens (labels only, added / updated / removed), then "What the merge did" in plain words. When there are no notes, that section is not shown. |
+| `23f1` / `23f2` | The master password changed on another machine: a calm modal with Sync and Later, and an inline error for a wrong password. One line says this machine's vault opens with the new password from now on. |
+| `23g` | Unlock for a connected vault: a cloud mark next to the path, and the faint line "3 changes from this machine will sync after unlocking". |
+| `23h1` | The palette: Sync vault now, Show last merge, Connect vault to a server… (greyed when already connected), Disconnect vault from server…. |
+| `23h2–4` | 900 × 600: step 2, Settings → Server connected ("Check every" becomes a select), and the status bar with the popover (Offline). |

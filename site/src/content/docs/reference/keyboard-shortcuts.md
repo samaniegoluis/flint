@@ -14,6 +14,7 @@ speaks the Kitty keyboard protocol.
 | Switch vault | ⇧⌘O | Ctrl+Alt+Shift+O |
 | Open vault file | ⌘O | Ctrl+Shift+O |
 | Create vault | ⇧⌘N | Ctrl+Alt+Shift+N |
+| Connect to a remote vault | ⌥⌘O | Ctrl+Alt+O |
 | New session (pick a host; always a new tab) | ⌘T | Ctrl+Shift+T |
 | Close the focused pane (the last one closes the tab) | ⌘W | Ctrl+Shift+W |
 | Go to tab 1–9 | ⌘1 … ⌘9 | Ctrl+Shift+1 … 9 |
@@ -63,7 +64,7 @@ as on an SSH tab. See [Remote desktop](/guides/remote-desktop/#keyboard-and-mous
 | Where | Keys |
 |---|---|
 | Host tree | ↑ ↓ move · ← → collapse or expand · ↵ connect · ⌘↵ new tab · ⌘I edit · ⌫ delete |
-| Files list | ↑ ↓ move · ↵ open a folder, rename a file · ⌘↑ up one folder · ⌘↓ download · ⌘⌫ delete · context-menu key for the menu |
+| Files list | ↑ ↓ move · ↵ open a folder, rename a file · ⌘↑ up one folder · ⇧⌘G (or `/`, `~`) type a path · ⌘↓ download · ⌘⌫ delete · context-menu key for the menu |
 | Files with two servers | ⌘→ copy to the second pane's server · ⌘← (in the second pane) copy back to the first · esc hide the second pane |
 | Command palette | ↑ ↓ move · ↵ open · ⌘↵ new tab · ⇧⌘↵ new pane · ⌘I edit host · Tab next group · esc close |
 | Divider between panes | ← → or ↑ ↓ resize · double-click to even out |

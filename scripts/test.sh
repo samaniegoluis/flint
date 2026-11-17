@@ -23,6 +23,7 @@ cleanup() {
   # `|| true`: under set -e, the stopped server's status would end the cleanup here.
   [[ -n "${rdp_pid:-}" ]] && { kill "$rdp_pid" 2>/dev/null; wait "$rdp_pid" 2>/dev/null || true; }
   [[ -n "${clip_pid:-}" ]] && { kill "$clip_pid" 2>/dev/null; wait "$clip_pid" 2>/dev/null || true; }
+  [[ -n "${vault_pid:-}" ]] && { kill "$vault_pid" 2>/dev/null; wait "$vault_pid" 2>/dev/null || true; }
   [[ -n "${SSH_AGENT_PID:-}" ]] && kill "$SSH_AGENT_PID" 2>/dev/null
   rm -rf "$tmp"
   exit "$st"
@@ -136,6 +137,18 @@ if clip_bin="$("$root/scripts/rdp-testserver.sh")"; then
   for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$clip_port") 2>/dev/null && break; sleep 0.1; done
   export FLINT_RDP_CLIP_PORT="$clip_port" FLINT_RDP_CLIP_CONTROL="$clip_ctl"
 fi
+
+# flint-vault-server on loopback (milestone 43), for the remote vault adapter's tests:
+# its own data folder and token, killed on exit.
+vault_port="${FLINT_TEST_VAULT_PORT:-38787}"
+(cd "$root" && source scripts/env.sh >/dev/null && cfire build flint-vault-server >/dev/null)
+vault_token="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+mkdir -p "$tmp/vault-data"
+FLINT_VAULT_TOKEN="$vault_token" FLINT_VAULT_DATA="$tmp/vault-data" FLINT_VAULT_LISTEN="127.0.0.1:$vault_port" \
+  "$root/build/flint-vault-server" >"$tmp/vault-server.log" 2>&1 &
+vault_pid=$!
+for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$vault_port") 2>/dev/null && break; sleep 0.1; done
+export FLINT_TEST_VAULT_URL="http://127.0.0.1:$vault_port" FLINT_TEST_VAULT_TOKEN="$vault_token" FLINT_TEST_VAULT_DATA="$tmp/vault-data"
 
 export FLINT_TEST_SSH_PORT="$port"
 export FLINT_TEST_SSH_PORT2="$port2"

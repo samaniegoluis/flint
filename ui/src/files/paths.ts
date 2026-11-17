@@ -89,3 +89,28 @@ export function humanTime(mtimeSecs: number, nowMs = Date.now()): string {
   const day = `${t.getDate()} ${MONTHS[t.getMonth()]}`;
   return t.getFullYear() === now.getFullYear() ? day : `${day} ${t.getFullYear()}`;
 }
+
+/**
+ * The folder a typed or pasted path names, absolute and without `.`, `..` or doubled
+ * slashes: `/etc/nginx`, `~` and `~/logs` (against `home`), or a name relative to
+ * `from`, the folder shown. Quotes around a pasted path are dropped. Null when there
+ * is nothing to go to, or `~` is typed with no home known.
+ */
+export function resolveTypedPath(typed: string, from: string, home: string): string | null {
+  let t = typed.trim();
+  if (t.length >= 2 && (t[0] === '"' || t[0] === "'") && t[t.length - 1] === t[0]) t = t.slice(1, -1).trim();
+  if (!t || t.includes('\0')) return null;
+  let abs: string;
+  if (t === '~' || t.startsWith('~/')) {
+    if (!home.startsWith('/')) return null;
+    abs = home + t.slice(1);
+  } else if (t.startsWith('/')) abs = t;
+  else abs = (from.startsWith('/') ? from : '/') + '/' + t;
+  const out: string[] = [];
+  for (const part of abs.split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') out.pop();
+    else out.push(part);
+  }
+  return '/' + out.join('/');
+}

@@ -1,12 +1,15 @@
 ---
 // Starlight's MobileMenuFooter without the theme control (D-023): the theme button
-// lives in the header on every screen size, so the menu does not repeat it.
+// lives in the header on every screen size, so the menu does not repeat it. It holds the
+// GitHub button, which the header has no room for on phones beside the menu button.
+import GitHubLink from './GitHubLink.astro';
 import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
 import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
 ---
 
 <div class="mobile-preferences sl-flex">
 	<div class="social-icons"><SocialIcons /></div>
+	<GitHubLink label />
 	<LanguageSelect />
 </div>
 

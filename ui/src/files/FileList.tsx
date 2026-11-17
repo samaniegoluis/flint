@@ -7,6 +7,7 @@ import type { FileEntry } from '../api/types';
 import { Icon } from '../ui/Icon';
 import { humanSize, humanTime } from './paths';
 import { files, type FolderState } from './store';
+import { editPath } from './PathField';
 
 /** The row being dragged between panes: set on dragstart, cleared on dragend. */
 export interface PaneDrag {
@@ -59,6 +60,9 @@ export function FileList({ fkey, folder, os, listRef, dropPath, onOpenFile, onMe
   const onKey = (ev: React.KeyboardEvent) => {
     const i = sel ? entries.indexOf(sel) : -1;
     if (ev.key === 'ArrowUp' && isMod(ev, os)) { ev.preventDefault(); files.up(fkey); return; }
+    // Go to folder: the path bar becomes a field (⇧⌘G, Ctrl+Shift+G); `/` and `~` start a path in it.
+    if (ev.code === 'KeyG' && ev.shiftKey && !ev.altKey && (os === 'mac' ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && !ev.metaKey)) { ev.preventDefault(); editPath(fkey); return; }
+    if ((ev.key === '/' || ev.key === '~') && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); editPath(fkey, ev.key); return; }
     if (ev.key === 'ArrowDown' && isMod(ev, os)) { ev.preventDefault(); if (sel && onDownload) onDownload(sel); return; }
     // A held key repeats: one press, one copy.
     if (ev.key === copyKey && isMod(ev, os)) { ev.preventDefault(); if (sel && onCopyOther && !ev.repeat) onCopyOther(sel); return; }

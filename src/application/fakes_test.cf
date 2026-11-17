@@ -6,6 +6,7 @@ package application
 
 import "core:str"
 import "core:fs"
+import "core:json"
 import "core:rand"
 import "core:encoding/hex"
 import "core:crypto/sha256"
@@ -161,10 +162,17 @@ type FakeStore struct {
     tombs: []Tombstone
     replaced: i64
     copy_open: bool
+    // Milestone 43: the "files" this store's vault file bytes stand for (cfire's
+    // json skips the record types), shared by the fake machines of one test.
+    bank: shared[FakeBank]
+}
+
+type FakeBank struct {
+    blobs: []VaultRecords
 }
 
 fn new_fake_store() -> FakeStore {
-    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "", rec_tokens: [], tombs: [], replaced: 0, copy_open: false }
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "", rec_tokens: [], tombs: [], replaced: 0, copy_open: false, bank: make[shared[FakeBank]](FakeBank{ blobs: [] }) }
 }
 
 fn (self: FakeStore) vault_file_exists(path: str) -> bool {
@@ -942,4 +950,210 @@ type FakeFonts struct {
 
 fn (self: FakeFonts) mono_font_families() -> []str! {
     return self.names
+}
+
+// ---- The remote vault (milestone 43) -------------------------------------------
+
+// The fake's vault "file": the salt, then "<key hex>|<id>|<n>", n naming the records
+// as they were in the store's bank, so two fake stores (two machines) sharing a bank
+// hand each other copies through a fake server.
+fn (self: FakeStore) vault_file_bytes(path: str) -> []byte! {
+    if !self.vault_file_exists(path) {
+        return error(coded(ERR_NOT_FOUND, "no vault file at {path}"))
+    }
+    mut id := ""
+    for i, k in self.meta_keys {
+        if k == VAULT_META_ID {
+            id = self.meta_values[i]
+        }
+    }
+    // CFIRE-UPSTREAM: CF-147 (no field access through shared[T]; a statement that
+    // starts with `(` continues the line before it)
+    mut bank := self.bank
+    mut list := (*bank).blobs
+    n := list.len()
+    list.push(VaultRecords{ groups: self.groups, hosts: self.hosts, keys: self.keys, creds: self.creds, known_hosts: self.known, tunnels: self.tunnels, tokens: self.rec_tokens, tombstones: self.tombs })
+    if n >= 0 {
+        (*bank).blobs = list
+    }
+    // The same records give the same bytes, so an unchanged vault hashes the same.
+    mut same := n
+    for i in 0..n {
+        x := list[i]
+        y := list[n]
+        if !merge_adds_to(x, y) && !merge_adds_to(y, x) && x.tombstones.len() == y.tombstones.len() {
+            same = i
+            break
+        }
+    }
+    mut data: []byte = []
+    for x in self.file_salt {
+        data.push(x)
+    }
+    for x in "{hex.encode(self.file_key)}|{id}|{same}".bytes() {
+        data.push(x)
+    }
+    return data
+}
+
+type FakeBlob struct {
+    key: str
+    id: str
+    records: VaultRecords
+}
+
+fn (self: FakeStore) fake_blob_of(data: []byte) -> FakeBlob! {
+    mut rest: []byte = []
+    for i in 16..data.len() {
+        rest.push(data[i])
+    }
+    parts := str.split(str(rest), "|")
+    if parts.len() != 3 {
+        return error(coded(ERR_INVALID, "not a fake vault"))
+    }
+    n := str.parse_i64(parts[2]) or -1
+    if n < 0 {
+        return error(coded(ERR_INVALID, "not a fake vault"))
+    }
+    list := (*self.bank).blobs
+    return FakeBlob{ key: parts[0], id: parts[1], records: list[usize(n)] }
+}
+
+fn (self: FakeStore) vault_blob_records(data: []byte, page_key: []byte, salt: []byte) -> BlobRecords! {
+    mut key := page_key
+    if key.len() == 0 {
+        key = self.file_key
+    }
+    b := try self.fake_blob_of(data)
+    if b.key != hex.encode(key) {
+        return error(coded(ERR_WRONG_PASSWORD, "file is not a database"))
+    }
+    return BlobRecords{ vault_id: b.id, records: b.records }
+}
+
+fn (mut self: FakeStore) vault_write_new(path: str, data: []byte) -> void! {
+    if self.file_path.len() > 0 {
+        return error(coded(ERR_EXISTS, "fake holds one file"))
+    }
+    b := try self.fake_blob_of(data)
+    salt := try vault_blob_salt(data)
+    self.file_path = path
+    self.file_salt = salt
+    self.file_key = try hex.decode(b.key)
+    self.meta_keys = ["format", VAULT_META_ID]
+    self.meta_values = ["1", b.id]
+    self.groups = b.records.groups
+    self.hosts = b.records.hosts
+    self.keys = b.records.keys
+    self.creds = b.records.creds
+    self.known = b.records.known_hosts
+    self.tunnels = b.records.tunnels
+    self.rec_tokens = b.records.tokens
+    self.tombs = b.records.tombstones
+}
+
+// A fake server, its state in a temp folder (ports take it by value): the blob, its
+// version, its vault id. `offline` fails every request with `network`; `race` makes
+// the next upload find another machine's version first.
+type FakeRemote struct {
+    dir: str
+}
+
+type FakeRemoteState struct {
+    version: i64  `json:"version"`
+    id:      str  `json:"id"`
+    data:    str  `json:"data"`
+    offline: bool `json:"offline"`
+    gets:    i64  `json:"gets"`
+    puts:    i64  `json:"puts"`
+    // A blob to store, as another machine's upload, just before the next PUT.
+    race:    str  `json:"race"`
+}
+
+fn new_fake_remote() -> FakeRemote {
+    dir := "/tmp/flint-fake-remote-" + sha256.random_hex(8)
+    _ := fs.mkdir_all(dir)
+    r := FakeRemote{ dir: dir }
+    r.save(FakeRemoteState{ version: 0, id: "", data: "", offline: false, gets: 0, puts: 0, race: "" })
+    return r
+}
+
+fn (self: FakeRemote) state() -> FakeRemoteState {
+    text := fs.read_text(self.dir + "/state.json") or ""
+    return json.parse[FakeRemoteState](text) or FakeRemoteState{ version: 0, id: "", data: "", offline: false, gets: 0, puts: 0, race: "" }
+}
+
+fn (self: FakeRemote) save(s: FakeRemoteState) {
+    _ := fs.write_text(self.dir + "/state.json", json.stringify(s))
+}
+
+fn (self: FakeRemote) set_offline(v: bool) {
+    mut s := self.state()
+    s.offline = v
+    self.save(s)
+}
+
+fn (self: FakeRemote) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
+    mut s := self.state()
+    if s.offline {
+        return error(coded(ERR_NETWORK, "cannot reach the server"))
+    }
+    if token != "tok" {
+        return error(coded(ERR_AUTH, "the server refused the token"))
+    }
+    s.gets += 1
+    self.save(s)
+    if s.version == 0 {
+        return RemoteVault{ found: false, changed: true, version: 0, vault_id: "", data: [] }
+    }
+    if known_version == s.version {
+        return RemoteVault{ found: true, changed: false, version: s.version, vault_id: s.id, data: [] }
+    }
+    return RemoteVault{ found: true, changed: true, version: s.version, vault_id: s.id, data: try hex.decode(s.data) }
+}
+
+fn (self: FakeRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
+    mut s := self.state()
+    if s.offline {
+        return error(coded(ERR_NETWORK, "cannot reach the server"))
+    }
+    if s.race.len() > 0 {
+        s.version += 1
+        s.data = s.race
+        s.race = ""
+    }
+    s.puts += 1
+    if s.version > 0 && s.id != vault_id {
+        self.save(s)
+        return error(coded(ERR_CONFLICT, "the server holds another vault"))
+    }
+    if base_version != s.version {
+        self.save(s)
+        return RemoteStored{ stored: false, version: s.version }
+    }
+    s.version += 1
+    s.id = vault_id
+    s.data = hex.encode(data)
+    self.save(s)
+    return RemoteStored{ stored: true, version: s.version }
+}
+
+// This machine's links, in a temp file.
+type FakeLinks struct {
+    path: str
+}
+
+fn new_fake_links() -> FakeLinks {
+    return FakeLinks{ path: "/tmp/flint-fake-links-" + sha256.random_hex(8) + ".json" }
+}
+
+fn (self: FakeLinks) links_load() -> []RemoteLink! {
+    if !fs.exists(self.path) {
+        return []
+    }
+    return try json.parse[[]RemoteLink](try fs.read_text(self.path))
+}
+
+fn (self: FakeLinks) links_save(list: []RemoteLink) -> void! {
+    try fs.write_text(self.path, json.stringify(list))
 }

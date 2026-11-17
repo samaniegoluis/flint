@@ -9,10 +9,8 @@ uploads it, encrypted in full, with a version number. It never receives your mas
 password or any key, and it never opens the file: a stolen server, or a stolen token,
 gives only ciphertext.
 
-:::note[Coming next]
-This page sets up the server. Connecting Flint to it (`flint vault connect`, and
-*Connect remote vault* in the app) arrives in the next releases.
-:::
+This page sets up the server. Connecting your vaults to it is
+[Sync a vault across machines](/guides/remote-vault/).
 
 One server holds one person's vault, behind one token. Run your own instance; there are no
 accounts.
@@ -138,7 +136,9 @@ a header's value or the vault file.
 
 Make a new token, set its hash on the server, restart it, and give the new token to each
 machine. Until a machine has the new one, its sync fails with `401` and its changes wait
-on that machine.
+on that machine. On each machine, run `flint vault token` (or **Settings → Vault → Server →
+Replace token…** in the app) and give it the new token: it is checked against the server,
+then kept in the keychain, and the waiting changes sync on the next round. Nothing is lost.
 
 ## The data folder and backups
 
@@ -197,6 +197,7 @@ For the curious, and for anyone writing a client. Every request carries
 | Request | Answer |
 |---|---|
 | `GET /v1/vault` | `200` with the file, `ETag: "<version>"` and `X-Flint-Vault-Id`; `404` before the first upload |
+| `GET /v1/vault` with `If-None-Match: "<version>"` | `304` with no body while that is still the newest version, else `200` with the file: how a machine checks for changes without downloading the vault |
 | `PUT /v1/vault` with `If-None-Match: *`, `X-Flint-Vault-Id` and the file | `200 {"version":1}`: the first upload |
 | `PUT /v1/vault` with `If-Match: "<version>"` | `200` with the next version, or `409` with the newest `ETag` when another machine uploaded first |
 

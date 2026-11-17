@@ -178,9 +178,8 @@ See the [CLI reference](/reference/cli/).
 <CardGrid>
 	<Card title="The whole file is encrypted" icon="seti:lock">
 		Hostnames, users, notes and known host keys are encrypted too, not only passwords
-		(SQLCipher, AES-256). Put the vault in any cloud-synced folder, merge a conflict copy
-		back record by record with <code>flint vault merge</code>, and change its master
-		password whenever you like: Flint shows how strong the new one is.
+		(SQLCipher, AES-256). Change its master password whenever you like: Flint shows how
+		strong the new one is.
 	</Card>
 	<Card title="Secrets sealed twice" icon="approve-check">
 		Passwords, private keys and passphrases are sealed again with XChaCha20-Poly1305,
@@ -196,6 +195,13 @@ See the [CLI reference](/reference/cli/).
 		Flint asks before it trusts a new server key, and always refuses a changed one
 		before any credential is sent.
 	</Card>
+	<Card title="Your vault on every machine" icon="random">
+		A <a href="/guides/vault-server/">server you run</a> keeps every machine's copy in
+		step, offline edits included, merged record by record. It stores the encrypted file
+		and a version, never a key. Connect from the app's welcome screen or Settings, or
+		with <code>flint vault connect</code>. Read <a href="/guides/remote-vault/">Sync a
+		vault across machines</a>.
+	</Card>
 </CardGrid>
 
 The details are in [Vault format](/reference/vault-format/),
@@ -207,7 +213,7 @@ which also says what an unlocked vault does not protect against.
 ## What's next
 
 <ul class="flint-next">
-	<li><strong>Your vault on every machine</strong> A server you run keeps one encrypted copy in step between your machines, merged record by record; it never sees your password. <a href="/guides/vault-server/">The server</a> is ready; Flint connects to it next.</li>
+	<li><strong>Several vaults on one server</strong> One server and one token keep all your vaults in step, Personal and Work alike, instead of a server for each.</li>
 	<li><strong>SSH agent</strong> <code>flint agent</code> serves keys from the vault to <code>ssh</code>, <code>git</code> and your editor, with no key on disk.</li>
 	<li><strong>Releases</strong> A signed macOS app, a Linux AppImage and a Homebrew tap.</li>
 </ul>

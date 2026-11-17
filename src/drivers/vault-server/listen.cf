@@ -141,7 +141,9 @@ fn to_server_request(o: ReadOutcome, client: str) -> ServerRequest {
 
 // Reason phrases core:net/http does not know (it sends "Error" for them).
 fn reason_phrase(status: i32) -> str {
-    if status == 408 {
+    if status == 304 {
+        return "Not Modified"
+    } else if status == 408 {
         return "Request Timeout"
     } else if status == 411 {
         return "Length Required"
@@ -165,7 +167,9 @@ fn to_http_response(r: ServerReply) -> http.Response {
     if reason.len() > 0 {
         resp.status_text = reason
     }
-    resp.set_header("Content-Type", r.content_type)
+    if r.content_type.len() > 0 {
+        resp.set_header("Content-Type", r.content_type)
+    }
     resp.set_header("Cache-Control", "no-store")
     if r.version > 0 {
         resp.set_header("ETag", version_tag(r.version))

@@ -1,0 +1,9 @@
+# CFIRE-UPSTREAM: CF-031, CF-146
+# The remote vault client's HTTP shim (milestone 43): libcurl, for TLS, timeouts and
+# request and response headers that core:net/http does not give cfire code (CF-146).
+# Apart from flint-native so flint-vault-server never links libcurl.
+Name: flint-remote
+Description: Native HTTP shim for Flint's remote vault client
+Version: 1
+Requires: libcurl
+Cflags: -I${pcfiledir}/../../vaultremote/native

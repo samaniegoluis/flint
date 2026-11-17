@@ -201,6 +201,8 @@ export interface Settings {
   rdp_mac_custom: string;
   /** Milestone 34: 'auto' offers the graphics pipeline (RDPGFX), 'compatible' keeps bitmap updates. */
   rdp_graphics: 'auto' | 'pipeline' | 'compatible';
+  /** Milestone 43: seconds between checks of a connected vault's server (0, 60, 300, 900); 0 syncs on events only. */
+  sync_interval: number;
   /** The app's own record that earlier cached keys were removed (D-048); the core keeps it. */
   keys_cleared?: boolean;
 }
@@ -617,4 +619,69 @@ export interface TransferEvent {
   file_size: number;
   files_done: number;
   bytes_done: number;
+}
+
+// ---- The remote vault (milestones 43-44, design 23*) --------------------------------
+
+/** Where a vault stands with its server, from this machine's memory and its file. */
+export interface RemoteStatus {
+  connected: boolean;
+  url: string;
+  version: number;
+  /** Unix milliseconds; 0 for never. */
+  last_sync: number;
+  last_attempt: number;
+  /** The last failed attempt's "code: message", or ''. */
+  last_error: string;
+  /** The vault holds changes the server does not have yet. */
+  pending: boolean;
+}
+
+export interface RemoteProbe {
+  url: string;
+  found: boolean;
+  vault_id: string;
+  version: number;
+  size: number;
+}
+
+export interface MergeChange {
+  kind: string;
+  name: string;
+  change: string;
+  detail: string;
+}
+
+export interface MergeReport {
+  added: number;
+  updated: number;
+  removed: number;
+  changes: MergeChange[];
+  notes: MergeChange[];
+}
+
+export interface SyncOutcome {
+  path: string;
+  name: string;
+  url: string;
+  result: 'in_step' | 'uploaded' | 'merged';
+  version: number;
+  uploaded: boolean;
+  report: MergeReport;
+  rekeyed: boolean;
+}
+
+/** `vault:sync`: what a sync the app ran did (or that one started). */
+export interface SyncEvent {
+  path: string;
+  state: 'syncing' | 'in_step' | 'uploaded' | 'merged' | 'error';
+  version: number;
+  report: MergeReport;
+  code: string;
+  message: string;
+}
+
+export interface RemoteLinkView {
+  path: string;
+  url: string;
 }

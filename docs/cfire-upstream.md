@@ -2516,3 +2516,56 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Workaround:** test data with a NUL byte is built from a `[]byte` (`str(bytes)`).
 - **Ideal:** a literal with an embedded NUL lowers to `std::string(ptr, len)` (or a `""s`
   literal), so `len()` counts every byte.
+
+### CF-146 · missing · `confirmed`: no HTTP client usable from cfire for an API with headers and deadlines
+- **Seen (milestone 43) [read, `c5b1d4b`]:** besides CF-142 (headers do not compile),
+  `http.request` has no connect or total timeout (`connect_tcp` and a read loop until the
+  peer closes), returns no way to cap the response size, and on macOS an `https://` URL
+  goes through `tls::wrap_client` over a dlopen'd OpenSSL, which macOS does not ship, so
+  it falls back to `NSURLConnection` (`request_apple_foundation`), whose `Response` carries
+  the status and body but no headers: the vault's version travels in `ETag` and its id in
+  `X-Flint-Vault-Id`.
+- **Why Flint needs it:** the remote vault client (`VaultRemote`) sends `Authorization`,
+  `If-Match` / `If-None-Match` and `X-Flint-Vault-Id`, reads `ETag` and the vault id, and
+  must time out (Principle 8).
+- **Workaround:** libcurl through `src/adapters/vaultremote/native/flint_remote.hpp`
+  (pkg-config `flint-remote`, so `flint-vault-server` never links it), tagged
+  `// CFIRE-UPSTREAM: CF-146`.
+- **Ideal:** `http.request(method, url, body, headers, timeout_ms, max_bytes)` that takes a
+  cfire map, returns every response header on every platform, and uses the system's TLS
+  (Security.framework / OpenSSL / SChannel) with the system trust store.
+
+### CF-147 · bug · `confirmed`: a statement starting with `(` continues the line before; no field access through `shared[T]`
+- **Seen (milestone 43, a test fake) [ran, macOS, `c5b1d4b`]:** with `mut bank :=
+  self.bank` (a `shared[FakeBank]`), `bank.blobs` fails in C++ ("no member named 'blobs'
+  in 'shared[FakeBank]'"; CF-085 in cfire's plan); `(*bank).blobs.len()` lowers to
+  `(*bank).blobs.size()((*bank)).blobs` when the next line also starts with `(`: the
+  parser takes `list.push(x)` followed by a line `(*bank).blobs = list` as one call,
+  `vec_push(list, x)((*bank)).blobs = list`. A bare `{ … }` block is not a statement
+  either, so there is no way to start a fresh statement there.
+- **Repro:** `mut v: []i64 = []`, then on two lines `v.push(1)` and `(*p).x = v` with `p`
+  a `shared[S]`.
+- **Workaround:** the assignment inside `if n >= 0 { … }` (`src/application/fakes_test.cf`).
+- **Ideal:** a newline ends a statement before `(` as Go does; `shared[T]` auto-derefs on
+  `.field`.
+
+### CF-148 · missing · `confirmed`: `[]byte` has no `clone()`
+- **Seen (milestone 43) [ran, macOS, `c5b1d4b`]:** `key.clone()` on a `[]byte` fails in C++
+  ("no member named 'clone'"). Assigning a slice copies it already, so it is only the
+  spelling a reader expects for an explicit copy.
+- **Workaround:** `copy_of_bytes` in `src/adapters/vault/store.cf`.
+- **Ideal:** `clone()` on slices, or a diagnostic pointing at plain assignment.
+
+### CF-149 · bug · `confirmed`: a macOS build's minimum version is the build machine's, not `LSMinimumSystemVersion`
+- **Seen (2026-11-15) [ran, macOS 27.2 → 27.1, `c5b1d4b`]:** `Flint.app` built on macOS 27.2
+  would not open on another Mac with 27.1 ("can't be used with this version of macOS").
+  cfire writes `LSMinimumSystemVersion` 12.0 in `Info.plist`, but passes no deployment target
+  to clang, which takes the SDK's: `vtool -show-build Flint.app/Contents/MacOS/Flint` shows
+  `minos 27.2`, `sdk 27.2`. The same holds for a console executable (`flint`).
+- **Repro:** `cfire build` any `build.Executable` on macOS, then `vtool -show-build <binary>`.
+- **Workaround:** none in Flint yet (no release build). By hand on the other Mac:
+  `vtool -set-build-version macos 27.0 27.2 -replace -output <bin> <bin>`, then ad-hoc
+  signing again. `MACOSX_DEPLOYMENT_TARGET` before `cfire build` is untested.
+- **Ideal:** pass `-mmacosx-version-min` to compile and link, equal to the bundle's
+  `LSMinimumSystemVersion`, with a `MinMacOS`-style field on `build.Executable` to set both
+  (and a diagnostic when a linked library's `minos` is newer).

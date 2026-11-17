@@ -603,3 +603,121 @@ password or tunnels: those sections must not appear for it.
 
 Dark and light for every screen.
 ```
+
+---
+
+## Message 9: Connect remote vault and the sync's state (v11, milestone 44, sent)
+
+Written at milestone 44's plan (2026-11-13), after milestone 43 built the sync in the core
+and the CLI (D-098). Send it in the same chat as messages 1-8. Screens 23a-23h are needed
+before milestone 44 is built.
+
+```
+Flint follow-up: a vault kept in step across machines by a server the person runs. Same
+tokens.css, components and dark/light pairs as the existing screens. Name the new files
+23…, as below, and update 01 and 12d where noted.
+
+Context: every machine keeps its own full copy of the vault and works offline. An
+optional server the person self-hosts (flint-vault-server, behind their own HTTPS proxy)
+keeps the copies in step. The server never holds the key: it stores the encrypted file
+and a version number, and nothing else. Flint syncs on its own: at unlock, a few seconds
+after a change, when the window comes back to the front, and every minute (configurable).
+When two machines changed the vault apart, Flint downloads the other copy, merges it
+record by record (the newer edit wins; a host alias created on both sides is renamed,
+e.g. "web-01-2") and uploads the result. Nothing is ever lost, so a merge is news, not an
+alarm. The rules (owner):
+  - A server keeps one vault today; a later version lets one server keep several, each
+    under its id (23a3 leaves room for the choice). Its address must be https://
+    (http:// only for localhost). It is reached with a token (a long random string
+    the server printed); the token is a secret: typed or pasted once, kept in the OS keychain, never shown again,
+    only "Saved in the keychain" and Replace.
+  - A vault may only go to a server with a Strong master password (3 of 4 on the strength
+    meter Flint already shows in Change master password). A weaker one is refused with a
+    way to change it first.
+  - A locked vault cannot sync (there is no key to merge with): its changes wait and are
+    merged at the next unlock.
+  - If the master password was changed on another machine, this one's copy no longer
+    opens the server's: Flint asks for the new password once, then carries on.
+  - Offline is normal (a laptop on a train): calm, never red.
+
+01 · Welcome, updated: a third card under "Create a new vault" and "Open a vault file…":
+  "Connect to a remote vault" (a server icon), one line "Download a vault kept on your
+  own server and keep it in step", its shortcut. The old footnote about iCloud/Dropbox
+  goes or says the server is the way now.
+
+23a · Connect to a remote vault, from Welcome (a page like 02 Create vault, in steps):
+  - 23a1 · Server: address (placeholder "https://vault.example.com") and token (a
+    password field, a paste button). Below, a quiet line: "No server yet? Self-host one
+    in a few minutes" linking to the docs. Continue checks the server.
+  - 23a2 · The checks failing, inline under the field each belongs to: http:// refused
+    ("Use https:// — plain http is allowed only for localhost"), server unreachable,
+    not a Flint vault server, wrong token, too many attempts (try again in N minutes),
+    and the server holding no vault yet ("This server is empty. Connect it from a machine
+    that already has the vault: Settings → Vault → Connect to a server").
+  - 23a3 · The vault found: the server cannot read it, so only "A vault was found", its
+    size and version (its name appears once it opens). A server may hold several vaults
+    (milestone 45, D-101): then a short list to pick one, each row an id (short, mono),
+    size, version and last change; the name shows once it opens. Then the master
+    password of that vault; where to keep the
+    local copy (folder picker and file name, as 02); "Remember on this computer" as 03.
+    Errors: wrong master password, a file already exists there.
+  - 23a4 · Downloading and opening: one progress line, then straight into the main shell
+    (no extra success screen).
+
+23b · Settings → Vault, a new "Server" section in 12d (above Lock after):
+  - 23b1 · Not connected: one line on what it does and a "Connect to a server…" button.
+  - 23b2 · Connecting this open vault (a modal): address, token, then the master password
+    typed again with the strength meter. A Weak or Fair password: the Connect button
+    disabled and "A vault on a server needs a Strong password — Change master password…".
+    Outcomes: the server was empty ("Uploaded. Other machines can connect now"), it
+    already held this same vault ("Merged with the server's copy", the merge summary as
+    23e), it holds another vault (refused for now: "This server already keeps a different
+    vault").
+  - 23b3 · Connected: the address (mono), state as in 23c with its last sync time
+    ("In step · 2 min ago"), version number (faint), "Sync now", "Check every" (Only on
+    changes and at unlock · 1 min · 5 min · 15 min), "Replace token…", and "Disconnect…"
+    (a confirm: the local copy stays as it is and keeps working, the server keeps its
+    copy, nothing is deleted).
+  - 23b4 · Replace token (a modal from 23b3): one password field with a paste button,
+    "Replace". Flint checks the new token against the server before the old one is
+    dropped; a refused token is an inline error and the old one stays.
+
+23c · The sync's state in the status bar (beside the lock state, as 16d placed the agents'
+  item): a small cloud glyph plus a word, each state at a glance:
+  - In step (quiet, no colour; tooltip "Synced 2 min ago").
+  - Syncing (a subtle motion).
+  - Waiting (changes not uploaded yet; a neutral dot. Flint knows that changes wait,
+    not how many: no count).
+  - Offline (server unreachable; neutral, "will sync when back").
+  - Merged (sapphire, info tone, for a short while after a merge brought changes; click
+    opens 23e).
+  - Needs the new password (warning tone; click opens 23f).
+  - Needs attention (the token was refused, the server now holds another vault: warning,
+    click opens Settings → Server).
+  Clicking the item opens a small popover: state, last sync, server address, "Sync now",
+  "Server settings…". A vault not connected shows nothing in the status bar.
+
+23d · The vault switcher (⇧⌘O popover) and the recents on Welcome: a small cloud mark on a
+  vault connected to a server, with its address in the tooltip.
+
+23e · A merge brought changes: a toast "Changes from another machine: 2 hosts added,
+  1 updated" with "Details". The details dialog lists what changed, grouped by kind
+  (hosts, credentials, SSH keys, tunnels, tokens), each line "added / updated / removed"
+  and the record's label (labels only, no secrets), then the notes the merge made in plain
+  words ("web-01 existed on both machines: this one is now web-01-2", "a tunnel whose
+  host was removed was removed too"). Empty notes: no section.
+
+23f · The master password was changed on another machine: a modal over the unlocked app,
+  calm, not an error: "The master password of Personal was changed on another machine.
+  Type the new one to keep syncing." A password field, "Sync" and "Later" (the status bar
+  keeps 23c's warning state). Wrong one: inline error. This machine's vault then opens
+  with the new password from now on (say so in one line).
+
+23g · Unlock (03) for a connected vault: one faint line under the field when changes wait
+  ("Changes from this machine will sync after unlocking"; no count, as 23c).
+
+23h · Command palette: "Sync vault now", "Connect vault to a server…", "Disconnect vault
+  from server…", "Show last merge". And 900×600 (as 04c): 23a3, 23b3 and the status bar.
+
+Dark and light for every screen.
+```

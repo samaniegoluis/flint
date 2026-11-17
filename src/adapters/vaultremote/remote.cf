@@ -1,0 +1,163 @@
+package vaultremote
+
+// The `VaultRemote` port over HTTP (milestone 43): protocol /v1 of flint-vault-server
+// (D-097), through libcurl in native/flint_remote.hpp, since core:net/http gives
+// cfire code no headers, no deadline and, on macOS, no response headers over TLS
+// (CF-146). Every request carries a deadline (Principle 8), the bearer token in a
+// header and nothing else of the vault but its id, a version and the encrypted file
+// (Principle 13). No message names the token (Principle 6).
+
+// CFIRE-UPSTREAM: CF-146, CF-031
+import cpp "flint_remote.hpp" @pkg("flint-remote")
+import "core:str"
+import "core:json"
+import "../../domain"
+
+// Connecting, and a whole request: a vault of a few MB over a slow link fits.
+REMOTE_CONNECT_MS: i64 = 10000
+REMOTE_REQUEST_MS: i64 = 120000
+// The most a download may be: the server's default cap (32 MiB) and room to spare.
+REMOTE_MAX_BYTES: i64 = 67108864
+
+type HttpVaultRemote struct {
+    connect_ms: i64
+    request_ms: i64
+}
+
+fn new_http_vault_remote() -> HttpVaultRemote {
+    return HttpVaultRemote{ connect_ms: REMOTE_CONNECT_MS, request_ms: REMOTE_REQUEST_MS }
+}
+
+type RemoteReply struct {
+    status:   i64
+    etag:     str
+    vault_id: str
+    body:     []byte
+}
+
+type RemoteErrorBody struct {
+    error:   str `json:"error"`
+    message: str `json:"message"`
+}
+
+fn (self: HttpVaultRemote) send(method: str, url: str, headers: str, body: []byte) -> RemoteReply! {
+    mut rc: i32 = 0
+    mut status: i64 = 0
+    mut etag := ""
+    mut vault_id := ""
+    mut got: []byte = []
+    mut reason := ""
+    connect_ms := self.connect_ms
+    request_ms := self.request_ms
+    max := REMOTE_MAX_BYTES
+    // CFIRE-UPSTREAM: CF-146
+    cpp {
+        rc = flint_remote::request(method, url, headers, body, connect_ms, request_ms, max, status, etag, vault_id, got, reason);
+    }
+    host := url_host(url)
+    if rc == 2 {
+        return error(coded(ERR_NETWORK, "cannot reach the vault's server at {host}: {reason}"))
+    }
+    if rc == 3 {
+        return error(coded(ERR_TIMEOUT, "the vault's server at {host} did not answer in time"))
+    }
+    if rc == 4 {
+        return error(coded(ERR_NETWORK, "TLS with the vault's server at {host} failed: {reason}"))
+    }
+    if rc == 5 {
+        return error(coded(ERR_REFUSED, "the vault's server at {host} sent more than a vault may be"))
+    }
+    if rc != 0 {
+        return error(coded(ERR_NETWORK, "the request to the vault's server at {host} failed: {reason}"))
+    }
+    return RemoteReply{ status: status, etag: etag, vault_id: vault_id, body: got }
+}
+
+// The host part of a URL, for messages (never a path or a query).
+fn url_host(url: str) -> str {
+    mut rest := url
+    i := rest.index_of("://")
+    if i >= 0 {
+        rest = rest.substr(usize(i) + 3)
+    }
+    j := rest.index_of("/")
+    if j >= 0 {
+        rest = rest.substr(0, usize(j))
+    }
+    return rest
+}
+
+fn auth_header(token: str) -> str {
+    return "Authorization: Bearer " + token + "\n"
+}
+
+// The error a refusal maps to, with the server's own message when it sent one.
+fn refusal(r: RemoteReply, host: str) -> str {
+    mut why := ""
+    parsed := json.parse[RemoteErrorBody](str(r.body)) or RemoteErrorBody{ error: "", message: "" }
+    if parsed.message.len() > 0 && parsed.message.len() < 200 {
+        why = ": " + parsed.message
+    }
+    if r.status == 401 {
+        return coded(ERR_AUTH, "the vault's server at {host} refused the token (a wrong token, or too many wrong ones from here: wait 15 minutes)")
+    }
+    if r.status == 412 {
+        return coded(ERR_CONFLICT, "the vault's server at {host} holds another vault")
+    }
+    if r.status == 429 {
+        return coded(ERR_REFUSED, "the vault's server at {host} asks to slow down; try again in a minute")
+    }
+    if r.status == 413 {
+        return coded(ERR_REFUSED, "the vault is over the server's size cap (FLINT_VAULT_MAX_BYTES at {host})")
+    }
+    return coded(ERR_REFUSED, "the vault's server at {host} answered {r.status}{why}")
+}
+
+fn (self: HttpVaultRemote) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
+    mut headers := auth_header(token)
+    if known_version > 0 {
+        headers = headers + "If-None-Match: " + version_tag(known_version) + "\n"
+    }
+    r := try self.send("GET", url, headers, [])
+    host := url_host(url)
+    if r.status == 304 {
+        return RemoteVault{ found: true, changed: false, version: known_version, vault_id: r.vault_id, data: [] }
+    }
+    if r.status == 404 {
+        parsed := json.parse[RemoteErrorBody](str(r.body)) or RemoteErrorBody{ error: "", message: "" }
+        if parsed.error == "empty" {
+            return RemoteVault{ found: false, changed: true, version: 0, vault_id: "", data: [] }
+        }
+        return error(coded(ERR_NOT_FOUND, "no vault server at {url}: check the URL"))
+    }
+    if r.status != 200 {
+        return error(refusal(r, host))
+    }
+    version := parse_version_tag(r.etag)
+    if version < 1 || !valid_vault_id(r.vault_id) || r.body.len() == 0 {
+        return error(coded(ERR_INVALID, "{host} did not answer as a Flint vault server"))
+    }
+    return RemoteVault{ found: true, changed: true, version: version, vault_id: r.vault_id, data: r.body }
+}
+
+fn (self: HttpVaultRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
+    mut headers := auth_header(token) + "Content-Type: application/octet-stream\nX-Flint-Vault-Id: " + vault_id + "\n"
+    if base_version == 0 {
+        headers = headers + "If-None-Match: *\n"
+    } else {
+        headers = headers + "If-Match: " + version_tag(base_version) + "\n"
+    }
+    r := try self.send("PUT", url, headers, data)
+    host := url_host(url)
+    if r.status == 409 {
+        return RemoteStored{ stored: false, version: parse_version_tag(r.etag) }
+    }
+    if r.status != 200 {
+        return error(refusal(r, host))
+    }
+    version := parse_version_tag(r.etag)
+    if version < 1 {
+        return error(coded(ERR_INVALID, "{host} did not answer as a Flint vault server"))
+    }
+    return RemoteStored{ stored: true, version: version }
+}

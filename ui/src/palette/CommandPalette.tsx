@@ -18,6 +18,7 @@ import { useSessions } from '../sessions/store';
 import { useMonitors } from '../sessions/monitors';
 import { MAX_PANES } from '../lib/layout';
 import { tunnels, useTunnels } from '../tunnels/store';
+import { useSyncMaybe } from '../sync/SyncProvider';
 
 type Group = 'all' | 'hosts' | 'actions' | 'vaults';
 
@@ -66,9 +67,24 @@ const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'switchVault', icon: 'updown' },
   { action: 'openVault', icon: 'folder' },
   { action: 'createVault', icon: 'plus' },
+  { action: 'connectRemote', icon: 'server' },
+  { action: 'syncNow', icon: 'cloud' },
+  { action: 'connectServer', icon: 'server' },
+  { action: 'disconnectServer', icon: 'cloud-off' },
+  { action: 'showLastMerge', icon: 'cloud' },
   { action: 'lock', icon: 'lock' },
   { action: 'quit', icon: 'x' },
 ];
+
+const SYNC_ACTIONS: Action[] = ['syncNow', 'connectServer', 'disconnectServer', 'showLastMerge'];
+
+function syncShows(a: Action, sync: ReturnType<typeof useSyncMaybe>): boolean {
+  if (!SYNC_ACTIONS.includes(a)) return true;
+  if (!sync) return false;
+  if (a === 'connectServer') return !sync.status;
+  if (a === 'showLastMerge') return !!sync.lastMerge;
+  return !!sync.status;
+}
 
 function Hl({ text, positions }: { text: string; positions: number[] }) {
   return <>{highlight(text, positions).map((r, i) => (r.match ? <span key={i} className="match">{r.text}</span> : <span key={i}>{r.text}</span>))}</>;
@@ -91,6 +107,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
   onAction: (a: Action) => void;
 }) {
   const { catalog, recents, vault, os, switchTo, fail } = useApp();
+  const sync = useSyncMaybe();
   const { tabs, panes, active } = useSessions();
   const tun = useTunnels();
   const activeTab = tabs.find((t) => t.id === active);
@@ -225,6 +242,8 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
     }
     if (!hostsOnly) {
       for (const a of PALETTE_ACTIONS) {
+        // The sync's commands follow the vault's server (milestone 44).
+        if (!syncShows(a.action, sync)) continue;
         const title = ACTION_TITLES[a.action];
         const m = fuzzy(q, title);
         if (q && !m) continue;
@@ -253,7 +272,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       }
     }
     return out;
-  }, [catalog.hosts, tabs, panes, tun.list, canSplit, rdpTab, monitorsReason, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail]);
+  }, [catalog.hosts, tabs, panes, tun.list, canSplit, rdpTab, monitorsReason, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail, sync]);
 
   const counts = { hosts: 0, actions: 0, vaults: 0 };
   for (const it of items) counts[it.group === 'tunnels' ? 'actions' : it.group]++;

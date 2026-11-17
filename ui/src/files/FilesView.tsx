@@ -1,7 +1,8 @@
 // The Files view (design screens 14a-d, milestones 17 and 19): a sidebar that
 // follows the active tab's focused pane and browses its host over that pane's own
 // session (D-053).
-// Path bar with `..` (⌘↑), a breadcrumb and Go to the terminal's folder (OSC 7);
+// Path bar with `..` (⌘↑), a breadcrumb that turns into a field to type or paste a
+// path (⇧⌘G, PathField) and Go to the terminal's folder (OSC 7);
 // Upload and New folder; the list; a context menu; the transfer queue docked at the
 // bottom; and the whole sidebar as a drop target for files dragged in from the OS.
 //
@@ -24,6 +25,7 @@ import { files, useFiles, type DroppedFile, type Transfer } from './store';
 import { livePair, pairs, paneKey, usePairs } from './pair';
 import { dropFolderAt, FileList, folderLabel, paneDrag, setPaneDrag } from './FileList';
 import { OtherPane, ServerPicker } from './OtherPane';
+import { PathField } from './PathField';
 
 interface Props {
   tab: Pane | undefined;
@@ -249,9 +251,9 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
         <div className="row" style={{ height: 36, flex: 'none', padding: '0 var(--sp-2)', gap: 'var(--sp-1)', borderBottom: '1px solid var(--border-subtle)' }}>
           <button className="icon-btn" aria-label={`Up one folder (${os === 'mac' ? '⌘↑' : 'Ctrl+Shift+↑'})`} title={`Up one folder (${os === 'mac' ? '⌘↑' : 'Ctrl+Shift+↑'})`}
             data-files-up disabled={!path || path === '/'} onClick={() => files.up(tabId)}><Icon name="up" size="sm" /></button>
-          <nav className="crumbs grow" aria-label="Path" data-files-crumbs>
+          <PathField fkey={tabId} path={path} os={os} onError={(m) => notify(m, 'error')} onDone={() => listRef.current?.focus()}>
             <Crumbs path={path} onGo={(p) => files.go(tabId, p)} />
-          </nav>
+          </PathField>
           <button className={'icon-btn' + (tab.cwd ? '' : ' is-disabled')} data-files-goto-cwd aria-disabled={!tab.cwd}
             aria-label={tab.cwd ? `Go to the terminal's current folder (${tab.cwd})` : "Go to the terminal's folder: the shell does not report it (OSC 7)"}
             title={tab.cwd ? `Go to the terminal's current folder (${tab.cwd})` : "The shell does not report its folder. Turn on OSC 7 in the shell to use this: see Docs › The Files view"}

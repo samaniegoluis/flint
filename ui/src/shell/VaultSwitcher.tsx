@@ -13,12 +13,18 @@ export function VaultMenu({ onClose, onManage, style }: { onClose: () => void; o
   const [hot, setHot] = useState(0);
 
   useEffect(() => { refreshRecents().catch(() => {}); }, [refreshRecents]);
+  // A cloud mark on the vaults kept in step by a server (milestone 44, design 23d).
+  const [servers, setServers] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api.remotes().then((r) => setServers(Object.fromEntries(r.links.map((l) => [l.path, l.url])))).catch(() => {});
+  }, [recents]);
 
   type Item = { key: string; run: () => void };
   const items: Item[] = [
     ...recents.map((r) => ({ key: r.path, run: () => { onClose(); if (r.path !== vault?.path) switchTo(r).catch(fail); } })),
     { key: 'open', run: () => { onClose(); openVaultFile().catch(fail); } },
     { key: 'create', run: () => { onClose(); go('create'); } },
+    { key: 'connect', run: () => { onClose(); go('connect'); } },
     ...(onManage ? [{ key: 'manage', run: () => { onClose(); onManage(); } }] : []),
   ];
 
@@ -52,7 +58,7 @@ export function VaultMenu({ onClose, onManage, style }: { onClose: () => void; o
         <button {...mi(r.path)} style={{ minHeight: 48 }}>
           <span className={'vault-mark ' + vaultMarkClass(r.path)}>{vaultInitial(r.name)}</span>
           <span className="col grow" style={{ gap: 1, minWidth: 0 }}>
-            <span className="strong row" style={{ gap: 6 }}>{r.name}{!r.exists && <span className="badge warn">not found</span>}</span>
+            <span className="strong row" style={{ gap: 6 }}>{r.name}{servers[r.path] && <span title={`Kept in step with ${servers[r.path]}`} data-cloud-mark style={{ display: 'inline-flex' }}><Icon name="cloud" className="cloud-mark" label={`Kept in step with ${servers[r.path]}`} /></span>}{!r.exists && <span className="badge warn">not found</span>}</span>
             <span className="vault-path trunc">{shortPath(r.path)}</span>
           </span>
           {r.path === vault?.path && <Icon name="check" size="sm" className="accent-t" label="Current vault" />}
@@ -61,6 +67,7 @@ export function VaultMenu({ onClose, onManage, style }: { onClose: () => void; o
       {recents.length > 0 && <div className="menu-sep" />}
       <button {...mi('open')}><Icon name="folder" size="sm" />Open vault…<Kbd action="openVault" /></button>
       <button {...mi('create')}><Icon name="plus" size="sm" />Create vault…<Kbd action="createVault" /></button>
+      <button {...mi('connect')}><Icon name="server" size="sm" />Connect to a remote vault…<Kbd action="connectRemote" /></button>
       {onManage && <button {...mi('manage')}><Icon name="settings" size="sm" />Manage vaults…</button>}
       <div className="menu-sep" />
       <div className="row faint" style={{ padding: 'var(--sp-1) var(--sp-2) var(--sp-2)', fontSize: 'var(--fs-xs)', gap: 'var(--sp-3)' }}>

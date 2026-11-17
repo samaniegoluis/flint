@@ -1,0 +1,84 @@
+package vaultremote
+
+// Against a real flint-vault-server on loopback, started by scripts/test.sh
+// (FLINT_TEST_VAULT_URL, FLINT_TEST_VAULT_TOKEN, an empty data folder).
+
+import "core:os"
+import "core:net"
+import "../../domain"
+
+VID_A: str = "00112233445566778899aabbccddeeff"
+VID_B: str = "ffeeddccbbaa99887766554433221100"
+
+fn vault_url() -> str {
+    base := os.getenv("FLINT_TEST_VAULT_URL")
+    assert(base.len() > 0, "run through scripts/test.sh, which starts a vault server")
+    return remote_vault_url(base)
+}
+
+fn token() -> str {
+    return os.getenv("FLINT_TEST_VAULT_TOKEN")
+}
+
+fn bytes_of(s: str) -> []byte {
+    return []byte(s)
+}
+
+test "GET, PUT, 304, 409, 412 and 401 over HTTP, with headers both ways" {
+    r := new_http_vault_remote()
+    url := vault_url()
+    // Empty server: not found, no error.
+    empty := try r.remote_get(url, token(), 0)
+    assert(!empty.found)
+
+    first := try r.remote_put(url, token(), VID_A, 0, bytes_of("blob-one\u{1}\u{2}"))
+    assert(first.stored)
+    assert_eq(first.version, i64(1))
+
+    got := try r.remote_get(url, token(), 0)
+    assert(got.found && got.changed)
+    assert_eq(got.version, i64(1))
+    assert_eq(got.vault_id, VID_A)
+    assert_eq(str(got.data), "blob-one\u{1}\u{2}")
+
+    same := try r.remote_get(url, token(), 1)
+    assert(same.found)
+    assert(!same.changed, "304 when the version is known")
+    assert_eq(same.data.len(), usize(0))
+
+    second := try r.remote_put(url, token(), VID_A, 1, bytes_of("blob-two"))
+    assert_eq(second.version, i64(2))
+    late := try r.remote_put(url, token(), VID_A, 1, bytes_of("blob-late"))
+    assert(!late.stored)
+    assert_eq(late.version, i64(2))
+
+    mut msg := ""
+    r.remote_put(url, token(), VID_B, 2, bytes_of("other")) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_CONFLICT)
+
+    msg = ""
+    r.remote_get(url, "wrong-token-wrong-token-wrong-token", 0) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_AUTH)
+    assert(!msg.contains("wrong-token"), "the token is never in a message")
+}
+
+test "an unreachable server is network, a path that is not a vault server is not_found" {
+    r := new_http_vault_remote()
+    mut msg := ""
+    r.remote_get("http://127.0.0.1:9/v1/vault", token(), 0) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_NETWORK)
+    base := os.getenv("FLINT_TEST_VAULT_URL")
+    msg = ""
+    r.remote_get(base + "/nope", token(), 0) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+}
+
+test "a server that stalls hits the deadline" {
+    mut r := new_http_vault_remote()
+    r.request_ms = 1500
+    // A listener that never accepts: the kernel completes the handshake, nobody answers.
+    l := try net.listen_tcp_addr("127.0.0.1", 0)
+    mut msg := ""
+    r.remote_get("http://127.0.0.1:{l.port()}/v1/vault", token(), 0) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_TIMEOUT)
+}

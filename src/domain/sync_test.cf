@@ -1,0 +1,95 @@
+package domain
+
+fn url_ok(raw: str) -> str {
+    return check_remote_url(raw) or err {
+        return "ERR " + err.message()
+    }
+}
+
+test "a server URL is https, or http to this machine only" {
+    assert_eq(url_ok("https://vault.example.com"), "https://vault.example.com")
+    assert_eq(url_ok("  https://vault.example.com/ "), "https://vault.example.com")
+    assert_eq(url_ok("https://vault.example.com/v1/vault"), "https://vault.example.com")
+    assert_eq(url_ok("https://example.com/flint/"), "https://example.com/flint")
+    assert_eq(url_ok("HTTPS://vault.example.com:8443"), "https://vault.example.com:8443")
+    assert_eq(url_ok("http://localhost:8787"), "http://localhost:8787")
+    assert_eq(url_ok("http://127.0.0.1:8787/"), "http://127.0.0.1:8787")
+    assert_eq(url_ok("http://[::1]:8787"), "http://[::1]:8787")
+    assert(url_ok("http://vault.example.com").starts_with("ERR invalid: plain http://"))
+    assert(url_ok("http://192.168.1.10:8787").starts_with("ERR invalid: plain http://"))
+    // A host that only starts like localhost is not this machine.
+    assert(url_ok("http://localhost.evil.com").starts_with("ERR invalid"))
+    assert(url_ok("http://127.evil.com").starts_with("ERR invalid"))
+    assert_eq(url_ok("http://127.0.0.2:1"), "http://127.0.0.2:1")
+    assert(url_ok("ftp://x").starts_with("ERR invalid"))
+    assert(url_ok("vault.example.com").starts_with("ERR invalid"))
+    assert(url_ok("https://").starts_with("ERR invalid"))
+    assert(url_ok("https://user:tok@vault.example.com").starts_with("ERR invalid: put the token"))
+    assert(url_ok("https://vault.example.com/?x=1").starts_with("ERR invalid"))
+    assert_eq(remote_vault_url("https://a.b"), "https://a.b/v1/vault")
+}
+
+test "a blob's salt is its first 16 bytes" {
+    mut data: []byte = []
+    for i in 0..40 {
+        data.push(byte(i))
+    }
+    salt := vault_blob_salt(data) or err {
+        assert(false)
+        return
+    }
+    assert_eq(salt.len(), usize(16))
+    assert_eq(u8(salt[15]), u8(15))
+    short: []byte = [byte(1), byte(2)]
+    got := vault_blob_salt(short) or err {
+        assert(err.message().starts_with("invalid"))
+        return
+    }
+    assert(false)
+}
+
+test "sync intervals" {
+    assert(valid_sync_interval(0))
+    assert(valid_sync_interval(60))
+    assert(!valid_sync_interval(1))
+    assert_eq(remote_token_account("ab"), "remote-token:ab")
+}
+
+test "the app syncs at unlock, on demand, after a change settles, on focus and by interval" {
+    mut c := new_sync_clock()
+    assert(sync_due(mut c, "/v", 1000, false, 60, ""), "first unlock")
+    sync_checked(mut c, "/v", 1000, true)
+    assert(!sync_due(mut c, "/v", 2000, false, 60, ""))
+    // A change waits for the batch.
+    assert(!sync_due(mut c, "/v", 3000, true, 60, ""))
+    assert(!sync_due(mut c, "/v", 5000, true, 60, ""))
+    assert(sync_due(mut c, "/v", 6000, true, 60, ""))
+    sync_checked(mut c, "/v", 6000, true)
+    // Focus soon after a check does nothing; later it syncs.
+    assert(!sync_due(mut c, "/v", 10000, false, 60, SYNC_HINT_FOCUS))
+    assert(sync_due(mut c, "/v", 21000, false, 60, SYNC_HINT_FOCUS))
+    // The interval, and 0 turning it off.
+    assert(sync_due(mut c, "/v", 66000, false, 60, ""))
+    assert(!sync_due(mut c, "/v", 999999, false, 0, ""))
+    assert(sync_due(mut c, "/v", 7000, false, 0, SYNC_HINT_NOW))
+    // Another vault: at once.
+    assert(sync_due(mut c, "/w", 7000, false, 0, ""))
+}
+
+test "failures back off, doubling to a cap; asking still syncs" {
+    mut c := new_sync_clock()
+    sync_checked(mut c, "/v", 0, false)
+    assert(!sync_due(mut c, "/v", 29000, true, 60, ""))
+    assert(sync_due(mut c, "/v", 31000, true, 60, ""))
+    sync_checked(mut c, "/v", 31000, false)
+    assert(!sync_due(mut c, "/v", 31000 + 59000, true, 60, ""))
+    assert(sync_due(mut c, "/v", 31000 + 61000, true, 60, ""))
+    for i in 0..10 {
+        sync_checked(mut c, "/v", 0, false)
+    }
+    assert(!sync_due(mut c, "/v", 899000, true, 60, ""))
+    assert(sync_due(mut c, "/v", 901000, true, 60, ""))
+    assert(sync_due(mut c, "/v", 1, true, 60, SYNC_HINT_NOW))
+    sync_checked(mut c, "/v", 2, true)
+    assert_eq(c.failures, 0)
+}

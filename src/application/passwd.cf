@@ -76,8 +76,16 @@ fn change_master_password[C: Crypto, S: VaultStore, K: Keychain](crypto: C, mut 
     if new_password == current {
         return error(coded(ERR_INVALID, "the new master password is the same as the current one"))
     }
+    return rekey_vault_to(crypto, mut store, keychain, session, new_password, crypto.random_bytes(VAULT_SALT_LEN))
+}
+
+// Re-keys the vault `session` holds to `new_password` with `salt`: a new random salt
+// for a password change here, or the salt of the vault's server copy when the
+// password was changed on another machine (milestone 43, sync.cf), so both copies
+// end with the same keys and merge. Any failure before the vault's rename leaves the
+// vault, the activity file and the keychain as they were.
+fn rekey_vault_to[C: Crypto, S: VaultStore, K: Keychain](crypto: C, mut store: S, keychain: K, session: VaultSession, new_password: str, salt: []byte) -> VaultSession! {
     old_salt := try store.vault_read_salt(session.path)
-    salt := crypto.random_bytes(VAULT_SALT_LEN)
     master := try crypto.derive_key(new_password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
     defer crypto.wipe(master)
     (page, secrets) := try derive_vault_keys(crypto, master)

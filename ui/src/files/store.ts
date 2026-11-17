@@ -15,7 +15,7 @@
 import { useSyncExternalStore } from 'react';
 import { api, on, toFlintError, type FlintError } from '../api/backend';
 import type { FileEntry, TransferEvent } from '../api/types';
-import { baseName, joinPath, parentPath, sortEntries } from './paths';
+import { baseName, joinPath, parentPath, resolveTypedPath, sortEntries } from './paths';
 
 export interface FolderState {
   /** The session this listing came from: a reconnect lists again. */
@@ -225,6 +225,33 @@ class FilesStore {
   go(tabId: string, path: string) {
     const f = this.snap.folders[tabId];
     if (f) this.load(tabId, f.session, path);
+  }
+
+  /**
+   * Goes to a path typed or pasted in the path bar. A file's path opens its folder
+   * with the file selected. Unlike `go`, a path that cannot be listed throws and the
+   * folder shown stays, so the person can correct what they typed.
+   */
+  async goTyped(tabId: string, typed: string) {
+    const f = this.snap.folders[tabId];
+    if (!f) return;
+    const session = f.session;
+    const home = typed.trim().replace(/^["']/, '').startsWith('~') ? (await api.filesHome(session)).path : '';
+    const target = resolveTypedPath(typed, f.path, home);
+    if (!target) throw new Error('Type a folder: an absolute path, ~ or a name inside this one.');
+    let res;
+    let selected: string | null = null;
+    try {
+      res = await api.filesList(session, target);
+    } catch (err) {
+      const e = toFlintError(err);
+      if (e.code !== 'not_a_directory' || target === '/') throw e;
+      res = await api.filesList(session, parentPath(target));
+      selected = joinPath(res.path, baseName(target));
+    }
+    const cur = this.snap.folders[tabId];
+    if (!cur || cur.session !== session) return;
+    this.patchFolder(tabId, { path: res.path, entries: sortEntries(res.entries), loading: false, error: null, selected, scroll: 0 });
   }
 
   up(tabId: string) {

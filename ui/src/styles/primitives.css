@@ -474,6 +474,11 @@ button.act-row.sudo.is-focus, button.act-row.sudo:focus-visible { box-shadow: in
 .crumbs .crumb:first-child { flex: none; }
 .crumbs .crumb.crumb-last { flex: 0 0 auto; max-width: 100%; }
 .crumbs .crumb > button, .crumbs .crumb > .cur-c { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.crumbs.can-edit { cursor: text; align-self: stretch; }
+.crumbs.can-edit button { cursor: pointer; }
+.crumbs-input { min-width: 0; height: 24px; padding: 0 var(--sp-2); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-primary); background: var(--surface-sunken); border: 1px solid var(--accent); border-radius: var(--radius-sm); outline: none; box-shadow: var(--focus-glow); }
+.crumbs-input.is-bad { border-color: var(--danger); }
+.crumbs-input::placeholder { color: var(--text-tertiary); }
 .frow { height: 28px; display: grid; grid-template-columns: minmax(0, 1fr) 60px 84px; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3); font-size: var(--fs-sm); color: var(--text-secondary); }
 .frow:hover { background: var(--surface-hover); }
 .frow.sel { background: var(--surface-active); color: var(--text-primary); }
@@ -677,3 +682,25 @@ button.picker-row:not(.off) { cursor: pointer; }
 .mon-page { position: fixed; inset: 0; background: #000; overflow: hidden; }
 .mon-page canvas { position: absolute; left: 0; top: 0; display: block; outline: none; cursor: default; }
 .mon-page.dim canvas { filter: grayscale(1) brightness(0.55); transition: filter var(--dur-base, 160ms) ease; }
+
+/* Vault sync (milestone 44, designs 23*), from the design's flint.css. */
+.sb-sync { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 6px; margin: 0 -6px; border-radius: var(--radius-sm); color: var(--text-secondary); font: inherit; font-size: inherit; background: none; border: 0; cursor: pointer; white-space: nowrap; }
+.sb-sync:hover, .sb-sync.is-open { background: var(--surface-hover); color: var(--text-primary); }
+.sb-sync .ic { width: 13px !important; height: 13px !important; }
+.sb-sync.syncing .ic { animation: flint-pulse 1.4s ease-in-out infinite; }
+.sb-sync.info { color: var(--info); } .sb-sync.info:hover { background: var(--info-subtle); }
+.sb-sync.warn { color: var(--warning); } .sb-sync.warn:hover { background: var(--warning-subtle); }
+.sb-sync .dot { width: 6px; height: 6px; }
+@keyframes flint-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .sb-sync.syncing .ic { animation: none; } }
+.sync-pop { position: absolute; z-index: 40; width: 320px; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) var(--sp-4); background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-popover); font-size: var(--fs-sm); }
+.sync-pop .kv { margin: 0; grid-template-columns: 76px minmax(0, 1fr); }
+.cloud-mark { width: 12px; height: 12px; color: var(--text-tertiary); flex: none; }
+.steps { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--text-tertiary); }
+.steps .on { color: var(--text-primary); font-weight: var(--fw-medium); }
+.steps i { width: 18px; height: 1px; background: var(--border-strong); }
+.found { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--surface-raised); }
+.chg-group { display: flex; flex-direction: column; gap: 2px; }
+.chg { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: var(--sp-3); align-items: center; min-height: 26px; font-size: var(--fs-sm); }
+.chg .k { font-size: var(--fs-xs); font-weight: var(--fw-medium); }
+.chg .k.add { color: var(--success); } .chg .k.upd { color: var(--info); } .chg .k.rem { color: var(--text-tertiary); }

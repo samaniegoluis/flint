@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppProvider, useApp } from './state/app';
 import { Welcome } from './screens/Welcome';
 import { CreateVault } from './screens/CreateVault';
+import { ConnectRemote } from './screens/ConnectRemote';
 import { Unlock } from './screens/Unlock';
 import { WindowLock } from './screens/WindowLock';
 import { Shell } from './shell/Shell';
@@ -59,6 +60,7 @@ function Phase() {
   }
   if (phase === 'welcome') return <Welcome />;
   if (phase === 'create') return <CreateVault />;
+  if (phase === 'connect') return <ConnectRemote />;
   if (phase === 'unlock') return <Unlock />;
   return <Main />;
 }

@@ -38,6 +38,8 @@ fn (self: LockedVaultStore) enter() -> SqlVaultStore {
         inner.act_dir = self.cell->act_dir;
         inner.rekey_mark = self.cell->rekey_mark;
         inner.act_rekey_mark = self.cell->act_rekey_mark;
+        inner.open_key = self.cell->open_key;
+        inner.open_salt = self.cell->open_salt;
     }
     return inner
 }
@@ -58,6 +60,9 @@ fn (self: LockedVaultStore) leave_with(inner: SqlVaultStore) {
         self.cell->act_path = inner.act_path;
         self.cell->rekey_mark = inner.rekey_mark;
         self.cell->act_rekey_mark = inner.act_rekey_mark;
+        std::fill(self.cell->open_key.begin(), self.cell->open_key.end(), std::byte{0});
+        self.cell->open_key = inner.open_key;
+        self.cell->open_salt = inner.open_salt;
         self.cell->mtx.unlock();
     }
 }
@@ -356,4 +361,24 @@ fn (self: LockedVaultStore) vault_replace_records(r: VaultRecords) -> void! {
 // the shared connection.
 fn (mut self: LockedVaultStore) vault_attach_copy(path: str, page_key: []byte, salt: []byte) -> void! {
     return error(coded(ERR_INTERNAL, "a conflict copy opens in a store of its own"))
+}
+
+// Milestone 43: read under the mutex, so never in the middle of a transaction.
+fn (self: LockedVaultStore) vault_file_bytes(path: str) -> []byte! {
+    inner := self.enter()
+    defer self.leave()
+    return inner.vault_file_bytes(path)
+}
+
+// Opens its own connection to a private file; holds the mutex only to read the key.
+fn (self: LockedVaultStore) vault_blob_records(data: []byte, page_key: []byte, salt: []byte) -> BlobRecords! {
+    inner := self.enter()
+    self.leave()
+    return inner.vault_blob_records(data, page_key, salt)
+}
+
+fn (self: LockedVaultStore) vault_write_new(path: str, data: []byte) -> void! {
+    inner := self.enter()
+    defer self.leave()
+    return inner.vault_write_new(path, data)
 }

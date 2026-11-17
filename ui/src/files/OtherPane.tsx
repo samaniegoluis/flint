@@ -18,6 +18,7 @@ import { validName } from './paths';
 import { files, useFiles } from './store';
 import { pairs, paneKey, type Pair } from './pair';
 import { dropFolderAt, FileList, folderLabel, paneDrag, setPaneDrag } from './FileList';
+import { PathField } from './PathField';
 
 // ---- 14d1: the server picker -----------------------------------------------------------
 
@@ -216,9 +217,9 @@ export function OtherPane({ tabId, session, alias, pair, onConfirm, onAsk, onEdi
         <span className="hint trunc" title={roleTitle} data-files-pane-role>{roleHint}</span>
         <div className="row" style={{ gap: 2 }}>
           <button className="icon-btn" aria-label="Up one folder" disabled={!ready || !path || path === '/'} onClick={() => files.up(key)}><Icon name="up" size="sm" /></button>
-          <nav className="crumbs grow" aria-label="Path" data-files-pane-crumbs>
+          <PathField fkey={key} path={path} os={os} pane disabled={!ready || !path} onError={(m) => notify(m, 'error')} onDone={() => listRef.current?.focus()}>
             {ready && path ? <PaneCrumbs path={path} onGo={(p) => files.go(key, p)} /> : <span className="cur-c">…</span>}
-          </nav>
+          </PathField>
           <button className="icon-btn" aria-label="Refresh" disabled={!ready} onClick={() => files.refresh(key)}><Icon name="reconnect" size="sm" /></button>
         </div>
       </div>
