@@ -95,6 +95,20 @@ fn save_link[L: RemoteLinkStore](links: L, link: RemoteLink) -> void! {
     try links.links_save(list)
 }
 
+// Puts `link` in place of the one for its path, and does nothing when there is none:
+// what a sync saves. A vault disconnected while its sync was on the network (the app's
+// Disconnect while a Sync now runs) stays disconnected; with `save_link` the sync's end
+// put the link back, with its token already gone from the keychain.
+fn update_link[L: RemoteLinkStore](links: L, link: RemoteLink) -> void! {
+    mut list := try links.links_load()
+    i := find_remote_link(list, link.path)
+    if i < 0 {
+        return
+    }
+    list[usize(i)] = link
+    try links.links_save(list)
+}
+
 fn drop_link[L: RemoteLinkStore](links: L, path: str) -> bool! {
     list := try links.links_load()
     mut kept: []RemoteLink = []
@@ -361,7 +375,7 @@ fn sync_vault[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: K
         mut failed := load_link(links, session.path) or link
         failed.last_attempt = now_ms
         failed.last_error = msg
-        _ := save_link(links, failed)
+        _ := update_link(links, failed)
         return error(msg)
     }
     return res
@@ -463,7 +477,7 @@ fn sync_rounds[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: 
         link.last_sync = now_ms
         link.last_attempt = now_ms
         link.last_error = ""
-        try save_link(links, link)
+        try update_link(links, link)
         res.version = link.version
         return res
     }
