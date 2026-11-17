@@ -272,7 +272,32 @@ test('vault connect asks for the token and the master password, refuses plain ht
 	assert.equal(flint(w, '--vault Demo vault token', ['new-token']).code, 3);
 	assert.deepEqual(flint(w, '--vault Work vault disconnect').out, ["Vault 'Work' no longer syncs with https://vault.example.com on this machine. The vault file and the server's copy were not touched."]);
 	assert.equal(flint(w, '--vault Work vault sync', ['pw']).code, 3);
-	assert.equal(flint(w, 'vault connect https://vault.example.com --to /home/you/home.flint', ['tok', 'pw']).code, 3);
+	const one = flint(w, 'vault connect https://vault.example.com --to /home/you/home.flint', ['tok', 'pw']);
+	assert.equal(one.code, 0);
+	assert.equal(one.out[0], "Downloaded vault 'home' from https://vault.example.com to /home/you/home.flint (version 1).");
+});
+
+test('vault connect keeps several vaults on one server: a label, --list and --id', () => {
+	const w = worldFromSeed(seed);
+	assert.equal(flint(w, 'vault connect https://vault.example.com --to /home/you/x.flint', ['tok', 'pw']).code, 3);
+	assert.equal(flint(w, '--vault Work vault connect https://vault.example.com --label " Work"', ['tok', 'pw']).code, 7);
+	const labelled = flint(w, '--vault Work vault connect https://vault.example.com --label Work', ['tok', 'pw']);
+	assert.equal(labelled.code, 0);
+	assert.equal(labelled.out[1], "The server lists it as 'Work'.");
+	flint(w, 'vault lock');
+	assert.equal(flint(w, '--vault Demo vault connect https://vault.example.com', ['tok', 'pw']).code, 0);
+	const list = flint(w, 'vault connect https://vault.example.com --list --json', ['tok']);
+	const vaults = JSON.parse(list.out[0]).vaults;
+	assert.deepEqual(vaults.map((v: any) => v.label), ['Work', '']);
+	assert.ok(flint(w, 'vault connect https://vault.example.com --list', ['tok']).out[0].startsWith('ID'));
+	const several = flint(w, 'vault connect https://vault.example.com --to /home/you/w2.flint', ['tok', 'pw']);
+	assert.equal(several.code, 2);
+	assert.ok(several.err.some((l) => l.includes('keeps 2 vaults') && l.includes('--list')));
+	const byId = flint(w, `vault connect https://vault.example.com --to /home/you/w2.flint --id ${vaults[0].id.slice(0, 6)}`, ['tok', 'pw']);
+	assert.equal(byId.code, 0);
+	assert.ok(byId.out[0].startsWith("Downloaded vault 'w2'"));
+	assert.equal(flint(w, 'vault connect https://vault.example.com --list --to /x.flint', ['tok']).code, 2);
+	assert.equal(flint(w, 'vault connect https://vault.example.com --id abcd', ['tok', 'pw']).code, 2);
 });
 
 test('vault merge puts a conflict copy into a locked vault, reports it, and is refused while Flint holds the vault', () => {

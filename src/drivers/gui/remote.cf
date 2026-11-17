@@ -27,11 +27,15 @@ type RemoteConnectReq struct {
     url:      str `json:"url"`
     token:    str `json:"token"`
     password: str `json:"password"`
+    // Optional; shown in the server's list, in clear (D-103).
+    label:    str `json:"label"`
 }
 
 type RemoteDownloadReq struct {
     url:      str  `json:"url"`
     token:    str  `json:"token"`
+    // The vault chosen from the probe's list.
+    vault_id: str  `json:"vault_id"`
     password: str  `json:"password"`
     path:     str  `json:"path"`
     remember: bool `json:"remember"`
@@ -75,7 +79,7 @@ fn rpc_vault_remotes() -> str! {
     return json.stringify(RemoteLinkList{ links: try remote_link_views(gui_remote_links()) })
 }
 
-// Connect remote vault, step 1 (design 23a1-23a3): what the server holds.
+// Connect remote vault, step 1 (design 23a1-23a3): the vaults the server keeps.
 fn rpc_vault_remote_probe(req: RemoteServerReq, c: Sodium) -> RemoteProbe! {
     defer c.wipe_text(req.token)
     return try probe_remote(new_http_vault_remote(), req.url, req.token)
@@ -90,7 +94,7 @@ fn rpc_vault_remote_download(req: RemoteDownloadReq, c: Sodium, mut store: Locke
     st.hold()
     defer st.release()
     close_current(mut store, mut st)
-    s := try download_remote(c, mut store, gui_remote_links(), new_http_vault_remote(), kc, kc, recents, req.url, req.token, req.password, req.path, req.remember, sync_wall_ms())
+    s := try download_remote(c, mut store, gui_remote_links(), new_http_vault_remote(), kc, kc, recents, req.url, req.token, req.vault_id, req.password, req.path, req.remember, sync_wall_ms())
     st.holder.set_remembered(s.path, s.cached)
     st.adopt(s)
     return session_info(s)
@@ -105,7 +109,7 @@ fn rpc_vault_remote_connect(req: RemoteConnectReq, c: Sodium, mut store: LockedV
     st.hold()
     defer st.release()
     mut session := st.vault_session()
-    got := try connect_remote(c, mut store, gui_remote_links(), new_http_vault_remote(), kc, kc, mut session, req.url, req.token, req.password, sync_wall_ms())
+    got := try connect_remote(c, mut store, gui_remote_links(), new_http_vault_remote(), kc, kc, mut session, req.url, req.token, req.password, req.label, sync_wall_ms())
     emit_sync_outcome(mut app, session.path, session.name, got)
     return got
 }

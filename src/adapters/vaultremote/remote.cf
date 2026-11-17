@@ -1,7 +1,7 @@
 package vaultremote
 
-// The `VaultRemote` port over HTTP (milestone 43): protocol /v1 of flint-vault-server
-// (D-097), through libcurl in native/flint_remote.hpp, since core:net/http gives
+// The `VaultRemote` port over HTTP (milestones 43 and 45): protocol /v1 of
+// flint-vault-server (D-097, D-103), through libcurl in native/flint_remote.hpp, since core:net/http gives
 // cfire code no headers, no deadline and, on macOS, no response headers over TLS
 // (CF-146). Every request carries a deadline (Principle 8), the bearer token in a
 // header and nothing else of the vault but its id, a version and the encrypted file
@@ -38,6 +38,20 @@ type RemoteReply struct {
 type RemoteErrorBody struct {
     error:   str `json:"error"`
     message: str `json:"message"`
+}
+
+type RemoteVaultsBody struct {
+    vaults: []ServerVault `json:"vaults"`
+}
+
+type RemoteLabelBody struct {
+    label: str `json:"label"`
+}
+
+// A 404 that is not the server's "empty": no server, or one from before milestone 45
+// that knows only `/v1/vault`.
+fn no_server(url: str) -> str {
+    return coded(ERR_NOT_FOUND, "no Flint vault server of 0.12 or later at {url_host(url)}: check the URL, or update flint-vault-server")
 }
 
 fn (self: HttpVaultRemote) send(method: str, url: str, headers: str, body: []byte) -> RemoteReply! {
@@ -128,7 +142,7 @@ fn (self: HttpVaultRemote) remote_get(url: str, token: str, known_version: i64) 
         if parsed.error == "empty" {
             return RemoteVault{ found: false, changed: true, version: 0, vault_id: "", data: [] }
         }
-        return error(coded(ERR_NOT_FOUND, "no vault server at {url}: check the URL"))
+        return error(no_server(url))
     }
     if r.status != 200 {
         return error(refusal(r, host))
@@ -160,4 +174,38 @@ fn (self: HttpVaultRemote) remote_put(url: str, token: str, vault_id: str, base_
         return error(coded(ERR_INVALID, "{host} did not answer as a Flint vault server"))
     }
     return RemoteStored{ stored: true, version: version }
+}
+
+fn (self: HttpVaultRemote) remote_list(url: str, token: str) -> []ServerVault! {
+    r := try self.send("GET", url, auth_header(token), [])
+    if r.status == 404 {
+        return error(no_server(url))
+    }
+    if r.status != 200 {
+        return error(refusal(r, url_host(url)))
+    }
+    got := json.parse[RemoteVaultsBody](str(r.body)) or err {
+        return error(coded(ERR_INVALID, "{url_host(url)} did not answer as a Flint vault server"))
+    }
+    for v in got.vaults {
+        if !valid_vault_id(v.id) || v.version < 1 {
+            return error(coded(ERR_INVALID, "{url_host(url)} did not answer as a Flint vault server"))
+        }
+    }
+    return got.vaults
+}
+
+fn (self: HttpVaultRemote) remote_set_label(url: str, token: str, label: str) -> void! {
+    headers := auth_header(token) + "Content-Type: application/json\n"
+    r := try self.send("PUT", url, headers, []byte(json.stringify(RemoteLabelBody{ label: label })))
+    if r.status == 404 {
+        parsed := json.parse[RemoteErrorBody](str(r.body)) or RemoteErrorBody{ error: "", message: "" }
+        if parsed.error == "empty" {
+            return error(coded(ERR_NOT_FOUND, "the server at {url_host(url)} holds no such vault"))
+        }
+        return error(no_server(url))
+    }
+    if r.status != 200 {
+        return error(refusal(r, url_host(url)))
+    }
 }

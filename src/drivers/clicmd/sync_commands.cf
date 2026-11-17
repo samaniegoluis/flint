@@ -43,18 +43,68 @@ fn server_token_for(sec: SecretInput) -> str! {
     return read_secret_line("Server token: ")
 }
 
-// `flint vault connect <url> [--to <path>]`.
+// "340 KB" or "1.2 MB" for a size in bytes.
+fn size_label(bytes: i64) -> str {
+    if bytes < 1024 {
+        return "{bytes} B"
+    }
+    if bytes < 1048576 {
+        return "{(bytes + 512) / 1024} KB"
+    }
+    tenths := (bytes * 10 + 524288) / 1048576
+    return "{tenths / 10}.{tenths % 10} MB"
+}
+
+// `flint vault connect <url> --list`: what the server keeps, before any password.
+fn cmd_vault_connect_list(url: str, sec: SecretInput, as_json: bool) -> void! {
+    token := try server_token_for(sec)
+    probe := try probe_remote(new_http_vault_remote(), url, token)
+    if as_json {
+        say(json.stringify(probe))
+        return
+    }
+    if probe.vaults.len() == 0 {
+        say("The server at {probe.url} holds no vault yet: `flint vault connect {probe.url}` uploads the current one.")
+        return
+    }
+    mut rows: [][]str = []
+    for v in probe.vaults {
+        mut label := v.label
+        if label.len() == 0 {
+            label = "-"
+        }
+        rows.push([v.id, label, "{v.version}", size_label(v.size), ago_label(v.updated_at)])
+    }
+    print_table(["ID", "LABEL", "VERSION", "SIZE", "UPDATED"], rows)
+}
+
+// `flint vault connect <url> [--label <text>]`, `--to <path> [--id <id>]` or `--list`.
 fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
     url := p.positional(2)
     to := p.flag_value("--to")
+    id := p.flag_value("--id")
+    label := p.flag_value("--label")
     links := remote_links()
     remote := new_http_vault_remote()
     tokens := token_keychain()
+    if p.has_flag("--list") {
+        if to.len() > 0 || id.len() > 0 || label.len() > 0 {
+            return error(coded(ERR_USAGE, "--list takes no --to, --id or --label"))
+        }
+        try cmd_vault_connect_list(url, sec, as_json)
+        return
+    }
+    if to.len() == 0 && id.len() > 0 {
+        return error(coded(ERR_USAGE, "--id names the vault to download: give --to <path> too"))
+    }
     if to.len() > 0 {
+        if label.len() > 0 {
+            return error(coded(ERR_USAGE, "--label is for connecting a vault from this machine; a downloaded vault keeps the server's label"))
+        }
         path := absolute_path(to)
         token := try server_token_for(sec)
         password := try master_password_for(sec, vault_name_from_path(path))
-        s := try download_remote(c, mut store, links, remote, src.kc, tokens, recents, url, token, password, path, false, wall_ms())
+        s := try download_remote(c, mut store, links, remote, src.kc, tokens, recents, url, token, id, password, path, false, wall_ms())
         st := try remote_status(c, store, links, s.path)
         if as_json {
             say(json.stringify(SyncOutcome{ path: s.path, name: s.name, url: st.url, result: "downloaded", version: st.version, uploaded: false, report: empty_merge_report(), rekeyed: false }))
@@ -71,7 +121,7 @@ fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, 
     token := try server_token_for(sec)
     password := try master_password_for(sec, target.name)
     mut session := try unlock_vault(c, mut store, src.kc, recents, target.path, password, false)
-    got := try connect_remote(c, mut store, links, remote, src.kc, tokens, mut session, url, token, password, wall_ms())
+    got := try connect_remote(c, mut store, links, remote, src.kc, tokens, mut session, url, token, password, label, wall_ms())
     if as_json {
         say(json.stringify(got))
         return
@@ -82,7 +132,10 @@ fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, 
     } else {
         say("Connected vault '{got.name}' to {got.url} and uploaded it (version {got.version}).")
     }
-    say("On another machine: `flint vault connect {got.url} --to <path>`.")
+    if label.len() > 0 {
+        say("The server lists it as '{label}'.")
+    }
+    say("On another machine: `flint vault connect {got.url} --to <path>` (with `--id {session.id.substr(0, 8)}` when the server keeps several vaults).")
 }
 
 // `flint vault sync`: in the app when it holds the vault, else with the master

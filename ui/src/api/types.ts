@@ -637,12 +637,20 @@ export interface RemoteStatus {
   pending: boolean;
 }
 
-export interface RemoteProbe {
-  url: string;
-  found: boolean;
-  vault_id: string;
+/** One vault a server keeps (milestone 45): what it can tell without a key. */
+export interface ServerVault {
+  id: string;
+  /** The label the person chose when connecting it, in clear; may be empty. */
+  label: string;
   version: number;
   size: number;
+  /** Unix milliseconds of its newest version. */
+  updated_at: number;
+}
+
+export interface RemoteProbe {
+  url: string;
+  vaults: ServerVault[];
 }
 
 export interface MergeChange {

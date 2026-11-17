@@ -26,7 +26,7 @@ test "a server URL is https, or http to this machine only" {
     assert(url_ok("https://").starts_with("ERR invalid"))
     assert(url_ok("https://user:tok@vault.example.com").starts_with("ERR invalid: put the token"))
     assert(url_ok("https://vault.example.com/?x=1").starts_with("ERR invalid"))
-    assert_eq(remote_vault_url("https://a.b"), "https://a.b/v1/vault")
+    assert_eq(remote_vault_url("https://a.b", "00112233445566778899aabbccddeeff"), "https://a.b/v1/vaults/00112233445566778899aabbccddeeff")
 }
 
 test "a blob's salt is its first 16 bytes" {

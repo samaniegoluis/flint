@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end checks of flint-vault-server (milestone 42, D-097): the real binary on a
+# End-to-end checks of flint-vault-server (milestones 42 and 45, D-097, D-103): the real binary on a
 # loopback port with a throwaway data folder, driven by curl and by raw sockets (a
 # client that stalls, a body cut short). Builds the server first unless
 # FLINT_SERVER_BIN names one. With FLINT_SERVER_IMAGE, the same checks run against that
@@ -213,7 +213,7 @@ check "429 says when to come back" "1" "$([[ "$(header Retry-After "${auth[@]}" 
 check "the log never holds the token" "0" "$(grep -c "$token" "$tmp/main/log" || true)"
 check "the log never holds the file" "0" "$(grep -c 'MARKER-BLOB' "$tmp/main/log" || true)"
 check "the log has a line per request" "1" "$([[ $(grep -c ' /v1/vault ' "$tmp/main/log") -gt 100 ]] && echo 1)"
-check "stored files are owner-only" "600" "$(file_mode main versions/1.blob)"
+check "stored files are owner-only" "600" "$(file_mode main "vaults/$vid/versions/1.blob")"
 
 # SIGTERM ends it cleanly.
 stop_server main
@@ -238,7 +238,7 @@ listed="$(in_server proxy versions --json | python3 -I -c 'import json,sys; v=js
 check "ten versions are kept, 13 down to 4" "10 13 4" "$listed"
 check "versions prints a table" "1" "$(in_server proxy versions | grep -c "^      4 ")"
 in_server proxy restore 5 >"$tmp/restore.out"
-check "restore says what it did" "1" "$(grep -c 'version 5 is now version 14' "$tmp/restore.out")"
+check "restore says what it did" "1" "$(grep -c 'version 5 of vault .* is now version 14' "$tmp/restore.out")"
 check "the server serves the restored file as version 14" '"14" v5' "$(header ETag "${auth[@]}" "${xff[@]}" "$url") $(curl -s -m 5 "${auth[@]}" "${xff[@]}" "$url")"
 check "restore --json names the new version" "15" "$(in_server proxy restore 6 --json | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
 set +e
@@ -246,6 +246,58 @@ in_server proxy restore 2 >/dev/null 2>"$tmp/restore.err"; rc=$?
 set -e
 check "a version no longer kept cannot be restored" "1" "$([[ $rc -ne 0 ]] && grep -c 'not kept' "$tmp/restore.err")"
 check "a machine that had version 13 gets 409 after the restore" "409" "$(status -X PUT "${auth[@]}" "${xff[@]}" -H 'If-Match: "13"' -H "X-Flint-Vault-Id: $vid" --data-binary @"$tmp/h.bin" "$url")"
+
+
+# --- several vaults on one server (milestone 45, D-103) ---------------------------------------
+start many FLINT_VAULT_TOKEN="$token" FLINT_VAULT_MAX_VAULTS=2
+base="http://127.0.0.1:$port/v1/vaults"
+vid2="ffeeddccbbaa99887766554433221100"
+vid3="abababababababababababababababab"
+vput() {  # <id> <file> <precondition header>
+  status -X PUT "${auth[@]}" -H "$3" -H "X-Flint-Vault-Id: $1" --data-binary @"$2" "$base/$1"
+}
+printf 'one-1' >"$tmp/m1.bin"; printf 'two-1' >"$tmp/m2.bin"; printf 'one-2' >"$tmp/m3.bin"
+check "GET /v1/vaults on an empty server lists none" '{"vaults":[]}' "$(curl -s -m 20 "${auth[@]}" "$base")"
+check "a vault not stored is 404" "404" "$(status "${auth[@]}" "$base/$vid")"
+check "the first vault's first upload is 200" "200" "$(vput "$vid" "$tmp/m1.bin" 'If-None-Match: *')"
+check "the old path serves the one vault" "one-1" "$(curl -s -m 20 "${auth[@]}" "http://127.0.0.1:$port/v1/vault")"
+check "a second vault's first upload is 200" "200" "$(vput "$vid2" "$tmp/m2.bin" 'If-None-Match: *')"
+check "the first vault goes on to version 2" "200" "$(vput "$vid" "$tmp/m3.bin" 'If-Match: "1"')"
+check "each vault keeps its own versions" '"2" "1"' "$(header ETag "${auth[@]}" "$base/$vid") $(header ETag "${auth[@]}" "$base/$vid2")"
+check "each vault serves its own file" "one-2 two-1" "$(curl -s -m 20 "${auth[@]}" "$base/$vid") $(curl -s -m 20 "${auth[@]}" "$base/$vid2")"
+check "a header naming another vault than the path is 400" "400" "$(status -X PUT "${auth[@]}" -H 'If-Match: "2"' -H "X-Flint-Vault-Id: $vid2" --data-binary @"$tmp/m1.bin" "$base/$vid")"
+check "a third vault over FLINT_VAULT_MAX_VAULTS is 507" "507" "$(vput "$vid3" "$tmp/m1.bin" 'If-None-Match: *')"
+check "the old path asks to update once there are several" "410" "$(status "${auth[@]}" "http://127.0.0.1:$port/v1/vault")"
+check "a label is set over HTTP" "200" "$(status -X PUT "${auth[@]}" --data '{"label":"Work laptop"}' "$base/$vid2/label")"
+check "a label with a control character is 400" "400" "$(status -X PUT "${auth[@]}" --data '{"label":"a\u0007b"}' "$base/$vid2/label")"
+listed="$(curl -s -m 20 "${auth[@]}" "$base" | python3 -I -c 'import json,sys; v=json.load(sys.stdin)["vaults"]; print(" ".join("%s:%s:%s:%s" % (x["id"][:4], x["version"], x["size"], x["label"] or "-") for x in v))')"
+check "the list names each vault's id, version, size and label" "0011:2:5:- ffee:1:5:Work laptop" "$listed"
+check "the list needs the token" "401" "$(status "$base")"
+check "the log never holds a label" "0" "$(grep -c 'Work laptop' "$tmp/many/log" || true)"
+check "vaults lists them on the server" "2" "$(in_server many vaults | grep -c -E '^(0011|ffee)')"
+check "versions needs an id once there are several" "1" "$(in_server many versions 2>&1 | grep -c 'keeps 2 vaults')"
+check "versions takes a prefix of the id" "2" "$(in_server many versions 0011 --json | python3 -I -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+in_server many label ffee "Personal" >/dev/null
+check "label sets a vault's label on the server" "Personal" "$(in_server many vaults --json | python3 -I -c 'import json,sys; print([v["label"] for v in json.load(sys.stdin) if v["id"].startswith("ffee")][0])')"
+in_server many restore 0011 1 >"$tmp/restore-many.out"
+check "restore names the vault by prefix and touches no other" '"3" "1"' "$(header ETag "${auth[@]}" "$base/$vid") $(header ETag "${auth[@]}" "$base/$vid2")"
+stop_server many
+
+# --- a data folder from before milestone 45 moves into a folder per vault --------------------
+if [[ -z "$image" ]]; then
+  mkdir -p "$tmp/legacy/data/versions"
+  for n in 1 2; do
+    printf "old-$n" >"$tmp/legacy/data/versions/$n.blob"
+    printf '{"version":%d,"vault_id":"%s","size":5,"stored_at":%d000}' "$n" "$vid" "$n" >"$tmp/legacy/data/versions/$n.json"
+  done
+  cp "$tmp/legacy/data/versions/2.json" "$tmp/legacy/data/head.json"
+  start legacy FLINT_VAULT_TOKEN="$token"
+  check "the server says it moved the vault" "1" "$(grep -c "moved the vault $vid" "$tmp/legacy/log")"
+  check "the moved vault is served at its id, as version 2" '"2" old-2' "$(header ETag "${auth[@]}" "http://127.0.0.1:$port/v1/vaults/$vid") $(curl -s -m 20 "${auth[@]}" "http://127.0.0.1:$port/v1/vaults/$vid")"
+  check "and at the old path" "old-2" "$(curl -s -m 20 "${auth[@]}" "http://127.0.0.1:$port/v1/vault")"
+  check "nothing is left at the top of the data folder" "vaults" "$(ls "$tmp/legacy/data")"
+  stop_server legacy
+fi
 
 echo
 echo "server-e2e: $pass passed, $fail failed"

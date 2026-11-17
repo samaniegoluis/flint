@@ -38,8 +38,9 @@ export function ConnectServerModal({ onClose, onChangePassword, onConnected }: {
   const [url, setUrl] = useState('');
   const [token, setToken] = useState('');
   const [pw, setPw] = useState('');
+  const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
-  const [errors, setErrors] = useState<{ url?: string; token?: string; pw?: string; form?: string }>({});
+  const [errors, setErrors] = useState<{ url?: string; token?: string; label?: string; pw?: string; form?: string }>({});
   const [strength, setStrength] = useState<PasswordStrength | null>(null);
   const [done, setDone] = useState<SyncOutcome | null>(null);
   const seq = useRef(0);
@@ -63,7 +64,7 @@ export function ConnectServerModal({ onClose, onChangePassword, onConnected }: {
     setBusy(true);
     setErrors({});
     try {
-      const got = await api.remoteConnect(url.trim(), token, pw);
+      const got = await api.remoteConnect(url.trim(), token, pw, label.trim());
       setToken('');
       setPw('');
       setDone(got);
@@ -71,7 +72,7 @@ export function ConnectServerModal({ onClose, onChangePassword, onConnected }: {
     } catch (err) {
       const fe = toFlintError(err);
       if (fe.code === 'wrong_password') setErrors({ pw: `That is not the master password of ${name}.` });
-      else if (fe.code === 'conflict' && /another vault/.test(fe.message)) setErrors({ url: 'This server already keeps a different vault.' });
+      else if (fe.code === 'invalid' && /label/.test(fe.message)) setErrors({ label: fe.message });
       else {
         const field = serverErrorField(fe.code);
         setErrors({ [field === 'form' ? 'form' : field]: fe.message });
@@ -106,6 +107,15 @@ export function ConnectServerModal({ onClose, onChangePassword, onConnected }: {
         <div className="modal-b" style={{ gap: 'var(--sp-4)' }}>
           <ServerAddress id="csa" value={url} onChange={setUrl} error={errors.url} disabled={busy} autoFocus />
           <TokenField id="cst" value={token} onChange={setToken} error={errors.token} disabled={busy} />
+          <div className="field">
+            <label className="flabel" htmlFor="csl">Label <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>optional</span></label>
+            <div className={'input' + (errors.label ? ' err' : '')}>
+              <input id="csl" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={64} placeholder="e.g. Work" autoComplete="off" spellCheck={false} disabled={busy} />
+            </div>
+            {errors.label
+              ? <span className="hint err" role="alert">{errors.label}</span>
+              : <span className="hint">Tells this vault apart on a server that keeps several. The server sees it in clear: leave it empty to show only the vault's id.</span>}
+          </div>
           <div className="field">
             <label className="flabel" htmlFor="cmp">Master password of {name}, again</label>
             <div className={'input' + (errors.pw ? ' err' : '')}>

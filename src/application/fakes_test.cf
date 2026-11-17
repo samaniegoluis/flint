@@ -1052,17 +1052,28 @@ fn (mut self: FakeStore) vault_write_new(path: str, data: []byte) -> void! {
     self.tombs = b.records.tombstones
 }
 
-// A fake server, its state in a temp folder (ports take it by value): the blob, its
-// version, its vault id. `offline` fails every request with `network`; `race` makes
-// the next upload find another machine's version first.
+// A fake server, its state in a temp folder (ports take it by value). Its first vault
+// is `version`, `id` and `data` (the one most tests sync); `others` are the vaults
+// connected after it (milestone 45). Every request must name SERVER's resources.
+// `offline` fails every request with `network`; `race` makes the next upload of the
+// first vault find another machine's version first.
 type FakeRemote struct {
     dir: str
+}
+
+type FakeVault struct {
+    id:      str `json:"id"`
+    version: i64 `json:"version"`
+    data:    str `json:"data"`
+    label:   str `json:"label"`
 }
 
 type FakeRemoteState struct {
     version: i64  `json:"version"`
     id:      str  `json:"id"`
     data:    str  `json:"data"`
+    label:   str  `json:"label"`
+    others:  []FakeVault `json:"others"`
     offline: bool `json:"offline"`
     gets:    i64  `json:"gets"`
     puts:    i64  `json:"puts"`
@@ -1070,17 +1081,21 @@ type FakeRemoteState struct {
     race:    str  `json:"race"`
 }
 
+fn empty_fake_remote_state() -> FakeRemoteState {
+    return FakeRemoteState{ version: 0, id: "", data: "", label: "", others: [], offline: false, gets: 0, puts: 0, race: "" }
+}
+
 fn new_fake_remote() -> FakeRemote {
     dir := "/tmp/flint-fake-remote-" + sha256.random_hex(8)
     _ := fs.mkdir_all(dir)
     r := FakeRemote{ dir: dir }
-    r.save(FakeRemoteState{ version: 0, id: "", data: "", offline: false, gets: 0, puts: 0, race: "" })
+    r.save(empty_fake_remote_state())
     return r
 }
 
 fn (self: FakeRemote) state() -> FakeRemoteState {
     text := fs.read_text(self.dir + "/state.json") or ""
-    return json.parse[FakeRemoteState](text) or FakeRemoteState{ version: 0, id: "", data: "", offline: false, gets: 0, puts: 0, race: "" }
+    return json.parse[FakeRemoteState](text) or empty_fake_remote_state()
 }
 
 fn (self: FakeRemote) save(s: FakeRemoteState) {
@@ -1093,29 +1108,64 @@ fn (self: FakeRemote) set_offline(v: bool) {
     self.save(s)
 }
 
-fn (self: FakeRemote) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
-    mut s := self.state()
+// The vault id a vault URL names, or an error for any other URL. (`u`, not `url`:
+// CF-150.)
+fn fake_url_id(u: str, suffix: str) -> str! {
+    prefix := SERVER + "/v1/vaults/"
+    if !u.starts_with(prefix) || !u.ends_with(suffix) {
+        return error(coded(ERR_INVALID, "the fake server has no resource {u}"))
+    }
+    return u.substr(prefix.len(), u.len() - prefix.len() - suffix.len())
+}
+
+fn (self: FakeRemote) reach(token: str) -> FakeRemoteState! {
+    s := self.state()
     if s.offline {
         return error(coded(ERR_NETWORK, "cannot reach the server"))
     }
     if token != "tok" {
         return error(coded(ERR_AUTH, "the server refused the token"))
     }
+    return s
+}
+
+// -1 for the first vault, the index in `others`, or -2 when the server keeps no `id`.
+fn fake_slot(s: FakeRemoteState, id: str) -> i64 {
+    if s.version > 0 && s.id == id {
+        return -1
+    }
+    for i, o in s.others {
+        if o.id == id {
+            return i64(i)
+        }
+    }
+    return -2
+}
+
+fn (self: FakeRemote) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
+    mut s := try self.reach(token)
+    id := try fake_url_id(url, "")
     s.gets += 1
     self.save(s)
-    if s.version == 0 {
+    slot := fake_slot(s, id)
+    if slot == -2 {
         return RemoteVault{ found: false, changed: true, version: 0, vault_id: "", data: [] }
     }
-    if known_version == s.version {
-        return RemoteVault{ found: true, changed: false, version: s.version, vault_id: s.id, data: [] }
+    mut v := FakeVault{ id: s.id, version: s.version, data: s.data, label: s.label }
+    if slot >= 0 {
+        v = s.others[usize(slot)]
     }
-    return RemoteVault{ found: true, changed: true, version: s.version, vault_id: s.id, data: try hex.decode(s.data) }
+    if known_version == v.version {
+        return RemoteVault{ found: true, changed: false, version: v.version, vault_id: v.id, data: [] }
+    }
+    return RemoteVault{ found: true, changed: true, version: v.version, vault_id: v.id, data: try hex.decode(v.data) }
 }
 
 fn (self: FakeRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
-    mut s := self.state()
-    if s.offline {
-        return error(coded(ERR_NETWORK, "cannot reach the server"))
+    mut s := try self.reach(token)
+    id := try fake_url_id(url, "")
+    if id != vault_id {
+        return error(coded(ERR_INVALID, "the URL names {id}, the upload {vault_id}"))
     }
     if s.race.len() > 0 {
         s.version += 1
@@ -1123,19 +1173,69 @@ fn (self: FakeRemote) remote_put(url: str, token: str, vault_id: str, base_versi
         s.race = ""
     }
     s.puts += 1
-    if s.version > 0 && s.id != vault_id {
+    slot := fake_slot(s, id)
+    if slot == -2 {
+        if base_version != 0 {
+            self.save(s)
+            return RemoteStored{ stored: false, version: 0 }
+        }
+        if s.version == 0 {
+            s.version = 1
+            s.id = id
+            s.data = hex.encode(data)
+        } else {
+            s.others.push(FakeVault{ id: id, version: 1, data: hex.encode(data), label: "" })
+        }
         self.save(s)
-        return error(coded(ERR_CONFLICT, "the server holds another vault"))
+        return RemoteStored{ stored: true, version: 1 }
     }
-    if base_version != s.version {
+    mut current := s.version
+    if slot >= 0 {
+        current = s.others[usize(slot)].version
+    }
+    if base_version != current {
         self.save(s)
-        return RemoteStored{ stored: false, version: s.version }
+        return RemoteStored{ stored: false, version: current }
     }
-    s.version += 1
-    s.id = vault_id
-    s.data = hex.encode(data)
+    if slot == -1 {
+        s.version += 1
+        s.data = hex.encode(data)
+    } else {
+        s.others[usize(slot)].version += 1
+        s.others[usize(slot)].data = hex.encode(data)
+    }
     self.save(s)
-    return RemoteStored{ stored: true, version: s.version }
+    return RemoteStored{ stored: true, version: current + 1 }
+}
+
+fn (self: FakeRemote) remote_list(url: str, token: str) -> []ServerVault! {
+    s := try self.reach(token)
+    if url != SERVER + "/v1/vaults" {
+        return error(coded(ERR_INVALID, "the fake server has no resource {url}"))
+    }
+    mut list: []ServerVault = []
+    if s.version > 0 {
+        list.push(ServerVault{ id: s.id, label: s.label, version: s.version, size: i64(s.data.len() / 2), updated_at: 1 })
+    }
+    for o in s.others {
+        list.push(ServerVault{ id: o.id, label: o.label, version: o.version, size: i64(o.data.len() / 2), updated_at: 1 })
+    }
+    return list
+}
+
+fn (self: FakeRemote) remote_set_label(url: str, token: str, label: str) -> void! {
+    mut s := try self.reach(token)
+    id := try fake_url_id(url, "/label")
+    slot := fake_slot(s, id)
+    if slot == -2 {
+        return error(coded(ERR_NOT_FOUND, "no such vault"))
+    }
+    if slot == -1 {
+        s.label = label
+    } else {
+        s.others[usize(slot)].label = label
+    }
+    self.save(s)
 }
 
 // This machine's links, in a temp file.

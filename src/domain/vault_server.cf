@@ -32,6 +32,65 @@ type BlobVersion struct {
     stored_at:  i64 `json:"stored_at"`
 }
 
+// The vaults one server keeps at most by default (`FLINT_VAULT_MAX_VAULTS`, milestone
+// 45, D-103): a stolen token can add vaults, and this bounds what it fills.
+SERVER_VAULTS_MAX_DEFAULT: i64 = 50
+// The longest label a person may give a vault on its server, in bytes.
+VAULT_LABEL_MAX_LEN: usize = 64
+
+// One vault a server keeps (milestone 45): its id, the label the person chose (in
+// clear, optional: the server cannot read the vault's name), and its newest version.
+type ServerVault struct {
+    id:         str `json:"id"`
+    label:      str `json:"label"`
+    version:    i64 `json:"version"`
+    size:       i64 `json:"size"`
+    // Unix milliseconds of the newest version.
+    updated_at: i64 `json:"updated_at"`
+}
+
+// A label: at most VAULT_LABEL_MAX_LEN bytes, no control characters, no white space
+// at either end. "" clears it.
+fn check_vault_label(label: str) -> void! {
+    if label.len() > VAULT_LABEL_MAX_LEN {
+        return error(coded(ERR_INVALID, "a vault's label is at most {VAULT_LABEL_MAX_LEN} characters"))
+    }
+    if str.trim(label) != label {
+        return error(coded(ERR_INVALID, "a vault's label starts or ends with white space"))
+    }
+    for b in label.bytes() {
+        c := u8(b)
+        if c < 32 || c == 127 {
+            return error(coded(ERR_INVALID, "a vault's label holds a control character"))
+        }
+    }
+}
+
+// The vault among `vaults` whose id is `wanted` or starts with it (at least 4
+// characters, as git's short ids); an unknown or ambiguous prefix is refused.
+fn pick_server_vault(vaults: []ServerVault, wanted: str) -> ServerVault! {
+    w := str.to_lower(str.trim(wanted))
+    if w.len() < 4 {
+        return error(coded(ERR_USAGE, "give at least 4 characters of the vault's id"))
+    }
+    mut found: []ServerVault = []
+    for v in vaults {
+        if v.id == w {
+            return v
+        }
+        if v.id.starts_with(w) {
+            found.push(v)
+        }
+    }
+    if found.len() == 1 {
+        return found[0]
+    }
+    if found.len() == 0 {
+        return error(coded(ERR_NOT_FOUND, "the server holds no vault with id {w}"))
+    }
+    return error(coded(ERR_USAGE, "{found.len()} vaults on the server start with {w}: give more of the id"))
+}
+
 // "7", "\"7\"" or "W/\"7\"" -> 7; -1 for anything else (a version is at least 1).
 fn parse_version_tag(tag: str) -> i64 {
     mut t := str.trim(tag)

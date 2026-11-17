@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# End-to-end run of the remote vault from the CLI (milestone 43): the real
+# End-to-end run of the remote vault from the CLI (milestones 43-45): the real
 # flint-vault-server on loopback and two config folders standing for two machines.
 # Both connect, both go offline (the server stopped) and edit, both come back and
 # end with every change; an alias taken on both is renamed; a master password
-# changed on one is taken by the other; the token never shows anywhere.
+# changed on one is taken by the other; a second vault goes to the same server beside
+# the first, with a label, and B downloads it by a prefix of its id (milestone 45);
+# the token never shows anywhere.
 #
 #   scripts/sync-e2e.sh
 #
@@ -136,11 +138,11 @@ on a 0 "A syncs: merges B's, nothing to upload" "$PW"$'\n' -- --json --vault "$V
 check "merged, not uploaded" '[[ "$(echo "$out" | json_get "d[\"result\"] + str(d[\"uploaded\"])")" == "mergedFalse" ]]'
 check "A has every host" '[[ "$(aliases a "$VA")" == "api cache cache-2 db web" ]]'
 check "B has every host" '[[ "$(aliases b "$VB")" == "api cache cache-2 db web" ]]'
-v_before="$(grep -c 'PUT /v1/vault 200' "$tmp/server.log")"
+v_before="$(grep -c -E 'PUT /v1/vaults/[0-9a-f]+ 200' "$tmp/server.log")"
 on a 0 "A again: in step" "$PW"$'\n' -- --vault "$VA" vault sync --master-stdin
 on b 0 "B again: in step" "$PW"$'\n' -- --vault "$VB" vault sync --master-stdin
-check "no empty versions" '[[ "$(grep -c "PUT /v1/vault 200" "$tmp/server.log")" == "$v_before" ]]'
-check "in-step checks download nothing (304)" '[[ "$(grep -c "GET /v1/vault 304" "$tmp/server.log")" -ge 2 ]]'
+check "no empty versions" '[[ "$(grep -c -E "PUT /v1/vaults/[0-9a-f]+ 200" "$tmp/server.log")" == "$v_before" ]]'
+check "in-step checks download nothing (304)" '[[ "$(grep -c -E "GET /v1/vaults/[0-9a-f]+ 304" "$tmp/server.log")" -ge 2 ]]'
 on a 0 "status: in step" "" -- --vault "$VA" vault status
 check "status names the server, nothing waits" '[[ "$out" == *"$url"* && "$out" == *"waiting    nothing"* ]]'
 
@@ -155,6 +157,40 @@ on a 6 "A's old password no longer opens it" "$PW"$'\n' -- --vault "$VA" host li
 on b 0 "B takes A's change" "$NEW_PW"$'\n' -- --vault "$VB" vault sync --master-stdin
 PW="$NEW_PW"
 check "both have mail" '[[ "$(aliases a "$VA")" == "$(aliases b "$VB")" && "$(aliases b "$VB")" == *mail* ]]'
+
+echo "== a second vault on the same server (milestone 45)"
+W_PW="copper-meadow-signal-tundra-58"
+VAW="$tmp/va/Work.flint"
+VBW="$tmp/vb/Work.flint"
+waliases() { printf '%s\n' "$W_PW" | FLINT_CONFIG_DIR="$tmp/$1" no_tty "$flint" --json --vault "$2" host list --master-stdin | python3 -c 'import json,sys; print(" ".join(sorted(h["alias"] for h in json.load(sys.stdin))))'; }
+on a 0 "create a second vault" "$W_PW"$'\n' -- vault create "$VAW" --master-stdin
+on a 0 "add a host to it" "$W_PW"$'\n' -- --vault "$VAW" host add work-db --hostname 10.1.0.5 --master-stdin
+on a 7 "a label with a control character is refused" "$W_PW"$'\n'"$TOKEN"$'\n' -- --vault "$VAW" vault connect "$url" --label $'a\tb' --master-stdin --token-stdin
+on a 0 "connect it beside the first, with a label" "$W_PW"$'\n'"$TOKEN"$'\n' -- --vault "$VAW" vault connect "$url" --label "Work" --master-stdin --token-stdin
+check "uploaded as its own version 1, listed as Work" '[[ "$out" == *"uploaded it (version 1)"* && "$out" == *"lists it as '"'"'Work'"'"'"* ]]'
+on b 0 "the server's list, before any password" "$TOKEN"$'\n' -- --json vault connect "$url" --list --token-stdin
+check "two vaults, Lab unlabelled and Work labelled" '[[ "$(echo "$out" | json_get "sorted((v[\"label\"] or \"-\") for v in d[\"vaults\"])")" == "['"'"'-'"'"', '"'"'Work'"'"']" ]]'
+work_id="$(echo "$out" | json_get "[v[\"id\"] for v in d[\"vaults\"] if v[\"label\"] == \"Work\"][0]")"
+lab_id="$(echo "$out" | json_get "[v[\"id\"] for v in d[\"vaults\"] if not v[\"label\"]][0]")"
+on b 0 "the list as a table" "$TOKEN"$'\n' -- vault connect "$url" --list --token-stdin
+check "the table has the label and the id" '[[ "$out" == *"LABEL"* && "$out" == *"$work_id"*"Work"* ]]'
+on b 2 "a download without --id is refused when there are several" "$W_PW"$'\n'"$TOKEN"$'\n' -- vault connect "$url" --to "$VBW" --master-stdin --token-stdin
+check "it points to --list and --id" '[[ "$err" == *"--list"* && "$err" == *"--id"* ]]'
+check "nothing was written" '[[ ! -f "$VBW" ]]'
+on b 3 "an id the server does not keep" "$W_PW"$'\n'"$TOKEN"$'\n' -- vault connect "$url" --to "$VBW" --id 0000ffff --master-stdin --token-stdin
+on b 0 "download Work by a prefix of its id" "$W_PW"$'\n'"$TOKEN"$'\n' -- --json vault connect "$url" --to "$VBW" --id "${work_id:0:6}" --master-stdin --token-stdin
+check "B has Work's host, and Lab is untouched" '[[ "$(waliases b "$VBW")" == "work-db" && "$(aliases b "$VB")" == *mail* ]]'
+lab_puts="$(grep -c -E "PUT /v1/vaults/[0-9a-f]+ 200" "$tmp/server.log")"
+on b 0 "B edits Work" "$W_PW"$'\n' -- --vault "$VBW" host add work-api --hostname 10.1.0.6 --master-stdin
+on a 0 "A syncs Work" "$W_PW"$'\n' -- --vault "$VAW" vault sync --master-stdin
+check "A's Work has B's change" '[[ "$(waliases a "$VAW")" == "work-api work-db" ]]'
+on a 0 "A syncs Lab: in step" "$PW"$'\n' -- --vault "$VA" vault sync --master-stdin
+check "Lab was not touched by Work's sync" '[[ "$out" == *"in step"* ]]'
+check "one upload, Work's" '[[ "$(grep -c -E "PUT /v1/vaults/$work_id 200" "$tmp/server.log")" == "2" && "$(grep -c -E "PUT /v1/vaults/[0-9a-f]+ 200" "$tmp/server.log")" == "$((lab_puts + 1))" ]]'
+check "the old single-vault path asks to update" '[[ "$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" "$url/v1/vault")" == "410" ]]'
+check "the label is not in the server's log" '! grep -q "Work" "$tmp/server.log"'
+on a 0 "A disconnects Work" "" -- --vault "$VAW" vault disconnect
+on b 0 "B disconnects Work" "" -- --vault "$VBW" vault disconnect
 
 echo "== the app keeps a connected vault in step (its sync loop)"
 # On macOS the token the CLI saved is behind a system dialog when Flint.app reads it
@@ -307,8 +343,15 @@ cat > "$tmp/app-c.js" <<JS
     type('#st', '$TOKEN');
     await submit('form[aria-label="Connect to a remote vault"]');
     await waitFor(() => q('[data-connect-step="vault"]'), 'the vault found');
-    if (!document.body.textContent.includes('A vault was found')) throw new Error('no "A vault was found"');
+    // The server keeps Lab and Work (milestone 45): a list to choose from, Work by its label.
+    await waitFor(() => q('[data-server-vaults="2"]'), 'the list of the two vaults');
+    if (!q('[data-server-vault="$work_id"]').textContent.includes('Work')) throw new Error('Work is not shown by its label');
+    if (!q('[data-server-vault="$lab_id"]').textContent.includes('No label')) throw new Error('Lab is not shown as unlabelled');
     type('#vp', 'not-the-password-at-all-17'); type('input[aria-label="Local copy path"]', '$VC');
+    await sleep(100);
+    if (!q('form[aria-label="Connect to a remote vault"] button[type="submit"]').disabled) throw new Error('Download is enabled before a vault is chosen');
+    q('[data-server-vault="$lab_id"] input').click();
+    await log('chose Lab from the list of two');
     await submit('form[aria-label="Connect to a remote vault"]');
     await waitFor(() => document.body.textContent.includes('does not open with that master password'), 'a wrong master password refused');
     type('#vp', '$PW');
@@ -356,7 +399,7 @@ cat > "$tmp/app-c.js" <<JS
     if (q('[data-sync-item]')) throw new Error('the status bar still shows a sync item');
     click('[data-connect-server]');
     await waitFor(() => q('#csa'), 'Connect to a server');
-    type('#csa', '$url'); type('#cst', '$TOKEN'); type('#cmp', '$PW');
+    type('#csa', '$url'); type('#cst', '$TOKEN'); type('#csl', 'Lab at home'); type('#cmp', '$PW');
     await submit('form[aria-label="Connect to a server"]');
     await waitFor(() => q('[data-connect-outcome]'), 'connected again', 30000);
     await log('connect outcome: ' + q('[data-connect-outcome]').dataset.connectOutcome);
@@ -378,6 +421,8 @@ on b 0 "B adds a host for C" "$PW"$'\n' -- --vault "$VB" host add to-c --hostnam
 wait "$app_pid"; app_pid=""
 check "the app downloaded, synced, replaced the token, disconnected and connected again" 'grep -q "^e2e: pass" "$tmp/app-c.log"'
 check "it reconnected by merging with the server's copy" 'grep -q "connect outcome: merged" "$tmp/app-c.log"'
+check "it chose Lab from the server's list of two" 'grep -q "chose Lab from the list of two" "$tmp/app-c.log"'
+check "the label it gave is in the server's list" '[[ "$(printf "%s\n" "$TOKEN" | FLINT_CONFIG_DIR="$tmp/b" no_tty "$flint" --json vault connect "$url" --list --token-stdin | json_get "[v[\"label\"] for v in d[\"vaults\"] if v[\"id\"] == \"$lab_id\"][0]")" == "Lab at home" ]]'
 check "the token is not in the app's log" '! grep -q "$TOKEN" "$tmp/app-c.log"'
 check "C's file is 0600" '[[ "$(file_mode "$VC")" == "600" ]]'
 grep -q "^e2e: pass" "$tmp/app-c.log" || { echo "---- app log"; grep -v '^\s*$' "$tmp/app-c.log" | tail -30; echo "---- server log"; tail -15 "$tmp/server.log"; }

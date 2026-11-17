@@ -66,7 +66,7 @@ interface AppApi {
   unlock: (path: string, password: string, allow?: boolean, remember?: boolean) => Promise<VaultInfo>;
   create: (path: string, name: string, password: string, remember?: boolean) => Promise<VaultInfo>;
   /** Connect remote vault (milestone 44): the server's vault downloaded to `path` and opened. */
-  download: (url: string, token: string, password: string, path: string, remember: boolean) => Promise<VaultInfo>;
+  download: (url: string, token: string, vaultId: string, password: string, path: string, remember: boolean) => Promise<VaultInfo>;
   closeVault: () => Promise<void>;
   openVaultFile: () => Promise<void>;
   switchTo: (r: RecentView) => Promise<void>;
@@ -184,8 +184,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return v;
   }, [enter]);
 
-  const download = useCallback(async (url: string, token: string, password: string, path: string, remember: boolean) => {
-    const v = await api.remoteDownload(url, token, password, path, remember);
+  const download = useCallback(async (url: string, token: string, vaultId: string, password: string, path: string, remember: boolean) => {
+    const v = await api.remoteDownload(url, token, vaultId, password, path, remember);
     await enter(v);
     return v;
   }, [enter]);

@@ -117,13 +117,13 @@ export const api = {
   remoteStatus: (path: string) => call<RemoteStatus>('vault_remote_status', { path }),
   /** The vaults connected on this machine, by path (the cloud mark, design 23d). */
   remotes: () => call<{ links: RemoteLinkView[] }>('vault_remotes'),
-  /** What a server holds, before any master password (design 23a). */
+  /** The vaults a server keeps, before any master password (design 23a). */
   remoteProbe: (url: string, token: string) => call<RemoteProbe>('vault_remote_probe', { url, token }),
-  /** Downloads the server's vault to a new file and opens it in this window. */
-  remoteDownload: (url: string, token: string, password: string, path: string, remember: boolean) =>
-    call<VaultInfo>('vault_remote_download', { url, token, password, path, remember }),
-  /** Connects the open vault to a server (design 23b2). */
-  remoteConnect: (url: string, token: string, password: string) => call<SyncOutcome>('vault_remote_connect', { url, token, password }),
+  /** Downloads the server's vault `vaultId` to a new file and opens it in this window. */
+  remoteDownload: (url: string, token: string, vaultId: string, password: string, path: string, remember: boolean) =>
+    call<VaultInfo>('vault_remote_download', { url, token, vault_id: vaultId, password, path, remember }),
+  /** Connects the open vault to a server (design 23b2); `label` is shown in the server's list. */
+  remoteConnect: (url: string, token: string, password: string, label = '') => call<SyncOutcome>('vault_remote_connect', { url, token, password, label }),
   /** Syncs the open vault now; `newPassword` is one set on another machine (23f). */
   syncNow: (newPassword = '') => call<SyncOutcome>('vault_sync_now', { new_password: newPassword }),
   /** A new server token for the open vault, tried against the server first (23b4). */

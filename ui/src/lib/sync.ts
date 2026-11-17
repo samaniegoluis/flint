@@ -148,3 +148,9 @@ export function sizeLabel(bytes: number): string {
 export function urlHost(url: string): string {
   return url.replace(/^[a-z]+:\/\//, '').replace(/\/.*$/, '');
 }
+
+/** A file name for the local copy: the vault's label when it has one. */
+export function copyName(v: { label: string } | undefined): string {
+  const base = (v?.label ?? '').replace(/[\/\\:*?"<>|\x00-\x1f]/g, '').trim();
+  return (base || 'vault') + '.flint';
+}

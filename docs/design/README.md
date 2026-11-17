@@ -358,7 +358,7 @@ Clicking the item opens a popover with the state, last sync, server, version, **
 | `12d` | Settings → Vault gets a **Server** section above Lock (not connected: one line and **Connect to a server…**). |
 | `23a1` | Step 1: server address (placeholder `https://vault.example.com`) and token (password field plus Paste), and "No server yet? Self-host one in a few minutes". |
 | `23a2a–f` | Inline check failures: http refused (allowed only for localhost); unreachable; not a Flint vault server; wrong token; too many attempts (warning, try again in N min); empty server (info callout: connect it from a machine that has the vault). |
-| `23a3` | Step 2: "A vault was found", showing size and version only; its name appears once it opens. Then the master password, where to keep the local copy, and Remember on this computer. |
+| `23a3` | Step 2: "A vault was found", showing size and version only; its name appears once it opens. Then the master password, where to keep the local copy, and Remember on this computer. Built in milestone 45 (D-103) without a new design: a server keeping several vaults lists them in the `opt-list` of the approval dialog (label or *No label*, the id's first 8 characters, size · version · updated), and 23b2 gains an optional *Label* field. |
 | `23a3b` / `23a3c` | Errors: wrong master password; a file already exists at that path (Flint never overwrites). |
 | `23a4` | A single progress line, then straight into the main shell. |
 | `23b1` | The Server section, not connected. |

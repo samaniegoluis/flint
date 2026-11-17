@@ -90,3 +90,57 @@ test "the gate forgets the client seen longest ago, never a locked-out one" {
     assert_eq(i64(g.clients.len()), GATE_CLIENTS_MAX)
     assert(g.gate_admit("locked", 5000) > 0)
 }
+
+test "a vault's label is short, printable and trimmed; empty clears it" {
+    try check_vault_label("")
+    try check_vault_label("Work laptop · ops")
+    mut codes: []str = []
+    check_vault_label(" Work") or err {
+        codes.push(error_code_of(err.message()))
+    }
+    check_vault_label("a\tb") or err {
+        codes.push(error_code_of(err.message()))
+    }
+    mut long := ""
+    for i in 0..65 {
+        long += "x"
+    }
+    check_vault_label(long) or err {
+        codes.push(error_code_of(err.message()))
+    }
+    assert_eq(codes.len(), usize(3))
+    assert_eq(codes[0], ERR_INVALID)
+}
+
+test "a server's vault is picked by its id or a unique prefix of 4 or more" {
+    a := ServerVault{ id: "00112233445566778899aabbccddeeff", label: "", version: 1, size: 1, updated_at: 1 }
+    b := ServerVault{ id: "0011ffffffffffffffffffffffffffff", label: "Work", version: 1, size: 1, updated_at: 1 }
+    c := ServerVault{ id: "abababababababababababababababab", label: "", version: 1, size: 1, updated_at: 1 }
+    all: []ServerVault = [a, b, c]
+    assert_eq((try pick_server_vault(all, "ABAB")).id, c.id)
+    assert_eq((try pick_server_vault(all, "001122")).id, a.id)
+    assert_eq((try pick_server_vault(all, b.id)).id, b.id)
+    mut codes: []str = []
+    pick_server_vault(all, "0011") or err {
+        codes.push(error_code_of(err.message()))
+    }
+    pick_server_vault(all, "aba") or err {
+        codes.push(error_code_of(err.message()))
+    }
+    pick_server_vault(all, "ffff") or err {
+        codes.push(error_code_of(err.message()))
+    }
+    assert_eq(codes.len(), usize(3))
+    assert_eq(codes[0], ERR_USAGE)
+    assert_eq(codes[1], ERR_USAGE)
+    assert_eq(codes[2], ERR_NOT_FOUND)
+}
+
+test "a vault's resources on its server are under /v1/vaults/<id>" {
+    id := "00112233445566778899aabbccddeeff"
+    assert_eq(remote_vault_url("https://v.example.com", id), "https://v.example.com/v1/vaults/" + id)
+    assert_eq(remote_vaults_url("https://v.example.com/x"), "https://v.example.com/x/v1/vaults")
+    assert_eq(remote_label_url("https://v.example.com", id), "https://v.example.com/v1/vaults/" + id + "/label")
+    assert_eq(try check_remote_url("https://v.example.com/v1/vaults/"), "https://v.example.com")
+    assert_eq(try check_remote_url("https://v.example.com/sub/v1/vault"), "https://v.example.com/sub")
+}

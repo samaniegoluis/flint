@@ -7,7 +7,8 @@ A vault on one machine stays a local file. Connect it to a
 [`flint-vault-server`](/guides/vault-server/) you run, and every machine you connect keeps
 its own full copy of that vault in step with the others. It is **local-first**: each
 machine works on its own copy, offline too, and the server only passes the encrypted
-file between them. Vaults you do not connect stay on their own machine.
+file between them. Vaults you do not connect stay on their own machine; the ones you do
+can all share one server, each kept apart under its own id.
 
 Everything here works from the desktop app and from the CLI; each section shows both.
 
@@ -16,23 +17,31 @@ Everything here works from the desktop app and from the CLI; each section shows 
 On the machine that has the vault, with the server's URL and token at hand.
 
 **In the app:** open the vault, then **Settings → Vault → Server → Connect to a server…**.
-Type the server's address, paste the token, and type the vault's master password again.
-The strength meter shows whether it is strong enough; **Connect** stays off until it is.
-The dialog ends with what happened: *Uploaded* (the server was empty) or *Merged with the
-server's copy* (it already held this vault).
+Type the server's address, paste the token, give it a **label** if you like, and type
+the vault's master password again. The strength meter shows whether it is strong enough;
+**Connect** stays off until it is. The dialog ends with what happened: *Uploaded* (the
+server did not keep this vault yet) or *Merged with the server's copy* (it already did).
 
 **From the CLI:**
 
 ```sh
-flint vault connect https://vault.example.com
+flint vault connect https://vault.example.com --label Home
 ```
 
 ```text
 Server token: ••••••••
 Master password for 'home': ••••••••
 Connected vault 'home' to https://vault.example.com and uploaded it (version 1).
-On another machine: `flint vault connect https://vault.example.com --to <path>`.
+The server lists it as 'Home'.
+On another machine: `flint vault connect https://vault.example.com --to <path>` (with `--id 0a1b2c3d` when the server keeps several vaults).
 ```
+
+One server keeps as many vaults as you connect to it, with the same token: connect Work
+the same way and it goes beside Home, with its own versions.
+
+**The label** tells your vaults apart on another machine, since the server cannot read a
+vault's name. It is optional, at most 64 characters, and the server keeps it **in clear**:
+leave it out when the name itself is private, and the vault shows by its id alone.
 
 Flint checks three things before the vault leaves the machine:
 
@@ -52,20 +61,33 @@ connect it from the app, or lock it there first.
 
 **In the app:** on the Welcome screen (or from the vault switcher, ⇧⌘O), choose
 **Connect to a remote vault** (⌥⌘O). Type the server's address and paste the token;
-**Continue** checks them with the server. The server cannot read the vault, so all it
-shows is that one was found, with its size and version. Type that vault's master
+**Continue** checks them with the server. The server cannot read a vault, so all it shows
+is its label (if it was given one), its size, its version and when it last changed; a
+server that keeps several lists them, and you pick one. Type that vault's master
 password, choose where to keep the local copy, and **Download and open**. The vault
-opens in the window, already connected.
+opens in the window, already connected. The other vaults on the server stay there: a
+machine downloads only the ones you choose.
 
-**From the CLI**, download the vault to a new file:
+**From the CLI**, list what the server keeps, then download one to a new file:
 
 ```sh
-flint vault connect https://vault.example.com --to ~/Vaults/home.flint
+flint vault connect https://vault.example.com --list
 ```
 
-Flint opens the server's copy with the master password you type before it writes
-anything; a path that already holds a file is refused. The new file is an ordinary vault,
-already connected.
+```text
+ID                                LABEL  VERSION  SIZE    UPDATED
+0a1b2c3d4e5f60718293a4b5c6d7e8f9  Home   14       1.2 MB  2 h ago
+7be04f1a22c3d4e5f60718293a4b5c6d  Work   3        340 KB  9 days ago
+```
+
+```sh
+flint vault connect https://vault.example.com --to ~/Vaults/work.flint --id 7be0
+```
+
+`--id` takes the vault's id or its first characters (4 or more, as long as only one vault
+starts with them); with a single vault on the server it is not needed. Flint opens the
+server's copy with the master password you type before it writes anything; a path that
+already holds a file is refused. The new file is an ordinary vault, already connected.
 
 A machine that already has a copy of the same vault (from a cloud folder, say) connects
 it with plain `flint vault connect <url>`: the two copies are merged.
@@ -152,7 +174,7 @@ leaves the status bar saying *Needs the new password* until you click it.
 | Offline | The server cannot be reached; changes wait here and go up when it is back |
 | Merged | Another machine's changes just came in; click for the details |
 | Needs the new password | The master password was changed on another machine; click to type it |
-| Needs attention | The server refused this machine (a wrong token, or it now keeps another vault); click for Settings |
+| Needs attention | The server refused this machine (a wrong token, or a server older than this Flint); click for Settings |
 
 Clicking it shows the last sync, the server, the version, **Sync now** and **Server
 settings…**. A vault that is not connected shows nothing there. The vault switcher marks

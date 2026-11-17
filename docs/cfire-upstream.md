@@ -2569,3 +2569,15 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** pass `-mmacosx-version-min` to compile and link, equal to the bundle's
   `LSMinimumSystemVersion`, with a `MinMacOS`-style field on `build.Executable` to set both
   (and a diagnostic when a linked library's `minos` is newer).
+
+### CF-150 · bug · `confirmed`: a variable named like a stdlib module turns its method calls into module calls
+- **Seen (milestone 45) [ran, macOS, `c5b1d4b`]:** in a test fake, `fn fake_url_id(url: str, …)`
+  with `url.starts_with(prefix)` and `url.substr(…)` compiles to
+  `cfire::url::starts_with(prefix)` and fails in C++ ("'url' is not a class, namespace, or
+  enumeration"). The package does not import `core:url`; the parameter shadows nothing in
+  cfire, yet the lowering treats `url.` as the module.
+- **Repro:** `fn f(url: str) -> bool { return url.starts_with("https") }` in any package.
+- **Workaround:** name the parameter otherwise (`u`). Flint's other `url: str` parameters
+  only pass `url` to functions, never call a method on it.
+- **Ideal:** resolve a local before a module name; a module that is not imported is never
+  the target of `name.`.
