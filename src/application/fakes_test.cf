@@ -169,10 +169,14 @@ type FakeStore struct {
 
 type FakeBank struct {
     blobs: []VaultRecords
+    // Reads of the vault file so far, and the read after which another process
+    // stands to have written to it (a tombstone it adds); 0 for never.
+    reads: i64
+    late_after: i64
 }
 
 fn new_fake_store() -> FakeStore {
-    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "", rec_tokens: [], tombs: [], replaced: 0, copy_open: false, bank: make[shared[FakeBank]](FakeBank{ blobs: [] }) }
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "", rec_tokens: [], tombs: [], replaced: 0, copy_open: false, bank: make[shared[FakeBank]](FakeBank{ blobs: [], reads: 0, late_after: 0 }) }
 }
 
 fn (self: FakeStore) vault_file_exists(path: str) -> bool {
@@ -972,9 +976,18 @@ fn (self: FakeStore) vault_file_bytes(path: str) -> []byte! {
     mut bank := self.bank
     mut list := (*bank).blobs
     n := list.len()
-    list.push(VaultRecords{ groups: self.groups, hosts: self.hosts, keys: self.keys, creds: self.creds, known_hosts: self.known, tunnels: self.tunnels, tokens: self.rec_tokens, tombstones: self.tombs })
+    reads := (*bank).reads + 1
+    late := (*bank).late_after
+    mut tombs := self.tombs
+    if late > 0 && reads > late {
+        tombs.push(Tombstone{ kind: "host", id: "written-by-another-process", deleted_at: 1 })
+    }
+    list.push(VaultRecords{ groups: self.groups, hosts: self.hosts, keys: self.keys, creds: self.creds, known_hosts: self.known, tunnels: self.tunnels, tokens: self.rec_tokens, tombstones: tombs })
     if n >= 0 {
         (*bank).blobs = list
+    }
+    if n >= 0 {
+        (*bank).reads = reads
     }
     // The same records give the same bytes, so an unchanged vault hashes the same.
     mut same := n

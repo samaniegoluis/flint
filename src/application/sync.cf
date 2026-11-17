@@ -463,13 +463,19 @@ fn sync_rounds[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: 
         got := try remote.remote_get(url, token, link.version)
         mut base := link.version
         mut upload := false
+        // The file as the decision to upload saw it: the bytes uploaded and the hash
+        // kept are the same ones, so a write made in between (another process) is
+        // never counted as synced without going up.
+        mut data: []byte = []
+        mut read := false
         if !got.found {
             // An empty server (new, or its data lost): it gets this vault.
             base = 0
             upload = true
         } else if !got.changed || (link.version > 0 && got.version == link.version) {
             // 304, or a server from before it (0.9.0) sending the version merged last.
-            data := try store.vault_file_bytes(session.path)
+            data = try store.vault_file_bytes(session.path)
+            read = true
             upload = (try file_hash(crypto, data)) != link.synced_hash
         } else {
             if got.vault_id != session.id {
@@ -498,7 +504,9 @@ fn sync_rounds[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: 
             upload = merge_adds_to(theirs.records, merged.records)
             link.version = got.version
         }
-        data := try store.vault_file_bytes(session.path)
+        if !read {
+            data = try store.vault_file_bytes(session.path)
+        }
         h := try file_hash(crypto, data)
         if upload {
             put := try remote.remote_put(url, token, session.id, base, data)

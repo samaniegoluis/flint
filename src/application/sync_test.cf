@@ -560,3 +560,21 @@ test "a token replaced while its vault is disconnected is not kept" {
     assert_eq(error_code_of(msg), ERR_NOT_FOUND)
     assert_eq((try a.kc.keychain_load(remote_token_account(a.session.id))).len(), usize(0))
 }
+
+test "a write made while a sync finds nothing new is left to upload" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut a := try machine_a(crypto)
+    remote := new_fake_remote()
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
+    // Another process writes right after this sync's first read of the file.
+    mut bank := a.store.bank
+    if true {
+        (*bank).reads = 0
+    }
+    if true {
+        (*bank).late_after = 1
+    }
+    got := try sync_vault(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, "", 2000)
+    assert_eq(got.result, SYNC_IN_STEP)
+    assert(remote_pending(crypto, a.store, a.links, a.session.path), "the write waits for the next sync")
+}
