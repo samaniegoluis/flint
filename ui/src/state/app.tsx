@@ -16,7 +16,7 @@ import { api, FlintError, on, toFlintError } from '../api/backend';
 import type { AppInfo, Catalog, LockReason, RecentView, Settings, UnlockRequest, VaultInfo, WindowState } from '../api/types';
 import type { Os } from '../lib/keymap';
 
-export type Phase = 'boot' | 'welcome' | 'create' | 'unlock' | 'main' | 'locked';
+export type Phase = 'boot' | 'welcome' | 'create' | 'connect' | 'unlock' | 'main' | 'locked';
 
 export interface Toast {
   id: number;
@@ -65,6 +65,8 @@ interface AppApi {
   refreshRecents: () => Promise<RecentView[]>;
   unlock: (path: string, password: string, allow?: boolean, remember?: boolean) => Promise<VaultInfo>;
   create: (path: string, name: string, password: string, remember?: boolean) => Promise<VaultInfo>;
+  /** Connect remote vault (milestone 44): the server's vault downloaded to `path` and opened. */
+  download: (url: string, token: string, password: string, path: string, remember: boolean) => Promise<VaultInfo>;
   closeVault: () => Promise<void>;
   openVaultFile: () => Promise<void>;
   switchTo: (r: RecentView) => Promise<void>;
@@ -178,6 +180,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const create = useCallback(async (path: string, name: string, password: string, remember = false) => {
     const v = await api.create(path, name, password, remember);
+    await enter(v);
+    return v;
+  }, [enter]);
+
+  const download = useCallback(async (url: string, token: string, password: string, path: string, remember: boolean) => {
+    const v = await api.remoteDownload(url, token, password, path, remember);
     await enter(v);
     return v;
   }, [enter]);
@@ -371,11 +379,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppApi>(() => ({
     info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError,
     lockReason, unlockRequest, dismissUnlockRequest, lock, windowLock, openWindow,
-    go: setPhase, setTarget, refreshRecents, unlock, create, closeVault, openVaultFile, switchTo, renameVault,
+    go: setPhase, setTarget, refreshRecents, unlock, create, download, closeVault, openVaultFile, switchTo, renameVault,
     refreshCatalog, saveSettings, notify, fail,
   }), [info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError,
     lockReason, unlockRequest, dismissUnlockRequest, lock, windowLock, openWindow, refreshRecents,
-    unlock, create, closeVault, openVaultFile, switchTo, renameVault, refreshCatalog, saveSettings, notify, fail]);
+    unlock, create, download, closeVault, openVaultFile, switchTo, renameVault, refreshCatalog, saveSettings, notify, fail]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

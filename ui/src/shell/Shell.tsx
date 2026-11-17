@@ -29,6 +29,8 @@ import { KeysPage, type Confirm } from '../pages/KeysPage';
 import { CredentialsPage } from '../pages/CredentialsPage';
 import { SettingsPage, type SettingsSection } from '../pages/SettingsPage';
 import { CommandPalette } from '../palette/CommandPalette';
+import { SyncProvider, useSyncMaybe } from '../sync/SyncProvider';
+import { SyncStatusItem } from '../sync/SyncStatusItem';
 import { ApprovalDialog, useAccessState } from '../access/ApprovalDialog';
 import { TunnelsView } from '../tunnels/TunnelsView';
 import { tunnels, upOn, useTunnels } from '../tunnels/store';
@@ -54,6 +56,10 @@ export function Shell() {
   const [addingKey, setAddingKey] = useState(false);
   const [credEditing, setCredEditing] = useState<string | null | undefined>(undefined);
   const [section, setSection] = useState<SettingsSection>('appearance');
+  // Milestone 44: Server settings… from the status bar's popover or the palette.
+  const openServerSettings = useCallback(() => { setSection('vault'); setView('settings'); }, []);
+  const syncActions = useRef<SyncHandle | null>(null);
+  const registerSync = useCallback((h: SyncHandle | null) => { syncActions.current = h; }, []);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [ask, setAsk] = useState<TextAsk | null>(null);
   const [zoom, setZoom] = useState(0);
@@ -310,6 +316,7 @@ export function Shell() {
       case 'switchVault': setView('hosts'); setSidebarCollapsed(false); setSwitcher(true); break;
       case 'openVault': openVaultFile().catch(fail); break;
       case 'createVault': go('create'); break;
+      case 'connectRemote': go('connect'); break;
       // ⌘W closes the focused pane; the last one closes its tab.
       case 'closeTab': if (tab) sessions.close(tab.id); break;
       case 'reconnect': if (tab) sessions.reconnect(tab.id); break;
@@ -338,6 +345,15 @@ export function Shell() {
       case 'viewKeys': setView('keys'); break;
       case 'viewCredentials': setView('credentials'); break;
       case 'settings': setView('settings'); break;
+      case 'syncNow': syncActions.current?.syncNow(); break;
+      case 'showLastMerge': syncActions.current?.showLastMerge(); break;
+      case 'connectServer': openServerSettings(); break;
+      case 'disconnectServer': setConfirm({
+        title: 'Disconnect this vault from its server?',
+        body: 'This machine stops syncing it. The local copy stays as it is and keeps working, the server keeps its copy, and nothing is deleted.',
+        action: 'Disconnect',
+        run: async () => { syncActions.current?.disconnect(); },
+      }); break;
       case 'newHost':
         if (view === 'keys') setAddingKey(true);
         else if (view === 'credentials') setCredEditing(null);
@@ -391,6 +407,8 @@ export function Shell() {
   );
 
   return (
+    <SyncProvider onOpenServerSettings={openServerSettings}>
+    <SyncActions register={registerSync} />
     <div className="chrome" style={{ position: 'absolute', inset: 0 }}>
       <header className="titlebar">
         <div className="tb-brand"><Logo />Flint</div>
@@ -473,6 +491,7 @@ export function Shell() {
       <footer className="statusbar">
         <span className="sb-item"><Icon name="unlock" />Unlocked{vault?.cached ? (os === 'mac' ? ' · Keychain' : ' · Keyring') : ''}</span>
         <button className="sb-btn" onClick={() => lock().catch(fail)}>Lock<Kbd action="lock" /></button>
+        <SyncStatusItem />
         <span className="sb-item">{sessionsOpen === 0 ? 'No sessions' : `${sessionsOpen} session${sessionsOpen === 1 ? '' : 's'}`}</span>
         {tab && <span className="sb-item mono">{tab.alias}</span>}
         {tunnelsUp > 0 && (
@@ -523,7 +542,26 @@ export function Shell() {
         <EmptyVault onNewHost={() => setEditor({ alias: null, group: '' })} onAddKey={() => { setView('keys'); setAddingKey(true); }} onCreds={() => setView('credentials')} />
       )}
     </div>
+    </SyncProvider>
   );
+}
+
+// The palette's sync commands reach the provider through the shell's `run` (design 23h).
+interface SyncHandle { syncNow: () => void; showLastMerge: () => void; disconnect: () => void }
+
+function SyncActions({ register }: { register: (h: SyncHandle | null) => void }) {
+  const sync = useSyncMaybe();
+  const { notify, fail } = useApp();
+  useEffect(() => {
+    if (!sync) return;
+    register({
+      syncNow: () => { sync.syncNow().catch(() => {}); },
+      showLastMerge: sync.showDetails,
+      disconnect: () => { api.remoteDisconnect().then(() => { notify('This machine no longer syncs the vault'); return sync.refresh(); }).catch(fail); },
+    });
+    return () => register(null);
+  }, [sync, register, notify, fail]);
+  return null;
 }
 
 // The sidebar's right edge: drag to resize (Hosts 200-400 px, Files 200-480 px),

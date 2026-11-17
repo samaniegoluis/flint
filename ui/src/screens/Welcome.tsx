@@ -12,6 +12,7 @@ export function Welcome() {
       const a = actionFor(e, os);
       if (a === 'createVault') { e.preventDefault(); go('create'); }
       if (a === 'openVault') { e.preventDefault(); openVaultFile().catch(fail); }
+      if (a === 'connectRemote') { e.preventDefault(); go('connect'); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -47,9 +48,17 @@ export function Welcome() {
               </span>
               <Kbd action="openVault" />
             </button>
+            <button className="panel row" style={{ padding: 'var(--sp-4)', gap: 'var(--sp-4)' }} data-connect-remote onClick={() => go('connect')}>
+              <span className="prompt-ic" style={{ width: 40, height: 40 }}><Icon name="server" size="lg" /></span>
+              <span className="col grow" style={{ gap: 2 }}>
+                <span className="strong" style={{ fontSize: 'var(--fs-md)' }}>Connect to a remote vault</span>
+                <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Download a vault kept on your own server and keep it in step.</span>
+              </span>
+              <Kbd action="connectRemote" />
+            </button>
           </div>
           <p className="row faint" style={{ justifyContent: 'center', fontSize: 'var(--fs-sm)', gap: 'var(--sp-2)' }}>
-            <Icon name="cloud" size="sm" />A vault is a single encrypted file — keep it in iCloud Drive, Dropbox or Syncthing to use it on every machine.
+            <Icon name="cloud" size="sm" />To use a vault on more than one machine, keep it in step through your own server.
           </p>
         </div>
       </main>

@@ -9,15 +9,19 @@ its own full copy of that vault in step with the others. It is **local-first**: 
 machine works on its own copy, offline too, and the server only passes the encrypted
 file between them. Vaults you do not connect stay on their own machine.
 
-:::note[The CLI first]
-This page is the CLI. *Connect remote vault* in the desktop app, beside *Create* and
-*Open*, with the sync's state in the status bar, arrives in the next release. The app
-already keeps a connected vault in step on its own (below).
-:::
+Everything here works from the desktop app and from the CLI; each section shows both.
 
 ## Connect a vault
 
-On the machine that has the vault, with the server's URL and token at hand:
+On the machine that has the vault, with the server's URL and token at hand.
+
+**In the app:** open the vault, then **Settings → Vault → Server → Connect to a server…**.
+Type the server's address, paste the token, and type the vault's master password again.
+The strength meter shows whether it is strong enough; **Connect** stays off until it is.
+The dialog ends with what happened: *Uploaded* (the server was empty) or *Merged with the
+server's copy* (it already held this vault).
+
+**From the CLI:**
 
 ```sh
 flint vault connect https://vault.example.com
@@ -41,12 +45,19 @@ Flint checks three things before the vault leaves the machine:
 - **The vault's own master password**, typed for this command.
 
 The token goes to the OS keychain (macOS Keychain, the Secret Service on Linux), never to
-a file. While the desktop app holds the vault unlocked, `vault connect` is refused: lock
-it there first.
+a file. While the desktop app holds the vault unlocked, `flint vault connect` is refused:
+connect it from the app, or lock it there first.
 
 ## Add another machine
 
-On the second machine, download the vault to a new file:
+**In the app:** on the Welcome screen (or from the vault switcher, ⇧⌘O), choose
+**Connect to a remote vault** (⌥⌘O). Type the server's address and paste the token;
+**Continue** checks them with the server. The server cannot read the vault, so all it
+shows is that one was found, with its size and version. Type that vault's master
+password, choose where to keep the local copy, and **Download and open**. The vault
+opens in the window, already connected.
+
+**From the CLI**, download the vault to a new file:
 
 ```sh
 flint vault connect https://vault.example.com --to ~/Vaults/home.flint
@@ -72,9 +83,15 @@ You do not run anything after connecting. Changes travel both ways:
   change waits.
 - **On demand**: `flint vault sync`.
 
-The 60 seconds is the `sync_interval` setting, in seconds, in your config folder's
-`settings.json`: `60`, `300`, `900`, or `0` to check only at unlock, after a change, when
-the window comes back and on demand. Settings will show it in the next release.
+The 60 seconds is **Settings → Vault → Server → Check every**: *1 min*, *5 min*,
+*15 min*, or *Only on changes and at unlock* (it is `sync_interval` in your config folder's
+`settings.json`, in seconds: `60`, `300`, `900` or `0`). **Sync now** is beside it, in the
+status bar's sync menu and in the command palette (*Sync vault now*).
+
+When a sync brings other machines' changes, the app says so in a toast (*Changes from
+another machine: 2 hosts added, 1 updated*). **Details** lists what changed, by kind and
+by name (labels only, never a secret), and what the merge did, such as a renamed alias.
+*Show last merge* in the command palette opens it again.
 
 ```sh
 flint vault sync
@@ -118,13 +135,31 @@ flint: the vault's master password was changed on another machine: sync again wi
 ```
 
 `flint vault sync` asks for the new master password (or reads it with
-`--new-master-stdin`), re-keys this machine's copy to it, merges and uploads. The app will
-ask for it in its window (next release); until then, lock the vault in the app and run
-`flint vault sync` once.
+`--new-master-stdin`), re-keys this machine's copy to it, merges and uploads. The app asks
+for it in its window: *The master password of home was changed on another machine*. Type
+the new one and **Sync**; from then on this machine's vault opens with it too. **Later**
+leaves the status bar saying *Needs the new password* until you click it.
 
 ## Where it stands
 
-`flint vault status` shows the server, the version last merged, when the last sync was,
+**In the app**, the status bar shows the sync's state beside the lock state, with a cloud:
+
+| State | What it means |
+|---|---|
+| In step | This machine and the server hold the same version; hover for when it last synced |
+| Syncing… | A sync is under way |
+| Waiting | Changes made here wait to be uploaded |
+| Offline | The server cannot be reached; changes wait here and go up when it is back |
+| Merged | Another machine's changes just came in; click for the details |
+| Needs the new password | The master password was changed on another machine; click to type it |
+| Needs attention | The server refused this machine (a wrong token, or it now keeps another vault); click for Settings |
+
+Clicking it shows the last sync, the server, the version, **Sync now** and **Server
+settings…**. A vault that is not connected shows nothing there. The vault switcher marks
+connected vaults with a cloud, and the unlock screen says when changes from this machine
+wait for the unlock.
+
+**From the CLI**, `flint vault status` shows the server, the version last merged, when the last sync was,
 and whether this machine holds changes the server does not have yet:
 
 ```text
@@ -153,9 +188,13 @@ flint vault token
 
 It asks for the new token (or reads it with `--token-stdin`), tries it against the server,
 and only then replaces the old one in the keychain. A token the server refuses changes
-nothing. In the app: **Settings → Vault → Server → Replace token…**.
+nothing. In the app: **Settings → Vault → Server → Replace token…**, which checks it the
+same way.
 
 ## Disconnect
+
+**In the app:** Settings → Vault → Server → **Disconnect…**, or *Disconnect vault from
+server…* in the command palette. **From the CLI:**
 
 ```sh
 flint vault disconnect
@@ -176,5 +215,6 @@ Without an OS keychain (`FLINT_KEYCHAIN=off`, or a Linux machine with no Secret 
 `vault connect` is refused: the token is never kept in a file.
 
 On macOS, the first time the desktop app reads a token the CLI saved, macOS asks whether
-Flint may use it: choose **Always Allow**. Until Flint's builds are signed, the question
+Flint may use it: choose **Always Allow**. A token saved from the app is its own, and
+macOS does not ask. Until Flint's builds are signed, the question
 comes back after each update; until it is answered, the app's sync waits.

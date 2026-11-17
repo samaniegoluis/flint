@@ -10,7 +10,7 @@ import { actionFor } from '../lib/keymap';
 import { VaultMenu } from '../shell/VaultSwitcher';
 import { RememberOption } from '../ui/RememberOption';
 import { sessions, useSessions } from '../sessions/store';
-import type { LockReason } from '../api/types';
+import type { LockReason, RemoteStatus } from '../api/types';
 
 const LOCK_REASONS: Record<LockReason, string> = {
   manual: 'Locked.',
@@ -43,6 +43,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
       if (a === 'switchVault') { e.preventDefault(); setSwitcher(true); }
       if (a === 'openVault') { e.preventDefault(); openVaultFile().catch(fail); }
       if (a === 'createVault') { e.preventDefault(); go('create'); }
+      if (a === 'connectRemote') { e.preventDefault(); go('connect'); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -55,6 +56,14 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
     setRemember(false);
     if (!target) return;
     api.vaultRemembered(target.path).then((r) => setRemember(r.remembered)).catch(() => {});
+  }, [target?.path]);
+  // A connected vault (milestone 44, design 23g): its server, and whether changes
+  // made here wait for the next unlock. No key needed: a hash of the file says so.
+  const [remote, setRemote] = useState<RemoteStatus | null>(null);
+  useEffect(() => {
+    setRemote(null);
+    if (!target) return;
+    api.remoteStatus(target.path).then((r) => setRemote(r.connected ? r : null)).catch(() => {});
   }, [target?.path]);
 
   if (!target) return null;
@@ -149,6 +158,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
             {locked ? <Icon name="lock" size="lg" className="accent-t" /> : <Logo size={40} label="Flint" />}
             <h1 style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-semibold)', letterSpacing: '-0.01em' }}>{target.name}</h1>
             <span className="mono muted" style={{ fontSize: 'var(--fs-sm)' }}>{shortPath(target.path)}</span>
+            {remote && <span className="faint row" style={{ fontSize: 'var(--fs-xs)', gap: 6 }} data-unlock-remote><Icon name="cloud" size="xs" />Kept in step with <span className="mono">{remote.url}</span></span>}
             {locked && <span className="muted" data-lock-reason={lockReason ?? 'manual'} style={{ fontSize: 'var(--fs-sm)' }}>{LOCK_REASONS[lockReason ?? 'manual']}{live > 0 ? ` ${live === 1 ? 'One session keeps' : `${live} sessions keep`} running.` : ''}</span>}
           </div>
           <div className="field">
@@ -165,6 +175,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
               <button type="submit" className="btn btn-primary btn-sm" style={{ fontFamily: 'var(--font-ui)' }} disabled={!pw || busy}>{busy ? 'Unlocking…' : 'Unlock'}<span className="kbd-in">↵</span></button>
             </div>
             {error && <span id="pwe" className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
+            {remote?.pending && <span className="hint row" style={{ gap: 6 }} data-unlock-waiting><Icon name="cloud" size="xs" />Changes from this machine will sync after unlocking.</span>}
           </div>
           <RememberOption checked={remember} onChange={setRemember} os={os} disabled={busy} />
           {locked && <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />The vault key left memory when it locked. Until you unlock, the flint CLI and new sessions cannot use this vault.</span>}

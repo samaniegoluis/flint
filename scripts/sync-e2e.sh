@@ -259,6 +259,131 @@ on b 0 "status: local again" "" -- --vault "$VB" vault status
 check "remote none" '[[ "$out" == *"remote"*"none (a local vault"* ]]'
 check "the file stays" '[[ -f "$VB" ]]'
 
+echo "== the app connects on its own (milestone 44: Welcome, Settings, the status bar)"
+# A third machine, C, with an empty config folder: the app downloads the vault through
+# Connect to a remote vault, syncs B's change from the status bar, replaces its token,
+# disconnects and connects again from Settings, driving the page as a person would.
+# The token is saved by the app itself, so macOS asks nothing (D-099): it runs on both.
+on a 0 "A disconnects, so the app's keychain item is its own" "" -- --vault "$VA" vault disconnect
+on b 0 "B connects again" "$PW"$'\n'"$TOKEN"$'\n' -- --vault "$VB" vault connect "$url" --master-stdin --token-stdin
+"$root/scripts/build-gui.sh" >/dev/null || { echo "sync-e2e: app build failed" >&2; exit 1; }
+if [[ "$(uname -s)" == Darwin ]]; then app=(build/gui/Flint.app/Contents/MacOS/Flint); else app=(timeout 200 xvfb-run -a build/gui/Flint); fi
+short_c="$(mktemp -d /tmp/fl-sync.XXXXXX)"
+VC="$tmp/vc/Lab.flint"
+mkdir -p "$tmp/vc"
+cat > "$tmp/app-c.js" <<JS
+(async () => {
+  const sleep = (ms) => new Promise((resolve) => {
+    const end = performance.now() + ms;
+    const ch = new MessageChannel();
+    ch.port1.onmessage = () => { if (performance.now() >= end) resolve(); else ch.port2.postMessage(0); };
+    ch.port2.postMessage(0);
+  });
+  const log = (name) => window.backend.e2e_log({ name });
+  const q = (sel) => document.querySelector(sel);
+  const waitFor = async (fn, what, ms = 20000) => {
+    const t0 = Date.now();
+    for (;;) { const v = fn(); if (v) return v; if (Date.now() - t0 > ms) throw new Error('timed out: ' + what); await sleep(100); }
+  };
+  const type = (sel, value) => {
+    const el = q(sel); if (!el) throw new Error('no ' + sel);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const click = (sel) => { const el = q(sel); if (!el) throw new Error('no ' + sel); el.click(); };
+  const byText = (root, text) => [...(root || document).querySelectorAll('button')].find((b) => b.textContent.trim().startsWith(text));
+  const submit = async (form) => { await sleep(50); const b = q(form + ' button[type="submit"]'); await waitFor(() => !b.disabled, 'submit enabled in ' + form); b.click(); };
+  const has = async (alias) => JSON.stringify(await window.backend.catalog({})).includes('"' + alias + '"');
+  try {
+    await waitFor(() => q('[data-connect-remote]'), 'Welcome');
+    click('[data-connect-remote]');
+    await waitFor(() => q('#sa'), 'Connect to a remote vault');
+    type('#sa', 'http://vault.example.com'); type('#st', '$TOKEN');
+    await submit('form[aria-label="Connect to a remote vault"]');
+    await waitFor(() => q('#sa-e') && q('#sa-e').textContent.includes('https'), 'plain http refused under the address');
+    type('#sa', '$url'); type('#st', 'wrong-token-wrong-token-wrong-token-3');
+    await submit('form[aria-label="Connect to a remote vault"]');
+    await waitFor(() => q('#st-e'), 'a wrong token refused under the token');
+    type('#st', '$TOKEN');
+    await submit('form[aria-label="Connect to a remote vault"]');
+    await waitFor(() => q('[data-connect-step="vault"]'), 'the vault found');
+    if (!document.body.textContent.includes('A vault was found')) throw new Error('no "A vault was found"');
+    type('#vp', 'not-the-password-at-all-17'); type('input[aria-label="Local copy path"]', '$VC');
+    await submit('form[aria-label="Connect to a remote vault"]');
+    await waitFor(() => document.body.textContent.includes('does not open with that master password'), 'a wrong master password refused');
+    type('#vp', '$PW');
+    await submit('form[aria-label="Connect to a remote vault"]');
+    await waitFor(() => q('.statusbar'), 'the main window', 60000);
+    if (!(await has('mail'))) throw new Error('the downloaded vault lacks mail');
+    await waitFor(() => q('[data-sync-item]'), 'the sync item in the status bar');
+    await log('downloaded; status bar says ' + q('[data-sync-item]').dataset.syncItem);
+    // Another machine's change, synced from the status bar's popover.
+    await window.backend.e2e_log({ name: 'ready-for-b' });
+    const t0 = Date.now();
+    while (!(await has('to-c'))) {
+      if (Date.now() - t0 > 60000) throw new Error('no to-c after 60 s');
+      if (q('[data-sync-item="in_step"]')) {
+        if (!q('[data-pop-sync-now]')) click('[data-sync-item]');
+        const b = await waitFor(() => q('[data-pop-sync-now]:not([disabled])'), 'the popover');
+        b.click();
+      }
+      await sleep(1000);
+    }
+    await waitFor(() => q('[data-toast-action]'), 'the merge toast');
+    click('[data-toast-action]');
+    await waitFor(() => q('[data-merge-details]') && q('[data-merge-details]').textContent.includes('to-c'), 'the merge details');
+    await log('merge details: ' + q('[data-merge-details]').textContent.replace(/\s+/g, ' ').slice(0, 120));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(300);
+    if (q('[data-merge-details]')) byText(q('.modal'), 'Close').click();
+    // Settings → Vault → Server.
+    click('[data-item="settings"]');
+    await waitFor(() => byText(document, 'Vault'), 'Settings');
+    byText(document, 'Vault').click();
+    await waitFor(() => q('[data-server="on"]'), 'Server, connected');
+    click('[data-replace-token]');
+    await waitFor(() => q('#rtk'), 'Replace token');
+    type('#rtk', 'wrong-token-wrong-token-wrong-token-4');
+    await submit('form[aria-label="Replace token"]');
+    await waitFor(() => q('#rtk-e'), 'a refused token kept the old one');
+    type('#rtk', '$TOKEN');
+    await submit('form[aria-label="Replace token"]');
+    await waitFor(() => !q('#rtk'), 'token replaced');
+    click('[data-disconnect-server]');
+    await waitFor(() => byText(q('.modal'), 'Disconnect'), 'the disconnect confirm');
+    byText(q('.modal'), 'Disconnect').click();
+    await waitFor(() => q('[data-server="off"]'), 'Server, not connected');
+    if (q('[data-sync-item]')) throw new Error('the status bar still shows a sync item');
+    click('[data-connect-server]');
+    await waitFor(() => q('#csa'), 'Connect to a server');
+    type('#csa', '$url'); type('#cst', '$TOKEN'); type('#cmp', '$PW');
+    await submit('form[aria-label="Connect to a server"]');
+    await waitFor(() => q('[data-connect-outcome]'), 'connected again', 30000);
+    await log('connect outcome: ' + q('[data-connect-outcome]').dataset.connectOutcome);
+    // Leave no keychain item behind.
+    await window.backend.vault_remote_disconnect({});
+    await window.backend.e2e_report({ ok: true, detail: '' });
+  } catch (e) {
+    const m = q('.modal');
+    if (m) await log('diag: open modal: ' + m.textContent.replace(/\s+/g, ' ').slice(0, 300));
+    await window.backend.e2e_report({ ok: false, detail: String(e && e.message || e) });
+  }
+  window.runtime.Quit();
+})();
+JS
+FLINT_CONFIG_DIR="$short_c" FLINT_GUI_E2E="$tmp/app-c.js" "${app[@]}" >"$tmp/app-c.log" 2>&1 &
+app_pid=$!
+for _ in $(seq 1 90); do grep -q "ready-for-b" "$tmp/app-c.log" && break; sleep 1; done
+on b 0 "B adds a host for C" "$PW"$'\n' -- --vault "$VB" host add to-c --hostname 10.0.5.5 --master-stdin
+wait "$app_pid"; app_pid=""
+check "the app downloaded, synced, replaced the token, disconnected and connected again" 'grep -q "^e2e: pass" "$tmp/app-c.log"'
+check "it reconnected by merging with the server's copy" 'grep -q "connect outcome: merged" "$tmp/app-c.log"'
+check "the token is not in the app's log" '! grep -q "$TOKEN" "$tmp/app-c.log"'
+check "C's file is 0600" '[[ "$(file_mode "$VC")" == "600" ]]'
+grep -q "^e2e: pass" "$tmp/app-c.log" || { echo "---- app log"; grep -v '^\s*$' "$tmp/app-c.log" | tail -30; echo "---- server log"; tail -15 "$tmp/server.log"; }
+rm -rf "$short_c"
+on b 0 "B disconnects again" "" -- --vault "$VB" vault disconnect
+
 echo "== the token never shows"
 check "not in any output" '! grep -q "$TOKEN" "$all_out"'
 check "not in either config folder" '! grep -rq "$TOKEN" "$tmp/a" "$tmp/b"'

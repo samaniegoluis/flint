@@ -18,6 +18,10 @@ import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
 import { MAC_MOD_KEYS, MOD_TARGETS, modMapOf, modMapText, type MacModKey, type ModTarget } from '../lib/rdpInput';
 import { AccessSettings } from '../access/AccessSettings';
 import { GRAPHICS_MODES } from '../lib/rdpStats';
+import { useSync } from '../sync/SyncProvider';
+import { ConnectServerModal } from '../sync/ConnectServerModal';
+import { ReplaceTokenModal } from '../sync/ReplaceTokenModal';
+import { agoLabel, SYNC_LABEL } from '../lib/sync';
 
 export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'about';
 
@@ -384,6 +388,84 @@ function LockAfterRow() {
 
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+const CHECK_EVERY: { value: number; label: string }[] = [
+  { value: 0, label: 'Only on changes and at unlock' },
+  { value: 60, label: '1 min' },
+  { value: 300, label: '5 min' },
+  { value: 900, label: '15 min' },
+];
+
+// Settings → Vault → Server (milestone 44, designs 23b1, 23b3): the vault's server,
+// its state, how often to check, the token and Disconnect.
+function ServerRow({ onConfirm, onChangePassword }: { onConfirm: (c: Confirm) => void; onChangePassword: () => void }) {
+  const { notify } = useApp();
+  const sync = useSync();
+  const [s, set] = useSetting();
+  const [connecting, setConnecting] = useState(false);
+  const [replacing, setReplacing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const st = sync.status;
+  const syncNow = async () => { setBusy(true); await sync.syncNow(); setBusy(false); };
+  // Kept across the switch to Connected, so its outcome (Uploaded, Merged) stays up.
+  const connectModal = connecting && <ConnectServerModal onClose={() => setConnecting(false)} onConnected={() => { sync.refresh().catch(() => {}); }}
+    onChangePassword={() => { setConnecting(false); onChangePassword(); }} />;
+  if (!st) {
+    return (
+      <Row title="Server" desc="Keep this vault in step across your machines through a server you run. The server stores only the encrypted file, never the key.">
+        <div className="row" style={{ gap: 'var(--sp-3)' }} data-server="off">
+          <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Not connected</span>
+          <span className="grow" />
+          <button className="btn btn-secondary btn-sm" data-connect-server onClick={() => setConnecting(true)}><Icon name="server" size="sm" />Connect to a server…</button>
+        </div>
+        {connectModal}
+      </Row>
+    );
+  }
+  const state = sync.state ?? 'in_step';
+  const tone = state === 'merged' ? 'accent-t' : state === 'password' || state === 'attention' ? 'warn-t' : 'muted';
+  return (
+    <Row title="Server" desc="The server stores only the encrypted file and a version number.">
+      <div className="col grow" style={{ gap: 'var(--sp-3)', minWidth: 0 }} data-server="on">
+        <div className="row" style={{ gap: 'var(--sp-3)' }}>
+          <span className="mono strong trunc" title={st.url}>{st.url}</span>
+          <span className="grow" />
+          <button className="btn btn-secondary btn-sm" data-sync-now onClick={() => syncNow().catch(() => {})} disabled={busy}><Icon name="reconnect" size="sm" />{busy ? 'Syncing…' : 'Sync now'}</button>
+        </div>
+        <div className="row" style={{ gap: 'var(--sp-2)', fontSize: 'var(--fs-sm)' }} data-sync-state={state}>
+          <Icon name={state === 'offline' ? 'cloud-off' : 'cloud'} size="sm" className={tone} />
+          <span className={tone === 'muted' ? '' : tone}>{SYNC_LABEL[state]} · {agoLabel(st.last_sync, sync.now)}</span>
+          <span className="faint mono" style={{ fontSize: 'var(--fs-xs)' }}>· version {st.version.toLocaleString('en-US')}</span>
+          {state === 'password' && <button className="btn btn-ghost btn-sm" onClick={sync.askPassword}>Type the new password…</button>}
+        </div>
+        {(state === 'attention' || state === 'offline') && sync.lastError && <span className="hint">{sync.lastError.replace(/^[a-z_]+: /, '')}</span>}
+        <div className="row" style={{ gap: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
+          <span style={{ whiteSpace: 'nowrap' }}>Check every</span>
+          <div className="seg" role="radiogroup" aria-label="Check every">
+            {CHECK_EVERY.map((o) => (
+              <button key={o.value} type="button" role="radio" aria-checked={s.sync_interval === o.value} aria-pressed={s.sync_interval === o.value} onClick={() => set({ sync_interval: o.value })}>{o.label}</button>
+            ))}
+          </div>
+        </div>
+        <div className="row" style={{ gap: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
+          <span>Token</span>
+          <span className="badge ok"><Icon name="check" size="xs" />Saved in the keychain</span>
+          <span className="grow" />
+          <button className="btn btn-ghost btn-sm" data-replace-token onClick={() => setReplacing(true)}>Replace token…</button>
+          <button className="btn btn-ghost btn-sm" data-disconnect-server onClick={() => onConfirm({
+            title: 'Disconnect this vault from its server?',
+            body: 'This machine stops syncing it. The local copy stays as it is and keeps working, the server keeps its copy, and nothing is deleted.',
+            action: 'Disconnect',
+            run: async () => { await api.remoteDisconnect(); notify('This machine no longer syncs the vault'); await sync.refresh(); },
+          })}>Disconnect…</button>
+        </div>
+      </div>
+      {connectModal}
+      {replacing && <ReplaceTokenModal url={st.url} onClose={() => setReplacing(false)} onReplaced={() => { sync.syncNow().catch(() => {}); }} />}
+    </Row>
+  );
+}
+
+
 function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (c: Confirm) => void }) {
   const { vault, catalog, os, refreshCatalog, notify, closeVault } = useApp();
   const [st, setSt] = useState<VaultStatus | null>(null);
@@ -423,6 +505,7 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
           })}>Forget on this device</button>}
         </div>
       </Row>
+      <ServerRow onConfirm={onConfirm} onChangePassword={() => setChanging(true)} />
       <Row title="Lock" desc="Clears the vault key from memory. Open sessions keep running behind the lock screen; the flint CLI and new sessions wait until you unlock with the master password.">
         <div><button className="btn btn-secondary" onClick={onLock}><Icon name="lock" size="sm" />Lock now<Kbd action="lock" /></button></div>
       </Row>

@@ -5,12 +5,13 @@
 export type Os = 'mac' | 'linux';
 
 export type Action =
-  | 'palette' | 'gotoHost' | 'switchVault' | 'openVault' | 'createVault'
+  | 'palette' | 'gotoHost' | 'switchVault' | 'openVault' | 'createVault' | 'connectRemote'
   | 'newSession' | 'closeTab' | 'reconnect' | 'duplicate' | 'toggleSidebar'
   | 'splitRight' | 'splitDown' | 'focusNextPane' | 'focusPrevPane'
   | 'layout1' | 'layout2' | 'layout3' | 'layout4'
   | 'viewHosts' | 'viewFiles' | 'viewTunnels' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'newSshHost' | 'newRdpHost' | 'editHost'
   | 'collapseAll' | 'expandAll' | 'fullscreen' | 'fullscreenAll'
+  | 'syncNow' | 'connectServer' | 'disconnectServer' | 'showLastMerge'
   | 'lock' | 'quit' | 'fontBigger' | 'fontSmaller' | 'fontReset' | 'nextRegion' | 'prevRegion'
   | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5' | 'tab6' | 'tab7' | 'tab8' | 'tab9';
 
@@ -35,6 +36,8 @@ const CHORDS: Record<Action, Chord> = {
   switchVault: { code: 'KeyO', shifted: true, label: 'O' },
   openVault: { code: 'KeyO', label: 'O' },
   createVault: { code: 'KeyN', shifted: true, label: 'N' },
+  // Milestone 44 (design 01): beside ⌘O and ⇧⌘O.
+  connectRemote: { code: 'KeyO', alt: true, label: 'O' },
   newSession: { code: 'KeyT', label: 'T' },
   closeTab: { code: 'KeyW', label: 'W' },
   reconnect: { code: 'KeyR', label: 'R' },
@@ -60,6 +63,11 @@ const CHORDS: Record<Action, Chord> = {
   newRdpHost: { none: true, code: '', label: '' },
   editHost: { code: 'KeyI', label: 'I' },
   collapseAll: { none: true, code: '', label: '' },
+  // Milestone 44 (design 23h): the palette's sync commands, no shortcut.
+  syncNow: { none: true, code: '', label: '' },
+  connectServer: { none: true, code: '', label: '' },
+  disconnectServer: { none: true, code: '', label: '' },
+  showLastMerge: { none: true, code: '', label: '' },
   expandAll: { none: true, code: '', label: '' },
   fullscreen: { fullscreen: true, code: 'KeyF', label: 'F' },
   fullscreenAll: { none: true, code: '', label: '' },
@@ -140,6 +148,7 @@ export const ACTION_TITLES: Record<Action, string> = {
   switchVault: 'Switch vault',
   openVault: 'Open vault file',
   createVault: 'Create vault',
+  connectRemote: 'Connect to a remote vault',
   newSession: 'New session',
   closeTab: 'Close pane',
   reconnect: 'Reconnect',
@@ -167,6 +176,10 @@ export const ACTION_TITLES: Record<Action, string> = {
   expandAll: 'Expand all groups',
   fullscreen: 'Full screen',
   fullscreenAll: 'Full screen on all monitors',
+  syncNow: 'Sync vault now',
+  connectServer: 'Connect vault to a server…',
+  disconnectServer: 'Disconnect vault from server…',
+  showLastMerge: 'Show last merge',
   lock: 'Lock vault',
   quit: 'Quit Flint',
   fontBigger: 'Bigger terminal font',

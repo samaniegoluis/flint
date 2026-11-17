@@ -170,7 +170,13 @@ On each machine ([Sync a vault across machines](/guides/remote-vault/)):
 
 - The token lives in the OS keychain, apart from the vault's key (which the CLI never
   reads from it), and travels only to the server, in the `Authorization` header. It is
-  never printed, logged, written to the config folder or part of an error.
+  never printed, logged, written to the config folder or part of an error. Typed or
+  pasted in the desktop app, it goes from the form to the keychain and never comes back
+  to the page: Settings shows only that one is saved. A replaced token is tried against
+  the server before the old one is dropped.
+- The desktop app's Connect to a remote vault learns only what the server can tell
+  without a key (that a vault is there, its size and version) until the master password
+  you type opens the download.
 - Flint refuses `http://` for any server but this machine, follows no redirect, and
   bounds every request (10 s to connect, 2 minutes in all, 64 MiB at most).
 - A vault connects only with a **Strong** master password, typed for that command.

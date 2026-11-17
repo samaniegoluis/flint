@@ -14,6 +14,7 @@ speaks the Kitty keyboard protocol.
 | Switch vault | ⇧⌘O | Ctrl+Alt+Shift+O |
 | Open vault file | ⌘O | Ctrl+Shift+O |
 | Create vault | ⇧⌘N | Ctrl+Alt+Shift+N |
+| Connect to a remote vault | ⌥⌘O | Ctrl+Alt+O |
 | New session (pick a host; always a new tab) | ⌘T | Ctrl+Shift+T |
 | Close the focused pane (the last one closes the tab) | ⌘W | Ctrl+Shift+W |
 | Go to tab 1–9 | ⌘1 … ⌘9 | Ctrl+Shift+1 … 9 |
