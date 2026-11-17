@@ -64,34 +64,70 @@ fn (self: TestCrypto) wipe(buf: []byte) {
 fn (self: TestCrypto) wipe_text(text: str) {
 }
 
-// Versions in memory; `race` makes the next write find another writer first.
+// Versions in memory, every vault's in one list; `race` makes the next write find
+// another writer first.
 type MemStore struct {
     versions: []BlobVersion
     datas:    []str
+    labels:   []LabelBody
+    label_of: []str
     race:     bool
     fail:     bool
 }
 
-fn (self: MemStore) blob_head() -> BlobVersion! {
+fn (self: MemStore) blob_vaults() -> []ServerVault! {
     if self.fail {
         return error(coded(ERR_IO, "disk gone"))
     }
-    if self.versions.len() == 0 {
-        return BlobVersion{ version: 0, vault_id: "", size: 0, stored_at: 0 }
+    mut ids: []str = []
+    for v in self.versions {
+        mut seen := false
+        for id in ids {
+            if id == v.vault_id {
+                seen = true
+            }
+        }
+        if !seen {
+            ids.push(v.vault_id)
+        }
     }
-    return self.versions[self.versions.len() - 1]
+    mut found: []ServerVault = []
+    for id in ids {
+        head := try self.blob_head(id)
+        mut label := ""
+        for i in 0..self.label_of.len() {
+            if self.label_of[i] == id {
+                label = self.labels[i].label
+            }
+        }
+        found.push(ServerVault{ id: id, label: label, version: head.version, size: head.size, updated_at: head.stored_at })
+    }
+    return found
 }
 
-fn (self: MemStore) blob_read(version: i64) -> str! {
+fn (self: MemStore) blob_head(vault_id: str) -> BlobVersion! {
+    if self.fail {
+        return error(coded(ERR_IO, "disk gone"))
+    }
+    mut head := BlobVersion{ version: 0, vault_id: vault_id, size: 0, stored_at: 0 }
+    for v in self.versions {
+        if v.vault_id == vault_id {
+            head = v
+        }
+    }
+    return head
+}
+
+fn (self: MemStore) blob_read(vault_id: str, version: i64) -> str! {
     for i in 0..self.versions.len() {
-        if self.versions[i].version == version {
+        if self.versions[i].vault_id == vault_id && self.versions[i].version == version {
             return self.datas[i]
         }
     }
     return error(coded(ERR_NOT_FOUND, "no version {version}"))
 }
 
-fn (mut self: MemStore) blob_write(version: i64, vault_id: str, data: str, now_ms: i64) -> void! {
+fn (mut self: MemStore) blob_write(vault_id: str, version: i64, data: str, now_ms: i64) -> void! {
     if self.race {
         self.race = false
         self.versions.push(BlobVersion{ version: version, vault_id: vault_id, size: 1, stored_at: now_ms })
@@ -102,16 +138,34 @@ fn (mut self: MemStore) blob_write(version: i64, vault_id: str, data: str, now_m
     self.datas.push(data)
 }
 
-fn (self: MemStore) blob_versions() -> []BlobVersion! {
+fn (self: MemStore) blob_versions(vault_id: str) -> []BlobVersion! {
     mut newest: []BlobVersion = []
     for k in 0..self.versions.len() {
-        newest.push(self.versions[self.versions.len() - 1 - k])
+        v := self.versions[self.versions.len() - 1 - k]
+        if v.vault_id == vault_id {
+            newest.push(v)
+        }
     }
     return newest
 }
 
+fn (mut self: MemStore) blob_set_label(vault_id: str, label: str) -> void! {
+    head := try self.blob_head(vault_id)
+    if head.version == 0 {
+        return error(coded(ERR_NOT_FOUND, "no vault {vault_id}"))
+    }
+    for i in 0..self.label_of.len() {
+        if self.label_of[i] == vault_id {
+            self.labels[i] = LabelBody{ label: label }
+            return
+        }
+    }
+    self.label_of.push(vault_id)
+    self.labels.push(LabelBody{ label: label })
+}
+
 fn new_mem_store() -> MemStore {
-    return MemStore{ versions: [], datas: [], race: false, fail: false }
+    return MemStore{ versions: [], datas: [], labels: [], label_of: [], race: false, fail: false }
 }
 
 TOKEN: str = "0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -310,8 +364,11 @@ test "another path gets 404 and another method 405, after the token" {
     mut store := new_mem_store()
     mut gate := new_server_gate()
     mut p := rq("GET", "", "")
-    p.path = "/v1/vaults"
+    p.path = "/v2/vault"
     assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, p, 1, 1).status, i32(404))
+    mut q := rq("GET", "", "")
+    q.path = "/v1/vaults/not-an-id"
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, q, 1, 1).status, i32(404))
     assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("DELETE", "", ""), 1, 1).status, i32(405))
     mut anon := rq("DELETE", "", "")
     anon.authorization = ""
@@ -343,26 +400,174 @@ test "a store that fails answers 500 without its reason" {
 
 test "restore makes a kept version the newest as a new version" {
     mut store := new_mem_store()
-    try store.blob_write(1, VID, "one", 10)
-    try store.blob_write(2, VID, "two", 20)
-    try store.blob_write(3, VID, "three", 30)
-    v := try restore_vault_version(mut store, 1, 40)
+    try store.blob_write(VID, 1, "one", 10)
+    try store.blob_write(VID, 2, "two", 20)
+    try store.blob_write(VID, 3, "three", 30)
+    try store.blob_write(VID2, 1, "other", 35)
+    v := try restore_vault_version(mut store, VID, 1, 40)
     assert_eq(v.version, i64(4))
-    assert_eq(try store.blob_read(4), "one")
-    assert_eq((try store.blob_head()).vault_id, VID)
+    assert_eq(try store.blob_read(VID, 4), "one")
+    assert_eq((try store.blob_head(VID)).vault_id, VID)
+    assert_eq((try store.blob_head(VID2)).version, i64(1))
     mut codes: []str = []
-    restore_vault_version(mut store, 4, 50) or err {
+    restore_vault_version(mut store, VID, 4, 50) or err {
         codes.push(error_code_of(err.message()))
     }
-    restore_vault_version(mut store, 9, 50) or err {
+    restore_vault_version(mut store, VID, 9, 50) or err {
         codes.push(error_code_of(err.message()))
     }
     mut empty := new_mem_store()
-    restore_vault_version(mut empty, 1, 50) or err {
+    restore_vault_version(mut empty, VID, 1, 50) or err {
         codes.push(error_code_of(err.message()))
     }
     assert_eq(codes.len(), usize(3))
     assert_eq(codes[0], ERR_INVALID)
     assert_eq(codes[1], ERR_NOT_FOUND)
     assert_eq(codes[2], ERR_NOT_FOUND)
+}
+
+// A request to the vault `id` under `/v1/vaults/<id>`.
+fn vq(id: str, method: str, if_match: str, body: str) -> ServerRequest {
+    mut r := rq(method, if_match, body)
+    r.path = SERVER_VAULTS_PATH + "/" + id
+    r.vault_id = id
+    return r
+}
+
+fn vq_first(id: str, body: str) -> ServerRequest {
+    mut r := vq(id, "PUT", "", body)
+    r.if_none_match = "*"
+    return r
+}
+
+fn list_req() -> ServerRequest {
+    mut r := rq("GET", "", "")
+    r.path = SERVER_VAULTS_PATH
+    r.vault_id = ""
+    return r
+}
+
+test "one server keeps several vaults, each with its own versions" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, vq(VID, "GET", "", ""), 1, 1).status, i32(404))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID, "a1"), 2, 2).version, i64(1))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID2, "b1"), 3, 3).version, i64(1))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, vq(VID, "PUT", "\"1\"", "a2"), 4, 4).version, i64(2))
+    // Each vault's versions are its own: VID2 is still at 1, and a stale upload of it conflicts at 1.
+    b := serve_vault_request(crypto, mut store, mut gate, cfg, vq(VID2, "GET", "", ""), 5, 5)
+    assert_eq(b.body, "b1")
+    assert_eq(b.version, i64(1))
+    assert_eq(b.vault_id, VID2)
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, vq(VID2, "PUT", "\"2\"", "x"), 6, 6).status, i32(409))
+    mut nm := vq(VID, "GET", "", "")
+    nm.if_none_match = "\"2\""
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, nm, 7, 7).status, i32(304))
+    // The id in the header must be the one the path names.
+    mut mixed := vq(VID, "PUT", "\"2\"", "y")
+    mixed.vault_id = VID2
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, mixed, 8, 8).status, i32(400))
+    // The list: ids, versions, sizes and times, no blob.
+    l := serve_vault_request(crypto, mut store, mut gate, cfg, list_req(), 9, 9)
+    assert_eq(l.status, i32(200))
+    got := try json.parse[VaultsBody](l.body)
+    assert_eq(got.vaults.len(), usize(2))
+    assert_eq(got.vaults[0].id, VID)
+    assert_eq(got.vaults[0].version, i64(2))
+    assert_eq(got.vaults[0].updated_at, i64(4))
+    assert(!l.body.contains("a2"))
+    // Still behind the token.
+    mut anon := list_req()
+    anon.authorization = ""
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, anon, 10, 10).status, i32(401))
+}
+
+test "a label is set, listed, cleared and checked; a vault not stored has none" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    mut put := vq(VID, "PUT", "", "\{\"label\":\"Work\"\}")
+    put.path = SERVER_VAULTS_PATH + "/" + VID + "/label"
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, put, 1, 1).status, i32(404))
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID, "a1"), 2, 2)
+    r := serve_vault_request(crypto, mut store, mut gate, cfg, put, 3, 3)
+    assert_eq(r.status, i32(200))
+    assert_eq(r.note, "")
+    l := try json.parse[VaultsBody](serve_vault_request(crypto, mut store, mut gate, cfg, list_req(), 4, 4).body)
+    assert_eq(l.vaults[0].label, "Work")
+    mut bad := put
+    bad.body = "\{\"label\":\" padded \"\}"
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, bad, 5, 5).status, i32(400))
+    bad.body = "not json"
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, bad, 5, 5).status, i32(400))
+    mut get := put
+    get.method = "GET"
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, get, 5, 5).status, i32(405))
+    mut clear := put
+    clear.body = "\{\"label\":\"\"\}"
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, clear, 6, 6).status, i32(200))
+    l2 := try json.parse[VaultsBody](serve_vault_request(crypto, mut store, mut gate, cfg, list_req(), 7, 7).body)
+    assert_eq(l2.vaults[0].label, "")
+}
+
+test "the single-vault path serves the one vault, and asks to update when there are several" {
+    crypto := TestCrypto{ seed: 1 }
+    cfg := test_config()
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    // A vault connected through the new path is the old clients' one vault.
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID, "a1"), 1, 1)
+    old := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 2, 2)
+    assert_eq(old.body, "a1")
+    assert_eq(old.vault_id, VID)
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "a2"), 3, 3).version, i64(2))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, vq(VID, "GET", "", ""), 4, 4).body, "a2")
+    // A second vault: the old path cannot tell which one, so it says to update.
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID2, "b1"), 5, 5)
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 6, 6).status, i32(410))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"2\"", "a3"), 7, 7).status, i32(410))
+}
+
+test "a server keeping its most vaults refuses a new one, never an upload of one it keeps" {
+    crypto := TestCrypto{ seed: 1 }
+    mut cfg := test_config()
+    cfg.max_vaults = 1
+    mut store := new_mem_store()
+    mut gate := new_server_gate()
+    _ := serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID, "a1"), 1, 1)
+    full := serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID2, "b1"), 2, 2)
+    assert_eq(full.status, i32(507))
+    assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, vq(VID, "PUT", "\"1\"", "a2"), 3, 3).status, i32(200))
+}
+
+test "a server command names a vault by id, a prefix, or none when there is one" {
+    mut store := new_mem_store()
+    mut codes: []str = []
+    server_vault_named(mut store, "") or err {
+        codes.push(error_code_of(err.message()))
+    }
+    try store.blob_write(VID, 1, "a", 1)
+    assert_eq((try server_vault_named(mut store, "")).id, VID)
+    try store.blob_write(VID2, 1, "b", 2)
+    server_vault_named(mut store, "") or err {
+        codes.push(error_code_of(err.message()))
+    }
+    assert_eq((try server_vault_named(mut store, "ffee")).id, VID2)
+    assert_eq((try server_vault_named(mut store, VID)).id, VID)
+    server_vault_named(mut store, "abcd") or err {
+        codes.push(error_code_of(err.message()))
+    }
+    server_vault_named(mut store, "ff") or err {
+        codes.push(error_code_of(err.message()))
+    }
+    assert_eq(codes.len(), usize(4))
+    assert_eq(codes[0], ERR_NOT_FOUND)
+    assert_eq(codes[1], ERR_USAGE)
+    assert_eq(codes[2], ERR_NOT_FOUND)
+    assert_eq(codes[3], ERR_USAGE)
+    try set_server_vault_label(mut store, VID2, "Work")
+    assert_eq((try store.blob_vaults())[1].label, "Work")
 }

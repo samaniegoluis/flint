@@ -1,14 +1,16 @@
 package serverfs
 
-// The server's store on disk (milestone 42, D-097).
+// The server's store on disk (milestones 42 and 45, D-097, D-103).
 
 import "core:fs"
+import "core:json"
 import "core:os"
 import "core:time"
 import "core:str"
 import "../../ports"
 
 VID: str = "00112233445566778899aabbccddeeff"
+VID2: str = "ffeeddccbbaa99887766554433221100"
 
 fn temp_store_dir(name: str) -> str {
     mut base := os.getenv("TMPDIR")
@@ -30,7 +32,7 @@ fn every_byte() -> str {
 }
 
 fn uses_port[B: BlobStore](mut b: B) -> i64 {
-    h := b.blob_head() or err {
+    h := b.blob_head(VID) or err {
         return -1
     }
     return h.version
@@ -44,17 +46,17 @@ test "an empty store has version 0, and a write becomes the head" {
     mut s := try new_file_blob_store(dir)
     assert_eq(uses_port(mut s), i64(0))
     data := every_byte()
-    try s.blob_write(1, VID, data, 1234)
-    head := try s.blob_head()
+    try s.blob_write(VID, 1, data, 1234)
+    head := try s.blob_head(VID)
     assert_eq(head.version, i64(1))
     assert_eq(head.vault_id, VID)
     assert_eq(head.size, i64(512))
     assert_eq(head.stored_at, i64(1234))
-    assert(try s.blob_read(1) == data)
+    assert(try s.blob_read(VID, 1) == data)
     // Reopened, it is the same store.
     s2 := try new_file_blob_store(dir)
-    assert_eq((try s2.blob_head()).version, i64(1))
-    assert(!fs.exists(dir + "/.lock"))
+    assert_eq((try s2.blob_head(VID)).version, i64(1))
+    assert(!fs.exists(dir + "/vaults/" + VID + "/.lock"))
 }
 
 test "a write that does not follow the head is refused" {
@@ -63,17 +65,17 @@ test "a write that does not follow the head is refused" {
         _ := fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
-    try s.blob_write(1, VID, "a", 1)
+    try s.blob_write(VID, 1, "a", 1)
     mut code := ""
-    s.blob_write(1, VID, "b", 2) or err {
+    s.blob_write(VID, 1, "b", 2) or err {
         code = error_code_of(err.message())
     }
     assert_eq(code, ERR_CONFLICT)
-    s.blob_write(3, VID, "b", 2) or err {
+    s.blob_write(VID, 3, "b", 2) or err {
         code = "again " + error_code_of(err.message())
     }
     assert_eq(code, "again " + ERR_CONFLICT)
-    assert_eq(try s.blob_read(1), "a")
+    assert_eq(try s.blob_read(VID, 1), "a")
 }
 
 test "the newest ten versions are kept, newest first" {
@@ -83,17 +85,17 @@ test "the newest ten versions are kept, newest first" {
     }
     mut s := try new_file_blob_store(dir)
     for n in 1..=13 {
-        try s.blob_write(n, VID, "v{n}", n * 10)
+        try s.blob_write(VID, n, "v{n}", n * 10)
     }
-    kept := try s.blob_versions()
+    kept := try s.blob_versions(VID)
     assert_eq(i64(kept.len()), SERVER_VERSIONS_KEPT)
     assert_eq(kept[0].version, i64(13))
     assert_eq(kept[9].version, i64(4))
-    assert(!fs.exists(dir + "/versions/3.blob"))
-    assert(!fs.exists(dir + "/versions/3.json"))
-    assert_eq(try s.blob_read(4), "v4")
+    assert(!fs.exists(dir + "/vaults/" + VID + "/versions/3.blob"))
+    assert(!fs.exists(dir + "/vaults/" + VID + "/versions/3.json"))
+    assert_eq(try s.blob_read(VID, 4), "v4")
     mut code := ""
-    s.blob_read(3) or err {
+    s.blob_read(VID, 3) or err {
         code = error_code_of(err.message())
     }
     assert_eq(code, ERR_NOT_FOUND)
@@ -105,17 +107,17 @@ test "a version cut short past the head and a stray tmp file are not listed" {
         _ := fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
-    try s.blob_write(1, VID, "one", 1)
+    try s.blob_write(VID, 1, "one", 1)
     // A crash after writing version 2's files but before the head named it.
-    try fs.write_text(dir + "/versions/2.blob", "half")
-    try fs.write_text(dir + "/versions/2.json", "\{\}")
-    try fs.write_text(dir + "/versions/5.blob.tmp", "x")
-    kept := try s.blob_versions()
+    try fs.write_text(dir + "/vaults/" + VID + "/versions/2.blob", "half")
+    try fs.write_text(dir + "/vaults/" + VID + "/versions/2.json", "\{\}")
+    try fs.write_text(dir + "/vaults/" + VID + "/versions/5.blob.tmp", "x")
+    kept := try s.blob_versions(VID)
     assert_eq(kept.len(), usize(1))
     // The next write takes number 2 over the leftovers and clears the tmp file.
-    try s.blob_write(2, VID, "two", 2)
-    assert_eq(try s.blob_read(2), "two")
-    assert(!fs.exists(dir + "/versions/5.blob.tmp"))
+    try s.blob_write(VID, 2, "two", 2)
+    assert_eq(try s.blob_read(VID, 2), "two")
+    assert(!fs.exists(dir + "/vaults/" + VID + "/versions/5.blob.tmp"))
 }
 
 test "a held lock refuses a writer, and a stale one is taken" {
@@ -124,17 +126,17 @@ test "a held lock refuses a writer, and a stale one is taken" {
         _ := fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
-    try fs.mkdir_all(dir + "/.lock")
+    try fs.mkdir_all(dir + "/vaults/" + VID + "/.lock")
     mut code := ""
-    s.blob_write(1, VID, "a", 1) or err {
+    s.blob_write(VID, 1, "a", 1) or err {
         code = error_code_of(err.message())
     }
     assert_eq(code, ERR_CONFLICT)
-    assert_eq((try s.blob_head()).version, i64(0))
+    assert_eq((try s.blob_head(VID)).version, i64(0))
     // A lock older than the stale limit: left by a process that died.
-    _ := os.command("touch", ["-t", "202001010000", dir + "/.lock"])
-    try s.blob_write(1, VID, "a", 1)
-    assert_eq((try s.blob_head()).version, i64(1))
+    _ := os.command("touch", ["-t", "202001010000", dir + "/vaults/" + VID + "/.lock"])
+    try s.blob_write(VID, 1, "a", 1)
+    assert_eq((try s.blob_head(VID)).version, i64(1))
 }
 
 test "the files are written owner-only" {
@@ -143,14 +145,125 @@ test "the files are written owner-only" {
         _ := fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
-    try s.blob_write(1, VID, "a", 1)
-    r := try os.command("stat", ["-c", "%a", dir + "/versions/1.blob"])
-    r2 := try os.command("stat", ["-f", "%Lp", dir + "/versions/1.blob"])
+    try s.blob_write(VID, 1, "a", 1)
+    r := try os.command("stat", ["-c", "%a", dir + "/vaults/" + VID + "/versions/1.blob"])
+    r2 := try os.command("stat", ["-f", "%Lp", dir + "/vaults/" + VID + "/versions/1.blob"])
     mut mode := r2.stdout
     if r.exit_code == 0 {
         mode = r.stdout
     }
     assert_eq(str.trim(mode), "600")
+}
+
+test "vaults are kept apart, each with its own versions, and listed by id" {
+    dir := temp_store_dir("many")
+    defer {
+        _ := fs.remove(dir)
+    }
+    mut s := try new_file_blob_store(dir)
+    assert_eq((try s.blob_vaults()).len(), usize(0))
+    try s.blob_write(VID2, 1, "two-1", 10)
+    try s.blob_write(VID, 1, "one-1", 20)
+    try s.blob_write(VID, 2, "one-22", 30)
+    all := try s.blob_vaults()
+    assert_eq(all.len(), usize(2))
+    assert_eq(all[0].id, VID)
+    assert_eq(all[0].version, i64(2))
+    assert_eq(all[0].size, i64(6))
+    assert_eq(all[0].updated_at, i64(30))
+    assert_eq(all[1].id, VID2)
+    assert_eq(all[1].version, i64(1))
+    assert_eq(try s.blob_read(VID2, 1), "two-1")
+    assert_eq((try s.blob_versions(VID2)).len(), usize(1))
+    assert_eq((try s.blob_versions(VID)).len(), usize(2))
+    // An unknown vault has version 0 and nothing kept; a malformed id is refused.
+    assert_eq((try s.blob_head("abababababababababababababababab")).version, i64(0))
+    mut code := ""
+    s.blob_head("../etc") or err {
+        code = error_code_of(err.message())
+    }
+    assert_eq(code, ERR_INVALID)
+}
+
+test "a label is kept beside its vault, cleared with an empty one, and checked" {
+    dir := temp_store_dir("label")
+    defer {
+        _ := fs.remove(dir)
+    }
+    mut s := try new_file_blob_store(dir)
+    mut code := ""
+    s.blob_set_label(VID, "Work") or err {
+        code = error_code_of(err.message())
+    }
+    assert_eq(code, ERR_NOT_FOUND)
+    try s.blob_write(VID, 1, "a", 1)
+    try s.blob_set_label(VID, "Work laptop")
+    assert_eq((try s.blob_vaults())[0].label, "Work laptop")
+    s.blob_set_label(VID, "bad\nline") or err {
+        code = "ctl " + error_code_of(err.message())
+    }
+    assert_eq(code, "ctl " + ERR_INVALID)
+    assert_eq((try s.blob_vaults())[0].label, "Work laptop")
+    try s.blob_set_label(VID, "")
+    assert_eq((try s.blob_vaults())[0].label, "")
+    assert(!fs.exists(dir + "/vaults/" + VID + "/label.json"))
+}
+
+// A store as milestone 42 left it: one vault at the top of the data folder.
+fn write_single_vault_store(dir: str) -> void! {
+    try fs.mkdir_all(dir + "/versions")
+    for n in 1..=2 {
+        meta := json.stringify(BlobVersion{ version: n, vault_id: VID, size: 3, stored_at: n * 100 })
+        try fs.write_text(dir + "/versions/{n}.blob", "v{n}!")
+        try fs.write_text(dir + "/versions/{n}.json", meta)
+        if n == 2 {
+            try fs.write_text(dir + "/head.json", meta)
+        }
+    }
+}
+
+test "a store from before milestone 45 moves its vault into a folder of its own" {
+    dir := temp_store_dir("move")
+    defer {
+        _ := fs.remove(dir)
+    }
+    try write_single_vault_store(dir)
+    mut s := try new_file_blob_store(dir)
+    assert(!fs.exists(dir + "/head.json"))
+    assert(!fs.exists(dir + "/versions"))
+    assert_eq((try s.blob_head(VID)).version, i64(2))
+    assert_eq(try s.blob_read(VID, 1), "v1!")
+    assert_eq((try s.blob_versions(VID)).len(), usize(2))
+    // It goes on from there, and a second open has nothing to move.
+    try s.blob_write(VID, 3, "v3!", 300)
+    s2 := try new_file_blob_store(dir)
+    assert_eq((try s2.blob_vaults()).len(), usize(1))
+    assert_eq((try s2.blob_head(VID)).version, i64(3))
+}
+
+test "a move cut short after the versions moved is finished at the next open" {
+    dir := temp_store_dir("move-cut")
+    defer {
+        _ := fs.remove(dir)
+    }
+    try write_single_vault_store(dir)
+    try fs.mkdir_all(dir + "/vaults/" + VID)
+    try fs.rename(dir + "/versions", dir + "/vaults/" + VID + "/versions")
+    s := try new_file_blob_store(dir)
+    assert(!fs.exists(dir + "/head.json"))
+    assert_eq((try s.blob_head(VID)).version, i64(2))
+    assert_eq(try s.blob_read(VID, 2), "v2!")
+}
+
+test "a store from before that never got a vault leaves no folder behind" {
+    dir := temp_store_dir("move-empty")
+    defer {
+        _ := fs.remove(dir)
+    }
+    try fs.mkdir_all(dir + "/versions")
+    s := try new_file_blob_store(dir)
+    assert(!fs.exists(dir + "/versions"))
+    assert_eq((try s.blob_vaults()).len(), usize(0))
 }
 
 test "a connection's peer address is read from its socket" {

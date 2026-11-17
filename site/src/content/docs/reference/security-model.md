@@ -152,8 +152,11 @@ every unlock are removed once.
 
 ## The remote vault server
 
-[`flint-vault-server`](/guides/vault-server/) stores the vault file exactly as Flint
-uploads it, encrypted in full, with a version and the vault's id. It never receives the
+[`flint-vault-server`](/guides/vault-server/) stores each vault file exactly as Flint
+uploads it, encrypted in full, with a version and the vault's id. One server keeps all of
+one person's connected vaults, each under its id. Beside each it keeps the **label** you
+may give a vault when you connect it, in clear: it is the one thing the server holds that
+you wrote, so leave it empty when a vault's name is itself private. It never receives the
 master password or any key and never opens the file, so whoever holds the server or its
 token reads only ciphertext; your master password is then what stands against an offline
 attack, which is why Flint asks for a strong one before it connects.
@@ -161,10 +164,11 @@ attack, which is why Flint asks for a strong one before it connects.
 The token says who may talk to the server. The server can keep only its BLAKE2b hash
 (libsodium), compares it in constant time, refuses a short one at start, and locks a
 client out after 10 wrong tokens in 10 minutes. Every request has a size cap and a
-deadline, and each client a rate limit. The log never holds a token, a header's value or
-the file. A stolen token can still upload, so the server keeps the last 10 versions and
-any of them can be [restored](/guides/vault-server/#restore-an-older-version); a machine
-never replaces its own copy with a download, it merges it.
+deadline, and each client a rate limit; the number of vaults is capped too. The log never
+holds a token, a header's value, a label or a file. A stolen token can still upload to
+every vault on that server, so the server keeps the last 10 versions of each and any of
+them can be [restored](/guides/vault-server/#restore-an-older-version); a machine never
+replaces its own copy with a download, it merges it.
 
 On each machine ([Sync a vault across machines](/guides/remote-vault/)):
 
@@ -174,9 +178,9 @@ On each machine ([Sync a vault across machines](/guides/remote-vault/)):
   pasted in the desktop app, it goes from the form to the keychain and never comes back
   to the page: Settings shows only that one is saved. A replaced token is tried against
   the server before the old one is dropped.
-- The desktop app's Connect to a remote vault learns only what the server can tell
-  without a key (that a vault is there, its size and version) until the master password
-  you type opens the download.
+- The desktop app's Connect to a remote vault (and `flint vault connect --list`) learns
+  only what the server can tell without a key (each vault's id, label, size, version and
+  last change) until the master password you type opens the download.
 - Flint refuses `http://` for any server but this machine, follows no redirect, and
   bounds every request (10 s to connect, 2 minutes in all, 64 MiB at most).
 - A vault connects only with a **Strong** master password, typed for that command.

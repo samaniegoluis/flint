@@ -6,8 +6,11 @@ package domain
 
 import "core:str"
 
-// The one resource of protocol v1 (the server's SERVER_VAULT_PATH).
+// Protocol v1's resources (the server's SERVER_VAULT_PATH and SERVER_VAULTS_PATH):
+// the single vault of milestones 42-44, and the vaults a server keeps by id since
+// milestone 45 (D-103), which every sync uses.
 REMOTE_VAULT_PATH: str = "/v1/vault"
+REMOTE_VAULTS_PATH: str = "/v1/vaults"
 
 // Seconds between checks for another machine's changes while the app holds the
 // vault unlocked (Settings `sync_interval`); 0 checks only at unlock, after a change,
@@ -104,6 +107,8 @@ fn check_remote_url(raw: str) -> str! {
     }
     if rest.ends_with(REMOTE_VAULT_PATH) {
         rest = rest.substr(0, rest.len() - REMOTE_VAULT_PATH.len())
+    } else if rest.ends_with(REMOTE_VAULTS_PATH) {
+        rest = rest.substr(0, rest.len() - REMOTE_VAULTS_PATH.len())
     }
     for rest.ends_with("/") {
         rest = rest.substr(0, rest.len() - 1)
@@ -143,9 +148,19 @@ fn check_remote_url(raw: str) -> str! {
     return "http://" + rest
 }
 
-// The URL of the vault resource on the server at `base` (check_remote_url's).
-fn remote_vault_url(base: str) -> str {
-    return base + REMOTE_VAULT_PATH
+// The URL of the vault `vault_id` on the server at `base` (check_remote_url's).
+fn remote_vault_url(base: str, vault_id: str) -> str {
+    return base + REMOTE_VAULTS_PATH + "/" + vault_id
+}
+
+// The URL of the list of vaults the server at `base` keeps.
+fn remote_vaults_url(base: str) -> str {
+    return base + REMOTE_VAULTS_PATH
+}
+
+// The URL of the label of the vault `vault_id` on the server at `base`.
+fn remote_label_url(base: str, vault_id: str) -> str {
+    return remote_vault_url(base, vault_id) + "/label"
 }
 
 // The Argon2id salt of a vault file: its first 16 bytes, where SQLCipher keeps it.

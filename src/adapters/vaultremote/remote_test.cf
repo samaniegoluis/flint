@@ -10,10 +10,14 @@ import "../../domain"
 VID_A: str = "00112233445566778899aabbccddeeff"
 VID_B: str = "ffeeddccbbaa99887766554433221100"
 
-fn vault_url() -> str {
+fn base_url() -> str {
     base := os.getenv("FLINT_TEST_VAULT_URL")
     assert(base.len() > 0, "run through scripts/test.sh, which starts a vault server")
-    return remote_vault_url(base)
+    return base
+}
+
+fn vault_url() -> str {
+    return remote_vault_url(base_url(), VID_A)
 }
 
 fn token() -> str {
@@ -52,9 +56,24 @@ test "GET, PUT, 304, 409, 412 and 401 over HTTP, with headers both ways" {
     assert(!late.stored)
     assert_eq(late.version, i64(2))
 
+    // A second vault beside the first, with its own versions (milestone 45).
+    b_url := remote_vault_url(base_url(), VID_B)
+    assert(!(try r.remote_get(b_url, token(), 0)).found)
+    b := try r.remote_put(b_url, token(), VID_B, 0, bytes_of("other"))
+    assert_eq(b.version, i64(1))
+    try r.remote_set_label(remote_label_url(base_url(), VID_B), token(), "Work")
+    list := try r.remote_list(remote_vaults_url(base_url()), token())
+    assert_eq(list.len(), usize(2))
+    assert_eq(list[0].id, VID_A)
+    assert_eq(list[0].version, i64(2))
+    assert_eq(list[0].label, "")
+    assert_eq(list[1].id, VID_B)
+    assert_eq(list[1].label, "Work")
+    assert_eq(list[1].size, i64(5))
+
     mut msg := ""
-    r.remote_put(url, token(), VID_B, 2, bytes_of("other")) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_CONFLICT)
+    r.remote_set_label(remote_label_url(base_url(), "abababababababababababababababab"), token(), "x") or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
 
     msg = ""
     r.remote_get(url, "wrong-token-wrong-token-wrong-token", 0) or err { msg = "{err.message()}" }
@@ -70,6 +89,10 @@ test "an unreachable server is network, a path that is not a vault server is not
     base := os.getenv("FLINT_TEST_VAULT_URL")
     msg = ""
     r.remote_get(base + "/nope", token(), 0) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    assert(msg.contains("0.12 or later"))
+    msg = ""
+    r.remote_list(base + "/nope", token()) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_NOT_FOUND)
 }
 

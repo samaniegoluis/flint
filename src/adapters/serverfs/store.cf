@@ -1,18 +1,23 @@
 package serverfs
 
-// The `BlobStore` port as files in one folder, the server's volume (milestone 42,
-// D-097):
+// The `BlobStore` port as files in one folder, the server's volume (milestones 42 and
+// 45, D-097, D-103), a folder per vault:
 //
-//   <dir>/head.json             the newest version: number, vault id, size, time
-//   <dir>/versions/<n>.blob     each version's file, as it was uploaded (encrypted)
-//   <dir>/versions/<n>.json     its number, vault id, size and time
-//   <dir>/.lock                 a folder, held while a version is written
+//   <dir>/vaults/<id>/head.json            the newest version: number, id, size, time
+//   <dir>/vaults/<id>/versions/<n>.blob    each version's file, as uploaded (encrypted)
+//   <dir>/vaults/<id>/versions/<n>.json    its number, vault id, size and time
+//   <dir>/vaults/<id>/label.json           the label the person chose, if any
+//   <dir>/vaults/<id>/.lock                a folder, held while a version is written
 //
 // A version is written to `.tmp` files flushed to disk, renamed into place, and only
 // then named by `head.json`, so a crash or a copy taken meanwhile never sees half a
 // version. The lock keeps `flint-vault-server restore` and the running server from
 // writing the same number; a lock older than STORE_LOCK_STALE_MS is taken as left by
 // a process that died.
+//
+// A store from before milestone 45 kept one vault at the top (`<dir>/head.json`,
+// `<dir>/versions/`); opening it moves that vault into its folder, `versions/` first
+// and `head.json` last, so a move cut short is finished at the next start.
 
 // CFIRE-UPSTREAM: CF-143, CF-031
 import cpp "flint_server.hpp" @pkg("flint-server-native")
@@ -25,22 +30,86 @@ import "../../domain"
 STORE_LOCK_STALE_MS: i64 = 30000
 
 type FileBlobStore struct {
-    dir: str
+    dir:   str
+    // The id of a vault moved from a store from before milestone 45 when it opened;
+    // "" otherwise. For the server's log.
+    moved: str
 }
 
-// Opens (or starts) the store in `dir`.
+type LabelFile struct {
+    label: str `json:"label"`
+}
+
+// Opens (or starts) the store in `dir`, moving a store from before milestone 45 into
+// the layout of one folder per vault.
 fn new_file_blob_store(dir: str) -> FileBlobStore! {
     if dir.len() == 0 {
         return error(coded(ERR_USAGE, "the data folder is not set"))
     }
-    fs.mkdir_all(dir + "/versions") or err {
-        return error(coded(ERR_IO, "cannot create {dir}/versions"))
+    fs.mkdir_all(dir + "/vaults") or err {
+        return error(coded(ERR_IO, "cannot create {dir}/vaults"))
     }
-    return FileBlobStore{ dir: dir }
+    mut s := FileBlobStore{ dir: dir, moved: "" }
+    s.moved = try s.move_single_vault()
+    return s
 }
 
-fn (self: FileBlobStore) version_path(version: i64, ext: str) -> str {
-    return "{self.dir}/versions/{version}.{ext}"
+// What `move_single_vault` found: "" (nothing to move) or the id moved.
+fn (self: FileBlobStore) move_single_vault() -> str! {
+    top_head := self.dir + "/head.json"
+    top_versions := self.dir + "/versions"
+    if !fs.exists(top_head) {
+        // A store from before that never received a vault left an empty folder.
+        if fs.exists(top_versions) {
+            names := fs.list_dir(top_versions) or err {
+                return ""
+            }
+            if names.len() == 0 {
+                _ := fs.remove(top_versions)
+            }
+        }
+        return ""
+    }
+    text := fs.read_text(top_head) or err {
+        return error(coded(ERR_IO, "cannot read {top_head}"))
+    }
+    head := json.parse[BlobVersion](text) or err {
+        return error(coded(ERR_IO, "{top_head} is not a version record"))
+    }
+    if !valid_vault_id(head.vault_id) {
+        return error(coded(ERR_IO, "{top_head} names no vault id"))
+    }
+    target := self.vault_dir(head.vault_id)
+    fs.mkdir_all(target) or err {
+        return error(coded(ERR_IO, "cannot create {target}"))
+    }
+    if fs.exists(top_versions) && !fs.exists(target + "/versions") {
+        fs.rename(top_versions, target + "/versions") or err {
+            return error(coded(ERR_IO, "cannot move {top_versions} to {target}"))
+        }
+    }
+    try sync_folder(self.dir)
+    fs.rename(top_head, target + "/head.json") or err {
+        return error(coded(ERR_IO, "cannot move {top_head} to {target}"))
+    }
+    _ := fs.remove(self.dir + "/.lock")
+    try sync_folder(target)
+    try sync_folder(self.dir)
+    return head.vault_id
+}
+
+fn (self: FileBlobStore) vault_dir(vault_id: str) -> str {
+    return "{self.dir}/vaults/{vault_id}"
+}
+
+fn (self: FileBlobStore) version_path(vault_id: str, version: i64, ext: str) -> str {
+    return "{self.dir}/vaults/{vault_id}/versions/{version}.{ext}"
+}
+
+fn check_id(vault_id: str) -> void! {
+    if !valid_vault_id(vault_id) {
+        return error(coded(ERR_INVALID, "not a vault id: {vault_id}"))
+    }
 }
 
 fn write_synced(path: str, data: str) -> void! {
@@ -80,10 +149,43 @@ fn replace_synced(path: str, data: str) -> void! {
     }
 }
 
-fn (self: FileBlobStore) blob_head() -> BlobVersion! {
-    path := self.dir + "/head.json"
+fn (self: FileBlobStore) blob_vaults() -> []ServerVault! {
+    names := fs.list_dir(self.dir + "/vaults") or err {
+        return error(coded(ERR_IO, "cannot list {self.dir}/vaults"))
+    }
+    mut found: []ServerVault = []
+    for name in names {
+        if !valid_vault_id(name) {
+            continue
+        }
+        head := try self.blob_head(name)
+        if head.version == 0 {
+            continue
+        }
+        found.push(ServerVault{ id: name, label: self.label_of(name), version: head.version, size: head.size, updated_at: head.stored_at })
+    }
+    return found
+}
+
+fn (self: FileBlobStore) label_of(vault_id: str) -> str {
+    path := self.vault_dir(vault_id) + "/label.json"
     if !fs.exists(path) {
-        return BlobVersion{ version: 0, vault_id: "", size: 0, stored_at: 0 }
+        return ""
+    }
+    text := fs.read_text(path) or err {
+        return ""
+    }
+    f := json.parse[LabelFile](text) or err {
+        return ""
+    }
+    return f.label
+}
+
+fn (self: FileBlobStore) blob_head(vault_id: str) -> BlobVersion! {
+    try check_id(vault_id)
+    path := self.vault_dir(vault_id) + "/head.json"
+    if !fs.exists(path) {
+        return BlobVersion{ version: 0, vault_id: vault_id, size: 0, stored_at: 0 }
     }
     text := fs.read_text(path) or err {
         return error(coded(ERR_IO, "cannot read {path}"))
@@ -93,8 +195,9 @@ fn (self: FileBlobStore) blob_head() -> BlobVersion! {
     }
 }
 
-fn (self: FileBlobStore) blob_read(version: i64) -> str! {
-    path := self.version_path(version, "blob")
+fn (self: FileBlobStore) blob_read(vault_id: str, version: i64) -> str! {
+    try check_id(vault_id)
+    path := self.version_path(vault_id, version, "blob")
     if !fs.exists(path) {
         return error(coded(ERR_NOT_FOUND, "version {version} is not kept"))
     }
@@ -103,9 +206,9 @@ fn (self: FileBlobStore) blob_read(version: i64) -> str! {
     }
 }
 
-// Takes the lock, or says another writer holds it.
-fn (self: FileBlobStore) store_lock() -> void! {
-    lock := self.dir + "/.lock"
+// Takes the vault's lock, or says another writer holds it.
+fn (self: FileBlobStore) store_lock(vault_id: str) -> void! {
+    lock := self.vault_dir(vault_id) + "/.lock"
     for attempt in 0..2 {
         mut rc: i32 = 0
         mut reason := ""
@@ -132,43 +235,71 @@ fn (self: FileBlobStore) store_lock() -> void! {
     return error(coded(ERR_CONFLICT, "another writer holds {lock}"))
 }
 
-fn (self: FileBlobStore) store_unlock() {
-    _ := fs.remove(self.dir + "/.lock")
+fn (self: FileBlobStore) store_unlock(vault_id: str) {
+    _ := fs.remove(self.vault_dir(vault_id) + "/.lock")
 }
 
-fn (mut self: FileBlobStore) blob_write(version: i64, vault_id: str, data: str, now_ms: i64) -> void! {
-    try self.store_lock()
+fn (mut self: FileBlobStore) blob_write(vault_id: str, version: i64, data: str, now_ms: i64) -> void! {
+    try check_id(vault_id)
+    vdir := self.vault_dir(vault_id)
+    fs.mkdir_all(vdir + "/versions") or err {
+        return error(coded(ERR_IO, "cannot create {vdir}/versions"))
+    }
+    try self.store_lock(vault_id)
     defer {
-        self.store_unlock()
+        self.store_unlock(vault_id)
     }
     // Under the lock: the version must still follow the head.
-    head := try self.blob_head()
+    head := try self.blob_head(vault_id)
     if head.version != version - 1 {
         return error(coded(ERR_CONFLICT, "version {head.version} was stored meanwhile"))
     }
     rec := BlobVersion{ version: version, vault_id: vault_id, size: i64(data.len()), stored_at: now_ms }
     meta := json.stringify(rec)
-    try replace_synced(self.version_path(version, "blob"), data)
-    try replace_synced(self.version_path(version, "json"), meta)
-    try sync_folder(self.dir + "/versions")
-    try replace_synced(self.dir + "/head.json", meta)
-    try sync_folder(self.dir)
-    self.prune(version)
+    try replace_synced(self.version_path(vault_id, version, "blob"), data)
+    try replace_synced(self.version_path(vault_id, version, "json"), meta)
+    try sync_folder(vdir + "/versions")
+    try replace_synced(vdir + "/head.json", meta)
+    try sync_folder(vdir)
+    if version == 1 {
+        try sync_folder(self.dir + "/vaults")
+    }
+    self.prune(vault_id, version)
+}
+
+fn (mut self: FileBlobStore) blob_set_label(vault_id: str, label: str) -> void! {
+    try check_id(vault_id)
+    try check_vault_label(label)
+    head := try self.blob_head(vault_id)
+    if head.version == 0 {
+        return error(coded(ERR_NOT_FOUND, "the server holds no vault {vault_id}"))
+    }
+    path := self.vault_dir(vault_id) + "/label.json"
+    if label.len() == 0 {
+        if fs.exists(path) {
+            fs.remove(path) or err {
+                return error(coded(ERR_IO, "cannot remove {path}"))
+            }
+        }
+        return
+    }
+    try replace_synced(path, json.stringify(LabelFile{ label: label }))
 }
 
 // Removes the versions past the kept history, and `.tmp` files a crash left behind.
-fn (self: FileBlobStore) prune(head: i64) {
-    names := fs.list_dir(self.dir + "/versions") or err {
+fn (self: FileBlobStore) prune(vault_id: str, head: i64) {
+    vdir := self.vault_dir(vault_id) + "/versions"
+    names := fs.list_dir(vdir) or err {
         return
     }
     for name in names {
         if name.ends_with(".tmp") {
-            _ := fs.remove("{self.dir}/versions/{name}")
+            _ := fs.remove("{vdir}/{name}")
             continue
         }
         n := version_of_name(name)
         if n > 0 && n <= head - SERVER_VERSIONS_KEPT {
-            _ := fs.remove("{self.dir}/versions/{name}")
+            _ := fs.remove("{vdir}/{name}")
         }
     }
 }
@@ -182,10 +313,14 @@ fn version_of_name(name: str) -> i64 {
     return parse_version_tag(stem)
 }
 
-fn (self: FileBlobStore) blob_versions() -> []BlobVersion! {
-    head := try self.blob_head()
-    names := fs.list_dir(self.dir + "/versions") or err {
-        return error(coded(ERR_IO, "cannot list {self.dir}/versions"))
+fn (self: FileBlobStore) blob_versions(vault_id: str) -> []BlobVersion! {
+    head := try self.blob_head(vault_id)
+    if head.version == 0 {
+        return []
+    }
+    vdir := self.vault_dir(vault_id) + "/versions"
+    names := fs.list_dir(vdir) or err {
+        return error(coded(ERR_IO, "cannot list {vdir}"))
     }
     mut found: []BlobVersion = []
     for name in names {
@@ -194,10 +329,10 @@ fn (self: FileBlobStore) blob_versions() -> []BlobVersion! {
         }
         n := version_of_name(name)
         // A version past the head was cut short by a crash before it was named.
-        if n < 1 || n > head.version || !fs.exists(self.version_path(n, "blob")) {
+        if n < 1 || n > head.version || !fs.exists(self.version_path(vault_id, n, "blob")) {
             continue
         }
-        text := fs.read_text("{self.dir}/versions/{name}") or err {
+        text := fs.read_text("{vdir}/{name}") or err {
             continue
         }
         v := json.parse[BlobVersion](text) or err {

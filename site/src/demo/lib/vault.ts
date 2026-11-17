@@ -137,9 +137,22 @@ export interface TokenRequest {
 	ttl: string;
 }
 
+/** A vault the demo's pretend server keeps (milestone 45): what `vault connect` put there. */
+export interface ServedVault {
+	url: string;
+	id: string;
+	label: string;
+	version: number;
+	size: number;
+	/** The demo vault it is a copy of, for `vault connect --to`. */
+	from: string;
+}
+
 export interface World {
 	current: string;
 	vaults: Vault[];
+	/** The vaults on the pretend server, kept after a `vault disconnect` as a real one keeps them. */
+	served?: ServedVault[];
 	/** This terminal was allowed in Flint's window (milestone 12); until a lock. */
 	approved?: boolean;
 }

@@ -157,8 +157,9 @@ touch 13: expect the owner's review there.
 12. Every request on the socket is checked against a live grant or token before its use case
     runs. A privileged step (`--sudo`) is approved one by one, never by a grant.
 13. **(owner review)** The sync server never receives a key, a master password or anything
-    decrypted: its API carries only the encrypted vault file, a version, the vault id and
-    the bearer token. It never logs a blob or a token, compares the token in constant time
+    decrypted: its API carries only the encrypted vault file, a version, the vault id, the
+    bearer token and an optional label the person chose, which the server keeps in clear
+    and never logs (D-103). It never logs a blob or a token, compares the token in constant time
     through libsodium, refuses to start with a weak one, and caps request size and rate.
 14. A sync never loses a change: the client never overwrites its local copy with a
     downloaded one, and never uploads over a version it has not merged. Plain `http://` is

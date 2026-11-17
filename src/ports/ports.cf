@@ -126,10 +126,11 @@ type TunnelStore interface {
     tunnel_drop(id: str) -> void!
 }
 
-// A remote vault server, protocol /v1 (adapters/vaultremote, milestone 43). `url` is
-// the vault resource (remote_vault_url). Every request has a deadline (Principle 8)
-// and carries only the token, a version, the vault id and the encrypted file
-// (Principle 13). Errors: `network` or `timeout` (not reached), `auth` (the token
+// A remote vault server, protocol /v1 (adapters/vaultremote, milestones 43 and 45).
+// `url` is the resource: a vault (remote_vault_url), the list (remote_vaults_url) or
+// a vault's label (remote_label_url). Every request has a deadline (Principle 8) and
+// carries only the token, a version, the vault id, the encrypted file and the label
+// the person chose (Principle 13, D-103). Errors: `network` or `timeout` (not reached), `auth` (the token
 // refused, or the client locked out), `conflict` (the server holds another vault),
 // `refused` (any other refusal: rate limit, size cap, server error).
 type VaultRemote interface {
@@ -137,6 +138,10 @@ type VaultRemote interface {
     remote_get(url: str, token: str, known_version: i64) -> RemoteVault!
     // `base_version` 0 is the first upload (`If-None-Match: *`).
     remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored!
+    // The vaults the server keeps: ids, labels, versions, sizes and times.
+    remote_list(url: str, token: str) -> []ServerVault!
+    // "" clears the label.
+    remote_set_label(url: str, token: str, label: str) -> void!
 }
 
 // What this machine remembers about each connected vault (adapters/config,
@@ -457,16 +462,22 @@ type DesktopSink interface {
     desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch)
 }
 
-// The remote vault server's versions of one vault (adapters/serverstore, milestone 42,
-// D-097): each upload stored whole and as it came, encrypted, next to its version and
-// the vault id; the newest SERVER_VERSIONS_KEPT kept. Version 0 means none stored yet.
-// Errors carry `not_found`, `io` or `conflict` (a store held by another writer).
+// The remote vault server's vaults (adapters/serverfs, milestones 42 and 45, D-097,
+// D-103): each vault under its id, each upload stored whole and as it came,
+// encrypted, next to its version; the newest SERVER_VERSIONS_KEPT kept per vault.
+// Version 0 means the vault is not stored. Errors carry `not_found`, `io` or
+// `conflict` (a vault held by another writer).
 type BlobStore interface {
-    blob_head() -> BlobVersion!
-    blob_read(version: i64) -> str!
-    // Stores `data` as `version` and makes it the head; the caller has checked that
-    // it follows the head. Prunes what is past the kept history.
-    blob_write(version: i64, vault_id: str, data: str, now_ms: i64) -> void!
+    // Every vault kept, with its label and newest version, ordered by id.
+    blob_vaults() -> []ServerVault!
+    blob_head(vault_id: str) -> BlobVersion!
+    blob_read(vault_id: str, version: i64) -> str!
+    // Stores `data` as `version` of `vault_id` and makes it the head; the caller has
+    // checked that it follows the head (version 1 starts the vault). Prunes what is
+    // past the kept history.
+    blob_write(vault_id: str, version: i64, data: str, now_ms: i64) -> void!
     // Newest first.
-    blob_versions() -> []BlobVersion!
+    blob_versions(vault_id: str) -> []BlobVersion!
+    // "" clears it. The vault must be stored.
+    blob_set_label(vault_id: str, label: str) -> void!
 }

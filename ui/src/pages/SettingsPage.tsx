@@ -412,7 +412,7 @@ function ServerRow({ onConfirm, onChangePassword }: { onConfirm: (c: Confirm) =>
     onChangePassword={() => { setConnecting(false); onChangePassword(); }} />;
   if (!st) {
     return (
-      <Row title="Server" desc="Keep this vault in step across your machines through a server you run. The server stores only the encrypted file, never the key.">
+      <Row title="Server" desc="Keep this vault in step across your machines through a server you run. The server stores the encrypted file, never the key.">
         <div className="row" style={{ gap: 'var(--sp-3)' }} data-server="off">
           <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Not connected</span>
           <span className="grow" />
@@ -425,7 +425,7 @@ function ServerRow({ onConfirm, onChangePassword }: { onConfirm: (c: Confirm) =>
   const state = sync.state ?? 'in_step';
   const tone = state === 'merged' ? 'accent-t' : state === 'password' || state === 'attention' ? 'warn-t' : 'muted';
   return (
-    <Row title="Server" desc="The server stores only the encrypted file and a version number.">
+    <Row title="Server" desc="The server stores the encrypted file, its version and id, and the label it was given, if any. Never the key.">
       <div className="col grow" style={{ gap: 'var(--sp-3)', minWidth: 0 }} data-server="on">
         <div className="row" style={{ gap: 'var(--sp-3)' }}>
           <span className="mono strong trunc" title={st.url}>{st.url}</span>

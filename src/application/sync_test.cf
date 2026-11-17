@@ -33,7 +33,7 @@ fn machine_b(crypto: FakeCrypto, remote: FakeRemote, a: Machine) -> Machine! {
     kc := new_fake_keychain()
     links := new_fake_links()
     recents := new_fake_recents()
-    s := try download_remote(crypto, mut store, links, remote, kc, kc, recents, SERVER, "tok", STRONG_PW, "/b/Lab.flint", false, 1000)
+    s := try download_remote(crypto, mut store, links, remote, kc, kc, recents, SERVER, "tok", "", STRONG_PW, "/b/Lab.flint", false, 1000)
     return Machine{ store: store, kc: kc, links: links, recents: recents, session: s }
 }
 
@@ -63,7 +63,7 @@ test "connect uploads to an empty server; a second sync finds nothing to do" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    got := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER + "/", " tok\n", STRONG_PW, 1000)
+    got := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER + "/", " tok\n", STRONG_PW, "", 1000)
     assert_eq(got.result, SYNC_UPLOADED)
     assert_eq(got.version, 1)
     assert_eq(got.url, SERVER)
@@ -82,7 +82,7 @@ test "connect uploads to an empty server; a second sync finds nothing to do" {
     assert_eq(remote.state().puts, 1)
 }
 
-test "connect refuses a weak password, plain http, a wrong password and another vault, leaving nothing" {
+test "connect refuses a weak password, plain http, a wrong password, a bad token and a bad label, leaving nothing" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     kc := new_fake_keychain()
@@ -90,39 +90,100 @@ test "connect refuses a weak password, plain http, a wrong password and another 
     remote := new_fake_remote()
     mut weak := try create_vault(crypto, mut store, kc, new_fake_recents(), "/w/W.flint", "", "password1", false)
     mut msg := ""
-    connect_remote(crypto, mut store, links, remote, kc, kc, mut weak, SERVER, "tok", "password1", 1) or err { msg = "{err.message()}" }
+    connect_remote(crypto, mut store, links, remote, kc, kc, mut weak, SERVER, "tok", "password1", "", 1) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_INVALID)
     assert(msg.contains("flint vault passwd"))
 
     mut a := try machine_a(crypto)
     msg = ""
-    connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, "http://vault.example.com", "tok", STRONG_PW, 1) or err { msg = "{err.message()}" }
+    connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, "http://vault.example.com", "tok", STRONG_PW, "", 1) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_INVALID)
     msg = ""
-    connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", NEW_PW, 1) or err { msg = "{err.message()}" }
+    connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", NEW_PW, "", 1) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_WRONG_PASSWORD)
     msg = ""
-    connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "bad", STRONG_PW, 1) or err { msg = "{err.message()}" }
+    connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "bad", STRONG_PW, "", 1) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_AUTH)
     assert_eq((try a.links.links_load()).len(), 0)
     assert_eq((try a.kc.keychain_load(remote_token_account(a.session.id))).len(), 0)
 
-    // The server holds another vault.
-    mut other := try machine_a(crypto)
-    other.store.bank = a.store.bank
-    _ := try connect_remote(crypto, mut other.store, other.links, remote, other.kc, other.kc, mut other.session, SERVER, "tok", STRONG_PW, 1)
     msg = ""
-    connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_CONFLICT)
+    connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, " Work", 1) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_INVALID)
     assert_eq((try a.links.links_load()).len(), 0)
-    assert_eq(remote.state().id, other.session.id)
+    assert_eq(remote.state().puts, 0)
+}
+
+// A vault of its own (another id), as a second vault a person keeps.
+fn machine_other(crypto: FakeCrypto, path: str) -> Machine! {
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    recents := new_fake_recents()
+    s := try create_vault(crypto, mut store, kc, recents, path, "", NEW_PW, false)
+    _ := try add_host(crypto, mut store, s, host_patch("work-db", "10.1.0.5"))
+    return Machine{ store: store, kc: kc, links: new_fake_links(), recents: recents, session: s }
+}
+
+test "one server keeps several vaults: each connects beside the others, with its label" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut a := try machine_a(crypto)
+    remote := new_fake_remote()
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
+    mut w := try machine_other(crypto, "/a/Work.flint")
+    assert(w.session.id != a.session.id)
+    got := try connect_remote(crypto, mut w.store, w.links, remote, w.kc, w.kc, mut w.session, SERVER, "tok", NEW_PW, "Work", 1000)
+    assert_eq(got.result, SYNC_UPLOADED)
+    assert_eq(got.version, 1)
+    probe := try probe_remote(remote, SERVER, "tok")
+    assert_eq(probe.vaults.len(), usize(2))
+    assert_eq(probe.vaults[0].id, a.session.id)
+    assert_eq(probe.vaults[0].label, "")
+    assert_eq(probe.vaults[1].id, w.session.id)
+    assert_eq(probe.vaults[1].label, "Work")
+    // Each syncs its own: a change to Work leaves Lab's version where it was.
+    try add_stamped(crypto, mut w, "work-api", 500)
+    _ := try sync_of(crypto, mut w, remote, "")
+    assert_eq(remote.state().version, 1)
+    assert_eq(remote.state().others[0].version, 2)
+    assert_eq((try sync_of(crypto, mut a, remote, "")).result, SYNC_IN_STEP)
+}
+
+test "a download takes the only vault, or the one an id or a prefix names" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut a := try machine_a(crypto)
+    remote := new_fake_remote()
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    mut msg := ""
+    download_remote(crypto, mut store, new_fake_links(), remote, kc, kc, new_fake_recents(), SERVER, "tok", "", STRONG_PW, "/c/X.flint", false, 1) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
+    mut w := try machine_other(crypto, "/a/Work.flint")
+    _ := try connect_remote(crypto, mut w.store, w.links, remote, w.kc, w.kc, mut w.session, SERVER, "tok", NEW_PW, "Work", 1000)
+    // Two vaults and no id: the person must choose.
+    msg = ""
+    download_remote(crypto, mut store, new_fake_links(), remote, kc, kc, new_fake_recents(), SERVER, "tok", "", NEW_PW, "/c/Work.flint", false, 1) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_USAGE)
+    assert(msg.contains("--list"))
+    msg = ""
+    download_remote(crypto, mut store, new_fake_links(), remote, kc, kc, new_fake_recents(), SERVER, "tok", "0000", NEW_PW, "/c/Work.flint", false, 1) or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    // Work, by a prefix of its id, on a machine that never had it.
+    store.bank = w.store.bank
+    links := new_fake_links()
+    s := try download_remote(crypto, mut store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", w.session.id.substr(0, 6), NEW_PW, "/c/Work.flint", false, 1)
+    assert_eq(s.id, w.session.id)
+    assert(has_alias(store, "work-db"))
+    l := try links.links_load()
+    assert_eq(l[0].vault_id, w.session.id)
+    assert_eq(l[0].version, 1)
 }
 
 test "two machines edit apart, offline, and both end with every change" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     mut b := try machine_b(crypto, remote, a)
     assert(has_alias(b.store, "web"))
     assert_eq(b.session.id, a.session.id)
@@ -166,7 +227,7 @@ test "a 409 merges the other machine's upload and uploads again" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     mut b := try machine_b(crypto, remote, a)
     try add_stamped(crypto, mut b, "db", 400)
     // B's copy reaches the server between A's download and A's upload.
@@ -185,7 +246,7 @@ test "a master password changed on another machine is asked for, then adopted" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     mut b := try machine_b(crypto, remote, a)
     b.session = try change_master_password(crypto, mut b.store, b.kc, b.session, STRONG_PW, NEW_PW)
     try add_stamped(crypto, mut b, "db", 400)
@@ -223,17 +284,17 @@ test "download refuses an empty server, a wrong password and a path taken" {
     kc := new_fake_keychain()
     links := new_fake_links()
     mut msg := ""
-    download_remote(crypto, mut store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", STRONG_PW, "/b/Lab.flint", false, 1) or err { msg = "{err.message()}" }
+    download_remote(crypto, mut store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", "", STRONG_PW, "/b/Lab.flint", false, 1) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_NOT_FOUND)
 
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     msg = ""
-    download_remote(crypto, mut store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", NEW_PW, "/b/Lab.flint", false, 1) or err { msg = "{err.message()}" }
+    download_remote(crypto, mut store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", "", NEW_PW, "/b/Lab.flint", false, 1) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_WRONG_PASSWORD)
     assert_eq(store.file_path, "", "nothing written")
     assert_eq((try links.links_load()).len(), 0)
     msg = ""
-    download_remote(crypto, mut a.store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", STRONG_PW, "/a/Lab.flint", false, 1) or err { msg = "{err.message()}" }
+    download_remote(crypto, mut a.store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", "", STRONG_PW, "/a/Lab.flint", false, 1) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_EXISTS)
 }
 
@@ -241,7 +302,7 @@ test "disconnect forgets the server and its token, and keeps the vault" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     gone := try disconnect_remote(a.links, a.kc, a.session.path)
     assert_eq(gone.url, SERVER)
     assert(!remote_connected(a.links, a.session.path))
@@ -259,8 +320,8 @@ test "a server that lost its data gets this vault again" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
-    remote.save(FakeRemoteState{ version: 0, id: "", data: "", offline: false, gets: 0, puts: 0, race: "" })
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
+    remote.save(empty_fake_remote_state())
     got := try sync_of(crypto, mut a, remote, "")
     assert_eq(got.result, SYNC_UPLOADED)
     assert_eq(remote.state().version, 1)
@@ -270,7 +331,7 @@ test "after a command, a connected vault with changes syncs; one with none does 
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     gets := remote.state().gets
     assert(!(try sync_if_pending(crypto, mut a.store, a.links, remote, a.kc, a.kc, a.session.path, a.session.name, 3000)))
     assert_eq(remote.state().gets, gets)
@@ -283,7 +344,7 @@ test "a connected vault changes its master password in step with its server, nev
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     mut b := try machine_b(crypto, remote, a)
     try add_stamped(crypto, mut b, "db", 400)
     _ := try sync_of(crypto, mut b, remote, "")
@@ -309,14 +370,17 @@ test "a probe tells what the server holds, without a password, and keeps nothing
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
     empty := try probe_remote(remote, SERVER + "/", " tok\n")
-    assert(!empty.found)
+    assert_eq(empty.vaults.len(), usize(0))
     assert_eq(empty.url, SERVER)
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
-    got := try probe_remote(remote, SERVER, "tok")
-    assert(got.found)
-    assert_eq(got.vault_id, a.session.id)
-    assert_eq(got.version, remote.state().version)
-    assert(got.size > 0)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
+    gets := remote.state().gets
+    got := try probe_remote(remote, SERVER + "/v1/vaults", "tok")
+    assert_eq(got.vaults.len(), usize(1))
+    assert_eq(got.vaults[0].id, a.session.id)
+    assert_eq(got.vaults[0].version, remote.state().version)
+    assert(got.vaults[0].size > 0)
+    // The list alone: no vault was downloaded.
+    assert_eq(remote.state().gets, gets)
     mut msg := ""
     probe_remote(remote, "http://vault.example.com", "tok") or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_INVALID)
@@ -332,11 +396,11 @@ test "a download can remember its key, as an unlock would" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     mut store := new_fake_store()
     store.bank = a.store.bank
     kc := new_fake_keychain()
-    s := try download_remote(crypto, mut store, new_fake_links(), remote, kc, kc, new_fake_recents(), SERVER, "tok", STRONG_PW, "/b/Lab.flint", true, 1000)
+    s := try download_remote(crypto, mut store, new_fake_links(), remote, kc, kc, new_fake_recents(), SERVER, "tok", "", STRONG_PW, "/b/Lab.flint", true, 1000)
     assert(s.cached)
 }
 
@@ -344,21 +408,12 @@ test "a new token replaces the old one only once the server takes it" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     account := remote_token_account(a.session.id)
     mut msg := ""
     replace_remote_token(a.links, remote, a.kc, a.session.path, "bad") or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_AUTH)
     assert_eq(str(try a.kc.keychain_load(account)), "tok")
-    // A server that now holds another vault keeps the old token too.
-    mut st := remote.state()
-    st.id = "another-vault"
-    remote.save(st)
-    msg = ""
-    replace_remote_token(a.links, remote, a.kc, a.session.path, "tok") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_CONFLICT)
-    st.id = a.session.id
-    remote.save(st)
     try a.kc.keychain_save(account, []byte("old"))
     link := try replace_remote_token(a.links, remote, a.kc, a.session.path, " tok\n")
     assert_eq(link.url, SERVER)
@@ -373,7 +428,7 @@ test "the connected vaults are listed by path and server, nothing more" {
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
     assert_eq((try remote_link_views(a.links)).len(), usize(0))
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     views := try remote_link_views(a.links)
     assert_eq(views.len(), usize(1))
     assert_eq(views[0].path, a.session.path)
@@ -399,17 +454,27 @@ fn (self: DisconnectingRemote) remote_put(url: str, token: str, vault_id: str, b
     return self.inner.remote_put(url, token, vault_id, base_version, data)
 }
 
+fn (self: DisconnectingRemote) remote_list(url: str, token: str) -> []ServerVault! {
+    return self.inner.remote_list(url, token)
+}
+
+fn (self: DisconnectingRemote) remote_set_label(url: str, token: str, label: str) -> void! {
+    return self.inner.remote_set_label(url, token, label)
+}
+
 test "a vault disconnected while its sync is on the network stays disconnected" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     try add_stamped(crypto, mut a, "api", 3000)
     slow := DisconnectingRemote{ inner: remote, links: a.links, kc: a.kc, path: a.session.path }
     _ := try sync_vault(crypto, mut a.store, a.links, slow, a.kc, a.kc, mut a.session, "", 4000)
     assert(!remote_connected(a.links, a.session.path), "the sync's end does not put the link back")
-    // A sync that fails after the disconnect does not either.
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 5000)
+    // A sync that fails after the disconnect does not either (an empty server this
+    // time, so connecting again uploads instead of merging).
+    other := new_fake_remote()
+    _ := try connect_remote(crypto, mut a.store, a.links, other, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 5000)
     try add_stamped(crypto, mut a, "db", 6000)
     _ := sync_vault(crypto, mut a.store, a.links, FailingAfterDisconnect{ links: a.links, kc: a.kc, path: a.session.path }, a.kc, a.kc, mut a.session, "", 7000)
     assert(!remote_connected(a.links, a.session.path), "a failed sync's error is not saved into a link that is gone")
@@ -428,5 +493,13 @@ fn (self: FailingAfterDisconnect) remote_get(url: str, token: str, known_version
 }
 
 fn (self: FailingAfterDisconnect) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
+    return error(coded(ERR_NETWORK, "cannot reach the server"))
+}
+
+fn (self: FailingAfterDisconnect) remote_list(url: str, token: str) -> []ServerVault! {
+    return error(coded(ERR_NETWORK, "cannot reach the server"))
+}
+
+fn (self: FailingAfterDisconnect) remote_set_label(url: str, token: str, label: str) -> void! {
     return error(coded(ERR_NETWORK, "cannot reach the server"))
 }

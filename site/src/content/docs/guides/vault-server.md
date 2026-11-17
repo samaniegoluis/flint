@@ -1,18 +1,19 @@
 ---
 title: Self-host a remote vault
-description: Run flint-vault-server, the small server that keeps one encrypted copy of your vault for every machine you use, in Docker or as a bare binary behind your own TLS.
+description: Run flint-vault-server, the small server that keeps an encrypted copy of each of your vaults for every machine you use, in Docker or as a bare binary behind your own TLS.
 ---
 
-`flint-vault-server` keeps your vault in step between your machines. Every machine still
-holds its full copy and works offline; the server keeps one more copy, exactly as Flint
-uploads it, encrypted in full, with a version number. It never receives your master
+`flint-vault-server` keeps your vaults in step between your machines. Every machine still
+holds its full copy and works offline; the server keeps one more copy of each vault,
+exactly as Flint uploads it, encrypted in full, with a version number. It never receives your master
 password or any key, and it never opens the file: a stolen server, or a stolen token,
 gives only ciphertext.
 
 This page sets up the server. Connecting your vaults to it is
 [Sync a vault across machines](/guides/remote-vault/).
 
-One server holds one person's vault, behind one token. Run your own instance; there are no
+One server holds one person's vaults, as many as you connect (Personal, Work…), each under
+its id with its own versions, behind one token. Run your own instance; there are no
 accounts.
 
 ## What it needs
@@ -91,6 +92,7 @@ flint-vault-server
 | `FLINT_VAULT_DATA` | `./flint-vault-data` (`/data` in the image) | The data folder |
 | `FLINT_VAULT_LISTEN` | `0.0.0.0:8787` | Address and port; `127.0.0.1:8787` behind a proxy on the same machine |
 | `FLINT_VAULT_MAX_BYTES` | `33554432` (32 MiB) | The largest upload accepted |
+| `FLINT_VAULT_MAX_VAULTS` | `50` | The most vaults the server keeps; a new one past it is refused with `507` |
 | `FLINT_VAULT_TRUST_PROXY` | `0` | `1` to count clients by the proxy's `X-Forwarded-For` |
 
 Set the token **or** its hash, not both. A token shorter than 32 characters is refused
@@ -128,9 +130,11 @@ requests (Nginx does by default) keeps that from delaying anyone.
   to count clients by the address the proxy forwards. Only set it behind a proxy you run:
   exposed directly, a client could forge that header.
 - **Size**: an upload over `FLINT_VAULT_MAX_BYTES` is refused with `413`.
+- **Vaults**: at most `FLINT_VAULT_MAX_VAULTS`. A stolen token could add vaults, so the
+  cap bounds the disk it can fill.
 
 The log has one line per request (client, method, path, status, time) and never a token,
-a header's value or the vault file.
+a header's value, a vault's label or a vault file.
 
 ## Rotate the token
 
@@ -140,17 +144,59 @@ on that machine. On each machine, run `flint vault token` (or **Settings → Vau
 Replace token…** in the app) and give it the new token: it is checked against the server,
 then kept in the keychain, and the waiting changes sync on the next round. Nothing is lost.
 
+## Several vaults on one server
+
+Each vault you connect goes to the server under its id, beside the others, and keeps its
+own versions. The server cannot read a vault's name, so it tells them apart by id, and by
+an optional **label** you give when you connect one (`flint vault connect <url> --label
+Work`, or the *Label* field in the app). The label is stored **in clear** on the server:
+leave it empty if the name itself is private, and the vault shows by its id alone.
+
+On the server, list them:
+
+```sh
+docker exec <container> flint-vault-server vaults
+```
+
+```text
+VAULT                             VERSION  UPDATED (UTC)             SIZE      LABEL
+00112233445566778899aabbccddeeff       42  2026-11-13T18:20:11Z     104448
+ffeeddccbbaa99887766554433221100        7  2026-11-17T09:02:40Z      61440  Work
+```
+
+`flint-vault-server label <id> <label>` sets a label (an empty one clears it). Every
+command that names a vault takes its id or the first characters of it (4 or more, as long
+as one vault starts with them), and needs none while the server keeps a single vault.
+
+## Updating from 0.11 or earlier
+
+A server from 0.11 or earlier kept one vault at the top of its data folder. The first time
+0.12 starts on that folder it moves the vault into `vaults/<id>/` and says so in its log.
+Machines still on Flint 0.11 keep syncing through the old path (`/v1/vault`) while the
+server keeps one vault; once a second vault is connected they are asked to update
+(`410`), and their changes wait on them until they do. Update the server first, then the
+machines.
+
+**Back up the data folder before updating.** Going back to an older server afterwards is
+not supported: it would not see the moved vault and would take the next upload as a new
+history.
+
 ## The data folder and backups
 
-Everything lives in one folder (`/data` in the image):
+Everything lives in one folder (`/data` in the image), a folder per vault:
 
 ```text
 /data/
-  head.json          the newest version: number, vault id, size, time
-  versions/
-    41.blob  41.json the vault file as it was uploaded (encrypted) and its record
-    42.blob  42.json
-    …                the newest 10 versions; older ones are removed
+  vaults/
+    00112233445566778899aabbccddeeff/
+      head.json          the newest version: number, vault id, size, time
+      label.json         the label, when it has one
+      versions/
+        41.blob  41.json the vault file as it was uploaded (encrypted) and its record
+        42.blob  42.json
+        …                the newest 10 versions; older ones are removed
+    ffeeddccbbaa99887766554433221100/
+      …
 ```
 
 Back up the whole folder, with the volume backup of Dokploy or any file backup. The
@@ -161,10 +207,11 @@ seen in passing belongs to a write in progress.
 
 ## Restore an older version
 
-The server keeps the last 10 versions. List them, then make one the newest again:
+The server keeps the last 10 versions of each vault. List them, then make one the newest
+again (name the vault by its id, or a prefix of it, when the server keeps several):
 
 ```sh
-docker exec <container> flint-vault-server versions
+docker exec <container> flint-vault-server versions 0011
 ```
 
 ```text
@@ -174,7 +221,7 @@ VERSION  STORED (UTC)              SIZE      VAULT
 ```
 
 ```sh
-docker exec <container> flint-vault-server restore 41
+docker exec <container> flint-vault-server restore 0011 41
 ```
 
 `restore` stores version 41 again as version 43 (`--json` prints its record). Every machine downloads it at its next
@@ -186,7 +233,7 @@ To look at an old version as it was, copy it out and open it in Flint with the m
 password it had then:
 
 ```sh
-docker cp <container>:/data/versions/41.blob ./vault-v41.flint
+docker cp <container>:/data/vaults/00112233445566778899aabbccddeeff/versions/41.blob ./vault-v41.flint
 ```
 
 ## The protocol
@@ -196,11 +243,15 @@ For the curious, and for anyone writing a client. Every request carries
 
 | Request | Answer |
 |---|---|
-| `GET /v1/vault` | `200` with the file, `ETag: "<version>"` and `X-Flint-Vault-Id`; `404` before the first upload |
-| `GET /v1/vault` with `If-None-Match: "<version>"` | `304` with no body while that is still the newest version, else `200` with the file: how a machine checks for changes without downloading the vault |
-| `PUT /v1/vault` with `If-None-Match: *`, `X-Flint-Vault-Id` and the file | `200 {"version":1}`: the first upload |
-| `PUT /v1/vault` with `If-Match: "<version>"` | `200` with the next version, or `409` with the newest `ETag` when another machine uploaded first |
+| `GET /v1/vaults` | `200 {"vaults":[{"id","label","version","size","updated_at"}]}`: what a machine may download, before any password |
+| `GET /v1/vaults/<id>` | `200` with the file, `ETag: "<version>"` and `X-Flint-Vault-Id`; `404` (`"error":"empty"`) while the server does not keep that vault |
+| `GET /v1/vaults/<id>` with `If-None-Match: "<version>"` | `304` with no body while that is still the newest version, else `200` with the file: how a machine checks for changes without downloading the vault |
+| `PUT /v1/vaults/<id>` with `If-None-Match: *`, `X-Flint-Vault-Id: <id>` and the file | `200 {"version":1}`: the vault's first upload |
+| `PUT /v1/vaults/<id>` with `If-Match: "<version>"` | `200` with the next version, or `409` with the newest `ETag` when another machine uploaded first |
+| `PUT /v1/vaults/<id>/label` with `{"label":"Work"}` | `200`; an empty label clears it, one over 64 characters or with a control character is `400` |
+| `GET`/`PUT /v1/vault` | The single vault of Flint 0.11 and earlier: served while the server keeps at most one, `410` once it keeps several |
 
-A `PUT` for another vault id is refused with `412`, one without a precondition with
-`428`, a chunked one with `411`. A client that gets `409` downloads the newest version,
+A `PUT` whose `X-Flint-Vault-Id` is not the id in its path is refused with `400`, one
+without a precondition with `428`, a chunked one with `411`, a new vault past
+`FLINT_VAULT_MAX_VAULTS` with `507`. A client that gets `409` downloads the newest version,
 merges it with its own copy, and uploads the result over that version.

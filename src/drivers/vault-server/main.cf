@@ -1,17 +1,24 @@
 package main
 
-// flint-vault-server (milestone 42, D-092, D-097): keeps one person's vault file, as it
-// is (encrypted in full), with a version, for the machines that sync it. It never holds
-// the key and never opens the file (Principle 13).
+// flint-vault-server (milestones 42 and 45, D-092, D-097, D-103): keeps one person's
+// vault files, as they are (encrypted in full), each under its id with its versions,
+// for the machines that sync them. It never holds a key and never opens a file
+// (Principle 13).
 //
-//   flint-vault-server [serve]          serve, configured by the environment
-//   flint-vault-server token [--json]   a new token, and the hash to set instead of it
-//   flint-vault-server versions [--json]  the kept versions, newest first
-//   flint-vault-server restore <n> [--json]  make a kept version the newest again
+//   flint-vault-server [serve]                   serve, configured by the environment
+//   flint-vault-server token [--json]            a new token, and the hash to set instead
+//   flint-vault-server vaults [--json]           the vaults kept, by id
+//   flint-vault-server versions [<id>] [--json]  a vault's kept versions, newest first
+//   flint-vault-server restore [<id>] <n> [--json]  make a kept version the newest again
+//   flint-vault-server label <id> [<label>]      set a vault's label, or clear it
 //   flint-vault-server --version
 //
+// <id> is a vault's id or a unique prefix of it (4 characters or more), and may be left
+// out while the server keeps one vault.
+//
 // Environment: FLINT_VAULT_TOKEN or FLINT_VAULT_TOKEN_HASH, FLINT_VAULT_DATA (the data
-// folder), FLINT_VAULT_LISTEN (host:port), FLINT_VAULT_MAX_BYTES, FLINT_VAULT_TRUST_PROXY.
+// folder), FLINT_VAULT_LISTEN (host:port), FLINT_VAULT_MAX_BYTES, FLINT_VAULT_MAX_VAULTS,
+// FLINT_VAULT_TRUST_PROXY.
 
 import "core:json"
 import "core:os"
@@ -26,7 +33,7 @@ import "../version"
 DEFAULT_LISTEN: str = "0.0.0.0:8787"
 DEFAULT_DATA: str = "./flint-vault-data"
 
-USAGE: str = "usage: flint-vault-server [serve | token [--json] | versions [--json] | restore <version> [--json] | --version]"
+USAGE: str = "usage: flint-vault-server [serve | token [--json] | vaults [--json] | versions [<id>] [--json] | restore [<id>] <version> [--json] | label <id> [<label>] | --version]"
 
 fn log_line(s: str) {
     eprintln("flint-vault-server: {s}")
@@ -73,7 +80,14 @@ fn cmd_serve() -> void! {
             return error(coded(ERR_USAGE, "FLINT_VAULT_MAX_BYTES must be a number of bytes"))
         }
     }
-    cfg := try server_config_from(sodium, os.getenv("FLINT_VAULT_TOKEN"), os.getenv("FLINT_VAULT_TOKEN_HASH"), max_body)
+    mut cfg := try server_config_from(sodium, os.getenv("FLINT_VAULT_TOKEN"), os.getenv("FLINT_VAULT_TOKEN_HASH"), max_body)
+    max_vaults_text := os.getenv("FLINT_VAULT_MAX_VAULTS")
+    if max_vaults_text.len() > 0 {
+        cfg.max_vaults = parse_version_tag(max_vaults_text)
+        if cfg.max_vaults < 1 {
+            return error(coded(ERR_USAGE, "FLINT_VAULT_MAX_VAULTS must be a number of vaults"))
+        }
+    }
     mut opts := try listen_parts(os.getenv("FLINT_VAULT_LISTEN", DEFAULT_LISTEN))
     opts.data_dir = os.getenv("FLINT_VAULT_DATA", DEFAULT_DATA)
     trust := os.getenv("FLINT_VAULT_TRUST_PROXY")
@@ -110,36 +124,63 @@ fn pad_left(s: str, width: usize) -> str {
     return out_s
 }
 
-fn cmd_versions(as_json: bool) -> void! {
+fn cmd_vaults(as_json: bool) -> void! {
     mut store := try data_store()
-    kept := try list_vault_versions(mut store)
+    vaults := try list_server_vaults(mut store)
+    if as_json {
+        println(json.stringify(vaults))
+        return
+    }
+    if vaults.len() == 0 {
+        eprintln("no vault stored yet")
+        return
+    }
+    println("VAULT                             VERSION  UPDATED (UTC)             SIZE      LABEL")
+    for v in vaults {
+        updated := time.unix(v.updated_at / 1000).format_rfc3339()
+        println(v.id + "  " + pad_left("{v.version}", 7) + "  " + updated + "    " + pad_left("{v.size}", 8) + "  " + v.label)
+    }
+}
+
+fn cmd_versions(wanted: str, as_json: bool) -> void! {
+    mut store := try data_store()
+    v := try server_vault_named(mut store, wanted)
+    kept := try list_vault_versions(mut store, v.id)
     if as_json {
         println(json.stringify(kept))
         return
     }
-    if kept.len() == 0 {
-        eprintln("no vault stored yet")
-        return
-    }
     println("VERSION  STORED (UTC)              SIZE      VAULT")
-    for v in kept {
-        stored := time.unix(v.stored_at / 1000).format_rfc3339()
-        println(pad_left("{v.version}", 7) + "  " + stored + "    " + pad_left("{v.size}", 8) + "  " + v.vault_id)
+    for k in kept {
+        stored := time.unix(k.stored_at / 1000).format_rfc3339()
+        println(pad_left("{k.version}", 7) + "  " + stored + "    " + pad_left("{k.size}", 8) + "  " + k.vault_id)
     }
 }
 
-fn cmd_restore(arg: str, as_json: bool) -> void! {
+fn cmd_restore(wanted: str, arg: str, as_json: bool) -> void! {
     n := parse_version_tag(arg)
     if n < 1 {
         return error(coded(ERR_USAGE, "restore takes a version number from `flint-vault-server versions`"))
     }
     mut store := try data_store()
-    v := try restore_vault_version(mut store, n, time.now().unix_millis())
+    target := try server_vault_named(mut store, wanted)
+    v := try restore_vault_version(mut store, target.id, n, time.now().unix_millis())
     if as_json {
         println(json.stringify(v))
         return
     }
-    println("version {n} is now version {v.version}, the newest: every machine merges it at its next sync")
+    println("version {n} of vault {target.id} is now version {v.version}, the newest: every machine merges it at its next sync")
+}
+
+fn cmd_label(wanted: str, label: str) -> void! {
+    mut store := try data_store()
+    target := try server_vault_named(mut store, wanted)
+    try set_server_vault_label(mut store, target.id, label)
+    if label.len() == 0 {
+        println("vault {target.id} has no label now")
+        return
+    }
+    println("vault {target.id} is labelled '{label}'")
 }
 
 fn main() {
@@ -181,14 +222,40 @@ fn main() {
         }
         return
     }
-    if cmd == "versions" && words.len() == 1 {
-        cmd_versions(as_json) or err {
+    if cmd == "vaults" && words.len() == 1 {
+        cmd_vaults(as_json) or err {
             fail(err.message())
         }
         return
     }
-    if cmd == "restore" && words.len() == 2 {
-        cmd_restore(words[1], as_json) or err {
+    if cmd == "versions" && words.len() <= 2 {
+        mut wanted := ""
+        if words.len() == 2 {
+            wanted = words[1]
+        }
+        cmd_versions(wanted, as_json) or err {
+            fail(err.message())
+        }
+        return
+    }
+    if cmd == "restore" && (words.len() == 2 || words.len() == 3) {
+        mut wanted := ""
+        mut n := words[1]
+        if words.len() == 3 {
+            wanted = words[1]
+            n = words[2]
+        }
+        cmd_restore(wanted, n, as_json) or err {
+            fail(err.message())
+        }
+        return
+    }
+    if cmd == "label" && (words.len() == 2 || words.len() == 3) {
+        mut label := ""
+        if words.len() == 3 {
+            label = words[2]
+        }
+        cmd_label(words[1], label) or err {
             fail(err.message())
         }
         return

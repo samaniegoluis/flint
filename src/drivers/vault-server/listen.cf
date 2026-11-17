@@ -233,8 +233,11 @@ fn serve_forever[C: Crypto](crypto: C, cfg: ServerConfig, opts: ServeOptions) ->
     mut ln := net.listen_tcp_addr(opts.host, opts.port) or err {
         return error(coded(ERR_PORT_IN_USE, "cannot listen on {opts.host}:{opts.port}"))
     }
-    head := try store.blob_head()
-    log_line("listening on {opts.host}:{ln.port()}, data in {opts.data_dir}, version {head.version}")
+    if store.moved.len() > 0 {
+        log_line("moved the vault {store.moved} into {opts.data_dir}/vaults/{store.moved} (one folder per vault since 0.12)")
+    }
+    vaults := try store.blob_vaults()
+    log_line("listening on {opts.host}:{ln.port()}, data in {opts.data_dir}, {vaults.len()} vaults (at most {cfg.max_vaults})")
     for {
         mut conn := ln.accept() or err {
             continue

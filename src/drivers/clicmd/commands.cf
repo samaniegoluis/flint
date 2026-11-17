@@ -214,8 +214,8 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         return
     }
     if verb == "connect" {
-        try p.allow_flags("vault connect", ["--to", "--token-stdin"])
-        try p.expect_args("vault connect", 1, "<url> [--to <path>] [--token-stdin]")
+        try p.allow_flags("vault connect", ["--to", "--id", "--label", "--list", "--token-stdin"])
+        try p.expect_args("vault connect", 1, "<url> [--label <text>] | <url> --to <path> [--id <id>] | <url> --list")
         try cmd_vault_connect(p, sec, as_json, c, mut store, src, recents)
         return
     }

@@ -1,14 +1,15 @@
 // Connect to a remote vault, from Welcome (milestone 44, design 23a): the server
 // first (its address and token, checked against it: 23a1-23a2), then the vault it
-// holds, which it cannot read, so only its size and version (23a3): its master
-// password, where to keep the local copy, and Remember. Downloading opens it straight
-// into the main window (23a4).
+// keeps, which it cannot read, so only its size, version and the label it was given
+// (23a3); a server keeping several lists them to pick one (milestone 45, D-103).
+// Then its master password, where to keep the local copy, and Remember. Downloading
+// opens it straight into the main window (23a4).
 
 import { useEffect, useState } from 'react';
 import { api, toFlintError } from '../api/backend';
-import type { RemoteProbe } from '../api/types';
+import type { RemoteProbe, ServerVault } from '../api/types';
 import { useApp } from '../state/app';
-import { sizeLabel, urlHost } from '../lib/sync';
+import { agoLabel, copyName, sizeLabel, urlHost } from '../lib/sync';
 import { Icon, Logo } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { RememberOption } from '../ui/RememberOption';
@@ -17,11 +18,16 @@ import { serverErrorField, TokenField } from '../sync/TokenField';
 
 type Errors = { url?: string; token?: string; pw?: string; path?: string; form?: string };
 
+function VaultFacts({ v, now }: { v: ServerVault; now: number }) {
+  return <>{sizeLabel(v.size)} · version {v.version.toLocaleString('en-US')} · updated {agoLabel(v.updated_at, now)}</>;
+}
+
 export function ConnectRemote() {
   const { go, download, vault, target, os } = useApp();
   const [url, setUrl] = useState('');
   const [token, setToken] = useState('');
   const [found, setFound] = useState<RemoteProbe | null>(null);
+  const [chosen, setChosen] = useState('');
   const [pw, setPw] = useState('');
   const [show, setShow] = useState(false);
   const [path, setPath] = useState('');
@@ -30,7 +36,7 @@ export function ConnectRemote() {
   const [errors, setErrors] = useState<Errors>({});
 
   const back = () => {
-    if (found && !busy) { setFound(null); setPw(''); setErrors({}); return; }
+    if (found && !busy) { setFound(null); setChosen(''); setPw(''); setErrors({}); return; }
     go(vault ? 'main' : target ? 'unlock' : 'welcome');
   };
 
@@ -45,10 +51,11 @@ export function ConnectRemote() {
     setErrors({});
     try {
       const p = await api.remoteProbe(url.trim(), token);
-      if (!p.found) {
+      if (p.vaults.length === 0) {
         setErrors({ form: 'empty' });
       } else {
         setFound(p);
+        setChosen(p.vaults.length === 1 ? p.vaults[0].id : '');
         setUrl(p.url);
       }
     } catch (err) {
@@ -60,7 +67,7 @@ export function ConnectRemote() {
   };
 
   const choose = async () => {
-    const { path: p } = await api.dialogSave('Keep the local copy in', 'vault.flint');
+    const { path: p } = await api.dialogSave('Keep the local copy in', copyName(found?.vaults.find((v) => v.id === chosen)));
     if (p) setPath(p.endsWith('.flint') ? p : p + '.flint');
   };
 
@@ -68,7 +75,7 @@ export function ConnectRemote() {
     setBusy(true);
     setErrors({});
     try {
-      await download(url, token, pw, path, remember);
+      await download(url, token, chosen, pw, path, remember);
       setToken('');
       setPw('');
     } catch (err) {
@@ -85,11 +92,13 @@ export function ConnectRemote() {
     e.preventDefault();
     if (busy) return;
     if (!found) { if (url.trim() && token.trim()) check().catch(() => {}); return; }
-    if (pw && path) fetchVault().catch(() => {});
+    if (chosen && pw && path) fetchVault().catch(() => {});
   };
 
   const step2 = !!found;
-  const ready = step2 ? !!pw && !!path && !busy : !!url.trim() && !!token.trim() && !busy;
+  const ready = step2 ? !!chosen && !!pw && !!path && !busy : !!url.trim() && !!token.trim() && !busy;
+  const now = Date.now();
+  const only = found && found.vaults.length === 1 ? found.vaults[0] : null;
   return (
     <>
       <header className="titlebar" style={{ background: 'var(--surface-base)', borderBottomColor: 'transparent' }}>
@@ -115,18 +124,36 @@ export function ConnectRemote() {
             </div>
           ) : (
             <div className="modal-b" style={{ gap: 'var(--sp-5)' }} data-connect-step="vault">
-              <div className="found">
-                <Icon name="lock" size="lg" className="accent-t" />
-                <div className="col grow" style={{ gap: 2 }}>
-                  <span className="strong">A vault was found</span>
-                  <span className="hint">{sizeLabel(found.size)} · version {found.version.toLocaleString('en-US')} · on <span className="mono">{urlHost(found.url)}</span>. Its name appears once it opens.</span>
+              {only ? (
+                <div className="found" data-server-vault={only.id}>
+                  <Icon name="lock" size="lg" className="accent-t" />
+                  <div className="col grow" style={{ gap: 2 }}>
+                    <span className="strong">{only.label ? <>A vault was found: {only.label}</> : 'A vault was found'}</span>
+                    <span className="hint"><VaultFacts v={only} now={now} /> · on <span className="mono">{urlHost(found.url)}</span>. Its name appears once it opens.</span>
+                  </div>
+                  <span className="badge ok"><Icon name="shield" size="xs" />encrypted</span>
                 </div>
-                <span className="badge ok"><Icon name="shield" size="xs" />encrypted</span>
-              </div>
+              ) : (
+                <div className="field" data-server-vaults={found.vaults.length}>
+                  <span className="flabel">This server keeps {found.vaults.length} vaults</span>
+                  <div className="opt-list" role="radiogroup" aria-label="Vaults on the server" style={{ maxHeight: 210, overflowY: 'auto' }}>
+                    {found.vaults.map((v) => (
+                      <label key={v.id} className="opt" data-server-vault={v.id}>
+                        <input type="radio" name="server-vault" checked={chosen === v.id} onChange={() => setChosen(v.id)} disabled={busy} />
+                        <span className="opt-t">
+                          <span className="opt-l">{v.label || <span className="muted">No label</span>} <span className="mono faint" title={v.id}>{v.id.slice(0, 8)}</span></span>
+                          <span className="hint"><VaultFacts v={v} now={now} /></span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <span className="hint row" style={{ gap: 6 }}><Icon name="shield" size="xs" />Each is encrypted: the server shows only the label it was given when connected. Its name appears once it opens.</span>
+                </div>
+              )}
               <div className="field">
                 <label className="flabel" htmlFor="vp">Master password of that vault</label>
                 <div className={'input' + (errors.pw ? ' err' : '')}>
-                  <input id="vp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" autoFocus disabled={busy} />
+                  <input id="vp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" autoFocus={!!only} disabled={busy} />
                   <button type="button" className="icon-btn" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
                 </div>
                 {errors.pw && <span className="hint err" role="alert">{errors.pw}</span>}

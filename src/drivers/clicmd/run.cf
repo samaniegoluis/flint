@@ -31,9 +31,13 @@ Vaults
   vault rename <new-name>               Rename the vault (its file is not moved)
   vault passwd [--new-master-stdin]     Change the master password (asks for both)
   vault merge <copy.flint>              Merge a conflict copy of the vault into it
-  vault connect <url> [--token-stdin]   Keep the vault in step with a flint-vault-server
-                                        (asks for its token and the master password)
-  vault connect <url> --to <path>       Download the server's vault to a new file here
+  vault connect <url> [--label <text>]  Keep the vault in step with a flint-vault-server
+                                        (asks for its token and the master password;
+                                        the label is shown in the server's list, in clear)
+  vault connect <url> --list            The vaults the server keeps: id, label, version
+  vault connect <url> --to <path> [--id <id>]
+                                        Download a vault from the server to a new file
+                                        here (--id when the server keeps several)
   vault sync [--new-master-stdin]       Sync now (Flint also syncs on its own)
   vault token [--token-stdin]           Replace the server's token after it was rotated
   vault disconnect                      Stop syncing on this machine; the file stays

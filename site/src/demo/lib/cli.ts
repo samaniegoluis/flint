@@ -48,9 +48,13 @@ Vaults
   vault rename <new-name>               Rename the vault (its file is not moved)
   vault passwd [--new-master-stdin]     Change the master password (asks for both)
   vault merge <copy.flint>              Merge a conflict copy of the vault into it
-  vault connect <url> [--token-stdin]   Keep the vault in step with a flint-vault-server
-                                        (asks for its token and the master password)
-  vault connect <url> --to <path>       Download the server's vault to a new file here
+  vault connect <url> [--label <text>]  Keep the vault in step with a flint-vault-server
+                                        (asks for its token and the master password;
+                                        the label is shown in the server's list, in clear)
+  vault connect <url> --list            The vaults the server keeps: id, label, version
+  vault connect <url> --to <path> [--id <id>]
+                                        Download a vault from the server to a new file
+                                        here (--id when the server keeps several)
   vault sync [--new-master-stdin]       Sync now (Flint also syncs on its own)
   vault token [--token-stdin]           Replace the server's token after it was rotated
   vault disconnect                      Stop syncing on this machine; the file stays
@@ -478,25 +482,77 @@ class Cmd {
 				return ok;
 			}
 			case 'connect': {
-				// cmd_vault_connect (milestone 43). The demo has no network: a connect to a
-				// well-formed https:// URL is pretended to reach an empty server.
-				p.allowFlags('vault connect', ['--to', '--token-stdin']);
-				p.expectArgs('vault connect', 1, '<url> [--to <path>] [--token-stdin]');
+				// cmd_vault_connect (milestones 43 and 45). The demo has no network: a
+				// well-formed https:// URL is pretended to reach a server that keeps only the
+				// vaults connected to it in this terminal (world.served).
+				p.allowFlags('vault connect', ['--to', '--id', '--label', '--list', '--token-stdin']);
+				p.expectArgs('vault connect', 1, '<url> [--label <text>] | <url> --to <path> [--id <id>] | <url> --list');
 				const to = p.value('--to');
+				const id = p.value('--id');
+				const label = p.value('--label');
+				const served = (this.world.served ??= []);
+				if (p.has('--list')) {
+					if (to || id || label) fail('usage', '--list takes no --to, --id or --label');
+					const token = yield* this.secret('Server token');
+					const base = checkRemoteUrl(p.positional(2));
+					if (token.trim().length === 0) fail('usage', "the server's token is needed");
+					const list = served.filter((s) => s.url === base);
+					const vaults = list.map((s) => ({ id: s.id, label: s.label, version: s.version, size: s.size, updated_at: 0 }));
+					this.emit({ url: base, vaults }, () => {
+						if (list.length === 0) return this.say(`The server at ${base} holds no vault yet: \`flint vault connect ${base}\` uploads the current one.`);
+						table(['ID', 'LABEL', 'VERSION', 'SIZE', 'UPDATED'], list.map((s) => [s.id, s.label || '-', `${s.version}`, sizeLabel(s.size), 'just now'])).forEach((l) => this.say(l));
+					});
+					this.io.note('flint (demo): no server is reached here. Run your own, then connect for real.', '/guides/remote-vault/');
+					return ok;
+				}
+				if (!to && id) fail('usage', '--id names the vault to download: give --to <path> too');
+				if (to && label) fail('usage', "--label is for connecting a vault from this machine; a downloaded vault keeps the server's label");
 				const v = to ? undefined : this.resolveVault(p.value('--vault'));
 				if (v && v.unlocked) fail('conflict', `Flint has vault '${v.name}' unlocked; lock it in Flint first, then connect it`);
 				const token = yield* this.secret('Server token');
-				const pw = yield { label: `Master password for '${v ? v.name : 'vault'}': `, secret: true };
+				const pw = yield { label: `Master password for '${v ? v.name : vaultNameOf(to)}': `, secret: true };
 				const base = checkRemoteUrl(p.positional(2));
 				if (token.trim().length === 0) fail('usage', "the server's token is needed");
 				if (pw.length === 0) fail('usage', "the vault's master password is needed");
-				if (to) fail('not_found', `the server at ${base} holds no vault yet: connect one from a machine that has it (\`flint vault connect ${base}\`)`);
+				if (to) {
+					const path = to.startsWith('/') ? to : `/home/you/${to}`;
+					if (this.world.vaults.some((o) => o.path === path)) fail('exists', `a file already exists at ${path}`);
+					const list = served.filter((s) => s.url === base);
+					if (list.length === 0) fail('not_found', `the server at ${base} holds no vault yet: connect one from a machine that has it (\`flint vault connect ${base}\`)`);
+					let pick = list[0];
+					if (!id) {
+						if (list.length > 1) fail('usage', `the server at ${base} keeps ${list.length} vaults: choose one by its id (\`flint vault connect ${base} --list\`, then \`--id <id>\`)`);
+					} else {
+						const w = id.trim().toLowerCase();
+						if (w.length < 4) fail('usage', "give at least 4 characters of the vault's id");
+						const hits = list.filter((s) => s.id.startsWith(w));
+						if (hits.length === 0) fail('not_found', `the server holds no vault with id ${w}`);
+						if (hits.length > 1 && !hits.some((s) => s.id === w)) fail('usage', `${hits.length} vaults on the server start with ${w}: give more of the id`);
+						pick = hits.find((s) => s.id === w) ?? hits[0];
+					}
+					const src = this.world.vaults.find((o) => o.name === pick.from)!;
+					const copy: Vault = { ...structuredClone(src), name: vaultNameOf(path), path, unlocked: false, conflictCopy: undefined, remote: { url: base, version: pick.version } };
+					this.world.vaults.push(copy);
+					this.emit(syncOutcome(copy, 'downloaded', false), () => {
+						this.say(`Downloaded vault '${copy.name}' from ${base} to ${path} (version ${pick.version}).`);
+						this.say("It is connected: changes on this machine and on the server's other machines stay in step.");
+					});
+					this.io.note('flint (demo): no server is reached here. Run your own, then connect for real.', '/guides/remote-vault/');
+					return ok;
+				}
+				if (label.length > 64 || label.trim() !== label || /[\x00-\x1f\x7f]/.test(label)) fail('invalid', "a vault's label is at most 64 characters, with no control character or white space at either end");
 				if (v!.remote) fail('conflict', `vault '${v!.name}' is already connected to ${v!.remote.url}; run \`flint vault disconnect\` first`);
-				v!.remote = { url: base, version: 1 };
-				const got = syncOutcome(v!, 'uploaded', true);
+				const vid = demoVaultId(v!.name);
+				const there = served.find((s) => s.url === base && s.id === vid);
+				const version = there ? there.version : 1;
+				if (there) { if (label) there.label = label; } else served.push({ url: base, id: vid, label, version, size: 118784, from: v!.name });
+				v!.remote = { url: base, version };
+				const got = syncOutcome(v!, there ? 'merged' : 'uploaded', !there);
 				this.emit(got, () => {
-					this.say(`Connected vault '${v!.name}' to ${base} and uploaded it (version 1).`);
-					this.say(`On another machine: \`flint vault connect ${base} --to <path>\`.`);
+					if (there) this.say(`Connected vault '${v!.name}' to ${base}: the server already held it, and the two copies were merged (version ${version}).`);
+					else this.say(`Connected vault '${v!.name}' to ${base} and uploaded it (version 1).`);
+					if (label) this.say(`The server lists it as '${label}'.`);
+					this.say(`On another machine: \`flint vault connect ${base} --to <path>\` (with \`--id ${vid.slice(0, 8)}\` when the server keeps several vaults).`);
 				});
 				this.io.note('flint (demo): no server is reached here. Run your own, then connect for real.', '/guides/remote-vault/');
 				return ok;
@@ -1261,6 +1317,31 @@ function remoteStatus(v: Vault, now: Date) {
 }
 
 /** SyncOutcome (src/application/sync.cf). */
+/** A demo vault's id: 32 hex characters from its name (a real one is random, D-095). */
+function demoVaultId(name: string): string {
+	let h = 0x811c9dc5;
+	let out = '';
+	for (let round = 0; round < 4; round++) {
+		for (const ch of `${name}#${round}`) h = Math.imul(h ^ ch.charCodeAt(0), 0x01000193) >>> 0;
+		out += h.toString(16).padStart(8, '0');
+	}
+	return out;
+}
+
+/** "340 KB" or "1.2 MB", as size_label in src/drivers/clicmd/sync_commands.cf. */
+function sizeLabel(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1048576) return `${Math.floor((bytes + 512) / 1024)} KB`;
+	const tenths = Math.floor((bytes * 10 + 524288) / 1048576);
+	return `${Math.floor(tenths / 10)}.${tenths % 10} MB`;
+}
+
+/** The name a vault file gives its vault (vault_name_from_path). */
+function vaultNameOf(path: string): string {
+	const file = path.split('/').pop() ?? path;
+	return file.endsWith('.flint') ? file.slice(0, -6) : file;
+}
+
 function syncOutcome(v: Vault, result: string, uploaded: boolean) {
 	return {
 		path: v.path, name: v.name, url: v.remote!.url, result, version: v.remote!.version, uploaded,

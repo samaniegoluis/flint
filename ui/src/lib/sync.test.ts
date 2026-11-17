@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MergeReport, RemoteStatus } from '../api/types';
-import { agoLabel, errorCodeOf, groupChanges, mergeSummary, MERGED_FOR_MS, NO_LIVE, noteText, sizeLabel, syncState, urlHost } from './sync';
+import { agoLabel, copyName, errorCodeOf, groupChanges, mergeSummary, MERGED_FOR_MS, NO_LIVE, noteText, sizeLabel, syncState, urlHost } from './sync';
 
 const st = (o: Partial<RemoteStatus> = {}): RemoteStatus => ({
   connected: true, url: 'https://vault.example.com', version: 3, last_sync: 1000, last_attempt: 1000, last_error: '', pending: false, ...o,
@@ -72,5 +72,14 @@ describe('merge reports', () => {
   it('says the merge notes in plain words', () => {
     expect(noteText({ kind: 'host', name: 'web-01-2', change: 'renamed', detail: 'was web-01' })).toBe('web-01 existed on both machines: this host is now web-01-2');
     expect(noteText({ kind: 'tunnel', name: 'db:pg', change: 'dropped', detail: 'its host was removed' })).toBe('db:pg (tunnel) was removed too: its host was removed');
+  });
+});
+
+describe('copyName', () => {
+  it('names the local copy after the label, or vault', () => {
+    expect(copyName({ label: 'Work' })).toBe('Work.flint');
+    expect(copyName({ label: ' a/b:c ' })).toBe('abc.flint');
+    expect(copyName({ label: '' })).toBe('vault.flint');
+    expect(copyName(undefined)).toBe('vault.flint');
   });
 });
