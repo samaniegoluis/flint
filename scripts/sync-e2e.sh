@@ -49,7 +49,7 @@ app_pid=""
 cleanup() {
   [[ -n "$app_pid" ]] && { kill "$app_pid" 2>/dev/null; wait "$app_pid" 2>/dev/null; }
   FLINT_CONFIG_DIR="$tmp/a" "$flint" --vault "$VA" vault disconnect >/dev/null 2>&1
-  FLINT_CONFIG_DIR="$tmp/b" "$flint" --vault "$VB" vault disconnect >/dev/null 2>&1
+  FLINT_CONFIG_DIR="$tmp/b" FLINT_KEYCHAIN_SERVICE="$(kc_service b)" "$flint" --vault "$VB" vault disconnect >/dev/null 2>&1
   stop_server
   # FLINT_E2E_KEEP=<dir> keeps the app's and the server's logs for a look.
   if [[ -n "${FLINT_E2E_KEEP:-}" ]]; then cp "$tmp/app.log" "$tmp/server.log" "$all_out" "$FLINT_E2E_KEEP/" 2>/dev/null; fi
@@ -59,11 +59,17 @@ trap cleanup EXIT
 
 no_tty() { perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV or die "exec: $!"' "$@"; }
 
+# Each machine's keychain service. On one Mac every "machine" shares the user's keychain,
+# and macOS asks a person before one binary reads an item another saved (D-099): B
+# and the app C both hold Lab, so B keeps its tokens under a service of its own, as a
+# machine of its own would.
+kc_service() { if [[ "$1" == b ]]; then echo "Flint e2e B"; else echo "Flint"; fi; }
+
 # on <machine a|b> <exit code> <description> <stdin text> -- <flint args...>
 on() {
   local m="$1" want="$2" desc="$3" input="$4"; shift 5
   checks=$((checks + 1))
-  printf '%s' "$input" | FLINT_CONFIG_DIR="$tmp/$m" no_tty "$flint" "$@" >"$tmp/out" 2>"$tmp/err"
+  printf '%s' "$input" | FLINT_CONFIG_DIR="$tmp/$m" FLINT_KEYCHAIN_SERVICE="$(kc_service "$m")" no_tty "$flint" "$@" >"$tmp/out" 2>"$tmp/err"
   local got=$?
   out="$(cat "$tmp/out")"; err="$(cat "$tmp/err")"
   { echo "\$ [$m] flint $*"; echo "$out"; echo "$err"; } >> "$all_out"
@@ -262,7 +268,7 @@ JS
   got_it=""
   for _ in $(seq 1 30); do
     sleep 1
-    printf '%s\n' "$PW" | FLINT_CONFIG_DIR="$tmp/b" no_tty "$flint" --vault "$VB" vault sync --master-stdin >/dev/null 2>&1
+    printf '%s\n' "$PW" | FLINT_CONFIG_DIR="$tmp/b" FLINT_KEYCHAIN_SERVICE="$(kc_service b)" no_tty "$flint" --vault "$VB" vault sync --master-stdin >/dev/null 2>&1
     [[ "$(aliases b "$VB")" == *app-made* ]] && { got_it=1; break; }
   done
   check "the app uploaded its change within seconds" '[[ -n "$got_it" ]]'

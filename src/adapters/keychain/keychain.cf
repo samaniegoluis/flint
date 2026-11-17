@@ -5,11 +5,20 @@ package keychain
 
 // CFIRE-UPSTREAM: CF-008, CF-031
 import cpp "flint_keychain.hpp" @pkg("flint-native")
+import "core:os"
 import "../../domain"
 
 // A function, not a global: a global initialiser elsewhere (the test warm-up) may run
-// before a global str is constructed.
+// before a global str is constructed. FLINT_KEYCHAIN_SERVICE is a seam for the e2e
+// runs only (milestone 45): two "machines" on one Mac share its keychain, and on
+// macOS an item one binary saved asks before another reads it (D-099), so a run that
+// stands for another machine keeps its items under another service. Not documented
+// for people: a vault remembered under it is not found by a Flint without it.
 fn keychain_service() -> str {
+    s := os.getenv("FLINT_KEYCHAIN_SERVICE")
+    if s.len() > 0 {
+        return s
+    }
     return "Flint"
 }
 
