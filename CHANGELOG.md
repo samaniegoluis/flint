@@ -4,6 +4,15 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.12.1 — 2026-11-17
+
+The desktop app's Settings now says exactly what a vault server keeps: the encrypted file, its version and id, and the label you gave it, if any. Never the key.
+
+### Fixed
+
+- **gui:** Settings says what the vault server keeps, the label included
+
+
 ## 0.12.0 — 2026-11-17
 
 One flint-vault-server now keeps all your vaults, Personal and Work alike, behind one token. Connect any vault to it, give it an optional label (stored in clear), and on a new machine pick the one you want from the server's list, in the app or with flint vault connect --list and --id. A server updated from 0.11 moves its vault into place on its own; machines still on 0.11 keep syncing until a second vault is connected.
