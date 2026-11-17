@@ -55,8 +55,16 @@ for s in "${suites[@]}"; do
   log="$WT/${s//\//_}.log"
   timeout -k 5 "${FLINT_SUITE_TIMEOUT:-900}" cfire test --target x86_64-w64-mingw32 "$root/$s" >"$log" 2>&1
   out="$(cat "$log")"
-  summary="$(grep -E '^(PASS|FAIL) \(' <<<"$out" | tail -1)"
-  [[ -n "$summary" ]] || summary="FAIL (no summary: $(tail -1 <<<"$out"))"
+  # A folder with packages inside (src/application holds vaultserver) runs one suite
+  # each, each with its own PASS/FAIL line: every one counts, not the last.
+  lines="$(grep -E '^(PASS|FAIL) \(' <<<"$out")"
+  if [[ -z "$lines" ]]; then
+    summary="FAIL (no summary: $(tail -1 <<<"$out"))"
+  elif grep -q '^FAIL' <<<"$lines"; then
+    summary="FAIL ($(tr '\n' ' ' <<<"$lines"))"
+  else
+    summary="PASS ($(grep -oE '[0-9]+ cfire tests' <<<"$lines" | awk '{n += $1} END {print n}') cfire tests in $(wc -l <<<"$lines") suites)"
+  fi
   echo "$s: $summary"
   if [[ "$summary" != PASS* ]]; then failed=1; grep '^--- FAIL' <<<"$out" | cut -c1-240; fi
 done

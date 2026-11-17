@@ -7,6 +7,10 @@
 #                                               # and adds the first two to WSLENV
 #   vault_server_stop
 #
+# VAULT_SERVER_TOKEN keeps a token across a stop and a start (sync-e2e.sh takes the
+# server down and up again); the data folder and the log ($d/vault-server.log, appended)
+# carry over too.
+#
 # The server has no Windows build (its shim is POSIX sockets, milestone 42; it runs in
 # Docker), so it is the Linux binary, built here, listening in WSL on 127.0.0.2, with
 # ssh-relay.ps1 carrying Windows' 127.0.0.1:<port> to it (why 127.0.0.2 and a relay: see
@@ -29,19 +33,25 @@ vault_server_start() {  # <folder> [port]
   (cd "$_vs_root" && unset PKG_CONFIG_LIBDIR CFIRE_CXX && PKG_CONFIG_PATH= && source scripts/env.sh >/dev/null \
     && cfire build flint-vault-server >"$d/vault-server-build.log" 2>&1) \
     || { echo "vault-server: build failed ($d/vault-server-build.log)" >&2; return 1; }
-  token="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  token="${VAULT_SERVER_TOKEN:-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')}"
   mkdir -p "$d/vault-data"
   FLINT_VAULT_TOKEN="$token" FLINT_VAULT_DATA="$d/vault-data" FLINT_VAULT_LISTEN="127.0.0.2:$inner" \
-    "$_vs_root/build/flint-vault-server" >"$d/vault-server.log" 2>&1 &
+    "$_vs_root/build/flint-vault-server" >>"$d/vault-server.log" 2>&1 &
   _vs_pid=$!
   for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.2/$inner") 2>/dev/null && break; sleep 0.1; done
+  # Removed first: the background job truncates its log only once it runs, so a restart
+  # would otherwise read the previous relay's ready line and go on before this one listens.
+  rm -f "$d/vault-relay.log"
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$_vs_here/ssh-relay.ps1")" \
     -Port "$port" -TargetHost 127.0.0.2 -Target "$inner" -Distro "$WSL_DISTRO_NAME" >"$d/vault-relay.log" 2>&1 &
   _vs_relay=$!
   _vs_inner=$inner
-  # The relay's ready line can take seconds to come through interop's pipe.
-  for _ in $(seq 1 300); do grep -q '^relay:' "$d/vault-relay.log" 2>/dev/null && break; sleep 0.1; done
-  grep -q '^relay:' "$d/vault-relay.log" || { echo "vault-server: the relay did not start" >&2; cat "$d/vault-relay.log" >&2; return 1; }
+  # The relay's ready line takes 10-15 s to come through interop's pipe (PowerShell
+  # compiling the relay); under load more: wait up to 60 s and say how long it took.
+  local t0=$SECONDS
+  for _ in $(seq 1 600); do grep -q '^relay:' "$d/vault-relay.log" 2>/dev/null && break; sleep 0.1; done
+  grep -q '^relay:' "$d/vault-relay.log" || { echo "vault-server: the relay did not start in $((SECONDS - t0)) s; its log:" >&2; cat "$d/vault-relay.log" >&2; return 1; }
+  echo "diag: the vault relay started in $((SECONDS - t0)) s" >&2
   export FLINT_TEST_VAULT_URL="http://127.0.0.1:$port" FLINT_TEST_VAULT_TOKEN="$token" FLINT_TEST_VAULT_DATA="$d/vault-data"
   export WSLENV="${WSLENV:+$WSLENV:}FLINT_TEST_VAULT_URL:FLINT_TEST_VAULT_TOKEN"
 }
