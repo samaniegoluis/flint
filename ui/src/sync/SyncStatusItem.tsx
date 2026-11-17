@@ -22,7 +22,11 @@ export function SyncStatusItem() {
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); setOpen(false); } };
+    // Esc closes it, and so does any shortcut (⌘K opens the palette over it).
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); setOpen(false); return; }
+      if (e.metaKey || e.ctrlKey) setOpen(false);
+    };
     window.addEventListener('mousedown', away);
     window.addEventListener('keydown', esc, true);
     return () => { window.removeEventListener('mousedown', away); window.removeEventListener('keydown', esc, true); };
