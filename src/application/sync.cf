@@ -98,11 +98,17 @@ fn save_link[L: RemoteLinkStore](links: L, link: RemoteLink) -> void! {
 // Puts `link` in place of the one for its path, and does nothing when there is none:
 // what a sync saves. A vault disconnected while its sync was on the network (the app's
 // Disconnect while a Sync now runs) stays disconnected; with `save_link` the sync's end
-// put the link back, with its token already gone from the keychain.
+// put the link back, with its token already gone from the keychain. A link for the
+// same path to another vault or server (disconnected and connected again meanwhile) is
+// not the one the sync started from, and is left as it is.
 fn update_link[L: RemoteLinkStore](links: L, link: RemoteLink) -> void! {
     mut list := try links.links_load()
     i := find_remote_link(list, link.path)
     if i < 0 {
+        return
+    }
+    now := list[usize(i)]
+    if now.vault_id != link.vault_id || now.url != link.url {
         return
     }
     list[usize(i)] = link
@@ -319,6 +325,14 @@ fn replace_remote_token[L: RemoteLinkStore, R: VaultRemote, T: Keychain](links: 
     got := try remote.remote_get(remote_vault_url(link.url, link.vault_id), clean_token, link.version)
     if got.found && got.vault_id.len() > 0 && got.vault_id != link.vault_id {
         return error(coded(ERR_CONFLICT, "the server at {link.url} answered for another vault; the token was not replaced"))
+    }
+    // Looked up again: a vault disconnected while the server was asked has no token
+    // to replace, and a token kept now would stay in the keychain with no link.
+    still := load_link(links, path) or err {
+        return error(coded(ERR_NOT_FOUND, "the vault was disconnected meanwhile; the token was not kept"))
+    }
+    if still.vault_id != link.vault_id || still.url != link.url {
+        return error(coded(ERR_CONFLICT, "the vault was connected again meanwhile; the token was not kept"))
     }
     try save_token(tokens, link.vault_id, clean_token)
     return link

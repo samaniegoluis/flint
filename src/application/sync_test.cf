@@ -503,3 +503,60 @@ fn (self: FailingAfterDisconnect) remote_list(url: str, token: str) -> []ServerV
 fn (self: FailingAfterDisconnect) remote_set_label(url: str, token: str, label: str) -> void! {
     return error(coded(ERR_NETWORK, "cannot reach the server"))
 }
+
+// A server whose GET returns only after this machine disconnected the vault and
+// connected its path to another server (stood for by the link saved directly).
+type ReconnectingRemote struct {
+    inner: FakeRemote
+    links: FakeLinks
+    kc: FakeKeychain
+    path: str
+    vault_id: str
+}
+
+fn (self: ReconnectingRemote) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
+    got := try self.inner.remote_get(url, token, known_version)
+    _ := try disconnect_remote(self.links, self.kc, self.path)
+    try save_link(self.links, RemoteLink{ path: self.path, vault_id: self.vault_id, url: OTHER_SERVER, version: 0, synced_hash: "", last_sync: 0, last_attempt: 0, last_error: "" })
+    return got
+}
+
+fn (self: ReconnectingRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
+    return self.inner.remote_put(url, token, vault_id, base_version, data)
+}
+
+fn (self: ReconnectingRemote) remote_list(url: str, token: str) -> []ServerVault! {
+    return self.inner.remote_list(url, token)
+}
+
+fn (self: ReconnectingRemote) remote_set_label(url: str, token: str, label: str) -> void! {
+    return self.inner.remote_set_label(url, token, label)
+}
+
+OTHER_SERVER: str = "https://other.example.com"
+
+test "a sync's end leaves alone a link connected again while it was on the network" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut a := try machine_a(crypto)
+    remote := new_fake_remote()
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
+    try add_stamped(crypto, mut a, "api", 3000)
+    moved := ReconnectingRemote{ inner: remote, links: a.links, kc: a.kc, path: a.session.path, vault_id: a.session.id }
+    _ := try sync_vault(crypto, mut a.store, a.links, moved, a.kc, a.kc, mut a.session, "", 4000)
+    l := try load_link(a.links, a.session.path)
+    assert_eq(l.url, OTHER_SERVER)
+    assert_eq(l.version, i64(0))
+    assert_eq(l.last_sync, i64(0))
+}
+
+test "a token replaced while its vault is disconnected is not kept" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut a := try machine_a(crypto)
+    remote := new_fake_remote()
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
+    slow := DisconnectingRemote{ inner: remote, links: a.links, kc: a.kc, path: a.session.path }
+    mut msg := ""
+    replace_remote_token(a.links, slow, a.kc, a.session.path, "tok") or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    assert_eq((try a.kc.keychain_load(remote_token_account(a.session.id))).len(), usize(0))
+}
