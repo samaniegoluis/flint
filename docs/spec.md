@@ -10,6 +10,10 @@
 [`ROADMAP.md`](../ROADMAP.md). This file is static: a decision that changes goes into
 [`decisions.md`](./decisions.md), which supersedes the line here.
 
+**Status: closed 2026-11-17.** Milestones 39-45 are built (`docs/build-log.md`), released
+up to `v0.12.1`, and their owner reviews done; only the owner's Windows checks remain,
+tracked in the build log. The next spec is drawn from `ROADMAP.md`.
+
 ## Problem
 
 v10 shipped (milestones 35-38, `v0.5.0`): the RDP desktop is finished, full screen and on
@@ -26,8 +30,9 @@ encrypted in full, with a version number. When two machines change the vault apa
 one that uploads second gets a `409`, downloads the other copy, opens both with the key it
 already holds, merges them record by record and uploads the result.
 
-One person, one server, one token: each user runs their own instance. Accounts, many users
-on one server and a hosted paid service are later (ROADMAP §10, D-092).
+One person, one server, one token: each user runs their own instance, which keeps any
+number of that person's vaults (milestone 45, D-101). Accounts, many users on one server
+and a hosted paid service are later (ROADMAP §10, D-092).
 
 ## Scope
 
@@ -46,6 +51,8 @@ on one server and a hosted paid service are later (ROADMAP §10, D-092).
   itself, conflicts merged, offline edits pushed on reconnect.
 - **Connect remote vault in the app** (milestone 44): the screen beside *Create* and
   *Open*, the sync's state, Settings.
+- **Several vaults on one server** (milestone 45, added during 43's check, D-101): one
+  server and one token keep each vault under its id, with an optional label in clear.
 - Docs site, the landing and the CLI demo follow every user-visible change (CLAUDE.md rules
   5 and 6), and a release closes each milestone with a `feat` or `fix` (rule 10).
 
@@ -92,8 +99,10 @@ Hexagonal, as in v10. v11 adds a driver and three ports.
 - **The protocol, `/v1`:** `GET /v1/vault` returns the blob, its version and the vault's
   id; `PUT /v1/vault` with `If-Match: <version>` stores a new version, `409` when another
   machine uploaded first, `412`/`400` for a blob of another vault id. A bearer token on
-  every request. Versioned from the start so accounts (`/v1/vaults/:id`) and a change log
-  (`/v2`) are additions, not rewrites.
+  every request. Versioned from the start so further vaults and a change log (`/v2`) are
+  additions, not rewrites. Milestone 45 made the first of them: `GET /v1/vaults`, and
+  `GET`/`PUT /v1/vaults/:id` with a label beside each vault; `/v1/vault` stays for 0.11
+  clients while the server keeps one vault (D-103).
 - **The client side:** a `VaultRemote` port (HTTP adapter) and a sync use case in
   `application/`; the merge itself in `domain/` (two record sets in, one out, plus a
   report). The CLI, grants, tokens, Touch ID, the tray and `exec --sudo` keep working on
@@ -180,22 +189,23 @@ v10.
 | 42 | **`flint-vault-server`** | Starts with a spike on `core:net/http`: a `PUT` route, a request body cap, read and write timeouts, the request's headers; gaps as `CF-NNN`. Then `src/drivers/vault-server/`: `GET` / `PUT /v1/vault` with `If-Match` and `409`, the vault id checked on every upload; the token from `FLINT_VAULT_TOKEN`, or only its hash from `FLINT_VAULT_TOKEN_HASH`, compared in constant time; `flint-vault-server token` prints a new 32-byte random token; it refuses to start with a short one; a rate limit per client, a lockout after repeated bad tokens, a size cap; storage as files on a volume, written by temp file + rename, **the last 10 versions kept** (a history a person restores by hand: documented). A `Dockerfile` and a `docker-compose.yml` with a volume, a local `scripts/server-image.sh` that builds the image (and pushes it to GHCR when asked). Server tests over `Router.dispatch` and a real listening server; docs page *Self-host a remote vault* (Docker, bare binary, a reverse proxy for TLS: Dokploy, NPM, Caddy, rotating the token). Owner review (Principle 13) |
 | 43 | **Sync in the core and the CLI** | The `VaultRemote` port with its HTTP adapter and the sync use case. `flint vault connect <url>`: asks for the token (kept in the keychain), refuses `http://` beyond `localhost` and a master password under the strength threshold (pointing to `flint vault passwd`), then uploads the local vault or, if the server already holds one, downloads it as a new local copy. The sync runs at unlock, after each change (batched), and about every 60 s while the app runs; offline edits wait and are pushed on reconnect. A `409` downloads, opens, merges (41) and uploads again; a locked machine keeps its changes and merges at the next unlock; a blob that does not open with the key asks for the new master password (changed on another machine, 40). `flint vault status` shows the remote, the last sync and what waits; `flint vault disconnect`. cli-e2e against a real server with two config folders as two machines (both offline, both edit, both reconnect); docs and the CLI demo. Owner review (Principles 13, 14) |
 | 44 | **Connect remote vault in the app** | *Connect remote vault* beside *Create vault* and *Open vault* (URL, token, master password; the same checks as 43), the sync's state in the status bar and Settings → Vault (in step, waiting, offline, merged with a report, needs the new password), *Sync now* and *Disconnect*. Screens designed first in Claude Design. gui-e2e against a real server; docs (remote vault, security model), the landing (a card for the remote vault, the "What's next" item leaves) |
+| 45 | **Several vaults on one server** | Added during 43's check (D-101). `flint-vault-server` keeps a folder per vault id with its own versions and history, and moves a 0.11 data folder there; `GET /v1/vaults` lists ids, sizes, versions and an optional label kept in clear (the one thing Principle 13 lets the server read, never logged); `GET`/`PUT /v1/vaults/:id`; `/v1/vault` kept for single-vault clients. `vault connect <url>` sends the vault's id and takes `--label`; a download chooses with `--list` and `--id` (a unique prefix), the app's Connect remote vault shows the server's list. One token per server, still one person. Owner review (Principle 13) at plan and close |
 
 ## Open questions
 
-- **The strength threshold** for a master password that may leave the machine (40, 43):
-  which estimate (a zxcvbn-style score in pure cfire) and where the line sits; settled at
-  40's plan with the owner.
-- **The vault's stable id** across a password change (40): a random id in `meta`, and how
-  existing per-machine state (keychain account, recents, ui-state, the activity file of
-  39) moves to it.
-- **Milestone 41's size**: the migration and the merge first; the CLI may split into 41b.
-- **How a person restores an older version** from the server's history (42): documented
-  by hand first; a `flint vault history` / restore only if it earns a milestone.
-- **The owner's Windows checks of milestones 34-38** (the shims written but not compiled
-  there: full screen, multi-monitor, CF-127 at 100 % and 150 %): pending, independent of
-  v11.
-- **Bundling FreeRDP and the other libraries into a release**: a dynamic system package for
-  now (D-015); bundling stays in ROADMAP §7.
-- **Flint's licence.** MIT or Apache-2.0. It also depends on cfire publishing a licence
-  (CF-009).
+All of v11's were settled while it was built:
+
+- **The strength threshold** (40, 43): a reduced zxcvbn port in pure cfire; a vault leaves
+  the machine only with *Strong*, score 3 of 4 (D-095).
+- **The vault's stable id** (40): frozen in `meta.vault_id`, so every per-machine file
+  keeps its name across a password change; a vault from before keeps its salt-derived id,
+  a new one gets a random id (D-095).
+- **Milestone 41's size**: built whole, no 41b (D-096).
+- **Restoring an older version** (42): `flint-vault-server versions` / `restore <n>` on the
+  server; history over HTTP stays an idea in ROADMAP §10 (D-097).
+- **Flint's licence**: MIT, the repository public as a preview (D-100).
+- **Bundling FreeRDP and the other libraries into a release**: unchanged, a dynamic system
+  package (D-015); bundling stays in ROADMAP §7.
+
+Carried past v11: **the owner's Windows checks** of milestones 34-45, tracked as *Pending
+owner checks* in `docs/build-log.md`.
