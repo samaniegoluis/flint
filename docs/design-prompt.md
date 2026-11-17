@@ -606,7 +606,7 @@ Dark and light for every screen.
 
 ---
 
-## Message 9: Connect remote vault and the sync's state (v11, milestone 44, to send)
+## Message 9: Connect remote vault and the sync's state (v11, milestone 44, sent)
 
 Written at milestone 44's plan (2026-11-13), after milestone 43 built the sync in the core
 and the CLI (D-098). Send it in the same chat as messages 1-8. Screens 23a-23h are needed
@@ -626,8 +626,9 @@ When two machines changed the vault apart, Flint downloads the other copy, merge
 record by record (the newer edit wins; a host alias created on both sides is renamed,
 e.g. "web-01-2") and uploads the result. Nothing is ever lost, so a merge is news, not an
 alarm. The rules (owner):
-  - One server holds one vault. Its address must be https:// (http:// only for
-    localhost). It is reached with a token (a long random string the server printed); the
+  - A server keeps one vault today; a later version lets one server keep several, each
+    under its id (23a3 leaves room for the choice). Its address must be https://
+    (http:// only for localhost). It is reached with a token (a long random string the server printed); the
     token is a secret: typed or pasted once, kept in the OS keychain, never shown again,
     only "Saved in the keychain" and Replace.
   - A vault may only go to a server with a Strong master password (3 of 4 on the strength
@@ -670,8 +671,11 @@ alarm. The rules (owner):
     disabled and "A vault on a server needs a Strong password — Change master password…".
     Outcomes: the server was empty ("Uploaded. Other machines can connect now"), it
     already held this same vault ("Merged with the server's copy", the merge summary as
-    23e), it holds another vault (refused: "This server keeps a different vault. A server
-    holds one vault").
+    23e), it holds another vault (refused for now: "This server already keeps a different
+    vault").
+  - 23b4 · Replace token (a modal from 23b3): one password field with a paste button,
+    "Replace". Flint checks the new token against the server before the old one is
+    dropped; a refused token is an inline error and the old one stays.
   - 23b3 · Connected: the address (mono), state as in 23c with its last sync time
     ("In step · 2 min ago"), version number (faint), "Sync now", "Check every" (Only on
     changes and at unlock · 1 min · 5 min · 15 min), "Replace token…", and "Disconnect…"
@@ -682,7 +686,8 @@ alarm. The rules (owner):
   item): a small cloud glyph plus a word, each state at a glance:
   - In step (quiet, no colour; tooltip "Synced 2 min ago").
   - Syncing (a subtle motion).
-  - Waiting · 3 changes (changes not uploaded yet; a neutral dot).
+  - Waiting (changes not uploaded yet; a neutral dot. Flint knows that changes wait,
+    not how many: no count).
   - Offline (server unreachable; neutral, "will sync when back").
   - Merged (sapphire, info tone, for a short while after a merge brought changes; click
     opens 23e).
@@ -709,7 +714,7 @@ alarm. The rules (owner):
   with the new password from now on (say so in one line).
 
 23g · Unlock (03) for a connected vault: one faint line under the field when changes wait
-  ("3 changes from this machine will sync after unlocking").
+  ("Changes from this machine will sync after unlocking"; no count, as 23c).
 
 23h · Command palette: "Sync vault now", "Connect vault to a server…", "Disconnect vault
   from server…", "Show last merge". And 900×600 (as 04c): 23a3, 23b3 and the status bar.
