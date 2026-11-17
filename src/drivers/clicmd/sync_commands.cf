@@ -54,7 +54,7 @@ fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, 
         path := absolute_path(to)
         token := try server_token_for(sec)
         password := try master_password_for(sec, vault_name_from_path(path))
-        s := try download_remote(c, mut store, links, remote, src.kc, tokens, recents, url, token, password, path, wall_ms())
+        s := try download_remote(c, mut store, links, remote, src.kc, tokens, recents, url, token, password, path, false, wall_ms())
         st := try remote_status(c, store, links, s.path)
         if as_json {
             say(json.stringify(SyncOutcome{ path: s.path, name: s.name, url: st.url, result: "downloaded", version: st.version, uploaded: false, report: empty_merge_report(), rekeyed: false }))

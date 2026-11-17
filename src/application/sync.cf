@@ -198,8 +198,9 @@ fn connect_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, 
 // `flint vault connect <url> --to <path>`: downloads the vault the server holds as a
 // new vault file at `path`, opened with `password` (its master password, typed for
 // this command), and connects it. Returns the session of the new vault, unlocked in
-// `store`.
-fn download_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: Keychain, T: Keychain, P: RecentStore](crypto: C, mut store: S, links: L, remote: R, keychain: K, tokens: T, recents: P, url: str, token: str, password: str, path: str, now_ms: i64) -> VaultSession! {
+// `store`. `remember` keeps its key in the keychain, as an unlock would (the app's
+// Connect remote vault; the CLI never does).
+fn download_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: Keychain, T: Keychain, P: RecentStore](crypto: C, mut store: S, links: L, remote: R, keychain: K, tokens: T, recents: P, url: str, token: str, password: str, path: str, remember: bool, now_ms: i64) -> VaultSession! {
     try check_absolute(path)
     base := try check_connect_inputs(url, token, password, vault_name_from_path(path))
     if store.vault_file_exists(path) {
@@ -226,7 +227,7 @@ fn download_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote,
         return error(msg)
     }
     try store.vault_write_new(path, got.data)
-    session := try unlock_vault(crypto, mut store, keychain, recents, path, password, false)
+    session := try unlock_vault(crypto, mut store, keychain, recents, path, password, remember)
     if session.id != got.vault_id {
         return error(coded(ERR_INVALID, "the server named vault {got.vault_id}, and the file it sent is vault {session.id}"))
     }
@@ -239,6 +240,64 @@ fn download_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote,
         return error("{err.message()}")
     }
     return session
+}
+
+// What a server holds, seen before any master password is typed (the app's Connect
+// remote vault, design 23a): its URL as Flint will keep it, whether it holds a vault,
+// and that vault's id, version and size. No key is needed and nothing is kept on this
+// machine; the token is only sent.
+type RemoteProbe struct {
+    url:      str  `json:"url"`
+    found:    bool `json:"found"`
+    vault_id: str  `json:"vault_id"`
+    version:  i64  `json:"version"`
+    size:     i64  `json:"size"`
+}
+
+fn probe_remote[R: VaultRemote](remote: R, url: str, token: str) -> RemoteProbe! {
+    base := try check_remote_url(url)
+    clean_token := str_trim_all(token)
+    if clean_token.len() == 0 {
+        return error(coded(ERR_USAGE, "the server's token is needed"))
+    }
+    got := try remote.remote_get(remote_vault_url(base), clean_token, 0)
+    if !got.found {
+        return RemoteProbe{ url: base, found: false, vault_id: "", version: 0, size: 0 }
+    }
+    return RemoteProbe{ url: base, found: true, vault_id: got.vault_id, version: got.version, size: i64(got.data.len()) }
+}
+
+// `flint vault token` and Settings → Vault → Replace token: a new token for the
+// connected vault at `path`, after its server's token was rotated. The new one is
+// tried against the server first; a refused token, or a server that now holds
+// another vault, leaves the old one in the keychain.
+fn replace_remote_token[L: RemoteLinkStore, R: VaultRemote, T: Keychain](links: L, remote: R, tokens: T, path: str, token: str) -> RemoteLink! {
+    link := try load_link(links, path)
+    clean_token := str_trim_all(token)
+    if clean_token.len() == 0 {
+        return error(coded(ERR_USAGE, "the server's token is needed"))
+    }
+    got := try remote.remote_get(remote_vault_url(link.url), clean_token, link.version)
+    if got.found && got.vault_id.len() > 0 && got.vault_id != link.vault_id {
+        return error(coded(ERR_CONFLICT, "the server at {link.url} now holds another vault; the token was not replaced"))
+    }
+    try save_token(tokens, link.vault_id, clean_token)
+    return link
+}
+
+// The vaults connected on this machine, by path, with their servers' URLs (the app's
+// cloud mark on recents and the vault switcher, design 23d). No token, no key.
+type RemoteLinkView struct {
+    path: str `json:"path"`
+    url:  str `json:"url"`
+}
+
+fn remote_link_views[L: RemoteLinkStore](links: L) -> []RemoteLinkView! {
+    mut views: []RemoteLinkView = []
+    for l in try links.links_load() {
+        views.push(RemoteLinkView{ path: l.path, url: l.url })
+    }
+    return views
 }
 
 // `flint vault disconnect`: this machine stops syncing the vault at `path`. The vault
