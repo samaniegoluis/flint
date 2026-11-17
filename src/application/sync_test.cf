@@ -434,3 +434,54 @@ test "the connected vaults are listed by path and server, nothing more" {
     assert_eq(views[0].path, a.session.path)
     assert_eq(views[0].url, SERVER)
 }
+
+// A server whose GET returns only after this machine disconnected the vault (the app's
+// Disconnect while a Sync now is on the network).
+type DisconnectingRemote struct {
+    inner: FakeRemote
+    links: FakeLinks
+    kc: FakeKeychain
+    path: str
+}
+
+fn (self: DisconnectingRemote) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
+    got := try self.inner.remote_get(url, token, known_version)
+    _ := try disconnect_remote(self.links, self.kc, self.path)
+    return got
+}
+
+fn (self: DisconnectingRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
+    return self.inner.remote_put(url, token, vault_id, base_version, data)
+}
+
+test "a vault disconnected while its sync is on the network stays disconnected" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut a := try machine_a(crypto)
+    remote := new_fake_remote()
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    try add_stamped(crypto, mut a, "api", 3000)
+    slow := DisconnectingRemote{ inner: remote, links: a.links, kc: a.kc, path: a.session.path }
+    _ := try sync_vault(crypto, mut a.store, a.links, slow, a.kc, a.kc, mut a.session, "", 4000)
+    assert(!remote_connected(a.links, a.session.path), "the sync's end does not put the link back")
+    // A sync that fails after the disconnect does not either.
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 5000)
+    try add_stamped(crypto, mut a, "db", 6000)
+    _ := sync_vault(crypto, mut a.store, a.links, FailingAfterDisconnect{ links: a.links, kc: a.kc, path: a.session.path }, a.kc, a.kc, mut a.session, "", 7000)
+    assert(!remote_connected(a.links, a.session.path), "a failed sync's error is not saved into a link that is gone")
+}
+
+// A server that cannot be reached, found only after the vault was disconnected.
+type FailingAfterDisconnect struct {
+    links: FakeLinks
+    kc: FakeKeychain
+    path: str
+}
+
+fn (self: FailingAfterDisconnect) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
+    _ := try disconnect_remote(self.links, self.kc, self.path)
+    return error(coded(ERR_NETWORK, "cannot reach the server"))
+}
+
+fn (self: FailingAfterDisconnect) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
+    return error(coded(ERR_NETWORK, "cannot reach the server"))
+}
