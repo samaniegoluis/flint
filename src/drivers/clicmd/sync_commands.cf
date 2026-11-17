@@ -1,7 +1,7 @@
 package clicmd
 
 // The remote vault from the CLI (milestone 43): `vault connect`, `vault sync`,
-// `vault disconnect`, the remote in `vault status`, and the sync after a command that
+// `vault token` (milestone 44), `vault disconnect`, the remote in `vault status`, and the sync after a command that
 // changed a connected vault. Each parses its input, calls one use case
 // (application/sync.cf) and formats the result (Principle 2).
 //
@@ -169,6 +169,29 @@ fn cmd_vault_disconnect(p: ParsedArgs, as_json: bool, recents: JsonRecentStore) 
         return
     }
     say("Vault '{target.name}' no longer syncs with {gone.url} on this machine. The vault file and the server's copy were not touched.")
+}
+
+// What `vault token --json` prints: the vault and its server, never the token.
+type TokenNote struct {
+    path: str `json:"path"`
+    url:  str `json:"url"`
+}
+
+// `flint vault token`: a new token for a connected vault, after the server's token
+// was rotated. No key needed; the new token is tried against the server before the
+// old one leaves the keychain.
+fn cmd_vault_token(p: ParsedArgs, sec: SecretInput, as_json: bool, recents: JsonRecentStore) -> void! {
+    target := try resolve_vault(recents, vault_selector(p))
+    if !remote_connected(remote_links(), target.path) {
+        return error(coded(ERR_NOT_FOUND, "vault '{target.name}' is not connected to a server; `flint vault connect <url>` connects it"))
+    }
+    token := try server_token_for(sec)
+    link := try replace_remote_token(remote_links(), new_http_vault_remote(), token_keychain(), target.path, token)
+    if as_json {
+        say(json.stringify(TokenNote{ path: target.path, url: link.url }))
+        return
+    }
+    say("Replaced the server token of vault '{target.name}' for {link.url}. It is kept in the OS keychain.")
 }
 
 // "3 min ago" for a Unix-millisecond time.

@@ -244,6 +244,14 @@ else
   echo "skip  the app's part (macOS: FLINT_SYNC_E2E_APP=1 with someone to answer the keychain dialog, D-099)"
 fi
 
+echo "== replace the token"
+on b 12 "a token the server refuses" "wrong-token-wrong-token-wrong-token-2"$'\n' -- --vault "$VB" vault token --token-stdin
+on b 0 "B still syncs with the old one" "$PW"$'\n' -- --vault "$VB" vault sync --master-stdin
+on b 0 "a token the server takes" "$TOKEN"$'\n' -- --json --vault "$VB" vault token --token-stdin
+check "--json names the server, not the token" '[[ "$(echo "$out" | json_get "d[\"url\"]")" == "$url" ]] && [[ "$out" != *"$TOKEN"* ]]'
+on b 0 "B syncs with the new one" "$PW"$'\n' -- --vault "$VB" vault sync --master-stdin
+on a 3 "a vault not connected has no token to replace" "$TOKEN"$'\n' -- --vault "$tmp/va/Weak.flint" vault token --token-stdin
+
 echo "== disconnect"
 on b 0 "disconnect" "" -- --json --vault "$VB" vault disconnect
 on b 3 "a disconnected vault does not sync" "$PW"$'\n' -- --vault "$VB" vault sync --master-stdin

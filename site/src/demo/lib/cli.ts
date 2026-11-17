@@ -52,6 +52,7 @@ Vaults
                                         (asks for its token and the master password)
   vault connect <url> --to <path>       Download the server's vault to a new file here
   vault sync [--new-master-stdin]       Sync now (Flint also syncs on its own)
+  vault token [--token-stdin]           Replace the server's token after it was rotated
   vault disconnect                      Stop syncing on this machine; the file stays
   vault forget <name|path>              Drop a vault from the recent list
 
@@ -146,7 +147,7 @@ them from stdin with the --*-stdin flags.`;
 
 /** Every `flint <noun> <verb>` the demo runs, for Tab completion and the coverage test. */
 export const COMMANDS: Record<string, string[]> = {
-	vault: ['create', 'open', 'list', 'use', 'status', 'unlock', 'lock', 'rename', 'passwd', 'merge', 'connect', 'sync', 'disconnect', 'forget'],
+	vault: ['create', 'open', 'list', 'use', 'status', 'unlock', 'lock', 'rename', 'passwd', 'merge', 'connect', 'sync', 'token', 'disconnect', 'forget'],
 	group: ['add', 'list', 'rename', 'rm'],
 	host: ['add', 'edit', 'list', 'show', 'test', 'rm'],
 	key: ['add', 'list', 'show', 'rename', 'rm'],
@@ -507,6 +508,20 @@ class Cmd {
 				if (!v.remote) fail('not_found', 'this vault is not connected to a server on this machine: run `flint vault connect <url>`');
 				const got = syncOutcome(v, 'in_step', false);
 				this.emit(got, () => this.say(`Vault '${v.name}' is in step with ${v.remote!.url} (version ${v.remote!.version}).`));
+				return ok;
+			}
+			case 'token': {
+				// cmd_vault_token (milestone 44): no key needed; the demo's server takes any token.
+				p.allowFlags('vault token', ['--token-stdin']);
+				p.expectArgs('vault token', 0, '[--vault <name|path>] [--token-stdin]');
+				const v = this.resolveVault(p.value('--vault'));
+				if (!v.remote) fail('not_found', `vault '${v.name}' is not connected to a server; \`flint vault connect <url>\` connects it`);
+				const token = yield* this.secret('Server token');
+				if (token.trim().length === 0) fail('usage', "the server's token is needed");
+				const url = v.remote.url;
+				this.emit({ path: v.path, url }, () =>
+					this.say(`Replaced the server token of vault '${v.name}' for ${url}. It is kept in the OS keychain.`),
+				);
 				return ok;
 			}
 			case 'disconnect': {

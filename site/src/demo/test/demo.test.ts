@@ -265,6 +265,11 @@ test('vault connect asks for the token and the master password, refuses plain ht
 	const st = flint(w, '--vault Work vault status --json');
 	assert.ok(st.out[0].includes('"remote":{"connected":true,"url":"https://vault.example.com"'));
 	assert.deepEqual(flint(w, '--vault Work vault sync', ['pw']).out, ["Vault 'Work' is in step with https://vault.example.com (version 1)."]);
+	const tok = flint(w, '--vault Work vault token', ['new-token']);
+	assert.deepEqual(tok.asks, ['Server token: ']);
+	assert.deepEqual(tok.out, ["Replaced the server token of vault 'Work' for https://vault.example.com. It is kept in the OS keychain."]);
+	assert.ok(!tok.out.join('').includes('new-token'));
+	assert.equal(flint(w, '--vault Demo vault token', ['new-token']).code, 3);
 	assert.deepEqual(flint(w, '--vault Work vault disconnect').out, ["Vault 'Work' no longer syncs with https://vault.example.com on this machine. The vault file and the server's copy were not touched."]);
 	assert.equal(flint(w, '--vault Work vault sync', ['pw']).code, 3);
 	assert.equal(flint(w, 'vault connect https://vault.example.com --to /home/you/home.flint', ['tok', 'pw']).code, 3);

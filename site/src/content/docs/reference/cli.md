@@ -44,6 +44,7 @@ terminal, Flint's window asks instead ([Vaults](/guides/vaults/#flint-holds-the-
 | `vault connect <url> [--token-stdin]` | Connect the vault to a [`flint-vault-server`](/guides/vault-server/) and keep it in step: asks for the server's token (kept in the OS keychain) and the master password, which must be **Strong**. An empty server gets the vault; one holding the same vault is merged with it; one holding another vault is refused (`conflict`). `http://` only to `localhost`. Refused (`conflict`) while Flint holds the vault unlocked |
 | `vault connect <url> --to <path>` | Download the vault the server holds to a new file at `<path>`, connected. Opens it with the master password first; a taken path is refused (`exists`) |
 | `vault sync [--new-master-stdin]` | Sync now: merge the server's changes, upload this machine's. When the master password was changed on another machine, asks for the new one (or reads it from stdin). Runs in Flint when it holds the vault. Without the app, a command that changes a connected vault syncs it on its own |
+| `vault token [--token-stdin]` | Replace the server's token of a connected vault after the server's token was rotated. The new one is tried against the server first; a refused token leaves the old one in the keychain. No master password needed |
 | `vault disconnect` | Stop syncing the vault on this machine and forget the token; the file and the server's copy are kept |
 | `vault forget <name\|path>` | Drop a vault from the recent list; the file is kept |
 

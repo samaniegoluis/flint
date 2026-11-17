@@ -142,6 +142,19 @@ A failed attempt shows as `last attempt`, with its error. With `--json` it is th
 `remote` object: `connected`, `url`, `version`, `last_sync` and `last_attempt` (Unix
 milliseconds), `last_error`, `pending`.
 
+## Replace the token
+
+When the server's token was [rotated](/guides/vault-server/#rotate-the-token), give each
+machine the new one:
+
+```sh
+flint vault token
+```
+
+It asks for the new token (or reads it with `--token-stdin`), tries it against the server,
+and only then replaces the old one in the keychain. A token the server refuses changes
+nothing. In the app: **Settings → Vault → Server → Replace token…**.
+
 ## Disconnect
 
 ```sh

@@ -223,6 +223,12 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try cmd_vault_sync(p, sec, as_json, c, mut store, src, recents)
         return
     }
+    if verb == "token" {
+        try p.allow_flags("vault token", ["--token-stdin"])
+        try p.expect_args("vault token", 0, "[--vault <name|path>] [--token-stdin]")
+        try cmd_vault_token(p, sec, as_json, recents)
+        return
+    }
     if verb == "disconnect" {
         try p.allow_flags("vault disconnect", [])
         try p.expect_args("vault disconnect", 0, "[--vault <name|path>]")

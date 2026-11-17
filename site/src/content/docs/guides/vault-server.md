@@ -136,9 +136,9 @@ a header's value or the vault file.
 
 Make a new token, set its hash on the server, restart it, and give the new token to each
 machine. Until a machine has the new one, its sync fails with `401` and its changes wait
-on that machine. On each machine, `flint vault disconnect`, then
-`flint vault connect <url>` with the new token: the vault is merged with the server's
-copy, nothing is lost.
+on that machine. On each machine, run `flint vault token` (or **Settings → Vault → Server →
+Replace token…** in the app) and give it the new token: it is checked against the server,
+then kept in the keychain, and the waiting changes sync on the next round. Nothing is lost.
 
 ## The data folder and backups
 
