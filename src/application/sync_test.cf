@@ -454,17 +454,27 @@ fn (self: DisconnectingRemote) remote_put(url: str, token: str, vault_id: str, b
     return self.inner.remote_put(url, token, vault_id, base_version, data)
 }
 
+fn (self: DisconnectingRemote) remote_list(url: str, token: str) -> []ServerVault! {
+    return self.inner.remote_list(url, token)
+}
+
+fn (self: DisconnectingRemote) remote_set_label(url: str, token: str, label: str) -> void! {
+    return self.inner.remote_set_label(url, token, label)
+}
+
 test "a vault disconnected while its sync is on the network stays disconnected" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 1000)
+    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     try add_stamped(crypto, mut a, "api", 3000)
     slow := DisconnectingRemote{ inner: remote, links: a.links, kc: a.kc, path: a.session.path }
     _ := try sync_vault(crypto, mut a.store, a.links, slow, a.kc, a.kc, mut a.session, "", 4000)
     assert(!remote_connected(a.links, a.session.path), "the sync's end does not put the link back")
-    // A sync that fails after the disconnect does not either.
-    _ := try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, 5000)
+    // A sync that fails after the disconnect does not either (an empty server this
+    // time, so connecting again uploads instead of merging).
+    other := new_fake_remote()
+    _ := try connect_remote(crypto, mut a.store, a.links, other, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 5000)
     try add_stamped(crypto, mut a, "db", 6000)
     _ := sync_vault(crypto, mut a.store, a.links, FailingAfterDisconnect{ links: a.links, kc: a.kc, path: a.session.path }, a.kc, a.kc, mut a.session, "", 7000)
     assert(!remote_connected(a.links, a.session.path), "a failed sync's error is not saved into a link that is gone")
@@ -483,5 +493,13 @@ fn (self: FailingAfterDisconnect) remote_get(url: str, token: str, known_version
 }
 
 fn (self: FailingAfterDisconnect) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
+    return error(coded(ERR_NETWORK, "cannot reach the server"))
+}
+
+fn (self: FailingAfterDisconnect) remote_list(url: str, token: str) -> []ServerVault! {
+    return error(coded(ERR_NETWORK, "cannot reach the server"))
+}
+
+fn (self: FailingAfterDisconnect) remote_set_label(url: str, token: str, label: str) -> void! {
     return error(coded(ERR_NETWORK, "cannot reach the server"))
 }
