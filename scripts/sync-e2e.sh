@@ -288,7 +288,7 @@ JS
   check "the app uploaded its change within seconds" '[[ -n "$got_it" ]]'
   echo "diag: +$(( $(date +%s) - app_t0 )) s since the app started: B adds from-b"
   on b 0 "B adds a host" "$PW"$'\n' -- --vault "$VB" host add from-b --hostname 10.0.4.4 --master-stdin
-  echo "diag: +$(( $(date +%s) - app_t0 )) s: B's add returned ($(grep -c 'PUT /v1/vault 200' "$tmp/server.log") uploads so far)"
+  echo "diag: +$(( $(date +%s) - app_t0 )) s: B's add returned ($(grep -c -E 'PUT /v1/vaults/[0-9a-f]+ 200' "$tmp/server.log") uploads so far)"
   wait "$app_pid"; app_pid=""
   check "the app merged B's change on its own (within the 60 s interval)" 'grep -q "^e2e: pass" "$tmp/app.log"'
   check "the app reported its syncs to the page" 'grep -q "heard .*uploaded" "$tmp/app.log" && grep -q "heard .*merged" "$tmp/app.log"'
