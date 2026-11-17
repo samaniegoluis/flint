@@ -37,7 +37,14 @@ today's cfire (`c5b1d4b`). It is shared to show what cfire needs, not to be merg
 
 ## Resume here
 
-State on 2026-11-13 (branch `windows-port-2`, `git log` for the latest commit):
+State on 2026-11-17 (branch `windows-port-2`, `git log` for the latest commit):
+
+- **Latest:** `main` at `f2c4508` (v0.11.0, milestones 43-44: the remote vault) merged and
+  green on Windows, the remote vault client on libcurl over Schannel; installed in
+  `D:\Programas\Flint`. Two fixes found here belong on `main` (the owner decides):
+  `67784e7` (a disconnected vault reconnected by a sync in flight) and `cce606a`
+  (`scripts/sync-e2e.sh` waits for the loop's merged event). Owner check open: Connect
+  remote vault in the installed app against the real server.
 
 - **Done:** the CLI and the desktop app build and run on Windows 11 on top of `main`
   (`83557b0`, cfire `c5b1d4b`) with cfire patches 0001-0009. Every automated check is
@@ -140,6 +147,42 @@ State on 2026-11-13 (branch `windows-port-2`, `git log` for the latest commit):
   - **Unexplained, instrumented:** one `cli-smoke.sh` run stopped at "relay did not
     start" with an empty log after 10 s; alone it starts in 1.3 s and the next full run
     passed; a `diag:` line now times it.
+- **Merged `main` again (2026-11-17):** milestones 43-44 (v0.10.0 and v0.11.0: sync in
+  the core and the CLI, Connect remote vault in the app), `5e378d4`..`f2c4508`, no
+  conflicts; same cfire `c5b1d4b` + 0001-0009. Windows work:
+  - **libcurl (`windows/bin/curl.sh`, new):** 8.17.0 cross-built static, HTTP and HTTPS
+    only, TLS through **Schannel** and the Windows certificate store (no CA bundle ships),
+    no other dependency; `pkgconfig/windows/flint-remote.pc` names it, `env.sh` adds it
+    to pkg-config. MSYS2's curl was not taken: it drags nghttp2/3, ngtcp2, libssh2, psl,
+    idn2, brotli, zstd and OpenSSL. Checked by hand: `vault connect` to `example.com`
+    reaches it (`not_found`), a self-signed and an expired certificate are refused
+    (`SEC_E_UNTRUSTED_ROOT`, `SEC_E_CERT_EXPIRED`).
+  - **Re-key:** the Windows branch passes the key and salt to `adopt` (milestone 43 keeps
+    them in the store). The store now holds the old key, so a rename that fails could
+    reopen the old vault instead of locking it: not done (an idea, below).
+  - **A vault server for checks (`windows/vault-server.sh`, new):** the Linux
+    `flint-vault-server` in WSL on 127.0.0.2, `ssh-relay.ps1` on Windows' 127.0.0.1.
+    Port 34787, not `scripts/test.sh`'s 38787: mirrored networking reserves Linux's
+    ephemeral range (36429-40525 here) on Windows, where binding in it fails with "Only
+    one usage of each socket address". `test-suites.sh` starts it for `vaultremote`.
+  - **`windows/sync-e2e.sh` (new):** main's `scripts/sync-e2e.sh` rewritten at run time
+    (each rewrite asserted): two machines' CLI, the app's sync loop, and the app
+    connecting on its own (milestone 44), with tokens in Credential Manager. **It checks
+    first that the env reaches Windows:** an early run with `WSLENV` flags `/u` (wrong
+    direction) ran `flint.exe` on the real `%APPDATA%\Flint`, adding two test vaults to
+    `vaults.json`, their activity files and a `remotes.json` (reverted by hand; the
+    owner's vault and credentials untouched).
+  - **Found by it, belongs on `main`:** (1) **a vault disconnected while its sync is on
+    the network was connected again** at the sync's end (`save_link` adds a missing
+    link; Replace token starts a Sync now, Disconnect right after lost); syncs now use
+    `update_link`, with a test that fails without it (`67784e7`). (2) `scripts/sync-e2e.sh`
+    logged what the page heard before the loop's `merged` event arrived (`cce606a`).
+  - **`test-suites.sh` counted only a folder's last suite:** `src/application` runs two
+    (vaultserver inside), and a failure in the first hid behind the second's PASS. It now
+    sums them and fails on any.
+  - **Unexplained, instrumented:** one sync-e2e run where the app stayed locked 30 s
+    after the page submitted the password, while B's CLI syncs took 8x their usual time;
+    `diag:` lines now time the unlock and show the page. Not seen in the runs after.
 - **Owner checks done:** Win+L with the app unlocked locks the vault: after signing back
   in to Windows, Flint asks for the master password. On the owner's own vault in the
   installed app: unlocking with "Remember on this computer" stores a Generic, local-machine
@@ -247,6 +290,7 @@ paths (the socket code moved into shared helpers with the same behaviour).
 | Windows build and install | `windows/build-gui.sh` (new) | `build/windows/Flint/`: `flint.exe`, `flint-app.exe`, `WebView2Loader.dll`, `ui/`; `--install DIR` copies it and adds `Flint.lnk` |
 | Checks | `windows/gui-e2e.sh`, `windows/serve-e2e.sh` + `serve-page.js` + `new-caller.js` (new), `ssh-relay.ps1 -ListenHost` | The UI e2e and a subset of serve-e2e, on Windows from WSL. `new-caller.js` runs `flint.exe` under `cscript` (`//E:jscript`: the `.js` association may be gone) so the app sees a caller it has not approved, the stand-in for the perl wrapper on Linux |
 | RDP tab (milestones 30-31) | `windows/bin/freerdp.sh` (new), `pkgconfig/windows/flint-rdp.pc` (new), `rdp/native/flint_rdp.hpp`, `windows/bin/env.sh`; tests: `rdp/native/testserver/flint_rdp_testserver.cpp`, `rdp/rdp_test.cf`, `windows/rdp-testserver.sh`, `rdp-servers.sh`, `tcp-switch.ps1` (new) | FreeRDP 3.33.1 cross-built **static** with llvm-mingw into `$WIN_SYSROOT/freerdp` (no ffmpeg/SDL/servers/USB/JSON; `-D__STDC_NO_THREADS__`, `USE_UNWIND=OFF`; the two channel helper archives a static install leaves out are copied, `-ldl` dropped from its `.pc`). The app links it in whole: no FreeRDP or OpenSSL DLLs, the CLI has none of it. The shim's Windows fixes are in [`rdp-windows.md`](rdp-windows.md) ("First Windows build"): `wtsapi32.h` first plus the `WTSLISTENER*` types mingw lacks, `NIIF_*` macros set aside, `FREERDP_EXPORTS`/`WINPR_EXPORTS` for a static link, and no SYN retransmission in the refused-port probe. Milestone 31: `sock_init()` before FreeRDP resolves, `winpr/shell.h` skipped (cfire W-17), keepalive and `TCP_MAXRT` in the `TCPConnect` hook; the test server's control port on Winsock |
+| Remote vault client (milestones 43-44) | `windows/bin/curl.sh` (new), `pkgconfig/windows/flint-remote.pc` (new), `windows/bin/env.sh`; checks: `windows/vault-server.sh`, `windows/sync-e2e.sh` (new) | libcurl 8.17.0 static over **Schannel** (the Windows certificate store), HTTP and HTTPS only, linked into both `flint.exe` and the app; no DLL. The server token goes to Credential Manager like a vault key (account `remote-token:<vault id>`), read by the CLI and the app alike |
 | App start (`serve`) | `drivers/clicmd/serve.cf`, `adapters/process` | `spawn_detached`: `CreateProcessW` with `DETACHED_PROCESS \| CREATE_NEW_PROCESS_GROUP`, no inherited handles, `CREATE_BREAKAWAY_FROM_JOB` when the job allows it; replaces `sh -c … setsid`. The app is `gui\Flint.exe` (build tree) or `flint-app.exe` (install): **`Flint.exe` next to `flint.exe` is the same file** on a case-insensitive file system |
 
 ## Verified on Windows (so far)
@@ -259,6 +303,7 @@ otherwise.
 | Check | Result |
 |---|---|
 | `windows/build-gui.sh` | CLI, app and page build (milestones 20-29 merged; 22-25 needed the Windows work above) |
+| After milestones 43-44 (2026-11-17) | `test-suites.sh` **13 suites, 2107 tests** (application 319 + vaultserver 140, now counted together; vaultremote 129 against the Linux server through the relay); `cli-smoke.sh` **84/84**; `serve-e2e.sh` **63/63**; `gui-e2e.sh` seven runs: terminal 97, vault 124, tunnels 33, paste 24, rdp 65, webgl 20, fullscreen 49; **`sync-e2e.sh` 81/81** (two of its checks, the vault files' 0600 mode, skipped: no POSIX modes). Installed in `D:\Programas\Flint` (`0.11.0-54-gcce606a`) |
 | After milestones 32-42 (2026-11-13) | `test-suites.sh` **12 suites, 1729 tests** (rdp 146, vault 173; the server's packages left out); `cli-smoke.sh` **84/84** (`--version`, `vault passwd`, `vault merge` new); `serve-e2e.sh` **63/63** (merge and passwd refused while the app holds the vault: by path, upper case, a junction; activity files encrypted); `gui-e2e.sh` **404 checks in seven runs**: terminal 89, vault 124 (Change master password in Settings), tunnels 33, paste 24, rdp 65, **webgl 20**, **fullscreen 49**; **multimon 33** on three monitors with `VERIFIED` on for that run only. vim and the focus trap skipped as before |
 | After milestone 31 (2026-11-11) | `test-suites.sh` **11 suites, 1404 tests**: rdp 111 against FreeRDP's sample server and Flint's own server running on Windows (3 return early: two need a real host, one needs iptables); `cli-smoke.sh` **60/60**; `serve-e2e.sh` **51/51**; `gui-e2e.sh` **318 checks in five runs**: terminal 89, vault 113, tunnels 33, paste 24, **rdp 59** (new on Windows). vim and the focus trap skipped as before. `serve-e2e` and `gui-e2e` had not run since milestone 30's merge |
 | After milestones 22-29 (2026-11-11) | `test-suites.sh` **10 suites, 1239 tests**; `cli-smoke.sh` **60/60** (11 tunnel checks new); `gui-e2e.sh` **275 checks in five runs**: terminal 89, vault 113, tunnels 33, paste 24 (the core reading the real Windows clipboard included), vim 16; `serve-e2e.sh` **51/51** |
@@ -459,6 +504,7 @@ Not done here; worth doing when `main` redoes the port on a cfire with Windows s
 | **File dialogs in ext:webui on `IFileDialog`** (cfire W-15) | No `MAX_PATH` buffer, the modern dialog, folder pickers (`FOS_PICKFOLDERS`); Flint's own `flint_dialog` stays empty on Windows |
 | **Presence with Windows Hello** (`UserConsentVerifier`, WinRT) | Today the window asks for the master password instead (the degraded fallback). Hello is the Windows equivalent of Touch ID / polkit for "the owner is here" |
 | **The CLI from WSL delegating to `flint.exe`** | As 1Password's `op.exe`: one vault, one app, one approval ("flint, started by wsl"), no Linux build to keep in step. A `flint` shim in WSL's `PATH` that calls the Windows binary, with arguments' paths translated (`wslpath -w`) |
+| **A failed re-key rename reopens the old vault** | On Windows the re-key closes the vault before renaming the new one over it; when the rename fails the vault is left locked (`ERR_LOCKED`). Since milestone 43 the store keeps the key it opened with, so it could reopen the old vault and return `ERR_IO` as macOS and Linux do |
 | **An icon per platform in `build.cf`** | Today W-13 looks for the `.ico` beside the `.icns`; an explicit `Icon` per target (or a list) is clearer, and the same `.rc` can carry a `VERSIONINFO` |
 | **WebView2's data folder name** | WebView2 keeps its profile in `%LOCALAPPDATA%\flint-app` (the `.exe` name). Name it `Flint` (or `Flint\WebView2`) through the environment options, so uninstalling and support know where it is |
 | **A tray glyph for the light taskbar** | The tray PNG is drawn for a dark bar; on Windows' light theme it is hard to see. Pick the glyph from `SystemUsesLightTheme` (and on change, `WM_SETTINGCHANGE`) |
