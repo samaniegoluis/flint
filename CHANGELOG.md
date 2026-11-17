@@ -4,6 +4,23 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.11.0 — 2026-11-17
+
+The desktop app connects to your vault server: download a vault from Welcome, connect one from Settings, see its sync in the status bar, and replace a rotated token with `flint vault token`.
+
+### Added
+
+- **files:** Type or paste a path in the path bar
+- **sync:** Probe a server, replace a vault's token, list the connected vaults, remember a downloaded vault's key
+- **cli:** Flint vault token replaces a connected vault's server token, checked against the server first
+- **gui:** Bindings to probe, connect, download, sync now, replace the token and disconnect a remote vault
+- **gui:** Connect a remote vault from Welcome or Settings, the sync's state in the status bar, merge details and the new-password prompt
+
+### Fixed
+
+- **gui:** A shortcut closes the sync popover, so the palette never opens over it
+
+
 ## 0.10.0 — 2026-11-13
 
 Your vault now stays in step across machines from the command line. `flint vault connect <url>` sends a vault to your own flint-vault-server (or downloads it to a new machine with `--to`), and every connected machine keeps working offline: changes are merged record by record when it reconnects, a master password changed on one machine is taken by the others, and the desktop app syncs on its own while the vault is unlocked. The server now answers a check for changes with 304, so a quiet vault costs almost nothing. Connecting from the app's own screen comes next.
