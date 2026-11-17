@@ -688,3 +688,27 @@ button.act-row.sudo.is-focus, button.act-row.sudo:focus-visible { box-shadow: in
 .mon-s { font-size: 10px; color: var(--text-tertiary); white-space: nowrap; }
 .mon-tag { position: absolute; top: 6px; right: 6px; padding: 1px 6px; border-radius: var(--radius-full); background: var(--accent); color: var(--text-on-accent); font-size: 10px; font-weight: var(--fw-semibold); white-space: nowrap; }
 .ext-card { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); border-radius: var(--radius-full); background: var(--surface-overlay); border: 1px solid var(--border-default); box-shadow: var(--shadow-popover); font-size: var(--fs-sm); color: var(--text-secondary); white-space: nowrap; }
+
+/* ===== v9 · vault sync (screens 23*) ===== */
+.sb-sync { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 6px; margin: 0 -6px; border-radius: var(--radius-sm); color: var(--text-secondary); font: inherit; font-size: inherit; background: none; border: 0; cursor: pointer; white-space: nowrap; }
+.sb-sync:hover, .sb-sync.is-open { background: var(--surface-hover); color: var(--text-primary); }
+.sb-sync .ic { width: 13px !important; height: 13px !important; }
+.sb-sync.syncing .ic { animation: flint-pulse 1.4s ease-in-out infinite; }
+.sb-sync.info { color: var(--info); } .sb-sync.info:hover { background: var(--info-subtle); }
+.sb-sync.warn { color: var(--warning); } .sb-sync.warn:hover { background: var(--warning-subtle); }
+.sb-sync .dot { width: 6px; height: 6px; }
+@keyframes flint-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .sb-sync.syncing .ic { animation: none; } }
+.sync-pop { position: absolute; z-index: 40; width: 320px; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) var(--sp-4); background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-popover); font-size: var(--fs-sm); }
+.sync-pop .kv { margin: 0; grid-template-columns: 76px minmax(0, 1fr); }
+.cloud-mark { width: 12px; height: 12px; color: var(--text-tertiary); flex: none; }
+.steps { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--text-tertiary); }
+.steps .on { color: var(--text-primary); font-weight: var(--fw-medium); }
+.steps i { width: 18px; height: 1px; background: var(--border-strong); }
+.found { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--surface-raised); }
+.chg-group { display: flex; flex-direction: column; gap: 2px; }
+.chg { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: var(--sp-3); align-items: center; min-height: 26px; font-size: var(--fs-sm); }
+.chg .k { font-size: var(--fs-xs); font-weight: var(--fw-medium); }
+.chg .k.add { color: var(--success); } .chg .k.upd { color: var(--info); } .chg .k.rem { color: var(--text-tertiary); }
+.sb-sheet { position: relative; height: var(--statusbar-h); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); overflow: hidden; }
+.sb-sheet .statusbar { position: absolute; }
