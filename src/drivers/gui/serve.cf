@@ -294,7 +294,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         treq := token_request_from_flags(parsed) or err {
             return refuse("{err.message()}")
         }
-        ask = TokenAsk{ name: treq.name.trim(), allows: token_allows_text(treq.read, treq.exec, treq.write), reaches: token_reach_text(treq.scope.all, treq.scope.groups, treq.scope.hosts), ttl: treq.ttl }
+        ask = TokenAsk{ name: str(treq.name.trim()), allows: token_allows_text(treq.read, treq.exec, treq.write), reaches: token_reach_text(treq.scope.all, treq.scope.groups, treq.scope.hosts), ttl: treq.ttl }
         st.hold()
         check_token_request(store, treq) or err {
             st.release()
@@ -375,7 +375,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         return refuse("")
     }
 
-    if !asked_every_time(need) && find_grant(st.holder.access_book().grants, caller, session.id, need, cat, now).has_value() {
+    if !asked_every_time(need) && find_grant(st.holder.access_book().grants, caller, session.id, need, cat, now) != none {
         if activity_logged(need) {
             log_activity(st, store, session, entry, mut app)
         }
@@ -423,7 +423,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
                 return refuse(coded(ERR_DENIED, "the owner denied this request in Flint"))
             }
             // A token or a sudo command is allowed for this one request; nothing else is.
-            if asked_every_time(need) || find_grant(st.holder.access_book().grants, caller, session.id, need, cat, t).has_value() {
+            if asked_every_time(need) || find_grant(st.holder.access_book().grants, caller, session.id, need, cat, t) != none {
                 if activity_logged(need) {
                     log_activity(st, store, session, entry, mut app)
                 }

@@ -72,7 +72,11 @@ fn emit_rdp_state(mut app: webui.App, tab: str, state: str, code: str, message: 
 // Checks a request and opens the tab's mailbox. The caller spawns the worker.
 fn rdp_open_check(params: str, st: GuiState) -> RdpOpenReq! {
     try st.require_unlocked()
-    req := try parse_req[RdpOpenReq](params)
+    // parse_req's own body: a value from `try parse_req[T]` keeps the type `T` and
+    // cannot be returned (CFIRE-UPSTREAM: CF-162).
+    req := json.parse[RdpOpenReq](params) or {
+        return error(coded(ERR_INVALID, "malformed request"))
+    }
     if req.tab.len() == 0 || req.alias.len() == 0 {
         return error(coded(ERR_INVALID, "a remote desktop needs a tab id and a host alias"))
     }

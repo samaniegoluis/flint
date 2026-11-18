@@ -139,7 +139,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
     st.holder.access_hold()
     mut book := st.holder.access_book()
     still := find_approval(book, req.id) or ap
-    if still.state != APPROVAL_PENDING || !find_approval(book, req.id).has_value() {
+    if still.state != APPROVAL_PENDING || find_approval(book, req.id) == none {
         st.holder.access_release()
         return error(coded(ERR_NOT_FOUND, "this request stopped waiting before it was allowed"))
     }

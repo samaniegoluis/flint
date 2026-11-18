@@ -40,7 +40,7 @@ rechecked on it. An old entry is rechecked when the move reaches it (step 5 walk
 
 | Status | Entries |
 |---|---|
-| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (a literal brace is `{{` or `\{` depending on whether the string interpolates), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped) |
+| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (a literal brace is `{{` or `\{` depending on whether the string interpolates), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped), 162 (`try f[T](…)` keeps the type `T`) |
 | Old, partly resolved on 0.12 [ran] | 031 (`@pkg` retired; `build.cf` `PkgConfig` per executable works; still no per-OS fields), 147 (field access through `shared[T]` works, except on a local copy: CF-156) |
 | Old, not rechecked yet | everything else |
 
@@ -2622,7 +2622,11 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   slice in a loop. GUIDE Ch5 says a copy is made where an owned value is needed, a return
   value among them; the return type is `str`, not a view.
 - **Repro:** the function above, `cfire check`.
-- **Workaround:** an explicit copy, `str(s[1..])` (`src/domain/files.cf`, `paste.cf`).
+- **Workaround:** an explicit copy, `str(s[1..])` (`src/domain/files.cf`, `paste.cf`;
+  `client_of`, `src/drivers/vault-server/listen.cf`). The same with `trim()`, which gives
+  a view: put in an owned `str` field of a struct literal from inside a block it is
+  "pointer/view 'ask' cannot borrow 'treq' from an inner scope" (`cfire/DANGLING-POINTER`,
+  `gate`, `src/drivers/gui/serve.cf`).
 - **Ideal:** a slice returned or bound as an owned `str` is copied, as the GUIDE says.
 
 ### CF-153 · bug · `confirmed`: two `for i, x in` loops in one block do not compile
@@ -2703,15 +2707,25 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   a `CStrViewHolder`, which does not convert to `std::filesystem::path`; an owned `str`
   goes through `c_str` to `const char*` and on to `path`. `fs.remove` (stdio's `remove`)
   and `fs.open` (fcntl's `open`) hit it too: 12 calls in the vault and server adapters.
+- **Wider than stdlib calls, and program-wide:** the table holds every function of every
+  header any package of the program imports, under its last name, namespace or not.
+  `src/adapters/config/atomic.cf` checks alone but not once `src/drivers/clicmd` imports
+  it. And in `src/drivers/gui`, the application's generic `rename_path(mut sftp: T, from,
+  to)`, `make_dir` and `real_path` took the parameters of Flint's own
+  `flint_sftp::rename_path(sftp_session, const std::string&, …)`: `std::string(link)`
+  around an `SshLink` ("no matching conversion for functional-style cast … to 'str'").
+  33 names are shared between Flint's `.cf` functions and its headers; most are wrappers
+  passing the same arguments, so the coercion happens to be harmless.
 - **Repro:** `import "core:fs"`, `import cpp "<stdio.h>"`, then
   `fn f(path: str) -> void! { tmp := path + ".tmp"; fs.write_text(tmp, "x") or {}; fs.rename(tmp, path) or err { return error("no") } }`;
   `cfire run`. Without the `import cpp`, or with `<cstdio>`, it runs.
 - **Workaround:** an owned copy of each view argument, `fs.rename(tmp, str(path))`
   (`src/adapters/serverfs/store.cf`; `activity.cf`, `rekey.cf`, `store.cf`, `sync.cf` in
-  `src/adapters/vault`).
-- **Ideal:** the C signature table is consulted only for a callee that resolves to a C
-  function (`cpp.name`, or an unqualified name from an `import cpp`), never for a cfire
-  module's function.
+  `src/adapters/vault`, `src/adapters/config/atomic.cf`); the four colliding C++ helpers
+  renamed `native_*` (`flint_sftp.hpp`, `flint_fs.hpp`).
+- **Ideal:** the C signature table is consulted only for a callee that resolves to a C++
+  function (`cpp.name`, `ns::name` inside a `cpp` type, an unqualified name from an
+  `import cpp`), keyed by its qualified name, never for a cfire function.
 
 ### CF-159 · bug · `confirmed`: a literal brace is spelled differently with and without interpolation
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** 0.12 interpolates `{name}` in every
@@ -2762,3 +2776,21 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   adapter.
 - **Ideal:** the notes name the change for `cpp` blocks; `CStrViewHolder` clears its buffer
   on destruction (cheap, and `c_str` is used for any text a C API takes).
+
+### CF-162 · bug · `confirmed`: a value from `try f[T](…)` keeps the type `T` and cannot be returned
+- **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** with `fn parse_req[T](params: str)
+  -> T!`, `req := try parse_req[Req](params)` then `return req` from a `-> Req!` function
+  is "return type mismatch: … expects 'Req!', got 'T'". `req.tab` reads fine, so the field
+  types resolve; the value's own type is left unsubstituted. A typed local
+  (`req: Req = try …`: "cannot initialize … with expression of type 'T'"), `or err {…}`
+  in place of `try`, and `return parse_req[Req](params)` all fail the same way. 66 other
+  calls of the same generic in the GUI driver only read fields and compile.
+- **Repro:** `fn parse_req[T](s: str) -> T! { return json.parse[T](s) or err { return error("bad") } }`,
+  ``type Req struct { tab: str `json:"tab"` }``,
+  `fn open_check(s: str) -> Req! { req := try parse_req[Req](s); return req }`; `cfire check`.
+- **Workaround:** `json.parse[X]` called directly with the same error, at the four checks
+  that return the request (`rdp_open_check`, `session_open_check`, `host_test_check`,
+  `tunnel_start_check` in `src/drivers/gui`).
+- **Ideal:** a generic call's result type is substituted (`T` := `Req`) wherever the value
+  flows, not only for field access.
+

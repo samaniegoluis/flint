@@ -130,7 +130,11 @@ fn rpc_tunnel_stop(params: str, store: LockedVaultStore, st: GuiState, mut app: 
 // Checks a start and opens its prompt mailbox. The caller spawns the worker.
 fn tunnel_start_check(params: str, st: GuiState) -> TunnelStartReq! {
     try st.require_unlocked()
-    req := try parse_req[TunnelStartReq](params)
+    // parse_req's own body: a value from `try parse_req[T]` keeps the type `T` and
+    // cannot be returned (CFIRE-UPSTREAM: CF-162).
+    req := json.parse[TunnelStartReq](params) or {
+        return error(coded(ERR_INVALID, "malformed request"))
+    }
     if req.session.len() == 0 || req.host.len() == 0 {
         return error(coded(ERR_INVALID, "a tunnel start needs an id and a host alias"))
     }
