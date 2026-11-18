@@ -2391,7 +2391,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   it, and only as qualified (`n::f`) or inside `cpp { }` blocks; a cfire function of the
   same name is never cast to a C++ signature.
 
-### CF-129 · bug · `confirmed`: a method called on a string literal does not compile
+### CF-129 · bug · `resolved ✓`: a method called on a string literal does not compile
+- **Resolved at `v0.12.2` (migration step 5):** `activity_id_ok` in `adapters/vault/activity.cf` calls `"0123456789abcdef".contains(…)` on the literal.
 - **At `v0.12.2` (migration step 5):** [ran] a method on a string literal builds and runs. **fixed** (1 tag).
 - **Seen (milestone 39) [ran, macOS, `c5b1d4b`]:** `if !"0123456789abcdef".contains(id.substr(i, 1)) { … }`
   in `src/adapters/vault/activity.cf` passes `cfire check` and fails in clang: "member

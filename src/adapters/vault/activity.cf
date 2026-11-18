@@ -70,11 +70,8 @@ fn activity_id_ok(id: str) -> bool {
     if id.len() != 32 {
         return false
     }
-    // A literal's method does not compile (CF-129): the digits go in a `str` first.
-    // CFIRE-UPSTREAM: CF-129
-    digits: str = "0123456789abcdef"
     for i in 0..id.len() {
-        if !digits.contains(byte_slice(id, i, i + 1)) {
+        if !"0123456789abcdef".contains(byte_slice(id, i, i + 1)) {
             return false
         }
     }
