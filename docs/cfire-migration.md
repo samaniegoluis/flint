@@ -124,7 +124,9 @@ the work VM when testing (they never run together):
   and the like): they remove pieces Flint depends on or the battery uses (Edge's update
   service behind WebView2, winget, optional features such as OpenSSH), and they are
   third-party images. No clone of the work VM (it carries the antivirus).
-- 8 vCPU with CPU type `host` (AVX2, faster builds), 12 GB RAM, about 100 GB of disk.
+- 6 vCPU (owner, 2026-11-17: the node has no more to give) with CPU type `host`: AVX2
+  for faster builds, and the SSE4.2/POPCNT that Windows 11 24H2 and later require. 12 GB
+  RAM, about 100 GB of disk.
 - OpenSSH Server: the stock firewall rule allows only the Private profile, so on a
   network Windows marks Public the port stays closed; a rule of its own for any profile,
   limited to the LAN and the VPN subnet. PowerShell as SSH's default shell. Key login.
@@ -137,6 +139,22 @@ member of Administrators its full token, with no UAC prompt, so every `flint exe
 such an account runs as administrator, with no window (the case the agents guide warns
 about for `root` on Linux). The battery's account should be a standard user unless a
 step needs more (ROADMAP §3, Windows elevation).
+
+#### Its state (2026-11-18)
+
+Flint host `Windows11-Flint-SSH` (RDP: `Windows11-Flint-RDP`), on the secondary node.
+
+| Piece | State |
+|---|---|
+| Windows | 11 Pro 22H2 (22621), updated. **22H2 is out of servicing** (its last cumulative update is 2024-10), and Windows Update will not offer 25H2: the host's i7-6700 is not on Windows 11's CPU list. Open, for the owner: an in-place upgrade to 25H2 from the ISO (`AllowUpgradesWithUnsupportedTPMOrCPU`), a clean 25H2 install, or a physical machine instead |
+| CPU, RAM, disk | `host` (i7-6700, AVX2), 6 vCPU, 8 GB (12 wanted, see below), 99 GB |
+| SSH | Works through `flint exec`; PowerShell 5.1 as the default shell. **Password login** (no `authorized_keys` yet); the firewall rule covers every profile but is not limited to the LAN and VPN yet |
+| Account | `lsamaniego`, an administrator, so every `flint exec` runs elevated. The standard battery user is still to create |
+| Defender | On, with exclusions `C:\flint-work` and `C:\msys64` |
+| WebView2, winget | Present (WebView2 157). winget is 1.2 and crashes over SSH (`0xC0000005`): install things from their own installers |
+| MSYS2 | `C:\msys64`, from the official `msys2-x86_64-latest.sfx.exe`, updated. CLANG64: clang 23.1.5, make 4.4.1, git 2.56.1, pkgconf 3.0.11. Over SSH: `$env:MSYSTEM="CLANG64"; C:\msys64\usr\bin\bash.exe -lc "…"` |
+| Flint | Cloned anonymously over HTTPS to `C:\flint-work\flint`: the VM only pulls, so no GitHub credential lives on it. Git: `core.autocrlf=false`, `core.eol=lf` |
+| Still to do | Automatic logon and the GUI launcher (the owner, at the console); key login; the battery user; a Proxmox snapshot; cfire itself waits for its Windows release |
 
 ### Where the VMs run (2026-11-17)
 
