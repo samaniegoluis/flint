@@ -831,6 +831,7 @@ The entries below were found while building milestone 01 against cfire `3963814`
   `str` parameter.
 
 ### CF-024 · missing · `resolved ✓`: CLI building blocks: argv, positional args, stderr
+- **Step 5 (2026-11-18):** nothing removed: Flint already uses `os.args`, `os.exit` and `os.cwd`; every tag left marks something still missing (the executable's folder, the capture, a stderr writer that flushes stdout, `/dev/tty` prompts).
 - **At `v0.12.2` (migration step 5):** [read] `os.args()`, `os.exit`, `os.cwd()` cover `process_args`, `exit_process`, `current_dir`; still none: a stderr writer that flushes stdout first, a `/dev/tty` prompt with echo off, the executable's folder. **fixed in part** (14 tags). Windows: `os.args()` is UTF-8 on Windows (W-11).
 - **At `466751b`:** `os.args`, `eprint`/`eprintln`, `os.exit`, `cli.positional`/`subcommand`, and `cli.parse` no longer throws. Flint uses `os.args`, `print`, `os.exit` and `os.is_tty`; it keeps its own stderr writer (it flushes stdout first, `eprint` does not), its own flag parser, and its `/dev/tty` prompts (`cli.prompt_password` reads stdin, so it cannot ask while stdin carries data).
 - **Needed:** `flint vault|host|key|cred <verb> [args] [--json]` with diagnostics on
@@ -2284,6 +2285,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   every time" stated in the reference.
 
 ### CF-124 · missing · `confirmed`: an interface method cannot declare a `mut` parameter
+- **Step 5 (2026-11-18):** kept: ~50 calls wipe fields of read-only parameters (`req.password`), which cannot be passed `mut` without making those parameters `mut` up the chain. A ROADMAP item (§5).
 - **At `v0.12.2` (migration step 5):** [ran] `type Wiper interface { wipe(mut buf: []byte) }` checks, and a generic call with `mut` zeroes the caller's buffer. **fixed** (2 tags).
 - **Repro (c5b1d4b, macOS) [ran]:** `type Wiper interface { wipe(mut buf: []byte) }` fails with
   `expected type name, got 'mut'`; `wipe(buf: mut []byte)` fails the same way. A free
