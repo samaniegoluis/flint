@@ -19,13 +19,14 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <span>
 #include <string>
 #include <vector>
 
 namespace flint_remote {
 
 struct Sink {
-    std::vector<std::byte>* out;
+    std::vector<std::uint8_t>* out;
     std::size_t max_bytes;
     bool over;
 };
@@ -42,7 +43,7 @@ inline std::size_t on_body(char* data, std::size_t size, std::size_t n, void* us
         s->over = true;
         return 0;
     }
-    const auto* p = reinterpret_cast<const std::byte*>(data);
+    const auto* p = reinterpret_cast<const std::uint8_t*>(data);
     s->out->insert(s->out->end(), p, p + len);
     return len;
 }
@@ -75,9 +76,9 @@ inline void global_init() {
 }
 
 inline int request(const std::string& method, const std::string& url, const std::string& headers,
-                   const std::vector<std::byte>& body, std::int64_t connect_ms, std::int64_t total_ms,
+                   std::span<const std::uint8_t> body, std::int64_t connect_ms, std::int64_t total_ms,
                    std::int64_t max_bytes, std::int64_t& status, std::string& etag, std::string& vault_id,
-                   std::vector<std::byte>& out, std::string& err) {
+                   std::vector<std::uint8_t>& out, std::string& err) {
     global_init();
     status = 0;
     out.clear();

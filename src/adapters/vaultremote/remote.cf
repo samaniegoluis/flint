@@ -89,13 +89,11 @@ fn (self: HttpVaultRemote) send(method: str, url: str, headers: str, body: []byt
 // The host part of a URL, for messages (never a path or a query).
 fn url_host(url: str) -> str {
     mut rest := url
-    i := rest.index_of("://")
-    if i >= 0 {
-        rest = rest.substr(usize(i) + 3)
+    if i := rest.index_of("://") {
+        rest = str(rest[i + 3..])
     }
-    j := rest.index_of("/")
-    if j >= 0 {
-        rest = rest.substr(0, usize(j))
+    if j := rest.index_of("/") {
+        rest = str(rest[..j])
     }
     return rest
 }
