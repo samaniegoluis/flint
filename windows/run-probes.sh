@@ -1,30 +1,47 @@
 #!/usr/bin/env bash
-# Cross-compile the Windows probes from WSL2 and run them on Windows through WSL interop.
-# Needs: cfire on PATH, llvm-mingw in ~/.local/opt, the sysroot (bin/sysroot.sh).
-# CFIRE_SRC: the cfire checkout whose stdlib suite to run (default: ../../cfire-windows).
-set -euo pipefail
+# cfire's own behaviour on Windows, each probe tied to a W-NN of docs/cfire-windows.md.
+# Natively in MSYS2 CLANG64 on the Windows test VM, with cfire's Windows release
+# (windows/bin/env.sh). Started over SSH:
+#
+#   windows/run-probes.sh            # hello, platform files, core
+#   FLINT_PROBE_WEBUI=1 windows/run-probes.sh   # also webui: needs the desktop session
+#
+# Exit status: 0 when every probe passed, 1 otherwise.
+set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-source "$here/bin/env.sh"
-T=x86_64-w64-mingw32
-CFIRE_SRC="${CFIRE_SRC:-$here/../../cfire-windows}"
+source "$here/bin/env.sh" || exit 2
+out="$TMPDIR/flint-probes"
+mkdir -p "$out"
 cd "$here/probes"
+fail=0
+step() { echo "== $1"; }
+bad() { echo "FAIL: $1"; fail=1; }
 
-echo "== hello";            (cd hello && cfire build --target $T -o hello.exe main.cf >/dev/null && ./hello.exe)
-echo "== platform files";   (cd platform_files && cfire build --target $T -o p.exe main.cf >/dev/null && ./p.exe)
-echo "== core";             (cd argv_echo && cfire build --target $T -o ../core/argv_echo.exe main.cf >/dev/null)
-(cd core && ARGV_ECHO=argv_echo.exe WSLENV=ARGV_ECHO cfire test --target $T core_test.cf | grep -E '^--- |\((.*)tests')
-echo "== cfire stdlib suite"
-(cd "$CFIRE_SRC" && cfire test --target $T tests/stdlib_suite_test.cf | grep -E '^--- FAIL|\((.*)tests')
-# WebView2Loader.dll must sit next to each .exe (W-10). cfire test runs its binary from /tmp.
-WV2_DLL="${WIN_SYSROOT:-$HOME/.local/opt/win-sysroot}/webview2/build/native/x64/WebView2Loader.dll"
-cp "$WV2_DLL" /tmp/
-echo "== webui offscreen (cfire test)"
-(cd webui && cfire test --target $T webui_test.cf | grep -E '^--- |\((.*)tests')
-echo "== webui window (closes itself once the page saw the event)"
-# Run from a Windows folder: WebView2 and cmd.exe dislike \\wsl.localhost paths.
-WIN_TMP="$(wslpath "$(cmd.exe /c 'echo %TEMP%' 2>/dev/null | tr -d '\r')")/cfire-probes"
-mkdir -p "$WIN_TMP"
-(cd webui && cfire build --target $T -o webui_probe.exe main.cf >/dev/null)
-cp webui/webui_probe.exe "$WV2_DLL" "$WIN_TMP/"
-(cd "$WIN_TMP" && PROBE_AUTOQUIT=1 WSLENV=PROBE_AUTOQUIT timeout 60 ./webui_probe.exe)
-echo "To look at it: $WIN_TMP/webui_probe.exe (without PROBE_AUTOQUIT it stays open)"
+step "hello (W-02, W-04: an .exe that runs with no DLL beside it)"
+(cd hello && cfire build -o "$out/hello.exe" main.cf >/dev/null) || bad "hello: build"
+[[ "$("$out/hello.exe")" == *hello* ]] || bad "hello: output"
+deps="$(objdump -p "$out/hello.exe" 2>/dev/null | sed -n 's/^\s*DLL Name: //p' | tr '\n' ' ')"
+echo "imports: $deps"
+[[ "$deps" != *"c++"* && "$deps" != *unwind* ]] || bad "hello links libc++/libunwind dynamically"
+
+step "platform files (W-08: _unix.cf left out on Windows)"
+(cd platform_files && cfire build -o "$out/p.exe" main.cf >/dev/null) || bad "platform files: build"
+got="$("$out/p.exe")"; echo "$got"
+[[ "$got" == "platform: windows" ]] || bad "platform files: $got"
+
+step "core (W-03 cwd, W-05 binary stdout, W-11 UTF-8 args, CF-010)"
+(cd argv_echo && cfire build -o "$out/argv_echo.exe" main.cf >/dev/null) || bad "argv_echo: build"
+(cd core && ARGV_ECHO="$(cygpath -m "$out/argv_echo.exe")" cfire test core_test.cf 2>&1 | tee "$out/core.log" | grep -E '^--- |\((.*)tests') || true
+grep -qE '^PASS \(' "$out/core.log" || bad "core: see $out/core.log"
+
+if [[ "${FLINT_PROBE_WEBUI:-}" == 1 ]]; then
+  step "webui offscreen (W-06, W-10: no SDK, no WebView2Loader.dll)"
+  (cd webui && cfire test webui_test.cf 2>&1 | tee "$out/webui.log" | grep -E '^--- |\((.*)tests') || true
+  grep -qE '^PASS \(' "$out/webui.log" || bad "webui offscreen: see $out/webui.log"
+  step "webui window (closes itself once the page saw the event)"
+  (cd webui && cfire build -o "$out/webui_probe.exe" main.cf >/dev/null) || bad "webui: build"
+  PROBE_AUTOQUIT=1 timeout 60 "$out/webui_probe.exe" || bad "webui window"
+fi
+
+[[ $fail == 0 ]] && echo "probes: all passed" || echo "probes: FAILED"
+exit $fail

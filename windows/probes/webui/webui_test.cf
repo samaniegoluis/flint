@@ -10,7 +10,7 @@ type ProbeGreet struct {
 }
 
 fn probe_app(page_js: str) -> webui.App {
-    mut app := webui.new_app("offscreen probe", 400, 300)
+    mut app := make(webui.App, "offscreen probe", 400, 300)
     app.set_html("<!doctype html><html><body><script>{page_js}</script></body></html>")
     app.bind[ProbeGreet]("greet") |g| {
         return "hello, {g.name}"
@@ -40,7 +40,7 @@ test "webui offscreen: a page that never quits times out and returns false" {
 }
 
 test "webui offscreen: a bound call that fails rejects the promise in the page" {
-    mut app := webui.new_app("offscreen probe", 400, 300)
+    mut app := make(webui.App, "offscreen probe", 400, 300)
     app.bind_action("boom") || {
         return error("no luck")
     }

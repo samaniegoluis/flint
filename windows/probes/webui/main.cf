@@ -11,7 +11,7 @@ type Greet struct {
 // Done when the window shows "bridge ok: hello, Windows" and "event ok". The backend also
 // prints each step; with PROBE_AUTOQUIT=1 it closes the window once the page saw the event.
 fn main() {
-    mut app := webui.new_app("cfire webui probe", 640, 360)
+    mut app := make(webui.App, "cfire webui probe", 640, 360)
     app.set_html(`<!doctype html><html><body style="font:16px system-ui;padding:24px">
 <h1>cfire webui on Windows</h1>
 <p id="bridge">bridge: waiting…</p>

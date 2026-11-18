@@ -3,17 +3,16 @@ package main
 import "core:os"
 import "core:net"
 import "core:fs"
-import "core:str"
 
 fn helper() -> str {
     return os.getenv("ARGV_ECHO", "argv_echo.exe")
 }
 
 test "net: TCP listen, connect, write and read back on loopback" {
-    mut ln := try net.listen_tcp_addr("127.0.0.1", 0)
+    mut ln := try net.listen(0, "127.0.0.1")
     port := ln.port()
     assert(port > 0)
-    mut c := try net.connect_tcp("127.0.0.1", port)
+    mut c := try net.connect("127.0.0.1", port)
     mut s := try ln.accept()
     try c.write_text("ping\n")
     line := s.read_line() or ""
@@ -39,24 +38,25 @@ test "os.command: arguments with spaces and quotes arrive intact (CF-010.d)" {
     args := ["plain", "two words", "say \"hi\"", "trailing\\", "a&b|c", ""]
     r := try os.command(helper(), args)
     want := "[plain]\n[two words]\n[say \"hi\"]\n[trailing\\]\n[a&b|c]\n[]\n"
-    assert_eq(str.replace(r.stdout, "\r\n", "\n"), want)
+    assert_eq(r.stdout, want)
 }
 
 test "os.args: a UTF-8 argument arrives as UTF-8, not in the ANSI code page (W-11)" {
     r := try os.command(helper(), ["año-ñ ✓.txt"])
-    assert_eq(str.replace(r.stdout, "\r\n", "\n"), "[año-ñ ✓.txt]\n")
+    assert_eq(r.stdout, "[año-ñ ✓.txt]\n")
 }
 
 test "os.command: a child writing 300 KB to stdout and stderr does not deadlock (CF-010.e)" {
     r := try os.command(helper(), ["big"])
-    // 3000 lines of 99 x's + newline. Windows' CRT writes "\r\n" (docs/cfire-windows.md, W-05).
-    assert_eq(str.replace(r.stdout, "\r\n", "\n").len(), 300000)
-    assert_eq(str.replace(r.stderr, "\r\n", "\n").len(), 300000)
+    // 3000 lines of 99 x's + "\n": exactly, since cfire 0.12 sets stdout and stderr to
+    // binary mode on Windows (W-05; 0.10's CRT wrote "\r\n", 303 000 bytes).
+    assert_eq(r.stdout.len(), 300000)
+    assert_eq(r.stderr.len(), 300000)
 }
 
 test "os.exec_output runs a shell command" {
     output := try os.exec_output("echo hello")
-    assert_eq(str.trim(output), "hello")
+    assert_eq(output.trim(), "hello")
 }
 
 test "os.pipe: write then read" {
@@ -70,6 +70,7 @@ test "os.pipe: write then read" {
 test "os: env, cwd, pid" {
     os.setenv("FLINT_PROBE", "ñandú ✓")
     assert_eq(os.getenv("FLINT_PROBE"), "ñandú ✓")
+    // A `str` on every OS (W-03): 0.10 returned a std::filesystem::path on Windows.
     here: str = os.cwd()
     assert(here.len() > 0)
     assert(os.getpid() > 0)
