@@ -48,7 +48,9 @@ fn process_exit_code(code: i64) -> i32 {
 // remote shell parses it.
 fn remote_command(p: ParsedArgs) -> str {
     mut cmd := ""
-    for i, w in p.rest {
+    // CFIRE-UPSTREAM: CF-156
+    words: []str = p.rest
+    for i, w in words {
         if i > 0 {
             cmd = cmd + " "
         }

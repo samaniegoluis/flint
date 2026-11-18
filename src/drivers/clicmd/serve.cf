@@ -273,7 +273,10 @@ fn caller_command(p: ParsedArgs) -> str {
         if p.has_flag("--force") {
             c = c + " --force"
         }
-        for i, w in p.positionals {
+        // A typed local: a loop over a parameter's field loses its item type once
+        // this package is imported (CFIRE-UPSTREAM: CF-156).
+        words: []str = p.positionals
+        for i, w in words {
             if i > 0 {
                 c = c + " " + w
             }
@@ -281,7 +284,9 @@ fn caller_command(p: ParsedArgs) -> str {
         return c
     }
     mut s := "flint"
-    for w in p.positionals {
+    // CFIRE-UPSTREAM: CF-156
+    all_words: []str = p.positionals
+    for w in all_words {
         s = s + " " + w
     }
     if p.positional(0) == "exec" && p.rest.len() > 0 {
