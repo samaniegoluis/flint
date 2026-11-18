@@ -472,7 +472,7 @@ each, nothing else running; "warm" means cfire's caches already hold the build.
 | Check | 0.12.1 | Time | Baseline 0.10 |
 |---|---|---|---|
 | `scripts/test.sh` (17 suites, then release-test), first run on 0.12.1 | 17/17 PASS, release-test 24/24 | 18 min 59 s (compiles every suite cold) | 17/17, 24/24, 7 min 44 s |
-| `scripts/test.sh`, warm | 17/17 PASS, release-test 24/24 | 11 min 54 s | |
+| `scripts/test.sh`, warm | 17/17 PASS, release-test 24/24 | 11 min 54 s (1 min 40 s with `--release`, below) | |
 | `scripts/cli-e2e.sh`, first run (builds the CLI cold) | 483/483 | 7 min 18 s | 483/483, 2 min 51 s |
 | `scripts/cli-e2e.sh`, warm | 483/483 | 1 min 52 s | |
 | `scripts/server-e2e.sh` | 70/70 | 13 s | 70/70, 19 s |
@@ -512,9 +512,22 @@ the estimator's dictionaries (~93k words, `src/domain/strength_words.cf`) on eac
 suites, **549 s of the warm run's 714**; the estimator's other tests add ~2 min. The same
 test alone: ~2.5 s on 0.10, 3.5 s with `cfire test --release` on 0.12.1, 31 s by default.
 Found with per-line timestamps on the warm run and `sample` on the test binary (un-inlined
-`std::string::size()`). Options for the owner, none applied: pass `--release` in
-`scripts/test.sh` (the test mode's UB traps stay on), build the dictionaries once per
-process, or fewer `--fuzz-runs` for that block.
+`std::string::size()`).
+
+**`scripts/test.sh` passes `--release`** (owner, 2026-11-18): the suites build at `-O2`;
+the test mode's UB traps stay on (`src/buildsys.hpp:205`, added whatever the profile).
+Measured right after, same Mac, same counts in all 17 suites:
+
+| `scripts/test.sh` on 0.12.1 | Time | Of it, the estimator's fuzz test |
+|---|---|---|
+| `-O0` (cfire's default), warm | 11 min 54 s | 549 s |
+| `--release`, first run (every suite cold at `-O2`) | 11 min 39 s | |
+| `--release`, warm | **1 min 40 s** | 56 s |
+| 0.10, every run compiles | 7 min 44 s | |
+
+Building the dictionaries once and moving inline tests to `*_test.cf` (they run in every
+suite that imports the package) are in the ROADMAP ("Faster test suites", §5), after the
+move.
 
 ## Progress
 
@@ -523,4 +536,4 @@ process, or fewer `--fuzz-runs` for that block.
 | 0 | 2026-11-18 | Mac and Docker baselines on 0.10 `c5b1d4b`: all green but Linux serve-e2e 47/224 (known, ROADMAP §5). Zorin before step 4; the Windows VM still needs autologon, the battery user and a snapshot | `81d5fa0` |
 | 1 | 2026-11-18 | `v0.12.0` (`7b68799`) from source in `~/.local/opt/cfire-0.12.0` (no `v0.12.x` release yet: `v0.12.1`'s macOS arm64 build failed); `cfire doctor` 17/17 needed, nothing to install; `scripts/cfire-next.sh` and the `cfire-next` MCP server; `~/.cfire/runtime` untouched; `main` builds its three binaries on 0.10. Then the published `v0.12.1` macOS arm64 archive (`71adeb7`, same compiler and runtime as `v0.12.0`) in `~/.local/opt/cfire-0.12.1`, the default of `cfire-next.sh` and the MCP server from step 3 on | `435858d`; `v0.12.1`: this commit |
 | 2 | 2026-11-18 | `cfire fix`, `@pkg` into `build.cf`; every package checks and passes on 0.12, each suite at its baseline count plus the tests step 2 added (table above), nothing skipped; `flint`, `FlintGui` and `flint-vault-server` build; 12 new cfire entries (CF-151..162) | `f1d664b` .. this commit |
-| 3 | 2026-11-18 | On `v0.12.1`: `scripts/test.sh` 17/17 and release-test 24/24, cli-e2e 483/483, server-e2e 70/70, sync-e2e 105/105, gui-e2e the baseline's eight counts, serve-e2e 223/223, `ui/` and `site/` green; nothing failed or skipped. Warm, every e2e is faster than 0.10 and builds take under a second; cold builds are 3-4x slower (CLI 1 min 25 s, app 3 min 56 s). `test.sh` warm 11 min 54 s against 7 min 44 s: `cfire test` builds at `-O0` (CF-163), one fuzz test is 549 s of it; the fix waits for the owner | this commit |
+| 3 | 2026-11-18 | On `v0.12.1`: `scripts/test.sh` 17/17 and release-test 24/24, cli-e2e 483/483, server-e2e 70/70, sync-e2e 105/105, gui-e2e the baseline's eight counts, serve-e2e 223/223, `ui/` and `site/` green; nothing failed or skipped. Warm, every e2e is faster than 0.10 and builds take under a second; cold builds are 3-4x slower (CLI 1 min 25 s, app 3 min 56 s). `test.sh` warm 11 min 54 s against 7 min 44 s: `cfire test` builds at `-O0` (CF-163), one fuzz test is 549 s of it. Then `--release` in `scripts/test.sh` (owner): 1 min 40 s warm, 11 min 39 s cold, same counts | `da43d74`; `--release`: this commit |

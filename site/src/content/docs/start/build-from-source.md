@@ -167,8 +167,8 @@ The script runs the suites in `src/`. It starts a throwaway `sshd` on `127.0.0.1
 with its own host key, user key and config in a temporary directory, so the SSH tests can
 open a real PTY. It does not touch your system `sshd` or `~/.ssh`. To use another port, set `FLINT_TEST_SSH_PORT`.
 
-To run only the tests that need no network, call `cfire test src` (after
-`. scripts/env.sh`). The SSH tests then print `SKIP`. One test stores, reads and deletes a
+To run only the tests that need no network, call `cfire test --release src` (after
+`. scripts/env.sh`; without `--release` the tests build unoptimized and run far slower). The SSH tests then print `SKIP`. One test stores, reads and deletes a
 throwaway entry in your real OS keychain; set `FLINT_TEST_KEYCHAIN=off` to skip it.
 
 ### The CLI end to end

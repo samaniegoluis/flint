@@ -2814,7 +2814,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `cfire test`'s usage line, the GUIDE or the changelog.
 - **Repro:** a `fuzz` block that builds a `map[str, i64]` of ~93k words per iteration (Flint's password estimator does);
   `cfire test` and `cfire test --release`, compare.
-- **Workaround:** none yet (the owner decides whether `scripts/test.sh` passes `--release`;
-  the UB traps of test mode stay on with it, `src/buildsys.hpp:206`).
+- **Workaround:** `cfire test --release` in `scripts/test.sh` (the UB traps of test mode
+  stay on with it, `src/buildsys.hpp:205`): the warm run went from 11 min 54 s to 1 min 40 s,
+  the fuzz test from 549 s to 56 s over the 17 suites.
 - **Ideal:** the profile of `cfire test` named in its usage and the GUIDE, with
   `--release` listed; or tests at `-O1`/`-O2 -g` by default, as debuggable and far faster.

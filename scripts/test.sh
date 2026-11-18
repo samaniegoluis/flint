@@ -163,8 +163,10 @@ if [[ -n "${FLINT_TEST_CMD:-}" ]]; then
   exit $?
 fi
 status=0
+# --release: cfire 0.12 builds tests at -O0 by default, and the password estimator's fuzz
+# test alone then takes 30 s in every suite (CF-163). The test mode's UB traps stay on.
 for t in "${targets[@]}"; do
-  cfire test "$t" || status=1
+  cfire test --release "$t" || status=1
 done
 # The release script and cliff.toml (milestone 32), with the whole run only.
 if [[ $# -eq 0 ]]; then
