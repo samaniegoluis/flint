@@ -12,7 +12,7 @@ package uievents
 // from the mailbox once taken. They are never emitted back (Principle 6).
 
 import "ext:webui"
-import cpp "flint_gui.hpp" @pkg("flint-native")
+import cpp "flint_gui.hpp"
 import "../../domain"
 
 // How long a prompt waits for the person before the connection attempt gives up.

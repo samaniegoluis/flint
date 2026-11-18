@@ -10,7 +10,7 @@ package uievents
 // check off.
 
 // CFIRE-UPSTREAM: CF-093, CF-031
-import cpp "flint_presence.hpp" @pkg("flint-native-gui")
+import cpp "flint_presence.hpp"
 
 import "core:os"
 import "../../domain"

@@ -4,7 +4,7 @@ package uievents
 // (native/flint_clipboard.hpp, CF-053). Only the GUI driver imports this file's
 // package, so the CLI never links AppKit or GTK.
 
-import cpp "flint_clipboard.hpp" @pkg("flint-native-gui")
+import cpp "flint_clipboard.hpp"
 import "../../domain"
 
 // `board` is "" for the system clipboard; the tests use a private named one on macOS.

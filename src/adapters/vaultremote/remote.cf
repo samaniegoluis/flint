@@ -8,7 +8,7 @@ package vaultremote
 // (Principle 13). No message names the token (Principle 6).
 
 // CFIRE-UPSTREAM: CF-146, CF-031
-import cpp "flint_remote.hpp" @pkg("flint-remote")
+import cpp "flint_remote.hpp"
 import "core:json"
 import "../../domain"
 

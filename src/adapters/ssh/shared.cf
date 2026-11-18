@@ -13,7 +13,7 @@ package ssh
 // timeout (Principle 8), and so is that wait.
 
 // CFIRE-UPSTREAM: CF-026, CF-031
-import cpp "flint_files.hpp" @pkg("flint-native")
+import cpp "flint_files.hpp"
 
 import "../../domain"
 

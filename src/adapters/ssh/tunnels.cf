@@ -9,7 +9,7 @@ package ssh
 // to stderr: a destination is a host name from the vault (Principle 5).
 
 // CFIRE-UPSTREAM: CF-026, CF-031, CF-112, CF-114
-import cpp "flint_tunnel.hpp" @pkg("flint-native")
+import cpp "flint_tunnel.hpp"
 
 import "../../domain"
 

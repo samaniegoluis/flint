@@ -4,7 +4,7 @@ package crypto
 // XChaCha20-Poly1305 AEAD. No primitive here is implemented by hand (Principle 4).
 
 // CFIRE-UPSTREAM: CF-006
-import cpp "sodium.h" @pkg("libsodium")
+import cpp "sodium.h"
 
 KEY_LEN: usize = 32
 SALT_LEN: usize = 16

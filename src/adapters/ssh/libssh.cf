@@ -8,11 +8,11 @@ package ssh
 // thread and writes keystrokes from the UI thread.
 
 // CFIRE-UPSTREAM: CF-005
-import cpp "libssh/libssh.h" @pkg("libssh")
+import cpp "libssh/libssh.h"
 // CFIRE-UPSTREAM: CF-026
 import cpp "mutex"
 // CFIRE-UPSTREAM: CF-005, CF-031
-import cpp "flint_ssh.hpp" @pkg("flint-native")
+import cpp "flint_ssh.hpp"
 
 import "../../domain"
 

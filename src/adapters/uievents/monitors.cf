@@ -6,7 +6,7 @@ package uievents
 // `monitor.html`; what they send reaches the page as `monitor:message`.
 
 // CFIRE-UPSTREAM: CF-126, CF-127
-import cpp "flint_monitors.hpp" @pkg("flint-native-gui")
+import cpp "flint_monitors.hpp"
 import "ext:webui"
 import "../../domain"
 

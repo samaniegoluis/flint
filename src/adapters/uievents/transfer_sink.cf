@@ -9,7 +9,7 @@ package uievents
 import "ext:webui"
 import "core:time"
 // CFIRE-UPSTREAM: CF-026
-import cpp "flint_files.hpp" @pkg("flint-native")
+import cpp "flint_files.hpp"
 import "../../domain"
 
 PROGRESS_EVERY_MS: i64 = 100

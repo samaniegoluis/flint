@@ -4,7 +4,7 @@ package keychain
 // Secret Service (libsecret). The native code is in native/flint_keychain.hpp.
 
 // CFIRE-UPSTREAM: CF-008, CF-031
-import cpp "flint_keychain.hpp" @pkg("flint-native")
+import cpp "flint_keychain.hpp"
 import "core:os"
 import "../../domain"
 

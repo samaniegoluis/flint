@@ -6,7 +6,7 @@ package uievents
 
 import "ext:webui"
 import "core:encoding/base64"
-import cpp "flint_gui.hpp" @pkg("flint-native")
+import cpp "flint_gui.hpp"
 
 type TerminalChunk struct {
     session: str `json:"session"`

@@ -6,7 +6,7 @@ package uievents
 // `window:fullscreen` event, sent by the shim on the UI thread.
 
 // CFIRE-UPSTREAM: CF-125, CF-031
-import cpp "flint_window.hpp" @pkg("flint-native-gui")
+import cpp "flint_window.hpp"
 import "ext:webui"
 
 // Starts hearing the window's full-screen state for `app`'s page. Call once, before

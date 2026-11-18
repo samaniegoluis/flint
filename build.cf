@@ -10,11 +10,19 @@ var Version = build.Command("sh", {
     Args: ["scripts/version.sh", "--write"],
 })
 
+// Native libraries, per executable (cfire 0.12 retired `@pkg` on `import cpp`).
+// flint-* are Flint's own pkg-config files, one folder per OS (src/adapters/pkgconfig/<os>,
+// put on PKG_CONFIG_PATH by scripts/env.sh), because build.cf takes literals only and has
+// no per-OS fields: Linux needs libsecret-1 and gtk+-3.0, the Mac its frameworks.
+// `cfire test` links the union of all three lists.
+// CFIRE-UPSTREAM: CF-031
+
 // The `flint` CLI.
 var Flint = build.Executable("flint", {
     Entry:     "src/drivers/cli/main.cf",
     Subsystem: "console",
     OutDir:    "build",
+    PkgConfig: ["flint-native", "flint-remote", "libsodium", "libssh", "sqlcipher"],
 })
 
 // The desktop app. scripts/build-gui.sh builds the page (ui/) and copies it into the
@@ -25,6 +33,7 @@ var FlintGui = build.Executable("Flint", {
     Subsystem: "gui",
     OutDir:    "build/gui",
     Icon:      "assets/app-icon/Flint.icns",
+    PkgConfig: ["flint-native", "flint-native-gui", "flint-rdp", "flint-remote", "libsodium", "libssh", "sqlcipher"],
 })
 
 // The remote vault server (milestone 42, D-092): a third binary that links libsodium
@@ -33,4 +42,5 @@ var FlintVaultServer = build.Executable("flint-vault-server", {
     Entry:     "src/drivers/vault-server/main.cf",
     Subsystem: "console",
     OutDir:    "build",
+    PkgConfig: ["flint-server-native", "libsodium"],
 })

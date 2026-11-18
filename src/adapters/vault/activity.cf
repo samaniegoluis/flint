@@ -14,7 +14,7 @@ package vault
 // time.
 
 // CFIRE-UPSTREAM: CF-099, CF-031
-import cpp "flint_fs.hpp" @pkg("flint-native")
+import cpp "flint_fs.hpp"
 
 import "core:fs"
 import "../../domain"

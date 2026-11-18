@@ -7,7 +7,7 @@ package vault
 // in the middle of it. Attaching or detaching changes the connection for every copy;
 // a copy that runs after a detach gets the store's "no vault is open" error.
 
-import cpp "flint_vault_lock.hpp" @pkg("flint-native")
+import cpp "flint_vault_lock.hpp"
 import "../../domain"
 
 type LockedVaultStore struct {

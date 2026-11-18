@@ -21,8 +21,8 @@ package vault
 
 import "core:fs"
 import "core:encoding/hex"
-import cpp "flint_fs.hpp" @pkg("flint-native")
-import cpp "sqlite3.h" @pkg("sqlcipher")
+import cpp "flint_fs.hpp"
+import cpp "sqlite3.h"
 import "../../domain"
 
 REKEY_SUFFIX: str = ".rekey"

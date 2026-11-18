@@ -3,7 +3,7 @@ package uievents
 // Open and save file dialogs where ext:webui has none: on Linux, a GTK file chooser
 // (native/flint_dialog.hpp, CF-077). On macOS the GUI driver keeps webui's own panels.
 
-import cpp "flint_dialog.hpp" @pkg("flint-native-gui")
+import cpp "flint_dialog.hpp"
 
 // True when this platform's dialogs come from here rather than from ext:webui.
 fn native_file_dialogs() -> bool {

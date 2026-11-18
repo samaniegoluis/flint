@@ -9,7 +9,7 @@ package rdp
 // package, so the CLI never links FreeRDP.
 
 // CFIRE-UPSTREAM: CF-119
-import cpp "flint_rdp.hpp" @pkg("flint-rdp")
+import cpp "flint_rdp.hpp"
 import "../../domain"
 
 // The engine. Stateless: the tabs live in the shim's registry.

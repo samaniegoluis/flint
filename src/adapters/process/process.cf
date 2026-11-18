@@ -5,7 +5,7 @@ package process
 // core:os covers is used directly; the rest is in native/flint_process.hpp (CF-024).
 
 // CFIRE-UPSTREAM: CF-024, CF-031
-import cpp "flint_process.hpp" @pkg("flint-native")
+import cpp "flint_process.hpp"
 
 import "core:os"
 import "core:time"

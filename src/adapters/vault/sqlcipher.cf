@@ -5,7 +5,7 @@ package vault
 // the core with libsodium; SQLCipher's own PBKDF2 is bypassed (D-014, D-017).
 
 // CFIRE-UPSTREAM: CF-007
-import cpp "sqlite3.h" @pkg("sqlcipher")
+import cpp "sqlite3.h"
 import "core:encoding/hex"
 
 // ---- Format v1 SQLCipher parameters (D-016, D-017) ----------------------------

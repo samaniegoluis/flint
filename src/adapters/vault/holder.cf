@@ -11,7 +11,7 @@ package vault
 // and setters take a separate short lock, so a reader never sees half of a write and
 // the UI thread never waits for an unlock to finish.
 
-import cpp "flint_vault_lock.hpp" @pkg("flint-native")
+import cpp "flint_vault_lock.hpp"
 
 import "core:json"
 import "../../domain"

@@ -11,9 +11,9 @@ package ssh
 // (the server refused for another reason) or `network` (the channel is gone).
 
 // CFIRE-UPSTREAM: CF-005
-import cpp "libssh/sftp.h" @pkg("libssh")
+import cpp "libssh/sftp.h"
 // CFIRE-UPSTREAM: CF-005, CF-031
-import cpp "flint_sftp.hpp" @pkg("flint-native")
+import cpp "flint_sftp.hpp"
 
 import "../../domain"
 

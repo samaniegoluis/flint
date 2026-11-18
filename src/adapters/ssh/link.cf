@@ -9,7 +9,7 @@ package ssh
 // error (Principle 6).
 
 // CFIRE-UPSTREAM: CF-005, CF-031
-import cpp "flint_ssh.hpp" @pkg("flint-native")
+import cpp "flint_ssh.hpp"
 
 import "../../domain"
 

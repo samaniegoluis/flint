@@ -7,7 +7,7 @@ package ipc
 // frames (native/flint_ipc.hpp); what they carry is the driver's business.
 
 // CFIRE-UPSTREAM: CF-081, CF-031
-import cpp "flint_ipc.hpp" @pkg("flint-native")
+import cpp "flint_ipc.hpp"
 
 import "../../domain"
 

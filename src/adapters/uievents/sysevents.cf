@@ -5,7 +5,7 @@ package uievents
 // from its lock timer.
 
 // CFIRE-UPSTREAM: CF-084, CF-031
-import cpp "flint_sysevents.hpp" @pkg("flint-native-gui")
+import cpp "flint_sysevents.hpp"
 
 // Subscribes to the OS's lock and sleep events. Call once on the main thread before
 // the window runs. Returns what it subscribed to ("" for nothing), for the log.

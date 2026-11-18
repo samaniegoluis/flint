@@ -6,7 +6,7 @@ package ipc
 // the anchor a grant is tied to (domain/access.cf).
 
 // CFIRE-UPSTREAM: CF-092, CF-031
-import cpp "flint_peer.hpp" @pkg("flint-native")
+import cpp "flint_peer.hpp"
 
 import "../../domain"
 

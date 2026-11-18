@@ -20,7 +20,7 @@ package serverfs
 // and `head.json` last, so a move cut short is finished at the next start.
 
 // CFIRE-UPSTREAM: CF-143, CF-031
-import cpp "flint_server.hpp" @pkg("flint-server-native")
+import cpp "flint_server.hpp"
 
 import "core:fs"
 import "core:json"
