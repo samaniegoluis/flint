@@ -86,10 +86,16 @@ type MergeRecord interface {
 }
 
 fn print_join(parts: []str) -> str {
-    // `join` does not compile on a read-only `[]str` parameter (CF-154): an owned copy.
-    // CFIRE-UPSTREAM: CF-154
+    return join_with(parts, "\x1f")
+}
+
+// `parts.join(sep)`. A function, for two cfire 0.12 bugs: `join` does not compile on a
+// read-only `[]str` parameter (CF-154), and on a struct field it lowers to a C++ member
+// once this package is imported (CF-156).
+// CFIRE-UPSTREAM: CF-154, CF-156
+fn join_with(parts: []str, sep: str) -> str {
     mut own := parts
-    return own.join("\x1f")
+    return own.join(sep)
 }
 
 fn print_bytes(b: []byte) -> str {
@@ -113,7 +119,7 @@ fn (self: Host) merge_id() -> str { return self.id }
 fn (self: Host) merge_stamp() -> i64 { return self.updated_at }
 fn (self: Host) merge_print() -> str {
     return print_join([self.alias, self.label, self.hostname, "{self.port}", self.username, self.group_id,
-            self.tags.join("\x1e"), self.color, self.notes, self.jump_host_id, self.credential_id,
+            join_with(self.tags, "\x1e"), self.color, self.notes, self.jump_host_id, self.credential_id,
             self.key_id, print_bytes(self.password), self.initial_command, print_bool(self.keep_shell),
             print_bytes(self.sudo_password), self.host_type, self.domain])
 }
@@ -146,7 +152,7 @@ fn (self: Tunnel) merge_print() -> str {
 fn (self: Token) merge_id() -> str { return self.id }
 fn (self: Token) merge_stamp() -> i64 { return self.updated_at }
 fn (self: Token) merge_print() -> str {
-    return print_join([self.name, self.hash, print_bool(self.scope.all), self.scope.groups.join(","), self.scope.hosts.join(","),
+    return print_join([self.name, self.hash, print_bool(self.scope.all), join_with(self.scope.groups, ","), join_with(self.scope.hosts, ","),
             print_bool(self.read), print_bool(self.exec), print_bool(self.write), "{self.created_at}", "{self.expires_at}", "{self.revoked_at}"])
 }
 

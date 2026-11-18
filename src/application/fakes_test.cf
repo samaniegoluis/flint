@@ -38,7 +38,8 @@ fn (self: FakeCrypto) derive_key(password: str, salt: []byte, ops: u64, mem_byte
 fn (self: FakeCrypto) derive_subkey(master: []byte, id: u64, kdf_context: str) -> []byte! {
     mut k := make([]byte, 32)
     for i in 0..32 {
-        k[i] = master[i] ^ byte(u8(id * 31 + 7))
+        // Mod 256, as the u8 conversions wrapped before cfire 0.12 checked them.
+        k[i] = master[i] ^ u8((id * 31 + 7) % 256)
     }
     return k
 }
@@ -48,7 +49,7 @@ fn (self: FakeCrypto) digest(data: []byte, out_len: usize) -> []byte! {
     mut res := make([]byte, out_len)
     for i, b in data {
         j := i % out_len
-        res[j] = byte(u8(u8(res[j]) * 31 + u8(b) + u8(i)))
+        res[j] = u8((i64(u8(res[j])) * 31 + i64(u8(b)) + i64(i)) % 256)
     }
     return res
 }
@@ -67,7 +68,7 @@ fn (self: FakeCrypto) equal(a: []byte, b: []byte) -> bool {
 
 // sealed = [aad_len] aad [key0] (plaintext xor key0)
 fn (self: FakeCrypto) seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte! {
-    mut s: []byte = [byte(u8(aad.len()))]
+    mut s: []byte = [u8(aad.len() % 256)]
     for b in aad {
         s.push(b)
     }
@@ -567,14 +568,12 @@ fn (self: FakeRecents) recents_load() -> []RecentVault! {
     }
     text := try fs.read_text(self.path)
     for line in str_split_lines(text) {
-        tab := line.index_of("\t")
-        if tab >= 0 {
-            rest := line[usize(tab) + 1..]
-            tab2 := rest.index_of("\t")
-            if tab2 >= 0 {
-                list.push(RecentVault{ path: line[..usize(tab)], name: rest[..usize(tab2)], id: rest[usize(tab2) + 1..] })
+        if tab := line.index_of("\t") {
+            rest := line[tab + 1..]
+            if tab2 := rest.index_of("\t") {
+                list.push(RecentVault{ path: line[..tab], name: rest[..tab2], id: rest[tab2 + 1..] })
             } else {
-                list.push(RecentVault{ path: line[..usize(tab)], name: rest, id: "" })
+                list.push(RecentVault{ path: line[..tab], name: rest, id: "" })
             }
         }
     }
@@ -705,12 +704,10 @@ fn (mut self: FakeLink) link_exec_start(command: str) -> void! {
 
 fn (mut self: FakeLink) link_exec_open(command: str) -> void! {
     self.calls.push("exec-open " + command)
-    start := command.index_of("-p '")
-    if start >= 0 {
-        rest := command[usize(start) + 4..]
-        end := rest.index_of("'")
-        if end >= 0 {
-            self.prompt = rest[..usize(end)]
+    if start := command.index_of("-p '") {
+        rest := command[start + 4..]
+        if end := rest.index_of("'") {
+            self.prompt = rest[..end]
         }
     }
 }
@@ -972,21 +969,23 @@ fn (self: FakeStore) vault_file_bytes(path: str) -> []byte! {
     }
     // CFIRE-UPSTREAM: CF-147 (no field access through shared[T]; a statement that
     // starts with `(` continues the line before it)
-    mut bank := self.bank
-    mut list := (*bank).blobs
+    // Through `self.bank`: a local copy of the field loses its `shared[T]` type once this
+    // package is imported, and its fields lower with `.` instead of `->` (CF-156).
+    // CFIRE-UPSTREAM: CF-156
+    mut list := self.bank.blobs
     n := list.len()
-    reads := (*bank).reads + 1
-    late := (*bank).late_after
+    reads := self.bank.reads + 1
+    late := self.bank.late_after
     mut tombs := self.tombs
     if late > 0 && reads > late {
         tombs.push(Tombstone{ kind: "host", id: "written-by-another-process", deleted_at: 1 })
     }
     list.push(VaultRecords{ groups: self.groups, hosts: self.hosts, keys: self.keys, creds: self.creds, known_hosts: self.known, tunnels: self.tunnels, tokens: self.rec_tokens, tombstones: tombs })
     if n >= 0 {
-        (*bank).blobs = list
+        self.bank.blobs = list
     }
     if n >= 0 {
-        (*bank).reads = reads
+        self.bank.reads = reads
     }
     // The same records give the same bytes, so an unchanged vault hashes the same.
     mut same := n
@@ -1027,7 +1026,7 @@ fn (self: FakeStore) fake_blob_of(data: []byte) -> FakeBlob! {
     if n < 0 {
         return error(coded(ERR_INVALID, "not a fake vault"))
     }
-    list := (*self.bank).blobs
+    list := self.bank.blobs
     return FakeBlob{ key: parts[0], id: parts[1], records: list[usize(n)] }
 }
 
@@ -1267,5 +1266,8 @@ fn (self: FakeLinks) links_load() -> []RemoteLink! {
 }
 
 fn (self: FakeLinks) links_save(list: []RemoteLink) -> void! {
-    try fs.write_text(self.path, json.stringify(list))
+    // An owned copy: `json.stringify` of a read-only `[]T` parameter gives "{}" (CF-157).
+    // CFIRE-UPSTREAM: CF-157
+    mut own := list
+    try fs.write_text(self.path, json.stringify(own))
 }

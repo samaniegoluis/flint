@@ -156,9 +156,8 @@ fn side_remove[T: SftpTransport, L: LocalFiles](remote: bool, mut sftp: T, mut l
         }
         return ""
     }
-    r := local.local_remove(path)
-    if !r.has_value() {
-        return "{r.error().message()}"
+    local.local_remove(path) or err {
+        return "{err.message()}"
     }
     return ""
 }

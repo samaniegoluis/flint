@@ -118,7 +118,10 @@ fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
 
 // What is still held back once the command ended.
 fn sudo_flush(mut w: SudoWatch) -> str {
-    mut rest := w.pending
+    // Typed: inferred from a parameter's field, its methods break once the package is
+    // imported (CF-156).
+    // CFIRE-UPSTREAM: CF-156
+    mut rest: str = w.pending
     if w.secret.len() > 0 {
         rest = rest.replace_all(w.secret, "")
     }

@@ -137,7 +137,7 @@ fn (mut self: FakeTree) t_read() -> str! {
     if self.read_pos + n > data.len() {
         n = data.len() - self.read_pos
     }
-    piece := data.substr(self.read_pos, n)
+    piece := byte_slice(data, self.read_pos, self.read_pos + n)
     self.read_pos += n
     return piece
 }

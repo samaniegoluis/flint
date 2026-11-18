@@ -366,7 +366,9 @@ test "every start holds its host's gate, and leaves it on failure too" {
     _ = try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
     web := host_id_of(store, "web")
     mut link := web_link()
-    start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts()) or err {}
+    // Only the gates it leaves behind are checked, whatever the start gives.
+    mut why := ""
+    start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts()) or err { why = err.message() }
     assert_eq(runner.gates.len(), 2)
     assert_eq(runner.gates[0], "+" + web)
     assert_eq(runner.gates[1], "-" + web)

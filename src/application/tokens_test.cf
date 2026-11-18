@@ -124,9 +124,9 @@ test "a token is created once, stored hashed, and checked by its text" {
     assert_eq(t.id, made.token.id)
     // A changed secret, an unknown id, garbage: all denied.
     parts := split_token_text(made.secret)
-    mut flipped := parts.secret.substr(1) + "0"
+    mut flipped := parts.secret[1..] + "0"
     if flipped == parts.secret {
-        flipped = parts.secret.substr(1) + "1"
+        flipped = parts.secret[1..] + "1"
     }
     mut bad := ""
     check_token(crypto, tokens, token_text(parts.id, flipped), 2000) or err { bad = "{err.message()}" }

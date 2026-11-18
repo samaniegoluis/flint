@@ -172,7 +172,7 @@ test "a download takes the only vault, or the one an id or a prefix names" {
     // Work, by a prefix of its id, on a machine that never had it.
     store.bank = w.store.bank
     links := new_fake_links()
-    s := try download_remote(crypto, mut store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", w.session.id.substr(0, 6), NEW_PW, "/c/Work.flint", false, 1)
+    s := try download_remote(crypto, mut store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", w.session.id[..6], NEW_PW, "/c/Work.flint", false, 1)
     assert_eq(s.id, w.session.id)
     assert(has_alias(store, "work-db"))
     l := try links.links_load()
@@ -568,12 +568,14 @@ test "a write made while a sync finds nothing new is left to upload" {
     remote := new_fake_remote()
     _ = try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     // Another process writes right after this sync's first read of the file.
-    mut bank := a.store.bank
+    // Through `a.store.bank`: a local copy of a `shared[T]` field lowers its fields with
+    // `.` instead of `->` (CF-156).
+    // CFIRE-UPSTREAM: CF-156
     if true {
-        (*bank).reads = 0
+        a.store.bank.reads = 0
     }
     if true {
-        (*bank).late_after = 1
+        a.store.bank.late_after = 1
     }
     got := try sync_vault(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, "", 2000)
     assert_eq(got.result, SYNC_IN_STEP)

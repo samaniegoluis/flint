@@ -36,7 +36,7 @@ test "ui state is kept per vault, most recent first, and cleaned" {
 
 fn test_vault_id(i: i64) -> str {
     digits := "0123456789abcdef"
-    return "000000000000000000000000000000" + digits.substr(usize(i / 16), 1) + digits.substr(usize(i % 16), 1)
+    return "000000000000000000000000000000" + digits[usize(i / 16)..usize(i / 16) + 1] + digits[usize(i % 16)..usize(i % 16) + 1]
 }
 
 test "ui state keeps at most the cap of vaults" {

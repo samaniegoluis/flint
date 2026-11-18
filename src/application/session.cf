@@ -88,12 +88,11 @@ fn session_info(s: VaultSession) -> VaultInfo {
 // "/a/b/Home Lab.flint" -> "Home Lab". Pure string work, no filesystem access.
 fn vault_name_from_path(path: str) -> str {
     mut base := path
-    slash := base.last_index_of("/")
-    if slash >= 0 {
-        base = base.substr(usize(slash) + 1)
+    if slash := base.last_index_of("/") {
+        base = str(base[slash + 1..])
     }
     if base.ends_with(".flint") && base.len() > 6 {
-        base = base.substr(0, base.len() - 6)
+        base = str(base[..base.len() - 6])
     }
     return base
 }

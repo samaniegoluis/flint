@@ -89,7 +89,7 @@ fn resolve_rdp_graphics[R: RemoteDesktop](mut rd: R, mut t: RdpTarget) {
     }
     rtt := rd.rd_probe_rtt(t.hostname, t.port, RDP_PROBE_TIMEOUT_MS)
     t.rtt_ms = rtt
-    t.graphics = auto_rdp_graphics(rtt, t.monitors.len())
+    t.graphics = auto_rdp_graphics(rtt, i64(t.monitors.len()))
 }
 
 // One connection attempt: "" when it opened (`got` holds the desktop), else the error.

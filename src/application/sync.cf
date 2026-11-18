@@ -176,7 +176,7 @@ fn str_trim_all(s: str) -> str {
     for end > start && (u8(b[end - 1]) == 32 || u8(b[end - 1]) == 9 || u8(b[end - 1]) == 10 || u8(b[end - 1]) == 13) {
         end -= 1
     }
-    return s.substr(start, end - start)
+    return s[start..end]
 }
 
 // `flint vault connect <url>`: connects the vault `session` holds to the server at

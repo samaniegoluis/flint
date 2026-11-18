@@ -2639,7 +2639,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** a byte view of a `str` (`s.byte_slice(a, b)` or `s.bytes()` as a view), or a
   bytes type that HTTP and IPC data can live in.
 
-### CF-156 · bug · `confirmed`: a loop over a parameter's field returning its item fails the check from an importing package
+### CF-156 · bug · `confirmed`: in an imported package, a type inferred from a parameter's field is lost
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** `fn find_item(book: Book, id: str) ->
   Item? { for it in book.pending { if it.id == id { return it } } return none }` checks
   clean in its own package, but `cfire check` of a package that imports it reports
@@ -2647,5 +2647,27 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   a parameter itself (`for g in grants`) is fine.
 - **Repro:** package `lib` with the function above and `type Book struct { pending: []Item }`;
   package `app` with `import "../lib"` and any function using `lib.Book`; `cfire check app`.
-- **Workaround:** an index loop (`find_approval`, `src/domain/access.cf`).
-- **Ideal:** the loop item's type is resolved the same from either package.
+- **Same cause, in codegen:** `x.tags.join(",")` or `mut rest := w.pending; rest.replace_all(…)`
+  with `x`/`w` parameters compiles in its own package, but once the package is imported
+  the call lowers to a C++ member ("no member named 'join' in '[]str'", "no member named
+  'replace_all' in 'str'"): the builtin dispatch does not know the value's type.
+- **Repro (codegen):** `fn tags_of(it: Item) -> str { return it.tags.join(",") }` in `lib`,
+  called from a test in `app`; `cfire test app`. A typed local (`t: []str = it.tags`) fixes it.
+- **Workaround:** an index loop (`find_approval`, `src/domain/access.cf`); `join_with` in
+  `src/domain/merge.cf`; a typed local in `sudo_flush`.
+- **Ideal:** the item's or field's type is resolved the same from either package.
+
+### CF-157 · bug · `confirmed`: `json.stringify` of a read-only `[]T` parameter gives `{}`
+- **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** a read-only `[]T` parameter lowers to
+  `slice_ref<T>`, which `json.stringify` serializes as an empty object, with no diagnostic.
+  The same slice as a local gives the array. A file written this way is silently empty:
+  Flint's test fake for the remote links stored `{}`, and every sync test failed reading
+  it back ("INCORRECT_TYPE"). **Severe**: it loses data without an error.
+- **Repro:** `fn dump(list: []L) -> str { return json.stringify(list) }` with `L` a
+  JSON-tagged struct; `dump([L{ url: "a" }])` gives `{}`, `json.stringify(xs)` on the local
+  gives `[{"url":"a"}]`.
+- **Workaround:** `mut own := list` before `json.stringify` (`FakeLinks.links_save`,
+  `src/application/fakes_test.cf`). A slice put into a struct field (`RemotesFile{ vaults:
+  list }`, the real store) is copied and serializes correctly.
+- **Ideal:** `slice_ref<T>` and `std::span` serialize as arrays (and `json.parse` and
+  `stringify` are covered for every lowering of `[]T`).

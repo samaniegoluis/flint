@@ -40,7 +40,8 @@ fn (self: TestCrypto) digest(data: []byte, out_len: usize) -> []byte! {
     mut res := make([]byte, out_len)
     for i, b in data {
         j := i % out_len
-        res[j] = byte(u8(u8(res[j]) * 31 + u8(b) + u8(i)))
+        // Mod 256, as the u8 arithmetic wrapped before cfire 0.12 checked conversions.
+        res[j] = u8((i64(u8(res[j])) * 31 + i64(u8(b)) + i64(i)) % 256)
     }
     return res
 }

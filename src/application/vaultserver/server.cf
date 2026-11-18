@@ -150,7 +150,7 @@ fn token_matches[C: Crypto](crypto: C, cfg: ServerConfig, authorization: str) ->
     if !authorization.starts_with("Bearer ") {
         return false
     }
-    presented := authorization.substr(7).trim()
+    presented := authorization[7..].trim()
     if presented.len() == 0 {
         return false
     }
@@ -189,10 +189,10 @@ fn serve_vault_request[C: Crypto, B: BlobStore](crypto: C, mut store: B, mut gat
     if !req.path.starts_with(SERVER_VAULTS_PATH + "/") {
         return json_reply(404, "not_found", "no such resource")
     }
-    mut rest := req.path.substr(SERVER_VAULTS_PATH.len() + 1)
+    mut rest := req.path[SERVER_VAULTS_PATH.len() + 1..]
     mut label := false
     if rest.ends_with("/label") {
-        rest = rest.substr(0, rest.len() - 6)
+        rest = rest[..rest.len() - 6]
         label = true
     }
     if !valid_vault_id(rest) {

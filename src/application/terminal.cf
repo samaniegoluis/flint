@@ -48,12 +48,11 @@ type Osc52Result struct {
 // An empty `Pc` means the clipboard; a list without `c` (only primary, `p`, or `s`)
 // is ignored, since a desktop app has one clipboard.
 fn osc52_copy[B: Clipboard](mut clip: B, payload: str) -> Osc52Result! {
-    semi := payload.index_of(";")
-    if semi < 0 {
+    semi := payload.index_of(";") or {
         return error(coded(ERR_INVALID, "an OSC 52 request is 'selection;base64'"))
     }
-    targets := payload[0..usize(semi)]
-    data := payload[usize(semi) + 1..payload.len()]
+    targets := payload[0..semi]
+    data := payload[semi + 1..payload.len()]
     if data == "?" {
         return Osc52Result{ outcome: "ignored", bytes: 0 }
     }

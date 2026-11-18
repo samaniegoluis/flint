@@ -34,35 +34,35 @@ type Crypto interface {
 type VaultStore interface {
     vault_file_exists(path: str) -> bool
     vault_read_salt(path: str) -> []byte!
-    vault_create(path: str, page_key: []byte, salt: []byte) -> void!
-    vault_attach(path: str, page_key: []byte, salt: []byte) -> void!
-    vault_detach()
+    mut vault_create(path: str, page_key: []byte, salt: []byte) -> void!
+    mut vault_attach(path: str, page_key: []byte, salt: []byte) -> void!
+    mut vault_detach()
     vault_format() -> i64!
     vault_get_meta(key: str) -> str!
-    vault_set_meta(key: str, value: str) -> void!
-    vault_begin() -> void!
-    vault_commit() -> void!
-    vault_rollback()
+    mut vault_set_meta(key: str, value: str) -> void!
+    mut vault_begin() -> void!
+    mut vault_commit() -> void!
+    mut vault_rollback()
     groups_all() -> []Group!
-    group_put(g: Group) -> void!
-    group_drop(id: str) -> void!
+    mut group_put(g: Group) -> void!
+    mut group_drop(id: str) -> void!
     hosts_all() -> []Host!
-    host_put(h: Host) -> void!
-    host_drop(id: str) -> void!
+    mut host_put(h: Host) -> void!
+    mut host_drop(id: str) -> void!
     keys_all() -> []SshKey!
-    key_put(k: SshKey) -> void!
-    key_drop(id: str) -> void!
+    mut key_put(k: SshKey) -> void!
+    mut key_drop(id: str) -> void!
     creds_all() -> []Credential!
-    cred_put(c: Credential) -> void!
-    cred_drop(id: str) -> void!
+    mut cred_put(c: Credential) -> void!
+    mut cred_drop(id: str) -> void!
     known_hosts_all() -> []KnownHost!
-    known_host_put(k: KnownHost) -> void!
-    known_host_drop(addr: str) -> void!
+    mut known_host_put(k: KnownHost) -> void!
+    mut known_host_drop(addr: str) -> void!
     // Milestone 39 (D-094): opens this machine's activity file for the open vault,
     // named by its id and encrypted with `key` (VAULT_SUBKEY_ACTIVITY); a new file
     // takes `new_salt`. Moves in, once, the log an older vault still holds.
     // `vault_detach` closes it with the vault.
-    activity_attach(vault_id: str, key: []byte, new_salt: []byte) -> void!
+    mut activity_attach(vault_id: str, key: []byte, new_salt: []byte) -> void!
     // Milestone 40 (D-095): a new master password. `vault_rekey_prepare` writes a copy
     // of the open vault under the new page key and salt, with `secrets` (every host,
     // key and credential, re-sealed under the new secrets key) in place of the old
@@ -71,20 +71,20 @@ type VaultStore interface {
     // commit point) and opens it, then `activity_rekey_commit` does the same for the
     // activity copy. A commit fails `conflict` when the vault changed since its
     // prepare. `vault_rekey_abort` removes the copies a prepare left.
-    vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: VaultSecrets) -> void!
-    activity_rekey_prepare(key: []byte, new_salt: []byte) -> void!
-    vault_rekey_commit(path: str, page_key: []byte, salt: []byte) -> void!
-    activity_rekey_commit(key: []byte) -> void!
-    vault_rekey_abort(path: str)
+    mut vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: VaultSecrets) -> void!
+    mut activity_rekey_prepare(key: []byte, new_salt: []byte) -> void!
+    mut vault_rekey_commit(path: str, page_key: []byte, salt: []byte) -> void!
+    mut activity_rekey_commit(key: []byte) -> void!
+    mut vault_rekey_abort(path: str)
     // Milestone 41 (D-093, D-096): every write stamps its row and every delete leaves
     // a tombstone. `vault_records` reads every synced row with its stamp, and the
     // tombstones; `vault_replace_records` puts a merge's result in their place, each
     // row keeping its stamp (inside `vault_begin` / `vault_commit`).
     vault_records() -> VaultRecords!
-    vault_replace_records(r: VaultRecords) -> void!
+    mut vault_replace_records(r: VaultRecords) -> void!
     // Opens a conflict copy of a vault to merge, read through a private copy so the
     // file at `path` is never changed; `vault_detach` closes and removes it.
-    vault_attach_copy(path: str, page_key: []byte, salt: []byte) -> void!
+    mut vault_attach_copy(path: str, page_key: []byte, salt: []byte) -> void!
     // Milestone 43 (the remote vault): the vault file at `path` as it is on disk, read
     // while no write is under way, to upload or to hash.
     vault_file_bytes(path: str) -> []byte!
@@ -93,7 +93,7 @@ type VaultStore interface {
     // and reads its records and id; `wrong_password` when the key does not open it.
     vault_blob_records(data: []byte, page_key: []byte, salt: []byte) -> BlobRecords!
     // Writes `data` as a new vault file at `path` (0600); `exists` when a file is there.
-    vault_write_new(path: str, data: []byte) -> void!
+    mut vault_write_new(path: str, data: []byte) -> void!
 }
 
 // Tokens, in the open vault (adapters/vault, migration 004, milestone 12b), and the
@@ -103,17 +103,17 @@ type VaultStore interface {
 // id below `before_id` (0: from the newest). The retention is this machine's.
 type TokenStore interface {
     tokens_all() -> []Token!
-    token_put(t: Token) -> void!
+    mut token_put(t: Token) -> void!
     // Appends `e` and prunes to `keep` in one savepoint.
-    activity_add(e: ActivityEntry, keep: ActivityKeep) -> void!
+    mut activity_add(e: ActivityEntry, keep: ActivityKeep) -> void!
     activity_page(before_id: i64, limit: i64) -> []ActivityEntry!
     // Prunes to `keep`; the number of entries removed (milestone 15).
-    activity_prune(keep: ActivityKeep) -> i64!
+    mut activity_prune(keep: ActivityKeep) -> i64!
     // How many entries are older than `since_at` (Unix seconds).
     activity_count_before(since_at: i64) -> i64!
     // The retention in days (0: no limit; -1: never set).
     activity_retention() -> i64!
-    set_activity_retention(days: i64) -> void!
+    mut set_activity_retention(days: i64) -> void!
     // Copies the activity file, still encrypted, to `dest` (replaced if there).
     activity_backup(dest: str) -> void!
 }
@@ -122,8 +122,8 @@ type TokenStore interface {
 // 22). Served by the same store as `VaultStore`; removing a host removes its tunnels.
 type TunnelStore interface {
     tunnels_all() -> []Tunnel!
-    tunnel_put(t: Tunnel) -> void!
-    tunnel_drop(id: str) -> void!
+    mut tunnel_put(t: Tunnel) -> void!
+    mut tunnel_drop(id: str) -> void!
 }
 
 // A remote vault server, protocol /v1 (adapters/vaultremote, milestones 43 and 45).
@@ -169,7 +169,7 @@ type RecentStore interface {
 // returns the defaults when nothing has been saved yet.
 type SettingsStore interface {
     settings_load() -> Settings!
-    settings_save(s: Settings) -> void!
+    mut settings_save(s: Settings) -> void!
 }
 
 // The monospaced font families installed on this machine (adapters/fonts).
@@ -185,14 +185,14 @@ type KeyInspector interface {
 // An interactive remote shell (adapters/ssh, libssh).
 type ShellSession interface {
     write(data: str) -> void!
-    read(timeout_ms: i32) -> str!
+    mut read(timeout_ms: i32) -> str!
     resize(cols: i32, rows: i32) -> void!
 }
 
 // Out-of-band delivery of terminal bytes to a driver (webui events, stdio).
 type EventSink interface {
-    terminal_output(session_id: str, data: str)
-    terminal_closed(session_id: str, reason: str)
+    mut terminal_output(session_id: str, data: str)
+    mut terminal_closed(session_id: str, reason: str)
 }
 
 // An SSH connection chain (adapters/ssh, libssh). `link_dial` opens the first hop
@@ -204,30 +204,30 @@ type EventSink interface {
 // One channel at a time: a shell (PTY) or an exec. `link_shell_open` with a
 // `command` runs that command on the PTY instead of the login shell ("" for none).
 type SshTransport interface {
-    link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void!
+    mut link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void!
     link_server_key() -> ServerKey!
-    link_auth_key(private_key: str, passphrase: str) -> void!
-    link_auth_password(password: str) -> void!
-    link_auth_agent() -> void!
-    link_shell_open(term: str, cols: i32, rows: i32, command: str) -> void!
-    link_exec_start(command: str) -> void!
+    mut link_auth_key(private_key: str, passphrase: str) -> void!
+    mut link_auth_password(password: str) -> void!
+    mut link_auth_agent() -> void!
+    mut link_shell_open(term: str, cols: i32, rows: i32, command: str) -> void!
+    mut link_exec_start(command: str) -> void!
     // Like `link_exec_start`, with stdin left open until `link_channel_eof`.
-    link_exec_open(command: str) -> void!
-    link_channel_eof() -> void!
-    link_channel_read(timeout_ms: i32) -> ExecChunk!
-    link_channel_write(data: str) -> void!
-    link_channel_resize(cols: i32, rows: i32) -> void!
+    mut link_exec_open(command: str) -> void!
+    mut link_channel_eof() -> void!
+    mut link_channel_read(timeout_ms: i32) -> ExecChunk!
+    mut link_channel_write(data: str) -> void!
+    mut link_channel_resize(cols: i32, rows: i32) -> void!
     // Sends a keepalive request on the last hop without waiting for the answer.
-    link_keepalive() -> void!
+    mut link_keepalive() -> void!
     // Lends the logged-in session to the Files view with no channel of its own (the
     // app's second Files pane, milestone 19). Only a GUI tab's link can; any other
     // fails with `internal`.
-    link_lend() -> void!
+    mut link_lend() -> void!
     // Gives the logged-in session to the tunnel runner under `key` (milestone 22): the
     // runner owns it from then on and hangs it up; this link is left with no hop. Only
     // a plain link can; any other fails with `internal`.
-    link_hand_over(key: str) -> void!
-    link_hangup()
+    mut link_hand_over(key: str) -> void!
+    mut link_hangup()
 }
 
 // Asking the person (adapters/process on a terminal, adapters/gui in a window).
@@ -246,32 +246,32 @@ type Prompter interface {
 // keystrokes in, remote bytes out, and window resizes.
 type Terminal interface {
     term_size() -> TerminalSize
-    term_raw_enter() -> void!
-    term_raw_leave()
-    term_input(timeout_ms: i32) -> str!
-    term_output(data: str)
-    term_take_resize() -> bool
+    mut term_raw_enter() -> void!
+    mut term_raw_leave()
+    mut term_input(timeout_ms: i32) -> str!
+    mut term_output(data: str)
+    mut term_take_resize() -> bool
 }
 
 // Where a streaming exec writes the remote stdout and stderr (adapters/process).
 type ExecSink interface {
-    exec_stdout(data: str)
-    exec_stderr(data: str)
+    mut exec_stdout(data: str)
+    mut exec_stderr(data: str)
 }
 
 // The system clipboard (adapters/uievents, the desktop app). `clipboard_copy_secret`
 // puts a secret on it, marked so clipboard managers skip it where the OS allows, and
 // clears it after `clear_after_ms` unless something else was copied since (D-029).
 type Clipboard interface {
-    clipboard_copy_secret(text: str, clear_after_ms: i64) -> void!
+    mut clipboard_copy_secret(text: str, clear_after_ms: i64) -> void!
     // Plain text a remote program copied (OSC 52): not concealed, never cleared.
-    clipboard_copy_text(text: str) -> void!
+    mut clipboard_copy_text(text: str) -> void!
     // What a paste would take: the text, else an image as PNG (milestone 25 on Linux).
-    clipboard_read() -> ClipboardContent!
+    mut clipboard_read() -> ClipboardContent!
     // A number that changes whenever anything is copied (macOS' changeCount, GTK's
     // owner changes), -1 where the system has none. Cheap: an RDP tab checks it a few
     // times a second (milestone 31).
-    clipboard_change_count() -> i64
+    mut clipboard_change_count() -> i64
 }
 
 // A presence check before the owner's Allow takes effect (adapters/uievents,
@@ -288,12 +288,12 @@ type Presence interface {
 // is damaged; writes are atomic.
 type UiStateStore interface {
     ui_state_load() -> UiState!
-    ui_state_save(s: UiState) -> void!
+    mut ui_state_save(s: UiState) -> void!
 }
 
 // Monotonic milliseconds, for timeouts and durations (adapters/process).
 type Clock interface {
-    clock_now_ms() -> i64
+    mut clock_now_ms() -> i64
 }
 
 // Files on a host over SFTP (adapters/ssh/sftp.cf, milestone 16), on the last hop of
@@ -302,30 +302,30 @@ type Clock interface {
 // (Principle 8). Errors carry `not_found`, `permission_denied`, `exists`,
 // `not_a_directory`, `io` or `network`.
 type SftpTransport interface {
-    sftp_open() -> void!
+    mut sftp_open() -> void!
     // Follows links.
     sftp_stat(path: str) -> FileEntry!
     // A folder's entries without `.` and `..`; links are not followed.
     sftp_list(path: str) -> []FileEntry!
     // For reading (`write` false) or writing: created or truncated, refused with
     // `exists` when `exclusive` and the file is there.
-    sftp_file_open(path: str, write: bool, exclusive: bool) -> void!
+    mut sftp_file_open(path: str, write: bool, exclusive: bool) -> void!
     // The next bytes of the open file; "" at its end.
-    sftp_file_read() -> str!
-    sftp_file_write(data: str) -> void!
-    sftp_file_close() -> void!
-    sftp_rename(from: str, to: str) -> void!
+    mut sftp_file_read() -> str!
+    mut sftp_file_write(data: str) -> void!
+    mut sftp_file_close() -> void!
+    mut sftp_rename(from: str, to: str) -> void!
     // A file, or an empty folder when `folder`.
-    sftp_remove(path: str, folder: bool) -> void!
-    sftp_mkdir(path: str) -> void!
+    mut sftp_remove(path: str, folder: bool) -> void!
+    mut sftp_mkdir(path: str) -> void!
     // Sets `path`'s permission bits, as `chmod` (milestone 25).
-    sftp_chmod(path: str, mode: i64) -> void!
+    mut sftp_chmod(path: str, mode: i64) -> void!
     // The absolute form of `path` ("." is the login folder).
     sftp_realpath(path: str) -> str!
-    sftp_close()
+    mut sftp_close()
     // How errors name this host ("on db1"); "the host" until set. A copy between two
     // hosts (milestone 18) names each.
-    sftp_label(name: str)
+    mut sftp_label(name: str)
 }
 
 // Files on this machine (adapters/process/local_fs.cf; over the socket, the CLI's own,
@@ -334,14 +334,14 @@ type SftpTransport interface {
 type LocalFiles interface {
     local_stat(path: str) -> FileEntry!
     local_list(path: str) -> []FileEntry!
-    local_file_open(path: str, write: bool, exclusive: bool) -> void!
-    local_file_read() -> str!
-    local_file_write(data: str) -> void!
-    local_file_close() -> void!
+    mut local_file_open(path: str, write: bool, exclusive: bool) -> void!
+    mut local_file_read() -> str!
+    mut local_file_write(data: str) -> void!
+    mut local_file_close() -> void!
     // Replaces `to` if it exists.
-    local_rename(from: str, to: str) -> void!
-    local_remove(path: str) -> void!
-    local_mkdir(path: str) -> void!
+    mut local_rename(from: str, to: str) -> void!
+    mut local_remove(path: str) -> void!
+    mut local_mkdir(path: str) -> void!
 }
 
 // Files dragged into the window from the OS (milestone 17): the webview hands the
@@ -352,14 +352,14 @@ type DropStage interface {
     // The drop's folder, absolute.
     stage_folder(drop_id: str) -> str
     // Appends `data` to `rel` (a relative path, already checked) in the drop's folder.
-    stage_append(drop_id: str, rel: str, data: str) -> void!
-    stage_discard(drop_id: str)
+    mut stage_append(drop_id: str, rel: str, data: str) -> void!
+    mut stage_discard(drop_id: str)
 }
 
 // Where a copy reports its progress, and how it learns it was cancelled (stderr in
 // the CLI, frames to the CLI from the app, events to the window in milestone 17).
 type TransferSink interface {
-    transfer_progress(p: TransferProgress)
+    mut transfer_progress(p: TransferProgress)
     transfer_cancelled() -> bool
 }
 
@@ -373,16 +373,16 @@ type TunnelRunner interface {
     tunnel_host_state(host_id: str) -> i64
     // Listens on 127.0.0.1:local_port (already listening: nothing changes) and returns
     // the port. Errors: `port_in_use`, `permission_denied`, `network` (no session).
-    tunnel_listen(host_id: str, tunnel_id: str, local_port: i64, dest_host: str, dest_port: i64) -> i64!
+    mut tunnel_listen(host_id: str, tunnel_id: str, local_port: i64, dest_host: str, dest_port: i64) -> i64!
     // Closes the tunnel and its connections; false when it was not running.
-    tunnel_unlisten(host_id: str, tunnel_id: str) -> bool
+    mut tunnel_unlisten(host_id: str, tunnel_id: str) -> bool
     // Closes every tunnel of the host and hangs its session up.
-    tunnel_release(host_id: str)
+    mut tunnel_release(host_id: str)
     tunnel_live() -> []TunnelLive
     // Starts on one host take turns (milestone 23): held while a start logs in and
     // listens, so a second start finds the first's session.
-    tunnel_gate_enter(host_id: str)
-    tunnel_gate_leave(host_id: str)
+    mut tunnel_gate_enter(host_id: str)
+    mut tunnel_gate_leave(host_id: str)
     // Whether 127.0.0.1:port cannot be bound now (the approval window says so first).
     tunnel_port_taken(port: i64) -> bool
     // Who listens on that port, when this user may see it (design 16h2).
@@ -400,44 +400,44 @@ type RemoteDesktop interface {
     // certificate fails `host_key` and is kept for `rd_presented_cert`. Bounded by
     // `timeout_ms` (Principle 8). Errors: `auth`, `network`, `refused`, `timeout`,
     // `host_key`.
-    rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> RdpDesktop!
+    mut rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> RdpDesktop!
     // The certificate the server presented on the tab's last `rd_open`.
     rd_presented_cert(tab: str) -> RdpCert
     // Asks for a new desktop size. With Display Control the server resizes in place;
     // without it the size is kept and `rd_wait` reports a `resize`.
-    rd_resize(tab: str, width: i64, height: i64) -> void!
+    mut rd_resize(tab: str, width: i64, height: i64) -> void!
     // Milestone 38 (D-089): the desktop across several monitors, `monitors` a layout
     // check_rdp_layout accepts (the primary first, at 0,0). With Display Control the
     // server rearranges in place, the session kept; without it `rd_wait` reports a
     // `resize` carrying the layout, which a reconnect gives. From here on the frame
     // channel serves one view per monitor (layout_crops' order), and `rd_resize` goes
     // back to one monitor.
-    rd_set_layout(tab: str, monitors: []RdpMonitor) -> void!
+    mut rd_set_layout(tab: str, monitors: []RdpMonitor) -> void!
     // Waits up to `wait_ms` for the session to end or to need a reconnect.
-    rd_wait(tab: str, wait_ms: i64) -> RdpEvent
-    rd_key(tab: str, code: str, down: bool) -> void!
-    rd_pointer(tab: str, p: RdpPointer) -> void!
+    mut rd_wait(tab: str, wait_ms: i64) -> RdpEvent
+    mut rd_key(tab: str, code: str, down: bool) -> void!
+    mut rd_pointer(tab: str, p: RdpPointer) -> void!
     // Milestone 31 (D-074): tells the server whether this machine's clipboard holds
     // text, without sending it; the server asks for it when someone pastes there, as
     // an `rd_wait` event of kind `clip_request`, answered with `rd_clip_answer` (the
     // text, or a refusal when `ok` is false). The remote's copies arrive as
     // `clip_text` events.
-    rd_clip_announce(tab: str, has_text: bool) -> void!
-    rd_clip_answer(tab: str, ok: bool, text: str) -> void!
+    mut rd_clip_announce(tab: str, has_text: bool) -> void!
+    mut rd_clip_answer(tab: str, ok: bool, text: str) -> void!
     // Milestone 34: the tab's counters since it opened (RdpStats); fails `network`
     // when the tab is closed.
     rd_stats(tab: str) -> RdpStats!
     // Milestone 35: asks for the tab in another graphics mode (RDP_GRAPHICS). Nothing
     // changes on the wire: `rd_wait` reports a `graphics` event and the core
     // reconnects. Fails `network` when the tab is closed.
-    rd_set_graphics(tab: str, graphics: str) -> void!
+    mut rd_set_graphics(tab: str, graphics: str) -> void!
     // Milestone 35: the round trip of a TCP dial to `host:port`, in ms (the best of a
     // few), or -1 when it does not answer within `timeout_ms`. Opens and closes plain
     // TCP connections; sends nothing.
-    rd_probe_rtt(host: str, port: i64, timeout_ms: i64) -> i64
+    mut rd_probe_rtt(host: str, port: i64, timeout_ms: i64) -> i64
     // Ends the tab's connection (an `rd_open` in progress is cancelled) and its frame
     // channel. A tab with nothing open is left as it is.
-    rd_close(tab: str)
+    mut rd_close(tab: str)
 }
 
 // This computer's monitors (milestone 38, D-089): native per system in the desktop app
@@ -453,13 +453,13 @@ type Screens interface {
 
 // Where a remote desktop tells its driver that it is up (webui events in the app).
 type DesktopSink interface {
-    desktop_ready(tab: str, d: RdpDesktop)
+    mut desktop_ready(tab: str, d: RdpDesktop)
     // Whether someone may act through the window now: a locked window answers no
     // clipboard request (milestone 31).
     desktop_window_open() -> bool
     // Milestone 35: the tab's graphics mode is now `graphics` (RDP_GRAPHICS), run by the
     // engine as `sw.graphics` (`sw.why` ""), or it stayed as it was and `sw.why` says why.
-    desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch)
+    mut desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch)
 }
 
 // The remote vault server's vaults (adapters/serverfs, milestones 42 and 45, D-097,
@@ -475,9 +475,9 @@ type BlobStore interface {
     // Stores `data` as `version` of `vault_id` and makes it the head; the caller has
     // checked that it follows the head (version 1 starts the vault). Prunes what is
     // past the kept history.
-    blob_write(vault_id: str, version: i64, data: str, now_ms: i64) -> void!
+    mut blob_write(vault_id: str, version: i64, data: str, now_ms: i64) -> void!
     // Newest first.
     blob_versions(vault_id: str) -> []BlobVersion!
     // "" clears it. The vault must be stored.
-    blob_set_label(vault_id: str, label: str) -> void!
+    mut blob_set_label(vault_id: str, label: str) -> void!
 }
