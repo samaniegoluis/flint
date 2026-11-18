@@ -80,6 +80,7 @@ Windows test VM (Windows 11 Pro 22H2, build 22621, WebView2 157), in MSYS2 CLANG
 | W-03 | **covered**: `os.cwd()` is a `str` on Windows | [ran] probe `os: env, cwd, pid` (`here: str = os.cwd()` builds) | nothing to remove (patch 0002 only) |
 | W-05 | **covered**: stdin, stdout and stderr are in binary mode, `println` writes `\n` | [ran] probe: a child printing 3000 lines of 100 bytes gives exactly 300 000 bytes on each stream | the probe no longer normalises `\r\n` |
 | W-08 | **covered**: `*_unix.cf` is left out on Windows | [ran] probe `platform_files` prints `platform: windows` | nothing to remove (patch 0003 only) |
+| W-11 | **covered**: `os.args()` is UTF-8 from the UTF-16 command line | [ran] probe: a child given `año-ñ ✓.txt` prints it back intact | nothing to remove (patch 0006 only) |
 
 ## How to read each entry
 
