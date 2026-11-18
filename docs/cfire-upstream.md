@@ -40,7 +40,7 @@ rechecked on it. An old entry is rechecked when the move reaches it (step 5 walk
 
 | Status | Entries |
 |---|---|
-| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)** |
+| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (`\{` checks but fails in clang) |
 | Old, partly resolved on 0.12 [ran] | 031 (`@pkg` retired; `build.cf` `PkgConfig` per executable works; still no per-OS fields), 147 (field access through `shared[T]` works, except on a local copy: CF-156) |
 | Old, not rechecked yet | everything else |
 
@@ -2689,3 +2689,34 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   list }`, the real store) is copied and serializes correctly.
 - **Ideal:** `slice_ref<T>` and `std::span` serialize as arrays (and `json.parse` and
   `stringify` are covered for every lowering of `[]T`).
+
+### CF-158 · bug · `confirmed`: a stdlib call takes the argument coercion of a C function with the same last name
+- **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** in `src/adapters/serverfs`, whose
+  native header pulls in `<stdio.h>`, `fs.rename(tmp, path)` lowers to
+  `cfire::fs::rename(cfire::c_str(tmp), cfire::c_str(path))` and clang fails ("no viable
+  conversion from 'CStrViewHolder' to 'const std::filesystem::path'"). `cfire check`
+  accepts it. The C parameter list is looked up by the callee's **last** component
+  (`lookup_name` after the final `::`, `src/codegen/expr.hpp:1068`), so stdio's
+  `rename(const char*, const char*)` drives the coercion of `cfire::fs::rename`. A string
+  literal argument escapes it (`starts_with("\"")`), so a quick test with literals passes.
+  `fs.remove(x)` in the same package compiles, likely by luck of the conversions; any
+  module function named like a C function in an imported header is exposed.
+- **Repro:** `import "core:fs"`, `import cpp "<stdio.h>"`, then
+  `fn f(path: str) -> void! { tmp := path + ".tmp"; fs.write_text(tmp, "x") or {}; fs.rename(tmp, path) or err { return error("no") } }`;
+  `cfire run`. Without the `import cpp`, or with `<cstdio>`, it runs.
+- **Workaround:** the call in a `cpp` block, `cfire::fs::rename(tmp, path)`
+  (`replace_synced`, `src/adapters/serverfs/store.cf`).
+- **Ideal:** the C signature table is consulted only for a callee that resolves to a C
+  function (`cpp.name`, or an unqualified name from an `import cpp`), never for a cfire
+  module's function.
+
+### CF-159 · bug · `confirmed`: `\{` in a string passes `cfire check` and fails in clang
+- **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** 0.12 interpolates `{name}` in every
+  double-quoted string, so curl's `"%{http_code}"` became an undeclared identifier (right:
+  `{{` gives a literal brace). Trying `"%\{http_code}"` first, `cfire check` accepts it, but
+  the C++ is `std::format("%{http_code}")`, a lone `{` in a format string: "call to
+  consteval function … is not a constant expression". `\{` is not in the GUIDE either way.
+- **Repro:** `fn main() { println("c %\{x} d") }`, `cfire run`.
+- **Workaround:** `{{` (`http_status`, `src/adapters/rdp/rdp_test.cf`).
+- **Ideal:** `\{` is a literal brace (escaped to `{{` in the format string), or a
+  diagnostic pointing at `{{`; the GUIDE says which.

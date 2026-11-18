@@ -143,7 +143,14 @@ fn replace_synced(path: str, data: str) -> void! {
         _ = fs.remove(tmp)
         return error(err.message())
     }
-    fs.rename(tmp, path) or err {
+    // `fs.rename` here lowers as stdio's rename(const char*, const char*), which a
+    // header of this package declares (CF-158): the call is made in C++.
+    mut renamed := false
+    // CFIRE-UPSTREAM: CF-158
+    cpp {
+        renamed = cfire::fs::rename(tmp, path).has_value();
+    }
+    if !renamed {
         _ = fs.remove(tmp)
         return error(coded(ERR_IO, "cannot replace {path}"))
     }
@@ -308,7 +315,7 @@ fn (self: FileBlobStore) prune(vault_id: str, head: i64) {
 fn version_of_name(name: str) -> i64 {
     mut stem := ""
     if name.ends_with(".blob") || name.ends_with(".json") {
-        stem = name.substr(0, name.len() - 5)
+        stem = name[..name.len() - 5]
     }
     return parse_version_tag(stem)
 }
