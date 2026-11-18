@@ -9,6 +9,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -42,7 +43,7 @@ inline int map_status(OSStatus st) {
     return 3;
 }
 
-inline int save(const std::string& service, const std::string& account, const std::vector<std::byte>& secret) {
+inline int save(const std::string& service, const std::string& account, std::span<const std::uint8_t> secret) {
     CFMutableDictionaryRef q = base_query(service, account);
     CFDataRef data = CFDataCreate(nullptr, reinterpret_cast<const UInt8*>(secret.data()), static_cast<CFIndex>(secret.size()));
     CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(nullptr, 0,
@@ -65,7 +66,7 @@ inline int save(const std::string& service, const std::string& account, const st
     return map_status(st);
 }
 
-inline int load(const std::string& service, const std::string& account, std::vector<std::byte>& out) {
+inline int load(const std::string& service, const std::string& account, std::vector<std::uint8_t>& out) {
     CFMutableDictionaryRef q = base_query(service, account);
     CFDictionarySetValue(q, kSecReturnData, kCFBooleanTrue);
     CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitOne);
@@ -74,7 +75,7 @@ inline int load(const std::string& service, const std::string& account, std::vec
     CFRelease(q);
     if (st == errSecSuccess && result) {
         CFDataRef data = static_cast<CFDataRef>(result);
-        const auto* p = reinterpret_cast<const std::byte*>(CFDataGetBytePtr(data));
+        const auto* p = CFDataGetBytePtr(data);
         out.assign(p, p + CFDataGetLength(data));
         CFRelease(result);
     }
@@ -116,13 +117,13 @@ inline int map_error(GError* err) {
     return code;
 }
 
-inline int save(const std::string& service, const std::string& account, const std::vector<std::byte>& secret) {
+inline int save(const std::string& service, const std::string& account, std::span<const std::uint8_t> secret) {
     // libsecret stores text; the key goes in as lowercase hex.
     static const char* digits = "0123456789abcdef";
     std::string hex;
     hex.reserve(secret.size() * 2);
     for (auto b : secret) {
-        auto v = std::to_integer<unsigned>(b);
+        auto v = static_cast<unsigned>(b);
         hex.push_back(digits[v >> 4]);
         hex.push_back(digits[v & 15]);
     }
@@ -133,7 +134,7 @@ inline int save(const std::string& service, const std::string& account, const st
     return map_error(err);
 }
 
-inline int load(const std::string& service, const std::string& account, std::vector<std::byte>& out) {
+inline int load(const std::string& service, const std::string& account, std::vector<std::uint8_t>& out) {
     GError* err = nullptr;
     gchar* hex = secret_password_lookup_sync(schema(), nullptr, &err,
         "service", service.c_str(), "account", account.c_str(), nullptr);
@@ -144,7 +145,7 @@ inline int load(const std::string& service, const std::string& account, std::vec
     auto val = [](char c) -> int { return c <= '9' ? c - '0' : c - 'a' + 10; };
     out.clear();
     for (size_t i = 0; i + 1 < h.size(); i += 2) {
-        out.push_back(static_cast<std::byte>((val(h[i]) << 4) | val(h[i + 1])));
+        out.push_back(static_cast<std::uint8_t>((val(h[i]) << 4) | val(h[i + 1])));
     }
     std::fill(h.begin(), h.end(), '\0');
     return 0;
