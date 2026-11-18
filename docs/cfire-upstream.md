@@ -1695,7 +1695,8 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 
 The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 2026-11-07).
 
-### CF-086 · bug · `confirmed`: `make install` fails: its temp file name changes between recipe lines
+### CF-086 · bug · `resolved ✓`: `make install` fails: its temp file name changes between recipe lines
+- **Resolved at `v0.12.2` (migration step 5):** `packaging/vault-server/Dockerfile` installs cfire's published `v0.12.2` Linux archive (SHA-256 pinned per architecture), as `scripts/linux/Dockerfile` has since step 4: no source build, so no `make` at all and no install by hand. The image builds and serves (`401` without the token, upload, download, `304`, `409`, a label, a restart keeps the vault).
 - **At `v0.12.2` (migration step 5):** [read] the recipe is one shell line now (`cp … && chmod … && mv …`, `Makefile:81`). **fixed** (1 tag).
 - **At `c5b1d4b`:** [read] Unchanged: the `install` recipe still names its temp file `.cfire.tmp.$$$$` on three recipe lines, each its own shell. The Linux image still installs by hand.
 - **Repro (43431f2):** `make install PREFIX=/usr/local CXX=clang++` (Debian trixie, in
