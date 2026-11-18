@@ -7,6 +7,7 @@ package process
 // CFIRE-UPSTREAM: CF-099, CF-031
 import cpp "flint_fs.hpp"
 
+import "core:fs"
 import "../../domain"
 
 // The most bytes one read returns.
@@ -27,12 +28,11 @@ fn new_local_fs() -> LocalFs {
 // two spellings of one file (`/tmp/a.flint`, `/private/tmp/a.flint`) are known to be
 // the same vault (milestone 41).
 fn local_real_path(path: str) -> str {
-    mut real := path
-    // CFIRE-UPSTREAM: CF-136
-    cpp {
-        real = flint_fs::native_real_path(path);
-    }
-    return real
+    // An owned copy: a `str` parameter passed to `fs.realpath` takes the coercion of
+    // stdlib.h's realpath(3) (CF-158).
+    // CFIRE-UPSTREAM: CF-158
+    owned: str = path
+    return fs.realpath(owned) or path
 }
 
 // Whether `a` and `b` name the same file, through any symbolic links.

@@ -2492,7 +2492,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `for k, v in m` lowers to `for (const auto& [k, v] : m)`, and `m.keys()`
   exists; or the checker rejects the loop over a map with that fix-it.
 
-### CF-136 · missing · `confirmed`: `core:fs` has no realpath (and no symlink)
+### CF-136 · missing · `partly resolved`: `core:fs` has no realpath (and no symlink)
+- **Partly resolved at `v0.12.2` (migration step 5):** `local_real_path` (`adapters/process/local_fs.cf`) calls `fs.realpath`, through an owned copy for CF-158, and `flint_fs::native_real_path` is gone. Left: `fs.symlink`, which the test still makes with `::symlink`.
 - **At `v0.12.2` (migration step 5):** [ran] `fs.realpath` gives `/private/tmp/…` for `/tmp/…`; still no `fs.symlink`. **fixed in part** (2 tags).
 - **Seen (milestone 41) [ran, macOS, `c5b1d4b`]:** the app compares the vault a CLI
   command names with the one it holds, as text; `/tmp/fp/lab.flint` and
