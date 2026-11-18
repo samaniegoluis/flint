@@ -2435,7 +2435,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** as CF-060: a read-only `[]T` parameter takes a slice (lowered to a span), or
   the checker says to copy it.
 
-### CF-132 · bug · `confirmed`: `xs.insert(i, x)` on a slice does not compile
+### CF-132 · bug · `resolved ✓`: `xs.insert(i, x)` on a slice does not compile
+- **Resolved at `v0.12.2` (migration step 5):** `domain/strength.cf` builds the match sequence with `seq.insert(0, m)`; the reversed copy is gone.
 - **At `v0.12.2` (migration step 5):** [ran] `xs.insert(0, 1)` builds and runs. **fixed** (1 tag).
 - **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** building the strength estimate's
   match sequence backwards (`seq.insert(0, m)`).

@@ -1171,15 +1171,15 @@ fn strength_guesses(password: str, user: StrengthWords, w: StrengthWords) -> (f6
             best_g = s.g
         }
     }
-    // Collected from the end, then reversed (CFIRE-UPSTREAM: CF-132: no `insert`).
-    mut back: []StrengthMatch = []
+    // Collected from the end, each match put in front of the ones after it.
+    mut seq: []StrengthMatch = []
     mut k := n - 1
     mut l := best_l
     for k >= 0 && l > 0 {
         mut found := false
         for s in opt[usize(k)] {
             if !found && s.l == l {
-                back.push(s.m)
+                seq.insert(0, s.m)
                 k = s.m.i - 1
                 found = true
             }
@@ -1188,10 +1188,6 @@ fn strength_guesses(password: str, user: StrengthWords, w: StrengthWords) -> (f6
             break
         }
         l -= 1
-    }
-    mut seq: []StrengthMatch = []
-    for idx in 0..back.len() {
-        seq.push(back[back.len() - 1 - idx])
     }
     return (best_g, seq)
 }
