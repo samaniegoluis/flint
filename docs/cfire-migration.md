@@ -6,7 +6,8 @@ before the next. It can be deleted when the move closes (step 7); what must outl
 goes into `decisions.md`, `cfire-upstream.md` and the Windows port guide.
 
 Facts below were read on 2026-11-17 from a clone of `gsandoval/cfire` at `2d830cd`
-(not installed anywhere). Re-read them when the release this plan targets is out.
+(not installed anywhere), and again on 2026-11-18 at `7b68799` (`v0.12.0`, see *Re-read
+on 2026-11-18*). Re-read them when the release this plan targets is out.
 
 ## Where cfire is
 
@@ -37,12 +38,35 @@ Facts below were read on 2026-11-17 from a clone of `gsandoval/cfire` at `2d830c
 Flint today: 164 `.cf` files (~41k lines), 358 `CFIRE-UPSTREAM` tags, 150 entries in
 `cfire-upstream.md`.
 
+### Re-read on 2026-11-18 (`7b68799`)
+
+| Fact | Detail |
+|---|---|
+| `v0.12.0` | Tagged 2026-11-17 on `7b68799`, today's `main` (nothing after it). Since `2d830cd` one commit, `c515dfe`: `cfire upgrade`, the release pipeline, installers, formatter. **No language change**; `pkg:*` imports retired (`cfire/RETIRED-API`), and Flint has none |
+| Its release | **No archives.** The release run failed: both Linux builds at the archive's smoke test (`no matching member function for call to 'query'`, SQLite), both Windows builds with exit 127 (a command not found, as W-07); macOS cancelled with them. `v0.11.0` is still GitHub's latest |
+| CI on `main` | Red on one TSan test (`busy + waiting are served and the next is 503`, got three 200s); the Linux, Windows and fuzz jobs pass |
+| Releases from now on | **Every green `main` CI publishes a patch release** with the six archives and `SHA256SUMS.txt` (`release.yml` `workflow_run`); minor and major by hand. So the first release with archives is likely `v0.12.1`, as soon as the pipeline is fixed, and later patches come often: `cfire upgrade --version <tag>` makes a bump one command |
+| History | `main` and the `v0.10.0`/`v0.11.0` tags were rewritten between 2026-11-10 and 2026-11-15; nothing since. Record the tag's commit when it is pinned and check it again before step 7 |
+| Runtime lookup | A binary under `<prefix>/bin` finds `<prefix>/share/cfire/runtime` (or `CFIRE_RUNTIME_DIR`). **`cfire setup` copies the runtime to `~/.cfire/runtime`**, which is where the installed `c5b1d4b` reads its headers: never run the new `cfire setup` while the old one is in use |
+| LSP and MCP | Both in the binary (`cfire lsp`, `cfire mcp`). The project's `.mcp.json` runs `cfire` from `PATH`, the old one |
+
+**Why Windows still waits** (owner asked, 2026-11-18). Not a hard block: the test VM has
+MSYS2 CLANG64 and could build `v0.12.0` from source. It waits because Windows is step 6
+anyway (after the Mac and Linux are green and the workarounds are gone), because the
+Windows packaging is exactly what fails in the release, so a hand-built cfire may differ
+from the archive a user installs, and because the point of the VM is Flint installed and
+tested as a user would (`install.ps1`). A cheap early probe, if wanted: build `v0.12.0`
+on the VM and run `cfire doctor` and a WebView2 hello world, without starting the port.
+
 ## Rules for the move
 
 1. **One target.** The release with a Windows archive (the first tag after `v0.11.0`
    that uses the 6-target pipeline). Not `main` at a commit, not the fork with our
    patches. If the owner chooses to start before that tag, do steps 1-4 on the
    macOS archive of the newest tag and redo nothing later but the version bump.
+   **The owner chose to start (2026-11-18)**: steps 1-3 on the Mac with `v0.12.0` built
+   from source at its tag (no archive exists yet), replaced by the first release's
+   archive when it is out. Windows (step 6) starts from an archive.
 2. **Side by side, never in place.** The new cfire goes into its own prefix
    (`~/.local/opt/cfire-<version>`) and is put on `PATH` only by a script of the
    migration branch. The installed `c5b1d4b` and the Windows fork stay as they are
@@ -197,13 +221,22 @@ Each step ends with a line in the table at the end, its checks and the commit.
 - Where the VMs run: the owner's choice among the three above.
 - Zorin: which automatic suites it runs (`scripts/test.sh`, `cli-e2e`, `gui-e2e`
   with a real WebKitGTK), and how they are started over SSH.
-- The baseline on the old cfire: every check, on every host, with its numbers.
+- The baseline on the old cfire: every check, on every host, with its numbers. The Mac
+  and Docker before step 1; Zorin's may wait until just before step 4 (owner,
+  2026-11-18: the box is off and shares the secondary node's RAM), on the same `main`
+  commit and with its cfire untouched, since only step 4 compares against it.
 
 ### 1. Install the new cfire beside the old one (Mac)
 
 - The release's macOS archive in `~/.local/opt/cfire-<version>`; `cfire --version`,
-  `cfire doctor`.
+  `cfire doctor`. Until an archive exists: the tag built from source and installed with
+  `./cfire install --prefix ~/.local/opt/cfire-<version>`. Never its `cfire setup` (it
+  overwrites `~/.cfire/runtime`, the old cfire's headers); a missing library is
+  installed by hand.
 - `scripts/cfire-next.sh` on the branch: puts it first on `PATH` for one command.
+- A second MCP server in `.mcp.json` on the branch, `cfire-next`, running the new binary
+  (`cfire mcp`), so lookups and checks answer for the new language; the editor's LSP
+  pointed at the new `cfire lsp` while working on the branch.
 - Read upstream's GUIDE for `build.cf` `PkgConfig` / `Includes`, and its notes for
   each breaking change in the table above.
 
@@ -266,8 +299,89 @@ Each step ends with a line in the table at the end, its checks and the commit.
 - The old cfire and the fork uninstalled; this file deleted, or kept as the record of
   the move.
 
+## Baseline (step 0)
+
+What every check gives on the old cfire, to tell a regression from something already red,
+and to measure how much faster the new cfire makes the battery (owner, 2026-11-18). Times
+are wall clock, one run each, nothing else running.
+
+### Mac, 2026-11-18
+
+Flint `38d3e3c` (`main`), cfire **0.10.0 `c5b1d4b`**; Apple M3 Pro (11 cores, 18 GB),
+macOS 27.2.1, Apple clang 21.0.0, Node 24.19.0.
+
+| Check | Result | Time |
+|---|---|---|
+| `scripts/test.sh` (17 suites, then release-test) | 17/17 PASS, release-test 24/24 | 7 min 44 s |
+| `scripts/cli-e2e.sh` (builds the CLI first) | 483/483 | 2 min 51 s |
+| `scripts/server-e2e.sh` | 70/70 | 19 s |
+| `scripts/sync-e2e.sh` | 105/105 | 1 min 47 s |
+| `scripts/serve-e2e.sh` | 223/223 | 2 min 58 s |
+| `scripts/gui-e2e.sh` (`FLINT_E2E_NOBUILD=1`) | terminal 95, vault 125, tunnels 33, paste 24, rdp 70, webgl 20, fullscreen 49, vim 16 | 2 min 6 s |
+| `ui/`: `tsc --noEmit`, `npm test` | ok, 141/141 (22 files) | 4 s, 3 s |
+| `site/`: `npm test`, `test:e2e`, `build` | 45/45, demo 64/64, 22 pages | 0 s, 12 s, 2 s |
+| `cfire build Flint` (the CLI) | ok | 27 s |
+| `cfire build Flint`, empty `CFIRE_CACHE_DIR` | ok; the cache stayed empty | 25 s |
+| `scripts/build-gui.sh` (page + app) | ok | 53 s |
+
+**0.10 has no build cache:** a build with an empty `CFIRE_CACHE_DIR` takes as long as one
+with the usual cache and writes nothing to it, so every build compiles everything (only
+the prelude PCH is reused). The new cfire's per-package objects should show here first.
+
+Each suite alone (`scripts/test.sh <dir>`, its own throwaway sshds; every run pays a
+fixed ~30 s, so the sum is above the whole run's):
+
+| Suite | cfire tests | Time |
+|---|---|---|
+| `src/adapters/config` | 134 | 33 s |
+| `src/adapters/crypto` | 133 | 33 s |
+| `src/adapters/fonts` | 124 | 32 s |
+| `src/adapters/ipc` | 136 | 32 s |
+| `src/adapters/keychain` | 126 | 35 s |
+| `src/adapters/process` | 133 | 37 s |
+| `src/adapters/rdp` | 145 | 49 s |
+| `src/adapters/serverfs` | 136 | 35 s |
+| `src/adapters/ssh` | 164 | 49 s |
+| `src/adapters/uievents` | 142 | 44 s |
+| `src/adapters/vault` | 174 | 45 s |
+| `src/adapters/vaultremote` | 129 | 36 s |
+| `src/application` (with `vaultserver`) | 323 + 145 | 1 min 42 s |
+| `src/application/vaultserver` | 145 | 37 s |
+| `src/domain` | 152 | 38 s |
+| `src/drivers/clicmd` | 203 | 49 s |
+| `src/drivers/vault-server` | 138 | 36 s |
+
+### Docker (Linux), 2026-11-18
+
+Same commits, `scripts/linux-check.sh` (Debian trixie image, cfire `c5b1d4b` built in it)
+on Docker 29.7.2 on the Mac above (11 CPUs, 8 GB to the VM). Each run builds the image's
+cfire, the CLI, the app and the server first.
+
+| Check | Result | Time |
+|---|---|---|
+| Full `scripts/linux-check.sh` (build, tests, cli, gui, serve; stops at serve) | exit 1 | 34 min 40 s |
+| ↳ `scripts/test.sh` | 17/17 PASS | |
+| ↳ cli-e2e | 494/494 | |
+| ↳ gui-e2e (vim skipped under Xvfb) | terminal 96, vault 125, tunnels 33, paste 24, rdp 65, webgl 20, fullscreen 49, multimon 32 | |
+| ↳ serve-e2e | **47/224, already red**: the known first-launch failure (ROADMAP §5, "serve-e2e is flaky on Linux"; 47/224 at M42 too). `the app serves the socket` fails after *a first launch*, the window's unlock times out (`timed out waiting for the unlocked tree`) and every later check fails as `locked`. Not rerun (rule 9: known, and only a baseline) | |
+| `FLINT_LINUX_STEPS=server,sync` (the steps the full run did not reach) | server-e2e 70/70, sync-e2e 110/110 | 10 min 50 s |
+
+Per-step times inside the container are not printed by `inside.sh`; the totals stand
+for now. On the new cfire, serve-e2e at 47/224 is the baseline, and anything else red
+there is new.
+
+### Zorin
+
+Before step 4 (see step 0).
+
+### Windows
+
+No old-cfire baseline on the test VM: stock 0.10 has no Windows build, and the port ran
+on the patched fork from WSL. Its reference is the last port results in
+`docs/windows-port-guide.md` on `windows-port-2` (`d191abd`).
+
 ## Progress
 
 | Step | Date | Result | Commit |
 |---|---|---|---|
-| — | | | |
+| 0 | 2026-11-18 | Mac and Docker baselines on 0.10 `c5b1d4b`: all green but Linux serve-e2e 47/224 (known, ROADMAP §5). Zorin before step 4; the Windows VM still needs autologon, the battery user and a snapshot | this commit |
