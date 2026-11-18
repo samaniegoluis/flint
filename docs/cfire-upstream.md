@@ -2638,3 +2638,14 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   which copies the whole string first.
 - **Ideal:** a byte view of a `str` (`s.byte_slice(a, b)` or `s.bytes()` as a view), or a
   bytes type that HTTP and IPC data can live in.
+
+### CF-156 · bug · `confirmed`: a loop over a parameter's field returning its item fails the check from an importing package
+- **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** `fn find_item(book: Book, id: str) ->
+  Item? { for it in book.pending { if it.id == id { return it } } return none }` checks
+  clean in its own package, but `cfire check` of a package that imports it reports
+  "return type mismatch: function 'find_item' expects 'lib.Item?', got 'auto'". A loop over
+  a parameter itself (`for g in grants`) is fine.
+- **Repro:** package `lib` with the function above and `type Book struct { pending: []Item }`;
+  package `app` with `import "../lib"` and any function using `lib.Book`; `cfire check app`.
+- **Workaround:** an index loop (`find_approval`, `src/domain/access.cf`).
+- **Ideal:** the loop item's type is resolved the same from either package.

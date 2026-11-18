@@ -443,9 +443,12 @@ fn grant_from_approval(ap: Approval, id: str, scope: AccessScope, read: bool, ex
 }
 
 fn find_approval(book: AccessBook, id: str) -> Approval? {
-    for ap in book.pending {
-        if ap.id == id {
-            return ap
+    // By index: a `for x in param.field` loop returning `x` fails a check from an
+    // importing package (CF-156).
+    // CFIRE-UPSTREAM: CF-156
+    for i in 0..book.pending.len() {
+        if book.pending[i].id == id {
+            return book.pending[i]
         }
     }
     return none
