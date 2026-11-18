@@ -19,7 +19,7 @@ package serverfs
 // `<dir>/versions/`); opening it moves that vault into its folder, `versions/` first
 // and `head.json` last, so a move cut short is finished at the next start.
 
-// CFIRE-UPSTREAM: CF-143, CF-031
+// CFIRE-UPSTREAM: CF-099, CF-139, CF-031
 import cpp "flint_server.hpp"
 
 import "core:fs"
@@ -113,28 +113,40 @@ fn check_id(vault_id: str) -> void! {
     }
 }
 
+// Writes `data` to `path` (created 0600; one left by a crash is replaced), flushed to
+// disk before it is closed.
 fn write_synced(path: str, data: str) -> void! {
-    mut rc: i32 = 0
-    mut reason := ""
-    // CFIRE-UPSTREAM: CF-143
-    cpp {
-        rc = flint_server::write_synced(path, data, reason);
+    // An owned copy: a `str` parameter passed to `fs.remove` takes the coercion of
+    // stdio.h's remove(3) (CF-158).
+    // CFIRE-UPSTREAM: CF-158
+    owned: str = path
+    _ = fs.remove(owned)
+    mut f := fs.create_new(owned) or err {
+        return error(coded(ERR_IO, "cannot write {path}: {err.message()}"))
     }
-    if rc != 0 {
-        return error(coded(ERR_IO, "cannot write {path}: {reason}"))
+    f.write_text(data) or err {
+        f.close()
+        return error(coded(ERR_IO, "cannot write {path}: {err.message()}"))
     }
+    f.sync() or err {
+        f.close()
+        return error(coded(ERR_IO, "cannot write {path}: {err.message()}"))
+    }
+    f.close()
 }
 
+// Flushes a folder, so a rename into it is on disk.
 fn sync_folder(path: str) -> void! {
-    mut rc: i32 = 0
-    mut reason := ""
-    // CFIRE-UPSTREAM: CF-143
-    cpp {
-        rc = flint_server::sync_dir(path, reason);
+    // CFIRE-UPSTREAM: CF-158
+    owned: str = path
+    mut d := fs.open(owned) or err {
+        return error(coded(ERR_IO, "cannot flush {path}: {err.message()}"))
     }
-    if rc != 0 {
-        return error(coded(ERR_IO, "cannot flush {path}: {reason}"))
+    d.sync() or err {
+        d.close()
+        return error(coded(ERR_IO, "cannot flush {path}: {err.message()}"))
     }
+    d.close()
 }
 
 // Writes `data` beside `path`, flushed, then renames it over `path`.
@@ -216,7 +228,8 @@ fn (self: FileBlobStore) store_lock(vault_id: str) -> void! {
     for attempt in 0..2 {
         mut rc: i32 = 0
         mut reason := ""
-        // CFIRE-UPSTREAM: CF-143
+        // An exclusive mkdir: core:fs has only mkdir_all (CF-099).
+        // CFIRE-UPSTREAM: CF-099
         cpp {
             rc = flint_server::make_dir_exclusive(lock, reason);
         }
@@ -227,10 +240,8 @@ fn (self: FileBlobStore) store_lock(vault_id: str) -> void! {
             return error(coded(ERR_IO, "cannot create {lock}: {reason}"))
         }
         mut mtime: i64 = -1
-        // CFIRE-UPSTREAM: CF-143
-        cpp {
-            mtime = flint_server::mtime_ms(lock);
-        }
+        info := fs.stat(lock) or fs.FileInfo{ mtime_ms: -1 }
+        mtime = info.mtime_ms
         if mtime < 0 || time.now().unix_millis() - mtime < STORE_LOCK_STALE_MS {
             return error(coded(ERR_CONFLICT, "another writer holds {lock}"))
         }

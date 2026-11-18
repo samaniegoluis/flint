@@ -2577,7 +2577,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   and raw sockets).
 - **Ideal:** the runtime takes `cfire::Map`, and a map literal argument lowers to a map.
 
-### CF-143 · missing · `confirmed`: `core:fs` has no fsync; `File.flush` does nothing
+### CF-143 · missing · `resolved ✓`: `core:fs` has no fsync; `File.flush` does nothing
+- **Resolved at `v0.12.2` (migration step 5):** `adapters/serverfs/store.cf` writes through `fs.create_new` and `File.sync()` and flushes a folder with `fs.open` + `sync()`; the lock's age is `fs.stat`'s `mtime_ms`. `flint_server::write_synced`, `sync_dir` and `mtime_ms` are gone. The exclusive lock folder stays native, now tagged CF-099 (core:fs has only `mkdir_all`).
 - **At `v0.12.2` (migration step 5):** [ran] `File.sync()` (`F_FULLFSYNC` on macOS, then `fsync`), and `fs.open(dir)` + `sync()` syncs a folder. **fixed** (6 tags).
 - **Seen (milestone 42) [read, `c5b1d4b`]:** `File::flush` (`core/fs.hpp:417`) returns success
   without touching the file; there is no `fsync` or `sync_dir`. A temp file + rename is
