@@ -5,7 +5,7 @@
 #   scripts/cfire-next.sh cfire --version
 #   scripts/cfire-next.sh cfire check src/domain
 #   scripts/cfire-next.sh scripts/test.sh src/domain
-#   CFIRE_NEXT=~/.local/opt/cfire-0.12.1 scripts/cfire-next.sh cfire doctor
+#   CFIRE_NEXT=~/.local/opt/cfire-0.12.0 scripts/cfire-next.sh cfire doctor
 #
 # The new cfire lives in its own prefix (~/.local/opt/cfire-<version>) and finds its
 # runtime at <prefix>/share/cfire/runtime. CFIRE_RUNTIME_DIR is pinned there too, so a
@@ -14,7 +14,7 @@
 # install.
 set -euo pipefail
 
-prefix="${CFIRE_NEXT:-$HOME/.local/opt/cfire-0.12.0}"
+prefix="${CFIRE_NEXT:-$HOME/.local/opt/cfire-0.12.1}"
 if [[ $# -eq 0 ]]; then
   echo "usage: scripts/cfire-next.sh <command> [args...]" >&2
   exit 2
