@@ -184,15 +184,6 @@ fn pw_bytes(s: str) -> []u8 {
     return out_b
 }
 
-// A copy of b[from..to] (CFIRE-UPSTREAM: CF-131: a slice passes to no `[]u8` parameter).
-fn sub_bytes(b: []u8, from: usize, to: usize) -> []u8 {
-    mut out_b: []u8 = []
-    for k in from..to {
-        out_b.push(b[k])
-    }
-    return out_b
-}
-
 fn bytes_str(b: []u8) -> str {
     return str(b)
 }
@@ -347,8 +338,8 @@ fn dictionary_match_all(pw: []u8, lower: []u8, user: StrengthWords, w: StrengthW
     mut list: []StrengthMatch = []
     for m0 in dictionary_matches(lower, user, w) {
         mut m := m0
-        m.upper = i64(uppercase_variations(sub_bytes(pw, usize(m.i), usize(m.j) + 1)))
-        m.guesses = cap_guesses(f64(m.rank) * uppercase_variations(sub_bytes(pw, usize(m.i), usize(m.j) + 1)))
+        m.upper = i64(uppercase_variations(pw[usize(m.i)..usize(m.j) + 1]))
+        m.guesses = cap_guesses(f64(m.rank) * uppercase_variations(pw[usize(m.i)..usize(m.j) + 1]))
         list.push(m)
     }
     // Reversed: "drowssap".
@@ -364,7 +355,7 @@ fn dictionary_match_all(pw: []u8, lower: []u8, user: StrengthWords, w: StrengthW
         m.i = i
         m.j = j
         m.reversed = true
-        m.guesses = cap_guesses(f64(m.rank) * uppercase_variations(sub_bytes(pw, usize(i), usize(j) + 1)) * 2.0)
+        m.guesses = cap_guesses(f64(m.rank) * uppercase_variations(pw[usize(i)..usize(j) + 1]) * 2.0)
         list.push(m)
     }
     return list
@@ -494,7 +485,7 @@ fn l33t_match_all(pw: []u8, lower: []u8, user: StrengthWords, w: StrengthWords) 
             if m0.j <= m0.i {
                 continue
             }
-            tok := sub_bytes(lower, usize(m0.i), usize(m0.j) + 1)
+            tok := lower[usize(m0.i)..usize(m0.j) + 1]
             mut subs: [][]u8 = []
             for k in 0..present.len() {
                 mut used := false
@@ -512,7 +503,7 @@ fn l33t_match_all(pw: []u8, lower: []u8, user: StrengthWords, w: StrengthWords) 
             }
             mut m := m0
             m.l33t = true
-            m.guesses = cap_guesses(f64(m.rank) * uppercase_variations(sub_bytes(pw, usize(m.i), usize(m.j) + 1)) * l33t_variations(tok, subs))
+            m.guesses = cap_guesses(f64(m.rank) * uppercase_variations(pw[usize(m.i)..usize(m.j) + 1]) * l33t_variations(tok, subs))
             list.push(m)
         }
     }
@@ -736,7 +727,7 @@ fn repeat_match_all(pw: []u8, user: StrengthWords, w: StrengthWords) -> []Streng
             i += 1
             continue
         }
-        (base_guesses, _) := strength_guesses(bytes_str(sub_bytes(pw, i, i + base)), user, w)
+        (base_guesses, _) := strength_guesses(bytes_str(pw[i..i + base]), user, w)
         mut m := new_match("repeat", i64(i), i64(i + total - 1), base_guesses * f64(total / base))
         m.base_len = i64(base)
         list.push(m)
@@ -784,7 +775,7 @@ fn sequence_match_all(pw: []u8) -> []StrengthMatch {
             ad = -ad
         }
         if (j - i > 1 || ad == 1) && ad > 0 && ad <= 5 {
-            list.push(new_match("sequence", i, j, sequence_guesses(sub_bytes(pw, usize(i), usize(j) + 1), last > 0)))
+            list.push(new_match("sequence", i, j, sequence_guesses(pw[usize(i)..usize(j) + 1], last > 0)))
         }
         i = j
         last = delta
@@ -1247,7 +1238,8 @@ fn strength_feedback(mut res: PasswordStrength, pw: str, seq: []StrengthMatch) {
                 res.warning = "Common names and surnames are easy to guess"
             }
         }
-        token := sub_bytes(pw_bytes(pw), usize(longest.i), usize(longest.j) + 1)
+        pwb := pw_bytes(pw)
+        token := pwb[usize(longest.i)..usize(longest.j) + 1]
         if uppercase_variations(token) == 2.0 && is_upper_byte(token[0]) {
             suggestions.push("Capitalization doesn't help very much")
         }

@@ -2420,7 +2420,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `m[k]` on a read-only map lowers to a `const` lookup (a missing key a runtime
   error, as an index out of range is), or the checker rejects it with the `get` fix-it.
 
-### CF-131 · bug · `confirmed`: a slice of a `[]T` passes to no `[]T` parameter
+### CF-131 · bug · `resolved ✓`: a slice of a `[]T` passes to no `[]T` parameter
+- **Resolved at `v0.12.2` (migration step 5):** `sub_bytes` is gone from `domain/strength.cf`; its eight calls pass a slice (`pw[i..j + 1]`), and the one over a temporary keeps the bytes in a local first.
 - **At `v0.12.2` (migration step 5):** [ran] `total(xs[1..3])` with `xs: []u8` builds and runs. **fixed** (1 tag).
 - **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** `uppercase_variations(pw[i..j + 1])`
   in `src/domain/strength.cf`.
