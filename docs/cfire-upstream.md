@@ -46,7 +46,9 @@ workaround (`resolved ✓`) or the entry is re-filed; the At line says which way
 | In part; what is left keeps Flint's shim | 031 [ran], 045, 053, 077, 125, 146 [read]; 113 [ran], open in a new form |
 | Fixed upstream, Windows only (kept until Windows moves) | 127 [read] |
 | **Still open** | 005, 007, 008, 018, 042, 043, 073, 084, 092, 093, 112, 114, 126 [read]; 119, 123, 128, 134, 147, 153, 154, 155, 156, 157, 158, 160, 161, 162 [ran]; 164, 165 (found on `v0.12.2`) |
-| **New** | 166 (`build.cf` drops an unknown `PkgConfig` name and any computed value, silently) |
+| **New** | 166 (`build.cf` drops an unknown `PkgConfig` name and any computed value, silently); 167 (a crashed test leaves no core and no backtrace) |
+
+**Step 5 closed (2026-11-18):** every **Fixed** entry is `resolved ✓` but CF-124 (a redesign, ROADMAP §5); of the fixed in part, CF-136 is used where it covers and CF-024 had nothing to take. The redesigns (006, 026, 081, 099, 124, 137) are ROADMAP §5 items.
 
 **Most urgent, unchanged:** CF-157 (data lost, no error), then CF-156, CF-158/164 (one
 lookup by last name, now breaking Linux builds) and CF-153.
