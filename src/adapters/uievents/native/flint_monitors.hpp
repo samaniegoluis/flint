@@ -384,21 +384,46 @@ inline void hear_screens() {}
 
 // ---------------------------------------------------------------------------------
 #elif defined(_WIN32)
-// Built on the Windows branch. cfire's webui includes WebView2.h inside its own
-// namespace (cfire W-17), so the WebView2 types and cfire's lambda-to-COM handler (WRL's
-// Callback<> is MSVC-only, and mingw has no __uuidof for WebView2) are taken from there.
+// Built on the Windows branch. cfire's webui declares the WebView2 interfaces itself,
+// inside its own namespace (it includes WebView2.h there when the SDK is present, cfire
+// W-17), so the WebView2 types, cfire's lambda-to-COM handler (WRL's Callback<> is
+// MSVC-only, and mingw has no __uuidof for WebView2) and its environment creation
+// (WebView2Loader.dll when it is there, the installed runtime otherwise) are taken from
+// there. cfire declares only what its own window uses: ICoreWebView2_3, for the folder a
+// monitor window's page is served from, is declared below on cfire's ICoreWebView2.
 // CFIRE-UPSTREAM: W-17
 namespace flint_monitors {
 
 namespace wv = cfire::webui::detail;
 using wv::ICoreWebView2;
-using wv::ICoreWebView2_3;
 using wv::ICoreWebView2Controller;
 using wv::ICoreWebView2Environment;
 using wv::ICoreWebView2CreateCoreWebView2ControllerCompletedHandler;
 using wv::ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler;
 using wv::ICoreWebView2WebMessageReceivedEventArgs;
 using wv::ICoreWebView2WebMessageReceivedEventHandler;
+
+// WebView2.idl's ICoreWebView2_2 and ICoreWebView2_3, in vtable order. Only
+// SetVirtualHostNameToFolderMapping is called; the rest hold their slots.
+enum COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND { COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY = 0,
+    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW = 1, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS = 2 };
+struct ICoreWebView2_2 : public ICoreWebView2 {
+    virtual HRESULT STDMETHODCALLTYPE add_WebResourceResponseReceived(IUnknown* handler, wv::EventRegistrationToken* token) = 0;
+    virtual HRESULT STDMETHODCALLTYPE remove_WebResourceResponseReceived(wv::EventRegistrationToken token) = 0;
+    virtual HRESULT STDMETHODCALLTYPE NavigateWithWebResourceRequest(IUnknown* request) = 0;
+    virtual HRESULT STDMETHODCALLTYPE add_DOMContentLoaded(IUnknown* handler, wv::EventRegistrationToken* token) = 0;
+    virtual HRESULT STDMETHODCALLTYPE remove_DOMContentLoaded(wv::EventRegistrationToken token) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_CookieManager(IUnknown** cookieManager) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Environment(wv::ICoreWebView2Environment** environment) = 0;
+};
+struct ICoreWebView2_3 : public ICoreWebView2_2 {
+    virtual HRESULT STDMETHODCALLTYPE TrySuspend(IUnknown* handler) = 0;
+    virtual HRESULT STDMETHODCALLTYPE Resume() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_IsSuspended(BOOL* isSuspended) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetVirtualHostNameToFolderMapping(LPCWSTR hostName, LPCWSTR folderPath,
+                                                                        COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND accessKind) = 0;
+    virtual HRESULT STDMETHODCALLTYPE ClearVirtualHostNameToFolderMapping(LPCWSTR hostName) = 0;
+};
 
 struct WinWin {
     HWND hwnd = nullptr;
@@ -597,7 +622,7 @@ inline void attach_view(const std::string& id) {
             if (SUCCEEDED(it->second.view->QueryInterface(wv::wv2_iid("A0D6DF20-3B92-416D-AA0C-437A9C727857"),
                                                           reinterpret_cast<void**>(&v3))) && v3) {
                 v3->SetVirtualHostNameToFolderMapping(L"flint-monitor.localhost", widen(page_dir()).c_str(),
-                                                      wv::COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
+                                                      COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
                 v3->Release();
             }
             wv::EventRegistrationToken tok{};
@@ -665,8 +690,8 @@ inline void open(const std::vector<std::string>& ids) {
                 if (SUCCEEDED(hr) && e && !env()) { e->AddRef(); env() = e; attach_all(); }
                 return S_OK;
             });
-        // WebView2Loader.dll next to the app, loaded at run time as cfire's webui does.
-        if (auto create = wv::wv2_load_loader()) (void)create(nullptr, data.c_str(), nullptr, ready);
+        // As cfire's own window: WebView2Loader.dll if it is there, else the installed runtime.
+        (void)wv::wv2_create_environment(data.c_str(), ready);
         ready->Release();
         if (owner) ::SetForegroundWindow(owner);
     });
