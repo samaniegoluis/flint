@@ -15,6 +15,9 @@
 # (the working tree with its .cfire/ and build/ folders, and CFIRE_CACHE_DIR; see
 # inside.sh), so a run compiles only what changed. FLINT_LINUX_COLD=1 deletes the
 # volume first, for a run from nothing. One run at a time: two would share the volume.
+# serve-e2e's app log and output stay there after the run:
+#   docker run --rm -v flint-linux-cache:/c --entrypoint ls flint-linux-check /c/keep/serve
+#   docker run --rm -v flint-linux-cache:/c --entrypoint cat flint-linux-check /c/keep/serve/app.log
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 image="flint-linux-check"

@@ -596,8 +596,16 @@ expect 0 "add the stop host" "" -- host add e2e-stop --hostname 10.0.0.9
 check "the lock ended the whole-vault grant: a write asks again" '[[ $(grep -c "asking the owner to approve" "$tmp/app.log") -gt $asked_after_unlock ]]'
 
 for _ in $(seq 1 300); do kill -0 "$app_pid" 2>/dev/null || break; sleep 0.1; done
-wait "$app_pid"; app_pid=""
+app_status=0
+wait "$app_pid" || app_status=$?
+app_pid=""
+# 137 is a SIGKILL (on Linux in Docker, the OOM killer), 139 a SIGSEGV.
+echo "diag: the app exited with status $app_status"
 sed 's/^/app: /' "$tmp/app.log" | grep -E "ok |FAILED|checks passed|e2e:|page text|locks on|vault locked" || true
+if ! grep -q "^e2e: pass" "$tmp/app.log"; then
+  echo "diag: the app log's last lines that are not the page's:"
+  grep -v '^\[page\]' "$tmp/app.log" | tail -20 | sed 's/^/app: /'
+fi
 check "the window checks passed" 'grep -q "^e2e: pass" "$tmp/app.log"'
 check "a click beside the approval window does not deny it" 'grep -q "ok   a click beside the approval window" "$tmp/app.log" && ! grep -q "FAIL a click beside" "$tmp/app.log"'
 check "the approval countdown shows the time left" 'grep -q "ok   the countdown shows the time left" "$tmp/app.log" && ! grep -q "FAIL the countdown" "$tmp/app.log"'

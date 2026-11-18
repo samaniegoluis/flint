@@ -72,7 +72,14 @@ fi
 # On a private session bus, so a screensaver signal can be sent to the app safely.
 if want serve; then
 echo "== CLI through the running app under Xvfb (screensaver signals on a private bus)"
-dbus-run-session -- env FLINT_TEST_PRIVATE_DBUS=1 scripts/serve-e2e.sh | tee /tmp/serve-e2e.log
+# The app's log and the commands' output stay in the cache volume for a look after the
+# run (~/cache/keep/serve; scripts/linux-check.sh says how to read them).
+# memory.log: the container's memory every 2 s, to tell an OOM kill (ROADMAP §5).
+rm -rf "$cache/keep/serve" && mkdir -p "$cache/keep/serve"
+(while sleep 2; do echo "$(date +%T) $(free -m | awk '/^Mem/{print "used", $3, "free", $4, "avail", $7}')"; done) > "$cache/keep/serve/memory.log" &
+mem_pid=$!
+dbus-run-session -- env FLINT_TEST_PRIVATE_DBUS=1 FLINT_E2E_KEEP="$cache/keep/serve" scripts/serve-e2e.sh | tee /tmp/serve-e2e.log
+kill "$mem_pid" 2>/dev/null || true
 line="$(grep "^serve-e2e: " /tmp/serve-e2e.log | tail -1)"
 [[ "$line" =~ ^serve-e2e:\ ([0-9]+)/([0-9]+)\ checks\ passed && "${BASH_REMATCH[1]}" == "${BASH_REMATCH[2]}" ]]
 fi

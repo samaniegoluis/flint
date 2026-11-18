@@ -168,12 +168,31 @@
   let step = 'unlock';
   try {
     await waitFor(() => q('#pw'), 'the unlock screen');
+    // A timeline of the first unlock (ROADMAP §5, "serve-e2e is flaky on Linux"): which
+    // vault the screen shows, the field, the button, and every change of them.
+    const t0 = performance.now();
+    const screenState = () => {
+      const f = q('#pw');
+      const b = byText('button[type="submit"]', 'Unlock');
+      return `vault=${q('.lock-screen h1, h1')?.textContent ?? '?'} field=${f ? f.value.length : 'none'} button=${b ? (b.disabled ? 'disabled' : 'enabled') : 'none'} request=${!!q('[data-unlock-request]')}`;
+    };
+    let lastState = '';
+    const watch = setInterval(() => {
+      const st = screenState();
+      if (st !== lastState) { log(`diag: unlock at ${Math.round(performance.now() - t0)} ms: ${st}`); lastState = st; }
+    }, 20);
     const pw = q('#pw');
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(pw, MASTER);
     pw.dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(30);
+    log(`diag: unlock clicked at ${Math.round(performance.now() - t0)} ms: ${screenState()}`);
     byText('button[type="submit"]', 'Unlock').click();
-    await waitFor(() => byText('.tree .ti', 'local-web'), 'the unlocked tree', 30000);
+    try {
+      await waitFor(() => byText('.tree .ti', 'local-web'), 'the unlocked tree', 30000);
+    } finally {
+      clearInterval(watch);
+      log(`diag: unlock ended at ${Math.round(performance.now() - t0)} ms: ${q('#pw') ? screenState() : 'no unlock screen'}`);
+    }
     await check(true, 'the window unlocks the vault the CLI will use');
     await log('ready');
 

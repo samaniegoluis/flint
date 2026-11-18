@@ -729,6 +729,40 @@ whose objects are newer) leaves stale objects in place: `touch` them before test
 `git checkout` and an editor write the current time, so day-to-day work is not exposed;
 the Docker volume's `rsync -a` copies the host's mtimes as they are.
 
+### 3. The always-red checks
+
+**Linux serve-e2e** (ROADMAP §5, "serve-e2e is flaky on Linux"), with the cache in place,
+Flint `3fff2c7` plus the diagnosis below:
+
+| Run | serve-e2e | Other steps |
+|---|---|---|
+| Full, cold (part 1) | 47/224: the first unlock times out | all green |
+| Full, warm (part 1) | 162/224: the first unlock passes; the app vanishes at the two-host `cp` | all green |
+| `FLINT_LINUX_STEPS=serve`, diagnosis on | **224/224**, 3 min 56 s with the rebuild of `3fff2c7` | |
+| Full, warm, diagnosis on | **224/224**; the app exited 0 | all green: test.sh 17/17, cli-e2e 494, gui-e2e the eight counts, server-e2e 70, sync-e2e 110; 15 min 9 s, exit 0 |
+
+So it is not deterministic, on a cold app or in the full run: two of four runs today
+failed, at two different places. **The lead of `ui/src/screens/Unlock.tsx:44` does not
+apply to this script:** `vault use` puts `Served` first in the recent list, so the app
+opens on `Served` and the CLI's request names the same path; `target?.path` never
+changes. The timeline of the passing unlock: the screen showed `Served` with the request
+at once, the field held the 25 characters, the button was enabled, and the vault opened
+459 ms after the click. **Not confirmed: memory.** In the passing run the container never
+had less than 3.9 GB available during serve-e2e (Argon2id takes 256 MB a derivation);
+the cold run that failed came right after the whole compile, but Docker Desktop had
+restarted its VM since, so its kernel log (an OOM kill) was gone.
+
+**What the next failure will say** (this commit): the page logs the unlock screen's
+timeline (`diag: unlock at … ms: vault=… field=… button=… request=…`), `serve-e2e.sh`
+prints the app's exit status (137 a SIGKILL, the OOM killer; 139 a SIGSEGV) and, when the
+page did not pass, the last 20 lines of the app's own log; in Docker the app's log, the
+commands' output and the container's memory every 2 s stay in the cache volume
+(`~/cache/keep/serve`, read as `linux-check.sh`'s header says). Under rule 9 nothing was
+rerun to see it pass again; the owner decides what is next.
+
+**gui-e2e's vim step on Linux:** not started (the owner's "only if cheap"); still
+skipped under Xvfb.
+
 ## Progress
 
 | Step | Date | Result | Commit |
@@ -741,3 +775,4 @@ the Docker volume's `rsync -a` copies the host's mtimes as they are.
 | 4 (Linux, Docker) | 2026-11-18 | The image on the `v0.12.2` Linux archive (SHA-256 pinned, no source build). Flint did not build: `json.parse` against libstdc++'s `<chrono>` (CF-164), fixed with a labeled argument at all 35 calls. Then the baseline exactly: test.sh 17/17, cli-e2e 494/494, gui-e2e the eight counts, serve-e2e 47/224 (the known first launch), server-e2e 70/70, sync-e2e 110/110; the Mac battery green again on the fix. Zorin waits for the owner. Step 4b (faster suites, then the always-red checks) added by the owner | `24df0dd`, `a3e0b77`, this commit |
 | 4b.1 | 2026-11-18 | Docker cache volume `flint-linux-cache` (the working tree with its `.cfire/` and `build/`, and `CFIRE_CACHE_DIR`): full `linux-check.sh` 32 min 48 s cold, **12 min 50 s warm**, every count step 4's; warm, serve-e2e passed the first unlock and lost the app at the two-host `cp` (162/224), for 4b's third part | this commit |
 | 4b.2 | 2026-11-18 | The estimator's word lists built once per process (`3a59941`, CF-165), then the 101 inline tests (92 of `domain`) moved to `*_test.cf`: `scripts/test.sh` warm on the Mac 1 min 41 s, 31 s, **29 s**; every suite 92 fewer (`clicmd` 93), `domain` 154, nothing dropped. The ~30 s per suite was 0.10's recompiling: on 0.12 the servers start in ~0.4 s and a suite takes ~1 s, so no change there | `3a59941`, this commit |
+| 4b.3 | 2026-11-18 | Linux serve-e2e is not deterministic: 47 and 162/224 in the two runs of part 1, **224/224** with `FLINT_LINUX_STEPS=serve` and in a full warm run (every step green, exit 0, for the first time on 0.12). `Unlock.tsx:44` ruled out for this script; memory not confirmed. Diagnosis left in place for the next failure (the unlock's timeline, the app's exit status and log, memory in Docker); for the owner. The vim step not started | this commit |
