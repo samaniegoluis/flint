@@ -642,6 +642,39 @@ the working tree while it was copied; the editor's language server keeps `.cfire
 folders); rerun once, as the log explained it. Zorin: its baseline just before its part
 of step 4, when the owner starts the box.
 
+## Step 4b, faster suites (2026-11-18)
+
+Owner, 2026-11-18: each change in its own commit, apart from the migration's, keeping
+step 4's counts (a test moved or merged is named here), measured before and after.
+
+### 1. A cache volume for Docker
+
+`scripts/linux-check.sh` mounts the Docker volume `flint-linux-cache` at `~/cache`.
+`inside.sh` mirrors `/src` into `~/cache/work` with `rsync -a --delete` (every file keeps
+its mtime, which cfire compares with its objects'; the `.cfire/` and `build/` folders are
+never sent, so they stay) and sets `CFIRE_CACHE_DIR=~/cache/cfire`. Nothing else of
+`~/.cache` is kept, so WebKit and fontconfig still start cold. `FLINT_LINUX_COLD=1`
+deletes the volume first. The image gains `rsync`. One run at a time: two would share
+the volume.
+
+Full `scripts/linux-check.sh`, the same tree both times (`b2a5829` plus this change),
+Docker 29.7.2 on the baseline's Mac, image already built, nothing else running:
+
+| Run | Time | Counts |
+|---|---|---|
+| Cold (`FLINT_LINUX_COLD=1`, empty volume) | 32 min 48 s | test.sh 17/17 (each suite at its step 2 count), cli-e2e 494/494, gui-e2e the eight counts, serve-e2e 47/224 (the known first launch) |
+| Warm (the cold run's volume: 1.2 GB, 19 `.cfire/` folders) | **12 min 50 s** | the same, but serve-e2e **162/224** (below) |
+| Step 4's run on 0.12.2, no cache | 31 min 8 s | the same as cold |
+
+**serve-e2e changed, and not because of the cache** (the same sources, nothing
+recompiled). On the warm run the first unlock passed, so the "deterministic"
+first-launch failure is not quite: 47 cold, while the suites compiled around the app
+starting, and past it warm. Then the app vanished during `flint cp` between two hosts
+(milestone 18): the page's last line was `allowed: flint exec local -- echo scope-me`,
+the socket was left behind ("the socket file is removed when the app quits" failed), and
+every later command was `locked`. serve-e2e had never got that far on Linux on 0.12, so
+there is no baseline for it. Both go to step 4b's third part, under rule 9; not rerun.
+
 ## Progress
 
 | Step | Date | Result | Commit |
@@ -652,3 +685,4 @@ of step 4, when the owner starts the box.
 | 3 | 2026-11-18 | On `v0.12.1`: `scripts/test.sh` 17/17 and release-test 24/24, cli-e2e 483/483, server-e2e 70/70, sync-e2e 105/105, gui-e2e the baseline's eight counts, serve-e2e 223/223, `ui/` and `site/` green; nothing failed or skipped. Warm, every e2e is faster than 0.10 and builds take under a second; cold builds are 3-4x slower (CLI 1 min 25 s, app 3 min 56 s). `test.sh` warm 11 min 54 s against 7 min 44 s: `cfire test` builds at `-O0` (CF-163), one fuzz test is 549 s of it. Then `--release` in `scripts/test.sh` (owner): 1 min 40 s warm, 11 min 39 s cold, same counts | `da43d74`; `--release`: this commit |
 | 4 (Mac) | 2026-11-18 | The published `v0.12.2` macOS arm64 archive (`5be0987`; against `v0.12.1` only CI test fixes and the version, prelude unchanged but its version line) in `~/.local/opt/cfire-0.12.2`, the default of `cfire-next.sh` and the MCP server; `~/.cfire/runtime` untouched; `cfire doctor` 17 passed. The Mac battery of step 3 on it: test.sh 17/17 and 24/24, cli-e2e 483/483, server-e2e 70/70, sync-e2e 105/105, gui-e2e the eight counts, serve-e2e 223/223; first runs and warm times within seconds of 0.12.1's | this commit |
 | 4 (Linux, Docker) | 2026-11-18 | The image on the `v0.12.2` Linux archive (SHA-256 pinned, no source build). Flint did not build: `json.parse` against libstdc++'s `<chrono>` (CF-164), fixed with a labeled argument at all 35 calls. Then the baseline exactly: test.sh 17/17, cli-e2e 494/494, gui-e2e the eight counts, serve-e2e 47/224 (the known first launch), server-e2e 70/70, sync-e2e 110/110; the Mac battery green again on the fix. Zorin waits for the owner. Step 4b (faster suites, then the always-red checks) added by the owner | `24df0dd`, `a3e0b77`, this commit |
+| 4b.1 | 2026-11-18 | Docker cache volume `flint-linux-cache` (the working tree with its `.cfire/` and `build/`, and `CFIRE_CACHE_DIR`): full `linux-check.sh` 32 min 48 s cold, **12 min 50 s warm**, every count step 4's; warm, serve-e2e passed the first unlock and lost the app at the two-host `cp` (162/224), for 4b's third part | this commit |

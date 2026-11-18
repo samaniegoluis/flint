@@ -93,8 +93,13 @@ ENV CPLUS_INCLUDE_PATH=/home/flint/.local/include LIBRARY_PATH=/home/flint/.loca
 
 # iptables for the RDP adapter's quiet-network test (milestone 31): it drops the test
 # server's packets, as a network that goes away, when the container has NET_ADMIN
-# (FLINT_RDP_BLACKHOLE=1 scripts/linux-check.sh). Last, so the layers above stay cached.
+# (FLINT_RDP_BLACKHOLE=1 scripts/linux-check.sh). rsync copies the tree into the cache
+# volume (below). Last, so the layers above stay cached.
 USER root
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends iptables \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends iptables rsync \
     && rm -rf /var/lib/apt/lists/*
 USER flint
+# The mount point of linux-check.sh's cache volume, owned by `flint` so a new volume
+# starts with that owner: the working tree with its .cfire/ and build/ folders, and
+# cfire's user cache (CFIRE_CACHE_DIR).
+RUN mkdir -p /home/flint/cache

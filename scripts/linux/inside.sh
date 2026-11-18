@@ -9,10 +9,21 @@
 set -euo pipefail
 steps=",${FLINT_LINUX_STEPS:-tests,cli,gui,serve,server,sync},"
 want() { [[ "$steps" == *",$1,"* ]]; }
-cd "$HOME"
-mkdir -p work
-tar -C /src --exclude=./site/node_modules --exclude=./ui/node_modules --exclude=./.git --exclude="*/build" --exclude="*/.cfire" -cf - . | tar -C work -xf -
-cd work
+# The working tree lives in linux-check.sh's cache volume (~/cache), with cfire's user
+# cache beside it, so a run compiles only what changed since the last one. rsync
+# mirrors /src into it, keeping each file's mtime (cfire compares an object's mtime
+# with its source's), deleting what /src no longer has, and leaving the .cfire/ and
+# build/ folders, which /src never sends. Exit 24 (a file vanished while copied: the
+# editor writing into the tree) is not an error.
+cache="$HOME/cache"
+mkdir -p "$cache/work" "$cache/cfire"
+export CFIRE_CACHE_DIR="$cache/cfire"
+rc=0
+rsync -a --delete --exclude=/site/node_modules --exclude=/ui/node_modules --exclude=/.git \
+  --exclude=build/ --exclude=.cfire/ /src/ "$cache/work/" || rc=$?
+[[ $rc == 0 || $rc == 24 ]] || { echo "inside.sh: rsync failed ($rc)" >&2; exit "$rc"; }
+echo "== cache volume: $(du -sh "$cache" | cut -f1) ($(find "$cache/work" -type d -name .cfire | wc -l) .cfire folders)"
+cd "$cache/work"
 . scripts/env.sh
 echo "== cfire $(cfire --version)"
 echo "== build flint"
