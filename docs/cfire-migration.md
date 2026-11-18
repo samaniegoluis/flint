@@ -463,6 +463,59 @@ The three `cfire build`s: `flint` (CLI, 1 min 20 s cold, 0.4 s with nothing chan
 | `os.exec_output` of a built string is `cfire/SHELL-INJECTION-RISK` | `os.command(binary, args)` |
 | A `str` slice of binary data (a relay frame, an HTTP body, a byte loop on untrusted text) panics on a continuation byte | `byte_slice` / `byte_tail` |
 
+## Step 3 on the Mac (2026-11-18)
+
+Flint `383e5c1` (`cfire-0.12`), cfire **`v0.12.1` `71adeb7`** (the published archive),
+the Mac of the baseline, every check through `scripts/cfire-next.sh`. Wall clock, one run
+each, nothing else running; "warm" means cfire's caches already hold the build.
+
+| Check | 0.12.1 | Time | Baseline 0.10 |
+|---|---|---|---|
+| `scripts/test.sh` (17 suites, then release-test), first run on 0.12.1 | 17/17 PASS, release-test 24/24 | 18 min 59 s (compiles every suite cold) | 17/17, 24/24, 7 min 44 s |
+| `scripts/test.sh`, warm | 17/17 PASS, release-test 24/24 | 11 min 54 s | |
+| `scripts/cli-e2e.sh`, first run (builds the CLI cold) | 483/483 | 7 min 18 s | 483/483, 2 min 51 s |
+| `scripts/cli-e2e.sh`, warm | 483/483 | 1 min 52 s | |
+| `scripts/server-e2e.sh` | 70/70 | 13 s | 70/70, 19 s |
+| `scripts/sync-e2e.sh` | 105/105 | 47 s | 105/105, 1 min 47 s |
+| `scripts/build-gui.sh`, warm | ok | 5 s | 53 s |
+| `scripts/gui-e2e.sh` (`FLINT_E2E_NOBUILD=1`) | terminal 95, vault 125, tunnels 33, paste 24, rdp 70, webgl 20, fullscreen 49, vim 16 | 2 min 2 s | the same counts, 2 min 6 s |
+| `scripts/serve-e2e.sh` | 223/223 | 1 min 9 s | 223/223, 2 min 58 s |
+| `ui/`: `tsc --noEmit`, `npm test` | ok, 141/141 (22 files) | 3 s, 1 s | the same, 4 s, 3 s |
+| `site/`: `npm test`, `test:e2e`, `build` | 45/45, demo 64/64, 22 pages | 0 s, 10 s, 2 s | the same, 0 s, 12 s, 2 s |
+
+Every count matches the baseline's, or step 2's table for the cfire suites (each at its
+step 2 count). Nothing failed, nothing was skipped or rerun to pass.
+
+**Builds.** Truly cold means an empty `CFIRE_CACHE_DIR` **and** no `.cfire/` folders in
+`src/`: 0.12 keeps its per-package objects and shards in `<package>/.cfire/` next to the
+sources (git-ignored), not in the user cache. Step 2's "1 min 20 s cold" was this cold.
+
+| Build | Cold | Cold, PCH already built | Warm, nothing changed | One edit | 0.10 |
+|---|---|---|---|---|---|
+| `flint` (CLI) | 1 min 25 s | 1 min 20 s | 0.5 s | 18 s (a new function in `domain` or in `drivers/cli`: 85 s of CPU over 11 cores); 0.4 s for a comment | 27 s, every build |
+| `flint-vault-server` | 13 s | 11 s | 0.2 s | | |
+| `FlintGui` (the executable) | 3 min 56 s | 3 min 57 s | 0.6 s | | `build-gui.sh` 53 s |
+
+The prelude PCH is a few seconds of a cold build; the rest is compiling. So a build from
+nothing is three times 0.10's for the CLI and over four times for the app, and every
+build after it is faster than 0.10's ever was: the cost moved to the first build, which
+is what a fresh machine, a version bump (the first `test.sh` and `cli-e2e` above) and the
+release build pay. Two timings are not understood and were not chased (they are no
+failure): the first edit after the cold CLI build took 61 s, later edits 18 s; and the
+first `cli-e2e` spent ~5 min 26 s building where a cold build takes 1 min 25 s (it ran
+right after the first `test.sh`, with step 2's `.cfire/` folders from 0.12.0 in place).
+
+**Why `test.sh` is slower warm than 0.10 cold (CF-163).** `cfire test` on 0.12 builds at
+`-O0 -g` (the DevDebug profile, unless `--release` or `--bench`); 0.10 optimized. One fuzz
+test, `the estimate never fails and stays in range` (`src/domain/strength.cf`), rebuilds
+the estimator's dictionaries (~93k words, `src/domain/strength_words.cf`) on each of its 200 calls: 32 s at `-O0`, run in each of the 17
+suites, **549 s of the warm run's 714**; the estimator's other tests add ~2 min. The same
+test alone: ~2.5 s on 0.10, 3.5 s with `cfire test --release` on 0.12.1, 31 s by default.
+Found with per-line timestamps on the warm run and `sample` on the test binary (un-inlined
+`std::string::size()`). Options for the owner, none applied: pass `--release` in
+`scripts/test.sh` (the test mode's UB traps stay on), build the dictionaries once per
+process, or fewer `--fuzz-runs` for that block.
+
 ## Progress
 
 | Step | Date | Result | Commit |
@@ -470,3 +523,4 @@ The three `cfire build`s: `flint` (CLI, 1 min 20 s cold, 0.4 s with nothing chan
 | 0 | 2026-11-18 | Mac and Docker baselines on 0.10 `c5b1d4b`: all green but Linux serve-e2e 47/224 (known, ROADMAP §5). Zorin before step 4; the Windows VM still needs autologon, the battery user and a snapshot | `81d5fa0` |
 | 1 | 2026-11-18 | `v0.12.0` (`7b68799`) from source in `~/.local/opt/cfire-0.12.0` (no `v0.12.x` release yet: `v0.12.1`'s macOS arm64 build failed); `cfire doctor` 17/17 needed, nothing to install; `scripts/cfire-next.sh` and the `cfire-next` MCP server; `~/.cfire/runtime` untouched; `main` builds its three binaries on 0.10. Then the published `v0.12.1` macOS arm64 archive (`71adeb7`, same compiler and runtime as `v0.12.0`) in `~/.local/opt/cfire-0.12.1`, the default of `cfire-next.sh` and the MCP server from step 3 on | `435858d`; `v0.12.1`: this commit |
 | 2 | 2026-11-18 | `cfire fix`, `@pkg` into `build.cf`; every package checks and passes on 0.12, each suite at its baseline count plus the tests step 2 added (table above), nothing skipped; `flint`, `FlintGui` and `flint-vault-server` build; 12 new cfire entries (CF-151..162) | `f1d664b` .. this commit |
+| 3 | 2026-11-18 | On `v0.12.1`: `scripts/test.sh` 17/17 and release-test 24/24, cli-e2e 483/483, server-e2e 70/70, sync-e2e 105/105, gui-e2e the baseline's eight counts, serve-e2e 223/223, `ui/` and `site/` green; nothing failed or skipped. Warm, every e2e is faster than 0.10 and builds take under a second; cold builds are 3-4x slower (CLI 1 min 25 s, app 3 min 56 s). `test.sh` warm 11 min 54 s against 7 min 44 s: `cfire test` builds at `-O0` (CF-163), one fuzz test is 549 s of it; the fix waits for the owner | this commit |

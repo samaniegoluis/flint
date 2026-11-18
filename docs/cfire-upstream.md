@@ -38,9 +38,12 @@ section is the one to hand over: **new** entries found on 0.12 apart from the **
 rechecked on it. An old entry is rechecked when the move reaches it (step 5 walks every
 `CFIRE-UPSTREAM` tag); until then it keeps its status.
 
+From step 3 on, Flint runs the published `v0.12.1` (`71adeb7`): against `v0.12.0` only CI,
+one test, docs and the version change, so every entry seen on `v0.12.0` stands for it.
+
 | Status | Entries |
 |---|---|
-| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (a literal brace is `{{` or `\{` depending on whether the string interpolates), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped), 162 (`try f[T](…)` keeps the type `T`) |
+| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (a literal brace is `{{` or `\{` depending on whether the string interpolates), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped), 162 (`try f[T](…)` keeps the type `T`), 163 (`cfire test` at `-O0` by default, undocumented: the suites ten times slower on CPU-bound tests) |
 | Old, partly resolved on 0.12 [ran] | 031 (`@pkg` retired; `build.cf` `PkgConfig` per executable works; still no per-OS fields), 147 (field access through `shared[T]` works, except on a local copy: CF-156) |
 | Old, fixed on 0.12 [ran] | 150 (a variable named like a module); its workaround goes in step 5 |
 | Old, not rechecked yet | everything else |
@@ -2798,3 +2801,20 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** a generic call's result type is substituted (`T` := `Req`) wherever the value
   flows, not only for field access.
 
+
+### CF-163 · improvement · `confirmed`: `cfire test` builds at `-O0` by default, undocumented, and CPU-bound tests run ten times slower
+- **Seen (migration step 3) [ran, macOS, `v0.12.1` `71adeb7`]:** `scripts/test.sh` took
+  11 min 54 s with every binary cached, against 7 min 44 s on 0.10 compiling everything.
+  One fuzz test of the password estimator (`the estimate never fails and stays in range`,
+  `src/domain/strength.cf`) took 32 s in each of the 17 suites, 549 s of the 714; `sample`
+  showed un-inlined `std::string::size()`/`data()` frames. `cfire test` without `--bench`
+  sets the DevDebug profile, `-O0 -g` (`src/cli/common_args.hpp:493`, since `14a1a51`); 0.10
+  built tests optimized. The same test: 0.10 ~2.5 s for its 100 iterations, 0.12.1
+  `--release` 3.5 s, 0.12.1 default 31 s. `cfire test --release` is accepted but is not in
+  `cfire test`'s usage line, the GUIDE or the changelog.
+- **Repro:** a `fuzz` block that builds a `map[str, i64]` of ~93k words per iteration (Flint's password estimator does);
+  `cfire test` and `cfire test --release`, compare.
+- **Workaround:** none yet (the owner decides whether `scripts/test.sh` passes `--release`;
+  the UB traps of test mode stay on with it, `src/buildsys.hpp:206`).
+- **Ideal:** the profile of `cfire test` named in its usage and the GUIDE, with
+  `--release` listed; or tests at `-O1`/`-O2 -g` by default, as debuggable and far faster.
