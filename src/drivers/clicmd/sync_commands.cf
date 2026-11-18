@@ -135,7 +135,7 @@ fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, 
     if label.len() > 0 {
         say("The server lists it as '{label}'.")
     }
-    say("On another machine: `flint vault connect {got.url} --to <path>` (with `--id {session.id.substr(0, 8)}` when the server keeps several vaults).")
+    say("On another machine: `flint vault connect {got.url} --to <path>` (with `--id {session.id[..8]}` when the server keeps several vaults).")
 }
 
 // `flint vault sync`: in the app when it holds the vault, else with the master

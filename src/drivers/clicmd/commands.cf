@@ -23,7 +23,7 @@ fn absolute_path(path: str) -> str {
         return path
     }
     if path.starts_with("./") {
-        return current_dir() + "/" + path.substr(2)
+        return current_dir() + "/" + path[2..]
     }
     return current_dir() + "/" + path
 }

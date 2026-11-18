@@ -52,10 +52,10 @@ fn parse_cli_args(args: []str) -> ParsedArgs! {
             mut name := a
             mut value := ""
             mut inline_value := false
-            eq := a.index_of("=")
+            eq := a.index_of("=") or 0
             if a.starts_with("--") && eq > 0 {
-                name = a.substr(0, usize(eq))
-                value = a.substr(usize(eq) + 1)
+                name = a[..eq]
+                value = a[eq + 1..]
                 inline_value = true
             }
             if list_has(values, name) {

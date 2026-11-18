@@ -28,7 +28,7 @@ fn token_scope_from_flags(p: ParsedArgs) -> ScopeByName {
             item := part.trim()
             if item.starts_with("@") {
                 if item.len() > 1 {
-                    s.groups.push(item.substr(1))
+                    s.groups.push(item[1..])
                 }
             } else if item.len() > 0 {
                 s.hosts.push(item)
