@@ -30,7 +30,7 @@ fn warm_up_keychain() -> bool {
     if apple || os.getenv("FLINT_TEST_KEYCHAIN") == "off" {
         return false
     }
-    _ := new_os_keychain(true).keychain_load("flint-test-warm-up")
+    _ = new_os_keychain(true).keychain_load("flint-test-warm-up")
     return true
 }
 

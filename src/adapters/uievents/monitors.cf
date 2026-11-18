@@ -8,7 +8,6 @@ package uievents
 // CFIRE-UPSTREAM: CF-126, CF-127
 import cpp "flint_monitors.hpp" @pkg("flint-native-gui")
 import "ext:webui"
-import "core:str"
 import "../../domain"
 
 // The Screens port over the shim.
@@ -51,16 +50,16 @@ fn (self: OsScreens) screens_main() -> str {
 // monitors; a line that does not read is left out.
 fn parse_monitor_lines(text: str) -> []LocalMonitor {
     mut res: []LocalMonitor = []
-    for line in str.split(text, "\n") {
-        f := str.split(line, "\t")
+    for line in text.split("\n") {
+        f := line.split("\t")
         if f.len() != 9 || f[0].len() == 0 {
             continue
         }
-        x := str.parse_i64(f[2]) or { continue }
-        y := str.parse_i64(f[3]) or { continue }
-        w := str.parse_i64(f[4]) or { continue }
-        h := str.parse_i64(f[5]) or { continue }
-        scale := str.parse_i64(f[6]) or { continue }
+        x := i64.parse(f[2]) or { continue }
+        y := i64.parse(f[3]) or { continue }
+        w := i64.parse(f[4]) or { continue }
+        h := i64.parse(f[5]) or { continue }
+        scale := i64.parse(f[6]) or { continue }
         if w <= 0 || h <= 0 {
             continue
         }

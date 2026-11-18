@@ -19,8 +19,6 @@ package domain
 // groups is cut. A record the merge itself changed gets a time one past its own, so
 // the change wins when the other copy merges it back.
 
-import "core:str"
-import "core:sort"
 import "core:encoding/hex"
 
 MERGE_KIND_GROUP: str = "group"
@@ -88,7 +86,7 @@ type MergeRecord interface {
 }
 
 fn print_join(parts: []str) -> str {
-    return str.join(parts, "\x1f")
+    return parts.join("\x1f")
 }
 
 fn print_bytes(b: []byte) -> str {
@@ -112,7 +110,7 @@ fn (self: Host) merge_id() -> str { return self.id }
 fn (self: Host) merge_stamp() -> i64 { return self.updated_at }
 fn (self: Host) merge_print() -> str {
     return print_join([self.alias, self.label, self.hostname, "{self.port}", self.username, self.group_id,
-            str.join(self.tags, "\x1e"), self.color, self.notes, self.jump_host_id, self.credential_id,
+            self.tags.join("\x1e"), self.color, self.notes, self.jump_host_id, self.credential_id,
             self.key_id, print_bytes(self.password), self.initial_command, print_bool(self.keep_shell),
             print_bytes(self.sudo_password), self.host_type, self.domain])
 }
@@ -145,7 +143,7 @@ fn (self: Tunnel) merge_print() -> str {
 fn (self: Token) merge_id() -> str { return self.id }
 fn (self: Token) merge_stamp() -> i64 { return self.updated_at }
 fn (self: Token) merge_print() -> str {
-    return print_join([self.name, self.hash, print_bool(self.scope.all), str.join(self.scope.groups, ","), str.join(self.scope.hosts, ","),
+    return print_join([self.name, self.hash, print_bool(self.scope.all), self.scope.groups.join(","), self.scope.hosts.join(","),
             print_bool(self.read), print_bool(self.exec), print_bool(self.write), "{self.created_at}", "{self.expires_at}", "{self.revoked_at}"])
 }
 
@@ -212,7 +210,7 @@ fn merge_picks[T: MergeRecord](local: []T, other: []T, tombs: TombTimes) -> []Me
             ids.push(id)
         }
     }
-    sort.slice(mut ids)
+    ids.sort()
     mut picks: []MergePick = []
     for id in ids {
         mut p := MergePick{ id: id, li: -1, oi: -1, side: -1, dead_at: 0 }
@@ -373,7 +371,7 @@ fn merge_vaults(local: VaultRecords, other: VaultRecords) -> MergeResult {
 
 // Lower-case, for names compared as the vault's indexes compare them (NOCASE).
 fn fold(s: str) -> str {
-    return str.to_lower(s)
+    return s.to_lower()
 }
 
 // Records sharing a name: who keeps it. The one written first (the older time), then
@@ -518,7 +516,7 @@ fn (mut self: MergeWork) fix_groups() {
     for g in self.records.groups {
         taken[g.parent_id + "/" + fold(g.name)] = true
     }
-    sort.slice(mut name_keys)
+    name_keys.sort()
     for key in name_keys {
         list := by_name[key]
         if list.len() < 2 {
@@ -556,7 +554,7 @@ fn unique_names(names: []str, stamps: []i64, ids: []str, spaced: bool, max: usiz
     }
     // In name order, so the second of two clashes never takes the first's new name
     // differently on two machines.
-    sort.slice(mut keys)
+    keys.sort()
     for k in keys {
         list := by_name[k]
         if list.len() < 2 {
@@ -657,7 +655,7 @@ fn (mut self: MergeWork) fix_hosts() {
         }
         if gone.len() > 0 {
             self.records.hosts[i].updated_at = h.updated_at + 1
-            self.note(MERGE_KIND_HOST, h.alias, "unlinked", str.join(gone, ", ") + " removed")
+            self.note(MERGE_KIND_HOST, h.alias, "unlinked", gone.join(", ") + " removed")
         }
     }
     mut names: []str = []

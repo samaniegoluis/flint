@@ -126,13 +126,13 @@ fn rekey_vault_to[C: Crypto, S: VaultStore, K: Keychain](crypto: C, mut store: S
     store.vault_rekey_commit(session.path, page, salt) or err {
         store.vault_rekey_abort(session.path)
         if cached {
-            _ := keychain.keychain_forget(new_account)
+            _ = keychain.keychain_forget(new_account)
         }
         return error("{err.message()}")
     }
     // From here the new password is the vault's. An activity file left behind is
     // taken at the next unlock (adapters/vault/activity.cf).
-    _ := store.activity_rekey_commit(act_key)
-    _ := keychain.keychain_forget(vault_account(old_salt))
+    _ = store.activity_rekey_commit(act_key)
+    _ = keychain.keychain_forget(vault_account(old_salt))
     return VaultSession{ path: session.path, name: session.name, id: session.id, secrets_key: secrets, cached: cached }
 }

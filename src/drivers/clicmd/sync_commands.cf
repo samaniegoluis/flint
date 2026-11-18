@@ -301,5 +301,5 @@ fn sync_after_command(p: ParsedArgs, c: Sodium, mut store: LockedVaultStore, kc:
         write_stderr("warning: vault '{target.name}' could not sync with its server, and its change waits for the next sync: {err.message()}\n")
         return
     }
-    _ := synced
+    _ = synced
 }

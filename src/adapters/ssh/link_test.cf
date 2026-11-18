@@ -1,7 +1,6 @@
 package ssh
 
 import "core:os"
-import "core:str"
 import "core:fs"
 import "../../domain"
 import "../../ports"
@@ -14,7 +13,7 @@ fn accepts_transport[T: SshTransport](mut t: T) -> bool {
 // The second sshd started by scripts/test.sh, dialled through the first.
 fn inner_port() -> i64 {
     port := os.getenv("FLINT_TEST_SSH_PORT2")
-    return str.parse_i64(port) or 0
+    return i64.parse(port) or 0
 }
 
 fn read_all(mut link: SshLink) -> ExecChunk! {
@@ -257,7 +256,7 @@ test "a keepalive goes out mid-session and the channel keeps working" {
     try link.link_auth_key(try fs.read_text(key_path), "")
     try link.link_exec_start("sleep 1; echo still-here")
     try link.link_keepalive()
-    _ := try link.link_channel_read(300)
+    _ = try link.link_channel_read(300)
     try link.link_keepalive()
     res := try read_all(mut link)
     link.link_hangup()

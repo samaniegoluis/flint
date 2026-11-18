@@ -3,7 +3,6 @@ package domain
 // The per-record merge (milestone 41, D-093, D-096): one table test per rule, then
 // properties over random pairs of copies.
 
-import "core:sort"
 
 fn mh(id: str, alias: str, at: i64) -> Host {
     return Host{ id: id, alias: alias, label: "", hostname: "{alias}.example", port: 22, username: "me", tags: [], color: "", notes: "", password: [], sudo_password: [], host_type: "ssh", updated_at: at }
@@ -143,7 +142,7 @@ test "merge: a group name taken twice under one parent becomes Name (2)" {
     for g in res.records.groups {
         names.push(g.id + "=" + g.name)
     }
-    sort.slice(mut names)
+    names.sort()
     // g3 lives under g1: its name is free there.
     assert_eq(names, ["g1=Prod", "g2=prod (2)", "g3=Prod"])
 }
@@ -183,7 +182,7 @@ test "merge: a loop of groups is cut at the group moved last" {
     for g in res.records.groups {
         parents.push(g.id + "<" + g.parent_id)
     }
-    sort.slice(mut parents)
+    parents.sort()
     assert_eq(parents, ["ga<gb", "gb<"])
     assert_eq(count_change(res.report, "cut"), 1)
 }
@@ -261,7 +260,7 @@ fn record_prints(r: VaultRecords) -> []str {
     for t in r.tombstones {
         lines.push("x:" + t.kind + ":" + t.id + ":{t.deleted_at}")
     }
-    sort.slice(mut lines)
+    lines.sort()
     return lines
 }
 

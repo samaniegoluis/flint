@@ -1,6 +1,5 @@
 package domain
 
-import "core:str"
 
 // Tokens and the activity log (milestone 12b, D-040, D-046, Principle 12).
 //
@@ -71,7 +70,7 @@ fn is_lower_hex(s: str) -> bool {
 
 fn split_token_text(text: str) -> TokenText {
     bad := TokenText{ ok: false, id: "", secret: "" }
-    t := str.trim(text)
+    t := text.trim()
     if !t.starts_with(TOKEN_PREFIX) || t.len() != TOKEN_PREFIX.len() + TOKEN_ID_HEX + 1 + TOKEN_SECRET_HEX {
         return bad
     }
@@ -132,7 +131,7 @@ fn token_status(t: Token, now_s: i64) -> str {
 
 // A token's name: what `token revoke` and the window call it.
 fn check_token_name(name: str) -> void! {
-    n := str.trim(name)
+    n := name.trim()
     if n.len() == 0 {
         return error(coded(ERR_USAGE, "a token needs a name: --name <name>"))
     }
@@ -165,7 +164,7 @@ fn find_token(tokens: []Token, key: str, now_s: i64) -> Token? {
         }
     }
     for t in tokens {
-        if token_status(t, now_s) == TOKEN_ACTIVE && str.to_lower(t.name) == str.to_lower(str.trim(key)) {
+        if token_status(t, now_s) == TOKEN_ACTIVE && t.name.to_lower() == key.trim().to_lower() {
             return t
         }
     }
@@ -325,7 +324,7 @@ test "a token's text splits into id and secret" {
     assert(!split_token_text("flint_" + id).ok)
     assert(!split_token_text("flint_" + id + "-" + secret).ok)
     assert(!split_token_text("flint_" + id + "_" + secret + "0").ok)
-    assert(!split_token_text("flint_" + id + "_" + str.to_upper(secret)).ok)
+    assert(!split_token_text("flint_" + id + "_" + secret.to_upper()).ok)
     assert(!split_token_text("tlint_" + id + "_" + secret).ok)
 }
 

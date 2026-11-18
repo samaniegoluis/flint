@@ -24,7 +24,7 @@ type SshConn struct {
     // socket given through SSH_OPTIONS_FD, so disconnect() does.
     sock: i32 = -1
     // Shared by every copy of this value. cfire has no mutex type (CF-026).
-    lock: shared[cpp::std::mutex]
+    lock: shared[cpp.std::mutex]
 }
 
 

@@ -11,7 +11,6 @@ package rdp
 // CFIRE-UPSTREAM: CF-119
 import cpp "flint_rdp.hpp" @pkg("flint-rdp")
 import "../../domain"
-import "core:str"
 
 // The engine. Stateless: the tabs live in the shim's registry.
 type FreeRdpDesktop struct {
@@ -143,15 +142,15 @@ fn parse_layout_text(s: str) -> []RdpMonitor {
     if s.len() == 0 {
         return res
     }
-    for part in str.split(s, ";") {
-        f := str.split(part, ",")
+    for part in s.split(";") {
+        f := part.split(",")
         if f.len() != 5 {
             return []
         }
-        x := str.parse_i64(f[0]) or { return [] }
-        y := str.parse_i64(f[1]) or { return [] }
-        w := str.parse_i64(f[2]) or { return [] }
-        h := str.parse_i64(f[3]) or { return [] }
+        x := i64.parse(f[0]) or { return [] }
+        y := i64.parse(f[1]) or { return [] }
+        w := i64.parse(f[2]) or { return [] }
+        h := i64.parse(f[3]) or { return [] }
         res.push(RdpMonitor{ local_id: "", x: x, y: y, width: w, height: h, primary: f[4] == "1" })
     }
     return res

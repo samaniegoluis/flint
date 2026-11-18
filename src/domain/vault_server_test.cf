@@ -82,10 +82,10 @@ test "bad tokens spread over more than the window never lock out" {
 test "the gate forgets the client seen longest ago, never a locked-out one" {
     mut g := new_server_gate()
     for i in 0..GATE_BAD_MAX {
-        _ := g.gate_bad_token("locked", 0)
+        _ = g.gate_bad_token("locked", 0)
     }
     for i in 0..(GATE_CLIENTS_MAX + 10) {
-        _ := g.gate_admit("c{i}", 10 + i)
+        _ = g.gate_admit("c{i}", 10 + i)
     }
     assert_eq(i64(g.clients.len()), GATE_CLIENTS_MAX)
     assert(g.gate_admit("locked", 5000) > 0)

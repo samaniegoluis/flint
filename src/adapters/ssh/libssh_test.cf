@@ -1,7 +1,6 @@
 package ssh
 
 import "core:os"
-import "core:str"
 import "core:fs"
 import "../../ports"
 
@@ -19,8 +18,8 @@ fn test_target() -> (i32, str) {
     if port.len() == 0 || key.len() == 0 {
         return (0, "")
     }
-    p := str.parse_i32(port) or 0
-    return (p, key)
+    p := i32.parse(port) or 0
+    return (i32(p), key)
 }
 
 test "dial refuses a non-positive timeout" {

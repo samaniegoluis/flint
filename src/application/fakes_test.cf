@@ -4,7 +4,6 @@ package application
 // any adapter (Principle 1). The fake crypto is NOT cryptography: it only has to be
 // deterministic, key-sensitive and AAD-sensitive.
 
-import "core:str"
 import "core:fs"
 import "core:json"
 import "core:rand"
@@ -176,7 +175,7 @@ type FakeBank struct {
 }
 
 fn new_fake_store() -> FakeStore {
-    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "", rec_tokens: [], tombs: [], replaced: 0, copy_open: false, bank: make[shared[FakeBank]](FakeBank{ blobs: [], reads: 0, late_after: 0 }) }
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "", rec_tokens: [], tombs: [], replaced: 0, copy_open: false, bank: make(shared[FakeBank], FakeBank{ blobs: [], reads: 0, late_after: 0 }) }
 }
 
 fn (self: FakeStore) vault_file_exists(path: str) -> bool {
@@ -524,7 +523,7 @@ type FakeKeychain struct {
 
 fn new_fake_keychain() -> FakeKeychain {
     dir := "/tmp/flint-fake-kc-" + sha256.random_hex(8)
-    _ := fs.mkdir_all(dir)
+    _ = fs.mkdir_all(dir)
     return FakeKeychain{ dir: dir, enabled: true }
 }
 
@@ -557,7 +556,7 @@ type FakeRecents struct {
 
 fn new_fake_recents() -> FakeRecents {
     dir := "/tmp/flint-fake-recents-" + sha256.random_hex(8)
-    _ := fs.mkdir_all(dir)
+    _ = fs.mkdir_all(dir)
     return FakeRecents{ path: dir + "/list" }
 }
 
@@ -568,10 +567,10 @@ fn (self: FakeRecents) recents_load() -> []RecentVault! {
     }
     text := try fs.read_text(self.path)
     for line in str_split_lines(text) {
-        tab := str.index_of(line, "\t")
+        tab := line.index_of("\t")
         if tab >= 0 {
             rest := line.substr(usize(tab) + 1)
-            tab2 := str.index_of(rest, "\t")
+            tab2 := rest.index_of("\t")
             if tab2 >= 0 {
                 list.push(RecentVault{ path: line.substr(0, usize(tab)), name: rest.substr(0, usize(tab2)), id: rest.substr(usize(tab2) + 1) })
             } else {
@@ -706,10 +705,10 @@ fn (mut self: FakeLink) link_exec_start(command: str) -> void! {
 
 fn (mut self: FakeLink) link_exec_open(command: str) -> void! {
     self.calls.push("exec-open " + command)
-    start := str.index_of(command, "-p '")
+    start := command.index_of("-p '")
     if start >= 0 {
         rest := command.substr(usize(start) + 4)
-        end := str.index_of(rest, "'")
+        end := rest.index_of("'")
         if end >= 0 {
             self.prompt = rest.substr(0, usize(end))
         }
@@ -725,8 +724,8 @@ fn (mut self: FakeLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
         mut c := self.chunks[self.read_pos]
         self.read_pos += 1
         if self.prompt.len() > 0 {
-            c.stdout = str.replace(c.stdout, "@PROMPT@", self.prompt)
-            c.stderr = str.replace(c.stderr, "@PROMPT@", self.prompt)
+            c.stdout = c.stdout.replace("@PROMPT@", self.prompt)
+            c.stderr = c.stderr.replace("@PROMPT@", self.prompt)
         }
         return c
     }
@@ -1020,11 +1019,11 @@ fn (self: FakeStore) fake_blob_of(data: []byte) -> FakeBlob! {
     for i in 16..data.len() {
         rest.push(data[i])
     }
-    parts := str.split(str(rest), "|")
+    parts := str(rest).split("|")
     if parts.len() != 3 {
         return error(coded(ERR_INVALID, "not a fake vault"))
     }
-    n := str.parse_i64(parts[2]) or -1
+    n := i64.parse(parts[2]) or -1
     if n < 0 {
         return error(coded(ERR_INVALID, "not a fake vault"))
     }
@@ -1100,7 +1099,7 @@ fn empty_fake_remote_state() -> FakeRemoteState {
 
 fn new_fake_remote() -> FakeRemote {
     dir := "/tmp/flint-fake-remote-" + sha256.random_hex(8)
-    _ := fs.mkdir_all(dir)
+    _ = fs.mkdir_all(dir)
     r := FakeRemote{ dir: dir }
     r.save(empty_fake_remote_state())
     return r
@@ -1112,7 +1111,7 @@ fn (self: FakeRemote) state() -> FakeRemoteState {
 }
 
 fn (self: FakeRemote) save(s: FakeRemoteState) {
-    _ := fs.write_text(self.dir + "/state.json", json.stringify(s))
+    _ = fs.write_text(self.dir + "/state.json", json.stringify(s))
 }
 
 fn (self: FakeRemote) set_offline(v: bool) {

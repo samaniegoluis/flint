@@ -14,11 +14,11 @@ fn write_file_atomic(path: str, text: str) -> void! {
     }
     tmp := path + ".tmp"
     fs.write_text(tmp, text) or err {
-        _ := fs.remove(tmp)
+        _ = fs.remove(tmp)
         return error(coded(ERR_IO, "cannot write {tmp}"))
     }
     fs.rename(tmp, path) or err {
-        _ := fs.remove(tmp)
+        _ = fs.remove(tmp)
         return error(coded(ERR_IO, "cannot replace {path}"))
     }
 }

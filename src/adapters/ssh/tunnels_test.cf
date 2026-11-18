@@ -68,8 +68,8 @@ test "two connections stream through one tunnel while a terminal runs on the hos
     mut term := try tunnel_key_link(port, key)
     try term.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
     size: i64 = 3000000
-    a_ch := sync.make_channel[i64]()
-    b_ch := sync.make_channel[i64]()
+    a_ch := make(sync.Channel[i64])
+    b_ch := make(sync.Channel[i64])
     async.scope(workers: 2) |scope| {
         scope.spawn || {
             a_ch.send(bytes_through(local, key, size) or -1)
@@ -188,7 +188,7 @@ test "a taken port is seen before any listen, and the gate takes turns" {
     owner := runner.tunnel_port_owner(local)
     assert_eq(owner.pid, os.getpid())
     assert(owner.name.len() > 0)
-    _ := runner.tunnel_unlisten(host, "t")
+    _ = runner.tunnel_unlisten(host, "t")
     assert(!runner.tunnel_port_taken(local))
     assert_eq(runner.tunnel_port_owner(local).name, "")
     assert_eq(runner.tunnel_port_owner(0).pid, 0)

@@ -9,7 +9,6 @@ package application
 // reported as `connection lost` until they are stopped or started again; nothing
 // redials on its own.
 
-import "core:str"
 import "../domain"
 import "../ports"
 
@@ -61,9 +60,9 @@ fn tunnel_view(h: Host, t: Tunnel, live: []TunnelLive) -> TunnelView {
 }
 
 fn find_tunnel(all: []Tunnel, host_id: str, name: str) -> i64 {
-    want := str.to_lower(name)
+    want := name.to_lower()
     for i, t in all {
-        if t.host_id == host_id && str.to_lower(t.name) == want {
+        if t.host_id == host_id && t.name.to_lower() == want {
             return i64(i)
         }
     }
@@ -100,7 +99,7 @@ fn prune_tunnels[R: TunnelRunner](saved: []Tunnel, mut runner: R) {
             }
         }
         if !kept {
-            _ := runner.tunnel_unlisten(l.host_id, l.tunnel_id)
+            _ = runner.tunnel_unlisten(l.host_id, l.tunnel_id)
             hosts.push(l.host_id)
         }
     }
@@ -125,12 +124,12 @@ fn sorted_tunnel_views(mut views: []TunnelView) {
 }
 
 fn tunnel_before(a: TunnelView, b: TunnelView) -> bool {
-    ah := str.to_lower(a.host)
-    bh := str.to_lower(b.host)
+    ah := a.host.to_lower()
+    bh := b.host.to_lower()
     if ah != bh {
         return ah < bh
     }
-    return str.to_lower(a.name) < str.to_lower(b.name)
+    return a.name.to_lower() < b.name.to_lower()
 }
 
 // `flint tunnel ls [<host>]`: every saved tunnel (of one host), with its state.
@@ -184,7 +183,7 @@ fn tunnel_status[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, tunne
 fn apply_tunnel_patch(all: []Tunnel, base: Tunnel, p: TunnelPatch) -> Tunnel! {
     mut t := base
     if p.set_name {
-        t.name = str.trim(p.name)
+        t.name = p.name.trim()
     }
     if p.set_local_port {
         t.local_port = p.local_port
@@ -259,7 +258,7 @@ fn remove_tunnel[S: VaultStore, U: TunnelStore, R: TunnelRunner](store: S, mut t
 }
 
 fn stop_running[R: TunnelRunner](mut runner: R, t: Tunnel) {
-    _ := runner.tunnel_unlisten(t.host_id, t.id)
+    _ = runner.tunnel_unlisten(t.host_id, t.id)
     if runner.tunnel_host_state(t.host_id) != 0 && !host_has_live(runner, t.host_id) {
         runner.tunnel_release(t.host_id)
     }
@@ -283,13 +282,13 @@ fn start_tunnel[C: Crypto, S: VaultStore, U: TunnelStore, T: SshTransport, P: Pr
         runner.tunnel_release(h.id)
     }
     if state != 1 {
-        _ := try open_link_in(crypto, mut store, session, cat, mut link, prompter, h, opts)
+        _ = try open_link_in(crypto, mut store, session, cat, mut link, prompter, h, opts)
         link.link_hand_over(h.id) or err {
             link.link_hangup()
             return error("{err.message()}")
         }
     }
-    _ := runner.tunnel_listen(h.id, t.id, t.local_port, t.dest_host, t.dest_port) or err {
+    _ = runner.tunnel_listen(h.id, t.id, t.local_port, t.dest_host, t.dest_port) or err {
         if !host_has_live(runner, h.id) {
             runner.tunnel_release(h.id)
         }

@@ -142,7 +142,7 @@ fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut
     if verb == "list" {
         try p.allow_flags("known-host list", [])
         try p.expect_args("known-host list", 0, "")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         list := try list_known_hosts(store)
         if as_json {
             say(json.stringify(list))
@@ -154,7 +154,7 @@ fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut
     if verb == "rm" {
         try p.allow_flags("known-host rm", [])
         try p.expect_args("known-host rm", 1, "<alias|address>")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         k := try remove_known_host(mut store, p.positional(2))
         if as_json {
             say(json.stringify(ForgottenKey{ removed: "known-host", addr: k.addr, fingerprint: k.fingerprint }))

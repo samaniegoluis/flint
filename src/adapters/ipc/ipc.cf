@@ -36,7 +36,7 @@ type IpcListener struct {
     // The uid a peer must have: the app's own, unless a test says otherwise.
     allowed_uid: i64
     // Shared by every copy, so another thread can stop the accept loop.
-    flag: shared[cpp::flint_ipc::StopFlag]
+    flag: shared[cpp.flint_ipc::StopFlag]
 }
 
 fn ipc_socket_path(config_dir: str) -> str {

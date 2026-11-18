@@ -59,7 +59,7 @@ test "a disabled keychain still unlocks with the password" {
     mut locked := ""
     unlock_vault(crypto, mut store, kc, recents, "/v/x.flint", "", true) or err { locked = "{err.message()}" }
     assert_eq(code_of_err(locked), "locked")
-    _ := try unlock_vault(crypto, mut store, kc, recents, "/v/x.flint", "correct horse", true)
+    _ = try unlock_vault(crypto, mut store, kc, recents, "/v/x.flint", "correct horse", true)
 }
 
 test "a stale cached key is dropped and reported as locked" {
@@ -67,7 +67,7 @@ test "a stale cached key is dropped and reported as locked" {
     mut store := new_fake_store()
     kc := new_fake_keychain()
     recents := new_fake_recents()
-    _ := try create_vault(crypto, mut store, kc, recents, "/v/x.flint", "X", "correct horse", true)
+    _ = try create_vault(crypto, mut store, kc, recents, "/v/x.flint", "X", "correct horse", true)
     salt := try store.vault_read_salt("/v/x.flint")
     try kc.keychain_save(vault_account(salt), crypto.random_bytes(32))
     store.vault_detach()
@@ -93,7 +93,7 @@ test "recent vaults resolve by name, path or recency, and can be forgotten" {
     resolve_vault(recents, "nope") or err { missing = "{err.message()}" }
     assert_eq(code_of_err("{missing}"), "not_found")
     mut store := new_fake_store()
-    _ := try forget_recent(mut store, new_fake_keychain(), recents, "Two")
+    _ = try forget_recent(mut store, new_fake_keychain(), recents, "Two")
     assert_eq((try list_recents(recents)).len(), 1)
 }
 
@@ -108,7 +108,7 @@ test "status reports counts only when the key is cached" {
     p.set_alias = true
     p.hostname = "10.0.0.1"
     p.set_hostname = true
-    _ := try add_host(crypto, mut store, s, p)
+    _ = try add_host(crypto, mut store, s, p)
     st := try vault_status(crypto, mut store, kc, recents, "/v/x.flint", "X")
     assert(st.cached)
     assert_eq(st.hosts, 1)
@@ -218,7 +218,7 @@ test "a key reaches the keychain only with Remember on this computer" {
     assert(kept.cached, "ticked: the key is cached")
     store.vault_detach()
     // Without Remember, a password unlock leaves a remembered key where it is.
-    _ := try unlock_vault(crypto, mut store, kc, recents, "/v/r.flint", "correct horse", false)
+    _ = try unlock_vault(crypto, mut store, kc, recents, "/v/r.flint", "correct horse", false)
     store.vault_detach()
     again := try unlock_vault(crypto, mut store, kc, recents, "/v/r.flint", "", false)
     assert(again.cached)
@@ -237,7 +237,7 @@ test "the keys earlier Flints cached are removed once per machine" {
     mut store := new_fake_store()
     kc := new_fake_keychain()
     recents := new_fake_recents()
-    _ := try create_vault(crypto, mut store, kc, recents, "/v/a.flint", "", "correct horse", true)
+    _ = try create_vault(crypto, mut store, kc, recents, "/v/a.flint", "", "correct horse", true)
     store.vault_detach()
     // A recent vault whose file is gone is skipped.
     try touch_recent(recents, RecentVault{ path: "/v/gone.flint", name: "gone", id: "" })
@@ -248,7 +248,7 @@ test "the keys earlier Flints cached are removed once per machine" {
     assert_eq(refused, 1)
 
     // Remembered after that: a later start leaves it alone.
-    _ := try unlock_vault(crypto, mut store, kc, recents, "/v/a.flint", "correct horse", true)
+    _ = try unlock_vault(crypto, mut store, kc, recents, "/v/a.flint", "correct horse", true)
     store.vault_detach()
     assert_eq(try forget_cached_keys_once(mut settings, store, kc, recents), i64(0))
     assert((try unlock_vault(crypto, mut store, kc, recents, "/v/a.flint", "", false)).cached)

@@ -9,7 +9,7 @@ fn accepts_sink[E: EventSink](mut e: E) -> bool {
 }
 
 test "WebuiEventSink satisfies EventSink and emits base64 chunks" {
-    mut app := webui.new_app("sink-test", 100, 100)
+    mut app := make(webui.App, "sink-test", 100, 100)
     defer app.close()
     mut sink := new_webui_event_sink(app)
     assert(accepts_sink(mut sink))

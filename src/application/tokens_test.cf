@@ -41,7 +41,7 @@ fn (mut self: FakeTokenStore) activity_add(e: ActivityEntry, keep: ActivityKeep)
     row.id = self.next_id
     self.next_id = self.next_id + 1
     self.activity.push(row)
-    _ := try self.activity_prune(keep)
+    _ = try self.activity_prune(keep)
 }
 
 // By age only: the size cap is the store's, tested with SQLCipher.
@@ -95,11 +95,11 @@ fn token_req(name: str, hosts: []str, read: bool, exec: bool, write: bool) -> To
 fn token_vault(mut store: FakeStore) -> void! {
     crypto := FakeCrypto{ derive_calls: 0 }
     s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/t.flint", "", "correct horse", false)
-    _ := try add_group(crypto, mut store, "lab")
+    _ = try add_group(crypto, mut store, "lab")
     mut p := host_patch("codebox", "10.0.0.5")
     p.group = "lab"
     p.set_group = true
-    _ := try add_host(crypto, mut store, s, p)
+    _ = try add_host(crypto, mut store, s, p)
 }
 
 test "a token is created once, stored hashed, and checked by its text" {
@@ -162,7 +162,7 @@ test "a revoked token is refused and its name can be used again" {
     assert("{refused}".contains("revoked"))
     // Still matched by its secret, so the log can name it.
     assert_eq((try match_token(crypto, tokens.tokens, made.secret)).name, "ci")
-    _ := try create_token(crypto, store, mut tokens, token_req("ci", [], true, false, false), 1400)
+    _ = try create_token(crypto, store, mut tokens, token_req("ci", [], true, false, false), 1400)
     list := try list_tokens(store, tokens, 1500)
     assert_eq(list.len(), 2)
     assert_eq(list[0].status, TOKEN_REVOKED)

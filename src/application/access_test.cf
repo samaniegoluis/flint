@@ -6,8 +6,8 @@ test "a scope by name maps to ids and back" {
     mut refused := 0
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
-    _ := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/a.flint", "", "correct horse", false)
-    _ := try add_group(crypto, mut store, "lab/pve")
+    _ = try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/a.flint", "", "correct horse", false)
+    _ = try add_group(crypto, mut store, "lab/pve")
     cat0 := try load_catalog(store)
     assert(cat0.groups.len() == 2)
     s := try access_scope_from_names(cat0, ScopeByName{ all: false, groups: ["lab/pve"], hosts: [] })

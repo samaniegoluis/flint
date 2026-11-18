@@ -217,8 +217,8 @@ fn check_rdp_mac_custom(v: str) -> void! {
         return error(coded(ERR_INVALID, "custom remote desktop keys are too long"))
     }
     mut seen: []str = []
-    for pair in str.split(v, ",") {
-        parts := str.split(pair, "=")
+    for pair in v.split(",") {
+        parts := pair.split("=")
         if parts.len() != 2 || !one_of(parts[0], RDP_MAC_KEY_CODES) || !one_of(parts[1], RDP_KEY_TARGETS) {
             return error(coded(ERR_INVALID, "custom remote desktop keys must be pairs such as MetaLeft=ctrl"))
         }

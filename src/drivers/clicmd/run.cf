@@ -264,7 +264,7 @@ fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
     if noun == "vault" && verb == "lock" {
         recents := new_json_recent_store(flint_config_dir())
         target := try resolve_vault(recents, vault_selector(p))
-        _ := lock_in_app(target)
+        _ = lock_in_app(target)
     }
     // Twice at most: a second time once Flint, asked to unlock, says it has.
     for attempt in 0..2 {

@@ -3,7 +3,6 @@ package vaultserver
 // The server's use cases over a store in memory (milestone 42, D-097).
 
 import "core:encoding/hex"
-import "core:str"
 import "core:json"
 import "../../domain"
 import "../../ports"
@@ -209,7 +208,7 @@ test "the token or only its hash configures the server, never both and never a s
     server_config_from(crypto, "", "ABCD", 10) or err {
         codes.push(error_code_of(err.message()))
     }
-    server_config_from(crypto, "", str.to_upper(hex.encode(h)), 10) or err {
+    server_config_from(crypto, "", hex.encode(h).to_upper(), 10) or err {
         codes.push(error_code_of(err.message()))
     }
     assert_eq(codes.len(), usize(5))
@@ -252,7 +251,7 @@ test "repeated bad tokens lock the client out, even with the right token after" 
     for i in 0..GATE_BAD_MAX {
         mut r := rq("GET", "", "")
         r.authorization = "Bearer nope"
-        _ := serve_vault_request(crypto, mut store, mut gate, cfg, r, 1000, 1000)
+        _ = serve_vault_request(crypto, mut store, mut gate, cfg, r, 1000, 1000)
     }
     reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 2000, 2000)
     assert_eq(reply.status, i32(429))
@@ -285,7 +284,7 @@ test "an upload over a version not merged gets 409 with the newest version" {
     cfg := test_config()
     mut store := new_mem_store()
     mut gate := new_server_gate()
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
+    _ = serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
     assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "b"), 2, 2).version, i64(2))
     // The second machine still saw version 1.
     late := serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "c"), 3, 3)
@@ -303,8 +302,8 @@ test "a GET naming the newest version gets 304 with no body; an older one gets t
     cfg := test_config()
     mut store := new_mem_store()
     mut gate := new_server_gate()
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "b"), 2, 2)
+    _ = serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
+    _ = serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "b"), 2, 2)
     mut same := rq("GET", "", "")
     same.if_none_match = "\"2\""
     r := serve_vault_request(crypto, mut store, mut gate, cfg, same, 3, 3)
@@ -327,7 +326,7 @@ test "an upload of another vault is refused with 412" {
     cfg := test_config()
     mut store := new_mem_store()
     mut gate := new_server_gate()
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
+    _ = serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
     mut r := rq("PUT", "\"1\"", "x")
     r.vault_id = VID2
     reply := serve_vault_request(crypto, mut store, mut gate, cfg, r, 2, 2)
@@ -380,7 +379,7 @@ test "a version stored first by another writer turns into 409" {
     cfg := test_config()
     mut store := new_mem_store()
     mut gate := new_server_gate()
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
+    _ = serve_vault_request(crypto, mut store, mut gate, cfg, first_upload("a"), 1, 1)
     store.race = true
     reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "b"), 2, 2)
     assert_eq(reply.status, i32(409))
@@ -492,7 +491,7 @@ test "a label is set, listed, cleared and checked; a vault not stored has none" 
     mut put := vq(VID, "PUT", "", "\{\"label\":\"Work\"\}")
     put.path = SERVER_VAULTS_PATH + "/" + VID + "/label"
     assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, put, 1, 1).status, i32(404))
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID, "a1"), 2, 2)
+    _ = serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID, "a1"), 2, 2)
     r := serve_vault_request(crypto, mut store, mut gate, cfg, put, 3, 3)
     assert_eq(r.status, i32(200))
     assert_eq(r.note, "")
@@ -519,14 +518,14 @@ test "the single-vault path serves the one vault, and asks to update when there 
     mut store := new_mem_store()
     mut gate := new_server_gate()
     // A vault connected through the new path is the old clients' one vault.
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID, "a1"), 1, 1)
+    _ = serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID, "a1"), 1, 1)
     old := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 2, 2)
     assert_eq(old.body, "a1")
     assert_eq(old.vault_id, VID)
     assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"1\"", "a2"), 3, 3).version, i64(2))
     assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, vq(VID, "GET", "", ""), 4, 4).body, "a2")
     // A second vault: the old path cannot tell which one, so it says to update.
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID2, "b1"), 5, 5)
+    _ = serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID2, "b1"), 5, 5)
     assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 6, 6).status, i32(410))
     assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, rq("PUT", "\"2\"", "a3"), 7, 7).status, i32(410))
 }
@@ -537,7 +536,7 @@ test "a server keeping its most vaults refuses a new one, never an upload of one
     cfg.max_vaults = 1
     mut store := new_mem_store()
     mut gate := new_server_gate()
-    _ := serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID, "a1"), 1, 1)
+    _ = serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID, "a1"), 1, 1)
     full := serve_vault_request(crypto, mut store, mut gate, cfg, vq_first(VID2, "b1"), 2, 2)
     assert_eq(full.status, i32(507))
     assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, vq(VID, "PUT", "\"1\"", "a2"), 3, 3).status, i32(200))

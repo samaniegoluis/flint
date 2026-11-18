@@ -346,7 +346,7 @@ fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
     } else {
         try p.expect_args("group rm", 1, "<path>")
     }
-    _ := try open_target(p, sec, c, mut store, src, recents)
+    _ = try open_target(p, sec, c, mut store, src, recents)
     if verb == "list" {
         groups := try list_groups(store)
         if as_json {
@@ -514,7 +514,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if verb == "list" {
         try p.allow_flags("host list", ["--group", "--tag"])
         try p.expect_args("host list", 0, "[--group <path>] [--tag <tag>]")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         hosts := try list_hosts(store, p.flag_value("--group"), p.flag_value("--tag"))
         if as_json {
             say(json.stringify(hosts))
@@ -526,7 +526,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if verb == "show" {
         try p.allow_flags("host show", [])
         try p.expect_args("host show", 1, "<alias>")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         h := try show_host(store, p.positional(2))
         if as_json {
             say(json.stringify(h))
@@ -538,7 +538,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if verb == "rm" {
         try p.allow_flags("host rm", [])
         try p.expect_args("host rm", 1, "<alias>")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         h := try remove_host(mut store, p.positional(2))
         if as_json {
             say(json.stringify(RemovedNote{ removed: "host", name: h.alias }))
@@ -584,7 +584,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store:
     if verb == "list" {
         try p.allow_flags("key list", [])
         try p.expect_args("key list", 0, "")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         keys := try list_keys(store)
         if as_json {
             say(json.stringify(keys))
@@ -596,7 +596,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store:
     if verb == "show" {
         try p.allow_flags("key show", [])
         try p.expect_args("key show", 1, "<name>")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         k := try show_key(store, p.positional(2))
         if as_json {
             say(json.stringify(k))
@@ -608,7 +608,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store:
     if verb == "rename" {
         try p.allow_flags("key rename", [])
         try p.expect_args("key rename", 2, "<name> <new-name>")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         k := try rename_key(mut store, p.positional(2), p.positional(3))
         if as_json {
             say(json.stringify(k))
@@ -620,7 +620,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store:
     if verb == "rm" {
         try p.allow_flags("key rm", [])
         try p.expect_args("key rm", 1, "<name>")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         k := try remove_key(mut store, p.positional(2))
         if as_json {
             say(json.stringify(RemovedNote{ removed: "key", name: k.name }))
@@ -702,7 +702,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if verb == "list" {
         try p.allow_flags("cred list", [])
         try p.expect_args("cred list", 0, "")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         list := try list_creds(store)
         if as_json {
             say(json.stringify(list))
@@ -714,7 +714,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if verb == "show" {
         try p.allow_flags("cred show", [])
         try p.expect_args("cred show", 1, "<name>")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         v := try show_cred(store, p.positional(2))
         if as_json {
             say(json.stringify(v))
@@ -726,7 +726,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
     if verb == "rm" {
         try p.allow_flags("cred rm", [])
         try p.expect_args("cred rm", 1, "<name>")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         v := try remove_cred(mut store, p.positional(2))
         if as_json {
             say(json.stringify(RemovedNote{ removed: "credential", name: v.name }))

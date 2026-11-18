@@ -10,7 +10,6 @@ package main
 
 import "core:net"
 import "core:net/http"
-import "core:str"
 import "core:time"
 import "../../domain"
 import "../../ports"
@@ -44,7 +43,7 @@ fn read_request(mut conn: net.TcpConn, max_body: i64) -> ReadOutcome {
     mut raw := ""
     mut head_end: i64 = -1
     for {
-        head_end = str.index_of(raw, "\r\n\r\n")
+        head_end = raw.index_of("\r\n\r\n")
         if head_end >= 0 {
             break
         }
@@ -73,7 +72,7 @@ fn read_request(mut conn: net.TcpConn, max_body: i64) -> ReadOutcome {
     if req.header("transfer-encoding").len() > 0 {
         return early(411, "chunked_refused")
     }
-    cl_text := str.trim(req.header("content-length"))
+    cl_text := req.header("content-length").trim()
     mut length: i64 = 0
     if cl_text.len() > 0 {
         length = parse_version_tag(cl_text)
@@ -121,8 +120,8 @@ fn client_of(peer: str, req: http.Request, trust_proxy: bool) -> str {
     if trust_proxy {
         fwd := req.header("x-forwarded-for")
         if fwd.len() > 0 {
-            parts := str.split(fwd, ",")
-            last := str.trim(parts[parts.len() - 1])
+            parts := fwd.split(",")
+            last := parts[parts.len() - 1].trim()
             if last.len() > 0 && last.len() <= 64 {
                 return last
             }
@@ -230,7 +229,7 @@ type ServeOptions struct {
 fn serve_forever[C: Crypto](crypto: C, cfg: ServerConfig, opts: ServeOptions) -> void! {
     mut store := try new_file_blob_store(opts.data_dir)
     mut gate := new_server_gate()
-    mut ln := net.listen_tcp_addr(opts.host, opts.port) or err {
+    mut ln := net.listen(opts.port, opts.host) or err {
         return error(coded(ERR_PORT_IN_USE, "cannot listen on {opts.host}:{opts.port}"))
     }
     if store.moved.len() > 0 {
@@ -266,7 +265,7 @@ fn serve_one[C: Crypto](crypto: C, cfg: ServerConfig, opts: ServeOptions, mut st
     }
     conn.set_timeout_ms(WRITE_TIMEOUT_MS)
     resp := to_http_response(reply)
-    _ := conn.write_text(resp.to_http_wire()) or err {
+    _ = conn.write_text(resp.to_http_wire()) or err {
         log_line("{client} {method} {path} {reply.status} write failed")
         return
     }

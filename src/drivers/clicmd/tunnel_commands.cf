@@ -109,7 +109,7 @@ fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut sto
         mut patch := try tunnel_patch_from_flags(p)
         patch.set_name = true
         patch.name = p.positional(3)
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         v := try add_tunnel(c, store, mut tun, runner, p.positional(2), patch)
         if as_json {
             say(json.stringify(v))
@@ -123,7 +123,7 @@ fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut sto
         try p.expect_args("tunnel edit", 1, "<host>:<name> [--name <name>] [--local <port>] [--to <host:port>] [--open-on-connect | --no-open-on-connect]")
         (alias, name) := try split_tunnel_ref(p.positional(2))
         patch := try tunnel_patch_from_flags(p)
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         v := try edit_tunnel(store, mut tun, runner, alias, name, patch)
         if as_json {
             say(json.stringify(v))
@@ -138,7 +138,7 @@ fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut sto
         try p.allow_flags("tunnel rm", [])
         try p.expect_args("tunnel rm", 1, "<host>:<name>")
         (alias, name) := try split_tunnel_ref(p.positional(2))
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         v := try remove_tunnel(store, mut tun, mut runner, alias, name)
         if as_json {
             say(json.stringify(RemovedNote{ removed: "tunnel", name: tunnel_ref_text(v) }))
@@ -152,7 +152,7 @@ fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut sto
         if p.positionals.len() > 3 {
             return error(coded(ERR_USAGE, "usage: flint tunnel ls [<host>]"))
         }
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         mut list := try list_tunnels(store, tun, mut runner, p.positional(2))
         if !sec.in_app {
             // Tunnels run in Flint: this process cannot see them.

@@ -12,7 +12,6 @@ package ipc
 // The app's side below serves the `LocalFiles` and `TransferSink` ports over the
 // connection; the CLI's side is `serve_file_op` (clicmd/serve.cf), on a `LocalFs`.
 
-import "core:str"
 import "core:json"
 import "../../domain"
 
@@ -50,7 +49,7 @@ fn file_op(op: str, path: str) -> RelayFileOp {
 
 // A frame's JSON head and the bytes after it.
 fn split_head(payload: str) -> (str, str) {
-    nl := str.index_of(payload, "\n")
+    nl := payload.index_of("\n")
     if nl < 0 {
         return (payload, "")
     }
@@ -129,7 +128,7 @@ fn (self: SocketLocalFiles) local_list(path: str) -> []FileEntry! {
 }
 
 fn (mut self: SocketLocalFiles) local_file_open(path: str, write: bool, exclusive: bool) -> void! {
-    _ := try self.ask(RelayFileOp{ op: "open", path: path, to: "", write: write, exclusive: exclusive }, "")
+    _ = try self.ask(RelayFileOp{ op: "open", path: path, to: "", write: write, exclusive: exclusive }, "")
 }
 
 fn (mut self: SocketLocalFiles) local_file_read() -> str! {
@@ -138,23 +137,23 @@ fn (mut self: SocketLocalFiles) local_file_read() -> str! {
 }
 
 fn (mut self: SocketLocalFiles) local_file_write(data: str) -> void! {
-    _ := try self.ask(file_op("write", ""), data)
+    _ = try self.ask(file_op("write", ""), data)
 }
 
 fn (mut self: SocketLocalFiles) local_file_close() -> void! {
-    _ := try self.ask(file_op("close", ""), "")
+    _ = try self.ask(file_op("close", ""), "")
 }
 
 fn (mut self: SocketLocalFiles) local_rename(from: str, to: str) -> void! {
-    _ := try self.ask(RelayFileOp{ op: "rename", path: from, to: to, write: false, exclusive: false }, "")
+    _ = try self.ask(RelayFileOp{ op: "rename", path: from, to: to, write: false, exclusive: false }, "")
 }
 
 fn (mut self: SocketLocalFiles) local_remove(path: str) -> void! {
-    _ := try self.ask(file_op("remove", path), "")
+    _ = try self.ask(file_op("remove", path), "")
 }
 
 fn (mut self: SocketLocalFiles) local_mkdir(path: str) -> void! {
-    _ := try self.ask(file_op("mkdir", path), "")
+    _ = try self.ask(file_op("mkdir", path), "")
 }
 
 // Progress to the CLI, which draws it on its stderr when that is a terminal. A copy

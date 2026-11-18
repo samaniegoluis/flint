@@ -43,7 +43,7 @@ fn copy_request_from_args(p: ParsedArgs) -> CopyRequest! {
 // The host alias a `flint cp` line copies to or from ("" when it names none).
 fn cp_alias(p: ParsedArgs) -> str {
     for i in 1..3 {
-        a := p.positional(i)
+        a := p.positional(usize(i))
         if is_remote_arg(a) {
             r := parse_remote_arg(a) or RemotePath{ alias: "", path: "" }
             return r.alias

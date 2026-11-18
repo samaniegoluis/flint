@@ -64,7 +64,7 @@ fn main() {
         return
     }
 
-    mut app := webui.new_app("Flint", 1280, 800)
+    mut app := make(webui.App, "Flint", 1280, 800)
     defer app.close()
     app.set_min_size(900, 600)
     if !fs.exists(ui_dir + "/index.html") {
@@ -439,7 +439,7 @@ fn main() {
         app.on(TRAY_LOCK) |data| {
             mut s := store
             mut a := app
-            _ := lock_now(mut s, st, mut a, "manual")
+            _ = lock_now(mut s, st, mut a, "manual")
         }
         app.on(TRAY_QUIT) |data| {
             mut a := app
@@ -459,7 +459,7 @@ fn main() {
             }
         }
         if e2e && os_name() == "mac" && !visible_e2e {
-            _ := app.run_webview_test(e2e_timeout_ms()) or false
+            _ = app.run_webview_test(e2e_timeout_ms()) or false
         } else {
             app.run()
         }

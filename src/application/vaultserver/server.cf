@@ -11,7 +11,6 @@ package vaultserver
 
 import "core:encoding/hex"
 import "core:json"
-import "core:str"
 import "../../domain"
 import "../../ports"
 
@@ -124,7 +123,7 @@ fn server_config_from[C: Crypto](crypto: C, token: str, token_hash_hex: str, max
         return ServerConfig{ token_hash: h, max_body: max_body, max_vaults: SERVER_VAULTS_MAX_DEFAULT }
     }
     if token_hash_hex.len() > 0 {
-        t := str.trim(token_hash_hex)
+        t := token_hash_hex.trim()
         if t.len() != SERVER_TOKEN_HASH_LEN * 2 || !is_lower_hex(t) {
             return error(coded(ERR_INVALID, "FLINT_VAULT_TOKEN_HASH must be the 64 hex characters `flint-vault-server token` printed"))
         }
@@ -151,7 +150,7 @@ fn token_matches[C: Crypto](crypto: C, cfg: ServerConfig, authorization: str) ->
     if !authorization.starts_with("Bearer ") {
         return false
     }
-    presented := str.trim(authorization.substr(7))
+    presented := authorization.substr(7).trim()
     if presented.len() == 0 {
         return false
     }
@@ -312,7 +311,7 @@ fn put_vault[B: BlobStore](mut store: B, cfg: ServerConfig, req: ServerRequest, 
         return json_reply(413, "too_large", "the upload is over the server's cap")
     }
     mut expected: i64 = -1
-    if str.trim(req.if_none_match) == "*" {
+    if req.if_none_match.trim() == "*" {
         expected = 0
     } else if req.if_match.len() > 0 {
         expected = parse_version_tag(req.if_match)

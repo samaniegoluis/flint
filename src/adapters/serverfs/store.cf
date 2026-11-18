@@ -65,7 +65,7 @@ fn (self: FileBlobStore) move_single_vault() -> str! {
                 return ""
             }
             if names.len() == 0 {
-                _ := fs.remove(top_versions)
+                _ = fs.remove(top_versions)
             }
         }
         return ""
@@ -92,7 +92,7 @@ fn (self: FileBlobStore) move_single_vault() -> str! {
     fs.rename(top_head, target + "/head.json") or err {
         return error(coded(ERR_IO, "cannot move {top_head} to {target}"))
     }
-    _ := fs.remove(self.dir + "/.lock")
+    _ = fs.remove(self.dir + "/.lock")
     try sync_folder(target)
     try sync_folder(self.dir)
     return head.vault_id
@@ -140,11 +140,11 @@ fn sync_folder(path: str) -> void! {
 fn replace_synced(path: str, data: str) -> void! {
     tmp := path + ".tmp"
     write_synced(tmp, data) or err {
-        _ := fs.remove(tmp)
+        _ = fs.remove(tmp)
         return error(err.message())
     }
     fs.rename(tmp, path) or err {
-        _ := fs.remove(tmp)
+        _ = fs.remove(tmp)
         return error(coded(ERR_IO, "cannot replace {path}"))
     }
 }
@@ -230,13 +230,13 @@ fn (self: FileBlobStore) store_lock(vault_id: str) -> void! {
         if mtime < 0 || time.now().unix_millis() - mtime < STORE_LOCK_STALE_MS {
             return error(coded(ERR_CONFLICT, "another writer holds {lock}"))
         }
-        _ := fs.remove(lock)
+        _ = fs.remove(lock)
     }
     return error(coded(ERR_CONFLICT, "another writer holds {lock}"))
 }
 
 fn (self: FileBlobStore) store_unlock(vault_id: str) {
-    _ := fs.remove(self.vault_dir(vault_id) + "/.lock")
+    _ = fs.remove(self.vault_dir(vault_id) + "/.lock")
 }
 
 fn (mut self: FileBlobStore) blob_write(vault_id: str, version: i64, data: str, now_ms: i64) -> void! {
@@ -294,12 +294,12 @@ fn (self: FileBlobStore) prune(vault_id: str, head: i64) {
     }
     for name in names {
         if name.ends_with(".tmp") {
-            _ := fs.remove("{vdir}/{name}")
+            _ = fs.remove("{vdir}/{name}")
             continue
         }
         n := version_of_name(name)
         if n > 0 && n <= head - SERVER_VERSIONS_KEPT {
-            _ := fs.remove("{vdir}/{name}")
+            _ = fs.remove("{vdir}/{name}")
         }
     }
 }

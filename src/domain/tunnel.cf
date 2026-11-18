@@ -4,7 +4,6 @@ package domain
 // login, credentials and jump hosts; it listens on 127.0.0.1 only and forwards each
 // connection to a destination as the server sees it (`localhost:5432` by default).
 
-import "core:str"
 
 TUNNEL_NAME_MAX: usize = 64
 TUNNEL_DEST_MAX: usize = 253
@@ -138,7 +137,7 @@ fn parse_port_text(text: str, what: str) -> i64! {
             return error(coded(ERR_INVALID, "the {what} '{text}' is not a number"))
         }
     }
-    port := text.parse_i64() or {
+    port := i64.parse(text) or {
         return error(coded(ERR_INVALID, "the {what} '{text}' is not a number"))
     }
     try check_tunnel_port(port, what)
@@ -148,7 +147,7 @@ fn parse_port_text(text: str, what: str) -> i64! {
 // A destination as typed: `5432` (the server itself, `localhost`), `host:5432` or
 // `[::1]:5432`.
 fn parse_tunnel_destination(text: str) -> (str, i64)! {
-    t := str.trim(text)
+    t := text.trim()
     if t.starts_with("[") {
         close := t.index_of("]")
         if close < 0 || usize(close) + 1 >= t.len() || t[usize(close) + 1] != 58 {
@@ -182,7 +181,7 @@ fn split_tunnel_ref(text: str) -> (str, str)! {
 }
 
 fn lower_tunnel_name(name: str) -> str {
-    return str.to_lower(name)
+    return name.to_lower()
 }
 
 test "tunnel names" {

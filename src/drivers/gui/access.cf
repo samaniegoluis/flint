@@ -5,7 +5,6 @@ package main
 // socket server waits on the book (serve.cf, `gate`); these handlers change it.
 
 import "core:encoding/hex"
-import "core:str"
 import "core:time"
 import "core:json"
 import "ext:webui"
@@ -86,14 +85,14 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
     if !req.allow {
         st.holder.access_hold()
         mut book := st.holder.access_book()
-        _ := set_approval_state(mut book, req.id, APPROVAL_DENIED)
+        _ = set_approval_state(mut book, req.id, APPROVAL_DENIED)
         st.holder.put_access_book(book)
         st.holder.access_release()
         return access_state(st, store, presence)
     }
     if ap.sudo.host.len() > 0 {
         // `exec --sudo`: allowed for this one command, never as a grant.
-        try confirm_presence(c, store, presence, st.vault_session(), req.password, "run \"{str.join(ap.sudo.argv, " ")}\" as root on {ap.sudo.host}")
+        try confirm_presence(c, store, presence, st.vault_session(), req.password, "run \"{ap.sudo.argv.join(" ")}\" as root on {ap.sudo.host}")
         if req.save_sudo_password && req.sudo_password.len() > 0 {
             st.hold()
             mut ts := store
@@ -135,7 +134,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
     }
     // Checked before presence, so a bad form never shows the OS dialog.
     scope := try access_scope_from_names(held_catalog(st, store), req.scope)
-    _ := try grant_from_approval(ap, "check", scope, req.read, req.exec, req.write, req.duration, time.now_ms())
+    _ = try grant_from_approval(ap, "check", scope, req.read, req.exec, req.write, req.duration, time.now_ms())
     try confirm_presence(c, store, presence, st.vault_session(), req.password, "let \"{ap.label}\" use the vault {st.vault_session().name}")
     st.holder.access_hold()
     mut book := st.holder.access_book()
@@ -149,7 +148,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
         return error("{err.message()}")
     }
     book.grants.push(g)
-    _ := set_approval_state(mut book, req.id, APPROVAL_ALLOWED)
+    _ = set_approval_state(mut book, req.id, APPROVAL_ALLOWED)
     st.holder.put_access_book(book)
     st.holder.access_release()
     write_stderr("flint-gui: allowed {ap.label} ({g.duration})\n")
@@ -207,7 +206,7 @@ fn rpc_token_revoke(params: str, st: GuiState, store: LockedVaultStore, mut app:
     try st.require_unlocked()
     now := time.unix_seconds()
     mut ts := store
-    _ := try revoke_token(store, mut ts, req.name, now)
+    _ = try revoke_token(store, mut ts, req.name, now)
     app.emit("access:changed", GrantsChanged{ count: i64(st.holder.access_book().grants.len()) })
     return json.stringify(TokensState{ now_s: now, tokens: try list_tokens(store, store, now) })
 }

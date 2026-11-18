@@ -4,7 +4,6 @@ package domain
 // server URLs a vault may sync with, what this machine remembers about a vault's
 // link to its server, and whether a merge left anything the server lacks.
 
-import "core:str"
 
 // Protocol v1's resources (the server's SERVER_VAULT_PATH and SERVER_VAULTS_PATH):
 // the single vault of milestones 42-44, and the vaults a server keeps by id since
@@ -64,7 +63,7 @@ type BlobRecords struct {
 
 // Whether `host` (without its port) is this machine, the one place plain http may go.
 fn is_loopback_host(host: str) -> bool {
-    h := str.to_lower(host)
+    h := host.to_lower()
     if h == "localhost" || h == "[::1]" {
         return true
     }
@@ -88,13 +87,13 @@ fn is_loopback_host(host: str) -> bool {
 // Principle 14), no path but an optional `/v1/vault` (dropped), no query, no user
 // in it, no trailing slash.
 fn check_remote_url(raw: str) -> str! {
-    mut u := str.trim(raw)
+    mut u := raw.trim()
     mut rest := ""
     mut secure := false
-    if str.to_lower(u).starts_with("https://") {
+    if u.to_lower().starts_with("https://") {
         rest = u.substr(8)
         secure = true
-    } else if str.to_lower(u).starts_with("http://") {
+    } else if u.to_lower().starts_with("http://") {
         rest = u.substr(7)
     } else {
         return error(coded(ERR_INVALID, "the server's URL must start with https://"))

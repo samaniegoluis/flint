@@ -17,7 +17,6 @@ package vault
 import cpp "flint_fs.hpp" @pkg("flint-native")
 
 import "core:fs"
-import "core:str"
 import "../../domain"
 
 // The activity file's own schema, numbered apart from the vault's. Append-only, as
@@ -141,14 +140,14 @@ fn (self: SqlVaultStore) activity_open_or_restart(path: str, key: []byte, new_sa
         return self.activity_set_aside(path, key, new_salt)
     }
     if fs.exists(pending) {
-        _ := fs.remove(pending)
+        _ = fs.remove(pending)
     }
     return db
 }
 
 fn (self: SqlVaultStore) activity_set_aside(path: str, key: []byte, new_salt: []byte) -> CipherDb! {
     aside := path + ".unreadable"
-    _ := fs.remove(aside)
+    _ = fs.remove(aside)
     fs.rename(path, aside) or err2 {
         return error(coded(ERR_IO, "cannot move {path} aside"))
     }
@@ -177,7 +176,7 @@ fn (self: SqlVaultStore) activity_open(path: str, key: []byte, new_salt: []byte)
     }
     mut db := open_cipher_db(path, key, salt, true) or err {
         if create {
-            _ := fs.remove(path)
+            _ = fs.remove(path)
         }
         return error("{err.message()}")
     }
@@ -199,13 +198,13 @@ fn (self: SqlVaultStore) activity_move_in() -> void! {
     retention := try self.vault_get_meta("activity_retention_days")
     try self.act().exec("BEGIN IMMEDIATE;")
     self.activity_copy(rows, retention) or err {
-        _ := self.act().exec("ROLLBACK;")
+        _ = self.act().exec("ROLLBACK;")
         return error("{err.message()}")
     }
     try self.act().exec("COMMIT;")
     try self.conn().exec("BEGIN IMMEDIATE;")
     self.conn().exec("DROP TABLE IF EXISTS activity_moving; DELETE FROM meta WHERE key = 'activity_retention_days';") or err {
-        _ := self.conn().exec("ROLLBACK;")
+        _ = self.conn().exec("ROLLBACK;")
         return error("io: cannot finish moving the activity log: {err.message()}")
     }
     try self.conn().exec("COMMIT;")
@@ -226,8 +225,8 @@ fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> v
     try self.require_activity()
     try self.act().exec("SAVEPOINT activity_add;")
     self.activity_insert(e, keep) or err {
-        _ := self.act().exec("ROLLBACK TO activity_add;")
-        _ := self.act().exec("RELEASE activity_add;")
+        _ = self.act().exec("ROLLBACK TO activity_add;")
+        _ = self.act().exec("RELEASE activity_add;")
         return error("{err.message()}")
     }
     try self.act().exec("RELEASE activity_add;")
@@ -237,7 +236,7 @@ fn (self: SqlVaultStore) activity_insert(e: ActivityEntry, keep: ActivityKeep) -
     try self.act().run_sql("INSERT INTO activity (at, caller, via, token_id, action, host, command, outcome, command_cut) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);", [
             sql_int(e.at), sql_text(e.caller), sql_text(e.via), sql_text(e.token), sql_text(e.action), sql_text(e.host), sql_text(e.command), sql_text(e.outcome), sql_int(e.cut),
     ])
-    _ := try self.activity_trim(keep)
+    _ = try self.activity_trim(keep)
 }
 
 // Deletes what `keep` no longer covers: entries older than `since_at`, then the
@@ -275,8 +274,8 @@ fn (self: SqlVaultStore) activity_prune(keep: ActivityKeep) -> i64! {
     try self.require_activity()
     try self.act().exec("SAVEPOINT activity_prune;")
     done := self.activity_trim(keep) or err {
-        _ := self.act().exec("ROLLBACK TO activity_prune;")
-        _ := self.act().exec("RELEASE activity_prune;")
+        _ = self.act().exec("ROLLBACK TO activity_prune;")
+        _ = self.act().exec("RELEASE activity_prune;")
         return error("{err.message()}")
     }
     try self.act().exec("RELEASE activity_prune;")
@@ -322,7 +321,7 @@ fn (self: SqlVaultStore) activity_page(before_id: i64, limit: i64) -> []Activity
 // on disk is complete.
 fn (self: SqlVaultStore) activity_backup(dest: str) -> void! {
     try self.require_activity()
-    if dest == self.act_path || str.starts_with(dest, self.act_dir + "/") {
+    if dest == self.act_path || dest.starts_with(self.act_dir + "/") {
         return error(coded(ERR_INVALID, "choose a place outside Flint's own folder"))
     }
     fs.copy_file(self.act_path, dest) or err {

@@ -17,7 +17,6 @@ package domain
 // can only make the estimate more cautious. Only the first STRENGTH_MAX_LEN bytes are
 // read; past them every password scores 4 anyway.
 
-import "core:str"
 
 STRENGTH_MIN_SCORE_TO_SYNC: i64 = 3
 STRENGTH_MAX_LEN: usize = 100
@@ -120,7 +119,7 @@ fn estimate_password_strength(password: str, user_words: []str) -> PasswordStren
 fn add_strength_words(mut w: StrengthWords, kind: str, chunks: []str) {
     mut r: i64 = 0
     for c in chunks {
-        for word in str.split(c, " ") {
+        for word in c.split(" ") {
             if word.len() == 0 {
                 continue
             }
@@ -137,13 +136,13 @@ fn strength_word_lists(user_words: []str) -> StrengthWords {
     mut w := StrengthWords{ rank: {}, kind: {} }
     mut mine: []str = []
     for u in user_words {
-        for part in str.split(str.to_lower(u), " ") {
+        for part in u.to_lower().split(" ") {
             if part.len() > 0 {
                 mine.push(part)
             }
         }
     }
-    add_strength_words(mut w, "user_inputs", [str.join(mine, " ")])
+    add_strength_words(mut w, "user_inputs", [mine.join(" ")])
     add_strength_words(mut w, "passwords", strength_words_passwords())
     add_strength_words(mut w, "english_wikipedia", strength_words_english_wikipedia())
     add_strength_words(mut w, "us_tv_and_film", strength_words_us_tv_and_film())
@@ -175,7 +174,7 @@ fn sub_bytes(b: []u8, from: usize, to: usize) -> []u8 {
 fn bytes_str(b: []u8) -> str {
     mut s := ""
     for c in b {
-        s.push_back(char(c))
+        s.push(char(c))
     }
     return s
 }
@@ -913,13 +912,13 @@ fn date_match_all(pw: []u8) -> []StrengthMatch {
     // No separator: 4 to 8 digits.
     for i in 0..n {
         for len in 4..=8 {
-            if i + len > n || !all_digits(pw, i, i + len) {
+            if i + len > n || !all_digits(pw, i, usize(i + len)) {
                 continue
             }
             mut best: i64 = -1
             mut best_dist: i64 = 0
-            for sp in date_splits(len) {
-                y := ints_to_year(digits_value(pw, i, i + sp[0]), digits_value(pw, i + sp[0], i + sp[1]), digits_value(pw, i + sp[1], i + len))
+            for sp in date_splits(usize(len)) {
+                y := ints_to_year(digits_value(pw, i, i + sp[0]), digits_value(pw, i + sp[0], i + sp[1]), digits_value(pw, i + sp[1], usize(i + len)))
                 if y < 0 {
                     continue
                 }
@@ -972,7 +971,7 @@ fn date_match_all(pw: []u8) -> []StrengthMatch {
             if l1 < 1 || l1 > 4 || l2 < 1 || l2 > 2 || l3 < 1 || l3 > 4 {
                 continue
             }
-            y := ints_to_year(digits_value(pw, i, s1), digits_value(pw, s1 + 1, s2), digits_value(pw, s2 + 1, i + len))
+            y := ints_to_year(digits_value(pw, i, s1), digits_value(pw, s1 + 1, s2), digits_value(pw, s2 + 1, usize(i + len)))
             if y >= 0 {
                 found.push(new_match("date", i64(i), i64(i + len - 1), date_guesses(y, true)))
             }

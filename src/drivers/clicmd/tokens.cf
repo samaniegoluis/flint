@@ -11,7 +11,6 @@ package clicmd
 // it; everything else goes to stderr (Principle 7). `list` and `revoke` also work
 // with the master password typed for one command.
 
-import "core:str"
 import "core:time"
 import "core:json"
 import "../../adapters/config"
@@ -25,8 +24,8 @@ import "../../domain"
 fn token_scope_from_flags(p: ParsedArgs) -> ScopeByName {
     mut s := ScopeByName{ all: p.has_flag("--all"), groups: [], hosts: [] }
     for v in p.flag_values_of("--hosts") {
-        for part in str.split(v, ",") {
-            item := str.trim(part)
+        for part in v.split(",") {
+            item := part.trim()
             if item.starts_with("@") {
                 if item.len() > 1 {
                     s.groups.push(item.substr(1))
@@ -48,8 +47,8 @@ fn token_request_from_flags(p: ParsedArgs) -> TokenRequest! {
         return error(coded(ERR_USAGE, "say what the token allows: --allow read,exec,write"))
     }
     for v in p.flag_values_of("--allow") {
-        for part in str.split(v, ",") {
-            a := str.trim(part)
+        for part in v.split(",") {
+            a := part.trim()
             if a == ACCESS_READ {
                 req.read = true
             } else if a == ACCESS_EXEC {
@@ -80,7 +79,7 @@ fn token_allows_text(read: bool, exec: bool, write: bool) -> str {
     if write {
         parts.push(ACCESS_WRITE)
     }
-    return str.join(parts, ",")
+    return parts.join(",")
 }
 
 fn token_reach_text(all: bool, groups: []str, hosts: []str) -> str {
@@ -94,7 +93,7 @@ fn token_reach_text(all: bool, groups: []str, hosts: []str) -> str {
     for g in groups {
         parts.push("@" + g)
     }
-    return str.join(parts, ", ")
+    return parts.join(", ")
 }
 
 fn two_digits(n: i64) -> str {
@@ -153,7 +152,7 @@ fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         if !src.served {
             return error(coded(ERR_LOCKED, "`flint token create` runs in Flint, which asks you to approve it: open Flint, unlock this vault and run it again"))
         }
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         mut ts := tokens
         made := try create_token(c, store, mut ts, req, time.unix_seconds())
         if as_json {
@@ -169,7 +168,7 @@ fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
     if verb == "list" {
         try p.allow_flags("token list", [])
         try p.expect_args("token list", 0, "")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         list := try list_tokens(store, tokens, time.unix_seconds())
         if as_json {
             say(json.stringify(list))
@@ -181,7 +180,7 @@ fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
     if verb == "revoke" {
         try p.allow_flags("token revoke", [])
         try p.expect_args("token revoke", 1, "<id|name>")
-        _ := try open_target(p, sec, c, mut store, src, recents)
+        _ = try open_target(p, sec, c, mut store, src, recents)
         mut ts := tokens
         t := try revoke_token(store, mut ts, p.positional(2), time.unix_seconds())
         if as_json {

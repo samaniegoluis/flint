@@ -23,7 +23,7 @@ fn keygen(dir: str, name: str, passphrase: str) -> str! {
 test "inspects plain and passphrase-protected keys and rejects bad input" {
     mut refused := 0
     dir := "/tmp/flint-keys-" + os.getenv("USER", "test")
-    _ := fs.remove(dir)
+    _ = fs.remove(dir)
     try fs.mkdir_all(dir)
     plain_path := try keygen(dir, "plain", "")
     locked_path := try keygen(dir, "locked", "s3cret-pass")

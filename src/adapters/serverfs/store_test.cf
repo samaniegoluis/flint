@@ -6,7 +6,6 @@ import "core:fs"
 import "core:json"
 import "core:os"
 import "core:time"
-import "core:str"
 import "../../ports"
 
 VID: str = "00112233445566778899aabbccddeeff"
@@ -18,7 +17,7 @@ fn temp_store_dir(name: str) -> str {
         base = "/tmp"
     }
     dir := base + "/flint-serverfs-{name}-{time.now_ms()}"
-    _ := fs.remove(dir)
+    _ = fs.remove(dir)
     return dir
 }
 
@@ -41,7 +40,7 @@ fn uses_port[B: BlobStore](mut b: B) -> i64 {
 test "an empty store has version 0, and a write becomes the head" {
     dir := temp_store_dir("head")
     defer {
-        _ := fs.remove(dir)
+        _ = fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
     assert_eq(uses_port(mut s), i64(0))
@@ -62,7 +61,7 @@ test "an empty store has version 0, and a write becomes the head" {
 test "a write that does not follow the head is refused" {
     dir := temp_store_dir("follow")
     defer {
-        _ := fs.remove(dir)
+        _ = fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
     try s.blob_write(VID, 1, "a", 1)
@@ -81,7 +80,7 @@ test "a write that does not follow the head is refused" {
 test "the newest ten versions are kept, newest first" {
     dir := temp_store_dir("prune")
     defer {
-        _ := fs.remove(dir)
+        _ = fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
     for n in 1..=13 {
@@ -104,7 +103,7 @@ test "the newest ten versions are kept, newest first" {
 test "a version cut short past the head and a stray tmp file are not listed" {
     dir := temp_store_dir("crash")
     defer {
-        _ := fs.remove(dir)
+        _ = fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
     try s.blob_write(VID, 1, "one", 1)
@@ -123,7 +122,7 @@ test "a version cut short past the head and a stray tmp file are not listed" {
 test "a held lock refuses a writer, and a stale one is taken" {
     dir := temp_store_dir("lock")
     defer {
-        _ := fs.remove(dir)
+        _ = fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
     try fs.mkdir_all(dir + "/vaults/" + VID + "/.lock")
@@ -134,7 +133,7 @@ test "a held lock refuses a writer, and a stale one is taken" {
     assert_eq(code, ERR_CONFLICT)
     assert_eq((try s.blob_head(VID)).version, i64(0))
     // A lock older than the stale limit: left by a process that died.
-    _ := os.command("touch", ["-t", "202001010000", dir + "/vaults/" + VID + "/.lock"])
+    _ = os.command("touch", ["-t", "202001010000", dir + "/vaults/" + VID + "/.lock"])
     try s.blob_write(VID, 1, "a", 1)
     assert_eq((try s.blob_head(VID)).version, i64(1))
 }
@@ -142,7 +141,7 @@ test "a held lock refuses a writer, and a stale one is taken" {
 test "the files are written owner-only" {
     dir := temp_store_dir("mode")
     defer {
-        _ := fs.remove(dir)
+        _ = fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
     try s.blob_write(VID, 1, "a", 1)
@@ -152,13 +151,13 @@ test "the files are written owner-only" {
     if r.exit_code == 0 {
         mode = r.stdout
     }
-    assert_eq(str.trim(mode), "600")
+    assert_eq(mode.trim(), "600")
 }
 
 test "vaults are kept apart, each with its own versions, and listed by id" {
     dir := temp_store_dir("many")
     defer {
-        _ := fs.remove(dir)
+        _ = fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
     assert_eq((try s.blob_vaults()).len(), usize(0))
@@ -188,7 +187,7 @@ test "vaults are kept apart, each with its own versions, and listed by id" {
 test "a label is kept beside its vault, cleared with an empty one, and checked" {
     dir := temp_store_dir("label")
     defer {
-        _ := fs.remove(dir)
+        _ = fs.remove(dir)
     }
     mut s := try new_file_blob_store(dir)
     mut code := ""
@@ -225,7 +224,7 @@ fn write_single_vault_store(dir: str) -> void! {
 test "a store from before milestone 45 moves its vault into a folder of its own" {
     dir := temp_store_dir("move")
     defer {
-        _ := fs.remove(dir)
+        _ = fs.remove(dir)
     }
     try write_single_vault_store(dir)
     mut s := try new_file_blob_store(dir)
@@ -244,7 +243,7 @@ test "a store from before milestone 45 moves its vault into a folder of its own"
 test "a move cut short after the versions moved is finished at the next open" {
     dir := temp_store_dir("move-cut")
     defer {
-        _ := fs.remove(dir)
+        _ = fs.remove(dir)
     }
     try write_single_vault_store(dir)
     try fs.mkdir_all(dir + "/vaults/" + VID)
@@ -258,7 +257,7 @@ test "a move cut short after the versions moved is finished at the next open" {
 test "a store from before that never got a vault leaves no folder behind" {
     dir := temp_store_dir("move-empty")
     defer {
-        _ := fs.remove(dir)
+        _ = fs.remove(dir)
     }
     try fs.mkdir_all(dir + "/versions")
     s := try new_file_blob_store(dir)

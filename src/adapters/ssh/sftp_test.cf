@@ -7,7 +7,6 @@ package ssh
 import "core:os"
 import "core:fs"
 import "core:time"
-import "core:str"
 import "core:sync"
 import "../../ports"
 
@@ -44,7 +43,7 @@ fn scratch_dir(tag: str) -> str {
         base = "/tmp"
     }
     d := base + "/flint-sftp-" + tag + "-{time.now_ms()}"
-    return str.replace(d, "//", "/")
+    return d.replace("//", "/")
 }
 
 test "sftp writes, stats, lists, reads, renames and removes" {
@@ -231,7 +230,7 @@ test "sftp shares a session with a PTY read on another thread" {
     reader := link
     mut stats: i64 = 0
     // A task's captures are copies: what it heard comes back on a channel (CF-098).
-    heard_ch := sync.make_channel[str]()
+    heard_ch := make(sync.Channel[str])
     async.scope(workers: 2) |scope| {
         scope.spawn || {
             mut r := reader
@@ -254,7 +253,7 @@ test "sftp shares a session with a PTY read on another thread" {
             if st.is_dir() {
                 stats += 1
             }
-            _ := link.sftp_list(".") or []
+            _ = link.sftp_list(".") or []
         }
     }
     heard := heard_ch.recv_timeout(10000) or ""
@@ -276,7 +275,7 @@ test "an sftp request to a stalled server fails within the timeout" {
     }
     mut link := new_ssh_link()
     defer link.link_hangup()
-    try link.link_dial("127.0.0.1", i64(stall_port.parse_i64() or 0), os.getenv("USER"), 3, "")
+    try link.link_dial("127.0.0.1", i64(i64.parse(stall_port) or 0), os.getenv("USER"), 3, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
     try link.sftp_open()
     try fs.write_text(stall_file, "stall")
@@ -348,8 +347,8 @@ test "a shared link lends its session once the shell is open, and takes it back 
     assert(got.contains("shared-42"), "the terminal keeps working beside SFTP")
     mut c := try borrow_browse(id)
     st := try c.sftp_stat(dir + "/a.txt")
-    _ := c.sftp_remove(dir + "/a.txt", false)
-    _ := c.sftp_remove(dir, true)
+    _ = c.sftp_remove(dir + "/a.txt", false)
+    _ = c.sftp_remove(dir, true)
     give_back_browse(id, c)
     assert_eq(st.size, 5)
     // A cancel is seen by the transfer it names.
@@ -378,7 +377,7 @@ test "hangup waits for a request still using the session" {
     try link.link_auth_key(try fs.read_text(key_path), "")
     try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
     mut held := try borrow_browse(id)
-    done_ch := sync.make_channel[i64]()
+    done_ch := make(sync.Channel[i64])
     start := time.now_ms()
     async.scope(workers: 2) |scope| {
         scope.spawn || {

@@ -9,7 +9,6 @@ package vaultremote
 
 // CFIRE-UPSTREAM: CF-146, CF-031
 import cpp "flint_remote.hpp" @pkg("flint-remote")
-import "core:str"
 import "core:json"
 import "../../domain"
 

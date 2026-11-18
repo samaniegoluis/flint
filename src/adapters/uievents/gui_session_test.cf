@@ -2,7 +2,6 @@ package uievents
 
 import "ext:webui"
 import "core:time"
-import "core:str"
 import "../../ports"
 import "../../domain"
 
@@ -15,7 +14,7 @@ fn accepts_prompter[P: Prompter](p: P) -> bool {
 }
 
 test "a GUI session mailbox carries input, resizes and close" {
-    mut app := webui.new_app("gui-session-test", 100, 100)
+    mut app := make(webui.App, "gui-session-test", 100, 100)
     defer app.close()
     assert(gui_session_open("t1", 100, 30))
     assert(!gui_session_open("t1", 100, 30))
@@ -64,10 +63,10 @@ fn answer_when_asked(mut app: webui.App, session: str, ok: bool, value: str) {
     for _ in 0..400 {
         payload := app.last_emitted_payload("session:prompt")
         if payload.contains(session) {
-            start := str.index_of(payload, "\"prompt\":\"")
+            start := payload.index_of("\"prompt\":\"")
             if start >= 0 {
                 rest := payload.substr(usize(start) + 10)
-                end := str.index_of(rest, "\"")
+                end := rest.index_of("\"")
                 id := rest.substr(0, usize(end))
                 if id.len() > 0 {
                     // An earlier prompt's payload is refused; keep waiting.
@@ -86,7 +85,7 @@ fn answer_when_asked(mut app: webui.App, session: str, ok: bool, value: str) {
 }
 
 test "the GUI prompter blocks until the page answers or cancels" {
-    mut app := webui.new_app("gui-prompt-test", 100, 100)
+    mut app := make(webui.App, "gui-prompt-test", 100, 100)
     defer app.close()
     assert(gui_session_open("p1", 80, 24))
     p := new_gui_prompter(app, "p1")
@@ -130,7 +129,7 @@ test "the GUI prompter blocks until the page answers or cancels" {
 }
 
 test "a prompt fails at once when its session is closed" {
-    mut app := webui.new_app("gui-close-test", 100, 100)
+    mut app := make(webui.App, "gui-close-test", 100, 100)
     defer app.close()
     assert(gui_session_open("c1", 80, 24))
     mut p := new_gui_prompter(app, "c1")
@@ -139,7 +138,7 @@ test "a prompt fails at once when its session is closed" {
     async.scope(workers: 1) |scope| {
         scope.spawn || {
             time.sleep_ms(50)
-            _ := gui_session_close("c1")
+            _ = gui_session_close("c1")
         }
         mut r := ""
         p.prompt_password("luis", "web") or err { r = "{err.message()}" }

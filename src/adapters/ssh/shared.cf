@@ -140,7 +140,7 @@ fn borrow_failure(rc: i32, session_id: str) -> str {
 // A link over a borrowed session: the session's last hop with no channel of its
 // own, so nothing here touches the terminal. Never hung up: it does not own the
 // session.
-fn borrowed_link(session: *mut cpp::ssh_session_struct, lock: shared[cpp::std::mutex], timeout_secs: i64, channel: *mut cpp::sftp_session_struct) -> SshLink {
+fn borrowed_link(session: *mut cpp.ssh_session_struct, lock: shared[cpp.std::mutex], timeout_secs: i64, channel: *mut cpp.sftp_session_struct) -> SshLink {
     mut link := new_ssh_link()
     mut conn := SshConn{ sock: -1 }
     // CFIRE-UPSTREAM: CF-005
@@ -160,7 +160,7 @@ fn borrowed_link(session: *mut cpp::ssh_session_struct, lock: shared[cpp::std::m
 fn borrow_browse(session_id: str) -> SshLink! {
     mut rc: i32 = 0
     mut session: *mut cpp::ssh_session_struct
-    mut lock: shared[cpp::std::mutex]
+    mut lock: shared[cpp.std::mutex]
     mut timeout: i64 = 0
     mut channel: *mut cpp::sftp_session_struct
     // CFIRE-UPSTREAM: CF-026
@@ -203,7 +203,7 @@ fn drop_browse(session_id: str, mut link: SshLink) {
 fn borrow_transfer(session_id: str, transfer_id: str) -> SshLink! {
     mut rc: i32 = 0
     mut session: *mut cpp::ssh_session_struct
-    mut lock: shared[cpp::std::mutex]
+    mut lock: shared[cpp.std::mutex]
     mut timeout: i64 = 0
     mut channel: *mut cpp::sftp_session_struct
     // CFIRE-UPSTREAM: CF-026

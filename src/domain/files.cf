@@ -3,7 +3,6 @@ package domain
 // Files on a host and on this machine (milestone 16): entries, paths, and what
 // `flint cp` copies where. Pure: no I/O.
 
-import "core:str"
 
 FILE_KIND_FILE: str = "file"
 FILE_KIND_DIR: str = "dir"
@@ -49,16 +48,16 @@ type RemotePath struct {
 // Whether a `flint cp` argument names a host: `alias:` before any `/`. A local path
 // with a colon is written `./a:b`, as with scp.
 fn is_remote_arg(arg: str) -> bool {
-    colon := str.index_of(arg, ":")
+    colon := arg.index_of(":")
     if colon <= 0 {
         return false
     }
-    slash := str.index_of(arg, "/")
+    slash := arg.index_of("/")
     return slash < 0 || colon < slash
 }
 
 fn parse_remote_arg(arg: str) -> RemotePath! {
-    colon := str.index_of(arg, ":")
+    colon := arg.index_of(":")
     if colon <= 0 {
         return error(coded(ERR_USAGE, "'{arg}' is not alias:/path"))
     }
@@ -85,7 +84,7 @@ fn remote_base(p: str) -> str {
     if s == "/" {
         return s
     }
-    i := str.last_index_of(s, "/")
+    i := s.last_index_of("/")
     if i < 0 {
         return s
     }
@@ -95,7 +94,7 @@ fn remote_base(p: str) -> str {
 // The folder of a `/` path: "/a/b" -> "/a", "b" -> ".", "/a" -> "/".
 fn remote_dir(p: str) -> str {
     s := trim_slashes(p)
-    i := str.last_index_of(s, "/")
+    i := s.last_index_of("/")
     if i < 0 {
         return "."
     }
@@ -224,7 +223,7 @@ fn valid_drop_path(rel: str) -> bool {
     if rel.len() == 0 || rel.len() > 4096 || rel.starts_with("/") {
         return false
     }
-    for part in str.split(rel, "/") {
+    for part in rel.split("/") {
         if part.len() == 0 || part == "." || part == ".." {
             return false
         }

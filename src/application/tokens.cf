@@ -6,7 +6,6 @@ package application
 // in by name and are stored by id, as grants are (access.cf).
 
 import "core:encoding/hex"
-import "core:str"
 import "../domain"
 import "../ports"
 
@@ -51,7 +50,7 @@ fn token_view(t: Token, cat: Catalog, now_s: i64) -> TokenView {
 // applies, so a bad request never reaches the owner. Returns the scope by id.
 fn check_token_request[S: VaultStore](store: S, req: TokenRequest) -> AccessScope! {
     try check_token_name(req.name)
-    _ := try token_ttl_seconds(req.ttl)
+    _ = try token_ttl_seconds(req.ttl)
     if !req.read && !req.exec && !req.write {
         return error(coded(ERR_USAGE, "say what the token allows: --allow read,exec,write"))
     }
@@ -77,9 +76,9 @@ fn token_hash[C: Crypto](crypto: C, id: str, secret: str) -> str! {
 
 fn create_token[C: Crypto, S: VaultStore, T: TokenStore](crypto: C, store: S, mut tokens: T, req: TokenRequest, now_s: i64) -> CreatedToken! {
     scope := try check_token_request(store, req)
-    name := str.trim(req.name)
+    name := req.name.trim()
     for t in try tokens.tokens_all() {
-        if token_status(t, now_s) == TOKEN_ACTIVE && str.to_lower(t.name) == str.to_lower(name) {
+        if token_status(t, now_s) == TOKEN_ACTIVE && t.name.to_lower() == name.to_lower() {
             return error(coded(ERR_CONFLICT, "a live token is already named '{name}'; revoke it or pick another name"))
         }
     }

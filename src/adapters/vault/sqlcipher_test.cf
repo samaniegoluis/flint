@@ -21,7 +21,7 @@ MIGRATION_010_SHA256: str = "d1a8646c794f875081914aa4aec21ad6bed5c674b44083e6035
 
 fn temp_vault_path(name: str) -> str {
     dir := "/tmp/flint-test-" + hex.encode(sha256.random_bytes(8))
-    _ := fs.mkdir_all(dir)
+    _ = fs.mkdir_all(dir)
     return dir + "/" + name
 }
 

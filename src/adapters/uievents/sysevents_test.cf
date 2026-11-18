@@ -1,7 +1,7 @@
 package uievents
 
 test "lock and sleep events are taken once, sleep first" {
-    _ := system_events_take()
+    _ = system_events_take()
     assert_eq(system_events_take(), "")
     system_events_inject("screen")
     system_events_inject("screen")

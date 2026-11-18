@@ -101,6 +101,6 @@ fn save_ui_state_paths[U: UiStateStore, S: VaultStore](mut ui: U, store: S, vaul
             }
         }
     }
-    _ := try save_ui_state(mut ui, vault, by_id)
+    _ = try save_ui_state(mut ui, vault, by_id)
     return ui_state_paths(ui, store, vault)
 }

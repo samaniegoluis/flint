@@ -222,7 +222,7 @@ fn (self: CipherDb) query_cells(sql: str, args: []SqlCell) -> [][]SqlCell! {
 
 // Runs one parameterised statement that returns no rows.
 fn (self: CipherDb) run_sql(sql: str, args: []SqlCell) -> void! {
-    _ := try self.query_cells(sql, args)
+    _ = try self.query_cells(sql, args)
 }
 
 // The first column of the first row as text, or "" when there is no row.

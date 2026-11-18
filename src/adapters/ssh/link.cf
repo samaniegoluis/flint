@@ -17,7 +17,7 @@ import "../../domain"
 type SshLink struct {
     hops: []SshConn
     // Shared by every copy of this value; owns the tunnel threads (CF-026, CF-043).
-    tunnels: shared[cpp::flint_ssh::Tunnels]
+    tunnels: shared[cpp.flint_ssh::Tunnels]
     timeout_secs: i64
     // The SFTP channel on the last hop and its one open file (sftp.cf), or none.
     sftp: *mut cpp::sftp_session_struct

@@ -238,7 +238,7 @@ fn (self: SocketPrompter) ask(p: RelayPrompt) -> RelayAnswer! {
     deadline := time.now_ms() + RELAY_PROMPT_WAIT_MS
     for time.now_ms() < deadline {
         mut other := ""
-        _ := try link.take(250, mut other)
+        _ = try link.take(250, mut other)
         if relay_tag(other) == TAG_ANSWER {
             return json.parse[RelayAnswer](relay_payload(other)) or {
                 return error(coded(ERR_INVALID, "the flint client sent an answer this Flint cannot read"))

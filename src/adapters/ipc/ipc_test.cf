@@ -8,7 +8,7 @@ import "../../domain"
 // A short folder: a socket path must fit in sun_path (104 bytes on macOS).
 fn temp_socket_dir() -> str {
     dir := "/tmp/fl-ipc-" + hex.encode(sha256.random_bytes(4))
-    _ := fs.mkdir_all(dir)
+    _ = fs.mkdir_all(dir)
     return dir
 }
 
@@ -42,7 +42,7 @@ test "a peer of another uid is closed before anything is read" {
     assert(!refused.open)
     assert_eq(refused.peer.uid, ipc_own_uid())
     // The app closed its end: the client sees the socket go away, never an answer.
-    _ := client.send("host list", 2000) or {}
+    _ = client.send("host list", 2000) or {}
     mut got := ""
     client.recv(2000) or err { got = "{err.message()}" }
     assert(got.len() > 0)
@@ -93,7 +93,7 @@ test "no Flint listening is not_found, a stale socket is replaced, a live one is
 test "a file that is not a socket is never removed" {
     dir := temp_socket_dir()
     path := ipc_socket_path(dir)
-    _ := fs.write_text(path, "not a socket") or {}
+    _ = fs.write_text(path, "not a socket") or {}
     mut r := ""
     ipc_listen(path) or err { r = "{err.message()}" }
     assert(r.len() > 0)

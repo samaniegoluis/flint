@@ -300,7 +300,7 @@ fn dedup_tags(tags: []str) -> []str {
 fn byte_to_str(b: u8) -> str {
     mut s := ""
     // A one-byte string; cfire has no char-to-str conversion in core:str.
-    s.push_back(char(b))
+    s.push(char(b))
     return s
 }
 

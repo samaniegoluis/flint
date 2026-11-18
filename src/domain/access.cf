@@ -1,6 +1,5 @@
 package domain
 
-import "core:str"
 
 // Who calls the app over its socket, and what they were allowed (D-038, D-040,
 // Principle 12).
@@ -91,7 +90,7 @@ fn need_hosts(need: AccessNeed) -> str {
 
 // The last part of a path.
 fn path_base(p: str) -> str {
-    slash := str.last_index_of(p, "/")
+    slash := p.last_index_of("/")
     if slash >= 0 {
         return p.substr(usize(slash) + 1)
     }
@@ -133,9 +132,9 @@ fn anchor_index(chain: []CallerProc) -> i64 {
             break
         }
         if !is_transparent(p) {
-            return i
+            return i64(i)
         }
-        last = i
+        last = i64(i)
     }
     return last
 }
@@ -235,7 +234,7 @@ fn scope_reaches(scope: AccessScope, cat: Catalog, alias: str) -> bool {
         return true
     }
     for h in cat.hosts {
-        if str.to_lower(h.alias) == str.to_lower(alias) {
+        if h.alias.to_lower() == alias.to_lower() {
             for id in scope.hosts {
                 if id == h.id {
                     return true
@@ -400,12 +399,12 @@ fn proposed_grant(ap: Approval, cat: Catalog, id: str, now_ms: i64) -> Grant! {
     if ap.need.action == ACCESS_EXEC {
         mut ids: []str = []
         mut wanted := 1
-        if ap.need.host2.len() > 0 && str.to_lower(ap.need.host2) != str.to_lower(ap.need.host) {
+        if ap.need.host2.len() > 0 && ap.need.host2.to_lower() != ap.need.host.to_lower() {
             wanted = 2
         }
         for h in cat.hosts {
-            a := str.to_lower(h.alias)
-            if a == str.to_lower(ap.need.host) || (ap.need.host2.len() > 0 && a == str.to_lower(ap.need.host2)) {
+            a := h.alias.to_lower()
+            if a == ap.need.host.to_lower() || (ap.need.host2.len() > 0 && a == ap.need.host2.to_lower()) {
                 ids.push(h.id)
             }
         }

@@ -9,7 +9,6 @@ package application
 // Every file lands under a temporary name in its folder (`.<name>.flint-part`) and
 // is renamed only once complete; a failure or a cancel removes the partial file.
 
-import "core:str"
 import "../domain"
 import "../ports"
 
@@ -252,7 +251,7 @@ fn copy_one[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut 
     }
     try side_open(src_remote, mut sftp, mut local, src, false)
     side_open(dst_remote, mut sftp, mut local, part, true) or err {
-        _ := side_close(src_remote, mut sftp, mut local)
+        _ = side_close(src_remote, mut sftp, mut local)
         return error("{err.message()}")
     }
     prog.file = target
@@ -281,7 +280,7 @@ fn copy_one[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut 
         prog.bytes_done += i64(data.len())
         sink.transfer_progress(prog)
     }
-    _ := side_close(src_remote, mut sftp, mut local)
+    _ = side_close(src_remote, mut sftp, mut local)
     side_close(dst_remote, mut sftp, mut local) or err {
         if failure.len() == 0 {
             failure = "{err.message()}"
@@ -294,7 +293,7 @@ fn copy_one[T: SftpTransport, L: LocalFiles, K: TransferSink](upload: bool, mut 
         }
         if move_failure.len() > 0 && existed {
             // A server that will not rename over a file: remove it, then rename.
-            _ := side_remove(dst_remote, mut sftp, mut local, target)
+            _ = side_remove(dst_remote, mut sftp, mut local, target)
             side_rename(dst_remote, mut sftp, mut local, part, target) or err {
                 failure = "{err.message()}"
             }
@@ -512,7 +511,7 @@ fn stage_dropped[D: DropStage](mut stage: D, drop_id: str, rel: str, data: str) 
         return error(coded(ERR_INVALID, "'{rel}' is not a path inside a drop"))
     }
     try stage.stage_append(drop_id, rel, data)
-    top := str.split(rel, "/")[0]
+    top := rel.split("/")[0]
     return remote_join(stage.stage_folder(drop_id), top)
 }
 

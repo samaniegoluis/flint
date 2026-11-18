@@ -56,8 +56,8 @@ fn (self: SqlVaultStore) unbury(kind: str, id: str) -> void! {
 fn (self: SqlVaultStore) drop_buried(kind: str, id: str) -> void! {
     try self.conn().exec("SAVEPOINT drop_buried;")
     self.bury_and_delete(kind, id) or err {
-        _ := self.conn().exec("ROLLBACK TO drop_buried;")
-        _ := self.conn().exec("RELEASE drop_buried;")
+        _ = self.conn().exec("ROLLBACK TO drop_buried;")
+        _ = self.conn().exec("RELEASE drop_buried;")
         return error("{err.message()}")
     }
     try self.conn().exec("RELEASE drop_buried;")
@@ -163,8 +163,8 @@ fn (mut self: SqlVaultStore) vault_attach_copy(path: str, page_key: []byte, salt
 // Removes the private copy `vault_attach_copy` made, if any.
 fn (mut self: SqlVaultStore) drop_copy() {
     if self.copy_path.len() > 0 {
-        _ := fs.remove(self.copy_path)
-        _ := fs.remove(self.copy_path + "-journal")
+        _ = fs.remove(self.copy_path)
+        _ = fs.remove(self.copy_path + "-journal")
         self.copy_path = ""
     }
 }
@@ -210,8 +210,8 @@ fn (self: SqlVaultStore) vault_blob_records(data: []byte, page_key: []byte, salt
     }
     work := dir + "/remote-" + hex.encode(sha256.random_bytes(8)) + ".flint"
     defer {
-        _ := fs.remove(work)
-        _ := fs.remove(work + "-journal")
+        _ = fs.remove(work)
+        _ = fs.remove(work + "-journal")
     }
     fs.write_bytes(work, data) or err {
         return error(coded(ERR_IO, "cannot write a private copy in {dir}"))
@@ -238,16 +238,16 @@ fn (self: SqlVaultStore) vault_write_new(path: str, data: []byte) -> void! {
     }
     tmp := path + ".download"
     fs.write_bytes(tmp, data) or err {
-        _ := fs.remove(tmp)
+        _ = fs.remove(tmp)
         return error(coded(ERR_IO, "cannot write {path}"))
     }
     set_mode_and_sync(tmp, 384, "") or err {
-        _ := fs.remove(tmp)
+        _ = fs.remove(tmp)
         return error("{err.message()}")
     }
     fs.rename(tmp, path) or err {
-        _ := fs.remove(tmp)
+        _ = fs.remove(tmp)
         return error(coded(ERR_IO, "cannot write {path}"))
     }
-    _ := sync_folder(dir)
+    _ = sync_folder(dir)
 }

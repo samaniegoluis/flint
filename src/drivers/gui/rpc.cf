@@ -39,7 +39,7 @@ E2E_TIMEOUT_MS: i32 = 240000
 // The run's cap: FLINT_GUI_E2E_TIMEOUT_MS when set (gui-e2e.sh gives its short vim run
 // 60 s, so a freeze there costs a minute, not four), else E2E_TIMEOUT_MS.
 fn e2e_timeout_ms() -> i32 {
-    ms := os.getenv("FLINT_GUI_E2E_TIMEOUT_MS").parse_i64() or 0
+    ms := i64.parse(os.getenv("FLINT_GUI_E2E_TIMEOUT_MS")) or 0
     if ms <= 0 || ms > 3600000 {
         return E2E_TIMEOUT_MS
     }
@@ -298,7 +298,7 @@ fn no_vault_session() -> VaultSession {
 }
 
 fn new_gui_state() -> GuiState {
-    return GuiState{ holder: new_session_holder(), sync_hints: sync.make_channel[str]() }
+    return GuiState{ holder: new_session_holder(), sync_hints: make(sync.Channel[str]) }
 }
 
 fn (self: GuiState) unlocked() -> bool {
@@ -477,7 +477,7 @@ fn rpc_vault_unlock(req: UnlockReq, c: Sodium, mut store: LockedVaultStore, kc: 
     s := try unlock_vault(c, mut store, kc, recents, req.path, req.password, req.remember)
     if req.password.len() > 0 && !req.remember && st.holder.remembered(s.path) {
         // Unticked: this computer no longer remembers it.
-        _ := forget_vault_key(store, kc, s.path)
+        _ = forget_vault_key(store, kc, s.path)
     }
     st.holder.set_remembered(s.path, s.cached)
     st.adopt(s)
@@ -522,7 +522,7 @@ fn allow_on_unlock(asked: Approval, c: Sodium, store: LockedVaultStore, st: GuiS
 
 // Locks the vault now (the Lock button, the palette, ⌘L).
 fn rpc_vault_lock(mut store: LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
-    _ := lock_now(mut store, st, mut app, "manual")
+    _ = lock_now(mut store, st, mut app, "manual")
     return ok_json()
 }
 
@@ -835,7 +835,7 @@ fn run_gui_session(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, v
 fn host_test_check(params: str, st: GuiState) -> HostTestReq! {
     try st.require_unlocked()
     req := try parse_req[HostTestReq](params)
-    _ := try parse_req[HostPatch](params)
+    _ = try parse_req[HostPatch](params)
     if req.session.len() == 0 {
         return error(coded(ERR_INVALID, "a host test needs an id"))
     }
@@ -893,7 +893,7 @@ fn rpc_session_answer(params: str, st: GuiState) -> str! {
 fn rpc_session_close(params: str, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[SessionReq](params)
-    _ := gui_session_close(req.session)
+    _ = gui_session_close(req.session)
     return ok_json()
 }
 

@@ -9,8 +9,8 @@ test "argv is readable outside main" {
 }
 
 test "stdin terminal detection does not crash" {
-    _ := stdin_is_terminal()
-    _ := has_terminal()
+    _ = stdin_is_terminal()
+    _ = has_terminal()
 }
 
 fn accepts_session_ports[P: Prompter, M: Terminal, O: ExecSink, K: Clock](p: P, mut m: M, mut o: O, mut k: K) -> bool {

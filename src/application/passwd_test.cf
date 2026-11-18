@@ -10,8 +10,8 @@ fn passwd_fixture(crypto: FakeCrypto, mut store: FakeStore, kc: FakeKeychain, re
     web.set_password = true
     web.sudo_password = "root-pw"
     web.set_sudo_password = true
-    _ := try add_host(crypto, mut store, s, web)
-    _ := try add_cred(crypto, mut store, s, CredPatch{ name: "ops", set_name: true, user: "ops", set_user: true, key: "", set_key: false, password: "cred-pw", set_password: true })
+    _ = try add_host(crypto, mut store, s, web)
+    _ = try add_cred(crypto, mut store, s, CredPatch{ name: "ops", set_name: true, user: "ops", set_user: true, key: "", set_key: false, password: "cred-pw", set_password: true })
     return s
 }
 

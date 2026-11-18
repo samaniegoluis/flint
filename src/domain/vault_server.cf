@@ -4,7 +4,6 @@ package domain
 // vault id look like on the wire, the server token's minimum, and the gate that limits
 // each client's rate and locks out a client after repeated bad tokens (Principle 13).
 
-import "core:str"
 
 // The versions the server keeps on disk; older ones are pruned after each upload.
 SERVER_VERSIONS_KEPT: i64 = 10
@@ -55,7 +54,7 @@ fn check_vault_label(label: str) -> void! {
     if label.len() > VAULT_LABEL_MAX_LEN {
         return error(coded(ERR_INVALID, "a vault's label is at most {VAULT_LABEL_MAX_LEN} characters"))
     }
-    if str.trim(label) != label {
+    if label.trim() != label {
         return error(coded(ERR_INVALID, "a vault's label starts or ends with white space"))
     }
     for b in label.bytes() {
@@ -69,7 +68,7 @@ fn check_vault_label(label: str) -> void! {
 // The vault among `vaults` whose id is `wanted` or starts with it (at least 4
 // characters, as git's short ids); an unknown or ambiguous prefix is refused.
 fn pick_server_vault(vaults: []ServerVault, wanted: str) -> ServerVault! {
-    w := str.to_lower(str.trim(wanted))
+    w := wanted.trim().to_lower()
     if w.len() < 4 {
         return error(coded(ERR_USAGE, "give at least 4 characters of the vault's id"))
     }
@@ -93,7 +92,7 @@ fn pick_server_vault(vaults: []ServerVault, wanted: str) -> ServerVault! {
 
 // "7", "\"7\"" or "W/\"7\"" -> 7; -1 for anything else (a version is at least 1).
 fn parse_version_tag(tag: str) -> i64 {
-    mut t := str.trim(tag)
+    mut t := tag.trim()
     if t.starts_with("W/") {
         t = t.substr(2)
     }
@@ -141,7 +140,7 @@ fn check_server_token(token: str) -> void! {
     if token.len() < SERVER_TOKEN_MIN_LEN {
         return error(coded(ERR_INVALID, "the server token is shorter than {SERVER_TOKEN_MIN_LEN} characters: make one with `flint-vault-server token`"))
     }
-    if str.trim(token) != token {
+    if token.trim() != token {
         return error(coded(ERR_INVALID, "the server token starts or ends with white space"))
     }
 }

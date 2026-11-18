@@ -10,7 +10,6 @@ package main
 import "core:encoding/hex"
 import "core:fs"
 import "core:os"
-import "core:str"
 import "core:time"
 import "ext:webui"
 import "../../adapters/config"
@@ -112,9 +111,9 @@ fn run_lock_timer(mut store: LockedVaultStore, st: GuiState, mut app: webui.App)
         time.sleep_ms(LOCK_TICK_MS)
         event := system_events_take()
         if event.len() > 0 {
-            _ := lock_now(mut store, st, mut app, event)
+            _ = lock_now(mut store, st, mut app, event)
         } else if st.unlocked() && idle_lock_due(time.now_ms(), st.holder.last_activity(), st.holder.lock_after()) {
-            _ := lock_now(mut store, st, mut app, "idle")
+            _ = lock_now(mut store, st, mut app, "idle")
         }
     }
 }
@@ -173,7 +172,7 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
         serve_session(mut conn, req, c, mut store, kc, recents, st, mut app)
     } else if req.kind == "status" {
         now := app_state_for(st, req.vault)
-        _ := conn.send(app_state_json(now.state, now.name), SERVE_SEND_MS) or {}
+        _ = conn.send(app_state_json(now.state, now.name), SERVE_SEND_MS) or {}
     } else if req.kind == "unlock" {
         now := app_state_for(st, req.vault)
         if now.state == APP_LOCKED || now.state == APP_ASKING {
@@ -192,16 +191,16 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
             st.holder.access_release()
             app.emit("vault:unlock-request", UnlockRequest{ path: req.vault, name: name, caller: req.caller, label: ap.label, command: ap.command })
             show_window(mut app)
-            _ := conn.send(app_state_json(APP_ASKING, ""), SERVE_SEND_MS) or {}
+            _ = conn.send(app_state_json(APP_ASKING, ""), SERVE_SEND_MS) or {}
         } else {
-            _ := conn.send(app_state_json(now.state, now.name), SERVE_SEND_MS) or {}
+            _ = conn.send(app_state_json(now.state, now.name), SERVE_SEND_MS) or {}
         }
     } else if req.kind == "show" {
         // A second launch of Flint (milestone 14): this one shows its window, locked
         // if it was closed to the tray, and the new one exits. Nothing of the vault
         // travels, so no grant is checked (as for status, unlock and lock).
         show_window(mut app)
-        _ := conn.send(app_state_json(app_state_for(st, req.vault).state, ""), SERVE_SEND_MS) or {}
+        _ = conn.send(app_state_json(app_state_for(st, req.vault).state, ""), SERVE_SEND_MS) or {}
     } else if req.kind == "lock" {
         now := app_state_for(st, req.vault)
         mut locked := false
@@ -212,7 +211,7 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
         if locked {
             answer = APP_UNLOCKED
         }
-        _ := conn.send(app_state_json(answer, ""), SERVE_SEND_MS) or {}
+        _ = conn.send(app_state_json(answer, ""), SERVE_SEND_MS) or {}
     }
 }
 
@@ -295,7 +294,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         treq := token_request_from_flags(parsed) or err {
             return refuse("{err.message()}")
         }
-        ask = TokenAsk{ name: str.trim(treq.name), allows: token_allows_text(treq.read, treq.exec, treq.write), reaches: token_reach_text(treq.scope.all, treq.scope.groups, treq.scope.hosts), ttl: treq.ttl }
+        ask = TokenAsk{ name: treq.name.trim(), allows: token_allows_text(treq.read, treq.exec, treq.write), reaches: token_reach_text(treq.scope.all, treq.scope.groups, treq.scope.hosts), ttl: treq.ttl }
         st.hold()
         check_token_request(store, treq) or err {
             st.release()
@@ -433,7 +432,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
             return refuse(coded(ERR_DENIED, "the access allowed in Flint does not cover this request"))
         }
         if t >= ap.deadline_ms {
-            _ := forget_approval(st, id)
+            _ = forget_approval(st, id)
             app.emit("access:resolved", ApprovalResolved{ id: id, state: "expired" })
             entry.outcome = ACTIVITY_TIMEOUT
             log_activity(st, store, session, entry, mut app)
@@ -442,7 +441,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
         // A client that hung up is not waiting any more. Before a session's raw mode
         // the client sends nothing, so anything readable is its close.
         if conn.readable(0) {
-            _ := forget_approval(st, id)
+            _ = forget_approval(st, id)
             app.emit("access:resolved", ApprovalResolved{ id: id, state: "gone" })
             return refuse("gone")
         }
@@ -462,7 +461,7 @@ fn activity_command(p: ParsedArgs, ask: TokenAsk, sudo: SudoAsk) -> str {
     s := caller_command(p)
     if sudo.host.len() > 0 {
         // The whole command, as approved: what ran as root (milestone 13).
-        return "flint exec {sudo.host} --sudo -- {str.join(quoted_argv(sudo.argv), " ")}"
+        return "flint exec {sudo.host} --sudo -- {quoted_argv(sudo.argv).join(" ")}"
     }
     if ask.name.len() > 0 {
         return "{s} '{ask.name}' ({ask.allows} on {ask.reaches}, {ask.ttl})"
@@ -497,7 +496,7 @@ type ActivityAdded struct {
 // may shorten it with FLINT_APPROVAL_WAIT_MS, to check a timeout in seconds.
 fn approval_wait_ms() -> i64 {
     if os.getenv("FLINT_GUI_E2E").len() > 0 {
-        ms := os.getenv("FLINT_APPROVAL_WAIT_MS").parse_i64() or APPROVAL_WAIT_MS
+        ms := i64.parse(os.getenv("FLINT_APPROVAL_WAIT_MS")) or APPROVAL_WAIT_MS
         if ms > 0 && ms < APPROVAL_WAIT_MS {
             return ms
         }
@@ -507,9 +506,9 @@ fn approval_wait_ms() -> i64 {
 
 fn send_wait(conn: IpcConn, notice: str, session_kind: bool) {
     if session_kind {
-        _ := conn.send(relay_frame(TAG_WAIT, notice), SERVE_SEND_MS) or {}
+        _ = conn.send(relay_frame(TAG_WAIT, notice), SERVE_SEND_MS) or {}
     } else {
-        _ := conn.send(wait_notice_json(notice), SERVE_SEND_MS) or {}
+        _ = conn.send(wait_notice_json(notice), SERVE_SEND_MS) or {}
     }
 }
 
@@ -544,7 +543,7 @@ fn run_servable_here(req: ServeRequest, st: GuiState) -> bool {
 
 fn serve_run(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, st: GuiState, mut app: webui.App) {
     if !run_servable_here(req, st) {
-        _ := conn.send(json_not_served(), SERVE_SEND_MS) or {}
+        _ = conn.send(json_not_served(), SERVE_SEND_MS) or {}
         return
     }
     refusal := gate(conn, req, c, store, st, mut app, false).refusal
@@ -552,14 +551,14 @@ fn serve_run(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedV
         return
     }
     if refusal.len() > 0 {
-        _ := conn.send(serve_reply_json(refused_reply(refusal, req)), SERVE_SEND_MS) or {}
+        _ = conn.send(serve_reply_json(refused_reply(refusal, req)), SERVE_SEND_MS) or {}
         return
     }
     st.hold()
     defer st.release()
     session := st.vault_session()
     if !st.unlocked() || session.path != req.vault {
-        _ := conn.send(serve_reply_json(refused_reply(coded(ERR_LOCKED, "the vault locked before the command ran"), req)), SERVE_SEND_MS) or {}
+        _ = conn.send(serve_reply_json(refused_reply(coded(ERR_LOCKED, "the vault locked before the command ran"), req)), SERVE_SEND_MS) or {}
         return
     }
     reply := run_served(req, c, mut store, kc, recents, session)
@@ -578,7 +577,7 @@ fn serve_run(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedV
             app.emit("access:changed", GrantsChanged{ count: i64(st.holder.access_book().grants.len()) })
         }
     }
-    _ := conn.send(serve_reply_json(reply), SERVE_SEND_MS) or {}
+    _ = conn.send(serve_reply_json(reply), SERVE_SEND_MS) or {}
 }
 
 // `connect`, `exec` and `host test`: the vault is checked and copied under the hold,
@@ -588,7 +587,7 @@ fn serve_session(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Loc
     ok := st.unlocked() && st.vault_session().path == req.vault && session_servable(req)
     st.release()
     if !ok {
-        _ := conn.send(session_not_served_frame(), SERVE_SEND_MS) or {}
+        _ = conn.send(session_not_served_frame(), SERVE_SEND_MS) or {}
         return
     }
     outcome := gate(conn, req, c, store, st, mut app, true)
@@ -597,7 +596,7 @@ fn serve_session(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Loc
         return
     }
     if refusal.len() > 0 {
-        _ := conn.send(refused_session_frame(refusal, req), SERVE_SEND_MS) or {}
+        _ = conn.send(refused_session_frame(refusal, req), SERVE_SEND_MS) or {}
         return
     }
     st.hold()
@@ -605,7 +604,7 @@ fn serve_session(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Loc
     still := st.unlocked() && session.path == req.vault
     st.release()
     if !still {
-        _ := conn.send(refused_session_frame(coded(ERR_LOCKED, "the vault locked before the command ran"), req), SERVE_SEND_MS) or {}
+        _ = conn.send(refused_session_frame(coded(ERR_LOCKED, "the vault locked before the command ran"), req), SERVE_SEND_MS) or {}
         return
     }
     // `flint connect` on an RDP host opens its tab here (milestone 30): the CLI never
@@ -616,7 +615,7 @@ fn serve_session(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Loc
     if desktop.len() > 0 {
         app.emit("rdp:open-request", RdpOpenRequestEvent{ alias: desktop })
         show_window(mut app)
-        _ := conn.send(desktop_opened_frame(desktop, req.as_json), SERVE_SEND_MS) or {}
+        _ = conn.send(desktop_opened_frame(desktop, req.as_json), SERVE_SEND_MS) or {}
         return
     }
     run_served_session(conn, req, c, mut store, kc, recents, session, outcome.sudo_typed)

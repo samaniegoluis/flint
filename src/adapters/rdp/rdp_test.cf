@@ -2,7 +2,6 @@ package rdp
 
 import "core:fs"
 import "core:os"
-import "core:str"
 import "core:time"
 
 // Two servers, each optional (a test passes without connecting when its server is not
@@ -17,7 +16,7 @@ fn sample_target(trusted: str) -> RdpTarget {
     port := os.getenv("FLINT_RDP_SAMPLE_PORT")
     mut p: i64 = 0
     if port.len() > 0 {
-        p = str.parse_i64(port) or 0
+        p = i64.parse(port) or 0
     }
     return RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "sample", width: 1024, height: 768, trusted_fingerprint: trusted, graphics: "auto", rtt_ms: -1 }
 }
@@ -200,7 +199,7 @@ test "a closed tab ends its wait and refuses input" {
     }
     rd := new_freerdp_desktop()
     fp := first_fingerprint(rd, "t-close", t)
-    _ := try rd.rd_open("t-close", sample_target(fp), 15000)
+    _ = try rd.rd_open("t-close", sample_target(fp), 15000)
     rd.rd_close("t-close")
     ev := rd.rd_wait("t-close", 200)
     assert_eq(ev.kind, "ended")
@@ -316,7 +315,7 @@ test "a real Windows host draws through the graphics pipeline, or bitmaps when a
     }
     rd := new_freerdp_desktop()
     fp := first_fingerprint(rd, "t-gfx", t)
-    _ := try rd.rd_open("t-gfx", live_target(fp), 20000)
+    _ = try rd.rd_open("t-gfx", live_target(fp), 20000)
     assert(wait_frame("t-gfx").len() > 16, "no frame in 10 s")
     // The pipeline's channel opens a moment after the desktop, as Display Control's.
     mut st := try rd.rd_stats("t-gfx")
@@ -345,7 +344,7 @@ test "a real Windows host draws through the graphics pipeline, or bitmaps when a
 
     mut old := live_target(fp)
     old.graphics = "compatible"
-    _ := try rd.rd_open("t-bitmap", old, 20000)
+    _ = try rd.rd_open("t-bitmap", old, 20000)
     defer rd.rd_close("t-bitmap")
     assert(wait_frame("t-bitmap").len() > 16, "no frame in 10 s")
     // Long enough for a pipeline that would open to have opened.
@@ -363,7 +362,7 @@ fn clip_target(trusted: str) -> RdpTarget {
     port := os.getenv("FLINT_RDP_CLIP_PORT")
     mut p: i64 = 0
     if port.len() > 0 {
-        p = str.parse_i64(port) or 0
+        p = i64.parse(port) or 0
     }
     return RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "x", width: 640, height: 480, trusted_fingerprint: trusted, graphics: "auto", rtt_ms: -1 }
 }
@@ -418,7 +417,7 @@ fn open_clip(rd: FreeRdpDesktop, tab: str) -> RdpDesktop! {
     fp := first_fingerprint(rd, tab, clip_target(""))
     d := try rd.rd_open(tab, clip_target(fp), 15000)
     // The clipboard channel announces itself once the desktop is up.
-    _ := ctl_until("formats", "-")
+    _ = ctl_until("formats", "-")
     time.sleep_ms(300)
     return d
 }
@@ -428,7 +427,7 @@ test "text copied on the remote arrives here, CRLF as LF" {
         return
     }
     rd := new_freerdp_desktop()
-    _ := try open_clip(rd, "t-clip-in")
+    _ = try open_clip(rd, "t-clip-in")
     defer rd.rd_close("t-clip-in")
     assert_eq(ctl("copy {to_hex("héllo\r\nwörld ✓")}"), "ok")
     ev := wait_kind(rd, "t-clip-in", "clip_text")
@@ -441,7 +440,7 @@ test "text here is only announced, and sent when the remote pastes" {
         return
     }
     rd := new_freerdp_desktop()
-    _ := try open_clip(rd, "t-clip-out")
+    _ = try open_clip(rd, "t-clip-out")
     defer rd.rd_close("t-clip-out")
     assert_eq(ctl("clear"), "ok")
     try rd.rd_clip_announce("t-clip-out", true)
@@ -475,7 +474,7 @@ test "keys reach the server by scancode" {
         return
     }
     rd := new_freerdp_desktop()
-    _ := try open_clip(rd, "t-clip-keys")
+    _ = try open_clip(rd, "t-clip-keys")
     defer rd.rd_close("t-clip-keys")
     assert_eq(ctl("clear"), "ok")
     try rd.rd_key("t-clip-keys", "MetaLeft", true)
@@ -490,7 +489,7 @@ test "a connection the server drops ends as lost, at once" {
         return
     }
     rd := new_freerdp_desktop()
-    _ := try open_clip(rd, "t-clip-drop")
+    _ = try open_clip(rd, "t-clip-drop")
     defer rd.rd_close("t-clip-drop")
     started := time.now_ms()
     assert_eq(ctl("drop"), "ok")
@@ -524,7 +523,7 @@ test "a network that goes quiet ends the session within 20 s, idle or sending" {
     rd := new_freerdp_desktop()
     for round in 0..2 {
         tab := "t-quiet-{round}"
-        _ := try open_clip(rd, tab)
+        _ = try open_clip(rd, tab)
         assert_eq(blackhole(true), "0:")
         started := time.now_ms()
         mut ev := RdpEvent{ kind: "none", message: "", width: 0, height: 0 }
@@ -728,7 +727,7 @@ test "a real Windows host in Compatible across two monitors keeps drawing each v
         again.monitors = layout
         again.width = ev.width
         again.height = ev.height
-        _ := try rd.rd_open("t-live-cmp", again, 20000)
+        _ = try rd.rd_open("t-live-cmp", again, 20000)
         path = "reconnect"
     } else {
         assert_eq(ev.kind, "running")

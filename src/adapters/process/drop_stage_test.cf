@@ -24,5 +24,5 @@ test "a drop is staged in private folders, appended in order, and discarded" {
     try stage.stage_append("d2", "a", "x")
     stage.stage_clear_all()
     assert(!fs.exists(dir + "/drops"))
-    _ := fs.remove(dir)
+    _ = fs.remove(dir)
 }

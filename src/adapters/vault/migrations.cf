@@ -232,7 +232,7 @@ fn (self: CipherDb) migrate_list(list: []Migration, what: str) -> void! {
             // Read again under the write lock: another Flint process opening the same
             // vault may have applied this step while this one waited for the lock.
             now := self.schema_version() or err {
-                _ := self.exec("ROLLBACK;")
+                _ = self.exec("ROLLBACK;")
                 return error("io: migration {m.version} failed: {err.message()}")
             }
             if now >= m.version {
@@ -240,7 +240,7 @@ fn (self: CipherDb) migrate_list(list: []Migration, what: str) -> void! {
                 continue
             }
             self.apply_migration(m) or err {
-                _ := self.exec("ROLLBACK;")
+                _ = self.exec("ROLLBACK;")
                 return error("io: migration {m.version} failed: {err.message()}")
             }
             try self.exec("COMMIT;")

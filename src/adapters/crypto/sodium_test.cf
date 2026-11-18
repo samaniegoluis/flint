@@ -81,7 +81,7 @@ test "open fails on tampered ciphertext, wrong key or wrong aad" {
     assert_eq(refused, 2)
     c.unseal(key, sealed, other) or { refused += 1 }
     assert_eq(refused, 3)
-    _ := try c.unseal(key, sealed, aad)
+    _ = try c.unseal(key, sealed, aad)
 }
 
 test "wipe zeroes the buffer" {

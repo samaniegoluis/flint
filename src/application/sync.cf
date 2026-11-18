@@ -207,12 +207,12 @@ fn connect_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, 
     try save_token(tokens, session.id, clean_token)
     link := RemoteLink{ path: session.path, vault_id: session.id, url: base, version: 0, synced_hash: "", last_sync: 0, last_attempt: 0, last_error: "" }
     save_link(links, link) or err {
-        _ := tokens.keychain_forget(remote_token_account(session.id))
+        _ = tokens.keychain_forget(remote_token_account(session.id))
         return error("{err.message()}")
     }
     res := sync_vault(crypto, mut store, links, remote, keychain, tokens, mut session, "", now_ms) or err {
-        _ := drop_link(links, session.path)
-        _ := tokens.keychain_forget(remote_token_account(session.id))
+        _ = drop_link(links, session.path)
+        _ = tokens.keychain_forget(remote_token_account(session.id))
         return error("{err.message()}")
     }
     if label.len() > 0 {
@@ -271,7 +271,7 @@ fn download_remote[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote,
     h := try file_hash(crypto, data)
     link := RemoteLink{ path: path, vault_id: session.id, url: base, version: got.version, synced_hash: h, last_sync: now_ms, last_attempt: now_ms, last_error: "" }
     save_link(links, link) or err {
-        _ := tokens.keychain_forget(remote_token_account(session.id))
+        _ = tokens.keychain_forget(remote_token_account(session.id))
         return error("{err.message()}")
     }
     return session
@@ -357,8 +357,8 @@ fn remote_link_views[L: RemoteLinkStore](links: L) -> []RemoteLinkView! {
 // file stays as it is, and so does the server's copy; the token leaves the keychain.
 fn disconnect_remote[L: RemoteLinkStore, T: Keychain](links: L, tokens: T, path: str) -> RemoteLink! {
     link := try load_link(links, path)
-    _ := try drop_link(links, path)
-    _ := tokens.keychain_forget(remote_token_account(link.vault_id))
+    _ = try drop_link(links, path)
+    _ = tokens.keychain_forget(remote_token_account(link.vault_id))
     return link
 }
 
@@ -414,7 +414,7 @@ fn sync_vault[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote, K: K
         mut failed := load_link(links, session.path) or link
         failed.last_attempt = now_ms
         failed.last_error = msg
-        _ := update_link(links, failed)
+        _ = update_link(links, failed)
         return error(msg)
     }
     return res
@@ -430,7 +430,7 @@ fn sync_if_pending[C: Crypto, S: VaultStore, L: RemoteLinkStore, R: VaultRemote,
     }
     link := try load_link(links, path)
     mut session := VaultSession{ path: path, name: name, id: link.vault_id, secrets_key: [], cached: false }
-    _ := try sync_vault(crypto, mut store, links, remote, keychain, tokens, mut session, "", now_ms)
+    _ = try sync_vault(crypto, mut store, links, remote, keychain, tokens, mut session, "", now_ms)
     return true
 }
 
@@ -450,7 +450,7 @@ fn change_master_password_synced[C: Crypto, S: VaultStore, K: Keychain, L: Remot
     if connected {
         mut n := next
         // The change is made; an upload that fails now waits like any other change.
-        _ := sync_vault(crypto, mut store, links, remote, keychain, tokens, mut n, "", now_ms)
+        _ = sync_vault(crypto, mut store, links, remote, keychain, tokens, mut n, "", now_ms)
     }
     return next
 }

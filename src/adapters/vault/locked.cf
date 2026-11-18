@@ -11,7 +11,7 @@ import cpp "flint_vault_lock.hpp" @pkg("flint-native")
 import "../../domain"
 
 type LockedVaultStore struct {
-    cell: shared[cpp::flint_vault::VaultCell]
+    cell: shared[cpp.flint_vault::VaultCell]
 }
 
 // `act_dir`: where this machine's activity files live (milestone 39), the config

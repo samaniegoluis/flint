@@ -84,7 +84,7 @@ fn paste_file_name(name: str, fallback_ext: str) -> str {
     if acc.len() == 0 {
         return "paste." + paste_ext(fallback_ext)
     }
-    dot := str.last_index_of(acc, ".")
+    dot := acc.last_index_of(".")
     if acc.len() > PASTE_NAME_MAX {
         if dot > 0 && acc.len() - usize(dot) <= 16 {
             ext := acc.substr(usize(dot))
@@ -100,7 +100,7 @@ fn paste_file_name(name: str, fallback_ext: str) -> str {
 // 1-5 of them, else "png".
 fn paste_ext(hint: str) -> str {
     mut sub := hint
-    slash := str.last_index_of(hint, "/")
+    slash := hint.last_index_of("/")
     if slash >= 0 {
         sub = hint.substr(usize(slash) + 1)
     }

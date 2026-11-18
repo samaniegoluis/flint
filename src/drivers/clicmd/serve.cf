@@ -599,7 +599,7 @@ fn show_running_app() -> bool {
         return false
     }
     defer conn.close()
-    _ := ask_app_state(conn, "show", "", "") or {
+    _ = ask_app_state(conn, "show", "", "") or {
         return false
     }
     return true

@@ -4,7 +4,6 @@ package vault
 // nothing about the rules between them; secrets arrive and leave already sealed.
 
 import "core:fs"
-import "core:str"
 import "../../domain"
 
 // Holds the raw handles; `conn()` and `act()` wrap them in CipherDb views.
@@ -112,7 +111,7 @@ fn (mut self: SqlVaultStore) vault_create(path: str, page_key: []byte, salt: []b
     self.adopt(try open_cipher_db(path, page_key, salt, true), page_key, salt)
     self.conn().migrate() or err {
         self.vault_detach()
-        _ := fs.remove(path)
+        _ = fs.remove(path)
         return error("{err.message()}")
     }
 }
@@ -125,7 +124,7 @@ fn (mut self: SqlVaultStore) vault_attach(path: str, page_key: []byte, salt: []b
     // A re-keyed copy left by a password change that never reached its rename
     // (rekey.cf): the vault itself is whole, the copy is of no use.
     if fs.exists(path + REKEY_SUFFIX) {
-        _ := fs.remove(path + REKEY_SUFFIX)
+        _ = fs.remove(path + REKEY_SUFFIX)
     }
     self.adopt(try open_cipher_db(path, page_key, salt, false), page_key, salt)
     self.conn().migrate() or err {
@@ -185,7 +184,7 @@ fn (self: SqlVaultStore) vault_commit() -> void! {
 }
 
 fn (self: SqlVaultStore) vault_rollback() {
-    _ := self.conn().exec("ROLLBACK;")
+    _ = self.conn().exec("ROLLBACK;")
 }
 
 // ---- Groups ------------------------------------------------------------------
@@ -422,7 +421,7 @@ fn (self: SqlVaultStore) tunnel_drop(id: str) -> void! {
 // ---- Tokens and the activity log (migration 004) ----------------------------------
 
 fn join_ids(ids: []str) -> str {
-    return str.join(ids, ",")
+    return ids.join(",")
 }
 
 fn split_ids(s: str) -> []str {
@@ -430,7 +429,7 @@ fn split_ids(s: str) -> []str {
     if s.len() == 0 {
         return parts
     }
-    for part in str.split(s, ",") {
+    for part in s.split(",") {
         if part.len() > 0 {
             parts.push(part)
         }

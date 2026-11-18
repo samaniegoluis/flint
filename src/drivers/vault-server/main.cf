@@ -22,7 +22,6 @@ package main
 
 import "core:json"
 import "core:os"
-import "core:str"
 import "core:time"
 import "../../domain"
 import "../../application/vaultserver"
@@ -55,7 +54,7 @@ type TokenOut struct {
 }
 
 fn listen_parts(spec: str) -> ServeOptions! {
-    colon := str.last_index_of(spec, ":")
+    colon := spec.last_index_of(":")
     if colon <= 0 {
         return error(coded(ERR_USAGE, "FLINT_VAULT_LISTEN must be host:port, such as 0.0.0.0:8787"))
     }

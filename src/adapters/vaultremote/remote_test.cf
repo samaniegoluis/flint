@@ -100,7 +100,7 @@ test "a server that stalls hits the deadline" {
     mut r := new_http_vault_remote()
     r.request_ms = 1500
     // A listener that never accepts: the kernel completes the handshake, nobody answers.
-    l := try net.listen_tcp_addr("127.0.0.1", 0)
+    l := try net.listen(0, "127.0.0.1")
     mut msg := ""
     r.remote_get("http://127.0.0.1:{l.port()}/v1/vault", token(), 0) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_TIMEOUT)

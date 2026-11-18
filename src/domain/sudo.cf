@@ -1,6 +1,5 @@
 package domain
 
-import "core:str"
 
 // `flint exec --sudo` (milestone 13, D-036, D-039, D-047). The app runs
 // `sudo -S -k -p <prompt> -- <argv>` on an exec channel of its own (no PTY: no pager
@@ -88,9 +87,9 @@ fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
     mut step := SudoStep{ output: "", send_password: false, refused: false }
     mut buf := w.pending + data
     if w.secret.len() > 0 {
-        buf = str.replace(buf, w.secret, "")
+        buf = buf.replace(w.secret, "")
     }
-    mut idx := str.index_of(buf, w.prompt)
+    mut idx := buf.index_of(w.prompt)
     for idx >= 0 {
         step.output = step.output + buf.substr(0, usize(idx))
         buf = buf.substr(usize(idx) + w.prompt.len())
@@ -100,7 +99,7 @@ fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
         } else {
             step.refused = true
         }
-        idx = str.index_of(buf, w.prompt)
+        idx = buf.index_of(w.prompt)
     }
     mut hold := partial_suffix(buf, w.prompt)
     if w.secret.len() > 0 {
@@ -122,7 +121,7 @@ fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
 fn sudo_flush(mut w: SudoWatch) -> str {
     mut rest := w.pending
     if w.secret.len() > 0 {
-        rest = str.replace(rest, w.secret, "")
+        rest = rest.replace(w.secret, "")
     }
     w.pending = ""
     return rest
@@ -186,7 +185,7 @@ test "sudo asking twice means the password was refused" {
 
 test "the password never reaches the output, even echoed or split" {
     mut w := new_sudo_watch(sudo_prompt("ab12"), "s3cret")
-    _ := sudo_feed(mut w, "[flint-sudo:ab12]")
+    _ = sudo_feed(mut w, "[flint-sudo:ab12]")
     a := sudo_feed(mut w, "s3c")
     b := sudo_feed(mut w, "ret\nok\n")
     rest := sudo_flush(mut w)
@@ -197,10 +196,10 @@ test "the password never reaches the output, even echoed or split" {
 
 test "sudo's refusal of a user who may not use it is recognised" {
     mut w := new_sudo_watch(sudo_prompt("ab12"), "pw")
-    _ := sudo_feed(mut w, "[flint-sudo:ab12]")
-    _ := sudo_feed(mut w, "\r\nme is not in the sudoers file.  This incident will be reported.\r\n")
+    _ = sudo_feed(mut w, "[flint-sudo:ab12]")
+    _ = sudo_feed(mut w, "\r\nme is not in the sudoers file.  This incident will be reported.\r\n")
     assert(sudo_not_allowed(w))
     mut ok := new_sudo_watch(sudo_prompt("ab12"), "pw")
-    _ := sudo_feed(mut ok, "all good\n")
+    _ = sudo_feed(mut ok, "all good\n")
     assert(!sudo_not_allowed(ok))
 }

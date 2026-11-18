@@ -23,7 +23,7 @@ fn conflict_copy(store: FakeStore, id: str) -> FakeStore {
 
 fn merge_fixture(crypto: FakeCrypto, mut store: FakeStore, kc: FakeKeychain, remember: bool) -> VaultSession! {
     s := try create_vault(crypto, mut store, kc, new_fake_recents(), "/v/Lab.flint", "", "correct horse", remember)
-    _ := try add_host(crypto, mut store, s, host_patch("web", "10.0.0.5"))
+    _ = try add_host(crypto, mut store, s, host_patch("web", "10.0.0.5"))
     store.hosts[0].updated_at = 100
     return s
 }
@@ -114,6 +114,6 @@ test "a copy from before milestone 40, with no id in meta, is known by its salt"
     salt := try store.vault_read_salt(s.path)
     s.id = try salt_vault_id(crypto, salt)
     mut copy := conflict_copy(store, "")
-    _ := try merge_vault_copy(crypto, mut store, mut copy, kc, s, COPY_PATH, "correct horse")
+    _ = try merge_vault_copy(crypto, mut store, mut copy, kc, s, COPY_PATH, "correct horse")
     assert_eq(store.replaced, 1)
 }

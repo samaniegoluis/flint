@@ -11,7 +11,6 @@ package ssh
 // CFIRE-UPSTREAM: CF-026, CF-031, CF-112, CF-114
 import cpp "flint_tunnel.hpp" @pkg("flint-native")
 
-import "core:str"
 import "../../domain"
 
 // How often a tunnel session sends a keepalive (as a terminal does, D-031's
@@ -126,15 +125,15 @@ fn (self: NativeTunnels) tunnel_live() -> []TunnelLive {
         text = flint_tunnel::states();
     }
     mut list: []TunnelLive = []
-    for line in str.split(text, "\n") {
-        f := str.split(line, "\t")
+    for line in text.split("\n") {
+        f := line.split("\t")
         if f.len() < 8 {
             continue
         }
         list.push(TunnelLive{
             host_id: f[0], tunnel_id: f[1], up: f[2] == "1",
-            port: f[3].parse_i64() or 0, connections: f[4].parse_i64() or 0,
-            opened: f[5].parse_i64() or 0, failed: f[6].parse_i64() or 0, error: f[7],
+            port: i64.parse(f[3]) or 0, connections: i64.parse(f[4]) or 0,
+            opened: i64.parse(f[5]) or 0, failed: i64.parse(f[6]) or 0, error: f[7],
         })
     }
     return list

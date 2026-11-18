@@ -162,7 +162,7 @@ fn rdp_fake(crypto: FakeCrypto, mut store: FakeStore, s: VaultSession, password:
         p.password = password
         p.set_password = true
     }
-    _ := try add_host(crypto, mut store, s, p)
+    _ = try add_host(crypto, mut store, s, p)
 }
 
 fn rdp_req(alias: str) -> RdpOpenRequest {
@@ -175,20 +175,20 @@ test "the graphics choice reaches the engine, empty reads auto (resolved by the 
     s := fresh_session(crypto, mut store)
     try rdp_fake(crypto, mut store, s, "s3cret")
     mut rd := new_fake_desktop("ab:cd", "s3cret")
-    _ := try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win"))
+    _ = try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win"))
     // A 20 ms link: not a local network, so the pipeline.
     assert_eq(rd.opens[1].graphics, "pipeline")
     assert_eq(rd.opens[1].rtt_ms, 20)
     mut req := rdp_req("win")
     req.graphics = "compatible"
     mut again := new_fake_desktop("ab:cd", "s3cret")
-    _ := try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), req)
+    _ = try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), req)
     assert_eq(again.opens[0].graphics, "compatible")
     assert_eq(again.probes, 0)
     req.graphics = "pipeline"
     mut forced := new_fake_desktop("ab:cd", "s3cret")
     forced.rtt = 1
-    _ := try open_remote_desktop(crypto, mut store, s, mut forced, no_prompter(), req)
+    _ = try open_remote_desktop(crypto, mut store, s, mut forced, no_prompter(), req)
     assert_eq(forced.opens[0].graphics, "pipeline")
     assert_eq(forced.probes, 0)
     req.graphics = "h264"
@@ -233,7 +233,7 @@ test "a first RDP connection asks for the certificate, keeps it, and connects wi
 
     // The next connection trusts it at once.
     mut again := new_fake_desktop("ab:cd", "s3cret")
-    _ := try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), rdp_req("win"))
+    _ = try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), rdp_req("win"))
     assert_eq(again.opens.len(), 1)
 }
 
@@ -282,25 +282,25 @@ test "an RDP login uses the credential's password, or asks for one, and failures
     cp.set_user = true
     cp.password = "fromcred"
     cp.set_password = true
-    _ := try add_cred(crypto, mut store, s, cp)
+    _ = try add_cred(crypto, mut store, s, cp)
     mut p := host_patch("srv", "srv.lan")
     p.host_type = "rdp"
     p.set_host_type = true
     p.credential = "corp"
     p.set_credential = true
-    _ := try add_host(crypto, mut store, s, p)
+    _ = try add_host(crypto, mut store, s, p)
     try rdp_fake(crypto, mut store, s, "")
     try store.known_host_put(KnownHost{ addr: "rdp://srv.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
     try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
 
     mut rd := new_fake_desktop("ab:cd", "fromcred")
-    _ := try open_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), rdp_req("srv"))
+    _ = try open_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), rdp_req("srv"))
     assert_eq(rd.opens[0].user, "CORP\\admin")
     assert_eq(rd.opens[0].password, "fromcred")
 
     // No saved password: asked for, or refused with nobody to ask.
     mut typed := new_fake_desktop("ab:cd", "typed")
-    _ := try open_remote_desktop(crypto, mut store, s, mut typed, trusting(), rdp_req("win"))
+    _ = try open_remote_desktop(crypto, mut store, s, mut typed, trusting(), rdp_req("win"))
     assert_eq(typed.opens[0].password, "typed")
     mut msg := ""
     open_remote_desktop(crypto, mut store, s, mut typed, no_prompter(), rdp_req("win")) or err { msg = "{err.message()}" }
@@ -318,7 +318,7 @@ test "only an RDP host opens a remote desktop" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
-    _ := try add_host(crypto, mut store, s, host_patch("web", "10.0.0.5"))
+    _ = try add_host(crypto, mut store, s, host_patch("web", "10.0.0.5"))
     mut rd := new_fake_desktop("ab:cd", "x")
     mut msg := ""
     open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("web")) or err { msg = "{err.message()}" }
@@ -656,7 +656,7 @@ test "the vault's password is wiped once the engine has it, on a first connectio
     try rdp_fake(crypto, mut store, s, "s3cret")
     reset_wiped()
     mut rd := new_fake_desktop("ab:cd", "s3cret")
-    _ := try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win"))
+    _ = try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win"))
     assert(was_wiped("s3cret"))
     // The sealed bytes were opened, then wiped as well.
     assert(WIPED_BUFS >= 1)

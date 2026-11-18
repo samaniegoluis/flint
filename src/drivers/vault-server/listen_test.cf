@@ -17,7 +17,7 @@ fn read_pair(raw: str, max_body: i64, close_after: bool) -> ReadOutcome! {
     (c0, s0) := try net.socketpair()
     mut client := move c0
     mut server := move s0
-    _ := try client.write_text(raw)
+    _ = try client.write_text(raw)
     if close_after {
         client.close()
     }

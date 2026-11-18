@@ -17,7 +17,7 @@ import "core:json"
 import "../../domain"
 
 type SessionHolder struct {
-    cell: shared[cpp::flint_vault::SessionCell]
+    cell: shared[cpp.flint_vault::SessionCell]
 }
 
 type HeldSession struct {

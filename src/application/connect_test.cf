@@ -12,7 +12,7 @@ fn yes_prompter() -> FakePrompter {
 fn ssh_fixture(crypto: FakeCrypto, mut store: FakeStore) -> VaultSession {
     s := fresh_session(crypto, mut store)
     inspector := FakeInspector{ strict: false }
-    _ := add_key(crypto, mut store, inspector, s, "k1", "PRIVATE one", "") or KeyView{ name: "", key_type: "", public_key: "", fingerprint: "", has_passphrase: false }
+    _ = add_key(crypto, mut store, inspector, s, "k1", "PRIVATE one", "") or KeyView{ name: "", key_type: "", public_key: "", fingerprint: "", has_passphrase: false }
     mut cp := empty_cred_patch()
     cp.name = "ops"
     cp.set_name = true
@@ -22,13 +22,13 @@ fn ssh_fixture(crypto: FakeCrypto, mut store: FakeStore) -> VaultSession {
     cp.set_key = true
     cp.password = "cred-pw"
     cp.set_password = true
-    _ := add_cred(crypto, mut store, s, cp) or CredView{ name: "", user: "", key: "", has_password: false }
+    _ = add_cred(crypto, mut store, s, cp) or CredView{ name: "", user: "", key: "", has_password: false }
     mut b := host_patch("bastion", "Bastion.Example.org")
     b.user = "jump"
     b.set_user = true
     b.password = "host-pw"
     b.set_password = true
-    _ := add_host(crypto, mut store, s, b) or empty_host_view()
+    _ = add_host(crypto, mut store, s, b) or empty_host_view()
     mut w := host_patch("web", "10.0.0.5")
     w.port = 2222
     w.set_port = true
@@ -36,7 +36,7 @@ fn ssh_fixture(crypto: FakeCrypto, mut store: FakeStore) -> VaultSession {
     w.set_credential = true
     w.jump = "bastion"
     w.set_jump = true
-    _ := add_host(crypto, mut store, s, w) or empty_host_view()
+    _ = add_host(crypto, mut store, s, w) or empty_host_view()
     return s
 }
 
@@ -53,7 +53,7 @@ fn accept_opts() -> ConnectOptions {
 test "the jump chain is outermost first and the users resolve" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
-    _ := ssh_fixture(crypto, mut store)
+    _ = ssh_fixture(crypto, mut store)
     cat := try load_catalog(store)
     web := try require_host(cat.hosts, "web")
     chain := try jump_chain(cat, web)
@@ -85,7 +85,7 @@ test "auth steps: host key, host password, credential key, credential password, 
     p.set_key = true
     p.password = "own-pw"
     p.set_password = true
-    _ := try edit_host(crypto, mut store, s, "web", p)
+    _ = try edit_host(crypto, mut store, s, "web", p)
     cat2 := try load_catalog(store)
     steps2 := auth_steps(cat2, try require_host(cat2.hosts, "web"))
     assert_eq(steps2.len(), 4)
@@ -99,7 +99,7 @@ test "a host with no user anywhere is refused before dialling" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := ssh_fixture(crypto, mut store)
-    _ := try add_host(crypto, mut store, s, host_patch("bare", "bare.example.org"))
+    _ = try add_host(crypto, mut store, s, host_patch("bare", "bare.example.org"))
     mut link := new_fake_link()
     mut r := ""
     open_link(crypto, mut store, s, mut link, no_prompter(), "bare", accept_opts()) or err { r = "{err.message()}" }
@@ -134,7 +134,7 @@ test "rejected methods fall through to the next, then fail with auth naming them
     s := ssh_fixture(crypto, mut store)
     mut link := new_fake_link()
     link.good_password = "host-pw"
-    _ := try open_link(crypto, mut store, s, mut link, no_prompter(), "bastion", accept_opts())
+    _ = try open_link(crypto, mut store, s, mut link, no_prompter(), "bastion", accept_opts())
 
     mut link2 := new_fake_link()
     link2.good_password = "host-pw"
@@ -155,16 +155,16 @@ test "the agent is tried last and a terminal password prompt follows" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := ssh_fixture(crypto, mut store)
-    _ := try add_host(crypto, mut store, s, host_patch_user("lone", "lone.example.org", "me"))
+    _ = try add_host(crypto, mut store, s, host_patch_user("lone", "lone.example.org", "me"))
     mut agent_link := new_fake_link()
     agent_link.agent_ok = true
-    _ := try open_link(crypto, mut store, s, mut agent_link, no_prompter(), "lone", accept_opts())
+    _ = try open_link(crypto, mut store, s, mut agent_link, no_prompter(), "lone", accept_opts())
     assert_eq(agent_link.calls[agent_link.calls.len() - 1], "agent")
 
     mut typed_link := new_fake_link()
     typed_link.good_password = "typed"
     prompter := FakePrompter{ available: true, confirm: true, password: "typed" }
-    _ := try open_link(crypto, mut store, s, mut typed_link, prompter, "lone", accept_opts())
+    _ = try open_link(crypto, mut store, s, mut typed_link, prompter, "lone", accept_opts())
     assert_eq(typed_link.calls[typed_link.calls.len() - 1], "password typed")
 }
 
@@ -210,7 +210,7 @@ test "an unknown host key needs a terminal or --accept-new-host-key" {
 
     mut link3 := new_fake_link()
     link3.good_password = "host-pw"
-    _ := try open_link(crypto, mut store, s, mut link3, yes_prompter(), "bastion", default_connect_options())
+    _ = try open_link(crypto, mut store, s, mut link3, yes_prompter(), "bastion", default_connect_options())
     assert_eq((try store.known_hosts_all()).len(), 1)
     // Nothing was recorded yet, so the library defaults were used.
     assert_eq(link3.dial_algos, [""])
@@ -218,7 +218,7 @@ test "an unknown host key needs a terminal or --accept-new-host-key" {
     // Known now: no prompt, no flag needed, and the recorded type is asked for first.
     mut link4 := new_fake_link()
     link4.good_password = "host-pw"
-    _ := try open_link(crypto, mut store, s, mut link4, no_prompter(), "bastion", default_connect_options())
+    _ = try open_link(crypto, mut store, s, mut link4, no_prompter(), "bastion", default_connect_options())
     assert_eq(link4.dial_algos, ["^ssh-ed25519"])
 }
 
@@ -229,7 +229,7 @@ test "a changed host key is refused even with --accept-new-host-key, until forgo
     s := ssh_fixture(crypto, mut store)
     mut link := new_fake_link()
     link.good_password = "host-pw"
-    _ := try open_link(crypto, mut store, s, mut link, no_prompter(), "bastion", accept_opts())
+    _ = try open_link(crypto, mut store, s, mut link, no_prompter(), "bastion", accept_opts())
 
     mut evil := new_fake_link()
     evil.good_password = "host-pw"
@@ -252,7 +252,7 @@ test "a changed host key is refused even with --accept-new-host-key, until forgo
     mut again := new_fake_link()
     again.good_password = "host-pw"
     again.server_fp = "SHA256:other"
-    _ := try open_link(crypto, mut store, s, mut again, no_prompter(), "bastion", accept_opts())
+    _ = try open_link(crypto, mut store, s, mut again, no_prompter(), "bastion", accept_opts())
     assert_eq((try store.known_hosts_all())[0].fingerprint, "SHA256:other")
 }
 
@@ -376,17 +376,17 @@ test "a host's initial command is stored, shown and run on the PTY" {
     mut link := web_link()
     mut term := new_fake_terminal(["exit\r"])
     mut clock1 := idle_clock()
-    _ := try connect_host(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock1, "web", "xterm-256color", accept_opts())
+    _ = try connect_host(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock1, "web", "xterm-256color", accept_opts())
     assert_eq(link.calls[link.calls.len() - 1], "shell xterm-256color 120x40 \"$SHELL\" -ilc 'herdr'; exec \"$SHELL\" -l")
 
     mut q := empty_host_patch()
     q.keep_shell = false
     q.set_keep_shell = true
-    _ := try edit_host(crypto, mut store, s, "web", q)
+    _ = try edit_host(crypto, mut store, s, "web", q)
     mut link2 := web_link()
     mut term2 := new_fake_terminal([])
     mut clock2 := idle_clock()
-    _ := try connect_host(crypto, mut store, s, mut link2, no_prompter(), mut term2, mut clock2, "web", "xterm-256color", accept_opts())
+    _ = try connect_host(crypto, mut store, s, mut link2, no_prompter(), mut term2, mut clock2, "web", "xterm-256color", accept_opts())
     assert_eq(link2.calls[link2.calls.len() - 1], "shell xterm-256color 120x40 exec \"$SHELL\" -ilc 'herdr'")
 
     // --no-command: a plain shell.
@@ -395,14 +395,14 @@ test "a host's initial command is stored, shown and run on the PTY" {
     mut link3 := web_link()
     mut term3 := new_fake_terminal([])
     mut clock3 := idle_clock()
-    _ := try connect_host(crypto, mut store, s, mut link3, no_prompter(), mut term3, mut clock3, "web", "xterm-256color", plain)
+    _ = try connect_host(crypto, mut store, s, mut link3, no_prompter(), mut term3, mut clock3, "web", "xterm-256color", plain)
     assert_eq(link3.calls[link3.calls.len() - 1], "shell xterm-256color 120x40")
 
     // exec ignores it.
     mut link4 := web_link()
     mut sink := FakeSink{ out_text: "", err_text: "" }
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
-    _ := try exec_on_host(crypto, mut store, s, mut link4, no_prompter(), mut sink, mut clock, "web", "uptime", accept_opts(), 60, true)
+    _ = try exec_on_host(crypto, mut store, s, mut link4, no_prompter(), mut sink, mut clock, "web", "uptime", accept_opts(), 60, true)
     assert_eq(link4.calls[link4.calls.len() - 1], "exec uptime")
 
     // An empty command clears it; a multi-line one is refused.
@@ -441,7 +441,7 @@ test "host test reports a failed method without asking for a password" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := ssh_fixture(crypto, mut store)
-    _ := try add_host(crypto, mut store, s, host_patch_user("lone", "lone.example.org", "me"))
+    _ = try add_host(crypto, mut store, s, host_patch_user("lone", "lone.example.org", "me"))
     mut link := new_fake_link()
     asks := FakePrompter{ available: true, confirm: true, password: "typed" }
     link.good_password = "typed"
@@ -456,7 +456,7 @@ test "host test reports a failed method without asking for a password" {
     mut evil := web_link()
     evil.server_fp = "SHA256:other"
     mut first := web_link()
-    _ := try test_host(crypto, mut store, s, mut first, no_prompter(), mut clock, "bastion", accept_opts())
+    _ = try test_host(crypto, mut store, s, mut first, no_prompter(), mut clock, "bastion", accept_opts())
     got_code = "ok"
     test_host(crypto, mut store, s, mut evil, yes_prompter(), mut clock, "bastion", accept_opts()) or err { got_code = error_code_of("{err.message()}") }
     assert_eq(got_code, "host_key")
@@ -509,7 +509,7 @@ test "a draft host is tested without saving it, and keeps a trusted key once add
     assert_eq(fresh_key_host, "", "a draft's key is recorded with no host")
     assert_eq((try load_catalog(store)).hosts.len(), 2)
 
-    _ := try add_host(crypto, mut store, s, p)
+    _ = try add_host(crypto, mut store, s, p)
     views := try list_known_hosts(store)
     mut owner := ""
     for k in views {
@@ -637,7 +637,7 @@ test "vault secrets an SSH login used are wiped once the transport has them (mil
     mut link := new_fake_link()
     link.good_password = "host-pw"
     link.good_key = "PRIVATE one"
-    _ := try open_link(crypto, mut store, s, mut link, no_prompter(), "web", accept_opts())
+    _ = try open_link(crypto, mut store, s, mut link, no_prompter(), "web", accept_opts())
     assert(was_wiped("host-pw"))
     assert(was_wiped("PRIVATE one"))
     // Every sealed value opened was wiped as bytes too.

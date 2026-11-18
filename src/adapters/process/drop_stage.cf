@@ -40,12 +40,12 @@ fn (mut self: FsDropStage) stage_append(drop_id: str, rel: str, data: str) -> vo
 }
 
 fn (mut self: FsDropStage) stage_discard(drop_id: str) {
-    _ := fs.remove(self.stage_folder(drop_id))
+    _ = fs.remove(self.stage_folder(drop_id))
 }
 
 // Removes what earlier runs left in the drops folder.
 fn (mut self: FsDropStage) stage_clear_all() {
     if fs.exists(self.root) {
-        _ := fs.remove(self.root)
+        _ = fs.remove(self.root)
     }
 }

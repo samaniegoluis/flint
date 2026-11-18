@@ -8,7 +8,6 @@ package application
 // key from it; neither is ever stored.
 
 import "core:encoding/hex"
-import "core:str"
 import "../domain"
 import "../ports"
 
@@ -89,7 +88,7 @@ fn session_info(s: VaultSession) -> VaultInfo {
 // "/a/b/Home Lab.flint" -> "Home Lab". Pure string work, no filesystem access.
 fn vault_name_from_path(path: str) -> str {
     mut base := path
-    slash := str.last_index_of(base, "/")
+    slash := base.last_index_of("/")
     if slash >= 0 {
         base = base.substr(usize(slash) + 1)
     }
@@ -199,7 +198,7 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
         msg := "{err.message()}"
         if from_cache && error_code_of(msg) == ERR_WRONG_PASSWORD {
             // The cached key is stale (the file was replaced): drop it and ask.
-            _ := keychain.keychain_forget(account)
+            _ = keychain.keychain_forget(account)
             return error(coded(ERR_LOCKED, "the cached key no longer opens {path}; the master password is needed"))
         }
         return error(msg)
@@ -461,7 +460,7 @@ fn forget_recent[S: VaultStore, K: Keychain, R: RecentStore](mut store: S, keych
     if store.vault_file_exists(target.path) {
         salt := store.vault_read_salt(target.path) or []
         if salt.len() == VAULT_SALT_LEN {
-            _ := keychain.keychain_forget(vault_account(salt))
+            _ = keychain.keychain_forget(vault_account(salt))
         }
     }
     try recents.recents_save(next)

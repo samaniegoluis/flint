@@ -150,7 +150,7 @@ fn rpc_rdp_close(params: str, st: GuiState) -> str! {
     req := try parse_req[RdpTabReq](params)
     mut rd := new_freerdp_desktop()
     close_remote_desktop(mut rd, req.tab)
-    _ := gui_session_close(req.tab)
+    _ = gui_session_close(req.tab)
     return ok_json()
 }
 
