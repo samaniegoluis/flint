@@ -14,7 +14,7 @@
 # install.
 set -euo pipefail
 
-prefix="${CFIRE_NEXT:-$HOME/.local/opt/cfire-0.12.1}"
+prefix="${CFIRE_NEXT:-$HOME/.local/opt/cfire-0.12.2}"
 if [[ $# -eq 0 ]]; then
   echo "usage: scripts/cfire-next.sh <command> [args...]" >&2
   exit 2

@@ -533,6 +533,43 @@ Building the dictionaries once and moving inline tests to `*_test.cf` (they run 
 suite that imports the package) are in the ROADMAP ("Faster test suites", §5), after the
 move.
 
+## Step 4 on the Mac (2026-11-18)
+
+**Onto `v0.12.2`** (`5be0987`), the release Linux will run. `v0.12.1..v0.12.2` is two
+commits: CI timing fixes in two cfire unit tests (`test_http_event_loop.hpp`,
+`test_stdlib_webui_ext.hpp`) and the version in `VERSION`, `src/version.hpp`, docs and the
+plugin manifests. `runtime/cfire_prelude.hpp` changes only its `CFIRE_RUNTIME_VERSION`
+line; the archive's runtime differs from 0.12.1's installed one in that line and
+`cfire-runtime.version`, nothing else. So the compiler and runtime are those of step 3.
+
+| Fact | Detail |
+|---|---|
+| Install | `cfire-v0.12.2-macos-arm64.tar.gz` verified against the release's `SHA256SUMS.txt` and unpacked by hand into `~/.local/opt/cfire-0.12.2` (`bin/cfire`, `share/cfire/runtime`, `0.12.2 5be0987`); no `cfire setup`, no installer. A checksum of `~/.cfire/runtime` before and after matched (`579d48f7…`) |
+| `cfire --version` / `doctor` | `0.12.2 (5be0987)`; 17 passed, the same optional `em++` warning |
+| Defaults | `scripts/cfire-next.sh` defaults to `~/.local/opt/cfire-0.12.2`, so the `cfire-next` MCP server too (`initialize` answers `0.12.2`). 0.12.1 and 0.12.0 stay installed until step 7 (`CFIRE_NEXT=`) |
+
+**The Mac battery on 0.12.2**, Flint `604d8b0` plus the `cfire-next.sh` change, the Mac
+of the baseline, one run each, nothing else running. The first runs follow the version
+change with step 3's `.cfire/` folders (0.12.1) in place, as step 3's did with 0.12.0's.
+
+| Check | 0.12.2 | Time | 0.12.1 (step 3) |
+|---|---|---|---|
+| `scripts/test.sh` (`--release`), first run on 0.12.2 | 17/17 PASS (each suite at its step 2 count), release-test 24/24 | 12 min 9 s | 11 min 39 s |
+| `scripts/test.sh`, warm | 17/17 PASS, release-test 24/24 | 1 min 41 s | 1 min 40 s |
+| `scripts/cli-e2e.sh`, first run (builds the CLI, and the app, cold) | 483/483 | 6 min 56 s | 7 min 18 s |
+| `scripts/cli-e2e.sh`, warm | 483/483 | 1 min 38 s | 1 min 52 s |
+| `scripts/server-e2e.sh` | 70/70 | 14 s | 13 s |
+| `scripts/sync-e2e.sh` | 105/105 | 44 s | 47 s |
+| `scripts/build-gui.sh`, warm | ok | 5 s | 5 s |
+| `scripts/gui-e2e.sh` (`FLINT_E2E_NOBUILD=1`) | terminal 95, vault 125, tunnels 33, paste 24, rdp 70, webgl 20, fullscreen 49, vim 16 | 2 min 0 s | the same counts, 2 min 2 s |
+| `scripts/serve-e2e.sh` | 223/223 | 1 min 9 s | 223/223, 1 min 9 s |
+
+Every count is step 3's; nothing failed, was skipped or rerun. The times are within a
+few seconds of 0.12.1's, as expected of the same compiler. The app's cold compile was
+paid inside the first `cli-e2e` (the app package's `gen/` is from that run), so
+`build-gui.sh` after it found everything cached. The 46 `cfire/UNKNOWN-TYPE` warnings of
+`cfire check src/domain` (`strength.cf`) are the same on 0.12.1: not new.
+
 ## Progress
 
 | Step | Date | Result | Commit |
@@ -541,3 +578,4 @@ move.
 | 1 | 2026-11-18 | `v0.12.0` (`7b68799`) from source in `~/.local/opt/cfire-0.12.0` (no `v0.12.x` release yet: `v0.12.1`'s macOS arm64 build failed); `cfire doctor` 17/17 needed, nothing to install; `scripts/cfire-next.sh` and the `cfire-next` MCP server; `~/.cfire/runtime` untouched; `main` builds its three binaries on 0.10. Then the published `v0.12.1` macOS arm64 archive (`71adeb7`, same compiler and runtime as `v0.12.0`) in `~/.local/opt/cfire-0.12.1`, the default of `cfire-next.sh` and the MCP server from step 3 on | `435858d`; `v0.12.1`: this commit |
 | 2 | 2026-11-18 | `cfire fix`, `@pkg` into `build.cf`; every package checks and passes on 0.12, each suite at its baseline count plus the tests step 2 added (table above), nothing skipped; `flint`, `FlintGui` and `flint-vault-server` build; 12 new cfire entries (CF-151..162) | `f1d664b` .. this commit |
 | 3 | 2026-11-18 | On `v0.12.1`: `scripts/test.sh` 17/17 and release-test 24/24, cli-e2e 483/483, server-e2e 70/70, sync-e2e 105/105, gui-e2e the baseline's eight counts, serve-e2e 223/223, `ui/` and `site/` green; nothing failed or skipped. Warm, every e2e is faster than 0.10 and builds take under a second; cold builds are 3-4x slower (CLI 1 min 25 s, app 3 min 56 s). `test.sh` warm 11 min 54 s against 7 min 44 s: `cfire test` builds at `-O0` (CF-163), one fuzz test is 549 s of it. Then `--release` in `scripts/test.sh` (owner): 1 min 40 s warm, 11 min 39 s cold, same counts | `da43d74`; `--release`: this commit |
+| 4 (Mac) | 2026-11-18 | The published `v0.12.2` macOS arm64 archive (`5be0987`; against `v0.12.1` only CI test fixes and the version, prelude unchanged but its version line) in `~/.local/opt/cfire-0.12.2`, the default of `cfire-next.sh` and the MCP server; `~/.cfire/runtime` untouched; `cfire doctor` 17 passed. The Mac battery of step 3 on it: test.sh 17/17 and 24/24, cli-e2e 483/483, server-e2e 70/70, sync-e2e 105/105, gui-e2e the eight counts, serve-e2e 223/223; first runs and warm times within seconds of 0.12.1's | this commit |

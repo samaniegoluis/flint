@@ -40,6 +40,8 @@ rechecked on it. An old entry is rechecked when the move reaches it (step 5 walk
 
 From step 3 on, Flint runs the published `v0.12.1` (`71adeb7`): against `v0.12.0` only CI,
 one test, docs and the version change, so every entry seen on `v0.12.0` stands for it.
+From step 4 on, `v0.12.2` (`5be0987`): against `v0.12.1` only two cfire CI tests and the
+version change, the prelude only in its version line, so the same holds.
 
 | Status | Entries |
 |---|---|
