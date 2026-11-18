@@ -2,7 +2,7 @@
 // Ctrl+Shift on Linux, ⇧⌘ to Ctrl+Alt+Shift and ⌥⌘ to Ctrl+Alt, so plain Ctrl chords
 // always reach the terminal (Kitty keyboard protocol).
 
-export type Os = 'mac' | 'linux';
+export type Os = 'mac' | 'linux' | 'windows';
 
 export type Action =
   | 'palette' | 'gotoHost' | 'switchVault' | 'openVault' | 'createVault' | 'connectRemote'

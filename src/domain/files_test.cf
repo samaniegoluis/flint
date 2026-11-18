@@ -61,3 +61,19 @@ test "a local path is shown from the CLI's folder" {
     assert_eq(absolute_from("/home/me", "site/"), "/home/me/site/")
     assert_eq(absolute_from("/home/me", "/etc/x"), "/etc/x")
 }
+
+test "drive paths" {
+    assert(is_drive_path("C:/Users/me"))
+    assert(is_drive_path("d:/"))
+    assert(!is_drive_path("web:/etc"))
+    assert(!is_drive_path("1:/x"))
+    assert(!is_drive_path("C:x"))
+}
+
+test "absolute paths: POSIX and Windows drive letters" {
+    assert(is_absolute_path("/var/log"))
+    assert(is_absolute_path("C:/Users/me/lab.flint"))
+    assert(!is_absolute_path("lab.flint"))
+    assert(!is_absolute_path("./a/b"))
+    assert(!is_absolute_path("C:"))
+}

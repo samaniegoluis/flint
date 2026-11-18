@@ -1,0 +1,52 @@
+package main
+
+import "ext:webui"
+
+// Offscreen WebView runner on Windows (CF-001.g): run_webview_test returns true only if
+// the page called window.runtime.Quit() before the timeout.
+
+type ProbeGreet struct {
+    name: str `json:"name"`
+}
+
+fn probe_app(page_js: str) -> webui.App {
+    mut app := webui.new_app("offscreen probe", 400, 300)
+    app.set_html("<!doctype html><html><body><script>{page_js}</script></body></html>")
+    app.bind[ProbeGreet]("greet") |g| {
+        return "hello, {g.name}"
+    }
+    app.on("ready") |_d| {
+        msg: str = "pong"
+        app.emit("ping", msg)
+    }
+    return app
+}
+
+test "webui offscreen: page -> bound call -> event -> page -> Quit" {
+    mut app := probe_app(`
+window.runtime.EventsOn("ping", d => { if (d === "pong") window.runtime.Quit() })
+window.backend.greet({name: "test"}).then(r => {
+  if (r === "hello, test") window.runtime.EventsEmit("ready", "{}")
+})`)
+    ok := try app.run_webview_test(15000)
+    assert(ok)
+    assert_eq(app.last_emitted_payload("ping"), "\"pong\"")
+}
+
+test "webui offscreen: a page that never quits times out and returns false" {
+    mut app := probe_app("/* never calls Quit */")
+    ok := try app.run_webview_test(3000)
+    assert(!ok)
+}
+
+test "webui offscreen: a bound call that fails rejects the promise in the page" {
+    mut app := webui.new_app("offscreen probe", 400, 300)
+    app.bind_action("boom") || {
+        return error("no luck")
+    }
+    app.set_html(`<!doctype html><html><body><script>
+window.backend.boom().catch(e => { if (String(e.message).includes("no luck")) window.runtime.Quit() })
+</script></body></html>`)
+    ok := try app.run_webview_test(15000)
+    assert(ok)
+}

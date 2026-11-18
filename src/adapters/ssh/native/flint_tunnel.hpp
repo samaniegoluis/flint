@@ -21,20 +21,33 @@
 // cfire has no thread or mutex usable from a struct (CF-026), no top-level cpp block
 // (CF-031), no sockets with accept/poll (CF-112), no SSH (CF-005) and no way to ask
 // which process holds a port (CF-114), hence this header.
+//
+// Windows (windows-port): sockets go through flint_sock (closesocket, WSAPoll, Winsock
+// errors); the wake pipe is a loopback socket pair, since WSAPoll waits on sockets only;
+// listeners take no SO_REUSEADDR (on Windows it lets another socket steal a bound port,
+// and a port with only TIME_WAIT connections binds without it); the port's holder comes
+// from GetExtendedTcpTable.
 #pragma once
 #include "flint_ssh.hpp"
-#include <arpa/inet.h>
 #include <atomic>
 #include <chrono>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
 #include <string>
 #include <thread>
 #include <vector>
-#ifdef __APPLE__
+#if !defined(_WIN32)
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#endif
+#if defined(_WIN32)
+// Windows: winsock2 only (through flint_sock.hpp). Not iphlpapi.h: it pulls in
+// ocidl.h, whose COM declarations clash with cfire's WebView2 header in the app; and
+// mingw's tcpmib.h lacks the *_OWNER_PID rows. port_owner declares the rows it reads
+// and looks GetExtendedTcpTable up at run time.
+#elif defined(__APPLE__)
 #include <libproc.h>
 #include <sys/proc_info.h>
 #else
@@ -119,17 +132,83 @@ inline std::shared_ptr<Host> find(const std::string& key) {
     return it == r.hosts.end() ? nullptr : it->second;
 }
 
-inline void set_nonblocking(int fd) {
-    int flags = ::fcntl(fd, F_GETFL, 0);
-    ::fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+inline void set_nonblocking(int fd) { flint_sock::set_nonblocking(fd, true); }
+
+// One poll entry. Windows' pollfd holds a SOCKET, not an int.
+inline pollfd poll_entry(int fd, short events) {
+    pollfd p{};
+#if defined(_WIN32)
+    p.fd = static_cast<SOCKET>(fd);
+#else
+    p.fd = fd;
+#endif
+    p.events = events;
+    return p;
+}
+
+inline int poll_all(std::vector<pollfd>& p, int timeout_ms) {
+#if defined(_WIN32)
+    return ::WSAPoll(p.data(), static_cast<ULONG>(p.size()), timeout_ms);
+#else
+    return ::poll(p.data(), static_cast<nfds_t>(p.size()), timeout_ms);
+#endif
+}
+
+inline int accept_fd(int listener) {
+#if defined(_WIN32)
+    SOCKET s = ::accept(static_cast<SOCKET>(listener), nullptr, nullptr);
+    return s == INVALID_SOCKET ? -1 : static_cast<int>(s);
+#else
+    return ::accept(listener, nullptr, nullptr);
+#endif
+}
+
+// The wake pipe: a pipe on POSIX, a loopback socket pair on Windows (WSAPoll).
+inline bool wake_open(int fds[2]) {
+#if defined(_WIN32)
+    return flint_sock::pair(fds) == 0;
+#else
+    return ::pipe(fds) == 0;
+#endif
+}
+
+inline void wake_close(int fd) {
+#if defined(_WIN32)
+    flint_sock::close(fd);
+#else
+    if (fd >= 0) ::close(fd);
+#endif
 }
 
 inline void wake(Host* h) {
     if (h->wake[1] >= 0) {
         char c = 1;
+#if defined(_WIN32)
+        (void)flint_sock::send_some(h->wake[1], &c, 1);
+#else
         (void)!::write(h->wake[1], &c, 1);
+#endif
     }
 }
+
+inline void wake_drain(Host* h) {
+    char drain[64];
+#if defined(_WIN32)
+    while (flint_sock::recv_some(h->wake[0], drain, sizeof drain) > 0) {}
+#else
+    while (::read(h->wake[0], drain, sizeof drain) > 0) {}
+#endif
+}
+
+inline std::string socket_error() { return flint_sock::error_text(flint_sock::last_error()); }
+
+#if defined(_WIN32)
+inline bool denied_error(int e) { return e == WSAEACCES; }
+inline bool in_use_error(int e) { return e == WSAEADDRINUSE; }
+#else
+inline bool denied_error(int e) { return e == EACCES || e == EPERM; }
+inline bool in_use_error(int e) { return e == EADDRINUSE; }
+#endif
 
 // ---- The worker -----------------------------------------------------------------
 
@@ -141,7 +220,7 @@ inline void close_conn(Host* h, Conn& c) {
         c.ch = nullptr;
     }
     if (c.fd >= 0) {
-        ::close(c.fd);
+        flint_sock::close(c.fd);
         c.fd = -1;
     }
 }
@@ -151,7 +230,7 @@ inline void close_listener(Host* h, Listener& l) {
     l.conns.clear();
     l.live.store(0);
     if (l.fd >= 0) {
-        ::close(l.fd);
+        flint_sock::close(l.fd);
         l.fd = -1;
     }
     l.closed.store(true);
@@ -160,9 +239,10 @@ inline void close_listener(Host* h, Listener& l) {
 // Writes what it can of `c.out` without blocking. False when the socket is gone.
 inline bool flush_out(Conn& c) {
     while (!c.out.empty()) {
-        ssize_t w = ::write(c.fd, c.out.data(), c.out.size());
-        if (w < 0 && errno == EINTR) continue;
-        if (w < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return true;
+        int w = flint_sock::send_some(c.fd, c.out.data(), c.out.size());
+        int e = w < 0 ? flint_sock::last_error() : 0;
+        if (w < 0 && flint_sock::interrupted(e)) continue;
+        if (w < 0 && flint_sock::would_block(e)) return true;
         if (w <= 0) return false;
         c.out.erase(0, static_cast<size_t>(w));
     }
@@ -173,7 +253,7 @@ inline bool flush_out(Conn& c) {
 inline void accept_one(Host* h, Listener& l, int fd) {
     set_nonblocking(fd);
     int one = 1;
-    ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+    ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&one), sizeof one);
     ssh_session s = h->hops.back().session;
     ssh_channel ch = nullptr;
     std::string err;
@@ -189,7 +269,7 @@ inline void accept_one(Host* h, Listener& l, int fd) {
         }
     }
     if (!ch) {
-        ::close(fd);
+        flint_sock::close(fd);
         l.failed.fetch_add(1);
         std::lock_guard<std::mutex> g(h->mtx);
         l.last_error = err;
@@ -207,9 +287,12 @@ inline bool serve_conn(Host* h, Conn& c, short revents, char* buf, size_t cap) {
     auto& lock = *h->hops.back().lock;
     if ((revents & POLLOUT) && !flush_out(c)) return false;
     if (c.out.empty() && (revents & (POLLIN | POLLHUP | POLLERR))) {
-        ssize_t n = ::read(c.fd, buf, cap);
+        int n = flint_sock::recv_some(c.fd, buf, cap);
         if (n == 0) return false;
-        if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) return false;
+        if (n < 0) {
+            int e = flint_sock::last_error();
+            if (!flint_sock::would_block(e) && !flint_sock::interrupted(e)) return false;
+        }
         if (n > 0) {
             std::lock_guard<std::mutex> g(lock);
             size_t off = 0;
@@ -253,7 +336,7 @@ inline void run(Host* h) {
     int sfd = -1;
     {
         std::lock_guard<std::mutex> g(lock);
-        sfd = ssh_get_fd(s);
+        sfd = static_cast<int>(ssh_get_fd(s));
     }
     using clock = std::chrono::steady_clock;
     auto last_keepalive = clock::now();
@@ -269,27 +352,24 @@ inline void run(Host* h) {
         // The poll set: wake pipe, listeners, connections, then the session's socket
         // while some connection can take what it brings.
         std::vector<pollfd> p;
-        p.push_back({h->wake[0], POLLIN, 0});
+        p.push_back(poll_entry(h->wake[0], POLLIN));
         bool want_session = false;
         for (auto& l : ls) {
             if (l->closed.load()) continue;
-            p.push_back({l->fd, POLLIN, 0});
+            p.push_back(poll_entry(l->fd, POLLIN));
             for (auto& c : l->conns) {
-                p.push_back({c.fd, static_cast<short>(c.out.empty() ? POLLIN : POLLOUT), 0});
+                p.push_back(poll_entry(c.fd, static_cast<short>(c.out.empty() ? POLLIN : POLLOUT)));
                 if (c.out.empty()) want_session = true;
             }
         }
         size_t session_at = p.size();
-        if (want_session && sfd >= 0) p.push_back({sfd, POLLIN, 0});
-        int pr = ::poll(p.data(), static_cast<nfds_t>(p.size()), 100);
-        if (pr < 0 && errno != EINTR) {
-            mark_lost(h, std::strerror(errno));
+        if (want_session && sfd >= 0) p.push_back(poll_entry(sfd, POLLIN));
+        int pr = poll_all(p, 100);
+        if (pr < 0 && !flint_sock::interrupted(flint_sock::last_error())) {
+            mark_lost(h, socket_error());
             break;
         }
-        if (p[0].revents & POLLIN) {
-            char drain[64];
-            while (::read(h->wake[0], drain, sizeof drain) > 0) {}
-        }
+        if (p[0].revents & POLLIN) wake_drain(h);
         size_t at = 1;
         for (auto& l : ls) {
             if (l->closed.load()) continue;
@@ -307,7 +387,7 @@ inline void run(Host* h) {
             l->conns = std::move(keep);
             if (lrev & POLLIN) {
                 for (;;) {
-                    int fd = ::accept(l->fd, nullptr, nullptr);
+                    int fd = accept_fd(l->fd);
                     if (fd < 0) break;
                     accept_one(h, *l, fd);
                 }
@@ -392,8 +472,8 @@ inline bool adopt_finish(const std::string& key, std::shared_ptr<flint_ssh::Tunn
     h->jumps = std::move(jumps);
     h->timeout_secs = timeout_secs;
     h->keepalive_secs = keepalive_secs > 0 ? keepalive_secs : 30;
-    if (h->hops.empty() || ::pipe(h->wake) != 0) {
-        err = h->hops.empty() ? "no session to adopt" : std::strerror(errno);
+    if (h->hops.empty() || !wake_open(h->wake)) {
+        err = h->hops.empty() ? "no session to adopt" : socket_error();
         return false;
     }
     set_nonblocking(h->wake[0]);
@@ -413,7 +493,7 @@ inline bool adopt_finish(const std::string& key, std::shared_ptr<flint_ssh::Tunn
 // left in TIME_WAIT on macOS, where SO_REUSEADDR would also let two listeners share
 // the port with one bound to the wildcard address).
 inline bool port_answers(int port) {
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    int fd = flint_sock::open(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return false;
     sockaddr_in a{};
     a.sin_family = AF_INET;
@@ -422,49 +502,57 @@ inline bool port_answers(int port) {
     set_nonblocking(fd);
     int rc = ::connect(fd, reinterpret_cast<sockaddr*>(&a), sizeof a);
     bool up = rc == 0;
-    if (rc != 0 && errno == EINPROGRESS) {
-        pollfd p{fd, POLLOUT, 0};
-        if (::poll(&p, 1, 500) > 0) {
+    if (rc != 0 && flint_sock::in_progress(flint_sock::last_error())) {
+        short rev = 0;
+        if (flint_sock::poll_one(fd, POLLOUT, 500, &rev) > 0) {
             int so = 0;
-            socklen_t len = sizeof so;
-            ::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so, &len);
-            up = so == 0;
+            flint_sock::socklen len = sizeof so;
+            ::getsockopt(fd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so), &len);
+            up = so == 0 && (rev & POLLOUT);
         }
     }
-    ::close(fd);
+    flint_sock::close(fd);
     return up;
 }
 
 // A listening socket on 127.0.0.1:port (0: any free port, for tests), non-blocking.
 inline int bind_loopback(int port, int& fd, int& bound, std::string& err) {
     for (int attempt = 0; attempt < 2; attempt++) {
-        fd = ::socket(AF_INET, SOCK_STREAM, 0);
-        if (fd < 0) { err = std::strerror(errno); return FAILED; }
+        fd = flint_sock::open(AF_INET, SOCK_STREAM, 0);
+        if (fd < 0) { err = socket_error(); return FAILED; }
         int one = 1;
-#ifdef __APPLE__
+#if defined(_WIN32)
+        bool reuse = false;   // see the header: SO_REUSEADDR shares a bound port on Windows
+        (void)attempt;
+#elif defined(__APPLE__)
         bool reuse = attempt == 1;
 #else
         bool reuse = true;
 #endif
-        if (reuse) ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
+        if (reuse) ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&one), sizeof one);
         sockaddr_in a{};
         a.sin_family = AF_INET;
         a.sin_port = htons(static_cast<uint16_t>(port));
         a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         if (::bind(fd, reinterpret_cast<sockaddr*>(&a), sizeof a) == 0 && ::listen(fd, 64) == 0) {
             sockaddr_in got{};
-            socklen_t len = sizeof got;
+            flint_sock::socklen len = sizeof got;
             ::getsockname(fd, reinterpret_cast<sockaddr*>(&got), &len);
             bound = ntohs(got.sin_port);
             set_nonblocking(fd);
             return OK;
         }
-        int why = errno;
-        ::close(fd);
+        int why = flint_sock::last_error();
+        flint_sock::close(fd);
         fd = -1;
-        if (why == EACCES || why == EPERM) { err = std::strerror(why); return DENIED; }
-        if (why != EADDRINUSE) { err = std::strerror(why); return FAILED; }
-        if (reuse || port == 0 || port_answers(port)) { err = std::strerror(why); return PORT_IN_USE; }
+        if (denied_error(why)) { err = flint_sock::error_text(why); return DENIED; }
+        if (!in_use_error(why)) { err = flint_sock::error_text(why); return FAILED; }
+#if defined(_WIN32)
+        err = flint_sock::error_text(why);
+        return PORT_IN_USE;
+#else
+        if (reuse || port == 0 || port_answers(port)) { err = flint_sock::error_text(why); return PORT_IN_USE; }
+#endif
     }
     err = "address in use";
     return PORT_IN_USE;
@@ -561,13 +649,13 @@ inline void release(const std::string& key) {
             hop.session = nullptr;
         }
         if (hop.sock >= 0) {
-            ::close(hop.sock);
+            flint_sock::close(hop.sock);
             hop.sock = -1;
         }
     }
     if (h->jumps) h->jumps->list.clear();
-    if (h->wake[0] >= 0) ::close(h->wake[0]);
-    if (h->wake[1] >= 0) ::close(h->wake[1]);
+    if (h->wake[0] >= 0) wake_close(h->wake[0]);
+    if (h->wake[1] >= 0) wake_close(h->wake[1]);
 }
 
 inline void release_all() {
@@ -637,7 +725,7 @@ inline bool port_taken(int port) {
     int bound = 0;
     std::string err;
     int rc = bind_loopback(port, fd, bound, err);
-    if (fd >= 0) ::close(fd);
+    if (fd >= 0) flint_sock::close(fd);
     return rc != OK;
 }
 
@@ -650,7 +738,61 @@ inline bool port_owner(int port, std::string& name, int& pid) {
     name.clear();
     pid = 0;
     if (port <= 0 || port > 65535) return false;
-#ifdef __APPLE__
+#if defined(_WIN32)
+    // The listening TCP sockets of every process, IPv4 then IPv6, with their pid; the
+    // name from the image path, without ".exe" (as the caller chain names programs).
+    // A process this user cannot open (a service, an elevated one) has no name: not
+    // found, as another user's process on macOS and Linux.
+    // MIB_TCPROW_OWNER_PID, MIB_TCP6ROW_OWNER_PID and their tables (Windows ABI).
+    struct Row4 { DWORD state, local_addr, local_port, remote_addr, remote_port, pid; };
+    struct Row6 { UCHAR local_addr[16]; DWORD local_scope, local_port; UCHAR remote_addr[16]; DWORD remote_scope, remote_port, state, pid; };
+    struct Table4 { DWORD count; Row4 rows[1]; };
+    struct Table6 { DWORD count; Row6 rows[1]; };
+    using TableFn = DWORD(WINAPI*)(PVOID, PDWORD, BOOL, ULONG, int, ULONG);
+    constexpr int kOwnerPidListener = 3;   // TCP_TABLE_OWNER_PID_LISTENER (iprtrmib.h)
+    static const TableFn table = [] {
+        HMODULE m = ::LoadLibraryW(L"iphlpapi.dll");
+        return m ? reinterpret_cast<TableFn>(reinterpret_cast<void*>(::GetProcAddress(m, "GetExtendedTcpTable"))) : nullptr;
+    }();
+    if (!table) return false;
+    for (ULONG family : {static_cast<ULONG>(AF_INET), static_cast<ULONG>(AF_INET6)}) {
+        DWORD size = 0;
+        if (table(nullptr, &size, FALSE, family, kOwnerPidListener, 0) != ERROR_INSUFFICIENT_BUFFER) continue;
+        std::vector<unsigned char> buf(size + 1024);
+        size = static_cast<DWORD>(buf.size());
+        if (table(buf.data(), &size, FALSE, family, kOwnerPidListener, 0) != NO_ERROR) continue;
+        DWORD found = 0;
+        if (family == AF_INET) {
+            auto* t = reinterpret_cast<Table4*>(buf.data());
+            for (DWORD i = 0; i < t->count && !found; i++) {
+                if (ntohs(static_cast<u_short>(t->rows[i].local_port)) == port) found = t->rows[i].pid;
+            }
+        } else {
+            auto* t = reinterpret_cast<Table6*>(buf.data());
+            for (DWORD i = 0; i < t->count && !found; i++) {
+                if (ntohs(static_cast<u_short>(t->rows[i].local_port)) == port) found = t->rows[i].pid;
+            }
+        }
+        if (!found) continue;
+        HANDLE proc = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, found);
+        if (!proc) return false;
+        wchar_t path[MAX_PATH * 4];
+        DWORD len = static_cast<DWORD>(sizeof path / sizeof path[0]);
+        BOOL ok = ::QueryFullProcessImageNameW(proc, 0, path, &len);
+        ::CloseHandle(proc);
+        if (!ok || len == 0) return false;
+        std::wstring w(path, len);
+        auto slash = w.find_last_of(L"\\/");
+        if (slash != std::wstring::npos) w = w.substr(slash + 1);
+        if (w.size() > 4 && _wcsicmp(w.c_str() + w.size() - 4, L".exe") == 0) w.resize(w.size() - 4);
+        int n = ::WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
+        name.resize(static_cast<size_t>(n));
+        ::WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), name.data(), n, nullptr, nullptr);
+        pid = static_cast<int>(found);
+        return !name.empty();
+    }
+    return false;
+#elif defined(__APPLE__)
     int bytes = proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0);
     if (bytes <= 0) return false;
     std::vector<pid_t> pids(static_cast<size_t>(bytes) / sizeof(pid_t) + 64);

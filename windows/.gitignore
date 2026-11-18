@@ -1,0 +1,4 @@
+# Probe build outputs
+*.exe
+.cfire/
+probes/core/argv_echo

@@ -46,6 +46,28 @@
 // Before winpr, which includes <windows.h>: Winsock 2 must come first.
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mstcpip.h>
+// Before winpr too: winpr/wtsapi.h declares its own WTS types unless Windows' header
+// came first (_INC_WTSAPI), and the app's session-lock shim includes Windows' one.
+#include <wtsapi32.h>
+// winpr then takes Windows' header to hold the listener types, as MSVC's does; mingw's
+// has not got them. winpr only names them as pointers, in its WTS function table.
+#if defined(__MINGW32__)
+typedef WCHAR WTSLISTENERNAMEW[WTS_LISTENER_NAME_LENGTH + 1];
+typedef WTSLISTENERNAMEW* PWTSLISTENERNAMEW;
+typedef CHAR WTSLISTENERNAMEA[WTS_LISTENER_NAME_LENGTH + 1];
+typedef WTSLISTENERNAMEA* PWTSLISTENERNAMEA;
+typedef struct flint_WTSLISTENERCONFIGW* PWTSLISTENERCONFIGW;
+typedef struct flint_WTSLISTENERCONFIGA* PWTSLISTENERCONFIGA;
+#endif
+// winpr/shell.h (through FreeRDP's clipboard headers, milestone 31) includes <shlobj.h>
+// and <userenv.h> on Windows, which bring <ocidl.h>. cfire's WebView2 backend includes
+// <WebView2.h> inside its own namespace, so in the app <ocidl.h>'s guards are already
+// set and a global include declares nothing (unknown IConnectionPoint, LPITEMIDLIST…);
+// <wbemcli.h> also names Windows' `byte`, renamed below. The clipboard headers need only
+// FILEDESCRIPTORW, as a pointer: skip winpr/shell.h and declare it (shlobj.h's tag).
+#define WINPR_SHELL_H
+typedef struct _FILEDESCRIPTORW FILEDESCRIPTORW;
 #endif
 
 #if defined(__APPLE__)
@@ -58,6 +80,29 @@
 // winpr declares a global `typedef BYTE byte`, and cfire's prelude a global
 // `using cfire::byte`: renamed while FreeRDP's headers are read (CF-119).
 #define byte flint_winpr_byte
+#if defined(_WIN32)
+// FreeRDP's rail.h names enumerators NIIF_NONE..NIIF_LARGE_ICON, which <shellapi.h>
+// defines as macros. FreeRDP builds with WIN32_LEAN_AND_MEAN and never meets them, but
+// the app's translation unit has the whole <windows.h> (the tray): set them aside while
+// FreeRDP's headers are read.
+#pragma push_macro("NIIF_NONE")
+#pragma push_macro("NIIF_INFO")
+#pragma push_macro("NIIF_WARNING")
+#pragma push_macro("NIIF_ERROR")
+#pragma push_macro("NIIF_NOSOUND")
+#pragma push_macro("NIIF_LARGE_ICON")
+#undef NIIF_NONE
+#undef NIIF_INFO
+#undef NIIF_WARNING
+#undef NIIF_ERROR
+#undef NIIF_NOSOUND
+#undef NIIF_LARGE_ICON
+// FreeRDP is linked static on Windows (windows/bin/freerdp.sh): without these its API
+// macros say dllimport, and the link looks for DLL imports that do not exist. FreeRDP
+// builds itself with them; on a declaration, dllexport is an ordinary reference.
+#define FREERDP_EXPORTS
+#define WINPR_EXPORTS
+#endif
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
 #include <freerdp/client/channels.h>
@@ -83,6 +128,16 @@
 #include <winpr/string.h>
 #include <winpr/synch.h>
 #include <winpr/wlog.h>
+#if defined(_WIN32)
+#pragma pop_macro("NIIF_NONE")
+#pragma pop_macro("NIIF_INFO")
+#pragma pop_macro("NIIF_WARNING")
+#pragma pop_macro("NIIF_ERROR")
+#pragma pop_macro("NIIF_NOSOUND")
+#pragma pop_macro("NIIF_LARGE_ICON")
+#undef FREERDP_EXPORTS
+#undef WINPR_EXPORTS
+#endif
 #undef byte
 #include <sodium.h>
 
@@ -136,6 +191,16 @@ inline void sock_nodelay(sock_t s) {
     setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&one), sizeof one);
 }
 inline void sock_nonblock(sock_t s) { u_long one = 1; ioctlsocket(s, FIONBIO, &one); }
+// Windows answers a refused connect (RST) by sending the SYN again, twice, so even on
+// loopback a closed port takes ~2 s to fail (measured 2.0-2.4 s): past the probe's wait.
+// With no SYN retransmission the first RST ends the connect, as on macOS and Linux.
+inline void sock_no_syn_retry(sock_t s) {
+    TCP_INITIAL_RTO_PARAMETERS p{};
+    p.Rtt = TCP_INITIAL_RTO_UNSPECIFIED_RTT;
+    p.MaxSynRetransmissions = TCP_INITIAL_RTO_NO_SYN_RETRANSMISSIONS;
+    DWORD n = 0;
+    WSAIoctl(s, SIO_TCP_INITIAL_RTO, &p, sizeof p, nullptr, 0, &n, nullptr, nullptr);
+}
 inline int sock_error() { return WSAGetLastError(); }
 inline bool sock_in_progress(int e) { return e == WSAEWOULDBLOCK || e == WSAEINPROGRESS; }
 inline bool sock_refused_error(int e) { return e == WSAECONNREFUSED; }
@@ -160,6 +225,7 @@ inline void sock_nodelay(sock_t s) {
 #endif
 }
 inline void sock_nonblock(sock_t s) { fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK); }
+inline void sock_no_syn_retry(sock_t) {}
 inline int sock_error() { return errno; }
 inline bool sock_in_progress(int e) { return e == EINPROGRESS; }
 inline bool sock_refused_error(int e) { return e == ECONNREFUSED; }
@@ -880,6 +946,7 @@ inline bool port_refused(const std::string& host, int32_t port, int64_t wait_ms)
         sock_t fd = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (fd == BAD_SOCK) continue;
         sock_nonblock(fd);
+        sock_no_syn_retry(fd);
         int rc = ::connect(fd, ai->ai_addr, static_cast<int>(ai->ai_addrlen));
         int e = rc != 0 ? sock_error() : 0;
         if (rc != 0 && sock_refused_error(e)) refused = true;
@@ -1159,7 +1226,8 @@ inline std::shared_ptr<Tab> tab_for(const std::string& id) {
 
 // FreeRDP's own TCP dial, with one more socket option where FreeRDP sets none: on
 // macOS (no TCP_USER_TIMEOUT) a connection whose data goes unacknowledged is dropped
-// after 20 s instead of the system's several minutes of retries.
+// after 20 s instead of the system's several minutes of retries; on Windows, the
+// keepalive timing and a 9 s retransmission limit FreeRDP does not set there.
 inline pTCPConnect& default_tcp_connect() { static pTCPConnect f = nullptr; return f; }
 
 inline int connect_tcp(rdpContext* ctx, rdpSettings* st, const char* host, int port, DWORD timeout) {
@@ -1168,6 +1236,22 @@ inline int connect_tcp(rdpContext* ctx, rdpSettings* st, const char* host, int p
     if (fd >= 0) {
         int secs = 20;
         (void)setsockopt(fd, IPPROTO_TCP, TCP_RXT_CONNDROPTIME, &secs, sizeof secs);
+    }
+#elif defined(_WIN32)
+    // FreeRDP sets only SO_KEEPALIVE on Windows, whose own timing is two hours idle,
+    // and has no TCP_USER_TIMEOUT there. The same choices as Linux, by Windows' own
+    // options (Windows 10 1709+): keepalive after 5 s idle, every 2 s, 3 probes; data
+    // left unacknowledged gives up after 9 s (TCP_MAXRT, in seconds).
+    if (fd >= 0) {
+        auto s = static_cast<SOCKET>(fd);
+        DWORD idle = freerdp_settings_get_uint32(st, FreeRDP_TcpKeepAliveDelay);
+        DWORD intvl = freerdp_settings_get_uint32(st, FreeRDP_TcpKeepAliveInterval);
+        DWORD cnt = freerdp_settings_get_uint32(st, FreeRDP_TcpKeepAliveRetries);
+        DWORD maxrt = (freerdp_settings_get_uint32(st, FreeRDP_TcpAckTimeout) + 999) / 1000;
+        (void)setsockopt(s, IPPROTO_TCP, TCP_KEEPIDLE, reinterpret_cast<const char*>(&idle), sizeof idle);
+        (void)setsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL, reinterpret_cast<const char*>(&intvl), sizeof intvl);
+        (void)setsockopt(s, IPPROTO_TCP, TCP_KEEPCNT, reinterpret_cast<const char*>(&cnt), sizeof cnt);
+        (void)setsockopt(s, IPPROTO_TCP, TCP_MAXRT, reinterpret_cast<const char*>(&maxrt), sizeof maxrt);
     }
 #endif
     return fd;
@@ -1226,6 +1310,13 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
                 const std::string& trusted, const std::string& graphics, const std::string& layout_s, int64_t timeout_ms, int32_t& out_w, int32_t& out_h, int32_t& out_port,
                 std::string& out_token, std::string& detail) {
     quiet_freerdp_log();
+    // Winsock before FreeRDP resolves the host: FreeRDP does not start it, and in a
+    // process where nothing else did (the adapter's tests on Windows) every name failed
+    // as ERRCONNECT_DNS_NAME_NOT_FOUND, 127.0.0.1 included. A no-op elsewhere.
+    if (!sock_init()) {
+        detail = "no sockets";
+        return RDP_ERR_OTHER;
+    }
     auto t = tab_for(id);
     if (t->closed.load()) return RDP_ERR_CLOSED;
     std::vector<Mon> layout = parse_layout(layout_s);

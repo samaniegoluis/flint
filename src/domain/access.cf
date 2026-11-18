@@ -27,7 +27,7 @@ ACCESS_SUDO: str = "sudo"
 GRANT_DURATIONS: []str = ["15m", "1h", "4h", "lock"]
 
 // Executables a caller chain passes through without being the caller itself.
-TRANSPARENT_EXES: []str = ["flint", "sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh", "csh", "nu", "xonsh", "elvish", "pwsh", "env", "timeout", "gtimeout", "nohup", "xargs", "time", "nice", "caffeinate", "login", "script", "stdbuf", "direnv"]
+TRANSPARENT_EXES: []str = ["flint", "sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh", "csh", "nu", "xonsh", "elvish", "pwsh", "powershell", "cmd", "env", "timeout", "gtimeout", "nohup", "xargs", "time", "nice", "caffeinate", "login", "script", "stdbuf", "direnv"]
 
 // One process of a caller's chain. `started` pins the pid (its unit is the OS's).
 type CallerProc struct {
@@ -153,6 +153,9 @@ fn friendly_name(name: str) -> str {
     }
     if name == "tmux" || name == "tmux: server" {
         return "tmux"
+    }
+    if name == "WindowsTerminal" {
+        return "Windows Terminal"
     }
     return name
 }

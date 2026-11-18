@@ -7,6 +7,7 @@
 _flint_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 case "$(uname -s)" in
   Darwin) _flint_os=darwin ;;
+  MINGW*|CLANG*|UCRT*|MSYS*) _flint_os=windows ;;  # MSYS2 (CLANG64 on the Windows VM)
   *)      _flint_os=linux ;;
 esac
 export PKG_CONFIG_PATH="$_flint_root/src/adapters/pkgconfig/$_flint_os${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"

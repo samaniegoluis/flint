@@ -17,9 +17,11 @@ import "../../adapters/vault"
 import "../../application"
 import "../../domain"
 
-// Makes a path absolute against the working directory. Shells expand `~`.
-fn absolute_path(path: str) -> str {
-    if path.len() == 0 || path.starts_with("/") {
+// Makes a path absolute against the working directory. Shells expand `~`. On
+// Windows, backslashes become `/` first (windows-port).
+fn absolute_path(raw: str) -> str {
+    path := local_slashes(raw)
+    if path.len() == 0 || is_absolute_path(path) {
         return path
     }
     if path.starts_with("./") {
@@ -31,7 +33,7 @@ fn absolute_path(path: str) -> str {
 // A --vault selector: a path (anything with '/' or ending in .flint) is made
 // absolute; a name is kept as is.
 fn vault_selector(p: ParsedArgs) -> str {
-    sel := p.flag_value("--vault")
+    sel := local_slashes(p.flag_value("--vault"))
     if sel.contains("/") || sel.ends_with(".flint") {
         return absolute_path(sel)
     }

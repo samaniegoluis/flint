@@ -7,9 +7,19 @@
 // convention for that (org.nspasteboard.ConcealedType on macOS, the
 // x-kde-passwordManagerHint target on Linux), and cleared after a delay unless
 // something else was copied since (D-029).
+//
+// Windows (windows-port branch): CF_UNICODETEXT through the Win32 clipboard. A secret
+// carries the formats Windows' own clipboard history and cloud sync, and well-behaved
+// clipboard managers, honour (ExcludeClipboardContentFromMonitorProcessing,
+// CanIncludeInClipboardHistory = 0, CanUploadToCloudClipboard = 0).
+// GetClipboardSequenceNumber is the change count. The clipboard owner is a
+// message-only window made on the calling thread: Flint copies from RPC handlers on
+// the UI thread, whose loop also runs this window (WM_DESTROYCLIPBOARD from another
+// program must not wait on a thread that never reads messages) and its clear timer.
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 #include <string>
 
 #if defined(__APPLE__)
@@ -18,6 +28,10 @@
 #include <objc/runtime.h>
 extern "C" void* objc_autoreleasePoolPush(void);
 extern "C" void objc_autoreleasePoolPop(void*);
+#elif defined(_WIN32)
+#include <windows.h>
+#include <mutex>
+#include <unordered_map>
 #elif defined(__linux__)
 #include <gtk/gtk.h>
 #endif
@@ -150,6 +164,189 @@ inline void release_board(const std::string& name) {
     id pb = board(name);
     if (pb && !name.empty()) reinterpret_cast<void (*)(id, SEL)>(objc_msgSend)(pb, sel("releaseGlobally"));
 }
+
+#elif defined(_WIN32)
+
+inline std::wstring widen(const std::string& s) {
+    if (s.empty()) return {};
+    int n = ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    std::wstring w(static_cast<size_t>(n), L'\0');
+    ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
+    return w;
+}
+
+inline void wipe_w(std::wstring& w) {
+    volatile wchar_t* p = w.data();
+    for (size_t i = 0; i < w.size(); i++) p[i] = 0;
+    w.clear();
+}
+
+// The clipboard owner on this thread (see the header comment).
+inline HWND owner_window() {
+    thread_local HWND hwnd = nullptr;
+    if (!hwnd) hwnd = ::CreateWindowExW(0, L"STATIC", L"Flint clipboard", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr,
+                                        ::GetModuleHandleW(nullptr), nullptr);
+    return hwnd;
+}
+
+// Another program may hold the clipboard for a moment: retry briefly.
+inline bool open_board() {
+    HWND owner = owner_window();
+    for (int i = 0; i < 20; i++) {
+        if (::OpenClipboard(owner)) return true;
+        ::Sleep(10);
+    }
+    return false;
+}
+
+inline bool put_dword(const wchar_t* format, DWORD value) {
+    UINT f = ::RegisterClipboardFormatW(format);
+    if (!f) return false;
+    HGLOBAL h = ::GlobalAlloc(GMEM_MOVEABLE, sizeof(DWORD));
+    if (!h) return false;
+    auto* p = static_cast<DWORD*>(::GlobalLock(h));
+    if (!p) {
+        ::GlobalFree(h);
+        return false;
+    }
+    *p = value;
+    ::GlobalUnlock(h);
+    if (!::SetClipboardData(f, h)) {
+        ::GlobalFree(h);
+        return false;
+    }
+    return true;
+}
+
+inline long change_count(const std::string&) { return static_cast<long>(::GetClipboardSequenceNumber()); }
+
+inline bool clear_if_unchanged(const std::string&, long count) {
+    if (static_cast<long>(::GetClipboardSequenceNumber()) != count) return false;
+    if (!open_board()) return false;
+    ::EmptyClipboard();
+    ::CloseClipboard();
+    return true;
+}
+
+// Timer id → the sequence number the copy left; the timer runs on the owner's thread.
+inline std::mutex& timers_mtx() { static std::mutex m; return m; }
+inline std::unordered_map<UINT_PTR, long>& timers() { static std::unordered_map<UINT_PTR, long> t; return t; }
+
+inline void CALLBACK clear_timer(HWND hwnd, UINT, UINT_PTR id, DWORD) {
+    ::KillTimer(hwnd, id);
+    long seq = 0;
+    {
+        std::lock_guard<std::mutex> lock(timers_mtx());
+        auto it = timers().find(id);
+        if (it == timers().end()) return;
+        seq = it->second;
+        timers().erase(it);
+    }
+    clear_if_unchanged("", seq);
+}
+
+inline int copy_to(const std::string&, const std::string& text, int64_t clear_after_ms, bool concealed) {
+    if (!open_board()) return 1;
+    ::EmptyClipboard();
+    std::wstring w = widen(text);
+    size_t bytes = (w.size() + 1) * sizeof(wchar_t);
+    HGLOBAL h = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
+    bool ok = false;
+    if (h) {
+        if (void* p = ::GlobalLock(h)) {
+            std::memcpy(p, w.c_str(), bytes);
+            ::GlobalUnlock(h);
+            ok = ::SetClipboardData(CF_UNICODETEXT, h) != nullptr;
+        }
+        if (!ok) ::GlobalFree(h);
+    }
+    wipe_w(w);
+    if (ok && concealed) {
+        put_dword(L"ExcludeClipboardContentFromMonitorProcessing", 1);
+        put_dword(L"CanIncludeInClipboardHistory", 0);
+        put_dword(L"CanUploadToCloudClipboard", 0);
+    }
+    ::CloseClipboard();
+    if (!ok) return 1;
+    if (clear_after_ms > 0) {
+        long seq = change_count("");
+        static UINT_PTR next_id = 0x464C;
+        std::lock_guard<std::mutex> lock(timers_mtx());
+        UINT_PTR id = ++next_id;
+        if (::SetTimer(owner_window(), id, static_cast<UINT>(clear_after_ms), clear_timer)) timers()[id] = seq;
+    }
+    return 0;
+}
+
+inline std::string read_text(const std::string&) {
+    if (!open_board()) return "";
+    std::string out;
+    if (HANDLE h = ::GetClipboardData(CF_UNICODETEXT)) {
+        if (const auto* w = static_cast<const wchar_t*>(::GlobalLock(h))) {
+            int n = ::WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
+            if (n > 1) {
+                out.assign(static_cast<size_t>(n - 1), '\0');
+                ::WideCharToMultiByte(CP_UTF8, 0, w, -1, out.data(), n, nullptr, nullptr);
+            }
+            ::GlobalUnlock(h);
+        }
+    }
+    ::CloseClipboard();
+    return out;
+}
+
+inline bool is_concealed(const std::string&) {
+    UINT f = ::RegisterClipboardFormatW(L"ExcludeClipboardContentFromMonitorProcessing");
+    return f != 0 && ::IsClipboardFormatAvailable(f);
+}
+
+// What a paste would take (milestone 25): the text, else the registered "PNG" format,
+// which browsers and the Snipping Tool put beside their bitmap. A bitmap alone (CF_DIB)
+// is not converted: no image then. 0, or 2 when the clipboard cannot be opened.
+inline int read_paste(const std::string& name, std::string& text, std::string& mime, std::string& data) {
+    text = read_text(name);
+    if (!text.empty()) return 0;
+    UINT png = ::RegisterClipboardFormatW(L"PNG");
+    if (!png || !::IsClipboardFormatAvailable(png)) return 0;
+    if (!open_board()) return 2;
+    if (HANDLE h = ::GetClipboardData(png)) {
+        if (const void* p = ::GlobalLock(h)) {
+            SIZE_T n = ::GlobalSize(h);
+            if (n > 0) {
+                data.assign(static_cast<const char*>(p), static_cast<size_t>(n));
+                mime = "image/png";
+            }
+            ::GlobalUnlock(h);
+        }
+    }
+    ::CloseClipboard();
+    return 0;
+}
+
+// For the tests: puts PNG bytes alone on the clipboard, as the "PNG" format.
+inline int copy_png(const std::string&, const std::string& bytes) {
+    UINT png = ::RegisterClipboardFormatW(L"PNG");
+    if (!png || !open_board()) return 2;
+    int rc = 1;
+    if (::EmptyClipboard()) {
+        HGLOBAL g = ::GlobalAlloc(GMEM_MOVEABLE, bytes.size());
+        if (g) {
+            if (void* p = ::GlobalLock(g)) {
+                std::memcpy(p, bytes.data(), bytes.size());
+                ::GlobalUnlock(g);
+                if (::SetClipboardData(png, g)) {
+                    rc = 0;
+                    g = nullptr;   // the clipboard owns it now
+                }
+            }
+            if (g) ::GlobalFree(g);
+        }
+    }
+    ::CloseClipboard();
+    return rc;
+}
+
+inline void release_board(const std::string&) {}
 
 #elif defined(__linux__)
 

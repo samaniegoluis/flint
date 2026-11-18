@@ -1,0 +1,23 @@
+package main
+
+import "core:os"
+
+// Helper child process for the core probes: prints each argument as `[arg]` on its own
+// line; `big` writes 300 000 bytes to stdout and to stderr (pipe draining, CF-010.e).
+fn main() {
+    args := os.args()
+    if args.len() > 1 && args[1] == "big" {
+        mut line := ""
+        for i in 0..99 {
+            line = line + "x"
+        }
+        for i in 0..3000 {
+            println("{line}")
+            eprintln("{line}")
+        }
+        return
+    }
+    for i in 1..args.len() {
+        println("[{args[i]}]")
+    }
+}

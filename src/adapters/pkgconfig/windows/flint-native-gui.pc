@@ -1,0 +1,9 @@
+# CFIRE-UPSTREAM: CF-031
+# See ../linux/flint-native-gui.pc. Windows port (windows-port branch only): the
+# clipboard and window calls are user32, session lock notifications wtsapi32. ext:webui
+# already links what WebView2 needs.
+Name: flint-native-gui
+Description: Native shims of Flint's desktop app (Windows)
+Version: 1
+Cflags: -I${pcfiledir}/../../uievents/native
+Libs: -luser32 -lwtsapi32

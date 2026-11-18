@@ -28,8 +28,8 @@ type JsonRecentStore struct {
 }
 
 // Where Flint keeps per-machine settings: $FLINT_CONFIG_DIR when set, else
-// ~/Library/Application Support/Flint on macOS and $XDG_CONFIG_HOME/flint
-// (default ~/.config/flint) on Linux.
+// ~/Library/Application Support/Flint on macOS, $XDG_CONFIG_HOME/flint
+// (default ~/.config/flint) on Linux and %APPDATA%\Flint on Windows.
 fn flint_config_dir() -> str {
     override := os.getenv("FLINT_CONFIG_DIR")
     if override.len() > 0 {
@@ -37,12 +37,18 @@ fn flint_config_dir() -> str {
     }
     home: str = os.getenv("HOME")
     mut apple := false
+    mut windows := false
     // cfire has no build-target query (CF-031).
     // CFIRE-UPSTREAM: CF-031
     cpp {
         #if defined(__APPLE__)
         apple = true;
+        #elif defined(_WIN32)
+        windows = true;
         #endif
+    }
+    if windows {
+        return os.getenv("APPDATA") + "/Flint"
     }
     if apple {
         return home + "/Library/Application Support/Flint"

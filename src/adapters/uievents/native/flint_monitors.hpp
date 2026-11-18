@@ -45,9 +45,6 @@
 #endif
 #elif defined(_WIN32)
 #include <windows.h>
-#include <shellscalingapi.h>
-#include <wrl.h>
-#include <WebView2.h>
 #else
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
@@ -387,20 +384,57 @@ inline void hear_screens() {}
 
 // ---------------------------------------------------------------------------------
 #elif defined(_WIN32)
-// Written for the owner's branch (the Windows port), not compiled here.
+// Built on the Windows branch. cfire's webui includes WebView2.h inside its own
+// namespace (cfire W-17), so the WebView2 types and cfire's lambda-to-COM handler (WRL's
+// Callback<> is MSVC-only, and mingw has no __uuidof for WebView2) are taken from there.
+// CFIRE-UPSTREAM: W-17
 namespace flint_monitors {
 
-using Microsoft::WRL::Callback;
-using Microsoft::WRL::ComPtr;
+namespace wv = cfire::webui::detail;
+using wv::ICoreWebView2;
+using wv::ICoreWebView2_3;
+using wv::ICoreWebView2Controller;
+using wv::ICoreWebView2Environment;
+using wv::ICoreWebView2CreateCoreWebView2ControllerCompletedHandler;
+using wv::ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler;
+using wv::ICoreWebView2WebMessageReceivedEventArgs;
+using wv::ICoreWebView2WebMessageReceivedEventHandler;
 
 struct WinWin {
     HWND hwnd = nullptr;
-    ComPtr<ICoreWebView2Controller> controller;
-    ComPtr<ICoreWebView2> view;
+    ICoreWebView2Controller* controller = nullptr;
+    ICoreWebView2* view = nullptr;
 };
 
+inline void release(WinWin& w) {
+    if (w.view) { w.view->Release(); w.view = nullptr; }
+    if (w.controller) { w.controller->Close(); w.controller->Release(); w.controller = nullptr; }
+}
+
 inline std::map<std::string, WinWin>& wins() { static std::map<std::string, WinWin> m; return m; }
-inline ComPtr<ICoreWebView2Environment>& env() { static ComPtr<ICoreWebView2Environment> e; return e; }
+inline ICoreWebView2Environment*& env() { static ICoreWebView2Environment* e = nullptr; return e; }
+
+// GetDpiForMonitor lives in shcore.dll (Windows 8.1+) and SetProcessDpiAwarenessContext
+// in user32 (Windows 10 1703+); the headers hide both below those _WIN32_WINNT values,
+// so they are looked up at run time, as cfire's webui does.
+inline UINT monitor_dpi(HMONITOR hm) {
+    using Fn = HRESULT(WINAPI*)(HMONITOR, int, UINT*, UINT*);
+    static Fn fn = [] {
+        HMODULE m = ::LoadLibraryW(L"shcore.dll");
+        return m ? reinterpret_cast<Fn>(reinterpret_cast<void*>(::GetProcAddress(m, "GetDpiForMonitor"))) : nullptr;
+    }();
+    UINT dx = 96, dy = 96;
+    if (fn) (void)fn(hm, 0 /* MDT_EFFECTIVE_DPI */, &dx, &dy);
+    return dx ? dx : 96;
+}
+
+inline void per_monitor_dpi() {
+    if (HMODULE user32 = ::GetModuleHandleW(L"user32.dll")) {
+        using Fn = BOOL(WINAPI*)(HANDLE);
+        void* sym = reinterpret_cast<void*>(::GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+        if (sym) (void)reinterpret_cast<Fn>(sym)(reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(-4))); // PER_MONITOR_AWARE_V2
+    }
+}
 inline DWORD& ui_thread() { static DWORD t = 0; return t; }
 
 inline std::wstring widen(const std::string& s) {
@@ -475,8 +509,7 @@ inline std::vector<Monitor> list() {
         MONITORINFOEXW mi{};
         mi.cbSize = sizeof(mi);
         ::GetMonitorInfoW(hm, &mi);
-        UINT dx = 96, dy = 96;
-        ::GetDpiForMonitor(hm, MDT_EFFECTIVE_DPI, &dx, &dy);
+        UINT dx = monitor_dpi(hm);
         Monitor m;
         m.id = narrow(mi.szDevice);
         m.name = m.id;
@@ -523,7 +556,14 @@ inline LRESULT CALLBACK win_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     }
     if (msg == WM_CLOSE) {
         for (auto& [id, w] : wins()) {
-            if (w.hwnd == h) { std::string gone = id; wins().erase(id); ::DestroyWindow(h); window_gone(gone); return 0; }
+            if (w.hwnd == h) {
+                std::string gone = id;
+                release(w);
+                wins().erase(gone);
+                ::DestroyWindow(h);
+                window_gone(gone);
+                return 0;
+            }
         }
     }
     return ::DefWindowProcW(h, msg, wp, lp);
@@ -532,7 +572,7 @@ inline LRESULT CALLBACK win_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 inline void close_one(const std::string& id) {
     auto it = wins().find(id);
     if (it == wins().end()) return;
-    if (it->second.controller) it->second.controller->Close();
+    release(it->second);
     HWND h = it->second.hwnd;
     wins().erase(it);
     if (h) ::DestroyWindow(h);
@@ -542,22 +582,27 @@ inline void attach_view(const std::string& id) {
     auto it = wins().find(id);
     if (it == wins().end() || !env()) return;
     HWND h = it->second.hwnd;
-    env()->CreateCoreWebView2Controller(h, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+    auto* done = wv::wv2_handler<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+        "6c4819f3-c9b7-4260-8127-c9f5bde7f68c",
         [id, h](HRESULT hr, ICoreWebView2Controller* c) -> HRESULT {
             auto it = wins().find(id);
             if (FAILED(hr) || !c || it == wins().end()) return S_OK;
+            c->AddRef();
             it->second.controller = c;
-            c->get_CoreWebView2(&it->second.view);
+            if (FAILED(c->get_CoreWebView2(&it->second.view)) || !it->second.view) return S_OK;
             RECT rc;
             ::GetClientRect(h, &rc);
             c->put_Bounds(rc);
-            ComPtr<ICoreWebView2_3> v3;
-            if (SUCCEEDED(it->second.view.As(&v3))) {
+            ICoreWebView2_3* v3 = nullptr;
+            if (SUCCEEDED(it->second.view->QueryInterface(wv::wv2_iid("A0D6DF20-3B92-416D-AA0C-437A9C727857"),
+                                                          reinterpret_cast<void**>(&v3))) && v3) {
                 v3->SetVirtualHostNameToFolderMapping(L"flint-monitor.localhost", widen(page_dir()).c_str(),
-                                                      COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
+                                                      wv::COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
+                v3->Release();
             }
-            EventRegistrationToken tok;
-            it->second.view->add_WebMessageReceived(Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+            wv::EventRegistrationToken tok{};
+            auto* heard = wv::wv2_handler<ICoreWebView2WebMessageReceivedEventHandler>(
+                "57213f19-00e6-49fa-8e07-898ea01ecbd2",
                 [id](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
                     LPWSTR s = nullptr;
                     if (SUCCEEDED(args->TryGetWebMessageAsString(&s)) && s) {
@@ -565,11 +610,15 @@ inline void attach_view(const std::string& id) {
                         ::CoTaskMemFree(s);
                     }
                     return S_OK;
-                }).Get(), &tok);
+                });
+            it->second.view->add_WebMessageReceived(heard, &tok);
+            heard->Release();
             std::wstring url = L"https://flint-monitor.localhost/monitor.html?id=" + widen(id);
             it->second.view->Navigate(url.c_str());
             return S_OK;
-        }).Get());
+        });
+    env()->CreateCoreWebView2Controller(h, done);
+    done->Release();
 }
 
 inline void open(const std::vector<std::string>& ids) {
@@ -610,12 +659,15 @@ inline void open(const std::vector<std::string>& ids) {
         wchar_t local[MAX_PATH] = {};
         ::GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
         std::wstring data = std::wstring(local) + L"\\Flint\\WebView2-monitors";
-        ::CreateCoreWebView2EnvironmentWithOptions(nullptr, data.c_str(), nullptr,
-            Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-                [attach_all](HRESULT hr, ICoreWebView2Environment* e) -> HRESULT {
-                    if (SUCCEEDED(hr) && e) { env() = e; attach_all(); }
-                    return S_OK;
-                }).Get());
+        auto* ready = wv::wv2_handler<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+            "4e8a3389-c9d8-4bd2-b6b5-124fee6cc14d",
+            [attach_all](HRESULT hr, ICoreWebView2Environment* e) -> HRESULT {
+                if (SUCCEEDED(hr) && e && !env()) { e->AddRef(); env() = e; attach_all(); }
+                return S_OK;
+            });
+        // WebView2Loader.dll next to the app, loaded at run time as cfire's webui does.
+        if (auto create = wv::wv2_load_loader()) (void)create(nullptr, data.c_str(), nullptr, ready);
+        ready->Release();
         if (owner) ::SetForegroundWindow(owner);
     });
 }
@@ -862,7 +914,7 @@ inline void install(const cfire::webui::App& app, const std::string& dir) {
         page_dir() = dir;
     }
 #if defined(_WIN32)
-    ::SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    per_monitor_dpi();
     make_helper();
 #endif
     hear_screens();

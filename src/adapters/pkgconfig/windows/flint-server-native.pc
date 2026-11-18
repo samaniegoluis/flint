@@ -1,0 +1,7 @@
+# CFIRE-UPSTREAM: CF-031
+# See ../linux/flint-server-native.pc. flint-vault-server runs on Linux only, but
+# `cfire test` links every executable's list, so Windows needs the folder too.
+Name: flint-server-native
+Description: Native shim for flint-vault-server's store and listener
+Version: 1
+Cflags: -I${pcfiledir}/../../serverfs/native

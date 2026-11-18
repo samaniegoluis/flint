@@ -1,0 +1,3 @@
+#!/bin/sh
+# Static .exe (xcxx links -static): pkg-config must add each library's Libs.private.
+exec /usr/bin/pkg-config --static "$@"
