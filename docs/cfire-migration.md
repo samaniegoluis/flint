@@ -771,6 +771,119 @@ and release-test 24/24 (29 s warm), cli-e2e 483/483, server-e2e 70/70, sync-e2e 
 paste 24, rdp 70, webgl 20, fullscreen 49, vim 16 (2 min 8 s), serve-e2e 223/223 (1 min
 26 s; the app exited 0). Every count is step 4's, but `test.sh`'s suites (part 2).
 
+## Step 5, the triage (2026-11-18)
+
+Every `CFIRE-UPSTREAM` tag in the code (outside `docs/`): **406 tag lines naming 56 entries**,
+401 lines and 53 entries under `src/` plus `build.cf` (CF-123) and the two Dockerfiles
+(CF-086, CF-087). A line can name several entries (`CF-005, CF-031`), so the per-entry
+counts below add up to more than 406. Each entry was checked against `v0.12.2`
+(`5be0987`): its repro rewritten and run where it has one (`cfire check`, then `cfire run`
+or `cfire build`, in a scratch folder outside the repo), the stdlib and runtime read where
+it asks for an API. Nothing in Flint was changed.
+
+**Windows.** This branch carries no Windows code but the `#elif defined(_WIN32)` branches
+of `flint_window.hpp`, `flint_monitors.hpp` and `flint_rdp.hpp`. Of the 56 entries, only
+CF-127's shim exists because of Windows; it stays until step 6. Where cfire's answer also
+covers Windows (CF-081's named pipes, CF-024's UTF-8 `os.args`, CF-125's full screen), the
+column says so, for step 6.
+
+| Class | Entries | Tags | Step 5 |
+|---|---|---|---|
+| **Fixed** | 086, 087, 091, 124, 129, 130, 131, 132, 133, 135, 139, 143 | 23 | the workaround goes, one commit each |
+| **Fixed in part**, the covered part goes | 024, 136 | 16 | the covered calls move to the stdlib; the rest stays tagged |
+| **Fixed differently**, a redesign | 006, 026, 081, 099, 137 | 128 | the owner chooses: step 5, or a ROADMAP item (rule 4) |
+| **In part**, what is left keeps the shim | 031, 045, 053, 077, 113, 125, 146 | 75 | kept; the entry says what is left |
+| **Fixed upstream, Windows only** | 127 | 3 | kept until step 6 |
+| **Still missing or still open** | 005, 007, 008, 018, 042, 043, 073, 084, 092, 093, 112, 114, 119, 123, 126, 128, 134, 147, 153, 154, 155, 156, 157, 158, 160, 161, 162, 164, 165 | 214 | kept |
+
+### Every entry
+
+[ran]: a repro built and run on `v0.12.2`. [read]: the runtime or cfire's source read at
+`v0.12.2`, nothing run. Tags: lines naming the entry.
+
+| CF | Tags | Works around | On `v0.12.2` | Class | Windows |
+|---|---|---|---|---|---|
+| 005 | 46 | libssh adapter (jump hosts over `SSH_OPTIONS_FD`, keyboard-interactive, known hosts in the vault, exit status) | [read] `ext:net/ssh` unchanged: no session over a channel, no keyboard-interactive, no `userauth_list`, known hosts in `~/.ssh` | still missing (declined upstream) | — |
+| 006 | 11 | libsodium adapter | [read] `ext:crypto/sodium` now has all Flint calls but one: Argon2id with memory in bytes (CF-090 fixed, upstream CF-215), BLAKE2b, `derive_subkey`, XChaCha20-Poly1305 in Flint's layout (nonce ‖ ciphertext ‖ tag), `random_bytes`, `memzero(mut)`. Missing: a constant-time compare (`sodium_memcmp`) | fixed differently: Principle 4 is owner review | — |
+| 007 | 11 | SQLCipher adapter (raw key and salt, pinned cipher settings) | [read] `sqlite.open_encrypted(path, key: str)`, `rekey`; still no cipher settings and no raw salt | still missing (not adopted) | — |
+| 008 | 5 | Security.framework / libsecret adapter on byte buffers | [read] `core:keychain` keeps `str` secrets and runs `secret-tool` on Linux | still missing (not adopted) | — |
+| 018 | 1 | a libsecret lookup at start-up in `keychain_test.cf` (fd canary) | [read] the canary is still off for packages with `import cpp` (upstream CF-233 excluded), so the warm-up is harmless | still open (declined upstream) | — |
+| 024 | 14 | argv, stderr, exit, `/dev/tty` prompts in `flint_process.hpp` | [read] `os.args()`, `os.exit`, `os.cwd()` cover `process_args`, `exit_process`, `current_dir`; still none: a stderr writer that flushes stdout first, a `/dev/tty` prompt with echo off, the executable's folder | fixed in part | `os.args()` is UTF-8 on Windows (W-11) |
+| 026 | 81 | native mutexes: `SshConn`'s, the recursive `LockedVaultStore`, the GUI's session mailboxes (mutex + condition variable) | [read] new: an owning `sync.Mutex[T]` (`lock`, `try_lock`, `with_lock`, `get`/`set`), `Atomic[T]`, `Channel.try_recv`/`recv_timeout`/`len`. Still none: a recursive lock, a wait on several channels | fixed differently: a redesign of three adapters' threading | — |
+| 031 | 48 | per-OS pkg-config files (`-I`, frameworks, `libsecret-1`, `gtk+-3.0`), `scripts/env.sh` | [ran] `build.cf` still takes literals only: `D := if build.os() == "darwin" { [...] } else { [] }` is accepted and dropped on both values (a literal `Defines` reaches the header, the same list through `if` does not). New, [ran]: a `PkgConfig` name pkg-config does not know is dropped with no message (CF-166) | in part (kept) | — |
+| 042 | 9 | raw mode, window size, SIGWINCH, input poll | [read] `os.hpp` unchanged: the terminal is restored at `exit()` only, not on SIGTERM/SIGHUP; `on_signal` runs a `std::function` in the handler; `term_size` falls back to 80×24 | still missing | — |
+| 043 | 3 | jump-host socketpair thread | [read] `net.socketpair()` exists; still no joinable thread | still missing (declined upstream) | — |
+| 045 | 2 | CoreText / fontconfig font list | [read] `webui.monospace_fonts()` now returns family names on macOS, Linux and Windows, but returns a made-up list (`SF Mono`, `Consolas`, …) when it finds none, and needs `ext:webui` (AppKit/GTK) in the fonts adapter | in part (kept) | WebView2 build has a list |
+| 053 | 9 | NSPasteboard / GTK clipboard, paste of images | [read] `clipboard_set(text, concealed, clear_after_ms)`; on Linux the clear still checks only webui's own counter, so it erases another app's copy; no image read | in part (kept) | — |
+| 073 | 2 | Flint's own macOS menu (⌘W) | [read] webui still installs Window → Close Window on ⌘W, no opt-out | still open (declined upstream) | — |
+| 077 | 4 | modal GTK file chooser | [read] webui's GTK dialogs still have no parent window (`nullptr`); cancel and "no dialog" are both `""` | in part (kept) | — |
+| 081 | 14 | Unix socket listener with peer uid/pid | [read] new `core:net/ipc`: `0600` Unix sockets and Windows named pipes, `peer_credentials()`. The plan names it as a ROADMAP item, not part of the move (rule 4) | fixed differently | the Windows half (named pipes) is step 6's question |
+| 084 | 7 | screen lock and sleep notifications | [read] nothing new | still missing (declined upstream) | — |
+| 086 | 1 | `make install` by hand in `packaging/vault-server/Dockerfile` | [read] the recipe is one shell line now (`cp … && chmod … && mv …`, `Makefile:81`) | fixed | — |
+| 087 | 2 | simdjson 4.6.6 built into `~/.local` (both Dockerfiles) | [read] the runtime vendors simdjson (`runtime/vendor/simdjson`) and uses it unless `~/.local` or pkg-config overrides it; the version gate runs only for a system simdjson | fixed | — |
+| 091 | 1 | a typed nested literal in `passwd_test.cf` | [ran] `need := [["host", "list"], ["exec", "web"]]` builds and runs | fixed | — |
+| 092 | 3 | process parent, start time, executable | [read] nothing in `core:os` | still missing | — |
+| 093 | 4 | Touch ID / polkit presence check | [read] nothing | still missing | — |
+| 099 | 21 | `flint_fs.hpp`: stat/lstat, exclusive create, fsync, rename, chmod, rmdir, errno kinds | [ran] `fs.stat` (size, mode, mtime, `is_dir`, `is_symlink`), `fs.create_new(path, mode)` (fails with code 17 on an existing file), `File.sync()`, `fs.realpath`. Still none: `chmod`, a single `mkdir` with a mode, `NotADirectory`/`IsADirectory` (`ENOTDIR` is folded into "not found"), a directory listing with kinds | fixed differently: the shim could shrink, not go | `core:fs` has the Windows half |
+| 112 | 4 | tunnel worker's poll over listeners, connections and libssh's fd | [read] one `poll` per `TcpConn`; the runtime's `Poller` is internal (`net::detail`); upstream CF-231 excluded | still missing | — |
+| 113 | 1 | a helper returning `[]str!` (`drivers/gui/tunnels.cf`) | [ran] changed: `mut r: i64! = 0; r = f()` builds, but `mut picked: []str! = []` is typed `[]str` (no `.has_value()`), with or without a generic call | still open, in a new form | — |
+| 114 | 3 | which process holds a port | [read] nothing | still missing | — |
+| 119 | 28 | FreeRDP shim; `#define byte` around winpr | [ran] a header with a global `typedef unsigned char byte;` still fails ("redefinition of 'byte' as different kind of symbol"); no RDP in cfire | still missing | the shim has `_WIN32` branches |
+| 123 | 1 | `build.Command` instead of the documented `build.Step` | [ran] `build.Step("stamp", { Command: "sh", Args: [...] })` never runs; `build.Command` does. The reference still documents both | still open | — |
+| 124 | 2 | `Crypto.wipe` takes a read-only borrow, `const_cast` in `cpp` | [ran] `type Wiper interface { wipe(mut buf: []byte) }` checks, and a generic call with `mut` zeroes the caller's buffer | fixed | — |
+| 125 | 6 | `flint_window.hpp`: enter/leave, hear the window, the top inset | [read] webui now hears the window (`NSWindowDidEnter/ExitFullScreen`, `window-state-event`, Win32) and emits `window:fullscreen` to the page; still a toggle with no `set(on)`, no state the core can read, no top inset, no headless inject | in part (kept) | webui's Windows full screen exists (step 6) |
+| 126 | 9 | second window per monitor, the screens | [read] one window per `App`, no screen list | still missing | the shim has `_WIN32` branches |
+| 127 | 3 | `SetProcessDpiAwarenessContext` before webui's window | [read] webui sets per-monitor-v2 awareness and handles `WM_DPICHANGED` (`windows_webview2.hpp:193`, `:294`) | fixed upstream, Windows only | **the shim exists for Windows: kept until step 6** |
+| 128 | 1 | the C++ function named `gdk_monitor_number` | [ran] a package with `fn first_index(ms: []Item, id: str) -> i64`, called unqualified in its own package, while another package of the program imports a header with `n::first_index(const std::string&)`: "no matching conversion for functional-style cast from 'const []Item' to 'str'" | still open | — |
+| 129 | 1 | a `str` local for `"0123…".contains` (`vault/activity.cf`) | [ran] a method on a string literal builds and runs | fixed | — |
+| 130 | 1 | `m.get(k) or -1` in `domain/merge.cf` | [ran] `m[k]` on a read-only map parameter builds and runs. The site wants `-1` for a missing key, so its code stays; only the tag goes | fixed | — |
+| 131 | 1 | `sub_bytes` copy in `domain/strength.cf` | [ran] `total(xs[1..3])` with `xs: []u8` builds and runs | fixed | — |
+| 132 | 1 | push then reverse in `domain/strength.cf` | [ran] `xs.insert(0, 1)` builds and runs | fixed | — |
+| 133 | 1 | a typed empty local in a tuple (`domain/strength.cf`) | [ran] `return (1.0, [])` from `-> (f64, []i64)` builds and runs | fixed | — |
+| 134 | 1 | a free generic function in `domain/merge.cf` | [ran] still fails in clang: "no matching function for call to 'cfire_method_add'" | still open | — |
+| 135 | 4 | a key slice kept beside each map (`domain/merge.cf`) | [ran] `for k, v in m` and `m.keys()` build and run. A map is iterated in hash order, not insertion order (`b` before `a`), so each site keeps its order by sorting where order matters | fixed | — |
+| 136 | 2 | `realpath(3)` in `flint_fs.hpp`; `::symlink` in a test | [ran] `fs.realpath` gives `/private/tmp/…` for `/tmp/…`; still no `fs.symlink` | fixed in part | — |
+| 137 | 1 | the vault server's own accept loop with deadlines and a `413` cap | [read] `HttpServer.set_limits(ServerLimits{ header_timeout_ms, body_timeout_ms, max_body_bytes, … })`, `413` above the cap, `408` on a deadline, `req.remote_addr` | fixed differently: the listener rewritten on `HttpServer` | — |
+| 139 | 2 | `getpeername(2)` in `flint_server.hpp` | [ran] `TcpConn.remote_addr()` gives `127.0.0.1` for an accepted connection | fixed | — |
+| 143 | 6 | `write_synced`, `sync_dir` in `flint_server.hpp` | [ran] `File.sync()` (`F_FULLFSYNC` on macOS, then `fsync`), and `fs.open(dir)` + `sync()` syncs a folder | fixed | — |
+| 146 | 5 | libcurl for the remote vault | [read] `http.request` takes a header map and `timeout_ms`; on macOS an `https://` URL still goes through `NSURLConnection` and returns no response headers (Flint needs `ETag` and `X-Flint-Vault-Id`); no response size cap | in part (kept) | — |
+| 147 | 1 | the assignment inside `if n >= 0 { … }` (`application/fakes_test.cf`) | [ran] fields through a `shared[T]` field work; a statement starting with `(` still continues the line before (`cfire::vec_push(v, 1)(s).x = v`), and a local copy of the field is of unknown type (CF-156) | still open | — |
+| 153 | 6 | another index name in a later loop | [ran] "redefinition of '_col_i'"; the same for `for k, v` over two maps | still open | — |
+| 154 | 2 | `mut own := parts` before `join` | [ran] "no matching function for call to 'join'" | still open | — |
+| 155 | 1 | `byte_slice` via `s.bytes()` | [ran] `s[0..2]` on `"a€b"` panics | still missing | — |
+| 156 | 8 | index loops and typed locals | [ran] "expects 'lib.Item?', got 'auto'"; `it.tags.join(",")` lowers to a C++ member ("no member named 'join' in '[]str'") once the package is imported | still open | — |
+| 157 | 1 | `mut own := list` before `json.stringify` | [ran] `json.stringify` of a `[]L` parameter gives `{}` | still open | — |
+| 158 | 14 | owned `str` locals before `fs.rename`/`fs.remove`/`fs.open` | [ran] `fs.rename(from, to)` with `str` parameters, in a package whose header includes `<stdio.h>`: "no viable conversion from 'CStrViewHolder' to 'const std::filesystem::path'" | still open | — |
+| 160 | 2 | `using SshSession = ssh_session_struct*;` | [ran] `*mut cpp::FILE` in a struct field is `cfire/RAW-POINTER` | still missing | — |
+| 161 | 1 | `flint_ssh::CText` | [ran] "no member named 'c_str' in 'cfire::str_ref'" | still open | — |
+| 162 | 4 | `json.parse[X]` called directly | [ran] "expects 'Req!', got 'T'" | still open | — |
+| 164 | 35 | a labeled argument at every `json.parse` | [ran] found on `v0.12.2` itself (step 4, Docker); not rerun | still open (Linux) | — |
+| 165 | 1 | `guard.get()` in `domain/strength.cf` | [ran] found on `v0.12.2` itself (step 4b); the checker's own message still says "read a locked value as 'guard.value'" | still open | — |
+
+### Found on the way
+
+- **CF-166** (new, [ran]): `build.cf` drops what it cannot read without a word. A
+  `PkgConfig` name pkg-config does not know builds as if absent, and a value computed with
+  `if build.os() == …` is accepted and dropped. A misspelt library or a per-OS list fails
+  later, or not at all.
+- **The server image was never moved**: `packaging/vault-server/Dockerfile` still clones
+  and builds cfire `c5b1d4b`. CF-086 and CF-087 there go with moving it onto the
+  `v0.12.2` Linux archive, as `scripts/linux/Dockerfile` did in step 4.
+
+### What step 5 removes, in order
+
+Bottom up, one commit per entry, the package's `cfire check` and `cfire test` each time:
+
+1. `domain`: CF-130, CF-131, CF-132, CF-133, CF-135 (`merge.cf`, `strength.cf`).
+2. `application`: CF-091 (`passwd_test.cf`).
+3. `adapters`: CF-124 (`crypto`), CF-129 (`vault`), CF-136 and CF-024 in part
+   (`process`), CF-139 and CF-143 (`serverfs`).
+4. The images: CF-087 (`scripts/linux/Dockerfile`), then the server image onto
+   `v0.12.2` with CF-086 and CF-087.
+
+No GUI entry is fixed outright. The five redesigns (CF-006, 026, 081, 099, 137) wait for
+the owner.
+
 ## Progress
 
 | Step | Date | Result | Commit |
@@ -785,3 +898,4 @@ paste 24, rdp 70, webgl 20, fullscreen 49, vim 16 (2 min 8 s), serve-e2e 223/223
 | 4b.2 | 2026-11-18 | The estimator's word lists built once per process (`3a59941`, CF-165), then the 101 inline tests (92 of `domain`) moved to `*_test.cf`: `scripts/test.sh` warm on the Mac 1 min 41 s, 31 s, **29 s**; every suite 92 fewer (`clicmd` 93), `domain` 154, nothing dropped. The ~30 s per suite was 0.10's recompiling: on 0.12 the servers start in ~0.4 s and a suite takes ~1 s, so no change there | `3a59941`, this commit |
 | 4b.3 | 2026-11-18 | Linux serve-e2e is not deterministic: 47 and 162/224 in the two runs of part 1, **224/224** with `FLINT_LINUX_STEPS=serve` and in a full warm run (every step green, exit 0, for the first time on 0.12). `Unlock.tsx:44` ruled out for this script; memory not confirmed. Diagnosis left in place for the next failure (the unlock's timeline, the app's exit status and log, memory in Docker); for the owner. The vim step not started | this commit |
 | 4b (Mac) | 2026-11-18 | The Mac battery on `13d2f04`: test.sh 17/17 at the new counts and 24/24, cli-e2e 483, server-e2e 70, sync-e2e 105, gui-e2e the eight counts, serve-e2e 223/223. Step 4b closed; Linux serve-e2e stays with the owner | this commit |
+| 5.1 | 2026-11-18 | The triage on `v0.12.2`, no code changed: 406 tag lines, 56 entries, each repro run or the runtime read. Fixed: 12 entries (23 tags), all below the GUI; in part: 2; redesigns for the owner: 5 (CF-006, 026, 081, 099, 137); kept in part: 7; Windows only: CF-127 (step 6); still open: 29. New: CF-166; the server image still on `c5b1d4b` | this commit |

@@ -31,6 +31,26 @@ as is.
 - Each entry gives: what Flint needed, a minimal repro or source pointer, the workaround and
   where it lives, and what an ideal API would look like.
 
+## Status at cfire `v0.12.2` (`5be0987`, 2026-11-18): every tagged entry rechecked
+
+Migration step 5's triage (`docs/cfire-migration.md`, "Step 5, the triage", with the
+evidence per entry): the 56 entries that have a `CFIRE-UPSTREAM` tag in the code, each
+with an **At `v0.12.2`** line. Statuses in the headings change only when Flint drops the
+workaround (`resolved ✓`) or the entry is re-filed; the At line says which way it goes.
+
+| On `v0.12.2` | Entries |
+|---|---|
+| **Fixed**; the workaround goes in step 5 [ran] | 086 and 087 [read], 091, 124, 129, 130, 131, 132, 133, 135, 139, 143 |
+| Fixed in part; the covered part goes in step 5 | 024 [read], 136 [ran] |
+| Fixed differently; adopting it is a redesign, the owner's call | 006, 026, 081, 137 [read]; 099 [ran] |
+| In part; what is left keeps Flint's shim | 031 [ran], 045, 053, 077, 125, 146 [read]; 113 [ran], open in a new form |
+| Fixed upstream, Windows only (kept until Windows moves) | 127 [read] |
+| **Still open** | 005, 007, 008, 018, 042, 043, 073, 084, 092, 093, 112, 114, 126 [read]; 119, 123, 128, 134, 147, 153, 154, 155, 156, 157, 158, 160, 161, 162 [ran]; 164, 165 (found on `v0.12.2`) |
+| **New** | 166 (`build.cf` drops an unknown `PkgConfig` name and any computed value, silently) |
+
+**Most urgent, unchanged:** CF-157 (data lost, no error), then CF-156, CF-158/164 (one
+lookup by last name, now breaking Linux builds) and CF-153.
+
 ## Status at cfire `v0.12.0` (`7b68799`, 2026-11-18): the move, in progress
 
 Flint is moving onto `v0.12.0` (`docs/cfire-migration.md`, branch `cfire-0.12`). This
@@ -447,6 +467,7 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
 - **Ideal:** an event such as `files:dropped` with absolute paths and the drop coordinates.
 
 ### CF-005 · missing · `declined upstream`: SSH client module
+- **At `v0.12.2` (migration step 5):** [read] `ext:net/ssh` unchanged: no session over a channel, no keyboard-interactive, no `userauth_list`, known hosts in `~/.ssh`. **still missing (declined upstream)** (46 tags).
 - **At `43431f2`:** **cfire's decision:** `ext:net/ssh` stays a high-level module; a specialised SSH client binds libssh directly. That is what Flint does, so nothing changes.
 - **At `466751b`:** `ext:net/ssh` covers dial, fingerprint, key/password/agent auth, PTY, exec, SFTP and forwarding, but not what Flint relies on: `SSH_OPTIONS_FD` (a session over another session's channel, for jump hosts), a host key algorithm preference, keyboard-interactive auth, `userauth_list`, private key inspection, an exec's exit status and signal. Known hosts go to `~/.ssh/known_hosts`, where Flint keeps them in its vault. `CFIRE_HEADLESS_TEST=1` swaps in a mock server (CF-071). Flint keeps its libssh adapter.
 - **Needed:** the core of Flint: PTY, exec, SFTP, agent, port forwarding, known_hosts.
@@ -458,6 +479,7 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
 - **Ideal:** `ext:net/ssh`, so a 15-line SSH client is possible in cfire.
 
 ### CF-006 · missing · `not adopted`: vetted crypto: Argon2id, XChaCha20-Poly1305
+- **At `v0.12.2` (migration step 5):** [read] `ext:crypto/sodium` now has all Flint calls but one: Argon2id with memory in bytes (CF-090 fixed, upstream CF-215), BLAKE2b, `derive_subkey`, XChaCha20-Poly1305 in Flint's layout (nonce ‖ ciphertext ‖ tag), `random_bytes`, `memzero(mut)`. Missing: a constant-time compare (`sodium_memcmp`). **fixed differently: Principle 4 is owner review** (11 tags).
 - **At `43431f2`:** [ran, read] libsodium is now required: without it `ext:crypto/sodium` stops at `#error` (no PBKDF2 or hand-written fallback, CF-070), and it adds `blake2b` and `derive_subkey`. Parallelism is still 1 (Tether's 4 lanes still need libargon2), and the default cost is far below what the reference says (**CF-090**). Flint keeps its adapter.
 - **At `466751b`:** `ext:crypto/sodium` has Argon2id (parallelism 1), XChaCha20-Poly1305, random bytes and memzero, but no `crypto_kdf` subkeys or BLAKE2b digest, and it falls back to PBKDF2 and a hand-written cipher without libsodium (CF-070). Tether's 4-lane Argon2id still needs libargon2. Flint keeps its libsodium adapter.
 - **Needed:** master-password key derivation and secret AEAD.
@@ -475,6 +497,7 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
 - **Ideal:** `ext:crypto/sodium` (or a libsodium-backed `core:crypto/*`).
 
 ### CF-007 · missing · `not adopted`: encrypted SQLite in `ext:db/sqlite`
+- **At `v0.12.2` (migration step 5):** [read] `sqlite.open_encrypted(path, key: str)`, `rekey`; still no cipher settings and no raw salt. **still missing (not adopted)** (11 tags).
 - **At `43431f2`:** [ran] With SQLCipher installed the build links it and `open_encrypted` writes an encrypted file (no `SQLite format 3` header, the inserted value is not in it). [read] Without SQLCipher, `apply_key` checks `PRAGMA cipher_version` and returns an error instead of writing plaintext (CF-069). A raw key (`x'…'`) is accepted; the cipher settings are not exposed. Flint keeps its adapter, which pins them.
 - **At `466751b`:** `sqlite.open_encrypted` writes a plaintext file when SQLCipher is not linked, and it is not linked by default (CF-069). Flint keeps its SQLCipher adapter, which also pins the cipher settings and keys with a raw key and salt.
 - **Needed:** the vault file must be encrypted in full.
@@ -487,6 +510,7 @@ lines 63–143) is the shortest complete example. The steps and their WebView2 e
 - **Ideal:** `sqlite.open(path, key: bytes)` backed by a cipher build.
 
 ### CF-008 · missing · `not adopted`: OS keychain module
+- **At `v0.12.2` (migration step 5):** [read] `core:keychain` keeps `str` secrets and runs `secret-tool` on Linux. **still missing (not adopted)** (5 tags).
 - **At `43431f2`:** [ran, macOS] `set`, `get` and `delete_password` round-trip, a secret with quotes and `$(id)` included, and `get` after delete reports not found. [read, Linux] `secret-tool` now gets the secret on stdin with shell-quoted arguments, `lookup` reads the Secret Service, the exit status is checked, and the in-memory store exists only in `CFIRE_TEST_MODE` builds (CF-071). Secrets are still `str`, not `[]byte`. Flint keeps its adapter (libsecret's C API, byte buffers).
 - **At `466751b`:** `ext:keychain` does not read the Secret Service on Linux, passes the secret through a shell, ignores errors and keeps secrets in memory (CF-071). Flint keeps its Security.framework / libsecret adapter, now on `std::byte` buffers.
 - **Needed:** cache the derived vault key per machine (macOS Keychain, Linux Secret Service,
@@ -728,6 +752,7 @@ The entries below were found while building milestone 01 against cfire `3963814`
   both have `open`, `close` and `new`.
 
 ### CF-018 · improvement · `declined upstream`: the `cfire test` fd-leak canary has no opt-out
+- **At `v0.12.2` (migration step 5):** [read] the canary is still off for packages with `import cpp` (upstream CF-233 excluded), so the warm-up is harmless. **still open (declined upstream)** (1 tag).
 - **At `43431f2`:** **cfire's decision:** no per-test opt-out attribute, "to keep the test grammar clean". Instead the canary is skipped for every test of a package that has an `import cpp`. That silences Flint's warm-up cases, and also every real leak in those packages: **CF-089**. Flint's warm-ups stay (harmless, and needed again if CF-089 lands).
 - **At `466751b`:** the canary pre-warms SQLite's RNG for `ext:db/sqlite` and skips tests that import `ext:keychain` or reach `run_webview_test` through a helper. Flint's own libsodium and libsecret still open fds on first use, so its start-up warm-ups stay. Still wanted: a per-test opt-out.
 - **Repro:** a test whose first call into libsodium runs `sodium_init()`. libsodium keeps
@@ -806,6 +831,7 @@ The entries below were found while building milestone 01 against cfire `3963814`
   `str` parameter.
 
 ### CF-024 · missing · `resolved ✓`: CLI building blocks: argv, positional args, stderr
+- **At `v0.12.2` (migration step 5):** [read] `os.args()`, `os.exit`, `os.cwd()` cover `process_args`, `exit_process`, `current_dir`; still none: a stderr writer that flushes stdout first, a `/dev/tty` prompt with echo off, the executable's folder. **fixed in part** (14 tags). Windows: `os.args()` is UTF-8 on Windows (W-11).
 - **At `466751b`:** `os.args`, `eprint`/`eprintln`, `os.exit`, `cli.positional`/`subcommand`, and `cli.parse` no longer throws. Flint uses `os.args`, `print`, `os.exit` and `os.is_tty`; it keeps its own stderr writer (it flushes stdout first, `eprint` does not), its own flag parser, and its `/dev/tty` prompts (`cli.prompt_password` reads stdin, so it cannot ask while stdin carries data).
 - **Needed:** `flint vault|host|key|cred <verb> [args] [--json]` with diagnostics on
   stderr and stable exit codes (Principle 7).
@@ -830,6 +856,7 @@ The entries below were found while building milestone 01 against cfire `3963814`
 - **Ideal:** accept commas, or fix the reference sheet.
 
 ### CF-026 · missing · `declined upstream`: concurrency primitives beyond `async.scope` and channels
+- **At `v0.12.2` (migration step 5):** [read] new: an owning `sync.Mutex[T]` (`lock`, `try_lock`, `with_lock`, `get`/`set`), `Atomic[T]`, `Channel.try_recv`/`recv_timeout`/`len`. Still none: a recursive lock, a wait on several channels. **fixed differently: a redesign of three adapters' threading** (81 tags).
 - **At `43431f2`:** [ran] `ch.len()` compiles and returns the queued count. **cfire's decision:** no owning `sync.Mutex[T]` and no multi-channel `select`. Flint's session mailboxes and locks stay native.
 - **At `466751b`:** `sync.Mutex`, `try_recv` and `recv_timeout` work, and the `with_timeout` hang is fixed. `Mutex` does not own its data and is not recursive, `ch.len()` is documented but does not compile (`no member named 'size'`), and there is no `select`. Captures in `scope.spawn` stay read-only, which is fine. Flint's session mailboxes and locks stay native for now (on its roadmap).
 - **Needed:** the GUI reads a PTY on a worker thread while keystrokes arrive on the UI
@@ -906,6 +933,7 @@ The entries below were found while building milestone 01 against cfire `3963814`
 The entries below were found while building milestone 02 against the same cfire build.
 
 ### CF-031 · missing · `partly resolved`: no way to link a framework, pick per-platform sources, or write top-level C++
+- **At `v0.12.2` (migration step 5):** [ran] `build.cf` still takes literals only: `D := if build.os() == "darwin" { [...] } else { [] }` is accepted and dropped on both values (a literal `Defines` reaches the header, the same list through `if` does not). New, [ran]: a `PkgConfig` name pkg-config does not know is dropped with no message (CF-166). **in part (kept)** (48 tags).
 - **At `v0.12.0`:** [ran] `@pkg` on `import cpp` is retired; each `build.Executable` takes `PkgConfig`, and Flint lists its packages there (`build.cf`). `cfire build <target>` uses that executable's list; `cfire test` the union of all. Left: `build.cf` takes literals only, with no per-OS fields, so Flint keeps its per-OS pkg-config files (`libsecret-1` and `gtk+-3.0` on Linux) and `scripts/env.sh`.
 - **At `43431f2`:** [ran] `cfire test` now applies the nearest `build.cf`'s `Frameworks` (a test calling CoreFoundation links with `Frameworks: ["CoreFoundation"]` and fails to link without it). **cfire's decision:** no `@framework("…")` on `import cpp` and no top-level `cpp {}`; linkage belongs in `build.cf`. Flint keeps its pkg-config files: they also carry the adapters' `-I` paths and, on Linux, `libsecret-1`.
 - **At `466751b`:** `*_darwin.cf`/`*_linux.cf` files are picked by platform, and `build.cf` takes `Frameworks`/`Libraries`. Those flags apply to `cfire build` of a declared executable only, not to `cfire test` of a package, so Flint's tests still need its pkg-config files. Still wanted: `@framework("…")` on `import cpp`.
@@ -1037,6 +1065,7 @@ The entries below were found while building milestone 02 against the same cfire 
   from `<unistd.h>`.
 
 ### CF-042 · missing · `partly resolved`: no terminal raw mode, window size or signal handlers
+- **At `v0.12.2` (migration step 5):** [read] `os.hpp` unchanged: the terminal is restored at `exit()` only, not on SIGTERM/SIGHUP; `on_signal` runs a `std::function` in the handler; `term_size` falls back to 80×24. **still missing** (9 tags).
 - **At `43431f2`:** [read] `os.make_raw` registers an `atexit` hook, so `os.exit()` restores the terminal. Still: nothing restores it on SIGTERM or SIGHUP, and `on_signal` still runs a `std::function` inside the handler. Flint keeps its native raw mode.
 - **At `466751b`:** `os.make_raw`, `os.term_size`, `os.on_signal` and `os.poll_fd` exist. Flint keeps its native raw mode: `RawTerminal` restores only at scope exit, not at `exit()` or on SIGTERM/SIGHUP; `on_signal` runs a `std::function` inside the signal handler (not async-signal-safe); `term_size` reports 80 columns when there is no terminal, where Flint needs "unknown".
 - **Repro:** an interactive SSH client needs to put stdin in raw mode (`cfmakeraw`),
@@ -1051,6 +1080,7 @@ The entries below were found while building milestone 02 against the same cfire 
   `poll(fds, timeout)` for byte streams.
 
 ### CF-043 · missing · `declined upstream`: no socketpair, poll or threads for a byte-stream bridge
+- **At `v0.12.2` (migration step 5):** [read] `net.socketpair()` exists; still no joinable thread. **still missing (declined upstream)** (3 tags).
 - **At `43431f2`:** **cfire's decision:** no joinable `Thread` value; concurrency stays structured (`async.scope`). Flint's tunnel stays native.
 - **At `466751b`:** `os.socketpair`, `os.poll_fd` and fd reads/writes exist. There is still no joinable thread value to own a bridge's thread, so Flint's tunnel stays native.
 - **Repro:** a jump host is a libssh channel that must look like a socket to the next
@@ -1075,6 +1105,7 @@ The entries below were found while building milestone 02 against the same cfire 
   operand.
 
 ### CF-045 · missing · `answered, untested`: no way to list installed fonts
+- **At `v0.12.2` (migration step 5):** [read] `webui.monospace_fonts()` now returns family names on macOS, Linux and Windows, but returns a made-up list (`SF Mono`, `Consolas`, …) when it finds none, and needs `ext:webui` (AppKit/GTK) in the fonts adapter. **in part (kept)** (2 tags). Windows: WebView2 build has a list.
 - **At `43431f2`:** [read] On macOS `monospace_fonts()` now returns family names (`[NSFont familyName]`, deduplicated), and a free `webui.monospace_fonts()` builds a temporary `App` for it. Flint keeps its adapter, which needs no `App`.
 - **At `466751b`:** `app.monospace_fonts()` returns font names on macOS (`Menlo-Regular`, `Menlo-Bold`, …), not the family names CSS takes, and needs an `App`. Flint keeps its CoreText / fontconfig adapter.
 - **Needed:** Settings → Terminal lists every installed monospaced font. A webview
@@ -1166,6 +1197,7 @@ The entries below were found while building milestone 02 against the same cfire 
   Windows) and `BundleId`.
 
 ### CF-053 · missing · `not adopted`: no clipboard API in `ext:webui` (or anywhere in cfire)
+- **At `v0.12.2` (migration step 5):** [read] `clipboard_set(text, concealed, clear_after_ms)`; on Linux the clear still checks only webui's own counter, so it erases another app's copy; no image read. **in part (kept)** (9 tags).
 - **Reading too (milestone 25 on Linux, 2026-11-10):** WebKitGTK hands the page's paste
   event neither text nor image, and `navigator.clipboard.read()` is refused
   (`NotAllowedError`) because cfire's webview leaves `javascript-can-access-clipboard`
@@ -1420,6 +1452,7 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   the SHA to `make` (`GIT_SHA=…`); publish tagged releases.
 
 ### CF-073 · bug · `declined upstream`: webui's built-in macOS menu takes ⌘W from the page, with no opt-out
+- **At `v0.12.2` (migration step 5):** [read] webui still installs Window → Close Window on ⌘W, no opt-out. **still open (declined upstream)** (2 tags).
 - **At `43431f2`:** **cfire's decision:** the standard macOS menu, ⌘W included, stays with no opt-out. Flint keeps installing its own menu after `run()`.
 - **Repro (466751b):** `App.run()` now always sets `NSApp.mainMenu` (the CF-051 fix), with
   Window → Close Window on ⌘W and Quit on a handler of its own. An app whose page uses ⌘W
@@ -1508,6 +1541,7 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 - **Ideal:** print clang's diagnostics only; keep the dump behind a verbose flag.
 
 ### CF-077 · gap · `partly resolved`: `ext:webui` file dialogs are macOS-only and silently return "" on Linux
+- **At `v0.12.2` (migration step 5):** [read] webui's GTK dialogs still have no parent window (`nullptr`); cancel and "no dialog" are both `""`. **in part (kept)** (4 tags).
 - **At `43431f2`:** [read] `open_file_dialog`, `save_file_dialog` and `message_dialog` use `GtkFileChooserDialog` / `GtkMessageDialog` on Linux and Win32 dialogs on Windows. Still: the GTK dialogs have no parent window (`nullptr`), so they are not modal to the app's window and can open behind it; and every platform still returns `""` both for "cancelled" and for "no dialog here". Flint keeps its adapter, modal over the active window.
 - **At `2d8613d`:** `open_file_dialog`, `save_file_dialog` and `message_dialog`
   (`runtime/core/webui.hpp`) have an `NSOpenPanel`/`NSSavePanel`/`NSAlert` body under
@@ -1560,6 +1594,7 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   handles (resolver, keychain), or let a test opt out of the check with a reason.
 
 ### CF-081 · missing · `deferred upstream`: no Unix domain socket listener and no peer credentials
+- **At `v0.12.2` (migration step 5):** [read] new `core:net/ipc`: `0600` Unix sockets and Windows named pipes, `peer_credentials()`. The plan names it as a ROADMAP item, not part of the move (rule 4). **fixed differently** (14 tags). Windows: the Windows half (named pipes) is step 6's question.
 - **At `43431f2`:** **Deferred by cfire** (P3): `net.listen_unix`, `net.connect_unix` and `conn.peer()`. Flint keeps `flint_ipc.hpp`.
 - **At `2d8613d`:** `ext:net` offers TCP only (`listen_tcp`, `connect_tcp`); `AF_UNIX` appears
   only as a `socketpair` fallback inside sandboxes. Nothing binds or connects a path, sets
@@ -1621,6 +1656,7 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
   `scope.handle()` that tasks can spawn through.
 
 ### CF-084 · missing · `declined upstream`: no way to hear screen lock, sleep or idle from the OS
+- **At `v0.12.2` (migration step 5):** [read] nothing new. **still missing (declined upstream)** (7 tags).
 - **At `43431f2`:** **cfire's decision:** screen lock, sleep and wake are application-specific native concerns. Flint keeps `flint_sysevents.hpp`.
 - **At `2d8613d`:** neither `core:os` nor `ext:webui` reports that the screen locked, that
   the computer is going to sleep, or that the user is idle. `os.on_signal` covers POSIX
@@ -1659,6 +1695,7 @@ The entries below were found moving Flint to cfire `466751b` (milestone 09, 2026
 The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 2026-11-07).
 
 ### CF-086 · bug · `confirmed`: `make install` fails: its temp file name changes between recipe lines
+- **At `v0.12.2` (migration step 5):** [read] the recipe is one shell line now (`cp … && chmod … && mv …`, `Makefile:81`). **fixed** (1 tag).
 - **At `c5b1d4b`:** [read] Unchanged: the `install` recipe still names its temp file `.cfire.tmp.$$$$` on three recipe lines, each its own shell. The Linux image still installs by hand.
 - **Repro (43431f2):** `make install PREFIX=/usr/local CXX=clang++` (Debian trixie, in
   Flint's Linux image) →
@@ -1676,6 +1713,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   with a fixed name.
 
 ### CF-087 · bug · `confirmed`: the simdjson check refuses versions that build
+- **At `v0.12.2` (migration step 5):** [read] the runtime vendors simdjson (`runtime/vendor/simdjson`) and uses it unless `~/.local` or pkg-config overrides it; the version gate runs only for a system simdjson. **fixed** (2 tags).
 - **At `c5b1d4b`:** [read] Unchanged in `src/build/deps.hpp`. The Linux image still builds simdjson 4.
 - **Repro (43431f2):** Debian trixie (`libsimdjson-dev` 3.12.3, `clang` 19), `cfire build`
   in Flint → `error building target 'native' for executable 'flint': system simdjson 3.12.3
@@ -1749,6 +1787,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `INTERACTIVE` (64 MiB) by name; an error, not a guess, for out-of-range values.
 
 ### CF-091 · bug · `confirmed`: a nested slice literal with no declared type passes `cfire check` and fails in clang
+- **At `v0.12.2` (migration step 5):** [ran] `need := [["host", "list"], ["exec", "web"]]` builds and runs. **fixed** (1 tag).
 - **At `d182f32`:** [ran] Still fails in clang (`auto need = {{"host", "list"}, {"exec", "web"}};`).
 - **At `c5b1d4b`:** [ran] Still fails in clang (`cannot deduce actual type for variable 'need' with type 'auto' from initializer list`).
 - **Repro (43431f2):** `need := [["host", "list"], ["exec", "web"]]` → `cfire check` passes;
@@ -1759,6 +1798,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   the checker.
 
 ### CF-092 · missing · `open`: no way to read another process's parent, start time or executable
+- **At `v0.12.2` (migration step 5):** [read] nothing in `core:os`. **still missing** (3 tags).
 - **At `c5b1d4b`:** [read] Nothing new in `core:os`.
 - **Repro (43431f2):** `cfire inspect core:os` has `getpid`-style calls for the running
   process only; nothing returns a pid's parent, start time, executable path or argv. Flint
@@ -1773,6 +1813,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `QueryFullProcessImageName`).
 
 ### CF-093 · missing · `open`: no presence check (Touch ID, polkit, Windows Hello)
+- **At `v0.12.2` (migration step 5):** [read] nothing. **still missing** (4 tags).
 - **At `c5b1d4b`:** [read] Nothing new.
 - **Repro (43431f2):** nothing in `core:` or `ext:` asks the OS to confirm the person at the
   machine is there. Flint needs it before the owner's **Allow** in the caller approval
@@ -1852,6 +1893,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `cfire/ASSIGN-TO-TASK-CAPTURE`), or capture `mut` locals by shared reference under the scope's join.
 
 ### CF-099 · missing · `confirmed`: `core:fs` has no stat, no exclusive create and no error kind
+- **At `v0.12.2` (migration step 5):** [ran] `fs.stat` (size, mode, mtime, `is_dir`, `is_symlink`), `fs.create_new(path, mode)` (fails with code 17 on an existing file), `File.sync()`, `fs.realpath`. Still none: `chmod`, a single `mkdir` with a mode, `NotADirectory`/`IsADirectory` (`ENOTDIR` is folded into "not found"), a directory listing with kinds. **fixed differently: the shim could shrink, not go** (21 tags). Windows: `core:fs` has the Windows half.
 - **At `c5b1d4b`:** [read] `core:fs` gained `is_file`, `is_dir`, `copy_file`, `append_*` and fd-based `File` handles, but still no stat (kind, size, mtime, mode in one call), no exclusive create and no error kind.
 - **Repro (43431f2):** `cfire_stdlib_lookup core:fs` lists `exists`, `list_dir` (names only), `open`
   with Read/Write/Append/ReadWrite and `remove`, but nothing returns a file's kind, size, mtime or
@@ -2017,6 +2059,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 
 
 ### CF-112 · missing · `confirmed`: no way to wait on several sockets at once
+- **At `v0.12.2` (migration step 5):** [read] one `poll` per `TcpConn`; the runtime's `Poller` is internal (`net::detail`); upstream CF-231 excluded. **still missing** (4 tags).
 - **What happened (c5b1d4b, milestone 22):** a tunnel's worker must wait on its listeners,
   every accepted connection and the SSH session's socket at once, then move whatever is
   ready. `ext:net` has `listen_tcp_addr`, `accept` and `read` with a timeout per call, but
@@ -2031,6 +2074,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   descriptors, with non-blocking `try_read` / `try_write` on `TcpConn`.
 
 ### CF-113 · bug · `confirmed`: a generic call's `[]T!` result is typed `[][]T!` when assigned
+- **At `v0.12.2` (migration step 5):** [ran] changed: `mut r: i64! = 0; r = f()` builds, but `mut picked: []str! = []` is typed `[]str` (no `.has_value()`), with or without a generic call. **still open, in a new form** (1 tag).
 - **What happened (c5b1d4b, milestone 23):** in `src/drivers/gui/tunnels.cf`, assigning
   the result of a generic use case that returns `[]str!` to a declared fallible variable
   fails to build, and the message names the wrong type:
@@ -2047,6 +2091,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** the assignment type-checks as `[]str!`, as it does for `i64!`.
 
 ### CF-114 · missing · `confirmed`: no way to ask which process holds a port
+- **At `v0.12.2` (migration step 5):** [read] nothing. **still missing** (3 tags).
 - **What happened (milestone 23, design 16h2):** when a tunnel's local port is taken, the
   approval window names the program that holds it (`Python (pid 11121)`). cfire can bind a
   port to see that it is taken, but `core:os` has no process list and nothing that maps a
@@ -2146,6 +2191,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   package.
 
 ### CF-119 · missing · `open`: no RDP client; winpr's `byte` clashes with the prelude
+- **At `v0.12.2` (migration step 5):** [ran] a header with a global `typedef unsigned char byte;` still fails ("redefinition of 'byte' as different kind of symbol"); no RDP in cfire. **still missing** (28 tags). Windows: the shim has `_WIN32` branches.
 - **What Flint needs (milestone 28):** an RDP client session in the desktop app: connect
   with NLA, receive the desktop's frames, send keys and the mouse. cfire has no RDP, and a
   library like libfreerdp 3 works through C callbacks (`PostConnect`, `EndPaint`,
@@ -2221,6 +2267,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `context-menu` signal; `WKUIDelegate` on macOS) that keeps copy and paste in text fields.
 
 ### CF-123 · bug · `confirmed`: `core:build` documents `build.Step`; the manifest reads `build.Command`
+- **At `v0.12.2` (migration step 5):** [ran] `build.Step("stamp", { Command: "sh", Args: [...] })` never runs; `build.Command` does. The reference still documents both. **still open** (1 tag).
 - **Seen (milestone 32) [ran]:** the reference (`docs/STDLIB_REFERENCE.md:98`,
   `cfire_stdlib_lookup core:build`) offers `build.Step(name, StepConfig)` for a pre-build
   command. The manifest parser only recognises a call whose member is `Command`
@@ -2236,6 +2283,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   every time" stated in the reference.
 
 ### CF-124 · missing · `confirmed`: an interface method cannot declare a `mut` parameter
+- **At `v0.12.2` (migration step 5):** [ran] `type Wiper interface { wipe(mut buf: []byte) }` checks, and a generic call with `mut` zeroes the caller's buffer. **fixed** (2 tags).
 - **Repro (c5b1d4b, macOS) [ran]:** `type Wiper interface { wipe(mut buf: []byte) }` fails with
   `expected type name, got 'mut'`; `wipe(buf: mut []byte)` fails the same way. A free
   function or a method on a struct takes `mut` as usual. Found in milestone 36.
@@ -2251,6 +2299,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   site's `mut` checked against them as for any function.
 
 ### CF-125 · missing · `confirmed`: `ext:webui`'s full screen is a toggle that never hears the window
+- **At `v0.12.2` (migration step 5):** [read] webui now hears the window (`NSWindowDidEnter/ExitFullScreen`, `window-state-event`, Win32) and emits `window:fullscreen` to the page; still a toggle with no `set(on)`, no state the core can read, no top inset, no headless inject. **in part (kept)** (6 tags). Windows: webui's Windows full screen exists (step 6).
 - **Seen (milestone 37) [read]:** `webui.App.fullscreen()` and the page's
   `WindowFullscreen()` flip `is_fullscreen` and call the platform's toggle
   (`core/webui.hpp:336`, `core/webui/bridge.hpp:492`): `-toggleFullScreen:` on macOS
@@ -2277,6 +2326,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   all three systems; for macOS, the inset the top edge reveals.
 
 ### CF-126 · missing · `confirmed`: `ext:webui` has one window per `App` and no list of screens
+- **At `v0.12.2` (migration step 5):** [read] one window per `App`, no screen list. **still missing** (9 tags). Windows: the shim has `_WIN32` branches.
 - **Seen (milestone 38 spike) [read, ran]:** an `App` owns exactly one native window and one
   web view (`run_macos_app`, `run_linux_webkitgtk`, `run_win32_webview2`); its `AppState`
   (the app:// files, the RPC table, the event target `platform_eval`) is private, so a second
@@ -2301,6 +2351,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   and work area in points, top-left origin, scale, rotation, refresh, primary, safe-area top).
 
 ### CF-127 · missing · `suspected`: `ext:webui` on Windows declares no per-monitor DPI awareness
+- **At `v0.12.2` (migration step 5):** [read] webui sets per-monitor-v2 awareness and handles `WM_DPICHANGED` (`windows_webview2.hpp:193`, `:294`). **fixed upstream, Windows only** (3 tags). Windows: the shim exists for Windows: kept until step 6.
 - **Seen (milestone 38) [read]:** neither cfire's runtime (`core/webui/windows_webview2.hpp`)
   nor the owner's Windows branch (`windows-port-2`) declares DPI awareness: no manifest
   entry and no `SetProcessDpiAwarenessContext`. A process that does not is scaled by
@@ -2319,6 +2370,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   its first window) and handles `WM_DPICHANGED`, so its window is sharp on every monitor.
 
 ### CF-128 · bug · `confirmed`: a function of an `import cpp` header takes over a cfire call of the same name in another package
+- **At `v0.12.2` (migration step 5):** [ran] a package with `fn first_index(ms: []Item, id: str) -> i64`, called unqualified in its own package, while another package of the program imports a header with `n::first_index(const std::string&)`: "no matching conversion for functional-style cast from 'const []Item' to 'str'". **still open** (1 tag).
 - **Seen (milestone 38) [ran, Linux]:** `src/domain/monitors.cf` defines
   `fn monitor_index(ms: []LocalMonitor, id: str) -> i64`. The `uievents` package imports
   `flint_monitors.hpp`, whose GTK branch declared `flint_monitors::monitor_index(const
@@ -2339,6 +2391,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   same name is never cast to a C++ signature.
 
 ### CF-129 · bug · `confirmed`: a method called on a string literal does not compile
+- **At `v0.12.2` (migration step 5):** [ran] a method on a string literal builds and runs. **fixed** (1 tag).
 - **Seen (milestone 39) [ran, macOS, `c5b1d4b`]:** `if !"0123456789abcdef".contains(id.substr(i, 1)) { … }`
   in `src/adapters/vault/activity.cf` passes `cfire check` and fails in clang: "member
   reference base type 'const char[17]' is not a structure or union". The literal lowers to
@@ -2352,6 +2405,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `std::string_view` with the same methods), as a `str` local does.
 
 ### CF-130 · bug · `confirmed`: indexing a map passed as a parameter does not compile
+- **At `v0.12.2` (migration step 5):** [ran] `m[k]` on a read-only map parameter builds and runs. The site wants `-1` for a missing key, so its code stays; only the tag goes. **fixed** (1 tag).
 - **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** the strength estimate's word lists
   (`src/domain/strength.cf`) are a `map[str]i64` read by functions that take them as a
   plain (read-only) parameter.
@@ -2366,6 +2420,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   error, as an index out of range is), or the checker rejects it with the `get` fix-it.
 
 ### CF-131 · bug · `confirmed`: a slice of a `[]T` passes to no `[]T` parameter
+- **At `v0.12.2` (migration step 5):** [ran] `total(xs[1..3])` with `xs: []u8` builds and runs. **fixed** (1 tag).
 - **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** `uppercase_variations(pw[i..j + 1])`
   in `src/domain/strength.cf`.
 - **Repro:** `fn total(xs: []u8) -> i64 { return i64(xs.len()) }`, then
@@ -2379,6 +2434,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   the checker says to copy it.
 
 ### CF-132 · bug · `confirmed`: `xs.insert(i, x)` on a slice does not compile
+- **At `v0.12.2` (migration step 5):** [ran] `xs.insert(0, 1)` builds and runs. **fixed** (1 tag).
 - **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** building the strength estimate's
   match sequence backwards (`seq.insert(0, m)`).
 - **Repro:** `mut xs: []i64 = [2, 3]; xs.insert(0, 1)` passes `cfire check` and lowers to
@@ -2389,6 +2445,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   check, or the checker rejects the call.
 
 ### CF-133 · bug · `confirmed`: a tuple with an empty slice literal does not compile
+- **At `v0.12.2` (migration step 5):** [ran] `return (1.0, [])` from `-> (f64, []i64)` builds and runs. **fixed** (1 tag).
 - **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** `return (1.0, [])` from a function
   typed `-> (f64, []StrengthMatch)`.
 - **Repro:** `fn pair() -> (f64, []i64) { return (1.0, []) }` passes `cfire check` and
@@ -2399,6 +2456,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   std::vector<i64>>{1.0, {}}`), as CF-091 asks for nested literals.
 
 ### CF-134 · bug · `confirmed`: a generic method does not compile
+- **At `v0.12.2` (migration step 5):** [ran] still fails in clang: "no matching function for call to 'cfire_method_add'". **still open** (1 tag).
 - **Seen (milestone 41) [ran, macOS, `c5b1d4b`]:** the merge report's diff
   (`src/domain/merge.cf`), one method for every kind of record.
 - **Repro:** `type R struct { n: i64 }` and `fn (mut self: R) add[T: I](xs: []T) { ... }`
@@ -2413,6 +2471,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   already uses, with its `template` line), or the checker rejects it.
 
 ### CF-135 · bug · `confirmed`: `for k, v in m` over a map does not compile
+- **At `v0.12.2` (migration step 5):** [ran] `for k, v in m` and `m.keys()` build and run. A map is iterated in hash order, not insertion order (`b` before `a`), so each site keeps its order by sorting where order matters. **fixed** (4 tags).
 - **Seen (milestone 41) [ran, macOS, `c5b1d4b`]:** walking the names, groups and
   tombstones the merge collects (`src/domain/merge.cf`).
 - **Repro:** `mut m: map[str]i64 = {}; m["a"] = 1; for k, v in m { println("{k} {v}") }`
@@ -2427,6 +2486,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   exists; or the checker rejects the loop over a map with that fix-it.
 
 ### CF-136 · missing · `confirmed`: `core:fs` has no realpath (and no symlink)
+- **At `v0.12.2` (migration step 5):** [ran] `fs.realpath` gives `/private/tmp/…` for `/tmp/…`; still no `fs.symlink`. **fixed in part** (2 tags).
 - **Seen (milestone 41) [ran, macOS, `c5b1d4b`]:** the app compares the vault a CLI
   command names with the one it holds, as text; `/tmp/fp/lab.flint` and
   `/private/tmp/fp/lab.flint` (macOS's `/tmp` is a link) were two vaults, so `vault merge`
@@ -2440,6 +2500,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `fs.real_path(path) -> str!` and `fs.symlink(target, link) -> void!`.
 
 ### CF-137 · bug · `confirmed`: `HttpServer` has no request deadline and a fixed body cap
+- **At `v0.12.2` (migration step 5):** [read] `HttpServer.set_limits(ServerLimits{ header_timeout_ms, body_timeout_ms, max_body_bytes, … })`, `413` above the cap, `408` on a deadline, `req.remote_addr`. **fixed differently: the listener rewritten on `HttpServer`** (1 tag).
 - **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** `read_http_request`
   (`core/net/http.hpp:392`) reads with the accepted socket's fixed 2 s idle timeout per
   read and no total deadline: a client sending one byte every 1.5 s held a request open
@@ -2472,6 +2533,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `spawn(fn)` returning a joinable handle, or a worker pool in `HttpServer`.
 
 ### CF-139 · missing · `confirmed`: an accepted connection has no peer address
+- **At `v0.12.2` (migration step 5):** [ran] `TcpConn.remote_addr()` gives `127.0.0.1` for an accepted connection. **fixed** (2 tags).
 - **Seen (milestone 42 spike) [read, `c5b1d4b`]:** `http.Request` carries no client address
   and an accepted `TcpConn` has an empty endpoint (`TcpListener::accept`).
 - **Why Flint needs it:** the vault server limits rate and locks out repeated bad tokens
@@ -2508,6 +2570,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** the runtime takes `cfire::Map`, and a map literal argument lowers to a map.
 
 ### CF-143 · missing · `confirmed`: `core:fs` has no fsync; `File.flush` does nothing
+- **At `v0.12.2` (migration step 5):** [ran] `File.sync()` (`F_FULLFSYNC` on macOS, then `fsync`), and `fs.open(dir)` + `sync()` syncs a folder. **fixed** (6 tags).
 - **Seen (milestone 42) [read, `c5b1d4b`]:** `File::flush` (`core/fs.hpp:417`) returns success
   without touching the file; there is no `fsync` or `sync_dir`. A temp file + rename is
   atomic against a crash of the process, not of the machine: the rename can reach the disk
@@ -2541,6 +2604,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   literal), so `len()` counts every byte.
 
 ### CF-146 · missing · `confirmed`: no HTTP client usable from cfire for an API with headers and deadlines
+- **At `v0.12.2` (migration step 5):** [read] `http.request` takes a header map and `timeout_ms`; on macOS an `https://` URL still goes through `NSURLConnection` and returns no response headers (Flint needs `ETag` and `X-Flint-Vault-Id`); no response size cap. **in part (kept)** (5 tags).
 - **Seen (milestone 43) [read, `c5b1d4b`]:** besides CF-142 (headers do not compile),
   `http.request` has no connect or total timeout (`connect_tcp` and a read loop until the
   peer closes), returns no way to cap the response size, and on macOS an `https://` URL
@@ -2559,6 +2623,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   (Security.framework / OpenSSL / SChannel) with the system trust store.
 
 ### CF-147 · bug · `partly resolved`: a statement starting with `(` continues the line before; no field access through `shared[T]`
+- **At `v0.12.2` (migration step 5):** [ran] fields through a `shared[T]` field work; a statement starting with `(` still continues the line before (`cfire::vec_push(v, 1)(s).x = v`), and a local copy of the field is of unknown type (CF-156). **still open** (1 tag).
 - **At `v0.12.0`:** [ran] `self.bank.blobs` reads and writes through a `shared[T]` field (`src/application/fakes_test.cf`), and `(*p).x` is now `cfire/RAW-POINTER`. A local copy of the field (`mut bank := self.bank`) still lowers with `.` instead of `->` (CF-156). The `(` statement half is not rechecked yet.
 - **Seen (milestone 43, a test fake) [ran, macOS, `c5b1d4b`]:** with `mut bank :=
   self.bank` (a `shared[FakeBank]`), `bank.blobs` fails in C++ ("no member named 'blobs'
@@ -2639,6 +2704,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** a slice returned or bound as an owned `str` is copied, as the GUIDE says.
 
 ### CF-153 · bug · `confirmed`: two `for i, x in` loops in one block do not compile
+- **At `v0.12.2` (migration step 5):** [ran] "redefinition of '_col_i'"; the same for `for k, v` over two maps. **still open** (6 tags).
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** each indexed loop lowers to
   `auto&& _col_<index> = <collection>;` **before** its `for`, in the enclosing block
   (`src/codegen/stmt.hpp:390`), so a second loop with the same index name redefines it:
@@ -2649,6 +2715,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** the `_col_` binding inside a block of its own, or a unique name per loop.
 
 ### CF-154 · bug · `confirmed`: `join` does not compile on a read-only `[]str` parameter
+- **At `v0.12.2` (migration step 5):** [ran] "no matching function for call to 'join'". **still open** (2 tags).
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** a read-only `[]str` parameter lowers
   to `slice_ref<str>`, and `cfire::bm::join` requires `detail::Seq` (a `std::vector` or
   `std::array`, `runtime/core/builtin_methods.hpp:50`): "no matching function for call to
@@ -2659,6 +2726,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** the `Seq` builtins accept `slice_ref<T>`/`std::span`.
 
 ### CF-155 · missing · `confirmed`: no byte-wise cut of a `str`
+- **At `v0.12.2` (migration step 5):** [ran] `s[0..2]` on `"a€b"` panics. **still missing** (1 tag).
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** a `str` slice panics on a bound inside
   a UTF-8 character (`check_utf8_boundary`, `cfire_prelude.hpp:908`). 0.10's `substr` cut
   bytes. Flint cuts by byte count or position in places where that is the point: a 100-byte
@@ -2671,6 +2739,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   bytes type that HTTP and IPC data can live in.
 
 ### CF-156 · bug · `confirmed`: in an imported package, a type inferred from a parameter's field is lost
+- **At `v0.12.2` (migration step 5):** [ran] "expects 'lib.Item?', got 'auto'"; `it.tags.join(",")` lowers to a C++ member ("no member named 'join' in '[]str'") once the package is imported. **still open** (8 tags).
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** `fn find_item(book: Book, id: str) ->
   Item? { for it in book.pending { if it.id == id { return it } } return none }` checks
   clean in its own package, but `cfire check` of a package that imports it reports
@@ -2689,6 +2758,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** the item's or field's type is resolved the same from either package.
 
 ### CF-157 · bug · `confirmed`: `json.stringify` of a read-only `[]T` parameter gives `{}`
+- **At `v0.12.2` (migration step 5):** [ran] `json.stringify` of a `[]L` parameter gives `{}`. **still open** (1 tag).
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** a read-only `[]T` parameter lowers to
   `slice_ref<T>`, which `json.stringify` serializes as an empty object, with no diagnostic.
   The same slice as a local gives the array. A file written this way is silently empty:
@@ -2704,6 +2774,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `stringify` are covered for every lowering of `[]T`).
 
 ### CF-158 · bug · `confirmed`: a stdlib call takes the argument coercion of a C function with the same last name
+- **At `v0.12.2` (migration step 5):** [ran] `fs.rename(from, to)` with `str` parameters, in a package whose header includes `<stdio.h>`: "no viable conversion from 'CStrViewHolder' to 'const std::filesystem::path'". **still open** (14 tags).
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** in `src/adapters/serverfs`, whose
   native header pulls in `<stdio.h>`, `fs.rename(tmp, path)` lowers to
   `cfire::fs::rename(cfire::c_str(tmp), cfire::c_str(path))` and clang fails ("no viable
@@ -2755,6 +2826,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `\{` → `{`, both if need be), documented.
 
 ### CF-160 · missing · `confirmed`: no `.cf` type for a copyable, non-owning C handle
+- **At `v0.12.2` (migration step 5):** [ran] `*mut cpp::FILE` in a struct field is `cfire/RAW-POINTER`. **still missing** (2 tags).
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** 0.12 rejects `*mut cpp::T` in `.cf`
   (`cfire/RAW-POINTER`). Flint's SSH adapter keeps libssh's `ssh_session`, `ssh_channel`,
   `sftp_session` and `sftp_file`, and the vault keeps `sqlite3*`, in struct fields and
@@ -2773,6 +2845,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   saying the alias is the sanctioned way.
 
 ### CF-161 · improvement · `confirmed`: a `str` in a `cpp` block is a view, and `cfire::c_str` leaves an unwiped copy
+- **At `v0.12.2` (migration step 5):** [ran] "no member named 'c_str' in 'cfire::str_ref'". **still open** (1 tag).
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** a `str` parameter is a
   `cfire::str_ref` on 0.12, so `cpp { f(x.c_str()); }` no longer compiles ("no member named
   'c_str' in 'cfire::str_ref'"). The breaking-change notes do not say so for `cpp` blocks.
@@ -2787,6 +2860,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   on destruction (cheap, and `c_str` is used for any text a C API takes).
 
 ### CF-162 · bug · `confirmed`: a value from `try f[T](…)` keeps the type `T` and cannot be returned
+- **At `v0.12.2` (migration step 5):** [ran] "expects 'Req!', got 'T'". **still open** (4 tags).
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** with `fn parse_req[T](params: str)
   -> T!`, `req := try parse_req[Req](params)` then `return req` from a `-> Req!` function
   is "return type mismatch: … expects 'Req!', got 'T'". `req.tab` reads fine, so the field
@@ -2823,6 +2897,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `--release` listed; or tests at `-O1`/`-O2 -g` by default, as debuggable and far faster.
 
 ### CF-164 · bug · `confirmed`: on Linux, every `json.parse` fails to compile in a package whose C++ headers include `<chrono>`
+- **At `v0.12.2` (migration step 5):** [ran] found on `v0.12.2` itself (step 4, Docker); not rerun. **still open (Linux)** (35 tags).
 - **Seen (migration step 4) [ran, Linux arm64 in Docker (Debian trixie, clang 19, libstdc++ 14), `v0.12.2` `5be0987`]:**
   `cfire build flint` fails in `src/adapters/ipc` with "unknown type name '_CharT'" at
   its four `json.parse[T](…)` calls (`relay.cf`, `relay_files.cf`), lowered to
@@ -2862,6 +2937,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   function, by its qualified name; never a template's parameter type pasted into a cast.
 
 ### CF-165 · bug · `confirmed`: `sync.MutexGuard` has no `.value`, and `with_lock` returns an unresolved `R`
+- **At `v0.12.2` (migration step 5):** [ran] found on `v0.12.2` itself (step 4b); the checker's own message still says "read a locked value as 'guard.value'". **still open** (1 tag).
 - **Seen (migration step 4b) [ran, macOS arm64, `v0.12.2` `5be0987`]:** keeping the
   password estimator's word lists for the process (`src/domain/strength.cf`) behind a
   package-level `sync.Mutex[T]`. The GUIDE's "Read a locked value: `guard.value` on a
@@ -2890,3 +2966,19 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `// CFIRE-UPSTREAM: CF-165` line.
 - **Ideal:** `guard.value` as documented (or the GUIDE says `get()`), and `with_lock`'s
   `R` taken from the closure's return type.
+
+### CF-166 · bug · `confirmed`: `build.cf` drops an unknown `PkgConfig` name and any computed value, silently
+- **Seen (migration step 5) [ran, macOS arm64, `v0.12.2` `5be0987`]:** checking whether
+  `build.cf` can pick a list per OS (CF-031). A header guarded by `#ifndef FLINT_PROBE
+  #error` reached through `import cpp`, built with `cfire build app`:
+  - `Defines: ["FLINT_PROBE=1"]` on the executable: builds (the macro arrives).
+  - `D := if build.os() == "darwin" { ["FLINT_PROBE=1"] } else { [] }`, then `Defines: D`:
+    the `#error` fires, and the same with `"linux"`. The manifest takes the `if` without a
+    message and uses an empty list for both branches.
+  - `PkgConfig: ["nonexistent-pkg-xyz"]` on an executable that needs no library: builds,
+    exit 0, nothing printed.
+- **Impact:** a misspelt package or a per-OS list written the way the reference's
+  `build.os()` suggests fails later at link time, far from its cause, or not at all.
+- **Ideal:** `cfire/INVALID-BUILD-VALUE` (or similar) for a manifest value that is not a
+  literal, until computed values are supported; an error for a `PkgConfig` name
+  pkg-config does not know, as `pkg-config --exists` reports it.
