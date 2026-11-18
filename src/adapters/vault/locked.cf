@@ -60,7 +60,7 @@ fn (self: LockedVaultStore) leave_with(inner: SqlVaultStore) {
         self.cell->act_path = inner.act_path;
         self.cell->rekey_mark = inner.rekey_mark;
         self.cell->act_rekey_mark = inner.act_rekey_mark;
-        std::fill(self.cell->open_key.begin(), self.cell->open_key.end(), std::byte{0});
+        std::fill(self.cell->open_key.begin(), self.cell->open_key.end(), std::uint8_t{0});
         self.cell->open_key = inner.open_key;
         self.cell->open_salt = inner.open_salt;
         self.cell->mtx.unlock();

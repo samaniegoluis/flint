@@ -27,8 +27,8 @@ struct VaultCell {
     int64_t rekey_mark = -1;
     int64_t act_rekey_mark = -1;
     // Milestone 43: the key and salt the connection was opened with (store.cf).
-    std::vector<std::byte> open_key;
-    std::vector<std::byte> open_salt;
+    std::vector<std::uint8_t> open_key;
+    std::vector<std::uint8_t> open_salt;
 };
 
 } // namespace flint_vault
@@ -55,7 +55,7 @@ struct SessionCell {
     std::string path;
     std::string name;
     std::string id;
-    std::vector<std::byte> secrets_key;
+    std::vector<std::uint8_t> secrets_key;
     bool cached = false;
     // Access state of the app (D-042), also under `mtx`: when someone last used it,
     // the unlock a CLI asked for and who asked, and the vaults locked in this run,
@@ -77,7 +77,7 @@ struct SessionCell {
     std::string access_json;
 
     void wipe() {
-        std::fill(secrets_key.begin(), secrets_key.end(), std::byte{0});
+        std::fill(secrets_key.begin(), secrets_key.end(), std::uint8_t{0});
         secrets_key.clear();
         path.clear();
         name.clear();

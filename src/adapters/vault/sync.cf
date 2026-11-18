@@ -245,7 +245,8 @@ fn (self: SqlVaultStore) vault_write_new(path: str, data: []byte) -> void! {
         _ = fs.remove(tmp)
         return error("{err.message()}")
     }
-    fs.rename(tmp, path) or err {
+    // str(): a view here lowers like the C function of that name (CFIRE-UPSTREAM: CF-158)
+    fs.rename(str(tmp), str(path)) or err {
         _ = fs.remove(tmp)
         return error(coded(ERR_IO, "cannot write {path}"))
     }

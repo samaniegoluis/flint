@@ -84,7 +84,8 @@ fn sync_folder(dir: str) -> void! {
 // Creates an empty file at `path`, 0600, failing if one is there.
 fn create_empty_private(path: str) -> void! {
     if fs.exists(path) {
-        _ = fs.remove(path)
+        // str(): a view here lowers like the C function of that name (CFIRE-UPSTREAM: CF-158)
+        _ = fs.remove(str(path))
     }
     mut rc: i32 = 0
     mut reason := ""
@@ -112,7 +113,7 @@ fn export_rekeyed(src: CipherDb, dest: str, key: []byte, salt: []byte) -> void! 
         sqlite3_stmt* st = nullptr;
         rc = sqlite3_prepare_v2(src.handle, "ATTACH DATABASE ?1 AS rekey KEY ?2;", -1, &st, nullptr);
         if (rc == SQLITE_OK) {
-            sqlite3_bind_text(st, 1, dest.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(st, 1, std::string(dest).c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(st, 2, key_text.c_str(), -1, SQLITE_TRANSIENT);
             rc = sqlite3_step(st);
             if (rc == SQLITE_DONE) rc = SQLITE_OK;
@@ -130,12 +131,14 @@ fn export_rekeyed(src: CipherDb, dest: str, key: []byte, salt: []byte) -> void! 
         }
     }
     if rc != 0 {
-        _ = fs.remove(dest)
+        // str(): a view here lowers like the C function of that name (CFIRE-UPSTREAM: CF-158)
+        _ = fs.remove(str(dest))
         return error(coded(ERR_IO, "cannot write the re-keyed copy: {reason}"))
     }
     // The copy must open with the new key before anything relies on it.
     mut check := open_cipher_db(dest, key, salt, false) or err {
-        _ = fs.remove(dest)
+        // str(): a view here lowers like the C function of that name (CFIRE-UPSTREAM: CF-158)
+        _ = fs.remove(str(dest))
         return error(coded(ERR_IO, "the re-keyed copy does not open: {err.message()}"))
     }
     check.close_db()
@@ -225,7 +228,8 @@ fn (mut self: SqlVaultStore) vault_rekey_commit(path: str, page_key: []byte, sal
     // changed and the store keeps working on the old vault. The old connection then
     // holds a file no longer in the folder, and is closed. (Windows cannot rename over
     // an open file: its port closes first.)
-    fs.rename(src, path) or err {
+    // str(): a view here lowers like the C function of that name (CFIRE-UPSTREAM: CF-158)
+    fs.rename(str(src), str(path)) or err {
         return error(coded(ERR_IO, "cannot put the new vault in place: {err.message()}"))
     }
     dir := fs.dirname(path)

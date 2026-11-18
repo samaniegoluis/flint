@@ -11,8 +11,8 @@ import "../../domain"
 // machine's activity file for the open vault (activity.cf, milestone 39), kept in
 // `act_dir`.
 type SqlVaultStore struct {
-    handle: *mut cpp::sqlite3
-    act_handle: *mut cpp::sqlite3
+    handle: cpp.flint_db::Db
+    act_handle: cpp.flint_db::Db
     act_path: str
     act_dir: str
     // Milestone 40 (rekey.cf): the connections' change counts when a re-keyed copy
@@ -88,7 +88,8 @@ fn (self: SqlVaultStore) vault_read_salt(path: str) -> []byte! {
     if size < 16 {
         return error(coded(ERR_INVALID, "{path} is not a Flint vault"))
     }
-    mut f := fs.open(path) or err {
+    // str(): a view here lowers like the C function of that name (CFIRE-UPSTREAM: CF-158)
+    mut f := fs.open(str(path)) or err {
         return error(coded(ERR_IO, "cannot read {path}"))
     }
     defer f.close()
@@ -111,7 +112,8 @@ fn (mut self: SqlVaultStore) vault_create(path: str, page_key: []byte, salt: []b
     self.adopt(try open_cipher_db(path, page_key, salt, true), page_key, salt)
     self.conn().migrate() or err {
         self.vault_detach()
-        _ = fs.remove(path)
+        // str(): a view here lowers like the C function of that name (CFIRE-UPSTREAM: CF-158)
+        _ = fs.remove(str(path))
         return error("{err.message()}")
     }
 }
@@ -421,7 +423,9 @@ fn (self: SqlVaultStore) tunnel_drop(id: str) -> void! {
 // ---- Tokens and the activity log (migration 004) ----------------------------------
 
 fn join_ids(ids: []str) -> str {
-    return ids.join(",")
+    // CFIRE-UPSTREAM: CF-154
+    mut own := ids
+    return own.join(",")
 }
 
 fn split_ids(s: str) -> []str {

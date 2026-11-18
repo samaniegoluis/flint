@@ -143,14 +143,8 @@ fn replace_synced(path: str, data: str) -> void! {
         _ = fs.remove(tmp)
         return error(err.message())
     }
-    // `fs.rename` here lowers as stdio's rename(const char*, const char*), which a
-    // header of this package declares (CF-158): the call is made in C++.
-    mut renamed := false
-    // CFIRE-UPSTREAM: CF-158
-    cpp {
-        renamed = cfire::fs::rename(tmp, path).has_value();
-    }
-    if !renamed {
+    // str(): a view here lowers like the C function of that name (CFIRE-UPSTREAM: CF-158)
+    fs.rename(tmp, str(path)) or err {
         _ = fs.remove(tmp)
         return error(coded(ERR_IO, "cannot replace {path}"))
     }

@@ -6,6 +6,8 @@ package vault
 
 // CFIRE-UPSTREAM: CF-007
 import cpp "sqlite3.h"
+// CFIRE-UPSTREAM: CF-160
+import cpp "flint_db.hpp"
 import "core:encoding/hex"
 
 // ---- Format v1 SQLCipher parameters (D-016, D-017) ----------------------------
@@ -61,7 +63,7 @@ fn sql_blob(v: []byte) -> SqlCell {
 
 type CipherDb struct {
     // Owned by this value; closed by close_db().
-    handle: *mut cpp::sqlite3
+    handle: cpp.flint_db::Db
 }
 
 fn (self: CipherDb) last_error() -> str {
@@ -93,13 +95,13 @@ fn open_cipher_db(path: str, key: []byte, salt: []byte, create: bool) -> CipherD
     "PRAGMA cipher_hmac_algorithm = " + CIPHER_HMAC_ALGORITHM + "; " +
     "PRAGMA cipher_kdf_algorithm = " + CIPHER_KDF_ALGORITHM + "; " +
     "PRAGMA kdf_iter = " + CIPHER_KDF_ITER + ";"
-    mut handle: *mut cpp::sqlite3
+    mut handle: cpp.flint_db::Db
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-007
     cpp {
         int flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX;
         if (create) flags |= SQLITE_OPEN_CREATE;
-        rc = sqlite3_open_v2(path.c_str(), &handle, flags, nullptr);
+        rc = sqlite3_open_v2(std::string(path).c_str(), &handle, flags, nullptr);
         if (rc == SQLITE_OK) {
             // SQLCipher logs decryption failures to stderr; keep vault errors in our
             // own messages only.
@@ -144,7 +146,7 @@ fn (self: CipherDb) exec(sql: str) -> void! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-007
     cpp {
-        rc = sqlite3_exec(self.handle, sql.c_str(), nullptr, nullptr, nullptr);
+        rc = sqlite3_exec(self.handle, std::string(sql).c_str(), nullptr, nullptr, nullptr);
     }
     if rc != 0 {
         return error(self.statement_error(rc))
@@ -166,7 +168,7 @@ fn (self: CipherDb) query_cells(sql: str, args: []SqlCell) -> [][]SqlCell! {
     // CFIRE-UPSTREAM: CF-007
     cpp {
         sqlite3_stmt* st = nullptr;
-        rc = sqlite3_prepare_v2(self.handle, sql.c_str(), -1, &st, nullptr);
+        rc = sqlite3_prepare_v2(self.handle, std::string(sql).c_str(), -1, &st, nullptr);
         for (size_t i = 0; rc == SQLITE_OK && i < args.size(); i++) {
             const auto& a = args[i];
             int idx = static_cast<int>(i) + 1;
@@ -199,7 +201,7 @@ fn (self: CipherDb) query_cells(sql: str, args: []SqlCell) -> [][]SqlCell! {
                     }
                     case SQLITE_BLOB: {
                         cell.kind = 3;
-                        const auto* b = static_cast<const std::byte*>(sqlite3_column_blob(st, c));
+                        const auto* b = static_cast<const std::uint8_t*>(sqlite3_column_blob(st, c));
                         int len = sqlite3_column_bytes(st, c);
                         cell.blob_val.assign(b, b + len);
                         break;

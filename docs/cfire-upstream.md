@@ -2699,13 +2699,16 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   (`lookup_name` after the final `::`, `src/codegen/expr.hpp:1068`), so stdio's
   `rename(const char*, const char*)` drives the coercion of `cfire::fs::rename`. A string
   literal argument escapes it (`starts_with("\"")`), so a quick test with literals passes.
-  `fs.remove(x)` in the same package compiles, likely by luck of the conversions; any
-  module function named like a C function in an imported header is exposed.
+  Only a **view** argument fails: a `str` parameter is a `str_ref`, and `c_str` of a view is
+  a `CStrViewHolder`, which does not convert to `std::filesystem::path`; an owned `str`
+  goes through `c_str` to `const char*` and on to `path`. `fs.remove` (stdio's `remove`)
+  and `fs.open` (fcntl's `open`) hit it too: 12 calls in the vault and server adapters.
 - **Repro:** `import "core:fs"`, `import cpp "<stdio.h>"`, then
   `fn f(path: str) -> void! { tmp := path + ".tmp"; fs.write_text(tmp, "x") or {}; fs.rename(tmp, path) or err { return error("no") } }`;
   `cfire run`. Without the `import cpp`, or with `<cstdio>`, it runs.
-- **Workaround:** the call in a `cpp` block, `cfire::fs::rename(tmp, path)`
-  (`replace_synced`, `src/adapters/serverfs/store.cf`).
+- **Workaround:** an owned copy of each view argument, `fs.rename(tmp, str(path))`
+  (`src/adapters/serverfs/store.cf`; `activity.cf`, `rekey.cf`, `store.cf`, `sync.cf` in
+  `src/adapters/vault`).
 - **Ideal:** the C signature table is consulted only for a callee that resolves to a C
   function (`cpp.name`, or an unqualified name from an `import cpp`), never for a cfire
   module's function.
@@ -2732,7 +2735,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `shared[...]`.
 - **Repro:** `type Conn struct { session: *mut cpp::ssh_session_struct }`, `cfire check`.
 - **Workaround:** a C++ alias of the pointer type, `using SshSession = ssh_session_struct*;`
-  (`flint_ssh.hpp`, `flint_vault_lock.hpp`), named as an opaque `cpp.flint_ssh::SshSession`
+  (`src/adapters/ssh/native/flint_ssh.hpp`, `src/adapters/vault/native/flint_db.hpp`), named as an opaque `cpp.flint_ssh::SshSession`
   in `.cf`; every use stays in a `cpp` block. It checks, defaults to `nullptr` and copies
   as before. A loophole in `cfire/RAW-POINTER` more than a design.
 - **Ideal:** a documented non-owning handle form (an opaque `cpp` type, or a `handle[T]`
