@@ -49,6 +49,9 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [locked, os, openVaultFile, fail, go]);
 
+  // The field takes the focus here, not through autoFocus: autoFocus lands at commit,
+  // before this effect empties the field, so a focused field would not mean the clear
+  // is done. serve-e2e waits for this focus before it types (ROADMAP §5).
   useEffect(() => { setPw(''); setError(''); input.current?.focus(); }, [target?.path]);
   // Off by default (D-048); ticked for a vault this run knows is remembered, so
   // unlocking it after a lock keeps it remembered unless the box is unticked.
@@ -165,7 +168,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
             <label className="flabel" htmlFor="pw">Master password</label>
             <div className={'input lg mono' + (error ? ' err' : '')} style={{ paddingLeft: 'var(--sp-4)', gap: 'var(--sp-3)' }}>
               <span className="accent-t" aria-hidden="true">❯</span>
-              <input id="pw" ref={input} type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} autoFocus
+              <input id="pw" ref={input} type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw}
                 onChange={(e) => setPw(e.target.value)}
                 onKeyDown={(e) => setCaps(e.getModifierState?.('CapsLock') ?? false)}
                 onKeyUp={(e) => setCaps(e.getModifierState?.('CapsLock') ?? false)}
