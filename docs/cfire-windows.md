@@ -6,13 +6,19 @@ each problem with the patch that fixed it. **Nothing here is an issue or a PR.**
 patches show *what* changed and *why*; rewrite them in cfire's own patterns.
 
 Sibling of [`cfire-upstream.md`](cfire-upstream.md), which tracks every other gap
-(CF-NNN). This file is Windows only, and lives on Flint's `windows-port` branch.
+(CF-NNN). This file is Windows only, and lives on Flint's Windows branches
+(`windows-port-2`, frozen at `d191abd`; `cfire-0.12-windows` since 2026-11-18).
+
+**Since 2026-11-18 Flint runs on stock cfire `v0.12.2`**, natively on the Windows test
+VM, with none of patches 0001-0009: [On stock cfire v0.12.2](#on-stock-cfire-v0122)
+below says, for each entry, whether cfire covers it now. The patches stay on
+`windows-port-2`; the entries below them are the record of the port on `c5b1d4b`.
 
 | | |
 |---|---|
 | cfire base | `c5b1d4b` (v0.10.0, 2026-11-09) |
 | Local cfire | `~/Personal/Proyectos/cfire/cfire-windows`, branch `windows-fixes`, never pushed |
-| Patches | [`cfire-windows/patches/`](cfire-windows/patches/) (`git format-patch c5b1d4b..windows-fixes`) |
+| Patches | `docs/cfire-windows/patches/` on `windows-port-2` (`git format-patch c5b1d4b..windows-fixes`) |
 | Windows | Windows 11 build 26200, x64, WebView2 Evergreen runtime 156 |
 | Toolchain | llvm-mingw 20261104 (clang 23.1.5, ucrt, libc++), MSYS2 CLANG64 libraries |
 | Probes | [`windows/`](../windows/): `run-probes.sh` rebuilds and reruns everything below |
@@ -57,6 +63,19 @@ around and patches 0001–0006 applied:
 | `webui.App` window: page from `set_html`, a `bind` call answered, an `emit` received, `runtime.Quit()` | works, Edge WebView2 157 | W-06, CF-001.a–e |
 | `app.run_webview_test` from `cfire test` (offscreen): success, timeout, rejected call | 3/3 pass | CF-001.g |
 
+## On stock cfire v0.12.2
+
+Step 6 of `docs/cfire-migration.md` (2026-11-18): cfire's Windows release
+(`cfire-v0.12.2-windows-x86_64.zip`, SHA-256 from the release's `SHA256SUMS.txt`) on the
+Windows test VM (Windows 11 Pro 22H2, build 22621, WebView2 157), in MSYS2 CLANG64
+(clang 23.1.5), natively: no WSL, no cross-compiling, no patches. Each entry is
+**covered** (Flint's workaround goes), **covered differently** (Flint adapts) or
+**open** (a report with a repro; the port keeps a Flint-side shim or waits).
+
+| ID | On `v0.12.2` | Evidence | Flint |
+|---|---|---|---|
+| W-01 | **covered differently**: cfire's supported Windows path is native MSYS2 CLANG64 (Q55), not cross-compiling, and the release ships `cfire.exe` for it | [ran] `cfire doctor` 10 passed, `cfire build flint` → `flint.exe` | `windows/bin/env.sh` sets up CLANG64 instead of a cross toolchain; `xcxx`, `sysroot.sh`, the `pkg-config --static` wrapper and `curl.sh` go (libsodium, libssh, SQLCipher, libcurl over Schannel from pacman; FreeRDP built natively, `freerdp.sh`) |
+
 ## How to read each entry
 
 - **Evidence** says how it was established: **[ran]** a binary ran on Windows,
@@ -86,7 +105,7 @@ around and patches 0001–0006 applied:
   finds llvm-mingw (or says how to get it) would make this discoverable.
 - **Patch:** none for the compiler choice. A wrapper outside cfire was enough.
 - **Then `import cpp` failed** · [compiled] · fixed ·
-  [patch 0005](cfire-windows/patches/0005-fix-build-read-import-cpp-headers-with-CFIRE_CXX-lik.patch).
+  [patch 0005](https://github.com/samaniegoluis/flint/blob/windows-port-2/docs/cfire-windows/patches/0005-fix-build-read-import-cpp-headers-with-CFIRE_CXX-lik.patch).
   With `CFIRE_CXX` set, the build itself used llvm-mingw, but every `import cpp` stopped
   first: `clang AST ingestion failed for sodium.h: 'stdlib.h' file not found`.
   `inspect_header()` (`clang_bridge.hpp`) runs a fixed `clang++` over the header with the
@@ -98,7 +117,7 @@ around and patches 0001–0006 applied:
 ## W-02
 
 **`cfire test` and `cfire run` look for the binary without `.exe`** · [ran] · fixed ·
-[patch 0001](cfire-windows/patches/0001-fix-build-name-the-test-run-binary-.exe-for-a-Window.patch)
+[patch 0001](https://github.com/samaniegoluis/flint/blob/windows-port-2/docs/cfire-windows/patches/0001-fix-build-name-the-test-run-binary-.exe-for-a-Window.patch)
 
 - **Symptom:** cross-compiling, `cfire test --target x86_64-w64-mingw32 file.cf` builds,
   then fails with `sh: 1: /tmp/cfire-test-31267: not found` (exit 127). The file on disk
@@ -122,7 +141,7 @@ around and patches 0001–0006 applied:
 ## W-03
 
 **`os.cwd()` returns `std::filesystem::path`, not `str`** · [compiled] · fixed ·
-[patch 0002](cfire-windows/patches/0002-fix-os-os.cwd-returns-UTF-8-str-as-documented-on-eve.patch)
+[patch 0002](https://github.com/samaniegoluis/flint/blob/windows-port-2/docs/cfire-windows/patches/0002-fix-os-os.cwd-returns-UTF-8-str-as-documented-on-eve.patch)
 
 - **Symptom:** `here: str = os.cwd()` fails on Windows with
   `no viable conversion from 'std::filesystem::path' to 'str'`. On Linux it compiles.
@@ -169,7 +188,7 @@ around and patches 0001–0006 applied:
 ## W-06
 
 **`ext:webui`: no WebView2 in the window** · [ran] · fixed ·
-[patch 0004](cfire-windows/patches/0004-feat-webui-a-real-WebView2-in-the-Windows-window-CF-.patch) ·
+[patch 0004](https://github.com/samaniegoluis/flint/blob/windows-port-2/docs/cfire-windows/patches/0004-feat-webui-a-real-WebView2-in-the-Windows-window-CF-.patch) ·
 CF-001.a–e and .g
 
 - **Symptom (before):** a `webui.App` opened an empty Win32 window and printed
@@ -245,7 +264,7 @@ CF-001.a–e and .g
 ## W-08
 
 **`*_unix.cf` is compiled for Windows too** · [ran] · fixed ·
-[patch 0003](cfire-windows/patches/0003-fix-build-honour-the-documented-_unix.cf-suffix-so-i.patch)
+[patch 0003](https://github.com/samaniegoluis/flint/blob/windows-port-2/docs/cfire-windows/patches/0003-fix-build-honour-the-documented-_unix.cf-suffix-so-i.patch)
 
 - **Symptom:** a package with `name_unix.cf` and `name_windows.cf` (the same function in
   each) builds on Linux, and fails for Windows with
@@ -291,7 +310,7 @@ worked around
 ## W-11
 
 **`os.args()` is in the ANSI code page, not UTF-8** · [ran] · fixed ·
-[patch 0006](cfire-windows/patches/0006-fix-os-os.args-is-UTF-8-on-Windows-from-the-UTF-16-c.patch)
+[patch 0006](https://github.com/samaniegoluis/flint/blob/windows-port-2/docs/cfire-windows/patches/0006-fix-os-os.args-is-UTF-8-on-Windows-from-the-UTF-16-c.patch)
 
 - **Symptom:** Flint's `flint cp "C:\…\año-ñ ✓.txt" web:/tmp/` failed with
   `C:/…/a�o-� ?.txt: no such file or folder`. The same name downloaded *to* Windows had
@@ -321,7 +340,7 @@ worked around
 
 **`set_tray` and `set_icon` take `.ico` only on Windows; a `.png` is silently ignored** ·
 [ran] · fixed ·
-[patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-on-Windows-PNG-files-a.patch)
+[patch 0007](https://github.com/samaniegoluis/flint/blob/windows-port-2/docs/cfire-windows/patches/0007-feat-webui-app-and-tray-icons-on-Windows-PNG-files-a.patch)
 
 - **Symptom:** Flint passes `ui/tray.png` to `app.set_tray` (as on macOS and Linux). On
   Windows the notification area showed the generic application icon, with no message.
@@ -340,7 +359,7 @@ worked around
 ## W-13
 
 **A Windows `.exe` has no icon: the build file's `Icon` is never embedded** · [ran] ·
-fixed · [patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-on-Windows-PNG-files-a.patch)
+fixed · [patch 0007](https://github.com/samaniegoluis/flint/blob/windows-port-2/docs/cfire-windows/patches/0007-feat-webui-app-and-tray-icons-on-Windows-PNG-files-a.patch)
 
 - **Symptom:** `Icon: "assets/app-icon/Flint.icns"` in `build.cf` gives the macOS bundle
   its icon. The Windows `.exe` shows the generic icon in Explorer, the taskbar and Alt+Tab.
@@ -364,7 +383,7 @@ fixed · [patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-o
 ## W-14
 
 **`fs.exists` is false for an AF_UNIX socket file on Windows** · [ran] · fixed ·
-[patch 0008](cfire-windows/patches/0008-fix-fs-fs.exists-sees-an-AF_UNIX-socket-file-on-Wind.patch)
+[patch 0008](https://github.com/samaniegoluis/flint/blob/windows-port-2/docs/cfire-windows/patches/0008-fix-fs-fs.exists-sees-an-AF_UNIX-socket-file-on-Wind.patch)
 
 - **Symptom:** with Flint's app running and listening on `%APPDATA%\Flint\flint.sock`
   (an AF_UNIX socket, Windows 10 1803+), the CLI said the app was not running. The CLI
@@ -400,7 +419,7 @@ fixed · [patch 0007](cfire-windows/patches/0007-feat-webui-app-and-tray-icons-o
 ## W-16
 
 **After Alt+Tab back, the WebView2 does not get the keyboard focus** · [ran] · **fixed** ·
-[patch 0009](cfire-windows/patches/0009-fix-webui-the-WebView2-takes-the-keyboard-focus-back.patch)
+[patch 0009](https://github.com/samaniegoluis/flint/blob/windows-port-2/docs/cfire-windows/patches/0009-fix-webui-the-WebView2-takes-the-keyboard-focus-back.patch)
 
 > **Found after the handoff.** cfire's author already has the 2026-11-09 package (W-01 to
 > W-15, patches 0001-0008) and is working from it; W-16 and patch 0009 are not in it and

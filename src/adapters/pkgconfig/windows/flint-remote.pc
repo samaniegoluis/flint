@@ -1,7 +1,7 @@
 # CFIRE-UPSTREAM: CF-031, CF-146
-# See ../linux/flint-remote.pc. Windows port (windows-port branch only): libcurl built
-# static by windows/bin/curl.sh, HTTP and HTTPS only, TLS through Schannel and the
-# Windows certificate store; its .pc carries -DCURL_STATICLIB and the system libraries.
+# See ../linux/flint-remote.pc. Windows: MSYS2's mingw-w64-clang-x86_64-curl-winssl,
+# TLS through Schannel and the Windows certificate store, linked static (cfire links
+# every Windows target -static), so no curl DLL ships.
 Name: flint-remote
 Description: Native HTTP shim for Flint's remote vault client (Windows)
 Version: 1
