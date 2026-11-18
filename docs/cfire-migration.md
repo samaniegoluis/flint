@@ -257,6 +257,10 @@ Each step ends with a line in the table at the end, its checks and the commit.
 
 ### 4. Linux green
 
+- **First, the Mac onto the newest patch** (owner, 2026-11-18): `v0.12.2` (`5be0987`, only
+  two flaky cfire CI tests fixed against `v0.12.1`) installed as step 1 did 0.12.1, the
+  default of `cfire-next.sh`, and the Mac battery of step 3 rerun on it before Linux, so
+  the Mac and Linux run the same release.
 - `scripts/linux-check.sh` with the new cfire's Linux archive in the image.
 - Zorin: the build and the automatic suites; the GUI on a real WebKitGTK.
 
