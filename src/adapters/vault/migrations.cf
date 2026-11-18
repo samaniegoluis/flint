@@ -258,11 +258,3 @@ fn (self: CipherDb) apply_migration(m: Migration) -> void! {
     try self.exec(m.sql)
     try self.run_sql("INSERT INTO schema_migrations (version, name) VALUES (?1, ?2);", [sql_int(m.version), sql_text(m.name)])
 }
-
-test "migrations are numbered 1..n with no gaps" {
-    list := vault_migrations()
-    for i, m in list {
-        assert_eq(m.version, i64(i) + 1)
-        assert(m.name.len() > 0)
-    }
-}

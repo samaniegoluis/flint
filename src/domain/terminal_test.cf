@@ -1,0 +1,7 @@
+package domain
+
+test "terminal size validation" {
+    assert(default_terminal_size().is_valid())
+    assert(!TerminalSize{ cols: 0, rows: 24 }.is_valid())
+    assert(!TerminalSize{ cols: 80, rows: 5000 }.is_valid())
+}

@@ -107,15 +107,3 @@ fn monitor_window_send(id: str, json: str) {
         flint_monitors::send(id, json);
     }
 }
-
-test "the shim's monitor lines read as monitors" {
-    text := "69733382\tDELL U2723QE\t0\t0\t2560\t1440\t100\t1\t0\n2\tLG\t-1080\t-235\t1080\t1920\t100\t0\t0\nbad\tline\n\\\\.\\DISPLAY2\tx\t3840\t0\t1920\t1080\t150\t0\t1\n"
-    ms := parse_monitor_lines(text)
-    assert_eq(ms.len(), 3)
-    assert_eq(ms[0].id, "69733382")
-    assert(ms[0].primary)
-    assert_eq(ms[1].x, -1080)
-    assert_eq(ms[2].scale, 150)
-    assert(ms[2].physical)
-    assert_eq(parse_monitor_lines("").len(), 0)
-}

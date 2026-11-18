@@ -1,0 +1,50 @@
+package domain
+
+test "tunnel names" {
+    try check_tunnel_name("postgres")
+    try check_tunnel_name("pg-15.main_db")
+    mut r := ""
+    check_tunnel_name("db1:pg") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+    r = ""
+    check_tunnel_name("") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+    r = ""
+    check_tunnel_name("a b") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+}
+
+test "destinations parse as port, host:port and [v6]:port" {
+    (h1, p1) := try parse_tunnel_destination("5432")
+    assert_eq(h1, "localhost")
+    assert_eq(p1, 5432)
+    (h2, p2) := try parse_tunnel_destination("db.internal:6379")
+    assert_eq(h2, "db.internal")
+    assert_eq(p2, 6379)
+    (h3, p3) := try parse_tunnel_destination("[fd00::5]:443")
+    assert_eq(h3, "fd00::5")
+    assert_eq(p3, 443)
+    assert_eq(tunnel_destination(h3, p3), "[fd00::5]:443")
+    assert_eq(tunnel_destination(h2, p2), "db.internal:6379")
+    mut r := ""
+    parse_tunnel_destination("db:0") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+    r = ""
+    parse_tunnel_destination("fd00::5:443") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+    r = ""
+    parse_tunnel_destination("db:http") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_INVALID)
+}
+
+test "a tunnel reference is host:name" {
+    (h, n) := try split_tunnel_ref("db1:postgres")
+    assert_eq(h, "db1")
+    assert_eq(n, "postgres")
+    mut r := ""
+    split_tunnel_ref("db1") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_USAGE)
+    r = ""
+    split_tunnel_ref("db1:") or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), ERR_USAGE)
+}

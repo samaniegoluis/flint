@@ -1,0 +1,78 @@
+package domain
+
+test "default settings are valid and bad values are refused" {
+    mut refused := 0
+    try check_settings(default_settings())
+    mut s := default_settings()
+    s.theme = "neon"
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 1)
+    s = default_settings()
+    s.term_font_size = 99
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 2)
+    s = default_settings()
+    s.term_line_height = 90
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 3)
+    s = default_settings()
+    s.term_font = "JetBrainsMono Nerd Font"
+    try check_settings(s)
+    s.term_font = "x\"; color: red"
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 4)
+    s = default_settings()
+    s.term_theme = "aura"
+    try check_settings(s)
+    s.term_theme = "solarized"
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 5)
+    s = default_settings()
+    assert_eq(s.lock_after, "1h")
+    s.lock_after = "1m"
+    try check_settings(s)
+    s.lock_after = "2m"
+    check_settings(s) or { refused += 1 }
+    assert_eq(refused, 6)
+}
+
+test "idle lock follows the setting" {
+    assert(!idle_lock_due(59999, 0, "1m"))
+    assert(idle_lock_due(60000, 0, "1m"))
+    assert(!idle_lock_due(3599999, 0, "1h"))
+    assert(idle_lock_due(3600000, 0, "1h"))
+    assert(!idle_lock_due(999999999, 0, "never"))
+    assert_eq(lock_after_ms(""), 0)
+}
+
+test "remote desktop keys are a preset and an optional custom table" {
+    mut s := default_settings()
+    assert_eq(s.rdp_mac_keys, "mac")
+    s.rdp_mac_keys = "windows"
+    try check_settings(s)
+    s.rdp_mac_keys = "custom"
+    s.rdp_mac_custom = "ControlLeft=win,ControlRight=off,AltLeft=alt,AltRight=altgr,MetaLeft=ctrl,MetaRight=ctrl"
+    try check_settings(s)
+    mut refused := 0
+    s.rdp_mac_keys = "linux"
+    check_settings(s) or { refused += 1 }
+    s.rdp_mac_keys = "custom"
+    for bad in ["MetaLeft", "MetaLeft=hyper", "Fn=ctrl", "MetaLeft=ctrl,MetaLeft=alt", "MetaLeft=ctrl,", "=ctrl"] {
+        s.rdp_mac_custom = bad
+        check_settings(s) or { refused += 1 }
+    }
+    assert_eq(refused, 7)
+}
+
+test "remote desktop graphics are auto or compatible" {
+    mut s := default_settings()
+    assert_eq(s.rdp_graphics, "auto")
+    s.rdp_graphics = "compatible"
+    try check_settings(s)
+    mut refused := 0
+    for bad in ["", "h264", "AUTO"] {
+        s.rdp_graphics = bad
+        check_settings(s) or { refused += 1 }
+    }
+    assert_eq(refused, 3)
+}

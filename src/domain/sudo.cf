@@ -1,6 +1,5 @@
 package domain
 
-
 // `flint exec --sudo` (milestone 13, D-036, D-039, D-047). The app runs
 // `sudo -S -k -p <prompt> -- <argv>` on an exec channel of its own (no PTY: no pager
 // waits for a key, stdout and stderr stay apart) and writes the host's sudo password
@@ -137,71 +136,4 @@ fn sudo_not_allowed(w: SudoWatch) -> bool {
         }
     }
     return false
-}
-
-// ---- Tests ------------------------------------------------------------------------
-
-test "a sudo command line quotes every argument as one word" {
-    line := sudo_command_line(sudo_prompt("ab12"), ["systemctl", "restart", "nginx"])
-    assert_eq(line, "sudo -S -k -p '[flint-sudo:ab12]' -- 'systemctl' 'restart' 'nginx'")
-    tricky := sudo_command_line("[p]", ["sh", "-c", "echo 'hi' > /tmp/x; rm -rf $HOME"])
-    assert_eq(tricky, "sudo -S -k -p '[p]' -- 'sh' '-c' 'echo '\\''hi'\\'' > /tmp/x; rm -rf $HOME'")
-}
-
-test "the password is typed once, at the real prompt, and the prompt is cut" {
-    mut w := new_sudo_watch(sudo_prompt("ab12"), "s3cret")
-    a := sudo_feed(mut w, "[flint-sudo:ab12]")
-    assert(a.send_password)
-    assert_eq(a.output, "")
-    b := sudo_feed(mut w, "\nnginx restarted\n")
-    assert(!b.send_password && !b.refused)
-    assert_eq(b.output, "\nnginx restarted\n")
-}
-
-test "a prompt split across chunks is still found" {
-    mut w := new_sudo_watch(sudo_prompt("ab12"), "s3cret")
-    a := sudo_feed(mut w, "motd line\n[flint-su")
-    assert(!a.send_password)
-    assert_eq(a.output, "motd line\n")
-    b := sudo_feed(mut w, "do:ab12]")
-    assert(b.send_password)
-    assert_eq(b.output, "")
-}
-
-test "a fake password prompt gets nothing" {
-    mut w := new_sudo_watch(sudo_prompt("ab12"), "s3cret")
-    a := sudo_feed(mut w, "[sudo] password for me: ")
-    assert(!a.send_password)
-    assert_eq(a.output, "[sudo] password for me: ")
-    b := sudo_feed(mut w, "Password:")
-    assert(!b.send_password)
-}
-
-test "sudo asking twice means the password was refused" {
-    mut w := new_sudo_watch(sudo_prompt("ab12"), "wrong")
-    assert(sudo_feed(mut w, "[flint-sudo:ab12]").send_password)
-    again := sudo_feed(mut w, "\r\nSorry, try again.\r\n[flint-sudo:ab12]")
-    assert(again.refused)
-    assert(!again.send_password)
-}
-
-test "the password never reaches the output, even echoed or split" {
-    mut w := new_sudo_watch(sudo_prompt("ab12"), "s3cret")
-    _ = sudo_feed(mut w, "[flint-sudo:ab12]")
-    a := sudo_feed(mut w, "s3c")
-    b := sudo_feed(mut w, "ret\nok\n")
-    rest := sudo_flush(mut w)
-    all := a.output + b.output + rest
-    assert(!all.contains("s3cret"))
-    assert_eq(all, "\nok\n")
-}
-
-test "sudo's refusal of a user who may not use it is recognised" {
-    mut w := new_sudo_watch(sudo_prompt("ab12"), "pw")
-    _ = sudo_feed(mut w, "[flint-sudo:ab12]")
-    _ = sudo_feed(mut w, "\r\nme is not in the sudoers file.  This incident will be reported.\r\n")
-    assert(sudo_not_allowed(w))
-    mut ok := new_sudo_watch(sudo_prompt("ab12"), "pw")
-    _ = sudo_feed(mut ok, "all good\n")
-    assert(!sudo_not_allowed(ok))
 }

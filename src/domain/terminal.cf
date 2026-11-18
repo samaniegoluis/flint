@@ -15,9 +15,3 @@ fn default_terminal_size() -> TerminalSize {
 fn (self: TerminalSize) is_valid() -> bool {
     return self.cols > 0 && self.rows > 0 && self.cols <= 1000 && self.rows <= 1000
 }
-
-test "terminal size validation" {
-    assert(default_terminal_size().is_valid())
-    assert(!TerminalSize{ cols: 0, rows: 24 }.is_valid())
-    assert(!TerminalSize{ cols: 80, rows: 5000 }.is_valid())
-}

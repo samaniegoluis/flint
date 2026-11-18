@@ -1,0 +1,206 @@
+package domain
+
+fn test_proc(pid: i64, ppid: i64, exe: str, argv0: str) -> CallerProc {
+    return CallerProc{ pid: pid, ppid: ppid, started: pid * 10, exe: exe, argv0: argv0 }
+}
+
+// flint ← zsh -c ← claude ← zsh ← tmux ← launchd
+fn agent_chain() -> []CallerProc {
+    return [
+        test_proc(500, 400, "/usr/local/bin/flint", "flint"),
+        test_proc(400, 300, "/bin/zsh", "/bin/zsh"),
+        test_proc(300, 200, "/Users/me/.local/share/claude/versions/2.1.3", "claude"),
+        test_proc(200, 100, "/bin/zsh", "-zsh"),
+        test_proc(100, 1, "/opt/homebrew/bin/tmux", "tmux"),
+        test_proc(1, 0, "/sbin/launchd", "launchd"),
+    ]
+}
+
+test "an agent's flint anchors on the agent, not on its shells" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    assert_eq(anchor_index(c.chain), 2)
+    assert_eq(caller_anchor(c).pid, 300)
+    assert_eq(caller_label(c), "flint, started by Claude Code")
+}
+
+test "a person's flint anchors on tmux or the terminal app" {
+    chain := [
+        test_proc(500, 200, "/usr/local/bin/flint", "flint"),
+        test_proc(200, 150, "/bin/zsh", "-zsh"),
+        test_proc(150, 100, "/usr/bin/login", "login"),
+        test_proc(100, 1, "/Applications/iTerm.app/Contents/MacOS/iTerm2", "/Applications/iTerm.app/Contents/MacOS/iTerm2"),
+        test_proc(1, 0, "/sbin/launchd", "launchd"),
+    ]
+    c := Caller{ uid: 501, chain: chain }
+    assert_eq(caller_anchor(c).pid, 100)
+    assert_eq(caller_label(c), "flint, started by iTerm")
+}
+
+test "a flint started straight by launchd is its own caller" {
+    chain := [test_proc(500, 1, "/usr/local/bin/flint", "flint"), test_proc(1, 0, "/sbin/launchd", "launchd")]
+    c := Caller{ uid: 501, chain: chain }
+    assert_eq(anchor_index(c.chain), 0)
+    assert_eq(caller_label(c), "flint")
+}
+
+fn test_catalog() -> Catalog {
+    groups := [
+        Group{ id: "g-prod", parent_id: "", name: "Production" },
+        Group{ id: "g-api", parent_id: "g-prod", name: "api" },
+        Group{ id: "g-lab", parent_id: "", name: "Lab" },
+    ]
+    mut a := Host{}
+    a.id = "h-api"
+    a.alias = "api-01"
+    a.group_id = "g-api"
+    mut b := Host{}
+    b.id = "h-lab"
+    b.alias = "lab-01"
+    b.group_id = "g-lab"
+    return Catalog{ groups: groups, hosts: [a, b], keys: [], creds: [] }
+}
+
+fn test_grant(scope: AccessScope, read: bool, exec: bool, write: bool, expires_ms: i64) -> Grant {
+    return Grant{ id: "g1", vault_id: "v1", anchor_pid: 300, anchor_started: 3000, label: "x", scope: scope, read: read, exec: exec, write: write, created_ms: 0, expires_ms: expires_ms, duration: "1h" }
+}
+
+fn run_need(alias: str) -> AccessNeed {
+    return AccessNeed{ action: ACCESS_EXEC, host: alias }
+}
+
+test "a grant reaches the hosts of its groups and subgroups only" {
+    cat := test_catalog()
+    g := test_grant(AccessScope{ all: false, groups: ["g-prod"], hosts: [] }, true, true, false, 0)
+    assert(grant_covers(g, "v1", run_need("api-01"), cat, 5))
+    assert(!grant_covers(g, "v1", run_need("lab-01"), cat, 5))
+    assert(grant_covers(g, "v1", AccessNeed{ action: ACCESS_READ, host: "" }, cat, 5))
+    // Changing the vault needs the whole vault, even with write ticked.
+    assert(!grant_covers(test_grant(AccessScope{ all: false, groups: ["g-prod"], hosts: [] }, true, true, true, 0), "v1", AccessNeed{ action: ACCESS_WRITE, host: "" }, cat, 5))
+    assert(grant_covers(test_grant(AccessScope{ all: true, groups: [], hosts: [] }, false, false, true, 0), "v1", AccessNeed{ action: ACCESS_WRITE, host: "" }, cat, 5))
+}
+
+test "a grant by host id survives a rename of its alias" {
+    mut cat := test_catalog()
+    g := test_grant(AccessScope{ all: false, groups: [], hosts: ["h-lab"] }, false, true, false, 0)
+    cat.hosts[1].alias = "lab-renamed"
+    assert(grant_covers(g, "v1", AccessNeed{ action: ACCESS_EXEC, host: "lab-renamed" }, cat, 5))
+    assert(!grant_covers(g, "v1", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, cat, 5))
+}
+
+test "a grant ends at its expiry, and belongs to one vault and one anchor" {
+    cat := test_catalog()
+    g := test_grant(AccessScope{ all: true, groups: [], hosts: [] }, true, false, false, 1000)
+    read := AccessNeed{ action: ACCESS_READ, host: "" }
+    assert(grant_covers(g, "v1", read, cat, 999))
+    assert(!grant_covers(g, "v1", read, cat, 1000))
+    assert(!grant_covers(g, "v2", read, cat, 5))
+    assert(!grant_covers(g, "v1", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, cat, 5))
+    agent := Caller{ uid: 501, chain: agent_chain() }
+    assert(grant_matches_caller(g, agent))
+    // The same pid started at another time is another process.
+    mut reused := agent_chain()
+    reused[2].started = 1
+    assert(!grant_matches_caller(g, Caller{ uid: 501, chain: reused }))
+    assert(find_grant([g], agent, "v1", read, cat, 5) != none)
+    assert(find_grant([g], agent, "v1", read, cat, 2000) == none)
+}
+
+test "durations" {
+    mut refused := 0
+    assert_eq(try grant_expiry(100, "15m"), 100 + 900000)
+    assert_eq(try grant_expiry(100, "lock"), 0)
+    grant_expiry(100, "forever") or { refused += 1 }
+    assert_eq(refused, 1)
+}
+
+test "an approval becomes a grant for its caller's anchor" {
+    mut refused := 0
+    c := Caller{ uid: 501, chain: agent_chain() }
+    ap := new_approval("a1", "v1", c, "flint exec api-01 -- uptime", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, 1000)
+    assert_eq(ap.deadline_ms, 1000 + APPROVAL_WAIT_MS)
+    assert_eq(ap.label, "flint, started by Claude Code")
+    g := try grant_from_approval(ap, "g1", AccessScope{ all: false, groups: ["g-prod"], hosts: [] }, true, true, false, "1h", 2000)
+    assert(grant_matches_caller(g, c))
+    assert_eq(g.expires_ms, 2000 + 3600000)
+    assert(find_grant([g], c, "v1", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, test_catalog(), 3000) != none)
+    grant_from_approval(ap, "g2", AccessScope{ all: false, groups: [], hosts: [] }, true, false, false, "1h", 0) or { refused += 1 }
+    assert_eq(refused, 1)
+    grant_from_approval(ap, "g2", AccessScope{ all: true, groups: [], hosts: [] }, false, false, false, "1h", 0) or { refused += 1 }
+    assert_eq(refused, 2)
+}
+
+test "the proposed grant is the host it runs on, or the whole vault" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    run := new_approval("a1", "v1", c, "flint exec api-01 -- uptime", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, 0)
+    g := try proposed_grant(run, test_catalog(), "g1", 0)
+    assert(!g.scope.all)
+    assert_eq(g.scope.hosts[0], "h-api")
+    assert(g.read && g.exec && !g.write)
+    assert_eq(g.expires_ms, 3600000)
+    unknown := new_approval("a2", "v1", c, "flint exec nope", AccessNeed{ action: ACCESS_EXEC, host: "nope" }, 0)
+    assert((try proposed_grant(unknown, test_catalog(), "g2", 0)).scope.all)
+    write := new_approval("a3", "v1", c, "flint host add", AccessNeed{ action: ACCESS_WRITE, host: "" }, 0)
+    w := try proposed_grant(write, test_catalog(), "g3", 0)
+    assert(w.scope.all && w.write)
+}
+
+test "an approval is answered once" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    mut book := empty_access_book()
+    book.pending.push(new_approval("a1", "v1", c, "flint host list", AccessNeed{ action: ACCESS_READ, host: "" }, 0))
+    assert_eq(waiting_approvals(book, 10).len(), 1)
+    assert_eq(waiting_approvals(book, APPROVAL_WAIT_MS).len(), 0)
+    assert(set_approval_state(mut book, "a1", APPROVAL_DENIED))
+    assert(!set_approval_state(mut book, "a1", APPROVAL_ALLOWED))
+    denied := find_approval(book, "a1") or new_approval("", "", Caller{}, "", AccessNeed{}, 0)
+    assert_eq(denied.state, APPROVAL_DENIED)
+    drop_approval(mut book, "a1")
+    assert(find_approval(book, "a1") == none)
+}
+
+test "a copy between two hosts needs a grant that reaches both" {
+    cat := test_catalog()
+    both := AccessNeed{ action: ACCESS_EXEC, host: "api-01", host2: "lab-01" }
+    only_api := test_grant(AccessScope{ all: false, groups: [], hosts: ["h-api"] }, true, true, false, 0)
+    assert(!grant_covers(only_api, "v1", both, cat, 5))
+    two := test_grant(AccessScope{ all: false, groups: [], hosts: ["h-api", "h-lab"] }, true, true, false, 0)
+    assert(grant_covers(two, "v1", both, cat, 5))
+    assert(grant_covers(test_grant(AccessScope{ all: true, groups: [], hosts: [] }, false, true, false, 0), "v1", both, cat, 5))
+    assert_eq(need_hosts(both), "api-01 → lab-01")
+    assert_eq(need_hosts(AccessNeed{ action: ACCESS_EXEC, host: "lab-01" }), "lab-01")
+}
+
+test "a copy between two hosts says which end a grant already reaches" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    cat := test_catalog()
+    only_api := test_grant(AccessScope{ all: false, groups: [], hosts: ["h-api"] }, true, true, false, 9000)
+    (api, until) := exec_allowed_until([only_api], c, "v1", "api-01", cat, 5)
+    assert(api)
+    assert_eq(until, 9000)
+    (lab, _) := exec_allowed_until([only_api], c, "v1", "lab-01", cat, 5)
+    assert(!lab)
+    (late, _) := exec_allowed_until([only_api], c, "v1", "api-01", cat, 9001)
+    assert(!late)
+    (other, _) := exec_allowed_until([only_api], c, "v2", "api-01", cat, 5)
+    assert(!other)
+    read_only := test_grant(AccessScope{ all: true, groups: [], hosts: [] }, true, false, false, 0)
+    (ro, _) := exec_allowed_until([read_only], c, "v1", "api-01", cat, 5)
+    assert(!ro)
+    forever := test_grant(AccessScope{ all: true, groups: [], hosts: [] }, false, true, false, 0)
+    (both, end) := exec_allowed_until([only_api, forever], c, "v1", "api-01", cat, 5)
+    assert(both)
+    assert_eq(end, 0)
+}
+
+test "the proposed grant of a copy between two hosts names both" {
+    c := Caller{ uid: 501, chain: agent_chain() }
+    ap := new_approval("a1", "v1", c, "flint cp api-01:/a lab-01:/b", AccessNeed{ action: ACCESS_EXEC, host: "api-01", host2: "lab-01" }, 0)
+    g := try proposed_grant(ap, test_catalog(), "g1", 0)
+    assert(!g.scope.all)
+    assert_eq(g.scope.hosts.len(), 2)
+    assert(grant_covers(g, "v1", ap.need, test_catalog(), 5))
+    same := new_approval("a2", "v1", c, "flint cp lab-01:/a lab-01:/b", AccessNeed{ action: ACCESS_EXEC, host: "lab-01", host2: "lab-01" }, 0)
+    assert_eq((try proposed_grant(same, test_catalog(), "g2", 0)).scope.hosts.len(), 1)
+    half := new_approval("a3", "v1", c, "flint cp api-01:/a nope:/b", AccessNeed{ action: ACCESS_EXEC, host: "api-01", host2: "nope" }, 0)
+    assert((try proposed_grant(half, test_catalog(), "g3", 0)).scope.all)
+}

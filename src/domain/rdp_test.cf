@@ -1,0 +1,129 @@
+package domain
+
+// Self-signed: issued by its own subject, the normal case for a Windows host.
+fn rdp_cert_self_signed(c: RdpCert) -> bool {
+    return c.subject.len() > 0 && c.subject == c.issuer
+}
+
+fn sample_rdp_host() -> Host {
+    mut h := sample_host()
+    h.alias = "win-01"
+    h.host_type = HOST_TYPE_RDP
+    h.port = RDP_DEFAULT_PORT
+    h.username = "admin"
+    h.domain = "CORP"
+    return h
+}
+
+test "a host without a type is an SSH host" {
+    h := sample_host()
+    assert_eq(host_type_of(h), "ssh")
+    assert(!is_rdp_host(h))
+    assert(is_rdp_host(sample_rdp_host()))
+}
+
+test "host types are ssh or rdp" {
+    try check_host_type("ssh")
+    try check_host_type("rdp")
+    mut msg := ""
+    check_host_type("vnc") or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid: "))
+    assert_eq(default_port_for("rdp"), 3389)
+    assert_eq(default_port_for("ssh"), 22)
+}
+
+test "an RDP host refuses SSH-only settings" {
+    try check_rdp_host(sample_rdp_host())
+    mut refused := 0
+    mut h := sample_rdp_host()
+    h.key_id = "k1"
+    check_rdp_host(h) or { refused += 1 }
+    h = sample_rdp_host()
+    h.jump_host_id = "j1"
+    check_rdp_host(h) or { refused += 1 }
+    h = sample_rdp_host()
+    h.initial_command = "htop"
+    check_rdp_host(h) or { refused += 1 }
+    h = sample_rdp_host()
+    h.sudo_password = [byte(1)]
+    check_rdp_host(h) or { refused += 1 }
+    assert_eq(refused, 4)
+}
+
+test "a domain applies to RDP hosts only" {
+    mut h := sample_host()
+    h.domain = "CORP"
+    mut msg := ""
+    check_rdp_host(h) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid: "))
+    h = sample_rdp_host()
+    h.domain = "bad\nname"
+    msg = ""
+    check_rdp_host(h) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid: "))
+}
+
+test "an RDP host is refused where only SSH works" {
+    try require_ssh_host(sample_host(), "exec")
+    mut msg := ""
+    require_ssh_host(sample_rdp_host(), "flint exec") or err { msg = "{err.message()}" }
+    assert_eq(msg, "wrong_host_type: 'win-01' is an RDP host; flint exec needs an SSH host")
+    assert_eq(error_code_of(msg), ERR_HOST_TYPE)
+}
+
+test "an RDP certificate is trusted on first use and a changed one is caught" {
+    assert_eq(rdp_cert_addr("Win.Example.org", 3389), "rdp://win.example.org:3389")
+    known: []KnownHost = [
+        KnownHost{ addr: "win.example.org", key_type: "ssh-ed25519", fingerprint: "SHA256:aaa", host_id: "", added_at: "" },
+        KnownHost{ addr: "rdp://win.example.org:3389", key_type: "x509", fingerprint: "AB:CD", host_id: "", added_at: "" },
+    ]
+    assert_eq(check_rdp_cert(known, "WIN.example.org", 3389, "AB:CD"), HOST_KEY_KNOWN)
+    assert_eq(check_rdp_cert(known, "win.example.org", 3389, "EF:01"), HOST_KEY_CHANGED)
+    assert_eq(check_rdp_cert(known, "win.example.org", 3390, "AB:CD"), HOST_KEY_NEW)
+    // The SSH key at the same name is never read as the certificate.
+    assert_eq(check_rdp_cert(known, "other", 3389, "AB:CD"), HOST_KEY_NEW)
+}
+
+test "a desktop size is one RDP accepts" {
+    s := fit_desktop_size(1281, 721)
+    assert_eq(s.width, 1280)
+    assert_eq(s.height, 721)
+    small := fit_desktop_size(10, 0)
+    assert_eq(small.width, 200)
+    assert_eq(small.height, 200)
+    big := fit_desktop_size(9999, 9000)
+    assert_eq(big.width, 8192)
+    assert_eq(big.height, 8192)
+}
+
+test "pointer events are checked" {
+    try check_rdp_pointer(RdpPointer{ kind: "move", button: 0, x: 10, y: 10, delta: 0 })
+    try check_rdp_pointer(RdpPointer{ kind: "wheel", button: 0, x: 0, y: 0, delta: -120 })
+    mut refused := 0
+    check_rdp_pointer(RdpPointer{ kind: "drag", button: 0, x: 0, y: 0, delta: 0 }) or { refused += 1 }
+    check_rdp_pointer(RdpPointer{ kind: "down", button: 3, x: 0, y: 0, delta: 0 }) or { refused += 1 }
+    check_rdp_pointer(RdpPointer{ kind: "move", button: 0, x: -1, y: 0, delta: 0 }) or { refused += 1 }
+    check_rdp_pointer(RdpPointer{ kind: "move", button: 0, x: 0, y: 9000, delta: 0 }) or { refused += 1 }
+    assert_eq(refused, 4)
+}
+
+test "an RDP certificate question carries the certificate and the trusted fingerprint" {
+    c := RdpCert{ subject: "CN=WIN11", issuer: "CN=WIN11", fingerprint: "ab:cd", valid_from: "2026-01-01", valid_to: "2026-07-01" }
+    assert(rdp_cert_self_signed(c))
+    q := rdp_cert_question("win", "Win11.lan", 3389, c, "")
+    assert_eq(q.addr, "rdp://win11.lan:3389")
+    assert_eq(q.key_type, "x509")
+    assert_eq(q.known_key_type, "")
+    assert_eq(q.subject, "CN=WIN11")
+    changed := rdp_cert_question("win", "win11.lan", 3389, c, "ef:01")
+    assert_eq(changed.known_fingerprint, "ef:01")
+    assert_eq(changed.known_key_type, "x509")
+    known: []KnownHost = [
+        KnownHost{ addr: "win11.lan", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" },
+        KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" },
+    ]
+    assert_eq(trusted_rdp_fingerprint(known, "WIN11.lan", 3389), "ab:cd")
+    assert_eq(trusted_rdp_fingerprint(known, "win11.lan", 3390), "")
+    issued := RdpCert{ subject: "CN=a", issuer: "CN=CA", fingerprint: "", valid_from: "", valid_to: "" }
+    assert(!rdp_cert_self_signed(issued))
+}

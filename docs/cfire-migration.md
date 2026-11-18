@@ -675,6 +675,60 @@ the socket was left behind ("the socket file is removed when the app quits" fail
 every later command was `locked`. serve-e2e had never got that far on Linux on 0.12, so
 there is no baseline for it. Both go to step 4b's third part, under rule 9; not rerun.
 
+### 2. The slow tests
+
+**The estimator's word lists, built once** (`3a59941`). `estimate_password_strength`
+rebuilt the ~93k-word dictionaries on every call (`src/domain/strength.cf`); its fuzz
+test makes 200 calls in each of the 17 suites. The fixed lists now fill a package value
+behind a `sync.Mutex` on the first estimate (CF-165: the guard's `get()`, not the
+GUIDE's `.value`); the person's words go in a small map per call, and a lookup takes the
+better rank of the two, ties to the person's words, as when they were one list. The
+app's and the CLI's estimates gain the same.
+
+**Inline tests moved to `*_test.cf`** (this commit). A test in a package's ordinary
+`.cf` file is compiled into every suite that imports the package; one in `*_test.cf`
+runs in its own only. Moved: `domain`'s 92 (16 files, with the helpers only they use:
+`test_catalog`, `test_grant`, `run_need`, `test_proc`, `agent_chain`, `owner_desk`,
+`sample_rdp_host`, `rdp_cert_self_signed`, `score_of`, `test_token`), `uievents`' 1,
+`vault`'s 1 (`migrations.cf`), `clicmd`'s 7. No test was dropped: each still runs in its
+own package's suite.
+
+`scripts/test.sh` on the Mac, warm, one run each, nothing else running:
+
+| State | Time | Counts |
+|---|---|---|
+| Before (step 4, `a3e0b77`) | 1 min 41 s | step 2's, 17/17, release-test 24/24 |
+| Word lists once (`3a59941`) | **31 s** | the same |
+| Inline tests moved (this commit) | **29 s** | 17/17 at the new counts below, release-test 24/24 |
+
+The new counts: every suite runs 92 fewer (`domain`'s tests, now in `domain` alone) and
+`drivers/clicmd` 93 (also `vault`'s migration test); `domain` keeps its 154.
+
+| Suite | Count | Suite | Count |
+|---|---|---|---|
+| `domain` | 154 | `rdp` | 54 |
+| `application` | 232 | `serverfs` | 45 |
+| `application/vaultserver` | 54 | `ssh` | 73 |
+| `adapters/config` | 43 | `uievents` | 51 |
+| `adapters/crypto` | 42 | `vault` | 83 |
+| `adapters/fonts` | 33 | `vaultremote` | 38 |
+| `adapters/ipc` | 46 | `drivers/clicmd` | 111 |
+| `adapters/keychain` | 35 | `drivers/vault-server` | 47 |
+| `adapters/process` | 42 | | |
+
+**The "~30 s fixed per suite" is gone on 0.12.** It was the baseline's `scripts/test.sh
+<dir>` on 0.10, which compiled everything on every run. Timed line by line on a warm run
+of 0.12: the servers (`test.sh`'s two sshds, FreeRDP's sample server, Flint's RDP test
+server, `flint-vault-server`, its build cached) start in ~0.4 s together, and each suite
+takes ~1 s (check, cached link, run) but `rdp` (6 s) and `ssh` (9 s), whose time is
+their own tests talking to those servers. Nothing to split by server, so nothing changed.
+
+**An mtime trap, met once here.** cfire takes an object as current when it is newer than
+its source. Restoring files with their old mtimes (from a `tar`, a `git stash` of a tree
+whose objects are newer) leaves stale objects in place: `touch` them before testing.
+`git checkout` and an editor write the current time, so day-to-day work is not exposed;
+the Docker volume's `rsync -a` copies the host's mtimes as they are.
+
 ## Progress
 
 | Step | Date | Result | Commit |
@@ -686,3 +740,4 @@ there is no baseline for it. Both go to step 4b's third part, under rule 9; not 
 | 4 (Mac) | 2026-11-18 | The published `v0.12.2` macOS arm64 archive (`5be0987`; against `v0.12.1` only CI test fixes and the version, prelude unchanged but its version line) in `~/.local/opt/cfire-0.12.2`, the default of `cfire-next.sh` and the MCP server; `~/.cfire/runtime` untouched; `cfire doctor` 17 passed. The Mac battery of step 3 on it: test.sh 17/17 and 24/24, cli-e2e 483/483, server-e2e 70/70, sync-e2e 105/105, gui-e2e the eight counts, serve-e2e 223/223; first runs and warm times within seconds of 0.12.1's | this commit |
 | 4 (Linux, Docker) | 2026-11-18 | The image on the `v0.12.2` Linux archive (SHA-256 pinned, no source build). Flint did not build: `json.parse` against libstdc++'s `<chrono>` (CF-164), fixed with a labeled argument at all 35 calls. Then the baseline exactly: test.sh 17/17, cli-e2e 494/494, gui-e2e the eight counts, serve-e2e 47/224 (the known first launch), server-e2e 70/70, sync-e2e 110/110; the Mac battery green again on the fix. Zorin waits for the owner. Step 4b (faster suites, then the always-red checks) added by the owner | `24df0dd`, `a3e0b77`, this commit |
 | 4b.1 | 2026-11-18 | Docker cache volume `flint-linux-cache` (the working tree with its `.cfire/` and `build/`, and `CFIRE_CACHE_DIR`): full `linux-check.sh` 32 min 48 s cold, **12 min 50 s warm**, every count step 4's; warm, serve-e2e passed the first unlock and lost the app at the two-host `cp` (162/224), for 4b's third part | this commit |
+| 4b.2 | 2026-11-18 | The estimator's word lists built once per process (`3a59941`, CF-165), then the 101 inline tests (92 of `domain`) moved to `*_test.cf`: `scripts/test.sh` warm on the Mac 1 min 41 s, 31 s, **29 s**; every suite 92 fewer (`clicmd` 93), `domain` 154, nothing dropped. The ~30 s per suite was 0.10's recompiling: on 0.12 the servers start in ~0.4 s and a suite takes ~1 s, so no change there | `3a59941`, this commit |

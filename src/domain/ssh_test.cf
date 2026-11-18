@@ -1,0 +1,32 @@
+package domain
+
+test "an initial command runs through the login shell, quoted" {
+    assert_eq(initial_command_line("", true), "")
+    assert_eq(initial_command_line("herdr", true), "\"$SHELL\" -ilc 'herdr'; exec \"$SHELL\" -l")
+    assert_eq(initial_command_line("herdr", false), "exec \"$SHELL\" -ilc 'herdr'")
+    assert_eq(initial_command_line("echo 'hi there'", false), "exec \"$SHELL\" -ilc 'echo '\\''hi there'\\'''")
+}
+
+test "known host addresses follow the OpenSSH form" {
+    assert_eq(known_host_addr("Web.Example.org", 22), "web.example.org")
+    assert_eq(known_host_addr("10.0.0.5", 2222), "[10.0.0.5]:2222")
+}
+
+test "a recorded key type is negotiated first" {
+    known: []KnownHost = [
+        KnownHost{ addr: "web", key_type: "ecdsa-sha2-nistp256", fingerprint: "SHA256:aaa", host_id: "", added_at: "" },
+        KnownHost{ addr: "[old]:2222", key_type: "ssh-rsa", fingerprint: "SHA256:bbb", host_id: "", added_at: "" },
+    ]
+    assert_eq(preferred_host_key_algos(known, "web"), "^ecdsa-sha2-nistp256")
+    assert_eq(preferred_host_key_algos(known, "[old]:2222"), "^rsa-sha2-512,rsa-sha2-256")
+    assert_eq(preferred_host_key_algos(known, "db"), "")
+}
+
+test "a server key is known, new or changed" {
+    rec := KnownHost{ addr: "web", key_type: "ssh-ed25519", fingerprint: "SHA256:aaa", host_id: "", added_at: "" }
+    known: []KnownHost = [rec]
+    assert_eq(check_server_key(known, "web", ServerKey{ key_type: "ssh-ed25519", fingerprint: "SHA256:aaa" }), "known")
+    assert_eq(check_server_key(known, "web", ServerKey{ key_type: "ssh-ed25519", fingerprint: "SHA256:bbb" }), "changed")
+    assert_eq(check_server_key(known, "web", ServerKey{ key_type: "ecdsa-sha2-nistp256", fingerprint: "SHA256:aaa" }), "changed")
+    assert_eq(check_server_key(known, "db", ServerKey{ key_type: "ssh-ed25519", fingerprint: "SHA256:aaa" }), "new")
+}

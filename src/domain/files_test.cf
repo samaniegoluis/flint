@@ -1,0 +1,63 @@
+package domain
+
+test "a dropped file's path stays inside its drop" {
+    assert(valid_drop_path("a.txt"))
+    assert(valid_drop_path("site/css/app.css"))
+    assert(!valid_drop_path(""))
+    assert(!valid_drop_path("/etc/passwd"))
+    assert(!valid_drop_path("../x"))
+    assert(!valid_drop_path("a/../../x"))
+    assert(!valid_drop_path("a//b"))
+    assert(!valid_drop_path("./a"))
+    assert(valid_drop_id("d-1a2b"))
+    assert(!valid_drop_id("../x"))
+    assert(!valid_drop_id(""))
+}
+
+test "a cp argument names a host only with alias: before any slash" {
+    assert(is_remote_arg("web:/etc/app.conf"))
+    assert(is_remote_arg("web:"))
+    assert(is_remote_arg("web:app.conf"))
+    assert(!is_remote_arg("./a:b"))
+    assert(!is_remote_arg("/tmp/a:b"))
+    assert(!is_remote_arg(":x"))
+    assert(!is_remote_arg("app.conf"))
+}
+
+test "a remote argument splits into alias and path" {
+    r := try parse_remote_arg("web:/var/log/")
+    assert_eq(r.alias, "web")
+    assert_eq(r.path, "/var/log/")
+    home := try parse_remote_arg("web:")
+    assert_eq(home.path, ".")
+}
+
+test "remote path helpers" {
+    assert_eq(remote_base("/var/log/"), "log")
+    assert_eq(remote_base("app.conf"), "app.conf")
+    assert_eq(remote_base("/"), "/")
+    assert_eq(remote_dir("/var/log"), "/var")
+    assert_eq(remote_dir("/var"), "/")
+    assert_eq(remote_dir("app.conf"), ".")
+    assert_eq(remote_join("/etc", "a"), "/etc/a")
+    assert_eq(remote_join("/", "a"), "/a")
+    assert_eq(remote_join(".", "a"), "a")
+    assert_eq(part_path("/etc/app.conf"), "/etc/.app.conf.flint-part")
+    assert_eq(part_path("app.conf"), ".app.conf.flint-part")
+}
+
+test "byte counts and the progress line read as people say them" {
+    assert_eq(human_bytes(0), "0 B")
+    assert_eq(human_bytes(1023), "1023 B")
+    assert_eq(human_bytes(1536), "1.5 KB")
+    assert_eq(human_bytes(12582912), "12.0 MB")
+    p := TransferProgress{ id: "", file: "/etc/app.conf", file_bytes: 512, file_size: 2048, files_done: 0, bytes_done: 512 }
+    assert_eq(progress_line(p), "app.conf  512 B / 2.0 KB  25%")
+}
+
+test "a local path is shown from the CLI's folder" {
+    assert_eq(absolute_from("/home/me", "."), "/home/me")
+    assert_eq(absolute_from("/home/me", "./a.conf"), "/home/me/a.conf")
+    assert_eq(absolute_from("/home/me", "site/"), "/home/me/site/")
+    assert_eq(absolute_from("/home/me", "/etc/x"), "/etc/x")
+}

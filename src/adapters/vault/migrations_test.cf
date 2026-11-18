@@ -1,0 +1,9 @@
+package vault
+
+test "migrations are numbered 1..n with no gaps" {
+    list := vault_migrations()
+    for i, m in list {
+        assert_eq(m.version, i64(i) + 1)
+        assert(m.name.len() > 0)
+    }
+}

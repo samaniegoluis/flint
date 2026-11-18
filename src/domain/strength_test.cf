@@ -1,0 +1,76 @@
+package domain
+
+fn score_of(pw: str) -> i64 {
+    return estimate_password_strength(pw, []).score
+}
+
+test "common passwords score 0" {
+    for pw in ["password", "123456", "qwerty", "letmein", "iloveyou", "Password1", "p@ssw0rd", "drowssap", "aaaaaaaa", "abcdefgh", "12345678"] {
+        if score_of(pw) != 0 {
+            println("{pw}: {score_of(pw)}")
+        }
+        assert_eq(score_of(pw), 0)
+    }
+}
+
+test "the warning names the pattern" {
+    assert_eq(estimate_password_strength("password", []).warning, "This is a top-10 common password")
+    assert_eq(estimate_password_strength("tyuiop[]", []).warning, "Straight rows of keys are easy to guess")
+    assert_eq(estimate_password_strength("zzzzzzzzzz", []).warning, "Repeats like \"aaa\" are easy to guess")
+    assert_eq(estimate_password_strength("19870513", []).warning, "Dates are often easy to guess")
+    assert_eq(estimate_password_strength("", []).score, 0)
+    assert_eq(estimate_password_strength("", []).suggestions.len(), 2)
+}
+
+test "long passphrases and random strings score 3 or 4" {
+    for pw in ["correct horse battery staple", "vY7#qL2!mZ9@", "gravel-onion-tundra-27", "9fK2mQx7Lp4w"] {
+        if score_of(pw) < 3 {
+            println("{pw}: {score_of(pw)}")
+        }
+        assert(score_of(pw) >= 3)
+    }
+    assert_eq(score_of("correct horse battery staple"), 4)
+}
+
+test "a few words or patterns sit in between" {
+    assert(score_of("monkey2026") <= 2)
+    assert(score_of("Summer2026!") <= 2)
+    assert(score_of("abcabcabcabc") <= 1)
+    // zxcvbn 4.4.2 scores xkcd's example 2 as well.
+    assert_eq(score_of("Tr0ub4dour&3"), 2)
+}
+
+test "the vault's name counts as a common word" {
+    plain := estimate_password_strength("homelabzeta", []).score
+    named := estimate_password_strength("homelabzeta", ["Homelab Zeta"]).score
+    assert(named < plain)
+}
+
+test "sync needs a score of 3" {
+    assert(!estimate_password_strength("monkey2026", []).sync_ok)
+    assert(estimate_password_strength("correct horse battery staple", []).sync_ok)
+    assert_eq(strength_label(0), "Very weak")
+    assert_eq(strength_label(4), "Very strong")
+}
+
+test "the qwerty graph matches zxcvbn's" {
+    rows := qwerty_rows()
+    (starts, degree) := qwerty_stats(rows)
+    assert_eq(i64(starts), 94)
+    // zxcvbn 4.4.2's KEYBOARD_AVERAGE_DEGREE is 4.595744680851064.
+    assert(degree > 4.59 && degree < 4.60)
+    (x, y) := qwerty_pos(rows, 113)
+    nb := qwerty_neighbours(rows, x, y)
+    assert_eq(nb[0].len(), 0)
+    assert_eq(bytes_str(nb[1]), "1!")
+    assert_eq(bytes_str(nb[2]), "2@")
+    assert_eq(bytes_str(nb[4]), "aA")
+}
+
+fuzz "the estimate never fails and stays in range" |s: str| {
+    r := estimate_password_strength(s, ["vault"])
+    assert(r.score >= 0 && r.score <= 4)
+    // A longer password made by appending is never weaker by more than one step.
+    r2 := estimate_password_strength(s + "Kq7#", ["vault"])
+    assert(r2.score + 1 >= r.score)
+}

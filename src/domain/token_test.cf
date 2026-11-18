@@ -1,0 +1,121 @@
+package domain
+
+fn test_token(scope: AccessScope, read: bool, exec: bool, write: bool) -> Token {
+    return Token{ id: "00112233aabbccdd", name: "backup", hash: "", scope: scope, read: read, exec: exec, write: write, created_at: 1000, expires_at: 2000, revoked_at: 0 }
+}
+
+test "a token's text splits into id and secret" {
+    id := "00112233aabbccdd"
+    secret := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    t := split_token_text(token_text(id, secret))
+    assert(t.ok)
+    assert_eq(t.id, id)
+    assert_eq(t.secret, secret)
+    assert(split_token_text(" " + token_text(id, secret) + "\n").ok)
+    assert(!split_token_text("").ok)
+    assert(!split_token_text("flint_" + id).ok)
+    assert(!split_token_text("flint_" + id + "-" + secret).ok)
+    assert(!split_token_text("flint_" + id + "_" + secret + "0").ok)
+    assert(!split_token_text("flint_" + id + "_" + secret.to_upper()).ok)
+    assert(!split_token_text("tlint_" + id + "_" + secret).ok)
+}
+
+test "token durations" {
+    mut refused := 0
+    assert_eq(try token_ttl_seconds("15m"), 900)
+    assert_eq(try token_ttl_seconds("1d"), 86400)
+    assert_eq(try token_ttl_seconds("90d"), 90 * 86400)
+    token_ttl_seconds("never") or { refused += 1 }
+    assert_eq(refused, 1)
+    token_ttl_seconds("lock") or { refused += 1 }
+    assert_eq(refused, 2)
+}
+
+test "a token ends on expiry and on revoke" {
+    mut t := test_token(AccessScope{ all: true, groups: [], hosts: [] }, true, false, false)
+    assert_eq(token_status(t, 1999), TOKEN_ACTIVE)
+    assert_eq(token_status(t, 2000), TOKEN_EXPIRED)
+    t.revoked_at = 1500
+    assert_eq(token_status(t, 1600), TOKEN_REVOKED)
+}
+
+test "a token covers what a grant with its scope would" {
+    cat := test_catalog()
+    t := test_token(AccessScope{ all: false, groups: [], hosts: ["h-api"] }, true, true, false)
+    assert(token_covers(t, "v1", AccessNeed{ action: ACCESS_READ, host: "" }, cat, 1500))
+    assert(token_covers(t, "v1", run_need("api-01"), cat, 1500))
+    assert(!token_covers(t, "v1", run_need("lab-01"), cat, 1500))
+    assert(!token_covers(t, "v1", AccessNeed{ action: ACCESS_WRITE, host: "" }, cat, 1500))
+    assert(!token_covers(t, "v1", run_need("api-01"), cat, 2000))
+    all := test_token(AccessScope{ all: true, groups: [], hosts: [] }, true, true, true)
+    assert(token_covers(all, "v1", AccessNeed{ action: ACCESS_WRITE, host: "" }, cat, 1500))
+    // Never another token, whatever it allows.
+    assert(!token_covers(all, "v1", AccessNeed{ action: ACCESS_TOKEN, host: "" }, cat, 1500))
+}
+
+test "tokens are found by id, or by the name of a live one" {
+    mut a := test_token(AccessScope{ all: true, groups: [], hosts: [] }, true, false, false)
+    mut b := a
+    b.id = "ffffffffffffffff"
+    a.revoked_at = 1200
+    list := [a, b]
+    assert_eq((find_token(list, "00112233aabbccdd", 1500) or b).id, a.id)
+    assert_eq((find_token(list, "Backup", 1500) or a).id, b.id)
+    assert(find_token(list, "nightly", 1500) == none)
+}
+
+test "token names" {
+    mut refused := 0
+    try check_token_name("nightly backup")
+    check_token_name("  ") or { refused += 1 }
+    assert_eq(refused, 1)
+    check_token_name("flint_x") or { refused += 1 }
+    assert_eq(refused, 2)
+}
+
+test "reads stay out of the activity log" {
+    assert(!activity_logged(AccessNeed{ action: ACCESS_READ, host: "" }))
+    assert(activity_logged(run_need("api-01")))
+    assert(activity_logged(AccessNeed{ action: ACCESS_WRITE, host: "" }))
+    assert(activity_logged(AccessNeed{ action: ACCESS_TOKEN, host: "" }))
+}
+
+test "a whole command is capped on a character boundary" {
+    short := whole_command("flint exec web -- uptime")
+    assert_eq(short.text, "flint exec web -- uptime")
+    assert_eq(short.cut, 0)
+    mut long := ""
+    for _ in 0..COMMAND_MAX_BYTES {
+        long = long + "a"
+    }
+    long = long + "€tail"
+    w := whole_command(long)
+    assert_eq(i64(w.text.len()), COMMAND_MAX_BYTES)
+    assert_eq(w.cut, 7)
+    // A three-byte character straddling the cap is left out whole.
+    odd := whole_command(long[..usize(COMMAND_MAX_BYTES - 1)] + "€")
+    assert_eq(i64(odd.text.len()), COMMAND_MAX_BYTES - 1)
+    assert_eq(odd.cut, 3)
+}
+
+test "a summary is one line of at most 160 bytes" {
+    assert_eq(command_summary("flint host list"), "flint host list")
+    mut long := "flint exec web -- echo "
+    for _ in 0..200 {
+        long = long + "ñ"
+    }
+    s := command_summary(long)
+    assert(i64(s.len()) <= COMMAND_SUMMARY_MAX)
+    assert(s.ends_with("..."))
+    assert(long.starts_with(s[..s.len() - 3]))
+}
+
+test "retention keeps entries by age" {
+    assert(retention_valid(30) && retention_valid(90) && retention_valid(365) && retention_valid(0))
+    assert(!retention_valid(7))
+    assert_eq(activity_keep(90, 100 * 86400).since_at, 10 * 86400)
+    assert_eq(activity_keep(0, 100 * 86400).since_at, 0)
+    assert_eq(retention_label(365), "1 year")
+    assert_eq(retention_label(0), "no limit")
+    assert_eq(retention_label(30), "30 days")
+}
