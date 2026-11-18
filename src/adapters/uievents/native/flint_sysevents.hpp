@@ -150,7 +150,15 @@ inline void events_thread(std::promise<std::string> ready) {
         return;
     }
     std::string got;
-    if (::WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION)) got = "session";
+    // Looked up in wtsapi32.dll at run time: the app links FreeRDP's winpr static, which
+    // defines its own WTSRegisterSessionNotification, so lld refuses wtsapi32's import of
+    // the same name ("WTSRegisterSessionNotification was replaced").
+    using WtsRegFn = BOOL(WINAPI*)(HWND, DWORD);
+    HMODULE wts = ::LoadLibraryW(L"wtsapi32.dll");
+    if (auto fn = wts ? reinterpret_cast<WtsRegFn>(reinterpret_cast<void*>(
+            ::GetProcAddress(wts, "WTSRegisterSessionNotification"))) : nullptr) {
+        if (fn(hwnd, NOTIFY_FOR_THIS_SESSION)) got = "session";
+    }
     got += got.empty() ? "power" : ",power";
     // Windows 8+: looked up at run time, the headers hide it below _WIN32_WINNT 0x0602.
     using RegFn = HANDLE(WINAPI*)(HANDLE, DWORD);
