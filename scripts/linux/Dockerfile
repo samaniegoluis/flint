@@ -1,4 +1,4 @@
-# Linux build check for Flint: Debian trixie, cfire pinned to the commit Flint is
+# Linux build check for Flint: Debian trixie, cfire pinned to the release Flint is
 # built against, and the native libraries from apt (D-015). vim is for gui-e2e's
 # full-screen editor step.
 #
@@ -27,7 +27,14 @@ RUN cmake -S /src/freerdp -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_
 
 FROM debian:trixie
 
-ARG CFIRE_COMMIT=c5b1d4bd09f7b1b07a3f855a095389f5cd3df332
+# cfire's published Linux archive (docs/cfire-migration.md, step 4), checked against the
+# release's SHA256SUMS.txt and unpacked in install.sh's layout (bin/cfire,
+# share/cfire/runtime) without its installer. TARGETARCH picks the archive: arm64 on an
+# Apple silicon Mac's Docker, amd64 elsewhere.
+ARG CFIRE_VERSION=0.12.2
+ARG CFIRE_SHA256_ARM64=ce992d12fe688fbfcb9bc9fcf7c195a99315d200c3fe9be10b185e6cc61b35ca
+ARG CFIRE_SHA256_AMD64=6fe582d6bf6a21a429b9212c28b8d01bf1a69bed9ee9216fa7afd6e7c1db7ffd
+ARG TARGETARCH
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         clang make git curl ca-certificates pkg-config \
@@ -40,16 +47,21 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         vim \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://github.com/gsandoval/cfire /opt/cfire-src \
-    && cd /opt/cfire-src && git checkout "$CFIRE_COMMIT" \
-    && make build CXX=clang++ -j4 \
-    # CFIRE-UPSTREAM: CF-086 — `make install` names its temp file with `$$` on three
-    # recipe lines, each its own shell, so chmod misses the file cp wrote. Install by hand.
-    && install -D -m 755 cfire /usr/local/bin/cfire \
-    && mkdir -p /usr/local/share/cfire/runtime /usr/local/share/cfire/pkg \
-    && cp -R runtime/* /usr/local/share/cfire/runtime/ \
-    && cp -R pkg/* /usr/local/share/cfire/pkg/ \
-    && rm -rf /opt/cfire-src
+RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+        arm64) arch=arm64;  sum="$CFIRE_SHA256_ARM64" ;; \
+        amd64) arch=x86_64; sum="$CFIRE_SHA256_AMD64" ;; \
+        *) echo "no cfire archive for ${TARGETARCH:-?}" >&2; exit 1 ;; \
+    esac \
+    && name="cfire-v${CFIRE_VERSION}-linux-${arch}" \
+    && mkdir /tmp/cfire && cd /tmp/cfire \
+    && curl -fsSLO "https://github.com/gsandoval/cfire/releases/download/v${CFIRE_VERSION}/${name}.tar.gz" \
+    && echo "${sum}  ${name}.tar.gz" | sha256sum -c - \
+    && tar xzf "${name}.tar.gz" \
+    && install -D -m 755 "${name}/cfire" /usr/local/bin/cfire \
+    && mkdir -p /usr/local/share/cfire \
+    && cp -R "${name}/runtime" /usr/local/share/cfire/runtime \
+    && cd / && rm -rf /tmp/cfire \
+    && cfire --version
 
 COPY --from=rdp-sample /out/sfreerdp-server /usr/local/bin/sfreerdp-server
 # 3.15's sample server ends every session in PostConnect when it finds no test_icon.* in

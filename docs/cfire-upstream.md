@@ -45,7 +45,7 @@ version change, the prelude only in its version line, so the same holds.
 
 | Status | Entries |
 |---|---|
-| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (a literal brace is `{{` or `\{` depending on whether the string interpolates), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped), 162 (`try f[T](…)` keeps the type `T`), 163 (`cfire test` at `-O0` by default, undocumented: the suites ten times slower on CPU-bound tests) |
+| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (a literal brace is `{{` or `\{` depending on whether the string interpolates), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped), 162 (`try f[T](…)` keeps the type `T`), 163 (`cfire test` at `-O0` by default, undocumented: the suites ten times slower on CPU-bound tests), **164 (on Linux, `json.parse` does not compile next to libstdc++'s `<chrono>`: CF-158's lookup; Flint does not build on Linux)** |
 | Old, partly resolved on 0.12 [ran] | 031 (`@pkg` retired; `build.cf` `PkgConfig` per executable works; still no per-OS fields), 147 (field access through `shared[T]` works, except on a local copy: CF-156) |
 | Old, fixed on 0.12 [ran] | 150 (a variable named like a module); its workaround goes in step 5 |
 | Old, not rechecked yet | everything else |
@@ -2821,3 +2821,33 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   the fuzz test from 549 s to 56 s over the 17 suites.
 - **Ideal:** the profile of `cfire test` named in its usage and the GUIDE, with
   `--release` listed; or tests at `-O1`/`-O2 -g` by default, as debuggable and far faster.
+
+### CF-164 · bug · `confirmed`: on Linux, every `json.parse` fails to compile in a package whose C++ headers include `<chrono>`
+- **Seen (migration step 4) [ran, Linux arm64 in Docker (Debian trixie, clang 19, libstdc++ 14), `v0.12.2` `5be0987`]:**
+  `cfire build flint` fails in `src/adapters/ipc` with "unknown type name '_CharT'" at
+  its four `json.parse[T](…)` calls (`relay.cf`, `relay_files.cf`), lowered to
+  `cfire::json::parse<T>(cfire::c_ptr<const _CharT *>(arg))`. The same tree builds on
+  macOS (libc++). It is CF-158's lookup again: the C signature table is keyed by the
+  callee's last name (`src/codegen/expr.hpp:1064`), and libstdc++ 14's `<chrono>`
+  (`bits/chrono_io.h:2999`) declares the C++20 `std::chrono::parse(const _CharT* __fmt,
+  _Parsable&)`, so `json.parse`'s first argument takes the pointer branch
+  (`expr.hpp:1165`, `cfire::c_ptr<{ptype}>`) with the template's parameter name pasted
+  in. The pointer branch has no literal exception, so a string literal fails too.
+  Flint's `flint_ipc.hpp` includes `<chrono>`, as do five other native headers.
+- **Repro:** on Linux with libstdc++ (`flint-linux-check` image):
+  ```
+  package main
+  import "core:json"
+  import cpp "<chrono>"
+  type Req struct { tab: str `json:"tab"` }
+  fn main() {
+      r := json.parse[Req](`{"tab":"x"}`) or Req{ tab: "none" }
+      println(r.tab)
+  }
+  ```
+  `cfire run main.cf`: "unknown type name '_CharT'". Without the `import cpp` it prints
+  `x`; on macOS it prints `x` with it. A parameter, a local or a call as the argument
+  fail the same way.
+- **Workaround:** pending (migration step 4, with the owner).
+- **Ideal:** as CF-158: the C signature table only for a callee that resolves to a C++
+  function, by its qualified name; never a template's parameter type pasted into a cast.
