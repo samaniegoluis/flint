@@ -17,7 +17,9 @@ fn write_file_atomic(path: str, text: str) -> void! {
         _ = fs.remove(tmp)
         return error(coded(ERR_IO, "cannot write {tmp}"))
     }
-    fs.rename(tmp, path) or err {
+    // str(): a view here lowers like the C function of that name once a package
+    // importing this one declares it (CFIRE-UPSTREAM: CF-158)
+    fs.rename(tmp, str(path)) or err {
         _ = fs.remove(tmp)
         return error(coded(ERR_IO, "cannot replace {path}"))
     }
