@@ -79,6 +79,7 @@ Windows test VM (Windows 11 Pro 22H2, build 22621, WebView2 157), in MSYS2 CLANG
 | W-02 | **covered**: `cfire test` and `cfire build -o x.exe` find and run the `.exe` | [ran] every `cfire test` in `run-probes.sh` and the suites | nothing to remove (patch 0001 only) |
 | W-03 | **covered**: `os.cwd()` is a `str` on Windows | [ran] probe `os: env, cwd, pid` (`here: str = os.cwd()` builds) | nothing to remove (patch 0002 only) |
 | W-05 | **covered**: stdin, stdout and stderr are in binary mode, `println` writes `\n` | [ran] probe: a child printing 3000 lines of 100 bytes gives exactly 300 000 bytes on each stream | the probe no longer normalises `\r\n` |
+| W-08 | **covered**: `*_unix.cf` is left out on Windows | [ran] probe `platform_files` prints `platform: windows` | nothing to remove (patch 0003 only) |
 
 ## How to read each entry
 
