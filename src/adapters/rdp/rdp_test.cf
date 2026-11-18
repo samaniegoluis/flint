@@ -571,7 +571,7 @@ fn wait_view(tab: str, v: i64, w: i64, h: i64) -> str {
 }
 
 fn http_status(url: str) -> str {
-    r := os.command("curl", ["-s", "-o", "/dev/null", "-w", "%{http_code}", "-m", "5", url]) or {
+    r := os.command("curl", ["-s", "-o", "/dev/null", "-w", "%{{http_code}}", "-m", "5", url]) or {
         return ""
     }
     return r.stdout
@@ -675,8 +675,8 @@ test "a real Windows host spans two monitors at connect and rearranges in place"
         main2 := wait_view("t-live-mon", 0, 2560, 1440)
         side2 := wait_view("t-live-mon", 1, 1080, 1920)
         if main2.len() > 16 && side2.len() > 16 {
-            fs.write_text("{dir}/view0-2560x1440.rgba", main2.substr(16)) or {}
-            fs.write_text("{dir}/view1-1080x1920.rgba", side2.substr(16)) or {}
+            fs.write_text("{dir}/view0-2560x1440.rgba", main2[16..]) or {}
+            fs.write_text("{dir}/view1-1080x1920.rgba", side2[16..]) or {}
         }
     }
     try rd.rd_resize("t-live-mon", 1280, 720)
