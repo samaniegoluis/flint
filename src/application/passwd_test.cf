@@ -61,8 +61,7 @@ test "the current password must be right and the new one new and long enough" {
     kc := new_fake_keychain()
     s := try passwd_fixture(crypto, mut store, kc, false)
     salt := try store.vault_read_salt(s.path)
-    // CFIRE-UPSTREAM: CF-091 (a nested slice literal needs its type)
-    cases: [][]str = [["wrong horse", "gravel onion tundra", "wrong_password"], ["correct horse", "short", "invalid"], ["correct horse", "correct horse", "invalid"]]
+    cases := [["wrong horse", "gravel onion tundra", "wrong_password"], ["correct horse", "short", "invalid"], ["correct horse", "correct horse", "invalid"]]
     for c in cases {
         mut got := ""
         change_master_password(crypto, mut store, kc, s, c[0], c[1]) or err { got = "{err.message()}" }

@@ -1786,7 +1786,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   heuristic; a default of libsodium's `crypto_pwhash_MEMLIMIT_MODERATE` (256 MiB) or
   `INTERACTIVE` (64 MiB) by name; an error, not a guess, for out-of-range values.
 
-### CF-091 · bug · `confirmed`: a nested slice literal with no declared type passes `cfire check` and fails in clang
+### CF-091 · bug · `resolved ✓`: a nested slice literal with no declared type passes `cfire check` and fails in clang
+- **Resolved at `v0.12.2` (migration step 5):** `application/passwd_test.cf` declares its cases with `cases := [[…], …]`.
 - **At `v0.12.2` (migration step 5):** [ran] `need := [["host", "list"], ["exec", "web"]]` builds and runs. **fixed** (1 tag).
 - **At `d182f32`:** [ran] Still fails in clang (`auto need = {{"host", "list"}, {"exec", "web"}};`).
 - **At `c5b1d4b`:** [ran] Still fails in clang (`cannot deduce actual type for variable 'need' with type 'auto' from initializer list`).
