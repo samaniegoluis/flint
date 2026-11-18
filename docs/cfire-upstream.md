@@ -2404,7 +2404,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** a method call on a string literal lowers the literal to `std::string` (or a
   `std::string_view` with the same methods), as a `str` local does.
 
-### CF-130 · bug · `confirmed`: indexing a map passed as a parameter does not compile
+### CF-130 · bug · `resolved ✓`: indexing a map passed as a parameter does not compile
+- **Resolved at `v0.12.2` (migration step 5):** the tag is gone from `domain/merge.cf`; the site keeps `get(id) or -1`, since it wants `-1` for an id with no tombstone.
 - **At `v0.12.2` (migration step 5):** [ran] `m[k]` on a read-only map parameter builds and runs. The site wants `-1` for a missing key, so its code stays; only the tag goes. **fixed** (1 tag).
 - **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** the strength estimate's word lists
   (`src/domain/strength.cf`) are a `map[str]i64` read by functions that take them as a

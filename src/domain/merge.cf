@@ -257,7 +257,7 @@ fn merge_picks[T: MergeRecord](local: []T, other: []T, tombs: TombTimes) -> []Me
             p.side = 1
             stamp = other[usize(p.oi)].merge_stamp()
         }
-        // CFIRE-UPSTREAM: CF-130
+        // -1 when the id has no tombstone.
         dead := tombs.at.get(id) or -1
         if tombs.at.contains(id) && (p.side < 0 || dead >= stamp) {
             p.side = -1
