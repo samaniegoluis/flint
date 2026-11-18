@@ -176,16 +176,15 @@ fn (self: Sodium) unseal(key: []byte, sealed: []byte, aad: []byte) -> []byte! {
 fn (self: Sodium) wipe(buf: []byte) {
     // CFIRE-UPSTREAM: CF-124
     cpp {
-        auto& b = const_cast<std::remove_cvref_t<decltype(buf)>&>(buf);
-        if (!b.empty()) sodium_memzero(cfire::c_arg(b.data()), b.size());
+        // On 0.12 a read-only slice is a const view: the cast goes on its pointer.
+        if (!buf.empty()) sodium_memzero(const_cast<void*>(static_cast<const void*>(buf.data())), buf.size());
     }
 }
 
 fn (self: Sodium) wipe_text(text: str) {
     // CFIRE-UPSTREAM: CF-124
     cpp {
-        auto& s = const_cast<std::remove_cvref_t<decltype(text)>&>(text);
-        if (!s.empty()) sodium_memzero(s.data(), s.size());
+        if (!text.empty()) sodium_memzero(const_cast<void*>(static_cast<const void*>(text.data())), text.size());
     }
 }
 
