@@ -151,3 +151,16 @@ test "a peer's caller chain is read from the kernel, up to pid 1" {
     l.close()
     fs.remove(dir) or {}
 }
+
+test "a relay frame carrying a file's bytes is cut by byte, not by character" {
+    // A continuation byte right after the tag and after the head's newline: a `str`
+    // slice would panic on either bound (cfire 0.12, CF-155).
+    raw: []u8 = [u8(0x80), u8(0xff), u8(0x41)]
+    data := str(raw)
+    frame := "F" + data
+    assert_eq(relay_tag(frame), "F")
+    assert_eq(relay_payload(frame), data)
+    (head, rest) := split_head("{\"op\":1}\n" + data)
+    assert_eq(head, "{\"op\":1}")
+    assert_eq(rest, data)
+}

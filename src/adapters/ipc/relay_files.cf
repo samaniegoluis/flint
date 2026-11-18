@@ -49,11 +49,11 @@ fn file_op(op: str, path: str) -> RelayFileOp {
 
 // A frame's JSON head and the bytes after it.
 fn split_head(payload: str) -> (str, str) {
-    nl := payload.index_of("\n")
-    if nl < 0 {
+    nl := payload.index_of("\n") or {
         return (payload, "")
     }
-    return (payload.substr(0, usize(nl)), payload.substr(usize(nl) + 1))
+    // The bytes after the head are a file's, not text: cut them by byte.
+    return (byte_slice(payload, 0, nl), byte_tail(payload, nl + 1))
 }
 
 fn file_op_frame(op: RelayFileOp, data: str) -> str {

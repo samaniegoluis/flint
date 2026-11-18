@@ -66,14 +66,15 @@ fn relay_tag(frame: str) -> str {
     if frame.len() == 0 {
         return ""
     }
-    return frame.substr(0, 1)
+    // A frame can carry a file's bytes: cut by byte (CF-155).
+    return byte_slice(frame, 0, 1)
 }
 
 fn relay_payload(frame: str) -> str {
     if frame.len() <= 1 {
         return ""
     }
-    return frame.substr(1)
+    return byte_tail(frame, 1)
 }
 
 // Each port holds its own copy of this: the connection (one descriptor, shared by
