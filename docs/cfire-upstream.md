@@ -42,6 +42,7 @@ rechecked on it. An old entry is rechecked when the move reaches it (step 5 walk
 |---|---|
 | **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (a literal brace is `{{` or `\{` depending on whether the string interpolates), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped), 162 (`try f[T](…)` keeps the type `T`) |
 | Old, partly resolved on 0.12 [ran] | 031 (`@pkg` retired; `build.cf` `PkgConfig` per executable works; still no per-OS fields), 147 (field access through `shared[T]` works, except on a local copy: CF-156) |
+| Old, fixed on 0.12 [ran] | 150 (a variable named like a module); its workaround goes in step 5 |
 | Old, not rechecked yet | everything else |
 
 **Most urgent:** CF-157 (no error, data lost), then CF-156 and CF-153 (common code that
@@ -2589,6 +2590,9 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   (and a diagnostic when a linked library's `minos` is newer).
 
 ### CF-150 · bug · `confirmed`: a variable named like a stdlib module turns its method calls into module calls
+- **At `v0.12.0` [ran, macOS]:** fixed: the repro returns `true false`. Flint's workaround
+  (the fake's parameter named `u`) stays until step 5 of the move removes workarounds;
+  then this entry is `resolved ✓`.
 - **Seen (milestone 45) [ran, macOS, `c5b1d4b`]:** in a test fake, `fn fake_url_id(url: str, …)`
   with `url.starts_with(prefix)` and `url.substr(…)` compiles to
   `cfire::url::starts_with(prefix)` and fails in C++ ("'url' is not a class, namespace, or

@@ -406,16 +406,35 @@ on the patched fork from WSL. Its reference is the last port results in
   no place a Mac build skips. Per-OS `.cf` files (`_darwin`, `_linux`, `_unix`) exist for
   sources only.
 
-## Step 2 on the Mac (in progress, 2026-11-18)
+## Step 2 on the Mac (2026-11-18)
 
-Done, each green on `cfire test` with 0.12 (`scripts/cfire-next.sh`, after `. scripts/env.sh`):
-`src/domain` 154, `src/ports` (no tests), `src/application` 324, `src/application/vaultserver`
-146. Next: `src/adapters/*` (config, crypto, fonts, ipc, keychain, process, rdp, serverfs,
-ssh, uievents, vault, vaultremote), then `src/drivers/*`, then the three `cfire build`s.
+Every package checks and passes on 0.12 (`scripts/cfire-next.sh`, after `. scripts/env.sh`).
+The suites that need servers ran under `scripts/test.sh` (throwaway sshds, FreeRDP's
+sample server and Flint's RDP test server, a local `flint-vault-server`), so their counts
+compare with the baseline's; `vault-server` was migrated before the remaining adapters
+for that reason, since `test.sh` builds it first.
 
-The working tree already holds two repo-wide rewrites for the packages still to do, not
-yet compiled: `substr` → slicing and `.has_value()` → `!= none`. Review them with each
-package's commit.
+| Suite | 0.12 | Baseline | Suite | 0.12 | Baseline |
+|---|---|---|---|---|---|
+| `domain` | 154 | 152 | `rdp` | 146 | 145 |
+| `application` | 324 | 323 | `serverfs` | 137 | 136 |
+| `application/vaultserver` | 146 | 145 | `ssh` | 165 | 164 |
+| `adapters/config` | 135 | 134 | `uievents` | 143 | 142 |
+| `adapters/crypto` | 134 | 133 | `vault` | 175 | 174 |
+| `adapters/fonts` | 125 | 124 | `vaultremote` | 130 | 129 |
+| `adapters/ipc` | 138 | 136 | `drivers/clicmd` | 204 | 203 |
+| `adapters/keychain` | 127 | 126 | `drivers/vault-server` | 139 | 138 |
+| `adapters/process` | 134 | 133 | | | |
+
+Every suite runs the tests of the packages it imports, and `domain` gained one in step 2
+(`byte_slice`), hence the +1 everywhere; `domain` also gained the negative-seed test and
+`ipc` a test that relay frames are cut by byte. Nothing was removed or skipped.
+`src/drivers/gui` and `src/drivers/cli` have no tests; both check clean.
+
+The three `cfire build`s: `flint` (CLI, 1 min 20 s cold, 0.4 s with nothing changed:
+0.12's per-package cache works), `FlintGui` (`build/gui/Flint.app`, 3 min 51 s cold) and
+`flint-vault-server` (14 s). `flint --version` runs. Cold builds are slower than 0.10's
+27 s for the CLI; step 3 times the warm ones.
 
 **How 0.12 differs, and what each fix looks like** (bugs in `cfire-upstream.md` CF-151..157):
 
@@ -434,6 +453,14 @@ package's commit.
 | `(*p).x` on a `shared[T]` | `p.x` |
 | `x.has_value()`, `x.value()` | `x != none`, `x or …` |
 | `build.cf` top-level `var X =` | `X :=` |
+| `byte` is `u8`, a read-only `[]byte` a `slice_ref<u8>` (a `std::span<const u8>`) | native headers take `std::span<const std::uint8_t>` and fill `std::vector<std::uint8_t>`, not `std::byte` |
+| A read-only slice or `str` is a const view in a `cpp` block; a `str` has no `.c_str()` (CF-161) | cast the pointer, not the container; `std::string(x).c_str()` for a call, `flint_ssh::CText` where the text is a secret |
+| `*mut cpp::T` is rejected (CF-160) | an opaque alias of the pointer, `cpp.flint_ssh::SshSession`, `cpp.flint_db::Db` |
+| A stdlib or Flint call takes the coercion of any C++ function of the same last name, program-wide (CF-158) | `str(view)` for each view argument of `fs.rename`/`remove`/`open`; colliding native helpers renamed `native_*` |
+| `{name}` interpolates in every string; `{{` is `{` only in an interpolated one (CF-159) | a raw string, `` `%{http_code}` `` |
+| A value from `try f[T](…)` keeps the type `T` (CF-162) | call the inner function directly |
+| `os.exec_output` of a built string is `cfire/SHELL-INJECTION-RISK` | `os.command(binary, args)` |
+| A `str` slice of binary data (a relay frame, an HTTP body, a byte loop on untrusted text) panics on a continuation byte | `byte_slice` / `byte_tail` |
 
 ## Progress
 
@@ -441,4 +468,4 @@ package's commit.
 |---|---|---|---|
 | 0 | 2026-11-18 | Mac and Docker baselines on 0.10 `c5b1d4b`: all green but Linux serve-e2e 47/224 (known, ROADMAP §5). Zorin before step 4; the Windows VM still needs autologon, the battery user and a snapshot | `81d5fa0` |
 | 1 | 2026-11-18 | `v0.12.0` (`7b68799`) from source in `~/.local/opt/cfire-0.12.0` (no `v0.12.x` release yet: `v0.12.1`'s macOS arm64 build failed); `cfire doctor` 17/17 needed, nothing to install; `scripts/cfire-next.sh` and the `cfire-next` MCP server; `~/.cfire/runtime` untouched; `main` builds its three binaries on 0.10 | this commit |
-| 2 (in progress) | 2026-11-18 | `cfire fix`, `@pkg` into `build.cf`; `domain`, `ports`, `application` and `vaultserver` green on 0.12 (154, -, 324, 146 tests); 7 new cfire bugs (CF-151..157); adapters and drivers next | `f1d664b` and the commit after it |
+| 2 | 2026-11-18 | `cfire fix`, `@pkg` into `build.cf`; every package checks and passes on 0.12, each suite at its baseline count plus the tests step 2 added (table above), nothing skipped; `flint`, `FlintGui` and `flint-vault-server` build; 12 new cfire entries (CF-151..162) | `f1d664b` .. this commit |
