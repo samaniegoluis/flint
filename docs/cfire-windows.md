@@ -75,6 +75,7 @@ Windows test VM (Windows 11 Pro 22H2, build 22621, WebView2 157), in MSYS2 CLANG
 | ID | On `v0.12.2` | Evidence | Flint |
 |---|---|---|---|
 | W-01 | **covered differently**: cfire's supported Windows path is native MSYS2 CLANG64 (Q55), not cross-compiling, and the release ships `cfire.exe` for it | [ran] `cfire doctor` 10 passed, `cfire build flint` → `flint.exe` | `windows/bin/env.sh` sets up CLANG64 instead of a cross toolchain; `xcxx`, `sysroot.sh`, the `pkg-config --static` wrapper and `curl.sh` go (libsodium, libssh, SQLCipher, libcurl over Schannel from pacman; FreeRDP built natively, `freerdp.sh`) |
+| W-04 | **covered**: every Windows target links `-static` (with `ws2_32`, `advapi32`, `shell32`); `flint.exe` imports only system DLLs (UCRT, Winsock, Crypt32, Secur32, …) | [ran] `run-probes.sh` hello; `objdump -p build/flint.exe` | the static link flags went with W-01. **One gap left:** cfire asks pkg-config without `--static`, and MSYS2's `libssh.pc` and `libsodium.pc` do not define `LIBSSH_STATIC`/`SODIUM_STATIC` even with it, so their headers declare `dllimport` and the link fails (`undefined symbol: __declspec(dllimport) ssh_free`). cfire defines `LIBSSH_STATIC` only for its own `ext:net/ssh`; Flint's `pkgconfig/windows/flint-native.pc` defines both |
 
 ## How to read each entry
 
