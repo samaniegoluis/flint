@@ -162,11 +162,32 @@ if [[ -n "${FLINT_TEST_CMD:-}" ]]; then
   bash -c "$FLINT_TEST_CMD"
   exit $?
 fi
+# Linux, with gdb: a suite that dies by a signal leaves every thread's backtrace in this
+# log, since cfire's test runtime exits from its own handler with no core (CF-167,
+# scripts/linux/crash-bt.c; ROADMAP §5, the RDP suite's crash). Not a rerun: the
+# backtrace is the crash's own.
+crash_bt=()
+if [[ "$(uname -s)" == Linux ]] && command -v gdb >/dev/null; then
+  cc_bin="$(command -v clang || command -v cc || true)"
+  mkdir -p "$tmp/crash"
+  if [[ -n "$cc_bin" ]] && "$cc_bin" -shared -fPIC -O2 -o "$tmp/crash-bt.so" "$root/scripts/linux/crash-bt.c" -ldl 2>"$tmp/crash-bt.log"; then
+    crash_bt=(env LD_PRELOAD="$tmp/crash-bt.so" FLINT_CRASH_BT_DIR="$tmp/crash")
+  else
+    echo "test.sh: no crash backtraces (crash-bt.c did not build):" >&2
+    cat "$tmp/crash-bt.log" >&2 || true
+  fi
+fi
 status=0
 # --release: cfire 0.12 builds tests at -O0 by default, and the password estimator's fuzz
 # test alone then takes 30 s in every suite (CF-163). The test mode's UB traps stay on.
 for t in "${targets[@]}"; do
-  cfire test --release "$t" || status=1
+  ${crash_bt[@]+"${crash_bt[@]}"} cfire test --release "$t" || status=1
+  for f in "$tmp"/crash/bt-*.txt; do
+    [[ -f "$f" ]] || continue
+    echo "test.sh: a process of $t died by a signal; every thread's backtrace:" >&2
+    cat "$f" >&2
+    rm -f "$f"
+  done
 done
 # The release script and cliff.toml (milestone 32), with the whole run only.
 if [[ $# -eq 0 ]]; then

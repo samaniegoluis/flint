@@ -44,7 +44,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         openssh-server openssh-client xvfb xauth \
         xserver-xorg-core xserver-xorg-video-dummy x11-xserver-utils \
         gnome-keyring dbus python3 perl sudo openssl \
-        vim \
+        vim gdb \
     && rm -rf /var/lib/apt/lists/*
 
 RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \

@@ -2996,3 +2996,25 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `cfire/INVALID-BUILD-VALUE` (or similar) for a manifest value that is not a
   literal, until computed values are supported; an error for a `PkgConfig` name
   pkg-config does not know, as `pkg-config --exists` reports it.
+
+### CF-167 · missing · `confirmed`: a crashed test leaves no core and no backtrace
+- **Seen (migration step 5) [ran, Linux arm64 in Docker, `v0.12.2` `5be0987`]:** Flint's
+  RDP adapter suite died once by SIGSEGV with nothing to read but the test's name (ROADMAP
+  §5). A package with `test "segv" { cpp { volatile int* p = nullptr; *p = 1; } }`, run
+  with `ulimit -c unlimited` and `core_pattern` `core`: `cfire test` prints `--- FAIL: segv
+  (…: test crashed: invalid memory access (SIGSEGV))` and `FAIL (test runner crashed;
+  remaining tests were not run)`, exits 1, and no core file is written anywhere.
+- **Cause:** `install_crash_handlers` (`cfire_test_runtime.hpp`) handles SIGSEGV, SIGBUS,
+  SIGABRT, SIGILL, SIGFPE and SIGTRAP, writes the report and ends with `std::_Exit(1)`.
+  The signal is never re-raised, so the kernel writes no core, and nothing prints a
+  backtrace. There is no flag or environment variable to leave the signals alone.
+- **Workaround:** `scripts/linux/crash-bt.c`, preloaded into `cfire test` by
+  `scripts/test.sh` on Linux with gdb: it wraps the handler, attaches gdb from a child and
+  writes every thread's backtrace, then runs cfire's handler. Linux only, and at
+  `--release` the test function is inlined into `main` (no `-g`), so the frames of Flint's
+  own code are thin; shared libraries keep theirs.
+- **Ideal:** after the report, restore the default action and re-raise the signal (the
+  exit status then says which signal, and a core is written where the system allows it);
+  or a backtrace of the crashing thread in the report (`backtrace_symbols_fd` on Linux and
+  macOS, `CaptureStackBackTrace` on Windows); and `-g` kept in `cfire test --release`, or
+  a `--debug-info` flag.
