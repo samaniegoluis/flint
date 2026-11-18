@@ -2581,3 +2581,18 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   only pass `url` to functions, never call a method on it.
 - **Ideal:** resolve a local before a module name; a module that is not imported is never
   the target of `name.`.
+
+### CF-151 · bug · `confirmed`: `cfire fix` rewrites `str.replace` to `.replace`, which now replaces only the first match
+- **Seen (migration step 2) [ran, macOS, `v0.12.0` `7b68799`]:** on 0.10, `str.replace(s,
+  from, to)` was `replace_all` (`runtime/core/str.hpp:87`). `cfire fix` (`cfire/RETIRED-API`)
+  rewrites it to `s.replace(from, to)`, which in 0.12 is "copy with the **first**
+  occurrence replaced" (`STDLIB_REFERENCE.md`). It compiles, so the behaviour changes
+  silently. In Flint it removed the sudo password from a command's output only once.
+- **Repro:** on 0.10, `str.replace("a-b-c", "-", "+")`; `cfire fix` on 0.12; run it:
+  `a+b-c`, where 0.10 gave `a+b+c`.
+- **Workaround:** the five rewritten calls changed to `replace_all` by hand
+  (`src/domain/sudo.cf`, two test fakes). The other rewrites (`trim`, `split`, `join`,
+  `to_lower`, `to_upper`, `parse_i64`/`parse_i32`, `index_of`, `last_index_of`) were probed
+  and keep their meaning, or fail to compile where the type changed (`index_of` now
+  returns `usize?`).
+- **Ideal:** the fix-it rewrites `str.replace` to `.replace_all`.

@@ -724,8 +724,8 @@ fn (mut self: FakeLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
         mut c := self.chunks[self.read_pos]
         self.read_pos += 1
         if self.prompt.len() > 0 {
-            c.stdout = c.stdout.replace("@PROMPT@", self.prompt)
-            c.stderr = c.stderr.replace("@PROMPT@", self.prompt)
+            c.stdout = c.stdout.replace_all("@PROMPT@", self.prompt)
+            c.stderr = c.stderr.replace_all("@PROMPT@", self.prompt)
         }
         return c
     }

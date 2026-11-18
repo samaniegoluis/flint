@@ -87,7 +87,7 @@ fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
     mut step := SudoStep{ output: "", send_password: false, refused: false }
     mut buf := w.pending + data
     if w.secret.len() > 0 {
-        buf = buf.replace(w.secret, "")
+        buf = buf.replace_all(w.secret, "")
     }
     mut idx := buf.index_of(w.prompt)
     for idx >= 0 {
@@ -121,7 +121,7 @@ fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
 fn sudo_flush(mut w: SudoWatch) -> str {
     mut rest := w.pending
     if w.secret.len() > 0 {
-        rest = rest.replace(w.secret, "")
+        rest = rest.replace_all(w.secret, "")
     }
     w.pending = ""
     return rest

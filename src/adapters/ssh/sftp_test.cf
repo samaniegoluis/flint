@@ -43,7 +43,7 @@ fn scratch_dir(tag: str) -> str {
         base = "/tmp"
     }
     d := base + "/flint-sftp-" + tag + "-{time.now_ms()}"
-    return d.replace("//", "/")
+    return d.replace_all("//", "/")
 }
 
 test "sftp writes, stats, lists, reads, renames and removes" {
