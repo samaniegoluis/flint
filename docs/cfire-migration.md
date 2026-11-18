@@ -763,6 +763,14 @@ rerun to see it pass again; the owner decides what is next.
 **gui-e2e's vim step on Linux:** not started (the owner's "only if cheap"); still
 skipped under Xvfb.
 
+### The Mac after 4b
+
+Flint `13d2f04`, the same Mac, one run each: `scripts/test.sh` 17/17 at part 2's counts
+and release-test 24/24 (29 s warm), cli-e2e 483/483, server-e2e 70/70, sync-e2e 105/105,
+`build-gui.sh` ok (42 s, `domain` changed), gui-e2e terminal 95, vault 125, tunnels 33,
+paste 24, rdp 70, webgl 20, fullscreen 49, vim 16 (2 min 8 s), serve-e2e 223/223 (1 min
+26 s; the app exited 0). Every count is step 4's, but `test.sh`'s suites (part 2).
+
 ## Progress
 
 | Step | Date | Result | Commit |
@@ -776,3 +784,4 @@ skipped under Xvfb.
 | 4b.1 | 2026-11-18 | Docker cache volume `flint-linux-cache` (the working tree with its `.cfire/` and `build/`, and `CFIRE_CACHE_DIR`): full `linux-check.sh` 32 min 48 s cold, **12 min 50 s warm**, every count step 4's; warm, serve-e2e passed the first unlock and lost the app at the two-host `cp` (162/224), for 4b's third part | this commit |
 | 4b.2 | 2026-11-18 | The estimator's word lists built once per process (`3a59941`, CF-165), then the 101 inline tests (92 of `domain`) moved to `*_test.cf`: `scripts/test.sh` warm on the Mac 1 min 41 s, 31 s, **29 s**; every suite 92 fewer (`clicmd` 93), `domain` 154, nothing dropped. The ~30 s per suite was 0.10's recompiling: on 0.12 the servers start in ~0.4 s and a suite takes ~1 s, so no change there | `3a59941`, this commit |
 | 4b.3 | 2026-11-18 | Linux serve-e2e is not deterministic: 47 and 162/224 in the two runs of part 1, **224/224** with `FLINT_LINUX_STEPS=serve` and in a full warm run (every step green, exit 0, for the first time on 0.12). `Unlock.tsx:44` ruled out for this script; memory not confirmed. Diagnosis left in place for the next failure (the unlock's timeline, the app's exit status and log, memory in Docker); for the owner. The vim step not started | this commit |
+| 4b (Mac) | 2026-11-18 | The Mac battery on `13d2f04`: test.sh 17/17 at the new counts and 24/24, cli-e2e 483, server-e2e 70, sync-e2e 105, gui-e2e the eight counts, serve-e2e 223/223. Step 4b closed; Linux serve-e2e stays with the owner | this commit |
