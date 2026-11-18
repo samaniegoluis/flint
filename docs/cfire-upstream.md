@@ -45,7 +45,7 @@ version change, the prelude only in its version line, so the same holds.
 
 | Status | Entries |
 |---|---|
-| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (a literal brace is `{{` or `\{` depending on whether the string interpolates), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped), 162 (`try f[T](…)` keeps the type `T`), 163 (`cfire test` at `-O0` by default, undocumented: the suites ten times slower on CPU-bound tests), **164 (on Linux, `json.parse` does not compile next to libstdc++'s `<chrono>`: CF-158's lookup; Flint does not build on Linux)** |
+| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (a literal brace is `{{` or `\{` depending on whether the string interpolates), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped), 162 (`try f[T](…)` keeps the type `T`), 163 (`cfire test` at `-O0` by default, undocumented: the suites ten times slower on CPU-bound tests), **164 (on Linux, `json.parse` does not compile next to libstdc++'s `<chrono>`: CF-158's lookup; Flint does not build on Linux)**, 165 (`sync.MutexGuard` has no `.value`, as the GUIDE says; `with_lock` returns an unresolved `R`) |
 | Old, partly resolved on 0.12 [ran] | 031 (`@pkg` retired; `build.cf` `PkgConfig` per executable works; still no per-OS fields), 147 (field access through `shared[T]` works, except on a local copy: CF-156) |
 | Old, fixed on 0.12 [ran] | 150 (a variable named like a module); its workaround goes in step 5 |
 | Old, not rechecked yet | everything else |
@@ -2860,3 +2860,33 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   Linux, a returned value included (no generic, so CF-162 does not apply).
 - **Ideal:** as CF-158: the C signature table only for a callee that resolves to a C++
   function, by its qualified name; never a template's parameter type pasted into a cast.
+
+### CF-165 · bug · `confirmed`: `sync.MutexGuard` has no `.value`, and `with_lock` returns an unresolved `R`
+- **Seen (migration step 4b) [ran, macOS arm64, `v0.12.2` `5be0987`]:** keeping the
+  password estimator's word lists for the process (`src/domain/strength.cf`) behind a
+  package-level `sync.Mutex[T]`. The GUIDE's "Read a locked value: `guard.value` on a
+  `sync.MutexGuard[T]`" (GUIDE.md:644, Chapter 4) passes `cfire check` and fails in
+  C++: "no member named 'value' in 'cfire::sync::MutexGuard<W>'"; the runtime's guard
+  (`runtime/core/sync.hpp:376`) has `get()`, `set()`, `->` and `*` only. And
+  `m.with_lock(|mut w: W| -> i64 { … })` returned from an `i64` function is rejected:
+  "return type mismatch: function 'lookup' expects 'i64', got 'R'" (`cfire/TYPE-MISMATCH`).
+- **Repro:**
+  ```
+  package main
+  import "core:sync"
+  type W struct { n: i64 }
+  M: sync.Mutex[W] = make(sync.Mutex[W], W{ n: 1 })
+  fn a() -> i64 {
+      mut g := M.lock()
+      return g.value.n          // C++: no member named 'value'
+  }
+  fn b() -> i64 {
+      return M.with_lock(|mut w: W| -> i64 { return w.n })   // got 'R'
+  }
+  fn main() { println("{a()} {b()}") }
+  ```
+- **Workaround:** `g.get()` on the guard, mutable through `mut g` (`fill(mut g.get())`
+  changes the locked value in place, no copy). One site, under a
+  `// CFIRE-UPSTREAM: CF-165` line.
+- **Ideal:** `guard.value` as documented (or the GUIDE says `get()`), and `with_lock`'s
+  `R` taken from the closure's return type.

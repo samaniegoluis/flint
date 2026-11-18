@@ -1,5 +1,7 @@
 package domain
 
+import "core:sync"
+
 // How hard a master password is to guess (milestone 40, D-095): a reduced port of
 // zxcvbn 4.4.2 (MIT, (c) 2012-2016 Dan Wheeler and Dropbox, Inc.), pure cfire. It
 // is an estimate shown to a person, not cryptography (Principle 4): the key still
@@ -16,7 +18,6 @@ package domain
 // Bytes are characters: a byte outside ASCII counts as an unknown character, which
 // can only make the estimate more cautious. Only the first STRENGTH_MAX_LEN bytes are
 // read; past them every password scores 4 anyway.
-
 
 STRENGTH_MIN_SCORE_TO_SYNC: i64 = 3
 STRENGTH_MAX_LEN: usize = 100
@@ -106,8 +107,16 @@ fn estimate_password_strength(password: str, user_words: []str) -> PasswordStren
     if pw.len() > STRENGTH_MAX_LEN {
         pw = byte_slice(pw, 0, STRENGTH_MAX_LEN)
     }
-    words := strength_word_lists(user_words)
-    (guesses, seq) := strength_guesses(pw, words)
+    user := strength_user_words(user_words)
+    // The fixed lists, built on the first estimate and kept for the process (~93k
+    // words: rebuilt on each call they were most of an estimate's time). The lock is
+    // held to the end of the estimate, so the lists are read in place, never copied.
+    // CFIRE-UPSTREAM: CF-165 — `get()`, not the GUIDE's `.value`.
+    mut fixed := STRENGTH_FIXED_WORDS.lock()
+    if !fixed.get().built {
+        fill_strength_fixed_words(mut fixed.get())
+    }
+    (guesses, seq) := strength_guesses(pw, user, fixed.get().words)
     score := strength_score(guesses)
     mut res := PasswordStrength{ score: score, label: strength_label(score), sync_ok: score >= STRENGTH_MIN_SCORE_TO_SYNC, warning: "", suggestions: [] }
     strength_feedback(mut res, pw, seq)
@@ -132,7 +141,8 @@ fn add_strength_words(mut w: StrengthWords, kind: str, chunks: []str) {
     }
 }
 
-fn strength_word_lists(user_words: []str) -> StrengthWords {
+// The person's own words (the vault's name, for one), ranked before every list.
+fn strength_user_words(user_words: []str) -> StrengthWords {
     mut w := StrengthWords{ rank: {}, kind: {} }
     mut mine: []str = []
     for u in user_words {
@@ -143,13 +153,25 @@ fn strength_word_lists(user_words: []str) -> StrengthWords {
         }
     }
     add_strength_words(mut w, "user_inputs", [mine.join(" ")])
-    add_strength_words(mut w, "passwords", strength_words_passwords())
-    add_strength_words(mut w, "english_wikipedia", strength_words_english_wikipedia())
-    add_strength_words(mut w, "us_tv_and_film", strength_words_us_tv_and_film())
-    add_strength_words(mut w, "surnames", strength_words_surnames())
-    add_strength_words(mut w, "female_names", strength_words_female_names())
-    add_strength_words(mut w, "male_names", strength_words_male_names())
     return w
+}
+
+// The fixed lists, filled once (estimate_password_strength).
+type StrengthFixedWords struct {
+    built: bool
+    words: StrengthWords
+}
+
+STRENGTH_FIXED_WORDS: sync.Mutex[StrengthFixedWords] = make(sync.Mutex[StrengthFixedWords], StrengthFixedWords{ built: false, words: StrengthWords{ rank: {}, kind: {} } })
+
+fn fill_strength_fixed_words(mut f: StrengthFixedWords) {
+    add_strength_words(mut f.words, "passwords", strength_words_passwords())
+    add_strength_words(mut f.words, "english_wikipedia", strength_words_english_wikipedia())
+    add_strength_words(mut f.words, "us_tv_and_film", strength_words_us_tv_and_film())
+    add_strength_words(mut f.words, "surnames", strength_words_surnames())
+    add_strength_words(mut f.words, "female_names", strength_words_female_names())
+    add_strength_words(mut f.words, "male_names", strength_words_male_names())
+    f.built = true
 }
 
 // ---- Small helpers --------------------------------------------------------------
@@ -290,18 +312,30 @@ fn uppercase_variations(token: []u8) -> f64 {
     return v
 }
 
-// Every word of `w` inside `lower` (already lowercase), with its rank.
-fn dictionary_matches(lower: []u8, w: StrengthWords) -> []StrengthMatch {
+// Every word of `user` or `w` inside `lower` (already lowercase), with its rank.
+fn dictionary_matches(lower: []u8, user: StrengthWords, w: StrengthWords) -> []StrengthMatch {
     mut list: []StrengthMatch = []
     n := lower.len()
     s := bytes_str(lower)
     for i in 0..n {
         for j in i..n {
             word := byte_slice(s, i, j + 1)
-            if w.rank.contains(word) {
-                mut m := new_match("dictionary", i64(i), i64(j), f64(w.rank.get(word) or 0))
-                m.rank = w.rank.get(word) or 0
-                m.kind = w.kind.get(word) or ""
+            // The best rank of the two; a tie goes to the person's own words, as when
+            // they were one list with theirs first.
+            mut rank: i64 = 0
+            mut kind := ""
+            if user.rank.contains(word) {
+                rank = user.rank.get(word) or 0
+                kind = user.kind.get(word) or ""
+            }
+            if w.rank.contains(word) && (rank == 0 || (w.rank.get(word) or 0) < rank) {
+                rank = w.rank.get(word) or 0
+                kind = w.kind.get(word) or ""
+            }
+            if rank > 0 {
+                mut m := new_match("dictionary", i64(i), i64(j), f64(rank))
+                m.rank = rank
+                m.kind = kind
                 list.push(m)
             }
         }
@@ -309,9 +343,9 @@ fn dictionary_matches(lower: []u8, w: StrengthWords) -> []StrengthMatch {
     return list
 }
 
-fn dictionary_match_all(pw: []u8, lower: []u8, w: StrengthWords) -> []StrengthMatch {
+fn dictionary_match_all(pw: []u8, lower: []u8, user: StrengthWords, w: StrengthWords) -> []StrengthMatch {
     mut list: []StrengthMatch = []
-    for m0 in dictionary_matches(lower, w) {
+    for m0 in dictionary_matches(lower, user, w) {
         mut m := m0
         m.upper = i64(uppercase_variations(sub_bytes(pw, usize(m.i), usize(m.j) + 1)))
         m.guesses = cap_guesses(f64(m.rank) * uppercase_variations(sub_bytes(pw, usize(m.i), usize(m.j) + 1)))
@@ -323,7 +357,7 @@ fn dictionary_match_all(pw: []u8, lower: []u8, w: StrengthWords) -> []StrengthMa
     for k in 0..n {
         rev.push(lower[n - 1 - k])
     }
-    for m0 in dictionary_matches(rev, w) {
+    for m0 in dictionary_matches(rev, user, w) {
         mut m := m0
         i := i64(n) - 1 - m0.j
         j := i64(n) - 1 - m0.i
@@ -412,7 +446,7 @@ fn l33t_variations(token_lower: []u8, subs: [][]u8) -> f64 {
 
 // Words with substitutions: "p@ssw0rd". Every way to read the ambiguous substitutes
 // (1, | and 7) is tried; there are eight at most.
-fn l33t_match_all(pw: []u8, lower: []u8, w: StrengthWords) -> []StrengthMatch {
+fn l33t_match_all(pw: []u8, lower: []u8, user: StrengthWords, w: StrengthWords) -> []StrengthMatch {
     mut list: []StrengthMatch = []
     // The substitutes present, each once.
     mut present: []u8 = []
@@ -456,7 +490,7 @@ fn l33t_match_all(pw: []u8, lower: []u8, w: StrengthWords) -> []StrengthMatch {
             }
             subbed.push(t)
         }
-        for m0 in dictionary_matches(subbed, w) {
+        for m0 in dictionary_matches(subbed, user, w) {
             if m0.j <= m0.i {
                 continue
             }
@@ -692,7 +726,7 @@ fn longest_repeat_at(pw: []u8, i: usize) -> (usize, usize) {
     return (best_total, best_total)
 }
 
-fn repeat_match_all(pw: []u8, w: StrengthWords) -> []StrengthMatch {
+fn repeat_match_all(pw: []u8, user: StrengthWords, w: StrengthWords) -> []StrengthMatch {
     mut list: []StrengthMatch = []
     n := pw.len()
     mut i: usize = 0
@@ -702,7 +736,7 @@ fn repeat_match_all(pw: []u8, w: StrengthWords) -> []StrengthMatch {
             i += 1
             continue
         }
-        (base_guesses, _) := strength_guesses(bytes_str(sub_bytes(pw, i, i + base)), w)
+        (base_guesses, _) := strength_guesses(bytes_str(sub_bytes(pw, i, i + base)), user, w)
         mut m := new_match("repeat", i64(i), i64(i + total - 1), base_guesses * f64(total / base))
         m.base_len = i64(base)
         list.push(m)
@@ -991,22 +1025,22 @@ fn date_match_all(pw: []u8) -> []StrengthMatch {
 
 // ---- The cheapest sequence ------------------------------------------------------
 
-fn omnimatch(pw: []u8, w: StrengthWords) -> []StrengthMatch {
+fn omnimatch(pw: []u8, user: StrengthWords, w: StrengthWords) -> []StrengthMatch {
     mut lower: []u8 = []
     for c in pw {
         lower.push(lower_byte(c))
     }
     mut all: []StrengthMatch = []
-    for m in dictionary_match_all(pw, lower, w) {
+    for m in dictionary_match_all(pw, lower, user, w) {
         all.push(m)
     }
-    for m in l33t_match_all(pw, lower, w) {
+    for m in l33t_match_all(pw, lower, user, w) {
         all.push(m)
     }
     for m in spatial_match_all(pw) {
         all.push(m)
     }
-    for m in repeat_match_all(pw, w) {
+    for m in repeat_match_all(pw, user, w) {
         all.push(m)
     }
     for m in sequence_match_all(pw) {
@@ -1092,7 +1126,7 @@ fn step_update(mut opt: [][]StrengthStep, m: StrengthMatch, l: i64, n: i64) {
 }
 
 // The password's guesses and the matches of the cheapest way to make it.
-fn strength_guesses(password: str, w: StrengthWords) -> (f64, []StrengthMatch) {
+fn strength_guesses(password: str, user: StrengthWords, w: StrengthWords) -> (f64, []StrengthMatch) {
     pw := pw_bytes(password)
     n := i64(pw.len())
     if n == 0 {
@@ -1100,7 +1134,7 @@ fn strength_guesses(password: str, w: StrengthWords) -> (f64, []StrengthMatch) {
         none_yet: []StrengthMatch = []
         return (1.0, none_yet)
     }
-    matches := omnimatch(pw, w)
+    matches := omnimatch(pw, user, w)
     mut opt: [][]StrengthStep = []
     for _ in 0..n {
         opt.push([])
