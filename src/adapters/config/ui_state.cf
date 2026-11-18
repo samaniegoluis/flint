@@ -39,7 +39,8 @@ fn (self: JsonUiStateStore) ui_state_load() -> UiState! {
         return default_ui_state()
     }
     // A damaged file only costs the layout: start from the defaults (D-030).
-    parsed := json.parse[UiStateFile](text) or err {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    parsed := json.parse[UiStateFile](payload: text) or err {
         return default_ui_state()
     }
     mut s := UiState{ sidebar_open: parsed.sidebar_open, sidebar_width: parsed.sidebar_width, files_width: parsed.files_width, fullscreen_note_seen: parsed.fullscreen_note_seen, vaults: [] }

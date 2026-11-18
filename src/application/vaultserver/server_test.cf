@@ -472,7 +472,8 @@ test "one server keeps several vaults, each with its own versions" {
     // The list: ids, versions, sizes and times, no blob.
     l := serve_vault_request(crypto, mut store, mut gate, cfg, list_req(), 9, 9)
     assert_eq(l.status, i32(200))
-    got := try json.parse[VaultsBody](l.body)
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    got := try json.parse[VaultsBody](payload: l.body)
     assert_eq(got.vaults.len(), usize(2))
     assert_eq(got.vaults[0].id, VID)
     assert_eq(got.vaults[0].version, i64(2))
@@ -496,7 +497,8 @@ test "a label is set, listed, cleared and checked; a vault not stored has none" 
     r := serve_vault_request(crypto, mut store, mut gate, cfg, put, 3, 3)
     assert_eq(r.status, i32(200))
     assert_eq(r.note, "")
-    l := try json.parse[VaultsBody](serve_vault_request(crypto, mut store, mut gate, cfg, list_req(), 4, 4).body)
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    l := try json.parse[VaultsBody](payload: serve_vault_request(crypto, mut store, mut gate, cfg, list_req(), 4, 4).body)
     assert_eq(l.vaults[0].label, "Work")
     mut bad := put
     bad.body = "\{\"label\":\" padded \"\}"
@@ -509,7 +511,8 @@ test "a label is set, listed, cleared and checked; a vault not stored has none" 
     mut clear := put
     clear.body = "\{\"label\":\"\"\}"
     assert_eq(serve_vault_request(crypto, mut store, mut gate, cfg, clear, 6, 6).status, i32(200))
-    l2 := try json.parse[VaultsBody](serve_vault_request(crypto, mut store, mut gate, cfg, list_req(), 7, 7).body)
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    l2 := try json.parse[VaultsBody](payload: serve_vault_request(crypto, mut store, mut gate, cfg, list_req(), 7, 7).body)
     assert_eq(l2.vaults[0].label, "")
 }
 

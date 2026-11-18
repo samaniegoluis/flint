@@ -73,7 +73,8 @@ fn (self: FileBlobStore) move_single_vault() -> str! {
     text := fs.read_text(top_head) or err {
         return error(coded(ERR_IO, "cannot read {top_head}"))
     }
-    head := json.parse[BlobVersion](text) or err {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    head := json.parse[BlobVersion](payload: text) or err {
         return error(coded(ERR_IO, "{top_head} is not a version record"))
     }
     if !valid_vault_id(head.vault_id) {
@@ -176,7 +177,8 @@ fn (self: FileBlobStore) label_of(vault_id: str) -> str {
     text := fs.read_text(path) or err {
         return ""
     }
-    f := json.parse[LabelFile](text) or err {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    f := json.parse[LabelFile](payload: text) or err {
         return ""
     }
     return f.label
@@ -191,7 +193,8 @@ fn (self: FileBlobStore) blob_head(vault_id: str) -> BlobVersion! {
     text := fs.read_text(path) or err {
         return error(coded(ERR_IO, "cannot read {path}"))
     }
-    return json.parse[BlobVersion](text) or err {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    return json.parse[BlobVersion](payload: text) or err {
         return error(coded(ERR_IO, "{path} is not a version record"))
     }
 }
@@ -336,7 +339,8 @@ fn (self: FileBlobStore) blob_versions(vault_id: str) -> []BlobVersion! {
         text := fs.read_text("{vdir}/{name}") or err {
             continue
         }
-        v := json.parse[BlobVersion](text) or err {
+        // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+        v := json.parse[BlobVersion](payload: text) or err {
             continue
         }
         found.push(v)

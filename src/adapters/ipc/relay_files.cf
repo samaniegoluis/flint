@@ -66,7 +66,8 @@ fn file_reply_frame(r: RelayFileReply, data: str) -> str {
 
 fn parse_file_op(payload: str) -> (RelayFileOp, str)! {
     (head, data) := split_head(payload)
-    op := json.parse[RelayFileOp](head) or {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    op := json.parse[RelayFileOp](payload: head) or {
         return error(coded(ERR_INVALID, "Flint sent a file request this flint cannot read"))
     }
     return (op, data)
@@ -102,7 +103,8 @@ fn (self: SocketLocalFiles) ask(op: RelayFileOp, data: str) -> (RelayFileReply, 
         }
         if relay_tag(frame) == TAG_FILE_REPLY {
             (head, bytes) := split_head(relay_payload(frame))
-            reply := json.parse[RelayFileReply](head) or {
+            // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+            reply := json.parse[RelayFileReply](payload: head) or {
                 return error(coded(ERR_IO, "the flint client sent an answer this Flint cannot read"))
             }
             if !reply.ok {

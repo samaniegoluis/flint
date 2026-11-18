@@ -65,7 +65,8 @@ fn (self: JsonRecentStore) recents_load() -> []RecentVault! {
     text := fs.read_text(self.path) or err {
         return error(coded(ERR_IO, "cannot read {self.path}"))
     }
-    parsed := json.parse[RecentFile](text) or err {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    parsed := json.parse[RecentFile](payload: text) or err {
         return error(coded(ERR_IO, "{self.path} is not a valid vault list; fix or delete it"))
     }
     mut list: []RecentVault = []

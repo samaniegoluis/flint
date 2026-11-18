@@ -231,7 +231,8 @@ fn (self: SessionHolder) access_book() -> AccessBook {
     if text.len() == 0 {
         return empty_access_book()
     }
-    return json.parse[AccessBook](text) or empty_access_book()
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    return json.parse[AccessBook](payload: text) or empty_access_book()
 }
 
 fn (self: SessionHolder) put_access_book(book: AccessBook) {

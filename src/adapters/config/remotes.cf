@@ -30,7 +30,8 @@ fn (self: JsonRemoteLinkStore) links_load() -> []RemoteLink! {
     text := fs.read_text(self.path) or err {
         return error(coded(ERR_IO, "cannot read {self.path}"))
     }
-    f := json.parse[RemotesFile](text) or err {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    f := json.parse[RemotesFile](payload: text) or err {
         return error(coded(ERR_INVALID, "{self.path} is not a remotes file"))
     }
     return f.vaults

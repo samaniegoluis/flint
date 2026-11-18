@@ -135,7 +135,8 @@ fn (mut self: RelayLink) take(timeout_ms: i32, mut other: str) -> str! {
         return relay_payload(frame)
     }
     if tag == TAG_RESIZE {
-        sz := json.parse[RelaySize](relay_payload(frame)) or RelaySize{ cols: 0, rows: 0 }
+        // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+        sz := json.parse[RelaySize](payload: relay_payload(frame)) or RelaySize{ cols: 0, rows: 0 }
         if sz.cols > 0 && sz.rows > 0 {
             self.cols = i32(sz.cols)
             self.rows = i32(sz.rows)
@@ -241,7 +242,8 @@ fn (self: SocketPrompter) ask(p: RelayPrompt) -> RelayAnswer! {
         mut other := ""
         _ = try link.take(250, mut other)
         if relay_tag(other) == TAG_ANSWER {
-            return json.parse[RelayAnswer](relay_payload(other)) or {
+            // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+            return json.parse[RelayAnswer](payload: relay_payload(other)) or {
                 return error(coded(ERR_INVALID, "the flint client sent an answer this Flint cannot read"))
             }
         }

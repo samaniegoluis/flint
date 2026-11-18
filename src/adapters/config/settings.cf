@@ -28,7 +28,8 @@ fn (self: JsonSettingsStore) settings_load() -> Settings! {
     text := fs.read_text(self.path) or err {
         return error(coded(ERR_IO, "cannot read {self.path}"))
     }
-    parsed := json.parse[SettingsFile](text) or err {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    parsed := json.parse[SettingsFile](payload: text) or err {
         // A damaged file must not keep the app from starting: use the defaults.
         return default_settings()
     }

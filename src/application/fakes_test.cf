@@ -1106,7 +1106,8 @@ fn new_fake_remote() -> FakeRemote {
 
 fn (self: FakeRemote) state() -> FakeRemoteState {
     text := fs.read_text(self.dir + "/state.json") or ""
-    return json.parse[FakeRemoteState](text) or empty_fake_remote_state()
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    return json.parse[FakeRemoteState](payload: text) or empty_fake_remote_state()
 }
 
 fn (self: FakeRemote) save(s: FakeRemoteState) {
@@ -1262,7 +1263,8 @@ fn (self: FakeLinks) links_load() -> []RemoteLink! {
     if !fs.exists(self.path) {
         return []
     }
-    return try json.parse[[]RemoteLink](try fs.read_text(self.path))
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    return try json.parse[[]RemoteLink](payload: try fs.read_text(self.path))
 }
 
 fn (self: FakeLinks) links_save(list: []RemoteLink) -> void! {

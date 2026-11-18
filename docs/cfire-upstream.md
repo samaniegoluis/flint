@@ -2848,6 +2848,15 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `cfire run main.cf`: "unknown type name '_CharT'". Without the `import cpp` it prints
   `x`; on macOS it prints `x` with it. A parameter, a local or a call as the argument
   fail the same way.
-- **Workaround:** pending (migration step 4, with the owner).
+- **Program-wide:** the table holds the headers of every package the program links, so
+  every `json.parse` of a program with one such header fails, in any package, generics
+  included: a `json_decode[T]` helper in `src/domain` (no C++ imports) failed the same
+  way inside the CLI and the app. A build stops at the first failing unit, so each run
+  showed a few sites only. `flint-vault-server` (no `<chrono>`) builds.
+- **Workaround:** a labeled argument, `json.parse[T](payload: x)`: a call with a label
+  goes through the stdlib signature (`expr.hpp:1085`) and returns before the C table is
+  read. All 35 calls in `src/`, tests included (`cfire test` links every executable's
+  headers), each under a `// CFIRE-UPSTREAM: CF-164` line. Same behaviour on macOS and
+  Linux, a returned value included (no generic, so CF-162 does not apply).
 - **Ideal:** as CF-158: the C signature table only for a callee that resolves to a C++
   function, by its qualified name; never a template's parameter type pasted into a cast.

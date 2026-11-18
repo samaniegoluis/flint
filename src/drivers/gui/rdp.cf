@@ -74,7 +74,8 @@ fn rdp_open_check(params: str, st: GuiState) -> RdpOpenReq! {
     try st.require_unlocked()
     // parse_req's own body: a value from `try parse_req[T]` keeps the type `T` and
     // cannot be returned (CFIRE-UPSTREAM: CF-162).
-    req := json.parse[RdpOpenReq](params) or {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    req := json.parse[RdpOpenReq](payload: params) or {
         return error(coded(ERR_INVALID, "malformed request"))
     }
     if req.tab.len() == 0 || req.alias.len() == 0 {

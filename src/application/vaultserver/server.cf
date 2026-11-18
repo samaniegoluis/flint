@@ -266,7 +266,8 @@ fn put_label[B: BlobStore](mut store: B, vault_id: str, body: str) -> ServerRepl
     if body.len() > 1024 {
         return json_reply(413, "too_large", "a label is short")
     }
-    parsed := json.parse[LabelBody](body) or err {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    parsed := json.parse[LabelBody](payload: body) or err {
         return json_reply(400, "bad_label", "send a JSON object with a label")
     }
     check_vault_label(parsed.label) or err {

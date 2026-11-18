@@ -360,7 +360,8 @@ fn (self: GuiState) require_open_window() -> void! {
 }
 
 fn parse_req[T](params: str) -> T! {
-    return json.parse[T](params) or err {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    return json.parse[T](payload: params) or err {
         return error(coded(ERR_INVALID, "malformed request"))
     }
 }
@@ -789,7 +790,8 @@ fn session_open_check(params: str, st: GuiState) -> SessionOpenReq! {
     try st.require_unlocked()
     // parse_req's own body: a value from `try parse_req[T]` keeps the type `T` and
     // cannot be returned (CFIRE-UPSTREAM: CF-162).
-    req := json.parse[SessionOpenReq](params) or {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    req := json.parse[SessionOpenReq](payload: params) or {
         return error(coded(ERR_INVALID, "malformed request"))
     }
     if req.session.len() == 0 || req.alias.len() == 0 {
@@ -840,7 +842,8 @@ fn host_test_check(params: str, st: GuiState) -> HostTestReq! {
     try st.require_unlocked()
     // parse_req's own body: a value from `try parse_req[T]` keeps the type `T` and
     // cannot be returned (CFIRE-UPSTREAM: CF-162).
-    req := json.parse[HostTestReq](params) or {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    req := json.parse[HostTestReq](payload: params) or {
         return error(coded(ERR_INVALID, "malformed request"))
     }
     _ = try parse_req[HostPatch](params)

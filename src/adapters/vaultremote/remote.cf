@@ -105,7 +105,8 @@ fn auth_header(token: str) -> str {
 // The error a refusal maps to, with the server's own message when it sent one.
 fn refusal(r: RemoteReply, host: str) -> str {
     mut why := ""
-    parsed := json.parse[RemoteErrorBody](str(r.body)) or RemoteErrorBody{ error: "", message: "" }
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    parsed := json.parse[RemoteErrorBody](payload: str(r.body)) or RemoteErrorBody{ error: "", message: "" }
     if parsed.message.len() > 0 && parsed.message.len() < 200 {
         why = ": " + parsed.message
     }
@@ -135,7 +136,8 @@ fn (self: HttpVaultRemote) remote_get(url: str, token: str, known_version: i64) 
         return RemoteVault{ found: true, changed: false, version: known_version, vault_id: r.vault_id, data: [] }
     }
     if r.status == 404 {
-        parsed := json.parse[RemoteErrorBody](str(r.body)) or RemoteErrorBody{ error: "", message: "" }
+        // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+        parsed := json.parse[RemoteErrorBody](payload: str(r.body)) or RemoteErrorBody{ error: "", message: "" }
         if parsed.error == "empty" {
             return RemoteVault{ found: false, changed: true, version: 0, vault_id: "", data: [] }
         }
@@ -181,7 +183,8 @@ fn (self: HttpVaultRemote) remote_list(url: str, token: str) -> []ServerVault! {
     if r.status != 200 {
         return error(refusal(r, url_host(url)))
     }
-    got := json.parse[RemoteVaultsBody](str(r.body)) or err {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    got := json.parse[RemoteVaultsBody](payload: str(r.body)) or err {
         return error(coded(ERR_INVALID, "{url_host(url)} did not answer as a Flint vault server"))
     }
     for v in got.vaults {
@@ -196,7 +199,8 @@ fn (self: HttpVaultRemote) remote_set_label(url: str, token: str, label: str) ->
     headers := auth_header(token) + "Content-Type: application/json\n"
     r := try self.send("PUT", url, headers, []byte(json.stringify(RemoteLabelBody{ label: label })))
     if r.status == 404 {
-        parsed := json.parse[RemoteErrorBody](str(r.body)) or RemoteErrorBody{ error: "", message: "" }
+        // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+        parsed := json.parse[RemoteErrorBody](payload: str(r.body)) or RemoteErrorBody{ error: "", message: "" }
         if parsed.error == "empty" {
             return error(coded(ERR_NOT_FOUND, "the server at {url_host(url)} holds no such vault"))
         }

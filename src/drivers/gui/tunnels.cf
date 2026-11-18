@@ -132,7 +132,8 @@ fn tunnel_start_check(params: str, st: GuiState) -> TunnelStartReq! {
     try st.require_unlocked()
     // parse_req's own body: a value from `try parse_req[T]` keeps the type `T` and
     // cannot be returned (CFIRE-UPSTREAM: CF-162).
-    req := json.parse[TunnelStartReq](params) or {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    req := json.parse[TunnelStartReq](payload: params) or {
         return error(coded(ERR_INVALID, "malformed request"))
     }
     if req.session.len() == 0 || req.host.len() == 0 {

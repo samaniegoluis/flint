@@ -377,10 +377,12 @@ fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> S
         if !is_wait_notice(text) {
             break
         }
-        notice := json.parse[WaitNotice](text) or WaitNotice{ wait: true, message: "" }
+        // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+        notice := json.parse[WaitNotice](payload: text) or WaitNotice{ wait: true, message: "" }
         show_wait(notice.message, as_json, mut shown)
     }
-    return json.parse[ServeReply](text) or {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    return json.parse[ServeReply](payload: text) or {
         return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
     }
 }
@@ -405,7 +407,8 @@ fn session_wait_ms(p: ParsedArgs) -> i64 {
 
 // Answers a prompt the app relays, on this terminal.
 fn answer_relayed_prompt(prompter: TtyPrompter, payload: str) -> RelayAnswer {
-    q := json.parse[RelayPrompt](payload) or {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    q := json.parse[RelayPrompt](payload: payload) or {
         return RelayAnswer{ ok: false, value: "" }
     }
     if q.kind == "host_key" {
@@ -516,7 +519,8 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
             }
             last_heard = time.now_ms()
         } else if tag == TAG_PROGRESS && serves_files {
-            pr := json.parse[TransferProgress](body) or {
+            // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+            pr := json.parse[TransferProgress](payload: body) or {
                 continue
             }
             progress.transfer_progress(pr)
@@ -528,7 +532,8 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
             if raw {
                 term.term_raw_leave()
             }
-            end := json.parse[SessionEndFrame](body) or {
+            // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+            end := json.parse[SessionEndFrame](payload: body) or {
                 return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
             }
             return ServeReply{ served: true, stdout: end.stdout, stderr: end.stderr, exit: end.exit }
@@ -623,7 +628,8 @@ fn ask_app_state_for(conn: IpcConn, kind: str, vault: str, caller: str, command:
     req.need = need
     try conn.send(json.stringify(req), SERVE_SEND_MS)
     text := try conn.recv(SERVE_SEND_MS)
-    return json.parse[AppState](text) or {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    return json.parse[AppState](payload: text) or {
         return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
     }
 }
@@ -780,7 +786,8 @@ fn lock_in_app(target: RecentVault) -> bool {
 // ---- The app's side ------------------------------------------------------------
 
 fn parse_serve_request(text: str) -> ServeRequest! {
-    req := json.parse[ServeRequest](text) or {
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    req := json.parse[ServeRequest](payload: text) or {
         return error(coded(ERR_INVALID, "malformed request on the socket"))
     }
     if req.version != SERVE_PROTOCOL {
