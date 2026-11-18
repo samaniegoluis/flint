@@ -380,8 +380,35 @@ No old-cfire baseline on the test VM: stock 0.10 has no Windows build, and the p
 on the patched fork from WSL. Its reference is the last port results in
 `docs/windows-port-guide.md` on `windows-port-2` (`d191abd`).
 
+## Step 1 on the Mac (2026-11-18)
+
+| Fact | Detail |
+|---|---|
+| Release check | **`v0.12.1` tagged** (`71adeb7`, 2026-11-18): `v0.12.0` plus a CI fix (`2802756`, only `release.yml` and a test), so the same compiler. **Still no release**: its run built five archives (Linux x86_64/arm64, macOS x86_64, Windows x86_64/arm64) and failed on **macOS arm64** at the quality gate, on the same TSan-red test as `main` (`busy + waiting are served and the next is 503`, three 200s). Nothing published; `v0.11.0` is still GitHub's latest. So `v0.12.0` built from source, as the owner asked |
+| Built | `v0.12.0` = `7b68799` (tag checked after fetch), `make -j10 build` in 23 s, then `./cfire install --prefix ~/.local/opt/cfire-0.12.0`: binary in `bin/`, runtime in `share/cfire/runtime` (`0.12.0 7b68799`). `cfire setup` not run. A checksum of `~/.cfire/runtime` before and after the install matched. The old `cfire` on `PATH` still answers `0.10.0 (c5b1d4b)` |
+| `cfire doctor` | 17 passed, 1 optional warning (`em++`, only for `--target=wasm`). Nothing to install: libsodium 1.0.22, sqlcipher 3.54.1, libzstd, sqlite3, OpenSSL 4.1.0, pkg-config, cmake. The PCH cache is now `~/Library/Caches/cfire/pch` (upstream CF-216) |
+| `scripts/cfire-next.sh` | Puts `~/.local/opt/cfire-0.12.0/bin` first on `PATH` and pins `CFIRE_RUNTIME_DIR` to its runtime for one command (`CFIRE_NEXT=<prefix>` for another version) |
+| `.mcp.json` | `cfire-next` runs `scripts/cfire-next.sh cfire mcp`; its `initialize` answers `cfire-compiler 0.12.0`. The `cfire` server stays on the old binary |
+| `main` on 0.10 | `main` (`38d3e3c`) in a fresh worktree: `cfire build` of `Flint`, `FlintVaultServer` and `FlintGui` all ok, no warnings, `flint --version` runs |
+| cfire checkout | Left detached at `v0.12.0`. Its local `v0.10.0`/`v0.11.0` tags predate upstream's rewrite (fetch refuses to clobber them); the remote's are `f36e3ac` and `38895b8` |
+
+**What `build.cf` gives in place of `@pkg`** (GUIDE Ch3 and Ch11, read in `src/build/manifest.hpp`):
+
+- `build.Executable` takes `PkgConfig`, `Libraries`, `Frameworks` (Apple only, ignored
+  elsewhere), `Includes` (paths from `build.cf`'s folder) and `Defines`; top-level
+  `build.PkgConfig(...)` / `build.Includes(...)` apply to every target.
+- `cfire build <target>` uses the fields of the executable whose `Entry` it builds, so the
+  CLI still links neither FreeRDP nor AppKit. **`cfire test` (and a file that is no
+  executable's entry) takes the union of every executable's fields**: every suite links
+  everything the app does.
+- **No per-OS selection in `build.cf`**: its values are literals only, no conditions.
+  `Frameworks` covers the Mac's link flags, but Linux's `libsecret-1` and `gtk+-3.0` have
+  no place a Mac build skips. Per-OS `.cf` files (`_darwin`, `_linux`, `_unix`) exist for
+  sources only.
+
 ## Progress
 
 | Step | Date | Result | Commit |
 |---|---|---|---|
-| 0 | 2026-11-18 | Mac and Docker baselines on 0.10 `c5b1d4b`: all green but Linux serve-e2e 47/224 (known, ROADMAP §5). Zorin before step 4; the Windows VM still needs autologon, the battery user and a snapshot | this commit |
+| 0 | 2026-11-18 | Mac and Docker baselines on 0.10 `c5b1d4b`: all green but Linux serve-e2e 47/224 (known, ROADMAP §5). Zorin before step 4; the Windows VM still needs autologon, the battery user and a snapshot | `81d5fa0` |
+| 1 | 2026-11-18 | `v0.12.0` (`7b68799`) from source in `~/.local/opt/cfire-0.12.0` (no `v0.12.x` release yet: `v0.12.1`'s macOS arm64 build failed); `cfire doctor` 17/17 needed, nothing to install; `scripts/cfire-next.sh` and the `cfire-next` MCP server; `~/.cfire/runtime` untouched; `main` builds its three binaries on 0.10 | this commit |
