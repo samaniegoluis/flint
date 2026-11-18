@@ -63,11 +63,10 @@ fn answer_when_asked(mut app: webui.App, session: str, ok: bool, value: str) {
     for _ in 0..400 {
         payload := app.last_emitted_payload("session:prompt")
         if payload.contains(session) {
-            start := payload.index_of("\"prompt\":\"")
-            if start >= 0 {
-                rest := payload.substr(usize(start) + 10)
-                end := rest.index_of("\"")
-                id := rest.substr(0, usize(end))
+            if start := payload.index_of("\"prompt\":\"") {
+                rest := payload[start + 10..]
+                end := rest.index_of("\"") or 0
+                id := rest[..end]
                 if id.len() > 0 {
                     // An earlier prompt's payload is refused; keep waiting.
                     mut answered := true
