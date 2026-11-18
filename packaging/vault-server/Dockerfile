@@ -34,17 +34,6 @@ RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
     && cd / && rm -rf /tmp/cfire \
     && cfire --version
 
-# CFIRE-UPSTREAM: CF-087 (simdjson's single header in ~/.local, as scripts/linux/Dockerfile)
-ARG SIMDJSON_VERSION=4.6.6
-RUN mkdir -p /root/.local/include /root/.local/lib /tmp/sj && cd /tmp/sj \
-    && curl -fsSLO "https://raw.githubusercontent.com/simdjson/simdjson/v${SIMDJSON_VERSION}/singleheader/simdjson.h" \
-    && curl -fsSLO "https://raw.githubusercontent.com/simdjson/simdjson/v${SIMDJSON_VERSION}/singleheader/simdjson.cpp" \
-    && clang++ -O2 -std=c++17 -c simdjson.cpp -o simdjson.o \
-    && ar rcs /root/.local/lib/libsimdjson.a simdjson.o \
-    && cp simdjson.h /root/.local/include/ \
-    && rm -rf /tmp/sj
-ENV CPLUS_INCLUDE_PATH=/root/.local/include LIBRARY_PATH=/root/.local/lib
-
 WORKDIR /flint
 COPY build.cf ./
 COPY scripts/version.sh scripts/

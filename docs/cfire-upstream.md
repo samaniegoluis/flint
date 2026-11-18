@@ -1714,7 +1714,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `.ONESHELL`), or `install -m 755 cfire $(DESTDIR)$(PREFIX)/bin/.cfire.tmp && mv -f …`
   with a fixed name.
 
-### CF-087 · bug · `confirmed`: the simdjson check refuses versions that build
+### CF-087 · bug · `resolved ✓`: the simdjson check refuses versions that build
+- **Resolved at `v0.12.2` (migration step 5):** both images drop simdjson 4.6.6 in `~/.local` and its `CPLUS_INCLUDE_PATH`/`LIBRARY_PATH`, and `scripts/linux/Dockerfile` drops `libsimdjson-dev` too: the runtime's vendored copy is used. The server image builds and serves on it; the Linux image is checked by a cold `linux-check.sh`.
 - **At `v0.12.2` (migration step 5):** [read] the runtime vendors simdjson (`runtime/vendor/simdjson`) and uses it unless `~/.local` or pkg-config overrides it; the version gate runs only for a system simdjson. **fixed** (2 tags).
 - **At `c5b1d4b`:** [read] Unchanged in `src/build/deps.hpp`. The Linux image still builds simdjson 4.
 - **Repro (43431f2):** Debian trixie (`libsimdjson-dev` 3.12.3, `clang` 19), `cfire build`

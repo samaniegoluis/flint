@@ -38,7 +38,7 @@ ARG TARGETARCH
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         clang make git curl ca-certificates pkg-config \
-        libssh-dev libcurl4-openssl-dev libsodium-dev libsqlcipher-dev libsimdjson-dev libsecret-1-dev \
+        libssh-dev libcurl4-openssl-dev libsodium-dev libsqlcipher-dev libsecret-1-dev \
         libwebkit2gtk-4.1-dev libgtk-3-dev \
         freerdp3-dev \
         openssh-server openssh-client xvfb xauth \
@@ -77,19 +77,6 @@ RUN echo 'flint:flint-e2e-login-pw' | chpasswd
 RUN echo 'flint ALL=(ALL) ALL' > /etc/sudoers.d/flint && chmod 440 /etc/sudoers.d/flint
 USER flint
 WORKDIR /home/flint
-
-# CFIRE-UPSTREAM: CF-087 — cfire's simdjson check refuses every 1.x-3.x with clang >= 19,
-# trixie's 3.12.3 included (which builds), unless ~/.local/include/simdjson.h exists.
-# simdjson 4.6.6's single-header release in ~/.local, as on the Zorin box (CF-075).
-ARG SIMDJSON_VERSION=4.6.6
-RUN mkdir -p .local/include .local/lib /tmp/sj && cd /tmp/sj \
-    && curl -fsSLO "https://raw.githubusercontent.com/simdjson/simdjson/v${SIMDJSON_VERSION}/singleheader/simdjson.h" \
-    && curl -fsSLO "https://raw.githubusercontent.com/simdjson/simdjson/v${SIMDJSON_VERSION}/singleheader/simdjson.cpp" \
-    && clang++ -O2 -std=c++17 -c simdjson.cpp -o simdjson.o \
-    && ar rcs /home/flint/.local/lib/libsimdjson.a simdjson.o \
-    && cp simdjson.h /home/flint/.local/include/ \
-    && rm -rf /tmp/sj
-ENV CPLUS_INCLUDE_PATH=/home/flint/.local/include LIBRARY_PATH=/home/flint/.local/lib
 
 # iptables for the RDP adapter's quiet-network test (milestone 31): it drops the test
 # server's packets, as a network that goes away, when the container has NET_ADMIN
