@@ -31,6 +31,22 @@ as is.
 - Each entry gives: what Flint needed, a minimal repro or source pointer, the workaround and
   where it lives, and what an ideal API would look like.
 
+## Status at cfire `v0.12.0` (`7b68799`, 2026-11-18): the move, in progress
+
+Flint is moving onto `v0.12.0` (`docs/cfire-migration.md`, branch `cfire-0.12`). This
+section is the one to hand over: **new** entries found on 0.12 apart from the **old** ones
+rechecked on it. An old entry is rechecked when the move reaches it (step 5 walks every
+`CFIRE-UPSTREAM` tag); until then it keeps its status.
+
+| Status | Entries |
+|---|---|
+| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)** |
+| Old, partly resolved on 0.12 [ran] | 031 (`@pkg` retired; `build.cf` `PkgConfig` per executable works; still no per-OS fields), 147 (field access through `shared[T]` works, except on a local copy: CF-156) |
+| Old, not rechecked yet | everything else |
+
+**Most urgent:** CF-157 (no error, data lost), then CF-156 and CF-153 (common code that
+does not compile) and CF-151 (`cfire fix` changes behaviour silently).
+
 ## Status at cfire `d182f32` (2026-11-10): checked, not adopted
 
 cfire `d182f32` is seven commits on `c5b1d4b`: the checker split into modules over an
@@ -883,7 +899,8 @@ The entries below were found while building milestone 01 against cfire `3963814`
 
 The entries below were found while building milestone 02 against the same cfire build.
 
-### CF-031 · missing · `declined upstream`: no way to link a framework, pick per-platform sources, or write top-level C++
+### CF-031 · missing · `partly resolved`: no way to link a framework, pick per-platform sources, or write top-level C++
+- **At `v0.12.0`:** [ran] `@pkg` on `import cpp` is retired; each `build.Executable` takes `PkgConfig`, and Flint lists its packages there (`build.cf`). `cfire build <target>` uses that executable's list; `cfire test` the union of all. Left: `build.cf` takes literals only, with no per-OS fields, so Flint keeps its per-OS pkg-config files (`libsecret-1` and `gtk+-3.0` on Linux) and `scripts/env.sh`.
 - **At `43431f2`:** [ran] `cfire test` now applies the nearest `build.cf`'s `Frameworks` (a test calling CoreFoundation links with `Frameworks: ["CoreFoundation"]` and fails to link without it). **cfire's decision:** no `@framework("…")` on `import cpp` and no top-level `cpp {}`; linkage belongs in `build.cf`. Flint keeps its pkg-config files: they also carry the adapters' `-I` paths and, on Linux, `libsecret-1`.
 - **At `466751b`:** `*_darwin.cf`/`*_linux.cf` files are picked by platform, and `build.cf` takes `Frameworks`/`Libraries`. Those flags apply to `cfire build` of a declared executable only, not to `cfire test` of a package, so Flint's tests still need its pkg-config files. Still wanted: `@framework("…")` on `import cpp`.
 - **Needed:** the keychain adapter calls Security.framework on macOS and libsecret on
@@ -2535,7 +2552,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   cfire map, returns every response header on every platform, and uses the system's TLS
   (Security.framework / OpenSSL / SChannel) with the system trust store.
 
-### CF-147 · bug · `confirmed`: a statement starting with `(` continues the line before; no field access through `shared[T]`
+### CF-147 · bug · `partly resolved`: a statement starting with `(` continues the line before; no field access through `shared[T]`
+- **At `v0.12.0`:** [ran] `self.bank.blobs` reads and writes through a `shared[T]` field (`src/application/fakes_test.cf`), and `(*p).x` is now `cfire/RAW-POINTER`. A local copy of the field (`mut bank := self.bank`) still lowers with `.` instead of `->` (CF-156). The `(` statement half is not rechecked yet.
 - **Seen (milestone 43, a test fake) [ran, macOS, `c5b1d4b`]:** with `mut bank :=
   self.bank` (a `shared[FakeBank]`), `bank.blobs` fails in C++ ("no member named 'blobs'
   in 'shared[FakeBank]'"; CF-085 in cfire's plan); `(*bank).blobs.len()` lowers to

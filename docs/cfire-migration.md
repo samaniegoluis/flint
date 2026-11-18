@@ -406,9 +406,39 @@ on the patched fork from WSL. Its reference is the last port results in
   no place a Mac build skips. Per-OS `.cf` files (`_darwin`, `_linux`, `_unix`) exist for
   sources only.
 
+## Step 2 on the Mac (in progress, 2026-11-18)
+
+Done, each green on `cfire test` with 0.12 (`scripts/cfire-next.sh`, after `. scripts/env.sh`):
+`src/domain` 154, `src/ports` (no tests), `src/application` 324, `src/application/vaultserver`
+146. Next: `src/adapters/*` (config, crypto, fonts, ipc, keychain, process, rdp, serverfs,
+ssh, uievents, vault, vaultremote), then `src/drivers/*`, then the three `cfire build`s.
+
+The working tree already holds two repo-wide rewrites for the packages still to do, not
+yet compiled: `substr` → slicing and `.has_value()` → `!= none`. Review them with each
+package's commit.
+
+**How 0.12 differs, and what each fix looks like** (bugs in `cfire-upstream.md` CF-151..157):
+
+| On 0.12 | Fix in Flint |
+|---|---|
+| `s.substr(a, n)` is gone (it was a raw `std::string` member) | `s[a..a + n]`, `s[a..]`. A `str` slice **panics on a bound inside a UTF-8 character**: a cut by byte count or position (caps, byte loops, terminal output, binary data in a `str`) uses `byte_slice` / `byte_tail` (`src/domain/bytes.cf`). A slice also panics past the end, where `substr` clamped: check the bound |
+| `index_of` / `last_index_of` return `usize?`, not `i64` with -1 | `x := s.index_of(":") or { return … }`, `if x := s.index_of(":") { … }`, or `or 0` / `or s.len()` where that keeps what "not found" did. Read each site |
+| `cfire fix` rewrote `str.replace` (replace-all on 0.10) to `.replace` (first match) | `.replace_all` (CF-151). The other rewrites were probed and keep their meaning |
+| `u8(x)`, `usize(x)` panic when the value does not fit (0.10 wrapped) | `% 256` where wrapping was meant; a seed's bits through `seed_bits` (`src/domain/merge_test.cf`) |
+| An interface method called on a `mut self` implementer | `mut name(…)` in the interface (`src/ports/ports.cf`) |
+| Returning a slice of a local (CF-152) | `str(s[a..b])` |
+| Two `for i, x in` loops in one block (CF-153) | another index name in the later one |
+| `join` on a `[]str` parameter (CF-154); `json.stringify` of one gives `{}` (CF-157) | `mut own := list` first |
+| In an imported package, a builtin method on a value inferred from a parameter's field lowers to a C++ member; a loop item over `param.field` loses its type (CF-156) | a typed local, a function (`join_with`), an index loop, or the field reached directly (`self.bank.blobs`) |
+| `str.push`, `char(b)` | `str(bytes)`, with `one: []u8 = [b]` for one byte |
+| `(*p).x` on a `shared[T]` | `p.x` |
+| `x.has_value()`, `x.value()` | `x != none`, `x or …` |
+| `build.cf` top-level `var X =` | `X :=` |
+
 ## Progress
 
 | Step | Date | Result | Commit |
 |---|---|---|---|
 | 0 | 2026-11-18 | Mac and Docker baselines on 0.10 `c5b1d4b`: all green but Linux serve-e2e 47/224 (known, ROADMAP §5). Zorin before step 4; the Windows VM still needs autologon, the battery user and a snapshot | `81d5fa0` |
 | 1 | 2026-11-18 | `v0.12.0` (`7b68799`) from source in `~/.local/opt/cfire-0.12.0` (no `v0.12.x` release yet: `v0.12.1`'s macOS arm64 build failed); `cfire doctor` 17/17 needed, nothing to install; `scripts/cfire-next.sh` and the `cfire-next` MCP server; `~/.cfire/runtime` untouched; `main` builds its three binaries on 0.10 | this commit |
+| 2 (in progress) | 2026-11-18 | `cfire fix`, `@pkg` into `build.cf`; `domain`, `ports`, `application` and `vaultserver` green on 0.12 (154, -, 324, 146 tests); 7 new cfire bugs (CF-151..157); adapters and drivers next | `f1d664b` and the commit after it |
