@@ -165,6 +165,14 @@
     passed++;
     return log('ok   ' + what);
   }
+  // The unlock screen's mount effect empties #pw and then focuses it (Unlock.tsx), so a
+  // value set before that focus is cleared (ROADMAP §5, "serve-e2e is flaky on Linux":
+  // the field was empty within 21 ms of typing). Type only once the field has the focus.
+  async function typeMaster(what) {
+    const pw = await waitFor(() => { const f = q('#pw'); return f && document.activeElement === f ? f : null; }, 'the focused password field of ' + what, 10000);
+    setValue(pw, MASTER);
+    return pw;
+  }
   let step = 'unlock';
   try {
     await waitFor(() => q('#pw'), 'the unlock screen');
@@ -181,9 +189,8 @@
       const st = screenState();
       if (st !== lastState) { log(`diag: unlock at ${Math.round(performance.now() - t0)} ms: ${st}`); lastState = st; }
     }, 20);
-    const pw = q('#pw');
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(pw, MASTER);
-    pw.dispatchEvent(new Event('input', { bubbles: true }));
+    await typeMaster('the first unlock');
+    log(`diag: unlock typed at ${Math.round(performance.now() - t0)} ms: ${screenState()}`);
     await sleep(30);
     log(`diag: unlock clicked at ${Math.round(performance.now() - t0)} ms: ${screenState()}`);
     byText('button[type="submit"]', 'Unlock').click();
@@ -220,13 +227,9 @@
       await sleep(150);
       await check(!q('[data-command-full]') && !!q('.lock-screen [data-unlock-request]'), 'Esc closes it and leaves the lock screen asking');
     }
-    {
-      const pw = q('#pw');
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(pw, MASTER);
-      pw.dispatchEvent(new Event('input', { bubbles: true }));
-      await sleep(30);
-      byText('button[type="submit"]', 'Unlock').click();
-    }
+    await typeMaster('the unlock a command asked for');
+    await sleep(30);
+    byText('button[type="submit"]', 'Unlock').click();
     await waitFor(() => !q('.lock-screen') && byText('.tree .ti', 'local-web'), 'the unlocked tree again', 30000);
     await check(!q('[data-unlock-request]'), 'unlocking answers the request');
 
@@ -235,12 +238,12 @@
     let relocks = 0;
     await waitFor(() => {
       const lock = q('.lock-screen [data-lock-reason]');
-      if (lock && !q('#pw')?.disabled) {
+      // Typed only once the field has the focus, as typeMaster does (the mount effect).
+      const pw = q('#pw');
+      if (lock && pw && !pw.disabled && document.activeElement === pw) {
         relocks++;
         log('ok   the window locked (' + lock.getAttribute('data-lock-reason') + '); unlocking again');
-        const pw = q('#pw');
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(pw, MASTER);
-        pw.dispatchEvent(new Event('input', { bubbles: true }));
+        setValue(pw, MASTER);
         setTimeout(() => byText('button[type="submit"]', 'Unlock')?.click(), 30);
         return null;
       }
