@@ -78,6 +78,7 @@ Windows test VM (Windows 11 Pro 22H2, build 22621, WebView2 157), in MSYS2 CLANG
 | W-04 | **covered**: every Windows target links `-static` (with `ws2_32`, `advapi32`, `shell32`); `flint.exe` imports only system DLLs (UCRT, Winsock, Crypt32, Secur32, …) | [ran] `run-probes.sh` hello; `objdump -p build/flint.exe` | the static link flags went with W-01. **One gap left:** cfire asks pkg-config without `--static`, and MSYS2's `libssh.pc` and `libsodium.pc` do not define `LIBSSH_STATIC`/`SODIUM_STATIC` even with it, so their headers declare `dllimport` and the link fails (`undefined symbol: __declspec(dllimport) ssh_free`). cfire defines `LIBSSH_STATIC` only for its own `ext:net/ssh`; Flint's `pkgconfig/windows/flint-native.pc` defines both |
 | W-02 | **covered**: `cfire test` and `cfire build -o x.exe` find and run the `.exe` | [ran] every `cfire test` in `run-probes.sh` and the suites | nothing to remove (patch 0001 only) |
 | W-03 | **covered**: `os.cwd()` is a `str` on Windows | [ran] probe `os: env, cwd, pid` (`here: str = os.cwd()` builds) | nothing to remove (patch 0002 only) |
+| W-05 | **covered**: stdin, stdout and stderr are in binary mode, `println` writes `\n` | [ran] probe: a child printing 3000 lines of 100 bytes gives exactly 300 000 bytes on each stream | the probe no longer normalises `\r\n` |
 
 ## How to read each entry
 
