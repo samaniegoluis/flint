@@ -17,6 +17,10 @@
 #include <unistd.h>
 #include <vector>
 
+// native_*: cfire 0.12 coerces a .cf call's arguments by the parameters of any C++
+// function with the same last name (CF-158), so these never share a name with the
+// application's rename_path, make_dir, real_path and stat_path.
+// CFIRE-UPSTREAM: CF-158
 namespace flint_fs {
 
 // Error kinds, the same numbers as flint_sftp's.
@@ -59,7 +63,7 @@ inline void fill(Entry& e, const struct stat& st) {
     e.mode = static_cast<int64_t>(st.st_mode & 07777);
 }
 
-inline int stat_path(const std::string& path, bool follow, Entry& out, std::string& err) {
+inline int native_stat_path(const std::string& path, bool follow, Entry& out, std::string& err) {
     struct stat st;
     int rc = follow ? ::stat(path.c_str(), &st) : ::lstat(path.c_str(), &st);
     if (rc != 0) {
@@ -82,7 +86,7 @@ inline int list(const std::string& path, std::vector<Entry>& out, std::string& e
         Entry e;
         e.name = name;
         std::string ignored;
-        if (stat_path(path + "/" + name, false, e, ignored) == OK) out.push_back(e);
+        if (native_stat_path(path + "/" + name, false, e, ignored) == OK) out.push_back(e);
     }
     ::closedir(d);
     return OK;
@@ -158,7 +162,7 @@ inline int close_file(int fd, bool sync, std::string& err) {
     return rc;
 }
 
-inline int rename_path(const std::string& from, const std::string& to, std::string& err) {
+inline int native_rename_path(const std::string& from, const std::string& to, std::string& err) {
     if (::rename(from.c_str(), to.c_str()) != 0) {
         err = std::strerror(errno);
         return map_errno(errno);
@@ -199,7 +203,7 @@ inline int remove_path(const std::string& path, std::string& err) {
     return OK;
 }
 
-inline int make_dir(const std::string& path, std::string& err) {
+inline int native_make_dir(const std::string& path, std::string& err) {
     if (::mkdir(path.c_str(), 0755) != 0) {
         err = std::strerror(errno);
         return map_errno(errno);
@@ -249,7 +253,7 @@ inline int append_file(const std::string& path, const std::string& data, std::st
 
 // The path with every symbolic link resolved (realpath(3), milestone 41, CF-136), or
 // the path as given when it does not exist or cannot be resolved.
-inline std::string real_path(const std::string& path) {
+inline std::string native_real_path(const std::string& path) {
     char real[PATH_MAX];
     if (::realpath(path.c_str(), real)) return std::string(real);
     return path;

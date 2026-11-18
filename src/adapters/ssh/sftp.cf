@@ -100,7 +100,7 @@ fn (self: SshLink) sftp_stat(path: str) -> FileEntry! {
     cpp {
         std::lock_guard<std::mutex> guard(*conn.lock);
         flint_sftp::Entry e;
-        rc = flint_sftp::stat_path(self.sftp, path, true, e);
+        rc = flint_sftp::native_stat_path(self.sftp, path, true, e);
         kind = e.kind; size = e.size; mtime = e.mtime; mode = e.mode; uid = e.uid;
     }
     if rc != 0 {
@@ -226,7 +226,7 @@ fn (mut self: SshLink) sftp_rename(from: str, to: str) -> void! {
     // CFIRE-UPSTREAM: CF-005
     cpp {
         std::lock_guard<std::mutex> guard(*conn.lock);
-        rc = flint_sftp::rename_path(self.sftp, from, to);
+        rc = flint_sftp::native_rename_path(self.sftp, from, to);
     }
     if rc != 0 {
         return error(sftp_failure(rc, "rename", from, conn, self.label))
@@ -253,7 +253,7 @@ fn (mut self: SshLink) sftp_mkdir(path: str) -> void! {
     // CFIRE-UPSTREAM: CF-005
     cpp {
         std::lock_guard<std::mutex> guard(*conn.lock);
-        rc = flint_sftp::make_dir(self.sftp, path);
+        rc = flint_sftp::native_make_dir(self.sftp, path);
     }
     if rc != 0 {
         return error(sftp_failure(rc, "create", path, conn, self.label))
@@ -282,7 +282,7 @@ fn (self: SshLink) sftp_realpath(path: str) -> str! {
     // CFIRE-UPSTREAM: CF-005
     cpp {
         std::lock_guard<std::mutex> guard(*conn.lock);
-        rc = flint_sftp::real_path(self.sftp, path, real);
+        rc = flint_sftp::native_real_path(self.sftp, path, real);
     }
     if rc != 0 {
         return error(sftp_failure(rc, "find", path, conn, self.label))

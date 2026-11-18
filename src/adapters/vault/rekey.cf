@@ -45,7 +45,7 @@ fn file_mode(path: str) -> i64 {
     cpp {
         flint_fs::Entry e;
         std::string err;
-        if (flint_fs::stat_path(path, true, e, err) == flint_fs::OK) mode = e.mode;
+        if (flint_fs::native_stat_path(path, true, e, err) == flint_fs::OK) mode = e.mode;
     }
     return mode
 }

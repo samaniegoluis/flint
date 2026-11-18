@@ -14,6 +14,10 @@
 #include <string>
 #include <vector>
 
+// native_*: cfire 0.12 coerces a .cf call's arguments by the parameters of any C++
+// function with the same last name (CF-158), so these never share a name with the
+// application's rename_path, make_dir, real_path and stat_path.
+// CFIRE-UPSTREAM: CF-158
 namespace flint_sftp {
 
 // Error kinds shared with sftp.cf.
@@ -83,7 +87,7 @@ inline sftp_session open(ssh_session s, std::string& err) {
     return sftp;
 }
 
-inline int stat_path(sftp_session sftp, const std::string& path, bool follow, Entry& out) {
+inline int native_stat_path(sftp_session sftp, const std::string& path, bool follow, Entry& out) {
     sftp_attributes a = follow ? sftp_stat(sftp, path.c_str()) : sftp_lstat(sftp, path.c_str());
     if (!a) return map_error(sftp);
     fill(out, a);
@@ -98,7 +102,7 @@ inline int list(sftp_session sftp, const std::string& path, std::vector<Entry>& 
         // OpenSSH answers opendir on a file with "no such file" (ENOTDIR).
         if (rc == FAILURE || rc == NOT_FOUND) {
             Entry e;
-            if (stat_path(sftp, path, true, e) == OK && e.kind != "dir") return NOT_DIR;
+            if (native_stat_path(sftp, path, true, e) == OK && e.kind != "dir") return NOT_DIR;
         }
         return rc;
     }
@@ -136,7 +140,7 @@ inline int open_file(sftp_session sftp, const std::string& path, bool write, boo
         // file fails with a plain failure.
         if (rc == FAILURE && exclusive) {
             Entry e;
-            if (stat_path(sftp, path, false, e) == OK) return EXISTS;
+            if (native_stat_path(sftp, path, false, e) == OK) return EXISTS;
         }
         return rc;
     }
@@ -175,7 +179,7 @@ inline int write_file(sftp_session sftp, sftp_file f, const std::string& data) {
     return OK;
 }
 
-inline int rename_path(sftp_session sftp, const std::string& from, const std::string& to) {
+inline int native_rename_path(sftp_session sftp, const std::string& from, const std::string& to) {
     return sftp_rename(sftp, from.c_str(), to.c_str()) == 0 ? OK : map_error(sftp);
 }
 
@@ -187,7 +191,7 @@ inline int remove_dir(sftp_session sftp, const std::string& path) {
     return sftp_rmdir(sftp, path.c_str()) == 0 ? OK : map_error(sftp);
 }
 
-inline int make_dir(sftp_session sftp, const std::string& path) {
+inline int native_make_dir(sftp_session sftp, const std::string& path) {
     return sftp_mkdir(sftp, path.c_str(), 0755) == 0 ? OK : map_error(sftp);
 }
 
@@ -197,7 +201,7 @@ inline int change_mode(sftp_session sftp, const std::string& path, int64_t mode)
     return sftp_chmod(sftp, path.c_str(), static_cast<mode_t>(mode & 07777)) == 0 ? OK : map_error(sftp);
 }
 
-inline int real_path(sftp_session sftp, const std::string& path, std::string& out) {
+inline int native_real_path(sftp_session sftp, const std::string& path, std::string& out) {
     char* p = sftp_canonicalize_path(sftp, path.c_str());
     if (!p) return map_error(sftp);
     out = p;

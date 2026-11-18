@@ -30,7 +30,7 @@ fn local_real_path(path: str) -> str {
     mut real := path
     // CFIRE-UPSTREAM: CF-136
     cpp {
-        real = flint_fs::real_path(path);
+        real = flint_fs::native_real_path(path);
     }
     return real
 }
@@ -69,7 +69,7 @@ fn (self: LocalFs) local_stat(path: str) -> FileEntry! {
     // CFIRE-UPSTREAM: CF-099
     cpp {
         flint_fs::Entry e;
-        rc = flint_fs::stat_path(path, true, e, reason);
+        rc = flint_fs::native_stat_path(path, true, e, reason);
         kind = e.kind; size = e.size; mtime = e.mtime; mode = e.mode;
     }
     if rc != 0 {
@@ -180,7 +180,7 @@ fn (mut self: LocalFs) local_rename(from: str, to: str) -> void! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-099
     cpp {
-        rc = flint_fs::rename_path(from, to, reason);
+        rc = flint_fs::native_rename_path(from, to, reason);
     }
     if rc != 0 {
         return error(local_failure(rc, to, reason))
@@ -204,7 +204,7 @@ fn (mut self: LocalFs) local_mkdir(path: str) -> void! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-099
     cpp {
-        rc = flint_fs::make_dir(path, reason);
+        rc = flint_fs::native_make_dir(path, reason);
     }
     if rc != 0 {
         return error(local_failure(rc, path, reason))
