@@ -2540,7 +2540,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `flint_tunnel.hpp`, `flint_rdp.hpp`).
 - **Ideal:** `spawn(fn)` returning a joinable handle, or a worker pool in `HttpServer`.
 
-### CF-139 · missing · `confirmed`: an accepted connection has no peer address
+### CF-139 · missing · `resolved ✓`: an accepted connection has no peer address
+- **Resolved at `v0.12.2` (migration step 5):** `drivers/vault-server/listen.cf` reads the client from `conn.remote_addr()`; `peer_address` (`adapters/serverfs`), its shim and its one test are gone (`serverfs` 45 → 44 tests). An IPv4 client of a dual-stack listener is now `a.b.c.d`, not `::ffff:a.b.c.d`.
 - **At `v0.12.2` (migration step 5):** [ran] `TcpConn.remote_addr()` gives `127.0.0.1` for an accepted connection. **fixed** (2 tags).
 - **Seen (milestone 42 spike) [read, `c5b1d4b`]:** `http.Request` carries no client address
   and an accepted `TcpConn` has an empty endpoint (`TcpListener::accept`).

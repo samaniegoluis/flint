@@ -249,7 +249,7 @@ fn serve_forever[C: Crypto](crypto: C, cfg: ServerConfig, opts: ServeOptions) ->
 
 fn serve_one[C: Crypto](crypto: C, cfg: ServerConfig, opts: ServeOptions, mut store: FileBlobStore, mut gate: ServerGate, mut conn: net.TcpConn) {
     started := time.now_ms()
-    peer := peer_address(conn.fd())
+    peer := conn.remote_addr()
     o := read_request(mut conn, cfg.max_body)
     if o.drop {
         return

@@ -264,7 +264,3 @@ test "a store from before that never got a vault leaves no folder behind" {
     assert(!fs.exists(dir + "/versions"))
     assert_eq((try s.blob_vaults()).len(), usize(0))
 }
-
-test "a connection's peer address is read from its socket" {
-    assert_eq(peer_address(-1), "")
-}

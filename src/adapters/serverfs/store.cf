@@ -19,7 +19,7 @@ package serverfs
 // `<dir>/versions/`); opening it moves that vault into its folder, `versions/` first
 // and `head.json` last, so a move cut short is finished at the next start.
 
-// CFIRE-UPSTREAM: CF-099, CF-139, CF-031
+// CFIRE-UPSTREAM: CF-099, CF-031
 import cpp "flint_server.hpp"
 
 import "core:fs"
@@ -369,14 +369,4 @@ fn (self: FileBlobStore) blob_versions(vault_id: str) -> []BlobVersion! {
         found[best].version = -1
     }
     return newest
-}
-
-// The address of the other end of an accepted connection, or "".
-fn peer_address(fd: i32) -> str {
-    mut addr := ""
-    // CFIRE-UPSTREAM: CF-139
-    cpp {
-        addr = flint_server::peer_address(fd);
-    }
-    return addr
 }
