@@ -2474,7 +2474,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** a generic method lowers to a member template (or the free function form it
   already uses, with its `template` line), or the checker rejects it.
 
-### CF-135 · bug · `confirmed`: `for k, v in m` over a map does not compile
+### CF-135 · bug · `resolved ✓`: `for k, v in m` over a map does not compile
+- **Resolved at `v0.12.2` (migration step 5):** `domain/merge.cf` reads the keys with `m.keys()` where it sorts them (the tombstone ids, through a typed local for CF-156; the group and record names). The tunnels keep their host list, which holds the order of first appearance the merge report follows: a map gives its keys in no set order.
 - **At `v0.12.2` (migration step 5):** [ran] `for k, v in m` and `m.keys()` build and run. A map is iterated in hash order, not insertion order (`b` before `a`), so each site keeps its order by sorting where order matters. **fixed** (4 tags).
 - **Seen (milestone 41) [ran, macOS, `c5b1d4b`]:** walking the names, groups and
   tombstones the merge collects (`src/domain/merge.cf`).

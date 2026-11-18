@@ -168,16 +168,13 @@ type MergePick struct {
     dead_at: i64
 }
 
-// The newest tombstone of each id of one kind, from both sides; `ids` lists the map's
-// keys (a map is not iterated).
-// CFIRE-UPSTREAM: CF-135
+// The newest tombstone of each id of one kind, from both sides.
 type TombTimes struct {
-    ids: []str
     at: map[str]i64
 }
 
 fn tombstone_times(kind: str, a: []Tombstone, b: []Tombstone) -> TombTimes {
-    mut times := TombTimes{ ids: [], at: {} }
+    mut times := TombTimes{ at: {} }
     for t in a {
         times.add(kind, t)
     }
@@ -192,7 +189,6 @@ fn (mut self: TombTimes) add(kind: str, t: Tombstone) {
         return
     }
     if !self.at.contains(t.id) {
-        self.ids.push(t.id)
         self.at[t.id] = t.deleted_at
     } else if self.at[t.id] < t.deleted_at {
         self.at[t.id] = t.deleted_at
@@ -216,7 +212,11 @@ fn merge_picks[T: MergeRecord](local: []T, other: []T, tombs: TombTimes) -> []Me
             ids.push(r.merge_id())
         }
     }
-    for id in tombs.ids {
+    // A typed local: a method on a parameter's field lowers as a C++ member once this
+    // package is imported (CF-156).
+    // CFIRE-UPSTREAM: CF-156
+    dead_at: map[str]i64 = tombs.at
+    for id in dead_at.keys() {
         if !lidx.contains(id) && !oidx.contains(id) {
             ids.push(id)
         }
@@ -513,15 +513,12 @@ fn (mut self: MergeWork) fix_groups() {
     }
     // A name taken twice under one parent.
     mut by_name: map[str][]StampOrder = {}
-    // CFIRE-UPSTREAM: CF-135 (the map's keys, kept beside it)
-    mut name_keys: []str = []
     // Its own index name: two `for i, x` loops in one block do not compile (CF-153).
     // CFIRE-UPSTREAM: CF-153
     for j, g in self.records.groups {
         k := g.parent_id + "/" + fold(g.name)
         if !by_name.contains(k) {
             by_name[k] = []
-            name_keys.push(k)
         }
         by_name[k].push(StampOrder{ stamp: g.updated_at, id: g.id, idx: i64(j) })
     }
@@ -529,6 +526,7 @@ fn (mut self: MergeWork) fix_groups() {
     for g in self.records.groups {
         taken[g.parent_id + "/" + fold(g.name)] = true
     }
+    mut name_keys := by_name.keys()
     name_keys.sort()
     for key in name_keys {
         list := by_name[key]
@@ -554,19 +552,17 @@ fn unique_names(names: []str, stamps: []i64, ids: []str, spaced: bool, max: usiz
     mut result := names
     mut by_name: map[str][]StampOrder = {}
     mut taken: map[str]bool = {}
-    // CFIRE-UPSTREAM: CF-135 (the map's keys, kept beside it)
-    mut keys: []str = []
     for i, n in names {
         k := fold(n)
         taken[k] = true
         if !by_name.contains(k) {
             by_name[k] = []
-            keys.push(k)
         }
         by_name[k].push(StampOrder{ stamp: stamps[i], id: ids[i], idx: i64(i) })
     }
     // In name order, so the second of two clashes never takes the first's new name
     // differently on two machines.
+    mut keys := by_name.keys()
     keys.sort()
     for k in keys {
         list := by_name[k]
@@ -727,7 +723,8 @@ fn (mut self: MergeWork) fix_tunnels() {
     self.records.tunnels = kept
     // Names, unique per host.
     mut by_host: map[str][]i64 = {}
-    // CFIRE-UPSTREAM: CF-135 (the map's keys, kept beside it)
+    // The hosts in the order their first tunnel comes, which the report follows (a map
+    // gives its keys in no set order).
     mut host_ids: []str = []
     for i, t in self.records.tunnels {
         if !by_host.contains(t.host_id) {
