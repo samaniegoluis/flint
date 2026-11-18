@@ -264,6 +264,33 @@ Each step ends with a line in the table at the end, its checks and the commit.
 - `scripts/linux-check.sh` with the new cfire's Linux archive in the image.
 - Zorin: the build and the automatic suites; the GUI on a real WebKitGTK.
 
+### 4b. Faster test suites
+
+Owner, 2026-11-18: after step 4 and before step 5, whose Mac and Linux checks after
+every batch make it the step that runs the battery most. This brings ROADMAP's "Faster
+test suites" (§5) into the move, in its own commits, apart from the migration's
+changes. Every change keeps the counts of step 4's tables (a test moved or merged is
+named there). Candidates, by measured cost:
+
+- Docker's `linux-check.sh` compiles everything on every run (~35 min): `inside.sh`
+  leaves out every `.cfire/` folder and nothing caches cfire's build. A Docker volume
+  for the caches.
+- The estimator's fuzz test, 56 s of `test.sh`'s 1 min 40 s warm: `domain`'s inline tests
+  run in all 17 suites. Its dictionaries built once; inline tests moved to `*_test.cf`.
+- ~30 s fixed per suite (sshds, the RDP test server): which suites need which server.
+
+Then the checks that are always red (owner, 2026-11-18), after the Docker cache makes a
+`FLINT_LINUX_STEPS=serve` run cheap, under rule 9:
+
+- Linux `serve-e2e` at 47/224 (ROADMAP §5, "serve-e2e is flaky on Linux"): deterministic
+  since M38 on a cold app (`serve` alone fails, `gui,serve` passes), the same on 0.10 and
+  0.12.2. First check the entry's lead, `ui/src/screens/Unlock.tsx:44` clearing the
+  password when `target?.path` changes: if so it is Flint's bug (a half-typed password
+  wiped when a CLI asks, seen on Windows too) and gets a `fix` with its test; if not,
+  the script waits for an enabled Unlock with the value set.
+- gui-e2e's vim step on Linux (ROADMAP §5), skipped under Xvfb: only if its diagnosis
+  is cheap.
+
 ### 5. Remove what cfire made unnecessary
 
 - Walk upstream's `flint.md` table (*Flint ref* column) and the 358 `CFIRE-UPSTREAM`
@@ -570,6 +597,51 @@ paid inside the first `cli-e2e` (the app package's `gen/` is from that run), so
 `build-gui.sh` after it found everything cached. The 46 `cfire/UNKNOWN-TYPE` warnings of
 `cfire check src/domain` (`strength.cf`) are the same on 0.12.1: not new.
 
+## Step 4 on Linux, Docker (2026-11-18)
+
+**The image** (`scripts/linux/Dockerfile`, `24df0dd`) downloads
+`cfire-v0.12.2-linux-<arch>.tar.gz` from the release, checks it against the SHA-256 of
+`SHA256SUMS.txt` written in the Dockerfile (arm64 `ce992d12…`, x86_64 `6fe582d6…`;
+`TARGETARCH` picks one, arm64 on this Mac's Docker) and unpacks it in `install.sh`'s
+layout (`/usr/local/bin/cfire`, `/usr/local/share/cfire/runtime`), with no installer. It
+replaces building `c5b1d4b` from source, and CF-086's hand install goes with it. The
+binary is static; the archive's runtime is the macOS archive's, byte for byte. In the
+container: `cfire 0.12.2 (5be0987)`. CF-087's simdjson in `~/.local` stays until step 5.
+
+**First run: Flint did not build** (CF-164). `cfire build flint` failed with "unknown type
+name '_CharT'" at every `json.parse[T](x)`: on Linux cfire coerces its argument like
+libstdc++ 14's `std::chrono::parse(const _CharT*, …)` (`<chrono>`, in six of Flint's
+native headers), program-wide. A first fix, a `json_decode[T]` helper in `src/domain`,
+failed the same way inside the CLI and the app and was dropped. **The fix**
+(`a3e0b77`): a labeled argument, `json.parse[T](payload: x)`, which goes through the
+stdlib signature and never reads the C table; all 35 calls in `src/`, tests included,
+each tagged. On Linux then: `flint` 1 min 50 s, `FlintGui` 4 min 55 s,
+`flint-vault-server` 24 s, cold.
+
+**The battery**, Flint `a3e0b77`, Docker 29.7.2 on the Mac of the baseline (11 CPUs,
+8 GB to the VM), each run building the image's layers from cache, then the CLI, the app
+and the server cold:
+
+| Check | 0.12.2 | Baseline 0.10 |
+|---|---|---|
+| Full `scripts/linux-check.sh` (build, tests, cli, gui, serve; stops at serve) | exit 1, 31 min 8 s | exit 1, 34 min 40 s |
+| ↳ `scripts/test.sh` | 17/17 PASS, each suite at its step 2 count | 17/17 PASS |
+| ↳ cli-e2e | 494/494 | 494/494 |
+| ↳ gui-e2e (vim skipped under Xvfb) | terminal 96, vault 125, tunnels 33, paste 24, rdp 65, webgl 20, fullscreen 49, multimon 32 | the same |
+| ↳ serve-e2e | **47/224**, the known first-launch failure (`unlock: timed out waiting for the unlocked tree`, then every check `locked`): the baseline's count and cause | 47/224 |
+| `FLINT_LINUX_STEPS=server,sync` | server-e2e 70/70, sync-e2e 110/110, 9 min 37 s | the same, 10 min 50 s |
+
+**The Mac after the fix** (`a3e0b77`, same order as above): `test.sh` 17/17 and 24/24
+(6 min 14 s, rebuilding the 16 changed files), cli-e2e 483/483 (2 min 46 s, the CLI and
+the app rebuilt), server-e2e 70/70, sync-e2e 105/105, `build-gui.sh` ok (6 s), gui-e2e
+the eight counts (2 min 3 s), serve-e2e 223/223 (1 min 13 s): every count step 3's.
+
+Nothing else red. The first `server,sync` run stopped in 8 s before any test:
+`inside.sh`'s `tar` of the tree said "file changed as we read it" (something wrote into
+the working tree while it was copied; the editor's language server keeps `.cfire/`
+folders); rerun once, as the log explained it. Zorin: its baseline just before its part
+of step 4, when the owner starts the box.
+
 ## Progress
 
 | Step | Date | Result | Commit |
@@ -579,3 +651,4 @@ paid inside the first `cli-e2e` (the app package's `gen/` is from that run), so
 | 2 | 2026-11-18 | `cfire fix`, `@pkg` into `build.cf`; every package checks and passes on 0.12, each suite at its baseline count plus the tests step 2 added (table above), nothing skipped; `flint`, `FlintGui` and `flint-vault-server` build; 12 new cfire entries (CF-151..162) | `f1d664b` .. this commit |
 | 3 | 2026-11-18 | On `v0.12.1`: `scripts/test.sh` 17/17 and release-test 24/24, cli-e2e 483/483, server-e2e 70/70, sync-e2e 105/105, gui-e2e the baseline's eight counts, serve-e2e 223/223, `ui/` and `site/` green; nothing failed or skipped. Warm, every e2e is faster than 0.10 and builds take under a second; cold builds are 3-4x slower (CLI 1 min 25 s, app 3 min 56 s). `test.sh` warm 11 min 54 s against 7 min 44 s: `cfire test` builds at `-O0` (CF-163), one fuzz test is 549 s of it. Then `--release` in `scripts/test.sh` (owner): 1 min 40 s warm, 11 min 39 s cold, same counts | `da43d74`; `--release`: this commit |
 | 4 (Mac) | 2026-11-18 | The published `v0.12.2` macOS arm64 archive (`5be0987`; against `v0.12.1` only CI test fixes and the version, prelude unchanged but its version line) in `~/.local/opt/cfire-0.12.2`, the default of `cfire-next.sh` and the MCP server; `~/.cfire/runtime` untouched; `cfire doctor` 17 passed. The Mac battery of step 3 on it: test.sh 17/17 and 24/24, cli-e2e 483/483, server-e2e 70/70, sync-e2e 105/105, gui-e2e the eight counts, serve-e2e 223/223; first runs and warm times within seconds of 0.12.1's | this commit |
+| 4 (Linux, Docker) | 2026-11-18 | The image on the `v0.12.2` Linux archive (SHA-256 pinned, no source build). Flint did not build: `json.parse` against libstdc++'s `<chrono>` (CF-164), fixed with a labeled argument at all 35 calls. Then the baseline exactly: test.sh 17/17, cli-e2e 494/494, gui-e2e the eight counts, serve-e2e 47/224 (the known first launch), server-e2e 70/70, sync-e2e 110/110; the Mac battery green again on the fix. Zorin waits for the owner. Step 4b (faster suites, then the always-red checks) added by the owner | `24df0dd`, `a3e0b77`, this commit |
