@@ -571,7 +571,7 @@ fn wait_view(tab: str, v: i64, w: i64, h: i64) -> str {
 }
 
 fn http_status(url: str) -> str {
-    r := os.command("curl", ["-s", "-o", "/dev/null", "-w", "%{{http_code}}", "-m", "5", url]) or {
+    r := os.command("curl", ["-s", "-o", "/dev/null", "-w", `%{http_code}`, "-m", "5", url]) or {
         return ""
     }
     return r.stdout

@@ -40,7 +40,7 @@ rechecked on it. An old entry is rechecked when the move reaches it (step 5 walk
 
 | Status | Entries |
 |---|---|
-| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (`\{` checks but fails in clang), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped) |
+| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (a literal brace is `{{` or `\{` depending on whether the string interpolates), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped) |
 | Old, partly resolved on 0.12 [ran] | 031 (`@pkg` retired; `build.cf` `PkgConfig` per executable works; still no per-OS fields), 147 (field access through `shared[T]` works, except on a local copy: CF-156) |
 | Old, not rechecked yet | everything else |
 
@@ -2713,16 +2713,23 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   function (`cpp.name`, or an unqualified name from an `import cpp`), never for a cfire
   module's function.
 
-### CF-159 · bug · `confirmed`: `\{` in a string passes `cfire check` and fails in clang
+### CF-159 · bug · `confirmed`: a literal brace is spelled differently with and without interpolation
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** 0.12 interpolates `{name}` in every
-  double-quoted string, so curl's `"%{http_code}"` became an undeclared identifier (right:
-  `{{` gives a literal brace). Trying `"%\{http_code}"` first, `cfire check` accepts it, but
-  the C++ is `std::format("%{http_code}")`, a lone `{` in a format string: "call to
-  consteval function … is not a constant expression". `\{` is not in the GUIDE either way.
-- **Repro:** `fn main() { println("c %\{x} d") }`, `cfire run`.
-- **Workaround:** `{{` (`http_status`, `src/adapters/rdp/rdp_test.cf`).
-- **Ideal:** `\{` is a literal brace (escaped to `{{` in the format string), or a
-  diagnostic pointing at `{{`; the GUIDE says which.
+  double-quoted string, so curl's `"%{http_code}"` became an undeclared identifier. The
+  escapes disagree by context:
+
+  | Spelling | In a string with no `{expr}` | In an interpolated string |
+  |---|---|---|
+  | `{{` | stays `{{` (`"%{{http_code}}"` is 14 bytes) | `{` |
+  | `\{` | `{` | passes `cfire check`, then a lone `{` in `std::format`: clang fails ("call to consteval function … is not a constant expression") |
+
+  `"%{{http_code}}"` checked and built, and curl got `%{{http_code}}` and printed `}`: a
+  live RDP test failed with no compile-time sign. The GUIDE documents neither escape.
+- **Repro:** `xs := ["%{{x}}"]; println(xs[0])` prints `%{{x}}`; `println("%{{x}}")` prints
+  `%{x}`; `println("c %\{x} d")` does not compile.
+- **Workaround:** a raw string, `` `%{http_code}` `` (`http_status`, `src/adapters/rdp/rdp_test.cf`).
+- **Ideal:** one escape with one meaning in every double-quoted string (`{{` → `{` or
+  `\{` → `{`, both if need be), documented.
 
 ### CF-160 · missing · `confirmed`: no `.cf` type for a copyable, non-owning C handle
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** 0.12 rejects `*mut cpp::T` in `.cf`
