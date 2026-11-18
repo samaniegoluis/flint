@@ -72,7 +72,7 @@ fn (mut self: SshLink) sftp_open() -> void! {
     if self.sftp != none {
         return
     }
-    mut sftp: *mut cpp::sftp_session_struct
+    mut sftp: cpp.flint_ssh::SftpSession
     mut msg := ""
     // CFIRE-UPSTREAM: CF-005
     cpp {
@@ -146,7 +146,7 @@ fn (mut self: SshLink) sftp_file_open(path: str, write: bool, exclusive: bool) -
     if self.sftp_file != none {
         return error(coded(ERR_INTERNAL, "sftp: a file is already open"))
     }
-    mut f: *mut cpp::sftp_file_struct
+    mut f: cpp.flint_ssh::SftpFile
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005
     cpp {

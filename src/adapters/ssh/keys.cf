@@ -28,8 +28,10 @@ fn (self: LibsshKeyInspector) inspect_private_key(private_key: str, passphrase: 
     cpp {
         ssh_key key = nullptr;
         ssh_key pub = nullptr;
-        const char* pass = passphrase.empty() ? nullptr : passphrase.c_str();
-        rc = ssh_pki_import_privkey_base64(private_key.c_str(), pass, nullptr, nullptr, &key);
+        flint_ssh::CText key_text(private_key);
+        flint_ssh::CText pass_text(passphrase);
+        const char* pass = pass_text.empty() ? nullptr : pass_text.c_str();
+        rc = ssh_pki_import_privkey_base64(key_text.c_str(), pass, nullptr, nullptr, &key);
         if (rc == SSH_OK && !ssh_key_is_private(key)) rc = -3;
         if (rc == SSH_OK) {
             const char* t = ssh_key_type_to_char(ssh_key_type(key));

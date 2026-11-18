@@ -115,7 +115,7 @@ fn files_detach(session_id: str) {
     if !idle {
         // CFIRE-UPSTREAM: CF-026
         cpp {
-            std::fprintf(stderr, "flint-gui: a Files request outlived the wait while session %s closed\n", session_id.c_str());
+            std::fprintf(stderr, "flint-gui: a Files request outlived the wait while session %s closed\n", flint_ssh::CText(session_id).c_str());
         }
     }
 }
@@ -140,7 +140,7 @@ fn borrow_failure(rc: i32, session_id: str) -> str {
 // A link over a borrowed session: the session's last hop with no channel of its
 // own, so nothing here touches the terminal. Never hung up: it does not own the
 // session.
-fn borrowed_link(session: *mut cpp.ssh_session_struct, lock: shared[cpp.std::mutex], timeout_secs: i64, channel: *mut cpp.sftp_session_struct) -> SshLink {
+fn borrowed_link(session: cpp.flint_ssh::SshSession, lock: shared[cpp.std::mutex], timeout_secs: i64, channel: cpp.flint_ssh::SftpSession) -> SshLink {
     mut link := new_ssh_link()
     mut conn := SshConn{ sock: -1 }
     // CFIRE-UPSTREAM: CF-005
@@ -159,10 +159,10 @@ fn borrowed_link(session: *mut cpp.ssh_session_struct, lock: shared[cpp.std::mut
 // a time per session; give it back with `give_back_browse`, whatever happened.
 fn borrow_browse(session_id: str) -> SshLink! {
     mut rc: i32 = 0
-    mut session: *mut cpp::ssh_session_struct
+    mut session: cpp.flint_ssh::SshSession
     mut lock: shared[cpp.std::mutex]
     mut timeout: i64 = 0
-    mut channel: *mut cpp::sftp_session_struct
+    mut channel: cpp.flint_ssh::SftpSession
     // CFIRE-UPSTREAM: CF-026
     cpp {
         long long t = 0;
@@ -202,10 +202,10 @@ fn drop_browse(session_id: str, mut link: SshLink) {
 // its own and `give_back_transfer` closes it.
 fn borrow_transfer(session_id: str, transfer_id: str) -> SshLink! {
     mut rc: i32 = 0
-    mut session: *mut cpp::ssh_session_struct
+    mut session: cpp.flint_ssh::SshSession
     mut lock: shared[cpp.std::mutex]
     mut timeout: i64 = 0
-    mut channel: *mut cpp::sftp_session_struct
+    mut channel: cpp.flint_ssh::SftpSession
     // CFIRE-UPSTREAM: CF-026
     cpp {
         long long t = 0;

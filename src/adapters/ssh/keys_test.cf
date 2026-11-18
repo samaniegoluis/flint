@@ -30,7 +30,7 @@ test "inspects plain and passphrase-protected keys and rejects bad input" {
     plain := try fs.read_text(plain_path)
     locked := try fs.read_text(locked_path)
     plain_pub := try fs.read_text(plain_path + ".pub")
-    expected_fp := try os.exec_output("ssh-keygen -l -E sha256 -f '" + plain_path + "'")
+    expected_fp := (try os.command("ssh-keygen", ["-l", "-E", "sha256", "-f", plain_path])).stdout
 
     ki := new_libssh_key_inspector()
     info := try ki.inspect_private_key(plain, "")

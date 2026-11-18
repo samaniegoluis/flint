@@ -40,7 +40,7 @@ rechecked on it. An old entry is rechecked when the move reaches it (step 5 walk
 
 | Status | Entries |
 |---|---|
-| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (`\{` checks but fails in clang) |
+| **New on 0.12** [ran] | 151 (`cfire fix` turns `str.replace` into a first-match `.replace`), 152 (`DANGLING-RETURN` on an owned copy), 153 (two `for i, x` loops in one block), 154 (`join` on a `[]str` parameter), 155 (no byte-wise cut of a `str`), 156 (types inferred from a parameter's field lost in an imported package), **157 (`json.stringify` of a `[]T` parameter gives `{}`: silent data loss)**, 158 (a stdlib call coerced like a C function of the same last name), 159 (`\{` checks but fails in clang), 160 (no `.cf` type for a copyable C handle), 161 (`str` is a view in `cpp` blocks; `c_str` copies a secret unwiped) |
 | Old, partly resolved on 0.12 [ran] | 031 (`@pkg` retired; `build.cf` `PkgConfig` per executable works; still no per-OS fields), 147 (field access through `shared[T]` works, except on a local copy: CF-156) |
 | Old, not rechecked yet | everything else |
 
@@ -2720,3 +2720,35 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Workaround:** `{{` (`http_status`, `src/adapters/rdp/rdp_test.cf`).
 - **Ideal:** `\{` is a literal brace (escaped to `{{` in the format string), or a
   diagnostic pointing at `{{`; the GUIDE says which.
+
+### CF-160 · missing · `confirmed`: no `.cf` type for a copyable, non-owning C handle
+- **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** 0.12 rejects `*mut cpp::T` in `.cf`
+  (`cfire/RAW-POINTER`). Flint's SSH adapter keeps libssh's `ssh_session`, `ssh_channel`,
+  `sftp_session` and `sftp_file`, and the vault keeps `sqlite3*`, in struct fields and
+  locals, copied freely (a jump chain's hops share one session; a borrowed link uses the
+  app's session without owning it) and freed by an explicit `close()`. The GUIDE's answer
+  (Ch11, "Wrapping C Handles with Custom Deleters") is a move-only RAII class held by
+  value, which changes that design: every copy would need to become a move or a
+  `shared[...]`.
+- **Repro:** `type Conn struct { session: *mut cpp::ssh_session_struct }`, `cfire check`.
+- **Workaround:** a C++ alias of the pointer type, `using SshSession = ssh_session_struct*;`
+  (`flint_ssh.hpp`, `flint_vault_lock.hpp`), named as an opaque `cpp.flint_ssh::SshSession`
+  in `.cf`; every use stays in a `cpp` block. It checks, defaults to `nullptr` and copies
+  as before. A loophole in `cfire/RAW-POINTER` more than a design.
+- **Ideal:** a documented non-owning handle form (an opaque `cpp` type, or a `handle[T]`
+  that is copyable, comparable with `none` and only dereferenced in `cpp`), or the GUIDE
+  saying the alias is the sanctioned way.
+
+### CF-161 · improvement · `confirmed`: a `str` in a `cpp` block is a view, and `cfire::c_str` leaves an unwiped copy
+- **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** a `str` parameter is a
+  `cfire::str_ref` on 0.12, so `cpp { f(x.c_str()); }` no longer compiles ("no member named
+  'c_str' in 'cfire::str_ref'"). The breaking-change notes do not say so for `cpp` blocks.
+  The runtime's `cfire::c_str(string_view)` gives a NUL-terminated `CStrViewHolder`, a
+  copy in a 256-byte buffer or on the heap, never cleared: for a private key or a
+  passphrase handed to libssh that is one more copy of a secret left in memory.
+- **Repro:** `fn f(x: str) { cpp { std::puts(x.c_str()); } }`, `cfire check`.
+- **Workaround:** `flint_ssh::CText` (`src/adapters/ssh/native/flint_ssh.hpp`), a
+  NUL-terminated copy wiped by its destructor, at the ten `.c_str()` sites of the SSH
+  adapter.
+- **Ideal:** the notes name the change for `cpp` blocks; `CStrViewHolder` clears its buffer
+  on destruction (cheap, and `c_str` is used for any text a C API takes).

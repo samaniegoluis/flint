@@ -17,6 +17,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 #include <chrono>
@@ -26,7 +27,39 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+struct sftp_session_struct;
+struct sftp_file_struct;
+
 namespace flint_ssh {
+
+// The libssh handles as .cf code holds them. cfire 0.12 keeps raw pointer types out
+// of .cf (cfire/RAW-POINTER), so a field or a local names one of these opaque types;
+// every use stays inside a cpp block. They are plain pointers, copied as before: a
+// hop's copy shares its session, and close() still frees it (CF-160).
+using SshSession = ssh_session_struct*;
+using SshChannel = ssh_channel_struct*;
+using SftpSession = sftp_session_struct*;
+using SftpFile = sftp_file_struct*;
+
+// A str parameter is a view on cfire 0.12 (cfire::str_ref), not NUL-terminated, so a
+// C call gets this copy instead of `.c_str()`. The text may be a key or a passphrase:
+// the copy is wiped when it goes out of scope.
+// CFIRE-UPSTREAM: CF-161
+class CText {
+public:
+    explicit CText(std::string_view v) : s_(v) {}
+    ~CText() {
+        volatile char* p = s_.data();
+        for (std::size_t i = 0; i < s_.size(); ++i) p[i] = 0;
+    }
+    CText(const CText&) = delete;
+    auto operator=(const CText&) -> CText& = delete;
+    [[nodiscard]] auto c_str() const noexcept -> const char* { return s_.c_str(); }
+    [[nodiscard]] auto empty() const noexcept -> bool { return s_.empty(); }
+
+private:
+    std::string s_;
+};
 
 // Result codes shared with link.cf.
 constexpr int OK = 0;

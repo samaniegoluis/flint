@@ -18,8 +18,8 @@ import "../../domain"
 
 type SshConn struct {
     // Owned by this value; released by close().
-    session: *mut cpp::ssh_session_struct
-    channel: *mut cpp::ssh_channel_struct
+    session: cpp.flint_ssh::SshSession
+    channel: cpp.flint_ssh::SshChannel
     // The socket Flint dialled for a first hop, or -1. libssh does not close a
     // socket given through SSH_OPTIONS_FD, so disconnect() does.
     sock: i32 = -1
@@ -52,7 +52,7 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
     if timeout_secs <= 0 {
         return error(coded(ERR_INVALID, "ssh: a positive timeout is required"))
     }
-    mut session: *mut cpp::ssh_session_struct
+    mut session: cpp.flint_ssh::SshSession
     mut rc: i32 = 0
     mut sock: i32 = -1
     mut dial_err := ""
@@ -82,9 +82,9 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
             unsigned int p = static_cast<unsigned int>(port);
             long t = static_cast<long>(timeout_secs);
             int no_config = 0;
-            ssh_options_set(s, SSH_OPTIONS_HOST, host.c_str());
+            ssh_options_set(s, SSH_OPTIONS_HOST, flint_ssh::CText(host).c_str());
             ssh_options_set(s, SSH_OPTIONS_PORT, &p);
-            ssh_options_set(s, SSH_OPTIONS_USER, user.c_str());
+            ssh_options_set(s, SSH_OPTIONS_USER, flint_ssh::CText(user).c_str());
             ssh_options_set(s, SSH_OPTIONS_TIMEOUT, &t);
             // Flint resolves hosts from its vault, never from ~/.ssh/config.
             ssh_options_set(s, SSH_OPTIONS_PROCESS_CONFIG, &no_config);
@@ -186,8 +186,10 @@ fn (self: SshConn) auth_key_content(private_key: str, passphrase: str) -> void! 
     cpp {
         std::lock_guard<std::mutex> guard(*self.lock);
         ssh_key key = nullptr;
-        const char* pass = passphrase.empty() ? nullptr : passphrase.c_str();
-        rc = ssh_pki_import_privkey_base64(private_key.c_str(), pass, nullptr, nullptr, &key);
+        flint_ssh::CText key_text(private_key);
+        flint_ssh::CText pass_text(passphrase);
+        const char* pass = pass_text.empty() ? nullptr : pass_text.c_str();
+        rc = ssh_pki_import_privkey_base64(key_text.c_str(), pass, nullptr, nullptr, &key);
         if (rc == SSH_OK) {
             rc = ssh_userauth_publickey(self.session, nullptr, key);
             ssh_key_free(key);
@@ -206,7 +208,7 @@ fn (self: SshConn) auth_key_content(private_key: str, passphrase: str) -> void! 
 // Requests a PTY of the given size and starts the login shell on it, or `command`
 // when it is not "".
 fn (mut self: SshConn) open_pty_shell(term: str, cols: i32, rows: i32, command: str) -> void! {
-    mut channel: *mut cpp::ssh_channel_struct
+    mut channel: cpp.flint_ssh::SshChannel
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005
     cpp {
@@ -214,8 +216,8 @@ fn (mut self: SshConn) open_pty_shell(term: str, cols: i32, rows: i32, command: 
         ssh_channel ch = ssh_channel_new(self.session);
         channel = ch;
         rc = ch ? ssh_channel_open_session(ch) : -1;
-        if (rc == SSH_OK) rc = ssh_channel_request_pty_size(ch, term.c_str(), cols, rows);
-        if (rc == SSH_OK) rc = command.empty() ? ssh_channel_request_shell(ch) : ssh_channel_request_exec(ch, command.c_str());
+        if (rc == SSH_OK) rc = ssh_channel_request_pty_size(ch, flint_ssh::CText(term).c_str(), cols, rows);
+        if (rc == SSH_OK) rc = command.empty() ? ssh_channel_request_shell(ch) : ssh_channel_request_exec(ch, flint_ssh::CText(command).c_str());
         if (rc != SSH_OK && ch) { ssh_channel_free(ch); channel = nullptr; }
     }
     if rc != 0 {

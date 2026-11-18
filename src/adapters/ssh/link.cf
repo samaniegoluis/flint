@@ -20,8 +20,8 @@ type SshLink struct {
     tunnels: shared[cpp.flint_ssh::Tunnels]
     timeout_secs: i64
     // The SFTP channel on the last hop and its one open file (sftp.cf), or none.
-    sftp: *mut cpp::sftp_session_struct
-    sftp_file: *mut cpp::sftp_file_struct
+    sftp: cpp.flint_ssh::SftpSession
+    sftp_file: cpp.flint_ssh::SftpFile
     // How SFTP errors name the host: "the host" when empty (sftp_label).
     label: str
 }
@@ -174,7 +174,7 @@ fn (mut self: SshLink) exec_open(command: str, close_stdin: bool) -> void! {
         return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
     }
     mut conn := self.hops[self.hops.len() - 1]
-    mut channel: *mut cpp::ssh_channel_struct
+    mut channel: cpp.flint_ssh::SshChannel
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005
     cpp {
@@ -182,7 +182,7 @@ fn (mut self: SshLink) exec_open(command: str, close_stdin: bool) -> void! {
         ssh_channel ch = ssh_channel_new(conn.session);
         channel = ch;
         rc = ch ? ssh_channel_open_session(ch) : -1;
-        if (rc == SSH_OK) rc = ssh_channel_request_exec(ch, command.c_str());
+        if (rc == SSH_OK) rc = ssh_channel_request_exec(ch, flint_ssh::CText(command).c_str());
         if (rc == SSH_OK && close_stdin) rc = ssh_channel_send_eof(ch);
         if (rc != SSH_OK && ch) { ssh_channel_free(ch); channel = nullptr; }
     }
