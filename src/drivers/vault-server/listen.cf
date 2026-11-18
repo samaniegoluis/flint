@@ -41,10 +41,10 @@ fn early(status: i32, note: str) -> ReadOutcome {
 fn read_request(mut conn: net.TcpConn, max_body: i64) -> ReadOutcome {
     start := time.now_ms()
     mut raw := ""
-    mut head_end: i64 = -1
+    mut head_end: usize = 0
     for {
-        head_end = raw.index_of("\r\n\r\n")
-        if head_end >= 0 {
+        if at := raw.index_of("\r\n\r\n") {
+            head_end = at
             break
         }
         if raw.len() > HEADER_MAX_BYTES {
@@ -65,7 +65,8 @@ fn read_request(mut conn: net.TcpConn, max_body: i64) -> ReadOutcome {
         }
         raw += chunk
     }
-    head := raw.substr(0, usize(head_end) + 4)
+    // The body is binary (sealed blobs): every cut of `raw` is by byte.
+    head := byte_slice(raw, 0, head_end + 4)
     req := http.parse_request(head) or err {
         return early(400, "bad_request")
     }
@@ -88,7 +89,7 @@ fn read_request(mut conn: net.TcpConn, max_body: i64) -> ReadOutcome {
     if length > max_body {
         return early(413, "too_large")
     }
-    mut body := raw.substr(usize(head_end) + 4)
+    mut body := byte_tail(raw, head_end + 4)
     for i64(body.len()) < length {
         left := start + REQUEST_TIMEOUT_MS - time.now_ms()
         if left <= 0 || !conn.poll(left) {
@@ -109,7 +110,7 @@ fn read_request(mut conn: net.TcpConn, max_body: i64) -> ReadOutcome {
         body += chunk
     }
     if i64(body.len()) > length {
-        body = body.substr(0, usize(length))
+        body = byte_slice(body, 0, usize(length))
     }
     return ReadOutcome{ status: 0, note: "", method: req.method, path: req.path, headers: req, body: body, drop: false }
 }
@@ -123,7 +124,7 @@ fn client_of(peer: str, req: http.Request, trust_proxy: bool) -> str {
             parts := fwd.split(",")
             last := parts[parts.len() - 1].trim()
             if last.len() > 0 && last.len() <= 64 {
-                return last
+                return str(last)
             }
         }
     }

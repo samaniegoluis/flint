@@ -54,15 +54,15 @@ type TokenOut struct {
 }
 
 fn listen_parts(spec: str) -> ServeOptions! {
-    colon := spec.last_index_of(":")
-    if colon <= 0 {
+    colon := spec.last_index_of(":") or 0
+    if colon == 0 {
         return error(coded(ERR_USAGE, "FLINT_VAULT_LISTEN must be host:port, such as 0.0.0.0:8787"))
     }
-    mut host := spec.substr(0, usize(colon))
+    mut host := spec[..colon]
     if host.starts_with("[") && host.ends_with("]") {
-        host = host.substr(1, host.len() - 2)
+        host = str(host[1..host.len() - 1])
     }
-    port := parse_version_tag(spec.substr(usize(colon) + 1))
+    port := parse_version_tag(spec[colon + 1..])
     if port < 1 || port > 65535 {
         return error(coded(ERR_USAGE, "FLINT_VAULT_LISTEN has no valid port"))
     }
