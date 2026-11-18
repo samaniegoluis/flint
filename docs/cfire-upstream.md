@@ -2447,7 +2447,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `insert(index, value)` lowers to `insert(begin() + index, value)` with a bounds
   check, or the checker rejects the call.
 
-### CF-133 · bug · `confirmed`: a tuple with an empty slice literal does not compile
+### CF-133 · bug · `resolved ✓`: a tuple with an empty slice literal does not compile
+- **Resolved at `v0.12.2` (migration step 5):** `strength_guesses` returns `(1.0, [])`; the typed local is gone.
 - **At `v0.12.2` (migration step 5):** [ran] `return (1.0, [])` from `-> (f64, []i64)` builds and runs. **fixed** (1 tag).
 - **Seen (milestone 40) [ran, macOS, `c5b1d4b`]:** `return (1.0, [])` from a function
   typed `-> (f64, []StrengthMatch)`.

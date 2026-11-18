@@ -1121,9 +1121,7 @@ fn strength_guesses(password: str, user: StrengthWords, w: StrengthWords) -> (f6
     pw := pw_bytes(password)
     n := i64(pw.len())
     if n == 0 {
-        // CFIRE-UPSTREAM: CF-133 (an empty slice literal in a tuple does not compile)
-        none_yet: []StrengthMatch = []
-        return (1.0, none_yet)
+        return (1.0, [])
     }
     matches := omnimatch(pw, user, w)
     mut opt: [][]StrengthStep = []
