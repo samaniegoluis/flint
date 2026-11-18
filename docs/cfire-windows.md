@@ -81,6 +81,7 @@ Windows test VM (Windows 11 Pro 22H2, build 22621, WebView2 157), in MSYS2 CLANG
 | W-05 | **covered**: stdin, stdout and stderr are in binary mode, `println` writes `\n` | [ran] probe: a child printing 3000 lines of 100 bytes gives exactly 300 000 bytes on each stream | the probe no longer normalises `\r\n` |
 | W-08 | **covered**: `*_unix.cf` is left out on Windows | [ran] probe `platform_files` prints `platform: windows` | nothing to remove (patch 0003 only) |
 | W-11 | **covered**: `os.args()` is UTF-8 from the UTF-16 command line | [ran] probe: a child given `año-ñ ✓.txt` prints it back intact | nothing to remove (patch 0006 only) |
+| W-07 | **covered**: the `windows` job of cfire's CI passes (MSYS2 CLANG64), and green `main` CI publishes the Windows archives | [read] CI run on `f8304b1`, the parent of `v0.12.2` (`5be0987`, the version bump; its green CI made the release): `linux`, `windows`, `test`, `fuzz-smoke` success; the release carries `cfire-v0.12.2-windows-x86_64.zip` | nothing in Flint |
 
 ## How to read each entry
 
