@@ -115,7 +115,7 @@ inline int map_error(DWORD e) {
     return 3;
 }
 
-inline int save(const std::string& service, const std::string& account, const std::vector<std::byte>& secret) {
+inline int save(const std::string& service, const std::string& account, std::span<const std::uint8_t> secret) {
     if (secret.size() > CRED_MAX_CREDENTIAL_BLOB_SIZE) return 3;
     std::wstring t = target(service, account);
     std::wstring user(account.begin(), account.end());
@@ -124,17 +124,17 @@ inline int save(const std::string& service, const std::string& account, const st
     c.TargetName = t.data();
     c.Comment = const_cast<wchar_t*>(L"Flint vault key");
     c.CredentialBlobSize = static_cast<DWORD>(secret.size());
-    c.CredentialBlob = reinterpret_cast<LPBYTE>(const_cast<std::byte*>(secret.data()));
+    c.CredentialBlob = const_cast<LPBYTE>(reinterpret_cast<const BYTE*>(secret.data()));
     c.Persist = CRED_PERSIST_LOCAL_MACHINE;
     c.UserName = user.data();
     return ::CredWriteW(&c, 0) ? 0 : map_error(::GetLastError());
 }
 
-inline int load(const std::string& service, const std::string& account, std::vector<std::byte>& out) {
+inline int load(const std::string& service, const std::string& account, std::vector<std::uint8_t>& out) {
     std::wstring t = target(service, account);
     PCREDENTIALW c = nullptr;
     if (!::CredReadW(t.c_str(), CRED_TYPE_GENERIC, 0, &c)) return map_error(::GetLastError());
-    const auto* p = reinterpret_cast<const std::byte*>(c->CredentialBlob);
+    const auto* p = reinterpret_cast<const std::uint8_t*>(c->CredentialBlob);
     out.assign(p, p + c->CredentialBlobSize);
     ::SecureZeroMemory(c->CredentialBlob, c->CredentialBlobSize);
     ::CredFree(c);
