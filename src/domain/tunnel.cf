@@ -149,35 +149,34 @@ fn parse_port_text(text: str, what: str) -> i64! {
 fn parse_tunnel_destination(text: str) -> (str, i64)! {
     t := text.trim()
     if t.starts_with("[") {
-        close := t.index_of("]")
-        if close < 0 || usize(close) + 1 >= t.len() || t[usize(close) + 1] != 58 {
+        close := t.index_of("]") or t.len()
+        if close + 1 >= t.len() || t[close + 1] != 58 {
             return error(coded(ERR_INVALID, "a destination is host:port, or [address]:port"))
         }
-        host := t.substr(1, usize(close) - 1)
-        port := try parse_port_text(t.substr(usize(close) + 2), "destination port")
+        host := t[1..close]
+        port := try parse_port_text(t[close + 2..], "destination port")
         try check_tunnel_dest_host(host)
         return (host, port)
     }
-    colon := t.last_index_of(":")
-    if colon < 0 {
+    colon := t.last_index_of(":") or {
         return ("localhost", try parse_port_text(t, "destination port"))
     }
-    host := t.substr(0, usize(colon))
+    host := t[..colon]
     if host.contains(":") {
         return error(coded(ERR_INVALID, "an IPv6 destination goes in brackets: [address]:port"))
     }
     try check_tunnel_dest_host(host)
-    port := try parse_port_text(t.substr(usize(colon) + 1), "destination port")
+    port := try parse_port_text(t[colon + 1..], "destination port")
     return (host, port)
 }
 
 // `<host>:<name>` as the CLI takes a tunnel.
 fn split_tunnel_ref(text: str) -> (str, str)! {
-    colon := text.last_index_of(":")
-    if colon <= 0 || usize(colon) + 1 >= text.len() {
+    colon := text.last_index_of(":") or 0
+    if colon == 0 || colon + 1 >= text.len() {
         return error(coded(ERR_USAGE, "a tunnel is named <host>:<name>, e.g. db1:postgres"))
     }
-    return (text.substr(0, usize(colon)), text.substr(usize(colon) + 1))
+    return (text[..colon], text[colon + 1..])
 }
 
 fn lower_tunnel_name(name: str) -> str {

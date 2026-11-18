@@ -64,7 +64,7 @@ fn error_text_of(msg: str) -> str {
     code := error_code_of(msg)
     prefix := code + ": "
     if msg.starts_with(prefix) {
-        return msg.substr(prefix.len())
+        return msg[prefix.len()..]
     }
     return msg
 }

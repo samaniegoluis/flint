@@ -75,7 +75,7 @@ fn partial_suffix(s: str, needle: str) -> usize {
         k = s.len()
     }
     for k > 0 {
-        if s.ends_with(needle.substr(0, k)) {
+        if s.ends_with(byte_slice(needle, 0, k)) {
             return k
         }
         k -= 1
@@ -89,17 +89,16 @@ fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
     if w.secret.len() > 0 {
         buf = buf.replace_all(w.secret, "")
     }
-    mut idx := buf.index_of(w.prompt)
-    for idx >= 0 {
-        step.output = step.output + buf.substr(0, usize(idx))
-        buf = buf.substr(usize(idx) + w.prompt.len())
+    for buf.contains(w.prompt) {
+        idx := buf.index_of(w.prompt) or 0
+        step.output = step.output + buf[..idx]
+        buf = byte_tail(buf, idx + w.prompt.len())
         w.prompts += 1
         if w.prompts == 1 {
             step.send_password = true
         } else {
             step.refused = true
         }
-        idx = buf.index_of(w.prompt)
     }
     mut hold := partial_suffix(buf, w.prompt)
     if w.secret.len() > 0 {
@@ -108,11 +107,11 @@ fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
             hold = k
         }
     }
-    step.output = step.output + buf.substr(0, buf.len() - hold)
-    w.pending = buf.substr(buf.len() - hold)
+    step.output = step.output + byte_slice(buf, 0, buf.len() - hold)
+    w.pending = byte_tail(buf, buf.len() - hold)
     w.seen = w.seen + step.output
     if w.seen.len() > 4096 {
-        w.seen = w.seen.substr(w.seen.len() - 4096)
+        w.seen = byte_tail(w.seen, w.seen.len() - 4096)
     }
     return step
 }

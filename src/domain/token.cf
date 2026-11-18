@@ -60,7 +60,7 @@ fn is_lower_hex(s: str) -> bool {
     // A method on a string literal emits invalid C++ (CF-094).
     digits: str = "0123456789abcdef"
     for i in 0..s.len() {
-        ch := s.substr(i, 1)
+        ch := byte_slice(s, i, i + 1)
         if !digits.contains(ch) {
             return false
         }
@@ -74,11 +74,11 @@ fn split_token_text(text: str) -> TokenText {
     if !t.starts_with(TOKEN_PREFIX) || t.len() != TOKEN_PREFIX.len() + TOKEN_ID_HEX + 1 + TOKEN_SECRET_HEX {
         return bad
     }
-    id := t.substr(TOKEN_PREFIX.len(), TOKEN_ID_HEX)
-    if t.substr(TOKEN_PREFIX.len() + TOKEN_ID_HEX, 1) != "_" {
+    id := t[TOKEN_PREFIX.len()..TOKEN_PREFIX.len() + TOKEN_ID_HEX]
+    if t[TOKEN_PREFIX.len() + TOKEN_ID_HEX..TOKEN_PREFIX.len() + TOKEN_ID_HEX + 1] != "_" {
         return bad
     }
-    secret := t.substr(TOKEN_PREFIX.len() + TOKEN_ID_HEX + 1)
+    secret := t[TOKEN_PREFIX.len() + TOKEN_ID_HEX + 1..]
     if !is_lower_hex(id) || !is_lower_hex(secret) {
         return bad
     }
@@ -256,7 +256,7 @@ fn utf8_prefix(s: str, max: i64) -> str {
     for end > 0 && (u8(s[end]) & 0xC0) == 0x80 {
         end = end - 1
     }
-    return s.substr(0, end)
+    return s[..end]
 }
 
 // `s` capped at COMMAND_MAX_BYTES.
@@ -369,7 +369,7 @@ test "tokens are found by id, or by the name of a live one" {
     list := [a, b]
     assert_eq((find_token(list, "00112233aabbccdd", 1500) or b).id, a.id)
     assert_eq((find_token(list, "Backup", 1500) or a).id, b.id)
-    assert(!find_token(list, "nightly", 1500).has_value())
+    assert(find_token(list, "nightly", 1500) == none)
 }
 
 test "token names" {
@@ -401,7 +401,7 @@ test "a whole command is capped on a character boundary" {
     assert_eq(i64(w.text.len()), COMMAND_MAX_BYTES)
     assert_eq(w.cut, 7)
     // A three-byte character straddling the cap is left out whole.
-    odd := whole_command(long.substr(0, usize(COMMAND_MAX_BYTES - 1)) + "€")
+    odd := whole_command(long[..usize(COMMAND_MAX_BYTES - 1)] + "€")
     assert_eq(i64(odd.text.len()), COMMAND_MAX_BYTES - 1)
     assert_eq(odd.cut, 3)
 }
@@ -415,7 +415,7 @@ test "a summary is one line of at most 160 bytes" {
     s := command_summary(long)
     assert(i64(s.len()) <= COMMAND_SUMMARY_MAX)
     assert(s.ends_with("..."))
-    assert(long.starts_with(s.substr(0, s.len() - 3)))
+    assert(long.starts_with(s[..s.len() - 3]))
 }
 
 test "retention keeps entries by age" {

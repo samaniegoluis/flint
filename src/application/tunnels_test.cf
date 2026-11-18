@@ -127,10 +127,12 @@ fn (mut self: FakeRunner) lose(host_id: str) {
             self.states[i] = 2
         }
     }
-    for i, l in self.live {
+    // Its own index name: two `for i, x` loops in one block do not compile (CF-153).
+    // CFIRE-UPSTREAM: CF-153
+    for j, l in self.live {
         if l.host_id == host_id {
-            self.live[i].up = false
-            self.live[i].error = "the connection was closed"
+            self.live[j].up = false
+            self.live[j].error = "the connection was closed"
         }
     }
 }

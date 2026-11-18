@@ -298,10 +298,8 @@ fn dedup_tags(tags: []str) -> []str {
 }
 
 fn byte_to_str(b: u8) -> str {
-    mut s := ""
-    // A one-byte string; cfire has no char-to-str conversion in core:str.
-    s.push(char(b))
-    return s
+    one: []u8 = [b]
+    return str(one)
 }
 
 fn str_trim_spaces(s: str) -> str {
@@ -314,7 +312,7 @@ fn str_trim_spaces(s: str) -> str {
     for end > start && u8(bytes[end - 1]) == 32 {
         end -= 1
     }
-    return s.substr(start, end - start)
+    return s[start..end]
 }
 
 fn sample_host() -> Host {

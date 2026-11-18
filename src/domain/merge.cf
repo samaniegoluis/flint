@@ -86,7 +86,10 @@ type MergeRecord interface {
 }
 
 fn print_join(parts: []str) -> str {
-    return parts.join("\x1f")
+    // `join` does not compile on a read-only `[]str` parameter (CF-154): an owned copy.
+    // CFIRE-UPSTREAM: CF-154
+    mut own := parts
+    return own.join("\x1f")
 }
 
 fn print_bytes(b: []byte) -> str {
@@ -199,8 +202,10 @@ fn merge_picks[T: MergeRecord](local: []T, other: []T, tombs: TombTimes) -> []Me
         lidx[r.merge_id()] = i64(i)
         ids.push(r.merge_id())
     }
-    for i, r in other {
-        oidx[r.merge_id()] = i64(i)
+    // Its own index name: two `for i, x` loops in one block do not compile (CF-153).
+    // CFIRE-UPSTREAM: CF-153
+    for j, r in other {
+        oidx[r.merge_id()] = i64(j)
         if !lidx.contains(r.merge_id()) {
             ids.push(r.merge_id())
         }
@@ -409,7 +414,7 @@ fn str_cut_utf8(s: str, max: usize) -> str {
     for end > 0 && (u8(bytes[end]) & 192) == 128 {
         end -= 1
     }
-    return s.substr(0, end)
+    return s[..end]
 }
 
 // The first free name for a record that lost `name`: none of `taken` (keys are
@@ -504,13 +509,15 @@ fn (mut self: MergeWork) fix_groups() {
     mut by_name: map[str][]StampOrder = {}
     // CFIRE-UPSTREAM: CF-135 (the map's keys, kept beside it)
     mut name_keys: []str = []
-    for i, g in self.records.groups {
+    // Its own index name: two `for i, x` loops in one block do not compile (CF-153).
+    // CFIRE-UPSTREAM: CF-153
+    for j, g in self.records.groups {
         k := g.parent_id + "/" + fold(g.name)
         if !by_name.contains(k) {
             by_name[k] = []
             name_keys.push(k)
         }
-        by_name[k].push(StampOrder{ stamp: g.updated_at, id: g.id, idx: i64(i) })
+        by_name[k].push(StampOrder{ stamp: g.updated_at, id: g.id, idx: i64(j) })
     }
     mut taken: map[str]bool = {}
     for g in self.records.groups {
@@ -786,21 +793,25 @@ fn report_diff[T: MergeRecord](mut self: MergeReport, kind: str, before: []T, af
         old[r.merge_id()] = i64(i)
     }
     mut now: map[str]bool = {}
-    for i, r in after {
+    // Its own index name: two `for i, x` loops in one block do not compile (CF-153).
+    // CFIRE-UPSTREAM: CF-153
+    for j, r in after {
         id := r.merge_id()
         now[id] = true
         if !old.contains(id) {
             self.added += 1
-            self.changes.push(MergeChange{ kind: kind, name: after_names[i], change: "added", detail: "" })
+            self.changes.push(MergeChange{ kind: kind, name: after_names[j], change: "added", detail: "" })
         } else if before[usize(old[id])].merge_print() != r.merge_print() {
             self.updated += 1
-            self.changes.push(MergeChange{ kind: kind, name: after_names[i], change: "updated", detail: "" })
+            self.changes.push(MergeChange{ kind: kind, name: after_names[j], change: "updated", detail: "" })
         }
     }
-    for i, r in before {
+    // Its own index name: two `for i, x` loops in one block do not compile (CF-153).
+    // CFIRE-UPSTREAM: CF-153
+    for k, r in before {
         if !now.contains(r.merge_id()) {
             self.removed += 1
-            self.changes.push(MergeChange{ kind: kind, name: before_names[i], change: "removed", detail: "" })
+            self.changes.push(MergeChange{ kind: kind, name: before_names[k], change: "removed", detail: "" })
         }
     }
 }

@@ -90,9 +90,8 @@ fn need_hosts(need: AccessNeed) -> str {
 
 // The last part of a path.
 fn path_base(p: str) -> str {
-    slash := p.last_index_of("/")
-    if slash >= 0 {
-        return p.substr(usize(slash) + 1)
+    if slash := p.last_index_of("/") {
+        return p[slash + 1..]
     }
     return p
 }
@@ -102,7 +101,7 @@ fn path_base(p: str) -> str {
 fn proc_name(p: CallerProc) -> str {
     mut n := path_base(p.argv0)
     if n.starts_with("-") {
-        n = n.substr(1)
+        n = n[1..]
     }
     if n.len() == 0 {
         n = path_base(p.exe)
@@ -602,8 +601,8 @@ test "a grant ends at its expiry, and belongs to one vault and one anchor" {
     mut reused := agent_chain()
     reused[2].started = 1
     assert(!grant_matches_caller(g, Caller{ uid: 501, chain: reused }))
-    assert(find_grant([g], agent, "v1", read, cat, 5).has_value())
-    assert(!find_grant([g], agent, "v1", read, cat, 2000).has_value())
+    assert(find_grant([g], agent, "v1", read, cat, 5) != none)
+    assert(find_grant([g], agent, "v1", read, cat, 2000) == none)
 }
 
 test "durations" {
@@ -623,7 +622,7 @@ test "an approval becomes a grant for its caller's anchor" {
     g := try grant_from_approval(ap, "g1", AccessScope{ all: false, groups: ["g-prod"], hosts: [] }, true, true, false, "1h", 2000)
     assert(grant_matches_caller(g, c))
     assert_eq(g.expires_ms, 2000 + 3600000)
-    assert(find_grant([g], c, "v1", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, test_catalog(), 3000).has_value())
+    assert(find_grant([g], c, "v1", AccessNeed{ action: ACCESS_EXEC, host: "api-01" }, test_catalog(), 3000) != none)
     grant_from_approval(ap, "g2", AccessScope{ all: false, groups: [], hosts: [] }, true, false, false, "1h", 0) or { refused += 1 }
     assert_eq(refused, 1)
     grant_from_approval(ap, "g2", AccessScope{ all: true, groups: [], hosts: [] }, false, false, false, "1h", 0) or { refused += 1 }
@@ -653,9 +652,10 @@ test "an approval is answered once" {
     assert_eq(waiting_approvals(book, APPROVAL_WAIT_MS).len(), 0)
     assert(set_approval_state(mut book, "a1", APPROVAL_DENIED))
     assert(!set_approval_state(mut book, "a1", APPROVAL_ALLOWED))
-    assert_eq(find_approval(book, "a1").value().state, APPROVAL_DENIED)
+    denied := find_approval(book, "a1") or new_approval("", "", Caller{}, "", AccessNeed{}, 0)
+    assert_eq(denied.state, APPROVAL_DENIED)
     drop_approval(mut book, "a1")
-    assert(!find_approval(book, "a1").has_value())
+    assert(find_approval(book, "a1") == none)
 }
 
 test "a copy between two hosts needs a grant that reaches both" {

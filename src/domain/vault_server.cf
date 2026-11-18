@@ -94,10 +94,10 @@ fn pick_server_vault(vaults: []ServerVault, wanted: str) -> ServerVault! {
 fn parse_version_tag(tag: str) -> i64 {
     mut t := tag.trim()
     if t.starts_with("W/") {
-        t = t.substr(2)
+        t = t[2..]
     }
     if t.len() >= 2 && t.starts_with("\"") && t.ends_with("\"") {
-        t = t.substr(1, t.len() - 2)
+        t = t[1..t.len() - 1]
     }
     if t.len() == 0 || t.len() > 18 {
         return -1

@@ -569,12 +569,12 @@ fn (self: FakeRecents) recents_load() -> []RecentVault! {
     for line in str_split_lines(text) {
         tab := line.index_of("\t")
         if tab >= 0 {
-            rest := line.substr(usize(tab) + 1)
+            rest := line[usize(tab) + 1..]
             tab2 := rest.index_of("\t")
             if tab2 >= 0 {
-                list.push(RecentVault{ path: line.substr(0, usize(tab)), name: rest.substr(0, usize(tab2)), id: rest.substr(usize(tab2) + 1) })
+                list.push(RecentVault{ path: line[..usize(tab)], name: rest[..usize(tab2)], id: rest[usize(tab2) + 1..] })
             } else {
-                list.push(RecentVault{ path: line.substr(0, usize(tab)), name: rest, id: "" })
+                list.push(RecentVault{ path: line[..usize(tab)], name: rest, id: "" })
             }
         }
     }
@@ -707,10 +707,10 @@ fn (mut self: FakeLink) link_exec_open(command: str) -> void! {
     self.calls.push("exec-open " + command)
     start := command.index_of("-p '")
     if start >= 0 {
-        rest := command.substr(usize(start) + 4)
+        rest := command[usize(start) + 4..]
         end := rest.index_of("'")
         if end >= 0 {
-            self.prompt = rest.substr(0, usize(end))
+            self.prompt = rest[..usize(end)]
         }
     }
 }
@@ -1127,7 +1127,7 @@ fn fake_url_id(u: str, suffix: str) -> str! {
     if !u.starts_with(prefix) || !u.ends_with(suffix) {
         return error(coded(ERR_INVALID, "the fake server has no resource {u}"))
     }
-    return u.substr(prefix.len(), u.len() - prefix.len() - suffix.len())
+    return u[prefix.len()..u.len() - suffix.len()]
 }
 
 fn (self: FakeRemote) reach(token: str) -> FakeRemoteState! {

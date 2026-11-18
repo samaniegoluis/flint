@@ -275,8 +275,22 @@ fn folded_unique(names: []str) -> bool {
     return true
 }
 
+// The seed's two's-complement bits: `u64(x)` panics on a negative value since cfire 0.12.
+fn seed_bits(seed: i64) -> u64 {
+    if seed >= 0 {
+        return u64(seed)
+    }
+    return u64(seed + i64.MAX + 1) + (u64(1) << 63)
+}
+
+test "a negative seed keeps its bits" {
+    assert_eq(seed_bits(-1), u64.MAX)
+    assert_eq(seed_bits(i64.MIN), u64(1) << 63)
+    assert_eq(seed_bits(5), u64(5))
+}
+
 fuzz "merge: symmetric, convergent and rule-keeping on random copies" |seed: i64| {
-    mut g := MergeGen{ state: u64(seed) }
+    mut g := MergeGen{ state: seed_bits(seed) }
     a := gen_copy(mut g)
     b := gen_copy(mut g)
     ab := merge_vaults(a, b)

@@ -224,8 +224,10 @@ fn desktop_layout(locals: []LocalMonitor, picks: []MonitorPick, main_id: str, ma
     }
     logical := logical_monitors(locals, main_id)
     mut order: []MonitorPick = [picks[usize(main_pick)]]
-    for i, p in picks {
-        if i64(i) != main_pick {
+    // Its own index name: two `for i, x` loops in one block do not compile (CF-153).
+    // CFIRE-UPSTREAM: CF-153
+    for j, p in picks {
+        if i64(j) != main_pick {
             order.push(p)
         }
     }

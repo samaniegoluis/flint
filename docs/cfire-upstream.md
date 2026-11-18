@@ -2596,3 +2596,45 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   and keep their meaning, or fail to compile where the type changed (`index_of` now
   returns `usize?`).
 - **Ideal:** the fix-it rewrites `str.replace` to `.replace_all`.
+
+### CF-152 · bug · `confirmed`: `cfire/DANGLING-RETURN` on a slice of a local returned as an owned `str`
+- **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** `fn f(p: str) -> str { s := p + "!";
+  return s[1..] }` is rejected ("cannot return pointer/view borrowing local variable 's'"),
+  and so is `tail: str = s[1..]; return tail` and a `mut s := p` reassigned from its own
+  slice in a loop. GUIDE Ch5 says a copy is made where an owned value is needed, a return
+  value among them; the return type is `str`, not a view.
+- **Repro:** the function above, `cfire check`.
+- **Workaround:** an explicit copy, `str(s[1..])` (`src/domain/files.cf`, `paste.cf`).
+- **Ideal:** a slice returned or bound as an owned `str` is copied, as the GUIDE says.
+
+### CF-153 · bug · `confirmed`: two `for i, x in` loops in one block do not compile
+- **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** each indexed loop lowers to
+  `auto&& _col_<index> = <collection>;` **before** its `for`, in the enclosing block
+  (`src/codegen/stmt.hpp:390`), so a second loop with the same index name redefines it:
+  "redefinition of '_col_i'".
+- **Repro:** `xs := [1, 2]`, then `for i, x in xs { println("{i} {x}") }` twice in `main`.
+- **Workaround:** a different index name in the later loop (six loops in
+  `src/domain/merge.cf`, `monitors.cf`, `src/application/tunnels_test.cf`).
+- **Ideal:** the `_col_` binding inside a block of its own, or a unique name per loop.
+
+### CF-154 · bug · `confirmed`: `join` does not compile on a read-only `[]str` parameter
+- **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** a read-only `[]str` parameter lowers
+  to `slice_ref<str>`, and `cfire::bm::join` requires `detail::Seq` (a `std::vector` or
+  `std::array`, `runtime/core/builtin_methods.hpp:50`): "no matching function for call to
+  'join'". `cfire check` accepts it; clang fails. Other `Seq` builtins (`binary_search`, …)
+  are likely the same.
+- **Repro:** `fn j(parts: []str) -> str { return parts.join(",") }`, called from `main`.
+- **Workaround:** `mut own := parts` and `own.join(…)` (`src/domain/merge.cf`).
+- **Ideal:** the `Seq` builtins accept `slice_ref<T>`/`std::span`.
+
+### CF-155 · missing · `confirmed`: no byte-wise cut of a `str`
+- **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** a `str` slice panics on a bound inside
+  a UTF-8 character (`check_utf8_boundary`, `cfire_prelude.hpp:908`). 0.10's `substr` cut
+  bytes. Flint cuts by byte count or position in places where that is the point: a 100-byte
+  password cap, byte loops in the strength estimate and hex checks, the last 4 KiB of a
+  terminal's output, binary bodies carried in a `str`.
+- **Repro:** `s := "a€b"; println(s[0..2])`: panic.
+- **Workaround:** `byte_slice(s, a, b)` = `str(s.bytes()[a..b])` (`src/domain/bytes.cf`),
+  which copies the whole string first.
+- **Ideal:** a byte view of a `str` (`s.byte_slice(a, b)` or `s.bytes()` as a view), or a
+  bytes type that HTTP and IPC data can live in.

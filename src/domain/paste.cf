@@ -68,7 +68,7 @@ fn paste_file_name(name: str, fallback_ext: str) -> str {
         } else {
             // No dash right before the extension ("a-.png").
             if c == 46 && dash {
-                acc = acc.substr(0, acc.len() - 1)
+                acc = str(acc[..acc.len() - 1])
             }
             acc = acc + byte_to_str(c)
             dash = false
@@ -76,21 +76,21 @@ fn paste_file_name(name: str, fallback_ext: str) -> str {
     }
     // No hidden file, no leading or trailing dash, no "." or "..".
     for acc.len() > 0 && (acc.starts_with(".") || acc.starts_with("-")) {
-        acc = acc.substr(1)
+        acc = str(acc[1..])
     }
     for acc.len() > 0 && acc.ends_with("-") {
-        acc = acc.substr(0, acc.len() - 1)
+        acc = str(acc[..acc.len() - 1])
     }
     if acc.len() == 0 {
         return "paste." + paste_ext(fallback_ext)
     }
-    dot := acc.last_index_of(".")
+    dot := acc.last_index_of(".") or 0
     if acc.len() > PASTE_NAME_MAX {
-        if dot > 0 && acc.len() - usize(dot) <= 16 {
-            ext := acc.substr(usize(dot))
-            acc = acc.substr(0, PASTE_NAME_MAX - ext.len()) + ext
+        if dot > 0 && acc.len() - dot <= 16 {
+            ext := acc[dot..]
+            acc = acc[..PASTE_NAME_MAX - ext.len()] + ext
         } else {
-            acc = acc.substr(0, PASTE_NAME_MAX)
+            acc = str(acc[..PASTE_NAME_MAX])
         }
     }
     return acc
@@ -100,9 +100,8 @@ fn paste_file_name(name: str, fallback_ext: str) -> str {
 // 1-5 of them, else "png".
 fn paste_ext(hint: str) -> str {
     mut sub := hint
-    slash := hint.last_index_of("/")
-    if slash >= 0 {
-        sub = hint.substr(usize(slash) + 1)
+    if slash := hint.last_index_of("/") {
+        sub = hint[slash + 1..]
     }
     mut acc := ""
     for b in sub.bytes() {

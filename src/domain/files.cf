@@ -48,21 +48,21 @@ type RemotePath struct {
 // Whether a `flint cp` argument names a host: `alias:` before any `/`. A local path
 // with a colon is written `./a:b`, as with scp.
 fn is_remote_arg(arg: str) -> bool {
-    colon := arg.index_of(":")
-    if colon <= 0 {
+    colon := arg.index_of(":") or 0
+    if colon == 0 {
         return false
     }
-    slash := arg.index_of("/")
-    return slash < 0 || colon < slash
+    slash := arg.index_of("/") or arg.len()
+    return colon < slash
 }
 
 fn parse_remote_arg(arg: str) -> RemotePath! {
-    colon := arg.index_of(":")
-    if colon <= 0 {
+    colon := arg.index_of(":") or 0
+    if colon == 0 {
         return error(coded(ERR_USAGE, "'{arg}' is not alias:/path"))
     }
-    alias := arg.substr(0, usize(colon))
-    mut path := arg.substr(usize(colon) + 1)
+    alias := arg[..colon]
+    mut path := arg[colon + 1..]
     if path.len() == 0 {
         path = "."
     }
@@ -73,7 +73,7 @@ fn parse_remote_arg(arg: str) -> RemotePath! {
 fn trim_slashes(p: str) -> str {
     mut s := p
     for s.len() > 1 && s.ends_with("/") {
-        s = s.substr(0, s.len() - 1)
+        s = str(s[..s.len() - 1])
     }
     return s
 }
@@ -84,24 +84,22 @@ fn remote_base(p: str) -> str {
     if s == "/" {
         return s
     }
-    i := s.last_index_of("/")
-    if i < 0 {
+    i := s.last_index_of("/") or {
         return s
     }
-    return s.substr(usize(i) + 1)
+    return str(s[i + 1..])
 }
 
 // The folder of a `/` path: "/a/b" -> "/a", "b" -> ".", "/a" -> "/".
 fn remote_dir(p: str) -> str {
     s := trim_slashes(p)
-    i := s.last_index_of("/")
-    if i < 0 {
+    i := s.last_index_of("/") or {
         return "."
     }
     if i == 0 {
         return "/"
     }
-    return s.substr(0, usize(i))
+    return str(s[..i])
 }
 
 fn remote_join(dir: str, name: str) -> str {
@@ -212,7 +210,7 @@ fn absolute_from(cwd: str, path: str) -> str {
     }
     mut p := path
     if p.starts_with("./") {
-        p = p.substr(2)
+        p = p[2..]
     }
     return remote_join(cwd, p)
 }

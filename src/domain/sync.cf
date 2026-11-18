@@ -91,10 +91,10 @@ fn check_remote_url(raw: str) -> str! {
     mut rest := ""
     mut secure := false
     if u.to_lower().starts_with("https://") {
-        rest = u.substr(8)
+        rest = u[8..]
         secure = true
     } else if u.to_lower().starts_with("http://") {
-        rest = u.substr(7)
+        rest = u[7..]
     } else {
         return error(coded(ERR_INVALID, "the server's URL must start with https://"))
     }
@@ -102,20 +102,19 @@ fn check_remote_url(raw: str) -> str! {
         return error(coded(ERR_INVALID, "the server's URL takes no query or fragment"))
     }
     for rest.ends_with("/") {
-        rest = rest.substr(0, rest.len() - 1)
+        rest = rest[..rest.len() - 1]
     }
     if rest.ends_with(REMOTE_VAULT_PATH) {
-        rest = rest.substr(0, rest.len() - REMOTE_VAULT_PATH.len())
+        rest = rest[..rest.len() - REMOTE_VAULT_PATH.len()]
     } else if rest.ends_with(REMOTE_VAULTS_PATH) {
-        rest = rest.substr(0, rest.len() - REMOTE_VAULTS_PATH.len())
+        rest = rest[..rest.len() - REMOTE_VAULTS_PATH.len()]
     }
     for rest.ends_with("/") {
-        rest = rest.substr(0, rest.len() - 1)
+        rest = rest[..rest.len() - 1]
     }
     mut authority := rest
-    slash := rest.index_of("/")
-    if slash >= 0 {
-        authority = rest.substr(0, usize(slash))
+    if slash := rest.index_of("/") {
+        authority = rest[..slash]
     }
     if authority.len() == 0 {
         return error(coded(ERR_INVALID, "the server's URL names no host"))
@@ -128,14 +127,13 @@ fn check_remote_url(raw: str) -> str! {
     }
     mut host := authority
     if host.starts_with("[") {
-        close := host.index_of("]")
+        close := host.index_of("]") or 0
         if close > 0 {
-            host = host.substr(0, usize(close) + 1)
+            host = host[..close + 1]
         }
     } else {
-        colon := host.index_of(":")
-        if colon >= 0 {
-            host = host.substr(0, usize(colon))
+        if colon := host.index_of(":") {
+            host = host[..colon]
         }
     }
     if !secure && !is_loopback_host(host) {

@@ -1,0 +1,24 @@
+package domain
+
+// The bytes `a..b` of `s` as a string, cut wherever the bounds fall. A `str` slice
+// (`s[a..b]`) panics on a bound inside a UTF-8 character; this is for text cut by byte
+// count or position (a byte loop, a cap, binary data carried in a `str`), as cfire
+// 0.10's `substr` did. It copies `s` whole first: there is no byte view of a `str`.
+// CFIRE-UPSTREAM: CF-155
+fn byte_slice(s: str, a: usize, b: usize) -> str {
+    return str(s.bytes()[a..b])
+}
+
+// `byte_slice` from `a` to the end.
+fn byte_tail(s: str, a: usize) -> str {
+    return byte_slice(s, a, s.len())
+}
+
+test "a byte slice cuts inside a character and keeps every byte" {
+    s := "a€b"
+    head := byte_slice(s, 0, 2)
+    assert_eq(head.len(), 2)
+    assert_eq(head + byte_tail(s, 2), s)
+    assert_eq(byte_slice(s, 1, 4), "€")
+    assert_eq(byte_tail(s, s.len()), "")
+}

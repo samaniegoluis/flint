@@ -104,7 +104,7 @@ fn strength_score(guesses: f64) -> i64 {
 fn estimate_password_strength(password: str, user_words: []str) -> PasswordStrength {
     mut pw := password
     if pw.len() > STRENGTH_MAX_LEN {
-        pw = pw.substr(0, STRENGTH_MAX_LEN)
+        pw = byte_slice(pw, 0, STRENGTH_MAX_LEN)
     }
     words := strength_word_lists(user_words)
     (guesses, seq) := strength_guesses(pw, words)
@@ -172,11 +172,7 @@ fn sub_bytes(b: []u8, from: usize, to: usize) -> []u8 {
 }
 
 fn bytes_str(b: []u8) -> str {
-    mut s := ""
-    for c in b {
-        s.push(char(c))
-    }
-    return s
+    return str(b)
 }
 
 fn is_upper_byte(c: u8) -> bool {
@@ -301,7 +297,7 @@ fn dictionary_matches(lower: []u8, w: StrengthWords) -> []StrengthMatch {
     s := bytes_str(lower)
     for i in 0..n {
         for j in i..n {
-            word := s.substr(i, j - i + 1)
+            word := byte_slice(s, i, j + 1)
             if w.rank.contains(word) {
                 mut m := new_match("dictionary", i64(i), i64(j), f64(w.rank.get(word) or 0))
                 m.rank = w.rank.get(word) or 0
