@@ -956,7 +956,8 @@
         }
         q('[data-files-list]').focus();
         q('[data-files-list]').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', code: 'ArrowUp', bubbles: true, cancelable: true, metaKey: mac, ctrlKey: !mac, shiftKey: !mac }));
-        await waitFor(() => aside()?.dataset.filesPath === dir, 'back up one folder');
+        // The path changes before the listing arrives ("Loading…"): wait for the rows too.
+        await waitFor(() => aside()?.dataset.filesPath === dir && q('[data-file="made"]'), 'back up one folder, listed');
         await check(q('[data-file="made"].sel'), 'the up chord climbs one folder and selects where it came from');
         {
           // A path typed or pasted in the path bar: the Go to folder chord, `/` in the
