@@ -815,6 +815,10 @@
       {
         const t = activeTerm();
         for (let i = 0; i < 300; i++) t.input(`L${i}\n`, true);
+        // On the Windows VM the test sshd is MSYS2's, whose pty dropped a ^D that came in
+        // the same burst (a second ^D ended cat; owner, 2026-11-19): there it goes
+        // apart. The burst's order is what this checks, on every system.
+        if ((await window.backend.app_info({})).os === 'windows') await sleep(300);
         t.input('\x04', true);
       }
       try {
