@@ -6,6 +6,7 @@
 #   assets/app-icon/flint-256.png   Linux and anything else that takes a PNG
 #   ui/public/tray-template.png      macOS menu bar glyph (assets/app-icon/flint-tray.svg)
 #   ui/public/tray.png               Linux tray glyph, light on the dark panel
+#   ui/public/tray-color.png         Windows tray: the app icon in colour (its taskbar is light or dark)
 #
 #   scripts/make-app-icon.sh        # needs rsvg-convert (librsvg) and macOS iconutil
 set -euo pipefail
@@ -28,4 +29,5 @@ tray="$dir/flint-tray.svg"
 rsvg-convert -w 36 -h 36 "$tray" -o "$root/ui/public/tray-template.png"
 sed 's/#000/#D8DBE0/g' "$tray" > "$tmp/tray-light.svg"
 rsvg-convert -w 48 -h 48 "$tmp/tray-light.svg" -o "$root/ui/public/tray.png"
-echo "make-app-icon: $dir/Flint.icns, $dir/flint-256.png, ui/public/tray-template.png, ui/public/tray.png"
+rsvg-convert -w 64 -h 64 "$svg" -o "$root/ui/public/tray-color.png"
+echo "make-app-icon: $dir/Flint.icns, $dir/flint-256.png, ui/public/tray-template.png, ui/public/tray.png, ui/public/tray-color.png"

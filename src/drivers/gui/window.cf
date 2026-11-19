@@ -25,11 +25,14 @@ type WindowLocked struct {
 }
 
 // The tray icon and its menu. macOS takes a template image the system tints; the
-// Linux tray gets a light glyph for its dark panel.
+// Linux tray gets a light glyph for its dark panel; Windows, whose taskbar is light or
+// dark and tints nothing, the app icon in colour (owner, 2026-11-19).
 fn install_tray(mut app: webui.App, ui_dir: str) {
     mut icon := ui_dir + "/tray.png"
     if os_name() == "mac" {
         icon = ui_dir + "/tray-template.png"
+    } else if os_name() == "windows" {
+        icon = ui_dir + "/tray-color.png"
     }
     app.set_tray(icon, "Flint")
     app.add_tray_item("Open Flint", TRAY_OPEN)
