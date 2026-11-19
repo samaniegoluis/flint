@@ -165,7 +165,12 @@ fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](
 fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K: DesktopSink, L: Clipboard](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, mut sink: K, mut clip: L, req: RdpOpenRequest) -> void! {
     d := open_remote_desktop(crypto, mut store, session, mut rd, prompter, req) or err {
         rd.rd_close(req.tab)
-        return error("{err.message()}")
+        msg := "{err.message()}"
+        // Closed while it connected: ended on purpose, not a failure.
+        if rdp_closed_by_tab(msg) {
+            return
+        }
+        return error(msg)
     }
     sink.desktop_ready(req.tab, d)
     // The tab's request as it stands: a graphics switch (milestone 35) changes its mode
@@ -197,12 +202,27 @@ fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K
         if ev.kind == RDP_EVENT_RESIZE {
             mut sized := cur
             sized.graphics = engine
-            try reconnect_at_size(crypto, store, session, mut rd, prompter, sized, ev)
+            // A close during the reconnect (Disconnect while the tab resized) ends the tab
+            // on purpose, not as a lost connection.
+            reconnect_at_size(crypto, store, session, mut rd, prompter, sized, ev) or err {
+                msg := "{err.message()}"
+                if rdp_closed_by_tab(msg) {
+                    return
+                }
+                return error(msg)
+            }
         }
         if ev.kind == RDP_EVENT_GRAPHICS {
             mut next := cur
             next.graphics = ev.message
-            sw := try reconnect_in_mode(crypto, store, session, mut rd, prompter, next, ev)
+            mut failure := ""
+            sw := reconnect_in_mode_or(crypto, store, session, mut rd, prompter, next, ev, mut failure)
+            if rdp_closed_by_tab(failure) {
+                return
+            }
+            if failure.len() > 0 {
+                return error(failure)
+            }
             if sw.why.len() == 0 {
                 cur = next
                 engine = sw.graphics
@@ -322,6 +342,14 @@ fn reconnect_in_mode[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](cr
         return error(failure)
     }
     return RdpModeSwitch{ why: "", graphics: t.graphics, rtt_ms: t.rtt_ms }
+}
+
+// reconnect_in_mode, its error in `failure` ("" when it did not fail; D-060).
+fn reconnect_in_mode_or[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: RdpEvent, mut failure: str) -> RdpModeSwitch {
+    return reconnect_in_mode(crypto, store, session, mut rd, prompter, req, ev) or err {
+        failure = "{err.message()}"
+        return RdpModeSwitch{ why: "", graphics: "", rtt_ms: -1 }
+    }
 }
 
 // The page asks for its tab in another graphics mode (milestone 35): checked here, then

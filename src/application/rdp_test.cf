@@ -22,13 +22,16 @@ type FakeDesktop struct {
     modes: []str
     // From this connection on (1-based; 0: never) the server cannot be reached.
     fail_from: i64
+    // From this connection on (1-based; 0: never) the tab's own close cancels the open:
+    // the person closed or disconnected it while it connected.
+    closed_from: i64
     // What rd_probe_rtt answers, and how often it was asked.
     rtt: i64
     probes: i64
 }
 
 fn new_fake_desktop(fp: str, password: str) -> FakeDesktop {
-    return FakeDesktop{ fp: fp, password: password, opens: [], closed: 0, events: [], waits: 0, keys: [], pointers: [], resizes: [], announces: [], answers: [], modes: [], fail_from: 0, rtt: 20, probes: 0 }
+    return FakeDesktop{ fp: fp, password: password, opens: [], closed: 0, events: [], waits: 0, keys: [], pointers: [], resizes: [], announces: [], answers: [], modes: [], fail_from: 0, closed_from: 0, rtt: 20, probes: 0 }
 }
 
 fn (mut self: FakeDesktop) rd_clip_announce(tab: str, has_text: bool) -> void! {
@@ -48,6 +51,9 @@ fn (mut self: FakeDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> R
     self.opens.push(t)
     if self.fail_from > 0 && i64(self.opens.len()) >= self.fail_from {
         return error(coded(ERR_NETWORK, "could not reach the server"))
+    }
+    if self.closed_from > 0 && i64(self.opens.len()) >= self.closed_from {
+        return error(coded(ERR_NETWORK, RDP_CLOSED_BY_TAB))
     }
     if t.trusted_fingerprint != self.fp {
         return error(coded(ERR_HOST_KEY, "the certificate is not the trusted one"))
@@ -365,6 +371,50 @@ test "a watched desktop reconnects at a new size without Display Control and rep
     run_remote_desktop(crypto, mut store, s, mut bad, no_prompter(), mut sink2, mut clip0, rdp_req("win")) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "auth")
     assert_eq(bad.closed, 1)
+}
+
+test "a tab closed while it connects or reconnects ends on purpose, not as a lost connection" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
+    mut clip0 := no_clipboard()
+
+    // Disconnect while the tab reconnects for a new size (found on Windows: the tab's
+    // own toolbar changes its size as Disconnect is pressed).
+    mut sized := new_fake_desktop("ab:cd", "s3cret")
+    sized.events = [RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 1025, height: 700 }]
+    sized.closed_from = 2
+    mut sink := FakeDesktopSink{ ready: [], locked: false, graphics: [] }
+    try run_remote_desktop(crypto, mut store, s, mut sized, no_prompter(), mut sink, mut clip0, rdp_req("win"))
+    assert_eq(sized.opens.len(), 2)
+    assert(sized.closed >= 1)
+
+    // Disconnect during a graphics switch: no error, and no switch reported.
+    mut moded := new_fake_desktop("ab:cd", "s3cret")
+    moded.events = [RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: "compatible", width: 1600, height: 900 }]
+    moded.closed_from = 2
+    mut sink2 := FakeDesktopSink{ ready: [], locked: false, graphics: [] }
+    try run_remote_desktop(crypto, mut store, s, mut moded, no_prompter(), mut sink2, mut clip0, rdp_req("win"))
+    assert_eq(sink2.graphics.len(), 0)
+
+    // Closed during the first connection.
+    mut first := new_fake_desktop("ab:cd", "s3cret")
+    first.closed_from = 1
+    mut sink3 := FakeDesktopSink{ ready: [], locked: false, graphics: [] }
+    try run_remote_desktop(crypto, mut store, s, mut first, no_prompter(), mut sink3, mut clip0, rdp_req("win"))
+    assert_eq(sink3.ready.len(), 0)
+    assert_eq(first.closed, 1)
+
+    // A reconnect that really fails still ends with its reason.
+    mut lost := new_fake_desktop("ab:cd", "s3cret")
+    lost.events = [RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 1025, height: 700 }]
+    lost.fail_from = 2
+    mut sink4 := FakeDesktopSink{ ready: [], locked: false, graphics: [] }
+    mut msg := ""
+    run_remote_desktop(crypto, mut store, s, mut lost, no_prompter(), mut sink4, mut clip0, rdp_req("win")) or err { msg = "{err.message()}" }
+    assert_eq(msg, "network: could not reach the server")
 }
 
 test "a reconnect for a new size is skipped when the vault cannot give the password" {

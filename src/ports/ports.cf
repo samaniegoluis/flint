@@ -399,7 +399,7 @@ type RemoteDesktop interface {
     // the server asks). Only `t.trusted_fingerprint` is accepted; any other
     // certificate fails `host_key` and is kept for `rd_presented_cert`. Bounded by
     // `timeout_ms` (Principle 8). Errors: `auth`, `network`, `refused`, `timeout`,
-    // `host_key`.
+    // `host_key`; `network` with RDP_CLOSED_BY_TAB when the tab's `rd_close` cancelled it.
     mut rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> RdpDesktop!
     // The certificate the server presented on the tab's last `rd_open`.
     rd_presented_cert(tab: str) -> RdpCert

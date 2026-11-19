@@ -287,6 +287,15 @@ RDP_EVENT_RESIZE: str = "resize"
 // machine's text, which the core answers (D-074).
 RDP_EVENT_CLIP_TEXT: str = "clip_text"
 RDP_EVENT_CLIP_REQUEST: str = "clip_request"
+// Why an `rd_open` failed when the tab's own `rd_close` cancelled it: the person closed
+// or disconnected the tab while it connected or reconnected. Not a failure: the tab
+// ends as closed on purpose, never as a lost connection.
+RDP_CLOSED_BY_TAB: str = "the tab was closed"
+
+fn rdp_closed_by_tab(msg: str) -> bool {
+    return error_code_of(msg) == ERR_NETWORK && error_text_of(msg) == RDP_CLOSED_BY_TAB
+}
+
 // Milestone 35: the tab asked for another graphics mode (RDP_GRAPHICS, in `message`),
 // which a reconnect at the desktop's current size (`width` x `height`) gives.
 RDP_EVENT_GRAPHICS: str = "graphics"

@@ -87,6 +87,10 @@ fn (self: FreeRdpDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> Rd
     cpp {
         rc = flint_rdp::open(tab, host, rport, user, dom, t.password, rw, rh, trusted, graphics, layout, timeout_ms, w, h, port, token, detail);
     }
+    // From open, "closed" only ever means the tab's own close cancelled it.
+    if rc == 7 {
+        return error(coded(ERR_NETWORK, RDP_CLOSED_BY_TAB))
+    }
     if rc != 0 {
         return error(rdp_error(i64(rc), detail))
     }
