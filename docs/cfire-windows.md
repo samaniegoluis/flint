@@ -84,7 +84,8 @@ Windows test VM (Windows 11 Pro 22H2, build 22621, WebView2 157), in MSYS2 CLANG
 | W-07 | **covered**: the `windows` job of cfire's CI passes (MSYS2 CLANG64), and green `main` CI publishes the Windows archives | [read] CI run on `f8304b1`, the parent of `v0.12.2` (`5be0987`, the version bump; its green CI made the release): `linux`, `windows`, `test`, `fuzz-smoke` success; the release carries `cfire-v0.12.2-windows-x86_64.zip` | nothing in Flint |
 | W-17 | **open, in another form**: `windows_webview2.hpp` still includes `<WebView2.h>` (when the SDK is there) and `<eventtoken.h>` inside `namespace cfire::webui::detail`; without the SDK it declares its own interfaces there, and only the ones its window uses | [compiled] the app builds with no SDK; Flint's two-monitor shim stopped at `ICoreWebView2_3` and `wv2_load_loader` (patch 0004's names) | `flint_monitors.hpp` declares `ICoreWebView2_2`/`_3` itself on cfire's `ICoreWebView2` and creates its environment with cfire's `wv2_create_environment`; the tunnels' and RDP shims' workarounds stay. A public way to open a second web view (or the declarations in a header of their own, at global scope) would remove it |
 | W-09 | **covered**: no `EventToken.h` problem: cfire includes `<eventtoken.h>` when there is one and declares the token otherwise, and a native build has no case-sensitive file system anyway | [compiled] `Flint.exe` builds in CLANG64 with no WebView2 SDK | the `EventToken.h` shim went with `sysroot.sh` (W-01) |
-| W-10 | **covered**: no SDK needed, and no `WebView2Loader.dll`: cfire uses it when it sits beside the `.exe` and otherwise loads the installed runtime's `EmbeddedBrowserWebView.dll` (`CreateWebViewEnvironmentWithOptionsInternal`, **an undocumented entry point**) | [compiled] `Flint.exe` imports no WebView2 DLL (`objdump -p`); [ran] waits for the desktop session (gui-e2e) | the SDK and the DLL copies go (`sysroot.sh`, the old `build-gui.sh`). Open for the owner: whether the installed app ships `WebView2Loader.dll` anyway rather than rely on the undocumented fallback |
+| W-06 | **covered**, with W-10's loader: a window from `ext:webui` shows its page, a bound call answers, an event arrives, `runtime.Quit()` closes it; `run_webview_test` offscreen passes | [ran] `FLINT_PROBE_WEBUI=1 windows/run-probes.sh` in the desktop session (`windows/desktop.sh`, 2026-11-19): webui offscreen 5/5, the window's page called `greet` and saw the event (Edge WebView2 157) | nothing to remove (patch 0004 only) |
+| W-10 | **open, a new report**: the fallback that should make `WebView2Loader.dll` unnecessary never finds the installed runtime: it reads a value `EBWebView` the EdgeUpdate key does not have (the key holds `location` and `pv`), so without the loader every webui window stays black with "the WebView2 Runtime is not installed" | [ran] probe `webui` in the desktop session (2026-11-19): black window and that message with WebView2 157 installed; the key read with PowerShell; the same probe green with the loader on `PATH` | the app ships `WebView2Loader.dll` beside `flint-app.exe` (Microsoft's documented loader, redistributable, from the `Microsoft.Web.WebView2` NuGet package, 1.0.4314.35, Microsoft signature checked); on the VM it is on `PATH` (`windows/bin/env.sh`). Report: [W-10 on v0.12.2](#w-10-on-v0122) |
 | W-12 | **covered**: `win32_load_icon_file` takes a `.png` (by its signature, through `CreateIconFromResourceEx`) or an `.ico`, at the system's sizes, for the window and the tray | [read] `windows_webview2.hpp` (the window's big and small icons, the tray's small one; the generic icon only when the file loads nothing); [ran] waits for the desktop session: a person looks for Flint's glyph in the tray with the GUI checks | nothing to remove (patch 0007 only); `ui/tray.png` stays as on macOS and Linux |
 | W-13 | **covered**: `cfire build` embeds the `.ico` beside `build.cf`'s `Icon` with windres | [compiled] `Flint.exe` has a 42 KB `.rsrc` (`assets/app-icon/Flint.ico` is 41 894 bytes); a person looks at Explorer and the taskbar with the GUI checks | nothing to remove: `Flint.ico` beside `Flint.icns` is what cfire looks for |
 | W-14 | **covered**: `fs.exists` asks `symlink_status` when `exists` fails, so a listening AF_UNIX socket's file (a reparse point) is seen | [ran] probe `unix_socket` (`run-probes.sh`): a socket bound and listening under `%TEMP%`, `fs.exists` true; the CLI ↔ app handoff itself waits for serve-e2e | nothing to remove (patch 0008 only) |
@@ -322,6 +323,32 @@ worked around
   for it, and `cfire build`/`cfire test` copying `WebView2Loader.dll` next to the binary
   they produce for an `ext:webui` target. Or the built-in loader from W-06, which removes
   the DLL altogether.
+
+### W-10 on v0.12.2
+
+**Without `WebView2Loader.dll`, no webui window finds the installed WebView2 runtime** ·
+[ran] · open · a new report
+
+- **Symptom:** on Windows 11 with the WebView2 Runtime installed (157.0.4341.60,
+  system-wide), any `ext:webui` app built in CLANG64 with no `WebView2Loader.dll` beside
+  it or on `PATH` opens a black window and prints `webui: CreateCoreWebView2EnvironmentWithOptions
+  failed: the WebView2 Runtime is not installed`. `run_webview_test` fails its two tests
+  that need a page.
+- **Cause:** `wv2_find_installed_client_dll()` (`runtime/core/webui/windows_webview2.hpp`)
+  opens `SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`
+  (found) and reads a value named `EBWebView`, which the key does not have. Its values are
+  `name`, `pv` (`157.0.4341.60`), `location` (`C:\Program Files (x86)\Microsoft\EdgeWebView\Application`)
+  and `SilentUninstall`; the DLL is at `<location>\<pv>\EBWebView\x64\EmbeddedBrowserWebView.dll`.
+  The empty result becomes `ERROR_FILE_NOT_FOUND`, reported as "not installed".
+- **Repro:** [`windows/probes/webui/main.cf`](../windows/probes/webui/main.cf), built with
+  `cfire build -o webui_probe.exe main.cf` and run on the desktop with no
+  `WebView2Loader.dll` on `PATH`.
+- **Suggested fix:** build the path from `location` and `pv` (both `REG_SZ`), checking
+  `HKLM` (both views) then `HKCU` (a per-user runtime install), and say "not found at
+  <path>" rather than "not installed" when the key exists. Since the fallback calls an
+  undocumented entry point (`CreateWebViewEnvironmentWithOptionsInternal`), shipping or
+  linking Microsoft's loader may be the safer default.
+- **Flint:** ships `WebView2Loader.dll` beside `flint-app.exe`, which cfire tries first.
 
 ## W-11
 
