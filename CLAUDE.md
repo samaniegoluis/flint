@@ -1,7 +1,8 @@
 # CLAUDE.md
 
 Flint is an open-source SSH client (GUI + CLI over one encrypted vault) written in
-[cfire](https://github.com/gsandoval/cfire), a Go-flavoured language that lowers to C++23.
+[cfire](https://github.com/gsandoval/cfire), a Go-flavoured language that lowers to C++23,
+pinned to its release `v0.12.2` (D-105) on macOS, Linux and Windows.
 It is the rewrite of the author's Go/Wails client Tether
 (`~/Personal/Proyectos/go/tether`), which is the reference for existing behaviour.
 
@@ -28,6 +29,7 @@ is `docs/build-log.md` plus `git log`.
 | [`docs/build-log.md`](docs/build-log.md) | One line per finished milestone. The only state |
 | [`docs/decisions.md`](docs/decisions.md) | One-line decision log |
 | [`docs/cfire-upstream.md`](docs/cfire-upstream.md) | Gaps in cfire, handed to its author |
+| [`docs/windows-port-guide.md`](docs/windows-port-guide.md) | Building, checking and packaging on Windows (stock cfire, MSYS2 CLANG64) |
 | [`docs/design-prompt.md`](docs/design-prompt.md) | Brief used to generate the UI in Claude Design |
 
 ## Rules

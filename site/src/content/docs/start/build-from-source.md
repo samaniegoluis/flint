@@ -11,39 +11,26 @@ Security.framework.
 
 ## 1. Install cfire
 
-Flint is built against cfire commit `c5b1d4b` (cfire 0.10.0). cfire's installer takes the
-commit in `CFIRE_VERSION`:
+Flint is built against cfire's release `v0.12.2`. cfire's installer downloads that
+release's archive for your system and checks it against the release's `SHA256SUMS.txt`:
 
 ```sh
-rm -rf ~/.cfire/runtime     # the installer copies over it and leaves stale headers
-curl -fsSL https://raw.githubusercontent.com/gsandoval/cfire/c5b1d4b/docs/install.sh \
-  | CFIRE_VERSION=c5b1d4b sh
-cfire --version     # cfire 0.10.0 (c5b1d4b, …)
+curl -fsSL https://raw.githubusercontent.com/gsandoval/cfire/v0.12.2/docs/install.sh \
+  | sh -s -- --version v0.12.2
+cfire --version     # cfire 0.12.2 (5be0987, …)
 ```
 
-It installs `cfire` into `~/.local/bin` and its runtime into `~/.cfire/runtime`, then runs
-`cfire doctor`.
+It installs `cfire` into `~/.local/bin` and its runtime beside it, in
+`~/.local/share/cfire/runtime`, then runs `cfire doctor`. Do not run `cfire setup`: Flint
+needs nothing it adds.
 
-**On macOS, remove the runtime's version stamp** after installing:
+**Coming from cfire 0.10 (`c5b1d4b`)?** The new `cfire` replaces the old one in
+`~/.local/bin`, and finds its runtime next to itself. The old runtime in `~/.cfire/runtime`
+is no longer read and can be deleted. A `CFIRE_RUNTIME_DIR` left in your environment still
+wins over both: unset it.
 
-```sh
-rm ~/.cfire/runtime/VERSION
-```
-
-The installer writes it into the runtime folder, which is on the compiler's include path,
-and macOS file systems ignore case: `#include <version>` in the C++ standard library then
-reads that file and every build fails (`.cfire/runtime/version:1:1: error: expected
-unqualified-id`). cfire works without it; `cfire doctor` reads the version from the
-runtime's headers instead.
-
-If an older cfire was installed from a checkout, its runtime in `~/.local/share/cfire`
-takes precedence over the new one, and the build fails in clang. `cfire doctor` names the
-runtime it uses; if it says `~/.local/share/cfire`, move that folder aside and clear the
-precompiled-header cache:
-
-```sh
-mv ~/.local/share/cfire ~/.local/share/cfire-old && rm -rf /tmp/cfire_pch_cache
-```
+On Windows, cfire comes from the same release through Flint's own setup script: see
+[Build on Windows](#build-on-windows).
 
 ## 2. Install the native libraries
 
@@ -59,28 +46,10 @@ brew install libssh libsodium sqlcipher pkg-config
 sudo apt install libssh-dev libsodium-dev libsqlcipher-dev libsecret-1-dev pkg-config openssh-server
 ```
 
-#### simdjson 4 (Debian, Ubuntu 24.04, Zorin OS 18)
-
-cfire refuses a system simdjson older than 4 when it builds with clang 19 or later
-(`system simdjson 3.12.3 is incompatible with Clang 19`), and Debian and Ubuntu ship 3.x.
-Ubuntu's 3.6 really does fail to compile; Debian's 3.12 builds, but cfire refuses it too.
-Build simdjson 4 as a static library in your home folder (no `sudo`) and point the build
-at it:
-
-```sh
-mkdir -p ~/.local/src/simdjson ~/.local/include ~/.local/lib && cd ~/.local/src/simdjson
-for f in simdjson.h simdjson.cpp; do
-  curl -fsSLO https://raw.githubusercontent.com/simdjson/simdjson/v4.6.6/singleheader/$f
-done
-clang++ -O2 -std=c++17 -DSIMDJSON_THREADS_ENABLED=1 -pthread -c simdjson.cpp
-ar rcs ~/.local/lib/libsimdjson.a simdjson.o && cp simdjson.h ~/.local/include/
-export CPLUS_INCLUDE_PATH=~/.local/include LIBRARY_PATH=~/.local/lib   # before cfire build
-```
-
 #### Ubuntu 24.04 and Zorin OS 18
 
 Flint builds there with libssh 0.10. The `clang-19` package installs `clang++-19` only,
-and cfire runs `clang++`, so link it by name before building simdjson:
+and cfire runs `clang++`, so link it by name:
 
 ```sh
 ln -sf /usr/bin/clang++-19 ~/.local/bin/clang++
@@ -280,7 +249,7 @@ scripts/linux-check.sh
 ```
 
 It builds the page on the host (the image has no Node), then builds a Debian image with
-cfire pinned to the same commit and the apt packages above. Inside, it builds `flint` and
+cfire's same release and the apt packages above. Inside, it builds `flint` and
 the desktop app, and runs the tests and the CLI end-to-end run against gnome-keyring on
 a private D-Bus session (the keychain adapter's tests use it; a screensaver signal sent
 on that bus must lock the vault). Then it runs the desktop app's end-to-end check and the
