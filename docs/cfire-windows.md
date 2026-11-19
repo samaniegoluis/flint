@@ -90,7 +90,7 @@ Windows test VM (Windows 11 Pro 22H2, build 22621, WebView2 157), in MSYS2 CLANG
 | W-13 | **covered**: `cfire build` embeds the `.ico` beside `build.cf`'s `Icon` with windres | [compiled] `Flint.exe` has a 42 KB `.rsrc`; [ran] owner, 2026-11-19: the glyph in the title bar and the taskbar | nothing to remove: `Flint.ico` beside `Flint.icns` is what cfire looks for |
 | W-14 | **covered**: `fs.exists` asks `symlink_status` when `exists` fails, so a listening AF_UNIX socket's file (a reparse point) is seen | [ran] probe `unix_socket` (`run-probes.sh`): a socket bound and listening under `%TEMP%`, `fs.exists` true; the CLI ↔ app handoff itself waits for serve-e2e | nothing to remove (patch 0008 only) |
 | W-15 | **covered** (the symptom): the open and save dialogs give `GetOpenFileNameW`/`GetSaveFileNameW` a buffer of 32 768 characters, so a long path no longer reads as "cancelled". Still the old dialogs, not `IFileOpenDialog` (no folder picker) | [ran] owner, 2026-11-19: a vault saved and opened through the dialogs under a folder whose path passes 260 characters, the whole path back in Flint. Found on the way: the path came back as `C:/flint-work\tmp\...` (Flint's `local_slashes` used 0.12's first-match `.replace`, CF-151; fixed, `6cc8178`) | nothing in Flint: it calls `open_file_dialog`/`save_file_dialog` as on the other systems (`src/drivers/gui/rpc.cf`) |
-| W-16 | **open**: the WndProc still has no `WM_SETFOCUS`, and `ICoreWebView2Controller::MoveFocus` is declared but never called, so after Alt+Tab back the page gets no keys until it is clicked | [ran] owner, 2026-11-19, probe `webui_focus` in the desktop session: after Alt+Tab back the window is active, `document.hasFocus()` false, no key arrives until a click | a shim (owner, D-104): `adapters/uievents/native/flint_focus.hpp` hands the focus to the WebView2 host child when Flint's window comes to the front; report [W-16 on v0.12.2](#w-16-on-v0122) |
+| W-16 | **open**: the WndProc still has no `WM_SETFOCUS`, and `ICoreWebView2Controller::MoveFocus` is declared but never called, so after Alt+Tab back (or any activation of a window that opened behind) the page gets no keys until it is clicked | [ran] owner, 2026-11-19, probe `webui_focus` in the desktop session: after Alt+Tab back the window is active, `document.hasFocus()` false, no key arrives until a click. A Flint-side shim was tried and dropped: `SetFocus` on WebView2's only child window (`Chrome_WidgetWin_0`, in-process) succeeds and leaves the page unfocused | Flint waits for cfire (owner, D-104); report [W-16 on v0.12.2](#w-16-on-v0122). The VM's gui-e2e clicks Flint's title bar once the window is in front (`windows/front.py`) |
 | W-18 | **open**: a cfire name that `<windows.h>` defines as a macro (`far`, `near`, `small`) still loses its name in C++ | [ran] probe `win_macros` (`run-probes.sh`): `far := 1` with `import cpp "windows.h"` fails with `expected unqualified-id`, as at `c5b1d4b` | the test variable stays `apart` (`src/domain/monitors_test.cf`); the probe says when it can go. Report: the repro and the suggested fix of the W-18 section below |
 
 ## How to read each entry
@@ -498,6 +498,12 @@ fixed · [patch 0007](https://github.com/samaniegoluis/flint/blob/windows-port-2
   built with `cfire build -o focus.exe main.cf` in CLANG64 and run on the desktop:
   type into the box ("keys: N" grows), Alt+Tab to another window and back, type
   again: N stays until the box is clicked.
+- **Not enough (tried in Flint, 2026-11-19):** a WinEvent hook that, when the window
+  comes to the front, calls `SetFocus` on WebView2's child window. On WebView2 157 the
+  window has one child, `Chrome_WidgetWin_0`, in the host's process; `SetFocus` on it
+  succeeds (`GetFocus()` is then another thread's window) and the page still reports
+  `document.hasFocus()` false. Only the controller's `MoveFocus` hands the page the
+  focus, and the controller lives in `run()`'s locals, out of an app's reach.
 - **Suggested fix:** patch 0009's: `case WM_SETFOCUS:` →
   `controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)`, which keeps the
   page's own focused element (`NEXT`/`PREVIOUS` would move it to a tab stop).
