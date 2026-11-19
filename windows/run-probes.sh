@@ -3,7 +3,7 @@
 # Natively in MSYS2 CLANG64 on the Windows test VM, with cfire's Windows release
 # (windows/bin/env.sh). Started over SSH:
 #
-#   windows/run-probes.sh            # hello, platform files, core
+#   windows/run-probes.sh            # hello, platform files, core, W-14
 #   FLINT_PROBE_WEBUI=1 windows/run-probes.sh   # also webui: needs the desktop session
 #
 # Exit status: 0 when every probe passed, 1 otherwise.
@@ -33,6 +33,11 @@ step "core (W-03 cwd, W-05 binary stdout, W-11 UTF-8 args, CF-010)"
 (cd argv_echo && cfire build -o "$out/argv_echo.exe" main.cf >/dev/null) || bad "argv_echo: build"
 (cd core && ARGV_ECHO="$(cygpath -m "$out/argv_echo.exe")" cfire test core_test.cf 2>&1 | tee "$out/core.log" | grep -E '^--- |\((.*)tests') || true
 grep -qE '^PASS \(' "$out/core.log" || bad "core: see $out/core.log"
+
+step "AF_UNIX socket file (W-14: fs.exists sees a listening socket)"
+# The test's header sits beside it; a lone test file has no build.cf for its Includes.
+(cd unix_socket && CPLUS_INCLUDE_PATH="$(cygpath -m "$PWD")" cfire test unix_socket_test.cf 2>&1 | tee "$out/w14.log" | grep -E '^--- |\((.*)tests') || true
+grep -qE '^PASS \(' "$out/w14.log" || bad "W-14: see $out/w14.log"
 
 if [[ "${FLINT_PROBE_WEBUI:-}" == 1 ]]; then
   step "webui offscreen (W-06, W-10: no SDK, no WebView2Loader.dll)"

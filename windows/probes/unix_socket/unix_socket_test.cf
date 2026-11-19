@@ -1,0 +1,35 @@
+package main
+
+// W-14: fs.exists on the file of a listening AF_UNIX socket (Windows 10 1803+), which
+// is a reparse point std::filesystem::exists cannot follow. The CLI checks the app's
+// socket this way before it dials.
+import cpp "w14.hpp"
+
+import "core:fs"
+import "core:os"
+
+test "fs.exists sees a listening AF_UNIX socket file (W-14)" {
+    path := os.getenv("TMPDIR", ".") + "\\flint-w14.sock"
+    _ = fs.remove(path)
+    mut err := ""
+    mut handle: u64 = 0
+    cpp {
+        WSADATA wsa;
+        ::WSAStartup(MAKEWORD(2, 2), &wsa);
+        SOCKET s = ::socket(AF_UNIX, SOCK_STREAM, 0);
+        sockaddr_un addr{};
+        addr.sun_family = AF_UNIX;
+        std::snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path.c_str());
+        if (s == INVALID_SOCKET) err = "socket " + std::to_string(::WSAGetLastError());
+        else if (::bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) err = "bind " + std::to_string(::WSAGetLastError());
+        else if (::listen(s, 1) != 0) err = "listen " + std::to_string(::WSAGetLastError());
+        handle = static_cast<uint64_t>(s);
+    }
+    assert_eq(err, "")
+    seen := fs.exists(path)
+    cpp {
+        ::closesocket(static_cast<SOCKET>(handle));
+    }
+    _ = fs.remove(path)
+    assert(seen, "fs.exists must see the listening socket's file")
+}
