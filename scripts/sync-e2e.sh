@@ -76,6 +76,9 @@ app_cmd() {
 # The app's config folder holds its socket, whose path must stay short (sun_path): /tmp,
 # not macOS's long TMPDIR; on Windows the run's own temp folder (never C:\tmp).
 case "$(uname -s)" in MINGW*|MSYS*) short_tmp="$TMPDIR" ;; *) short_tmp=/tmp ;; esac
+# A path as the native app reads it, for a page script: C:/... in MSYS2 (bash's /c/...
+# reaches a native program converted only as an argument, never inside a script).
+case "$(uname -s)" in MINGW*|MSYS*) npath() { cygpath -m "$1"; } ;; *) npath() { printf '%s' "$1"; } ;; esac
 # Windows has no POSIX modes (a file takes its folder's ACL; owner, 2026-11-18: skipped
 # there, as in the suites and server-e2e).
 check_0600() {
@@ -393,7 +396,7 @@ cat > "$tmp/app-c.js" <<JS
     await waitFor(() => q('[data-server-vaults="2"]'), 'the list of the two vaults');
     if (!q('[data-server-vault="$work_id"]').textContent.includes('Work')) throw new Error('Work is not shown by its label');
     if (!q('[data-server-vault="$lab_id"]').textContent.includes('No label')) throw new Error('Lab is not shown as unlabelled');
-    type('#vp', 'not-the-password-at-all-17'); type('input[aria-label="Local copy path"]', '$VC');
+    type('#vp', 'not-the-password-at-all-17'); type('input[aria-label="Local copy path"]', '$(npath "$VC")');
     await sleep(100);
     if (!q('form[aria-label="Connect to a remote vault"] button[type="submit"]').disabled) throw new Error('Download is enabled before a vault is chosen');
     q('[data-server-vault="$lab_id"] input').click();
@@ -455,6 +458,7 @@ cat > "$tmp/app-c.js" <<JS
   } catch (e) {
     const m = q('.modal');
     if (m) await log('diag: open modal: ' + m.textContent.replace(/\s+/g, ' ').slice(0, 300));
+    await log('diag: page: ' + document.body.textContent.replace(/\s+/g, ' ').slice(0, 400));
     await window.backend.e2e_report({ ok: false, detail: String(e && e.message || e) });
   }
   window.runtime.Quit();
