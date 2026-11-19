@@ -1,5 +1,6 @@
 package process
 
+import "core:os"
 import "core:fs"
 import "core:crypto/sha256"
 import "../../ports"
@@ -9,7 +10,7 @@ fn accepts_stage[D: DropStage](mut d: D) -> bool {
 }
 
 test "a drop is staged in private folders, appended in order, and discarded" {
-    dir := "/tmp/flint-drops-" + sha256.random_hex(8)
+    dir := test_tmp() + "/flint-drops-" + sha256.random_hex(8)
     mut stage := new_fs_drop_stage(dir)
     assert(accepts_stage(mut stage))
     try stage.stage_append("d1", "site/css/app.css", "body{")

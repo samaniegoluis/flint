@@ -1,5 +1,6 @@
 package config
 
+import "core:os"
 import "core:fs"
 import "core:crypto/sha256"
 import "../../ports"
@@ -11,7 +12,7 @@ fn recents_port_check[R: RecentStore](r: R) -> bool {
 
 test "recent vaults round-trip through the JSON file" {
     mut refused := 0
-    dir := "/tmp/flint-config-" + sha256.random_hex(8)
+    dir := test_tmp() + "/flint-config-" + sha256.random_hex(8)
     store := new_json_recent_store(dir)
     assert(recents_port_check(store))
     try store.recents_save([RecentVault{ path: "/a/b.flint", name: "Home", id: "0123456789abcdef0123456789abcdef" }, RecentVault{ path: "/c \"q\".flint", name: "Work", id: "" }])

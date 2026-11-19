@@ -161,6 +161,11 @@ export USER="${USER:-$(id -un)}"
 
 cd "$root"
 . "$root/scripts/env.sh"
+# Windows (MSYS2): the tests' fixed /tmp would be C:\tmp for a native test binary, a
+# folder of the system's; they write under this run's temp folder instead.
+case "$(uname -s)" in
+  MINGW*|MSYS*) export FLINT_TEST_TMP="$(cygpath -m "${TMPDIR:-/tmp}")" ;;
+esac
 # FLINT_TEST_CMD runs one command against the sshd instead of the cfire suites.
 if [[ -n "${FLINT_TEST_CMD:-}" ]]; then
   bash -c "$FLINT_TEST_CMD"

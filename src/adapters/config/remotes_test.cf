@@ -1,11 +1,12 @@
 package config
 
+import "core:os"
 import "core:fs"
 import "core:crypto/sha256"
 import "../../domain"
 
 test "remotes.json keeps each connected vault's link, and nothing else" {
-    dir := "/tmp/flint-remotes-" + sha256.random_hex(8)
+    dir := test_tmp() + "/flint-remotes-" + sha256.random_hex(8)
     defer { _ = fs.remove(dir) }
     s := new_json_remote_link_store(dir)
     assert_eq((try s.links_load()).len(), usize(0))

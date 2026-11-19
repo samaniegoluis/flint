@@ -1,5 +1,6 @@
 package config
 
+import "core:os"
 import "core:fs"
 import "core:crypto/sha256"
 import "../../ports"
@@ -10,7 +11,7 @@ fn ui_state_port_check[U: UiStateStore](u: U) -> bool {
 }
 
 test "ui state round-trips through an atomic JSON file and survives damage" {
-    dir := "/tmp/flint-config-" + sha256.random_hex(8)
+    dir := test_tmp() + "/flint-config-" + sha256.random_hex(8)
     store := new_json_ui_state_store(dir)
     assert(ui_state_port_check(store))
     a := "0123456789abcdef0123456789abcdef"

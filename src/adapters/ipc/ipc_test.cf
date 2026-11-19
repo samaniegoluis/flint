@@ -1,13 +1,20 @@
 package ipc
 
+import "core:os"
 import "core:fs"
 import "core:encoding/hex"
 import "core:crypto/sha256"
 import "../../domain"
 
+// Where the tests write real files: FLINT_TEST_TMP, which scripts/test.sh sets on
+// Windows to the run's temp folder (a fixed /tmp there is C:\tmp, outside it), or /tmp.
+fn test_tmp() -> str {
+    return os.getenv("FLINT_TEST_TMP", "/tmp")
+}
+
 // A short folder: a socket path must fit in sun_path (104 bytes on macOS).
 fn temp_socket_dir() -> str {
-    dir := "/tmp/fl-ipc-" + hex.encode(sha256.random_bytes(4))
+    dir := test_tmp() + "/fl-ipc-" + hex.encode(sha256.random_bytes(4))
     _ = fs.mkdir_all(dir)
     return dir
 }

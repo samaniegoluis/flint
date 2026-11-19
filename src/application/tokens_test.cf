@@ -1,5 +1,6 @@
 package application
 
+import "core:os"
 import "../domain"
 
 // ---- Token store ---------------------------------------------------------------
@@ -244,7 +245,7 @@ test "retention is set per vault, counted before and pruned at once" {
 
 test "an activity backup goes to an absolute path, and its failure is reported" {
     t := new_fake_token_store()
-    try backup_activity(t, "/tmp/flint-activity-backup.db")
+    try backup_activity(t, test_tmp() + "/flint-activity-backup.db")
     mut code := ""
     backup_activity(t, "relative.db") or err { code = error_code_of("{err.message()}") }
     assert_eq(code, ERR_INVALID)

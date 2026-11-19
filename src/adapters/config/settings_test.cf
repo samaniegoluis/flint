@@ -1,9 +1,16 @@
 package config
 
+import "core:os"
 import "core:fs"
 import "core:crypto/sha256"
 import "../../ports"
 import "../../domain"
+
+// Where the tests write real files: FLINT_TEST_TMP, which scripts/test.sh sets on
+// Windows to the run's temp folder (a fixed /tmp there is C:\tmp, outside it), or /tmp.
+fn test_tmp() -> str {
+    return os.getenv("FLINT_TEST_TMP", "/tmp")
+}
 
 fn settings_port_check[T: SettingsStore](mut t: T) -> bool {
     s := t.settings_load() or err { return false }
@@ -11,7 +18,7 @@ fn settings_port_check[T: SettingsStore](mut t: T) -> bool {
 }
 
 test "settings round-trip through settings.json and default when missing or damaged" {
-    dir := "/tmp/flint-config-" + sha256.random_hex(8)
+    dir := test_tmp() + "/flint-config-" + sha256.random_hex(8)
     mut store := new_json_settings_store(dir)
     assert(settings_port_check(mut store))
     mut s := default_settings()

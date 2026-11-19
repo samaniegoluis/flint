@@ -1,10 +1,17 @@
 package vault
 
+import "core:os"
 import "core:fs"
 import "core:encoding/hex"
 import "core:crypto/sha256"
 import "../../ports"
 import "../../domain"
+
+// Where the tests write real files: FLINT_TEST_TMP, which scripts/test.sh sets on
+// Windows to the run's temp folder (a fixed /tmp there is C:\tmp, outside it), or /tmp.
+fn test_tmp() -> str {
+    return os.getenv("FLINT_TEST_TMP", "/tmp")
+}
 
 // Migration 001 as shipped. An applied migration must never change (Principle 10);
 // if this test fails, revert the edit and append a new migration instead.
@@ -20,7 +27,7 @@ MIGRATION_009_SHA256: str = "e91dbaa118d11d978767535da9951c247398934df22b6bd145d
 MIGRATION_010_SHA256: str = "d1a8646c794f875081914aa4aec21ad6bed5c674b44083e603525df364ace1c6"
 
 fn temp_vault_path(name: str) -> str {
-    dir := "/tmp/flint-test-" + hex.encode(sha256.random_bytes(8))
+    dir := test_tmp() + "/flint-test-" + hex.encode(sha256.random_bytes(8))
     _ = fs.mkdir_all(dir)
     return dir + "/" + name
 }
