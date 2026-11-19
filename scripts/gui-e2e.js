@@ -818,8 +818,13 @@
         // On the Windows VM the test sshd is MSYS2's, whose pty dropped a ^D that came in
         // the same burst (a second ^D ended cat; owner, 2026-11-19): there it goes
         // apart. The burst's order is what this checks, on every system.
-        if ((await window.backend.app_info({})).os === 'windows') await sleep(300);
-        t.input('\x04', true);
+        if ((await window.backend.app_info({})).os === 'windows') {
+          // The first ^D is lost there even 300 ms apart; a second ended cat. Up to three,
+          // each only while cat still runs (a ^D at the shell's prompt would end it).
+          for (let i = 0; i < 3 && !termText().includes('cat-done-42'); i++) { await sleep(i ? 1000 : 300); if (!termText().includes('cat-done-42')) t.input('\x04', true); }
+        } else {
+          t.input('\x04', true);
+        }
       }
       try {
         await waitFor(() => termText().includes('cat-done-42'), 'cat to finish');
