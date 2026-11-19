@@ -406,7 +406,26 @@ there is new.
 
 ### Zorin
 
-Before step 4 (see step 0).
+No old-cfire baseline: the box was off through steps 1 to 6, and the move closed without
+it (owner). Its first battery ran on `v0.13.0` (`cf537dc`) with `v0.12.2` on 2026-11-19,
+and is Zorin's reference from here on. Zorin OS 18.1, 4 cores, 5 GB, clang 19.1.1, libssh
+0.10.6; run over `flint exec ZorinOS`, the steps of `scripts/linux/inside.sh` on the box
+itself (a private D-Bus session with gnome-keyring for the keychain, the app under
+`xvfb-run`), no Docker.
+
+| Check | Result | Time |
+|---|---|---|
+| Build: `flint`, `flint-vault-server`, `build-gui.sh` (cold, empty cfire caches) | ok, after `libcurl4-openssl-dev` was installed (missing since milestone 43; *Build from source* listed no libcurl) and `~/.cache/cfire/probes.json` deleted (CF-169: cfire kept the failed probe) | 10 min 37 s |
+| `scripts/test.sh` | **17/17**: 16 in the full run; keychain failed there (`the OS keychain refused to store the vault key`) because the private gnome-keyring opened the box's real `login.keyring`, which `flint-test` does not unlock, and asked for a prompt with no display. The harness's fault, not Flint's: with the keyring daemon on a throwaway `XDG_DATA_HOME`, keychain 35/35 | 18 min 28 s |
+| cli-e2e | 483/483 (the 11 `exec --sudo` checks skipped: no test sudoer, as on the Mac) | 3 min 16 s |
+| server-e2e | 70/70 | 12 s |
+| sync-e2e | 110/110 | 3 min 26 s |
+| gui-e2e | terminal 95, vault 125, tunnels 33, paste 24, webgl 20, fullscreen 49; vim skipped (Xvfb), **rdp skipped**: Ubuntu ships no `sfreerdp-server` (the Docker image builds it from FreeRDP's source), so the RDP adapter's sample-server tests skip too | 1 min 52 s |
+| serve-e2e | **214/214** (the 10 `exec --sudo` checks skipped); the Linux first-launch failure of the old baseline (47/224) did not appear | 2 min 36 s |
+
+Not run here: multimon (needs a two-monitor X display), vim (Xvfb), rdp (no sample
+server). The X11 desktop session was not needed: every GUI suite starts the app under
+`xvfb-run`.
 
 ### Windows
 
