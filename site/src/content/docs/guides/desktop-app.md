@@ -46,6 +46,22 @@ Below about 1040 px of window width the sidebar starts hidden and opens over the
 Flint remembers the layout on this machine: whether the sidebar is open, its width, and
 which groups are collapsed in each vault. See [Layout on this machine](#layout-on-this-machine).
 
+### Notifications
+
+Flint tells you what happened in a toast, in the bottom right corner by default (move it in
+**Settings → Appearance → Notifications**). Up to three show at once, the newest closest to
+the corner.
+
+- A toast leaves after about 6 seconds. Pointing at the stack, or moving the focus into it,
+  pauses that while you read.
+- **Errors stay** until you close them, and so does a toast that shows progress.
+- Every toast has a **✕**. With the focus on a toast, <kbd>Esc</kbd> closes it.
+- A long message is cut at two lines; **More** shows the rest.
+- A toast may carry a button or two (*Stop them*, *Details*). Clicking one does what it says
+  and closes the toast.
+- Screen readers announce each toast, errors at once. With reduce motion on, toasts appear
+  and leave without the slide.
+
 ### The host tree
 
 - Double-click a host, or select it and press <kbd>↵</kbd>, to connect. If the host
@@ -349,7 +365,9 @@ host**. See [sudo](/guides/ai-agents/#sudo).
 Settings belong to this machine, not to the vault, and save as you change them.
 
 - **Appearance**: dark, light or matching the system; the accent colour; row density;
-  whether to follow the system's reduce-motion setting; reopening the last vault.
+  the corner [notifications](#notifications) appear in (any of the four; bottom corners sit
+  above the status bar, top corners under the tab bar); whether to follow the system's
+  reduce-motion setting; reopening the last vault.
 - **Terminal**: the colours (Default, Catppuccin, Tokyo Night, Aura, Dracula or Nord, each
   in a dark and a light variant that follows the app's theme), the font (any monospaced
   font installed on this machine, or the bundled JetBrains Mono), size, line height,

@@ -1,28 +1,14 @@
 import { useEffect, useRef } from 'react';
-import { AppProvider, useApp } from './state/app';
+import { AppProvider, toasts, useApp } from './state/app';
 import { Welcome } from './screens/Welcome';
 import { CreateVault } from './screens/CreateVault';
 import { ConnectRemote } from './screens/ConnectRemote';
 import { Unlock } from './screens/Unlock';
 import { WindowLock } from './screens/WindowLock';
 import { Shell } from './shell/Shell';
-import { Icon, Logo } from './ui/Icon';
+import { Logo } from './ui/Icon';
+import { Toasts } from './ui/Toasts';
 import { sessions } from './sessions/store';
-
-function Toast() {
-  const { toast, notify } = useApp();
-  if (!toast || !toast.text) return null;
-  // An empty info toast replaces this one and is gone at once.
-  const dismiss = () => notify('', 'info');
-  const icon = toast.kind === 'error' ? 'alert' : toast.kind === 'info' ? 'info' : 'check';
-  const cls = toast.kind === 'error' ? 'danger-t' : toast.kind === 'info' ? 'accent-t' : 'ok-t';
-  return (
-    <div className="toast" role={toast.kind === 'error' ? 'alert' : 'status'} style={{ left: 'calc(var(--rail-w) + 16px)', bottom: 'calc(var(--statusbar-h) + 16px)', maxWidth: 560 }}>
-      <Icon name={icon} size="sm" className={cls} /><span>{toast.text}</span>
-      {toast.action && <button className="btn btn-secondary btn-sm" data-toast-action onClick={() => { toast.action?.run(); dismiss(); }}>{toast.action.label}</button>}
-    </div>
-  );
-}
 
 // The main window, and the lock screens over it (the vault's, or the window's own
 // when it was closed to the tray): the same element in every phase, so a lock never
@@ -66,11 +52,11 @@ function Phase() {
 }
 
 function Root() {
-  const { os } = useApp();
+  const { os, settings } = useApp();
   return (
     <div className="app" data-os={os}>
       <Phase />
-      <Toast />
+      <Toasts store={toasts} corner={settings.toast_corner} />
     </div>
   );
 }

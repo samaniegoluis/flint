@@ -41,10 +41,14 @@ type Settings struct {
     // changes to a connected vault (SYNC_INTERVALS); 0 checks only at unlock, after a
     // change, when the window comes back and on demand. Older files read the default.
     sync_interval:      i64  `json:"sync_interval" default:"60"`
+    // Milestone 46 (D-106 (3)): the window corner toasts appear in (TOAST_CORNERS).
+    // Older files read the default.
+    toast_corner:       str  `json:"toast_corner" default:"bottom-right"`
 }
 
 RDP_MAC_KEYS: []str = ["mac", "windows", "custom"]
 RDP_GRAPHICS: []str = ["auto", "pipeline", "compatible"]
+TOAST_CORNERS: []str = ["bottom-right", "bottom-left", "top-right", "top-left"]
 // The six modifier keys of a Mac keyboard, by their W3C `code`.
 RDP_MAC_KEY_CODES: []str = ["ControlLeft", "ControlRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight"]
 // What each can send: a PC keyboard's Ctrl, Alt, AltGr (right Alt), Windows key, or nothing.
@@ -65,7 +69,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right" }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {
@@ -123,6 +127,9 @@ fn check_settings(s: Settings) -> void! {
     }
     if !one_of(s.rdp_graphics, RDP_GRAPHICS) {
         return error(coded(ERR_INVALID, "remote desktop graphics must be auto, pipeline or compatible"))
+    }
+    if !one_of(s.toast_corner, TOAST_CORNERS) {
+        return error(coded(ERR_INVALID, "notifications corner must be bottom-right, bottom-left, top-right or top-left"))
     }
     try check_text("terminal font", s.term_font, 128, false)
     // The name ends up in a CSS font-family list, quoted.

@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../api/backend';
-import { PASTE_LIMITS, type LockAfter, type Settings, type VaultStatus } from '../api/types';
+import { PASTE_LIMITS, TOAST_CORNERS, type LockAfter, type Settings, type ToastCorner, type VaultStatus } from '../api/types';
 import { shortPath, useApp, vaultInitial, vaultMarkClass } from '../state/app';
 import { ACTION_TITLES, chordLabel, SHORTCUT_GROUPS } from '../lib/keymap';
 import { Icon, type IconName } from '../ui/Icon';
@@ -112,6 +112,11 @@ function ThemeCard({ value, label, current, onPick }: { value: Settings['theme']
   );
 }
 
+const CORNER_LABEL: Record<ToastCorner, string> = {
+  'bottom-right': 'Bottom right', 'bottom-left': 'Bottom left', 'top-right': 'Top right', 'top-left': 'Top left',
+};
+const CORNER_CLASS: Record<ToastCorner, string> = { 'bottom-right': 'br', 'bottom-left': 'bl', 'top-right': 'tr', 'top-left': 'tl' };
+
 function Appearance() {
   const [s, set] = useSetting();
   return (
@@ -139,6 +144,21 @@ function Appearance() {
             ))}
           </div>
           <span className="hint">22 · 26 · 30 px rows</span>
+        </div>
+      </Row>
+      <Row title="Notifications" desc="Where toasts appear.">
+        <div className="row" style={{ gap: 'var(--sp-4)' }}>
+          <div className="cpick" role="radiogroup" aria-label="Notification corner">
+            <span className="cp-bar" /><span className="cp-rail" /><span className="cp-sb" />
+            {TOAST_CORNERS.map((c) => (
+              <button key={c} type="button" className={'cp-c ' + CORNER_CLASS[c] + (s.toast_corner === c ? ' on' : '')} role="radio"
+                aria-checked={s.toast_corner === c} aria-label={CORNER_LABEL[c]} data-corner={c} onClick={() => set({ toast_corner: c })} />
+            ))}
+          </div>
+          <div className="col" style={{ gap: 2, fontSize: 'var(--fs-sm)' }}>
+            <span data-corner-label>{CORNER_LABEL[s.toast_corner]}{s.toast_corner === 'bottom-right' && <span className="faint"> · default</span>}</span>
+            <span className="hint" style={{ maxWidth: 260, lineHeight: 1.45 }}>Bottom corners sit above the status bar; top corners under the tab bar. Never over the rail.</span>
+          </div>
         </div>
       </Row>
       <Row title="Motion" desc="Popovers, drawers, sidebar collapse.">

@@ -76,3 +76,18 @@ test "remote desktop graphics are auto or compatible" {
     }
     assert_eq(refused, 3)
 }
+
+test "toasts appear in one of four corners, bottom right by default" {
+    mut s := default_settings()
+    assert_eq(s.toast_corner, "bottom-right")
+    for c in ["bottom-right", "bottom-left", "top-right", "top-left"] {
+        s.toast_corner = c
+        try check_settings(s)
+    }
+    mut refused := 0
+    for bad in ["", "center", "Bottom-Right", "bottom"] {
+        s.toast_corner = bad
+        check_settings(s) or { refused += 1 }
+    }
+    assert_eq(refused, 4)
+}

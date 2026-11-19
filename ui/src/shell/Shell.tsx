@@ -5,7 +5,7 @@
 import { keyTab, pairs } from '../files/pair';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, on } from '../api/backend';
-import { useApp } from '../state/app';
+import { toasts, useApp } from '../state/app';
 import { actionFor, chordLabel, type Action } from '../lib/keymap';
 import { Icon, Logo } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
@@ -177,9 +177,9 @@ export function Shell() {
   useEffect(() => on('monitors:changed', () => { void monitors.screensChanged(); }), []);
   useEffect(() => {
     void monitors.refresh();
-    // gui-e2e's multimon run reads the store.
+    // gui-e2e's multimon run reads the monitors' store; its vault run drives the toasts'.
     const e2e = (window as unknown as { __flintE2E?: Record<string, unknown> }).__flintE2E;
-    if (e2e) e2e.monitors = monitors;
+    if (e2e) { e2e.monitors = monitors; e2e.toasts = toasts; }
   }, []);
 
   useEffect(() => {

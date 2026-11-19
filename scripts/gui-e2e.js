@@ -2354,6 +2354,95 @@
       await check(true, 'Default goes back to the design tokens');
       await check(q('[data-sb-version]')?.textContent.trim() === `v${VERSION}`, `the status bar shows the version (${q('[data-sb-version]')?.textContent.trim()})`);
       await click('.nav-i', 'Appearance');
+
+      // Milestone 46: the toast component (24a, 24b) and its corner (24h), driven
+      // through the page's store (window.__flintE2E.toasts).
+      await setStep('toasts');
+      const T = window.__flintE2E.toasts;
+      T.clear();
+      const shown = () => qa('[data-toast]').filter((el) => !el.classList.contains('leaving'));
+      const shownText = () => shown().map((el) => el.querySelector('.t-text').textContent);
+      await waitFor(() => !q('[data-toasts]'), 'the stack to empty');
+      await check(!!q('[data-toast-live="polite"]') && !!q('[data-toast-live="assertive"]'), 'both aria-live regions stay mounted with no toast on screen');
+      await check((await window.backend.settings_get({})).toast_corner === 'bottom-right', 'toasts start in the bottom right corner');
+      for (const t of ['one', 'two', 'three', 'four']) T.show({ text: 'toast ' + t });
+      await waitFor(() => shown().length === 3, 'three toasts');
+      await check(shownText().join(',') === 'toast two,toast three,toast four', `a stack of three, the oldest pushed out, the newest closest to the corner (${shownText()})`);
+      const stack = q('[data-toasts]').getBoundingClientRect();
+      const sb = q('.statusbar')?.getBoundingClientRect();
+      await check(window.innerWidth - stack.right < 40 && (!sb || stack.bottom <= sb.top), `the stack sits bottom right, above the status bar (${Math.round(stack.right)}/${window.innerWidth}, ${Math.round(stack.bottom)}/${Math.round(sb?.top ?? -1)})`);
+      await check(shown().every((el) => el.querySelector('[data-toast-close]')), 'every toast has a ✕');
+      T.clear();
+
+      T.show({ text: 'an error that stays', kind: 'error' });
+      await waitFor(() => q('[data-toast-live="assertive"]').textContent === 'an error that stays', 'the error in the assertive region');
+      await check(true, 'an error is announced in the assertive region');
+      T.show({ text: 'a quick one', duration: 300 });
+      await waitFor(() => q('[data-toast-live="polite"]').textContent === 'a quick one', 'the toast in the polite region');
+      await waitFor(() => shownText().join() === 'an error that stays', 'the quick toast to leave', 15000);
+      await check(true, 'a toast leaves after its own duration and an error stays');
+      shown()[0].querySelector('[data-toast-close]').click();
+      await waitFor(() => shown().length === 0, 'the ✕ to close the error');
+      await check(true, '✕ closes a toast');
+
+      T.show({ text: 'paused while hovered', duration: 400 });
+      const hovered = await waitFor(() => shown()[0], 'the hover toast');
+      hovered.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }));
+      await sleep(1500);
+      await check(shownText().join() === 'paused while hovered', 'a hovered stack keeps its toasts');
+      hovered.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
+      await waitFor(() => shown().length === 0, 'the toast to leave once the pointer goes', 15000);
+      await check(true, 'the timer resumes when the pointer leaves');
+
+      T.show({ text: 'closed by Escape', kind: 'error' });
+      const esc = await waitFor(() => shown()[0]?.querySelector('[data-toast-close]'), 'the Escape toast');
+      esc.focus();
+      esc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+      await waitFor(() => shown().length === 0, 'Escape to close the focused toast');
+      await check(true, 'Escape closes the toast holding the focus');
+
+      T.show({ text: 'Flint 9.9.9 is available', kind: 'info', duration: 'sticky', key: 'e2e' });
+      T.show({ text: 'Downloading Flint 9.9.9', kind: 'info', progress: 42, key: 'e2e' });
+      await waitFor(() => shownText().join() === 'Downloading Flint 9.9.9', 'the keyed toast to change in place');
+      await check(shown().length === 1 && shown()[0].querySelector('.t-prog')?.textContent === '42%', 'a key replaces the toast in place, with its progress');
+      T.clear();
+
+      let ran = '';
+      T.show({ text: 'two buttons', duration: 'sticky', actions: [
+        { label: 'Keep', run: () => { ran += 'k'; }, keepOpen: true },
+        { label: 'Go', run: () => { ran += 'g'; } },
+        { label: 'Third', run: () => {} }] });
+      await waitFor(() => shown().length === 1, 'the toast with buttons');
+      await check(qa('[data-toast-action]', shown()[0]).length === 2, 'a toast keeps two buttons at most');
+      q('[data-toast-action="0"]', shown()[0]).click();
+      await sleep(400);
+      await check(ran === 'k' && shown().length === 1, 'an action that keeps the toast open leaves it up');
+      q('[data-toast-action="1"]', shown()[0]).click();
+      await waitFor(() => shown().length === 0, 'the second action to close the toast');
+      await check(ran === 'kg', 'an action runs and closes the toast');
+
+      T.show({ text: 'A long error that runs well past two lines of the toast so that More appears beside it: '.repeat(4), kind: 'error' });
+      const more = await waitFor(() => shown()[0]?.querySelector('[data-toast-more]'), 'More on a long toast');
+      await check(more.textContent === 'More', 'a text clamped at two lines gets More');
+      more.click();
+      await waitFor(() => shown()[0]?.classList.contains('expanded') && shown()[0].querySelector('[data-toast-more]').textContent === 'Less', 'the expanded toast');
+      await check(true, 'More expands the toast, Less folds it');
+      T.clear();
+
+      await setStep('toast corner');
+      await click('.cpick [data-corner="top-left"]');
+      await waitForAsync(async () => (await window.backend.settings_get({})).toast_corner === 'top-left', 'the corner to be saved');
+      await check(q('[data-corner-label]')?.textContent.startsWith('Top left'), 'the picker names the chosen corner');
+      T.show({ text: 'top left', kind: 'error' });
+      const tl = await waitFor(() => q('[data-toasts][data-corner="tl"]'), 'the stack in the top left');
+      const r = tl.getBoundingClientRect();
+      const rail = q('.rail')?.getBoundingClientRect();
+      await check(r.top < window.innerHeight / 2 && (!rail || r.left >= rail.right), `the stack moves to the top left, never over the rail (${Math.round(r.left)},${Math.round(r.top)})`);
+      T.clear();
+      await click('.cpick [data-corner="bottom-right"]');
+      await waitForAsync(async () => (await window.backend.settings_get({})).toast_corner === 'bottom-right', 'the default corner again');
+      await check(true, 'the corner goes back to bottom right');
+
       q('[data-sb-version]').click();
       await waitFor(() => q('[data-about-version]'), 'the About section from the status bar');
       await check(q('.nav-i.on')?.textContent.includes('About'), 'the status bar version opens Settings → About');

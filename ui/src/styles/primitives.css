@@ -293,7 +293,47 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .modal-b { padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); }
 .modal-f { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-5); border-top: 1px solid var(--border-subtle); background: var(--surface-raised); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
 .drawer { position: absolute; top: 0; right: 0; bottom: 0; width: 400px; display: flex; flex-direction: column; background: var(--surface-overlay); border-left: 1px solid var(--border-strong); box-shadow: var(--shadow-modal); z-index: var(--z-modal); }
-.toast { position: absolute; z-index: var(--z-toast); display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); background: var(--surface-overlay); border: 1px solid var(--border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-popover); font-size: var(--fs-sm); }
+/* ---------- Toasts (milestone 46, designs 24a, 24b, 24j1; from the design's flint.css) ---------- */
+.toasts { position: absolute; z-index: var(--z-toast); display: flex; flex-direction: column; gap: var(--sp-2); max-width: min(440px, calc(100vw - var(--rail-w) - 2 * var(--sp-4))); }
+.toasts[data-corner="br"] { right: var(--sp-4); bottom: calc(var(--statusbar-h) + var(--sp-3)); align-items: flex-end; }
+.toasts[data-corner="bl"] { left: calc(var(--rail-w) + var(--sp-4)); bottom: calc(var(--statusbar-h) + var(--sp-3)); align-items: flex-start; }
+.toasts[data-corner="tr"] { right: var(--sp-4); top: calc(var(--titlebar-h) + var(--tabbar-h) + var(--toolbar-h) + var(--sp-3)); align-items: flex-end; }
+.toasts[data-corner="tl"] { left: calc(var(--rail-w) + var(--sp-4)); top: calc(var(--titlebar-h) + var(--tabbar-h) + var(--toolbar-h) + var(--sp-3)); align-items: flex-start; }
+/* Pages without tabs or a session toolbar (Settings, Keys, Credentials, and the screens before a vault opens): just under the title bar. */
+.app[data-view="settings"] .toasts[data-corner^="t"], .app[data-view="keys"] .toasts[data-corner^="t"], .app[data-view="credentials"] .toasts[data-corner^="t"], .app:not([data-view]) .toasts[data-corner^="t"] { top: calc(var(--titlebar-h) + var(--sp-3)); }
+/* Before a vault opens there is no rail. */
+.app:not([data-view]) .toasts[data-corner$="l"] { left: var(--sp-4); }
+.toast { position: relative; display: flex; align-items: center; gap: var(--sp-2); min-height: 40px; max-width: 100%; padding: 5px 5px 5px var(--sp-4); background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: 12px; box-shadow: var(--shadow-popover); font-size: var(--fs-sm); color: var(--text-primary); animation: toast-in var(--dur-base) var(--ease-out, ease-out); transition: opacity var(--dur-fast) ease-in, transform var(--dur-fast) ease-in; }
+.toasts[data-corner^="t"] .toast { animation-name: toast-in-top; }
+.toast.leaving { opacity: 0; transform: scale(0.97); pointer-events: none; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes toast-in-top { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { :root:not([data-motion="full"]) .toast { animation: none; transition: none; } }
+.t-mark { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-tertiary); }
+.toast[data-kind="ok"] .t-mark { background: var(--success); }
+.toast[data-kind="info"] .t-mark { background: var(--info); }
+svg.t-mark { width: 14px; height: 14px; border-radius: 0; background: none; color: var(--danger); margin-left: -3px; }
+.t-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 4px 0; }
+.t-text { line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.t-more { border: 0; background: none; padding: 0; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--accent-text); cursor: pointer; }
+.toast.expanded { align-items: flex-start; }
+.toast.expanded .t-text { display: block; -webkit-line-clamp: unset; max-height: calc(1.4em * 8); overflow-y: auto; }
+.toast.expanded > .btn, .toast.expanded > .t-x, .toast.expanded > .t-mark { margin-top: 4px; }
+.t-prog { width: 36px; flex: none; text-align: right; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.toast .btn { flex: none; }
+.t-x { width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: none; color: var(--text-tertiary); cursor: pointer; }
+.t-x:hover { background: var(--surface-hover); color: var(--text-primary); }
+.t-x:focus-visible, .t-more:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+/* Settings → Appearance → Notifications: the corner picker (24h, 12a). */
+.cpick { position: relative; width: 132px; height: 84px; flex: none; border: 1.5px solid var(--border-strong); border-radius: 8px; background: var(--surface-base); overflow: hidden; }
+.cp-bar { position: absolute; left: 0; right: 0; top: 0; height: 12px; background: var(--surface-chrome); border-bottom: 1px solid var(--border-subtle); }
+.cp-rail { position: absolute; left: 0; top: 12px; bottom: 8px; width: 12px; background: var(--surface-chrome); border-right: 1px solid var(--border-subtle); }
+.cp-sb { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; background: var(--surface-chrome); border-top: 1px solid var(--border-subtle); }
+.cp-c { position: absolute; width: 38px; height: 12px; border-radius: 4px; border: 1.5px dashed var(--border-strong); background: transparent; cursor: pointer; padding: 0; }
+.cp-c.tl { left: 18px; top: 18px; } .cp-c.tr { right: 6px; top: 18px; } .cp-c.bl { left: 18px; bottom: 14px; } .cp-c.br { right: 6px; bottom: 14px; }
+.cp-c:hover { border-color: var(--text-tertiary); }
+.cp-c:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.cp-c.on { border: 0; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-subtle); }
 .tooltip { display: inline-flex; align-items: center; gap: var(--sp-2); padding: 4px var(--sp-2); background: var(--text-primary); color: var(--surface-base); border-radius: var(--radius-sm); font-size: var(--fs-xs); font-weight: var(--fw-medium); white-space: nowrap; box-shadow: var(--shadow-popover); z-index: var(--z-tooltip); }
 .tooltip .kbd { background: transparent; color: inherit; border-color: currentColor; opacity: 0.7; }
 .tooltip.abs { position: absolute; }

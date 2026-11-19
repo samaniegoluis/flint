@@ -62,6 +62,19 @@ test "settings are validated on save and repaired field by field on load" {
     odd.paste_limit_mb = 100
     store.saved = odd
     assert_eq((try load_settings(store)).paste_limit_mb, 100)
+
+    // A toast corner from a hand edit falls back to bottom right and keeps the rest;
+    // a valid one is kept.
+    mut cornered := default_settings()
+    cornered.toast_corner = "middle"
+    cornered.term_theme = "nord"
+    store.saved = cornered
+    recornered := try load_settings(store)
+    assert_eq(recornered.toast_corner, "bottom-right")
+    assert_eq(recornered.term_theme, "nord")
+    cornered.toast_corner = "top-left"
+    store.saved = cornered
+    assert_eq((try load_settings(store)).toast_corner, "top-left")
 }
 
 test "installed mono fonts are deduplicated and sorted" {

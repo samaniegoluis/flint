@@ -15,22 +15,30 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { api, FlintError, on, toFlintError } from '../api/backend';
 import type { AppInfo, Catalog, LockReason, RecentView, Settings, UnlockRequest, VaultInfo, WindowState } from '../api/types';
 import type { Os } from '../lib/keymap';
+import { ToastStore, type ToastKind, type ToastOptions } from '../lib/toasts';
 
 export type Phase = 'boot' | 'welcome' | 'create' | 'connect' | 'unlock' | 'main' | 'locked';
 
-export interface Toast {
-  id: number;
-  text: string;
-  kind: 'ok' | 'error' | 'info';
-  /** One button on the toast (design 20d2's "Stop them"). */
-  action?: { label: string; run: () => void };
+/** The single button today's `notify(text, kind, action)` takes (design 20d2's "Stop them"). */
+export interface ToastActionArg { label: string; run: () => void }
+
+/**
+ * Shows a toast (milestone 46): `notify(text, kind?, action?)` as before, or
+ * `notify({ text, kind, duration, actions, key, progress })`. Returns its id.
+ */
+export interface Notify {
+  (text: string, kind?: ToastKind, action?: ToastActionArg): number;
+  (opts: ToastOptions): number;
 }
+
+/** The app's one toast stack; the view in App.tsx renders it. */
+export const toasts = new ToastStore();
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system', accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
   term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: true, term_theme: 'default',
   lock_after: '1h', paste_limit_mb: 20, rdp_mac_keys: 'mac', rdp_mac_custom: '', rdp_graphics: 'auto',
-  sync_interval: 60,
+  sync_interval: 60, toast_corner: 'bottom-right',
 };
 
 // How often the page tells the core someone is using the window.
@@ -48,7 +56,6 @@ interface AppApi {
   target: RecentView | null;
   vault: VaultInfo | null;
   catalog: Catalog;
-  toast: Toast | null;
   bootError: string;
   /** Why the vault locked, while the lock screen shows. */
   lockReason: LockReason | null;
@@ -73,7 +80,9 @@ interface AppApi {
   renameVault: (name: string) => Promise<VaultInfo>;
   refreshCatalog: () => Promise<Catalog>;
   saveSettings: (s: Settings) => Promise<void>;
-  notify: (text: string, kind?: Toast['kind'], action?: Toast['action']) => void;
+  notify: Notify;
+  /** Closes a toast by the id `notify` returned. */
+  dismissToast: (id: number) => void;
   fail: (err: unknown) => FlintError;
 }
 
@@ -98,7 +107,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [target, setTarget] = useState<RecentView | null>(null);
   const [vault, setVault] = useState<VaultInfo | null>(null);
   const [catalog, setCatalog] = useState<Catalog>(EMPTY_CATALOG);
-  const [toast, setToast] = useState<Toast | null>(null);
   const [bootError, setBootError] = useState('');
   const [lockReason, setLockReason] = useState<LockReason | null>(null);
   const [unlockRequest, setUnlockRequest] = useState<UnlockRequest | null>(null);
@@ -107,12 +115,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const os: Os = info?.os ?? (/mac/i.test(navigator.platform) ? 'mac' : 'linux');
   const dark = settings.theme === 'system' ? sysDark : settings.theme === 'dark';
 
-  const notify = useCallback((text: string, kind: Toast['kind'] = 'ok', action?: Toast['action']) => {
-    const id = Date.now();
-    setToast({ id, text, kind, action });
-    // A toast with a button stays long enough to reach it.
-    window.setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), action ? 8000 : 4000);
-  }, []);
+  const notify = useCallback(((a: string | ToastOptions, kind?: ToastKind, action?: ToastActionArg) => {
+    if (typeof a !== 'string') return toasts.show(a);
+    return toasts.show({ text: a, kind: kind ?? 'ok', actions: action ? [action] : undefined });
+  }) as Notify, []);
+  const dismissToast = useCallback((id: number) => toasts.dismiss(id), []);
 
   const fail = useCallback((err: unknown) => {
     const e = toFlintError(err);
@@ -377,13 +384,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AppApi>(() => ({
-    info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError,
+    info, os, phase, settings, dark, recents, target, vault, catalog, bootError,
     lockReason, unlockRequest, dismissUnlockRequest, lock, windowLock, openWindow,
     go: setPhase, setTarget, refreshRecents, unlock, create, download, closeVault, openVaultFile, switchTo, renameVault,
-    refreshCatalog, saveSettings, notify, fail,
-  }), [info, os, phase, settings, dark, recents, target, vault, catalog, toast, bootError,
+    refreshCatalog, saveSettings, notify, dismissToast, fail,
+  }), [info, os, phase, settings, dark, recents, target, vault, catalog, bootError,
     lockReason, unlockRequest, dismissUnlockRequest, lock, windowLock, openWindow, refreshRecents,
-    unlock, create, download, closeVault, openVaultFile, switchTo, renameVault, refreshCatalog, saveSettings, notify, fail]);
+    unlock, create, download, closeVault, openVaultFile, switchTo, renameVault, refreshCatalog, saveSettings, notify, dismissToast, fail]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

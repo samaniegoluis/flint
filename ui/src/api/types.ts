@@ -203,9 +203,15 @@ export interface Settings {
   rdp_graphics: 'auto' | 'pipeline' | 'compatible';
   /** Milestone 43: seconds between checks of a connected vault's server (0, 60, 300, 900); 0 syncs on events only. */
   sync_interval: number;
+  /** Milestone 46 (D-106 (3)): the window corner toasts appear in. */
+  toast_corner: ToastCorner;
   /** The app's own record that earlier cached keys were removed (D-048); the core keeps it. */
   keys_cleared?: boolean;
 }
+
+/** Settings → Appearance → Notifications (milestone 46). */
+export type ToastCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+export const TOAST_CORNERS: ToastCorner[] = ['bottom-right', 'bottom-left', 'top-right', 'top-left'];
 
 export type LockAfter = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | 'never';
 /** Settings → Terminal → Largest file to paste (milestone 25). */
