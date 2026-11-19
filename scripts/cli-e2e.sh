@@ -47,7 +47,12 @@ cleanup() {
 trap cleanup EXIT
 
 # Runs with no controlling terminal, so Flint can never prompt (and never hang).
-no_tty() { perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV or die "exec: $!"' "$@"; }
+# On Windows (MSYS2) the terminal is the console, which setsid does not take away: the
+# command starts with none at all (DETACHED_PROCESS), through the native python.
+case "$(uname -s)" in
+  MINGW*|MSYS*) no_tty() { python3 -c 'import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, creationflags=0x8))' "$@"; } ;;
+  *) no_tty() { perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV or die "exec: $!"' "$@"; } ;;
+esac
 
 # expect <exit code> <description> <stdin text> -- <flint args...>
 # Leaves the command's stdout in $out and stderr in $err.

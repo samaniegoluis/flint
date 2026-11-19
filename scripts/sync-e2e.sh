@@ -57,7 +57,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-no_tty() { perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV or die "exec: $!"' "$@"; }
+# On Windows (MSYS2) the terminal is the console, which setsid does not take away: the
+# command starts with none at all (DETACHED_PROCESS), through the native python.
+case "$(uname -s)" in
+  MINGW*|MSYS*) no_tty() { python3 -c 'import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, creationflags=0x8))' "$@"; } ;;
+  *) no_tty() { perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV or die "exec: $!"' "$@"; } ;;
+esac
 
 # Each machine's keychain service. On one Mac every "machine" shares the user's keychain,
 # and macOS asks a person before one binary reads an item another saved (D-099): B
