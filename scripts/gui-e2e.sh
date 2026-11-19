@@ -157,7 +157,7 @@ sleep 0.5
 make_script() {
   E2E_VERSION="$("$root/scripts/version.sh")" E2E_VAULT="$1" E2E_PORT3="$port3" E2E_TPORT="$tport" E2E_RPORT="$rport" E2E_RPORT_FWD="$rport_fwd" E2E_RUN="$2" python3 -I - "$root/scripts/gui-e2e.js" "$3" <<'PY'
 import os, sys
-src = open(sys.argv[1]).read()
+src = open(sys.argv[1], encoding="utf-8").read()
 key = open(os.environ["FLINT_TEST_SSH_KEY"]).read().replace("\\", "\\\\").replace("`", "\\`")
 values = {"VAULT": os.environ["E2E_VAULT"], "PORT": os.environ["FLINT_TEST_SSH_PORT"],
           "PORT2": os.environ["FLINT_TEST_SSH_PORT2"], "PORT3": os.environ["E2E_PORT3"], "TPORT": os.environ["E2E_TPORT"],
@@ -173,7 +173,7 @@ values["BMODES"] = os.environ.get("FLINT_BENCH_MODES", "compatible/2d,auto/auto"
 values["BMONS"] = os.environ.get("FLINT_BENCH_MONITORS", "") if bench else ""
 for k, v in values.items():
     src = src.replace("@@" + k + "@@", v)
-open(sys.argv[2], "w").write(src)
+open(sys.argv[2], "w", encoding="utf-8").write(src)
 PY
 }
 
