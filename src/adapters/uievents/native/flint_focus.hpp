@@ -18,6 +18,7 @@
 #include <windows.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace flint_focus {
 
@@ -42,9 +43,21 @@ inline void CALLBACK on_foreground(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG i
     describe("foreground", hwnd);
     // A dialog of ours (a file dialog, a message box) keeps its own focus.
     if (::GetWindow(hwnd, GW_OWNER)) return;
-    for (HWND c = ::GetWindow(hwnd, GW_CHILD); c && diag(); c = ::GetWindow(c, GW_HWNDNEXT)) describe("  child", c);
-    HWND child = ::GetWindow(hwnd, GW_CHILD);
+    // The window that takes the keys is WebView2's deepest, Chrome_RenderWidgetHostHWND
+    // (in the browser's process, under the host child Chrome_WidgetWin_0); focusing the
+    // host child alone left the page without focus.
+    struct Found { HWND render = nullptr; } found;
+    ::EnumChildWindows(hwnd, [](HWND c, LPARAM lp) -> BOOL {
+        describe("  descendant", c);
+        char cls[64] = "";
+        ::GetClassNameA(c, cls, sizeof cls);
+        auto* f = reinterpret_cast<Found*>(lp);
+        if (!f->render && std::strcmp(cls, "Chrome_RenderWidgetHostHWND") == 0) f->render = c;
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&found));
+    HWND child = found.render ? found.render : ::GetWindow(hwnd, GW_CHILD);
     if (!child) return;
+    describe("target", child);
     HWND now = ::GetFocus();
     describe("focus now", now);
     if (now && now != hwnd) return;  // the focus is already inside the window
