@@ -82,15 +82,23 @@ fn partial_suffix(s: str, needle: str) -> usize {
     return 0
 }
 
+// `s` with every copy of `secret` cut out ("" cuts nothing).
+fn without_secret(s: str, secret: str) -> str {
+    if secret.len() == 0 {
+        return s
+    }
+    return s.replace_all(secret, "")
+}
+
+// The prompt is found in the raw output first and the secret cut only from what goes
+// to the caller: the prompt's nonce is random hex, so a short hex password can sit
+// inside it, and cutting first would hide the prompt.
 fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
     mut step := SudoStep{ output: "", send_password: false, refused: false }
     mut buf := w.pending + data
-    if w.secret.len() > 0 {
-        buf = buf.replace_all(w.secret, "")
-    }
     for buf.contains(w.prompt) {
         idx := buf.index_of(w.prompt) or 0
-        step.output = step.output + buf[..idx]
+        step.output = step.output + without_secret(buf[..idx], w.secret)
         buf = byte_tail(buf, idx + w.prompt.len())
         w.prompts += 1
         if w.prompts == 1 {
@@ -106,7 +114,8 @@ fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
             hold = k
         }
     }
-    step.output = step.output + byte_slice(buf, 0, buf.len() - hold)
+    step.output = step.output + without_secret(byte_slice(buf, 0, buf.len() - hold), w.secret)
+    // Held raw: a prompt or a secret cut by the chunk is whole in the next one.
     w.pending = byte_tail(buf, buf.len() - hold)
     w.seen = w.seen + step.output
     if w.seen.len() > 4096 {
@@ -120,10 +129,7 @@ fn sudo_flush(mut w: SudoWatch) -> str {
     // Typed: inferred from a parameter's field, its methods break once the package is
     // imported (CF-156).
     // CFIRE-UPSTREAM: CF-156
-    mut rest: str = w.pending
-    if w.secret.len() > 0 {
-        rest = rest.replace_all(w.secret, "")
-    }
+    mut rest: str = without_secret(w.pending, w.secret)
     w.pending = ""
     return rest
 }

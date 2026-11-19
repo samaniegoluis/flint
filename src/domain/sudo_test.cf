@@ -64,3 +64,21 @@ test "sudo's refusal of a user who may not use it is recognised" {
     _ = sudo_feed(mut ok, "all good\n")
     assert(!sudo_not_allowed(ok))
 }
+
+test "a password that is part of the prompt's nonce does not hide the prompt" {
+    // The nonce is random hex: a short hex password ("bad") can sit inside it.
+    prompt := sudo_prompt("00bad00")
+    mut w := new_sudo_watch(prompt, "bad")
+    first := sudo_feed(mut w, prompt)
+    assert(first.send_password)
+    again := sudo_feed(mut w, "Sorry, try again.\n" + prompt)
+    assert(again.refused)
+    assert_eq(again.output, "Sorry, try again.\n")
+    // The password echoed around the prompt is still cut.
+    mut e := new_sudo_watch(prompt, "bad")
+    echoed := sudo_feed(mut e, "xbadx" + prompt + "ba")
+    assert(echoed.send_password)
+    assert_eq(echoed.output, "xx")
+    rest := sudo_feed(mut e, "dy")
+    assert_eq(rest.output, "y")
+}
