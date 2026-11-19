@@ -114,8 +114,12 @@ export FLINT_TEST_AGENT=1
 # by its firewall-free port, a throwaway self-signed certificate, any user. Skipped
 # (the tests pass without it) where FreeRDP ships no sample server.
 rdp_port="${FLINT_TEST_RDP_PORT:-33891}"
+# MSYS2 (Windows) rewrites an argument that starts with "/" into a Windows path for a
+# native program: `-subj /CN=…` would reach openssl as `C:/msys64/CN=…`. Elsewhere the
+# variable means nothing.
+self_signed_cert() { MSYS2_ARG_CONV_EXCL='/CN=' openssl req -x509 "$@"; }
 if command -v sfreerdp-server >/dev/null; then
-  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/rdp.key" -out "$tmp/rdp.crt" -days 2 -subj "/CN=flint-test" 2>/dev/null
+  self_signed_cert -newkey rsa:2048 -nodes -keyout "$tmp/rdp.key" -out "$tmp/rdp.crt" -days 2 -subj "/CN=flint-test" 2>/dev/null
   # FreeRDP 3.15's sample server closes every session unless a test_icon.* sits in its
   # working folder (the Linux image installs one; Homebrew's 3.33 needs none).
   icons="$(dirname "$(command -v sfreerdp-server)")/../share/sfreerdp-server"
@@ -131,7 +135,7 @@ fi
 clip_port="${FLINT_TEST_RDP_CLIP_PORT:-33893}"
 clip_ctl="${FLINT_TEST_RDP_CLIP_CONTROL:-33894}"
 if clip_bin="$("$root/scripts/rdp-testserver.sh")"; then
-  [[ -f "$tmp/rdp.crt" ]] || openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/rdp.key" -out "$tmp/rdp.crt" -days 2 -subj "/CN=flint-test" 2>/dev/null
+  [[ -f "$tmp/rdp.crt" ]] || self_signed_cert -newkey rsa:2048 -nodes -keyout "$tmp/rdp.key" -out "$tmp/rdp.crt" -days 2 -subj "/CN=flint-test" 2>/dev/null
   "$clip_bin" --port="$clip_port" --control="$clip_ctl" --cert="$tmp/rdp.crt" --key="$tmp/rdp.key" >"$tmp/rdp-clip.log" 2>&1 &
   clip_pid=$!
   for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$clip_port") 2>/dev/null && break; sleep 0.1; done
