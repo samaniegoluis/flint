@@ -19,6 +19,9 @@ export PATH="$FLINT_CFIRE:$FLINT_WIN_OPT/freerdp/bin:$PATH"
 export CFIRE_RUNTIME_DIR="$(cygpath -m "$FLINT_CFIRE/runtime")"
 export CFIRE_CACHE_DIR="$(cygpath -m /c/flint-work/cache/cfire)"
 export TMPDIR=/c/flint-work/tmp
+# `ln -s` makes a real Windows symbolic link (Developer Mode allows it), not MSYS2's
+# default copy: cli-e2e names a vault through a link inside its own folder.
+export MSYS="${MSYS:+$MSYS }winsymlinks:nativestrict"
 export TMP="$(cygpath -w "$TMPDIR")" TEMP="$(cygpath -w "$TMPDIR")"
 mkdir -p "$TMPDIR" /c/flint-work/cache/cfire
 # Flint's own .pc files (scripts/env.sh picks the windows folder under MSYS2), then
