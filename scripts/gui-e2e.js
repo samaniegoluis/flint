@@ -180,6 +180,13 @@
   try {
     if (!RUNS.includes(RUN)) throw new Error(`unknown run "${RUN}"`);
     await log('run: ' + RUN);
+    // Windows (the VM): windows/front.py clicks the page's own title bar about two seconds
+    // after the window shows, to give the page the keyboard focus (W-16). Nothing starts
+    // before that click: landing on a dialog's backdrop, it closed the terminal run's
+    // New host dialog (2026-11-19).
+    if ((await window.backend.app_info({})).os === 'windows') {
+      await waitFor(() => document.hasFocus(), "the page's focus (windows/front.py's click)", 30000);
+    }
     await setStep('welcome');
     await waitFor(() => hasText('Welcome to Flint'), 'the welcome screen');
     await check(true, 'a first launch shows the welcome screen');
