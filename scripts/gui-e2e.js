@@ -817,7 +817,13 @@
         for (let i = 0; i < 300; i++) t.input(`L${i}\n`, true);
         t.input('\x04', true);
       }
-      await waitFor(() => termText().includes('cat-done-42'), 'cat to finish');
+      try {
+        await waitFor(() => termText().includes('cat-done-42'), 'cat to finish');
+      } catch (e) {
+        // diag (Windows VM, 2026-11-19): what the terminal showed when cat did not end.
+        await log('diag: terminal tail: ' + JSON.stringify(termText().slice(-300)));
+        throw e;
+      }
       await runInTerminal(`awk 'NR-1!=substr($0,2){bad=1} END{print ((bad||NR!=300)?"order-bad-" NR:"order-" "ok")}' /tmp/flint-e2e-order.txt`, '\norder-');
       await check(termText().includes('order-ok'), 'a 300-write burst reaches the remote in order' + (termText().includes('order-ok') ? '' : ' — ' + (termText().match(/order-bad-\d+/) || [''])[0]));
 
@@ -1924,6 +1930,12 @@
       const pathCount = () => (fullText().match(new RegExp(pathRe.source, 'g')) || []).length;
 
       await setStep('paste: an image');
+      // On the Windows VM the test sshd is MSYS2's, on NTFS mounted noacl: its files have
+      // no POSIX modes to check (owner, 2026-11-18, as the suites skip them there). A real
+      // server is Linux, and macOS and Linux check them.
+      const srvModes = (await window.backend.app_info({})).os !== 'windows';
+      const fileMode = srvModes ? '-rw-------@?' : '-[-rwx]{9}';
+      const modeNote = srvModes ? 'mode 0600' : 'mode not checked (MSYS2 test server)';
       // /bin/ls: the login shell may alias ls (eza on the owner's Mac).
       await type('/bin/ls -ln ');
       await pasteData(null, [png]);
@@ -1937,10 +1949,11 @@
       await enter();
       await waitFor(() => termText().includes('ls-42'), 'the ls of the pasted file');
       // macOS's ls marks extended attributes with '@' after the mode.
-      await check(new RegExp(`-rw-------@? +1 +\\d+ +\\d+ +${pngBytes.length} `).test(fullText()), `the file is on the server, mode 0600, ${pngBytes.length} bytes`);
+      await check(new RegExp(`${fileMode} +1 +\\d+ +\\d+ +${pngBytes.length} `).test(fullText()), `the file is on the server, ${modeNote}, ${pngBytes.length} bytes`);
       const folder = path.replace(/\/[^/]+$/, '');
       await runInTerminal(`/bin/ls -ld ${folder} ~/.cache/flint/paste ~/.cache/flint | cut -c1-10 | sort | uniq -c; echo modes-$((6*7))`, 'modes-42');
-      await check(/3 drwx------/.test(termText()), 'its folder, the paste folder and ~/.cache/flint are 0700');
+      if (srvModes) await check(/3 drwx------/.test(termText()), 'its folder, the paste folder and ~/.cache/flint are 0700');
+      else await log('skip  the 0700 folders (no POSIX modes on the MSYS2 test server)');
       await runInTerminal(`od -An -tx1 -N8 ${path} | tr -s ' '; echo head-$((6*7))`, 'head-42');
       await check(termText().includes(' 89 50 4e 47 0d 0a 1a 0a'), 'the bytes on the server are the pasted image');
 
@@ -1957,7 +1970,7 @@
       await type('; echo native-$((6*7))');
       await enter();
       await waitFor(() => termText().includes('native-42'), 'the ls of the image the core read');
-      await check(new RegExp(`-rw-------@? +1 +\\d+ +\\d+ +${pngBytes.length} `).test(fullText().split('native-42')[0].slice(-400)), `it is on the server, mode 0600, ${pngBytes.length} bytes`);
+      await check(new RegExp(`${fileMode} +1 +\\d+ +\\d+ +${pngBytes.length} `).test(fullText().split('native-42')[0].slice(-400)), `it is on the server, ${modeNote}, ${pngBytes.length} bytes`);
       const nativeFolder = nativePasted[1].replace(/\/[^/]+$/, '');
 
       await setStep('paste: text wins');
@@ -2248,6 +2261,13 @@
         const ta = activePane().querySelector('textarea');
         ta.focus();
         await sleep(50);
+        if (!editorOpen().contains(document.activeElement)) {
+          // diag (Windows VM, 2026-11-19): where the focus is over the next 500 ms.
+          const where = () => { const a = document.activeElement; return (a?.tagName || '-') + (a?.className ? '.' + String(a.className).split(' ')[0] : '') + (editorOpen().contains(a) ? ' (editor)' : ''); };
+          const seen = [where()];
+          for (let i = 0; i < 5; i++) { await sleep(100); seen.push(where()); }
+          await log('diag: focus after ta.focus(), every 100 ms: ' + seen.join(' | ') + '; document.hasFocus=' + document.hasFocus());
+        }
         await check(editorOpen().contains(document.activeElement), 'a dialog takes the focus back from the terminal behind it');
         ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
         await sleep(100);
