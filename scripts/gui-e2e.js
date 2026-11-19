@@ -1022,11 +1022,18 @@
         await check(!q('[data-transfer]'), 'Clear done empties the queue of finished transfers');
         // A download and a cancel, through the same RPC the save dialog leads to.
         const session = aside().dataset.filesSession;
-        const res = await window.backend.files_transfer({ session, id: 'e2e-dl', direction: 'download', local: dir + '/made/b-copy.txt', remote: dir + '/b.txt', recursive: false, force: true });
+        // The local side is the app's own path. On the Windows VM the test sshd is MSYS2's,
+        // whose /tmp is not the native app's (there /tmp is C:\tmp): the shell names it.
+        let local = dir;
+        if (!mac && (await window.backend.app_info({})).os === 'windows') {
+          await runInTerminal(`echo "L[$(cygpath -m ${dir})]L-$((6*7))"`, ']L-42');
+          local = ([...termText().matchAll(/L\[([^\]\n]*)\]L-42/g)].pop() || ['', dir])[1];
+        }
+        const res = await window.backend.files_transfer({ session, id: 'e2e-dl', direction: 'download', local: local + '/made/b-copy.txt', remote: dir + '/b.txt', recursive: false, force: true });
         await check(res.bytes === 5, 'a download over the tab\'s session copies the file');
         let heard = 0;
         const off = window.runtime.EventsOn('files:transfer', (ev) => { if (ev.id === 'e2e-cancel') heard++; });
-        const started = window.backend.files_transfer({ session, id: 'e2e-cancel', direction: 'download', local: dir + '/made/big-copy.bin', remote: dir + '/big.bin', recursive: false, force: true })
+        const started = window.backend.files_transfer({ session, id: 'e2e-cancel', direction: 'download', local: local + '/made/big-copy.bin', remote: dir + '/big.bin', recursive: false, force: true })
           .then(() => 'finished', (err) => String(err));
         await waitFor(() => heard > 0, 'progress of the big download');
         await window.backend.files_cancel({ id: 'e2e-cancel' });
