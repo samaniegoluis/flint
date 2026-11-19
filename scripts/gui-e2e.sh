@@ -10,7 +10,7 @@
 #
 # macOS: the real window opens on screen, and the run types and clicks in it; leave it
 # alone until it ends (covered, or on another Space, it is hidden again). Linux: the real
-# GTK window opens under xvfb-run.
+# GTK window opens under xvfb-run. Windows: in the desktop session (windows/desktop.sh).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -47,13 +47,19 @@ runs=(terminal vault tunnels paste rdp webgl fullscreen vim)
 # rdpbench (milestone 34) is scripts/rdp-bench.sh's: a real Windows host, named only.
 known=("${runs[@]}" multimon rdpbench)
 if [[ -n "${FLINT_E2E_MULTIMON_DISPLAY:-}" || "${FLINT_E2E_MULTIMON:-}" == 1 ]]; then runs+=(multimon); fi
-if [[ "$(uname -s)" == Darwin ]]; then
-  app=(build/gui/Flint.app/Contents/MacOS/Flint)
-  run_vim=1
-else
-  app=(timeout 300 xvfb-run -a build/gui/Flint)
-  run_vim="${FLINT_E2E_VIM:-0}"
-fi
+# Windows (MSYS2): the real WebView2 window in the desktop session, which
+# windows/desktop.sh runs this in; vim passes there.
+case "$(uname -s)" in
+  Darwin)
+    app=(build/gui/Flint.app/Contents/MacOS/Flint)
+    run_vim=1 ;;
+  MINGW*|MSYS*)
+    app=(timeout 300 build/gui/Flint.exe)
+    run_vim="${FLINT_E2E_VIM:-1}" ;;
+  *)
+    app=(timeout 300 xvfb-run -a build/gui/Flint)
+    run_vim="${FLINT_E2E_VIM:-0}" ;;
+esac
 only="${FLINT_E2E_ONLY:-}"
 visible="${FLINT_E2E_VISIBLE:-1}"
 if [[ -n "$only" ]]; then
