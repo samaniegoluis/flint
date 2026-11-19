@@ -7,5 +7,6 @@ set MSYSTEM=CLANG64
 set CHERE_INVOKING=1
 cd /d C:\flint-work\tmp
 C:\msys64\usr\bin\bash.exe -l /c/flint-work/tmp/desktop-job.sh > C:\flint-work\tmp\desktop-job.log 2>&1
-echo %ERRORLEVEL%> C:\flint-work\tmp\desktop-job.rc.tmp
+rem "echo 1>file" would be a redirection of stream 1: the redirection goes first.
+> C:\flint-work\tmp\desktop-job.rc.tmp echo %ERRORLEVEL%
 move /y C:\flint-work\tmp\desktop-job.rc.tmp C:\flint-work\tmp\desktop-job.rc > nul
