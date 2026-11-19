@@ -42,14 +42,21 @@ fetch() {
 
 echo "== pacman packages"
 p=mingw-w64-clang-x86_64
-pacman -S --needed --noconfirm "$p-libsodium" "$p-libssh" "$p-sqlcipher" "$p-curl-winssl" \
-  "$p-cmake" "$p-ninja" "$p-openssl" "$p-zlib" "$p-pkgconf" "$p-python" \
-  git make diffutils unzip vim >/dev/null
-echo "pacman: ready"
+pkgs=("$p-libsodium" "$p-libssh" "$p-sqlcipher" "$p-curl-winssl" "$p-cmake" "$p-ninja" "$p-openssl"
+  "$p-zlib" "$p-pkgconf" "$p-python" git make diffutils unzip vim)
+# What is missing, with its dependencies; nothing already there is upgraded.
+missing="$(pacman -S --needed --print --print-format '%n' "${pkgs[@]}" 2>/dev/null | tr '\n' ' ')"
+if [[ -z "${missing// }" ]]; then
+  echo "pacman ready"
+else
+  pacman -S --needed --noconfirm "${pkgs[@]}" >/dev/null 2>&1
+  echo "pacman installed: $missing"
+fi
 
 echo "== cfire $CFIRE_VERSION"
 dest="$OPT/cfire-$CFIRE_VERSION"
-if [[ -x "$dest/cfire.exe" && "$("$dest/cfire.exe" --version 2>/dev/null)" == "$CFIRE_VERSION"* ]]; then
+# `cfire --version` prints "cfire 0.12.2 (<commit>, ...)".
+if [[ -x "$dest/cfire.exe" && "$("$dest/cfire.exe" --version 2>/dev/null)" == "cfire $CFIRE_VERSION "* ]]; then
   echo "cfire ready: $dest"
 else
   zip="$tmp/cfire.zip"
