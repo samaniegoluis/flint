@@ -1,6 +1,7 @@
 package rdp
 
 import "core:fs"
+import "core:net"
 import "core:os"
 import "core:time"
 
@@ -286,10 +287,6 @@ test "a quiet second re-reads the whole desktop once, and a graphics switch reac
     // Every pixel the sample server drew was reported: nothing stale.
     assert_eq(st.stale_px, 0)
     assert_eq(st.mode, "pipeline")
-    // The dial's round trip on loopback: a local network.
-    rtt := rd.rd_probe_rtt("127.0.0.1", t.port, 1500)
-    assert(rtt >= 0 && rtt <= 5, "loopback round trip {rtt} ms")
-    assert_eq(rd.rd_probe_rtt("127.0.0.1", 9, 1500), -1)
     // Once per quiet spell: nothing more while the server stays quiet.
     again := next_frame("t-quiet", 1500) or ""
     assert_eq(again.len(), 0)
@@ -788,3 +785,12 @@ test "a real Windows host in Compatible across two monitors keeps drawing each v
     assert_eq(rd.rd_wait("t-live-cmp", 100).kind, "running")
 }
 
+// Against a listener of its own, not the sample server: one busy streaming frames on a
+// VM with few CPUs once answered loopback in 14 ms (ROADMAP §5, 2026-11-19).
+test "the dial's round trip on loopback reads as a local network, a closed port as -1" {
+    rd := new_freerdp_desktop()
+    l := try net.listen(0, "127.0.0.1")
+    rtt := rd.rd_probe_rtt("127.0.0.1", i64(l.port()), 1500)
+    assert(rtt >= 0 && rtt <= 5, "loopback round trip {rtt} ms")
+    assert_eq(rd.rd_probe_rtt("127.0.0.1", 9, 1500), -1)
+}
