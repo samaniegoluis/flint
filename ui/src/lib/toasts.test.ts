@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_DURATION_MS, EXIT_MS, ToastStore } from './toasts';
+import { DEFAULT_DURATION_MS, ERROR_DURATION_MS, EXIT_MS, ToastStore } from './toasts';
 
 const texts = (s: ToastStore) => s.list().filter((t) => !t.leaving).map((t) => t.text);
 
@@ -25,21 +25,25 @@ describe('ToastStore', () => {
     expect(texts(s)).toEqual(['slow']);
   });
 
-  it('keeps errors, progress and sticky toasts until closed', () => {
-    const err = s.show({ text: 'Upload failed', kind: 'error' });
-    s.show({ text: 'Downloading', kind: 'info', progress: 7 });
+  it('keeps errors 30 s, and progress and sticky toasts until closed', () => {
+    s.show({ text: 'Upload failed', kind: 'error' });
+    const prog = s.show({ text: 'Downloading', kind: 'info', progress: 7 });
     s.show({ text: 'Decide', duration: 'sticky' });
-    vi.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(ERROR_DURATION_MS - 1);
     expect(texts(s)).toEqual(['Upload failed', 'Downloading', 'Decide']);
-    s.dismiss(err);
-    vi.advanceTimersByTime(EXIT_MS);
+    vi.advanceTimersByTime(1 + EXIT_MS);
     expect(texts(s)).toEqual(['Downloading', 'Decide']);
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(texts(s)).toEqual(['Downloading', 'Decide']);
+    s.dismiss(prog);
+    vi.advanceTimersByTime(EXIT_MS);
+    expect(texts(s)).toEqual(['Decide']);
   });
 
-  it('lets an error leave on a timer when the call says so', () => {
-    s.show({ text: 'Not found', kind: 'error', duration: 2000 });
-    vi.advanceTimersByTime(2000 + EXIT_MS);
-    expect(s.list()).toEqual([]);
+  it('keeps an error until closed when the call says sticky', () => {
+    s.show({ text: 'Keep me', kind: 'error', duration: 'sticky' });
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(texts(s)).toEqual(['Keep me']);
   });
 
   it('pauses every timer while hovered or focused, and resumes with the time left', () => {
@@ -71,17 +75,17 @@ describe('ToastStore', () => {
   });
 
   it('never lets a plain toast push out a sticky one', () => {
-    s.show({ text: 'error 1', kind: 'error' });
+    s.show({ text: 'error 1', kind: 'error', duration: 'sticky' });
     s.show({ text: 'plain' });
-    s.show({ text: 'error 2', kind: 'error' });
-    s.show({ text: 'error 3', kind: 'error' });
+    s.show({ text: 'error 2', kind: 'error', duration: 'sticky' });
+    s.show({ text: 'error 3', kind: 'error', duration: 'sticky' });
     expect(texts(s)).toEqual(['error 1', 'error 2', 'error 3']);
   });
 
   it('holds a plain toast back while three sticky ones fill the stack', () => {
-    const first = s.show({ text: 'e1', kind: 'error' });
-    s.show({ text: 'e2', kind: 'error' });
-    s.show({ text: 'e3', kind: 'error' });
+    const first = s.show({ text: 'e1', kind: 'error', duration: 'sticky' });
+    s.show({ text: 'e2', kind: 'error', duration: 'sticky' });
+    s.show({ text: 'e3', kind: 'error', duration: 'sticky' });
     s.show({ text: 'Saved' });
     expect(texts(s)).toEqual(['e1', 'e2', 'e3']);
     s.dismiss(first);
@@ -93,7 +97,7 @@ describe('ToastStore', () => {
   });
 
   it('lets a fourth sticky toast push out the oldest sticky one', () => {
-    for (const t of ['e1', 'e2', 'e3', 'e4']) s.show({ text: t, kind: 'error' });
+    for (const t of ['e1', 'e2', 'e3', 'e4']) s.show({ text: t, kind: 'error', duration: 'sticky' });
     expect(texts(s)).toEqual(['e2', 'e3', 'e4']);
   });
 

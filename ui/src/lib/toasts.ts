@@ -1,7 +1,8 @@
-// The toast stack (milestone 46, D-106, designs 24a/24b): every message the page
-// shows goes through one store. No React here, so the rules are tested with fake
-// timers: per-call duration, sticky toasts, a stack of three, `key` replacing in
-// place, a pause while the stack is hovered or focused.
+// The toast stack (milestone 46, D-106, D-109, designs 24a/24b): every message the
+// page shows goes through one store. No React here, so the rules are tested with fake
+// timers: per-call duration (6 s, errors 30 s), sticky toasts (progress, and what a
+// call asks for), a stack of three, `key` replacing in place, a pause while the stack
+// is hovered or focused.
 
 export type ToastKind = 'ok' | 'error' | 'info';
 
@@ -15,7 +16,7 @@ export interface ToastAction {
 export interface ToastOptions {
   text: string;
   kind?: ToastKind;
-  /** Milliseconds on screen, or 'sticky' to stay until ✕ or an action. Errors and progress toasts default to sticky. */
+  /** Milliseconds on screen, or 'sticky' to stay until ✕ or an action. Errors default to 30 s, progress toasts to sticky (D-109). */
   duration?: number | 'sticky';
   /** Up to two buttons; any more are dropped. */
   actions?: ToastAction[];
@@ -38,6 +39,8 @@ export interface ToastItem {
 }
 
 export const DEFAULT_DURATION_MS = 6000;
+/** Errors stay longer, so a long one is read, but still leave (D-109). */
+export const ERROR_DURATION_MS = 30_000;
 export const MAX_VISIBLE = 3;
 export const MAX_ACTIONS = 2;
 export const EXIT_MS = 160;
@@ -71,9 +74,9 @@ export class ToastStore {
 
   show(opts: ToastOptions): number {
     const kind = opts.kind ?? 'ok';
-    const sticky = opts.duration === 'sticky'
-      || (opts.duration === undefined && (kind === 'error' || opts.progress !== undefined));
-    const ms = typeof opts.duration === 'number' ? Math.max(0, opts.duration) : DEFAULT_DURATION_MS;
+    const sticky = opts.duration === 'sticky' || (opts.duration === undefined && opts.progress !== undefined);
+    const ms = typeof opts.duration === 'number' ? Math.max(0, opts.duration)
+      : kind === 'error' ? ERROR_DURATION_MS : DEFAULT_DURATION_MS;
     const actions = (opts.actions ?? []).slice(0, MAX_ACTIONS);
 
     const same = opts.key !== undefined

@@ -2380,7 +2380,7 @@
       T.show({ text: 'a quick one', duration: 300 });
       await waitFor(() => q('[data-toast-live="polite"]').textContent === 'a quick one', 'the toast in the polite region');
       await waitFor(() => shownText().join() === 'an error that stays', 'the quick toast to leave', 15000);
-      await check(true, 'a toast leaves after its own duration and an error stays');
+      await check(true, 'a toast leaves after its own duration and an error stays longer (30 s)');
       shown()[0].querySelector('[data-toast-close]').click();
       await waitFor(() => shown().length === 0, 'the ✕ to close the error');
       await check(true, '✕ closes a toast');

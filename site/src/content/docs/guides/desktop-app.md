@@ -52,9 +52,9 @@ Flint tells you what happened in a toast, in the bottom right corner by default 
 **Settings → Appearance → Notifications**). Up to three show at once, the newest closest to
 the corner.
 
-- A toast leaves after about 6 seconds. Pointing at the stack, or moving the focus into it,
-  pauses that while you read.
-- **Errors stay** until you close them, and so does a toast that shows progress.
+- A toast leaves after about 6 seconds, an error after 30. Pointing at the stack, or moving
+  the focus into it, pauses that while you read.
+- A toast that shows progress stays until the work ends.
 - Every toast has a **✕**. <kbd>F6</kbd> reaches the toasts like any other part of the
   window (the terminal keeps <kbd>Tab</kbd>); there, <kbd>Esc</kbd> closes the toast and the
   focus goes back where it was.
