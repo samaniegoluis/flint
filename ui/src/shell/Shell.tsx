@@ -179,7 +179,7 @@ export function Shell() {
   useEffect(() => on('monitors:changed', () => { void monitors.screensChanged(); }), []);
   useEffect(() => {
     void monitors.refresh();
-    // gui-e2e's multimon run reads the monitors' store; its vault run drives the toasts'.
+    // gui-e2e's multimon run reads the monitors' store; its vault run drives the toasts', its paste run records them.
     const e2e = (window as unknown as { __flintE2E?: Record<string, unknown> }).__flintE2E;
     if (e2e) { e2e.monitors = monitors; e2e.toasts = toasts; }
   }, []);

@@ -1989,8 +1989,14 @@
       const modeNote = srvModes ? 'mode 0600' : 'mode not checked (MSYS2 test server)';
       // /bin/ls: the login shell may alias ls (eza on the owner's Mac).
       await type('/bin/ls -ln ');
+      // Every text the toast store shows, recorded as it changes: a local upload is quick
+      // enough for its result to replace "Pasting…" before a poll of the page sees it.
+      const seen = [];
+      const offSeen = window.__flintE2E.toasts.subscribe(() => {
+        for (const t of window.__flintE2E.toasts.list()) if (!seen.includes(t.text)) seen.push(t.text);
+      });
       await pasteData(null, [png]);
-      await waitFor(() => hasText('Pasting image to local'), 'the upload notice');
+      await waitFor(() => seen.includes('Pasting image to local…'), 'the upload notice');
       await check(true, 'pasting an image shows "Pasting image to local…"');
       const pasted = await waitFor(() => fullText().match(pathRe), 'the pasted path in the prompt', 20000);
       const path = pasted[1];
@@ -2000,6 +2006,7 @@
         .filter((el) => !el.classList.contains('leaving') && /^Past/.test(el.querySelector('.t-text')?.textContent ?? ''))
         .map((el) => el.querySelector('.t-text').textContent);
       await waitFor(() => pasteToasts().includes('Pasted the image on local'), 'the paste result toast');
+      offSeen();
       await check(pasteToasts().length === 1, `"Pasted the image on local" replaces "Pasting…" (${pasteToasts()})`);
       await settle();
       await type('; echo ls-$((6*7))');
