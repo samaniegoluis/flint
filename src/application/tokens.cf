@@ -199,7 +199,8 @@ fn set_activity_retention_days[T: TokenStore](mut tokens: T, days: i64, now_s: i
 // Activity → Back up activity…, milestone 39). No export format: the copy opens only
 // with the vault's key.
 fn backup_activity[T: TokenStore](tokens: T, dest: str) -> void! {
-    if !dest.starts_with("/") {
+    // "C:/..." on Windows, as the save dialog gives it (windows-port).
+    if !is_absolute_path(dest) {
         return error(coded(ERR_INVALID, "the backup path must be absolute"))
     }
     try tokens.activity_backup(dest)
