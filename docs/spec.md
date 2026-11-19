@@ -1,137 +1,111 @@
-# Flint — v11 Technical Specification: Your vault on every machine
+# Flint — v12 Technical Specification: Toasts
 
-**Scope of this document:** version 11 only. The versions it builds on are archived in
+**Scope of this document:** version 12 only. The versions it builds on are archived in
 [`spec-v1.md`](./spec-v1.md) (MVP), [`spec-v2.md`](./spec-v2.md) (daily driver),
 [`spec-v3.md`](./spec-v3.md) (Flint holds the vault), [`spec-v4.md`](./spec-v4.md) (Files),
 [`spec-v5.md`](./spec-v5.md) (Between servers), [`spec-v6.md`](./spec-v6.md) (Tunnels),
 [`spec-v7.md`](./spec-v7.md) (Paste into the terminal), [`spec-v8.md`](./spec-v8.md)
-(Embedded RDP), [`spec-v9.md`](./spec-v9.md) (Versions and a faster desktop) and
-[`spec-v10.md`](./spec-v10.md) (The desktop, finished); everything beyond v11 lives in
+(Embedded RDP), [`spec-v9.md`](./spec-v9.md) (Versions and a faster desktop),
+[`spec-v10.md`](./spec-v10.md) (The desktop, finished) and [`spec-v11.md`](./spec-v11.md)
+(Your vault on every machine); everything beyond v12 lives in
 [`ROADMAP.md`](../ROADMAP.md). This file is static: a decision that changes goes into
 [`decisions.md`](./decisions.md), which supersedes the line here.
 
-**Status: closed 2026-11-17.** Milestones 39-45 are built (`docs/build-log.md`), released
-up to `v0.12.1`, and their owner reviews done; only the owner's Windows checks remain,
-tracked in the build log. The next spec is drawn from `ROADMAP.md`.
-
 ## Problem
 
-v10 shipped (milestones 35-38, `v0.5.0`): the RDP desktop is finished, full screen and on
-two monitors. Every machine still holds its own `.flint` file. Sharing one vault between
-five machines means passing the file around or putting it in a cloud folder, and a cloud
-folder that sees two machines edit at once keeps one side and drops the other (or leaves a
-conflict copy nobody merges).
+v11 shipped (milestones 39-45, up to `v0.12.1`; `v0.13.0` moved Flint to cfire `v0.12.2`,
+D-105). Every message the app gives (a saved host, a failed upload, a merge, a tunnel left
+up) goes through one toast, and that toast loses things:
 
-v11 is the self-hosted remote vault decided in D-050: **local-first**, like Obsidian Sync.
-Every machine keeps its full copy and works offline (hosts on the local network still
-connect); an optional server the owner runs keeps the copies in step. The server never
-holds the key and never decrypts anything: it stores the vault file exactly as it is,
-encrypted in full, with a version number. When two machines change the vault apart, the
-one that uploads second gets a `409`, downloads the other copy, opens both with the key it
-already holds, merges them record by record and uploads the result.
+- **One at a time.** A new toast replaces the one on screen, so a toast with a button can
+  vanish before it is seen.
+- **4 s for everything, errors included,** with no ✕, no pause on hover and no Escape: a
+  long error is gone before it is read.
+- **Fixed at the bottom left,** over the terminal's prompt.
+- **Ids from `Date.now()` and timers never cleared:** two toasts in the same millisecond
+  share an id, and the first one's timer closes the second.
+- **Test connection's result** is a line at the bottom of the host editor, out of sight on
+  a small window.
 
-One person, one server, one token: each user runs their own instance, which keeps any
-number of that person's vaults (milestone 45, D-101). Accounts, many users on one server
-and a hosted paid service are later (ROADMAP §10, D-092).
+v12 makes the toast one reusable component with options per call, as designed (screens
+24a, 24b, 24h, 24j1; D-106), and moves every existing call onto it. It is also the base
+the next version's update notice and self-update are built on (ROADMAP §7, v13).
 
 ## Scope
 
-**In scope (v11), macOS and Linux here; Windows checked by the owner:**
-- **The activity log leaves the vault** (milestone 39): a second encrypted database per
-  machine in the app's data folder, so the synced file never carries it.
-- **Change the master password** (milestone 40): `flint vault passwd` and its place in
-  Settings, with a strength estimate shown, so a weak password can be replaced before the
-  vault leaves the machine.
-- **A sync-ready vault and the per-record merge** (milestone 41): `updated_at` and
-  tombstones on every synced table; the merge in pure cfire; `flint vault merge` for a
-  cloud folder's conflict copy as its first user.
-- **`flint-vault-server`** (milestone 42): a separate binary in this repo, in cfire, run in
-  Docker or bare; the Docker image and a *Self-host a remote vault* docs page.
-- **Sync in the core and the CLI** (milestone 43): `flint vault connect <url>`, the sync
-  itself, conflicts merged, offline edits pushed on reconnect.
-- **Connect remote vault in the app** (milestone 44): the screen beside *Create* and
-  *Open*, the sync's state, Settings.
-- **Several vaults on one server** (milestone 45, added during 43's check, D-101): one
-  server and one token keep each vault under its id, with an optional label in clear.
+**In scope (v12), macOS and Linux here; Windows on the VM with the owner's ok:**
+- **The toast component and its corner** (milestone 46): `notify` with options, every
+  behaviour of D-106 (1) and (2), the corner as a setting in the core and in Settings →
+  Appearance.
+- **Every toast on the new component** (milestone 47): the ~58 existing calls reviewed one
+  by one, 20d2 and 23e1 on the new design, and Test connection's result in a toast.
 - Docs site, the landing and the CLI demo follow every user-visible change (CLAUDE.md rules
   5 and 6), and a release closes each milestone with a `feat` or `fix` (rule 10).
 
-**Windows:** as in v8-v10. The owner runs Flint on Windows from his own branch over a
-patched cfire and checks each milestone there at its close. The server runs on Linux
-(Docker) and on macOS bare; a Windows build of the server is not a goal.
+**Windows:** builds from `main` on stock cfire since D-105. Each milestone is checked on
+the Windows VM, and on Zorin, only with the owner's ok; macOS and the Docker Linux check
+are the default.
 
-**Out of scope (v11), tracked in the roadmap:** accounts and many users on one server, the
-hosted paid service (its code may stay private, D-092); shared vaults between users
-(ruled out, D-050); the change log + snapshot protocol (`/v2`); a server status page;
-built-in TLS in the server (the reverse proxy does it); GHCR publishing from GitHub Actions
-(arrives with CI, ROADMAP §7); importing another vault (a different key) and the quick wins
-of Order of work block 0; everything v10 left out.
+**Out of scope (v12), tracked in the roadmap:** everything of the update (the toast's
+update states 24c, the relaunch confirm 24d, About's Updates block 24e, the status bar's
+version item 24f, What's new 24g, the palette's commands 24i: ROADMAP §7, v13); ember on a
+toast action (reserved for the update's, D-106 (2)); free content in a toast (JSX,
+colours); more than two buttons; a notification history; OS notifications; the quick wins
+of Order of work block 0.
 
 ## Stack
 
-v10's, plus the server.
+v11's, unchanged. The toast is plain React and CSS Modules over the design tokens: no
+toast library, no animation library.
 
 | Layer | Choice | Why | Rejected |
 |---|---|---|---|
-| Language | **cfire** (→ C++23), pinned (D-060) | Dogfood the friend's language and feed back real gaps. Native speed, a single binary | Go + Wails (Tether's stack, known-good), Rust + Tauri |
-| Desktop shell | **cfire `ext:webui`** (WKWebView / WebKitGTK) | Wails-like typed RPC + events, native webview, no bundled browser | Electron (heavy), raygui (no rich UI) |
+| Language | **cfire** (→ C++23), pinned to `v0.12.2` (D-105) | Dogfood the friend's language and feed back real gaps. Native speed, a single binary | Go + Wails (Tether's stack, known-good), Rust + Tauri |
+| Desktop shell | **cfire `ext:webui`** (WKWebView / WebKitGTK / WebView2) | Wails-like typed RPC + events, native webview, no bundled browser | Electron (heavy), raygui (no rich UI) |
 | Frontend | **React + Vite**, CSS Modules + design tokens | Proven in Tether; the frontend is largely portable | Svelte/Solid: no strong reason to switch while the backend is new |
+| Toasts | **Flint's own component** (`ui/`), CSS transitions | Two buttons, a key that replaces in place, progress and a corner setting are a few hundred lines; a library would bring its own look and timing rules | react-hot-toast, sonner (another look to override, their timing rules, a dependency for little) |
 | Terminal | **xterm.js** (pinned beta + WebGL addon) | Kitty keyboard protocol; WebGL renderer fixes cell sizing | — |
 | SSH | **libssh** via `import cpp` (D-012) | cfire has no SSH. Covers PTY, SFTP, agent, forwarding and known_hosts | libssh2, writing SSH ourselves |
 | RDP | **FreeRDP 3** via `import cpp`, core library only, frames drawn by Flint (D-070) | One engine on macOS, Linux and Windows; Apache 2.0 | The RDP ActiveX control, the system client, writing RDP ourselves |
 | Crypto | **libsodium**: Argon2id + XChaCha20-Poly1305 | Vetted, constant-time, the same primitives as Tether | cfire `core:crypto/aes` (hand-rolled) |
 | Vault store | **SQLite, whole-file encrypted** with SQLCipher (D-013) | Queryable and transactional. No plaintext metadata on a synced disk | Per-field encryption (Tether: leaks metadata), a KeePass-style blob |
-| Activity store | **A second SQLCipher file per machine**, keyed from the vault key (D-092) | The one table that grows with use and changes on every `flint exec`; synced, it would re-upload the vault on each command | A plain log file (clear text on disk), keeping it in the vault |
-| Keychain | macOS Security.framework, Linux libsecret, via `import cpp` | Used by *Remember on this computer* (D-048) and now the server token | Storing either in a file |
-| Sync server | **`flint-vault-server`**, cfire on `core:net/http`, one static binary and a Docker image (D-050, D-092) | A few hundred lines; the hard logic lives in the client. Same language, toolchain and version as Flint, in the same repo, so client and protocol change in one commit | A repo of its own, another language, an off-the-shelf store (WebDAV, S3: no `If-Match` contract of ours, no history rule) |
-| Server storage | **Files on a volume**, one per kept version, written by temp file + rename | Atomic, trivially backed up, and the version history falls out of it | SQLite on the server (nothing to query), Postgres |
+| Activity store | **A second SQLCipher file per machine**, keyed from the vault key (D-092) | The one table that grows with use; synced, it would re-upload the vault on each command | A plain log file (clear text on disk), keeping it in the vault |
+| Keychain | macOS Security.framework, Linux libsecret, Windows Credential Manager, via `import cpp` | *Remember on this computer* (D-048) and the server token | Storing either in a file |
+| Sync server | **`flint-vault-server`**, cfire on `core:net/http` (D-050, D-092) | Same language, toolchain and version as Flint, in the same repo | A repo of its own, an off-the-shelf store |
 | Docs | **Astro + Starlight** | Landing and Docs in one site | Docusaurus, VitePress |
 | Changelog | **git-cliff**, run locally | Reads the Conventional Commits already in use | release-please, semantic-release |
 
 ## Architecture
 
-Hexagonal, as in v10. v11 adds a driver and three ports.
+Hexagonal, as in v11. v12 changes the page and adds one setting.
 
-- **`src/drivers/vault-server/`** is a third binary beside the CLI and the app, with its
-  own `build.Executable("flint-vault-server", …)`. It shares the protocol's types and
-  nothing that pulls in libssh, FreeRDP or SQLCipher. Its storage is a port (`BlobStore`),
-  with a file adapter first.
-- **The protocol, `/v1`:** `GET /v1/vault` returns the blob, its version and the vault's
-  id; `PUT /v1/vault` with `If-Match: <version>` stores a new version, `409` when another
-  machine uploaded first, `412`/`400` for a blob of another vault id. A bearer token on
-  every request. Versioned from the start so further vaults and a change log (`/v2`) are
-  additions, not rewrites. Milestone 45 made the first of them: `GET /v1/vaults`, and
-  `GET`/`PUT /v1/vaults/:id` with a label beside each vault; `/v1/vault` stays for 0.11
-  clients while the server keeps one vault (D-103).
-- **The client side:** a `VaultRemote` port (HTTP adapter) and a sync use case in
-  `application/`; the merge itself in `domain/` (two record sets in, one out, plus a
-  report). The CLI, grants, tokens, Touch ID, the tray and `exec --sudo` keep working on
-  the local copy and never learn the vault is remote.
-- **Per-machine sync state lives in the config folder** (D-030): the server URL, the last
-  version seen, whether local changes wait to be uploaded. The server token lives in the
-  OS keychain, never in the config.
-- **The activity log is per machine** (39): its own file in the app's data folder, tied to
-  the vault's stable id (40 decides how the id survives a password change: today it is
-  derived from the salt) and keyed from the vault key.
+- **The toast lives in the page.** One provider owns the stack (ids from a counter, one
+  timer per toast, cleared on close and on unmount) and one view renders it in the chosen
+  corner. `notify(text, kind?, action?)` keeps its signature, so every existing call works
+  unchanged on day one; `notify({ text, kind, duration, actions, key, progress, keepOpen })`
+  is the full form. `fail(e)` stays the one path for errors and is sticky by default.
+- **The corner is a per-machine setting** in the core: a field of `Settings`
+  (`src/domain/settings.cf`), stored in the config folder's settings file like the theme,
+  read and saved through the existing settings use case and binding. It is not in the
+  vault.
+- **Nothing in the core sends a toast.** Events the core already emits (`vault:sync`,
+  tunnel and session events) stay as they are; the page decides what becomes a toast.
 
-Contracts (v10's stand, plus):
-- **Drivers hold no business logic.** A GUI binding, a socket request, a CLI command and an
-  HTTP handler for the same action call the same use case.
-- **Secrets never leave the core in clear text** except to a transport at connect time
-  (SSH, RDP). The server token goes only to the server, in a header, over TLS.
-- **Streaming is out-of-band.** Sync progress and state travel as events, not RPC results.
-- **One holder of an unlocked vault** (v3). A sync that needs to merge needs the key: a
-  locked machine keeps its changes and merges at the next unlock.
-- **A downloaded blob replaces nothing until it is opened.** It must open with the vault's
-  key and carry the same vault id; then it is merged with the local copy, never written
-  over it.
+Contracts (v11's stand, plus):
+- **One toast component.** No screen draws its own toast; every message goes through
+  `notify` or `fail`.
+- **A toast never holds a secret.** It shows what an error message shows, so Principle 6
+  covers it as it covers errors today.
+- **Accessible by construction.** The `aria-live` region is mounted before the first toast
+  (polite for ok and info, assertive for errors), the ✕ and the buttons are reachable by
+  keyboard, and the motion honours `prefers-reduced-motion`.
 
 ## Principles
 
 Checkable rules. Every milestone is checked against them before it is closed. Rules marked
-**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v10's,
-plus 13 and 14. Milestones 39-43 touch 5 and 10 (migrations), 40 touches 4, and 42-43
-touch 13: expect the owner's review there.
+**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v11's,
+unchanged. v12 touches only the page and one per-machine setting: no milestone is expected
+to touch an owner-review rule.
 
 1. The domain and application layers import no adapter and no I/O module (`ext:webui`,
    `ext:db/sqlite`, sockets, HTTP, keychain, files).
@@ -177,35 +151,20 @@ touch 13: expect the owner's review there.
 ## Milestones
 
 Each milestone is built **whole** with `lean-build` and verified by the agent. Owner checks
-happen only where a human is required (see `CLAUDE.md`), plus the owner's Windows check at
-each close. Progress is recorded in `docs/build-log.md`, not here. Numbering continues from
-v10.
+happen only where a human is required (see `CLAUDE.md`). Progress is recorded in
+`docs/build-log.md`, not here. Numbering continues from v11.
 
 | # | Milestone | Delivers |
 |---|---|---|
-| 39 | **The activity log leaves the vault** | A second SQLCipher file per machine in the app's data folder (not beside the `.flint`), tied to the vault's id and keyed from the vault key through libsodium's KDF, so it never syncs, not even through a cloud folder. An appended migration moves existing rows out and drops the `activity` table from the vault (the copy runs in code, then the migration; a failure leaves the vault as it was). Retention becomes per machine. Settings → Activity gains *Back up activity…*, which copies the file as it is (still encrypted). Lock closes both files. The CLI's and the app's activity views unchanged in behaviour; adapter and use-case tests for the move, an e2e on a vault with rows from before; docs (activity, security model) |
-| 40 | **Change the master password** | `flint vault passwd` and *Change master password* in Settings → Vault: the current password, the new one twice, a strength estimate shown as it is typed (pure cfire in the domain; not cryptography); a new salt, the vault re-keyed (`sqlcipher_export`), every sealed secret re-sealed with the new secrets key, the activity file re-keyed, *Remember on this computer* moved to the new keychain account (D-017), recents and per-machine state kept. **The vault's identity survives the change:** today its id is derived from the salt, so the plan settles a stable id (likely a random id in `meta` by an appended migration, the salt-derived one kept for what already uses it). A crash mid-change leaves the old vault usable. Owner review (Principles 4, 5). Unit tests, cli-e2e, gui-e2e; docs |
-| 41 | **A sync-ready vault and the per-record merge** | An appended migration adds `updated_at` and tombstones (deleted records kept as markers) to every synced table: groups, hosts, host tags, credentials, SSH keys, known hosts, tunnels and CLI tokens; every write sets them. **The merge** in `domain/`, pure cfire: two copies of the same vault in, one out, plus a report. Rules (D-093): the newer `updated_at` wins a record changed on both sides; a tombstone newer than an edit wins; records the client does not show are kept; an alias created on both sides offline keeps the first and renames the second (`web-01 (2)`), reported; a token's *last used* takes the later value and is never a conflict. Fuzz and table tests. **First user:** `flint vault merge <copy.flint>` merges a cloud folder's conflict copy of the same vault (same key) into the open one and prints the report (ROADMAP §4). May split into 41b (the CLI) if the plan finds it over one sitting |
-| 42 | **`flint-vault-server`** | Starts with a spike on `core:net/http`: a `PUT` route, a request body cap, read and write timeouts, the request's headers; gaps as `CF-NNN`. Then `src/drivers/vault-server/`: `GET` / `PUT /v1/vault` with `If-Match` and `409`, the vault id checked on every upload; the token from `FLINT_VAULT_TOKEN`, or only its hash from `FLINT_VAULT_TOKEN_HASH`, compared in constant time; `flint-vault-server token` prints a new 32-byte random token; it refuses to start with a short one; a rate limit per client, a lockout after repeated bad tokens, a size cap; storage as files on a volume, written by temp file + rename, **the last 10 versions kept** (a history a person restores by hand: documented). A `Dockerfile` and a `docker-compose.yml` with a volume, a local `scripts/server-image.sh` that builds the image (and pushes it to GHCR when asked). Server tests over `Router.dispatch` and a real listening server; docs page *Self-host a remote vault* (Docker, bare binary, a reverse proxy for TLS: Dokploy, NPM, Caddy, rotating the token). Owner review (Principle 13) |
-| 43 | **Sync in the core and the CLI** | The `VaultRemote` port with its HTTP adapter and the sync use case. `flint vault connect <url>`: asks for the token (kept in the keychain), refuses `http://` beyond `localhost` and a master password under the strength threshold (pointing to `flint vault passwd`), then uploads the local vault or, if the server already holds one, downloads it as a new local copy. The sync runs at unlock, after each change (batched), and about every 60 s while the app runs; offline edits wait and are pushed on reconnect. A `409` downloads, opens, merges (41) and uploads again; a locked machine keeps its changes and merges at the next unlock; a blob that does not open with the key asks for the new master password (changed on another machine, 40). `flint vault status` shows the remote, the last sync and what waits; `flint vault disconnect`. cli-e2e against a real server with two config folders as two machines (both offline, both edit, both reconnect); docs and the CLI demo. Owner review (Principles 13, 14) |
-| 44 | **Connect remote vault in the app** | *Connect remote vault* beside *Create vault* and *Open vault* (URL, token, master password; the same checks as 43), the sync's state in the status bar and Settings → Vault (in step, waiting, offline, merged with a report, needs the new password), *Sync now* and *Disconnect*. Screens designed first in Claude Design. gui-e2e against a real server; docs (remote vault, security model), the landing (a card for the remote vault, the "What's next" item leaves) |
-| 45 | **Several vaults on one server** | Added during 43's check (D-101). `flint-vault-server` keeps a folder per vault id with its own versions and history, and moves a 0.11 data folder there; `GET /v1/vaults` lists ids, sizes, versions and an optional label kept in clear (the one thing Principle 13 lets the server read, never logged); `GET`/`PUT /v1/vaults/:id`; `/v1/vault` kept for single-vault clients. `vault connect <url>` sends the vault's id and takes `--label`; a download chooses with `--list` and `--id` (a unique prefix), the app's Connect remote vault shows the server's list. One token per server, still one person. Owner review (Principle 13) at plan and close |
+| 46 | **The toast component and its corner** | `notify` takes options as well as today's arguments (`notify({ text, kind, duration, actions, key, progress, keepOpen })`; every existing call keeps working). **Duration** per call, 6 s by default, paused while hovered or focused; `'sticky'` stays until closed; **errors are sticky**, and so are progress toasts. **A ✕ on every toast**, and Escape closes the newest. **Up to two buttons**, all secondary (ember is the update's, D-106 (2)); `keepOpen` lets an action leave the toast up. **A stack of three**, newest closest to the corner; a sticky toast is never pushed out by a plain one. **`key`** replaces a toast in place, **`progress`** shows a fixed-width percentage. A text clamped at two lines gets **More** / **Less**. A short entry and exit animation that honours reduced motion; an `aria-live` region always mounted. Ids from a counter, every timer cleared. **The corner** as a setting: a field in the core's `Settings` (bottom right by default), Settings → Appearance → Notifications with the corner picker (24h, 12a); bottom corners above the status bar growing up, top corners under the tab bar and the session toolbar growing down, never over the rail (24b1-24b4, 24j1 at 900×600). Vitest for the component (timers, pause, stack, key, sticky), `cfire test` for the setting, gui-e2e for the stack, ✕, Escape and a corner change; docs (Appearance, a short *Notifications* note) |
+| 47 | **Every toast on the new component** | The ~58 calls of `notify` and `fail` across the page reviewed one by one: kind, duration, actions, `key` where one toast should replace another. 20d2 (*Tab closed. 2 tunnels still up on prod-db · Stop them*) and 23e1 (the merge toast with *Details*) on the new design. **Test connection's result in a toast too**, in the SSH and the RDP host editors: success as an ok toast, failure as a sticky error; the inline line stays as the record. `scripts/gui-e2e.js` follows (`data-toast-action`, the new markup), `npm run shots:gui` re-run if a landing screen shows a toast; docs where a page describes a message that changed |
 
 ## Open questions
 
-All of v11's were settled while it was built:
+None open at the start. Settled with the owner on 2026-11-19 (D-108):
 
-- **The strength threshold** (40, 43): a reduced zxcvbn port in pure cfire; a vault leaves
-  the machine only with *Strong*, score 3 of 4 (D-095).
-- **The vault's stable id** (40): frozen in `meta.vault_id`, so every per-machine file
-  keeps its name across a password change; a vault from before keeps its salt-derived id,
-  a new one gets a random id (D-095).
-- **Milestone 41's size**: built whole, no 41b (D-096).
-- **Restoring an older version** (42): `flint-vault-server versions` / `restore <n>` on the
-  server; history over HTTP stays an idea in ROADMAP §10 (D-097).
-- **Flint's licence**: MIT, the repository public as a preview (D-100).
-- **Bundling FreeRDP and the other libraries into a release**: unchanged, a dynamic system
-  package (D-015); bundling stays in ROADMAP §7.
+- **Two milestones**, the component first with the old signature kept, then the calls.
+- **Test connection** shows its result in a toast both on success and on failure.
 
 Carried past v11: **the owner's Windows checks** of milestones 34-45, tracked as *Pending
 owner checks* in `docs/build-log.md`.
