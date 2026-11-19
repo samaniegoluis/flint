@@ -4,6 +4,43 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.13.0 — 2026-11-19
+
+Flint builds and runs on Windows from the main line, natively, on cfire's own release, with no patched compiler: a portable zip that runs without anything else installed, and a per-user install with a Start menu entry and `flint` on the PATH. The whole codebase moved to cfire 0.12.2: warm builds take under a second and a dozen workarounds for cfire are gone. Fixes include an RDP tab that showed "Connection lost" when disconnected while it reconnected, a vault's sync state after Disconnect or a reconnect, and Windows paths, the tray icon and the password fields.
+
+### Added
+
+- **windows:** Build, package and install Flint on Windows
+
+### Fixed
+
+- **sync:** A vault disconnected while its sync is on the network stays disconnected
+- **sync:** A token replaced or a sync ended after Disconnect or a reconnect leaves the new state alone
+- **sync:** A sync that finds nothing new hashes the same bytes it decided on
+- Keep replace-all where cfire fix turned str.replace into .replace
+- Json.parse takes a labeled argument, so it compiles on Linux (CF-164)
+- **ui:** Focus the unlock field in its mount effect, not with autoFocus
+- **test:** Serve-e2e types the master password once the field has the focus
+- **windows:** The Credential Manager shim takes u8 bytes, as on macOS and Linux
+- **windows:** The monitor windows on cfire 0.12's own WebView2 backend (W-17)
+- **windows:** Session lock notifications looked up at run time
+- **windows:** The server's store does not flush a folder on Windows (CF-168)
+- **windows:** A socket read that times out says timeout, not io
+- **windows:** An activity backup to C:/... is an absolute path
+- **windows:** Local paths take / at every separator, not only the first
+- **windows:** One eye in the password fields
+- **windows:** The tray shows the app icon in colour
+- **windows:** Setup.sh knows an installed cfire and says what pacman installed
+- **windows:** Package.sh counts the UCRT API sets (api-ms-win-crt-*) as Windows' own DLLs
+- **windows:** Package.sh accepts WINSPOOL.DRV, Windows' print spooler, as a system import
+- **test:** Serve-e2e green on Windows: one caller for the whole run, scope.py, a junction
+- **rdp:** A tab closed while it reconnects ends as disconnected, not as a lost connection
+
+### Faster
+
+- Build the password estimator's word lists once per process
+
+
 ## 0.12.1 — 2026-11-17
 
 The desktop app's Settings now says exactly what a vault server keeps: the encrypted file, its version and id, and the label you gave it, if any. Never the key.
