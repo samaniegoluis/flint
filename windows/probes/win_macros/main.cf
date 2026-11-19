@@ -1,0 +1,12 @@
+package main
+
+// W-18: a cfire name that a Windows header defines as a macro (`far`, `near`, `small`,
+// `interface`), in a file that includes <windows.h>.
+import cpp "windows.h"
+
+fn main() {
+    far := 1
+    near := 2
+    small := 3
+    println("macros: {far + near + small}")
+}

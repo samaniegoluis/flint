@@ -3,7 +3,7 @@
 # Natively in MSYS2 CLANG64 on the Windows test VM, with cfire's Windows release
 # (windows/bin/env.sh). Started over SSH:
 #
-#   windows/run-probes.sh            # hello, platform files, core, W-14
+#   windows/run-probes.sh            # hello, platform files, core, W-14, W-18
 #   FLINT_PROBE_WEBUI=1 windows/run-probes.sh   # also webui: needs the desktop session
 #
 # Exit status: 0 when every probe passed, 1 otherwise.
@@ -38,6 +38,15 @@ step "AF_UNIX socket file (W-14: fs.exists sees a listening socket)"
 # The test's header sits beside it; a lone test file has no build.cf for its Includes.
 (cd unix_socket && CPLUS_INCLUDE_PATH="$(cygpath -m "$PWD")" cfire test unix_socket_test.cf 2>&1 | tee "$out/w14.log" | grep -E '^--- |\((.*)tests') || true
 grep -qE '^PASS \(' "$out/w14.log" || bad "W-14: see $out/w14.log"
+
+step "Windows macros as names (W-18, open on v0.12.2: far, near, small)"
+# Still open: the build fails with "expected unqualified-id". A build that works means
+# cfire fixed it, and Flint's workaround (`apart` in monitors_test.cf) can go.
+if (cd win_macros && cfire build -o "$out/wm.exe" main.cf >"$out/w18.log" 2>&1); then
+  echo "W-18: covered now; drop Flint's workaround"
+else
+  grep -q 'expected unqualified-id' "$out/w18.log" && echo "W-18: still open" || bad "W-18: see $out/w18.log"
+fi
 
 if [[ "${FLINT_PROBE_WEBUI:-}" == 1 ]]; then
   step "webui offscreen (W-06, W-10: no SDK, no WebView2Loader.dll)"
