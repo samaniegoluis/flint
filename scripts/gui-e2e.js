@@ -1147,7 +1147,9 @@
           'the second pane floats over the terminal, which keeps its width (D-059)');
         const into = async (folder, path) => {
           pane().querySelector(`[data-file="${folder}"]`).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-          await waitFor(() => pane().dataset.filesPath === path, 'the second pane in ' + path);
+          // Every folder entered here holds something: wait for its rows, not only its path
+          // (the path changes first; the Windows VM's MSYS2 SFTP lists late).
+          await waitFor(() => pane().dataset.filesPath === path && pane().querySelector('.frow[data-file]'), 'the second pane in ' + path + ', listed');
         };
         await waitFor(() => pane().querySelector(`[data-file="${name}"]`), 'the scratch folder in the second pane');
         await into(name, base);
