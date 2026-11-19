@@ -1,0 +1,115 @@
+package domain
+
+// The `flint` command on the PATH, from a packaged app (milestone 48, D-111 (2)).
+// A released Flint.app carries its CLI at Contents/Helpers/flint; the app offers to
+// put a symbolic link to it in a folder on the PATH and never does so on its own.
+// Since the link points into the app, an update that swaps the app updates the
+// command too. The link is "ours" when it points at the CLI of any Flint.app; anything
+// else at that path (a file `scripts/install.sh` copied, another program) is left
+// alone.
+
+// What is at one place the link can go, as the adapter found it.
+type LinkProbe struct {
+    exists:        bool `json:"exists"`
+    is_link:       bool `json:"is_link"`
+    target:        str  `json:"target"`
+    target_exists: bool `json:"target_exists"`
+    // Whether this process can write the folder; otherwise the link needs an
+    // administrator's password (macOS asks for it).
+    dir_writable:  bool `json:"dir_writable"`
+}
+
+// One place the command can be installed, and what is there now (CLI_LINK_STATES).
+type CliLinkSpot struct {
+    path:   str  `json:"path"`
+    state:  str  `json:"state"`
+    target: str  `json:"target"`
+    admin:  bool `json:"admin"`
+}
+
+// The command as the app sees it: whether this copy carries a CLI, where it is, and
+// each place it can be linked from, the default (on every Mac's PATH) first.
+type CliLinkStatus struct {
+    available: bool          `json:"available"`
+    cli:       str           `json:"cli"`
+    spots:     []CliLinkSpot `json:"spots"`
+    // Shown once on the first launch (Settings.cli_offer_shown); a link to another or
+    // a missing copy is offered again on every launch.
+    offer:     str           `json:"offer"`
+}
+
+// missing: nothing there. installed: a link to this copy's CLI. other-copy: a link to
+// another Flint.app's CLI that still exists. broken: a link to a Flint.app's CLI that
+// is gone (the app was moved or deleted). foreign: something that is not our link.
+CLI_LINK_STATES: []str = ["missing", "installed", "other-copy", "broken", "foreign"]
+CLI_IN_BUNDLE: str = "/Contents/Helpers/flint"
+
+// The CLI inside the bundle the app runs from, or "" when the app is not in a bundle
+// (a Linux or Windows build, or a build from source run in place).
+fn bundle_cli_path(exe_dir: str) -> str {
+    suffix := "/Contents/MacOS"
+    if !exe_dir.ends_with(suffix) {
+        return ""
+    }
+    return exe_dir[0..exe_dir.len() - suffix.len()] + CLI_IN_BUNDLE
+}
+
+// The Flint.app a CLI inside a bundle belongs to, or "" (milestone 48: `flint` starts
+// the app it came with, not whichever Flint.app macOS finds first).
+fn bundle_of_cli(exe_dir: str) -> str {
+    suffix := "/Contents/Helpers"
+    if !exe_dir.ends_with(suffix) {
+        return ""
+    }
+    bundle := exe_dir[0..exe_dir.len() - suffix.len()]
+    if !bundle.ends_with(".app") {
+        return ""
+    }
+    return bundle
+}
+
+fn cli_link_state(cli: str, p: LinkProbe) -> str {
+    if !p.exists && !p.is_link {
+        return "missing"
+    }
+    if !p.is_link || !p.target.ends_with(".app" + CLI_IN_BUNDLE) {
+        return "foreign"
+    }
+    if p.target == cli {
+        return "installed"
+    }
+    if p.target_exists {
+        return "other-copy"
+    }
+    return "broken"
+}
+
+// What the first launch's toast offers: "install" once while nothing is linked,
+// "fix" whenever a link of ours points at another or a missing copy, else "".
+fn cli_link_offer(available: bool, spots: []CliLinkSpot, offer_shown: bool) -> str {
+    if !available {
+        return ""
+    }
+    mut any_ours := false
+    mut all_missing := true
+    for s in spots {
+        if s.state == "installed" {
+            any_ours = true
+        }
+        if s.state != "missing" {
+            all_missing = false
+        }
+    }
+    if any_ours {
+        return ""
+    }
+    for s in spots {
+        if s.state == "other-copy" || s.state == "broken" {
+            return "fix"
+        }
+    }
+    if all_missing && !offer_shown {
+        return "install"
+    }
+    return ""
+}

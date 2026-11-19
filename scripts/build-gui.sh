@@ -30,7 +30,8 @@ else
   exit 1
 fi
 
-cfire build FlintGui
+# FLINT_CFIRE_BUILD_FLAGS: scripts/package.sh links a release build (--portable).
+cfire build ${FLINT_CFIRE_BUILD_FLAGS:-} FlintGui
 
 case "$(uname -s)" in
   Darwin)

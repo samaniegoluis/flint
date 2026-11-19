@@ -3054,3 +3054,29 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** stamp the folders `pkg-config --variable pc_path pkg-config` reports, do not
   cache negative results (a miss costs one `pkg-config` call), or let `--no-cache` skip
   the probe cache too.
+
+### CF-170 · bug · `confirmed`: a cached pkg-config result ignores a change to a package it requires
+- **Seen (milestone 48) [ran, macOS 27.2 arm64, `v0.12.2` `5be0987`]:** Flint's
+  `flint-rdp.pc` requires `freerdp-client3`. After rebuilding FreeRDP with fewer channels,
+  `pkg-config --static --libs flint-rdp` no longer names `-lrdpsnd-common`, but `cfire build
+  --portable FlintGui` (and with `--no-cache`) kept passing it and the link failed
+  (`library 'rdpsnd-common' not found`); `probes.json` held the old line.
+- **Cause:** a found result is reused while the fingerprint of the package's own `.pc` file
+  is unchanged (`probe_pkg_config`, `src/build/probe_cache.hpp`); the `.pc` files it
+  `Requires` are not part of the fingerprint. CF-169 is the same cache's negative side.
+- **Workaround:** `scripts/package.sh` builds with `CFIRE_CACHE_DIR` set to a folder of its
+  own (`build/deps/cfire-cache`), and `scripts/deps-macos.sh` empties it whenever it
+  rebuilds a library.
+- **Ideal:** fingerprint every `.pc` file `pkg-config --print-requires(-private)` reaches,
+  or let `--no-cache` skip the probe cache.
+
+### CF-171 · gap · `confirmed`: `core:fs` has no symbolic links
+- **Seen (milestone 48):** the app links the `flint` command into a folder on the PATH and
+  must tell its own link from someone else's file and from a dangling link. `core:fs` has
+  `stat` (`is_symlink`, which follows nothing for a dangling one) but no `lstat`,
+  `readlink`, `symlink` or a way to run a command as an administrator.
+- **Workaround:** `src/adapters/clilink/native/flint_clilink.hpp`: `lstat`, `readlink`,
+  `symlink` + `rename` over the old link, `unlink`, and `osascript … with administrator
+  privileges` on macOS.
+- **Ideal:** `fs.lstat`, `fs.readlink`, `fs.symlink(target, path)` (on Windows, a directory
+  junction or a symlink where Developer Mode allows it).

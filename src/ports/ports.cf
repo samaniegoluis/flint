@@ -173,6 +173,15 @@ type SettingsStore interface {
 }
 
 // The monospaced font families installed on this machine (adapters/fonts).
+// The `flint` command's link on the PATH (milestone 48, adapters/clilink). `admin`
+// asks the OS for an administrator's password when the folder is not writable.
+type CliLinks interface {
+    cli_link_probe(path: str) -> LinkProbe
+    cli_link_exists(path: str) -> bool
+    mut cli_link_make(target: str, path: str, admin: bool) -> void!
+    mut cli_link_remove(path: str, admin: bool) -> void!
+}
+
 type FontCatalog interface {
     mono_font_families() -> []str!
 }

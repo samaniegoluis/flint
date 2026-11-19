@@ -18,6 +18,7 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     fixed.reopen_last_vault = s.reopen_last_vault
     fixed.term_cursor_blink = s.term_cursor_blink
     fixed.keys_cleared = s.keys_cleared
+    fixed.cli_offer_shown = s.cli_offer_shown
     mut probe := d
     probe.theme = s.theme
     if settings_valid(probe) {
@@ -86,12 +87,14 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     return fixed
 }
 
-// `keys_cleared` is the app's own record, not a preference: the stored value is
-// kept whatever the page sends.
+// `keys_cleared` and `cli_offer_shown` are the app's own records, not preferences:
+// the stored values are kept whatever the page sends.
 fn save_settings[T: SettingsStore](mut store: T, s: Settings) -> Settings! {
     try check_settings(s)
     mut saved := s
-    saved.keys_cleared = (try load_settings(store)).keys_cleared
+    stored := try load_settings(store)
+    saved.keys_cleared = stored.keys_cleared
+    saved.cli_offer_shown = stored.cli_offer_shown
     try store.settings_save(saved)
     return saved
 }

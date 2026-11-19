@@ -5,8 +5,9 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../api/backend';
-import { PASTE_LIMITS, TOAST_CORNERS, type LockAfter, type Settings, type ToastCorner, type VaultStatus } from '../api/types';
-import { shortPath, useApp, vaultInitial, vaultMarkClass } from '../state/app';
+import { PASTE_LIMITS, TOAST_CORNERS, type CliLinkSpot, type CliLinkStatus, type LockAfter, type Settings, type ToastCorner, type VaultStatus } from '../api/types';
+import { CLI_TOAST_KEY, cliSpotAction, cliSpotText } from '../lib/cliLink';
+import { installCli, shortPath, useApp, vaultInitial, vaultMarkClass } from '../state/app';
 import { ACTION_TITLES, chordLabel, SHORTCUT_GROUPS } from '../lib/keymap';
 import { Icon, type IconName } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
@@ -278,6 +279,7 @@ function About() {
         <span className="mono strong" data-about-version>Flint {info?.version ?? ''}</span>
         <span className="hint">What changed in each version is on the Changelog page of Flint's docs. A version with a suffix (<span className="mono">0.1.0-3-gabc1234</span>) is a build made between two releases.</span>
       </Row>
+      <CommandLine />
       <Row title="Libraries" desc="Linked into this build.">
         <table className="table compact" data-about-libs>
           <tbody>
@@ -286,6 +288,58 @@ function About() {
         </table>
       </Row>
     </>
+  );
+}
+
+// Milestone 48 (D-111 (2)): the flint command from this copy, linked from a folder on
+// the PATH, so updating Flint updates it. Never linked without the person's click.
+function CommandLine() {
+  const { notify, fail } = useApp();
+  const [st, setSt] = useState<CliLinkStatus | null>(null);
+  const [busy, setBusy] = useState('');
+  useEffect(() => { api.cliStatus(false).then(setSt).catch(() => {}); }, []);
+  if (!st) return null;
+  const act = async (spot: CliLinkSpot) => {
+    setBusy(spot.path);
+    try {
+      if (cliSpotAction(spot) === 'remove') {
+        setSt(await api.cliRemove(spot.path));
+        notify({ text: `Removed ${shortPath(spot.path)}`, key: CLI_TOAST_KEY });
+      } else {
+        const next = await installCli(spot.path, notify, fail);
+        if (next) setSt(next);
+      }
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy('');
+    }
+  };
+  return (
+    <Row title="Command line" desc="The flint command runs this copy of Flint through a link in a folder on your PATH, so updating Flint updates it too.">
+      {!st.available
+        ? <span className="hint" data-cli-none>This build carries no flint command. A build from source puts one on the PATH with <span className="mono">scripts/install.sh</span>.</span>
+        : (
+          <table className="table compact" data-cli-spots>
+            <tbody>
+              {st.spots.map((spot) => {
+                const a = cliSpotAction(spot);
+                return (
+                  <tr key={spot.path} data-cli-spot={spot.state}>
+                    <td className="mono">{shortPath(spot.path)}</td>
+                    <td>{cliSpotText(spot)}</td>
+                    <td>{a && (
+                      <button className="btn btn-ghost btn-sm" disabled={busy !== ''} data-cli-action={a} onClick={() => act(spot)}>
+                        {a === 'install' ? 'Install' : a === 'repoint' ? 'Use this copy' : 'Remove'}
+                      </button>
+                    )}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+    </Row>
   );
 }
 

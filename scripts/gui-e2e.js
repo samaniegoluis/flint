@@ -51,7 +51,7 @@
   const COVER = '@@COVER@@';
   // fullscreen only: '1' when the window really goes full screen (FLINT_E2E_NATIVE_FS).
   const NATIVEFS = '@@NATIVEFS@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'multimon', 'rdpbench'];
+  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'multimon', 'rdpbench', 'clilink'];
   // The benchmark's host (rdpbench only; '' otherwise).
   const BHOST = '@@BHOST@@';
   const BUSER = '@@BUSER@@';
@@ -200,6 +200,35 @@
     await click('button[type="submit"]', 'Create vault');
     await waitFor(() => hasText('Add your first host'), 'the empty vault page', 30000);
     await check(q('.vault-name')?.textContent === 'E2E Vault', 'the new vault opens on the empty state');
+
+    if (RUN === 'clilink') {
+      // Milestone 48 (D-111 (2)): the flint command from a packaged app. The run's own
+      // ~/.local/bin holds a link to a copy that was moved (scripts/gui-e2e.sh).
+      await setStep('the flint command');
+      const cliToast = (re) => qa('[data-toast]').find((el) => !el.classList.contains('leaving') && re.test(el.querySelector('.t-text')?.textContent ?? ''));
+      const fix = await waitFor(() => cliToast(/^The flint command in .*\.local\/bin\/flint runs a copy of Flint that was moved or deleted$/), 'the offer to fix the moved link');
+      await check(fix.dataset.kind === 'info', 'a link to a moved copy is offered a fix at launch');
+      await click('[data-toast] button', 'Use this copy');
+      await waitFor(() => cliToast(/^Installed .*\.local\/bin\/flint/), 'the installed toast');
+      await check(!cliToast(/runs a copy of Flint that was moved/), 'the result replaces the offer in place');
+      q('[data-sb-version]').click();
+      await waitFor(() => q('[data-cli-spots]'), 'About\'s Command line row');
+      const spot = (end) => qa('[data-cli-spots] tr').find((r) => r.cells[0].textContent.endsWith(end));
+      await check(spot('.local/bin/flint')?.dataset.cliSpot === 'installed', 'About shows the link now runs this copy');
+      await check(spot('/usr/local/bin/flint')?.cells[1].textContent.length > 0, `About names the other place (${spot('/usr/local/bin/flint')?.cells[1].textContent})`);
+      await check((await window.backend.settings_get({})).cli_offer_shown === false, 'a fix is not the first-launch offer: that one is still to show');
+      spot('.local/bin/flint').querySelector('[data-cli-action="remove"]').click();
+      await waitFor(() => spot('.local/bin/flint')?.dataset.cliSpot === 'missing', 'the removed link');
+      await check(true, 'Remove takes the link away');
+      spot('.local/bin/flint').querySelector('[data-cli-action="install"]').click();
+      await waitFor(() => spot('.local/bin/flint')?.dataset.cliSpot === 'installed', 'the link again');
+      const st = await window.backend.cli_status({ first: false });
+      await check(st.spots[1].target.endsWith('/cli/Flint.app/Contents/Helpers/flint'), 'Install links this copy\'s CLI');
+      await log(`${passed} checks passed`);
+      await window.backend.e2e_report({ ok: true, detail: '' });
+      window.runtime.Quit();
+      return;
+    }
 
     await setStep('add key');
     await click('.rail-btn', 'Keys');

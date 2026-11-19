@@ -20,7 +20,11 @@ if [[ -z "${FLINT_TEST_SSH_PORT:-}" ]]; then
 fi
 cd "$root"
 . "$root/scripts/env.sh"
-cfire build >/dev/null || { echo "cli-e2e: build failed" >&2; exit 1; }
+# FLINT_E2E_NOBUILD=1 runs the binaries already built (milestone 48: a release build from
+# scripts/package.sh, linked against its own libraries).
+if [[ "${FLINT_E2E_NOBUILD:-0}" != 1 ]]; then
+  cfire build >/dev/null || { echo "cli-e2e: build failed" >&2; exit 1; }
+fi
 flint="$root/build/flint"
 
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-e2e.XXXXXX")"

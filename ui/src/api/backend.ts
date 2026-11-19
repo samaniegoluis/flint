@@ -3,7 +3,7 @@
 // FlintError so the UI can branch on stable codes (D-018, D-019).
 
 import type {
-  AccessAnswer, AccessState, ActivityEntry, AppInfo, RdpStats, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
+  AccessAnswer, AccessState, ActivityEntry, AppInfo, CliLinkStatus, RdpStats, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
   CopyResult, DesktopSpan, RemoteLinkView, RemoteProbe, RemoteStatus, SyncOutcome, FileEntry, MonitorPick, MonitorsView, PasswordStrength, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
 } from './types';
 
@@ -60,6 +60,10 @@ export const api = {
   dialogSave: (title: string, defaultName: string) => call<{ path: string }>('dialog_save', { title, default_name: defaultName }),
   settingsGet: () => call<Settings>('settings_get'),
   settingsSet: (s: Settings) => call<Settings>('settings_set', s),
+  /** Milestone 48: the `flint` command; `first` records the first launch's offer as shown. */
+  cliStatus: (first: boolean) => call<CliLinkStatus>('cli_status', { first }),
+  cliInstall: (path: string) => call<CliLinkStatus>('cli_install', { path }),
+  cliRemove: (path: string) => call<CliLinkStatus>('cli_remove', { path }),
   /** Milestone 43: tells the app's sync loop to look at a connected vault's server. */
   syncHint: (reason: 'focus' | 'now') => call('vault_sync_hint', { reason }),
   fonts: () => call<{ fonts: string[] }>('fonts_mono'),

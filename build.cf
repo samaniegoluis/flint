@@ -22,17 +22,24 @@ Flint := build.Executable("flint", {
     Entry:     "src/drivers/cli/main.cf",
     Subsystem: "console",
     OutDir:    "build",
+    MacosMin:  "13.3",
     PkgConfig: ["flint-native", "flint-remote", "libsodium", "libssh", "sqlcipher"],
 })
 
 // The desktop app. scripts/build-gui.sh builds the page (ui/) and copies it into the
-// app bundle; `cfire build` alone produces the executable only. It gets its own
+// app bundle; `cfire build` alone produces the executable only. A release build
+// (scripts/package.sh) links it and the CLI with `--portable` against the libraries of
+// scripts/deps-macos.sh, at the same minimum macOS (D-112). It gets its own
 // folder: macOS file systems ignore case, so build/Flint would overwrite build/flint.
 FlintGui := build.Executable("Flint", {
     Entry:     "src/drivers/gui/main.cf",
     Subsystem: "gui",
     OutDir:    "build/gui",
     Icon:      "assets/app-icon/Flint.icns",
+    // Milestone 48 (D-112): the id v14 signs, beside polkit's dev.flint.policy. macOS
+    // keeps permissions and WebKit data per id, so it does not change again.
+    BundleId:  "dev.flint.app",
+    MacosMin:  "13.3",
     PkgConfig: ["flint-native", "flint-native-gui", "flint-rdp", "flint-remote", "libsodium", "libssh", "sqlcipher"],
 })
 

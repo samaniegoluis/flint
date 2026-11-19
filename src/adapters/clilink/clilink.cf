@@ -1,0 +1,72 @@
+package clilink
+
+// The `CliLinks` port over the file system (native/flint_clilink.hpp, milestone 48).
+
+import cpp "flint_clilink.hpp"
+import "../../domain"
+
+type OsCliLinks struct {
+    enabled: bool
+}
+
+fn new_os_cli_links() -> OsCliLinks {
+    return OsCliLinks{ enabled: true }
+}
+
+fn (self: OsCliLinks) cli_link_probe(path: str) -> LinkProbe {
+    mut exists := false
+    mut is_link := false
+    mut target := ""
+    mut target_exists := false
+    mut writable := false
+    // CFIRE-UPSTREAM: CF-171
+    cpp {
+        auto p = flint_clilink::probe(std::string(path));
+        exists = p.exists;
+        is_link = p.is_link;
+        target = p.target;
+        target_exists = p.target_exists;
+        writable = p.dir_writable;
+    }
+    return LinkProbe{ exists: exists, is_link: is_link, target: target, target_exists: target_exists, dir_writable: writable }
+}
+
+fn (self: OsCliLinks) cli_link_exists(path: str) -> bool {
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-171
+    cpp {
+        ok = flint_clilink::exists(std::string(path));
+    }
+    return ok
+}
+
+fn (mut self: OsCliLinks) cli_link_make(target: str, path: str, admin: bool) -> void! {
+    mut why := ""
+    // CFIRE-UPSTREAM: CF-171
+    cpp {
+        why = flint_clilink::make(std::string(target), std::string(path), admin);
+    }
+    return link_result(why, path)
+}
+
+fn (mut self: OsCliLinks) cli_link_remove(path: str, admin: bool) -> void! {
+    mut why := ""
+    // CFIRE-UPSTREAM: CF-171
+    cpp {
+        why = flint_clilink::remove(std::string(path), admin);
+    }
+    return link_result(why, path)
+}
+
+fn link_result(why: str, path: str) -> void! {
+    if why.len() == 0 {
+        return
+    }
+    if why == "cancelled" {
+        return error(coded(ERR_DENIED, "no administrator password was given; {path} was left as it was"))
+    }
+    if why == "unsupported" {
+        return error(coded(ERR_UNSUPPORTED, "linking the flint command is for macOS"))
+    }
+    return error(coded(ERR_IO, why))
+}

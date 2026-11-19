@@ -1,0 +1,38 @@
+package domain
+
+test "the CLI is found inside a bundle and nowhere else" {
+    assert_eq(bundle_cli_path("/Applications/Flint.app/Contents/MacOS"), "/Applications/Flint.app/Contents/Helpers/flint")
+    assert_eq(bundle_cli_path("/home/me/flint/build/gui"), "")
+    assert_eq(bundle_of_cli("/Users/me/Apps/Flint.app/Contents/Helpers"), "/Users/me/Apps/Flint.app")
+    assert_eq(bundle_of_cli("/usr/local/bin"), "")
+    assert_eq(bundle_of_cli("/x/Contents/Helpers"), "")
+}
+
+test "each state of the place the command goes" {
+    cli := "/Applications/Flint.app/Contents/Helpers/flint"
+    assert_eq(cli_link_state(cli, LinkProbe{ exists: false, is_link: false, target: "", target_exists: false, dir_writable: true }), "missing")
+    assert_eq(cli_link_state(cli, LinkProbe{ exists: true, is_link: true, target: cli, target_exists: true, dir_writable: true }), "installed")
+    assert_eq(cli_link_state(cli, LinkProbe{ exists: true, is_link: true, target: "/Users/me/Downloads/Flint.app/Contents/Helpers/flint", target_exists: true, dir_writable: true }), "other-copy")
+    // A dangling link does not "exist" to stat, but is still a link.
+    assert_eq(cli_link_state(cli, LinkProbe{ exists: false, is_link: true, target: "/Volumes/Old/Flint.app/Contents/Helpers/flint", target_exists: false, dir_writable: true }), "broken")
+    // scripts/install.sh copies a file; Homebrew links somewhere else: never touched.
+    assert_eq(cli_link_state(cli, LinkProbe{ exists: true, is_link: false, target: "", target_exists: false, dir_writable: true }), "foreign")
+    assert_eq(cli_link_state(cli, LinkProbe{ exists: true, is_link: true, target: "/opt/homebrew/bin/flint", target_exists: true, dir_writable: true }), "foreign")
+}
+
+test "the toast offers to install once and to fix every time" {
+    missing := CliLinkSpot{ path: "/usr/local/bin/flint", state: "missing", target: "", admin: true }
+    local := CliLinkSpot{ path: "/Users/me/.local/bin/flint", state: "missing", target: "", admin: false }
+    assert_eq(cli_link_offer(true, [missing, local], false), "install")
+    assert_eq(cli_link_offer(true, [missing, local], true), "")
+    assert_eq(cli_link_offer(false, [missing, local], false), "")
+    mut moved := local
+    moved.state = "broken"
+    assert_eq(cli_link_offer(true, [missing, moved], true), "fix")
+    mut ok := missing
+    ok.state = "installed"
+    assert_eq(cli_link_offer(true, [ok, moved], true), "")
+    mut foreign := local
+    foreign.state = "foreign"
+    assert_eq(cli_link_offer(true, [missing, foreign], false), "")
+}

@@ -1,0 +1,112 @@
+package application
+
+// A file system of links: path → target ("" for a plain file), plus the files that
+// exist and the folders this process may write.
+type FakeCliLinks struct {
+    links:    map[str]str
+    files:    map[str]bool
+    writable: map[str]bool
+    admin_calls: i64
+}
+
+fn new_fake_cli_links() -> FakeCliLinks {
+    mut l := FakeCliLinks{ links: {}, files: {}, writable: {}, admin_calls: 0 }
+    l.writable["/Users/me/.local/bin"] = true
+    return l
+}
+
+fn (self: FakeCliLinks) cli_link_exists(path: str) -> bool {
+    return self.files.contains(path)
+}
+
+fn (self: FakeCliLinks) cli_link_probe(path: str) -> LinkProbe {
+    dir := path[0..path.len() - 6]   // without "/flint"
+    w := self.writable.contains(dir)
+    if self.links.contains(path) {
+        t := self.links[path]
+        if t.len() == 0 {
+            return LinkProbe{ exists: true, is_link: false, target: "", target_exists: false, dir_writable: w }
+        }
+        te := self.files.contains(t)
+        return LinkProbe{ exists: te, is_link: true, target: t, target_exists: te, dir_writable: w }
+    }
+    return LinkProbe{ exists: false, is_link: false, target: "", target_exists: false, dir_writable: w }
+}
+
+fn (mut self: FakeCliLinks) cli_link_make(target: str, path: str, admin: bool) -> void! {
+    if admin {
+        self.admin_calls += 1
+    }
+    self.links[path] = target
+}
+
+fn (mut self: FakeCliLinks) cli_link_remove(path: str, admin: bool) -> void! {
+    if admin {
+        self.admin_calls += 1
+    }
+    self.links.remove(path)
+}
+
+CLI_A: str = "/Applications/Flint.app/Contents/Helpers/flint"
+CLI_B: str = "/Users/me/Downloads/Flint.app/Contents/Helpers/flint"
+HOME: str = "/Users/me"
+
+test "the command is offered once, linked on request, and the admin path used only where needed" {
+    mut links := new_fake_cli_links()
+    links.files[CLI_A] = true
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    st := try cli_link_first_launch(links, mut settings, CLI_A, HOME)
+    assert_eq(st.offer, "install")
+    assert(settings.saved.cli_offer_shown)
+    again := try cli_link_first_launch(links, mut settings, CLI_A, HOME)
+    assert_eq(again.offer, "")
+    after := try install_cli_link(mut links, CLI_A, HOME, "/usr/local/bin/flint")
+    assert_eq(after.spots[0].state, "installed")
+    assert_eq(links.admin_calls, 1)
+    _ = try install_cli_link(mut links, CLI_A, HOME, "/Users/me/.local/bin/flint")
+    assert_eq(links.admin_calls, 1)
+    gone := try remove_cli_link(mut links, CLI_A, HOME, "/usr/local/bin/flint")
+    assert_eq(gone.spots[0].state, "missing")
+    assert_eq(links.admin_calls, 2)
+}
+
+test "a moved app is offered a fix, and a foreign flint is never touched" {
+    mut links := new_fake_cli_links()
+    links.files[CLI_B] = true
+    links.links["/Users/me/.local/bin/flint"] = CLI_A   // A was moved to B: the link dangles
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    settings.saved.cli_offer_shown = true
+    st := try cli_link_first_launch(links, mut settings, CLI_B, HOME)
+    assert_eq(st.spots[1].state, "broken")
+    assert_eq(st.offer, "fix")
+    fixed := try install_cli_link(mut links, CLI_B, HOME, "/Users/me/.local/bin/flint")
+    assert_eq(fixed.spots[1].state, "installed")
+    links.links["/usr/local/bin/flint"] = ""   // a copied file, as scripts/install.sh leaves
+    mut refused := 0
+    install_cli_link(mut links, CLI_B, HOME, "/usr/local/bin/flint") or { refused += 1 }
+    remove_cli_link(mut links, CLI_B, HOME, "/usr/local/bin/flint") or { refused += 1 }
+    install_cli_link(mut links, CLI_B, HOME, "/tmp/flint") or { refused += 1 }
+    assert_eq(refused, 3)
+    assert_eq(links.links["/usr/local/bin/flint"], "")
+}
+
+test "a copy with no CLI inside offers nothing and links nothing" {
+    mut links := new_fake_cli_links()
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    st := try cli_link_first_launch(links, mut settings, "", HOME)
+    assert(!st.available)
+    assert_eq(st.offer, "")
+    assert(!settings.saved.cli_offer_shown)
+    mut refused := 0
+    install_cli_link(mut links, "", HOME, "/usr/local/bin/flint") or { refused += 1 }
+    assert_eq(refused, 1)
+}
+
+test "the page cannot set the app's own records" {
+    mut store := FakeSettingsStore{ saved: default_settings() }
+    store.saved.cli_offer_shown = true
+    mut s := default_settings()
+    s.cli_offer_shown = false
+    saved := try save_settings(mut store, s)
+    assert(saved.cli_offer_shown)
+}

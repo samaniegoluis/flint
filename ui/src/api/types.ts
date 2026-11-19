@@ -207,6 +207,8 @@ export interface Settings {
   toast_corner: ToastCorner;
   /** The app's own record that earlier cached keys were removed (D-048); the core keeps it. */
   keys_cleared?: boolean;
+  /** Milestone 48: the app's own record that the flint command was offered; the core keeps it. */
+  cli_offer_shown?: boolean;
 }
 
 /** Settings → Appearance → Notifications (milestone 46). */
@@ -698,4 +700,23 @@ export interface SyncEvent {
 export interface RemoteLinkView {
   path: string;
   url: string;
+}
+
+/** Milestone 48 (D-111 (2)): one place the `flint` command can be linked from. */
+export type CliLinkState = 'missing' | 'installed' | 'other-copy' | 'broken' | 'foreign';
+export interface CliLinkSpot {
+  path: string;
+  state: CliLinkState;
+  /** What the link points to now ("" when nothing or not a link). */
+  target: string;
+  /** macOS asks for an administrator's password to write there. */
+  admin: boolean;
+}
+export interface CliLinkStatus {
+  /** This copy of Flint carries a CLI (a packaged app). */
+  available: boolean;
+  cli: string;
+  spots: CliLinkSpot[];
+  /** What the first launch's toast offers: install once, fix every time. */
+  offer: '' | 'install' | 'fix';
 }

@@ -44,6 +44,9 @@ type Settings struct {
     // Milestone 46 (D-106 (3)): the window corner toasts appear in (TOAST_CORNERS).
     // Older files read the default.
     toast_corner:       str  `json:"toast_corner" default:"bottom-right"`
+    // Milestone 48 (D-111 (2)): the first launch of a packaged app offered to put the
+    // `flint` command on the PATH. Set by the app, never by the page.
+    cli_offer_shown:    bool `json:"cli_offer_shown" default:"false"`
 }
 
 RDP_MAC_KEYS: []str = ["mac", "windows", "custom"]
@@ -69,7 +72,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right" }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {

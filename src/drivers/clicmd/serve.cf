@@ -645,6 +645,12 @@ fn app_launch_command() -> []str {
         return [override]
     }
     if os_name() == "mac" {
+        // A CLI inside a Flint.app (or linked to one, milestone 48) starts that app,
+        // not whichever Flint.app macOS finds first.
+        bundle := bundle_of_cli(executable_dir())
+        if bundle.len() > 0 {
+            return ["open", "-a", bundle]
+        }
         return ["open", "-a", "Flint"]
     }
     // Next to this flint (a build tree or an install), else on the PATH. On Windows,

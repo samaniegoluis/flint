@@ -1,0 +1,30 @@
+package clilink
+
+import "core:fs"
+import "core:os"
+
+test "a link is made, read back, replaced and removed in a folder this process writes" {
+    dir := os.getenv("TMPDIR") + "/flint-clilink-test-{os.getpid()}"
+    fs.remove(dir) or {}
+    defer { fs.remove(dir) or {} }
+    try fs.mkdir_all(dir + "/A.app/Contents/Helpers")
+    try fs.write_text(dir + "/A.app/Contents/Helpers/flint", "#!/bin/sh\n")
+    mut links := new_os_cli_links()
+    path := dir + "/bin/flint"   // bin does not exist yet
+    p0 := links.cli_link_probe(path)
+    assert(!p0.exists && !p0.is_link && p0.dir_writable)
+    try links.cli_link_make(dir + "/A.app/Contents/Helpers/flint", path, false)
+    p1 := links.cli_link_probe(path)
+    assert(p1.is_link && p1.exists && p1.target_exists)
+    assert_eq(p1.target, dir + "/A.app/Contents/Helpers/flint")
+    // The app moved: the link dangles but is still seen as a link.
+    try fs.rename(dir + "/A.app", dir + "/B.app")
+    p2 := links.cli_link_probe(path)
+    assert(p2.is_link && !p2.exists && !p2.target_exists)
+    try links.cli_link_make(dir + "/B.app/Contents/Helpers/flint", path, false)
+    assert_eq(links.cli_link_probe(path).target, dir + "/B.app/Contents/Helpers/flint")
+    try links.cli_link_remove(path, false)
+    p3 := links.cli_link_probe(path)
+    assert(!p3.exists && !p3.is_link)
+    assert(links.cli_link_exists(dir + "/B.app/Contents/Helpers/flint"))
+}

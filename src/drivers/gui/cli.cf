@@ -1,0 +1,55 @@
+package main
+
+// The `flint` command from a packaged app (milestone 48, D-111 (2)): its state for the
+// first launch's toast and About, and linking it on the person's request.
+
+import "core:json"
+import "core:os"
+import "../../adapters/clilink"
+import "../../adapters/config"
+import "../../adapters/process"
+import "../../application"
+import "../../domain"
+
+type CliFirstReq struct {
+    first: bool `json:"first"`
+}
+
+// This copy's CLI: inside its own bundle. FLINT_CLI and FLINT_CLI_HOME stand in for the
+// bundle and the home folder in gui-e2e, which runs a build with no CLI inside.
+fn self_cli() -> str {
+    o := os.getenv("FLINT_CLI")
+    if o.len() > 0 && os.getenv("FLINT_GUI_E2E").len() > 0 {
+        return o
+    }
+    return bundle_cli_path(executable_dir())
+}
+
+fn cli_home() -> str {
+    o := os.getenv("FLINT_CLI_HOME")
+    if o.len() > 0 && os.getenv("FLINT_GUI_E2E").len() > 0 {
+        return o
+    }
+    return os.getenv("HOME")
+}
+
+fn rpc_cli_status(params: str, mut store: JsonSettingsStore) -> str! {
+    req := try parse_req[CliFirstReq](params)
+    links := new_os_cli_links()
+    if req.first {
+        return json.stringify(try cli_link_first_launch(links, mut store, self_cli(), cli_home()))
+    }
+    return json.stringify(cli_link_status(links, self_cli(), cli_home(), true))
+}
+
+fn rpc_cli_install(params: str) -> str! {
+    req := try parse_req[PathReq](params)
+    mut links := new_os_cli_links()
+    return json.stringify(try install_cli_link(mut links, self_cli(), cli_home(), req.path))
+}
+
+fn rpc_cli_remove(params: str) -> str! {
+    req := try parse_req[PathReq](params)
+    mut links := new_os_cli_links()
+    return json.stringify(try remove_cli_link(mut links, self_cli(), cli_home(), req.path))
+}

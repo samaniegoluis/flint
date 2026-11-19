@@ -13,7 +13,8 @@
 import { pairs } from '../files/pair';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, FlintError, on, toFlintError } from '../api/backend';
-import type { AppInfo, Catalog, LockReason, RecentView, Settings, UnlockRequest, VaultInfo, WindowState } from '../api/types';
+import type { AppInfo, Catalog, CliLinkStatus, LockReason, RecentView, Settings, UnlockRequest, VaultInfo, WindowState } from '../api/types';
+import { CLI_TOAST_KEY, cliInstalledText, cliOffer } from '../lib/cliLink';
 import type { Os } from '../lib/keymap';
 import { ToastStore, type ToastKind, type ToastOptions } from '../lib/toasts';
 
@@ -346,6 +347,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (w?.locked) setWindowLock(w);
         const s = await api.settingsGet();
         setSettings(s);
+        // A packaged app offers the flint command once, and a fix when its link runs
+        // another copy (milestone 48). Never awaited: the vault does not wait on it.
+        api.cliStatus(true).then((st) => {
+          const offer = cliOffer(st);
+          if (!offer) return;
+          notify({ text: offer.text, kind: 'info', key: CLI_TOAST_KEY, duration: 'sticky', actions: [
+            { label: offer.label, run: () => { installCli(offer.path, notify, fail).catch(() => {}); } },
+          ] });
+        }).catch(() => {});
         const list = await refreshRecents();
         // A `flint` command started this app to have a vault unlocked.
         const asked = await api.unlockRequest().catch(() => null);
@@ -409,6 +419,18 @@ export function vaultMarkClass(path: string): string {
 }
 
 // "~/…" for paths under the home folder, when it can be guessed from the path.
+/** Links the flint command at `path` to this copy (milestone 48) and says so. */
+export async function installCli(path: string, notify: Notify, fail: (err: unknown) => unknown): Promise<CliLinkStatus | null> {
+  try {
+    const st = await api.cliInstall(path);
+    notify({ text: cliInstalledText(path), kind: 'ok', key: CLI_TOAST_KEY });
+    return st;
+  } catch (err) {
+    fail(err);
+    return null;
+  }
+}
+
 export function shortPath(path: string): string {
   const m = path.match(/^\/(Users|home)\/[^/]+(\/.*)$/);
   return m ? '~' + m[2] : path;

@@ -40,7 +40,7 @@ fi
 #                                                (milestone 27, D-068)
 #   scripts/repeat.sh vim 10                     one run N times, with its failure rate
 # Exit status: 0 all passed, 1 a run failed.
-runs=(terminal vault tunnels paste rdp webgl fullscreen vim)
+runs=(terminal vault tunnels paste rdp webgl fullscreen vim clilink)
 # multimon (milestone 38) needs two monitors: on Linux an X display with two (the check's
 # container makes one, FLINT_E2E_MULTIMON_DISPLAY), on macOS a person's own screens with
 # FLINT_E2E_MULTIMON=1 (its windows take a Space on each).
@@ -188,7 +188,17 @@ run_app() {
   case "$(uname -s)" in
     MINGW*|MSYS*) python3 -I "$root/windows/front.py" "$(cygpath -w "$root/build/gui/Flint.exe")" 60 >"$4.front" 2>&1 & ;;
   esac
-  FLINT_CONFIG_DIR="$3" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$2" FLINT_GUI_E2E_TIMEOUT_MS="${5:-}" \
+  # clilink (milestone 48): a CLI inside a pretend Flint.app and a home folder of the
+  # run's own, so the links go nowhere near the machine's PATH; its ~/.local/bin holds
+  # a link to a copy that was moved, which the app offers to fix.
+  local cli_env=()
+  if [[ "$1" == clilink ]]; then
+    mkdir -p "$tmp/cli/Flint.app/Contents/Helpers" "$tmp/clihome/.local/bin"
+    printf '#!/bin/sh\n' > "$tmp/cli/Flint.app/Contents/Helpers/flint"
+    ln -sfn "$tmp/cli/Moved.app/Contents/Helpers/flint" "$tmp/clihome/.local/bin/flint"
+    cli_env=(FLINT_CLI="$tmp/cli/Flint.app/Contents/Helpers/flint" FLINT_CLI_HOME="$tmp/clihome")
+  fi
+  env ${cli_env[@]+"${cli_env[@]}"} FLINT_CONFIG_DIR="$3" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$2" FLINT_GUI_E2E_TIMEOUT_MS="${5:-}" \
     FLINT_GUI_E2E_VISIBLE="$visible" \
     "${app[@]}" 2>&1 | tee "$4" || st=$?
   [[ -f "$4.front" ]] && cat "$4.front"
