@@ -146,7 +146,8 @@ if [[ "$run_rdp" == 1 ]]; then
   free_port() { python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
   rport2="$(free_port)"
   rport_fwd="$(free_port)"
-  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/rdp2.key" -out "$tmp/rdp2.crt" -days 2 -subj "/CN=flint-test-2" 2>/dev/null
+  # MSYS2 would turn -subj's /CN=... into a Windows path (as in scripts/test.sh).
+  MSYS2_ARG_CONV_EXCL='/CN=' openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/rdp2.key" -out "$tmp/rdp2.crt" -days 2 -subj "/CN=flint-test-2" 2>/dev/null
   (cd "$tmp" && WLOG_LEVEL=OFF exec sfreerdp-server --cert="$tmp/rdp2.crt" --key="$tmp/rdp2.key" --port="$rport2" >"$tmp/rdp2.log" 2>&1) & rdp2_pid=$!
   python3 -I "$tmp/fwd.py" "$rport_fwd" "$rport" "$rport2" 2 peek & rfwd_pid=$!
 fi
