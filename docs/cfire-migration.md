@@ -887,6 +887,26 @@ Bottom up, one commit per entry, the package's `cfire check` and `cfire test` ea
 No GUI entry is fixed outright. The five redesigns (CF-006, 026, 081, 099, 137) wait for
 the owner.
 
+## Step 6 on the Windows VM (2026-11-18, in progress)
+
+**Resume here.** Branch `cfire-0.12-windows` (from `cfire-0.12`, pushed; never merged
+into `main`). The VM's clone is `C:\flint-work\flint` on that branch. Everything is
+driven from the Mac with `windows/remote.sh <script>` (MSYS2 CLANG64 over `flint exec`,
+600 s cap lifted); `windows/vm/pull.sh` brings the VM to the pushed branch,
+`windows/vm/build-all.sh` builds the three binaries, `windows/vm/test-all.sh` runs
+`scripts/test.sh` with its log in `C:\flint-work\tmp\test-all.log` (read it with a
+second, short script).
+
+| Piece | State |
+|---|---|
+| cfire | `v0.12.2` Windows zip, SHA-256 checked, in `C:\flint-work\opt\cfire-0.12.2` (not `install.ps1`: its default folder and the user PATH are outside `C:\flint-work`); `cfire doctor` in CLANG64: 10 passed, 4 optional warnings |
+| Libraries | pacman (owner, 2026-11-18): `mingw-w64-clang-x86_64-{libsodium,libssh,sqlcipher,curl-winssl,cmake,ninja}`; FreeRDP 3.33.1 static, built natively by `windows/bin/freerdp.sh` into `C:\flint-work\opt\freerdp` |
+| Environment | `windows/bin/env.sh`: cfire and FreeRDP's bin on PATH, temp folder and cfire caches under `C:\flint-work` |
+| Builds | `flint.exe`, `gui\Flint.exe` (icon embedded, no WebView2 DLL) and `flint-vault-server.exe` (Windows branch for the VM's checks only), all with system DLLs only |
+| W-NN | in `docs/cfire-windows.md`, "On stock cfire v0.12.2", one commit each: done W-01..05, 07..11, 13, 17. **Left:** W-06 (ran, needs the desktop), W-12, W-14 (serve-e2e), W-15, W-16 (still open upstream: a new report with a repro), W-18 (still open) |
+| `scripts/test.sh` | runs unchanged in MSYS2 bash (sshd and openssh of MSYS2, sfreerdp-server, Flint's RDP test server, the vault server) but for `-subj /CN=` (MSYS2 path conversion). First full run, partial: domain 157, rdp 54 pass; **serverfs 10/44 fail** (`fs.open(dir)` + `sync()`, step 5's CF-143 change, is "Permission denied" on a Windows folder); **ssh 7/73 fail** (a fixed `/tmp`, a connect timeout, MSYS2 sshd's home, MSYS2's agent socket that a native flint.exe cannot reach, `NUL` vs `/dev/null`, a Windows path sent to SFTP, POSIX modes). Not yet read under rule 9 |
+| Next | finish and read the suite run (rule 9, one failure at a time), then `cli-e2e`, `server-e2e`, `sync-e2e` from `main`'s scripts made portable (the old `windows/*.sh` WSL rewrites go as each is replaced), then `windows/battery.sh` (one command, a summary and an exit code), the port guide. gui-e2e and serve-e2e wait for the owner's autologon |
+
 ## Progress
 
 | Step | Date | Result | Commit |
@@ -905,3 +925,4 @@ the owner.
 | 5.2 | 2026-11-18 | Batch 1, `domain`: CF-130, 131, 132, 133, 135 (`9b90340`..`1d75d2c`; CF-135's tombstone ids through a CF-156 typed local, the tunnels' host list kept for the report's order). Mac: test.sh 17/17 at 4b's counts and 24/24, cli-e2e 483, server-e2e 70, sync-e2e 105. Docker warm: test.sh 16/17, **`rdp` crashed once on its first test** (SIGSEGV in a dial that can only time out; the same binary under gdb ran 54/54; ROADMAP §5), cli-e2e 494, gui-e2e the eight counts, serve-e2e 47/224 with its timeline (the field emptied within 21 ms of typing: `Unlock.tsx`'s mount effect, ROADMAP §5), server-e2e 70, sync-e2e 110. Both failures with the owner; not rerun | this commit |
 | 5.3 | 2026-11-18 | Batch 2, `application` and `adapters`: CF-091, 129, 136 in part, 143, 139 (`639d4bc`..`4708a8f`; owned copies for CF-158 at `fs.realpath`, `fs.remove`, `fs.open`; the lock folder stays native, tagged CF-099; `serverfs` 45 → 44 tests, its `peer_address` test gone with the function). Not removed after a closer look: CF-024 (nothing left to take) and CF-124 (a redesign), both to ROADMAP with CF-006, 026, 081, 099, 137. Mac: test.sh 17/17 and 24/24, cli-e2e 483, server-e2e 70, sync-e2e 105. Docker warm: test.sh 17/17, cli-e2e 494, gui-e2e the eight counts, serve-e2e 47/224 with the same timeline as batch 1, server-e2e 70, sync-e2e 110. **Batch 3, the images (CF-087 in `scripts/linux/Dockerfile`, the server image onto the `v0.12.2` archive with CF-086/087), prepared but not built: in `git stash` `step5-images`, for the next session** | this commit |
 | 5.4 | 2026-11-18 | Batch 3, the images, and the owner's two calls. The server image on the `v0.12.2` archive (CF-086, `f2dbdd7`), simdjson out of both images (CF-087, `98b3ae3`); the server image built under its own tag and run (401 without the token, upload, download, `304`, `409`, a label, a restart keeps the vault). Linux serve-e2e: `#pw`'s `autoFocus` landed before the mount effect's clear, so focus was no signal; `autoFocus` gone, the effect's focus kept (`a045a70`), and serve-e2e types once the field is focused (`ebde9dd`): the first unlock now reads `field=25` at the click. The RDP crash: gdb in the Linux image and `scripts/linux/crash-bt.c` preloaded by `test.sh`, every thread's backtrace from the crash itself (CF-167, new: the test runtime `_Exit`s with no core; `5fe399f`); no crash this run, so the dial's margin waits. Mac: test.sh 17/17 and 24/24, cli-e2e 483, server-e2e 70, sync-e2e 105. Docker **cold** (`FLINT_LINUX_COLD=1`, 26 min 29 s): test.sh 17/17, cli-e2e 494, gui-e2e the eight counts, **serve-e2e 224/224**, server-e2e 70, sync-e2e 110, exit 0. **Step 5 closed**; step 6 waits for the owner | this commit |
+| 6 (in progress) | 2026-11-18 | cfire `v0.12.2` on the VM, stock; branch `cfire-0.12-windows` with the port's Flint side; the three binaries build natively; 13 W-NN decided; `scripts/test.sh` runs in MSYS2, first failures in serverfs and ssh. See *Step 6 on the Windows VM* | `5941161`..this commit |
