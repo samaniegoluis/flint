@@ -52,7 +52,7 @@ fn spawn_detached(path: str) -> bool {
 // (windows-port).
 fn local_slashes(path: str) -> str {
     if os_name() == "windows" {
-        return path.replace("\\", "/")
+        return path.replace_all("\\", "/")
     }
     return path
 }
@@ -120,7 +120,7 @@ fn current_dir() -> str {
     here: str = os.cwd()
     if os_name() == "windows" {
         // One form for local paths on Windows: `/` separators (windows-port).
-        return here.replace("\\", "/")
+        return here.replace_all("\\", "/")
     }
     return here
 }

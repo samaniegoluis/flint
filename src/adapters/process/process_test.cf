@@ -43,3 +43,14 @@ test "the executable folder and OS name are known" {
     // "C:/..." on Windows (windows-port).
     assert(executable_dir().starts_with("/") || (os == "windows" && is_absolute_path(executable_dir())))
 }
+
+// Every `\` becomes `/` on Windows, not only the first (CF-151: 0.12's `.replace` is
+// first-match): the file dialogs gave `C:/flint-work\tmp\...`, and the unlock screen
+// named the vault after the whole path.
+test "local paths on Windows take / at every separator" {
+    if os_name() == "windows" {
+        assert_eq(local_slashes("C:\\a\\b c\\v.flint"), "C:/a/b c/v.flint")
+    } else {
+        assert_eq(local_slashes("/a/b\\c"), "/a/b\\c")
+    }
+}
