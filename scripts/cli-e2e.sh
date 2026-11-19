@@ -80,6 +80,12 @@ check() {
 }
 
 json_get() { python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(eval(sys.argv[1], {"d": d}))' "$1"; }
+# A path as the native flint.exe prints it: C:/... in MSYS2 (where bash says /c/...),
+# unchanged elsewhere.
+case "$(uname -s)" in
+  MINGW*|MSYS*) npath() { cygpath -m "$1"; } ;;
+  *) npath() { printf '%s' "$1"; } ;;
+esac
 is_json() { python3 -c 'import json,sys; json.loads(sys.stdin.read())' 2>/dev/null; }
 
 echo "== vault lifecycle"
@@ -187,14 +193,14 @@ expect 4 "rename to another recent vault's name is a conflict" "$MI" -- vault re
 expect 7 "rename to an empty name is invalid" "$MI" -- vault rename "" "${M[@]}"
 expect 2 "rename needs exactly one name" "" -- vault rename
 expect 0 "vault list after rename" "" -- --json vault list
-check "the recent entry has the new name and an id" '[[ "$(echo "$out" | json_get "d[0][\"name\"]")" == "Work Three" && "$(python3 -c "import json;print(len(json.load(open(\"$FLINT_CONFIG_DIR/vaults.json\"))[\"vaults\"][0][\"id\"]))")" == "32" ]]'
+check "the recent entry has the new name and an id" '[[ "$(echo "$out" | json_get "d[0][\"name\"]")" == "Work Three" && "$(python3 -c "import json,sys;print(len(json.load(open(sys.argv[1]))[\"vaults\"][0][\"id\"]))" "$FLINT_CONFIG_DIR/vaults.json")" == "32" ]]'
 check "the vault list keeps no stale entries" '[[ "$(echo "$out" | json_get "len(d)")" == "2" ]]'
 moved="$tmp/moved/work.flint"
 mkdir -p "$tmp/moved" && mv "$work" "$moved"
 expect 0 "opening a moved vault" "$MI" -- --json vault open "$moved" "${M[@]}"
 check "the moved vault keeps its name" '[[ "$(echo "$out" | json_get "d[\"name\"]")" == "Work Three" ]]'
 expect 0 "vault list after the move" "" -- --json vault list
-check "the moved vault replaced its stale entry" '[[ "$(echo "$out" | json_get "len(d)")" == "2" && "$(echo "$out" | json_get "d[0][\"path\"]")" == "$moved" && "$(echo "$out" | json_get "all(v[\"exists\"] for v in d)")" == "True" ]]'
+check "the moved vault replaced its stale entry" '[[ "$(echo "$out" | json_get "len(d)")" == "2" && "$(echo "$out" | json_get "d[0][\"path\"]")" == "$(npath "$moved")" && "$(echo "$out" | json_get "all(v[\"exists\"] for v in d)")" == "True" ]]'
 mv "$moved" "$work"
 expect 0 "the vault is back where it was" "$MI" -- vault open "$work" "${M[@]}"
 expect 0 "and renamed back" "$MI" -- vault rename work "${M[@]}"
