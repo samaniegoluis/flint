@@ -10,6 +10,15 @@ real Windows support, that diff is the port; this guide is its checklist and the
 is checked against [`cfire-windows.md`](cfire-windows.md). Keep the branch close to `main`
 by merging `main` into it now and then.
 
+> **On stock cfire `v0.12.2` (cfire migration, step 6, 2026-11-18):** Flint builds and is
+> checked natively on the Windows test VM in MSYS2 CLANG64, with `main`'s own scripts
+> (`docs/cfire-migration.md`, "Step 6 on the Windows VM"). The WSL scripts that those
+> replace are gone: `windows/test-suites.sh` (now `scripts/test.sh`, through
+> `windows/vm/test-all.sh`), `windows/cli-smoke.sh` (now `scripts/cli-e2e.sh`),
+> `windows/sync-e2e.sh` and `windows/vault-server.sh` (now `scripts/sync-e2e.sh` and the
+> test server of `scripts/test.sh`). The rest of `windows/` stays until gui-e2e and
+> serve-e2e run on the VM's desktop. What follows is the WSL-era record.
+
 | Two files, two readers | |
 |---|---|
 | [`cfire-windows.md`](cfire-windows.md) + `cfire-windows/patches/` | For cfire's author: what cfire lacked on Windows, with patches |

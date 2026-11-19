@@ -1,5 +1,5 @@
 # source windows/rdp-servers.sh — RDP test servers as Windows programs on Windows'
-# loopback, for test-suites.sh and gui-e2e.sh (scripts/test.sh's twin on macOS/Linux).
+# loopback, for the WSL gui-e2e.sh (scripts/test.sh's twin on macOS/Linux).
 #
 #   rdp_servers_start <folder in WSL>   # exports FLINT_RDP_SAMPLE_PORT, FLINT_RDP_CLIP_PORT,
 #                                       # FLINT_RDP_CLIP_CONTROL and adds them to WSLENV

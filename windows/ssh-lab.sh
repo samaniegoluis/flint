@@ -5,7 +5,7 @@
 #   windows/ssh-lab.sh start   # sshd x2 in WSL + relay + a vault in %TEMP%\flint-lab
 #   windows/ssh-lab.sh stop
 #
-# Same setup as cli-smoke.sh: two sshd on 127.0.0.2:2222/2223 with their own keys and
+# The setup the WSL cli-smoke.sh had (gone in step 6): two sshd on 127.0.0.2:2222/2223 with their own keys and
 # config in a temp dir, and ssh-relay.ps1 carrying Windows' 127.0.0.1:2322 to the
 # first. The vault (master password `master-pass-1`) has the user key `tkey`, host
 # `local` (host key already trusted) and host `inner` behind `local` (not trusted
