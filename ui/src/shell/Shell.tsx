@@ -293,7 +293,7 @@ export function Shell() {
   }, [view, setSidebarCollapsed]);
 
   const cycleRegion = (dir: 1 | -1) => {
-    const regions = ['.palette-btn', '.rail', '.sidebar', '.tabbar', '.toolbar', '.pane', '.statusbar']
+    const regions = ['.palette-btn', '.rail', '.sidebar', '.tabbar', '.toolbar', '.pane', '.statusbar', '.toasts']
       .map((s) => document.querySelector<HTMLElement>(s)).filter((el): el is HTMLElement => !!el && el.offsetParent !== null);
     const cur = regions.findIndex((r) => r.contains(document.activeElement));
     const next = regions[(cur + dir + regions.length) % regions.length];

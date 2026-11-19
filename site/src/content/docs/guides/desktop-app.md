@@ -55,7 +55,9 @@ the corner.
 - A toast leaves after about 6 seconds. Pointing at the stack, or moving the focus into it,
   pauses that while you read.
 - **Errors stay** until you close them, and so does a toast that shows progress.
-- Every toast has a **✕**. With the focus on a toast, <kbd>Esc</kbd> closes it.
+- Every toast has a **✕**. <kbd>F6</kbd> reaches the toasts like any other part of the
+  window (the terminal keeps <kbd>Tab</kbd>); there, <kbd>Esc</kbd> closes the toast and the
+  focus goes back where it was.
 - A long message is cut at two lines; **More** shows the rest.
 - A toast may carry a button or two (*Stop them*, *Details*). Clicking one does what it says
   and closes the toast.

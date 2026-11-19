@@ -1,7 +1,8 @@
 // The toast stack's view (milestone 46, designs 24a, 24b, 24j1): the store's toasts
 // in the corner Settings → Appearance → Notifications chose. The newest sits closest
-// to the corner. Hover or focus anywhere on the stack pauses every timer; Escape
-// closes the toast that holds the focus. Screen readers hear each toast through two
+// to the corner. Hover or focus anywhere on the stack pauses every timer; F6 reaches
+// the stack like any other region of the window, and Escape closes the toast that
+// holds the focus, giving the focus back where it came from. Screen readers hear each toast through two
 // live regions mounted before the first one, so the first toast is never missed.
 
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
@@ -18,6 +19,9 @@ export function Toasts({ store, corner }: { store: ToastStore; corner: ToastCorn
   const said = useSyncExternalStore(store.subscribe, store.announcement);
   const hover = useRef(false);
   const focus = useRef(false);
+  // Where the focus was before it came into the stack (often the terminal), given
+  // back when Escape closes the last toast.
+  const before = useRef<HTMLElement | null>(null);
   const top = corner.startsWith('top');
 
   const sync = () => (hover.current || focus.current ? store.pause() : store.resume());
@@ -38,7 +42,11 @@ export function Toasts({ store, corner }: { store: ToastStore; corner: ToastCorn
         <div className="toasts" data-corner={CORNER_ATTR[corner]} data-toasts
           onMouseEnter={() => { hover.current = true; sync(); }}
           onMouseLeave={() => { hover.current = false; sync(); }}
-          onFocus={() => { focus.current = true; sync(); }}
+          onFocus={(e) => {
+            const from = e.relatedTarget as HTMLElement | null;
+            if (!e.currentTarget.contains(from)) before.current = from;
+            focus.current = true; sync();
+          }}
           onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { focus.current = false; sync(); } }}
           onKeyDown={(e) => {
             if (e.key !== 'Escape') return;
@@ -46,7 +54,11 @@ export function Toasts({ store, corner }: { store: ToastStore; corner: ToastCorn
             if (!el) return;
             e.preventDefault();
             e.stopPropagation();
+            // The focus moves to another toast's ✕, or back where it came from.
+            const other = [...e.currentTarget.querySelectorAll<HTMLElement>('[data-toast]:not(.leaving)')].find((t) => t !== el);
             store.dismiss(Number(el.dataset.toast));
+            const back = other?.querySelector<HTMLElement>('[data-toast-close]') ?? before.current;
+            if (back?.isConnected) back.focus();
           }}>
           {ordered.map((t) => <ToastView key={t.id} t={t} store={store} />)}
         </div>

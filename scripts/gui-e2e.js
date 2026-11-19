@@ -2395,11 +2395,20 @@
       await check(true, 'the timer resumes when the pointer leaves');
 
       T.show({ text: 'closed by Escape', kind: 'error' });
-      const esc = await waitFor(() => shown()[0]?.querySelector('[data-toast-close]'), 'the Escape toast');
-      esc.focus();
-      esc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+      await waitFor(() => shown().length === 1, 'the Escape toast');
+      const startedAt = document.activeElement;
+      for (let i = 0; i < 10 && !q('[data-toasts]')?.contains(document.activeElement); i++) {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', code: 'F6', bubbles: true, cancelable: true }));
+        await sleep(60);
+      }
+      await check(q('[data-toasts]').contains(document.activeElement), 'F6 reaches the toast stack like any other region');
+      const fromEl = q('.nav-i.on') ?? q('.nav-i');
+      fromEl.focus();
+      q('[data-toast-close]', shown()[0]).focus();
+      document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
       await waitFor(() => shown().length === 0, 'Escape to close the focused toast');
       await check(true, 'Escape closes the toast holding the focus');
+      await check(document.activeElement === fromEl, `the focus goes back where it came from (${document.activeElement?.className}, was ${startedAt?.className})`);
 
       T.show({ text: 'Flint 9.9.9 is available', kind: 'info', duration: 'sticky', key: 'e2e' });
       T.show({ text: 'Downloading Flint 9.9.9', kind: 'info', progress: 42, key: 'e2e' });

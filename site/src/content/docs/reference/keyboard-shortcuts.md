@@ -35,7 +35,7 @@ speaks the Kitty keyboard protocol.
 | Quit Flint (closing the window only hides it in the menu bar or tray) | ⌘Q | Ctrl+Shift+Q |
 | Copy · paste in the terminal | ⌘C · ⌘V | Ctrl+Shift+C · Ctrl+Shift+V |
 | Terminal font size | ⌘+ ⌘− ⌘0 | Ctrl+Shift+= − 0 |
-| Move between regions (leave the terminal) | F6 · ⇧F6 | F6 · Shift+F6 |
+| Move between regions (leave the terminal; the toasts are one) | F6 · ⇧F6 | F6 · Shift+F6 |
 
 On Windows the shortcuts are the Linux ones, and the terminal also copies and pastes as
 Windows Terminal does: <kbd>Ctrl+Insert</kbd> copies, and so does <kbd>Ctrl+C</kbd>
