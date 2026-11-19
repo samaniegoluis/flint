@@ -94,7 +94,7 @@
         const remote = up ? to : from;
         const host = form.querySelector('[data-copy-ask]')?.dataset.copyHost ?? '';
         const badge = form.querySelector('[data-copy-ask] .badge')?.textContent ?? '';
-        log((/wants to copy files (to|from) local/.test(title) && host === 'local' && local.startsWith('/') && remote.length > 0 && !remote.startsWith('local:') && badge === (up ? 'Upload' : 'Download') ? 'ok   ' : 'FAIL ') + 'the approval window says copy files with the direction, the host and both paths');
+        log((/wants to copy files (to|from) local/.test(title) && host === 'local' && /^(\/|[A-Za-z]:\/)/.test(local) && remote.length > 0 && !remote.startsWith('local:') && badge === (up ? 'Upload' : 'Download') ? 'ok   ' : 'FAIL ') + 'the approval window says copy files with the direction, the host and both paths');
         if (req.includes('--force')) log((form.querySelector('[data-copy-force]') ? 'ok   ' : 'FAIL ') + 'a copy with --force warns that it replaces files');
         log((form.querySelector('[data-scope-host]') && form.querySelector('[data-action="exec"]')?.checked ? 'ok   ' : 'FAIL ') + 'a copy proposes running commands on that host');
       }
@@ -189,6 +189,9 @@
       const st = screenState();
       if (st !== lastState) { log(`diag: unlock at ${Math.round(performance.now() - t0)} ms: ${st}`); lastState = st; }
     }, 20);
+    // The CLI's first command asks for this unlock; Allow covers it only when it has
+    // arrived, so wait for it (on Windows the window was ready first).
+    await waitFor(() => q('[data-unlock-request]'), 'the request on the unlock screen');
     await typeMaster('the first unlock');
     log(`diag: unlock typed at ${Math.round(performance.now() - t0)} ms: ${screenState()}`);
     await sleep(30);
@@ -202,11 +205,18 @@
     }
     await check(true, 'the window unlocks the vault the CLI will use');
     await log('ready');
+    // A timeline of what the CLI's changes tell the window (on Windows the rename
+    // sometimes never shows): each event and what the window showed when it came.
+    window.runtime.EventsOn('vault:changed', (e) => {
+      log(`diag: vault:changed path=${e.path} name=${e.name}; window shows ${q('.vault-name')?.textContent ?? '?'} at ${q('.vault-path')?.textContent ?? '?'}`);
+    });
 
     step = 'served changes';
     await waitFor(() => byText('.tree .ti', 'served-web'), 'the host the CLI added', 90000);
     await check(true, 'a host added by the CLI shows in the tree without a reload');
-    await waitFor(() => q('.vault-name')?.textContent === 'Served Renamed', 'the name the CLI gave the vault', 120000);
+    // The shell gets to `vault rename` after every section below the first unlock: about
+    // two minutes on Windows, so this ceiling is generous.
+    await waitFor(() => q('.vault-name')?.textContent === 'Served Renamed', 'the name the CLI gave the vault', 300000);
     await check(true, 'a rename by the CLI shows in the window');
 
     step = 'locked by the CLI';

@@ -24,6 +24,18 @@ if [[ -z "${FLINT_TEST_SSH_PORT:-}" ]]; then
   FLINT_TEST_CMD="$root/scripts/serve-e2e.sh" exec "$root/scripts/test.sh"
 fi
 cd "$root"
+# Windows (MSYS2): Flint takes a console with a window for a terminal, and setsid cannot
+# take it away. The whole run starts again once in a console with no window
+# (CREATE_NO_WINDOW), so every `flint` below has no terminal and is called directly:
+# a wrapper per command would stay as its parent (Windows has no exec) and be a new
+# caller each time, which no grant covers.
+case "$(uname -s)" in
+  MINGW*|MSYS*)
+    if [[ -z "${FLINT_E2E_NO_WINDOW:-}" ]]; then
+      FLINT_E2E_NO_WINDOW=1 exec python3 -I -c 'import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:], stdin=subprocess.DEVNULL, stdout=sys.stdout, stderr=sys.stderr, creationflags=0x08000000))' \
+        "$(cygpath -m /usr/bin/bash.exe)" "$(cygpath -m "$root/scripts/serve-e2e.sh")" "$@"
+    fi ;;
+esac
 . "$root/scripts/env.sh"
 cfire build >/dev/null || { echo "serve-e2e: build failed" >&2; exit 1; }
 "$root/scripts/build-gui.sh" >/dev/null || { echo "serve-e2e: app build failed" >&2; exit 1; }
@@ -31,7 +43,7 @@ flint="$root/build/flint"
 case "$(uname -s)" in
   Darwin) app=(build/gui/Flint.app/Contents/MacOS/Flint); win=0 ;;
   # Windows (MSYS2): the real WebView2 window in the desktop session (windows/desktop.sh).
-  MINGW*|MSYS*) app=(timeout 200 build/gui/Flint.exe); win=1 ;;
+  MINGW*|MSYS*) app=(timeout 600 build/gui/Flint.exe); win=1 ;;
   *) app=(timeout 200 xvfb-run -a build/gui/Flint); win=0 ;;
 esac
 
@@ -65,10 +77,10 @@ all_out="$tmp/all-output"
 failures=0
 checks=0
 
-# On Windows (MSYS2) the terminal is the console, which setsid does not take away: the
-# command starts with none at all (DETACHED_PROCESS), through the native python.
+# No terminal for `flint`: setsid, then exec, so the caller's chain is the one of this
+# script. On Windows the whole run already has a console with no window (above).
 case "$(uname -s)" in
-  MINGW*|MSYS*) no_tty() { python3 -c 'import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, creationflags=0x8))' "$@"; } ;;
+  MINGW*|MSYS*) no_tty() { "$@"; } ;;
   *) no_tty() { perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV or die "exec: $!"' "$@"; } ;;
 esac
 
@@ -335,15 +347,15 @@ new_caller "" -- exec local -- echo long-cmd "$long_tail" long-cmd-end
 check "a long exec allowed in the window runs whole" '[[ $status == 0 && "$out" == *long-cmd-end* ]]'
 
 # One caller, several commands: a grant scoped to one host is reused for it, and
-# does not reach another host.
-cat > "$tmp/scope.pl" <<'PL'
-my ($flint, @runs) = @ARGV;
-my @codes;
-for my $r (@runs) { push @codes, system($flint, split(/ /, $r)) >> 8; }
-print join(",", @codes), "\n";
-PL
+# does not reach another host. Python, not perl: MSYS2's perl forks for each system(),
+# and on Windows the fork stays as flint's parent, a new caller per command.
+cat > "$tmp/scope.py" <<'PY'
+import subprocess, sys
+flint, runs = sys.argv[1], sys.argv[2:]
+print(",".join(str(subprocess.call([flint] + r.split(" "))) for r in runs))
+PY
 asked_scope_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
-scope_out="$(printf '' | no_tty perl "$tmp/scope.pl" "$flint" "exec local -- echo scope-me" "exec local -- echo again" "host list" "exec tty -- echo deny-me" 2>"$tmp/scope.err")"
+scope_out="$(printf '' | no_tty python3 -I "$tmp/scope.py" "$flint" "exec local -- echo scope-me" "exec local -- echo again" "host list" "exec tty -- echo deny-me" 2>"$tmp/scope.err")"
 echo "$scope_out" >> "$all_out"
 asked_scope_after=$(grep -c "asking the owner to approve" "$tmp/app.log")
 check "a grant for one host runs there, again without asking, and reads" '[[ "$scope_out" == *"0,0,0,"* ]]'
@@ -358,7 +370,7 @@ tok="$out"
 check "token create, allowed in the window, prints only the token on stdout" '[[ $status == 0 && "$tok" =~ ^flint_[0-9a-f]{16}_[0-9a-f]{64}$ ]]'
 check "and says on stderr it is shown this once" '[[ "$err" == *"shows it this once"* ]]'
 # One caller twice: a grant never covers token create, so each one asks.
-twice_out="$(printf '' | no_tty perl "$tmp/scope.pl" "$flint" "token create --name twice-a --allow read" "token create --name twice-b --allow read" 2>"$tmp/twice.err")"
+twice_out="$(printf '' | no_tty python3 -I "$tmp/scope.py" "$flint" "token create --name twice-a --allow read" "token create --name twice-b --allow read" 2>"$tmp/twice.err")"
 asked_tok_after=$(grep -c "asking the owner to approve" "$tmp/app.log")
 check "a caller that created a token is asked again for the next one" '[[ "$twice_out" == *"0,0"* && $((asked_tok_after - asked_tok_before)) == 3 ]]'
 new_caller "" -- token create --name deny-me-token --allow read
@@ -412,7 +424,7 @@ if [[ -n "${FLINT_FAKE_SUDO_DIR:-}" || -n "${FLINT_E2E_SUDO:-}" ]]; then
   check "--json captures a sudo command's output" '[[ $status == 0 && "$(echo "$out" | json_get "d[\"stdout\"]")" == as-root* ]]'
   local_run "" -- --json host show local
   check "the window saved the sudo password for the host, as asked" '[[ "$(echo "$lout" | json_get "d[\"has_sudo_password\"]")" == "True" && "$lout" != *"$SUDO_PW"* ]]'
-  sudo_out="$(printf '' | no_tty perl "$tmp/scope.pl" "$flint" "host list" "exec local --sudo -- echo first" "exec local --sudo -- echo second" 2>"$tmp/sudo.err")"
+  sudo_out="$(printf '' | no_tty python3 -I "$tmp/scope.py" "$flint" "host list" "exec local --sudo -- echo first" "exec local --sudo -- echo second" 2>"$tmp/sudo.err")"
   echo "$sudo_out" >> "$all_out"
   asked_sudo_after=$(grep -c "asking the owner to approve" "$tmp/app.log")
   check "no grant covers sudo: each command is asked for, with the saved password" '[[ "$sudo_out" == *"0,0,0"* && $((asked_sudo_after - asked_sudo_before)) == 7 ]]'
@@ -467,7 +479,7 @@ echo "== flint cp between two hosts through the app (milestone 18)"
 # One caller: a grant for `local` alone does not reach a copy to `tty` (behind it), so
 # the window asks again and proposes both hosts; that grant then covers the next copy.
 asked_relay_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
-relay_out="$(printf '' | no_tty perl "$tmp/scope.pl" "$flint" "exec local -- echo scope-me" "cp local:$cpd/here/blob.bin tty:$cpd/remote/scope-me-relay.bin" "cp local:$cpd/here/blob.bin tty:$cpd/remote/again-relay.bin" "exec tty -- echo both" 2>"$tmp/relay.err")"
+relay_out="$(printf '' | no_tty python3 -I "$tmp/scope.py" "$flint" "exec local -- echo scope-me" "cp local:$cpd/here/blob.bin tty:$cpd/remote/scope-me-relay.bin" "cp local:$cpd/here/blob.bin tty:$cpd/remote/again-relay.bin" "exec tty -- echo both" 2>"$tmp/relay.err")"
 echo "$relay_out" >> "$all_out"
 asked_relay_after=$(grep -c "asking the owner to approve" "$tmp/app.log")
 check "a copy between two hosts runs through the app, byte for byte" '[[ "$relay_out" == *"0,0,0,0"* ]] && cmp -s "$cpd/here/blob.bin" "$cpd/remote/scope-me-relay.bin" && cmp -s "$cpd/here/blob.bin" "$cpd/remote/again-relay.bin"'
@@ -539,7 +551,9 @@ expect 0 "vault unlock: Flint already holds it" "" -- vault unlock
 check "it says so" '[[ "$out" == *"in Flint"* ]]'
 
 echo "== the held vault named through a symbolic link is the held vault (milestone 41)"
-ln -s "$tmp" "$tmp/link"
+# Windows: a junction (mklink /J), which needs no Developer Mode; a symbolic link does,
+# and the desktop session's task is not elevated.
+if [[ $win == 1 ]]; then MSYS2_ARG_CONV_EXCL="*" cmd /c mklink /J "$(cygpath -w "$tmp/link")" "$(cygpath -w "$tmp")" >/dev/null; else ln -s "$tmp" "$tmp/link"; fi
 expect 0 "a served command through the link" "" -- --vault "$tmp/link/served.flint" --json vault status
 check "it is the app's vault, unlocked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" == "True" ]]'
 expect 4 "vault merge through the link is refused while the app holds it" "$MASTER"$'\n' -- --vault "$tmp/link/served.flint" vault merge "$other" --master-stdin
@@ -612,7 +626,7 @@ wait "$app_pid" || app_status=$?
 app_pid=""
 # 137 is a SIGKILL (on Linux in Docker, the OOM killer), 139 a SIGSEGV.
 echo "diag: the app exited with status $app_status"
-sed 's/^/app: /' "$tmp/app.log" | grep -E "ok |FAILED|checks passed|e2e:|page text|locks on|vault locked" || true
+sed 's/^/app: /' "$tmp/app.log" | grep -E "ok |FAILED|checks passed|e2e:|page text|locks on|vault locked|diag:" || true
 if ! grep -q "^e2e: pass" "$tmp/app.log"; then
   echo "diag: the app log's last lines that are not the page's:"
   grep -v '^\[page\]' "$tmp/app.log" | tail -20 | sed 's/^/app: /'
