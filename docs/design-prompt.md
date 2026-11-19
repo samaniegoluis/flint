@@ -721,3 +721,140 @@ alarm. The rules (owner):
 
 Dark and light for every screen.
 ```
+
+## Message 10: updates, What's new and the toast component (spec v12, sent 2026-11-19)
+
+Written with the owner on 2026-11-19, before any spec: the toast reworked into one
+reusable component (any corner, durations per call, up to two buttons, progress), and the
+screens for the self-update of ROADMAP §7. Send it in the same chat as messages 1-9. The
+handoff came back as screens 24*, 12e and changes to 12a, 20d2 and 23e1; message 10b
+corrected it.
+
+```
+Flint follow-up: updates, a "What's new" screen, and the toast reworked into a reusable
+component. Same tokens.css, components and dark/light pairs as the existing screens.
+Name the new files 24…, as below, and update 12 (Settings → About and Appearance) and
+the status bar where noted.
+
+Context: Flint will ship releases (semver, a CHANGELOG with a short summary per version
+and Added / Fixed sections). The app checks for a new version and can update itself.
+The rules (owner):
+  - Never a forced restart: Flint holds open SSH and RDP sessions and tunnels. It tells,
+    downloads when asked, and relaunches only when the person says so.
+  - Releases are signed with Flint's own key and verified before anything is applied;
+    the screens may say "Verified" but never show keys or hashes.
+  - The check can be turned off; it only fetches a manifest, it sends nothing about the
+    person.
+  - The app and the command-line tool update together (one install).
+  - Installs managed by a package manager (Linux .deb/.rpm, Homebrew, winget) do not
+    self-update: Flint only says a new version exists and shows the command to run.
+  - Calm, never alarming: an update is good news, like the merge toast of 23e.
+
+24a · The toast, as a component (replaces the single toast of today, see 23e and 20d2).
+  One look for every toast in the app: a status mark (a small dot or icon in the kind's
+  colour: ok, info, error), the text, up to two buttons, an optional progress value on
+  the right ("7%", faint, fixed width so the text never moves), and a ✕ always.
+  Show: an ok toast ("Saved prod-api"), an error toast with a long message wrapping to
+  two lines, an info toast with one button ("Tab closed. 2 tunnels still up on prod-db ·
+  Stop them"), and a stack of three (newest closest to the corner; at most three).
+  Reference for the feel: a compact pill-like bar, rounded, the accent used only for
+  the action button and the dot.
+
+24b · Toast position: the same stack in each corner of the window. Bottom-right is the
+  default. Bottom corners sit above the status bar and the stack grows upward; top
+  corners sit under the tab bar and the stack grows downward. Never over the rail.
+
+24c · The update toast, one toast that changes in place (it stays until acted on or ✕):
+  1. "Flint 1.4.0 is available" · [Download] [✕]
+  2. "Downloading Flint 1.4.0" · 7% · [✕ cancels the download]
+  3. "Flint 1.4.0 is ready" · [Relaunch] [✕ = later; it applies at the next launch]
+  4. Failed: "Couldn't download Flint 1.4.0" · [Retry] [✕]
+  5. Package-managed install: "Flint 1.4.0 is available" · [How to update] (opens 24e)
+
+24d · Relaunch with work open: a small confirm when sessions or tunnels are up.
+  "Relaunch to update? 3 sessions and 2 tunnels will close." [Cancel] [Relaunch].
+  With nothing open, Relaunch goes straight through.
+
+24e · Settings → About, updated (12): a "Version" block with the current version, the
+  update state and its action, matching 24c (Up to date · last checked 10 min ago ·
+  [Check now]; Available · [Download]; Downloading 42%; Ready · [Relaunch]; package
+  manager: the command to run, e.g. `brew upgrade --cask flint`, with Copy). A toggle
+  "Check for updates automatically". A link "What's new in 1.4.0" that opens 24g.
+  Keep the existing libraries table below.
+
+24f · The status bar's version item (today "v0.12.1", bottom right, opens About):
+  when an update is available or ready, a small accent dot on it; a click opens a
+  popover (like the sync popover of 23c) with the state and its one action, and a link
+  to About. Idle and up to date: it looks as today.
+
+24g · What's new: the first thing after a relaunch into a new version (once per
+  version), and reachable from About and the palette. A modal over the unlocked app,
+  wide enough to read: "Flint 1.4.0", the date, the version's summary as a short
+  paragraph, then Added and Fixed as lists (scope in bold, as the CHANGELOG writes
+  them). When versions were skipped (1.2.0 → 1.4.0), each version in between as its
+  own section, newest first. A link "Full changelog" (the docs site) and [Close]
+  (Esc). Show it with a long changelog (scrolls inside the modal) and a short one.
+
+24h · Settings → Appearance: "Notifications" with the corner picker (a small window
+  diagram with four clickable corners, bottom-right selected).
+
+24i · Command palette: "Check for updates", "What's new in Flint".
+
+24j · At 900×600 (as 04c): 24a stack, 24c state 3, 24e and 24g.
+```
+
+## Message 10b: corrections to message 10 (sent 2026-11-19)
+
+After reviewing the first handoff of 24*: the top corners covered the session toolbar,
+a failed download did not tell a network failure from a failed verification, a long
+error lost its end, and some screens disagreed. With the owner's decisions on timing,
+button colour and the check's frequency. The second handoff was imported as is, except
+that its README dropped milestone 45's note on 23a3, which was kept.
+
+```
+Flint follow-up to message 10 (screens 24*): corrections and the owner's decisions.
+Same files and names; update the screens in place and the README section.
+
+Decisions (owner):
+  - Timing: toasts leave after 6 s, paused while hovered or focused. Error toasts are
+    sticky: they stay until ✕ or their action. Progress toasts and toasts waiting for
+    a decision (update available, ready) stay too.
+  - Button colour: ember (btn-primary) only for the update's actions: Download,
+    Relaunch, How to update. Every other toast action is btn-secondary: Stop them,
+    Retry (upload), Details, Retry (download). Update 24a1, 24a2, 24b1-4, 24j1, 20d2
+    and 23e1.
+  - The update check runs at launch and then once a day. About's toggle text:
+    "Fetches a small manifest at launch and once a day. Nothing about you is sent."
+
+Corrections:
+  1. Top corners (24b3, 24b4): the stack covers the session toolbar (Duplicate, Files,
+     Split). Place it under the tab bar AND the session toolbar:
+     top: calc(var(--titlebar-h) + var(--tabbar-h) + var(--toolbar-h) + var(--sp-3)),
+     with a --toolbar-h token if there is none. On a page without a session toolbar
+     (Settings, Keys) it sits under the title bar.
+  2. Download failed (24c4) has two cases, shown as two screens:
+     24c4a · Network: "Couldn't download Flint 1.4.0 · no connection" · [Retry] [✕].
+     24c4b · Verification failed: "Flint 1.4.0 didn't pass verification and was
+     discarded" · [Details] [✕]. No Retry: a download that fails verification is never
+     applied. Details opens About (24e6, below).
+     24e6 · About after a failed verification: a calm danger line "The download of
+     1.4.0 didn't pass verification and was discarded. Nothing was installed." with
+     [Check again] and a link "Download from the website ↗". Still no keys or hashes.
+  3. Long text: a toast clamps to 2 lines, so a long error loses its end. When the
+     text is clamped, show a small "More" link after it that expands the toast to its
+     full text (up to ~8 lines, then it scrolls). Show it in 24a1: the error toast
+     clamped with "More", and the same toast expanded.
+  4. Consistency:
+     - 24g2: the app is on 1.3.2, so the skipped versions are 1.3.0 – 1.3.1. The
+       header reads "18 Nov 2026 · since your 1.3.2" or similar; list 1.4.0, then
+       what the person did not see. Keep the long scrolling case: make the current
+       version 1.2.4 if needed so there are several sections.
+     - 24e3 (downloading): the status bar's version item shows the accent dot, as in
+       24c2.
+     - Settings nav must match the app's on every Settings screen (12a, 12e, 24e*,
+       24h1, 24j3): Appearance, Terminal, Remote desktop, Keyboard shortcuts, Vault,
+       Access, About. About is not new: it already exists in the app.
+  5. README: the section belongs to spec v12, not v10; drop "Settings gains an About
+     item"; keep every existing line of the README unchanged (do not drop the 23a3
+     note about milestone 45). List the new screens 24c4a, 24c4b and 24e6.
+```

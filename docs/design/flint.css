@@ -712,3 +712,53 @@ button.act-row.sudo.is-focus, button.act-row.sudo:focus-visible { box-shadow: in
 .chg .k.add { color: var(--success); } .chg .k.upd { color: var(--info); } .chg .k.rem { color: var(--text-tertiary); }
 .sb-sheet { position: relative; height: var(--statusbar-h); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); overflow: hidden; }
 .sb-sheet .statusbar { position: absolute; }
+
+/* ===== v10 · the toast component, updates, What's new (screens 24*) ===== */
+.toasts { position: absolute; z-index: var(--z-toast); display: flex; flex-direction: column; gap: var(--sp-2); max-width: 440px; }
+.toasts[data-corner="br"] { right: var(--sp-4); bottom: calc(var(--statusbar-h) + var(--sp-3)); align-items: flex-end; }
+.toasts[data-corner="bl"] { left: calc(var(--rail-w) + var(--sp-4)); bottom: calc(var(--statusbar-h) + var(--sp-3)); align-items: flex-start; }
+.toasts[data-corner="tr"] { right: var(--sp-4); top: calc(var(--titlebar-h) + var(--tabbar-h) + var(--toolbar-h) + var(--sp-3)); align-items: flex-end; }
+.toasts[data-corner="tl"] { left: calc(var(--rail-w) + var(--sp-4)); top: calc(var(--titlebar-h) + var(--tabbar-h) + var(--toolbar-h) + var(--sp-3)); align-items: flex-start; }
+/* Pages without tabs or a session toolbar (Settings, Keys, Credentials): just under the title bar. */
+.app[data-view="settings"] .toasts[data-corner^="t"], .app[data-view="keys"] .toasts[data-corner^="t"], .app[data-view="credentials"] .toasts[data-corner^="t"] { top: calc(var(--titlebar-h) + var(--sp-3)); }
+.toast[data-kind] { position: relative; right: auto; bottom: auto; display: flex; align-items: center; gap: var(--sp-2); min-height: 40px; max-width: 440px; padding: 5px 5px 5px var(--sp-4); background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: 12px; box-shadow: var(--shadow-popover); font-size: var(--fs-sm); color: var(--text-primary); }
+.t-mark { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-tertiary); }
+.toast[data-kind="ok"] .t-mark { background: var(--success); }
+.toast[data-kind="info"] .t-mark { background: var(--info); }
+svg.t-mark { width: 14px; height: 14px; border-radius: 0; background: none; color: var(--danger); margin-left: -3px; }
+.t-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 4px 0; }
+.t-text { line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.t-more { border: 0; background: none; padding: 0; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--accent-text); cursor: pointer; }
+.toast.expanded { align-items: flex-start; }
+.toast.expanded .t-text { display: block; -webkit-line-clamp: unset; max-height: calc(1.4em * 8); overflow-y: auto; }
+.toast.expanded > .btn, .toast.expanded > .t-x, .toast.expanded > .t-mark { margin-top: 4px; }
+.t-prog { width: 36px; flex: none; text-align: right; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.toast[data-kind] .btn { flex: none; }
+.t-x { width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: none; color: var(--text-tertiary); cursor: pointer; }
+.t-x:hover { background: var(--surface-hover); color: var(--text-primary); }
+/* status bar version item */
+.sb-ver { position: relative; height: 20px; padding: 0 6px; margin-right: -6px; border: 0; border-radius: var(--radius-sm); background: none; font-family: var(--font-mono); font-size: inherit; color: var(--text-tertiary); cursor: pointer; }
+.sb-ver:hover, .sb-ver.is-open { background: var(--surface-hover); color: var(--text-primary); }
+.sb-ver.has-dot::after { content: ""; position: absolute; top: 2px; right: 1px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface-chrome); }
+/* About: libraries table */
+.lib-tbl { border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); overflow: hidden; }
+.lib-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px 80px; gap: var(--sp-3); align-items: center; min-height: 30px; padding: 0 var(--sp-3); font-size: var(--fs-sm); border-bottom: 1px solid var(--border-subtle); }
+.lib-row.h { height: 28px; font-size: var(--fs-xs); color: var(--text-tertiary); background: var(--surface-raised); }
+/* What's new */
+.modal.wn { display: flex; flex-direction: column; }
+.wn-body { overflow: hidden; gap: var(--sp-6) !important; min-height: 0; flex: 1; position: relative; padding-right: var(--sp-6) !important; }
+.modal.wn[style*="max-height"] .wn-body::after { content: ""; position: absolute; right: 6px; top: 8px; width: 4px; height: 38%; border-radius: 2px; background: var(--border-strong); }
+.wn-sec { display: flex; flex-direction: column; gap: var(--sp-2); }
+.wn-sec + .wn-sec { padding-top: var(--sp-5); border-top: 1px solid var(--border-subtle); }
+.wn-sum { font-size: var(--fs-md); line-height: 1.55; color: var(--text-secondary); margin: 0 0 var(--sp-2); }
+.wn-list { margin: 0 0 var(--sp-2); padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); line-height: 1.5; }
+.wn-list strong { font-weight: var(--fw-semibold); color: var(--text-primary); }
+/* corner picker */
+.cpick { position: relative; width: 132px; height: 84px; flex: none; border: 1.5px solid var(--border-strong); border-radius: 8px; background: var(--surface-base); overflow: hidden; }
+.cp-bar { position: absolute; left: 0; right: 0; top: 0; height: 12px; background: var(--surface-chrome); border-bottom: 1px solid var(--border-subtle); }
+.cp-rail { position: absolute; left: 0; top: 12px; bottom: 8px; width: 12px; background: var(--surface-chrome); border-right: 1px solid var(--border-subtle); }
+.cp-sb { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; background: var(--surface-chrome); border-top: 1px solid var(--border-subtle); }
+.cp-c { position: absolute; width: 38px; height: 12px; border-radius: 4px; border: 1.5px dashed var(--border-strong); background: transparent; cursor: pointer; padding: 0; }
+.cp-c.tl { left: 18px; top: 18px; } .cp-c.tr { right: 6px; top: 18px; } .cp-c.bl { left: 18px; bottom: 14px; } .cp-c.br { right: 6px; bottom: 14px; }
+.cp-c:hover { border-color: var(--text-tertiary); }
+.cp-c.on { border: 0; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-subtle); }

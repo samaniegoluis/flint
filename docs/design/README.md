@@ -378,3 +378,51 @@ Clicking the item opens a popover with the state, last sync, server, version, **
 | `23g` | Unlock for a connected vault: a cloud mark next to the path, and the faint line "3 changes from this machine will sync after unlocking". |
 | `23h1` | The palette: Sync vault now, Show last merge, Connect vault to a server… (greyed when already connected), Disconnect vault from server…. |
 | `23h2–4` | 900 × 600: step 2, Settings → Server connected ("Check every" becomes a select), and the status bar with the popover (Offline). |
+
+## Updates, What's new and the toast component, spec v12 (12a and 12e updated; screens 24*)
+
+**Toast component (24a):**
+- **Look:** `.toasts` stacks `.toast[data-kind]` items. Each toast has a status mark (`.t-mark`: ok is a green dot, info a sapphire dot, error a danger icon), the text (`.t-text`, clamped to 2 lines), an optional progress value (`.t-prog`, 36 px, mono, tabular figures), up to two buttons, and ✕ (`.t-x`), which is always there.
+- **Long text:** when the text is clamped, a **More** link (`.t-more`) follows it. It expands the toast (`.toast.expanded`) to the full text, up to about 8 lines, after which it scrolls.
+- **Button colour:** ember (`btn-primary`) only for the update's actions: Download, Relaunch, How to update. Every other toast action is `btn-secondary`: Stop them, Retry, Details.
+- **Timing:** info and ok toasts leave after 6 s, paused while hovered or focused. Error toasts are sticky until ✕ or their action. So are progress toasts and toasts waiting for a decision (update available, ready).
+- **Stacking:** at most three toasts; the newest sits closest to the corner.
+- **Existing toasts:** 20d2 and 23e1 use the component.
+
+**Position (24b):** `data-corner` is br (default), bl, tr or tl.
+- Bottom corners sit above the status bar, and the stack grows upward.
+- Top corners sit under the tab bar and the session toolbar (`top: calc(var(--titlebar-h) + var(--tabbar-h) + var(--toolbar-h) + var(--sp-3))`), and the stack grows downward.
+- On pages without a session toolbar (Settings, Keys, Credentials), top corners sit under the title bar.
+- Left corners start after the rail, never over it.
+- The corner is chosen in Settings → Appearance → Notifications (24h, also in 12a).
+
+**Updates:**
+- Checked at launch and then once a day.
+- Flint never restarts on its own.
+- Releases are verified before anything is applied, and a download that fails verification is never applied. The UI only says "Verified" or "didn't pass verification", with no keys or hashes.
+- The automatic check can be turned off. It fetches only a manifest and sends nothing about the person.
+- The app and the CLI update together.
+- Package-managed installs (Homebrew, .deb/.rpm, winget) only show the command to run.
+
+**Settings nav** (12a, 12e, 24e*, 24h1, 24j3): Appearance, Terminal, Remote desktop, Keyboard shortcuts, Vault, Access, About.
+
+| Screen | What it shows |
+|---|---|
+| `24a1` | Component sheet: ok; error clamped with More; the same error expanded; info with one action; progress; a stack. |
+| `24a2` | A stack of three in the app. |
+| `24b1–4` | The same stack in each corner: bottom right (default), bottom left, top right, top left. |
+| `24c1–3`, `24c5` | The update toast changing in place. Available: Download. Downloading: 7%, and ✕ cancels. Ready: Relaunch, and ✕ means later, at the next launch. Package-managed: How to update, which opens About. |
+| `24c4a` | Network failure: "Couldn't download Flint 1.4.0 · no connection", with Retry and ✕. |
+| `24c4b` | Verification failed: "Flint 1.4.0 didn't pass verification and was discarded", with Details (opens About, 24e6) and ✕. There is no Retry. |
+| `24d1` | Relaunch with work open: "Relaunch to update? 3 sessions and 2 tunnels will close." With nothing open, Relaunch goes straight through. |
+| `24e1–5` | Settings → About, Updates block: Up to date · last checked · Check now; Available · Download; Downloading 42% (with a bar) · Cancel; Ready · Verified · Relaunch; Homebrew with `brew upgrade --cask flint` and Copy. Also the toggle "Check for updates automatically" ("Fetches a small manifest at launch and once a day. Nothing about you is sent."), the link "What's new in …", and the libraries table. |
+| `24e6` | About after a failed verification: a calm danger line, "The download of 1.4.0 didn't pass verification and was discarded. Nothing was installed.", with Check again and "Download from the website ↗". |
+| `12e` | Settings → About, up to date. |
+| `24f1–3` | The version item at the right of the status bar. Idle, it looks as today. Available, downloading or ready, it gets an accent dot, and a click opens a popover with the state, its one action, What's new and About Flint. |
+| `24g1` | What's new after relaunching from 1.3.2 into 1.4.0 ("since your 1.3.2"): title, date, summary, Added and Fixed (scope in bold), Full changelog ↗, Close (esc). The status bar shows v1.4.0. |
+| `24g2` | What's new after relaunching from 1.2.4: 1.4.0 first, then the versions not seen (1.3.2, 1.3.1, 1.3.0), newest first, scrolling inside the modal. |
+| `24h1` | Appearance → Notifications: a window diagram with four corners, bottom right selected. |
+| `24i1` | The palette: Check for updates, What's new in Flint, About Flint. |
+| `24j1–4` | 900 × 600: toast stack, update ready, About, What's new. |
+
+**Placeholder:** the libraries table in About lists only xterm.js, Geist and JetBrains Mono plus "All 46 licences…". Replace it with the real list.

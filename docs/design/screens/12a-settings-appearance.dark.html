@@ -79,6 +79,7 @@
 <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/></symbol>
 <symbol id="i-cloud-off" viewBox="0 0 24 24"><path d="M7 18a5 5 0 0 1-.6-10 6 6 0 0 1 1.4-1.9M10.5 5.2A6 6 0 0 1 17.4 9 4.5 4.5 0 0 1 20.6 16"/><path d="M3 3l18 18"/><path d="M17 18H7"/></symbol>
 <symbol id="i-paste" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/></symbol>
+<symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
 <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 3h6l-1 6 4 4H6l4-4z"/><path d="M12 13v8"/></symbol>
 </svg>
 <div class="app" data-theme="dark" data-view="settings" data-os="mac" style="width: 1280px; height: 800px">
@@ -142,8 +143,11 @@
 <span class="label" style="padding: 0 var(--sp-2) var(--sp-2)">Settings</span>
 <a class="nav-i on" href="#appearance" aria-current="page"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-palette"></use></svg>Appearance</a>
 <a class="nav-i" href="#terminal"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-term"></use></svg>Terminal</a>
+<a class="nav-i" href="#remote-desktop"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-rdp"></use></svg>Remote desktop</a>
 <a class="nav-i" href="#keyboard"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-keyboard"></use></svg>Keyboard shortcuts</a>
 <a class="nav-i" href="#vault"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-lock"></use></svg>Vault</a>
+<a class="nav-i" href="#access"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-shield-key"></use></svg>Access</a>
+<a class="nav-i" href="#about"><svg class="ic ic-sm" aria-hidden="true"><use href="#i-info"></use></svg>About</a>
 </nav>
 <div class="grow" style="padding: var(--sp-6) var(--sp-8); overflow: hidden">
 <div class="col" style="max-width: 720px">
@@ -167,6 +171,7 @@
 <div class="set-row"><div class="set-l"><span class="t">Density</span><span class="d">Row height in the host tree, tabs and lists.</span></div>
 <div class="col" style="gap: var(--sp-2)"><div class="seg" role="group" aria-label="Density"><button aria-pressed="false">Compact</button><button aria-pressed="true">Default</button><button aria-pressed="false">Comfortable</button></div><span class="hint mono">22 · 26 · 30 px rows</span></div></div>
 
+<div class="set-row"><div class="set-l"><span class="t">Notifications</span><span class="d">Where toasts appear.</span></div><div class="row" style="gap: var(--sp-4)"><div class="cpick" role="radiogroup" aria-label="Notification corner"><span class="cp-bar"></span><span class="cp-rail"></span><span class="cp-sb"></span><button class="cp-c tl" role="radio" aria-checked="false" aria-label="Top left"></button><button class="cp-c tr" role="radio" aria-checked="false" aria-label="Top right"></button><button class="cp-c bl" role="radio" aria-checked="false" aria-label="Bottom left"></button><button class="cp-c br on" role="radio" aria-checked="true" aria-label="Bottom right"></button></div><div class="col" style="gap: 2px; font-size: var(--fs-sm)"><span>Bottom right <span class="faint">· default</span></span><span class="hint" style="max-width: 260px; line-height: 1.45">Bottom corners sit above the status bar; top corners under the tab bar. Never over the rail.</span></div></div></div>
 <div class="set-row"><div class="set-l"><span class="t">Motion</span><span class="d">Popovers, drawers, sidebar collapse.</span></div>
 <label class="row" style="gap: var(--sp-3); font-size: var(--fs-sm)"><button class="toggle" role="switch" aria-checked="true" aria-label="Follow system reduce-motion setting"></button>Follow the system's “Reduce motion” setting</label></div>
 
