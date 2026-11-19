@@ -43,8 +43,12 @@ brew install libssh libsodium sqlcipher pkg-config
 ### Debian and Ubuntu
 
 ```sh
-sudo apt install libssh-dev libsodium-dev libsqlcipher-dev libsecret-1-dev pkg-config openssh-server
+sudo apt install libssh-dev libcurl4-openssl-dev libsodium-dev libsqlcipher-dev libsecret-1-dev \
+  pkg-config openssh-server
 ```
+
+If you install one of them after a build failed for want of it, delete cfire's probe cache
+(`rm ~/.cache/cfire/probes.json`): cfire 0.12.2 keeps the miss.
 
 #### Ubuntu 24.04 and Zorin OS 18
 
@@ -116,7 +120,8 @@ open build/gui/Flint.app                     # macOS
 The script builds the page with Vite, builds the `Flint` executable, and puts the page
 where the executable looks for it: `Flint.app/Contents/Resources/ui` on macOS, `build/gui/ui`
 on Linux. On macOS it signs the bundle again ad hoc, because adding the page invalidates
-cfire's signature. On Linux the app also needs WebKitGTK (`libwebkit2gtk-4.1-dev`).
+cfire's signature. The app also needs FreeRDP 3 (`brew install freerdp` on macOS), and on
+Linux WebKitGTK: `sudo apt install libwebkit2gtk-4.1-dev freerdp3-dev`.
 
 On Linux, approving a program in Flint's window asks for your login password through
 polkit once Flint's action is installed; without it, Flint asks for the vault's master
