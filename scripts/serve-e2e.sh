@@ -239,31 +239,29 @@ check "it is answered at once, not after the exec (several clients)" 'python3 -c
 wait "$long_pid"
 check "and the exec still ends well" '[[ $? == 0 ]]'
 
+cp "$root/scripts/ptyhost.py" "$tmp/"
 cat > "$tmp/connect_tty.py" <<'PY'
-import fcntl, json, os, pty, select, struct, sys, termios, time
+# On a pseudo-terminal (a ConPTY on Windows, scripts/ptyhost.py).
+import json, os, sys, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ptyhost import spawn
 flint, args = sys.argv[1], sys.argv[2:]
-pid, fd = pty.fork()
-if pid == 0:
-    os.execv(flint, [flint] + args)
-def setsize(rows, cols):
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
-setsize(24, 80)
+p = spawn([flint] + args, rows=24, cols=80)
+setsize = p.resize
 buf = b""
 def pump(until, secs=20):
     global buf
     end = time.time() + secs
     while time.time() < end:
-        r, _, _ = select.select([fd], [], [], 0.1)
-        if r:
-            try:
-                d = os.read(fd, 4096)
-            except OSError:
-                return False
-            if not d:
-                return False
-            buf += d
-            if until and until in buf[-4096:]:
-                return True
+        d = p.read(0.1)
+        if d is None:
+            return False
+        if not d and p.poll() is not None:
+            buf += p.read(0.3) or b""
+            return False
+        buf += d
+        if until and until in buf[-4096:]:
+            return True
     return False
 prompted = asked_master = ready = False
 deadline = time.time() + 40
@@ -274,17 +272,17 @@ while time.time() < deadline and not ready:
         break
     if b"(yes/no)?" in buf and not prompted:
         prompted = True
-        os.write(fd, b"yes\n")
+        p.write(b"yes\n")
     elif prompted:
-        os.write(fd, b"echo READY$((40+2))\n")
+        p.write(b"echo READY$((40+2))\n")
         ready = pump(b"READY42", 2)
-os.write(fd, b"stty size\n"); size1 = pump(b"24 80")
+p.write(b"stty size\n"); size1 = pump(b"24 80")
 setsize(40, 100); time.sleep(0.5)
-os.write(fd, b"stty size; exit 6\n"); size2 = pump(b"40 100")
+p.write(b"stty size; exit 6\n"); size2 = pump(b"40 100")
 pump(None, 10)
-_, status = os.waitpid(pid, 0)
+code = p.wait()
 print(json.dumps({"prompted": prompted, "asked_master": asked_master, "size1": size1, "size2": size2,
-                  "code": os.waitstatus_to_exitcode(status), "out": buf.decode(errors="replace")}))
+                  "code": code, "out": buf.decode(errors="replace")}))
 PY
 checks=$((checks + 1))
 pty_out="$(python3 -I "$tmp/connect_tty.py" "$flint" connect tty 2>&1)"
