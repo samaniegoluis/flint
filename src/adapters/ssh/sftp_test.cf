@@ -36,11 +36,16 @@ fn sftp_link() -> SshLink! {
     return link
 }
 
-// A fresh folder name under $TMPDIR, or /tmp where it is unset (Linux).
+// A fresh folder name under $TMPDIR, or /tmp where it is unset (Linux). It is a path
+// on the test's sshd, so a Windows $TMPDIR (C:\flint-work\tmp) takes MSYS2's form
+// (/c/flint-work/tmp), which that sshd's shell and SFTP server both read.
 fn scratch_dir(tag: str) -> str {
     mut base := os.getenv("TMPDIR")
     if base.len() == 0 {
         base = "/tmp"
+    }
+    if base.len() > 2 && base[1..2] == ":" {
+        base = "/" + base[0..1].to_lower() + base[2..].replace_all("\\", "/")
     }
     d := base + "/flint-sftp-" + tag + "-{time.now_ms()}"
     return d.replace_all("//", "/")
