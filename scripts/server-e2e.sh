@@ -220,9 +220,14 @@ case "$(uname -s)" in
   *) check "stored files are owner-only" "600" "$(file_mode main "vaults/$vid/versions/1.blob")" ;;
 esac
 
-# SIGTERM ends it cleanly.
+# SIGTERM ends it cleanly. Windows has no signals: MSYS2's kill ends a native process
+# with TerminateProcess (143), so the check skips there (owner, 2026-11-18; ROADMAP §7,
+# "A clean stop for flint-vault-server on Windows").
 stop_server main
-check "SIGTERM stops the server with 0" "0" "$stopped"
+case "$(uname -s)" in
+  MINGW*|MSYS*) echo "skip SIGTERM stops the server with 0 (no signals on Windows)" ;;
+  *) check "SIGTERM stops the server with 0" "0" "$stopped" ;;
+esac
 
 # --- lockout per client, behind a trusted proxy ---------------------------------------------
 start proxy FLINT_VAULT_TOKEN="$token" FLINT_VAULT_TRUST_PROXY=1
