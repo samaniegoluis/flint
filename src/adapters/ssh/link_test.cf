@@ -241,8 +241,16 @@ test "OpenSSH's known_hosts files are not read" {
         if (ssh_options_get(session, SSH_OPTIONS_GLOBAL_KNOWNHOSTS, &v) == SSH_OK && v) { global_file = v; ssh_string_free_char(v); }
     }
     link.link_hangup()
-    assert_eq(user_file, "/dev/null")
-    assert_eq(global_file, "/dev/null")
+    // The null device, as libssh.cf names it: NUL on Windows.
+    mut no_file := "/dev/null"
+    // CFIRE-UPSTREAM: CF-031
+    cpp {
+#if defined(_WIN32)
+        no_file = "NUL";
+#endif
+    }
+    assert_eq(user_file, no_file)
+    assert_eq(global_file, no_file)
 }
 
 test "a keepalive goes out mid-session and the channel keeps working" {
