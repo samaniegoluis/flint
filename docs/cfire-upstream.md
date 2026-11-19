@@ -3035,3 +3035,22 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `fs.sync_dir(path)` (an `fsync` of the folder on POSIX; on Windows a no-op or
   `FlushFileBuffers` on a backup-semantics handle, and `MoveFileExW` with
   `MOVEFILE_WRITE_THROUGH` in `fs.rename`), or `fs.write_atomic` as CF-143 suggested.
+
+### CF-169 · bug · `confirmed`: a failed pkg-config probe stays cached after the package is installed
+- **Seen (migration step 7, Zorin's battery) [ran, Zorin OS 18.1 x86_64, `v0.12.2`
+  `5be0987`]:** `cfire build` of `flint` on a box without `libcurl4-openssl-dev` fails at
+  `flint_remote.hpp: file not found` (Flint's `flint-remote.pc` requires `libcurl`, so its
+  Cflags never arrive). After `apt install libcurl4-openssl-dev`, `pkg-config --cflags
+  flint-remote` answers, but `cfire build` (and `cfire build --no-cache`) fails the same way
+  in half a second. Deleting `~/.cache/cfire/probes.json` fixes it.
+- **Cause:** `probe_pkg_config` (`src/build/probe_cache.hpp`) keeps a negative result while
+  `pkg_search_dir_stamps` is unchanged. That stamp covers `PKG_CONFIG_PATH`,
+  `PKG_CONFIG_LIBDIR`, `/opt/homebrew/lib/pkgconfig`, `/usr/local/lib/pkgconfig` and
+  `/usr/lib/pkgconfig`, but not Debian's multiarch `/usr/lib/<triple>/pkgconfig` or
+  `/usr/share/pkgconfig`, where apt puts `libcurl.pc`; and a package found but with a
+  missing `Requires:` changes nothing in its own folder either. `--no-cache` does not reach
+  this cache.
+- **Workaround:** `rm ~/.cache/cfire/probes.json` after installing a native library.
+- **Ideal:** stamp the folders `pkg-config --variable pc_path pkg-config` reports, do not
+  cache negative results (a miss costs one `pkg-config` call), or let `--no-cache` skip
+  the probe cache too.
