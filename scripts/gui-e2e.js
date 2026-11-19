@@ -1568,8 +1568,25 @@
       }
 
       await setStep('rdp: disconnect and connect again');
-      await click('[data-rdp-disconnect]');
-      await waitFor(() => rdpState('closed'), 'the disconnected card', 20000);
+      {
+        // diag (Windows VM, 2026-11-19): Disconnect once ended as "Connection lost — the
+        // session is closed". What the tab was doing at the click, and each state after it.
+        const stateNow = () => q('[data-rdp-state]', activeRegion())?.dataset.rdpState ?? 'none';
+        const sess = q('[data-rdp-session]', activeRegion())?.dataset.rdpSession;
+        const stats = sess ? await window.backend.rdp_stats({ tab: sess }).catch((e) => String(e)) : 'no session';
+        await log(`diag: before Disconnect: state=${stateNow()} size=${!!q('[data-rdp-size]')} busy=${!!q('[data-rdp-graphics-busy]')} stats=${JSON.stringify(stats)}`);
+        const t0 = Date.now();
+        const seen = [];
+        let last = '';
+        const tick = setInterval(() => { const st = stateNow(); if (st !== last) { last = st; seen.push(`${Date.now() - t0}ms:${st}`); } }, 20);
+        await click('[data-rdp-disconnect]');
+        try {
+          await waitFor(() => rdpState('closed'), 'the disconnected card', 20000);
+        } finally {
+          clearInterval(tick);
+          await log(`diag: after Disconnect: ${seen.join(' ')}`);
+        }
+      }
       await check(byText('.tab', 'disconnected'), 'Disconnect keeps the tab, marked disconnected');
       await click('button', 'Connect again');
       await waitFor(() => q('[data-rdp-size]'), 'the desktop again', 30000);
