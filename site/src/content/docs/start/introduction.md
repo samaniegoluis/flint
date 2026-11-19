@@ -24,8 +24,8 @@ file that holds your hosts, SSH keys and login credentials.
 
 ## Status
 
-Flint is in early development: a preview, with no release builds yet. Here is what works
-today:
+Flint is in early development: a preview. Release packages are being built now
+([Install](/start/install/)); here is what works today:
 
 | Area | Status |
 |---|---|

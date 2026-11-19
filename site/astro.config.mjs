@@ -41,6 +41,7 @@ export default defineConfig({
 					label: 'Start here',
 					items: [
 						{ label: 'Introduction', slug: 'start/introduction' },
+						{ label: 'Install', slug: 'start/install' },
 						{ label: 'Build from source', slug: 'start/build-from-source' },
 					],
 				},

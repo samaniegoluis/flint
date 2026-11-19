@@ -245,6 +245,36 @@ CLI in another folder.
 - One Flint runs per config folder. With the installed app open, starting a build from
   `build/gui` only shows the installed app's window: quit it first.
 
+## Build a release package
+
+A release package is the app and the CLI together, linked against libraries of its own
+rather than the ones your package manager installed, so it runs on a machine with none
+of them. The release workflow runs the same script.
+
+```sh
+scripts/package.sh macos      # → dist/Flint-<version>-macos-arm64.zip
+```
+
+On macOS (Apple silicon) it first runs `scripts/deps-macos.sh`, which downloads pinned
+sources of OpenSSL, libsodium, libssh, SQLCipher and FreeRDP 3, checks their SHA-256 and
+builds them as static libraries for macOS 13.3 into `build/deps/macos-arm64` (a few
+minutes the first time; kept while the versions stay). It needs `cmake`, `ninja` and
+`pkg-config` (`brew install cmake ninja pkg-config`) and never reads Homebrew's libraries.
+Then it links the app and the CLI against them (`cfire build --portable --macos-min
+13.3`), checks that neither links anything outside macOS nor asks for a newer one, puts
+the CLI in `Contents/Helpers`, writes the version into `Info.plist`, adds every library's
+licence, signs the bundle ad hoc and zips it. It prints the zip's SHA-256.
+
+The script leaves `build/flint` and `build/gui/Flint.app` as the release build, so the
+end-to-end suites can run on exactly what ships:
+
+```sh
+FLINT_E2E_NOBUILD=1 scripts/cli-e2e.sh
+FLINT_E2E_NOBUILD=1 scripts/gui-e2e.sh
+```
+
+Installing a package is described in [Install](/start/install/).
+
 ## Check the Linux build from macOS
 
 With Docker running:

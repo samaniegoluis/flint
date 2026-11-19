@@ -409,7 +409,10 @@ Settings belong to this machine, not to the vault, and save as you change them.
 - **About**: the version this build was made from (also at the right of the status bar,
   which opens this section) and the libraries linked into it
   (libssh, libsodium, SQLite with SQLCipher, FreeRDP). What changed in each version is
-  on the [Releases](/releases/) page.
+  on the [Releases](/releases/) page. **Command line**, in a package from a release
+  (macOS): where the `flint` command can be linked from, `/usr/local/bin` or
+  `~/.local/bin`, what is there now, and **Install**, **Use this copy** or **Remove**
+  ([The flint command](/start/install/#the-flint-command)).
 
 They are kept in `settings.json` in Flint's config folder (`~/Library/Application
 Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults list.
