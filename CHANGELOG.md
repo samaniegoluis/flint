@@ -4,6 +4,22 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.14.0 — 2026-11-19
+
+Every message the app gives now comes through one toast that waits for you: up to three stack in the corner you choose (Settings → Appearance → Notifications, bottom right by default), each with a ✕, pausing while you point at them; errors stay 30 seconds and a toast with a button 15, and a message that comes again replaces its toast instead of piling up. Test connection's result shows in a toast too, pasting an image says when it is done, and F6 reaches the toasts from the keyboard. Also fixed: a short sudo password could keep `flint exec --sudo` from recognising its own prompt.
+
+### Added
+
+- **ui:** Toasts as one component, in a corner of your choosing
+- **ui:** Every toast on the component, with Test connection's result in one
+
+### Fixed
+
+- **ui:** F6 reaches the toasts, and Escape gives the focus back
+- **ui:** Error toasts leave after 30 s (D-109)
+- **core:** A sudo password inside the prompt's nonce no longer hides the prompt
+
+
 ## 0.13.0 — 2026-11-19
 
 Flint builds and runs on Windows from the main line, natively, on cfire's own release, with no patched compiler: a portable zip that runs without anything else installed, and a per-user install with a Start menu entry and `flint` on the PATH. The whole codebase moved to cfire 0.12.2: warm builds take under a second and a dozen workarounds for cfire are gone. Fixes include an RDP tab that showed "Connection lost" when disconnected while it reconnected, a vault's sync state after Disconnect or a reconnect, and Windows paths, the tray icon and the password fields.
