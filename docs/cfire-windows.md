@@ -89,6 +89,7 @@ Windows test VM (Windows 11 Pro 22H2, build 22621, WebView2 157), in MSYS2 CLANG
 | W-13 | **covered**: `cfire build` embeds the `.ico` beside `build.cf`'s `Icon` with windres | [compiled] `Flint.exe` has a 42 KB `.rsrc` (`assets/app-icon/Flint.ico` is 41 894 bytes); a person looks at Explorer and the taskbar with the GUI checks | nothing to remove: `Flint.ico` beside `Flint.icns` is what cfire looks for |
 | W-14 | **covered**: `fs.exists` asks `symlink_status` when `exists` fails, so a listening AF_UNIX socket's file (a reparse point) is seen | [ran] probe `unix_socket` (`run-probes.sh`): a socket bound and listening under `%TEMP%`, `fs.exists` true; the CLI ↔ app handoff itself waits for serve-e2e | nothing to remove (patch 0008 only) |
 | W-15 | **covered** (the symptom): the open and save dialogs give `GetOpenFileNameW`/`GetSaveFileNameW` a buffer of 32 768 characters, so a long path no longer reads as "cancelled". Still the old dialogs, not `IFileOpenDialog` (no folder picker) | [read] `windows_webview2.hpp` (`kWin32DialogPathBufLen`); [ran] waits for the desktop session (the GUI checks open both dialogs) | nothing in Flint: it calls `open_file_dialog`/`save_file_dialog` as on the other systems (`src/drivers/gui/rpc.cf`) |
+| W-16 | **open**: the WndProc still has no `WM_SETFOCUS`, and `ICoreWebView2Controller::MoveFocus` is declared but never called, so after Alt+Tab back the page gets no keys until it is clicked | [read] `windows_webview2.hpp` (`cfire_win32_wndproc` handles `WM_CREATE`, `WM_SIZE`, `WM_DPICHANGED`, `WM_GETMINMAXINFO`, `WM_CLOSE`, the tray and its own messages; no `MoveFocus(` call); [ran] waits for the desktop session: the repro is the probe `webui_focus` | a new report, [W-16 on v0.12.2](#w-16-on-v0122); the port waits on it or carries a Flint-side shim (the owner's call) |
 | W-18 | **open**: a cfire name that `<windows.h>` defines as a macro (`far`, `near`, `small`) still loses its name in C++ | [ran] probe `win_macros` (`run-probes.sh`): `far := 1` with `import cpp "windows.h"` fails with `expected unqualified-id`, as at `c5b1d4b` | the test variable stays `apart` (`src/domain/monitors_test.cf`); the probe says when it can go. Report: the repro and the suggested fix of the W-18 section below |
 
 ## How to read each entry
@@ -452,6 +453,31 @@ fixed · [patch 0007](https://github.com/samaniegoluis/flint/blob/windows-port-2
   stop). Flint's gui-e2e still passes (180) with it. Checked by a person (a window
   started from WSL never gets the foreground): after Alt+Tab away and back, the terminal
   takes keys and Ctrl+V pastes without a click (2026-11-09).
+
+### W-16 on v0.12.2
+
+**After Alt+Tab back, a webui window's page gets no keys until it is clicked** ·
+[read] · open · a new report (not in the 2026-11-09 package)
+
+- **Symptom (at `c5b1d4b` with patch 0004, owner, 2026-11-09):** in Flint, switch to
+  another window and back with Alt+Tab: the window is active, but the terminal that
+  had the focus gets no keys (a paste does nothing) until it is clicked.
+- **Cause, still in `v0.12.2`:** on activation Windows gives the focus to the top-level
+  window, and WebView2 does not take it back by itself: the host calls
+  `ICoreWebView2Controller::MoveFocus` on `WM_SETFOCUS` (WebView2's documented
+  pattern). `cfire_win32_wndproc` has no `WM_SETFOCUS` case, and `MoveFocus` appears
+  only in the interface's declaration.
+- **Repro:** [`windows/probes/webui_focus/main.cf`](../windows/probes/webui_focus/main.cf),
+  built with `cfire build -o focus.exe main.cf` in CLANG64 and run on the desktop:
+  type into the box ("keys: N" grows), Alt+Tab to another window and back, type
+  again: N stays until the box is clicked.
+- **Suggested fix:** patch 0009's: `case WM_SETFOCUS:` →
+  `controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)`, which keeps the
+  page's own focused element (`NEXT`/`PREVIOUS` would move it to a tab stop).
+- **In Flint:** nothing yet. A shim would subclass the top-level window
+  (`SetWindowSubclass`) and call `MoveFocus` on the controller, reaching into
+  `cfire::webui::detail` as the two-monitor shim does (W-17); or the port waits for
+  cfire.
 
 ---
 

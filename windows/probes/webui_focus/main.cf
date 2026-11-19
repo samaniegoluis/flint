@@ -1,0 +1,24 @@
+package main
+
+import "ext:webui"
+
+// W-16 repro, by hand on the desktop: click into the text box and type, Alt+Tab to
+// another window and back, type again. With the WebView2 given the focus back, the
+// keys keep arriving ("keys: N" grows); without it nothing arrives until a click.
+fn main() {
+    mut app := make(webui.App, "cfire webui focus probe", 640, 360)
+    app.set_html(`<!doctype html><html><body style="font:16px system-ui;padding:24px">
+<h1>Alt+Tab away and back, then type</h1>
+<textarea id="t" rows="4" cols="50"></textarea>
+<p id="k">keys: 0</p>
+<p id="f">page focus: ?</p>
+<script>
+let n = 0
+const t = document.getElementById("t")
+t.addEventListener("keydown", () => { document.getElementById("k").textContent = "keys: " + (++n) })
+const show = () => { document.getElementById("f").textContent = "page focus: " + document.hasFocus() }
+addEventListener("focus", show); addEventListener("blur", show); show()
+t.focus()
+</script></body></html>`)
+    app.run()
+}
