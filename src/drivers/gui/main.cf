@@ -421,6 +421,8 @@ fn main() {
         install_app_menu("Flint")
         // Full screen (milestone 37): the page hears every change as `window:fullscreen`.
         window_fullscreen_install(app)
+        // Windows: the page gets the keys back after Alt+Tab (W-16).
+        window_focus_install()
         // The extra monitors' windows (milestone 38) load the same page folder.
         monitors_install(app, ui_dir)
         // The tray (milestone 14): closing the window keeps Flint serving, with the
