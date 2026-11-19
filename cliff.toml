@@ -38,10 +38,18 @@ filter_commits = true
 tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
 topo_order = false
 sort_commits = "oldest"
+# Words in a commit subject that stopped being true before it shipped.
+commit_preprocessors = [
+  { pattern = " \\(not yet run on the VM\\)", replace = "" },
+]
 commit_parsers = [
   # Releases count only the product (D-078): the site and the docs neither bump the
   # version nor appear in the changelog.
   { message = "^(feat|fix|perf)\\((site|docs)\\)", skip = true },
+  # The W-16 focus shim, reverted before any release (d67b9be, D-104): Flint does not
+  # fix the focus after Alt+Tab, it waits for cfire.
+  { sha = "d03eee9ee7df3794708f8e8f0872432fe39126a1", skip = true },
+  { sha = "717cf572ce0c5393d1dd613baa098bc9e3148d05", skip = true },
   { message = "^feat", group = "<!-- 0 -->Added" },
   { message = "^fix", group = "<!-- 1 -->Fixed" },
   { message = "^perf", group = "<!-- 2 -->Faster" },
