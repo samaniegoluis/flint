@@ -148,8 +148,13 @@ vault_port="${FLINT_TEST_VAULT_PORT:-38787}"
 (cd "$root" && source scripts/env.sh >/dev/null && cfire build flint-vault-server >/dev/null)
 vault_token="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 mkdir -p "$tmp/vault-data"
+# Run from a copy: a `cfire build` while the suites run (cli-e2e builds every target)
+# must be able to rewrite build/, and Windows will not replace a running .exe.
+vault_bin="$tmp/flint-vault-server"
+[[ -f "$root/build/flint-vault-server.exe" ]] && vault_bin="$vault_bin.exe"
+cp "$root/build/$(basename "$vault_bin")" "$vault_bin"
 FLINT_VAULT_TOKEN="$vault_token" FLINT_VAULT_DATA="$tmp/vault-data" FLINT_VAULT_LISTEN="127.0.0.1:$vault_port" \
-  "$root/build/flint-vault-server" >"$tmp/vault-server.log" 2>&1 &
+  "$vault_bin" >"$tmp/vault-server.log" 2>&1 &
 vault_pid=$!
 for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$vault_port") 2>/dev/null && break; sleep 0.1; done
 export FLINT_TEST_VAULT_URL="http://127.0.0.1:$vault_port" FLINT_TEST_VAULT_TOKEN="$vault_token" FLINT_TEST_VAULT_DATA="$tmp/vault-data"
