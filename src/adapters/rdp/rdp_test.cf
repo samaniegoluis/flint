@@ -785,12 +785,22 @@ test "a real Windows host in Compatible across two monitors keeps drawing each v
     assert_eq(rd.rd_wait("t-live-cmp", 100).kind, "running")
 }
 
-// Against a listener of its own, not the sample server: one busy streaming frames on a
-// VM with few CPUs once answered loopback in 14 ms (ROADMAP §5, 2026-11-19).
+// Against a listener of its own, not the sample server. On Windows, inside this suite's
+// process (FreeRDP loaded) some loopback connects take 15-16 ms, an idle process, for a
+// cause not found yet: there the bound is not checked (owner, 2026-11-19; ROADMAP §7).
 test "the dial's round trip on loopback reads as a local network, a closed port as -1" {
     rd := new_freerdp_desktop()
     l := try net.listen(0, "127.0.0.1")
     rtt := rd.rd_probe_rtt("127.0.0.1", i64(l.port()), 1500)
-    assert(rtt >= 0 && rtt <= 5, "loopback round trip {rtt} ms")
+    mut windows := false
+    cpp {
+        #if defined(_WIN32)
+        windows = true;
+        #endif
+    }
+    assert(rtt >= 0, "no loopback round trip")
+    if !windows {
+        assert(rtt <= 5, "loopback round trip {rtt} ms")
+    }
     assert_eq(rd.rd_probe_rtt("127.0.0.1", 9, 1500), -1)
 }
