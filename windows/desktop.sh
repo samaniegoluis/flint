@@ -10,7 +10,8 @@
 #
 # Exit status: the script's; 124 when it did not end in time; 3 when nobody is signed
 # in on the console (automatic logon, or the session moved to RDP and not back:
-# C:\flint-work\bin\to-console.cmd).
+# C:\flint-work\bin\to-console.cmd); 4 when the previous job still runs (the task
+# starts one at a time, and would ignore this one).
 set -euo pipefail
 host="${FLINT_VM_HOST:-Windows11-Flint-SSH}"
 limit="${FLINT_VM_TIMEOUT:-7200}"
@@ -19,6 +20,7 @@ b64=$(base64 < "$src" | tr -d '\n')
 exec flint exec "$host" --exec-timeout "$((limit + 60))" -- "
 \$t='C:\\flint-work\\tmp'; New-Item -ItemType Directory -Force \$t | Out-Null
 if (-not (query user 2>\$null | Select-String ' console ')) { 'desktop: nobody is signed in on the console'; exit 3 }
+if ((Get-ScheduledTask -TaskName FlintDesktop).State -eq 'Running') { 'desktop: the previous job is still running (a window left open?)'; exit 4 }
 Remove-Item \"\$t\\desktop-job.rc\",\"\$t\\desktop-job.log\" -ErrorAction SilentlyContinue
 [IO.File]::WriteAllBytes(\"\$t\\desktop-job.sh\", [Convert]::FromBase64String('$b64'))
 Start-ScheduledTask -TaskName FlintDesktop
