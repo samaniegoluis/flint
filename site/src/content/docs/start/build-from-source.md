@@ -296,20 +296,21 @@ FLINT_LINUX_STEPS=tests FLINT_LINUX_SUITES=src/adapters/ssh scripts/linux-check.
 
 ## Build on Windows
 
-Flint builds natively on Windows 10 and 11 (x64) in [MSYS2](https://www.msys2.org)'s
-CLANG64 environment, the toolchain cfire's Windows release uses. No administrator rights
-are needed beyond installing MSYS2. The app needs the Microsoft Edge WebView2 Runtime,
-which Windows 11 ships with.
+Flint builds natively on Windows 11 (x64) in [MSYS2](https://www.msys2.org)'s CLANG64
+environment, the toolchain cfire's Windows release uses. No administrator rights are
+needed beyond installing MSYS2. The app needs the Microsoft Edge WebView2 Runtime, which
+Windows 11 ships with.
 
-**In one command**, from PowerShell in a checkout of Flint (cloned with
-`core.autocrlf=false`, so the scripts keep Unix line endings):
+**In one command**, with MSYS2 installed in `C:\msys64` (`-Msys <folder>` for another
+place), from PowerShell in a checkout of Flint (cloned with `core.autocrlf=false`, so the
+scripts keep Unix line endings):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File windows\build.ps1 -Install
 ```
 
-It installs MSYS2 into `C:\msys64` if it is not there, then does steps 3 to 5 below.
-Leave out `-Install` for the zip only. The steps it runs, by hand:
+It does steps 3 to 5 below. Leave out `-Install` for the zip only. The steps it runs,
+by hand:
 
 1. Install MSYS2 into `C:\msys64` and open **MSYS2 CLANG64** from the Start menu.
 2. Get the code, keeping Unix line endings:
@@ -330,8 +331,9 @@ Leave out `-Install` for the zip only. The steps it runs, by hand:
    and FreeRDP's build tools), then puts cfire's Windows release, a static FreeRDP built
    from source, Microsoft's `WebView2Loader.dll` and Node into
    `%LOCALAPPDATA%\flint-build` (`FLINT_WIN_HOME` for another folder). Every download is pinned to a version and
-   checked against its SHA-256. Run it again after pulling a change to its versions.
-   The first run takes a while: FreeRDP builds from source.
+   checked against its SHA-256. Run it again after pulling a change to its versions:
+   each piece already in place says `ready` and nothing is fetched again. The first run
+   takes a while: FreeRDP builds from source.
 
 4. Build the portable zip:
 
@@ -358,7 +360,9 @@ Leave out `-Install` for the zip only. The steps it runs, by hand:
 
    `flint` starts `flint-app.exe` beside it when it needs the app. A running Flint is
    quit first. `-Uninstall` removes the program, the Start menu entry and the `PATH`
-   entry; your vaults and settings in `%APPDATA%\Flint` stay.
+   entry; your vaults and settings in `%APPDATA%\Flint` stay. Without installing, the
+   unpacked folder runs as it is: `flint-app.exe` finds the `WebView2Loader.dll` beside
+   it.
 
 The programs are not signed yet, so Windows SmartScreen may warn about them the first
 time.
