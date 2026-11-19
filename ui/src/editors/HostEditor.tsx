@@ -11,6 +11,7 @@ import type { HostKeyPayload, HostPatch, HostTestEvent, HostType, HostView, Sess
 import { useApp } from '../state/app';
 import { colorHex, colorName, colorStyle, TAG_COLORS } from '../lib/colors';
 import { groupPaths } from '../lib/tree';
+import { testFailText, testKey, testOkText } from '../lib/toastText';
 import { Icon } from '../ui/Icon';
 import { Kbd, Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
@@ -149,14 +150,25 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
   };
 
   // ---- Test connection --------------------------------------------------------
+  // The result shows inline as the record, and in a toast too (milestone 47), so it is
+  // seen on a small window; one toast per editor, a second test replaces the first.
   const [test, setTest] = useState<TestState>({ s: 'idle' });
   const testId = useRef('');
+  const testWho = useRef({ alias: '', key: '' });
+  const failTest = (code: string, message: string) => {
+    setTest({ s: 'fail', code, message });
+    notify({ text: testFailText(testWho.current.alias, message), kind: 'error', key: testWho.current.key });
+  };
+  const failRef = useRef(failTest);
+  failRef.current = failTest;
   useEffect(() => {
     const offEnd = on<HostTestEvent>('host:test', (ev) => {
       if (ev.session !== testId.current) return;
       testId.current = '';
-      setTest(ev.code ? { s: 'fail', code: ev.code, message: ev.message } : { s: 'ok', ev });
-      if (!ev.code) refreshCatalog();
+      if (ev.code) { failRef.current(ev.code, ev.message); return; }
+      setTest({ s: 'ok', ev });
+      notify({ text: testOkText(testWho.current.alias, ev.target, ev.duration_ms, ev.hops), key: testWho.current.key });
+      refreshCatalog();
     });
     const offPrompt = on<SessionPromptEvent>('session:prompt', (ev) => {
       if (ev.session !== testId.current || ev.kind !== 'host_key') return;
@@ -167,11 +179,12 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
       offPrompt();
       if (testId.current) api.sessionClose(testId.current).catch(() => {});
     };
-  }, [refreshCatalog]);
+  }, [refreshCatalog, notify]);
   const runTest = async () => {
     if (testId.current) return;
+    testWho.current = { alias: f.alias.trim(), key: testKey(host?.alias ?? '') };
     const p = buildPatch();
-    if (typeof p === 'string') { setTest({ s: 'fail', code: 'invalid', message: p }); return; }
+    if (typeof p === 'string') { failTest('invalid', p); return; }
     const id = `test-${Date.now().toString(36)}-${++testSeq}`;
     testId.current = id;
     setTest({ s: 'running' });
@@ -180,7 +193,7 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
     } catch (err) {
       testId.current = '';
       const e = toFlintError(err);
-      setTest({ s: 'fail', code: e.code, message: e.message });
+      failTest(e.code, e.message);
     }
   };
   const answerKey = (ok: boolean) => {

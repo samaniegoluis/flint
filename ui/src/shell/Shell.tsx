@@ -7,6 +7,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, on } from '../api/backend';
 import { toasts, useApp } from '../state/app';
 import { actionFor, chordLabel, type Action } from '../lib/keymap';
+import { ACTION_DURATION_MS } from '../lib/toasts';
+import { tunnelsLeftText } from '../lib/toastText';
 import { Icon, Logo } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { ConfirmDialog, TextDialog, type TextAsk } from '../ui/Dialogs';
@@ -204,8 +206,9 @@ export function Shell() {
       const i = tabs.findIndex((t) => t.id === p.tab);
       const t = tabs[i];
       if (!t || (t.id === active && t.focus === p.id)) continue;
-      if (t.id === active) notify(`${p.alias} needs your input in pane ${t.panes.indexOf(p.id) + 1}`, 'info');
-      else notify(`${p.alias} needs your input${i < 9 ? ' ' + chordLabel(('tab' + (i + 1)) as Action, os) : ''}`, 'info');
+      const text = t.id === active ? `${p.alias} needs your input in pane ${t.panes.indexOf(p.id) + 1}`
+        : `${p.alias} needs your input${i < 9 ? ' ' + chordLabel(('tab' + (i + 1)) as Action, os) : ''}`;
+      notify({ text, kind: 'info', key: `prompt:${p.id}` });
     }
   }, [panes, tabs, active, os, notify]);
 
@@ -226,9 +229,8 @@ export function Shell() {
       if (now.has(alias) || panes.some((p) => p.alias === alias)) continue;
       const up = upOn(tunnels.get().list, alias);
       if (up.length === 0) continue;
-      const names = up.map((v) => v.name);
-      const list = names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
-      notify(`Tab closed. ${list} ${names.length === 1 ? 'is' : 'are'} still up on ${alias}.`, 'info', { label: names.length === 1 ? 'Stop it' : 'Stop them', run: () => { void tunnels.stopHost(alias); } });
+      const { text, label } = tunnelsLeftText(alias, up.map((v) => v.name));
+      notify({ text, kind: 'info', key: `tunnels-up:${alias}`, duration: ACTION_DURATION_MS, actions: [{ label, run: () => { void tunnels.stopHost(alias); } }] });
     }
     openHosts.current = now;
   }, [panes, notify]);
@@ -262,8 +264,8 @@ export function Shell() {
     setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts'));
     const t = sessions.tab(sessions.get().active);
     if (!t) { if (alias) sessions.open(alias, noCommand); return; }
-    if (sessions.pane(t.focus)?.kind === 'rdp') { notify('A remote desktop tab has no split panes', 'info'); return; }
-    if (t.panes.length >= MAX_PANES) { notify(`A tab holds up to ${MAX_PANES} panes`, 'info'); return; }
+    if (sessions.pane(t.focus)?.kind === 'rdp') { notify({ text: 'A remote desktop tab has no split panes', kind: 'info', key: 'split:rdp' }); return; }
+    if (t.panes.length >= MAX_PANES) { notify({ text: `A tab holds up to ${MAX_PANES} panes`, kind: 'info', key: 'split:max' }); return; }
     sessions.split(dir, alias, noCommand);
   }, [notify, isRdp, connect]);
 

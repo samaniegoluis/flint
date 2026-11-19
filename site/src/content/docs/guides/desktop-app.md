@@ -52,8 +52,11 @@ Flint tells you what happened in a toast, in the bottom right corner by default 
 **Settings → Appearance → Notifications**). Up to three show at once, the newest closest to
 the corner.
 
-- A toast leaves after about 6 seconds, an error after 30. Pointing at the stack, or moving
-  the focus into it, pauses that while you read.
+- A toast leaves after about 6 seconds, one with a button after 15, an error after 30.
+  Pointing at the stack, or moving the focus into it, pauses that while you read.
+- A message that comes again replaces its toast instead of stacking a copy: a second
+  *needs your input* for the same pane, a second copy of a password, a newer result of
+  **Test connection**.
 - A toast that shows progress stays until the work ends.
 - Every toast has a **✕**. <kbd>F6</kbd> reaches the toasts like any other part of the
   window (the terminal keeps <kbd>Tab</kbd>); there, <kbd>Esc</kbd> closes the toast and the
@@ -127,7 +130,8 @@ every jump host, checks each host key and logs in, then hangs up. A server Flint
 seen asks to be verified inside the editor; a key you trust there is kept, and belongs
 to the host once you save it. The result appears above the buttons: **Connection
 works** with the address it reached and how long it took, or **Test failed** with the
-reason. A test never asks for a password. `flint host test` does the same in the CLI.
+reason. It shows in a toast too, so you see it on a small window; testing again replaces
+that toast. A test never asks for a password. `flint host test` does the same in the CLI.
 
 ### Remote desktop (RDP) hosts
 
@@ -256,8 +260,9 @@ you finish the line and press <kbd>Enter</kbd> yourself.
 - Images up to **Settings → Terminal → Largest file to paste** (20 MB unless you change
   it) are uploaded; a larger one is refused with its size. Use the
   [Files view](/guides/files-view/) for big files: it shows progress and has no limit.
-- While it uploads, Flint shows *Pasting image to &lt;host&gt;…*; if the upload fails (no
-  SFTP on the server, no permission, a lost connection), it says why.
+- While it uploads, Flint shows *Pasting image to &lt;host&gt;…*, and that toast turns into
+  the result: *Pasted the image on &lt;host&gt;*, or, if the upload fails (no SFTP on the
+  server, no permission, a lost connection), why.
 
 **Accents and other layouts.** Dead keys (US International, ABC Extended, most ISO
 layouts) and input methods (Japanese, Chinese, Korean) compose as they do in any other

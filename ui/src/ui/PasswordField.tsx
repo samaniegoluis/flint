@@ -48,7 +48,7 @@ export function PasswordField({ value, onChange, saved, placeholder, label = 'Pa
   const copy = async () => {
     try {
       await api.secretCopy(saved!.kind, saved!.name);
-      notify('Password copied · the clipboard clears in 30 s');
+      notify({ text: 'Password copied · the clipboard clears in 30 s', key: 'copied:password' });
     } catch (err) {
       fail(toFlintError(err));
     }

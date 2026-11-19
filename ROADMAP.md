@@ -51,6 +51,8 @@ macOS only.
 | macOS signing | Developer ID and notarization on the owner's account, in the scripts and the workflow's `release` environment |
 | Funding | `.github/FUNDING.yml`, the Sponsor button, a README and site line |
 
+**Open for the update milestone (owner, 2026-11-19, during milestone 47):** design 24c2 says ✕ on the *Downloading* toast cancels the download. The owner sees the update's toasts as sticky until closed, and closing one as hiding it, never stopping the download, which goes on in the status bar's version item (24f) and About (24e). Settle it when the v13 spec is written.
+
 ## 1. Parity with Tether
 
 What Tether already does and Flint must not lose.

@@ -1995,6 +1995,12 @@
       const pasted = await waitFor(() => fullText().match(pathRe), 'the pasted path in the prompt', 20000);
       const path = pasted[1];
       await check(true, `the image's path on the server is pasted into the prompt (${path})`);
+      // Milestone 47: the result replaces "Pasting…" in place (one toast per pane).
+      const pasteToasts = () => [...document.querySelectorAll('[data-toast]')]
+        .filter((el) => !el.classList.contains('leaving') && /^Past/.test(el.querySelector('.t-text')?.textContent ?? ''))
+        .map((el) => el.querySelector('.t-text').textContent);
+      await waitFor(() => pasteToasts().includes('Pasted the image on local'), 'the paste result toast');
+      await check(pasteToasts().length === 1, `"Pasted the image on local" replaces "Pasting…" (${pasteToasts()})`);
       await settle();
       await type('; echo ls-$((6*7))');
       await enter();
@@ -2185,6 +2191,11 @@
       await click('.modal button', 'Test connection');
       await waitFor(() => hasText('Test failed'), 'the failed test', 30000);
       await check(true, 'a test of a closed port reports the failure in the editor');
+      // Milestone 47: the result is in a toast too, one per editor (`key`).
+      const testToasts = () => [...document.querySelectorAll('[data-toast]')]
+        .filter((el) => !el.classList.contains('leaving') && /^(Test of probe failed|Connection to probe works)/.test(el.querySelector('.t-text')?.textContent ?? ''));
+      await waitFor(() => testToasts().length === 1, 'the failed test toast');
+      await check(testToasts()[0].dataset.kind === 'error', `the failure is an error toast too (${testToasts()[0].querySelector('.t-text').textContent})`);
       await fill('#hp', PORT2);
       await click('.modal button', 'Test connection');
       await waitFor(() => q('.modal [role="alertdialog"]'), 'the host key card in the editor', 30000);
@@ -2192,6 +2203,10 @@
       await click('.modal [role="alertdialog"] button', 'Trust and continue');
       await waitFor(() => hasText('Connection works'), 'the successful test', 30000);
       await check(hasText(`${USER}@127.0.0.1:${PORT2}`), 'the test names the target it reached');
+      await waitFor(() => testToasts().some((el) => el.dataset.kind === 'ok'), 'the successful test toast');
+      await check(testToasts().length === 1 && /^Connection to probe works · \d+ ms$/.test(testToasts()[0].querySelector('.t-text').textContent),
+        `the success replaces the failure's toast in place (${testToasts().map((el) => el.querySelector('.t-text').textContent)})`);
+      await check(hasText('Connection works ·'), 'the inline line stays as the record');
       await check(!(await window.backend.catalog({})).hosts.some((h) => h.alias === 'probe'), 'testing does not save the host');
 
       await setStep('initial command');

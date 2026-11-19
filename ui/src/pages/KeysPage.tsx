@@ -28,7 +28,7 @@ export function KeysPage({ adding, setAdding, onConfirm }: { adding: boolean; se
   const keys = catalog.keys.filter((k) => !q || (k.name + ' ' + k.fingerprint).toLowerCase().includes(q.toLowerCase()));
 
   const copy = (name: string, pub: string) => {
-    navigator.clipboard?.writeText(pub).then(() => notify(`Public key of ${name} copied`)).catch(() => notify('Copy failed', 'error'));
+    navigator.clipboard?.writeText(pub).then(() => notify({ text: `Public key of ${name} copied`, key: 'copied:pubkey' })).catch(() => notify('Copy failed', 'error'));
   };
 
   const rename = async () => {

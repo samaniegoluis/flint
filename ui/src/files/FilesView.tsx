@@ -181,7 +181,7 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
   };
   const copyPath = (p: string) => {
     const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(p)));
-    api.terminalClipboard('c;' + b64).then(() => notify('Copied the path')).catch(fail);
+    api.terminalClipboard('c;' + b64).then(() => notify({ text: 'Copied the path', key: 'copied:path' })).catch(fail);
   };
 
   const menuItems = (e: FileEntry | null): MenuItem[] => {

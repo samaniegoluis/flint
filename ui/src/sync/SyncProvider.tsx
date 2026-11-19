@@ -9,6 +9,7 @@ import { api, on, toFlintError } from '../api/backend';
 import type { MergeReport, RemoteStatus, SyncEvent } from '../api/types';
 import { useApp } from '../state/app';
 import { hasChanges, mergeSummary, NO_LIVE, syncState, type SyncLive, type SyncState } from '../lib/sync';
+import { ACTION_DURATION_MS } from '../lib/toasts';
 import { MergeDetails } from './MergeDetails';
 import { NewPasswordModal } from './NewPasswordModal';
 
@@ -105,7 +106,7 @@ export function SyncProvider({ children, onOpenServerSettings }: { children: Rea
       setLastError('');
       if (merged) {
         setLastMerge(e.report);
-        notify(`Changes from another machine: ${mergeSummary(e.report)}`, 'info', { label: 'Details', run: () => setDetails(e.report) });
+        notify({ text: `Changes from another machine: ${mergeSummary(e.report)}`, kind: 'info', key: 'sync-merge', duration: ACTION_DURATION_MS, actions: [{ label: 'Details', run: () => setDetails(e.report) }] });
       }
     }
     refresh().catch(() => {});

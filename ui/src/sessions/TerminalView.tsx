@@ -242,12 +242,19 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
         say(tooBig, 'error');
         return;
       }
-      say(`Pasting image to ${pane.alias}…`, 'info');
+      // One toast per pane: "Pasting…" stays while the upload runs and its result replaces it.
+      const key = `paste:${tabId}`;
+      say({ text: `Pasting image to ${pane.alias}…`, kind: 'info', key, duration: 'sticky' });
       const session = pane.session;
       upload(session).then((text) => {
         // The pane may have reconnected or closed meanwhile: paste only into the same session.
-        if (alive && sessions.pane(tabId)?.session === session) term.paste(text);
-      }).catch((err: { message: string }) => say(`Paste to ${pane.alias} failed: ${err.message}`, 'error'));
+        if (alive && sessions.pane(tabId)?.session === session) {
+          term.paste(text);
+          say({ text: `Pasted the image on ${pane.alias}`, key });
+        } else {
+          say({ text: `The image was written on ${pane.alias}, but its session ended before the paste`, kind: 'info', key });
+        }
+      }).catch((err: { message: string }) => say({ text: `Paste to ${pane.alias} failed: ${err.message}`, kind: 'error', key }));
     };
     const onPaste = (e: ClipboardEvent) => {
       const choice = pasteChoice(e.clipboardData);

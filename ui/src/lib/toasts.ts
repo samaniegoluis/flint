@@ -41,6 +41,8 @@ export interface ToastItem {
 export const DEFAULT_DURATION_MS = 6000;
 /** Errors stay longer, so a long one is read, but still leave (D-109). */
 export const ERROR_DURATION_MS = 30_000;
+/** A toast whose button offers what is also reachable elsewhere (20d2's Stop them, 23e1's Details): time to reach it (D-110). */
+export const ACTION_DURATION_MS = 15_000;
 export const MAX_VISIBLE = 3;
 export const MAX_ACTIONS = 2;
 export const EXIT_MS = 160;
