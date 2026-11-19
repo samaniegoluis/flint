@@ -2,7 +2,8 @@
 # Builds the Flint desktop app: the page (ui/, React + Vite), then the executable,
 # then puts the page where the executable looks for it.
 #
-#   scripts/build-gui.sh          # → build/gui/Flint.app on macOS, build/gui/Flint + build/gui/ui on Linux
+#   scripts/build-gui.sh          # → build/gui/Flint.app on macOS, build/gui/Flint + build/gui/ui on Linux,
+#                                 #   build/gui/Flint.exe + ui + WebView2Loader.dll on Windows (MSYS2)
 #
 # The app lives in build/gui, not build/: macOS file systems ignore case, so
 # build/Flint and the CLI's build/flint would be the same file.
@@ -39,6 +40,18 @@ case "$(uname -s)" in
     cp -R ui/dist "$res/ui"
     codesign --force --deep -s - build/gui/Flint.app >/dev/null 2>&1 || echo "build-gui: ad-hoc signing failed" >&2
     echo "build-gui: build/gui/Flint.app"
+    ;;
+  MINGW*|MSYS*)
+    rm -rf build/gui/ui
+    cp -R ui/dist build/gui/ui
+    # WebView2Loader.dll beside the app: without it cfire finds no WebView2 runtime
+    # (docs/cfire-windows.md, W-10). windows/bin/env.sh says where it is.
+    if [[ -f "${FLINT_WV2:-}/WebView2Loader.dll" ]]; then
+      cp "$FLINT_WV2/WebView2Loader.dll" build/gui/
+    else
+      echo "build-gui: no WebView2Loader.dll (FLINT_WV2); the window will stay black" >&2
+    fi
+    echo "build-gui: build/gui/Flint.exe (page in build/gui/ui)"
     ;;
   *)
     rm -rf build/gui/ui

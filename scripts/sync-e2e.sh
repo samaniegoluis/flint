@@ -64,6 +64,27 @@ case "$(uname -s)" in
   *) no_tty() { perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV or die "exec: $!"' "$@"; } ;;
 esac
 
+# The app to start: the bundle on macOS, Xvfb on Linux, the desktop session on Windows
+# (MSYS2: windows/desktop.sh runs this script there).
+app_cmd() {
+  case "$(uname -s)" in
+    Darwin) app=(build/gui/Flint.app/Contents/MacOS/Flint) ;;
+    MINGW*|MSYS*) app=(timeout 200 build/gui/Flint.exe) ;;
+    *) app=(timeout 200 xvfb-run -a build/gui/Flint) ;;
+  esac
+}
+# The app's config folder holds its socket, whose path must stay short (sun_path): /tmp,
+# not macOS's long TMPDIR; on Windows the run's own temp folder (never C:\tmp).
+case "$(uname -s)" in MINGW*|MSYS*) short_tmp="$TMPDIR" ;; *) short_tmp=/tmp ;; esac
+# Windows has no POSIX modes (a file takes its folder's ACL; owner, 2026-11-18: skipped
+# there, as in the suites and server-e2e).
+check_0600() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*) echo "skip  $1 (no POSIX modes on Windows)" ;;
+    *) check "$1" "[[ \"\$(file_mode \"$2\")\" == \"600\" ]]" ;;
+  esac
+}
+
 # Each machine's keychain service. On one Mac every "machine" shares the user's keychain,
 # and macOS asks a person before one binary reads an item another saved (D-099): B
 # and the app C both hold Lab, so B keeps its tokens under a service of its own, as a
@@ -120,7 +141,7 @@ check "uploaded as version 1" '[[ "$(echo "$out" | json_get "d[\"result\"] + str
 on a 4 "connecting again is refused" "$PW"$'\n'"$TOKEN"$'\n' -- --vault "$VA" vault connect "$url" --master-stdin --token-stdin
 on b 0 "download to a new file" "$PW"$'\n'"$TOKEN"$'\n' -- --json vault connect "$url" --to "$VB" --master-stdin --token-stdin
 check "downloaded version 1" '[[ "$(echo "$out" | json_get "d[\"result\"] + str(d[\"version\"])")" == "downloaded1" ]]'
-check "B's file is 0600" '[[ "$(file_mode "$VB")" == "600" ]]'
+check_0600 "B's file is 0600" "$VB"
 on b 20 "a taken path is refused" "$PW"$'\n'"$TOKEN"$'\n' -- vault connect "$url" --to "$VB" --master-stdin --token-stdin
 check "B has A's host" '[[ "$(aliases b "$VB")" == "web" ]]'
 on b 0 "B in step" "$PW"$'\n' -- --vault "$VB" vault sync --master-stdin
@@ -211,10 +232,10 @@ app_default=1
 [[ "$(uname -s)" == Darwin ]] && app_default=0
 if [[ "${FLINT_SYNC_E2E_APP:-$app_default}" == 1 ]]; then
   "$root/scripts/build-gui.sh" >/dev/null || { echo "sync-e2e: app build failed" >&2; exit 1; }
-  if [[ "$(uname -s)" == Darwin ]]; then app=(build/gui/Flint.app/Contents/MacOS/Flint); else app=(timeout 200 xvfb-run -a build/gui/Flint); fi
+  app_cmd
   # The page unlocks A's vault, then listens until the CLI adds `stop-app`, and
   # reports every vault:sync it heard. Its socket needs a short path (sun_path).
-  short="$(mktemp -d /tmp/fl-sync.XXXXXX)"
+  short="$(mktemp -d "$short_tmp/fl-sync.XXXXXX")"
   cp -R "$tmp/a/." "$short/"
   cat > "$tmp/app.js" <<JS
 (async () => {
@@ -328,8 +349,8 @@ echo "== the app connects on its own (milestone 44: Welcome, Settings, the statu
 on a 0 "A disconnects, so the app's keychain item is its own" "" -- --vault "$VA" vault disconnect
 on b 0 "B connects again" "$PW"$'\n'"$TOKEN"$'\n' -- --vault "$VB" vault connect "$url" --master-stdin --token-stdin
 "$root/scripts/build-gui.sh" >/dev/null || { echo "sync-e2e: app build failed" >&2; exit 1; }
-if [[ "$(uname -s)" == Darwin ]]; then app=(build/gui/Flint.app/Contents/MacOS/Flint); else app=(timeout 200 xvfb-run -a build/gui/Flint); fi
-short_c="$(mktemp -d /tmp/fl-sync.XXXXXX)"
+app_cmd
+short_c="$(mktemp -d "$short_tmp/fl-sync.XXXXXX")"
 VC="$tmp/vc/Lab.flint"
 mkdir -p "$tmp/vc"
 cat > "$tmp/app-c.js" <<JS
@@ -449,7 +470,7 @@ check "it reconnected by merging with the server's copy" 'grep -q "connect outco
 check "it chose Lab from the server's list of two" 'grep -q "chose Lab from the list of two" "$tmp/app-c.log"'
 check "the label it gave is in the server's list" '[[ "$(printf "%s\n" "$TOKEN" | FLINT_CONFIG_DIR="$tmp/b" no_tty "$flint" --json vault connect "$url" --list --token-stdin | json_get "[v[\"label\"] for v in d[\"vaults\"] if v[\"id\"] == \"$lab_id\"][0]")" == "Lab at home" ]]'
 check "the token is not in the app's log" '! grep -q "$TOKEN" "$tmp/app-c.log"'
-check "C's file is 0600" '[[ "$(file_mode "$VC")" == "600" ]]'
+check_0600 "C's file is 0600" "$VC"
 grep -q "^e2e: pass" "$tmp/app-c.log" || { echo "---- app log"; grep -v '^\s*$' "$tmp/app-c.log" | tail -30; echo "---- server log"; tail -15 "$tmp/server.log"; }
 rm -rf "$short_c"
 on b 0 "B disconnects again" "" -- --vault "$VB" vault disconnect

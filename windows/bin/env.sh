@@ -20,7 +20,8 @@ export FLINT_CFIRE="${FLINT_CFIRE:-$FLINT_WIN_OPT/cfire-0.12.2}"
 # WebView2Loader.dll: cfire's fallback without it never finds the installed runtime (W-10),
 # so every webui window needs it beside the .exe or on PATH.
 export FLINT_WV2="${FLINT_WV2:-$FLINT_WIN_OPT/webview2/1.0.4314.35}"
-export PATH="$FLINT_CFIRE:$FLINT_WIN_OPT/freerdp/bin:$FLINT_WV2:$PATH"
+# Node (the official win-x64 zip, in $FLINT_WIN_OPT/node): scripts/build-gui.sh builds ui/.
+export PATH="$FLINT_CFIRE:$FLINT_WIN_OPT/freerdp/bin:$FLINT_WV2:$FLINT_WIN_OPT/node:$PATH"
 export CFIRE_RUNTIME_DIR="$(cygpath -m "$FLINT_CFIRE/runtime")"
 export CFIRE_CACHE_DIR="$(cygpath -m /c/flint-work/cache/cfire)"
 export TMPDIR=/c/flint-work/tmp
