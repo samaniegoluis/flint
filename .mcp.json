@@ -3,12 +3,9 @@
     "cfire": {
       "type": "stdio",
       "command": "cfire",
-      "args": ["mcp"]
-    },
-    "cfire-next": {
-      "type": "stdio",
-      "command": "scripts/cfire-next.sh",
-      "args": ["cfire", "mcp"]
+      "args": [
+        "mcp"
+      ]
     }
   }
 }
