@@ -183,9 +183,15 @@ PY
 # is named with the last line the page logged.
 run_app() {
   local st=0
+  # Windows: the app starts behind (the run comes from a scheduled task); bring it to
+  # the front, or the page gets no focus events (windows/front.py).
+  case "$(uname -s)" in
+    MINGW*|MSYS*) python3 -I "$root/windows/front.py" "$(cygpath -w "$root/build/gui/Flint.exe")" 60 >"$4.front" 2>&1 & ;;
+  esac
   FLINT_CONFIG_DIR="$3" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$2" FLINT_GUI_E2E_TIMEOUT_MS="${5:-}" \
     FLINT_GUI_E2E_VISIBLE="$visible" \
     "${app[@]}" 2>&1 | tee "$4" || st=$?
+  [[ -f "$4.front" ]] && cat "$4.front"
   if ! grep -q '^e2e: ' "$4"; then
     echo "e2e: fail: killed with no verdict (exit $st); last page line: $(grep '\[page\]' "$4" | tail -1 | sed 's/^.*\[page\] //')"
   fi

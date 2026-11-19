@@ -822,6 +822,14 @@
       } catch (e) {
         // diag (Windows VM, 2026-11-19): what the terminal showed when cat did not end.
         await log('diag: terminal tail: ' + JSON.stringify(termText().slice(-300)));
+        // A second ^D: did the first one get lost, or does cat never see EOF here?
+        activeTerm().input('\x04', true);
+        await sleep(2000);
+        await log('diag: after a second ^D, cat ' + (termText().includes('cat-done-42') ? 'ended' : 'still runs'));
+        if (termText().includes('cat-done-42')) {
+          await runInTerminal(`wc -l < /tmp/flint-e2e-order.txt; echo wc-$((6*7))`, 'wc-42');
+          await log('diag: lines in the file: ' + JSON.stringify(termText().slice(-40)));
+        }
         throw e;
       }
       await runInTerminal(`awk 'NR-1!=substr($0,2){bad=1} END{print ((bad||NR!=300)?"order-bad-" NR:"order-" "ok")}' /tmp/flint-e2e-order.txt`, '\norder-');
