@@ -1,5 +1,5 @@
 // The words of the toasts whose text is built from data (milestone 47): design 20d2's
-// tunnels left up, Test connection's result, an image pasted. Kept apart from the views
+// tunnels left up and Test connection's result. Kept apart from the views
 // so the wording is tested without React.
 
 /** Design 20d2: the last tab of a host closed while some of its tunnels are up. */
