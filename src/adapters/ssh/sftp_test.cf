@@ -474,6 +474,19 @@ test "sftp_chmod sets permission bits, and stat reports the owner's uid" {
         println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
         return
     }
+    // On Windows the test sshd is MSYS2's, which mounts C: noacl and ignores chmod
+    // (owner, 2026-11-18: skipped there; a real host's SFTP server applies it).
+    mut windows := false
+    // CFIRE-UPSTREAM: CF-031
+    cpp {
+#if defined(_WIN32)
+        windows = true;
+#endif
+    }
+    if windows {
+        println("SKIP: the Windows test sshd ignores chmod (MSYS2, noacl)")
+        return
+    }
     mut link := try sftp_link()
     defer link.link_hangup()
     dir := scratch_dir("chmod")

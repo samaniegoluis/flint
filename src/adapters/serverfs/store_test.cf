@@ -139,6 +139,19 @@ test "a held lock refuses a writer, and a stale one is taken" {
 }
 
 test "the files are written owner-only" {
+    // Windows has no POSIX modes: the files take the data folder's ACL (owner,
+    // 2026-11-18: skipped there; the server ships for Linux).
+    mut windows := false
+    // CFIRE-UPSTREAM: CF-031
+    cpp {
+#if defined(_WIN32)
+        windows = true;
+#endif
+    }
+    if windows {
+        println("SKIP: no POSIX modes on Windows")
+        return
+    }
     dir := temp_store_dir("mode")
     defer {
         _ = fs.remove(dir)
