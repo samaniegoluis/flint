@@ -28,14 +28,16 @@ cd "$root"
 cfire build >/dev/null || { echo "serve-e2e: build failed" >&2; exit 1; }
 "$root/scripts/build-gui.sh" >/dev/null || { echo "serve-e2e: app build failed" >&2; exit 1; }
 flint="$root/build/flint"
-if [[ "$(uname -s)" == Darwin ]]; then
-  app=(build/gui/Flint.app/Contents/MacOS/Flint)
-else
-  app=(timeout 200 xvfb-run -a build/gui/Flint)
-fi
+case "$(uname -s)" in
+  Darwin) app=(build/gui/Flint.app/Contents/MacOS/Flint); win=0 ;;
+  # Windows (MSYS2): the real WebView2 window in the desktop session (windows/desktop.sh).
+  MINGW*|MSYS*) app=(timeout 200 build/gui/Flint.exe); win=1 ;;
+  *) app=(timeout 200 xvfb-run -a build/gui/Flint); win=0 ;;
+esac
 
-# A short folder: the socket path must fit in sun_path (104 bytes on macOS).
-tmp="$(mktemp -d /tmp/fl-serve.XXXXXX)"
+# A short folder: the socket path must fit in sun_path (104 bytes on macOS). On Windows
+# the run's own temp folder (never C:\tmp).
+if [[ $win == 1 ]]; then tmp="$(mktemp -d "$TMPDIR/fl-serve.XXXXXX")"; else tmp="$(mktemp -d /tmp/fl-serve.XXXXXX)"; fi
 export FLINT_CONFIG_DIR="$tmp/cfg"
 export FLINT_KEYCHAIN=off
 # Only the launch check below lets `flint` start the app (D-042).
@@ -93,6 +95,12 @@ check() {
 }
 json_get() { python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(eval(sys.argv[1], {"d": d}))' "$1"; }
 file_mode() { if [[ "$(uname -s)" == Darwin ]]; then stat -f '%Lp' "$1"; else stat -c '%a' "$1"; fi; }
+# The app's socket is there. On Windows an AF_UNIX socket's file is a reparse point
+# MSYS2 does not see as a socket (-S), so there it is only "exists".
+sock_up() { if [[ $win == 1 ]]; then [[ -e "$1" ]]; else [[ -S "$1" ]]; fi; }
+# Windows has no POSIX modes (a file takes its folder's ACL; owner, 2026-11-18: skipped
+# there, as in the suites, server-e2e and sync-e2e).
+check_modes() { if [[ $win == 1 ]]; then echo "skip  $1 (no POSIX modes on Windows)"; else check "$@"; fi; }
 
 # The same command run by the CLI on its own: a config folder with the same recent
 # list and no socket, and the master password on stdin.
@@ -132,15 +140,15 @@ cat > "$tmp/idle.js" <<'JS'
 JS
 FLINT_CONFIG_DIR="$tmp/fresh" FLINT_GUI_E2E="$tmp/idle.js" "${app[@]}" >"$tmp/fresh.log" 2>&1 &
 fresh_pid=$!
-for _ in $(seq 1 100); do [[ -S "$tmp/fresh/flint.sock" ]] && break; sleep 0.1; done
-check "the app creates the config folder and serves on a first launch" '[[ -S "$tmp/fresh/flint.sock" ]]'
+for _ in $(seq 1 100); do sock_up "$tmp/fresh/flint.sock" && break; sleep 0.1; done
+check "the app creates the config folder and serves on a first launch" 'sock_up "$tmp/fresh/flint.sock"'
 wait "$fresh_pid"
 
 echo "== the app"
-E2E_MASTER="$MASTER" E2E_TMP="$tmp" python3 -I - "$root/scripts/serve-e2e.js" "$tmp/serve-e2e.js" <<'PY'
+E2E_MASTER="$MASTER" E2E_TMP="$(if [[ $win == 1 ]]; then cygpath -m "$tmp"; else printf '%s' "$tmp"; fi)" python3 -I - "$root/scripts/serve-e2e.js" "$tmp/serve-e2e.js" <<'PY'
 import os, sys
-src = open(sys.argv[1]).read().replace("@@MASTER@@", os.environ["E2E_MASTER"]).replace("@@TMP@@", os.environ["E2E_TMP"])
-open(sys.argv[2], "w").write(src)
+src = open(sys.argv[1], encoding="utf-8").read().replace("@@MASTER@@", os.environ["E2E_MASTER"]).replace("@@TMP@@", os.environ["E2E_TMP"])
+open(sys.argv[2], "w", encoding="utf-8").write(src)
 PY
 FLINT_GUI_E2E="$tmp/serve-e2e.js" "${app[@]}" >"$tmp/app.log" 2>&1 &
 app_pid=$!
@@ -149,8 +157,8 @@ for _ in $(seq 1 300); do
   printf '' | no_tty "$flint" host list >/dev/null 2>&1 && break
   sleep 0.1
 done
-check "the app serves the socket" '[[ -S "$sock" ]]'
-check "the socket is owner-only (0600)" '[[ "$(file_mode "$sock")" == "600" ]]'
+check "the app serves the socket" 'sock_up "$sock"'
+check_modes "the socket is owner-only (0600)" '[[ "$(file_mode "$sock")" == "600" ]]'
 check "the first command, which asked for the unlock, was allowed with it" 'grep -q "allowed flint, started by .* at unlock" "$tmp/app.log"'
 
 echo "== commands served by the app: no keychain, no master password, no terminal"
@@ -549,7 +557,7 @@ env -u FLINT_GUI_E2E timeout 20 "${app[@]}" >"$tmp/second.log" 2>&1 || second_st
 second_took=$(( $(date +%s) - second_start ))
 check "the second launch exits at once, with status 0" '[[ $second_status == 0 && $second_took -lt 10 ]]'
 check "it says Flint is already running" 'grep -q "already running" "$tmp/second.log"'
-check "the running app is still serving" '[[ -S "$sock" ]]'
+check "the running app is still serving" 'sock_up "$sock"'
 expect 0 "and the CLI is still served" "" -- --json vault status
 
 echo "== a rename, then the stop host"
@@ -622,7 +630,7 @@ check "the socket file is removed when the app quits" '[[ ! -e "$sock" ]]'
 act_files=("$FLINT_CONFIG_DIR"/activity/*.db)
 # One file per vault opened here: "Served" and "Other".
 check "the activity log is a file of this machine's per vault, in the config folder" '[[ ${#act_files[@]} -eq 2 && -s "${act_files[0]}" && -s "${act_files[1]}" ]]'
-check "the activity folder is owner-only (0700) and its files 0600" '[[ "$(file_mode "$FLINT_CONFIG_DIR/activity")" == "700" && "$(file_mode "${act_files[0]}")" == "600" && "$(file_mode "${act_files[1]}")" == "600" ]]'
+check_modes "the activity folder is owner-only (0700) and its files 0600" '[[ "$(file_mode "$FLINT_CONFIG_DIR/activity")" == "700" && "$(file_mode "${act_files[0]}")" == "600" && "$(file_mode "${act_files[1]}")" == "600" ]]'
 check "the activity files and the backup are encrypted" '! grep -qa "long-cmd-end" "${act_files[@]}" && [[ -s "$tmp/activity-backup.db" ]] && ! grep -qa "long-cmd-end" "$tmp/activity-backup.db" && ! grep -qa "SQLite format" "$tmp/activity-backup.db"'
 check "quitting Flint closed the tunnel it ran" '[[ "$(banner "$TP" 1)" == "closed" ]]'
 
@@ -631,26 +639,34 @@ expect 5 "with the app gone, the CLI is on its own again: locked" "" -- host lis
 echo "== with Flint closed, flint starts it on its unlock screen (D-042)"
 E2E_MASTER="$MASTER" python3 -I - "$root/scripts/serve-e2e-launch.js" "$tmp/launch.js" <<'PY'
 import os, sys
-src = open(sys.argv[1]).read().replace("@@MASTER@@", os.environ["E2E_MASTER"])
-open(sys.argv[2], "w").write(src)
+src = open(sys.argv[1], encoding="utf-8").read().replace("@@MASTER@@", os.environ["E2E_MASTER"])
+open(sys.argv[2], "w", encoding="utf-8").write(src)
 PY
 if [[ "$(uname -s)" == Darwin ]]; then real_app="$root/build/gui/Flint.app/Contents/MacOS/Flint"; else real_app="$root/scripts/linux/xvfb-flint.sh"; fi
-# What `flint` starts: the app, its output kept for this report.
+# What `flint` starts: the app, its output kept for this report. On Windows the CLI
+# starts gui\Flint.exe beside it itself (CreateProcessW, detached: no script, no
+# output to keep), so FLINT_APP is empty there and the page's verdict is read from the
+# socket going away once the page has passed and quit.
 launch_app="$tmp/launch-app.sh"
 printf '#!/usr/bin/env bash\nexec "%s" >"%s" 2>&1\n' "$real_app" "$tmp/launched.log" > "$launch_app"
 chmod +x "$launch_app"
+[[ $win == 1 ]] && launch_app=""
 FLINT_APP="$launch_app" FLINT_GUI_E2E="$tmp/launch.js" expect 5 "a command with Flint closed starts it and fails with locked" "" -- host list
 check "it says Flint is asking" '[[ "$err" == *"Flint is asking"* ]]'
-check "Flint is running and serving" '[[ -S "$sock" ]]'
+check "Flint is running and serving" 'sock_up "$sock"'
 expect 0 "vault unlock waits until the window unlocks" "" -- vault unlock
 expect 0 "the command now runs in the app it started" "" -- host list
 check "it lists the hosts" '[[ "$out" == *e2e-stop* ]]'
 expect 0 "add the second stop host" "" -- host add e2e-stop-2 --hostname 10.0.0.10
-for _ in $(seq 1 300); do [[ -S "$sock" ]] || break; sleep 0.1; done
-check "the launched app quit when done" '[[ ! -S "$sock" ]]'
+for _ in $(seq 1 300); do sock_up "$sock" || break; sleep 0.1; done
+check "the launched app quit when done" '! sock_up "$sock"'
 for _ in $(seq 1 100); do grep -q "^e2e:" "$tmp/launched.log" 2>/dev/null && break; sleep 0.1; done
 sed 's/^/launched app: /' "$tmp/launched.log" 2>/dev/null | grep -E "ok |FAILED|e2e:" || true
-check "the launched app's checks passed" 'grep -q "^e2e: pass" "$tmp/launched.log"'
+if [[ $win == 1 ]]; then
+  echo "skip  the launched app's log (detached on Windows: its page passed if it quit, above)"
+else
+  check "the launched app's checks passed" 'grep -q "^e2e: pass" "$tmp/launched.log"'
+fi
 
 echo "== no secret left the app (Principle 6)"
 check "no password in any output" '! grep -q -e "$HOST_PW" -e "$CRED_PW" "$all_out"'
