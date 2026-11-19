@@ -19,7 +19,7 @@ package serverfs
 // `<dir>/versions/`); opening it moves that vault into its folder, `versions/` first
 // and `head.json` last, so a move cut short is finished at the next start.
 
-// CFIRE-UPSTREAM: CF-099, CF-031
+// CFIRE-UPSTREAM: CF-099, CF-031, CF-168
 import cpp "flint_server.hpp"
 
 import "core:fs"
@@ -135,8 +135,17 @@ fn write_synced(path: str, data: str) -> void! {
     f.close()
 }
 
-// Flushes a folder, so a rename into it is on disk.
+// Flushes a folder, so a rename into it is on disk. Not on Windows, where core:fs
+// cannot open a folder (CF-168).
 fn sync_folder(path: str) -> void! {
+    mut can := true
+    // CFIRE-UPSTREAM: CF-168
+    cpp {
+        can = flint_server::folders_sync();
+    }
+    if !can {
+        return
+    }
     // CFIRE-UPSTREAM: CF-158
     owned: str = path
     mut d := fs.open(owned) or err {

@@ -1,4 +1,4 @@
-// CFIRE-UPSTREAM: CF-099, CF-031
+// CFIRE-UPSTREAM: CF-099, CF-031, CF-168
 //
 // Native shim for flint-vault-server's store (milestone 42): an exclusive lock folder
 // (core:fs has only mkdir_all, CF-099). Since cfire 0.12, writes flushed to disk go
@@ -39,6 +39,18 @@ inline int make_dir_exclusive(const std::string& path, std::string& err) {
     if (errno == EEXIST) return EXISTS;
     err = std::strerror(errno);
     return FAILURE;
+#endif
+}
+
+// Whether a folder can be flushed by opening it with core:fs (`fs.open` + `sync()`).
+// Windows' CRT opens no folder ("Permission denied"), and core:fs has no other way
+// (CF-168). The server ships for Linux; on the Windows test VM a rename into a folder is
+// left to NTFS's journal.
+inline bool folders_sync() {
+#if defined(_WIN32)
+    return false;
+#else
+    return true;
 #endif
 }
 

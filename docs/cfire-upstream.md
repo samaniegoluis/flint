@@ -3020,3 +3020,18 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   or a backtrace of the crashing thread in the report (`backtrace_symbols_fd` on Linux and
   macOS, `CaptureStackBackTrace` on Windows); and `-g` kept in `cfire test --release`, or
   a `--debug-info` flag.
+
+### CF-168 · missing · `confirmed`: a folder cannot be flushed on Windows
+- **Seen (migration step 6) [ran, Windows 11 in MSYS2 CLANG64, `v0.12.2` `5be0987`]:**
+  `fs.open(dir)` then `sync()` flushes a folder on macOS and Linux (CF-143's fix), and on
+  Windows `fs.open` fails: `failed to open file C:\…\versions: Permission denied`. The
+  CRT's `_wopen` opens no folder; Windows opens one only with `CreateFileW` and
+  `FILE_FLAG_BACKUP_SEMANTICS`. core:fs has nothing else for it, so a "rename then flush
+  the folder" written with core:fs works on two of three systems.
+- **Repro:** `d := try fs.open("C:/Windows")` in any test, on Windows.
+- **Workaround:** `flint_server::folders_sync()` (`src/adapters/serverfs/native/
+  flint_server.hpp`), false on Windows; `sync_folder` returns there without flushing. The
+  server ships for Linux; the Windows build is for the test VM's checks.
+- **Ideal:** `fs.sync_dir(path)` (an `fsync` of the folder on POSIX; on Windows a no-op or
+  `FlushFileBuffers` on a backup-semantics handle, and `MoveFileExW` with
+  `MOVEFILE_WRITE_THROUGH` in `fs.rename`), or `fs.write_atomic` as CF-143 suggested.
