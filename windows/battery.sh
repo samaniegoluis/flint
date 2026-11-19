@@ -9,7 +9,7 @@
 # On the VM, with FLINT_WIN_STEPS=<comma-separated steps> to run some only:
 #   probes   windows/run-probes.sh (cfire's own behaviour, the W-NN probes)
 #   build    cfire build: flint.exe, gui\Flint.exe, flint-vault-server.exe
-#   tests    scripts/test.sh, every suite
+#   tests    scripts/test.sh, every suite (over SSH all but keychain: see below)
 #   cli      scripts/cli-e2e.sh
 #   server   scripts/server-e2e.sh
 #   sync     scripts/sync-e2e.sh: needs Credential Manager, which an SSH key logon
@@ -58,7 +58,21 @@ sync_result()   { grep -E '^sync-e2e:' "$1"; grep -E '^FAIL' "$1" | head -5; }
 echo "battery on $(git log --oneline -1), cfire $(cfire --version 2>&1 | head -1)"
 step probes bash windows/run-probes.sh
 step build  cfire build
-step tests  scripts/test.sh
+# Over SSH (how the Mac starts it) the keychain suite cannot run: an SSH key logon gets
+# no Credential Manager. Every other suite runs; keychain waits for the desktop session.
+# cfire test runs a folder's nested suites too, so nested folders are not listed again.
+suites=()
+desktop_wait="gui-e2e, serve-e2e"
+if [[ -n "${SSH_CONNECTION:-}" ]]; then
+  for d in $(find src -name '*_test.cf' -not -path '*/.cfire/*' -exec dirname {} \; | sort -u); do
+    [[ "$d" == src/adapters/keychain ]] && continue
+    nested=0
+    for k in "${suites[@]+"${suites[@]}"}"; do [[ "$d" == "$k"/* ]] && nested=1; done
+    [[ $nested == 0 ]] && suites+=("$d")
+  done
+  desktop_wait="$desktop_wait, the keychain suite"
+fi
+step tests  scripts/test.sh ${suites[@]+"${suites[@]}"}
 step cli    scripts/cli-e2e.sh
 step server scripts/server-e2e.sh
 step sync   scripts/sync-e2e.sh
@@ -66,6 +80,6 @@ step sync   scripts/sync-e2e.sh
 echo
 echo "== summary (logs in $(cygpath -w "$logs"))"
 printf '%s\n' "${summary[@]}"
-echo "waiting for the desktop session: gui-e2e, serve-e2e$([[ "$steps" == *",sync,"* ]] || echo ", sync-e2e")"
+echo "waiting for the desktop session: $desktop_wait$([[ "$steps" == *",sync,"* ]] || echo ", sync-e2e")"
 [[ $failed == 0 ]] && echo "battery: every step passed" || echo "battery: FAILED"
 exit $failed
