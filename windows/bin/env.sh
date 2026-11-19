@@ -14,7 +14,8 @@ _d="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 _root="$(cd "$_d/../.." && pwd)"
 export FLINT_WIN_OPT="${FLINT_WIN_OPT:-/c/flint-work/opt}"
 export FLINT_CFIRE="${FLINT_CFIRE:-$FLINT_WIN_OPT/cfire-0.12.2}"
-export PATH="$FLINT_CFIRE:$PATH"
+# FreeRDP's bin: its sample server, sfreerdp-server, for the RDP suite (scripts/test.sh).
+export PATH="$FLINT_CFIRE:$FLINT_WIN_OPT/freerdp/bin:$PATH"
 export CFIRE_RUNTIME_DIR="$(cygpath -m "$FLINT_CFIRE/runtime")"
 export CFIRE_CACHE_DIR="$(cygpath -m /c/flint-work/cache/cfire)"
 export TMPDIR=/c/flint-work/tmp
