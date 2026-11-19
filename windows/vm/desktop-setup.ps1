@@ -7,6 +7,6 @@
 #   flint exec Windows11-Flint-SSH -- "& C:\flint-work\flint\windows\vm\desktop-setup.ps1"
 $run = 'C:\flint-work\flint\windows\vm\desktop-run.cmd'
 $a = New-ScheduledTaskAction -Execute "$env:windir\System32\conhost.exe" -Argument "--headless cmd.exe /c $run"
-$p = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
+$p = New-ScheduledTaskPrincipal -UserId "$env:COMPUTERNAME\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 $s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 3) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
 Register-ScheduledTask -TaskName FlintDesktop -Action $a -Principal $p -Settings $s -Force | Select-Object TaskName, State
