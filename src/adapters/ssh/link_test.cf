@@ -136,6 +136,19 @@ test "the agent authenticates when SSH_AUTH_SOCK holds the key" {
         println("SKIP: FLINT_TEST_AGENT not set")
         return
     }
+    // libssh reaches no agent on Windows: Windows' is a named pipe, MSYS2's an
+    // emulated socket (ROADMAP §7, "SSH agent auth on Windows"; owner, 2026-11-18).
+    mut windows := false
+    // CFIRE-UPSTREAM: CF-031
+    cpp {
+#if defined(_WIN32)
+        windows = true;
+#endif
+    }
+    if windows {
+        println("SKIP: no SSH agent reachable on Windows yet (ROADMAP §7)")
+        return
+    }
     mut link := new_ssh_link()
     try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
     try link.link_auth_agent()
