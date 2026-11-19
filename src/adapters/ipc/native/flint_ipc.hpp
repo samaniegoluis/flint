@@ -312,7 +312,9 @@ inline bool wait_io(int fd, short events, int64_t deadline) {
         if (left <= 0) return false;
         int n = flint_sock::poll_one(fd, events, static_cast<int>(left));
         if (n > 0) return true;
-        if (n == 0) return false;
+        // Nothing yet: wait out the rest. WSAPoll can come back a tick (~15 ms) before
+        // its timeout, and read_all tells a timeout from an error by the clock.
+        if (n == 0) continue;
         if (!flint_sock::interrupted(flint_sock::last_error())) return false;
     }
 }
