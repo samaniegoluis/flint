@@ -216,6 +216,8 @@ body { margin: 0; background: var(--surface-desk); }
 .input { height: var(--control-h); display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2) 0 var(--sp-3); background: var(--surface-sunken); border: 1px solid var(--border-default); border-radius: var(--radius-sm); color: var(--text-primary); transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
 .input input, .input textarea { flex: 1; min-width: 0; background: none; border: 0; outline: none; font-size: var(--fs-md); color: inherit; padding: 0; }
 .input input::placeholder, .input textarea::placeholder { color: var(--text-tertiary); }
+/* Edge's WebView2 (Windows) adds its own reveal and clear buttons to inputs; Flint has its own eye. */
+input::-ms-reveal, input::-ms-clear { display: none; }
 .input:hover { border-color: var(--border-strong); }
 .input.focus { border-color: var(--accent); box-shadow: var(--focus-glow); }
 .input.err { border-color: var(--danger); box-shadow: var(--danger-glow); }
