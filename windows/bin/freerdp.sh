@@ -14,14 +14,15 @@
 # H.264 can come from Media Foundation, which ships with Windows.
 #
 # Needs: MSYS2 CLANG64 with mingw-w64-clang-x86_64-{cmake,ninja,openssl,zlib}.
-# Installs into $FLINT_WIN_OPT/freerdp (default /c/flint-work/opt). Pinned version: bump
+# Installs into $FLINT_WIN_OPT/freerdp (windows/bin/home.sh). Pinned version: bump
 # it here, never "latest" at fetch time.
 set -eu
 FREERDP_VERSION=3.33.1
 # Bumped when the build options change, so an install built with the old ones rebuilds.
 FREERDP_STAMP="$FREERDP_VERSION server native"
 
-OPT="${FLINT_WIN_OPT:-/c/flint-work/opt}"
+. "$(dirname "$0")/home.sh"
+OPT="$FLINT_WIN_OPT"
 PREFIX="$OPT/freerdp"
 
 if [ "$(cat "$PREFIX/VERSION" 2>/dev/null)" = "$FREERDP_STAMP" ]; then
