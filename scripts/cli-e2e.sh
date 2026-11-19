@@ -82,8 +82,9 @@ check() {
 json_get() { python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(eval(sys.argv[1], {"d": d}))' "$1"; }
 # A path as the native flint.exe prints it: C:/... in MSYS2 (where bash says /c/...),
 # unchanged elsewhere.
+windows=0
 case "$(uname -s)" in
-  MINGW*|MSYS*) npath() { cygpath -m "$1"; } ;;
+  MINGW*|MSYS*) windows=1; npath() { cygpath -m "$1"; } ;;
   *) npath() { printf '%s' "$1"; } ;;
 esac
 is_json() { python3 -c 'import json,sys; json.loads(sys.stdin.read())' 2>/dev/null; }
@@ -311,7 +312,14 @@ check "known hosts name their host" '[[ "$(echo "$out" | json_get "d[0][\"host\"
 
 echo "== ssh: auth and network failures"
 expect 0 "host add with no key" "$SMI" -- host add bare --hostname 127.0.0.1 --port "$P" --user "$USER" "${SM[@]}"
-expect 0 "the agent authenticates a host with no key" "$SMI" -- exec bare --accept-new-host-key "${SM[@]}" -- true
+if [[ $windows == 1 ]]; then
+  # No agent reachable on Windows yet (ROADMAP §7, "SSH agent auth on Windows"); the
+  # host key is accepted here instead, for the checks below.
+  echo "skip  the agent authenticates a host with no key (ROADMAP §7)"
+  printf '%s' "$SMI" | SSH_AUTH_SOCK= no_tty "$flint" exec bare --accept-new-host-key "${SM[@]}" -- true >/dev/null 2>&1
+else
+  expect 0 "the agent authenticates a host with no key" "$SMI" -- exec bare --accept-new-host-key "${SM[@]}" -- true
+fi
 SSH_AUTH_SOCK= expect 12 "no key and no agent fails with auth" "$SMI" -- --json exec bare "${SM[@]}" -- true
 check "the auth error names what was tried" '[[ "$err" == *"SSH agent"* ]]'
 expect 0 "host add on a closed port" "$SMI" -- host add dead --hostname 127.0.0.1 --port 1 --user "$USER" "${SM[@]}"
@@ -369,34 +377,32 @@ expect 5 "exec --sudo needs Flint" "$SMI" -- exec local --sudo "${SM[@]}" -- id 
 check "it says to open Flint and runs nothing" '[[ "$err" == *"runs only through Flint"* && -z "$out" ]]'
 expect 0 "host edit --no-sudo-password" "$SMI" -- --json host edit local --no-sudo-password "${SM[@]}"
 check "the sudo password is gone" '[[ "$(echo "$out" | json_get "d[\"has_sudo_password\"]")" == "False" ]]'
+cp "$root/scripts/ptyhost.py" "$tmp/"
 cat > "$tmp/cmd_tty.py" <<'PY'
 # Waits for <wait_for> (if any), then types <typed> (if any) until <until> shows up:
 # input typed ahead is flushed when Flint enters raw mode, so it is resent.
-import json, os, pty, select, sys, time
+import json, os, sys, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ptyhost import spawn
 flint, wait_for, typed, until = sys.argv[1], sys.argv[2].encode(), sys.argv[3].encode(), sys.argv[4].encode()
-args = sys.argv[5:]
-pid, fd = pty.fork()
-if pid == 0:
-    os.execv(flint, [flint] + args)
+p = spawn([flint] + sys.argv[5:])
 buf = b""; end = time.time() + 40; last_typed = 0.0; answered = False
 master = os.environ.get("FLINT_E2E_MASTER", "").encode()
 while time.time() < end:
-    r, _, _ = select.select([fd], [], [], 0.2)
-    if r:
-        try:
-            d = os.read(fd, 4096)
-        except OSError:
-            break
-        if not d:
-            break
-        buf += d
+    d = p.read(0.2)
+    if d is None:
+        break
+    buf += d
+    if not d and p.poll() is not None:
+        buf += p.read(0.3) or b""
+        break
     if b"Master password" in buf and not answered:
         answered = True
-        os.write(fd, master + b"\n")
+        p.write(master + b"\n")
     if typed and wait_for in buf and until not in buf and time.time() - last_typed > 1.5:
-        os.write(fd, typed + b"\n"); last_typed = time.time()
-_, status = os.waitpid(pid, 0)
-print(json.dumps({"saw": wait_for in buf and until in buf, "code": os.waitstatus_to_exitcode(status), "out": buf.decode(errors="replace")}))
+        p.write(typed + b"\n"); last_typed = time.time()
+code = p.wait()
+print(json.dumps({"saw": wait_for in buf and until in buf, "code": code, "out": buf.decode(errors="replace")}))
 PY
 run_tty() {  # <description> <wait for> <typed line> <until> <flint args...>
   local desc="$1"; shift
@@ -459,30 +465,24 @@ kill "$fwd_pid" 2>/dev/null; wait "$fwd_pid" 2>/dev/null; fwd_pid=""
 echo "== ssh: interactive connect on a pseudo-terminal"
 expect 0 "host add for connect" "$SMI" -- host add tty --hostname localhost --port "$P" --user "$USER" --key tkey --jump local "${SM[@]}"
 cat > "$tmp/connect_tty.py" <<'PY'
-import fcntl, json, os, pty, select, struct, sys, termios, time
+import json, os, sys, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ptyhost import spawn
 flint, master, args = sys.argv[1], sys.argv[2], sys.argv[3:]
-pid, fd = pty.fork()
-if pid == 0:
-    os.execv(flint, [flint] + args)
-def setsize(rows, cols):
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
-setsize(24, 80)
+p = spawn([flint] + args, rows=24, cols=80)
 buf = b""
 def pump(until, secs=20):
     global buf
     end = time.time() + secs
     while time.time() < end:
-        r, _, _ = select.select([fd], [], [], 0.1)
-        if r:
-            try:
-                d = os.read(fd, 4096)
-            except OSError:
-                return False
-            if not d:
-                return False
-            buf += d
-            if until and until in buf[-4096:]:
-                return True
+        d = p.read(0.1)
+        if d is None:
+            return False
+        buf += d
+        if until and until in buf[-4096:]:
+            return True
+        if not d and p.poll() is not None:
+            return False
     return False
 # Answer the host key and master password prompts, then wait for the shell:
 # typed-ahead input is flushed when Flint enters raw mode, so the marker command
@@ -493,20 +493,20 @@ while time.time() < deadline and not ready:
     pump(None, 0.5)
     if b"(yes/no)?" in buf and not prompted:
         prompted = True
-        os.write(fd, b"yes\n")
+        p.write(b"yes\n")
     elif b"Master password" in buf and not answered_master:
         answered_master = True
-        os.write(fd, master.encode() + b"\n")
+        p.write(master.encode() + b"\n")
     elif prompted:
-        os.write(fd, b"echo READY$((40+2))\n")
+        p.write(b"echo READY$((40+2))\n")
         ready = pump(b"READY42", 2)
-os.write(fd, b"stty size\n"); size1 = pump(b"24 80")
-setsize(40, 100); time.sleep(0.5)
-os.write(fd, b"stty size; exit 6\n"); size2 = pump(b"40 100")
+p.write(b"stty size\n"); size1 = pump(b"24 80")
+p.resize(40, 100); time.sleep(0.5)
+p.write(b"stty size; exit 6\n"); size2 = pump(b"40 100")
 pump(None, 10)
-_, status = os.waitpid(pid, 0)
+code = p.wait()
 print(json.dumps({"prompted": prompted, "size1": size1, "size2": size2,
-                  "code": os.waitstatus_to_exitcode(status), "out": buf.decode(errors="replace")}))
+                  "code": code, "out": buf.decode(errors="replace")}))
 PY
 checks=$((checks + 1))
 pty_out="$(python3 -I "$tmp/connect_tty.py" "$flint" "$MASTER" --vault "$sv" connect tty 2>&1)"
@@ -572,9 +572,15 @@ expect 3 "a missing remote file is not_found" "$SMI" -- cp "local:$rem/nope" "$l
 expect 3 "a missing local file is not_found" "$SMI" -- cp "$loc/nope" "local:$rem/" "${SM[@]}"
 expect 3 "a missing remote folder is not_found" "$SMI" -- cp "$loc/app.conf" "local:$rem/no/such/" "${SM[@]}"
 expect 21 "a file as the folder is not_a_directory" "$SMI" -- cp "$loc/app.conf" "local:$rem/app.conf/x" "${SM[@]}"
-mkdir -p "$rem/locked"; chmod 000 "$rem/locked"
-expect 19 "a folder the user cannot write is permission_denied" "$SMI" -- cp "$loc/app.conf" "local:$rem/locked/" "${SM[@]}"
-chmod 755 "$rem/locked"
+# On Windows the test sshd is MSYS2's, which mounts C: noacl: chmod changes nothing
+# (owner, 2026-11-18: skipped there).
+if [[ $windows == 1 ]]; then
+  echo "skip  a folder the user cannot write is permission_denied (MSYS2 ignores chmod)"
+else
+  mkdir -p "$rem/locked"; chmod 000 "$rem/locked"
+  expect 19 "a folder the user cannot write is permission_denied" "$SMI" -- cp "$loc/app.conf" "local:$rem/locked/" "${SM[@]}"
+  chmod 755 "$rem/locked"
+fi
 expect 2 "no host is a usage error" "$SMI" -- cp "$loc/a" "$loc/b" "${SM[@]}"
 expect 2 "cp with one path is a usage error" "$SMI" -- cp "$loc/a" "${SM[@]}"
 expect 3 "an unknown alias is not_found" "$SMI" -- cp "$loc/app.conf" "nohost:/tmp/" "${SM[@]}"
