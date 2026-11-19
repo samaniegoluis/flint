@@ -22,7 +22,13 @@ fn keygen(dir: str, name: str, passphrase: str) -> str! {
 
 test "inspects plain and passphrase-protected keys and rejects bad input" {
     mut refused := 0
-    dir := "/tmp/flint-keys-" + os.getenv("USER", "test")
+    // Under $TMPDIR, or /tmp where it is unset (Linux): Windows has no /tmp that a
+    // native program and MSYS2's ssh-keygen read alike.
+    mut base := os.getenv("TMPDIR")
+    if base.len() == 0 {
+        base = "/tmp"
+    }
+    dir := base + "/flint-keys-" + os.getenv("USER", "test")
     _ = fs.remove(dir)
     try fs.mkdir_all(dir)
     plain_path := try keygen(dir, "plain", "")
