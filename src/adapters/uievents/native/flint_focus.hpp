@@ -16,21 +16,42 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <cstdio>
+#include <cstdlib>
 
 namespace flint_focus {
+
+// FLINT_FOCUS_DIAG=1: each step on stderr (W-16's diagnosis on the Windows VM).
+inline bool diag() { static const bool on = std::getenv("FLINT_FOCUS_DIAG") != nullptr; return on; }
+
+inline void describe(const char* what, HWND h) {
+    if (!diag()) return;
+    char cls[128] = "-";
+    if (h) ::GetClassNameA(h, cls, sizeof cls);
+    DWORD pid = 0;
+    if (h) ::GetWindowThreadProcessId(h, &pid);
+    std::fprintf(stderr, "flint-focus: %s %p class=%s pid=%lu%s\n", what, static_cast<void*>(h), cls,
+                 static_cast<unsigned long>(pid), pid == ::GetCurrentProcessId() ? " (ours)" : "");
+}
 
 inline void CALLBACK on_foreground(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG id_object, LONG, DWORD, DWORD) {
     if (event != EVENT_SYSTEM_FOREGROUND || id_object != OBJID_WINDOW || !hwnd) return;
     DWORD pid = 0;
     ::GetWindowThreadProcessId(hwnd, &pid);
     if (pid != ::GetCurrentProcessId()) return;
+    describe("foreground", hwnd);
     // A dialog of ours (a file dialog, a message box) keeps its own focus.
     if (::GetWindow(hwnd, GW_OWNER)) return;
+    for (HWND c = ::GetWindow(hwnd, GW_CHILD); c && diag(); c = ::GetWindow(c, GW_HWNDNEXT)) describe("  child", c);
     HWND child = ::GetWindow(hwnd, GW_CHILD);
     if (!child) return;
     HWND now = ::GetFocus();
+    describe("focus now", now);
     if (now && now != hwnd) return;  // the focus is already inside the window
-    ::SetFocus(child);
+    HWND prev = ::SetFocus(child);
+    if (diag()) std::fprintf(stderr, "flint-focus: SetFocus -> %s (error %lu)\n", prev || ::GetFocus() == child ? "ok" : "failed",
+                             static_cast<unsigned long>(::GetLastError()));
+    describe("focus after", ::GetFocus());
 }
 
 // Call once, on the UI thread, before the window runs: the hook's calls arrive through
@@ -40,6 +61,7 @@ inline void install() {
     if (hook) return;
     hook = ::SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, on_foreground,
                              ::GetCurrentProcessId(), 0, WINEVENT_OUTOFCONTEXT);
+    if (diag()) std::fprintf(stderr, "flint-focus: hook %s\n", hook ? "installed" : "not installed");
 }
 
 }  // namespace flint_focus
