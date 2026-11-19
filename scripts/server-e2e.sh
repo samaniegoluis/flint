@@ -213,7 +213,12 @@ check "429 says when to come back" "1" "$([[ "$(header Retry-After "${auth[@]}" 
 check "the log never holds the token" "0" "$(grep -c "$token" "$tmp/main/log" || true)"
 check "the log never holds the file" "0" "$(grep -c 'MARKER-BLOB' "$tmp/main/log" || true)"
 check "the log has a line per request" "1" "$([[ $(grep -c ' /v1/vault ' "$tmp/main/log") -gt 100 ]] && echo 1)"
-check "stored files are owner-only" "600" "$(file_mode main "vaults/$vid/versions/1.blob")"
+# Windows has no POSIX modes (a file takes its folder's ACL; owner, 2026-11-18: skipped
+# there, as in serverfs's suite). The server ships for Linux.
+case "$(uname -s)" in
+  MINGW*|MSYS*) echo "skip owner-only files (no POSIX modes on Windows)" ;;
+  *) check "stored files are owner-only" "600" "$(file_mode main "vaults/$vid/versions/1.blob")" ;;
+esac
 
 # SIGTERM ends it cleanly.
 stop_server main
