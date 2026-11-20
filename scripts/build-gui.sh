@@ -38,8 +38,10 @@ case "$(uname -s)" in
     res="build/gui/Flint.app/Contents/Resources"
     rm -rf "$res/ui"
     # A build from source is never a package (milestone 52): only scripts/package.sh's
-    # copy carries install-kind, which decides how Flint updates.
-    rm -f "$res/install-kind"
+    # copy carries install-kind (how Flint updates), the CLI in Helpers (the flint
+    # command's offer) and the licences. A bundle an older package.sh left them in
+    # would pass for a packaged app.
+    rm -rf "$res/install-kind" "$res/licenses" "build/gui/Flint.app/Contents/Helpers"
     mkdir -p "$res"
     cp -R ui/dist "$res/ui"
     codesign --force --deep -s - build/gui/Flint.app >/dev/null 2>&1 || echo "build-gui: ad-hoc signing failed" >&2
