@@ -221,7 +221,7 @@
       await waitFor(() => q('[data-cli-spots]'), 'About\'s Command line row');
       const spot = (end) => qa('[data-cli-spots] tr').find((r) => r.cells[0].textContent.endsWith(end));
       await check(spot('.local/bin/flint')?.dataset.cliSpot === 'installed', 'About shows the link now runs this copy');
-      await check(spot('/usr/local/bin/flint')?.cells[1].textContent.length > 0, `About names the other place (${spot('/usr/local/bin/flint')?.cells[1].textContent})`);
+      await check(spot('/clisys/flint')?.cells[1].textContent.length > 0, `About names the other place (${spot('/clisys/flint')?.cells[1].textContent})`);
       await check((await window.backend.settings_get({})).cli_offer_shown === false, 'a fix is not the first-launch offer: that one is still to show');
       spot('.local/bin/flint').querySelector('[data-cli-action="remove"]').click();
       await waitFor(() => spot('.local/bin/flint')?.dataset.cliSpot === 'missing', 'the removed link');

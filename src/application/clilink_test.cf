@@ -55,17 +55,17 @@ test "the command is offered once, linked on request, and the admin path used on
     mut links := new_fake_cli_links()
     links.files[CLI_A] = true
     mut settings := FakeSettingsStore{ saved: default_settings() }
-    st := try cli_link_first_launch(links, mut settings, CLI_A, HOME)
+    st := try cli_link_first_launch(links, mut settings, CLI_A, CLI_SYSTEM_DIR, HOME)
     assert_eq(st.offer, "install")
     assert(settings.saved.cli_offer_shown)
-    again := try cli_link_first_launch(links, mut settings, CLI_A, HOME)
+    again := try cli_link_first_launch(links, mut settings, CLI_A, CLI_SYSTEM_DIR, HOME)
     assert_eq(again.offer, "")
-    after := try install_cli_link(mut links, CLI_A, HOME, "/usr/local/bin/flint")
+    after := try install_cli_link(mut links, CLI_A, CLI_SYSTEM_DIR, HOME, "/usr/local/bin/flint")
     assert_eq(after.spots[0].state, "installed")
     assert_eq(links.admin_calls, 1)
-    _ = try install_cli_link(mut links, CLI_A, HOME, "/Users/me/.local/bin/flint")
+    _ = try install_cli_link(mut links, CLI_A, CLI_SYSTEM_DIR, HOME, "/Users/me/.local/bin/flint")
     assert_eq(links.admin_calls, 1)
-    gone := try remove_cli_link(mut links, CLI_A, HOME, "/usr/local/bin/flint")
+    gone := try remove_cli_link(mut links, CLI_A, CLI_SYSTEM_DIR, HOME, "/usr/local/bin/flint")
     assert_eq(gone.spots[0].state, "missing")
     assert_eq(links.admin_calls, 2)
 }
@@ -76,16 +76,16 @@ test "a moved app is offered a fix, and a foreign flint is never touched" {
     links.links["/Users/me/.local/bin/flint"] = CLI_A   // A was moved to B: the link dangles
     mut settings := FakeSettingsStore{ saved: default_settings() }
     settings.saved.cli_offer_shown = true
-    st := try cli_link_first_launch(links, mut settings, CLI_B, HOME)
+    st := try cli_link_first_launch(links, mut settings, CLI_B, CLI_SYSTEM_DIR, HOME)
     assert_eq(st.spots[1].state, "broken")
     assert_eq(st.offer, "fix")
-    fixed := try install_cli_link(mut links, CLI_B, HOME, "/Users/me/.local/bin/flint")
+    fixed := try install_cli_link(mut links, CLI_B, CLI_SYSTEM_DIR, HOME, "/Users/me/.local/bin/flint")
     assert_eq(fixed.spots[1].state, "installed")
     links.links["/usr/local/bin/flint"] = ""   // a copied file, as scripts/install.sh leaves
     mut refused := 0
-    install_cli_link(mut links, CLI_B, HOME, "/usr/local/bin/flint") or { refused += 1 }
-    remove_cli_link(mut links, CLI_B, HOME, "/usr/local/bin/flint") or { refused += 1 }
-    install_cli_link(mut links, CLI_B, HOME, "/tmp/flint") or { refused += 1 }
+    install_cli_link(mut links, CLI_B, CLI_SYSTEM_DIR, HOME, "/usr/local/bin/flint") or { refused += 1 }
+    remove_cli_link(mut links, CLI_B, CLI_SYSTEM_DIR, HOME, "/usr/local/bin/flint") or { refused += 1 }
+    install_cli_link(mut links, CLI_B, CLI_SYSTEM_DIR, HOME, "/tmp/flint") or { refused += 1 }
     assert_eq(refused, 3)
     assert_eq(links.links["/usr/local/bin/flint"], "")
 }
@@ -93,12 +93,12 @@ test "a moved app is offered a fix, and a foreign flint is never touched" {
 test "a copy with no CLI inside offers nothing and links nothing" {
     mut links := new_fake_cli_links()
     mut settings := FakeSettingsStore{ saved: default_settings() }
-    st := try cli_link_first_launch(links, mut settings, "", HOME)
+    st := try cli_link_first_launch(links, mut settings, "", CLI_SYSTEM_DIR, HOME)
     assert(!st.available)
     assert_eq(st.offer, "")
     assert(!settings.saved.cli_offer_shown)
     mut refused := 0
-    install_cli_link(mut links, "", HOME, "/usr/local/bin/flint") or { refused += 1 }
+    install_cli_link(mut links, "", CLI_SYSTEM_DIR, HOME, "/usr/local/bin/flint") or { refused += 1 }
     assert_eq(refused, 1)
 }
 

@@ -194,10 +194,11 @@ run_app() {
   # a link to a copy that was moved, which the app offers to fix.
   local cli_env=()
   if [[ "$1" == clilink ]]; then
-    mkdir -p "$tmp/cli/Flint.app/Contents/Helpers" "$tmp/clihome/.local/bin"
+    mkdir -p "$tmp/cli/Flint.app/Contents/Helpers" "$tmp/clihome/.local/bin" "$tmp/clisys"
     printf '#!/bin/sh\n' > "$tmp/cli/Flint.app/Contents/Helpers/flint"
     ln -sfn "$tmp/cli/Moved.app/Contents/Helpers/flint" "$tmp/clihome/.local/bin/flint"
-    cli_env=(FLINT_CLI="$tmp/cli/Flint.app/Contents/Helpers/flint" FLINT_CLI_HOME="$tmp/clihome")
+    # /usr/local/bin is the machine's own: the run uses a folder of its own instead.
+    cli_env=(FLINT_CLI="$tmp/cli/Flint.app/Contents/Helpers/flint" FLINT_CLI_HOME="$tmp/clihome" FLINT_CLI_SYSTEM_DIR="$tmp/clisys")
   fi
   # update (milestone 52): a signed manifest of a newer Flint on a feed of the run's own,
   # under a throwaway key; a build from source accepts both (D-116), a package never.
@@ -229,7 +230,7 @@ JSON
     "${app[@]}" 2>&1 | tee "$4" || st=$?
   [[ -f "$4.front" ]] && cat "$4.front"
   if [[ "$1" == update ]]; then
-    kill "${feed_pid:-0}" 2>/dev/null || true; wait "${feed_pid:-0}" 2>/dev/null || true
+    kill "${feed_pid:-0}" 2>/dev/null || true; wait "${feed_pid:-0}" 2>/dev/null || true; feed_pid=""
     # Download opens the release page (milestone 52); the run names it instead.
     grep -q 'e2e: would open https://github.com/samaniegoluis/flint/releases/tag/v99.0.0' "$4" \
       || { echo "e2e: fail: Download did not open the release page"; echo "gui-e2e ($1): FAILED" >&2; return 1; }

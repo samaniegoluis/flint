@@ -25,6 +25,17 @@ fn self_cli() -> str {
     return bundle_cli_path(executable_dir())
 }
 
+// FLINT_CLI_SYSTEM_DIR stands in for /usr/local/bin in gui-e2e, so a run never sees the
+// machine's own link there (milestone 52: the clilink run failed on a Mac whose
+// /usr/local/bin/flint pointed at an installed Flint.app).
+fn cli_system_dir() -> str {
+    o := os.getenv("FLINT_CLI_SYSTEM_DIR")
+    if o.len() > 0 && os.getenv("FLINT_GUI_E2E").len() > 0 {
+        return o
+    }
+    return CLI_SYSTEM_DIR
+}
+
 fn cli_home() -> str {
     o := os.getenv("FLINT_CLI_HOME")
     if o.len() > 0 && os.getenv("FLINT_GUI_E2E").len() > 0 {
@@ -37,19 +48,19 @@ fn rpc_cli_status(params: str, mut store: JsonSettingsStore) -> str! {
     req := try parse_req[CliFirstReq](params)
     links := new_os_cli_links()
     if req.first {
-        return json.stringify(try cli_link_first_launch(links, mut store, self_cli(), cli_home()))
+        return json.stringify(try cli_link_first_launch(links, mut store, self_cli(), cli_system_dir(), cli_home()))
     }
-    return json.stringify(cli_link_status(links, self_cli(), cli_home(), true))
+    return json.stringify(cli_link_status(links, self_cli(), cli_system_dir(), cli_home(), true))
 }
 
 fn rpc_cli_install(params: str) -> str! {
     req := try parse_req[PathReq](params)
     mut links := new_os_cli_links()
-    return json.stringify(try install_cli_link(mut links, self_cli(), cli_home(), req.path))
+    return json.stringify(try install_cli_link(mut links, self_cli(), cli_system_dir(), cli_home(), req.path))
 }
 
 fn rpc_cli_remove(params: str) -> str! {
     req := try parse_req[PathReq](params)
     mut links := new_os_cli_links()
-    return json.stringify(try remove_cli_link(mut links, self_cli(), cli_home(), req.path))
+    return json.stringify(try remove_cli_link(mut links, self_cli(), cli_system_dir(), cli_home(), req.path))
 }

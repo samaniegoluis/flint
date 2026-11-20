@@ -6,17 +6,20 @@ package application
 import "../domain"
 import "../ports"
 
-// The places the command can go, the default first: /usr/local/bin is on every Mac's
-// PATH (an administrator's password the first time); ~/.local/bin needs none but is
-// on the PATH only when the person put it there.
-fn cli_link_dirs(home: str) -> []str {
-    return ["/usr/local/bin", home + "/.local/bin"]
+// The system's folder for it: /usr/local/bin, on every Mac's PATH (an administrator's
+// password the first time). gui-e2e passes a folder of its own (drivers/gui/cli.cf).
+CLI_SYSTEM_DIR: str = "/usr/local/bin"
+
+// The places the command can go, the default first: `system` (CLI_SYSTEM_DIR);
+// ~/.local/bin needs no password but is on the PATH only when the person put it there.
+fn cli_link_dirs(system: str, home: str) -> []str {
+    return [system, home + "/.local/bin"]
 }
 
-fn cli_link_status[L: CliLinks](links: L, cli: str, home: str, offer_shown: bool) -> CliLinkStatus {
+fn cli_link_status[L: CliLinks](links: L, cli: str, system: str, home: str, offer_shown: bool) -> CliLinkStatus {
     available := cli.len() > 0 && links.cli_link_exists(cli)
     mut spots: []CliLinkSpot = []
-    for dir in cli_link_dirs(home) {
+    for dir in cli_link_dirs(system, home) {
         path := dir + "/flint"
         p := links.cli_link_probe(path)
         spots.push(CliLinkSpot{ path: path, state: cli_link_state(cli, p), target: p.target, admin: !p.dir_writable })
@@ -26,8 +29,8 @@ fn cli_link_status[L: CliLinks](links: L, cli: str, home: str, offer_shown: bool
 
 // Links `path` to this copy's CLI. Only one of the known places, only over nothing or
 // over a link of ours (another or a missing copy): never over a foreign file.
-fn install_cli_link[L: CliLinks](mut links: L, cli: str, home: str, path: str) -> CliLinkStatus! {
-    st := cli_link_status(links, cli, home, true)
+fn install_cli_link[L: CliLinks](mut links: L, cli: str, system: str, home: str, path: str) -> CliLinkStatus! {
+    st := cli_link_status(links, cli, system, home, true)
     if !st.available {
         return error(coded(ERR_UNSUPPORTED, "this copy of Flint carries no flint command"))
     }
@@ -39,12 +42,12 @@ fn install_cli_link[L: CliLinks](mut links: L, cli: str, home: str, path: str) -
         return error(coded(ERR_EXISTS, "{path} is not a link to Flint; it was left as it is"))
     }
     try links.cli_link_make(cli, path, spot.admin)
-    return cli_link_status(links, cli, home, true)
+    return cli_link_status(links, cli, system, home, true)
 }
 
 // Removes the link at `path` when it is one of ours; anything else stays.
-fn remove_cli_link[L: CliLinks](mut links: L, cli: str, home: str, path: str) -> CliLinkStatus! {
-    st := cli_link_status(links, cli, home, true)
+fn remove_cli_link[L: CliLinks](mut links: L, cli: str, system: str, home: str, path: str) -> CliLinkStatus! {
+    st := cli_link_status(links, cli, system, home, true)
     spot := try find_spot(st, path)
     if spot.state == "missing" {
         return st
@@ -53,7 +56,7 @@ fn remove_cli_link[L: CliLinks](mut links: L, cli: str, home: str, path: str) ->
         return error(coded(ERR_EXISTS, "{path} is not a link to Flint; it was left as it is"))
     }
     try links.cli_link_remove(path, spot.admin)
-    return cli_link_status(links, cli, home, true)
+    return cli_link_status(links, cli, system, home, true)
 }
 
 fn find_spot(st: CliLinkStatus, path: str) -> CliLinkSpot! {
@@ -67,9 +70,9 @@ fn find_spot(st: CliLinkStatus, path: str) -> CliLinkSpot! {
 
 // The first launch's offer, recorded as made so it is shown once (a fix is offered
 // every time, cli_link_offer).
-fn cli_link_first_launch[L: CliLinks, T: SettingsStore](links: L, mut settings: T, cli: str, home: str) -> CliLinkStatus! {
+fn cli_link_first_launch[L: CliLinks, T: SettingsStore](links: L, mut settings: T, cli: str, system: str, home: str) -> CliLinkStatus! {
     mut s := try load_settings(settings)
-    st := cli_link_status(links, cli, home, s.cli_offer_shown)
+    st := cli_link_status(links, cli, system, home, s.cli_offer_shown)
     if st.offer == "install" {
         s.cli_offer_shown = true
         try settings.settings_save(s)
