@@ -50,6 +50,24 @@ deps="$root/build/deps/macos-arm64"
 . scripts/env.sh
 export PKG_CONFIG_LIBDIR="$deps/lib/pkgconfig"
 export CFIRE_CACHE_DIR="$root/build/deps/cfire-cache"
+# Every package build.cf asks for must resolve here: cfire drops the flags of one that
+# does not and fails later on a missing header, with no word of the package.
+pc="$(command -v pkg-config || true)"
+[[ -n "$pc" ]] || { echo "package: needs pkg-config" >&2; exit 1; }
+echo "package: $pc $(pkg-config --version)"
+pc_fail=0
+for p in $(grep -E '^\s*PkgConfig:' build.cf | grep -oE '"[^"]+"' | tr -d '"' | sort -u); do
+  if ! out="$(pkg-config --cflags --libs "$p" 2>&1)"; then
+    echo "package: pkg-config cannot resolve $p:" >&2
+    echo "$out" | sed 's/^/  /' >&2
+    pc_fail=1
+  fi
+done
+if [[ $pc_fail -ne 0 ]]; then
+  echo "package: the .pc files in $PKG_CONFIG_LIBDIR:" >&2
+  ls "$PKG_CONFIG_LIBDIR" | sed 's/^/  /' >&2
+  exit 1
+fi
 flags="--portable --macos-min $MACOS_MIN"
 FLINT_CFIRE_BUILD_FLAGS="$flags" scripts/build-gui.sh
 # shellcheck disable=SC2086
