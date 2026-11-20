@@ -35,7 +35,9 @@ PUB_PREFIX="302a300506032b6570032100"
 die() { echo "sign-manifest: $*" >&2; exit 1; }
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{print $1}'; }
 fsize() { wc -c < "$1" | tr -d ' '; }
-hex_to_bin() { xxd -r -p; }
+# Hex to bytes and back with printf and od, found on every system (xxd is not).
+hex_to_bin() { local h; h="$(cat)"; printf "$(printf '%s' "$h" | sed 's/../\\x&/g')"; }
+bin_to_hex() { od -An -v -tx1 | tr -d ' \n'; echo; }
 b64() { openssl_bin base64 -A; }
 unb64() { openssl_bin base64 -d -A; }
 
@@ -76,12 +78,13 @@ case "$cmd" in
     openssl_bin genpkey -algorithm ed25519 -outform DER -out "$t/k.der" 2>/dev/null
     # The seed is the last 32 bytes of the PKCS#8 form.
     (umask 077; tail -c 32 "$t/k.der" | b64 > "$out"; echo >> "$out")
-    openssl_bin pkey -inform DER -in "$t/k.der" -pubout -outform DER 2>/dev/null | tail -c 32 | xxd -p -c 64
+    openssl_bin pkey -inform DER -in "$t/k.der" -pubout -outform DER 2>/dev/null | tail -c 32 | bin_to_hex
     echo "sign-manifest: the secret is in $out: put it in Infisical (/flint, FLINT_UPDATE_SIGNING_KEY) and in the" >&2
     echo "sign-manifest: repository's 'release' environment, then delete the file. The line above is the public key." >&2
     ;;
   manifest)
     tag="${2:-}"; dir="${3:-}"
+    command -v jq >/dev/null || die "manifest needs jq"
     [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] || die "the manifest is for a release tag vX.Y.Z, not '$tag' (a pre-release is never offered)"
     [[ -d "$dir" ]] || die "usage: sign-manifest.sh manifest <tag> <dir>"
     version="${tag#v}"

@@ -206,11 +206,16 @@ run_app() {
     mkdir -p "$tmp/feed" "$tmp/feedkey"
     local pub
     pub="$("$root/scripts/sign-manifest.sh" keygen "$tmp/feedkey" 2>/dev/null)"
-    jq -n '{version: "99.0.0", date: "2026-12-01", summary: "A newer Flint for the test.",
-            page: "https://github.com/samaniegoluis/flint/releases/tag/v99.0.0",
-            assets: [{key: "macos-arm64", name: "Flint-99.0.0-macos-arm64.zip", url: "https://github.com/samaniegoluis/flint/releases/download/v99.0.0/Flint-99.0.0-macos-arm64.zip", size: 1000, sha256: ("a" * 64)},
-                     {key: "windows-x86_64", name: "Flint-99.0.0-windows-x86_64.zip", url: "https://github.com/samaniegoluis/flint/releases/download/v99.0.0/Flint-99.0.0-windows-x86_64.zip", size: 1000, sha256: ("b" * 64)},
-                     {key: "linux-x86_64-deb", name: "flint_99.0.0_amd64.deb", url: "https://github.com/samaniegoluis/flint/releases/download/v99.0.0/flint_99.0.0_amd64.deb", size: 1000, sha256: ("c" * 64)}]}' > "$tmp/feed/manifest.json"
+    python3 -I - "$tmp/feed/manifest.json" <<'PY'
+import json, sys
+base = "https://github.com/samaniegoluis/flint/releases/download/v99.0.0/"
+assets = [(k, n, c) for k, n, c in (("macos-arm64", "Flint-99.0.0-macos-arm64.zip", "a"),
+          ("windows-x86_64", "Flint-99.0.0-windows-x86_64.zip", "b"), ("linux-x86_64-deb", "flint_99.0.0_amd64.deb", "c"))]
+json.dump({"version": "99.0.0", "date": "2026-12-01", "summary": "A newer Flint for the test.",
+           "page": "https://github.com/samaniegoluis/flint/releases/tag/v99.0.0",
+           "assets": [{"key": k, "name": n, "url": base + n, "size": 1000, "sha256": c * 64} for k, n, c in assets]},
+          open(sys.argv[1], "w"))
+PY
     FLINT_UPDATE_PUBLIC_KEY_HEX="$pub" FLINT_UPDATE_SIGNING_KEY="$(cat "$tmp/feedkey/flint-update-signing.key")" \
       "$root/scripts/sign-manifest.sh" sign "$tmp/feed/manifest.json" >/dev/null
     rm -f "$tmp/feedkey/flint-update-signing.key"
@@ -231,9 +236,12 @@ JSON
   [[ -f "$4.front" ]] && cat "$4.front"
   if [[ "$1" == update ]]; then
     kill "${feed_pid:-0}" 2>/dev/null || true; wait "${feed_pid:-0}" 2>/dev/null || true; feed_pid=""
-    # Download opens the release page (milestone 52); the run names it instead.
-    grep -q 'e2e: would open https://github.com/samaniegoluis/flint/releases/tag/v99.0.0' "$4" \
-      || { echo "e2e: fail: Download did not open the release page"; echo "gui-e2e ($1): FAILED" >&2; return 1; }
+    # Download opens the release page (milestone 52); the run names it instead. A system
+    # with no package in the manifest (Linux on arm64 in Docker) gets How to update.
+    if grep -q 'Flint 99.0.0 is available (download)' "$4"; then
+      grep -q 'e2e: would open https://github.com/samaniegoluis/flint/releases/tag/v99.0.0' "$4" \
+        || { echo "e2e: fail: Download did not open the release page"; echo "gui-e2e ($1): FAILED" >&2; return 1; }
+    fi
     # One GET of the manifest and one of its signature per check, nothing else (Principle 15).
     if grep -v -E '"GET /manifest\.json(\.sig)? HTTP' "$tmp/feed.log" | grep -q 'HTTP/'; then
       echo "e2e: fail: the feed got another request: $(grep -v -E 'GET /manifest' "$tmp/feed.log" | head -1)"; echo "gui-e2e ($1): FAILED" >&2; return 1

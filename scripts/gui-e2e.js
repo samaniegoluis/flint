@@ -240,40 +240,58 @@
       // Milestone 52 (designs 24c, 24e, 24f, 24g, 24i, D-116): a signed manifest of Flint
       // 99.0.0 on the run's own feed (scripts/gui-e2e.sh), checked at launch.
       await setStep("what's new after an update");
-      const wn = await waitFor(() => q('[data-whats-new]'), "What's new at the first unlock after an update", 30000);
-      await check(wn.dataset.whatsNew.split(',').includes('0.16.0') && !wn.dataset.whatsNew.split(',').includes('0.15.0'), `What's new shows the versions since the last one run (${wn.dataset.whatsNew})`);
-      await check(hasText('since your 0.15.0'), "What's new names the version the person had");
-      await check((await window.backend.settings_get({})).last_seen_version === VERSION, 'this version is recorded as seen');
-      await click('.modal.wn .btn-primary', 'Close');
-      await waitFor(() => !q('[data-whats-new]'), "What's new closed");
+      // A build with no git (the Linux check's container) is 0.0.0-dev: older than the
+      // 0.15.0 seen, so What's new rightly stays shut.
+      const devBuild = VERSION.startsWith('0.0.0');
+      if (devBuild) {
+        await sleep(1500);
+        await check(!q('[data-whats-new]'), "What's new stays shut for a build older than the version seen");
+      } else {
+        const wn = await waitFor(() => q('[data-whats-new]'), "What's new at the first unlock after an update", 30000);
+        await check(wn.dataset.whatsNew.split(',').includes('0.16.0') && !wn.dataset.whatsNew.split(',').includes('0.15.0'), `What's new shows the versions since the last one run (${wn.dataset.whatsNew})`);
+        await check(hasText('since your 0.15.0'), "What's new names the version the person had");
+        await check((await window.backend.settings_get({})).last_seen_version === VERSION, 'this version is recorded as seen');
+        await click('.modal.wn .btn-primary', 'Close');
+        await waitFor(() => !q('[data-whats-new]'), "What's new closed");
+      }
 
       await setStep('the update toast');
       const upToast = () => qa('[data-toast]').find((el) => !el.classList.contains('leaving') && el.querySelector('.t-text')?.textContent === 'Flint 99.0.0 is available');
       const toast = await waitFor(upToast, 'the update toast at launch', 30000);
-      const dl = byText('button', 'Download', toast);
-      await check(!!dl && dl.classList.contains('btn-primary'), 'the toast offers Download, in the accent colour (24c1)');
+      // Download where the manifest has this system's package (the Mac: always); How to
+      // update where it has none (Linux on arm64, the Docker check).
       const bar = await waitFor(() => q('[data-sb-update]'), 'Update in the status bar');
-      await check(bar.dataset.sbUpdate === 'download' && bar.textContent === 'Update', 'the status bar says Update beside the version (D-116)');
+      const action = bar.dataset.sbUpdate;
+      const label = action === 'download' ? 'Download' : 'How to update';
+      if ((await window.backend.app_info({})).os === 'mac') await check(action === 'download', 'a Mac with a package in the manifest gets Download');
+      const dl = byText('button', label, toast);
+      await check(!!dl && dl.classList.contains('btn-primary'), `the toast offers ${label}, in the accent colour (24c)`);
+      await check(bar.textContent === 'Update', 'the status bar says Update beside the version (D-116)');
       await check(q('[data-sb-version]').classList.contains('has-dot'), 'the version item carries the dot (24f2)');
       await check((await window.backend.settings_get({})).update_toast_version === '99.0.0', 'the toast is recorded as shown for 99.0.0');
       toast.querySelector('[data-toast-close], .t-x').click();
       await waitFor(() => !upToast(), 'the toast closed');
       await check(!!q('[data-sb-update]'), 'closing the toast leaves Update in the status bar');
 
-      await setStep('the popover and Download');
+      await setStep('the popover and its action');
       q('[data-sb-version]').click();
       const pop = await waitFor(() => q('[data-update-pop="available"]'), "the version's popover");
       await check(pop.textContent.includes('Flint 99.0.0 is available') && pop.textContent.includes(`You have ${VERSION}`), 'the popover says what is available and what you have');
-      await click('[data-pop-update-act]', 'Download');
-      await check(!q('[data-update-pop]'), 'Download closes the popover');
-      q('[data-sb-update]').click();
-      await sleep(200);
+      await click('[data-pop-update-act]', label);
+      await check(!q('[data-update-pop]'), `${label} closes the popover`);
+      if (action === 'download') {
+        q('[data-sb-update]').click();
+        await sleep(200);
+      } else {
+        await waitFor(() => q('[data-about-how]'), 'How to update opens About with what to do');
+        await check(q('[data-about-how]').dataset.aboutHow.length > 0, `About says why (${q('[data-about-how]').dataset.aboutHow})`);
+      }
 
       await setStep('About');
       await openAbout();
       const about = await waitFor(() => q('[data-about-update="available"]'), "About's Updates block");
       await check(about.textContent.includes('Flint 99.0.0 is available · released 1 Dec'), `About says it, with the release date (${about.textContent})`);
-      await check(!!q('[data-about-download]'), 'About offers Download');
+      await check(action !== 'download' || !!q('[data-about-download]'), 'About offers Download where there is a package');
 
       await setStep('check again: no second toast');
       let got = null;
@@ -296,7 +314,7 @@
       await setStep("What's new on demand");
       await click('[data-about-whats-new]');
       const wn2 = await waitFor(() => q('[data-whats-new]'), "What's new from About");
-      await check(wn2.dataset.whatsNew === VERSION.replace(/-.*$/, '') || wn2.dataset.whatsNew.length > 0, `What's new shows this version's notes (${wn2.dataset.whatsNew})`);
+      await check(devBuild ? hasText('no notes in its changelog') : wn2.dataset.whatsNew.length > 0, `What's new shows this version's notes (${wn2.dataset.whatsNew || 'none for a dev build'})`);
       await click('.modal.wn .btn-primary', 'Close');
       await log(`${passed} checks passed`);
       await window.backend.e2e_report({ ok: true, detail: '' });
