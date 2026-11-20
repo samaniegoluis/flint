@@ -1,0 +1,205 @@
+package process
+
+// The self-update's files and processes on this machine (milestone 53): the
+// `UpdateFiles` and `UpdateProcesses` ports. Files through core:fs, a zip through the
+// system's own tool (macOS `ditto`, which keeps the bundle's links, modes and ad-hoc
+// signature; `unzip` on Linux; `tar` on Windows, milestone 50), and the processes in
+// native/flint_update.hpp (CF-175).
+
+// CFIRE-UPSTREAM: CF-175
+import cpp "flint_update.hpp"
+
+import "core:fs"
+import "core:os"
+import "core:time"
+import "../../domain"
+
+type OsUpdateFiles struct {
+    ready: bool
+}
+
+fn new_os_update_files() -> OsUpdateFiles {
+    return OsUpdateFiles{ ready: true }
+}
+
+fn (self: OsUpdateFiles) upd_exists(path: str) -> bool {
+    return fs.exists(path)
+}
+
+fn (self: OsUpdateFiles) upd_read(path: str) -> str! {
+    return fs.read_text(path) or err {
+        return error(coded(ERR_IO, "cannot read {path}: {err.message()}"))
+    }
+}
+
+fn (mut self: OsUpdateFiles) upd_mkdir(path: str) -> void! {
+    fs.mkdir_all(path) or err {
+        return error(coded(ERR_IO, "cannot create {path}: {err.message()}"))
+    }
+}
+
+fn (mut self: OsUpdateFiles) upd_remove(path: str) -> void! {
+    if !fs.exists(path) {
+        return
+    }
+    mut ok := false
+    mut why := ""
+    // CFIRE-UPSTREAM: CF-158
+    cpp {
+        ok = flint_update::remove_tree(path, why);
+    }
+    if !ok {
+        return error(coded(ERR_IO, "cannot remove {path}: {why}"))
+    }
+}
+
+fn (mut self: OsUpdateFiles) upd_rename(from: str, to: str) -> void! {
+    mut ok := false
+    mut why := ""
+    // CFIRE-UPSTREAM: CF-158
+    cpp {
+        ok = flint_update::rename_path(from, to, why);
+    }
+    if !ok {
+        return error(coded(ERR_IO, "cannot move {from} to {to}: {why}"))
+    }
+}
+
+fn (mut self: OsUpdateFiles) upd_write(path: str, text: str) -> void! {
+    fs.write_text(path, text) or err {
+        return error(coded(ERR_IO, "cannot write {path}: {err.message()}"))
+    }
+}
+
+fn (mut self: OsUpdateFiles) upd_unzip(zip: str, dest: str) -> void! {
+    fs.mkdir_all(dest) or err {
+        return error(coded(ERR_IO, "cannot create {dest}: {err.message()}"))
+    }
+    mut cmd := "unzip"
+    mut args: []str = ["-q", "-o", zip, "-d", dest]
+    if os_name() == "mac" {
+        cmd = "ditto"
+        args = ["-x", "-k", zip, dest]
+    } else if os_name() == "windows" {
+        cmd = "tar"
+        args = ["-x", "-f", zip, "-C", dest]
+    }
+    r := os.command(cmd, args) or err {
+        return error(coded(ERR_IO, "cannot unpack the update ({cmd}): {err.message()}"))
+    }
+    if r.exit_code != 0 {
+        return error(coded(ERR_IO, "cannot unpack the update ({cmd} exited {r.exit_code}: {r.stderr.trim()})"))
+    }
+}
+
+fn (mut self: OsUpdateFiles) upd_copy_exe(from: str, to: str) -> void! {
+    fs.copy_file(from, to) or err {
+        return error(coded(ERR_IO, "cannot copy {from}: {err.message()}"))
+    }
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-175
+    cpp {
+        ok = flint_update::make_executable(to);
+    }
+    if !ok {
+        return error(coded(ERR_IO, "cannot make {to} executable"))
+    }
+}
+
+type OsUpdateProcesses struct {
+    ready: bool
+}
+
+fn new_os_update_processes() -> OsUpdateProcesses {
+    return OsUpdateProcesses{ ready: true }
+}
+
+fn (self: OsUpdateProcesses) proc_alive(pid: i64) -> bool {
+    mut on := false
+    // CFIRE-UPSTREAM: CF-175
+    cpp {
+        on = flint_update::alive(pid);
+    }
+    return on
+}
+
+// The folder is compared as its real path: the processes report theirs.
+fn (self: OsUpdateProcesses) proc_running_under(dir: str) -> []i64 {
+    mut joined := ""
+    // CFIRE-UPSTREAM: CF-158, CF-175
+    cpp {
+        for (auto p : flint_update::running_under(flint_update::real_path(dir))) {
+            joined += std::to_string(p);
+            joined += ",";
+        }
+    }
+    mut out: []i64 = []
+    for part in joined.split(",") {
+        if n := i64.parse(part) {
+            out.push(n)
+        }
+    }
+    return out
+}
+
+// Arguments go one by one, never through a shell.
+fn (mut self: OsUpdateProcesses) proc_spawn(exe: str, args: []str, log: str) -> i64! {
+    mut packed := ""
+    for a in args {
+        packed = packed + a + "\u{1f}"
+    }
+    mut pid: i64 = 0
+    // CFIRE-UPSTREAM: CF-175
+    cpp {
+        std::vector<std::string> argv;
+        std::string cur;
+        for (char ch : packed) {
+            if (ch == '\x1f') { argv.push_back(cur); cur.clear(); } else { cur += ch; }
+        }
+        pid = flint_update::spawn_detached(exe, argv, log);
+    }
+    if pid <= 0 {
+        return error(coded(ERR_IO, "cannot start {exe} (error {-pid})"))
+    }
+    return pid
+}
+
+fn (mut self: OsUpdateProcesses) proc_stop(pid: i64) {
+    // CFIRE-UPSTREAM: CF-175
+    cpp {
+        flint_update::stop(pid);
+    }
+}
+
+fn (mut self: OsUpdateProcesses) proc_sleep(ms: i64) {
+    time.sleep_ms(ms)
+}
+
+fn (self: OsUpdateProcesses) proc_now_ms() -> i64 {
+    return time.now_ms()
+}
+
+// This process's id: update-apply waits for it to quit.
+fn current_pid() -> i64 {
+    mut pid: i64 = 0
+    // CFIRE-UPSTREAM: CF-175
+    cpp {
+        #if defined(_WIN32)
+        pid = static_cast<std::int64_t>(::GetCurrentProcessId());
+        #else
+        pid = static_cast<std::int64_t>(::getpid());
+        #endif
+    }
+    return pid
+}
+
+// A temporary folder of this machine's (TMPDIR, TEMP, or /tmp).
+fn temp_base() -> str {
+    for name in ["TMPDIR", "TEMP", "TMP"] {
+        v := os.getenv(name)
+        if v.len() > 0 {
+            return local_slashes("{v.trim_end()}").replace_all("//", "/")
+        }
+    }
+    return "/tmp"
+}

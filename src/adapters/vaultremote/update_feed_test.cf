@@ -2,7 +2,10 @@ package vaultremote
 
 // The update feed against a server of its own on loopback (milestone 52).
 
+import "core:fs"
 import "core:net/http"
+import "core:os"
+import "core:time"
 import "../../domain"
 
 fn feed_code(feed: HttpUpdateFeed, url: str, max: i64) -> str {
@@ -37,4 +40,35 @@ test "the update feed gets a file, follows nothing but HTTPS, and caps it" {
     assert_eq(feed_code(feed, "ftp://example.com/manifest.json", 1000), ERR_INVALID)
     assert(update_url_allowed("https://github.com/samaniegoluis/flint/releases/latest/download/manifest.json"))
     assert(!update_url_allowed("http://localhost.evil.example/x"))
+}
+
+fn download_code(mut dl: HttpUpdateDownloader, url: str, path: str, max: i64) -> str {
+    dl.update_download(url, path, max) or err {
+        return error_code_of("{err.message()}")
+    }
+    return "ok"
+}
+
+test "the package download streams to a file, counts its bytes and caps it" {
+    mut server := try make(http.Server, 0, host: "127.0.0.1")
+    defer server.stop()
+    mut router := make(http.Router)
+    router.get("/Flint.zip") |req| { return http.Response.text(200, "z".repeat(200000)) }
+    server.serve_in_background(router)
+    base := "http://127.0.0.1:{server.port()}"
+    path := "{os.getenv("TMPDIR", "/tmp")}/flint-dl-{time.now_ms()}.zip"
+    defer {
+        // CFIRE-UPSTREAM: CF-158 (fs.remove beside curl's <stdio.h>)
+        cpp {
+            std::remove(std::string(path).c_str());
+        }
+    }
+    mut dl := new_http_update_downloader()
+    assert_eq(download_code(mut dl, base + "/Flint.zip", path, 200000), "ok")
+    assert_eq(try fs.file_size(path), u64(200000))
+    assert_eq(update_download_received(), 200000)
+    // Larger than the release says: refused.
+    assert_eq(download_code(mut dl, base + "/Flint.zip", path, 1000), ERR_REFUSED)
+    assert_eq(download_code(mut dl, base + "/none.zip", path, 1000), ERR_NOT_FOUND)
+    assert_eq(download_code(mut dl, "http://example.com/Flint.zip", path, 1000), ERR_INVALID)
 }

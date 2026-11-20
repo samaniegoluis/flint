@@ -218,3 +218,40 @@ fn sodium_version() -> str {
     }
     return v
 }
+
+// The `UpdateHasher` port (milestone 53): a downloaded package's SHA-256, read in
+// chunks through libsodium's crypto_hash_sha256 (Principle 4), as 64 hex characters.
+fn (self: Sodium) update_file_sha256(path: str) -> str! {
+    mut hex := ""
+    mut why := ""
+    // CFIRE-UPSTREAM: CF-006
+    cpp {
+        std::FILE* f = std::fopen(std::string(path).c_str(), "rb");
+        if (!f) {
+            why = "cannot open the download";
+        } else {
+            crypto_hash_sha256_state st;
+            crypto_hash_sha256_init(&st);
+            std::vector<unsigned char> buf(1 << 16);
+            size_t n = 0;
+            while ((n = std::fread(buf.data(), 1, buf.size(), f)) > 0) {
+                crypto_hash_sha256_update(&st, buf.data(), n);
+            }
+            bool bad = std::ferror(f) != 0;
+            std::fclose(f);
+            if (bad) {
+                why = "cannot read the download";
+            } else {
+                unsigned char out[crypto_hash_sha256_BYTES];
+                crypto_hash_sha256_final(&st, out);
+                char text[crypto_hash_sha256_BYTES * 2 + 1];
+                sodium_bin2hex(text, sizeof text, out, sizeof out);
+                hex = text;
+            }
+        }
+    }
+    if why.len() > 0 {
+        return error("io: " + why)
+    }
+    return hex
+}

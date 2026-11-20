@@ -2790,6 +2790,10 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `stringify` are covered for every lowering of `[]T`).
 
 ### CF-158 · bug · `confirmed`: a stdlib call takes the argument coercion of a C function with the same last name
+- **Seen again (milestone 53):** `fs.rename`, `fs.remove` and `fs.realpath` in
+  `src/adapters/process/update.cf` (the package's headers include `<stdio.h>` and
+  `<stdlib.h>`); worked around in `flint_update.hpp` (`rename_path`, `remove_tree`,
+  `real_path`).
 - **At `v0.12.2` (migration step 5):** [ran] `fs.rename(from, to)` with `str` parameters, in a package whose header includes `<stdio.h>`: "no viable conversion from 'CStrViewHolder' to 'const std::filesystem::path'". **still open** (14 tags).
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** in `src/adapters/serverfs`, whose
   native header pulls in `<stdio.h>`, `fs.rename(tmp, path)` lowers to
@@ -3114,3 +3118,38 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `__aarch64__` / `_M_ARM64` and `__x86_64__` / `_M_X64`.
 - **Ideal:** `os.arch()` and `os.name()` in `core:os`, the values `core:build` already
   uses.
+
+### CF-175 · gap · `confirmed`: no detached process, no process list, no process liveness
+- **Seen (milestone 53):** the self-update starts `flint update-apply` from the app, and
+  that process outlives the app that started it, then starts the new app and waits for
+  it. `os.command` waits for the child and captures its output; there is no way to start
+  a program detached (its own session, output to a file, its pid returned), to ask
+  whether a pid is still alive, to stop one, or to list the processes running an
+  executable from inside a folder (update-apply waits for every `flint` from the app's
+  folder before it renames it).
+- **Workaround:** `src/adapters/process/native/flint_update.hpp`: `posix_spawn` with
+  `POSIX_SPAWN_SETSID`, `waitpid(WNOHANG)` + `kill(pid, 0)`, SIGTERM then SIGKILL,
+  `proc_listallpids` + `proc_pidpath` on macOS and `/proc/<pid>/exe` on Linux; `chmod` for
+  the CLI copied out of the package (`core:fs` has no mode setter). Windows waits for
+  milestone 50.
+- **Ideal:** `os.spawn(binary, args, detached: true, stdout: path) -> Process` with
+  `pid()`, `alive()`, `kill()`; `os.processes()` with each one's executable path;
+  `fs.set_mode(path, mode)`.
+
+### CF-176 · bug · `unconfirmed`: `cfire check` spins forever on a package whose native header includes `<filesystem>`
+- **Seen (milestone 53) [ran, macOS, `v0.12.2`]:** `cfire check` in `src/adapters/process`
+  ran for minutes at ~92 % CPU with 3 MB of memory and printed nothing, where the package
+  checks in 18 s. Bisected: a file holding only `import cpp "flint_update.hpp"` and one
+  function still hung; the header with its `#include <filesystem>` line removed checked at
+  once (the rest unchanged: `<spawn.h>`, `<sys/wait.h>`, `<libproc.h>`, `extern char**
+  environ;`, and three functions on `std::filesystem::rename`, `remove_all` and
+  `canonical` with `std::error_code`).
+- **Not reproduced alone:** a header with only `#include <filesystem>` and one inline
+  function, imported by a one-file program, checks in 4 s. So it takes something else in
+  that header or in the package (it includes `flint_fs.hpp` and `flint_process.hpp` too).
+  Unconfirmed until a small repro hangs.
+- **Workaround:** no `<filesystem>` in Flint's native headers: `rename(2)`, `nftw` and
+  `realpath(3)` in `flint_update.hpp`.
+- **Ideal:** the checker never spins on a header; a time limit on header analysis with a
+  diagnostic naming the header.
+

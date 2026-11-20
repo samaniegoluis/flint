@@ -2,6 +2,9 @@ package crypto
 
 import "../../ports"
 import "core:encoding/hex"
+import "core:fs"
+import "core:os"
+import "core:time"
 
 // Cross-checked against argon2-cffi (the reference C implementation):
 // hash_secret_raw(b"flint", bytes(range(16)), time_cost=2, memory_cost=65536,
@@ -185,4 +188,15 @@ test "Ed25519 signatures verify as RFC 8032 says, and nothing else does" {
     assert(!s.update_verify(msg2, bent, pk2))
     assert(!s.update_verify(msg2, sig2[0..63], pk2))
     assert(!s.update_verify(msg2, sig2, pk2[0..31]))
+}
+
+test "a file's SHA-256 through libsodium, as sha256sum prints it" {
+    c := try new_sodium()
+    path := "{os.getenv("TMPDIR", "/tmp")}/flint-sha-{time.now_ms()}.txt"
+    try fs.write_text(path, "abc")
+    defer { fs.remove(path) or {} }
+    assert_eq(try c.update_file_sha256(path), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    mut r := ""
+    c.update_file_sha256(path + ".none") or err { r = "{err.message()}" }
+    assert(r.starts_with("io:"))
 }

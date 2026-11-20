@@ -17,6 +17,8 @@
 #include <curl/curl.h>
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <span>
@@ -234,6 +236,125 @@ inline int get_following(const std::string& url, std::int64_t connect_ms, std::i
         case CURLE_SSL_CERTPROBLEM:
         case CURLE_SSL_CIPHER:
         case CURLE_SSL_CACERT_BADFILE:
+            return 4;
+        default:
+            return 6;
+    }
+}
+
+// The self-update's package (milestone 53): `url` streamed to the file `path`, at most
+// `max_bytes`, HTTPS-only redirects as get_following. A connect deadline, and a stall
+// deadline instead of a total one (a package may take minutes on a slow link, never a
+// silent one): below 1 byte/s for `stall_ms` ends it. The bytes received so far are in
+// download_received(), read by the app's update loop from another thread. Returns as
+// get_following; 7 when the file cannot be written.
+inline std::atomic<std::int64_t>& download_received() {
+    static std::atomic<std::int64_t> n{0};
+    return n;
+}
+
+struct FileSink {
+    std::FILE* f;
+    std::size_t max_bytes;
+    std::size_t got;
+    bool over;
+    bool bad;
+};
+
+inline std::size_t on_file_body(char* data, std::size_t size, std::size_t n, void* user) {
+    auto* s = static_cast<FileSink*>(user);
+    std::size_t len = size * n;
+    if (s->got + len > s->max_bytes) {
+        s->over = true;
+        return 0;
+    }
+    if (std::fwrite(data, 1, len, s->f) != len) {
+        s->bad = true;
+        return 0;
+    }
+    s->got += len;
+    download_received().store(static_cast<std::int64_t>(s->got));
+    return len;
+}
+
+inline int download_to_file(const std::string& url, std::int64_t connect_ms, std::int64_t stall_ms,
+                            std::int64_t max_bytes, const std::string& path, std::int64_t& status,
+                            std::string& err) {
+    global_init();
+    status = 0;
+    download_received().store(0);
+    std::FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) {
+        err = "cannot write the download";
+        return 7;
+    }
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        std::fclose(f);
+        err = "could not start an HTTP request";
+        return 6;
+    }
+    FileSink sink{f, static_cast<std::size_t>(max_bytes), 0, false, false};
+    char errbuf[CURL_ERROR_SIZE];
+    errbuf[0] = 0;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+#if LIBCURL_VERSION_NUM >= 0x075500
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+#else
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
+#endif
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, static_cast<long>(connect_ms));
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, static_cast<long>((stall_ms + 999) / 1000));
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, on_file_body);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "flint");
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    CURLcode rc = curl_easy_perform(curl);
+    long code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+    curl_easy_cleanup(curl);
+    bool closed = std::fclose(f) == 0;
+    status = code;
+    if (rc == CURLE_OK) {
+        if (!closed) {
+            err = "cannot write the download";
+            return 7;
+        }
+        return 0;
+    }
+    if (sink.over) {
+        err = "the download was larger than the release says";
+        return 5;
+    }
+    if (sink.bad) {
+        err = "cannot write the download";
+        return 7;
+    }
+    if (rc == CURLE_HTTP_RETURNED_ERROR) return 0;
+    err = errbuf[0] ? std::string(errbuf) : std::string(curl_easy_strerror(rc));
+    switch (rc) {
+        case CURLE_COULDNT_RESOLVE_HOST:
+        case CURLE_COULDNT_RESOLVE_PROXY:
+        case CURLE_COULDNT_CONNECT:
+        case CURLE_SEND_ERROR:
+        case CURLE_RECV_ERROR:
+        case CURLE_GOT_NOTHING:
+        case CURLE_PARTIAL_FILE:
+            return 2;
+        case CURLE_OPERATION_TIMEDOUT:
+            return 3;
+        case CURLE_SSL_CONNECT_ERROR:
+        case CURLE_PEER_FAILED_VERIFICATION:
             return 4;
         default:
             return 6;

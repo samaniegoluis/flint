@@ -1,0 +1,91 @@
+package process
+
+// The self-update's files and processes on this machine (milestone 53), in a folder of
+// the test's own.
+
+import "core:fs"
+import "core:os"
+import "core:time"
+import "../../domain"
+
+fn update_tmp(name: str) -> str {
+    return "{temp_base()}/flint-update-{name}-{time.now_ms()}"
+}
+
+test "a zip unpacks with the system's tool, and folders move and go by rename" {
+    if os_name() == "windows" {
+        println("SKIP: the Windows update comes with milestone 50")
+        return
+    }
+    dir := update_tmp("files")
+    mut files := new_os_update_files()
+    defer { files.upd_remove(dir) or {} }
+    try files.upd_mkdir(dir + "/src/Flint.app/Contents/MacOS")
+    try files.upd_write(dir + "/src/Flint.app/Contents/MacOS/Flint", "#!/bin/sh\necho flint\n")
+    try files.upd_copy_exe(dir + "/src/Flint.app/Contents/MacOS/Flint", dir + "/flint-copy")
+    st := try fs.stat(dir + "/flint-copy")
+    assert((st.mode & 0o111) != 0)
+    // The zip, as scripts/package.sh makes it (ditto on macOS, zip -r elsewhere).
+    mut made := false
+    if os_name() == "mac" {
+        r := try os.command("ditto", ["-c", "-k", "--keepParent", dir + "/src/Flint.app", dir + "/p.zip"])
+        made = r.exit_code == 0
+    } else {
+        r := os.command("sh", ["-c", "cd \"$1\" && zip -qr \"$2\" Flint.app", "sh", dir + "/src", dir + "/p.zip"]) or {
+            println("SKIP: no zip on this machine")
+            return
+        }
+        made = r.exit_code == 0
+    }
+    if !made {
+        println("SKIP: could not make a zip here")
+        return
+    }
+    try files.upd_unzip(dir + "/p.zip", dir + "/new")
+    assert(files.upd_exists(dir + "/new/Flint.app/Contents/MacOS/Flint"))
+    assert_eq(try files.upd_read(dir + "/new/Flint.app/Contents/MacOS/Flint"), "#!/bin/sh\necho flint\n")
+    try files.upd_rename(dir + "/new/Flint.app", dir + "/Flint.app")
+    assert(files.upd_exists(dir + "/Flint.app/Contents/MacOS/Flint"))
+    assert(!files.upd_exists(dir + "/new/Flint.app"))
+    mut r := ""
+    files.upd_unzip(dir + "/none.zip", dir + "/x") or err { r = "{err.message()}" }
+    assert(r.starts_with("io:"))
+    try files.upd_remove(dir + "/Flint.app")
+    assert(!files.upd_exists(dir + "/Flint.app"))
+    // Removing what is not there is quiet.
+    try files.upd_remove(dir + "/Flint.app")
+}
+
+test "a detached process is started, seen inside its folder, and stopped" {
+    if os_name() == "windows" {
+        println("SKIP: the Windows update comes with milestone 50")
+        return
+    }
+    dir := update_tmp("procs")
+    mut files := new_os_update_files()
+    defer { files.upd_remove(dir) or {} }
+    try files.upd_mkdir(dir + "/bin")
+    // A copy of sleep inside the folder: what update-apply waits for.
+    try files.upd_copy_exe("/bin/sleep", dir + "/bin/sleep")
+    mut procs := new_os_update_processes()
+    pid := try procs.proc_spawn(dir + "/bin/sleep", ["30"], dir + "/log.txt")
+    assert(pid > 0)
+    assert(procs.proc_alive(pid))
+    mut seen: []i64 = []
+    for _ in 0..50 {
+        seen = procs.proc_running_under(dir)
+        if seen.len() > 0 {
+            break
+        }
+        procs.proc_sleep(100)
+    }
+    assert_eq(seen.len(), 1)
+    assert_eq(seen[0], pid)
+    assert_eq(procs.proc_running_under(dir + "/bin/other").len(), 0)
+    procs.proc_stop(pid)
+    assert(!procs.proc_alive(pid))
+    assert_eq(procs.proc_running_under(dir).len(), 0)
+    bad := procs.proc_spawn(dir + "/none", [], "") or -1
+    assert_eq(bad, -1)
+    assert(current_pid() > 0)
+}
