@@ -64,8 +64,8 @@ export const api = {
   cliStatus: (first: boolean) => call<CliLinkStatus>('cli_status', { first }),
   cliInstall: (path: string) => call<CliLinkStatus>('cli_install', { path }),
   cliRemove: (path: string) => call<CliLinkStatus>('cli_remove', { path }),
-  /** Milestone 52: `now` checks for a newer Flint; `status` repeats the last outcome as `update:status`. */
-  updateHint: (reason: 'now' | 'status') => call('update_hint', { reason }),
+  /** Milestone 52: `now` checks for a newer Flint; `status` repeats the last outcome as `update:status`; `toast_shown` says the toast it asked for is up. */
+  updateHint: (reason: 'now' | 'status' | 'toast_shown') => call('update_hint', { reason }),
   /** `launch`: the versions since the last one seen, once; otherwise this version's notes. */
   whatsNew: (launch: boolean) => call<WhatsNew>('whats_new', { launch }),
   /** Opens one of Flint's own pages (its repository, its site) in the browser. */

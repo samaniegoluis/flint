@@ -62,6 +62,9 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     setStatus(st);
     setNow(Date.now());
     if (st.toast && st.state === 'available') {
+      // The core asks for the toast until it hears it was shown (a page that loads
+      // after the check still gets it, once).
+      api.updateHint('toast_shown').catch(() => {});
       notify({
         text: updateToastText(st), kind: 'info', key: UPDATE_TOAST_KEY, duration: 'sticky',
         actions: [{ label: updateActionLabel(st), primary: true, run: () => act() }],

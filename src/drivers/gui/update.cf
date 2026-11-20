@@ -27,6 +27,10 @@ UPDATE_TICK_MS: i64 = 1000
 UPDATE_FIRST_CHECK_MS: i64 = 3000
 UPDATE_HINT_NOW: str = "now"
 UPDATE_HINT_STATUS: str = "status"
+// The page showed the toast: the loop stops asking for it. Until then every outcome it
+// repeats asks for it, so a page that starts after the check (a slow first load, a
+// reload) still shows it once.
+UPDATE_HINT_TOAST_SHOWN: str = "toast_shown"
 
 type UpdateHintReq struct {
     reason: str `json:"reason"`
@@ -104,7 +108,7 @@ fn update_source(kind: str) -> UpdateSource {
 
 fn rpc_update_hint(params: str, st: GuiState) -> str! {
     req := try parse_req[UpdateHintReq](params)
-    if req.reason == UPDATE_HINT_NOW || req.reason == UPDATE_HINT_STATUS {
+    if req.reason == UPDATE_HINT_NOW || req.reason == UPDATE_HINT_STATUS || req.reason == UPDATE_HINT_TOAST_SHOWN {
         st.update_hints.send(req.reason)
     }
     return ok_json()
@@ -161,10 +165,13 @@ fn run_update_loop(c: Sodium, settings_store: JsonSettingsStore, st: GuiState, m
     for !st.holder.quitting() {
         hint := st.update_hints.recv_timeout(UPDATE_TICK_MS) or ""
         auto := (load_settings(settings) or default_settings()).update_check
+        if hint == UPDATE_HINT_TOAST_SHOWN {
+            last.toast = false
+            continue
+        }
         if hint == UPDATE_HINT_STATUS || auto != last.auto {
             last.auto = auto
             app.emit("update:status", last)
-            last.toast = false
             continue
         }
         now := time.now_ms()
@@ -175,7 +182,12 @@ fn run_update_loop(c: Sodium, settings_store: JsonSettingsStore, st: GuiState, m
         checking.state = UPDATE_CHECKING
         checking.toast = false
         app.emit("update:status", checking)
+        pending := last.toast
         last = check_for_update(feed, c, mut settings, src, here, time.unix_seconds() * 1000)
+        // A toast the page has not shown yet stays asked for while the same version waits.
+        if pending && last.state == UPDATE_AVAILABLE {
+            last.toast = true
+        }
         next_auto = time.now_ms() + UPDATE_CHECK_EVERY_MS
         if last.state == UPDATE_FAILED {
             write_stderr("flint-gui: update check failed ({last.code})\n")
@@ -183,6 +195,5 @@ fn run_update_loop(c: Sodium, settings_store: JsonSettingsStore, st: GuiState, m
             write_stderr("flint-gui: Flint {last.version} is available ({last.action})\n")
         }
         app.emit("update:status", last)
-        last.toast = false
     }
 }
