@@ -4,6 +4,16 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.18.1 — 2026-11-20
+
+A small fix release. What's new and the confirmation before Relaunch now use Flint's own font instead of a serif one, and the tools that build the app and the website are updated to versions with no known security advisories.
+
+### Fixed
+
+- **deps:** Vite 6.4.6, vitest 4.1.12 and astro 7.4.13 for Dependabot's alerts
+- **ui:** What's new and the Relaunch confirmation in the app's font
+
+
 ## 0.18.0 — 2026-11-20
 
 Flint now updates itself. When a new version is out, Download fetches it inside the app with its progress, checks it against the signed release before anything else, and offers Relaunch: Flint swaps itself for the new version and opens it, or puts the old one back if the new one does not start. Nothing changes until you choose Relaunch.
