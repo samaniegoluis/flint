@@ -51,7 +51,7 @@ deps="$root/build/deps/macos-arm64"
 export PKG_CONFIG_LIBDIR="$deps/lib/pkgconfig"
 export CFIRE_CACHE_DIR="$root/build/deps/cfire-cache"
 # Every package build.cf asks for must resolve here: cfire drops the flags of one that
-# does not and fails later on a missing header, with no word of the package.
+# does not and fails later on a missing header, with no word of the package (CF-166).
 pc="$(command -v pkg-config || true)"
 [[ -n "$pc" ]] || { echo "package: needs pkg-config" >&2; exit 1; }
 echo "package: $pc $(pkg-config --version)"

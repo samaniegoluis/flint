@@ -2998,6 +2998,13 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `cfire/INVALID-BUILD-VALUE` (or similar) for a manifest value that is not a
   literal, until computed values are supported; an error for a `PkgConfig` name
   pkg-config does not know, as `pkg-config --exists` reports it.
+- **Seen again (milestone 51) [ran, GitHub's `macos-26` runner, `v0.12.2`]:** a known
+  name whose `Requires` do not resolve is dropped the same way. Flint's `flint-rdp.pc`
+  requires `freerdp3`; a FreeRDP built with the wrong version installed `freerdp0.pc`,
+  and `cfire build FlintGui` failed only at `fatal error: 'flint_rdp.hpp' file not found`
+  (the `-I` comes from that `.pc`), with no word of pkg-config. Flint's workaround:
+  `scripts/package.sh` runs `pkg-config --cflags --libs` on every `PkgConfig` name in
+  `build.cf` first and prints pkg-config's own error.
 
 ### CF-167 · missing · `confirmed`: a crashed test leaves no core and no backtrace
 - **Seen (migration step 5) [ran, Linux arm64 in Docker, `v0.12.2` `5be0987`]:** Flint's
