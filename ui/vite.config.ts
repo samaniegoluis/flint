@@ -1,4 +1,6 @@
-import { defineConfig } from 'vite';
+// vitest/config's defineConfig is vite's with the `test` block typed (vitest 4 no
+// longer adds it to vite's own).
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 // The page is served by the app from app://localhost/ (webui's serve_dir), so assets
