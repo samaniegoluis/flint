@@ -4,6 +4,21 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.18.0 — 2026-11-20
+
+Flint now updates itself. When a new version is out, Download fetches it inside the app with its progress, checks it against the signed release before anything else, and offers Relaunch: Flint swaps itself for the new version and opens it, or puts the old one back if the new one does not start. Nothing changes until you choose Relaunch.
+
+### Added
+
+- **update:** The self-update's use cases: download, verify, stage, swap and roll back
+- **update:** The self-update's adapters: the package download, its SHA-256, unzip, the processes
+- **update:** Download, verify and relaunch into a new version inside Flint
+
+### Fixed
+
+- **ui:** The download's progress and a quick failure reach the page
+
+
 ## 0.17.0 — 2026-11-20
 
 Flint now tells you when a new version is out. It checks a small file signed with Flint's own key at launch and every hour (Settings → About turns it off; nothing about you is sent), shows a notification once per version with Download, and keeps Update beside the version in the status bar until you update. Clicking the version shows the state with Check now, What's new and About; the command palette has Check for updates, What's new in Flint and About Flint; and after an update, What's new shows every version since the one you had. Releases now carry the signed update manifest.
