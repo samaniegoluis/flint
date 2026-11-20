@@ -15,8 +15,8 @@ which list every file with a `SHA256SUMS` to check them against:
 shasum -a 256 -c SHA256SUMS --ignore-missing     # on Linux: sha256sum -c …
 ```
 
-Packages are published for macOS first; Linux and Windows follow. Until one is published
-for your system, build it from a checkout:
+Packages are published for macOS, and for Linux from the first release after 0.18.2; Windows follows. Until one is published for
+your system, build it from a checkout:
 [Build a release package](/start/build-from-source/#build-a-release-package).
 
 ## macOS
@@ -68,9 +68,48 @@ copy, Flint says so at launch and offers **Use this copy**. A `flint` that is no
 to a Flint.app (a build installed by `scripts/install.sh`, for example) is listed but
 never changed.
 
-### What a package build leaves out
+### What a macOS package build leaves out
 
 The package links its own copies of libssh, libsodium, SQLCipher, OpenSSL and FreeRDP,
 built for macOS 13.3. Its FreeRDP has no FFmpeg, audio or device redirection, which Flint
 never turns on; it decodes H.264 with macOS's own VideoToolbox, so the remote desktop's
 graphics pipeline works as in a build from source.
+
+## Linux
+
+**Needs:** a 64-bit PC (x86_64) with Ubuntu 24.04 or later, Debian 13 or later, or
+Fedora 43 or later, or a distribution built on one of them (Zorin OS 18, Linux Mint 22,
+Pop!_OS 24.04). Older releases have no FreeRDP 3, which Flint's remote desktop needs.
+
+Install the package with your package manager, which brings in the libraries it needs:
+
+```sh
+sudo apt install ./flint_<version>_amd64.deb        # Debian, Ubuntu
+sudo dnf install ./flint-<version>.x86_64.rpm       # Fedora
+```
+
+Flint is then in your desktop's applications, and `flint` is on your `PATH`
+(`/usr/bin/flint`). The package puts:
+
+| Where | What |
+|---|---|
+| `/usr/lib/flint/` | The app, the CLI and the app's page |
+| `/usr/bin/flint` | A link to the CLI, so a `flint` you start opens the app it came with |
+| `/usr/share/applications/dev.flint.app.desktop` | The menu entry, with its icon in `/usr/share/icons/hicolor/` |
+| `/usr/share/polkit-1/actions/dev.flint.policy` | The action Flint asks your desktop to confirm when a program wants your vault ([Security model](/reference/security-model/)) |
+
+Your vaults and settings live in your home folder, never in `/usr/lib/flint`, so
+removing or replacing the package keeps them. To remove it: `sudo apt remove flint` or
+`sudo dnf remove flint`.
+
+The package manager updates a package, not Flint: when a new version is out, Flint says
+so and **How to update** points to the release page; install the new package the same
+way ([Updates](/guides/updates/)).
+
+The packages are not signed with a repository key. Check a download against
+`SHA256SUMS` (above) before installing it.
+
+If you installed a build of your own with `scripts/install.sh`, remove its copy first
+(`~/.local/bin/flint`, `~/.local/bin/flint-app`, `~/.local/share/flint` and
+`~/.local/share/applications/flint.desktop`): `~/.local/bin` comes before `/usr/bin` on
+your `PATH`, so its `flint` would keep answering.

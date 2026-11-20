@@ -1,0 +1,35 @@
+# Flint's .deb and .rpm (milestone 49, D-120), written by nfpm inside the build image of
+# each format (scripts/linux/package-inside.sh). ${FLINT_*} are put in by that script:
+# the version, and the folder of staged files. The `depends:` list is added
+# by the script from what the binaries link, as the package names of the base they
+# were built on.
+name: flint
+# nfpm names it x86_64 in the .rpm.
+arch: amd64
+platform: linux
+version: ${FLINT_VERSION}
+version_schema: semver
+section: net
+priority: optional
+maintainer: Flint <flint@users.noreply.github.com>
+description: |-
+  SSH client over one encrypted vault
+  Flint keeps hosts, keys and passwords in one encrypted vault, opened by a desktop
+  app (terminals, files, tunnels, RDP) and the flint CLI, for people and for agents.
+vendor: Flint
+homepage: https://github.com/samaniegoluis/flint
+license: MIT
+
+contents:
+  - src: ${FLINT_STAGE}/lib/
+    dst: /usr/lib/flint/
+    type: tree
+  - src: /usr/lib/flint/flint
+    dst: /usr/bin/flint
+    type: symlink
+  - src: ${FLINT_STAGE}/dev.flint.app.desktop
+    dst: /usr/share/applications/dev.flint.app.desktop
+  - src: ${FLINT_STAGE}/dev.flint.app.png
+    dst: /usr/share/icons/hicolor/256x256/apps/dev.flint.app.png
+  - src: ${FLINT_STAGE}/dev.flint.policy
+    dst: /usr/share/polkit-1/actions/dev.flint.policy

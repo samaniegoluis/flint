@@ -92,8 +92,8 @@ change the vault) and expires; it ends when the vault locks and when Flint quits
 is never written to disk.
 
 Allowing needs **presence**: Touch ID or the Mac's password (macOS), the login password
-through polkit (Linux, with `dev.flint.approve` installed from
-`packaging/linux/dev.flint.policy`), or the vault's master password. A program that can
+through polkit (Linux: the `dev.flint.approve` action, which the `.deb` and `.rpm`
+install, or a build from source copies from `packaging/linux/dev.flint.policy`), or the vault's master password. A program that can
 click Flint's window still cannot approve itself. Denying needs nothing.
 
 **Tokens** (`flint token create`) are for programs nobody starts from an approved

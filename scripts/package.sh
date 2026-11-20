@@ -3,11 +3,21 @@
 #
 #   scripts/package.sh macos      # → dist/Flint-<version>-macos-arm64.zip
 #   scripts/package.sh windows    # → windows/package.sh (MSYS2 CLANG64 on Windows)
-#   scripts/package.sh linux      # milestone 49
+#   scripts/package.sh linux      # → dist/flint_<version>_amd64.deb, dist/flint-<version>.x86_64.rpm
+#   scripts/package.sh linux deb  # one of the two
 #
 # The same script runs on a person's machine and in the release workflow, which calls
 # it and nothing else (Principle 16). It reads no secret and signs nothing but ad hoc;
 # prints each package's path and SHA-256. Exit 1 when a step fails.
+#
+# Linux (D-120): each format is built in its own image (scripts/linux/package.Dockerfile:
+# Ubuntu 24.04 for the .deb, Fedora 43 for the .rpm, x86_64) against the system's
+# libraries, and depends on them by name; scripts/linux/package-inside.sh does the
+# build and runs nfpm. Needs Docker (or an engine that speaks its API) and npm on the
+# host, which builds the page. /usr/lib/flint/ holds the app, the CLI (/usr/bin/flint
+# links to it), the page, install-kind ("package:deb" or "package:rpm": the package
+# manager updates it) and CHANGELOG.md; the .desktop file, the icon and the polkit
+# policy go where the desktop and polkit look for them.
 #
 # macOS: the libraries come from scripts/deps-macos.sh (static, built from pinned
 # sources at macOS 13.3), so the app and the CLI link nothing outside macOS itself.
@@ -28,9 +38,53 @@ system="${1:-}"
 case "$system" in
   macos) ;;
   windows) exec windows/package.sh ;;
-  linux) echo "package: Linux packages come in milestone 49" >&2; exit 1 ;;
+  linux) ;;
   *) echo "usage: scripts/package.sh macos|linux|windows" >&2; exit 1 ;;
 esac
+
+if [[ "$system" == linux ]]; then
+  formats="${2:-deb rpm}"
+  for f in $formats; do
+    [[ "$f" == deb || "$f" == rpm ]] || { echo "usage: scripts/package.sh linux [deb|rpm]" >&2; exit 1; }
+  done
+  command -v docker >/dev/null || { echo "package: the Linux packages are built with docker" >&2; exit 1; }
+  version="$(scripts/version.sh)"
+  echo "package: Flint $version"
+  # The page: the build images have no Node, and it is the same on every system.
+  (cd ui && { [[ -d node_modules ]] || npm ci --no-audit --no-fund; } && npm run build)
+  mkdir -p dist
+  for f in $formats; do
+    image="flint-package-$f"
+    # --load: a buildx builder on the docker-container driver keeps the image in its
+    # cache otherwise, and the run below would not find it.
+    docker build --load --platform linux/amd64 --target "$f" -t "$image" \
+      -f scripts/linux/package.Dockerfile scripts/linux
+    # The tree is copied into a cache volume of its own (with cfire's cache), so a
+    # second build compiles only what changed and the checkout never gets Linux's
+    # .cfire/ or build/ folders; the version comes from the host's git.
+    docker run --rm --platform linux/amd64 -e FLINT_VERSION="$version" \
+      -e OWNER="$(id -u):$(id -g)" \
+      -v "$root:/src:ro" -v "flint-package-$f-cache:/cache" -v "$root/dist:/out" \
+      "$image" bash -c '
+        set -euo pipefail
+        mkdir -p /cache/work /cache/cfire
+        rc=0
+        rsync -a --delete --exclude=/site/node_modules --exclude=/ui/node_modules \
+          --exclude=/.git --exclude=/dist --exclude=build/ --exclude=.cfire/ /src/ /cache/work/ || rc=$?
+        [[ $rc == 0 || $rc == 24 ]] || exit "$rc"
+        export CFIRE_CACHE_DIR=/cache/cfire
+        mkdir -p /tmp/out
+        /cache/work/scripts/linux/package-inside.sh '"$f"' /cache/work /tmp/out
+        for p in /tmp/out/*; do install -m 644 "$p" /out/; chown "$OWNER" "/out/$(basename "$p")"; done'
+  done
+  for f in $formats; do
+    if [[ "$f" == deb ]]; then file="dist/flint_${version}_amd64.deb"; else file="dist/flint-${version}.x86_64.rpm"; fi
+    sum=$( (command -v sha256sum >/dev/null && sha256sum "$file" || shasum -a 256 "$file") | awk '{print $1}')
+    echo "package: $root/$file"
+    echo "package: sha256 $sum"
+  done
+  exit 0
+fi
 
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] \
   || { echo "package: the macOS package is built on an arm64 Mac" >&2; exit 1; }

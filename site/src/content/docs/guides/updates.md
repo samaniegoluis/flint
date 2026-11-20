@@ -67,7 +67,7 @@ update**, which opens **Settings → About** with what to do:
 
 | Your copy | How it updates |
 |---|---|
-| A `.deb` or `.rpm` package | Download the new package from the release page and install it the same way |
+| A `.deb` or `.rpm` package | Download the new package from the release page and install it the same way (`sudo apt install ./flint_<version>_amd64.deb`, `sudo dnf install ./flint-<version>.x86_64.rpm`) |
 | Built from source | Pull the new version and build it again ([Build from source](/start/build-from-source/)) |
 | In a folder you can't write | Download the new version from the release page and replace the copy |
 | A system with no package yet | Build from source, or watch the release page for one |

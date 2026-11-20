@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Flint
+GenericName=SSH Client
+Comment=SSH client over one encrypted vault
+Exec=/usr/lib/flint/Flint
+Icon=dev.flint.app
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=ssh;terminal;sftp;rdp;vault;
+StartupNotify=true
+StartupWMClass=Flint
