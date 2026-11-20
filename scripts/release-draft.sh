@@ -12,7 +12,13 @@
 #   scripts/release-draft.sh draft <tag> <dir>   SHA256SUMS for every file in <dir>, then a
 #                                                draft release on GitHub with them all (a
 #                                                pre-release for -rc tags); a draft that
-#                                                already exists gets the files replaced
+#                                                already exists gets the files replaced.
+#                                                A release (not an -rc) also gets the
+#                                                signed update manifest, manifest.json and
+#                                                manifest.json.sig (milestone 52,
+#                                                scripts/sign-manifest.sh), when
+#                                                FLINT_UPDATE_SIGNING_KEY is set; without
+#                                                it the release is never offered as an update
 #
 # `draft` needs the GitHub CLI (`gh`) signed in, or GH_TOKEN (the workflow's own token);
 # it never publishes: the owner looks at the draft and publishes it. GH (default `gh`)
@@ -74,12 +80,22 @@ case "$cmd" in
     [[ -d "$dir" ]] || die "draft needs the folder of packages"
     gh="${GH:-gh}"
     files=()
+    rm -f "$dir/manifest.json" "$dir/manifest.json.sig"
     while IFS= read -r f; do files+=("$f"); done < <(find "$dir" -maxdepth 1 -type f ! -name SHA256SUMS | sort)
     [[ ${#files[@]} -gt 0 ]] || die "$dir holds no packages"
     (cd "$dir" && for f in "${files[@]}"; do
        n="$(basename "$f")"
        printf '%s  %s\n' "$(sha256 "$n")" "$n"
      done) > "$dir/SHA256SUMS"
+    # The update manifest (milestone 52): what Flint checks at launch and every hour,
+    # reached at releases/latest/download/, so only once the owner publishes the draft.
+    if [[ -z "$pre" && -n "${FLINT_UPDATE_SIGNING_KEY:-}" ]]; then
+      scripts/sign-manifest.sh manifest "$tag" "$dir"
+      scripts/sign-manifest.sh sign "$dir/manifest.json"
+      files+=("$dir/manifest.json" "$dir/manifest.json.sig")
+    elif [[ -z "$pre" ]]; then
+      echo "release-draft: WARNING: FLINT_UPDATE_SIGNING_KEY is not set: no update manifest, so Flint will not offer $tag as an update" >&2
+    fi
     notes_file="$(mktemp)"
     trap 'rm -f "$notes_file"' EXIT
     notes > "$notes_file"

@@ -150,6 +150,31 @@ check "an existing draft gets its files replaced" '[[ $rc == 0 && "$(cat gh.log)
 draft draft v1.1.0-rc.1 pkgs
 check "a published release is never changed" '[[ $rc == 1 && "$out" == *"already published"* && "$(cat gh.log)" != *"upload"* ]]'
 unset FAKE_GH_DRAFT
+
+# The update manifest (milestone 52): a release gets manifest.json and its signature
+# when the key is set, an -rc never, and no key means a warning and no manifest. A
+# throwaway key pair, its public half in FLINT_UPDATE_PUBLIC_KEY_HEX.
+cp "$root/scripts/sign-manifest.sh" scripts/
+mkdir -p keys rel; printf 'mac' > rel/Flint-1.0.0-macos-arm64.zip; printf 'deb' > rel/flint_1.0.0_amd64.deb
+export FLINT_UPDATE_PUBLIC_KEY_HEX="$(scripts/sign-manifest.sh keygen keys 2>/dev/null)"
+: > gh.log
+FLINT_UPDATE_SIGNING_KEY="$(cat keys/flint-update-signing.key)" draft draft v1.0.0 rel
+check "a release gets a signed manifest" '[[ $rc == 0 && -f rel/manifest.json && -f rel/manifest.json.sig && "$(cat gh.log)" == *"manifest.json.sig"* ]]'
+check "the manifest names the version and each package" '[[ "$(jq -r .version rel/manifest.json)" == 1.0.0 && "$(jq -r ".assets | map(.key) | join(\",\")" rel/manifest.json)" == "linux-x86_64-deb,macos-arm64" && "$(jq -r .page rel/manifest.json)" == *"/releases/tag/v1.0.0" ]]'
+check "the manifest is not in SHA256SUMS" '[[ "$(cat rel/SHA256SUMS)" != *manifest* ]]'
+scripts/sign-manifest.sh verify rel/manifest.json >/dev/null 2>&1
+check "its signature verifies" '[[ $? == 0 ]]'
+printf ' ' >> rel/manifest.json
+scripts/sign-manifest.sh verify rel/manifest.json >/dev/null 2>&1 && changed=0 || changed=1
+check "a changed manifest does not verify" '[[ $changed == 1 ]]'
+: > gh.log
+draft draft v1.0.0 rel
+check "no key: a warning and no manifest" '[[ $rc == 0 && "$out" == *"no update manifest"* && ! -f rel/manifest.json && "$(cat gh.log)" != *manifest* ]]'
+: > gh.log
+FLINT_UPDATE_SIGNING_KEY="$(cat keys/flint-update-signing.key)" draft draft v1.1.0-rc.1 pkgs
+check "a pre-release never gets a manifest" '[[ $rc == 0 && ! -f pkgs/manifest.json && "$(cat gh.log)" != *manifest* ]]'
+unset FLINT_UPDATE_PUBLIC_KEY_HEX
+
 mkdir -p empty
 draft draft v1.0.0 empty
 check "a folder with no packages is refused" '[[ $rc == 1 && "$out" == *"no packages"* ]]'

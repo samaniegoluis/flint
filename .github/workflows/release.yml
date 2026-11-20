@@ -67,6 +67,9 @@ jobs:
     needs: [macos]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The update manifest's signing key lives here and nowhere else in GitHub
+    # (Principle 15, milestone 52); the owner fills it from Infisical (/flint).
+    environment: release
     permissions:
       contents: write
     steps:
@@ -82,4 +85,5 @@ jobs:
         env:
           TAG: ${{ inputs.tag }}
           GH_TOKEN: ${{ github.token }}
+          FLINT_UPDATE_SIGNING_KEY: ${{ secrets.FLINT_UPDATE_SIGNING_KEY }}
         run: scripts/release-draft.sh draft "$TAG" packages

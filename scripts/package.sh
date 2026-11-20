@@ -18,6 +18,7 @@
 #                          onto the PATH (Settings → About → Command line)
 #   Resources/ui           the page
 #   Resources/install-kind "portable": the app may update itself in place (milestone 53)
+#   Resources/CHANGELOG.md What's new after an update (milestone 52)
 #   Resources/licenses     LICENSE and each bundled library's licence
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -83,6 +84,7 @@ mkdir -p "$app/Contents/Helpers" "$app/Contents/Resources/licenses"
 cp build/flint "$app/Contents/Helpers/flint"
 chmod 755 "$app/Contents/Helpers/flint"
 printf 'portable\n' > "$app/Contents/Resources/install-kind"
+cp CHANGELOG.md "$app/Contents/Resources/CHANGELOG.md"
 cp LICENSE "$app/Contents/Resources/licenses/Flint-LICENSE"
 for lib in "$deps"/share/licenses/*; do
   for f in "$lib"/*; do
