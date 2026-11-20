@@ -51,11 +51,11 @@ so. If a `flint` command is still running from the app when you relaunch (a long
 exec`, say), Flint waits for it for half a minute, then opens the old version again and
 keeps the download, so you can choose **Relaunch** once it ends.
 
-**macOS:** an unsigned Flint is a new app to macOS after each update, so two things
-come back once. Gatekeeper stops its first launch: open **System Settings → Privacy &
-Security** and choose **Open Anyway**. Then the Keychain asks again for the vault you
-keep with *Remember on this computer* and for a vault server's token: choose **Always
-Allow**. Signed builds, which keep both, are planned.
+**macOS:** an update downloaded by Flint carries no download flag, so Gatekeeper does
+not stop it as it did the zip from your browser (no **Open Anyway** this time). But an
+unsigned Flint is a new app to macOS after each update, so the Keychain asks once more
+for the vault you keep with *Remember on this computer* and for a vault server's token:
+choose **Always Allow**. Signed builds, which keep that permission, are planned.
 
 Applying an update is the job of `flint update-apply`, which the app starts from a copy
 of the new version's `flint`; it is not a command you type.
