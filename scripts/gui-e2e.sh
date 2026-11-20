@@ -279,7 +279,7 @@ run_selfupdate() {
   # swap itself runs there in cli-e2e's update-apply steps.
   if [[ "$(uname -s)" == Linux && "$(uname -m)" != x86_64 ]]; then
     echo "gui-e2e: skip the selfupdate run (no package for Linux $(uname -m); cli-e2e runs update-apply)"
-    echo "e2e: pass" >> "$log"
+    { echo "e2e: pass"; echo "0 checks passed (skipped: no package for Linux $(uname -m))"; } >> "$log"
     return 0
   fi
   local base="$tmp/su" pub name exe cli res xdisp="" xpid=""
