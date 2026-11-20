@@ -115,7 +115,10 @@ build_sqlcipher() {
 
 build_freerdp() {
   local d; d=$(fetch "$@")
-  cmake -S "$d" -B "$d/build" "${cmake_common[@]}" \
+  # USE_VERSION_FROM_GIT_TAG=OFF: the source sits inside Flint's checkout, and FreeRDP
+  # takes an exact git tag there as its own version, so a build of a tagged Flint
+  # (v0.15.1) made "freerdp0.pc" instead of "freerdp3.pc" (milestone 51).
+  cmake -S "$d" -B "$d/build" "${cmake_common[@]}" -DUSE_VERSION_FROM_GIT_TAG=OFF \
     -DWITH_CLIENT=OFF -DWITH_CLIENT_COMMON=ON -DWITH_CLIENT_CHANNELS=ON -DWITH_CLIENT_SDL=OFF \
     -DWITH_CLIENT_MAC=OFF -DWITH_SERVER=OFF -DWITH_SAMPLE=OFF -DWITH_PROXY=OFF -DWITH_SHADOW=OFF \
     -DWITH_PLATFORM_SERVER=OFF -DWITH_MANPAGES=OFF -DWITH_WEBVIEW=OFF -DWITH_X11=OFF \
@@ -132,6 +135,8 @@ build_freerdp() {
     -DOPENSSL_ROOT_DIR="$prefix" -DOPENSSL_USE_STATIC_LIBS=ON >/dev/null
   cmake --build "$d/build" >/dev/null
   cmake --install "$d/build" >/dev/null
+  [[ -f "$prefix/lib/pkgconfig/freerdp3.pc" && -f "$prefix/lib/pkgconfig/winpr3.pc" ]] \
+    || { echo "deps-macos: FreeRDP installed no freerdp3.pc/winpr3.pc (its version came out wrong)" >&2; exit 1; }
 }
 
 for pin in "${PINS[@]}"; do
