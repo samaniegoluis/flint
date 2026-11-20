@@ -4,7 +4,11 @@ import "core:fs"
 import "core:os"
 
 test "a link is made, read back, replaced and removed in a folder this process writes" {
-    dir := os.getenv("TMPDIR") + "/flint-clilink-test-{os.getpid()}"
+    mut tmp := os.getenv("TMPDIR")
+    if tmp.len() == 0 {
+        tmp = "/tmp"   // unset in the Linux check's container
+    }
+    dir := tmp + "/flint-clilink-test-{os.getpid()}"
     fs.remove(dir) or {}
     defer { fs.remove(dir) or {} }
     try fs.mkdir_all(dir + "/A.app/Contents/Helpers")
