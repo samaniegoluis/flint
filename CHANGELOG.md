@@ -4,6 +4,15 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.18.2 — 2026-11-20
+
+A small fix release. When you check for updates from the version's panel or from Settings → About, the news of a new version shows there with its button, and no notification comes up on top of it.
+
+### Fixed
+
+- **ui:** No update toast over the popover or About that already says it
+
+
 ## 0.18.1 — 2026-11-20
 
 A small fix release. What's new and the confirmation before Relaunch now use Flint's own font instead of a serif one, and the tools that build the app and the website are updated to versions with no known security advisories.
