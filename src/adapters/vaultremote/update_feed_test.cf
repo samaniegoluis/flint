@@ -1,0 +1,40 @@
+package vaultremote
+
+// The update feed against a server of its own on loopback (milestone 52).
+
+import "core:net/http"
+import "../../domain"
+
+fn feed_code(feed: HttpUpdateFeed, url: str, max: i64) -> str {
+    mut r := ""
+    _ = feed.update_get(url, max) or err {
+        r = "{err.message()}"
+        return error_code_of(r)
+    }
+    return "ok"
+}
+
+test "the update feed gets a file, follows nothing but HTTPS, and caps it" {
+    mut server := try make(http.Server, 0, host: "127.0.0.1")
+    defer server.stop()
+    mut router := make(http.Router)
+    router.get("/manifest.json") |req| { return http.Response.json(200, "{\"version\":\"0.17.0\"}") }
+    router.get("/big") |req| { return http.Response.text(200, "x".repeat(5000)) }
+    router.get("/gone") |req| { return http.Response.text(500, "no") }
+    // A redirect to plain HTTP is never followed.
+    router.get("/hop") |req| { return http.Response.redirect("http://127.0.0.1:1/manifest.json") }
+    server.serve_in_background(router)
+    base := "http://127.0.0.1:{server.port()}"
+    feed := new_http_update_feed()
+    got := try feed.update_get(base + "/manifest.json", 1000)
+    assert_eq(str(got), "{\"version\":\"0.17.0\"}")
+    assert_eq(feed_code(feed, base + "/none", 1000), ERR_NOT_FOUND)
+    assert_eq(feed_code(feed, base + "/big", 1000), ERR_REFUSED)
+    assert_eq(feed_code(feed, base + "/gone", 1000), ERR_REFUSED)
+    assert(feed_code(feed, base + "/hop", 1000) != "ok")
+    // Plain HTTP anywhere but this machine is refused before any request.
+    assert_eq(feed_code(feed, "http://example.com/manifest.json", 1000), ERR_INVALID)
+    assert_eq(feed_code(feed, "ftp://example.com/manifest.json", 1000), ERR_INVALID)
+    assert(update_url_allowed("https://github.com/samaniegoluis/flint/releases/latest/download/manifest.json"))
+    assert(!update_url_allowed("http://localhost.evil.example/x"))
+}

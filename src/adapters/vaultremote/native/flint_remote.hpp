@@ -168,4 +168,76 @@ inline int request(const std::string& method, const std::string& url, const std:
     }
 }
 
+// One GET that follows redirects, HTTPS only past the first request (milestone 52: a
+// release file on GitHub answers with a redirect to its storage). No header but the
+// User-Agent, no cookie, nothing else sent. Same return codes as `request`.
+inline int get_following(const std::string& url, std::int64_t connect_ms, std::int64_t total_ms,
+                         std::int64_t max_bytes, std::int64_t& status, std::vector<std::uint8_t>& out,
+                         std::string& err) {
+    global_init();
+    status = 0;
+    out.clear();
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        err = "could not start an HTTP request";
+        return 6;
+    }
+    Sink sink{&out, static_cast<std::size_t>(max_bytes), false};
+    char errbuf[CURL_ERROR_SIZE];
+    errbuf[0] = 0;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+#if LIBCURL_VERSION_NUM >= 0x075500
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+#else
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
+#endif
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, static_cast<long>(connect_ms));
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, static_cast<long>(total_ms));
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, on_body);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "flint");
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    CURLcode rc = curl_easy_perform(curl);
+    long code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+    curl_easy_cleanup(curl);
+    status = code;
+    if (rc == CURLE_OK) return 0;
+    if (sink.over) {
+        err = "the answer was larger than expected";
+        return 5;
+    }
+    err = errbuf[0] ? std::string(errbuf) : std::string(curl_easy_strerror(rc));
+    switch (rc) {
+        case CURLE_COULDNT_RESOLVE_HOST:
+        case CURLE_COULDNT_RESOLVE_PROXY:
+        case CURLE_COULDNT_CONNECT:
+        case CURLE_SEND_ERROR:
+        case CURLE_RECV_ERROR:
+        case CURLE_GOT_NOTHING:
+            return 2;
+        case CURLE_OPERATION_TIMEDOUT:
+            return 3;
+        case CURLE_SSL_CONNECT_ERROR:
+        case CURLE_PEER_FAILED_VERIFICATION:
+#if LIBCURL_VERSION_NUM < 0x073e00
+        case CURLE_SSL_CACERT:
+#endif
+        case CURLE_SSL_CERTPROBLEM:
+        case CURLE_SSL_CIPHER:
+        case CURLE_SSL_CACERT_BADFILE:
+            return 4;
+        default:
+            return 6;
+    }
+}
+
 }  // namespace flint_remote

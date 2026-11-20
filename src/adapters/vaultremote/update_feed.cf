@@ -1,0 +1,67 @@
+package vaultremote
+
+// The `UpdateFeed` port (milestone 52): one GET of a file of Flint's latest release,
+// through the same libcurl as the vault server (native/flint_remote.hpp, CF-146). A
+// deadline and a size cap on every request (Principle 8); no header but the
+// User-Agent, nothing about this machine (Principle 15). HTTPS only, redirects too;
+// plain `http://` only to this machine, for the tests' local feed.
+
+// CFIRE-UPSTREAM: CF-146
+import cpp "flint_remote.hpp"
+import "../../domain"
+
+UPDATE_CONNECT_MS: i64 = 10000
+UPDATE_REQUEST_MS: i64 = 30000
+
+type HttpUpdateFeed struct {
+    connect_ms: i64
+    request_ms: i64
+}
+
+fn new_http_update_feed() -> HttpUpdateFeed {
+    return HttpUpdateFeed{ connect_ms: UPDATE_CONNECT_MS, request_ms: UPDATE_REQUEST_MS }
+}
+
+// https://, or http:// to localhost / 127.0.0.1 only.
+fn update_url_allowed(url: str) -> bool {
+    if url.starts_with("https://") {
+        return true
+    }
+    return url.starts_with("http://localhost:") || url.starts_with("http://localhost/") || url.starts_with("http://127.0.0.1:") || url.starts_with("http://127.0.0.1/")
+}
+
+fn (self: HttpUpdateFeed) update_get(url: str, max_bytes: i64) -> []byte! {
+    host := url_host(url)
+    if !update_url_allowed(url) {
+        return error(coded(ERR_INVALID, "updates are fetched over HTTPS only (not from {host})"))
+    }
+    mut rc: i32 = 0
+    mut status: i64 = 0
+    mut got: []byte = []
+    mut reason := ""
+    connect_ms := self.connect_ms
+    request_ms := self.request_ms
+    // CFIRE-UPSTREAM: CF-146
+    cpp {
+        rc = flint_remote::get_following(url, connect_ms, request_ms, max_bytes, status, got, reason);
+    }
+    if rc == 2 || rc == 4 {
+        return error(coded(ERR_NETWORK, "cannot reach {host}: {reason}"))
+    }
+    if rc == 3 {
+        return error(coded(ERR_TIMEOUT, "{host} did not answer in time"))
+    }
+    if rc == 5 {
+        return error(coded(ERR_REFUSED, "{host} sent more than the update information may be"))
+    }
+    if rc != 0 {
+        return error(coded(ERR_NETWORK, "the request to {host} failed: {reason}"))
+    }
+    if status == 404 {
+        return error(coded(ERR_NOT_FOUND, "no published release has update information yet"))
+    }
+    if status != 200 {
+        return error(coded(ERR_REFUSED, "{host} answered {status}"))
+    }
+    return got
+}

@@ -47,6 +47,13 @@ type Settings struct {
     // Milestone 48 (D-111 (2)): the first launch of a packaged app offered to put the
     // `flint` command on the PATH. Set by the app, never by the page.
     cli_offer_shown:    bool `json:"cli_offer_shown" default:"false"`
+    // Milestone 52 (D-106 (4), D-116): check for a newer Flint at launch and every hour.
+    update_check:       bool `json:"update_check" default:"true"`
+    // Milestone 52: the newer version whose toast was shown (once per version, D-116),
+    // and the version What's new last showed for (or the first that ran here). Set by
+    // the app, never by the page.
+    update_toast_version: str `json:"update_toast_version" default:""`
+    last_seen_version:  str  `json:"last_seen_version" default:""`
 }
 
 RDP_MAC_KEYS: []str = ["mac", "windows", "custom"]
@@ -72,7 +79,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false, update_check: true, update_toast_version: "", last_seen_version: "" }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {

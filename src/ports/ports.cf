@@ -490,3 +490,19 @@ type BlobStore interface {
     // "" clears it. The vault must be stored.
     mut blob_set_label(vault_id: str, label: str) -> void!
 }
+
+// The update feed (milestone 52, adapters/update over libcurl): one GET of a file of
+// the latest release (its manifest, the manifest's signature), with a deadline and a
+// size cap (Principle 8), sending nothing about this machine (Principle 15). HTTPS
+// only, redirects too (GitHub sends release files from another host); plain `http://`
+// only to localhost. Errors: `network`, `timeout`, `not_found` (no such file: no
+// release has one yet), `refused` (any other answer, or more than `max_bytes`).
+type UpdateFeed interface {
+    update_get(url: str, max_bytes: i64) -> []byte!
+}
+
+// The manifest's signature (milestone 52, adapters/crypto, libsodium): Ed25519,
+// detached, against `public_key` (32 bytes). Never a hand-rolled check (Principle 4).
+type UpdateVerifier interface {
+    update_verify(message: []byte, signature: []byte, public_key: []byte) -> bool
+}

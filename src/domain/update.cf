@@ -1,0 +1,469 @@
+package domain
+
+// The update notice (milestone 52, spec v13, D-106, D-111, D-116). Flint fetches a
+// signed manifest of the latest published release and says when it is newer than
+// itself. Everything here is pure: comparing versions, reading the manifest once its
+// signature verified, picking what this copy of Flint can do about a newer version
+// (Download, or How to update), and the changelog's sections What's new shows.
+
+// The release feed: `releases/latest/download/…` never names a draft or a
+// pre-release, so only a published release is ever offered.
+UPDATE_FEED_URL: str = "https://github.com/samaniegoluis/flint/releases/latest/download/manifest.json"
+// Where a manifest's links may point: this repository's releases, nowhere else.
+UPDATE_RELEASES_PREFIX: str = "https://github.com/samaniegoluis/flint/releases/"
+UPDATE_DOWNLOAD_PREFIX: str = "https://github.com/samaniegoluis/flint/releases/download/"
+// The Ed25519 public key (32 bytes, hex) the manifest's signature must verify against
+// (Principle 15). Its secret is FLINT_UPDATE_SIGNING_KEY in the workflow's `release`
+// environment and the owner's Infisical (/flint), never in this repository.
+UPDATE_PUBLIC_KEY_HEX: str = "81f64a7519190dca92da677e34c26bba996ad684cef43992b28bb52c110f041f"
+// The most a manifest or its signature may be.
+UPDATE_MANIFEST_MAX_BYTES: i64 = 65536
+// The automatic check: at launch, then every hour while Flint runs (D-116).
+UPDATE_CHECK_EVERY_MS: i64 = 3600000
+
+// The assets a release may carry, by system (spec v13).
+UPDATE_ASSET_MACOS: str = "macos-arm64"
+UPDATE_ASSET_WINDOWS: str = "windows-x86_64"
+UPDATE_ASSET_DEB: str = "linux-x86_64-deb"
+UPDATE_ASSET_RPM: str = "linux-x86_64-rpm"
+UPDATE_ASSET_KEYS: []str = ["macos-arm64", "windows-x86_64", "linux-x86_64-deb", "linux-x86_64-rpm"]
+
+// How this copy was installed: the package's `install-kind` file. `portable` (the
+// macOS .app, the Windows folder) can update itself; `package` (a .deb or an .rpm,
+// `package:deb` / `package:rpm`) is updated by the system's package manager; `source`
+// (no file: a build from source) is rebuilt by hand.
+INSTALL_PORTABLE: str = "portable"
+INSTALL_PACKAGE: str = "package"
+INSTALL_SOURCE: str = "source"
+
+// What the person can do about a newer version.
+UPDATE_ACTION_DOWNLOAD: str = "download"
+UPDATE_ACTION_HOW: str = "how"
+// Why How to update: a package manager's install, a build from source, a folder this
+// process cannot write, or a release with no package for this system.
+UPDATE_HOW_PACKAGE: str = "package"
+UPDATE_HOW_SOURCE: str = "source"
+UPDATE_HOW_READONLY: str = "readonly"
+UPDATE_HOW_NO_ASSET: str = "no_asset"
+
+// The page's states.
+UPDATE_IDLE: str = "idle"
+UPDATE_CHECKING: str = "checking"
+UPDATE_UP_TO_DATE: str = "up_to_date"
+UPDATE_AVAILABLE: str = "available"
+UPDATE_FAILED: str = "error"
+
+type UpdateAsset struct {
+    key:    str `json:"key"`
+    name:   str `json:"name"`
+    url:    str `json:"url"`
+    size:   i64 `json:"size"`
+    sha256: str `json:"sha256"`
+}
+
+// manifest.json, written and signed by scripts/sign-manifest.sh.
+type UpdateManifest struct {
+    version: str           `json:"version"`
+    date:    str           `json:"date"`
+    summary: str           `json:"summary"`
+    page:    str           `json:"page"`
+    assets:  []UpdateAsset `json:"assets"`
+}
+
+// This copy of Flint, as the update sees it.
+type UpdateHere struct {
+    version:  str
+    // os_name(): mac, linux, windows; and the CPU (arm64, x86_64).
+    os:       str
+    arch:     str
+    // The install-kind file's first line (INSTALL_*), `source` when there is none.
+    kind:     str
+    // Whether this process can replace its own folder (the .app, the Windows folder).
+    writable: bool
+}
+
+// What the page shows: the state of the last check and what it found.
+type UpdateStatus struct {
+    state:      str  `json:"state"`
+    current:    str  `json:"current"`
+    // When the last check ended (Unix ms; 0: never in this run).
+    checked_at: i64  `json:"checked_at"`
+    // The automatic check is on.
+    auto:       bool `json:"auto"`
+    version:    str  `json:"version"`
+    date:       str  `json:"date"`
+    summary:    str  `json:"summary"`
+    page:       str  `json:"page"`
+    // UPDATE_ACTION_*, and for `how` its reason (UPDATE_HOW_*).
+    action:     str  `json:"action"`
+    how:        str  `json:"how"`
+    // The package for this system (Download), when there is one.
+    asset_url:  str  `json:"asset_url"`
+    asset_size: i64  `json:"asset_size"`
+    // The toast is due: the first time this version is found (D-116).
+    toast:      bool `json:"toast"`
+    // The error's code and message when `state` is UPDATE_FAILED.
+    code:       str  `json:"code"`
+    message:    str  `json:"message"`
+}
+
+fn update_status_idle(current: str, auto: bool, checked_at: i64) -> UpdateStatus {
+    return UpdateStatus{ state: UPDATE_IDLE, current: current, checked_at: checked_at, auto: auto, version: "", date: "", summary: "", page: "", action: "", how: "", asset_url: "", asset_size: 0, toast: false, code: "", message: "" }
+}
+
+// Only a build from source may check another feed and key, its tests' local feed on
+// this machine (D-116): a package always checks UPDATE_FEED_URL against
+// UPDATE_PUBLIC_KEY_HEX (Principle 15).
+fn update_override_allowed(kind: str, feed_url: str) -> bool {
+    if kind != INSTALL_SOURCE {
+        return false
+    }
+    return feed_url.starts_with("http://127.0.0.1:") || feed_url.starts_with("http://localhost:")
+}
+
+// The pages the app opens in the browser (Download, How to update, the changelog):
+// Flint's repository and its site, over HTTPS.
+OPEN_URL_PREFIXES: []str = ["https://github.com/samaniegoluis/flint/", "https://flint-2xk.pages.dev/"]
+
+fn url_open_allowed(url: str) -> bool {
+    for p in OPEN_URL_PREFIXES {
+        if plain_url(url, p) {
+            return true
+        }
+    }
+    return false
+}
+
+// ---- Versions ----------------------------------------------------------------------
+
+// A version as Flint writes them: 0.16.0 (a release), 0.17.0-rc.1 (a pre-release),
+// 0.16.0-3-gabc1234 (three commits after 0.16.0, from git describe), with "-dirty"
+// for uncommitted changes and 0.0.0-dev with no tag. `ok` false for anything else.
+type FlintVersion struct {
+    ok:    bool
+    major: i64
+    minor: i64
+    patch: i64
+    // The pre-release's number (0: a release).
+    rc:    i64
+    // Commits after the tag (git describe).
+    ahead: i64
+}
+
+fn bad_version() -> FlintVersion {
+    return FlintVersion{ ok: false, major: 0, minor: 0, patch: 0, rc: 0, ahead: 0 }
+}
+
+fn digits(text: str) -> i64? {
+    if text.len() == 0 || text.len() > 9 {
+        return none
+    }
+    for i in 0..text.len() {
+        if text[i] < 48 || text[i] > 57 {
+            return none
+        }
+    }
+    // CFIRE-UPSTREAM: CF-172 (`or none` fails in clang)
+    return i64.parse(text) or { return none }
+}
+
+fn parse_flint_version(text: str) -> FlintVersion {
+    mut t := text.trim()
+    if t.starts_with("v") {
+        t = t[1..]
+    }
+    if t.ends_with("-dirty") {
+        t = t[0..t.len() - 6]
+    }
+    if t.ends_with("-dev") {
+        t = t[0..t.len() - 4]
+    }
+    parts := t.split("-")
+    nums := parts[0].split(".")
+    if nums.len() != 3 {
+        return bad_version()
+    }
+    major := digits(nums[0]) or { return bad_version() }
+    minor := digits(nums[1]) or { return bad_version() }
+    patch := digits(nums[2]) or { return bad_version() }
+    mut v := FlintVersion{ ok: true, major: major, minor: minor, patch: patch, rc: 0, ahead: 0 }
+    mut i: usize = 1
+    if i < parts.len() && parts[i].starts_with("rc.") {
+        v.rc = digits(parts[i][3..]) or { return bad_version() }
+        if v.rc == 0 {
+            return bad_version()
+        }
+        i += 1
+    }
+    if i + 2 == parts.len() && parts[i + 1].starts_with("g") {
+        v.ahead = digits(parts[i]) or { return bad_version() }
+        i += 2
+    }
+    if i != parts.len() {
+        return bad_version()
+    }
+    return v
+}
+
+// -1, 0 or 1 as `a` is older than, the same as or newer than `b`. A pre-release comes
+// before its release; a build after a tag comes after it.
+fn compare_flint_versions(a: FlintVersion, b: FlintVersion) -> i64 {
+    if a.major != b.major {
+        return if a.major < b.major { -1 } else { 1 }
+    }
+    if a.minor != b.minor {
+        return if a.minor < b.minor { -1 } else { 1 }
+    }
+    if a.patch != b.patch {
+        return if a.patch < b.patch { -1 } else { 1 }
+    }
+    if a.rc != b.rc {
+        if a.rc == 0 {
+            return 1
+        }
+        if b.rc == 0 {
+            return -1
+        }
+        return if a.rc < b.rc { -1 } else { 1 }
+    }
+    if a.ahead != b.ahead {
+        return if a.ahead < b.ahead { -1 } else { 1 }
+    }
+    return 0
+}
+
+// Whether `candidate` is newer than `current`: newer, not merely different (D-116),
+// so a build from source ahead of the latest release is never offered an older one.
+// Nothing that does not read as a version is newer.
+fn version_is_newer(candidate: str, current: str) -> bool {
+    c := parse_flint_version(candidate)
+    h := parse_flint_version(current)
+    if !c.ok {
+        return false
+    }
+    if !h.ok {
+        return true
+    }
+    return compare_flint_versions(c, h) > 0
+}
+
+// ---- The manifest -----------------------------------------------------------------
+
+fn is_hex64(text: str) -> bool {
+    if text.len() != 64 {
+        return false
+    }
+    for i in 0..text.len() {
+        c := text[i]
+        if !((c >= 48 && c <= 57) || (c >= 97 && c <= 102)) {
+            return false
+        }
+    }
+    return true
+}
+
+fn plain_url(url: str, prefix: str) -> bool {
+    if !url.starts_with(prefix) || url.len() == prefix.len() {
+        return false
+    }
+    rest := url[prefix.len()..]
+    return !rest.contains("..") && !rest.contains("?") && !rest.contains("#") && !rest.contains(" ") && !rest.contains("\\")
+}
+
+// Checks a manifest whose signature already verified: its version reads as a release
+// (never a pre-release), its page and every asset point into this repository's
+// releases, each asset has a known key, a size and a SHA-256.
+fn check_update_manifest(m: UpdateManifest) -> void! {
+    v := parse_flint_version(m.version)
+    if !v.ok || v.rc != 0 || v.ahead != 0 || m.version.contains("-") {
+        return error(coded(ERR_INVALID, "the update manifest names a version that is not a release ('{m.version}')"))
+    }
+    if !plain_url(m.page, UPDATE_RELEASES_PREFIX) {
+        return error(coded(ERR_INVALID, "the update manifest's page is not one of Flint's releases"))
+    }
+    for a in m.assets {
+        if !one_of(a.key, UPDATE_ASSET_KEYS) {
+            return error(coded(ERR_INVALID, "the update manifest names an unknown package ('{a.key}')"))
+        }
+        if !plain_url(a.url, UPDATE_DOWNLOAD_PREFIX) || a.name.len() == 0 || !a.url.ends_with("/" + a.name) {
+            return error(coded(ERR_INVALID, "the update manifest's {a.key} package is not one of Flint's releases"))
+        }
+        if a.size <= 0 || !is_hex64(a.sha256) {
+            return error(coded(ERR_INVALID, "the update manifest's {a.key} package has no size or SHA-256"))
+        }
+    }
+}
+
+// The asset this system takes (empty: none, as for an Intel Mac).
+fn update_asset_key(os: str, arch: str, kind: str) -> str {
+    if os == "mac" && arch == "arm64" {
+        return UPDATE_ASSET_MACOS
+    }
+    if os == "windows" && arch == "x86_64" {
+        return UPDATE_ASSET_WINDOWS
+    }
+    if os == "linux" && arch == "x86_64" {
+        if kind == "package:rpm" {
+            return UPDATE_ASSET_RPM
+        }
+        return UPDATE_ASSET_DEB
+    }
+    return ""
+}
+
+// The install-kind file's text as one of INSTALL_* (a package keeps its format).
+fn install_kind_of(text: str) -> str {
+    lines := text.trim().lines()
+    if lines.len() == 0 {
+        return INSTALL_SOURCE
+    }
+    k := "{lines[0].trim()}"
+    if k == INSTALL_PORTABLE || k == INSTALL_PACKAGE || k == "package:deb" || k == "package:rpm" {
+        return k
+    }
+    return INSTALL_SOURCE
+}
+
+// What a verified manifest means for this copy: up to date, or a newer version with
+// Download (a portable copy that can replace its folder, with a package for its
+// system) or How to update (anything else, and why).
+fn update_offer(m: UpdateManifest, here: UpdateHere, auto: bool, checked_at: i64) -> UpdateStatus {
+    mut s := update_status_idle(here.version, auto, checked_at)
+    if !version_is_newer(m.version, here.version) {
+        s.state = UPDATE_UP_TO_DATE
+        return s
+    }
+    s.state = UPDATE_AVAILABLE
+    s.version = m.version
+    s.date = m.date
+    s.summary = m.summary
+    s.page = m.page
+    key := update_asset_key(here.os, here.arch, here.kind)
+    for a in m.assets {
+        if key.len() > 0 && a.key == key {
+            s.asset_url = a.url
+            s.asset_size = a.size
+        }
+    }
+    s.action = UPDATE_ACTION_HOW
+    if here.kind.starts_with(INSTALL_PACKAGE) {
+        s.how = UPDATE_HOW_PACKAGE
+    } else if here.kind != INSTALL_PORTABLE {
+        s.how = UPDATE_HOW_SOURCE
+    } else if s.asset_url.len() == 0 {
+        s.how = UPDATE_HOW_NO_ASSET
+    } else if !here.writable {
+        s.how = UPDATE_HOW_READONLY
+    } else {
+        s.action = UPDATE_ACTION_DOWNLOAD
+    }
+    return s
+}
+
+// ---- What's new ---------------------------------------------------------------------
+
+// One line of a version's notes: "- **ui:** Toasts as one component".
+type ChangeItem struct {
+    scope: str `json:"scope"`
+    text:  str `json:"text"`
+}
+
+// A group of a version's notes: Added, Fixed, Faster.
+type ChangeGroup struct {
+    title: str          `json:"title"`
+    items: []ChangeItem `json:"items"`
+}
+
+// One version's section of CHANGELOG.md: "## 0.16.0 — 2026-11-20", a summary, groups.
+type ChangeVersion struct {
+    version: str           `json:"version"`
+    date:    str           `json:"date"`
+    summary: str           `json:"summary"`
+    groups:  []ChangeGroup `json:"groups"`
+}
+
+fn change_item(line: str) -> ChangeItem {
+    t := "{line.trim()[2..].trim()}"
+    if t.starts_with("**") {
+        rest := t[2..]
+        end := rest.index_of(":**") or {
+            return ChangeItem{ scope: "", text: t }
+        }
+        return ChangeItem{ scope: "{rest[0..end]}", text: "{rest[end + 3..].trim()}" }
+    }
+    return ChangeItem{ scope: "", text: t }
+}
+
+// Between a version and its date in a heading. CFIRE-UPSTREAM: CF-173 (a literal's
+// `.len()` fails in clang).
+CHANGELOG_DATE_SEP: str = " — "
+
+// The versions in CHANGELOG.md, newest first, as written by scripts/release.sh.
+fn parse_changelog(text: str) -> []ChangeVersion {
+    mut out: []ChangeVersion = []
+    mut on := false
+    mut cur := ChangeVersion{ version: "", date: "", summary: "", groups: [] }
+    for raw in text.lines() {
+        line := raw.trim_end()
+        if line.starts_with("## ") {
+            if on {
+                out.push(cur)
+            }
+            head := line[3..].trim()
+            mut version := head
+            mut date := ""
+            sep := head.index_of(CHANGELOG_DATE_SEP) or head.len()
+            if sep < head.len() {
+                version = head[0..sep].trim()
+                date = head[sep + CHANGELOG_DATE_SEP.len()..].trim()
+            }
+            cur = ChangeVersion{ version: version, date: date, summary: "", groups: [] }
+            on = parse_flint_version(version).ok
+            continue
+        }
+        if !on {
+            continue
+        }
+        if line.starts_with("### ") {
+            cur.groups.push(ChangeGroup{ title: line[4..].trim(), items: [] })
+            continue
+        }
+        if line.starts_with("- ") && cur.groups.len() > 0 {
+            n := cur.groups.len() - 1
+            cur.groups[n].items.push(change_item(line))
+            continue
+        }
+        if line.trim().len() > 0 && cur.groups.len() == 0 {
+            if cur.summary.len() > 0 {
+                cur.summary = cur.summary + " "
+            }
+            cur.summary = cur.summary + line.trim()
+        }
+    }
+    if on {
+        out.push(cur)
+    }
+    return out
+}
+
+// What's new after an update: every version newer than `last_seen` and not newer than
+// `current`, newest first. Nothing on the first launch (no `last_seen`) or when the
+// version did not move forward.
+fn whats_new_since(changes: []ChangeVersion, last_seen: str, current: str) -> []ChangeVersion {
+    mut out: []ChangeVersion = []
+    if last_seen.len() == 0 || !version_is_newer(current, last_seen) {
+        return out
+    }
+    here := parse_flint_version(current)
+    seen := parse_flint_version(last_seen)
+    if !here.ok || !seen.ok {
+        return out
+    }
+    for c in changes {
+        v := parse_flint_version(c.version)
+        if v.ok && compare_flint_versions(v, seen) > 0 && compare_flint_versions(v, here) <= 0 {
+            out.push(c)
+        }
+    }
+    return out
+}

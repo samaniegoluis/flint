@@ -1,0 +1,195 @@
+package application
+
+import "core:encoding/base64"
+import "core:json"
+import "../domain"
+
+// The feed: the manifest and its signature ("" for none), or an error code for every
+// request. A map in a struct field does not compile (its defaulted == fails in clang).
+type FakeUpdateFeed struct {
+    manifest: str
+    sig:      str
+    fail:     str
+}
+
+fn (self: FakeUpdateFeed) update_get(url: str, max_bytes: i64) -> []byte! {
+    if self.fail.len() > 0 {
+        return error(coded(self.fail, "the feed failed"))
+    }
+    mut body := self.manifest
+    if url.ends_with(".sig") {
+        body = self.sig
+    }
+    if body.len() == 0 {
+        return error(coded(ERR_NOT_FOUND, "no {url}"))
+    }
+    if i64(body.len()) > max_bytes {
+        return error(coded(ERR_REFUSED, "too big"))
+    }
+    mut out: []byte = []
+    for b in body.bytes() {
+        out.push(b)
+    }
+    return out
+}
+
+// Not Ed25519: a "signature" is the message's length and the key's first byte, padded
+// to 64 bytes; enough to tell a good signature, a changed message and another key.
+type FakeUpdateVerifier struct {}
+
+fn fake_sign(message: str, key0: u8) -> str {
+    mut sig := make([]byte, 64)
+    sig[0] = u8(message.len() % 256)
+    sig[1] = key0
+    return base64.encode(sig)
+}
+
+fn (self: FakeUpdateVerifier) update_verify(message: []byte, signature: []byte, public_key: []byte) -> bool {
+    return signature.len() == 64 && signature[0] == u8(message.len() % 256) && signature[1] == public_key[0]
+}
+
+UPDATE_TEST_URL: str = "https://example.test/manifest.json"
+
+fn update_key(b: u8) -> []byte {
+    mut k := make([]byte, 32)
+    k[0] = b
+    return k
+}
+
+fn manifest_json(version: str) -> str {
+    base := "https://github.com/samaniegoluis/flint/releases/download/v{version}/"
+    m := UpdateManifest{
+        version: version, date: "2026-11-21", summary: "New things.",
+        page: "https://github.com/samaniegoluis/flint/releases/tag/v{version}",
+        assets: [UpdateAsset{ key: UPDATE_ASSET_MACOS, name: "Flint-{version}-macos-arm64.zip", url: base + "Flint-{version}-macos-arm64.zip", size: 1000, sha256: "c".repeat(64) }],
+    }
+    return json.stringify(m)
+}
+
+fn signed_feed(body: str, key0: u8) -> FakeUpdateFeed {
+    return FakeUpdateFeed{ manifest: body, sig: fake_sign(body, key0) + "\n", fail: "" }
+}
+
+fn here_mac(version: str) -> UpdateHere {
+    return UpdateHere{ version: version, os: "mac", arch: "arm64", kind: INSTALL_PORTABLE, writable: true }
+}
+
+test "a newer version, verified, asks for the toast once" {
+    feed := signed_feed(manifest_json("0.17.0"), 7)
+    src := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: update_key(7) }
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    s := check_for_update(feed, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 42)
+    assert_eq(s.state, UPDATE_AVAILABLE)
+    assert_eq(s.version, "0.17.0")
+    assert_eq(s.action, UPDATE_ACTION_DOWNLOAD)
+    assert_eq(s.checked_at, 42)
+    assert(s.auto)
+    assert(s.toast)
+    assert_eq(settings.saved.update_toast_version, "0.17.0")
+    // The next hour's check finds the same version: no toast, still available.
+    again := check_for_update(feed, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 43)
+    assert_eq(again.state, UPDATE_AVAILABLE)
+    assert(!again.toast)
+}
+
+test "the same or an older version is up to date" {
+    src := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: update_key(7) }
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    same := check_for_update(signed_feed(manifest_json("0.16.0"), 7), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1)
+    assert_eq(same.state, UPDATE_UP_TO_DATE)
+    older := check_for_update(signed_feed(manifest_json("0.15.0"), 7), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1)
+    assert_eq(older.state, UPDATE_UP_TO_DATE)
+    assert(!older.toast)
+    assert_eq(settings.saved.update_toast_version, "")
+}
+
+test "a bad signature, another key or a changed manifest is not read" {
+    body := manifest_json("0.17.0")
+    src := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: update_key(7) }
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    // Signed with another key.
+    other := check_for_update(signed_feed(body, 9), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1)
+    assert_eq(other.state, UPDATE_FAILED)
+    assert_eq(other.code, ERR_INVALID)
+    assert(other.message.contains("did not pass verification"))
+    assert_eq(other.version, "")
+    // The manifest changed after it was signed.
+    mut changed := signed_feed(body, 7)
+    changed.manifest = body + " "
+    assert_eq(check_for_update(changed, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).state, UPDATE_FAILED)
+    // Not Base64, the wrong length, no signature at all.
+    mut garbled := signed_feed(body, 7)
+    garbled.sig = "%%%"
+    assert_eq(check_for_update(garbled, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, ERR_INVALID)
+    mut short := signed_feed(body, 7)
+    short.sig = base64.encode(make([]byte, 10))
+    assert_eq(check_for_update(short, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, ERR_INVALID)
+    unsigned := FakeUpdateFeed{ manifest: body, sig: "", fail: "" }
+    assert_eq(check_for_update(unsigned, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, ERR_NOT_FOUND)
+    // A build with no key verifies nothing.
+    nokey := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: [] }
+    assert_eq(check_for_update(signed_feed(body, 7), FakeUpdateVerifier{}, mut settings, nokey, here_mac("0.16.0"), 1).code, ERR_INTERNAL)
+    assert_eq(settings.saved.update_toast_version, "")
+}
+
+test "a signed manifest that breaks the rules is refused" {
+    src := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: update_key(7) }
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    bad := manifest_json("0.17.0").replace("https://github.com/samaniegoluis/flint/releases/tag/", "https://evil.example/")
+    assert_eq(check_for_update(signed_feed(bad, 7), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, ERR_INVALID)
+    junk := "not json"
+    assert_eq(check_for_update(signed_feed(junk, 7), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, ERR_INVALID)
+}
+
+test "a feed that cannot be reached says why" {
+    src := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: update_key(7) }
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut off := default_settings()
+    off.update_check = false
+    settings.saved = off
+    s := check_for_update(FakeUpdateFeed{ manifest: "", sig: "", fail: ERR_NETWORK }, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 9)
+    assert_eq(s.state, UPDATE_FAILED)
+    assert_eq(s.code, ERR_NETWORK)
+    assert(!s.auto)
+    assert_eq(s.checked_at, 9)
+}
+
+CHANGES: str = "# Changelog\n\n## 0.17.0 — 2026-11-21\n\nUpdates.\n\n### Added\n\n- **ui:** An update notice\n\n## 0.16.0 — 2026-11-20\n\nReleases.\n\n## 0.15.0 — 2026-11-20\n\nA package.\n"
+
+test "What's new once per version, nothing on the first launch" {
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    first := try whats_new_at_launch(mut settings, CHANGES, "0.15.0")
+    assert_eq(first.len(), 0)
+    assert_eq(settings.saved.last_seen_version, "0.15.0")
+    up := try whats_new_at_launch(mut settings, CHANGES, "0.17.0")
+    assert_eq(up.len(), 2)
+    assert_eq(up[0].version, "0.17.0")
+    assert_eq(up[0].groups[0].items[0].text, "An update notice")
+    assert_eq(settings.saved.last_seen_version, "0.17.0")
+    again := try whats_new_at_launch(mut settings, CHANGES, "0.17.0")
+    assert_eq(again.len(), 0)
+    // Going back to an older build does not lower what was seen.
+    _ = try whats_new_at_launch(mut settings, CHANGES, "0.16.0")
+    assert_eq(settings.saved.last_seen_version, "0.17.0")
+}
+
+test "What's new in this version" {
+    assert_eq(whats_new_here(CHANGES, "0.16.0")[0].version, "0.16.0")
+    assert_eq(whats_new_here(CHANGES, "0.17.0-3-gabc1234")[0].version, "0.17.0")
+    assert_eq(whats_new_here(CHANGES, "0.14.0").len(), 0)
+    assert_eq(whats_new_here("", "0.16.0").len(), 0)
+}
+
+test "the page keeps the app's update records" {
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut s := default_settings()
+    s.update_toast_version = "0.17.0"
+    s.last_seen_version = "0.17.0"
+    settings.saved = s
+    mut page := default_settings()
+    page.update_check = false
+    saved := try save_settings(mut settings, page)
+    assert(!saved.update_check)
+    assert_eq(saved.update_toast_version, "0.17.0")
+    assert_eq(saved.last_seen_version, "0.17.0")
+}

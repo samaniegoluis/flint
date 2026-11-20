@@ -123,6 +123,20 @@ fn (self: Sodium) equal(a: []byte, b: []byte) -> bool {
     return rc == 0
 }
 
+// The `UpdateVerifier` port (milestone 52, Principle 15): an Ed25519 detached
+// signature of `message` under `public_key`, through crypto_sign_verify_detached.
+fn (self: Sodium) update_verify(message: []byte, signature: []byte, public_key: []byte) -> bool {
+    if signature.len() != 64 || public_key.len() != 32 {
+        return false
+    }
+    mut rc: i32 = -1
+    // CFIRE-UPSTREAM: CF-006
+    cpp {
+        rc = crypto_sign_verify_detached(cfire::c_arg(signature.data()), cfire::c_arg(message.data()), message.size(), cfire::c_arg(public_key.data()));
+    }
+    return rc == 0
+}
+
 // Encrypts `plaintext` and returns nonce || ciphertext || tag.
 fn (self: Sodium) seal(key: []byte, plaintext: []byte, aad: []byte) -> []byte! {
     if key.len() != KEY_LEN {

@@ -3087,3 +3087,30 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   privileges` on macOS.
 - **Ideal:** `fs.lstat`, `fs.readlink`, `fs.symlink(target, path)` (on Windows, a directory
   junction or a symlink where Developer Mode allows it).
+
+### CF-172 · bug · `confirmed`: `or none` on a parse in a function returning `T?` fails in clang
+- **Repro (cfire `v0.12.2`, macOS, milestone 52):**
+  `fn digits(text: str) -> i64? { return i64.parse(text) or none }` passes `cfire check`
+  and fails in clang: "no matching conversion for static_cast from 'const cfire::None_t'
+  to 'V'".
+- **Workaround:** `digits` in `src/domain/update.cf` writes `or { return none }`. No
+  native code.
+- **Ideal:** `x or none` lowers to an empty optional when the function returns `T?`, or
+  `cfire check` refuses it.
+
+### CF-173 · bug · `confirmed`: `.len()` on a string literal fails in clang
+- **Repro (cfire `v0.12.2`, macOS, milestone 52):** `n := " — ".len()` passes `cfire check`
+  and fails in clang: "member reference base type 'const char[6]' is not a structure or
+  union" (the literal lowers to a C array, `" — ".size()`).
+- **Workaround:** `parse_changelog` in `src/domain/update.cf` keeps the separator in a
+  named `str` constant. No native code.
+- **Ideal:** a method on a string literal lowers on a `std::string_view` (`" — "sv.size()`).
+
+### CF-174 · gap · `confirmed`: no way to ask the running program's CPU
+- **Seen (milestone 52):** the update check picks the package for this system
+  (`macos-arm64`, `windows-x86_64`, …). `core:build`'s `arch()` exists only in `build.cf`;
+  a program has no `os.arch()` (nor `os.name()`, CF-031's `os_name` shim).
+- **Workaround:** `cpu_arch` in `src/adapters/process/process.cf`, a `cpp` block testing
+  `__aarch64__` / `_M_ARM64` and `__x86_64__` / `_M_X64`.
+- **Ideal:** `os.arch()` and `os.name()` in `core:os`, the values `core:build` already
+  uses.

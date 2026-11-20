@@ -1,0 +1,165 @@
+package domain
+
+fn test_manifest(version: str) -> UpdateManifest {
+    base := "https://github.com/samaniegoluis/flint/releases/download/v{version}/"
+    return UpdateManifest{
+        version: version, date: "2026-11-21", summary: "Flint tells you when a new version is out.",
+        page: "https://github.com/samaniegoluis/flint/releases/tag/v{version}",
+        assets: [
+            UpdateAsset{ key: UPDATE_ASSET_MACOS, name: "Flint-{version}-macos-arm64.zip", url: base + "Flint-{version}-macos-arm64.zip", size: 25000000, sha256: "a".repeat(64) },
+            UpdateAsset{ key: UPDATE_ASSET_DEB, name: "flint_{version}_amd64.deb", url: base + "flint_{version}_amd64.deb", size: 20000000, sha256: "b".repeat(64) },
+        ],
+    }
+}
+
+fn mac_here(version: str, kind: str, writable: bool) -> UpdateHere {
+    return UpdateHere{ version: version, os: "mac", arch: "arm64", kind: kind, writable: writable }
+}
+
+test "versions read as Flint writes them" {
+    v := parse_flint_version("0.16.0")
+    assert(v.ok)
+    assert_eq(v.minor, 16)
+    assert_eq(parse_flint_version("v0.17.0-rc.2").rc, 2)
+    assert_eq(parse_flint_version("0.16.0-3-gabc1234").ahead, 3)
+    assert_eq(parse_flint_version("0.16.0-3-gabc1234-dirty").ahead, 3)
+    assert_eq(parse_flint_version("0.15.1-rc.3-2-g97fc049").ahead, 2)
+    assert(parse_flint_version("0.0.0-dev").ok)
+    assert(!parse_flint_version("").ok)
+    assert(!parse_flint_version("1.2").ok)
+    assert(!parse_flint_version("1.2.x").ok)
+    assert(!parse_flint_version("1.2.3-beta").ok)
+    assert(!parse_flint_version("1.2.3-rc.0").ok)
+}
+
+test "newer, never merely different" {
+    assert(version_is_newer("0.17.0", "0.16.0"))
+    assert(version_is_newer("0.16.1", "0.16.0"))
+    assert(version_is_newer("1.0.0", "0.99.99"))
+    assert(version_is_newer("0.17.0", "0.17.0-rc.3"))
+    assert(version_is_newer("0.17.0", "0.16.0-12-gabc1234"))
+    assert(version_is_newer("0.17.0", "0.0.0-dev"))
+    assert(!version_is_newer("0.16.0", "0.16.0"))
+    // A build from source after the latest release is not offered that release.
+    assert(!version_is_newer("0.16.0", "0.16.0-3-gabc1234"))
+    assert(!version_is_newer("0.15.0", "0.16.0"))
+    assert(version_is_newer("0.10.0", "0.9.0"))
+    assert(!version_is_newer("garbage", "0.16.0"))
+    assert(version_is_newer("0.16.0", "garbage"))
+}
+
+fn manifest_refused(m: UpdateManifest) -> bool {
+    mut r := ""
+    check_update_manifest(m) or err { r = "{err.message()}" }
+    return error_code_of(r) == ERR_INVALID
+}
+
+test "a manifest names only this repository's releases" {
+    try check_update_manifest(test_manifest("0.17.0"))
+    mut m := test_manifest("0.17.0-rc.1")
+    assert(manifest_refused(m))
+    m = test_manifest("0.17.0")
+    m.page = "https://evil.example/flint"
+    assert(manifest_refused(m))
+    m = test_manifest("0.17.0")
+    m.assets[0].url = "https://github.com/samaniegoluis/flint/releases/download/../../other/x.zip"
+    assert(manifest_refused(m))
+    m = test_manifest("0.17.0")
+    m.assets[0].url = "http://github.com/samaniegoluis/flint/releases/download/v0.17.0/Flint-0.17.0-macos-arm64.zip"
+    assert(manifest_refused(m))
+    m = test_manifest("0.17.0")
+    m.assets[0].sha256 = "xyz"
+    assert(manifest_refused(m))
+    m = test_manifest("0.17.0")
+    m.assets[0].key = "macos-x86_64"
+    assert(manifest_refused(m))
+    m = test_manifest("0.17.0")
+    m.assets[0].name = "other.zip"
+    assert(manifest_refused(m))
+}
+
+test "the package each system takes" {
+    assert_eq(update_asset_key("mac", "arm64", INSTALL_PORTABLE), UPDATE_ASSET_MACOS)
+    assert_eq(update_asset_key("mac", "x86_64", INSTALL_PORTABLE), "")
+    assert_eq(update_asset_key("windows", "x86_64", INSTALL_PORTABLE), UPDATE_ASSET_WINDOWS)
+    assert_eq(update_asset_key("linux", "x86_64", "package:deb"), UPDATE_ASSET_DEB)
+    assert_eq(update_asset_key("linux", "x86_64", "package:rpm"), UPDATE_ASSET_RPM)
+    assert_eq(update_asset_key("linux", "arm64", "package:deb"), "")
+}
+
+test "the install-kind file" {
+    assert_eq(install_kind_of("portable\n"), INSTALL_PORTABLE)
+    assert_eq(install_kind_of("package:rpm"), "package:rpm")
+    assert_eq(install_kind_of(""), INSTALL_SOURCE)
+    assert_eq(install_kind_of("something"), INSTALL_SOURCE)
+}
+
+test "Download for a portable copy, How to update for anything else" {
+    m := test_manifest("0.17.0")
+    s := update_offer(m, mac_here("0.16.0", INSTALL_PORTABLE, true), true, 5)
+    assert_eq(s.state, UPDATE_AVAILABLE)
+    assert_eq(s.version, "0.17.0")
+    assert_eq(s.action, UPDATE_ACTION_DOWNLOAD)
+    assert(s.asset_url.ends_with("Flint-0.17.0-macos-arm64.zip"))
+    assert_eq(s.checked_at, 5)
+    assert_eq(update_offer(m, mac_here("0.16.0", INSTALL_PORTABLE, false), true, 0).how, UPDATE_HOW_READONLY)
+    assert_eq(update_offer(m, mac_here("0.16.0", INSTALL_SOURCE, true), true, 0).how, UPDATE_HOW_SOURCE)
+    deb := UpdateHere{ version: "0.16.0", os: "linux", arch: "x86_64", kind: "package:deb", writable: false }
+    d := update_offer(m, deb, true, 0)
+    assert_eq(d.action, UPDATE_ACTION_HOW)
+    assert_eq(d.how, UPDATE_HOW_PACKAGE)
+    assert(d.asset_url.ends_with("_amd64.deb"))
+    win := UpdateHere{ version: "0.16.0", os: "windows", arch: "x86_64", kind: INSTALL_PORTABLE, writable: true }
+    assert_eq(update_offer(m, win, true, 0).how, UPDATE_HOW_NO_ASSET)
+    assert_eq(update_offer(m, mac_here("0.17.0", INSTALL_PORTABLE, true), true, 0).state, UPDATE_UP_TO_DATE)
+    assert_eq(update_offer(m, mac_here("0.17.0-2-gabc1234", INSTALL_PORTABLE, true), true, 0).state, UPDATE_UP_TO_DATE)
+}
+
+CHANGELOG_SAMPLE: str = "# Changelog\n\nWhat changed.\n\n## 0.16.0 — 2026-11-20\n\nBuilt on GitHub. Also fixed:\na lost FreeRDP.\n\n### Added\n\n- **release:** A workflow\n\n### Fixed\n\n- **release:** The script names a library\n- A fix with no scope\n\n\n## 0.15.0 — 2026-11-20\n\nA portable app.\n\n### Added\n\n- **macos:** A portable Flint.app\n\n## 0.14.0 — 2026-11-19\n\nToasts.\n"
+
+test "CHANGELOG.md's sections" {
+    c := parse_changelog(CHANGELOG_SAMPLE)
+    assert_eq(c.len(), 3)
+    assert_eq(c[0].version, "0.16.0")
+    assert_eq(c[0].date, "2026-11-20")
+    assert_eq(c[0].summary, "Built on GitHub. Also fixed: a lost FreeRDP.")
+    assert_eq(c[0].groups.len(), 2)
+    assert_eq(c[0].groups[1].title, "Fixed")
+    assert_eq(c[0].groups[1].items[0].scope, "release")
+    assert_eq(c[0].groups[1].items[0].text, "The script names a library")
+    assert_eq(c[0].groups[1].items[1].scope, "")
+    assert_eq(c[0].groups[1].items[1].text, "A fix with no scope")
+    assert_eq(c[2].groups.len(), 0)
+}
+
+test "What's new shows the versions since the last one seen" {
+    c := parse_changelog(CHANGELOG_SAMPLE)
+    assert_eq(whats_new_since(c, "", "0.16.0").len(), 0)
+    assert_eq(whats_new_since(c, "0.16.0", "0.16.0").len(), 0)
+    assert_eq(whats_new_since(c, "0.16.0", "0.15.0").len(), 0)
+    one := whats_new_since(c, "0.15.0", "0.16.0")
+    assert_eq(one.len(), 1)
+    assert_eq(one[0].version, "0.16.0")
+    two := whats_new_since(c, "0.14.0", "0.16.0-2-gabc1234")
+    assert_eq(two.len(), 2)
+    assert_eq(two[1].version, "0.15.0")
+    assert_eq(whats_new_since(c, "0.16.0", "0.16.0-2-gabc1234").len(), 0)
+}
+
+test "only a build from source checks a local feed" {
+    assert(update_override_allowed(INSTALL_SOURCE, "http://127.0.0.1:8123/manifest.json"))
+    assert(update_override_allowed(INSTALL_SOURCE, "http://localhost:8123/manifest.json"))
+    assert(!update_override_allowed(INSTALL_PORTABLE, "http://127.0.0.1:8123/manifest.json"))
+    assert(!update_override_allowed("package:deb", "http://127.0.0.1:8123/manifest.json"))
+    assert(!update_override_allowed(INSTALL_SOURCE, "https://evil.example/manifest.json"))
+    assert(!update_override_allowed(INSTALL_SOURCE, "http://localhost.evil.example/manifest.json"))
+}
+
+test "the browser opens Flint's own pages only" {
+    assert(url_open_allowed("https://github.com/samaniegoluis/flint/releases/tag/v0.17.0"))
+    assert(url_open_allowed("https://flint-2xk.pages.dev/guides/updates/"))
+    assert(!url_open_allowed("https://github.com/samaniegoluis/flint-evil/x"))
+    assert(!url_open_allowed("http://github.com/samaniegoluis/flint/releases"))
+    assert(!url_open_allowed("file:///etc/passwd"))
+    assert(!url_open_allowed("https://github.com/samaniegoluis/flint/"))
+}

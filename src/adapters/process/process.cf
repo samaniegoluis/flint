@@ -7,6 +7,7 @@ package process
 // CFIRE-UPSTREAM: CF-024, CF-031
 import cpp "flint_process.hpp"
 
+import "core:fs"
 import "core:os"
 import "core:time"
 import "../../domain"
@@ -374,4 +375,51 @@ fn (mut self: StderrTransferSink) transfer_progress(p: TransferProgress) {
 
 fn (self: StderrTransferSink) transfer_cancelled() -> bool {
     return false
+}
+
+// This build's CPU: arm64 or x86_64 (milestone 52: the update's package for this
+// system).
+fn cpu_arch() -> str {
+    mut name := "other"
+    // CFIRE-UPSTREAM: CF-174
+    cpp {
+        #if defined(__aarch64__) || defined(_M_ARM64)
+        name = "arm64";
+        #elif defined(__x86_64__) || defined(_M_X64)
+        name = "x86_64";
+        #endif
+    }
+    return name
+}
+
+// Opens `url` in the system's browser (milestone 52). The caller checks the URL
+// first (domain's url_open_allowed); it goes as one argument, never through a shell.
+fn open_in_browser(url: str) -> void! {
+    mut cmd := "xdg-open"
+    mut args: []str = [url]
+    if os_name() == "mac" {
+        cmd = "open"
+    } else if os_name() == "windows" {
+        cmd = "rundll32"
+        args = ["url.dll,FileProtocolHandler", url]
+    }
+    r := os.command(cmd, args) or err {
+        return error(coded(ERR_IO, "could not open the browser: {err.message()}"))
+    }
+    if r.exit_code != 0 {
+        return error(coded(ERR_IO, "could not open the browser ({cmd} exited {r.exit_code})"))
+    }
+}
+
+// Whether this process can create and remove a file in `dir` (milestone 52: an app
+// that can replace its own folder). Tries it: the one check that means the same on
+// every system.
+fn folder_writable(dir: str) -> bool {
+    probe := dir + "/.flint-write-probe"
+    mut f := fs.create_new(probe) or {
+        return false
+    }
+    f.close()
+    fs.remove(probe) or {}
+    return true
 }

@@ -164,3 +164,25 @@ test "equal compares in constant time and by length" {
     assert(!c.equal(a, b))
     assert(!c.equal(a, c.random_bytes(16)))
 }
+
+// RFC 8032, section 7.1, tests 1 and 2 (milestone 52, the update manifest's signature).
+test "Ed25519 signatures verify as RFC 8032 says, and nothing else does" {
+    s := try new_sodium()
+    pk1 := try hex.decode("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+    sig1 := try hex.decode("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b")
+    empty: []byte = []
+    assert(s.update_verify(empty, sig1, pk1))
+    pk2 := try hex.decode("3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c")
+    sig2 := try hex.decode("92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00")
+    msg2 := try hex.decode("72")
+    assert(s.update_verify(msg2, sig2, pk2))
+    // Another key, another message, a changed signature, the wrong lengths.
+    assert(!s.update_verify(msg2, sig2, pk1))
+    other := try hex.decode("73")
+    assert(!s.update_verify(other, sig2, pk2))
+    mut bent := sig2
+    bent[0] = bent[0] ^ 1
+    assert(!s.update_verify(msg2, bent, pk2))
+    assert(!s.update_verify(msg2, sig2[0..63], pk2))
+    assert(!s.update_verify(msg2, sig2, pk2[0..31]))
+}
