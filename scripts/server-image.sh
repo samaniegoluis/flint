@@ -23,6 +23,6 @@ if [[ $push -eq 1 ]]; then
   fi
   docker buildx build --platform linux/amd64,linux/arm64 --push "${args[@]}" "$root"
 else
-  docker build "${args[@]}" "$root"
+  docker build --load "${args[@]}" "$root"
 fi
 echo "server-image: $repo:$version"

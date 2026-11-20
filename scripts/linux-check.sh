@@ -24,7 +24,9 @@ image="flint-linux-check"
 
 # The container has no Node: the page is built here and copied in with the tree.
 (cd "$root/ui" && { [[ -d node_modules ]] || npm ci --no-audit --no-fund; } && npm run build)
-docker build -t "$image" -f "$root/scripts/linux/Dockerfile" "$root/scripts/linux"
+# --load: a buildx builder on the docker-container driver would keep the image in its
+# cache, and the run below would not find it.
+docker build --load -t "$image" -f "$root/scripts/linux/Dockerfile" "$root/scripts/linux"
 # The RDP adapter's live tests run when the test host is given (milestone 28):
 #   sec with FLINT_RDP_TEST_HOST FLINT_RDP_TEST_USER FLINT_RDP_TEST_PASSWORD -- scripts/linux-check.sh
 # The RDP adapter's quiet-network test drops packets with iptables (milestone 31):
