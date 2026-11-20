@@ -4,6 +4,15 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.15.0 — 2026-11-20
+
+Flint for macOS now comes as one portable app. Flint.app carries its own copies of the libraries it needs, so it opens on any Mac with Apple silicon and macOS 13.3 or later, with nothing else installed, and the flint command is inside it: the app offers once to put it on your PATH, and Settings > About > Command line installs, repoints or removes it. Packages are built with scripts/package.sh macos and are not code-signed yet.
+
+### Added
+
+- **macos:** A portable Flint.app with the flint command inside
+
+
 ## 0.14.0 — 2026-11-19
 
 Every message the app gives now comes through one toast that waits for you: up to three stack in the corner you choose (Settings → Appearance → Notifications, bottom right by default), each with a ✕, pausing while you point at them; errors stay 30 seconds and a toast with a button 15, and a message that comes again replaces its toast instead of piling up. Test connection's result shows in a toast too, pasting an image says when it is done, and F6 reaches the toasts from the keyboard. Also fixed: a short sudo password could keep `flint exec --sudo` from recognising its own prompt.
