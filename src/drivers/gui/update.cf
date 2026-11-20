@@ -181,16 +181,18 @@ fn with_staged(s: UpdateStatus, staged: str, mut files: OsUpdateFiles, root: str
     return (out, staged)
 }
 
-// While a package downloads, its bytes so far go to the page.
+// The package's bytes so far go to the page whenever they change: a download shorter
+// than a tick still reports its last count (100 %) before the check and the unpacking,
+// which take seconds.
 fn run_update_progress(st: GuiState, mut app: webui.App) {
-    mut was := false
+    mut sent: i64 = -1
     for !st.holder.quitting() {
         time.sleep_ms(UPDATE_PROGRESS_MS)
-        on := update_download_active()
-        if on || was {
-            app.emit("update:progress", UpdateProgress{ received: update_download_received() })
+        got := update_download_received()
+        if got != sent {
+            app.emit("update:progress", UpdateProgress{ received: got })
+            sent = got
         }
-        was = on
     }
 }
 

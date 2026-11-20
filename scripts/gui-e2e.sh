@@ -329,7 +329,27 @@ json.dump({"version": "99.0.0", "date": "2026-12-01", "summary": "A newer Flint 
 PY
     FLINT_UPDATE_PUBLIC_KEY_HEX="$pub" FLINT_UPDATE_SIGNING_KEY="$(cat "$base/key/flint-update-signing.key")" \
       "$root/scripts/sign-manifest.sh" sign "$w/feed/manifest.json" >/dev/null
-    (cd "$w/feed" && exec python3 -I -m http.server "$fport" --bind 127.0.0.1 >"$w/feed.log" 2>&1) & fpid=$!
+    # The package goes out slowly (a slice every 0.1 s, about 3 s in all), as from a
+    # real server, so the page sees the percentage move; the log is http.server's.
+    cat > "$w/slowfeed.py" <<'PY'
+import functools, http.server, os, sys, time
+class Slow(http.server.SimpleHTTPRequestHandler):
+    def copyfile(self, src, dst):
+        if not self.path.endswith(".zip"):
+            return super().copyfile(src, dst)
+        size = os.fstat(src.fileno()).st_size
+        step = max(1, size // 30)
+        while True:
+            part = src.read(step)
+            if not part:
+                break
+            dst.write(part)
+            dst.flush()
+            time.sleep(0.1)
+port, root = int(sys.argv[1]), sys.argv[2]
+http.server.ThreadingHTTPServer(("127.0.0.1", port), functools.partial(Slow, directory=root)).serve_forever()
+PY
+    python3 -I "$w/slowfeed.py" "$fport" "$w/feed" >"$w/feed.log" 2>&1 & fpid=$!
     for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$fport") 2>/dev/null && break; sleep 0.1; done
     local run=("$inst/$exe")
     [[ -z "$xdisp" ]] || run=(env DISPLAY="$xdisp" timeout 300 "$inst/$exe")
@@ -338,6 +358,7 @@ PY
       FLINT_CONFIG_DIR="$w/config" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$inst/$res/e2e.js" FLINT_GUI_E2E_VISIBLE="$visible" \
       FLINT_UPDATE_APP_LOG="$w/app2.log" TMPDIR="$w/t" "${run[@]}" >"$w/app1.log" 2>&1 || true
     cat "$w/app1.log" >> "$log"
+    grep -E "the page heard the download move|the toast's percentage moved" "$w/app1.log" | sed 's/^\[page\] /  /' || true
     local fail=""
     if [[ "$scenario" == badsha ]]; then
       grep -q 'selfupdate: discarded' "$w/app1.log" && grep -q '^e2e: pass' "$w/app1.log" || fail="the bad download was not discarded as the page saw it"

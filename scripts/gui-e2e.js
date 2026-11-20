@@ -243,10 +243,17 @@
       await click('button[type="submit"]', 'Create vault');
       await waitFor(() => hasText('Add your first host'), 'the empty vault page', 30000);
       await setStep('download');
+      // The run's feed sends the package in slices over ~3 s (scripts/gui-e2e.sh): the
+      // page must see it move, not only 0 % and then Ready.
+      const heard = new Set();
+      let mostReceived = 0;
+      const percents = new Set();
+      window.runtime.EventsOn('update:progress', (p) => { heard.add(p.received); mostReceived = Math.max(mostReceived, p.received); });
       const avail = await waitFor(() => updToast('Flint 99.0.0 is available'), 'the update toast', 30000);
       const dl = byText('button', 'Download', avail);
       await check(!!dl, 'the toast offers Download');
       dl.click();
+      const watch = setInterval(() => { const pct = updToast('Downloading Flint 99.0.0')?.querySelector('.t-prog')?.textContent.match(/^(\d+)%$/); if (pct) percents.add(Number(pct[1])); }, 50);
       const outcome = await waitFor(() => updToast('Flint 99.0.0 is ready') || updToast("Flint 99.0.0 didn't pass verification"), 'the download to end', 60000);
       if ((outcome.querySelector('.t-text')?.textContent || '').includes("didn't pass verification")) {
         await setStep('discarded');
@@ -264,6 +271,12 @@
       await check(!!rl && rl.classList.contains('btn-primary'), 'the Ready toast offers Relaunch, in the accent colour (24c3)');
       const st = await status();
       await check(st.state === 'ready' && st.version === '99.0.0', 'the core says it is ready');
+      clearInterval(watch);
+      await waitFor(() => mostReceived === st.asset_size, `the page to hear the whole download (${mostReceived} of ${st.asset_size} bytes)`, 2000);
+      const between = [...heard].filter((n) => n > 0 && n < st.asset_size).length;
+      await check(between >= 3, `the page heard the download move (${between} counts between 0 and ${st.asset_size})`);
+      const shown = [...percents].filter((n) => n > 0 && n < 100);
+      await check(shown.length >= 2, `the toast's percentage moved (${[...percents].sort((a, b) => a - b).join(', ')} %)`);
       await log(`${passed} checks passed`);
       await log('selfupdate: relaunching');
       // Nothing is open, so Relaunch goes straight through (24d1 is for open work): the

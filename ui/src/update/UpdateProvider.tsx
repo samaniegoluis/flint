@@ -95,6 +95,9 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   // Every outcome of the core's loop; the toast when the core says it is due.
   useEffect(() => on<UpdateStatus>('update:status', (st) => {
     const before = statusRef.current;
+    // Two outcomes can arrive before a render (a download that fails at once): the next
+    // one must see this one, not the state of the last render.
+    statusRef.current = st;
     setStatus(st);
     setNow(Date.now());
     if (st.outcome) {
