@@ -4,6 +4,15 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.19.0 — 2026-11-20
+
+Flint for Linux: a .deb for Ubuntu 24.04 and later, Debian 13 and Zorin OS 18, and an .rpm for Fedora 43 and later, each installing the desktop app and the flint command together, with its menu entry, icon and polkit policy. Your package manager updates them; Flint tells you when a new version is out.
+
+### Added
+
+- **release:** Linux .deb and .rpm packages
+
+
 ## 0.18.2 — 2026-11-20
 
 A small fix release. When you check for updates from the version's panel or from Settings → About, the news of a new version shows there with its button, and no notification comes up on top of it.
