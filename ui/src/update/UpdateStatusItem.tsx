@@ -7,13 +7,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../state/app';
 import { updateActionLabel, updateBarLabel, updateDownloading, updatePending, updatePopoverDetail, updateReady, updateStateLine } from '../lib/update';
-import { useUpdate } from './UpdateProvider';
+import { useUpdate, useUpdateOnScreen } from './UpdateProvider';
 
 export function UpdateStatusItem() {
   const { info } = useApp();
   const up = useUpdate();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
+  useUpdateOnScreen(open);
 
   useEffect(() => {
     if (!open) return;

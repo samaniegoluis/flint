@@ -23,7 +23,7 @@ import { useSync } from '../sync/SyncProvider';
 import { ConnectServerModal } from '../sync/ConnectServerModal';
 import { ReplaceTokenModal } from '../sync/ReplaceTokenModal';
 import { agoLabel, SYNC_LABEL } from '../lib/sync';
-import { useUpdate } from '../update/UpdateProvider';
+import { useUpdate, useUpdateOnScreen } from '../update/UpdateProvider';
 import { updateActionLabel, updateAvailable, updateDownloadFailure, updateDownloading, updateHowText, updatePercent, updateReady, updateStateLine } from '../lib/update';
 
 export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'about';
@@ -300,6 +300,7 @@ function About() {
 // was discarded.
 function Updates() {
   const up = useUpdate();
+  useUpdateOnScreen();
   const [settings, save] = useSetting();
   const st = up.status;
   const downloading = updateDownloading(st);

@@ -398,6 +398,33 @@
       await sleep(300);
       await check(!upToast(), 'the toast does not come back for the same version (D-116)');
 
+      // D-119: no toast over a surface that already says it (the owner's check of 53: the
+      // toast covered the popover after its Check now). The core's status for a version
+      // not toasted yet goes in through webui's own event entry, so the step does not
+      // hang on the feed's timing.
+      await setStep('no toast over the popover or About');
+      const fresh = (v) => window.__cfire_event_dispatch('update:status', { ...got, version: v, toast: true });
+      const toastFor = (v) => qa('[data-toast]').find((el) => !el.classList.contains('leaving') && el.querySelector('.t-text')?.textContent === `Flint ${v} is available`);
+      fresh('99.0.1');
+      await sleep(400);
+      await check(!toastFor('99.0.1'), "a new version found with About open: About says it, no toast");
+      await click('.nav-i', 'Appearance');
+      q('[data-sb-version]').click();
+      await waitFor(() => q('[data-update-pop]'), "the version's popover");
+      fresh('99.0.2');
+      await sleep(400);
+      await check(!toastFor('99.0.2'), 'a new version found with the popover open: no toast over it');
+      await check(!!q('[data-sb-update]'), 'Update stays in the status bar');
+      q('[data-sb-version]').click();
+      await waitFor(() => !q('[data-update-pop]'), 'the popover closed');
+      fresh('99.0.3');
+      const shown = await waitFor(() => toastFor('99.0.3'), 'the toast with nothing else saying it', 5000);
+      shown.querySelector('[data-toast-close], .t-x').click();
+      await waitFor(() => !toastFor('99.0.3'), 'the toast closed');
+      window.__cfire_event_dispatch('update:status', got);
+      await openAbout();
+      await waitFor(() => q('[data-about-update="available"]'), "About's Updates block again");
+
       await setStep('the automatic check off');
       const toggle = await waitFor(() => byText('label', 'Check for updates automatically')?.querySelector('[role="switch"]'), 'the automatic check toggle');
       await check(toggle.getAttribute('aria-checked') === 'true', 'the automatic check is on by default');

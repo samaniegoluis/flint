@@ -6,7 +6,8 @@
 // per version after an update, and on demand. Milestone 53 (24c2-24c4, 24d1, D-111):
 // Download inside Flint, its progress in the toast and the status bar (✕ only hides
 // the toast), a sticky Ready toast with Relaunch, 24d1 when sessions or tunnels are
-// open, and why the last update was not applied, once.
+// open, and why the last update was not applied, once. The toast that a version is
+// out stays away while the popover or About's Updates block is on screen (D-119).
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, on } from '../api/backend';
@@ -32,6 +33,9 @@ interface UpdateApi {
   /** The shell's way to Settings → About; unset while the vault is locked. */
   setAboutOpener: (fn: (() => void) | null) => void;
   openAbout: () => void;
+  /** A surface that shows the update's state and its button (the version's popover,
+   *  About's Updates block) is on screen until the returned function runs. */
+  onScreen: () => () => void;
 }
 
 const Ctx = createContext<UpdateApi | null>(null);
@@ -40,6 +44,12 @@ export function useUpdate(): UpdateApi {
   const v = useContext(Ctx);
   if (!v) throw new Error('useUpdate outside UpdateProvider');
   return v;
+}
+
+/** While `active`, this component shows the update's news itself: no toast over it. */
+export function useUpdateOnScreen(active = true) {
+  const { onScreen } = useUpdate();
+  useEffect(() => (active ? onScreen() : undefined), [active, onScreen]);
 }
 
 export function UpdateProvider({ children }: { children: ReactNode }) {
@@ -51,6 +61,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const [whatsNew, setWhatsNew] = useState<{ versions: ChangeVersion[]; since: string; current: string } | null>(null);
   const [launchNews, setLaunchNews] = useState<{ versions: ChangeVersion[]; since: string; current: string } | null>(null);
   const aboutOpener = useRef<(() => void) | null>(null);
+  const surfaces = useRef(0);
   const statusRef = useRef<UpdateStatus | null>(null);
   statusRef.current = status;
 
@@ -129,6 +140,9 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       // The core asks for the toast until it hears it was shown (a page that loads
       // after the check still gets it, once).
       api.updateHint('toast_shown').catch(() => {});
+      // The popover or About's Updates block already says it, with its button: a toast
+      // would repeat it (over the popover). Seen there, so it does not come later either.
+      if (surfaces.current > 0) return;
       notify({
         text: updateToastText(st), kind: 'info', key: UPDATE_TOAST_KEY, duration: 'sticky',
         actions: [{ label: updateActionLabel(st), primary: true, run: () => act() }],
@@ -160,10 +174,14 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const showWhatsNew = useCallback(() => {
     api.whatsNew(false).then((w) => setWhatsNew({ versions: w.versions, since: '', current: w.current })).catch(fail);
   }, [fail]);
+  const onScreen = useCallback(() => {
+    surfaces.current++;
+    return () => { surfaces.current--; };
+  }, []);
   const setAboutOpener = useCallback((fn: (() => void) | null) => { aboutOpener.current = fn; }, []);
 
-  const value = useMemo<UpdateApi>(() => ({ status, received, now, checkNow, act, showWhatsNew, setAboutOpener, openAbout }),
-    [status, received, now, checkNow, act, showWhatsNew, setAboutOpener, openAbout]);
+  const value = useMemo<UpdateApi>(() => ({ status, received, now, checkNow, act, showWhatsNew, setAboutOpener, openAbout, onScreen }),
+    [status, received, now, checkNow, act, showWhatsNew, setAboutOpener, openAbout, onScreen]);
   return (
     <Ctx.Provider value={value}>
       {children}

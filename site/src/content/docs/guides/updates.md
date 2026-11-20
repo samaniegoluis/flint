@@ -21,6 +21,8 @@ updates** in the command palette (<kbd>⌘K</kbd>).
 
 - **A notification**: *Flint 0.18.0 is available*, with **Download** (or **How to
   update**, below). It shows once per version; closing it does not lose the update.
+  When the version's panel or **Settings → About** is open, it already says so with its
+  own button, so no notification comes on top of it.
 - **The status bar**: **Update** appears beside the version and stays until you update.
   Clicking it does what the notification's button does. Clicking the version opens a
   small panel with what is available, **Check now**, **What's new** and **About Flint**.
