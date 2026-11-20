@@ -31,7 +31,8 @@ for your system, build it from a checkout:
    Choose **Done**, open **System Settings → Privacy & Security**, and under
    **Security** choose **Open Anyway** beside *"Flint.app" was blocked*, then confirm with
    your password. Open Flint again and choose **Open Anyway** once more. macOS remembers
-   the choice for this copy.
+   the choice for this copy; each update is a new copy and asks once more
+   ([Updates](/guides/updates/)).
 
    If Privacy & Security shows no such button, remove the download's quarantine flag
    instead: `xattr -dr com.apple.quarantine /Applications/Flint.app`.
