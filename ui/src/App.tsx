@@ -56,8 +56,12 @@ function Root() {
   const { os, settings } = useApp();
   return (
     <div className="app" data-os={os}>
-      <Phase />
-      <Toasts store={toasts} corner={settings.toast_corner} />
+      {/* Inside .app: the provider draws What's new and the Relaunch confirmation,
+          which take the app's font and tokens from here (outside it, WebKit's serif). */}
+      <UpdateProvider>
+        <Phase />
+        <Toasts store={toasts} corner={settings.toast_corner} />
+      </UpdateProvider>
     </div>
   );
 }
@@ -66,9 +70,7 @@ export function App() {
   useEffect(() => sessions.start(), []);
   return (
     <AppProvider>
-      <UpdateProvider>
-        <Root />
-      </UpdateProvider>
+      <Root />
     </AppProvider>
   );
 }

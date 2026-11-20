@@ -410,6 +410,9 @@
       await click('[data-about-whats-new]');
       const wn2 = await waitFor(() => q('[data-whats-new]'), "What's new from About");
       await check(devBuild ? hasText('no notes in its changelog') : wn2.dataset.whatsNew.length > 0, `What's new shows this version's notes (${wn2.dataset.whatsNew || 'none for a dev build'})`);
+      // v0.18.0 drew it outside .app, in WebKit's serif (the owner's check of 53).
+      const wnFont = getComputedStyle(wn2).fontFamily;
+      await check(!!wn2.closest('.app') && wnFont.startsWith('Geist'), `What's new is inside the app, in its font (${wnFont})`);
       await click('.modal.wn .btn-primary', 'Close');
       await log(`${passed} checks passed`);
       await window.backend.e2e_report({ ok: true, detail: '' });
