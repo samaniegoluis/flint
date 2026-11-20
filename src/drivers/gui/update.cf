@@ -1,0 +1,188 @@
+package main
+
+// The update notice (milestone 52, D-106, D-116): a loop on its own thread checks the
+// latest release's signed manifest at launch and every hour while the automatic check
+// is on, or at once when the page asks (Check now). Each outcome goes to the page as
+// `update:status`; the page asks for the last one with the hint `status`. Opening a
+// release page and What's new are RPCs. Nothing here is downloaded or applied
+// (milestone 53).
+
+import "ext:webui"
+import "core:encoding/hex"
+import "core:fs"
+import "core:json"
+import "core:os"
+import "core:sync"
+import "core:time"
+import "../../adapters/config"
+import "../../adapters/crypto"
+import "../../adapters/process"
+import "../../adapters/vaultremote"
+import "../../application"
+import "../../domain"
+import "../version"
+
+UPDATE_TICK_MS: i64 = 1000
+// The first automatic check waits for the page to listen.
+UPDATE_FIRST_CHECK_MS: i64 = 3000
+UPDATE_HINT_NOW: str = "now"
+UPDATE_HINT_STATUS: str = "status"
+
+type UpdateHintReq struct {
+    reason: str `json:"reason"`
+}
+
+type WhatsNewReq struct {
+    // At launch: the versions since the last one seen, once. Otherwise this version's.
+    launch: bool `json:"launch"`
+}
+
+type WhatsNewReply struct {
+    current:  str             `json:"current"`
+    since:    str             `json:"since"`
+    versions: []ChangeVersion `json:"versions"`
+}
+
+type OpenUrlReq struct {
+    url: str `json:"url"`
+}
+
+// The app's own folder: the .app bundle on macOS, the executable's folder elsewhere.
+// CFIRE-UPSTREAM: CF-173 (a literal's `.len()` fails in clang)
+BUNDLE_EXE_TAIL: str = "/Contents/MacOS"
+
+fn install_root() -> str {
+    exe := executable_dir()
+    if exe.ends_with(".app" + BUNDLE_EXE_TAIL) {
+        return "{exe[0..exe.len() - BUNDLE_EXE_TAIL.len()]}"
+    }
+    return exe
+}
+
+fn install_kind_file() -> str {
+    exe := executable_dir()
+    if exe.ends_with(".app/Contents/MacOS") {
+        return exe + "/../Resources/install-kind"
+    }
+    return exe + "/install-kind"
+}
+
+// The install-kind file as it is (INSTALL_SOURCE when there is none).
+fn real_install_kind() -> str {
+    return install_kind_of(fs.read_text(install_kind_file()) or "")
+}
+
+fn update_here() -> UpdateHere {
+    kind := real_install_kind()
+    root := install_root()
+    writable := folder_writable(root) && folder_writable(fs.dirname(root))
+    mut here := UpdateHere{ version: version.FLINT_VERSION, os: os_name(), arch: cpu_arch(), kind: kind, writable: writable }
+    // A build from source, under test, may pretend to be a package (FLINT_UPDATE_TEST_KIND).
+    test_kind := os.getenv("FLINT_UPDATE_TEST_KIND")
+    if test_kind.len() > 0 && update_override_allowed(kind, os.getenv("FLINT_UPDATE_FEED")) {
+        here.kind = install_kind_of(test_kind)
+        here.writable = true
+    }
+    return here
+}
+
+// The feed and key: always Flint's, except for a build from source checking a local
+// feed with a test key (domain's update_override_allowed, D-116).
+fn update_source(kind: str) -> UpdateSource {
+    key := hex.decode(UPDATE_PUBLIC_KEY_HEX) or []
+    feed := os.getenv("FLINT_UPDATE_FEED")
+    if feed.len() > 0 && update_override_allowed(kind, feed) {
+        test_key := hex.decode(os.getenv("FLINT_UPDATE_TEST_KEY")) or []
+        write_stderr("flint-gui: update check against the test feed {feed}\n")
+        return UpdateSource{ manifest_url: feed, public_key: test_key }
+    }
+    if feed.len() > 0 {
+        write_stderr("flint-gui: FLINT_UPDATE_FEED ignored: only a build from source checks a local feed\n")
+    }
+    return UpdateSource{ manifest_url: UPDATE_FEED_URL, public_key: key }
+}
+
+fn rpc_update_hint(params: str, st: GuiState) -> str! {
+    req := try parse_req[UpdateHintReq](params)
+    if req.reason == UPDATE_HINT_NOW || req.reason == UPDATE_HINT_STATUS {
+        st.update_hints.send(req.reason)
+    }
+    return ok_json()
+}
+
+// CHANGELOG.md: inside the package, or the checkout's for a build from source.
+fn find_changelog() -> str {
+    exe := executable_dir()
+    candidates: []str = [exe + "/../Resources/CHANGELOG.md", exe + "/CHANGELOG.md", exe + "/../../../../../CHANGELOG.md", exe + "/../../CHANGELOG.md", exe + "/../CHANGELOG.md"]
+    for path in candidates {
+        if fs.exists(path) {
+            return fs.read_text(path) or ""
+        }
+    }
+    return ""
+}
+
+fn rpc_whats_new(params: str, mut settings: JsonSettingsStore) -> str! {
+    req := try parse_req[WhatsNewReq](params)
+    changes := find_changelog()
+    if req.launch {
+        since := (load_settings(settings) or default_settings()).last_seen_version
+        return json.stringify(WhatsNewReply{ current: version.FLINT_VERSION, since: since, versions: try whats_new_at_launch(mut settings, changes, version.FLINT_VERSION) })
+    }
+    return json.stringify(WhatsNewReply{ current: version.FLINT_VERSION, since: "", versions: whats_new_here(changes, version.FLINT_VERSION) })
+}
+
+fn rpc_open_url(params: str, e2e: bool) -> str! {
+    req := try parse_req[OpenUrlReq](params)
+    if !url_open_allowed(req.url) {
+        return error(coded(ERR_INVALID, "Flint opens only its own pages in the browser"))
+    }
+    // The end-to-end run names the page instead of opening a browser on the machine.
+    if e2e {
+        write_stderr("flint-gui: e2e: would open {req.url}\n")
+        return ok_json()
+    }
+    try open_in_browser(req.url)
+    return ok_json()
+}
+
+fn run_update_loop(c: Sodium, settings_store: JsonSettingsStore, st: GuiState, mut app: webui.App) {
+    feed := new_http_update_feed()
+    here := update_here()
+    // The real kind decides whether a test feed is allowed, never the one a test pretends.
+    src := update_source(real_install_kind())
+    mut settings := settings_store
+    first := load_settings(settings) or default_settings()
+    mut last := update_status_idle(here.version, first.update_check, 0)
+    mut next_auto := time.now_ms() + UPDATE_FIRST_CHECK_MS
+    // An end-to-end run never checks GitHub on its own: only its own feed, or Check now.
+    quiet := os.getenv("FLINT_GUI_E2E").len() > 0 && os.getenv("FLINT_UPDATE_FEED").len() == 0
+    write_stderr("flint-gui: updates: {here.kind} on {here.os}-{here.arch}, automatic check {first.update_check}\n")
+    for !st.holder.quitting() {
+        hint := st.update_hints.recv_timeout(UPDATE_TICK_MS) or ""
+        auto := (load_settings(settings) or default_settings()).update_check
+        if hint == UPDATE_HINT_STATUS || auto != last.auto {
+            last.auto = auto
+            app.emit("update:status", last)
+            last.toast = false
+            continue
+        }
+        now := time.now_ms()
+        if hint != UPDATE_HINT_NOW && !(auto && !quiet && now >= next_auto) {
+            continue
+        }
+        mut checking := last
+        checking.state = UPDATE_CHECKING
+        checking.toast = false
+        app.emit("update:status", checking)
+        last = check_for_update(feed, c, mut settings, src, here, time.unix_seconds() * 1000)
+        next_auto = time.now_ms() + UPDATE_CHECK_EVERY_MS
+        if last.state == UPDATE_FAILED {
+            write_stderr("flint-gui: update check failed ({last.code})\n")
+        } else if last.state == UPDATE_AVAILABLE {
+            write_stderr("flint-gui: Flint {last.version} is available ({last.action})\n")
+        }
+        app.emit("update:status", last)
+        last.toast = false
+    }
+}

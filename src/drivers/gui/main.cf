@@ -127,6 +127,10 @@ fn main() {
     app.bind_raw("settings_set") |params| { return rpc_settings_set(params, mut settings_store, st) }
     // Milestone 48: the flint command from a packaged app.
     app.bind_raw("cli_status") |params| { return rpc_cli_status(params, mut settings_store) }
+    // The update notice (update.cf, milestone 52).
+    app.bind_raw("update_hint") |params| { return rpc_update_hint(params, st) }
+    app.bind_raw("whats_new") |params| { return rpc_whats_new(params, mut settings_store) }
+    app.bind_raw("open_url") |params| { return rpc_open_url(params, e2e) }
     app.bind_raw("cli_install") |params| { return rpc_cli_install(params) }
     app.bind_raw("cli_remove") |params| { return rpc_cli_remove(params) }
     app.bind_raw("vault_sync_hint") |params| { return rpc_vault_sync_hint(params, st) }
@@ -412,6 +416,14 @@ fn main() {
             mut s := sync_store
             mut a := sync_app
             run_sync_loop(c, mut s, kc, sync_settings, sync_st, mut a)
+        }
+        // The update notice (milestone 52, update.cf): at launch, then every hour.
+        update_app := app
+        update_st := st
+        update_settings := settings_store
+        scope.spawn || {
+            mut a := update_app
+            run_update_loop(c, update_settings, update_st, mut a)
         }
         // Auto-lock: idle time, screen lock and sleep.
         write_stderr("flint-gui: locks on idle, {system_events_start()}\n")

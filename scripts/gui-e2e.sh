@@ -40,7 +40,7 @@ fi
 #                                                (milestone 27, D-068)
 #   scripts/repeat.sh vim 10                     one run N times, with its failure rate
 # Exit status: 0 all passed, 1 a run failed.
-runs=(terminal vault tunnels paste rdp webgl fullscreen vim clilink)
+runs=(terminal vault tunnels paste rdp webgl fullscreen vim clilink update)
 # multimon (milestone 38) needs two monitors: on Linux an X display with two (the check's
 # container makes one, FLINT_E2E_MULTIMON_DISPLAY), on macOS a person's own screens with
 # FLINT_E2E_MULTIMON=1 (its windows take a Space on each).
@@ -79,8 +79,9 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/flint-gui-e2e.XXXXXX")"
 fwd_pid=""
 rdp2_pid=""
 rfwd_pid=""
+feed_pid=""
 cleanup() {
-  for p in "$fwd_pid" "$rdp2_pid" "$rfwd_pid"; do
+  for p in "$fwd_pid" "$rdp2_pid" "$rfwd_pid" "$feed_pid"; do
     if [[ -n "$p" ]]; then kill "$p" 2>/dev/null; wait "$p" 2>/dev/null || true; fi
   done
   rm -rf "$tmp"
@@ -198,10 +199,45 @@ run_app() {
     ln -sfn "$tmp/cli/Moved.app/Contents/Helpers/flint" "$tmp/clihome/.local/bin/flint"
     cli_env=(FLINT_CLI="$tmp/cli/Flint.app/Contents/Helpers/flint" FLINT_CLI_HOME="$tmp/clihome")
   fi
+  # update (milestone 52): a signed manifest of a newer Flint on a feed of the run's own,
+  # under a throwaway key; a build from source accepts both (D-116), a package never.
+  if [[ "$1" == update ]]; then
+    mkdir -p "$tmp/feed" "$tmp/feedkey"
+    local pub
+    pub="$("$root/scripts/sign-manifest.sh" keygen "$tmp/feedkey" 2>/dev/null)"
+    jq -n '{version: "99.0.0", date: "2026-12-01", summary: "A newer Flint for the test.",
+            page: "https://github.com/samaniegoluis/flint/releases/tag/v99.0.0",
+            assets: [{key: "macos-arm64", name: "Flint-99.0.0-macos-arm64.zip", url: "https://github.com/samaniegoluis/flint/releases/download/v99.0.0/Flint-99.0.0-macos-arm64.zip", size: 1000, sha256: ("a" * 64)},
+                     {key: "windows-x86_64", name: "Flint-99.0.0-windows-x86_64.zip", url: "https://github.com/samaniegoluis/flint/releases/download/v99.0.0/Flint-99.0.0-windows-x86_64.zip", size: 1000, sha256: ("b" * 64)},
+                     {key: "linux-x86_64-deb", name: "flint_99.0.0_amd64.deb", url: "https://github.com/samaniegoluis/flint/releases/download/v99.0.0/flint_99.0.0_amd64.deb", size: 1000, sha256: ("c" * 64)}]}' > "$tmp/feed/manifest.json"
+    FLINT_UPDATE_PUBLIC_KEY_HEX="$pub" FLINT_UPDATE_SIGNING_KEY="$(cat "$tmp/feedkey/flint-update-signing.key")" \
+      "$root/scripts/sign-manifest.sh" sign "$tmp/feed/manifest.json" >/dev/null
+    rm -f "$tmp/feedkey/flint-update-signing.key"
+    local fport
+    fport="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+    (cd "$tmp/feed" && exec python3 -I -m http.server "$fport" --bind 127.0.0.1 >"$tmp/feed.log" 2>&1) & feed_pid=$!
+    for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$fport") 2>/dev/null && break; sleep 0.1; done
+    # What's new after an update: this machine last ran 0.15.0.
+    mkdir -p "$3"
+    cat > "$3/settings.json" <<'JSON'
+{"version":1,"settings":{"theme":"system","accent":"ember","density":"default","follow_motion":true,"reopen_last_vault":true,"term_font":"","term_font_size":13,"term_line_height":100,"term_cursor":"block","term_cursor_blink":true,"term_theme":"default","lock_after":"1h","keys_cleared":false,"paste_limit_mb":20,"rdp_mac_keys":"mac","rdp_mac_custom":"","rdp_graphics":"auto","sync_interval":60,"toast_corner":"bottom-right","cli_offer_shown":false,"update_check":true,"update_toast_version":"","last_seen_version":"0.15.0"}}
+JSON
+    cli_env=(FLINT_UPDATE_FEED="http://127.0.0.1:$fport/manifest.json" FLINT_UPDATE_TEST_KEY="$pub" FLINT_UPDATE_TEST_KIND=portable)
+  fi
   env ${cli_env[@]+"${cli_env[@]}"} FLINT_CONFIG_DIR="$3" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$2" FLINT_GUI_E2E_TIMEOUT_MS="${5:-}" \
     FLINT_GUI_E2E_VISIBLE="$visible" \
     "${app[@]}" 2>&1 | tee "$4" || st=$?
   [[ -f "$4.front" ]] && cat "$4.front"
+  if [[ "$1" == update ]]; then
+    kill "${feed_pid:-0}" 2>/dev/null || true; wait "${feed_pid:-0}" 2>/dev/null || true
+    # Download opens the release page (milestone 52); the run names it instead.
+    grep -q 'e2e: would open https://github.com/samaniegoluis/flint/releases/tag/v99.0.0' "$4" \
+      || { echo "e2e: fail: Download did not open the release page"; echo "gui-e2e ($1): FAILED" >&2; return 1; }
+    # One GET of the manifest and one of its signature per check, nothing else (Principle 15).
+    if grep -v -E '"GET /manifest\.json(\.sig)? HTTP' "$tmp/feed.log" | grep -q 'HTTP/'; then
+      echo "e2e: fail: the feed got another request: $(grep -v -E 'GET /manifest' "$tmp/feed.log" | head -1)"; echo "gui-e2e ($1): FAILED" >&2; return 1
+    fi
+  fi
   if ! grep -q '^e2e: ' "$4"; then
     echo "e2e: fail: killed with no verdict (exit $st); last page line: $(grep '\[page\]' "$4" | tail -1 | sed 's/^.*\[page\] //')"
   fi

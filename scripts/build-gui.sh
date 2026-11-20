@@ -37,6 +37,9 @@ case "$(uname -s)" in
   Darwin)
     res="build/gui/Flint.app/Contents/Resources"
     rm -rf "$res/ui"
+    # A build from source is never a package (milestone 52): only scripts/package.sh's
+    # copy carries install-kind, which decides how Flint updates.
+    rm -f "$res/install-kind"
     mkdir -p "$res"
     cp -R ui/dist "$res/ui"
     codesign --force --deep -s - build/gui/Flint.app >/dev/null 2>&1 || echo "build-gui: ad-hoc signing failed" >&2

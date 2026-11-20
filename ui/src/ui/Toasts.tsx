@@ -96,7 +96,7 @@ function ToastView({ t, store }: { t: ToastItem; store: ToastStore }) {
         <span className="t-prog" aria-label={`${Math.round(t.progress)}% done`}>{Math.round(t.progress)}%</span>
       )}
       {t.actions.map((a, i) => (
-        <button key={a.label} type="button" className="btn btn-secondary btn-sm" data-toast-action={i}
+        <button key={a.label} type="button" className={'btn btn-sm ' + (a.primary ? 'btn-primary' : 'btn-secondary')} data-toast-action={i}
           onClick={() => store.act(t.id, i)}>{a.label}</button>
       ))}
       <button type="button" className="t-x" aria-label="Dismiss" data-toast-close

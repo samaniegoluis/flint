@@ -19,6 +19,8 @@ import { useMonitors } from '../sessions/monitors';
 import { MAX_PANES } from '../lib/layout';
 import { tunnels, useTunnels } from '../tunnels/store';
 import { useSyncMaybe } from '../sync/SyncProvider';
+import { useUpdate } from '../update/UpdateProvider';
+import { updatePaletteHint } from '../lib/update';
 
 type Group = 'all' | 'hosts' | 'actions' | 'vaults';
 
@@ -72,6 +74,9 @@ const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'connectServer', icon: 'server' },
   { action: 'disconnectServer', icon: 'cloud-off' },
   { action: 'showLastMerge', icon: 'cloud' },
+  { action: 'checkUpdates', icon: 'download' },
+  { action: 'whatsNew', icon: 'sparkle' },
+  { action: 'aboutFlint', icon: 'info' },
   { action: 'lock', icon: 'lock' },
   { action: 'quit', icon: 'x' },
 ];
@@ -108,6 +113,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
 }) {
   const { catalog, recents, vault, os, switchTo, fail } = useApp();
   const sync = useSyncMaybe();
+  const update = useUpdate();
   const { tabs, panes, active } = useSessions();
   const tun = useTunnels();
   const activeTab = tabs.find((t) => t.id === active);
@@ -249,7 +255,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
         if (q && !m) continue;
         out.push({
           group: 'actions', key: 'a:' + a.action, score: (m?.score ?? 0) + 1000,
-          render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m?.positions ?? []} /></span>{a.action === 'newSshHost' && <HostTypeIcon type="ssh" size="md" />}{a.action === 'newRdpHost' && <HostTypeIcon type="rdp" size="md" />}{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
+          render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m?.positions ?? []} /></span>{a.action === 'newSshHost' && <HostTypeIcon type="ssh" size="md" />}{a.action === 'newRdpHost' && <HostTypeIcon type="rdp" size="md" />}{a.action === 'checkUpdates' && update.status && <span className="hint" data-palette-update>{updatePaletteHint(update.status, update.now)}</span>}{a.action === 'whatsNew' && update.status?.current && <span className="hint">{update.status.current}</span>}{a.action === 'aboutFlint' && update.status?.current && <span className="hint">v{update.status.current}</span>}{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
           run: () => onAction(a.action),
           disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? 'SSH hosts only' : !rdpTab && (a.action === 'fullscreen' || a.action === 'fullscreenAll') ? 'RDP tabs only' : a.action === 'fullscreenAll' && monitorsReason ? monitorsReason : undefined,
         });
@@ -272,7 +278,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       }
     }
     return out;
-  }, [catalog.hosts, tabs, panes, tun.list, canSplit, rdpTab, monitorsReason, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail, sync]);
+  }, [catalog.hosts, tabs, panes, tun.list, canSplit, rdpTab, monitorsReason, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail, sync, update]);
 
   const counts = { hosts: 0, actions: 0, vaults: 0 };
   for (const it of items) counts[it.group === 'tunnels' ? 'actions' : it.group]++;

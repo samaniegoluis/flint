@@ -11,6 +11,8 @@ export interface ToastAction {
   run: () => void;
   /** The toast stays up after the action runs (an action that changes it, e.g. Download → Downloading). */
   keepOpen?: boolean;
+  /** In the accent colour: only the update's actions (Download, How to update), D-106 (2). */
+  primary?: boolean;
 }
 
 export interface ToastOptions {

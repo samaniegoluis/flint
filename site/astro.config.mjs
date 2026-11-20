@@ -61,6 +61,7 @@ export default defineConfig({
 						{ label: 'Tunnels', slug: 'guides/tunnels' },
 						{ label: 'Remote desktop', slug: 'guides/remote-desktop' },
 						{ label: 'Use Flint with an AI agent', slug: 'guides/ai-agents' },
+						{ label: 'Updates', slug: 'guides/updates' },
 					],
 				},
 				{

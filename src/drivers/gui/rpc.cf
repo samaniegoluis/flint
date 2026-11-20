@@ -291,6 +291,9 @@ type GuiState struct {
     holder: SessionHolder
     // Milestone 43: tells the sync loop to look now (sync.cf).
     sync_hints: sync.Channel[str]
+    // Milestone 52: tells the update loop to check now, or to repeat its last outcome
+    // (update.cf).
+    update_hints: sync.Channel[str]
 }
 
 fn no_vault_session() -> VaultSession {
@@ -298,7 +301,7 @@ fn no_vault_session() -> VaultSession {
 }
 
 fn new_gui_state() -> GuiState {
-    return GuiState{ holder: new_session_holder(), sync_hints: make(sync.Channel[str]) }
+    return GuiState{ holder: new_session_holder(), sync_hints: make(sync.Channel[str]), update_hints: make(sync.Channel[str]) }
 }
 
 fn (self: GuiState) unlocked() -> bool {

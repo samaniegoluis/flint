@@ -209,6 +209,53 @@ export interface Settings {
   keys_cleared?: boolean;
   /** Milestone 48: the app's own record that the flint command was offered; the core keeps it. */
   cli_offer_shown?: boolean;
+  /** Milestone 52 (D-116): check for a newer Flint at launch and every hour. */
+  update_check: boolean;
+  /** The app's own records (milestone 52): the version whose toast was shown, and What's new's last version. */
+  update_toast_version?: string;
+  last_seen_version?: string;
+}
+
+/** The update check's outcome (milestone 52, src/domain/update.cf), as `update:status`. */
+export type UpdateState = 'idle' | 'checking' | 'up_to_date' | 'available' | 'error';
+export type UpdateAction = 'download' | 'how' | '';
+/** Why How to update: a .deb/.rpm, a build from source, a folder Flint can't write, no package for this system. */
+export type UpdateHow = 'package' | 'source' | 'readonly' | 'no_asset' | '';
+
+export interface UpdateStatus {
+  state: UpdateState;
+  current: string;
+  /** When the last check ended (Unix ms; 0: not in this run). */
+  checked_at: number;
+  auto: boolean;
+  version: string;
+  date: string;
+  summary: string;
+  /** The release's page on GitHub. */
+  page: string;
+  action: UpdateAction;
+  how: UpdateHow;
+  asset_url: string;
+  asset_size: number;
+  /** The first time this version was found: show the toast (once per version, D-116). */
+  toast: boolean;
+  code: string;
+  message: string;
+}
+
+/** One version's section of CHANGELOG.md, for What's new (24g). */
+export interface ChangeVersion {
+  version: string;
+  date: string;
+  summary: string;
+  groups: { title: string; items: { scope: string; text: string }[] }[];
+}
+
+export interface WhatsNew {
+  current: string;
+  /** At launch: the version run before this one ("since your 0.15.0"); "" otherwise. */
+  since: string;
+  versions: ChangeVersion[];
 }
 
 /** Settings → Appearance → Notifications (milestone 46). */

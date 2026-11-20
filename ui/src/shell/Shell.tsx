@@ -36,6 +36,8 @@ import { SyncStatusItem } from '../sync/SyncStatusItem';
 import { ApprovalDialog, useAccessState } from '../access/ApprovalDialog';
 import { TunnelsView } from '../tunnels/TunnelsView';
 import { tunnels, upOn, useTunnels } from '../tunnels/store';
+import { UpdateStatusItem } from '../update/UpdateStatusItem';
+import { useUpdate } from '../update/UpdateProvider';
 
 type View = 'hosts' | 'files' | 'tunnels' | 'keys' | 'credentials' | 'settings';
 // The views that keep the sessions on screen beside a sidebar.
@@ -44,7 +46,7 @@ const NARROW = 1040;
 
 export function Shell() {
   const app = useApp();
-  const { os, info, vault, catalog, settings, notify, fail, refreshCatalog, openVaultFile, go, phase } = app;
+  const { os, vault, catalog, settings, notify, fail, refreshCatalog, openVaultFile, go, phase } = app;
   const { tabs, panes, active } = useSessions();
   const [view, setView] = useState<View>('hosts');
   const [narrow, setNarrow] = useState(window.innerWidth < NARROW);
@@ -60,6 +62,13 @@ export function Shell() {
   const [section, setSection] = useState<SettingsSection>('appearance');
   // Milestone 44: Server settings… from the status bar's popover or the palette.
   const openServerSettings = useCallback(() => { setSection('vault'); setView('settings'); }, []);
+  // How to update and About Flint (milestone 52) open Settings → About while the shell is up.
+  const update = useUpdate();
+  const { setAboutOpener } = update;
+  useEffect(() => {
+    setAboutOpener(() => { setSection('about'); setView('settings'); });
+    return () => setAboutOpener(null);
+  }, [setAboutOpener]);
   const syncActions = useRef<SyncHandle | null>(null);
   const registerSync = useCallback((h: SyncHandle | null) => { syncActions.current = h; }, []);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
@@ -348,6 +357,9 @@ export function Shell() {
       case 'viewCredentials': setView('credentials'); break;
       case 'settings': setView('settings'); break;
       case 'syncNow': syncActions.current?.syncNow(); break;
+      case 'checkUpdates': update.checkNow(); break;
+      case 'whatsNew': update.showWhatsNew(); break;
+      case 'aboutFlint': setSection('about'); setView('settings'); break;
       case 'showLastMerge': syncActions.current?.showLastMerge(); break;
       case 'connectServer': openServerSettings(); break;
       case 'disconnectServer': setConfirm({
@@ -379,7 +391,7 @@ export function Shell() {
       case 'prevRegion': cycleRegion(-1); break;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, tab, rdpTab, view, collapsed, selected, catalog.hosts, catalog.groups, connect, split, lock, openVaultFile, fail, go, setSidebarCollapsed, setCollapsedGroups]);
+  }, [active, tab, rdpTab, view, collapsed, selected, catalog.hosts, catalog.groups, connect, split, lock, openVaultFile, fail, go, setSidebarCollapsed, setCollapsedGroups, update]);
 
   useEffect(() => {
     setActionHandler(run);
@@ -510,12 +522,7 @@ export function Shell() {
         )}
         <span className="grow" />
         {zoom !== 0 && <button className="sb-btn" onClick={() => setZoom(0)} title="Reset terminal font size">{fontSize} px</button>}
-        {info?.version && (
-          <button className="sb-btn sb-version" data-sb-version onClick={() => { setSection('about'); setView('settings'); }}
-            title="Settings → About" aria-label={`Flint ${info.version}. Open Settings, About`}>
-            v{info.version}
-          </button>
-        )}
+        <UpdateStatusItem />
         <span className="sb-item"><Kbd action="palette" />Commands</span>
       </footer>
 

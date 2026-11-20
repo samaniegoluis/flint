@@ -9,6 +9,7 @@ import { Shell } from './shell/Shell';
 import { Logo } from './ui/Icon';
 import { Toasts } from './ui/Toasts';
 import { sessions } from './sessions/store';
+import { UpdateProvider } from './update/UpdateProvider';
 
 // The main window, and the lock screens over it (the vault's, or the window's own
 // when it was closed to the tray): the same element in every phase, so a lock never
@@ -65,7 +66,9 @@ export function App() {
   useEffect(() => sessions.start(), []);
   return (
     <AppProvider>
-      <Root />
+      <UpdateProvider>
+        <Root />
+      </UpdateProvider>
     </AppProvider>
   );
 }

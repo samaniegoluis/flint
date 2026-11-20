@@ -4,7 +4,7 @@
 
 import type {
   AccessAnswer, AccessState, ActivityEntry, AppInfo, CliLinkStatus, RdpStats, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  CopyResult, DesktopSpan, RemoteLinkView, RemoteProbe, RemoteStatus, SyncOutcome, FileEntry, MonitorPick, MonitorsView, PasswordStrength, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState,
+  CopyResult, DesktopSpan, RemoteLinkView, RemoteProbe, RemoteStatus, SyncOutcome, FileEntry, MonitorPick, MonitorsView, PasswordStrength, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState, WhatsNew,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -64,6 +64,12 @@ export const api = {
   cliStatus: (first: boolean) => call<CliLinkStatus>('cli_status', { first }),
   cliInstall: (path: string) => call<CliLinkStatus>('cli_install', { path }),
   cliRemove: (path: string) => call<CliLinkStatus>('cli_remove', { path }),
+  /** Milestone 52: `now` checks for a newer Flint; `status` repeats the last outcome as `update:status`. */
+  updateHint: (reason: 'now' | 'status') => call('update_hint', { reason }),
+  /** `launch`: the versions since the last one seen, once; otherwise this version's notes. */
+  whatsNew: (launch: boolean) => call<WhatsNew>('whats_new', { launch }),
+  /** Opens one of Flint's own pages (its repository, its site) in the browser. */
+  openUrl: (url: string) => call('open_url', { url }),
   /** Milestone 43: tells the app's sync loop to look at a connected vault's server. */
   syncHint: (reason: 'focus' | 'now') => call('vault_sync_hint', { reason }),
   fonts: () => call<{ fonts: string[] }>('fonts_mono'),

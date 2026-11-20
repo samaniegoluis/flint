@@ -12,6 +12,7 @@ export type Action =
   | 'viewHosts' | 'viewFiles' | 'viewTunnels' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'newSshHost' | 'newRdpHost' | 'editHost'
   | 'collapseAll' | 'expandAll' | 'fullscreen' | 'fullscreenAll'
   | 'syncNow' | 'connectServer' | 'disconnectServer' | 'showLastMerge'
+  | 'checkUpdates' | 'whatsNew' | 'aboutFlint'
   | 'lock' | 'quit' | 'fontBigger' | 'fontSmaller' | 'fontReset' | 'nextRegion' | 'prevRegion'
   | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5' | 'tab6' | 'tab7' | 'tab8' | 'tab9';
 
@@ -68,6 +69,10 @@ const CHORDS: Record<Action, Chord> = {
   connectServer: { none: true, code: '', label: '' },
   disconnectServer: { none: true, code: '', label: '' },
   showLastMerge: { none: true, code: '', label: '' },
+  // Milestone 52 (design 24i): the update's commands, no shortcut.
+  checkUpdates: { none: true, code: '', label: '' },
+  whatsNew: { none: true, code: '', label: '' },
+  aboutFlint: { none: true, code: '', label: '' },
   expandAll: { none: true, code: '', label: '' },
   fullscreen: { fullscreen: true, code: 'KeyF', label: 'F' },
   fullscreenAll: { none: true, code: '', label: '' },
@@ -180,6 +185,9 @@ export const ACTION_TITLES: Record<Action, string> = {
   connectServer: 'Connect vault to a server…',
   disconnectServer: 'Disconnect vault from server…',
   showLastMerge: 'Show last merge',
+  checkUpdates: 'Check for updates',
+  whatsNew: "What's new in Flint",
+  aboutFlint: 'About Flint',
   lock: 'Lock vault',
   quit: 'Quit Flint',
   fontBigger: 'Bigger terminal font',

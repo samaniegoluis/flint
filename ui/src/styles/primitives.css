@@ -746,3 +746,21 @@ button.picker-row:not(.off) { cursor: pointer; }
 .chg { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: var(--sp-3); align-items: center; min-height: 26px; font-size: var(--fs-sm); }
 .chg .k { font-size: var(--fs-xs); font-weight: var(--fw-medium); }
 .chg .k.add { color: var(--success); } .chg .k.upd { color: var(--info); } .chg .k.rem { color: var(--text-tertiary); }
+
+/* What's new (milestone 52, 24g): the versions since the last one run, scrolling inside the modal. */
+.modal.wn { display: flex; flex-direction: column; }
+.wn-body { gap: var(--sp-6); min-height: 0; flex: 1; overflow-y: auto; }
+.wn-sec { display: flex; flex-direction: column; gap: var(--sp-2); }
+.wn-sec + .wn-sec { padding-top: var(--sp-5); border-top: 1px solid var(--border-subtle); }
+.wn-v { font-size: var(--fs-lg); font-weight: var(--fw-semibold); margin: 0; }
+.wn-sum { font-size: var(--fs-md); line-height: 1.55; color: var(--text-secondary); margin: 0 0 var(--sp-2); }
+.wn-list { margin: 0 0 var(--sp-2); padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); line-height: 1.5; }
+.wn-list strong { font-weight: var(--fw-semibold); color: var(--text-primary); }
+
+/* The status bar's version item (24f, D-116): the version opens a popover; "Update" beside it while a newer one waits. */
+.sb-update { display: inline-flex; align-items: center; gap: 2px; position: relative; }
+.sb-update-act { height: 20px; padding: 0 6px; border: 0; border-radius: var(--radius-xs); background: none; color: var(--accent-text); font-weight: var(--fw-medium); font-size: inherit; cursor: pointer; }
+.sb-update-act:hover { background: var(--accent-subtle); }
+.sb-btn.sb-version.has-dot { position: relative; }
+.sb-btn.sb-version.has-dot::after { content: ""; position: absolute; top: 2px; right: 1px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface-chrome); }
+.sb-btn.sb-version.is-open { background: var(--surface-hover); color: var(--text-primary); }

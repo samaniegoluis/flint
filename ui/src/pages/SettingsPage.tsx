@@ -23,6 +23,8 @@ import { useSync } from '../sync/SyncProvider';
 import { ConnectServerModal } from '../sync/ConnectServerModal';
 import { ReplaceTokenModal } from '../sync/ReplaceTokenModal';
 import { agoLabel, SYNC_LABEL } from '../lib/sync';
+import { useUpdate } from '../update/UpdateProvider';
+import { updateActionLabel, updateAvailable, updateHowText, updateStateLine } from '../lib/update';
 
 export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'about';
 
@@ -277,8 +279,9 @@ function About() {
       <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', marginBottom: 'var(--sp-3)' }}>About</h1>
       <Row title="Version" desc="The version this build of Flint was made from.">
         <span className="mono strong" data-about-version>Flint {info?.version ?? ''}</span>
-        <span className="hint">What changed in each version is on the Changelog page of Flint's docs. A version with a suffix (<span className="mono">0.1.0-3-gabc1234</span>) is a build made between two releases.</span>
+        <span className="hint">A version with a suffix (<span className="mono">0.1.0-3-gabc1234</span>) is a build made between two releases.</span>
       </Row>
+      <Updates />
       <CommandLine />
       <Row title="Libraries" desc="Linked into this build.">
         <table className="table compact" data-about-libs>
@@ -288,6 +291,41 @@ function About() {
         </table>
       </Row>
     </>
+  );
+}
+
+// Milestone 52 (design 24e, D-116): the update's state, its one action, Check now, the
+// automatic check and What's new. Nothing is downloaded here yet (milestone 53).
+function Updates() {
+  const up = useUpdate();
+  const [settings, save] = useSetting();
+  const st = up.status;
+  const avail = updateAvailable(st);
+  const how = avail && st.action === 'how' ? updateHowText(st) : '';
+  return (
+    <Row title="Updates" desc="The app and the flint command update together. A release is checked against Flint's signature before Flint offers it.">
+      <div className="row" style={{ gap: 'var(--sp-3)', flexWrap: 'wrap' }} data-about-update={st?.state ?? 'idle'}>
+        {avail && <span className="t-mark" style={{ background: 'var(--accent)' }} />}
+        <span className={avail ? 'strong' : ''}>{updateStateLine(st, up.now) || 'Not checked yet'}</span>
+        <span className="grow" />
+        {avail && st.action === 'download' && <button className="btn btn-primary btn-sm" data-about-download onClick={() => up.act()}>{updateActionLabel(st)}</button>}
+        {!avail && (
+          <button className="btn btn-secondary btn-sm" data-about-check disabled={up.status?.state === 'checking'} onClick={() => up.checkNow()}>
+            {up.status?.state === 'checking' ? 'Checking…' : 'Check now'}
+          </button>
+        )}
+      </div>
+      {how && (
+        <span className="hint" data-about-how={st?.how}>
+          {how}{' '}
+          <button className="link" onClick={() => { api.openUrl(st!.page).catch(() => {}); }}>Open the release page ↗</button>
+        </span>
+      )}
+      {st?.state === 'error' && st.message && <span className="hint">{st.message}</span>}
+      <Toggle on={settings.update_check} onChange={(v) => save({ update_check: v })} label="Check for updates automatically" />
+      <span className="hint">Fetches a small signed file from GitHub at launch and every hour. Nothing about you or this computer is sent.</span>
+      <button className="link" style={{ alignSelf: 'flex-start' }} data-about-whats-new onClick={() => up.showWhatsNew()}>What's new in {st?.current || ''}</button>
+    </Row>
   );
 }
 

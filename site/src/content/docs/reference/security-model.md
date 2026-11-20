@@ -191,6 +191,28 @@ On each machine ([Sync a vault across machines](/guides/remote-vault/)):
 - `remotes.json` holds the vault's path and id, the server's URL, a version and a hash
   of the encrypted file: nothing from inside the vault.
 
+## Updates
+
+The desktop app checks for a new version at launch and every hour (it can be turned
+off: [Updates](/guides/updates/)). The check is two GET requests over HTTPS, to Flint's
+latest release on GitHub: `manifest.json` and `manifest.json.sig`. They carry no cookie,
+no identifier and nothing about the machine or its vaults; each has a deadline (10 s to
+connect, 30 s in all) and a size cap, and redirects are followed over HTTPS only.
+
+- **Signed with Flint's own key.** The release workflow signs each manifest with an
+  Ed25519 key kept only in its protected `release` environment and the maintainer's
+  secret store, never in the repository or a package. Flint carries the public key and
+  verifies the signature (libsodium) before it reads a byte of the manifest. A manifest
+  that does not verify is ignored and the app says the update information did not pass
+  verification.
+- **Only this project's releases.** A verified manifest must name a release version and
+  point at this repository's releases on GitHub; anything else is refused. Drafts and
+  pre-releases are never offered.
+- **Nothing is applied.** Today **Download** opens the release page in your browser;
+  the app never installs, replaces or restarts anything on its own. The package's
+  SHA-256 is in the manifest for the in-app update that comes next, which will check it
+  before installing.
+
 ## Next
 
 Windows (a named pipe and Windows Hello), a headless `flint serve`, and a Keychain item

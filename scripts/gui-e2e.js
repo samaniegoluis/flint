@@ -51,7 +51,7 @@
   const COVER = '@@COVER@@';
   // fullscreen only: '1' when the window really goes full screen (FLINT_E2E_NATIVE_FS).
   const NATIVEFS = '@@NATIVEFS@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'multimon', 'rdpbench', 'clilink'];
+  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'multimon', 'rdpbench', 'clilink', 'update'];
   // The benchmark's host (rdpbench only; '' otherwise).
   const BHOST = '@@BHOST@@';
   const BUSER = '@@BUSER@@';
@@ -132,6 +132,12 @@
     await click('.modal button', 'Continue');
     await waitFor(() => q('#ha'), 'the SSH host editor');
   }
+  // Milestone 52 (24f): the status bar's version opens a popover; About Flint is in it.
+  async function openAbout() {
+    q('[data-sb-version]').click();
+    const pop = await waitFor(() => q('[data-update-pop]'), "the version's popover");
+    await click('.link', 'About Flint', pop);
+  }
   function check(cond, what) {
     if (!cond) throw new Error('check failed: ' + what);
     passed++;
@@ -211,7 +217,7 @@
       await click('[data-toast] button', 'Use this copy');
       await waitFor(() => cliToast(/^Installed .*\.local\/bin\/flint/), 'the installed toast');
       await check(!cliToast(/runs a copy of Flint that was moved/), 'the result replaces the offer in place');
-      q('[data-sb-version]').click();
+      await openAbout();
       await waitFor(() => q('[data-cli-spots]'), 'About\'s Command line row');
       const spot = (end) => qa('[data-cli-spots] tr').find((r) => r.cells[0].textContent.endsWith(end));
       await check(spot('.local/bin/flint')?.dataset.cliSpot === 'installed', 'About shows the link now runs this copy');
@@ -224,6 +230,74 @@
       await waitFor(() => spot('.local/bin/flint')?.dataset.cliSpot === 'installed', 'the link again');
       const st = await window.backend.cli_status({ first: false });
       await check(st.spots[1].target.endsWith('/cli/Flint.app/Contents/Helpers/flint'), 'Install links this copy\'s CLI');
+      await log(`${passed} checks passed`);
+      await window.backend.e2e_report({ ok: true, detail: '' });
+      window.runtime.Quit();
+      return;
+    }
+
+    if (RUN === 'update') {
+      // Milestone 52 (designs 24c, 24e, 24f, 24g, 24i, D-116): a signed manifest of Flint
+      // 99.0.0 on the run's own feed (scripts/gui-e2e.sh), checked at launch.
+      await setStep("what's new after an update");
+      const wn = await waitFor(() => q('[data-whats-new]'), "What's new at the first unlock after an update", 30000);
+      await check(wn.dataset.whatsNew.split(',').includes('0.16.0') && !wn.dataset.whatsNew.split(',').includes('0.15.0'), `What's new shows the versions since the last one run (${wn.dataset.whatsNew})`);
+      await check(hasText('since your 0.15.0'), "What's new names the version the person had");
+      await check((await window.backend.settings_get({})).last_seen_version === VERSION, 'this version is recorded as seen');
+      await click('.modal.wn .btn-primary', 'Close');
+      await waitFor(() => !q('[data-whats-new]'), "What's new closed");
+
+      await setStep('the update toast');
+      const upToast = () => qa('[data-toast]').find((el) => !el.classList.contains('leaving') && el.querySelector('.t-text')?.textContent === 'Flint 99.0.0 is available');
+      const toast = await waitFor(upToast, 'the update toast at launch', 30000);
+      const dl = byText('button', 'Download', toast);
+      await check(!!dl && dl.classList.contains('btn-primary'), 'the toast offers Download, in the accent colour (24c1)');
+      const bar = await waitFor(() => q('[data-sb-update]'), 'Update in the status bar');
+      await check(bar.dataset.sbUpdate === 'download' && bar.textContent === 'Update', 'the status bar says Update beside the version (D-116)');
+      await check(q('[data-sb-version]').classList.contains('has-dot'), 'the version item carries the dot (24f2)');
+      await check((await window.backend.settings_get({})).update_toast_version === '99.0.0', 'the toast is recorded as shown for 99.0.0');
+      toast.querySelector('[data-toast-close], .t-x').click();
+      await waitFor(() => !upToast(), 'the toast closed');
+      await check(!!q('[data-sb-update]'), 'closing the toast leaves Update in the status bar');
+
+      await setStep('the popover and Download');
+      q('[data-sb-version]').click();
+      const pop = await waitFor(() => q('[data-update-pop="available"]'), "the version's popover");
+      await check(pop.textContent.includes('Flint 99.0.0 is available') && pop.textContent.includes(`You have ${VERSION}`), 'the popover says what is available and what you have');
+      await click('[data-pop-update-act]', 'Download');
+      await check(!q('[data-update-pop]'), 'Download closes the popover');
+      q('[data-sb-update]').click();
+      await sleep(200);
+
+      await setStep('About');
+      await openAbout();
+      const about = await waitFor(() => q('[data-about-update="available"]'), "About's Updates block");
+      await check(about.textContent.includes('Flint 99.0.0 is available · released 1 Dec'), `About says it, with the release date (${about.textContent})`);
+      await check(!!q('[data-about-download]'), 'About offers Download');
+
+      await setStep('check again: no second toast');
+      let got = null;
+      const off = window.runtime.EventsOn('update:status', (st) => { if (st.state !== 'checking') got = st; });
+      await window.backend.update_hint({ reason: 'now' });
+      await waitFor(() => got, 'the second check', 20000);
+      off();
+      await check(got.state === 'available' && !got.toast, 'a second check finds the same version and asks for no toast');
+      await sleep(300);
+      await check(!upToast(), 'the toast does not come back for the same version (D-116)');
+
+      await setStep('the automatic check off');
+      const toggle = await waitFor(() => byText('label', 'Check for updates automatically')?.querySelector('[role="switch"]'), 'the automatic check toggle');
+      await check(toggle.getAttribute('aria-checked') === 'true', 'the automatic check is on by default');
+      toggle.click();
+      await waitForAsync(async () => (await window.backend.settings_get({})).update_check === false, 'the setting saved off');
+      await check((await window.backend.settings_get({})).update_toast_version === '99.0.0', "the page's save keeps the app's own records");
+      await check(true, 'the automatic check turns off');
+
+      await setStep("What's new on demand");
+      await click('[data-about-whats-new]');
+      const wn2 = await waitFor(() => q('[data-whats-new]'), "What's new from About");
+      await check(wn2.dataset.whatsNew === VERSION.replace(/-.*$/, '') || wn2.dataset.whatsNew.length > 0, `What's new shows this version's notes (${wn2.dataset.whatsNew})`);
+      await click('.modal.wn .btn-primary', 'Close');
       await log(`${passed} checks passed`);
       await window.backend.e2e_report({ ok: true, detail: '' });
       window.runtime.Quit();
@@ -2503,9 +2577,9 @@
       await waitForAsync(async () => (await window.backend.settings_get({})).toast_corner === 'bottom-right', 'the default corner again');
       await check(true, 'the corner goes back to bottom right');
 
-      q('[data-sb-version]').click();
+      await openAbout();
       await waitFor(() => q('[data-about-version]'), 'the About section from the status bar');
-      await check(q('.nav-i.on')?.textContent.includes('About'), 'the status bar version opens Settings → About');
+      await check(q('.nav-i.on')?.textContent.includes('About'), "the status bar version's About Flint opens Settings → About");
       await check(q('[data-about-version]').textContent.trim() === `Flint ${VERSION}`, `Settings → About shows the build's version (${q('[data-about-version]').textContent.trim()})`);
       await check([...qa('[data-about-libs] tr')].every((r) => r.cells[1].textContent.trim() !== '—') && /\d/.test(q('[data-about-libs]').textContent), 'About lists the linked libraries with their versions');
       await click('.nav-i', 'Vault');
