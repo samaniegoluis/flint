@@ -274,6 +274,10 @@ FLINT_E2E_NOBUILD=1 scripts/cli-e2e.sh
 FLINT_E2E_NOBUILD=1 scripts/gui-e2e.sh
 ```
 
+On a packaged app the desktop suite skips its `update` and `selfupdate` runs: a package
+checks only Flint's own update feed with Flint's key, and those runs need a feed and a key
+of their own, which only a build from source accepts.
+
 On Linux (or a Mac with Docker), `scripts/package.sh linux` builds each package in a
 container of its own, x86_64: the `.deb` on Ubuntu 24.04 and the `.rpm` on Fedora 43,
 the oldest releases with FreeRDP 3 and WebKitGTK 4.1 in their own repositories. The app

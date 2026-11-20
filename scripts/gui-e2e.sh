@@ -408,8 +408,24 @@ PY
   echo "3 checks passed" >> "$log"
 }
 
+# A packaged app (FLINT_E2E_NOBUILD on a release build, or a Linux package installed and
+# linked into build/gui) carries install-kind, which a build from source never does
+# (build-gui.sh): it checks only Flint's own feed with Flint's key (D-116, Principle 15),
+# so the update and selfupdate runs, which need a feed and a key of the run's own, cannot
+# run on it. cfire test covers what such a copy is offered (src/domain/update_test.cf).
+packaged=""
+case "$(uname -s)" in
+  Darwin) [[ -f build/gui/Flint.app/Contents/Resources/install-kind ]] && packaged="$(head -1 build/gui/Flint.app/Contents/Resources/install-kind)" ;;
+  MINGW*|MSYS*) [[ -f build/gui/install-kind ]] && packaged="$(head -1 build/gui/install-kind)" ;;
+  *) kind="$(dirname "$(readlink -f build/gui/Flint)")/install-kind"
+     [[ -f "$kind" ]] && packaged="$(head -1 "$kind")" ;;
+esac
 failed=()
 for r in "${runs[@]}"; do
+  if [[ ( "$r" == update || "$r" == selfupdate ) && -n "$packaged" ]]; then
+    echo "gui-e2e: skip the $r run (a packaged app, $packaged, checks only Flint's own feed)"
+    continue
+  fi
   if [[ "$r" == vim && "$run_vim" != 1 ]]; then
     echo "gui-e2e: skip the vim run (it fails under Xvfb; FLINT_E2E_VIM=1 runs it)"
     continue
