@@ -27,8 +27,14 @@ for your system, build it from a checkout:
 2. Move `Flint.app` where you keep apps, usually **Applications**. It runs from any
    folder.
 3. Open it. macOS refuses the first time, because the app is not signed by an identified
-   developer: open **System Settings → Privacy & Security**, find *"Flint" was blocked*,
-   choose **Open Anyway** and confirm. macOS remembers the choice for this copy.
+   developer: it says *"Flint.app" Not Opened* and offers **Move to Trash** or **Done**.
+   Choose **Done**, open **System Settings → Privacy & Security**, and under
+   **Security** choose **Open Anyway** beside *"Flint.app" was blocked*, then confirm with
+   your password. Open Flint again and choose **Open Anyway** once more. macOS remembers
+   the choice for this copy.
+
+   If Privacy & Security shows no such button, remove the download's quarantine flag
+   instead: `xattr -dr com.apple.quarantine /Applications/Flint.app`.
 
 Your vaults and settings live in your user folder, never inside `Flint.app`, so replacing
 the app keeps them.
