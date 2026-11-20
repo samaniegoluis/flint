@@ -275,6 +275,40 @@ FLINT_E2E_NOBUILD=1 scripts/gui-e2e.sh
 
 Installing a package is described in [Install](/start/install/).
 
+### The release workflow
+
+A release on GitHub is built by the **Release** workflow
+(`.github/workflows/release.yml`) on GitHub's hosted runners. It is started by hand, with
+a tag that is already pushed:
+
+```sh
+gh workflow run release.yml -f tag=v0.16.0       # or Actions → Release → Run workflow
+```
+
+The workflow holds no logic of its own: each step is a script you can run the same way.
+
+| Step | Runs | Does |
+|---|---|---|
+| guard | `scripts/release-draft.sh guard <tag>` | Fails unless the tag is `vX.Y.Z` or `vX.Y.Z-rc.N` and its commit is on `main` |
+| macos | `scripts/install-cfire.sh`, `scripts/package.sh macos` | Installs cfire's pinned release (its SHA-256 is kept in the script) and builds the macOS zip on an Apple silicon runner. The built libraries are cached while `scripts/deps-macos.sh` stays the same |
+| draft | `scripts/release-draft.sh draft <tag> <dir>` | Writes `SHA256SUMS` and makes a **draft** release with every package; a `-rc` tag makes a pre-release |
+
+The notes are the version's section of `CHANGELOG.md` (`scripts/release-draft.sh notes
+<tag>` prints them); an `-rc` tag, which has none, gets its tag's message. Nothing is
+published on its own: open the draft on GitHub, check it, and publish it. Only then does
+the site's [Releases](/releases/) page offer it, since it asks GitHub for the latest
+published release. A draft that already exists is updated, never a published release.
+
+When a runner fails, run the same script on your machine, then upload the file by hand:
+
+```sh
+gh release upload v0.16.0 dist/Flint-0.16.0-macos-arm64.zip --clobber
+```
+
+and write `SHA256SUMS` again (`scripts/release-draft.sh draft v0.16.0 <folder>` with
+every package in the folder). Trial tags (`v0.16.0-rc.1`) are deleted with their
+release afterwards: `gh release delete v0.16.0-rc.1 --cleanup-tag`.
+
 ## Check the Linux build from macOS
 
 With Docker running:

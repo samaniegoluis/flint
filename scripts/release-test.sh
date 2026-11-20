@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests scripts/release.sh and cliff.toml on a throwaway repository (milestone 32): the
 # version bump, what the changelog keeps and leaves out, the summary, the tag, and the
-# refusals. Run by scripts/test.sh; needs git-cliff.
+# refusals; and scripts/release-draft.sh (milestone 51): the guard, the notes, SHA256SUMS
+# and the draft against a stand-in for gh. Run by scripts/test.sh; needs git-cliff.
 set -uo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -88,6 +89,70 @@ release --apply --version 1.0.0 --summary "Again."
 check "an existing version is refused" '[[ $rc == 1 && "$out" == *"already exists"* ]]'
 release --version 1.0
 check "a malformed version is refused" '[[ $rc == 2 ]]'
+
+# scripts/release-draft.sh (milestone 51): the workflow's guard, notes and draft.
+cp "$root/scripts/release-draft.sh" scripts/
+export FLINT_RELEASE_MAIN=main
+draft() { out="$(scripts/release-draft.sh "$@" 2>&1)"; rc=$?; }
+
+draft guard v1.0.0
+check "a tag on main passes the guard" '[[ $rc == 0 && "$out" == *"is on main"* ]]'
+git checkout -q -b side
+commit "fix: on a side branch"
+git tag -a v1.0.1 -m "side"
+draft guard v1.0.1
+check "a tag off main is refused" '[[ $rc == 1 && "$out" == *"not on main"* ]]'
+git checkout -q main
+cp "$root/scripts/release-draft.sh" scripts/   # the side commit took it along
+draft guard v9.9.9
+check "a missing tag is refused" '[[ $rc == 1 && "$out" == *"no tag"* ]]'
+draft guard v1.0
+check "a malformed tag is refused" '[[ $rc == 1 && "$out" == *"not vX.Y.Z"* ]]'
+draft guard demo-2026-01-01
+check "a tag that is not a release is refused" '[[ $rc == 1 ]]'
+
+draft notes v0.2.0
+check "the notes are the version's section" '[[ $rc == 0 && "$out" == *"A desktop."* && "$out" == *"One more"* && "$out" != *"## 0.2.0"* && "$out" != *"Two fixes."* ]]'
+check "the notes say the packages are unsigned" '[[ "$out" == *"not code-signed"* && "$out" == *"SHA256SUMS"* ]]'
+git tag -a v1.1.0-rc.1 -m "Trying the packages."
+draft notes v1.1.0-rc.1
+check "a pre-release not in the changelog gets its tag's message" '[[ $rc == 0 && "$out" == *"pre-release of Flint 1.1.0"* && "$out" == *"Trying the packages."* ]]'
+draft notes v1.2.0
+check "a release not in the changelog is refused" '[[ $rc == 1 && "$out" == *"no section for 1.2.0"* ]]'
+
+# A stand-in for gh: logs its arguments; FAKE_GH_DRAFT says whether the release exists
+# (true: a draft, false: published, unset: none).
+cat > fake-gh <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >> "$FAKE_GH_LOG"
+if [[ "$1 $2" == "release view" ]]; then
+  [[ -n "${FAKE_GH_DRAFT:-}" ]] || exit 1
+  echo "$FAKE_GH_DRAFT"
+fi
+exit 0
+EOF
+chmod +x fake-gh
+export GH="$PWD/fake-gh" FAKE_GH_LOG="$PWD/gh.log"
+mkdir -p pkgs; printf 'mac' > pkgs/Flint-1.1.0-rc.1-macos-arm64.zip; printf 'deb' > pkgs/flint_1.1.0_amd64.deb
+: > gh.log; unset FAKE_GH_DRAFT
+draft draft v1.1.0-rc.1 pkgs
+log="$(cat gh.log)"
+check "draft writes SHA256SUMS for every package" '[[ $rc == 0 && "$(wc -l < pkgs/SHA256SUMS | tr -d " ")" == 2 && "$(cat pkgs/SHA256SUMS)" == *"  Flint-1.1.0-rc.1-macos-arm64.zip"* ]]'
+check "SHA256SUMS checks" '(cd pkgs && shasum -a 256 -c SHA256SUMS >/dev/null)'
+check "a new release is a draft, a pre-release for -rc, with every file" '[[ "$log" == *"release create v1.1.0-rc.1 --draft --verify-tag"*"--prerelease"*"SHA256SUMS"* && "$log" == *"macos-arm64.zip"* && "$log" == *"amd64.deb"* ]]'
+: > gh.log
+draft draft v1.0.0 pkgs
+check "a release tag is not a pre-release" '[[ $rc == 0 && "$(cat gh.log)" == *"release create v1.0.0 --draft"* && "$(cat gh.log)" != *"--prerelease"* ]]'
+: > gh.log; export FAKE_GH_DRAFT=true
+draft draft v1.1.0-rc.1 pkgs
+check "an existing draft gets its files replaced" '[[ $rc == 0 && "$(cat gh.log)" == *"release upload v1.1.0-rc.1 --clobber"* && "$(cat gh.log)" != *"release create"* ]]'
+: > gh.log; export FAKE_GH_DRAFT=false
+draft draft v1.1.0-rc.1 pkgs
+check "a published release is never changed" '[[ $rc == 1 && "$out" == *"already published"* && "$(cat gh.log)" != *"upload"* ]]'
+unset FAKE_GH_DRAFT
+mkdir -p empty
+draft draft v1.0.0 empty
+check "a folder with no packages is refused" '[[ $rc == 1 && "$out" == *"no packages"* ]]'
 
 echo "release-test: $((checks - failures))/$checks"
 [[ $failures == 0 ]]
