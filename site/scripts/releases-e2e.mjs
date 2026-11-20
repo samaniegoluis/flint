@@ -1,6 +1,7 @@
 // Headless check of the Releases page (milestone 33, D-078), against the built site in
 // dist/: the versions from CHANGELOG.md, the list to jump to, folded long lists, the
-// header link, both themes, and no horizontal scroll at phone width.
+// header link, both themes, and no horizontal scroll at phone width; and the Download
+// buttons (milestone 51) against a stand-in for GitHub's latest-release API, per system.
 //
 //   npm run build && npm run test:releases
 //
@@ -42,8 +43,30 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}/`;
 const browser = await chromium.launch({ executablePath: findChromium() });
 
-async function open(viewport, theme) {
-	const ctx = await browser.newContext({ viewport, colorScheme: theme });
+const API = 'https://api.github.com/repos/samaniegoluis/flint/releases/latest';
+const UA = {
+	macos: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36',
+	windows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36',
+	linux: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36',
+};
+const DL = 'https://github.com/samaniegoluis/flint/releases/download/v0.16.0/';
+const latest = (names) => ({
+	tag_name: 'v0.16.0',
+	html_url: 'https://github.com/samaniegoluis/flint/releases/tag/v0.16.0',
+	draft: false,
+	prerelease: false,
+	assets: names.map((name) => ({ name, browser_download_url: DL + name })),
+});
+
+// Every page gets the stand-in, never the real API: 404 (nothing published) unless a
+// release is given.
+async function open(viewport, theme, { release = null, ua } = {}) {
+	const ctx = await browser.newContext({ viewport, colorScheme: theme, ...(ua ? { userAgent: ua } : {}) });
+	await ctx.route(API, (route) =>
+		release
+			? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(release) })
+			: route.fulfill({ status: 404, contentType: 'application/json', body: '{"message":"Not Found"}' }),
+	);
 	const page = await ctx.newPage();
 	const errors = [];
 	page.on('pageerror', (e) => errors.push(String(e)));
@@ -71,7 +94,8 @@ try {
 		check(JSON.stringify(navItems) === JSON.stringify(versions), `${theme} desktop: the list to jump to names every version`);
 		check((await page.locator('.flint-release').first().locator('.flint-releases__latest').count()) === 1, `${theme} desktop: the newest is marked Latest`);
 		check(await page.locator('.flint-releases__get a[href="/start/build-from-source/"]').isVisible(), `${theme} desktop: Build from source is offered`);
-		check(/downloads coming soon/i.test(await page.locator('.flint-releases__get').innerText()), `${theme} desktop: downloads are announced as coming soon`);
+		await page.waitForLoadState('networkidle');
+		check(!(await page.locator('.flint-releases__get-download').isVisible()), `${theme} desktop: with nothing published, no Download button`);
 		const summary = await page.locator('.flint-release__summary').first().innerText();
 		check(summary.length > 40, `${theme} desktop: the newest release shows its summary`);
 		check(/^added/i.test(await page.locator('.flint-release__group h3').first().innerText()), `${theme} desktop: its lists start with Added`);
@@ -126,6 +150,55 @@ try {
 			check(errors.length === 0, `${theme} phone: no script errors${errors.length ? ': ' + errors.join('; ') : ''}`);
 			await ctx.close();
 		}
+	}
+
+	// Download buttons per system, from the latest published release.
+	const ALL = ['Flint-0.16.0-macos-arm64.zip', 'flint_0.16.0_amd64.deb', 'flint-0.16.0.x86_64.rpm', 'SHA256SUMS'];
+	for (const theme of ['dark', 'light']) {
+		const { ctx, page, errors } = await open({ width: 1280, height: 900 }, theme, { release: latest(ALL), ua: UA.macos });
+		await page.goto(base + 'releases/');
+		const btn = page.locator('.flint-releases__get-buttons a');
+		await btn.first().waitFor({ timeout: 5000 });
+		check((await btn.count()) === 1, `${theme} macOS: one Download button`);
+		check((await btn.first().getAttribute('href')) === DL + 'Flint-0.16.0-macos-arm64.zip', `${theme} macOS: it downloads the macOS zip`);
+		check(/Download for macOS/.test(await btn.first().innerText()), `${theme} macOS: labelled for macOS`);
+		const box = await page.locator('.flint-releases__get').innerText();
+		check(/Flint 0\.16\.0/i.test(box) && /Apple silicon/.test(box) && /not code-signed/i.test(box), `${theme} macOS: the version, what it needs, and that it is unsigned`);
+		check(!(await page.locator('.flint-releases__get-source').isVisible()), `${theme} macOS: Build from source gives way`);
+		check((await page.locator('[data-download-release]').getAttribute('href')).endsWith('/releases/tag/v0.16.0'), `${theme} macOS: other systems and SHA256SUMS link to the release`);
+		const bg = await btn.first().evaluate((a) => getComputedStyle(a).backgroundColor);
+		check(bg !== 'rgba(0, 0, 0, 0)', `${theme} macOS: the button has Starlight's style (${bg})`);
+		if (shots) await page.locator('.flint-releases__get').screenshot({ path: join(shots, `releases-download-${theme}.png`) });
+		check(errors.length === 0, `${theme} macOS: no script errors${errors.length ? ': ' + errors.join('; ') : ''}`);
+		await ctx.close();
+	}
+	{
+		const { ctx, page, errors } = await open({ width: 1280, height: 900 }, 'dark', { release: latest(ALL), ua: UA.linux });
+		await page.goto(base + 'releases/');
+		const btn = page.locator('.flint-releases__get-buttons a');
+		await btn.first().waitFor({ timeout: 5000 });
+		const hrefs = await btn.evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+		check(JSON.stringify(hrefs) === JSON.stringify([DL + 'flint_0.16.0_amd64.deb', DL + 'flint-0.16.0.x86_64.rpm']), 'Linux: .deb and .rpm');
+		check(errors.length === 0, 'Linux: no script errors');
+		await ctx.close();
+	}
+	{
+		const { ctx, page, errors } = await open({ width: 1280, height: 900 }, 'dark', { release: latest(ALL), ua: UA.windows });
+		await page.goto(base + 'releases/');
+		await page.waitForFunction(() => document.querySelector('.flint-releases__get')?.dataset.downloadState === 'none');
+		check(await page.locator('.flint-releases__get-source a[href="/start/build-from-source/"]').isVisible(), 'Windows with no package: Build from source stays');
+		check(/no package for Windows yet/.test(await page.locator('.flint-releases__get').innerText()), 'Windows with no package: says so');
+		check(errors.length === 0, 'Windows: no script errors');
+		await ctx.close();
+	}
+	{
+		const { ctx, page } = await open({ width: 375, height: 812 }, 'dark', { release: latest(ALL), ua: UA.macos });
+		await page.goto(base + 'releases/');
+		await page.locator('.flint-releases__get-buttons a').first().waitFor({ timeout: 5000 });
+		const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+		check(overflow <= 0, `phone: no horizontal scroll with the Download button (overflow ${overflow}px)`);
+		if (shots) await page.screenshot({ path: join(shots, 'releases-download-phone.png') });
+		await ctx.close();
 	}
 
 	// The sidebar's Reference → Releases entry leads to the page.

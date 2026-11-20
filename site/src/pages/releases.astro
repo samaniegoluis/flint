@@ -2,8 +2,9 @@
 // The Releases page (milestone 33, D-078): every version of Flint newest first, read
 // from CHANGELOG.md at build time, so the page cannot drift from the changelog
 // scripts/release.sh writes. Built in the landing's style (D-027), not from Claude Design.
-// Until there are release builds (ROADMAP §7) it offers Build from source instead of
-// downloads.
+// Above the list, Download buttons for the visitor's system from the latest published
+// release on GitHub, asked from the browser (milestone 51, src/releases/download.ts);
+// Build from source when there is none, no package for the system, or no script.
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 import { LinkButton } from '@astrojs/starlight/components';
 import { repoUrl } from '../repo';
@@ -42,17 +43,37 @@ function item(text: string): { scope: string | null; html: string } {
 			version, only fixes the patch.
 		</p>
 
-		<aside class="flint-releases__get" aria-labelledby="flint-releases-get">
-			<div>
-				<p class="flint-releases__kicker">Downloads coming soon</p>
-				<h2 id="flint-releases-get">Build Flint from source</h2>
-				<p>
-					There are no release builds yet. Flint builds on macOS and Linux with cfire and a few
-					native libraries; each version below is a <a href={`${repoUrl}/tags`}>git tag</a> you can
-					check out and build.
-				</p>
+		<aside class="flint-releases__get" aria-labelledby="flint-releases-get" data-download-state="source">
+			<div class="flint-releases__get-source">
+				<div>
+					<p class="flint-releases__kicker" data-download-kicker>Get Flint</p>
+					<h2 id="flint-releases-get">Build Flint from source</h2>
+					<p>
+						<span data-download-why>Release packages are published on <a href={`${repoUrl}/releases`}>GitHub</a>.</span>{' '}
+						Flint also builds from a checkout with cfire and a few native libraries; each version
+						below is a <a href={`${repoUrl}/tags`}>git tag</a> you can check out and build.
+					</p>
+				</div>
+				<LinkButton href="/start/build-from-source/" icon="right-arrow">Build from source</LinkButton>
 			</div>
-			<LinkButton href="/start/build-from-source/" icon="right-arrow">Build from source</LinkButton>
+			<div class="flint-releases__get-download" hidden>
+				<div>
+					<p class="flint-releases__kicker" data-download-version></p>
+					<h2 data-download-title></h2>
+					<p>
+						<span data-download-needs></span>{' '}Not code-signed yet: the first launch needs{' '}
+						<a href="/start/install/">one extra step</a>. Other systems and <code>SHA256SUMS</code> are on{' '}
+						<a data-download-release href={`${repoUrl}/releases/latest`}>the release's page</a>.
+					</p>
+				</div>
+				<div class="flint-releases__get-buttons" data-download-buttons></div>
+				<template data-download-button>
+					<LinkButton href="#" icon="download">Download</LinkButton>
+				</template>
+				<template data-download-button-secondary>
+					<LinkButton href="#" icon="download" variant="secondary">Download</LinkButton>
+				</template>
+			</div>
 		</aside>
 
 		<div class="flint-releases__body">
@@ -121,6 +142,66 @@ function item(text: string): { scope: string | null; html: string } {
 	</div>
 </StarlightPage>
 
+<script>
+	import { NEEDS, SYSTEM_NAME, detectSystem, downloadsFor, versionOf, type Release } from '../releases/download.ts';
+
+	const API = 'https://api.github.com/repos/samaniegoluis/flint/releases/latest';
+
+	async function offer() {
+		const box = document.querySelector<HTMLElement>('.flint-releases__get');
+		if (!box) return;
+		const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+		const system = detectSystem(navigator.userAgent, nav.userAgentData?.platform ?? navigator.platform ?? '');
+		let release: Release;
+		try {
+			const ctl = new AbortController();
+			const timer = setTimeout(() => ctl.abort(), 8000);
+			const res = await fetch(API, { headers: { Accept: 'application/vnd.github+json' }, signal: ctl.signal });
+			clearTimeout(timer);
+			if (!res.ok) return; // 404: nothing published yet; keep Build from source
+			release = await res.json();
+		} catch {
+			return;
+		}
+		const version = versionOf(release.tag_name);
+		const downloads = system ? downloadsFor(release, system) : [];
+		if (!system || downloads.length === 0) {
+			// A release exists, but nothing for this system yet.
+			const why = box.querySelector('[data-download-why]');
+			if (why && system) why.textContent = `Flint ${version} has no package for ${SYSTEM_NAME[system]} yet.`;
+			box.querySelector('[data-download-kicker]')!.textContent = `Flint ${version}`;
+			box.dataset.downloadState = 'none';
+			return;
+		}
+		const dl = box.querySelector<HTMLElement>('.flint-releases__get-download')!;
+		dl.querySelector('[data-download-version]')!.textContent = `Flint ${version}`;
+		dl.querySelector('[data-download-title]')!.textContent = `Download Flint for ${SYSTEM_NAME[system]}`;
+		dl.querySelector('[data-download-needs]')!.textContent = NEEDS[system];
+		if (release.html_url.startsWith('https://github.com/')) {
+			dl.querySelector<HTMLAnchorElement>('[data-download-release]')!.href = release.html_url;
+		}
+		const buttons = dl.querySelector('[data-download-buttons]')!;
+		downloads.forEach((d, i) => {
+			const tpl = dl.querySelector<HTMLTemplateElement>(i === 0 ? '[data-download-button]' : '[data-download-button-secondary]')!;
+			const a = (tpl.content.firstElementChild as HTMLAnchorElement).cloneNode(true) as HTMLAnchorElement;
+			a.href = d.url;
+			a.title = d.name;
+			// The label is the text node before the icon.
+			const text = [...a.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim());
+			if (text) text.textContent = d.label;
+			else a.prepend(d.label);
+			buttons.append(a);
+		});
+		box.querySelector<HTMLElement>('.flint-releases__get-source')!.hidden = true;
+		dl.hidden = false;
+		box.setAttribute('aria-labelledby', 'flint-releases-download');
+		dl.querySelector('[data-download-title]')!.id = 'flint-releases-download';
+		box.dataset.downloadState = 'download';
+	}
+
+	offer();
+</script>
+
 <style>
 	.flint-releases {
 		--rel-gap: 2.5rem;
@@ -138,12 +219,8 @@ function item(text: string): { scope: string | null; html: string } {
 		color: var(--sl-color-text-accent);
 	}
 
-	/* ---- Build from source, in place of downloads ---- */
+	/* ---- Download for the visitor's system, or Build from source ---- */
 	.flint-releases__get {
-		display: flex;
-		gap: 1.5rem;
-		align-items: center;
-		justify-content: space-between;
 		margin-top: 2rem;
 		padding: 1.5rem 1.75rem;
 		border: 1px solid var(--flint-border);
@@ -151,6 +228,22 @@ function item(text: string): { scope: string | null; html: string } {
 		background:
 			radial-gradient(ellipse at 0% 0%, var(--flint-glow), transparent 60%),
 			var(--flint-surface-raised);
+	}
+	.flint-releases__get-source,
+	.flint-releases__get-download {
+		display: flex;
+		gap: 1.5rem;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.flint-releases__get [hidden] {
+		display: none;
+	}
+	.flint-releases__get-buttons {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		flex-shrink: 0;
 	}
 	.flint-releases__get p a {
 		color: var(--sl-color-text-accent);
@@ -413,9 +506,12 @@ function item(text: string): { scope: string | null; html: string } {
 	/* ---- Narrow screens: the versions become a row above the list ---- */
 	@media (max-width: 50rem) {
 		.flint-releases__get {
+			padding: 1.25rem;
+		}
+		.flint-releases__get-source,
+		.flint-releases__get-download {
 			flex-direction: column;
 			align-items: flex-start;
-			padding: 1.25rem;
 		}
 		.flint-releases__body {
 			grid-template-columns: minmax(0, 1fr);

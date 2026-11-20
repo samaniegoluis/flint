@@ -7,7 +7,16 @@ Flint ships as a portable package per system: the desktop app with the `flint` C
 inside it. Packages are not code-signed yet, so the first launch needs one extra step,
 described below. Signed packages and installers come later.
 
-Until the first release is published on GitHub, a package is built from a checkout:
+Download the package for your system from [Releases](/releases/), which offers the
+latest version's, or from the [releases on GitHub](https://github.com/samaniegoluis/flint/releases),
+which list every file with a `SHA256SUMS` to check them against:
+
+```sh
+shasum -a 256 -c SHA256SUMS --ignore-missing     # on Linux: sha256sum -c …
+```
+
+Packages are published for macOS first; Linux and Windows follow. Until one is published
+for your system, build it from a checkout:
 [Build a release package](/start/build-from-source/#build-a-release-package).
 
 ## macOS
