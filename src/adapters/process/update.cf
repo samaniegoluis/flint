@@ -46,7 +46,7 @@ fn (mut self: OsUpdateFiles) upd_remove(path: str) -> void! {
     mut why := ""
     // CFIRE-UPSTREAM: CF-158
     cpp {
-        ok = flint_update::remove_tree(path, why);
+        ok = flint_update::upd_remove_tree(path, why);
     }
     if !ok {
         return error(coded(ERR_IO, "cannot remove {path}: {why}"))
@@ -58,7 +58,7 @@ fn (mut self: OsUpdateFiles) upd_rename(from: str, to: str) -> void! {
     mut why := ""
     // CFIRE-UPSTREAM: CF-158
     cpp {
-        ok = flint_update::rename_path(from, to, why);
+        ok = flint_update::upd_rename_path(from, to, why);
     }
     if !ok {
         return error(coded(ERR_IO, "cannot move {from} to {to}: {why}"))
@@ -99,7 +99,7 @@ fn (mut self: OsUpdateFiles) upd_copy_exe(from: str, to: str) -> void! {
     mut ok := false
     // CFIRE-UPSTREAM: CF-175
     cpp {
-        ok = flint_update::make_executable(to);
+        ok = flint_update::upd_make_executable(to);
     }
     if !ok {
         return error(coded(ERR_IO, "cannot make {to} executable"))
@@ -118,7 +118,7 @@ fn (self: OsUpdateProcesses) proc_alive(pid: i64) -> bool {
     mut on := false
     // CFIRE-UPSTREAM: CF-175
     cpp {
-        on = flint_update::alive(pid);
+        on = flint_update::upd_alive(pid);
     }
     return on
 }
@@ -128,7 +128,7 @@ fn (self: OsUpdateProcesses) proc_running_under(dir: str) -> []i64 {
     mut joined := ""
     // CFIRE-UPSTREAM: CF-158, CF-175
     cpp {
-        for (auto p : flint_update::running_under(flint_update::real_path(dir))) {
+        for (auto p : flint_update::upd_running_under(flint_update::upd_real_path(dir))) {
             joined += std::to_string(p);
             joined += ",";
         }
@@ -156,7 +156,7 @@ fn (mut self: OsUpdateProcesses) proc_spawn(exe: str, args: []str, log: str) -> 
         for (char ch : packed) {
             if (ch == '\x1f') { argv.push_back(cur); cur.clear(); } else { cur += ch; }
         }
-        pid = flint_update::spawn_detached(exe, argv, log);
+        pid = flint_update::upd_spawn_detached(exe, argv, log);
     }
     if pid <= 0 {
         return error(coded(ERR_IO, "cannot start {exe} (error {-pid})"))
@@ -167,7 +167,7 @@ fn (mut self: OsUpdateProcesses) proc_spawn(exe: str, args: []str, log: str) -> 
 fn (mut self: OsUpdateProcesses) proc_stop(pid: i64) {
     // CFIRE-UPSTREAM: CF-175
     cpp {
-        flint_update::stop(pid);
+        flint_update::upd_stop(pid);
     }
 }
 

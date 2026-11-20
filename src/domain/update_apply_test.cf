@@ -35,16 +35,16 @@ test "a package's SHA-256 must match the verified manifest's" {
 }
 
 test "update-apply takes only the package beside the folder it replaces" {
-    ok := ApplyRequest{ wait_pid: 42, from: "/Applications/.flint-update/new/Flint.app", to: "/Applications/Flint.app", os: "mac" }
+    ok := ApplyRequest{ wait_pid: 42, from: "/Applications/.flint-update/new/Flint.app", to: "/Applications/Flint.app", os: "mac", app_log: "" }
     check_apply_request(ok) or err {
         assert_eq("{err.message()}", "")
     }
     mut r := ""
-    elsewhere := ApplyRequest{ wait_pid: 42, from: "/tmp/evil/Flint.app", to: "/Applications/Flint.app", os: "mac" }
+    elsewhere := ApplyRequest{ wait_pid: 42, from: "/tmp/evil/Flint.app", to: "/Applications/Flint.app", os: "mac", app_log: "" }
     check_apply_request(elsewhere) or err { r = "{err.message()}" }
     assert(r.starts_with("invalid:"))
     r = ""
-    check_apply_request(ApplyRequest{ wait_pid: 0, from: "", to: "/Applications/Flint.app", os: "mac" }) or err { r = "{err.message()}" }
+    check_apply_request(ApplyRequest{ wait_pid: 0, from: "", to: "/Applications/Flint.app", os: "mac", app_log: "" }) or err { r = "{err.message()}" }
     assert(r.starts_with("usage:"))
 }
 

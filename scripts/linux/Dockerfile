@@ -81,9 +81,10 @@ WORKDIR /home/flint
 # iptables for the RDP adapter's quiet-network test (milestone 31): it drops the test
 # server's packets, as a network that goes away, when the container has NET_ADMIN
 # (FLINT_RDP_BLACKHOLE=1 scripts/linux-check.sh). rsync copies the tree into the cache
-# volume (below). Last, so the layers above stay cached.
+# volume (below). zip and unzip for the self-update (milestone 53: the package's zip and
+# the adapter that unpacks it). Last, so the layers above stay cached.
 USER root
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends iptables rsync \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends iptables rsync zip unzip \
     && rm -rf /var/lib/apt/lists/*
 USER flint
 # The mount point of linux-check.sh's cache volume, owned by `flint` so a new volume

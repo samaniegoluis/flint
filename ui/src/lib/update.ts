@@ -1,4 +1,5 @@
-// The words of the update notice (milestone 52, designs 24c, 24e, 24f, 24i, D-116):
+// The words of the update notice (milestone 52, designs 24c, 24e, 24f, 24i, D-116) and
+// of the self-update (milestone 53: 24c2-24c4, 24d1, 24e3, 24e4, 24f3, D-111):
 // the toast, the status bar's version item and its popover, About's Updates block
 // and the palette. Kept apart from the views so the wording is tested without React.
 
@@ -16,8 +17,60 @@ export function updateAvailable(st: UpdateStatus | null): st is UpdateStatus {
   return !!st && st.state === 'available';
 }
 
-/** The action's label: Download for a copy that can be replaced, How to update otherwise. */
+/** Milestone 53: the package is downloading, or downloaded, verified and unpacked. */
+export function updateDownloading(st: UpdateStatus | null): boolean {
+  return !!st && st.state === 'downloading';
+}
+
+export function updateReady(st: UpdateStatus | null): boolean {
+  return !!st && st.state === 'ready';
+}
+
+/** Something to do about a newer version: shown beside the version in the status bar. */
+export function updatePending(st: UpdateStatus | null): boolean {
+  return updateAvailable(st) || updateDownloading(st) || updateReady(st);
+}
+
+/** The download's percentage, 0-100 (whole numbers; 99 until the last byte). */
+export function updatePercent(received: number, total: number): number {
+  if (total <= 0 || received <= 0) return 0;
+  if (received >= total) return 100;
+  return Math.min(99, Math.floor((received * 100) / total));
+}
+
+/** 24c2. */
+export function updateDownloadingText(st: UpdateStatus): string {
+  return `Downloading Flint ${st.version}`;
+}
+
+/** 24c3. */
+export function updateReadyText(st: UpdateStatus): string {
+  return `Flint ${st.version} is ready`;
+}
+
+/** A download that failed (24c4a, 24c4b): its toast's words, and whether Retry makes sense. */
+export function updateDownloadFailure(st: UpdateStatus): { text: string; retry: boolean } {
+  switch (st.code) {
+    case 'invalid': return { text: `Flint ${st.version} didn't pass verification and was discarded`, retry: false };
+    case 'network': return { text: `Couldn't download Flint ${st.version} · no connection`, retry: true };
+    case 'timeout': return { text: `Couldn't download Flint ${st.version} · the download stalled`, retry: true };
+    case 'io': return { text: `Couldn't download Flint ${st.version} · ${st.message}`, retry: true };
+    default: return { text: `Couldn't download Flint ${st.version}${st.message ? ` · ${st.message}` : ''}`, retry: true };
+  }
+}
+
+/** 24d1: what closes when Flint relaunches; "" when nothing does (Relaunch goes straight through). */
+export function relaunchClosesText(sessions: number, tunnels: number): string {
+  const parts: string[] = [];
+  if (sessions > 0) parts.push(`${sessions} session${sessions === 1 ? '' : 's'}`);
+  if (tunnels > 0) parts.push(`${tunnels} tunnel${tunnels === 1 ? '' : 's'}`);
+  if (parts.length === 0) return '';
+  return `${parts.join(' and ')} will close.`;
+}
+
+/** The action's label: Download for a copy that can be replaced, How to update otherwise; Relaunch once it is ready. */
 export function updateActionLabel(st: UpdateStatus): string {
+  if (st.state === 'ready') return 'Relaunch';
   return st.action === 'download' ? 'Download' : 'How to update';
 }
 
@@ -27,7 +80,9 @@ export function updateToastText(st: UpdateStatus): string {
 }
 
 /** The text beside the version in the status bar (the owner's change to 24f, D-116). */
-export function updateBarLabel(st: UpdateStatus | null): string {
+export function updateBarLabel(st: UpdateStatus | null, received = 0): string {
+  if (updateReady(st)) return 'Relaunch';
+  if (st && updateDownloading(st)) return `${updatePercent(received, st.asset_size)}%`;
   return updateAvailable(st) ? 'Update' : '';
 }
 
@@ -66,6 +121,8 @@ export function updateStateLine(st: UpdateStatus | null, now: number): string {
     case 'checking': return 'Checking for updates…';
     case 'up_to_date': return `Up to date${checked}`;
     case 'available': return `Flint ${st.version} is available${st.date ? ` · released ${shortDate(st.date)}` : ''}`;
+    case 'downloading': return `Downloading Flint ${st.version}`;
+    case 'ready': return `Flint ${st.version} is ready · verified`;
     case 'error': return updateErrorText(st) + checked;
     default: return st.auto ? 'Not checked yet' : 'Automatic check is off';
   }
@@ -79,6 +136,8 @@ export function updatePaletteHint(st: UpdateStatus | null, now: number): string 
     case 'checking': return 'checking…';
     case 'up_to_date': return `up to date${when}`;
     case 'available': return `${st.version} is available`;
+    case 'downloading': return `downloading ${st.version}…`;
+    case 'ready': return `${st.version} is ready: relaunch to update`;
     case 'error': return `couldn't check${when}`;
     default: return '';
   }
@@ -86,8 +145,10 @@ export function updatePaletteHint(st: UpdateStatus | null, now: number): string 
 
 /** The popover's line under the title (24f2). */
 export function updatePopoverDetail(st: UpdateStatus): string {
+  if (st.state === 'ready') return 'Downloaded and verified. Relaunch when it suits you; nothing changes until then.';
+  if (st.state === 'downloading') return `You have ${st.current}. Nothing changes until you relaunch.`;
   if (st.state !== 'available') return `You have ${st.current}.`;
-  if (st.action === 'download') return `You have ${st.current}. Download it from the release page; nothing changes until you install it.`;
+  if (st.action === 'download') return `You have ${st.current}. Download it here; nothing changes until you relaunch.`;
   return `You have ${st.current}. ${updateHowText(st)}`;
 }
 

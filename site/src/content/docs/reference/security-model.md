@@ -208,10 +208,17 @@ connect, 30 s in all) and a size cap, and redirects are followed over HTTPS only
 - **Only this project's releases.** A verified manifest must name a release version and
   point at this repository's releases on GitHub; anything else is refused. Drafts and
   pre-releases are never offered.
-- **Nothing is applied.** Today **Download** opens the release page in your browser;
-  the app never installs, replaces or restarts anything on its own. The package's
-  SHA-256 is in the manifest for the in-app update that comes next, which will check it
-  before installing.
+- **Nothing unverified is unpacked.** **Download** fetches the package the verified
+  manifest names, over HTTPS with a connect deadline and a stall deadline (30 s with
+  nothing received ends it), capped at the size the manifest gives. Its SHA-256
+  (libsodium) must match the manifest's before it is unpacked, beside the installed
+  app; a mismatch deletes it and nothing is retried on its own.
+- **You decide when.** Nothing is applied until you choose **Relaunch**, and nothing at
+  the next launch if you don't. Relaunch starts `flint update-apply` from a copy of the
+  new `flint` outside the app, which waits for the app (and any `flint` running from it)
+  to quit, swaps the two folders by renaming them, and starts the new app. Until the
+  new app says it has started, the old folder is kept; if it does not, the old one is
+  put back and opened. No file in use is ever overwritten.
 
 ## Next
 

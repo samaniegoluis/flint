@@ -4,8 +4,11 @@ package main
 // latest release's signed manifest at launch and every hour while the automatic check
 // is on, or at once when the page asks (Check now). Each outcome goes to the page as
 // `update:status`; the page asks for the last one with the hint `status`. Opening a
-// release page and What's new are RPCs. Nothing here is downloaded or applied
-// (milestone 53).
+// release page and What's new are RPCs. Milestone 53: Download (the hint `download`)
+// fetches, checks and unpacks the package on this thread while another one emits
+// `update:progress`; Relaunch (`relaunch`) starts update-apply and quits. At launch a
+// package already unpacked is offered as Ready, and why the last update was not
+// applied is said once.
 
 import "ext:webui"
 import "core:encoding/hex"
@@ -31,6 +34,15 @@ UPDATE_HINT_STATUS: str = "status"
 // repeats asks for it, so a page that starts after the check (a slow first load, a
 // reload) still shows it once.
 UPDATE_HINT_TOAST_SHOWN: str = "toast_shown"
+// Milestone 53: Download, Relaunch, and the page has shown the outcome.
+UPDATE_HINT_DOWNLOAD: str = "download"
+UPDATE_HINT_RELAUNCH: str = "relaunch"
+UPDATE_HINT_OUTCOME_SHOWN: str = "outcome_shown"
+UPDATE_PROGRESS_MS: i64 = 250
+
+type UpdateProgress struct {
+    received: i64 `json:"received"`
+}
 
 type UpdateHintReq struct {
     reason: str `json:"reason"`
@@ -108,7 +120,7 @@ fn update_source(kind: str) -> UpdateSource {
 
 fn rpc_update_hint(params: str, st: GuiState) -> str! {
     req := try parse_req[UpdateHintReq](params)
-    if req.reason == UPDATE_HINT_NOW || req.reason == UPDATE_HINT_STATUS || req.reason == UPDATE_HINT_TOAST_SHOWN {
+    if req.reason == UPDATE_HINT_NOW || req.reason == UPDATE_HINT_STATUS || req.reason == UPDATE_HINT_TOAST_SHOWN || req.reason == UPDATE_HINT_DOWNLOAD || req.reason == UPDATE_HINT_RELAUNCH || req.reason == UPDATE_HINT_OUTCOME_SHOWN {
         st.update_hints.send(req.reason)
     }
     return ok_json()
@@ -150,14 +162,66 @@ fn rpc_open_url(params: str, e2e: bool) -> str! {
     return ok_json()
 }
 
+// A check's outcome with what is on disk: the version found already unpacked is Ready;
+// a newer one than the unpacked replaces it (the staging folder goes).
+fn with_staged(s: UpdateStatus, staged: str, mut files: OsUpdateFiles, root: str) -> (UpdateStatus, str) {
+    if staged.len() == 0 {
+        return (s, staged)
+    }
+    mut out := s
+    if s.state == UPDATE_AVAILABLE && s.version != staged {
+        files.upd_remove(update_paths(root, os_name()).staging) or {}
+        return (out, "")
+    }
+    if s.state == UPDATE_AVAILABLE || s.state == UPDATE_FAILED || s.state == UPDATE_UP_TO_DATE || s.state == UPDATE_IDLE {
+        out.state = UPDATE_READY
+        out.version = staged
+        out.toast = false
+    }
+    return (out, staged)
+}
+
+// While a package downloads, its bytes so far go to the page.
+fn run_update_progress(st: GuiState, mut app: webui.App) {
+    mut was := false
+    for !st.holder.quitting() {
+        time.sleep_ms(UPDATE_PROGRESS_MS)
+        on := update_download_active()
+        if on || was {
+            app.emit("update:progress", UpdateProgress{ received: update_download_received() })
+        }
+        was = on
+    }
+}
+
 fn run_update_loop(c: Sodium, settings_store: JsonSettingsStore, st: GuiState, mut app: webui.App) {
     feed := new_http_update_feed()
+    mut dl := new_http_update_downloader()
+    mut files := new_os_update_files()
+    mut procs := new_os_update_processes()
     here := update_here()
+    root := install_root()
     // The real kind decides whether a test feed is allowed, never the one a test pretends.
     src := update_source(real_install_kind())
     mut settings := settings_store
     first := load_settings(settings) or default_settings()
     mut last := update_status_idle(here.version, first.update_check, 0)
+    // What the last update-apply could not do, said once; a package already unpacked.
+    if o := take_apply_outcome(mut files, root, os_name()) {
+        last.outcome = apply_outcome_text(o)
+        write_stderr("flint-gui: the last update was not applied ({o.step}: {o.message})\n")
+    }
+    mut staged := ""
+    if here.kind == INSTALL_PORTABLE {
+        staged = staged_update(mut files, root, os_name(), here.version)
+    }
+    if staged.len() > 0 {
+        last.state = UPDATE_READY
+        last.version = staged
+        last.action = UPDATE_ACTION_DOWNLOAD
+        write_stderr("flint-gui: Flint {staged} is downloaded and ready\n")
+    }
+    mut said_started := false
     mut next_auto := time.now_ms() + UPDATE_FIRST_CHECK_MS
     // An end-to-end run never checks GitHub on its own: only its own feed, or Check now.
     quiet := os.getenv("FLINT_GUI_E2E").len() > 0 && os.getenv("FLINT_UPDATE_FEED").len() == 0
@@ -169,10 +233,67 @@ fn run_update_loop(c: Sodium, settings_store: JsonSettingsStore, st: GuiState, m
             last.toast = false
             continue
         }
+        if hint == UPDATE_HINT_OUTCOME_SHOWN {
+            last.outcome = ""
+            continue
+        }
+        if hint == UPDATE_HINT_STATUS && !said_started {
+            // The page is up: an update-apply waiting for this app hears it started.
+            mark_update_started(mut files, root, os_name())
+            said_started = true
+        }
         if hint == UPDATE_HINT_STATUS || auto != last.auto {
             last.auto = auto
             app.emit("update:status", last)
             continue
+        }
+        if hint == UPDATE_HINT_DOWNLOAD {
+            if last.state != UPDATE_AVAILABLE || last.action != UPDATE_ACTION_DOWNLOAD {
+                continue
+            }
+            mut going := last
+            going.state = UPDATE_DOWNLOADING
+            going.toast = false
+            going.code = ""
+            going.message = ""
+            going.received = 0
+            app.emit("update:status", going)
+            write_stderr("flint-gui: downloading Flint {last.version}\n")
+            download_update(mut dl, c, mut files, last, root, os_name()) or err {
+                msg := "{err.message()}"
+                last.code = error_code_of(msg)
+                last.message = error_text_of(msg)
+                last.toast = false
+                write_stderr("flint-gui: the download failed ({last.code}): {last.message}\n")
+                app.emit("update:status", last)
+                continue
+            }
+            staged = last.version
+            last.state = UPDATE_READY
+            last.toast = false
+            last.code = ""
+            last.message = ""
+            last.received = last.asset_size
+            write_stderr("flint-gui: Flint {last.version} is downloaded and ready\n")
+            app.emit("update:status", last)
+            continue
+        }
+        if hint == UPDATE_HINT_RELAUNCH {
+            if last.state != UPDATE_READY {
+                continue
+            }
+            temp := "{temp_base()}/flint-update-{current_pid()}"
+            relaunch_update(mut files, mut procs, root, os_name(), here.version, temp, current_pid()) or err {
+                msg := "{err.message()}"
+                last.code = error_code_of(msg)
+                last.message = error_text_of(msg)
+                write_stderr("flint-gui: Relaunch failed ({last.code}): {last.message}\n")
+                app.emit("update:status", last)
+                continue
+            }
+            write_stderr("flint-gui: relaunching into Flint {last.version} (log: {temp}/update-apply.log)\n")
+            quit_app(mut app)
+            return
         }
         now := time.now_ms()
         if hint != UPDATE_HINT_NOW && !(auto && !quiet && now >= next_auto) {
@@ -183,11 +304,14 @@ fn run_update_loop(c: Sodium, settings_store: JsonSettingsStore, st: GuiState, m
         checking.toast = false
         app.emit("update:status", checking)
         pending := last.toast
+        outcome := last.outcome
         last = check_for_update(feed, c, mut settings, src, here, time.unix_seconds() * 1000)
+        last.outcome = outcome
         // A toast the page has not shown yet stays asked for while the same version waits.
         if pending && last.state == UPDATE_AVAILABLE {
             last.toast = true
         }
+        (last, staged) = with_staged(last, staged, mut files, root)
         next_auto = time.now_ms() + UPDATE_CHECK_EVERY_MS
         if last.state == UPDATE_FAILED {
             write_stderr("flint-gui: update check failed ({last.code})\n")

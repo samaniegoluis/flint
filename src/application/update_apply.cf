@@ -116,17 +116,13 @@ fn relaunch_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: 
     _ = try procs.proc_spawn(cli, args, temp_dir + "/update-apply.log")
 }
 
-// Leaves the outcome for the app it starts, and starts the installed app.
-fn give_back[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, p: UpdatePaths, os: str, o: ApplyOutcome) -> ApplyOutcome {
-    files.upd_write(p.outcome, json.stringify(o)) or {}
-    _ = procs.proc_spawn(update_app_exe(p.installed, os), [], "") or 0
-    return o
-}
-
 // `flint update-apply` (D-111 (3)): waits for the app to quit and for every `flint`
 // running from its folder, swaps the folders by rename, starts the new app and waits
 // for its word; with none, stops it and puts the old folder back. Never writes over
 // a file in use: a folder is only ever renamed (D-113 (3), Windows' locked files).
+// When it cannot apply it leaves the outcome for the app it starts again (inline at
+// each step: a generic helper taking `mut files, mut procs, p` lowers its arguments to
+// `str(...)` with the adapters' types, CF-177).
 fn apply_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, r: ApplyRequest) -> ApplyOutcome {
     check_apply_request(r) or err {
         msg := "{err.message()}"
@@ -153,21 +149,30 @@ fn apply_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, 
         held = procs.proc_running_under(p.installed)
     }
     if held.len() > 0 {
-        return give_back(mut files, mut procs, p, r.os, apply_failed(APPLY_STEP_CLI, ERR_CONFLICT, "flint is still running from {path_base(p.installed)} (process {held[0]})", true))
+        o := apply_failed(APPLY_STEP_CLI, ERR_CONFLICT, "flint is still running from {path_base(p.installed)} (process {held[0]})", true)
+        files.upd_write(p.outcome, json.stringify(o)) or {}
+        _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
+        return o
     }
     // The swap: two renames on one volume.
     files.upd_remove(p.started) or {}
     files.upd_remove(update_parent(p.old_root)) or {}
     files.upd_mkdir(update_parent(p.old_root)) or {}
     files.upd_rename(p.installed, p.old_root) or err {
-        return give_back(mut files, mut procs, p, r.os, apply_failed(APPLY_STEP_SWAP, ERR_IO, "{err.message()}", true))
+        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, "{err.message()}", true)
+        files.upd_write(p.outcome, json.stringify(o)) or {}
+        _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
+        return o
     }
     files.upd_rename(p.new_root, p.installed) or err {
         files.upd_rename(p.old_root, p.installed) or {}
-        return give_back(mut files, mut procs, p, r.os, apply_failed(APPLY_STEP_SWAP, ERR_IO, "{err.message()}", true))
+        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, "{err.message()}", true)
+        files.upd_write(p.outcome, json.stringify(o)) or {}
+        _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
+        return o
     }
     mut started := false
-    child := procs.proc_spawn(update_app_exe(p.installed, r.os), [], "") or 0
+    child := procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
     if child > 0 {
         start_deadline := procs.proc_now_ms() + UPDATE_WAIT_START_MS
         for !started && procs.proc_alive(child) && procs.proc_now_ms() < start_deadline {
@@ -181,6 +186,7 @@ fn apply_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, 
         return apply_ok()
     }
     // Put the old folder back.
+    quit_early := child > 0 && !procs.proc_alive(child)
     if child > 0 {
         procs.proc_stop(child)
     }
@@ -195,6 +201,11 @@ fn apply_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, 
     mut why := "It did not say it started within {UPDATE_WAIT_START_MS / 1000} s."
     if child == 0 {
         why = "It could not be started."
+    } else if quit_early {
+        why = "It quit as soon as it started."
     }
-    return give_back(mut files, mut procs, p, r.os, apply_failed(APPLY_STEP_START, ERR_TIMEOUT, why, false))
+    o := apply_failed(APPLY_STEP_START, ERR_TIMEOUT, why, false)
+    files.upd_write(p.outcome, json.stringify(o)) or {}
+    _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
+    return o
 }

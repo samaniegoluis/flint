@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../state/app';
-import { updateActionLabel, updateAvailable, updateBarLabel, updatePopoverDetail, updateStateLine } from '../lib/update';
+import { updateActionLabel, updateBarLabel, updateDownloading, updatePending, updatePopoverDetail, updateReady, updateStateLine } from '../lib/update';
 import { useUpdate } from './UpdateProvider';
 
 export function UpdateStatusItem() {
@@ -29,14 +29,17 @@ export function UpdateStatusItem() {
 
   if (!info?.version) return null;
   const st = up.status;
-  const avail = updateAvailable(st);
-  const label = updateBarLabel(st);
-  const title = avail ? `Flint ${st.version} is available` : `Flint ${info.version}`;
+  // Available, downloading or ready: the version item carries the dot and its action.
+  const avail = updatePending(st);
+  const ready = updateReady(st);
+  const downloading = updateDownloading(st);
+  const label = updateBarLabel(st, up.received);
+  const title = !st || !avail ? `Flint ${info.version}` : ready ? `Flint ${st.version} is ready` : downloading ? `Downloading Flint ${st.version}` : `Flint ${st.version} is available`;
   return (
     <span ref={box} className="sb-update">
       {label && (
-        <button className="sb-update-act" data-sb-update={st?.action} onClick={() => up.act()}
-          title={`${title}: ${updateActionLabel(st!)}`} aria-label={`${title}. ${updateActionLabel(st!)}`}>
+        <button className="sb-update-act" data-sb-update={ready ? 'relaunch' : downloading ? 'downloading' : st?.action} disabled={downloading} onClick={() => up.act()}
+          title={downloading ? title : `${title}: ${updateActionLabel(st!)}`} aria-label={downloading ? `${title}, ${label}` : `${title}. ${updateActionLabel(st!)}`}>
           {label}
         </button>
       )}
@@ -50,13 +53,16 @@ export function UpdateStatusItem() {
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
             {avail && <span className="t-mark" style={{ background: 'var(--accent)' }} />}
             <span className="strong grow">{avail ? title : `Flint ${info.version}`}</span>
+            {ready && <span className="badge ok" data-pop-verified>Verified</span>}
           </div>
           <span className="muted" style={{ lineHeight: 1.45 }}>
-            {avail ? updatePopoverDetail(st) : updateStateLine(st, up.now)}
+            {avail ? updatePopoverDetail(st!) : updateStateLine(st, up.now)}
           </span>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
-            {avail
-              ? <button className="btn btn-primary btn-sm" data-pop-update-act onClick={() => { setOpen(false); up.act(); }}>{updateActionLabel(st)}</button>
+            {avail && downloading && <span className="muted" data-pop-progress>{label}</span>}
+            {avail && !downloading
+              ? <button className="btn btn-primary btn-sm" data-pop-update-act onClick={() => { setOpen(false); up.act(); }}>{updateActionLabel(st!)}</button>
+              : avail ? null
               : <button className="btn btn-secondary btn-sm" data-pop-check disabled={up.status?.state === 'checking'} onClick={() => up.checkNow()}>
                   {up.status?.state === 'checking' ? 'Checking…' : 'Check now'}
                 </button>}

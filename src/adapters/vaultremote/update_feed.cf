@@ -90,6 +90,16 @@ fn update_download_received() -> i64 {
     return n
 }
 
+// Whether a package download is running now.
+fn update_download_active() -> bool {
+    mut on := false
+    // CFIRE-UPSTREAM: CF-146
+    cpp {
+        on = flint_remote::download_active().load();
+    }
+    return on
+}
+
 fn (mut self: HttpUpdateDownloader) update_download(url: str, path: str, max_bytes: i64) -> void! {
     host := url_host(url)
     if !update_url_allowed(url) {

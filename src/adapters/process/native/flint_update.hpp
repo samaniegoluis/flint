@@ -42,40 +42,46 @@ namespace flint_update {
 // in a package that includes <stdio.h> (CF-158), and a header with <filesystem> hangs
 // `cfire check` (CF-176): the three here, on POSIX calls.
 #if !defined(_WIN32)
-inline bool rename_path(const std::string& from, const std::string& to, std::string& err) {
+inline bool upd_rename_path(const std::string& from, const std::string& to, std::string& err) {
     if (::rename(from.c_str(), to.c_str()) == 0) return true;
     err = std::strerror(errno);
     return false;
 }
 
-inline int remove_one(const char* path, const struct stat*, int, struct FTW*) {
+inline int upd_remove_one(const char* path, const struct stat*, int, struct FTW*) {
     return ::remove(path);
 }
 
-inline bool remove_tree(const std::string& path, std::string& err) {
+inline bool upd_remove_tree(const std::string& path, std::string& err) {
     struct stat st;
     if (::lstat(path.c_str(), &st) != 0) return true;
-    if (::nftw(path.c_str(), remove_one, 32, FTW_DEPTH | FTW_PHYS) == 0) return true;
+    // nftw on a file (not a folder) fails with ENOTDIR on macOS.
+    if (!S_ISDIR(st.st_mode)) {
+        if (::remove(path.c_str()) == 0) return true;
+        err = std::strerror(errno);
+        return false;
+    }
+    if (::nftw(path.c_str(), upd_remove_one, 32, FTW_DEPTH | FTW_PHYS) == 0) return true;
     err = std::strerror(errno);
     return false;
 }
 
-inline std::string real_path(const std::string& path) {
+inline std::string upd_real_path(const std::string& path) {
     char buf[PATH_MAX];
     if (::realpath(path.c_str(), buf) == nullptr) return path;
     return std::string(buf);
 }
 #else
-inline bool rename_path(const std::string&, const std::string&, std::string& err) { err = "unsupported"; return false; }
-inline bool remove_tree(const std::string&, std::string& err) { err = "unsupported"; return false; }
-inline std::string real_path(const std::string& path) { return path; }
+inline bool upd_rename_path(const std::string&, const std::string&, std::string& err) { err = "unsupported"; return false; }
+inline bool upd_remove_tree(const std::string&, std::string& err) { err = "unsupported"; return false; }
+inline std::string upd_real_path(const std::string& path) { return path; }
 #endif
 
 #if !defined(_WIN32)
 
 // Starts `exe` with `args` in a new session, stdin from /dev/null, stdout and stderr to
 // `log` (appended) or /dev/null. Returns its pid, or -errno.
-inline std::int64_t spawn_detached(const std::string& exe, const std::vector<std::string>& args,
+inline std::int64_t upd_spawn_detached(const std::string& exe, const std::vector<std::string>& args,
                                    const std::string& log) {
     posix_spawn_file_actions_t fa;
     posix_spawnattr_t at;
@@ -99,7 +105,7 @@ inline std::int64_t spawn_detached(const std::string& exe, const std::vector<std
     return static_cast<std::int64_t>(pid);
 }
 
-inline bool alive(std::int64_t pid) {
+inline bool upd_alive(std::int64_t pid) {
     if (pid <= 0) return false;
     int status = 0;
     // Our own child that exited is reaped here, so it reads as gone, not as a zombie.
@@ -109,21 +115,21 @@ inline bool alive(std::int64_t pid) {
     return errno == EPERM;
 }
 
-inline void stop(std::int64_t pid) {
+inline void upd_stop(std::int64_t pid) {
     if (pid <= 0) return;
     ::kill(static_cast<pid_t>(pid), SIGTERM);
-    for (int i = 0; i < 50 && alive(pid); ++i) usleep(100000);
-    if (alive(pid)) ::kill(static_cast<pid_t>(pid), SIGKILL);
+    for (int i = 0; i < 50 && upd_alive(pid); ++i) usleep(100000);
+    if (upd_alive(pid)) ::kill(static_cast<pid_t>(pid), SIGKILL);
     int status = 0;
     waitpid(static_cast<pid_t>(pid), &status, WNOHANG);
 }
 
-inline bool inside(const std::string& path, const std::string& dir) {
+inline bool upd_inside(const std::string& path, const std::string& dir) {
     return path.size() > dir.size() && path.compare(0, dir.size(), dir) == 0 && path[dir.size()] == '/';
 }
 
 // Every process but this one whose executable lies inside `dir` (a real path).
-inline std::vector<std::int64_t> running_under(const std::string& dir) {
+inline std::vector<std::int64_t> upd_running_under(const std::string& dir) {
     std::vector<std::int64_t> out;
     pid_t self = getpid();
 #if defined(__APPLE__)
@@ -135,7 +141,7 @@ inline std::vector<std::int64_t> running_under(const std::string& dir) {
     for (int i = 0; i < n; ++i) {
         if (pids[i] <= 0 || pids[i] == self) continue;
         if (proc_pidpath(pids[i], buf, sizeof buf) <= 0) continue;
-        if (inside(buf, dir)) out.push_back(pids[i]);
+        if (upd_inside(buf, dir)) out.push_back(pids[i]);
     }
 #else
     DIR* d = opendir("/proc");
@@ -149,24 +155,24 @@ inline std::vector<std::int64_t> running_under(const std::string& dir) {
         ssize_t len = readlink(link.c_str(), buf, sizeof buf - 1);
         if (len <= 0) continue;
         buf[len] = 0;
-        if (inside(buf, dir)) out.push_back(pid);
+        if (upd_inside(buf, dir)) out.push_back(pid);
     }
     closedir(d);
 #endif
     return out;
 }
 
-inline bool make_executable(const std::string& path) {
+inline bool upd_make_executable(const std::string& path) {
     return ::chmod(path.c_str(), 0755) == 0;
 }
 
 #else
 
-inline std::int64_t spawn_detached(const std::string&, const std::vector<std::string>&, const std::string&) { return -1; }
-inline bool alive(std::int64_t) { return false; }
-inline void stop(std::int64_t) {}
-inline std::vector<std::int64_t> running_under(const std::string&) { return {}; }
-inline bool make_executable(const std::string&) { return true; }
+inline std::int64_t upd_spawn_detached(const std::string&, const std::vector<std::string>&, const std::string&) { return -1; }
+inline bool upd_alive(std::int64_t) { return false; }
+inline void upd_stop(std::int64_t) {}
+inline std::vector<std::int64_t> upd_running_under(const std::string&) { return {}; }
+inline bool upd_make_executable(const std::string&) { return true; }
 
 #endif
 

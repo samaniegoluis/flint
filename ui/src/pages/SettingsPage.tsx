@@ -24,7 +24,7 @@ import { ConnectServerModal } from '../sync/ConnectServerModal';
 import { ReplaceTokenModal } from '../sync/ReplaceTokenModal';
 import { agoLabel, SYNC_LABEL } from '../lib/sync';
 import { useUpdate } from '../update/UpdateProvider';
-import { updateActionLabel, updateAvailable, updateHowText, updateStateLine } from '../lib/update';
+import { updateActionLabel, updateAvailable, updateDownloadFailure, updateDownloading, updateHowText, updatePercent, updateReady, updateStateLine } from '../lib/update';
 
 export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'about';
 
@@ -295,26 +295,42 @@ function About() {
 }
 
 // Milestone 52 (design 24e, D-116): the update's state, its one action, Check now, the
-// automatic check and What's new. Nothing is downloaded here yet (milestone 53).
+// automatic check and What's new. Milestone 53 (24e3, 24e4, 24e6, D-111): Download
+// here, its progress with a bar, Ready with Verified and Relaunch, and why a download
+// was discarded.
 function Updates() {
   const up = useUpdate();
   const [settings, save] = useSetting();
   const st = up.status;
-  const avail = updateAvailable(st);
-  const how = avail && st.action === 'how' ? updateHowText(st) : '';
+  const downloading = updateDownloading(st);
+  const ready = updateReady(st);
+  const avail = updateAvailable(st) || downloading || ready;
+  const how = updateAvailable(st) && st.action === 'how' ? updateHowText(st) : '';
+  const pct = downloading ? updatePercent(up.received, st!.asset_size) : 0;
+  const failed = updateAvailable(st) && st.code ? updateDownloadFailure(st) : null;
   return (
     <Row title="Updates" desc="The app and the flint command update together. A release is checked against Flint's signature before Flint offers it.">
       <div className="row" style={{ gap: 'var(--sp-3)', flexWrap: 'wrap' }} data-about-update={st?.state ?? 'idle'}>
         {avail && <span className="t-mark" style={{ background: 'var(--accent)' }} />}
-        <span className={avail ? 'strong' : ''}>{updateStateLine(st, up.now) || 'Not checked yet'}</span>
+        <span className={avail ? 'strong' : ''}>{ready ? `Flint ${st!.version} is ready` : updateStateLine(st, up.now) || 'Not checked yet'}</span>
+        {ready && <span className="badge ok" data-about-verified>Verified</span>}
+        {downloading && <span className="muted mono" data-about-progress={pct}>{pct}%</span>}
         <span className="grow" />
-        {avail && st.action === 'download' && <button className="btn btn-primary btn-sm" data-about-download onClick={() => up.act()}>{updateActionLabel(st)}</button>}
+        {updateAvailable(st) && st.action === 'download' && <button className="btn btn-primary btn-sm" data-about-download onClick={() => up.act()}>{updateActionLabel(st)}</button>}
+        {ready && <button className="btn btn-primary btn-sm" data-about-relaunch onClick={() => up.act()}>Relaunch</button>}
         {!avail && (
           <button className="btn btn-secondary btn-sm" data-about-check disabled={up.status?.state === 'checking'} onClick={() => up.checkNow()}>
             {up.status?.state === 'checking' ? 'Checking…' : 'Check now'}
           </button>
         )}
       </div>
+      {downloading && (
+        <div className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`Downloading Flint ${st!.version}`}>
+          <i style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      {ready && <span className="hint">Downloaded and checked against the release's SHA-256. Nothing changes until you relaunch.</span>}
+      {failed && <span className="hint danger-t" data-about-failed={st?.code}>{failed.retry ? failed.text : `The download of ${st!.version} didn't pass verification and was discarded. Nothing was installed.`}</span>}
       {how && (
         <span className="hint" data-about-how={st?.how}>
           {how}{' '}

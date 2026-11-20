@@ -312,3 +312,23 @@ flint --version --json
 
 `flint` is the version the binary was built from: a release (`0.1.0`), or a build made
 after one (`0.1.0-4-g83f876b`, four commits later). What changed in each one is on the [Releases](/releases/) page.
+
+## `flint update-apply`
+
+The step of an [update](/guides/updates/) that replaces the app: the desktop app starts
+it at **Relaunch**, from a copy of the new version's `flint` outside the app, and quits.
+It is not a command to type.
+
+```sh
+flint update-apply --wait <pid> --from <folder> --to <folder> [--json]
+```
+
+It takes only the package the app unpacked beside the installed one (`--from` must be
+`<parent of --to>/.flint-update/new/Flint.app`), waits up to a minute for process
+`--wait` to quit and up to half a minute for any `flint` running from the app's folder,
+swaps the two folders by renaming them, starts the new app and waits a minute for it to
+say it started. If it does not, the old folder is put back and opened. Exits 0 when
+applied; otherwise `timeout` (14) when the app did not quit or the new one did not
+start, `conflict` (4) when a `flint` kept running, `io` (10) when a folder could not be
+moved, `usage` (2) or `invalid` (7) for its arguments. With `--json` it prints
+`{"applied":…,"step":…,"code":…,"message":…,"kept":…}`.

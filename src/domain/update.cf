@@ -106,13 +106,17 @@ type UpdateStatus struct {
     received:   i64  `json:"received"`
     // The toast is due: the first time this version is found (D-116).
     toast:      bool `json:"toast"`
-    // The error's code and message when `state` is UPDATE_FAILED.
+    // Why the last update was not applied (update-apply's outcome, milestone 53), shown
+    // once at launch; "" when there is nothing to say.
+    outcome:    str  `json:"outcome"`
+    // The error's code and message when `state` is UPDATE_FAILED, or when a download
+    // failed (the state goes back to UPDATE_AVAILABLE with them set).
     code:       str  `json:"code"`
     message:    str  `json:"message"`
 }
 
 fn update_status_idle(current: str, auto: bool, checked_at: i64) -> UpdateStatus {
-    return UpdateStatus{ state: UPDATE_IDLE, current: current, checked_at: checked_at, auto: auto, version: "", date: "", summary: "", page: "", action: "", how: "", asset_url: "", asset_size: 0, asset_sha256: "", received: 0, toast: false, code: "", message: "" }
+    return UpdateStatus{ state: UPDATE_IDLE, current: current, checked_at: checked_at, auto: auto, version: "", date: "", summary: "", page: "", action: "", how: "", asset_url: "", asset_size: 0, asset_sha256: "", received: 0, toast: false, outcome: "", code: "", message: "" }
 }
 
 // Only a build from source may check another feed and key, its tests' local feed on

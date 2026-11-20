@@ -694,6 +694,50 @@ check "it says the desktop opens in the Flint app" '[[ "$err" == *"'"'"'win'"'"'
 
 expect 0 "host rm of an RDP host" "$SMI" -- host rm win2 "${SM[@]}"
 
+echo "== update-apply (milestone 53)"
+# The self-update's swap on real folders: a pretend installed Flint and a package
+# unpacked beside it, whose "app" is a script. Windows swaps from milestone 50 (D-118).
+if [[ "$windows" != 1 ]]; then
+  ua="$tmp/ua"
+  ua_layout() {
+    rm -rf "$ua"; mkdir -p "$ua/Apps"
+    local name exe cli d
+    if [[ "$(uname -s)" == Darwin ]]; then name=Flint.app; exe=Contents/MacOS/Flint; cli=Contents/Helpers/flint
+    else name=Flint; exe=Flint; cli=flint; fi
+    UA_TO="$ua/Apps/$name"; UA_FROM="$ua/Apps/.flint-update/new/$name"
+    for d in "$UA_TO" "$UA_FROM"; do
+      mkdir -p "$d/$(dirname "$exe")" "$d/$(dirname "$cli")"
+      cp "$flint" "$d/$cli"
+    done
+    printf '#!/bin/sh\necho old > "%s/ran"\n' "$ua" > "$UA_TO/$exe"
+    if [[ "$1" == starts ]]; then
+      printf '#!/bin/sh\necho new > "%s/ran"\n: > "%s/Apps/.flint-update/started"\nsleep 2\n' "$ua" "$ua" > "$UA_FROM/$exe"
+    else
+      printf '#!/bin/sh\nexit 1\n' > "$UA_FROM/$exe"
+    fi
+    chmod 755 "$UA_TO/$exe" "$UA_FROM/$exe"
+    echo new > "$UA_FROM/label"
+    echo 99.0.0 > "$ua/Apps/.flint-update/ready"
+  }
+  ran_is() { local _; for _ in $(seq 1 30); do [[ "$(cat "$ua/ran" 2>/dev/null)" == "$1" ]] && return 0; sleep 0.1; done; return 1; }
+  ua_layout starts
+  expect 0 "update-apply swaps the folders and starts the new app" "" -- update-apply --wait 0 --from "$UA_FROM" --to "$UA_TO" --json
+  check "its JSON says applied" '[[ "$(echo "$out" | json_get "d[\"applied\"]")" == True ]]'
+  check "the installed folder is the package" '[[ -f "$UA_TO/label" ]]'
+  check "the new app ran" 'ran_is new'
+  check "nothing is left beside it" '[[ ! -e "$ua/Apps/.flint-update" ]]'
+  ua_layout quits
+  expect 14 "a new app that quits at once is put back (timeout)" "" -- update-apply --wait 0 --from "$UA_FROM" --to "$UA_TO" --json
+  check "the old folder is back" '[[ ! -f "$UA_TO/label" && -x "$UA_TO/$( [[ "$(uname -s)" == Darwin ]] && echo Contents/MacOS/Flint || echo Flint)" ]]'
+  check "the old app is opened again" 'ran_is old'
+  check "it leaves why for the old app" 'grep -q "\"step\":\"start\"" "$ua/Apps/.flint-update/outcome.json"'
+  check "the broken package is gone" '[[ ! -e "$ua/Apps/.flint-update/new" ]]'
+  ua_layout starts
+  expect 7 "update-apply takes only the package unpacked beside the folder" "" -- update-apply --wait 0 --from "$tmp" --to "$UA_TO"
+  check "a refused request moves nothing" '[[ ! -f "$UA_TO/label" && -d "$UA_FROM" ]]'
+  expect 2 "update-apply needs --to" "" -- update-apply --wait 0 --from "$UA_FROM"
+fi
+
 echo "== every --json output parses"
 expect 0 "version --json" "" -- --version --json
 check "version is JSON" 'echo "$out" | is_json'

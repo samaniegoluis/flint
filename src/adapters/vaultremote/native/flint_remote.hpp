@@ -253,6 +253,17 @@ inline std::atomic<std::int64_t>& download_received() {
     return n;
 }
 
+inline std::atomic<bool>& download_active() {
+    static std::atomic<bool> on{false};
+    return on;
+}
+
+// Marks the download running for as long as it lives.
+struct ActiveDownload {
+    ActiveDownload() { download_active().store(true); }
+    ~ActiveDownload() { download_active().store(false); }
+};
+
 struct FileSink {
     std::FILE* f;
     std::size_t max_bytes;
@@ -283,6 +294,7 @@ inline int download_to_file(const std::string& url, std::int64_t connect_ms, std
     global_init();
     status = 0;
     download_received().store(0);
+    ActiveDownload active;
     std::FILE* f = std::fopen(path.c_str(), "wb");
     if (!f) {
         err = "cannot write the download";

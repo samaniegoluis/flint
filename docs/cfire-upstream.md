@@ -2792,8 +2792,10 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 ### CF-158 · bug · `confirmed`: a stdlib call takes the argument coercion of a C function with the same last name
 - **Seen again (milestone 53):** `fs.rename`, `fs.remove` and `fs.realpath` in
   `src/adapters/process/update.cf` (the package's headers include `<stdio.h>` and
-  `<stdlib.h>`); worked around in `flint_update.hpp` (`rename_path`, `remove_tree`,
-  `real_path`).
+  `<stdlib.h>`); worked around in `flint_update.hpp`. The same last-name lookup bit the
+  other way: the header's first names (`rename_path`, `spawn_detached`, `alive`, …) took
+  over cfire calls of the same name in the GUI (`files.cf`'s `rename_path`, `sftp_realpath`:
+  "no matching function"), so every function there is `upd_*`.
 - **At `v0.12.2` (migration step 5):** [ran] `fs.rename(from, to)` with `str` parameters, in a package whose header includes `<stdio.h>`: "no viable conversion from 'CStrViewHolder' to 'const std::filesystem::path'". **still open** (14 tags).
 - **Seen (migration step 2) [ran, macOS, `v0.12.0`]:** in `src/adapters/serverfs`, whose
   native header pulls in `<stdio.h>`, `fs.rename(tmp, path)` lowers to
@@ -3153,3 +3155,16 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** the checker never spins on a header; a time limit on header analysis with a
   diagnostic naming the header.
 
+
+### CF-177 · bug · `unconfirmed`: a generic call's `mut` and struct arguments lowered as `str(...)`
+- **Seen (milestone 53) [ran, macOS, `v0.12.2`]:** in `src/application/update_apply.cf`,
+  `return give_back(mut files, mut procs, p, r.os, apply_failed(...))`, with
+  `fn give_back[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, p:
+  UpdatePaths, os: str, o: ApplyOutcome) -> ApplyOutcome`, built in `cfire test` with the
+  test's fakes, but `cfire build flint` (the adapters' `OsUpdateFiles`) failed in clang:
+  `give_back(str(files), procs, str(p), …)`, "no matching conversion for functional-style
+  cast from 'UpdatePaths' to 'str'". `cfire check` accepted it. Other generic helpers in
+  the same file taking `mut files: F, p: UpdatePaths` (`discard_staging`) lower correctly.
+- **Workaround:** the helper's two statements inlined at each of its four call sites.
+- **Ideal:** the same lowering for a generic call whatever type instantiates it; `cfire
+  check` failing where the build will.

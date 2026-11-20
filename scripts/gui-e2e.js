@@ -51,7 +51,7 @@
   const COVER = '@@COVER@@';
   // fullscreen only: '1' when the window really goes full screen (FLINT_E2E_NATIVE_FS).
   const NATIVEFS = '@@NATIVEFS@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'multimon', 'rdpbench', 'clilink', 'update'];
+  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'multimon', 'rdpbench', 'clilink', 'update', 'selfupdate'];
   // The benchmark's host (rdpbench only; '' otherwise).
   const BHOST = '@@BHOST@@';
   const BUSER = '@@BUSER@@';
@@ -193,6 +193,85 @@
     if ((await window.backend.app_info({})).os === 'windows') {
       await waitFor(() => document.hasFocus(), "the page's focus (windows/front.py's click)", 30000);
     }
+    if (RUN === 'selfupdate') {
+      // Milestone 53 (24c2, 24c3, 24c4b, D-111): the self-update from a copy laid out by
+      // scripts/gui-e2e.sh, against a manifest of its own. This script sits inside the
+      // installed package, so the app update-apply starts after the swap runs the new
+      // package's copy of it. A first launch (the welcome screen) downloads; an app that
+      // finds a vault already there was started by update-apply: the new one, or the old
+      // one put back with why. scripts/gui-e2e.sh checks the folders on disk.
+      await setStep('which launch');
+      const first = await waitForAsync(async () => {
+        if (hasText('Welcome to Flint')) return 'first';
+        if (hasText('Unlock') || hasText('E2E Vault')) return 'relaunched';
+        return null;
+      }, 'the welcome or the unlock screen', 30000);
+      const status = () => new Promise((resolve) => {
+        const off = window.runtime.EventsOn('update:status', (st) => { off(); resolve(st); });
+        window.backend.update_hint({ reason: 'status' });
+      });
+      const updToast = (text) => qa('[data-toast]').find((el) => !el.classList.contains('leaving') && (el.querySelector('.t-text')?.textContent || '').startsWith(text));
+      if (first === 'relaunched') {
+        // The page shows why the last update was not applied as soon as it hears it,
+        // so look for the toast itself (the core then forgets the outcome, once shown).
+        let back = null;
+        const until = Date.now() + 8000;
+        while (!back && Date.now() < until) { back = updToast('The new version did not start'); if (!back) await sleep(100); }
+        const st = await status();
+        if (back) {
+          await setStep('rolled back');
+          await check(true, `the old Flint says why (${back.querySelector('.t-text').textContent})`);
+          await check(!st.outcome, 'the core says it once');
+          await log('selfupdate: rolled back');
+        } else {
+          await setStep('the new Flint');
+          await check(st.current === VERSION, `the relaunched Flint runs (${st.current})`);
+          await log('selfupdate: relaunched into the new package');
+        }
+        await log(`${passed} checks passed`);
+        await window.backend.e2e_report({ ok: true, detail: '' });
+        window.runtime.Quit();
+        return;
+      }
+      // A vault first, so the app started after Relaunch finds one (the unlock screen).
+      await setStep('create vault');
+      await click('button.panel', 'Create a new vault');
+      await fill('#vn', 'E2E Vault');
+      await fill('input[aria-label="Vault file path"]', VAULT);
+      await fill('#mp', MASTER);
+      await fill('#mp2', MASTER);
+      await click('button[type="submit"]', 'Create vault');
+      await waitFor(() => hasText('Add your first host'), 'the empty vault page', 30000);
+      await setStep('download');
+      const avail = await waitFor(() => updToast('Flint 99.0.0 is available'), 'the update toast', 30000);
+      const dl = byText('button', 'Download', avail);
+      await check(!!dl, 'the toast offers Download');
+      dl.click();
+      const outcome = await waitFor(() => updToast('Flint 99.0.0 is ready') || updToast("Flint 99.0.0 didn't pass verification"), 'the download to end', 60000);
+      if ((outcome.querySelector('.t-text')?.textContent || '').includes("didn't pass verification")) {
+        await setStep('discarded');
+        await check(!byText('button', 'Retry', outcome), 'a download that fails verification offers no Retry (24c4b)');
+        const st = await status();
+        await check(st.state === 'available' && st.code === 'invalid', `the core discarded it (${st.state}, ${st.code})`);
+        await log('selfupdate: discarded');
+        await log(`${passed} checks passed`);
+        await window.backend.e2e_report({ ok: true, detail: '' });
+        window.runtime.Quit();
+        return;
+      }
+      await setStep('ready');
+      const rl = byText('button', 'Relaunch', outcome);
+      await check(!!rl && rl.classList.contains('btn-primary'), 'the Ready toast offers Relaunch, in the accent colour (24c3)');
+      const st = await status();
+      await check(st.state === 'ready' && st.version === '99.0.0', 'the core says it is ready');
+      await log(`${passed} checks passed`);
+      await log('selfupdate: relaunching');
+      // Nothing is open, so Relaunch goes straight through (24d1 is for open work): the
+      // app quits here and update-apply takes over.
+      rl.click();
+      return;
+    }
+
     await setStep('welcome');
     await waitFor(() => hasText('Welcome to Flint'), 'the welcome screen');
     await check(true, 'a first launch shows the welcome screen');
@@ -280,8 +359,11 @@
       await click('[data-pop-update-act]', label);
       await check(!q('[data-update-pop]'), `${label} closes the popover`);
       if (action === 'download') {
-        q('[data-sb-update]').click();
-        await sleep(200);
+        // Milestone 53: Download downloads, here from the run's feed, which has no
+        // package: the toast says so and offers Retry (24c4a), and nothing was kept.
+        const failed = await waitFor(() => qa('[data-toast]').find((el) => !el.classList.contains('leaving') && (el.querySelector('.t-text')?.textContent || '').startsWith("Couldn't download Flint 99.0.0")), 'the download to fail against a feed with no package', 30000);
+        await check(!!byText('button', 'Retry', failed), `a failed download offers Retry (${failed.querySelector('.t-text').textContent})`);
+        await check(q('[data-sb-update]')?.dataset.sbUpdate === 'download', 'the status bar offers Download again');
       } else {
         await waitFor(() => q('[data-about-how]'), 'How to update opens About with what to do');
         await check(q('[data-about-how]').dataset.aboutHow.length > 0, `About says why (${q('[data-about-how]').dataset.aboutHow})`);

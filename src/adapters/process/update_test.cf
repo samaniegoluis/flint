@@ -52,6 +52,10 @@ test "a zip unpacks with the system's tool, and folders move and go by rename" {
     assert(r.starts_with("io:"))
     try files.upd_remove(dir + "/Flint.app")
     assert(!files.upd_exists(dir + "/Flint.app"))
+    // A file goes as a folder does (nftw alone refuses a file on macOS).
+    try files.upd_write(dir + "/ready", "0.18.0")
+    try files.upd_remove(dir + "/ready")
+    assert(!files.upd_exists(dir + "/ready"))
     // Removing what is not there is quiet.
     try files.upd_remove(dir + "/Flint.app")
 }

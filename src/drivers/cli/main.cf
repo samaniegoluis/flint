@@ -50,6 +50,11 @@ fn main() {
             as_json = true
         }
     }
+    // The self-update's swap (update_apply.cf): its own flags, no vault, no socket.
+    if args.len() > 0 && args[0] == "update-apply" {
+        exit_process(run_update_apply(args, as_json))
+        return
+    }
     parsed := parse_cli_args(args) or err {
         fail_with("{err.message()}", as_json)
         return

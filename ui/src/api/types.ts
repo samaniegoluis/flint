@@ -243,6 +243,8 @@ export interface UpdateStatus {
   received: number;
   /** The first time this version was found: show the toast (once per version, D-116). */
   toast: boolean;
+  /** Why the last update was not applied, shown once at launch (milestone 53). */
+  outcome: string;
   code: string;
   message: string;
 }

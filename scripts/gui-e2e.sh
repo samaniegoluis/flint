@@ -40,7 +40,7 @@ fi
 #                                                (milestone 27, D-068)
 #   scripts/repeat.sh vim 10                     one run N times, with its failure rate
 # Exit status: 0 all passed, 1 a run failed.
-runs=(terminal vault tunnels paste rdp webgl fullscreen vim clilink update)
+runs=(terminal vault tunnels paste rdp webgl fullscreen vim clilink update selfupdate)
 # multimon (milestone 38) needs two monitors: on Linux an X display with two (the check's
 # container makes one, FLINT_E2E_MULTIMON_DISPLAY), on macOS a person's own screens with
 # FLINT_E2E_MULTIMON=1 (its windows take a Space on each).
@@ -206,9 +206,13 @@ run_app() {
     mkdir -p "$tmp/feed" "$tmp/feedkey"
     local pub
     pub="$("$root/scripts/sign-manifest.sh" keygen "$tmp/feedkey" 2>/dev/null)"
-    python3 -I - "$tmp/feed/manifest.json" <<'PY'
+    local fport
+    fport="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+    # The packages point at the run's own feed, which does not have them: Download
+    # (milestone 53) fails there with a toast, and nothing reaches GitHub.
+    python3 -I - "$tmp/feed/manifest.json" "$fport" <<'PY'
 import json, sys
-base = "https://github.com/samaniegoluis/flint/releases/download/v99.0.0/"
+base = f"http://127.0.0.1:{sys.argv[2]}/"
 assets = [(k, n, c) for k, n, c in (("macos-arm64", "Flint-99.0.0-macos-arm64.zip", "a"),
           ("windows-x86_64", "Flint-99.0.0-windows-x86_64.zip", "b"), ("linux-x86_64-deb", "flint_99.0.0_amd64.deb", "c"))]
 json.dump({"version": "99.0.0", "date": "2026-12-01", "summary": "A newer Flint for the test.",
@@ -219,8 +223,6 @@ PY
     FLINT_UPDATE_PUBLIC_KEY_HEX="$pub" FLINT_UPDATE_SIGNING_KEY="$(cat "$tmp/feedkey/flint-update-signing.key")" \
       "$root/scripts/sign-manifest.sh" sign "$tmp/feed/manifest.json" >/dev/null
     rm -f "$tmp/feedkey/flint-update-signing.key"
-    local fport
-    fport="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
     (cd "$tmp/feed" && exec python3 -I -m http.server "$fport" --bind 127.0.0.1 >"$tmp/feed.log" 2>&1) & feed_pid=$!
     for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$fport") 2>/dev/null && break; sleep 0.1; done
     # What's new after an update: this machine last ran 0.15.0.
@@ -236,14 +238,16 @@ JSON
   [[ -f "$4.front" ]] && cat "$4.front"
   if [[ "$1" == update ]]; then
     kill "${feed_pid:-0}" 2>/dev/null || true; wait "${feed_pid:-0}" 2>/dev/null || true; feed_pid=""
-    # Download opens the release page (milestone 52); the run names it instead. A system
-    # with no package in the manifest (Linux on arm64 in Docker) gets How to update.
+    # Download downloads inside Flint (milestone 53): from the run's feed, which has no
+    # package. A system with no package in the manifest (Linux on arm64 in Docker) gets
+    # How to update and downloads nothing.
     if grep -q 'Flint 99.0.0 is available (download)' "$4"; then
-      grep -q 'e2e: would open https://github.com/samaniegoluis/flint/releases/tag/v99.0.0' "$4" \
-        || { echo "e2e: fail: Download did not open the release page"; echo "gui-e2e ($1): FAILED" >&2; return 1; }
+      grep -q '"GET /Flint-99.0.0-macos-arm64.zip HTTP\|"GET /flint_99.0.0_amd64.deb HTTP' "$tmp/feed.log" \
+        || { echo "e2e: fail: Download did not ask the feed for the package"; echo "gui-e2e ($1): FAILED" >&2; return 1; }
     fi
-    # One GET of the manifest and one of its signature per check, nothing else (Principle 15).
-    if grep -v -E '"GET /manifest\.json(\.sig)? HTTP' "$tmp/feed.log" | grep -q 'HTTP/'; then
+    # One GET of the manifest and one of its signature per check, and the package when
+    # Download is chosen; nothing else (Principle 15).
+    if grep -v -E '"GET /(manifest\.json(\.sig)?|Flint-99\.0\.0-macos-arm64\.zip|flint_99\.0\.0_amd64\.deb) HTTP' "$tmp/feed.log" | grep -q 'HTTP/'; then
       echo "e2e: fail: the feed got another request: $(grep -v -E 'GET /manifest' "$tmp/feed.log" | head -1)"; echo "gui-e2e ($1): FAILED" >&2; return 1
     fi
   fi
@@ -254,6 +258,133 @@ JSON
     echo "gui-e2e ($1): FAILED" >&2
     return 1
   fi
+}
+
+# selfupdate (milestone 53): the self-update end to end, three times. A copy of this
+# build laid out as an installed Flint in a folder of the run's own, a package of the
+# same build (marked, or broken) on a local feed under a throwaway key, and the page
+# script inside the installed copy, so the app update-apply starts after the swap runs
+# the package's own copy of it. apply: Download, Ready, Relaunch, the new copy runs and
+# the old folder is gone; badsha: a package whose SHA-256 is not the manifest's is
+# discarded and nothing changes; rollback: a package whose app quits at once is put
+# back, and the old Flint says why. Only a build from source accepts the test feed and
+# key (D-116).
+run_selfupdate() {
+  local js="$1" log="$2"
+  case "$(uname -s)" in
+    MINGW*|MSYS*) echo "gui-e2e: skip the selfupdate run (Windows updates itself from milestone 50, D-118)"; return 0 ;;
+  esac
+  # Releases carry packages for macOS arm64 and Linux x86_64 only (D-111): Linux on arm64
+  # (Docker on a Mac) is offered How to update, so there is nothing to download. The
+  # swap itself runs there in cli-e2e's update-apply steps.
+  if [[ "$(uname -s)" == Linux && "$(uname -m)" != x86_64 ]]; then
+    echo "gui-e2e: skip the selfupdate run (no package for Linux $(uname -m); cli-e2e runs update-apply)"
+    echo "e2e: pass" >> "$log"
+    return 0
+  fi
+  local base="$tmp/su" pub name exe cli res xdisp="" xpid=""
+  rm -rf "$base"; mkdir -p "$base/key"
+  pub="$("$root/scripts/sign-manifest.sh" keygen "$base/key" 2>/dev/null)"
+  if [[ "$(uname -s)" == Darwin ]]; then
+    name=Flint.app; exe=Contents/MacOS/Flint; cli=Contents/Helpers/flint; res=Contents/Resources
+  else
+    name=Flint; exe=Flint; cli=flint; res=.
+    # The relaunched app outlives the first one: a display of the run's own, not xvfb-run's.
+    xdisp=":$((90 + RANDOM % 9))"
+    Xvfb "$xdisp" -screen 0 1600x1000x24 >/dev/null 2>&1 & xpid=$!
+    sleep 1
+  fi
+  local scenario st=0 fport fpid
+  # FLINT_E2E_SELFUPDATE=<scenario> runs one of them (a diagnosis in seconds, rule 9).
+  for scenario in ${FLINT_E2E_SELFUPDATE:-apply badsha rollback}; do
+    local w="$base/$scenario" inst
+    rm -rf "$w"; mkdir -p "$w/Apps" "$w/pkg" "$w/feed" "$w/t" "$w/config"
+    # Each scenario creates its vault anew (the page script's VAULT is one path).
+    rm -f "$tmp/selfupdate.flint"
+    inst="$w/Apps/$name"
+    if [[ "$(uname -s)" == Darwin ]]; then ditto build/gui/Flint.app "$inst"; else cp -R build/gui "$inst"; fi
+    mkdir -p "$inst/$(dirname "$cli")"
+    cp build/flint "$inst/$cli"
+    cp "$js" "$inst/$res/e2e.js"
+    if [[ "$(uname -s)" == Darwin ]]; then ditto "$inst" "$w/pkg/$name"; else cp -R "$inst" "$w/pkg/$name"; fi
+    printf 'new\n' > "$w/pkg/$name/$res/e2e-new"
+    if [[ "$scenario" == rollback ]]; then printf '#!/bin/sh\nexit 1\n' > "$w/pkg/$name/$exe"; chmod 755 "$w/pkg/$name/$exe"; fi
+    local zipf="$w/feed/Flint-99.0.0-pkg.zip"
+    if [[ "$(uname -s)" == Darwin ]]; then ditto -c -k --keepParent "$w/pkg/$name" "$zipf"; else (cd "$w/pkg" && zip -qry "$zipf" "$name"); fi
+    local sha size key
+    sha="$(python3 -I -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$zipf")"
+    size="$(wc -c < "$zipf" | tr -d ' ')"
+    [[ "$scenario" != badsha ]] || sha="$(printf '%064d' 7)"
+    key=linux-x86_64-deb
+    [[ "$(uname -s)" != Darwin ]] || key=macos-arm64
+    fport="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+    python3 -I - "$w/feed/manifest.json" "$fport" "$key" "$sha" "$size" <<'PY'
+import json, sys
+path, port, key, sha, size = sys.argv[1:]
+base = f"http://127.0.0.1:{port}/"
+json.dump({"version": "99.0.0", "date": "2026-12-01", "summary": "A newer Flint for the test.",
+           "page": "https://github.com/samaniegoluis/flint/releases/tag/v99.0.0",
+           "assets": [{"key": key, "name": "Flint-99.0.0-pkg.zip", "url": base + "Flint-99.0.0-pkg.zip", "size": int(size), "sha256": sha}]},
+          open(path, "w"))
+PY
+    FLINT_UPDATE_PUBLIC_KEY_HEX="$pub" FLINT_UPDATE_SIGNING_KEY="$(cat "$base/key/flint-update-signing.key")" \
+      "$root/scripts/sign-manifest.sh" sign "$w/feed/manifest.json" >/dev/null
+    (cd "$w/feed" && exec python3 -I -m http.server "$fport" --bind 127.0.0.1 >"$w/feed.log" 2>&1) & fpid=$!
+    for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$fport") 2>/dev/null && break; sleep 0.1; done
+    local run=("$inst/$exe")
+    [[ -z "$xdisp" ]] || run=(env DISPLAY="$xdisp" timeout 300 "$inst/$exe")
+    echo "gui-e2e: selfupdate: $scenario"
+    env FLINT_UPDATE_FEED="http://127.0.0.1:$fport/manifest.json" FLINT_UPDATE_TEST_KEY="$pub" FLINT_UPDATE_TEST_KIND=portable \
+      FLINT_CONFIG_DIR="$w/config" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$inst/$res/e2e.js" FLINT_GUI_E2E_VISIBLE="$visible" \
+      FLINT_UPDATE_APP_LOG="$w/app2.log" TMPDIR="$w/t" "${run[@]}" >"$w/app1.log" 2>&1 || true
+    cat "$w/app1.log" >> "$log"
+    local fail=""
+    if [[ "$scenario" == badsha ]]; then
+      grep -q 'selfupdate: discarded' "$w/app1.log" && grep -q '^e2e: pass' "$w/app1.log" || fail="the bad download was not discarded as the page saw it"
+      [[ -z "$fail" && -e "$w/Apps/.flint-update" ]] && fail="the discarded download left $w/Apps/.flint-update"
+      [[ -z "$fail" && -e "$inst/$res/e2e-new" ]] && fail="the installed copy changed"
+    else
+      grep -q 'selfupdate: relaunching' "$w/app1.log" || fail="the first app never reached Relaunch"
+      # The relaunched app's verdict, in the log update-apply gave it.
+      for _ in $(seq 1 600); do grep -q '^e2e: ' "$w/app2.log" 2>/dev/null && break; [[ -n "$fail" ]] && break; sleep 0.2; done
+      [[ -f "$w/app2.log" ]] && cat "$w/app2.log" >> "$log"
+      [[ -z "$fail" ]] && ! grep -q '^e2e: pass' "$w/app2.log" 2>/dev/null && fail="the relaunched app gave no pass"
+      if [[ -z "$fail" && "$scenario" == apply ]]; then
+        grep -q 'selfupdate: relaunched into the new package' "$w/app2.log" || fail="the relaunched app was not the new one"
+        [[ -e "$inst/$res/e2e-new" ]] || fail="the installed folder is not the package"
+      fi
+      if [[ -z "$fail" && "$scenario" == rollback ]]; then
+        grep -q 'selfupdate: rolled back' "$w/app2.log" || fail="the old app did not say why"
+        [[ ! -e "$inst/$res/e2e-new" ]] || fail="the broken package stayed installed"
+      fi
+      # The old folder (or the broken one) is gone once the app that runs took over.
+      for _ in $(seq 1 50); do [[ -e "$w/Apps/.flint-update" ]] || break; sleep 0.2; done
+      [[ -z "$fail" && -e "$w/Apps/.flint-update" ]] && fail="$w/Apps/.flint-update was left behind: $(ls -A "$w/Apps/.flint-update" | tr '\n' ' ')"
+      find "$w/t" -name update-apply.log -exec sed 's/^/update-apply: /' {} \; >> "$log"
+    fi
+    # Only the manifest, its signature and the package reached the feed.
+    if [[ -z "$fail" ]] && grep -v -E '"GET /(manifest\.json(\.sig)?|Flint-99\.0\.0-pkg\.zip) HTTP' "$w/feed.log" | grep -q 'HTTP/'; then
+      fail="the feed got another request: $(grep -v -E 'GET /(manifest|Flint-99)' "$w/feed.log" | head -1)"
+    fi
+    kill "$fpid" 2>/dev/null || true; wait "$fpid" 2>/dev/null || true
+    if [[ -n "$fail" ]]; then
+      echo "e2e: fail: selfupdate $scenario: $fail" | tee -a "$log"
+      for f in app1 app2; do
+        [[ -f "$w/$f.log" ]] && grep -E 'flint-gui: (Flint|download|relaunch|the last|update)|\[page\]|^e2e:' "$w/$f.log" | tail -15 | sed "s/^/  $f: /"
+      done
+      find "$w/t" -name update-apply.log -exec sed 's/^/  update-apply: /' {} \;
+      st=1
+    else
+      echo "e2e: selfupdate $scenario passed" | tee -a "$log"
+    fi
+  done
+  [[ -z "$xpid" ]] || { kill "$xpid" 2>/dev/null; wait "$xpid" 2>/dev/null || true; }
+  if [[ "$st" != 0 ]]; then
+    echo "gui-e2e (selfupdate): FAILED" >&2
+    return 1
+  fi
+  echo "e2e: pass" >> "$log"
+  echo "3 checks passed" >> "$log"
 }
 
 failed=()
@@ -288,6 +419,10 @@ for r in "${runs[@]}"; do
     app=(timeout 300 env DISPLAY="$FLINT_E2E_MULTIMON_DISPLAY" build/gui/Flint)
     run_app "$r" "$tmp/$r.js" "$tmp/config-$r" "$tmp/$r.log" "$cap" || failed+=("$r")
     app=("${saved[@]}")
+    continue
+  fi
+  if [[ "$r" == selfupdate ]]; then
+    run_selfupdate "$tmp/$r.js" "$tmp/$r.log" || failed+=("$r")
     continue
   fi
   run_app "$r" "$tmp/$r.js" "$tmp/config-$r" "$tmp/$r.log" "$cap" || failed+=("$r")

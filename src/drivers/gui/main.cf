@@ -425,6 +425,13 @@ fn main() {
             mut a := update_app
             run_update_loop(c, update_settings, update_st, mut a)
         }
+        // The download's bytes so far (milestone 53), while one runs.
+        progress_app := app
+        progress_st := st
+        scope.spawn || {
+            mut a := progress_app
+            run_update_progress(progress_st, mut a)
+        }
         // Auto-lock: idle time, screen lock and sleep.
         write_stderr("flint-gui: locks on idle, {system_events_start()}\n")
         timer_store := store

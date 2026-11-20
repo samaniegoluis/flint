@@ -1,0 +1,71 @@
+package main
+
+// `flint update-apply --wait <pid> --from <new> --to <installed> [--json]` (milestone
+// 53, D-111 (3)): run by the app at Relaunch, from a copy of the new CLI outside the
+// folder it replaces. Parses its flags, runs the use case, prints what it did. Not a
+// command a person types; documented under Updates.
+
+import "core:json"
+import "core:os"
+import "../../adapters/process"
+import "../../application"
+import "../../domain"
+import "../clicmd"
+
+fn update_apply_usage() -> str {
+    return coded(ERR_USAGE, "usage: flint update-apply --wait <pid> --from <folder> --to <folder> [--json]")
+}
+
+fn parse_apply_request(args: []str) -> ApplyRequest! {
+    // The end-to-end run keeps the started app's output (scripts/gui-e2e.sh, selfupdate).
+    mut r := ApplyRequest{ wait_pid: 0, from: "", to: "", os: os_name(), app_log: os.getenv("FLINT_UPDATE_APP_LOG") }
+    mut i: usize = 1
+    for i < args.len() {
+        a := args[i]
+        if a == "--json" {
+            i += 1
+            continue
+        }
+        if i + 1 >= args.len() {
+            return error(update_apply_usage())
+        }
+        v := "{args[i + 1]}"
+        if a == "--wait" {
+            r.wait_pid = i64.parse(v) or {
+                return error(update_apply_usage())
+            }
+        } else if a == "--from" {
+            r.from = local_slashes(v)
+        } else if a == "--to" {
+            r.to = local_slashes(v)
+        } else {
+            return error(update_apply_usage())
+        }
+        i += 2
+    }
+    return r
+}
+
+fn run_update_apply(args: []str, as_json: bool) -> i32 {
+    r := parse_apply_request(args) or err {
+        return report_error("{err.message()}", as_json)
+    }
+    write_stderr("flint update-apply: {r.from} -> {r.to} once process {r.wait_pid} quits\n")
+    mut files := new_os_update_files()
+    mut procs := new_os_update_processes()
+    o := apply_update(mut files, mut procs, r)
+    if o.applied {
+        write_stderr("flint update-apply: applied; the new Flint started\n")
+        if as_json {
+            say(json.stringify(o))
+        } else {
+            say("Flint was updated.")
+        }
+        return 0
+    }
+    write_stderr("flint update-apply: not applied at step {o.step}: {o.message}\n")
+    if as_json {
+        say(json.stringify(o))
+    }
+    return report_error(coded(o.code, o.message), as_json)
+}

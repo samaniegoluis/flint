@@ -112,6 +112,8 @@ type ApplyRequest struct {
     from:     str
     to:       str
     os:       str
+    // Where the app it starts writes its output ("" for nowhere; the e2e run's log).
+    app_log:  str
 }
 
 // What update-apply did: written to `outcome.json` when it could not apply (the app it

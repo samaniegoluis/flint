@@ -43,8 +43,9 @@ An unsigned app is a new program to the macOS Keychain each time it is replaced:
 opened with **Remember on this computer**, and a remote vault's server token, ask for
 Keychain access again after an update. Choose **Always Allow**.
 
-Flint tells you when a new version is out, at launch and every hour, and you replace the
-app the same way: see [Updates](/guides/updates/).
+Flint tells you when a new version is out, at launch and every hour, downloads and checks
+it when you choose **Download**, and relaunches into it when you choose **Relaunch**:
+see [Updates](/guides/updates/).
 
 ### The flint command
 
