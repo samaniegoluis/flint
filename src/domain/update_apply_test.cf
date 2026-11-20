@@ -1,0 +1,72 @@
+package domain
+
+test "an update's files sit beside the installed folder" {
+    p := update_paths("/Applications/Flint.app/", "mac")
+    assert_eq(p.installed, "/Applications/Flint.app")
+    assert_eq(p.staging, "/Applications/.flint-update")
+    assert_eq(p.zip, "/Applications/.flint-update/package.zip")
+    assert_eq(p.new_root, "/Applications/.flint-update/new/Flint.app")
+    assert_eq(p.old_root, "/Applications/.flint-update/old/Flint.app")
+    assert_eq(p.started, "/Applications/.flint-update/started")
+    // A renamed app keeps its name: the old one is set aside under it, the package's
+    // folder is always Flint.app.
+    r := update_paths("/Users/me/Apps/Flint 2.app", "mac")
+    assert_eq(r.old_root, "/Users/me/Apps/.flint-update/old/Flint 2.app")
+    assert_eq(r.new_root, "/Users/me/Apps/.flint-update/new/Flint.app")
+    w := update_paths("C:/Tools/Flint", "windows")
+    assert_eq(w.new_root, "C:/Tools/.flint-update/new/Flint")
+}
+
+test "the app and the CLI inside a package, by system" {
+    assert_eq(update_app_exe("/A/Flint.app", "mac"), "/A/Flint.app/Contents/MacOS/Flint")
+    assert_eq(update_cli_exe("/A/Flint.app", "mac"), "/A/Flint.app/Contents/Helpers/flint")
+    assert_eq(update_app_exe("C:/F", "windows"), "C:/F/Flint.exe")
+    assert_eq(update_cli_exe("C:/F", "windows"), "C:/F/flint.exe")
+    assert_eq(update_cli_exe("/opt/Flint", "linux"), "/opt/Flint/flint")
+}
+
+test "a package's SHA-256 must match the verified manifest's" {
+    good := "ab".repeat(32)
+    assert(sha256_matches(good, good))
+    assert(sha256_matches(good, good.to_upper()))
+    assert(!sha256_matches(good, "cd".repeat(32)))
+    assert(!sha256_matches("", ""))
+    assert(!sha256_matches("xyz", "xyz"))
+}
+
+test "update-apply takes only the package beside the folder it replaces" {
+    ok := ApplyRequest{ wait_pid: 42, from: "/Applications/.flint-update/new/Flint.app", to: "/Applications/Flint.app", os: "mac" }
+    check_apply_request(ok) or err {
+        assert_eq("{err.message()}", "")
+    }
+    mut r := ""
+    elsewhere := ApplyRequest{ wait_pid: 42, from: "/tmp/evil/Flint.app", to: "/Applications/Flint.app", os: "mac" }
+    check_apply_request(elsewhere) or err { r = "{err.message()}" }
+    assert(r.starts_with("invalid:"))
+    r = ""
+    check_apply_request(ApplyRequest{ wait_pid: 0, from: "", to: "/Applications/Flint.app", os: "mac" }) or err { r = "{err.message()}" }
+    assert(r.starts_with("usage:"))
+}
+
+test "a local feed's packages may come from its own folder, only for a build from source" {
+    assert_eq(update_download_prefix(UPDATE_FEED_URL), UPDATE_DOWNLOAD_PREFIX)
+    assert_eq(update_download_prefix("http://127.0.0.1:8123/manifest.json"), "http://127.0.0.1:8123/")
+    assert_eq(update_download_prefix("https://evil.example/manifest.json"), UPDATE_DOWNLOAD_PREFIX)
+    mut m := test_manifest("0.18.0")
+    m.assets = [UpdateAsset{ key: UPDATE_ASSET_MACOS, name: "Flint.zip", url: "http://127.0.0.1:8123/Flint.zip", size: 10, sha256: "a".repeat(64) }]
+    mut r := ""
+    check_update_manifest(m) or err { r = "{err.message()}" }
+    assert(r.starts_with("invalid:"))
+    try check_update_manifest_from(m, update_download_prefix("http://127.0.0.1:8123/manifest.json"))
+}
+
+test "an offer carries the package's SHA-256 for the download" {
+    s := update_offer(test_manifest("0.18.0"), mac_here("0.17.0", INSTALL_PORTABLE, true), true, 1)
+    assert_eq(s.action, UPDATE_ACTION_DOWNLOAD)
+    assert_eq(s.asset_sha256, "a".repeat(64))
+}
+
+test "what the person reads when an update was not applied" {
+    assert(apply_outcome_text(apply_failed(APPLY_STEP_START, ERR_TIMEOUT, "It did not answer in 60 s.", false)).starts_with("The new version did not start"))
+    assert(apply_outcome_text(apply_failed(APPLY_STEP_CLI, ERR_CONFLICT, "flint is still running from Flint.app", true)).contains("Relaunch again"))
+}

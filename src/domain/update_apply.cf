@@ -1,0 +1,169 @@
+package domain
+
+// The signed self-update (milestone 53, spec v13, D-111, D-118). A verified package is
+// downloaded and unpacked into a staging folder beside the installed one (same volume:
+// a rename is atomic), and `flint update-apply`, started from a copy of the new CLI,
+// swaps the folders once the app quit, starts the new app, and puts the old one back
+// when the new one does not report that it started. Everything here is pure: where
+// things go, what a package holds, and what each step's outcome means.
+
+// The page's states beyond the notice's (update.cf).
+UPDATE_DOWNLOADING: str = "downloading"
+UPDATE_READY: str = "ready"
+
+// Beside the installed folder: `<parent>/.flint-update/`.
+UPDATE_STAGE_NAME: str = ".flint-update"
+// Bytes a package may exceed its manifest size by: none. The manifest names the size.
+// How long update-apply waits for the app to quit, for every `flint` running from the
+// folder, and for the new app to report it started.
+UPDATE_WAIT_QUIT_MS: i64 = 60000
+UPDATE_WAIT_CLI_MS: i64 = 30000
+UPDATE_WAIT_START_MS: i64 = 60000
+UPDATE_POLL_MS: i64 = 200
+
+// Where an update's files go, from the installed folder (the .app on macOS, the
+// `Flint` folder on Windows, the portable test layout's folder on Linux).
+type UpdatePaths struct {
+    installed: str
+    // `<parent>/.flint-update`, removed once an update is applied or discarded.
+    staging:   str
+    // The downloaded zip, before it is checked.
+    zip:       str
+    // What the zip held: `staging/new/<package folder>`.
+    new_dir:   str
+    new_root:  str
+    // The installed folder, moved aside during the swap.
+    old_root:  str
+    // The version unpacked and ready (`ready`), the new app's word that it started
+    // (`started`), and what update-apply did when it could not apply (`outcome.json`).
+    ready:     str
+    started:   str
+    outcome:   str
+}
+
+// The folder holding `path` ("/a/b/" -> "/a").
+fn update_parent(path: str) -> str {
+    p := trim_slashes(path)
+    i := p.last_index_of("/") or {
+        return "."
+    }
+    if i == 0 {
+        return "/"
+    }
+    return "{p[0..i]}"
+}
+
+// The folder a package unpacks to, by system (scripts/package.sh).
+fn update_package_folder(os: str) -> str {
+    if os == "mac" {
+        return "Flint.app"
+    }
+    return "Flint"
+}
+
+fn update_paths(installed: str, os: str) -> UpdatePaths {
+    root := trim_slashes(installed)
+    staging := update_parent(root) + "/" + UPDATE_STAGE_NAME
+    new_dir := staging + "/new"
+    return UpdatePaths{
+        installed: root,
+        staging: staging,
+        zip: staging + "/package.zip",
+        new_dir: new_dir,
+        new_root: new_dir + "/" + update_package_folder(os),
+        old_root: staging + "/old/" + path_base(root),
+        ready: staging + "/ready",
+        started: staging + "/started",
+        outcome: staging + "/outcome.json",
+    }
+}
+
+// The app's executable and the CLI inside an installed (or unpacked) folder.
+fn update_app_exe(root: str, os: str) -> str {
+    if os == "mac" {
+        return root + "/Contents/MacOS/Flint"
+    }
+    if os == "windows" {
+        return root + "/Flint.exe"
+    }
+    return root + "/Flint"
+}
+
+fn update_cli_exe(root: str, os: str) -> str {
+    if os == "mac" {
+        return root + "/Contents/Helpers/flint"
+    }
+    if os == "windows" {
+        return root + "/flint.exe"
+    }
+    return root + "/flint"
+}
+
+// A SHA-256 as printed (64 hex characters), compared without regard to case.
+fn sha256_matches(expected: str, got: str) -> bool {
+    return is_hex64(expected.to_lower()) && expected.to_lower() == got.to_lower()
+}
+
+// What `flint update-apply` was asked to do.
+type ApplyRequest struct {
+    // The app's process, which must quit first (0: none to wait for).
+    wait_pid: i64
+    // The unpacked package's folder, and the installed one it replaces.
+    from:     str
+    to:       str
+    os:       str
+}
+
+// What update-apply did: written to `outcome.json` when it could not apply (the app it
+// starts reads it and says why), and printed by `--json`.
+type ApplyOutcome struct {
+    applied: bool `json:"applied"`
+    // The step that stopped it (APPLY_STEP_*), "" when applied.
+    step:    str  `json:"step"`
+    code:    str  `json:"code"`
+    message: str  `json:"message"`
+    // The package was kept: Relaunch can try again (a `flint` still running).
+    kept:    bool `json:"kept"`
+}
+
+APPLY_STEP_ARGS: str = "args"
+APPLY_STEP_QUIT: str = "quit"
+APPLY_STEP_CLI: str = "cli"
+APPLY_STEP_SWAP: str = "swap"
+APPLY_STEP_START: str = "start"
+
+fn apply_ok() -> ApplyOutcome {
+    return ApplyOutcome{ applied: true, step: "", code: "", message: "", kept: false }
+}
+
+fn apply_failed(step: str, code: str, message: str, kept: bool) -> ApplyOutcome {
+    return ApplyOutcome{ applied: false, step: step, code: code, message: message, kept: kept }
+}
+
+// Checks update-apply's request against the folders it may touch: `from` must be the
+// staging folder of `to` (update_paths), so the command can never be pointed at
+// another folder to move it.
+fn check_apply_request(r: ApplyRequest) -> void! {
+    if r.to.len() == 0 || r.from.len() == 0 {
+        return error(coded(ERR_USAGE, "update-apply needs --from and --to"))
+    }
+    if r.wait_pid < 0 {
+        return error(coded(ERR_USAGE, "--wait takes a process id"))
+    }
+    p := update_paths(r.to, r.os)
+    if trim_slashes(r.from) != p.new_root {
+        return error(coded(ERR_INVALID, "update-apply applies only the package unpacked beside the installed folder ({p.new_root})"))
+    }
+    return
+}
+
+// The page's text for an outcome that did not apply (the app shows it at launch).
+fn apply_outcome_text(o: ApplyOutcome) -> str {
+    if o.step == APPLY_STEP_CLI {
+        return "The update was not applied: {o.message}. Close it and choose Relaunch again."
+    }
+    if o.step == APPLY_STEP_START {
+        return "The new version did not start, so this one was put back. {o.message}"
+    }
+    return "The update was not applied: {o.message}"
+}

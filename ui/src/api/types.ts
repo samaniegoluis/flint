@@ -217,7 +217,7 @@ export interface Settings {
 }
 
 /** The update check's outcome (milestone 52, src/domain/update.cf), as `update:status`. */
-export type UpdateState = 'idle' | 'checking' | 'up_to_date' | 'available' | 'error';
+export type UpdateState = 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'ready' | 'error';
 export type UpdateAction = 'download' | 'how' | '';
 /** Why How to update: a .deb/.rpm, a build from source, a folder Flint can't write, no package for this system. */
 export type UpdateHow = 'package' | 'source' | 'readonly' | 'no_asset' | '';
@@ -237,6 +237,10 @@ export interface UpdateStatus {
   how: UpdateHow;
   asset_url: string;
   asset_size: number;
+  /** The package's SHA-256 from the verified manifest (milestone 53). */
+  asset_sha256: string;
+  /** Bytes received while downloading. */
+  received: number;
   /** The first time this version was found: show the toast (once per version, D-116). */
   toast: boolean;
   code: string;

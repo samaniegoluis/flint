@@ -100,6 +100,10 @@ type UpdateStatus struct {
     // The package for this system (Download), when there is one.
     asset_url:  str  `json:"asset_url"`
     asset_size: i64  `json:"asset_size"`
+    // Its SHA-256 from the verified manifest, checked before it is unpacked (milestone 53).
+    asset_sha256: str `json:"asset_sha256"`
+    // Bytes received while downloading (UPDATE_DOWNLOADING).
+    received:   i64  `json:"received"`
     // The toast is due: the first time this version is found (D-116).
     toast:      bool `json:"toast"`
     // The error's code and message when `state` is UPDATE_FAILED.
@@ -108,7 +112,7 @@ type UpdateStatus struct {
 }
 
 fn update_status_idle(current: str, auto: bool, checked_at: i64) -> UpdateStatus {
-    return UpdateStatus{ state: UPDATE_IDLE, current: current, checked_at: checked_at, auto: auto, version: "", date: "", summary: "", page: "", action: "", how: "", asset_url: "", asset_size: 0, toast: false, code: "", message: "" }
+    return UpdateStatus{ state: UPDATE_IDLE, current: current, checked_at: checked_at, auto: auto, version: "", date: "", summary: "", page: "", action: "", how: "", asset_url: "", asset_size: 0, asset_sha256: "", received: 0, toast: false, code: "", message: "" }
 }
 
 // Only a build from source may check another feed and key, its tests' local feed on
@@ -274,6 +278,22 @@ fn plain_url(url: str, prefix: str) -> bool {
 // (never a pre-release), its page and every asset point into this repository's
 // releases, each asset has a known key, a size and a SHA-256.
 fn check_update_manifest(m: UpdateManifest) -> void! {
+    return check_update_manifest_from(m, UPDATE_DOWNLOAD_PREFIX)
+}
+
+// Where a manifest's packages may be: Flint's releases, or, for the local feed only a
+// build from source may check (update_override_allowed), the feed's own folder.
+fn update_download_prefix(manifest_url: str) -> str {
+    if update_override_allowed(INSTALL_SOURCE, manifest_url) {
+        i := manifest_url.last_index_of("/") or 0
+        if i > 0 {
+            return "{manifest_url[0..i + 1]}"
+        }
+    }
+    return UPDATE_DOWNLOAD_PREFIX
+}
+
+fn check_update_manifest_from(m: UpdateManifest, download_prefix: str) -> void! {
     v := parse_flint_version(m.version)
     if !v.ok || v.rc != 0 || v.ahead != 0 || m.version.contains("-") {
         return error(coded(ERR_INVALID, "the update manifest names a version that is not a release ('{m.version}')"))
@@ -285,7 +305,7 @@ fn check_update_manifest(m: UpdateManifest) -> void! {
         if !one_of(a.key, UPDATE_ASSET_KEYS) {
             return error(coded(ERR_INVALID, "the update manifest names an unknown package ('{a.key}')"))
         }
-        if !plain_url(a.url, UPDATE_DOWNLOAD_PREFIX) || a.name.len() == 0 || !a.url.ends_with("/" + a.name) {
+        if !plain_url(a.url, download_prefix) || a.name.len() == 0 || !a.url.ends_with("/" + a.name) {
             return error(coded(ERR_INVALID, "the update manifest's {a.key} package is not one of Flint's releases"))
         }
         if a.size <= 0 || !is_hex64(a.sha256) {
@@ -343,6 +363,7 @@ fn update_offer(m: UpdateManifest, here: UpdateHere, auto: bool, checked_at: i64
         if key.len() > 0 && a.key == key {
             s.asset_url = a.url
             s.asset_size = a.size
+            s.asset_sha256 = a.sha256
         }
     }
     s.action = UPDATE_ACTION_HOW

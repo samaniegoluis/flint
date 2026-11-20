@@ -506,3 +506,46 @@ type UpdateFeed interface {
 type UpdateVerifier interface {
     update_verify(message: []byte, signature: []byte, public_key: []byte) -> bool
 }
+
+// The package download (milestone 53, adapters/vaultremote over libcurl): `url` written
+// to the file `path`, at most `max_bytes`, with a connect deadline and a stall deadline
+// (Principle 8: a package may take minutes, but never sits silent). HTTPS only, as the
+// feed. The bytes received so far are readable from another thread while it runs
+// (the adapter's update_download_received). Errors as UpdateFeed's.
+type UpdateDownloader interface {
+    mut update_download(url: str, path: str, max_bytes: i64) -> void!
+}
+
+// A downloaded package's SHA-256, as 64 hex characters (milestone 53, adapters/crypto:
+// libsodium's crypto_hash_sha256, Principle 4).
+type UpdateHasher interface {
+    update_file_sha256(path: str) -> str!
+}
+
+// The files of an update (milestone 53, adapters/process): the staging folder beside
+// the installed one, the swap by rename, unpacking a zip with the system's own tool
+// (macOS `ditto`, keeping the bundle's links and signature; `bsdtar` / `unzip`
+// elsewhere: CF-175). `upd_remove` removes a tree and is quiet when there is none.
+type UpdateFiles interface {
+    upd_exists(path: str) -> bool
+    upd_read(path: str) -> str!
+    mut upd_mkdir(path: str) -> void!
+    mut upd_remove(path: str) -> void!
+    mut upd_rename(from: str, to: str) -> void!
+    mut upd_write(path: str, text: str) -> void!
+    mut upd_unzip(zip: str, dest: str) -> void!
+    // A copy of an executable, kept executable (the new CLI, run from a temporary folder).
+    mut upd_copy_exe(from: str, to: str) -> void!
+}
+
+// The processes of an update (milestone 53, adapters/process): whether one runs, which
+// run an executable from inside a folder, starting one detached from this process
+// (its output to `log`, or nowhere), stopping one, and the clock.
+type UpdateProcesses interface {
+    proc_alive(pid: i64) -> bool
+    proc_running_under(dir: str) -> []i64
+    mut proc_spawn(exe: str, args: []str, log: str) -> i64!
+    mut proc_stop(pid: i64)
+    mut proc_sleep(ms: i64)
+    proc_now_ms() -> i64
+}

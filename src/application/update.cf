@@ -50,7 +50,7 @@ fn fetch_update_manifest[F: UpdateFeed, V: UpdateVerifier](feed: F, verifier: V,
     m := json.parse[UpdateManifest](payload: str(body)) or {
         return error(coded(ERR_INVALID, "the update information could not be read"))
     }
-    try check_update_manifest(m)
+    try check_update_manifest_from(m, update_download_prefix(src.manifest_url))
     return m
 }
 

@@ -1,0 +1,200 @@
+package application
+
+// The signed self-update (milestone 53, spec v13, D-106 (5), D-111, D-118). Download:
+// the package named by a verified manifest, its SHA-256 checked before a byte of it is
+// unpacked (Principle 15), unpacked beside the installed folder. Relaunch: the new CLI
+// copied out and started as `flint update-apply`, which swaps the folders once the app
+// quit and puts the old one back when the new app does not say it started. Nothing is
+// retried on its own: a failure discards the download and the person decides again.
+
+import "core:json"
+import "../domain"
+import "../ports"
+
+fn discard_staging[F: UpdateFiles](mut files: F, p: UpdatePaths) {
+    files.upd_remove(p.staging) or {}
+}
+
+// Downloads, checks and unpacks the package `s` offers (a status whose action is
+// Download, from a verified manifest). The staging folder is made anew; on any failure
+// it is removed, so nothing unverified stays on disk.
+fn download_update[D: UpdateDownloader, H: UpdateHasher, F: UpdateFiles](mut dl: D, hasher: H, mut files: F, s: UpdateStatus, installed: str, os: str) -> void! {
+    if s.action != UPDATE_ACTION_DOWNLOAD || s.asset_url.len() == 0 || s.asset_size <= 0 || !is_hex64(s.asset_sha256) {
+        return error(coded(ERR_INVALID, "there is no package to download for this copy of Flint"))
+    }
+    p := update_paths(installed, os)
+    discard_staging(mut files, p)
+    try files.upd_mkdir(p.staging)
+    dl.update_download(s.asset_url, p.zip, s.asset_size) or err {
+        discard_staging(mut files, p)
+        return error(err)
+    }
+    got := hasher.update_file_sha256(p.zip) or err {
+        discard_staging(mut files, p)
+        return error(err)
+    }
+    if !sha256_matches(s.asset_sha256, got) {
+        discard_staging(mut files, p)
+        return error(coded(ERR_INVALID, "the download did not match the release's SHA-256 and was discarded"))
+    }
+    files.upd_unzip(p.zip, p.new_dir) or err {
+        discard_staging(mut files, p)
+        return error(err)
+    }
+    files.upd_remove(p.zip) or {}
+    if !files.upd_exists(update_app_exe(p.new_root, os)) || !files.upd_exists(update_cli_exe(p.new_root, os)) {
+        discard_staging(mut files, p)
+        return error(coded(ERR_INVALID, "the download did not hold Flint and was discarded"))
+    }
+    files.upd_write(p.ready, s.version) or err {
+        discard_staging(mut files, p)
+        return error(err)
+    }
+}
+
+// The version downloaded and ready to apply, "" when none. A staged version that is
+// not newer than this one (left by an update that applied, or by an older download)
+// is removed, unless a swap is under way (its old folder still set aside).
+fn staged_update[F: UpdateFiles](mut files: F, installed: str, os: str, current: str) -> str {
+    p := update_paths(installed, os)
+    if !files.upd_exists(p.ready) {
+        return ""
+    }
+    v := "{(files.upd_read(p.ready) or "").trim()}"
+    if version_is_newer(v, current) && files.upd_exists(p.new_root) {
+        return v
+    }
+    if !files.upd_exists(update_parent(p.old_root)) {
+        discard_staging(mut files, p)
+    }
+    return ""
+}
+
+// The app says it started (the new app, at launch, once its page is up): update-apply
+// waits for this before it removes the old folder.
+fn mark_update_started[F: UpdateFiles](mut files: F, installed: str, os: str) {
+    p := update_paths(installed, os)
+    if files.upd_exists(p.staging) {
+        files.upd_write(p.started, "started") or {}
+    }
+}
+
+// What update-apply left when it could not apply, once: read, then cleared (the whole
+// staging folder unless the package was kept for another Relaunch).
+fn take_apply_outcome[F: UpdateFiles](mut files: F, installed: str, os: str) -> ApplyOutcome? {
+    p := update_paths(installed, os)
+    if !files.upd_exists(p.outcome) {
+        return none
+    }
+    text := files.upd_read(p.outcome) or ""
+    files.upd_remove(p.outcome) or {}
+    o := json.parse[ApplyOutcome](payload: text) or {
+        return none
+    }
+    if !o.kept {
+        discard_staging(mut files, p)
+    }
+    return o
+}
+
+// Relaunch: the new CLI copied to `temp_dir` and started as update-apply for this
+// process (`pid`); the caller quits right after. Its log goes to `temp_dir`.
+fn relaunch_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, installed: str, os: str, current: str, temp_dir: str, pid: i64) -> void! {
+    p := update_paths(installed, os)
+    if staged_update(mut files, installed, os, current).len() == 0 {
+        return error(coded(ERR_NOT_FOUND, "no update is ready to apply"))
+    }
+    files.upd_remove(p.started) or {}
+    files.upd_remove(p.outcome) or {}
+    mut cli := temp_dir + "/flint"
+    if os == "windows" {
+        cli = cli + ".exe"
+    }
+    try files.upd_mkdir(temp_dir)
+    try files.upd_copy_exe(update_cli_exe(p.new_root, os), cli)
+    args: []str = ["update-apply", "--wait", "{pid}", "--from", p.new_root, "--to", p.installed]
+    _ = try procs.proc_spawn(cli, args, temp_dir + "/update-apply.log")
+}
+
+// Leaves the outcome for the app it starts, and starts the installed app.
+fn give_back[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, p: UpdatePaths, os: str, o: ApplyOutcome) -> ApplyOutcome {
+    files.upd_write(p.outcome, json.stringify(o)) or {}
+    _ = procs.proc_spawn(update_app_exe(p.installed, os), [], "") or 0
+    return o
+}
+
+// `flint update-apply` (D-111 (3)): waits for the app to quit and for every `flint`
+// running from its folder, swaps the folders by rename, starts the new app and waits
+// for its word; with none, stops it and puts the old folder back. Never writes over
+// a file in use: a folder is only ever renamed (D-113 (3), Windows' locked files).
+fn apply_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, r: ApplyRequest) -> ApplyOutcome {
+    check_apply_request(r) or err {
+        msg := "{err.message()}"
+        return apply_failed(APPLY_STEP_ARGS, error_code_of(msg), msg, true)
+    }
+    p := update_paths(r.to, r.os)
+    if !files.upd_exists(p.new_root) || !files.upd_exists(p.installed) {
+        return apply_failed(APPLY_STEP_ARGS, ERR_NOT_FOUND, "the update or the installed folder is missing", false)
+    }
+    pid := r.wait_pid
+    if pid > 0 {
+        deadline := procs.proc_now_ms() + UPDATE_WAIT_QUIT_MS
+        for procs.proc_alive(pid) {
+            if procs.proc_now_ms() >= deadline {
+                return apply_failed(APPLY_STEP_QUIT, ERR_TIMEOUT, "Flint did not quit", true)
+            }
+            procs.proc_sleep(UPDATE_POLL_MS)
+        }
+    }
+    mut held := procs.proc_running_under(p.installed)
+    cli_deadline := procs.proc_now_ms() + UPDATE_WAIT_CLI_MS
+    for held.len() > 0 && procs.proc_now_ms() < cli_deadline {
+        procs.proc_sleep(UPDATE_POLL_MS)
+        held = procs.proc_running_under(p.installed)
+    }
+    if held.len() > 0 {
+        return give_back(mut files, mut procs, p, r.os, apply_failed(APPLY_STEP_CLI, ERR_CONFLICT, "flint is still running from {path_base(p.installed)} (process {held[0]})", true))
+    }
+    // The swap: two renames on one volume.
+    files.upd_remove(p.started) or {}
+    files.upd_remove(update_parent(p.old_root)) or {}
+    files.upd_mkdir(update_parent(p.old_root)) or {}
+    files.upd_rename(p.installed, p.old_root) or err {
+        return give_back(mut files, mut procs, p, r.os, apply_failed(APPLY_STEP_SWAP, ERR_IO, "{err.message()}", true))
+    }
+    files.upd_rename(p.new_root, p.installed) or err {
+        files.upd_rename(p.old_root, p.installed) or {}
+        return give_back(mut files, mut procs, p, r.os, apply_failed(APPLY_STEP_SWAP, ERR_IO, "{err.message()}", true))
+    }
+    mut started := false
+    child := procs.proc_spawn(update_app_exe(p.installed, r.os), [], "") or 0
+    if child > 0 {
+        start_deadline := procs.proc_now_ms() + UPDATE_WAIT_START_MS
+        for !started && procs.proc_alive(child) && procs.proc_now_ms() < start_deadline {
+            procs.proc_sleep(UPDATE_POLL_MS)
+            started = files.upd_exists(p.started)
+        }
+        started = started || files.upd_exists(p.started)
+    }
+    if started {
+        discard_staging(mut files, p)
+        return apply_ok()
+    }
+    // Put the old folder back.
+    if child > 0 {
+        procs.proc_stop(child)
+    }
+    failed_dir := p.staging + "/failed"
+    files.upd_remove(failed_dir) or {}
+    files.upd_rename(p.installed, failed_dir) or {}
+    files.upd_rename(p.old_root, p.installed) or {}
+    files.upd_remove(failed_dir) or {}
+    files.upd_remove(p.new_dir) or {}
+    files.upd_remove(p.ready) or {}
+    files.upd_remove(update_parent(p.old_root)) or {}
+    mut why := "It did not say it started within {UPDATE_WAIT_START_MS / 1000} s."
+    if child == 0 {
+        why = "It could not be started."
+    }
+    return give_back(mut files, mut procs, p, r.os, apply_failed(APPLY_STEP_START, ERR_TIMEOUT, why, false))
+}

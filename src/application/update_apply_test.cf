@@ -1,0 +1,356 @@
+package application
+
+import "../domain"
+
+// A file tree as a list of paths (a folder exists when a path is under it). A map in a
+// struct field does not compile (see update_test.cf). `unzip_holds` is what a zip
+// unpacks to, relative to the destination; `new_app_starts` is whether the new app
+// says it started (its marker exists).
+type FakeUpdateFiles struct {
+    paths:          []str
+    texts:          []str
+    unzip_holds:    []str
+    new_app_starts: bool
+    fail_unzip:     bool
+    log:            []str
+}
+
+fn fake_files(paths: []str) -> FakeUpdateFiles {
+    return FakeUpdateFiles{ paths: paths, texts: [], unzip_holds: ["Flint.app/Contents/MacOS/Flint", "Flint.app/Contents/Helpers/flint"], new_app_starts: true, fail_unzip: false, log: [] }
+}
+
+fn under(path: str, dir: str) -> bool {
+    return path == dir || path.starts_with(dir + "/")
+}
+
+fn (self: FakeUpdateFiles) upd_exists(path: str) -> bool {
+    if path.ends_with("/started") {
+        return self.new_app_starts
+    }
+    for x in self.paths {
+        if under(x, path) {
+            return true
+        }
+    }
+    return false
+}
+
+fn (self: FakeUpdateFiles) upd_read(path: str) -> str! {
+    for i, x in self.paths {
+        if x == path && i < self.texts.len() {
+            return self.texts[i]
+        }
+    }
+    for x in self.texts {
+        if x.starts_with(path + "=") {
+            return "{x[path.len() + 1..]}"
+        }
+    }
+    return error(coded(ERR_NOT_FOUND, "no {path}"))
+}
+
+fn (mut self: FakeUpdateFiles) upd_mkdir(path: str) -> void! {
+    self.paths.push(path)
+}
+
+fn (mut self: FakeUpdateFiles) upd_remove(path: str) -> void! {
+    mut kept: []str = []
+    for x in self.paths {
+        if !under(x, path) {
+            kept.push(x)
+        }
+    }
+    self.paths = kept
+    mut texts: []str = []
+    for t in self.texts {
+        if !t.starts_with(path + "=") {
+            texts.push(t)
+        }
+    }
+    self.texts = texts
+}
+
+fn (mut self: FakeUpdateFiles) upd_rename(from: str, to: str) -> void! {
+    if !self.upd_exists(from) {
+        return error(coded(ERR_NOT_FOUND, "no {from}"))
+    }
+    mut moved: []str = []
+    for x in self.paths {
+        if under(x, from) {
+            moved.push(to + "{x[from.len()..]}")
+        } else {
+            moved.push(x)
+        }
+    }
+    self.paths = moved
+    self.log.push("rename {from} -> {to}")
+}
+
+fn (mut self: FakeUpdateFiles) upd_write(path: str, text: str) -> void! {
+    self.upd_remove(path) or {}
+    self.paths.push(path)
+    self.texts.push(path + "=" + text)
+}
+
+fn (mut self: FakeUpdateFiles) upd_unzip(zip: str, dest: str) -> void! {
+    if self.fail_unzip {
+        return error(coded(ERR_IO, "not a zip"))
+    }
+    for h in self.unzip_holds {
+        self.paths.push(dest + "/" + h)
+    }
+}
+
+fn (mut self: FakeUpdateFiles) upd_copy_exe(from: str, to: str) -> void! {
+    if !self.upd_exists(from) {
+        return error(coded(ERR_NOT_FOUND, "no {from}"))
+    }
+    self.paths.push(to)
+}
+
+// The download writes the zip; `sha` is what hashing it gives.
+type FakeDownloader struct {
+    fail: str
+    urls: []str
+}
+
+fn (mut self: FakeDownloader) update_download(url: str, path: str, max_bytes: i64) -> void! {
+    self.urls.push(url)
+    if self.fail.len() > 0 {
+        return error(coded(self.fail, "the download failed"))
+    }
+}
+
+type FakeHasher struct {
+    sha: str
+}
+
+fn (self: FakeHasher) update_file_sha256(path: str) -> str! {
+    return self.sha
+}
+
+// Processes: the app (`app_pid`) quits after `quit_after` polls; a `flint` from the
+// folder holds it for `held_for` polls; spawned programs are recorded.
+type FakeProcesses struct {
+    now:        i64
+    app_pid:    i64
+    quit_after: i64
+    held_for:   i64
+    polls:      i64
+    spawned:    []str
+    stopped:    []i64
+    child_dies: bool
+}
+
+fn fake_procs() -> FakeProcesses {
+    return FakeProcesses{ now: 0, app_pid: 42, quit_after: 2, held_for: 0, polls: 0, spawned: [], stopped: [], child_dies: false }
+}
+
+fn (self: FakeProcesses) proc_alive(pid: i64) -> bool {
+    if pid == self.app_pid {
+        return self.polls < self.quit_after
+    }
+    return !self.child_dies
+}
+
+fn (self: FakeProcesses) proc_running_under(dir: str) -> []i64 {
+    if self.polls < self.held_for {
+        return [77]
+    }
+    return []
+}
+
+fn (mut self: FakeProcesses) proc_spawn(exe: str, args: []str, log: str) -> i64! {
+    mut line := exe
+    for a in args {
+        line = line + " " + a
+    }
+    self.spawned.push(line)
+    return 100 + i64(self.spawned.len())
+}
+
+fn (mut self: FakeProcesses) proc_stop(pid: i64) {
+    self.stopped.push(pid)
+}
+
+fn (mut self: FakeProcesses) proc_sleep(ms: i64) {
+    self.now = self.now + ms
+    self.polls = self.polls + 1
+}
+
+fn (self: FakeProcesses) proc_now_ms() -> i64 {
+    return self.now
+}
+
+INSTALLED: str = "/Apps/Flint.app"
+
+fn offer(sha: str) -> UpdateStatus {
+    mut s := update_status_idle("0.17.0", true, 1)
+    s.state = UPDATE_AVAILABLE
+    s.version = "0.18.0"
+    s.action = UPDATE_ACTION_DOWNLOAD
+    s.asset_url = "https://github.com/samaniegoluis/flint/releases/download/v0.18.0/Flint-0.18.0-macos-arm64.zip"
+    s.asset_size = 1000
+    s.asset_sha256 = sha
+    return s
+}
+
+fn installed_files() -> FakeUpdateFiles {
+    return fake_files([INSTALLED + "/Contents/MacOS/Flint", INSTALLED + "/Contents/Helpers/flint"])
+}
+
+test "a verified download is unpacked beside the installed folder and ready" {
+    mut files := installed_files()
+    mut dl := FakeDownloader{ fail: "", urls: [] }
+    try download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac")
+    assert_eq(dl.urls.len(), 1)
+    assert(files.upd_exists("/Apps/.flint-update/new/Flint.app/Contents/Helpers/flint"))
+    assert(!files.upd_exists("/Apps/.flint-update/package.zip"))
+    assert_eq(staged_update(mut files, INSTALLED, "mac", "0.17.0"), "0.18.0")
+}
+
+test "a download whose SHA-256 does not match is discarded, never unpacked" {
+    mut files := installed_files()
+    mut dl := FakeDownloader{ fail: "", urls: [] }
+    mut r := ""
+    download_update(mut dl, FakeHasher{ sha: "b".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
+    assert(r.starts_with("invalid:") && r.contains("SHA-256"))
+    assert(!files.upd_exists("/Apps/.flint-update"))
+    assert(files.upd_exists(INSTALLED + "/Contents/MacOS/Flint"))
+}
+
+test "a failed download, a bad zip or a zip without Flint leave nothing behind" {
+    mut files := installed_files()
+    mut dl := FakeDownloader{ fail: ERR_TIMEOUT, urls: [] }
+    mut r := ""
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
+    assert(r.starts_with("timeout:"))
+    assert(!files.upd_exists("/Apps/.flint-update"))
+
+    files.fail_unzip = true
+    dl.fail = ""
+    r = ""
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
+    assert(r.starts_with("io:"))
+    assert(!files.upd_exists("/Apps/.flint-update"))
+
+    files.fail_unzip = false
+    files.unzip_holds = ["Other.app/readme"]
+    r = ""
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
+    assert(r.contains("did not hold Flint"))
+    assert(!files.upd_exists("/Apps/.flint-update"))
+}
+
+test "nothing is downloaded for How to update" {
+    mut files := installed_files()
+    mut dl := FakeDownloader{ fail: "", urls: [] }
+    mut s := offer("a".repeat(64))
+    s.action = UPDATE_ACTION_HOW
+    mut r := ""
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, s, INSTALLED, "mac") or err { r = "{err.message()}" }
+    assert(r.starts_with("invalid:"))
+    assert_eq(dl.urls.len(), 0)
+}
+
+fn staged_files() -> FakeUpdateFiles {
+    mut files := installed_files()
+    mut dl := FakeDownloader{ fail: "", urls: [] }
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac") or {}
+    return files
+}
+
+test "Relaunch starts update-apply from a copy of the new CLI" {
+    mut files := staged_files()
+    mut procs := fake_procs()
+    try relaunch_update(mut files, mut procs, INSTALLED, "mac", "0.17.0", "/tmp/fu", 42)
+    assert_eq(procs.spawned.len(), 1)
+    assert_eq(procs.spawned[0], "/tmp/fu/flint update-apply --wait 42 --from /Apps/.flint-update/new/Flint.app --to /Apps/Flint.app")
+    assert(files.upd_exists("/tmp/fu/flint"))
+    // Nothing staged: nothing to apply.
+    mut empty := installed_files()
+    mut r := ""
+    relaunch_update(mut empty, mut procs, INSTALLED, "mac", "0.17.0", "/tmp/fu", 42) or err { r = "{err.message()}" }
+    assert(r.starts_with("not_found:"))
+}
+
+test "update-apply swaps the folders and starts the new app" {
+    mut files := staged_files()
+    mut procs := fake_procs()
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac" })
+    assert(o.applied)
+    assert(procs.polls >= 2)
+    assert_eq(files.log[0], "rename /Apps/Flint.app -> /Apps/.flint-update/old/Flint.app")
+    assert_eq(files.log[1], "rename /Apps/.flint-update/new/Flint.app -> /Apps/Flint.app")
+    assert_eq(procs.spawned[0], "/Apps/Flint.app/Contents/MacOS/Flint")
+    assert(!files.upd_exists("/Apps/.flint-update"))
+    assert(files.upd_exists(INSTALLED + "/Contents/Helpers/flint"))
+}
+
+test "a new app that does not start is stopped and the old folder put back" {
+    mut files := staged_files()
+    files.new_app_starts = false
+    mut procs := fake_procs()
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac" })
+    assert(!o.applied)
+    assert_eq(o.step, APPLY_STEP_START)
+    assert_eq(procs.stopped.len(), 1)
+    assert_eq(files.log[files.log.len() - 1], "rename /Apps/.flint-update/old/Flint.app -> /Apps/Flint.app")
+    assert(files.upd_exists(INSTALLED + "/Contents/MacOS/Flint"))
+    assert(!files.upd_exists("/Apps/.flint-update/new"))
+    // The old app is started again and reads why, once; nothing is kept to retry.
+    assert_eq(procs.spawned.len(), 2)
+    got := take_apply_outcome(mut files, INSTALLED, "mac") or {
+        assert(false)
+        return
+    }
+    assert_eq(got.step, APPLY_STEP_START)
+    assert(!files.upd_exists("/Apps/.flint-update"))
+}
+
+test "a new app that exits at once is put back without waiting a minute" {
+    mut files := staged_files()
+    files.new_app_starts = false
+    mut procs := fake_procs()
+    procs.child_dies = true
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac" })
+    assert(!o.applied)
+    assert(procs.now < UPDATE_WAIT_START_MS)
+}
+
+test "a flint still running from the folder stops the swap and keeps the package" {
+    mut files := staged_files()
+    mut procs := fake_procs()
+    procs.held_for = 1000000
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac" })
+    assert(!o.applied)
+    assert_eq(o.step, APPLY_STEP_CLI)
+    assert(o.kept)
+    assert(o.message.contains("process 77"))
+    assert_eq(files.log.len(), 0)
+    // The old app comes back, says why, and Relaunch is still there.
+    assert_eq(procs.spawned[0], "/Apps/Flint.app/Contents/MacOS/Flint")
+    _ = take_apply_outcome(mut files, INSTALLED, "mac") or {
+        assert(false)
+        return
+    }
+    assert_eq(staged_update(mut files, INSTALLED, "mac", "0.17.0"), "0.18.0")
+}
+
+test "update-apply refuses a folder that is not the staged package, and an app that never quits" {
+    mut files := staged_files()
+    mut procs := fake_procs()
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/tmp/other/Flint.app", to: INSTALLED, os: "mac" })
+    assert_eq(o.step, APPLY_STEP_ARGS)
+    assert_eq(files.log.len(), 0)
+    procs.quit_after = 1000000
+    q := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac" })
+    assert_eq(q.step, APPLY_STEP_QUIT)
+    assert_eq(files.log.len(), 0)
+}
+
+test "a staged version no newer than this one is cleared" {
+    mut files := staged_files()
+    assert_eq(staged_update(mut files, INSTALLED, "mac", "0.18.0"), "")
+    assert(!files.upd_exists("/Apps/.flint-update"))
+}

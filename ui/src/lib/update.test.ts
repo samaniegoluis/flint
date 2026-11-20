@@ -4,7 +4,7 @@ import { shortDate, updateActionLabel, updateBarLabel, updateHowText, updatePale
 
 const base: UpdateStatus = {
   state: 'idle', current: '0.16.0', checked_at: 0, auto: true, version: '', date: '', summary: '', page: '',
-  action: '', how: '', asset_url: '', asset_size: 0, toast: false, code: '', message: '',
+  action: '', how: '', asset_url: '', asset_size: 0, asset_sha256: "", received: 0, toast: false, code: '', message: '',
 };
 const NOW = 1_800_000_000_000;
 const available: UpdateStatus = { ...base, state: 'available', version: '0.17.0', date: '2026-11-18', action: 'download', checked_at: NOW - 600_000, page: 'https://github.com/samaniegoluis/flint/releases/tag/v0.17.0' };
