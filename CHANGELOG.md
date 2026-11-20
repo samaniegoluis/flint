@@ -4,6 +4,20 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.16.0 — 2026-11-20
+
+Flint's macOS package is now built on GitHub: a release workflow builds Flint.app on a hosted Mac from a tag on main and leaves a draft release with the zip, its SHA256SUMS and the version's notes, to be checked and published by hand. The Releases page on the site offers the package for your system once a release is published, and keeps Build from source until then. Also fixed: a macOS package built from a tagged checkout no longer loses FreeRDP.
+
+### Added
+
+- **release:** A workflow that builds the macOS package into a draft release
+
+### Fixed
+
+- **release:** The macOS package script names a library pkg-config cannot find
+- **macos:** FreeRDP keeps its own version when Flint's checkout sits on a tag
+
+
 ## 0.15.0 — 2026-11-20
 
 Flint for macOS now comes as one portable app. Flint.app carries its own copies of the libraries it needs, so it opens on any Mac with Apple silicon and macOS 13.3 or later, with nothing else installed, and the flint command is inside it: the app offers once to put it on your PATH, and Settings > About > Command line installs, repoints or removes it. Packages are built with scripts/package.sh macos and are not code-signed yet.
