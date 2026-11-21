@@ -65,10 +65,11 @@ with every file and its `SHA256SUMS`. Each one holds the desktop app and the `fl
 |---|---|---|
 | macOS 13.3+, Apple silicon | `Flint.app`, zipped | Not signed yet: the first launch needs [one extra step](https://flint-2xk.pages.dev/start/install/#macos) |
 | Windows 10 and 11, x64 | A portable folder, zipped | SmartScreen asks once (**More info** → **Run anyway**); needs the WebView2 Runtime, which Windows 11 has |
-| Ubuntu 24.04+, Debian 13+, Fedora 43+ | `.deb`, `.rpm` | Installed with `apt` or `dnf`, which also update it |
+| Ubuntu 24.04+, Debian 13+, Fedora 43+ | `.deb`, `.rpm` | Installed with `apt` or `dnf`; a new version is installed the same way |
 
 The app tells you when a new version is out; on macOS and Windows it downloads it,
-checks its signature and relaunches into it when you say so
+checks its signature and relaunches into it when you say so, and on Linux you install
+the new package as you did the first
 ([Updates](https://flint-2xk.pages.dev/guides/updates/)). The [install guide](https://flint-2xk.pages.dev/start/install/) has the
 details, and [Build from source](https://flint-2xk.pages.dev/start/build-from-source/) the other way in.
 

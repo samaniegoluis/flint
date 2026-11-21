@@ -52,7 +52,7 @@ export const NEEDS: Record<System, string> = {
 export const SIGNING: Record<System, { text: string; link: string; anchor: string }> = {
 	macos: { text: 'Not code-signed yet: the first launch needs', link: 'one extra step', anchor: '#macos' },
 	windows: { text: 'Not code-signed yet: SmartScreen asks once, choose', link: 'Run anyway', anchor: '#windows' },
-	linux: { text: 'Installed with apt or dnf, which also update it; not signed with a repository key, so', link: 'check it against SHA256SUMS', anchor: '#linux' },
+	linux: { text: 'Installed with apt or dnf, a new version the same way (Flint tells you when one is out); not signed with a repository key, so', link: 'check it against SHA256SUMS', anchor: '#linux' },
 };
 
 /** The visitor's system from the browser, or null for one Flint has no package for (a phone). */

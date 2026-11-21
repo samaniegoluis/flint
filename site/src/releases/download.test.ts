@@ -73,4 +73,6 @@ test('the unsigned note fits each system', () => {
 	assert.match(SIGNING.windows.text + ' ' + SIGNING.windows.link, /SmartScreen.*Run anyway/);
 	assert.doesNotMatch(SIGNING.linux.text + ' ' + SIGNING.linux.link, /extra step|code-signed/);
 	assert.match(SIGNING.linux.text, /apt or dnf/);
+	// No repository yet: apt and dnf never see a new version on their own.
+	assert.doesNotMatch(SIGNING.linux.text, /also update/);
 });
