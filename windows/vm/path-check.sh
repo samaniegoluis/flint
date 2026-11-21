@@ -20,8 +20,16 @@ case "${1:-}" in
     FLINT_TEST_REAL_PATH_BIN="$(cygpath -m "$2/bin")" cfire test --release src/adapters/clilink 2>&1 \
       | grep -E "real Path|^--- FAIL|left:" ;;
   look)
-    # Started by the Task Scheduler, this job's environment is the registry's now.
-    powershell -NoProfile -Command '$c = Get-Command flint -ErrorAction SilentlyContinue; if ($c) { "flint is " + $c.Source; & $c.Source --version | Select-Object -First 1 } else { "flint not found" }; ($env:Path -split ";")[0..2] -join " | "' ;;
+    # A program the person starts comes from Explorer, which heard the app's
+    # WM_SETTINGCHANGE; this job's own shell is MSYS2's, whose login drops Windows'
+    # Path. So Explorer runs a .cmd that writes where `flint` resolves.
+    out=/c/flint-work/tmp/path-check.look; rm -f "$out"
+    printf '@echo off\r\nwhere flint > "%s" 2>&1\r\nflint --version >> "%s" 2>&1\r\n' \
+      "$(cygpath -w "$out")" "$(cygpath -w "$out")" > /c/flint-work/tmp/path-check.cmd
+    explorer.exe "$(cygpath -w /c/flint-work/tmp/path-check.cmd)" || true
+    for _ in $(seq 1 30); do [[ -s "$out" ]] && grep -q "flint\|Could not" "$out" && break; sleep 1; done
+    sleep 2
+    tr -d '\r' < "$out" ;;
   restore)
     [[ -f "$saved" ]] || { echo "nothing saved"; exit 1; }
     MSYS2_ARG_CONV_EXCL='*' reg add 'HKCU\Environment' /v Path /t REG_EXPAND_SZ /d "$(cat "$saved")" /f >/dev/null
