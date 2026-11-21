@@ -4,6 +4,10 @@ import "core:fs"
 import "core:os"
 
 test "a link is made, read back, replaced and removed in a folder this process writes" {
+    // macOS's and Linux's links; Windows puts a folder on the Path instead (below).
+    if os.getenv("OS") == "Windows_NT" {
+        return
+    }
     mut tmp := os.getenv("TMPDIR")
     if tmp.len() == 0 {
         tmp = "/tmp"   // unset in the Linux check's container
@@ -31,4 +35,53 @@ test "a link is made, read back, replaced and removed in a folder this process w
     p3 := links.cli_link_probe(path)
     assert(!p3.exists && !p3.is_link)
     assert(links.cli_link_exists(dir + "/B.app/Contents/Helpers/flint"))
+}
+
+// Windows only: a registry key of the test's own stands in for HKCU\Environment.
+test "Windows: the user's Path is read as written, written back and its entries probed" {
+    if os.getenv("OS") != "Windows_NT" {
+        return
+    }
+    tmp := os.getenv("FLINT_TEST_TMP")
+    if tmp.len() == 0 {
+        return
+    }
+    dir := tmp + "/flint-clipath-test-{os.getpid()}"
+    fs.remove(dir) or {}
+    defer { fs.remove(dir) or {} }
+    try fs.mkdir_all(dir + "/Flint/bin")
+    try fs.write_text(dir + "/Flint/Flint.exe", "")
+    try fs.write_text(dir + "/Flint/bin/flint.exe", "")
+    key := "Software\\Flint-test\\clipath-{os.getpid()}"
+    mut env := new_os_cli_path(key)
+    defer { env.cli_path_write("") or {} }
+    assert_eq(try env.cli_path_read(), "")
+    try env.cli_path_write("%USERPROFILE%\\tools;" + dir + "/Flint/bin")
+    assert_eq(try env.cli_path_read(), "%USERPROFILE%\\tools;" + dir + "/Flint/bin")
+    p := env.cli_path_probe(dir + "/Flint/bin")
+    assert(p.has_cli && p.has_app)
+    q := env.cli_path_probe("%USERPROFILE%\\no-such-folder")
+    assert(!q.has_cli && !q.has_app)
+    assert(env.cli_path_file_exists(dir + "/Flint/bin/flint.exe"))
+    try env.cli_path_write("")
+    assert_eq(try env.cli_path_read(), "")
+}
+
+// Windows, opt-in only (FLINT_TEST_REAL_PATH_BIN, the milestone 50 check on the test
+// VM): the user's real Path takes a package's bin folder as the app writes it, so a
+// terminal started afterwards finds flint. The caller saved the value before and puts
+// it back after (windows/vm/path-check.sh).
+test "Windows: the user's real Path takes the bin folder (opt-in)" {
+    bin := os.getenv("FLINT_TEST_REAL_PATH_BIN")
+    if os.getenv("OS") != "Windows_NT" || bin.len() == 0 {
+        return
+    }
+    mut env := new_os_cli_path(CLI_PATH_KEY)
+    mut probes: []PathEntryProbe = []
+    for e in split_path_value(try env.cli_path_read()) {
+        probes.push(env.cli_path_probe(e))
+    }
+    try env.cli_path_write(path_with_cli(bin, probes))
+    got := try env.cli_path_read()
+    assert(path_entry_key(split_path_value(got)[0]) == path_entry_key(bin))
 }

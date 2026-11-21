@@ -110,3 +110,87 @@ test "the page cannot set the app's own records" {
     saved := try save_settings(mut store, s)
     assert(saved.cli_offer_shown)
 }
+
+// The user's Path as a string, plus the files that exist (Windows, milestone 50).
+type FakeCliPath struct {
+    value:  str
+    files:  map[str]bool
+    writes: i64
+}
+
+fn (self: FakeCliPath) cli_path_read() -> str! {
+    return self.value
+}
+
+fn (mut self: FakeCliPath) cli_path_write(value: str) -> void! {
+    self.value = value
+    self.writes += 1
+}
+
+fn (self: FakeCliPath) cli_path_file_exists(path: str) -> bool {
+    return self.files.contains(path.replace_all("\\", "/").to_lower())
+}
+
+fn (self: FakeCliPath) cli_path_probe(entry: str) -> PathEntryProbe {
+    e := entry.replace_all("\\", "/").to_lower()
+    return PathEntryProbe{ entry: entry, has_cli: self.files.contains(e + "/flint.exe"), has_app: self.files.contains(e + "_app") }
+}
+
+fn fake_path_with(value: str, copies: []str) -> FakeCliPath {
+    mut env := FakeCliPath{ value: value, files: {}, writes: 0 }
+    for c in copies {
+        k := c.to_lower()
+        env.files[k + "/bin/flint.exe"] = true
+        env.files[k + "/bin_app"] = true
+    }
+    return env
+}
+
+WIN_A: str = "C:/Users/me/Apps/Flint"
+WIN_B: str = "C:/Users/me/Downloads/Flint"
+
+test "Windows: the folder is offered once, added first on request and taken off again" {
+    mut env := fake_path_with("C:\\Tools;%USERPROFILE%\\go\\bin", [WIN_A])
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    cli := WIN_A + "/bin/flint.exe"
+    bin := WIN_A + "/bin"
+    st := try cli_path_first_launch(env, mut settings, cli, bin)
+    assert_eq(st.kind, "path")
+    assert_eq(st.offer, "install")
+    assert_eq(st.spots[0].state, "missing")
+    assert(settings.saved.cli_offer_shown)
+    again := try cli_path_first_launch(env, mut settings, cli, bin)
+    assert_eq(again.offer, "")
+    done := try install_cli_path(mut env, cli, bin, bin)
+    assert_eq(done.spots[0].state, "installed")
+    assert_eq(env.value, "C:\\Users\\me\\Apps\\Flint\\bin;C:\\Tools;%USERPROFILE%\\go\\bin")
+    _ = try install_cli_path(mut env, cli, bin, bin)
+    assert_eq(env.writes, 1)
+    off := try remove_cli_path(mut env, cli, bin, bin)
+    assert_eq(off.spots[0].state, "missing")
+    assert_eq(env.value, "C:\\Tools;%USERPROFILE%\\go\\bin")
+}
+
+test "Windows: a moved folder is offered again and replaced, a foreign folder is never added" {
+    // The Path still names the folder before it was moved (now gone) and another copy.
+    mut env := fake_path_with("D:\\Old\\Flint\\bin;C:\\Tools", [WIN_A])
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    settings.saved.cli_offer_shown = true
+    cli := WIN_A + "/bin/flint.exe"
+    bin := WIN_A + "/bin"
+    st := try cli_path_first_launch(env, mut settings, cli, bin)
+    assert_eq(st.spots[0].state, "broken")
+    assert_eq(st.offer, "fix")
+    _ = try install_cli_path(mut env, cli, bin, bin)
+    assert_eq(env.value, "C:\\Users\\me\\Apps\\Flint\\bin;C:\\Tools")
+    mut two := fake_path_with("C:\\Users\\me\\Downloads\\Flint\\bin", [WIN_A, WIN_B])
+    assert_eq(cli_path_status(two, cli, bin, true).spots[0].state, "other-copy")
+    mut refused := 0
+    install_cli_path(mut two, cli, bin, "C:\\Windows") or { refused += 1 }
+    // A build from source carries no bin\flint.exe: nothing to offer.
+    mut none_here := fake_path_with("", [])
+    assert(!cli_path_status(none_here, cli, bin, false).available)
+    install_cli_path(mut none_here, cli, bin, bin) or { refused += 1 }
+    assert_eq(refused, 2)
+    assert_eq(none_here.writes, 0)
+}

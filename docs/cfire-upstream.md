@@ -3132,8 +3132,12 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Workaround:** `src/adapters/process/native/flint_update.hpp`: `posix_spawn` with
   `POSIX_SPAWN_SETSID`, `waitpid(WNOHANG)` + `kill(pid, 0)`, SIGTERM then SIGKILL,
   `proc_listallpids` + `proc_pidpath` on macOS and `/proc/<pid>/exe` on Linux; `chmod` for
-  the CLI copied out of the package (`core:fs` has no mode setter). Windows waits for
-  milestone 50.
+  the CLI copied out of the package (`core:fs` has no mode setter). **Windows (milestone
+  50):** `CreateProcessW` with `DETACHED_PROCESS` and only the log handle inherited
+  (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`), `OpenProcess` + `WaitForSingleObject`,
+  `TerminateProcess`, a Toolhelp snapshot with `QueryFullProcessImageNameW`, `MoveFileExW`
+  and a tree removal on `FindFirstFileW` (`core:fs`'s `rename` and `remove` are not used
+  there for CF-158's reason).
 - **Ideal:** `os.spawn(binary, args, detached: true, stdout: path) -> Process` with
   `pid()`, `alive()`, `kill()`; `os.processes()` with each one's executable path;
   `fs.set_mode(path, mode)`.
@@ -3168,3 +3172,34 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Workaround:** the helper's two statements inlined at each of its four call sites.
 - **Ideal:** the same lowering for a generic call whatever type instantiates it; `cfire
   check` failing where the build will.
+
+### CF-178 · gap · `confirmed`: no Windows registry, no way to change the user's environment
+- **Seen (milestone 50):** the app offers to put its `bin` folder on the person's `PATH`,
+  as `install.ps1` does. On Windows the user's own `Path` is the `Path` value of
+  `HKCU\Environment` (`REG_EXPAND_SZ`, with `%VARIABLES%` kept unexpanded), and a change
+  reaches terminals opened later only after a `WM_SETTINGCHANGE` broadcast. cfire has no
+  registry access (`core:os` reads the process's environment only) and no way to expand
+  `%VARIABLES%` or to broadcast the change.
+- **Workaround:** `src/adapters/clilink/native/flint_clilink.hpp`: `RegGetValueW` with
+  `RRF_NOEXPAND`, `RegSetValueExW` as `REG_EXPAND_SZ`, `SendMessageTimeoutW(HWND_BROADCAST,
+  WM_SETTINGCHANGE, …, L"Environment")`, `ExpandEnvironmentStringsW`, `GetFileAttributesW`.
+- **Ideal:** `os.user_env_get(name)` / `os.user_env_set(name, value)` (the persistent,
+  per-user variable: HKCU on Windows, nothing elsewhere), or a small `core:winreg`.
+
+### CF-179 · gap · `confirmed`: `ext:webui` opens an empty window when WebView2 is missing
+- **Seen (milestone 50):** on a Windows with no WebView2 Runtime, `webui.App.run()` opens
+  its window and prints `the WebView2 Runtime is not installed` on stderr, which a
+  windowed program has nowhere to show (`windows_webview2.hpp`, `report`). The person sees
+  an empty window and nothing else. The app cannot ask before opening it either: there is
+  no `webui.runtime_available()`.
+- **Workaround:** `src/adapters/uievents/native/flint_webview_runtime.hpp` asks
+  `GetAvailableCoreWebView2BrowserVersionString` of the `WebView2Loader.dll` beside the
+  app before the window opens, and shows a `MessageBoxW` that offers Microsoft's
+  download page.
+- **Ideal:** `webui.runtime_available() -> (bool, version)` and a `run()` that returns an
+  error instead of an empty window, so the app says it its own way.
+- **Also seen:** the `.exe` gets its icon from a `.ico` beside `Icon` (`windres`), but no
+  version resource (`FileDescription`, `ProductName`, `FileVersion`), so Explorer's
+  Properties and Task Manager's details show none. A `Version` field in
+  `build.Executable` would fill it.
+

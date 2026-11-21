@@ -43,9 +43,10 @@ import AgentBand from '../../components/landing/AgentBand.astro';
 <CliDemo />
 
 :::caution[Early development]
-Flint works today on macOS and Linux, as a desktop app and as the `flint` CLI. Release
-packages arrive on [Releases](/releases/) system by system (macOS, then Linux, then
-Windows), and macOS's updates itself when you say so; until yours is there, [build it from source](/start/build-from-source/).
+Flint works today on macOS, Linux and Windows, as a desktop app and as the `flint` CLI.
+Release packages for all three are on [Releases](/releases/) from 0.20.0, unsigned for now; macOS's
+and Windows' update themselves when you say so, and a Linux package through its package
+manager.
 :::
 
 ## One vault, two ways in
@@ -216,7 +217,7 @@ which also says what an unlocked vault does not protect against.
 
 <ul class="flint-next">
 	<li><strong>SSH agent</strong> <code>flint agent</code> serves keys from the vault to <code>ssh</code>, <code>git</code> and your editor, with no key on disk.</li>
-	<li><strong>Releases</strong> A Windows download beside macOS's and Linux's, updating itself as macOS already does. Signed builds after that.</li>
+	<li><strong>Signed releases</strong> macOS and Windows packages signed and notarized, with an installer for each, so the first launch asks nothing.</li>
 </ul>
 
 <p class="flint-footnote">Flint is written in <a href="https://cfire.memo.engineer/">cfire</a>, a Go-flavoured language that compiles to C++23.</p>

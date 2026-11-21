@@ -44,7 +44,8 @@ updates** in the command palette (<kbd>⌘K</kbd>).
 4. **Relaunch.** With sessions or tunnels open, Flint asks first: *3 sessions and 2
    tunnels will close*. Then it quits, the new version takes the old one's place, and
    the new Flint opens. Your vaults and settings live in your user folder, so they stay.
-   On macOS the `flint` command is a link into the app, so it is the new one too.
+   On macOS the `flint` command is a link into the app, and on Windows the `Flint\bin`
+   folder on your `PATH` is inside the new folder, so it is the new one too.
 
 If the new version does not start, Flint puts the old one back and opens it, and says
 so. If a `flint` command is still running from the app when you relaunch (a long `flint
@@ -56,6 +57,13 @@ not stop it as it did the zip from your browser (no **Open Anyway** this time). 
 unsigned Flint is a new app to macOS after each update, so the Keychain asks once more
 for the vault you keep with *Remember on this computer* and for a vault server's token:
 choose **Always Allow**. Signed builds, which keep that permission, are planned.
+
+**Windows:** the whole `Flint` folder is replaced, by renaming it, never by writing over
+a file in use. A program that keeps a file in it open (a terminal whose current folder is
+inside it, an Explorer preview) stops that: Flint tries for ten seconds, then leaves
+everything as it was, opens the old version, keeps the download and names the problem;
+close that program and choose **Relaunch** again. An update downloaded by Flint carries
+no download mark, so SmartScreen does not ask again.
 
 Applying an update is the job of `flint update-apply`, which the app starts from a copy
 of the new version's `flint`; it is not a command you type.

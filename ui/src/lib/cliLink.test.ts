@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { CliLinkSpot, CliLinkStatus } from '../api/types';
-import { cliInstalledText, cliOffer, cliSpotAction, cliSpotText } from './cliLink';
+import { cliActionLabel, cliInstalledText, cliOffer, cliSpotAction, cliSpotText } from './cliLink';
 
 const usr: CliLinkSpot = { path: '/usr/local/bin/flint', state: 'missing', target: '', admin: true };
 const local: CliLinkSpot = { path: '/Users/me/.local/bin/flint', state: 'missing', target: '', admin: false };
 const status = (offer: CliLinkStatus['offer'], spots: CliLinkSpot[], available = true): CliLinkStatus =>
-  ({ available, cli: '/Applications/Flint.app/Contents/Helpers/flint', spots, offer });
+  ({ available, cli: '/Applications/Flint.app/Contents/Helpers/flint', spots, offer, kind: 'link' });
 
 describe('the flint command', () => {
   it('offers to install in the first missing place', () => {
@@ -29,5 +29,19 @@ describe('the flint command', () => {
     expect(cliSpotAction(usr)).toBe('install');
     expect(cliSpotAction({ ...usr, state: 'installed' })).toBe('remove');
     expect(cliSpotAction({ ...usr, state: 'foreign' })).toBeNull();
+  });
+
+  it('on Windows offers the bin folder for the PATH, in Windows\' own words', () => {
+    const bin: CliLinkSpot = { path: 'C:/Users/me/Apps/Flint/bin', state: 'missing', target: '', admin: false };
+    const win = (offer: CliLinkStatus['offer'], spot: CliLinkSpot): CliLinkStatus =>
+      ({ available: true, cli: 'C:/Users/me/Apps/Flint/bin/flint.exe', spots: [spot], offer, kind: 'path' });
+    expect(cliOffer(win('install', bin))).toEqual({ text: 'Use Flint from a terminal: add flint to your PATH', label: 'Add to PATH', path: bin.path });
+    const moved = { ...bin, state: 'broken' as const, target: 'D:\\Old\\Flint\\bin' };
+    expect(cliOffer(win('fix', moved))).toEqual({ text: 'flint on your PATH runs a copy of Flint that was moved or deleted', label: 'Use this copy', path: bin.path });
+    expect(cliSpotText(moved, 'path')).toBe('Your PATH names a copy that was moved or deleted: D:\\Old\\Flint\\bin');
+    expect(cliInstalledText(bin.path, 'path')).toBe('Added C:\\Users\\me\\Apps\\Flint\\bin to your PATH: open a new terminal and run flint');
+    expect(cliActionLabel('install', 'path')).toBe('Add to PATH');
+    expect(cliActionLabel('remove', 'path')).toBe('Remove from PATH');
+    expect(cliActionLabel('install')).toBe('Install');
   });
 });

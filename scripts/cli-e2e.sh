@@ -736,6 +736,42 @@ if [[ "$windows" != 1 ]]; then
   expect 7 "update-apply takes only the package unpacked beside the folder" "" -- update-apply --wait 0 --from "$tmp" --to "$UA_TO"
   check "a refused request moves nothing" '[[ ! -f "$UA_TO/label" && -d "$UA_FROM" ]]'
   expect 2 "update-apply needs --to" "" -- update-apply --wait 0 --from "$UA_FROM"
+else
+  # Windows (milestone 50, D-118 (5)): Flint\Flint.exe and Flint\bin\flint.exe. The
+  # "app" is a copy of cmd.exe, which quits at once with no console: the rollback. The
+  # swap that starts the new app is gui-e2e's selfupdate run, in the desktop session.
+  ua="$tmp/ua"
+  sys32="$(cygpath -u "${SYSTEMROOT:-C:\\Windows}")/System32"
+  ua_win() {
+    rm -rf "$ua"; mkdir -p "$ua/Apps"
+    UA_TO="$(npath "$ua/Apps/Flint")"; UA_FROM="$(npath "$ua/Apps/.flint-update/new/Flint")"
+    local d
+    for d in "$ua/Apps/Flint" "$ua/Apps/.flint-update/new/Flint"; do
+      mkdir -p "$d/bin"; cp "$flint" "$d/bin/flint.exe"; cp "$sys32/cmd.exe" "$d/Flint.exe"
+    done
+    echo new > "$ua/Apps/.flint-update/new/Flint/label"
+    echo 99.0.0 > "$ua/Apps/.flint-update/ready"
+  }
+  ua_win
+  expect 14 "Windows: a new app that quits at once is put back (timeout)" "" -- update-apply --wait 0 --from "$UA_FROM" --to "$UA_TO" --json
+  check "Windows: the old folder is back" '[[ ! -f "$ua/Apps/Flint/label" && -f "$ua/Apps/Flint/Flint.exe" ]]'
+  check "Windows: it leaves why for the old app" 'grep -q "\"step\":\"start\"" "$ua/Apps/.flint-update/outcome.json"'
+  check "Windows: the broken package is gone" '[[ ! -e "$ua/Apps/.flint-update/new" ]]'
+  # A program whose current folder is inside the installed one holds it (as a terminal
+  # left there does): ten seconds of retries, then everything stays as it was, the
+  # package kept for another Relaunch.
+  ua_win
+  (cd "$ua/Apps/Flint/bin" && exec "$sys32/PING.EXE" -n 14 127.0.0.1 >/dev/null) &
+  ua_hold=$!
+  sleep 1
+  expect 10 "Windows: a folder held by another program is not swapped (io)" "" -- update-apply --wait 0 --from "$UA_FROM" --to "$UA_TO" --json
+  check "Windows: its message says a program has a file open" '[[ "$out" == *"a program has a file in Flint open"* ]]'
+  check "Windows: the package is kept" '[[ "$(echo "$out" | json_get "d[\"kept\"]")" == True && -f "$ua/Apps/.flint-update/new/Flint/label" ]]'
+  check "Windows: the installed folder is untouched" '[[ ! -f "$ua/Apps/Flint/label" && -f "$ua/Apps/Flint/bin/flint.exe" ]]'
+  # The holder pings for 13 s, past update-apply's 10 s of retries: waited for, not
+  # killed (MSYS2's kill does not reach a native program reliably).
+  wait "$ua_hold" 2>/dev/null || true
+  expect 7 "Windows: update-apply takes only the package unpacked beside the folder" "" -- update-apply --wait 0 --from "$(npath "$tmp")" --to "$UA_TO"
 fi
 
 echo "== every --json output parses"

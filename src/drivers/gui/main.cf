@@ -65,6 +65,18 @@ fn main() {
         return
     }
 
+    // Windows (milestone 50): without the WebView2 Runtime the window would open empty;
+    // say so, with Microsoft's download page, and stop. FLINT_WEBVIEW_CHECK=quiet only
+    // prints it (the Windows check runs it with no runtime to be found).
+    rt := webview_runtime()
+    if rt.state != "ok" {
+        write_stderr("flint-gui: {webview_missing_text(rt.state)}\n")
+        if os.getenv("FLINT_WEBVIEW_CHECK") != "quiet" {
+            tell_webview_missing(rt.state)
+        }
+        os.exit(3)
+    }
+
     mut app := make(webui.App, "Flint", 1280, 800)
     defer app.close()
     app.set_min_size(900, 600)

@@ -182,6 +182,16 @@ type CliLinks interface {
     mut cli_link_remove(path: str, admin: bool) -> void!
 }
 
+// The user's own Path on Windows (milestone 50, adapters/clilink): HKCU\Environment's
+// value as written (unexpanded), written back with the same type and announced to
+// running programs; and what one entry holds (expanded only to look).
+type CliPath interface {
+    cli_path_read() -> str!
+    mut cli_path_write(value: str) -> void!
+    cli_path_probe(entry: str) -> PathEntryProbe
+    cli_path_file_exists(path: str) -> bool
+}
+
 type FontCatalog interface {
     mono_font_families() -> []str!
 }

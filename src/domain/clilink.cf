@@ -36,6 +36,9 @@ type CliLinkStatus struct {
     // Shown once on the first launch (Settings.cli_offer_shown); a link to another or
     // a missing copy is offered again on every launch.
     offer:     str           `json:"offer"`
+    // "link" (macOS: a symbolic link in a folder on the PATH) or "path" (Windows: the
+    // package's bin folder on the user's Path, milestone 50).
+    kind:      str           `json:"kind"`
 }
 
 // missing: nothing there. installed: a link to this copy's CLI. other-copy: a link to
@@ -112,4 +115,103 @@ fn cli_link_offer(available: bool, spots: []CliLinkSpot, offer_shown: bool) -> s
         return "install"
     }
     return ""
+}
+
+// Windows (milestone 50, D-121): the package is a folder, `Flint\Flint.exe` with its CLI
+// alone in `Flint\bin\flint.exe`, and the command is offered as that `bin` folder on the
+// user's own `Path` (HKCU\Environment, no administrator). One place, so one spot, whose
+// path is the folder. An entry is "ours" when it is a Flint package's `bin` (it holds
+// flint.exe and its parent Flint.exe), or, once gone, when it was named `…\Flint\bin`.
+// Other entries are never touched.
+CLI_PATH_BIN: str = "bin"
+
+// The folder a packaged Windows app offers for the PATH, or "" when the app does not
+// run from a package's layout (a build from source has no bin\flint.exe beside it).
+fn windows_cli_dir(exe_dir: str) -> str {
+    return exe_dir + "/" + CLI_PATH_BIN
+}
+
+// A Path entry as compared: backslashes, no trailing separator, lower case (NTFS
+// ignores case), no surrounding quotes or spaces.
+fn path_entry_key(entry: str) -> str {
+    mut e := entry.trim().replace_all("\"", "").replace_all("/", "\\").to_lower()
+    for e.len() > 3 && e.ends_with("\\") {
+        e = "{e[0..e.len() - 1]}"
+    }
+    return e
+}
+
+// The user's Path value split into its entries, empty ones dropped.
+fn split_path_value(value: str) -> []str {
+    mut out: []str = []
+    for part in value.split(";") {
+        if part.trim().len() > 0 {
+            out.push(part)
+        }
+    }
+    return out
+}
+
+// What one Path entry is, as the adapter found it: `has_cli` = entry\flint.exe exists,
+// `has_app` = entry\..\Flint.exe exists.
+type PathEntryProbe struct {
+    entry:   str  `json:"entry"`
+    has_cli: bool `json:"has_cli"`
+    has_app: bool `json:"has_app"`
+}
+
+// "installed", "other-copy", "broken" or "" (not ours) for one entry against this
+// copy's `bin` folder.
+fn path_entry_state(bin: str, p: PathEntryProbe) -> str {
+    key := path_entry_key(p.entry)
+    if key == path_entry_key(bin) {
+        return "installed"
+    }
+    if p.has_cli && p.has_app && key.ends_with("\\" + CLI_PATH_BIN) {
+        return "other-copy"
+    }
+    if !p.has_cli && key.ends_with("\\flint\\" + CLI_PATH_BIN) {
+        return "broken"
+    }
+    return ""
+}
+
+// The one Windows spot: installed when this copy's folder is on the Path; else the
+// first entry of another or a missing copy; else missing.
+fn path_spot(bin: str, probes: []PathEntryProbe) -> CliLinkSpot {
+    for p in probes {
+        if path_entry_state(bin, p) == "installed" {
+            return CliLinkSpot{ path: bin, state: "installed", target: p.entry, admin: false }
+        }
+    }
+    for p in probes {
+        st := path_entry_state(bin, p)
+        if st == "other-copy" || st == "broken" {
+            return CliLinkSpot{ path: bin, state: st, target: p.entry, admin: false }
+        }
+    }
+    return CliLinkSpot{ path: bin, state: "missing", target: "", admin: false }
+}
+
+// The Path with this copy's folder first and every entry of another or a missing copy
+// taken out; everything else kept, in order, as written.
+fn path_with_cli(bin: str, probes: []PathEntryProbe) -> str {
+    mut out: []str = [bin.replace_all("/", "\\")]
+    for p in probes {
+        if path_entry_state(bin, p).len() == 0 {
+            out.push(p.entry)
+        }
+    }
+    return out.join(";")
+}
+
+// The Path without this copy's folder (other entries, ours or not, stay).
+fn path_without_cli(bin: str, probes: []PathEntryProbe) -> str {
+    mut out: []str = []
+    for p in probes {
+        if path_entry_state(bin, p) != "installed" {
+            out.push(p.entry)
+        }
+    }
+    return out.join(";")
 }

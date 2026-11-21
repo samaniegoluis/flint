@@ -116,6 +116,11 @@ fn relaunch_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: 
     _ = try procs.proc_spawn(cli, args, temp_dir + "/update-apply.log")
 }
 
+// Why a rename failed, in words a person can act on.
+fn held_message(why: str, folder: str) -> str {
+    return "a program has a file in {path_base(folder)} open, so it could not be replaced (close it and Relaunch again): {why}"
+}
+
 // `flint update-apply` (D-111 (3)): waits for the app to quit and for every `flint`
 // running from its folder, swaps the folders by rename, starts the new app and waits
 // for its word; with none, stops it and puts the old folder back. Never writes over
@@ -158,15 +163,39 @@ fn apply_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, 
     files.upd_remove(p.started) or {}
     files.upd_remove(update_parent(p.old_root)) or {}
     files.upd_mkdir(update_parent(p.old_root)) or {}
-    files.upd_rename(p.installed, p.old_root) or err {
-        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, "{err.message()}", true)
+    // Each rename is tried again for UPDATE_RENAME_RETRY_MS (inline, CF-177): on
+    // Windows a file in the folder held open for a moment refuses it.
+    mut swap_err := ""
+    rename_deadline := procs.proc_now_ms() + UPDATE_RENAME_RETRY_MS
+    for {
+        files.upd_rename(p.installed, p.old_root) or err {
+            swap_err = "{err.message()}"
+        }
+        if swap_err.len() == 0 || procs.proc_now_ms() >= rename_deadline {
+            break
+        }
+        swap_err = ""
+        procs.proc_sleep(UPDATE_POLL_MS)
+    }
+    if swap_err.len() > 0 {
+        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, held_message(swap_err, p.installed), true)
         files.upd_write(p.outcome, json.stringify(o)) or {}
         _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
         return o
     }
-    files.upd_rename(p.new_root, p.installed) or err {
+    for {
+        files.upd_rename(p.new_root, p.installed) or err {
+            swap_err = "{err.message()}"
+        }
+        if swap_err.len() == 0 || procs.proc_now_ms() >= rename_deadline {
+            break
+        }
+        swap_err = ""
+        procs.proc_sleep(UPDATE_POLL_MS)
+    }
+    if swap_err.len() > 0 {
         files.upd_rename(p.old_root, p.installed) or {}
-        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, "{err.message()}", true)
+        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, held_message(swap_err, path_base(p.new_root)), true)
         files.upd_write(p.outcome, json.stringify(o)) or {}
         _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
         return o

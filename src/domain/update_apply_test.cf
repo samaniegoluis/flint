@@ -21,7 +21,7 @@ test "the app and the CLI inside a package, by system" {
     assert_eq(update_app_exe("/A/Flint.app", "mac"), "/A/Flint.app/Contents/MacOS/Flint")
     assert_eq(update_cli_exe("/A/Flint.app", "mac"), "/A/Flint.app/Contents/Helpers/flint")
     assert_eq(update_app_exe("C:/F", "windows"), "C:/F/Flint.exe")
-    assert_eq(update_cli_exe("C:/F", "windows"), "C:/F/flint.exe")
+    assert_eq(update_cli_exe("C:/F", "windows"), "C:/F/bin/flint.exe")
     assert_eq(update_cli_exe("/opt/Flint", "linux"), "/opt/Flint/flint")
 }
 

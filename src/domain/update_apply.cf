@@ -20,6 +20,11 @@ UPDATE_WAIT_QUIT_MS: i64 = 60000
 UPDATE_WAIT_CLI_MS: i64 = 30000
 UPDATE_WAIT_START_MS: i64 = 60000
 UPDATE_POLL_MS: i64 = 200
+// A rename that fails is tried again for this long (milestone 50): on Windows a file
+// inside the folder held open for a moment (Defender scanning what was just unpacked,
+// Explorer's preview) refuses the rename; held longer, the swap gives up and puts
+// everything back.
+UPDATE_RENAME_RETRY_MS: i64 = 10000
 
 // Where an update's files go, from the installed folder (the .app on macOS, the
 // `Flint` folder on Windows, the portable test layout's folder on Linux).
@@ -94,7 +99,7 @@ fn update_cli_exe(root: str, os: str) -> str {
         return root + "/Contents/Helpers/flint"
     }
     if os == "windows" {
-        return root + "/flint.exe"
+        return root + "/bin/flint.exe"
     }
     return root + "/flint"
 }

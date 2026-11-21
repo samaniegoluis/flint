@@ -7,4 +7,4 @@ Name: flint-native-gui
 Description: Native shims of Flint's desktop app (Windows)
 Version: 1
 Cflags: -I${pcfiledir}/../../uievents/native
-Libs: -luser32
+Libs: -luser32 -lshell32 -lole32

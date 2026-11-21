@@ -1,0 +1,51 @@
+package uievents
+
+// The webview the window needs (milestone 50): on Windows, the WebView2 Runtime, asked
+// of Microsoft's loader before the window opens (native/flint_webview_runtime.hpp,
+// CF-179). Elsewhere always there: macOS and Linux webviews come with the system or
+// the package's dependencies.
+
+import cpp "flint_webview_runtime.hpp"
+
+WEBVIEW2_DOWNLOAD_URL: str = "https://developer.microsoft.com/microsoft-edge/webview2/"
+
+// "ok", "loader" (WebView2Loader.dll missing beside the app) or "runtime" (the
+// WebView2 Runtime is not installed), and the runtime's version when there is one.
+type WebviewRuntime struct {
+    state:   str
+    version: str
+}
+
+fn webview_runtime() -> WebviewRuntime {
+    mut state := ""
+    mut version := ""
+    // CFIRE-UPSTREAM: CF-179
+    cpp {
+        std::string v;
+        state = flint_webview_runtime::check(v);
+        version = v;
+    }
+    return WebviewRuntime{ state: state, version: version }
+}
+
+// What the person is told when the window cannot open, by state.
+fn webview_missing_text(state: str) -> str {
+    if state == "loader" {
+        return "Flint's folder is incomplete: WebView2Loader.dll is missing beside Flint.exe.\n\nUnpack the whole zip again and start Flint from the new folder."
+    }
+    return "Flint needs the Microsoft Edge WebView2 Runtime to show its window, and it is not installed on this computer.\n\nOpen Microsoft's download page now? Install the Evergreen runtime, then start Flint again."
+}
+
+// Shows the message for `state` (a Yes/No box with the download page for "runtime").
+fn tell_webview_missing(state: str) {
+    text := webview_missing_text(state)
+    url := WEBVIEW2_DOWNLOAD_URL
+    // CFIRE-UPSTREAM: CF-179
+    cpp {
+        if (state == "runtime") {
+            flint_webview_runtime::ask_and_open("Flint", text, url);
+        } else {
+            flint_webview_runtime::tell("Flint", text);
+        }
+    }
+}

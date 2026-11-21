@@ -10,7 +10,7 @@
 # 2. windows/bin/setup.sh in MSYS2 CLANG64: the native libraries, cfire's Windows
 #    release, FreeRDP, the WebView2 loader and Node, pinned and checked, into
 #    %LOCALAPPDATA%\flint-build (the first run builds FreeRDP: allow a while).
-# 3. windows/package.sh: dist\flint-<version>-windows-x86_64.zip.
+# 3. windows/package.sh: dist\Flint-<version>-windows-x86_64.zip.
 # 4. With -Install: the zip unpacked to a temporary folder and its install.ps1 run
 #    (%LOCALAPPDATA%\Programs\Flint, the Start menu, the user's PATH).
 #
@@ -65,7 +65,7 @@ function Step([string]$name, [string]$cmd) {
 Step 'setup' 'windows/bin/setup.sh'
 Step 'package' '. windows/bin/env.sh && windows/package.sh'
 
-$zip = Get-ChildItem (Join-Path $repo 'dist') -Filter 'flint-*-windows-x86_64.zip' |
+$zip = Get-ChildItem (Join-Path $repo 'dist') -Filter 'Flint-*-windows-x86_64.zip' |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $zip) { Fail 'no zip in dist\' }
 Write-Host "build: $($zip.FullName)"
