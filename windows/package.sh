@@ -57,13 +57,16 @@ cp CHANGELOG.md "$stage/CHANGELOG.md"
 # NuGet package (windows/bin/setup.sh).
 cp LICENSE "$stage/licenses/Flint-LICENSE"
 mingw="${MINGW_PREFIX:-/clang64}"
-for pkg in libsodium libssh sqlcipher curl openssl zlib libpsl libidn2 libunistring brotli zstd nghttp2 nghttp3 ngtcp2 libssh2 libc++ libwinpthread; do
+for pkg in libsodium libssh sqlcipher curl openssl zlib libpsl libidn2 libunistring brotli zstd nghttp2 nghttp3 ngtcp2 libssh2 winpthreads; do
   d="$mingw/share/licenses/$pkg"
   [[ -d "$d" ]] || continue
   for f in "$d"/*; do
     [[ -f "$f" ]] && cp "$f" "$stage/licenses/$pkg-$(basename "$f")"
   done
 done
+# MSYS2's libssh package carries no licence file: windows/licenses/ keeps libssh's own
+# COPYING (LGPL 2.1, the same text in every release).
+cp windows/licenses/libssh-COPYING "$stage/licenses/libssh-COPYING"
 for need in libsodium libssh sqlcipher curl openssl zlib; do
   compgen -G "$stage/licenses/$need-*" >/dev/null || { echo "package: no licence for $need in $mingw/share/licenses" >&2; exit 1; }
 done
