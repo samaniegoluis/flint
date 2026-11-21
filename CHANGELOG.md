@@ -4,6 +4,20 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.22.0 — 2026-11-21
+
+The status bar now shows the CPU, memory, network, disk and uptime of the Linux server a terminal tab is on, read over the tab's own connection, with a detail on hover or click and a switch in Settings → Terminal. Shortcuts no longer run while the window is locked.
+
+### Added
+
+- **stats:** The server resources loop's parsers and watch use case (milestone 55)
+- **ui:** Live server resources in the status bar (milestone 55)
+
+### Fixed
+
+- **ui:** No shortcut runs under the window lock
+
+
 ## 0.21.0 — 2026-11-21
 
 A Flint installed from a .deb or .rpm now updates itself: Download, then Relaunch asks for the system password and apt or dnf installs it.
