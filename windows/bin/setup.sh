@@ -5,8 +5,9 @@
 #
 #   windows/bin/setup.sh           # then: . windows/bin/env.sh; windows/package.sh
 #
-# 1. CLANG64 packages from pacman: the native libraries Flint links (libsodium, libssh,
-#    SQLCipher, libcurl over Schannel), FreeRDP's build tools and python for the scripts.
+# 1. CLANG64 packages from pacman: the clang toolchain, the native libraries Flint links
+#    (libsodium, libssh, SQLCipher, libcurl over Schannel), FreeRDP's build tools and
+#    python for the scripts.
 # 2. cfire's Windows release, the zip from its GitHub release, SHA-256 checked.
 # 3. FreeRDP, built static by windows/bin/freerdp.sh.
 # 4. Microsoft's WebView2Loader.dll, from the Microsoft.Web.WebView2 NuGet package
@@ -42,7 +43,9 @@ fetch() {
 
 echo "== pacman packages"
 p=mingw-w64-clang-x86_64
-pkgs=("$p-libsodium" "$p-libssh" "$p-sqlcipher" "$p-curl-winssl" "$p-cmake" "$p-ninja" "$p-openssl"
+# The toolchain group (clang, lld, libc++, compiler-rt): cfire and FreeRDP's CMake compile
+# with it; a clean MSYS2, as GitHub's runner, has none (the VM's was installed by hand).
+pkgs=("$p-toolchain" "$p-libsodium" "$p-libssh" "$p-sqlcipher" "$p-curl-winssl" "$p-cmake" "$p-ninja" "$p-openssl"
   "$p-zlib" "$p-pkgconf" "$p-python" git make diffutils unzip vim)
 # What is missing, with its dependencies; nothing already there is upgraded.
 missing="$(pacman -S --needed --print --print-format '%n' "${pkgs[@]}" 2>/dev/null | tr '\n' ' ')"

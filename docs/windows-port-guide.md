@@ -24,7 +24,8 @@ Windows 10 1803 or later (AF_UNIX sockets); checked on Windows 11 22H2.
 2. **`windows/bin/setup.sh`**: everything else Flint needs, beside MSYS2. Each piece is
    checked first and fetched only when missing or of another version, so a second run
    installs nothing:
-   - pacman: `mingw-w64-clang-x86_64-{libsodium,libssh,sqlcipher,curl-winssl,cmake,ninja}`
+   - pacman: the `mingw-w64-clang-x86_64-toolchain` group (clang, lld, libc++),
+     `mingw-w64-clang-x86_64-{libsodium,libssh,sqlcipher,curl-winssl,cmake,ninja}`
      and the tools the checks use (`unzip`, `diffutils`, `vim`);
    - cfire's Windows release zip (SHA-256 from the release's `SHA256SUMS.txt`);
    - `WebView2Loader.dll` (NuGet, Microsoft's signature) and Node (to build `ui/`);
