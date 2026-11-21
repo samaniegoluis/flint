@@ -22,6 +22,8 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     fixed.update_check = s.update_check
     fixed.update_toast_version = s.update_toast_version
     fixed.last_seen_version = s.last_seen_version
+    fixed.server_stats = s.server_stats
+    fixed.server_stats_colour = s.server_stats_colour
     mut probe := d
     probe.theme = s.theme
     if settings_valid(probe) {

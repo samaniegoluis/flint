@@ -1,0 +1,514 @@
+package domain
+
+// Live server resources (milestone 55, designs 25a, 25b). A GUI tab reads its host's
+// load over a second exec channel on its own SSH session: one POSIX `sh` loop that
+// prints a sample each time Flint sends it a line, and ends when its stdin closes
+// (the channel, the tab or the session), so nothing of Flint's is left running on
+// the server between samples or after it (Principle 18). It only reads files under
+// /proc and runs `df`: it writes nothing and changes nothing there.
+//
+// Everything below is pure: the script, the parsers of one sample, and the
+// arithmetic that turns two samples into what the status bar shows. CPU % and the
+// network rates come from the difference of two samples over the server's own
+// /proc/uptime, so the link's jitter does not bend them.
+
+// How often Flint asks for a sample.
+STATS_INTERVAL_MS: i64 = 2000
+// A sample that has not arrived this long after its request ends the loop
+// (Principle 8): the channel is closed and the tab shows nothing.
+STATS_SAMPLE_TIMEOUT_MS: i64 = 10000
+// The most a sample may hold before it is thrown away as unparsable (a sample of a
+// 64-core host is ~5 KB).
+STATS_SAMPLE_MAX_BYTES: usize = 65536
+
+// The end of the OS block and of every sample.
+STATS_END: str = "@@end"
+// What a server that is not Linux answers instead of the OS block.
+STATS_UNSUPPORTED: str = "@@unsupported"
+
+// The loop, run as `sh -c '<script>'` so the login shell (zsh, fish) never parses
+// it. No single quote inside. `read` waits for Flint's next line; on EOF it fails
+// and the loop ends.
+STATS_SCRIPT: str = "exec 2>/dev/null; [ \"$(uname -s)\" = Linux ] || { echo @@unsupported; exit 0; }; echo @@os; cat /etc/os-release; echo @@end; while read -r _; do echo @@stat; grep \"^cpu\" /proc/stat; echo @@mem; grep -E \"^(MemTotal|MemFree|MemAvailable|Buffers|Cached|SwapTotal|SwapFree):\" /proc/meminfo; echo @@net; cat /proc/net/dev; echo @@load; cat /proc/loadavg; echo @@up; cat /proc/uptime; echo @@df; df -Pk /; echo @@end; done"
+
+fn stats_command() -> str {
+    return "sh -c '{STATS_SCRIPT}'"
+}
+
+// Interfaces whose traffic is not the server's own: loopback, and the virtual ones
+// that carry traffic already counted on a real interface (containers, bridges, VMs,
+// VPN tunnels).
+STATS_SKIPPED_INTERFACES: []str = ["veth", "docker", "br-", "virbr", "vnet", "cni", "flannel", "cali", "vxlan", "tun", "tap", "wg", "tailscale", "zt", "kube", "lxc", "lxdbr", "podman", "ifb"]
+
+fn stats_interface_counted(name: str) -> bool {
+    if name == "lo" || name.len() == 0 {
+        return false
+    }
+    for p in STATS_SKIPPED_INTERFACES {
+        if name.starts_with(p) {
+            return false
+        }
+    }
+    return true
+}
+
+// Cumulative CPU jiffies of the "cpu" line.
+type CpuTimes struct {
+    busy:  i64
+    total: i64
+}
+
+type NetCounter struct {
+    name: str
+    rx:   i64
+    tx:   i64
+}
+
+// One sample as the server printed it. A section the server did not give (or gave
+// in a shape Flint cannot read) leaves its `has_` false: the bar shows fewer fields.
+type StatsReading struct {
+    has_cpu:    bool
+    cpu:        CpuTimes
+    cores:      i64
+    has_mem:    bool
+    mem_total:  i64
+    mem_used:   i64
+    swap_total: i64
+    swap_used:  i64
+    has_net:    bool
+    net:        []NetCounter
+    has_load:   bool
+    load1:      f64
+    load5:      f64
+    load15:     f64
+    has_uptime: bool
+    uptime:     f64
+    has_disk:   bool
+    disk_total: i64
+    disk_used:  i64
+    disk_avail: i64
+}
+
+// What the page shows: one per tab and sample (`stats:sample`). Sizes in bytes,
+// rates in bytes per second.
+type ServerSample struct {
+    session:     str   `json:"session"`
+    os:          str   `json:"os"`
+    cores:       i64   `json:"cores"`
+    has_cpu:     bool  `json:"has_cpu"`
+    cpu_pct:     f64   `json:"cpu_pct"`
+    has_mem:     bool  `json:"has_mem"`
+    mem_total:   i64   `json:"mem_total"`
+    mem_used:    i64   `json:"mem_used"`
+    swap_total:  i64   `json:"swap_total"`
+    swap_used:   i64   `json:"swap_used"`
+    has_net:     bool  `json:"has_net"`
+    rx_rate:     f64   `json:"rx_rate"`
+    tx_rate:     f64   `json:"tx_rate"`
+    interfaces:  []str `json:"interfaces"`
+    has_load:    bool  `json:"has_load"`
+    load1:       f64   `json:"load1"`
+    load5:       f64   `json:"load5"`
+    load15:      f64   `json:"load15"`
+    has_uptime:  bool  `json:"has_uptime"`
+    uptime_secs: i64   `json:"uptime_secs"`
+    has_disk:    bool  `json:"has_disk"`
+    disk_total:  i64   `json:"disk_total"`
+    disk_used:   i64   `json:"disk_used"`
+    disk_avail:  i64   `json:"disk_avail"`
+}
+
+// Whether a sample has anything to show: a host that gives none shows nothing (25a6).
+fn sample_has_fields(s: ServerSample) -> bool {
+    return s.has_cpu || s.has_mem || s.has_net || s.has_disk || s.has_uptime || s.has_load
+}
+
+// ---- Text helpers ----------------------------------------------------------------
+
+// The whitespace-separated words of `line`, as owned copies.
+fn stats_words(line: str) -> []str {
+    mut out: []str = []
+    bs := line.bytes()
+    mut start: usize = 0
+    mut in_word := false
+    for i in 0..bs.len() {
+        b := bs[i]
+        space := b == 32 || b == 9 || b == 13
+        if space && in_word {
+            out.push("{line[start..i]}")
+            in_word = false
+        } else if !space && !in_word {
+            start = i
+            in_word = true
+        }
+    }
+    if in_word {
+        out.push("{line[start..bs.len()]}")
+    }
+    return out
+}
+
+fn stats_int(text: str) -> i64? {
+    // CFIRE-UPSTREAM: CF-172 (`or none` fails in clang)
+    return i64.parse(text) or { return none }
+}
+
+fn stats_float(text: str) -> f64? {
+    // CFIRE-UPSTREAM: CF-172 (`or none` fails in clang)
+    return f64.parse(text) or { return none }
+}
+
+// The sections of one sample, by marker ("stat" for "@@stat"), each its lines.
+type StatsSection struct {
+    name:  str
+    lines: []str
+}
+
+fn stats_sections(text: str) -> []StatsSection {
+    mut out: []StatsSection = []
+    for raw in text.lines() {
+        line := raw.trim_end()
+        if line.starts_with("@@") {
+            name := "{line[2..]}"
+            if name == "end" {
+                break
+            }
+            out.push(StatsSection{ name: name, lines: [] })
+            continue
+        }
+        if out.len() > 0 {
+            out[out.len() - 1].lines.push("{line}")
+        }
+    }
+    return out
+}
+
+// ---- Parsers -----------------------------------------------------------------------
+
+// The "cpu" line of /proc/stat (user nice system idle iowait irq softirq steal …):
+// busy is everything but idle and iowait. `cores` counts the cpuN lines.
+fn parse_proc_stat(lines: []str, mut r: StatsReading) {
+    mut cores: i64 = 0
+    for line in lines {
+        w := stats_words(line)
+        if w.len() < 5 {
+            continue
+        }
+        if w[0] == "cpu" {
+            mut total: i64 = 0
+            mut idle: i64 = 0
+            mut ok := true
+            // guest and guest_nice are already inside user and nice.
+            mut n := w.len()
+            if n > 9 {
+                n = 9
+            }
+            for i in 1..n {
+                v := stats_int(w[i]) or {
+                    ok = false
+                    break
+                }
+                total += v
+                if i == 4 || i == 5 {
+                    idle += v
+                }
+            }
+            if ok && total > 0 {
+                r.has_cpu = true
+                r.cpu = CpuTimes{ busy: total - idle, total: total }
+            }
+        } else if w[0].starts_with("cpu") {
+            cores += 1
+        }
+    }
+    r.cores = cores
+}
+
+// /proc/meminfo, in kB. Used memory is MemTotal - MemAvailable (MemFree + Buffers +
+// Cached on a kernel older than 3.14).
+fn parse_meminfo(lines: []str, mut r: StatsReading) {
+    mut total: i64 = -1
+    mut avail: i64 = -1
+    mut free: i64 = -1
+    mut buffers: i64 = 0
+    mut cached: i64 = 0
+    mut swap_total: i64 = 0
+    mut swap_free: i64 = 0
+    for line in lines {
+        w := stats_words(line)
+        if w.len() < 2 {
+            continue
+        }
+        v := stats_int(w[1]) or { continue }
+        kb := v * 1024
+        if w[0] == "MemTotal:" {
+            total = kb
+        } else if w[0] == "MemAvailable:" {
+            avail = kb
+        } else if w[0] == "MemFree:" {
+            free = kb
+        } else if w[0] == "Buffers:" {
+            buffers = kb
+        } else if w[0] == "Cached:" {
+            cached = kb
+        } else if w[0] == "SwapTotal:" {
+            swap_total = kb
+        } else if w[0] == "SwapFree:" {
+            swap_free = kb
+        }
+    }
+    if avail < 0 && free >= 0 {
+        avail = free + buffers + cached
+    }
+    if total <= 0 || avail < 0 {
+        return
+    }
+    if avail > total {
+        avail = total
+    }
+    r.has_mem = true
+    r.mem_total = total
+    r.mem_used = total - avail
+    if swap_free > swap_total {
+        swap_free = swap_total
+    }
+    r.swap_total = swap_total
+    r.swap_used = swap_total - swap_free
+}
+
+// /proc/net/dev: "name: rx_bytes … (8 fields) tx_bytes …". A long name runs into its
+// first number ("enp6s18:88658808"), so the line splits at its colon.
+fn parse_net_dev(lines: []str, mut r: StatsReading) {
+    mut list: []NetCounter = []
+    for line in lines {
+        colon := line.index_of(":") or { continue }
+        name := "{line[0..colon].trim()}"
+        if name.contains("|") {
+            continue
+        }
+        w := stats_words(line[colon + 1..])
+        if w.len() < 9 {
+            continue
+        }
+        rx := stats_int(w[0]) or { continue }
+        tx := stats_int(w[8]) or { continue }
+        list.push(NetCounter{ name: name, rx: rx, tx: tx })
+    }
+    if list.len() > 0 {
+        r.has_net = true
+        r.net = list
+    }
+}
+
+fn parse_loadavg(lines: []str, mut r: StatsReading) {
+    if lines.len() == 0 {
+        return
+    }
+    w := stats_words(lines[0])
+    if w.len() < 3 {
+        return
+    }
+    a := stats_float(w[0]) or { return }
+    b := stats_float(w[1]) or { return }
+    c := stats_float(w[2]) or { return }
+    r.has_load = true
+    r.load1 = a
+    r.load5 = b
+    r.load15 = c
+}
+
+fn parse_uptime(lines: []str, mut r: StatsReading) {
+    if lines.len() == 0 {
+        return
+    }
+    w := stats_words(lines[0])
+    if w.len() < 1 {
+        return
+    }
+    up := stats_float(w[0]) or { return }
+    if up < 0.0 {
+        return
+    }
+    r.has_uptime = true
+    r.uptime = up
+}
+
+// `df -Pk /`: a header naming the block size ("1024-blocks"), then "fs blocks used
+// available capacity mount". A long device name may wrap onto its own line, so the
+// numbers are the last five words of what follows the header.
+fn parse_df(lines: []str, mut r: StatsReading) {
+    if lines.len() < 2 {
+        return
+    }
+    head := stats_words(lines[0])
+    mut unit: i64 = 1024
+    if head.len() > 1 && head[1].ends_with("-blocks") {
+        u := stats_int(head[1][0..head[1].len() - 7]) or { return }
+        unit = u
+    }
+    mut rest := ""
+    for i in 1..lines.len() {
+        rest = rest + " " + lines[i]
+    }
+    w := stats_words(rest)
+    if w.len() < 5 {
+        return
+    }
+    n := w.len()
+    total := stats_int(w[n - 5]) or { return }
+    used := stats_int(w[n - 4]) or { return }
+    avail := stats_int(w[n - 3]) or { return }
+    if total <= 0 {
+        return
+    }
+    r.has_disk = true
+    r.disk_total = total * unit
+    r.disk_used = used * unit
+    r.disk_avail = avail * unit
+}
+
+// One sample's text, up to (not including) its "@@end".
+fn parse_stats_reading(text: str) -> StatsReading {
+    mut r := StatsReading{ net: [] }
+    for sec in stats_sections(text) {
+        if sec.name == "stat" {
+            parse_proc_stat(sec.lines, mut r)
+        } else if sec.name == "mem" {
+            parse_meminfo(sec.lines, mut r)
+        } else if sec.name == "net" {
+            parse_net_dev(sec.lines, mut r)
+        } else if sec.name == "load" {
+            parse_loadavg(sec.lines, mut r)
+        } else if sec.name == "up" {
+            parse_uptime(sec.lines, mut r)
+        } else if sec.name == "df" {
+            parse_df(sec.lines, mut r)
+        }
+    }
+    return r
+}
+
+fn os_release_value(raw: str) -> str {
+    mut v := raw.trim()
+    if v.len() >= 2 && (v.starts_with("\"") || v.starts_with("'")) {
+        v = v[1..v.len() - 1]
+    }
+    return "{v}"
+}
+
+// The OS block: /etc/os-release's NAME and VERSION_ID ("Ubuntu 24.04"), else its
+// PRETTY_NAME, else "Linux".
+fn parse_os_name(text: str) -> str {
+    mut name := ""
+    mut version := ""
+    mut pretty := ""
+    for sec in stats_sections(text) {
+        if sec.name != "os" {
+            continue
+        }
+        for line in sec.lines {
+            kv := line.split_n("=", 2)
+            if kv.len() != 2 {
+                continue
+            }
+            if kv[0] == "NAME" {
+                name = os_release_value(kv[1])
+            } else if kv[0] == "VERSION_ID" {
+                version = os_release_value(kv[1])
+            } else if kv[0] == "PRETTY_NAME" {
+                pretty = os_release_value(kv[1])
+            }
+        }
+    }
+    if name.len() > 0 && version.len() > 0 {
+        return "{name} {version}"
+    }
+    if pretty.len() > 0 {
+        return pretty
+    }
+    if name.len() > 0 {
+        return name
+    }
+    return "Linux"
+}
+
+// ---- Two samples ----------------------------------------------------------------------
+
+fn counter_of(list: []NetCounter, name: str) -> NetCounter? {
+    for c in list {
+        if c.name == name {
+            return c
+        }
+    }
+    return none
+}
+
+// What the bar shows from the sample before (`prev`) and this one (`cur`). CPU and
+// the rates need both, over a positive stretch of the server's uptime; a counter
+// that went back (a reset interface, a reboot) adds nothing. The rest is `cur`'s.
+fn server_sample(session: str, os: str, prev: StatsReading, cur: StatsReading) -> ServerSample {
+    mut s := ServerSample{ session: session, os: os, cores: cur.cores, interfaces: [] }
+    mut dt := 0.0
+    if prev.has_uptime && cur.has_uptime {
+        dt = cur.uptime - prev.uptime
+    }
+    if prev.has_cpu && cur.has_cpu {
+        dtotal := cur.cpu.total - prev.cpu.total
+        dbusy := cur.cpu.busy - prev.cpu.busy
+        if dtotal > 0 && dbusy >= 0 {
+            s.has_cpu = true
+            s.cpu_pct = 100.0 * f64(dbusy) / f64(dtotal)
+            if s.cpu_pct > 100.0 {
+                s.cpu_pct = 100.0
+            }
+        }
+    }
+    if cur.has_mem {
+        s.has_mem = true
+        s.mem_total = cur.mem_total
+        s.mem_used = cur.mem_used
+        s.swap_total = cur.swap_total
+        s.swap_used = cur.swap_used
+    }
+    if prev.has_net && cur.has_net && dt > 0.0 {
+        mut rx: i64 = 0
+        mut tx: i64 = 0
+        mut names: []str = []
+        for c in cur.net {
+            if !stats_interface_counted(c.name) {
+                continue
+            }
+            p := counter_of(prev.net, c.name) or { continue }
+            names.push(c.name)
+            if c.rx >= p.rx {
+                rx += c.rx - p.rx
+            }
+            if c.tx >= p.tx {
+                tx += c.tx - p.tx
+            }
+        }
+        if names.len() > 0 {
+            s.has_net = true
+            s.rx_rate = f64(rx) / dt
+            s.tx_rate = f64(tx) / dt
+            s.interfaces = names
+        }
+    }
+    if cur.has_load {
+        s.has_load = true
+        s.load1 = cur.load1
+        s.load5 = cur.load5
+        s.load15 = cur.load15
+    }
+    if cur.has_uptime {
+        s.has_uptime = true
+        s.uptime_secs = i64(cur.uptime)
+    }
+    if cur.has_disk {
+        s.has_disk = true
+        s.disk_total = cur.disk_total
+        s.disk_used = cur.disk_used
+        s.disk_avail = cur.disk_avail
+    }
+    return s
+}

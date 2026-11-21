@@ -593,3 +593,24 @@ type PackageSourceProbe interface {
 type RootRunner interface {
     mut run_root_helper(helper: str) -> RootRun!
 }
+
+// The resources loop of a GUI tab (milestone 55, adapters/ssh/stats.cf): one exec
+// channel on the tab's own SSH session, with its stdin left open. `stats_read`
+// waits at most `timeout_ms` for output, returns early when some arrives or the
+// watch is stopped, and never holds the session for long: the terminal on the same
+// session keeps answering. `stats_stopped` is true once the tab, its session or the
+// setting ended the watch. `stats_close` closes the channel (the loop on the server
+// sees its stdin close and ends), never the session.
+type ServerStats interface {
+    mut stats_open(command: str) -> void!
+    mut stats_send(data: str) -> void!
+    mut stats_read(timeout_ms: i64) -> ExecChunk!
+    mut stats_stopped() -> bool
+    mut stats_close()
+}
+
+// Where a tab's samples go (the page's `stats:sample`). A sample with no field
+// (`sample_has_fields` false) says the host shows nothing (design 25a6).
+type StatsSink interface {
+    mut stats_emit(sample: ServerSample)
+}

@@ -54,6 +54,11 @@ type Settings struct {
     // the app, never by the page.
     update_toast_version: str `json:"update_toast_version" default:""`
     last_seen_version:  str  `json:"last_seen_version" default:""`
+    // Milestone 55 (design 25b1): the active tab's server resources in the status
+    // bar, read over the tab's own session, and whether its values are coloured by
+    // load. Older files read the defaults.
+    server_stats:       bool `json:"server_stats" default:"true"`
+    server_stats_colour: bool `json:"server_stats_colour" default:"true"`
 }
 
 RDP_MAC_KEYS: []str = ["mac", "windows", "custom"]
@@ -79,7 +84,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false, update_check: true, update_toast_version: "", last_seen_version: "" }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false, update_check: true, update_toast_version: "", last_seen_version: "", server_stats: true, server_stats_colour: true }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {

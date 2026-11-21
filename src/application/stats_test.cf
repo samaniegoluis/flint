@@ -1,0 +1,194 @@
+package application
+
+// Milestone 55: the resources watch (application/stats.cf) over a scripted channel
+// and a clock that moves only when the watch reads or waits.
+
+import "../domain"
+import "../ports"
+
+STATS_OS: str = "@@os\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\n@@end\n"
+
+fn stats_reply(busy: i64, idle: i64, rx: i64, up: i64) -> str {
+    return "@@stat\ncpu  {busy} 0 0 {idle} 0 0 0 0 0 0\ncpu0 {busy} 0 0 {idle} 0 0 0 0 0 0\n@@mem\nMemTotal: 1000 kB\nMemAvailable: 500 kB\n@@net\n  eth0: {rx} 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n@@up\n{up}.00 1.00\n@@end\n"
+}
+
+// The server's side: `greeting` at open, then `replies[i]` for the i-th line sent.
+// After the replies run out it answers nothing (a silent server), unless `end_after`
+// says the loop ends then. `stop_after` stops the watch after that many samples.
+type FakeStats struct {
+    refuse:     bool
+    greeting:   str
+    replies:    []str
+    sent:       i64
+    pending:    str
+    end_after:  bool
+    stop_after: i64
+    stopped:    bool
+    opened:     bool
+    closed:     bool
+    command:    str
+    clock:      shared[FakeClockState]
+}
+
+type FakeClockState struct {
+    now: i64
+}
+
+type StatsClock struct {
+    state: shared[FakeClockState]
+}
+
+fn (mut self: StatsClock) clock_now_ms() -> i64 {
+    return self.state.now
+}
+
+fn (mut self: FakeStats) stats_open(command: str) -> void! {
+    if self.refuse {
+        return error(coded(ERR_NETWORK, "channel open failed"))
+    }
+    self.opened = true
+    self.command = command
+    self.pending = self.greeting
+}
+
+fn (mut self: FakeStats) stats_send(data: str) -> void! {
+    if self.stop_after > 0 && self.sent >= self.stop_after {
+        self.stopped = true
+    }
+    if self.sent < i64(self.replies.len()) {
+        self.pending = self.pending + self.replies[usize(self.sent)]
+    }
+    self.sent += 1
+}
+
+fn (mut self: FakeStats) stats_read(timeout_ms: i64) -> ExecChunk! {
+    if self.pending.len() > 0 {
+        out := self.pending
+        self.pending = ""
+        return ExecChunk{ stdout: out, stderr: "", done: false, exit_code: 0, signal: "" }
+    }
+    self.clock.now = self.clock.now + timeout_ms
+    done := self.end_after && self.sent >= i64(self.replies.len())
+    return ExecChunk{ stdout: "", stderr: "", done: done, exit_code: 0, signal: "" }
+}
+
+fn (mut self: FakeStats) stats_stopped() -> bool {
+    return self.stopped
+}
+
+fn (mut self: FakeStats) stats_close() {
+    self.closed = true
+}
+
+type FakeStatsSink struct {
+    samples: []ServerSample
+}
+
+fn (mut self: FakeStatsSink) stats_emit(sample: ServerSample) {
+    self.samples.push(sample)
+}
+
+fn accepts_stats[C: ServerStats, S: StatsSink](c: C, s: S) -> bool {
+    return true
+}
+
+fn fake_stats(greeting: str, replies: []str) -> (FakeStats, StatsClock) {
+    st := make(shared[FakeClockState], FakeClockState{ now: 0 })
+    return (FakeStats{ greeting: greeting, replies: replies, command: "", pending: "", clock: st }, StatsClock{ state: st })
+}
+
+test "the fakes satisfy the ServerStats and StatsSink ports" {
+    (ch, _) := fake_stats("", [])
+    assert(accepts_stats(ch, FakeStatsSink{ samples: [] }))
+}
+
+test "a sample from each two, every 2 s, until the watch stops; the channel is closed" {
+    (mut ch, mut clock) := fake_stats(STATS_OS, [stats_reply(10, 90, 1000, 100), stats_reply(30, 170, 5000, 102), stats_reply(30, 270, 9000, 104)])
+    ch.stop_after = 3
+    mut sink := FakeStatsSink{ samples: [] }
+    watch_server_stats(mut ch, mut sink, mut clock, "t1")
+    assert(ch.opened && ch.closed)
+    assert_eq(ch.command, stats_command())
+    // Three samples asked, two emitted (the first has nothing to compare with), and
+    // nothing more once stopped: no empty sample either.
+    assert_eq(sink.samples.len(), 2)
+    a := sink.samples[0]
+    assert_eq(a.session, "t1")
+    assert_eq(a.os, "Ubuntu 24.04")
+    assert(a.has_cpu)
+    // 20 busy of 100.
+    assert(a.cpu_pct > 19.99 && a.cpu_pct < 20.01)
+    assert(a.has_net)
+    assert(a.rx_rate > 1999.9 && a.rx_rate < 2000.1)
+    b := sink.samples[1]
+    assert(b.cpu_pct < 0.01)
+    // The requests were 2 s apart on the clock.
+    assert(clock.clock_now_ms() >= 2 * STATS_INTERVAL_MS)
+}
+
+test "a refused channel (MaxSessions) shows nothing" {
+    (mut ch, mut clock) := fake_stats(STATS_OS, [])
+    ch.refuse = true
+    mut sink := FakeStatsSink{ samples: [] }
+    watch_server_stats(mut ch, mut sink, mut clock, "t1")
+    assert_eq(sink.samples.len(), 1)
+    assert(!sample_has_fields(sink.samples[0]))
+    assert(!ch.closed)
+}
+
+test "a server that is not Linux shows nothing and the channel is closed" {
+    (mut ch, mut clock) := fake_stats("@@unsupported\n", [])
+    ch.end_after = true
+    mut sink := FakeStatsSink{ samples: [] }
+    watch_server_stats(mut ch, mut sink, mut clock, "t1")
+    assert(ch.closed)
+    assert_eq(sink.samples.len(), 1)
+    assert(!sample_has_fields(sink.samples[0]))
+}
+
+test "an unparsable answer shows nothing" {
+    (mut ch, mut clock) := fake_stats(STATS_OS, ["@@stat\nnonsense\n@@end\n", "@@stat\nmore nonsense\n@@end\n"])
+    mut sink := FakeStatsSink{ samples: [] }
+    watch_server_stats(mut ch, mut sink, mut clock, "t1")
+    assert(ch.closed)
+    assert_eq(sink.samples.len(), 1)
+    assert(!sample_has_fields(sink.samples[0]))
+}
+
+test "a server that stops answering ends the watch after the sample timeout" {
+    (mut ch, mut clock) := fake_stats(STATS_OS, [stats_reply(10, 90, 1000, 100), stats_reply(30, 170, 5000, 102)])
+    mut sink := FakeStatsSink{ samples: [] }
+    watch_server_stats(mut ch, mut sink, mut clock, "t1")
+    assert(ch.closed)
+    // One real sample, then the empty one when the third never came.
+    assert_eq(sink.samples.len(), 2)
+    assert(sample_has_fields(sink.samples[0]))
+    assert(!sample_has_fields(sink.samples[1]))
+    assert(clock.clock_now_ms() >= 2 * STATS_INTERVAL_MS + STATS_SAMPLE_TIMEOUT_MS)
+}
+
+test "a loop that ends (the session closed) shows nothing" {
+    (mut ch, mut clock) := fake_stats(STATS_OS, [stats_reply(10, 90, 1000, 100)])
+    ch.end_after = true
+    mut sink := FakeStatsSink{ samples: [] }
+    watch_server_stats(mut ch, mut sink, mut clock, "t1")
+    assert(ch.closed)
+    assert_eq(sink.samples.len(), 1)
+    assert(!sample_has_fields(sink.samples[0]))
+}
+
+test "a sample split across reads, and two in one read, are both read" {
+    st := make(shared[FakeClockState], FakeClockState{ now: 0 })
+    mut ch := FakeStats{ greeting: STATS_OS + stats_reply(10, 90, 1000, 100)[0..20], replies: [], command: "", pending: "", clock: st }
+    mut clock := StatsClock{ state: st }
+    _ = try ch.stats_open("x")
+    mut buf := ""
+    os := try read_stats_block(mut ch, mut clock, mut buf)
+    assert(os.starts_with("@@os"))
+    assert(buf.starts_with("@@stat"))
+    ch.pending = stats_reply(10, 90, 1000, 100)[20..] + stats_reply(30, 170, 5000, 102)
+    a := try read_stats_block(mut ch, mut clock, mut buf)
+    b := try read_stats_block(mut ch, mut clock, mut buf)
+    assert(parse_stats_reading(a).has_cpu && parse_stats_reading(b).has_cpu)
+    assert_eq(buf, "")
+}

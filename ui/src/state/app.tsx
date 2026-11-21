@@ -39,7 +39,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system', accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
   term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: true, term_theme: 'default',
   lock_after: '1h', paste_limit_mb: 20, rdp_mac_keys: 'mac', rdp_mac_custom: '', rdp_graphics: 'auto',
-  sync_interval: 60, toast_corner: 'bottom-right', update_check: true,
+  sync_interval: 60, toast_corner: 'bottom-right', update_check: true, server_stats: true, server_stats_colour: true,
 };
 
 // How often the page tells the core someone is using the window.

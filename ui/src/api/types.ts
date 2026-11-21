@@ -214,6 +214,10 @@ export interface Settings {
   /** The app's own records (milestone 52): the version whose toast was shown, and What's new's last version. */
   update_toast_version?: string;
   last_seen_version?: string;
+  /** Milestone 55 (design 25b1): the active tab's server resources in the status bar. */
+  server_stats: boolean;
+  /** Milestone 55: colour CPU, memory and disk by load (green, amber, red). */
+  server_stats_colour: boolean;
 }
 
 /** The update check's outcome (milestone 52, src/domain/update.cf), as `update:status`. */

@@ -1,0 +1,129 @@
+package application
+
+// Live server resources (milestone 55): a GUI tab's resources loop. The loop on the
+// server (domain/stats.cf) prints its OS once, then a sample for each line Flint
+// sends; this asks for one every STATS_INTERVAL_MS and emits what the status bar
+// shows from each two. It ends when the watch is stopped (the tab, its session, the
+// setting), and on its own when the host refuses the channel (sshd's MaxSessions),
+// is not Linux, answers something unparsable, or stops answering within
+// STATS_SAMPLE_TIMEOUT_MS (Principle 8). Each of those emits one sample with no
+// field, so the page shows nothing, and no error reaches the page. The channel is
+// always closed on the way out, which ends the loop on the server (Principle 18).
+
+import "../domain"
+import "../ports"
+
+// How long one read waits; short, so a stop is seen quickly.
+STATS_READ_SLICE_MS: i64 = 200
+
+fn empty_sample(session: str) -> ServerSample {
+    return ServerSample{ session: session, os: "", interfaces: [] }
+}
+
+// Reads from the channel into `buf` until it holds a whole block (up to its
+// "@@end" line, or the unsupported marker) and returns the block, leaving the rest
+// in `buf`. Fails when the watch stops ("stopped"), the channel ends, the block is
+// too large or it takes longer than STATS_SAMPLE_TIMEOUT_MS.
+fn read_stats_block[C: ServerStats, K: Clock](mut ch: C, mut clock: K, mut buf: str) -> str! {
+    start := clock.clock_now_ms()
+    end_line := STATS_END + "\n"
+    for true {
+        if buf.starts_with(STATS_UNSUPPORTED) || buf.contains("\n" + STATS_UNSUPPORTED) {
+            return error(coded(ERR_UNSUPPORTED, "not a Linux server"))
+        }
+        if at := buf.index_of(end_line) {
+            cut := at + end_line.len()
+            block := "{buf[0..cut]}"
+            buf = "{buf[cut..]}"
+            return block
+        }
+        if buf.len() > STATS_SAMPLE_MAX_BYTES {
+            return error(coded(ERR_INVALID, "a sample too large to read"))
+        }
+        if ch.stats_stopped() {
+            return error("stopped")
+        }
+        if clock.clock_now_ms() - start > STATS_SAMPLE_TIMEOUT_MS {
+            return error(coded(ERR_TIMEOUT, "the server stopped answering"))
+        }
+        chunk := try ch.stats_read(STATS_READ_SLICE_MS)
+        buf = buf + chunk.stdout
+        if chunk.done {
+            // What came with the end still counts; a block it holds is read next turn.
+            if !buf.contains(end_line) && !buf.contains(STATS_UNSUPPORTED) {
+                return error(coded(ERR_NETWORK, "the loop ended"))
+            }
+        }
+    }
+    return error(coded(ERR_INTERNAL, "unreachable"))
+}
+
+// Waits until `until_ms` on the clock, or until the watch stops. Output in the
+// meantime is kept in `buf`. False once stopped or the channel ended.
+fn stats_pause[C: ServerStats, K: Clock](mut ch: C, mut clock: K, mut buf: str, until_ms: i64) -> bool {
+    for true {
+        if ch.stats_stopped() {
+            return false
+        }
+        left := until_ms - clock.clock_now_ms()
+        if left <= 0 {
+            return true
+        }
+        mut slice := left
+        if slice > STATS_READ_SLICE_MS {
+            slice = STATS_READ_SLICE_MS
+        }
+        chunk := ch.stats_read(slice) or { return false }
+        buf = buf + chunk.stdout
+        if chunk.done {
+            return false
+        }
+    }
+    return false
+}
+
+// The whole watch of one tab. Returns when it ends; see the file comment for why.
+fn watch_server_stats[C: ServerStats, S: StatsSink, K: Clock](mut ch: C, mut sink: S, mut clock: K, session: str) {
+    ch.stats_open(stats_command()) or {
+        // The host refused a second channel (MaxSessions) or exec: nothing to show.
+        sink.stats_emit(empty_sample(session))
+        return
+    }
+    stopped := run_stats_loop(mut ch, mut sink, mut clock, session)
+    ch.stats_close()
+    if !stopped {
+        sink.stats_emit(empty_sample(session))
+    }
+}
+
+// True when the watch was stopped; false when the host ended it.
+fn run_stats_loop[C: ServerStats, S: StatsSink, K: Clock](mut ch: C, mut sink: S, mut clock: K, session: str) -> bool {
+    mut buf := ""
+    os_block := read_stats_block(mut ch, mut clock, mut buf) or err {
+        return "{err.message()}" == "stopped"
+    }
+    os := parse_os_name(os_block)
+    mut prev := StatsReading{ net: [] }
+    mut have_prev := false
+    for true {
+        asked := clock.clock_now_ms()
+        ch.stats_send("\n") or { return ch.stats_stopped() }
+        block := read_stats_block(mut ch, mut clock, mut buf) or err {
+            return "{err.message()}" == "stopped"
+        }
+        cur := parse_stats_reading(block)
+        if have_prev {
+            s := server_sample(session, os, prev, cur)
+            if !sample_has_fields(s) {
+                return false
+            }
+            sink.stats_emit(s)
+        }
+        prev = cur
+        have_prev = true
+        if !stats_pause(mut ch, mut clock, mut buf, asked + STATS_INTERVAL_MS) {
+            return ch.stats_stopped()
+        }
+    }
+    return false
+}

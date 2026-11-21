@@ -1,0 +1,138 @@
+package domain
+
+// Milestone 55: the resources loop's parsers and arithmetic (domain/stats.cf), over
+// the real samples in stats_fixtures_test.cf and a few made-up edge cases.
+
+fn near(a: f64, b: f64) -> bool {
+    d := a - b
+    return d < 0.001 && d > -0.001
+}
+
+test "codebox: two samples give CPU, memory, the real interface's rates, disk, load and uptime" {
+    os := parse_os_name(CODEBOX_OS)
+    assert_eq(os, "Ubuntu 24.04")
+    a := parse_stats_reading(CODEBOX_A)
+    b := parse_stats_reading(CODEBOX_B)
+    s := server_sample("t1", os, a, b)
+    assert_eq(s.session, "t1")
+    assert_eq(s.cores, 6)
+    assert(s.has_cpu)
+    // 1 busy jiffy of 1199.
+    assert(near(s.cpu_pct, 100.0 / 1199.0))
+    assert(s.has_mem)
+    assert_eq(s.mem_total, 8131012 * 1024)
+    assert_eq(s.mem_used, (8131012 - 7592936) * 1024)
+    assert_eq(s.swap_total, 2097148 * 1024)
+    assert_eq(s.swap_used, 0)
+    // Only enp6s18: lo, docker0 and the br- bridge are left out. 2 s of uptime apart.
+    assert(s.has_net)
+    assert_eq(s.interfaces.len(), 1)
+    assert_eq(s.interfaces[0], "enp6s18")
+    assert(near(s.rx_rate, 2387.0 / 2.0))
+    assert(near(s.tx_rate, 6670.0 / 2.0))
+    assert(s.has_disk)
+    assert_eq(s.disk_total, 75156720 * 1024)
+    assert_eq(s.disk_used, 53857616 * 1024)
+    assert_eq(s.disk_avail, 17969644 * 1024)
+    assert(s.has_load)
+    assert(near(s.load1, 0.0))
+    assert(s.has_uptime)
+    assert_eq(s.uptime_secs, 74140)
+    assert(sample_has_fields(s))
+}
+
+test "a container without lxcfs reads like a host: eth0 counted, the overlay root's disk" {
+    for pair in [(DEBIAN_OS, DEBIAN_A, DEBIAN_B, "Debian GNU/Linux 12"), (ALPINE_OS, ALPINE_A, ALPINE_B, "Alpine Linux 3")] {
+        (os_text, ta, tb, want) := pair
+        os := parse_os_name(os_text)
+        assert(os.starts_with(want))
+        a := parse_stats_reading(ta)
+        b := parse_stats_reading(tb)
+        assert(a.has_cpu && a.has_mem && a.has_net && a.has_load && a.has_uptime && a.has_disk)
+        s := server_sample("c", os, a, b)
+        assert(s.has_cpu)
+        assert(s.cpu_pct >= 0.0 && s.cpu_pct <= 100.0)
+        assert(s.cores >= 1)
+        assert(s.has_net)
+        assert_eq(s.interfaces.len(), 1)
+        assert_eq(s.interfaces[0], "eth0")
+        assert(s.has_disk && s.disk_total > 0)
+        assert(s.mem_used > 0 && s.mem_used <= s.mem_total)
+    }
+}
+
+test "the first sample alone has no CPU or rates, and the rest is shown" {
+    a := parse_stats_reading(CODEBOX_A)
+    s := server_sample("t", "Ubuntu 24.04", StatsReading{ net: [] }, a)
+    assert(!s.has_cpu)
+    assert(!s.has_net)
+    assert(s.has_mem && s.has_disk && s.has_uptime && s.has_load)
+}
+
+test "a host that gives only CPU and memory shows only those" {
+    a := parse_stats_reading("@@stat\ncpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n@@mem\nMemTotal: 1000 kB\nMemAvailable: 400 kB\n@@end\n")
+    b := parse_stats_reading("@@stat\ncpu  30 0 30 140 0 0 0 0 0 0\ncpu0 30 0 30 140 0 0 0 0 0 0\n@@mem\nMemTotal: 1000 kB\nMemAvailable: 250 kB\n@@end\n")
+    s := server_sample("t", "Linux", a, b)
+    assert(s.has_cpu)
+    // 40 busy of 100.
+    assert(near(s.cpu_pct, 40.0))
+    assert_eq(s.cores, 1)
+    assert(s.has_mem)
+    assert_eq(s.mem_used, 750 * 1024)
+    assert(!s.has_net && !s.has_disk && !s.has_load && !s.has_uptime)
+}
+
+test "garbage, a refusal or an empty answer gives nothing to show" {
+    for text in ["", "rbash: sh: restricted\n", "@@stat\ncpu x y z w\n@@mem\nMemTotal: lots\n@@end\n", "@@unsupported\n"] {
+        r := parse_stats_reading(text)
+        s := server_sample("t", "Linux", r, r)
+        assert(!sample_has_fields(s))
+    }
+}
+
+test "meminfo without MemAvailable (kernel < 3.14) falls back to free, buffers and cached" {
+    r := parse_stats_reading("@@mem\nMemTotal: 1000 kB\nMemFree: 100 kB\nBuffers: 50 kB\nCached: 250 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n@@end\n")
+    assert(r.has_mem)
+    assert_eq(r.mem_used, 600 * 1024)
+}
+
+test "a counter that went back adds nothing, and no uptime stretch gives no rates" {
+    a := parse_stats_reading("@@net\n  eth0: 1000 0 0 0 0 0 0 0 5000 0 0 0 0 0 0 0\n@@up\n100.0 1.0\n@@end\n")
+    b := parse_stats_reading("@@net\n  eth0: 10 0 0 0 0 0 0 0 7000 0 0 0 0 0 0 0\n@@up\n102.0 1.0\n@@end\n")
+    s := server_sample("t", "Linux", a, b)
+    assert(s.has_net)
+    assert(near(s.rx_rate, 0.0))
+    assert(near(s.tx_rate, 1000.0))
+    same := server_sample("t", "Linux", a, a)
+    assert(!same.has_net)
+}
+
+test "which interfaces count" {
+    for name in ["eth0", "enp6s18", "ens3", "wlan0", "bond0", "eno1"] {
+        assert(stats_interface_counted(name))
+    }
+    for name in ["lo", "veth1a2b", "docker0", "br-9fc07f5aa9dd", "virbr0", "cni0", "flannel.1", "tun0", "wg0", "tailscale0", ""] {
+        assert(!stats_interface_counted(name))
+    }
+}
+
+test "df with a device name on its own line, and 512-byte blocks" {
+    r := parse_stats_reading("@@df\nFilesystem 1024-blocks Used Available Capacity Mounted on\n/dev/mapper/a-very-long-volume-name\n 100 40 60 40% /\n@@end\n")
+    assert(r.has_disk)
+    assert_eq(r.disk_total, 100 * 1024)
+    assert_eq(r.disk_used, 40 * 1024)
+    h := parse_stats_reading("@@df\nFilesystem 512-blocks Used Available Capacity Mounted on\n/dev/sda1 100 40 60 40% /\n@@end\n")
+    assert_eq(h.disk_total, 100 * 512)
+}
+
+test "the OS name falls back to PRETTY_NAME, then Linux" {
+    assert_eq(parse_os_name("@@os\nPRETTY_NAME=\"Arch Linux\"\nNAME=\"Arch Linux\"\n@@end\n"), "Arch Linux")
+    assert_eq(parse_os_name("@@os\n@@end\n"), "Linux")
+    assert_eq(parse_os_name("@@unsupported\n"), "Linux")
+}
+
+test "the loop's script has no single quote, so sh -c '…' carries it whole" {
+    assert(!STATS_SCRIPT.contains("'"))
+    assert(stats_command().starts_with("sh -c '"))
+    assert(stats_command().ends_with("done'"))
+}
