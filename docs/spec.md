@@ -33,6 +33,11 @@ Code signing and installers are v14 (D-111): an unsigned download is normal for 
 open-source app, and the owner wants updates working first so every later version,
 signed ones included, reaches people on its own.
 
+Milestone 54 closes the gap the first Linux update showed (0.19.0 → 0.20.0 on Zorin): a
+`.deb` or `.rpm` installed from a file updates the way macOS and Windows do, Flint
+downloading it and Relaunch asking for the system password so the package manager installs
+it (D-124).
+
 ## Scope
 
 **In scope (v13):**
@@ -52,6 +57,9 @@ signed ones included, reaches people on its own.
   off); designs 24c, 24e, 24f, 24g, 24i on v12's toast.
 - **The signed self-update** (53): download, Ed25519 verification, the folder swapped by
   `flint update-apply`, the relaunch confirm 24d; app and CLI updated together.
+- **The Linux self-update** (54): a `.deb`/`.rpm` installed from a file gets Download →
+  Ready → Relaunch; the system password through polkit, a root helper in the package that
+  verifies again as root, and `apt` or `dnf` installing it (D-124).
 - Docs site, the landing and the CLI demo follow every user-visible change (CLAUDE.md rules
   5 and 6), and a release closes each milestone with a `feat` or `fix` (rule 10).
 
@@ -64,8 +72,8 @@ notarization) and Windows (SignPath), installers (a Windows setup, a macOS `.dmg
 keychain access lists by signed identity (D-099) and Touch ID: **v14 · Signing and
 installers**. Intel Macs, Linux and Windows on arm64 (asked for through an issue, they are
 added later). Homebrew, winget, an apt/dnf repository, AppImage. A self-update of a `.deb`
-or `.rpm` (the package manager updates them; Flint only says a new version exists). An
-update notice in the CLI. Applying an update at the next launch without asking.
+or `.rpm` installed from a repository or a store (*How to update* names the system's
+updater; none exists yet). An update notice in the CLI. Applying an update at the next launch without asking.
 
 ## Stack
 
@@ -125,6 +133,17 @@ ports.
   otherwise it renames the old one back. A running program cannot replace its own files on
   Windows, but a copy of it running from elsewhere can; macOS and Linux behave the same
   way, so there is one path.
+- **Applying an update on Linux** (D-124): the package is not a folder the user owns but
+  files under `/usr` recorded in dpkg's or rpm's database, so the package manager installs
+  it as root. The package is staged in `~/.cache/flint/update/`; Relaunch runs `pkexec
+  /usr/lib/flint/flint-update-root` (its own polkit action `dev.flint.update`, `auth_admin`,
+  never kept). The helper, a small cfire binary apart from the CLI, takes no path from its
+  caller: it reads the package and the manifest from the calling user's (`PKEXEC_UID`)
+  staging folder without following a link, copies them into a folder of root's, checks on
+  that copy the manifest's signature against the compiled-in key, the package's SHA-256 and
+  a version newer than the installed one, and only then runs `apt-get install ./…` or `dnf
+  install ./…`. The app then starts the new Flint and quits. There is no rollback: a new
+  app that does not start is said at the next launch (as D-123 (3)).
 - **The page** shows the update with v12's toast (`key: 'update'`, changing in place), the
   status bar's version item, About's Updates block and What's new.
 
@@ -140,7 +159,7 @@ Contracts (v12's stand, plus):
 
 Checkable rules. Every milestone is checked against them before it is closed. Rules marked
 **(owner review)** stop `lean-build` for the owner whenever a diff touches them. v12's,
-plus 15 and 16.
+plus 15, 16 and 17.
 
 1. The domain and application layers import no adapter and no I/O module (`ext:webui`,
    `ext:db/sqlite`, sockets, HTTP, keychain, files).
@@ -194,6 +213,14 @@ plus 15 and 16.
     installs the pinned cfire and calls them, so every package can be rebuilt by a person
     on the Mac, Linux or the Windows VM (D-107 (2)). User data never lives in the
     package's folder.
+17. **(owner review)** A Linux update gets root only through `flint-update-root` and its
+    polkit action `dev.flint.update` (`auth_admin`, never kept). The helper accepts no path
+    or URL from its caller and verifies a copy root owns, never the file the user's process
+    wrote: the manifest's Ed25519 signature against the compiled-in key, the package's
+    SHA-256 from that manifest, and a version newer than the installed one. Only a file that
+    passed all three is handed to `apt` or `dnf`; any failure installs nothing and is never
+    retried from the toast (D-106 (5)). A package built with a test feed or key is refused
+    by `release-draft.sh`.
 
 ## Milestones
 
@@ -209,6 +236,7 @@ happen only where a human is required (see `CLAUDE.md`). Progress is recorded in
 | 51 | **The release workflow** | `.github/workflows/release.yml` on a `v*` tag: a guard step (the tag's commit is on `main`), a job per system on hosted runners (`macos-14` arm64, `ubuntu`, `windows`) installing the pinned cfire and calling `scripts/package.sh`, then a **draft** release with every package, `SHA256SUMS` and the version's changelog section (from the tag's message and `CHANGELOG.md`). The site's `/releases` page gets **Download** buttons that pick the visitor's system. **Funding:** `.github/FUNDING.yml` (GitHub Sponsors, Ko-fi), a README line and a link on the site; passive only. Verified: a pre-release tag run end to end on GitHub, its packages downloaded and opened on the Mac, the VM and Zorin; docs (*Releases*, *Install*) |
 | 52 | **The update notice** | The manifest (`manifest.json`, `manifest.json.sig`) added to the workflow, signed with the `release` environment's key (`scripts/sign-manifest.sh`, also runnable by hand). `application/update.cf` with `UpdateFeed` and `UpdateVerifier`: checked at launch and once a day, a setting to turn it off; a newer version shown with the toast 24c (*Flint 0.15.0 is available* · **Download** in ember, or **How to update** for a `.deb`/`.rpm` or a folder Flint cannot write), the status bar's version item 24f, About's Updates block 24e with *Check now*, the palette's commands 24i, and **What's new** 24g once per version after an update. Verified: `cfire test` (signature good, bad, wrong key, older version, the asset per system and install kind), a local manifest server in gui-e2e; docs (*Updates*, the security model's update section) |
 | 53 | **The signed self-update** | **Download:** progress in the toast (`key: 'update'`) and in the status bar item; ✕ hides the toast and the download goes on; when it finishes, a sticky *Ready* toast with **Relaunch**. A package whose SHA-256 does not match is discarded (D-106 (5)). **Relaunch:** 24d asks first when sessions or tunnels are open; the package unpacked beside the installed folder; `flint update-apply` (from a temporary copy) waits for the app and any `flint` from the folder, swaps the folders, starts the new app and removes the old folder once it started, or puts it back. ✕ on *Ready* applies nothing; the status bar item and About keep **Relaunch** (D-111). macOS `.app` and the Windows folder; a folder Flint cannot write gets *How to update*. Verified: `cfire test` of `update-apply` (swap, rollback, a held file on Windows), an end-to-end update from one local build to the next on macOS, the VM and Linux (portable test layout), the keychain prompt after an unsigned macOS update documented; docs (*Updates*) |
+| 54 | **Linux: self-update through the package manager** | **How it was installed:** `package:deb`/`package:rpm` and its source, read once at launch (`apt-cache policy flint`: only `/var/lib/dpkg/status` means a file; `dnf info --installed flint`: `@commandline`). **From a file:** Download (the package the verified manifest names, its SHA-256 checked) into `~/.cache/flint/update/` → sticky *Ready* → **Relaunch**: 24d first when sessions or tunnels are open, then polkit's password dialog for `dev.flint.update`; `flint-update-root` (a small cfire binary in both packages) copies, verifies again as root and installs with `apt-get`/`dnf`; the app then starts the new Flint and quits, which also ends an old app left running after a manual upgrade (ROADMAP's tray row). A cancelled dialog or a failed check installs nothing and keeps the old app open, saying why; a new app that does not start is said at the next launch (no rollback). **From a repository or a store:** *How to update* names the system's updater and the command, with Copy. **A test package** (`scripts/package.sh linux --test-feed`: a local feed and a test key compiled in) for containers and Zorin only, refused by `release-draft.sh`. Verified: `cfire test` of the helper's checks (good, bad SHA-256, bad signature, wrong key, older or equal version, a link, a file swapped after the user's check); the helper as root in clean Ubuntu 24.04, Debian 13 and Fedora 43 (`package-test.sh`); an end-to-end update on Zorin between two test packages, the owner typing the password in the real dialog; docs (*Updates*, the security model, *Install* for Linux) |
 
 ## Open questions
 
@@ -225,3 +253,8 @@ None open at the start. Settled with the owner on 2026-11-19 (D-111):
 milestone 52:** an Ed25519 key pair made with the script the milestone adds; the owner puts
 its secret in Infisical (folder `/flint`, name `FLINT_UPDATE_SIGNING_KEY`) and in the
 repo's `release` environment, and its public key is committed.
+
+**At milestone 54 (settled with the owner, 2026-11-21, D-124):** the root helper is a cfire
+binary of its own, not a subcommand of `flint`; no rollback after a successful install; the
+end-to-end check on Zorin uses test packages that are never published. Funding (D-114) stays
+v13's last step, after 54.
