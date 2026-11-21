@@ -66,3 +66,22 @@ test "Windows: the user's Path is read as written, written back and its entries 
     try env.cli_path_write("")
     assert_eq(try env.cli_path_read(), "")
 }
+
+// Windows, opt-in only (FLINT_TEST_REAL_PATH_BIN, the milestone 50 check on the test
+// VM): the user's real Path takes a package's bin folder as the app writes it, so a
+// terminal started afterwards finds flint. The caller saved the value before and puts
+// it back after (windows/vm/path-check.sh).
+test "Windows: the user's real Path takes the bin folder (opt-in)" {
+    bin := os.getenv("FLINT_TEST_REAL_PATH_BIN")
+    if os.getenv("OS") != "Windows_NT" || bin.len() == 0 {
+        return
+    }
+    mut env := new_os_cli_path(CLI_PATH_KEY)
+    mut probes: []PathEntryProbe = []
+    for e in split_path_value(try env.cli_path_read()) {
+        probes.push(env.cli_path_probe(e))
+    }
+    try env.cli_path_write(path_with_cli(bin, probes))
+    got := try env.cli_path_read()
+    assert(path_entry_key(split_path_value(got)[0]) == path_entry_key(bin))
+}
