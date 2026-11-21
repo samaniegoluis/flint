@@ -4,6 +4,10 @@ import "core:fs"
 import "core:os"
 
 test "a link is made, read back, replaced and removed in a folder this process writes" {
+    // macOS's and Linux's links; Windows puts a folder on the Path instead (below).
+    if os.getenv("OS") == "Windows_NT" {
+        return
+    }
     mut tmp := os.getenv("TMPDIR")
     if tmp.len() == 0 {
         tmp = "/tmp"   // unset in the Linux check's container

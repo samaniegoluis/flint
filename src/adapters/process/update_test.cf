@@ -108,9 +108,9 @@ test "a detached process is started, seen inside its folder, and stopped" {
 }
 
 // Windows (milestone 50, D-118 (5)): what holds a folder there. A file open without
-// FILE_SHARE_DELETE inside it, and a program running from it, both refuse the rename;
-// let go, the rename goes through. update-apply never writes over a file in use.
-test "Windows: a folder with a file held open, or a program running from it, cannot be renamed until let go" {
+// FILE_SHARE_DELETE inside it refuses the rename; let go, the rename goes through. A
+// program running from it does not. update-apply never writes over a file in use.
+test "Windows: a folder with a file held open cannot be renamed until let go; a program running from it can" {
     if os_name() != "windows" {
         return
     }
@@ -142,17 +142,27 @@ test "Windows: a folder with a file held open, or a program running from it, can
     }
     try files.upd_rename(dir + "/Flint", dir + "/Flint-old")
     try files.upd_rename(dir + "/Flint-old", dir + "/Flint")
-    // A program running from the folder: its image is open, so the same.
+    // A program running from the folder does not hold it: Windows 11 lets the folder of
+    // a running image be renamed (seen on the VM, milestone 50), and the program goes on
+    // from the new path. That is why update-apply waits for every `flint` from the
+    // folder (proc_running_under) before it renames anything.
     try files.upd_copy_exe(system32() + "/PING.EXE", dir + "/Flint/bin/flint.exe")
     mut procs := new_os_update_processes()
     pid := try procs.proc_spawn(dir + "/Flint/bin/flint.exe", ["-n", "30", "127.0.0.1"], "")
-    why = ""
-    files.upd_rename(dir + "/Flint", dir + "/Flint-old") or err { why = "{err.message()}" }
-    assert(why.starts_with("io:"))
-    assert_eq(procs.proc_running_under(dir + "/Flint")[0], pid)
-    procs.proc_stop(pid)
+    mut seen: []i64 = []
+    for _ in 0..50 {
+        seen = procs.proc_running_under(dir + "/Flint")
+        if seen.len() > 0 {
+            break
+        }
+        procs.proc_sleep(100)
+    }
+    assert_eq(seen.len(), 1)
+    assert_eq(seen[0], pid)
     try files.upd_rename(dir + "/Flint", dir + "/Flint-old")
     assert(files.upd_exists(dir + "/Flint-old/bin/flint.exe"))
+    procs.proc_stop(pid)
+    assert(!procs.proc_alive(pid))
 }
 
 test "Windows: arguments reach a detached program as given, and its output the log" {
