@@ -8,7 +8,7 @@
 <p align="center">
   <img alt="Status: preview" src="https://img.shields.io/badge/status-preview-orange">
   <img alt="Version" src="https://img.shields.io/github/v/tag/samaniegoluis/flint?sort=semver&label=version">
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
   <a href="https://github.com/gsandoval/cfire"><img alt="Built with cfire" src="https://img.shields.io/badge/built%20with-cfire-e8590c"></a>
   <br>
   <img alt="Last commit" src="https://img.shields.io/github/last-commit/samaniegoluis/flint">
@@ -21,10 +21,9 @@
 </picture>
 
 > [!WARNING]
-> **Preview.** Flint is in early development. It works today on macOS and Linux (Windows
-> is in progress), but there are no release builds yet: you
-> [build it from source](site/src/content/docs/start/build-from-source.md). The vault
-> format may still change between versions.
+> **Preview.** Flint is in early development. Release packages for macOS, Linux and
+> Windows are published, but they are not code-signed yet, and the vault format may
+> still change between versions.
 
 ## Why Flint
 
@@ -54,20 +53,29 @@ with nothing behind a paywall.
 | **Remote desktop** | RDP hosts in a Flint tab (FreeRDP 3, H.264 on the GPU), full screen, two monitors, certificate checked like a host key |
 | **Sync** | Merge a cloud folder's conflict copy record by record, or run `flint-vault-server` (Docker) and sync every machine through it; the server never sees your key |
 | **Agents** | Approval prompts for programs that ask the app, scoped tokens, an activity log |
+| **Updates** | A notice when a new version is out; on macOS and Windows a download checked against Flint's own Ed25519 key, applied only when you choose Relaunch |
+
+## Install
+
+Get the package for your system from [Releases](https://flint-2xk.pages.dev/releases/), which offers the
+latest version's, or from [GitHub](https://github.com/samaniegoluis/flint/releases/latest),
+with every file and its `SHA256SUMS`. Each one holds the desktop app and the `flint` CLI.
+
+| System | Package | Good to know |
+|---|---|---|
+| macOS 13.3+, Apple silicon | `Flint.app`, zipped | Not signed yet: the first launch needs [one extra step](https://flint-2xk.pages.dev/start/install/#macos) |
+| Windows 10 and 11, x64 | A portable folder, zipped | SmartScreen asks once (**More info** → **Run anyway**); needs the WebView2 Runtime, which Windows 11 has |
+| Ubuntu 24.04+, Debian 13+, Fedora 43+ | `.deb`, `.rpm` | Installed with `apt` or `dnf`, which also update it |
+
+The app tells you when a new version is out; on macOS and Windows it downloads it,
+checks its signature and relaunches into it when you say so
+([Updates](https://flint-2xk.pages.dev/guides/updates/)). The [install guide](https://flint-2xk.pages.dev/start/install/) has the
+details, and [Build from source](https://flint-2xk.pages.dev/start/build-from-source/) the other way in.
 
 ## Quick start
 
-Build it ([full guide](site/src/content/docs/start/build-from-source.md): cfire and the
-native libraries first):
-
-```sh
-. scripts/env.sh
-cfire build                 # the flint CLI, the desktop app and flint-vault-server
-scripts/build-gui.sh        # the app's page (needs Node.js 20+)
-scripts/install.sh          # install the app and the CLI together
-```
-
-Then:
+With Flint installed, from a terminal (on macOS and Windows the app offers to put `flint`
+on your `PATH`; the Linux packages already do):
 
 ```sh
 flint vault create ~/work.flint
@@ -79,20 +87,23 @@ flint exec db --json -- uptime
 
 ## Documentation
 
-The docs site is not published yet; its pages read fine on GitHub:
+On the docs site, [flint-2xk.pages.dev](https://flint-2xk.pages.dev/) (its pages are in
+[`site/`](site/src/content/docs/) too):
 
-- [Introduction](site/src/content/docs/start/introduction.md)
-- Guides: [the desktop app](site/src/content/docs/guides/desktop-app.md),
-  [connecting](site/src/content/docs/guides/connecting.md),
-  [files](site/src/content/docs/guides/files-view.md),
-  [tunnels](site/src/content/docs/guides/tunnels.md),
-  [remote desktop](site/src/content/docs/guides/remote-desktop.md),
-  [AI agents](site/src/content/docs/guides/ai-agents.md),
-  [self-host a remote vault](site/src/content/docs/guides/vault-server.md)
-- Reference: [CLI](site/src/content/docs/reference/cli.md),
-  [security model](site/src/content/docs/reference/security-model.md),
-  [vault format](site/src/content/docs/reference/vault-format.md)
-- [CHANGELOG](CHANGELOG.md) · [ROADMAP](ROADMAP.md)
+- [Introduction](https://flint-2xk.pages.dev/start/introduction/) · [Install](https://flint-2xk.pages.dev/start/install/) ·
+  [Build from source](https://flint-2xk.pages.dev/start/build-from-source/)
+- Guides: [the desktop app](https://flint-2xk.pages.dev/guides/desktop-app/),
+  [connecting](https://flint-2xk.pages.dev/guides/connecting/),
+  [files](https://flint-2xk.pages.dev/guides/files-view/),
+  [tunnels](https://flint-2xk.pages.dev/guides/tunnels/),
+  [remote desktop](https://flint-2xk.pages.dev/guides/remote-desktop/),
+  [AI agents](https://flint-2xk.pages.dev/guides/ai-agents/),
+  [updates](https://flint-2xk.pages.dev/guides/updates/),
+  [self-host a remote vault](https://flint-2xk.pages.dev/guides/vault-server/)
+- Reference: [CLI](https://flint-2xk.pages.dev/reference/cli/),
+  [security model](https://flint-2xk.pages.dev/reference/security-model/),
+  [vault format](https://flint-2xk.pages.dev/reference/vault-format/)
+- [Releases](https://flint-2xk.pages.dev/releases/) · [CHANGELOG](CHANGELOG.md) · [ROADMAP](ROADMAP.md)
 
 ## Built with cfire
 
@@ -120,4 +131,7 @@ see [SECURITY.md](SECURITY.md).
 Flint links [libssh](https://www.libssh.org) (LGPL-2.1),
 [FreeRDP](https://www.freerdp.com) (Apache-2.0), [libsodium](https://libsodium.org) (ISC)
 and [SQLCipher](https://www.zetetic.net/sqlcipher/) (BSD-style), and ships the
-[cfire](https://github.com/gsandoval/cfire) runtime (MIT).
+[cfire](https://github.com/gsandoval/cfire) runtime (MIT). The Windows package also
+carries Microsoft's WebView2 loader, OpenSSL, libcurl and zlib. The macOS and Windows
+packages hold each bundled library's licence; on Linux the libraries come from your
+distribution.
