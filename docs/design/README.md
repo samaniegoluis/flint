@@ -358,7 +358,7 @@ Clicking the item opens a popover with the state, last sync, server, version, **
 | `12d` | Settings → Vault gets a **Server** section above Lock (not connected: one line and **Connect to a server…**). |
 | `23a1` | Step 1: server address (placeholder `https://vault.example.com`) and token (password field plus Paste), and "No server yet? Self-host one in a few minutes". |
 | `23a2a–f` | Inline check failures: http refused (allowed only for localhost); unreachable; not a Flint vault server; wrong token; too many attempts (warning, try again in N min); empty server (info callout: connect it from a machine that has the vault). |
-| `23a3` | Step 2: "A vault was found", showing size and version only; its name appears once it opens. Then the master password, where to keep the local copy, and Remember on this computer. Built in milestone 45 (D-103) without a new design: a server keeping several vaults lists them in the `opt-list` of the approval dialog (label or *No label*, the id's first 8 characters, size · version · updated), and 23b2 gains an optional *Label* field. |
+| `23a3` | Step 2: "A vault was found", showing size and version only; its name appears once it opens. Then the master password, where to keep the local copy, and Remember on this computer. |
 | `23a3b` / `23a3c` | Errors: wrong master password; a file already exists at that path (Flint never overwrites). |
 | `23a4` | A single progress line, then straight into the main shell. |
 | `23b1` | The Server section, not connected. |
@@ -426,3 +426,54 @@ Clicking the item opens a popover with the state, last sync, server, version, **
 | `24j1–4` | 900 × 600: toast stack, update ready, About, What's new. |
 
 **Placeholder:** the libraries table in About lists only xterm.js, Geist and JetBrains Mono plus "All 46 licences…". Replace it with the real list.
+
+## Server resources, Type, RDP audio, sudo for a while, v14 (screens 25*)
+
+These screens are on the second canvas, "Flint — Desktop UI (2)", because the first one reached its 512-file limit. Page numbers continue from 15.
+
+**Live server resources (25a):** the active tab's host is sampled every ~2 s over the tab's own SSH session. The fields are CPU %, RAM used / total, network ↓ / ↑, and, where cheap, disk % and uptime.
+- **Placement (final):** in the status bar (`.res`), after the tab alias and before tunnels and Agents. The session-toolbar placement (`.res.res-tb`) was considered and rejected; its screens are kept only for reference.
+- **Colour:** values are either coloured by load (`.v.ok` green under 60 %, `.v.warn` amber to 85 %, `.v.hot` red above) or plain.
+
+| Screen | What it shows |
+|---|---|
+| `25a1` / `25a2` | **Chosen:** status bar placement, coloured and plain. |
+| `25a5` | A host that only gives CPU and RAM. |
+| `25a6` | A host that gives none: nothing is shown, and there is no error. |
+| `25a7` | The first ~2 s: skeleton values, which pulse unless reduced motion is on. |
+| `25a8a` | Split panes: the values follow the focused pane (db-primary). |
+| `25a9` | Detail on hover or click: CPU with load averages, memory with swap, disk with free space, network per interface, uptime, the time of the last sample, the colour thresholds, and a link to Settings. |
+| `25a10` | 900 × 600: compact form, CPU and RAM as small bars with %. Uptime collapses first, then disk, then network. The status bar keeps the lock and sync icons, the alias (truncated), **Agents with its waiting badge (never collapses)** and ⌘K. |
+| `25a3`, `25a4`, `25a8b`, `25a11` | **Rejected alternative:** the same values beside host and address in the session toolbar. |
+| `25b1` | Settings → Terminal: "Show server resources" (on by default), with the line about the tab's SSH session and auditd. Below it, "Colour values by load" (a proposal). |
+| `25c1` | RDP toolbar **Type** menu: "Type clipboard" (shows the character count, no shortcut: ⌥⌘V would reach Windows as Ctrl+Alt+V) and "Type win-01's password". The text is sent as keystrokes, for places paste doesn't reach. |
+| `25c2` | "Type clipboard" disabled, with the reason "The clipboard holds no text". |
+| `25c3` | Confirmation toast: "Typed 24 characters". |
+| `25d1` | RDP host editor, **Audio**: Play remote audio (On this computer · On the remote computer · Off) and Microphone (off by default), with the note that macOS asks for permission the first time. |
+| `25d2` | Microphone on: a callout says the permission prompt comes at the next connection. |
+| `25e1` / `25e2` | Settings → Access, **Run as root**: "Allow sudo for a while". The help line follows the switch ("Off: every root command is approved on its own." / "On: the root approval window also offers 2, 5 or 15 minutes."), with a warning line (amber off, danger on). |
+| `25e3` | The root approval window with the switch off: each command only, as 17a1. |
+| `25e4` | With the switch on: "Allow for" Each command (default) · 2 min · 5 min · 15 min. |
+| `25e5` | 5 min picked: no top banner, only the warning under "Allow for" ("Claude Code and everything it starts can run commands as root on db1 for 5 min without asking you."). The primary button becomes "Allow root for 5 min". |
+
+## Live notice of what a grant runs, v14 (screens 26*)
+
+On the second canvas, page 16. Covers D-117 (3)–(4).
+
+**The notice toast (`.toast.notice`):** one per grant, updated in place: "Claude Code ran a command on db1", then "Claude Code ran 10 commands on db1, nas". It names the program and the hosts, never the command text.
+- **Actions:** View and Stop, both `btn-secondary` (ember stays for update actions only). The ✕ hides this toast only; notices for the grant keep coming.
+- **Stop:** the toast turns into a short confirm (`role="alertdialog"`): "Stop this grant? Claude Code can't run more on db1, nas." with Cancel and `btn-danger` "Stop grant". Stopping revokes the grant.
+- **Root period:** `data-kind="root"`, a danger edge and shield mark, "as root" in danger, and the time left of the period (`.t-prog.wide`, e.g. "3:41 left").
+- **Timing:** a notice hides by itself ~10 s after the grant's last command (paused while hovered or focused) and comes back, updated, with the next one. Only a root period's notice stays while the period lasts. Each grant gets its own toast, inside the three-visible limit.
+
+| Screen | What it shows |
+|---|---|
+| `26a1` | First command of a grant: "ran a command on db1". |
+| `26a2` | The same toast updated in place: "ran 10 commands on db1, nas". |
+| `26a3` | Stop pressed: the in-toast confirm. |
+| `26a4` | Root period: danger edge, "as root", "3:41 left". This notice stays while the period lasts. |
+| `26b1` | **View:** a variant of the activity entry modal, "Claude Code · what this grant ran". A "Live · 10 commands" pill with a pulsing dot (static when reduced motion is on), and "3 new above · newest first" when rows arrive while scrolled. Each row: time, host, the command cut to one line, duration and exit status (`exit 0` / `exit 1`, "0.4 s"). A command still running shows "running…" and a ticking duration, with no exit yet. A command Flint refused before it ran (e.g. sudo when the user is not a sudoer) is struck through, with the reason ("not a sudoer") and a `refused` badge. Expanded: the exact command and Copy. Footer: "Full log in Settings → Access", Stop grant (danger ghost), Close. |
+| `26c1` | Grant approval window (17*): "Notify me of each command", checked from the Access default. |
+| `26c2` | Root approval window with a period picked (25e5, 5 min): the checkbox checked and disabled, "Always on for root." The row appears only when 2, 5 or 15 min is picked; with "Each command" (25e4) there is no row. |
+| `26d1` | Settings → Access: "Notify me of commands run under a grant" (default on), and a bell per row in Active grants (on / off). |
+| `26e1` | Three grants busy at once: three notices, one per grant. Each hides ~10 s after its own grant's last command, so the stack only holds grants that ran something in the last few seconds. |
