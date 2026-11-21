@@ -13,6 +13,7 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>
+#include <objbase.h>
 #endif
 
 namespace flint_webview_runtime {
