@@ -4,6 +4,16 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.21.0 — 2026-11-21
+
+A Flint installed from a .deb or .rpm now updates itself: Download, then Relaunch asks for the system password and apt or dnf installs it.
+
+### Added
+
+- **update:** The Linux package update's use cases (milestone 54)
+- **update:** A Linux package updates itself through apt or dnf (milestone 54)
+
+
 ## 0.20.0 — 2026-11-21
 
 Flint for Windows: a portable zip for 64-bit Windows 10 and 11 holding one Flint folder, the desktop app and the flint command together. Unzip it anywhere you can write, and Flint offers to put flint on your PATH, no admin needed, and again if you move the folder. It updates itself like the Mac app: it downloads the new version, checks its signature and relaunches into it when you say so. Quitting Flint, or relaunching to update, no longer waits behind a long flint exec: running commands get five seconds, then stop.
@@ -15,6 +25,7 @@ Flint for Windows: a portable zip for 64-bit Windows 10 and 11 holding one Flint
 ### Fixed
 
 - **app:** Quitting stops the CLI's running commands, so Relaunch never hangs behind a flint exec
+- **windows:** Setup installs the clang toolchain, which a clean MSYS2 does not have
 
 
 ## 0.19.0 — 2026-11-20
