@@ -119,9 +119,13 @@ export function stub({ catalog, recents, screens, theme, listing, homes, tunnelL
 	const emit = (event, data) => (listeners.get(event) ?? []).forEach((cb) => cb(data));
 	window.__shotsEmit = emit;
 	const b64 = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+	const statsAlias = new Map();
+	const statsTimers = new Map();
 	const settings = {
 		theme, accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
 		term_font: '', term_font_size: video?.termFontSize ?? 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: false, term_theme: 'default', lock_after: '1h',
+		toast_corner: 'bottom-right', update_check: false,
+		server_stats: true, server_stats_colour: true,
 	};
 	const uiState = { sidebar_open: true, sidebar_width: 264, files_width: 340, collapsed: [] };
 	const current = recents.find((r) => r.current);
@@ -142,7 +146,31 @@ export function stub({ catalog, recents, screens, theme, listing, homes, tunnelL
 		vault_remembered: () => ({ remembered: false }),
 		vault_status: () => ({ path: current.path, name: current.name, exists: true, unlocked: window.__shotsOpen !== false, cached: !video, groups: catalog.groups.length, hosts: catalog.hosts.length, keys: catalog.keys.length, credentials: catalog.credentials.length }),
 		catalog: () => catalog,
+		// Milestone 55: the tab's server resources, a steady made-up load per host.
+		stats_watch: ({ session }) => {
+			const GB = 1024 ** 3;
+			const alias = statsAlias.get(session) ?? '';
+			const seed = [...alias].reduce((n, c) => n + c.charCodeAt(0), 0) % 7;
+			let tick = 0;
+			const send = () => {
+				tick += 1;
+				emit('stats:sample', {
+					session, os: 'Ubuntu 24.04', cores: 4 + seed,
+					has_cpu: true, cpu_pct: 14 + seed * 6 + (tick % 3) * 2,
+					has_mem: true, mem_total: 15.6 * GB, mem_used: (6.2 + seed) * GB, swap_total: 2 * GB, swap_used: 0.1 * GB,
+					has_net: true, rx_rate: (1.1 + seed * 0.3) * 1024 * 1024, tx_rate: (84 + seed * 9) * 1024, interfaces: ['eth0'],
+					has_load: true, load1: 0.42 + seed / 10, load5: 0.38, load15: 0.31,
+					has_uptime: true, uptime_secs: (12 + seed * 5) * 86400 + 6 * 3600,
+					has_disk: true, disk_total: 200 * GB, disk_used: (88 + seed * 9) * GB, disk_avail: (112 - seed * 9) * GB,
+				});
+			};
+			setTimeout(send, 50);
+			statsTimers.set(session, setInterval(send, 2000));
+			return {};
+		},
+		stats_stop: ({ session }) => { clearInterval(statsTimers.get(session)); statsTimers.delete(session); return {}; },
 		session_open: ({ session, alias, files_only }) => {
+			statsAlias.set(session, alias);
 			bySession.set(session, alias);
 			setTimeout(() => {
 				if (files_only) return emit('session:state', { session, state: 'ready', code: '', message: '', exit_code: 0 });

@@ -331,7 +331,9 @@ fn main() {
         }
     }
 
-    async.scope(workers: 64) |scope| {
+    // Workers: every session (MAX_SESSIONS) and its resources watch, plus room for
+    // the RDP tabs, host tests and the rest.
+    async.scope(workers: 128) |scope| {
         app.bind_raw("session_open") |params| {
             r := session_open_check(params, st) or err {
                 return error("{err.message()}")
@@ -348,6 +350,19 @@ fn main() {
             }
             return ok_json()
         }
+        // Live server resources (stats.cf, milestone 55): a watch per terminal tab.
+        app.bind_raw("stats_watch") |params| {
+            r := stats_watch_check(params, st) or err {
+                return error("{err.message()}")
+            }
+            worker_app := app
+            scope.spawn || {
+                mut a := worker_app
+                run_gui_stats(mut a, r)
+            }
+            return ok_json()
+        }
+        app.bind_raw("stats_stop") |params| { return rpc_stats_stop(params) }
         // The RDP tab (rdp.cf, milestone 30).
         app.bind_raw("rdp_open") |params| {
             r := rdp_open_check(params, st) or err {

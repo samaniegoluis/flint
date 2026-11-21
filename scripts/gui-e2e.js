@@ -1075,6 +1075,52 @@
     }
 
     if (RUN === 'terminal') {
+      // Milestone 55: the tab's server resources in the status bar, read over a second
+      // channel of its own session. Only a Linux sshd (the Docker check) has them; the
+      // Mac's and the Windows VM's show nothing, and say no error.
+      await setStep('server resources');
+      if ((await window.backend.app_info({})).os === 'linux') {
+        let probe = 0;
+        // Whether `n` loops run on the server, asked a few times (a closed channel takes
+        // a moment to end its loop). "[w]hile" keeps grep from counting itself.
+        const loops = async (n) => {
+          for (let i = 0; i < 20; i++) {
+            probe += 1;
+            const mark = `loops-${probe}-`;
+            await type(`echo ${mark}$(grep -las "[w]hile read -r _" /proc/[0-9]*/cmdline | wc -l)`);
+            await enter();
+            const seen = new RegExp(mark + '(\\d+)');
+            await waitFor(() => seen.test(termText()), `"${mark}" in the terminal`);
+            if (termText().match(seen)[1] === String(n)) return true;
+            await sleep(250);
+          }
+          return false;
+        };
+        await waitFor(() => q('[data-server-stats="live"]'), 'the status bar shows the server resources', 15000);
+        const bar = q('[data-server-stats="live"]');
+        await check(['cpu', 'ram', 'net', 'disk', 'up'].every((k) => bar.querySelector(`[data-res="${k}"]`)), 'CPU, RAM, network, disk and uptime are in the status bar');
+        await check(/Server resources: CPU \d+ percent/.test(bar.getAttribute('aria-label') ?? ''), 'the item says what it shows to a screen reader');
+        await check(await loops(1), 'one resources loop runs on the server');
+        bar.click();
+        await waitFor(() => q('[data-server-stats-detail]'), 'the detail opens on a click');
+        await check(hasText('Last sample') && hasText('Memory') && hasText('Uptime'), 'the detail shows memory, uptime and the last sample');
+        await click('[data-server-stats-settings]');
+        await waitFor(() => q('[data-setting="server_stats"]'), 'Settings… opens Settings, Terminal');
+        q('[data-setting="server_stats"]').click();
+        await waitFor(() => !q('[data-server-stats]'), 'turning the setting off hides the resources');
+        await click('.rail-btn', 'Hosts');
+        await waitFor(() => activeTerm(), 'the terminal again');
+        await check(await loops(0), 'turning the setting off ends the loop on the server');
+        await click('.rail-btn', 'Settings');
+        await waitFor(() => q('[data-setting="server_stats"]'), 'Settings, Terminal');
+        q('[data-setting="server_stats"]').click();
+        await click('.rail-btn', 'Hosts');
+        await waitFor(() => q('[data-server-stats="live"]'), 'turning it on again shows them again', 15000);
+      } else {
+        await sleep(3000);
+        await check(!q('[data-server-stats]'), 'a server that is not Linux shows no resources');
+      }
+
       await setStep('osc 52');
       // A remote program sets the clipboard: the core writes it (the run's private board).
       await runInTerminal(`printf '\\033]52;c;%s\\a' "$(printf 'osc52-from-remote-%s' "$((6*7))" | base64)"; echo osc-sent-$((6*7))`, 'osc-sent-42');

@@ -3,7 +3,7 @@
 // status bar, plus every overlay. App shortcuts are handled here.
 
 import { keyTab, pairs } from '../files/pair';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api, on } from '../api/backend';
 import { toasts, useApp } from '../state/app';
 import { actionFor, chordLabel, type Action } from '../lib/keymap';
@@ -37,6 +37,8 @@ import { ApprovalDialog, useAccessState } from '../access/ApprovalDialog';
 import { TunnelsView } from '../tunnels/TunnelsView';
 import { tunnels, upOn, useTunnels } from '../tunnels/store';
 import { UpdateStatusItem } from '../update/UpdateStatusItem';
+import { serverStats } from '../sessions/serverStats';
+import { ServerStatsItem } from './ServerStatsItem';
 import { useUpdate } from '../update/UpdateProvider';
 
 type View = 'hosts' | 'files' | 'tunnels' | 'keys' | 'credentials' | 'settings';
@@ -146,6 +148,13 @@ export function Shell() {
   const fontSize = Math.max(8, Math.min(32, settings.term_font_size + zoom));
   // The active tab's focused pane: the Files view, the title and the status bar follow it.
   const tab = panes.find((p) => p.id === tabs.find((t) => t.id === active)?.focus);
+  // Live server resources (milestone 55): a watch per open terminal shell while the
+  // setting is on; the status bar shows the focused pane's (split panes follow it, 25a8a).
+  const statsStore = serverStats();
+  const stats = useSyncExternalStore(statsStore.subscribe, statsStore.get);
+  useEffect(() => {
+    statsStore.sync(panes.filter((p) => p.kind === 'ssh' && p.status === 'ready').map((p) => p.session), settings.server_stats);
+  }, [panes, settings.server_stats, statsStore]);
   const sideView = SIDE_VIEWS.includes(view);
   // Full screen (milestone 37) belongs to the RDP tab shown in the sessions area.
   const rdpTab = sideView && tab?.kind === 'rdp' ? active : null;
@@ -411,6 +420,7 @@ export function Shell() {
     return () => { window.removeEventListener('keydown', onKey); setActionHandler(null); };
   }, [run, os, phase, windowLock]);
 
+  const unlockedLabel = 'Unlocked' + (vault?.cached ? (os === 'mac' ? ' · Keychain' : ' · Keyring') : '');
   const anyOverlay = palette || editor || confirm || ask || manage;
   const sessionsOpen = panes.filter((t) => t.status !== 'ended').length;
   const crumb = tab ? <><span>{vault?.name}</span><span className="faint">/</span><span className="mono muted">{tab.alias}</span></> : <span>{vault?.name}</span>;
@@ -503,12 +513,16 @@ export function Shell() {
       {view === 'credentials' && <CredentialsPage editing={credEditing} setEditing={setCredEditing} onConfirm={setConfirm} />}
       {view === 'settings' && <SettingsPage section={section} setSection={setSection} onLock={() => lock().catch(fail)} onConfirm={setConfirm} />}
 
-      <footer className="statusbar">
-        <span className="sb-item"><Icon name="unlock" />Unlocked{vault?.cached ? (os === 'mac' ? ' · Keychain' : ' · Keyring') : ''}</span>
-        <button className="sb-btn" onClick={() => lock().catch(fail)}>Lock<Kbd action="lock" /></button>
+      <footer className="statusbar" data-compact={narrow || undefined}>
+        <span className="sb-item" title={unlockedLabel}><Icon name="unlock" /><span className="sb-lock-label">{unlockedLabel}</span></span>
+        <button className="sb-btn" data-sb-lock onClick={() => lock().catch(fail)}>Lock<Kbd action="lock" /></button>
         <SyncStatusItem />
-        <span className="sb-item">{sessionsOpen === 0 ? 'No sessions' : `${sessionsOpen} session${sessionsOpen === 1 ? '' : 's'}`}</span>
-        {tab && <span className="sb-item mono">{tab.alias}</span>}
+        <span className="sb-item" data-sb-sessions>{sessionsOpen === 0 ? 'No sessions' : `${sessionsOpen} session${sessionsOpen === 1 ? '' : 's'}`}</span>
+        {tab && <span className="sb-item mono sb-host">{tab.alias}</span>}
+        {tab?.kind === 'ssh' && settings.server_stats && (
+          <ServerStatsItem alias={tab.alias} view={stats.get(tab.session) ?? null} colour={settings.server_stats_colour} compact={narrow}
+            onSettings={() => { setSection('terminal'); setView('settings'); }} />
+        )}
         {tunnelsUp > 0 && (
           <button className="sb-btn" data-tunnels-status onClick={() => run('viewTunnels')}>
             <Icon name="tunnel" />{tunnelsUp} tunnel{tunnelsUp === 1 ? '' : 's'} up
@@ -522,9 +536,9 @@ export function Shell() {
           </button>
         )}
         <span className="grow" />
-        {zoom !== 0 && <button className="sb-btn" onClick={() => setZoom(0)} title="Reset terminal font size">{fontSize} px</button>}
+        {zoom !== 0 && <button className="sb-btn" data-sb-zoom onClick={() => setZoom(0)} title="Reset terminal font size">{fontSize} px</button>}
         <UpdateStatusItem />
-        <span className="sb-item"><Kbd action="palette" />Commands</span>
+        <span className="sb-item"><Kbd action="palette" /><span className="sb-cmd-label">Commands</span></span>
       </footer>
 
       {palette && (

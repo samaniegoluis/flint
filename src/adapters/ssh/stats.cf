@@ -1,0 +1,102 @@
+package ssh
+
+// The `ServerStats` port (milestone 55): a GUI tab's resources loop on a second exec
+// channel of the tab's own session, borrowed from the Files view's registry like a
+// transfer (shared.cf), under a watch id of its own. So closing the tab, or its
+// session ending, cancels the watch the way it cancels a transfer, and waits for it
+// to give the session back before freeing it.
+//
+// libssh serialises a session's calls on the hop's mutex, and the terminal reads on
+// the same session: every read here holds it for a few milliseconds and then sleeps
+// without it.
+
+// CFIRE-UPSTREAM: CF-005, CF-026
+import cpp "flint_ssh.hpp"
+
+import "core:time"
+import "../../domain"
+
+// How long one locked read waits, and the pause between two.
+STATS_LOCKED_READ_MS: i32 = 5
+STATS_POLL_MS: i64 = 40
+
+type StatsLink struct {
+    session_id: str
+    watch_id:   str
+    link:       SshLink
+    open:       bool
+}
+
+// Borrows the session `session_id` for the watch `watch_id`. Fails with `not_found`
+// when the tab's shell is not open (or is closing).
+fn borrow_stats(session_id: str, watch_id: str) -> StatsLink! {
+    link := try borrow_transfer(session_id, watch_id)
+    return StatsLink{ session_id: session_id, watch_id: watch_id, link: link, open: false }
+}
+
+fn (mut self: StatsLink) stats_open(command: str) -> void! {
+    try self.link.link_exec_open(command)
+    self.open = true
+}
+
+fn (mut self: StatsLink) stats_send(data: str) -> void! {
+    try self.link.link_channel_write(data)
+}
+
+fn (mut self: StatsLink) stats_read(timeout_ms: i64) -> ExecChunk! {
+    start := time.now_ms()
+    for true {
+        chunk := try self.link.link_channel_read(STATS_LOCKED_READ_MS)
+        if chunk.stdout.len() > 0 || chunk.done {
+            return chunk
+        }
+        if files_cancelled(self.watch_id) || time.now_ms() - start >= timeout_ms {
+            return chunk
+        }
+        time.sleep_ms(STATS_POLL_MS)
+    }
+    return error(coded(ERR_INTERNAL, "unreachable"))
+}
+
+fn (mut self: StatsLink) stats_stopped() -> bool {
+    return files_cancelled(self.watch_id)
+}
+
+// Closes the loop's channel: the server's sshd closes the loop's stdin, its `read`
+// fails and the loop ends. The session stays the tab's.
+fn (mut self: StatsLink) stats_close() {
+    if !self.open {
+        return
+    }
+    self.open = false
+    conn := self.link.last_hop() or { return }
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        std::lock_guard<std::mutex> guard(*conn.lock);
+        if (conn.channel) {
+            ssh_channel_send_eof(conn.channel);
+            ssh_channel_close(conn.channel);
+            ssh_channel_free(conn.channel);
+        }
+    }
+    // The borrowed hop's copy forgets the freed channel.
+    mut hop := conn
+    // CFIRE-UPSTREAM: CF-005
+    cpp {
+        hop.channel = nullptr;
+    }
+    self.link.hops[self.link.hops.len() - 1] = hop
+}
+
+// Closes the channel if it is still open and gives the session back to its tab.
+// Always called once the watch has ended, whatever ended it.
+fn (mut self: StatsLink) stats_release() {
+    self.stats_close()
+    give_back_transfer(self.session_id, self.watch_id, mut self.link)
+}
+
+// Asks the watch `watch_id` to end (the setting turned off, or the page let go of
+// the tab); its loop sees it within a read.
+fn stats_cancel(watch_id: str) {
+    files_cancel(watch_id)
+}

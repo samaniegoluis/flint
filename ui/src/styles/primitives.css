@@ -764,3 +764,28 @@ button.picker-row:not(.off) { cursor: pointer; }
 .sb-btn.sb-version.has-dot { position: relative; }
 .sb-btn.sb-version.has-dot::after { content: ""; position: absolute; top: 2px; right: 1px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface-chrome); }
 .sb-btn.sb-version.is-open { background: var(--surface-hover); color: var(--text-primary); }
+
+/* Live server resources in the status bar (milestone 55, designs 25a1-25a10). */
+.res { display: inline-flex; align-items: center; gap: 10px; height: 20px; padding: 0 6px; margin: 0 -2px; border: 0; border-radius: var(--radius-sm); background: none; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; cursor: pointer; }
+.res:hover, .res.is-open { background: var(--surface-hover); }
+.res-i { display: inline-flex; align-items: center; gap: 4px; }
+.res-i .k { font-family: var(--font-ui); font-size: 10.5px; color: var(--text-tertiary); }
+.res-i .v { font-variant-numeric: tabular-nums; }
+.res .v.ok, .res-pop .v.ok { color: var(--success); }
+.res .v.warn, .res-pop .v.warn { color: var(--warning); }
+.res .v.hot, .res-pop .v.hot { color: var(--danger); }
+.res.loading .v { color: transparent; min-width: 22px; height: 9px; border-radius: 3px; background: var(--surface-active); animation: flint-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .res.loading .v { animation: none; } }
+.res-bar { display: inline-block; width: 18px; height: 6px; border-radius: 2px; background: var(--surface-active); overflow: hidden; color: var(--text-secondary); }
+.res-bar i { display: block; height: 100%; background: currentColor; }
+.res-bar.ok { color: var(--success); } .res-bar.warn { color: var(--warning); } .res-bar.hot { color: var(--danger); }
+.res-bar.wide { width: 100%; height: 6px; }
+.res-grid { display: grid; grid-template-columns: 64px minmax(0, 1fr) 40px; column-gap: var(--sp-3); row-gap: 2px; align-items: center; font-size: var(--fs-sm); }
+.res-grid .k { color: var(--text-secondary); }
+.res-grid .v { font-family: var(--font-mono); font-size: var(--fs-xs); text-align: right; }
+.res-grid .sub { grid-column: 2 / span 2; font-size: var(--fs-xs); color: var(--text-tertiary); margin-bottom: 6px; }
+/* A narrow window (25a10): icons for the lock and the sync, no counts, Agents and its waiting kept whole. */
+.statusbar[data-compact] { gap: var(--sp-3); }
+.statusbar[data-compact] .sb-lock-label, .statusbar[data-compact] [data-sb-lock], .statusbar[data-compact] [data-sb-sessions], .statusbar[data-compact] [data-tunnels-status], .statusbar[data-compact] [data-sb-zoom], .statusbar[data-compact] .sb-cmd-label { display: none; }
+.statusbar[data-compact] .sb-agents { flex: none; }
+.statusbar[data-compact] .sb-host { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

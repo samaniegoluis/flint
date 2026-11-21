@@ -52,6 +52,15 @@ the page over a channel on `127.0.0.1` that answers only requests carrying a 256
 token, made per tab, sent to that port by number, and readable by no other web page. See
 [Remote desktop → Security](/guides/remote-desktop/#security).
 
+## What Flint runs on a server
+
+Flint never leaves a process of its own running on a server. The one thing it starts there
+for itself is the [server resources](/guides/desktop-app/#server-resources) loop of a
+terminal tab: a read-only `sh` loop on a second channel of the tab's own connection, which
+reads files under `/proc` and runs `df`, writes nothing, and ends when the tab, its
+connection or the setting ends it. It sends Flint numbers only, and nothing it reads is
+stored. Commands you or an approved program run (`flint exec`) are yours, not Flint's.
+
 ## Secrets leave memory once used
 
 A password, key or passphrase opened from the vault is overwritten as soon as SSH or RDP

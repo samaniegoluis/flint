@@ -177,6 +177,9 @@ export const api = {
   sessionAnswer: (session: string, prompt: string, ok: boolean, value: string) =>
     call('session_answer', { session, prompt, ok, value }),
   sessionClose: (session: string) => call('session_close', { session }),
+  /** Milestone 55: watch a terminal tab's server resources; samples come as `stats:sample`. */
+  statsWatch: (session: string, watch: string) => call('stats_watch', { session, watch }),
+  statsStop: (session: string, watch: string) => call('stats_stop', { session, watch }),
 
   /** A remote desktop (milestone 30): connects on a worker; "rdp:ready" and "rdp:state" follow. */
   rdpOpen: (tab: string, alias: string, width: number, height: number, graphics: string) => call('rdp_open', { tab, alias, width, height, graphics }),

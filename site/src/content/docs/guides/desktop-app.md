@@ -36,7 +36,7 @@ menu bar icon, ⌘Q or the command palette quits it.
 | Activity bar (left) | **Hosts**, **Files** and **Tunnels** (all three in the sidebar; Tunnels counts the ones running), **Keys**, **Credentials**, and **Settings** at the bottom |
 | Sidebar | **Hosts**: the vault button (switch vaults), a filter, and your hosts in their groups. **Files**: the focused pane's host, over SFTP ([The Files view](/guides/files-view/)). **Tunnels**: every tunnel by host, with a switch and its state ([Tunnels](/guides/tunnels/#in-the-app)) |
 | Main area | The tabs, the session toolbar and the terminals: up to four panes in a tab ([Split panes](#split-panes)) |
-| Status bar | Lock state, the number of open sessions, **N tunnels up** while any runs (it opens the Tunnels view), **Lock**, and **Agents: N** while programs you approved may use the vault (it opens Settings → Access, and shows **N waiting** while a request waits and Flint is not in front) |
+| Status bar | Lock state, the number of open sessions, the [server resources](#server-resources) of the active tab's host, **N tunnels up** while any runs (it opens the Tunnels view), **Lock**, and **Agents: N** while programs you approved may use the vault (it opens Settings → Access, and shows **N waiting** while a request waits and Flint is not in front) |
 
 Click **Hosts** again (or press <kbd>⌘B</kbd>) to hide the sidebar and give the terminal
 the whole width; it stays hidden when you come back to **Hosts** from another view. Drag the sidebar's right edge to make it wider or narrower (200 to 400 px;
@@ -264,6 +264,32 @@ you finish the line and press <kbd>Enter</kbd> yourself.
   the result: *Pasted the image on &lt;host&gt;*, or, if the upload fails (no SFTP on the
   server, no permission, a lost connection), why.
 
+### Server resources
+
+While a terminal tab is open on a Linux server, the status bar shows that server's
+**CPU**, **RAM** (used of total), network (**↓** received, **↑** sent, per second),
+**Disk** (how full `/` is) and how long it has been **up**, refreshed every 2 seconds.
+With split panes it follows the focused pane. Hover over it, or click it, for the detail:
+cores and system, the load averages, memory and swap, the disk's free space, the
+interfaces counted, and when the last sample came.
+
+- CPU, RAM and disk are green under 60 %, amber to 85 % and red above, unless you turn
+  **Colour values by load** off.
+- Flint reads them over a second channel of the tab's **own** connection: no new login.
+  It runs one small read-only `sh` loop that prints `/proc/stat`, `/proc/meminfo`,
+  `/proc/net/dev`, `/proc/loadavg`, `/proc/uptime` and `df -Pk /` each time Flint asks,
+  and that ends as soon as the tab or its connection closes. It writes nothing and
+  changes nothing on the server. Loopback and virtual interfaces (Docker's `veth` and
+  bridges, VPN tunnels) are left out of the network figures.
+- A server Flint cannot read (macOS, Windows, a restricted shell, a router, a server that
+  refuses another channel) shows nothing, and says no error. A host that gives only some
+  of the figures shows those.
+- Inside a container without lxcfs, `/proc` shows the host machine's figures, so that is
+  what Flint shows.
+- A server that logs every command (auditd, a recording bastion) logs these reads. Turn
+  them off in **Settings → Terminal → Show server resources**.
+- In a narrow window the bar keeps CPU and RAM, as percentages with a small bar each.
+
 **Accents and other layouts.** Dead keys (US International, ABC Extended, most ISO
 layouts) and input methods (Japanese, Chinese, Korean) compose as they do in any other
 app: <kbd>'</kbd> <kbd>e</kbd> types `é`, and <kbd>'</kbd> <kbd>s</kbd> types `'s`, not
@@ -378,8 +404,9 @@ Settings belong to this machine, not to the vault, and save as you change them.
 - **Terminal**: the colours (Default, Catppuccin, Tokyo Night, Aura, Dracula or Nord, each
   in a dark and a light variant that follows the app's theme), the font (any monospaced
   font installed on this machine, or the bundled JetBrains Mono), size, line height,
-  cursor, and the **largest file to paste** (10, 20, 50 or 100 MB; see
-  [The terminal](#the-terminal)).
+  cursor, the **largest file to paste** (10, 20, 50 or 100 MB; see
+  [The terminal](#the-terminal)), and **Show server resources** (on) with **Colour values
+  by load** (on; see [Server resources](#server-resources)).
 - **Remote desktop**: the **Graphics** a new remote desktop tab uses, **Automatic**,
   **Pipeline** or **Compatible**, which each tab's toolbar can switch while connected (see
   [Graphics](/guides/remote-desktop/#graphics)), and on macOS what

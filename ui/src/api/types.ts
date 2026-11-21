@@ -782,3 +782,18 @@ export interface CliLinkStatus {
    *  user's Path (`path`, milestone 50, D-121), whose one spot's path is that folder. */
   kind: 'link' | 'path';
 }
+
+/** Milestone 55: one sample of a terminal tab's server (src/domain/stats.cf), as `stats:sample`.
+ * Sizes in bytes, rates in bytes per second. A field whose `has_` is false is not shown;
+ * a sample with none says the host shows nothing (design 25a6). */
+export interface ServerSample {
+  session: string;
+  os: string;
+  cores: number;
+  has_cpu: boolean; cpu_pct: number;
+  has_mem: boolean; mem_total: number; mem_used: number; swap_total: number; swap_used: number;
+  has_net: boolean; rx_rate: number; tx_rate: number; interfaces: string[];
+  has_load: boolean; load1: number; load5: number; load15: number;
+  has_uptime: boolean; uptime_secs: number;
+  has_disk: boolean; disk_total: number; disk_used: number; disk_avail: number;
+}

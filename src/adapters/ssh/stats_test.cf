@@ -1,0 +1,119 @@
+package ssh
+
+// Milestone 55: the resources loop on the throwaway sshd of scripts/test.sh, over a
+// tab's shared session. On Linux (the Docker check) it reads real samples, the
+// terminal on the same session keeps answering, and once the channel closes no loop
+// is left on the server. On macOS the loop answers that it is not Linux and ends.
+
+import "core:os"
+import "core:fs"
+import "core:time"
+import "../../domain"
+import "../../ports"
+
+fn accepts_server_stats[C: ServerStats](c: C) -> bool {
+    return true
+}
+
+// Reads until `marker` arrives or `ms` pass; everything read.
+fn stats_read_until(mut s: StatsLink, marker: str, ms: i64) -> str! {
+    mut got := ""
+    start := time.now_ms()
+    for !got.contains(marker) && time.now_ms() - start < ms {
+        chunk := try s.stats_read(200)
+        got = got + chunk.stdout
+        if chunk.done {
+            break
+        }
+    }
+    return got
+}
+
+// How many resources loops run on the server for this user, counted over a plain
+// exec of its own, from /proc (no procps needed; "[w]hile" keeps grep from
+// counting its own command line).
+fn stats_loops(port: i32, key: str) -> i64! {
+    mut probe := new_ssh_link()
+    try probe.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    defer probe.link_hangup()
+    try probe.link_auth_key(key, "")
+    try probe.link_exec_start("grep -las \"[w]hile read -r _\" /proc/[0-9]*/cmdline | wc -l")
+    mut out := ""
+    for true {
+        chunk := try probe.link_channel_read(200)
+        out = out + chunk.stdout
+        if chunk.done {
+            break
+        }
+    }
+    return i64.parse(out.trim()) or -1
+}
+
+test "StatsLink satisfies the ServerStats port" {
+    s := StatsLink{ session_id: "", watch_id: "", link: new_ssh_link(), open: false }
+    assert(accepts_server_stats(s))
+}
+
+test "a watch needs the tab's open shell" {
+    mut failed := 0
+    borrow_stats("no-such-tab-{time.now_ms()}", "w") or { failed += 1 }
+    assert_eq(failed, 1)
+}
+
+test "the resources loop runs beside the terminal on the tab's session and leaves nothing behind" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    key := try fs.read_text(key_path)
+    id := "stats-{time.now_ms()}"
+    mut link := new_shared_link(id)
+    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_auth_key(key, "")
+    try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
+    defer link.link_hangup()
+    watch := "{id}-w1"
+    mut s := try borrow_stats(id, watch)
+    try s.stats_open(stats_command())
+    first := try stats_read_until(mut s, "\n", 5000)
+    if first.contains(STATS_UNSUPPORTED) {
+        // macOS: not Linux, the loop says so and ends at once.
+        s.stats_release()
+        return
+    }
+    assert(first.starts_with("@@os"))
+    os_block := try stats_read_until(mut s, STATS_END + "\n", 5000)
+    assert(parse_os_name(first + os_block).len() > 0)
+    // Two samples, a second apart.
+    try s.stats_send("\n")
+    a := try stats_read_until(mut s, STATS_END + "\n", 5000)
+    time.sleep_ms(1000)
+    try s.stats_send("\n")
+    b := try stats_read_until(mut s, STATS_END + "\n", 5000)
+    sample := server_sample(id, "Linux", parse_stats_reading(a), parse_stats_reading(b))
+    assert(sample.has_cpu && sample.has_mem && sample.has_disk && sample.has_uptime && sample.has_load)
+    // The terminal on the same session still answers.
+    try link.link_channel_write("echo stats-$((40+2))\n")
+    mut term := ""
+    start := time.now_ms()
+    for !term.contains("stats-42") && time.now_ms() - start < 5000 {
+        term = term + (try link.link_channel_read(100)).stdout
+    }
+    assert(term.contains("stats-42"))
+    assert_eq(try stats_loops(port, key), 1)
+    // Stopping: the watch sees it, the channel closes, the loop on the server ends.
+    stats_cancel(watch)
+    assert(s.stats_stopped())
+    s.stats_release()
+    mut left: i64 = -1
+    for i in 0..20 {
+        left = try stats_loops(port, key)
+        if left == 0 {
+            break
+        }
+        time.sleep_ms(100)
+    }
+    assert_eq(left, 0)
+    assert(!files_cancelled(watch))
+}

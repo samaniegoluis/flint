@@ -248,6 +248,19 @@ function TerminalSettings() {
           ))}
         </div>
       </Row>
+      <Row title="Server resources" desc="CPU, memory, network, disk and uptime of the host the active tab is on.">
+        <label className="row" style={{ gap: 'var(--sp-3)', alignItems: 'flex-start', cursor: 'pointer' }}>
+          <button type="button" className="toggle" role="switch" aria-checked={s.server_stats} aria-label="Show server resources" data-setting="server_stats" onClick={() => set({ server_stats: !s.server_stats })} />
+          <span className="col" style={{ gap: 3 }}>
+            <span>Show server resources</span>
+            <span className="hint" style={{ lineHeight: 1.45, maxWidth: 440 }}>Reads CPU, memory and network over the tab's own SSH session. Servers that log every command (auditd) will log these reads.</span>
+          </span>
+        </label>
+        <label className="check" style={{ marginLeft: 46 }}>
+          <input type="checkbox" checked={s.server_stats_colour} disabled={!s.server_stats} data-setting="server_stats_colour" onChange={(e) => set({ server_stats_colour: e.target.checked })} />
+          <span style={{ fontSize: 'var(--fs-sm)' }}>Colour values by load</span>
+        </label>
+      </Row>
       <Row title="Preview" desc="Uses the chosen colours and font.">
         <div className="term" style={{ ...themeVars, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', fontFamily: family, fontSize: s.term_font_size, lineHeight: s.term_line_height / 100 }}>
           <div className="l"><span className="g">luis</span><span className="d">@</span><span className="b">prod-api-01</span> <span className="c">~/srv/api</span> <span className="m">(main)</span> <span className="pc">❯</span> ls</div>
