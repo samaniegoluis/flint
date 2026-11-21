@@ -378,6 +378,9 @@ fn run_exec[T: SshTransport, O: ExecSink, K: Clock](mut link: T, mut sink: O, mu
         if clock.clock_now_ms() > deadline {
             return error(coded(ERR_TIMEOUT, "the command on '{alias}' did not finish within {timeout_secs}s"))
         }
+        if sink.exec_cancelled() {
+            return error(coded(ERR_IO, "the command on '{alias}' was stopped: the flint client went away or Flint quit"))
+        }
         chunk := try link.link_channel_read(100)
         if capture {
             res.stdout = res.stdout + chunk.stdout

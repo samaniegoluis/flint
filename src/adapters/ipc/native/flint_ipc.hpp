@@ -9,6 +9,8 @@
 // write waits with poll() under a deadline, so no call blocks forever (Principle 8).
 #pragma once
 #include <atomic>
+#include <mutex>
+#include <set>
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
@@ -411,6 +413,51 @@ inline int64_t file_mode(const std::string& path) {
     if (::lstat(path.c_str(), &st) != 0) return -1;
     return static_cast<int64_t>(st.st_mode & 07777);
 #endif
+}
+
+// The connections the app is serving (milestone 50): a command from the CLI keeps
+// its connection for as long as it runs (`flint exec`, `connect`). Quitting waits a
+// moment for them, then shuts each one down, so its relay sees the client gone and
+// the command ends instead of holding the app open (the Relaunch that hung).
+struct Served {
+    std::mutex mu;
+    std::set<int> fds;
+    std::set<int> cut;
+};
+
+inline Served& served() {
+    static Served s;
+    return s;
+}
+
+inline void served_add(int fd) {
+    std::lock_guard<std::mutex> lock(served().mu);
+    served().fds.insert(fd);
+}
+
+// Removed before the fd is closed, so a shutdown never reaches a reused number.
+inline void served_remove(int fd) {
+    std::lock_guard<std::mutex> lock(served().mu);
+    served().fds.erase(fd);
+    served().cut.erase(fd);
+}
+
+inline bool served_was_cut(int fd) {
+    std::lock_guard<std::mutex> lock(served().mu);
+    return served().cut.count(fd) > 0;
+}
+
+inline int64_t served_count() {
+    std::lock_guard<std::mutex> lock(served().mu);
+    return static_cast<int64_t>(served().fds.size());
+}
+
+inline void served_shutdown_all() {
+    std::lock_guard<std::mutex> lock(served().mu);
+    for (int fd : served().fds) {
+        served().cut.insert(fd);
+        flint_sock::shutdown_both(fd);
+    }
 }
 
 } // namespace flint_ipc

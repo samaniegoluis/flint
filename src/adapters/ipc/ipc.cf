@@ -141,7 +141,45 @@ fn (self: IpcListener) accept_wait(timeout_ms: i32) -> IpcConn! {
         }
         return IpcConn{ fd: 0, open: false, peer: IpcPeer{ uid: uid, pid: pid } }
     }
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        flint_ipc::served_add(fd);
+    }
     return IpcConn{ fd: fd, open: true, peer: IpcPeer{ uid: uid, pid: pid } }
+}
+
+// How many CLI connections the app is serving now (milestone 50): a running `flint
+// exec` or `connect` is one. Relaunch's confirmation counts them.
+fn ipc_served_count() -> i64 {
+    mut n: i64 = 0
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        n = flint_ipc::served_count();
+    }
+    return n
+}
+
+// Shuts down every connection still being served: its command sees the client gone
+// and ends. For quitting, after a grace (drivers/gui/main.cf).
+fn ipc_served_shutdown_all() {
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        flint_ipc::served_shutdown_all();
+    }
+}
+
+// Whether quitting cut this connection (ipc_served_shutdown_all).
+fn (self: IpcConn) cut() -> bool {
+    if !self.open {
+        return false
+    }
+    mut c := false
+    fd := self.fd
+    // CFIRE-UPSTREAM: CF-081
+    cpp {
+        c = flint_ipc::served_was_cut(fd);
+    }
+    return c
 }
 
 // A peer is let in only when the kernel told us its uid and it is the allowed one.
@@ -249,6 +287,7 @@ fn (mut self: IpcConn) close() {
     fd := self.fd
     // CFIRE-UPSTREAM: CF-081
     cpp {
+        flint_ipc::served_remove(fd);
         flint_ipc::close_fd(fd);
     }
     self.open = false

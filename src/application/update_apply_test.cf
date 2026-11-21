@@ -356,6 +356,14 @@ test "update-apply refuses a folder that is not the staged package, and an app t
     q := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
     assert_eq(q.step, APPLY_STEP_QUIT)
     assert_eq(files.log.len(), 0)
+    // The next launch says why, and the package stays for another Relaunch.
+    assert(procs.now >= UPDATE_WAIT_QUIT_MS)
+    got := take_apply_outcome(mut files, INSTALLED, "mac") or {
+        assert(false)
+        return
+    }
+    assert(got.kept && got.message.starts_with("Flint did not quit within 10 minutes"))
+    assert_eq(staged_update(mut files, INSTALLED, "mac", "0.17.0"), "0.18.0")
 }
 
 test "a staged version no newer than this one is cleared" {

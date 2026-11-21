@@ -218,6 +218,11 @@ fn (mut self: SocketExecSink) exec_stderr(data: str) {
     self.link.put(TAG_STDERR, data)
 }
 
+// The client went away, or the app cut the connection while quitting.
+fn (self: SocketExecSink) exec_cancelled() -> bool {
+    return self.link.broken || self.link.conn.cut()
+}
+
 // ---- Prompter ------------------------------------------------------------------
 
 type SocketPrompter struct {

@@ -620,7 +620,22 @@ fi
 expect 0 "add the stop host" "" -- host add e2e-stop --hostname 10.0.0.9
 check "the lock ended the whole-vault grant: a write asks again" '[[ $(grep -c "asking the owner to approve" "$tmp/app.log") -gt $asked_after_unlock ]]'
 
+# Milestone 50: a long, silent command through the app while it quits. The page waits
+# for it, then quits: the app gives it 5 s, then cuts it, and exits (the Relaunch
+# that hung behind a long `flint exec`).
+# Only once the page waits for it: an exec earlier would add to the activity log the
+# page is still counting.
+for _ in $(seq 1 3000); do grep -q "waiting for a long flint exec" "$tmp/app.log" 2>/dev/null && break; kill -0 "$app_pid" 2>/dev/null || break; sleep 0.1; done
+quit_t0=$(date +%s)
+no_tty "$flint" exec local -- sleep 120 >"$tmp/longexec.out" 2>"$tmp/longexec.err" &
+longexec_pid=$!
 for _ in $(seq 1 300); do kill -0 "$app_pid" 2>/dev/null || break; sleep 0.1; done
+quit_t1=$(date +%s)
+longexec_status=0
+wait "$longexec_pid" || longexec_status=$?
+quit_t2=$(date +%s)
+echo "diag: quit $((quit_t1 - quit_t0)) s after the long exec started; the exec ended $((quit_t2 - quit_t0)) s after, status $longexec_status: $(tr '\n' ' ' < "$tmp/longexec.err" | cut -c1-200)"
+check "quitting cuts a running flint exec instead of waiting for it" '[[ $((quit_t2 - quit_t0)) -lt 60 && $longexec_status != 0 ]]'
 app_status=0
 wait "$app_pid" || app_status=$?
 app_pid=""

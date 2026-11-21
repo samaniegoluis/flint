@@ -141,6 +141,8 @@ fn main() {
     app.bind_raw("cli_status") |params| { return rpc_cli_status(params, mut settings_store) }
     // The update notice (update.cf, milestone 52).
     app.bind_raw("update_hint") |params| { return rpc_update_hint(params, st) }
+    // Relaunch's 24d counts the CLI's running commands too (milestone 50).
+    app.bind_raw("cli_running") |params| { return rpc_cli_running() }
     app.bind_raw("whats_new") |params| { return rpc_whats_new(params, mut settings_store) }
     app.bind_raw("open_url") |params| { return rpc_open_url(params, e2e) }
     app.bind_raw("cli_install") |params| { return rpc_cli_install(params) }
@@ -506,6 +508,11 @@ fn main() {
         // Tunnels run in this process only: quitting closes them (D-062).
         release_all_tunnels()
         listener.close()
+        // Commands the CLI runs through this app (`flint exec`, `connect`) hold their
+        // connection while they run: a moment to finish, then they are cut, so quitting
+        // (and Relaunch's update-apply, which waits for this process) is never held by
+        // one (milestone 50: a Relaunch that hung behind a long `flint exec`).
+        end_served_commands()
     }
     // Waits for an unlock or create still running on a worker, then closes.
     st.hold()

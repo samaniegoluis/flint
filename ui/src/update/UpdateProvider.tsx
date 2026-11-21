@@ -71,12 +71,13 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   }, [fail]);
 
   // Relaunch: 24d1 first when sessions or tunnels would close.
-  const relaunch = useCallback(() => {
+  const relaunch = useCallback(async () => {
     const st = statusRef.current;
     if (!st || st.state !== 'ready') return;
     const open = sessions.get().panes.filter((p) => p.status !== 'ended').length;
     const up = tunnels.get().list.filter((t) => t.state === 'listening').length;
-    const closes = relaunchClosesText(open, up);
+    const commands = (await api.cliRunning().catch(() => ({ count: 0 }))).count;
+    const closes = relaunchClosesText(open, up, commands);
     if (closes) setConfirm({ version: st.version, closes });
     else api.updateHint('relaunch').catch(fail);
   }, [fail]);

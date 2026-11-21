@@ -867,12 +867,17 @@ fn (mut self: FakeTerminal) term_take_resize() -> bool {
 }
 
 type FakeSink struct {
-    out_text: str
-    err_text: str
+    out_text:  str
+    err_text:  str
+    cancelled: bool
 }
 
 fn (mut self: FakeSink) exec_stdout(data: str) {
     self.out_text = self.out_text + data
+}
+
+fn (self: FakeSink) exec_cancelled() -> bool {
+    return self.cancelled
 }
 
 fn (mut self: FakeSink) exec_stderr(data: str) {

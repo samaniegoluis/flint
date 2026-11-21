@@ -41,14 +41,18 @@ updates** in the command palette (<kbd>⌘K</kbd>).
 3. **Ready.** *Flint 0.18.0 is ready*, with **Relaunch**. It stays until you choose. If
    you close it, nothing happens at the next launch either: **Relaunch** stays in the
    status bar and in **Settings → About**.
-4. **Relaunch.** With sessions or tunnels open, Flint asks first: *3 sessions and 2
-   tunnels will close*. Then it quits, the new version takes the old one's place, and
+4. **Relaunch.** With sessions or tunnels open, or a `flint` command running through
+   Flint (a `flint exec` or `connect` from a terminal or an agent), Flint asks first:
+   *3 sessions and 2 tunnels will close. 1 running flint command will stop.* Then it quits, the new version takes the old one's place, and
    the new Flint opens. Your vaults and settings live in your user folder, so they stay.
    On macOS the `flint` command is a link into the app, and on Windows the `Flint\bin`
    folder on your `PATH` is inside the new folder, so it is the new one too.
 
-If the new version does not start, Flint puts the old one back and opens it, and says
-so. If a `flint` command is still running from the app when you relaunch (a long `flint
+When Flint quits, for an update or otherwise, a `flint exec` or `connect` still running
+through it gets five seconds to finish and is then stopped; the command reports that
+Flint went away (exit code 10). If the new version does not start, Flint puts the old
+one back and opens it, and says so. If the old Flint takes more than ten minutes to quit,
+nothing is changed and Flint says so the next time it opens, with the download kept. If a `flint` command is still running from the app when you relaunch (a long `flint
 exec`, say), Flint waits for it for half a minute, then opens the old version again and
 keeps the download, so you can choose **Relaunch** once it ends.
 
