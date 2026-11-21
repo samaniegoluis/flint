@@ -264,12 +264,12 @@ JSON
     # package. A system with no package in the manifest (Linux on arm64 in Docker) gets
     # How to update and downloads nothing.
     if grep -q 'Flint 99.0.0 is available (download)' "$4"; then
-      grep -q '"GET /Flint-99.0.0-macos-arm64.zip HTTP\|"GET /flint_99.0.0_amd64.deb HTTP' "$tmp/feed.log" \
+      grep -q '"GET /Flint-99.0.0-macos-arm64.zip HTTP\|"GET /Flint-99.0.0-windows-x86_64.zip HTTP\|"GET /flint_99.0.0_amd64.deb HTTP' "$tmp/feed.log" \
         || { echo "e2e: fail: Download did not ask the feed for the package"; echo "gui-e2e ($1): FAILED" >&2; return 1; }
     fi
     # One GET of the manifest and one of its signature per check, and the package when
     # Download is chosen; nothing else (Principle 15).
-    if grep -v -E '"GET /(manifest\.json(\.sig)?|Flint-99\.0\.0-macos-arm64\.zip|flint_99\.0\.0_amd64\.deb) HTTP' "$tmp/feed.log" | grep -q 'HTTP/'; then
+    if grep -v -E '"GET /(manifest\.json(\.sig)?|Flint-99\.0\.0-(macos-arm64|windows-x86_64)\.zip|flint_99\.0\.0_amd64\.deb) HTTP' "$tmp/feed.log" | grep -q 'HTTP/'; then
       echo "e2e: fail: the feed got another request: $(grep -v -E 'GET /manifest' "$tmp/feed.log" | head -1)"; echo "gui-e2e ($1): FAILED" >&2; return 1
     fi
   fi
@@ -393,9 +393,13 @@ PY
     [[ -z "$xdisp" ]] || run=(env DISPLAY="$xdisp" timeout 300 "$inst/$exe")
     [[ -z "$win" ]] || run=(timeout 300 "$inst/$exe")
     echo "gui-e2e: selfupdate: $scenario"
+    # Windows: the app starts behind; bring it to the front, as run_app does.
+    [[ -z "$win" ]] || { python3 -I "$root/windows/front.py" "$(cygpath -w "$inst/$exe")" 60 >"$w/front.log" 2>&1 & }
     env FLINT_UPDATE_FEED="http://127.0.0.1:$fport/manifest.json" FLINT_UPDATE_TEST_KEY="$pub" FLINT_UPDATE_TEST_KIND=portable \
       FLINT_CONFIG_DIR="$w/config" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$inst/$res/e2e.js" FLINT_GUI_E2E_VISIBLE="$visible" \
       FLINT_UPDATE_APP_LOG="$w/app2.log" TMPDIR="$w/t" "${run[@]}" >"$w/app1.log" 2>&1 || true
+    # The app update-apply starts (the new one, or the old one again) starts behind too.
+    [[ -z "$win" ]] || { python3 -I "$root/windows/front.py" "$(cygpath -w "$inst/$exe")" 120 >"$w/front2.log" 2>&1 & }
     cat "$w/app1.log" >> "$log"
     grep -E "the page heard the download move|the toast's percentage moved" "$w/app1.log" | sed 's/^\[page\] /  /' || true
     local fail=""
