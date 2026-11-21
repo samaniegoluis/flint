@@ -115,6 +115,7 @@ test "Download for a portable copy, How to update for anything else" {
     r := update_offer(m, repo, true, 0)
     assert_eq(r.action, UPDATE_ACTION_HOW)
     assert_eq(r.how, UPDATE_HOW_REPOSITORY)
+    assert(r.command.contains("apt"))
     mut rpm := deb
     rpm.kind = "package:rpm"
     assert_eq(update_offer(m, rpm, true, 0).how, UPDATE_HOW_NO_ASSET)

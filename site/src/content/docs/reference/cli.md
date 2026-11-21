@@ -336,3 +336,15 @@ start, `conflict` (4) when a `flint` kept running, `io` (10) when a folder could
 moved (each rename is tried for ten seconds: on Windows a program holding a file in the
 folder stops it, and the package is kept), `usage` (2) or `invalid` (7) for its arguments. With `--json` it prints
 `{"applied":…,"step":…,"code":…,"message":…,"kept":…}`.
+
+On Linux, where the package manager has already installed the new package
+([Updates](/guides/updates/)), the app starts the new `flint` with `--start` instead:
+
+```sh
+flint update-apply --wait <pid> --start --to /usr/lib/flint --staging ~/.cache/flint/update [--json]
+```
+
+It swaps nothing: it waits up to ten minutes for process `--wait` to quit, starts the
+Flint beside this `flint` (`--to` must be its own folder) and waits a minute for it to
+say it started. If it does not, the next launch says so (`package_start`); there is no
+old version to put back.

@@ -1,0 +1,100 @@
+package rootupdate
+
+import "core:fs"
+import "core:os"
+import "core:time"
+import "../../domain"
+
+fn temp_dir(name: str) -> str {
+    mut base := os.getenv("TMPDIR")
+    if base.len() == 0 {
+        base = "/tmp"
+    }
+    dir := "{base}/flint-rootupdate-{name}-{time.now_ms()}"
+    os.command("rm", ["-rf", dir]) or {}
+    fs.mkdir_all(dir) or {}
+    return dir
+}
+
+// A home with a staging folder holding `files` (name=content), and a base for root's
+// folder.
+fn staged_home(name: str, files: []str) -> (str, str) {
+    root := temp_dir(name)
+    home := root + "/home"
+    fs.mkdir_all(home + "/.cache/flint/update") or {}
+    fs.mkdir_all(root + "/var") or {}
+    for f in files {
+        i := f.index_of("=") or 0
+        fs.write_text(home + "/.cache/flint/update/" + f[0..i], "{f[i + 1..]}") or {}
+    }
+    return (home, root + "/var")
+}
+
+fn copy_error(mut s: OsRootStage, name: str, max: i64) -> str {
+    mut r := ""
+    s.stage_copy(current_uid(), name, max) or err { r = "{err.message()}" }
+    return r
+}
+
+test "the caller's staged file is copied into root's own folder" {
+    (home, base) := staged_home("copy", ["manifest.json=\{\"version\":\"0.21.0\"\}"])
+    mut s := new_test_root_stage(home, base)
+    path := try s.stage_copy(current_uid(), "manifest.json", 1000)
+    assert(path.starts_with(base + "/flint-update-"))
+    assert_eq(str(try s.stage_read(path, 1000)), "\{\"version\":\"0.21.0\"\}")
+    assert_eq(try s.stage_size(path), 20)
+    // The caller changing their file afterwards changes nothing in root's copy.
+    fs.write_text(home + "/.cache/flint/update/manifest.json", "changed") or {}
+    assert_eq(str(try s.stage_read(path, 1000)), "\{\"version\":\"0.21.0\"\}")
+    s.stage_done()
+    assert(!fs.exists(path))
+    os.command("rm", ["-rf", fs.dirname(home)]) or {}
+}
+
+test "nothing staged, a link, a hard link, too large: refused" {
+    (home, base) := staged_home("refuse", ["package.deb=PPPP"])
+    mut s := new_test_root_stage(home, base)
+    assert(copy_error(mut s, "manifest.json", 1000).starts_with("not_found:"))
+    assert(copy_error(mut s, "package.deb", 3).starts_with("invalid:"))
+    assert(copy_error(mut s, "../package.deb", 1000).starts_with("invalid:"))
+    // A link to a file elsewhere (root would otherwise copy what the caller cannot read).
+    fs.write_text(fs.dirname(home) + "/secret", "root's") or {}
+    os.command("ln", ["-s", fs.dirname(home) + "/secret", home + "/.cache/flint/update/manifest.json"]) or {}
+    assert(copy_error(mut s, "manifest.json", 1000).starts_with("invalid:"))
+    // A hard link: more than one name for the file.
+    os.command("ln", [fs.dirname(home) + "/secret", home + "/.cache/flint/update/manifest.json.sig"]) or {}
+    assert(copy_error(mut s, "manifest.json.sig", 1000).starts_with("invalid:"))
+    s.stage_done()
+    os.command("rm", ["-rf", fs.dirname(home)]) or {}
+}
+
+test "a staging folder that is a link is refused" {
+    (home, base) := staged_home("dirlink", [])
+    os.command("rm", ["-rf", home + "/.cache/flint/update"]) or {}
+    elsewhere := fs.dirname(home) + "/elsewhere"
+    fs.mkdir_all(elsewhere) or {}
+    fs.write_text(elsewhere + "/manifest.json", "x") or {}
+    os.command("ln", ["-s", elsewhere, home + "/.cache/flint/update"]) or {}
+    mut s := new_test_root_stage(home, base)
+    assert(copy_error(mut s, "manifest.json", 1000).starts_with("invalid:"))
+    s.stage_done()
+    os.command("rm", ["-rf", fs.dirname(home)]) or {}
+}
+
+test "the package manager's failure carries its output" {
+    if !fs.exists("/usr/bin/timeout") {
+        // macOS has no coreutils timeout: the installer runs on Linux only.
+        return
+    }
+    dir := temp_dir("installer")
+    fs.write_text(dir + "/fail.sh", "#!/bin/sh\necho 'E: Could not get lock /var/lib/dpkg/lock-frontend' >&2\nexit 100\n") or {}
+    fs.write_text(dir + "/ok.sh", "#!/bin/sh\nexit 0\n") or {}
+    os.command("chmod", ["+x", dir + "/fail.sh", dir + "/ok.sh"]) or {}
+    mut bad := new_test_package_installer(dir + "/fail.sh")
+    mut r := ""
+    bad.pkg_install(PACKAGE_DEB, "/x.deb") or err { r = "{err.message()}" }
+    assert(r.starts_with("io:") && r.contains("Could not get lock"))
+    mut good := new_test_package_installer(dir + "/ok.sh")
+    try good.pkg_install(PACKAGE_RPM, "/x.rpm")
+    os.command("rm", ["-rf", dir]) or {}
+}

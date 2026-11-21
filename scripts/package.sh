@@ -5,6 +5,14 @@
 #   scripts/package.sh windows    # → dist/Flint-<version>-windows-x86_64.zip (windows/package.sh, MSYS2 CLANG64)
 #   scripts/package.sh linux      # → dist/flint_<version>_amd64.deb, dist/flint-<version>.x86_64.rpm
 #   scripts/package.sh linux deb  # one of the two
+#   FLINT_BUILD_TEST_FEED=http://127.0.0.1:8123/manifest.json FLINT_BUILD_TEST_KEY=<hex> \
+#     scripts/package.sh linux deb --test-feed   # → dist/flint-testfeed_<version>_amd64.deb
+#
+# --test-feed (milestone 54, D-124 (5)): a package for containers and Zorin only, with a
+# local feed and its key compiled in (scripts/version.sh), so the self-update can be
+# tried end to end between two local packages (FLINT_VERSION sets each one's version).
+# Its name says testfeed, it holds /usr/lib/flint/TEST-FEED, and release-draft.sh
+# refuses it.
 #
 # The same script runs on a person's machine and in the release workflow, which calls
 # it and nothing else (Principle 16). It reads no secret and signs nothing but ad hoc;
@@ -43,9 +51,20 @@ case "$system" in
 esac
 
 if [[ "$system" == linux ]]; then
-  formats="${2:-deb rpm}"
+  formats="" test_feed=0
+  for a in "${@:2}"; do
+    if [[ "$a" == --test-feed ]]; then test_feed=1; else formats="$formats $a"; fi
+  done
+  formats="${formats:-deb rpm}"
+  if [[ $test_feed == 1 ]]; then
+    [[ -n "${FLINT_BUILD_TEST_FEED:-}" && -n "${FLINT_BUILD_TEST_KEY:-}" ]] \
+      || { echo "package: --test-feed needs FLINT_BUILD_TEST_FEED and FLINT_BUILD_TEST_KEY" >&2; exit 1; }
+  else
+    # A release build never carries a test feed, even one left in the environment.
+    unset FLINT_BUILD_TEST_FEED FLINT_BUILD_TEST_KEY
+  fi
   for f in $formats; do
-    [[ "$f" == deb || "$f" == rpm ]] || { echo "usage: scripts/package.sh linux [deb|rpm]" >&2; exit 1; }
+    [[ "$f" == deb || "$f" == rpm ]] || { echo "usage: scripts/package.sh linux [deb|rpm] [--test-feed]" >&2; exit 1; }
   done
   command -v docker >/dev/null || { echo "package: the Linux packages are built with docker" >&2; exit 1; }
   version="$(scripts/version.sh)"
@@ -63,6 +82,7 @@ if [[ "$system" == linux ]]; then
     # second build compiles only what changed and the checkout never gets Linux's
     # .cfire/ or build/ folders; the version comes from the host's git.
     docker run --rm --platform linux/amd64 -e FLINT_VERSION="$version" \
+      -e FLINT_BUILD_TEST_FEED="${FLINT_BUILD_TEST_FEED:-}" -e FLINT_BUILD_TEST_KEY="${FLINT_BUILD_TEST_KEY:-}" \
       -e OWNER="$(id -u):$(id -g)" \
       -v "$root:/src:ro" -v "flint-package-$f-cache:/cache" -v "$root/dist:/out" \
       "$image" bash -c '
@@ -78,7 +98,9 @@ if [[ "$system" == linux ]]; then
         for p in /tmp/out/*; do install -m 644 "$p" /out/; chown "$OWNER" "/out/$(basename "$p")"; done'
   done
   for f in $formats; do
-    if [[ "$f" == deb ]]; then file="dist/flint_${version}_amd64.deb"; else file="dist/flint-${version}.x86_64.rpm"; fi
+    name=flint
+    [[ $test_feed == 1 ]] && name=flint-testfeed
+    if [[ "$f" == deb ]]; then file="dist/${name}_${version}_amd64.deb"; else file="dist/${name}-${version}.x86_64.rpm"; fi
     sum=$( (command -v sha256sum >/dev/null && sha256sum "$file" || shasum -a 256 "$file") | awk '{print $1}')
     echo "package: $root/$file"
     echo "package: sha256 $sum"

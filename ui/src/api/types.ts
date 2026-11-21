@@ -219,8 +219,8 @@ export interface Settings {
 /** The update check's outcome (milestone 52, src/domain/update.cf), as `update:status`. */
 export type UpdateState = 'idle' | 'checking' | 'up_to_date' | 'available' | 'downloading' | 'ready' | 'error';
 export type UpdateAction = 'download' | 'how' | '';
-/** Why How to update: a .deb/.rpm, a build from source, a folder Flint can't write, no package for this system. */
-export type UpdateHow = 'package' | 'source' | 'readonly' | 'no_asset' | '';
+/** Why How to update: a .deb/.rpm (from a repository since milestone 54), a build from source, a folder Flint can't write, no package for this system. */
+export type UpdateHow = 'package' | 'repository' | 'source' | 'readonly' | 'no_asset' | '';
 
 export interface UpdateStatus {
   state: UpdateState;
@@ -235,6 +235,8 @@ export interface UpdateStatus {
   page: string;
   action: UpdateAction;
   how: UpdateHow;
+  /** How to update from a repository (milestone 54): the system updater's command. */
+  command: string;
   asset_url: string;
   asset_size: number;
   /** The package's SHA-256 from the verified manifest (milestone 53). */

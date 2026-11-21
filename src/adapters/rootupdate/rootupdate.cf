@@ -1,0 +1,187 @@
+package rootupdate
+
+// flint-update-root's side of the Linux self-update (milestone 54, D-124, Principle 17):
+// the `RootStage` port (the caller's staged files copied, without following a link,
+// into a folder only root can write: native/flint_root_update.hpp, CF-180) and the
+// `PackageInstaller` port (apt-get or dnf, with a deadline through coreutils'
+// `timeout`). Linked by flint-update-root alone, never by the app or the CLI.
+
+// CFIRE-UPSTREAM: CF-180
+import cpp "flint_root_update.hpp"
+
+import "core:fs"
+import "core:os"
+import "../../domain"
+
+// How long apt or dnf may take (Principle 8: they may fetch a new dependency).
+PACKAGE_INSTALL_TIMEOUT_S: str = "600"
+// Where root's folder goes.
+ROOT_STAGE_BASE: str = "/var/tmp"
+// The tail of apt's or dnf's output an error carries.
+INSTALL_OUTPUT_TAIL: usize = 400
+
+type OsRootStage struct {
+    // The caller's home ("": from the system's user database, by uid). A test's own.
+    home: str
+    // Root's folder, made at the first copy ("" until then).
+    dir:  str
+    base: str
+}
+
+fn new_os_root_stage() -> OsRootStage {
+    return OsRootStage{ home: "", dir: "", base: ROOT_STAGE_BASE }
+}
+
+// For tests: the caller's home and root's base folder given.
+fn new_test_root_stage(home: str, base: str) -> OsRootStage {
+    return OsRootStage{ home: home, dir: "", base: base }
+}
+
+fn (mut self: OsRootStage) stage_copy(uid: i64, name: str, max_bytes: i64) -> str! {
+    mut why := ""
+    if self.dir.len() == 0 {
+        mut made := ""
+        mut ok := false
+        // CFIRE-UPSTREAM: CF-180
+        cpp {
+            ok = flint_root::make_root_dir(std::string(self.base), made, why);
+        }
+        if !ok {
+            return error(coded(ERR_IO, "cannot make a folder for the update: {why}"))
+        }
+        self.dir = made
+    }
+    mut home := self.home
+    if home.len() == 0 {
+        mut ok := false
+        // CFIRE-UPSTREAM: CF-180
+        cpp {
+            ok = flint_root::home_of(uid, home, why);
+        }
+        if !ok {
+            return error(coded(ERR_INVALID, why))
+        }
+    }
+    dest := self.dir + "/" + name
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-180
+    cpp {
+        rc = flint_root::copy_staged(uid, std::string(home), std::string(name), max_bytes, std::string(dest), why);
+    }
+    if rc == 1 {
+        return error(coded(ERR_NOT_FOUND, why))
+    }
+    if rc == 2 {
+        return error(coded(ERR_INVALID, why))
+    }
+    if rc != 0 {
+        return error(coded(ERR_IO, why))
+    }
+    return dest
+}
+
+fn (self: OsRootStage) stage_read(path: str, max_bytes: i64) -> []byte! {
+    size := try self.stage_size(path)
+    if size > max_bytes {
+        return error(coded(ERR_INVALID, "{fs.basename(path)} is too large"))
+    }
+    return fs.read_bytes(path) or err {
+        return error(coded(ERR_IO, "cannot read {path}: {err.message()}"))
+    }
+}
+
+fn (self: OsRootStage) stage_size(path: str) -> i64! {
+    mut why := ""
+    mut n: i64 = 0
+    // CFIRE-UPSTREAM: CF-180
+    cpp {
+        n = flint_root::file_size(std::string(path), why);
+    }
+    if n < 0 {
+        return error(coded(ERR_IO, why))
+    }
+    return n
+}
+
+fn (mut self: OsRootStage) stage_done() {
+    if self.dir.len() > 0 {
+        d := self.dir
+        // CFIRE-UPSTREAM: CF-180
+        cpp {
+            flint_root::remove_tree(std::string(d));
+        }
+        self.dir = ""
+    }
+}
+
+// The caller pkexec names (PKEXEC_UID), -1 when there is none; whether this is root.
+fn pkexec_caller() -> i64 {
+    mut uid: i64 = -1
+    // CFIRE-UPSTREAM: CF-180
+    cpp {
+        uid = flint_root::pkexec_uid();
+    }
+    return uid
+}
+
+fn running_as_root() -> bool {
+    mut on := false
+    // CFIRE-UPSTREAM: CF-180
+    cpp {
+        on = flint_root::is_root();
+    }
+    return on
+}
+
+fn current_uid() -> i64 {
+    mut uid: i64 = -1
+    // CFIRE-UPSTREAM: CF-180
+    cpp {
+        uid = flint_root::current_uid();
+    }
+    return uid
+}
+
+// The package manager. `tool` is the command run for a format (absolute paths: pkexec
+// gives root a minimal PATH); a test gives its own.
+type OsPackageInstaller struct {
+    apt: str
+    dnf: str
+}
+
+fn new_os_package_installer() -> OsPackageInstaller {
+    return OsPackageInstaller{ apt: "/usr/bin/apt-get", dnf: "/usr/bin/dnf" }
+}
+
+fn new_test_package_installer(tool: str) -> OsPackageInstaller {
+    return OsPackageInstaller{ apt: tool, dnf: tool }
+}
+
+fn output_tail(text: str) -> str {
+    t := text.trim()
+    if t.len() <= INSTALL_OUTPUT_TAIL {
+        return "{t}"
+    }
+    return "{t[t.len() - INSTALL_OUTPUT_TAIL..]}"
+}
+
+fn (mut self: OsPackageInstaller) pkg_install(format: str, path: str) -> void! {
+    mut args: []str = []
+    mut tool := "apt-get"
+    if format == PACKAGE_RPM {
+        tool = "dnf"
+        args = ["/usr/bin/timeout", PACKAGE_INSTALL_TIMEOUT_S, self.dnf, "install", "-y", "-q", path]
+    } else {
+        // apt-get reads no prompt: noninteractive, and never a configuration question.
+        args = ["DEBIAN_FRONTEND=noninteractive", "/usr/bin/timeout", PACKAGE_INSTALL_TIMEOUT_S, self.apt, "install", "-y", "-q", path]
+    }
+    res := os.command("/usr/bin/env", args) or err {
+        return error(coded(ERR_IO, "{tool} could not be started: {err.message()}"))
+    }
+    if res.exit_code == 124 {
+        return error(coded(ERR_TIMEOUT, "{tool} did not finish within {PACKAGE_INSTALL_TIMEOUT_S} s"))
+    }
+    if res.exit_code != 0 {
+        return error(coded(ERR_IO, "{tool} could not install it: {output_tail(res.stderr + "\n" + res.stdout)}"))
+    }
+}

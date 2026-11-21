@@ -101,6 +101,8 @@ type UpdateStatus struct {
     // UPDATE_ACTION_*, and for `how` its reason (UPDATE_HOW_*).
     action:     str  `json:"action"`
     how:        str  `json:"how"`
+    // For How to update from a repository (milestone 54): the system updater's command.
+    command:    str  `json:"command"`
     // The package for this system (Download), when there is one.
     asset_url:  str  `json:"asset_url"`
     asset_size: i64  `json:"asset_size"`
@@ -120,7 +122,7 @@ type UpdateStatus struct {
 }
 
 fn update_status_idle(current: str, auto: bool, checked_at: i64) -> UpdateStatus {
-    return UpdateStatus{ state: UPDATE_IDLE, current: current, checked_at: checked_at, auto: auto, version: "", date: "", summary: "", page: "", action: "", how: "", asset_url: "", asset_size: 0, asset_sha256: "", received: 0, toast: false, outcome: "", code: "", message: "" }
+    return UpdateStatus{ state: UPDATE_IDLE, current: current, checked_at: checked_at, auto: auto, version: "", date: "", summary: "", page: "", action: "", how: "", command: "", asset_url: "", asset_size: 0, asset_sha256: "", received: 0, toast: false, outcome: "", code: "", message: "" }
 }
 
 // Only a build from source may check another feed and key, its tests' local feed on
@@ -380,6 +382,7 @@ fn update_offer(m: UpdateManifest, here: UpdateHere, auto: bool, checked_at: i64
         // copy, and root installs it; one from a repository is the system updater's.
         if here.source == INSTALL_FROM_REPOSITORY {
             s.how = UPDATE_HOW_REPOSITORY
+            s.command = package_update_command(package_format(here.kind))
         } else if package_format(here.kind).len() == 0 {
             s.how = UPDATE_HOW_PACKAGE
         } else if s.asset_url.len() == 0 {

@@ -1,0 +1,70 @@
+package main
+
+// flint-update-root (milestone 54, D-124, Principle 17): the Linux self-update's root
+// side, run only by the app through `pkexec /usr/lib/flint/flint-update-root` under
+// polkit's action dev.flint.update (auth_admin, never kept). It takes no argument and
+// no path: the caller is pkexec's PKEXEC_UID, the staged files are that user's
+// `~/.cache/flint/update/`, the format is root's own install-kind and the version the
+// one this helper was built as. It prints what it did as JSON and exits with
+// ROOT_EXIT_* (0 installed, 2 usage, 3 refused, 4 apt or dnf failed, 5 nothing staged).
+
+import "core:encoding/hex"
+import "core:fs"
+import "core:json"
+import "core:os"
+import "../../domain"
+import "../../application"
+import "../../adapters/crypto"
+import "../../adapters/rootupdate"
+import "../version"
+
+// The package's folder: fixed, never taken from the caller or from argv[0].
+PACKAGE_LIB: str = "/usr/lib/flint"
+
+fn finish(o: RootOutcome) {
+    if o.installed {
+        eprintln("flint-update-root: Flint {o.version} installed")
+    } else {
+        eprintln("flint-update-root: nothing installed ({o.code}): {o.message}")
+    }
+    println(json.stringify(o))
+    os.exit(root_exit_code(o))
+}
+
+fn usage(message: str) -> RootOutcome {
+    return RootOutcome{ installed: false, version: "", code: ERR_USAGE, message: message, discard: false }
+}
+
+fn main() {
+    if os.args().len() > 1 {
+        finish(usage("flint-update-root takes no arguments: Flint runs it through pkexec"))
+        return
+    }
+    if !running_as_root() {
+        finish(usage("flint-update-root runs as root, through pkexec"))
+        return
+    }
+    uid := pkexec_caller()
+    if uid <= 0 {
+        finish(usage("flint-update-root runs through pkexec, for the person whose Flint asked"))
+        return
+    }
+    kind := install_kind_of(fs.read_text(PACKAGE_LIB + "/install-kind") or "")
+    // A test package (scripts/package.sh linux --test-feed) has its local feed's key
+    // compiled in; a release has none and takes Flint's key alone.
+    mut key := hex.decode(UPDATE_PUBLIC_KEY_HEX) or []
+    mut prefix := UPDATE_DOWNLOAD_PREFIX
+    if version.UPDATE_TEST_KEY_HEX.len() > 0 {
+        key = hex.decode(version.UPDATE_TEST_KEY_HEX) or []
+        prefix = update_download_prefix(version.UPDATE_TEST_FEED)
+        eprintln("flint-update-root: a test package: the test feed's key")
+    }
+    sodium := new_sodium() or {
+        finish(RootOutcome{ installed: false, version: "", code: ERR_INTERNAL, message: "libsodium failed to initialise", discard: false })
+        return
+    }
+    mut stage := new_os_root_stage()
+    mut installer := new_os_package_installer()
+    req := RootUpdateRequest{ uid: uid, format: package_format(kind), installed: version.FLINT_VERSION, public_key: key, download_prefix: prefix }
+    finish(root_install_update(mut stage, sodium, sodium, mut installer, req))
+}

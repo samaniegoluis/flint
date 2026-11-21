@@ -3203,3 +3203,25 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   Properties and Task Manager's details show none. A `Version` field in
   `build.Executable` would fill it.
 
+
+### CF-180 · gap · `confirmed`: no file owner, no uid lookup, no `openat`/`O_NOFOLLOW`, and `os.command` has no deadline
+- **Seen (milestone 54):** flint-update-root runs as root (pkexec) and must read files in
+  the caller's home without trusting a path twice. `core:fs` has `stat` (size, mode,
+  `is_symlink`) but no owner (`st_uid`), no link count, no descriptor-relative open
+  (`openat`) and no `O_NOFOLLOW`/`O_NONBLOCK`, so a check and the open that follows it
+  can be raced by the file's owner (a link swapped in between). `core:os` has no uid
+  (`getuid`/`geteuid`) and no user database (`getpwuid`): the caller's home can only come
+  from `$HOME`, which root must not trust. `mkdtemp` is missing too. And `os.command`
+  waits forever: a package manager that hangs holds the helper with it (worked around
+  with coreutils' `timeout`, which macOS lacks).
+- **Workaround:** `src/adapters/rootupdate/native/flint_root_update.hpp`: `getpwuid_r`,
+  each folder opened with `openat(…, O_NOFOLLOW | O_DIRECTORY)` and checked with `fstat`,
+  the file opened `O_NOFOLLOW | O_NONBLOCK` and checked on its descriptor (regular, the
+  caller's, one link, its size), copied from that descriptor into a `mkdtemp` folder;
+  `geteuid`, `PKEXEC_UID`. The package manager runs under `/usr/bin/timeout`.
+- **Ideal:** `fs.open(path, { no_follow: true, dir: parent_handle })`, `File.info()` with
+  `uid`, `gid`, `nlink`; `os.uid()`, `os.euid()`, `os.user(uid).home`; `fs.mkdtemp`; and
+  `os.command(…, { timeout_ms })` that kills the child and says so.
+- **Also seen:** `cfire test` of a package whose `import cpp` header comes from a `.pc`
+  prints `clang AST ingestion failed … file not found` for that header and then runs
+  every test and passes; the line reads like a failure.

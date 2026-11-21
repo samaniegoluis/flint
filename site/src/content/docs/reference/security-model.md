@@ -219,6 +219,21 @@ connect, 30 s in all) and a size cap, and redirects are followed over HTTPS only
   to quit, swaps the two folders by renaming them, and starts the new app. Until the
   new app says it has started, the old folder is kept; if it does not, the old one is
   put back and opened. No file in use is ever overwritten.
+- **On Linux, root checks again.** A `.deb` or `.rpm` is installed by the package
+  manager as root, and the app runs as you, so the app's own check is not enough: a
+  program running as you could swap the file between the app's check and the install,
+  and gain root with the password you typed for Flint. So **Relaunch** runs
+  `pkexec /usr/lib/flint/flint-update-root` under its own polkit action,
+  `dev.flint.update`, which asks for the system password every time (`auth_admin`,
+  never remembered). The helper takes no argument and no path: it reads only
+  `~/.cache/flint/update/` of the user pkexec names, opening each folder and file
+  without following a link and taking only plain files that user owns; copies them into
+  a folder only root can write; and on that copy verifies the manifest's signature
+  against the key compiled into it, that it names a release newer than the installed
+  one (never a downgrade or a reinstall) with a package of the installed format, and the
+  package's size and SHA-256. Only then is the copy handed to `apt-get install` or
+  `dnf install`, with a deadline. Any failure installs nothing. The helper links
+  libsodium and nothing else of Flint's: no SSH, no vault.
 
 ## Next
 

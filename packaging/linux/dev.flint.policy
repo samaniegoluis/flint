@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
-<!-- Flint's presence check for the caller approval window (milestone 12). Install to
-     /usr/share/polkit-1/actions/. auth_self: the person logged in proves they are at
-     the machine (password or fingerprint); no admin rights are involved. -->
+<!-- Flint's polkit actions, installed to /usr/share/polkit-1/actions/ by the packages.
+     dev.flint.approve: the presence check for the caller approval window (milestone
+     12); auth_self, the person logged in proves they are at the machine (password or
+     fingerprint), no admin rights involved. dev.flint.update: below. -->
 <policyconfig>
   <vendor>Flint</vendor>
   <action id="dev.flint.approve">
@@ -14,5 +15,19 @@
       <allow_inactive>auth_self</allow_inactive>
       <allow_active>auth_self</allow_active>
     </defaults>
+  </action>
+  <!-- The Linux self-update (milestone 54, D-124, Principle 17): Relaunch runs
+       `pkexec /usr/lib/flint/flint-update-root`, which verifies the staged package again
+       as root and has apt or dnf install it. auth_admin, never kept: the system
+       password every time, and no other root action rides on it. -->
+  <action id="dev.flint.update">
+    <description>Install a Flint update</description>
+    <message>Flint needs the system password to install its update</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/flint/flint-update-root</annotate>
   </action>
 </policyconfig>

@@ -51,3 +51,15 @@ FlintVaultServer := build.Executable("flint-vault-server", {
     OutDir:    "build",
     PkgConfig: ["flint-server-native", "libsodium"],
 })
+
+// The Linux self-update's root helper (milestone 54, D-124, Principle 17): run by the
+// app through `pkexec`, shipped in the .deb and the .rpm at /usr/lib/flint. It links
+// libsodium (the manifest's signature, the package's SHA-256) and its own shim, never
+// libssh, FreeRDP, SQLCipher or the vault.
+FlintUpdateRoot := build.Executable("flint-update-root", {
+    Entry:     "src/drivers/update-root/main.cf",
+    Subsystem: "console",
+    OutDir:    "build",
+    PkgConfig: ["flint-root-native", "libsodium"],
+})
+

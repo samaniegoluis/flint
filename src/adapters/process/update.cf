@@ -209,3 +209,58 @@ fn temp_base() -> str {
     }
     return "/tmp"
 }
+
+// ---- The Linux package update (milestone 54, D-124) -------------------------------
+
+// The app's side: `pkexec <helper>` (the `RootRunner` port) and the package manager
+// asked where Flint came from (`PackageSourceProbe`). Absolute paths: nothing here is
+// found through PATH.
+PKEXEC_PATH: str = "/usr/bin/pkexec"
+// How long asking apt or dnf where Flint came from may take, at launch.
+PACKAGE_SOURCE_TIMEOUT_S: str = "15"
+
+type OsRootRunner struct {
+    pkexec: str
+}
+
+fn new_os_root_runner() -> OsRootRunner {
+    return OsRootRunner{ pkexec: PKEXEC_PATH }
+}
+
+// Waits for the person's answer in polkit's dialog and for apt or dnf: no deadline of
+// its own (the helper bounds the package manager, Principle 8).
+fn (mut self: OsRootRunner) run_root_helper(helper: str) -> RootRun! {
+    if !fs.exists(self.pkexec) {
+        return error(coded(ERR_UNSUPPORTED, "pkexec is not installed, so Flint cannot ask for the system password: install the update with your package manager"))
+    }
+    res := os.command(self.pkexec, [helper]) or err {
+        return error(coded(ERR_IO, "pkexec could not be started: {err.message()}"))
+    }
+    if res.stderr.trim().len() > 0 {
+        write_stderr("flint-gui: {helper}: {res.stderr.trim()}\n")
+    }
+    return RootRun{ exit_code: res.exit_code, stdout: res.stdout }
+}
+
+type OsPackageSourceProbe struct {
+    ready: bool
+}
+
+fn new_os_package_source_probe() -> OsPackageSourceProbe {
+    return OsPackageSourceProbe{ ready: true }
+}
+
+fn (self: OsPackageSourceProbe) package_source_text(format: str) -> str {
+    mut args: []str = [PACKAGE_SOURCE_TIMEOUT_S, "/usr/bin/apt-cache", "policy", "flint"]
+    if format == PACKAGE_RPM {
+        // -C: from the cache only, never a metadata download at launch.
+        args = [PACKAGE_SOURCE_TIMEOUT_S, "/usr/bin/dnf", "-C", "-q", "info", "--installed", "flint"]
+    }
+    if !fs.exists("/usr/bin/timeout") || !fs.exists(args[1]) {
+        return ""
+    }
+    res := os.command("/usr/bin/timeout", args) or {
+        return ""
+    }
+    return res.stdout
+}

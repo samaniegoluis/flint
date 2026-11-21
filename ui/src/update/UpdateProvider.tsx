@@ -13,7 +13,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api, on } from '../api/backend';
 import type { ChangeVersion, UpdateStatus } from '../api/types';
 import { toasts, useApp } from '../state/app';
-import { UPDATE_TOAST_KEY, UPDATES_DOCS_URL, relaunchClosesText, updateActionLabel, updateDownloadFailure, updateDownloadingText, updatePercent, updateReadyText, updateToastText } from '../lib/update';
+import { UPDATE_TOAST_KEY, UPDATES_DOCS_URL, relaunchClosesText, updateActionLabel, updateDownloadFailure, updateDownloadingText, updatePercent, updateReadyText, updateRelaunchFailure, updateToastText } from '../lib/update';
 import { sessions } from '../sessions/store';
 import { tunnels } from '../tunnels/store';
 import { RelaunchConfirm } from './RelaunchConfirm';
@@ -125,6 +125,16 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       notify({
         text: updateReadyText(st), kind: 'ok', key: UPDATE_TOAST_KEY, duration: 'sticky',
         actions: [{ label: 'Relaunch', primary: true, run: () => relaunch() }],
+      });
+      return;
+    }
+    if (before?.state === 'ready' && st.code && (st.state === 'ready' || st.state === 'available')) {
+      // Relaunch installed nothing (milestone 54): a password not given or apt failing
+      // keeps the package for another Relaunch; a check root failed discarded it.
+      const f = updateRelaunchFailure(st);
+      notify({
+        text: f.text, kind: 'error', key: UPDATE_TOAST_KEY,
+        actions: [f.kept ? { label: 'Relaunch', primary: true, run: () => relaunch() } : { label: 'Details', run: () => openAbout() }],
       });
       return;
     }

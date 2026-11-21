@@ -69,6 +69,28 @@ everything as it was, opens the old version, keeps the download and names the pr
 close that program and choose **Relaunch** again. An update downloaded by Flint carries
 no download mark, so SmartScreen does not ask again.
 
+**Linux (`.deb` and `.rpm`):** a package's files belong to the system, not to you, so
+the package manager installs the update, as it installed Flint. Flint downloads the new
+package into `~/.cache/flint/update/`, with the signed manifest beside it. **Relaunch**
+asks for your system password (*Flint needs the system password to install its
+update*), every time. Then a small helper inside the package,
+`/usr/lib/flint/flint-update-root`, copies the files where only the system can change
+them, checks that copy again (the signature, the SHA-256, and that the version is newer
+than the one installed) and has `apt` or `dnf` install it, exactly as
+`sudo apt install ./flint_<version>_amd64.deb` would: removing Flint later still works
+the usual way. Then the old Flint quits and the new one opens.
+
+- **Cancel the password** and nothing is installed; the download stays, so **Relaunch**
+  can ask again.
+- **`apt` or `dnf` fails** (another update is running, say) and Flint says why and keeps
+  the download.
+- **The second check fails** and the download is deleted: *didn't pass verification*.
+- There is no going back to the old version on its own: if the new one does not open,
+  Flint says so the next time it opens.
+
+This works from the first version that has it (0.21.0): a Flint installed from a package
+before that shows **How to update**, so install the new package by hand once.
+
 Applying an update is the job of `flint update-apply`, which the app starts from a copy
 of the new version's `flint`; it is not a command you type.
 
@@ -79,7 +101,8 @@ update**, which opens **Settings → About** with what to do:
 
 | Your copy | How it updates |
 |---|---|
-| A `.deb` or `.rpm` package | Download the new package from the release page and install it the same way (`sudo apt install ./flint_<version>_amd64.deb`, `sudo dnf install ./flint-<version>.x86_64.rpm`) |
+| A `.deb` or `.rpm` from a package repository | Your system's updater installs it (Flint shows the command, with **Copy**: `sudo apt update && sudo apt install --only-upgrade flint`, or `sudo dnf upgrade flint`). Flint has no repository yet; a package installed from a file updates itself, above |
+| A `.deb` or `.rpm` before 0.21.0 | Download the new package from the release page and install it the same way (`sudo apt install ./flint_<version>_amd64.deb`, `sudo dnf install ./flint-<version>.x86_64.rpm`) |
 | Built from source | Pull the new version and build it again ([Build from source](/start/build-from-source/)) |
 | In a folder you can't write | Download the new version from the release page and replace the copy |
 | A system with no package yet | Build from source, or watch the release page for one |
@@ -97,5 +120,7 @@ in the command palette. The full history is in the
 Every release's manifest is signed with Flint's own Ed25519 key, and Flint carries the
 public half inside it. A manifest whose signature does not verify is ignored before
 Flint reads it, and one that names anything but this project's own releases is refused.
-The package is checked against the manifest's SHA-256 before it is unpacked. Details in
-the [security model](/reference/security-model/#updates).
+The package is checked against the manifest's SHA-256 before it is unpacked. On Linux,
+where installing takes the system's password, the system checks it all again on its own
+copy before the package manager sees it. Details in the
+[security model](/reference/security-model/#updates).

@@ -25,6 +25,8 @@ done
 [[ $pc_fail -eq 0 ]] || exit 1
 scripts/build-gui.sh
 cfire build Flint
+# The self-update's root helper (milestone 54, D-124).
+cfire build FlintUpdateRoot
 
 # 1. The files.
 stage="$(mktemp -d)"
@@ -33,9 +35,18 @@ lib="$stage/lib"
 mkdir -p "$lib/licenses"
 install -m 755 build/gui/Flint "$lib/Flint"
 install -m 755 build/flint "$lib/flint"
+install -m 755 build/flint-update-root "$lib/flint-update-root"
 cp -R build/gui/ui "$lib/ui"
 # How this copy updates (milestone 52): the package manager, and which one.
 printf 'package:%s\n' "$format" > "$lib/install-kind"
+# A test package (milestone 54, `package.sh linux --test-feed`): marked, so nothing
+# mistakes it for a release (release-draft.sh refuses it by name).
+name=flint
+if [[ -n "${FLINT_BUILD_TEST_KEY:-}" ]]; then
+  printf 'A test package: its update feed is %s, never a release.\n' "${FLINT_BUILD_TEST_FEED:-}" > "$lib/TEST-FEED"
+  name=flint-testfeed
+  echo "package: a TEST package (feed ${FLINT_BUILD_TEST_FEED:-})"
+fi
 cp CHANGELOG.md "$lib/CHANGELOG.md"
 cp LICENSE "$lib/licenses/Flint-LICENSE"
 cp packaging/linux/dev.flint.app.desktop "$stage/"
@@ -59,11 +70,14 @@ owner_of() {
   fi | head -1 | cut -d: -f1
 }
 deps=()
-for soname in $( (needed "$lib/Flint"; needed "$lib/flint") | sort -u); do
+for soname in $( (needed "$lib/Flint"; needed "$lib/flint"; needed "$lib/flint-update-root") | sort -u); do
   pkg="$(owner_of "$soname")" || exit 1
   [[ -n "$pkg" ]] || { echo "package: no package owns $soname" >&2; exit 1; }
   deps+=("$pkg")
 done
+# Relaunch asks for the system password through pkexec (milestone 54): its own package
+# on Debian and Ubuntu, part of polkit on Fedora.
+if [[ "$format" == deb ]]; then deps+=(pkexec); else deps+=(polkit); fi
 mapfile -t deps < <(printf '%s\n' "${deps[@]}" | sort -u)
 echo "package: depends on ${deps[*]}"
 
@@ -77,9 +91,9 @@ sed -e "s|\${FLINT_STAGE}|$stage|g" -e "s|\${FLINT_VERSION}|$version|g" packagin
 } >> "$config"
 mkdir -p "$out"
 if [[ "$format" == deb ]]; then
-  file="$out/flint_${version}_amd64.deb"
+  file="$out/${name}_${version}_amd64.deb"
 else
-  file="$out/flint-${version}.x86_64.rpm"
+  file="$out/${name}-${version}.x86_64.rpm"
 fi
 rm -f "$file"
 nfpm package --config "$config" --packager "$format" --target "$file"

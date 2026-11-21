@@ -176,6 +176,12 @@ FLINT_UPDATE_SIGNING_KEY="$(cat keys/flint-update-signing.key)" draft draft v1.1
 check "a pre-release never gets a manifest" '[[ $rc == 0 && ! -f pkgs/manifest.json && "$(cat gh.log)" != *manifest* ]]'
 unset FLINT_UPDATE_PUBLIC_KEY_HEX
 
+mkdir -p testpkgs
+echo deb > testpkgs/flint-testfeed_1.0.0_amd64.deb
+: > gh.log
+draft draft v1.0.0 testpkgs
+check "a test package (--test-feed) is refused" '[[ $rc == 1 && "$out" == *"test package"* && "$(cat gh.log)" != *create* ]]'
+
 mkdir -p empty
 draft draft v1.0.0 empty
 check "a folder with no packages is refused" '[[ $rc == 1 && "$out" == *"no packages"* ]]'

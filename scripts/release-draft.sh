@@ -83,6 +83,11 @@ case "$cmd" in
     rm -f "$dir/manifest.json" "$dir/manifest.json.sig"
     while IFS= read -r f; do files+=("$f"); done < <(find "$dir" -maxdepth 1 -type f ! -name SHA256SUMS | sort)
     [[ ${#files[@]} -gt 0 ]] || die "$dir holds no packages"
+    # A test package (milestone 54, package.sh linux --test-feed) has a local feed and
+    # its key compiled in: never a release (Principle 17).
+    for f in "${files[@]}"; do
+      [[ "$(basename "$f")" != *testfeed* ]] || die "$(basename "$f") is a test package (--test-feed): never released"
+    done
     (cd "$dir" && for f in "${files[@]}"; do
        n="$(basename "$f")"
        printf '%s  %s\n' "$(sha256 "$n")" "$n"

@@ -48,6 +48,30 @@ export function updateReadyText(st: UpdateStatus): string {
   return `Flint ${st.version} is ready`;
 }
 
+/**
+ * Milestone 54 (D-124): a Linux package (.deb, .rpm) is installed by the package manager
+ * as root, so Relaunch asks for the system password first.
+ */
+export function updateIsPackage(st: UpdateStatus | null): boolean {
+  return !!st && /\.(deb|rpm)$/.test(st.asset_url);
+}
+
+/** The Ready line's hint (24e3): what Relaunch does. */
+export function updateReadyHint(st: UpdateStatus): string {
+  if (updateIsPackage(st)) {
+    return "Downloaded and checked against the release's SHA-256. Relaunch asks for your system password, checks it again and installs it with your package manager.";
+  }
+  return "Downloaded and checked against the release's SHA-256. Nothing changes until you relaunch.";
+}
+
+/** A Relaunch that installed nothing (milestone 54): its words, and whether the package was kept for another try. */
+export function updateRelaunchFailure(st: UpdateStatus): { text: string; kept: boolean } {
+  const kept = st.state === 'ready';
+  if (st.code === 'denied') return { text: `Flint ${st.version} wasn't installed · the system password wasn't given`, kept };
+  if (!kept) return { text: `Flint ${st.version} didn't pass verification and was discarded`, kept };
+  return { text: `Couldn't install Flint ${st.version}${st.message ? ` · ${st.message}` : ''}`, kept };
+}
+
 /** A download that failed (24c4a, 24c4b): its toast's words, and whether Retry makes sense. */
 export function updateDownloadFailure(st: UpdateStatus): { text: string; retry: boolean } {
   switch (st.code) {
@@ -158,6 +182,7 @@ export function updatePopoverDetail(st: UpdateStatus): string {
 export function updateHowText(st: UpdateStatus): string {
   switch (st.how) {
     case 'package': return 'This copy was installed from a .deb or .rpm package: download the new package from the release page and install it the same way.';
+    case 'repository': return "This copy came from a package repository: your system's updater installs the new version.";
     case 'source': return 'This copy was built from source: pull the new version and build it again.';
     case 'readonly': return "Flint can't replace this copy where it is: download the new version from the release page and replace it.";
     case 'no_asset': return 'This release has no package for your system: build it from source, or download it from the release page.';

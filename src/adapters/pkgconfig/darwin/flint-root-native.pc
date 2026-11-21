@@ -1,0 +1,8 @@
+# CFIRE-UPSTREAM: CF-031
+# flint-update-root's native shim (milestone 54, D-124): the staged files read as root
+# without following a link (CF-180). The helper runs on Linux only, but `cfire test`
+# links every executable's list, so every system has this file.
+Name: flint-root-native
+Description: Native shim for flint-update-root
+Version: 1
+Cflags: -I${pcfiledir}/../../rootupdate/native

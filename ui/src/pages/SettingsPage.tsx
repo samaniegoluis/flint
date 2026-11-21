@@ -24,7 +24,7 @@ import { ConnectServerModal } from '../sync/ConnectServerModal';
 import { ReplaceTokenModal } from '../sync/ReplaceTokenModal';
 import { agoLabel, SYNC_LABEL } from '../lib/sync';
 import { useUpdate, useUpdateOnScreen } from '../update/UpdateProvider';
-import { updateActionLabel, updateAvailable, updateDownloadFailure, updateDownloading, updateHowText, updatePercent, updateReady, updateStateLine } from '../lib/update';
+import { updateActionLabel, updateAvailable, updateDownloadFailure, updateDownloading, updateHowText, updatePercent, updateReady, updateReadyHint, updateRelaunchFailure, updateStateLine } from '../lib/update';
 
 export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'about';
 
@@ -330,7 +330,8 @@ function Updates() {
           <i style={{ width: `${pct}%` }} />
         </div>
       )}
-      {ready && <span className="hint">Downloaded and checked against the release's SHA-256. Nothing changes until you relaunch.</span>}
+      {ready && <span className="hint" data-about-ready-hint>{updateReadyHint(st!)}</span>}
+      {ready && st!.code && <span className="hint danger-t" data-about-relaunch-failed={st!.code}>{updateRelaunchFailure(st!).text}</span>}
       {failed && <span className="hint danger-t" data-about-failed={st?.code}>{failed.retry ? failed.text : `The download of ${st!.version} didn't pass verification and was discarded. Nothing was installed.`}</span>}
       {how && (
         <span className="hint" data-about-how={st?.how}>
@@ -338,11 +339,26 @@ function Updates() {
           <button className="link" onClick={() => { api.openUrl(st!.page).catch(() => {}); }}>Open the release page ↗</button>
         </span>
       )}
+      {how && st?.command && <UpdateCommand command={st.command} />}
       {st?.state === 'error' && st.message && <span className="hint">{st.message}</span>}
       <Toggle on={settings.update_check} onChange={(v) => save({ update_check: v })} label="Check for updates automatically" />
       <span className="hint">Fetches a small signed file from GitHub at launch and every hour. Nothing about you or this computer is sent.</span>
       <button className="link" style={{ alignSelf: 'flex-start' }} data-about-whats-new onClick={() => up.showWhatsNew()}>What's new in {st?.current || ''}</button>
     </Row>
+  );
+}
+
+// Milestone 54 (D-124 (6)): How to update for a package from a repository, the
+// system updater's command with Copy.
+function UpdateCommand({ command }: { command: string }) {
+  const { notify } = useApp();
+  return (
+    <div className="row" style={{ gap: 'var(--sp-2)' }} data-about-update-command>
+      <code className="mono">{command}</code>
+      <button className="btn btn-secondary btn-sm" onClick={() => {
+        navigator.clipboard?.writeText(command).then(() => notify({ text: 'Command copied', key: 'copied:update-command' })).catch(() => {});
+      }}>Copy</button>
+    </div>
   );
 }
 

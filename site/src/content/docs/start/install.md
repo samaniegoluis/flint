@@ -155,18 +155,21 @@ Flint is then in your desktop's applications, and `flint` is on your `PATH`
 
 | Where | What |
 |---|---|
-| `/usr/lib/flint/` | The app, the CLI and the app's page |
+| `/usr/lib/flint/` | The app, the CLI, the app's page, and `flint-update-root`, the small helper that installs an update ([Updates](/guides/updates/)) |
 | `/usr/bin/flint` | A link to the CLI, so a `flint` you start opens the app it came with |
 | `/usr/share/applications/dev.flint.app.desktop` | The menu entry, with its icon in `/usr/share/icons/hicolor/` |
-| `/usr/share/polkit-1/actions/dev.flint.policy` | The action Flint asks your desktop to confirm when a program wants your vault ([Security model](/reference/security-model/)) |
+| `/usr/share/polkit-1/actions/dev.flint.policy` | The two actions Flint asks your desktop to confirm: when a program wants your vault, and the system password before an update is installed ([Security model](/reference/security-model/)) |
 
 Your vaults and settings live in your home folder, never in `/usr/lib/flint`, so
 removing or replacing the package keeps them. To remove it: `sudo apt remove flint` or
 `sudo dnf remove flint`.
 
-The package manager updates a package, not Flint: when a new version is out, Flint says
-so and **How to update** points to the release page; install the new package the same
-way ([Updates](/guides/updates/)).
+Flint updates itself through your package manager: when a new version is out,
+**Download** fetches the new package, and **Relaunch** asks for your system password and
+has `apt` or `dnf` install it, as you installed it ([Updates](/guides/updates/)). This
+works from 0.21.0 on: a copy installed before that is updated by hand once, the same way
+you installed it. The package depends on `pkexec` (Debian, Ubuntu) or `polkit` (Fedora)
+for that password.
 
 The packages are not signed with a repository key. Check a download against
 `SHA256SUMS` (above) before installing it.

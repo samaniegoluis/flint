@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { UpdateStatus } from '../api/types';
-import { relaunchClosesText, updateDownloadFailure, updatePercent, shortDate, updateActionLabel, updateBarLabel, updateHowText, updatePaletteHint, updatePopoverDetail, updateStateLine, updateToastText } from './update';
+import { relaunchClosesText, updateDownloadFailure, updatePercent, shortDate, updateActionLabel, updateBarLabel, updateHowText, updatePaletteHint, updatePopoverDetail, updateStateLine, updateToastText, updateIsPackage, updateReadyHint, updateRelaunchFailure } from './update';
 
 const base: UpdateStatus = {
   state: 'idle', current: '0.16.0', checked_at: 0, auto: true, version: '', date: '', summary: '', page: '',
-  action: '', how: '', asset_url: '', asset_size: 0, asset_sha256: '', received: 0, toast: false, outcome: '', code: '', message: '',
+  action: '', how: '', command: '', asset_url: '', asset_size: 0, asset_sha256: '', received: 0, toast: false, outcome: '', code: '', message: '',
 };
 const NOW = 1_800_000_000_000;
 const available: UpdateStatus = { ...base, state: 'available', version: '0.17.0', date: '2026-11-18', action: 'download', checked_at: NOW - 600_000, page: 'https://github.com/samaniegoluis/flint/releases/tag/v0.17.0' };
@@ -75,5 +75,29 @@ describe('the update notice', () => {
     expect(relaunchClosesText(2, 0, 3)).toBe('2 sessions will close. 3 running flint commands will stop.');
     expect(relaunchClosesText(0, 0, 0)).toBe('');
     expect(relaunchClosesText(0, 0)).toBe('');
+  });
+});
+
+describe('milestone 54: a Linux package update', () => {
+  const pkg = { ...base, state: 'ready' as const, version: '0.21.0', action: 'download' as const, asset_url: 'https://github.com/samaniegoluis/flint/releases/download/v0.21.0/flint_0.21.0_amd64.deb' };
+  it('says Relaunch asks for the system password', () => {
+    expect(updateIsPackage(pkg)).toBe(true);
+    expect(updateReadyHint(pkg)).toContain('system password');
+    expect(updateIsPackage({ ...pkg, asset_url: 'https://x/Flint-0.21.0-macos-arm64.zip' })).toBe(false);
+    expect(updateReadyHint({ ...pkg, asset_url: 'https://x/Flint-0.21.0-macos-arm64.zip' })).not.toContain('password');
+  });
+  it('says why a Relaunch installed nothing', () => {
+    const denied = updateRelaunchFailure({ ...pkg, code: 'denied', message: 'Nothing was installed: the system password was not given' });
+    expect(denied.kept).toBe(true);
+    expect(denied.text).toContain("password wasn't given");
+    const busy = updateRelaunchFailure({ ...pkg, code: 'io', message: 'apt-get could not install it: dpkg is locked' });
+    expect(busy.kept).toBe(true);
+    expect(busy.text).toContain('dpkg is locked');
+    const refused = updateRelaunchFailure({ ...pkg, state: 'available', code: 'invalid', message: 'the package did not match' });
+    expect(refused.kept).toBe(false);
+    expect(refused.text).toContain('discarded');
+  });
+  it('names the system updater for a package from a repository', () => {
+    expect(updateHowText({ ...pkg, state: 'available', action: 'how', how: 'repository' })).toContain("system's updater");
   });
 });
