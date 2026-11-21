@@ -858,3 +858,76 @@ Corrections:
      item"; keep every existing line of the README unchanged (do not drop the 23a3
      note about milestone 45). List the new screens 24c4a, 24c4b and 24e6.
 ```
+
+## Message 11: server resources, Type, RDP audio, sudo for a while (spec v14, sent 2026-11-21; screens 25* imported)
+
+Sent to the same chat; drawn on a second canvas, "Flint — Desktop UI (2)", because the
+first reached its 512-file limit.
+
+```
+New screens for Flint v14, numbered 25*. Same visual language as the base design
+(tokens.css, screens 04, 16d, 23c, 24*). Desktop sizes as before, plus 900×600 where noted.
+
+25a · Live server resources for the active terminal tab. CPU %, RAM (used / total),
+network (↓ / ↑ rates) and, where cheap, disk % and uptime of the host the tab is on,
+refreshed every ~2 s. Each value coloured by load (green, amber, red) with a plain
+(uncoloured) variant. Show two placements so we can choose:
+  (1) in the status bar, after the tab alias;
+  (2) beside the host and address at the top of the session area.
+  Also show: a host that gives fewer fields; a host that gives none (nothing shown, no
+  error); the first ~2 s; split panes (the values follow the focused pane); 900×600
+  (what collapses first; a compact form). A hover or click detail with the exact figures
+  and the time of the last sample.
+25b · Settings → Terminal: "Show server resources" switch (on by default) with one line
+  saying how it works and that servers logging every command (auditd) will log the reads.
+25c · RDP tab toolbar: a "Type" menu with "Type clipboard" and "Type <host>'s password",
+  for places where paste does not reach (the Windows administrator prompt). Disabled
+  when the clipboard holds no text. A short "Typed 24 characters" toast.
+25d · RDP host editor: an "Audio" section: Play remote audio: On this computer / On the
+  remote computer / Off; Microphone: off by default, with the permission note.
+25e · Settings → Access: a switch "Allow sudo for a while" (off by default) with a warning
+  line, and the root approval window (17*) with and without the period choices it
+  unlocks: Each command (default) · 2 min · 5 min · 15 min, and the warning line shown
+  when a period is picked.
+```
+
+## Message 11b: corrections to message 11 (sent 2026-11-21)
+
+```
+1. 25e1/25e2: the switch's help line follows its state ("Off: …" / "On: …").
+2. 25e5: drop the top banner; keep only the warning under Allow for.
+3. 25c1: no ⌥⌘V on "Type clipboard" (Ctrl+Alt+V on Windows is Paste Special); menu only.
+4. 25a10/25a11: Agents and its "waiting" badge never collapse at 900×600.
+5. The status bar placement (25a1/25a2) is final; the toolbar screens stay as the
+   rejected alternative.
+```
+
+## Message 12: the live notice of what a grant runs (spec v14, sent 2026-11-21; screens 26* imported)
+
+```
+New screens 26* for Flint v14, "Live notice of what a grant runs" (D-117 (3)-(4)),
+same language as 17* (approval windows), 24* (toasts) and 25e.
+
+26a · The notice toast (key per grant): "Claude Code ran a command on db1" → updated in
+  place: "Claude Code ran 10 commands on db1, nas". Program and host only, never the
+  command text. View · Stop (Stop revokes the grant, with a short confirmation state).
+  A root-period variant ("as root").
+26b · View: the activity entry modal's variation with that grant's commands as an
+  accordion (time, host, command cut to one line; expanded: the exact command and Copy),
+  still filling while open, and a link "Full log in Settings → Access".
+26c · The grant approval window (17*) with "Notify me of each command", starting from the
+  default; the root window (25e4) with it checked and disabled: "Always on for root".
+26d · Settings → Access: the default "Notify me of commands run under a grant" (on), and a
+  bell per row in Active grants.
+26e · Three grants busy at once: three toasts, one per grant.
+```
+
+## Message 12b: corrections to message 12 (sent 2026-11-21)
+
+```
+1. 26b1: keep exit status and duration; add a row for a command still running
+   ("running…") and one Flint refused before it ran (e.g. "not a sudoer").
+2. Notices hide ~10 s after the grant's last command and come back with the next; only a
+   root period's notice stays while the period lasts.
+3. 26c2: the "Always on for root" row appears only when a period is picked.
+```
