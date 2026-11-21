@@ -1,7 +1,7 @@
 // Tests of the Releases page's Download buttons (milestone 51). Run with `npm test`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectSystem, downloadsFor, othersFor, versionOf, type Release } from './download.ts';
+import { SIGNING, detectSystem, downloadsFor, othersFor, versionOf, type Release } from './download.ts';
 
 const GH = 'https://github.com/samaniegoluis/flint/releases/download/v0.16.0/';
 const release = (names: string[], extra: Partial<Release> = {}): Release => ({
@@ -66,4 +66,11 @@ test('the other systems that have a package, in a fixed order', () => {
 	assert.deepEqual(names(othersFor(release(ALL), null)), ['macos:zip', 'windows:zip', 'linux:.deb,.rpm']);
 	assert.deepEqual(names(othersFor(release(['Flint-0.16.0-macos-arm64.zip']), 'macos')), []);
 	assert.deepEqual(othersFor(release(ALL, { prerelease: true }), 'macos'), []);
+});
+
+test('the unsigned note fits each system', () => {
+	assert.match(SIGNING.macos.text + ' ' + SIGNING.macos.link, /extra step/);
+	assert.match(SIGNING.windows.text + ' ' + SIGNING.windows.link, /SmartScreen.*Run anyway/);
+	assert.doesNotMatch(SIGNING.linux.text + ' ' + SIGNING.linux.link, /extra step|code-signed/);
+	assert.match(SIGNING.linux.text, /apt or dnf/);
 });

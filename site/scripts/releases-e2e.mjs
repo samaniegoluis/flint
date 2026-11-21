@@ -164,6 +164,7 @@ try {
 		check(/Download for macOS/.test(await btn.first().innerText()), `${theme} macOS: labelled for macOS`);
 		const box = await page.locator('.flint-releases__get').innerText();
 		check(/Flint 0\.16\.0/i.test(box) && /Apple silicon/.test(box) && /not code-signed/i.test(box), `${theme} macOS: the version, what it needs, and that it is unsigned`);
+		check((await page.locator('[data-download-signing-link]').getAttribute('href')) === '/start/install/#macos', `${theme} macOS: the extra step links Install for macOS`);
 		check(!(await page.locator('.flint-releases__get-source').isVisible()), `${theme} macOS: Build from source gives way`);
 		check((await page.locator('[data-download-release]').getAttribute('href')).endsWith('/releases/tag/v0.16.0'), `${theme} macOS: other systems and SHA256SUMS link to the release`);
 		const others = page.locator('[data-download-others]');
@@ -184,6 +185,9 @@ try {
 		await btn.first().waitFor({ timeout: 5000 });
 		const hrefs = await btn.evaluateAll((as) => as.map((a) => a.getAttribute('href')));
 		check(JSON.stringify(hrefs) === JSON.stringify([DL + 'flint_0.16.0_amd64.deb', DL + 'flint-0.16.0.x86_64.rpm']), 'Linux: .deb and .rpm');
+		const lbox = await page.locator('.flint-releases__get-download').innerText();
+		check(/apt or dnf/.test(lbox) && !/extra step|code-signed/i.test(lbox), `Linux: the note is apt/dnf and SHA256SUMS, no extra step (${lbox.replace(/\s+/g, ' ').slice(0, 160)})`);
+		check((await page.locator('[data-download-signing-link]').getAttribute('href')) === '/start/install/#linux', 'Linux: it links Install for Linux');
 		check(errors.length === 0, 'Linux: no script errors');
 		await ctx.close();
 	}
@@ -205,6 +209,8 @@ try {
 		await btn.first().waitFor({ timeout: 5000 });
 		check((await btn.first().getAttribute('href')) === DL + 'Flint-0.16.0-windows-x86_64.zip' && /Download for Windows/.test(await btn.first().innerText()), 'Windows: Download for Windows, the zip');
 		check(/Also for macOS \(zip\) · Linux \(\.deb, \.rpm\)/.test(await page.locator('[data-download-others]').innerText()), 'Windows: and the other systems');
+		check(/SmartScreen asks once, choose Run anyway/.test(await page.locator('.flint-releases__get-download').innerText()), 'Windows: the note is SmartScreen\'s Run anyway');
+		check((await page.locator('[data-download-signing-link]').getAttribute('href')) === '/start/install/#windows', 'Windows: it links Install for Windows');
 		check(errors.length === 0, 'Windows with a package: no script errors');
 		await ctx.close();
 	}

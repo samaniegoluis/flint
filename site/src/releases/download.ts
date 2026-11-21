@@ -48,6 +48,13 @@ export const NEEDS: Record<System, string> = {
 	linux: 'For 64-bit Linux: Debian and Ubuntu (.deb), Fedora (.rpm).',
 };
 
+/** What an unsigned package means on each system, and where Install says more. */
+export const SIGNING: Record<System, { text: string; link: string; anchor: string }> = {
+	macos: { text: 'Not code-signed yet: the first launch needs', link: 'one extra step', anchor: '#macos' },
+	windows: { text: 'Not code-signed yet: SmartScreen asks once, choose', link: 'Run anyway', anchor: '#windows' },
+	linux: { text: 'Installed with apt or dnf, which also update it; not signed with a repository key, so', link: 'check it against SHA256SUMS', anchor: '#linux' },
+};
+
 /** The visitor's system from the browser, or null for one Flint has no package for (a phone). */
 export function detectSystem(userAgent: string, platform = ''): System | null {
 	const s = `${platform} ${userAgent}`;

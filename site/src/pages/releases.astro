@@ -61,8 +61,8 @@ function item(text: string): { scope: string | null; html: string } {
 					<p class="flint-releases__kicker" data-download-version></p>
 					<h2 data-download-title></h2>
 					<p>
-						<span data-download-needs></span>{' '}Not code-signed yet: the first launch needs{' '}
-						<a href="/start/install/">one extra step</a>. Every file and <code>SHA256SUMS</code> are on{' '}
+						<span data-download-needs></span>{' '}<span data-download-signing>Not code-signed yet: the first launch needs</span>{' '}
+						<a data-download-signing-link href="/start/install/">one extra step</a>. Every file and <code>SHA256SUMS</code> are on{' '}
 						<a data-download-release href={`${repoUrl}/releases/latest`}>the release's page</a>.
 					</p>
 				</div>
@@ -144,7 +144,7 @@ function item(text: string): { scope: string | null; html: string } {
 </StarlightPage>
 
 <script>
-	import { NEEDS, SYSTEM_NAME, detectSystem, downloadsFor, othersFor, versionOf, type Release } from '../releases/download.ts';
+	import { NEEDS, SIGNING, SYSTEM_NAME, detectSystem, downloadsFor, othersFor, versionOf, type Release } from '../releases/download.ts';
 
 	/** "Also for Windows (zip) · Linux (.deb, .rpm)": each package a direct link. */
 	function showOthers(box: HTMLElement, release: Release, system: ReturnType<typeof detectSystem>, lead: string) {
@@ -201,6 +201,10 @@ function item(text: string): { scope: string | null; html: string } {
 		dl.querySelector('[data-download-version]')!.textContent = `Flint ${version}`;
 		dl.querySelector('[data-download-title]')!.textContent = `Download Flint for ${SYSTEM_NAME[system]}`;
 		dl.querySelector('[data-download-needs]')!.textContent = NEEDS[system];
+		dl.querySelector('[data-download-signing]')!.textContent = SIGNING[system].text;
+		const signing = dl.querySelector<HTMLAnchorElement>('[data-download-signing-link]')!;
+		signing.textContent = SIGNING[system].link;
+		signing.href = '/start/install/' + SIGNING[system].anchor;
 		if (release.html_url.startsWith('https://github.com/')) {
 			dl.querySelector<HTMLAnchorElement>('[data-download-release]')!.href = release.html_url;
 		}
