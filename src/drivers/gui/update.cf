@@ -92,7 +92,7 @@ fn update_here() -> UpdateHere {
     kind := real_install_kind()
     root := install_root()
     writable := folder_writable(root) && folder_writable(fs.dirname(root))
-    mut here := UpdateHere{ version: version.FLINT_VERSION, os: os_name(), arch: cpu_arch(), kind: kind, writable: writable }
+    mut here := UpdateHere{ version: version.FLINT_VERSION, os: os_name(), arch: cpu_arch(), kind: kind, writable: writable, source: "" }
     // A build from source, under test, may pretend to be a package (FLINT_UPDATE_TEST_KIND).
     test_kind := os.getenv("FLINT_UPDATE_TEST_KIND")
     if test_kind.len() > 0 && update_override_allowed(kind, os.getenv("FLINT_UPDATE_FEED")) {

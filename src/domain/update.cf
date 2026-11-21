@@ -30,7 +30,8 @@ UPDATE_ASSET_KEYS: []str = ["macos-arm64", "windows-x86_64", "linux-x86_64-deb",
 
 // How this copy was installed: the package's `install-kind` file. `portable` (the
 // macOS .app, the Windows folder) can update itself; `package` (a .deb or an .rpm,
-// `package:deb` / `package:rpm`) is updated by the system's package manager; `source`
+// `package:deb` / `package:rpm`) is installed by the system's package manager, from
+// Flint's download when it came from a file (milestone 54); `source`
 // (no file: a build from source) is rebuilt by hand.
 INSTALL_PORTABLE: str = "portable"
 INSTALL_PACKAGE: str = "package"
@@ -80,6 +81,9 @@ type UpdateHere struct {
     kind:     str
     // Whether this process can replace its own folder (the .app, the Windows folder).
     writable: bool
+    // For a .deb or .rpm, where it came from (INSTALL_FROM_*, milestone 54); "" otherwise
+    // or when it could not be told, which reads as a file.
+    source:   str
 }
 
 // What the page shows: the state of the last check and what it found.
@@ -372,7 +376,17 @@ fn update_offer(m: UpdateManifest, here: UpdateHere, auto: bool, checked_at: i64
     }
     s.action = UPDATE_ACTION_HOW
     if here.kind.starts_with(INSTALL_PACKAGE) {
-        s.how = UPDATE_HOW_PACKAGE
+        // Milestone 54 (D-124): a .deb or .rpm from a file downloads like a portable
+        // copy, and root installs it; one from a repository is the system updater's.
+        if here.source == INSTALL_FROM_REPOSITORY {
+            s.how = UPDATE_HOW_REPOSITORY
+        } else if package_format(here.kind).len() == 0 {
+            s.how = UPDATE_HOW_PACKAGE
+        } else if s.asset_url.len() == 0 {
+            s.how = UPDATE_HOW_NO_ASSET
+        } else {
+            s.action = UPDATE_ACTION_DOWNLOAD
+        }
     } else if here.kind != INSTALL_PORTABLE {
         s.how = UPDATE_HOW_SOURCE
     } else if s.asset_url.len() == 0 {

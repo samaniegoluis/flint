@@ -18,7 +18,7 @@ fn update_apply_usage() -> str {
 
 fn parse_apply_request(args: []str) -> ApplyRequest! {
     // The end-to-end run keeps the started app's output (scripts/gui-e2e.sh, selfupdate).
-    mut r := ApplyRequest{ wait_pid: 0, from: "", to: "", os: os_name(), app_log: os.getenv("FLINT_UPDATE_APP_LOG") }
+    mut r := ApplyRequest{ wait_pid: 0, from: "", to: "", os: os_name(), app_log: os.getenv("FLINT_UPDATE_APP_LOG"), start_only: false, staging: "" }
     mut i: usize = 1
     for i < args.len() {
         a := args[i]

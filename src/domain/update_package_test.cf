@@ -1,0 +1,95 @@
+package domain
+
+APT_FROM_FILE: str = "flint:\n  Installed: 0.20.0\n  Candidate: 0.20.0\n  Version table:\n *** 0.20.0 100\n        100 /var/lib/dpkg/status\n"
+APT_FROM_REPO: str = "flint:\n  Installed: 0.20.0\n  Candidate: 0.21.0\n  Version table:\n     0.21.0 500\n        500 https://example.org/apt stable/main amd64 Packages\n *** 0.20.0 500\n        500 https://example.org/apt stable/main amd64 Packages\n        100 /var/lib/dpkg/status\n"
+// An older file install with a repository offering only newer versions: still a file.
+APT_FILE_REPO_NEWER: str = "flint:\n  Installed: 0.20.0\n  Candidate: 0.21.0\n  Version table:\n     0.21.0 500\n        500 https://example.org/apt stable/main amd64 Packages\n *** 0.20.0 100\n        100 /var/lib/dpkg/status\n"
+
+test "apt says whether the package came from a file" {
+    assert_eq(apt_source_of(APT_FROM_FILE), INSTALL_FROM_FILE)
+    assert_eq(apt_source_of(APT_FROM_REPO), INSTALL_FROM_REPOSITORY)
+    assert_eq(apt_source_of(APT_FILE_REPO_NEWER), INSTALL_FROM_FILE)
+    assert_eq(apt_source_of(""), INSTALL_FROM_FILE)
+    assert_eq(apt_source_of("N: Unable to locate package flint\n"), INSTALL_FROM_FILE)
+}
+
+test "dnf says whether the package came from a file" {
+    five := "Installed packages\nName            : flint\nVersion         : 0.20.0\nFrom repository : @commandline\n"
+    assert_eq(dnf_source_of(five), INSTALL_FROM_FILE)
+    four := "Name         : flint\nFrom repo    : @commandline\n"
+    assert_eq(dnf_source_of(four), INSTALL_FROM_FILE)
+    repo := "Name            : flint\nFrom repository : flint-stable\n"
+    assert_eq(dnf_source_of(repo), INSTALL_FROM_REPOSITORY)
+    assert_eq(dnf_source_of(""), INSTALL_FROM_FILE)
+}
+
+test "a package update is staged in the person's cache" {
+    p := update_package_paths("/home/ana/", PACKAGE_DEB, "/usr/lib/flint")
+    assert_eq(p.staging, "/home/ana/.cache/flint/update")
+    assert_eq(p.zip, "/home/ana/.cache/flint/update/package.deb")
+    assert_eq(update_manifest_path(p), "/home/ana/.cache/flint/update/manifest.json")
+    assert_eq(update_signature_path(p), "/home/ana/.cache/flint/update/manifest.json.sig")
+    assert_eq(p.new_root, "")
+    assert_eq(p.installed, "/usr/lib/flint")
+    assert_eq(update_package_paths("/home/ana", PACKAGE_RPM, "/usr/lib/flint").zip, "/home/ana/.cache/flint/update/package.rpm")
+    assert_eq(package_format("package:deb"), PACKAGE_DEB)
+    assert_eq(package_format("package:rpm"), PACKAGE_RPM)
+    assert_eq(package_format(INSTALL_PACKAGE), "")
+    assert_eq(package_format(INSTALL_PORTABLE), "")
+}
+
+fn root_refusal(m: UpdateManifest, format: str, installed: str) -> str {
+    mut r := ""
+    root_update_asset(m, format, installed, UPDATE_DOWNLOAD_PREFIX) or err { r = "{err.message()}" }
+    return r
+}
+
+test "root takes only a newer release with a package of the installed format" {
+    m := test_manifest("0.21.0")
+    a := try root_update_asset(m, PACKAGE_DEB, "0.20.0", UPDATE_DOWNLOAD_PREFIX)
+    assert_eq(a.key, UPDATE_ASSET_DEB)
+    // The same version, an older one: a downgrade as root is never done.
+    assert(root_refusal(m, PACKAGE_DEB, "0.21.0").contains("not newer"))
+    assert(root_refusal(m, PACKAGE_DEB, "0.22.0").contains("not newer"))
+    // No .rpm in this manifest.
+    assert(root_refusal(m, PACKAGE_RPM, "0.20.0").contains("no rpm package"))
+    assert(root_refusal(m, "", "0.20.0").contains("not installed from"))
+    // A manifest naming a pre-release, or a package elsewhere.
+    assert_eq(error_code_of(root_refusal(test_manifest("0.21.0-rc.1"), PACKAGE_DEB, "0.20.0")), ERR_INVALID)
+    mut elsewhere := m
+    elsewhere.assets[1].url = "https://evil.example/flint_0.21.0_amd64.deb"
+    assert_eq(error_code_of(root_refusal(elsewhere, PACKAGE_DEB, "0.20.0")), ERR_INVALID)
+}
+
+test "root checks its copy's size and SHA-256" {
+    a := test_manifest("0.21.0").assets[1]
+    try root_package_matches(a, a.size, "B".repeat(64))
+    mut r := ""
+    root_package_matches(a, a.size - 1, a.sha256) or err { r = "{err.message()}" }
+    assert(r.contains("size"))
+    r = ""
+    root_package_matches(a, a.size, "c".repeat(64)) or err { r = "{err.message()}" }
+    assert(r.contains("SHA-256"))
+}
+
+test "what a Relaunch's run of the helper means" {
+    assert(package_relaunch_of(ROOT_EXIT_OK, none).installed)
+    dismissed := package_relaunch_of(PKEXEC_EXIT_DISMISSED, none)
+    assert(!dismissed.installed && !dismissed.discard)
+    assert(dismissed.message.contains("password"))
+    refused := RootOutcome{ installed: false, version: "0.21.0", code: ERR_INVALID, message: "the package did not match the release's SHA-256", discard: true }
+    r := package_relaunch_of(root_exit_code(refused), refused)
+    assert(r.discard)
+    assert(r.message.contains("SHA-256"))
+    apt := RootOutcome{ installed: false, version: "0.21.0", code: ERR_IO, message: "apt-get could not install it: dpkg is locked", discard: false }
+    assert_eq(root_exit_code(apt), ROOT_EXIT_INSTALL)
+    assert(!package_relaunch_of(ROOT_EXIT_INSTALL, apt).discard)
+    crashed := package_relaunch_of(139, none)
+    assert_eq(crashed.code, ERR_INTERNAL)
+    assert(!crashed.discard)
+}
+
+test "How to update names the system's updater" {
+    assert(package_update_command(PACKAGE_DEB).contains("apt"))
+    assert(package_update_command(PACKAGE_RPM).contains("dnf"))
+}

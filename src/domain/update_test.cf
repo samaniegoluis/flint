@@ -13,7 +13,7 @@ fn test_manifest(version: str) -> UpdateManifest {
 }
 
 fn mac_here(version: str, kind: str, writable: bool) -> UpdateHere {
-    return UpdateHere{ version: version, os: "mac", arch: "arm64", kind: kind, writable: writable }
+    return UpdateHere{ version: version, os: "mac", arch: "arm64", kind: kind, writable: writable, source: "" }
 }
 
 test "versions read as Flint writes them" {
@@ -104,12 +104,24 @@ test "Download for a portable copy, How to update for anything else" {
     assert_eq(s.checked_at, 5)
     assert_eq(update_offer(m, mac_here("0.16.0", INSTALL_PORTABLE, false), true, 0).how, UPDATE_HOW_READONLY)
     assert_eq(update_offer(m, mac_here("0.16.0", INSTALL_SOURCE, true), true, 0).how, UPDATE_HOW_SOURCE)
-    deb := UpdateHere{ version: "0.16.0", os: "linux", arch: "x86_64", kind: "package:deb", writable: false }
+    deb := UpdateHere{ version: "0.16.0", os: "linux", arch: "x86_64", kind: "package:deb", writable: false, source: "" }
+    // Milestone 54: a package from a file (or one whose source could not be told)
+    // downloads; one from a repository is the system updater's.
     d := update_offer(m, deb, true, 0)
-    assert_eq(d.action, UPDATE_ACTION_HOW)
-    assert_eq(d.how, UPDATE_HOW_PACKAGE)
+    assert_eq(d.action, UPDATE_ACTION_DOWNLOAD)
     assert(d.asset_url.ends_with("_amd64.deb"))
-    win := UpdateHere{ version: "0.16.0", os: "windows", arch: "x86_64", kind: INSTALL_PORTABLE, writable: true }
+    mut repo := deb
+    repo.source = INSTALL_FROM_REPOSITORY
+    r := update_offer(m, repo, true, 0)
+    assert_eq(r.action, UPDATE_ACTION_HOW)
+    assert_eq(r.how, UPDATE_HOW_REPOSITORY)
+    mut rpm := deb
+    rpm.kind = "package:rpm"
+    assert_eq(update_offer(m, rpm, true, 0).how, UPDATE_HOW_NO_ASSET)
+    mut plain := deb
+    plain.kind = INSTALL_PACKAGE
+    assert_eq(update_offer(m, plain, true, 0).how, UPDATE_HOW_PACKAGE)
+    win := UpdateHere{ version: "0.16.0", os: "windows", arch: "x86_64", kind: INSTALL_PORTABLE, writable: true, source: "" }
     assert_eq(update_offer(m, win, true, 0).how, UPDATE_HOW_NO_ASSET)
     assert_eq(update_offer(m, mac_here("0.17.0", INSTALL_PORTABLE, true), true, 0).state, UPDATE_UP_TO_DATE)
     assert_eq(update_offer(m, mac_here("0.17.0-2-gabc1234", INSTALL_PORTABLE, true), true, 0).state, UPDATE_UP_TO_DATE)

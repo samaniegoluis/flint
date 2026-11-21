@@ -39,14 +39,15 @@ fn (self: FakeUpdateFiles) upd_exists(path: str) -> bool {
 }
 
 fn (self: FakeUpdateFiles) upd_read(path: str) -> str! {
-    for i, x in self.paths {
-        if x == path && i < self.texts.len() {
-            return self.texts[i]
-        }
-    }
+    // What was written (path=text) first, then a text given by position.
     for x in self.texts {
         if x.starts_with(path + "=") {
             return "{x[path.len() + 1..]}"
+        }
+    }
+    for i, x in self.paths {
+        if x == path && i < self.texts.len() {
+            return self.texts[i]
         }
     }
     return error(coded(ERR_NOT_FOUND, "no {path}"))
@@ -285,7 +286,7 @@ test "Relaunch starts update-apply from a copy of the new CLI" {
 test "update-apply swaps the folders and starts the new app" {
     mut files := staged_files()
     mut procs := fake_procs()
-    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "", start_only: false, staging: "" })
     assert(o.applied)
     assert(procs.polls >= 2)
     assert_eq(files.log[0], "rename /Apps/Flint.app -> /Apps/.flint-update/old/Flint.app")
@@ -299,7 +300,7 @@ test "a new app that does not start is stopped and the old folder put back" {
     mut files := staged_files()
     files.new_app_starts = false
     mut procs := fake_procs()
-    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "", start_only: false, staging: "" })
     assert(!o.applied)
     assert_eq(o.step, APPLY_STEP_START)
     assert_eq(procs.stopped.len(), 1)
@@ -321,7 +322,7 @@ test "a new app that exits at once is put back without waiting a minute" {
     files.new_app_starts = false
     mut procs := fake_procs()
     procs.child_dies = true
-    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "", start_only: false, staging: "" })
     assert(!o.applied)
     assert(procs.now < UPDATE_WAIT_START_MS)
     assert_eq(o.message, "It quit as soon as it started.")
@@ -331,7 +332,7 @@ test "a flint still running from the folder stops the swap and keeps the package
     mut files := staged_files()
     mut procs := fake_procs()
     procs.held_for = 1000000
-    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "", start_only: false, staging: "" })
     assert(!o.applied)
     assert_eq(o.step, APPLY_STEP_CLI)
     assert(o.kept)
@@ -349,11 +350,11 @@ test "a flint still running from the folder stops the swap and keeps the package
 test "update-apply refuses a folder that is not the staged package, and an app that never quits" {
     mut files := staged_files()
     mut procs := fake_procs()
-    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/tmp/other/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/tmp/other/Flint.app", to: INSTALLED, os: "mac", app_log: "", start_only: false, staging: "" })
     assert_eq(o.step, APPLY_STEP_ARGS)
     assert_eq(files.log.len(), 0)
     procs.quit_after = 1000000
-    q := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    q := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "", start_only: false, staging: "" })
     assert_eq(q.step, APPLY_STEP_QUIT)
     assert_eq(files.log.len(), 0)
     // The next launch says why, and the package stays for another Relaunch.
@@ -377,7 +378,7 @@ test "a folder held open for a moment is renamed once it is let go" {
     files.held_path = INSTALLED
     files.held_renames = 3
     mut procs := fake_procs()
-    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "", start_only: false, staging: "" })
     assert(o.applied)
     assert_eq(files.log[0], "held /Apps/Flint.app")
     assert_eq(files.log[3], "rename /Apps/Flint.app -> /Apps/.flint-update/old/Flint.app")
@@ -388,7 +389,7 @@ test "a folder held open past the retries is left as it was, the package kept" {
     files.held_path = INSTALLED
     files.held_renames = 1000000
     mut procs := fake_procs()
-    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "", start_only: false, staging: "" })
     assert(!o.applied)
     assert_eq(o.step, APPLY_STEP_SWAP)
     assert(o.kept)
@@ -405,7 +406,7 @@ test "the new folder held open puts the old one back" {
     files.held_path = "/Apps/.flint-update/new/Flint.app"
     files.held_renames = 1000000
     mut procs := fake_procs()
-    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "", start_only: false, staging: "" })
     assert(!o.applied)
     assert_eq(o.step, APPLY_STEP_SWAP)
     assert_eq(files.log[files.log.len() - 1], "rename /Apps/.flint-update/old/Flint.app -> /Apps/Flint.app")

@@ -121,6 +121,11 @@ type ApplyRequest struct {
     os:       str
     // Where the app it starts writes its output ("" for nowhere; the e2e run's log).
     app_log:  str
+    // Milestone 54 (D-124): a package root already installed. Nothing is swapped: wait
+    // for the old app, start the new one from `to`, and wait for its word in `staging`
+    // (the person's `~/.cache/flint/update`); no rollback.
+    start_only: bool
+    staging:    str
 }
 
 // What update-apply did: written to `outcome.json` when it could not apply (the app it
@@ -140,6 +145,8 @@ APPLY_STEP_QUIT: str = "quit"
 APPLY_STEP_CLI: str = "cli"
 APPLY_STEP_SWAP: str = "swap"
 APPLY_STEP_START: str = "start"
+// Milestone 54: a package root installed whose app did not say it started (no rollback).
+APPLY_STEP_PACKAGE_START: str = "package_start"
 
 fn apply_ok() -> ApplyOutcome {
     return ApplyOutcome{ applied: true, step: "", code: "", message: "", kept: false }
@@ -153,6 +160,15 @@ fn apply_failed(step: str, code: str, message: str, kept: bool) -> ApplyOutcome 
 // staging folder of `to` (update_paths), so the command can never be pointed at
 // another folder to move it.
 fn check_apply_request(r: ApplyRequest) -> void! {
+    if r.start_only {
+        if r.to.len() == 0 || r.staging.len() == 0 || r.from.len() > 0 {
+            return error(coded(ERR_USAGE, "update-apply --start needs --to and --staging, and no --from"))
+        }
+        if r.wait_pid < 0 {
+            return error(coded(ERR_USAGE, "--wait takes a process id"))
+        }
+        return
+    }
     if r.to.len() == 0 || r.from.len() == 0 {
         return error(coded(ERR_USAGE, "update-apply needs --from and --to"))
     }
@@ -170,6 +186,9 @@ fn check_apply_request(r: ApplyRequest) -> void! {
 fn apply_outcome_text(o: ApplyOutcome) -> str {
     if o.step == APPLY_STEP_CLI {
         return "The update was not applied: {o.message}. Close it and choose Relaunch again."
+    }
+    if o.step == APPLY_STEP_PACKAGE_START {
+        return "The new version was installed but did not start: {o.message} Open Flint again."
     }
     if o.step == APPLY_STEP_START {
         return "The new version did not start, so this one was put back. {o.message}"

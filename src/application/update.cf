@@ -34,24 +34,48 @@ fn not_verified() -> str {
 // The manifest, verified and checked. `manifest.json.sig` holds the Ed25519 signature
 // of `manifest.json`'s exact bytes, in Base64.
 fn fetch_update_manifest[F: UpdateFeed, V: UpdateVerifier](feed: F, verifier: V, src: UpdateSource) -> UpdateManifest! {
-    if src.public_key.len() != ED25519_PUBLIC_KEY_LEN {
+    signed := try fetch_signed_manifest(feed, verifier, src)
+    return signed.manifest
+}
+
+// A manifest as fetched, with the exact bytes and the signature it verified against:
+// a Linux package update keeps both beside the package, for root to verify again
+// (milestone 54, Principle 17).
+type SignedManifest struct {
+    body:      []byte
+    signature: str
+    manifest:  UpdateManifest
+}
+
+// `manifest.json`'s bytes and `manifest.json.sig`'s text, verified against `public_key`
+// and only then read and checked (Principle 15; root's check, Principle 17).
+fn verify_signed_manifest[V: UpdateVerifier](verifier: V, body: []byte, sig_text: str, public_key: []byte, download_prefix: str) -> UpdateManifest! {
+    if public_key.len() != ED25519_PUBLIC_KEY_LEN {
         return error(coded(ERR_INTERNAL, "this build of Flint has no key to verify updates with"))
     }
-    body := try feed.update_get(src.manifest_url, UPDATE_MANIFEST_MAX_BYTES)
-    sig_file := try feed.update_get(update_signature_url(src.manifest_url), UPDATE_SIGNATURE_MAX_BYTES)
-    sig_text := str(sig_file).trim()
-    sig := base64.decode(sig_text) or {
+    sig := base64.decode(sig_text.trim()) or {
         return error(not_verified())
     }
-    if sig.len() != ED25519_SIGNATURE_LEN || !verifier.update_verify(body, sig, src.public_key) {
+    if sig.len() != ED25519_SIGNATURE_LEN || !verifier.update_verify(body, sig, public_key) {
         return error(not_verified())
     }
     // Read only once verified.
     m := json.parse[UpdateManifest](payload: str(body)) or {
         return error(coded(ERR_INVALID, "the update information could not be read"))
     }
-    try check_update_manifest_from(m, update_download_prefix(src.manifest_url))
+    try check_update_manifest_from(m, download_prefix)
     return m
+}
+
+fn fetch_signed_manifest[F: UpdateFeed, V: UpdateVerifier](feed: F, verifier: V, src: UpdateSource) -> SignedManifest! {
+    if src.public_key.len() != ED25519_PUBLIC_KEY_LEN {
+        return error(coded(ERR_INTERNAL, "this build of Flint has no key to verify updates with"))
+    }
+    body := try feed.update_get(src.manifest_url, UPDATE_MANIFEST_MAX_BYTES)
+    sig_file := try feed.update_get(update_signature_url(src.manifest_url), UPDATE_SIGNATURE_MAX_BYTES)
+    sig_text := "{str(sig_file).trim()}"
+    m := try verify_signed_manifest(verifier, body, sig_text, src.public_key, update_download_prefix(src.manifest_url))
+    return SignedManifest{ body: body, signature: sig_text, manifest: m }
 }
 
 // One check: its outcome for the page, never an error. A newer version found for the

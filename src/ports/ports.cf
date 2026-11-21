@@ -562,3 +562,34 @@ type UpdateProcesses interface {
     mut proc_sleep(ms: i64)
     proc_now_ms() -> i64
 }
+
+// The Linux self-update's root side (milestone 54, D-124, Principle 17), for
+// flint-update-root alone: the caller's staged files (`~/.cache/flint/update/<name>` of
+// the user pkexec names, opened without following a link, a regular file that user
+// owns, at most `max_bytes`) copied into a folder only root can write, and read back
+// from there. `stage_done` removes that folder. Errors: `not_found` (nothing staged),
+// `invalid` (a link, not a regular file, someone else's, too large), `io`.
+type RootStage interface {
+    mut stage_copy(uid: i64, name: str, max_bytes: i64) -> str!
+    stage_read(path: str, max_bytes: i64) -> []byte!
+    stage_size(path: str) -> i64!
+    mut stage_done()
+}
+
+// The package manager, as root (milestone 54): `apt-get install` or `dnf install` of
+// one package file, with a deadline. The error carries the tail of its output.
+type PackageInstaller interface {
+    mut pkg_install(format: str, path: str) -> void!
+}
+
+// Where the installed package came from (milestone 54): `apt-cache policy flint` or
+// `dnf info --installed flint`, as text ("" when it could not be asked).
+type PackageSourceProbe interface {
+    package_source_text(format: str) -> str
+}
+
+// The app's side of a Linux Relaunch (milestone 54): `pkexec <helper>`, waited for,
+// its exit code and what it printed. The password dialog is the person's: no deadline.
+type RootRunner interface {
+    mut run_root_helper(helper: str) -> RootRun!
+}

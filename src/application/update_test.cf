@@ -71,7 +71,7 @@ fn signed_feed(body: str, key0: u8) -> FakeUpdateFeed {
 }
 
 fn here_mac(version: str) -> UpdateHere {
-    return UpdateHere{ version: version, os: "mac", arch: "arm64", kind: INSTALL_PORTABLE, writable: true }
+    return UpdateHere{ version: version, os: "mac", arch: "arm64", kind: INSTALL_PORTABLE, writable: true, source: "" }
 }
 
 test "a newer version, verified, asks for the toast once" {

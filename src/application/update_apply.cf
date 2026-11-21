@@ -56,15 +56,21 @@ fn download_update[D: UpdateDownloader, H: UpdateHasher, F: UpdateFiles](mut dl:
 // not newer than this one (left by an update that applied, or by an older download)
 // is removed, unless a swap is under way (its old folder still set aside).
 fn staged_update[F: UpdateFiles](mut files: F, installed: str, os: str, current: str) -> str {
-    p := update_paths(installed, os)
+    return staged_update_at(mut files, update_paths(installed, os), current)
+}
+
+// The same, for any staging (a Linux package's in the person's cache, milestone 54:
+// the package file itself is what is staged, nothing is unpacked or set aside).
+fn staged_update_at[F: UpdateFiles](mut files: F, p: UpdatePaths, current: str) -> str {
     if !files.upd_exists(p.ready) {
         return ""
     }
     v := "{(files.upd_read(p.ready) or "").trim()}"
-    if version_is_newer(v, current) && files.upd_exists(p.new_root) {
+    staged := if p.new_root.len() > 0 { p.new_root } else { p.zip }
+    if version_is_newer(v, current) && files.upd_exists(staged) {
         return v
     }
-    if !files.upd_exists(update_parent(p.old_root)) {
+    if p.old_root.len() == 0 || !files.upd_exists(update_parent(p.old_root)) {
         discard_staging(mut files, p)
     }
     return ""
@@ -73,7 +79,10 @@ fn staged_update[F: UpdateFiles](mut files: F, installed: str, os: str, current:
 // The app says it started (the new app, at launch, once its page is up): update-apply
 // waits for this before it removes the old folder.
 fn mark_update_started[F: UpdateFiles](mut files: F, installed: str, os: str) {
-    p := update_paths(installed, os)
+    mark_update_started_at(mut files, update_paths(installed, os))
+}
+
+fn mark_update_started_at[F: UpdateFiles](mut files: F, p: UpdatePaths) {
     if files.upd_exists(p.staging) {
         files.upd_write(p.started, "started") or {}
     }
@@ -82,7 +91,10 @@ fn mark_update_started[F: UpdateFiles](mut files: F, installed: str, os: str) {
 // What update-apply left when it could not apply, once: read, then cleared (the whole
 // staging folder unless the package was kept for another Relaunch).
 fn take_apply_outcome[F: UpdateFiles](mut files: F, installed: str, os: str) -> ApplyOutcome? {
-    p := update_paths(installed, os)
+    return take_apply_outcome_at(mut files, update_paths(installed, os))
+}
+
+fn take_apply_outcome_at[F: UpdateFiles](mut files: F, p: UpdatePaths) -> ApplyOutcome? {
     if !files.upd_exists(p.outcome) {
         return none
     }
