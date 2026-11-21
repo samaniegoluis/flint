@@ -3090,6 +3090,10 @@
         const acc = await window.backend.access_state({});
         await check(acc.pending.length === 0 && acc.grants.length === 0, 'a locked window shows no grant and no caller');
         await check((await window.backend.window_state({})).locked, 'the core reports the window locked');
+        const isMacKeys = (await window.backend.app_info({})).os === 'mac';
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', bubbles: true, cancelable: true, metaKey: isMacKeys, ctrlKey: !isMacKeys, shiftKey: !isMacKeys }));
+        await sleep(300);
+        await check(!q('[aria-label="Command palette"]'), 'a shortcut under the window lock opens nothing behind it');
       }
       await fill('#wpw', 'not-the-master-password');
       await click('button[type="submit"]', 'Open');
@@ -3099,6 +3103,7 @@
       await click('button[type="submit"]', 'Open');
       await waitFor(() => !q('[data-window-lock]'), 'the window to open', 30000);
       await check(!q('.tab')?.closest('[inert]') && (byText('.tree .ti', 'local') || grpRow()), 'the master password opens the window on the same vault');
+      await check(!q('[aria-label="Command palette"]'), 'and the shortcut typed under the lock was not kept for later');
       await runInTerminal('echo after-window-$((3+3))', 'after-window-6');
       await check(true, 'the session that ran behind the window lock still works');
     }

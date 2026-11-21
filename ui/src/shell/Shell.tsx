@@ -46,7 +46,7 @@ const NARROW = 1040;
 
 export function Shell() {
   const app = useApp();
-  const { os, vault, catalog, settings, notify, fail, refreshCatalog, openVaultFile, go, phase } = app;
+  const { os, vault, catalog, settings, notify, fail, refreshCatalog, openVaultFile, go, phase, windowLock } = app;
   const { tabs, panes, active } = useSessions();
   const [view, setView] = useState<View>('hosts');
   const [narrow, setNarrow] = useState(window.innerWidth < NARROW);
@@ -396,8 +396,9 @@ export function Shell() {
   useEffect(() => {
     setActionHandler(run);
     const onKey = (e: KeyboardEvent) => {
-      // Under the lock screen the window takes no shortcut.
-      if (e.defaultPrevented || phase !== 'main') return;
+      // Under either lock screen (the vault's, or the window's own after it was closed
+      // to the tray) the window takes no shortcut: the shell behind it is inert.
+      if (e.defaultPrevented || phase !== 'main' || windowLock) return;
       const a = actionFor(e, os);
       if (!a) return;
       // While a dialog is open only its own keys apply, plus the palette toggle.
@@ -408,7 +409,7 @@ export function Shell() {
     };
     window.addEventListener('keydown', onKey);
     return () => { window.removeEventListener('keydown', onKey); setActionHandler(null); };
-  }, [run, os, phase]);
+  }, [run, os, phase, windowLock]);
 
   const anyOverlay = palette || editor || confirm || ask || manage;
   const sessionsOpen = panes.filter((t) => t.status !== 'ended').length;
