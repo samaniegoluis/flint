@@ -98,6 +98,9 @@ fn run_sudo[C: Crypto, T: SshTransport, O: ExecSink, K: Clock](crypto: C, mut li
             try link.link_channel_eof()
             stdin_open = false
         }
+        if sink.exec_cancelled() {
+            return error(coded(ERR_IO, "the command on '{alias}' was stopped: the flint client went away or Flint quit"))
+        }
         chunk := try link.link_channel_read(100)
         outs := sudo_feed(mut out_watch, chunk.stdout)
         errs := sudo_feed(mut err_watch, chunk.stderr)

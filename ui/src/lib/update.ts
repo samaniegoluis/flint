@@ -60,12 +60,14 @@ export function updateDownloadFailure(st: UpdateStatus): { text: string; retry: 
 }
 
 /** 24d1: what closes when Flint relaunches; "" when nothing does (Relaunch goes straight through). */
-export function relaunchClosesText(sessions: number, tunnels: number): string {
+export function relaunchClosesText(sessions: number, tunnels: number, commands = 0): string {
   const parts: string[] = [];
   if (sessions > 0) parts.push(`${sessions} session${sessions === 1 ? '' : 's'}`);
   if (tunnels > 0) parts.push(`${tunnels} tunnel${tunnels === 1 ? '' : 's'}`);
-  if (parts.length === 0) return '';
-  return `${parts.join(' and ')} will close.`;
+  const closes = parts.length ? `${parts.join(' and ')} will close.` : '';
+  // Milestone 50: a `flint exec` or `connect` running through Flint is cut when it quits.
+  const stops = commands > 0 ? `${commands} running flint command${commands === 1 ? '' : 's'} will stop.` : '';
+  return [closes, stops].filter(Boolean).join(' ');
 }
 
 /** The action's label: Download for a copy that can be replaced, How to update otherwise; Relaunch once it is ready. */

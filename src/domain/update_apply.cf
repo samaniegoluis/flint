@@ -16,7 +16,9 @@ UPDATE_STAGE_NAME: str = ".flint-update"
 // Bytes a package may exceed its manifest size by: none. The manifest names the size.
 // How long update-apply waits for the app to quit, for every `flint` running from the
 // folder, and for the new app to report it started.
-UPDATE_WAIT_QUIT_MS: i64 = 60000
+// Long enough for any quit: the app cuts the CLI's running commands after 5 s
+// (milestone 50, after a Relaunch that hung behind a long `flint exec`).
+UPDATE_WAIT_QUIT_MS: i64 = 600000
 UPDATE_WAIT_CLI_MS: i64 = 30000
 UPDATE_WAIT_START_MS: i64 = 60000
 UPDATE_POLL_MS: i64 = 200

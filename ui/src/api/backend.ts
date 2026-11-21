@@ -62,6 +62,8 @@ export const api = {
   settingsSet: (s: Settings) => call<Settings>('settings_set', s),
   /** Milestone 48: the `flint` command; `first` records the first launch's offer as shown. */
   cliStatus: (first: boolean) => call<CliLinkStatus>('cli_status', { first }),
+  /** Commands the flint CLI is running through this app now (`exec`, `connect`). */
+  cliRunning: () => call<{ count: number }>('cli_running'),
   cliInstall: (path: string) => call<CliLinkStatus>('cli_install', { path }),
   cliRemove: (path: string) => call<CliLinkStatus>('cli_remove', { path }),
   /** Milestone 52: `now` checks for a newer Flint; `status` repeats the last outcome as `update:status`; `toast_shown` says the toast it asked for is up. */

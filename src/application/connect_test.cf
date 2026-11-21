@@ -259,7 +259,7 @@ test "a changed host key is refused even with --accept-new-host-key, until forgo
 test "exec streams or captures output and reports the exit code" {
     mut link := new_fake_link()
     link.chunks = [out_chunk("hello "), err_chunk("warn"), out_chunk("world"), done_chunk(3)]
-    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut sink := FakeSink{ out_text: "", err_text: "", cancelled: false }
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
     res := try run_exec(mut link, mut sink, mut clock, "web", "echo hi", 60, false)
     assert_eq(sink.out_text, "hello world")
@@ -270,7 +270,7 @@ test "exec streams or captures output and reports the exit code" {
 
     mut link2 := new_fake_link()
     link2.chunks = [out_chunk("a"), err_chunk("b"), done_chunk(0)]
-    mut sink2 := FakeSink{ out_text: "", err_text: "" }
+    mut sink2 := FakeSink{ out_text: "", err_text: "", cancelled: false }
     res2 := try run_exec(mut link2, mut sink2, mut clock, "web", "x", 60, true)
     assert_eq(res2.stdout, "a")
     assert_eq(res2.stderr, "b")
@@ -286,7 +286,7 @@ test "exec times out and refuses an empty command" {
         many.push(out_chunk("."))
     }
     link.chunks = many
-    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut sink := FakeSink{ out_text: "", err_text: "", cancelled: false }
     mut clock := FakeClock{ now_ms: 0, step_ms: 500 }
     mut r := ""
     run_exec(mut link, mut sink, mut clock, "web", "sleep 99", 2, false) or err { r = "{err.message()}" }
@@ -400,7 +400,7 @@ test "a host's initial command is stored, shown and run on the PTY" {
 
     // exec ignores it.
     mut link4 := web_link()
-    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut sink := FakeSink{ out_text: "", err_text: "", cancelled: false }
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
     _ = try exec_on_host(crypto, mut store, s, mut link4, no_prompter(), mut sink, mut clock, "web", "uptime", accept_opts(), 60, true)
     assert_eq(link4.calls[link4.calls.len() - 1], "exec uptime")
@@ -642,4 +642,19 @@ test "vault secrets an SSH login used are wiped once the transport has them (mil
     assert(was_wiped("PRIVATE one"))
     // Every sealed value opened was wiped as bytes too.
     assert(WIPED_BUFS >= 2)
+}
+
+test "exec stops when its reader is gone (Flint quitting cut the CLI's connection)" {
+    mut link := new_fake_link()
+    mut many: []ExecChunk = []
+    for _ in 0..100 {
+        many.push(out_chunk(""))
+    }
+    link.chunks = many
+    mut sink := FakeSink{ out_text: "", err_text: "", cancelled: true }
+    mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
+    mut r := ""
+    run_exec(mut link, mut sink, mut clock, "web", "sleep 600", 7200, false) or err { r = "{err.message()}" }
+    assert(r.starts_with("io:"))
+    assert(r.contains("went away or Flint quit"))
 }

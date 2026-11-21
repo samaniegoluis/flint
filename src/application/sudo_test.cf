@@ -11,7 +11,7 @@ fn sudo_link(chunks: []ExecChunk) -> FakeLink {
 test "sudo types the password at its prompt only, and hides prompt and password" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut link := sudo_link([err_chunk("@PROMPT@"), out_chunk("restarted\n"), err_chunk("s3cret\n"), done_chunk(0)])
-    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut sink := FakeSink{ out_text: "", err_text: "", cancelled: false }
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
     res := try run_sudo(crypto, mut link, mut sink, mut clock, "web", "me", ["systemctl", "restart", "nginx"], "s3cret", 60, false)
     assert_eq(res.exit_code, 0)
@@ -27,7 +27,7 @@ test "sudo types the password at its prompt only, and hides prompt and password"
 test "a fake prompt from the command gets no password" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut link := sudo_link([out_chunk("[sudo] password for me: "), err_chunk("Password:"), done_chunk(0)])
-    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut sink := FakeSink{ out_text: "", err_text: "", cancelled: false }
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
     _ = try run_sudo(crypto, mut link, mut sink, mut clock, "web", "me", ["true"], "s3cret", 60, true)
     assert_eq(link.written, "")
@@ -35,7 +35,7 @@ test "a fake prompt from the command gets no password" {
 
 test "a refused password, a missing one and a user who may not sudo are told apart" {
     crypto := FakeCrypto{ derive_calls: 0 }
-    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut sink := FakeSink{ out_text: "", err_text: "", cancelled: false }
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
     mut wrong := sudo_link([err_chunk("@PROMPT@"), err_chunk("Sorry, try again.\n@PROMPT@"), done_chunk(1)])
     mut r1 := ""
@@ -56,7 +56,7 @@ test "a refused password, a missing one and a user who may not sudo are told apa
 
 test "with no prompt, stdin closes once the command speaks or the wait ends" {
     crypto := FakeCrypto{ derive_calls: 0 }
-    mut sink := FakeSink{ out_text: "", err_text: "" }
+    mut sink := FakeSink{ out_text: "", err_text: "", cancelled: false }
     mut clock := FakeClock{ now_ms: 0, step_ms: 1 }
     mut talk := sudo_link([out_chunk("hi\n"), done_chunk(0)])
     _ = try run_sudo(crypto, mut talk, mut sink, mut clock, "web", "me", ["echo", "hi"], "pw", 60, true)

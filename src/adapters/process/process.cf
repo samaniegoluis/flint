@@ -311,6 +311,10 @@ fn (mut self: StdioExecSink) exec_stdout(data: str) {
     }
 }
 
+fn (self: StdioExecSink) exec_cancelled() -> bool {
+    return false
+}
+
 fn (mut self: StdioExecSink) exec_stderr(data: str) {
     // CFIRE-UPSTREAM: CF-042
     cpp {

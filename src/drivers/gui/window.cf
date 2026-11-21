@@ -10,6 +10,7 @@ import "ext:webui"
 import "core:json"
 import "core:time"
 import "../../adapters/crypto"
+import "../../adapters/ipc"
 import "../../adapters/process"
 import "../../adapters/uievents"
 import "../../adapters/vault"
@@ -62,6 +63,29 @@ fn show_window(mut app: webui.App) {
 }
 
 // Quits Flint: the tray's Quit, ⌘Q, or the palette.
+// How long quitting waits for the CLI's running commands before it cuts them.
+QUIT_SERVED_GRACE_MS: i64 = 5000
+
+type CliRunning struct {
+    count: i64 `json:"count"`
+}
+
+fn rpc_cli_running() -> str {
+    return json.stringify(CliRunning{ count: ipc_served_count() })
+}
+
+fn end_served_commands() {
+    deadline := time.now_ms() + QUIT_SERVED_GRACE_MS
+    for ipc_served_count() > 0 && time.now_ms() < deadline {
+        time.sleep_ms(100)
+    }
+    n := ipc_served_count()
+    if n > 0 {
+        write_stderr("flint-gui: quitting: {n} running flint command(s) cut\n")
+        ipc_served_shutdown_all()
+    }
+}
+
 fn quit_app(mut app: webui.App) {
     write_stderr("flint-gui: quit\n")
     app.quit()

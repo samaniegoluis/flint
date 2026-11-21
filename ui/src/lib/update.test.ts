@@ -71,6 +71,9 @@ describe('the update notice', () => {
     expect(relaunchClosesText(3, 2)).toBe('3 sessions and 2 tunnels will close.');
     expect(relaunchClosesText(1, 0)).toBe('1 session will close.');
     expect(relaunchClosesText(0, 1)).toBe('1 tunnel will close.');
+    expect(relaunchClosesText(0, 0, 1)).toBe('1 running flint command will stop.');
+    expect(relaunchClosesText(2, 0, 3)).toBe('2 sessions will close. 3 running flint commands will stop.');
+    expect(relaunchClosesText(0, 0, 0)).toBe('');
     expect(relaunchClosesText(0, 0)).toBe('');
   });
 });

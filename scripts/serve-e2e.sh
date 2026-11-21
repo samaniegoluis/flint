@@ -620,7 +620,22 @@ fi
 expect 0 "add the stop host" "" -- host add e2e-stop --hostname 10.0.0.9
 check "the lock ended the whole-vault grant: a write asks again" '[[ $(grep -c "asking the owner to approve" "$tmp/app.log") -gt $asked_after_unlock ]]'
 
+# Milestone 50: a long, silent command through the app while it quits. The page waits
+# for it, then quits: the app gives it 5 s, then cuts it, and exits (the Relaunch
+# that hung behind a long `flint exec`).
+# Only once the page waits for it: an exec earlier would add to the activity log the
+# page is still counting.
+for _ in $(seq 1 3000); do grep -q "waiting for a long flint exec" "$tmp/app.log" 2>/dev/null && break; kill -0 "$app_pid" 2>/dev/null || break; sleep 0.1; done
+quit_t0=$(date +%s)
+no_tty "$flint" exec local -- sleep 120 >"$tmp/longexec.out" 2>"$tmp/longexec.err" &
+longexec_pid=$!
 for _ in $(seq 1 300); do kill -0 "$app_pid" 2>/dev/null || break; sleep 0.1; done
+quit_t1=$(date +%s)
+longexec_status=0
+wait "$longexec_pid" || longexec_status=$?
+quit_t2=$(date +%s)
+echo "diag: quit $((quit_t1 - quit_t0)) s after the long exec started; the exec ended $((quit_t2 - quit_t0)) s after, status $longexec_status: $(tr '\n' ' ' < "$tmp/longexec.err" | cut -c1-200)"
+check "quitting cuts a running flint exec instead of waiting for it" '[[ $((quit_t2 - quit_t0)) -lt 60 && $longexec_status != 0 ]]'
 app_status=0
 wait "$app_pid" || app_status=$?
 app_pid=""
@@ -670,9 +685,20 @@ expect 0 "vault unlock waits until the window unlocks" "" -- vault unlock
 expect 0 "the command now runs in the app it started" "" -- host list
 check "it lists the hosts" '[[ "$out" == *e2e-stop* ]]'
 expect 0 "add the second stop host" "" -- host add e2e-stop-2 --hostname 10.0.0.10
+launched_t0=$(date +%s)
 for _ in $(seq 1 300); do sock_up "$sock" || break; sleep 0.1; done
+launched_t1=$(date +%s)
 check "the launched app quit when done" '! sock_up "$sock"'
 for _ in $(seq 1 100); do grep -q "^e2e:" "$tmp/launched.log" 2>/dev/null && break; sleep 0.1; done
+launched_t2=$(date +%s)
+if [[ -n "${FLINT_E2E_KEEP:-}" && -f "$tmp/launched.log" ]]; then cp "$tmp/launched.log" "$FLINT_E2E_KEEP/" 2>/dev/null || true; fi
+if [[ $win != 1 ]] && ! grep -q "^e2e: pass" "$tmp/launched.log" 2>/dev/null; then
+  echo "diag: the socket went away $((launched_t1 - launched_t0)) s after the last command, the log waited $((launched_t2 - launched_t1)) s more"
+  echo "diag: launched.log: $(wc -c < "$tmp/launched.log" 2>/dev/null || echo missing) bytes, $(tr -cd '\000' < "$tmp/launched.log" 2>/dev/null | wc -c) NUL; its last lines:"
+  tail -15 "$tmp/launched.log" 2>/dev/null | cat -v | cut -c1-200 | sed 's/^/diag:   /'
+  echo "diag: Flint processes still running:"
+  ps -eo pid,ppid,etimes,args 2>/dev/null | grep -E "[F]lint|[x]vfb" | cut -c1-200 | sed 's/^/diag:   /' || true
+fi
 sed 's/^/launched app: /' "$tmp/launched.log" 2>/dev/null | grep -E "ok |FAILED|e2e:" || true
 if [[ $win == 1 ]]; then
   echo "skip  the launched app's log (detached on Windows: its page passed if it quit, above)"

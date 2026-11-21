@@ -142,7 +142,10 @@ fn apply_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, 
         deadline := procs.proc_now_ms() + UPDATE_WAIT_QUIT_MS
         for procs.proc_alive(pid) {
             if procs.proc_now_ms() >= deadline {
-                return apply_failed(APPLY_STEP_QUIT, ERR_TIMEOUT, "Flint did not quit", true)
+                // Said at the next launch, with the package kept for another Relaunch.
+                o := apply_failed(APPLY_STEP_QUIT, ERR_TIMEOUT, "Flint did not quit within {UPDATE_WAIT_QUIT_MS / 60000} minutes, so nothing was changed", true)
+                files.upd_write(p.outcome, json.stringify(o)) or {}
+                return o
             }
             procs.proc_sleep(UPDATE_POLL_MS)
         }

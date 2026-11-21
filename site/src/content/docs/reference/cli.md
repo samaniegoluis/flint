@@ -129,6 +129,9 @@ See [Credentials](/guides/credentials/).
 refused), and `exec` takes `--exec-timeout <secs>` (default 600). With `--json`, `exec`
 prints `{host, exit_code, signal, stdout, stderr, duration_ms}` and `connect` prints
 `{host, exit_code}` after the session. See [Connecting](/guides/connecting/).
+Run through Flint, a command lives as long as the app: when Flint quits (or relaunches
+for an update) it gets five seconds to finish, then it is stopped on the host and
+`flint` exits with `io` (10), *Flint went away during the session*.
 
 `connect` on an [RDP host](/guides/remote-desktop/) never shows a desktop in the
 terminal: with Flint serving the vault it opens the host's tab there, prints `Opened

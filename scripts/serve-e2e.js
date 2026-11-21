@@ -340,6 +340,18 @@
       await check(true, 'and listed as revoked when asked for');
     }
 
+    // Milestone 50: quitting with a command of the CLI's still running. The shell
+    // starts a long, silent `flint exec` once it is done; the app quits with it running
+    // and must cut it after its grace, not wait for it (the Relaunch that hung).
+    step = 'quitting with a running flint exec';
+    await log('waiting for a long flint exec');
+    const longFrom = Date.now();
+    while ((await window.backend.cli_running()).count < 1) {
+      if (Date.now() - longFrom > 300000) throw new Error("timed out waiting for the shell's long flint exec");
+      await sleep(200);
+    }
+    await check(true, 'a running flint exec is counted for Relaunch\'s warning');
+
     await log(`${passed} checks passed`);
     await window.backend.e2e_report({ ok: true, detail: '' });
   } catch (e) {

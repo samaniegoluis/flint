@@ -276,6 +276,9 @@ type Terminal interface {
 type ExecSink interface {
     mut exec_stdout(data: str)
     mut exec_stderr(data: str)
+    // True once whoever reads the output is gone (milestone 50: the app quitting cuts
+    // the CLI's connection); the command is then stopped, not left running.
+    exec_cancelled() -> bool
 }
 
 // The system clipboard (adapters/uievents, the desktop app). `clipboard_copy_secret`
