@@ -166,6 +166,11 @@ try {
 		check(/Flint 0\.16\.0/i.test(box) && /Apple silicon/.test(box) && /not code-signed/i.test(box), `${theme} macOS: the version, what it needs, and that it is unsigned`);
 		check(!(await page.locator('.flint-releases__get-source').isVisible()), `${theme} macOS: Build from source gives way`);
 		check((await page.locator('[data-download-release]').getAttribute('href')).endsWith('/releases/tag/v0.16.0'), `${theme} macOS: other systems and SHA256SUMS link to the release`);
+		const others = page.locator('[data-download-others]');
+		check(await others.isVisible(), `${theme} macOS: the other systems' packages are named`);
+		check(/Also for Linux \(\.deb, \.rpm\)/.test(await others.innerText()), `${theme} macOS: Linux, its .deb and .rpm (${await others.innerText()})`);
+		const otherHrefs = await others.locator('a').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+		check(JSON.stringify(otherHrefs) === JSON.stringify([DL + 'flint_0.16.0_amd64.deb', DL + 'flint-0.16.0.x86_64.rpm']), `${theme} macOS: each one a direct download`);
 		const bg = await btn.first().evaluate((a) => getComputedStyle(a).backgroundColor);
 		check(bg !== 'rgba(0, 0, 0, 0)', `${theme} macOS: the button has Starlight's style (${bg})`);
 		if (shots) await page.locator('.flint-releases__get').screenshot({ path: join(shots, `releases-download-${theme}.png`) });
@@ -188,7 +193,19 @@ try {
 		await page.waitForFunction(() => document.querySelector('.flint-releases__get')?.dataset.downloadState === 'none');
 		check(await page.locator('.flint-releases__get-source a[href="/start/build-from-source/"]').isVisible(), 'Windows with no package: Build from source stays');
 		check(/no package for Windows yet/.test(await page.locator('.flint-releases__get').innerText()), 'Windows with no package: says so');
+		check(/Flint 0\.16\.0 is for macOS \(zip\) · Linux \(\.deb, \.rpm\)/.test(await page.locator('[data-download-others]').innerText()), 'Windows with no package: names the systems that have one');
 		check(errors.length === 0, 'Windows: no script errors');
+		await ctx.close();
+	}
+	{
+		const WIN = [...ALL, 'Flint-0.16.0-windows-x86_64.zip'];
+		const { ctx, page, errors } = await open({ width: 1280, height: 900 }, 'dark', { release: latest(WIN), ua: UA.windows });
+		await page.goto(base + 'releases/');
+		const btn = page.locator('.flint-releases__get-buttons a');
+		await btn.first().waitFor({ timeout: 5000 });
+		check((await btn.first().getAttribute('href')) === DL + 'Flint-0.16.0-windows-x86_64.zip' && /Download for Windows/.test(await btn.first().innerText()), 'Windows: Download for Windows, the zip');
+		check(/Also for macOS \(zip\) · Linux \(\.deb, \.rpm\)/.test(await page.locator('[data-download-others]').innerText()), 'Windows: and the other systems');
+		check(errors.length === 0, 'Windows with a package: no script errors');
 		await ctx.close();
 	}
 	{

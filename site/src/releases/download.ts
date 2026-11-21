@@ -22,19 +22,23 @@ export interface Release {
 
 export interface Download {
 	label: string;
+	short: string;
 	url: string;
 	name: string;
 }
 
 /** Each system's packages, named as scripts/package.sh names them (D-111). */
-const PACKAGES: Record<System, { test: RegExp; label: string }[]> = {
-	macos: [{ test: /^Flint-.+-macos-arm64\.zip$/, label: 'Download for macOS' }],
-	windows: [{ test: /^Flint-.+-windows-x86_64\.zip$/, label: 'Download for Windows' }],
+/** `short` names it in the line of the other systems' packages. */
+const PACKAGES: Record<System, { test: RegExp; label: string; short: string }[]> = {
+	macos: [{ test: /^Flint-.+-macos-arm64\.zip$/, label: 'Download for macOS', short: 'zip' }],
+	windows: [{ test: /^Flint-.+-windows-x86_64\.zip$/, label: 'Download for Windows', short: 'zip' }],
 	linux: [
-		{ test: /^flint_.+_amd64\.deb$/, label: 'Download .deb' },
-		{ test: /^flint-.+\.x86_64\.rpm$/, label: 'Download .rpm' },
+		{ test: /^flint_.+_amd64\.deb$/, label: 'Download .deb', short: '.deb' },
+		{ test: /^flint-.+\.x86_64\.rpm$/, label: 'Download .rpm', short: '.rpm' },
 	],
 };
+
+const SYSTEMS: System[] = ['macos', 'windows', 'linux'];
 
 export const SYSTEM_NAME: Record<System, string> = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
 
@@ -62,10 +66,18 @@ export function downloadsFor(release: Release, system: System): Download[] {
 		const a = release.assets.find((x) => p.test.test(x.name));
 		// Only links into GitHub's own release downloads.
 		if (a && a.browser_download_url.startsWith('https://github.com/')) {
-			out.push({ label: p.label, url: a.browser_download_url, name: a.name });
+			out.push({ label: p.label, short: p.short, url: a.browser_download_url, name: a.name });
 		}
 	}
 	return out;
+}
+
+/** The release's packages for every other system that has one, in a fixed order, so a
+ * visitor on one system sees that Flint exists for the others too. */
+export function othersFor(release: Release, system: System | null): { system: System; downloads: Download[] }[] {
+	return SYSTEMS.filter((s) => s !== system)
+		.map((s) => ({ system: s, downloads: downloadsFor(release, s) }))
+		.filter((o) => o.downloads.length > 0);
 }
 
 /** "v0.16.0" → "0.16.0". */

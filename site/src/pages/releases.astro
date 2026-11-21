@@ -62,7 +62,7 @@ function item(text: string): { scope: string | null; html: string } {
 					<h2 data-download-title></h2>
 					<p>
 						<span data-download-needs></span>{' '}Not code-signed yet: the first launch needs{' '}
-						<a href="/start/install/">one extra step</a>. Other systems and <code>SHA256SUMS</code> are on{' '}
+						<a href="/start/install/">one extra step</a>. Every file and <code>SHA256SUMS</code> are on{' '}
 						<a data-download-release href={`${repoUrl}/releases/latest`}>the release's page</a>.
 					</p>
 				</div>
@@ -74,6 +74,7 @@ function item(text: string): { scope: string | null; html: string } {
 					<LinkButton href="#" icon="download" variant="secondary">Download</LinkButton>
 				</template>
 			</div>
+			<p class="flint-releases__others" data-download-others hidden></p>
 		</aside>
 
 		<div class="flint-releases__body">
@@ -143,7 +144,29 @@ function item(text: string): { scope: string | null; html: string } {
 </StarlightPage>
 
 <script>
-	import { NEEDS, SYSTEM_NAME, detectSystem, downloadsFor, versionOf, type Release } from '../releases/download.ts';
+	import { NEEDS, SYSTEM_NAME, detectSystem, downloadsFor, othersFor, versionOf, type Release } from '../releases/download.ts';
+
+	/** "Also for Windows (zip) · Linux (.deb, .rpm)": each package a direct link. */
+	function showOthers(box: HTMLElement, release: Release, system: ReturnType<typeof detectSystem>, lead: string) {
+		const others = othersFor(release, system);
+		const line = box.querySelector<HTMLElement>('[data-download-others]');
+		if (!line || others.length === 0) return;
+		line.append(lead + ' ');
+		others.forEach((o, i) => {
+			if (i > 0) line.append(' · ');
+			line.append(`${SYSTEM_NAME[o.system]} (`);
+			o.downloads.forEach((d, j) => {
+				if (j > 0) line.append(', ');
+				const a = document.createElement('a');
+				a.href = d.url;
+				a.title = d.name;
+				a.textContent = d.short;
+				line.append(a);
+			});
+			line.append(')');
+		});
+		line.hidden = false;
+	}
 
 	const API = 'https://api.github.com/repos/samaniegoluis/flint/releases/latest';
 
@@ -171,6 +194,7 @@ function item(text: string): { scope: string | null; html: string } {
 			if (why && system) why.textContent = `Flint ${version} has no package for ${SYSTEM_NAME[system]} yet.`;
 			box.querySelector('[data-download-kicker]')!.textContent = `Flint ${version}`;
 			box.dataset.downloadState = 'none';
+			showOthers(box, release, system, `Flint ${version} is for`);
 			return;
 		}
 		const dl = box.querySelector<HTMLElement>('.flint-releases__get-download')!;
@@ -197,6 +221,7 @@ function item(text: string): { scope: string | null; html: string } {
 		box.setAttribute('aria-labelledby', 'flint-releases-download');
 		dl.querySelector('[data-download-title]')!.id = 'flint-releases-download';
 		box.dataset.downloadState = 'download';
+		showOthers(box, release, system, 'Also for');
 	}
 
 	offer();
@@ -244,6 +269,16 @@ function item(text: string): { scope: string | null; html: string } {
 		flex-direction: column;
 		gap: 0.6rem;
 		flex-shrink: 0;
+	}
+	.flint-releases__others {
+		margin-top: 1rem !important;
+		padding-top: 0.9rem;
+		border-top: 1px solid var(--sl-color-hairline);
+		font-size: var(--sl-text-sm);
+	}
+	/* Its links are made by the script, so the scoped rule below does not reach them. */
+	.flint-releases__others :global(a) {
+		color: var(--sl-color-text-accent);
 	}
 	.flint-releases__get p a {
 		color: var(--sl-color-text-accent);

@@ -1,7 +1,7 @@
 // Tests of the Releases page's Download buttons (milestone 51). Run with `npm test`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectSystem, downloadsFor, versionOf, type Release } from './download.ts';
+import { detectSystem, downloadsFor, othersFor, versionOf, type Release } from './download.ts';
 
 const GH = 'https://github.com/samaniegoluis/flint/releases/download/v0.16.0/';
 const release = (names: string[], extra: Partial<Release> = {}): Release => ({
@@ -57,4 +57,13 @@ test('only links into GitHub', () => {
 
 test('the version from the tag', () => {
 	assert.equal(versionOf('v0.16.0'), '0.16.0');
+});
+
+test('the other systems that have a package, in a fixed order', () => {
+	const names = (o: ReturnType<typeof othersFor>) => o.map((x) => `${x.system}:${x.downloads.map((d) => d.short).join(',')}`);
+	assert.deepEqual(names(othersFor(release(ALL), 'macos')), ['windows:zip', 'linux:.deb,.rpm']);
+	assert.deepEqual(names(othersFor(release(ALL), 'linux')), ['macos:zip', 'windows:zip']);
+	assert.deepEqual(names(othersFor(release(ALL), null)), ['macos:zip', 'windows:zip', 'linux:.deb,.rpm']);
+	assert.deepEqual(names(othersFor(release(['Flint-0.16.0-macos-arm64.zip']), 'macos')), []);
+	assert.deepEqual(othersFor(release(ALL, { prerelease: true }), 'macos'), []);
 });
