@@ -4,15 +4,18 @@
 # Ubuntu 24.04 and Debian 13 (.deb) and Fedora 43 (.rpm).
 #
 #   scripts/linux/selfupdate-test.sh            # builds two test packages, then tests
-#   FLINT_SELFUPDATE_KEEP=1 …                   # keeps dist/selfupdate/ (the packages,
-#                                               # the key, the manifests) for Zorin
+#   FLINT_SELFUPDATE_KEEP=1 …                   # keeps dist/selfupdate/ (the packages
+#                                               # and their signed manifests) for Zorin
+#   FLINT_SELFUPDATE_REUSE=1 …                  # the tests again on a kept dist/selfupdate/,
+#                                               # without building
 #
 # Two test packages per format (scripts/package.sh linux --test-feed: a local feed and a
 # throwaway key compiled in, never released), 0.90.0 and 0.90.1, and manifests for them
 # signed with that key. In each container: 0.90.0 installed; then, each from a fresh
 # staging folder in the user's ~/.cache/flint/update:
 #   - nothing staged (exit 5), no PKEXEC_UID (exit 2), an argument (exit 2);
-#   - a package whose bytes are not the manifest's (exit 3, nothing installed);
+#   - a package whose bytes are not the manifest's, or larger than it says (exit 3,
+#     nothing installed);
 #   - a manifest changed after it was signed, or signed by another key (exit 3);
 #   - a manifest naming the installed version (exit 3: never a reinstall or downgrade);
 #   - a staged package that is a link to another file, a staging folder that is a link
@@ -28,18 +31,21 @@ OLD=0.90.0 NEW=0.90.1
 FEED_PORT=8123
 FEED="http://127.0.0.1:$FEED_PORT/manifest.json"
 work="$root/dist/selfupdate"
-rm -rf "$work"
-mkdir -p "$work/key"
-
-# The throwaway key: a test package's own, not a secret (Principle 16).
-pub="$(scripts/sign-manifest.sh keygen "$work/key" 2>/dev/null)"
-[[ "$pub" =~ ^[0-9a-f]{64}$ ]] || { echo "selfupdate-test: no key" >&2; exit 1; }
-
 formats="${FLINT_SELFUPDATE_FORMATS:-deb rpm}"
-for v in "$OLD" "$NEW"; do
-  FLINT_VERSION="$v" FLINT_BUILD_TEST_FEED="$FEED" FLINT_BUILD_TEST_KEY="$pub" \
-    scripts/package.sh linux $formats --test-feed
-done
+reuse="${FLINT_SELFUPDATE_REUSE:-}"
+if [[ -z "$reuse" ]]; then
+  rm -rf "$work"
+  mkdir -p "$work/key"
+  # The throwaway key: a test package's own, not a secret (Principle 16).
+  pub="$(scripts/sign-manifest.sh keygen "$work/key" 2>/dev/null)"
+  [[ "$pub" =~ ^[0-9a-f]{64}$ ]] || { echo "selfupdate-test: no key" >&2; exit 1; }
+  for v in "$OLD" "$NEW"; do
+    FLINT_VERSION="$v" FLINT_BUILD_TEST_FEED="$FEED" FLINT_BUILD_TEST_KEY="$pub" \
+      scripts/package.sh linux $formats --test-feed
+  done
+else
+  [[ -f "$work/deb/manifest.json" || -f "$work/rpm/manifest.json" ]] || { echo "selfupdate-test: nothing kept in $work" >&2; exit 1; }
+fi
 
 # A signed manifest naming `version`'s package of `format` (name and bytes of `file`).
 manifest() {
@@ -77,6 +83,8 @@ if [[ "$fmt" == deb ]]; then
   apt-get install -y -qq /w/old.deb >/dev/null 2>&1 || { echo "  FAIL installing $old"; exit 1; }
 else
   dnf -y -q install /w/old.rpm >/dev/null 2>&1 || { echo "  FAIL installing $old"; exit 1; }
+  # su and useradd for the test user (Fedora'"'"'s image has neither).
+  dnf -y -q install util-linux shadow-utils >/dev/null 2>&1
 fi
 flint --version | grep -qF "$old" && ok "Flint $old installed" || bad "Flint $old installed"
 grep -q "dev.flint.update" /usr/share/polkit-1/actions/dev.flint.policy && ok "the polkit action dev.flint.update" || bad "the polkit action"
@@ -105,7 +113,10 @@ expect "an argument" 2 "$(helper /tmp/evil)"
 
 fresh manifest.json bad
 expect "a package that is not the release'"'"'s" 3 "$(helper)"; still_old badsha
-grep -q "SHA-256\|size" /tmp/out.json && ok "  says why" || bad "  says why"
+grep -q "SHA-256" /tmp/out.json && ok "  says why (SHA-256)" || bad "  says why (SHA-256)"
+fresh manifest.json big
+expect "a package larger than the release says" 3 "$(helper)"; still_old big
+grep -q "larger" /tmp/out.json && ok "  says why (larger)" || bad "  says why (larger)"
 
 fresh changed.json
 expect "a manifest changed after it was signed" 3 "$(helper)"; still_old changed
@@ -127,7 +138,8 @@ flint --version | grep -qF "$new" && ok "  Flint $new now" || bad "  Flint $new 
 if [[ "$fmt" == deb ]]; then
   dpkg-query -W -f="\${Version}" flint | grep -qF "$new" && ok "  dpkg says $new" || bad "  dpkg says $new"
   apt-cache policy flint > /tmp/src.txt
-  if grep -q "\*\*\* $new" /tmp/src.txt && ! grep -vE "dpkg/status|^\S|Version table|\*\*\*" /tmp/src.txt | grep -q .; then ok "  apt-cache policy: from a file"; else bad "  apt-cache policy: from a file"; cat /tmp/src.txt; fi
+  # The sources are the lines indented eight spaces: only dpkg'"'"'s own status file.
+  if grep -q "\*\*\* $new" /tmp/src.txt && ! grep -E "^ {8}[0-9]+ " /tmp/src.txt | grep -vq "/var/lib/dpkg/status"; then ok "  apt-cache policy: from a file"; else bad "  apt-cache policy: from a file"; cat /tmp/src.txt; fi
 else
   rpm -q --qf "%{VERSION}" flint | grep -qF "$new" && ok "  rpm says $new" || bad "  rpm says $new"
   dnf -C -q info --installed flint > /tmp/src.txt 2>&1
@@ -139,8 +151,10 @@ exit $((fails > 0))
 '
 
 # Another key, for the manifest signed by someone else.
-mkdir -p "$work/other"
-other="$(scripts/sign-manifest.sh keygen "$work/other" 2>/dev/null)"
+if [[ -z "$reuse" ]]; then
+  mkdir -p "$work/other"
+  other="$(scripts/sign-manifest.sh keygen "$work/other" 2>/dev/null)"
+fi
 
 total=0
 for f in $formats; do
@@ -152,18 +166,22 @@ for f in $formats; do
     bases="${FLINT_SELFUPDATE_RPM_BASES:-fedora:43}"
   fi
   w="$work/$f"
-  mkdir -p "$w"
-  cp "$oldp" "$w/old.$f"
-  cp "$newp" "$w/new.$f"
-  # A package with one byte changed: not the release's.
-  cp "$newp" "$w/bad.$f"; printf 'x' >> "$w/bad.$f"
-  manifest "$NEW" "$key" "$newp" "$w/manifest.json"
-  manifest "$OLD" "$key" "$oldp" "$w/same.json"
-  cp "$w/manifest.json" "$w/changed.json"; cp "$w/manifest.json.sig" "$w/changed.json.sig"
-  sed -i.bak 's/A test release/A changed release/' "$w/changed.json" && rm -f "$w/changed.json.bak"
-  cp "$w/manifest.json" "$w/otherkey.json"
-  FLINT_UPDATE_PUBLIC_KEY_HEX="$other" FLINT_UPDATE_SIGNING_KEY="$(cat "$work/other/flint-update-signing.key")" \
-    scripts/sign-manifest.sh sign "$w/otherkey.json" >/dev/null
+  if [[ -z "$reuse" ]]; then
+    mkdir -p "$w"
+    cp "$oldp" "$w/old.$f"
+    cp "$newp" "$w/new.$f"
+    manifest "$NEW" "$key" "$newp" "$w/manifest.json"
+    manifest "$OLD" "$key" "$oldp" "$w/same.json"
+    cp "$w/manifest.json" "$w/changed.json"; cp "$w/manifest.json.sig" "$w/changed.json.sig"
+    sed -i.bak 's/A test release/A changed release/' "$w/changed.json" && rm -f "$w/changed.json.bak"
+    cp "$w/manifest.json" "$w/otherkey.json"
+    FLINT_UPDATE_PUBLIC_KEY_HEX="$other" FLINT_UPDATE_SIGNING_KEY="$(cat "$work/other/flint-update-signing.key")" \
+      scripts/sign-manifest.sh sign "$w/otherkey.json" >/dev/null
+  fi
+  [[ -f "$w/new.$f" ]] || continue
+  # Not the release's package: its last byte changed (the same size), or one byte more.
+  python3 -I -c 'import sys; b = bytearray(open(sys.argv[1], "rb").read()); b[-1] ^= 1; open(sys.argv[2], "wb").write(b)' "$w/new.$f" "$w/bad.$f"
+  cp "$w/new.$f" "$w/big.$f"; printf 'x' >> "$w/big.$f"
   for b in $bases; do
     docker run --rm --platform linux/amd64 -v "$w:/w:ro" "$b" bash -c "$inside" _ "$f" "$OLD" "$NEW" || total=$((total + 1))
   done
