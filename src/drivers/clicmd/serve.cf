@@ -655,11 +655,12 @@ fn app_launch_command() -> []str {
     }
     // Next to this flint (a build tree or an install), else on the PATH. On Windows,
     // Flint.exe next to flint.exe is the same name to the file system (it ignores
-    // case): the app is gui\Flint.exe in a build tree, flint-app.exe in an install.
-    // windows-port.
+    // case): the package keeps the CLI in Flint\bin\ with the app one folder up
+    // (milestone 50, D-121), a build tree has gui\Flint.exe, and an install.ps1 of
+    // 0.19 or earlier flint-app.exe beside it.
     mut beside: []str = [executable_dir() + "/gui/Flint", executable_dir() + "/Flint", executable_dir() + "/flint-app"]
     if os_name() == "windows" {
-        beside = [executable_dir() + "/gui/Flint.exe", executable_dir() + "/flint-app.exe"]
+        beside = [fs.dirname(executable_dir()) + "/Flint.exe", executable_dir() + "/gui/Flint.exe", executable_dir() + "/flint-app.exe"]
     }
     for path in beside {
         if fs.exists(path) {

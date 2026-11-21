@@ -772,4 +772,7 @@ export interface CliLinkStatus {
   spots: CliLinkSpot[];
   /** What the first launch's toast offers: install once, fix every time. */
   offer: '' | 'install' | 'fix';
+  /** macOS links the command (`link`); Windows puts the package's bin folder on the
+   *  user's Path (`path`, milestone 50, D-121), whose one spot's path is that folder. */
+  kind: 'link' | 'path';
 }

@@ -9,7 +9,10 @@
 //   /proc/<pid>/exe), so update-apply waits for every `flint` from the folder;
 // - stopping one, SIGTERM then SIGKILL;
 // - a file's mode set executable (the CLI copied out of the package).
-// Windows comes with milestone 50 (D-118): the functions there report "unsupported".
+// Windows (milestone 50, D-118 (5)): the same functions on Win32: CreateProcessW with
+// only the log handle inherited, OpenProcess/WaitForSingleObject, a Toolhelp snapshot
+// with QueryFullProcessImageNameW, TerminateProcess, MoveFileExW (a folder is only ever
+// renamed, never written over) and a tree removal that clears read-only first.
 #pragma once
 #include <cstdint>
 #include <cstdlib>
@@ -34,6 +37,13 @@
 #include <dirent.h>
 #endif
 extern char** environ;
+#else
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <tlhelp32.h>
+#include <cwchar>
 #endif
 
 namespace flint_update {
@@ -72,9 +82,79 @@ inline std::string upd_real_path(const std::string& path) {
     return std::string(buf);
 }
 #else
-inline bool upd_rename_path(const std::string&, const std::string&, std::string& err) { err = "unsupported"; return false; }
-inline bool upd_remove_tree(const std::string&, std::string& err) { err = "unsupported"; return false; }
-inline std::string upd_real_path(const std::string& path) { return path; }
+inline std::wstring upd_widen(const std::string& s) {
+    if (s.empty()) return std::wstring();
+    int n = ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    std::wstring w(static_cast<size_t>(n), L'\0');
+    ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
+    for (auto& c : w) if (c == L'/') c = L'\\';
+    return w;
+}
+
+inline std::string upd_narrow(const std::wstring& w) {
+    if (w.empty()) return std::string();
+    int n = ::WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
+    std::string s(static_cast<size_t>(n), '\0');
+    ::WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), s.data(), n, nullptr, nullptr);
+    return s;
+}
+
+inline std::string upd_win_error(DWORD e) {
+    wchar_t* msg = nullptr;
+    DWORD n = ::FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                               nullptr, e, 0, reinterpret_cast<LPWSTR>(&msg), 0, nullptr);
+    std::string out = n && msg ? upd_narrow(std::wstring(msg, n)) : std::string("error");
+    if (msg) ::LocalFree(msg);
+    while (!out.empty() && (out.back() == '\n' || out.back() == '\r' || out.back() == ' ' || out.back() == '.')) out.pop_back();
+    return out + " (error " + std::to_string(e) + ")";
+}
+
+// A folder (or file) renamed on its volume. ERROR_SHARING_VIOLATION or
+// ERROR_ACCESS_DENIED mean something holds a file inside it open; the caller retries
+// for a while (application/update_apply.cf) and otherwise puts things back.
+inline bool upd_rename_path(const std::string& from, const std::string& to, std::string& err) {
+    if (::MoveFileExW(upd_widen(from).c_str(), upd_widen(to).c_str(), 0)) return true;
+    err = upd_win_error(::GetLastError());
+    return false;
+}
+
+inline bool upd_remove_tree_w(const std::wstring& path, std::string& err) {
+    DWORD a = ::GetFileAttributesW(path.c_str());
+    if (a == INVALID_FILE_ATTRIBUTES) return true;
+    if (a & FILE_ATTRIBUTE_READONLY) ::SetFileAttributesW(path.c_str(), a & ~FILE_ATTRIBUTE_READONLY);
+    // A link or junction is removed itself, never followed.
+    if ((a & FILE_ATTRIBUTE_DIRECTORY) && !(a & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        WIN32_FIND_DATAW fd;
+        HANDLE h = ::FindFirstFileW((path + L"\\*").c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                if (std::wcscmp(fd.cFileName, L".") == 0 || std::wcscmp(fd.cFileName, L"..") == 0) continue;
+                if (!upd_remove_tree_w(path + L"\\" + fd.cFileName, err)) { ::FindClose(h); return false; }
+            } while (::FindNextFileW(h, &fd));
+            ::FindClose(h);
+        }
+        if (::RemoveDirectoryW(path.c_str())) return true;
+    } else if (a & FILE_ATTRIBUTE_DIRECTORY) {
+        if (::RemoveDirectoryW(path.c_str())) return true;
+    } else if (::DeleteFileW(path.c_str())) {
+        return true;
+    }
+    err = upd_win_error(::GetLastError());
+    return false;
+}
+
+inline bool upd_remove_tree(const std::string& path, std::string& err) {
+    return upd_remove_tree_w(upd_widen(path), err);
+}
+
+// The full path, backslashes, as processes report theirs (compared without case).
+inline std::string upd_real_path(const std::string& path) {
+    std::wstring w = upd_widen(path);
+    wchar_t buf[MAX_PATH * 4];
+    DWORD n = ::GetFullPathNameW(w.c_str(), static_cast<DWORD>(sizeof buf / sizeof buf[0]), buf, nullptr);
+    if (n == 0 || n >= sizeof buf / sizeof buf[0]) return path;
+    return upd_narrow(std::wstring(buf, n));
+}
 #endif
 
 #if !defined(_WIN32)
@@ -168,10 +248,119 @@ inline bool upd_make_executable(const std::string& path) {
 
 #else
 
-inline std::int64_t upd_spawn_detached(const std::string&, const std::vector<std::string>&, const std::string&) { return -1; }
-inline bool upd_alive(std::int64_t) { return false; }
-inline void upd_stop(std::int64_t) {}
-inline std::vector<std::int64_t> upd_running_under(const std::string&) { return {}; }
+// One argument quoted as the C runtime's command-line parser reads it back.
+inline void upd_quote_arg(std::wstring& cmd, const std::wstring& a) {
+    if (!a.empty() && a.find_first_of(L" \t\n\v\"") == std::wstring::npos) { cmd += a; return; }
+    cmd += L'"';
+    for (size_t i = 0; i < a.size(); ++i) {
+        size_t bs = 0;
+        while (i < a.size() && a[i] == L'\\') { ++bs; ++i; }
+        if (i == a.size()) { cmd.append(bs * 2, L'\\'); break; }
+        if (a[i] == L'"') { cmd.append(bs * 2 + 1, L'\\'); cmd += L'"'; }
+        else { cmd.append(bs, L'\\'); cmd += a[i]; }
+    }
+    cmd += L'"';
+}
+
+// Starts `exe` with `args` detached (no console, its own process group), stdout and
+// stderr appended to `log` (or nowhere), inheriting that one handle and nothing else.
+// Returns its pid, or -GetLastError().
+inline std::int64_t upd_spawn_detached(const std::string& exe, const std::vector<std::string>& args,
+                                       const std::string& log) {
+    std::wstring wexe = upd_widen(exe);
+    std::wstring cmd;
+    upd_quote_arg(cmd, wexe);
+    for (const auto& a : args) { cmd += L' '; upd_quote_arg(cmd, upd_widen(a)); }
+    SECURITY_ATTRIBUTES sa{sizeof sa, nullptr, TRUE};
+    HANDLE out = ::CreateFileW(log.empty() ? L"NUL" : upd_widen(log).c_str(), FILE_APPEND_DATA,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &sa, OPEN_ALWAYS,
+                               FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE in = ::CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
+    STARTUPINFOEXW si{};
+    si.StartupInfo.cb = sizeof si;
+    SIZE_T size = 0;
+    ::InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
+    std::vector<unsigned char> attrs(size);
+    auto* list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrs.data());
+    HANDLE inherit[2] = {in, out};
+    bool have_list = ::InitializeProcThreadAttributeList(list, 1, 0, &size) &&
+        in != INVALID_HANDLE_VALUE && out != INVALID_HANDLE_VALUE &&
+        ::UpdateProcThreadAttribute(list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherit, sizeof inherit, nullptr, nullptr);
+    if (have_list) {
+        si.lpAttributeList = list;
+        si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        si.StartupInfo.hStdInput = in;
+        si.StartupInfo.hStdOutput = out;
+        si.StartupInfo.hStdError = out;
+    }
+    PROCESS_INFORMATION pi{};
+    DWORD flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_UNICODE_ENVIRONMENT |
+                  (have_list ? EXTENDED_STARTUPINFO_PRESENT : 0);
+    BOOL ok = ::CreateProcessW(wexe.c_str(), cmd.data(), nullptr, nullptr, have_list ? TRUE : FALSE, flags,
+                               nullptr, nullptr, &si.StartupInfo, &pi);
+    DWORD e = ok ? 0 : ::GetLastError();
+    if (have_list) ::DeleteProcThreadAttributeList(list);
+    if (in != INVALID_HANDLE_VALUE) ::CloseHandle(in);
+    if (out != INVALID_HANDLE_VALUE) ::CloseHandle(out);
+    if (!ok) return -static_cast<std::int64_t>(e ? e : 1);
+    ::CloseHandle(pi.hThread);
+    ::CloseHandle(pi.hProcess);
+    return static_cast<std::int64_t>(pi.dwProcessId);
+}
+
+inline bool upd_alive(std::int64_t pid) {
+    if (pid <= 0) return false;
+    HANDLE h = ::OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+    if (!h) return ::GetLastError() == ERROR_ACCESS_DENIED;
+    bool alive = ::WaitForSingleObject(h, 0) == WAIT_TIMEOUT;
+    ::CloseHandle(h);
+    return alive;
+}
+
+// Windows has no SIGTERM for a windowed program: it is ended, then waited for up to
+// five seconds so its files are released.
+inline void upd_stop(std::int64_t pid) {
+    if (pid <= 0) return;
+    HANDLE h = ::OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, static_cast<DWORD>(pid));
+    if (!h) return;
+    ::TerminateProcess(h, 1);
+    ::WaitForSingleObject(h, 5000);
+    ::CloseHandle(h);
+}
+
+inline std::wstring upd_fold(std::wstring p) {
+    for (auto& c : p) { if (c == L'/') c = L'\\'; c = static_cast<wchar_t>(::towlower(c)); }
+    return p;
+}
+
+// Every process but this one whose executable lies inside `dir` (compared without case).
+inline std::vector<std::int64_t> upd_running_under(const std::string& dir) {
+    std::vector<std::int64_t> out;
+    std::wstring d = upd_fold(upd_widen(dir));
+    while (d.size() > 3 && d.back() == L'\\') d.pop_back();
+    DWORD self = ::GetCurrentProcessId();
+    HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return out;
+    PROCESSENTRY32W pe{};
+    pe.dwSize = sizeof pe;
+    for (BOOL more = ::Process32FirstW(snap, &pe); more; more = ::Process32NextW(snap, &pe)) {
+        if (pe.th32ProcessID == 0 || pe.th32ProcessID == self) continue;
+        HANDLE h = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
+        if (!h) continue;
+        wchar_t buf[MAX_PATH * 4];
+        DWORD n = static_cast<DWORD>(sizeof buf / sizeof buf[0]);
+        if (::QueryFullProcessImageNameW(h, 0, buf, &n)) {
+            std::wstring p = upd_fold(std::wstring(buf, n));
+            if (p.size() > d.size() && p.compare(0, d.size(), d) == 0 && p[d.size()] == L'\\') {
+                out.push_back(static_cast<std::int64_t>(pe.th32ProcessID));
+            }
+        }
+        ::CloseHandle(h);
+    }
+    ::CloseHandle(snap);
+    return out;
+}
+
 inline bool upd_make_executable(const std::string&) { return true; }
 
 #endif

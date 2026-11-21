@@ -36,3 +36,42 @@ test "the toast offers to install once and to fix every time" {
     foreign.state = "foreign"
     assert_eq(cli_link_offer(true, [missing, foreign], false), "")
 }
+
+test "a Path entry is compared without case, slashes or a trailing separator" {
+    assert_eq(path_entry_key(" C:/Users/Me/Flint/bin/ "), "c:\\users\\me\\flint\\bin")
+    assert_eq(path_entry_key("\"C:\\Tools\""), "c:\\tools")
+    assert_eq(path_entry_key("C:\\"), "c:\\")
+    assert_eq(split_path_value("C:\\a;;C:\\b; ;"), ["C:\\a", "C:\\b"])
+}
+
+test "each state of the Windows PATH entry" {
+    bin := "C:/Users/me/Apps/Flint/bin"
+    here := PathEntryProbe{ entry: "c:\\users\\me\\apps\\flint\\bin\\", has_cli: true, has_app: true }
+    other := PathEntryProbe{ entry: "C:\\Users\\me\\Downloads\\Flint-2\\bin", has_cli: true, has_app: true }
+    gone := PathEntryProbe{ entry: "D:\\Old\\Flint\\bin", has_cli: false, has_app: false }
+    tools := PathEntryProbe{ entry: "C:\\Tools\\bin", has_cli: false, has_app: false }
+    // A flint.exe that is not beside a Flint.exe (install.ps1's old layout, a source
+    // build): not ours.
+    loose := PathEntryProbe{ entry: "C:\\Users\\me\\AppData\\Local\\Programs\\Flint", has_cli: true, has_app: false }
+    assert_eq(path_entry_state(bin, here), "installed")
+    assert_eq(path_entry_state(bin, other), "other-copy")
+    assert_eq(path_entry_state(bin, gone), "broken")
+    assert_eq(path_entry_state(bin, tools), "")
+    assert_eq(path_entry_state(bin, loose), "")
+    assert_eq(path_spot(bin, [tools, other, here]).state, "installed")
+    assert_eq(path_spot(bin, [tools, gone, other]).state, "broken")
+    assert_eq(path_spot(bin, [tools, gone, other]).target, "D:\\Old\\Flint\\bin")
+    assert_eq(path_spot(bin, [tools, loose]).state, "missing")
+    assert_eq(path_spot(bin, []).path, bin)
+}
+
+test "adding the folder puts it first and drops other copies; removing keeps the rest" {
+    bin := "C:/F/Flint/bin"
+    other := PathEntryProbe{ entry: "D:\\Flint\\bin", has_cli: true, has_app: true }
+    tools := PathEntryProbe{ entry: "%USERPROFILE%\\tools", has_cli: false, has_app: false }
+    here := PathEntryProbe{ entry: "C:\\F\\Flint\\bin", has_cli: true, has_app: true }
+    assert_eq(path_with_cli(bin, [tools, other]), "C:\\F\\Flint\\bin;%USERPROFILE%\\tools")
+    assert_eq(path_with_cli(bin, [here, tools]), "C:\\F\\Flint\\bin;%USERPROFILE%\\tools")
+    assert_eq(path_without_cli(bin, [tools, here, other]), "%USERPROFILE%\\tools;D:\\Flint\\bin")
+    assert_eq(path_without_cli(bin, []), "")
+}

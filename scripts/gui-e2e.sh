@@ -193,7 +193,18 @@ run_app() {
   # run's own, so the links go nowhere near the machine's PATH; its ~/.local/bin holds
   # a link to a copy that was moved, which the app offers to fix.
   local cli_env=()
-  if [[ "$1" == clilink ]]; then
+  local cli_key="" win=""
+  case "$(uname -s)" in MINGW*|MSYS*) win=1 ;; esac
+  if [[ "$1" == clilink && -n "$win" ]]; then
+    # Windows (milestone 50, D-121): a pretend Flint folder with its bin\flint.exe, and
+    # a registry key of the run's own standing in for HKCU\Environment, whose Path
+    # still names a copy that was moved; the machine's own Path is never touched.
+    mkdir -p "$tmp/cli/Flint/bin"
+    : > "$tmp/cli/Flint/Flint.exe"; : > "$tmp/cli/Flint/bin/flint.exe"
+    cli_key="Software\\Flint-e2e\\clilink-$$"
+    MSYS2_ARG_CONV_EXCL='*' reg add "HKCU\\$cli_key" /v Path /t REG_EXPAND_SZ /d 'D:\Old\Flint\bin;%USERPROFILE%\tools' /f >/dev/null
+    cli_env=(FLINT_CLI="$(cygpath -m "$tmp/cli/Flint/bin/flint.exe")" FLINT_CLI_PATH_KEY="$cli_key")
+  elif [[ "$1" == clilink ]]; then
     mkdir -p "$tmp/cli/Flint.app/Contents/Helpers" "$tmp/clihome/.local/bin" "$tmp/clisys"
     printf '#!/bin/sh\n' > "$tmp/cli/Flint.app/Contents/Helpers/flint"
     ln -sfn "$tmp/cli/Moved.app/Contents/Helpers/flint" "$tmp/clihome/.local/bin/flint"
@@ -236,6 +247,17 @@ JSON
     FLINT_GUI_E2E_VISIBLE="$visible" \
     "${app[@]}" 2>&1 | tee "$4" || st=$?
   [[ -f "$4.front" ]] && cat "$4.front"
+  if [[ -n "$cli_key" ]]; then
+    # What the app wrote is what Windows reads: this copy's bin first, the moved copy
+    # gone, the rest kept as written.
+    local val
+    val="$(MSYS2_ARG_CONV_EXCL='*' reg query "HKCU\\$cli_key" /v Path 2>/dev/null | sed -n 's/^ *Path *REG_EXPAND_SZ *//p' | tr -d '\r')"
+    MSYS2_ARG_CONV_EXCL='*' reg delete "HKCU\\$cli_key" /f >/dev/null 2>&1 || true
+    if [[ "$val" != "$(cygpath -w "$tmp/cli/Flint/bin");%USERPROFILE%\tools" ]]; then
+      echo "e2e: fail: the Path the app left is [$val]"; echo "gui-e2e ($1): FAILED" >&2; return 1
+    fi
+    echo "e2e: the Path the app left: $val"
+  fi
   if [[ "$1" == update ]]; then
     kill "${feed_pid:-0}" 2>/dev/null || true; wait "${feed_pid:-0}" 2>/dev/null || true; feed_pid=""
     # Download downloads inside Flint (milestone 53): from the run's feed, which has no
@@ -270,10 +292,8 @@ JSON
 # back, and the old Flint says why. Only a build from source accepts the test feed and
 # key (D-116).
 run_selfupdate() {
-  local js="$1" log="$2"
-  case "$(uname -s)" in
-    MINGW*|MSYS*) echo "gui-e2e: skip the selfupdate run (Windows updates itself from milestone 50, D-118)"; return 0 ;;
-  esac
+  local js="$1" log="$2" win=""
+  case "$(uname -s)" in MINGW*|MSYS*) win=1 ;; esac
   # Releases carry packages for macOS arm64 and Linux x86_64 only (D-111): Linux on arm64
   # (Docker on a Mac) is offered How to update, so there is nothing to download. The
   # swap itself runs there in cli-e2e's update-apply steps.
@@ -287,6 +307,9 @@ run_selfupdate() {
   pub="$("$root/scripts/sign-manifest.sh" keygen "$base/key" 2>/dev/null)"
   if [[ "$(uname -s)" == Darwin ]]; then
     name=Flint.app; exe=Contents/MacOS/Flint; cli=Contents/Helpers/flint; res=Contents/Resources
+  elif [[ -n "$win" ]]; then
+    # Windows (milestone 50, D-121): Flint\Flint.exe and Flint\bin\flint.exe.
+    name=Flint; exe=Flint.exe; cli=bin/flint.exe; res=.
   else
     name=Flint; exe=Flint; cli=flint; res=.
     # The relaunched app outlives the first one: a display of the run's own, not xvfb-run's.
@@ -304,19 +327,34 @@ run_selfupdate() {
     inst="$w/Apps/$name"
     if [[ "$(uname -s)" == Darwin ]]; then ditto build/gui/Flint.app "$inst"; else cp -R build/gui "$inst"; fi
     mkdir -p "$inst/$(dirname "$cli")"
-    cp build/flint "$inst/$cli"
+    if [[ -n "$win" ]]; then cp build/flint.exe "$inst/$cli"; else cp build/flint "$inst/$cli"; fi
     cp "$js" "$inst/$res/e2e.js"
     if [[ "$(uname -s)" == Darwin ]]; then ditto "$inst" "$w/pkg/$name"; else cp -R "$inst" "$w/pkg/$name"; fi
     printf 'new\n' > "$w/pkg/$name/$res/e2e-new"
-    if [[ "$scenario" == rollback ]]; then printf '#!/bin/sh\nexit 1\n' > "$w/pkg/$name/$exe"; chmod 755 "$w/pkg/$name/$exe"; fi
+    if [[ "$scenario" == rollback && -n "$win" ]]; then
+      # A copy of cmd.exe: with no console and nothing to read, it quits at once.
+      cp "$(cygpath -u "${SYSTEMROOT:-C:\\Windows}")/System32/cmd.exe" "$w/pkg/$name/$exe"
+    elif [[ "$scenario" == rollback ]]; then printf '#!/bin/sh\nexit 1\n' > "$w/pkg/$name/$exe"; chmod 755 "$w/pkg/$name/$exe"; fi
     local zipf="$w/feed/Flint-99.0.0-pkg.zip"
-    if [[ "$(uname -s)" == Darwin ]]; then ditto -c -k --keepParent "$w/pkg/$name" "$zipf"; else (cd "$w/pkg" && zip -qry "$zipf" "$name"); fi
+    if [[ "$(uname -s)" == Darwin ]]; then ditto -c -k --keepParent "$w/pkg/$name" "$zipf"
+    elif [[ -n "$win" ]]; then
+      # As windows/package.sh writes it (MSYS2 has no zip).
+      (cd "$w/pkg" && python3 -I -c '
+import os, sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED) as z:
+    for d, _, files in os.walk(sys.argv[2]):
+        for f in files:
+            p = os.path.join(d, f)
+            z.write(p, p.replace(os.sep, "/"))
+' "$zipf" "$name")
+    else (cd "$w/pkg" && zip -qry "$zipf" "$name"); fi
     local sha size key
     sha="$(python3 -I -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$zipf")"
     size="$(wc -c < "$zipf" | tr -d ' ')"
     [[ "$scenario" != badsha ]] || sha="$(printf '%064d' 7)"
     key=linux-x86_64-deb
     [[ "$(uname -s)" != Darwin ]] || key=macos-arm64
+    [[ -z "$win" ]] || key=windows-x86_64
     fport="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
     python3 -I - "$w/feed/manifest.json" "$fport" "$key" "$sha" "$size" <<'PY'
 import json, sys
@@ -353,6 +391,7 @@ PY
     for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$fport") 2>/dev/null && break; sleep 0.1; done
     local run=("$inst/$exe")
     [[ -z "$xdisp" ]] || run=(env DISPLAY="$xdisp" timeout 300 "$inst/$exe")
+    [[ -z "$win" ]] || run=(timeout 300 "$inst/$exe")
     echo "gui-e2e: selfupdate: $scenario"
     env FLINT_UPDATE_FEED="http://127.0.0.1:$fport/manifest.json" FLINT_UPDATE_TEST_KEY="$pub" FLINT_UPDATE_TEST_KIND=portable \
       FLINT_CONFIG_DIR="$w/config" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$inst/$res/e2e.js" FLINT_GUI_E2E_VISIBLE="$visible" \

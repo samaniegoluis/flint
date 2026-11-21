@@ -15,8 +15,9 @@ which list every file with a `SHA256SUMS` to check them against:
 shasum -a 256 -c SHA256SUMS --ignore-missing     # on Linux: sha256sum -c …
 ```
 
-Packages are published for macOS, and for Linux from the first release after 0.18.2; Windows follows. Until one is published for
-your system, build it from a checkout:
+Packages are published for macOS, for Linux from the first release after 0.18.2, and for
+Windows from the first release after 0.19.0. Until one is published for your system, build
+it from a checkout:
 [Build a release package](/start/build-from-source/#build-a-release-package).
 
 ## macOS
@@ -74,6 +75,67 @@ The package links its own copies of libssh, libsodium, SQLCipher, OpenSSL and Fr
 built for macOS 13.3. Its FreeRDP has no FFmpeg, audio or device redirection, which Flint
 never turns on; it decodes H.264 with macOS's own VideoToolbox, so the remote desktop's
 graphics pipeline works as in a build from source.
+
+## Windows
+
+**Needs:** 64-bit Windows 10 or 11 (x86_64) and the Microsoft Edge WebView2 Runtime,
+which Windows 11 and an up-to-date Windows 10 already have. If it is missing, Flint says
+so when it starts and offers Microsoft's
+[download page](https://developer.microsoft.com/microsoft-edge/webview2/); install the
+*Evergreen* runtime and start Flint again.
+
+1. Unzip `Flint-<version>-windows-x86_64.zip` (right-click → **Extract All**). It holds
+   one folder, `Flint`.
+2. Move the `Flint` folder where you keep programs, for example
+   `%LOCALAPPDATA%\Programs\Flint`. It runs from any folder you can write to, which
+   Flint needs in order to update itself. A USB drive works too.
+3. Open `Flint.exe`. Windows SmartScreen stops it the first time, because the program is
+   not signed: it says *Windows protected your PC*. Choose **More info**, then
+   **Run anyway**. Windows remembers the choice for this copy.
+
+The folder holds:
+
+| Where | What |
+|---|---|
+| `Flint.exe` | The app |
+| `bin\flint.exe` | The CLI, alone in its folder so that folder can go on your `PATH` |
+| `ui\`, `WebView2Loader.dll` | The app's page and Microsoft's WebView2 loader |
+| `licenses\` | Flint's licence and each bundled library's |
+| `install.ps1` | An optional installer for this user (below) |
+
+Your vaults and settings live in your user folder (`%APPDATA%\Flint`), never inside the
+`Flint` folder, so replacing the folder keeps them.
+
+Flint tells you when a new version is out, at launch and every hour, downloads and checks
+it when you choose **Download**, and relaunches into it when you choose **Relaunch**:
+see [Updates](/guides/updates/).
+
+### The flint command
+
+The first time the app opens, a notification offers **Add to PATH**; it never does so on
+its own. You can also do it later from **Settings → About → Command line**. It adds the
+`Flint\bin` folder to your own `PATH` (no administrator needed), first, so a terminal
+opened afterwards finds `flint`. **Remove from PATH** takes it off again. Since the entry
+points into the folder, an update to Flint updates the command too, and a `flint` you
+start opens the `Flint.exe` it came with when it needs the app.
+
+If you move or rename the `Flint` folder, the old entry points at a copy that is gone:
+Flint says so at launch and offers **Use this copy**, which replaces it. Only entries that
+name a Flint folder's `bin` are ever changed.
+
+### Install it for this user (optional)
+
+The zip's `install.ps1` copies the folder to `%LOCALAPPDATA%\Programs\Flint`, adds Flint
+to the Start menu and puts `bin` on your `PATH`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Flint\install.ps1
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\Flint\install.ps1" -Uninstall
+```
+
+`-Uninstall` removes the folder, the Start menu entry and the `PATH` entry; your vaults
+and settings stay. The installed copy updates itself like any other. A setup program comes
+with signed packages, later.
 
 ## Linux
 

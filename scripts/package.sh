@@ -2,7 +2,7 @@
 # Builds Flint's release packages for one system into dist/ (spec v13, D-111, D-112):
 #
 #   scripts/package.sh macos      # → dist/Flint-<version>-macos-arm64.zip
-#   scripts/package.sh windows    # → windows/package.sh (MSYS2 CLANG64 on Windows)
+#   scripts/package.sh windows    # → dist/Flint-<version>-windows-x86_64.zip (windows/package.sh, MSYS2 CLANG64)
 #   scripts/package.sh linux      # → dist/flint_<version>_amd64.deb, dist/flint-<version>.x86_64.rpm
 #   scripts/package.sh linux deb  # one of the two
 #

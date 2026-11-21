@@ -7,7 +7,6 @@
 # person runs the same way on the Mac, Zorin or the Windows VM. guard checks the tag's
 # commit is on main; a job per system builds its packages; draft makes the release a
 # draft with SHA256SUMS and the version's notes, which the owner looks at and publishes.
-# Windows (50) adds its job here.
 name: Release
 
 on:
@@ -86,8 +85,46 @@ jobs:
             dist/*.rpm
           if-no-files-found: error
 
+  windows:
+    needs: guard
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      # Checked out with LF endings: the scripts run in MSYS2's bash.
+      - run: git config --global core.autocrlf false
+        shell: pwsh
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+      # MSYS2 itself and its CLANG64 shell; every package Flint needs is
+      # windows/bin/setup.sh's, the same as on the Windows VM and windows/build.ps1.
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: false
+          install: git
+      - name: The pinned FreeRDP, cfire, WebView2 loader and Node, kept while their scripts are unchanged
+        uses: actions/cache@v6
+        with:
+          path: ~/AppData/Local/flint-build/opt
+          key: windows-opt-${{ hashFiles('windows/bin/setup.sh', 'windows/bin/freerdp.sh') }}
+      # FLINT_WIN_HOME is %LOCALAPPDATA%\flint-build there (windows/bin/home.sh).
+      - name: Setup
+        run: windows/bin/setup.sh
+      - name: Package
+        run: scripts/package.sh windows
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: dist/*.zip
+          if-no-files-found: error
+
   draft:
-    needs: [macos, linux]
+    needs: [macos, linux, windows]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The update manifest's signing key lives here and nowhere else in GitHub

@@ -324,11 +324,12 @@ flint update-apply --wait <pid> --from <folder> --to <folder> [--json]
 ```
 
 It takes only the package the app unpacked beside the installed one (`--from` must be
-`<parent of --to>/.flint-update/new/Flint.app`), waits up to a minute for process
+`<parent of --to>/.flint-update/new/Flint.app`, or `…/new/Flint` on Windows), waits up to a minute for process
 `--wait` to quit and up to half a minute for any `flint` running from the app's folder,
 swaps the two folders by renaming them, starts the new app and waits a minute for it to
 say it started. If it does not, the old folder is put back and opened. Exits 0 when
 applied; otherwise `timeout` (14) when the app did not quit or the new one did not
 start, `conflict` (4) when a `flint` kept running, `io` (10) when a folder could not be
-moved, `usage` (2) or `invalid` (7) for its arguments. With `--json` it prints
+moved (each rename is tried for ten seconds: on Windows a program holding a file in the
+folder stops it, and the package is kept), `usage` (2) or `invalid` (7) for its arguments. With `--json` it prints
 `{"applied":…,"step":…,"code":…,"message":…,"kept":…}`.

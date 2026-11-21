@@ -24,7 +24,7 @@ fn cli_link_status[L: CliLinks](links: L, cli: str, system: str, home: str, offe
         p := links.cli_link_probe(path)
         spots.push(CliLinkSpot{ path: path, state: cli_link_state(cli, p), target: p.target, admin: !p.dir_writable })
     }
-    return CliLinkStatus{ available: available, cli: cli, spots: spots, offer: cli_link_offer(available, spots, offer_shown) }
+    return CliLinkStatus{ available: available, cli: cli, spots: spots, offer: cli_link_offer(available, spots, offer_shown), kind: "link" }
 }
 
 // Links `path` to this copy's CLI. Only one of the known places, only over nothing or
@@ -73,6 +73,61 @@ fn find_spot(st: CliLinkStatus, path: str) -> CliLinkSpot! {
 fn cli_link_first_launch[L: CliLinks, T: SettingsStore](links: L, mut settings: T, cli: str, system: str, home: str) -> CliLinkStatus! {
     mut s := try load_settings(settings)
     st := cli_link_status(links, cli, system, home, s.cli_offer_shown)
+    if st.offer == "install" {
+        s.cli_offer_shown = true
+        try settings.settings_save(s)
+    }
+    return st
+}
+
+// Windows (milestone 50, D-121): the package's `bin` folder (holding only flint.exe) on
+// the user's Path. `cli` is bin\flint.exe, `bin` its folder. The same states, offer and
+// first-launch record as the macOS link.
+fn path_probes[P: CliPath](env: P) -> []PathEntryProbe {
+    value := env.cli_path_read() or ""
+    mut out: []PathEntryProbe = []
+    for e in split_path_value(value) {
+        out.push(env.cli_path_probe(e))
+    }
+    return out
+}
+
+fn cli_path_status[P: CliPath](env: P, cli: str, bin: str, offer_shown: bool) -> CliLinkStatus {
+    available := cli.len() > 0 && env.cli_path_file_exists(cli)
+    spots: []CliLinkSpot = [path_spot(bin, path_probes(env))]
+    return CliLinkStatus{ available: available, cli: cli, spots: spots, offer: cli_link_offer(available, spots, offer_shown), kind: "path" }
+}
+
+fn install_cli_path[P: CliPath](mut env: P, cli: str, bin: str, path: str) -> CliLinkStatus! {
+    st := cli_path_status(env, cli, bin, true)
+    if !st.available {
+        return error(coded(ERR_UNSUPPORTED, "this copy of Flint carries no flint command"))
+    }
+    if path_entry_key(path) != path_entry_key(bin) {
+        return error(coded(ERR_INVALID, "only this copy's folder goes on the PATH"))
+    }
+    if st.spots[0].state == "installed" {
+        return st
+    }
+    try env.cli_path_write(path_with_cli(bin, path_probes(env)))
+    return cli_path_status(env, cli, bin, true)
+}
+
+fn remove_cli_path[P: CliPath](mut env: P, cli: str, bin: str, path: str) -> CliLinkStatus! {
+    if path_entry_key(path) != path_entry_key(bin) {
+        return error(coded(ERR_INVALID, "only this copy's folder can be taken off the PATH"))
+    }
+    st := cli_path_status(env, cli, bin, true)
+    if st.spots[0].state != "installed" {
+        return st
+    }
+    try env.cli_path_write(path_without_cli(bin, path_probes(env)))
+    return cli_path_status(env, cli, bin, true)
+}
+
+fn cli_path_first_launch[P: CliPath, T: SettingsStore](env: P, mut settings: T, cli: str, bin: str) -> CliLinkStatus! {
+    mut s := try load_settings(settings)
+    st := cli_path_status(env, cli, bin, s.cli_offer_shown)
     if st.offer == "install" {
         s.cli_offer_shown = true
         try settings.settings_save(s)

@@ -81,7 +81,13 @@ fn (mut self: OsUpdateFiles) upd_unzip(zip: str, dest: str) -> void! {
         cmd = "ditto"
         args = ["-x", "-k", zip, dest]
     } else if os_name() == "windows" {
-        cmd = "tar"
+        // Windows' own bsdtar, which reads a zip; an MSYS2 or Git tar earlier on the
+        // PATH is GNU tar, which does not (milestone 50).
+        mut root := os.getenv("SystemRoot")
+        if root.len() == 0 {
+            root = "C:/Windows"
+        }
+        cmd = local_slashes(root) + "/System32/tar.exe"
         args = ["-x", "-f", zip, "-C", dest]
     }
     r := os.command(cmd, args) or err {

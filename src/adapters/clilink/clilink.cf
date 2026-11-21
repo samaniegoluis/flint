@@ -70,3 +70,66 @@ fn link_result(why: str, path: str) -> void! {
     }
     return error(coded(ERR_IO, why))
 }
+
+// The `CliPath` port on Windows' registry (milestone 50): `key` is the HKCU subkey,
+// "Environment" for the user's real Path; gui-e2e and the adapter test give one of
+// their own (FLINT_CLI_PATH_KEY), so a run never touches the machine's Path.
+CLI_PATH_KEY: str = "Environment"
+
+type OsCliPath struct {
+    key: str
+}
+
+fn new_os_cli_path(key: str) -> OsCliPath {
+    return OsCliPath{ key: key }
+}
+
+fn (self: OsCliPath) cli_path_read() -> str! {
+    mut value := ""
+    mut why := ""
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-178
+    cpp {
+        std::string v, e;
+        ok = flint_clilink::path_read(std::string(self.key), v, e);
+        value = v;
+        why = e;
+    }
+    if !ok {
+        return error(coded(ERR_IO, why))
+    }
+    return value
+}
+
+fn (mut self: OsCliPath) cli_path_write(value: str) -> void! {
+    mut why := ""
+    // CFIRE-UPSTREAM: CF-178
+    cpp {
+        why = flint_clilink::path_write(std::string(self.key), std::string(value));
+    }
+    if why == "unsupported" {
+        return error(coded(ERR_UNSUPPORTED, "the PATH is offered on Windows"))
+    }
+    if why.len() > 0 {
+        return error(coded(ERR_IO, why))
+    }
+}
+
+fn (self: OsCliPath) cli_path_probe(entry: str) -> PathEntryProbe {
+    mut has_cli := false
+    mut has_app := false
+    // CFIRE-UPSTREAM: CF-178
+    cpp {
+        flint_clilink::entry_probe(std::string(entry), has_cli, has_app);
+    }
+    return PathEntryProbe{ entry: entry, has_cli: has_cli, has_app: has_app }
+}
+
+fn (self: OsCliPath) cli_path_file_exists(path: str) -> bool {
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-178
+    cpp {
+        ok = flint_clilink::file_exists(std::string(path));
+    }
+    return ok
+}

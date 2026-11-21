@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/backend';
 import { PASTE_LIMITS, TOAST_CORNERS, type CliLinkSpot, type CliLinkStatus, type LockAfter, type Settings, type ToastCorner, type VaultStatus } from '../api/types';
-import { CLI_TOAST_KEY, cliSpotAction, cliSpotText } from '../lib/cliLink';
+import { CLI_TOAST_KEY, cliActionLabel, cliSpotAction, cliSpotText, winPath } from '../lib/cliLink';
 import { installCli, shortPath, useApp, vaultInitial, vaultMarkClass } from '../state/app';
 import { ACTION_TITLES, chordLabel, SHORTCUT_GROUPS } from '../lib/keymap';
 import { Icon, type IconName } from '../ui/Icon';
@@ -359,9 +359,9 @@ function CommandLine() {
     try {
       if (cliSpotAction(spot) === 'remove') {
         setSt(await api.cliRemove(spot.path));
-        notify({ text: `Removed ${shortPath(spot.path)}`, key: CLI_TOAST_KEY });
+        notify({ text: st.kind === 'path' ? `Removed ${winPath(spot.path)} from your PATH` : `Removed ${shortPath(spot.path)}`, key: CLI_TOAST_KEY });
       } else {
-        const next = await installCli(spot.path, notify, fail);
+        const next = await installCli(spot.path, notify, fail, st.kind);
         if (next) setSt(next);
       }
     } catch (err) {
@@ -371,7 +371,9 @@ function CommandLine() {
     }
   };
   return (
-    <Row title="Command line" desc="The flint command runs this copy of Flint through a link in a folder on your PATH, so updating Flint updates it too.">
+    <Row title="Command line" desc={st.kind === 'path'
+      ? "The flint command runs from this copy's bin folder on your PATH, so updating Flint updates it too."
+      : 'The flint command runs this copy of Flint through a link in a folder on your PATH, so updating Flint updates it too.'}>
       {!st.available
         ? <span className="hint" data-cli-none>This build carries no flint command. A build from source puts one on the PATH with <span className="mono">scripts/install.sh</span>.</span>
         : (
@@ -381,11 +383,11 @@ function CommandLine() {
                 const a = cliSpotAction(spot);
                 return (
                   <tr key={spot.path} data-cli-spot={spot.state}>
-                    <td className="mono">{shortPath(spot.path)}</td>
-                    <td>{cliSpotText(spot)}</td>
+                    <td className="mono">{st.kind === 'path' ? winPath(spot.path) : shortPath(spot.path)}</td>
+                    <td>{cliSpotText(spot, st.kind)}</td>
                     <td>{a && (
                       <button className="btn btn-ghost btn-sm" disabled={busy !== ''} data-cli-action={a} onClick={() => act(spot)}>
-                        {a === 'install' ? 'Install' : a === 'repoint' ? 'Use this copy' : 'Remove'}
+                        {cliActionLabel(a, st.kind)}
                       </button>
                     )}</td>
                   </tr>

@@ -12,22 +12,32 @@ fn update_tmp(name: str) -> str {
     return "{temp_base()}/flint-update-{name}-{time.now_ms()}"
 }
 
-test "a zip unpacks with the system's tool, and folders move and go by rename" {
-    if os_name() == "windows" {
-        println("SKIP: the Windows update comes with milestone 50")
-        return
+fn system32() -> str {
+    mut root := os.getenv("SystemRoot")
+    if root.len() == 0 {
+        root = "C:/Windows"
     }
+    return local_slashes(root) + "/System32"
+}
+
+test "a zip unpacks with the system's tool, and folders move and go by rename" {
     dir := update_tmp("files")
     mut files := new_os_update_files()
     defer { files.upd_remove(dir) or {} }
     try files.upd_mkdir(dir + "/src/Flint.app/Contents/MacOS")
     try files.upd_write(dir + "/src/Flint.app/Contents/MacOS/Flint", "#!/bin/sh\necho flint\n")
     try files.upd_copy_exe(dir + "/src/Flint.app/Contents/MacOS/Flint", dir + "/flint-copy")
-    st := try fs.stat(dir + "/flint-copy")
-    assert((st.mode & 0o111) != 0)
-    // The zip, as scripts/package.sh makes it (ditto on macOS, zip -r elsewhere).
+    if os_name() != "windows" {
+        st := try fs.stat(dir + "/flint-copy")
+        assert((st.mode & 0o111) != 0)
+    }
+    // The zip, as scripts/package.sh makes it (ditto on macOS, zip -r elsewhere; on
+    // Windows its own bsdtar writes one, as the package's Python zipfile does).
     mut made := false
-    if os_name() == "mac" {
+    if os_name() == "windows" {
+        r := try os.command(system32() + "/tar.exe", ["-a", "-c", "-f", dir + "/p.zip", "-C", dir + "/src", "Flint.app"])
+        made = r.exit_code == 0
+    } else if os_name() == "mac" {
         r := try os.command("ditto", ["-c", "-k", "--keepParent", dir + "/src/Flint.app", dir + "/p.zip"])
         made = r.exit_code == 0
     } else {
@@ -61,18 +71,21 @@ test "a zip unpacks with the system's tool, and folders move and go by rename" {
 }
 
 test "a detached process is started, seen inside its folder, and stopped" {
-    if os_name() == "windows" {
-        println("SKIP: the Windows update comes with milestone 50")
-        return
-    }
     dir := update_tmp("procs")
     mut files := new_os_update_files()
     defer { files.upd_remove(dir) or {} }
     try files.upd_mkdir(dir + "/bin")
-    // A copy of sleep inside the folder: what update-apply waits for.
-    try files.upd_copy_exe("/bin/sleep", dir + "/bin/sleep")
+    // A copy of sleep inside the folder: what update-apply waits for (Windows: ping,
+    // which waits a second between echoes).
+    mut pid: i64 = 0
     mut procs := new_os_update_processes()
-    pid := try procs.proc_spawn(dir + "/bin/sleep", ["30"], dir + "/log.txt")
+    if os_name() == "windows" {
+        try files.upd_copy_exe(system32() + "/PING.EXE", dir + "/bin/ping.exe")
+        pid = try procs.proc_spawn(dir + "/bin/ping.exe", ["-n", "30", "127.0.0.1"], dir + "/log.txt")
+    } else {
+        try files.upd_copy_exe("/bin/sleep", dir + "/bin/sleep")
+        pid = try procs.proc_spawn(dir + "/bin/sleep", ["30"], dir + "/log.txt")
+    }
     assert(pid > 0)
     assert(procs.proc_alive(pid))
     mut seen: []i64 = []
@@ -92,4 +105,79 @@ test "a detached process is started, seen inside its folder, and stopped" {
     bad := procs.proc_spawn(dir + "/none", [], "") or -1
     assert_eq(bad, -1)
     assert(current_pid() > 0)
+}
+
+// Windows (milestone 50, D-118 (5)): what holds a folder there. A file open without
+// FILE_SHARE_DELETE inside it, and a program running from it, both refuse the rename;
+// let go, the rename goes through. update-apply never writes over a file in use.
+test "Windows: a folder with a file held open, or a program running from it, cannot be renamed until let go" {
+    if os_name() != "windows" {
+        return
+    }
+    dir := update_tmp("held")
+    mut files := new_os_update_files()
+    defer { files.upd_remove(dir) or {} }
+    try files.upd_mkdir(dir + "/Flint/bin")
+    try files.upd_write(dir + "/Flint/ui.txt", "page")
+    held := dir + "/Flint/ui.txt"
+    mut handle: i64 = 0
+    // CFIRE-UPSTREAM: CF-175
+    cpp {
+        #if defined(_WIN32)
+        HANDLE h = ::CreateFileW(flint_update::upd_widen(held).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        handle = h == INVALID_HANDLE_VALUE ? 0 : reinterpret_cast<std::int64_t>(h);
+        #endif
+    }
+    assert(handle != 0)
+    mut why := ""
+    files.upd_rename(dir + "/Flint", dir + "/Flint-old") or err { why = "{err.message()}" }
+    assert(why.starts_with("io:"))
+    assert(files.upd_exists(dir + "/Flint/ui.txt"))
+    // CFIRE-UPSTREAM: CF-175
+    cpp {
+        #if defined(_WIN32)
+        ::CloseHandle(reinterpret_cast<HANDLE>(handle));
+        #endif
+    }
+    try files.upd_rename(dir + "/Flint", dir + "/Flint-old")
+    try files.upd_rename(dir + "/Flint-old", dir + "/Flint")
+    // A program running from the folder: its image is open, so the same.
+    try files.upd_copy_exe(system32() + "/PING.EXE", dir + "/Flint/bin/flint.exe")
+    mut procs := new_os_update_processes()
+    pid := try procs.proc_spawn(dir + "/Flint/bin/flint.exe", ["-n", "30", "127.0.0.1"], "")
+    why = ""
+    files.upd_rename(dir + "/Flint", dir + "/Flint-old") or err { why = "{err.message()}" }
+    assert(why.starts_with("io:"))
+    assert_eq(procs.proc_running_under(dir + "/Flint")[0], pid)
+    procs.proc_stop(pid)
+    try files.upd_rename(dir + "/Flint", dir + "/Flint-old")
+    assert(files.upd_exists(dir + "/Flint-old/bin/flint.exe"))
+}
+
+test "Windows: arguments reach a detached program as given, and its output the log" {
+    if os_name() != "windows" {
+        return
+    }
+    dir := update_tmp("args")
+    mut files := new_os_update_files()
+    defer { files.upd_remove(dir) or {} }
+    try files.upd_mkdir(dir + "/a b")
+    mut procs := new_os_update_processes()
+    log := dir + "/a b/log.txt"
+    // cmd's own parser differs from the C runtime's; findstr reads its arguments the
+    // C runtime's way: a pattern with a space and a quote, found in a file whose path
+    // has a space.
+    try files.upd_write(dir + "/a b/in.txt", "one\nsay \"hi there\"\nthree\n")
+    pid := try procs.proc_spawn(system32() + "/findstr.exe", ["/C:say \"hi there\"", dir + "/a b/in.txt"], log)
+    for _ in 0..50 {
+        if !procs.proc_alive(pid) {
+            break
+        }
+        procs.proc_sleep(100)
+    }
+    assert(!procs.proc_alive(pid))
+    out := try files.upd_read(log)
+    assert(out.contains("say \"hi there\""))
+    assert(!out.contains("three"))
 }

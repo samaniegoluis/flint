@@ -299,6 +299,35 @@
     await waitFor(() => hasText('Add your first host'), 'the empty vault page', 30000);
     await check(q('.vault-name')?.textContent === 'E2E Vault', 'the new vault opens on the empty state');
 
+    if (RUN === 'clilink' && (await window.backend.app_info({})).os === 'windows') {
+      // Milestone 50 (D-121): the package's bin folder on the user's Path, here a
+      // registry key of the run's own whose Path names a copy that was moved
+      // (scripts/gui-e2e.sh, which then reads back what the app wrote).
+      await setStep('the flint command on the PATH');
+      const cliToast = (re) => qa('[data-toast]').find((el) => !el.classList.contains('leaving') && re.test(el.querySelector('.t-text')?.textContent ?? ''));
+      const fix = await waitFor(() => cliToast(/^flint on your PATH runs a copy of Flint that was moved or deleted$/), 'the offer to fix the moved folder');
+      await check(fix.dataset.kind === 'info', 'a Path naming a moved copy is offered a fix at launch');
+      await click('[data-toast] button', 'Use this copy');
+      await waitFor(() => cliToast(/^Added .*\\cli\\Flint\\bin to your PATH: open a new terminal and run flint$/), 'the added toast');
+      await check(!cliToast(/moved or deleted/), 'the result replaces the offer in place');
+      await openAbout();
+      await waitFor(() => q('[data-cli-spots]'), "About's Command line row");
+      const row = () => q('[data-cli-spots] tr');
+      await check(qa('[data-cli-spots] tr').length === 1, 'Windows has one place: the bin folder');
+      await check(row()?.dataset.cliSpot === 'installed' && row().cells[0].textContent.endsWith('\\cli\\Flint\\bin'), `About shows the folder on the PATH (${row()?.cells[0].textContent})`);
+      row().querySelector('[data-cli-action="remove"]').click();
+      await waitFor(() => row()?.dataset.cliSpot === 'missing', 'the folder taken off');
+      await check(!!byText('button', 'Add to PATH', row()), 'Remove from PATH takes it off and offers Add to PATH');
+      row().querySelector('[data-cli-action="install"]').click();
+      await waitFor(() => row()?.dataset.cliSpot === 'installed', 'the folder on the PATH again');
+      const st = await window.backend.cli_status({ first: false });
+      await check(st.kind === 'path' && st.spots[0].path.endsWith('/cli/Flint/bin'), 'the status names this copy\'s bin folder');
+      await log(`${passed} checks passed`);
+      await window.backend.e2e_report({ ok: true, detail: '' });
+      window.runtime.Quit();
+      return;
+    }
+
     if (RUN === 'clilink') {
       // Milestone 48 (D-111 (2)): the flint command from a packaged app. The run's own
       // ~/.local/bin holds a link to a copy that was moved (scripts/gui-e2e.sh).

@@ -13,10 +13,13 @@ type FakeUpdateFiles struct {
     new_app_starts: bool
     fail_unzip:     bool
     log:            []str
+    // Renames from this path fail this many times (a file inside held open).
+    held_path:      str
+    held_renames:   i64
 }
 
 fn fake_files(paths: []str) -> FakeUpdateFiles {
-    return FakeUpdateFiles{ paths: paths, texts: [], unzip_holds: ["Flint.app/Contents/MacOS/Flint", "Flint.app/Contents/Helpers/flint"], new_app_starts: true, fail_unzip: false, log: [] }
+    return FakeUpdateFiles{ paths: paths, texts: [], unzip_holds: ["Flint.app/Contents/MacOS/Flint", "Flint.app/Contents/Helpers/flint"], new_app_starts: true, fail_unzip: false, log: [], held_path: "", held_renames: 0 }
 }
 
 fn under(path: str, dir: str) -> bool {
@@ -71,6 +74,11 @@ fn (mut self: FakeUpdateFiles) upd_remove(path: str) -> void! {
 }
 
 fn (mut self: FakeUpdateFiles) upd_rename(from: str, to: str) -> void! {
+    if from == self.held_path && self.held_renames > 0 {
+        self.held_renames -= 1
+        self.log.push("held {from}")
+        return error(coded(ERR_IO, "The process cannot access the file because it is being used by another process."))
+    }
     if !self.upd_exists(from) {
         return error(coded(ERR_NOT_FOUND, "no {from}"))
     }
@@ -354,4 +362,44 @@ test "a staged version no newer than this one is cleared" {
     mut files := staged_files()
     assert_eq(staged_update(mut files, INSTALLED, "mac", "0.18.0"), "")
     assert(!files.upd_exists("/Apps/.flint-update"))
+}
+
+test "a folder held open for a moment is renamed once it is let go" {
+    mut files := staged_files()
+    files.held_path = INSTALLED
+    files.held_renames = 3
+    mut procs := fake_procs()
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    assert(o.applied)
+    assert_eq(files.log[0], "held /Apps/Flint.app")
+    assert_eq(files.log[3], "rename /Apps/Flint.app -> /Apps/.flint-update/old/Flint.app")
+}
+
+test "a folder held open past the retries is left as it was, the package kept" {
+    mut files := staged_files()
+    files.held_path = INSTALLED
+    files.held_renames = 1000000
+    mut procs := fake_procs()
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    assert(!o.applied)
+    assert_eq(o.step, APPLY_STEP_SWAP)
+    assert(o.kept)
+    assert(o.message.starts_with("a program has a file in Flint.app open"))
+    assert(procs.now >= UPDATE_RENAME_RETRY_MS)
+    assert(files.upd_exists(INSTALLED + "/Contents/MacOS/Flint"))
+    assert(files.upd_exists("/Apps/.flint-update/new/Flint.app"))
+    // The old app opens again to say why.
+    assert_eq(procs.spawned[procs.spawned.len() - 1], "/Apps/Flint.app/Contents/MacOS/Flint")
+}
+
+test "the new folder held open puts the old one back" {
+    mut files := staged_files()
+    files.held_path = "/Apps/.flint-update/new/Flint.app"
+    files.held_renames = 1000000
+    mut procs := fake_procs()
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "" })
+    assert(!o.applied)
+    assert_eq(o.step, APPLY_STEP_SWAP)
+    assert_eq(files.log[files.log.len() - 1], "rename /Apps/.flint-update/old/Flint.app -> /Apps/Flint.app")
+    assert(files.upd_exists(INSTALLED + "/Contents/MacOS/Flint"))
 }

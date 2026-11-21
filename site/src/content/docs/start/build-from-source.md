@@ -254,7 +254,10 @@ of them. The release workflow runs the same script.
 ```sh
 scripts/package.sh macos      # → dist/Flint-<version>-macos-arm64.zip
 scripts/package.sh linux      # → dist/flint_<version>_amd64.deb, dist/flint-<version>.x86_64.rpm
+scripts/package.sh windows    # → dist/Flint-<version>-windows-x86_64.zip (in MSYS2 CLANG64)
 ```
+
+On Windows it is `windows/package.sh`, described in [Build on Windows](#build-on-windows).
 
 On macOS (Apple silicon) it first runs `scripts/deps-macos.sh`, which downloads pinned
 sources of OpenSSL, libsodium, libssh, SQLCipher and FreeRDP 3, checks their SHA-256 and
@@ -405,26 +408,28 @@ by hand:
    ```
 
    It builds the CLI and the desktop app and writes
-   `dist\flint-<version>-windows-x86_64.zip`: `flint.exe`, `flint-app.exe`, the app's
-   `ui\` folder, `WebView2Loader.dll` and `install.ps1`. Every program links statically
-   and needs only Windows' own DLLs, so the unpacked folder runs where it is.
+   `dist\Flint-<version>-windows-x86_64.zip`, the same package a release carries: one
+   `Flint` folder with `Flint.exe`, `bin\flint.exe`, the app's `ui\` folder,
+   `WebView2Loader.dll`, the licences and `install.ps1`. Every program links statically
+   and needs only Windows' own DLLs, so the unpacked folder runs where it is
+   ([Install](/start/install/#windows)). `scripts/package.sh windows` runs the same.
 
-5. Install it for your user: unpack the zip, then in PowerShell, in that folder:
+5. Install it for your user (optional): unpack the zip, then in PowerShell:
 
    ```powershell
-   powershell -ExecutionPolicy Bypass -File .\install.ps1
+   powershell -ExecutionPolicy Bypass -File .\Flint\install.ps1
    ```
 
    | | Windows |
    |---|---|
-   | App | `%LOCALAPPDATA%\Programs\Flint\flint-app.exe`, with a Start menu entry |
-   | CLI | `flint.exe` in the same folder, which is added to your user's `PATH` |
+   | App | `%LOCALAPPDATA%\Programs\Flint\Flint.exe`, with a Start menu entry |
+   | CLI | `bin\flint.exe` in that folder; `bin` is added to your user's `PATH` |
 
-   `flint` starts `flint-app.exe` beside it when it needs the app. A running Flint is
+   `flint` starts the `Flint.exe` one folder up when it needs the app. A running Flint is
    quit first. `-Uninstall` removes the program, the Start menu entry and the `PATH`
    entry; your vaults and settings in `%APPDATA%\Flint` stay. Without installing, the
-   unpacked folder runs as it is: `flint-app.exe` finds the `WebView2Loader.dll` beside
-   it.
+   unpacked folder runs as it is, and the app offers to put its `bin` on the `PATH`
+   itself.
 
 The programs are not signed yet, so Windows SmartScreen may warn about them the first
 time.

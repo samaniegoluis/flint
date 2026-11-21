@@ -353,7 +353,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const offer = cliOffer(st);
           if (!offer) return;
           notify({ text: offer.text, kind: 'info', key: CLI_TOAST_KEY, duration: 'sticky', actions: [
-            { label: offer.label, run: () => { installCli(offer.path, notify, fail).catch(() => {}); } },
+            { label: offer.label, run: () => { installCli(offer.path, notify, fail, st.kind).catch(() => {}); } },
           ] });
         }).catch(() => {});
         const list = await refreshRecents();
@@ -420,10 +420,10 @@ export function vaultMarkClass(path: string): string {
 
 // "~/…" for paths under the home folder, when it can be guessed from the path.
 /** Links the flint command at `path` to this copy (milestone 48) and says so. */
-export async function installCli(path: string, notify: Notify, fail: (err: unknown) => unknown): Promise<CliLinkStatus | null> {
+export async function installCli(path: string, notify: Notify, fail: (err: unknown) => unknown, kind: CliLinkStatus['kind'] = 'link'): Promise<CliLinkStatus | null> {
   try {
     const st = await api.cliInstall(path);
-    notify({ text: cliInstalledText(path), kind: 'ok', key: CLI_TOAST_KEY });
+    notify({ text: cliInstalledText(path, kind), kind: 'ok', key: CLI_TOAST_KEY });
     return st;
   } catch (err) {
     fail(err);

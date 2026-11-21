@@ -46,16 +46,18 @@ MSYS2 itself is not checked yet (ROADMAP §7).
 | Build the CLI | `cfire build flint` | `build/flint.exe` |
 | Build the app | `scripts/build-gui.sh` | `build/gui/Flint.exe` and `build/gui/ui/` |
 | Build all three binaries | `cfire build` | adds `flint-vault-server.exe` (Windows only for the checks) |
-| Make the portable zip | `windows/package.sh` | `dist/flint-<version>-windows-x86_64.zip` and its SHA-256 |
-| Install it for this user | the zip's `install.ps1` (`-Uninstall` to remove) | `%LOCALAPPDATA%\Programs\Flint`, a Start menu entry, `flint` on the user's `PATH` |
+| Make the portable zip | `windows/package.sh` (or `scripts/package.sh windows`) | `dist/Flint-<version>-windows-x86_64.zip` and its SHA-256 |
+| Install it for this user | the zip's `Flint\install.ps1` (`-Uninstall` to remove) | `%LOCALAPPDATA%\Programs\Flint`, a Start menu entry, its `bin` on the user's `PATH` |
 
-The zip holds one folder: `flint.exe`, `flint-app.exe` (the app: `Flint.exe` beside
+The zip holds one folder, `Flint\` (milestone 50, D-121): `Flint.exe` (the app),
+`bin\flint.exe` (the CLI, alone so its folder can go on the `PATH`; `Flint.exe` beside
 `flint.exe` would be the same file on a case-insensitive disk), `ui\`,
-`WebView2Loader.dll`, `install.ps1` and `LICENSE`. Every `.exe` links statically and
-imports only Windows' own DLLs; `package.sh` refuses to pack one that does not. So the
-unpacked folder runs anywhere, with no MSYS2: the owner ran it that way on a second
-Windows machine (2026-11-19). `-Uninstall` removes the folder, the Start menu entry and
-the `PATH` entry; the vault and `%APPDATA%\Flint` stay.
+`WebView2Loader.dll`, `install-kind` (`portable`), `CHANGELOG.md`, `licenses\` and
+`install.ps1`. Every `.exe` links statically and imports only Windows' own DLLs;
+`package.sh` refuses to pack one that does not. So the unpacked folder runs anywhere,
+with no MSYS2, and updates itself in place (`flint update-apply`, D-122). `-Uninstall`
+removes the folder, the Start menu entry and the `PATH` entry; the vault and
+`%APPDATA%\Flint` stay.
 
 ## Check
 
@@ -97,7 +99,7 @@ paths. Shims for what cfire still lacks are tagged `// CFIRE-UPSTREAM:`.
 | Config folder | `adapters/config/recents.cf` | `%APPDATA%/Flint` |
 | Paths | `domain/files.cf`, `adapters/process/process.cf`, `drivers/clicmd/commands.cf`, `drivers/gui/rpc.cf` | One form of local path, `/`: `\` becomes `/` at every edge (`local_slashes`, `current_dir`, the file dialogs' results); `is_absolute_path()` accepts `C:/…`. Remote paths stay POSIX |
 | `flint cp` | `drivers/clicmd/files_commands.cf`, `domain/files.cf` | `C:\…` / `C:/…` is a local path, not host `C` (`is_drive_path`, on Windows only) |
-| App start (`serve`) | `drivers/clicmd/serve.cf`, `adapters/process` | `spawn_detached`: `CreateProcessW` with `DETACHED_PROCESS \| CREATE_NEW_PROCESS_GROUP`, no inherited handles; the app is `gui\Flint.exe` (build tree) or `flint-app.exe` (install) |
+| App start (`serve`) | `drivers/clicmd/serve.cf`, `adapters/process` | `spawn_detached`: `CreateProcessW` with `DETACHED_PROCESS \| CREATE_NEW_PROCESS_GROUP`, no inherited handles; the app is `gui\Flint.exe` (build tree) or `..\Flint.exe` from `bin\` (package) |
 | GUI: lock, sleep, front | `uievents/native/flint_sysevents.hpp` | A hidden window on its own thread: `WTS_SESSION_LOCK` is "screen", `PBT_APMSUSPEND` (and Modern Standby) is "sleep"; `bring_to_front` restores webui's window, `FlashWindowEx` when Windows refuses |
 | GUI: presence | `uievents/native/flint_presence.hpp` | None yet: the window asks for the master password. Windows Hello is the candidate |
 | GUI: clipboard | `uievents/native/flint_clipboard.hpp` | `CF_UNICODETEXT`; a secret also carries the no-history, no-cloud formats; the clear timer on a message-only window |
@@ -155,7 +157,6 @@ focus after Alt+Tab, W-07 Windows CI) is in [`cfire-windows.md`](cfire-windows.m
 | **Presence with Windows Hello** (`UserConsentVerifier`) | Today the window asks for the master password, the degraded fallback |
 | **Clipboard through `navigator.clipboard`** for plain copies | One code path on all three systems; secrets keep the native write |
 | **A failed re-key rename reopens the old vault** | On Windows the re-key closes the vault before the rename, and a failed rename leaves it locked |
-| **WebView2's data folder named `Flint`** | It is `%LOCALAPPDATA%\flint-app` (the `.exe` name) today |
 | **A tray glyph for the light taskbar**, **`set_dark_mode` at run time** | Follow Windows' theme without a restart |
 | **The CLI from WSL delegating to `flint.exe`** | As 1Password's `op.exe`: one vault, one app, one approval |
-| An installer (Inno Setup), the WebView2 runtime check, signing | ROADMAP §7, *Releases* |
+| An installer (Inno Setup), signing | ROADMAP §7, v14 |
