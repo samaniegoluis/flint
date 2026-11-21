@@ -4,6 +4,19 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.20.0 — 2026-11-21
+
+Flint for Windows: a portable zip for 64-bit Windows 10 and 11 holding one Flint folder, the desktop app and the flint command together. Unzip it anywhere you can write, and Flint offers to put flint on your PATH, no admin needed, and again if you move the folder. It updates itself like the Mac app: it downloads the new version, checks its signature and relaunches into it when you say so. Quitting Flint, or relaunching to update, no longer waits behind a long flint exec: running commands get five seconds, then stop.
+
+### Added
+
+- **windows:** The portable zip finished, Add flint to PATH and the self-update's swap
+
+### Fixed
+
+- **app:** Quitting stops the CLI's running commands, so Relaunch never hangs behind a flint exec
+
+
 ## 0.19.0 — 2026-11-20
 
 Flint for Linux: a .deb for Ubuntu 24.04 and later, Debian 13 and Zorin OS 18, and an .rpm for Fedora 43 and later, each installing the desktop app and the flint command together, with its menu entry, icon and polkit policy. Your package manager updates them; Flint tells you when a new version is out.
