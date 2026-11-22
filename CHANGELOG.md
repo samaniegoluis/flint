@@ -4,6 +4,15 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.26.0 — 2026-11-22
+
+Remote desktops that take only the graphics pipeline, such as GNOME Remote Desktop on Linux, now connect with Automatic: when a server closes the connection during setup, Flint tries once more with the pipeline and remembers that host. Such a close has its own message instead of saying there is no route to the server.
+
+### Added
+
+- **rdp:** A server that closes during setup has its own card, and Automatic falls back to the pipeline once (milestone 59)
+
+
 ## 0.25.0 — 2026-11-22
 
 A remote desktop that types like the machine in front of you. The pointer takes Windows' shapes, Caps Lock and Num Lock follow your keyboard, one click on a field is enough, and a Stream Deck's Text action reaches the remote. The new Type menu sends the clipboard, or the host's saved password after Touch ID or your system or master password, as keystrokes, for the places a paste doesn't reach such as the Windows administrator prompt. On Linux, the app no longer freezes when the clipboard changes with a remote desktop open.
