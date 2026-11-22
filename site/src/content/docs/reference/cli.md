@@ -35,8 +35,8 @@ terminal, Flint's window asks instead ([Vaults](/guides/vaults/#flint-holds-the-
 | `vault open <path>` | Open an existing vault and make it current |
 | `vault list` | Recent vaults, current one first |
 | `vault use <name\|path>` | Make a recent vault current |
-| `vault status` | Path, lock state, counts, how long the activity log keeps entries (set in the app, **Settings → Access**), and the vault's server: the version last merged, the last sync, and whether changes wait to be uploaded |
-| `vault unlock` | Ask Flint to unlock the vault (starting it if needed), and wait up to 2 minutes |
+| `vault status` | Path, lock state and, when locked, why (*auto-lock after 1h idle*, *locked in Flint*, *locked by `flint vault lock`*, *the screen locked*, *the computer slept*, *keychain access denied*, *not unlocked since Flint started*, *Flint is not running*; `lock_reason` in `--json`), counts, how long the activity log keeps entries (set in the app, **Settings → Access**), and the vault's server: the version last merged, the last sync, and whether changes wait to be uploaded |
+| `vault unlock` | Ask Flint to unlock the vault (starting it if needed), and wait for it as long as Flint's approval wait (2 minutes by default) |
 | `vault lock` | Lock the vault in Flint, and remove its key if this machine remembers it |
 | `vault rename <new-name>` | Rename the vault (with `--vault`, another one); the file keeps its name and place |
 | `vault passwd` | Change the master password: asks for the current one, then the new one twice, and prints its strength. Refused (`conflict`) while Flint holds the vault unlocked: use **Settings → Vault** there |
@@ -146,7 +146,8 @@ With `--sudo`, the words after `--` are the command and its arguments, each pass
 `sudo` as one word, never parsed by a shell (`--sudo -- sh -c '…'` for a pipe). The
 command runs with no terminal; its output and exit status come back as with `exec`.
 It runs only through Flint, approved one command at a time; with Flint closed or the
-vault locked it fails with `locked`. See [sudo](/guides/ai-agents/#sudo).
+vault locked it waits for the unlock in Flint (with no terminal, as any command), and
+fails with `locked` when nobody unlocks in time. See [sudo](/guides/ai-agents/#sudo).
 
 ### Files
 
@@ -264,7 +265,7 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 2 | `usage` | Bad command line: unknown command or flag, missing argument |
 | 3 | `not_found` | No such vault, host, group, key, credential or tunnel |
 | 4 | `conflict` | Already exists, or still in use; a vault server that holds another vault |
-| 5 | `locked` | The vault is not unlocked in Flint and no master password was given. With no terminal, Flint's window now asks for it (see [Vaults](/guides/vaults/#flint-holds-the-unlocked-vault)) |
+| 5 | `locked` | The vault is not unlocked in Flint and no master password was given. With no terminal, Flint's window asks for it and the command waits; `locked` means nobody unlocked it within the approval wait, or Flint could not start (see [Vaults](/guides/vaults/#flint-holds-the-unlocked-vault)). `vault status` says why it is locked |
 | 6 | `wrong_password` | The master password is wrong |
 | 7 | `invalid` | A value breaks a rule (alias, port, colour, key format…) |
 | 8 | `unsupported` | The vault was written by a newer Flint |
@@ -275,7 +276,7 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 13 | `network` | A host or vault server could not be reached, or the connection dropped |
 | 14 | `timeout` | `flint exec` ran past `--exec-timeout`; a vault server did not answer in time |
 | 15 | `denied` | The owner denied this program in Flint's window, or its grant or token does not cover the command; a token that is revoked, expired or wrong (see [Approve a program](/guides/ai-agents/#approve-a-program)) |
-| 16 | `approval_timeout` | Nobody answered Flint's approval window within two minutes |
+| 16 | `approval_timeout` | Nobody answered Flint's approval window within its approval wait (**Settings → Access**: 2, 5, 10 or 30 minutes) |
 | 17 | `not_sudoer` | `exec --sudo`: the host's login user may not use `sudo` |
 | 18 | `sudo_password` | `exec --sudo`: sudo refused the password Flint typed, or Flint has none for that host |
 | 19 | `permission_denied` | `cp`: the user may not read that file or write in that folder, here or on the host |

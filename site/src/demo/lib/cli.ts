@@ -10,6 +10,13 @@ import {
 	type CredPatch, type Host, type HostPatch, type TokenRequest, type TunnelPatch, type TunnelView, type Vault, type World,
 } from './vault.ts';
 
+/** lock_reason_text (src/domain/lock_reason.cf, milestone 61); the demo's Flint never auto-locks. */
+function lockReasonText(reason: string): string {
+	if (reason === 'cli') return 'locked by `flint vault lock`';
+	if (reason === 'manual') return 'locked in Flint';
+	return 'not unlocked since Flint started';
+}
+
 export interface Ask {
 	/** What the prompt shows; lines before the last one print as output. */
 	label: string;
@@ -42,7 +49,7 @@ Vaults
   vault open <path>                     Open an existing vault and make it current
   vault list                            Recent vaults; * marks the current one
   vault use <name|path>                 Make a recent vault the current one
-  vault status                          Path, lock state and counts
+  vault status                          Path, lock state (and why) and counts
   vault unlock                          Ask Flint to unlock the vault, and wait
   vault lock                            Lock the vault in Flint; remove any cached key
   vault rename <new-name>               Rename the vault (its file is not moved)
@@ -292,7 +299,7 @@ class Cmd {
 			// The first command from this terminal waits for the owner's Allow in Flint;
 			// the demo plays the owner and allows it.
 			if (!this.world.approved) {
-				if (!this.asJson) this.io.err('Waiting for approval in Flint (flint, started by Terminal)…');
+				if (!this.asJson) this.io.err('Waiting for approval in Flint (flint, started by Terminal), up to 2 min…');
 				this.world.approved = true;
 			}
 			return v;
@@ -326,7 +333,7 @@ class Cmd {
 				p.expectArgs('vault unlock', 0, '[--vault <name|path>]');
 				const v = this.resolveVault(p.value('--vault'));
 				if (!v.unlocked) {
-					if (!this.asJson) this.io.err(`Flint is asking for the master password of '${v.name}'…`);
+					if (!this.asJson) this.io.err(`Flint is asking for the master password of '${v.name}', up to 2 min…`);
 					this.io.note(`flint (demo): Flint's window would ask for the master password of '${v.name}' now. The demo unlocks it for you; Flint holds one vault at a time.`);
 					for (const o of this.world.vaults) o.unlocked = false;
 					v.unlocked = true;
@@ -340,6 +347,7 @@ class Cmd {
 				p.expectArgs('vault lock', 0, '[--vault <name|path>]');
 				const v = this.resolveVault(p.value('--vault'));
 				v.unlocked = false;
+				v.lockReason = 'cli';
 				this.world.approved = false;
 				this.emit(info(v), () =>
 					this.say(`Locked vault '${v.name}': Flint holds no key for it and none is cached on this machine.`),
@@ -357,6 +365,9 @@ class Cmd {
 					// Set in the app only (D-052); the demo's vaults keep the default.
 					activity_days: v.unlocked ? 90 : -1,
 					remote: remoteStatus(v, this.io.now()),
+					// Milestone 61: why it is locked, as the running Flint says (lock_reason_text).
+					lock_reason: v.unlocked ? '' : (v.lockReason ?? 'not_unlocked'),
+					lock_detail: v.unlocked ? '' : lockReasonText(v.lockReason ?? 'not_unlocked'),
 				};
 				// remote_status_fields (milestone 43).
 				const [rn, rv] = v.remote
@@ -364,7 +375,7 @@ class Cmd {
 					: [['remote'], ['none (a local vault; `flint vault connect <url>` to sync it)']];
 				this.emit(st, () => {
 					if (!v.unlocked) {
-						fields(['vault', 'path', 'state', ...rn], [v.name, v.path, 'locked (unlock it in Flint, or pass --master-stdin)', ...rv]).forEach((l) => this.say(l));
+						fields(['vault', 'path', 'state', ...rn], [v.name, v.path, `locked (${st.lock_detail}); unlock it in Flint, or pass --master-stdin`, ...rv]).forEach((l) => this.say(l));
 						return;
 					}
 					fields(
@@ -938,7 +949,7 @@ class Cmd {
 			if (!v.unlocked) fail('locked', '`flint token create` runs in Flint, which asks you to approve it: open Flint, unlock this vault and run it again');
 			const ops = new VaultOps(yield* this.openTarget());
 			// Flint's window asks every time; the demo plays the owner and allows it.
-			if (!this.asJson) this.io.err(`Waiting for approval in Flint (flint, started by Terminal)…`);
+			if (!this.asJson) this.io.err(`Waiting for approval in Flint (flint, started by Terminal), up to 2 min…`);
 			const made = ops.createToken(req, now);
 			if (this.asJson) {
 				this.say(json({ token: tokenView(made.token, now), secret: made.secret }));
@@ -1262,7 +1273,7 @@ class Cmd {
 			const ops = new VaultOps(yield* this.openTarget());
 			requireSshHost(ops.findHost(p.positional(1)), 'flint exec --sudo');
 			// Flint's window asks for every sudo command; the demo plays the owner and allows it.
-			if (!this.asJson) this.io.err('Waiting for approval in Flint (flint, started by Terminal)…');
+			if (!this.asJson) this.io.err('Waiting for approval in Flint (flint, started by Terminal), up to 2 min…');
 		}
 		const { host, user } = yield* this.reach(p.positional(1), false, sudo ? 'flint exec --sudo' : 'flint exec');
 		const shell = new RemoteShell(host.alias, sudo ? 'root' : user, host.hostname, () => this.io.now());

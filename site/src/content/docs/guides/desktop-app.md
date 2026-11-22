@@ -365,7 +365,8 @@ until the vault locks; and **Notify me of each command**, ticked as the default 
 (<kbd>⌘↵</kbd>, <kbd>Ctrl+↵</kbd> on Linux) asks for Touch ID or your Mac's password
 (macOS), your login password through polkit (Linux), or the master password. **Deny**
 has the focus (<kbd>Esc</kbd>), unless the window asks for a password; it refuses, and so
-does no answer within two minutes (the countdown shows it). Several requests wait in
+does no answer within the approval wait (2 minutes unless **Settings → Access** says
+otherwise; the countdown shows it). Several requests wait in
 turn: the window says *1 of N waiting* and names the next one. See
 [Approve a program](/guides/ai-agents/#approve-a-program).
 
@@ -436,7 +437,10 @@ Settings belong to this machine, not to the vault, and save as you change them.
   shows a **Root** badge and its time left to the second, its bell always on. Grants end when the vault locks or Flint quits. Then
   **Run as root**: **Allow sudo for a while** (off), which lets the root approval window
   offer 2, 5 or 15 minutes on one host; turning it off ends every period
-  ([Root for a while](/guides/ai-agents/#root-for-a-while)). Below
+  ([Root for a while](/guides/ai-agents/#root-for-a-while)). **Approval wait** (2, 5, 10
+  or 30 minutes; 2 by default) sets how long every approval window, and a command waiting
+  for the vault's unlock, waits for you; at 30 it notes that the program must be able to
+  wait that long ([How long Flint waits](/guides/ai-agents/#how-long-flint-waits)). Below
   them, the vault's **tokens** (**Revoke** ends one; **Show ended** lists the expired
   and revoked ones) and the **activity log**: when, which program or token, the command
   and whether it was allowed, denied or left unanswered, newest first, with **Load

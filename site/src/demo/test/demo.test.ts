@@ -176,7 +176,7 @@ function allowed(): World {
 test('the first command waits for Flint to allow this terminal, once until a lock', () => {
 	const w = worldFromSeed(seed);
 	const a = flint(w, 'host list');
-	assert.deepEqual(a.err, ['Waiting for approval in Flint (flint, started by Terminal)…']);
+	assert.deepEqual(a.err, ['Waiting for approval in Flint (flint, started by Terminal), up to 2 min…']);
 	assert.equal(a.code, 0);
 	assert.deepEqual(flint(w, 'host list').err, []);
 	assert.equal(flint(worldFromSeed(seed), 'host list --json').err.length, 0, '--json waits silently');
@@ -214,7 +214,7 @@ test('host add asks for the password with echo off and never prints it', () => {
 test('a vault not unlocked in Flint asks for its master password for each command', () => {
 	const w = worldFromSeed(seed);
 	flint(w, 'vault use Work');
-	assert.deepEqual(flint(w, 'vault status').out, ['vault   Work', 'path    /home/you/OneDrive/work.flint', 'state   locked (unlock it in Flint, or pass --master-stdin)', 'remote  none (a local vault; `flint vault connect <url>` to sync it)']);
+	assert.deepEqual(flint(w, 'vault status').out, ['vault   Work', 'path    /home/you/OneDrive/work.flint', 'state   locked (not unlocked since Flint started); unlock it in Flint, or pass --master-stdin', 'remote  none (a local vault; `flint vault connect <url>` to sync it)']);
 	const first = flint(w, 'host list', ['any password']);
 	assert.deepEqual(first.asks, ["Master password for 'Work': "]);
 	assert.equal(first.out.length, 3);
@@ -236,6 +236,11 @@ test('vault unlock asks Flint, which holds one vault at a time; vault lock locks
 	assert.deepEqual(flint(w, '--vault Work host list').asks, []);
 	assert.ok(flint(w, 'vault status --json').out[0].includes('"unlocked":false'));
 	assert.equal(flint(w, 'vault lock --vault Work').out[0], "Locked vault 'Work': Flint holds no key for it and none is cached on this machine.");
+	// Milestone 61: vault status says why.
+	const why = flint(w, '--vault Work vault status');
+	assert.ok(why.out.some((l) => l.includes('locked (locked by `flint vault lock`)')));
+	assert.ok(flint(w, '--vault Work vault status --json').out[0].includes('"lock_reason":"cli"'));
+	assert.ok(u.err.some((l) => l.includes('up to 2 min')));
 	assert.deepEqual(flint(w, '--vault Work host list', ['pw']).asks, ["Master password for 'Work': "]);
 });
 
@@ -341,7 +346,7 @@ test('token create is approved in Flint, prints the token once, and list and rev
 	assert.equal(made.code, 0);
 	assert.equal(made.out.length, 1, 'only the token on stdout');
 	assert.match(made.out[0], /^flint_[0-9a-f]{16}_[0-9a-f]{64}$/);
-	assert.ok(made.err.includes('Waiting for approval in Flint (flint, started by Terminal)…'), 'Flint asks for every token');
+	assert.ok(made.err.includes('Waiting for approval in Flint (flint, started by Terminal), up to 2 min…'), 'Flint asks for every token');
 	assert.match(made.err.find((l) => l.startsWith('Created')) ?? '', /^Created token 'nightly' \(exec on nas, @prod\), until \d{4}-\d\d-\d\d \d\d:\d\d UTC\.$/);
 	assert.ok(made.err.includes('Flint shows it this once, above. Give it to the program in the FLINT_TOKEN environment variable.'));
 	const list = flint(w, 'token list');
@@ -366,7 +371,7 @@ test('exec --sudo is approved in Flint and runs as root; the sudo password is ne
 	const r = flint(w, 'exec web-01 --accept-new-host-key --sudo -- whoami');
 	assert.equal(r.code, 0);
 	assert.deepEqual(r.out, ['root']);
-	assert.ok(r.err.includes('Waiting for approval in Flint (flint, started by Terminal)…'), 'Flint asks for every sudo command');
+	assert.ok(r.err.includes('Waiting for approval in Flint (flint, started by Terminal), up to 2 min…'), 'Flint asks for every sudo command');
 	assert.equal(flint(w, 'exec web-01 --sudo -- ').code, 2, 'no command is a usage error');
 	assert.equal(flint(w, 'exec ghost --sudo -- id').code, 3);
 	assert.equal(flint(w, 'exec web-01 --vault Work --sudo -- id').code, 5, 'a vault not unlocked in Flint runs no sudo');

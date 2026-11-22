@@ -92,6 +92,8 @@ export interface Vault {
 	path: string;
 	/** Unlocked in the Flint app, which the demo pretends is open (D-042). One at a time. */
 	unlocked: boolean;
+	/** Why it is locked (milestone 61, LOCK_REASON_*): unset is "not_unlocked". */
+	lockReason?: string;
 	groups: string[];
 	hosts: Host[];
 	keys: Key[];

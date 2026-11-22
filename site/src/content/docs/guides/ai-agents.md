@@ -36,12 +36,14 @@ command goes through the **Flint app**, which holds the vault unlocked
    answer the host key question, so an unknown key stops it with `host_key`.
 
 The first time the agent runs `flint`, Flint asks you in its own window
-([Approve a program](#approve-a-program)). The command waits while you decide.
+([Approve a program](#approve-a-program)). The command waits while you decide, for as
+long as the [approval wait](#how-long-flint-waits) (2 minutes by default).
 
 When the vault locks (idle time, screen lock, sleep) or Flint is closed, the agent's next
-command fails with `locked`, and Flint's window, started if needed, asks you for the
-master password and names the command that asked. Unlock (with **Allow … for 1 hour**
-ticked, the agent is approved in the same step), and the agent can run it again.
+command **waits**: Flint's window, started if needed, asks you for the master password and
+names the command that asked. Unlock within the approval wait (with **Allow … for 1 hour**
+ticked, the agent is approved in the same step) and the command goes on and runs. Only
+if nobody unlocks in time does it fail with `locked`.
 **Settings → Vault → Lock after** sets the idle time (1 hour by default).
 
 Closing Flint's window does not stop the agent: Flint stays in the menu bar or system
@@ -64,13 +66,37 @@ command, and lets you choose:
 
 **Allow** asks you to prove you are at the machine: Touch ID or your Mac's password on
 macOS, your login password through polkit on Linux, or the vault's master password where
-neither is available. **Deny**, or no answer within two minutes, refuses the command.
+neither is available. **Deny** refuses the command, and so does no answer within the
+[approval wait](#how-long-flint-waits).
 
 The grant covers every `flint` that program starts until it expires, the vault locks or
 Flint quits; it is tied to that process, so another program, or the same one started
 again, asks again. **Settings → Access** lists the grants, and **Revoke** ends one now.
 The status bar counts them (**Agents: N**), and shows **N waiting** while a request waits
 behind another app.
+
+## How long Flint waits
+
+**Settings → Access → Approval wait** sets how long a command waits for you: **2**
+(the default), **5**, **10** or **30 minutes**. It is one value for every approval window
+(a grant, a root command, a token, a copy, a tunnel) and for a command waiting for you to
+unlock the vault. A command that waits through an unlock and then needs an approval waits
+again for it, so the longest a command can wait is twice the setting. Away from the desk
+for a meeting, a longer wait lets the agent's command still be there when you come back.
+
+The command says it is waiting on stderr (*Waiting for approval in Flint (…), up to 10
+min…*) and keeps waiting while Flint does, so `flint` itself never gives up first. The
+agent's own tool may: many agent tools stop a command after a few minutes. An agent that
+needs to wait longer than its tool allows runs `flint` in the background and checks on it:
+
+```sh
+flint --json exec web-01 -- 'systemctl restart app' >/tmp/flint-out.json 2>/tmp/flint-err.json &
+echo $! >/tmp/flint.pid
+# later, as often as needed:
+kill -0 "$(cat /tmp/flint.pid)" 2>/dev/null && echo waiting || cat /tmp/flint-out.json /tmp/flint-err.json
+```
+
+With 30 minutes, Settings reminds you of this: the program must be able to wait that long.
 
 ## See what a grant runs
 
@@ -117,8 +143,12 @@ keys or `ssh` directly.
   `flint --json tunnel up <host>:<name>` and connect to its `listen` address; stop it
   with `flint tunnel down <host>:<name>` when done. Never add or change tunnels without
   asking me. Exit 22 (`port_in_use`): tell me.
-- Exit code 5 (`locked`): Flint is asking me to unlock it; wait for me, then retry.
-  15 (`denied`) or 16 (`approval_timeout`): I did not approve it in Flint; ask me first.
+- `flint` waits for me in Flint (to approve, or to unlock the vault) for up to the
+  approval wait I set; if your tool cuts commands sooner, run `flint` in the background
+  and check on it. Exit 15 (`denied`): I said no; never retry without asking me.
+  16 (`approval_timeout`): I was not there; one retry is fair, then ask me.
+  5 (`locked`): nobody unlocked in time; run `flint vault unlock` (it waits for me),
+  then retry once.
   11 (`host_key`): ask me to check the server's key. Never pass `--accept-new-host-key`.
 - As root: `flint --json exec <alias> --sudo -- <command> [args]`. I approve each one
   in Flint, or a few minutes of root on that one host, and Flint types the sudo
@@ -163,13 +193,13 @@ command's own failure comes as the usual object on stdout with its `exit_code`.
 
 | Exit | Code | What the agent should do |
 |---|---|---|
-| 5 | `locked` | Stop: Flint's window is asking you to unlock. Retry once you have |
+| 5 | `locked` | Nobody unlocked the vault within the approval wait, or Flint could not start. `flint vault unlock` waits for it; then retry once. `flint vault status` says why it is locked |
 | 11 | `host_key` | Stop. The key is unknown, or it **changed**, which Flint always refuses |
 | 12 | `auth` | Report it: the server refused every login method in the vault |
 | 13 | `network` | The host is unreachable: VPN, address, firewall |
 | 14 | `timeout` | The command ran past `--exec-timeout` |
 | 15 | `denied` | You denied it in Flint, or the grant does not cover it. Ask before retrying |
-| 16 | `approval_timeout` | Nobody answered Flint's window within two minutes |
+| 16 | `approval_timeout` | Nobody answered Flint's window within the approval wait. One retry is fair, then ask |
 | 17 | `not_sudoer` | The host's login user may not use `sudo` |
 | 18 | `sudo_password` | sudo refused the password Flint typed, or Flint has none for that host |
 | 19 | `permission_denied` | `cp`: the host's user may not read or write there |

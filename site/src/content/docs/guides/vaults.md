@@ -44,14 +44,15 @@ else asks the app:
   terminal or from `--master-stdin`, and keeps nothing.
 - With **no terminal** (an agent, a script, a cron job) and no `--master-stdin`, `flint`
   asks Flint to unlock: it starts the app if it is closed, the unlock screen names the
-  command (*"`flint exec web -- uptime` wants to use this vault"*), and the command fails
-  with `locked`. Unlock in the window and run it again.
+  command (*"`flint exec web -- uptime` wants to use this vault"*), and the command waits.
+  Unlock in the window and it goes on; if nobody unlocks within the approval wait
+  (**Settings → Access**, 2 minutes by default), it fails with `locked`.
 
 | Command | What it does |
 |---|---|
-| `flint vault unlock` | Asks Flint to unlock the vault (starting it if needed) and waits up to 2 minutes for you to unlock it there |
+| `flint vault unlock` | Asks Flint to unlock the vault (starting it if needed) and waits for you to unlock it there, as long as the approval wait |
 | `flint vault lock` | Locks the vault in Flint and removes any key cached on this machine |
-| `flint vault status` | Shows whether Flint holds the vault unlocked, and what it holds when it does |
+| `flint vault status` | Shows whether Flint holds the vault unlocked, what it holds when it does, and why it is locked when it is not (`locked (keychain access denied)` after a Keychain **Deny**) |
 
 A command that needs a secret of its own (`--password`, `--passphrase`, a host's
 password at login) asks for it in your terminal, and only sends it to
