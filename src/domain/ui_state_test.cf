@@ -36,3 +36,26 @@ test "the Files view's width is clamped, and 0 is the default" {
     assert_eq(clamp_files_width(9000), FILES_WIDTH_MAX)
     assert_eq(clamp_files_width(410), i64(410))
 }
+
+test "RDP hosts remembered as pipeline-only are row ids, each once, the newest first (milestone 59)" {
+    a := "0123456789abcdef0123456789abcdef"
+    b := "fedcba9876543210fedcba9876543210"
+    mut s := default_ui_state()
+    assert(!rdp_pipeline_remembered(s, a))
+    s = remember_rdp_pipeline(s, a)
+    s = remember_rdp_pipeline(s, b)
+    s = remember_rdp_pipeline(s, a)
+    assert_eq(s.rdp_pipeline_hosts.len(), usize(2))
+    assert_eq(s.rdp_pipeline_hosts[0], a)
+    assert(rdp_pipeline_remembered(s, b))
+    // An address or a name is never kept: only an id reads as one.
+    c := clean_ui_state(UiState{ sidebar_open: true, sidebar_width: 264, vaults: [], rdp_pipeline_hosts: ["192.168.68.99", b, "zorinos-rdp"] })
+    assert_eq(c.rdp_pipeline_hosts.len(), usize(1))
+    mut many := default_ui_state()
+    for i in 0..300 {
+        many = remember_rdp_pipeline(many, "{i:032x}")
+    }
+    assert_eq(many.rdp_pipeline_hosts.len(), UI_STATE_MAX_PIPELINE_HOSTS)
+    last := 299
+    assert_eq(many.rdp_pipeline_hosts[0], "{last:032x}")
+}

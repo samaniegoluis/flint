@@ -84,6 +84,11 @@ higher on an office LAN, lower over a slow VPN.
   Across two monitors it always takes the graphics pipeline, which keeps drawing while a
   window moves from one monitor to the other: the tab switches when it goes full screen
   on all monitors and back when it leaves, keeping your Windows session.
+  **A server that takes only the pipeline**, such as GNOME Remote Desktop on Linux
+  (Remote Login), closes the connection during setup when it is offered the bitmap
+  updates. Automatic then connects once more with the pipeline, and this computer
+  remembers that host: from then on Automatic takes the pipeline for it straight away.
+  Only the host's id is kept, in `ui-state.json` beside the settings, never its address.
 - **Pipeline**: always the graphics pipeline, with the best codec both ends support.
 - **Compatible**: always the classic bitmap updates, as earlier versions of Flint used.
   Try it too if a desktop shows wrong colours or garbled areas.
@@ -287,6 +292,7 @@ The tab says why, with **Retry** (<kbd>↵</kbd>), **Edit host** and **Close tab
 | … didn't answer | Nothing came back within 30 seconds: the machine is asleep or off, or a firewall drops RDP |
 | … refused the session: nothing answers on its Remote Desktop port | Remote Desktop is off (Settings → System → Remote Desktop; Windows Home has none) or a firewall rejects it |
 | … refused the session | The server answered and would not open one: all its sessions are in use (Windows 10/11 Pro allows one at a time) |
+| … closed the connection during setup | The server answered and accepted the login, then closed while the session was set up. A server that takes only the graphics pipeline (GNOME Remote Desktop) does this when Graphics is *Compatible*: choose *Automatic* or *Pipeline*. Otherwise the server's own log says why |
 | … needs a safer connection | The server offers only the old *Standard RDP Security*, which Flint refuses (see [Security](#security)). On the server, set *Require use of specific security layer for remote connections* to SSL or Negotiate |
 | The certificate … has changed | See [The certificate](#the-certificate) |
 | Connection lost | The connection dropped. See [When the connection drops](#when-the-connection-drops) |

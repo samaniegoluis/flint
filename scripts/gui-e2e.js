@@ -2197,6 +2197,37 @@
         await check(!canvas().classList.contains('stale'), 'Reconnect (the reconnect chord) brings the desktop back');
         await click('.tab.on .tx');
         await waitFor(() => !byText('.tab', 'rdp-clip'), 'the test server tab closed');
+
+        await setStep('rdp: Automatic falls back to the pipeline when the server closes during setup (milestone 59)');
+        {
+          // As GNOME Remote Desktop: the test server closes in the capability exchange a
+          // client that offers no graphics pipeline.
+          await ctl('gfxonly/on');
+          await addRdp('rdp-gnome', CPORT, 'x');
+          await open('rdp-gnome');
+          await waitFor(() => q('[data-rdp-size]') || q('[data-rdp-state]:not([data-rdp-state="connecting"])', activeRegion()), 'the desktop or a card', 60000);
+          await check(!!q('[data-rdp-size]') && !q('[data-rdp-state]', activeRegion()), `Automatic connects to a server that takes only the pipeline (${q('[data-rdp-state]', activeRegion())?.dataset.rdpState ?? 'up'})`);
+          const session = () => q('[data-rdp-session]', activeRegion()).dataset.rdpSession;
+          await check((await window.backend.rdp_stats({ tab: session() })).mode === 'pipeline', 'the tab runs in the pipeline');
+          // Compatible twice (FreeRDP reconnects once by itself), then the pipeline.
+          await check((await ctl('setups')) === '3', `Compatible, FreeRDP's own retry, then the pipeline (${await ctl('setups')} setups)`);
+          await click('.tab.on .tx');
+          await waitFor(() => !byText('.tab', 'rdp-gnome'), 'the tab closed');
+          await ctl('gfxonly/on');
+          await open('rdp-gnome');
+          await waitFor(() => q('[data-rdp-size]'), 'the desktop again', 30000);
+          await check((await ctl('setups')) === '1', `the host is remembered: the next connection goes straight to the pipeline (${await ctl('setups')} setup)`);
+
+          await setStep('rdp: a server that closed during setup has its own card (milestone 59)');
+          await click('[data-rdp-tab-graphics] button[data-graphics="compatible"]');
+          await waitFor(() => rdpState('setup-closed'), 'the closed-during-setup card', 60000);
+          await check(hasText('closed the connection during setup') && hasText('graphics pipeline'), 'the card says the server closed during setup, and names the pipeline');
+          await check(!hasText('no route'), 'it never says there is no route');
+          await check(byText('.tab', 'closed during setup'), 'the tab says closed during setup');
+          await click('button', 'Close tab');
+          await waitFor(() => !byText('.tab', 'rdp-gnome'), 'the tab closed');
+          await ctl('gfxonly/off');
+        }
       } else {
         log('rdp: no test server (FLINT_RDP_CLIP_PORT), clipboard steps skipped');
       }

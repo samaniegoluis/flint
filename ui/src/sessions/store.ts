@@ -561,7 +561,10 @@ export function statusLabel(t: Pane): { dot: string; meta: string; metaClass: st
 }
 
 /** Why a remote desktop ended, as its tab says it (design 22c). */
-export function rdpEndKind(t: Pane): 'closed' | 'auth' | 'cert-changed' | 'unreachable' | 'timeout' | 'rdp-off' | 'legacy-security' | 'refused' | 'lost' | 'other' {
+/** The core's phrase for a server that closed during setup (domain/rdp.cf, milestone 59). */
+export const RDP_SERVER_CLOSED_SETUP = 'the server closed the connection during setup';
+
+export function rdpEndKind(t: Pane): 'closed' | 'auth' | 'cert-changed' | 'unreachable' | 'timeout' | 'rdp-off' | 'legacy-security' | 'setup-closed' | 'refused' | 'lost' | 'other' {
   const code = t.end?.code ?? '';
   if (!code) return 'closed';
   if (code === 'auth') return 'auth';
@@ -571,6 +574,8 @@ export function rdpEndKind(t: Pane): 'closed' | 'auth' | 'cert-changed' | 'unrea
     const msg = t.end?.message ?? '';
     if (msg.includes('Remote Desktop port')) return 'rdp-off';
     if (msg.includes('Standard RDP Security')) return 'legacy-security';
+    // Milestone 59: it answered, took the sign-in, then closed while the session was set up.
+    if (msg.includes(RDP_SERVER_CLOSED_SETUP)) return 'setup-closed';
     return 'refused';
   }
   if (code === 'network') return t.connectedAt > 0 ? 'lost' : 'unreachable';
@@ -581,7 +586,7 @@ function rdpStatusLabel(t: Pane): { dot: string; meta: string; metaClass: string
   const k = rdpEndKind(t);
   const meta: Record<typeof k, string> = {
     closed: 'disconnected', auth: 'sign-in failed', 'cert-changed': 'certificate changed', unreachable: 'unreachable',
-    timeout: 'timed out', 'rdp-off': 'refused', 'legacy-security': 'refused', refused: 'refused', lost: 'disconnected', other: 'failed',
+    timeout: 'timed out', 'rdp-off': 'refused', 'legacy-security': 'refused', 'setup-closed': 'closed during setup', refused: 'refused', lost: 'disconnected', other: 'failed',
   };
   return { dot: k === 'closed' ? 'st-off' : 'st-fail', meta: meta[k], metaClass: k === 'closed' ? 'faint' : 'danger-t' };
 }

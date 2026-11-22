@@ -296,6 +296,38 @@ fn rdp_closed_by_tab(msg: str) -> bool {
     return error_code_of(msg) == ERR_NETWORK && error_text_of(msg) == RDP_CLOSED_BY_TAB
 }
 
+// Milestone 59: the server answered, took the credentials and closed the connection
+// during setup (GNOME Remote Desktop closes in the capability exchange when the client
+// offers no graphics pipeline). A `refused` error whose text starts with this phrase,
+// then the connection state it closed in: never "no route", which it is not.
+RDP_SERVER_CLOSED_SETUP: str = "the server closed the connection during setup"
+
+/// ```cf
+/// assert(rdp_server_closed_setup("refused: the server closed the connection during setup (CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT)"))
+/// assert(!rdp_server_closed_setup("network: could not reach the server (ERRCONNECT_CONNECT_TRANSPORT_FAILED)"))
+/// assert(!rdp_server_closed_setup("refused: the server refused the connection (x)"))
+/// ```
+fn rdp_server_closed_setup(msg: str) -> bool {
+    return error_code_of(msg) == ERR_REFUSED && error_text_of(msg).starts_with(RDP_SERVER_CLOSED_SETUP)
+}
+
+// Milestone 59: whether a failed connection is tried once more with the graphics
+// pipeline. Only when the person left graphics on "auto", "auto" chose the bitmap
+// updates ("compatible") and the server closed during setup: such a server (GNOME
+// Remote Desktop) takes only the pipeline. A mode the person picked is never changed,
+// and a pipeline connection that closed has nothing left to fall back to.
+///
+/// ```cf
+/// closed := "refused: " + RDP_SERVER_CLOSED_SETUP + " (CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT)"
+/// assert(rdp_setup_fallback("auto", "compatible", closed))
+/// assert(!rdp_setup_fallback("compatible", "compatible", closed))
+/// assert(!rdp_setup_fallback("auto", "pipeline", closed))
+/// assert(!rdp_setup_fallback("auto", "compatible", "network: could not reach the server (x)"))
+/// ```
+fn rdp_setup_fallback(asked: str, engine: str, failure: str) -> bool {
+    return asked == "auto" && engine == "compatible" && rdp_server_closed_setup(failure)
+}
+
 // Milestone 35: the tab asked for another graphics mode (RDP_GRAPHICS, in `message`),
 // which a reconnect at the desktop's current size (`width` x `height`) gives.
 RDP_EVENT_GRAPHICS: str = "graphics"

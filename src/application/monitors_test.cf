@@ -82,6 +82,7 @@ test "spanning is refused where the system cannot, past the cap and without the 
 }
 
 test "a reconnect keeps the monitors the desktop spans" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -100,7 +101,7 @@ test "a reconnect keeps the monitors the desktop spans" {
     ]
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip0 := no_clipboard()
-    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, mut ui0, rdp_req("win"))
     assert_eq(rd.opens.len(), 4)
     assert_eq(rd.opens[1].monitors.len(), 2)
     assert_eq(rd.opens[1].width, 3640)

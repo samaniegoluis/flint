@@ -383,11 +383,13 @@ fn main() {
             holder := st.holder
             // The system clipboard (the run's private board under gui-e2e).
             board := clipboard
+            // ui-state.json, where Automatic remembers a pipeline-only host (milestone 59).
+            ui := ui_state_store
             emit_rdp_state(mut app, r.tab, "connecting", "", "")
             scope.spawn || {
                 mut a := worker_app
                 mut s := worker_store
-                run_gui_rdp(mut a, c, mut s, vs, holder, board, r)
+                run_gui_rdp(mut a, c, mut s, vs, holder, board, ui, r)
             }
             return ok_json()
         }

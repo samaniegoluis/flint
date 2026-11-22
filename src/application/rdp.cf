@@ -80,11 +80,17 @@ fn rdp_target[C: Crypto, S: VaultStore, P: Prompter](crypto: C, store: S, sessio
 
 // "auto" made concrete before the engine sees it (milestone 35, D-083): the link's
 // round trip picks the bitmap updates on a local network and the pipeline elsewhere,
-// and a desktop across monitors always the pipeline (D-091). Any other mode goes as it
-// is.
-fn resolve_rdp_graphics[R: RemoteDesktop](mut rd: R, mut t: RdpTarget) {
+// and a desktop across monitors always the pipeline (D-091). A host whose server
+// closed during setup in Compatible (milestone 59) takes the pipeline with no probe.
+// Any other mode goes as it is.
+fn resolve_rdp_graphics[R: RemoteDesktop](mut rd: R, mut t: RdpTarget, pipeline_only: bool) {
     if t.graphics != "auto" {
         t.rtt_ms = -1
+        return
+    }
+    if pipeline_only {
+        t.rtt_ms = -1
+        t.graphics = "pipeline"
         return
     }
     rtt := rd.rd_probe_rtt(t.hostname, t.port, RDP_PROBE_TIMEOUT_MS)
@@ -101,11 +107,37 @@ fn rd_try_open[R: RemoteDesktop](mut rd: R, tab: str, t: RdpTarget, timeout_ms: 
     return ""
 }
 
+// Whether "auto" takes the pipeline for the RDP host `alias` on this machine
+// (milestone 59); false when the host cannot be read.
+fn rdp_host_pipeline_only[S: VaultStore, U: UiStateStore](store: S, ui: U, alias: str) -> bool {
+    cat := load_catalog(store) or { return false }
+    h := require_host(cat.hosts, alias) or { return false }
+    return rdp_pipeline_remembered(load_ui_state(ui), h.id)
+}
+
+// One connection attempt, and in "auto" one more with the pipeline when the server
+// closed during setup in Compatible (milestone 59): "" when one opened. The pipeline's
+// success is remembered for host `host_id` on this machine, so "auto" asks it first
+// next time. `t.graphics` is left as the mode last tried.
+fn rd_open_with_fallback[R: RemoteDesktop, U: UiStateStore](mut rd: R, mut ui: U, tab: str, mut t: RdpTarget, asked: str, host_id: str, timeout_ms: i64, mut got: RdpDesktop) -> str {
+    failure := rd_try_open(mut rd, tab, t, timeout_ms, mut got)
+    if failure.len() == 0 || !rdp_setup_fallback(asked, t.graphics, failure) {
+        return failure
+    }
+    t.graphics = "pipeline"
+    t.rtt_ms = -1
+    again := rd_try_open(mut rd, tab, t, timeout_ms, mut got)
+    if again.len() == 0 && host_id.len() > 0 {
+        ui.ui_state_save(clean_ui_state(remember_rdp_pipeline(load_ui_state(ui), host_id))) or {}
+    }
+    return again
+}
+
 // Connects tab `req.tab` to the RDP host `req.alias`. A certificate that is not the
 // trusted one stops the first attempt: a new one is shown to the person (design 22d1)
 // and, once trusted, kept in the known hosts and the connection made again; a changed
 // one is refused with the reason (22d2), never continued.
-fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest) -> RdpDesktop! {
+fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, U: UiStateStore](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, mut ui: U, req: RdpOpenRequest) -> RdpDesktop! {
     if req.tab.len() == 0 {
         return error(coded(ERR_INVALID, "a remote desktop needs a tab id"))
     }
@@ -116,9 +148,11 @@ fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](
     graphics := try rdp_graphics_of(req)
     mut t := try rdp_target(crypto, store, session, prompter, req.alias, size, graphics, true)
     defer crypto.wipe_text(t.password)
-    resolve_rdp_graphics(mut rd, mut t)
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, req.alias)
+    resolve_rdp_graphics(mut rd, mut t, rdp_pipeline_remembered(load_ui_state(ui), h.id))
     mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "", graphics: "", rtt_ms: -1 }
-    failure := rd_try_open(mut rd, req.tab, t, req.timeout_ms, mut d)
+    failure := rd_open_with_fallback(mut rd, mut ui, req.tab, mut t, graphics, h.id, req.timeout_ms, mut d)
     if failure.len() == 0 {
         return d
     }
@@ -129,8 +163,6 @@ fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](
     if cert.fingerprint.len() == 0 {
         return error(failure)
     }
-    cat := try load_catalog(store)
-    h := try require_host(cat.hosts, req.alias)
     known := try store.known_hosts_all()
     status := check_rdp_cert(known, h.hostname, h.port, cert.fingerprint)
     if status == HOST_KEY_CHANGED {
@@ -152,7 +184,11 @@ fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](
     }
     try store.known_host_put(KnownHost{ addr: rdp_cert_addr(h.hostname, h.port), key_type: RDP_CERT_KEY_TYPE, fingerprint: cert.fingerprint, host_id: h.id, added_at: "" })
     t.trusted_fingerprint = cert.fingerprint
-    return try rd.rd_open(req.tab, t, req.timeout_ms)
+    again := rd_open_with_fallback(mut rd, mut ui, req.tab, mut t, graphics, h.id, req.timeout_ms, mut d)
+    if again.len() > 0 {
+        return error(again)
+    }
+    return d
 }
 
 // Opens the desktop, tells the driver, then watches it until it ends: a session the
@@ -162,8 +198,8 @@ fn open_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](
 // locked, the password is not saved) the session keeps its size. The clipboard goes
 // both ways meanwhile (milestone 31, D-074): text the remote copies is written to this
 // machine's clipboard, and this machine's text is sent when the remote pastes.
-fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K: DesktopSink, L: Clipboard](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, mut sink: K, mut clip: L, req: RdpOpenRequest) -> void! {
-    d := open_remote_desktop(crypto, mut store, session, mut rd, prompter, req) or err {
+fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K: DesktopSink, L: Clipboard, U: UiStateStore](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, mut sink: K, mut clip: L, mut ui: U, req: RdpOpenRequest) -> void! {
+    d := open_remote_desktop(crypto, mut store, session, mut rd, prompter, mut ui, req) or err {
         rd.rd_close(req.tab)
         msg := "{err.message()}"
         // Closed while it connected: ended on purpose, not a failure.
@@ -216,7 +252,7 @@ fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K
             mut next := cur
             next.graphics = ev.message
             mut failure := ""
-            sw := reconnect_in_mode_or(crypto, store, session, mut rd, prompter, next, ev, mut failure)
+            sw := reconnect_in_mode_or(crypto, store, session, mut rd, prompter, next, ev, rdp_host_pipeline_only(store, ui, req.alias), mut failure)
             if rdp_closed_by_tab(failure) {
                 return
             }
@@ -320,7 +356,7 @@ fn reconnect_at_size[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](cr
 // apps stay; "auto" measures the link again. Returns the mode it reconnected in, or why
 // it did not (the tab keeps its mode); fails, with the tab closed, when the new
 // connection does.
-fn reconnect_in_mode[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: RdpEvent) -> RdpModeSwitch! {
+fn reconnect_in_mode[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: RdpEvent, pipeline_only: bool) -> RdpModeSwitch! {
     graphics := rdp_graphics_of(req) or err {
         return RdpModeSwitch{ why: error_text_of("{err.message()}"), graphics: "", rtt_ms: -1 }
     }
@@ -337,7 +373,7 @@ fn reconnect_in_mode[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](cr
         return RdpModeSwitch{ why: "the server's certificate is not trusted yet", graphics: "", rtt_ms: -1 }
     }
     with_layout(mut t, ev.monitors)
-    resolve_rdp_graphics(mut rd, mut t)
+    resolve_rdp_graphics(mut rd, mut t, pipeline_only)
     mut d := RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "", graphics: "", rtt_ms: -1 }
     failure := rd_try_open(mut rd, req.tab, t, req.timeout_ms, mut d)
     if failure.len() > 0 {
@@ -348,8 +384,8 @@ fn reconnect_in_mode[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](cr
 }
 
 // reconnect_in_mode, its error in `failure` ("" when it did not fail; D-060).
-fn reconnect_in_mode_or[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: RdpEvent, mut failure: str) -> RdpModeSwitch {
-    return reconnect_in_mode(crypto, store, session, mut rd, prompter, req, ev) or err {
+fn reconnect_in_mode_or[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: RdpEvent, pipeline_only: bool, mut failure: str) -> RdpModeSwitch {
+    return reconnect_in_mode(crypto, store, session, mut rd, prompter, req, ev, pipeline_only) or err {
         failure = "{err.message()}"
         return RdpModeSwitch{ why: "", graphics: "", rtt_ms: -1 }
     }

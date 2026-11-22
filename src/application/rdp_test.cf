@@ -34,10 +34,13 @@ type FakeDesktop struct {
     typed: []RdpKeyEvent
     klid: i64
     address: str
+    // Milestone 59: the server closes during setup, after the login, for a connection
+    // in "compatible" (as GNOME Remote Desktop), or "all" for every mode; "" never.
+    setup_closes: str
 }
 
 fn new_fake_desktop(fp: str, password: str) -> FakeDesktop {
-    return FakeDesktop{ fp: fp, password: password, opens: [], closed: 0, events: [], waits: 0, keys: [], pointers: [], resizes: [], announces: [], answers: [], modes: [], fail_from: 0, closed_from: 0, rtt: 20, probes: 0, syncs: [], typed: [], klid: 0x0409, address: "rdp://win11.lan:3389" }
+    return FakeDesktop{ fp: fp, password: password, opens: [], closed: 0, events: [], waits: 0, keys: [], pointers: [], resizes: [], announces: [], answers: [], modes: [], fail_from: 0, closed_from: 0, rtt: 20, probes: 0, syncs: [], typed: [], klid: 0x0409, address: "rdp://win11.lan:3389", setup_closes: "" }
 }
 
 fn (mut self: FakeDesktop) rd_clip_announce(tab: str, has_text: bool) -> void! {
@@ -66,6 +69,9 @@ fn (mut self: FakeDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> R
     }
     if t.password != self.password {
         return error(coded(ERR_AUTH, "the server refused the user or password"))
+    }
+    if self.setup_closes == "all" || (self.setup_closes == "compatible" && t.graphics == "compatible") {
+        return error(coded(ERR_REFUSED, "{RDP_SERVER_CLOSED_SETUP} (CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT)"))
     }
     return RdpDesktop{ width: t.width, height: t.height, frame_port: 4100, frame_token: "tok", graphics: t.graphics, rtt_ms: t.rtt_ms }
 }
@@ -190,6 +196,11 @@ fn no_clipboard() -> FakeClipboard {
     return FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
 }
 
+// No RDP host remembered as pipeline-only (milestone 59).
+fn no_ui() -> FakeUiStateStore {
+    return FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+}
+
 fn trusting() -> FakePrompter {
     return FakePrompter{ available: true, confirm: true, password: "typed" }
 }
@@ -214,31 +225,32 @@ fn rdp_req(alias: str) -> RdpOpenRequest {
 }
 
 test "the graphics choice reaches the engine, empty reads auto (resolved by the round trip) and an unknown one is refused" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
     try rdp_fake(crypto, mut store, s, "s3cret")
     mut rd := new_fake_desktop("ab:cd", "s3cret")
-    _ = try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win"))
+    _ = try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut ui0, rdp_req("win"))
     // A 20 ms link: not a local network, so the pipeline.
     assert_eq(rd.opens[1].graphics, "pipeline")
     assert_eq(rd.opens[1].rtt_ms, 20)
     mut req := rdp_req("win")
     req.graphics = "compatible"
     mut again := new_fake_desktop("ab:cd", "s3cret")
-    _ = try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), req)
+    _ = try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), mut ui0, req)
     assert_eq(again.opens[0].graphics, "compatible")
     assert_eq(again.probes, 0)
     req.graphics = "pipeline"
     mut forced := new_fake_desktop("ab:cd", "s3cret")
     forced.rtt = 1
-    _ = try open_remote_desktop(crypto, mut store, s, mut forced, no_prompter(), req)
+    _ = try open_remote_desktop(crypto, mut store, s, mut forced, no_prompter(), mut ui0, req)
     assert_eq(forced.opens[0].graphics, "pipeline")
     assert_eq(forced.probes, 0)
     req.graphics = "h264"
     mut msg := ""
     mut refused := new_fake_desktop("ab:cd", "s3cret")
-    open_remote_desktop(crypto, mut store, s, mut refused, no_prompter(), req) or err { msg = "{err.message()}" }
+    open_remote_desktop(crypto, mut store, s, mut refused, no_prompter(), mut ui0, req) or err { msg = "{err.message()}" }
     assert(msg.contains("graphics"))
     assert_eq(refused.opens.len(), 0)
 }
@@ -254,12 +266,13 @@ test "a tab's statistics come from the engine" {
 }
 
 test "a first RDP connection asks for the certificate, keeps it, and connects with the vault's password" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
     try rdp_fake(crypto, mut store, s, "s3cret")
     mut rd := new_fake_desktop("ab:cd", "s3cret")
-    d := try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win"))
+    d := try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut ui0, rdp_req("win"))
     assert_eq(d.width, 1600)
     assert_eq(d.height, 900)
     assert_eq(rd.opens.len(), 2)
@@ -277,26 +290,28 @@ test "a first RDP connection asks for the certificate, keeps it, and connects wi
 
     // The next connection trusts it at once.
     mut again := new_fake_desktop("ab:cd", "s3cret")
-    _ = try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), rdp_req("win"))
+    _ = try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), mut ui0, rdp_req("win"))
     assert_eq(again.opens.len(), 1)
 }
 
 test "an RDP certificate not trusted, or with nobody to ask, does not connect" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
     try rdp_fake(crypto, mut store, s, "s3cret")
     mut rd := new_fake_desktop("ab:cd", "s3cret")
     mut msg := ""
-    open_remote_desktop(crypto, mut store, s, mut rd, FakePrompter{ available: true, confirm: false, password: "" }, rdp_req("win")) or err { msg = "{err.message()}" }
+    open_remote_desktop(crypto, mut store, s, mut rd, FakePrompter{ available: true, confirm: false, password: "" }, mut ui0, rdp_req("win")) or err { msg = "{err.message()}" }
     assert_eq(msg, "host_key: the certificate of 'win' was not trusted")
     assert_eq((try store.known_hosts_all()).len(), 0)
     msg = ""
-    open_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), rdp_req("win")) or err { msg = "{err.message()}" }
+    open_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut ui0, rdp_req("win")) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "host_key")
 }
 
 test "a changed RDP certificate is refused with the reason and nothing is trusted" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -304,7 +319,7 @@ test "a changed RDP certificate is refused with the reason and nothing is truste
     try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "11:22", host_id: "", added_at: "" })
     mut rd := new_fake_desktop("ab:cd", "s3cret")
     mut msg := ""
-    open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win")) or err { msg = "{err.message()}" }
+    open_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut ui0, rdp_req("win")) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "host_key")
     assert(msg.contains("CHANGED"))
     assert(msg.contains("ab:cd"))
@@ -316,6 +331,7 @@ test "a changed RDP certificate is refused with the reason and nothing is truste
 }
 
 test "an RDP login uses the credential's password, or asks for one, and failures keep their code" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -338,42 +354,44 @@ test "an RDP login uses the credential's password, or asks for one, and failures
     try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
 
     mut rd := new_fake_desktop("ab:cd", "fromcred")
-    _ = try open_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), rdp_req("srv"))
+    _ = try open_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut ui0, rdp_req("srv"))
     assert_eq(rd.opens[0].user, "CORP\\admin")
     assert_eq(rd.opens[0].password, "fromcred")
 
     // No saved password: asked for, or refused with nobody to ask.
     mut typed := new_fake_desktop("ab:cd", "typed")
-    _ = try open_remote_desktop(crypto, mut store, s, mut typed, trusting(), rdp_req("win"))
+    _ = try open_remote_desktop(crypto, mut store, s, mut typed, trusting(), mut ui0, rdp_req("win"))
     assert_eq(typed.opens[0].password, "typed")
     mut msg := ""
-    open_remote_desktop(crypto, mut store, s, mut typed, no_prompter(), rdp_req("win")) or err { msg = "{err.message()}" }
+    open_remote_desktop(crypto, mut store, s, mut typed, no_prompter(), mut ui0, rdp_req("win")) or err { msg = "{err.message()}" }
     assert_eq(msg, "auth: 'win' has no saved password")
 
     // A wrong password is `auth`, and never named.
     mut wrong := new_fake_desktop("ab:cd", "other")
     msg = ""
-    open_remote_desktop(crypto, mut store, s, mut wrong, no_prompter(), rdp_req("srv")) or err { msg = "{err.message()}" }
+    open_remote_desktop(crypto, mut store, s, mut wrong, no_prompter(), mut ui0, rdp_req("srv")) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "auth")
     assert(!msg.contains("fromcred"))
 }
 
 test "only an RDP host opens a remote desktop" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
     _ = try add_host(crypto, mut store, s, host_patch("web", "10.0.0.5"))
     mut rd := new_fake_desktop("ab:cd", "x")
     mut msg := ""
-    open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("web")) or err { msg = "{err.message()}" }
+    open_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut ui0, rdp_req("web")) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "wrong_host_type")
     assert_eq(rd.opens.len(), 0)
     msg = ""
-    open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("nope")) or err { msg = "{err.message()}" }
+    open_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut ui0, rdp_req("nope")) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "not_found")
 }
 
 test "a watched desktop reconnects at a new size without Display Control and reports how it ended" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -388,7 +406,7 @@ test "a watched desktop reconnects at a new size without Display Control and rep
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip0 := no_clipboard()
     mut msg := ""
-    run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, rdp_req("win")) or err { msg = "{err.message()}" }
+    run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, mut ui0, rdp_req("win")) or err { msg = "{err.message()}" }
     assert_eq(msg, "network: the connection was lost")
     assert_eq(sink.ready.len(), 1)
     assert_eq(rd.opens.len(), 2)
@@ -400,18 +418,19 @@ test "a watched desktop reconnects at a new size without Display Control and rep
     // Closed on purpose: no error.
     mut quiet := new_fake_desktop("ab:cd", "s3cret")
     mut sink2 := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
-    try run_remote_desktop(crypto, mut store, s, mut quiet, no_prompter(), mut sink2, mut clip0, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut quiet, no_prompter(), mut sink2, mut clip0, mut ui0, rdp_req("win"))
     assert_eq(quiet.closed, 1)
 
     // A failed open closes the tab and reports why.
     mut bad := new_fake_desktop("ab:cd", "other")
     msg = ""
-    run_remote_desktop(crypto, mut store, s, mut bad, no_prompter(), mut sink2, mut clip0, rdp_req("win")) or err { msg = "{err.message()}" }
+    run_remote_desktop(crypto, mut store, s, mut bad, no_prompter(), mut sink2, mut clip0, mut ui0, rdp_req("win")) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "auth")
     assert_eq(bad.closed, 1)
 }
 
 test "a tab closed while it connects or reconnects ends on purpose, not as a lost connection" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -425,7 +444,7 @@ test "a tab closed while it connects or reconnects ends on purpose, not as a los
     sized.events = [RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 1025, height: 700 }]
     sized.closed_from = 2
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
-    try run_remote_desktop(crypto, mut store, s, mut sized, no_prompter(), mut sink, mut clip0, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut sized, no_prompter(), mut sink, mut clip0, mut ui0, rdp_req("win"))
     assert_eq(sized.opens.len(), 2)
     assert(sized.closed >= 1)
 
@@ -434,14 +453,14 @@ test "a tab closed while it connects or reconnects ends on purpose, not as a los
     moded.events = [RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: "compatible", width: 1600, height: 900 }]
     moded.closed_from = 2
     mut sink2 := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
-    try run_remote_desktop(crypto, mut store, s, mut moded, no_prompter(), mut sink2, mut clip0, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut moded, no_prompter(), mut sink2, mut clip0, mut ui0, rdp_req("win"))
     assert_eq(sink2.graphics.len(), 0)
 
     // Closed during the first connection.
     mut first := new_fake_desktop("ab:cd", "s3cret")
     first.closed_from = 1
     mut sink3 := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
-    try run_remote_desktop(crypto, mut store, s, mut first, no_prompter(), mut sink3, mut clip0, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut first, no_prompter(), mut sink3, mut clip0, mut ui0, rdp_req("win"))
     assert_eq(sink3.ready.len(), 0)
     assert_eq(first.closed, 1)
 
@@ -451,11 +470,12 @@ test "a tab closed while it connects or reconnects ends on purpose, not as a los
     lost.fail_from = 2
     mut sink4 := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut msg := ""
-    run_remote_desktop(crypto, mut store, s, mut lost, no_prompter(), mut sink4, mut clip0, rdp_req("win")) or err { msg = "{err.message()}" }
+    run_remote_desktop(crypto, mut store, s, mut lost, no_prompter(), mut sink4, mut clip0, mut ui0, rdp_req("win")) or err { msg = "{err.message()}" }
     assert_eq(msg, "network: could not reach the server")
 }
 
 test "a reconnect for a new size is skipped when the vault cannot give the password" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -465,7 +485,7 @@ test "a reconnect for a new size is skipped when the vault cannot give the passw
     rd.events = [RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 800, height: 600 }]
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip0 := no_clipboard()
-    try run_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut sink, mut clip0, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut sink, mut clip0, mut ui0, rdp_req("win"))
     // The typed password is not kept for a reconnect.
     assert_eq(rd.opens.len(), 1)
 }
@@ -490,6 +510,7 @@ test "input and resizes reach the engine once checked" {
 }
 
 test "the remote's copies reach this machine's clipboard and its pastes get this machine's text" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -503,7 +524,7 @@ test "the remote's copies reach this machine's clipboard and its pastes get this
     ]
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip := no_clipboard()
-    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip, mut ui0, rdp_req("win"))
     // The empty copy left the first one in place, and the paste got it back.
     assert_eq(clip.text, "from windows\nline 2")
     assert_eq(clip.copies, 1)
@@ -540,6 +561,7 @@ test "the tab announces whether this machine's clipboard holds text, never the t
 // A FakeDesktop whose session copies this machine's clipboard partway through: each
 // wait bumps the fake clipboard, as a person copying in another app.
 test "a copy on this machine is announced to the server, and the remote's own copy is not echoed back" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -553,7 +575,7 @@ test "a copy on this machine is announced to the server, and the remote's own co
     ]
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip := no_clipboard()
-    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip, mut ui0, rdp_req("win"))
     assert_eq(rd.announces.len(), 0)
 
     // A copy made here before the session opened is not new; one made after is.
@@ -566,7 +588,7 @@ test "a copy on this machine is announced to the server, and the remote's own co
     clip2.text = "old"
     clip2.copies = 5
     mut ticking := TickingClipboard{ inner: clip2, at_wait: 1, reads: 0 }
-    try run_remote_desktop(crypto, mut store, s, mut rd2, no_prompter(), mut sink, mut ticking, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut rd2, no_prompter(), mut sink, mut ticking, mut ui0, rdp_req("win"))
     assert_eq(rd2.announces.len(), 1)
     assert(rd2.announces[0])
     assert_eq(rd2.answers.len(), 0)
@@ -601,6 +623,7 @@ fn (mut self: TickingClipboard) clipboard_change_count() -> i64 {
 }
 
 test "a graphics switch reconnects the tab in the new mode and later reconnects keep it" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -613,7 +636,7 @@ test "a graphics switch reconnects the tab in the new mode and later reconnects 
     ]
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip0 := no_clipboard()
-    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, mut ui0, rdp_req("win"))
     assert_eq(rd.opens.len(), 3)
     assert_eq(rd.opens[0].graphics, "pipeline")
     assert_eq(rd.opens[1].graphics, "compatible")
@@ -631,6 +654,7 @@ test "a graphics switch reconnects the tab in the new mode and later reconnects 
 // the pipeline; the page asks for "auto" again when the desktop spans and when it goes
 // back to one monitor, and each reconnect carries the layout of its moment.
 test "Automatic takes the pipeline across monitors and bitmaps again on one" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -650,7 +674,7 @@ test "Automatic takes the pipeline across monitors and bitmaps again on one" {
     mut clip0 := no_clipboard()
     mut req := rdp_req("win")
     req.graphics = "auto"
-    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, req)
+    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, mut ui0, req)
     assert_eq(rd.opens.len(), 3)
     assert_eq(rd.opens[0].graphics, "compatible")
     assert_eq(rd.opens[1].graphics, "pipeline")
@@ -663,6 +687,7 @@ test "Automatic takes the pipeline across monitors and bitmaps again on one" {
 }
 
 test "a graphics switch is refused, the mode kept, when the vault has no saved password" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -672,13 +697,14 @@ test "a graphics switch is refused, the mode kept, when the vault has no saved p
     rd.events = [RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: "compatible", width: 1600, height: 900 }]
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip0 := no_clipboard()
-    try run_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut sink, mut clip0, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut sink, mut clip0, mut ui0, rdp_req("win"))
     assert_eq(rd.opens.len(), 1)
     assert_eq(sink.graphics.len(), 1)
     assert(sink.graphics[0].starts_with("auto: the password is not saved"))
 }
 
 test "a graphics switch whose reconnect fails closes the tab with the reason" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -691,7 +717,7 @@ test "a graphics switch whose reconnect fails closes the tab with the reason" {
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip0 := no_clipboard()
     mut msg := ""
-    run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, rdp_req("win")) or err { msg = "{err.message()}" }
+    run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, mut ui0, rdp_req("win")) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "network")
     assert(rd.closed >= 1)
     assert_eq(sink.graphics.len(), 0)
@@ -709,6 +735,7 @@ test "switching graphics checks the mode before it reaches the engine" {
 }
 
 test "auto picks bitmaps on a local network, keeps its choice on a resize and measures again when chosen" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -723,7 +750,7 @@ test "auto picks bitmaps on a local network, keeps its choice on a resize and me
     ]
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip0 := no_clipboard()
-    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, mut ui0, rdp_req("win"))
     assert_eq(rd.opens.len(), 4)
     assert_eq(rd.opens[0].graphics, "compatible")
     assert_eq(rd.ready_rtt(sink), 1)
@@ -738,13 +765,14 @@ test "auto picks bitmaps on a local network, keeps its choice on a resize and me
 }
 
 test "the vault's password is wiped once the engine has it, on a first connection and a reconnect (milestone 36)" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
     try rdp_fake(crypto, mut store, s, "s3cret")
     reset_wiped()
     mut rd := new_fake_desktop("ab:cd", "s3cret")
-    _ = try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), rdp_req("win"))
+    _ = try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut ui0, rdp_req("win"))
     assert(was_wiped("s3cret"))
     // The sealed bytes were opened, then wiped as well.
     assert(WIPED_BUFS >= 1)
@@ -752,7 +780,7 @@ test "the vault's password is wiped once the engine has it, on a first connectio
     // A failed connection wipes it too.
     reset_wiped()
     mut bad := new_fake_desktop("ab:cd", "other")
-    open_remote_desktop(crypto, mut store, s, mut bad, trusting(), rdp_req("win")) or {}
+    open_remote_desktop(crypto, mut store, s, mut bad, trusting(), mut ui0, rdp_req("win")) or {}
     assert(was_wiped("s3cret"))
 
     // And a reconnect for a new size, opened from the vault again.
@@ -763,7 +791,7 @@ test "the vault's password is wiped once the engine has it, on a first connectio
     ]
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip0 := no_clipboard()
-    try run_remote_desktop(crypto, mut store, s, mut again, no_prompter(), mut sink, mut clip0, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut again, no_prompter(), mut sink, mut clip0, mut ui0, rdp_req("win"))
     assert_eq(again.opens.len(), 2)
     assert_eq(WIPED_TEXTS.len(), 2)
     assert(was_wiped("s3cret"))
@@ -781,6 +809,7 @@ fn typed_text(evs: []RdpKeyEvent) -> str {
 }
 
 test "a pointer change reaches the page" {
+    mut ui0 := no_ui()
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
@@ -794,7 +823,7 @@ test "a pointer change reaches the page" {
     ]
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip := no_clipboard()
-    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip, rdp_req("win"))
+    try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip, mut ui0, rdp_req("win"))
     assert_eq(sink.cursors, ["image 3", "set 3", "hidden 0"])
 }
 
@@ -915,4 +944,87 @@ fn rdp_fake_named(crypto: FakeCrypto, mut store: FakeStore, s: VaultSession, ali
     p.user = "luis"
     p.set_user = true
     _ = try add_host(crypto, mut store, s, p)
+}
+
+// Milestone 59: the host's row id, as the vault holds it.
+fn rdp_host_id(store: FakeStore, alias: str) -> str! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    return h.id
+}
+
+test "Automatic falls back to the pipeline once when the server closes during setup in Compatible, and remembers the host" {
+    crypto := FakeCrypto{}
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    id := try rdp_host_id(store, "win")
+    mut ui0 := no_ui()
+    // A local network: "auto" picks Compatible, the server closes, the pipeline opens.
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    rd.rtt = 1
+    rd.setup_closes = "compatible"
+    d := try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut ui0, rdp_req("win"))
+    // The certificate first (open 1), then Compatible (2), then the pipeline (3).
+    assert_eq(rd.opens.len(), 3)
+    assert_eq(rd.opens[1].graphics, "compatible")
+    assert_eq(rd.opens[2].graphics, "pipeline")
+    assert_eq(rd.opens[2].password, "s3cret")
+    assert_eq(d.graphics, "pipeline")
+    assert_eq(ui0.saves, 1)
+    assert(rdp_pipeline_remembered(ui0.saved, id))
+    // Next time "auto" goes straight to the pipeline, with no probe.
+    mut next := new_fake_desktop("ab:cd", "s3cret")
+    next.rtt = 1
+    next.setup_closes = "compatible"
+    _ = try open_remote_desktop(crypto, mut store, s, mut next, no_prompter(), mut ui0, rdp_req("win"))
+    assert_eq(next.opens.len(), 1)
+    assert_eq(next.opens[0].graphics, "pipeline")
+    assert_eq(next.probes, 0)
+    assert_eq(ui0.saves, 1)
+}
+
+test "a mode the person chose, a pipeline that closes, or another failure is never retried" {
+    crypto := FakeCrypto{}
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    mut ui0 := no_ui()
+    mut msg := ""
+    // Compatible chosen in Settings: one attempt, its own error, nothing remembered.
+    mut req := rdp_req("win")
+    req.graphics = "compatible"
+    mut chosen := new_fake_desktop("ab:cd", "s3cret")
+    _ = try open_remote_desktop(crypto, mut store, s, mut chosen, trusting(), mut ui0, rdp_req("win"))
+    chosen.opens = []
+    chosen.setup_closes = "compatible"
+    open_remote_desktop(crypto, mut store, s, mut chosen, no_prompter(), mut ui0, req) or err { msg = "{err.message()}" }
+    assert_eq(chosen.opens.len(), 1)
+    assert(rdp_server_closed_setup(msg))
+    // "auto" on a slow link picks the pipeline: when it closes there is nothing to fall to.
+    mut slow := new_fake_desktop("ab:cd", "s3cret")
+    slow.setup_closes = "all"
+    msg = ""
+    open_remote_desktop(crypto, mut store, s, mut slow, no_prompter(), mut ui0, rdp_req("win")) or err { msg = "{err.message()}" }
+    assert_eq(slow.opens.len(), 1)
+    assert(rdp_server_closed_setup(msg))
+    // Compatible, then the pipeline closes too: two attempts, the error said, nothing kept.
+    mut both := new_fake_desktop("ab:cd", "s3cret")
+    both.rtt = 1
+    both.setup_closes = "all"
+    msg = ""
+    open_remote_desktop(crypto, mut store, s, mut both, no_prompter(), mut ui0, rdp_req("win")) or err { msg = "{err.message()}" }
+    assert_eq(both.opens.len(), 2)
+    assert_eq(both.opens[1].graphics, "pipeline")
+    assert(rdp_server_closed_setup(msg))
+    // A server that cannot be reached is not a setup close.
+    mut gone := new_fake_desktop("ab:cd", "s3cret")
+    gone.rtt = 1
+    gone.fail_from = 1
+    msg = ""
+    open_remote_desktop(crypto, mut store, s, mut gone, no_prompter(), mut ui0, rdp_req("win")) or err { msg = "{err.message()}" }
+    assert_eq(gone.opens.len(), 1)
+    assert_eq(error_code_of(msg), ERR_NETWORK)
+    assert_eq(ui0.saves, 0)
+    assert_eq(ui0.saved.rdp_pipeline_hosts.len(), 0)
 }

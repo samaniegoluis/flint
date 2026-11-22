@@ -890,3 +890,54 @@ test "the dial's round trip on loopback reads as a local network, a closed port 
     }
     assert_eq(rd.rd_probe_rtt("127.0.0.1", 9, 1500), -1)
 }
+
+// ---- Milestone 59: a server that closes during setup.
+
+test "a server that closes in the capability exchange is told from no route, and FreeRDP tries it twice" {
+    if clip_target("").port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    fp := first_fingerprint(rd, "t-setup", clip_target(""))
+    assert_eq(ctl("gfxonly on"), "ok")
+    defer { _ = ctl("gfxonly off") }
+    mut t := clip_target(fp)
+    t.graphics = "compatible"
+    mut msg := ""
+    rd.rd_open("t-setup", t, 15000) or err { msg = "{err.message()}" }
+    rd.rd_close("t-setup")
+    assert(rdp_server_closed_setup(msg), msg)
+    assert(msg.contains("CONNECTION_STATE_"), msg)
+    // The second connection of each attempt is FreeRDP's own: freerdp_connect reconnects
+    // once after a transport failure (milestone 59's "two connections 130 ms apart").
+    assert_eq(ctl("setups"), "2")
+    // The same server takes a client that offers the pipeline.
+    t.graphics = "pipeline"
+    d := try rd.rd_open("t-setup", t, 15000)
+    assert(d.width > 0)
+    rd.rd_close("t-setup")
+}
+
+// zorinos-rdp (milestone 59): GNOME Remote Desktop in system mode, NLA with grdctl's
+// credential, then a Server Redirection to the GDM greeter. FLINT_RDP_ZORIN_HOST, _USER
+// and _PASSWORD (Infisical, /ai-agents); skipped without them. Input there is free (a
+// test user), but this test sends none.
+fn zorin_target(trusted: str, graphics: str) -> RdpTarget {
+    return RdpTarget{ hostname: os.getenv("FLINT_RDP_ZORIN_HOST"), port: 3389, user: os.getenv("FLINT_RDP_ZORIN_USER"), domain: "", password: os.getenv("FLINT_RDP_ZORIN_PASSWORD"), width: 1024, height: 768, trusted_fingerprint: trusted, graphics: graphics, rtt_ms: -1 }
+}
+
+test "zorinos-rdp closes Compatible during setup and opens the greeter with the pipeline" {
+    if os.getenv("FLINT_RDP_ZORIN_HOST").len() == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    fp := first_fingerprint(rd, "t-zorin", zorin_target("", "pipeline"))
+    mut msg := ""
+    rd.rd_open("t-zorin", zorin_target(fp, "compatible"), 20000) or err { msg = "{err.message()}" }
+    rd.rd_close("t-zorin")
+    assert(rdp_server_closed_setup(msg), msg)
+    d := try rd.rd_open("t-zorin", zorin_target(fp, "pipeline"), 20000)
+    assert(d.width > 0)
+    assert(wait_frame("t-zorin").len() > 16)
+    rd.rd_close("t-zorin")
+}

@@ -22,6 +22,10 @@ type UiState struct {
     monitors:      []str          `json:"monitors"`
     monitors_note_seen: bool      `json:"monitors_note_seen"`
     vaults:        []VaultUiState `json:"vaults"`
+    // Milestone 59: the RDP hosts (row ids, never an address, Principle 5) whose server
+    // closed during setup in Compatible and connected with the pipeline, so "auto"
+    // takes the pipeline for them from then on, on this machine.
+    rdp_pipeline_hosts: []str     `json:"rdp_pipeline_hosts"`
 }
 
 // The bounds match the design's --sidebar-min / --sidebar-max.
@@ -36,9 +40,11 @@ FILES_WIDTH_DEFAULT: i64 = 340
 UI_STATE_MAX_VAULTS: usize = 32
 // Collapsed groups kept per vault.
 UI_STATE_MAX_COLLAPSED: usize = 2048
+// RDP hosts remembered as pipeline-only (milestone 59); the oldest fall off.
+UI_STATE_MAX_PIPELINE_HOSTS: usize = 256
 
 fn default_ui_state() -> UiState {
-    return UiState{ sidebar_open: true, sidebar_width: SIDEBAR_WIDTH_DEFAULT, files_width: FILES_WIDTH_DEFAULT, vaults: [] }
+    return UiState{ sidebar_open: true, sidebar_width: SIDEBAR_WIDTH_DEFAULT, files_width: FILES_WIDTH_DEFAULT, vaults: [], rdp_pipeline_hosts: [] }
 }
 
 // A 128-bit id as 32 lowercase hex characters: row ids and vault ids alike.
@@ -133,7 +139,7 @@ fn clean_collapsed(ids: []str) -> []str {
 // repeated vault and group ids left out, the vault list capped. A hand-edited or
 // partly damaged file therefore loads as the parts of it that still make sense.
 fn clean_ui_state(s: UiState) -> UiState {
-    mut res := UiState{ sidebar_open: s.sidebar_open, sidebar_width: clamp_sidebar_width(s.sidebar_width), files_width: clamp_files_width(s.files_width), fullscreen_note_seen: s.fullscreen_note_seen, monitors: clean_monitor_ids(s.monitors), monitors_note_seen: s.monitors_note_seen, vaults: [] }
+    mut res := UiState{ sidebar_open: s.sidebar_open, sidebar_width: clamp_sidebar_width(s.sidebar_width), files_width: clamp_files_width(s.files_width), fullscreen_note_seen: s.fullscreen_note_seen, monitors: clean_monitor_ids(s.monitors), monitors_note_seen: s.monitors_note_seen, vaults: [], rdp_pipeline_hosts: clean_pipeline_hosts(s.rdp_pipeline_hosts) }
     for v in s.vaults {
         if res.vaults.len() >= UI_STATE_MAX_VAULTS {
             break
@@ -152,4 +158,34 @@ fn clean_ui_state(s: UiState) -> UiState {
         }
     }
     return res
+}
+
+// Row ids only, each once, the newest first, at most UI_STATE_MAX_PIPELINE_HOSTS.
+fn clean_pipeline_hosts(ids: []str) -> []str {
+    mut res: []str = []
+    for id in ids {
+        if res.len() >= UI_STATE_MAX_PIPELINE_HOSTS {
+            break
+        }
+        if is_hex_id(id) && !str_in(res, id) {
+            res.push(id)
+        }
+    }
+    return res
+}
+
+// Whether "auto" takes the pipeline for host `id` on this machine (milestone 59).
+fn rdp_pipeline_remembered(s: UiState, id: str) -> bool {
+    return str_in(s.rdp_pipeline_hosts, id)
+}
+
+// `s` with host `id` remembered as pipeline-only, at the front of the list.
+fn remember_rdp_pipeline(s: UiState, id: str) -> UiState {
+    mut next := s
+    mut ids: []str = [id]
+    for o in s.rdp_pipeline_hosts {
+        ids.push(o)
+    }
+    next.rdp_pipeline_hosts = clean_pipeline_hosts(ids)
+    return next
 }

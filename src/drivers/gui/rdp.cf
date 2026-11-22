@@ -147,13 +147,14 @@ fn (mut self: RdpTabSink) desktop_cursor(tab: str, c: RdpCursor) {
 }
 
 // The connection, on a worker, until the tab ends.
-fn run_gui_rdp(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, vs: VaultSession, holder: SessionHolder, board: OsClipboard, req: RdpOpenReq) {
+fn run_gui_rdp(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, vs: VaultSession, holder: SessionHolder, board: OsClipboard, ui_store: JsonUiStateStore, req: RdpOpenReq) {
     mut rd := new_freerdp_desktop()
     prompter := new_gui_prompter(app, req.tab)
     mut sink := RdpTabSink{ events: new_gui_desktop_sink(app), holder: holder }
     mut clip := board
+    mut ui := ui_store
     open := RdpOpenRequest{ tab: req.tab, alias: req.alias, width: req.width, height: req.height, timeout_ms: RDP_CONNECT_TIMEOUT_MS, graphics: req.graphics }
-    run_remote_desktop(c, mut store, vs, mut rd, prompter, mut sink, mut clip, open) or err {
+    run_remote_desktop(c, mut store, vs, mut rd, prompter, mut sink, mut clip, mut ui, open) or err {
         msg := "{err.message()}"
         emit_rdp_state(mut app, req.tab, "ended", error_code_of(msg), error_text_of(msg))
         gui_session_drop(req.tab)

@@ -27,6 +27,9 @@
 //   sync         the lock keys of the last synchronize event, "-" for none
 //   cursor <k>   sends every client a pointer: new (a 32x32 image, cache 0, hotspot
 //                3,4), cached (cache 0 again), null (hidden) or default (the arrow)
+//   gfxonly <on|off>  (milestone 59) as GNOME Remote Desktop: close in the capability
+//                exchange a client that offers no graphics pipeline; resets `setups`
+//   setups       how many connections reached the capability exchange since then
 // Unicode key events are in `keys` as "d:U+e9 u:U+e9".
 
 #if defined(_WIN32)
@@ -98,6 +101,8 @@ std::vector<std::string> g_keys;
 std::string g_pointer = "-";
 std::vector<std::string> g_mice;
 std::string g_sync = "-";
+std::atomic<bool> g_gfx_only{false};
+std::atomic<int> g_setups{0};
 const char* g_cert = nullptr;
 const char* g_key = nullptr;
 
@@ -344,6 +349,16 @@ void context_free(freerdp_peer*, rdpContext* ctx) {
     if (c->vcm) WTSCloseServer(c->vcm);
 }
 
+// The client's capabilities arrived (Confirm Active). gnome-remote-desktop closes here
+// when the client did not advertise the graphics pipeline; so does `gfxonly on`.
+BOOL on_capabilities(freerdp_peer* client) {
+    g_setups.fetch_add(1);
+    if (g_gfx_only.load() && !freerdp_settings_get_bool(client->context->settings, FreeRDP_SupportGraphicsPipeline)) {
+        return FALSE;
+    }
+    return TRUE;
+}
+
 void peer_loop(freerdp_peer* client) {
     Peer self;
     self.client = client;
@@ -370,6 +385,7 @@ void peer_loop(freerdp_peer* client) {
     if (ok) {
         client->PostConnect = on_post_connect;
         client->Activate = on_activate;
+        client->Capabilities = on_capabilities;
         rdpInput* in = client->context->input;
         in->KeyboardEvent = on_keyboard;
         in->UnicodeKeyboardEvent = on_unicode;
@@ -450,6 +466,8 @@ std::string run(const std::string& line) {
         return out.empty() ? "-" : out;
     }
     if (cmd == "sync") return g_sync;
+    if (cmd == "gfxonly") { g_gfx_only.store(arg == "on"); g_setups.store(0); return "ok"; }
+    if (cmd == "setups") return std::to_string(g_setups.load());
     if (cmd == "cursor") {
         int k = arg == "new" ? 1 : arg == "cached" ? 2 : arg == "null" ? 3 : arg == "default" ? 4 : 0;
         if (!k) return "unknown";

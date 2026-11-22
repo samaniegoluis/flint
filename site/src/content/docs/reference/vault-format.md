@@ -25,7 +25,8 @@ vault in the `meta` row `vault_id` (migration 10), so a new master password and 
 leave it as it was. A vault from before migration 10 keeps the id it had, a BLAKE2b hash
 of its salt. The id recognises a vault after its file moves, names its activity file and
 keys the desktop app's layout state (`ui-state.json`, which holds only
-that id and random group ids). Nothing from inside a vault is ever written there. While a
+that id, random group ids and the random ids of RDP hosts that take only the graphics
+pipeline). Nothing from inside a vault is ever written there. While a
 change is being written, SQLite keeps a rollback journal next to the file, encrypted as
 well, and deletes it when the change commits.
 

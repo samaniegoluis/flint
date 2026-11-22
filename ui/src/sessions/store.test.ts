@@ -120,4 +120,9 @@ describe('why a remote desktop ended', () => {
     expect(rdpEndKind(ended('refused', 'refused: the server ended the session'))).toBe('refused');
     expect(rdpEndKind(ended('network', 'network: lost', 5))).toBe('lost');
   });
+
+  it('tells a server that closed during setup from no route at all (milestone 59)', () => {
+    expect(rdpEndKind(ended('refused', 'the server closed the connection during setup (CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT)'))).toBe('setup-closed');
+    expect(rdpEndKind(ended('network', 'could not reach the server (ERRCONNECT_CONNECT_TRANSPORT_FAILED)'))).toBe('unreachable');
+  });
 });

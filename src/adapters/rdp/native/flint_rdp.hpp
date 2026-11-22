@@ -259,6 +259,10 @@ inline constexpr int RDP_ERR_LOST = 10;
 inline constexpr int RDP_ERR_ENDED = 11;
 inline constexpr int RDP_ERR_UNKNOWN_KEY = 12;
 inline constexpr int RDP_ERR_LEGACY_SECURITY = 13;
+// Milestone 59: the transport failed after security (TLS and NLA) was through: the server
+// answered, took the credentials and closed during setup (GNOME Remote Desktop does so in
+// the capability exchange when the client offers no graphics pipeline), not "no route".
+inline constexpr int RDP_ERR_SERVER_CLOSED_SETUP = 14;
 
 // Events of `wait`.
 inline constexpr int EV_RUNNING = 0;
@@ -387,6 +391,10 @@ struct Conn {
     // (milestone 36): told apart from a network failure when the connect fails.
     std::atomic<bool> x224_seen{false};
     std::atomic<bool> legacy_only{false};
+    // Milestone 59: the furthest connection state a read was made in (CONNECTION_STATE),
+    // over every attempt of one freerdp_connect (it reconnects once by itself after a
+    // transport failure). Read on the connecting thread, where FreeRDP moves the state.
+    std::atomic<int> max_state{0};
 };
 
 struct Context {
@@ -1461,6 +1469,12 @@ inline bool legacy_only_answer(const uint8_t* b, size_t n) {
 }
 
 inline int read_pdu(rdpTransport* transport, wStream* s) {
+    if (rdpContext* sc = transport_get_context(transport)) {
+        if (Conn* c = ctx_of(sc)->conn) {
+            const int st = static_cast<int>(freerdp_get_state(sc));
+            if (st > c->max_state.load()) c->max_state.store(st);
+        }
+    }
     int rc = default_read_pdu()(transport, s);
     if (rc > 0) {
         rdpContext* ctx = transport_get_context(transport);
@@ -1690,6 +1704,12 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         } else if (elapsed >= std::chrono::milliseconds(timeout_ms) - std::chrono::milliseconds(50)) {
             code = RDP_ERR_TIMEOUT;
             detail = "no answer within the timeout";
+        } else if (err == FREERDP_ERROR_CONNECT_TRANSPORT_FAILED &&
+                   c->max_state.load() >= static_cast<int>(CONNECTION_STATE_MCS_CREATE_REQUEST)) {
+            // Past TLS and NLA: the server closed during setup. Named by the state it
+            // closed in, so the card can say where.
+            code = RDP_ERR_SERVER_CLOSED_SETUP;
+            detail = freerdp_state_string(static_cast<CONNECTION_STATE>(c->max_state.load()));
         } else {
             code = classify(err);
             detail = freerdp_get_last_error_name(err);

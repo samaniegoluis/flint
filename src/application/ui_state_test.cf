@@ -77,3 +77,10 @@ test "the full-screen note, once seen, stays seen" {
     assert(ui_state_for(store, a).fullscreen_note_seen)
     assert(ui_state_for(store, "").fullscreen_note_seen)
 }
+
+test "the page's layout saves keep the RDP hosts remembered as pipeline-only (milestone 59)" {
+    a := "0123456789abcdef0123456789abcdef"
+    mut store := FakeUiStateStore{ saved: remember_rdp_pipeline(default_ui_state(), a), saves: 0 }
+    _ = try save_ui_state(mut store, a, UiStateView{ sidebar_open: false, sidebar_width: 300, collapsed: [] })
+    assert(rdp_pipeline_remembered(store.saved, a))
+}

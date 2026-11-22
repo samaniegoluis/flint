@@ -461,7 +461,9 @@ Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults 
 The sidebar (open or closed, and its width) and the collapsed groups of each vault are
 kept in `ui-state.json` in the same config folder, not in the vault: a vault synced
 between machines is not rewritten each time you fold a group, and each machine keeps its
-own layout. The file holds only ids: a vault is named by its id (kept inside it), and a group
-by its random id, so it never contains a vault, group or host name. A vault that is moved
+own layout. It also lists the RDP hosts whose server takes only the graphics pipeline, so
+*Automatic* goes straight to it ([Remote desktop](/guides/remote-desktop/#graphics)). The
+file holds only ids: a vault is named by its id (kept inside it), and a group or a host
+by its random id, so it never contains a vault, group or host name or an address. A vault that is moved
 or renamed keeps its layout, and so does a renamed group. If the file is damaged, Flint
 starts from the default layout.

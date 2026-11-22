@@ -42,7 +42,7 @@ fn ui_state_for[U: UiStateStore](store: U, vault: str) -> UiStateView {
 // out of range are clamped and bad ids dropped, as on load.
 fn save_ui_state[U: UiStateStore](mut store: U, vault: str, view: UiStateView) -> UiStateView! {
     current := load_ui_state(store)
-    mut next := UiState{ sidebar_open: view.sidebar_open, sidebar_width: view.sidebar_width, files_width: view.files_width, fullscreen_note_seen: view.fullscreen_note_seen, monitors: view.monitors, monitors_note_seen: view.monitors_note_seen, vaults: [] }
+    mut next := UiState{ sidebar_open: view.sidebar_open, sidebar_width: view.sidebar_width, files_width: view.files_width, fullscreen_note_seen: view.fullscreen_note_seen, monitors: view.monitors, monitors_note_seen: view.monitors_note_seen, vaults: [], rdp_pipeline_hosts: current.rdp_pipeline_hosts }
     if vault.len() > 0 {
         if !is_hex_id(vault) {
             return error(coded(ERR_INVALID, "internal: bad vault id"))
