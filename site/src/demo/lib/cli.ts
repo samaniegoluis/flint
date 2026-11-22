@@ -75,10 +75,13 @@ Hosts
                                         the sudo password defaults to the login one
   host add <alias> --type rdp --hostname <host> [--port N] [--user U]
            [--domain D] [--password | --password-stdin | --cred <name>]
+           [--audio local|remote|off] [--microphone]
                                         a remote desktop host (port 3389); no
-                                        --key, --jump, --command or sudo password
+                                        --key, --jump, --command or sudo password;
+                                        audio plays here (local) by default, the
+                                        microphone is off
   host edit <alias> [same flags] [--alias <new>] [--no-tags] [--no-password]
-           [--no-sudo-password] [--command ""] [--keep-shell]
+           [--no-sudo-password] [--command ""] [--keep-shell] [--no-microphone]
   host list [--group <path>] [--tag <tag>] | host show <alias> | host rm <alias>
   host test <alias> [--timeout <secs>] [--accept-new-host-key]
                                         Connect, verify the host key, log in, hang up
@@ -666,6 +669,11 @@ class Cmd {
 		if (p.has('--command')) patch.command = p.value('--command');
 		if (p.has('--type')) patch.type = p.value('--type');
 		if (p.has('--domain')) patch.domain = p.value('--domain');
+		if (p.has('--audio')) patch.audio = p.value('--audio');
+		if (p.has('--microphone') && p.has('--no-microphone')) {
+			fail('usage', '--microphone and --no-microphone contradict each other');
+		}
+		if (p.has('--microphone') || p.has('--no-microphone')) patch.microphone = p.has('--microphone');
 		if (p.has('--keep-shell') && p.has('--no-keep-shell')) {
 			fail('usage', '--keep-shell and --no-keep-shell contradict each other');
 		}
@@ -688,7 +696,7 @@ class Cmd {
 	private static HOST_FLAGS = [
 		'--label', '--hostname', '--port', '--user', '--group', '--tag', '--no-tags', '--color', '--notes',
 		'--jump', '--cred', '--key', '--password', '--password-stdin', '--sudo-password', '--sudo-password-stdin',
-		'--command', '--keep-shell', '--no-keep-shell', '--type', '--domain',
+		'--command', '--keep-shell', '--no-keep-shell', '--type', '--domain', '--audio', '--microphone', '--no-microphone',
 	];
 
 	*host(): Run {
@@ -736,9 +744,9 @@ class Cmd {
 				this.emit(hostView(h), () =>
 					(h.type === 'rdp'
 						? fields(
-							['alias', 'type', 'label', 'hostname', 'port', 'user', 'domain', 'group', 'tags', 'color', 'credential', 'password', 'notes'],
+							['alias', 'type', 'label', 'hostname', 'port', 'user', 'domain', 'group', 'tags', 'color', 'credential', 'password', 'audio', 'microphone', 'notes'],
 							[h.alias, h.type, dash(h.label), h.hostname, `${h.port}`, dash(h.user), dash(h.domain), dash(h.group), dash(h.tags.join(', ')), dash(h.color),
-								dash(h.credential), h.hasPassword ? 'set' : 'not set', dash(h.notes)],
+								dash(h.credential), h.hasPassword ? 'set' : 'not set', audioText(h.audio), h.microphone ? 'on' : 'off', dash(h.notes)],
 						)
 						: fields(
 						['alias', 'type', 'label', 'hostname', 'port', 'user', 'group', 'tags', 'color', 'jump', 'credential', 'key', 'password', 'sudo password', 'command', 'notes'],
@@ -1282,6 +1290,13 @@ function isRemoteArg(a: string): boolean {
 	if (colon <= 0) return false;
 	const slash = a.indexOf('/');
 	return slash < 0 || colon < slash;
+}
+
+/** An RDP host's audio in words, as `host show` prints it (milestone 60). */
+function audioText(audio: string): string {
+	if (audio === 'remote') return 'on the remote computer';
+	if (audio === 'off') return 'off';
+	return 'on this computer';
 }
 
 /** check_remote_url (src/domain/sync.cf): https, or http to this machine only. */

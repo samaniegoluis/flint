@@ -84,11 +84,15 @@ fn (self: FreeRdpDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> Rd
     rw := i32(t.width)
     rh := i32(t.height)
     layout := layout_text(t.monitors)
+    sound := rdp_audio_settings(t.audio, t.microphone)
+    playback := sound.playback
+    remote_audio := sound.remote_console
+    capture := sound.capture
     // The password goes to the shim straight from the target, never through a local
     // copy here (milestone 36): the caller wipes the target's once this returns.
     // CFIRE-UPSTREAM: CF-119
     cpp {
-        rc = flint_rdp::open(tab, host, rport, user, dom, t.password, rw, rh, trusted, graphics, layout, timeout_ms, w, h, port, token, detail);
+        rc = flint_rdp::open(tab, host, rport, user, dom, t.password, rw, rh, trusted, graphics, layout, playback, remote_audio, capture, timeout_ms, w, h, port, token, detail);
     }
     // From open, "closed" only ever means the tab's own close cancelled it.
     if rc == 7 {
@@ -420,6 +424,27 @@ fn (self: FreeRdpDesktop) rd_close(tab: str) {
     cpp {
         flint_rdp::close(tab);
     }
+}
+
+// Whether this FreeRDP carries channel `name` built in, with backend `subsystem` when
+// one is given (milestone 60; tests).
+fn rdp_has_channel(name: str, subsystem: str) -> bool {
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        ok = flint_rdp::has_channel(name, subsystem);
+    }
+    return ok
+}
+
+// The audio backend FreeRDP uses on this system: mac, pulse or winmm (tests).
+fn rdp_audio_backend() -> str {
+    mut b := ""
+    // CFIRE-UPSTREAM: CF-119
+    cpp {
+        b = flint_rdp::audio_backend();
+    }
+    return b
 }
 
 // The tab's pending frame, waiting up to `wait_ms` (tests; the page reads the frame

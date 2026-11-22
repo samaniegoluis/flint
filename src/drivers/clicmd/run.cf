@@ -58,10 +58,13 @@ Hosts
                                         the sudo password defaults to the login one
   host add <alias> --type rdp --hostname <host> [--port N] [--user U]
            [--domain D] [--password | --password-stdin | --cred <name>]
+           [--audio local|remote|off] [--microphone]
                                         a remote desktop host (port 3389); no
-                                        --key, --jump, --command or sudo password
+                                        --key, --jump, --command or sudo password;
+                                        audio plays here (local) by default, the
+                                        microphone is off
   host edit <alias> [same flags] [--alias <new>] [--no-tags] [--no-password]
-           [--no-sudo-password] [--command ""] [--keep-shell]
+           [--no-sudo-password] [--command ""] [--keep-shell] [--no-microphone]
   host list [--group <path>] [--tag <tag>] | host show <alias> | host rm <alias>
   host test <alias> [--timeout <secs>] [--accept-new-host-key]
                                         Connect, verify the host key, log in, hang up

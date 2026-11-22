@@ -62,7 +62,7 @@ export function tokenize(line: string): Tokens {
 const VALUE_FLAGS = [
 	'--vault', '--name', '--hostname', '--label', '--port', '--user', '--group', '--tag',
 	'--color', '--notes', '--jump', '--cred', '--key', '--file', '--alias', '--timeout',
-	'--exec-timeout', '--command', '--hosts', '--allow', '--ttl', '--local', '--to', '--type', '--domain', '--id',
+	'--exec-timeout', '--command', '--hosts', '--allow', '--ttl', '--local', '--to', '--type', '--domain', '--audio', '--id',
 ];
 
 const BOOL_FLAGS = [
@@ -70,7 +70,7 @@ const BOOL_FLAGS = [
 	'--password-stdin', '--no-password', '--passphrase', '--passphrase-stdin', '--key-stdin',
 	'--no-tags', '--accept-new-host-key', '--keep-shell', '--no-keep-shell', '--no-command', '--all',
 	'--sudo', '--sudo-password', '--sudo-password-stdin', '--no-sudo-password', '-r', '--recursive', '--force',
-	'--open-on-connect', '--no-open-on-connect', '--list',
+	'--open-on-connect', '--no-open-on-connect', '--list', '--microphone', '--no-microphone',
 ];
 
 const GLOBAL_FLAGS = ['--json', '--vault', '--help', '-h', '--master-stdin'];

@@ -150,6 +150,17 @@ fn command_text(h: HostView) -> str {
     return h.command + " (ends the session)"
 }
 
+// An RDP host's audio in words (milestone 60).
+fn audio_text(audio: str) -> str {
+    if audio == RDP_AUDIO_REMOTE {
+        return "on the remote computer"
+    }
+    if audio == RDP_AUDIO_OFF {
+        return "off"
+    }
+    return "on this computer"
+}
+
 fn print_host(h: HostView) {
     mut pw := "not set"
     if h.has_password {
@@ -160,8 +171,12 @@ fn print_host(h: HostView) {
         sudo_pw = "set"
     }
     if h.host_type == HOST_TYPE_RDP {
-        print_fields(["alias", "type", "label", "hostname", "port", "user", "domain", "group", "tags", "color", "credential", "password", "notes"],
-            [h.alias, h.host_type, dash_if_empty(h.label), h.hostname, "{h.port}", dash_if_empty(h.user), dash_if_empty(h.domain), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags)), dash_if_empty(h.color), dash_if_empty(h.credential), pw, dash_if_empty(h.notes)])
+        mut mic := "off"
+        if h.microphone {
+            mic = "on"
+        }
+        print_fields(["alias", "type", "label", "hostname", "port", "user", "domain", "group", "tags", "color", "credential", "password", "audio", "microphone", "notes"],
+            [h.alias, h.host_type, dash_if_empty(h.label), h.hostname, "{h.port}", dash_if_empty(h.user), dash_if_empty(h.domain), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags)), dash_if_empty(h.color), dash_if_empty(h.credential), pw, audio_text(h.audio), mic, dash_if_empty(h.notes)])
         return
     }
     print_fields(["alias", "type", "label", "hostname", "port", "user", "group", "tags", "color", "jump", "credential", "key", "password", "sudo password", "command", "notes"],

@@ -81,9 +81,13 @@ login password), `--command <cmd>` (run on connect) with `--keep-shell` / `--no-
 
 An RDP host (`--type rdp`, port 3389 by default) takes `--domain <name>` and logs in with
 `--password` or a `--cred` that has a password; `--key`, `--jump`, `--command` and
-`--sudo-password` are refused for it (`invalid`), and `--domain` for an SSH host. The type
-is fixed once added: `host edit --type` may repeat it, not change it. `host list` shows a
-`TYPE` column, and `--json` a `type` (and `domain`) field on every host. See
+`--sudo-password` are refused for it (`invalid`), and `--domain` for an SSH host. It also
+takes `--audio local|remote|off` (where its sound plays; `local` by default) and
+`--microphone` / `--no-microphone` (off by default), both refused for an SSH host
+(`invalid`, as is an unknown `--audio`). The type is fixed once added: `host edit --type`
+may repeat it, not change it. `host list` shows a `TYPE` column, and `--json` a `type`
+(and `domain`) field on every host, and `audio` and `microphone` (`""` and `false` for an
+SSH host). `host show` of an RDP host prints both. See
 [Remote desktop hosts](/guides/hosts/#remote-desktop-rdp-hosts).
 
 `host test` takes `--timeout` and `--accept-new-host-key` like `connect`, never asks for

@@ -127,3 +127,40 @@ test "an RDP certificate question carries the certificate and the trusted finger
     issued := RdpCert{ subject: "CN=a", issuer: "CN=CA", fingerprint: "", valid_from: "", valid_to: "" }
     assert(!rdp_cert_self_signed(issued))
 }
+
+test "an RDP host's audio plays here unless it says otherwise, and the microphone starts off" {
+    h := sample_rdp_host()
+    assert_eq(rdp_audio_of(h), RDP_AUDIO_LOCAL)
+    assert(!h.rdp_microphone)
+    mut r := sample_rdp_host()
+    r.rdp_audio = RDP_AUDIO_REMOTE
+    assert_eq(rdp_audio_of(r), "remote")
+    try check_rdp_host(r)
+    r.rdp_audio = "speakers"
+    mut msg := ""
+    check_rdp_host(r) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid: audio must be"), msg)
+}
+
+test "audio and the microphone apply to RDP hosts only" {
+    mut h := sample_host()
+    h.rdp_audio = RDP_AUDIO_OFF
+    mut refused := 0
+    check_rdp_host(h) or { refused += 1 }
+    h = sample_host()
+    h.rdp_microphone = true
+    check_rdp_host(h) or { refused += 1 }
+    assert_eq(refused, 2)
+    try check_rdp_host(sample_host())
+}
+
+test "what the engine is told for each audio choice" {
+    here := rdp_audio_settings(RDP_AUDIO_LOCAL, false)
+    assert(here.playback && !here.remote_console && !here.capture)
+    remote := rdp_audio_settings(RDP_AUDIO_REMOTE, false)
+    assert(!remote.playback && remote.remote_console && !remote.capture)
+    off := rdp_audio_settings(RDP_AUDIO_OFF, true)
+    assert(!off.playback && !off.remote_console && off.capture)
+    unset := rdp_audio_settings("", false)
+    assert(!unset.playback && !unset.remote_console && !unset.capture)
+}

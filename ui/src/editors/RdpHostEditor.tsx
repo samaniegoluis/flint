@@ -2,10 +2,12 @@
 // Address, port (3389 when left empty), user, an optional Windows domain, and a login:
 // the host's own password or a credential that has one. No jump host, initial command,
 // sudo or tunnels: those are SSH's. Testing the connection arrives with the RDP tab.
+// Audio (milestone 60, designs 25d1/25d2): where the remote audio plays and the
+// microphone, off by default.
 
 import { useState } from 'react';
 import { api, emptyHostPatch, toFlintError } from '../api/backend';
-import type { HostPatch, HostView } from '../api/types';
+import type { HostPatch, HostView, RdpAudio } from '../api/types';
 import { useApp } from '../state/app';
 import { colorHex, colorName, colorStyle, TAG_COLORS } from '../lib/colors';
 import { groupPaths } from '../lib/tree';
@@ -19,6 +21,12 @@ import { TypeBadge } from './TypeBadge';
 export const RDP_PORT = 3389;
 
 type Login = 'password' | 'credential';
+
+const AUDIO_CHOICES: { value: RdpAudio; label: string }[] = [
+  { value: 'local', label: 'On this computer' },
+  { value: 'remote', label: 'On the remote computer' },
+  { value: 'off', label: 'Off' },
+];
 
 export function RdpHostEditor({ host, group, onClose, onDelete, onNewCredential }: {
   host: HostView | undefined;
@@ -42,6 +50,8 @@ export function RdpHostEditor({ host, group, onClose, onDelete, onNewCredential 
     notes: host?.notes ?? '',
     credential: host?.credential ?? (withPassword.length === 1 ? withPassword[0].name : ''),
     password: '',
+    audio: (host?.audio || 'local') as RdpAudio,
+    microphone: host?.microphone ?? false,
   }));
   const [login, setLogin] = useState<Login>(host?.credential ? 'credential' : 'password');
   const [loginChanged, setLoginChanged] = useState(false);
@@ -88,6 +98,8 @@ export function RdpHostEditor({ host, group, onClose, onDelete, onNewCredential 
       if (login !== 'password' && host?.has_password) { p.password = ''; p.set_password = true; }
     }
     if (login === 'password' && f.password) { p.password = f.password; p.set_password = true; }
+    if (host ? (host.audio || 'local') !== f.audio : f.audio !== 'local') { p.audio = f.audio; p.set_audio = true; }
+    if ((host?.microphone ?? false) !== f.microphone) { p.microphone = f.microphone; p.set_microphone = true; }
     return p;
   };
 
@@ -178,6 +190,32 @@ export function RdpHostEditor({ host, group, onClose, onDelete, onNewCredential 
                 <span className="hint">Only credentials with a password can sign in to a remote desktop.</span>
               </>
             )}
+          </div>
+          <div className="field" data-rdp-audio><span className="flabel">Audio</span>
+            <div className="col" style={{ gap: 'var(--sp-3)' }}>
+              <div className="col" style={{ gap: 6 }}>
+                <span style={{ fontSize: 'var(--fs-sm)' }}>Play remote audio</span>
+                <div className="seg full" role="radiogroup" aria-label="Play remote audio">
+                  {AUDIO_CHOICES.map((a) => (
+                    <button key={a.value} type="button" aria-pressed={f.audio === a.value} data-audio={a.value} onClick={() => set('audio', a.value)}>{a.label}</button>
+                  ))}
+                </div>
+              </div>
+              <label className="row" style={{ gap: 'var(--sp-3)', fontSize: 'var(--fs-sm)', alignItems: 'flex-start' }}>
+                <button type="button" className="toggle" role="switch" aria-checked={f.microphone} aria-label="Microphone" data-microphone
+                  onClick={() => set('microphone', !f.microphone)} />
+                <span className="col" style={{ gap: 3 }}>
+                  <span>Microphone</span>
+                  <span className="hint" style={{ lineHeight: 1.45 }}>Lets the remote computer use this computer's microphone. Off by default.{os === 'mac' && ' macOS asks for microphone permission the first time.'}</span>
+                </span>
+              </label>
+              {os === 'mac' && f.microphone && !host?.microphone && (
+                <div className="callout info" style={{ fontSize: 'var(--fs-xs)' }} data-mic-permission>
+                  <Icon name="info" size="sm" className="info-t" />
+                  <span>Next time you connect, macOS will ask whether Flint may use the microphone. You can change it later in System Settings → Privacy &amp; Security → Microphone.</span>
+                </div>
+              )}
+            </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', gap: 'var(--sp-4)' }}>
             <div className="field"><span className="flabel">Tags</span>

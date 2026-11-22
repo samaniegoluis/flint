@@ -3251,3 +3251,16 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `println("{n}")` → `error: redefinition of '_col_i'`.
 - **Workaround:** each loop names its variables differently (`for j, kk in keys`).
 - **Ideal:** the temporary lives inside the loop's own block (or takes a unique name).
+
+### CF-183 · gap · `confirmed`: no way to add a key to the macOS bundle's `Info.plist`
+- **Seen (milestone 60):** the microphone of an RDP tab (FreeRDP's `audin` on
+  AVFoundation) needs `NSMicrophoneUsageDescription` in `Flint.app`'s `Info.plist`, or
+  macOS ends the process the moment it asks for the microphone. `build.Executable`
+  writes the plist itself (`src/build/apple_bundle.hpp`) from a fixed set: executable,
+  id, name, minimum macOS, icon and URL schemes; nothing else can be added.
+- **Repro (cfire 0.12.2):** any `build.Executable(..., { BundleId: ... })` on macOS;
+  `Contents/Info.plist` has no usage strings and no option to put one there.
+- **Workaround:** `scripts/build-gui.sh` adds the key with `PlistBuddy` after `cfire
+  build` and signs the bundle again (ad hoc), so `scripts/package.sh`'s copy carries it.
+- **Ideal:** a `Plist: { "NSMicrophoneUsageDescription": "…" }` option (or a plist file
+  merged in), so a bundle that needs the camera, microphone or location can say why.

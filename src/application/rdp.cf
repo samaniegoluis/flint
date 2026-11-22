@@ -75,7 +75,7 @@ fn rdp_target[C: Crypto, S: VaultStore, P: Prompter](crypto: C, store: S, sessio
         }
     }
     known := try store.known_hosts_all()
-    return RdpTarget{ hostname: h.hostname, port: h.port, user: user, domain: h.domain, password: password, width: size.width, height: size.height, trusted_fingerprint: trusted_rdp_fingerprint(known, h.hostname, h.port), graphics: graphics, rtt_ms: -1 }
+    return RdpTarget{ hostname: h.hostname, port: h.port, user: user, domain: h.domain, password: password, width: size.width, height: size.height, trusted_fingerprint: trusted_rdp_fingerprint(known, h.hostname, h.port), graphics: graphics, rtt_ms: -1, audio: rdp_audio_of(h), microphone: h.rdp_microphone }
 }
 
 // "auto" made concrete before the engine sees it (milestone 35, D-083): the link's

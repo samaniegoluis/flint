@@ -115,6 +115,9 @@ typedef struct _FILEDESCRIPTORW FILEDESCRIPTORW;
 #include <freerdp/channels/drdynvc.h>
 #include <freerdp/channels/disp.h>
 #include <freerdp/channels/rdpgfx.h>
+#include <freerdp/channels/rdpsnd.h>
+#include <freerdp/channels/audin.h>
+#include <freerdp/channels/rdpdr.h>
 #include <freerdp/codec/h264.h>
 #include <freerdp/crypto/certificate.h>
 #include <freerdp/crypto/crypto.h>
@@ -1017,9 +1020,70 @@ inline BOOL on_pre_connect(freerdp* inst) {
     return TRUE;
 }
 
+// A static channel FreeRDP's own loader takes from the settings' StaticChannelArray,
+// with its arguments (rdpsnd reads them: no `sys:` lets it pick this system's backend).
+// A channel this FreeRDP was built without is skipped, so a build with no audio still
+// connects (the adapter's tests catch a build that lost it).
+inline BOOL load_static_channel(rdpContext* ctx, const char* name, void* data) {
+    PVIRTUALCHANNELENTRY entry = freerdp_channels_load_static_addin_entry(
+        name, nullptr, nullptr, FREERDP_ADDIN_CHANNEL_STATIC | FREERDP_ADDIN_CHANNEL_ENTRYEX);
+    if (entry) return freerdp_channels_client_load_ex(ctx->channels, ctx->settings, reinterpret_cast<PVIRTUALCHANNELENTRYEX>(entry), data) == 0;
+    entry = freerdp_channels_load_static_addin_entry(name, nullptr, nullptr, FREERDP_ADDIN_CHANNEL_STATIC);
+    if (!entry) return TRUE;
+    return freerdp_channels_client_load(ctx->channels, ctx->settings, entry, data) == 0;
+}
+
+// Whether this FreeRDP carries channel `name` built in, and with `subsystem` (a
+// backend such as "mac") when one is given (milestone 60, for the adapter's tests).
+inline bool has_channel(const std::string& name, const std::string& subsystem) {
+    return freerdp_channels_load_static_addin_entry(name.c_str(), subsystem.empty() ? nullptr : subsystem.c_str(), nullptr, 0) != nullptr;
+}
+
+// The audio backend FreeRDP is expected to use on this system.
+inline std::string audio_backend() {
+#if defined(_WIN32)
+    return "winmm";
+#elif defined(__APPLE__)
+    return "mac";
+#else
+    return "pulse";
+#endif
+}
+
+// Milestone 60: the remote audio played here goes over `rdpsnd`, as a static channel
+// (Windows) and a dynamic one (servers that offer only that), the way FreeRDP's own
+// loader does it; Windows starts the static one only beside device redirection
+// (`rdpdr`), which is loaded with no device at all. The microphone is the dynamic
+// `audin`. Each on this system's default device (mac, pulse/alsa, winmm), FreeRDP's
+// choice.
+inline BOOL add_audio_channels(rdpContext* ctx) {
+    rdpSettings* st = ctx->settings;
+    if (freerdp_settings_get_bool(st, FreeRDP_AudioPlayback)) {
+        const char* const snd[] = { RDPSND_CHANNEL_NAME };
+        if (!freerdp_client_add_dynamic_channel(st, 1, snd)) return FALSE;
+        if (!freerdp_client_add_static_channel(st, 1, snd)) return FALSE;
+        if (!freerdp_settings_set_bool(st, FreeRDP_DeviceRedirection, TRUE)) return FALSE;
+    }
+    if (freerdp_settings_get_bool(st, FreeRDP_AudioCapture)) {
+        const char* const mic[] = { AUDIN_CHANNEL_NAME };
+        if (!freerdp_client_add_dynamic_channel(st, 1, mic)) return FALSE;
+    }
+    return TRUE;
+}
+
+inline BOOL load_audio_channels(rdpContext* ctx) {
+    rdpSettings* st = ctx->settings;
+    if (!freerdp_settings_get_bool(st, FreeRDP_AudioPlayback)) return TRUE;
+    if (!load_static_channel(ctx, RDPDR_SVC_CHANNEL_NAME, st)) return FALSE;
+    ADDIN_ARGV* snd = freerdp_static_channel_collection_find(st, RDPSND_CHANNEL_NAME);
+    if (!snd) return FALSE;
+    return load_static_channel(ctx, RDPSND_CHANNEL_NAME, snd);
+}
+
 // Only the channels Flint uses: the dynamic channel carrier, Display Control, the
-// graphics pipeline when it is offered, and the clipboard (FreeRDP's own loader also
-// asks for device redirection, which Flint leaves out).
+// graphics pipeline when it is offered, the clipboard, and audio and the microphone
+// when the host asks for them (milestone 60). FreeRDP's own loader also asks for
+// drives, printers and smartcards, which Flint leaves out.
 inline BOOL load_channels(freerdp* inst) {
     rdpContext* ctx = inst->context;
     rdpSettings* st = ctx->settings;
@@ -1033,6 +1097,7 @@ inline BOOL load_channels(freerdp* inst) {
         const char* const gfx[] = { RDPGFX_CHANNEL_NAME };
         if (!freerdp_client_add_dynamic_channel(st, 1, gfx)) return FALSE;
     }
+    if (!add_audio_channels(ctx)) return FALSE;
     if (!freerdp_settings_set_bool(st, FreeRDP_SupportDynamicChannels, TRUE)) return FALSE;
     PVIRTUALCHANNELENTRY entry = freerdp_channels_load_static_addin_entry(
         DRDYNVC_SVC_CHANNEL_NAME, nullptr, nullptr, FREERDP_ADDIN_CHANNEL_STATIC | FREERDP_ADDIN_CHANNEL_ENTRYEX);
@@ -1041,7 +1106,8 @@ inline BOOL load_channels(freerdp* inst) {
     PVIRTUALCHANNELENTRY clip = freerdp_channels_load_static_addin_entry(
         CLIPRDR_SVC_CHANNEL_NAME, nullptr, nullptr, FREERDP_ADDIN_CHANNEL_STATIC | FREERDP_ADDIN_CHANNEL_ENTRYEX);
     if (!clip) return FALSE;
-    return freerdp_channels_client_load_ex(ctx->channels, st, reinterpret_cast<PVIRTUALCHANNELENTRYEX>(clip), nullptr) == 0;
+    if (freerdp_channels_client_load_ex(ctx->channels, st, reinterpret_cast<PVIRTUALCHANNELENTRYEX>(clip), nullptr) != 0) return FALSE;
+    return load_audio_channels(ctx);
 }
 
 inline BOOL on_post_connect(freerdp* inst) {
@@ -1507,7 +1573,8 @@ inline void install_tcp_hook(rdpContext* ctx) {
 // an RDP_ERR_* code; `detail` gets FreeRDP's error name, never a credential.
 inline int open(const std::string& id, const std::string& host, int32_t port, const std::string& user,
                 const std::string& domain, const std::string& password, int32_t width, int32_t height,
-                const std::string& trusted, const std::string& graphics, const std::string& layout_s, int64_t timeout_ms, int32_t& out_w, int32_t& out_h, int32_t& out_port,
+                const std::string& trusted, const std::string& graphics, const std::string& layout_s,
+                bool audio_playback, bool audio_remote, bool audio_capture, int64_t timeout_ms, int32_t& out_w, int32_t& out_h, int32_t& out_port,
                 std::string& out_token, std::string& detail) {
     quiet_freerdp_log();
     // Winsock before FreeRDP resolves the host: FreeRDP does not start it, and in a
@@ -1604,6 +1671,12 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         freerdp_settings_set_uint32(st, FreeRDP_MonitorCount, static_cast<UINT32>(layout.size()));
     }
     freerdp_settings_set_uint32(st, FreeRDP_ColorDepth, 32);
+    // Milestone 60 (rdp_audio_settings in the core): played here, on the remote's own
+    // speakers, or nowhere (no playback: the server is told not to redirect it), and
+    // the microphone. load_channels adds the channels these ask for.
+    freerdp_settings_set_bool(st, FreeRDP_AudioPlayback, audio_playback ? TRUE : FALSE);
+    freerdp_settings_set_bool(st, FreeRDP_RemoteConsoleAudio, audio_remote ? TRUE : FALSE);
+    freerdp_settings_set_bool(st, FreeRDP_AudioCapture, audio_capture ? TRUE : FALSE);
     freerdp_settings_set_uint32(st, FreeRDP_KeyboardLayout, local_keyboard_layout());
     freerdp_settings_set_uint32(st, FreeRDP_TcpConnectTimeout, static_cast<UINT32>(timeout_ms));
     freerdp_settings_set_bool(st, FreeRDP_ExternalCertificateManagement, TRUE);
@@ -1635,8 +1708,8 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
     freerdp_settings_set_bool(st, FreeRDP_GfxThinClient, FALSE);
     freerdp_settings_set_bool(st, FreeRDP_SupportDisplayControl, TRUE);
     freerdp_settings_set_bool(st, FreeRDP_DynamicResolutionUpdate, TRUE);
-    freerdp_settings_set_bool(st, FreeRDP_AudioPlayback, FALSE);
-    freerdp_settings_set_bool(st, FreeRDP_DeviceRedirection, FALSE);
+    // Audio and device redirection follow the host (milestone 60), set above:
+    // add_audio_channels turns device redirection on only for the sound channel.
     freerdp_settings_set_bool(st, FreeRDP_RedirectClipboard, TRUE);
     // A connection that goes quiet is noticed (Principle 8): TCP keepalive after 5 s
     // idle, every 2 s, 3 probes (~11 s); with data in flight, Linux gives up after 9 s

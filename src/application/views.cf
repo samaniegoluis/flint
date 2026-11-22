@@ -38,6 +38,10 @@ type HostView struct {
     host_type:    str   `json:"type"`
     // An RDP host's Windows domain; "" for none.
     domain:       str   `json:"domain"`
+    // An RDP host's remote audio (`local`, `remote`, `off`; "" for an SSH host) and
+    // whether its microphone is on (milestone 60).
+    audio:        str   `json:"audio"`
+    microphone:   bool  `json:"microphone"`
 }
 
 // What a successful `host test` reports: the host, how many hops were dialled

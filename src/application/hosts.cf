@@ -51,10 +51,16 @@ type HostPatch struct {
     // An RDP host's Windows domain; "" for none.
     domain: str `json:"domain"`
     set_domain: bool `json:"set_domain"`
+    // An RDP host's remote audio, `local`, `remote` or `off`, and its microphone
+    // (milestone 60).
+    audio: str `json:"audio"`
+    set_audio: bool `json:"set_audio"`
+    microphone: bool `json:"microphone"`
+    set_microphone: bool `json:"set_microphone"`
 }
 
 fn empty_host_patch() -> HostPatch {
-    return HostPatch{ alias: "", set_alias: false, label: "", set_label: false, hostname: "", set_hostname: false, port: 22, set_port: false, user: "", set_user: false, group: "", set_group: false, tags: [], set_tags: false, color: "", set_color: false, notes: "", set_notes: false, jump: "", set_jump: false, credential: "", set_credential: false, key: "", set_key: false, password: "", set_password: false, command: "", set_command: false, keep_shell: true, set_keep_shell: false, sudo_password: "", set_sudo_password: false, host_type: "", set_host_type: false, domain: "", set_domain: false }
+    return HostPatch{ alias: "", set_alias: false, label: "", set_label: false, hostname: "", set_hostname: false, port: 22, set_port: false, user: "", set_user: false, group: "", set_group: false, tags: [], set_tags: false, color: "", set_color: false, notes: "", set_notes: false, jump: "", set_jump: false, credential: "", set_credential: false, key: "", set_key: false, password: "", set_password: false, command: "", set_command: false, keep_shell: true, set_keep_shell: false, sudo_password: "", set_sudo_password: false, host_type: "", set_host_type: false, domain: "", set_domain: false, audio: "", set_audio: false, microphone: false, set_microphone: false }
 }
 
 fn load_catalog[S: VaultStore](store: S) -> Catalog! {
@@ -143,7 +149,17 @@ fn host_view(cat: Catalog, h: Host) -> HostView {
         keep_shell: h.keep_shell,
         host_type: host_type_of(h),
         domain: h.domain,
+        audio: host_audio_view(h),
+        microphone: h.rdp_microphone,
     }
+}
+
+// An RDP host's audio as shown (`local` when it carries none); "" for an SSH host.
+fn host_audio_view(h: Host) -> str {
+    if !is_rdp_host(h) {
+        return ""
+    }
+    return rdp_audio_of(h)
 }
 
 fn require_host(hosts: []Host, alias: str) -> Host! {
@@ -222,6 +238,12 @@ fn apply_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: 
     }
     if p.set_domain {
         h.domain = p.domain
+    }
+    if p.set_audio {
+        h.rdp_audio = p.audio
+    }
+    if p.set_microphone {
+        h.rdp_microphone = p.microphone
     }
     // Field rules first, so a bad value is reported before any group is created.
     try check_host(h)

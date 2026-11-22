@@ -44,6 +44,11 @@ case "$(uname -s)" in
     rm -rf "$res/install-kind" "$res/licenses" "build/gui/Flint.app/Contents/Helpers"
     mkdir -p "$res"
     cp -R ui/dist "$res/ui"
+    # The microphone of an RDP tab (milestone 60): macOS ends an app that asks for it
+    # with no reason in its Info.plist, which cfire cannot write (CF-183).
+    plist="build/gui/Flint.app/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Delete :NSMicrophoneUsageDescription" "$plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string Flint passes your microphone to a remote desktop when its host has the microphone turned on." "$plist"
     codesign --force --deep -s - build/gui/Flint.app >/dev/null 2>&1 || echo "build-gui: ad-hoc signing failed" >&2
     echo "build-gui: build/gui/Flint.app"
     ;;

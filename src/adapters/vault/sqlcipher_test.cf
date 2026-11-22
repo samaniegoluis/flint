@@ -25,6 +25,7 @@ MIGRATION_007_SHA256: str = "a2dfbc52aeadca07fd769aa3617dd95232529f02a6582e666ca
 MIGRATION_008_SHA256: str = "8a9563e7bb167910d4c6bc95d8ca07d1e126d985b72aa6a28ef40f3f0afc75c3"
 MIGRATION_009_SHA256: str = "e91dbaa118d11d978767535da9951c247398934df22b6bd145dbaed7bf4fe493"
 MIGRATION_010_SHA256: str = "d1a8646c794f875081914aa4aec21ad6bed5c674b44083e603525df364ace1c6"
+MIGRATION_012_SHA256: str = "61ac63516f69de09c8aa19d3de482f031f810fe544d82f3d5a63289dab070619"
 
 fn temp_vault_path(name: str) -> str {
     dir := test_tmp() + "/flint-test-" + hex.encode(sha256.random_bytes(8))
@@ -275,6 +276,37 @@ test "an RDP host round-trips its type and domain, which never leak" {
     raw := try fs.read_text(path)
     assert(!raw.contains("flint-domain-marker"), "the domain must not leak")
     assert(!raw.contains("rdp://"), "certificate addresses must not leak")
+    try fs.remove(fs.dirname(path))
+}
+
+test "migration 012 is frozen" {
+    assert_eq(sha256.hash_hex(vault_migrations()[11].sql.bytes()), MIGRATION_012_SHA256)
+}
+
+test "a vault at schema 11 gains an RDP audio that plays here and a microphone that is off" {
+    path := temp_vault_path("v.flint")
+    mut db := try open_cipher_db(path, test_key(7), test_salt_bytes(), true)
+    try db.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+    for i in 0..11 {
+        try db.apply_migration(vault_migrations()[i])
+    }
+    try db.exec("INSERT INTO hosts (id, alias, label, hostname, port, username, color, notes, type) VALUES ('h1', 'win', '', 'win.example.org', 3389, 'u', '', '', 'rdp');")
+    db.close_db()
+    mut store := new_sql_vault_store()
+    try store.vault_attach(path, test_key(7), test_salt_bytes())
+    assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "{vault_migrations().len()}")
+    mut hosts := try store.hosts_all()
+    assert_eq(hosts[0].rdp_audio, "")
+    assert_eq(rdp_audio_of(hosts[0]), "local")
+    assert(!hosts[0].rdp_microphone)
+    mut h := hosts[0]
+    h.rdp_audio = "remote"
+    h.rdp_microphone = true
+    try store.host_put(h)
+    hosts = try store.hosts_all()
+    assert_eq(hosts[0].rdp_audio, "remote")
+    assert(hosts[0].rdp_microphone)
+    store.vault_detach()
     try fs.remove(fs.dirname(path))
 }
 

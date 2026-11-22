@@ -941,3 +941,47 @@ test "zorinos-rdp closes Compatible during setup and opens the greeter with the 
     assert(wait_frame("t-zorin").len() > 16)
     rd.rd_close("t-zorin")
 }
+
+// Milestone 60: what a host's audio asks for reaches the server: the info packet's
+// flags, and the static channels Windows needs to play here (rdpsnd beside rdpdr).
+fn audio_report(rd: FreeRdpDesktop, tab: str, audio: str, microphone: bool) -> str {
+    fp := first_fingerprint(rd, tab, clip_target(""))
+    mut t := clip_target(fp)
+    t.audio = audio
+    t.microphone = microphone
+    assert_eq(ctl("clear"), "ok")
+    _ = rd.rd_open(tab, t, 15000) or err {
+        return "open failed: {err.message()}"
+    }
+    mut got := "-"
+    for i in 0..50 {
+        got = ctl("audio")
+        if got != "-" {
+            break
+        }
+        time.sleep_ms(100)
+    }
+    rd.rd_close(tab)
+    return got
+}
+
+test "a host's audio reaches the server: played here, on the remote, off, and the microphone" {
+    if clip_target("").port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    assert_eq(audio_report(rd, "t-audio-1", RDP_AUDIO_LOCAL, false), "playback=1 remote=0 capture=0 rdpsnd=1 rdpdr=1")
+    assert_eq(audio_report(rd, "t-audio-2", RDP_AUDIO_REMOTE, false), "playback=0 remote=1 capture=0 rdpsnd=0 rdpdr=0")
+    assert_eq(audio_report(rd, "t-audio-3", RDP_AUDIO_OFF, false), "playback=0 remote=0 capture=0 rdpsnd=0 rdpdr=0")
+    assert_eq(audio_report(rd, "t-audio-4", RDP_AUDIO_LOCAL, true), "playback=1 remote=0 capture=1 rdpsnd=1 rdpdr=1")
+}
+
+test "this build of FreeRDP carries the sound and microphone channels and a backend for each" {
+    assert(rdp_has_channel("rdpsnd", ""))
+    assert(rdp_has_channel("audin", ""))
+    assert(rdp_has_channel("rdpdr", ""))
+    backend := rdp_audio_backend()
+    assert(backend.len() > 0, "no audio backend in this FreeRDP")
+    assert(rdp_has_channel("rdpsnd", backend), backend)
+    assert(rdp_has_channel("audin", backend), backend)
+}

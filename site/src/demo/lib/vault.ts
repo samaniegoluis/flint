@@ -26,6 +26,10 @@ export interface Host {
 	type: 'ssh' | 'rdp';
 	/** An RDP host's Windows domain; '' for none. */
 	domain: string;
+	/** Where an RDP host's remote audio plays (milestone 60): local, remote or off; '' for an SSH host. */
+	audio: string;
+	/** Whether an RDP host's remote computer may use this computer's microphone. */
+	microphone: boolean;
 	/** Local forwards saved in this host (milestone 22); they go with it. */
 	tunnels: Tunnel[];
 }
@@ -165,7 +169,7 @@ export function hostView(h: Host) {
 		group: h.group, tags: h.tags, color: h.color, notes: h.notes, jump: h.jump,
 		credential: h.credential, key: h.key, has_password: h.hasPassword,
 		has_sudo_password: h.hasSudoPassword, command: h.command, keep_shell: h.keepShell,
-		type: h.type, domain: h.domain,
+		type: h.type, domain: h.domain, audio: h.type === 'rdp' ? (h.audio || 'local') : '', microphone: h.microphone,
 	};
 }
 
@@ -263,6 +267,7 @@ function hostFromSeed(h: any): Host {
 		group: h.group ?? '', tags: h.tags ?? [], color: h.color ?? '', notes: h.notes ?? '',
 		jump: h.jump ?? '', credential: h.credential ?? '', key: h.key ?? '', hasPassword: !!h.password, hasSudoPassword: false,
 		command: h.command ?? '', keepShell: h.keep_shell ?? true, type: h.type ?? 'ssh', domain: h.domain ?? '',
+		audio: h.audio ?? '', microphone: !!h.microphone,
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		tunnels: (h.tunnels ?? []).map((t: any) => ({ name: t.name, localPort: t.local_port, destHost: t.dest_host ?? 'localhost', destPort: t.dest_port ?? t.local_port, openOnConnect: !!t.open_on_connect, running: false })),
 	};
@@ -302,7 +307,11 @@ function checkRdpHost(h: Host): void {
 	checkText('domain', h.domain, 128);
 	if (h.type !== 'rdp') {
 		if (h.domain) fail('invalid', 'a domain applies to RDP hosts only');
+		if (h.audio || h.microphone) fail('invalid', 'audio and the microphone apply to RDP hosts only');
 		return;
+	}
+	if (h.audio && !['local', 'remote', 'off'].includes(h.audio)) {
+		fail('invalid', `audio must be 'local', 'remote' or 'off', not '${h.audio}'`);
 	}
 	if (h.key) fail('invalid', 'an RDP host logs in with a password, not an SSH key');
 	if (h.jump) fail('invalid', 'an RDP host has no jump host');
@@ -444,6 +453,8 @@ export class VaultOps {
 			if (isNew && patch.port === undefined) h.port = patch.type === 'rdp' ? 3389 : 22;
 		}
 		if (patch.domain !== undefined) h.domain = patch.domain;
+		if (patch.audio !== undefined) h.audio = patch.audio;
+		if (patch.microphone !== undefined) h.microphone = patch.microphone;
 		if (isNew) {
 			if (!h.alias) fail('usage', 'a host needs an alias');
 			if (!h.hostname) fail('usage', 'a host needs a hostname (--hostname)');
@@ -493,7 +504,7 @@ export class VaultOps {
 		const h: Host = {
 			alias: '', label: '', hostname: '', port: 22, user: '', group: '', tags: [], color: '',
 			notes: '', jump: '', credential: '', key: '', hasPassword: false, hasSudoPassword: false, command: '', keepShell: true,
-			type: 'ssh', domain: '', tunnels: [],
+			type: 'ssh', domain: '', audio: '', microphone: false, tunnels: [],
 		};
 		const groupsBefore = [...this.v.groups];
 		try {
@@ -787,6 +798,8 @@ export interface HostPatch {
 	keepShell?: boolean;
 	type?: string;
 	domain?: string;
+	audio?: string;
+	microphone?: boolean;
 }
 
 export interface CredPatch {

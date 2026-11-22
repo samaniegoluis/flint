@@ -142,8 +142,11 @@ empty), folder, **User**, an optional **Domain** (`DOMAIN\user` and `user@domain
 User too), the login, tags, colour and notes. The login is the host's **Own password**,
 saved in the vault like an SSH host's, or a **Credential** that has a password: a
 credential with only an SSH key is listed but cannot be chosen, since RDP signs in with a
-password. There is no jump host, command on connect, sudo password or tunnels, and no
-**Test connection** yet.
+password. Its **Audio** section sets where the remote's sound plays (**On this
+computer**, **On the remote computer** or **Off**) and the **Microphone** switch (off);
+see [Sound and the microphone](/guides/remote-desktop/#sound-and-the-microphone). There
+is no jump host, command on connect, sudo password or tunnels, and no **Test
+connection** yet.
 
 Opening an RDP host (double-click, <kbd>↵</kbd>, the palette) opens its desktop in a tab
 of its own: see [Remote desktop](/guides/remote-desktop/). See [Remote desktop (RDP)

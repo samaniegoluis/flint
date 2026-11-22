@@ -7,4 +7,6 @@ Description: Native RDP shim of Flint's desktop app (darwin)
 Version: 1
 Requires: freerdp-client3 freerdp3 winpr3 libsodium
 Cflags: -I${pcfiledir}/../../rdp/native
-Libs: -framework Carbon
+# The sound and microphone channels' backends (milestone 60), for the static FreeRDP
+# of scripts/deps-macos.sh: AudioToolbox and CoreAudio play, AVFoundation records.
+Libs: -framework Carbon -framework AudioToolbox -framework CoreAudio -framework AVFoundation -framework CoreMedia -framework Foundation

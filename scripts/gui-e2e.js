@@ -3122,6 +3122,37 @@
         const after = (await window.backend.catalog({})).hosts.find((h) => h.alias === 'win-e2e');
         await check(!after.has_password, 'switching to a credential removes the host\'s own password');
 
+        await setStep('rdp hosts: audio and microphone (milestone 60)');
+        await check(after.audio === 'local' && after.microphone === false, `a new RDP host plays its audio here, microphone off (${after.audio}, ${after.microphone})`);
+        menu();
+        await waitFor(() => q('[role="menu"]'), 'the context menu');
+        await click('[role="menu"] .mi', 'Edit host');
+        await waitFor(() => q('[data-rdp-audio]'), 'the Audio section');
+        await check(q('[data-audio="local"]')?.getAttribute('aria-pressed') === 'true' && q('[data-microphone]')?.getAttribute('aria-checked') === 'false',
+          'the Audio section shows On this computer and the microphone off (25d1)');
+        await check(!q('[data-mic-permission]'), 'no permission notice while the microphone is off');
+        q('[data-audio="remote"]').click();
+        q('[data-microphone]').click();
+        await sleep(60);
+        await check(q('[data-audio="remote"]')?.getAttribute('aria-pressed') === 'true' && q('[data-microphone]')?.getAttribute('aria-checked') === 'true',
+          'On the remote computer and the microphone switch take a click');
+        await check(isMac ? !!q('[data-mic-permission]') : !q('[data-mic-permission]'), 'turning the microphone on shows macOS\'s permission notice on a Mac only (25d2)');
+        await click('.modal button[type="submit"]', 'Save');
+        await waitForAsync(async () => (await window.backend.catalog({})).hosts.find((h) => h.alias === 'win-e2e')?.microphone === true, 'the microphone to be saved');
+        const sound = (await window.backend.catalog({})).hosts.find((h) => h.alias === 'win-e2e');
+        await check(sound.audio === 'remote' && sound.microphone === true && sound.credential === 'domain-login', `the audio and the microphone are saved, nothing else changed (${JSON.stringify([sound.audio, sound.microphone, sound.credential])})`);
+        menu();
+        await waitFor(() => q('[role="menu"]'), 'the context menu');
+        await click('[role="menu"] .mi', 'Edit host');
+        await waitFor(() => q('[data-rdp-audio]'), 'the Audio section');
+        await check(q('[data-audio="remote"]')?.getAttribute('aria-pressed') === 'true' && q('[data-microphone]')?.getAttribute('aria-checked') === 'true' && !q('[data-mic-permission]'),
+          'opened again it shows what was saved, with no notice for a microphone already on');
+        q('[data-audio="local"]').click();
+        q('[data-microphone]').click();
+        await sleep(60);
+        await click('.modal button[type="submit"]', 'Save');
+        await waitForAsync(async () => (await window.backend.catalog({})).hosts.find((h) => h.alias === 'win-e2e')?.microphone === false, 'the microphone off again');
+
         await setStep('rdp hosts: connect, palette');
         const tabsBefore = qa('.tab').length;
         row().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));

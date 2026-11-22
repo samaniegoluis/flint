@@ -31,6 +31,45 @@ fn check_host_type(t: str) -> void! {
     }
 }
 
+// Where an RDP host's remote audio plays (milestone 60, design 25d): on this
+// computer, left on the remote computer, or nowhere. A host that carries none plays it
+// here, as Remote Desktop clients do by default.
+RDP_AUDIO_LOCAL: str = "local"
+RDP_AUDIO_REMOTE: str = "remote"
+RDP_AUDIO_OFF: str = "off"
+
+fn rdp_audio_of(h: Host) -> str {
+    if h.rdp_audio.len() == 0 {
+        return RDP_AUDIO_LOCAL
+    }
+    return h.rdp_audio
+}
+
+fn check_rdp_audio(a: str) -> void! {
+    if a != RDP_AUDIO_LOCAL && a != RDP_AUDIO_REMOTE && a != RDP_AUDIO_OFF {
+        return error(coded(ERR_INVALID, "audio must be 'local', 'remote' or 'off', not '{a}'"))
+    }
+}
+
+// What the engine is told about audio (milestone 60): `playback` loads the sound
+// channel (`rdpsnd`) and plays here; `remote_console` asks the server to play on its
+// own speakers; neither: the server plays nothing. `capture` loads the microphone
+// channel (`audin`) on this computer's default device. The audio comes resolved
+// (rdp_audio_of): "" here asks for nothing, like `off`.
+type RdpAudioSettings struct {
+    playback: bool
+    remote_console: bool
+    capture: bool
+}
+
+fn rdp_audio_settings(audio: str, microphone: bool) -> RdpAudioSettings {
+    return RdpAudioSettings{
+        playback: audio == RDP_AUDIO_LOCAL,
+        remote_console: audio == RDP_AUDIO_REMOTE,
+        capture: microphone,
+    }
+}
+
 // The default port of a host type.
 fn default_port_for(t: str) -> i64 {
     if t == HOST_TYPE_RDP {
@@ -47,7 +86,13 @@ fn check_rdp_host(h: Host) -> void! {
         if h.domain.len() > 0 {
             return error(coded(ERR_INVALID, "a domain applies to RDP hosts only"))
         }
+        if h.rdp_audio.len() > 0 || h.rdp_microphone {
+            return error(coded(ERR_INVALID, "audio and the microphone apply to RDP hosts only"))
+        }
         return
+    }
+    if h.rdp_audio.len() > 0 {
+        try check_rdp_audio(h.rdp_audio)
     }
     if h.key_id.len() > 0 {
         return error(coded(ERR_INVALID, "an RDP host logs in with a password, not an SSH key"))
@@ -155,6 +200,10 @@ type RdpTarget struct {
     // Milestone 38: the monitors the desktop spans (check_rdp_layout), empty for one
     // monitor of `width` x `height`; then `width` x `height` is the layout's bounds.
     monitors: []RdpMonitor
+    // Milestone 60: where the remote audio plays (`local`, `remote`, `off`) and
+    // whether the microphone goes to the remote computer (rdp_audio_settings).
+    audio: str
+    microphone: bool
 }
 
 // A switch's outcome (milestone 35): `why` is "" when the tab reconnected, in `graphics`

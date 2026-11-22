@@ -56,9 +56,13 @@ flint host add win-01 --type rdp --hostname 10.20.30.50 --user admin --domain CO
 | `--user <user>` | Windows user. `DOMAIN\user` and `user@domain` work too | none |
 | `--domain <name>` | Windows domain | none |
 | `--password` / `--password-stdin` / `--cred <name>` | The login: its own password, or a credential that has one | none |
+| `--audio local\|remote\|off` | Where the remote's sound plays: on this computer, on the remote computer, or nowhere | `local` |
+| `--microphone` / `--no-microphone` | Let the remote computer use this computer's microphone | off |
 
 Label, group, tags, colour and notes work as for SSH hosts. An RDP host logs in with a
-password only, so `--key`, `--jump`, `--command` and `--sudo-password` are refused for it.
+password only, so `--key`, `--jump`, `--command` and `--sudo-password` are refused for it,
+and `--audio` and `--microphone` for an SSH host. See
+[Sound and the microphone](/guides/remote-desktop/#sound-and-the-microphone).
 To change a host's type, remove it and add it again.
 
 The host opens in a Flint tab: see [Remote desktop](/guides/remote-desktop/).

@@ -255,6 +255,36 @@ test "the graphics choice reaches the engine, empty reads auto (resolved by the 
     assert_eq(refused.opens.len(), 0)
 }
 
+test "a host's audio and microphone reach the engine, and an edit changes the next connection" {
+    mut ui0 := no_ui()
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := fresh_session(crypto, mut store)
+    try rdp_fake(crypto, mut store, s, "s3cret")
+    mut rd := new_fake_desktop("ab:cd", "s3cret")
+    _ = try open_remote_desktop(crypto, mut store, s, mut rd, trusting(), mut ui0, rdp_req("win"))
+    assert_eq(rd.opens[1].audio, "local")
+    assert(!rd.opens[1].microphone)
+    mut p := empty_host_patch()
+    p.audio = "remote"
+    p.set_audio = true
+    p.microphone = true
+    p.set_microphone = true
+    v := try edit_host(crypto, mut store, s, "win", p)
+    assert_eq(v.audio, "remote")
+    assert(v.microphone)
+    mut again := new_fake_desktop("ab:cd", "s3cret")
+    _ = try open_remote_desktop(crypto, mut store, s, mut again, no_prompter(), mut ui0, rdp_req("win"))
+    assert_eq(again.opens[0].audio, "remote")
+    assert(again.opens[0].microphone)
+    mut bad := empty_host_patch()
+    bad.audio = "speakers"
+    bad.set_audio = true
+    mut msg := ""
+    edit_host(crypto, mut store, s, "win", bad) or err { msg = "{err.message()}" }
+    assert(msg.starts_with("invalid: audio must be"), msg)
+}
+
 test "a tab's statistics come from the engine" {
     rd := new_fake_desktop("ab:cd", "s3cret")
     st := try remote_desktop_stats(rd, "t1")

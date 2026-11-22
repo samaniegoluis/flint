@@ -121,7 +121,7 @@ fn (self: Host) merge_print() -> str {
     return print_join([self.alias, self.label, self.hostname, "{self.port}", self.username, self.group_id,
             join_with(self.tags, "\x1e"), self.color, self.notes, self.jump_host_id, self.credential_id,
             self.key_id, print_bytes(self.password), self.initial_command, print_bool(self.keep_shell),
-            print_bytes(self.sudo_password), self.host_type, self.domain])
+            print_bytes(self.sudo_password), self.host_type, self.domain, self.rdp_audio, print_bool(self.rdp_microphone)])
 }
 
 fn (self: SshKey) merge_id() -> str { return self.id }

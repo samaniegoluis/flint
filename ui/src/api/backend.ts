@@ -257,6 +257,7 @@ export function emptyHostPatch(): HostPatch {
     jump: '', set_jump: false, credential: '', set_credential: false, key: '', set_key: false,
     password: '', set_password: false, command: '', set_command: false, keep_shell: true, set_keep_shell: false,
     sudo_password: '', set_sudo_password: false, type: 'ssh', set_type: false, domain: '', set_domain: false,
+    audio: '', set_audio: false, microphone: false, set_microphone: false,
   };
 }
 

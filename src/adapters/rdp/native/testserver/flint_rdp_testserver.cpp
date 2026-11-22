@@ -101,6 +101,7 @@ std::vector<std::string> g_keys;
 std::string g_pointer = "-";
 std::vector<std::string> g_mice;
 std::string g_sync = "-";
+std::string g_audio = "-";   // milestone 60: what the last client asked for audio
 std::atomic<bool> g_gfx_only{false};
 std::atomic<int> g_setups{0};
 const char* g_cert = nullptr;
@@ -315,6 +316,17 @@ BOOL on_suppress(rdpContext*, BYTE, const RECTANGLE_16*) { return TRUE; }
 
 BOOL on_post_connect(freerdp_peer* client) {
     PeerContext* c = pctx(client->context);
+    {
+        // Milestone 60: the client's info flags (audio played here, on the remote, the
+        // microphone) and the static channels its audio needs.
+        rdpSettings* st = client->context->settings;
+        auto joined = [&](const char* n) { return WTSVirtualChannelManagerIsChannelJoined(c->vcm, n) ? 1 : 0; };
+        std::lock_guard<std::mutex> lk(g_mu);
+        g_audio = "playback=" + std::to_string(freerdp_settings_get_bool(st, FreeRDP_AudioPlayback) ? 1 : 0)
+            + " remote=" + std::to_string(freerdp_settings_get_bool(st, FreeRDP_RemoteConsoleAudio) ? 1 : 0)
+            + " capture=" + std::to_string(freerdp_settings_get_bool(st, FreeRDP_AudioCapture) ? 1 : 0)
+            + " rdpsnd=" + std::to_string(joined("rdpsnd")) + " rdpdr=" + std::to_string(joined("rdpdr"));
+    }
     if (WTSVirtualChannelManagerIsChannelJoined(c->vcm, CLIPRDR_SVC_CHANNEL_NAME)) {
         c->cliprdr = cliprdr_server_context_new(c->vcm);
         if (!c->cliprdr) return FALSE;
@@ -459,13 +471,14 @@ std::string run(const std::string& line) {
         for (auto& k : g_keys) { if (!out.empty()) out += " "; out += k; }
         return out.empty() ? "-" : out;
     }
-    if (cmd == "clear") { g_pasted = "-"; g_formats.clear(); g_keys.clear(); g_pointer = "-"; g_mice.clear(); g_sync = "-"; return "ok"; }
+    if (cmd == "clear") { g_pasted = "-"; g_formats.clear(); g_keys.clear(); g_pointer = "-"; g_mice.clear(); g_sync = "-"; g_audio = "-"; return "ok"; }
     if (cmd == "mice") {
         std::string out;
         for (auto& m : g_mice) { if (!out.empty()) out += " "; out += m; }
         return out.empty() ? "-" : out;
     }
     if (cmd == "sync") return g_sync;
+    if (cmd == "audio") return g_audio;
     if (cmd == "gfxonly") { g_gfx_only.store(arg == "on"); g_setups.store(0); return "ok"; }
     if (cmd == "setups") return std::to_string(g_setups.load());
     if (cmd == "cursor") {

@@ -1,6 +1,6 @@
 ---
 title: Remote desktop
-description: Open a Windows machine's desktop in a Flint tab, with the login from the vault, its certificate trusted on first use, the keyboard and mouse sent to it, copy and paste both ways, and a reconnect when the connection drops.
+description: Open a Windows machine's desktop in a Flint tab, with the login from the vault, its certificate trusted on first use, the keyboard and mouse sent to it, copy and paste both ways, its sound and your microphone, and a reconnect when the connection drops.
 ---
 
 An [RDP host](/guides/hosts/#remote-desktop-rdp-hosts) opens in a tab of its own, next to
@@ -281,6 +281,30 @@ and images are not, yet.
 A remote desktop tab has no split panes, and the Files view, tunnels and **Open in a new
 pane** are for SSH hosts: the palette shows them greyed with *SSH hosts only*.
 
+## Sound and the microphone
+
+Each RDP host says where its sound plays and whether it may use your microphone, in the
+host editor's **Audio** section or with `--audio` and `--microphone` (see
+[Remote desktop hosts](/guides/hosts/#remote-desktop-rdp-hosts)):
+
+| Play remote audio | What happens |
+|---|---|
+| **On this computer** (the default) | The remote's sound plays on this computer's default output |
+| **On the remote computer** | It plays on the remote machine's own speakers, as if you sat there |
+| **Off** | Nothing plays, here or there |
+
+**Microphone** (off by default) gives the remote computer this computer's default
+microphone: Windows shows it as *Remote Audio*, so a call inside the remote desktop hears
+you. Both take effect at the next connection. Flint always uses the system's default
+devices; to use another one, change the default in the system's sound settings.
+
+On macOS the first connection with the microphone on asks whether Flint may use it;
+you can change the answer later in System Settings → Privacy & Security → Microphone.
+Until Flint's macOS package is signed (version 15), macOS may ask again after each
+update, since it sees a new app. Windows asks nothing as long as *Let desktop apps access
+your microphone* is on (Settings → Privacy & security → Microphone); Linux uses
+PulseAudio or PipeWire's default source.
+
 ## When it does not connect
 
 The tab says why, with **Retry** (<kbd>↵</kbd>), **Edit host** and **Close tab**:
@@ -339,6 +363,6 @@ What Flint does with your password and the connection, and what it leaves as it 
 
 ## Not yet
 
-Alt+Tab and the Windows key in full screen, files and images over the clipboard, sound,
-drive and printer redirection, more than two monitors, an RDP tab in a window of its own,
+Alt+Tab and the Windows key in full screen, files and images over the clipboard, a
+choice of sound device, drive and printer redirection, more than two monitors, an RDP tab in a window of its own,
 RD Gateway and RDP through an SSH tunnel are planned for later.

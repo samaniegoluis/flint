@@ -209,6 +209,14 @@ CREATE TABLE tombstones (
 );
 ` })
 
+    // 012: an RDP host's audio (milestone 60, design 25d): where its remote audio
+    // plays (`local`, `remote`, `off`; '' reads as `local`, and every SSH host keeps
+    // it) and whether the remote computer may use this computer's microphone (off).
+    list.push(Migration{ version: 12, name: "rdp audio and microphone", sql: `
+ALTER TABLE hosts ADD COLUMN rdp_audio TEXT NOT NULL DEFAULT '';
+ALTER TABLE hosts ADD COLUMN rdp_microphone INTEGER NOT NULL DEFAULT 0;
+` })
+
     return list
 }
 

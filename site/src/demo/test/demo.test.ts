@@ -116,7 +116,7 @@ test('host show and --json carry no secret, only has_password', () => {
 	const j = flint(w, 'host show db --json');
 	assert.equal(
 		j.out[0],
-		'{"alias":"db","label":"","hostname":"10.0.0.12","port":22,"user":"admin","group":"prod","tags":["postgres"],"color":"#e8833a","notes":"","jump":"bastion","credential":"","key":"","has_password":true,"has_sudo_password":false,"command":"","keep_shell":true,"type":"ssh","domain":""}',
+		'{"alias":"db","label":"","hostname":"10.0.0.12","port":22,"user":"admin","group":"prod","tags":["postgres"],"color":"#e8833a","notes":"","jump":"bastion","credential":"","key":"","has_password":true,"has_sudo_password":false,"command":"","keep_shell":true,"type":"ssh","domain":"","audio":"","microphone":false}',
 	);
 });
 
@@ -135,10 +135,25 @@ test('host test walks the jump chain, never asks for a password, and prints the 
 	assert.equal(flint(w, 'host test db -- true').code, 2);
 });
 
+test("an RDP host's audio plays here by default; --audio and --microphone change it, on RDP hosts only", () => {
+	const w = allowed();
+	const a = JSON.parse(flint(w, 'host add win-01 --type rdp --hostname 10.0.0.50 --json').out[0]);
+	assert.deepEqual([a.audio, a.microphone], ['local', false]);
+	const e = JSON.parse(flint(w, 'host edit win-01 --audio remote --microphone --json').out[0]);
+	assert.deepEqual([e.audio, e.microphone], ['remote', true]);
+	const show = flint(w, 'host show win-01').out;
+	assert.ok(show.includes('audio       on the remote computer'), show.join('\n'));
+	assert.ok(show.includes('microphone  on'));
+	assert.equal(flint(w, 'host edit win-01 --audio speakers').code, 7);
+	assert.equal(flint(w, 'host edit web-01 --audio off').code, 7);
+	assert.equal(flint(w, 'host edit web-01 --microphone').code, 7);
+	assert.equal(flint(w, 'host edit win-01 --microphone --no-microphone').code, 2);
+});
+
 test('a host keeps an initial command, shows it, and connect notes it unless --no-command', () => {
 	const w = worldFromSeed(seed);
 	const e = flint(w, 'host edit nas --command htop --json');
-	assert.ok(e.out[0].endsWith('"has_sudo_password":false,"command":"htop","keep_shell":true,"type":"ssh","domain":""}'));
+	assert.ok(e.out[0].endsWith('"has_sudo_password":false,"command":"htop","keep_shell":true,"type":"ssh","domain":"","audio":"","microphone":false}'));
 	assert.ok(flint(w, 'host show nas').out.includes('command        htop (then a login shell)'));
 	flint(w, 'host edit nas --no-keep-shell');
 	assert.ok(flint(w, 'host show nas').out.includes('command        htop (ends the session)'));

@@ -68,7 +68,9 @@ fetch() {
   echo "$dir"
 }
 
-stamp() { echo "$prefix/.built-$1-$2"; }
+# FreeRDP's stamp also names its channel set: milestone 60 turned on the sound
+# (rdpsnd, with rdpdr beside it) and the microphone (audin), so an older build is redone.
+stamp() { local rev=""; [[ $1 == freerdp ]] && rev="-audio"; echo "$prefix/.built-$1-$2$rev"; }
 
 build_openssl() {
   local d; d=$(fetch "$@")
@@ -127,14 +129,17 @@ build_freerdp() {
     -DWITH_SOXR=OFF -DWITH_LAME=OFF -DWITH_CUPS=OFF -DWITH_PCSC=OFF -DWITH_FUSE=OFF \
     -DWITH_KRB5=OFF -DWITH_PULSE=OFF -DWITH_OSS=OFF -DWITH_ALSA=OFF -DWITH_AAD=OFF \
     -DWITH_CJSON_REQUIRED=OFF -DWITH_JSONC_REQUIRED=OFF -DWITH_URIPARSER=OFF \
-    -DCHANNEL_URBDRC=OFF -DCHANNEL_RDPEWA=OFF -DCHANNEL_AUDIN=OFF -DCHANNEL_RDPSND=OFF \
-    -DCHANNEL_RDPECAM=OFF -DCHANNEL_TSMF=OFF -DCHANNEL_RDPDR=OFF -DCHANNEL_SMARTCARD=OFF \
+    -DCHANNEL_URBDRC=OFF -DCHANNEL_RDPEWA=OFF -DCHANNEL_AUDIN=ON -DCHANNEL_RDPSND=ON \
+    -DWITH_MACAUDIO=ON -DCHANNEL_RDPECAM=OFF -DCHANNEL_TSMF=OFF -DCHANNEL_RDPDR=ON -DCHANNEL_SMARTCARD=OFF \
     -DCHANNEL_PRINTER=OFF -DCHANNEL_DRIVE=OFF -DCHANNEL_SERIAL=OFF -DCHANNEL_PARALLEL=OFF -DWITH_FIDO2=OFF -DWITH_LIBSYSTEMD=OFF \
     -DWITH_TIMEZONE_ICU=OFF -DWITH_INTERNAL_MD4=ON -DWITH_INTERNAL_RC4=ON \
     -DWITH_OPENH264=OFF -DWITH_SIMD=ON -DBUILD_TESTING=OFF -DWITH_BINARY_VERSIONING=ON \
     -DOPENSSL_ROOT_DIR="$prefix" -DOPENSSL_USE_STATIC_LIBS=ON >/dev/null
   cmake --build "$d/build" >/dev/null
   cmake --install "$d/build" >/dev/null
+  # With the sound channel (milestone 60), libfreerdp-client3.a needs two channel helper
+  # archives a static install leaves out, as on Windows (windows/bin/freerdp.sh).
+  cp "$d/build/channels/rdpsnd/common/librdpsnd-common.a" "$d/build/channels/remdesk/common/libremdesk-common.a" "$prefix/lib/"
   [[ -f "$prefix/lib/pkgconfig/freerdp3.pc" && -f "$prefix/lib/pkgconfig/winpr3.pc" ]] \
     || { echo "deps-macos: FreeRDP installed no freerdp3.pc/winpr3.pc (its version came out wrong)" >&2; exit 1; }
 }

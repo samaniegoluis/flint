@@ -68,6 +68,12 @@ type Host struct {
     host_type: str
     // An RDP host's Windows domain; "" for none and for every SSH host.
     domain: str
+    // Where an RDP host's remote audio plays (milestone 60): `local`, `remote` or
+    // `off`; "" reads as `local`, and every SSH host keeps "".
+    rdp_audio: str
+    // Whether an RDP host's remote computer may use this computer's microphone
+    // (milestone 60); off by default, and always off for an SSH host.
+    rdp_microphone: bool
     // When the record was last written, Unix milliseconds, set by the store (milestone
     // 41, D-096): the per-record merge keeps the newer. 0 for a row never written since.
     updated_at: i64

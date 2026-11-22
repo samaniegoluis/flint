@@ -222,7 +222,7 @@ fn (self: SqlVaultStore) group_drop(id: str) -> void! {
 
 fn (self: SqlVaultStore) hosts_all() -> []Host! {
     try self.require_open()
-    res := try self.conn().query_cells("SELECT id, alias, label, hostname, port, username, ifnull(group_id, ''), color, notes, ifnull(jump_host_id, ''), ifnull(credential_id, ''), ifnull(key_id, ''), password, initial_command, keep_shell, sudo_password, type, domain, updated_at FROM hosts ORDER BY alias COLLATE NOCASE;", [])
+    res := try self.conn().query_cells("SELECT id, alias, label, hostname, port, username, ifnull(group_id, ''), color, notes, ifnull(jump_host_id, ''), ifnull(credential_id, ''), ifnull(key_id, ''), password, initial_command, keep_shell, sudo_password, type, domain, updated_at, rdp_audio, rdp_microphone FROM hosts ORDER BY alias COLLATE NOCASE;", [])
     tag_res := try self.conn().query_cells("SELECT host_id, tag FROM host_tags ORDER BY host_id, position;", [])
     mut tags_by_host: map[str][]str = {}
     for t in tag_res {
@@ -260,6 +260,8 @@ fn (self: SqlVaultStore) hosts_all() -> []Host! {
                 host_type: cell_str(r[16]),
                 domain: cell_str(r[17]),
                 updated_at: cell_i64(r[18]),
+                rdp_audio: cell_str(r[19]),
+                rdp_microphone: cell_i64(r[20]) != 0,
         })
     }
     return list
@@ -279,12 +281,13 @@ fn (self: SqlVaultStore) host_put(h: Host) -> void! {
 }
 
 fn (self: SqlVaultStore) host_write(h: Host, stamp: i64) -> void! {
-    try self.conn().run_sql("INSERT INTO hosts (id, alias, label, hostname, port, username, group_id, color, notes, jump_host_id, credential_id, key_id, password, initial_command, keep_shell, sudo_password, type, domain, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19) ON CONFLICT(id) DO UPDATE SET alias = excluded.alias, label = excluded.label, hostname = excluded.hostname, port = excluded.port, username = excluded.username, group_id = excluded.group_id, color = excluded.color, notes = excluded.notes, jump_host_id = excluded.jump_host_id, credential_id = excluded.credential_id, key_id = excluded.key_id, password = excluded.password, initial_command = excluded.initial_command, keep_shell = excluded.keep_shell, sudo_password = excluded.sudo_password, type = excluded.type, domain = excluded.domain, updated_at = excluded.updated_at;", [
+    try self.conn().run_sql("INSERT INTO hosts (id, alias, label, hostname, port, username, group_id, color, notes, jump_host_id, credential_id, key_id, password, initial_command, keep_shell, sudo_password, type, domain, updated_at, rdp_audio, rdp_microphone) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21) ON CONFLICT(id) DO UPDATE SET alias = excluded.alias, label = excluded.label, hostname = excluded.hostname, port = excluded.port, username = excluded.username, group_id = excluded.group_id, color = excluded.color, notes = excluded.notes, jump_host_id = excluded.jump_host_id, credential_id = excluded.credential_id, key_id = excluded.key_id, password = excluded.password, initial_command = excluded.initial_command, keep_shell = excluded.keep_shell, sudo_password = excluded.sudo_password, type = excluded.type, domain = excluded.domain, updated_at = excluded.updated_at, rdp_audio = excluded.rdp_audio, rdp_microphone = excluded.rdp_microphone;", [
             sql_text(h.id), sql_text(h.alias), sql_text(h.label), sql_text(h.hostname), sql_int(h.port),
             sql_text(h.username), sql_ref(h.group_id), sql_text(h.color), sql_text(h.notes),
             sql_ref(h.jump_host_id), sql_ref(h.credential_id), sql_ref(h.key_id), sql_blob(h.password),
             sql_text(h.initial_command), sql_int(bool_int(h.keep_shell)), sql_blob(h.sudo_password),
             sql_text(host_type_of(h)), sql_text(h.domain), sql_int(stamp),
+            sql_text(h.rdp_audio), sql_int(bool_int(h.rdp_microphone)),
     ])
     try self.conn().run_sql("DELETE FROM host_tags WHERE host_id = ?1;", [sql_text(h.id)])
     for i, t in h.tags {

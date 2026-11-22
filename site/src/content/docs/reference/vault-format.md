@@ -101,7 +101,10 @@ own transaction; a vault from a newer Flint is refused rather than downgraded.
 | 10 | The `meta` row `vault_id`, empty: the next unlock writes the id the vault already had (a hash of its salt), and a new vault gets a random one. A new master password keeps it |
 | 11 | `updated_at` on groups, hosts, SSH keys, credentials, known hosts, tunnels and tokens (when the row was last written, in Unix milliseconds; 0 for a row not written since), and `tombstones` (kind, id and time of each deleted row), so two copies of a vault [merge record by record](#two-copies-of-one-vault) |
 
-A vault that has been opened by a Flint with migration 11 is refused by older builds.
+| 12 | `hosts.rdp_audio` (an RDP host's remote sound: `local`, `remote` or `off`; empty reads as `local`, and every SSH host keeps it empty) and `hosts.rdp_microphone` (0 or 1: whether the remote computer may use this computer's microphone; 0 for every host saved before) |
+
+A vault that has been opened by a Flint with migration 11 is refused by older builds, and
+one opened with migration 12 by a Flint before 0.27.
 
 ## Two copies of one vault
 

@@ -72,9 +72,11 @@ never changed.
 ### What a macOS package build leaves out
 
 The package links its own copies of libssh, libsodium, SQLCipher, OpenSSL and FreeRDP,
-built for macOS 13.3. Its FreeRDP has no FFmpeg, audio or device redirection, which Flint
-never turns on; it decodes H.264 with macOS's own VideoToolbox, so the remote desktop's
-graphics pipeline works as in a build from source.
+built for macOS 13.3. Its FreeRDP has no FFmpeg, and of the redirections only sound and the
+microphone (on macOS's own audio) and the device channel they need, with no drive,
+printer or smartcard; it decodes H.264 with macOS's own VideoToolbox, so the remote
+desktop's graphics pipeline works as in a build from source. Sound comes as PCM or
+ADPCM, which Windows and GNOME Remote Desktop both send.
 
 ## Windows
 

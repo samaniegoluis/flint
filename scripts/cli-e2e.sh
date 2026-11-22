@@ -692,6 +692,25 @@ expect 23 "host test refuses an RDP host" "$SMI" -- host test win "${SM[@]}"
 expect 23 "flint connect on an RDP host with no app serving the vault" "$SMI" -- connect win "${SM[@]}"
 check "it says the desktop opens in the Flint app" '[[ "$err" == *"'"'"'win'"'"' is an RDP host: its desktop opens in the Flint app"* ]]'
 
+echo "== rdp audio and microphone (milestone 60)"
+expect 0 "host show --json of an RDP host" "$SMI" -- --json host show win2 "${SM[@]}"
+check "an RDP host plays its audio here, microphone off, by default" '[[ "$(echo "$out" | json_get "d[\"audio\"], d[\"microphone\"]")" == "('"'"'local'"'"', False)" ]]'
+expect 0 "host edit --audio remote --microphone" "$SMI" -- --json host edit win2 --audio remote --microphone "${SM[@]}"
+check "--json shows both" '[[ "$(echo "$out" | json_get "d[\"audio\"], d[\"microphone\"]")" == "('"'"'remote'"'"', True)" ]]'
+expect 0 "host show of it (text)" "$SMI" -- host show win2 "${SM[@]}"
+check "it shows where the audio plays and the microphone" '[[ "$out" == *"audio       on the remote computer"* && "$out" == *"microphone  on"* ]]'
+expect 0 "host edit --audio off --no-microphone" "$SMI" -- --json host edit win2 --audio off --no-microphone "${SM[@]}"
+check "both changed" '[[ "$(echo "$out" | json_get "d[\"audio\"], d[\"microphone\"]")" == "('"'"'off'"'"', False)" ]]'
+expect 0 "host add --type rdp --audio off --microphone" "$SMI" -- --json host add win3 --type rdp --hostname 10.9.9.10 --audio off --microphone "${SM[@]}"
+check "add takes both" '[[ "$(echo "$out" | json_get "d[\"audio\"], d[\"microphone\"]")" == "('"'"'off'"'"', True)" ]]'
+expect 7 "an unknown audio choice is invalid" "$SMI" -- host edit win2 --audio speakers "${SM[@]}"
+expect 7 "audio on an SSH host is invalid" "$SMI" -- host edit local --audio off "${SM[@]}"
+expect 7 "the microphone on an SSH host is invalid" "$SMI" -- host edit local --microphone "${SM[@]}"
+expect 2 "--microphone and --no-microphone contradict" "$SMI" -- host edit win2 --microphone --no-microphone "${SM[@]}"
+expect 0 "an SSH host's --json has no audio" "$SMI" -- --json host show local "${SM[@]}"
+check "audio empty, microphone false" '[[ "$(echo "$out" | json_get "d[\"audio\"], d[\"microphone\"]")" == "('"'"''"'"', False)" ]]'
+expect 0 "host rm win3" "$SMI" -- host rm win3 "${SM[@]}"
+
 expect 0 "host rm of an RDP host" "$SMI" -- host rm win2 "${SM[@]}"
 
 echo "== update-apply (milestone 53)"

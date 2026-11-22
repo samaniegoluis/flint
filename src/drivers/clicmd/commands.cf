@@ -441,6 +441,17 @@ fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> HostPatch! {
         patch.domain = p.flag_value("--domain")
         patch.set_domain = true
     }
+    if p.has_flag("--audio") {
+        patch.audio = p.flag_value("--audio")
+        patch.set_audio = true
+    }
+    if p.has_flag("--microphone") && p.has_flag("--no-microphone") {
+        return error(coded(ERR_USAGE, "--microphone and --no-microphone contradict each other"))
+    }
+    if p.has_flag("--microphone") || p.has_flag("--no-microphone") {
+        patch.microphone = p.has_flag("--microphone")
+        patch.set_microphone = true
+    }
     if p.has_flag("--command") {
         patch.command = p.flag_value("--command")
         patch.set_command = true
@@ -476,7 +487,7 @@ fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> HostPatch! {
 }
 
 fn host_field_flags() -> []str {
-    return ["--label", "--hostname", "--port", "--user", "--group", "--tag", "--no-tags", "--color", "--notes", "--jump", "--cred", "--key", "--password", "--password-stdin", "--sudo-password", "--sudo-password-stdin", "--command", "--keep-shell", "--no-keep-shell", "--type", "--domain"]
+    return ["--label", "--hostname", "--port", "--user", "--group", "--tag", "--no-tags", "--color", "--notes", "--jump", "--cred", "--key", "--password", "--password-stdin", "--sudo-password", "--sudo-password-stdin", "--command", "--keep-shell", "--no-keep-shell", "--type", "--domain", "--audio", "--microphone", "--no-microphone"]
 }
 
 fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {

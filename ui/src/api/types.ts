@@ -56,11 +56,18 @@ export interface GroupView {
 /** `ssh` (every host from before milestone 29) or `rdp`; fixed once the host is added. */
 export type HostType = 'ssh' | 'rdp';
 
+/** Where an RDP host's remote audio plays: on this computer, on the remote computer, or nowhere. */
+export type RdpAudio = 'local' | 'remote' | 'off';
+
 export interface HostView {
   alias: string;
   type: HostType;
   /** An RDP host's Windows domain; '' for none. */
   domain: string;
+  /** Where an RDP host's remote audio plays (milestone 60); '' for an SSH host. */
+  audio: RdpAudio | '';
+  /** Whether an RDP host's remote computer may use this computer's microphone. */
+  microphone: boolean;
   label: string;
   hostname: string;
   port: number;
@@ -329,6 +336,8 @@ export interface HostPatch {
   /** Given only when the host is added: the type is fixed after that. */
   type: HostType; set_type: boolean;
   domain: string; set_domain: boolean;
+  audio: RdpAudio | ''; set_audio: boolean;
+  microphone: boolean; set_microphone: boolean;
 }
 
 export interface CredPatch {
