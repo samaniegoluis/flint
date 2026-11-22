@@ -4,6 +4,20 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.27.0 — 2026-11-22
+
+Remote desktops now carry sound and the microphone: per RDP host, the remote's audio plays on this computer, stays on the remote machine or is off, and the microphone can be passed through for calls, on macOS, Linux and Windows. Spanning two monitors no longer drops back to one when the window is still settling, and the card for a server that closes during setup says where Compatible was chosen and which mode Retry uses. This closes spec v14.
+
+### Added
+
+- **rdp:** Remote audio played here, on the remote or off, and the microphone, per host (milestone 60)
+
+### Fixed
+
+- **rdp:** A layout or a size asked while a tab spans or reconnects is kept, not lost (milestone 60)
+- **rdp:** The closed-during-setup card names the toolbar and Settings, and Retry says the mode it connects in (milestone 60)
+
+
 ## 0.26.0 — 2026-11-22
 
 Remote desktops that take only the graphics pipeline, such as GNOME Remote Desktop on Linux, now connect with Automatic: when a server closes the connection during setup, Flint tries once more with the pipeline and remembers that host. Such a close has its own message instead of saying there is no route to the server.
