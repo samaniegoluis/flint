@@ -210,7 +210,7 @@ export const api = {
   /** The Type menu (design 25c): the clipboard's count and whether a password is saved. */
   rdpTypeInfo: (tab: string, alias: string) => call<RdpTypeInfo>('rdp_type_info', { tab, alias, what: '' }),
   /** Types the clipboard or the host's password; "rdp:typed" says how it went. */
-  rdpType: (tab: string, alias: string, what: 'clipboard' | 'password') => call('rdp_type', { tab, alias, what }),
+  rdpType: (tab: string, alias: string, what: 'clipboard' | 'password', password = '') => call('rdp_type', { tab, alias, what, password }),
 
   /** The Files view (milestone 17): SFTP over a tab's own session (D-053). */
   filesHome: (session: string) => call<{ path: string }>('files_home', { session, path: '' }),

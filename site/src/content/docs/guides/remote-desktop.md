@@ -243,8 +243,12 @@ the toolbar (and in full screen's connection bar) sends text as keystrokes there
   characters it holds, and is greyed when there is no text (or more than 2,000
   characters).
 - **Type *host*'s password** types the host's saved password (its own or its
-  credential's). Flint opens it from the vault and types it itself: the window never holds
-  it, nothing is shown on screen, and it goes only into the tab connected to that host.
+  credential's), once you confirm it's you, **every time**: Touch ID (or the Mac's
+  password), the system's password dialog on Linux, or the vault's master password, typed
+  in the menu, where the system has no check of its own (Windows today). Typed anywhere,
+  a password can be read there, so it's never one click. Flint then opens it from the
+  vault and types it itself: the window never holds it, nothing is shown on screen, and it
+  goes only into the tab connected to that host.
 
 Click the field first, then choose. When it is done a notice says how many characters
 went (*Typed 24 characters*). Each character goes by its key on your keyboard layout
@@ -318,9 +322,10 @@ What Flint does with your password and the connection, and what it leaves as it 
 - **Sign-in uses NTLM, not Kerberos.** Kerberos stalls with a user written as an e-mail
   address, and a computer outside a domain has none. NTLM is bound to the checked
   certificate, so it is safe from a machine in the middle.
-- **Type never shows the password.** The window learns only that a host has a saved
-  password; the core opens it and types it into the session of that host alone, and the
-  notice says how many characters went, never which.
+- **Type never shows the password, and asks for you each time.** The window learns only
+  that a host has a saved password; after your presence check (Touch ID, the system's
+  password, or the master password) the core opens it and types it into the session of
+  that host alone, and the notice says how many characters went, never which.
 - **Frames stay on this computer.** The desktop reaches Flint's window over `127.0.0.1`,
   through a channel that answers only a request carrying the tab's 256-bit random token,
   addressed to that port by its number (not by a name a web page could point there), and

@@ -106,15 +106,21 @@ fn confirm_window_unlock[C: Crypto, S: VaultStore, P: Presence](crypto: C, store
 }
 
 fn confirm_presence[C: Crypto, S: VaultStore, P: Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str, reason: str) -> void! {
+    try confirm_presence_for(crypto, store, presence, session, password, reason, "nothing was allowed")
+}
+
+// confirm_presence for any action: `reason` is what the OS dialog says the check is
+// for, `refused` what a refusal left undone ("nothing was typed"), in the error.
+fn confirm_presence_for[C: Crypto, S: VaultStore, P: Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str, reason: str, refused: str) -> void! {
     if presence.presence_method() == "password" {
         ok := try verify_master_password(crypto, store, session, password)
         if !ok {
-            return error(coded(ERR_WRONG_PASSWORD, "that is not the master password of this vault"))
+            return error(coded(ERR_WRONG_PASSWORD, "that is not the master password of this vault; {refused}"))
         }
         return
     }
     ok := try presence.presence_confirm(reason)
     if !ok {
-        return error(coded(ERR_DENIED, "presence was not confirmed; nothing was allowed"))
+        return error(coded(ERR_DENIED, "presence was not confirmed; {refused}"))
     }
 }

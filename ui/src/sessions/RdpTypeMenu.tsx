@@ -2,7 +2,9 @@
 // host's saved password sent as keystrokes, for places a paste does not reach (the
 // Windows administrator prompt on the secure desktop). The page never sees either:
 // it learns the clipboard's character count and whether a password is saved, and the
-// core types the text itself. "rdp:typed" says how it went, as a toast.
+// core types the text itself. Type password asks for your presence every time (Touch
+// ID, the Mac's password, polkit; the vault's master password, asked here, where the
+// system has none). "rdp:typed" says how it went, as a toast.
 
 import { useEffect, useRef, useState } from 'react';
 import { api, on } from '../api/backend';
@@ -17,6 +19,16 @@ export function clipboardItem(chars: number): { hint: string; reason: string } {
   if (chars <= 0) return { hint: '', reason: 'The clipboard holds no text' };
   if (chars > TYPE_MAX_CHARS) return { hint: '', reason: `Too long to type: over ${TYPE_MAX_CHARS.toLocaleString('en-US')} characters` };
   return { hint: `${chars} ${chars === 1 ? 'character' : 'characters'}`, reason: '' };
+}
+
+/** The password item's hint: how it will confirm you. */
+export function presenceHint(presence: string): string {
+  switch (presence) {
+    case 'touchid': return 'Asks for Touch ID';
+    case 'device': return "Asks for this Mac's password";
+    case 'polkit': return 'Asks for your system password';
+    default: return 'Asks for the master password';
+  }
 }
 
 /** The toast after a Type (25c3). */
@@ -42,22 +54,32 @@ export function TypeMenuButton({ session, alias, bar, onOpenChange }: {
 }) {
   const [open, setOpen] = useState(false);
   const [info, setInfo] = useState<RdpTypeInfo | null>(null);
+  // Where the system has no presence check: the master password, asked in the menu.
+  const [asking, setAsking] = useState(false);
+  const [master, setMaster] = useState('');
   const ref = useRef<HTMLSpanElement>(null);
   const set = (o: boolean) => { setOpen(o); onOpenChange?.(o); };
   useEffect(() => {
     if (!open) return;
     setInfo(null);
-    api.rdpTypeInfo(session, alias).then(setInfo).catch(() => setInfo({ clipboard_chars: 0, has_password: false }));
+    setAsking(false);
+    setMaster('');
+    api.rdpTypeInfo(session, alias).then(setInfo).catch(() => setInfo({ clipboard_chars: 0, has_password: false, presence: 'password' }));
     const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) set(false); };
     window.addEventListener('mousedown', onDown);
     return () => window.removeEventListener('mousedown', onDown);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, session, alias]);
-  const type = (what: 'clipboard' | 'password') => {
+  const type = (what: 'clipboard' | 'password', password = '') => {
     set(false);
+    setMaster('');
     // Back to the desktop, so what comes next goes where it typed.
     (document.querySelector(`canvas.rdp-canvas[aria-label="Remote desktop of ${CSS.escape(alias)}"]`) as HTMLCanvasElement | null)?.focus({ preventScroll: true });
-    api.rdpType(session, alias, what).catch(() => {});
+    api.rdpType(session, alias, what, password).catch(() => {});
+  };
+  const typePassword = () => {
+    if (info?.presence === 'password') setAsking(true);
+    else type('password');
   };
   const clip = clipboardItem(info?.clipboard_chars ?? 0);
   return (
@@ -83,11 +105,22 @@ export function TypeMenuButton({ session, alias, bar, onOpenChange }: {
               <Icon name="clip" size="sm" /><span className="grow">Type clipboard</span><span className="hint">{clip.hint}</span>
             </button>
           )}
-          {info && (info.has_password ? (
-            <button className="mi" role="menuitem" data-type-password onClick={() => type('password')}>
-              <Icon name="key" size="sm" /><span className="grow">Type <span className="mono">{alias}</span>'s password</span>
-            </button>
+          {info && (info.has_password ? (asking ? (
+            <form className="col" style={{ gap: 6, padding: '6px var(--sp-2)' }} data-type-master
+              onSubmit={(e) => { e.preventDefault(); if (master) type('password', master); }}>
+              <label className="hint" htmlFor="type-master">Master password, to type <span className="mono">{alias}</span>'s password</label>
+              <div className="row" style={{ gap: 6 }}>
+                <input id="type-master" className="input grow" type="password" autoFocus autoComplete="off" value={master}
+                  onChange={(e) => setMaster(e.target.value)} aria-label="Master password" />
+                <button type="submit" className="btn btn-primary btn-sm" disabled={!master}>Type</button>
+              </div>
+            </form>
           ) : (
+            <button className="mi" role="menuitem" data-type-password onClick={typePassword}>
+              <Icon name="key" size="sm" /><span className="grow">Type <span className="mono">{alias}</span>'s password</span>
+              <span className="hint">{presenceHint(info.presence)}</span>
+            </button>
+          )) : (
             <button className="mi is-disabled" role="menuitem" aria-disabled="true" data-type-password data-reason="No saved password"
               style={{ color: 'var(--text-disabled)', minHeight: 40, alignItems: 'flex-start', paddingTop: 6 }}>
               <Icon name="key" size="sm" />

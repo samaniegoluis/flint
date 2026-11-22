@@ -32,8 +32,9 @@ and Flint never takes a secret from a command-line argument or an environment va
 where it would leak into `ps` and shell history. The desktop app shows a saved password
 only when you press **reveal**, and **copy** writes it to the clipboard without passing it
 to the page, then clears it after 30 seconds. A remote desktop's **Type *host*'s
-password** types it into that host's session the same way: opened and typed by the core,
-never in the page.
+password** types it into that host's session the same way, opened and typed by the core,
+never in the page, and only after your presence check (Touch ID, the system's password, or
+the master password), each time.
 
 So a script or an AI agent that uses Flint gets results, never credentials. See
 [Use Flint with an AI agent](/guides/ai-agents/).

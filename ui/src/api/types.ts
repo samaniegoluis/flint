@@ -358,6 +358,8 @@ export interface HostKeyPayload {
 export interface RdpTypeInfo {
   clipboard_chars: number;
   has_password: boolean;
+  /** How Type password confirms you: touchid, device, polkit, or password (the master password). */
+  presence: string;
 }
 
 /** "rdp:typed": a Type's outcome. */

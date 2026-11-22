@@ -211,6 +211,11 @@ run_app() {
     # /usr/local/bin is the machine's own: the run uses a folder of its own instead.
     cli_env=(FLINT_CLI="$tmp/cli/Flint.app/Contents/Helpers/flint" FLINT_CLI_HOME="$tmp/clihome" FLINT_CLI_SYSTEM_DIR="$tmp/clisys")
   fi
+  # rdp (milestone 58): Type password's presence check is the master password, which
+  # the page types; Touch ID or polkit would wait for a person.
+  if [[ "$1" == rdp ]]; then
+    cli_env=(FLINT_PRESENCE=password)
+  fi
   # update (milestone 52): a signed manifest of a newer Flint on a feed of the run's own,
   # under a throwaway key; a build from source accepts both (D-116), a package never.
   if [[ "$1" == update ]]; then

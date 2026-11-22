@@ -2102,13 +2102,28 @@
           await check(nonMods(k1) === 3, `three characters reach the remote as keys (${k1})`);
           await check(document.activeElement === canvas(), 'the desktop has the keyboard again');
 
+          // Type password asks for presence every time (owner, milestone 58): here the
+          // master password (the run sets FLINT_PRESENCE=password).
+          const setInput = (el, v) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+          const askMaster = async (pw) => {
+            await click('[data-rdp-type]');
+            await waitFor(() => q('[data-type-password]:not([aria-disabled])'), 'the password item', 10000);
+            await check(q('[data-type-password] .hint')?.textContent === 'Asks for the master password', 'the password item says it asks for the master password');
+            await click('[data-type-password]');
+            const input = await waitFor(() => q('[data-type-master] input[type="password"]'), 'the master password field', 5000);
+            setInput(input, pw);
+            await click('[data-type-master] button[type="submit"]');
+          };
           await ctl('clear');
-          await click('[data-rdp-type]');
-          await waitFor(() => q('[data-type-password]:not([aria-disabled])'), 'the password item', 10000);
-          await click('[data-type-password]');
+          await askMaster('not the master');
+          await waitFor(() => /nothing was typed/.test(lastToast()), 'the refusal', 15000);
+          await sleep(300);
+          await check((await ctl('keys')) === '-', `a wrong master password types nothing (${lastToast()})`);
+          await ctl('clear');
+          await askMaster(MASTER);
           await waitFor(() => lastToast() === 'Typed 1 character', 'the password typed', 15000);
           const k2 = await ctl('keys');
-          await check(nonMods(k2) === 1, `the saved password reaches the remote, typed by the core (${k2})`);
+          await check(nonMods(k2) === 1, `with presence confirmed, the saved password reaches the remote, typed by the core (${k2})`);
 
           await window.backend.e2e_clipboard_set({ name: '' });
           await click('[data-rdp-type]');

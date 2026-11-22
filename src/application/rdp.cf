@@ -467,9 +467,11 @@ fn rdp_has_saved_password(cat: Catalog, h: Host) -> bool {
 }
 
 // *Type <host>'s password*: the core opens the saved password and types it itself,
-// so it never reaches the page (Principle 6). Only into a tab connected to that
-// host's own address: the page cannot send one host's password to another.
-fn type_host_password_into_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop](crypto: C, store: S, session: VaultSession, mut rd: R, tab: str, alias: str) -> i64! {
+// so it never reaches the page (Principle 6), and only once the person confirmed it
+// (confirm_type_password), each time: typed anywhere, a password can be read there.
+// Only into a tab connected to that host's own address: the page cannot send one
+// host's password to another.
+fn type_host_password_into_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Presence](crypto: C, store: S, session: VaultSession, mut rd: R, presence: P, master: str, tab: str, alias: str) -> i64! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
     if !is_rdp_host(h) {
@@ -478,6 +480,11 @@ fn type_host_password_into_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop](c
     if rd.rd_address(tab) != rdp_cert_addr(h.hostname, h.port) {
         return error(coded(ERR_INVALID, "this tab is not connected to '{h.alias}'"))
     }
+    if !rdp_has_saved_password(cat, h) {
+        return error(coded(ERR_NOT_FOUND, "'{h.alias}' has no saved password"))
+    }
+    // Each time: typed anywhere, a password can be read there (owner, milestone 58).
+    try confirm_presence_for(crypto, store, presence, session, master, "type the password of {h.alias} into its remote desktop", "nothing was typed")
     password := try rdp_saved_password(crypto, session, cat, h)
     defer crypto.wipe_text(password)
     if password.len() == 0 {

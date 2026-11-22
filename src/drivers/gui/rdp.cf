@@ -70,6 +70,16 @@ type RdpTypeReq struct {
     tab:   str `json:"tab"`
     alias: str `json:"alias"`
     what:  str `json:"what"`
+    // The vault's master password, with "password" where the OS has no presence check.
+    password: str `json:"password" default:""`
+}
+
+// The Type menu's facts (RdpTypeInfo) and how Type password confirms the person
+// (the presence method: touchid, device, polkit or password).
+type RdpTypeMenu struct {
+    clipboard_chars: i64  `json:"clipboard_chars"`
+    has_password:    bool `json:"has_password"`
+    presence:        str  `json:"presence"`
 }
 
 // A Type's outcome: `count` characters typed, or `code` and `message` when it failed.
@@ -245,11 +255,12 @@ fn rpc_rdp_text(params: str, st: GuiState) -> str! {
 
 // What the Type menu shows: the clipboard's character count and whether the host has
 // a saved password; neither value itself.
-fn rpc_rdp_type_info(params: str, store: LockedVaultStore, mut clip: OsClipboard, st: GuiState) -> str! {
+fn rpc_rdp_type_info(params: str, store: LockedVaultStore, mut clip: OsClipboard, presence: OsPresence, st: GuiState) -> str! {
     try st.require_open_window()
     try st.require_unlocked()
     req := try parse_req[RdpTypeReq](params)
-    return json.stringify(try desktop_type_info(store, mut clip, req.alias))
+    i := try desktop_type_info(store, mut clip, req.alias)
+    return json.stringify(RdpTypeMenu{ clipboard_chars: i.clipboard_chars, has_password: i.has_password, presence: presence.presence_method() })
 }
 
 // Checks a Type request; the caller types it on a worker (it takes a second or more).
@@ -274,12 +285,13 @@ fn rdp_type_check(params: str, st: GuiState) -> RdpTypeReq! {
 }
 
 // Types, then tells the page how many characters went ("rdp:typed").
-fn run_gui_rdp_type(mut app: webui.App, c: Sodium, store: LockedVaultStore, vs: VaultSession, board: OsClipboard, req: RdpTypeReq) {
+// Type password waits here for the person's presence check (Touch ID, polkit): a worker.
+fn run_gui_rdp_type(mut app: webui.App, c: Sodium, store: LockedVaultStore, vs: VaultSession, board: OsClipboard, presence: OsPresence, req: RdpTypeReq) {
     mut rd := new_freerdp_desktop()
     mut clip := board
     mut out := RdpTyped{ tab: req.tab, what: req.what, count: 0, code: "", message: "" }
     if req.what == "password" {
-        out.count = type_host_password_into_desktop(c, store, vs, mut rd, req.tab, req.alias) or err {
+        out.count = type_host_password_into_desktop(c, store, vs, mut rd, presence, req.password, req.tab, req.alias) or err {
             msg := "{err.message()}"
             out.code = error_code_of(msg)
             out.message = error_text_of(msg)

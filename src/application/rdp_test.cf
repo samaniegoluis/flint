@@ -854,14 +854,15 @@ test "Type password types the host's saved password only into a tab connected to
     s := fresh_session(crypto, mut store)
     try rdp_fake(crypto, mut store, s, "pw")
     mut rd := new_fake_desktop("ab:cd", "pw")
-    assert_eq(try type_host_password_into_desktop(crypto, store, s, mut rd, "t1", "win"), 2)
+    touch := FakePresence{ method: "touchid", answer: true }
+    assert_eq(try type_host_password_into_desktop(crypto, store, s, mut rd, touch, "", "t1", "win"), 2)
     // The lock keys not known yet: Caps Lock is turned off first.
     assert_eq(typed_text(rd.typed), "su0 kd19 ku19 kd11 ku11")
     // Another host's tab: refused, nothing typed.
     rd.typed = []
     rd.address = "rdp://other.lan:3389"
     mut msg := ""
-    type_host_password_into_desktop(crypto, store, s, mut rd, "t1", "win") or err { msg = "{err.message()}" }
+    type_host_password_into_desktop(crypto, store, s, mut rd, touch, "", "t1", "win") or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "invalid")
     assert(!msg.contains("pw"))
     assert_eq(rd.typed.len(), 0)
@@ -869,8 +870,26 @@ test "Type password types the host's saved password only into a tab connected to
     try rdp_fake_named(crypto, mut store, s, "bare", "Bare.lan")
     rd.address = "rdp://bare.lan:3389"
     msg = ""
-    type_host_password_into_desktop(crypto, store, s, mut rd, "t1", "bare") or err { msg = "{err.message()}" }
+    type_host_password_into_desktop(crypto, store, s, mut rd, touch, "", "t1", "bare") or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), "not_found")
+}
+
+test "Type password asks for presence every time, and types nothing without it" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/t.flint", "", "correct horse", false)
+    try rdp_fake(crypto, mut store, s, "pw")
+    mut rd := new_fake_desktop("ab:cd", "pw")
+    mut msg := ""
+    type_host_password_into_desktop(crypto, store, s, mut rd, FakePresence{ method: "touchid", answer: false }, "", "t1", "win") or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), "denied")
+    assert_eq(rd.typed.len(), 0)
+    // Where the OS has no check, the vault's master password.
+    msg = ""
+    type_host_password_into_desktop(crypto, store, s, mut rd, FakePresence{ method: "password", answer: true }, "wrong", "t1", "win") or err { msg = "{err.message()}" }
+    assert_eq(error_code_of(msg), "wrong_password")
+    assert_eq(rd.typed.len(), 0)
+    assert_eq(try type_host_password_into_desktop(crypto, store, s, mut rd, FakePresence{ method: "password", answer: false }, "correct horse", "t1", "win"), 2)
 }
 
 test "the Type menu learns the clipboard's count and whether a password is saved" {
