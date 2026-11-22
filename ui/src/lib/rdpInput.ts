@@ -88,16 +88,16 @@ export class HeldKeys {
   down(code: string) {
     const c = rdpCode(code, this.os, this.map);
     if (!c) return;
-    // Caps Lock on macOS reports a keydown when it turns on and a keyup when it
-    // turns off: each is one press.
-    if (code === 'CapsLock') { this.send(c, true); this.send(c, false); return; }
+    // The lock keys are never sent as presses (milestone 58): a press toggles the
+    // remote's state, which may not be this machine's. LockSync sends the state.
+    if (LOCK_KEYS.includes(code)) return;
     this.held.add(c);
     this.send(c, true);
   }
 
   up(code: string) {
     const c = rdpCode(code, this.os, this.map);
-    if (code === 'CapsLock') { if (c) { this.send(c, true); this.send(c, false); } return; }
+    if (LOCK_KEYS.includes(code)) return;
     if (this.os === 'mac' && (code === 'MetaLeft' || code === 'MetaRight')) {
       // The keys pressed with ⌘ never reported their release.
       for (const k of [...this.held]) if (k !== c && !isModifierSent(k)) { this.held.delete(k); this.send(k, false); }
@@ -177,4 +177,118 @@ export function parseFrameHeader(buf: ArrayBuffer): FrameHeader | null {
   const h = { seq: dv.getUint32(0, true), x: dv.getUint16(4, true), y: dv.getUint16(6, true), w: dv.getUint16(8, true), h: dv.getUint16(10, true), fullW: dv.getUint16(12, true), fullH: dv.getUint16(14, true) };
   if (buf.byteLength !== 16 + h.w * h.h * 4) return null;
   return h;
+}
+
+// ---- Lock keys and typed text (milestone 58) ---------------------------------------
+
+/** The lock keys, whose state goes to the remote with a synchronize event instead. */
+export const LOCK_KEYS = ['CapsLock', 'NumLock', 'ScrollLock'];
+
+/** RDP's synchronize flags (KBD_SYNC_*), as the core's RDP_LOCK_*. */
+export const LOCK_SCROLL = 1;
+export const LOCK_NUM = 2;
+export const LOCK_CAPS = 4;
+
+export interface ModifierStateLike {
+  getModifierState(key: string): boolean;
+}
+
+/**
+ * This machine's lock keys as the remote should have them. A Mac has no Num Lock and
+ * its keypad always types digits, so the remote's Num Lock is on, as Windows App sets it.
+ */
+export function lockFlags(e: ModifierStateLike, os: Os): number {
+  let f = 0;
+  if (e.getModifierState('CapsLock')) f |= LOCK_CAPS;
+  if (os === 'mac' || e.getModifierState('NumLock')) f |= LOCK_NUM;
+  if (e.getModifierState('ScrollLock')) f |= LOCK_SCROLL;
+  return f;
+}
+
+/**
+ * Keeps the remote's lock keys in step: each key or pointer event carries this
+ * machine's state, and a change from what was last sent is sent. A new connection (or
+ * the focus coming back) starts over with `reset`, so the next event sends it again.
+ */
+export class LockSync {
+  private last = -1;
+  constructor(private send: (flags: number) => void, private os: Os) {}
+  seen(e: ModifierStateLike) {
+    const f = lockFlags(e, this.os);
+    if (f === this.last) return;
+    this.last = f;
+    this.send(f);
+  }
+  reset() { this.last = -1; }
+}
+
+export interface TextKeyLike extends KeyLike {
+  key: string;
+}
+
+/**
+ * The text a key event types when it comes from no key of the keyboard, else null.
+ * A Stream Deck's *Text* action (and other macro tools) post events that carry the
+ * character but name no real key, or the key in the first position (KeyA, macOS'
+ * virtual key 0) whatever the character: sent by position, the remote would get the
+ * wrong letter. Such a character goes as Unicode. With Ctrl, ⌘ or ⌥ held it is a
+ * shortcut, sent by position as always.
+ */
+export function unicodeText(e: TextKeyLike): string | null {
+  if (e.ctrlKey || e.metaKey || e.altKey) return null;
+  const chars = [...e.key];
+  if (chars.length !== 1) return null;
+  const ch = chars[0];
+  const cp = ch.codePointAt(0) ?? 0;
+  if (cp < 0x20 || cp === 0x7f) return null;
+  if (e.code === '' || e.code === 'Unidentified') return ch;
+  if (e.code === 'KeyA' && ch.toLowerCase() !== 'a' && ch.toLowerCase() !== 'q') return ch;
+  return null;
+}
+
+// ---- The remote pointer (milestone 58) ---------------------------------------------
+
+/** An "rdp:cursor" event (the core's RdpCursor). */
+export interface RdpCursorEvent {
+  tab: string;
+  action: 'image' | 'set' | 'hidden' | 'default';
+  id: number;
+  width: number;
+  height: number;
+  hot_x: number;
+  hot_y: number;
+  rgba: string;
+}
+
+export interface CursorImage { width: number; height: number; hotX: number; hotY: number; rgba: string }
+
+/** What the canvas shows: an image of the cache, none, or the system's arrow. */
+export type CursorShown = { kind: 'image'; id: number } | { kind: 'hidden' } | { kind: 'default' };
+
+/** Images kept per tab: the server reuses a few dozen; older ones go first. */
+export const CURSOR_CACHE_MAX = 64;
+
+/** The remote pointer's images by id, and the one shown. */
+export class CursorCache {
+  private images = new Map<number, CursorImage>();
+  shown: CursorShown = { kind: 'default' };
+
+  /** Takes an event; true when what is shown changed. */
+  apply(e: RdpCursorEvent): boolean {
+    if (e.action === 'image') {
+      this.images.delete(e.id);
+      this.images.set(e.id, { width: e.width, height: e.height, hotX: e.hot_x, hotY: e.hot_y, rgba: e.rgba });
+      while (this.images.size > CURSOR_CACHE_MAX) this.images.delete(this.images.keys().next().value as number);
+      return false;
+    }
+    if (e.action === 'set') {
+      this.shown = this.images.has(e.id) ? { kind: 'image', id: e.id } : { kind: 'default' };
+      return true;
+    }
+    this.shown = { kind: e.action === 'hidden' ? 'hidden' : 'default' };
+    return true;
+  }
+
+  image(id: number): CursorImage | undefined { return this.images.get(id); }
+  get size(): number { return this.images.size; }
 }

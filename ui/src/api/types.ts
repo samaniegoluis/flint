@@ -354,6 +354,21 @@ export interface HostKeyPayload {
 
 /** A remote desktop is up (milestone 30): its size and its frame channel (D-071). */
 /** A remote desktop's counters since its tab opened (milestone 34). */
+/** What the Type menu shows (milestone 58): never the text or the password. */
+export interface RdpTypeInfo {
+  clipboard_chars: number;
+  has_password: boolean;
+}
+
+/** "rdp:typed": a Type's outcome. */
+export interface RdpTyped {
+  tab: string;
+  what: 'clipboard' | 'password';
+  count: number;
+  code: string;
+  message: string;
+}
+
 export interface RdpStats {
   updates: number;
   bytes_in: number;

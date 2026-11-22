@@ -9,6 +9,7 @@ import { HostTypeIcon, Icon } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import type { Pane } from './store';
 import { useMonitors } from './monitors';
+import { TypeMenuButton } from './RdpTypeMenu';
 import { MonitorsButton } from './MonitorsUi';
 
 /** How long the bar stays after the pointer leaves it. */
@@ -90,6 +91,7 @@ export function FullScreenBar({ pane, top, noteSeen, onNoteSeen, monitorsNoteSee
             : <span className="faint mono" style={{ fontSize: 'var(--fs-xs)' }}>{meta}</span>}
           <span className="sep" />
           {!lost && <MonitorsButton onOpenChange={setPopover} onSpan={onSpan} />}
+          {!lost && pane.session && <TypeMenuButton bar session={pane.session} alias={pane.alias} onOpenChange={setPopover} />}
           <button className="btn btn-ghost btn-sm" data-fs-exit onClick={onExit}>
             <Icon name="shrink" size="sm" />Exit full screen<Kbd action="fullscreen" />
           </button>

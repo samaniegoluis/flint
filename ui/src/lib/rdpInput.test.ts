@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitScale, HeldKeys, MOD_PRESETS, modMapOf, modMapText, parseFrameHeader, rdpCode, rdpKeptAction, toDesktop, WheelAccumulator } from './rdpInput';
+import { CURSOR_CACHE_MAX, CursorCache, fitScale, HeldKeys, LOCK_CAPS, LOCK_NUM, LOCK_SCROLL, LockSync, lockFlags, MOD_PRESETS, modMapOf, modMapText, parseFrameHeader, rdpCode, rdpKeptAction, toDesktop, unicodeText, WheelAccumulator } from './rdpInput';
 
 const key = (code: string, mods: Partial<{ meta: boolean; ctrl: boolean; alt: boolean; shift: boolean }> = {}) => ({
   code, metaKey: !!mods.meta, ctrlKey: !!mods.ctrl, altKey: !!mods.alt, shiftKey: !!mods.shift,
@@ -84,8 +84,11 @@ describe('RDP input', () => {
     sent.length = 0;
     k.up('KeyA');
     expect(sent).toEqual([]);
+    // The lock keys go as their state (LockSync), never as presses.
     k.down('CapsLock');
-    expect(sent).toEqual(['CapsLock down', 'CapsLock up']);
+    k.up('CapsLock');
+    k.down('NumLock');
+    expect(sent).toEqual([]);
   });
 
   it('turns wheel deltas into notches', () => {
@@ -112,5 +115,73 @@ describe('RDP input', () => {
     dv.setUint16(12, 1280, true); dv.setUint16(14, 720, true);
     expect(parseFrameHeader(buf)).toEqual({ seq: 7, x: 10, y: 20, w: 2, h: 1, fullW: 1280, fullH: 720 });
     expect(parseFrameHeader(buf.slice(0, 20))).toBeNull();
+  });
+});
+
+describe('lock keys (milestone 58)', () => {
+  const state = (on: string[]) => ({ getModifierState: (k: string) => on.includes(k) });
+  it('reads Caps, Num and Scroll Lock; a Mac always has Num Lock on', () => {
+    expect(lockFlags(state([]), 'linux')).toBe(0);
+    expect(lockFlags(state(['CapsLock', 'NumLock', 'ScrollLock']), 'windows')).toBe(LOCK_CAPS | LOCK_NUM | LOCK_SCROLL);
+    expect(lockFlags(state([]), 'mac')).toBe(LOCK_NUM);
+    expect(lockFlags(state(['CapsLock']), 'mac')).toBe(LOCK_CAPS | LOCK_NUM);
+  });
+  it('sends the state only when it changes, and again after a reset', () => {
+    const sent: number[] = [];
+    const l = new LockSync((f) => sent.push(f), 'linux');
+    l.seen(state([]));
+    l.seen(state([]));
+    l.seen(state(['CapsLock']));
+    l.seen(state(['CapsLock']));
+    l.reset();
+    l.seen(state(['CapsLock']));
+    expect(sent).toEqual([0, LOCK_CAPS, LOCK_CAPS]);
+  });
+});
+
+describe('text from no key (Stream Deck, milestone 58)', () => {
+  const ev = (code: string, key: string, mods: Partial<{ ctrlKey: boolean; metaKey: boolean; altKey: boolean }> = {}) =>
+    ({ code, key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
+  it('a character on no key, or on macOS virtual key 0 that is not its letter, is Unicode', () => {
+    expect(unicodeText(ev('', 'x'))).toBe('x');
+    expect(unicodeText(ev('Unidentified', 'é'))).toBe('é');
+    expect(unicodeText(ev('KeyA', 'P'))).toBe('P');
+    expect(unicodeText(ev('KeyA', '😀'))).toBe('😀');
+  });
+  it('a real key, a shortcut or a named key goes by position', () => {
+    expect(unicodeText(ev('KeyA', 'a'))).toBeNull();
+    expect(unicodeText(ev('KeyA', 'A'))).toBeNull();
+    // AZERTY's key in that place.
+    expect(unicodeText(ev('KeyA', 'q'))).toBeNull();
+    expect(unicodeText(ev('KeyS', 'z'))).toBeNull();
+    expect(unicodeText(ev('', 'x', { metaKey: true }))).toBeNull();
+    expect(unicodeText(ev('KeyA', 'å', { altKey: true }))).toBeNull();
+    expect(unicodeText(ev('', 'Enter'))).toBeNull();
+  });
+});
+
+describe('the remote pointer (milestone 58)', () => {
+  const img = (id: number) => ({ tab: 't', action: 'image' as const, id, width: 2, height: 2, hot_x: 1, hot_y: 0, rgba: 'AAAA' });
+  const act = (action: 'set' | 'hidden' | 'default', id = 0) => ({ tab: 't', action, id, width: 0, height: 0, hot_x: 0, hot_y: 0, rgba: '' });
+  it('keeps images by id and shows the one set', () => {
+    const c = new CursorCache();
+    expect(c.apply(img(1))).toBe(false);
+    expect(c.shown).toEqual({ kind: 'default' });
+    expect(c.apply(act('set', 1))).toBe(true);
+    expect(c.shown).toEqual({ kind: 'image', id: 1 });
+    expect(c.image(1)?.hotX).toBe(1);
+    c.apply(act('hidden'));
+    expect(c.shown).toEqual({ kind: 'hidden' });
+    c.apply(act('set', 9));
+    expect(c.shown).toEqual({ kind: 'default' });
+    c.apply(act('default'));
+    expect(c.shown).toEqual({ kind: 'default' });
+  });
+  it('forgets the oldest images past its size', () => {
+    const c = new CursorCache();
+    for (let i = 1; i <= CURSOR_CACHE_MAX + 5; i++) c.apply(img(i));
+    expect(c.size).toBe(CURSOR_CACHE_MAX);
+    expect(c.image(1)).toBeUndefined();
+    expect(c.image(CURSOR_CACHE_MAX + 5)).toBeDefined();
   });
 });

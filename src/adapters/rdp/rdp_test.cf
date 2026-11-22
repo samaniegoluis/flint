@@ -559,9 +559,8 @@ test "the lock keys reach the server as a synchronize event, and Type's keys and
     try rd.rd_sync_locks("t-clip-type", RDP_LOCK_CAPS | RDP_LOCK_NUM)
     assert_eq(ctl_until("sync", "6"), "6")
     assert_eq(rd.rd_locks("t-clip-type"), 6)
-    // The focus-in event ends with a Tab release, as mstsc's.
-    keys := ctl_until("keys", "u:0xf u:0xf")
-    assert(keys.starts_with("u:0xf"), keys)
+    // Only the state: no key goes with it.
+    assert_eq(ctl("keys"), "-")
     assert(rd.rd_keyboard_layout("t-clip-type") != 0)
     assert_eq(rd.rd_address("t-clip-type"), rdp_cert_addr("127.0.0.1", clip_target("").port))
     assert_eq(ctl("clear"), "ok")

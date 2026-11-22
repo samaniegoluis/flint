@@ -2017,15 +2017,16 @@ inline int key(const std::string& id, const std::string& code, bool down) {
 }
 
 // The lock keys (milestone 58): the remote's Caps, Num and Scroll Lock set to `flags`
-// (KBD_SYNC_*), as mstsc does when it takes the focus: a synchronize event, then a
-// Tab release (FreeRDP's focus-in event). Kept for `typing`.
+// (KBD_SYNC_*) with a synchronize event, as mstsc sends when it takes the focus (its
+// Tab release after it is left out: it would reach the remote as a key). Kept for
+// Type, which turns Caps Lock off while it types.
 inline int sync_locks(const std::string& id, int32_t flags) {
     auto t = find(id);
     if (!t || t->closed.load()) return RDP_ERR_CLOSED;
     auto c = live_conn(*t);
     if (!c) return RDP_ERR_CLOSED;
     std::lock_guard<std::mutex> g(t->input_mu);
-    if (!freerdp_input_send_focus_in_event(c->inst->context->input, static_cast<UINT16>(flags & 0x0F))) return RDP_ERR_OTHER;
+    if (!freerdp_input_send_synchronize_event(c->inst->context->input, static_cast<UINT32>(flags & 0x0F))) return RDP_ERR_OTHER;
     t->locks.store(flags & 0x0F);
     return RDP_OK;
 }

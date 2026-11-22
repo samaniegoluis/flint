@@ -137,6 +137,7 @@ fn main() {
     app.bind_raw("rdp_clipboard_announce") |params| { return rpc_rdp_clipboard_announce(params, mut clipboard, st) }
     // Milestone 58: the lock keys and the Type menu (design 25c).
     app.bind_raw("rdp_locks") |params| { return rpc_rdp_locks(params, st) }
+    app.bind_raw("rdp_text") |params| { return rpc_rdp_text(params, st) }
     app.bind_raw("rdp_type_info") |params| { return rpc_rdp_type_info(params, store, mut clipboard, st) }
     app.bind_raw("window_theme") |params| { return rpc_window_theme(params, mut app) }
     app.bind_raw("dialog_open") |params| { return rpc_dialog_open(params, app) }

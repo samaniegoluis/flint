@@ -31,7 +31,9 @@ No `flint` command prints a stored password, key or passphrase, with or without 
 and Flint never takes a secret from a command-line argument or an environment variable,
 where it would leak into `ps` and shell history. The desktop app shows a saved password
 only when you press **reveal**, and **copy** writes it to the clipboard without passing it
-to the page, then clears it after 30 seconds.
+to the page, then clears it after 30 seconds. A remote desktop's **Type *host*'s
+password** types it into that host's session the same way: opened and typed by the core,
+never in the page.
 
 So a script or an AI agent that uses Flint gets results, never credentials. See
 [Use Flint with an AI agent](/guides/ai-agents/).

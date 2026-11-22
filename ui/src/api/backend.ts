@@ -3,7 +3,7 @@
 // FlintError so the UI can branch on stable codes (D-018, D-019).
 
 import type {
-  AccessAnswer, AccessState, ActivityEntry, AppInfo, CliLinkStatus, RdpStats, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
+  AccessAnswer, AccessState, ActivityEntry, AppInfo, CliLinkStatus, RdpStats, RdpTypeInfo, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
   CopyResult, DesktopSpan, RemoteLinkView, RemoteProbe, RemoteStatus, SyncOutcome, FileEntry, MonitorPick, MonitorsView, PasswordStrength, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState, WhatsNew,
 } from './types';
 
@@ -203,6 +203,14 @@ export const api = {
   rdpGraphics: (tab: string, graphics: string) => call('rdp_graphics', { tab, graphics }),
   /** Milestone 31: tells the server whether this machine's clipboard holds text (never the text). */
   rdpClipboardAnnounce: (tab: string) => call('rdp_clipboard_announce', { tab }),
+  /** Milestone 58: this machine's lock keys for the remote (RDP's synchronize flags). */
+  rdpLocks: (tab: string, flags: number) => call('rdp_locks', { tab, flags }),
+  /** A character from no key (a Stream Deck's Text action), typed as Unicode. */
+  rdpText: (tab: string, text: string) => call('rdp_text', { tab, text }),
+  /** The Type menu (design 25c): the clipboard's count and whether a password is saved. */
+  rdpTypeInfo: (tab: string, alias: string) => call<RdpTypeInfo>('rdp_type_info', { tab, alias, what: '' }),
+  /** Types the clipboard or the host's password; "rdp:typed" says how it went. */
+  rdpType: (tab: string, alias: string, what: 'clipboard' | 'password') => call('rdp_type', { tab, alias, what }),
 
   /** The Files view (milestone 17): SFTP over a tab's own session (D-053). */
   filesHome: (session: string) => call<{ path: string }>('files_home', { session, path: '' }),

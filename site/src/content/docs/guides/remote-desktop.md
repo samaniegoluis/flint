@@ -57,8 +57,9 @@ server without it, is reconnected at the new size, back to the same Windows sess
 it cannot follow, the desktop is scaled down to fit and letterboxed.
 
 The toolbar shows the host, the user, the desktop's size and, when it is scaled, by how
-much. **Disconnect** ends the connection and keeps the tab: your Windows session keeps
-running on the server, and **Connect again** brings you back to it.
+much. **Type** sends text as keystrokes (see [Type](#type)). **Disconnect** ends the
+connection and keeps the tab: your Windows session keeps running on the server, and
+**Connect again** brings you back to it.
 
 ### Graphics
 
@@ -200,7 +201,18 @@ Almost every key belongs to the remote desktop:
   Everything else Flint does is in the palette and the toolbar. <kbd>⌘Q</kbd>,
   <kbd>⌘Tab</kbd> and <kbd>⌘Space</kbd> stay with macOS.
 
-The mouse, its buttons and the wheel (vertical and horizontal) go to the desktop.
+The mouse, its buttons and the wheel (vertical and horizontal) go to the desktop. The
+pointer takes Windows' shapes: the arrows over a window's edge, the text cursor over a
+field, the hand over a link, and none where Windows hides it. A click lands where the
+pointer is, so one click on a field both focuses it and lets you type there.
+
+**Caps Lock, Num Lock and Scroll Lock** follow this computer's. Flint sends their state
+when the desktop connects and whenever it takes the keyboard back, never the key as a
+press, so Windows' Caps Lock can no longer end up the other way round from yours. A Mac
+has no Num Lock and its keypad always types digits: Windows' Num Lock stays on.
+
+A character that comes from no key, as a **Stream Deck**'s *Text* action or another macro
+tool types it, reaches Windows as that character, not as the key in the first position.
 
 ### Modifier keys on a Mac
 
@@ -220,6 +232,27 @@ keyboard has them (<kbd>⌃C</kbd> copies, <kbd>⌥</kbd> opens the Start menu).
 one key in the table makes a **Custom** set from what is shown; each key can send Ctrl,
 Alt, AltGr, Win or nothing (Off). The setting belongs to this computer. Linux and Windows
 have no such setting: a PC keyboard already sends its own keys.
+
+## Type
+
+Some places in Windows take no paste: the administrator prompt (*User Account
+Control*) and the sign-in screen run on a secure desktop with no clipboard. **Type** in
+the toolbar (and in full screen's connection bar) sends text as keystrokes there:
+
+- **Type clipboard** types this computer's clipboard text; the menu shows how many
+  characters it holds, and is greyed when there is no text (or more than 2,000
+  characters).
+- **Type *host*'s password** types the host's saved password (its own or its
+  credential's). Flint opens it from the vault and types it itself: the window never holds
+  it, nothing is shown on screen, and it goes only into the tab connected to that host.
+
+Click the field first, then choose. When it is done a notice says how many characters
+went (*Typed 24 characters*). Each character goes by its key on your keyboard layout
+(US, US International, UK, Spanish, Latin American, German and French), with Shift or
+AltGr as the layout needs; one your layout has on no key, or any character on another
+layout, goes as a Unicode key event. Caps Lock is turned off on the remote while it types,
+so the case comes out as written, and put back after. There is no shortcut: on a Mac
+<kbd>⌥⌘V</kbd> would reach Windows as <kbd>Ctrl+Alt+V</kbd>.
 
 ## Copy and paste
 
@@ -285,6 +318,9 @@ What Flint does with your password and the connection, and what it leaves as it 
 - **Sign-in uses NTLM, not Kerberos.** Kerberos stalls with a user written as an e-mail
   address, and a computer outside a domain has none. NTLM is bound to the checked
   certificate, so it is safe from a machine in the middle.
+- **Type never shows the password.** The window learns only that a host has a saved
+  password; the core opens it and types it into the session of that host alone, and the
+  notice says how many characters went, never which.
 - **Frames stay on this computer.** The desktop reaches Flint's window over `127.0.0.1`,
   through a channel that answers only a request carrying the tab's 256-bit random token,
   addressed to that port by its number (not by a name a web page could point there), and

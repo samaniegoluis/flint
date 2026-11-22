@@ -11,10 +11,10 @@
 // putImageData (lib/deskRenderer); the statistics overlay shows what the desktop costs.
 
 import { useEffect, useRef, useState } from 'react';
-import { api } from '../api/backend';
+import { api, on } from '../api/backend';
 import { useApp } from '../state/app';
 import { runAction } from '../shell/actions';
-import { fitScale, HeldKeys, modMapOf, parseFrameHeader, rdpButton, rdpKeptAction, toDesktop, WheelAccumulator } from '../lib/rdpInput';
+import { CursorCache, fitScale, HeldKeys, LOCK_KEYS, LockSync, modMapOf, parseFrameHeader, rdpButton, rdpKeptAction, toDesktop, unicodeText, WheelAccumulator, type CursorImage, type RdpCursorEvent } from '../lib/rdpInput';
 import { createRenderer, type DeskRenderer } from '../lib/deskRenderer';
 import { FrameMeter, graphicsChoiceLabel } from '../lib/rdpStats';
 import { sessions, type Pane } from './store';
@@ -133,6 +133,30 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
     if (ready && active) canvas.current?.focus({ preventScroll: true });
   }, [ready, active]);
 
+  // The lock keys (milestone 58): the remote's follow this machine's. Each key and
+  // pointer event carries their state and a change is sent; a new connection and the
+  // focus coming back start over, so the next event sends it again (as mstsc does on
+  // focus). The lock keys themselves are never sent as presses (HeldKeys).
+  const locks = useRef<LockSync | null>(null);
+  useEffect(() => {
+    locks.current = new LockSync((f) => { if (session) api.rdpLocks(session, f).catch(() => {}); }, os);
+    return () => { locks.current = null; };
+  }, [session, os, desk]);
+  const seen = (e: { getModifierState(k: string): boolean }) => { if (ready) locks.current?.seen(e); };
+
+  // The remote pointer's shape (milestone 58): the server's images, kept by id, become
+  // the canvas's CSS cursor, drawn at the desktop's scale.
+  const cursors = useRef(new CursorCache());
+  const [cursorTick, setCursorTick] = useState(0);
+  useEffect(() => {
+    if (!session) return;
+    cursors.current = new CursorCache();
+    return on<RdpCursorEvent>('rdp:cursor', (e) => {
+      if (e.tab !== session) return;
+      if (cursors.current.apply(e)) setCursorTick((n) => n + 1);
+    });
+  }, [session]);
+
   // The clipboard (milestone 31, D-074): whenever the desktop takes the keyboard (the
   // tab, the canvas, the window coming back), the server learns whether this machine's
   // clipboard holds text, so a paste there can ask for it. The text is sent only then.
@@ -166,6 +190,8 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
   }, [ready, session, pane.id, os]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    seen(e);
+    if (LOCK_KEYS.includes(e.code)) { e.preventDefault(); e.stopPropagation(); return; }
     const kept = rdpKeptAction(e.nativeEvent, os);
     if (kept) {
       e.preventDefault();
@@ -175,9 +201,16 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
     }
     e.preventDefault();
     e.stopPropagation();
+    // A character from no key (a Stream Deck's Text action) goes as Unicode.
+    const text = unicodeText(e.nativeEvent);
+    if (text !== null) {
+      if (session) api.rdpText(session, text).catch(() => {});
+      return;
+    }
     held.current?.down(e.code);
   };
   const onKeyUp = (e: React.KeyboardEvent) => {
+    seen(e);
     e.preventDefault();
     e.stopPropagation();
     held.current?.up(e.code);
@@ -206,8 +239,9 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
     pendingMove.current = null;
     if (m && session) api.rdpPointer(session, { kind: 'move', button: 0, x: m.x, y: m.y, delta: 0 }).catch(() => {});
   };
-  const onMouseMove = (e: { clientX: number; clientY: number; buttons: number }) => {
+  const onMouseMove = (e: { clientX: number; clientY: number; buttons: number; getModifierState?(k: string): boolean }) => {
     if (!ready) return;
+    if (e.getModifierState) seen(e as { getModifierState(k: string): boolean });
     pendingMove.current = point(e);
     if (!moveFrame.current) moveFrame.current = requestAnimationFrame(flushMove);
   };
@@ -248,8 +282,9 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
     if (!spanOn) sessions.fitDesktopToArea(pane.id);
     sessions.autoForMonitors(pane.id, spanOn);
   }, [spanOn, pane.id]);
-  const onMouseButton = (e: { clientX: number; clientY: number; button: number; buttons: number; preventDefault(): void }, down: boolean) => {
+  const onMouseButton = (e: { clientX: number; clientY: number; button: number; buttons: number; preventDefault(): void; getModifierState?(k: string): boolean }, down: boolean) => {
     if (!ready || !session) return;
+    if (e.getModifierState) seen(e as { getModifierState(k: string): boolean });
     const b = rdpButton(e.button);
     if (b < 0) return;
     e.preventDefault();
@@ -258,6 +293,9 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
     else if (e.buttons === 0) dragOff.current?.();
     if (moveFrame.current) { cancelAnimationFrame(moveFrame.current); flushMove(); }
     const p = point(e);
+    // A press is preceded by a move to its own point, as mstsc sends it: a remote app
+    // that has seen no move there may take the first click only to focus (milestone 58).
+    if (down) api.rdpPointer(session, { kind: 'move', button: 0, x: p.x, y: p.y, delta: 0 }).catch(() => {});
     api.rdpPointer(session, { kind: down ? 'down' : 'up', button: b, x: p.x, y: p.y, delta: 0 }).catch(() => {});
   };
   const onWheel = (e: React.WheelEvent) => {
@@ -272,12 +310,14 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
   const scale = Math.min(1, fitScale(areaSize.width, areaSize.height, deskSize.width, deskSize.height));
   const shownW = Math.floor(deskSize.width * scale);
   const shownH = Math.floor(deskSize.height * scale);
+  const cursor = cursorStyle(cursors.current, scale, cursorTick);
   return (
     <div className="rdp-area" ref={area} data-rdp-pane={pane.id} data-rdp-session={session ?? ''}>
       <canvas key={canvasKey} ref={canvas} className={'rdp-canvas' + (ready ? '' : ' stale')} tabIndex={0} aria-label={`Remote desktop of ${pane.alias}`}
         data-desktop={deskSize.width ? `${deskSize.width}x${deskSize.height}` : ''} data-renderer={rendererKind}
-        style={{ width: shownW || 0, height: shownH || 0, visibility: deskSize.width ? 'visible' : 'hidden' }}
-        onKeyDown={onKeyDown} onKeyUp={onKeyUp} onFocus={announce} onBlur={() => held.current?.releaseAll()}
+        data-cursor={cursorKind(cursors.current)}
+        style={{ width: shownW || 0, height: shownH || 0, visibility: deskSize.width ? 'visible' : 'hidden', cursor: ready ? cursor : undefined }}
+        onKeyDown={onKeyDown} onKeyUp={onKeyUp} onFocus={() => { locks.current?.reset(); announce(); }} onBlur={() => held.current?.releaseAll()}
         onMouseMove={onMouseMove} onMouseDown={(e) => onMouseButton(e, true)} onMouseUp={(e) => onMouseButton(e, false)}
         onWheel={onWheel} onContextMenu={(e) => e.preventDefault()} />
       {showStats && ready && session && <RdpStatsOverlay session={session} renderer={rendererKind} meter={meter.current}
@@ -285,6 +325,54 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
       <RdpCard pane={pane} active={active} onEditHost={onEditHost} onKnownHosts={onKnownHosts} />
     </div>
   );
+}
+
+// The CSS cursors made from the server's images, by image and scale.
+const cursorUrls = new WeakMap<CursorImage, Map<number, string>>();
+
+/** An image as a CSS cursor value, drawn at `scale` (the desktop's in the tab). */
+function cursorUrl(img: CursorImage, scale: number): string {
+  let byScale = cursorUrls.get(img);
+  if (!byScale) { byScale = new Map(); cursorUrls.set(img, byScale); }
+  const known = byScale.get(scale);
+  if (known) return known;
+  const bytes = Uint8ClampedArray.from(atob(img.rgba), (c) => c.charCodeAt(0));
+  let value = 'default';
+  if (bytes.length === img.width * img.height * 4) {
+    const src = document.createElement('canvas');
+    src.width = img.width;
+    src.height = img.height;
+    src.getContext('2d')?.putImageData(new ImageData(bytes, img.width, img.height), 0, 0);
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    const g = out.getContext('2d');
+    if (g) {
+      g.imageSmoothingEnabled = scale < 1;
+      g.drawImage(src, 0, 0, w, h);
+      const hx = Math.min(w - 1, Math.round(img.hotX * scale));
+      const hy = Math.min(h - 1, Math.round(img.hotY * scale));
+      value = `url(${out.toDataURL('image/png')}) ${hx} ${hy}, default`;
+    }
+  }
+  byScale.set(scale, value);
+  return value;
+}
+
+/** The canvas's cursor for what the remote shows. `_tick` re-reads after a change. */
+function cursorStyle(c: CursorCache, scale: number, _tick: number): string {
+  const s = c.shown;
+  if (s.kind === 'hidden') return 'none';
+  if (s.kind === 'default') return 'default';
+  const img = c.image(s.id);
+  return img ? cursorUrl(img, scale) : 'default';
+}
+
+/** What the canvas shows, for the tests: "image:<id>", "hidden" or "default". */
+function cursorKind(c: CursorCache): string {
+  return c.shown.kind === 'image' ? `image:${c.shown.id}` : c.shown.kind;
 }
 
 /** The desktop's scale in the tab, for the toolbar: 1 when it fits as is. */

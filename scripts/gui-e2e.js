@@ -2019,6 +2019,105 @@
           await check((await keysAfter('MetaLeft')) === 'd:0x15b u:0x15b', 'a PC keyboard sends the Windows key as it is');
         }
 
+        await setStep('rdp: the remote pointer is the canvas cursor (milestone 58)');
+        {
+          const cur = () => canvas().dataset.cursor;
+          await ctl('cursor/new');
+          await waitFor(() => (cur() || '').startsWith('image:'), 'the server pointer on the canvas', 10000);
+          const css = canvas().style.cursor.replace(/"/g, '');
+          await check(/^url\(data:image\/png;base64,/.test(css) && / 3 4, default$/.test(css),
+            `the pointer's image and hotspot are the canvas's cursor (${canvas().style.cursor.slice(-24)})`);
+          const shown = cur();
+          await ctl('cursor/null');
+          await waitFor(() => cur() === 'hidden', 'the pointer hidden', 10000);
+          await check(canvas().style.cursor === 'none', 'a hidden remote pointer hides the cursor');
+          await ctl('cursor/cached');
+          await waitFor(() => cur() === shown, 'the cached pointer again', 10000);
+          await check(true, 'a pointer from the server cache comes back with no new image');
+          await ctl('cursor/default');
+          await waitFor(() => cur() === 'default', 'the arrow', 10000);
+          await check(canvas().style.cursor === 'default', 'the system pointer is the arrow');
+        }
+
+        await setStep('rdp: the lock keys follow this machine, never as presses (milestone 58)');
+        {
+          const c = canvas();
+          c.focus();
+          await ctl('clear');
+          c.dispatchEvent(new KeyboardEvent('keydown', { code: 'CapsLock', key: 'CapsLock', modifierCapsLock: true, bubbles: true, cancelable: true }));
+          c.dispatchEvent(new KeyboardEvent('keyup', { code: 'CapsLock', key: 'CapsLock', modifierCapsLock: true, bubbles: true, cancelable: true }));
+          const caps = new KeyboardEvent('keydown', { code: 'CapsLock', modifierCapsLock: true }).getModifierState('CapsLock');
+          const want = String((caps ? 4 : 0) | (isMac ? 2 : 0));
+          const sync = await waitForAsync(async () => { const v = await ctl('sync'); return v === want ? v : null; }, 'the synchronize event', 10000).catch(() => ctl('sync'));
+          log(`diag: lock sync ${sync} (the page reads Caps Lock ${caps ? 'on' : 'off'} from a synthetic event)`);
+          await check(sync === want, `the lock keys reach the remote as a synchronize event (${sync})`);
+          const keys = await ctl('keys');
+          await check(!/0x3a\b/.test(keys), `Caps Lock is not sent as a press (${keys})`);
+          c.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', key: 'b', bubbles: true, cancelable: true }));
+          c.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyB', key: 'b', bubbles: true, cancelable: true }));
+          await sleep(300);
+          const after = await ctl('sync');
+          const wantOff = String(isMac ? 2 : 0);
+          await check(after === wantOff, `a key with Caps Lock off turns the remote's off (${after})`);
+        }
+
+        await setStep('rdp: a click is a move to its point, then the press (milestone 58)');
+        {
+          const c = canvas();
+          const r = c.getBoundingClientRect();
+          const at = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, cancelable: true, button: 0 };
+          await ctl('clear');
+          c.dispatchEvent(new MouseEvent('mousedown', { ...at, buttons: 1 }));
+          c.dispatchEvent(new MouseEvent('mouseup', { ...at, buttons: 0 }));
+          const mice = await waitForAsync(async () => { const m = await ctl('mice'); return /u1:/.test(m) ? m : null; }, 'the click at the server', 10000);
+          const m = mice.match(/^m:(\d+,\d+) d1:(\d+,\d+) u1:(\d+,\d+)$/);
+          await check(!!m && m[1] === m[2] && m[2] === m[3], `a press comes right after a move to its point (${mice})`);
+        }
+
+        await setStep('rdp: a character from no key goes as Unicode (a Stream Deck, milestone 58)');
+        {
+          const c = canvas();
+          c.focus();
+          await ctl('clear');
+          c.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', key: 'ł', bubbles: true, cancelable: true }));
+          c.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyA', key: 'ł', bubbles: true, cancelable: true }));
+          const keys = await waitForAsync(async () => { const k = await ctl('keys'); return k.includes('u:U+142') ? k : null; }, 'the Unicode key at the server', 10000).catch(() => ctl('keys'));
+          await check(/d:U\+142 u:U\+142/.test(keys) && !/0x1e/.test(keys), `the character arrives, not the key in its place (${keys})`);
+        }
+
+        await setStep('rdp: Type the clipboard and the host\'s password (design 25c, milestone 58)');
+        {
+          const lastToast = () => qa('[data-toast]:not(.leaving) .t-text').map((e) => e.textContent).pop() || '';
+          const nonMods = (k) => k.split(' ').filter((e) => e.startsWith('u:') && e !== 'u:0x2a' && e !== 'u:0x138').length;
+          await window.backend.e2e_clipboard_set({ name: 'Hi!' });
+          await click('[data-rdp-type]');
+          await waitFor(() => q('[data-rdp-type-menu] [data-type-clipboard]'), 'the Type menu', 10000);
+          await check(q('[data-type-clipboard] .hint')?.textContent === '3 characters', `the menu counts the clipboard (${q('[data-type-clipboard] .hint')?.textContent})`);
+          await check(!!q('[data-type-password]:not([aria-disabled])') && hasText("rdp-clip's password"), 'the host\'s saved password is offered');
+          await ctl('clear');
+          await click('[data-type-clipboard]');
+          await waitFor(() => lastToast() === 'Typed 3 characters', 'the typed toast', 15000);
+          await check(!q('[data-rdp-type-menu]'), 'Type clipboard closes the menu and says Typed 3 characters');
+          const k1 = await ctl('keys');
+          await check(nonMods(k1) === 3, `three characters reach the remote as keys (${k1})`);
+          await check(document.activeElement === canvas(), 'the desktop has the keyboard again');
+
+          await ctl('clear');
+          await click('[data-rdp-type]');
+          await waitFor(() => q('[data-type-password]:not([aria-disabled])'), 'the password item', 10000);
+          await click('[data-type-password]');
+          await waitFor(() => lastToast() === 'Typed 1 character', 'the password typed', 15000);
+          const k2 = await ctl('keys');
+          await check(nonMods(k2) === 1, `the saved password reaches the remote, typed by the core (${k2})`);
+
+          await window.backend.e2e_clipboard_set({ name: '' });
+          await click('[data-rdp-type]');
+          await waitFor(() => q('[data-type-clipboard][aria-disabled="true"]'), 'the greyed clipboard item', 10000);
+          await check(q('[data-type-clipboard]').dataset.reason === 'The clipboard holds no text', 'with no text on the clipboard Type clipboard is greyed and says why');
+          await click('[data-rdp-type]');
+          await waitFor(() => !q('[data-rdp-type-menu]'), 'the menu closed', 5000);
+        }
+
         await setStep('rdp: an SSH tab behind the desktop keeps its size and its picture (owner, herdr)');
         {
           await click('.tab', 'local');

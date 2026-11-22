@@ -3,7 +3,7 @@
 // Files view follow the focused pane. With no tab open it shows the "No open
 // sessions" start page.
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../state/app';
 import { chordLabel } from '../lib/keymap';
 import { colorStyle } from '../lib/colors';
@@ -20,6 +20,7 @@ import { fullScreen, useFullScreen } from './fullscreen';
 import { FullScreenSplit } from './MonitorsUi';
 import { FullScreenBar } from './FullScreenBar';
 import { TabMenu } from './TabMenu';
+import { listenTyped, TypeMenuButton } from './RdpTypeMenu';
 
 // Stays mounted while another view (Keys, Credentials, Settings) is shown, with
 // `shown` false: unmounting it disposed every xterm.js terminal and its scrollback.
@@ -42,8 +43,10 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
   onManageTunnels: (alias: string) => void;
   onConnect: (alias: string, newTab: boolean) => void;
 }) {
-  const { os, catalog } = useApp();
+  const { os, catalog, notify } = useApp();
   const { tabs, panes, active } = useSessions();
+  // A Type's outcome (milestone 58, design 25c3), whichever tab it went to.
+  useEffect(() => listenTyped((text, kind) => { notify(text, kind); }), [notify]);
   const tablist = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState(false);
   // The RDP statistics overlay (milestone 34), for every RDP tab while it is on.
@@ -176,6 +179,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           {ready && !tab.graphicsSwitching && tab.graphicsNote && <span className="warn-t trunc" data-rdp-graphics-note title={tab.graphicsNote}>Mode not changed</span>}
           {ready && <button className="tbtn" data-rdp-stats-toggle aria-pressed={stats} title="Show what the desktop costs: frames, bandwidth, codec"
             onClick={() => setStats((v) => !v)}><Icon name="info" size="sm" /><span className="tb-l">Stats</span></button>}
+          {ready && tab.session && <TypeMenuButton session={tab.session} alias={tab.alias} />}
           {ready && <FullScreenSplit onFullScreen={() => fullScreen.enter(activeTab.id)}
             onAllMonitors={() => sessions.enterAllMonitors(activeTab.id, (t) => fullScreen.enter(t))} />}
           {ready

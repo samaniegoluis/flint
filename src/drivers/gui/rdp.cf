@@ -225,6 +225,24 @@ fn rpc_rdp_locks(params: str, st: GuiState) -> str! {
     return ok_json()
 }
 
+// A character from no key of the keyboard (a Stream Deck's Text action): typed as
+// Unicode, or by its key where the session's layout has one. A few at most.
+type RdpTextReq struct {
+    tab:  str `json:"tab"`
+    text: str `json:"text"`
+}
+
+fn rpc_rdp_text(params: str, st: GuiState) -> str! {
+    try st.require_open_window()
+    req := try parse_req[RdpTextReq](params)
+    if rdp_type_count(req.text) > 8 {
+        return error(coded(ERR_INVALID, "a key event carries a character or two, not text"))
+    }
+    mut rd := new_freerdp_desktop()
+    _ = try type_into_desktop(mut rd, req.tab, req.text)
+    return ok_json()
+}
+
 // What the Type menu shows: the clipboard's character count and whether the host has
 // a saved password; neither value itself.
 fn rpc_rdp_type_info(params: str, store: LockedVaultStore, mut clip: OsClipboard, st: GuiState) -> str! {
