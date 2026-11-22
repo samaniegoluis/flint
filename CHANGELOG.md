@@ -4,6 +4,21 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.25.0 — 2026-11-22
+
+A remote desktop that types like the machine in front of you. The pointer takes Windows' shapes, Caps Lock and Num Lock follow your keyboard, one click on a field is enough, and a Stream Deck's Text action reaches the remote. The new Type menu sends the clipboard, or the host's saved password after Touch ID or your system or master password, as keystrokes, for the places a paste doesn't reach such as the Windows administrator prompt. On Linux, the app no longer freezes when the clipboard changes with a remote desktop open.
+
+### Added
+
+- **rdp:** Remote pointer shapes, lock-key sync and Type in the core (milestone 58)
+- **ui:** The remote pointer's shape, lock keys in step, one click and the Type menu (milestone 58)
+- **rdp:** Type password asks for presence every time (milestone 58)
+
+### Fixed
+
+- **linux:** Clipboard calls from an RDP tab's worker run on GTK's thread (milestone 58)
+
+
 ## 0.24.0 — 2026-11-22
 
 Root for a while: with Allow sudo for a while turned on in Settings → Access, the root approval window can give a program 2, 5 or 15 minutes of sudo on one host, confirmed once, with every command shown in a notice that counts down. Off by default; turning it off ends every period.
