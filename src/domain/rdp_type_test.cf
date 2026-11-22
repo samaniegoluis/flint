@@ -1,0 +1,105 @@
+package domain
+
+// The events as text, for the assertions: "d2a d1e u1e u2a" (key down/up by scan
+// code in hex), "U+e9" for a Unicode event's press (its release left out), "s:4" a
+// synchronize event.
+fn type_trace(evs: []RdpKeyEvent) -> str {
+    mut parts: []str = []
+    for e in evs {
+        if e.kind == RDP_KEY_EVENT_SYNC {
+            parts.push("s:{e.code}")
+        } else if e.kind == RDP_KEY_EVENT_UNICODE {
+            if e.down {
+                parts.push("U+{e.code:x}")
+            }
+        } else {
+            d := if e.down { "d" } else { "u" }
+            parts.push("{d}{e.code:x}")
+        }
+    }
+    return parts.join(" ")
+}
+
+test "every layout row covers every key" {
+    n := rdp_layout_keys().len()
+    for klid in [0x0409, 0x20409, 0x0809, 0x040A, 0x080A, 0x0407, 0x040C] {
+        l := rdp_layout(klid)
+        assert_eq(utf8_code_points(l.plain).len(), n)
+        assert_eq(utf8_code_points(l.shifted).len(), n)
+        assert_eq(utf8_code_points(l.altgr).len(), l.altgr_keys.len())
+    }
+}
+
+test "US letters, digits and symbols go by scan code" {
+    assert_eq(type_trace(rdp_type_events("aZ1!", 0x0409, 0)), "d1e u1e d2a d2c u2c u2a d2 u2 d2a d2 u2 u2a")
+}
+
+test "a character the layout has not goes as Unicode" {
+    assert_eq(type_trace(rdp_type_events("é€", 0x0409, 0)), "U+e9 U+20ac")
+}
+
+test "an unknown layout types everything as Unicode" {
+    assert(!rdp_layout_known(0x0419))
+    assert_eq(type_trace(rdp_type_events("a1", 0x0419, 0)), "U+61 U+31")
+}
+
+test "a character outside the BMP is a surrogate pair" {
+    evs := rdp_type_events("😀", 0x0409, 0)
+    assert_eq(type_trace(evs), "U+d83d U+de00")
+    assert_eq(evs.len(), 4)
+}
+
+test "US-International's dead keys are followed by Space" {
+    assert_eq(type_trace(rdp_type_events("'a", 0x20409, 0)), "d28 u28 d39 u39 d1e u1e")
+    assert_eq(type_trace(rdp_type_events("\"", 0x20409, 0)), "d2a d28 u28 u2a d39 u39")
+    // Plain US has none.
+    assert_eq(type_trace(rdp_type_events("'", 0x0409, 0)), "d28 u28")
+}
+
+test "AltGr characters hold right Alt" {
+    assert_eq(type_trace(rdp_type_events("@", 0x040A, 0)), "d138 d3 u3 u138")
+    assert_eq(type_trace(rdp_type_events("@", 0x0407, 0)), "d138 d10 u10 u138")
+    assert_eq(type_trace(rdp_type_events("ñÑ", 0x040A, 0)), "d27 u27 d2a d27 u27 u2a")
+}
+
+test "German swaps Y and Z, French is AZERTY" {
+    assert_eq(type_trace(rdp_type_events("z", 0x0407, 0)), "d15 u15")
+    assert_eq(type_trace(rdp_type_events("a1", 0x040C, 0)), "d10 u10 d2a d2 u2 u2a")
+}
+
+test "Caps Lock is off while typing and comes back after" {
+    evs := rdp_type_events("a", 0x0409, RDP_LOCK_CAPS | RDP_LOCK_NUM)
+    assert_eq(type_trace(evs), "s:2 d1e u1e s:6")
+    // Without Caps Lock nothing is synchronized; not knowing it turns it off.
+    assert_eq(type_trace(rdp_type_events("a", 0x0409, RDP_LOCK_NUM)), "d1e u1e")
+    assert_eq(type_trace(rdp_type_events("a", 0x0409, -1)), "s:0 d1e u1e")
+}
+
+test "line breaks are Enter, tabs Tab, other controls left out" {
+    assert_eq(type_trace(rdp_type_events("a\r\nb\nc\td\u{7}", 0x0409, 0)), "d1e u1e d1c u1c d30 u30 d1c u1c d2e u2e df uf d20 u20")
+}
+
+test "the count is code points, CR LF as one" {
+    assert_eq(rdp_type_count("añ😀"), 3)
+    assert_eq(rdp_type_count("a\r\nb"), 3)
+    assert_eq(rdp_type_count(""), 0)
+}
+
+fuzz "every key pressed is released" |s: str, klid: i64| {
+    layouts := [0x0409, 0x20409, 0x0809, 0x040A, 0x080A, 0x0407, 0x040C, klid]
+    for l in layouts {
+        mut held: map[i64]i64 = {}
+        for e in rdp_type_events(s, l, 4) {
+            if e.kind == RDP_KEY_EVENT_SYNC {
+                continue
+            }
+            k := if e.kind == RDP_KEY_EVENT_UNICODE { e.code + 0x100000 } else { e.code }
+            prev := if held.contains(k) { held[k] } else { 0 }
+            held[k] = if e.down { prev + 1 } else { prev - 1 }
+            assert(held[k] >= 0 && held[k] <= 1)
+        }
+        for _, v in held {
+            assert_eq(v, 0)
+        }
+    }
+}

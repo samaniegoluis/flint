@@ -444,6 +444,19 @@ type RemoteDesktop interface {
     mut rd_wait(tab: str, wait_ms: i64) -> RdpEvent
     mut rd_key(tab: str, code: str, down: bool) -> void!
     mut rd_pointer(tab: str, p: RdpPointer) -> void!
+    // Milestone 58: the remote's Caps, Num and Scroll Lock set to `flags`
+    // (RDP_LOCK_*), with a synchronize event, as when the tab takes the focus.
+    mut rd_sync_locks(tab: str, flags: i64) -> void!
+    // The lock keys last set with rd_sync_locks, -1 before the first.
+    rd_locks(tab: str) -> i64
+    // The keyboard layout (a Windows KLID) the tab's connection gave the server, 0
+    // when it is not connected.
+    rd_keyboard_layout(tab: str) -> i64
+    // Sends one event of a Type (rdp_type_events), paced so the remote takes them all.
+    // Fails `network` when the tab is closed.
+    mut rd_type_event(tab: str, e: RdpKeyEvent) -> void!
+    // Where the tab's connection goes, as rdp_cert_addr writes it ("" when it has none).
+    rd_address(tab: str) -> str
     // Milestone 31 (D-074): tells the server whether this machine's clipboard holds
     // text, without sending it; the server asks for it when someone pastes there, as
     // an `rd_wait` event of kind `clip_request`, answered with `rd_clip_answer` (the
@@ -487,6 +500,8 @@ type DesktopSink interface {
     // Milestone 35: the tab's graphics mode is now `graphics` (RDP_GRAPHICS), run by the
     // engine as `sw.graphics` (`sw.why` ""), or it stayed as it was and `sw.why` says why.
     mut desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch)
+    // Milestone 58: the remote pointer changed.
+    mut desktop_cursor(tab: str, c: RdpCursor)
 }
 
 // The remote vault server's vaults (adapters/serverfs, milestones 42 and 45, D-097,

@@ -237,6 +237,9 @@ fn run_remote_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P: Prompter, K
         if ev.kind == RDP_EVENT_CLIP_REQUEST {
             answer_remote_paste(mut rd, mut clip, req.tab, sink.desktop_window_open())
         }
+        if ev.kind == RDP_EVENT_POINTER {
+            sink.desktop_cursor(req.tab, ev.cursor)
+        }
     }
 }
 
@@ -390,6 +393,114 @@ fn send_desktop_key[R: RemoteDesktop](mut rd: R, tab: str, code: str, down: bool
 fn send_desktop_pointer[R: RemoteDesktop](mut rd: R, tab: str, p: RdpPointer) -> void! {
     try check_rdp_pointer(p)
     try rd.rd_pointer(tab, p)
+}
+
+// ---- Lock keys and Type (milestone 58, design 25c) ----------------------------------
+
+// The remote's Caps, Num and Scroll Lock as this machine's (RDP_LOCK_* flags), sent
+// when the tab connects and whenever it takes the focus or a lock key changes.
+fn sync_desktop_locks[R: RemoteDesktop](mut rd: R, tab: str, flags: i64) -> void! {
+    if flags < 0 || flags > (RDP_LOCK_SCROLL | RDP_LOCK_NUM | RDP_LOCK_CAPS) {
+        return error(coded(ERR_INVALID, "lock keys are a set of Scroll, Num and Caps Lock"))
+    }
+    try rd.rd_sync_locks(tab, flags)
+}
+
+// Types `text` into the tab as key events (rdp_type_events) and returns how many
+// characters it typed. The text is never logged and never in an error.
+fn type_into_desktop[R: RemoteDesktop](mut rd: R, tab: str, text: str) -> i64! {
+    n := rdp_type_count(text)
+    if n == 0 {
+        return error(coded(ERR_INVALID, "there is no text to type"))
+    }
+    if n > RDP_TYPE_MAX_CHARS {
+        return error(coded(ERR_INVALID, "{n} characters is too much to type; Type takes up to {RDP_TYPE_MAX_CHARS}"))
+    }
+    klid := rd.rd_keyboard_layout(tab)
+    if klid == 0 {
+        return error(coded(ERR_NETWORK, "the remote desktop is not connected"))
+    }
+    // Bounded: at most RDP_TYPE_MAX_CHARS characters, each a few paced events; a tab
+    // that closes meanwhile stops it (Principle 8).
+    for e in rdp_type_events(text, klid, rd.rd_locks(tab)) {
+        try rd.rd_type_event(tab, e)
+    }
+    return n
+}
+
+// *Type clipboard*: this machine's clipboard text typed into the tab.
+fn type_clipboard_into_desktop[R: RemoteDesktop, L: Clipboard](mut rd: R, mut clip: L, tab: str) -> i64! {
+    content := try clip.clipboard_read()
+    if content.text.len() == 0 {
+        return error(coded(ERR_NOT_FOUND, "the clipboard holds no text"))
+    }
+    return try type_into_desktop(mut rd, tab, content.text)
+}
+
+// The saved password of RDP host `h`: its own, else its credential's ("" for none).
+fn rdp_saved_password[C: Crypto](crypto: C, session: VaultSession, cat: Catalog, h: Host) -> str! {
+    if h.password.len() > 0 {
+        return try open_secret(crypto, session, "hosts", h.id, "password", h.password)
+    }
+    if h.credential_id.len() > 0 {
+        idx := cred_index_by_id(cat.creds, h.credential_id)
+        if idx >= 0 {
+            cred := cat.creds[usize(idx)]
+            if cred.password.len() > 0 {
+                return try open_secret(crypto, session, "credentials", cred.id, "password", cred.password)
+            }
+        }
+    }
+    return ""
+}
+
+// Whether RDP host `h` has a saved password, without opening it.
+fn rdp_has_saved_password(cat: Catalog, h: Host) -> bool {
+    if h.password.len() > 0 {
+        return true
+    }
+    if h.credential_id.len() > 0 {
+        idx := cred_index_by_id(cat.creds, h.credential_id)
+        return idx >= 0 && cat.creds[usize(idx)].password.len() > 0
+    }
+    return false
+}
+
+// *Type <host>'s password*: the core opens the saved password and types it itself,
+// so it never reaches the page (Principle 6). Only into a tab connected to that
+// host's own address: the page cannot send one host's password to another.
+fn type_host_password_into_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop](crypto: C, store: S, session: VaultSession, mut rd: R, tab: str, alias: str) -> i64! {
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    if !is_rdp_host(h) {
+        return error(coded(ERR_HOST_TYPE, "'{h.alias}' is an SSH host; Type types into a remote desktop"))
+    }
+    if rd.rd_address(tab) != rdp_cert_addr(h.hostname, h.port) {
+        return error(coded(ERR_INVALID, "this tab is not connected to '{h.alias}'"))
+    }
+    password := try rdp_saved_password(crypto, session, cat, h)
+    defer crypto.wipe_text(password)
+    if password.len() == 0 {
+        return error(coded(ERR_NOT_FOUND, "'{h.alias}' has no saved password"))
+    }
+    return try type_into_desktop(mut rd, tab, password)
+}
+
+// What the Type menu shows (design 25c1, 25c2): the clipboard's character count (0:
+// no text) and whether the host has a saved password. Neither the text nor the
+// password leaves the core.
+type RdpTypeInfo struct {
+    clipboard_chars: i64 `json:"clipboard_chars"`
+    has_password: bool `json:"has_password"`
+}
+
+fn desktop_type_info[S: VaultStore, L: Clipboard](store: S, mut clip: L, alias: str) -> RdpTypeInfo! {
+    // A clipboard that cannot be read counts as holding no text.
+    content := clip.clipboard_read() or ClipboardContent{ text: "", mime: "", image: "" }
+    chars := rdp_type_count(content.text)
+    cat := try load_catalog(store)
+    h := try require_host(cat.hosts, alias)
+    return RdpTypeInfo{ clipboard_chars: chars, has_password: is_rdp_host(h) && rdp_has_saved_password(cat, h) }
 }
 
 // What the tab's desktop has done since it opened (milestone 34).

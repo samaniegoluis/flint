@@ -299,6 +299,26 @@ fn rdp_closed_by_tab(msg: str) -> bool {
 // Milestone 35: the tab asked for another graphics mode (RDP_GRAPHICS, in `message`),
 // which a reconnect at the desktop's current size (`width` x `height`) gives.
 RDP_EVENT_GRAPHICS: str = "graphics"
+// Milestone 58: the remote pointer changed (`cursor`).
+RDP_EVENT_POINTER: str = "pointer"
+
+// The remote pointer's shape (milestone 58). `action` "image" hands the page a new
+// image (`id`, its size, hotspot and RGBA rows in base64), which it keeps by id; "set"
+// shows image `id`; "hidden" hides the pointer; "default" is the system's arrow.
+type RdpCursor struct {
+    action: str
+    id: i64
+    width: i64
+    height: i64
+    hot_x: i64
+    hot_y: i64
+    rgba: str
+}
+
+RDP_CURSOR_IMAGE: str = "image"
+RDP_CURSOR_SET: str = "set"
+RDP_CURSOR_HIDDEN: str = "hidden"
+RDP_CURSOR_DEFAULT: str = "default"
 
 type RdpEvent struct {
     kind: str
@@ -308,6 +328,8 @@ type RdpEvent struct {
     // Milestone 38: with `resize` and `graphics`, the layout the reconnect keeps
     // (empty: one monitor of `width` x `height`).
     monitors: []RdpMonitor
+    // Milestone 58: with `pointer`, the pointer's change.
+    cursor: RdpCursor
 }
 
 // The question for a certificate, the RDP twin of an SSH host key's (design 22d1,

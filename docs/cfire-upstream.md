@@ -3240,3 +3240,14 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** cfire mangles (or refuses, with a clear error) identifiers that collide with
   the macros of the platform headers it includes, or `#undef`s them after including
   `<windows.h>` (`NOMINMAX` covers only `min`/`max`).
+
+### CF-182 · bug · `confirmed`: two `for i, x in xs` loops over the same slice in one function do not compile
+- **Seen (milestone 58):** `src/domain/rdp_type.cf` walks one slice of scan codes twice,
+  each time as `for i, k in keys`; the C++ fails with `redefinition of '_col_i'`: the
+  collection temporary is named after the index variable, in the function's scope, not
+  the loop's.
+- **Repro (cfire 0.12.2, `cfire eval`):** `keys := [1, 2]` · `mut n := 0` ·
+  `for i, k in keys { n += i + k }` · `for i, k in keys { n += i * k }` ·
+  `println("{n}")` → `error: redefinition of '_col_i'`.
+- **Workaround:** each loop names its variables differently (`for j, kk in keys`).
+- **Ideal:** the temporary lives inside the loop's own block (or takes a unique name).

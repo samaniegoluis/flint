@@ -336,6 +336,22 @@ type DesktopGraphics struct {
     message:  str `json:"message"`
 }
 
+// The remote pointer's change (milestone 58), as "rdp:cursor".
+type DesktopCursor struct {
+    tab:    str `json:"tab"`
+    action: str `json:"action"`
+    id:     i64 `json:"id"`
+    width:  i64 `json:"width"`
+    height: i64 `json:"height"`
+    hot_x:  i64 `json:"hot_x"`
+    hot_y:  i64 `json:"hot_y"`
+    rgba:   str `json:"rgba"`
+}
+
+fn (mut self: GuiDesktopSink) desktop_cursor(tab: str, c: RdpCursor) {
+    self.app.emit("rdp:cursor", DesktopCursor{ tab: tab, action: c.action, id: c.id, width: c.width, height: c.height, hot_x: c.hot_x, hot_y: c.hot_y, rgba: c.rgba })
+}
+
 fn (mut self: GuiDesktopSink) desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch) {
     self.app.emit("rdp:graphics", DesktopGraphics{ tab: tab, graphics: graphics, engine: sw.graphics, rtt_ms: sw.rtt_ms, message: sw.why })
 }

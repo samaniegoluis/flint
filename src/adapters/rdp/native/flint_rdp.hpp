@@ -117,6 +117,9 @@ typedef struct _FILEDESCRIPTORW FILEDESCRIPTORW;
 #include <freerdp/channels/rdpgfx.h>
 #include <freerdp/codec/h264.h>
 #include <freerdp/crypto/certificate.h>
+#include <freerdp/crypto/crypto.h>
+#include <freerdp/codec/color.h>
+#include <freerdp/graphics.h>
 #include <freerdp/event.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/gdi/gfx.h>
@@ -263,6 +266,7 @@ inline constexpr int EV_RESIZE = 2;
 inline constexpr int EV_CLIP_TEXT = 3;     // the remote copied text (in `detail`)
 inline constexpr int EV_CLIP_REQUEST = 4;  // the remote pastes: it wants this machine's text
 inline constexpr int EV_GRAPHICS = 5;      // reconnect in the mode in `detail`, at w x h
+inline constexpr int EV_POINTER = 6;       // the remote pointer changed (`detail`, see Pointers)
 
 // A quiet second with no update, after some, before the whole desktop is read again.
 inline constexpr int64_t REREAD_QUIET_MS = 1000;
@@ -434,6 +438,13 @@ struct Tab {
     int32_t shadow_w = 0, shadow_h = 0;
     // A graphics mode the page asked for, waiting for `wait` ("": none).
     std::string want_graphics;
+    // The remote pointer (milestone 58), under `mu`: images not yet handed to the page,
+    // in order, and the pointer shown now once it changed ("": no change). They
+    // outlive a reconnect, as the page's cache does.
+    std::vector<std::string> pointer_images;
+    std::string pointer_active;
+    // The lock keys last sent with a synchronize event (KBD_SYNC_*), -1 for none yet.
+    std::atomic<int32_t> locks{-1};
     // Whether the last open wiped the password from FreeRDP's backup of the settings
     // too (milestone 36): for the tests.
     std::atomic<bool> creds_wiped{false};
@@ -551,6 +562,96 @@ inline BOOL on_desktop_resize(rdpContext* ctx) {
     mark_all_locked(*t);
     t->cv.notify_all();
     return TRUE;
+}
+
+// ---- Pointers (milestone 58) ---------------------------------------------------------
+//
+// The server's pointer shapes. Each image FreeRDP creates gets an id that is never
+// reused (across reconnects too), is turned into RGBA once and queued for the page,
+// which keeps it by id; setting a pointer then only names it. `wait` hands them out as
+// EV_POINTER events whose `detail` is one of:
+//
+//   image <id> <w> <h> <hot x> <hot y> <base64 RGBA rows>
+//   set <id>      the pointer is that image
+//   hidden        no pointer (the remote hid it)
+//   default       the system's arrow
+
+inline constexpr uint32_t POINTER_MAX_SIDE = 256;  // larger ones fall back to the arrow
+
+struct FlintPointer {
+    rdpPointer base;  // first: FreeRDP allocates Pointer_Prototype->size bytes
+    uint64_t id;
+    bool usable;
+};
+
+inline std::atomic<uint64_t>& pointer_ids() { static std::atomic<uint64_t> n{0}; return n; }
+
+inline void pointer_active_locked(Tab& t, std::string what) {
+    t.pointer_active = std::move(what);
+    t.cv.notify_all();
+}
+
+inline BOOL on_pointer_new(rdpContext* ctx, rdpPointer* p) {
+    auto* fp = reinterpret_cast<FlintPointer*>(p);
+    fp->id = pointer_ids().fetch_add(1) + 1;
+    fp->usable = false;
+    uint32_t w = p->width, h = p->height;
+    if (w == 0 || h == 0 || w > POINTER_MAX_SIDE || h > POINTER_MAX_SIDE) return TRUE;
+    std::vector<BYTE> rgba(static_cast<size_t>(w) * h * 4);
+    if (!freerdp_image_copy_from_pointer_data(rgba.data(), PIXEL_FORMAT_RGBA32, w * 4, 0, 0, w, h, p->xorMaskData,
+                                              p->lengthXorMask, p->andMaskData, p->lengthAndMask, p->xorBpp,
+                                              ctx->gdi ? &ctx->gdi->palette : nullptr))
+        return TRUE;
+    char* b64 = crypto_base64_encode(rgba.data(), rgba.size());
+    if (!b64) return TRUE;
+    std::string line = "image " + std::to_string(fp->id) + " " + std::to_string(w) + " " + std::to_string(h) + " " +
+                       std::to_string(p->xPos) + " " + std::to_string(p->yPos) + " " + b64;
+    free(b64);
+    fp->usable = true;
+    Tab* t = ctx_of(ctx)->tab;
+    std::lock_guard<std::mutex> g(t->mu);
+    t->pointer_images.push_back(std::move(line));
+    t->cv.notify_all();
+    return TRUE;
+}
+
+inline void on_pointer_free(rdpContext*, rdpPointer*) {}
+
+inline BOOL on_pointer_set(rdpContext* ctx, rdpPointer* p) {
+    auto* fp = reinterpret_cast<FlintPointer*>(p);
+    Tab* t = ctx_of(ctx)->tab;
+    std::lock_guard<std::mutex> g(t->mu);
+    pointer_active_locked(*t, fp->usable ? "set " + std::to_string(fp->id) : "default");
+    return TRUE;
+}
+
+inline BOOL on_pointer_set_null(rdpContext* ctx) {
+    Tab* t = ctx_of(ctx)->tab;
+    std::lock_guard<std::mutex> g(t->mu);
+    pointer_active_locked(*t, "hidden");
+    return TRUE;
+}
+
+inline BOOL on_pointer_set_default(rdpContext* ctx) {
+    Tab* t = ctx_of(ctx)->tab;
+    std::lock_guard<std::mutex> g(t->mu);
+    pointer_active_locked(*t, "default");
+    return TRUE;
+}
+
+// The server moving the pointer itself: the local one stays where the person has it.
+inline BOOL on_pointer_set_position(rdpContext*, UINT32, UINT32) { return TRUE; }
+
+inline void register_pointer(rdpContext* ctx) {
+    rdpPointer proto{};
+    proto.size = sizeof(FlintPointer);
+    proto.New = on_pointer_new;
+    proto.Free = on_pointer_free;
+    proto.Set = on_pointer_set;
+    proto.SetNull = on_pointer_set_null;
+    proto.SetDefault = on_pointer_set_default;
+    proto.SetPosition = on_pointer_set_position;
+    graphics_register_pointer(ctx->graphics, &proto);
 }
 
 // ---- Display Control -------------------------------------------------------------
@@ -857,6 +958,7 @@ inline BOOL on_post_connect(freerdp* inst) {
     ctx->update->BeginPaint = on_begin_paint;
     ctx->update->EndPaint = on_end_paint;
     ctx->update->DesktopResize = on_desktop_resize;
+    register_pointer(ctx);
     return TRUE;
 }
 
@@ -1687,7 +1789,7 @@ inline int wait(const std::string& id, int64_t wait_ms, int32_t& code, std::stri
     std::unique_lock<std::mutex> g(t->mu);
     auto pending = [&] {
         return t->closed.load() || !t->conn || t->conn->ended.load() || t->want_w != 0 || t->remote_pending || t->request_pending ||
-               !t->want_graphics.empty();
+               !t->want_graphics.empty() || !t->pointer_images.empty() || !t->pointer_active.empty();
     };
     t->cv.wait_for(g, std::chrono::milliseconds(wait_ms), pending);
     if (t->closed.load()) return EV_ENDED;
@@ -1724,6 +1826,16 @@ inline int wait(const std::string& id, int64_t wait_ms, int32_t& code, std::stri
         h = t->height;
         layout_out = layout_text(t->layout);
         return EV_GRAPHICS;
+    }
+    if (!t->pointer_images.empty()) {
+        detail = std::move(t->pointer_images.front());
+        t->pointer_images.erase(t->pointer_images.begin());
+        return EV_POINTER;
+    }
+    if (!t->pointer_active.empty()) {
+        detail = std::move(t->pointer_active);
+        t->pointer_active.clear();
+        return EV_POINTER;
     }
     return EV_RUNNING;
 }
@@ -1902,6 +2014,75 @@ inline int key(const std::string& id, const std::string& code, bool down) {
     std::lock_guard<std::mutex> g(t->input_mu);
     return freerdp_input_send_keyboard_event_ex(c->inst->context->input, down, FALSE, static_cast<UINT32>(sc))
                ? RDP_OK : RDP_ERR_OTHER;
+}
+
+// The lock keys (milestone 58): the remote's Caps, Num and Scroll Lock set to `flags`
+// (KBD_SYNC_*), as mstsc does when it takes the focus: a synchronize event, then a
+// Tab release (FreeRDP's focus-in event). Kept for `typing`.
+inline int sync_locks(const std::string& id, int32_t flags) {
+    auto t = find(id);
+    if (!t || t->closed.load()) return RDP_ERR_CLOSED;
+    auto c = live_conn(*t);
+    if (!c) return RDP_ERR_CLOSED;
+    std::lock_guard<std::mutex> g(t->input_mu);
+    if (!freerdp_input_send_focus_in_event(c->inst->context->input, static_cast<UINT16>(flags & 0x0F))) return RDP_ERR_OTHER;
+    t->locks.store(flags & 0x0F);
+    return RDP_OK;
+}
+
+inline int32_t locks_of(const std::string& id) {
+    auto t = find(id);
+    return t ? t->locks.load() : -1;
+}
+
+// The keyboard layout the tab's connection gave the server (a KLID), 0 for none.
+inline int64_t layout_of(const std::string& id) {
+    auto t = find(id);
+    if (!t) return 0;
+    auto c = live_conn(*t);
+    if (!c) return 0;
+    return static_cast<int64_t>(freerdp_settings_get_uint32(c->inst->context->settings, FreeRDP_KeyboardLayout));
+}
+
+// The host and port the tab's live connection goes to ("" and 0 when it has none).
+inline void address_of(const std::string& id, std::string& host, int64_t& port) {
+    host.clear();
+    port = 0;
+    auto t = find(id);
+    if (!t) return;
+    auto c = live_conn(*t);
+    if (!c) return;
+    const char* h = freerdp_settings_get_string(c->inst->context->settings, FreeRDP_ServerHostname);
+    host = h ? h : "";
+    port = static_cast<int64_t>(freerdp_settings_get_uint32(c->inst->context->settings, FreeRDP_ServerPort));
+}
+
+// Between two events of a Type: Windows' secure desktop drops keys sent faster.
+inline constexpr int TYPE_EVENT_GAP_MS = 4;
+
+// One event of a Type (domain's RdpKeyEvent): `kind` 0 a scan code (0x100 extended),
+// 1 a UTF-16 code unit, 2 the lock keys (a synchronize event alone). Waits
+// TYPE_EVENT_GAP_MS after a key's release.
+inline int type_event(const std::string& id, int32_t kind, int32_t code, bool down) {
+    auto t = find(id);
+    if (!t || t->closed.load()) return RDP_ERR_CLOSED;
+    auto c = live_conn(*t);
+    if (!c) return RDP_ERR_CLOSED;
+    BOOL ok;
+    {
+        std::lock_guard<std::mutex> g(t->input_mu);
+        rdpInput* in = c->inst->context->input;
+        if (kind == 2) {
+            ok = freerdp_input_send_synchronize_event(in, static_cast<UINT32>(code & 0x0F));
+        } else if (kind == 1) {
+            ok = freerdp_input_send_unicode_keyboard_event(in, down ? 0 : KBD_FLAGS_RELEASE, static_cast<UINT16>(code));
+        } else {
+            ok = freerdp_input_send_keyboard_event_ex(in, down, FALSE, static_cast<UINT32>(code));
+        }
+    }
+    if (!ok) return RDP_ERR_OTHER;
+    if (!down || kind == 2) std::this_thread::sleep_for(std::chrono::milliseconds(TYPE_EVENT_GAP_MS));
+    return RDP_OK;
 }
 
 // `kind`: 0 move, 1 down, 2 up, 3 wheel, 4 horizontal wheel. `button`: 0 main, 1

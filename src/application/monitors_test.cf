@@ -98,7 +98,7 @@ test "a reconnect keeps the monitors the desktop spans" {
         RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: "compatible", width: 3640, height: 1920, monitors: layout },
         RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 1280, height: 720, monitors: bad },
     ]
-    mut sink := FakeDesktopSink{ ready: [], locked: false, graphics: [] }
+    mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip0 := no_clipboard()
     try run_remote_desktop(crypto, mut store, s, mut rd, no_prompter(), mut sink, mut clip0, rdp_req("win"))
     assert_eq(rd.opens.len(), 4)

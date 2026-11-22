@@ -58,6 +58,29 @@ type RdpTabReq struct {
     tab: str `json:"tab"`
 }
 
+// Milestone 58: this machine's lock keys (RDP_LOCK_* flags) for the remote.
+type RdpLocksReq struct {
+    tab:   str `json:"tab"`
+    flags: i64 `json:"flags"`
+}
+
+// The Type menu (design 25c): `what` is "clipboard" or "password" (`alias`'s saved
+// password, typed by the core).
+type RdpTypeReq struct {
+    tab:   str `json:"tab"`
+    alias: str `json:"alias"`
+    what:  str `json:"what"`
+}
+
+// A Type's outcome: `count` characters typed, or `code` and `message` when it failed.
+type RdpTyped struct {
+    tab:     str `json:"tab"`
+    what:    str `json:"what"`
+    count:   i64 `json:"count"`
+    code:    str `json:"code"`
+    message: str `json:"message"`
+}
+
 type RdpState struct {
     tab:     str `json:"tab"`
     state:   str `json:"state"`
@@ -107,6 +130,10 @@ fn (self: RdpTabSink) desktop_window_open() -> bool {
 
 fn (mut self: RdpTabSink) desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch) {
     self.events.desktop_graphics(tab, graphics, sw)
+}
+
+fn (mut self: RdpTabSink) desktop_cursor(tab: str, c: RdpCursor) {
+    self.events.desktop_cursor(tab, c)
 }
 
 // The connection, on a worker, until the tab ends.
@@ -186,4 +213,69 @@ fn rpc_rdp_clipboard_announce(params: str, mut clip: OsClipboard, st: GuiState) 
     mut rd := new_freerdp_desktop()
     try announce_desktop_clipboard(mut rd, mut clip, req.tab)
     return ok_json()
+}
+
+// The lock keys (milestone 58): sent when the tab connects, takes the focus or sees a
+// lock key change.
+fn rpc_rdp_locks(params: str, st: GuiState) -> str! {
+    try st.require_open_window()
+    req := try parse_req[RdpLocksReq](params)
+    mut rd := new_freerdp_desktop()
+    try sync_desktop_locks(mut rd, req.tab, req.flags)
+    return ok_json()
+}
+
+// What the Type menu shows: the clipboard's character count and whether the host has
+// a saved password; neither value itself.
+fn rpc_rdp_type_info(params: str, store: LockedVaultStore, mut clip: OsClipboard, st: GuiState) -> str! {
+    try st.require_open_window()
+    try st.require_unlocked()
+    req := try parse_req[RdpTypeReq](params)
+    return json.stringify(try desktop_type_info(store, mut clip, req.alias))
+}
+
+// Checks a Type request; the caller types it on a worker (it takes a second or more).
+fn rdp_type_check(params: str, st: GuiState) -> RdpTypeReq! {
+    try st.require_open_window()
+    // parse_req's own body (CFIRE-UPSTREAM: CF-162, CF-164), as rdp_open_check.
+    req := json.parse[RdpTypeReq](payload: params) or {
+        return error(coded(ERR_INVALID, "malformed request"))
+    }
+    if req.tab.len() == 0 {
+        return error(coded(ERR_INVALID, "Type needs a tab"))
+    }
+    if req.what == "password" {
+        try st.require_unlocked()
+        if req.alias.len() == 0 {
+            return error(coded(ERR_INVALID, "Type password needs the host"))
+        }
+    } else if req.what != "clipboard" {
+        return error(coded(ERR_INVALID, "Type takes the clipboard or the host's password"))
+    }
+    return req
+}
+
+// Types, then tells the page how many characters went ("rdp:typed").
+fn run_gui_rdp_type(mut app: webui.App, c: Sodium, store: LockedVaultStore, vs: VaultSession, board: OsClipboard, req: RdpTypeReq) {
+    mut rd := new_freerdp_desktop()
+    mut clip := board
+    mut out := RdpTyped{ tab: req.tab, what: req.what, count: 0, code: "", message: "" }
+    if req.what == "password" {
+        out.count = type_host_password_into_desktop(c, store, vs, mut rd, req.tab, req.alias) or err {
+            msg := "{err.message()}"
+            out.code = error_code_of(msg)
+            out.message = error_text_of(msg)
+            app.emit("rdp:typed", out)
+            return
+        }
+    } else {
+        out.count = type_clipboard_into_desktop(mut rd, mut clip, req.tab) or err {
+            msg := "{err.message()}"
+            out.code = error_code_of(msg)
+            out.message = error_text_of(msg)
+            app.emit("rdp:typed", out)
+            return
+        }
+    }
+    app.emit("rdp:typed", out)
 }

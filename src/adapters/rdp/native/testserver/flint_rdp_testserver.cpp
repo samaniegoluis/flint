@@ -22,6 +22,12 @@
 //   drop         closes every client's connection without a goodbye
 //   peers        how many clients are connected
 //   pointer      where the last mouse event landed, "x,y" ("-" for none)
+//   mice         the mouse events received, "m:x,y d1:x,y u1:x,y …" (m move, d/u a
+//                button's press or release, 1-3 the button)
+//   sync         the lock keys of the last synchronize event, "-" for none
+//   cursor <k>   sends every client a pointer: new (a 32x32 image, cache 0, hotspot
+//                3,4), cached (cache 0 again), null (hidden) or default (the arrow)
+// Unicode key events are in `keys` as "d:U+e9 u:U+e9".
 
 #if defined(_WIN32)
 // Winsock before winpr, which includes <windows.h>.
@@ -38,6 +44,7 @@
 #include <freerdp/freerdp.h>
 #include <freerdp/listener.h>
 #include <freerdp/peer.h>
+#include <freerdp/pointer.h>
 #include <freerdp/channels/channels.h>
 #include <freerdp/channels/wtsvc.h>
 #include <freerdp/channels/cliprdr.h>
@@ -89,6 +96,8 @@ std::string g_pasted = "-";  // the client's last answer
 std::string g_formats;       // the client's last format list
 std::vector<std::string> g_keys;
 std::string g_pointer = "-";
+std::vector<std::string> g_mice;
+std::string g_sync = "-";
 const char* g_cert = nullptr;
 const char* g_key = nullptr;
 
@@ -102,6 +111,9 @@ struct PeerContext {
 struct Peer {
     freerdp_peer* client = nullptr;
     std::atomic<bool> drop{false};
+    // A pointer to send from the peer's own thread (`cursor`): 0 none, 1 new,
+    // 2 cached, 3 null, 4 default.
+    std::atomic<int> cursor{0};
 };
 
 PeerContext* pctx(rdpContext* c) { return reinterpret_cast<PeerContext*>(c); }
@@ -239,14 +251,60 @@ BOOL on_keyboard(rdpInput* input, UINT16 flags, UINT8 code) {
     return TRUE;
 }
 
-BOOL on_unicode(rdpInput*, UINT16, UINT16) { return TRUE; }
-BOOL on_mouse(rdpInput*, UINT16, UINT16 x, UINT16 y) {
+BOOL on_unicode(rdpInput*, UINT16 flags, UINT16 code) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%s:U+%x", (flags & KBD_FLAGS_RELEASE) ? "u" : "d", code);
+    std::lock_guard<std::mutex> g(g_mu);
+    if (g_keys.size() < 4096) g_keys.emplace_back(buf);
+    return TRUE;
+}
+BOOL on_mouse(rdpInput*, UINT16 flags, UINT16 x, UINT16 y) {
     std::lock_guard<std::mutex> g(g_mu);
     g_pointer = std::to_string(x) + "," + std::to_string(y);
+    std::string at = std::to_string(x) + "," + std::to_string(y);
+    std::string what;
+    int b = (flags & PTR_FLAGS_BUTTON1) ? 1 : (flags & PTR_FLAGS_BUTTON2) ? 2 : (flags & PTR_FLAGS_BUTTON3) ? 3 : 0;
+    if (b) what = std::string((flags & PTR_FLAGS_DOWN) ? "d" : "u") + std::to_string(b) + ":" + at;
+    else if (flags & PTR_FLAGS_MOVE) what = "m:" + at;
+    if (!what.empty() && g_mice.size() < 4096) g_mice.push_back(what);
     return TRUE;
 }
 BOOL on_ext_mouse(rdpInput*, UINT16, UINT16, UINT16) { return TRUE; }
-BOOL on_sync(rdpInput*, UINT32) { return TRUE; }
+BOOL on_sync(rdpInput*, UINT32 flags) {
+    std::lock_guard<std::mutex> g(g_mu);
+    g_sync = std::to_string(flags);
+    return TRUE;
+}
+
+// A pointer for `cursor`, on the peer's thread.
+void send_cursor(freerdp_peer* client, int kind) {
+    rdpPointerUpdate* pu = client->context->update->pointer;
+    if (kind == 1) {
+        // A 32x32 arrow-ish square: 32 bpp XOR rows, opaque, and an AND mask of zeros.
+        static std::vector<BYTE> xorm(32 * 32 * 4), andm(32 * 32 / 8, 0);
+        for (size_t i = 0; i < 32 * 32; ++i) { xorm[i * 4] = 0x20; xorm[i * 4 + 1] = 0x40; xorm[i * 4 + 2] = 0x80; xorm[i * 4 + 3] = 0xFF; }
+        POINTER_NEW_UPDATE n{};
+        n.xorBpp = 32;
+        n.colorPtrAttr.cacheIndex = 0;
+        n.colorPtrAttr.hotSpotX = 3;
+        n.colorPtrAttr.hotSpotY = 4;
+        n.colorPtrAttr.width = 32;
+        n.colorPtrAttr.height = 32;
+        n.colorPtrAttr.lengthXorMask = static_cast<UINT16>(xorm.size());
+        n.colorPtrAttr.xorMaskData = xorm.data();
+        n.colorPtrAttr.lengthAndMask = static_cast<UINT16>(andm.size());
+        n.colorPtrAttr.andMaskData = andm.data();
+        (void)pu->PointerNew(client->context, &n);
+    } else if (kind == 2) {
+        POINTER_CACHED_UPDATE c{};
+        c.cacheIndex = 0;
+        (void)pu->PointerCached(client->context, &c);
+    } else {
+        POINTER_SYSTEM_UPDATE sp{};
+        sp.type = kind == 3 ? SYSPTR_NULL : SYSPTR_DEFAULT;
+        (void)pu->PointerSystem(client->context, &sp);
+    }
+}
 BOOL on_refresh(rdpContext* ctx, BYTE, const RECTANGLE_16*) { return draw(ctx->peer); }
 BOOL on_suppress(rdpContext*, BYTE, const RECTANGLE_16*) { return TRUE; }
 
@@ -332,6 +390,7 @@ void peer_loop(freerdp_peer* client) {
             if (WaitForMultipleObjects(n, handles, FALSE, 100) == WAIT_FAILED) break;
             if (client->CheckFileDescriptor(client) != TRUE) break;
             if (WTSVirtualChannelManagerCheckFileDescriptor(pctx(client->context)->vcm) != TRUE) break;
+            if (int k = self.cursor.exchange(0)) send_cursor(client, k);
         }
         { std::lock_guard<std::mutex> g(g_mu); g_peers.erase(&self); }
         if (self.drop.load()) {
@@ -384,7 +443,19 @@ std::string run(const std::string& line) {
         for (auto& k : g_keys) { if (!out.empty()) out += " "; out += k; }
         return out.empty() ? "-" : out;
     }
-    if (cmd == "clear") { g_pasted = "-"; g_formats.clear(); g_keys.clear(); g_pointer = "-"; return "ok"; }
+    if (cmd == "clear") { g_pasted = "-"; g_formats.clear(); g_keys.clear(); g_pointer = "-"; g_mice.clear(); g_sync = "-"; return "ok"; }
+    if (cmd == "mice") {
+        std::string out;
+        for (auto& m : g_mice) { if (!out.empty()) out += " "; out += m; }
+        return out.empty() ? "-" : out;
+    }
+    if (cmd == "sync") return g_sync;
+    if (cmd == "cursor") {
+        int k = arg == "new" ? 1 : arg == "cached" ? 2 : arg == "null" ? 3 : arg == "default" ? 4 : 0;
+        if (!k) return "unknown";
+        for (Peer* p : g_peers) p->cursor.store(k);
+        return "ok";
+    }
     if (cmd == "drop") { for (Peer* p : g_peers) p->drop.store(true); return "ok"; }
     if (cmd == "peers") return std::to_string(g_peers.size());
     if (cmd == "pointer") return g_pointer;

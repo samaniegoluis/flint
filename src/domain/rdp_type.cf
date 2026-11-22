@@ -1,0 +1,234 @@
+package domain
+
+// Type (milestone 58, design 25c): text sent to an RDP session as key events, for the
+// places a paste does not reach (Windows' administrator prompt on the secure desktop).
+// A character the session's keyboard layout has on a key goes as that key's scan
+// code, with Shift or AltGr held as the layout needs; one it has not goes as a Unicode
+// key event. Caps Lock is turned off on the remote for the typing and put back after,
+// so the case comes out as written.
+
+// One input event of a Type: a key's scan code ("key", 0x100 for an extended key), a
+// UTF-16 code unit ("unicode") or the lock keys' state ("sync", KBD_SYNC_* flags).
+type RdpKeyEvent struct {
+    kind: str
+    code: i64
+    down: bool
+}
+
+RDP_KEY_EVENT_KEY: str = "key"
+RDP_KEY_EVENT_UNICODE: str = "unicode"
+RDP_KEY_EVENT_SYNC: str = "sync"
+
+// The lock keys of RDP's synchronize event.
+RDP_LOCK_SCROLL: i64 = 1
+RDP_LOCK_NUM: i64 = 2
+RDP_LOCK_CAPS: i64 = 4
+
+// The most a Type sends: a clipboard longer than this is refused, not cut.
+RDP_TYPE_MAX_CHARS: i64 = 2000
+
+SC_SHIFT: i64 = 0x2A
+SC_ALTGR: i64 = 0x138
+SC_SPACE: i64 = 0x39
+SC_ENTER: i64 = 0x1C
+SC_TAB: i64 = 0x0F
+
+// The character keys of a PC keyboard, in the order the layout rows below list them:
+// the key left of 1, the digit row, the top row, the key above Enter (0x2B), the home
+// row, the ISO key left of Z (0x56), the bottom row.
+fn rdp_layout_keys() -> []i64 {
+    return [0x29, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x2B, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x56, 0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35]
+}
+
+// One key press that types a character.
+type RdpStroke struct {
+    code: i64
+    shift: bool
+    altgr: bool
+    // A dead key: typed, then Space, which gives the character itself.
+    dead: bool
+}
+
+// A layout as three rows of characters over rdp_layout_keys (a space: the key types
+// nothing there, or Flint does not rely on it), the dead keys among them, and the
+// AltGr characters Flint types (scan code and character).
+type RdpLayout struct {
+    plain: str
+    shifted: str
+    dead: str
+    altgr_keys: []i64
+    altgr: str
+}
+
+// The layouts Flint types by scan code, by Windows layout id (KLID). Any other layout
+// gets Unicode events only: a wrong table would type the wrong character into a
+// password.
+fn rdp_layout(klid: i64) -> RdpLayout {
+    us_plain := "`1234567890-=qwertyuiop[]\\asdfghjkl;' zxcvbnm,./"
+    us_shifted := "~!@#$%^&*()_+QWERTYUIOP\{\}|ASDFGHJKL:\" ZXCVBNM<>?"
+    if klid == 0x0409 {
+        return RdpLayout{ plain: us_plain, shifted: us_shifted, dead: "", altgr_keys: [], altgr: "" }
+    }
+    if klid == 0x20409 {
+        // US-International: ` ' ~ ^ " are dead keys.
+        return RdpLayout{ plain: us_plain, shifted: us_shifted, dead: "`'~^\"", altgr_keys: [], altgr: "" }
+    }
+    if klid == 0x0809 {
+        return RdpLayout{ plain: "`1234567890-=qwertyuiop[]#asdfghjkl;'\\zxcvbnm,./", shifted: "¬!\"£$%^&*()_+QWERTYUIOP\{\}~ASDFGHJKL:@|ZXCVBNM<>?", dead: "", altgr_keys: [0x05], altgr: "€" }
+    }
+    if klid == 0x040A {
+        return RdpLayout{ plain: "º1234567890'¡qwertyuiop`+çasdfghjklñ´<zxcvbnm,.-", shifted: "ª!\"·$%&/()=?¿QWERTYUIOP^*ÇASDFGHJKLÑ¨>ZXCVBNM;:_", dead: "`^´¨", altgr_keys: [0x29, 0x02, 0x03, 0x04, 0x06, 0x07, 0x1A, 0x1B, 0x2B, 0x28], altgr: "\\|@#€¬[]\}\{" }
+    }
+    if klid == 0x080A {
+        return RdpLayout{ plain: "|1234567890'¿qwertyuiop´+\}asdfghjklñ\{<zxcvbnm,.-", shifted: "°!\"#$%&/()=?¡QWERTYUIOP¨*]ASDFGHJKLÑ[>ZXCVBNM;:_", dead: "´¨", altgr_keys: [0x10, 0x0C], altgr: "@\\" }
+    }
+    if klid == 0x0407 {
+        return RdpLayout{ plain: "^1234567890ß´qwertzuiopü+#asdfghjklöä<yxcvbnm,.-", shifted: "°!\"§$%&/()=?`QWERTZUIOPÜ*'ASDFGHJKLÖÄ>YXCVBNM;:_", dead: "^´`", altgr_keys: [0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x10, 0x12, 0x1B, 0x56], altgr: "\{[]\}\\@€~|" }
+    }
+    if klid == 0x040C {
+        return RdpLayout{ plain: "²&é\"'(-è_çà)=azertyuiop^$*qsdfghjklmù<wxcvbn,;:!", shifted: " 1234567890°+AZERTYUIOP¨£µQSDFGHJKLM%>WXCVBN?./§", dead: "^¨", altgr_keys: [0x04, 0x05, 0x06, 0x07, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x12], altgr: "#\{[|\\^@]\}€" }
+    }
+    return RdpLayout{ plain: "", shifted: "", dead: "", altgr_keys: [], altgr: "" }
+}
+
+// Whether Flint types layout `klid` by scan code.
+fn rdp_layout_known(klid: i64) -> bool {
+    return rdp_layout(klid).plain.len() > 0
+}
+
+// The code points of UTF-8 text (an invalid byte is U+FFFD).
+fn utf8_code_points(s: str) -> []i64 {
+    mut out: []i64 = []
+    for r in s.runes() {
+        out.push(i64(r))
+    }
+    return out
+}
+
+// The strokes of a layout by code point. The plain row first, so a character on two
+// keys takes the one with fewer modifiers.
+fn rdp_layout_strokes(l: RdpLayout) -> map[i64]RdpStroke {
+    mut m: map[i64]RdpStroke = {}
+    keys := rdp_layout_keys()
+    dead := utf8_code_points(l.dead)
+    mut dead_set: map[i64]bool = {}
+    for d in dead {
+        dead_set[d] = true
+    }
+    plain := utf8_code_points(l.plain)
+    shifted := utf8_code_points(l.shifted)
+    for i, k in keys {
+        if i < plain.len() && plain[i] != 32 && !m.contains(plain[i]) {
+            m[plain[i]] = RdpStroke{ code: k, shift: false, altgr: false, dead: dead_set.contains(plain[i]) }
+        }
+    }
+    // Distinct names: two `for i, k` loops in one function do not compile (CFIRE-UPSTREAM: CF-182).
+    for j, kk in keys {
+        if j < shifted.len() && shifted[j] != 32 && !m.contains(shifted[j]) {
+            m[shifted[j]] = RdpStroke{ code: kk, shift: true, altgr: false, dead: dead_set.contains(shifted[j]) }
+        }
+    }
+    alt := utf8_code_points(l.altgr)
+    for ai, ak in l.altgr_keys {
+        if ai < alt.len() && !m.contains(alt[ai]) {
+            m[alt[ai]] = RdpStroke{ code: ak, shift: false, altgr: true, dead: false }
+        }
+    }
+    return m
+}
+
+fn push_key(mut out: []RdpKeyEvent, code: i64) {
+    out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: code, down: true })
+    out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: code, down: false })
+}
+
+fn push_unicode(mut out: []RdpKeyEvent, cp: i64) {
+    if cp < 0x10000 {
+        out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: cp, down: true })
+        out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: cp, down: false })
+        return
+    }
+    v := cp - 0x10000
+    hi := 0xD800 + (v >> 10)
+    lo := 0xDC00 + (v & 0x3FF)
+    out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: hi, down: true })
+    out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: hi, down: false })
+    out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: lo, down: true })
+    out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: lo, down: false })
+}
+
+// How many characters a Type of `text` counts (what the menu and the toast say): its
+// code points, a CR LF as one.
+fn rdp_type_count(text: str) -> i64 {
+    cps := utf8_code_points(text)
+    mut n: i64 = 0
+    for i, c in cps {
+        if c == 13 && i + 1 < cps.len() && cps[i + 1] == 10 {
+            continue
+        }
+        n += 1
+    }
+    return n
+}
+
+// The events that type `text` on a session whose layout is `klid`, its lock keys
+// `locks` (KBD_SYNC_* flags; -1: not known). A line break is Enter, a tab is Tab;
+// other control characters are left out.
+fn rdp_type_events(text: str, klid: i64, locks: i64) -> []RdpKeyEvent {
+    mut out: []RdpKeyEvent = []
+    known := if locks < 0 { 0 } else { locks }
+    if locks < 0 || (locks & RDP_LOCK_CAPS) != 0 {
+        out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_SYNC, code: known & ~RDP_LOCK_CAPS, down: false })
+    }
+    strokes := rdp_layout_strokes(rdp_layout(klid))
+    cps := utf8_code_points(text)
+    for i, c in cps {
+        if c == 13 {
+            push_key(mut out, SC_ENTER)
+            continue
+        }
+        if c == 10 {
+            if i > 0 && cps[i - 1] == 13 {
+                continue
+            }
+            push_key(mut out, SC_ENTER)
+            continue
+        }
+        if c == 9 {
+            push_key(mut out, SC_TAB)
+            continue
+        }
+        if c == 32 {
+            push_key(mut out, SC_SPACE)
+            continue
+        }
+        if c < 32 || c == 127 {
+            continue
+        }
+        if !strokes.contains(c) {
+            push_unicode(mut out, c)
+            continue
+        }
+        s := strokes[c]
+        if s.shift {
+            out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: SC_SHIFT, down: true })
+        }
+        if s.altgr {
+            out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: SC_ALTGR, down: true })
+        }
+        push_key(mut out, s.code)
+        if s.altgr {
+            out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: SC_ALTGR, down: false })
+        }
+        if s.shift {
+            out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: SC_SHIFT, down: false })
+        }
+        if s.dead {
+            push_key(mut out, SC_SPACE)
+        }
+    }
+    if locks >= 0 && (locks & RDP_LOCK_CAPS) != 0 {
+        out.push(RdpKeyEvent{ kind: RDP_KEY_EVENT_SYNC, code: locks, down: false })
+    }
+    return out
+}

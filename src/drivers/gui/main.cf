@@ -135,6 +135,9 @@ fn main() {
     app.bind_raw("rdp_stats") |params| { return rpc_rdp_stats(params) }
     app.bind_raw("rdp_graphics") |params| { return rpc_rdp_graphics(params, st) }
     app.bind_raw("rdp_clipboard_announce") |params| { return rpc_rdp_clipboard_announce(params, mut clipboard, st) }
+    // Milestone 58: the lock keys and the Type menu (design 25c).
+    app.bind_raw("rdp_locks") |params| { return rpc_rdp_locks(params, st) }
+    app.bind_raw("rdp_type_info") |params| { return rpc_rdp_type_info(params, store, mut clipboard, st) }
     app.bind_raw("window_theme") |params| { return rpc_window_theme(params, mut app) }
     app.bind_raw("dialog_open") |params| { return rpc_dialog_open(params, app) }
     app.bind_raw("dialog_save") |params| { return rpc_dialog_save(params, app) }
@@ -384,6 +387,20 @@ fn main() {
                 mut a := worker_app
                 mut s := worker_store
                 run_gui_rdp(mut a, c, mut s, vs, holder, board, r)
+            }
+            return ok_json()
+        }
+        app.bind_raw("rdp_type") |params| {
+            r := rdp_type_check(params, st) or err {
+                return error("{err.message()}")
+            }
+            worker_app := app
+            worker_store := store
+            vs := st.vault_session()
+            board := clipboard
+            scope.spawn || {
+                mut a := worker_app
+                run_gui_rdp_type(mut a, c, worker_store, vs, board, r)
             }
             return ok_json()
         }

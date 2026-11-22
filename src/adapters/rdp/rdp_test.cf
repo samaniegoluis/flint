@@ -45,6 +45,17 @@ fn wait_frame(tab: str) -> str {
     return ""
 }
 
+// rd_wait, past the pointer changes a server sends on its own (milestone 58).
+fn wait_past_pointers(rd: FreeRdpDesktop, tab: str, wait_ms: i64) -> RdpEvent {
+    for i in 0..50 {
+        ev := rd.rd_wait(tab, wait_ms)
+        if ev.kind != RDP_EVENT_POINTER {
+            return ev
+        }
+    }
+    return RdpEvent{ kind: "pointers", message: "", width: 0, height: 0 }
+}
+
 fn upper_hex(s: str) -> str {
     mut res := ""
     for b in s.bytes() {
@@ -132,7 +143,7 @@ test "the sample server's certificate is refused until trusted, then frames and 
     // No Display Control here: the size is kept and reported for a reconnect, which
     // keeps the frame channel.
     try rd.rd_resize("t-sample", 800, 600)
-    ev := rd.rd_wait("t-sample", 2000)
+    ev := wait_past_pointers(rd, "t-sample", 2000)
     assert_eq(ev.kind, "resize")
     assert_eq(ev.width, 800)
     d2 := try rd.rd_open("t-sample", sample_target(fp), 15000)
@@ -140,7 +151,7 @@ test "the sample server's certificate is refused until trusted, then frames and 
     assert_eq(d2.frame_token, d.frame_token)
     // FreeRDP's backup of the settings lost the password too (milestone 36).
     assert(creds_wiped("t-sample"))
-    assert_eq(rd.rd_wait("t-sample", 200).kind, "running")
+    assert_eq(wait_past_pointers(rd, "t-sample", 200).kind, "running")
     try rd.rd_pointer("t-sample", RdpPointer{ kind: "move", button: 0, x: 10, y: 10, delta: 0 })
     try rd.rd_key("t-sample", "ShiftLeft", true)
     try rd.rd_key("t-sample", "ShiftLeft", false)
@@ -251,7 +262,7 @@ test "a real Windows host resizes in place through Display Control" {
         }
     }
     assert(resized, "the desktop did not become 1280x720")
-    assert_eq(rd.rd_wait("t-live", 100).kind, "running")
+    assert_eq(wait_past_pointers(rd, "t-live", 100).kind, "running")
 }
 
 // Milestone 35: after a quiet second the whole desktop is read again, once, and the
@@ -292,12 +303,12 @@ test "a quiet second re-reads the whole desktop once, and a graphics switch reac
     assert_eq(again.len(), 0)
 
     try rd.rd_set_graphics("t-quiet", "compatible")
-    ev := rd.rd_wait("t-quiet", 2000)
+    ev := wait_past_pointers(rd, "t-quiet", 2000)
     assert_eq(ev.kind, "graphics")
     assert_eq(ev.message, "compatible")
     assert_eq(ev.width, d.width)
     assert_eq(ev.height, d.height)
-    assert_eq(rd.rd_wait("t-quiet", 100).kind, "running")
+    assert_eq(wait_past_pointers(rd, "t-quiet", 100).kind, "running")
     mut msg := ""
     rd.rd_set_graphics("t-none", "compatible") or err { msg = "{err.message()}" }
     assert(msg.starts_with("network:"), msg)
@@ -486,7 +497,7 @@ test "text here is only announced, and sent when the remote pastes" {
     assert(formats == "-" || formats == "13", formats)
     assert_eq(ctl("paste"), "ok")
     assert_eq(ctl_until("pasted", "fail"), "fail")
-    assert_eq(rd.rd_wait("t-clip-out", 300).kind, "running")
+    assert_eq(wait_past_pointers(rd, "t-clip-out", 300).kind, "running")
 }
 
 test "keys reach the server by scancode" {
@@ -502,6 +513,82 @@ test "keys reach the server by scancode" {
     try rd.rd_key("t-clip-keys", "AltRight", true)
     try rd.rd_key("t-clip-keys", "AltRight", false)
     assert_eq(ctl_until("keys", "d:0x15b u:0x15b d:0x138 u:0x138"), "d:0x15b u:0x15b d:0x138 u:0x138")
+}
+
+// Milestone 58: the remote pointer, the lock keys and Type.
+
+test "the remote pointer's image arrives once, then only which one is shown" {
+    if clip_target("").port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    _ = try open_clip(rd, "t-clip-cursor")
+    defer rd.rd_close("t-clip-cursor")
+    assert_eq(ctl("cursor new"), "ok")
+    img := wait_kind(rd, "t-clip-cursor", "pointer")
+    assert_eq(img.cursor.action, "image")
+    assert_eq(img.cursor.width, 32)
+    assert_eq(img.cursor.height, 32)
+    assert_eq(img.cursor.hot_x, 3)
+    assert_eq(img.cursor.hot_y, 4)
+    // 32 x 32 RGBA in base64.
+    assert_eq(img.cursor.rgba.len(), 5464)
+    set := wait_kind(rd, "t-clip-cursor", "pointer")
+    assert_eq(set.cursor.action, "set")
+    assert_eq(set.cursor.id, img.cursor.id)
+    assert_eq(ctl("cursor null"), "ok")
+    assert_eq(wait_kind(rd, "t-clip-cursor", "pointer").cursor.action, "hidden")
+    // From the cache: no new image, the same one shown.
+    assert_eq(ctl("cursor cached"), "ok")
+    again := wait_kind(rd, "t-clip-cursor", "pointer")
+    assert_eq(again.cursor.action, "set")
+    assert_eq(again.cursor.id, img.cursor.id)
+    assert_eq(ctl("cursor default"), "ok")
+    assert_eq(wait_kind(rd, "t-clip-cursor", "pointer").cursor.action, "default")
+}
+
+test "the lock keys reach the server as a synchronize event, and Type's keys and Unicode follow" {
+    if clip_target("").port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    _ = try open_clip(rd, "t-clip-type")
+    defer rd.rd_close("t-clip-type")
+    assert_eq(rd.rd_locks("t-clip-type"), -1)
+    assert_eq(ctl("clear"), "ok")
+    try rd.rd_sync_locks("t-clip-type", RDP_LOCK_CAPS | RDP_LOCK_NUM)
+    assert_eq(ctl_until("sync", "6"), "6")
+    assert_eq(rd.rd_locks("t-clip-type"), 6)
+    // The focus-in event ends with a Tab release, as mstsc's.
+    keys := ctl_until("keys", "u:0xf u:0xf")
+    assert(keys.starts_with("u:0xf"), keys)
+    assert(rd.rd_keyboard_layout("t-clip-type") != 0)
+    assert_eq(rd.rd_address("t-clip-type"), rdp_cert_addr("127.0.0.1", clip_target("").port))
+    assert_eq(ctl("clear"), "ok")
+    for e in [RdpKeyEvent{ kind: RDP_KEY_EVENT_SYNC, code: 2, down: false }, RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: 0x1E, down: true }, RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: 0x1E, down: false }, RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: 0xE9, down: true }, RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: 0xE9, down: false }] {
+        try rd.rd_type_event("t-clip-type", e)
+    }
+    assert_eq(ctl_until("keys", "d:0x1e u:0x1e d:U+e9 u:U+e9"), "d:0x1e u:0x1e d:U+e9 u:U+e9")
+    assert_eq(ctl("sync"), "2")
+    rd.rd_close("t-clip-type")
+    mut msg := ""
+    rd.rd_type_event("t-clip-type", RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: 0x1E, down: true }) or err { msg = "{err.message()}" }
+    assert(msg.len() > 0)
+    assert_eq(rd.rd_address("t-clip-type"), "")
+}
+
+test "a click is a move to its point, the press and the release" {
+    if clip_target("").port == 0 {
+        return
+    }
+    rd := new_freerdp_desktop()
+    _ = try open_clip(rd, "t-clip-click")
+    defer rd.rd_close("t-clip-click")
+    assert_eq(ctl("clear"), "ok")
+    try rd.rd_pointer("t-clip-click", RdpPointer{ kind: "move", button: 0, x: 40, y: 50, delta: 0 })
+    try rd.rd_pointer("t-clip-click", RdpPointer{ kind: "down", button: 0, x: 40, y: 50, delta: 0 })
+    try rd.rd_pointer("t-clip-click", RdpPointer{ kind: "up", button: 0, x: 40, y: 50, delta: 0 })
+    assert_eq(ctl_until("mice", "m:40,50 d1:40,50 u1:40,50"), "m:40,50 d1:40,50 u1:40,50")
 }
 
 test "a connection the server drops ends as lost, at once" {
@@ -636,7 +723,7 @@ test "a desktop across two monitors serves one view per monitor, each its own cr
     // No Display Control on the sample server: the layout comes back for a reconnect.
     layout := pair_layout(512, 768, 512, 0, 512, 768)
     try rd.rd_set_layout("t-mon", layout)
-    ev := rd.rd_wait("t-mon", 2000)
+    ev := wait_past_pointers(rd, "t-mon", 2000)
     assert_eq(ev.kind, "resize")
     assert_eq(ev.width, 1024)
     assert_eq(ev.monitors.len(), 2)
@@ -712,7 +799,7 @@ test "a real Windows host spans two monitors at connect and rearranges in place"
     try rd.rd_set_layout("t-live-mon", layout)
     again := wait_view("t-live-mon", 1, 1080, 1920)
     assert(again.len() > 16, "the portrait did not come back through Display Control")
-    assert_eq(rd.rd_wait("t-live-mon", 100).kind, "running")
+    assert_eq(wait_past_pointers(rd, "t-live-mon", 100).kind, "running")
 }
 
 // Milestone 38: the bitmap path (Compatible) across two monitors. The layout goes
@@ -738,7 +825,7 @@ test "a real Windows host in Compatible across two monitors keeps drawing each v
     time.sleep_ms(3000)
     layout := pair_layout(2560, 1440, 393, 1440, 1512, 950)
     try rd.rd_set_layout("t-live-cmp", layout)
-    ev := rd.rd_wait("t-live-cmp", 1000)
+    ev := wait_past_pointers(rd, "t-live-cmp", 1000)
     mut path := "display control"
     if ev.kind == "resize" {
         assert_eq(ev.monitors.len(), 2)
@@ -782,7 +869,7 @@ test "a real Windows host in Compatible across two monitors keeps drawing each v
         }
     }
     assert(drawn1 > 0, "the second monitor's view drew nothing")
-    assert_eq(rd.rd_wait("t-live-cmp", 100).kind, "running")
+    assert_eq(wait_past_pointers(rd, "t-live-cmp", 100).kind, "running")
 }
 
 // Against a listener of its own, not the sample server. On Windows, inside this suite's
