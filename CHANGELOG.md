@@ -4,6 +4,19 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.24.0 — 2026-11-22
+
+Root for a while: with Allow sudo for a while turned on in Settings → Access, the root approval window can give a program 2, 5 or 15 minutes of sudo on one host, confirmed once, with every command shown in a notice that counts down. Off by default; turning it off ends every period.
+
+### Added
+
+- **access:** Root for a while on one host (milestone 57)
+
+### Fixed
+
+- **ui:** View of a root period says Root and its time left to the second (milestone 57)
+
+
 ## 0.23.0 — 2026-11-22
 
 See what an agent runs while it runs: a notice per grant counts its commands on screen, View lists them live with how each ended, and Stop revokes the grant from the notice. The activity log now records each command's exit status, duration and sudo refusals.
