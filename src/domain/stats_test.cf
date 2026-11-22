@@ -3,7 +3,7 @@ package domain
 // Milestone 55: the resources loop's parsers and arithmetic (domain/stats.cf), over
 // the real samples in stats_fixtures_test.cf and a few made-up edge cases.
 
-fn near(a: f64, b: f64) -> bool {
+fn close_to(a: f64, b: f64) -> bool {
     d := a - b
     return d < 0.001 && d > -0.001
 }
@@ -18,7 +18,7 @@ test "codebox: two samples give CPU, memory, the real interface's rates, disk, l
     assert_eq(s.cores, 6)
     assert(s.has_cpu)
     // 1 busy jiffy of 1199.
-    assert(near(s.cpu_pct, 100.0 / 1199.0))
+    assert(close_to(s.cpu_pct, 100.0 / 1199.0))
     assert(s.has_mem)
     assert_eq(s.mem_total, 8131012 * 1024)
     assert_eq(s.mem_used, (8131012 - 7592936) * 1024)
@@ -28,14 +28,14 @@ test "codebox: two samples give CPU, memory, the real interface's rates, disk, l
     assert(s.has_net)
     assert_eq(s.interfaces.len(), 1)
     assert_eq(s.interfaces[0], "enp6s18")
-    assert(near(s.rx_rate, 2387.0 / 2.0))
-    assert(near(s.tx_rate, 6670.0 / 2.0))
+    assert(close_to(s.rx_rate, 2387.0 / 2.0))
+    assert(close_to(s.tx_rate, 6670.0 / 2.0))
     assert(s.has_disk)
     assert_eq(s.disk_total, 75156720 * 1024)
     assert_eq(s.disk_used, 53857616 * 1024)
     assert_eq(s.disk_avail, 17969644 * 1024)
     assert(s.has_load)
-    assert(near(s.load1, 0.0))
+    assert(close_to(s.load1, 0.0))
     assert(s.has_uptime)
     assert_eq(s.uptime_secs, 74140)
     assert(sample_has_fields(s))
@@ -75,7 +75,7 @@ test "a host that gives only CPU and memory shows only those" {
     s := server_sample("t", "Linux", a, b)
     assert(s.has_cpu)
     // 40 busy of 100.
-    assert(near(s.cpu_pct, 40.0))
+    assert(close_to(s.cpu_pct, 40.0))
     assert_eq(s.cores, 1)
     assert(s.has_mem)
     assert_eq(s.mem_used, 750 * 1024)
@@ -101,8 +101,8 @@ test "a counter that went back adds nothing, and no uptime stretch gives no rate
     b := parse_stats_reading("@@net\n  eth0: 10 0 0 0 0 0 0 0 7000 0 0 0 0 0 0 0\n@@up\n102.0 1.0\n@@end\n")
     s := server_sample("t", "Linux", a, b)
     assert(s.has_net)
-    assert(near(s.rx_rate, 0.0))
-    assert(near(s.tx_rate, 1000.0))
+    assert(close_to(s.rx_rate, 0.0))
+    assert(close_to(s.tx_rate, 1000.0))
     same := server_sample("t", "Linux", a, a)
     assert(!same.has_net)
 }

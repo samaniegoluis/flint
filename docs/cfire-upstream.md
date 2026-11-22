@@ -3225,3 +3225,18 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Also seen:** `cfire test` of a package whose `import cpp` header comes from a `.pc`
   prints `clang AST ingestion failed … file not found` for that header and then runs
   every test and passes; the line reads like a failure.
+
+### CF-181 · bug · `confirmed`: a function named like a Windows macro (`near`) breaks the Windows build
+- **Seen (milestone 56, on the Windows VM):** the domain suite stopped compiling on Windows
+  after milestone 55: `src/domain/stats_test.cf` declares `fn near(a: f64, b: f64) -> bool`,
+  lowered as `inline auto near(double a, double b) -> bool`, and `<windows.h>` (through
+  `minwindef.h`) has `#define near`, so clang reads `auto (double a, …)`: `expected
+  unqualified-id`. macOS and Linux build it. `far`, `min`, `max`, `IN`, `OUT`, `ERROR`,
+  `DELETE` and the like would do the same.
+- **Repro:** `package main` · `fn near(a: f64) -> bool { return a > 0.0 }` ·
+  `fn main() { println("{near(1.0)}") }`, built with cfire 0.12.2 on Windows (MSYS2
+  CLANG64).
+- **Workaround:** the test helper is `close_to`.
+- **Ideal:** cfire mangles (or refuses, with a clear error) identifiers that collide with
+  the macros of the platform headers it includes, or `#undef`s them after including
+  `<windows.h>` (`NOMINMAX` covers only `min`/`max`).
