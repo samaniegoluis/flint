@@ -44,10 +44,18 @@ function callerName(label: string): string {
   return label.replace(/^.*?, started by /, '');
 }
 
-function expiresText(g: GrantView, now: number, skew: number): string {
+export function expiresText(g: GrantView, now: number, skew: number): string {
   if (g.expires_ms === 0) return 'until the vault locks';
+  // A root period lasts minutes: its time left to the second (m:ss).
+  if (g.root) return `${clockLeft(g.expires_ms + skew - now)} left`;
   const min = Math.max(0, Math.round((g.expires_ms + skew - now) / 60000));
   return min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} min left` : `${min} min left`;
+}
+
+/** "3:41" for 221 s, never below 0:00. */
+export function clockLeft(ms: number): string {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 /** "12 Nov, 14:05" in the viewer's time zone, from Unix seconds. */
@@ -296,10 +304,12 @@ export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void 
   const { fail, settings, saveSettings } = useApp();
   const { state, setState, skew } = useAccessState(true);
   const [now, setNow] = useState(Date.now());
-  useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(t); }, []);
+  const grants = state?.grants ?? [];
+  // A root period counts down by the second; grants alone by the half minute.
+  const anyRoot = grants.some((g) => g.root);
+  useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), anyRoot ? 1000 : 30000); return () => window.clearInterval(t); }, [anyRoot]);
   const revoke = (id: string) => api.accessRevoke(id).then(setState).catch((e) => fail(toFlintError(e)));
   const bell = (g: GrantView) => api.accessNotify(g.id, !g.notify).then(setState).catch((e) => fail(toFlintError(e)));
-  const grants = state?.grants ?? [];
   return (
     <>
       <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', paddingBottom: 'var(--sp-2)' }}>Access</h1>
@@ -331,17 +341,19 @@ export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void 
           <thead><tr><th>Program</th><th>Hosts</th><th>Actions</th><th>Time left</th><th>Anchor</th><th style={{ width: 40 }}><span className="sr-only">Notices</span></th><th style={{ width: 80 }} /></tr></thead>
           <tbody>
             {grants.map((g) => (
-              <tr key={g.id} data-grant={g.id}>
-                <td className="primary" title={g.label}><div className="row" style={{ gap: 'var(--sp-2)' }}><Icon name="agent" />{callerName(g.label)}</div></td>
+              <tr key={g.id} data-grant={g.id} data-grant-root={g.root ? 'yes' : undefined}>
+                <td className="primary" title={g.label}><div className="row" style={{ gap: 'var(--sp-2)' }}><Icon name={g.root ? 'shield' : 'agent'} />{callerName(g.label)}</div></td>
                 <td><ScopeChips s={g} /></td>
-                <td><ActionBadges s={g} /></td>
-                <td>{expiresText(g, now, skew)}</td>
+                <td>{g.root ? <span className="badge danger">Root</span> : <ActionBadges s={g} />}</td>
+                <td className={g.root ? 'mono' : undefined}>{expiresText(g, now, skew)}</td>
                 <td className="mono">pid {g.anchor_pid}</td>
                 <td>
-                  <button type="button" className={g.notify ? 'icon-btn bell on' : 'icon-btn bell'} aria-pressed={g.notify} data-grant-bell={g.notify ? 'on' : 'off'}
-                    aria-label={g.notify ? 'Notices on — turn off' : 'Notices off — turn on'} title={g.notify ? 'Notices on' : 'Notices off'} onClick={() => bell(g)}>
-                    <Icon name={g.notify ? 'bell' : 'bell-off'} size="sm" />
-                  </button>
+                  {g.root
+                    ? <span className="icon-btn bell on is-disabled" aria-disabled="true" data-grant-bell="root" title="Always on for root" aria-label="Notices always on for root"><Icon name="bell" size="sm" /></span>
+                    : <button type="button" className={g.notify ? 'icon-btn bell on' : 'icon-btn bell'} aria-pressed={g.notify} data-grant-bell={g.notify ? 'on' : 'off'}
+                      aria-label={g.notify ? 'Notices on — turn off' : 'Notices off — turn on'} title={g.notify ? 'Notices on' : 'Notices off'} onClick={() => bell(g)}>
+                      <Icon name={g.notify ? 'bell' : 'bell-off'} size="sm" />
+                    </button>}
                 </td>
                 <td style={{ textAlign: 'right' }}><button className="btn btn-secondary btn-sm" onClick={() => revoke(g.id)}>Revoke</button></td>
               </tr>
@@ -349,6 +361,23 @@ export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void 
           </tbody>
         </table>
       )}
+      <div className="section-h"><h2>Run as root</h2><span className="grow" /></div>
+      <div className="panel col" style={{ padding: 'var(--sp-4)', gap: 'var(--sp-2)' }} data-sudo-periods>
+        <div className="row" style={{ gap: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
+          <button type="button" className="toggle" role="switch" aria-checked={settings.sudo_periods} aria-label="Allow sudo for a while" data-setting="sudo_periods"
+            onClick={() => saveSettings({ ...settings, sudo_periods: !settings.sudo_periods }).catch((e) => fail(toFlintError(e)))} />
+          <span className="col" style={{ gap: 2 }}>
+            <span className="strong">Allow sudo for a while</span>
+            <span className="hint">{settings.sudo_periods ? 'On: the root approval window also offers 2, 5 or 15 minutes.' : 'Off: every root command is approved on its own.'}</span>
+          </span>
+        </div>
+        <div className={settings.sudo_periods ? 'callout danger' : 'callout warn'} style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
+          <Icon name="alert" size="sm" />
+          <span>{settings.sudo_periods
+            ? 'For the time picked, the program and everything it starts can run any command as root on that host without asking you. Turning this off ends every period at once.'
+            : 'When on, for the time picked in the root approval window, the program and everything it starts can run any command as root on that host without asking you.'}</span>
+        </div>
+      </div>
       <TokensSection onConfirm={onConfirm} />
       <ActivitySection onConfirm={onConfirm} />
     </>

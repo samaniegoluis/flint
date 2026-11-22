@@ -26,6 +26,10 @@ ACCESS_SUDO: str = "sudo"
 // How long a grant lasts. "lock" lasts until the vault locks.
 GRANT_DURATIONS: []str = ["15m", "1h", "4h", "lock"]
 
+// How long a root period lasts (D-117 (1)): never longer than 15 minutes, never until
+// the vault locks.
+ROOT_PERIODS: []str = ["2m", "5m", "15m"]
+
 // Executables a caller chain passes through without being the caller itself.
 TRANSPARENT_EXES: []str = ["flint", "sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh", "csh", "nu", "xonsh", "elvish", "pwsh", "powershell", "cmd", "env", "timeout", "gtimeout", "nohup", "xargs", "time", "nice", "caffeinate", "login", "script", "stdbuf", "direnv"]
 
@@ -71,6 +75,10 @@ type Grant struct {
     // notice. Memory only, like the grant; set from the approval window's checkbox
     // and the bell in Settings → Access.
     notify:         bool        `json:"notify"`
+    // Milestone 57 (D-117 (1)-(2), D-126 (4)): a root period. It covers `exec --sudo`
+    // by this anchor on the one host of `scope.hosts`, nothing else, for at most 15
+    // minutes from the approval; `read`, `exec` and `write` are false. Always notifies.
+    root:           bool        `json:"root"`
 }
 
 // What one request needs: an action and, for `exec`, the host alias it runs on
@@ -191,7 +199,8 @@ fn label_program(label: str) -> str {
 fn set_grant_notify(mut book: AccessBook, id: str, on: bool) -> bool {
     for i in 0..book.grants.len() {
         if book.grants[i].id == id {
-            book.grants[i].notify = on
+            // A root period always notifies (D-117 (4)).
+            book.grants[i].notify = on || book.grants[i].root
             return true
         }
     }
@@ -220,6 +229,28 @@ fn grant_expiry(now_ms: i64, duration: str) -> i64! {
         return 0
     }
     return error(coded(ERR_INVALID, "duration must be 15m, 1h, 4h or lock"))
+}
+
+// The expiry of a root period given at `now_ms` for `period` (2m, 5m or 15m).
+fn root_period_expiry(now_ms: i64, period: str) -> i64! {
+    if period == "2m" {
+        return now_ms + 2 * 60000
+    }
+    if period == "5m" {
+        return now_ms + 5 * 60000
+    }
+    if period == "15m" {
+        return now_ms + 15 * 60000
+    }
+    return error(coded(ERR_INVALID, "a root period must be 2m, 5m or 15m"))
+}
+
+// "5" for "5m": how the presence dialog names a period.
+fn period_minutes(period: str) -> str {
+    if period.ends_with("m") {
+        return period[..period.len() - 1]
+    }
+    return period
 }
 
 fn grant_live(g: Grant, now_ms: i64) -> bool {
@@ -281,7 +312,7 @@ fn scope_reaches(scope: AccessScope, cat: Catalog, alias: str) -> bool {
 // vault's hosts, groups, keys and credentials (never a secret: Principle 6); running
 // is checked against the scope; changing the vault needs the whole vault in scope.
 fn grant_covers(g: Grant, vault_id: str, need: AccessNeed, cat: Catalog, now_ms: i64) -> bool {
-    if g.vault_id != vault_id || !grant_live(g, now_ms) {
+    if g.root || g.vault_id != vault_id || !grant_live(g, now_ms) {
         return false
     }
     if need.action == ACCESS_READ {
@@ -307,6 +338,72 @@ fn find_grant(grants: []Grant, c: Caller, vault_id: str, need: AccessNeed, cat: 
         }
     }
     return none
+}
+
+// Whether root period `g` lets `c` run `need` (an `exec --sudo`) at `now_ms`: the same
+// anchor, the same vault, still live, and exactly the host it was given for. A host
+// the vault does not hold is never covered (unlike a grant's scope).
+fn root_period_covers(g: Grant, c: Caller, vault_id: str, need: AccessNeed, cat: Catalog, now_ms: i64) -> bool {
+    if !g.root || need.action != ACCESS_SUDO || g.vault_id != vault_id || g.expires_ms == 0 || !grant_live(g, now_ms) {
+        return false
+    }
+    if !grant_matches_caller(g, c) || g.scope.all || g.scope.groups.len() > 0 || g.scope.hosts.len() != 1 || need.host2.len() > 0 {
+        return false
+    }
+    for h in cat.hosts {
+        if h.alias.to_lower() == need.host.to_lower() {
+            return h.id == g.scope.hosts[0]
+        }
+    }
+    return false
+}
+
+// The caller's live root period on the host `need` runs on, if any. With `allowed`
+// false (Settings → Access's *Allow sudo for a while* off) there is none.
+fn find_root_period(grants: []Grant, c: Caller, vault_id: str, need: AccessNeed, cat: Catalog, now_ms: i64, allowed: bool) -> Grant? {
+    if !allowed {
+        return none
+    }
+    for g in grants {
+        if root_period_covers(g, c, vault_id, need, cat, now_ms) {
+            return g
+        }
+    }
+    return none
+}
+
+// The root period an `exec --sudo` approval becomes when the owner picks `period` in
+// the window: its caller's anchor, the one host of the command, always notifying.
+fn root_period_from_approval(ap: Approval, cat: Catalog, id: str, period: str, now_ms: i64) -> Grant! {
+    if ap.need.action != ACCESS_SUDO {
+        return error(coded(ERR_INVALID, "only a command as root can be allowed for a while"))
+    }
+    expires := try root_period_expiry(now_ms, period)
+    if ap.anchor_pid <= 0 {
+        return error(coded(ERR_INVALID, "this caller has no process to tie a root period to"))
+    }
+    for h in cat.hosts {
+        if h.alias.to_lower() == ap.need.host.to_lower() {
+            return Grant{ id: id, vault_id: ap.vault_id, anchor_pid: ap.anchor_pid, anchor_started: ap.anchor_started, label: ap.label, scope: AccessScope{ all: false, groups: [], hosts: [h.id] }, read: false, exec: false, write: false, created_ms: now_ms, expires_ms: expires, duration: period, notify: true, root: true }
+        }
+    }
+    return error(coded(ERR_NOT_FOUND, "host '{ap.need.host}'"))
+}
+
+// Ends every root period (the setting turned off); how many ended.
+fn end_root_periods(mut book: AccessBook) -> i64 {
+    mut kept: []Grant = []
+    mut ended: i64 = 0
+    for g in book.grants {
+        if g.root {
+            ended += 1
+        } else {
+            kept.push(g)
+        }
+    }
+    book.grants = kept
+    prune_period_typed(mut book, 0)
+    return ended
 }
 
 // The caller's live grants that already run commands on `alias`, and when the last of
@@ -387,6 +484,10 @@ type AccessBook struct {
     // until that request takes it (milestone 13). Memory only, like the rest of the
     // book, and cleared with it on every lock.
     typed:   []SudoTyped `json:"typed"`
+    // A sudo password typed in the window that gave a root period, kept for that
+    // period's commands (milestone 57) by the period's grant id: memory only, dropped
+    // when the period ends, is revoked or the vault locks.
+    period_typed: []SudoTyped `json:"period_typed"`
 }
 
 type SudoTyped struct {
@@ -395,7 +496,7 @@ type SudoTyped struct {
 }
 
 fn empty_access_book() -> AccessBook {
-    return AccessBook{ grants: [], pending: [], asking: [], typed: [] }
+    return AccessBook{ grants: [], pending: [], asking: [], typed: [], period_typed: [] }
 }
 
 fn put_sudo_typed(mut book: AccessBook, id: str, password: str) {
@@ -415,6 +516,33 @@ fn take_sudo_typed(mut book: AccessBook, id: str) -> str {
     }
     book.typed = kept
     return found
+}
+
+// The password typed for root period `grant` ("" for none), left in the book.
+fn period_sudo_typed(book: AccessBook, grant: str) -> str {
+    for i in 0..book.period_typed.len() {
+        if book.period_typed[i].id == grant {
+            return book.period_typed[i].password
+        }
+    }
+    return ""
+}
+
+// Drops the passwords of root periods that are no longer live at `now_ms`.
+fn prune_period_typed(mut book: AccessBook, now_ms: i64) {
+    mut kept: []SudoTyped = []
+    for t in book.period_typed {
+        mut live := false
+        for g in book.grants {
+            if g.id == t.id && g.root && grant_live(g, now_ms) {
+                live = true
+            }
+        }
+        if live {
+            kept.push(t)
+        }
+    }
+    book.period_typed = kept
 }
 
 // The grant the window proposes for `ap`: the host it runs on, or both hosts of a
@@ -514,6 +642,7 @@ fn revoke_grant(mut book: AccessBook, id: str) -> bool {
         }
     }
     book.grants = kept
+    prune_period_typed(mut book, 0)
     return found
 }
 

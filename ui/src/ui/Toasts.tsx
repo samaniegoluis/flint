@@ -84,6 +84,7 @@ function ToastView({ t, store }: { t: ToastItem; store: ToastStore }) {
     <div className={cls} data-kind={t.kind} data-toast={t.id} data-toast-kind={t.kind}>
       {t.kind === 'error'
         ? <Icon name="alert" className="t-mark" />
+        : t.kind === 'root' ? <Icon name="shield" className="t-mark" />
         : <span className="t-mark" aria-hidden="true" />}
       <span className="t-body">
         <span className="t-text" ref={text}>{t.text}</span>
@@ -95,6 +96,7 @@ function ToastView({ t, store }: { t: ToastItem; store: ToastStore }) {
       {t.progress !== undefined && (
         <span className="t-prog" aria-label={`${Math.round(t.progress)}% done`}>{Math.round(t.progress)}%</span>
       )}
+      {t.side !== undefined && <span className="t-prog wide" aria-label="time left" data-toast-side>{t.side}</span>}
       {t.actions.map((a, i) => (
         <button key={a.label} type="button" className={'btn btn-sm ' + (a.primary ? 'btn-primary' : 'btn-secondary')} data-toast-action={i}
           onClick={() => store.act(t.id, i)}>{a.label}</button>

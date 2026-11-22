@@ -4,7 +4,8 @@
 // call asks for), a stack of three, `key` replacing in place, a pause while the stack
 // is hovered or focused.
 
-export type ToastKind = 'ok' | 'error' | 'info';
+/** 'root': a root period's notice (milestone 57, 26a4), marked with a shield. */
+export type ToastKind = 'ok' | 'error' | 'info' | 'root';
 
 export interface ToastAction {
   label: string;
@@ -28,6 +29,9 @@ export interface ToastOptions {
   progress?: number;
   /** false: a change of text is not read out (a notice updating often, milestone 56). */
   announce?: boolean;
+  /** A short text on the right, never read out when it changes: a root period's
+   *  "3:41 left" (milestone 57, 26a4). */
+  side?: string;
 }
 
 export interface ToastItem {
@@ -37,6 +41,7 @@ export interface ToastItem {
   actions: ToastAction[];
   key?: string;
   progress?: number;
+  side?: string;
   sticky: boolean;
   /** Set while the exit animation runs; the toast is gone EXIT_MS later. */
   leaving: boolean;
@@ -91,7 +96,7 @@ export class ToastStore {
     if (same) {
       this.stop(same);
       const textChanged = same.item.text !== opts.text || same.item.kind !== kind;
-      same.item = { ...same.item, text: opts.text, kind, actions, progress: opts.progress, sticky };
+      same.item = { ...same.item, text: opts.text, kind, actions, progress: opts.progress, side: opts.side, sticky };
       same.remaining = ms;
       if (this.shown.includes(same)) this.start(same);
       if (textChanged && opts.announce !== false) this.last = { id: same.item.id, text: opts.text, kind };
@@ -100,7 +105,7 @@ export class ToastStore {
     }
 
     const e: Entry = {
-      item: { id: this.next++, text: opts.text, kind, actions, key: opts.key, progress: opts.progress, sticky, leaving: false },
+      item: { id: this.next++, text: opts.text, kind, actions, key: opts.key, progress: opts.progress, side: opts.side, sticky, leaving: false },
       remaining: ms, startedAt: 0,
     };
     this.shown.push(e);

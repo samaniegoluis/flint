@@ -394,7 +394,11 @@ host, the login user, and the command's arguments, one per chip, after the `sudo
 Flint adds (tinted), never cut short. **Run as root** (with presence) allows that command
 only. When Flint holds no
 password for sudo on that host, the window asks for one, with **Save it for this
-host**. See [sudo](/guides/ai-agents/#sudo).
+host**. With **Allow sudo for a while** on in **Settings → Access**, the window also has
+**Allow for: Each command · 2 min · 5 min · 15 min**; a period shows its warning every
+time, **Notify me of each command** checked and disabled (*Always on for root*), and
+**Allow root for 5 min**. See [sudo](/guides/ai-agents/#sudo) and [Root for a
+while](/guides/ai-agents/#root-for-a-while).
 
 ## Settings
 
@@ -425,7 +429,11 @@ Settings belong to this machine, not to the vault, and save as you change them.
   (see [Change the master password](/guides/vaults/#change-the-master-password)).
 - **Access**: **Notify me of commands run under a grant** (on: the default for new grants),
   then the programs you approved, with what they may do and until when, a **bell** that
-  turns that grant's notices off or on, and **Revoke** for each (or all). Grants end when the vault locks or Flint quits. Below
+  turns that grant's notices off or on, and **Revoke** for each (or all); a root period
+  shows a **Root** badge and its time left to the second, its bell always on. Grants end when the vault locks or Flint quits. Then
+  **Run as root**: **Allow sudo for a while** (off), which lets the root approval window
+  offer 2, 5 or 15 minutes on one host; turning it off ends every period
+  ([Root for a while](/guides/ai-agents/#root-for-a-while)). Below
   them, the vault's **tokens** (**Revoke** ends one; **Show ended** lists the expired
   and revoked ones) and the **activity log**: when, which program or token, the command
   and whether it was allowed, denied or left unanswered, newest first, with **Load

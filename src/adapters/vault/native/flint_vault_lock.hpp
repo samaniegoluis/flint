@@ -67,6 +67,8 @@ struct SessionCell {
     std::string lock_after;
     // Milestone 56: whether a grant given at unlock notifies (Settings' default).
     bool notify_grants = true;
+    // Milestone 57: Settings' *Allow sudo for a while* (root periods).
+    bool sudo_periods = false;
     bool quitting = false;
     // Milestone 14: the window is locked (closed to the tray) while the vault stays
     // unlocked, and the vaults this run knows are remembered on this computer.

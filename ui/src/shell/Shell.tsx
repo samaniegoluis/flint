@@ -558,7 +558,7 @@ export function Shell() {
       )}
       {manage && <ManageVaults onClose={() => setManage(false)} />}
       {approval && access.state && (
-        <ApprovalDialog key={approval.id} ap={approval} queue={access.state.pending} presence={access.state.presence} catalog={catalog} skew={access.skew}
+        <ApprovalDialog key={approval.id} ap={approval} queue={access.state.pending} presence={access.state.presence} periods={!!access.state.sudo_periods} catalog={catalog} skew={access.skew}
           onDone={(s) => (s ? access.setState(s) : access.refresh())} />
       )}
       <GrantNoticesHost onLog={() => { setSection('access'); setView('settings'); }} />

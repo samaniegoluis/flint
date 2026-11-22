@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActivityAddedEvent, ActivityFinishedEvent } from '../api/types';
-import { GrantNotices, NOTICE_ANNOUNCE_MS, NOTICE_HIDE_MS, entryHosts, noticeKey, noticeText } from './grantNotices';
+import { GrantNotices, NOTICE_ANNOUNCE_MS, NOTICE_HIDE_MS, entryHosts, leftText, noticeKey, noticeText } from './grantNotices';
 import { EXIT_MS, ToastStore } from './toasts';
 
 const live = (s: ToastStore) => s.list().filter((t) => !t.leaving);
@@ -133,5 +133,41 @@ describe('GrantNotices', () => {
     expect(entryHosts('db1 → nas')).toEqual(['db1', 'nas']);
     expect(entryHosts('')).toEqual([]);
     expect(noticeText('Codex', 1, [])).toBe('Codex ran a command');
+  });
+
+  // Milestone 57 (26a4): a root period's notice.
+  it('says as root with the time left, stays while the period lasts and goes when it ends', () => {
+    const a = added('r1', 'db1', { root: true, left_ms: 5 * 60_000 });
+    n.added(a);
+    expect(texts(toasts)).toEqual(['Claude Code ran a command as root on db1']);
+    expect(live(toasts)[0].kind).toBe('root');
+    expect(live(toasts)[0].side).toBe('5:00 left');
+    n.finished(finished(a));
+    n.added(added('r1', 'db1', { root: true, left_ms: 4 * 60_000, state: 'ended' }));
+    n.added(added('r1', 'db1', { root: true, left_ms: 4 * 60_000, state: 'ended' }));
+    // No 10 s hide: it stays, counting down by the second, without reading it out.
+    const said = toasts.announcement();
+    vi.advanceTimersByTime(19_000);
+    expect(texts(toasts)).toEqual(['Claude Code ran 3 commands as root on db1']);
+    expect(live(toasts)[0].side).toBe('3:41 left');
+    expect(toasts.announcement()).toBe(said);
+    vi.advanceTimersByTime(221_000 + EXIT_MS);
+    expect(texts(toasts)).toEqual([]);
+    expect(n.active()).toEqual([]);
+  });
+
+  it('a root notice goes with its period when it is revoked, beside a grant that stays', () => {
+    n.added(added('r1', 'db1', { root: true, left_ms: 120_000 }));
+    n.added(added('g1', 'nas'));
+    n.grants(['g1']);
+    vi.advanceTimersByTime(EXIT_MS);
+    expect(texts(toasts)).toEqual(['Claude Code ran a command on nas']);
+    expect(live(toasts)[0].side).toBeUndefined();
+  });
+
+  it('time left', () => {
+    expect(leftText(221_000)).toBe('3:41 left');
+    expect(leftText(500)).toBe('0:01 left');
+    expect(leftText(-5)).toBe('0:00 left');
   });
 });

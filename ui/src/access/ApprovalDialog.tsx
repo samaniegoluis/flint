@@ -17,7 +17,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, on, toFlintError } from '../api/backend';
-import type { AccessAction, AccessState, Approval, Catalog, CopyAsk, GrantDuration, PresenceMethod, TunnelAsk } from '../api/types';
+import type { AccessAction, AccessState, Approval, Catalog, CopyAsk, GrantDuration, PresenceMethod, RootPeriod, TunnelAsk } from '../api/types';
 import { Modal } from '../ui/Modal';
 import { Key } from '../ui/Kbd';
 import { useApp } from '../state/app';
@@ -26,6 +26,19 @@ import { CommandModal, MoreRow, moreText } from './CommandModal';
 import { colorStyle } from '../lib/colors';
 
 type ScopeKind = 'host' | 'group' | 'all';
+
+/** Root periods (milestone 57, 25e4): offered only with *Allow sudo for a while* on. */
+export const ROOT_PERIODS: { value: RootPeriod; label: string; min: number }[] = [
+  { value: '', label: 'Each command', min: 0 },
+  { value: '2m', label: '2 min', min: 2 },
+  { value: '5m', label: '5 min', min: 5 },
+  { value: '15m', label: '15 min', min: 15 },
+];
+
+/** 25e5's warning, shown every time a period is picked (D-117 (2)). */
+export function rootPeriodWarning(label: string, host: string, min: number): string {
+  return `${label.replace(/^.*?, started by /, '')} and everything it starts can run commands as root on ${host} for ${min} min without asking you.`;
+}
 
 const DURATIONS: { value: GrantDuration; label: string }[] = [
   { value: '15m', label: '15 min' },
@@ -268,8 +281,10 @@ function kindOf(ap: Approval): 'sudo' | 'token' | 'copy' | 'tunnel' | 'grant' {
 
 const KIND_LABEL = { sudo: 'Run as root', token: 'Token request', copy: 'Copy files', tunnel: 'Tunnel', grant: 'Grant request' };
 
-export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
+export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalog, skew, onDone }: {
   ap: Approval;
+  /** Milestone 57: *Allow sudo for a while* is on, so a root request offers periods. */
+  periods: boolean;
   /** Every request waiting, this one first. */
   queue: Approval[];
   presence: PresenceMethod;
@@ -300,6 +315,8 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   const [notify, setNotify] = useState(settings.notify_grants);
   const [password, setPassword] = useState('');
   const [sudoPassword, setSudoPassword] = useState('');
+  // 25e4: each command (the default) or a root period on this one host.
+  const [period, setPeriod] = useState<RootPeriod>('');
   const [saveSudo, setSaveSudo] = useState(false);
   const [error, setError] = useState('');
   const [wrongPassword, setWrongPassword] = useState(false);
@@ -362,6 +379,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
         id: ap.id, allow, duration, password: allow ? password : '',
         sudo_password: allow ? sudoPassword : '', save_sudo_password: allow && saveSudo && !!sudoPassword,
         notify: allow && notify,
+        period: allow && sudo && periodsOn ? period : '',
         scope: scope === 'all' ? { all: true, groups: [], hosts: [] }
           : scope === 'group' ? { all: false, groups, hosts: [] }
           : { all: false, groups: [], hosts: host2 ? [host, host2] : [host] },
@@ -401,6 +419,8 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   const argCount = sudo?.argv.length ?? 0;
   const more = ap.command ? moreText(ap.request, ap.command.text) : '';
   const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  const periods = !!sudo && periodsOn;
+  const periodMin = periods ? ROOT_PERIODS.find((p) => p.value === period)?.min ?? 0 : 0;
 
   return (
     <Modal label={sudo ? 'Run a command as root' : 'Allow access to the vault'} onClose={() => { if (!busy) answer(false); }} width={580} top={46}
@@ -433,7 +453,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
         <div className="modal-b" style={{ gap: 'var(--sp-4)', paddingTop: 'var(--sp-4)' }}>
           {sudo ? (
             <>
-              <div className="callout danger" style={{ alignItems: 'center' }}><Icon name="alert" /><span><strong>Runs as root, once.</strong> Nothing else is allowed by this.</span></div>
+              {periodMin === 0 && <div className="callout danger" style={{ alignItems: 'center' }} data-sudo-once><Icon name="alert" /><span><strong>Runs as root, once.</strong> Nothing else is allowed by this.</span></div>}
               <dl className="kv" data-sudo-ask style={{ margin: 0, gridTemplateColumns: '72px minmax(0, 1fr)' }}>
                 <dt>Where</dt>
                 <dd>
@@ -453,6 +473,24 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                   {sudo.argv.map((a, i) => <span key={i} className={a.includes('\n') ? 'arg script' : 'arg'} role="listitem" data-arg={i}>{a}</span>)}
                 </div>
               </div>
+              {periods && (
+                <>
+                  <div className="row" style={{ gap: 'var(--sp-3)' }}>
+                    <span className="label" style={{ width: 72 }}>Allow for</span>
+                    <div className="seg" role="radiogroup" aria-label="Allow for" data-root-periods>
+                      {ROOT_PERIODS.map((p) => <button type="button" role="radio" key={p.value || 'each'} data-root-period={p.value || 'each'} aria-checked={period === p.value} aria-pressed={period === p.value} onClick={() => setPeriod(p.value)}>{p.label}</button>)}
+                    </div>
+                  </div>
+                  {periodMin > 0 && (
+                    <>
+                      <div className="callout danger" role="alert" style={{ fontSize: 'var(--fs-sm)' }} data-root-warning><Icon name="alert" size="sm" /><span><strong>{rootPeriodWarning(ap.label, sudo.host, periodMin)}</strong></span></div>
+                      <label className="opt notify-opt is-disabled"><input type="checkbox" checked disabled data-root-notify />
+                        <span className="opt-t"><span className="opt-l row" style={{ gap: 6 }}><Icon name="bell" size="sm" />Notify me of each command</span><span className="hint">Always on for root.</span></span>
+                      </label>
+                    </>
+                  )}
+                </>
+              )}
               {sudo.has_password ? (
                 <div className="row" style={{ gap: 'var(--sp-2)', fontSize: 'var(--fs-sm)' }}>
                   <Icon name="key" /><span className="grow">Flint types the sudo password it holds for <span className="mono">{sudo.host}</span>, only if sudo asks. The program never sees it.</span>
@@ -463,7 +501,8 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                   <div className="input"><input id="approval-sudo-pw" type="password" className="pw" autoComplete="off" value={sudoPassword}
                     onChange={(e) => setSudoPassword(e.target.value)} data-sudo-password {...(focusOn === 'sudo' ? { 'data-autofocus': true } : {})} /></div>
                   <label className="opt"><input type="checkbox" checked={saveSudo} onChange={(e) => setSaveSudo(e.target.checked)} data-sudo-save />
-                    <span className="opt-t"><span className="opt-l">Save it for {sudo.host}</span><span className="hint">Kept in the vault. Flint types it only when sudo asks.</span></span>
+                    <span className="opt-t"><span className="opt-l">Save it for {sudo.host}</span><span className="hint">{periodMin > 0 && !saveSudo
+                      ? `Not saved, Flint keeps it in memory for these ${periodMin} min only.` : 'Kept in the vault. Flint types it only when sudo asks.'}</span></span>
                   </label>
                 </div>
               )}
@@ -560,7 +599,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
           )}
           {presence === 'password' && (
             <div className={sudo ? 'field' : 'choice-row'}>
-              <label className="flabel" htmlFor="approval-pw">{sudo ? 'Master password: confirms this one command' : 'Confirm'}</label>
+              <label className="flabel" htmlFor="approval-pw">{sudo ? (periodMin > 0 ? `Master password: confirms root for ${periodMin} min` : 'Master password: confirms this one command') : 'Confirm'}</label>
               <div className="field">
                 <div className={wrongPassword ? 'input err' : 'input'}>
                   <input id="approval-pw" type="password" className="pw" autoComplete="off" value={password} aria-invalid={wrongPassword || undefined}
@@ -585,7 +624,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
             title={portTaken && tunnel ? `The tunnel can't open: port ${tunnel.local_port} is in use` : undefined}>
             {confirming && presence !== 'password'
               ? <>{presence === 'touchid' && <Icon name="fingerprint" />}Confirm with {presenceLabel(presence)}…</>
-              : <>{sudo ? 'Run as root' : 'Allow'}<span className="kbd-in">{allowKey}</span></>}
+              : <>{sudo ? (periodMin > 0 ? `Allow root for ${periodMin} min` : 'Run as root') : 'Allow'}<span className="kbd-in">{allowKey}</span></>}
           </button>
         </div>
         {next && (

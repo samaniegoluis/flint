@@ -183,6 +183,26 @@ fn (self: SessionHolder) set_notify_grants(on: bool) {
     }
 }
 
+// Settings' *Allow sudo for a while* (milestone 57): whether the root window may give
+// a period and a live one still covers. Set at start and on save.
+fn (self: SessionHolder) set_sudo_periods(on: bool) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->sudo_periods = on;
+    }
+}
+
+fn (self: SessionHolder) sudo_periods() -> bool {
+    mut on := false
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        on = self.cell->sudo_periods;
+    }
+    return on
+}
+
 fn (self: SessionHolder) notify_grants() -> bool {
     mut on := true
     // CFIRE-UPSTREAM: CF-026

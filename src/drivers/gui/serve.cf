@@ -291,14 +291,19 @@ fn refuse(msg: str) -> GateOutcome {
 fn go_ahead(st: GuiState, store: LockedVaultStore, session: VaultSession, entry: ActivityEntry, grant: Grant?, sudo_typed: str, mut app: webui.App) -> GateOutcome {
     mut e := entry
     e.state = ACTIVITY_RUNNING
-    mut notify := false
+    mut notice := NoticeOf{ notify: false, root: false, left_ms: 0 }
     if g := grant {
         e.grant = g.id
-        notify = g.notify
+        notice.notify = g.notify
+        // A root period's notice stays while it lasts and shows its time left (26a4).
+        if g.root {
+            notice.root = true
+            notice.left_ms = g.expires_ms - time.now_ms()
+        }
     }
     mut id: i64 = 0
     if activity_logged(AccessNeed{ action: e.action, host: "", host2: "" }) {
-        id = log_activity_notify(st, store, session, e, notify, mut app)
+        id = log_activity_notify(st, store, session, e, notice, mut app)
     }
     return GateOutcome{ refusal: "", sudo_typed: sudo_typed, entry_id: id, grant_id: e.grant }
 }
@@ -399,6 +404,13 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
             return go_ahead(st, store, session, entry, g, "", mut app)
         }
     }
+    if need.action == ACCESS_SUDO {
+        // Inside a root period the person gave (milestone 57, Principle 12): no window,
+        // the command shows in the period's notice.
+        if hit := root_period_for(st, caller, session.id, need, cat, now) {
+            return go_ahead(st, store, session, entry, hit.grant, hit.typed, mut app)
+        }
+    }
     entry.via = ACTIVITY_VIA_WINDOW
     id := hex.encode(c.random_bytes(8))
     // What the window shows is read from the argv that runs, never from the client's
@@ -442,6 +454,12 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
             }
             // A token or a sudo command is allowed for this one request; nothing else is.
             if asked_every_time(need) {
+                // A root period just given covers this first command: its notice counts it.
+                if need.action == ACCESS_SUDO {
+                    if hit := root_period_for(st, caller, session.id, need, cat, t) {
+                        return go_ahead(st, store, session, entry, hit.grant, typed, mut app)
+                    }
+                }
                 return go_ahead(st, store, session, entry, none, typed, mut app)
             }
             // The grant just given covers this first command too: its notice counts it.
@@ -491,12 +509,20 @@ fn activity_command(p: ParsedArgs, ask: TokenAsk, sudo: SudoAsk) -> str {
 // Appends `e` to the open vault's log, if `session` is still the vault held. A
 // failure is reported by its code only: a message could name a host (Principle 5).
 fn log_activity(st: GuiState, store: LockedVaultStore, session: VaultSession, e: ActivityEntry, mut app: webui.App) {
-    _ = log_activity_notify(st, store, session, e, false, mut app)
+    _ = log_activity_notify(st, store, session, e, NoticeOf{ notify: false, root: false, left_ms: 0 }, mut app)
 }
 
-// log_activity, returning the entry's id (0 when it was not written), with `notify`
+// How the page shows an entry: whether its grant notifies (milestone 56), and whether
+// that grant is a root period with how long it has left (milestone 57).
+type NoticeOf struct {
+    notify:  bool
+    root:    bool
+    left_ms: i64
+}
+
+// log_activity, returning the entry's id (0 when it was not written), with `notice`
 // telling the page whether the entry's grant shows it in a notice (milestone 56).
-fn log_activity_notify(st: GuiState, store: LockedVaultStore, session: VaultSession, e: ActivityEntry, notify: bool, mut app: webui.App) -> i64 {
+fn log_activity_notify(st: GuiState, store: LockedVaultStore, session: VaultSession, e: ActivityEntry, notice: NoticeOf, mut app: webui.App) -> i64 {
     st.hold()
     still := st.unlocked() && st.vault_session().path == session.path
     mut id: i64 = 0
@@ -506,7 +532,7 @@ fn log_activity_notify(st: GuiState, store: LockedVaultStore, session: VaultSess
     }
     st.release()
     if id > 0 {
-        app.emit("activity:added", activity_added(e, id, notify))
+        app.emit("activity:added", activity_added(e, id, notice))
     }
     return id
 }
@@ -541,10 +567,13 @@ type ActivityAdded struct {
     action:  str  `json:"action"`
     at:      i64  `json:"at"`
     state:   str  `json:"state"`
+    // Milestone 57: the grant is a root period, with this long left when it ran.
+    root:    bool `json:"root"`
+    left_ms: i64  `json:"left_ms"`
 }
 
-fn activity_added(e: ActivityEntry, id: i64, notify: bool) -> ActivityAdded {
-    return ActivityAdded{ id: id, outcome: e.outcome, grant: e.grant, notify: notify, program: label_program(e.caller), hosts: e.host, action: e.action, at: e.at, state: e.state }
+fn activity_added(e: ActivityEntry, id: i64, n: NoticeOf) -> ActivityAdded {
+    return ActivityAdded{ id: id, outcome: e.outcome, grant: e.grant, notify: n.notify, program: label_program(e.caller), hosts: e.host, action: e.action, at: e.at, state: e.state, root: n.root, left_ms: n.left_ms }
 }
 
 // An entry's command ended (milestone 56).
@@ -594,6 +623,26 @@ fn send_wait(conn: IpcConn, notice: str, session_kind: bool) {
     } else {
         _ = conn.send(wait_notice_json(notice), SERVE_SEND_MS) or {}
     }
+}
+
+// The caller's live root period on `need`'s host and the sudo password typed when it
+// was given ("" for none), while *Allow sudo for a while* is on. Passwords of periods
+// that ended are dropped on the way.
+type PeriodHit struct {
+    grant: Grant
+    typed: str
+}
+
+fn root_period_for(st: GuiState, caller: Caller, vault_id: str, need: AccessNeed, cat: Catalog, now: i64) -> PeriodHit? {
+    st.holder.access_hold()
+    mut book := st.holder.access_book()
+    prune_period_typed(mut book, now)
+    st.holder.put_access_book(book)
+    st.holder.access_release()
+    g := find_root_period(book.grants, caller, vault_id, need, cat, now, st.holder.sudo_periods()) or {
+        return none
+    }
+    return PeriodHit{ grant: g, typed: period_sudo_typed(book, g.id) }
 }
 
 // Drops approval `id` from the book, with any sudo password typed for it, which it

@@ -150,6 +150,21 @@ fake prompt gets nothing. The prompt and the password never reach the caller, th
 the activity; `-k` leaves no sudo session cached for a later command. It runs only in
 Flint, never on a typed master password.
 
+**Root for a while** is the one exception to one at a time, and only with **Allow sudo
+for a while** turned on in **Settings → Access** (off by default). A root period is a
+grant of its own kind, given in the root approval window with presence once: one caller
+anchor, **one host**, `exec --sudo` only, 2, 5 or 15 minutes from the approval, never
+until the vault locks. Each command it allows shows in its notice while it lasts. No
+grant, token or exec grant implies root, and no period covers a group or the whole vault,
+another host or a plain exec. A command that starts inside the period runs; one already
+running is never cut. Turning the setting off ends every period, as revoking one, locking
+or quitting does. Flint still types the password per command and keeps `-k`, so the
+period exists only in Flint's memory, never as a sudo session on the server. A sudo
+password typed in that window, if not saved for the host, is kept in that memory for the
+period and dropped when it ends. The setting is this computer's, like the grants it
+allows: turning it on gives nothing by itself, since a period is still given in the
+window, for one host, with presence.
+
 What a grant does not stop: a program running as you that is a **child of an approved
 program** shares its grant, and a program that can control the approved one (debug it,
 type into its terminal) can act through it. [Limits today](/guides/ai-agents/#limits-today)

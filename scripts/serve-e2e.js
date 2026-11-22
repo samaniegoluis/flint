@@ -46,7 +46,40 @@
         // `exec --sudo` (milestone 13): the exact argv, no grant to choose.
         const argv = [...form.querySelectorAll('[data-arg]')].map((e) => e.textContent);
         log((form.querySelector('[data-scope-all]') ? 'FAIL ' : 'ok   ') + 'a sudo request offers no grant to choose: ' + argv.join(' '));
+        // Milestone 57: "periods-on"/"periods-off" turn *Allow sudo for a while* on or off
+        // through the core (as Settings → Access's switch does) and deny the command.
+        if (argv.includes('periods-on') || argv.includes('periods-off')) {
+          const on = argv.includes('periods-on');
+          if (on) log((form.querySelector('[data-root-periods]') ? 'FAIL ' : 'ok   ') + 'with Allow sudo for a while off, the root window offers each command only');
+          const s = await window.backend.settings_get();
+          await window.backend.settings_set({ ...s, sudo_periods: on });
+          form.querySelector('[data-approval-deny]').click();
+          log('ok   Allow sudo for a while turned ' + (on ? 'on' : 'off'));
+          continue;
+        }
         if (argv.includes('deny-me')) { form.querySelector('[data-approval-deny]').click(); log('ok   denied the sudo command'); continue; }
+        const seg = form.querySelector('[data-root-periods]');
+        // With the switch off (25e3) there is nothing to pick: allowed for this command.
+        if (argv.includes('period-2m') && !seg) log('ok   the root window offers no period while Allow sudo for a while is off');
+        if (argv.includes('period-2m') && seg) {
+          const ok = (cond, what) => log((cond ? 'ok   ' : 'FAIL ') + what);
+          // 25e4/25e5/26c2: Allow for, the warning every time, notices always on for root.
+          ok(seg.querySelector('[aria-checked="true"]')?.dataset.rootPeriod === 'each' && !!form.querySelector('[data-sudo-once]') && !form.querySelector('[data-root-warning]'), 'the root window starts on Each command, with no warning');
+          form.querySelector('[data-root-period="2m"]').click();
+          await sleep(50);
+          ok(/ and everything it starts can run commands as root on local for 2 min without asking you\.$/.test(form.querySelector('[data-root-warning]')?.textContent ?? ''), 'picking 2 min shows the warning: ' + (form.querySelector('[data-root-warning]')?.textContent ?? ''));
+          const bell = form.querySelector('[data-root-notify]');
+          ok(!!bell && bell.checked && bell.disabled && !form.querySelector('[data-grant-notify]'), 'and Notify me of each command, checked and disabled: always on for root');
+          ok(!form.querySelector('[data-sudo-once]') && /^Allow root for 2 min/.test(form.querySelector('[data-approval-allow]').textContent), 'the button says Allow root for 2 min');
+          // The period's notice (26a4) and its row in the grants, once it has run.
+          (async () => {
+            const toast = await waitFor(() => [...document.querySelectorAll('[data-toast]')].find((t) => !t.classList.contains('leaving') && / ran 2 commands as root on local$/.test(t.querySelector('.t-text')?.textContent ?? '')), 'the root notice', 60000).catch(() => null);
+            ok(!!toast && toast.dataset.kind === 'root' && /^\d:\d\d left$/.test(toast.querySelector('[data-toast-side]')?.textContent ?? ''), 'the root notice says as root, counted in place, with its time left: ' + (toast?.textContent ?? 'none'));
+            const st = await window.backend.access_state();
+            const p = st.grants.find((g) => g.root);
+            ok(!!p && p.hosts.join() === 'local' && !p.read && !p.exec && !p.write && p.notify && p.expires_ms - st.now_ms <= 120000, 'the period is a grant of its own: root, one host, 2 min at most, notifying');
+          })();
+        }
         const field = form.querySelector('[data-sudo-password]');
         if (argv.includes('typed-pw') || argv.includes('save-pw') || argv.includes('wrong-pw')) {
           if (!field) { log('FAIL the window asks for a sudo password it does not hold'); continue; }
@@ -333,6 +366,8 @@
       await waitFor(() => q('[data-activity] [data-activity-entry]'), 'the activity table', 10000);
       await check(qa('[data-activity] [data-activity-entry="denied"]').length > 0, 'Settings → Access shows the activity, refusals included');
       if (sudoRows.length > 0) await check(!!q('[data-activity] [data-activity-sudo]'), 'a sudo command is marked root in the activity');
+      // Milestone 57 (25e1): Allow sudo for a while, off by default, says what off means.
+      await check(q('[data-setting="sudo_periods"]')?.getAttribute('aria-checked') === 'false' && hasText('Off: every root command is approved on its own.'), 'Settings → Access has Allow sudo for a while, off, with its help line');
       {
         // Milestone 15: an entry opens its detail with the whole command and the exact time.
         const row = qa('[data-activity] [data-activity-entry]').find((r) => r.textContent.includes('long-cmd'));

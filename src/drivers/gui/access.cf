@@ -22,6 +22,8 @@ type AccessState struct {
     now_ms:   i64        `json:"now_ms"`
     pending:  []Approval `json:"pending"`
     grants:   []GrantView `json:"grants"`
+    // Milestone 57: *Allow sudo for a while* is on, so the root window offers periods.
+    sudo_periods: bool   `json:"sudo_periods"`
 }
 
 type AccessAnswer struct {
@@ -41,6 +43,10 @@ type AccessAnswer struct {
     // Milestone 56 (26c1): the grant notifies each command it allows. For this grant
     // only; the default in Settings stays as it is.
     notify:             bool `json:"notify"`
+    // Milestone 57 (25e4): for `exec --sudo`, a root period of 2m, 5m or 15m on its
+    // host instead of this one command ("" for each command). Only while *Allow sudo
+    // for a while* is on.
+    period:             str  `json:"period"`
 }
 
 type GrantsChanged struct {
@@ -51,11 +57,11 @@ fn access_state(st: GuiState, store: LockedVaultStore, presence: OsPresence) -> 
     now := time.now_ms()
     if st.holder.window_locked() {
         // A locked window shows none of it: the lock screen counts who waits.
-        return AccessState{ presence: presence.presence_method(), now_ms: now, pending: [], grants: [] }
+        return AccessState{ presence: presence.presence_method(), now_ms: now, pending: [], grants: [], sudo_periods: st.holder.sudo_periods() }
     }
     book := st.holder.access_book()
     cat := held_catalog(st, store)
-    return AccessState{ presence: presence.presence_method(), now_ms: now, pending: waiting_approvals(book, now), grants: grant_views(live_grants(book.grants, now), cat) }
+    return AccessState{ presence: presence.presence_method(), now_ms: now, pending: waiting_approvals(book, now), grants: grant_views(live_grants(book.grants, now), cat), sudo_periods: st.holder.sudo_periods() }
 }
 
 // The open vault's catalog, or an empty one when it is locked.
@@ -94,8 +100,22 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
         return access_state(st, store, presence)
     }
     if ap.sudo.host.len() > 0 {
-        // `exec --sudo`: allowed for this one command, never as a grant.
-        try confirm_presence(c, store, presence, st.vault_session(), req.password, "run \"{ap.sudo.argv.join(" ")}\" as root on {ap.sudo.host}")
+        // `exec --sudo`: allowed for this one command, or for a root period on its one
+        // host (milestone 57, Principle 12), never as a grant.
+        mut period: Grant? = none
+        if req.period.len() > 0 {
+            // Checked before presence, so a period that cannot be given never shows
+            // the OS dialog.
+            if !st.holder.sudo_periods() {
+                return error(coded(ERR_INVALID, "Allow sudo for a while is off in Settings → Access; allow this one command"))
+            }
+            period = try root_period_from_approval(ap, held_catalog(st, store), hex.encode(c.random_bytes(8)), req.period, time.now_ms())
+        }
+        mut reason := "run \"{ap.sudo.argv.join(" ")}\" as root on {ap.sudo.host}"
+        if p := period {
+            reason = "let \"{ap.label}\" run commands as root on {ap.sudo.host} for {period_minutes(p.duration)} minutes"
+        }
+        try confirm_presence(c, store, presence, st.vault_session(), req.password, reason)
         if req.save_sudo_password && req.sudo_password.len() > 0 {
             st.hold()
             mut ts := store
@@ -114,6 +134,22 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
         }
         if req.sudo_password.len() > 0 {
             put_sudo_typed(mut sbook, req.id, req.sudo_password)
+        }
+        if p := period {
+            // Counted from the approval: presence took its time, so start it now.
+            mut given := p
+            given.created_ms = time.now_ms()
+            given.expires_ms = root_period_expiry(given.created_ms, given.duration) or p.expires_ms
+            sbook.grants.push(given)
+            if req.sudo_password.len() > 0 {
+                sbook.period_typed.push(SudoTyped{ id: given.id, password: req.sudo_password })
+            }
+            st.holder.put_access_book(sbook)
+            st.holder.access_release()
+            // No host here: the log never names what is inside the vault (Principle 5).
+            write_stderr("flint-gui: allowed {ap.label} to run commands as root on one host ({given.duration})\n")
+            app.emit("access:changed", GrantsChanged{ count: i64(sbook.grants.len()) })
+            return access_state(st, store, presence)
         }
         st.holder.put_access_book(sbook)
         st.holder.access_release()

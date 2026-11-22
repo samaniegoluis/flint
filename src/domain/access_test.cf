@@ -236,3 +236,113 @@ test "set_grant_notify turns one grant's notice on or off" {
     assert(!book.grants[0].notify)
     assert(!set_grant_notify(mut book, "nope", true))
 }
+
+// ---- Root periods (milestone 57, D-117 (1)-(2), D-126 (4), Principle 12) ------------
+
+fn sudo_need(alias: str) -> AccessNeed {
+    return AccessNeed{ action: ACCESS_SUDO, host: alias }
+}
+
+fn root_approval(alias: str) -> Approval {
+    return new_approval("a1", "v1", Caller{ uid: 501, chain: agent_chain() }, "flint exec {alias} --sudo -- id", sudo_need(alias), 1000)
+}
+
+test "a root period covers exec --sudo by its caller on its one host, until it ends" {
+    cat := test_catalog()
+    agent := Caller{ uid: 501, chain: agent_chain() }
+    p := try root_period_from_approval(root_approval("api-01"), cat, "r1", "2m", 1000)
+    assert(p.root && p.notify && !p.read && !p.exec && !p.write)
+    assert_eq(p.expires_ms, 1000 + 120000)
+    assert_eq(p.scope.hosts.len(), 1)
+    assert(find_root_period([p], agent, "v1", sudo_need("api-01"), cat, 1001, true) != none)
+    // The alias is matched without case, as everywhere else.
+    assert(find_root_period([p], agent, "v1", sudo_need("API-01"), cat, 1001, true) != none)
+    // Another host, another vault, after the end, or with the setting off: none.
+    assert(find_root_period([p], agent, "v1", sudo_need("lab-01"), cat, 1001, true) == none)
+    assert(find_root_period([p], agent, "v2", sudo_need("api-01"), cat, 1001, true) == none)
+    assert(find_root_period([p], agent, "v1", sudo_need("api-01"), cat, 1000 + 120000, true) == none)
+    assert(find_root_period([p], agent, "v1", sudo_need("api-01"), cat, 1001, false) == none)
+    // A host the vault does not hold is never covered.
+    assert(find_root_period([p], agent, "v1", sudo_need("gone-01"), cat, 1001, true) == none)
+}
+
+test "a root period belongs to one caller and covers nothing but root" {
+    cat := test_catalog()
+    p := try root_period_from_approval(root_approval("api-01"), cat, "r1", "5m", 0)
+    // Another process, or the same pid started at another time.
+    other := Caller{ uid: 501, chain: [test_proc(700, 600, "/usr/local/bin/flint", "flint"), test_proc(600, 1, "/usr/bin/codex", "codex"), test_proc(1, 0, "/sbin/launchd", "launchd")] }
+    assert(find_root_period([p], other, "v1", sudo_need("api-01"), cat, 5, true) == none)
+    mut reused := agent_chain()
+    reused[2].started = 1
+    assert(find_root_period([p], Caller{ uid: 501, chain: reused }, "v1", sudo_need("api-01"), cat, 5, true) == none)
+    // A plain exec, a read or a write on that host: not through the period.
+    agent := Caller{ uid: 501, chain: agent_chain() }
+    assert(!grant_covers(p, "v1", run_need("api-01"), cat, 5))
+    assert(!grant_covers(p, "v1", AccessNeed{ action: ACCESS_READ, host: "" }, cat, 5))
+    assert(find_grant([p], agent, "v1", run_need("api-01"), cat, 5) == none)
+    (ok, _) := exec_allowed_until([p], agent, "v1", "api-01", cat, 5)
+    assert(!ok)
+}
+
+test "no exec grant, whole-vault grant or token implies root" {
+    cat := test_catalog()
+    agent := Caller{ uid: 501, chain: agent_chain() }
+    g := test_grant(AccessScope{ all: true, groups: [], hosts: [] }, true, true, true, 0)
+    assert(!grant_covers(g, "v1", sudo_need("api-01"), cat, 5))
+    assert(find_root_period([g], agent, "v1", sudo_need("api-01"), cat, 5, true) == none)
+    // Even a grant marked root by hand but scoped wider than one host covers nothing.
+    mut wide := g
+    wide.root = true
+    wide.expires_ms = 1000
+    assert(find_root_period([wide], agent, "v1", sudo_need("api-01"), cat, 5, true) == none)
+    mut until_lock := try root_period_from_approval(root_approval("api-01"), cat, "r1", "2m", 0)
+    until_lock.expires_ms = 0
+    assert(find_root_period([until_lock], agent, "v1", sudo_need("api-01"), cat, 5, true) == none)
+}
+
+test "a root period is 2, 5 or 15 minutes, for a command as root on a known host" {
+    cat := test_catalog()
+    mut refused := 0
+    assert_eq((try root_period_from_approval(root_approval("api-01"), cat, "r", "15m", 0)).expires_ms, 900000)
+    root_period_from_approval(root_approval("api-01"), cat, "r", "16m", 0) or { refused += 1 }
+    root_period_from_approval(root_approval("api-01"), cat, "r", "1h", 0) or { refused += 1 }
+    root_period_from_approval(root_approval("api-01"), cat, "r", "lock", 0) or { refused += 1 }
+    root_period_from_approval(root_approval("gone-01"), cat, "r", "2m", 0) or { refused += 1 }
+    plain := new_approval("a2", "v1", Caller{ uid: 501, chain: agent_chain() }, "flint exec api-01 -- id", run_need("api-01"), 0)
+    root_period_from_approval(plain, cat, "r", "2m", 0) or { refused += 1 }
+    assert_eq(refused, 5)
+}
+
+test "turning the setting off ends every root period and its typed password" {
+    cat := test_catalog()
+    mut book := empty_access_book()
+    book.grants.push(test_grant(AccessScope{ all: true, groups: [], hosts: [] }, true, true, false, 0))
+    book.grants.push(try root_period_from_approval(root_approval("api-01"), cat, "r1", "5m", 0))
+    book.period_typed.push(SudoTyped{ id: "r1", password: "pw" })
+    assert_eq(period_sudo_typed(book, "r1"), "pw")
+    assert_eq(end_root_periods(mut book), 1)
+    assert_eq(book.grants.len(), 1)
+    assert_eq(period_sudo_typed(book, "r1"), "")
+}
+
+test "a root period's typed password goes when it is revoked or ends" {
+    cat := test_catalog()
+    mut book := empty_access_book()
+    book.grants.push(try root_period_from_approval(root_approval("api-01"), cat, "r1", "2m", 0))
+    book.grants.push(try root_period_from_approval(root_approval("lab-01"), cat, "r2", "15m", 0))
+    book.period_typed.push(SudoTyped{ id: "r1", password: "one" })
+    book.period_typed.push(SudoTyped{ id: "r2", password: "two" })
+    prune_period_typed(mut book, 120000)
+    assert_eq(period_sudo_typed(book, "r1"), "")
+    assert_eq(period_sudo_typed(book, "r2"), "two")
+    assert(revoke_grant(mut book, "r2"))
+    assert_eq(book.period_typed.len(), 0)
+}
+
+test "a root period's bell stays on" {
+    cat := test_catalog()
+    mut book := empty_access_book()
+    book.grants.push(try root_period_from_approval(root_approval("api-01"), cat, "r1", "2m", 0))
+    assert(set_grant_notify(mut book, "r1", false))
+    assert(book.grants[0].notify)
+}

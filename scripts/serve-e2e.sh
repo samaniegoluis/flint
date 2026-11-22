@@ -439,6 +439,56 @@ if [[ -n "${FLINT_FAKE_SUDO_DIR:-}" || -n "${FLINT_E2E_SUDO:-}" ]]; then
     rm -f "$FLINT_FAKE_SUDO_DIR/not-a-sudoer"
   fi
   check "no sudo password in the app log" '! grep -q "$SUDO_PW" "$tmp/app.log"'
+
+  # Root for a while (milestone 57, D-117 (1)-(2), D-126 (4), Principle 12). One caller
+  # (period.py) is given 2 minutes of root on `local`; its next sudo there runs with
+  # no window, while a plain exec, sudo on another host and another caller still ask;
+  # turning the switch off ends the period mid-way. The host has its saved password.
+  echo "== root for a while (milestone 57)"
+  cat > "$tmp/period.py" <<'PY'
+import os, subprocess, sys, time
+flint, gate, runs = sys.argv[1], sys.argv[2], sys.argv[3:]
+codes = []
+for r in runs:
+    if r == "WAIT":
+        open(gate + ".ready", "w").close()
+        for _ in range(1200):
+            if os.path.exists(gate):
+                break
+            time.sleep(0.1)
+        continue
+    codes.append(str(subprocess.call([flint] + r.split(" "))))
+print("codes=" + ",".join(codes))
+PY
+  asked_root_before=$(grep -c "asking the owner to approve" "$tmp/app.log")
+  new_caller "" -- exec local --sudo -- true period-2m
+  check "with Allow sudo for a while off (the default), the window offers no period: this one command only" '[[ $status == 0 ]] && grep -q "\[page\] ok   the root window offers no period while" "$tmp/app.log"'
+  new_caller "" -- exec local --sudo -- true periods-on
+  check "the switch turned on (that request denied)" '[[ $status == 15 ]] && grep -q "\[page\] ok   Allow sudo for a while turned on" "$tmp/app.log"'
+  gate="$tmp/period-go"; rm -f "$gate" "$gate.ready"
+  (printf '' | no_tty python3 -I "$tmp/period.py" "$flint" "$gate" \
+    "exec local --sudo -- echo period-2m" "exec local --sudo -- echo in-period" \
+    "exec local -- echo plain-exec deny-me" "exec tty --sudo -- true deny-me" \
+    "WAIT" "exec local --sudo -- echo after-off deny-me" >"$tmp/period.out" 2>"$tmp/period.err") &
+  period_pid=$!
+  for _ in $(seq 1 1200); do [[ -e "$gate.ready" ]] && break; sleep 0.1; done
+  check "the period was given, for one host, and logged without naming it" 'grep -q "allowed .* to run commands as root on one host (2m)" "$tmp/app.log"'
+  new_caller "" -- exec local --sudo -- true deny-me
+  check "another caller is outside the period: its sudo asks (denied here)" '[[ $status == 15 ]]'
+  new_caller "" -- exec local --sudo -- true periods-off
+  check "the switch turned off" '[[ $status == 15 ]] && grep -q "\[page\] ok   Allow sudo for a while turned off" "$tmp/app.log"'
+  check "turning it off ended the period" 'grep -q "sudo for a while turned off; 1 root period(s) ended" "$tmp/app.log"'
+  touch "$gate"; wait "$period_pid"
+  period_out="$(cat "$tmp/period.out")"
+  { echo "\$ period.py"; echo "$period_out"; cat "$tmp/period.err"; } >> "$all_out"
+  asked_root_after=$(grep -c "asking the owner to approve" "$tmp/app.log")
+  check "inside the period the next sudo ran with no window, as root" '[[ "$period_out" == *in-period* && "$period_out" == *"codes=0,0,"* ]]'
+  check "a plain exec and sudo on another host still asked (denied here)" '[[ "$period_out" == *"codes=0,0,15,15,"* ]]'
+  check "after the switch went off the same caller is asked again (denied here)" '[[ "$period_out" == *"codes=0,0,15,15,15" && "$period_out" != *after-off* ]]'
+  # period-2m twice (off, then on), periods-on, plain exec, tty, another caller,
+  # periods-off, after-off: the in-period command alone did not ask.
+  check "eight approvals for nine requests" '[[ $((asked_root_after - asked_root_before)) == 8 ]]'
+  check "no sudo password in the app log, still" '! grep -q "$SUDO_PW" "$tmp/app.log"'
 else
   echo "skip  exec --sudo (no sudo to run against: macOS stand-in or FLINT_E2E_SUDO=1)"
 fi

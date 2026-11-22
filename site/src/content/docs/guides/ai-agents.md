@@ -88,7 +88,8 @@ ends (pointing at it keeps it), then comes back with the next.
   db1.*), then revokes the grant. A command already running finishes; the next one asks
   again.
 
-Notices are on for every new grant by default. Untick **Notify me of each command** in the
+A [root period](#root-for-a-while)'s notice says *as root* and its time left, and stays
+until the period ends. Notices are on for every new grant by default. Untick **Notify me of each command** in the
 approval window for one grant, turn the default off with **Notify me of commands run under
 a grant** in **Settings → Access**, or use a grant's bell there to turn its notices off or
 on at any time. Notices are cleared when the vault locks, which also ends every grant.
@@ -120,7 +121,8 @@ keys or `ssh` directly.
   15 (`denied`) or 16 (`approval_timeout`): I did not approve it in Flint; ask me first.
   11 (`host_key`): ask me to check the server's key. Never pass `--accept-new-host-key`.
 - As root: `flint --json exec <alias> --sudo -- <command> [args]`. I approve each one
-  in Flint, which types the sudo password; you never see it. Pass the arguments as
+  in Flint, or a few minutes of root on that one host, and Flint types the sudo
+  password; you never see it. Pass the arguments as
   separate words, not one quoted string. Exit 17 (`not_sudoer`) or 18 (`sudo_password`):
   tell me.
 ```
@@ -132,7 +134,7 @@ keys or `ssh` directly.
 | `flint --json host list` | Every host: alias, hostname, user, group, tags. No secret |
 | `flint --json host show <alias>` | One host, with `has_password` instead of the password |
 | `flint --json exec <alias> -- '<cmd>'` | `{host, exit_code, signal, stdout, stderr, duration_ms}` |
-| `flint --json exec <alias> --sudo -- <cmd> [args]` | The same, run as root once you allow that exact command in Flint |
+| `flint --json exec <alias> --sudo -- <cmd> [args]` | The same, run as root once you allow that exact command in Flint, or inside a [root period](#root-for-a-while) you gave |
 | `flint --json cp [-r] <src> <dst>` | Copies a file or folder to or from a host, or between two: `{host, to_host, direction, files, folders, bytes, skipped, duration_ms}` |
 | `flint --json tunnel ls` / `tunnel status` | The saved tunnels, or the running ones, with `listen` (`127.0.0.1:<port>`) and `state` |
 | `flint --json tunnel up\|down <host>:<name>` | Starts or stops a saved tunnel in Flint; it keeps running after the command returns |
@@ -189,7 +191,8 @@ flint exec web-01 --sudo -- systemctl restart nginx
 
 1. Flint's window shows the program that asks, the host, the login user and the
    **exact arguments**, one per chip. No grant or token covers it: every `--sudo`
-   command is asked for, and confirmed with Touch ID, polkit or the master password.
+   command is asked for, and confirmed with Touch ID, polkit or the master password,
+   unless you gave that program [a few minutes of root](#root-for-a-while) on that host.
 2. Flint runs `sudo -S -k -p <random prompt> -- <arguments>` on the host, each argument
    quoted as one word: the arguments are never parsed by a shell. For pipes or
    redirections the agent passes them on purpose, and you see them:
@@ -210,6 +213,36 @@ decision is in the activity log, with the full command.
 If a host lets its login user run `sudo` with no password (`NOPASSWD`), or logs in as
 `root`, a plain `flint exec` gets root there with no window. Keep agents away from such
 hosts, or remove that rule.
+
+### Root for a while
+
+Setting up a server, an agent may run ten commands as root you already agreed to, and
+approving each one with Touch ID gets in the way. Turn on **Allow sudo for a while** in
+**Settings → Access** (it is off by default). The root approval window then offers
+**Allow for: Each command · 2 min · 5 min · 15 min**.
+
+Picking a period shows a warning every time, *Claude Code and everything it starts can run
+commands as root on db1 for 5 min without asking you*, and the button becomes **Allow root
+for 5 min**. You confirm once, with Touch ID, polkit or the master password. Then, until
+the period ends:
+
+- `flint exec db1 --sudo -- …` from **that program** (and everything it starts) runs with
+  no window, on **that one host** only. A period never covers a group or the whole vault.
+- Each command shows in the period's notice, *Claude Code ran 3 commands as root on db1*,
+  with its time left. The notice stays while the period lasts; **View** lists the
+  commands, **Stop** ends the period. Notices are always on for root.
+- Everything else still asks: a plain `flint exec`, `--sudo` on another host, and any other
+  program. An exec grant never covers root and a period covers nothing but root.
+- Flint still types the sudo password per command and keeps `sudo -k`, so the server
+  never holds a sudo session: the period is Flint's alone. When Flint has no saved
+  password for the host, the one you type in the window is kept in memory for the period
+  only, unless you tick **Save it for this host**.
+
+The period counts from your approval, and covers commands that **start** inside it: one
+already running is never cut, which is why the shortest is 2 minutes, not 1. It is listed
+in **Settings → Access → Active grants** with a **Root** badge and its time left, and
+**Revoke** ends it. Turning **Allow sudo for a while** off ends every period at once;
+locking the vault or quitting Flint ends them too.
 
 ## Limits today
 

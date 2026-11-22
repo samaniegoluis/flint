@@ -416,12 +416,25 @@ fn rpc_settings_get(store: JsonSettingsStore) -> str! {
     return json.stringify(try load_settings(store))
 }
 
-fn rpc_settings_set(params: str, mut store: JsonSettingsStore, st: GuiState) -> str! {
+fn rpc_settings_set(params: str, mut store: JsonSettingsStore, st: GuiState, mut app: webui.App) -> str! {
     try st.require_open_window()
     req := try parse_req[Settings](params)
     saved := try save_settings(mut store, req)
     st.holder.set_lock_after(saved.lock_after)
     st.holder.set_notify_grants(saved.notify_grants)
+    st.holder.set_sudo_periods(saved.sudo_periods)
+    if !saved.sudo_periods {
+        // *Allow sudo for a while* off ends every root period at once (milestone 57).
+        st.holder.access_hold()
+        mut book := st.holder.access_book()
+        ended := end_root_periods(mut book)
+        st.holder.put_access_book(book)
+        st.holder.access_release()
+        if ended > 0 {
+            write_stderr("flint-gui: sudo for a while turned off; {ended} root period(s) ended\n")
+            app.emit("access:changed", GrantsChanged{ count: i64(book.grants.len()) })
+        }
+    }
     return json.stringify(saved)
 }
 

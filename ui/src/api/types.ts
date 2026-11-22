@@ -220,6 +220,8 @@ export interface Settings {
   server_stats_colour: boolean;
   /** Milestone 56 (26d1): new grants notify each command they allow. */
   notify_grants: boolean;
+  /** Milestone 57 (25e1/25e2): *Allow sudo for a while*; off by default. */
+  sudo_periods: boolean;
 }
 
 /** The update check's outcome (milestone 52, src/domain/update.cf), as `update:status`. */
@@ -585,6 +587,8 @@ export interface GrantView {
   anchor_pid: number;
   /** Milestone 56: each command it allows shows in its notice (the bell). */
   notify: boolean;
+  /** Milestone 57: a root period on its one host (`hosts`); always notifies. */
+  root: boolean;
 }
 
 /** How Allow is confirmed: Touch ID, the Mac's password, polkit, or the master password. */
@@ -596,9 +600,14 @@ export interface AccessState {
   now_ms: number;
   pending: Approval[];
   grants: GrantView[];
+  /** Milestone 57: *Allow sudo for a while* is on (the core's own word). */
+  sudo_periods: boolean;
 }
 
 export type GrantDuration = '15m' | '1h' | '4h' | 'lock';
+
+/** Milestone 57 (25e4): '' is each command. */
+export type RootPeriod = '' | '2m' | '5m' | '15m';
 
 export interface AccessAnswer {
   id: string;
@@ -614,6 +623,8 @@ export interface AccessAnswer {
   save_sudo_password: boolean;
   /** Milestone 56 (26c1): this grant notifies each command it allows. */
   notify: boolean;
+  /** Milestone 57 (25e4): `exec --sudo` allowed for a root period on its host. */
+  period: RootPeriod;
 }
 
 /** A token as Settings → Access lists it (milestone 12b): never its secret. Times are Unix seconds. */
@@ -674,6 +685,9 @@ export interface ActivityAddedEvent {
   action: AccessNeedAction;
   at: number;
   state: '' | 'running' | 'ended';
+  /** Milestone 57: the grant is a root period, with this long left when it ran. */
+  root?: boolean;
+  left_ms?: number;
 }
 
 /** `activity:finished` (milestone 56). */

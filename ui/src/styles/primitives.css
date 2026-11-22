@@ -319,6 +319,7 @@ svg.t-mark { width: 14px; height: 14px; border-radius: 0; background: none; colo
 .toast.expanded { align-items: flex-start; }
 .toast.expanded .t-text { display: block; -webkit-line-clamp: unset; max-height: calc(1.4em * 8); overflow-y: auto; }
 .toast.expanded > .btn, .toast.expanded > .t-x, .toast.expanded > .t-mark { margin-top: 4px; }
+.t-prog.wide { width: auto; min-width: 56px; }
 .t-prog { width: 36px; flex: none; text-align: right; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 .toast .btn { flex: none; }
 .t-x { width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: none; color: var(--text-tertiary); cursor: pointer; }
@@ -811,4 +812,6 @@ button.picker-row:not(.off) { cursor: pointer; }
 .acc-h .acc-refused { color: var(--text-tertiary); text-decoration: line-through; text-decoration-color: var(--border-strong); }
 .bell { color: var(--text-tertiary); }
 .bell.on { color: var(--accent-text); }
+/* A root period's bell is always on (milestone 57): shown, not a button. */
+.bell.is-disabled { cursor: default; opacity: 0.6; }
 button.link { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
