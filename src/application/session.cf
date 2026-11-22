@@ -49,6 +49,10 @@ type VaultStatus struct {
     activity_days: i64 `json:"activity_days"`
     // Milestone 43: its server, when this machine syncs it with one.
     remote: RemoteStatus `json:"remote"`
+    // Milestone 61: why it is locked (LOCK_REASON_*, "" when unlocked), and those
+    // words as `vault status` shows them. Only the running Flint knows; the CLI asks it.
+    lock_reason: str `json:"lock_reason"`
+    lock_detail: str `json:"lock_detail"`
 }
 
 // The keychain account of a vault: its salt, which is unique per vault and already
@@ -167,6 +171,16 @@ fn create_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     return VaultSession{ path: path, name: vault_name, id: id, secrets_key: secrets, cached: cached }
 }
 
+// The key the keychain remembers for `account` ([] for none or no keychain), and
+// whether the keychain refused to give it (the person denied it).
+fn load_cached_key[K: Keychain](keychain: K, account: str) -> ([]byte, bool) {
+    key := keychain.keychain_load(account) or err {
+        m := "{err.message()}"
+        return ([], error_code_of(m) == ERR_KEYCHAIN && m.contains("refused"))
+    }
+    return (key, false)
+}
+
 // Unlocks a vault. With an empty `password`, only the key cached in the keychain is
 // tried, and a vault with no cached key fails with `locked`. With a password, the
 // key is derived, and cached on success only with `remember` (D-048). Without it the
@@ -178,8 +192,12 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
     mut master: []byte = []
     mut from_cache := false
     if password.len() == 0 {
-        // A keychain that cannot be reached is treated like one with no entry.
-        cached_key := keychain.keychain_load(account) or []
+        // A keychain that cannot be reached is treated like one with no entry; one
+        // that refused (the person denied it) says so (milestone 61).
+        (cached_key, refused) := load_cached_key(keychain, account)
+        if refused {
+            return error(coded(ERR_LOCKED, "{KEYCHAIN_REFUSED_TEXT}; the master password is needed"))
+        }
         if cached_key.len() != VAULT_KEY_LEN {
             return error(coded(ERR_LOCKED, "the vault at {path} is locked; the master password is needed"))
         }
@@ -288,7 +306,7 @@ fn lock_vault[S: VaultStore, K: Keychain](mut store: S, keychain: K, path: str) 
 // Reports a vault without asking for its password: counts appear only when the
 // keychain holds its key.
 fn vault_status[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C, mut store: S, keychain: K, recents: R, path: str, name: str) -> VaultStatus! {
-    mut st := VaultStatus{ path: path, name: name, exists: store.vault_file_exists(path), unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1, remote: no_remote_status() }
+    mut st := VaultStatus{ path: path, name: name, exists: store.vault_file_exists(path), unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1, remote: no_remote_status(), lock_reason: "", lock_detail: "" }
     if !st.exists {
         return st
     }
@@ -319,6 +337,7 @@ fn open_vault_status[S: VaultStore, T: TokenStore](store: S, tokens: T, session:
         keys: i64((try store.keys_all()).len()),
         credentials: i64((try store.creds_all()).len()),
         remote: no_remote_status(),
+        lock_reason: "", lock_detail: "",
     }
 }
 

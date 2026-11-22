@@ -144,12 +144,18 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try p.allow_flags("vault status", [])
         try p.expect_args("vault status", 0, "[--vault <name|path>]")
         target := try resolve_vault(recents, vault_selector(p))
-        mut st := VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1, remote: no_remote_status() }
+        mut st := VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1, remote: no_remote_status(), lock_reason: "", lock_detail: "" }
         if src.served && same_file_path(target.path, src.session.path) {
             // Unlocked in the app: counts from the open store, no keychain read.
             st = try open_vault_status(store, store, src.session)
         } else {
             st = try vault_status(c, mut store, src.kc, recents, target.path, target.name)
+            if st.exists && !st.unlocked && !src.served {
+                // Only the running Flint knows why (milestone 61); the CLI asks it.
+                why := app_lock_reason(target)
+                st.lock_reason = why.reason
+                st.lock_detail = why.detail
+            }
         }
         if st.exists {
             st.remote = try remote_status(c, store, remote_links(), target.path)

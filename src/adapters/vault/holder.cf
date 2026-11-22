@@ -223,6 +223,46 @@ fn (self: SessionHolder) lock_after() -> str {
     return s
 }
 
+// Settings' approval wait (milestone 61), in milliseconds as approval_wait_ms gives
+// it. Set at start and on save.
+fn (self: SessionHolder) set_approval_wait(ms: i64) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->approval_wait_ms = ms;
+    }
+}
+
+fn (self: SessionHolder) approval_wait() -> i64 {
+    mut ms: i64 = 0
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        ms = self.cell->approval_wait_ms;
+    }
+    return ms
+}
+
+// Why the vault is locked (milestone 61): a domain LOCK_REASON_*, kept until the
+// next lock or a failed unlock says otherwise.
+fn (self: SessionHolder) set_lock_reason(reason: str) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->lock_reason = reason;
+    }
+}
+
+fn (self: SessionHolder) lock_reason() -> str {
+    mut r := ""
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        r = self.cell->lock_reason;
+    }
+    return r
+}
+
 // The window closed: background loops end.
 fn (self: SessionHolder) set_quitting() {
     // CFIRE-UPSTREAM: CF-026

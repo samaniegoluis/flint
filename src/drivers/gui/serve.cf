@@ -94,6 +94,7 @@ fn lock_now(mut store: LockedVaultStore, st: GuiState, mut app: webui.App, reaso
     }
     s := st.vault_session()
     st.holder.mark_relocked(s.path)
+    st.holder.set_lock_reason(reason)
     // The vault's lock screen replaces the window's.
     st.holder.set_window_locked(false)
     st.forget()
@@ -171,8 +172,14 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
     } else if req.kind == "session" {
         serve_session(mut conn, req, c, mut store, kc, recents, st, mut app)
     } else if req.kind == "status" {
-        now := app_state_for(st, req.vault)
-        _ = conn.send(app_state_json(now.state, now.name), SERVE_SEND_MS) or {}
+        mut now := app_state_for(st, req.vault)
+        if now.state == APP_LOCKED || now.state == APP_ASKING {
+            // Why (milestone 61): nothing from inside the vault (Principle 5).
+            now.reason = st.holder.lock_reason()
+            now.detail = lock_reason_text(now.reason, st.holder.lock_after())
+        }
+        now.wait_ms = st.holder.approval_wait()
+        _ = conn.send(app_state_full_json(now), SERVE_SEND_MS) or {}
     } else if req.kind == "unlock" {
         now := app_state_for(st, req.vault)
         if now.state == APP_LOCKED || now.state == APP_ASKING {
@@ -181,6 +188,7 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
             // Who asks, kept until the unlock: the unlock screen may allow it at once.
             caller := ipc_caller(conn.peer)
             mut ap := new_approval(hex.encode(c.random_bytes(8)), "", caller, req.caller, req.need, time.now_ms())
+            ap.deadline_ms = ap.created_ms + st.holder.approval_wait()
             if req.command.len() > 0 {
                 ap.command = whole_command(req.command)
             }
@@ -191,9 +199,10 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
             st.holder.access_release()
             app.emit("vault:unlock-request", UnlockRequest{ path: req.vault, name: name, caller: req.caller, label: ap.label, command: ap.command })
             show_window(mut app)
-            _ = conn.send(app_state_json(APP_ASKING, ""), SERVE_SEND_MS) or {}
+            // How long the client may wait for the person (milestone 61).
+            _ = conn.send(app_state_full_json(AppState{ state: APP_ASKING, name: "", wait_ms: st.holder.approval_wait() }), SERVE_SEND_MS) or {}
         } else {
-            _ = conn.send(app_state_json(now.state, now.name), SERVE_SEND_MS) or {}
+            _ = conn.send(app_state_full_json(AppState{ state: now.state, name: now.name, wait_ms: st.holder.approval_wait() }), SERVE_SEND_MS) or {}
         }
     } else if req.kind == "show" {
         // A second launch of Flint (milestone 14): this one shows its window, locked
@@ -417,7 +426,8 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     // own words (`req.caller`), which a client could set to anything (milestone 15).
     mut ap := new_approval(id, session.id, caller, caller_summary(parsed), need, now)
     ap.command = whole_command(caller_command(parsed))
-    ap.deadline_ms = now + approval_wait_ms()
+    wait_ms := st.holder.approval_wait()
+    ap.deadline_ms = now + wait_ms
     ap.token = ask
     ap.sudo = sudo
     ap.tunnel = tunnel
@@ -433,8 +443,8 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     write_stderr("flint-gui: asking the owner to approve {ap.label}\n")
     app.emit("access:request", ap)
     show_window(mut app)
-    notice := "Waiting for approval in Flint ({ap.label})…"
-    send_wait(conn, notice, session_kind)
+    notice := "Waiting for approval in Flint ({ap.label}), up to {wait_text(wait_ms)}…"
+    send_wait(conn, notice, ap.deadline_ms, session_kind)
     mut last_notice := now
     for true {
         time.sleep_ms(APPROVAL_POLL_MS)
@@ -473,7 +483,7 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
             app.emit("access:resolved", ApprovalResolved{ id: id, state: "expired" })
             entry.outcome = ACTIVITY_TIMEOUT
             log_activity(st, store, session, entry, mut app)
-            return refuse(coded(ERR_APPROVAL_TIMEOUT, "nobody answered in Flint within {approval_wait_ms() / 1000}s; run the command again and allow it there"))
+            return refuse(coded(ERR_APPROVAL_TIMEOUT, "nobody answered in Flint within {wait_text(wait_ms)}; run the command again and allow it there"))
         }
         // A client that hung up is not waiting any more. Before a session's raw mode
         // the client sends nothing, so anything readable is its close.
@@ -482,8 +492,10 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
             app.emit("access:resolved", ApprovalResolved{ id: id, state: "gone" })
             return refuse("gone")
         }
-        if session_kind && t - last_notice >= APPROVAL_NOTICE_MS {
-            send_wait(conn, notice, session_kind)
+        // A run's client too (milestone 61): each notice keeps it reading past its own
+        // socket timeout for as long as the approval wait lasts.
+        if t - last_notice >= APPROVAL_NOTICE_MS {
+            send_wait(conn, notice, ap.deadline_ms, session_kind)
             last_notice = t
         }
     }
@@ -605,23 +617,20 @@ fn finish_logged(st: GuiState, store: LockedVaultStore, session: VaultSession, g
     }
 }
 
-// How long a caller waits for the owner. The headless end-to-end run (and only it)
-// may shorten it with FLINT_APPROVAL_WAIT_MS, to check a timeout in seconds.
-fn approval_wait_ms() -> i64 {
+// The headless end-to-end runs (and only they) may shorten every approval wait with
+// FLINT_APPROVAL_WAIT_MS, to check a timeout in seconds; 0 for none.
+fn approval_wait_override_ms() -> i64 {
     if os.getenv("FLINT_GUI_E2E").len() > 0 {
-        ms := i64.parse(os.getenv("FLINT_APPROVAL_WAIT_MS")) or APPROVAL_WAIT_MS
-        if ms > 0 && ms < APPROVAL_WAIT_MS {
-            return ms
-        }
+        return i64.parse(os.getenv("FLINT_APPROVAL_WAIT_MS")) or 0
     }
-    return APPROVAL_WAIT_MS
+    return 0
 }
 
-fn send_wait(conn: IpcConn, notice: str, session_kind: bool) {
+fn send_wait(conn: IpcConn, notice: str, deadline_ms: i64, session_kind: bool) {
     if session_kind {
         _ = conn.send(relay_frame(TAG_WAIT, notice), SERVE_SEND_MS) or {}
     } else {
-        _ = conn.send(wait_notice_json(notice), SERVE_SEND_MS) or {}
+        _ = conn.send(wait_notice_json(notice, deadline_ms), SERVE_SEND_MS) or {}
     }
 }
 

@@ -116,6 +116,7 @@ fn main() {
     st.holder.set_lock_after(first_settings.lock_after)
     st.holder.set_notify_grants(first_settings.notify_grants)
     st.holder.set_sudo_periods(first_settings.sudo_periods)
+    st.holder.set_approval_wait(approval_wait_ms(first_settings.approval_wait, approval_wait_override_ms()))
     // Once per machine: the keys earlier Flints cached on every unlock go (D-048).
     if os.getenv("FLINT_KEYCHAIN") != "off" {
         report_forget_cached_keys(mut settings_store, store, kc, recents)

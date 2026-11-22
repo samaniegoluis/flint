@@ -249,8 +249,9 @@ fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
 
 // The whole CLI: help, then the running app if it holds this command's vault
 // unlocked (serve.cf), else the command in this process with a typed master
-// password. With nobody to type it, Flint is asked to unlock and the command fails
-// with `locked`.
+// password. With nobody to type it, Flint is asked to unlock and the command waits
+// for it within the approval wait (milestone 61), failing with `locked` when nobody
+// unlocks in time.
 fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
     if wants_help(p) {
         write_stdout(usage_text())
@@ -295,7 +296,19 @@ fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
             }
             recents := new_json_recent_store(flint_config_dir())
             target := try resolve_vault(recents, vault_selector(p))
-            st := request_unlock(target, p)
+            mut st := request_unlock(target, p)
+            if st.state == APP_ASKING {
+                // The vault waits for the unlock as an approval waits (milestone 61,
+                // D-134 (3)), then the command goes on to its approval.
+                wait_ms := unlock_wait_ms(st)
+                if !as_json {
+                    write_stderr("Waiting for vault '{target.name}' to be unlocked in Flint, up to {wait_text(wait_ms)}…\n")
+                }
+                st = wait_for_unlock(target, wait_ms)
+                if st.state == APP_ASKING || st.state == APP_LOCKED {
+                    return error(not_unlocked_error(target, wait_ms))
+                }
+            }
             if st.state != APP_UNLOCKED {
                 return error(locked_error(target, st))
             }

@@ -302,3 +302,39 @@ test "create and unlock open the machine's activity file with a key of its own" 
     assert_eq(store.act_id, again.id)
     assert(store.act_key == created_key, "the same vault derives the same activity key")
 }
+
+// A keychain whose person denied the read (a macOS *Deny*), milestone 61.
+type RefusingKeychain struct {
+    unused: bool
+}
+
+fn (self: RefusingKeychain) keychain_save(account: str, secret: []byte) -> void! {
+    return error(coded(ERR_KEYCHAIN, "the OS keychain refused to store the vault key"))
+}
+
+fn (self: RefusingKeychain) keychain_load(account: str) -> []byte! {
+    return error(coded(ERR_KEYCHAIN, "the OS keychain refused to read the vault key"))
+}
+
+fn (self: RefusingKeychain) keychain_forget(account: str) -> void! {
+}
+
+test "a keychain that refuses the remembered key is told apart from none cached" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    kc := new_fake_keychain()
+    recents := new_fake_recents()
+    _ = try create_vault(crypto, mut store, kc, recents, "/v/K.flint", "", "correct horse", true)
+    store.vault_detach()
+    mut denied := ""
+    unlock_vault(crypto, mut store, RefusingKeychain{ unused: false }, recents, "/v/K.flint", "", false) or err { denied = "{err.message()}" }
+    assert_eq(code_of_err(denied), ERR_LOCKED)
+    assert(locked_by_keychain(denied))
+
+    // No key cached at all is a plain `locked`.
+    try lock_vault(mut store, kc, "/v/K.flint")
+    mut none_cached := ""
+    unlock_vault(crypto, mut store, kc, recents, "/v/K.flint", "", false) or err { none_cached = "{err.message()}" }
+    assert_eq(code_of_err(none_cached), ERR_LOCKED)
+    assert(!locked_by_keychain(none_cached))
+}

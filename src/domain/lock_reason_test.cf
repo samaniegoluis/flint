@@ -1,0 +1,20 @@
+package domain
+
+test "every lock reason reads as a few words, an idle lock naming its setting" {
+    assert_eq(lock_reason_text(LOCK_REASON_IDLE, "1h"), "auto-lock after 1h idle")
+    assert_eq(lock_reason_text(LOCK_REASON_IDLE, "never"), "auto-lock")
+    assert_eq(lock_reason_text(LOCK_REASON_MANUAL, "1h"), "locked in Flint")
+    assert_eq(lock_reason_text(LOCK_REASON_CLI, "1h"), "locked by `flint vault lock`")
+    assert_eq(lock_reason_text(LOCK_REASON_SCREEN, "1h"), "the screen locked")
+    assert_eq(lock_reason_text(LOCK_REASON_SLEEP, "1h"), "the computer slept")
+    assert_eq(lock_reason_text(LOCK_REASON_KEYCHAIN_DENIED, "1h"), "keychain access denied")
+    assert_eq(lock_reason_text(LOCK_REASON_NOT_RUNNING, ""), "Flint is not running")
+    assert_eq(lock_reason_text(LOCK_REASON_OTHER_VAULT, ""), "Flint has another vault open")
+    assert_eq(lock_reason_text(LOCK_REASON_NOT_UNLOCKED, ""), "not unlocked since Flint started")
+    assert_eq(lock_reason_text("", ""), "not unlocked since Flint started")
+}
+
+test "a keychain refusal is told apart from no cached key" {
+    assert(locked_by_keychain(coded(ERR_LOCKED, "{KEYCHAIN_REFUSED_TEXT}; the master password is needed")))
+    assert(!locked_by_keychain(coded(ERR_LOCKED, "the vault at /v is locked; the master password is needed")))
+}

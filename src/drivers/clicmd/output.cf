@@ -256,7 +256,11 @@ fn print_status(st: VaultStatus) {
     (rnames, rvalues) := remote_status_fields(st.remote)
     if !st.unlocked {
         mut lf: []str = ["vault", "path", "state"]
-        mut lv: []str = [st.name, st.path, "locked (unlock it in Flint, or pass --master-stdin)"]
+        mut state := "locked (unlock it in Flint, or pass --master-stdin)"
+        if st.lock_detail.len() > 0 {
+            state = "locked ({st.lock_detail}); unlock it in Flint, or pass --master-stdin"
+        }
+        mut lv: []str = [st.name, st.path, state]
         for i, n in rnames {
             lf.push(n)
             lv.push(rvalues[i])

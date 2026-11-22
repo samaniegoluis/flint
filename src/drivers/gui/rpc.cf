@@ -423,6 +423,7 @@ fn rpc_settings_set(params: str, mut store: JsonSettingsStore, st: GuiState, mut
     st.holder.set_lock_after(saved.lock_after)
     st.holder.set_notify_grants(saved.notify_grants)
     st.holder.set_sudo_periods(saved.sudo_periods)
+    st.holder.set_approval_wait(approval_wait_ms(saved.approval_wait, approval_wait_override_ms()))
     if !saved.sudo_periods {
         // *Allow sudo for a while* off ends every root period at once (milestone 57).
         st.holder.access_hold()
@@ -492,7 +493,14 @@ fn rpc_vault_unlock(req: UnlockReq, c: Sodium, mut store: LockedVaultStore, kc: 
     (asked, caller) := st.holder.ask()
     asking := st.holder.access_book().asking
     close_current(mut store, mut st)
-    s := try unlock_vault(c, mut store, kc, recents, req.path, req.password, req.remember)
+    s := unlock_vault(c, mut store, kc, recents, req.path, req.password, req.remember) or err {
+        msg := "{err.message()}"
+        if req.password.len() == 0 && locked_by_keychain(msg) {
+            // A Keychain *Deny* (milestone 61): `vault status` says so.
+            st.holder.set_lock_reason(LOCK_REASON_KEYCHAIN_DENIED)
+        }
+        return error(msg)
+    }
     if req.password.len() > 0 && !req.remember && st.holder.remembered(s.path) {
         // Unticked: this computer no longer remembers it.
         _ = forget_vault_key(store, kc, s.path)

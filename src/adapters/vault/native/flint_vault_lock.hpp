@@ -69,6 +69,10 @@ struct SessionCell {
     bool notify_grants = true;
     // Milestone 57: Settings' *Allow sudo for a while* (root periods).
     bool sudo_periods = false;
+    // Milestone 61: Settings' approval wait, in ms, and why the vault last locked
+    // (a domain LOCK_REASON_*; "not_unlocked" until the first unlock).
+    int64_t approval_wait_ms = 120000;
+    std::string lock_reason = "not_unlocked";
     bool quitting = false;
     // Milestone 14: the window is locked (closed to the tray) while the vault stays
     // unlocked, and the vaults this run knows are remembered on this computer.

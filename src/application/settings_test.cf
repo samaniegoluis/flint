@@ -25,12 +25,14 @@ test "settings are validated on save and repaired field by field on load" {
     edited.term_line_height = 999
     edited.reopen_last_vault = false
     edited.term_theme = "aura"
+    edited.approval_wait = 10
     store.saved = edited
     fixed := try load_settings(store)
     assert_eq(fixed.theme, "light")
     assert_eq(fixed.term_line_height, i64(100))
     assert(!fixed.reopen_last_vault)
     assert_eq(fixed.term_theme, "aura")
+    assert_eq(fixed.approval_wait, i64(10))
 
     // An empty theme (a hand-edited file) is repaired to the default.
     mut old := default_settings()

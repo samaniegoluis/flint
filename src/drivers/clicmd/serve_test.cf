@@ -145,6 +145,33 @@ test "each served command needs read, exec on a host, or write" {
 }
 
 test "a wait notice is told apart from a reply" {
-    assert(is_wait_notice(wait_notice_json("Waiting for approval in Flint…")))
+    assert(is_wait_notice(wait_notice_json("Waiting for approval in Flint…", 5000)))
     assert(!is_wait_notice(json.stringify(not_served())))
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    n := json.parse[WaitNotice](payload: wait_notice_json("w", 123456)) or WaitNotice{ wait: false, message: "" }
+    assert_eq(n.deadline_ms, i64(123456))
+    // An older Flint's notice has no deadline.
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    old := json.parse[WaitNotice](payload: "{\"wait\":true,\"message\":\"w\"}") or WaitNotice{ wait: false, message: "x", deadline_ms: -1 }
+    assert_eq(old.deadline_ms, i64(0))
+    assert_eq(old.message, "w")
+}
+
+test "the wait is shown in minutes, or seconds when a test shortens it" {
+    assert_eq(wait_text(120000), "2 min")
+    assert_eq(wait_text(1800000), "30 min")
+    assert_eq(wait_text(3000), "3 s")
+}
+
+test "a command waits as long as Flint says, or the default from an older Flint" {
+    assert_eq(unlock_wait_ms(AppState{ state: APP_ASKING, name: "", wait_ms: 600000 }), i64(600000))
+    assert_eq(unlock_wait_ms(AppState{ state: APP_ASKING, name: "" }), UNLOCK_WAIT_MS)
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    older := json.parse[AppState](payload: "{\"state\":\"asking\",\"name\":\"\"}") or AppState{ state: "", name: "", wait_ms: -1 }
+    assert_eq(older.wait_ms, i64(0))
+    assert_eq(older.reason, "")
+    t := RecentVault{ path: "/v.flint", name: "Home", id: "" }
+    msg := not_unlocked_error(t, 300000)
+    assert_eq(error_code_of(msg), ERR_LOCKED)
+    assert(msg.contains("within 5 min"))
 }

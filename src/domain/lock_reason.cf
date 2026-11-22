@@ -1,0 +1,58 @@
+package domain
+
+// Why a vault is locked (milestone 61, D-134): the app keeps the last reason and
+// `flint vault status` reports it. A reason names no host, user or label (Principle 5).
+
+LOCK_REASON_IDLE: str = "idle"
+LOCK_REASON_MANUAL: str = "manual"
+LOCK_REASON_CLI: str = "cli"
+LOCK_REASON_SCREEN: str = "screen"
+LOCK_REASON_SLEEP: str = "sleep"
+// Flint started and nobody has unlocked the vault since.
+LOCK_REASON_NOT_UNLOCKED: str = "not_unlocked"
+// Flint asked the OS keychain for the remembered key and the person denied it.
+LOCK_REASON_KEYCHAIN_DENIED: str = "keychain_denied"
+// Seen by the CLI only: no Flint answers, or Flint holds another vault.
+LOCK_REASON_NOT_RUNNING: str = "flint_not_running"
+LOCK_REASON_OTHER_VAULT: str = "other_vault"
+
+// What unlock_vault says when the keychain refused to hand over a remembered key, so
+// the app can tell a Keychain *Deny* from no cached key.
+KEYCHAIN_REFUSED_TEXT: str = "the OS keychain refused to give Flint the remembered key"
+
+fn locked_by_keychain(msg: str) -> bool {
+    return msg.contains(KEYCHAIN_REFUSED_TEXT)
+}
+
+// The words `vault status` shows in brackets after `locked`. `lock_after` is the
+// auto-lock setting (LOCK_AFTER), named for an idle lock.
+fn lock_reason_text(reason: str, lock_after: str) -> str {
+    if reason == LOCK_REASON_IDLE {
+        if lock_after.len() > 0 && lock_after != "never" {
+            return "auto-lock after {lock_after} idle"
+        }
+        return "auto-lock"
+    }
+    if reason == LOCK_REASON_MANUAL {
+        return "locked in Flint"
+    }
+    if reason == LOCK_REASON_CLI {
+        return "locked by `flint vault lock`"
+    }
+    if reason == LOCK_REASON_SCREEN {
+        return "the screen locked"
+    }
+    if reason == LOCK_REASON_SLEEP {
+        return "the computer slept"
+    }
+    if reason == LOCK_REASON_KEYCHAIN_DENIED {
+        return "keychain access denied"
+    }
+    if reason == LOCK_REASON_NOT_RUNNING {
+        return "Flint is not running"
+    }
+    if reason == LOCK_REASON_OTHER_VAULT {
+        return "Flint has another vault open"
+    }
+    return "not unlocked since Flint started"
+}

@@ -67,6 +67,10 @@ type Settings struct {
     // root approval window offers each command only; turning it off ends every root
     // period. This machine's, like the grants it unlocks.
     sudo_periods:       bool `json:"sudo_periods" default:"false"`
+    // Milestone 61 (D-134 (2)): how long every approval window, and a command waiting
+    // for its vault's unlock, waits for the person, in minutes (APPROVAL_WAITS). This
+    // machine's. Older files read the default.
+    approval_wait:      i64  `json:"approval_wait" default:"2"`
 }
 
 RDP_MAC_KEYS: []str = ["mac", "windows", "custom"]
@@ -76,6 +80,10 @@ TOAST_CORNERS: []str = ["bottom-right", "bottom-left", "top-right", "top-left"]
 RDP_MAC_KEY_CODES: []str = ["ControlLeft", "ControlRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight"]
 // What each can send: a PC keyboard's Ctrl, Alt, AltGr (right Alt), Windows key, or nothing.
 RDP_KEY_TARGETS: []str = ["ctrl", "alt", "altgr", "win", "off"]
+
+// The approval wait's choices, in minutes (D-134 (2)).
+APPROVAL_WAITS: []i64 = [2, 5, 10, 30]
+APPROVAL_WAIT_DEFAULT: i64 = 2
 
 // Terminal colour themes (ui/src/lib/terminalThemes.ts holds the palettes).
 TERM_THEMES: []str = ["default", "catppuccin", "tokyo-night", "aura", "dracula", "nord"]
@@ -92,7 +100,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false, update_check: true, update_toast_version: "", last_seen_version: "", server_stats: true, server_stats_colour: true, notify_grants: true, sudo_periods: false }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false, update_check: true, update_toast_version: "", last_seen_version: "", server_stats: true, server_stats_colour: true, notify_grants: true, sudo_periods: false, approval_wait: APPROVAL_WAIT_DEFAULT }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {
@@ -151,6 +159,9 @@ fn check_settings(s: Settings) -> void! {
     if !one_of(s.rdp_graphics, RDP_GRAPHICS) {
         return error(coded(ERR_INVALID, "remote desktop graphics must be auto, pipeline or compatible"))
     }
+    if !approval_wait_valid(s.approval_wait) {
+        return error(coded(ERR_INVALID, "approval wait must be 2, 5, 10 or 30 minutes"))
+    }
     if !one_of(s.toast_corner, TOAST_CORNERS) {
         return error(coded(ERR_INVALID, "notifications corner must be bottom-right, bottom-left, top-right or top-left"))
     }
@@ -185,6 +196,31 @@ fn lock_after_ms(setting: str) -> i64 {
         return 14400000
     }
     return 0
+}
+
+fn approval_wait_valid(minutes: i64) -> bool {
+    for m in APPROVAL_WAITS {
+        if m == minutes {
+            return true
+        }
+    }
+    return false
+}
+
+// How long an approval, or a command waiting for an unlock, waits for the person:
+// the setting's minutes, or `override_ms` when it is shorter and above zero (the
+// end-to-end runs' FLINT_APPROVAL_WAIT_MS, to see a timeout in seconds). A setting
+// that is not one of APPROVAL_WAITS reads the default.
+fn approval_wait_ms(minutes: i64, override_ms: i64) -> i64 {
+    mut m := minutes
+    if !approval_wait_valid(m) {
+        m = APPROVAL_WAIT_DEFAULT
+    }
+    ms := m * 60000
+    if override_ms > 0 && override_ms < ms {
+        return override_ms
+    }
+    return ms
 }
 
 // Whether an unlocked vault last used at `last_ms` locks now.

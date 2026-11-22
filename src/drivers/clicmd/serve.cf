@@ -55,8 +55,11 @@ SERVE_RUN_MS: i32 = 300000
 SESSION_SILENCE_MS: i64 = 60000
 // How long `flint` waits for a Flint it started to listen on its socket.
 APP_START_WAIT_MS: i64 = 15000
-// How long `flint vault unlock` waits for the person to unlock in Flint.
+// How long a command waits for the person to unlock in Flint when Flint does not say
+// (an older Flint): the approval wait's default.
 UNLOCK_WAIT_MS: i64 = 120000
+// How often a waiting command asks Flint whether the vault is unlocked yet.
+UNLOCK_POLL_MS: i64 = 500
 
 // States in an unlock, status or lock reply.
 APP_UNLOCKED: str = "unlocked"
@@ -112,6 +115,12 @@ type ServeReply struct {
 type AppState struct {
     state: str `json:"state"`
     name:  str `json:"name"`
+    // Milestone 61: why the vault is locked (LOCK_REASON_*) and those words, in a
+    // status reply for a vault that is not unlocked; and how long Flint waits for the
+    // person (Settings' approval wait), in an unlock reply. An older Flint sends none.
+    reason:  str `json:"reason" default:""`
+    detail:  str `json:"detail" default:""`
+    wait_ms: i64 `json:"wait_ms" default:"0"`
 }
 
 // The last frame of a session.
@@ -199,10 +208,22 @@ fn access_need(p: ParsedArgs) -> AccessNeed {
 type WaitNotice struct {
     wait:    bool `json:"wait"`
     message: str  `json:"message"`
+    // Milestone 61: when the app stops waiting, on this machine's clock (0 from an
+    // older Flint). Sent again every APPROVAL_NOTICE_MS, so a long wait keeps the
+    // client reading.
+    deadline_ms: i64 `json:"deadline_ms" default:"0"`
 }
 
-fn wait_notice_json(message: str) -> str {
-    return json.stringify(WaitNotice{ wait: true, message: message })
+fn wait_notice_json(message: str, deadline_ms: i64) -> str {
+    return json.stringify(WaitNotice{ wait: true, message: message, deadline_ms: deadline_ms })
+}
+
+// "2 min", "30 min", or seconds below a minute (a shortened test wait).
+fn wait_text(ms: i64) -> str {
+    if ms < 60000 {
+        return "{(ms + 999) / 1000} s"
+    }
+    return "{(ms + 59999) / 60000} min"
 }
 
 fn is_wait_notice(text: str) -> bool {
@@ -731,6 +752,12 @@ fn locked_error(target: RecentVault, st: AppState) -> str {
     return coded(ERR_LOCKED, "vault '{target.name}' is locked and Flint could not be started; open Flint and unlock it, or pass --master-stdin")
 }
 
+// The `locked` error for a command that waited for an unlock nobody gave in time
+// (milestone 61), or whose unlock screen the person closed.
+fn not_unlocked_error(target: RecentVault, wait_ms: i64) -> str {
+    return coded(ERR_LOCKED, "vault '{target.name}' was not unlocked in Flint within {wait_text(wait_ms)}; unlock it there (`flint vault unlock` waits for it) and run the command again")
+}
+
 // Whether the running Flint holds `target` unlocked (false when it is not running).
 // Asks nothing of the person and never starts Flint.
 fn app_holds_unlocked(target: RecentVault) -> bool {
@@ -755,26 +782,13 @@ fn cmd_vault_unlock_app(p: ParsedArgs, as_json: bool) -> void! {
     target := try resolve_vault(recents, vault_selector(p))
     mut st := request_unlock(target, p)
     if st.state == APP_ASKING {
+        wait_ms := unlock_wait_ms(st)
         if !as_json {
-            write_stderr("Flint is asking for the master password of '{target.name}'…\n")
+            write_stderr("Flint is asking for the master password of '{target.name}', up to {wait_text(wait_ms)}…\n")
         }
-        deadline := time.now_ms() + UNLOCK_WAIT_MS
-        for st.state == APP_ASKING && time.now_ms() < deadline {
-            time.sleep_ms(500)
-            conn := dial_app()
-            if !conn.open {
-                break
-            }
-            mut c := conn
-            st = ask_app_state(c, "status", target.path, "") or AppState{ state: APP_LOCKED, name: "" }
-            c.close()
-            if st.state == APP_LOCKED {
-                // Not asking any more and not unlocked: the person went elsewhere.
-                break
-            }
-        }
+        st = wait_for_unlock(target, wait_ms)
         if st.state == APP_ASKING {
-            return error(coded(ERR_TIMEOUT, "vault '{target.name}' was not unlocked in Flint within {UNLOCK_WAIT_MS / 1000}s"))
+            return error(coded(ERR_TIMEOUT, "vault '{target.name}' was not unlocked in Flint within {wait_text(wait_ms)}"))
         }
     }
     if st.state != APP_UNLOCKED {
@@ -786,6 +800,61 @@ fn cmd_vault_unlock_app(p: ParsedArgs, as_json: bool) -> void! {
     } else {
         say("Unlocked vault '{target.name}' in Flint. Commands use it until Flint locks it.")
     }
+}
+
+// How long to wait for the unlock Flint just put on screen: Flint's approval wait
+// (milestone 61), or UNLOCK_WAIT_MS from an older Flint.
+fn unlock_wait_ms(st: AppState) -> i64 {
+    if st.wait_ms > 0 {
+        return st.wait_ms
+    }
+    return UNLOCK_WAIT_MS
+}
+
+// Asks Flint every UNLOCK_POLL_MS whether `target` is unlocked, for up to `wait_ms`.
+// Returns unlocked, asking (nobody unlocked in time), or locked/other (Flint went
+// away, or the person dismissed the unlock screen or opened another vault).
+fn wait_for_unlock(target: RecentVault, wait_ms: i64) -> AppState {
+    deadline := time.now_ms() + wait_ms
+    mut st := AppState{ state: APP_ASKING, name: "" }
+    for st.state == APP_ASKING && time.now_ms() < deadline {
+        time.sleep_ms(UNLOCK_POLL_MS)
+        conn := dial_app()
+        if !conn.open {
+            return AppState{ state: APP_LOCKED, name: "" }
+        }
+        mut c := conn
+        st = ask_app_state(c, "status", target.path, "") or AppState{ state: APP_LOCKED, name: "" }
+        c.close()
+    }
+    return st
+}
+
+// Why `target` is locked, as the running Flint says (milestone 61), or that no Flint
+// answers. Never starts Flint.
+type LockWhy struct {
+    reason: str
+    detail: str
+}
+
+fn app_lock_reason(target: RecentVault) -> LockWhy {
+    not_running := LockWhy{ reason: LOCK_REASON_NOT_RUNNING, detail: lock_reason_text(LOCK_REASON_NOT_RUNNING, "") }
+    mut conn := dial_app()
+    if !conn.open {
+        return not_running
+    }
+    defer conn.close()
+    st := ask_app_state(conn, "status", target.path, "") or {
+        return not_running
+    }
+    if st.state == APP_OTHER {
+        return LockWhy{ reason: LOCK_REASON_OTHER_VAULT, detail: lock_reason_text(LOCK_REASON_OTHER_VAULT, "") }
+    }
+    if st.reason.len() == 0 {
+        // An older Flint, or the vault unlocked in the meantime.
+        return LockWhy{ reason: "", detail: "" }
+    }
+    return LockWhy{ reason: st.reason, detail: st.detail }
 }
 
 // `flint vault lock`: tells a running Flint to lock the vault if it holds it.
@@ -944,6 +1013,10 @@ fn serve_reply_json(r: ServeReply) -> str {
 
 fn app_state_json(state: str, name: str) -> str {
     return json.stringify(AppState{ state: state, name: name })
+}
+
+fn app_state_full_json(a: AppState) -> str {
+    return json.stringify(a)
 }
 
 // Whether a served command may have changed the vault, so the window reloads what it
