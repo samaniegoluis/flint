@@ -2224,7 +2224,12 @@
           await check(hasText('closed the connection during setup') && hasText('graphics pipeline'), 'the card says the server closed during setup, and names the pipeline');
           await check(!hasText('no route'), 'it never says there is no route');
           await check(byText('.tab', 'closed during setup'), 'the tab says closed during setup');
-          await click('button', 'Close tab');
+          await check(hasText("in this tab's toolbar or in Settings"), 'the hint names both places Compatible is chosen (owner, milestone 60)');
+          await check(q('[data-rdp-retry]')?.textContent.startsWith('Retry in Automatic'), `Retry says it connects in the mode that worked (${q('[data-rdp-retry]')?.textContent})`);
+          await click('[data-rdp-retry]');
+          await waitFor(() => q('[data-rdp-size]'), 'the desktop again in Automatic', 30000);
+          await check((await window.backend.rdp_stats({ tab: session() })).mode === 'pipeline', 'Retry in Automatic connects, in the pipeline');
+          await click('.tab.on .tx');
           await waitFor(() => !byText('.tab', 'rdp-gnome'), 'the tab closed');
           await ctl('gfxonly/off');
         }

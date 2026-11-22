@@ -132,6 +132,9 @@ export function RdpCard({ pane, active, onEditHost, onKnownHosts }: {
   }
 
   const text = failureText(kind, pane, host);
+  // A switch to Compatible that the server closed leaves the tab in the mode that
+  // worked, and Retry connects in that one (owner, milestone 60): the button says so.
+  const retryIn = kind === 'setup-closed' && pane.graphics && pane.graphics !== 'compatible' ? GRAPHICS_LABEL[pane.graphics] ?? '' : '';
   return wrap(
     <div className="card prompt" role="alert" style={{ width: 480 }} data-rdp-state={kind} onKeyDown={keys}>
       <div className="prompt-h"><span className="prompt-ic danger"><Icon name={text.icon} /></span>
@@ -143,11 +146,13 @@ export function RdpCard({ pane, active, onEditHost, onKnownHosts }: {
         <button className="btn btn-ghost" onClick={() => onEditHost(pane.alias)}>Edit host</button>
         <button className="btn btn-ghost" onClick={close}>Close tab<Key>esc</Key></button>
         <span className="grow" />
-        <button className="btn btn-primary" data-autofocus onClick={retry}>Retry<span className="kbd-in">↵</span></button>
+        <button className="btn btn-primary" data-autofocus data-rdp-retry={retryIn || undefined} onClick={retry}>{retryIn ? `Retry in ${retryIn}` : 'Retry'}<span className="kbd-in">↵</span></button>
       </div>
     </div>,
   );
 }
+
+const GRAPHICS_LABEL: Record<string, string> = { auto: 'Automatic', pipeline: 'Pipeline' };
 
 /** "the connection was lost (ERRCONNECT_…) · 10:21": why, and when (design 22c7). */
 export function lostReason(pane: Pane): string {
@@ -172,7 +177,7 @@ function failureText(kind: ReturnType<typeof rdpEndKind>, pane: Pane, host: Host
     case 'legacy-security':
       return { icon: 'shield', title: `${pane.alias} needs a safer connection`, body: 'It offers only the old Standard RDP Security, where no certificate protects your password, so Flint did not sign in.', hint: "On the server, set Require use of specific security layer for remote connections to SSL or Negotiate (Group Policy → Remote Desktop Session Host → Security), then retry." };
     case 'setup-closed':
-      return { icon: 'alert', title: `${pane.alias} closed the connection during setup`, body: 'It answered and took the sign-in, then closed the connection while the session was being set up.', hint: 'Some servers, such as GNOME Remote Desktop, take only the graphics pipeline. If Settings → Remote desktop → Graphics is Compatible, choose Automatic (it falls back to the pipeline by itself) or Pipeline, then retry. With either one already chosen, the server\'s own log says why it closed.' };
+      return { icon: 'alert', title: `${pane.alias} closed the connection during setup`, body: 'It answered and took the sign-in, then closed the connection while the session was being set up.', hint: 'Some servers, such as GNOME Remote Desktop, take only the graphics pipeline. If Graphics is Compatible, in this tab\'s toolbar or in Settings → Remote desktop, choose Automatic (it falls back to the pipeline by itself) or Pipeline, then retry. With either one already chosen, the server\'s own log says why it closed.' };
     case 'refused':
       return { icon: 'alert', title: `${pane.alias} refused the session`, body: 'The server answered and would not open a session.', hint: 'All remote sessions may be in use: Windows 10/11 Pro allows one at a time. Ask someone to sign out, or try later.' };
     default:

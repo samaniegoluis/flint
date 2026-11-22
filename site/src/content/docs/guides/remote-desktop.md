@@ -301,7 +301,15 @@ devices; to use another one, change the default in the system's sound settings.
 On macOS the first connection with the microphone on asks whether Flint may use it;
 you can change the answer later in System Settings → Privacy & Security → Microphone.
 Until Flint's macOS package is signed (version 15), macOS may ask again after each
-update, since it sees a new app. Windows asks nothing as long as *Let desktop apps access
+update, since it sees a new app. An app in the remote desktop that was already recording
+while macOS asked (Windows' own Sound settings, which start their level meter at once)
+stays silent until it opens the microphone again; anything that opens it after you allow
+it hears you.
+
+A Linux server plays to this computer only what plays on one of its own outputs: GNOME
+Remote Desktop sends what its output plays, so a virtual machine with no sound card
+(*Dummy Output* in Settings → Sound) sends nothing. The microphone shows up there as
+*Remoteaudio Source*. Windows asks nothing as long as *Let desktop apps access
 your microphone* is on (Settings → Privacy & security → Microphone); Linux uses
 PulseAudio or PipeWire's default source.
 
@@ -316,7 +324,7 @@ The tab says why, with **Retry** (<kbd>↵</kbd>), **Edit host** and **Close tab
 | … didn't answer | Nothing came back within 30 seconds: the machine is asleep or off, or a firewall drops RDP |
 | … refused the session: nothing answers on its Remote Desktop port | Remote Desktop is off (Settings → System → Remote Desktop; Windows Home has none) or a firewall rejects it |
 | … refused the session | The server answered and would not open one: all its sessions are in use (Windows 10/11 Pro allows one at a time) |
-| … closed the connection during setup | The server answered and accepted the login, then closed while the session was set up. A server that takes only the graphics pipeline (GNOME Remote Desktop) does this when Graphics is *Compatible*: choose *Automatic* or *Pipeline*. Otherwise the server's own log says why |
+| … closed the connection during setup | The server answered and accepted the login, then closed while the session was set up. A server that takes only the graphics pipeline (GNOME Remote Desktop) does this when Graphics is *Compatible*, in the tab's toolbar or in Settings: choose *Automatic* or *Pipeline*. After a switch to Compatible in the toolbar, the button reads **Retry in Automatic** (or Pipeline): the tab connects again in the mode that worked. Otherwise the server's own log says why |
 | … needs a safer connection | The server offers only the old *Standard RDP Security*, which Flint refuses (see [Security](#security)). On the server, set *Require use of specific security layer for remote connections* to SSL or Negotiate |
 | The certificate … has changed | See [The certificate](#the-certificate) |
 | Connection lost | The connection dropped. See [When the connection drops](#when-the-connection-drops) |
