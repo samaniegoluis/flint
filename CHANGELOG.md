@@ -4,6 +4,19 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.23.0 — 2026-11-22
+
+See what an agent runs while it runs: a notice per grant counts its commands on screen, View lists them live with how each ended, and Stop revokes the grant from the notice. The activity log now records each command's exit status, duration and sudo refusals.
+
+### Added
+
+- **access:** The live notice of what a grant runs (milestone 56)
+
+### Fixed
+
+- **test:** The resources tests build on Windows (near is a Windows macro, CF-181)
+
+
 ## 0.22.0 — 2026-11-21
 
 The status bar now shows the CPU, memory, network, disk and uptime of the Linux server a terminal tab is on, read over the tab's own connection, with a detail on hover or click and a switch in Settings → Terminal. Shortcuts no longer run while the window is locked.
