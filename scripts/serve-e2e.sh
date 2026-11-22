@@ -632,16 +632,27 @@ check "a running tunnel keeps running while the vault is locked" '[[ "$(banner "
 expect 5 "tunnel status on the locked vault: locked" "" -- tunnel status local:fwd
 expect 0 "vault status: locked" "" -- --json vault status
 check "status says locked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" == "False" ]]'
+check "and why: locked by the CLI (milestone 61)" '[[ "$(echo "$out" | json_get "d[\"lock_reason\"]")" == "cli" ]]'
+expect 0 "vault status in text names the reason" "" -- vault status
+check "it says locked by flint vault lock" '[[ "$out" == *"locked (locked by \`flint vault lock\`)"* ]]'
+# Milestone 61: the page leaves a request naming timeout-me unanswered, so the command
+# waits the approval wait (8 s here) for the unlock, then fails with locked.
+locked_t0=$(date +%s)
+expect 5 "a command on the locked vault nobody unlocks waits, then: locked" "" -- exec local -- echo timeout-me
+locked_took=$(( $(date +%s) - locked_t0 ))
+check "it waited for the unlock, up to the approval wait" '[[ "$err" == *"Waiting for vault"*"up to 8 s"* && $locked_took -ge 7 ]]'
+check "it says the vault was not unlocked in time" '[[ "$err" == *"was not unlocked in Flint within 8 s"* ]]'
 # A long command, so the lock screen's request offers "Show full command" (M15, 16e1b).
-expect 5 "a command on the locked vault, with no terminal: locked" "" -- exec local -- echo locked-long "$long_tail" locked-long-end
-check "it says Flint is asking for the master password" '[[ "$err" == *"Flint is asking"* ]]'
-# `vault unlock` would replace that request: let the page check the long one first.
+# The page checks it, then unlocks with Allow: the command waits through that unlock
+# and runs (D-134 (3)).
+expect 0 "a command on the locked vault, with no terminal, waits for the unlock and runs" "" -- exec local -- echo locked-long "$long_tail" locked-long-end
+check "it said it was waiting, then ran" '[[ "$err" == *"Waiting for vault"* && "$out" == *"locked-long-end"* ]]'
 for _ in $(seq 1 300); do
   grep -q "leaves the lock screen asking" "$tmp/app.log" && break
   grep -q "\[page\] FAIL\|check failed" "$tmp/app.log" && break
   sleep 0.2
 done
-expect 0 "vault unlock waits for the window" "" -- vault unlock
+expect 0 "vault unlock: Flint holds it again" "" -- vault unlock
 expect 0 "and the CLI is served again" "" -- --json vault status
 check "status says unlocked" '[[ "$(echo "$out" | json_get "d[\"unlocked\"]")" == "True" ]]'
 check "unlocking with Allow ticked allowed the command that asked" 'grep -q "allowed flint, started by .* (1h) at unlock" "$tmp/app.log"'
@@ -722,6 +733,8 @@ check "the activity files and the backup are encrypted" '! grep -qa "long-cmd-en
 check "quitting Flint closed the tunnel it ran" '[[ "$(banner "$TP" 1)" == "closed" ]]'
 
 expect 5 "with the app gone, the CLI is on its own again: locked" "" -- host list
+expect 0 "vault status with the app gone" "" -- --json vault status
+check "it says Flint is not running (milestone 61)" '[[ "$(echo "$out" | json_get "d[\"lock_reason\"]")" == "flint_not_running" ]]'
 
 echo "== with Flint closed, flint starts it on its unlock screen (D-042)"
 E2E_MASTER="$MASTER" python3 -I - "$root/scripts/serve-e2e-launch.js" "$tmp/launch.js" <<'PY'
@@ -738,12 +751,14 @@ launch_app="$tmp/launch-app.sh"
 printf '#!/usr/bin/env bash\nexec "%s" >"%s" 2>&1\n' "$real_app" "$tmp/launched.log" > "$launch_app"
 chmod +x "$launch_app"
 [[ $win == 1 ]] && launch_app=""
-FLINT_APP="$launch_app" FLINT_GUI_E2E="$tmp/launch.js" expect 5 "a command with Flint closed starts it and fails with locked" "" -- host list
-check "it says Flint is asking" '[[ "$err" == *"Flint is asking"* ]]'
-check "Flint is running and serving" 'sock_up "$sock"'
-expect 0 "vault unlock waits until the window unlocks" "" -- vault unlock
-expect 0 "the command now runs in the app it started" "" -- host list
+# The started page unlocks as soon as it sees the request: the command waits for that
+# unlock and then runs (milestone 61, D-134 (3)).
+FLINT_APP="$launch_app" FLINT_GUI_E2E="$tmp/launch.js" expect 0 "a command with Flint closed starts it, waits for the unlock and runs" "" -- host list
+check "it said it was waiting for the unlock" '[[ "$err" == *"Waiting for vault"* ]]'
 check "it lists the hosts" '[[ "$out" == *e2e-stop* ]]'
+check "Flint is running and serving" 'sock_up "$sock"'
+expect 0 "vault unlock: already unlocked" "" -- vault unlock
+expect 0 "the command runs again in the app it started" "" -- host list
 expect 0 "add the second stop host" "" -- host add e2e-stop-2 --hostname 10.0.0.10
 launched_t0=$(date +%s)
 for _ in $(seq 1 300); do sock_up "$sock" || break; sleep 0.1; done

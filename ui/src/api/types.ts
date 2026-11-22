@@ -229,6 +229,8 @@ export interface Settings {
   notify_grants: boolean;
   /** Milestone 57 (25e1/25e2): *Allow sudo for a while*; off by default. */
   sudo_periods: boolean;
+  /** Milestone 61 (D-134 (2)): how long approvals and a locked vault wait, in minutes (2, 5, 10, 30). */
+  approval_wait: number;
 }
 
 /** The update check's outcome (milestone 52, src/domain/update.cf), as `update:status`. */

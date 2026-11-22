@@ -18,6 +18,9 @@ import { CommandModal, sudoArgv } from './CommandModal';
 
 type Scoped = { all: boolean; groups: string[]; hosts: string[]; read: boolean; exec: boolean; write: boolean };
 
+
+/** Settings → Access → Approval wait (milestone 61, D-134 (2)), in minutes. */
+const APPROVAL_WAITS = [2, 5, 10, 30];
 function ScopeChips({ s }: { s: Scoped }) {
   if (s.all) return <span className="chip">Whole vault</span>;
   const items = [...s.groups.map((p) => ({ key: 'g:' + p, text: p, title: `Group ${p}, its subgroups included` })), ...s.hosts.map((h) => ({ key: 'h:' + h, text: h, title: h }))];
@@ -361,6 +364,25 @@ export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void 
           </tbody>
         </table>
       )}
+      <div className="section-h"><h2>Approval wait</h2><span className="grow" /></div>
+      <div className="panel col" style={{ padding: 'var(--sp-4)', gap: 'var(--sp-2)' }} data-approval-wait-panel>
+        <div className="row" style={{ gap: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
+          <span className="flabel">Wait</span>
+          <div className="seg" role="radiogroup" aria-label="How long Flint waits for you" data-approval-wait>
+            {APPROVAL_WAITS.map((m) => (
+              <button key={m} type="button" role="radio" aria-checked={settings.approval_wait === m} aria-pressed={settings.approval_wait === m}
+                data-approval-wait-min={m} onClick={() => saveSettings({ ...settings, approval_wait: m }).catch((e) => fail(toFlintError(e)))}>{m} min</button>
+            ))}
+          </div>
+        </div>
+        <span className="hint">How long a program waits for your answer in an approval window, and for you to unlock the vault when it finds it locked. Then it gets <span className="mono">approval_timeout</span> or <span className="mono">locked</span>.</span>
+        {settings.approval_wait >= 30 && (
+          <div className="callout warn" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }} data-approval-wait-note>
+            <Icon name="alert" size="sm" />
+            <span>The program must be able to wait that long: many agent tools stop a command sooner. An agent can run <span className="mono">flint exec</span> in the background and check on it.</span>
+          </div>
+        )}
+      </div>
       <div className="section-h"><h2>Run as root</h2><span className="grow" /></div>
       <div className="panel col" style={{ padding: 'var(--sp-4)', gap: 'var(--sp-2)' }} data-sudo-periods>
         <div className="row" style={{ gap: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>

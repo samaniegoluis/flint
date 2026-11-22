@@ -273,7 +273,12 @@
     step = 'locked by the CLI';
     await waitFor(() => q('.lock-screen [data-lock-reason="cli"]'), 'the lock screen after `flint vault lock`', 90000);
     await check(true, '`flint vault lock` locks the window');
-    const banner = await waitFor(() => q('[data-unlock-request]'), 'the unlock request of a command', 90000);
+    // Milestone 61: the request naming timeout-me is left unanswered; the CLI gives up
+    // after the approval wait and the long command asks next.
+    const banner = await waitFor(() => {
+      const b = q('[data-unlock-request]');
+      return b && /locked-long/.test(b.textContent) ? b : null;
+    }, 'the unlock request of the long command', 90000);
     // The shell runs `flint vault unlock` only once this block has logged its last check.
     await check(/flint exec local -- echo locked-long/.test(banner.textContent), 'a command on the locked vault makes the window ask, naming it');
     {
@@ -368,6 +373,18 @@
       if (sudoRows.length > 0) await check(!!q('[data-activity] [data-activity-sudo]'), 'a sudo command is marked root in the activity');
       // Milestone 57 (25e1): Allow sudo for a while, off by default, says what off means.
       await check(q('[data-setting="sudo_periods"]')?.getAttribute('aria-checked') === 'false' && hasText('Off: every root command is approved on its own.'), 'Settings → Access has Allow sudo for a while, off, with its help line');
+      {
+        // Milestone 61 (D-134 (2)): the approval wait, 2 minutes by default; 30 adds a note.
+        const picked = () => q('[data-approval-wait] [aria-checked="true"]')?.getAttribute('data-approval-wait-min');
+        await check(qa('[data-approval-wait] [data-approval-wait-min]').map((b) => b.textContent).join(',') === '2 min,5 min,10 min,30 min' && picked() === '2' && !q('[data-approval-wait-note]'), 'Settings → Access has the approval wait, 2 minutes, no note');
+        q('[data-approval-wait-min="30"]')?.click();
+        await waitFor(() => picked() === '30', 'the approval wait at 30 minutes', 5000);
+        const saved = await window.backend.settings_get();
+        await check(saved.approval_wait === 30 && !!q('[data-approval-wait-note]')?.textContent.includes('in the background'), 'choosing 30 minutes is saved and notes that the program must wait that long');
+        q('[data-approval-wait-min="2"]')?.click();
+        await waitFor(() => picked() === '2', 'the approval wait back at 2 minutes', 5000);
+        await check(!q('[data-approval-wait-note]') && (await window.backend.settings_get()).approval_wait === 2, 'back to 2 minutes, the note goes');
+      }
       {
         // Milestone 15: an entry opens its detail with the whole command and the exact time.
         const row = qa('[data-activity] [data-activity-entry]').find((r) => r.textContent.includes('long-cmd'));
