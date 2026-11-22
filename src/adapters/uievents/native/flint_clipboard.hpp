@@ -34,6 +34,12 @@ extern "C" void objc_autoreleasePoolPop(void*);
 #include <unordered_map>
 #elif defined(__linux__)
 #include <gtk/gtk.h>
+#include <chrono>
+#include <condition_variable>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <optional>
 #endif
 
 namespace flint_clip {
@@ -350,6 +356,44 @@ inline void release_board(const std::string&) {}
 
 #elif defined(__linux__)
 
+// GTK and X11 are used from GTK's own thread only (milestone 58, a Linux freeze): the
+// RDP tab's worker announces and takes the clipboard (milestone 31) and Type reads it
+// (milestone 58), and two threads in GTK's clipboard waits at once left the main loop
+// blocked on X11's display lock for good. Each entry point below runs its body on the
+// main context: at once on that thread (or where no loop runs, as in the tests),
+// otherwise queued there and awaited, for at most 10 s.
+template <class R>
+inline std::optional<R> on_gtk(std::function<R()> f) {
+    GMainContext* ctx = g_main_context_default();
+    if (g_main_context_is_owner(ctx)) return f();
+    if (g_main_context_acquire(ctx)) {
+        R r = f();
+        g_main_context_release(ctx);
+        return r;
+    }
+    struct Job {
+        std::function<R()> f;
+        std::optional<R> r;
+        std::mutex m;
+        std::condition_variable cv;
+    };
+    auto job = std::make_shared<Job>();
+    job->f = std::move(f);
+    g_main_context_invoke_full(ctx, G_PRIORITY_DEFAULT, [](gpointer p) -> gboolean {
+        auto& j = *static_cast<std::shared_ptr<Job>*>(p);
+        R r = j->f();
+        {
+            std::lock_guard<std::mutex> g(j->m);
+            j->r = std::move(r);
+        }
+        j->cv.notify_all();
+        return G_SOURCE_REMOVE;
+    }, new std::shared_ptr<Job>(job), [](gpointer p) { delete static_cast<std::shared_ptr<Job>*>(p); });
+    std::unique_lock<std::mutex> g(job->m);
+    job->cv.wait_for(g, std::chrono::seconds(10), [&] { return job->r.has_value(); });
+    return job->r;
+}
+
 // One live copy at a time: `live_seq` names it until GTK reports that another owner
 // took the clipboard (or Flint cleared it).
 inline uint64_t& live_seq() { static uint64_t s = 0; return s; }
@@ -390,13 +434,13 @@ inline gboolean timer_cb(gpointer p) {
 }
 
 inline long change_count(const std::string&) { return static_cast<long>(live_seq()); }
-inline bool clear_if_unchanged(const std::string&, long count) {
+inline bool clear_if_unchanged_gtk(const std::string&, long count) {
     if (count == 0 || static_cast<long>(live_seq()) != count) return false;
     gtk_clipboard_clear(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD));
     return true;
 }
 
-inline int copy_to(const std::string&, const std::string& text, int64_t clear_after_ms, bool concealed) {
+inline int copy_to_gtk(const std::string&, const std::string& text, int64_t clear_after_ms, bool concealed) {
     if (!gdk_display_get_default()) return 2;
     GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
     auto* d = new ClipData{text, ++next_seq()};
@@ -421,7 +465,7 @@ inline int copy_to(const std::string&, const std::string& text, int64_t clear_af
     return 0;
 }
 
-inline std::string read_text(const std::string&) {
+inline std::string read_text_gtk(const std::string&) {
     if (!gdk_display_get_default()) return "";
     gchar* t = gtk_clipboard_wait_for_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD));
     std::string s = t ? t : "";
@@ -433,7 +477,7 @@ inline std::string read_text(const std::string&) {
 // event neither text nor image (milestone 25 on Linux): the clipboard's text, else an
 // image as PNG (`image/png` as offered, or any image GTK can read, converted). 0, or 2
 // with no display. GTK's waits run a nested main loop: called on the UI thread.
-inline int read_paste(const std::string&, std::string& text, std::string& mime, std::string& data) {
+inline int read_paste_gtk(const std::string&, std::string& text, std::string& mime, std::string& data) {
     if (!gdk_display_get_default()) return 2;
     GtkClipboard* cb = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
     GdkAtom* targets = nullptr;
@@ -494,7 +538,7 @@ inline void png_get_cb(GtkClipboard*, GtkSelectionData* sd, guint, gpointer p) {
 
 inline void png_clear_cb(GtkClipboard*, gpointer p) { delete static_cast<PngData*>(p); }
 
-inline int copy_png(const std::string&, const std::string& png) {
+inline int copy_png_gtk(const std::string&, const std::string& png) {
     if (!gdk_display_get_default()) return 2;
     static GtkTargetEntry targets[] = {{const_cast<gchar*>("image/png"), 0, 0}};
     auto* d = new PngData{png};
@@ -509,6 +553,53 @@ inline int copy_png(const std::string&, const std::string& png) {
 inline bool is_concealed(const std::string&) { return live_seq() != 0 && live_concealed(); }
 inline void release_board(const std::string&) {}
 
+
+// The entry points, on GTK's thread (on_gtk). A wait that timed out reads as nothing
+// on the clipboard, or as a copy that failed.
+inline bool clear_if_unchanged(const std::string& name, long count) {
+    std::string n = name;
+    return on_gtk<bool>([n, count] { return clear_if_unchanged_gtk(n, count); }).value_or(false);
+}
+
+inline int copy_to(const std::string& name, const std::string& text, int64_t clear_after_ms, bool concealed) {
+    std::string n = name;
+    // The text may be a secret: its one copy for the trip is wiped once GTK has it.
+    auto t = std::make_shared<std::string>(text);
+    return on_gtk<int>([n, t, clear_after_ms, concealed] {
+        int rc = copy_to_gtk(n, *t, clear_after_ms, concealed);
+        wipe(*t);
+        return rc;
+    }).value_or(1);
+}
+
+inline std::string read_text(const std::string& name) {
+    std::string n = name;
+    return on_gtk<std::string>([n] { return read_text_gtk(n); }).value_or("");
+}
+
+struct Paste {
+    int rc = 0;
+    std::string text, mime, data;
+};
+
+inline int read_paste(const std::string& name, std::string& text, std::string& mime, std::string& data) {
+    std::string n = name;
+    auto got = on_gtk<Paste>([n] {
+        Paste p;
+        p.rc = read_paste_gtk(n, p.text, p.mime, p.data);
+        return p;
+    });
+    if (!got) return 0;
+    text = std::move(got->text);
+    mime = std::move(got->mime);
+    data = std::move(got->data);
+    return got->rc;
+}
+
+inline int copy_png(const std::string& name, const std::string& png) {
+    std::string n = name, b = png;
+    return on_gtk<int>([n, b] { return copy_png_gtk(n, b); }).value_or(1);
+}
 #else
 
 inline long change_count(const std::string&) { return -1; }

@@ -162,6 +162,7 @@ typedef struct _FILEDESCRIPTORW FILEDESCRIPTORW;
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -275,6 +276,89 @@ inline constexpr int64_t REREAD_QUIET_MS = 1000;
 inline constexpr UINT32 CLIP_UNICODE = 13;
 // Text larger than this is not exchanged (either way).
 inline constexpr size_t CLIP_MAX_BYTES = 16u << 20;
+
+// ---- Lock watch (milestone 58, CLAUDE.md rule 9) ------------------------------------
+//
+// With FLINT_RDP_LOCK_WATCH set (gui-e2e's rdp run), every wait for a tab's lock or
+// its input lock is noted, and a watcher thread prints a `diag:` line for one that has
+// lasted over 2 s: the line it waits at and the line that holds the lock. A hang then
+// names itself instead of ending a run with no verdict. Off, it is a plain lock.
+
+inline bool lock_watch_on() {
+    static const bool on = std::getenv("FLINT_RDP_LOCK_WATCH") != nullptr;
+    return on;
+}
+
+inline int64_t watch_now_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+struct WatchWait {
+    int line = 0;
+    int64_t since = 0;
+    const void* mu = nullptr;
+    int64_t reported = 0;
+};
+
+inline std::mutex& watch_mu() { static std::mutex m; return m; }
+inline std::map<std::thread::id, WatchWait>& watch_waiting() { static std::map<std::thread::id, WatchWait> w; return w; }
+inline std::map<const void*, int>& watch_holders() { static std::map<const void*, int> h; return h; }
+
+inline void watch_start() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        std::thread([] {
+            for (;;) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                std::lock_guard<std::mutex> g(watch_mu());
+                int64_t now = watch_now_ms();
+                for (auto& [id, w] : watch_waiting()) {
+                    if (now - w.since < 2000 || now - w.reported < 5000) continue;
+                    w.reported = now;
+                    auto h = watch_holders().find(w.mu);
+                    std::fprintf(stderr, "diag: rdp lock: waited %lld ms at flint_rdp.hpp:%d; held since line %d\n",
+                                 static_cast<long long>(now - w.since), w.line, h == watch_holders().end() ? 0 : h->second);
+                    std::fflush(stderr);
+                }
+            }
+        }).detach();
+    });
+}
+
+inline void watch_wait_begin(const void* mu, int line) {
+    if (!lock_watch_on()) return;
+    watch_start();
+    std::lock_guard<std::mutex> g(watch_mu());
+    watch_waiting()[std::this_thread::get_id()] = WatchWait{ line, watch_now_ms(), mu, 0 };
+}
+
+inline void watch_wait_end(const void* mu, int line) {
+    if (!lock_watch_on()) return;
+    std::lock_guard<std::mutex> g(watch_mu());
+    watch_waiting().erase(std::this_thread::get_id());
+    if (line) watch_holders()[mu] = line;
+}
+
+// A lock_guard that is watched.
+class LockWatch {
+public:
+    LockWatch(std::mutex& m, int line) : m_(m) {
+        watch_wait_begin(&m_, line);
+        m_.lock();
+        watch_wait_end(&m_, line);
+    }
+    ~LockWatch() {
+        if (lock_watch_on()) {
+            std::lock_guard<std::mutex> g(watch_mu());
+            watch_holders().erase(&m_);
+        }
+        m_.unlock();
+    }
+    LockWatch(const LockWatch&) = delete;
+    LockWatch& operator=(const LockWatch&) = delete;
+private:
+    std::mutex& m_;
+};
 
 struct Tab;
 
@@ -537,7 +621,7 @@ inline BOOL on_end_paint(rdpContext* ctx) {
     if (w <= 0 || h <= 0) return TRUE;
     Tab* t = ctx_of(ctx)->tab;
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         mark_locked(*t, x, y, w, h);
         t->last_update = std::chrono::steady_clock::now();
         t->reread_due = true;
@@ -552,7 +636,7 @@ inline BOOL on_desktop_resize(rdpContext* ctx) {
     Tab* t = ctx_of(ctx)->tab;
     UINT32 w = freerdp_settings_get_uint32(st, FreeRDP_DesktopWidth);
     UINT32 h = freerdp_settings_get_uint32(st, FreeRDP_DesktopHeight);
-    std::lock_guard<std::mutex> g(t->mu);
+    LockWatch g(t->mu, __LINE__);
     in_resize = true;
     BOOL ok = gdi_resize(ctx->gdi, w, h);
     in_resize = false;
@@ -609,7 +693,7 @@ inline BOOL on_pointer_new(rdpContext* ctx, rdpPointer* p) {
     free(b64);
     fp->usable = true;
     Tab* t = ctx_of(ctx)->tab;
-    std::lock_guard<std::mutex> g(t->mu);
+    LockWatch g(t->mu, __LINE__);
     t->pointer_images.push_back(std::move(line));
     t->cv.notify_all();
     return TRUE;
@@ -620,21 +704,21 @@ inline void on_pointer_free(rdpContext*, rdpPointer*) {}
 inline BOOL on_pointer_set(rdpContext* ctx, rdpPointer* p) {
     auto* fp = reinterpret_cast<FlintPointer*>(p);
     Tab* t = ctx_of(ctx)->tab;
-    std::lock_guard<std::mutex> g(t->mu);
+    LockWatch g(t->mu, __LINE__);
     pointer_active_locked(*t, fp->usable ? "set " + std::to_string(fp->id) : "default");
     return TRUE;
 }
 
 inline BOOL on_pointer_set_null(rdpContext* ctx) {
     Tab* t = ctx_of(ctx)->tab;
-    std::lock_guard<std::mutex> g(t->mu);
+    LockWatch g(t->mu, __LINE__);
     pointer_active_locked(*t, "hidden");
     return TRUE;
 }
 
 inline BOOL on_pointer_set_default(rdpContext* ctx) {
     Tab* t = ctx_of(ctx)->tab;
-    std::lock_guard<std::mutex> g(t->mu);
+    LockWatch g(t->mu, __LINE__);
     pointer_active_locked(*t, "default");
     return TRUE;
 }
@@ -804,7 +888,7 @@ inline UINT on_clip_server_data_response(CliprdrClientContext* clip, const CLIPR
     if (wlen && text.empty()) return CHANNEL_RC_OK;
     Tab* t = c->tab;
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         if (!t->remote_text.empty()) sodium_memzero(t->remote_text.data(), t->remote_text.size());
         t->remote_text = std::move(text);
         t->remote_pending = true;
@@ -820,7 +904,7 @@ inline UINT on_clip_server_data_request(CliprdrClientContext* clip, const CLIPRD
     if (!c) return clip_send_data(clip, false, "");
     Tab* t = c->tab;
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         if (!req || req->requestedFormatId != CLIP_UNICODE || !t->local_text) {
             // falls through to the refusal below, outside the lock
         } else {
@@ -992,7 +1076,7 @@ inline int on_verify_x509(freerdp* inst, const BYTE* data, size_t length, const 
         freerdp_certificate_free(cert);
     }
     for (auto& ch : c.fingerprint) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-    std::lock_guard<std::mutex> g(t->mu);
+    LockWatch g(t->mu, __LINE__);
     t->presented = c;
     bool ok = !c.fingerprint.empty() && !t->trusted.empty() && c.fingerprint.size() == t->trusted.size() &&
               sodium_memcmp(c.fingerprint.data(), t->trusted.data(), c.fingerprint.size()) == 0;
@@ -1237,7 +1321,7 @@ inline uint64_t stale_pixels_locked(const Tab& t, rdpGdi* gdi) {
 inline void quiet_reread(Tab& t, rdpGdi* gdi) {
     if (!gdi || !gdi->primary_buffer) return;
     {
-        std::lock_guard<std::mutex> g(t.mu);
+        LockWatch g(t.mu, __LINE__);
         if (!t.reread_due) return;
         if (std::chrono::steady_clock::now() - t.last_update < std::chrono::milliseconds(REREAD_QUIET_MS)) return;
         t.reread_due = false;
@@ -1265,7 +1349,7 @@ inline void run_loop(std::shared_ptr<Conn> c) {
     c->error_info = freerdp_error_info(c->inst);
     c->ended.store(true);
     Tab* t = c->tab;
-    { std::lock_guard<std::mutex> g(t->mu); }
+    { LockWatch g(t->mu, __LINE__); }
     t->cv.notify_all();
 }
 
@@ -1426,7 +1510,7 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
     // A reconnect: the old connection goes first, so the server never sees two.
     std::shared_ptr<Conn> old;
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         old = t->conn;
         t->conn = nullptr;
         t->want_w = 0;
@@ -1590,7 +1674,7 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         auto elapsed = std::chrono::steady_clock::now() - started;
         bool refused_cert;
         {
-            std::lock_guard<std::mutex> g(t->mu);
+            LockWatch g(t->mu, __LINE__);
             refused_cert = t->cert_refused;
         }
         int code;
@@ -1621,7 +1705,7 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         return RDP_ERR_OTHER;
     }
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         t->conn = c;
         t->width = static_cast<int32_t>(inst->context->gdi->width);
         t->height = static_cast<int32_t>(inst->context->gdi->height);
@@ -1649,7 +1733,7 @@ inline bool presented_cert(const std::string& id, std::string& subject, std::str
                            std::string& from, std::string& to) {
     auto t = find(id);
     if (!t) return false;
-    std::lock_guard<std::mutex> g(t->mu);
+    LockWatch g(t->mu, __LINE__);
     subject = t->presented.subject;
     issuer = t->presented.issuer;
     fp = t->presented.fingerprint;
@@ -1666,7 +1750,7 @@ inline int resize(const std::string& id, int32_t w, int32_t h) {
     if (!t || t->closed.load()) return RDP_ERR_CLOSED;
     std::shared_ptr<Conn> c;
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         c = t->conn;
         if (!c && t->listen_fd != BAD_SOCK) {
             // A reconnect is under way (a mode switch, a size): the request waits for
@@ -1702,11 +1786,11 @@ inline int resize(const std::string& id, int32_t w, int32_t h) {
         layout.Orientation = ORIENTATION_LANDSCAPE;
         layout.DesktopScaleFactor = 100;
         layout.DeviceScaleFactor = 100;
-        std::lock_guard<std::mutex> g(t->input_mu);
+        LockWatch g(t->input_mu, __LINE__);
         return c->disp->SendMonitorLayout(c->disp, 1, &layout) == CHANNEL_RC_OK ? RDP_OK : RDP_ERR_OTHER;
     }
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         t->want_w = w;
         t->want_h = h;
     }
@@ -1727,7 +1811,7 @@ inline int set_layout(const std::string& id, const std::string& layout_s) {
     layout_box(layout, bx, by, bw, bh);
     std::shared_ptr<Conn> c;
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         c = t->conn;
         if (!c || c->ended.load()) return RDP_ERR_CLOSED;
         t->layout = layout.size() < 2 ? std::vector<Mon>() : layout;
@@ -1750,11 +1834,11 @@ inline int set_layout(const std::string& id, const std::string& layout_s) {
             l.DesktopScaleFactor = 100;
             l.DeviceScaleFactor = 100;
         }
-        std::lock_guard<std::mutex> g(t->input_mu);
+        LockWatch g(t->input_mu, __LINE__);
         return c->disp->SendMonitorLayout(c->disp, static_cast<UINT32>(L.size()), L.data()) == CHANNEL_RC_OK ? RDP_OK : RDP_ERR_OTHER;
     }
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         t->want_w = bw;
         t->want_h = bh;
     }
@@ -1786,7 +1870,9 @@ inline int wait(const std::string& id, int64_t wait_ms, int32_t& code, std::stri
     layout_out.clear();
     auto t = find(id);
     if (!t || t->closed.load()) return EV_ENDED;
+    watch_wait_begin(&t->mu, __LINE__);
     std::unique_lock<std::mutex> g(t->mu);
+    watch_wait_end(&t->mu, 0);
     auto pending = [&] {
         return t->closed.load() || !t->conn || t->conn->ended.load() || t->want_w != 0 || t->remote_pending || t->request_pending ||
                !t->want_graphics.empty() || !t->pointer_images.empty() || !t->pointer_active.empty();
@@ -1846,7 +1932,7 @@ inline int set_graphics(const std::string& id, const std::string& mode) {
     auto t = find(id);
     if (!t || t->closed.load()) return RDP_ERR_CLOSED;
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         if (!t->conn || t->conn->ended.load()) return RDP_ERR_CLOSED;
         t->want_graphics = mode;
     }
@@ -1861,12 +1947,12 @@ inline int clip_announce(const std::string& id, bool has_text) {
     if (!t || t->closed.load()) return RDP_ERR_CLOSED;
     std::shared_ptr<Conn> c;
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         t->local_text = has_text;
         c = t->conn;
     }
     if (!c || c->ended.load() || !c->clip_ready.load() || !c->clip) return RDP_OK;
-    std::lock_guard<std::mutex> g(t->input_mu);
+    LockWatch g(t->input_mu, __LINE__);
     return clip_send_format_list(c->clip, has_text) == CHANNEL_RC_OK ? RDP_OK : RDP_ERR_OTHER;
 }
 
@@ -1876,14 +1962,14 @@ inline int clip_answer(const std::string& id, bool ok, const std::string& text) 
     if (!t || t->closed.load()) return RDP_ERR_CLOSED;
     std::shared_ptr<Conn> c;
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         if (!t->request_pending) return RDP_OK;
         t->request_pending = false;
         c = t->conn;
     }
     if (!c || c->ended.load() || !c->clip) return RDP_ERR_CLOSED;
     if (text.size() > CLIP_MAX_BYTES) ok = false;
-    std::lock_guard<std::mutex> g(t->input_mu);
+    LockWatch g(t->input_mu, __LINE__);
     return clip_send_data(c->clip, ok, ok ? text : std::string()) == CHANNEL_RC_OK ? RDP_OK : RDP_ERR_OTHER;
 }
 
@@ -1925,7 +2011,7 @@ inline int stats(const std::string& id, int64_t& updates, int64_t& bytes_in, int
     link_rtt_ms = 0;
     bool connected;
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         connected = t->conn != nullptr;
         mode = t->want_gfx ? "pipeline" : "compatible";
         // What the server measured of the link, once it has (auto-detect, milestone 35).
@@ -1999,7 +2085,7 @@ inline int32_t scancode_for(const std::string& code) {
 }
 
 inline std::shared_ptr<Conn> live_conn(Tab& t) {
-    std::lock_guard<std::mutex> g(t.mu);
+    LockWatch g(t.mu, __LINE__);
     if (!t.conn || t.conn->ended.load()) return nullptr;
     return t.conn;
 }
@@ -2011,7 +2097,7 @@ inline int key(const std::string& id, const std::string& code, bool down) {
     if (sc < 0) return RDP_ERR_UNKNOWN_KEY;
     auto c = live_conn(*t);
     if (!c) return RDP_ERR_CLOSED;
-    std::lock_guard<std::mutex> g(t->input_mu);
+    LockWatch g(t->input_mu, __LINE__);
     return freerdp_input_send_keyboard_event_ex(c->inst->context->input, down, FALSE, static_cast<UINT32>(sc))
                ? RDP_OK : RDP_ERR_OTHER;
 }
@@ -2025,7 +2111,7 @@ inline int sync_locks(const std::string& id, int32_t flags) {
     if (!t || t->closed.load()) return RDP_ERR_CLOSED;
     auto c = live_conn(*t);
     if (!c) return RDP_ERR_CLOSED;
-    std::lock_guard<std::mutex> g(t->input_mu);
+    LockWatch g(t->input_mu, __LINE__);
     if (!freerdp_input_send_synchronize_event(c->inst->context->input, static_cast<UINT32>(flags & 0x0F))) return RDP_ERR_OTHER;
     t->locks.store(flags & 0x0F);
     return RDP_OK;
@@ -2071,7 +2157,7 @@ inline int type_event(const std::string& id, int32_t kind, int32_t code, bool do
     if (!c) return RDP_ERR_CLOSED;
     BOOL ok;
     {
-        std::lock_guard<std::mutex> g(t->input_mu);
+        LockWatch g(t->input_mu, __LINE__);
         rdpInput* in = c->inst->context->input;
         if (kind == 2) {
             ok = freerdp_input_send_synchronize_event(in, static_cast<UINT32>(code & 0x0F));
@@ -2113,11 +2199,11 @@ inline int pointer(const std::string& id, int32_t kind, int32_t button, int32_t 
     }
     int32_t mx, my;
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         mx = std::clamp<int32_t>(x, 0, std::max<int32_t>(0, t->width - 1));
         my = std::clamp<int32_t>(y, 0, std::max<int32_t>(0, t->height - 1));
     }
-    std::lock_guard<std::mutex> g(t->input_mu);
+    LockWatch g(t->input_mu, __LINE__);
     return freerdp_input_send_mouse_event(c->inst->context->input, flags, static_cast<UINT16>(mx), static_cast<UINT16>(my))
                ? RDP_OK : RDP_ERR_OTHER;
 }
@@ -2180,7 +2266,9 @@ inline int take_frame_locked(Tab& t, size_t vi, std::string& out) {
 inline int next_frame_view(const std::string& id, int32_t vi, int64_t wait_ms, std::string& out) {
     auto t = find(id);
     if (!t) return RDP_ERR_CLOSED;
+    watch_wait_begin(&t->mu, __LINE__);
     std::unique_lock<std::mutex> g(t->mu);
+    watch_wait_end(&t->mu, 0);
     const size_t v = static_cast<size_t>(std::max(0, vi));
     t->cv.wait_for(g, std::chrono::milliseconds(wait_ms), [&] { return view_pending(*t, v) || t->closed.load(); });
     return take_frame_locked(*t, v, out);
@@ -2323,7 +2411,9 @@ inline void serve_conn(std::shared_ptr<Tab> t, sock_t fd) {
         bool gone;
         int rc = RDP_OK;
         {
+            watch_wait_begin(&t->mu, __LINE__);
             std::unique_lock<std::mutex> g(t->mu);
+            watch_wait_end(&t->mu, 0);
             if (vi >= 0) {
                 t->cv.wait_for(g, std::chrono::milliseconds(1000), [&] { return view_pending(*t, static_cast<size_t>(vi)) || t->closed.load() || static_cast<size_t>(vi) >= t->views.size(); });
             }
@@ -2384,7 +2474,7 @@ inline bool start_frame_server(std::shared_ptr<Tab> t) {
     socklen_t len = sizeof addr;
     getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len);
     {
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         t->token = hex;
         t->listen_fd = fd;
         t->port = ntohs(addr.sin_port);
@@ -2417,7 +2507,7 @@ inline void close(const std::string& id) {
     {
         // Under the frame lock: a frame-channel thread reads the framebuffer only while
         // holding it and checks `closed` first.
-        std::lock_guard<std::mutex> g(t->mu);
+        LockWatch g(t->mu, __LINE__);
         c = t->conn;
         t->conn = nullptr;
     }

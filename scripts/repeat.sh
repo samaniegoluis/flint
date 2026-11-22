@@ -48,7 +48,7 @@ for i in $(seq 1 "$n"); do
     verdict="$(grep '^e2e: ' "$out/$i.log" | tail -1 | cut -c1-240)"
     echo "repeat: $run $i/$n: FAIL (${dt} s) ${verdict:-no e2e line}"
     # The failure's whole log, kept after the run (the rest of $out is removed).
-    keep="${TMPDIR:-/tmp}/flint-repeat-fail-$run-$$-$i.log"
+    keep="${FLINT_REPEAT_KEEP:-${TMPDIR:-/tmp}}/flint-repeat-fail-$run-$$-$i.log"
     cp "$out/$i.log" "$keep" && echo "  log: $keep"
   fi
   [[ -z "$diag" ]] || echo "$diag"

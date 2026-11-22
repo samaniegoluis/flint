@@ -1950,7 +1950,20 @@
 
       if (CPORT !== '0') {
         await setStep('rdp: text copied on the remote reaches this machine (milestone 31)');
-        const ctl = async (cmd) => (await fetch(`http://127.0.0.1:${CCTL}/${cmd}`, { cache: 'no-store' })).text();
+        // Bounded, and timed when slow (rule 9, milestone 58's Linux run that hung here
+        // with no verdict): a test server that stops answering names itself.
+        const ctl = async (cmd) => {
+          const t0 = performance.now();
+          try {
+            return await (await fetch(`http://127.0.0.1:${CCTL}/${cmd}`, { cache: 'no-store', signal: AbortSignal.timeout(10000) })).text();
+          } catch (e) {
+            log(`diag: test server control "${cmd.slice(0, 20)}" failed after ${Math.round(performance.now() - t0)} ms: ${e}`);
+            throw e;
+          } finally {
+            const ms = performance.now() - t0;
+            if (ms > 2000) log(`diag: test server control "${cmd.slice(0, 20)}" took ${Math.round(ms)} ms`);
+          }
+        };
         const hex = (t) => Array.from(new TextEncoder().encode(t), (b) => b.toString(16).padStart(2, '0')).join('');
         const clipNow = async () => { const r = await window.backend.e2e_clipboard({}); return (typeof r === 'string' ? JSON.parse(r) : r)?.name; };
         await addRdp('rdp-clip', CPORT, 'x');

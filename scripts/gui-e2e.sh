@@ -214,7 +214,8 @@ run_app() {
   # rdp (milestone 58): Type password's presence check is the master password, which
   # the page types; Touch ID or polkit would wait for a person.
   if [[ "$1" == rdp ]]; then
-    cli_env=(FLINT_PRESENCE=password)
+    # FLINT_RDP_LOCK_WATCH: a wait for a tab's lock over 2 s prints where (rule 9).
+    cli_env=(FLINT_PRESENCE=password FLINT_RDP_LOCK_WATCH=1)
   fi
   # update (milestone 52): a signed manifest of a newer Flint on a feed of the run's own,
   # under a throwaway key; a build from source accepts both (D-116), a package never.
@@ -248,9 +249,21 @@ PY
 JSON
     cli_env=(FLINT_UPDATE_FEED="http://127.0.0.1:$fport/manifest.json" FLINT_UPDATE_TEST_KEY="$pub" FLINT_UPDATE_TEST_KIND=portable)
   fi
+  # FLINT_E2E_STACK=1 (Linux, rule 9): an app still running 240 s in, 60 s before the
+  # timeout kills it with no verdict, has every thread's stack written after its log,
+  # so a hang says where it is.
+  local stack_pid=""
+  if [[ "${FLINT_E2E_STACK:-}" == 1 ]] && command -v gdb >/dev/null; then
+    ( sleep 240
+      pid="$(pgrep -n -f "^build/gui/Flint\$|/build/gui/Flint\$" || true)"
+      [[ -n "$pid" ]] && { echo "diag: stacks of the app (pid $pid) 240 s in:"; gdb -p "$pid" -batch -ex "thread apply all bt 30" 2>&1 | grep -E '^Thread|^#|ptrace|ermission|not permitted' ; } > "$4.stack" ) &
+    stack_pid=$!
+  fi
   env ${cli_env[@]+"${cli_env[@]}"} FLINT_CONFIG_DIR="$3" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$2" FLINT_GUI_E2E_TIMEOUT_MS="${5:-}" \
     FLINT_GUI_E2E_VISIBLE="$visible" \
     "${app[@]}" 2>&1 | tee "$4" || st=$?
+  [[ -n "$stack_pid" ]] && { kill "$stack_pid" 2>/dev/null; wait "$stack_pid" 2>/dev/null || true; }
+  [[ -s "$4.stack" ]] && cat "$4.stack"
   [[ -f "$4.front" ]] && cat "$4.front"
   if [[ -n "$cli_key" ]]; then
     # What the app wrote is what Windows reads: this copy's bin first, the moved copy

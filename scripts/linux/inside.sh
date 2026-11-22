@@ -62,7 +62,10 @@ fi
 if want gui && [[ -n "${FLINT_LINUX_REPEAT:-}" ]]; then
 echo "== one desktop run repeated under Xvfb: $FLINT_LINUX_REPEAT"
 # shellcheck disable=SC2086
-PATH="$PATH:/usr/sbin" scripts/repeat.sh $FLINT_LINUX_REPEAT
+# A failure's whole log (with the app's stacks, FLINT_E2E_STACK) is kept in the volume:
+#   docker run --rm -v flint-linux-cache:/c --entrypoint ls flint-linux-check /c/keep/repeat
+rm -rf "$cache/keep/repeat" && mkdir -p "$cache/keep/repeat"
+PATH="$PATH:/usr/sbin" FLINT_E2E_STACK=1 FLINT_REPEAT_KEEP="$cache/keep/repeat" scripts/repeat.sh $FLINT_LINUX_REPEAT
 elif want gui; then
 echo "== desktop app end-to-end under Xvfb"
 PATH="$PATH:/usr/sbin" scripts/gui-e2e.sh | tee /tmp/gui-e2e.log
