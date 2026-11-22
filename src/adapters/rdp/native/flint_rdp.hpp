@@ -501,6 +501,9 @@ struct Tab {
     // being opened carries the old size or layout, so `open` leaves the request for
     // `wait` to report, and the core reconnects at that size on one monitor.
     bool asked_while_opening = false;
+    // What was asked while opening: one monitor (resize, empty) or a layout across
+    // several (set_layout, milestone 60); `wait` reports it once the connection is up.
+    std::vector<Mon> asked_layout;
     // The certificate check of the connection being opened.
     std::string trusted;
     Cert presented;
@@ -1803,10 +1806,12 @@ inline int open(const std::string& id, const std::string& host, int32_t port, co
         t->width = static_cast<int32_t>(inst->context->gdi->width);
         t->height = static_cast<int32_t>(inst->context->gdi->height);
         if (t->asked_while_opening) {
-            // Back to one monitor was asked meanwhile: the request stands (want_w, an
-            // empty layout) and `wait` reports it once this connection is up.
+            // A size or a layout was asked meanwhile: the request stands (want_w, the
+            // layout asked, empty for one monitor) and `wait` reports it once this
+            // connection is up.
             t->asked_while_opening = false;
-            t->layout.clear();
+            t->layout = std::move(t->asked_layout);
+            t->asked_layout.clear();
         } else {
             t->layout = layout;
         }
@@ -1853,6 +1858,7 @@ inline int resize(const std::string& id, int32_t w, int32_t h) {
             t->want_w = w;
             t->want_h = h;
             t->asked_while_opening = true;
+            t->asked_layout.clear();
             return RDP_OK;
         }
         if (!c || c->ended.load()) return RDP_ERR_CLOSED;
@@ -1906,6 +1912,18 @@ inline int set_layout(const std::string& id, const std::string& layout_s) {
     {
         LockWatch g(t->mu, __LINE__);
         c = t->conn;
+        if (!c && t->listen_fd != BAD_SOCK) {
+            // A reconnect is under way (the main window's new size as it goes full
+            // screen): the layout waits for it, as resize's request does, rather than
+            // failing as a closed session (milestone 60, seen in gui-e2e's multimon run).
+            t->layout = layout.size() < 2 ? std::vector<Mon>() : layout;
+            t->views = views_for(t->layout);
+            t->want_w = bw;
+            t->want_h = bh;
+            t->asked_while_opening = true;
+            t->asked_layout = t->layout;
+            return RDP_OK;
+        }
         if (!c || c->ended.load()) return RDP_ERR_CLOSED;
         t->layout = layout.size() < 2 ? std::vector<Mon>() : layout;
         t->views = views_for(t->layout);

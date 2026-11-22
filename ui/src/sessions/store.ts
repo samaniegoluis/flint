@@ -423,6 +423,10 @@ class SessionStore {
       this.resizeTimers.delete(paneId);
       const p = this.pane(paneId);
       const area = this.areas.get(paneId);
+      // A size that changed just before the span began (the window going full screen)
+      // settles after it: it goes into the layout, as a resize would take the desktop
+      // back to one monitor (seen in gui-e2e's multimon run).
+      if (area && monitors.spanning(paneId)) { monitors.mainArea(paneId, area.width, area.height); return; }
       if (p && area && p.session && p.status === 'ready') api.rdpResize(p.session, area.width, area.height).catch(() => {});
     }, DESKTOP_SETTLE_MS));
   }
