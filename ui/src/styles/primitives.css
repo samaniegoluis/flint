@@ -789,3 +789,26 @@ button.picker-row:not(.off) { cursor: pointer; }
 .statusbar[data-compact] .sb-lock-label, .statusbar[data-compact] [data-sb-lock], .statusbar[data-compact] [data-sb-sessions], .statusbar[data-compact] [data-tunnels-status], .statusbar[data-compact] [data-sb-zoom], .statusbar[data-compact] .sb-cmd-label { display: none; }
 .statusbar[data-compact] .sb-agents { flex: none; }
 .statusbar[data-compact] .sb-host { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ===== v14 · live notice of what a grant runs (milestone 56, screens 26*) ===== */
+.live { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: var(--radius-full); background: var(--surface-raised); border: 1px solid var(--border-subtle); font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); animation: flint-pulse 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+.acc { border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface-base); }
+.acc + .acc { margin-top: 2px; }
+.acc-h { width: 100%; display: flex; align-items: center; gap: var(--sp-3); height: 34px; padding: 0 var(--sp-3); border: 0; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text-primary); text-align: left; cursor: pointer; }
+.acc-h:hover { background: var(--surface-hover); }
+.acc-h .mono.faint { font-size: var(--fs-xs); flex: none; }
+.acc-h .chip { flex: none; }
+.acc-h .badge { flex: none; display: inline-flex; align-items: center; gap: 4px; }
+.acc-chev { transform: rotate(-90deg); color: var(--text-tertiary); flex: none; }
+.acc.open .acc-chev { transform: none; }
+.acc.open { border-color: var(--border-default); }
+.acc-b { display: flex; flex-direction: column; gap: var(--sp-2); padding: 0 var(--sp-3) var(--sp-3) calc(var(--sp-3) + 24px); }
+.acc-b .cmd-block { white-space: pre-wrap; word-break: break-all; }
+.acc-meta { flex: none; min-width: 44px; text-align: right; font-size: var(--fs-xs); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.acc-meta.warn-t { color: var(--warning); }
+.acc-h .acc-refused { color: var(--text-tertiary); text-decoration: line-through; text-decoration-color: var(--border-strong); }
+.bell { color: var(--text-tertiary); }
+.bell.on { color: var(--accent-text); }
+button.link { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }

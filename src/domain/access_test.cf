@@ -218,3 +218,21 @@ test "the proposed grant of a copy between two hosts names both" {
     half := new_approval("a3", "v1", c, "flint cp api-01:/a nope:/b", AccessNeed{ action: ACCESS_EXEC, host: "api-01", host2: "nope" }, 0)
     assert((try proposed_grant(half, test_catalog(), "g3", 0)).scope.all)
 }
+
+test "label_program names the program behind flint (milestone 56)" {
+    assert_eq(label_program("flint, started by Claude Code"), "Claude Code")
+    assert_eq(label_program("flint, started by tmux"), "tmux")
+    assert_eq(label_program("flint"), "flint")
+    assert_eq(label_program(""), "")
+}
+
+test "set_grant_notify turns one grant's notice on or off" {
+    mut book := empty_access_book()
+    book.grants.push(test_grant(AccessScope{ all: true, groups: [], hosts: [] }, true, true, false, 0))
+    assert(!book.grants[0].notify)
+    assert(set_grant_notify(mut book, "g1", true))
+    assert(book.grants[0].notify)
+    assert(set_grant_notify(mut book, "g1", false))
+    assert(!book.grants[0].notify)
+    assert(!set_grant_notify(mut book, "nope", true))
+}

@@ -421,6 +421,7 @@ fn rpc_settings_set(params: str, mut store: JsonSettingsStore, st: GuiState) -> 
     req := try parse_req[Settings](params)
     saved := try save_settings(mut store, req)
     st.holder.set_lock_after(saved.lock_after)
+    st.holder.set_notify_grants(saved.notify_grants)
     return json.stringify(saved)
 }
 
@@ -513,9 +514,10 @@ fn allow_on_unlock(asked: Approval, c: Sodium, store: LockedVaultStore, st: GuiS
     cat := load_catalog(store) or Catalog{ groups: [], hosts: [], keys: [], creds: [] }
     mut ap := asked
     ap.vault_id = vault_id
-    g := proposed_grant(ap, cat, hex.encode(c.random_bytes(8)), time.now_ms()) or {
+    mut g := proposed_grant(ap, cat, hex.encode(c.random_bytes(8)), time.now_ms()) or {
         return
     }
+    g.notify = st.holder.notify_grants()
     st.holder.access_hold()
     mut book := st.holder.access_book()
     book.grants.push(g)

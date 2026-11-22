@@ -141,6 +141,11 @@
         log('ok   denied: ' + req);
         continue;
       }
+      if (req.includes('notice-one')) {
+        // Milestone 56 (26c1): the grant's notice, starting from Settings' default (on).
+        const box = form.querySelector('[data-grant-notify]');
+        log((box && box.checked ? 'ok   ' : 'FAIL ') + 'the approval window offers Notify me of each command, ticked by default');
+      }
       if (!req.includes('scope-me')) {
         form.querySelector('[data-scope-all]').click();
         await sleep(30);
@@ -173,6 +178,19 @@
     setValue(pw, MASTER);
     return pw;
   }
+  // Milestone 56: every notice text the toast stack shows, as it shows it.
+  // Kept per toast: a notice updated in place keeps its toast (and its id).
+  const notices = [];
+  const history = new Map();
+  new MutationObserver(() => {
+    for (const el of document.querySelectorAll('[data-toast]')) {
+      const v = el.querySelector('.t-text')?.textContent ?? '';
+      if (!/ ran (a command|\d+ commands)/.test(v)) continue;
+      const h = history.get(el.dataset.toast) ?? [];
+      if (h[h.length - 1] !== v) { h.push(v); notices.push(v); }
+      history.set(el.dataset.toast, h);
+    }
+  }).observe(document.body, { subtree: true, childList: true, characterData: true });
   let step = 'unlock';
   try {
     await waitFor(() => q('#pw'), 'the unlock screen');
@@ -279,6 +297,17 @@
       await check(log2.some((e) => e.action === 'read' && e.outcome === 'denied' && e.via === 'token'), 'a read refused for a bad token is');
       await check(viaToken.some((e) => e.outcome === 'denied' && e.command.includes('after-revoke') && e.caller.includes('(token nightly)') && e.token.length > 0), 'a revoked token is still named when refused');
       await check(!log2.some((e) => e.command.includes('flint_')), 'no token text is logged');
+      // Milestone 56 (D-127 (3)): an allowed command's entry is completed when it ends.
+      const ex3 = log2.find((e) => e.outcome === 'allowed' && e.command.includes('exit 3'));
+      await check(ex3 && ex3.state === 'ended' && ex3.exit === 3 && ex3.result === '' && ex3.duration_ms >= 0, 'the log records an exec\'s exit status and duration when it ends');
+      const late = log2.find((e) => e.outcome === 'allowed' && e.command.includes('sleep 5'));
+      await check(late && late.state === 'ended' && late.result === 'timeout', 'and an exec Flint stopped, by its error code: ' + (late && late.result));
+      await check(log2.some((e) => e.via === 'grant' && e.outcome === 'allowed' && e.grant.length > 0), 'an entry a grant allowed names the grant');
+      await check(log2.filter((e) => e.outcome !== 'allowed').every((e) => e.state === ''), 'a refusal has no result: it never ran');
+      if (log2.some((e) => e.action === 'sudo')) {
+        const wrong = log2.find((e) => e.action === 'sudo' && e.command.includes('wrong-pw'));
+        await check(wrong && wrong.state === 'ended' && wrong.result === 'sudo_password', 'a sudo password sudo refused is written back as such');
+      }
       const long = log2.find((e) => e.command.includes('long-cmd-end'));
       await check(long && long.cut === 0 && long.command.length > 600, 'the log keeps a long command whole');
       const copies = log2.filter((e) => e.command.startsWith('flint cp'));
@@ -339,6 +368,67 @@
       await waitFor(() => q('[data-token="nightly"][data-token-status="revoked"]'), 'the revoked token row', 5000);
       await check(true, 'and listed as revoked when asked for');
     }
+
+    // Milestone 56 (designs 26a1-26a3, 26b1, 26d1): the live notice of what a grant runs.
+    // The shell starts one caller running three commands under one grant: echo, a
+    // failing one (exit 5) and a sleep. Settings → Access is still open from above.
+    step = 'grant notices';
+    await check(q('[data-setting="notify_grants"]')?.getAttribute('aria-checked') === 'true', 'Settings → Access has Notify me of commands run under a grant, on');
+    await log('waiting for grant notices');
+    {
+      const toastOf = (re) => qa('[data-toast]').find((t) => !t.classList.contains('leaving') && re.test(t.querySelector('.t-text')?.textContent ?? ''));
+      const notice = await waitFor(() => toastOf(/ ran 3 commands on local$/), 'the notice of three commands', 120000);
+      const said = notice.querySelector('.t-text').textContent;
+      await check(!/notice-one|exit 5|sleep/.test(notices.join(' | ')), 'a notice names the program and the host, never the command: ' + said);
+      // This notice's own texts, in the order its one toast showed them.
+      const program = said.split(' ran ')[0];
+      const mine = history.get(notice.dataset.toast) ?? [];
+      await check(mine.join(' → ') === `${program} ran a command on local → ${program} ran 2 commands on local → ${program} ran 3 commands on local`, 'one notice for the grant, updated in place: ' + mine.join(' → '));
+      await check(qa('[data-toast]:not(.leaving) .t-text').filter((t) => t.textContent.startsWith(program + ' ran ')).length === 1, 'one toast, not one per command');
+      await check([...notice.querySelectorAll('[data-toast-action]')].map((b) => b.textContent).join(',') === 'View,Stop', 'the notice offers View and Stop');
+      // View while the last command runs (26b1), then the run fills in live.
+      notice.querySelector('[data-toast-action="0"]').click();
+      const modal = await waitFor(() => q('[data-grant-activity]'), 'View', 5000);
+      const grant = modal.dataset.grantActivity;
+      const rows = () => qa('[data-grant-activity] [data-grant-row]');
+      await waitFor(() => rows().length === 3, 'three rows in View', 10000);
+      const resultOf = (r) => r.querySelector('[data-grant-row-result]')?.textContent ?? '';
+      await check(rows()[0].dataset.grantRowState === 'running' && resultOf(rows()[0]) === 'running…' && /sleep 6/.test(rows()[0].textContent), 'View lists the newest first, running…');
+      await check(rows().some((r) => resultOf(r) === 'exit 5') && rows().some((r) => resultOf(r) === 'exit 0'), 'and each ended command with its exit status');
+      await waitFor(() => rows()[0]?.dataset.grantRowState === 'ended', 'the sleep to end in View', 20000);
+      await check(resultOf(rows()[0]) === 'exit 0' && /\d\.\d s/.test(rows()[0].textContent), 'View fills in live: the running command ends with exit 0 and its duration');
+      const failed = rows().find((r) => resultOf(r) === 'exit 5');
+      failed.querySelector('.acc-h').click();
+      const full = await waitFor(() => failed.querySelector('[data-grant-row-command]'), 'the exact command', 3000);
+      await check(full.textContent === 'flint exec local -- exit 5', 'a row opens to the exact command');
+      q('[data-grant-activity] [data-autofocus]').click();
+      await sleep(150);
+      await check(!q('[data-grant-activity]'), 'Close closes View');
+      // The bell (26d1): this grant's notice off and on again, in the grants table.
+      const bell = await waitFor(() => q(`[data-grant="${grant}"] [data-grant-bell="on"]`), "the grant's bell, on", 10000);
+      bell.click();
+      await waitFor(() => q(`[data-grant="${grant}"] [data-grant-bell="off"]`), 'the bell turned off', 5000);
+      await check(!(await window.backend.access_state({})).grants.find((g) => g.id === grant).notify, 'the bell turns the grant\'s notice off');
+      q(`[data-grant="${grant}"] [data-grant-bell="off"]`).click();
+      await waitFor(() => q(`[data-grant="${grant}"] [data-grant-bell="on"]`), 'the bell turned on', 5000);
+      await check(true, 'and on again');
+      // Stop asks once inside the toast (26a3); Cancel puts it back; Stop grant revokes.
+      const n2 = await waitFor(() => toastOf(/ ran 3 commands on local$/), 'the notice, still up', 5000);
+      n2.querySelector('[data-toast-action="1"]').click();
+      const ask = await waitFor(() => toastOf(/^Stop this grant\?/), 'the question', 3000);
+      await check(/can't run more on local\.$/.test(ask.querySelector('.t-text')?.textContent ?? '') && [...ask.querySelectorAll('[data-toast-action]')].map((b) => b.textContent).join(',') === 'Cancel,Stop grant', 'Stop asks once, in the toast');
+      ask.querySelector('[data-toast-action="0"]').click();
+      await waitFor(() => toastOf(/ ran 3 commands on local$/), 'the notice back', 3000);
+      await check(true, 'Cancel puts the notice back');
+      toastOf(/ ran 3 commands on local$/).querySelector('[data-toast-action="1"]').click();
+      (await waitFor(() => toastOf(/^Stop this grant\?/), 'the question again', 3000)).querySelector('[data-toast-action="1"]').click();
+      let gone = false;
+      for (let i = 0; i < 50 && !gone; i++) { gone = !(await window.backend.access_state({})).grants.some((g) => g.id === grant); if (!gone) await sleep(100); }
+      await check(gone, 'Stop grant revokes the grant');
+      await sleep(300);
+      await check(!toastOf(/ ran 3 commands on local$|^Stop this grant/), 'and its notice goes');
+    }
+    await log('grant notices checked');
 
     // Milestone 50: quitting with a command of the CLI's still running. The shell
     // starts a long, silent `flint exec` once it is done; the app quits with it running

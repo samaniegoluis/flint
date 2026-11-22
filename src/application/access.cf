@@ -26,6 +26,8 @@ type GrantView struct {
     created_ms: i64   `json:"created_ms"`
     expires_ms: i64   `json:"expires_ms"`
     anchor_pid: i64   `json:"anchor_pid"`
+    // Milestone 56: the grant's notice is on (its bell in Settings → Access).
+    notify:     bool  `json:"notify"`
 }
 
 // The scope with ids for `s`. Every name must exist.
@@ -69,7 +71,7 @@ fn grant_view(g: Grant, cat: Catalog) -> GrantView {
             }
         }
     }
-    return GrantView{ id: g.id, label: g.label, all: g.scope.all, groups: groups, hosts: hosts, read: g.read, exec: g.exec, write: g.write, created_ms: g.created_ms, expires_ms: g.expires_ms, anchor_pid: g.anchor_pid }
+    return GrantView{ id: g.id, label: g.label, all: g.scope.all, groups: groups, hosts: hosts, read: g.read, exec: g.exec, write: g.write, created_ms: g.created_ms, expires_ms: g.expires_ms, anchor_pid: g.anchor_pid, notify: g.notify }
 }
 
 fn grant_views(grants: []Grant, cat: Catalog) -> []GrantView {

@@ -252,6 +252,11 @@ fn recent_name(recents: JsonRecentStore, path: str) -> str {
 type GateOutcome struct {
     refusal:    str
     sudo_typed: str
+    // The activity entry of an allowed command that runs now (0 for none: a read, or
+    // the log could not be written), and the grant that allowed it ("" for none): the
+    // entry is completed when the command ends (milestone 56).
+    entry_id:   i64
+    grant_id:   str
 }
 
 // Names in the log entry the token `secret` still matches, when it is revoked or
@@ -278,7 +283,24 @@ fn copy_ask_for(parsed: ParsedArgs, st: GuiState, caller: Caller, vault_id: str,
 }
 
 fn refuse(msg: str) -> GateOutcome {
-    return GateOutcome{ refusal: msg, sudo_typed: "" }
+    return GateOutcome{ refusal: msg, sudo_typed: "", entry_id: 0, grant_id: "" }
+}
+
+// Goes ahead with `entry` logged as running, when the log keeps it (everything but a
+// read), under `grant` ("" for a token or the window alone).
+fn go_ahead(st: GuiState, store: LockedVaultStore, session: VaultSession, entry: ActivityEntry, grant: Grant?, sudo_typed: str, mut app: webui.App) -> GateOutcome {
+    mut e := entry
+    e.state = ACTIVITY_RUNNING
+    mut notify := false
+    if g := grant {
+        e.grant = g.id
+        notify = g.notify
+    }
+    mut id: i64 = 0
+    if activity_logged(AccessNeed{ action: e.action, host: "", host2: "" }) {
+        id = log_activity_notify(st, store, session, e, notify, mut app)
+    }
+    return GateOutcome{ refusal: "", sudo_typed: sudo_typed, entry_id: id, grant_id: e.grant }
 }
 
 fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st: GuiState, mut app: webui.App, session_kind: bool) -> GateOutcome {
@@ -369,17 +391,13 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
             log_activity(st, store, session, entry, mut app)
             return refuse(coded(ERR_DENIED, "the token '{t.name}' does not allow this; see `flint token list`"))
         }
-        if activity_logged(need) {
-            log_activity(st, store, session, entry, mut app)
-        }
-        return refuse("")
+        return go_ahead(st, store, session, entry, none, "", mut app)
     }
 
-    if !asked_every_time(need) && find_grant(st.holder.access_book().grants, caller, session.id, need, cat, now) != none {
-        if activity_logged(need) {
-            log_activity(st, store, session, entry, mut app)
+    if !asked_every_time(need) {
+        if g := find_grant(st.holder.access_book().grants, caller, session.id, need, cat, now) {
+            return go_ahead(st, store, session, entry, g, "", mut app)
         }
-        return refuse("")
     }
     entry.via = ACTIVITY_VIA_WINDOW
     id := hex.encode(c.random_bytes(8))
@@ -423,11 +441,12 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
                 return refuse(coded(ERR_DENIED, "the owner denied this request in Flint"))
             }
             // A token or a sudo command is allowed for this one request; nothing else is.
-            if asked_every_time(need) || find_grant(st.holder.access_book().grants, caller, session.id, need, cat, t) != none {
-                if activity_logged(need) {
-                    log_activity(st, store, session, entry, mut app)
-                }
-                return GateOutcome{ refusal: "", sudo_typed: typed }
+            if asked_every_time(need) {
+                return go_ahead(st, store, session, entry, none, typed, mut app)
+            }
+            // The grant just given covers this first command too: its notice counts it.
+            if g := find_grant(st.holder.access_book().grants, caller, session.id, need, cat, t) {
+                return go_ahead(st, store, session, entry, g, typed, mut app)
             }
             return refuse(coded(ERR_DENIED, "the access allowed in Flint does not cover this request"))
         }
@@ -472,24 +491,89 @@ fn activity_command(p: ParsedArgs, ask: TokenAsk, sudo: SudoAsk) -> str {
 // Appends `e` to the open vault's log, if `session` is still the vault held. A
 // failure is reported by its code only: a message could name a host (Principle 5).
 fn log_activity(st: GuiState, store: LockedVaultStore, session: VaultSession, e: ActivityEntry, mut app: webui.App) {
-    st.hold()
-    still := st.unlocked() && st.vault_session().path == session.path
-    mut ok := true
-    if still {
-        mut ts := store
-        record_activity(mut ts, e, time.unix_seconds()) or err {
-            ok = false
-            write_stderr("flint-gui: the activity log was not written ({error_code_of("{err.message()}")})\n")
-        }
-    }
-    st.release()
-    if still && ok {
-        app.emit("activity:added", ActivityAdded{ outcome: e.outcome })
-    }
+    _ = log_activity_notify(st, store, session, e, false, mut app)
 }
 
+// log_activity, returning the entry's id (0 when it was not written), with `notify`
+// telling the page whether the entry's grant shows it in a notice (milestone 56).
+fn log_activity_notify(st: GuiState, store: LockedVaultStore, session: VaultSession, e: ActivityEntry, notify: bool, mut app: webui.App) -> i64 {
+    st.hold()
+    still := st.unlocked() && st.vault_session().path == session.path
+    mut id: i64 = 0
+    if still {
+        mut ts := store
+        id = add_activity(mut ts, e)
+    }
+    st.release()
+    if id > 0 {
+        app.emit("activity:added", activity_added(e, id, notify))
+    }
+    return id
+}
+
+// The new entry's id, 0 when the log was not written (said by its code only).
+fn add_activity(mut ts: LockedVaultStore, e: ActivityEntry) -> i64 {
+    id := record_activity(mut ts, e, time.unix_seconds()) or err {
+        write_stderr("flint-gui: the activity log was not written ({error_code_of("{err.message()}")})\n")
+        return 0
+    }
+    return id
+}
+
+// Whether entry `id` was completed with `end`.
+fn end_activity(mut ts: LockedVaultStore, id: i64, end: ActivityEnd) -> bool {
+    done := finish_activity(mut ts, id, end) or err {
+        write_stderr("flint-gui: the activity log was not completed ({error_code_of("{err.message()}")})\n")
+        return false
+    }
+    return done
+}
+
+// An entry joined the log. Never the command (D-127 (1)): a notice names the program
+// and the hosts; View asks for the commands (grant_activity).
 type ActivityAdded struct {
-    outcome: str `json:"outcome"`
+    id:      i64  `json:"id"`
+    outcome: str  `json:"outcome"`
+    grant:   str  `json:"grant"`
+    notify:  bool `json:"notify"`
+    program: str  `json:"program"`
+    hosts:   str  `json:"hosts"`
+    action:  str  `json:"action"`
+    at:      i64  `json:"at"`
+    state:   str  `json:"state"`
+}
+
+fn activity_added(e: ActivityEntry, id: i64, notify: bool) -> ActivityAdded {
+    return ActivityAdded{ id: id, outcome: e.outcome, grant: e.grant, notify: notify, program: label_program(e.caller), hosts: e.host, action: e.action, at: e.at, state: e.state }
+}
+
+// An entry's command ended (milestone 56).
+type ActivityFinished struct {
+    id:          i64 `json:"id"`
+    grant:       str `json:"grant"`
+    exit:        i64 `json:"exit"`
+    duration_ms: i64 `json:"duration_ms"`
+    result:      str `json:"result"`
+}
+
+// Completes the entry `gate` logged for a command that ran from `started_ms` and
+// ended as `ended`, if `session` is still the vault held.
+fn finish_logged(st: GuiState, store: LockedVaultStore, session: VaultSession, g: GateOutcome, started_ms: i64, ended: ServedEnd, mut app: webui.App) {
+    if g.entry_id <= 0 {
+        return
+    }
+    end := activity_end(ended.exit, ended.error_code, time.now_ms() - started_ms)
+    st.hold()
+    still := st.unlocked() && st.vault_session().path == session.path
+    mut done := false
+    if still {
+        mut ts := store
+        done = end_activity(mut ts, g.entry_id, end)
+    }
+    st.release()
+    if done {
+        app.emit("activity:finished", ActivityFinished{ id: g.entry_id, grant: g.grant_id, exit: end.exit, duration_ms: end.duration_ms, result: end.result })
+    }
 }
 
 // How long a caller waits for the owner. The headless end-to-end run (and only it)
@@ -546,7 +630,8 @@ fn serve_run(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedV
         _ = conn.send(json_not_served(), SERVE_SEND_MS) or {}
         return
     }
-    refusal := gate(conn, req, c, store, st, mut app, false).refusal
+    outcome := gate(conn, req, c, store, st, mut app, false)
+    refusal := outcome.refusal
     if refusal == "gone" {
         return
     }
@@ -554,14 +639,17 @@ fn serve_run(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedV
         _ = conn.send(serve_reply_json(refused_reply(refusal, req)), SERVE_SEND_MS) or {}
         return
     }
+    started := time.now_ms()
     st.hold()
-    defer st.release()
     session := st.vault_session()
     if !st.unlocked() || session.path != req.vault {
+        st.release()
         _ = conn.send(serve_reply_json(refused_reply(coded(ERR_LOCKED, "the vault locked before the command ran"), req)), SERVE_SEND_MS) or {}
+        finish_logged(st, store, session, outcome, started, ServedEnd{ exit: i64(exit_code_for(ERR_LOCKED)), error_code: ERR_LOCKED }, mut app)
         return
     }
-    reply := run_served(req, c, mut store, kc, recents, session)
+    ran := run_served(req, c, mut store, kc, recents, session)
+    reply := ran.reply
     if reply.served {
         // `vault rename` changes the name inside the file: keep the window's in step.
         name := store.vault_get_meta("name") or session.name
@@ -577,7 +665,9 @@ fn serve_run(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedV
             app.emit("access:changed", GrantsChanged{ count: i64(st.holder.access_book().grants.len()) })
         }
     }
+    st.release()
     _ = conn.send(serve_reply_json(reply), SERVE_SEND_MS) or {}
+    finish_logged(st, store, session, outcome, started, ran.ended, mut app)
 }
 
 // `connect`, `exec` and `host test`: the vault is checked and copied under the hold,
@@ -599,6 +689,7 @@ fn serve_session(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Loc
         _ = conn.send(refused_session_frame(refusal, req), SERVE_SEND_MS) or {}
         return
     }
+    started := time.now_ms()
     st.hold()
     session := st.vault_session()
     still := st.unlocked() && session.path == req.vault
@@ -616,9 +707,11 @@ fn serve_session(mut conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Loc
         app.emit("rdp:open-request", RdpOpenRequestEvent{ alias: desktop })
         show_window(mut app)
         _ = conn.send(desktop_opened_frame(desktop, req.as_json), SERVE_SEND_MS) or {}
+        finish_logged(st, store, session, outcome, started, ServedEnd{ exit: 0, error_code: "" }, mut app)
         return
     }
-    run_served_session(conn, req, c, mut store, kc, recents, session, outcome.sudo_typed)
+    ended := run_served_session(conn, req, c, mut store, kc, recents, session, outcome.sudo_typed)
+    finish_logged(st, store, session, outcome, started, ended, mut app)
 }
 
 // The CLI asked to open an RDP host's tab (`flint connect`).

@@ -21,7 +21,8 @@ export type IconName =
   | 'clip' | 'info' | 'enter' | 'sun' | 'moon' | 'monitor' | 'keyboard' | 'palette' | 'link'
   | 'cloud' | 'jump' | 'sidebar' | 'arrow-r' | 'sparkle' | 'more' | 'reveal'
   | 'fingerprint' | 'agent' | 'chain' | 'shield-key' | 'clock' | 'upload' | 'download' | 'up' | 'target' | 'tunnel'
-  | 'ssh' | 'rdp' | 'expand' | 'shrink' | 'plug' | 'pin' | 'monitors' | 'server' | 'cloud-off' | 'paste';
+  | 'ssh' | 'rdp' | 'expand' | 'shrink' | 'plug' | 'pin' | 'monitors' | 'server' | 'cloud-off' | 'paste'
+  | 'bell' | 'bell-off';
 
 export function Icon({ name, size, className = '', label }: { name: IconName; size?: 'xs' | 'sm' | 'lg' | 'xl'; className?: string; label?: string }) {
   const cls = ['ic', size ? 'ic-' + size : '', className].filter(Boolean).join(' ');

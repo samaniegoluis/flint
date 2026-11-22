@@ -41,7 +41,24 @@ CREATE TABLE activity (
     command_cut INTEGER NOT NULL DEFAULT 0
 );
 ` })
+    // Milestone 56 (D-127): the grant that allowed an entry and how its command ended,
+    // written back when it ends (activity_finish). Older rows read "" and 0: no result.
+    list.push(Migration{ version: 2, name: "activity results", sql: `
+ALTER TABLE activity ADD COLUMN grant_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE activity ADD COLUMN run_state TEXT NOT NULL DEFAULT '';
+ALTER TABLE activity ADD COLUMN exit_status INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE activity ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE activity ADD COLUMN result TEXT NOT NULL DEFAULT '';
+CREATE INDEX activity_grant ON activity (grant_id) WHERE grant_id != '';
+` })
     return list
+}
+
+// The columns every read of an entry selects, in activity_row's order.
+ACTIVITY_COLUMNS: str = "id, at, caller, via, token_id, action, host, command, outcome, command_cut, grant_id, run_state, exit_status, duration_ms, result"
+
+fn activity_row(r: []SqlCell) -> ActivityEntry {
+    return ActivityEntry{ id: cell_i64(r[0]), at: cell_i64(r[1]), caller: cell_str(r[2]), via: cell_str(r[3]), token: cell_str(r[4]), action: cell_str(r[5]), host: cell_str(r[6]), command: cell_str(r[7]), outcome: cell_str(r[8]), cut: cell_i64(r[9]), grant: cell_str(r[10]), state: cell_str(r[11]), exit: cell_i64(r[12]), duration_ms: cell_i64(r[13]), result: cell_str(r[14]) }
 }
 
 // A view of the activity file's connection; it does not own the handle.
@@ -220,23 +237,53 @@ fn (self: SqlVaultStore) activity_copy(rows: [][]SqlCell, retention: str) -> voi
 }
 
 // The insert and the prune in one savepoint, so a reader never sees a log that is
-// half pruned.
-fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> void! {
+// half pruned. Returns the new entry's id.
+fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> i64! {
     try self.require_activity()
     try self.act().exec("SAVEPOINT activity_add;")
-    self.activity_insert(e, keep) or err {
+    id := self.activity_insert(e, keep) or err {
         _ = self.act().exec("ROLLBACK TO activity_add;")
         _ = self.act().exec("RELEASE activity_add;")
         return error("{err.message()}")
     }
     try self.act().exec("RELEASE activity_add;")
+    return id
 }
 
-fn (self: SqlVaultStore) activity_insert(e: ActivityEntry, keep: ActivityKeep) -> void! {
-    try self.act().run_sql("INSERT INTO activity (at, caller, via, token_id, action, host, command, outcome, command_cut) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);", [
+fn (self: SqlVaultStore) activity_insert(e: ActivityEntry, keep: ActivityKeep) -> i64! {
+    try self.act().run_sql("INSERT INTO activity (at, caller, via, token_id, action, host, command, outcome, command_cut, grant_id, run_state, exit_status, duration_ms, result) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14);", [
             sql_int(e.at), sql_text(e.caller), sql_text(e.via), sql_text(e.token), sql_text(e.action), sql_text(e.host), sql_text(e.command), sql_text(e.outcome), sql_int(e.cut),
+            sql_text(e.grant), sql_text(e.state), sql_int(e.exit), sql_int(e.duration_ms), sql_text(e.result),
     ])
+    res := try self.act().query_cells("SELECT last_insert_rowid();", [])
+    id := cell_i64(res[0][0])
     _ = try self.activity_trim(keep)
+    return id
+}
+
+// Records how entry `id`'s command ended (milestone 56). An entry pruned meanwhile,
+// or one that never ran, is left as it is: false.
+fn (self: SqlVaultStore) activity_finish(id: i64, end: ActivityEnd) -> bool! {
+    try self.require_activity()
+    try self.act().run_sql("UPDATE activity SET run_state = ?2, exit_status = ?3, duration_ms = ?4, result = ?5 WHERE id = ?1 AND run_state = ?6;", [
+            sql_int(id), sql_text(ACTIVITY_ENDED), sql_int(end.exit), sql_int(end.duration_ms), sql_text(end.result), sql_text(ACTIVITY_RUNNING),
+    ])
+    res := try self.act().query_cells("SELECT changes();", [])
+    return cell_i64(res[0][0]) > 0
+}
+
+// The newest `limit` entries grant `grant_id` allowed, newest first (View, 26b1).
+fn (self: SqlVaultStore) activity_of_grant(grant_id: str, limit: i64) -> []ActivityEntry! {
+    try self.require_activity()
+    if grant_id.len() == 0 {
+        return []
+    }
+    res := try self.act().query_cells("SELECT {ACTIVITY_COLUMNS} FROM activity WHERE grant_id = ?1 ORDER BY id DESC LIMIT ?2;", [sql_text(grant_id), sql_int(limit)])
+    mut list: []ActivityEntry = []
+    for r in res {
+        list.push(activity_row(r))
+    }
+    return list
 }
 
 // Deletes what `keep` no longer covers: entries older than `since_at`, then the
@@ -308,10 +355,10 @@ fn (self: SqlVaultStore) activity_page(before_id: i64, limit: i64) -> []Activity
     if before <= 0 {
         before = 9223372036854775807
     }
-    res := try self.act().query_cells("SELECT id, at, caller, via, token_id, action, host, command, outcome, command_cut FROM activity WHERE id < ?1 ORDER BY id DESC LIMIT ?2;", [sql_int(before), sql_int(limit)])
+    res := try self.act().query_cells("SELECT {ACTIVITY_COLUMNS} FROM activity WHERE id < ?1 ORDER BY id DESC LIMIT ?2;", [sql_int(before), sql_int(limit)])
     mut list: []ActivityEntry = []
     for r in res {
-        list.push(ActivityEntry{ id: cell_i64(r[0]), at: cell_i64(r[1]), caller: cell_str(r[2]), via: cell_str(r[3]), token: cell_str(r[4]), action: cell_str(r[5]), host: cell_str(r[6]), command: cell_str(r[7]), outcome: cell_str(r[8]), cut: cell_i64(r[9]) })
+        list.push(activity_row(r))
     }
     return list
 }

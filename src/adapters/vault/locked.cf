@@ -264,10 +264,22 @@ fn (self: LockedVaultStore) token_put(t: Token) -> void! {
     return inner.token_put(t)
 }
 
-fn (self: LockedVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> void! {
+fn (self: LockedVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> i64! {
     inner := self.enter()
     defer self.leave()
     return inner.activity_add(e, keep)
+}
+
+fn (self: LockedVaultStore) activity_finish(id: i64, end: ActivityEnd) -> bool! {
+    inner := self.enter()
+    defer self.leave()
+    return inner.activity_finish(id, end)
+}
+
+fn (self: LockedVaultStore) activity_of_grant(grant_id: str, limit: i64) -> []ActivityEntry! {
+    inner := self.enter()
+    defer self.leave()
+    return inner.activity_of_grant(grant_id, limit)
 }
 
 fn (self: LockedVaultStore) activity_page(before_id: i64, limit: i64) -> []ActivityEntry! {

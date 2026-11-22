@@ -38,7 +38,11 @@ syncs, through a cloud folder or later a remote vault, never carries it, and the
 not rewritten on another machine. The file has its own random salt in its first 16 bytes
 and is encrypted with its own key, derived from the vault's master key (below), so it
 opens only while its vault is unlocked. **Back up activity…** copies it as it is, still
-encrypted. A file the key no longer opens is kept beside it as `<id>.db.unreadable`
+encrypted. Its own migrations are numbered apart from the vault's: **1** creates the log
+(time, caller, how it was allowed, token, action, host, command, outcome, bytes cut) and
+**2** adds the grant that allowed an entry and how its command ended (`run_state`
+`running` or `ended`, `exit_status`, `duration_ms`, and `result`, Flint's error code when
+Flint stopped it); entries from before say nothing there. A file the key no longer opens is kept beside it as `<id>.db.unreadable`
 and a new log begins, unless a re-encrypted copy of it waits beside it (`<id>.db.new`, left
 by a master password change cut short, below) that the key opens: that copy takes its
 place.

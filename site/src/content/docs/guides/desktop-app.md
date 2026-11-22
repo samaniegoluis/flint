@@ -64,6 +64,8 @@ the corner.
 - A long message is cut at two lines; **More** shows the rest.
 - A toast may carry a button or two (*Stop them*, *Details*). Clicking one does what it says
   and closes the toast.
+- A program you approved shows what it runs in a notice of its own, one per grant, updated
+  in place, with **View** and **Stop** (see [See what a grant runs](/guides/ai-agents/#see-what-a-grant-runs)).
 - Screen readers announce each toast, errors at once. With reduce motion on, toasts appear
   and leave without the slide.
 
@@ -354,8 +356,9 @@ The first time a program runs `flint` while the vault is unlocked, Flint comes t
 front with the approval window: who asks (*"flint, started by Claude Code"*, with its
 chain of processes), the command, and what to allow: the host, its group or the whole
 vault; reading, running commands, changing the vault; for 15 minutes, 1 hour, 4 hours or
-until the vault locks. The action the command needs is marked *needed*; a choice that
-does not cover it says so, and that request will still be refused. **Allow**
+until the vault locks; and **Notify me of each command**, ticked as the default in
+**Settings → Access** says, for this grant only. The action the command needs is marked
+*needed*; a choice that does not cover it says so, and that request will still be refused. **Allow**
 (<kbd>⌘↵</kbd>, <kbd>Ctrl+↵</kbd> on Linux) asks for Touch ID or your Mac's password
 (macOS), your login password through polkit (Linux), or the master password. **Deny**
 has the focus (<kbd>Esc</kbd>), unless the window asks for a password; it refuses, and so
@@ -420,8 +423,9 @@ Settings belong to this machine, not to the vault, and save as you change them.
   [Sync a vault across machines](/guides/remote-vault/)), and **Change master
   password…**, with the new password's strength shown as you type
   (see [Change the master password](/guides/vaults/#change-the-master-password)).
-- **Access**: the programs you approved, with what they may do and until when, and
-  **Revoke** for each (or all). Grants end when the vault locks or Flint quits. Below
+- **Access**: **Notify me of commands run under a grant** (on: the default for new grants),
+  then the programs you approved, with what they may do and until when, a **bell** that
+  turns that grant's notices off or on, and **Revoke** for each (or all). Grants end when the vault locks or Flint quits. Below
   them, the vault's **tokens** (**Revoke** ends one; **Show ended** lists the expired
   and revoked ones) and the **activity log**: when, which program or token, the command
   and whether it was allowed, denied or left unanswered, newest first, with **Load

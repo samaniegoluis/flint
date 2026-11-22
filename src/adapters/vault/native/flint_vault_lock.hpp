@@ -65,6 +65,8 @@ struct SessionCell {
     std::string ask_caller;
     std::vector<std::string> relocked;
     std::string lock_after;
+    // Milestone 56: whether a grant given at unlock notifies (Settings' default).
+    bool notify_grants = true;
     bool quitting = false;
     // Milestone 14: the window is locked (closed to the tray) while the vault stays
     // unlocked, and the vaults this run knows are remembered on this computer.

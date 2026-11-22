@@ -104,9 +104,14 @@ type VaultStore interface {
 type TokenStore interface {
     tokens_all() -> []Token!
     mut token_put(t: Token) -> void!
-    // Appends `e` and prunes to `keep` in one savepoint.
-    mut activity_add(e: ActivityEntry, keep: ActivityKeep) -> void!
+    // Appends `e` and prunes to `keep` in one savepoint; the new entry's id.
+    mut activity_add(e: ActivityEntry, keep: ActivityKeep) -> i64!
+    // Records how a running entry's command ended (milestone 56); false when the
+    // entry is gone or was not running.
+    mut activity_finish(id: i64, end: ActivityEnd) -> bool!
     activity_page(before_id: i64, limit: i64) -> []ActivityEntry!
+    // The newest `limit` entries a grant allowed, newest first (milestone 56).
+    activity_of_grant(grant_id: str, limit: i64) -> []ActivityEntry!
     // Prunes to `keep`; the number of entries removed (milestone 15).
     mut activity_prune(keep: ActivityKeep) -> i64!
     // How many entries are older than `since_at` (Unix seconds).

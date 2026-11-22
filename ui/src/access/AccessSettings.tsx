@@ -11,6 +11,7 @@ import { api, on, toFlintError } from '../api/backend';
 import type { ActivityEntry, GrantView, RetentionDays, TokenView } from '../api/types';
 import type { Confirm } from '../pages/KeysPage';
 import { useApp } from '../state/app';
+import { resultView } from '../lib/activityResult';
 import { CallerLabel, findHost, presenceLabel, useAccessState } from './ApprovalDialog';
 import { Icon } from '../ui/Icon';
 import { CommandModal, sudoArgv } from './CommandModal';
@@ -160,6 +161,8 @@ function ActivityDetail({ e, onClose }: { e: ActivityEntry; onClose: () => void 
   // The login user as the core picks it (auth_user): the host's, else its credential's.
   const user = host?.user || catalog.credentials.find((c) => c.name === host?.credential)?.user || '';
   const when = exactWhen(e.at);
+  // Milestone 56: how the command ended, when the log knows (entries from before say nothing).
+  const ended = resultView(e);
   const details = (
     <dl className="kv" data-activity-detail style={{ margin: 0, gridTemplateColumns: '88px minmax(0, 1fr)' }}>
       <dt>When</dt><dd data-activity-when><span className="mono">{when.time}</span> <span className="faint">{when.offset}</span></dd>
@@ -169,7 +172,8 @@ function ActivityDetail({ e, onClose }: { e: ActivityEntry; onClose: () => void 
         ? <span className="faint"> · {user ? `${user} → ` : ''}root (sudo)</span>
         : host?.group ? <span className="faint"> · {host.group}</span> : null}</dd></>}
       <dt>Action</dt><dd><span className="mono">{root ? 'exec' : e.action}</span>{root && <> <span className="root-badge">root</span></>}</dd>
-      <dt>Result</dt><dd><span className={`badge ${OUTCOME[e.outcome].tone}`}>{OUTCOME[e.outcome].text}</span></dd>
+      <dt>Result</dt><dd><span className={`badge ${OUTCOME[e.outcome].tone}`}>{OUTCOME[e.outcome].text}</span>
+        {ended.badge && <span data-activity-ended> <span className={`badge ${ended.tone}`}>{ended.badge}</span>{ended.meta && <span className="faint"> · {ended.meta}</span>}</span>}</dd>
     </dl>
   );
   return <CommandModal title="Activity entry" icon="clock" root={root} argv={root && e.cut === 0 ? sudoArgv(e.command) : null}
@@ -289,11 +293,12 @@ function ActivitySection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
 }
 
 export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
-  const { fail } = useApp();
+  const { fail, settings, saveSettings } = useApp();
   const { state, setState, skew } = useAccessState(true);
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(t); }, []);
   const revoke = (id: string) => api.accessRevoke(id).then(setState).catch((e) => fail(toFlintError(e)));
+  const bell = (g: GrantView) => api.accessNotify(g.id, !g.notify).then(setState).catch((e) => fail(toFlintError(e)));
   const grants = state?.grants ?? [];
   return (
     <>
@@ -303,6 +308,14 @@ export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void 
         the approval window. A grant covers the program that started <span className="mono">flint</span> (Claude Code, a terminal app, tmux), is
         limited to some hosts and actions, ends when it expires or the vault locks, and is confirmed with {presenceLabel(state?.presence ?? 'password')}.
       </p>
+      <div className="panel row" style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-3)', marginTop: 'var(--sp-3)' }}>
+        <button type="button" className="toggle" role="switch" aria-checked={settings.notify_grants} aria-label="Notify me of commands run under a grant" data-setting="notify_grants"
+          onClick={() => saveSettings({ ...settings, notify_grants: !settings.notify_grants }).catch((e) => fail(toFlintError(e)))} />
+        <span className="col grow" style={{ gap: 2 }}>
+          <span className="strong" style={{ fontSize: 'var(--fs-sm)' }}>Notify me of commands run under a grant</span>
+          <span className="hint">The default for new grants. A notice names the program and the host, never the command.</span>
+        </span>
+      </div>
       <div className="section-h">
         <h2>Active grants</h2>{grants.length > 0 && <span className="badge">{grants.length}</span>}<span className="grow" />
         {grants.length > 1 && <button className="btn btn-danger-ghost btn-sm" data-grants-revoke-all onClick={() => revoke('')}>Revoke all</button>}
@@ -315,7 +328,7 @@ export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void 
         </div>
       ) : (
         <table className="table compact">
-          <thead><tr><th>Program</th><th>Hosts</th><th>Actions</th><th>Time left</th><th>Anchor</th><th style={{ width: 80 }} /></tr></thead>
+          <thead><tr><th>Program</th><th>Hosts</th><th>Actions</th><th>Time left</th><th>Anchor</th><th style={{ width: 40 }}><span className="sr-only">Notices</span></th><th style={{ width: 80 }} /></tr></thead>
           <tbody>
             {grants.map((g) => (
               <tr key={g.id} data-grant={g.id}>
@@ -324,6 +337,12 @@ export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void 
                 <td><ActionBadges s={g} /></td>
                 <td>{expiresText(g, now, skew)}</td>
                 <td className="mono">pid {g.anchor_pid}</td>
+                <td>
+                  <button type="button" className={g.notify ? 'icon-btn bell on' : 'icon-btn bell'} aria-pressed={g.notify} data-grant-bell={g.notify ? 'on' : 'off'}
+                    aria-label={g.notify ? 'Notices on — turn off' : 'Notices off — turn on'} title={g.notify ? 'Notices on' : 'Notices off'} onClick={() => bell(g)}>
+                    <Icon name={g.notify ? 'bell' : 'bell-off'} size="sm" />
+                  </button>
+                </td>
                 <td style={{ textAlign: 'right' }}><button className="btn btn-secondary btn-sm" onClick={() => revoke(g.id)}>Revoke</button></td>
               </tr>
             ))}

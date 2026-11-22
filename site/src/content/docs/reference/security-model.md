@@ -116,7 +116,10 @@ once revoked. A token never unlocks the vault.
 
 The **activity log** records every command a caller ran or changed through Flint and
 every request refused: when, which program (and token), the host and the whole command
-(up to 16 KB), never a flag's value or a secret. Allowed reads are not recorded. It is
+(up to 16 KB), never a flag's value or a secret. The entry is written before the command
+runs and completed when it ends, with its exit status, how long it took, and Flint's error
+code when Flint stopped it (a refused sudo password, a timeout); a vault locked meanwhile
+leaves it without a result. Allowed reads are not recorded. It is
 **this machine's**: a [file of its own](/reference/vault-format/#the-activity-file) in the
 config folder, encrypted with a key derived from the vault's, and never inside the vault,
 so a vault that syncs carries no log and is not rewritten on every `flint exec`. It
@@ -125,6 +128,12 @@ machine in **Settings → Access** and nowhere else: no CLI command changes it, 
 program allowed to change the vault cannot shorten the record of what it did. Past about
 50 MB the oldest entries go whatever the setting. Read it, or **Back up activity…** (a
 copy of the file, still encrypted), in **Settings → Access**.
+
+**What a grant runs is on screen.** Each command a grant allows shows in a notice in
+Flint's window, one per grant, with **Stop** (unless you turned that off for the grant or
+by default). The notice and the event behind it carry the program's name and the host,
+never the command: only **View**, opened by the person at the screen, shows commands, as
+the activity log does.
 
 **What you approve is what runs.** The approval window shows the command read from the
 arguments Flint is about to run, not from words the program sends to describe itself, and

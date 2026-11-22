@@ -218,6 +218,8 @@ export interface Settings {
   server_stats: boolean;
   /** Milestone 55: colour CPU, memory and disk by load (green, amber, red). */
   server_stats_colour: boolean;
+  /** Milestone 56 (26d1): new grants notify each command they allow. */
+  notify_grants: boolean;
 }
 
 /** The update check's outcome (milestone 52, src/domain/update.cf), as `update:status`. */
@@ -581,6 +583,8 @@ export interface GrantView {
   /** 0 = until the vault locks. */
   expires_ms: number;
   anchor_pid: number;
+  /** Milestone 56: each command it allows shows in its notice (the bell). */
+  notify: boolean;
 }
 
 /** How Allow is confirmed: Touch ID, the Mac's password, polkit, or the master password. */
@@ -608,6 +612,8 @@ export interface AccessAnswer {
   /** `exec --sudo`: a sudo password for this command, and whether to keep it. */
   sudo_password: string;
   save_sudo_password: boolean;
+  /** Milestone 56 (26c1): this grant notifies each command it allows. */
+  notify: boolean;
 }
 
 /** A token as Settings → Access lists it (milestone 12b): never its secret. Times are Unix seconds. */
@@ -645,6 +651,38 @@ export interface ActivityEntry {
   outcome: 'allowed' | 'denied' | 'timeout';
   /** Bytes cut from the end of `command` past 16 KB (milestone 15); 0 when whole. */
   cut: number;
+  /** Milestone 56: the grant that allowed it ('' for none) and how it ended. */
+  grant: string;
+  /** 'running' while it runs, 'ended' after; '' for a refusal or an older entry. */
+  state: '' | 'running' | 'ended';
+  exit: number;
+  duration_ms: number;
+  /** The error code when Flint stopped it ('not_sudoer', 'sudo_password', …), else ''. */
+  result: string;
+}
+
+/** `activity:added` (milestone 56): never the command (D-127 (1)). */
+export interface ActivityAddedEvent {
+  id: number;
+  outcome: 'allowed' | 'denied' | 'timeout';
+  grant: string;
+  notify: boolean;
+  /** "Claude Code" for "flint, started by Claude Code". */
+  program: string;
+  /** The host or hosts of the command ("db1", "db1 → nas"), '' for none. */
+  hosts: string;
+  action: AccessNeedAction;
+  at: number;
+  state: '' | 'running' | 'ended';
+}
+
+/** `activity:finished` (milestone 56). */
+export interface ActivityFinishedEvent {
+  id: number;
+  grant: string;
+  exit: number;
+  duration_ms: number;
+  result: string;
 }
 
 /** A command as shown and kept (milestone 15): whole up to 16 KB, `cut` bytes beyond. */

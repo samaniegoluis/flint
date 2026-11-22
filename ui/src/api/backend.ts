@@ -106,6 +106,10 @@ export const api = {
   accessAnswer: (a: AccessAnswer) => call<AccessState>('access_answer', a),
   /** Ends one grant, or every grant with ''. */
   accessRevoke: (id: string) => call<AccessState>('access_revoke', { name: id }),
+  /** A grant's bell (milestone 56, 26d1): its notice on or off. */
+  accessNotify: (id: string, on: boolean) => call<AccessState>('access_notify', { id, on }),
+  /** What a grant ran, newest first (its notice's View, 26b1). */
+  grantActivity: (id: string) => call<{ entries: ActivityEntry[] }>('grant_activity', { name: id }),
   /** Tokens of the open vault (milestone 12b). */
   tokensList: () => call<TokensState>('tokens_list'),
   tokenRevoke: (id: string) => call<TokensState>('token_revoke', { name: id }),

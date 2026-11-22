@@ -37,12 +37,38 @@ fn (mut self: FakeTokenStore) token_put(t: Token) -> void! {
     self.tokens.push(t)
 }
 
-fn (mut self: FakeTokenStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> void! {
+fn (mut self: FakeTokenStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> i64! {
     mut row := e
     row.id = self.next_id
     self.next_id = self.next_id + 1
     self.activity.push(row)
     _ = try self.activity_prune(keep)
+    return row.id
+}
+
+fn (mut self: FakeTokenStore) activity_finish(id: i64, end: ActivityEnd) -> bool! {
+    for i in 0..self.activity.len() {
+        if self.activity[i].id == id && self.activity[i].state == ACTIVITY_RUNNING {
+            self.activity[i].state = ACTIVITY_ENDED
+            self.activity[i].exit = end.exit
+            self.activity[i].duration_ms = end.duration_ms
+            self.activity[i].result = end.result
+            return true
+        }
+    }
+    return false
+}
+
+fn (self: FakeTokenStore) activity_of_grant(grant_id: str, limit: i64) -> []ActivityEntry! {
+    mut page: []ActivityEntry = []
+    n := self.activity.len()
+    for k in 0..n {
+        a := self.activity[n - 1 - k]
+        if i64(page.len()) < limit && grant_id.len() > 0 && a.grant == grant_id {
+            page.push(a)
+        }
+    }
+    return page
 }
 
 // By age only: the size cap is the store's, tested with SQLCipher.
@@ -209,7 +235,7 @@ fn day_entry(day: i64) -> ActivityEntry {
 test "the activity log keeps 90 days by default and pages back" {
     mut tokens := new_fake_token_store()
     for day in [10, 50, 100, 120, 130] {
-        try record_activity(mut tokens, day_entry(day), 130 * 86400)
+        _ = try record_activity(mut tokens, day_entry(day), 130 * 86400)
     }
     page := try list_activity(tokens, 0, 2)
     assert_eq(page.len(), 2)
@@ -225,7 +251,7 @@ test "retention is set per vault, counted before and pruned at once" {
     mut tokens := new_fake_token_store()
     tokens.retention = 0
     for day in [1, 200, 300, 395, 400] {
-        try record_activity(mut tokens, day_entry(day), 400 * 86400)
+        _ = try record_activity(mut tokens, day_entry(day), 400 * 86400)
     }
     assert_eq(try activity_retention_days(tokens), 0)
     now := 400 * 86400
@@ -252,4 +278,25 @@ test "an activity backup goes to an absolute path, and its failure is reported" 
     code = ""
     backup_activity(t, "/unwritable/a.db") or err { code = error_code_of("{err.message()}") }
     assert_eq(code, ERR_IO)
+}
+
+test "finish_activity writes back how a running command ended, once (milestone 56)" {
+    mut tokens := new_fake_token_store()
+    mut e := day_entry(1)
+    e.grant = "g1"
+    e.state = ACTIVITY_RUNNING
+    id := try record_activity(mut tokens, e, 2 * 86400)
+    mut other := day_entry(1)
+    other.grant = "g2"
+    _ = try record_activity(mut tokens, other, 2 * 86400)
+    assert(try finish_activity(mut tokens, id, activity_end(17, ERR_NOT_SUDOER, 300)))
+    assert(!(try finish_activity(mut tokens, id, activity_end(0, "", 1))), "an entry ends once")
+    assert(!(try finish_activity(mut tokens, 0, activity_end(0, "", 1))))
+    list := try grant_activity(tokens, "g1")
+    assert_eq(list.len(), usize(1))
+    assert_eq(list[0].state, ACTIVITY_ENDED)
+    assert_eq(list[0].exit, 17)
+    assert_eq(list[0].result, ERR_NOT_SUDOER)
+    assert(activity_refused_by_sudo(list[0]))
+    assert_eq((try grant_activity(tokens, "")).len(), usize(0))
 }

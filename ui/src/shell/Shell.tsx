@@ -2,6 +2,7 @@
 // bar, the Hosts sidebar, the main area (sessions, or a full-page view) and the
 // status bar, plus every overlay. App shortcuts are handled here.
 
+import { GrantNoticesHost } from '../access/GrantNoticesHost';
 import { keyTab, pairs } from '../files/pair';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api, on } from '../api/backend';
@@ -560,6 +561,7 @@ export function Shell() {
         <ApprovalDialog key={approval.id} ap={approval} queue={access.state.pending} presence={access.state.presence} catalog={catalog} skew={access.skew}
           onDone={(s) => (s ? access.setState(s) : access.refresh())} />
       )}
+      <GrantNoticesHost onLog={() => { setSection('access'); setView('settings'); }} />
       {confirm && <ConfirmDialog c={confirm} onClose={() => setConfirm(null)} />}
       {ask && <TextDialog ask={ask} onClose={() => setAsk(null)} />}
       {!anyOverlay && catalog.hosts.length === 0 && view === 'hosts' && tabs.length === 0 && (

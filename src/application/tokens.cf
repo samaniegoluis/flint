@@ -154,9 +154,28 @@ fn match_token[C: Crypto](crypto: C, all: []Token, text: str) -> Token! {
 }
 
 // Appends `e`, pruning what the vault's retention no longer keeps (milestone 15).
-fn record_activity[T: TokenStore](mut tokens: T, e: ActivityEntry, now_s: i64) -> void! {
+// Returns the entry's id.
+fn record_activity[T: TokenStore](mut tokens: T, e: ActivityEntry, now_s: i64) -> i64! {
     days := try activity_retention_days(tokens)
-    try tokens.activity_add(e, activity_keep(days, now_s))
+    return tokens.activity_add(e, activity_keep(days, now_s))
+}
+
+// Records how the command of entry `id` ended (milestone 56, D-127 (3)): its exit
+// status, how long it ran, and the error code when Flint stopped it. False when the
+// entry was pruned meanwhile or never ran.
+fn finish_activity[T: TokenStore](mut tokens: T, id: i64, end: ActivityEnd) -> bool! {
+    if id <= 0 {
+        return false
+    }
+    return tokens.activity_finish(id, end)
+}
+
+// The most commands View lists for one grant (26b1).
+GRANT_ACTIVITY_MAX: i64 = 500
+
+// What grant `grant_id` ran, newest first, for View (milestone 56).
+fn grant_activity[T: TokenStore](tokens: T, grant_id: str) -> []ActivityEntry! {
+    return tokens.activity_of_grant(grant_id, GRANT_ACTIVITY_MAX)
 }
 
 // The vault's retention in days, ACTIVITY_RETENTION_DEFAULT when never set.

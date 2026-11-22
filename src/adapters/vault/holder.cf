@@ -173,6 +173,26 @@ fn (self: SessionHolder) set_lock_after(setting: str) {
     }
 }
 
+// Settings' *Notify me of commands run under a grant* (milestone 56): what a grant
+// the unlock screen gives starts with. Set at start and on save.
+fn (self: SessionHolder) set_notify_grants(on: bool) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->notify_grants = on;
+    }
+}
+
+fn (self: SessionHolder) notify_grants() -> bool {
+    mut on := true
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        on = self.cell->notify_grants;
+    }
+    return on
+}
+
 fn (self: SessionHolder) lock_after() -> str {
     mut s := ""
     // CFIRE-UPSTREAM: CF-026

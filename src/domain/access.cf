@@ -67,6 +67,10 @@ type Grant struct {
     // Wall-clock milliseconds; 0 lasts until the vault locks.
     expires_ms:     i64         `json:"expires_ms"`
     duration:       str         `json:"duration"`
+    // Milestone 56 (D-117 (3), D-127): each command it allows shows in the grant's
+    // notice. Memory only, like the grant; set from the approval window's checkbox
+    // and the bell in Settings → Access.
+    notify:         bool        `json:"notify"`
 }
 
 // What one request needs: an action and, for `exec`, the host alias it runs on
@@ -171,6 +175,27 @@ fn caller_label(c: Caller) -> str {
         return first
     }
     return "{first}, started by {friendly_name(proc_name(c.chain[i]))}"
+}
+
+// The program a label names, as a notice shows it: "Claude Code" for "flint, started
+// by Claude Code", the label itself when it names one process.
+fn label_program(label: str) -> str {
+    marker := ", started by "
+    if i := label.index_of(marker) {
+        return label[i + marker.len()..]
+    }
+    return label
+}
+
+// Turns grant `id`'s notice on or off; false when there is no such grant.
+fn set_grant_notify(mut book: AccessBook, id: str, on: bool) -> bool {
+    for i in 0..book.grants.len() {
+        if book.grants[i].id == id {
+            book.grants[i].notify = on
+            return true
+        }
+    }
+    return false
 }
 
 fn caller_anchor(c: Caller) -> CallerProc {

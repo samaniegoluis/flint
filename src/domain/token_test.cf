@@ -119,3 +119,22 @@ test "retention keeps entries by age" {
     assert_eq(retention_label(0), "no limit")
     assert_eq(retention_label(30), "30 days")
 }
+
+test "activity_end keeps the exit, the error code and a duration of at least 0" {
+    e := activity_end(3, "", 420)
+    assert_eq(e.exit, 3)
+    assert_eq(e.duration_ms, 420)
+    assert_eq(e.result, "")
+    assert_eq(activity_end(17, ERR_NOT_SUDOER, -5).duration_ms, 0)
+}
+
+test "activity_refused_by_sudo is true only for sudo's two refusals" {
+    mut e := ActivityEntry{ id: 1, at: 0, caller: "c", via: ACTIVITY_VIA_WINDOW, token: "", action: ACCESS_SUDO, host: "h", command: "x", outcome: ACTIVITY_ALLOWED, cut: 0 }
+    assert(!activity_refused_by_sudo(e))
+    e.result = ERR_NOT_SUDOER
+    assert(activity_refused_by_sudo(e))
+    e.result = ERR_SUDO_PASSWORD
+    assert(activity_refused_by_sudo(e))
+    e.result = ERR_NETWORK
+    assert(!activity_refused_by_sudo(e))
+}

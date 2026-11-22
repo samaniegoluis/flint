@@ -112,7 +112,9 @@ fn main() {
         clipboard.board = "net.flint.gui-e2e"
     }
     mut st := new_gui_state()
-    st.holder.set_lock_after((load_settings(settings_store) or default_settings()).lock_after)
+    first_settings := load_settings(settings_store) or default_settings()
+    st.holder.set_lock_after(first_settings.lock_after)
+    st.holder.set_notify_grants(first_settings.notify_grants)
     // Once per machine: the keys earlier Flints cached on every unlock go (D-048).
     if os.getenv("FLINT_KEYCHAIN") != "off" {
         report_forget_cached_keys(mut settings_store, store, kc, recents)
@@ -201,6 +203,8 @@ fn main() {
     presence := new_os_presence()
     app.bind_raw("access_state") |params| { return rpc_access_state(st, store, presence) }
     app.bind_raw("access_revoke") |params| { return rpc_access_revoke(params, st, store, presence, mut app) }
+    app.bind_raw("access_notify") |params| { return rpc_access_notify(params, st, store, presence, mut app) }
+    app.bind_raw("grant_activity") |params| { return rpc_grant_activity(params, st, store) }
     app.bind_raw("tokens_list") |params| { return rpc_tokens_list(st, store) }
     app.bind_raw("token_revoke") |params| { return rpc_token_revoke(params, st, store, mut app) }
     app.bind_raw("activity_log") |params| { return rpc_activity_log(params, st, store) }

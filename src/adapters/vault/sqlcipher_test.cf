@@ -413,7 +413,7 @@ test "tokens and activity round-trip, stay encrypted, and the log keeps by age" 
 
     // Kept from 1002 on: the two oldest go as the later ones arrive.
     for n in 0..5 {
-        try store.activity_add(marker_entry(n), ActivityKeep{ since_at: 1002, max_bytes: ACTIVITY_MAX_BYTES })
+        _ = try store.activity_add(marker_entry(n), ActivityKeep{ since_at: 1002, max_bytes: ACTIVITY_MAX_BYTES })
     }
     page := try store.activity_page(0, 10)
     assert_eq(page.len(), 3)
@@ -527,7 +527,7 @@ test "the activity log keeps a cut, its retention, and stays under its size cap"
     try attach_test_activity(mut store, path, 8)
     mut e := marker_entry(0)
     e.cut = 42
-    try store.activity_add(e, ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(e, ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     assert_eq((try store.activity_page(0, 1))[0].cut, 42)
 
     try store.set_activity_retention(365)
@@ -537,7 +537,7 @@ test "the activity log keeps a cut, its retention, and stays under its size cap"
 
     // Each marker entry is about 160 bytes with its row cost: a cap of 500 keeps 3.
     for n in 1..10 {
-        try store.activity_add(marker_entry(n), ActivityKeep{ since_at: 0, max_bytes: 500 })
+        _ = try store.activity_add(marker_entry(n), ActivityKeep{ since_at: 0, max_bytes: 500 })
     }
     kept := try store.activity_page(0, 20)
     assert(kept.len() >= 1 && kept.len() <= 3, "kept {kept.len()}")
@@ -638,7 +638,7 @@ test "an older vault's activity moves to the machine's file, whole, and leaves t
     assert(!(try has_table(store, "activity_moving")))
     assert_eq(try store.vault_get_meta("activity_retention_days"), "")
     // New entries follow the moved ones.
-    try store.activity_add(marker_entry(9), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(9), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     assert_eq((try store.activity_page(0, 10)).len(), 4)
     store.vault_detach()
     raw := try fs.read_text(path)
@@ -683,7 +683,7 @@ test "the activity file is private, closes with the vault, and a key it refuses 
     store.activity_attach("../escape", test_key(8), test_salt_bytes()) or err { bad = "{err.message()}" }
     assert(bad.contains("bad vault id"), bad)
     try store.activity_attach(TEST_VAULT_ID, test_key(8), test_salt_bytes())
-    try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     mut mode: i64 = 0
     mut dir_mode: i64 = 0
     mut windows := false
@@ -719,7 +719,7 @@ test "an activity backup is the encrypted file, opened only with its key" {
     mut store := new_sql_vault_store()
     try store.vault_create(path, test_key(7), test_salt_bytes())
     try attach_test_activity(mut store, path, 8)
-    try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     dest := fs.dirname(path) + "/backup.db"
     try store.activity_backup(dest)
     mut inside := ""
@@ -765,7 +765,7 @@ test "a re-key writes a copy under the new key, and its rename is the commit poi
     try attach_test_activity(mut store, path, 8)
     try store.host_put(marker_host())
     try store.vault_set_meta(VAULT_META_ID, TEST_VAULT_ID)
-    try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     secrets := try resealed(store)
 
     try store.vault_rekey_prepare(path, test_key(17), other_salt(), secrets)
@@ -839,7 +839,7 @@ test "a change cut short leaves files that open: a stale copy goes, a pending ac
     try store.vault_create(path, test_key(7), test_salt_bytes())
     try attach_test_activity(mut store, path, 8)
     try store.host_put(marker_host())
-    try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     secrets := try resealed(store)
 
     // Cut before the vault's rename: the old vault opens and the copies go.
@@ -876,6 +876,52 @@ test "migration 010 leaves an empty vault id for the first unlock to write" {
     store.vault_detach()
     try store.vault_attach(path, test_key(7), test_salt_bytes())
     assert_eq(try store.vault_get_meta(VAULT_META_ID), TEST_VAULT_ID, "a migration never overwrites it")
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}
+
+test "an activity file at version 1 gains results, and an entry ends once (milestone 56)" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    // A file written before milestone 56: only the first activity migration, one row.
+    act := activity_file(path)
+    try fs.mkdir_all(fs.dirname(act))
+    mut old := try open_cipher_db(act, test_key(8), test_salt_bytes(), true)
+    try old.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+    try old.apply_migration(activity_migrations()[0])
+    try old.exec("INSERT INTO activity (at, caller, via, action, host, command, outcome) VALUES (5, 'c', 'grant', 'exec', 'web', 'flint exec web -- true', 'allowed');")
+    old.close_db()
+    try attach_test_activity(mut store, path, 8)
+    before := try store.activity_page(0, 10)
+    assert_eq(before.len(), 1)
+    assert_eq(before[0].state, "", "an older entry has no result")
+    assert_eq(before[0].grant, "")
+
+    mut e := marker_entry(1)
+    e.grant = "g1"
+    e.state = ACTIVITY_RUNNING
+    id := try store.activity_add(e, ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    assert(id > before[0].id)
+    mut e2 := marker_entry(2)
+    e2.grant = "g2"
+    e2.state = ACTIVITY_RUNNING
+    _ = try store.activity_add(e2, ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    running := try store.activity_of_grant("g1", 10)
+    assert_eq(running.len(), 1)
+    assert_eq(running[0].id, id)
+    assert_eq(running[0].state, ACTIVITY_RUNNING)
+
+    assert(try store.activity_finish(id, activity_end(18, ERR_SUDO_PASSWORD, 1234)))
+    assert(!(try store.activity_finish(id, activity_end(0, "", 1))), "an entry ends once")
+    assert(!(try store.activity_finish(before[0].id, activity_end(0, "", 1))), "an entry that never ran stays as it is")
+    done := try store.activity_of_grant("g1", 10)
+    assert_eq(done[0].state, ACTIVITY_ENDED)
+    assert_eq(done[0].exit, 18)
+    assert_eq(done[0].duration_ms, 1234)
+    assert_eq(done[0].result, ERR_SUDO_PASSWORD)
+    assert_eq((try store.activity_page(0, 1))[0].grant, "g2")
+    assert_eq((try store.activity_of_grant("", 10)).len(), 0)
     store.vault_detach()
     try fs.remove(fs.dirname(path))
 }

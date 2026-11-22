@@ -828,25 +828,41 @@ fn served_secrets(req: ServeRequest) -> SecretInput {
 // Runs a client's command against `session`, the vault the app holds (attached to
 // `store`), capturing everything it prints. The caller holds the vault still for
 // the whole run and has checked that `req.vault` is `session`'s.
-fn run_served(req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, session: VaultSession) -> ServeReply {
+fn run_served(req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, session: VaultSession) -> ServedRun {
     p := parse_cli_args(req.argv) or {
-        return not_served()
+        return ServedRun{ reply: not_served(), ended: ServedEnd{ exit: 0, error_code: "" } }
     }
     if !servable(p) || !command_checks(p) || wants_help(p) {
-        return not_served()
+        return ServedRun{ reply: not_served(), ended: ServedEnd{ exit: 0, error_code: "" } }
     }
     capture_begin(req.cwd)
-    code := served_exit(p, req, c, mut store, kc, session, recents)
+    ended := served_exit(p, req, c, mut store, kc, session, recents)
     (o, e) := capture_end()
-    return ServeReply{ served: true, stdout: o, stderr: e, exit: i64(code) }
+    return ServedRun{ reply: ServeReply{ served: true, stdout: o, stderr: e, exit: ended.exit }, ended: ended }
+}
+
+// What run_served sends the client, and how the command ended for the log.
+type ServedRun struct {
+    reply: ServeReply
+    ended: ServedEnd
+}
+
+// How a command run for a client ended: its exit status, and the code of the error
+// Flint reported ("" when the command itself returned), for the activity entry
+// (milestone 56). Never sent to the client.
+type ServedEnd struct {
+    exit:       i64
+    error_code: str
 }
 
 // The exit status of a command run for a client, or the code of the error it
 // reported.
-fn served_exit(p: ParsedArgs, req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, session: VaultSession, recents: JsonRecentStore) -> i32 {
-    return run_command(p, served_secrets(req), req.as_json, c, mut store, served_vault_source(kc, session), recents) or err {
-        return report_error("{err.message()}", req.as_json)
+fn served_exit(p: ParsedArgs, req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, session: VaultSession, recents: JsonRecentStore) -> ServedEnd {
+    code := run_command(p, served_secrets(req), req.as_json, c, mut store, served_vault_source(kc, session), recents) or err {
+        msg := "{err.message()}"
+        return ServedEnd{ exit: i64(report_error(msg, req.as_json)), error_code: error_code_of(msg) }
     }
+    return ServedEnd{ exit: i64(code), error_code: "" }
 }
 
 // Whether the command line passes check_command (its flags and arguments are valid).
@@ -880,9 +896,9 @@ fn session_servable(req: ServeRequest) -> bool {
 // ends with the frame carrying the exit status and what the command printed. The
 // vault is not held still meanwhile: a session can last hours, and needs the key
 // only to log in.
-fn run_served_session(conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, session: VaultSession, sudo_typed: str) {
+fn run_served_session(conn: IpcConn, req: ServeRequest, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, session: VaultSession, sudo_typed: str) -> ServedEnd {
     p := parse_cli_args(req.argv) or {
-        return
+        return ServedEnd{ exit: 2, error_code: ERR_USAGE }
     }
     link := new_relay_link(conn, req.tty, i32(req.cols), i32(req.rows))
     mut term := new_socket_terminal(link)
@@ -897,18 +913,21 @@ fn run_served_session(conn: IpcConn, req: ServeRequest, c: Sodium, mut store: Lo
     capture_begin(req.cwd)
     mut sec := served_secrets(req)
     sec.sudo_typed = sudo_typed
-    code := session_exit(p, sec, req.as_json, c, mut store, served_vault_source(kc, session), recents, mut term, prompter, mut sink, mut local, mut progress, term_name)
+    ended := session_exit(p, sec, req.as_json, c, mut store, served_vault_source(kc, session), recents, mut term, prompter, mut sink, mut local, mut progress, term_name)
     (o, e) := capture_end()
-    end := SessionEndFrame{ exit: i64(code), stdout: o, stderr: e }
+    end := SessionEndFrame{ exit: ended.exit, stdout: o, stderr: e }
     conn.send(relay_frame(TAG_END, json.stringify(end)), SERVE_SEND_MS) or {}
+    return ended
 }
 
 // The exit status of a session command run for a client, or the code of the error it
-// reported.
-fn session_exit[M: Terminal, P: Prompter, O: ExecSink, L: LocalFiles, K: TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, mut term: M, prompter: P, mut sink: O, mut local: L, mut progress: K, term_name: str) -> i32 {
-    return run_session_command(p, sec, as_json, c, mut store, src, recents, mut term, prompter, mut sink, mut local, mut progress, term_name) or err {
-        return report_error("{err.message()}", as_json)
+// reported, with that error's code.
+fn session_exit[M: Terminal, P: Prompter, O: ExecSink, L: LocalFiles, K: TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, mut term: M, prompter: P, mut sink: O, mut local: L, mut progress: K, term_name: str) -> ServedEnd {
+    code := run_session_command(p, sec, as_json, c, mut store, src, recents, mut term, prompter, mut sink, mut local, mut progress, term_name) or err {
+        msg := "{err.message()}"
+        return ServedEnd{ exit: i64(report_error(msg, as_json)), error_code: error_code_of(msg) }
     }
+    return ServedEnd{ exit: i64(code), error_code: "" }
 }
 
 fn session_not_served_frame() -> str {

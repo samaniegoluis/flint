@@ -297,6 +297,43 @@ type ActivityEntry struct {
     // Bytes cut from the end of `command` past COMMAND_MAX_BYTES (milestone 15); 0
     // when whole. Entries from before milestone 15 were cut at 160 and say 0.
     cut:     i64 `json:"cut"`
+    // Milestone 56 (D-127): the grant that allowed it ("" for a token, a refusal or a
+    // request allowed in the window alone), and how it ended once it ran: `state` is
+    // ACTIVITY_RUNNING while it runs and ACTIVITY_ENDED after, "" for an entry that
+    // never ran (a refusal) or from before milestone 56. `exit` is the command's exit
+    // status, `duration_ms` how long it took, and `result` the error code when Flint
+    // itself stopped it ("not_sudoer", "sudo_password", "network", …; "" otherwise).
+    grant:       str `json:"grant"`
+    state:       str `json:"state"`
+    exit:        i64 `json:"exit"`
+    duration_ms: i64 `json:"duration_ms"`
+    result:      str `json:"result"`
+}
+
+ACTIVITY_RUNNING: str = "running"
+ACTIVITY_ENDED: str = "ended"
+
+// How a command that ran ended, as the activity entry records it.
+type ActivityEnd struct {
+    exit:        i64 `json:"exit"`
+    duration_ms: i64 `json:"duration_ms"`
+    result:      str `json:"result"`
+}
+
+// The end of a command whose run returned `exit`, and `error_code` when Flint itself
+// reported an error (the code report_error printed); a negative duration counts as 0.
+fn activity_end(exit: i64, error_code: str, duration_ms: i64) -> ActivityEnd {
+    mut d := duration_ms
+    if d < 0 {
+        d = 0
+    }
+    return ActivityEnd{ exit: exit, duration_ms: d, result: error_code }
+}
+
+// Whether the entry is a command refused before it ran, after it was allowed: sudo
+// said the user is not a sudoer, or refused the password (milestone 56, 26b1).
+fn activity_refused_by_sudo(e: ActivityEntry) -> bool {
+    return e.result == ERR_NOT_SUDOER || e.result == ERR_SUDO_PASSWORD
 }
 
 // Whether an allowed request with `need` goes into the log: everything but reading.

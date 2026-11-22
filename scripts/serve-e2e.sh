@@ -620,6 +620,16 @@ fi
 expect 0 "add the stop host" "" -- host add e2e-stop --hostname 10.0.0.9
 check "the lock ended the whole-vault grant: a write asks again" '[[ $(grep -c "asking the owner to approve" "$tmp/app.log") -gt $asked_after_unlock ]]'
 
+# Milestone 56: the live notice of what a grant runs. One caller, three commands under
+# one grant (the page allows it for the whole vault, notices on by default); the page
+# checks the notice, View while the sleep runs, the bell and Stop.
+for _ in $(seq 1 3000); do grep -q "waiting for grant notices" "$tmp/app.log" 2>/dev/null && break; kill -0 "$app_pid" 2>/dev/null || break; sleep 0.1; done
+notice_out="$(printf '' | no_tty python3 -I "$tmp/scope.py" "$flint" "exec local -- echo notice-one" "exec local -- exit 5" "exec local -- sleep 6" 2>"$tmp/notice.err")"
+echo "$notice_out" >> "$all_out"
+check "three commands under one grant end 0, 5 and 0" '[[ "$notice_out" == *"0,5,0" ]]'
+for _ in $(seq 1 600); do grep -q "grant notices checked\|FAILED at" "$tmp/app.log" 2>/dev/null && break; sleep 0.1; done
+check "the approval window offered the notice, ticked" 'grep -q "ok   the approval window offers Notify me of each command" "$tmp/app.log"'
+
 # Milestone 50: a long, silent command through the app while it quits. The page waits
 # for it, then quits: the app gives it 5 s, then cuts it, and exits (the Relaunch
 # that hung behind a long `flint exec`).

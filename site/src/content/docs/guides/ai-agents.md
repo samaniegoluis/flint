@@ -72,6 +72,27 @@ again, asks again. **Settings → Access** lists the grants, and **Revoke** ends
 The status bar counts them (**Agents: N**), and shows **N waiting** while a request waits
 behind another app.
 
+## See what a grant runs
+
+While a grant lasts, each command it allows shows in a notice in Flint's window, one per
+grant, updated in place: *Claude Code ran 10 commands on db1, nas*. The notice names the
+program and the hosts, **never the command**, so nothing secret in a command shows on a
+shared screen. It stays while a command runs and hides about 10 seconds after the last one
+ends (pointing at it keeps it), then comes back with the next.
+
+- **View** lists that grant's commands, newest first, and keeps filling while it is open:
+  the time, the host, the command, how long it took and how it ended: *running…*,
+  **exit 0**, **exit 1**, or **refused** with sudo's reason (*not a sudoer*, *sudo
+  password refused*). Open a row for the exact command and **Copy**.
+- **Stop** asks once, in the notice (*Stop this grant? Claude Code can't run more on
+  db1.*), then revokes the grant. A command already running finishes; the next one asks
+  again.
+
+Notices are on for every new grant by default. Untick **Notify me of each command** in the
+approval window for one grant, turn the default off with **Notify me of commands run under
+a grant** in **Settings → Access**, or use a grant's bell there to turn its notices off or
+on at any time. Notices are cleared when the vault locks, which also ends every grant.
+
 ## Tell your agent about Flint
 
 Paste this into your project's `CLAUDE.md`, `AGENTS.md` or the agent's instructions:
@@ -207,8 +228,11 @@ to `~/.ssh/authorized_keys`. Ways to narrow it:
   `root`, with access only to what they need.
 - **Watch the transcript.** Every remote command an agent runs is in its own
   `flint exec` line.
+- **Keep the notices on** ([See what a grant runs](#see-what-a-grant-runs)): every
+  command a grant allows shows in Flint's window while it runs, with **Stop** at hand.
 - **Read the activity log** in **Settings → Access**: every command a program ran or
-  changed through Flint, and every request refused or left to time out, newest first.
+  changed through Flint, and every request refused or left to time out, newest first,
+  with how each one ended (its exit status and how long it took).
   Commands run as root carry a `root` badge. Click an entry, or press Enter on it, for the
   whole command (up to 16 KB) with the exact time and the full caller chain. Entries are
   kept 90 days unless you choose 30 days, 1 year or no limit there. Each computer keeps

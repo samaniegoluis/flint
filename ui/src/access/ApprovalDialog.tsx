@@ -278,7 +278,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
   skew: number;
   onDone: (s: AccessState | null) => void;
 }) {
-  const { os } = useApp();
+  const { os, settings } = useApp();
   const host = ap.need.host;
   // A copy between two hosts runs on both (milestone 18, design 16g): "these two hosts"
   // means both, and "their groups" both groups, offered when each host is in one.
@@ -296,6 +296,8 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
     read: true, exec: ap.need.action === 'exec', write: ap.need.action === 'write',
   });
   const [duration, setDuration] = useState<GrantDuration>('1h');
+  // 26c1: this grant's notice, starting from Settings' default; never changes the default.
+  const [notify, setNotify] = useState(settings.notify_grants);
   const [password, setPassword] = useState('');
   const [sudoPassword, setSudoPassword] = useState('');
   const [saveSudo, setSaveSudo] = useState(false);
@@ -359,6 +361,7 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
       const s = await api.accessAnswer({
         id: ap.id, allow, duration, password: allow ? password : '',
         sudo_password: allow ? sudoPassword : '', save_sudo_password: allow && saveSudo && !!sudoPassword,
+        notify: allow && notify,
         scope: scope === 'all' ? { all: true, groups: [], hosts: [] }
           : scope === 'group' ? { all: false, groups, hosts: [] }
           : { all: false, groups: [], hosts: host2 ? [host, host2] : [host] },
@@ -540,6 +543,12 @@ export function ApprovalDialog({ ap, queue, presence, catalog, skew, onDone }: {
                       {DURATIONS.map((d) => <button type="button" role="radio" key={d.value} data-duration={d.value} aria-checked={duration === d.value} aria-pressed={duration === d.value} onClick={() => setDuration(d.value)}>{d.label}</button>)}
                     </div>
                   </div>
+                  <label className="opt notify-opt"><input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} data-grant-notify />
+                    <span className="opt-t">
+                      <span className="opt-l row" style={{ gap: 6 }}><Icon name="bell" size="sm" />Notify me of each command</span>
+                      <span className="hint">A notice names the program and the host, never the command. Default from Settings → Access.</span>
+                    </span>
+                  </label>
                   {!covers && (
                     <div className="callout warn" role="status"><Icon name="alert" />
                       <span>This doesn't cover the request: <span className="mono strong">{ap.request.split(' ').slice(0, 2).join(' ')}</span> needs <span className="strong">{needLabel}</span>{ap.need.action === 'write' ? ' on the whole vault' : ''}. You can still allow it, but this request will be refused.</span>

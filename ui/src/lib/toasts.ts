@@ -26,6 +26,8 @@ export interface ToastOptions {
   key?: string;
   /** A percentage (0-100) shown at a fixed width on the right. */
   progress?: number;
+  /** false: a change of text is not read out (a notice updating often, milestone 56). */
+  announce?: boolean;
 }
 
 export interface ToastItem {
@@ -92,7 +94,7 @@ export class ToastStore {
       same.item = { ...same.item, text: opts.text, kind, actions, progress: opts.progress, sticky };
       same.remaining = ms;
       if (this.shown.includes(same)) this.start(same);
-      if (textChanged) this.last = { id: same.item.id, text: opts.text, kind };
+      if (textChanged && opts.announce !== false) this.last = { id: same.item.id, text: opts.text, kind };
       this.emit();
       return same.item.id;
     }
@@ -109,6 +111,17 @@ export class ToastStore {
     }
     this.emit();
     return e.item.id;
+  }
+
+  /** Whether a toast with `key` is on screen or waiting for a slot. */
+  hasKey(key: string): boolean {
+    return [...this.shown, ...this.waiting].some((e) => e.item.key === key && !e.item.leaving);
+  }
+
+  /** Closes the toast with `key`, if any. */
+  dismissKey(key: string) {
+    const e = [...this.shown, ...this.waiting].find((x) => x.item.key === key && !x.item.leaving);
+    if (e) this.dismiss(e.item.id);
   }
 
   dismiss(id: number) {

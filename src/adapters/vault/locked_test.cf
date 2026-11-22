@@ -18,9 +18,7 @@ test "LockedVaultStore shares one connection between copies and threads" {
         scope.spawn || {
             mut w := worker_copy
             for i in 0..40 {
-                mut logged := ""
-                w.activity_add(marker_entry(i64(i)), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES }) or err { logged = "{err.message()}" }
-                assert(logged.len() == 0)
+                assert(add_marker_entry(mut w, i64(i)).len() == 0)
                 mut put := ""
                 w.known_host_put(KnownHost{ addr: "w{i}", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" }) or err { put = "{err.message()}" }
                 assert(put.len() == 0)
@@ -50,4 +48,12 @@ test "LockedVaultStore shares one connection between copies and threads" {
     mut act_after := ""
     worker_copy.activity_page(0, 1) or err { act_after = "{err.message()}" }
     assert(act_after.len() > 0)
+}
+
+// "" when the entry was added, else the error.
+fn add_marker_entry(mut w: LockedVaultStore, n: i64) -> str {
+    _ = w.activity_add(marker_entry(n), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES }) or err {
+        return "{err.message()}"
+    }
+    return ""
 }
