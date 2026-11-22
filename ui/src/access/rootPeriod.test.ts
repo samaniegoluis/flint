@@ -13,3 +13,12 @@ describe('root periods (milestone 57, 25e4/25e5)', () => {
     expect(rootPeriodWarning('flint', 'nas', 2)).toBe('flint and everything it starts can run commands as root on nas for 2 min without asking you.');
   });
 });
+
+describe('View of a root period (26b1 for 26a4)', () => {
+  it('says Root and its time left to the second', async () => {
+    const { grantSpan } = await import('./GrantActivityModal');
+    const g = { id: 'r1', label: 'x', all: false, groups: [], hosts: ['db1'], read: false, exec: false, write: false,
+      created_ms: 0, expires_ms: 300_000, anchor_pid: 1, notify: true, root: true };
+    expect(grantSpan(g, 0, 79_000)).toMatch(/^5 min, approved \d\d:\d\d · 3:41 left$/);
+  });
+});

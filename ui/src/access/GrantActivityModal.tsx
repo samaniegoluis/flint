@@ -5,6 +5,7 @@
 // never shows a command (D-127 (1)); this modal does, to the person at the screen,
 // as the activity log already does.
 
+import { leftText } from '../lib/grantNotices';
 import { useCallback, useEffect, useState } from 'react';
 import { api, on } from '../api/backend';
 import type { ActivityEntry, GrantView } from '../api/types';
@@ -27,11 +28,14 @@ export function grantSpan(g: GrantView, skew: number, now: number): string {
   if (!g.expires_ms) return `until the vault locks, ${approved}`;
   const mins = Math.round((g.expires_ms - g.created_ms) / 60000);
   const len = mins === 15 ? '15 min' : mins === 60 ? '1 hour' : mins === 240 ? '4 hours' : `${mins} min`;
+  // A root period lasts minutes: its time left to the second, as its notice shows it.
+  if (g.root) return `${len}, ${approved} · ${leftText(g.expires_ms + skew - now)}`;
   const left = Math.max(0, Math.round((g.expires_ms + skew - now) / 60000));
   return `${len}, ${approved} · ${left} min left`;
 }
 
 function actionsText(g: GrantView): string {
+  if (g.root) return 'Root';
   return [g.read && 'Read', g.exec && 'Run', g.write && 'Change'].filter(Boolean).join(', ');
 }
 
