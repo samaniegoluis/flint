@@ -54,8 +54,38 @@ jobs:
           key: deps-macos-arm64-${{ hashFiles('scripts/deps-macos.sh') }}
       - name: cfire
         run: scripts/install-cfire.sh "$RUNNER_TEMP/cfire" >> "$GITHUB_PATH"
+      # `cfire build` hung here twice with no output (ROADMAP §7, rule 9). Diagnosis only,
+      # no build logic: past 25 minutes a watcher writes every cfire process's stacks
+      # (`sample`, twice a minute apart), its open files and the process tree; the step
+      # ends at 35, so the job keeps time to upload them. It lives here, not in scripts/,
+      # because the job runs the scripts of the tag being built.
       - name: Package
-        run: scripts/package.sh macos
+        timeout-minutes: 35
+        run: |
+          out="$RUNNER_TEMP/hang"; mkdir -p "$out"
+          (
+            sleep 1500
+            ps -axo pid,ppid,etime,stat,%cpu,rss,args > "$out/ps.txt" 2>&1
+            for p in $(pgrep -x cfire); do
+              sample "$p" 10 -file "$out/cfire-$p.sample.txt" >/dev/null 2>&1
+              lsof -p "$p" > "$out/cfire-$p.lsof.txt" 2>&1
+            done
+            sleep 60
+            for p in $(pgrep -x cfire); do sample "$p" 5 -file "$out/cfire-$p.sample-2.txt" >/dev/null 2>&1; done
+            ps -axo pid,ppid,etime,stat,%cpu,rss,args > "$out/ps-2.txt" 2>&1
+          ) </dev/null >/dev/null 2>&1 &
+          watcher=$!
+          status=0
+          scripts/package.sh macos || status=$?
+          kill "$watcher" 2>/dev/null || true
+          exit "$status"
+      - name: The stacks of a hung build
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-hang
+          path: ${{ runner.temp }}/hang
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         with:
           name: macos
