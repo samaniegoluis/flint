@@ -55,13 +55,13 @@ test "an alert is one POST of its fixed text, title and priority" {
     assert_eq(publish_code(n, base, "flint-locked", ALERT_APPROVAL), ERR_REFUSED)
     assert_eq(ntfy_headers(ALERT_LOCKED), "Title: Flint\nPriority: high\nContent-Type: text/plain; charset=utf-8")
     assert_eq(publish_code(n, base, "flint-denied", ALERT_APPROVAL), ERR_REFUSED)
-    assert(publish_text(n, base, "flint-denied", ALERT_APPROVAL).contains("answered 403"))
+    assert_eq(publish_text(n, base, "flint-denied", ALERT_APPROVAL), "refused: the server answered 403")
     // An error names the host, never the topic.
     assert(!publish_text(n, base, "flint-denied", ALERT_APPROVAL).contains("flint-denied"))
     slow := NtfyNotifier{ connect_ms: 500, request_ms: 500 }
-    assert_eq(publish_code(slow, base, "flint-slow", ALERT_APPROVAL), ERR_TIMEOUT)
+    assert_eq(publish_text(slow, base, "flint-slow", ALERT_APPROVAL), "timeout: couldn't reach 127.0.0.1:{server.port()} (timed out)")
     // Nothing listens on port 1.
-    assert_eq(publish_code(n, "http://127.0.0.1:1", "flint-topic", ALERT_APPROVAL), ERR_NETWORK)
+    assert_eq(publish_text(n, "http://127.0.0.1:1", "flint-topic", ALERT_APPROVAL), "network: couldn't reach 127.0.0.1:1")
     // Refused before any request.
     assert_eq(publish_code(n, base, "a/b", ALERT_APPROVAL), ERR_INVALID)
     assert_eq(publish_code(n, base, "flint-topic", "prod-db"), ERR_INVALID)

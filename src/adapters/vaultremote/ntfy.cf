@@ -58,16 +58,20 @@ fn (self: NtfyNotifier) alert_publish(server: str, topic: str, kind: str) -> voi
     cpp {
         rc = flint_remote::request(method, url, headers, body, connect_ms, request_ms, max, status, etag, vault_id, got, reason);
     }
-    if rc == 2 || rc == 4 {
-        return error(coded(ERR_NETWORK, "couldn't reach {host}: {reason}"))
+    // Settings shows these on one line (27a4): no libcurl wording.
+    if rc == 2 {
+        return error(coded(ERR_NETWORK, "couldn't reach {host}"))
+    }
+    if rc == 4 {
+        return error(coded(ERR_NETWORK, "couldn't reach {host} (TLS failed)"))
     }
     if rc == 3 {
-        return error(coded(ERR_TIMEOUT, "{host} did not answer in time"))
+        return error(coded(ERR_TIMEOUT, "couldn't reach {host} (timed out)"))
     }
     if rc != 0 && rc != 5 {
-        return error(coded(ERR_NETWORK, "the alert to {host} failed: {reason}"))
+        return error(coded(ERR_NETWORK, "couldn't reach {host}"))
     }
     if status < 200 || status > 299 {
-        return error(coded(ERR_REFUSED, "{host} answered {status}"))
+        return error(coded(ERR_REFUSED, "the server answered {status}"))
     }
 }

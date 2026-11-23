@@ -398,8 +398,11 @@
       await check(q('[data-setting="sudo_periods"]')?.getAttribute('aria-checked') === 'false' && hasText('Off: every root command is approved on its own.'), 'Settings → Access has Allow sudo for a while, off, with its help line');
       {
         // Milestone 61 (D-134 (2)): the approval wait, 2 minutes by default; 30 adds a note.
+        // Milestone 63 (27a): it lives in Settings → Notifications.
+        byText('.nav-i', 'Notifications')?.click();
+        await waitFor(() => q('[data-approval-wait]'), 'Settings → Notifications', 10000);
         const picked = () => q('[data-approval-wait] [aria-checked="true"]')?.getAttribute('data-approval-wait-min');
-        await check(qa('[data-approval-wait] [data-approval-wait-min]').map((b) => b.textContent).join(',') === '2 min,5 min,10 min,30 min' && picked() === '2' && !q('[data-approval-wait-note]'), 'Settings → Access has the approval wait, 2 minutes, no note');
+        await check(qa('[data-approval-wait] [data-approval-wait-min]').map((b) => b.textContent).join(',') === '2 min,5 min,10 min,30 min' && picked() === '2' && !q('[data-approval-wait-note]'), 'Settings → Notifications has the approval wait, 2 minutes, no note');
         q('[data-approval-wait-min="30"]')?.click();
         await waitFor(() => picked() === '30', 'the approval wait at 30 minutes', 5000);
         const saved = await window.backend.settings_get();
@@ -407,6 +410,8 @@
         q('[data-approval-wait-min="2"]')?.click();
         await waitFor(() => picked() === '2', 'the approval wait back at 2 minutes', 5000);
         await check(!q('[data-approval-wait-note]') && (await window.backend.settings_get()).approval_wait === 2, 'back to 2 minutes, the note goes');
+        byText('.nav-i', 'Access')?.click();
+        await waitFor(() => q('[data-activity]'), 'Settings → Access again', 10000);
       }
       {
         // Milestone 15: an entry opens its detail with the whole command and the exact time.

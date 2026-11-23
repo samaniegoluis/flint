@@ -17,6 +17,7 @@ import { RenameVault } from '../shell/VaultSwitcher';
 import { ChangeMasterPassword } from './ChangeMasterPassword';
 import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
 import { MAC_MOD_KEYS, MOD_TARGETS, modMapOf, modMapText, type MacModKey, type ModTarget } from '../lib/rdpInput';
+import { NotificationsSettings } from './NotificationsSettings';
 import { AccessSettings } from '../access/AccessSettings';
 import { GRAPHICS_MODES } from '../lib/rdpStats';
 import { useSync } from '../sync/SyncProvider';
@@ -27,7 +28,7 @@ import { useUpdate, useUpdateOnScreen } from '../update/UpdateProvider';
 import { updateActionLabel, updateAvailable, updateDownloadFailure, updateDownloading, updateHowText, updatePercent, updateReady, updateReadyHint, updateRelaunchFailure, updateStateLine } from '../lib/update';
 import { plainText } from '../ui/plainText';
 
-export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'about';
+export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'notifications' | 'about';
 
 const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
   { id: 'appearance', label: 'Appearance', icon: 'palette' },
@@ -36,6 +37,8 @@ const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
   { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'keyboard' },
   { id: 'vault', label: 'Vault', icon: 'lock' },
   { id: 'access', label: 'Access', icon: 'shield-key' },
+  // Milestone 63 (27a): the approval wait and phone alerts.
+  { id: 'notifications', label: 'Notifications', icon: 'bell' },
   { id: 'about', label: 'About', icon: 'info' },
 ];
 
@@ -67,6 +70,7 @@ export function SettingsPage({ section, setSection, onLock, onConfirm }: {
           {section === 'shortcuts' && <Shortcuts />}
           {section === 'vault' && <VaultSettings onLock={onLock} onConfirm={onConfirm} />}
           {section === 'access' && <AccessSettings onConfirm={onConfirm} />}
+          {section === 'notifications' && <NotificationsSettings />}
           {section === 'about' && <About />}
         </div>
       </div>
@@ -150,9 +154,9 @@ function Appearance() {
           <span className="hint">22 · 26 · 30 px rows</span>
         </div>
       </Row>
-      <Row title="Notifications" desc="Where toasts appear.">
+      <Row title="Toasts" desc="Where toasts appear.">
         <div className="row" style={{ gap: 'var(--sp-4)' }}>
-          <div className="cpick" role="radiogroup" aria-label="Notification corner">
+          <div className="cpick" role="radiogroup" aria-label="Toast corner">
             <span className="cp-bar" /><span className="cp-rail" /><span className="cp-sb" />
             {TOAST_CORNERS.map((c) => (
               <button key={c} type="button" className={'cp-c ' + CORNER_CLASS[c] + (s.toast_corner === c ? ' on' : '')} role="radio"

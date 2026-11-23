@@ -815,3 +815,30 @@ button.picker-row:not(.off) { cursor: pointer; }
 /* A root period's bell is always on (milestone 57): shown, not a button. */
 .bell.is-disabled { cursor: default; opacity: 0.6; }
 button.link { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+
+/* Settings → Notifications (milestone 63, designs 27a*). */
+.nt-off-what { margin: 0 0 0 44px; max-width: 640px; font-size: var(--fs-xs); line-height: 1.55; color: var(--text-secondary); }
+.nt-div { height: 1px; background: var(--border-subtle); margin: 0 calc(-1 * var(--sp-4)); }
+.nt-grid { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: var(--sp-4) var(--sp-4); align-items: start; }
+.nt-k { font-size: var(--fs-sm); color: var(--text-secondary); padding-top: 6px; }
+.nt-topic { height: 28px; display: inline-flex; align-items: center; padding: 0 var(--sp-3); border-radius: var(--radius-sm); background: var(--surface-sunken); border: 1px solid var(--border-subtle); font-size: var(--fs-sm); color: var(--text-primary); user-select: all; }
+.nt-confirm { align-items: center; font-size: var(--fs-xs); padding: var(--sp-2) var(--sp-3); }
+.nt-qr { width: 148px; height: 148px; flex: none; display: grid; place-items: center; border-radius: var(--radius-md); background: var(--surface-raised); border: 1px solid var(--border-default); color: var(--text-primary); }
+.nt-qr-empty { background: var(--surface-sunken); border-style: dashed; padding: var(--sp-3); }
+.nt-url { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-sm); word-break: break-all; user-select: all; color: var(--text-primary); }
+.nt-steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.45; }
+.nt-prev { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.nt-notif { width: 300px; display: flex; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-lg); background: var(--surface-sunken); border: 1px solid var(--border-subtle); font-size: var(--fs-xs); line-height: 1.4; }
+.nt-app { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 7px; background: var(--surface-active); color: var(--text-secondary); margin-top: 2px; }
+.nt-meta { gap: 4px; font-size: var(--fs-2xs); color: var(--text-tertiary); }
+.nt-text { color: var(--text-secondary); }
+.nt-pri { height: 16px; font-size: var(--fs-2xs); }
+.nt-status { gap: 6px; font-size: var(--fs-sm); padding-top: 4px; }
+.nt-test > .hint, .nt-test > .row, .nt-test > .col { padding-top: 5px; }
+.nt-test .nt-status { padding-top: 0; }
+/* 27e: a narrow window stacks each label over its value. */
+@media (max-width: 1040px) {
+  .nt-grid { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1) 0; }
+  .nt-grid > div { margin-bottom: var(--sp-3); }
+  .nt-k { padding-top: 0; font-weight: var(--fw-medium); color: var(--text-primary); }
+}

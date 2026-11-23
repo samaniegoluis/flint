@@ -271,6 +271,21 @@ connect, 30 s in all) and a size cap, and redirects are followed over HTTPS only
   `dnf install`, with a deadline. Any failure installs nothing. The helper links
   libsodium and nothing else of Flint's: no SSH, no vault.
 
+## Alerts on your phone
+
+Nothing leaves the machine to tell you something unless you turned it on: phone alerts are
+off by default ([Alerts on your phone](/guides/notifications/)). When on, Flint sends one
+`POST` to an ntfy topic per request that waits for you, with one of two fixed texts
+(*An agent is waiting for your approval*, *Flint is locked and an agent is waiting*), a
+title and a priority. The text is chosen by kind inside Flint; nothing of the request (no
+host, user, command, program, vault or count) reaches the code that sends it. An alert
+answers nothing: approving, denying and unlocking still happen at the machine.
+
+The topic is random (libsodium, 120 bits), per machine and kept in its settings, not in
+the vault. Whoever knows it can read those two texts or send alerts to your phone, and
+nothing more. Each publish has a deadline (10 s to connect, 15 s in all), is never
+retried, and its failure never changes the request it was about.
+
 ## Next
 
 Windows (a named pipe and Windows Hello), a headless `flint serve`, and a Keychain item

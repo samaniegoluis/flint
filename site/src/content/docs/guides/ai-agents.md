@@ -77,7 +77,7 @@ behind another app.
 
 ## How long Flint waits
 
-**Settings → Access → Approval wait** sets how long a command waits for you: **2**
+**Settings → Notifications → Approval wait** sets how long a command waits for you: **2**
 (the default), **5**, **10** or **30 minutes**. It is one value for every approval window
 (a grant, a root command, a token, a copy, a tunnel) and for a command waiting for you to
 unlock the vault. A command that waits through an unlock and then needs an approval waits
@@ -97,6 +97,9 @@ kill -0 "$(cat /tmp/flint.pid)" 2>/dev/null && echo waiting || cat /tmp/flint-ou
 ```
 
 With 30 minutes, Settings reminds you of this: the program must be able to wait that long.
+
+Away from the desk, Flint can tell your phone that a command waits, with a content-free
+alert through ntfy: [Alerts on your phone](/guides/notifications/).
 
 ## See what a grant runs
 

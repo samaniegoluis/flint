@@ -276,7 +276,7 @@ A failing command prints nothing to stdout and exits with the code of its error.
 | 13 | `network` | A host or vault server could not be reached, or the connection dropped |
 | 14 | `timeout` | `flint exec` ran past `--exec-timeout`; a vault server did not answer in time |
 | 15 | `denied` | The owner denied this program in Flint's window, or its grant or token does not cover the command; a token that is revoked, expired or wrong (see [Approve a program](/guides/ai-agents/#approve-a-program)) |
-| 16 | `approval_timeout` | Nobody answered Flint's approval window within its approval wait (**Settings → Access**: 2, 5, 10 or 30 minutes) |
+| 16 | `approval_timeout` | Nobody answered Flint's approval window within its approval wait (**Settings → Notifications**: 2, 5, 10 or 30 minutes) |
 | 17 | `not_sudoer` | `exec --sudo`: the host's login user may not use `sudo` |
 | 18 | `sudo_password` | `exec --sudo`: sudo refused the password Flint typed, or Flint has none for that host |
 | 19 | `permission_denied` | `cp`: the user may not read that file or write in that folder, here or on the host |

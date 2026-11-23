@@ -2984,6 +2984,60 @@
       await click('.cpick [data-corner="bottom-right"]');
       await waitForAsync(async () => (await window.backend.settings_get({})).toast_corner === 'bottom-right', 'the default corner again');
       await check(true, 'the corner goes back to bottom right');
+      await check(!!q('[role="radiogroup"][aria-label="Toast corner"]') && [...qa('.set-row .set-l .t')].some((e) => e.textContent === 'Toasts'), "Appearance names the corner picker's row Toasts (27c)");
+
+      // Milestone 63 (27a*): Settings → Notifications, the approval wait and phone alerts.
+      // The server is pointed at a closed port on this machine: nothing leaves the run.
+      await setStep('notifications');
+      await click('.nav-i', 'Notifications');
+      await waitFor(() => q('[data-phone-alerts]'), 'Settings → Notifications');
+      {
+        const picked = () => q('[data-approval-wait] [aria-checked="true"]')?.getAttribute('data-approval-wait-min');
+        const sw = () => q('[data-setting="ntfy_on"]');
+        const saved = () => window.backend.settings_get({});
+        await check(picked() === '2' && sw()?.getAttribute('aria-checked') === 'false' && /An agent is waiting for your approval.*Flint is locked and an agent is waiting/.test(q('[data-alerts-off]')?.textContent ?? '') && !q('[data-ntfy-topic]'),
+          'off by default (27a1): the wait at 2 min, and the two texts an alert would ever say');
+        sw().click();
+        await waitForAsync(async () => (await saved()).ntfy_on, 'alerts on');
+        const topic = (await saved()).ntfy_topic;
+        await waitFor(() => q('[data-ntfy-topic]')?.textContent === topic, 'the topic');
+        await check(/^flint-[a-z2-7]{24}$/.test(topic), `turning alerts on makes this machine's random topic (${topic})`);
+        await check(!!q('[data-ntfy-qr] svg path') && q('[data-ntfy-url]')?.textContent === 'ntfy.sh/' + topic, 'with a QR and the address to subscribe to (27a2)');
+        await check(q('[data-ntfy-preview]')?.textContent.includes('An agent is waiting for your approval') && q('[data-ntfy-preview]')?.textContent.includes('High priority'), "and what the phone shows, the locked one high priority");
+        await check(!!q('[data-alerts-wait-tip]'), 'at 2 min it suggests 5 or more');
+        q('[data-alerts-use-wait]').click();
+        await waitForAsync(async () => (await saved()).approval_wait === 5, 'the wait at 5 min');
+        await waitFor(() => !q('[data-alerts-wait-tip]') && picked() === '5', 'the suggestion gone');
+        await check(true, 'Use 5 min sets the wait and the suggestion goes');
+        const server = q('[data-ntfy-server]');
+        setValue(server, 'ntfy.home');
+        await waitFor(() => q('[data-ntfy-server-error]'), 'the server error');
+        server.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        await sleep(200);
+        await check((await saved()).ntfy_server === 'https://ntfy.sh', 'an address that is not one is refused and not saved (27a5)');
+        setValue(server, 'http://127.0.0.1:9');
+        server.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await waitForAsync(async () => (await saved()).ntfy_server === 'http://127.0.0.1:9', 'the own server saved');
+        await check(!!q('[data-ntfy-http]'), 'a plain http:// server says what that means');
+        q('[data-ntfy-test]').click();
+        const failed = await waitFor(() => q('[data-ntfy-status="error"]'), 'the failed test', 20000);
+        await check(/Last alert couldn't be sent · \d\d:\d\d · couldn't reach 127\.0\.0\.1:9/.test(failed.textContent) && failed.textContent.includes('Approvals are unaffected'), `a publish that fails says why, in Settings (27a4): ${failed.textContent}`);
+        q('[data-ntfy-new-topic]').click();
+        await waitFor(() => q('[data-ntfy-new-topic-confirm]'), 'the New topic confirmation');
+        q('[data-ntfy-new-topic-go]').click();
+        await waitForAsync(async () => (await saved()).ntfy_topic !== topic, 'a new topic');
+        const fresh = (await saved()).ntfy_topic;
+        await waitFor(() => q('[data-ntfy-topic]')?.textContent === fresh, 'the new topic shown');
+        await check(/^flint-[a-z2-7]{24}$/.test(fresh) && !q('[data-ntfy-new-topic-confirm]'), 'New topic, confirmed, replaces the topic (27a6)');
+        q('[data-approval-wait-min="30"]').click();
+        await waitFor(() => q('[data-approval-wait-note]'), 'the 30-minute note');
+        await check(q('[data-approval-wait-note]').textContent.includes('in the background'), 'at 30 minutes the wait notes that the program must wait that long');
+        const back = await saved();
+        await window.backend.settings_set({ ...back, ntfy_on: false, ntfy_server: 'https://ntfy.sh', approval_wait: 2 });
+        await click('.nav-i', 'Access');
+        await waitFor(() => q('[data-sudo-periods]'), 'Settings → Access');
+        await check(!q('[data-approval-wait]'), 'Access no longer holds the approval wait (27b)');
+      }
 
       await openAbout();
       await waitFor(() => q('[data-about-version]'), 'the About section from the status bar');

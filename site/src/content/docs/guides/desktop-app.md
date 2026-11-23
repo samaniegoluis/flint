@@ -46,10 +46,10 @@ Below about 1040 px of window width the sidebar starts hidden and opens over the
 Flint remembers the layout on this machine: whether the sidebar is open, its width, and
 which groups are collapsed in each vault. See [Layout on this machine](#layout-on-this-machine).
 
-### Notifications
+### Toasts
 
 Flint tells you what happened in a toast, in the bottom right corner by default (move it in
-**Settings → Appearance → Notifications**). Up to three show at once, the newest closest to
+**Settings → Appearance → Toasts**). Up to three show at once, the newest closest to
 the corner.
 
 - A toast leaves after about 6 seconds, one with a button after 15, an error after 30.
@@ -389,8 +389,8 @@ until the vault locks; and **Notify me of each command**, ticked as the default 
 (<kbd>⌘↵</kbd>, <kbd>Ctrl+↵</kbd> on Linux) asks for Touch ID or your Mac's password
 (macOS), your login password through polkit (Linux), or the master password. **Deny**
 has the focus (<kbd>Esc</kbd>), unless the window asks for a password; it refuses, and so
-does no answer within the approval wait (2 minutes unless **Settings → Access** says
-otherwise; the countdown shows it). Several requests wait in
+does no answer within the approval wait (2 minutes unless **Settings → Notifications**
+says otherwise; the countdown shows it). Several requests wait in
 turn: the window says *1 of N waiting* and names the next one. See
 [Approve a program](/guides/ai-agents/#approve-a-program).
 
@@ -433,7 +433,7 @@ while](/guides/ai-agents/#root-for-a-while).
 Settings belong to this machine, not to the vault, and save as you change them.
 
 - **Appearance**: dark, light or matching the system; the accent colour; row density;
-  the corner [notifications](#notifications) appear in (any of the four; bottom corners sit
+  the corner [toasts](#toasts) appear in (any of the four; bottom corners sit
   above the status bar, top corners under the tab bar); whether to follow the system's
   reduce-motion setting; reopening the last vault.
 - **Terminal**: the colours (Default, Catppuccin, Tokyo Night, Aura, Dracula or Nord, each
@@ -461,14 +461,11 @@ Settings belong to this machine, not to the vault, and save as you change them.
   shows a **Root** badge and its time left to the second, its bell always on. Grants end when the vault locks or Flint quits. Then
   **Run as root**: **Allow sudo for a while** (off), which lets the root approval window
   offer 2, 5 or 15 minutes on one host; turning it off ends every period
-  ([Root for a while](/guides/ai-agents/#root-for-a-while)). **Approval wait** (2, 5, 10
-  or 30 minutes; 2 by default) sets how long every approval window, and a command waiting
-  for the vault's unlock, waits for you; at 30 it notes that the program must be able to
-  wait that long ([How long Flint waits](/guides/ai-agents/#how-long-flint-waits)). Below
+  ([Root for a while](/guides/ai-agents/#root-for-a-while)). Below
   them, the vault's **tokens** (**Revoke** ends one; **Show ended** lists the expired
   and revoked ones) and the **activity log**: when, which program or token, the command
-  and whether it was allowed, denied or left unanswered, newest first, with **Load
-  more**. Allowed reads are not recorded; refused ones are. Click an entry, or press
+  and whether it was allowed, denied or left unanswered (**Missed · alerted** when a
+  phone alert went out for it), newest first, with **Load more**. Allowed reads are not recorded; refused ones are. Click an entry, or press
   <kbd>Enter</kbd> on it, for its detail: the exact time with seconds, the caller, how it
   was allowed, the host and the whole command, with **Copy**. **Keep** sets how long the
   log keeps entries: 30 days, 90 days (the default), 1 year or no limit. A shorter
@@ -476,6 +473,13 @@ Settings belong to this machine, not to the vault, and save as you change them.
   are this computer's: kept encrypted in Flint's config folder, never in the vault, so
   they never sync. Only this window changes the setting. **Back up
   activity…** saves a copy of the log's file, still encrypted, where you choose.
+- **Notifications**: **Approval wait** (2, 5, 10 or 30 minutes; 2 by default) sets how
+  long every approval window, and a command waiting for the vault's unlock, waits for
+  you; at 30 it notes that the program must be able to wait that long
+  ([How long Flint waits](/guides/ai-agents/#how-long-flint-waits)). **Phone alerts**
+  (off): the ntfy server and this machine's topic, a QR and a link to subscribe,
+  **Send test**, **New topic** and the last alert's outcome
+  ([Alerts on your phone](/guides/notifications/)).
 - **About**: the version this build was made from (also at the right of the status bar,
   which opens this section) and the libraries linked into it
   (libssh, libsodium, SQLite with SQLCipher, FreeRDP). What changed in each version is

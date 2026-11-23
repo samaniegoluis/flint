@@ -19,8 +19,6 @@ import { CommandModal, sudoArgv } from './CommandModal';
 type Scoped = { all: boolean; groups: string[]; hosts: string[]; read: boolean; exec: boolean; write: boolean };
 
 
-/** Settings → Access → Approval wait (milestone 61, D-134 (2)), in minutes. */
-const APPROVAL_WAITS = [2, 5, 10, 30];
 function ScopeChips({ s }: { s: Scoped }) {
   if (s.all) return <span className="chip">Whole vault</span>;
   const items = [...s.groups.map((p) => ({ key: 'g:' + p, text: p, title: `Group ${p}, its subgroups included` })), ...s.hosts.map((h) => ({ key: 'h:' + h, text: h, title: h }))];
@@ -86,6 +84,11 @@ function tokenUntil(t: TokenView, nowSecs: number): string {
   if (t.status === 'revoked') return `revoked ${whenText(t.revoked_at)}`;
   if (t.status === 'expired') return `expired ${whenText(t.expires_at)}`;
   return inText(t.expires_at, nowSecs);
+}
+
+/** Milestone 63: an approval that timed out after a phone alert went out (27d1). */
+function missedAfterAlert(e: ActivityEntry): boolean {
+  return e.outcome === 'timeout' && !!e.alerted;
 }
 
 const OUTCOME: Record<ActivityEntry['outcome'], { text: string; tone: string }> = {
@@ -183,12 +186,24 @@ function ActivityDetail({ e, onClose }: { e: ActivityEntry; onClose: () => void 
         ? <span className="faint"> · {user ? `${user} → ` : ''}root (sudo)</span>
         : host?.group ? <span className="faint"> · {host.group}</span> : null}</dd></>}
       <dt>Action</dt><dd><span className="mono">{root ? 'exec' : e.action}</span>{root && <> <span className="root-badge">root</span></>}</dd>
-      <dt>Result</dt><dd><span className={`badge ${OUTCOME[e.outcome].tone}`}>{OUTCOME[e.outcome].text}</span>
+      <dt>Result</dt><dd>{missedAfterAlert(e)
+        ? <><span className="badge warn"><Icon name="bell" />Missed · alerted</span> <span className="faint">· the program got approval_timeout</span></>
+        : <span className={`badge ${OUTCOME[e.outcome].tone}`}>{OUTCOME[e.outcome].text}</span>}
         {ended.badge && <span data-activity-ended> <span className={`badge ${ended.tone}`}>{ended.badge}</span>{ended.meta && <span className="faint"> · {ended.meta}</span>}</span>}</dd>
     </dl>
   );
+  // Milestone 63 (27d2): the alert went out, and nobody answered in time.
+  const alerted = missedAfterAlert(e) ? (
+    <div className="callout info" style={{ alignItems: 'center' }} data-activity-alerted-note>
+      <Icon name="bell" size="sm" className="info-t" />
+      <span className="col" style={{ gap: 2 }}>
+        <span>Timed out after an alert to your phone.</span>
+        <span className="hint">The alert said “An agent is waiting for your approval”.</span>
+      </span>
+    </div>
+  ) : null;
   return <CommandModal title="Activity entry" icon="clock" root={root} argv={root && e.cut === 0 ? sudoArgv(e.command) : null}
-    command={e.command} cut={e.cut} details={details} onClose={onClose} />;
+    command={e.command} cut={e.cut} details={alerted ? <>{details}{alerted}</> : details} onClose={onClose} />;
 }
 
 function RetentionChoice({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
@@ -288,7 +303,8 @@ function ActivitySection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
                 {e.action === 'sudo' && <span className="root-badge" data-activity-sudo>root</span>}
                 {e.command}
               </span>
-              <span><span className={`badge ${OUTCOME[e.outcome].tone}`}>{e.outcome === 'allowed' && <Icon name="check" />}{OUTCOME[e.outcome].text}</span></span>
+              <span className="row" style={{ gap: 4, flexWrap: 'wrap' }}><span className={`badge ${OUTCOME[e.outcome].tone}`}>{e.outcome === 'allowed' && <Icon name="check" />}{OUTCOME[e.outcome].text}</span>
+                {missedAfterAlert(e) && <span className="badge warn" data-activity-alerted><Icon name="bell" />Missed · alerted</span>}</span>
             </button>
           ))}
         </div>
@@ -364,25 +380,6 @@ export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void 
           </tbody>
         </table>
       )}
-      <div className="section-h"><h2>Approval wait</h2><span className="grow" /></div>
-      <div className="panel col" style={{ padding: 'var(--sp-4)', gap: 'var(--sp-2)' }} data-approval-wait-panel>
-        <div className="row" style={{ gap: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
-          <span className="flabel">Wait</span>
-          <div className="seg" role="radiogroup" aria-label="How long Flint waits for you" data-approval-wait>
-            {APPROVAL_WAITS.map((m) => (
-              <button key={m} type="button" role="radio" aria-checked={settings.approval_wait === m} aria-pressed={settings.approval_wait === m}
-                data-approval-wait-min={m} onClick={() => saveSettings({ ...settings, approval_wait: m }).catch((e) => fail(toFlintError(e)))}>{m} min</button>
-            ))}
-          </div>
-        </div>
-        <span className="hint">How long a program waits for your answer in an approval window, and for you to unlock the vault when it finds it locked. Then it gets <span className="mono">approval_timeout</span> or <span className="mono">locked</span>.</span>
-        {settings.approval_wait >= 30 && (
-          <div className="callout warn" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }} data-approval-wait-note>
-            <Icon name="alert" size="sm" />
-            <span>The program must be able to wait that long: many agent tools stop a command sooner. An agent can run <span className="mono">flint exec</span> in the background and check on it.</span>
-          </div>
-        )}
-      </div>
       <div className="section-h"><h2>Run as root</h2><span className="grow" /></div>
       <div className="panel col" style={{ padding: 'var(--sp-4)', gap: 'var(--sp-2)' }} data-sudo-periods>
         <div className="row" style={{ gap: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
