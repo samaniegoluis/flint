@@ -51,7 +51,7 @@
 	</div>
 
 	<ol class="flint-agent__steps">
-		<li><strong>Unlock in Flint.</strong> The app holds the vault’s key; the CLI never reads it. Locked or closed, Flint’s window asks you, naming the command that wants in.</li>
+		<li><strong>Unlock in Flint.</strong> The app holds the vault’s key; the CLI never reads it. Locked or closed, Flint’s window asks you, naming the command that wants in, and the command waits until you do.</li>
 		<li><strong>You allow it, once.</strong> The first <code>flint</code> your agent runs opens Flint’s window: “flint, started by Claude Code”. Pick the hosts, what it may do and for how long, and confirm with Touch ID.</li>
 		<li><strong>Your agent asks Flint.</strong> <code>flint exec &lt;alias&gt; -- …</code> from any agent that can run a command: Claude Code, Codex, a script.</li>
 		<li><strong>Flint does the login.</strong> Jump hosts, keys, passwords and host keys stay on Flint’s side. Only the result comes back.</li>
