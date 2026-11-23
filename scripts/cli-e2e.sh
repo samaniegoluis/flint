@@ -790,6 +790,17 @@ else
   # The holder pings for 13 s, past update-apply's 10 s of retries: waited for, not
   # killed (MSYS2's kill does not reach a native program reliably).
   wait "$ua_hold" 2>/dev/null || true
+  # Milestone 65 (CF-190): a program that holds a file open in the folder is named, as
+  # the Restart Manager reports it, with its pid.
+  ua_win
+  ua_file="$(cygpath -w "$ua/Apps/Flint/bin/flint.exe")"
+  "$sys32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -Command "\$f = [IO.File]::Open('$ua_file', 'Open', 'Read', 'Read'); Start-Sleep 14" &
+  ua_hold=$!
+  sleep 3
+  expect 10 "Windows: a folder with a file held open is not swapped (io)" "" -- update-apply --wait 0 --from "$UA_FROM" --to "$UA_TO" --json
+  check "Windows: its message names the program that holds the file, with its pid" '[[ "$out" == *"close "*"(pid "*"and Relaunch again"* ]]'
+  check "Windows: the package is kept again" '[[ "$(echo "$out" | json_get "d[\"kept\"]")" == True ]]'
+  wait "$ua_hold" 2>/dev/null || true
   expect 7 "Windows: update-apply takes only the package unpacked beside the folder" "" -- update-apply --wait 0 --from "$(npath "$tmp")" --to "$UA_TO"
   # The app opened from its Start menu shortcut starts in the installed folder, and
   # Relaunch hands that current directory down to update-apply, which must leave it:
