@@ -3362,3 +3362,37 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `src/adapters/vaultremote/ntfy.cf` does. No native code.
 - **Ideal:** `cfire/DANGLING-POINTER` (or a new code) on a borrowed view of a temporary
   bound to a local, or `.bytes()` on an rvalue returning an owned `[]byte`.
+
+### CF-186 · bug · `confirmed`: on Windows a webui window's page gets no keys after Alt+Tab back until it is clicked
+- **Seen (owner, in Flint, since 2026-11-09; again on `v0.12.2`, 2026-11-19):** switch to
+  another window and back with Alt+Tab. The window is active, but the page reports
+  `document.hasFocus()` false and gets no keys, and a Ctrl+V pastes nothing, until it is
+  clicked. macOS does not have it, because WKWebView restores the first responder by
+  itself. Also in [`cfire-windows.md`, W-16](cfire-windows.md#w-16-on-v0122), which was
+  not in the 2026-11-09 package.
+- **Cause (`runtime/core/webui/windows_webview2.hpp`, still in `v0.12.4`):** when a window
+  is activated, Windows gives the focus to the top-level window, and WebView2 does not
+  take it back on its own. The host is expected to call
+  `ICoreWebView2Controller::MoveFocus` on `WM_SETFOCUS` (WebView2's documented pattern).
+  `cfire_win32_wndproc` has no `WM_SETFOCUS` case (only `WM_ACTIVATE`, which emits
+  `app:active`), and `MoveFocus` is declared (line ~888 in `v0.12.4`) and never called.
+- **Repro:** [`windows/probes/webui_focus/main.cf`](../windows/probes/webui_focus/main.cf).
+  Build it with `cfire build -o focus.exe main.cf` in MSYS2 CLANG64 and start it from the
+  desktop, not a remote shell (a window started from a remote shell never gets the
+  foreground). Type into the box and "keys: N" grows. Alt+Tab to another window and back,
+  then type again: N stays the same until the box is clicked.
+- **Fix to make in cfire (Flint's old patch 0009, checked by hand 2026-11-09, gui-e2e
+  green):** in the WndProc, `case WM_SETFOCUS:` →
+  `controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)`, then
+  `DefWindowProcW`. `PROGRAMMATIC` keeps the page's own focused element; `NEXT` and
+  `PREVIOUS` would move it to a tab stop.
+- **Not possible in an app:** the controller lives in `run()`'s locals (`std::optional<Wv2Host>
+  wv2`), and the window's `GWLP_USERDATA` context holds only lambdas that capture it.
+  `SetFocus` on WebView2's child window (`Chrome_WidgetWin_0`) succeeds and leaves the
+  page unfocused (tried 2026-11-19). `native_webview_handle()` (`v0.12.4`) gives the
+  `ICoreWebView2`, which cannot reach its controller. So the only way around it in an app
+  is to patch the controller's vtable, which Flint will not do (D-137).
+- **Workaround in Flint:** none in the code. A person clicks the terminal, and the VM's
+  gui-e2e clicks Flint's title bar once the window is in front (`windows/front.py`).
+- **Ideal:** the `WM_SETFOCUS` case above. If useful beyond this bug, also a
+  `native_controller_handle()` beside `native_webview_handle()`.
