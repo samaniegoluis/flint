@@ -3396,3 +3396,16 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   gui-e2e clicks Flint's title bar once the window is in front (`windows/front.py`).
 - **Ideal:** the `WM_SETFOCUS` case above. If useful beyond this bug, also a
   `native_controller_handle()` beside `native_webview_handle()`.
+
+### CF-187 · missing · `confirmed`: `core:os` has `cwd()` and no way to change the current directory
+- **Needed (fix after v0.30.0):** `flint update-apply` inherits the app's current
+  directory. On Windows that is the installed folder when the app was opened from its
+  Start menu shortcut, and Windows does not rename a folder that is a process's current
+  directory (error 32), so the self-update's swap failed every time. update-apply has to
+  move to its own folder before the swap.
+- **Workaround:** `upd_set_cwd` in `src/adapters/process/native/flint_update.hpp`
+  (`chdir` on POSIX, `SetCurrentDirectoryW` on Windows), wrapped as `set_working_dir` in
+  `src/adapters/process/update.cf`, tagged `// CFIRE-UPSTREAM: CF-187`.
+- **Ideal:** `os.chdir(path: str) -> void!` beside `os.cwd()`, and a working-directory
+  option on `os.command` (and on any detached spawn, CF-175), so a child need not
+  inherit the parent's.

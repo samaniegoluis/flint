@@ -66,8 +66,12 @@ choose **Always Allow**. Signed builds, which keep that permission, are planned.
 a file in use. A program that keeps a file in it open (a terminal whose current folder is
 inside it, an Explorer preview) stops that: Flint tries for ten seconds, then leaves
 everything as it was, opens the old version, keeps the download and names the problem;
-close that program and choose **Relaunch** again. An update downloaded by Flint carries
-no download mark, so SmartScreen does not ask again.
+close that program and choose **Relaunch** again. Up to version 0.30.0, Flint itself held
+its folder this way when it was opened from its Start menu shortcut (or any shortcut
+that starts it in its own folder), so **Relaunch** failed every time with *a program has
+a file in Flint open*. The fix is in the new version's own updater, so from 0.29.0 or
+0.30.0 a **Relaunch** to 0.30.1 or later works with no step of yours. An update
+downloaded by Flint carries no download mark, so SmartScreen does not ask again.
 
 **Linux (`.deb` and `.rpm`):** a package's files belong to the system, not to you, so
 the package manager installs the update, as it installed Flint. Flint downloads the new
