@@ -3265,24 +3265,77 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** a `Plist: { "NSMicrophoneUsageDescription": "…" }` option (or a plist file
   merged in), so a bundle that needs the camera, microphone or location can say why.
 
-### CF-184 · bug · `confirmed`: `cfire build` spends 30+ minutes in `inspect_header` on a GitHub macOS runner
+### CF-184 · bug · `confirmed`: `inspect_header` loops forever when clang's stderr lands inside the JSON AST
 - **Seen (releases v0.27.0 and v0.28.0, 2026-11-22/23):** the macOS release job's `cfire
   build --portable --macos-min 13.3 FlintGui` printed nothing for 40-86 minutes until it was
   cancelled, three runs out of three since milestone 60. Stacks taken 20 and 21 minutes in
-  (`sample`, artifact `macos-hang` of run 45103137186): one thread at 100% CPU (state `R`),
-  `build_native → analyze_and_emit_impl → bridge::inspect_header →
-  extract_clang_json_symbols → ClangAstParser::parse_node` (8 levels) `→ skip_value`;
-  footprint 1.6 GB, peak 3.7 GB; no clang child, no file open but pipes. Same runner image
-  (`macos-26-arm64` 20261117.0516.1, 3 vCPU, 7 GB) as v0.26.0's release, whose whole
-  `cfire build` took ~4.5 minutes. On the owner's Mac (macOS 27.2) the same cold build
-  (an emptied `CFIRE_CACHE_DIR`) takes ~4 minutes.
-- **Repro (cfire 0.12.2):** clang's `-Xclang -ast-dump=json` of Flint's
-  `src/adapters/rdp/native/flint_rdp.hpp` with `pkg-config --cflags flint-rdp` against
-  `scripts/deps-macos.sh`'s prefix is **1.6 GB** of JSON (5.5 s for clang, at v0.26.0 and
-  v0.27.0 alike); cfire reads all of it to find the header's symbols. Which header was
-  being inspected when it stalled is not known (nothing in the stacks names it).
-- **Workaround:** none yet in CI; the Mac builds the macOS package (`scripts/package.sh
-  macos`, D-107 (4)) and `gh release upload` adds it to the draft.
-- **Ideal:** inspect a header without the full AST of everything it includes (filter the
-  dump to the main file, `-ast-dump-filter`, or clang's libTooling), stream the JSON instead
-  of holding it, and print which header is being inspected so a slow one names itself.
+  (`sample`, artifact `macos-hang` of run 45103137186): one thread at 100% CPU,
+  `inspect_header → extract_clang_json_symbols → ClangAstParser::parse_node` (8 levels)
+  `→ skip_value`, **every sample at the same depth, a minute apart**: a loop with no
+  progress, not a slow parse. v0.26.0 built on the same runner image in ~4.5 minutes.
+- **Cause (found 2026-11-23, `src/clang_bridge.hpp` at v0.12.2):**
+  1. `inspect_header` runs clang through `run_command_capture`, which appends `2>&1`:
+     clang's diagnostics share the pipe with the JSON. They come before it, except the
+     count line (`1 warning generated.`), written after the dump while clang's stdout still
+     holds its last, partial 16 KB block: the line lands **inside the JSON**, at the last
+     multiple of 16 384 bytes of the dump (measured: always there, `| cat` or a file).
+  2. `ClangAstParser` makes no progress on what is not JSON: inside an `inner` array,
+     `skip_value` on the stray text stops at the next `,`; later, at the child's `}`, its
+     scalar branch neither consumes nor fails, and the element loop calls it again forever
+     (the same at a `]` in a key position). Whether it hangs depends on what sits at that
+     16 KB boundary, so it is deterministic for one machine's paths and SDK, and about
+     1.5-2% of boundary positions are fatal: on the runner every time, on the owner's
+     Mac (other paths, other SDK) not.
+  3. Flint's `flint_rdp.hpp` started drawing a warning in milestone 60: the new
+     `freerdp/channels/rdpdr.h` includes `winpr/interlocked.h`, which uses
+     `WINPR_SINGLE_LIST_ENTRY`, deprecated since FreeRDP 3.27. Until then no header Flint
+     inspects wrote anything to stderr.
+- **Also measured (the Mac, M-series, the same dump):** the parser is **quadratic in
+  depth**: a node's `inner` is skipped once to find its end, then rewound and parsed, at
+  every level, so each byte is read once per enclosing `inner` (13.4 times on average for
+  `flint_rdp.hpp`'s 1.67 GB dump, max depth 77; 22.4 billion byte reads). 15.1 s per
+  inspection, against 0.99 s for a one-pass parse giving the same 46 463 symbols byte for
+  byte. Flint's three largest dumps are `flint_gui.hpp`, `flint_monitors.hpp` and
+  `flint_window.hpp` (2.2-2.3 GB each). A **truly cold** `cfire build --portable
+  --macos-min 13.3 FlintGui` (29 headers inspected) takes **250 s** with stock 0.12.2 and
+  **99 s** with the patch below, both peaking at ~5.7 GB. Truly cold means without the
+  header index cache, which lives in each workspace's `.cfire/cache/ast` (the nearest
+  `build.cf`), not under `CFIRE_CACHE_DIR`: a runner's fresh checkout is always cold, a
+  developer's machine almost never (the Mac's earlier "4-5.6 minutes cold" had it warm).
+- **A second bug, same cause:** the parse starts at the first `{` of the captured text.
+  When a warning quotes a source line with a brace (`inline int f() { return old(); }`),
+  that brace is taken for the root node, the "parse" ends at its `}`, and the header gets
+  **no symbols at all**, silently. Reading stdout alone removes this one too.
+- **Repro, end to end (cfire 0.12.2 as released, the owner's Mac):** a 10-line project
+  (`cfire new`, `Includes: ["."]`, `main.cf` importing `warn.hpp` and calling one
+  function) whose header draws one warning quoting no brace (`[[deprecated]] inline int
+  old_value = 41;` read on a line of its own inside a function), with a padding function
+  first (`inline int pad_ppp…() { return 0; }`) and a deeply nested expression last, so the
+  dump's end is mostly `inner` arrays. Sweeping the padding's length (clang's dump through
+  one pipe, cfire's parser copied verbatim) found hangs at 152, 153 and 156 characters;
+  `cfire build` with the 152 one was still running after 90 s (normally 3 s), `sample`
+  showing the runner's stack. The same project builds in 1.7 s with the patch. Which
+  padding hangs depends on the machine's paths, so the sweep is part of the repro.
+- **Repro (the dump alone):** with Flint's flags, `clang++ -std=c++2b -Xclang -ast-dump=json
+  -fsyntax-only … tu.cpp 2>&1 | cat > dump.json` (tu.cpp: `#include <flint_rdp.hpp>`) puts
+  `1 warning generated.` 5 268 bytes before the end, right after `"inner": [`; cfire's
+  `ClangAstParser` (copied verbatim into a harness) never returns on that file, nor on the
+  minimal `{"kind":"TranslationUnitDecl","inner":[\n1 warning generated.\n{"kind":"VarDecl","name":"x"}]}`.
+- **Workaround (Flint, 2026-11-23):** `flint_rdp.hpp` reads FreeRDP's headers under
+  `#pragma GCC diagnostic ignored "-Wdeprecated-declarations"` (tagged CF-184), so clang
+  writes nothing to stderr; every header FlintGui imports was checked to write nothing.
+  Any new header that draws a warning brings the hang back until cfire is fixed.
+- **Fix proposed (a patch against v0.12.2 in a worktree of cfire's clone, `cfire-cf184`):**
+  (1) clang's stderr to a file in the AST's private temp dir (`run_command_capture` gains
+  `merge_stderr = true`; `inspect_header` passes false and reads the file back for its
+  error); (2) the parser always advances or fails: anything that is not JSON where a key or
+  an element belongs ends the parse as malformed, with its offset, and `inspect_header`
+  reports it; (3) a node's `inner` is parsed where it stands, so each byte is read once
+  (clang writes `inner` after a node's own keys; checked on the real dump). Same symbols as
+  today on the clean dump; the spliced dumps end as malformed at the splice instead of
+  looping. Two unit tests beside `test_cpp_ast_ingestion_and_overloads` (a stray line
+  inside `inner`; 200 levels of nesting with scopes after it). `make test-unit` (44 groups)
+  and `.cfire_test_runner stdlib` pass. Measured: 1.16 s against 18.4 s for
+  `flint_rdp.hpp`'s dump, 99 s against 250 s for a cold FlintGui. The patch is
+  `cf184.patch` at the root of that worktree (uncommitted). Also worth having: print the
+  header being inspected, so a slow one names itself.
