@@ -4,6 +4,15 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.30.1 — 2026-11-23
+
+On Windows, Relaunch now installs an update when Flint was opened from its Start menu shortcut: the updater no longer holds Flint's own folder, which made every update fail with "a program has a file in Flint open". Flint 0.29.0 and 0.30.0 update to this version with no extra step.
+
+### Fixed
+
+- **update:** Update-apply leaves the installed folder it inherits as its current directory
+
+
 ## 0.30.0 — 2026-11-23
 
 Flint can tell your phone when an agent is waiting for you. Turn on Phone alerts in the new Settings → Notifications, subscribe to this computer's topic in the ntfy app, and an alert arrives when a program waits for your approval or finds the vault locked. An alert only ever says one of two fixed sentences, never a host, command or program, and it cannot approve anything: you still answer at the computer. The approval wait moved to the same section, and the activity log marks approvals you missed after an alert.
