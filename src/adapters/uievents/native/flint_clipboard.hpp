@@ -613,8 +613,25 @@ inline void release_board(const std::string&) {}
 
 #endif
 
+// The change count right after Flint last copied a secret (milestone 64): while the
+// clipboard still shows it, a paste through the core (the field menu) is refused, so a
+// vault secret never travels back to the page in an RPC result (Principle 6).
+inline long& secret_count() {
+    static long count = -1;
+    return count;
+}
+
 inline int copy_secret(const std::string& name, const std::string& text, int64_t clear_after_ms) {
-    return copy_to(name, text, clear_after_ms, true);
+    int rc = copy_to(name, text, clear_after_ms, true);
+    if (rc == 0) secret_count() = change_count(name);
+    return rc;
+}
+
+// Whether the clipboard still holds the secret Flint copied last; false where the system
+// gives no change count.
+inline bool holds_own_secret(const std::string& name) {
+    long now = change_count(name);
+    return now != -1 && now == secret_count();
 }
 inline int copy_text(const std::string& name, const std::string& text) {
     return copy_to(name, text, 0, false);

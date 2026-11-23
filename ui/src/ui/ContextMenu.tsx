@@ -8,6 +8,8 @@ export interface MenuItem {
   hint?: string;
   /** Draws a separator above this item. */
   sep?: boolean;
+  /** Drawn, but does nothing (the field menu's Cut with no selection). */
+  disabled?: boolean;
   run: () => void;
 }
 
@@ -26,7 +28,7 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
   const left = Math.min(x, window.innerWidth - 230);
   const top = Math.min(y, window.innerHeight - items.length * 34 - 16);
   return (
-    <div ref={ref} className="menu" role="menu" style={{ position: 'fixed', left, top, width: 220, zIndex: 60 }}
+    <div ref={ref} className="menu" role="menu" data-floating-menu style={{ position: 'fixed', left, top, width: 220, zIndex: 60 }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
         if (e.key === 'ArrowDown') { e.preventDefault(); setHot((hot + 1) % items.length); }
@@ -35,7 +37,8 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
       {items.map((it, i) => [
         it.sep ? <div key={it.label + '-sep'} className="menu-sep" /> : null,
         <button key={it.label} role="menuitem" className={'mi' + (it.danger ? ' danger' : '') + (i === hot ? ' hot' : '')} tabIndex={i === hot ? 0 : -1}
-          onMouseEnter={() => setHot(i)} onClick={() => { onClose(); it.run(); }}>
+          aria-disabled={it.disabled || undefined}
+          onMouseEnter={() => setHot(i)} onClick={() => { if (it.disabled) return; onClose(); it.run(); }}>
           {it.icon && <Icon name={it.icon} size="sm" />}<span className="grow">{it.label}</span>{it.hint && <span className="kbd">{it.hint}</span>}
         </button>,
       ])}

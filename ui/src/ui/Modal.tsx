@@ -57,6 +57,9 @@ export function useTrapFocus(ref: React.RefObject<HTMLElement>, onClose: () => v
     const focusFirst = () => (el.querySelector<HTMLElement>('[data-autofocus]') ?? el.querySelector<HTMLElement>('input, textarea, button, [tabindex="0"]'))?.focus();
     focusFirst();
     const top = () => stack[stack.length - 1] === el;
+    // A menu drawn over the dialog (the field menu, milestone 64) counts as inside it:
+    // its focus and its Esc are its own.
+    const inside = (t: EventTarget | null) => el.contains(t as Node) || (t instanceof Element && !!t.closest('[data-floating-menu]'));
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -74,12 +77,12 @@ export function useTrapFocus(ref: React.RefObject<HTMLElement>, onClose: () => v
     };
     // Keys aimed behind the dialog: caught before xterm, which swallows Esc.
     const onKeyOutside = (e: KeyboardEvent) => {
-      if (top() && !el.contains(e.target as Node) && (e.key === 'Escape' || e.key === 'Tab')) {
+      if (top() && !inside(e.target) && (e.key === 'Escape' || e.key === 'Tab')) {
         if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); focusFirst(); } else onKey(e);
       }
     };
     const onFocusIn = (e: FocusEvent) => {
-      if (top() && !el.contains(e.target as Node)) focusFirst();
+      if (top() && !inside(e.target)) focusFirst();
     };
     el.addEventListener('keydown', onKey);
     window.addEventListener('keydown', onKeyOutside, true);

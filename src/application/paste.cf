@@ -199,3 +199,34 @@ fn stage_clipboard[C: Clipboard, D: DropStage](mut clip: C, mut stage: D, drop_i
     try stage.stage_append(drop_id, rel, held.image)
     return ClipboardPaste{ kind: "image", text: "", mime: held.mime, size: i64(held.image.len()) }
 }
+
+// ---- The field menu (milestone 64) --------------------------------------------------
+
+// What the field menu's Paste inserts: the clipboard's text, or `secret` when the
+// clipboard still holds a secret Flint copied (*Copy password*), which never travels
+// back to the page in a result (Principle 6): the page says to press the paste keys,
+// which the webview handles itself.
+type FieldPaste struct {
+    text:   str  `json:"text"`
+    secret: bool `json:"secret"`
+}
+
+fn field_paste_text[C: Clipboard](mut clip: C) -> FieldPaste! {
+    if clip.clipboard_holds_secret() {
+        return FieldPaste{ text: "", secret: true }
+    }
+    held := try clip.clipboard_read()
+    return FieldPaste{ text: held.text, secret: false }
+}
+
+// The field menu's Copy and Cut: the selection, as plain text (not concealed, never
+// cleared), like a copy in any other app. The page never offers them in a password
+// field.
+fn field_copy_text[C: Clipboard](mut clip: C, text: str) -> void! {
+    if i64(text.len()) > FIELD_COPY_MAX_BYTES {
+        return error(coded(ERR_INVALID, "the selection is too long to copy"))
+    }
+    try clip.clipboard_copy_text(text)
+}
+
+FIELD_COPY_MAX_BYTES: i64 = 1048576

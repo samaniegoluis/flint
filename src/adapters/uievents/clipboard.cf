@@ -73,6 +73,17 @@ fn (self: OsClipboard) clipboard_change_count() -> i64 {
     return clipboard_change_count(self.board)
 }
 
+// Whether the clipboard still holds the secret Flint copied last (milestone 64).
+fn (self: OsClipboard) clipboard_holds_secret() -> bool {
+    mut held := false
+    name := self.board
+    // CFIRE-UPSTREAM: CF-053
+    cpp {
+        held = flint_clip::holds_own_secret(name);
+    }
+    return held
+}
+
 // ---- For the tests -----------------------------------------------------------------
 
 fn clipboard_copy_png(board: str, png: str) -> i32 {

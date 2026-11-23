@@ -8,6 +8,7 @@ import { WindowLock } from './screens/WindowLock';
 import { Shell } from './shell/Shell';
 import { Logo } from './ui/Icon';
 import { Toasts } from './ui/Toasts';
+import { FieldMenu } from './ui/FieldMenu';
 import { sessions } from './sessions/store';
 import { UpdateProvider } from './update/UpdateProvider';
 
@@ -61,6 +62,7 @@ function Root() {
       <UpdateProvider>
         <Phase />
         <Toasts store={toasts} corner={settings.toast_corner} />
+        <FieldMenu />
       </UpdateProvider>
     </div>
   );

@@ -46,6 +46,21 @@ Below about 1040 px of window width the sidebar starts hidden and opens over the
 Flint remembers the layout on this machine: whether the sidebar is open, its width, and
 which groups are collapsed in each vault. See [Layout on this machine](#layout-on-this-machine).
 
+### Right-click and the browser's keys
+
+Flint's window is not a browser. A right-click in a text field opens Flint's own menu:
+**Cut**, **Copy**, **Paste** and **Select all** (Cut and Copy need a selection, and a
+password field never offers them). Anywhere else a right-click does nothing, except where
+Flint has a menu of its own: the terminal, a tab, a host. **Paste** does not paste a
+password Flint copied for you (**Copy password**): it says to press <kbd>⌘V</kbd>
+(<kbd>Ctrl+V</kbd> on Linux and Windows), which pastes it as usual.
+
+The keys a browser uses to reload, print, save or view the page (<kbd>F5</kbd>,
+<kbd>Ctrl+R</kbd>, <kbd>Ctrl+P</kbd>, <kbd>Ctrl+S</kbd>, <kbd>Ctrl+U</kbd>, and their
+<kbd>⌘</kbd> forms on macOS) do nothing in the window, so a stray reload never restarts
+it over your sessions. In a terminal they go to the program on the server, as in any
+terminal, and Flint's own shortcuts on them (Reconnect, Go to host) still work.
+
 ### Toasts
 
 Flint tells you what happened in a toast, in the bottom right corner by default (move it in

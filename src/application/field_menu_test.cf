@@ -1,0 +1,36 @@
+package application
+
+import "../domain"
+
+fn field_clip() -> FakeClipboard {
+    return FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
+}
+
+test "the field menu pastes the clipboard's text" {
+    mut clip := field_clip()
+    try clip.clipboard_copy_text("codebox.lan")
+    p := try field_paste_text(mut clip)
+    assert_eq(p.text, "codebox.lan")
+    assert(!p.secret)
+}
+
+test "the field menu never returns a secret Flint copied" {
+    mut clip := field_clip()
+    try clip.clipboard_copy_secret("s3cret", 30000)
+    p := try field_paste_text(mut clip)
+    assert(p.secret)
+    assert_eq(p.text, "")
+    // Something copied since: pasted again.
+    try clip.clipboard_copy_text("plain")
+    assert_eq((try field_paste_text(mut clip)).text, "plain")
+}
+
+test "the field menu copies plain text, within a bound" {
+    mut clip := field_clip()
+    try field_copy_text(mut clip, "root@codebox")
+    assert_eq(clip.text, "root@codebox")
+    assert_eq(clip.clear_after_ms, i64(0))
+    mut refused := 0
+    field_copy_text(mut clip, "x".repeat(usize(FIELD_COPY_MAX_BYTES + 1))) or { refused += 1 }
+    assert_eq(refused, 1)
+}

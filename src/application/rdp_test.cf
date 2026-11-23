@@ -644,6 +644,10 @@ fn (mut self: TickingClipboard) clipboard_read() -> ClipboardContent! {
     return try self.inner.clipboard_read()
 }
 
+fn (self: TickingClipboard) clipboard_holds_secret() -> bool {
+    return self.inner.clipboard_holds_secret()
+}
+
 fn (mut self: TickingClipboard) clipboard_change_count() -> i64 {
     self.reads += 1
     if self.reads > self.at_wait {

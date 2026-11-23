@@ -50,3 +50,18 @@ fn rpc_terminal_clipboard_read(params: str, mut clip: OsClipboard, mut stage: Fs
     req := try parse_req[ClipboardPasteReq](params)
     return json.stringify(try stage_clipboard(mut clip, mut stage, req.drop, req.rel))
 }
+
+// The field menu (milestone 64): Paste and Copy in a text field, through the core,
+// since a release build has no engine menu and the webview's clipboard API asks for a
+// permission. Bound synchronously, like `terminal_clipboard_read` (GTK's clipboard is
+// read on the UI thread). The lock screen's master password field pastes too: the
+// clipboard is not the vault, and Flint's own secret is refused either way.
+fn rpc_field_clipboard_read(mut clip: OsClipboard) -> str! {
+    return json.stringify(try field_paste_text(mut clip))
+}
+
+fn rpc_field_clipboard_copy(params: str, mut clip: OsClipboard) -> str! {
+    req := try parse_req[NameReq](params)
+    try field_copy_text(mut clip, req.name)
+    return ok_json()
+}

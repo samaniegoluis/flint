@@ -36,6 +36,12 @@ password** types it into that host's session the same way, opened and typed by t
 never in the page, and only after your presence check (Touch ID, the system's password, or
 the master password), each time.
 
+The window's web view keeps nothing you type: its form autofill and password saving are
+off, and on Windows what WebView2 had stored before Flint 0.31 is removed once, at the
+first start. A release build has no web inspector and no browser menu, so nothing in the
+window can read the page while a vault is open; `FLINT_DEVTOOLS=1` turns the inspector on
+for diagnosis ([Build from source](/start/build-from-source/#the-web-inspector)).
+
 So a script or an AI agent that uses Flint gets results, never credentials. See
 [Use Flint with an AI agent](/guides/ai-agents/).
 

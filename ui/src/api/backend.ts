@@ -182,6 +182,10 @@ export const api = {
   sessionOpen: (session: string, alias: string, cols: number, rows: number, noCommand = false, filesOnly = false) =>
     call('session_open', { session, alias, cols, rows, accept_new_host_key: false, no_command: noCommand, files_only: filesOnly }),
   /** An OSC 52 payload ("c;base64") a remote program wrote; the core copies it. */
+  /** The field menu's Paste (milestone 64): the clipboard's text, or `secret` while it holds a password Flint copied. */
+  fieldClipboardRead: () => call<{ text: string; secret: boolean }>('field_clipboard_read', {}),
+  /** The field menu's Copy and Cut: plain text, not concealed. */
+  fieldClipboardCopy: (text: string) => call('field_clipboard_copy', { name: text }),
   terminalClipboard: (payload: string) => call<{ outcome: string; bytes: number }>('terminal_clipboard', { name: payload }),
   sessionInput: (session: string, data: string) => call('session_input', { session, data }),
   sessionResize: (session: string, cols: number, rows: number) => call('session_resize', { session, cols, rows }),

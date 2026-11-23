@@ -299,6 +299,9 @@ type Clipboard interface {
     // owner changes), -1 where the system has none. Cheap: an RDP tab checks it a few
     // times a second (milestone 31).
     mut clipboard_change_count() -> i64
+    // Whether the clipboard still holds the secret Flint copied last (milestone 64):
+    // a paste through the core refuses it, so it never returns to the page.
+    mut clipboard_holds_secret() -> bool
 }
 
 // A presence check before the owner's Allow takes effect (adapters/uievents,

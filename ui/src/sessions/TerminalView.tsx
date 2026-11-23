@@ -202,7 +202,10 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       if (ck === 'nativePaste') return false;
       const action = actionFor(e, osRef.current);
       if (action) {
+        // Run here only: the shell's own handler would take it again, since the
+        // browser-key guard (milestone 64) leaves ⌘R and ⌘P to it.
         e.preventDefault();
+        e.stopPropagation();
         runAction(action);
         return false;
       }

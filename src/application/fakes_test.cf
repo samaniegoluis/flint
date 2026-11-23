@@ -920,6 +920,11 @@ fn (self: FakeClipboard) clipboard_change_count() -> i64 {
     return self.copies
 }
 
+// The last copy was a secret: only a secret's copy asks for a clear delay.
+fn (self: FakeClipboard) clipboard_holds_secret() -> bool {
+    return self.clear_after_ms > 0
+}
+
 // What a paste reads: `text`, else `held` (an image), as the test set them.
 fn (mut self: FakeClipboard) clipboard_read() -> ClipboardContent! {
     if self.text.len() > 0 {

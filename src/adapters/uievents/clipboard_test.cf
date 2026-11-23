@@ -42,6 +42,27 @@ test "a copied secret is concealed, and cleared only if nothing was copied since
     clipboard_release(board)
 }
 
+// Milestone 64: the field menu's Paste refuses Flint's own secret while it is there.
+test "the clipboard knows while it holds the secret Flint copied" {
+    tag := os.getpid()
+    board := "net.flint.test.clipboard.secret.{tag}"
+    mut c := OsClipboard{ board: board }
+    mut r := ""
+    c.clipboard_copy_secret("s3cret-value", 0) or err { r = "{err.message()}" }
+    if r.len() > 0 {
+        println("SKIP: no clipboard here (no display)")
+        return
+    }
+    assert(c.clipboard_holds_secret())
+    try c.clipboard_copy_text("plain text")
+    assert(!c.clipboard_holds_secret())
+    try c.clipboard_copy_secret("again", 0)
+    assert(c.clipboard_holds_secret())
+    assert(clipboard_clear_if_unchanged(board, clipboard_change_count(board)))
+    assert(!c.clipboard_holds_secret())
+    clipboard_release(board)
+}
+
 test "text a remote program copied (OSC 52) is plain, not concealed" {
     tag := os.getpid()
     board := "net.flint.test.clipboard-text.{tag}"

@@ -2743,6 +2743,50 @@
       await runInTerminal('echo again-$((6*7))', 'again-42');
       await check(!termText().includes('started-42'), 'a reconnect keeps the session without the initial command');
 
+      await setStep('browser keys');
+      // Milestone 64: the engine's reload and print keys are cancelled outside the
+      // terminal; in it, Ctrl+R and F5 still reach the remote program.
+      {
+        const press = (target, o) => {
+          const ev = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...o });
+          target.dispatchEvent(ev);
+          return ev;
+        };
+        await runInTerminal('cat -v; echo cat-done-$((6*7))', 'cat -v');
+        const ta = activePane().querySelector('textarea');
+        await check(press(ta, { key: 'r', code: 'KeyR', keyCode: 82, ctrlKey: true }).defaultPrevented, 'Ctrl+R in the terminal is not left to the engine');
+        press(ta, { key: 'F5', code: 'F5', keyCode: 116 });
+        await enter();
+        // The tty echoes ^R as its reprint key (a new line), then cat prints F5's sequence.
+        await waitFor(() => /cat -v;[^\n]*\n\^R\n[\s\S]*\^\[\[15~/.test(termText()), 'Ctrl+R and F5 echoed by the remote');
+        await check(true, 'Ctrl+R and F5 in the terminal reach the remote program');
+        // Ctrl+D ends cat (Ctrl+C would abort the shell's whole command list).
+        press(ta, { key: 'd', code: 'KeyD', keyCode: 68, ctrlKey: true });
+        await waitFor(() => termText().includes('cat-done-42'), 'cat to end');
+        const field = document.body;
+        await check(press(field, { key: 'F5', code: 'F5' }).defaultPrevented, 'F5 outside the terminal is cancelled');
+        await check(press(field, { key: 's', code: 'KeyS', metaKey: isMac, ctrlKey: !isMac }).defaultPrevented, 'the save key is cancelled');
+        await check(press(field, { key: 'u', code: 'KeyU', metaKey: isMac, ctrlKey: !isMac }).defaultPrevented, 'the view-source key is cancelled');
+        await check(press(field, { key: 'p', code: 'KeyP', metaKey: isMac, ctrlKey: !isMac }).defaultPrevented, 'the print key is cancelled');
+        await sleep(100);
+        if (q('[aria-label="Command palette"]')) {
+          // ⌘P is Go to host on macOS: the guard leaves Flint's own chord running.
+          await check(isMac, 'only macOS opens Go to host on ⌘P');
+          q('[aria-label="Command palette"] input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await waitFor(() => !q('[aria-label="Command palette"]'), 'the palette to close');
+        } else {
+          await check(!isMac, 'macOS opens Go to host on ⌘P, the guard notwithstanding');
+        }
+        if (!isMac) {
+          // Ctrl+Shift+P is Go to host elsewhere: cancelled for the engine, run by Flint.
+          press(field, { key: 'P', code: 'KeyP', ctrlKey: true, shiftKey: true });
+          await waitFor(() => q('[aria-label="Command palette"]'), 'Go to host on Ctrl+Shift+P');
+          q('[aria-label="Command palette"] input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await waitFor(() => !q('[aria-label="Command palette"]'), 'the palette to close');
+          await check(true, "Flint's own chord on a guarded key still runs");
+        }
+      }
+
       await setStep('reveal and copy');
       shortcut('k', 'KeyK');
       await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
@@ -2761,6 +2805,51 @@
       await waitFor(() => hasText('Password copied'), 'the copy toast');
       await check(true, 'Copy asks the core to put the password on the clipboard');
       await check(!JSON.stringify(await window.backend.catalog({})).includes(HOST_PW_MARKER), 'the catalog still carries no password');
+
+      await setStep('field menu');
+      // Milestone 64: a release has no engine menu, so a text field gets Flint's own.
+      {
+        const rightClick = (el) => {
+          const r = el.getBoundingClientRect();
+          const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.top + 5 });
+          el.dispatchEvent(ev);
+          return ev;
+        };
+        const items = () => qa('.menu[role="menu"] .mi').map((b) => `${b.textContent.replace(/(⌘|Ctrl\+).*/, '')}${b.getAttribute('aria-disabled') ? '-' : '+'}`);
+        const closeMenu = async () => {
+          q('.menu[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await waitFor(() => !q('.menu[role="menu"]'), 'the field menu to close');
+        };
+        const hh = q('#hh');
+        hh.setSelectionRange(0, 0);
+        await check(rightClick(hh).defaultPrevented, 'a right-click in a field is taken by Flint');
+        await waitFor(() => q('.menu[role="menu"]'), 'the field menu');
+        await check(items().join(' ') === 'Cut- Copy- Paste+ Select all+', `with nothing selected, Cut and Copy are off (${items().join(' ')})`);
+        const before = hh.value;
+        await click('.menu[role="menu"] .mi', 'Paste');
+        await waitFor(() => hasText('to paste the password Flint copied'), 'the secret paste notice');
+        await check(q('#hh').value === before, 'Paste refuses the password Flint copied and says to use the paste keys');
+        const ha = q('#ha');
+        ha.focus();
+        ha.setSelectionRange(0, 3);
+        rightClick(ha);
+        await waitFor(() => q('.menu[role="menu"]'), 'the field menu on the alias');
+        await check(items().join(' ') === 'Cut+ Copy+ Paste+ Select all+', `with a selection, everything is on (${items().join(' ')})`);
+        await click('.menu[role="menu"] .mi', 'Copy');
+        const copied = await waitForAsync(async () => {
+          const r = await window.backend.e2e_clipboard({});
+          const v = (typeof r === 'string' ? JSON.parse(r) : r)?.name;
+          return v === 'pwh' ? v : null;
+        }, 'the copied selection');
+        await check(copied === 'pwh', 'Copy puts the selection on the clipboard');
+        const pw = q('.modal input[aria-label="Password"]');
+        rightClick(pw);
+        await waitFor(() => q('.menu[role="menu"]'), 'the field menu on the password');
+        await check(items()[1] === 'Copy-', 'a password field never offers Copy');
+        await closeMenu();
+        const heading = q('.modal h2') ?? q('.modal');
+        await check(!rightClick(heading).defaultPrevented && !q('.menu[role="menu"]'), 'a right-click outside a field opens nothing');
+      }
       await click('.modal button', 'Cancel');
       await waitFor(() => !q('[role="dialog"][aria-label^="Edit host"]'), 'the editor to close');
 
@@ -2768,6 +2857,18 @@
       const mac = isMac;
       window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK', key: 'k', metaKey: mac, ctrlKey: !mac, shiftKey: !mac, bubbles: true, cancelable: true }));
       await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
+      // Milestone 64: the field menu's Paste types plain text into a field (the
+      // clipboard holds "pwh", copied from the alias above).
+      {
+        const input = q('[aria-label="Command palette"] input');
+        const r = input.getBoundingClientRect();
+        input.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.top + 5 }));
+        await waitFor(() => q('.menu[role="menu"]'), 'the field menu in the palette');
+        await click('.menu[role="menu"] .mi', 'Paste');
+        await waitFor(() => q('[aria-label="Command palette"] input')?.value === 'pwh', 'the pasted text');
+        await waitFor(() => byText('[role="option"]', 'pwhost'), 'pwhost found by the pasted text');
+        await check(true, 'Paste in the field menu types the clipboard into the field, and the page sees it');
+      }
       await fill('[aria-label="Command palette"] input', 'pwh');
       await waitFor(() => byText('[role="option"]', 'pwhost'), 'pwhost in the palette');
       await check(q('[role="option"].hot')?.textContent.includes('pwhost'), 'the palette ranks the matching host first');

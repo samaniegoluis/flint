@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { api, on } from '../api/backend';
 import { toasts, useApp } from '../state/app';
 import { actionFor, chordLabel, type Action } from '../lib/keymap';
+import { cancelledByGuard } from '../lib/browserKeys';
 import { ACTION_DURATION_MS } from '../lib/toasts';
 import { tunnelsLeftText } from '../lib/toastText';
 import { Icon, Logo } from '../ui/Icon';
@@ -408,7 +409,7 @@ export function Shell() {
     const onKey = (e: KeyboardEvent) => {
       // Under either lock screen (the vault's, or the window's own after it was closed
       // to the tray) the window takes no shortcut: the shell behind it is inert.
-      if (e.defaultPrevented || phase !== 'main' || windowLock) return;
+      if ((e.defaultPrevented && !cancelledByGuard(e)) || phase !== 'main' || windowLock) return;
       const a = actionFor(e, os);
       if (!a) return;
       // While a dialog is open only its own keys apply, plus the palette toggle.
