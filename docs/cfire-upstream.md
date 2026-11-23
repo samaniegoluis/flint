@@ -3341,3 +3341,24 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `flint_rdp.hpp`'s dump, 99 s against 250 s for a cold FlintGui. The patch is
   `cf184.patch` at the root of that worktree (uncommitted). Also worth having: print the
   header being inspected, so a slow one names itself.
+
+### CF-185 · bug · `confirmed`: `x := f().bytes()` keeps a view of a destroyed string, with no diagnostic
+- **Seen (milestone 63):** the ntfy notifier sent `alert_text(kind).bytes()` as its POST
+  body; the stub server received 37 bytes of the right length and the wrong content.
+  `cfire check` is clean.
+- **Repro (cfire 0.12.2, macOS):**
+  ```cf
+  fn text() -> str { return "An agent is waiting for your approval, a text long enough to leave the SSO buffer" }
+  fn main() {
+      body := text().bytes()
+      mut s := ""
+      for b in body { s += "{u8(b)} " }
+      println(s[0..16])   // prints "6 0 0 0 0 0 0 0 ", not "65 110 32 97 …"
+  }
+  ```
+  It lowers to `auto body = cfire::to_bytes(text());`: a span into the temporary `str`,
+  which dies at the end of the statement.
+- **Workaround:** name the string first (`t := text()` then `body := t.bytes()`), as
+  `src/adapters/vaultremote/ntfy.cf` does. No native code.
+- **Ideal:** `cfire/DANGLING-POINTER` (or a new code) on a borrowed view of a temporary
+  bound to a local, or `.bytes()` on an rvalue returning an owned `[]byte`.

@@ -1,0 +1,113 @@
+package application
+
+import "../domain"
+
+// Records what crossed the port, and fails when told to.
+type FakeSent struct {
+    items: []str
+}
+
+type FakeNotifier struct {
+    sent: shared[FakeSent]
+    fail: str
+}
+
+fn new_fake_notifier(fail: str) -> FakeNotifier {
+    return FakeNotifier{ sent: make(shared[FakeSent], FakeSent{ items: [] }), fail: fail }
+}
+
+fn (self: FakeNotifier) alert_publish(server: str, topic: str, kind: str) -> void! {
+    if self.fail.len() > 0 {
+        return error(self.fail)
+    }
+    self.sent.items.push("{server}|{topic}|{kind}")
+}
+
+fn on_target() -> AlertTarget {
+    return AlertTarget{ on: true, server: "https://ntfy.sh", topic: "flint-abc" }
+}
+
+test "an alert goes out only when on, with a topic, nobody at the window, once" {
+    assert(alert_due(on_target(), false, false))
+    mut off := on_target()
+    off.on = false
+    assert(!alert_due(off, false, false))
+    mut no_topic := on_target()
+    no_topic.topic = ""
+    assert(!alert_due(no_topic, false, false))
+    // The person is looking at Flint.
+    assert(!alert_due(on_target(), true, false))
+    // Already sent for this request.
+    assert(!alert_due(on_target(), false, true))
+}
+
+test "a publish passes only the kind, the server and the topic" {
+    n := new_fake_notifier("")
+    a := publish_alert(n, on_target(), ALERT_APPROVAL, 1000)
+    assert(a.ok)
+    assert_eq(a.at_ms, i64(1000))
+    assert_eq(a.kind, ALERT_APPROVAL)
+    l := publish_alert(n, on_target(), ALERT_LOCKED, 2000)
+    assert(l.ok)
+    assert_eq(n.sent.items.len(), usize(2))
+    assert_eq(n.sent.items[0], "https://ntfy.sh|flint-abc|approval")
+    assert_eq(n.sent.items[1], "https://ntfy.sh|flint-abc|locked")
+}
+
+test "a failed or impossible publish is a status, never sent with anything else" {
+    failing := new_fake_notifier(coded(ERR_NETWORK, "cannot reach ntfy.sh: timed out"))
+    st := publish_alert(failing, on_target(), ALERT_APPROVAL, 5)
+    assert(!st.ok)
+    assert_eq(st.error, "cannot reach ntfy.sh: timed out")
+
+    n := new_fake_notifier("")
+    // A kind that is not one of the three (a host name, say) never crosses.
+    bad := publish_alert(n, on_target(), "prod-db", 5)
+    assert(!bad.ok)
+    mut no_topic := on_target()
+    no_topic.topic = ""
+    assert(!publish_alert(n, no_topic, ALERT_TEST, 5).ok)
+    mut bad_server := on_target()
+    bad_server.server = "ntfy.sh"
+    assert(!publish_alert(n, bad_server, ALERT_TEST, 5).ok)
+    assert_eq(n.sent.items.len(), usize(0))
+}
+
+test "the topic is made once by the app and only replaced by New topic" {
+    mut store := FakeSettingsStore{ saved: default_settings() }
+    c := FakeCrypto{}
+    first := try ensure_alert_topic(mut store, c)
+    assert(ntfy_topic_valid(first.ntfy_topic))
+    assert(first.ntfy_topic.starts_with("flint-"))
+    again := try ensure_alert_topic(mut store, c)
+    assert_eq(again.ntfy_topic, first.ntfy_topic)
+
+    // The page cannot set it.
+    mut from_page := again
+    from_page.ntfy_topic = "flint-mine"
+    from_page.ntfy_on = true
+    saved := try save_settings(mut store, from_page)
+    assert_eq(saved.ntfy_topic, first.ntfy_topic)
+    assert(saved.ntfy_on)
+
+    fresh := try new_alert_topic(mut store, c)
+    assert(fresh.ntfy_topic != first.ntfy_topic)
+    assert_eq(store.saved.ntfy_topic, fresh.ntfy_topic)
+}
+
+test "alerts are off by default and a bad server on disk reads the default" {
+    d := default_settings()
+    assert(!d.ntfy_on)
+    assert_eq(d.ntfy_server, NTFY_SERVER_DEFAULT)
+    assert_eq(d.ntfy_topic, "")
+    mut store := FakeSettingsStore{ saved: d }
+    mut edited := d
+    edited.ntfy_on = true
+    edited.ntfy_server = "gopher://x"
+    edited.ntfy_topic = "flint-ok"
+    store.saved = edited
+    fixed := try load_settings(store)
+    assert(fixed.ntfy_on)
+    assert_eq(fixed.ntfy_server, NTFY_SERVER_DEFAULT)
+    assert_eq(fixed.ntfy_topic, "flint-ok")
+}

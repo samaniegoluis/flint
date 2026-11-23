@@ -1,0 +1,69 @@
+package application
+
+// Alerts on the person's phone (milestone 63, D-134 (4), D-136, Principle 19): when a
+// request needs the person and they are not at the window, one content-free alert
+// through the `Notifier` port. Off unless the person turned it on. A failed publish
+// is reported to Settings and never changes the request it was about.
+
+import "../domain"
+import "../ports"
+
+// Where alerts go, from this machine's settings.
+type AlertTarget struct {
+    on:     bool
+    server: str
+    topic:  str
+}
+
+fn alert_target(s: Settings) -> AlertTarget {
+    return AlertTarget{ on: s.ntfy_on, server: s.ntfy_server, topic: s.ntfy_topic }
+}
+
+// Whether a request's alert goes out: alerts on with a topic, the person not at the
+// window (window_attended), and none sent for this request yet.
+fn alert_due(t: AlertTarget, attended: bool, already_sent: bool) -> bool {
+    return t.on && t.topic.len() > 0 && !attended && !already_sent
+}
+
+// Publishes `kind` to the target and says how it went. Nothing but the kind is
+// passed on; a publish that fails is a status, never an error of the caller's.
+fn publish_alert[N: Notifier](n: N, t: AlertTarget, kind: str, now_ms: i64) -> AlertStatus {
+    mut st := AlertStatus{ at_ms: now_ms, kind: kind, ok: false, error: "" }
+    if !alert_kind_valid(kind) {
+        st.error = "unknown alert"
+        return st
+    }
+    if !ntfy_topic_valid(t.topic) {
+        st.error = "no topic yet: turn phone alerts on first"
+        return st
+    }
+    check_ntfy_server(t.server) or err {
+        st.error = error_text_of(err.message())
+        return st
+    }
+    n.alert_publish(t.server, t.topic, kind) or err {
+        st.error = error_text_of(err.message())
+        return st
+    }
+    st.ok = true
+    return st
+}
+
+// The topic made on first need: kept when there is one, else a random one saved.
+fn ensure_alert_topic[T: SettingsStore, C: Crypto](mut store: T, c: C) -> Settings! {
+    mut s := try load_settings(store)
+    if ntfy_topic_valid(s.ntfy_topic) {
+        return s
+    }
+    s.ntfy_topic = ntfy_topic_from(c.random_bytes(NTFY_TOPIC_BYTES))
+    try store.settings_save(s)
+    return s
+}
+
+// *New topic*: a fresh random topic; the phone must subscribe again.
+fn new_alert_topic[T: SettingsStore, C: Crypto](mut store: T, c: C) -> Settings! {
+    mut s := try load_settings(store)
+    s.ntfy_topic = ntfy_topic_from(c.random_bytes(NTFY_TOPIC_BYTES))
+    try store.settings_save(s)
+    return s
+}

@@ -1,0 +1,61 @@
+package domain
+
+test "an alert is one of three fixed texts, the locked one louder" {
+    assert_eq(alert_text(ALERT_APPROVAL), "An agent is waiting for your approval")
+    assert_eq(alert_text(ALERT_LOCKED), "Flint is locked and an agent is waiting")
+    assert_eq(alert_text(ALERT_TEST), "Test from Flint")
+    assert_eq(alert_priority(ALERT_APPROVAL), "default")
+    assert_eq(alert_priority(ALERT_LOCKED), "high")
+    assert_eq(alert_priority(ALERT_TEST), "default")
+    assert(alert_kind_valid(ALERT_LOCKED))
+    assert(!alert_kind_valid("prod-db"))
+}
+
+test "the window is attended only with the focus and a recent key or click" {
+    assert(window_attended(true, 1000, 1000 + ALERT_ATTENDED_MS - 1))
+    assert(!window_attended(true, 1000, 1000 + ALERT_ATTENDED_MS))
+    // Flint left in front of a screen that locked: the focus stays, the input stops.
+    assert(!window_attended(true, 1000, 1000 + 10 * ALERT_ATTENDED_MS))
+    assert(!window_attended(false, 1000, 1001))
+    assert(!window_attended(true, 0, 10))
+}
+
+test "an ntfy server is an http(s) address with a host and nothing else" {
+    check_ntfy_server("https://ntfy.sh") or { assert(false) }
+    check_ntfy_server("https://ntfy.example.com:8443/base/") or { assert(false) }
+    check_ntfy_server("http://192.168.1.20:8080") or { assert(false) }
+    for bad in ["", "ntfy.sh", "ftp://ntfy.sh", "https://", "https:///x", "https://:80", "https://a b", "https://ntfy.sh/?x=1", "https://u@ntfy.sh", "https://ntfy.sh#t"] {
+        mut failed := false
+        check_ntfy_server(bad) or { failed = true }
+        assert(failed)
+    }
+}
+
+test "a topic is letters, digits, dash and underscore up to 64" {
+    assert(ntfy_topic_valid("flint-abc_DEF-234"))
+    assert(!ntfy_topic_valid(""))
+    assert(!ntfy_topic_valid("a/b"))
+    assert(!ntfy_topic_valid("a b"))
+    mut long := ""
+    for _ in 0..65 {
+        long += "a"
+    }
+    assert(!ntfy_topic_valid(long))
+}
+
+test "a topic made from random bytes is flint- and lowercase base32" {
+    // RFC 4648's test vector "foobar" → MZXW6YTBOI.
+    assert_eq(ntfy_topic_from("foobar".bytes()), "flint-mzxw6ytboi")
+    mut fifteen: []byte = []
+    for i in 0..15 {
+        fifteen.push(byte(i * 17))
+    }
+    t := ntfy_topic_from(fifteen)
+    assert_eq(t.len(), 6 + 24)
+    assert(ntfy_topic_valid(t))
+}
+
+test "the topic's address joins the server and the topic once" {
+    assert_eq(ntfy_topic_url("https://ntfy.sh", "flint-x"), "https://ntfy.sh/flint-x")
+    assert_eq(ntfy_topic_url("https://n.example/base//", "flint-x"), "https://n.example/base/flint-x")
+}

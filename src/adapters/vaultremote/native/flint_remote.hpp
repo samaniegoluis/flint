@@ -124,8 +124,9 @@ inline int request(const std::string& method, const std::string& url, const std:
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &heads);
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "flint");
-    if (method == "PUT") {
-        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+    if (method == "PUT" || method == "POST") {
+        // POST: an alert's publish to ntfy (milestone 63).
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method.c_str());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, reinterpret_cast<const char*>(body.data()));
         curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     } else {

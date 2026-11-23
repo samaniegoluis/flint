@@ -634,3 +634,12 @@ type ServerStats interface {
 type StatsSink interface {
     mut stats_emit(sample: ServerSample)
 }
+
+// Alerts on the person's phone (milestone 63, adapters/vaultremote/ntfy.cf): one
+// publish to `server`/`topic` of the fixed text of `kind` (domain ALERT_*), with a
+// deadline (Principle 8) and never retried. Only the kind crosses the port: the
+// adapter writes alert_text(kind), so nothing of a request can reach the phone
+// (Principle 19).
+type Notifier interface {
+    alert_publish(server: str, topic: str, kind: str) -> void!
+}

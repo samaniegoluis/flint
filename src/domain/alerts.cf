@@ -1,0 +1,145 @@
+package domain
+
+// Alerts on the person's phone (milestone 63, D-134 (4), Principle 19). Off by
+// default; when on, Flint publishes one of two fixed texts to an ntfy topic. An alert
+// carries no content: no host, user, command, caller, vault or count. It is only a
+// "come back to the machine": nothing that arrives on the phone can approve, deny or
+// unlock anything.
+
+// The kinds of alert, the only thing that crosses the `Notifier` port.
+ALERT_APPROVAL: str = "approval"
+ALERT_LOCKED: str = "locked"
+// *Send test* in Settings → Notifications.
+ALERT_TEST: str = "test"
+
+ALERT_TITLE: str = "Flint"
+NTFY_SERVER_DEFAULT: str = "https://ntfy.sh"
+NTFY_SERVER_MAX: i64 = 256
+NTFY_TOPIC_PREFIX: str = "flint-"
+// ntfy's own limit on a topic's length.
+NTFY_TOPIC_MAX: i64 = 64
+// Random bytes behind a topic: 120 bits, 24 base32 characters.
+NTFY_TOPIC_BYTES: usize = 15
+
+// The person is at the window when it has the focus and the page saw a key or the
+// mouse this recently (D-136): the focus alone stays on a Flint left in front of a
+// screen that then locked.
+ALERT_ATTENDED_MS: i64 = 60000
+
+// The fixed text of each kind. Nothing from the request is ever added to it.
+fn alert_text(kind: str) -> str {
+    if kind == ALERT_APPROVAL {
+        return "An agent is waiting for your approval"
+    }
+    if kind == ALERT_LOCKED {
+        return "Flint is locked and an agent is waiting"
+    }
+    return "Test from Flint"
+}
+
+// ntfy's priority header: a locked Flint is the one that drops the command unless the
+// person comes back, so it rings louder.
+fn alert_priority(kind: str) -> str {
+    if kind == ALERT_LOCKED {
+        return "high"
+    }
+    return "default"
+}
+
+fn alert_kind_valid(kind: str) -> bool {
+    return kind == ALERT_APPROVAL || kind == ALERT_LOCKED || kind == ALERT_TEST
+}
+
+// Whether the person is looking at Flint now (D-136).
+fn window_attended(focused: bool, last_input_ms: i64, now_ms: i64) -> bool {
+    return focused && last_input_ms > 0 && now_ms - last_input_ms < ALERT_ATTENDED_MS
+}
+
+// An ntfy server: http(s)://host[:port][/path], no query, fragment, user or spaces.
+// Plain http:// is allowed (a self-hosted ntfy on the local network); Settings says
+// what it means.
+fn check_ntfy_server(url: str) -> void! {
+    if url.len() == 0 {
+        return error(coded(ERR_INVALID, "the ntfy server is empty"))
+    }
+    if url.len() > NTFY_SERVER_MAX {
+        return error(coded(ERR_INVALID, "the ntfy server address is too long"))
+    }
+    mut rest := ""
+    if url.starts_with("https://") {
+        rest = url[8..]
+    } else if url.starts_with("http://") {
+        rest = url[7..]
+    } else {
+        return error(coded(ERR_INVALID, "the ntfy server must start with https:// or http://"))
+    }
+    for b in rest.bytes() {
+        c := u8(b)
+        if c <= 32 || c >= 127 || c == 63 || c == 35 || c == 64 || c == 92 {
+            return error(coded(ERR_INVALID, "the ntfy server must be an address such as https://ntfy.sh"))
+        }
+    }
+    host := rest.split("/")[0]
+    if host.len() == 0 || host.starts_with(":") || host.ends_with(":") {
+        return error(coded(ERR_INVALID, "the ntfy server must name a host"))
+    }
+}
+
+// A topic Flint made or the person kept: letters, digits, `-` and `_`, at most 64.
+fn ntfy_topic_valid(topic: str) -> bool {
+    if topic.len() == 0 || topic.len() > NTFY_TOPIC_MAX {
+        return false
+    }
+    for b in topic.bytes() {
+        c := u8(b)
+        letter := (c >= 97 && c <= 122) || (c >= 65 && c <= 90)
+        digit := c >= 48 && c <= 57
+        if !letter && !digit && c != 45 && c != 95 {
+            return false
+        }
+    }
+    return true
+}
+
+// `flint-` and the random bytes in lowercase base32 (RFC 4648's alphabet, no padding).
+fn ntfy_topic_from(random: []byte) -> str {
+    alphabet := "abcdefghijklmnopqrstuvwxyz234567"
+    mut out := NTFY_TOPIC_PREFIX
+    mut acc: u32 = 0
+    mut bits: u32 = 0
+    for b in random {
+        acc = (acc << 8) | u32(u8(b))
+        bits += 8
+        for bits >= 5 {
+            bits -= 5
+            out += alphabet[usize((acc >> bits) & 31)..usize((acc >> bits) & 31) + 1]
+        }
+        acc = acc & ((u32(1) << bits) - 1)
+    }
+    if bits > 0 {
+        out += alphabet[usize((acc << (5 - bits)) & 31)..usize((acc << (5 - bits)) & 31) + 1]
+    }
+    return out
+}
+
+// The topic's address: where Flint publishes and what the phone subscribes to.
+fn ntfy_topic_url(server: str, topic: str) -> str {
+    mut base := server
+    for base.ends_with("/") {
+        base = base[0..base.len() - 1]
+    }
+    return base + "/" + topic
+}
+
+// What the last publish did (Settings shows it); `at_ms` is 0 before the first.
+type AlertStatus struct {
+    at_ms: i64 `json:"at_ms"`
+    kind:  str `json:"kind"`
+    ok:    bool `json:"ok"`
+    // Why it failed, without the error code ("couldn't reach ntfy.sh: …").
+    error: str `json:"error"`
+}
+
+fn no_alert_status() -> AlertStatus {
+    return AlertStatus{ at_ms: 0, kind: "", ok: false, error: "" }
+}

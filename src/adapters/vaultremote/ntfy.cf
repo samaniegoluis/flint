@@ -1,0 +1,73 @@
+package vaultremote
+
+// The `Notifier` port (milestone 63, D-134 (4)): one POST of an alert's fixed text to
+// an ntfy topic, through the same libcurl as the vault server (CF-146). A connect and
+// a total deadline (Principle 8), never retried: a missed alert is reported in
+// Settings, and the approval it was about goes on unchanged. What is sent is
+// alert_text(kind) with a title and a priority, nothing else (Principle 19); errors
+// name the server's host, never the topic.
+
+// CFIRE-UPSTREAM: CF-146
+import cpp "flint_remote.hpp"
+import "../../domain"
+
+NTFY_CONNECT_MS: i64 = 10000
+NTFY_REQUEST_MS: i64 = 15000
+// ntfy answers with a short JSON of the message; anything larger is cut off.
+NTFY_REPLY_MAX: i64 = 65536
+
+type NtfyNotifier struct {
+    connect_ms: i64
+    request_ms: i64
+}
+
+fn new_ntfy_notifier() -> NtfyNotifier {
+    return NtfyNotifier{ connect_ms: NTFY_CONNECT_MS, request_ms: NTFY_REQUEST_MS }
+}
+
+// The headers of a publish: ntfy's title and priority, and the body's type.
+fn ntfy_headers(kind: str) -> str {
+    return "Title: {ALERT_TITLE}\nPriority: {alert_priority(kind)}\nContent-Type: text/plain; charset=utf-8"
+}
+
+fn (self: NtfyNotifier) alert_publish(server: str, topic: str, kind: str) -> void! {
+    if !alert_kind_valid(kind) {
+        return error(coded(ERR_INVALID, "unknown alert"))
+    }
+    if !ntfy_topic_valid(topic) {
+        return error(coded(ERR_INVALID, "the ntfy topic is not valid"))
+    }
+    try check_ntfy_server(server)
+    url := ntfy_topic_url(server, topic)
+    host := url_host(server)
+    method := "POST"
+    headers := ntfy_headers(kind)
+    // Named first: `.bytes()` of a temporary is a view of a destroyed string (CF-185).
+    text := alert_text(kind)
+    body := text.bytes()
+    mut rc: i32 = 0
+    mut status: i64 = 0
+    mut etag := ""
+    mut vault_id := ""
+    mut got: []byte = []
+    mut reason := ""
+    connect_ms := self.connect_ms
+    request_ms := self.request_ms
+    max := NTFY_REPLY_MAX
+    // CFIRE-UPSTREAM: CF-146
+    cpp {
+        rc = flint_remote::request(method, url, headers, body, connect_ms, request_ms, max, status, etag, vault_id, got, reason);
+    }
+    if rc == 2 || rc == 4 {
+        return error(coded(ERR_NETWORK, "couldn't reach {host}: {reason}"))
+    }
+    if rc == 3 {
+        return error(coded(ERR_TIMEOUT, "{host} did not answer in time"))
+    }
+    if rc != 0 && rc != 5 {
+        return error(coded(ERR_NETWORK, "the alert to {host} failed: {reason}"))
+    }
+    if status < 200 || status > 299 {
+        return error(coded(ERR_REFUSED, "{host} answered {status}"))
+    }
+}
