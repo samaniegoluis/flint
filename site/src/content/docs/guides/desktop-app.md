@@ -62,8 +62,8 @@ it over your sessions. In a terminal they go to the program on the server, as in
 terminal, and Flint's own shortcuts on them (Reconnect, Go to host) still work.
 
 On Windows the web view can still act on them before Flint sees them, for example right
-after the window comes to the front and before you click in it: a reload there brings
-Flint back to its unlock screen with your sessions closed. Turning the web view's own keys
+after the window comes to the front and before you click in it, and a reload there
+restarts the window over your open sessions. Turning the web view's own keys
 off is waiting on cfire, the language Flint is written in.
 
 ### Toasts
