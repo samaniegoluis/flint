@@ -32,11 +32,11 @@ describe('attentionReporter', () => {
     expect(sent).toEqual([]);
   });
 
-  it('counts a regained focus as input (the core notes it), so the next report waits', () => {
+  it('never counts the focus as input: Flint raises its own window for an approval', () => {
     const { sent, r, at } = setup();
     r.focus(true);
     at(2000);
     r.input(true);
-    expect(sent).toEqual(['focus:true']);
+    expect(sent).toEqual(['focus:true', 'input']);
   });
 });

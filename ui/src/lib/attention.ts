@@ -14,10 +14,9 @@ export interface AttentionSink {
 export function attentionReporter(sink: AttentionSink, now: () => number = Date.now) {
   let lastInput = -Infinity;
   return {
+    // The focus alone is not someone there: Flint brings its own window to the front.
     focus(focused: boolean) {
       sink.focus(focused);
-      // The focus coming back is a sign of someone there: the next input reports at once.
-      if (focused) lastInput = now();
     },
     input(trusted: boolean) {
       if (!trusted) return;

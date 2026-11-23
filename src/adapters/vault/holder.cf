@@ -409,12 +409,13 @@ fn (self: SessionHolder) alerts() -> AlertTarget {
 }
 
 // What the page tells about the window (D-136): its focus, and a key or the mouse.
+// The focus alone is never input: Flint brings its own window to the front for an
+// approval, and that must not make the next one look attended.
 fn (self: SessionHolder) set_window_focus(focused: bool, now_ms: i64) {
     // CFIRE-UPSTREAM: CF-026
     cpp {
         std::lock_guard<std::mutex> g(self.cell->mtx);
         self.cell->window_focused = focused;
-        if (focused) self.cell->last_input_ms = now_ms;
     }
 }
 
