@@ -3264,3 +3264,25 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   build` and signs the bundle again (ad hoc), so `scripts/package.sh`'s copy carries it.
 - **Ideal:** a `Plist: { "NSMicrophoneUsageDescription": "…" }` option (or a plist file
   merged in), so a bundle that needs the camera, microphone or location can say why.
+
+### CF-184 · bug · `confirmed`: `cfire build` spends 30+ minutes in `inspect_header` on a GitHub macOS runner
+- **Seen (releases v0.27.0 and v0.28.0, 2026-11-22/23):** the macOS release job's `cfire
+  build --portable --macos-min 13.3 FlintGui` printed nothing for 40-86 minutes until it was
+  cancelled, three runs out of three since milestone 60. Stacks taken 20 and 21 minutes in
+  (`sample`, artifact `macos-hang` of run 45103137186): one thread at 100% CPU (state `R`),
+  `build_native → analyze_and_emit_impl → bridge::inspect_header →
+  extract_clang_json_symbols → ClangAstParser::parse_node` (8 levels) `→ skip_value`;
+  footprint 1.6 GB, peak 3.7 GB; no clang child, no file open but pipes. Same runner image
+  (`macos-26-arm64` 20261117.0516.1, 3 vCPU, 7 GB) as v0.26.0's release, whose whole
+  `cfire build` took ~4.5 minutes. On the owner's Mac (macOS 27.2) the same cold build
+  (an emptied `CFIRE_CACHE_DIR`) takes ~4 minutes.
+- **Repro (cfire 0.12.2):** clang's `-Xclang -ast-dump=json` of Flint's
+  `src/adapters/rdp/native/flint_rdp.hpp` with `pkg-config --cflags flint-rdp` against
+  `scripts/deps-macos.sh`'s prefix is **1.6 GB** of JSON (5.5 s for clang, at v0.26.0 and
+  v0.27.0 alike); cfire reads all of it to find the header's symbols. Which header was
+  being inspected when it stalled is not known (nothing in the stacks names it).
+- **Workaround:** none yet in CI; the Mac builds the macOS package (`scripts/package.sh
+  macos`, D-107 (4)) and `gh release upload` adds it to the draft.
+- **Ideal:** inspect a header without the full AST of everything it includes (filter the
+  dump to the main file, `-ast-dump-filter`, or clang's libTooling), stream the JSON instead
+  of holding it, and print which header is being inspected so a slow one names itself.
