@@ -409,13 +409,22 @@ PY
     for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$fport") 2>/dev/null && break; sleep 0.1; done
     local run=("$inst/$exe")
     [[ -z "$xdisp" ]] || run=(env DISPLAY="$xdisp" timeout 300 "$inst/$exe")
-    [[ -z "$win" ]] || run=(timeout 300 "$inst/$exe")
+    # Windows: started in its own folder, as its Start menu shortcut starts it (install.ps1
+    # sets the shortcut's WorkingDirectory), so Relaunch hands that current directory down
+    # to update-apply, which must leave it to rename the folder (error 32 otherwise).
+    # PowerShell sets the app's folder without holding it itself, and waits for the app
+    # alone (Start-Process -Wait would wait for update-apply and the app it starts too).
+    [[ -z "$win" ]] || run=(powershell.exe -NoProfile -Command "
+      \$p = Start-Process -FilePath '$(cygpath -m "$inst/$exe")' -WorkingDirectory '$(cygpath -m "$inst")' -PassThru -NoNewWindow \`
+        -RedirectStandardOutput '$(cygpath -m "$w/app1.out")' -RedirectStandardError '$(cygpath -m "$w/app1.err")'
+      if (-not \$p.WaitForExit(300000)) { \$p.Kill() }")
     echo "gui-e2e: selfupdate: $scenario"
     # Windows: the app starts behind; bring it to the front, as run_app does.
     [[ -z "$win" ]] || { python3 -I "$root/windows/front.py" "$(cygpath -w "$inst/$exe")" 60 >"$w/front.log" 2>&1 & }
     env FLINT_UPDATE_FEED="http://127.0.0.1:$fport/manifest.json" FLINT_UPDATE_TEST_KEY="$pub" FLINT_UPDATE_TEST_KIND=portable \
       FLINT_CONFIG_DIR="$w/config" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$inst/$res/e2e.js" FLINT_GUI_E2E_VISIBLE="$visible" \
       FLINT_UPDATE_APP_LOG="$w/app2.log" TMPDIR="$w/t" "${run[@]}" >"$w/app1.log" 2>&1 || true
+    [[ -z "$win" ]] || cat "$w/app1.out" "$w/app1.err" >> "$w/app1.log" 2>/dev/null
     # The app update-apply starts (the new one, or the old one again) starts behind too.
     [[ -z "$win" ]] || { python3 -I "$root/windows/front.py" "$(cygpath -w "$inst/$exe")" 120 >"$w/front2.log" 2>&1 & }
     cat "$w/app1.log" >> "$log"

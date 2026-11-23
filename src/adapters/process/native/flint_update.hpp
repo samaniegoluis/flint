@@ -8,7 +8,8 @@
 // - which processes run an executable from inside a folder (macOS: libproc; Linux:
 //   /proc/<pid>/exe), so update-apply waits for every `flint` from the folder;
 // - stopping one, SIGTERM then SIGKILL;
-// - a file's mode set executable (the CLI copied out of the package).
+// - a file's mode set executable (the CLI copied out of the package);
+// - this process's current directory changed (CF-187: core:os has no chdir).
 // Windows (milestone 50, D-118 (5)): the same functions on Win32: CreateProcessW with
 // only the log handle inherited, OpenProcess/WaitForSingleObject, a Toolhelp snapshot
 // with QueryFullProcessImageNameW, TerminateProcess, MoveFileExW (a folder is only ever
@@ -246,6 +247,11 @@ inline bool upd_make_executable(const std::string& path) {
     return ::chmod(path.c_str(), 0755) == 0;
 }
 
+// Makes `dir` this process's current directory (CF-187: core:os has cwd(), no chdir).
+inline bool upd_set_cwd(const std::string& dir) {
+    return ::chdir(dir.c_str()) == 0;
+}
+
 #else
 
 // One argument quoted as the C runtime's command-line parser reads it back.
@@ -262,8 +268,9 @@ inline void upd_quote_arg(std::wstring& cmd, const std::wstring& a) {
     cmd += L'"';
 }
 
-// Starts `exe` with `args` detached (no console, its own process group), stdout and
-// stderr appended to `log` (or nowhere), inheriting that one handle and nothing else.
+// Starts `exe` with `args` detached (no console, its own process group), in `exe`'s own
+// folder, stdout and stderr appended to `log` (or nowhere), inheriting that one handle
+// and nothing else.
 // Returns its pid, or -GetLastError().
 inline std::int64_t upd_spawn_detached(const std::string& exe, const std::vector<std::string>& args,
                                        const std::string& log) {
@@ -296,8 +303,14 @@ inline std::int64_t upd_spawn_detached(const std::string& exe, const std::vector
     PROCESS_INFORMATION pi{};
     DWORD flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_UNICODE_ENVIRONMENT |
                   (have_list ? EXTENDED_STARTUPINFO_PRESENT : 0);
+    // It starts in its own folder, never in this process's current directory: that may be
+    // the installed folder update-apply must rename (a Start menu shortcut starts Flint
+    // there), and a folder that is a process's current directory cannot be renamed.
+    std::wstring wdir = wexe;
+    size_t cut = wdir.find_last_of(L"/\\");
+    wdir = cut == std::wstring::npos ? std::wstring() : wdir.substr(0, cut);
     BOOL ok = ::CreateProcessW(wexe.c_str(), cmd.data(), nullptr, nullptr, have_list ? TRUE : FALSE, flags,
-                               nullptr, nullptr, &si.StartupInfo, &pi);
+                               nullptr, wdir.empty() ? nullptr : wdir.c_str(), &si.StartupInfo, &pi);
     DWORD e = ok ? 0 : ::GetLastError();
     if (have_list) ::DeleteProcThreadAttributeList(list);
     if (in != INVALID_HANDLE_VALUE) ::CloseHandle(in);
@@ -362,6 +375,13 @@ inline std::vector<std::int64_t> upd_running_under(const std::string& dir) {
 }
 
 inline bool upd_make_executable(const std::string&) { return true; }
+
+// Makes `dir` this process's current directory (CF-187), which releases the handle
+// Windows keeps on the one before: a folder that is some process's current directory
+// cannot be renamed (error 32).
+inline bool upd_set_cwd(const std::string& dir) {
+    return ::SetCurrentDirectoryW(upd_widen(dir).c_str()) != 0;
+}
 
 #endif
 

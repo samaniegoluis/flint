@@ -791,6 +791,22 @@ else
   # killed (MSYS2's kill does not reach a native program reliably).
   wait "$ua_hold" 2>/dev/null || true
   expect 7 "Windows: update-apply takes only the package unpacked beside the folder" "" -- update-apply --wait 0 --from "$(npath "$tmp")" --to "$UA_TO"
+  # The app opened from its Start menu shortcut starts in the installed folder, and
+  # Relaunch hands that current directory down to update-apply, which must leave it:
+  # Windows renames no folder that is a process's current directory (error 32, seen on
+  # the owner's office machine). Started through PowerShell so that update-apply alone
+  # has the folder as its current directory; the copy of cmd.exe as the app then quits
+  # at once, so the swap is undone at step start, past step swap.
+  ua_win
+  mkdir -p "$ua/helper"; cp "$flint" "$ua/helper/flint.exe"
+  powershell.exe -NoProfile -Command "
+    \$p = Start-Process -FilePath '$(npath "$ua/helper/flint.exe")' -WorkingDirectory '$UA_TO' -PassThru -Wait -NoNewWindow \`
+      -RedirectStandardOutput '$(npath "$ua/helper/out")' -RedirectStandardError '$(npath "$ua/helper/err")' \`
+      -ArgumentList 'update-apply','--wait','0','--from','$UA_FROM','--to','$UA_TO','--json'
+    exit \$p.ExitCode" >/dev/null 2>&1
+  ua_rc=$?
+  out="$(head -1 "$ua/helper/out" 2>/dev/null)"
+  check "Windows: update-apply started inside the installed folder still swaps it (step start, not swap; exit $ua_rc)" '[[ "$(echo "$out" | json_get "d[\"step\"]")" == start ]]'
 fi
 
 echo "== every --json output parses"

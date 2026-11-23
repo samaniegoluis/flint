@@ -6,7 +6,7 @@ package process
 // signature; `unzip` on Linux; `tar` on Windows, milestone 50), and the processes in
 // native/flint_update.hpp (CF-175).
 
-// CFIRE-UPSTREAM: CF-175
+// CFIRE-UPSTREAM: CF-175, CF-187
 import cpp "flint_update.hpp"
 
 import "core:fs"
@@ -109,6 +109,21 @@ fn (mut self: OsUpdateFiles) upd_copy_exe(from: str, to: str) -> void! {
     }
     if !ok {
         return error(coded(ERR_IO, "cannot make {to} executable"))
+    }
+}
+
+// Leaves whatever folder this process started in for `dir` (its own). update-apply
+// inherits the app's current directory, which on Windows is the installed folder when
+// the app was opened from its Start menu shortcut, and Windows does not rename a folder
+// that is a process's current directory (error 32).
+fn set_working_dir(dir: str) -> void! {
+    mut ok := false
+    // CFIRE-UPSTREAM: CF-187
+    cpp {
+        ok = flint_update::upd_set_cwd(dir);
+    }
+    if !ok {
+        return error(coded(ERR_IO, "cannot change the current directory to {dir}"))
     }
 }
 

@@ -55,9 +55,48 @@ fn parse_apply_request(args: []str) -> ApplyRequest! {
     return r
 }
 
+// Whether every folder of the request is an absolute path (`/…`, `C:/…`, `C:\…`,
+// `\\server\…`), so leaving the current directory changes nothing it names.
+fn apply_paths_absolute(r: ApplyRequest) -> bool {
+    for p in [r.from, r.to, r.staging] {
+        if p.len() > 0 && !is_absolute_path(p) {
+            return false
+        }
+    }
+    return true
+}
+
+fn is_absolute_path(p: str) -> bool {
+    if p.starts_with("/") || p.starts_with("\\") {
+        return true
+    }
+    return p.len() >= 3 && p[1..2] == ":" && (p[2..3] == "/" || p[2..3] == "\\")
+}
+
+test "a request of absolute folders lets update-apply leave its current directory" {
+    r := ApplyRequest{ wait_pid: 1, from: "C:/A/.flint-update/new/Flint", to: "C:/A/Flint", os: "windows", app_log: "", start_only: false, staging: "" }
+    assert(apply_paths_absolute(r))
+    assert(apply_paths_absolute(ApplyRequest{ wait_pid: 1, from: "/a/.flint-update/new/Flint", to: "/a/Flint", os: "linux", app_log: "", start_only: false, staging: "" }))
+    assert(is_absolute_path("D:\\Programas\\Flint"))
+    assert(is_absolute_path("\\\\server\\share"))
+    assert(!apply_paths_absolute(ApplyRequest{ wait_pid: 1, from: "x/.flint-update/new/Flint", to: "x/Flint", os: "linux", app_log: "", start_only: false, staging: "" }))
+    assert(!is_absolute_path("Flint"))
+    assert(!is_absolute_path("C:Flint"))
+}
+
 fn run_update_apply(args: []str, as_json: bool) -> i32 {
     r := parse_apply_request(args) or err {
         return report_error("{err.message()}", as_json)
+    }
+    // Out of the folder it inherited as its current directory, which may be the very
+    // folder it renames: the app opened from its Start menu shortcut starts in it, and
+    // Windows renames no folder that is a process's current directory (error 32). The
+    // app passes absolute paths, so moving does not change what they name.
+    here := executable_dir()
+    if here.len() > 0 && apply_paths_absolute(r) {
+        set_working_dir(here) or err {
+            write_stderr("flint update-apply: {err.message()}; staying in {os.cwd()}\n")
+        }
     }
     mut files := new_os_update_files()
     mut procs := new_os_update_processes()
