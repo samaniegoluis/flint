@@ -103,6 +103,14 @@ typedef struct _FILEDESCRIPTORW FILEDESCRIPTORW;
 #define FREERDP_EXPORTS
 #define WINPR_EXPORTS
 #endif
+// CFIRE-UPSTREAM: CF-184. winpr's interlocked.h (through rdpdr.h, milestone 60) uses a
+// type deprecated since FreeRDP 3.27, so clang warns while cfire dumps this header's
+// AST. cfire reads clang's stderr in the same pipe as the JSON: the "1 warning
+// generated." line lands inside it, and where it lands between two array elements,
+// cfire's parser loops forever (the macOS release job's hang). No warning from
+// FreeRDP's headers, no stray line. Drop this once cfire reads the AST from stdout only.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
 #include <freerdp/client/channels.h>
@@ -134,6 +142,7 @@ typedef struct _FILEDESCRIPTORW FILEDESCRIPTORW;
 #include <winpr/string.h>
 #include <winpr/synch.h>
 #include <winpr/wlog.h>
+#pragma GCC diagnostic pop
 #if defined(_WIN32)
 #pragma pop_macro("NIIF_NONE")
 #pragma pop_macro("NIIF_INFO")
