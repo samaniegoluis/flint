@@ -4,6 +4,16 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.31.0 — 2026-11-23
+
+Flint's window no longer acts like a browser. A right-click in a text field opens Flint's own Cut, Copy, Paste and Select all, and Paste will not hand back a password Flint copied for you. The web view stops remembering what you type into Flint's fields, and on Windows what it had already stored is removed at the first start. F5 and the browser's reload, print and save keys no longer restart the window over your sessions. To diagnose a release, FLINT_DEVTOOLS=1 brings the web inspector back.
+
+### Added
+
+- **gui:** No autofill in the webview, FLINT_DEVTOOLS for a release's inspector
+- **gui:** A text field's own menu, the browser's keys cancelled
+
+
 ## 0.30.1 — 2026-11-23
 
 On Windows, Relaunch now installs an update when Flint was opened from its Start menu shortcut: the updater no longer holds Flint's own folder, which made every update fail with "a program has a file in Flint open". Flint 0.29.0 and 0.30.0 update to this version with no extra step.
