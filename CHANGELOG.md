@@ -4,6 +4,22 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.30.0 — 2026-11-23
+
+Flint can tell your phone when an agent is waiting for you. Turn on Phone alerts in the new Settings → Notifications, subscribe to this computer's topic in the ntfy app, and an alert arrives when a program waits for your approval or finds the vault locked. An alert only ever says one of two fixed sentences, never a host, command or program, and it cannot approve anything: you still answer at the computer. The approval wait moved to the same section, and the activity log marks approvals you missed after an alert.
+
+### Added
+
+- **alerts:** The Notifier port, its ntfy adapter and the alert use case
+- **alerts:** Send the phone alerts from the app, and mark missed approvals
+- **settings:** Settings → Notifications, with the approval wait and phone alerts
+
+### Fixed
+
+- **alerts:** The window gaining the focus is not someone at it
+- **settings:** Subscribe in the ntfy app with +, the QR opens the web page
+
+
 ## 0.29.0 — 2026-11-23
 
 The command palette finds what you typed, word by word: every word whole, from a host's alias, label, hostname, tags or folder, in any order, accents ignored, with the matching field named in the row. Text fields no longer autocorrect or check spelling. The macOS release build no longer meets the warning from FreeRDP's headers that hung it since 0.27.0.
