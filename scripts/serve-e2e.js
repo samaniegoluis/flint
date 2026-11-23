@@ -148,6 +148,17 @@
           continue;
         }
       }
+      // Milestone 63: "alerts-on" turns phone alerts on through the core (as Settings →
+      // Notifications does), pointed at the run's ntfy stub, sends a test, and denies.
+      if (req.includes('alerts-on')) {
+        const s = await window.backend.settings_get();
+        const on = await window.backend.settings_set({ ...s, ntfy_on: true, ntfy_server: '@@NTFY@@', ntfy_topic: 'flint-from-the-page' });
+        log((on.ntfy_on && /^flint-[a-z2-7]{24}$/.test(on.ntfy_topic) ? 'ok   ' : 'FAIL ') + 'turning alerts on makes a random topic, never the page\'s: ' + on.ntfy_topic);
+        await window.backend.alerts_test();
+        form.querySelector('[data-approval-deny]').click();
+        log('ok   phone alerts turned on');
+        continue;
+      }
       if (req.includes('timeout-me')) { log('ok   left unanswered: ' + req); continue; }
       if (req.includes('long-cmd')) {
         // Milestone 15 (D-049): a command past 160 characters shows its first line, how
@@ -330,6 +341,18 @@
       await check(viaToken.some((e) => e.outcome === 'denied' && e.host === 'tty'), 'and the one outside its scope, refused');
       await check(log2.some((e) => e.outcome === 'denied' && e.command.includes('deny-me')), 'the log has what the owner denied');
       await check(log2.some((e) => e.outcome === 'timeout'), 'and what nobody answered');
+      // Milestone 63: the approval that timed out after a phone alert is marked; one denied
+      // before alerts were on is not.
+      await check(log2.some((e) => e.outcome === 'timeout' && e.alerted && e.command.includes('timeout-me')), 'the approval missed after an alert is marked alerted');
+      {
+        // The log is newest first: the oldest deny-me came before "alerts-on".
+        const denied = log2.filter((e) => e.command.includes('deny-me'));
+        await check(denied.length > 0 && denied[denied.length - 1].alerted === false, 'a request from before alerts were on is not');
+      }
+      {
+        const st = await window.backend.alerts_status();
+        await check(st.ok && st.at_ms > 0 && st.error === '', 'the last publish is reported ok: ' + JSON.stringify(st));
+      }
       await check(log2.some((e) => e.action === 'token' && e.outcome === 'allowed' && e.command.includes("'nightly'")), 'and the token created, by name');
       await check(!log2.some((e) => e.action === 'read' && e.outcome === 'allowed'), 'no allowed read is logged');
       await check(log2.some((e) => e.action === 'read' && e.outcome === 'denied' && e.via === 'token'), 'a read refused for a bad token is');

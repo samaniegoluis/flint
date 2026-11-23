@@ -74,6 +74,15 @@ struct SessionCell {
     int64_t approval_wait_ms = 120000;
     std::string lock_reason = "not_unlocked";
     bool quitting = false;
+    // Milestone 63: where phone alerts go (Settings), whether the window has the focus
+    // and when the page last saw a key or the mouse (D-136), and the last publish's
+    // outcome as the JSON of a domain AlertStatus ("" before the first).
+    bool alerts_on = false;
+    std::string alerts_server;
+    std::string alerts_topic;
+    bool window_focused = false;
+    int64_t last_input_ms = 0;
+    std::string alert_status_json;
     // Milestone 14: the window is locked (closed to the tray) while the vault stays
     // unlocked, and the vaults this run knows are remembered on this computer.
     bool window_locked = false;

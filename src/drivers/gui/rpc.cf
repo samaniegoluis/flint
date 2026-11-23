@@ -294,6 +294,8 @@ type GuiState struct {
     // Milestone 52: tells the update loop to check now, or to repeat its last outcome
     // (update.cf).
     update_hints: sync.Channel[str]
+    // Milestone 63: the alerts to publish, by kind (alerts.cf).
+    alert_hints: sync.Channel[str]
 }
 
 fn no_vault_session() -> VaultSession {
@@ -301,7 +303,7 @@ fn no_vault_session() -> VaultSession {
 }
 
 fn new_gui_state() -> GuiState {
-    return GuiState{ holder: new_session_holder(), sync_hints: make(sync.Channel[str]), update_hints: make(sync.Channel[str]) }
+    return GuiState{ holder: new_session_holder(), sync_hints: make(sync.Channel[str]), update_hints: make(sync.Channel[str]), alert_hints: make(sync.Channel[str]) }
 }
 
 fn (self: GuiState) unlocked() -> bool {
@@ -416,10 +418,15 @@ fn rpc_settings_get(store: JsonSettingsStore) -> str! {
     return json.stringify(try load_settings(store))
 }
 
-fn rpc_settings_set(params: str, mut store: JsonSettingsStore, st: GuiState, mut app: webui.App) -> str! {
+fn rpc_settings_set(params: str, c: Sodium, mut store: JsonSettingsStore, st: GuiState, mut app: webui.App) -> str! {
     try st.require_open_window()
     req := try parse_req[Settings](params)
-    saved := try save_settings(mut store, req)
+    mut saved := try save_settings(mut store, req)
+    if saved.ntfy_on {
+        // Phone alerts turned on: this machine's topic, made the first time (milestone 63).
+        saved = try ensure_alert_topic(mut store, c)
+    }
+    st.holder.set_alerts(alert_target(saved))
     st.holder.set_lock_after(saved.lock_after)
     st.holder.set_notify_grants(saved.notify_grants)
     st.holder.set_sudo_periods(saved.sudo_periods)

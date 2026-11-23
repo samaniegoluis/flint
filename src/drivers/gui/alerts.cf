@@ -1,0 +1,83 @@
+package main
+
+// Phone alerts (milestone 63, D-134 (4), D-136, Principle 19). The socket server asks
+// application's `alert_due` whether a request's alert goes out and queues its kind
+// here; one loop publishes them in turn through the ntfy notifier, so a slow or
+// failing server never holds a request. What each publish did is kept in the holder
+// and sent to the page as `alerts:status` (Settings → Notifications).
+
+import "ext:webui"
+import "core:json"
+import "core:time"
+import "../../adapters/config"
+import "../../adapters/crypto"
+import "../../adapters/vaultremote"
+import "../../application"
+import "../../domain"
+
+ALERT_TICK_MS: i64 = 1000
+
+// Queues `kind` when an alert is due for a request now (before the window is brought
+// to the front: once it is, it has the focus). Returns whether it was queued.
+fn queue_alert(st: GuiState, kind: str, already_sent: bool) -> bool {
+    if !alert_due(st.holder.alerts(), st.holder.attended(time.now_ms()), already_sent) {
+        return false
+    }
+    st.alert_hints.send(kind)
+    return true
+}
+
+fn run_alert_loop(st: GuiState, mut app: webui.App) {
+    n := new_ntfy_notifier()
+    for !st.holder.quitting() {
+        kind := st.alert_hints.recv_timeout(ALERT_TICK_MS) or ""
+        if kind.len() == 0 {
+            continue
+        }
+        status := publish_alert(n, st.holder.alerts(), kind, time.now_ms())
+        st.holder.set_alert_status(status)
+        if status.ok {
+            write_stderr("flint-gui: sent a phone alert ({kind})\n")
+        } else {
+            write_stderr("flint-gui: a phone alert ({kind}) was not sent: {status.error}\n")
+        }
+        app.emit("alerts:status", status)
+    }
+}
+
+// The page's report on the window (D-136): `focus` with `focused`, or `input`.
+type WindowAttentionReq struct {
+    reason:  str  `json:"reason"`
+    focused: bool `json:"focused"`
+}
+
+fn rpc_window_attention(params: str, st: GuiState) -> str! {
+    req := try parse_req[WindowAttentionReq](params)
+    now := time.now_ms()
+    if req.reason == "focus" {
+        st.holder.set_window_focus(req.focused, now)
+    } else if req.reason == "input" {
+        st.holder.note_input(now)
+    }
+    return ok_json()
+}
+
+fn rpc_alerts_status(st: GuiState) -> str! {
+    return json.stringify(st.holder.alert_status())
+}
+
+// *Send test*: queued like any alert, whether or not the switch is on, once a topic
+// exists; its outcome comes back as `alerts:status`.
+fn rpc_alerts_test(st: GuiState) -> str! {
+    try st.require_open_window()
+    st.alert_hints.send(ALERT_TEST)
+    return ok_json()
+}
+
+// *New topic*: the phone must subscribe again.
+fn rpc_alerts_new_topic(c: Sodium, mut store: JsonSettingsStore, st: GuiState) -> str! {
+    try st.require_open_window()
+    saved := try new_alert_topic(mut store, c)
+    st.holder.set_alerts(alert_target(saved))
+    return json.stringify(saved)
+}

@@ -231,6 +231,22 @@ export interface Settings {
   sudo_periods: boolean;
   /** Milestone 61 (D-134 (2)): how long approvals and a locked vault wait, in minutes (2, 5, 10, 30). */
   approval_wait: number;
+  /** Milestone 63 (D-134 (4)): phone alerts through ntfy, off by default. */
+  ntfy_on: boolean;
+  /** The ntfy server, https://ntfy.sh by default. */
+  ntfy_server: string;
+  /** This machine's random topic, made by the app ('' until alerts are first on). */
+  ntfy_topic: string;
+}
+
+/** Milestone 63: what the last phone alert did (`alerts:status`, `alerts_status`). */
+export interface AlertStatus {
+  /** 0 before the first publish. */
+  at_ms: number;
+  kind: '' | 'approval' | 'locked' | 'test';
+  ok: boolean;
+  /** Why it failed ("couldn't reach ntfy.sh: …"), '' when ok. */
+  error: string;
 }
 
 /** The update check's outcome (milestone 52, src/domain/update.cf), as `update:status`. */
@@ -698,6 +714,8 @@ export interface ActivityEntry {
   duration_ms: number;
   /** The error code when Flint stopped it ('not_sudoer', 'sudo_password', …), else ''. */
   result: string;
+  /** Milestone 63: a phone alert went out while it waited (false before 63). */
+  alerted?: boolean;
 }
 
 /** `activity:added` (milestone 56): never the command (D-127 (1)). */

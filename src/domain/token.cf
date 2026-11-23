@@ -308,6 +308,10 @@ type ActivityEntry struct {
     exit:        i64 `json:"exit"`
     duration_ms: i64 `json:"duration_ms"`
     result:      str `json:"result"`
+    // Milestone 63 (D-134 (4)): a phone alert was sent for this request while it waited
+    // for the person; with `outcome` timeout, an approval missed away from the desk.
+    // false before milestone 63.
+    alerted:     bool `json:"alerted"`
 }
 
 ACTIVITY_RUNNING: str = "running"

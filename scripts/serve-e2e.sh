@@ -61,6 +61,7 @@ export FLINT_APPROVAL_WAIT_MS=8000
 app_pid=""
 cleanup() {
   if [[ -n "$app_pid" ]]; then kill "$app_pid" 2>/dev/null; wait "$app_pid" 2>/dev/null; fi
+  if [[ -n "${ntfy_pid:-}" ]]; then kill "$ntfy_pid" 2>/dev/null; wait "$ntfy_pid" 2>/dev/null; fi
   # FLINT_E2E_KEEP=<dir> keeps the app's log and the commands' output for a look.
   if [[ -n "${FLINT_E2E_KEEP:-}" ]]; then cp "$tmp/app.log" "$all_out" "$FLINT_E2E_KEEP/" 2>/dev/null; fi
   rm -rf "$tmp"
@@ -156,10 +157,34 @@ for _ in $(seq 1 100); do sock_up "$tmp/fresh/flint.sock" && break; sleep 0.1; d
 check "the app creates the config folder and serves on a first launch" 'sock_up "$tmp/fresh/flint.sock"'
 wait "$fresh_pid"
 
+# Milestone 63: a stand-in ntfy server on loopback. It answers every POST and keeps
+# each one as a JSON line (path, title, priority, body) in $tmp/ntfy.log.
+python3 -I - "$tmp/ntfy.log" "$tmp/ntfy.port" <<'PY' &
+import http.server, json, sys
+log, portfile = sys.argv[1], sys.argv[2]
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(n).decode("utf-8", "replace")
+        with open(log, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"path": self.path, "title": self.headers.get("Title", ""), "priority": self.headers.get("Priority", ""), "body": body}) + "\n")
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+        self.wfile.write(b'{"id":"stub"}')
+    def log_message(self, *a): pass
+s = http.server.HTTPServer(("127.0.0.1", 0), H)
+open(portfile, "w").write(str(s.server_port))
+s.serve_forever()
+PY
+ntfy_pid=$!
+: > "$tmp/ntfy.log"
+for _ in $(seq 1 50); do [[ -s "$tmp/ntfy.port" ]] && break; sleep 0.1; done
+ntfy_url="http://127.0.0.1:$(cat "$tmp/ntfy.port")"
+ntfy_count() { grep -c "$1" "$tmp/ntfy.log"; }
+
 echo "== the app"
-E2E_MASTER="$MASTER" E2E_TMP="$(if [[ $win == 1 ]]; then cygpath -m "$tmp"; else printf '%s' "$tmp"; fi)" python3 -I - "$root/scripts/serve-e2e.js" "$tmp/serve-e2e.js" <<'PY'
+E2E_MASTER="$MASTER" E2E_NTFY="$ntfy_url" E2E_TMP="$(if [[ $win == 1 ]]; then cygpath -m "$tmp"; else printf '%s' "$tmp"; fi)" python3 -I - "$root/scripts/serve-e2e.js" "$tmp/serve-e2e.js" <<'PY'
 import os, sys
-src = open(sys.argv[1], encoding="utf-8").read().replace("@@MASTER@@", os.environ["E2E_MASTER"]).replace("@@TMP@@", os.environ["E2E_TMP"])
+src = open(sys.argv[1], encoding="utf-8").read().replace("@@MASTER@@", os.environ["E2E_MASTER"]).replace("@@TMP@@", os.environ["E2E_TMP"]).replace("@@NTFY@@", os.environ["E2E_NTFY"])
 open(sys.argv[2], "w", encoding="utf-8").write(src)
 PY
 FLINT_GUI_E2E="$tmp/serve-e2e.js" "${app[@]}" >"$tmp/app.log" 2>&1 &
@@ -332,12 +357,20 @@ check "a request the owner denies fails with denied (15)" '[[ $status == 15 && "
 check "the window names the caller after the program that started flint" 'grep -q "asking the owner to approve flint, started by perl" "$tmp/app.log"'
 new_caller "" -- --json host show deny-me
 check "denied is a JSON error with --json" '[[ $status == 15 && "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "denied" ]]'
+# Milestone 63: phone alerts are off by default; nothing was published for the
+# requests above. "alerts-on" makes the page turn them on and send a test.
+check "with alerts off, nothing reaches the ntfy server" '[[ ! -s "$tmp/ntfy.log" ]]'
+new_caller "" -- host show alerts-on
+for _ in $(seq 1 50); do [[ "$(ntfy_count "Test from Flint")" -ge 1 ]] && break; sleep 0.1; done
+check "Send test publishes the fixed test text to the topic" '[[ "$(ntfy_count "Test from Flint")" == 1 ]] && grep -q "\"path\": \"/flint-[a-z2-7]\{24\}\"" "$tmp/ntfy.log"'
 t0=$(python3 -c 'import time; print(time.time())')
 new_caller "" -- host show timeout-me
 t1=$(python3 -c 'import time; print(time.time())')
 check "a request nobody answers fails with approval_timeout (16)" '[[ $status == 16 && "$err" == *"nobody answered"* ]]'
 check "after the wait, not before" 'python3 -c "import sys; sys.exit(0 if 7 < $t1 - $t0 < 20 else 1)"'
 check "the client said it was waiting" '[[ "$err" == *"Waiting for approval in Flint"* ]]'
+check "the approval it waited for sent one alert, normal priority" '[[ "$(ntfy_count "An agent is waiting for your approval")" == 1 ]] && grep "waiting for your approval" "$tmp/ntfy.log" | grep -q "\"priority\": \"default\""'
+check "no alert carries the command, the host or the caller" '! grep -q "timeout-me\|alerts-on\|perl\|Served\|local" "$tmp/ntfy.log"'
 new_caller "" -- exec local -- echo deny-me
 check "a denied exec runs nothing and says why" '[[ $status == 15 && "$out" != *deny-me* && "$err" == *"denied"* ]]'
 check "a session told the client it was waiting" '[[ "$err" == *"Waiting for approval in Flint"* ]]'
@@ -642,6 +675,7 @@ expect 5 "a command on the locked vault nobody unlocks waits, then: locked" "" -
 locked_took=$(( $(date +%s) - locked_t0 ))
 check "it waited for the unlock, up to the approval wait" '[[ "$err" == *"Waiting for vault"*"up to 8 s"* && $locked_took -ge 7 ]]'
 check "it says the vault was not unlocked in time" '[[ "$err" == *"was not unlocked in Flint within 8 s"* ]]'
+check "a locked Flint with a command waiting sent one high-priority alert" '[[ "$(ntfy_count "Flint is locked and an agent is waiting")" == 1 ]] && grep "Flint is locked" "$tmp/ntfy.log" | grep -q "\"priority\": \"high\""'
 # A long command, so the lock screen's request offers "Show full command" (M15, 16e1b).
 # The page checks it, then unlocks with Allow: the command waits through that unlock
 # and runs (D-134 (3)).

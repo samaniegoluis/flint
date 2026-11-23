@@ -957,3 +957,36 @@ test "an activity file at version 1 gains results, and an entry ends once (miles
     store.vault_detach()
     try fs.remove(fs.dirname(path))
 }
+
+test "an activity file at version 2 gains alerted, older rows read false (milestone 63)" {
+    path := temp_vault_path("v.flint")
+    mut store := new_sql_vault_store()
+    try store.vault_create(path, test_key(7), test_salt_bytes())
+    // A file written by milestones 56-62: the first two activity migrations, one row.
+    act := activity_file(path)
+    try fs.mkdir_all(fs.dirname(act))
+    mut old := try open_cipher_db(act, test_key(8), test_salt_bytes(), true)
+    try old.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+    try old.apply_migration(activity_migrations()[0])
+    try old.apply_migration(activity_migrations()[1])
+    try old.exec("INSERT INTO activity (at, caller, via, action, host, command, outcome) VALUES (5, 'c', 'window', 'exec', 'web', 'flint exec web -- true', 'timeout');")
+    old.close_db()
+    try attach_test_activity(mut store, path, 8)
+    before := try store.activity_page(0, 10)
+    assert_eq(before.len(), 1)
+    assert(!before[0].alerted, "an older entry was never alerted")
+
+    mut e := marker_entry(1)
+    e.via = ACTIVITY_VIA_WINDOW
+    e.outcome = ACTIVITY_TIMEOUT
+    e.alerted = true
+    _ = try store.activity_add(e, ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(2), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    page := try store.activity_page(0, 10)
+    assert_eq(page.len(), 3)
+    assert(!page[0].alerted)
+    assert(page[1].alerted)
+    assert_eq(page[1].outcome, ACTIVITY_TIMEOUT)
+    store.vault_detach()
+    try fs.remove(fs.dirname(path))
+}

@@ -51,14 +51,19 @@ ALTER TABLE activity ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE activity ADD COLUMN result TEXT NOT NULL DEFAULT '';
 CREATE INDEX activity_grant ON activity (grant_id) WHERE grant_id != '';
 ` })
+    // Milestone 63 (D-134 (4)): a phone alert went out while the request waited.
+    // Older rows read 0.
+    list.push(Migration{ version: 3, name: "activity alerted", sql: `
+ALTER TABLE activity ADD COLUMN alerted INTEGER NOT NULL DEFAULT 0;
+` })
     return list
 }
 
 // The columns every read of an entry selects, in activity_row's order.
-ACTIVITY_COLUMNS: str = "id, at, caller, via, token_id, action, host, command, outcome, command_cut, grant_id, run_state, exit_status, duration_ms, result"
+ACTIVITY_COLUMNS: str = "id, at, caller, via, token_id, action, host, command, outcome, command_cut, grant_id, run_state, exit_status, duration_ms, result, alerted"
 
 fn activity_row(r: []SqlCell) -> ActivityEntry {
-    return ActivityEntry{ id: cell_i64(r[0]), at: cell_i64(r[1]), caller: cell_str(r[2]), via: cell_str(r[3]), token: cell_str(r[4]), action: cell_str(r[5]), host: cell_str(r[6]), command: cell_str(r[7]), outcome: cell_str(r[8]), cut: cell_i64(r[9]), grant: cell_str(r[10]), state: cell_str(r[11]), exit: cell_i64(r[12]), duration_ms: cell_i64(r[13]), result: cell_str(r[14]) }
+    return ActivityEntry{ id: cell_i64(r[0]), at: cell_i64(r[1]), caller: cell_str(r[2]), via: cell_str(r[3]), token: cell_str(r[4]), action: cell_str(r[5]), host: cell_str(r[6]), command: cell_str(r[7]), outcome: cell_str(r[8]), cut: cell_i64(r[9]), grant: cell_str(r[10]), state: cell_str(r[11]), exit: cell_i64(r[12]), duration_ms: cell_i64(r[13]), result: cell_str(r[14]), alerted: cell_i64(r[15]) != 0 }
 }
 
 // A view of the activity file's connection; it does not own the handle.
@@ -251,9 +256,9 @@ fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> i
 }
 
 fn (self: SqlVaultStore) activity_insert(e: ActivityEntry, keep: ActivityKeep) -> i64! {
-    try self.act().run_sql("INSERT INTO activity (at, caller, via, token_id, action, host, command, outcome, command_cut, grant_id, run_state, exit_status, duration_ms, result) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14);", [
+    try self.act().run_sql("INSERT INTO activity (at, caller, via, token_id, action, host, command, outcome, command_cut, grant_id, run_state, exit_status, duration_ms, result, alerted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15);", [
             sql_int(e.at), sql_text(e.caller), sql_text(e.via), sql_text(e.token), sql_text(e.action), sql_text(e.host), sql_text(e.command), sql_text(e.outcome), sql_int(e.cut),
-            sql_text(e.grant), sql_text(e.state), sql_int(e.exit), sql_int(e.duration_ms), sql_text(e.result),
+            sql_text(e.grant), sql_text(e.state), sql_int(e.exit), sql_int(e.duration_ms), sql_text(e.result), sql_bool(e.alerted),
     ])
     res := try self.act().query_cells("SELECT last_insert_rowid();", [])
     id := cell_i64(res[0][0])

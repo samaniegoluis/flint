@@ -117,6 +117,7 @@ fn main() {
     st.holder.set_notify_grants(first_settings.notify_grants)
     st.holder.set_sudo_periods(first_settings.sudo_periods)
     st.holder.set_approval_wait(approval_wait_ms(first_settings.approval_wait, approval_wait_override_ms()))
+    st.holder.set_alerts(alert_target(first_settings))
     // Once per machine: the keys earlier Flints cached on every unlock go (D-048).
     if os.getenv("FLINT_KEYCHAIN") != "off" {
         report_forget_cached_keys(mut settings_store, store, kc, recents)
@@ -144,7 +145,12 @@ fn main() {
     app.bind_raw("dialog_open") |params| { return rpc_dialog_open(params, app) }
     app.bind_raw("dialog_save") |params| { return rpc_dialog_save(params, app) }
     app.bind_raw("settings_get") |params| { return rpc_settings_get(settings_store) }
-    app.bind_raw("settings_set") |params| { return rpc_settings_set(params, mut settings_store, st, mut app) }
+    // Phone alerts (alerts.cf, milestone 63).
+    app.bind_raw("window_attention") |params| { return rpc_window_attention(params, st) }
+    app.bind_raw("alerts_status") |params| { return rpc_alerts_status(st) }
+    app.bind_raw("alerts_test") |params| { return rpc_alerts_test(st) }
+    app.bind_raw("alerts_new_topic") |params| { return rpc_alerts_new_topic(c, mut settings_store, st) }
+    app.bind_raw("settings_set") |params| { return rpc_settings_set(params, c, mut settings_store, st, mut app) }
     // Milestone 48: the flint command from a packaged app.
     app.bind_raw("cli_status") |params| { return rpc_cli_status(params, mut settings_store) }
     // The update notice (update.cf, milestone 52).
@@ -480,6 +486,13 @@ fn main() {
         scope.spawn || {
             mut a := update_app
             run_update_loop(c, update_settings, update_st, mut a)
+        }
+        // Phone alerts (milestone 63, alerts.cf): one publish at a time.
+        alert_app := app
+        alert_st := st
+        scope.spawn || {
+            mut a := alert_app
+            run_alert_loop(alert_st, mut a)
         }
         // The download's bytes so far (milestone 53), while one runs.
         progress_app := app

@@ -10,6 +10,7 @@
 // sessions and their terminals carry on; the vault's key and catalog are gone until
 // the master password is typed again.
 
+import { attentionReporter } from '../lib/attention';
 import { pairs } from '../files/pair';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, FlintError, on, toFlintError } from '../api/backend';
@@ -41,6 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lock_after: '1h', paste_limit_mb: 20, rdp_mac_keys: 'mac', rdp_mac_custom: '', rdp_graphics: 'auto',
   sync_interval: 60, toast_corner: 'bottom-right', update_check: true, server_stats: true, server_stats_colour: true,
   notify_grants: true, sudo_periods: false, approval_wait: 2,
+  ntfy_on: false, ntfy_server: 'https://ntfy.sh', ntfy_topic: '',
 };
 
 // How often the page tells the core someone is using the window.
@@ -260,6 +262,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const onChange = () => setSysDark(mq.matches);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // Milestone 63 (D-136): the core sends no phone alert while someone is at the window.
+  useEffect(() => {
+    const r = attentionReporter({
+      focus: (focused) => { api.windowAttention('focus', focused).catch(() => {}); },
+      input: () => { api.windowAttention('input').catch(() => {}); },
+    });
+    const focus = () => r.focus(document.hasFocus() && document.visibilityState === 'visible');
+    const input = (e: Event) => r.input(e.isTrusted);
+    focus();
+    window.addEventListener('focus', focus);
+    window.addEventListener('blur', focus);
+    document.addEventListener('visibilitychange', focus);
+    for (const k of ['keydown', 'pointerdown', 'pointermove', 'wheel'] as const) window.addEventListener(k, input, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener('focus', focus);
+      window.removeEventListener('blur', focus);
+      document.removeEventListener('visibilitychange', focus);
+      for (const k of ['keydown', 'pointerdown', 'pointermove', 'wheel'] as const) window.removeEventListener(k, input, { capture: true });
+    };
   }, []);
 
   // A connected vault (milestone 43): the window coming back tells the app's sync loop

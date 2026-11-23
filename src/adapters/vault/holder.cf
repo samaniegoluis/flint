@@ -379,3 +379,85 @@ fn (self: SessionHolder) remembered(path: str) -> bool {
     }
     return found
 }
+
+// Phone alerts (milestone 63): where they go, from Settings, set at start and on save.
+fn (self: SessionHolder) set_alerts(t: AlertTarget) {
+    on := t.on
+    server := t.server
+    topic := t.topic
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->alerts_on = on;
+        self.cell->alerts_server = std::string(server);
+        self.cell->alerts_topic = std::string(topic);
+    }
+}
+
+fn (self: SessionHolder) alerts() -> AlertTarget {
+    mut on := false
+    mut server := ""
+    mut topic := ""
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        on = self.cell->alerts_on;
+        server = self.cell->alerts_server;
+        topic = self.cell->alerts_topic;
+    }
+    return AlertTarget{ on: on, server: server, topic: topic }
+}
+
+// What the page tells about the window (D-136): its focus, and a key or the mouse.
+fn (self: SessionHolder) set_window_focus(focused: bool, now_ms: i64) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->window_focused = focused;
+        if (focused) self.cell->last_input_ms = now_ms;
+    }
+}
+
+fn (self: SessionHolder) note_input(now_ms: i64) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->last_input_ms = now_ms;
+    }
+}
+
+// Whether the person is at the window now (domain window_attended).
+fn (self: SessionHolder) attended(now_ms: i64) -> bool {
+    mut focused := false
+    mut last: i64 = 0
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        focused = self.cell->window_focused;
+        last = self.cell->last_input_ms;
+    }
+    return window_attended(focused, last, now_ms)
+}
+
+fn (self: SessionHolder) set_alert_status(st: AlertStatus) {
+    text := json.stringify(st)
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        self.cell->alert_status_json = std::string(text);
+    }
+}
+
+fn (self: SessionHolder) alert_status() -> AlertStatus {
+    mut text := ""
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        std::lock_guard<std::mutex> g(self.cell->mtx);
+        text = self.cell->alert_status_json;
+    }
+    if text.len() == 0 {
+        return no_alert_status()
+    }
+    // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
+    return json.parse[AlertStatus](payload: text) or no_alert_status()
+}

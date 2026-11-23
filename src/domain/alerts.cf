@@ -131,6 +131,17 @@ fn ntfy_topic_url(server: str, topic: str) -> str {
     return base + "/" + topic
 }
 
+// Where alerts go, from this machine's settings.
+type AlertTarget struct {
+    on:     bool
+    server: str
+    topic:  str
+}
+
+fn alert_target(s: Settings) -> AlertTarget {
+    return AlertTarget{ on: s.ntfy_on, server: s.ntfy_server, topic: s.ntfy_topic }
+}
+
 // What the last publish did (Settings shows it); `at_ms` is 0 before the first.
 type AlertStatus struct {
     at_ms: i64 `json:"at_ms"`

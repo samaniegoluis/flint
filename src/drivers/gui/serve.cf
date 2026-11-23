@@ -198,6 +198,9 @@ fn serve_client(mut conn: IpcConn, c: Sodium, mut store: LockedVaultStore, kc: O
             st.holder.put_access_book(book)
             st.holder.access_release()
             app.emit("vault:unlock-request", UnlockRequest{ path: req.vault, name: name, caller: req.caller, label: ap.label, command: ap.command })
+            // A phone alert (milestone 63), decided before the window comes to the front;
+            // a second command while Flint already asks adds none.
+            _ = queue_alert(st, ALERT_LOCKED, now.state == APP_ASKING)
             show_window(mut app)
             // How long the client may wait for the person (milestone 61).
             _ = conn.send(app_state_full_json(AppState{ state: APP_ASKING, name: "", wait_ms: st.holder.approval_wait() }), SERVE_SEND_MS) or {}
@@ -442,6 +445,8 @@ fn gate(conn: IpcConn, req: ServeRequest, c: Sodium, store: LockedVaultStore, st
     st.holder.access_release()
     write_stderr("flint-gui: asking the owner to approve {ap.label}\n")
     app.emit("access:request", ap)
+    // A phone alert (milestone 63), decided before the window comes to the front.
+    entry.alerted = queue_alert(st, ALERT_APPROVAL, false)
     show_window(mut app)
     notice := "Waiting for approval in Flint ({ap.label}), up to {wait_text(wait_ms)}…"
     send_wait(conn, notice, ap.deadline_ms, session_kind)

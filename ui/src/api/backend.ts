@@ -4,7 +4,7 @@
 
 import type {
   AccessAnswer, AccessState, ActivityEntry, AppInfo, CliLinkStatus, RdpStats, RdpTypeInfo, RetentionDays, Catalog, CredPatch, CredView, GroupView, HostPatch, HostView, KeyView,
-  CopyResult, DesktopSpan, RemoteLinkView, RemoteProbe, RemoteStatus, SyncOutcome, FileEntry, MonitorPick, MonitorsView, PasswordStrength, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState, WhatsNew,
+  CopyResult, DesktopSpan, RemoteLinkView, RemoteProbe, RemoteStatus, SyncOutcome, FileEntry, MonitorPick, MonitorsView, PasswordStrength, RdpPointer, TunnelSave, TunnelView, KnownHostView, RecentView, Settings, AlertStatus, UiStateView, TokensState, UnlockRequest, VaultInfo, VaultStatus, WindowState, WhatsNew,
 } from './types';
 
 type Rpc = (params?: unknown) => Promise<unknown>;
@@ -74,6 +74,13 @@ export const api = {
   openUrl: (url: string) => call('open_url', { url }),
   /** Milestone 43: tells the app's sync loop to look at a connected vault's server. */
   syncHint: (reason: 'focus' | 'now') => call('vault_sync_hint', { reason }),
+  /** Milestone 63 (D-136): whether the person is at the window (focus, a key or the mouse). */
+  windowAttention: (reason: 'focus' | 'input', focused = false) => call('window_attention', { reason, focused }),
+  alertsStatus: () => call<AlertStatus>('alerts_status'),
+  /** *Send test*: its outcome comes back as `alerts:status`. */
+  alertsTest: () => call('alerts_test'),
+  /** *New topic*: the settings with the new topic. */
+  alertsNewTopic: () => call<Settings>('alerts_new_topic'),
   fonts: () => call<{ fonts: string[] }>('fonts_mono'),
   uiStateGet: () => call<UiStateView>('ui_state_get'),
   uiStateSet: (s: UiStateView & { vault: string }) => call<UiStateView>('ui_state_set', s),
