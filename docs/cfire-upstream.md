@@ -2237,7 +2237,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Workaround:** run a changed test file by its path once before trusting the folder run.
 - **Ideal:** a test file that fails to compile fails the run with its error.
 
-### CF-121 · missing · `confirmed`: no way to turn off the webview's form autofill (Windows)
+### CF-121 · missing · `resolved ✓`: no way to turn off the webview's form autofill (Windows)
+- **At `v0.12.2`:** [read] `app.set_autofill(bool)` (WebView2 `ICoreWebView2Settings4` `put_IsGeneralAutofillEnabled` and `put_IsPasswordAutosaveEnabled`, plus `autocomplete="off"` enforced by the bridge); on by default, so Flint calls it in milestone 64 (D-138). Clearing what a profile already stored is the app's own job.
 - **Seen (owner, Windows 11, Flint's Windows branch on cfire `c5b1d4b` + its Windows patches) [ran]:**
   registering a second RDP host in the app, the user field offered the user typed in the
   first. WebView2 is Chromium, and its general autofill is on by default: values typed into
@@ -2253,7 +2254,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** a `webui.App` option for autofill, off by default for an app (not a browser), and
   password autosave always off.
 
-### CF-122 · missing · `confirmed`: the web inspector and the browser's context menu are on in every build
+### CF-122 · missing · `resolved ✓`: the web inspector and the browser's context menu are on in every build
+- **At `v0.12.2`:** [read] off by default in `cfire build` (`-DCFIRE_RELEASE_BUILD=1`), on in `cfire run`/`cfire test`, with `app.set_devtools(bool)` and `app.set_context_menu(bool)` on all three backends. The menu is all or nothing (WebKitGTK's `context-menu` signal refused, macOS `willOpenMenu` empties it, WebView2 `AreDefaultContextMenusEnabled`), so text fields lose copy and paste: Flint draws its own field menu (milestone 64, D-138). `AreBrowserAcceleratorKeysEnabled` is left on (F5, Ctrl+R): checked at 64.
 - **Seen (owner, Windows 11) [ran]:** right-click in Flint's window shows Edge's menu with
   *Inspect*, *Reload*, *Print*, *Save as* and *Back*.
 - **Checked in cfire's source:** WebView2 leaves `AreDevToolsEnabled` and

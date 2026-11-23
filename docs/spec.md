@@ -1,6 +1,6 @@
-# Flint — v15 Technical Specification: Flint waits for you
+# Flint — v16 Technical Specification: Hardening and polish
 
-**Scope of this document:** version 15 only. The versions it builds on are archived in
+**Scope of this document:** version 16 only. The versions it builds on are archived in
 [`spec-v1.md`](./spec-v1.md) (MVP), [`spec-v2.md`](./spec-v2.md) (daily driver),
 [`spec-v3.md`](./spec-v3.md) (Flint holds the vault), [`spec-v4.md`](./spec-v4.md) (Files),
 [`spec-v5.md`](./spec-v5.md) (Between servers), [`spec-v6.md`](./spec-v6.md) (Tunnels),
@@ -8,59 +8,66 @@
 (Embedded RDP), [`spec-v9.md`](./spec-v9.md) (Versions and a faster desktop),
 [`spec-v10.md`](./spec-v10.md) (The desktop, finished), [`spec-v11.md`](./spec-v11.md)
 (Your vault on every machine), [`spec-v12.md`](./spec-v12.md) (Toasts),
-[`spec-v13.md`](./spec-v13.md) (Releases) and [`spec-v14.md`](./spec-v14.md) (RDP for daily
-work, root for a while, server resources); everything beyond v15 lives in
-[`ROADMAP.md`](../ROADMAP.md). This file is static: a decision that changes goes into
-[`decisions.md`](./decisions.md), which supersedes the line here.
+[`spec-v13.md`](./spec-v13.md) (Releases), [`spec-v14.md`](./spec-v14.md) (RDP for daily
+work, root for a while, server resources) and [`spec-v15.md`](./spec-v15.md) (Flint waits
+for you); everything beyond v16 lives in [`ROADMAP.md`](../ROADMAP.md). This file is
+static: a decision that changes goes into [`decisions.md`](./decisions.md), which
+supersedes the line here.
 
 ## Problem
 
-v14 shipped (milestones 55-60, `v0.27.0`). Agents now do real work through `flint exec`: the
-owner's own tests on the Windows VM and on Zorin run that way, under grants of an hour or
-four. What breaks is the waiting (D-134):
+v15 shipped (milestones 61-63, `v0.30.0`; `v0.30.1` fixed Windows' Relaunch). Before the
+larger work of the app in two languages (v17) and signing (v18), the owner wants the small
+rough edges that touch security or daily use closed (D-138):
 
-- **An approval gives up after a fixed two minutes.** At the desk that is plenty; away from
-  it (lunch, a meeting, another room) the agent gets `approval_timeout` again and again.
-- **A locked vault fails at once** with `locked` (D-042). The owner unlocks later, nothing
-  tells the agent, and the command is never run again.
-- **A locked vault does not say why** (a Keychain *Deny* looks like no cached key).
-- **Nobody away from the desk knows an agent is waiting.** A content-free alert on the phone
-  lets someone a few minutes away come back in time.
-
-v15 makes the wait one setting the person chooses, makes a locked vault wait like an
-approval, and sends an optional alert through ntfy. Signing and installers move to v16.
+- **The window behaves like a browser in places.** cfire `v0.12.2` already turns the web
+  inspector and the engine's right-click menu off in a release (`cfire build`), but all or
+  nothing: a text field lost *Copy* and *Paste* on right-click, nobody can open the
+  inspector on a release to diagnose it, and on Windows the browser's own keys (F5,
+  Ctrl+R, Ctrl+P) may still reload or print the page over open sessions.
+- **WebView2 keeps what is typed.** Its form autofill stores host names, users and domains
+  typed in the editors in its profile on disk, outside the vault and its encryption, and
+  offers them back. Flint never turned it off, and what it already stored is still there.
+- **✕ on a desktop with no tray hides Flint for good.** On Zorin the window disappears,
+  Flint keeps running with no icon, and only the palette's Quit gets out.
+- **The QR in Settings → Notifications opens a web page,** not the ntfy app; on Android a
+  `ntfy://` link would subscribe in one scan.
+- **A failed update swap names no program.** On Windows, a file held open in Flint's
+  folder stops the Relaunch with "a program has a file open", and the person has to guess
+  which.
 
 ## Scope
 
-**In scope (v15):**
-- **Flint waits for you** (61): one approval wait, 2, 5, 10 or 30 minutes, for every
-  approval window; a locked vault waits for the unlock within it; `flint vault status` says
-  why a vault is locked; the agent guide on how an agent waits that long.
-- **Polish** (62): spelling correction off in the remaining fields, the palette's search by
-  whole words, one diagnosis pass of `cfire test src/application` on macOS.
-- **Alerts on your phone** (63): Settings → **Notifications**, with the wait and ntfy, off by
-  default, two content-free alerts, the activity log marking an approval that timed out
-  after an alert.
+**In scope (v16):**
+- **A release is not a browser** (64): Flint's own Cut/Copy/Paste/Select all menu in text
+  fields, `FLINT_DEVTOOLS=1` to get the inspector and the engine's menu back on a release,
+  the browser's reload and print keys blocked, form autofill and password autosave off and
+  what WebView2 already stored removed, `autocomplete="off"` on every field.
+- **Close, alerts and updates** (65): ✕ quits on a Linux desktop with no tray, or asks
+  once, the answer kept in Settings; the QR with an iPhone / Android choice; the swap
+  names the programs that hold the folder (Windows Restart Manager).
 - Docs site, the landing and the CLI demo follow every user-visible change (CLAUDE.md rules
   5 and 6), and a release closes each milestone with a `feat` or `fix` (rule 10).
 
 **Every system:** each milestone is verified on macOS and the Docker Linux check; the
-Windows parts on the Windows VM (`windows/vm/`), as the milestone needs them.
+Windows parts on the Windows VM, the Linux tray parts on Zorin, as the milestone needs them.
 
-**Out of scope (v15), tracked in the roadmap:** signing and installers (**v16**); other
-alert providers (Pushover, Bark), each an adapter later; answering an approval from the
-phone (the phone app in `../flint-cloud`; Telegram set aside, D-134 (5)); the CLI on
-another machine approved by the desktop's Flint; system notifications and a setting per
-kind of notice (D-117 (5)); unlocking the vault from anywhere but the machine.
+**Out of scope (v16), tracked in the roadmap:** the app in English and Spanish (**v17**,
+D-084); signing, the keychain by signed identity, installers and Touch ID (**v18**); a
+StatusNotifierItem tray icon on Linux (CF-082, cfire's); a tray menu that follows the state;
+the iPhone QR opening the ntfy app (waits for ntfy-ios#51); a native menu filtered item by
+item (cfire offers on or off only).
 
 ## Stack
 
-v14's, unchanged, plus a QR encoder in the frontend for 63.
+v15's, unchanged. 64 uses cfire `v0.12.2`'s `app.set_devtools`, `app.set_context_menu` and
+`app.set_autofill`; 65 adds two small native shims inside `adapters/`, tagged as Principle 3
+asks: the X11 tray check on Linux and the Restart Manager (`rstrtmgr`) on Windows.
 
 | Layer | Choice | Why | Rejected |
 |---|---|---|---|
 | Language | **cfire** (→ C++23), pinned to `v0.12.2` (D-105) | Dogfood the friend's language and feed back real gaps. Native speed, a single binary | Go + Wails (Tether's stack, known-good), Rust + Tauri |
-| Desktop shell | **cfire `ext:webui`** (WKWebView / WebKitGTK / WebView2) | Wails-like typed RPC + events, native webview, no bundled browser | Electron (heavy), raygui (no rich UI) |
+| Desktop shell | **cfire `ext:webui`** (WKWebView / WebKitGTK / WebView2) | Wails-like typed RPC + events, native webview, no bundled browser. Release builds have no inspector and no engine menu | Electron (heavy), raygui (no rich UI) |
 | Frontend | **React + Vite**, CSS Modules + design tokens | Proven in Tether; the frontend is largely portable | Svelte/Solid: no strong reason to switch while the backend is new |
 | Toasts | **Flint's own component** (`ui/`, v12) | Notices, updates and grants share one corner | A toast library |
 | Terminal | **xterm.js** (pinned beta + WebGL addon) | Kitty keyboard protocol; WebGL renderer fixes cell sizing | — |
@@ -70,55 +77,60 @@ v14's, unchanged, plus a QR encoder in the frontend for 63.
 | Vault store | **SQLite, whole-file encrypted** with SQLCipher (D-013) | Queryable and transactional. No plaintext metadata on a synced disk | Per-field encryption, a KeePass-style blob |
 | Activity store | **A second SQLCipher file per machine** (D-092) | The one table that grows with use | A plain log file, keeping it in the vault |
 | Keychain | macOS Security.framework, Linux libsecret, Windows Credential Manager | *Remember on this computer* (D-048) and the server token | Storing either in a file |
-| HTTP client | **libcurl** | Sync, the manifest, the download, and now an ntfy publish | A second HTTP stack |
-| Alerts | **ntfy** (ntfy.sh or the person's own server), behind a notifier port | Open source, free, iOS and Android, no account: one `POST` per alert (D-134 (4)) | Telegram (reads what it relays, and answering would approve from outside the machine), Pushover (paid, closed), Bark (iOS only), Gotify (no iOS app); each may be an adapter later |
-| QR code | **A small QR encoder in the frontend**, chosen at 63's plan (pinned, no network) | Subscribing from the phone is a scan | Drawing QR in the core; a link only |
+| HTTP client | **libcurl** | Sync, the manifest, the download, an ntfy publish | A second HTTP stack |
+| Alerts | **ntfy** (ntfy.sh or the person's own server), behind a notifier port | Open source, free, iOS and Android, no account (D-134 (4)) | Telegram, Pushover, Bark, Gotify; each may be an adapter later |
+| QR code | **`qrcode-generator` 2.0.4** in the frontend (M63) | Subscribing from the phone is a scan | Drawing QR in the core |
+| Linux tray check | **The X11 `_NET_SYSTEM_TRAY_S0` selection** (D-138 (3)) | cfire's Linux icon is a `GtkStatusIcon` (XEmbed): a tray that shows it owns that selection; a Wayland session shows none | A D-Bus `StatusNotifierWatcher` check (says "tray" where an XEmbed icon still never shows) |
 | Sync server | **`flint-vault-server`**, cfire on `core:net/http` (D-050, D-092) | Same language and toolchain, same repo | A repo of its own |
-| Packages and updates | v13's: portable packages, `.deb`/`.rpm`, Flint's signed self-update (D-111, D-124) | Every v15 release reaches people on its own | — |
+| Packages and updates | v13's: portable packages, `.deb`/`.rpm`, Flint's signed self-update (D-111, D-124) | Every v16 release reaches people on its own | — |
 | Docs | **Astro + Starlight** | Landing and Docs in one site | Docusaurus, VitePress |
 | Changelog | **git-cliff**, run locally | Reads the Conventional Commits already in use | release-please, semantic-release |
 
 ## Architecture
 
-Hexagonal, as in v14. v15 changes how long a request on the socket may wait, and adds one
-outbound port.
+Hexagonal, as in v15. v16 changes how the window is set up and adds two read-only native
+queries; no new port, no vault or socket format change.
 
-- **One approval wait.** `Settings.approval_wait` (this machine's, not the vault's): 2, 5,
-  10 or 30 minutes, 2 by default. Every approval window (grant, root, token, copy, tunnel)
-  takes its deadline from it; `FLINT_APPROVAL_WAIT_MS` stays as the tests' way to shorten
-  it. The app tells the CLI how long it will wait (a `wait` frame with the deadline), so the
-  CLI has no wait of its own to keep in step, and keeps reading past its socket timeout
-  while those frames say the request is alive.
-- **A locked vault waits** (revisits D-042). A command that finds its vault locked while the
-  app runs no longer fails at once: the app shows its unlock screen and the command waits,
-  within the same approval wait, then goes on to its approval or runs under a live grant.
-  `locked` (exit 5) remains for nobody unlocking in time and for Flint not starting.
-  The CLI still never reads the keychain or holds a key (Principle 11).
-- **Why a vault is locked.** The holder keeps the last reason (auto-lock, locked by hand or
-  on sleep, never unlocked since start, Keychain access denied) and `vault status` reports it
-  (text and `--json`).
-- **Alerts** (63). A `Notifier` port in the application layer, one adapter: `ntfy` (libcurl,
-  `POST` to `<server>/<topic>`, the network timeout of Principle 8, never retried in a
-  loop). The use case sends exactly two kinds, both content-free: *an agent is waiting for
-  your approval*, *Flint is locked and an agent is waiting*. Sent once per request, only
-  when the setting is on, never for a request the person is already looking at (the window
-  is focused) where that can be known. The topic is random (libsodium), per machine, shown
-  with a QR and a link; *Send test* publishes a fixed sample. A failure to publish is shown
-  in Settings and never blocks or changes the approval.
-- **The activity log** records an approval that ended in a timeout after an alert was sent
-  (an appended migration of the activity file if a column is needed), so the person can see
-  how many were missed away from the desk.
+- **The window's setup** (`drivers/gui`). At start the app calls `set_autofill(false)`
+  always, and `set_devtools(true)` with `set_context_menu(true)` only when `FLINT_DEVTOOLS=1`
+  (a debug build, `cfire run`, has both already). Before the window opens on Windows, it
+  removes the autofill data WebView2 already wrote in Flint's profile folder, once, recorded
+  in `ui-state.json` (the exact files settled at 64's plan from the VM).
+- **The field menu** (`ui/`). One handler for `contextmenu`: inside an `input` or a
+  `textarea` it opens Flint's context-menu component with Cut, Copy, Paste and Select all
+  (disabled where they do nothing: Cut and Copy with no selection, Cut and Paste in a
+  read-only field); elsewhere it does nothing, and the terminal, the tabs and the lists
+  keep their own menus. Paste reads the clipboard through the core, as the terminal's
+  paste does, never through a browser permission.
+- **The browser's keys.** The page cancels the engine's reload, print and save shortcuts
+  (F5, Ctrl/⌘+R, Ctrl/⌘+P, Ctrl/⌘+S) where nothing in Flint uses them. If WebView2 acts
+  on them before the page, 64 files a CF-NNN for `AreBrowserAcceleratorKeysEnabled`.
+- **Is there a tray?** (Linux, 65). A function in `adapters/uievents` answers whether an X11
+  tray manager owns `_NET_SYSTEM_TRAY_S0` on the window's display, and *no* on Wayland.
+  macOS and Windows always have one. With none, `window:close_requested` does not lock and
+  hide: the first time the page asks *Keep Flint running in the background? It serves the
+  flint command and your grants* (Quit / Keep running), and the answer is a setting of this
+  machine (Settings → General) that later closes follow. Kept running, a second launch of
+  Flint shows the window, as today.
+- **The QR's phone** (65). Settings → Notifications gets an iPhone / Android choice beside
+  the QR, kept per machine: iPhone shows `https://<server>/<topic>` with the "subscribe
+  with +" step, Android `ntfy://<host>/<topic>?display=Flint` with no step.
+- **Who holds the folder** (Windows, 65). When `flint update-apply` gives up on the rename,
+  it asks the Restart Manager (`RmStartSession`, `RmRegisterResources` with the files in the
+  folder, `RmGetList`) and names each program and pid in its error; the toast shows it. Any
+  failure of that query keeps today's message.
 
-Contracts (v14's stand, plus):
-- **An alert carries no content:** no host, user, command, caller, vault name or count.
-- **An alert never approves anything;** approving still happens at the machine.
-- **One wait value** governs every approval and the locked-vault wait.
+Contracts (v15's, plus):
+- **A release build opens no inspector** unless `FLINT_DEVTOOLS=1` is set in its
+  environment.
+- **The webview stores nothing typed into Flint's fields** (autofill and password autosave
+  off on every OS).
 
 ## Principles
 
 Checkable rules. Every milestone is checked against them before it is closed. Rules marked
-**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v14's, with
-8 extended and 19 added (D-134).
+**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v15's, with
+20 added (D-138).
 
 1. The domain and application layers import no adapter and no I/O module (`ext:webui`,
    `ext:db/sqlite`, sockets, HTTP, keychain, files).
@@ -191,27 +203,27 @@ Checkable rules. Every milestone is checked against them before it is closed. Ru
 19. **(owner review)** Nothing leaves the machine to tell a person something unless that
     person turned it on, and what leaves carries no content: an alert names no host, user,
     command, caller, vault or count, and no alert can approve, deny or unlock anything.
+20. The webview is never a browser in a release: no inspector, no engine menu and no
+    autofill unless `FLINT_DEVTOOLS=1` is set (autofill stays off even then), and nothing
+    in the page reloads, prints or saves it.
 
 ## Milestones
 
 Each milestone is built **whole** with `lean-build` and verified by the agent. Owner checks
 happen only where a human is required (see `CLAUDE.md`). Progress is recorded in
-`docs/build-log.md`, not here. Numbering continues from v14.
+`docs/build-log.md`, not here. Numbering continues from v15.
 
 | # | Milestone | Delivers |
 |---|---|---|
-| 61 | **Flint waits for you** | `Settings.approval_wait` (2, 5, 10, 30 min; 2 by default) for every approval window, chosen in Settings → Access with a note at 30 that the agent must be able to wait that long; the deadline sent to the CLI in a `wait` frame, the CLI reading past its socket timeout while frames come; **a locked vault waits for the unlock** within the same wait and then goes on to its approval (D-042 revisited; `locked` only when nobody unlocks in time or Flint cannot start); `flint vault status` with the reason a vault is locked (text and `--json`). Verified: `cfire test` of the wait's deadline and of the locked-vault path (unlocked in time, not in time, the setting's four values with `FLINT_APPROVAL_WAIT_MS` shortening them); cli-e2e of a command that waits through an unlock; gui-e2e of the setting; docs (*AI agents*: exit codes 5, 15 and 16 as they now behave, and how an agent waits past its own tool's limit, such as running `flint exec` in the background; *Access*; the CLI reference; the CLI demo) |
-| 62 | **Polish** | Spelling correction and autocorrect off in every search and name field (one shared input or a pass over them); the palette's search by whole words (the rule agreed in the roadmap row: every word whole and exact in alias, label, hostname, tags or folder, each from any field); one diagnosis pass of `cfire test src/application` spinning on macOS (rule 9: under a pty to see the last test; fixed, rewritten, or closed if it no longer happens). Verified: the fuzzy module's tests with the roadmap's examples (`pinf`, `code`); gui-e2e of the palette; docs where the palette's search is described |
-| 63 | **Alerts on your phone (ntfy)** | Settings → **Notifications** (design to come): the approval wait moves here with its explanation; **ntfy**, off by default, server (ntfy.sh by default) and a random topic, a QR and a link to subscribe, *Send test*, the last publish's error; turning it on recommends 5 minutes or more. The `Notifier` port and its ntfy adapter (libcurl, timeout, no retry loop); the two content-free alerts, *an agent is waiting for your approval* and *Flint is locked and an agent is waiting* (higher priority), once per request; the activity log marks an approval that timed out after an alert. Verified: `cfire test` of the use case with a fake notifier (when it sends, which kind, never content, never twice, nothing when off) and of the adapter against a local HTTP stub; gui-e2e of the section; the owner's phone receives both alerts; docs (*Notifications*, *AI agents*, the security model's line on what leaves the machine), the landing if it earns a place |
+| 64 | **A release is not a browser** | `set_autofill(false)` always; `FLINT_DEVTOOLS=1` turns the inspector and the engine's menu on in a release; Flint's own field menu (Cut, Copy, Paste, Select all, disabled where they do nothing, Paste through the core) in every `input` and `textarea`, nothing elsewhere; the reload, print and save keys cancelled (a CF-NNN if WebView2 ignores the page); `autoComplete="off"` in the shared `plainText` props; on Windows, WebView2's stored autofill data removed once before the window opens; CF-121 and CF-122 marked resolved at `v0.12.2`. Verified: vitest of the field menu's items and of the keys; gui-e2e of right-click in a field and outside one; a release build on the Mac, the Windows VM and Docker Linux with no inspector, and with it under `FLINT_DEVTOOLS=1`; on the VM, no autofill offer in the host editor after typing a host twice, and the old data gone; docs (desktop app: the field menu, build from source: `FLINT_DEVTOOLS`, the security model's line on the webview) |
+| 65 | **Close, alerts and updates** | The Linux tray check (X11 `_NET_SYSTEM_TRAY_S0`, none on Wayland) in `adapters/uievents`; with no tray, ✕ asks once *Keep Flint running in the background?* and the answer is a setting in Settings → General that later closes follow (Quit, or hide as today with a second launch showing the window); the QR's iPhone / Android choice (Android `ntfy://<host>/<topic>?display=Flint`, iPhone the `https` link and the + step); on Windows, `update-apply` naming the programs and pids that hold the folder (`RmGetList`) in its error and the toast. Verified: `cfire test` of the close decision (tray or none, each answer) and of the update error's text with a fake holder list; vitest of the QR's two links; gui-e2e of the close question and the setting; on Zorin, ✕ with no tray asks, then quits or hides as answered; on the VM, a file held open in the folder (a PowerShell in it) named by the Relaunch; the owner scans the Android QR on a real phone if one is at hand; docs (desktop app: closing the window, *Alerts on your phone*, updating) |
 
 ## Open questions
 
-None open at the start. Settled with the owner on 2026-11-22 (D-134):
+None open at the start. Settled with the owner on 2026-11-23 (D-138):
 
-- **The wait** is one value, 2, 5, 10 or 30 minutes, for every approval window and for a
-  locked vault.
-- **ntfy** is the first provider, behind a port; others are adapters later.
-- **The QR** is drawn in the frontend.
-- **Telegram** was considered and set aside (it reads what it relays, and approving through
-  it would move the approval off the machine).
-- **Signing and installers** are v16.
+- **v16 is two milestones**, 64 then 65; the Restart Manager is in (65).
+- **The tray check** is the X11 tray selection, not the D-Bus StatusNotifierWatcher.
+- **The field menu** offers Cut, Copy, Paste and Select all; right-click elsewhere does
+  nothing in a release.
+- **Then:** v17 the app in English and Spanish (D-084), v18 signing and installers.
