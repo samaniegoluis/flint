@@ -1,0 +1,39 @@
+package uievents
+
+import "core:fs"
+import "core:os"
+import "core:time"
+
+fn webview_test_dir() -> str {
+    mut base := os.getenv("TMPDIR")
+    if base.len() == 0 {
+        base = os.getenv("TEMP")
+    }
+    if base.len() == 0 {
+        base = "/tmp"
+    }
+    return "{base}/flint-webview-data-{time.now_ms()}"
+}
+
+test "the webview's autofill files go, the rest of the profile stays" {
+    dir := webview_test_dir()
+    try fs.mkdir_all(dir)
+    defer { fs.remove(dir) or {} }
+    for name in ["Web Data", "Web Data-journal", "Login Data", "Login Data For Account", "Cookies", "Preferences"] {
+        try fs.write_text(dir + "/" + name, "x")
+    }
+    mut w := OsWebviewData{ profile: dir }
+    assert_eq(try w.webview_autofill_clear(), i64(4))
+    assert(!fs.exists(dir + "/Web Data"))
+    assert(!fs.exists(dir + "/Login Data For Account"))
+    assert(fs.exists(dir + "/Cookies"))
+    assert(fs.exists(dir + "/Preferences"))
+    assert_eq(try w.webview_autofill_clear(), i64(0))
+}
+
+test "no profile folder removes nothing" {
+    mut empty := OsWebviewData{ profile: "" }
+    assert_eq(try empty.webview_autofill_clear(), i64(0))
+    mut missing := OsWebviewData{ profile: "/nonexistent/flint/profile" }
+    assert_eq(try missing.webview_autofill_clear(), i64(0))
+}

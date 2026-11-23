@@ -1,0 +1,30 @@
+package application
+
+import "../domain"
+
+test "the webview's stored autofill is cleared once per machine" {
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut web := FakeWebviewData{ files: 3, calls: 0, broken: false }
+    assert_eq(try clear_webview_autofill_once(mut settings, mut web), i64(3))
+    assert(settings.saved.webview_cleared)
+    // A later start leaves the profile alone.
+    web.files = 2
+    assert_eq(try clear_webview_autofill_once(mut settings, mut web), i64(0))
+    assert_eq(web.calls, i64(1))
+    // The page cannot reset the record.
+    mut page := default_settings()
+    page.theme = "dark"
+    saved := try save_settings(mut settings, page)
+    assert(saved.webview_cleared)
+}
+
+test "a profile that cannot be cleared is tried again at the next start" {
+    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut web := FakeWebviewData{ files: 3, calls: 0, broken: true }
+    mut failed := 0
+    clear_webview_autofill_once(mut settings, mut web) or { failed += 1 }
+    assert_eq(failed, 1)
+    assert(!settings.saved.webview_cleared)
+    web.broken = false
+    assert_eq(try clear_webview_autofill_once(mut settings, mut web), i64(3))
+}

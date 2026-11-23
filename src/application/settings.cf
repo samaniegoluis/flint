@@ -18,6 +18,7 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     fixed.reopen_last_vault = s.reopen_last_vault
     fixed.term_cursor_blink = s.term_cursor_blink
     fixed.keys_cleared = s.keys_cleared
+    fixed.webview_cleared = s.webview_cleared
     fixed.cli_offer_shown = s.cli_offer_shown
     fixed.update_check = s.update_check
     fixed.update_toast_version = s.update_toast_version
@@ -108,7 +109,7 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     return fixed
 }
 
-// `keys_cleared`, `cli_offer_shown`, `update_toast_version` and `last_seen_version`
+// `keys_cleared`, `webview_cleared`, `cli_offer_shown`, `update_toast_version` and `last_seen_version`
 // are the app's own records, not preferences:
 // the stored values are kept whatever the page sends.
 fn save_settings[T: SettingsStore](mut store: T, s: Settings) -> Settings! {
@@ -116,6 +117,7 @@ fn save_settings[T: SettingsStore](mut store: T, s: Settings) -> Settings! {
     mut saved := s
     stored := try load_settings(store)
     saved.keys_cleared = stored.keys_cleared
+    saved.webview_cleared = stored.webview_cleared
     saved.cli_offer_shown = stored.cli_offer_shown
     saved.update_toast_version = stored.update_toast_version
     saved.last_seen_version = stored.last_seen_version
@@ -135,6 +137,21 @@ fn forget_cached_keys_once[T: SettingsStore, S: VaultStore, K: Keychain, R: Rece
     }
     n := try forget_cached_keys(store, keychain, recents)
     s.keys_cleared = true
+    try settings.settings_save(s)
+    return n
+}
+
+// Removes what the webview stored from the page's fields (milestone 64, Principle 20)
+// the first time a Flint that turns autofill off starts on this machine, and records
+// that it did. Returns how many files it removed (0 when it had already run). A file it
+// cannot remove leaves it for the next start.
+fn clear_webview_autofill_once[T: SettingsStore, W: WebviewData](mut settings: T, mut webview: W) -> i64! {
+    mut s := try load_settings(settings)
+    if s.webview_cleared {
+        return 0
+    }
+    n := try webview.webview_autofill_clear()
+    s.webview_cleared = true
     try settings.settings_save(s)
     return n
 }

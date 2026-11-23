@@ -77,8 +77,10 @@ fn main() {
         os.exit(3)
     }
 
+    clear_webview_autofill(flint_config_dir())
     mut app := make(webui.App, "Flint", 1280, 800)
     defer app.close()
+    setup_webview(mut app)
     app.set_min_size(900, 600)
     if !fs.exists(ui_dir + "/index.html") {
         write_stderr("flint-gui: no page at {ui_dir}/index.html; build it with scripts/build-gui.sh\n")

@@ -313,6 +313,13 @@ type Presence interface {
 // The desktop app's layout state (adapters/config, ui-state.json, D-030).
 // `ui_state_load` returns the defaults when nothing has been saved yet or the file
 // is damaged; writes are atomic.
+// The webview's own profile on disk (milestone 64): removes what its autofill and
+// password autosave stored, outside the vault. Returns how many files went; a
+// webview with no such store (WKWebView, WebKitGTK) removes none.
+type WebviewData interface {
+    mut webview_autofill_clear() -> i64!
+}
+
 type UiStateStore interface {
     ui_state_load() -> UiState!
     mut ui_state_save(s: UiState) -> void!

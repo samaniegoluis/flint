@@ -9,6 +9,8 @@ package main
 import "ext:webui"
 import "core:json"
 import "core:time"
+import "core:os"
+import "../../adapters/config"
 import "../../adapters/crypto"
 import "../../adapters/ipc"
 import "../../adapters/process"
@@ -41,6 +43,32 @@ fn install_tray(mut app: webui.App, ui_dir: str) {
     app.add_tray_item("-", "")
     app.add_tray_item("Quit Flint", TRAY_QUIT)
     app.set_hide_on_close(true)
+}
+
+// The webview is never a browser in a release (milestone 64, Principle 20). A release
+// build has no inspector and no engine menu (cfire `v0.12.2`); FLINT_DEVTOOLS=1 brings
+// both back to diagnose one. Autofill and password autosave are off in every build.
+fn setup_webview(mut app: webui.App) {
+    app.set_autofill(false)
+    if devtools_requested(os.getenv("FLINT_DEVTOOLS")) {
+        app.set_devtools(true)
+        app.set_context_menu(true)
+        write_stderr("flint-gui: FLINT_DEVTOOLS is set: the web inspector and the browser menu are on\n")
+    }
+}
+
+// What WebView2 stored from the page's fields before milestone 64 goes, once per
+// machine, before the window opens and holds its profile (Windows only).
+fn clear_webview_autofill(config_dir: str) {
+    mut settings := new_json_settings_store(config_dir)
+    mut web := new_os_webview_data()
+    n := clear_webview_autofill_once(mut settings, mut web) or err {
+        write_stderr("flint-gui: the webview's stored form values were left in place: {err.message()}\n")
+        return
+    }
+    if n > 0 {
+        write_stderr("flint-gui: removed {n} files of form values and passwords the webview had stored\n")
+    }
 }
 
 // The window was closed to the tray: lock it if it shows a vault.

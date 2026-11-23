@@ -131,6 +131,20 @@ password instead. A `.deb` or `.rpm` installs it; for a build from source:
 sudo cp packaging/linux/dev.flint.policy /usr/share/polkit-1/actions/
 ```
 
+#### The web inspector
+
+`cfire build` makes a release build: its window has no web inspector and no browser
+right-click menu (a text field gets Flint's own *Cut*, *Copy*, *Paste* and *Select all*).
+To diagnose the page in a build, start it with `FLINT_DEVTOOLS=1`:
+
+```sh
+FLINT_DEVTOOLS=1 open build/gui/Flint.app   # macOS: right-click → Inspect Element
+FLINT_DEVTOOLS=1 ./build/gui/Flint          # Linux, and Flint.exe on Windows
+```
+
+Only for diagnosis: with a vault unlocked, the inspector can read whatever the page
+shows. Form autofill stays off either way.
+
 ## 4. Run the tests
 
 ```sh

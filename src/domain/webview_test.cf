@@ -1,0 +1,24 @@
+package domain
+
+test "FLINT_DEVTOOLS turns the inspector on only when asked" {
+    assert(devtools_requested("1"))
+    assert(devtools_requested(" TRUE "))
+    assert(devtools_requested("yes"))
+    assert(devtools_requested("on"))
+    assert(!devtools_requested(""))
+    assert(!devtools_requested("0"))
+    assert(!devtools_requested("false"))
+    assert(!devtools_requested("off"))
+}
+
+test "only autofill and saved-password files of the profile are picked" {
+    assert(webview_autofill_file("Web Data"))
+    assert(webview_autofill_file("Web Data-journal"))
+    assert(webview_autofill_file("Login Data"))
+    assert(webview_autofill_file("Login Data-journal"))
+    assert(webview_autofill_file("Login Data For Account"))
+    assert(!webview_autofill_file("Cookies"))
+    assert(!webview_autofill_file("Preferences"))
+    assert(!webview_autofill_file("Local Storage"))
+    assert(!webview_autofill_file("History"))
+}

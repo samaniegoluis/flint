@@ -23,6 +23,10 @@ type Settings struct {
     // Milestone 14: the keys every earlier Flint cached on each unlock were removed
     // from this machine's keychain (D-048). Set once by the app, never by the page.
     keys_cleared:       bool `json:"keys_cleared" default:"false"`
+    // Milestone 64: what WebView2 had stored from the page's fields (autofill,
+    // saved passwords) was removed from this machine. Set once by the app, never by
+    // the page.
+    webview_cleared:    bool `json:"webview_cleared" default:"false"`
     // Milestone 25: the largest image or file a paste into the terminal uploads, in
     // MB (PASTE_LIMITS_MB). Older files read the default.
     paste_limit_mb:     i64  `json:"paste_limit_mb" default:"20"`
@@ -107,7 +111,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false, update_check: true, update_toast_version: "", last_seen_version: "", server_stats: true, server_stats_colour: true, notify_grants: true, sudo_periods: false, approval_wait: APPROVAL_WAIT_DEFAULT, ntfy_on: false, ntfy_server: NTFY_SERVER_DEFAULT, ntfy_topic: "" }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, webview_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false, update_check: true, update_toast_version: "", last_seen_version: "", server_stats: true, server_stats_colour: true, notify_grants: true, sudo_periods: false, approval_wait: APPROVAL_WAIT_DEFAULT, ntfy_on: false, ntfy_server: NTFY_SERVER_DEFAULT, ntfy_topic: "" }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {

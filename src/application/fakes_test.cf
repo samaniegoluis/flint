@@ -1285,3 +1285,20 @@ fn (self: FakeLinks) links_save(list: []RemoteLink) -> void! {
     mut own := list
     try fs.write_text(self.path, json.stringify(own))
 }
+
+// The webview's profile (milestone 64): how many files a clear removes, or a failure.
+type FakeWebviewData struct {
+    files:  i64
+    calls:  i64
+    broken: bool
+}
+
+fn (mut self: FakeWebviewData) webview_autofill_clear() -> i64! {
+    self.calls += 1
+    if self.broken {
+        return error(coded(ERR_IO, "the profile is in use"))
+    }
+    n := self.files
+    self.files = 0
+    return n
+}

@@ -1,0 +1,42 @@
+package uievents
+
+// The webview's own profile on disk (milestone 64, the WebviewData port). Only
+// WebView2 keeps an autofill store: cfire puts its profile in
+// `%LOCALAPPDATA%\<exe stem>\WebView2` (`wv2_user_data_dir`, `windows_webview2.hpp`),
+// and the desktop app's executable is `Flint`. WKWebView and WebKitGTK have none, and
+// no LOCALAPPDATA, so this removes nothing there.
+
+import "core:fs"
+import "core:os"
+import "../../domain"
+
+type OsWebviewData struct {
+    // The profile's `Default` folder; "" where the webview keeps no autofill.
+    profile: str
+}
+
+fn new_os_webview_data() -> OsWebviewData {
+    base := os.getenv("LOCALAPPDATA")
+    if base.len() == 0 {
+        return OsWebviewData{ profile: "" }
+    }
+    return OsWebviewData{ profile: base + "/Flint/WebView2/EBWebView/Default" }
+}
+
+// Removes `Web Data` and `Login Data` with their journals before the window opens,
+// so nothing holds them. A missing profile (a first start) removes none.
+fn (mut self: OsWebviewData) webview_autofill_clear() -> i64! {
+    if self.profile.len() == 0 || !fs.is_dir(self.profile) {
+        return 0
+    }
+    names := try fs.list_dir(self.profile)
+    mut n: i64 = 0
+    for name in names {
+        if !webview_autofill_file(name) {
+            continue
+        }
+        try fs.remove(self.profile + "/" + name)
+        n += 1
+    }
+    return n
+}
