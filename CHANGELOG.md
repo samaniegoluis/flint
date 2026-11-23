@@ -4,6 +4,19 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.32.0 — 2026-11-23
+
+Closing Flint's window on a Linux desktop with no tray now asks once whether to keep Flint running in the background or quit, and remembers the answer (Settings → Access). Settings → Notifications has an iPhone / Android choice: on Android the QR subscribes the ntfy app in one scan. On Windows, an update that cannot replace Flint's folder names the programs holding it.
+
+### Added
+
+- Close with no tray, the QR's phone, and who holds an update's folder
+
+### Fixed
+
+- **update:** Ask the Restart Manager with Windows' own paths
+
+
 ## 0.31.0 — 2026-11-23
 
 Flint's window no longer acts like a browser. A right-click in a text field opens Flint's own Cut, Copy, Paste and Select all, and Paste will not hand back a password Flint copied for you. The web view stops remembering what you type into Flint's fields, and on Windows what it had already stored is removed at the first start. F5 and the browser's reload, print and save keys no longer restart the window over your sessions. To diagnose a release, FLINT_DEVTOOLS=1 brings the web inspector back.
