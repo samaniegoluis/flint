@@ -138,8 +138,8 @@ right-click menu (a text field gets Flint's own *Cut*, *Copy*, *Paste* and *Sele
 To diagnose the page in a build, start it with `FLINT_DEVTOOLS=1`:
 
 ```sh
-FLINT_DEVTOOLS=1 open build/gui/Flint.app   # macOS: right-click → Inspect Element
-FLINT_DEVTOOLS=1 ./build/gui/Flint          # Linux, and Flint.exe on Windows
+FLINT_DEVTOOLS=1 build/gui/Flint.app/Contents/MacOS/Flint   # macOS: right-click → Inspect Element
+FLINT_DEVTOOLS=1 ./build/gui/Flint                          # Linux, and Flint.exe on Windows
 ```
 
 Only for diagnosis: with a vault unlocked, the inspector can read whatever the page
