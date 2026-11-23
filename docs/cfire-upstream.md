@@ -3325,6 +3325,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `#pragma GCC diagnostic ignored "-Wdeprecated-declarations"` (tagged CF-184), so clang
   writes nothing to stderr; every header FlintGui imports was checked to write nothing.
   Any new header that draws a warning brings the hang back until cfire is fixed.
+  **Confirmed on the runner:** v0.29.0's release (run 45174579362) packaged macOS in
+  15 min 7 s, the first macOS package built there since v0.26.0.
 - **Fix proposed (a patch against v0.12.2 in a worktree of cfire's clone, `cfire-cf184`):**
   (1) clang's stderr to a file in the AST's private temp dir (`run_command_capture` gains
   `merge_stderr = true`; `inspect_header` passes false and reads the file back for its
