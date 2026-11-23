@@ -232,6 +232,9 @@ test "the programs that hold a file in the folder are named on Windows, nobody e
         }
         procs.proc_sleep(100)
     }
+    if seen.len() == 0 {
+        write_stderr("diag: holders: nobody; powershell {pid} alive {procs.proc_alive(pid)}; {holders_diag()}\n")
+    }
     assert_eq(seen.len(), 1)
     assert_eq(seen[0].pid, pid)
     assert(seen[0].name.len() > 0)

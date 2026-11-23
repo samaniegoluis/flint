@@ -174,6 +174,16 @@ fn (self: OsUpdateProcesses) proc_holders(dir: str) -> []FolderHolder {
     return parse_folder_holders(lines)
 }
 
+// Why the last proc_holders named nobody (Windows; for a test's diagnosis).
+fn holders_diag() -> str {
+    mut d := ""
+    // CFIRE-UPSTREAM: CF-190
+    cpp {
+        d = flint_update::upd_holders_diag();
+    }
+    return d
+}
+
 // Arguments go one by one, never through a shell.
 fn (mut self: OsUpdateProcesses) proc_spawn(exe: str, args: []str, log: str) -> i64! {
     mut packed := ""

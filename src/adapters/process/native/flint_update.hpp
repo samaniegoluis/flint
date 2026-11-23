@@ -394,34 +394,48 @@ inline bool upd_set_cwd(const std::string& dir) {
 // Windows asks the Restart Manager about every file in the folder (at most 4096); any
 // failure, and every other OS, answers none, and the swap's error stays as it was.
 #if defined(_WIN32)
+// Why the last query named nobody, for a test's diagnosis: the step and its code.
+inline std::string& upd_holders_diag() { static thread_local std::string d; return d; }
+
 inline std::string upd_holders(const std::string& dir) {
+    auto& diag = upd_holders_diag();
+    diag.clear();
     std::vector<std::wstring> files;
     std::error_code ec;
-    std::filesystem::recursive_directory_iterator it(std::filesystem::path(upd_widen(dir)),
-        std::filesystem::directory_options::skip_permission_denied, ec);
+    // The Restart Manager matches full paths as Windows writes them: backslashes.
+    std::filesystem::path root = std::filesystem::absolute(std::filesystem::path(upd_widen(dir)), ec);
+    if (ec) { diag = "absolute: " + ec.message(); return ""; }
+    root.make_preferred();
+    std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec);
     for (; !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
-        if (it->is_regular_file(ec)) files.push_back(it->path().wstring());
+        if (it->is_regular_file(ec)) files.push_back(std::filesystem::path(it->path()).make_preferred().wstring());
         if (files.size() >= 4096) break;
     }
-    if (files.empty()) return "";
+    if (files.empty()) { diag = "no files" + (ec ? ": " + ec.message() : std::string()); return ""; }
     std::vector<LPCWSTR> names;
     for (const auto& f : files) names.push_back(f.c_str());
     DWORD session = 0;
     WCHAR key[CCH_RM_SESSION_KEY + 1] = {};
-    if (::RmStartSession(&session, 0, key) != ERROR_SUCCESS) return "";
+    DWORD r = ::RmStartSession(&session, 0, key);
+    if (r != ERROR_SUCCESS) { diag = "RmStartSession " + std::to_string(r); return ""; }
     std::string out;
-    if (::RmRegisterResources(session, static_cast<UINT>(names.size()), names.data(), 0, nullptr, 0, nullptr) == ERROR_SUCCESS) {
+    r = ::RmRegisterResources(session, static_cast<UINT>(names.size()), names.data(), 0, nullptr, 0, nullptr);
+    if (r != ERROR_SUCCESS) {
+        diag = "RmRegisterResources " + std::to_string(r);
+    } else {
         UINT need = 0;
         UINT have = 0;
         DWORD reasons = 0;
         std::vector<RM_PROCESS_INFO> info;
-        DWORD r = ERROR_MORE_DATA;
+        r = ERROR_MORE_DATA;
         for (int tries = 0; r == ERROR_MORE_DATA && tries < 3; ++tries) {
             info.resize(need + 8);
             have = static_cast<UINT>(info.size());
             r = ::RmGetList(session, &need, &have, info.data(), &reasons);
         }
-        if (r == ERROR_SUCCESS) {
+        if (r != ERROR_SUCCESS) {
+            diag = "RmGetList " + std::to_string(r);
+        } else {
             DWORD self = ::GetCurrentProcessId();
             for (UINT i = 0; i < have; ++i) {
                 DWORD pid = info[i].Process.dwProcessId;
@@ -430,6 +444,7 @@ inline std::string upd_holders(const std::string& dir) {
                 for (auto& c : name) if (c == '\t' || c == '\n' || c == '\r') c = ' ';
                 out += std::to_string(pid) + "\t" + name + "\n";
             }
+            diag = "RmGetList " + std::to_string(have) + " of " + std::to_string(files.size()) + " files, first " + upd_narrow(files[0]);
         }
     }
     ::RmEndSession(session);
@@ -437,6 +452,7 @@ inline std::string upd_holders(const std::string& dir) {
 }
 #else
 inline std::string upd_holders(const std::string&) { return ""; }
+inline std::string& upd_holders_diag() { static thread_local std::string d; return d; }
 #endif
 
 }  // namespace flint_update
