@@ -436,10 +436,9 @@ inline std::string upd_holders(const std::string& dir) {
         if (r != ERROR_SUCCESS) {
             diag = "RmGetList " + std::to_string(r);
         } else {
-            DWORD self = ::GetCurrentProcessId();
             for (UINT i = 0; i < have; ++i) {
                 DWORD pid = info[i].Process.dwProcessId;
-                if (pid == 0 || pid == self) continue;
+                if (pid == 0) continue;
                 std::string name = upd_narrow(info[i].strAppName);
                 for (auto& c : name) if (c == '\t' || c == '\n' || c == '\r') c = ' ';
                 out += std::to_string(pid) + "\t" + name + "\n";

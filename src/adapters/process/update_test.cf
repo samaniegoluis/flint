@@ -207,9 +207,9 @@ test "Windows: arguments reach a detached program as given, and its output the l
 }
 
 // Windows (milestone 65, CF-190): the Restart Manager names who holds a file in the
-// folder: a cmd.exe whose output goes to a file there while a ping runs, by its pid.
-// (A PowerShell started detached, with no console, exits at once: cli-e2e holds the
-// file with one started from its terminal.) Elsewhere nobody is named.
+// folder, by its pid: this test's own process, holding one open as the test above does.
+// (A shell started detached exits at once here, with no console; cli-e2e holds the file
+// with a PowerShell started from its terminal.) Elsewhere nobody is named.
 test "the programs that hold a file in the folder are named on Windows, nobody elsewhere" {
     dir := update_tmp("holders")
     mut files := new_os_update_files()
@@ -222,35 +222,30 @@ test "the programs that hold a file in the folder are named on Windows, nobody e
         return
     }
     assert_eq(procs.proc_holders(dir + "/Flint").len(), 0)
-    held := (dir + "/Flint/held.txt").replace("/", "\\")
-    // No quotes: the temporary path has no space, and cmd reads `\"` as no quote at all.
-    pid := try procs.proc_spawn(system32() + "/cmd.exe", ["/c", "ping -n 8 127.0.0.1 > {held}"], "")
-    mut seen: []FolderHolder = []
-    for _ in 0..100 {
-        seen = procs.proc_holders(dir + "/Flint")
-        if seen.len() > 0 {
-            break
-        }
-        procs.proc_sleep(100)
+    held := dir + "/Flint/ui.txt"
+    mut handle: i64 = 0
+    // CFIRE-UPSTREAM: CF-175
+    cpp {
+        #if defined(_WIN32)
+        HANDLE h = ::CreateFileW(flint_update::upd_widen(held).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        handle = h == INVALID_HANDLE_VALUE ? 0 : reinterpret_cast<std::int64_t>(h);
+        #endif
+    }
+    assert(handle != 0)
+    seen := procs.proc_holders(dir + "/Flint")
+    // CFIRE-UPSTREAM: CF-175
+    cpp {
+        #if defined(_WIN32)
+        ::CloseHandle(reinterpret_cast<HANDLE>(handle));
+        #endif
     }
     if seen.len() == 0 {
-        write_stderr("diag: holders: nobody; cmd {pid} alive {procs.proc_alive(pid)}; {holders_diag()}\n")
+        write_stderr("diag: holders: nobody; {holders_diag()}\n")
     }
-    // cmd.exe, and the ping that inherited its output, hold the file.
-    mut named := false
-    for h in seen {
-        write_stderr("holders: {h.name} (pid {h.pid})\n")
-        if h.pid == pid && h.name.len() > 0 {
-            named = true
-        }
-    }
-    assert(named)
-    // The ping ends by itself in seconds and lets go, so the folder can be removed.
-    procs.proc_stop(pid)
-    for _ in 0..150 {
-        if procs.proc_holders(dir + "/Flint").len() == 0 {
-            break
-        }
-        procs.proc_sleep(100)
-    }
+    assert_eq(seen.len(), 1)
+    assert_eq(seen[0].pid, current_pid())
+    assert(seen[0].name.len() > 0)
+    write_stderr("holders: {seen[0].name} (pid {seen[0].pid})\n")
+    assert_eq(procs.proc_holders(dir + "/Flint").len(), 0)
 }
