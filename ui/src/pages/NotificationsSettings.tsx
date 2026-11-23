@@ -171,7 +171,7 @@ function AlertsSetup() {
               <span className="mono nt-url" data-ntfy-url>{qr ? url.replace(/^https?:\/\//, '') : '—'}</span>
               <ol className="nt-steps">
                 <li>Install <strong>ntfy</strong> from the App Store or Google Play.</li>
-                <li>Scan the code with the phone, or open the link on it.</li>
+                <li>In ntfy, tap <strong>+</strong> and subscribe to the topic above. The code opens the topic's web page, which shows alerts too while it is open.</li>
               </ol>
             </div>
           </div>

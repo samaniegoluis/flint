@@ -19,8 +19,10 @@ Alerts are **off** until you turn them on, in **Settings → Notifications → P
 1. Install **ntfy** on your phone (App Store or Google Play).
 2. Turn **Phone alerts** on. Flint makes a random topic for this machine
    (`flint-` and 24 letters and digits) and shows it with a QR code and a link.
-3. Scan the QR with the phone's camera, or open the link there, and subscribe to the
-   topic in ntfy.
+3. In ntfy, tap **+** and subscribe to the topic (Copy puts it on the clipboard; on
+   the default server, the topic is all you type). Scanning the QR with the camera opens
+   the topic's page on the ntfy website, which shows alerts only while it is open: the
+   iOS app does not take a subscription from a link.
 4. **Send test**: the phone gets *Test from Flint*. The line under it says when the test
    went out, or why it did not.
 
