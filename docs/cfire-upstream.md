@@ -3411,3 +3411,22 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `os.chdir(path: str) -> void!` beside `os.cwd()`, and a working-directory
   option on `os.command` (and on any detached spawn, CF-175), so a child need not
   inherit the parent's.
+
+### CF-188 · missing · `confirmed`: WebView2's browser keys (F5, Ctrl+R, Ctrl+P) reload and print a release's page
+- **Seen (milestone 64, the Windows VM, Flint's release build on cfire `v0.12.2`) [ran]:**
+  real key presses (`keybd_event`) into Flint's window right after it came to the front:
+  F5, Ctrl+R and Ctrl+Shift+R each reloaded the page (it loaded four times) and Ctrl+P
+  started printing (`beforeprint`), while the page saw no `keydown` at all (it did not
+  have the keyboard focus yet, CF-186). A reload restarts the UI over open sessions.
+- **Checked in cfire's source:** `apply_webview2_settings` (`windows_webview2.hpp:577`)
+  sets devtools, the default context menu and autofill, never
+  `ICoreWebView2Settings3::put_AreBrowserAcceleratorKeysEnabled`, so the browser's keys
+  stay on in a release.
+- **Impact:** the page can cancel the keys it receives (Flint's guard, milestone 64), but
+  not the ones WebView2 handles without the page: whenever the page lacks the keyboard
+  focus, and in any case WebView2 decides before the page.
+- **Workaround:** none from the app: the main window's controller and its settings are
+  `run()`'s locals (D-137). Flint cancels the keys in the page (`ui/src/lib/browserKeys.ts`).
+- **Ideal:** `put_AreBrowserAcceleratorKeysEnabled(FALSE)` with the devtools default
+  (off in `cfire build`, on in `cfire run`), or an `app.set_browser_keys(bool)`. WebKit
+  has no such keys, so it is Windows only.

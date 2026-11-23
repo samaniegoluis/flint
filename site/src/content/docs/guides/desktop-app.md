@@ -61,6 +61,11 @@ The keys a browser uses to reload, print, save or view the page (<kbd>F5</kbd>,
 it over your sessions. In a terminal they go to the program on the server, as in any
 terminal, and Flint's own shortcuts on them (Reconnect, Go to host) still work.
 
+On Windows the web view can still act on them before Flint sees them, for example right
+after the window comes to the front and before you click in it: a reload there brings
+Flint back to its unlock screen with your sessions closed. Turning the web view's own keys
+off is waiting on cfire, the language Flint is written in.
+
 ### Toasts
 
 Flint tells you what happened in a toast, in the bottom right corner by default (move it in
