@@ -9,6 +9,7 @@ import { Shell } from './shell/Shell';
 import { Logo } from './ui/Icon';
 import { Toasts } from './ui/Toasts';
 import { FieldMenu } from './ui/FieldMenu';
+import { CloseAsk } from './shell/CloseAsk';
 import { sessions } from './sessions/store';
 import { UpdateProvider } from './update/UpdateProvider';
 
@@ -63,6 +64,7 @@ function Root() {
         <Phase />
         <Toasts store={toasts} corner={settings.toast_corner} />
         <FieldMenu />
+        <CloseAsk />
       </UpdateProvider>
     </div>
   );

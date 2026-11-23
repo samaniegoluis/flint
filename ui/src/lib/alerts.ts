@@ -22,6 +22,21 @@ export function ntfyTopicUrl(server: string, topic: string): string {
   return server.replace(/\/+$/, '') + '/' + topic;
 }
 
+export type NtfyPhone = 'iphone' | 'android';
+
+/**
+ * What the QR of Settings → Notifications holds (milestone 65, D-138 (1)). Android's
+ * ntfy app opens `ntfy://<host>/<topic>` and subscribes in one scan (`display` names
+ * the subscription, `secure=false` for a plain http server). The iPhone app takes no
+ * link (ntfy-ios#51), so its code stays the topic's web address and the + step.
+ */
+export function ntfyQrUrl(phone: NtfyPhone, server: string, topic: string): string {
+  const web = ntfyTopicUrl(server, topic);
+  if (!web || phone !== 'android') return web;
+  const plain = web.startsWith('http://');
+  return 'ntfy://' + web.replace(/^https?:\/\//, '') + '?display=Flint' + (plain ? '&secure=false' : '');
+}
+
 function clock(ms: number): string {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;

@@ -9,6 +9,8 @@ export interface AppInfo {
   sqlite: string;
   freerdp: string;
   e2e: boolean;
+  /** Milestone 65: a tray shows Flint's icon (always on macOS and Windows). */
+  tray: boolean;
 }
 
 export interface RecentView {
@@ -237,6 +239,10 @@ export interface Settings {
   ntfy_server: string;
   /** This machine's random topic, made by the app ('' until alerts are first on). */
   ntfy_topic: string;
+  /** Milestone 65: the phone the QR is for ('iphone' by default). */
+  ntfy_phone: 'iphone' | 'android';
+  /** Milestone 65: what ✕ does with no tray: '' asks, 'quit', 'background'. */
+  close_action: '' | 'quit' | 'background';
 }
 
 /** Milestone 63: what the last phone alert did (`alerts:status`, `alerts_status`). */

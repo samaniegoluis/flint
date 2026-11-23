@@ -1,0 +1,18 @@
+package uievents
+
+// Is there a tray that shows Flint's icon? (milestone 65, D-138 (3)), through a native
+// shim (native/flint_tray.hpp, CF-189). macOS and Windows always have one; a Linux
+// desktop has one when an X11 tray manager owns `_NET_SYSTEM_TRAY_S<screen>`, never on
+// Wayland. Asked at each close, so a panel added or removed meanwhile counts.
+
+// CFIRE-UPSTREAM: CF-189, CF-031
+import cpp "flint_tray.hpp"
+
+fn has_system_tray() -> bool {
+    mut on := true
+    // CFIRE-UPSTREAM: CF-189
+    cpp {
+        on = flint_tray::has_tray();
+    }
+    return on
+}

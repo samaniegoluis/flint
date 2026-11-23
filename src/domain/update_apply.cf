@@ -140,6 +140,64 @@ type ApplyOutcome struct {
     kept:    bool `json:"kept"`
 }
 
+// A program holding a file open in the installed folder (milestone 65): what a failed
+// swap names, as the Restart Manager reports it.
+type FolderHolder struct {
+    name: str
+    pid:  i64
+}
+
+// The adapter's "pid\tname" lines; a line that does not parse is left out.
+fn parse_folder_holders(lines: str) -> []FolderHolder {
+    mut out: []FolderHolder = []
+    for line in lines.split("\n") {
+        tab := line.index_of("\t") or {
+            continue
+        }
+        if tab == 0 {
+            continue
+        }
+        if pid := i64.parse(line[0..tab]) {
+            mut name := line[tab + 1..line.len()].trim()
+            if name.len() == 0 {
+                name = "a program"
+            }
+            out.push(FolderHolder{ name: name, pid: pid })
+        }
+    }
+    return out
+}
+
+// FOLDER_HOLDERS_SHOWN programs are named at most; the rest are counted.
+FOLDER_HOLDERS_SHOWN: i64 = 3
+
+// Why a rename failed, in words a person can act on: the programs that hold the
+// folder when Windows could say, else that one does.
+fn held_message(why: str, folder: str, holders: []FolderHolder) -> str {
+    if holders.len() == 0 {
+        return "a program has a file in {path_base(folder)} open, so it could not be replaced (close it and Relaunch again): {why}"
+    }
+    mut names := ""
+    for i, h in holders {
+        if i64(i) >= FOLDER_HOLDERS_SHOWN {
+            break
+        }
+        if i > 0 {
+            names = names + ", "
+        }
+        names = names + "{h.name} (pid {h.pid})"
+    }
+    rest := i64(holders.len()) - FOLDER_HOLDERS_SHOWN
+    if rest > 0 {
+        names = names + " and {rest} more"
+    }
+    mut verb := "it has a file"
+    if holders.len() > 1 {
+        verb = "they have files"
+    }
+    return "close {names} and Relaunch again: {verb} in {path_base(folder)} open, so it could not be replaced"
+}
+
 APPLY_STEP_ARGS: str = "args"
 APPLY_STEP_QUIT: str = "quit"
 APPLY_STEP_CLI: str = "cli"

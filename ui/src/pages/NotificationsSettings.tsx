@@ -9,7 +9,7 @@ import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
 import { plainText } from '../ui/plainText';
 import { qrCode } from '../lib/qr';
-import { alertStatusLine, ntfyServerProblem, ntfyTopicUrl } from '../lib/alerts';
+import { alertStatusLine, ntfyQrUrl, ntfyServerProblem, ntfyTopicUrl } from '../lib/alerts';
 
 /** Settings → Notifications → Approval wait (milestone 61), in minutes. */
 const APPROVAL_WAITS = [2, 5, 10, 30];
@@ -92,7 +92,8 @@ function AlertsSetup() {
   }, []);
   const problem = ntfyServerProblem(server);
   const saved = settings.ntfy_server;
-  const url = ntfyTopicUrl(saved, settings.ntfy_topic);
+  const phone = settings.ntfy_phone === 'android' ? 'android' : 'iphone';
+  const url = ntfyQrUrl(phone, saved, settings.ntfy_topic);
   const qr = useMemo(() => (url && !ntfyServerProblem(saved) ? qrCode(url) : null), [url, saved]);
   const saveServer = () => {
     if (problem || server === saved) return;
@@ -157,6 +158,14 @@ function AlertsSetup() {
         </div>
         <span className="nt-k">Subscribe on your phone</span>
         <div style={{ minWidth: 0 }}>
+          <div className="seg" role="radiogroup" aria-label="Your phone" style={{ marginBottom: 'var(--sp-3)' }} data-ntfy-phone>
+            {(['iphone', 'android'] as const).map((p) => (
+              <button key={p} type="button" role="radio" aria-checked={phone === p} aria-pressed={phone === p} data-phone={p}
+                onClick={() => { if (phone !== p) saveSettings({ ...settings, ntfy_phone: p }).catch((e) => fail(toFlintError(e))); }}>
+                {p === 'iphone' ? 'iPhone' : 'Android'}
+              </button>
+            ))}
+          </div>
           <div className="row nt-sub" style={{ gap: 'var(--sp-4)', alignItems: 'flex-start' }}>
             {qr ? (
               <div className="nt-qr" data-theme="light" data-ntfy-qr>
@@ -168,11 +177,18 @@ function AlertsSetup() {
               <div className="nt-qr nt-qr-empty" aria-label="No code until the server address is valid"><span className="hint" style={{ textAlign: 'center' }}>Fix the server address to get the code</span></div>
             )}
             <div className="col" style={{ gap: 'var(--sp-2)', minWidth: 0 }}>
-              <span className="mono nt-url" data-ntfy-url>{qr ? url.replace(/^https?:\/\//, '') : '—'}</span>
-              <ol className="nt-steps">
-                <li>Install <strong>ntfy</strong> from the App Store or Google Play.</li>
-                <li>In ntfy, tap <strong>+</strong> and subscribe to the topic above. The code opens the topic's web page, which shows alerts too while it is open.</li>
-              </ol>
+              <span className="mono nt-url" data-ntfy-url>{qr ? ntfyTopicUrl(saved, settings.ntfy_topic).replace(/^https?:\/\//, '') : '—'}</span>
+              {phone === 'android' ? (
+                <ol className="nt-steps" data-ntfy-steps="android">
+                  <li>Install <strong>ntfy</strong> from Google Play or F-Droid.</li>
+                  <li>Scan the code with the camera: ntfy opens and subscribes to the topic.</li>
+                </ol>
+              ) : (
+                <ol className="nt-steps" data-ntfy-steps="iphone">
+                  <li>Install <strong>ntfy</strong> from the App Store.</li>
+                  <li>In ntfy, tap <strong>+</strong> and subscribe to the topic above. The code opens the topic's web page, which shows alerts too while it is open.</li>
+                </ol>
+              )}
             </div>
           </div>
         </div>

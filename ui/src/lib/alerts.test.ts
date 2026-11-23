@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alertStatusLine, ntfyServerProblem, ntfyTopicUrl } from './alerts';
+import { alertStatusLine, ntfyQrUrl, ntfyServerProblem, ntfyTopicUrl } from './alerts';
 
 describe('ntfyServerProblem', () => {
   it('takes an http(s) address with a host, as the core does', () => {
@@ -15,6 +15,21 @@ describe('ntfyTopicUrl', () => {
     expect(ntfyTopicUrl('https://ntfy.sh', 'flint-x')).toBe('https://ntfy.sh/flint-x');
     expect(ntfyTopicUrl('https://n.example/base//', 'flint-x')).toBe('https://n.example/base/flint-x');
     expect(ntfyTopicUrl('https://ntfy.sh', '')).toBe('');
+  });
+});
+
+describe('ntfyQrUrl', () => {
+  it("is the web address for an iPhone, whose app takes no link", () => {
+    expect(ntfyQrUrl('iphone', 'https://ntfy.sh', 'flint-x')).toBe('https://ntfy.sh/flint-x');
+  });
+  it("is ntfy:// for Android, named Flint, secure=false only over http", () => {
+    expect(ntfyQrUrl('android', 'https://ntfy.sh', 'flint-x')).toBe('ntfy://ntfy.sh/flint-x?display=Flint');
+    expect(ntfyQrUrl('android', 'https://ntfy.example.com:8443/', 'flint-x')).toBe('ntfy://ntfy.example.com:8443/flint-x?display=Flint');
+    expect(ntfyQrUrl('android', 'http://192.168.1.20:8080', 'flint-x')).toBe('ntfy://192.168.1.20:8080/flint-x?display=Flint&secure=false');
+  });
+  it('is empty with no topic, for either phone', () => {
+    expect(ntfyQrUrl('android', 'https://ntfy.sh', '')).toBe('');
+    expect(ntfyQrUrl('iphone', 'https://ntfy.sh', '')).toBe('');
   });
 });
 

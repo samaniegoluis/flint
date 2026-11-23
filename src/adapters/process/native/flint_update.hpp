@@ -14,6 +14,9 @@
 // only the log handle inherited, OpenProcess/WaitForSingleObject, a Toolhelp snapshot
 // with QueryFullProcessImageNameW, TerminateProcess, MoveFileExW (a folder is only ever
 // renamed, never written over) and a tree removal that clears read-only first.
+// Milestone 65 (CF-190): which programs hold a file open in a folder, asked of the
+// Restart Manager (RmStartSession, RmRegisterResources, RmGetList), so a swap that
+// failed names them. Windows only: elsewhere an open file never stops a rename.
 #pragma once
 #include <cstdint>
 #include <cstdlib>
@@ -44,6 +47,8 @@ extern char** environ;
 #endif
 #include <windows.h>
 #include <tlhelp32.h>
+#include <restartmanager.h>
+#include <filesystem>
 #include <cwchar>
 #endif
 
@@ -383,6 +388,55 @@ inline bool upd_set_cwd(const std::string& dir) {
     return ::SetCurrentDirectoryW(upd_widen(dir).c_str()) != 0;
 }
 
+#endif
+
+// The programs holding a file open inside `dir`, one "pid\tname" line each (CF-190).
+// Windows asks the Restart Manager about every file in the folder (at most 4096); any
+// failure, and every other OS, answers none, and the swap's error stays as it was.
+#if defined(_WIN32)
+inline std::string upd_holders(const std::string& dir) {
+    std::vector<std::wstring> files;
+    std::error_code ec;
+    std::filesystem::recursive_directory_iterator it(std::filesystem::path(upd_widen(dir)),
+        std::filesystem::directory_options::skip_permission_denied, ec);
+    for (; !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+        if (it->is_regular_file(ec)) files.push_back(it->path().wstring());
+        if (files.size() >= 4096) break;
+    }
+    if (files.empty()) return "";
+    std::vector<LPCWSTR> names;
+    for (const auto& f : files) names.push_back(f.c_str());
+    DWORD session = 0;
+    WCHAR key[CCH_RM_SESSION_KEY + 1] = {};
+    if (::RmStartSession(&session, 0, key) != ERROR_SUCCESS) return "";
+    std::string out;
+    if (::RmRegisterResources(session, static_cast<UINT>(names.size()), names.data(), 0, nullptr, 0, nullptr) == ERROR_SUCCESS) {
+        UINT need = 0;
+        UINT have = 0;
+        DWORD reasons = 0;
+        std::vector<RM_PROCESS_INFO> info;
+        DWORD r = ERROR_MORE_DATA;
+        for (int tries = 0; r == ERROR_MORE_DATA && tries < 3; ++tries) {
+            info.resize(need + 8);
+            have = static_cast<UINT>(info.size());
+            r = ::RmGetList(session, &need, &have, info.data(), &reasons);
+        }
+        if (r == ERROR_SUCCESS) {
+            DWORD self = ::GetCurrentProcessId();
+            for (UINT i = 0; i < have; ++i) {
+                DWORD pid = info[i].Process.dwProcessId;
+                if (pid == 0 || pid == self) continue;
+                std::string name = upd_narrow(info[i].strAppName);
+                for (auto& c : name) if (c == '\t' || c == '\n' || c == '\r') c = ' ';
+                out += std::to_string(pid) + "\t" + name + "\n";
+            }
+        }
+    }
+    ::RmEndSession(session);
+    return out;
+}
+#else
+inline std::string upd_holders(const std::string&) { return ""; }
 #endif
 
 }  // namespace flint_update

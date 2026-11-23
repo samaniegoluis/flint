@@ -42,7 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lock_after: '1h', paste_limit_mb: 20, rdp_mac_keys: 'mac', rdp_mac_custom: '', rdp_graphics: 'auto',
   sync_interval: 60, toast_corner: 'bottom-right', update_check: true, server_stats: true, server_stats_colour: true,
   notify_grants: true, sudo_periods: false, approval_wait: 2,
-  ntfy_on: false, ntfy_server: 'https://ntfy.sh', ntfy_topic: '',
+  ntfy_on: false, ntfy_server: 'https://ntfy.sh', ntfy_topic: '', ntfy_phone: 'iphone', close_action: '',
 };
 
 // How often the page tells the core someone is using the window.

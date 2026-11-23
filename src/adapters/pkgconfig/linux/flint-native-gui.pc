@@ -1,8 +1,9 @@
 # CFIRE-UPSTREAM: CF-031
 # The desktop app's own native shims (the clipboard, CF-053) on GTK 3, which WebKitGTK
-# already pulls in. Kept apart from flint-native so the CLI never links GTK.
+# already pulls in, and Xlib for the tray check (CF-189). Kept apart from flint-native
+# so the CLI never links GTK.
 Name: flint-native-gui
 Description: Native shims of Flint's desktop app (Linux)
 Version: 1
-Requires: gtk+-3.0
+Requires: gtk+-3.0 x11
 Cflags: -I${pcfiledir}/../../uievents/native

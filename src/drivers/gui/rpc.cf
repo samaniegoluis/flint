@@ -238,6 +238,9 @@ type AppInfo struct {
     sqlite:    str  `json:"sqlite"`
     freerdp:   str  `json:"freerdp"`
     e2e:       bool `json:"e2e"`
+    // Milestone 65: whether a tray shows Flint's icon, so ✕ hides it there; with none
+    // Settings → Access offers what ✕ does.
+    tray:      bool `json:"tray"`
 }
 
 type Ok struct {
@@ -389,7 +392,7 @@ fn close_current(mut store: LockedVaultStore, mut st: GuiState) {
 // ---- App and window -------------------------------------------------------------------
 
 fn rpc_app_info(e2e: bool) -> str! {
-    return json.stringify(AppInfo{ version: version.FLINT_VERSION, os: os_name(), libssh: libssh_version(), libsodium: sodium_version(), sqlite: sqlcipher_version(), freerdp: freerdp_version(), e2e: e2e })
+    return json.stringify(AppInfo{ version: version.FLINT_VERSION, os: os_name(), libssh: libssh_version(), libsodium: sodium_version(), sqlite: sqlcipher_version(), freerdp: freerdp_version(), e2e: e2e, tray: window_has_tray(e2e) })
 }
 
 fn rpc_window_theme(params: str, mut app: webui.App) -> str! {

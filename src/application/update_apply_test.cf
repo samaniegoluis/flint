@@ -149,10 +149,15 @@ type FakeProcesses struct {
     spawned:    []str
     stopped:    []i64
     child_dies: bool
+    holders:    []FolderHolder
 }
 
 fn fake_procs() -> FakeProcesses {
-    return FakeProcesses{ now: 0, app_pid: 42, quit_after: 2, held_for: 0, polls: 0, spawned: [], stopped: [], child_dies: false }
+    return FakeProcesses{ now: 0, app_pid: 42, quit_after: 2, held_for: 0, polls: 0, spawned: [], stopped: [], child_dies: false, holders: [] }
+}
+
+fn (self: FakeProcesses) proc_holders(dir: str) -> []FolderHolder {
+    return self.holders
 }
 
 fn (self: FakeProcesses) proc_alive(pid: i64) -> bool {
@@ -411,4 +416,17 @@ test "the new folder held open puts the old one back" {
     assert_eq(o.step, APPLY_STEP_SWAP)
     assert_eq(files.log[files.log.len() - 1], "rename /Apps/.flint-update/old/Flint.app -> /Apps/Flint.app")
     assert(files.upd_exists(INSTALLED + "/Contents/MacOS/Flint"))
+}
+
+test "a held folder names the programs the Restart Manager reports" {
+    mut files := staged_files()
+    files.held_path = INSTALLED
+    files.held_renames = 1000000
+    mut procs := fake_procs()
+    procs.holders = [FolderHolder{ name: "Windows PowerShell", pid: 4120 }]
+    o := apply_update(mut files, mut procs, ApplyRequest{ wait_pid: 42, from: "/Apps/.flint-update/new/Flint.app", to: INSTALLED, os: "mac", app_log: "", start_only: false, staging: "" })
+    assert(!o.applied)
+    assert_eq(o.step, APPLY_STEP_SWAP)
+    assert(o.kept)
+    assert_eq(o.message, "close Windows PowerShell (pid 4120) and Relaunch again: it has a file in Flint.app open, so it could not be replaced")
 }

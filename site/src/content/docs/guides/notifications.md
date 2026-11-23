@@ -16,13 +16,17 @@ phone can answer it: you still approve or unlock at the machine.
 
 Alerts are **off** until you turn them on, in **Settings → Notifications → Phone alerts**.
 
-1. Install **ntfy** on your phone (App Store or Google Play).
+1. Install **ntfy** on your phone (App Store, Google Play or F-Droid).
 2. Turn **Phone alerts** on. Flint makes a random topic for this machine
    (`flint-` and 24 letters and digits) and shows it with a QR code and a link.
-3. In ntfy, tap **+** and subscribe to the topic (Copy puts it on the clipboard; on
-   the default server, the topic is all you type). Scanning the QR with the camera opens
-   the topic's page on the ntfy website, which shows alerts only while it is open: the
-   iOS app does not take a subscription from a link.
+3. Pick your phone above the code, **iPhone** or **Android** (kept on this computer):
+   - **Android:** scan the code with the camera. It is an `ntfy://` link: the ntfy app
+     opens and subscribes to the topic, named *Flint*. On a plain `http://` server the
+     link says so (`secure=false`).
+   - **iPhone:** in ntfy, tap **+** and subscribe to the topic (Copy puts it on the
+     clipboard; on the default server, the topic is all you type). Scanning the code
+     opens the topic's page on the ntfy website, which shows alerts only while it is
+     open: the iOS app does not take a subscription from a link yet.
 4. **Send test**: the phone gets *Test from Flint*. The line under it says when the test
    went out, or why it did not.
 

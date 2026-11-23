@@ -119,3 +119,34 @@ test "the approval wait in milliseconds, shortened only by a smaller override" {
     // A stored value that is not a choice reads the default.
     assert_eq(approval_wait_ms(7, 0), 120000)
 }
+
+test "the QR is for an iPhone by default, or an Android" {
+    mut s := default_settings()
+    assert_eq(s.ntfy_phone, "iphone")
+    s.ntfy_phone = "android"
+    assert(settings_valid(s))
+    s.ntfy_phone = "windows-phone"
+    assert(!settings_valid(s))
+}
+
+test "closing the window asks by default; quit and background are kept" {
+    mut s := default_settings()
+    assert_eq(s.close_action, "")
+    for a in ["quit", "background"] {
+        s.close_action = a
+        assert(settings_valid(s))
+    }
+    s.close_action = "minimize"
+    assert(!settings_valid(s))
+}
+
+test "with a tray ✕ always hides; with none the answer decides, or the page asks" {
+    for a in ["", "quit", "background"] {
+        assert_eq(close_decision(true, a), CLOSE_HIDE)
+    }
+    assert_eq(close_decision(false, ""), CLOSE_ASK)
+    assert_eq(close_decision(false, "quit"), CLOSE_QUIT)
+    assert_eq(close_decision(false, "background"), CLOSE_HIDE)
+    // A value no Flint writes reads as no answer.
+    assert_eq(close_decision(false, "minimize"), CLOSE_ASK)
+}

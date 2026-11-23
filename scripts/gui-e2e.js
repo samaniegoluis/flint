@@ -3104,6 +3104,16 @@
         await waitFor(() => q('[data-ntfy-topic]')?.textContent === topic, 'the topic');
         await check(/^flint-[a-z2-7]{24}$/.test(topic), `turning alerts on makes this machine's random topic (${topic})`);
         await check(!!q('[data-ntfy-qr] svg path') && q('[data-ntfy-url]')?.textContent === 'ntfy.sh/' + topic, 'with a QR and the address to subscribe to (27a2)');
+        // Milestone 65: the QR is for an iPhone (the web address and the + step) or an
+        // Android (ntfy://, which subscribes in one scan).
+        const qrLabel = () => q('[data-ntfy-qr] svg')?.getAttribute('aria-label') ?? '';
+        await check(q('[data-phone="iphone"]')?.getAttribute('aria-checked') === 'true' && qrLabel() === `QR code for https://ntfy.sh/${topic}` && !!q('[data-ntfy-steps="iphone"]'), "the QR is the iPhone's by default: the topic's web address and the + step");
+        q('[data-phone="android"]').click();
+        await waitForAsync(async () => ((await window.backend.settings_get({})).ntfy_phone === 'android' ? true : null), 'Android saved');
+        await waitFor(() => qrLabel().startsWith('QR code for ntfy://'), "Android's code");
+        await check(qrLabel() === `QR code for ntfy://ntfy.sh/${topic}?display=Flint` && !!q('[data-ntfy-steps="android"]') && q('[data-ntfy-url]')?.textContent === 'ntfy.sh/' + topic, "Android's QR is ntfy:// with no + step, the address shown the same");
+        q('[data-phone="iphone"]').click();
+        await waitForAsync(async () => ((await window.backend.settings_get({})).ntfy_phone === 'iphone' ? true : null), 'iPhone saved again');
         await check(q('[data-ntfy-preview]')?.textContent.includes('An agent is waiting for your approval') && q('[data-ntfy-preview]')?.textContent.includes('High priority'), "and what the phone shows, the locked one high priority");
         await check(!!q('[data-alerts-wait-tip]'), 'at 2 min it suggests 5 or more');
         q('[data-alerts-use-wait]').click();
@@ -3528,6 +3538,50 @@
       await check(!q('[aria-label="Command palette"]'), 'and the shortcut typed under the lock was not kept for later');
       await runInTerminal('echo after-window-$((3+3))', 'after-window-6');
       await check(true, 'the session that ran behind the window lock still works');
+
+      // Milestone 65 (D-138 (3)): a desktop with no tray asks once what ✕ does.
+      await setStep('✕ with no tray asks once');
+      await window.backend.e2e_set_tray({ tray: false });
+      await window.backend.e2e_close_window({});
+      await waitFor(() => q('[data-close-ask]'), 'the close question', 10000);
+      await check(!q('[data-window-lock]'), 'with no answer the window stays open and asks');
+      document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await waitFor(() => !q('[data-close-ask]'), 'the question to go on Esc', 5000);
+      await check((await window.backend.settings_get({})).close_action === '', 'Esc keeps no answer');
+      await window.backend.e2e_close_window({});
+      await waitFor(() => q('[data-close-ask-keep]'), 'the close question again', 10000);
+      await click('[data-close-ask-keep]', 'Keep running');
+      await waitFor(() => q('[data-window-lock]'), 'the window lock after Keep running', 10000);
+      await check((await window.backend.settings_get({})).close_action === 'background', 'Keep running is kept in the settings');
+      await fill('#wpw', MASTER);
+      await click('button[type="submit"]', 'Open');
+      await waitFor(() => !q('[data-window-lock]'), 'the window to open', 30000);
+      await window.backend.e2e_close_window({});
+      await waitFor(() => q('[data-window-lock]'), 'the window lock with the answer kept', 10000);
+      await check(!q('[data-close-ask]'), 'answered, a later ✕ hides the window without asking');
+      await fill('#wpw', MASTER);
+      await click('button[type="submit"]', 'Open');
+      await waitFor(() => !q('[data-window-lock]'), 'the window to open', 30000);
+      const openAccess = async () => {
+        await click('.rail-btn', 'Settings');
+        await click('.nav-i', 'Access');
+        await waitFor(() => q('[data-sudo-periods]'), 'Settings → Access');
+      };
+      await openAccess();
+      await waitFor(() => q('[data-close-action-row]'), "Access's row for closing the window", 10000);
+      await check(q('[data-close="background"]')?.getAttribute('aria-checked') === 'true', 'Settings shows Keep running');
+      await click('[data-close="quit"]', 'Quit');
+      await waitForAsync(async () => ((await window.backend.settings_get({})).close_action === 'quit' ? true : null), 'Quit saved');
+      await check(hasText('Flint quits'), 'the row says what Quit does');
+      await click('[data-close="ask"]', 'Ask');
+      await waitForAsync(async () => ((await window.backend.settings_get({})).close_action === '' ? true : null), 'Ask saved');
+      await window.backend.e2e_set_tray({ tray: true });
+      await click('.nav-i', 'Vault');
+      await click('.nav-i', 'Access');
+      await waitFor(() => q('[data-sudo-periods]'), 'Settings → Access');
+      await sleep(500);
+      await check(!q('[data-close-action-row]'), 'with a tray the row is not offered');
+      await click('.rail-btn', 'Hosts');
     }
 
     await log(`${passed} checks passed`);

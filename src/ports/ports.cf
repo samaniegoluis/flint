@@ -587,6 +587,9 @@ type UpdateFiles interface {
 type UpdateProcesses interface {
     proc_alive(pid: i64) -> bool
     proc_running_under(dir: str) -> []i64
+    // The programs holding a file open inside `dir` (milestone 65): Windows' Restart
+    // Manager; none elsewhere, and none when it cannot tell.
+    proc_holders(dir: str) -> []FolderHolder
     mut proc_spawn(exe: str, args: []str, log: str) -> i64!
     mut proc_stop(pid: i64)
     mut proc_sleep(ms: i64)

@@ -31,6 +31,12 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
         fixed.approval_wait = s.approval_wait
     }
     fixed.ntfy_on = s.ntfy_on
+    if one_of(s.ntfy_phone, NTFY_PHONES) {
+        fixed.ntfy_phone = s.ntfy_phone
+    }
+    if one_of(s.close_action, CLOSE_ACTIONS) {
+        fixed.close_action = s.close_action
+    }
     mut probe := d
     probe.ntfy_server = s.ntfy_server
     if settings_valid(probe) {
@@ -185,4 +191,11 @@ fn list_mono_fonts[F: FontCatalog](fonts: F) -> []str! {
         }
     }
     return names
+}
+
+// What ✕ does now (milestone 65, D-138 (3)): CLOSE_HIDE, CLOSE_QUIT or CLOSE_ASK, by
+// the tray and the person's answer kept in this machine's settings.
+fn window_close_action[T: SettingsStore](store: T, has_tray: bool) -> str {
+    s := load_settings(store) or default_settings()
+    return close_decision(has_tray, s.close_action)
 }

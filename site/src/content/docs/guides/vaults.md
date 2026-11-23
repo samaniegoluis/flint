@@ -140,8 +140,10 @@ minutes: Flint comes to the front, and you answer once the window is open.
 
 The menu bar icon also has **Lock Vault** (the vault's own lock, which ends every grant)
 and **Quit Flint**. ⌘Q, **Quit Flint** in the command palette and Ctrl+Shift+Q on Linux
-quit too. On a Linux desktop that shows no tray icon (GNOME without the AppIndicator
-extension, some Wayland sessions), launch Flint again to bring its window back.
+quit too. On a Linux desktop that shows no tray icon (GNOME without a tray extension,
+any Wayland session), the first close asks whether to keep Flint running or quit
+([closing the window](/guides/desktop-app/)); kept running, launch Flint again to bring
+its window back.
 
 ## Several vaults
 

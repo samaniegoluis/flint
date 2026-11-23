@@ -65,8 +65,10 @@ choose **Always Allow**. Signed builds, which keep that permission, are planned.
 **Windows:** the whole `Flint` folder is replaced, by renaming it, never by writing over
 a file in use. A program that keeps a file in it open (a terminal whose current folder is
 inside it, an Explorer preview) stops that: Flint tries for ten seconds, then leaves
-everything as it was, opens the old version, keeps the download and names the problem;
-close that program and choose **Relaunch** again. Up to version 0.30.0, Flint itself held
+everything as it was, opens the old version, keeps the download and says which programs
+hold the folder, as Windows' Restart Manager reports them (*close Windows PowerShell (pid
+4120) and Relaunch again*); close them and choose **Relaunch** again. When Windows cannot
+tell, the message says *a program has a file in Flint open*. Up to version 0.30.0, Flint itself held
 its folder this way when it was opened from its Start menu shortcut (or any shortcut
 that starts it in its own folder), so **Relaunch** failed every time with *a program has
 a file in Flint open*. The fix is in the new version's own updater, so from 0.29.0 or

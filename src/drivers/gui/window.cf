@@ -71,6 +71,48 @@ fn clear_webview_autofill(config_dir: str) {
     }
 }
 
+// Is there a tray showing Flint's icon? The headless runs stand in for a desktop with
+// none with FLINT_E2E_NO_TRAY=1 (milestone 65).
+fn window_has_tray(e2e: bool) -> bool {
+    if e2e {
+        return os.getenv("FLINT_E2E_NO_TRAY") != "1"
+    }
+    return has_system_tray()
+}
+
+type E2eTrayReq struct {
+    tray: bool `json:"tray"`
+}
+
+type CloseAsk struct {
+    ask: bool `json:"ask"`
+}
+
+// ✕ (milestone 65, D-138 (3)). With a tray, or kept running by the person's answer,
+// the window hides locked, as since milestone 14. Answered Quit, Flint quits. With no
+// answer yet, the window comes back and the page asks *Keep Flint running in the
+// background?*; its answer is saved and `window_close` comes here again. cfire hid the
+// window already (`set_hide_on_close`), which is what intercepts ✕ at all.
+fn on_window_close(settings_store: JsonSettingsStore, st: GuiState, mut app: webui.App, e2e: bool) {
+    action := window_close_action(settings_store, window_has_tray(e2e))
+    if action == CLOSE_QUIT {
+        write_stderr("flint-gui: window closed with no tray: quit\n")
+        quit_app(mut app)
+        return
+    }
+    if action == CLOSE_ASK {
+        if !e2e {
+            show_window(mut app)
+        }
+        app.emit("window:close_ask", CloseAsk{ ask: true })
+        return
+    }
+    if !e2e && !app.is_window_hidden() {
+        app.hide_window()
+    }
+    lock_window(st, mut app)
+}
+
 // The window was closed to the tray: lock it if it shows a vault.
 fn lock_window(st: GuiState, mut app: webui.App) {
     if !st.unlocked() || st.holder.window_locked() {

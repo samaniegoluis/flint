@@ -22,11 +22,20 @@ password, or opens it without a prompt if you ticked **Remember on this computer
 unlock ([what that means](/guides/vaults/#remember-on-this-computer)). You can turn the
 reopening off in **Settings → Appearance → Window**.
 
-**Closing the window keeps Flint running** in the menu bar (macOS) or the system tray
-(Linux), serving the programs you approved, with the window locked: opening it again
-asks for Touch ID, polkit or the master password
+**Closing the window keeps Flint running** in the menu bar (macOS), the notification
+area (Windows) or the system tray (Linux), serving the programs you approved, with the
+window locked: opening it again asks for Touch ID, polkit or the master password
 ([the window's own lock](/guides/vaults/#the-windows-own-lock)). **Quit Flint** in the
-menu bar icon, ⌘Q or the command palette quits it.
+tray icon, ⌘Q or the command palette quits it.
+
+**On a Linux desktop with no tray** (GNOME without an XEmbed tray extension, which is
+Zorin's and Ubuntu's default, or any Wayland session), a hidden window would have no icon
+to come back from. There, the first ✕ asks **Keep Flint running in the background?**:
+**Keep running** hides and locks the window as above (launch Flint again to show it),
+**Quit** quits. The answer is kept on this computer, and **Settings → Access → When you
+close the window** changes it (**Ask**, **Keep running**, **Quit**); that row only shows
+on a desktop with no tray. Flint looks for a tray at each close: a panel that owns the
+X11 system tray counts.
 
 ## The main window
 

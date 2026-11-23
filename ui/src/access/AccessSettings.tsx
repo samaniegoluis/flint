@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api, on, toFlintError } from '../api/backend';
-import type { ActivityEntry, GrantView, RetentionDays, TokenView } from '../api/types';
+import type { ActivityEntry, GrantView, RetentionDays, Settings, TokenView } from '../api/types';
 import type { Confirm } from '../pages/KeysPage';
 import { useApp } from '../state/app';
 import { resultView } from '../lib/activityResult';
@@ -319,8 +319,47 @@ function ActivitySection({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
   );
 }
 
-export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
+// What ✕ does on a desktop with no tray (milestone 65, D-138 (3)): only offered there;
+// with a tray the window always hides to it.
+const CLOSE_ACTIONS: { id: Settings['close_action']; label: string }[] = [
+  { id: '', label: 'Ask' },
+  { id: 'background', label: 'Keep running' },
+  { id: 'quit', label: 'Quit' },
+];
+
+function CloseWindowRow() {
   const { fail, settings, saveSettings } = useApp();
+  const a = settings.close_action;
+  return (
+    <div className="panel col" style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-2)', marginTop: 'var(--sp-3)' }} data-close-action-row>
+      <div className="row" style={{ gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
+        <span className="col grow" style={{ gap: 2 }}>
+          <span className="strong" style={{ fontSize: 'var(--fs-sm)' }}>When you close the window</span>
+          <span className="hint">{a === 'quit'
+            ? 'Flint quits: the flint command and your grants stop until you open it again.'
+            : a === 'background'
+              ? 'Flint keeps serving the flint command and your grants, with the window locked. Open Flint again to show it.'
+              : 'Flint asks the next time you close the window.'}</span>
+        </span>
+        <div className="seg" role="radiogroup" aria-label="When you close the window" data-close-action>
+          {CLOSE_ACTIONS.map((c) => (
+            <button key={c.id || 'ask'} type="button" role="radio" aria-checked={a === c.id} aria-pressed={a === c.id} data-close={c.id || 'ask'}
+              onClick={() => { if (a !== c.id) saveSettings({ ...settings, close_action: c.id }).catch((e) => fail(toFlintError(e))); }}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <span className="hint">This desktop shows no tray icon for Flint, so there is nothing to bring a hidden window back but opening Flint again.</span>
+    </div>
+  );
+}
+
+export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void }) {
+  const { fail, settings, saveSettings, info } = useApp();
+  // Asked again on each visit: a panel's tray can come or go while Flint runs.
+  const [tray, setTray] = useState(info?.tray ?? true);
+  useEffect(() => { api.appInfo().then((i) => setTray(i.tray)).catch(() => {}); }, []);
   const { state, setState, skew } = useAccessState(true);
   const [now, setNow] = useState(Date.now());
   const grants = state?.grants ?? [];
@@ -345,6 +384,7 @@ export function AccessSettings({ onConfirm }: { onConfirm: (c: Confirm) => void 
           <span className="hint">The default for new grants. A notice names the program and the host, never the command.</span>
         </span>
       </div>
+      {!tray && <CloseWindowRow />}
       <div className="section-h">
         <h2>Active grants</h2>{grants.length > 0 && <span className="badge">{grants.length}</span>}<span className="grow" />
         {grants.length > 1 && <button className="btn btn-danger-ghost btn-sm" data-grants-revoke-all onClick={() => revoke('')}>Revoke all</button>}

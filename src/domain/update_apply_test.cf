@@ -70,3 +70,21 @@ test "what the person reads when an update was not applied" {
     assert(apply_outcome_text(apply_failed(APPLY_STEP_START, ERR_TIMEOUT, "It did not answer in 60 s.", false)).starts_with("The new version did not start"))
     assert(apply_outcome_text(apply_failed(APPLY_STEP_CLI, ERR_CONFLICT, "flint is still running from Flint.app", true)).contains("Relaunch again"))
 }
+
+test "the Restart Manager's lines become holders; a line that does not parse is left out" {
+    h := parse_folder_holders("4120\tWindows PowerShell\nnot a line\n88\t\n\n12x\tbad\n")
+    assert_eq(h.len(), 2)
+    assert_eq(h[0].name, "Windows PowerShell")
+    assert_eq(h[0].pid, 4120)
+    assert_eq(h[1].name, "a program")
+    assert_eq(h[1].pid, 88)
+    assert_eq(parse_folder_holders("").len(), 0)
+}
+
+test "a held folder's message names up to three programs and counts the rest" {
+    assert(held_message("Access is denied.", "C:/Flint", []).starts_with("a program has a file in Flint open, so it could not be replaced (close it and Relaunch again): Access is denied."))
+    one := [FolderHolder{ name: "Notepad", pid: 7 }]
+    assert_eq(held_message("x", "C:/Flint", one), "close Notepad (pid 7) and Relaunch again: it has a file in Flint open, so it could not be replaced")
+    five := [FolderHolder{ name: "A", pid: 1 }, FolderHolder{ name: "B", pid: 2 }, FolderHolder{ name: "C", pid: 3 }, FolderHolder{ name: "D", pid: 4 }, FolderHolder{ name: "E", pid: 5 }]
+    assert_eq(held_message("x", "C:/Flint", five), "close A (pid 1), B (pid 2), C (pid 3) and 2 more and Relaunch again: they have files in Flint open, so it could not be replaced")
+}

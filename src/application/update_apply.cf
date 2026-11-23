@@ -128,11 +128,6 @@ fn relaunch_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: 
     _ = try procs.proc_spawn(cli, args, temp_dir + "/update-apply.log")
 }
 
-// Why a rename failed, in words a person can act on.
-fn held_message(why: str, folder: str) -> str {
-    return "a program has a file in {path_base(folder)} open, so it could not be replaced (close it and Relaunch again): {why}"
-}
-
 // `flint update-apply` (D-111 (3)): waits for the app to quit and for every `flint`
 // running from its folder, swaps the folders by rename, starts the new app and waits
 // for its word; with none, stops it and puts the old folder back. Never writes over
@@ -193,7 +188,7 @@ fn apply_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, 
         procs.proc_sleep(UPDATE_POLL_MS)
     }
     if swap_err.len() > 0 {
-        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, held_message(swap_err, p.installed), true)
+        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, held_message(swap_err, p.installed, procs.proc_holders(p.installed)), true)
         files.upd_write(p.outcome, json.stringify(o)) or {}
         _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
         return o
@@ -210,7 +205,7 @@ fn apply_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, 
     }
     if swap_err.len() > 0 {
         files.upd_rename(p.old_root, p.installed) or {}
-        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, held_message(swap_err, path_base(p.new_root)), true)
+        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, held_message(swap_err, path_base(p.new_root), procs.proc_holders(p.new_root)), true)
         files.upd_write(p.outcome, json.stringify(o)) or {}
         _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
         return o

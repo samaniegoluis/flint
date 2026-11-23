@@ -163,6 +163,17 @@ fn (self: OsUpdateProcesses) proc_running_under(dir: str) -> []i64 {
     return out
 }
 
+// Who holds a file open in `dir` (milestone 65, Windows' Restart Manager, CF-190);
+// none on macOS and Linux, and none when the query fails.
+fn (self: OsUpdateProcesses) proc_holders(dir: str) -> []FolderHolder {
+    mut lines := ""
+    // CFIRE-UPSTREAM: CF-190
+    cpp {
+        lines = flint_update::upd_holders(dir);
+    }
+    return parse_folder_holders(lines)
+}
+
 // Arguments go one by one, never through a shell.
 fn (mut self: OsUpdateProcesses) proc_spawn(exe: str, args: []str, log: str) -> i64! {
     mut packed := ""

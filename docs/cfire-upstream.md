@@ -3430,3 +3430,33 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `put_AreBrowserAcceleratorKeysEnabled(FALSE)` with the devtools default
   (off in `cfire build`, on in `cfire run`), or an `app.set_browser_keys(bool)`. WebKit
   has no such keys, so it is Windows only.
+
+### CF-189 · missing · `confirmed`: nothing tells an app whether its tray icon is shown
+- **Needed (milestone 65, D-138 (3)):** on a Linux desktop with no tray (Zorin's GNOME,
+  any Wayland session) `set_hide_on_close(true)` hides the window behind an icon nobody
+  sees: Flint keeps running with no way back but a second launch. The app must know
+  whether the icon shows to decide what ✕ does.
+- **Checked in cfire's source (`v0.12.2`):** `linux_gtk.hpp` puts up a `GtkStatusIcon`
+  (XEmbed) and never asks `gtk_status_icon_is_embedded`, nor offers it to the app; a
+  Wayland GDK backend shows no status icon at all.
+- **Workaround:** `src/adapters/uievents/native/flint_tray.hpp`: on an X11 GDK display,
+  a connection of its own asks whether anyone owns `_NET_SYSTEM_TRAY_S<screen>` (the
+  XEmbed tray manager's selection); Wayland is *no*; macOS and Windows are *yes*. Wrapped
+  as `has_system_tray()` in `src/adapters/uievents/tray.cf`, tagged
+  `// CFIRE-UPSTREAM: CF-189`; `x11` added to `flint-native-gui.pc`.
+- **Ideal:** `app.tray_shown() -> bool` (`gtk_status_icon_is_embedded` for the
+  GtkStatusIcon, true for `NSStatusItem` and `Shell_NotifyIcon`), and, with CF-082's
+  StatusNotifierItem, the watcher's `IsStatusNotifierHostRegistered`.
+
+### CF-190 · missing · `confirmed`: nothing in `core:os` says which processes hold a file open
+- **Needed (milestone 65, D-138 (1)):** on Windows, `flint update-apply`'s folder swap
+  fails when any program holds a file in Flint's folder open (a PowerShell, an editor, an
+  antivirus scan), and the person had only "a program has a file open" to go on.
+- **Workaround:** `upd_holders` in `src/adapters/process/native/flint_update.hpp`: the
+  Restart Manager (`RmStartSession`, `RmRegisterResources` with the folder's files, at
+  most 4096, `RmGetList`), each holder's pid and `strAppName`; none on macOS and Linux
+  (an open file never stops a rename there) and none on any failure. Wrapped as
+  `proc_holders` in `src/adapters/process/update.cf`, tagged `// CFIRE-UPSTREAM: CF-190`;
+  `-lrstrtmgr` added to the Windows `flint-native.pc`.
+- **Ideal:** `os.file_holders(paths: []str) -> []ProcessInfo!` (Restart Manager on
+  Windows; `lsof`-like `proc_pidinfo` / `/proc/*/fd` elsewhere).

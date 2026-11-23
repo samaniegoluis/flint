@@ -126,6 +126,13 @@ fn main() {
     }
 
     app.bind_raw("app_info") |params| { return rpc_app_info(e2e) }
+    // The page's answer to *Keep Flint running in the background?* was saved: ✕ again
+    // (milestone 65).
+    app.bind_raw("window_close") |params| {
+        mut a := app
+        on_window_close(settings_store, st, mut a, e2e)
+        return ok_json()
+    }
     app.bind_raw("rdp_key") |params| { return rpc_rdp_key(params, st) }
     app.bind_raw("rdp_pointer") |params| { return rpc_rdp_pointer(params, st) }
     app.bind_raw("rdp_resize") |params| { return rpc_rdp_resize(params) }
@@ -326,9 +333,15 @@ fn main() {
         app.bind_raw("e2e_clipboard_png") |params| { return rpc_e2e_clipboard_png(params, clipboard) }
         app.bind_raw("e2e_clipboard_set") |params| { return rpc_e2e_clipboard_set(params, clipboard) }
         // Stands in for the window's close button with the tray (milestone 14).
+        // Stands in for a desktop with no tray, or one again (milestone 65).
+        app.bind_raw("e2e_set_tray") |params| {
+            req := try parse_req[E2eTrayReq](params)
+            os.setenv("FLINT_E2E_NO_TRAY", if req.tray { "0" } else { "1" })
+            return ok_json()
+        }
         app.bind_raw("e2e_close_window") |params| {
             mut a := app
-            lock_window(st, mut a)
+            on_window_close(settings_store, st, mut a, e2e)
             return ok_json()
         }
         // Stands in for the OS entering or leaving full screen by its own means (the
@@ -527,7 +540,7 @@ fn main() {
         }
         app.on("window:close_requested") |data| {
             mut a := app
-            lock_window(st, mut a)
+            on_window_close(settings_store, st, mut a, e2e)
         }
         app.on(TRAY_OPEN) |data| {
             mut a := app
