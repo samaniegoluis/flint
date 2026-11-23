@@ -932,7 +932,7 @@ same language as 17* (approval windows), 24* (toasts) and 25e.
 3. 26c2: the "Always on for root" row appears only when a period is picked.
 ```
 
-## Message 13: Settings → Notifications and phone alerts through ntfy (spec v15, milestone 63, to send)
+## Message 13: Settings → Notifications and phone alerts through ntfy (spec v15, milestone 63, sent 2026-11-23; screens 27* imported)
 
 Written on 2026-11-23 from milestone 63, Principle 19 and D-134 (4). Send it in the same chat
 as messages 1-12 (canvas "Flint — Desktop UI (2)").

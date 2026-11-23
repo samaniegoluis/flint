@@ -477,3 +477,45 @@ On the second canvas, page 16. Covers D-117 (3)–(4).
 | `26c2` | Root approval window with a period picked (25e5, 5 min): the checkbox checked and disabled, "Always on for root." The row appears only when 2, 5 or 15 min is picked; with "Each command" (25e4) there is no row. |
 | `26d1` | Settings → Access: "Notify me of commands run under a grant" (default on), and a bell per row in Active grants (on / off). |
 | `26e1` | Three grants busy at once: three notices, one per grant. Each hides ~10 s after its own grant's last command, so the stack only holds grants that ran something in the last few seconds. |
+
+## Alerts on your phone, spec v15 · milestone 63 (screens 27*)
+
+On the second canvas, page 17. Optional push alerts through ntfy (open source, iOS and Android, no account: the phone subscribes to a topic, Flint publishes one message to it).
+
+**Rules (Principle 19):**
+- Off by default. Nothing leaves the machine until the person turns it on.
+- An alert carries no content: never a host, user, command, program, vault name or count. Only one of two fixed texts: "An agent is waiting for your approval" (normal priority) or "Flint is locked and an agent is waiting" (high priority).
+- An alert never approves, denies or unlocks anything; the person still answers at the machine. The section says so once.
+- Sent once per request, never while Flint's window is in front.
+- A failed publish never blocks or changes the approval; it only shows in Settings.
+- The topic is random and belongs to this machine (not synced with the vault).
+
+**Settings → Notifications** is a new nav item with a bell, between Access and About. The Settings nav is now: Appearance, Terminal, Remote desktop, Keyboard shortcuts, Vault, Access, Notifications, About.
+- **Approval wait** (moved from Access): 2 / 5 / 10 / 30 min, with the line "How long a program waits for your answer in an approval window, and for you to unlock the vault when it finds it locked. Then it gets approval_timeout or locked." At 30 min, a warning: the program must be able to wait that long; an agent can run `flint exec` in the background.
+- **Phone alerts (ntfy):** a switch whose help line follows its state ("Off: nothing is sent." / "On: your phone is told when an agent is waiting."). Setup rows: Server, Topic, Subscribe on your phone, What your phone shows, Send test with the last publish's state.
+- The QR (132 px) sits on a light tile in both themes so it scans. It holds the topic's URL, which is also shown as a link.
+- With alerts on, the boards are scrolled so the setup is in view; Approval wait is above.
+
+| Screen | What it shows |
+|---|---|
+| `27a1` | Off (default): the switch and one line on what would be sent (the two texts, nothing else) and that an alert can't approve anything. |
+| `27a1b` | Approval wait at 30 min: the warning callout. |
+| `27a2` | Just turned on, wait still 2 min: a callout recommending 5 min or more ("time to see the alert and come back") with **Use 5 min**; it goes away at 5 min or more. Below, the setup: Server (`https://ntfy.sh`), Topic in mono with Copy and New topic, the QR with its link and two steps (install ntfy from the App Store or Google Play; scan or open the link), the two alerts as phone notification rows (app "ntfy", title "Flint", the locked one marked high priority), and Send test with "No alert sent yet." |
+| `27a3a` / `27a3b` | Send test: "Sending “Test from Flint”…" (button disabled), then "Test sent 10:42 · check your phone". |
+| `27a4a` / `27a4b` | The last publish failed: "Last alert couldn't be sent · 10:42 · couldn't reach ntfy.sh (timed out)", or "· the server answered 403", with "Approvals are unaffected: the window opened and waited as usual." |
+| `27a5a` | Own server: a custom https address; the QR and link follow it. |
+| `27a5b` | Invalid address: the field's error ("Enter a full address, like https://ntfy.example.com"); the QR tile shows "Fix the server address to get the code". |
+| `27a5c` | http:// address: a warning under the field ("Over http:// the topic travels unencrypted. Anyone who reads it could send alerts to your phone, but never read yours."). |
+| `27a6` | New topic, confirmed inline under Topic: "Your phone stops getting alerts until you subscribe to the new topic." Cancel · New topic. |
+| `27b1` | Settings → Access without an Approval wait block; otherwise as before (notices default, bells, Run as root), with the new nav. The earlier Access boards never drew that block, so nothing else moved. |
+| `27c1` | Settings → Appearance: the toast corner row is renamed **Toasts**, so there aren't two "Notifications" in Settings. Same picker. |
+| `27d1` | Activity: a request that timed out after an alert has a warning dot and a **Missed · alerted** badge (bell). Normal rows stay as they were: approved, denied, and a plain timeout without an alert ("denied · timed out after 5:00"). |
+| `27d2` | Activity entry for it: Result "Missed · alerted · the program got approval_timeout", and an info line "Timed out 5 min after an alert to your phone" with when and where the alert was sent and which of the two texts it carried. |
+| `27e1` / `27e2` | 900 × 600: the setup rows stack (label above control); the QR and its steps still sit side by side; the two notification rows wrap one under the other below the QR. Shown at the top of the setup and scrolled to the end. |
+
+**As built (milestone 63, 2026-11-23):** three differences from the boards. (1) 27a2's second
+step says to add the topic in the ntfy app with **+**: on an iPhone the camera opens the QR's
+`https://` address on ntfy's web page, and no browser hands an `ntfy://` link to the iOS app
+(owner's check). (2) The address and the App Store / Google Play names are text, not links:
+the app opens only Flint's own pages. (3) 27d2's info line reads "Timed out after an alert to
+your phone" without the alert's time and server, which the activity log does not keep.
