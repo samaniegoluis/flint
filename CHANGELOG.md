@@ -4,6 +4,19 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.29.0 — 2026-11-23
+
+The command palette finds what you typed, word by word: every word whole, from a host's alias, label, hostname, tags or folder, in any order, accents ignored, with the matching field named in the row. Text fields no longer autocorrect or check spelling. The macOS release build no longer meets the warning from FreeRDP's headers that hung it since 0.27.0.
+
+### Added
+
+- **palette:** Search by whole words from any field, and no spelling correction in any text field (milestone 62)
+
+### Fixed
+
+- **rdp:** Keep clang quiet on FreeRDP's headers, which hung cfire's AST read (CF-184)
+
+
 ## 0.28.0 — 2026-11-23
 
 Flint now waits for you. Settings → Access → Approval wait sets how long every approval window waits (2, 5, 10 or 30 minutes). A command that finds the vault locked no longer fails at once: it waits for you to unlock it in Flint, then runs. And `flint vault status` says why a vault is locked, including a Keychain Deny.
