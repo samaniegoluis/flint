@@ -20,6 +20,7 @@ import { PasswordField } from '../ui/PasswordField';
 import { HostTunnels } from '../tunnels/HostTunnels';
 import { RdpHostEditor } from './RdpHostEditor';
 import { TypeBadge } from './TypeBadge';
+import { plainText } from '../ui/plainText';
 
 type TestState =
   | { s: 'idle' }
@@ -247,15 +248,15 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
         <div className="modal-b scroll" style={{ gap: 'var(--sp-4)', paddingBottom: 'var(--sp-4)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--sp-4)' }}>
             <div className="field"><label className="flabel" htmlFor="ha">Alias</label>
-              <div className="input"><input id="ha" className="mono" value={f.alias} onChange={(e) => set('alias', e.target.value)} placeholder="prod-api-01" data-autofocus={!showTunnels || undefined} autoFocus={!showTunnels} /></div>
+              <div className="input"><input {...plainText} id="ha" className="mono" value={f.alias} onChange={(e) => set('alias', e.target.value)} placeholder="prod-api-01" data-autofocus={!showTunnels || undefined} autoFocus={!showTunnels} /></div>
               <span className="hint">What you type in <span className="mono">flint connect</span>.</span></div>
             <div className="field"><label className="flabel" htmlFor="hl">Label <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></label>
-              <div className="input"><input id="hl" value={f.label} onChange={(e) => set('label', e.target.value)} placeholder="e.g. Home server" /></div></div>
+              <div className="input"><input {...plainText} id="hl" value={f.label} onChange={(e) => set('label', e.target.value)} placeholder="e.g. Home server" /></div></div>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 96px', gap: 'var(--sp-4)' }}>
               <div className="field"><label className="flabel" htmlFor="hh">Hostname</label>
-                <div className="input"><input id="hh" className="mono" value={f.hostname} onChange={(e) => set('hostname', e.target.value)} placeholder="10.0.4.21" /></div></div>
+                <div className="input"><input {...plainText} id="hh" className="mono" value={f.hostname} onChange={(e) => set('hostname', e.target.value)} placeholder="10.0.4.21" /></div></div>
               <div className="field"><label className="flabel" htmlFor="hp">Port</label>
-                <div className="input"><input id="hp" className="mono" inputMode="numeric" value={f.port} onChange={(e) => set('port', e.target.value.replace(/\D/g, ''))} /></div></div>
+                <div className="input"><input {...plainText} id="hp" className="mono" inputMode="numeric" value={f.port} onChange={(e) => set('port', e.target.value.replace(/\D/g, ''))} /></div></div>
             </div>
             <div className="field"><span className="flabel">Folder</span>
               <Picker label="Folder" value={f.group} onChange={(v) => set('group', v)} icon="folder" placeholder="No folder"
@@ -308,13 +309,13 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--sp-4)' }}>
             <div className="field"><label className="flabel" htmlFor="hu">User {mode === 'credential' && <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· overrides the credential's</span>}</label>
-              <div className="input"><input id="hu" className="mono" value={f.user} onChange={(e) => set('user', e.target.value)} placeholder={mode === 'credential' ? 'from the credential' : 'root'} /></div></div>
+              <div className="input"><input {...plainText} id="hu" className="mono" value={f.user} onChange={(e) => set('user', e.target.value)} placeholder={mode === 'credential' ? 'from the credential' : 'root'} /></div></div>
             <div className="field"><span className="flabel">Jump host <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></span>
               <Picker label="Jump host" value={f.jump} onChange={(v) => set('jump', v)} icon="jump" placeholder="None"
                 options={[{ value: '', label: 'None', text: '' }, ...catalog.hosts.filter((h) => h.alias !== host?.alias && h.type !== 'rdp').map((h) => ({ value: h.alias, text: h.alias, label: <span className="mono">{h.alias}</span>, meta: h.group }))]} /></div>
           </div>
           <div className="field"><label className="flabel" htmlFor="hc">On connect <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></label>
-            <div className="input"><Icon name="term" size="sm" className="faint" /><input id="hc" className="mono" value={f.command} onChange={(e) => set('command', e.target.value)} placeholder="e.g. herdr or tmux new -A -s main" spellCheck={false} autoComplete="off" /></div>
+            <div className="input"><Icon name="term" size="sm" className="faint" /><input {...plainText} id="hc" className="mono" value={f.command} onChange={(e) => set('command', e.target.value)} placeholder="e.g. herdr or tmux new -A -s main" autoComplete="off" /></div>
             {f.command.trim() ? (
               <label className="check" style={{ fontSize: 'var(--fs-sm)' }}><input type="checkbox" checked={f.keep_shell} onChange={(e) => set('keep_shell', e.target.checked)} />
                 <span>Return to a shell when it exits <span className="faint">· otherwise the session ends with it</span></span></label>
@@ -325,7 +326,7 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
             <div className="field"><span className="flabel">Tags</span>
               <div className="tags">
                 {f.tags.map((t) => <span key={t} className="tag">{t}<button type="button" aria-label={`Remove tag ${t}`} onClick={() => set('tags', f.tags.filter((x) => x !== t))}><Icon name="x" size="xs" /></button></span>)}
-                <input aria-label="Add tag" placeholder="Add tag…" value={tagInput} onChange={(e) => setTagInput(e.target.value)}
+                <input {...plainText} aria-label="Add tag" placeholder="Add tag…" value={tagInput} onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag(tagInput); }
                     if (e.key === 'Backspace' && !tagInput && f.tags.length) set('tags', f.tags.slice(0, -1));
@@ -340,7 +341,7 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
               </div></div>
           </div>
           <div className="field"><label className="flabel" htmlFor="hn">Notes</label>
-            <div className="input area"><textarea id="hn" rows={2} value={f.notes} onChange={(e) => set('notes', e.target.value)} /></div></div>
+            <div className="input area"><textarea data-prose id="hn" rows={2} value={f.notes} onChange={(e) => set('notes', e.target.value)} /></div></div>
           {test.s === 'host_key' && (
             <div className="card prompt" role="alertdialog" aria-label={`Verify ${test.key.alias}`} style={{ boxShadow: 'none' }}
               onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); answerKey(false); } }}>

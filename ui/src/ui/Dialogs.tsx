@@ -4,6 +4,7 @@ import { Icon } from './Icon';
 import { Key } from './Kbd';
 import { Modal } from './Modal';
 import type { Confirm } from '../pages/KeysPage';
+import { plainText } from './plainText';
 
 export function ConfirmDialog({ c, onClose }: { c: Confirm; onClose: () => void }) {
   const [error, setError] = useState('');
@@ -60,7 +61,7 @@ export function TextDialog({ ask, onClose }: { ask: TextAsk; onClose: () => void
         <div className="modal-h"><h2 className="grow">{ask.title}</h2></div>
         <div className="modal-b">
           <div className="field"><label className="flabel" htmlFor="ta">{ask.label}</label>
-            <div className={'input' + (error ? ' err' : '')}><input id="ta" value={v} onChange={(e) => setV(e.target.value)} data-autofocus autoFocus onFocus={(e) => e.target.select()} /></div>
+            <div className={'input' + (error ? ' err' : '')}><input {...plainText} id="ta" value={v} onChange={(e) => setV(e.target.value)} data-autofocus autoFocus onFocus={(e) => e.target.select()} /></div>
             {error ? <span className="hint err">{error}</span> : ask.hint && <span className="hint">{ask.hint}</span>}</div>
         </div>
         <div className="modal-f"><span className="grow" />

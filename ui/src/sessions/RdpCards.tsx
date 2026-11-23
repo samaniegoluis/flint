@@ -10,6 +10,7 @@ import { Icon } from '../ui/Icon';
 import { Kbd, Key } from '../ui/Kbd';
 import { RDP_CONNECT_TIMEOUT_S } from '../lib/rdpInput';
 import { rdpEndKind, sessions, type Pane } from './store';
+import { plainText } from '../ui/plainText';
 
 /** "4f:a2:…" as the design groups it: upper-case bytes split by spaces. */
 export function groupedFingerprint(fp: string): string {
@@ -228,7 +229,7 @@ function RdpPasswordPrompt({ pane }: { pane: Pane }) {
         <div className="prompt-h"><span className="prompt-ic accent"><Icon name="lock" /></span>
           <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">Password for <span className="mono">{p.user}</span> on <span className="mono">{p.alias}</span></h2>
             <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>This host has no saved password.</p></div></div>
-        <div className="input lg"><input type="password" className="pw" aria-label="Password" value={pw} onChange={(e) => setPw(e.target.value)} data-autofocus autoFocus autoComplete="off" /></div>
+        <div className="input lg"><input {...plainText} type="password" className="pw" aria-label="Password" value={pw} onChange={(e) => setPw(e.target.value)} data-autofocus autoFocus autoComplete="off" /></div>
         <span className="hint">Used for this connection only. Save it in the host editor to skip this prompt.</span>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
           <button type="button" className="btn btn-ghost" onClick={() => sessions.answer(pane.id, false, '')}>Cancel<Key>esc</Key></button>

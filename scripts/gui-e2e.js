@@ -503,6 +503,11 @@
     await newSshHost('.side-head .icon-btn[aria-label^="New host"]');
     await fill('#ha', 'pwhost');
     await fill('#hh', '127.0.0.2');
+    // A label with an accent and a tag, for the palette's search by words (milestone 62).
+    await fill('#hl', 'Facturación');
+    await fill('.modal input[aria-label="Add tag"]', 'Billing-DB');
+    q('.modal input[aria-label="Add tag"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await waitFor(() => byText('.modal .tag', 'Billing-DB'), 'the tag on pwhost');
     await click('.seg button', 'Password');
     await fill('input[aria-label="Password"]', HOST_PW_MARKER);
     await click('.modal button[type="submit"]', 'Add host');
@@ -540,6 +545,11 @@
     {
       const box = term.element.parentElement.getBoundingClientRect();
       const screen = term.element.querySelector('.xterm-screen').getBoundingClientRect();
+      if (!(screen.bottom <= box.bottom + 0.5 && screen.right <= box.right + 0.5)) {
+        const r = (x) => `${Math.round(x.top)}..${Math.round(x.bottom)} x ${Math.round(x.left)}..${Math.round(x.right)}`;
+        const el = term.element.getBoundingClientRect();
+        log(`diag: resize box ${r(box)}, term ${r(el)}, screen ${r(screen)}, rows ${term.rows}, window ${innerWidth}x${innerHeight}, parent ${term.element.parentElement.className}, children ${[...term.element.parentElement.children].map((c) => c.className + ':' + Math.round(c.getBoundingClientRect().height)).join(', ')}`);
+      }
       await check(screen.bottom <= box.bottom + 0.5 && screen.right <= box.right + 0.5,
         `the terminal's rows fit inside the pane (screen ${Math.round(screen.height)} px, box ${Math.round(box.height)} px)`);
     }
@@ -2763,6 +2773,23 @@
       await check(q('[role="option"].hot')?.textContent.includes('pwhost'), 'the palette ranks the matching host first');
       const footer = () => q('[data-palette-hints]')?.textContent ?? '';
       await check(footer().includes('edit host'), 'the palette offers ⌘I while a host is hot');
+      // Milestone 62: every word whole, from any field; never letters scattered.
+      const pwRow = () => qa('[aria-label="Command palette"] [role="option"]').find((o) => o.textContent.includes('pwhost'));
+      await fill('[aria-label="Command palette"] input', 'pwhst');
+      await sleep(150);
+      await check(!pwRow(), 'letters scattered across a name find nothing: "pwhst" does not find pwhost');
+      await fill('[aria-label="Command palette"] input', 'db billing');
+      const tagRow = await waitFor(() => pwRow(), 'pwhost by its tag');
+      const tagNote = tagRow.querySelector('[data-match-field="tag"]');
+      await check(tagNote?.textContent === ' · tag: Billing-DB' && [...tagNote.querySelectorAll('.match')].map((m) => m.textContent).join(' ') === 'Billing DB',
+        'two words found in a tag the row does not show: "· tag: Billing-DB", both highlighted');
+      await fill('[aria-label="Command palette"] input', 'facturacion pwh');
+      const labelRow = await waitFor(() => pwRow(), 'pwhost by its label and alias');
+      await check(labelRow.querySelector('[data-match-field="label"]')?.textContent.includes('Facturación') && labelRow.querySelector('.mono .match')?.textContent === 'pwh',
+        'accents ignored, words from two fields: "facturacion pwh" finds pwhost, its label shown and "pwh" highlighted');
+      await fill('[aria-label="Command palette"] input', '0.2 pwh');
+      await waitFor(() => pwRow()?.querySelector('.grow .match')?.textContent === '0.2', 'the hostname highlighted');
+      await check(true, 'word order does not matter, and a host with no folder highlights its hostname: "0.2 pwh"');
       await fill('[aria-label="Command palette"] input', 'reconnect');
       await waitFor(() => q('[role="option"].hot')?.textContent.includes('Reconnect'), 'Reconnect hot');
       await check(!footer().includes('edit host') && !footer().includes('new tab'), 'the palette does not offer ⌘I or ⌘↵ on an action');

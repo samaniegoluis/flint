@@ -10,6 +10,7 @@ import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
 import { Kbd, Key } from '../ui/Kbd';
 import { sessions, type Pane } from './store';
+import { plainText } from '../ui/plainText';
 
 function hostLine(h: HostView | undefined, alias: string): string {
   if (!h) return alias;
@@ -132,7 +133,7 @@ function PasswordPrompt({ tab }: { tab: Pane }) {
           <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">Password for <span className="mono">{p.user}@{p.alias}</span></h2>
             <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>No saved login was accepted. The server asked for a password.</p></div></div>
         <div className="input lg">
-          <input type={show ? 'text' : 'password'} className={show ? '' : 'pw'} aria-label="Password" value={pw} onChange={(e) => setPw(e.target.value)} data-autofocus autoFocus autoComplete="off" />
+          <input {...plainText} type={show ? 'text' : 'password'} className={show ? '' : 'pw'} aria-label="Password" value={pw} onChange={(e) => setPw(e.target.value)} data-autofocus autoFocus autoComplete="off" />
           <button type="button" className="icon-btn" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
         </div>
         <span className="hint">Used for this connection only. Save it in the host editor to skip this prompt.</span>
@@ -200,7 +201,7 @@ function HostKeyChanged({ tab }: { tab: Pane }) {
           <div className="col" style={{ gap: 4 }}><span className="flabel danger-t">Presented now · {k.key_type}</span><div className="fp" style={{ borderColor: 'var(--danger-border)' }}>{k.fingerprint}</div></div>
         </div>
         <div className="field"><label className="flabel" htmlFor={'cf-' + tab.id}>To replace the saved key, type <span className="mono strong">{k.alias}</span></label>
-          <div className="input"><input id={'cf-' + tab.id} className="mono" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" /></div></div>
+          <div className="input"><input {...plainText} id={'cf-' + tab.id} className="mono" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" /></div></div>
         <div className="row" style={{ gap: 'var(--sp-2)' }}>
           <button type="button" className={'btn btn-danger' + (ok ? '' : ' is-disabled')} aria-disabled={!ok} onClick={() => replace()}>Replace key and connect</button>
           <span className="grow" />

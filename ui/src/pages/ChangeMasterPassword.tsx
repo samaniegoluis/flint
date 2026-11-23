@@ -10,6 +10,7 @@ import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
+import { plainText } from '../ui/plainText';
 
 const MIN_LEN = 8;
 const ESTIMATE_DELAY_MS = 120;
@@ -80,14 +81,14 @@ export function ChangeMasterPassword({ onClose }: { onClose: () => void }) {
           <div className="field">
             <label className="flabel" htmlFor="cmp-current">Current master password</label>
             <div className="input">
-              <input id="cmp-current" type={type} className={show ? '' : 'pw'} value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" autoFocus data-autofocus disabled={busy} />
+              <input {...plainText} id="cmp-current" type={type} className={show ? '' : 'pw'} value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" autoFocus data-autofocus disabled={busy} />
               <button type="button" className="icon-btn" aria-label={show ? 'Hide passwords' : 'Show passwords'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
             </div>
           </div>
           <div className="field">
             <label className="flabel" htmlFor="cmp-new">New master password</label>
             <div className={'input' + (short ? ' err' : '')}>
-              <input id="cmp-new" type={type} className={show ? '' : 'pw'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" disabled={busy} />
+              <input {...plainText} id="cmp-new" type={type} className={show ? '' : 'pw'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" disabled={busy} />
             </div>
             <div className="row" style={{ gap: 'var(--sp-3)' }}>
               <div className={'meter grow ' + meterClass(strength)} role="meter" aria-label="Password strength" aria-valuenow={strength?.score ?? 0} aria-valuemin={0} aria-valuemax={4}>
@@ -104,7 +105,7 @@ export function ChangeMasterPassword({ onClose }: { onClose: () => void }) {
           <div className="field">
             <label className="flabel" htmlFor="cmp-new2">Confirm new master password</label>
             <div className={'input' + (mismatch ? ' err' : '')}>
-              <input id="cmp-new2" type={type} className={show ? '' : 'pw'} value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" disabled={busy} aria-describedby={mismatch ? 'cmp-e' : undefined} />
+              <input {...plainText} id="cmp-new2" type={type} className={show ? '' : 'pw'} value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" disabled={busy} aria-describedby={mismatch ? 'cmp-e' : undefined} />
               {pw2 && !mismatch && <Icon name="check" size="sm" className="ok-t" label="Passwords match" />}
             </div>
             {mismatch && <span id="cmp-e" className="hint err">The passwords do not match.</span>}

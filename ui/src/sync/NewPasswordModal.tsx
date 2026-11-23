@@ -7,6 +7,7 @@ import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
+import { plainText } from '../ui/plainText';
 
 export function NewPasswordModal({ vaultName, onClose }: { vaultName: string; onClose: () => void }) {
   const { notify } = useApp();
@@ -40,7 +41,7 @@ export function NewPasswordModal({ vaultName, onClose }: { vaultName: string; on
           <div className="field">
             <label className="flabel" htmlFor="nnp">New master password</label>
             <div className={'input' + (error ? ' err' : '')}>
-              <input id="nnp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" autoFocus data-autofocus disabled={busy} />
+              <input {...plainText} id="nnp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" autoFocus data-autofocus disabled={busy} />
               <button type="button" className="icon-btn" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
             </div>
             {error

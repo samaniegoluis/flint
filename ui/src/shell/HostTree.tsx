@@ -13,6 +13,7 @@ import { ContextMenu, type MenuItem } from '../ui/ContextMenu';
 import { useSessions } from '../sessions/store';
 import { chordLabel } from '../lib/keymap';
 import { TunnelMark } from '../tunnels/TunnelsMenu';
+import { plainText } from '../ui/plainText';
 
 export interface TreeHandlers {
   connect: (alias: string, newTab: boolean) => void;
@@ -148,7 +149,7 @@ export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer
       </button>
       <label className="search side-search">
         <Icon name="search" size="sm" />
-        <input ref={filterRef} aria-label="Filter hosts" placeholder="Filter hosts" value={filter} onChange={(e) => setFilter(e.target.value)}
+        <input {...plainText} ref={filterRef} aria-label="Filter hosts" placeholder="Filter hosts" value={filter} onChange={(e) => setFilter(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Escape') { setFilter(''); (e.target as HTMLInputElement).blur(); }
             if (e.key === 'ArrowDown') { e.preventDefault(); move(0); treeRef.current?.querySelector<HTMLElement>('[tabindex="0"]')?.focus(); }

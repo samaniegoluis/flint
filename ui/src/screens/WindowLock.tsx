@@ -11,6 +11,7 @@ import { useApp } from '../state/app';
 import { presenceLabel } from '../access/ApprovalDialog';
 import type { PresenceMethod } from '../api/types';
 import { Icon, Logo } from '../ui/Icon';
+import { plainText } from '../ui/plainText';
 
 export function WindowLock() {
   const { windowLock, openWindow, os, info } = useApp();
@@ -77,7 +78,7 @@ export function WindowLock() {
             <label className="flabel" htmlFor="wpw">{hasPresence ? 'Or the master password' : 'Master password'}</label>
             <div className={'input lg mono' + (error ? ' err' : '')} style={{ paddingLeft: 'var(--sp-4)', gap: 'var(--sp-3)' }}>
               <span className="accent-t" aria-hidden="true">❯</span>
-              <input id="wpw" ref={input} type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw}
+              <input {...plainText} id="wpw" ref={input} type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw}
                 onChange={(e) => setPw(e.target.value)} aria-invalid={!!error} aria-describedby={error ? 'wpwe' : undefined}
                 style={{ fontSize: 'var(--fs-lg)' }} disabled={!!busy} />
               <button type="button" className="icon-btn" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>

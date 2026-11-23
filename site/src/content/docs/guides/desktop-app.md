@@ -313,6 +313,30 @@ the host in a new pane of that tab ([Split panes](#split-panes)), and while you 
 best matches are also offered as **Open <host> in a new pane**. <kbd>⌘I</kbd> edits the
 host, and <kbd>Tab</kbd> moves between result groups.
 
+### How the search matches
+
+The palette finds what you typed, word by word:
+
+- **Every word must appear whole**, as you typed it, in one of a host's fields: its alias,
+  label, hostname, a tag or its folder. Each word may come from a different field, so
+  `triara prod` finds the hosts in the *Triara/…/PROD* folder and `stg db` finds
+  `bp-stg-db01`.
+- **Word order does not matter** (`db stg` is the same search), and what you type together
+  is matched together: `stg-db` is one word, dash included.
+- **Case and accents are ignored**, both ways: `produccion` finds *Producción*.
+- **Letters scattered across a name do not match**, and neither do initials: `pinf` finds
+  `pinflix` but not `vm-de-billing-de-produccion`, and `cdbx` finds nothing.
+- Hosts whose **alias** starts with a word come first, then those where it starts a part
+  of the alias (after `-`, `_` or `.`), then anywhere in the alias, then the other fields.
+
+What matched is highlighted, in the alias and in the folder. A match in a field the row
+does not show is named at the end of the row: `· tag: db`, `· host: db1.lan`,
+`· label: Billing`. Actions, tunnels and vaults are searched by the same rule, so
+`stop web` still finds **Stop tunnel web on …**.
+
+Search and name fields in Flint do not autocorrect or check spelling, so macOS never
+rewrites an alias or a search into a word it knows.
+
 While you search, tunnels are offered too: **Start tunnel <name> on <host>**, **Stop
 tunnel …**, **Connect to <host> with tunnels** and **Manage tunnels of <host>…** (see
 [Tunnels](/guides/tunnels/#in-the-app)).

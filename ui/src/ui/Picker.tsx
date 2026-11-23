@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon, type IconName } from './Icon';
+import { plainText } from './plainText';
 
 export interface PickerOption {
   value: string;
@@ -65,7 +66,7 @@ export function Picker({ value, options, onChange, icon, placeholder, label, sea
           {search && (
             <label className="search" style={{ margin: 'var(--sp-1)' }}>
               <Icon name="search" size="sm" />
-              <input autoFocus aria-label={'Search ' + label} placeholder="Search" value={q} onChange={(e) => { setQ(e.target.value); setHot(0); }} />
+              <input {...plainText} autoFocus aria-label={'Search ' + label} placeholder="Search" value={q} onChange={(e) => { setQ(e.target.value); setHot(0); }} />
             </label>
           )}
           {shown.map((o, i) => (

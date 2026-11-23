@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, toFlintError } from '../api/backend';
 import { useApp } from '../state/app';
 import { Icon } from './Icon';
+import { plainText } from './plainText';
 
 export const REVEAL_MS = 10000;
 
@@ -56,7 +57,7 @@ export function PasswordField({ value, onChange, saved, placeholder, label = 'Pa
 
   return (
     <div className="input"><Icon name="lock" size="sm" className="faint" />
-      <input type={shown ? 'text' : 'password'} className={shown ? 'mono' : 'pw'} aria-label={label} autoComplete="off" spellCheck={false}
+      <input {...plainText} type={shown ? 'text' : 'password'} className={shown ? 'mono' : 'pw'} aria-label={label} autoComplete="off"
         value={revealed ?? value} readOnly={revealed !== null} placeholder={placeholder}
         onChange={(e) => { if (revealed === null) onChange(e.target.value); }}
         onKeyDown={(e) => { if (revealed !== null && e.key.length === 1) { hide(); } }} />

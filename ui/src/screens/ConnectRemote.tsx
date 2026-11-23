@@ -15,6 +15,7 @@ import { Key } from '../ui/Kbd';
 import { RememberOption } from '../ui/RememberOption';
 import { ServerAddress } from '../sync/ConnectServerModal';
 import { serverErrorField, TokenField } from '../sync/TokenField';
+import { plainText } from '../ui/plainText';
 
 type Errors = { url?: string; token?: string; pw?: string; path?: string; form?: string };
 
@@ -153,7 +154,7 @@ export function ConnectRemote() {
               <div className="field">
                 <label className="flabel" htmlFor="vp">Master password of that vault</label>
                 <div className={'input' + (errors.pw ? ' err' : '')}>
-                  <input id="vp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" autoFocus={!!only} disabled={busy} />
+                  <input {...plainText} id="vp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" autoFocus={!!only} disabled={busy} />
                   <button type="button" className="icon-btn" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
                 </div>
                 {errors.pw && <span className="hint err" role="alert">{errors.pw}</span>}
@@ -162,7 +163,7 @@ export function ConnectRemote() {
                 <span className="flabel">Keep the local copy in</span>
                 <div className="row" style={{ gap: 'var(--sp-2)' }}>
                   <div className={'input grow' + (errors.path ? ' err' : '')}><Icon name="folder" size="sm" className="faint" />
-                    <input className="mono" aria-label="Local copy path" value={path} onChange={(e) => setPath(e.target.value)} placeholder="Choose where to keep it" style={{ fontSize: 'var(--fs-sm)' }} disabled={busy} /></div>
+                    <input {...plainText} className="mono" aria-label="Local copy path" value={path} onChange={(e) => setPath(e.target.value)} placeholder="Choose where to keep it" style={{ fontSize: 'var(--fs-sm)' }} disabled={busy} /></div>
                   <button type="button" className="btn btn-secondary" style={{ height: 'var(--control-h)' }} onClick={() => choose().catch(() => {})} disabled={busy}>Choose…</button>
                 </div>
                 {errors.path

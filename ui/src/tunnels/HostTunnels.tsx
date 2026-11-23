@@ -11,6 +11,7 @@ import { Icon } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
 import { tunnels, useTunnels } from './store';
+import { plainText } from '../ui/plainText';
 
 /** Splits a destination as the core writes it: `host:port`, `[v6]:port`. */
 export function splitDestination(d: string): { host: string; port: string } {
@@ -151,12 +152,12 @@ function TunnelDialog({ host, tunnel, all, onClose }: { host: string; tunnel: Tu
         </div>
         <div className="modal-b" style={{ gap: 'var(--sp-4)' }}>
           <div className="field"><label className="flabel" htmlFor="tun-name">Name</label>
-            <div className={'input' + (err?.field === 'name' ? ' err' : '')}><input id="tun-name" className="mono" value={name} placeholder="pg" autoFocus data-autofocus onChange={(e) => setName(e.target.value)} spellCheck={false} autoComplete="off" /></div>
+            <div className={'input' + (err?.field === 'name' ? ' err' : '')}><input {...plainText} id="tun-name" className="mono" value={name} placeholder="pg" autoFocus data-autofocus onChange={(e) => setName(e.target.value)} autoComplete="off" /></div>
             {ferr('name')}
           </div>
           <div className="field"><label className="flabel" htmlFor="tun-local">On {here}</label>
             <div style={{ display: 'grid', gridTemplateColumns: '160px minmax(0, 1fr)', gap: 'var(--sp-3)', alignItems: 'center' }}>
-              <div className={'input' + (err?.field === 'local' ? ' err' : '')}><span className="port-pre">127.0.0.1 :</span><input id="tun-local" className="mono" inputMode="numeric" aria-label="Local port" value={local} placeholder="5432" onChange={(e) => setLocal(e.target.value.replace(/\D/g, ''))} /></div>
+              <div className={'input' + (err?.field === 'local' ? ' err' : '')}><span className="port-pre">127.0.0.1 :</span><input {...plainText} id="tun-local" className="mono" inputMode="numeric" aria-label="Local port" value={local} placeholder="5432" onChange={(e) => setLocal(e.target.value.replace(/\D/g, ''))} /></div>
               <span className="hint" style={{ lineHeight: 1.45 }}>Always <span className="mono">127.0.0.1</span>: only {here} can connect, never your network.</span>
             </div>
             {ferr('local')}
@@ -166,8 +167,8 @@ function TunnelDialog({ host, tunnel, all, onClose }: { host: string; tunnel: Tu
           </div>
           <div className="field"><span className="flabel">On {host} <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· the destination, as the server sees it</span></span>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 110px', gap: 'var(--sp-3)' }}>
-              <div className={'input' + (err?.field === 'dest' ? ' err' : '')}><input className="mono" placeholder="localhost" aria-label="Destination host" value={destHost} onChange={(e) => setDestHost(e.target.value)} spellCheck={false} autoComplete="off" /></div>
-              <div className={'input' + (err?.field === 'dest' ? ' err' : '')}><input className="mono" inputMode="numeric" aria-label="Destination port" placeholder={local || 'port'} value={destPort} onChange={(e) => setDestPort(e.target.value.replace(/\D/g, ''))} /></div>
+              <div className={'input' + (err?.field === 'dest' ? ' err' : '')}><input {...plainText} className="mono" placeholder="localhost" aria-label="Destination host" value={destHost} onChange={(e) => setDestHost(e.target.value)} autoComplete="off" /></div>
+              <div className={'input' + (err?.field === 'dest' ? ' err' : '')}><input {...plainText} className="mono" inputMode="numeric" aria-label="Destination port" placeholder={local || 'port'} value={destPort} onChange={(e) => setDestPort(e.target.value.replace(/\D/g, ''))} /></div>
             </div>
             {ferr('dest')}
             <span className="hint" style={{ lineHeight: 1.45 }}><span className="mono">localhost</span> is {host} itself. An address on its network, like <span className="mono">10.0.0.5</span>, reaches another machine through it.</span>

@@ -5,6 +5,7 @@ import { Icon, Logo } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { passwordStrength } from '../lib/strength';
 import { RememberOption } from '../ui/RememberOption';
+import { plainText } from '../ui/plainText';
 
 const MIN_LEN = 8;
 
@@ -64,13 +65,13 @@ export function CreateVault() {
           <div className="modal-b" style={{ gap: 'var(--sp-5)' }}>
             <div className="field">
               <label className="flabel" htmlFor="vn">Name</label>
-              <div className="input"><input id="vn" value={name} onChange={(e) => setName(e.target.value)} placeholder="Work" autoFocus maxLength={64} /></div>
+              <div className="input"><input {...plainText} id="vn" value={name} onChange={(e) => setName(e.target.value)} placeholder="Work" autoFocus maxLength={64} /></div>
             </div>
             <div className="field">
               <span className="flabel">Location</span>
               <div className="row" style={{ gap: 'var(--sp-2)' }}>
                 <div className="input grow"><Icon name="folder" size="sm" className="faint" />
-                  <input className="mono" aria-label="Vault file path" value={path} onChange={(e) => setPath(e.target.value)} placeholder="Choose where to save the file" style={{ fontSize: 'var(--fs-sm)' }} /></div>
+                  <input {...plainText} className="mono" aria-label="Vault file path" value={path} onChange={(e) => setPath(e.target.value)} placeholder="Choose where to save the file" style={{ fontSize: 'var(--fs-sm)' }} /></div>
                 <button type="button" className="btn btn-secondary" style={{ height: 'var(--control-h)' }} onClick={() => choose().catch(() => {})}>Choose…</button>
               </div>
               <span className="hint row" style={{ gap: 6 }}><Icon name="cloud" size="xs" />Put it in a synced folder (iCloud Drive, Dropbox, Syncthing) to use it on your other machines.</span>
@@ -78,7 +79,7 @@ export function CreateVault() {
             <div className="field">
               <label className="flabel" htmlFor="mp">Master password</label>
               <div className="input">
-                <input id="mp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
+                <input {...plainText} id="mp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
                 <button type="button" className="icon-btn" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
               </div>
               <div className="row" style={{ gap: 'var(--sp-3)' }}>
@@ -92,7 +93,7 @@ export function CreateVault() {
             <div className="field">
               <label className="flabel" htmlFor="mp2">Confirm master password</label>
               <div className={'input' + (mismatch ? ' err' : '')}>
-                <input id="mp2" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" aria-describedby={mismatch ? 'mp2e' : undefined} />
+                <input {...plainText} id="mp2" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" aria-describedby={mismatch ? 'mp2e' : undefined} />
                 {pw2 && !mismatch && <Icon name="check" size="sm" className="ok-t" label="Passwords match" />}
               </div>
               {mismatch && <span id="mp2e" className="hint err">The passwords do not match.</span>}

@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, on } from '../api/backend';
 import type { RdpTyped, RdpTypeInfo } from '../api/types';
 import { Icon } from '../ui/Icon';
+import { plainText } from '../ui/plainText';
 
 /** The most Type takes (the core's RDP_TYPE_MAX_CHARS). */
 export const TYPE_MAX_CHARS = 2000;
@@ -110,7 +111,7 @@ export function TypeMenuButton({ session, alias, bar, onOpenChange }: {
               onSubmit={(e) => { e.preventDefault(); if (master) type('password', master); }}>
               <label className="hint" htmlFor="type-master">Master password, to type <span className="mono">{alias}</span>'s password</label>
               <div className="row" style={{ gap: 6 }}>
-                <input id="type-master" className="input grow" type="password" autoFocus autoComplete="off" value={master}
+                <input {...plainText} id="type-master" className="input grow" type="password" autoFocus autoComplete="off" value={master}
                   onChange={(e) => setMaster(e.target.value)} aria-label="Master password" />
                 <button type="submit" className="btn btn-primary btn-sm" disabled={!master}>Type</button>
               </div>

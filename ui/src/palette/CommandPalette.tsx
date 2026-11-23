@@ -8,7 +8,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { useApp, vaultInitial, vaultMarkClass, shortPath } from '../state/app';
-import { fuzzy, highlight } from '../lib/fuzzy';
+import { folderDisplay, highlight, hostFields, search, type SearchMatch } from '../lib/search';
 import { ACTION_TITLES, chordLabel, type Action } from '../lib/keymap';
 import { colorStyle } from '../lib/colors';
 import { HostTypeIcon, Icon, type IconName } from '../ui/Icon';
@@ -21,6 +21,7 @@ import { tunnels, useTunnels } from '../tunnels/store';
 import { useSyncMaybe } from '../sync/SyncProvider';
 import { useUpdate } from '../update/UpdateProvider';
 import { updatePaletteHint } from '../lib/update';
+import { plainText } from '../ui/plainText';
 
 type Group = 'all' | 'hosts' | 'actions' | 'vaults';
 
@@ -95,6 +96,26 @@ function Hl({ text, positions }: { text: string; positions: number[] }) {
   return <>{highlight(text, positions).map((r, i) => (r.match ? <span key={i} className="match">{r.text}</span> : <span key={i}>{r.text}</span>))}</>;
 }
 
+/**
+ * Where a host row says it is (its folder, or its hostname with no folder), with the
+ * words that matched there highlighted, and then each match in a field the row does
+ * not show: `· tag: db`, `· host: db1.lan`, `· label: Billing` (milestone 62).
+ */
+function HostWhere({ h, m }: { h: { label: string; hostname: string; tags: string[]; group: string }; m: SearchMatch | null }) {
+  const pos = m?.positions ?? {};
+  const where = h.group ? folderDisplay(h.group, pos.group) : { text: h.hostname, positions: pos.hostname ?? [] };
+  const extra: { kind: string; text: string; positions: number[] }[] = [];
+  if (pos.label) extra.push({ kind: 'label', text: h.label, positions: pos.label });
+  if (h.group && pos.hostname) extra.push({ kind: 'host', text: h.hostname, positions: pos.hostname });
+  h.tags.forEach((t, i) => { const p = pos['tag:' + i]; if (p) extra.push({ kind: 'tag', text: t, positions: p }); });
+  return (
+    <>
+      <Hl text={where.text} positions={where.positions} />
+      {extra.map((e) => <span key={e.kind + e.text} data-match-field={e.kind}> · {e.kind}: <Hl text={e.text} positions={e.positions} /></span>)}
+    </>
+  );
+}
+
 export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = false, onClose, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction }: {
   hostsOnly: boolean;
   newSession?: boolean;
@@ -136,20 +157,20 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       const rdp = h.type === 'rdp';
       // Adding a tunnel needs an SSH host.
       if (pickToEdit && rdp) continue;
-      const name = fuzzy(q, h.alias);
-      const where = h.group ? h.group.split('/').join(' / ') : h.hostname;
-      const alt = q ? fuzzy(q, `${h.label} ${h.hostname} ${h.tags.join(' ')} ${h.group}`) : null;
-      if (q && !name && !alt) continue;
+      // Every word whole in the alias, label, hostname, a tag or the folder (milestone 62).
+      const m = search(q, hostFields(h));
+      if (!m) continue;
+      const aliasAt = m.positions.alias ?? [];
       const tabIdx = tabs.findIndex((t) => panes.some((p) => p.tab === t.id && p.alias === h.alias && p.status !== 'ended'));
       const c = colorStyle(h.color);
       out.push({
-        group: 'hosts', key: 'h:' + h.alias, score: (name?.score ?? 0) + (alt ? alt.score / 4 : 0) + 2000,
+        group: 'hosts', key: 'h:' + h.alias, score: m.score + 2000,
         render: () => (
           <>
             <span className={'hmark ' + c.className} style={c.style} />
             <HostTypeIcon type={h.type} size="md" />
-            <span className="mono" style={{ width: 160, flex: 'none' }}><Hl text={h.alias} positions={name?.positions ?? []} /></span>
-            <span className="grow faint trunc" style={{ fontSize: 'var(--fs-xs)' }}>{where}{tabIdx >= 0 ? ` · open in tab ${tabIdx + 1}` : ''}</span>
+            <span className="mono" style={{ width: 160, flex: 'none' }}><Hl text={h.alias} positions={aliasAt} /></span>
+            <span className="grow faint trunc" style={{ fontSize: 'var(--fs-xs)' }}><HostWhere h={h} m={q ? m : null} />{tabIdx >= 0 ? ` · open in tab ${tabIdx + 1}` : ''}</span>
             <span className="hint">{newSession ? 'New tab' : tabIdx >= 0 ? 'Switch to tab' : 'Connect'}</span>
           </>
         ),
@@ -162,11 +183,11 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       // only while searching, so an empty palette does not list every host twice.
       if (h.command && q) {
         out.push({
-          group: 'hosts', key: 'hn:' + h.alias, score: (name?.score ?? 0) + (alt ? alt.score / 4 : 0) + 1999,
+          group: 'hosts', key: 'hn:' + h.alias, score: m.score + 1999,
           render: () => (
             <>
               <span className={'hmark ' + c.className} style={c.style} />
-              <span className="mono" style={{ width: 160, flex: 'none' }}><Hl text={h.alias} positions={name?.positions ?? []} /></span>
+              <span className="mono" style={{ width: 160, flex: 'none' }}><Hl text={h.alias} positions={aliasAt} /></span>
               <span className="grow faint trunc" style={{ fontSize: 'var(--fs-xs)' }}>without <span className="mono">{h.command}</span></span>
               <span className="hint">Connect without command</span>
             </>
@@ -183,10 +204,14 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       const hostsWith = new Map<string, number>();
       for (const v of tun.list) {
         const up = v.state === 'listening';
-        const byName = fuzzy(q, `${v.name} ${v.host}`);
-        const byAction = byName ? null : fuzzy(q, `${up ? 'stop' : 'start'} tunnel ${v.name} on ${v.host}`);
-        const m = byName ?? byAction ?? (String(v.local_port).includes(q) ? { score: 1, positions: [] } : null);
+        const m = search(q, [
+          { name: 'name', text: v.name, primary: true },
+          { name: 'host', text: v.host },
+          { name: 'port', text: String(v.local_port) },
+          { name: 'action', text: `${up ? 'stop' : 'start'} tunnel on` },
+        ]);
         if (!m) continue;
+        const byAction = !!m.positions.action;
         hostsWith.set(v.host, Math.max(hostsWith.get(v.host) ?? 0, m.score));
         const conns = v.connections === 0 ? 'no connections' : v.connections === 1 ? '1 connection' : `${v.connections} connections`;
         out.push({
@@ -228,7 +253,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       // The best three hosts, as "Open <host> in a new pane" (design 18e).
       const best = catalog.hosts
         .filter((h) => h.type !== 'rdp')
-        .map((h) => ({ h, m: fuzzy(q, h.alias) }))
+        .map((h) => ({ h, m: search(q, hostFields(h)) }))
         .filter((x) => x.m)
         .sort((a, b) => b.m!.score - a.m!.score)
         .slice(0, 3);
@@ -238,7 +263,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           render: () => (
             <>
               <Icon name="split" size="sm" />
-              <span className="grow trunc">Open <span className="mono"><Hl text={h.alias} positions={m!.positions} /></span> in a new pane</span>
+              <span className="grow trunc">Open <span className="mono"><Hl text={h.alias} positions={m!.positions.alias ?? []} /></span> in a new pane</span>
               {i === 0 && <span className="hint">splits pane {paneNo} · {activeTab!.panes.length + 1} of {MAX_PANES}</span>}
             </>
           ),
@@ -251,25 +276,25 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
         // The sync's commands follow the vault's server (milestone 44).
         if (!syncShows(a.action, sync)) continue;
         const title = ACTION_TITLES[a.action];
-        const m = fuzzy(q, title);
-        if (q && !m) continue;
+        const m = search(q, [{ name: 'title', text: title, primary: true }]);
+        if (!m) continue;
         out.push({
-          group: 'actions', key: 'a:' + a.action, score: (m?.score ?? 0) + 1000,
-          render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m?.positions ?? []} /></span>{a.action === 'newSshHost' && <HostTypeIcon type="ssh" size="md" />}{a.action === 'newRdpHost' && <HostTypeIcon type="rdp" size="md" />}{a.action === 'checkUpdates' && update.status && <span className="hint" data-palette-update>{updatePaletteHint(update.status, update.now)}</span>}{a.action === 'whatsNew' && update.status?.current && <span className="hint">{update.status.current}</span>}{a.action === 'aboutFlint' && update.status?.current && <span className="hint">v{update.status.current}</span>}{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
+          group: 'actions', key: 'a:' + a.action, score: m.score + 1000,
+          render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m.positions.title ?? []} /></span>{a.action === 'newSshHost' && <HostTypeIcon type="ssh" size="md" />}{a.action === 'newRdpHost' && <HostTypeIcon type="rdp" size="md" />}{a.action === 'checkUpdates' && update.status && <span className="hint" data-palette-update>{updatePaletteHint(update.status, update.now)}</span>}{a.action === 'whatsNew' && update.status?.current && <span className="hint">{update.status.current}</span>}{a.action === 'aboutFlint' && update.status?.current && <span className="hint">v{update.status.current}</span>}{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
           run: () => onAction(a.action),
           disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? 'SSH hosts only' : !rdpTab && (a.action === 'fullscreen' || a.action === 'fullscreenAll') ? 'RDP tabs only' : a.action === 'fullscreenAll' && monitorsReason ? monitorsReason : undefined,
         });
       }
       for (const r of recents) {
         if (r.path === vault?.path) continue;
-        const m = fuzzy(q, r.name);
-        if (q && !m) continue;
+        const m = search(q, [{ name: 'name', text: r.name, primary: true }]);
+        if (!m) continue;
         out.push({
-          group: 'vaults', key: 'v:' + r.path, score: m?.score ?? 0,
+          group: 'vaults', key: 'v:' + r.path, score: m.score,
           render: () => (
             <>
               <span className={'vault-mark ' + vaultMarkClass(r.path)} style={{ width: 18, height: 18, fontSize: 'var(--fs-2xs)' }}>{vaultInitial(r.name)}</span>
-              <span className="grow trunc"><Hl text={r.name} positions={m?.positions ?? []} /> <span className="mono faint" style={{ fontSize: 'var(--fs-xs)' }}>{shortPath(r.path)}</span></span>
+              <span className="grow trunc"><Hl text={r.name} positions={m.positions.name ?? []} /> <span className="mono faint" style={{ fontSize: 'var(--fs-xs)' }}>{shortPath(r.path)}</span></span>
               <span className="hint">Switch vault</span>
             </>
           ),
@@ -313,9 +338,8 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       <div onKeyDown={onKey} style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
         <label className="row" style={{ height: 52, padding: '0 var(--sp-4)', gap: 'var(--sp-3)', borderBottom: '1px solid var(--border-subtle)' }}>
           <Icon name="search" className="faint" />
-          <input aria-label={pickToEdit ? 'Add a tunnel to' : newSession ? 'New session on' : hostsOnly ? 'Go to host' : 'Search hosts, actions and vaults'} placeholder={pickToEdit ? 'Add a tunnel to…' : newSession ? 'New session on…' : hostsOnly ? 'Go to host…' : 'Hosts, actions, vaults…'}
-            value={q} onChange={(e) => { setQ(e.target.value); setHot(0); }} className="grow" data-autofocus autoFocus
-            spellCheck={false} autoComplete="off" autoCorrect="off" autoCapitalize="off"
+          <input {...plainText} aria-label={pickToEdit ? 'Add a tunnel to' : newSession ? 'New session on' : hostsOnly ? 'Go to host' : 'Search hosts, actions and vaults'} placeholder={pickToEdit ? 'Add a tunnel to…' : newSession ? 'New session on…' : hostsOnly ? 'Go to host…' : 'Hosts, actions, vaults…'}
+            value={q} onChange={(e) => { setQ(e.target.value); setHot(0); }} className="grow" data-autofocus autoFocus autoComplete="off"
             role="combobox" aria-expanded="true" aria-controls="palette-results" aria-activedescendant={current ? 'pi-' + current.key : undefined}
             style={{ background: 'none', border: 0, outline: 'none', fontSize: 'var(--fs-lg)', color: 'var(--text-primary)' }} />
           <Key>esc</Key>

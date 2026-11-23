@@ -17,6 +17,7 @@ import { Modal } from '../ui/Modal';
 import { Picker } from '../ui/Picker';
 import { PasswordField } from '../ui/PasswordField';
 import { TypeBadge } from './TypeBadge';
+import { plainText } from '../ui/plainText';
 
 export const RDP_PORT = 3389;
 
@@ -144,17 +145,17 @@ export function RdpHostEditor({ host, group, onClose, onDelete, onNewCredential 
         <div className="modal-b scroll" style={{ gap: 'var(--sp-4)', paddingBottom: 'var(--sp-4)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--sp-4)', alignItems: 'start' }}>
             <div className="field"><label className="flabel" htmlFor="ra">Alias</label>
-              <div className={'input' + (errs.alias ? ' err' : '')}><input id="ra" className="mono" value={f.alias} onChange={(e) => set('alias', e.target.value)} placeholder="win-01" data-autofocus autoFocus /></div>
+              <div className={'input' + (errs.alias ? ' err' : '')}><input {...plainText} id="ra" className="mono" value={f.alias} onChange={(e) => set('alias', e.target.value)} placeholder="win-01" data-autofocus autoFocus /></div>
               {ferr(errs.alias) || <span className="hint">What you type in <span className="mono">flint connect</span>.</span>}</div>
             <div className="field"><label className="flabel" htmlFor="rl">Label <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></label>
-              <div className="input"><input id="rl" value={f.label} onChange={(e) => set('label', e.target.value)} placeholder="e.g. Reception PC" /></div></div>
+              <div className="input"><input {...plainText} id="rl" value={f.label} onChange={(e) => set('label', e.target.value)} placeholder="e.g. Reception PC" /></div></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 120px', gap: 'var(--sp-4)', alignItems: 'start' }}>
             <div className="field"><label className="flabel" htmlFor="rh">Address</label>
-              <div className={'input' + (errs.hostname ? ' err' : '')}><input id="rh" className="mono" value={f.hostname} onChange={(e) => set('hostname', e.target.value)} placeholder="name or IP" /></div>
+              <div className={'input' + (errs.hostname ? ' err' : '')}><input {...plainText} id="rh" className="mono" value={f.hostname} onChange={(e) => set('hostname', e.target.value)} placeholder="name or IP" /></div>
               {ferr(errs.hostname)}</div>
             <div className="field"><label className="flabel" htmlFor="rp">Port</label>
-              <div className={'input' + (errs.port ? ' err' : '')}><input id="rp" className="mono" inputMode="numeric" value={f.port} onChange={(e) => set('port', e.target.value.replace(/\D/g, ''))} placeholder={String(RDP_PORT)} /></div>
+              <div className={'input' + (errs.port ? ' err' : '')}><input {...plainText} id="rp" className="mono" inputMode="numeric" value={f.port} onChange={(e) => set('port', e.target.value.replace(/\D/g, ''))} placeholder={String(RDP_PORT)} /></div>
               {ferr(errs.port)}</div>
           </div>
           <div className="field"><span className="flabel">Folder</span>
@@ -163,9 +164,9 @@ export function RdpHostEditor({ host, group, onClose, onDelete, onNewCredential 
           <div className="field">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--sp-4)' }}>
               <div className="field"><label className="flabel" htmlFor="ru">User {login === 'credential' && <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· overrides the credential's</span>}</label>
-                <div className="input"><input id="ru" className="mono" value={f.user} onChange={(e) => set('user', e.target.value)} placeholder={login === 'credential' ? 'from the credential' : 'Administrator'} /></div></div>
+                <div className="input"><input {...plainText} id="ru" className="mono" value={f.user} onChange={(e) => set('user', e.target.value)} placeholder={login === 'credential' ? 'from the credential' : 'Administrator'} /></div></div>
               <div className="field"><label className="flabel" htmlFor="rd">Domain <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></label>
-                <div className="input"><input id="rd" className="mono" value={f.domain} onChange={(e) => set('domain', e.target.value)} placeholder="e.g. CORP" /></div></div>
+                <div className="input"><input {...plainText} id="rd" className="mono" value={f.domain} onChange={(e) => set('domain', e.target.value)} placeholder="e.g. CORP" /></div></div>
             </div>
             <span className="hint"><span className="mono">DOMAIN\user</span> and <span className="mono">user@domain</span> also work in User.</span>
           </div>
@@ -221,7 +222,7 @@ export function RdpHostEditor({ host, group, onClose, onDelete, onNewCredential 
             <div className="field"><span className="flabel">Tags</span>
               <div className="tags">
                 {f.tags.map((t) => <span key={t} className="tag">{t}<button type="button" aria-label={`Remove tag ${t}`} onClick={() => set('tags', f.tags.filter((x) => x !== t))}><Icon name="x" size="xs" /></button></span>)}
-                <input aria-label="Add tag" placeholder="Add tag…" value={tagInput} onChange={(e) => setTagInput(e.target.value)}
+                <input {...plainText} aria-label="Add tag" placeholder="Add tag…" value={tagInput} onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag(tagInput); }
                     if (e.key === 'Backspace' && !tagInput && f.tags.length) set('tags', f.tags.slice(0, -1));
@@ -236,7 +237,7 @@ export function RdpHostEditor({ host, group, onClose, onDelete, onNewCredential 
               </div></div>
           </div>
           <div className="field"><label className="flabel" htmlFor="rn">Notes</label>
-            <div className="input area"><textarea id="rn" rows={2} value={f.notes} onChange={(e) => set('notes', e.target.value)} /></div></div>
+            <div className="input area"><textarea data-prose id="rn" rows={2} value={f.notes} onChange={(e) => set('notes', e.target.value)} /></div></div>
           {error && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
         </div>
         <div className="modal-f">

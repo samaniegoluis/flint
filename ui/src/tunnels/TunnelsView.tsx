@@ -12,6 +12,7 @@ import { Icon } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu';
 import { key, stateLine, switchedOn, tunnels, upOn, useTunnels, type Start } from './store';
+import { plainText } from '../ui/plainText';
 
 export function TunnelsView({ resizer, onEditHost, onConnect, onPickHost }: {
   resizer: React.ReactNode;
@@ -56,7 +57,7 @@ export function TunnelsView({ resizer, onEditHost, onConnect, onPickHost }: {
       </div>
       <label className="search side-search">
         <Icon name="search" size="sm" />
-        <input aria-label="Filter tunnels" placeholder="Filter by name, host or port" value={filter} disabled={snap.list.length === 0}
+        <input {...plainText} aria-label="Filter tunnels" placeholder="Filter by name, host or port" value={filter} disabled={snap.list.length === 0}
           onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape' && filter) { e.stopPropagation(); setFilter(''); } }} data-tunnels-filter />
       </label>
       <div className="tun-scroll">
@@ -160,7 +161,7 @@ function StartCard({ start, host }: { start: Start; host: string }) {
             <span className="hint">For the tunnels' own session. Save it in the host editor to skip this.</span>
           </div>
         </div>
-        <div className="input"><input type="password" className="pw" aria-label="Password" value={pw} autoFocus autoComplete="off" onChange={(e) => setPw(e.target.value)} /></div>
+        <div className="input"><input {...plainText} type="password" className="pw" aria-label="Password" value={pw} autoFocus autoComplete="off" onChange={(e) => setPw(e.target.value)} /></div>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => tunnels.answer(host, false, '')}>Cancel</button>
           <button className="btn btn-primary btn-sm" disabled={!pw}>Connect<span className="kbd-in">↵</span></button>

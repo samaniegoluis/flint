@@ -157,7 +157,7 @@ also checks that no password, key or passphrase appears in any output, and that 
 hostname, user, label or note appears in clear text in the vault files. It sets
 `FLINT_APP=off`, so a locked vault never starts your installed Flint.
 
-The page's own unit tests (keyboard map, host tree, fuzzy search) run with Vitest:
+The page's own unit tests (keyboard map, host tree, the palette's search) run with Vitest:
 
 ```sh
 cd ui && npm test

@@ -19,6 +19,7 @@ import { files, useFiles } from './store';
 import { pairs, paneKey, type Pair } from './pair';
 import { dropFolderAt, FileList, folderLabel, paneDrag, setPaneDrag } from './FileList';
 import { PathField } from './PathField';
+import { plainText } from '../ui/plainText';
 
 // ---- 14d1: the server picker -----------------------------------------------------------
 
@@ -50,7 +51,7 @@ export function ServerPicker({ current, onPick, onClose }: { current: string; on
       <div className="menu-label"><span className="label">Copy to another server</span></div>
       <label className="search" style={{ margin: '0 var(--sp-1) var(--sp-1)' }}>
         <Icon name="search" size="sm" />
-        <input aria-label="Filter hosts" placeholder="Filter hosts" value={filter} autoFocus onChange={(e) => setFilter(e.target.value)} data-files-picker-filter />
+        <input {...plainText} aria-label="Filter hosts" placeholder="Filter hosts" value={filter} autoFocus onChange={(e) => setFilter(e.target.value)} data-files-picker-filter />
       </label>
       <div className="col" style={{ overflowY: 'auto', minHeight: 0, gap: 1 }}>
         {rows.map((r) => {
@@ -294,7 +295,7 @@ function PaneState({ tabId, pair, onEditHost }: { tabId: string; pair: Pair; onE
         <div className="prompt-h"><span className="prompt-ic accent"><Icon name="lock" /></span>
           <div className="col grow" style={{ gap: 2 }}><h2 className="prompt-t" style={{ fontSize: 'var(--fs-md)' }}>Password for <span className="mono">{p.user}@{p.alias}</span></h2>
             <span className="hint">No saved login was accepted.</span></div></div>
-        <div className="input"><input type="password" className="pw" aria-label="Password" value={pw} onChange={(e) => setPw(e.target.value)} data-autofocus autoComplete="off" /></div>
+        <div className="input"><input {...plainText} type="password" className="pw" aria-label="Password" value={pw} onChange={(e) => setPw(e.target.value)} data-autofocus autoComplete="off" /></div>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => pairs.answer(tabId, false, '')}>Cancel</button>
           <button type="submit" className="btn btn-primary btn-sm" disabled={!pw}>Connect<span className="kbd-in">↵</span></button>

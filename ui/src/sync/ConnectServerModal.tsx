@@ -12,6 +12,7 @@ import { Icon } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
 import { serverErrorField, TokenField } from './TokenField';
+import { plainText } from '../ui/plainText';
 
 const ESTIMATE_DELAY_MS = 120;
 
@@ -110,7 +111,7 @@ export function ConnectServerModal({ onClose, onChangePassword, onConnected }: {
           <div className="field">
             <label className="flabel" htmlFor="csl">Label <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>optional</span></label>
             <div className={'input' + (errors.label ? ' err' : '')}>
-              <input id="csl" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={64} placeholder="e.g. Work" autoComplete="off" spellCheck={false} disabled={busy} />
+              <input {...plainText} id="csl" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={64} placeholder="e.g. Work" autoComplete="off" disabled={busy} />
             </div>
             {errors.label
               ? <span className="hint err" role="alert">{errors.label}</span>
@@ -119,7 +120,7 @@ export function ConnectServerModal({ onClose, onChangePassword, onConnected }: {
           <div className="field">
             <label className="flabel" htmlFor="cmp">Master password of {name}, again</label>
             <div className={'input' + (errors.pw ? ' err' : '')}>
-              <input id="cmp" type="password" className="pw" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" disabled={busy} />
+              <input {...plainText} id="cmp" type="password" className="pw" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" disabled={busy} />
             </div>
             <div className="row" style={{ gap: 'var(--sp-3)' }}>
               <div className={'meter grow ' + meterClass(strength)} role="meter" aria-label="Password strength" aria-valuenow={strength?.score ?? 0} aria-valuemin={0} aria-valuemax={4}>
@@ -153,8 +154,8 @@ export function ServerAddress({ id, value, onChange, error, disabled, autoFocus 
       <label className="flabel" htmlFor={id}>Server address</label>
       <div className={'input' + (error ? ' err' : '')}>
         <Icon name="server" size="sm" className="faint" />
-        <input id={id} className="mono" value={value} onChange={(e) => onChange(e.target.value)} placeholder="https://vault.example.com"
-          autoComplete="off" spellCheck={false} disabled={disabled} autoFocus={autoFocus} data-autofocus={autoFocus || undefined} aria-describedby={error ? id + '-e' : undefined} />
+        <input {...plainText} id={id} className="mono" value={value} onChange={(e) => onChange(e.target.value)} placeholder="https://vault.example.com"
+          autoComplete="off" disabled={disabled} autoFocus={autoFocus} data-autofocus={autoFocus || undefined} aria-describedby={error ? id + '-e' : undefined} />
       </div>
       {error && <span id={id + '-e'} className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
     </div>

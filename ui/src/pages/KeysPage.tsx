@@ -10,6 +10,7 @@ import { Kbd, Key } from '../ui/Kbd';
 import { useTrapFocus } from '../ui/Modal';
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu';
 import { useRef } from 'react';
+import { plainText } from '../ui/plainText';
 
 export function KeysPage({ adding, setAdding, onConfirm }: { adding: boolean; setAdding: (v: boolean) => void; onConfirm: (c: Confirm) => void }) {
   const { catalog, notify, fail, refreshCatalog } = useApp();
@@ -54,7 +55,7 @@ export function KeysPage({ adding, setAdding, onConfirm }: { adding: boolean; se
       <div className="page-h">
         <h1>SSH keys</h1><span className="badge">{catalog.keys.length}</span>
         <span className="grow" />
-        <label className="search" style={{ width: 240 }}><Icon name="search" size="sm" /><input aria-label="Filter keys" placeholder="Filter by name or fingerprint" value={q} onChange={(e) => setQ(e.target.value)} /></label>
+        <label className="search" style={{ width: 240 }}><Icon name="search" size="sm" /><input {...plainText} aria-label="Filter keys" placeholder="Filter by name or fingerprint" value={q} onChange={(e) => setQ(e.target.value)} /></label>
         <button className="btn btn-primary" onClick={() => setAdding(true)}><Icon name="plus" size="sm" />Add key<Kbd action="newHost" inline /></button>
       </div>
       <div className="scroll" style={{ padding: '0 var(--sp-6) var(--sp-6)' }}>
@@ -83,7 +84,7 @@ export function KeysPage({ adding, setAdding, onConfirm }: { adding: boolean; se
                   <td className="primary"><div className="row">
                     <Icon name="key" size="sm" className={sel === k.name ? 'info-t' : 'faint'} />
                     {renaming?.name === k.name ? (
-                      <div className="input" style={{ height: 26 }}><input className="mono" autoFocus value={renaming.value} aria-label="New key name"
+                      <div className="input" style={{ height: 26 }}><input {...plainText} className="mono" autoFocus value={renaming.value} aria-label="New key name"
                         onChange={(e) => setRenaming({ ...renaming, value: e.target.value })}
                         onKeyDown={(e) => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') setRenaming(null); }} onBlur={() => setRenaming(null)} /></div>
                     ) : <span className="mono">{k.name}</span>}
@@ -172,19 +173,19 @@ function AddKeyDrawer({ onClose }: { onClose: () => void }) {
           </div>
           {source === 'paste' ? (
             <div className="field"><label className="flabel" htmlFor="pk">Private key</label>
-              <div className="input area"><textarea id="pk" rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" spellCheck={false} data-autofocus /></div></div>
+              <div className="input area"><textarea {...plainText} id="pk" rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" data-autofocus /></div></div>
           ) : (
             <div className="field"><span className="flabel">Key file</span>
               <div className="row" style={{ gap: 'var(--sp-2)' }}>
-                <div className="input grow"><Icon name="file" size="sm" className="faint" /><input className="mono" aria-label="Key file" value={file} onChange={(e) => setFile(e.target.value)} style={{ fontSize: 'var(--fs-sm)' }} /></div>
+                <div className="input grow"><Icon name="file" size="sm" className="faint" /><input {...plainText} className="mono" aria-label="Key file" value={file} onChange={(e) => setFile(e.target.value)} style={{ fontSize: 'var(--fs-sm)' }} /></div>
                 <button type="button" className="btn btn-secondary" style={{ height: 'var(--control-h)' }} onClick={() => pick().catch(() => {})}>Choose…</button>
               </div>
               <span className="hint">The file's content is copied into the vault; the file itself is not needed afterwards.</span></div>
           )}
           <div className="field"><label className="flabel" htmlFor="kn">Name</label>
-            <div className="input"><input id="kn" className="mono" value={name} onChange={(e) => setName(e.target.value)} placeholder="deploy-2026" /></div></div>
+            <div className="input"><input {...plainText} id="kn" className="mono" value={name} onChange={(e) => setName(e.target.value)} placeholder="deploy-2026" /></div></div>
           <div className="field"><label className="flabel" htmlFor="kp">Passphrase <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· {encrypted ? 'this key is encrypted' : 'only if the key is encrypted'}</span></label>
-            <div className="input"><input id="kp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="off" />
+            <div className="input"><input {...plainText} id="kp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="off" />
               <button type="button" className="icon-btn" aria-label={show ? 'Hide passphrase' : 'Show passphrase'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button></div>
             <span className="hint">Stored in the vault, sealed like the key, so connections never ask for it.</span></div>
           {error && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}

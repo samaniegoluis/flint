@@ -24,6 +24,7 @@ import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
 import { CommandModal, MoreRow, moreText } from './CommandModal';
 import { colorStyle } from '../lib/colors';
+import { plainText } from '../ui/plainText';
 
 type ScopeKind = 'host' | 'group' | 'all';
 
@@ -498,7 +499,7 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
               ) : (
                 <div className="field">
                   <label className="flabel" htmlFor="approval-sudo-pw">Sudo password for <span className="mono strong">{sudo.user}</span> on <span className="mono strong">{sudo.host}</span></label>
-                  <div className="input"><input id="approval-sudo-pw" type="password" className="pw" autoComplete="off" value={sudoPassword}
+                  <div className="input"><input {...plainText} id="approval-sudo-pw" type="password" className="pw" autoComplete="off" value={sudoPassword}
                     onChange={(e) => setSudoPassword(e.target.value)} data-sudo-password {...(focusOn === 'sudo' ? { 'data-autofocus': true } : {})} /></div>
                   <label className="opt"><input type="checkbox" checked={saveSudo} onChange={(e) => setSaveSudo(e.target.checked)} data-sudo-save />
                     <span className="opt-t"><span className="opt-l">Save it for {sudo.host}</span><span className="hint">{periodMin > 0 && !saveSudo
@@ -602,7 +603,7 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
               <label className="flabel" htmlFor="approval-pw">{sudo ? (periodMin > 0 ? `Master password: confirms root for ${periodMin} min` : 'Master password: confirms this one command') : 'Confirm'}</label>
               <div className="field">
                 <div className={wrongPassword ? 'input err' : 'input'}>
-                  <input id="approval-pw" type="password" className="pw" autoComplete="off" value={password} aria-invalid={wrongPassword || undefined}
+                  <input {...plainText} id="approval-pw" type="password" className="pw" autoComplete="off" value={password} aria-invalid={wrongPassword || undefined}
                     onChange={(e) => { setPassword(e.target.value); setWrongPassword(false); }} {...(focusOn === 'master' ? { 'data-autofocus': true } : {})} />
                 </div>
                 {!wrongPassword && <span className="hint">{sudo ? `${noPresence} here. This is the vault's password, not the host's sudo password.` : `Master password for this vault. ${noPresence} is available here.`}</span>}

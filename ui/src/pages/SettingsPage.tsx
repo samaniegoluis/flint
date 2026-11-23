@@ -25,6 +25,7 @@ import { ReplaceTokenModal } from '../sync/ReplaceTokenModal';
 import { agoLabel, SYNC_LABEL } from '../lib/sync';
 import { useUpdate, useUpdateOnScreen } from '../update/UpdateProvider';
 import { updateActionLabel, updateAvailable, updateDownloadFailure, updateDownloading, updateHowText, updatePercent, updateReady, updateReadyHint, updateRelaunchFailure, updateStateLine } from '../lib/update';
+import { plainText } from '../ui/plainText';
 
 export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'about';
 
@@ -500,7 +501,7 @@ function Shortcuts() {
     <div className="col" style={{ gap: 'var(--sp-3)' }}>
       <div className="row" style={{ gap: 'var(--sp-3)' }}>
         <h1 className="grow" style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)' }}>Keyboard shortcuts</h1>
-        <label className="search" style={{ width: 220 }}><Icon name="search" size="sm" /><input aria-label="Filter shortcuts" placeholder="Filter actions or keys" value={q} onChange={(e) => setQ(e.target.value)} /></label>
+        <label className="search" style={{ width: 220 }}><Icon name="search" size="sm" /><input {...plainText} aria-label="Filter shortcuts" placeholder="Filter actions or keys" value={q} onChange={(e) => setQ(e.target.value)} /></label>
       </div>
       <div className="callout info"><Icon name="keyboard" size="sm" className="info-t" /><span>On Linux <span className="mono strong">⌘</span> becomes <span className="mono strong">Ctrl+Shift</span> and <span className="mono strong">⇧⌘</span> becomes <span className="mono strong">Ctrl+Alt+Shift</span>, so plain Ctrl combos always reach the terminal (Kitty keyboard protocol). Custom shortcuts are coming in a later version.</span></div>
       <table className="table compact">

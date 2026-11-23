@@ -11,6 +11,7 @@ import { useTrapFocus } from '../ui/Modal';
 import { PasswordField } from '../ui/PasswordField';
 import { Picker } from '../ui/Picker';
 import type { Confirm } from './KeysPage';
+import { plainText } from '../ui/plainText';
 
 export function CredentialsPage({ editing, setEditing, onConfirm }: {
   editing: string | null | undefined; // undefined: closed · null: new · name: edit
@@ -38,7 +39,7 @@ export function CredentialsPage({ editing, setEditing, onConfirm }: {
       <div className="page-h">
         <h1>Credentials</h1><span className="badge">{catalog.credentials.length}</span>
         <span className="grow" />
-        <label className="search" style={{ width: 240 }}><Icon name="search" size="sm" /><input aria-label="Filter credentials" placeholder="Filter credentials" value={q} onChange={(e) => setQ(e.target.value)} /></label>
+        <label className="search" style={{ width: 240 }}><Icon name="search" size="sm" /><input {...plainText} aria-label="Filter credentials" placeholder="Filter credentials" value={q} onChange={(e) => setQ(e.target.value)} /></label>
         <button className="btn btn-primary" onClick={() => setEditing(null)}><Icon name="plus" size="sm" />New credential<Kbd action="newHost" inline /></button>
       </div>
       <p className="muted" style={{ padding: '0 var(--sp-6) var(--sp-3)', fontSize: 'var(--fs-sm)', maxWidth: 640 }}>A credential is a username plus a password or key. Link it to many hosts and change it in one place.</p>
@@ -101,8 +102,8 @@ function CredEditor({ name, onClose, onDelete }: { name: string | null; onClose:
         onKeyDown={(e) => { if (e.key === 'Enter' && (os === 'mac' ? e.metaKey : e.ctrlKey)) submit(); }}>
         <div className="modal-h"><h2 className="grow">{cred ? 'Edit credential' : 'New credential'}</h2><button type="button" className="icon-btn" aria-label="Close (esc)" onClick={onClose}><Icon name="x" size="sm" /></button></div>
         <div className="modal-b scroll" style={{ flex: 1 }}>
-          <div className="field"><label className="flabel" htmlFor="cn">Name</label><div className="input"><input id="cn" value={n} onChange={(e) => setN(e.target.value)} placeholder="domain-login" data-autofocus /></div></div>
-          <div className="field"><label className="flabel" htmlFor="cu">Username</label><div className="input"><input id="cu" className="mono" value={user} onChange={(e) => setUser(e.target.value)} placeholder="luis" /></div></div>
+          <div className="field"><label className="flabel" htmlFor="cn">Name</label><div className="input"><input {...plainText} id="cn" value={n} onChange={(e) => setN(e.target.value)} placeholder="domain-login" data-autofocus /></div></div>
+          <div className="field"><label className="flabel" htmlFor="cu">Username</label><div className="input"><input {...plainText} id="cu" className="mono" value={user} onChange={(e) => setUser(e.target.value)} placeholder="luis" /></div></div>
           <div className="field"><span className="flabel">Authentication</span>
             <div className="seg full" role="group" aria-label="Authentication method">
               <button type="button" aria-pressed={mode === 'password'} onClick={() => setMode('password')}><Icon name="lock" size="sm" />Password</button>

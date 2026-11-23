@@ -5,6 +5,7 @@ import { shortPath, useApp, vaultInitial, vaultMarkClass } from '../state/app';
 import { Icon } from '../ui/Icon';
 import { Kbd, Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
+import { plainText } from '../ui/plainText';
 
 // The vault switcher popover (⇧⌘O): recent vaults, then Open, Create and Manage.
 export function VaultMenu({ onClose, onManage, style }: { onClose: () => void; onManage?: () => void; style?: CSSProperties }) {
@@ -104,7 +105,7 @@ export function RenameVault({ onDone }: { onDone: () => void }) {
     <form className="row" style={{ gap: 'var(--sp-2)' }} onSubmit={(e) => { e.preventDefault(); save(); }}
       onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onDone(); } }}>
       <div className="input" style={{ minWidth: 180 }}>
-        <input aria-label="Vault name" value={name} maxLength={64} autoFocus data-autofocus onChange={(e) => setName(e.target.value)} />
+        <input {...plainText} aria-label="Vault name" value={name} maxLength={64} autoFocus data-autofocus onChange={(e) => setName(e.target.value)} />
       </div>
       <button className="btn btn-primary btn-sm" type="submit" disabled={busy || !name.trim()}>Save</button>
       <button className="btn btn-ghost btn-sm" type="button" onClick={onDone}>Cancel</button>

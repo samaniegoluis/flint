@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toFlintError } from '../api/backend';
 import { files } from './store';
+import { plainText } from '../ui/plainText';
 
 const editors = new Map<string, (seed?: string) => void>();
 
@@ -73,8 +74,8 @@ export function PathField({ fkey, path, os, pane, disabled, onError, onDone, chi
   if (editing) {
     const name = pane ? { 'data-files-pane-path-input': '' } : { 'data-files-path-input': '' };
     return (
-      <input ref={input} className={'crumbs-input grow' + (bad ? ' is-bad' : '')} {...name} aria-label="Go to folder" aria-invalid={bad || undefined}
-        value={draft} readOnly={busy} spellCheck={false} autoCapitalize="off" autoCorrect="off" autoComplete="off" placeholder="/path, ~ or a folder here"
+      <input {...plainText} ref={input} className={'crumbs-input grow' + (bad ? ' is-bad' : '')} {...name} aria-label="Go to folder" aria-invalid={bad || undefined}
+        value={draft} readOnly={busy} autoComplete="off" placeholder="/path, ~ or a folder here"
         onChange={(e) => { setDraft(e.target.value); setBad(false); }}
         onBlur={() => { if (!busy) close(false); }}
         onKeyDown={(e) => {

@@ -11,6 +11,7 @@ import { VaultMenu } from '../shell/VaultSwitcher';
 import { RememberOption } from '../ui/RememberOption';
 import { sessions, useSessions } from '../sessions/store';
 import type { LockReason, RemoteStatus } from '../api/types';
+import { plainText } from '../ui/plainText';
 
 const LOCK_REASONS: Record<LockReason, string> = {
   manual: 'Locked.',
@@ -168,7 +169,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
             <label className="flabel" htmlFor="pw">Master password</label>
             <div className={'input lg mono' + (error ? ' err' : '')} style={{ paddingLeft: 'var(--sp-4)', gap: 'var(--sp-3)' }}>
               <span className="accent-t" aria-hidden="true">❯</span>
-              <input id="pw" ref={input} type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw}
+              <input {...plainText} id="pw" ref={input} type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw}
                 onChange={(e) => setPw(e.target.value)}
                 onKeyDown={(e) => setCaps(e.getModifierState?.('CapsLock') ?? false)}
                 onKeyUp={(e) => setCaps(e.getModifierState?.('CapsLock') ?? false)}

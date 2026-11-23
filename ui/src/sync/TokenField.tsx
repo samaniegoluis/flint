@@ -4,6 +4,7 @@
 import { useRef, useState } from 'react';
 import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
+import { plainText } from '../ui/plainText';
 
 export function TokenField({ id, value, onChange, error, disabled, autoFocus }: {
   id: string;
@@ -29,8 +30,8 @@ export function TokenField({ id, value, onChange, error, disabled, autoFocus }: 
       <label className="flabel" htmlFor={id}>Token</label>
       <div className="row" style={{ gap: 'var(--sp-2)' }}>
         <div className={'input grow' + (error ? ' err' : '')}>
-          <input ref={ref} id={id} type={show ? 'text' : 'password'} className={'mono' + (show ? '' : ' pw')} value={value}
-            onChange={(e) => onChange(e.target.value)} autoComplete="off" spellCheck={false} disabled={disabled} autoFocus={autoFocus}
+          <input {...plainText} ref={ref} id={id} type={show ? 'text' : 'password'} className={'mono' + (show ? '' : ' pw')} value={value}
+            onChange={(e) => onChange(e.target.value)} autoComplete="off" disabled={disabled} autoFocus={autoFocus}
             aria-describedby={error ? id + '-e' : undefined} />
           <button type="button" className="icon-btn" aria-label={show ? 'Hide token' : 'Show token'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
         </div>
