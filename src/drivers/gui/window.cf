@@ -94,9 +94,10 @@ type CloseAsk struct {
 // background?*; its answer is saved and `window_close` comes here again. cfire hid the
 // window already (`set_hide_on_close`), which is what intercepts ✕ at all.
 fn on_window_close(settings_store: JsonSettingsStore, st: GuiState, mut app: webui.App, e2e: bool) {
-    action := window_close_action(settings_store, window_has_tray(e2e))
+    tray := window_has_tray(e2e)
+    action := window_close_action(settings_store, tray)
+    write_stderr("flint-gui: window closed (tray: {tray}): {action}\n")
     if action == CLOSE_QUIT {
-        write_stderr("flint-gui: window closed with no tray: quit\n")
         quit_app(mut app)
         return
     }

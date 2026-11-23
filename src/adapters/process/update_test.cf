@@ -205,3 +205,35 @@ test "Windows: arguments reach a detached program as given, and its output the l
     assert(out.contains("say \"hi there\""))
     assert(!out.contains("three"))
 }
+
+// Windows (milestone 65, CF-190): the Restart Manager names who holds a file in the
+// folder: a PowerShell that keeps one open, by its pid. Elsewhere nobody is named.
+test "the programs that hold a file in the folder are named on Windows, nobody elsewhere" {
+    dir := update_tmp("holders")
+    mut files := new_os_update_files()
+    defer { files.upd_remove(dir) or {} }
+    try files.upd_mkdir(dir + "/Flint")
+    try files.upd_write(dir + "/Flint/ui.txt", "page")
+    mut procs := new_os_update_processes()
+    if os_name() != "windows" {
+        assert_eq(procs.proc_holders(dir + "/Flint").len(), 0)
+        return
+    }
+    assert_eq(procs.proc_holders(dir + "/Flint").len(), 0)
+    held := (dir + "/Flint/ui.txt").replace("/", "\\")
+    ps := system32() + "/WindowsPowerShell/v1.0/powershell.exe"
+    pid := try procs.proc_spawn(ps, ["-NoProfile", "-Command", "$f = [IO.File]::Open('{held}', 'Open', 'Read', 'Read'); Start-Sleep 30"], "")
+    defer { procs.proc_stop(pid) }
+    mut seen: []FolderHolder = []
+    for _ in 0..100 {
+        seen = procs.proc_holders(dir + "/Flint")
+        if seen.len() > 0 {
+            break
+        }
+        procs.proc_sleep(100)
+    }
+    assert_eq(seen.len(), 1)
+    assert_eq(seen[0].pid, pid)
+    assert(seen[0].name.len() > 0)
+    write_stderr("holders: {seen[0].name} (pid {seen[0].pid})\n")
+}
