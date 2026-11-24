@@ -21,6 +21,7 @@ import { sessions, type Pane } from './store';
 import { cropPoint, monitors, useMonitors } from './monitors';
 import { RdpCard } from './RdpCards';
 import { RdpStatsOverlay } from './RdpStatsOverlay';
+import { t } from '../i18n';
 
 /** Tests force a renderer by setting this before the tab opens ('2d' or 'webgl'). */
 declare global { interface Window { __flintRdpRenderer?: string } }
@@ -313,7 +314,7 @@ export function RdpView({ pane, active, showStats, onEditHost, onKnownHosts }: {
   const cursor = cursorStyle(cursors.current, scale, cursorTick);
   return (
     <div className="rdp-area" ref={area} data-rdp-pane={pane.id} data-rdp-session={session ?? ''}>
-      <canvas key={canvasKey} ref={canvas} className={'rdp-canvas' + (ready ? '' : ' stale')} tabIndex={0} aria-label={`Remote desktop of ${pane.alias}`}
+      <canvas key={canvasKey} ref={canvas} className={'rdp-canvas' + (ready ? '' : ' stale')} tabIndex={0} aria-label={t('rdp_view.remote_desktop_of_alias', { alias: pane.alias })}
         data-desktop={deskSize.width ? `${deskSize.width}x${deskSize.height}` : ''} data-renderer={rendererKind}
         data-cursor={cursorKind(cursors.current)}
         style={{ width: shownW || 0, height: shownH || 0, visibility: deskSize.width ? 'visible' : 'hidden', cursor: ready ? cursor : undefined }}
@@ -379,5 +380,5 @@ function cursorKind(c: CursorCache): string {
 export function desktopScaleLabel(pane: Pane, areaW: number, areaH: number): string {
   if (!pane.desktop) return '';
   const s = Math.min(1, fitScale(areaW, areaH, pane.desktop.width, pane.desktop.height));
-  return s >= 0.995 ? '' : `scaled to ${Math.round(s * 100)}%`;
+  return s >= 0.995 ? '' : t('rdp_view.scaled_to', { pct: Math.round(s * 100) });
 }

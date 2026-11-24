@@ -7,6 +7,7 @@ import { chordLabel, type Action } from '../lib/keymap';
 import { sessions, type Pane, type Tab } from './store';
 import { useMonitors } from './monitors';
 import { allMonitorsReason } from './MonitorsUi';
+import { t } from '../i18n';
 
 interface Item {
   key: string;
@@ -35,12 +36,12 @@ export function TabMenu({ tab, pane, x, y, onClose, onEditHost, onFullScreen, on
   const rdp = pane.kind === 'rdp';
   const ready = pane.status === 'ready';
   const items: Item[] = [
-    ...(rdp && ready ? [{ key: 'fullscreen', label: 'Full screen', chord: 'fullscreen' as Action, run: onFullScreen }] : []),
-    ...(rdp && ready ? [{ key: 'fullscreenAll', label: 'Full screen on all monitors', reason: allMonitorsReason(monitorsView), run: onAllMonitors }] : []),
-    ...(!rdp ? [{ key: 'reconnect', label: 'Reconnect', chord: 'reconnect' as Action, run: () => sessions.reconnect(pane.id) }] : []),
-    { key: 'edit', label: 'Edit host…', chord: 'editHost', run: onEditHost },
-    ...(rdp && ready ? [{ key: 'disconnect', label: 'Disconnect', run: () => sessions.disconnect(pane.id) }] : []),
-    { key: 'close', label: 'Close tab', chord: 'closeTab', sep: true, run: () => sessions.closeTab(tab.id) },
+    ...(rdp && ready ? [{ key: 'fullscreen', label: t('tab_menu.full_screen'), chord: 'fullscreen' as Action, run: onFullScreen }] : []),
+    ...(rdp && ready ? [{ key: 'fullscreenAll', label: t('tab_menu.full_screen_on_all_monitors'), reason: allMonitorsReason(monitorsView), run: onAllMonitors }] : []),
+    ...(!rdp ? [{ key: 'reconnect', label: t('tab_menu.reconnect'), chord: 'reconnect' as Action, run: () => sessions.reconnect(pane.id) }] : []),
+    { key: 'edit', label: t('tab_menu.edit_host'), chord: 'editHost', run: onEditHost },
+    ...(rdp && ready ? [{ key: 'disconnect', label: t('common.disconnect'), run: () => sessions.disconnect(pane.id) }] : []),
+    { key: 'close', label: t('tab_menu.close_tab'), chord: 'closeTab', sep: true, run: () => sessions.closeTab(tab.id) },
   ];
   const [hot, setHot] = useState(0);
   useEffect(() => { ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]')[hot]?.focus(); }, [hot]);

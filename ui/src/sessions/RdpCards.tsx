@@ -11,6 +11,8 @@ import { Kbd, Key } from '../ui/Kbd';
 import { RDP_CONNECT_TIMEOUT_S } from '../lib/rdpInput';
 import { rdpEndKind, sessions, type Pane } from './store';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 /** "4f:a2:…" as the design groups it: upper-case bytes split by spaces. */
 export function groupedFingerprint(fp: string): string {
@@ -59,13 +61,13 @@ export function RdpCard({ pane, active, onEditHost, onKnownHosts }: {
         <div className="row" style={{ gap: 'var(--sp-4)' }}>
           <span className="spinner" aria-hidden="true" />
           <div className="col" style={{ gap: 2, minWidth: 0 }}>
-            <span className="prompt-t">Connecting to <span className="mono">{pane.alias}</span></span>
-            <span className="muted mono trunc" style={{ fontSize: 'var(--fs-xs)' }}>{who ? `${who}@` : ''}{address(host, pane.alias)}{host?.credential ? ` · credential ${host.credential}` : host?.has_password ? ' · own password' : ''}</span>
+            <span className="prompt-t">{tr('rdp_cards.connecting_to_span', { span: <span className="mono">{pane.alias}</span> })}</span>
+            <span className="muted mono trunc" style={{ fontSize: 'var(--fs-xs)' }}>{who ? `${who}@` : ''}{address(host, pane.alias)}{host?.credential ? t('rdp_cards.via_credential', { name: host.credential }) : host?.has_password ? t('rdp_cards.own_password') : ''}</span>
           </div>
         </div>
         <div className="row" style={{ gap: 'var(--sp-2)' }}>
-          <button className="btn btn-secondary btn-sm" data-autofocus onClick={close}>Cancel<Key>esc</Key></button>
-          <span className="hint">Times out after {RDP_CONNECT_TIMEOUT_S} s</span>
+          <button className="btn btn-secondary btn-sm" data-autofocus onClick={close}>{t('common.cancel')}<Key>esc</Key></button>
+          <span className="hint">{tr('rdp_cards.times_out_after_rdp_connect', { RDP_CONNECT_TIMEOUT_S })}</span>
         </div>
       </div>,
     );
@@ -79,21 +81,21 @@ export function RdpCard({ pane, active, onEditHost, onKnownHosts }: {
   if (kind === 'cert-changed') {
     const k = pane.changedKey!;
     return wrap(
-      <div className="card prompt danger" role="alertdialog" aria-label={`The certificate for ${pane.alias} has changed`} style={{ width: 560 }} data-rdp-state="cert-changed"
+      <div className="card prompt danger" role="alertdialog" aria-label={t('rdp_cards.the_certificate_for_alias_has', { alias: pane.alias })} style={{ width: 560 }} data-rdp-state="cert-changed"
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } }}>
         <div className="prompt-h"><span className="prompt-ic danger"><Icon name="shield" /></span>
-          <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">The certificate for <span className="mono">{pane.alias}</span> has changed</h2>
-            <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Nothing was sent. Flint stopped before signing in.</p></div></div>
-        <div className="callout danger"><Icon name="alert" size="sm" className="danger-t" /><span>Someone may be intercepting this connection. It also happens when Windows renews its certificate or a VM is rebuilt. <strong>Don't continue unless you know why it changed.</strong></span></div>
+          <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{tr('rdp_cards.the_certificate_for_span_has', { span: <span className="mono">{pane.alias}</span> })}</h2>
+            <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{t('rdp_cards.nothing_was_sent_flint_stopped')}</p></div></div>
+        <div className="callout danger"><Icon name="alert" size="sm" className="danger-t" /><span>{tr('rdp_cards.someone_may_be_intercepting_this', { strong: <strong>{t('rdp_cards.don_t_continue_unless_you')}</strong> })}</span></div>
         <div className="col" style={{ gap: 'var(--sp-2)' }}>
-          <div className="col" style={{ gap: 4 }}><span className="flabel">Trusted</span><div className="fp" style={{ textDecoration: 'line-through', color: 'var(--text-tertiary)' }}>{groupedFingerprint(k.known_fingerprint)}</div></div>
-          <div className="col" style={{ gap: 4 }}><span className="flabel danger-t">Presented now{k.subject ? ` · ${k.subject}` : ''}{k.valid_from ? ` · valid from ${k.valid_from}` : ''}</span><div className="fp" style={{ borderColor: 'var(--danger-border)' }}>{groupedFingerprint(k.fingerprint)}</div></div>
+          <div className="col" style={{ gap: 4 }}><span className="flabel">{t('rdp_cards.trusted')}</span><div className="fp" style={{ textDecoration: 'line-through', color: 'var(--text-tertiary)' }}>{groupedFingerprint(k.known_fingerprint)}</div></div>
+          <div className="col" style={{ gap: 4 }}><span className="flabel danger-t">{t('rdp_cards.presented_now')}{k.subject ? ` · ${k.subject}` : ''}{k.valid_from ? t('rdp_cards.valid_from_valid_from', { valid_from: k.valid_from }) : ''}</span><div className="fp" style={{ borderColor: 'var(--danger-border)' }}>{groupedFingerprint(k.fingerprint)}</div></div>
         </div>
-        <span className="hint">To trust the new one, forget the old certificate in Settings → Known hosts, then connect again. You'll be asked to verify it as on a first connection.</span>
+        <span className="hint">{t('rdp_cards.to_trust_the_new_one')}</span>
         <div className="row" style={{ gap: 'var(--sp-2)' }}>
-          <button type="button" className="btn btn-secondary" data-autofocus onClick={close}>Close tab<Key>esc</Key></button>
+          <button type="button" className="btn btn-secondary" data-autofocus onClick={close}>{t('rdp_cards.close_tab')}<Key>esc</Key></button>
           <span className="grow" />
-          <button type="button" className="btn btn-ghost" onClick={onKnownHosts}>Open Known hosts…</button>
+          <button type="button" className="btn btn-ghost" onClick={onKnownHosts}>{t('rdp_cards.open_known_hosts')}</button>
         </div>
       </div>,
     );
@@ -103,12 +105,12 @@ export function RdpCard({ pane, active, onEditHost, onKnownHosts }: {
     return wrap(
       <div className="card prompt" role="status" style={{ width: 420 }} data-rdp-state="closed" onKeyDown={keys}>
         <div className="prompt-h"><span className="prompt-ic"><Icon name="rdp" /></span>
-          <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">Disconnected</h2>
-            <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Your Windows session keeps running on <span className="mono">{pane.alias}</span>; connecting again brings you back to it.</span></div></div>
+          <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{t('rdp_cards.disconnected')}</h2>
+            <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{tr('rdp_cards.your_windows_session_keeps_running', { span: <span className="mono">{pane.alias}</span> })}</span></div></div>
         <div className="row" style={{ gap: 'var(--sp-2)' }}>
-          <button className="btn btn-ghost" onClick={close}>Close tab<Key>esc</Key></button>
+          <button className="btn btn-ghost" onClick={close}>{t('rdp_cards.close_tab')}<Key>esc</Key></button>
           <span className="grow" />
-          <button className="btn btn-primary" data-autofocus onClick={retry}>Connect again<span className="kbd-in">↵</span></button>
+          <button className="btn btn-primary" data-autofocus onClick={retry}>{t('rdp_cards.connect_again')}<span className="kbd-in">↵</span></button>
         </div>
       </div>,
     );
@@ -120,13 +122,13 @@ export function RdpCard({ pane, active, onEditHost, onKnownHosts }: {
     return wrap(
       <div className="card prompt" role="alert" style={{ width: 460 }} data-rdp-state="lost" onKeyDown={keys}>
         <div className="prompt-h"><span className="prompt-ic danger"><Icon name="wifi-off" /></span>
-          <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">Connection lost</h2>
+          <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{t('rdp_cards.connection_lost')}</h2>
             <span className="mono muted" style={{ fontSize: 'var(--fs-xs)' }} data-rdp-lost-reason>{lostReason(pane)}</span></div></div>
-        <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Your Windows session keeps running on <span className="mono">{pane.alias}</span> for a while. Reconnecting brings you back to it, with your windows as you left them.</p>
+        <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{tr('rdp_cards.your_windows_session_keeps_running_2', { span: <span className="mono">{pane.alias}</span> })}</p>
         <div className="row" style={{ gap: 'var(--sp-2)' }}>
-          <button className="btn btn-ghost" onClick={close}>Close tab<Kbd action="closeTab" /></button>
+          <button className="btn btn-ghost" onClick={close}>{t('rdp_cards.close_tab')}<Kbd action="closeTab" /></button>
           <span className="grow" />
-          <button className="btn btn-primary" data-autofocus data-rdp-reconnect onClick={retry}>Reconnect<Kbd action="reconnect" inline /></button>
+          <button className="btn btn-primary" data-autofocus data-rdp-reconnect onClick={retry}>{t('rdp_cards.reconnect')}<Kbd action="reconnect" inline /></button>
         </div>
       </div>,
     );
@@ -135,7 +137,7 @@ export function RdpCard({ pane, active, onEditHost, onKnownHosts }: {
   const text = failureText(kind, pane, host);
   // A switch to Compatible that the server closed leaves the tab in the mode that
   // worked, and Retry connects in that one (owner, milestone 60): the button says so.
-  const retryIn = kind === 'setup-closed' && pane.graphics && pane.graphics !== 'compatible' ? GRAPHICS_LABEL[pane.graphics] ?? '' : '';
+  const retryIn = kind === 'setup-closed' && pane.graphics && pane.graphics !== 'compatible' ? (GRAPHICS_LABEL[pane.graphics] ? t(GRAPHICS_LABEL[pane.graphics]) : '') : '';
   return wrap(
     <div className="card prompt" role="alert" style={{ width: 480 }} data-rdp-state={kind} onKeyDown={keys}>
       <div className="prompt-h"><span className="prompt-ic danger"><Icon name={text.icon} /></span>
@@ -144,16 +146,16 @@ export function RdpCard({ pane, active, onEditHost, onKnownHosts }: {
       {pane.end?.message && <span className="mono muted" style={{ fontSize: 'var(--fs-xs)' }}>{pane.end.message}</span>}
       {text.hint && <span className="hint">{text.hint}</span>}
       <div className="row" style={{ gap: 'var(--sp-2)' }}>
-        <button className="btn btn-ghost" onClick={() => onEditHost(pane.alias)}>Edit host</button>
-        <button className="btn btn-ghost" onClick={close}>Close tab<Key>esc</Key></button>
+        <button className="btn btn-ghost" onClick={() => onEditHost(pane.alias)}>{t('rdp_cards.edit_host')}</button>
+        <button className="btn btn-ghost" onClick={close}>{t('rdp_cards.close_tab')}<Key>esc</Key></button>
         <span className="grow" />
-        <button className="btn btn-primary" data-autofocus data-rdp-retry={retryIn || undefined} onClick={retry}>{retryIn ? `Retry in ${retryIn}` : 'Retry'}<span className="kbd-in">↵</span></button>
+        <button className="btn btn-primary" data-autofocus data-rdp-retry={retryIn || undefined} onClick={retry}>{retryIn ? t('rdp_cards.retry_in_retryin', { retryIn }) : t('common.retry')}<span className="kbd-in">↵</span></button>
       </div>
     </div>,
   );
 }
 
-const GRAPHICS_LABEL: Record<string, string> = { auto: 'Automatic', pipeline: 'Pipeline' };
+const GRAPHICS_LABEL: Record<string, string> = { auto: 'rdp_cards.graphics.auto', pipeline: 'rdp_cards.graphics.pipeline' };
 
 /** "the connection was lost (ERRCONNECT_…) · 10:21": why, and when (design 22c7). */
 export function lostReason(pane: Pane): string {
@@ -168,21 +170,21 @@ function failureText(kind: ReturnType<typeof rdpEndKind>, pane: Pane, host: Host
   const note = host?.notes?.split('\n')[0]?.trim() ?? '';
   switch (kind) {
     case 'auth':
-      return { icon: 'lock', title: 'Wrong user or password', body: `${pane.alias} didn't accept ${login(host) || 'the user'} with the saved password.`, hint: 'If the password changed on the domain, update the host or its credential. Several wrong tries can lock the account.' };
+      return { icon: 'lock', title: t('rdp_cards.wrong_user_or_password'), body: t('rdp_cards.alias_didn_t_accept_p', { alias: pane.alias, p: login(host) || t('rdp_cards.the_user') }), hint: t('rdp_cards.if_the_password_changed_on') };
     case 'unreachable':
-      return { icon: 'wifi-off', title: `Can't reach ${pane.alias}`, body: `There is no route from this computer to ${addr}.`, hint: 'If it is behind a VPN, connect the VPN first.' + (note ? ` Notes for this host say: ${note}` : '') };
+      return { icon: 'wifi-off', title: t('rdp_cards.can_t_reach_alias', { alias: pane.alias }), body: t('rdp_cards.there_is_no_route_from', { addr }), hint: note ? t('rdp_cards.vpn_hint_note', { note }) : t('rdp_cards.vpn_hint') };
     case 'timeout':
-      return { icon: 'clock', title: `${pane.alias} didn't answer`, body: `No reply on ${addr} within ${RDP_CONNECT_TIMEOUT_S} s.`, hint: 'The machine may be asleep or off, or a firewall drops RDP. On a Proxmox VM, check that it is running.' };
+      return { icon: 'clock', title: t('rdp_cards.alias_didn_t_answer', { alias: pane.alias }), body: t('rdp_cards.no_reply_on_addr_within', { addr, RDP_CONNECT_TIMEOUT_S }), hint: t('rdp_cards.the_machine_may_be_asleep') };
     case 'rdp-off':
-      return { icon: 'wifi-off', title: `${pane.alias} refused the session`, body: "Nothing answers on its Remote Desktop port.", hint: "Turn it on in the machine's Settings → System → Remote Desktop, then retry. On Windows Home it isn't available at all." };
+      return { icon: 'wifi-off', title: t('rdp_cards.alias_refused_the_session', { alias: pane.alias }), body: t('rdp_cards.nothing_answers_on_its_remote'), hint: t('rdp_cards.turn_it_on_in_the') };
     case 'legacy-security':
-      return { icon: 'shield', title: `${pane.alias} needs a safer connection`, body: 'It offers only the old Standard RDP Security, where no certificate protects your password, so Flint did not sign in.', hint: "On the server, set Require use of specific security layer for remote connections to SSL or Negotiate (Group Policy → Remote Desktop Session Host → Security), then retry." };
+      return { icon: 'shield', title: t('rdp_cards.alias_needs_a_safer_connection', { alias: pane.alias }), body: t('rdp_cards.it_offers_only_the_old'), hint: t('rdp_cards.on_the_server_set_require') };
     case 'setup-closed':
-      return { icon: 'alert', title: `${pane.alias} closed the connection during setup`, body: 'It answered and took the sign-in, then closed the connection while the session was being set up.', hint: 'Some servers, such as GNOME Remote Desktop, take only the graphics pipeline. If Graphics is Compatible, in this tab\'s toolbar or in Settings → Remote desktop, choose Automatic (it falls back to the pipeline by itself) or Pipeline, then retry. With either one already chosen, the server\'s own log says why it closed.' };
+      return { icon: 'alert', title: t('rdp_cards.alias_closed_the_connection_during', { alias: pane.alias }), body: t('rdp_cards.it_answered_and_took_the'), hint: t('rdp_cards.some_servers_such_as_gnome') };
     case 'refused':
-      return { icon: 'alert', title: `${pane.alias} refused the session`, body: 'The server answered and would not open a session.', hint: 'All remote sessions may be in use: Windows 10/11 Pro allows one at a time. Ask someone to sign out, or try later.' };
+      return { icon: 'alert', title: t('rdp_cards.alias_refused_the_session', { alias: pane.alias }), body: t('rdp_cards.the_server_answered_and_would'), hint: t('rdp_cards.all_remote_sessions_may_be') };
     default:
-      return { icon: 'alert', title: `Could not connect to ${pane.alias}`, body: 'The connection failed.', hint: '' };
+      return { icon: 'alert', title: t('rdp_cards.could_not_connect_to_alias', { alias: pane.alias }), body: t('rdp_cards.the_connection_failed'), hint: '' };
   }
 }
 
@@ -192,25 +194,25 @@ function CertificatePrompt({ pane }: { pane: Pane }) {
   const self = k.subject !== '' && k.subject === k.issuer;
   return (
     <div className="pane-dim">
-      <form className="card prompt" role="alertdialog" aria-label={`Verify ${k.alias}`} style={{ width: 560 }} data-rdp-state="certificate"
+      <form className="card prompt" role="alertdialog" aria-label={t('rdp_cards.verify_alias', { alias: k.alias })} style={{ width: 560 }} data-rdp-state="certificate"
         onSubmit={(e) => { e.preventDefault(); sessions.answer(pane.id, true, ''); }}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); sessions.answer(pane.id, false, ''); } }}>
         <div className="prompt-h"><span className="prompt-ic warn"><Icon name="shield" /></span>
-          <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">Verify <span className="mono">{k.alias}</span> before connecting</h2>
-            <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>This server's certificate is not known yet.</p></div></div>
+          <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{tr('rdp_cards.verify_span_before_connecting', { span: <span className="mono">{k.alias}</span> })}</h2>
+            <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{t('rdp_cards.this_server_s_certificate_is')}</p></div></div>
         <dl className="kv" style={{ margin: 0 }}>
-          <dt>Address</dt><dd className="mono">{k.addr.replace(/^rdp:\/\//, '')}</dd>
-          {k.subject && <><dt>Subject</dt><dd className="mono">{k.subject}</dd></>}
-          {k.issuer && <><dt>Issuer</dt><dd className="mono">{k.issuer}{self && <span className="badge" style={{ marginLeft: 'var(--sp-2)' }}>self-signed</span>}</dd></>}
-          {k.valid_to && <><dt>Valid</dt><dd className="mono">{k.valid_from} → {k.valid_to}</dd></>}
+          <dt>{t('rdp_cards.address')}</dt><dd className="mono">{k.addr.replace(/^rdp:\/\//, '')}</dd>
+          {k.subject && <><dt>{t('rdp_cards.subject')}</dt><dd className="mono">{k.subject}</dd></>}
+          {k.issuer && <><dt>{t('rdp_cards.issuer')}</dt><dd className="mono">{k.issuer}{self && <span className="badge" style={{ marginLeft: 'var(--sp-2)' }}>{t('rdp_cards.self_signed')}</span>}</dd></>}
+          {k.valid_to && <><dt>{t('rdp_cards.valid')}</dt><dd className="mono">{k.valid_from} → {k.valid_to}</dd></>}
         </dl>
-        <div className="col" style={{ gap: 6 }}><span className="flabel">SHA-256 fingerprint</span><div className="fp" data-fingerprint>{groupedFingerprint(k.fingerprint)}</div></div>
-        <span className="hint">Self-signed is normal for Windows hosts and VMs: Windows makes this certificate itself. To compare, run in PowerShell on the server:</span>
-        <div className="fp" data-cert-command style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{"$c = Get-ChildItem 'Cert:\\LocalMachine\\Remote Desktop'; [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($c.RawData))"}</div>
+        <div className="col" style={{ gap: 6 }}><span className="flabel">{t('rdp_cards.sha_256_fingerprint')}</span><div className="fp" data-fingerprint>{groupedFingerprint(k.fingerprint)}</div></div>
+        <span className="hint">{t('rdp_cards.self_signed_is_normal_for')}</span>
+        <div className="fp" data-cert-command data-i18n-skip style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{"$c = Get-ChildItem 'Cert:\\LocalMachine\\Remote Desktop'; [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($c.RawData))"}</div>
         <div className="row" style={{ gap: 'var(--sp-2)' }}>
-          <button type="button" className="btn btn-ghost" onClick={() => sessions.answer(pane.id, false, '')}>Cancel<Key>esc</Key></button>
+          <button type="button" className="btn btn-ghost" onClick={() => sessions.answer(pane.id, false, '')}>{t('common.cancel')}<Key>esc</Key></button>
           <span className="grow" />
-          <button type="submit" className="btn btn-primary" data-autofocus>Trust and connect<span className="kbd-in">↵</span></button>
+          <button type="submit" className="btn btn-primary" data-autofocus>{t('rdp_cards.trust_and_connect')}<span className="kbd-in">↵</span></button>
         </div>
       </form>
     </div>
@@ -223,17 +225,17 @@ function RdpPasswordPrompt({ pane }: { pane: Pane }) {
   const p = pane.prompt!;
   return (
     <div className="pane-dim">
-      <form className="card prompt" role="dialog" aria-label={`Password for ${p.user}@${p.alias}`}
+      <form className="card prompt" role="dialog" aria-label={t('rdp_cards.password_for_user_alias', { user: p.user, alias: p.alias })}
         onSubmit={(e) => { e.preventDefault(); sessions.answer(pane.id, true, pw); setPw(''); }}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); sessions.answer(pane.id, false, ''); } }}>
         <div className="prompt-h"><span className="prompt-ic accent"><Icon name="lock" /></span>
-          <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">Password for <span className="mono">{p.user}</span> on <span className="mono">{p.alias}</span></h2>
-            <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>This host has no saved password.</p></div></div>
-        <div className="input lg"><input {...plainText} type="password" className="pw" aria-label="Password" value={pw} onChange={(e) => setPw(e.target.value)} data-autofocus autoFocus autoComplete="off" /></div>
-        <span className="hint">Used for this connection only. Save it in the host editor to skip this prompt.</span>
+          <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{tr('rdp_cards.password_for_span_on_span2', { span: <span className="mono">{p.user}</span>, span2: <span className="mono">{p.alias}</span> })}</h2>
+            <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{t('rdp_cards.this_host_has_no_saved')}</p></div></div>
+        <div className="input lg"><input {...plainText} type="password" className="pw" aria-label={t('rdp_cards.password')} value={pw} onChange={(e) => setPw(e.target.value)} data-autofocus autoFocus autoComplete="off" /></div>
+        <span className="hint">{t('rdp_cards.used_for_this_connection_only')}</span>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
-          <button type="button" className="btn btn-ghost" onClick={() => sessions.answer(pane.id, false, '')}>Cancel<Key>esc</Key></button>
-          <button type="submit" className="btn btn-primary" disabled={!pw}>Connect<span className="kbd-in">↵</span></button>
+          <button type="button" className="btn btn-ghost" onClick={() => sessions.answer(pane.id, false, '')}>{t('common.cancel')}<Key>esc</Key></button>
+          <button type="submit" className="btn btn-primary" disabled={!pw}>{t('common.connect')}<span className="kbd-in">↵</span></button>
         </div>
       </form>
     </div>

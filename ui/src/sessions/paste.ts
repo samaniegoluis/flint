@@ -6,6 +6,7 @@
 
 import { api, toFlintError } from '../api/backend';
 import { STAGE_CHUNK, bytesToB64 } from '../files/store';
+import { fmtNumber, t } from '../i18n';
 
 // `native`: the paste event carried neither text nor an image, as WebKitGTK's does on
 // Linux (an empty event, or empty text in xterm's textarea); the core reads the
@@ -34,13 +35,13 @@ export function pasteChoice(dt: Pick<DataTransfer, 'types' | 'getData' | 'items'
 /** Megabytes as the paste limit names them. */
 export function mb(bytes: number): string {
   const v = bytes / 1048576;
-  return v >= 10 ? `${Math.round(v)} MB` : `${v.toFixed(1)} MB`;
+  return t('paste.mb', { n: v >= 10 ? fmtNumber(Math.round(v)) : fmtNumber(v, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
 }
 
 /** Refused before any upload when `file` is over `limitMb`; the core checks again. */
 export function overLimit(file: { name: string; size: number }, limitMb: number): string | null {
   if (file.size <= limitMb * 1048576) return null;
-  return `${file.name || 'The image'} is ${mb(file.size)}, over the ${limitMb} MB paste limit. Use Files to upload it`;
+  return file.name ? t('paste.over_limit', { name: file.name, size: mb(file.size), limit: limitMb }) : t('paste.image_over_limit', { size: mb(file.size), limit: limitMb });
 }
 
 let seq = 0;

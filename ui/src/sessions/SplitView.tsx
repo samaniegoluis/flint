@@ -15,6 +15,7 @@ import { Icon } from '../ui/Icon';
 import { sessions, statusLabel, type Pane, type Tab } from './store';
 import { TerminalView } from './TerminalView';
 import { SessionCard } from './SessionCards';
+import { t } from '../i18n';
 
 const GAP = 4;
 
@@ -78,7 +79,7 @@ export function SplitView({ tab, panes, shown, active, fontSize, onEditHost }: {
         const st = statusLabel(p);
         return (
           <section key={id} className={'spane' + (multi && focused ? ' focus' : '')} style={placement(tab.layout, n, i)}
-            role="region" aria-label={multi ? `Pane ${i + 1} — ${p.alias}${focused ? ' (focused)' : ''}` : `Terminal — ${p.alias}`}
+            role="region" aria-label={multi ? t(focused ? 'split_view.pane_focused' : 'split_view.pane', { n: i + 1, alias: p.alias }) : t('split_view.terminal_alias', { alias: p.alias })}
             data-pane={id} onMouseDownCapture={() => { if (!focused) sessions.focusPane(id); }}>
             {multi && (
               <div className="sp-h">
@@ -87,7 +88,7 @@ export function SplitView({ tab, panes, shown, active, fontSize, onEditHost }: {
                 <span className="mono grow trunc" style={{ color: 'inherit' }}>{p.alias}</span>
                 {st.meta && <span className={st.metaClass} style={{ fontSize: 'var(--fs-2xs)' }}>{st.meta}</span>}
                 <span className={'st ' + st.dot} role="img" aria-label={p.status} />
-                <button className="sp-x" aria-label={`Close pane ${i + 1}${focused ? ` (${chordLabel('closeTab', os)})` : ''}`}
+                <button className="sp-x" aria-label={focused ? t('split_view.close_pane_chord', { n: i + 1, chord: chordLabel('closeTab', os) }) : t('split_view.close_pane', { n: i + 1 })}
                   onMouseDown={(e) => e.stopPropagation()} onClick={() => sessions.close(id)}><Icon name="x" size="xs" /></button>
               </div>
             )}
@@ -115,9 +116,9 @@ export function SplitView({ tab, panes, shown, active, fontSize, onEditHost }: {
         return (
           <div key={key} className={'sp-div ' + d.axis + (dragging === key ? ' drag' : '')} style={style}
             role="separator" aria-orientation={d.axis === 'cols' ? 'vertical' : 'horizontal'} tabIndex={0}
-            aria-label={d.axis === 'cols' ? 'Resize the panes beside this divider' : 'Resize the panes above and below this divider'}
+            aria-label={d.axis === 'cols' ? t('split_view.resize_the_panes_beside_this') : t('split_view.resize_the_panes_above_and')}
             aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(at * 100)}
-            title="Drag to resize · double-click to even out"
+            title={t('split_view.drag_to_resize_double_click')}
             onPointerDown={(e) => startDrag(d, e)} onDoubleClick={even}
             onKeyDown={(e) => {
               const back = d.axis === 'cols' ? 'ArrowLeft' : 'ArrowUp';

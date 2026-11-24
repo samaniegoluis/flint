@@ -21,6 +21,8 @@ import { FullScreenSplit } from './MonitorsUi';
 import { FullScreenBar } from './FullScreenBar';
 import { TabMenu } from './TabMenu';
 import { listenTyped, TypeMenuButton } from './RdpTypeMenu';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 // Stays mounted while another view (Keys, Credentials, Settings) is shown, with
 // `shown` false: unmounting it disposed every xterm.js terminal and its scrollback.
@@ -66,20 +68,20 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
 
   if (tabs.length === 0) {
     return (
-      <section className="main" aria-label="No open sessions" hidden={!shown} style={{ alignItems: 'center', justifyContent: 'center', background: 'var(--surface-base)' }}>
+      <section className="main" aria-label={t('session_area.no_open_sessions')} hidden={!shown} style={{ alignItems: 'center', justifyContent: 'center', background: 'var(--surface-base)' }}>
         <div className="col" style={{ width: 520, gap: 'var(--sp-5)' }}>
           <div className="col" style={{ alignItems: 'center', gap: 'var(--sp-3)', textAlign: 'center' }}>
             <Logo size={64} />
-            <h2 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)' }}>No open sessions</h2>
-            <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Pick a host from the sidebar, or jump straight to one.</p>
+            <h2 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)' }}>{t('session_area.no_open_sessions')}</h2>
+            <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{t('session_area.pick_a_host_from_the')}</p>
           </div>
-          <button className="row" aria-label={`Open command palette (${chordLabel('palette', os)})`} onClick={() => onPalette(false)}
+          <button className="row" aria-label={t('session_area.open_command_palette_chordlabel', { chordLabel: chordLabel('palette', os) })} onClick={() => onPalette(false)}
             style={{ height: 48, padding: '0 var(--sp-3) 0 var(--sp-4)', gap: 'var(--sp-3)', border: '1px solid var(--accent-border)', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)', color: 'var(--text-tertiary)', fontSize: 'var(--fs-lg)' }}>
-            <Icon name="search" /><span className="grow">Search hosts, actions, vaults…</span><Kbd action="palette" />
+            <Icon name="search" /><span className="grow">{t('session_area.search_hosts_actions_vaults')}</span><Kbd action="palette" />
           </button>
           {firstHosts.length > 0 && (
             <div className="col" style={{ gap: 2 }}>
-              <div className="menu-label"><span className="label">Hosts</span><span className="hint">click to connect</span></div>
+              <div className="menu-label"><span className="label">{t('session_area.hosts')}</span><span className="hint">{t('session_area.click_to_connect')}</span></div>
               {firstHosts.map((h) => {
                 const c = colorStyle(h.color);
                 return (
@@ -94,9 +96,9 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
             </div>
           )}
           <div className="row faint" style={{ justifyContent: 'center', gap: 'var(--sp-5)', fontSize: 'var(--fs-xs)' }}>
-            <span className="row" style={{ gap: 6 }}><Kbd action="gotoHost" />go to host</span>
-            <span className="row" style={{ gap: 6 }}><Kbd action="newHost" />new host</span>
-            <span className="row" style={{ gap: 6 }}><Kbd action="switchVault" />switch vault</span>
+            <span className="row" style={{ gap: 6 }}><Kbd action="gotoHost" />{t('session_area.go_to_host')}</span>
+            <span className="row" style={{ gap: 6 }}><Kbd action="newHost" />{t('session_area.new_host')}</span>
+            <span className="row" style={{ gap: 6 }}><Kbd action="switchVault" />{t('session_area.switch_vault')}</span>
           </div>
         </div>
       </section>
@@ -118,35 +120,35 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
   const s = tab ? statusLabel(tab) : null;
   const ready = tab?.status === 'ready';
   return (
-    <section className="main" aria-label="Sessions" hidden={!shown}>
-      <div className="tabbar" role="tablist" aria-label="Open sessions" ref={tablist} onKeyDown={onTabKey}>
-        {tabs.map((t, i) => {
+    <section className="main" aria-label={t('session_area.sessions')} hidden={!shown}>
+      <div className="tabbar" role="tablist" aria-label={t('session_area.open_sessions')} ref={tablist} onKeyDown={onTabKey}>
+        {tabs.map((tabItem, i) => {
           // A tab is titled by its focused pane; a prompt in another pane shows too.
-          const fp = panes.find((p) => p.id === t.focus);
+          const fp = panes.find((p) => p.id === tabItem.focus);
           if (!fp) return null;
-          const waiting = panes.find((p) => p.tab === t.id && p.id !== t.focus && p.status === 'prompt');
+          const waiting = panes.find((p) => p.tab === tabItem.id && p.id !== tabItem.focus && p.status === 'prompt');
           const st = waiting && fp.status === 'ready' ? statusLabel(waiting) : statusLabel(fp);
-          const on = t.id === active;
-          const n = t.panes.length;
+          const on = tabItem.id === active;
+          const n = tabItem.panes.length;
           return (
-            <button key={t.id} className={'tab' + (on ? ' on' : '')} role="tab" aria-selected={on} tabIndex={on ? 0 : -1}
-              aria-label={n > 1 ? `${fp.alias}, ${n} panes` : undefined}
-              onClick={() => sessions.activate(t.id)}
-              onContextMenu={(e) => { e.preventDefault(); sessions.activate(t.id); setTabMenu({ tab: t.id, x: e.clientX, y: e.clientY }); }}
-              onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); sessions.closeTab(t.id); } }}>
+            <button key={tabItem.id} className={'tab' + (on ? ' on' : '')} role="tab" aria-selected={on} tabIndex={on ? 0 : -1}
+              aria-label={n > 1 ? t('session_area.alias_n_panes', { alias: fp.alias, n }) : undefined}
+              onClick={() => sessions.activate(tabItem.id)}
+              onContextMenu={(e) => { e.preventDefault(); sessions.activate(tabItem.id); setTabMenu({ tab: tabItem.id, x: e.clientX, y: e.clientY }); }}
+              onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); sessions.closeTab(tabItem.id); } }}>
               <span className={'st ' + st.dot} role="img" aria-label={fp.status} />
               <HostTypeIcon type={fp.kind} />
               {fp.alias}
               <TunnelMark host={fp.alias} />
-              {n > 1 && <span className="tab-split" title={`${n} panes`}><LayoutIcon layout={t.layout} small />{n}</span>}
+              {n > 1 && <span className="tab-split" title={`${n} panes`}><LayoutIcon layout={tabItem.layout} small />{n}</span>}
               {st.meta && <span className={'tab-meta ' + st.metaClass}>{st.meta}</span>}
               {on ? (
-                <span className="tx" role="button" aria-label={n > 1 ? 'Close tab and its panes' : `Close tab (${chordLabel('closeTab', os)})`} onClick={(e) => { e.stopPropagation(); sessions.closeTab(t.id); }}><Icon name="x" size="xs" /></span>
+                <span className="tx" role="button" aria-label={n > 1 ? t('session_area.close_tab_and_its_panes') : t('session_area.close_tab_chordlabel', { chordLabel: chordLabel('closeTab', os) })} onClick={(e) => { e.stopPropagation(); sessions.closeTab(tabItem.id); }}><Icon name="x" size="xs" /></span>
               ) : (i < 9 && <span className="kbd">{chordLabel(('tab' + (i + 1)) as 'tab1', os)}</span>)}
             </button>
           );
         })}
-        <button className="tab-add" aria-label={`New session (${chordLabel('newSession', os)})`} onClick={() => onPalette(true)}><Icon name="plus" size="sm" /><Kbd action="newSession" /></button>
+        <button className="tab-add" aria-label={t('session_area.new_session_chordlabel', { chordLabel: chordLabel('newSession', os) })} onClick={() => onPalette(true)}><Icon name="plus" size="sm" /><Kbd action="newSession" /></button>
       </div>
       {tab && s && activeTab && tab.kind === 'rdp' && (
         <div className="toolbar" data-rdp-toolbar>
@@ -156,7 +158,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           <span className="dotsep">·</span>
           {ready && tab.desktop
             ? <span className="mono" data-rdp-size>{tab.desktop.width} × {tab.desktop.height}</span>
-            : <span className={s.metaClass || 'faint'}>{s.meta || 'not connected'}</span>}
+            : <span className={s.metaClass || 'faint'}>{s.meta || t('session_area.not_connected')}</span>}
           {ready && (() => {
             const r = paneArea.current?.getBoundingClientRect();
             const label = r ? desktopScaleLabel(tab, r.width, r.height) : '';
@@ -165,8 +167,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           {host && <span className="mono faint trunc tb-host" style={{ marginLeft: 'var(--sp-2)' }}>{host.hostname}:{host.port}</span>}
           <span className="grow" />
           {ready && (
-            <div className="seg sm" role="radiogroup" aria-label="Graphics for this tab" data-rdp-tab-graphics
-              title={tab.graphicsNote || [graphicsChoiceLabel(tab.graphics, tab.desktop?.engine ?? '', tab.desktop?.rttMs ?? -1), 'Switching reconnects the desktop; your Windows session stays'].filter(Boolean).join('. ')}>
+            <div className="seg sm" role="radiogroup" aria-label={t('session_area.graphics_for_this_tab')} data-rdp-tab-graphics
+              title={tab.graphicsNote || [graphicsChoiceLabel(tab.graphics, tab.desktop?.engine ?? '', tab.desktop?.rttMs ?? -1), t('session_area.switching_reconnects')].filter(Boolean).join(t('session_area.sentence_join'))}>
               {GRAPHICS_MODES.map((g) => (
                 <button key={g.id} type="button" role="radio" aria-checked={tab.graphics === g.id} aria-pressed={tab.graphics === g.id} data-graphics={g.id}
                   disabled={tab.graphicsSwitching} onClick={() => sessions.setGraphics(tab.id, g.id)}>
@@ -175,16 +177,16 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
               ))}
             </div>
           )}
-          {ready && tab.graphicsSwitching && <span className="faint" data-rdp-graphics-busy>Reconnecting…</span>}
-          {ready && !tab.graphicsSwitching && tab.graphicsNote && <span className="warn-t trunc" data-rdp-graphics-note title={tab.graphicsNote}>Mode not changed</span>}
-          {ready && <button className="tbtn" data-rdp-stats-toggle aria-pressed={stats} title="Show what the desktop costs: frames, bandwidth, codec"
-            onClick={() => setStats((v) => !v)}><Icon name="info" size="sm" /><span className="tb-l">Stats</span></button>}
+          {ready && tab.graphicsSwitching && <span className="faint" data-rdp-graphics-busy>{t('session_area.reconnecting')}</span>}
+          {ready && !tab.graphicsSwitching && tab.graphicsNote && <span className="warn-t trunc" data-rdp-graphics-note title={tab.graphicsNote}>{t('session_area.mode_not_changed')}</span>}
+          {ready && <button className="tbtn" data-rdp-stats-toggle aria-pressed={stats} title={t('session_area.show_what_the_desktop_costs')}
+            onClick={() => setStats((v) => !v)}><Icon name="info" size="sm" /><span className="tb-l">{t('session_area.stats')}</span></button>}
           {ready && tab.session && <TypeMenuButton session={tab.session} alias={tab.alias} />}
           {ready && <FullScreenSplit onFullScreen={() => fullScreen.enter(activeTab.id)}
             onAllMonitors={() => sessions.enterAllMonitors(activeTab.id, (t) => fullScreen.enter(t))} />}
           {ready
-            ? <button className="tbtn" data-rdp-disconnect title="Disconnect" onClick={() => sessions.disconnect(tab.id)}><Icon name="x" size="sm" /><span className="tb-l">Disconnect</span></button>
-            : <button className="tbtn" title="Close tab" onClick={() => sessions.closeTab(activeTab.id)}><Icon name="x" size="sm" /><span className="tb-l">Close tab</span></button>}
+            ? <button className="tbtn" data-rdp-disconnect title={t('common.disconnect')} onClick={() => sessions.disconnect(tab.id)}><Icon name="x" size="sm" /><span className="tb-l">{t('common.disconnect')}</span></button>
+            : <button className="tbtn" title={t('session_area.close_tab')} onClick={() => sessions.closeTab(activeTab.id)}><Icon name="x" size="sm" /><span className="tb-l">{t('session_area.close_tab')}</span></button>}
         </div>
       )}
       {tab && s && activeTab && tab.kind !== 'rdp' && (
@@ -193,18 +195,18 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           <span className="mono strong">{tab.alias}</span>
           {host?.user && <><span className="dotsep">·</span><span className="mono">{host.user}</span></>}
           {!ready && s.meta && <><span className="dotsep">·</span><span className={s.metaClass}>{s.meta}</span></>}
-          {paneCount > 1 && <span className="badge accent" data-pane-badge style={{ marginLeft: 'var(--sp-2)' }}>pane {paneNo} of {paneCount}</span>}
+          {paneCount > 1 && <span className="badge accent" data-pane-badge style={{ marginLeft: 'var(--sp-2)' }}>{tr('session_area.pane_paneno_of_panecount', { paneNo, paneCount })}</span>}
           {host && <span className="mono faint trunc tb-host" style={{ marginLeft: 'var(--sp-2)' }}>{host.hostname}:{host.port}{host.jump ? ` via ${host.jump}` : ''}</span>}
           <span className="grow" />
-          <button className="tbtn" title={`Reconnect (${chordLabel('reconnect', os)})`} onClick={() => sessions.reconnect(tab.id)}><Icon name="reconnect" size="sm" /><span className="tb-l">Reconnect</span><Kbd action="reconnect" /></button>
-          <button className="tbtn" title={`Duplicate (${chordLabel('duplicate', os)})`} onClick={() => onConnect(tab.alias, true)}><Icon name="dup" size="sm" /><span className="tb-l">Duplicate</span><Kbd action="duplicate" /></button>
+          <button className="tbtn" title={t('session_area.reconnect_chordlabel', { chordLabel: chordLabel('reconnect', os) })} onClick={() => sessions.reconnect(tab.id)}><Icon name="reconnect" size="sm" /><span className="tb-l">{t('session_area.reconnect')}</span><Kbd action="reconnect" /></button>
+          <button className="tbtn" title={t('session_area.duplicate_chordlabel', { chordLabel: chordLabel('duplicate', os) })} onClick={() => onConnect(tab.alias, true)}><Icon name="dup" size="sm" /><span className="tb-l">{t('session_area.duplicate')}</span><Kbd action="duplicate" /></button>
           <span className="sep" />
-          <button className={'tbtn' + (filesOn ? ' on' : '')} aria-pressed={filesOn} data-toolbar-files onClick={onFiles} title={`Files (${chordLabel('viewFiles', os)})`}><Icon name="files" size="sm" /><span className="tb-l">Files</span><Kbd action="viewFiles" /></button>
+          <button className={'tbtn' + (filesOn ? ' on' : '')} aria-pressed={filesOn} data-toolbar-files onClick={onFiles} title={t('session_area.files_chordlabel', { chordLabel: chordLabel('viewFiles', os) })}><Icon name="files" size="sm" /><span className="tb-l">{t('session_area.files')}</span><Kbd action="viewFiles" /></button>
           <TunnelsButton host={tab.alias} onManage={onManageTunnels} />
           <span style={{ position: 'relative', display: 'flex' }}>
             <button className={'tbtn' + (menu ? ' on' : '')} data-split-button aria-haspopup="menu" aria-expanded={menu}
-              title={paneCount >= MAX_PANES ? `Split · this tab has ${MAX_PANES} panes` : `Split (${chordLabel('splitRight', os)})`}
-              onClick={() => setMenu((m) => !m)}><Icon name="split" size="sm" /><span className="tb-l">Split</span></button>
+              title={paneCount >= MAX_PANES ? t('session_area.split_this_tab_has_max', { MAX_PANES }) : t('session_area.split_chordlabel', { chordLabel: chordLabel('splitRight', os) })}
+              onClick={() => setMenu((m) => !m)}><Icon name="split" size="sm" /><span className="tb-l">{t('session_area.split')}</span></button>
             {menu && <SplitMenu tab={activeTab} onClose={() => setMenu(false)} />}
           </span>
         </div>

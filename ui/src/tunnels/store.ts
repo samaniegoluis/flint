@@ -11,6 +11,7 @@
 import { useSyncExternalStore } from 'react';
 import { api, on } from '../api/backend';
 import type { SessionPromptEvent, TunnelStartedEvent, TunnelView } from '../api/types';
+import { fmtNumber, t } from '../i18n';
 
 /** A start from the app, logging in for `host`. */
 export interface Start {
@@ -50,18 +51,18 @@ export type StateKind = 'ok' | 'idle' | 'wait' | 'warn' | 'danger';
 export function stateLine(v: TunnelView, s: Pick<Snapshot, 'list' | 'starts' | 'failed'>): { kind: StateKind; text: string } {
   if (v.state === 'listening') {
     const n = v.connections;
-    return { kind: 'ok', text: `listening · ${n === 0 ? 'no connections' : n === 1 ? '1 connection' : n + ' connections'}` };
+    return { kind: 'ok', text: n === 0 ? t('tunnels.state.listening_idle') : t('tunnels.state.listening', { count: n, n: fmtNumber(n) }) };
   }
   const st = s.starts[v.host];
-  if (st && inStart(st, v)) return { kind: 'wait', text: st.status === 'prompt' ? 'waiting for you…' : 'starting…' };
-  if (v.state === 'connection lost') return { kind: 'danger', text: 'connection lost' + (v.error ? ' · ' + v.error : '') };
+  if (st && inStart(st, v)) return { kind: 'wait', text: st.status === 'prompt' ? t('tunnels.state.waiting_for_you') : t('tunnels.state.starting') };
+  if (v.state === 'connection lost') return { kind: 'danger', text: v.error ? t('tunnels.state.connection_lost_why', { why: v.error }) : t('tunnels.state.connection_lost') };
   const f = s.failed[key(v.host, v.name)];
   if (f?.code === 'port_in_use') {
     const holder = s.list.find((o) => o.local_port === v.local_port && o.state === 'listening' && key(o.host, o.name) !== key(v.host, v.name));
-    return { kind: 'warn', text: `port ${v.local_port} in use · ` + (holder ? `used by ${holder.name} on ${holder.host}` : 'by another program') };
+    return { kind: 'warn', text: holder ? t('tunnels.state.port_used_by', { port: v.local_port, name: holder.name, host: holder.host }) : t('tunnels.state.port_in_use', { port: v.local_port }) };
   }
-  if (f) return { kind: 'danger', text: 'not started · ' + (f.code === 'auth' ? 'login failed' : f.message) };
-  return { kind: 'idle', text: 'stopped' };
+  if (f) return { kind: 'danger', text: f.code === 'auth' ? t('tunnels.state.login_failed') : t('tunnels.state.not_started', { why: f.message }) };
+  return { kind: 'idle', text: t('tunnels.state.stopped') };
 }
 
 /** Whether a start under way opens this tunnel. */
@@ -81,8 +82,8 @@ export function switchedOn(v: TunnelView, s: Pick<Snapshot, 'starts'>): boolean 
 export function portAdvice(v: TunnelView, s: Pick<Snapshot, 'list' | 'failed'>): string {
   if (s.failed[key(v.host, v.name)]?.code !== 'port_in_use') return '';
   const holder = s.list.find((o) => o.local_port === v.local_port && o.state === 'listening' && key(o.host, o.name) !== key(v.host, v.name));
-  if (holder) return `Stop ${holder.name} on ${holder.host} first, or give ${v.name} another local port.`;
-  return `Close what uses port ${v.local_port} on this machine, or give ${v.name} another local port.`;
+  if (holder) return t('tunnels.advice.stop_holder', { holder: holder.name, host: holder.host, name: v.name });
+  return t('tunnels.advice.close_program', { port: v.local_port, name: v.name });
 }
 
 /** The running tunnels of a host. */

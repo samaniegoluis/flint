@@ -12,11 +12,12 @@ export const MIN_TRACK = 0.15;
 
 export const LAYOUTS: Layout[] = ['cols', 'rows', 'grid', 'large'];
 
+/** Catalog keys of the layouts' names, read through t(). */
 export const LAYOUT_TITLES: Record<Layout, string> = {
-  cols: 'Side by side',
-  rows: 'Stacked',
-  grid: 'Grid 2 × 2',
-  large: 'One large + two small',
+  cols: 'layout.cols',
+  rows: 'layout.rows',
+  grid: 'layout.grid',
+  large: 'layout.large',
 };
 
 /**

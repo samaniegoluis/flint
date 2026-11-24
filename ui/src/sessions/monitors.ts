@@ -16,6 +16,7 @@
 import { useSyncExternalStore } from 'react';
 import { api } from '../api/backend';
 import type { DesktopRect, DesktopSpan, LocalMonitor, MonitorPick, MonitorsView, RdpPointer } from '../api/types';
+import { t } from '../i18n';
 
 export type MonitorsPhase = 'off' | 'opening' | 'arranging' | 'on';
 
@@ -129,7 +130,7 @@ export class MonitorsStore {
     const view = await this.refresh();
     const picks = chosen && view ? [view.main, ...chosen.filter((id) => id !== view.main)].slice(0, view.max) : view?.picks ?? [];
     if (!view || view.reason || picks.length < 2) {
-      this.set({ error: view?.reason || 'Only one monitor connected' });
+      this.set({ error: view?.reason || t('monitors.only_one_monitor') });
       return;
     }
     this.sizes.clear();
@@ -157,7 +158,7 @@ export class MonitorsStore {
     this.backend.open(extras).catch((err) => this.fail(round, err));
     this.timers.clearTimeout(this.openTimer);
     this.openTimer = this.timers.setTimeout(() => {
-      if (round === this.round && this.snap.phase === 'opening') this.fail(round, new Error('the other monitors did not open in time'));
+      if (round === this.round && this.snap.phase === 'opening') this.fail(round, new Error(t('monitors.did_not_open_in_time')));
     }, OPEN_TIMEOUT_MS);
     this.maybeSpan(round);
   }

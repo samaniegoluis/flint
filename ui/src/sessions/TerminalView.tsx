@@ -22,6 +22,7 @@ import { parseOsc7 } from '../files/paths';
 import styles from './TerminalView.module.css';
 import { paletteVars, themePalette } from '../lib/terminalThemes';
 import { discardStaged, overLimit, pasteChoice, pasteStaged, readClipboard, uploadPaste } from './paste';
+import { t } from '../i18n';
 
 
 function readVar(name: string, el: Element = document.documentElement): string {
@@ -236,7 +237,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       const pane = sessions.pane(tabId);
       if (!pane || pane.status !== 'ready' || !pane.session) {
         drop();
-        say('Connect first: the image is pasted on the server', 'error');
+        say(t('terminal_view.connect_first'), 'error');
         return;
       }
       const tooBig = overLimit(file, limit);
@@ -247,17 +248,17 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       }
       // One toast per pane: "Pasting…" stays while the upload runs and its result replaces it.
       const key = `paste:${tabId}`;
-      say({ text: `Pasting image to ${pane.alias}…`, kind: 'info', key, duration: 'sticky' });
+      say({ text: t('terminal_view.pasting_image_to_alias', { alias: pane.alias }), kind: 'info', key, duration: 'sticky' });
       const session = pane.session;
       upload(session).then((text) => {
         // The pane may have reconnected or closed meanwhile: paste only into the same session.
         if (alive && sessions.pane(tabId)?.session === session) {
           term.paste(text);
-          say({ text: `Pasted the image on ${pane.alias}`, key });
+          say({ text: t('terminal_view.pasted_the_image_on_alias', { alias: pane.alias }), key });
         } else {
-          say({ text: `The image was written on ${pane.alias}, but its session ended before the paste`, kind: 'info', key });
+          say({ text: t('terminal_view.the_image_was_written_on', { alias: pane.alias }), kind: 'info', key });
         }
-      }).catch((err: { message: string }) => say({ text: `Paste to ${pane.alias} failed: ${err.message}`, kind: 'error', key }));
+      }).catch((err: { message: string }) => say({ text: t('terminal_view.paste_to_alias_failed_message', { alias: pane.alias, message: err.message }), kind: 'error', key }));
     };
     const onPaste = (e: ClipboardEvent) => {
       const choice = pasteChoice(e.clipboardData);
@@ -276,9 +277,9 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
         }
         if (r.kind === 'text') term.paste(r.text);
         if (r.kind === 'image') {
-          pasteImage({ name: 'The image', size: r.size }, (session) => pasteStaged(session, r.image), () => discardStaged(r.image));
+          pasteImage({ name: '', size: r.size }, (session) => pasteStaged(session, r.image), () => discardStaged(r.image));
         }
-      }).catch((err: { message: string }) => pasteRef.current.notify(`Paste failed: ${err.message}`, 'error'));
+      }).catch((err: { message: string }) => pasteRef.current.notify(t('terminal_view.paste_failed_message', { message: err.message }), 'error'));
     };
     term.element?.addEventListener('paste', onPaste, true);
 

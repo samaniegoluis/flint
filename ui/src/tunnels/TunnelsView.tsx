@@ -13,6 +13,8 @@ import { Key } from '../ui/Kbd';
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu';
 import { key, stateLine, switchedOn, tunnels, upOn, useTunnels, type Start } from './store';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 export function TunnelsView({ resizer, onEditHost, onConnect, onPickHost }: {
   resizer: React.ReactNode;
@@ -26,7 +28,7 @@ export function TunnelsView({ resizer, onEditHost, onConnect, onPickHost }: {
   const { panes } = useSessions();
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<{ x: number; y: number; host: string } | null>(null);
-  const here = os === 'mac' ? 'this Mac' : 'this computer';
+  const here = os === 'mac' ? t('tunnels.this_mac') : t('tunnels.this_computer');
 
   const groups = useMemo(() => {
     const f = filter.trim().toLowerCase();
@@ -42,36 +44,36 @@ export function TunnelsView({ resizer, onEditHost, onConnect, onPickHost }: {
   const menuItems = (host: string): MenuItem[] => {
     const all = snap.list.filter((v) => v.host === host);
     const items: MenuItem[] = [];
-    if (all.some((v) => v.state !== 'listening')) items.push({ label: 'Start all', icon: 'tunnel', run: () => tunnels.startTunnels(host, all.filter((v) => v.state !== 'listening').map((v) => v.name)) });
-    if (upOn(snap.list, host).length > 0) items.push({ label: 'Stop all', icon: 'x', run: () => { void tunnels.stopHost(host); } });
-    items.push({ label: 'Open a tab', icon: 'term', sep: items.length > 0, run: () => onConnect(host) });
-    items.push({ label: 'Manage tunnels…', icon: 'edit', run: () => onEditHost(host) });
+    if (all.some((v) => v.state !== 'listening')) items.push({ label: t('tunnels_view.start_all'), icon: 'tunnel', run: () => tunnels.startTunnels(host, all.filter((v) => v.state !== 'listening').map((v) => v.name)) });
+    if (upOn(snap.list, host).length > 0) items.push({ label: t('tunnels_view.stop_all'), icon: 'x', run: () => { void tunnels.stopHost(host); } });
+    items.push({ label: t('tunnels_view.open_a_tab'), icon: 'term', sep: items.length > 0, run: () => onConnect(host) });
+    items.push({ label: t('tunnels_view.manage_tunnels'), icon: 'edit', run: () => onEditHost(host) });
     return items;
   };
 
   return (
-    <aside className="sidebar" data-for="tunnels" aria-label="Tunnels" data-tunnels-view>
+    <aside className="sidebar" data-for="tunnels" aria-label={t('tunnels_view.tunnels')} data-tunnels-view>
       <div className="side-title">
-        <span className="strong grow" style={{ fontSize: 'var(--fs-sm)' }}>Tunnels</span>
-        {up > 0 && <span className="hint">{up} up</span>}
+        <span className="strong grow" style={{ fontSize: 'var(--fs-sm)' }}>{t('tunnels_view.tunnels')}</span>
+        {up > 0 && <span className="hint">{tr('tunnels_view.up_up', { up })}</span>}
       </div>
       <label className="search side-search">
         <Icon name="search" size="sm" />
-        <input {...plainText} aria-label="Filter tunnels" placeholder="Filter by name, host or port" value={filter} disabled={snap.list.length === 0}
+        <input {...plainText} aria-label={t('tunnels_view.filter_tunnels')} placeholder={t('tunnels_view.filter_by_name_host_or')} value={filter} disabled={snap.list.length === 0}
           onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape' && filter) { e.stopPropagation(); setFilter(''); } }} data-tunnels-filter />
       </label>
       <div className="tun-scroll">
         {snap.loaded && snap.list.length === 0 && (
           <div className="empty" style={{ padding: 'var(--sp-6) var(--sp-5)', gap: 'var(--sp-3)' }} data-tunnels-empty>
             <span className="empty-ic"><Icon name="tunnel" /></span>
-            <h2 style={{ fontSize: 'var(--fs-md)' }}>No tunnels yet</h2>
-            <span style={{ fontSize: 'var(--fs-sm)', lineHeight: 'var(--lh-ui)' }}>A tunnel lets an app on {here} reach a service that only listens inside a server:</span>
-            <span className="fp" style={{ fontSize: 'var(--fs-xs)', textAlign: 'left' }}>127.0.0.1:5432 here<span className="faint"> → </span>localhost:5432 on db1</span>
-            <span className="hint" style={{ lineHeight: 1.5 }}>Add one in a host's editor, under Tunnels. It uses that host's login and jump host.</span>
-            {catalog.hosts.length > 0 && <button className="btn btn-secondary btn-sm" onClick={onPickHost}><Icon name="hosts" size="sm" />Choose a host…</button>}
+            <h2 style={{ fontSize: 'var(--fs-md)' }}>{t('tunnels_view.no_tunnels_yet')}</h2>
+            <span style={{ fontSize: 'var(--fs-sm)', lineHeight: 'var(--lh-ui)' }}>{tr('tunnels_view.a_tunnel_lets_an_app', { here })}</span>
+            <span className="fp" style={{ fontSize: 'var(--fs-xs)', textAlign: 'left' }}>{tr('tunnels_view.127_0_0_1_5432', { span: <span className="faint"> → </span> })}</span>
+            <span className="hint" style={{ lineHeight: 1.5 }}>{t('tunnels_view.add_one_in_a_host')}</span>
+            {catalog.hosts.length > 0 && <button className="btn btn-secondary btn-sm" onClick={onPickHost}><Icon name="hosts" size="sm" />{t('tunnels_view.choose_a_host')}</button>}
           </div>
         )}
-        {snap.list.length > 0 && groups.length === 0 && <span className="hint" style={{ display: 'block', padding: 'var(--sp-3)' }}>No tunnel matches.</span>}
+        {snap.list.length > 0 && groups.length === 0 && <span className="hint" style={{ display: 'block', padding: 'var(--sp-3)' }}>{t('tunnels_view.no_tunnel_matches')}</span>}
         {groups.map(([host, list]) => {
           const h = catalog.hosts.find((x) => x.alias === host);
           const c = colorStyle(h?.color ?? '');
@@ -79,19 +81,19 @@ export function TunnelsView({ resizer, onEditHost, onConnect, onPickHost }: {
           const lost = list.some((v) => v.state === 'connection lost');
           const running = list.some((v) => v.state === 'listening');
           const tab = panes.some((p) => p.alias === host && p.status !== 'ended');
-          const meta = lost ? 'connection lost' : start ? 'logging in…' : running ? (tab ? 'tab open' : 'no tab · own session') : tab ? 'tab open' : 'not connected';
+          const meta = t(lost ? 'tunnels_view.meta.lost' : start ? 'tunnels_view.meta.logging_in' : running ? (tab ? 'tunnels_view.meta.tab_open' : 'tunnels_view.meta.own_session') : tab ? 'tunnels_view.meta.tab_open' : 'tunnels_view.meta.not_connected');
           const lostWhy = list.find((v) => v.state === 'connection lost')?.error;
           return (
-            <section key={host} className="tun-group" aria-label={`Tunnels on ${host}`} data-tunnel-host={host}>
+            <section key={host} className="tun-group" aria-label={t('tunnels_view.tunnels_on_host', { host })} data-tunnel-host={host}>
               <div className="tun-gh">
                 <span className={'hmark ' + c.className} style={c.style} />
                 <span className="mono strong grow trunc">{host}</span>
                 <span className={'gmeta' + (lost ? ' danger-t' : '')}>{meta}</span>
-                <button className="icon-btn" aria-label={`More for ${host}`} onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ x: r.left, y: r.bottom + 4, host }); }}><Icon name="more" size="sm" /></button>
+                <button className="icon-btn" aria-label={t('tunnels_view.more_for_host', { host })} onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu({ x: r.left, y: r.bottom + 4, host }); }}><Icon name="more" size="sm" /></button>
               </div>
               {lost && (
                 <div className="ferr" style={{ padding: '0 var(--sp-3) var(--sp-1) var(--sp-4)' }}>
-                  <Icon name="wifi-off" /><span>{lostWhy ? lostWhy + ' · ' : ''}all its tunnels stopped. Flip a switch to log in again.</span>
+                  <Icon name="wifi-off" /><span>{lostWhy ? lostWhy + ' · ' : ''}{t('tunnels_view.all_its_tunnels_stopped_flip')}</span>
                 </div>
               )}
               {start && <StartCard start={start} host={host} />}
@@ -100,15 +102,15 @@ export function TunnelsView({ resizer, onEditHost, onConnect, onPickHost }: {
                   <div className="prompt-h" style={{ gap: 'var(--sp-2)' }}>
                     <span className="prompt-ic danger" style={{ width: 28, height: 28 }}><Icon name="lock" size="sm" /></span>
                     <div className="col grow" style={{ gap: 2 }}>
-                      <span className="strong" style={{ fontSize: 'var(--fs-sm)' }}>{snap.loginFailed[host].code === 'auth' ? 'Authentication failed' : `Could not log in to ${host}`}</span>
+                      <span className="strong" style={{ fontSize: 'var(--fs-sm)' }}>{snap.loginFailed[host].code === 'auth' ? t('tunnels_view.authentication_failed') : t('tunnels_view.could_not_log_in_to', { host })}</span>
                       <span className="hint">{snap.loginFailed[host].message}</span>
                     </div>
                   </div>
                   <div className="row" style={{ gap: 'var(--sp-2)' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => onEditHost(host)}>Edit host</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => onEditHost(host)}>{t('tunnels_view.edit_host')}</button>
                     <span className="grow" />
-                    <button className="btn btn-ghost btn-sm" onClick={() => tunnels.dismissLogin(host)}>Dismiss</button>
-                    <button className="btn btn-primary btn-sm" onClick={() => tunnels.startTunnels(host, list.filter((v) => snap.failed[key(host, v.name)]).map((v) => v.name))}>Retry</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => tunnels.dismissLogin(host)}>{t('tunnels_view.dismiss')}</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => tunnels.startTunnels(host, list.filter((v) => snap.failed[key(host, v.name)]).map((v) => v.name))}>{t('common.retry')}</button>
                   </div>
                 </div>
               )}
@@ -119,7 +121,7 @@ export function TunnelsView({ resizer, onEditHost, onConnect, onPickHost }: {
           );
         })}
       </div>
-      <div className="tun-foot"><Icon name="shield" /><span>The local side is always <span className="mono">127.0.0.1</span>: only {here} can connect, never your network.</span></div>
+      <div className="tun-foot"><Icon name="shield" /><span>{tr('tunnels_view.the_local_side_is_always', { span: <span className="mono">127.0.0.1</span>, here })}</span></div>
       {resizer}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.host)} onClose={() => setMenu(null)} />}
     </aside>
@@ -133,7 +135,7 @@ function TunnelRow({ v }: { v: TunnelView }) {
   const icon = st.kind === 'danger' ? (v.state === 'connection lost' ? 'wifi-off' : 'lock') : st.kind === 'warn' ? 'alert' : null;
   return (
     <div className="tun" role="listitem" data-tunnel={v.name} data-state={st.kind}>
-      <button className="toggle" role="switch" aria-checked={on} aria-label={`Tunnel ${v.name}`} data-tunnel-switch={v.name}
+      <button className="toggle" role="switch" aria-checked={on} aria-label={t('tunnels_view.tunnel_name', { name: v.name })} data-tunnel-switch={v.name}
         onClick={() => { void tunnels.toggle(v); }} />
       <span className="tun-n">{v.name}</span>
       <span className="tun-map" title={`127.0.0.1:${v.local_port} → ${v.destination}`}>127.0.0.1:{v.local_port}<span className="arr">→</span>{v.destination}</span>
@@ -151,20 +153,20 @@ function StartCard({ start, host }: { start: Start; host: string }) {
   const p = start.prompt;
   if (start.status === 'prompt' && p?.kind === 'password') {
     return (
-      <form className="tun-card" aria-label={`Password for ${p.user}@${p.alias}`} data-tunnel-password
+      <form className="tun-card" aria-label={t('tunnels_view.password_for_user_alias', { user: p.user, alias: p.alias })} data-tunnel-password
         onSubmit={(e) => { e.preventDefault(); tunnels.answer(host, true, pw); setPw(''); }}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tunnels.answer(host, false, ''); } }}>
         <div className="prompt-h" style={{ gap: 'var(--sp-2)' }}>
           <span className="prompt-ic accent" style={{ width: 28, height: 28 }}><Icon name="lock" size="sm" /></span>
           <div className="col grow" style={{ gap: 2 }}>
-            <span className="strong" style={{ fontSize: 'var(--fs-sm)' }}>Password for <span className="mono">{p.user}@{p.alias}</span></span>
-            <span className="hint">For the tunnels' own session. Save it in the host editor to skip this.</span>
+            <span className="strong" style={{ fontSize: 'var(--fs-sm)' }}>{tr('tunnels_view.password_for_span', { span: <span className="mono">{p.user}@{p.alias}</span> })}</span>
+            <span className="hint">{t('tunnels_view.for_the_tunnels_own_session')}</span>
           </div>
         </div>
-        <div className="input"><input {...plainText} type="password" className="pw" aria-label="Password" value={pw} autoFocus autoComplete="off" onChange={(e) => setPw(e.target.value)} /></div>
+        <div className="input"><input {...plainText} type="password" className="pw" aria-label={t('tunnels_view.password')} value={pw} autoFocus autoComplete="off" onChange={(e) => setPw(e.target.value)} /></div>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => tunnels.answer(host, false, '')}>Cancel</button>
-          <button className="btn btn-primary btn-sm" disabled={!pw}>Connect<span className="kbd-in">↵</span></button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => tunnels.answer(host, false, '')}>{t('common.cancel')}</button>
+          <button className="btn btn-primary btn-sm" disabled={!pw}>{t('common.connect')}<span className="kbd-in">↵</span></button>
         </div>
       </form>
     );
@@ -172,35 +174,35 @@ function StartCard({ start, host }: { start: Start; host: string }) {
   if (start.status === 'prompt' && p?.kind === 'host_key') {
     const k = p.host_key;
     return (
-      <form className="tun-card" aria-label={`Verify ${k.alias}`} data-tunnel-hostkey
+      <form className="tun-card" aria-label={t('tunnels_view.verify_alias', { alias: k.alias })} data-tunnel-hostkey
         onSubmit={(e) => { e.preventDefault(); tunnels.answer(host, true, ''); }}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tunnels.answer(host, false, ''); } }}>
         <div className="prompt-h" style={{ gap: 'var(--sp-2)' }}>
           <span className="prompt-ic warn" style={{ width: 28, height: 28 }}><Icon name="shield" size="sm" /></span>
           <div className="col grow" style={{ gap: 2 }}>
-            <span className="strong" style={{ fontSize: 'var(--fs-sm)' }}>Verify <span className="mono">{k.alias}</span></span>
-            <span className="hint">First connection. Compare the fingerprint.</span>
+            <span className="strong" style={{ fontSize: 'var(--fs-sm)' }}>{tr('tunnels_view.verify_span', { span: <span className="mono">{k.alias}</span> })}</span>
+            <span className="hint">{t('tunnels_view.first_connection_compare_the_fingerprint')}</span>
           </div>
         </div>
         <div className="fp" style={{ fontSize: 'var(--fs-xs)', padding: '6px var(--sp-2)' }}>{k.key_type} · {k.fingerprint}</div>
         <div className="row" style={{ gap: 'var(--sp-2)' }}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => tunnels.answer(host, false, '')}>Cancel</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => tunnels.answer(host, false, '')}>{t('common.cancel')}</button>
           <span className="grow" />
-          <button className="btn btn-primary btn-sm" autoFocus>Trust<span className="kbd-in">↵</span></button>
+          <button className="btn btn-primary btn-sm" autoFocus>{t('tunnels_view.trust')}<span className="kbd-in">↵</span></button>
         </div>
       </form>
     );
   }
-  const names = start.names.length ? start.names.join(', ') : start.all ? 'every tunnel' : 'its Open when I connect tunnels';
+  const names = start.names.length ? start.names.join(', ') : start.all ? t('tunnels_view.every_tunnel') : t('tunnels_view.its_open_on_connect');
   return (
     <div className="tun-card" aria-live="polite" data-tunnel-connecting
       onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tunnels.cancel(host); } }}>
       <div className="row" style={{ gap: 'var(--sp-2)' }}>
         <span className="mini-spin" style={{ width: 12, height: 12 }} />
-        <span className="strong" style={{ fontSize: 'var(--fs-sm)' }}>Connecting to <span className="mono">{host}</span></span>
+        <span className="strong" style={{ fontSize: 'var(--fs-sm)' }}>{tr('tunnels_view.connecting_to_span', { span: <span className="mono">{host}</span> })}</span>
       </div>
-      <span className="hint">Opens {names}. No terminal: the tunnels get a session of their own.</span>
-      <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => tunnels.cancel(host)}>Cancel<Key>esc</Key></button>
+      <span className="hint">{tr('tunnels_view.opens_names_no_terminal_the', { names })}</span>
+      <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => tunnels.cancel(host)}>{t('common.cancel')}<Key>esc</Key></button>
     </div>
   );
 }

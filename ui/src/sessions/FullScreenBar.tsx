@@ -11,6 +11,8 @@ import type { Pane } from './store';
 import { useMonitors } from './monitors';
 import { TypeMenuButton } from './RdpTypeMenu';
 import { MonitorsButton } from './MonitorsUi';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 /** How long the bar stays after the pointer leaves it. */
 const HIDE_AFTER_MS = 700;
@@ -77,43 +79,43 @@ export function FullScreenBar({ pane, top, noteSeen, onNoteSeen, monitorsNoteSee
     <>
       <div className="fs-edge" data-fs-edge onMouseEnter={show} onMouseLeave={hide} />
       {open ? (
-        <div className="fs-bar" role="toolbar" aria-label="Connection bar" data-fs-bar
+        <div className="fs-bar" role="toolbar" aria-label={t('full_screen_bar.connection_bar')} data-fs-bar
           style={{ top: hover && !kept ? top : 0 }} onMouseEnter={show} onMouseLeave={hide}>
           <button className={'icon-btn' + (pinOn ? ' on' : '')} aria-pressed={pinOn} disabled={lost}
-            aria-label={pinOn ? 'Bar kept open' : 'Keep the bar shown'} title={pinOn ? 'Bar kept open' : 'Keep the bar shown'}
+            aria-label={pinOn ? t('full_screen_bar.bar_kept_open') : t('full_screen_bar.keep_the_bar_shown')} title={pinOn ? t('full_screen_bar.bar_kept_open') : t('full_screen_bar.keep_the_bar_shown')}
             data-fs-pin onClick={() => setPinned((p) => !p)}>
             <Icon name="pin" size="sm" />
           </button>
           <HostTypeIcon type="rdp" size="md" />
           <span className="mono strong">{pane.alias}</span>
           {busy
-            ? <span className="row faint" style={{ gap: 6, fontSize: 'var(--fs-xs)' }} data-fs-rearranging><span className="mini-spin" />Rearranging the desktop…</span>
+            ? <span className="row faint" style={{ gap: 6, fontSize: 'var(--fs-xs)' }} data-fs-rearranging><span className="mini-spin" />{t('full_screen_bar.rearranging_the_desktop')}</span>
             : <span className="faint mono" style={{ fontSize: 'var(--fs-xs)' }}>{meta}</span>}
           <span className="sep" />
           {!lost && <MonitorsButton onOpenChange={setPopover} onSpan={onSpan} />}
           {!lost && pane.session && <TypeMenuButton bar session={pane.session} alias={pane.alias} onOpenChange={setPopover} />}
           <button className="btn btn-ghost btn-sm" data-fs-exit onClick={onExit}>
-            <Icon name="shrink" size="sm" />Exit full screen<Kbd action="fullscreen" />
+            <Icon name="shrink" size="sm" />{t('full_screen_bar.exit_full_screen')}<Kbd action="fullscreen" />
           </button>
           {!lost && (
             <button className="btn btn-ghost btn-sm" data-fs-disconnect onClick={onDisconnect}>
-              <Icon name="plug" size="sm" />Disconnect
+              <Icon name="plug" size="sm" />{t('common.disconnect')}
             </button>
           )}
         </div>
       ) : (
-        <span className="fs-tab" aria-label="Connection bar, hidden" data-fs-tab onMouseEnter={show} />
+        <span className="fs-tab" aria-label={t('full_screen_bar.connection_bar_hidden')} data-fs-tab onMouseEnter={show} />
       )}
       {monNote && !open && mon.span && (
         <div className="fs-note" role="status" data-fs-monitors-note>
           <Icon name="monitors" size="sm" />
-          <span>The desktop spans {mon.span.monitors.length} monitors. Move the pointer to the top of the main screen for the bar.</span>
+          <span>{tr('full_screen_bar.the_desktop_spans_length_monitors', { length: mon.span.monitors.length })}</span>
         </div>
       )}
       {note && !monNote && !open && (
         <div className="fs-note" role="status" data-fs-note>
           <Icon name="info" size="sm" />
-          <span>Point at the top edge, or press <Kbd action="fullscreen" /> to leave.</span>
+          <span>{tr('full_screen_bar.point_at_the_top_edge', { kbd: <Kbd action="fullscreen" /> })}</span>
         </div>
       )}
     </>

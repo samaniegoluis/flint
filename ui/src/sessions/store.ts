@@ -15,6 +15,7 @@ import { api, on } from '../api/backend';
 import { InputQueue } from '../lib/inputQueue';
 import { defaultTracks, layoutAfterClose, layoutForSplit, MAX_PANES, type Layout, type SplitDir } from '../lib/layout';
 import type { DesktopReadyEvent, HostKeyPayload, HostType, RdpGraphicsEvent, RdpStateEvent, SessionPromptEvent, SessionStateEvent } from '../api/types';
+import { t } from '../i18n';
 
 /** The core's RDP_AUTO_LAN_RTT_MS (domain/rdp.cf): a round trip this short is a local network. */
 const RDP_AUTO_LAN_RTT_MS = 5;
@@ -551,22 +552,22 @@ export function useSessions(): Snapshot {
   return useSyncExternalStore(sessions.subscribe, sessions.get);
 }
 
-export function statusLabel(t: Pane): { dot: string; meta: string; metaClass: string } {
-  if (t.status === 'ready') return { dot: 'st-on', meta: '', metaClass: '' };
-  if (t.status === 'prompt') {
-    const verify = t.kind === 'rdp' ? 'verify certificate' : 'verify host';
-    return { dot: 'st-wait', meta: t.prompt?.kind === 'host_key' ? verify : 'needs input', metaClass: 'accent-t' };
+export function statusLabel(pane: Pane): { dot: string; meta: string; metaClass: string } {
+  if (pane.status === 'ready') return { dot: 'st-on', meta: '', metaClass: '' };
+  if (pane.status === 'prompt') {
+    const verify = pane.kind === 'rdp' ? t('sessions.status.verify_certificate') : t('sessions.status.verify_host');
+    return { dot: 'st-wait', meta: pane.prompt?.kind === 'host_key' ? verify : t('sessions.status.needs_input'), metaClass: 'accent-t' };
   }
-  if (t.status === 'connecting') return { dot: 'st-wait', meta: 'connecting…', metaClass: 'faint' };
-  if (t.kind === 'rdp') return rdpStatusLabel(t);
-  if (t.end?.code === 'host_key' && t.changedKey) return { dot: 'st-fail', meta: 'host key changed', metaClass: 'danger-t' };
-  if (t.end?.code) return { dot: 'st-fail', meta: t.end.code === 'auth' ? 'auth failed' : 'disconnected', metaClass: 'danger-t' };
-  return { dot: 'st-off', meta: 'closed', metaClass: 'faint' };
+  if (pane.status === 'connecting') return { dot: 'st-wait', meta: t('sessions.status.connecting'), metaClass: 'faint' };
+  if (pane.kind === 'rdp') return rdpStatusLabel(pane);
+  if (pane.end?.code === 'host_key' && pane.changedKey) return { dot: 'st-fail', meta: t('sessions.status.host_key_changed'), metaClass: 'danger-t' };
+  if (pane.end?.code) return { dot: 'st-fail', meta: pane.end.code === 'auth' ? t('sessions.status.auth_failed') : t('sessions.status.disconnected'), metaClass: 'danger-t' };
+  return { dot: 'st-off', meta: t('sessions.status.closed'), metaClass: 'faint' };
 }
 
 /** Why a remote desktop ended, as its tab says it (design 22c). */
 /** The core's phrase for a server that closed during setup (domain/rdp.cf, milestone 59). */
-export const RDP_SERVER_CLOSED_SETUP = 'the server closed the connection during setup';
+export const RDP_SERVER_CLOSED_SETUP = 'the server closed the connection during setup'; // i18n-ignore: matched, never shown
 
 export function rdpEndKind(t: Pane): 'closed' | 'auth' | 'cert-changed' | 'unreachable' | 'timeout' | 'rdp-off' | 'legacy-security' | 'setup-closed' | 'refused' | 'lost' | 'other' {
   const code = t.end?.code ?? '';
@@ -586,11 +587,12 @@ export function rdpEndKind(t: Pane): 'closed' | 'auth' | 'cert-changed' | 'unrea
   return 'other';
 }
 
-function rdpStatusLabel(t: Pane): { dot: string; meta: string; metaClass: string } {
-  const k = rdpEndKind(t);
+function rdpStatusLabel(pane: Pane): { dot: string; meta: string; metaClass: string } {
+  const k = rdpEndKind(pane);
   const meta: Record<typeof k, string> = {
-    closed: 'disconnected', auth: 'sign-in failed', 'cert-changed': 'certificate changed', unreachable: 'unreachable',
-    timeout: 'timed out', 'rdp-off': 'refused', 'legacy-security': 'refused', 'setup-closed': 'closed during setup', refused: 'refused', lost: 'disconnected', other: 'failed',
+    closed: 'sessions.status.disconnected', auth: 'sessions.status.sign_in_failed', 'cert-changed': 'sessions.status.certificate_changed', unreachable: 'sessions.status.unreachable',
+    timeout: 'sessions.status.timed_out', 'rdp-off': 'sessions.status.refused', 'legacy-security': 'sessions.status.refused', 'setup-closed': 'sessions.status.closed_during_setup',
+    refused: 'sessions.status.refused', lost: 'sessions.status.disconnected', other: 'sessions.status.failed',
   };
-  return { dot: k === 'closed' ? 'st-off' : 'st-fail', meta: meta[k], metaClass: k === 'closed' ? 'faint' : 'danger-t' };
+  return { dot: k === 'closed' ? 'st-off' : 'st-fail', meta: t(meta[k]), metaClass: k === 'closed' ? 'faint' : 'danger-t' };
 }

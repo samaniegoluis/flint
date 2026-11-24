@@ -12,6 +12,8 @@ import { Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
 import { tunnels, useTunnels } from './store';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 /** Splits a destination as the core writes it: `host:port`, `[v6]:port`. */
 export function splitDestination(d: string): { host: string; port: string } {
@@ -29,7 +31,7 @@ export function HostTunnels({ host, focus }: { host: string | null; focus: boole
   const snap = useTunnels();
   const [editing, setEditing] = useState<TunnelView | 'new' | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const here = os === 'mac' ? 'this Mac' : 'this computer';
+  const here = os === 'mac' ? t('tunnels.this_mac') : t('tunnels.this_computer');
   const list = host ? snap.list.filter((v) => v.host === host) : [];
 
   useEffect(() => {
@@ -39,8 +41,8 @@ export function HostTunnels({ host, focus }: { host: string | null; focus: boole
   if (!host) {
     return (
       <div className="tun-sec" data-host-tunnels>
-        <span className="flabel row" style={{ gap: 'var(--sp-2)' }}><Icon name="tunnel" size="sm" className="info-t" />Tunnels</span>
-        <span className="hint">Add the host first; then give it tunnels here.</span>
+        <span className="flabel row" style={{ gap: 'var(--sp-2)' }}><Icon name="tunnel" size="sm" className="info-t" />{t('host_tunnels.tunnels')}</span>
+        <span className="hint">{t('host_tunnels.add_the_host_first_then')}</span>
       </div>
     );
   }
@@ -56,20 +58,19 @@ export function HostTunnels({ host, focus }: { host: string | null; focus: boole
     try {
       await api.tunnelRm(v.host, v.name);
       await tunnels.refresh();
-      notify(`Removed tunnel ${v.name}`);
+      notify(t('host_tunnels.removed_tunnel_name', { name: v.name }));
     } catch (err) { fail(err); }
   };
 
   return (
     <div className="tun-sec" ref={ref} data-host-tunnels>
       <div className="row" style={{ gap: 'var(--sp-2)' }}>
-        <span className="flabel row grow" style={{ gap: 'var(--sp-2)' }}><Icon name="tunnel" size="sm" className="info-t" />Tunnels{list.length > 0 && <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· {list.length}</span>}</span>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditing('new')} data-add-tunnel autoFocus={focus}><Icon name="plus" size="sm" />Add tunnel</button>
+        <span className="flabel row grow" style={{ gap: 'var(--sp-2)' }}><Icon name="tunnel" size="sm" className="info-t" />{t('host_tunnels.tunnels')}{list.length > 0 && <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· {list.length}</span>}</span>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditing('new')} data-add-tunnel autoFocus={focus}><Icon name="plus" size="sm" />{t('host_tunnels.add_tunnel')}</button>
       </div>
       {list.length === 0 ? (
         <span className="hint" style={{ lineHeight: 1.5, fontSize: 'var(--fs-sm)' }}>
-          No tunnels. A tunnel lets an app on {here} reach a service that only listens on {host}: <span className="mono">127.0.0.1:5432</span> here goes to <span className="mono">localhost:5432</span> there.
-        </span>
+          {tr('host_tunnels.no_tunnels_a_tunnel_lets', { here, host, span: <span className="mono">127.0.0.1:5432</span>, span2: <span className="mono">localhost:5432</span> })}</span>
       ) : (
         <>
           <div className="col" role="list" style={{ gap: 4 }}>
@@ -78,15 +79,15 @@ export function HostTunnels({ host, focus }: { host: string | null; focus: boole
                 <span className="nm">{v.name}</span>
                 <span className="mp">127.0.0.1:{v.local_port}<span className="arr">→</span>{v.destination}</span>
                 <label className="opt"><input type="checkbox" checked={v.open_on_connect} onChange={(e) => { void setOpen(v, e.target.checked); }} data-open-on-connect={v.name} />
-                  <span className="opt-t"><span className="opt-l" style={{ fontSize: 'var(--fs-sm)' }}>Open when I connect</span></span></label>
+                  <span className="opt-t"><span className="opt-l" style={{ fontSize: 'var(--fs-sm)' }}>{t('host_tunnels.open_when_i_connect')}</span></span></label>
                 <span className="acts">
-                  <button type="button" className="icon-btn" aria-label={`Edit tunnel ${v.name}`} onClick={() => setEditing(v)}><Icon name="edit" size="sm" /></button>
-                  <button type="button" className="icon-btn" aria-label={`Remove tunnel ${v.name}`} onClick={() => { void remove(v); }}><Icon name="trash" size="sm" /></button>
+                  <button type="button" className="icon-btn" aria-label={t('host_tunnels.edit_tunnel_name', { name: v.name })} onClick={() => setEditing(v)}><Icon name="edit" size="sm" /></button>
+                  <button type="button" className="icon-btn" aria-label={t('host_tunnels.remove_tunnel_name', { name: v.name })} onClick={() => { void remove(v); }}><Icon name="trash" size="sm" /></button>
                 </span>
               </div>
             ))}
           </div>
-          <span className="hint">They use this host's login, credential and jump host. The local side is always <span className="mono">127.0.0.1</span>.</span>
+          <span className="hint">{tr('host_tunnels.they_use_this_host_s', { span: <span className="mono">127.0.0.1</span> })}</span>
         </>
       )}
       {editing && <TunnelDialog host={host} tunnel={editing === 'new' ? null : editing} all={snap.list} onClose={() => setEditing(null)} />}
@@ -104,7 +105,7 @@ function TunnelDialog({ host, tunnel, all, onClose }: { host: string; tunnel: Tu
   const [open, setOpen] = useState(tunnel?.open_on_connect ?? false);
   const [err, setErr] = useState<{ field: 'name' | 'local' | 'dest' | 'form'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const here = os === 'mac' ? 'this Mac' : 'this computer';
+  const here = os === 'mac' ? t('tunnels.this_mac') : t('tunnels.this_computer');
 
   const localNo = Number(local);
   const shared = Number.isInteger(localNo) && localNo > 0 ? sharedPort(all, localNo, host, tunnel?.name ?? name) : [];
@@ -116,20 +117,20 @@ function TunnelDialog({ host, tunnel, all, onClose }: { host: string; tunnel: Tu
     e?.stopPropagation();
     if (busy) return;
     const n = name.trim();
-    if (!n) { setErr({ field: 'name', text: 'Give the tunnel a name.' }); return; }
+    if (!n) { setErr({ field: 'name', text: t('host_tunnels.give_the_tunnel_a_name') }); return; }
     if (all.some((v) => v.host === host && v.name.toLowerCase() === n.toLowerCase() && v.name !== tunnel?.name)) {
-      setErr({ field: 'name', text: `${host} already has a tunnel named ${n}.` });
+      setErr({ field: 'name', text: t('host_tunnels.host_already_has_a_tunnel', { host, n }) });
       return;
     }
-    if (!portOk(local)) { setErr({ field: 'local', text: 'Use a port from 1 to 65535.' }); return; }
+    if (!portOk(local)) { setErr({ field: 'local', text: t('host_tunnels.use_a_port_from_1') }); return; }
     const dp = destPort.trim() || local;
-    if (!portOk(dp)) { setErr({ field: 'dest', text: 'Use a port from 1 to 65535.' }); return; }
+    if (!portOk(dp)) { setErr({ field: 'dest', text: t('host_tunnels.use_a_port_from_1') }); return; }
     setBusy(true);
     setErr(null);
     try {
       await api.tunnelSave({ host, target: tunnel?.name ?? '', name: n, local_port: Number(local), dest_host: destHost.trim() || 'localhost', dest_port: Number(dp), open_on_connect: open });
       await tunnels.refresh();
-      notify(tunnel ? `Saved tunnel ${n}` : `Added tunnel ${n}`);
+      notify(tunnel ? t('host_tunnels.saved_tunnel_n', { n }) : t('host_tunnels.added_tunnel_n', { n }));
       onClose();
     } catch (x) {
       const fe = toFlintError(x);
@@ -143,44 +144,44 @@ function TunnelDialog({ host, tunnel, all, onClose }: { host: string; tunnel: Tu
   );
 
   return (
-    <Modal label={tunnel ? `Edit tunnel ${tunnel.name}` : 'Add tunnel'} onClose={onClose} width={520} top={120} layer={2}>
+    <Modal label={tunnel ? t('host_tunnels.edit_tunnel_name', { name: tunnel.name }) : t('host_tunnels.add_tunnel')} onClose={onClose} width={520} top={120} layer={2}>
       <form onSubmit={save} onKeyDown={(e) => { if (e.key === 'Enter' && (os === 'mac' ? e.metaKey : e.ctrlKey)) { e.stopPropagation(); void save(); } }} data-tunnel-dialog>
         <div className="modal-h">
           <span className="prompt-ic info" style={{ width: 28, height: 28 }}><Icon name="tunnel" size="sm" /></span>
-          <h2 className="grow">{tunnel ? 'Edit tunnel' : 'Add tunnel'} <span className="mono muted" style={{ fontWeight: 'var(--fw-regular)' }}>· {host}</span></h2>
-          <button type="button" className="icon-btn" aria-label="Close (esc)" onClick={onClose}><Icon name="x" size="sm" /></button>
+          <h2 className="grow">{tunnel ? t('host_tunnels.edit_tunnel') : t('host_tunnels.add_tunnel')} <span className="mono muted" style={{ fontWeight: 'var(--fw-regular)' }}>· {host}</span></h2>
+          <button type="button" className="icon-btn" aria-label={t('host_tunnels.close_esc')} onClick={onClose}><Icon name="x" size="sm" /></button>
         </div>
         <div className="modal-b" style={{ gap: 'var(--sp-4)' }}>
-          <div className="field"><label className="flabel" htmlFor="tun-name">Name</label>
+          <div className="field"><label className="flabel" htmlFor="tun-name">{t('host_tunnels.name')}</label>
             <div className={'input' + (err?.field === 'name' ? ' err' : '')}><input {...plainText} id="tun-name" className="mono" value={name} placeholder="pg" autoFocus data-autofocus onChange={(e) => setName(e.target.value)} autoComplete="off" /></div>
             {ferr('name')}
           </div>
-          <div className="field"><label className="flabel" htmlFor="tun-local">On {here}</label>
+          <div className="field"><label className="flabel" htmlFor="tun-local">{tr('host_tunnels.on_here', { here })}</label>
             <div style={{ display: 'grid', gridTemplateColumns: '160px minmax(0, 1fr)', gap: 'var(--sp-3)', alignItems: 'center' }}>
-              <div className={'input' + (err?.field === 'local' ? ' err' : '')}><span className="port-pre">127.0.0.1 :</span><input {...plainText} id="tun-local" className="mono" inputMode="numeric" aria-label="Local port" value={local} placeholder="5432" onChange={(e) => setLocal(e.target.value.replace(/\D/g, ''))} /></div>
-              <span className="hint" style={{ lineHeight: 1.45 }}>Always <span className="mono">127.0.0.1</span>: only {here} can connect, never your network.</span>
+              <div className={'input' + (err?.field === 'local' ? ' err' : '')}><span className="port-pre">127.0.0.1 :</span><input {...plainText} id="tun-local" className="mono" inputMode="numeric" aria-label={t('host_tunnels.local_port')} value={local} placeholder="5432" onChange={(e) => setLocal(e.target.value.replace(/\D/g, ''))} /></div>
+              <span className="hint" style={{ lineHeight: 1.45 }}>{tr('host_tunnels.always_span_only_here_can', { span: <span className="mono">127.0.0.1</span>, here })}</span>
             </div>
             {ferr('local')}
             {!err && shared.length > 0 && (
-              <span className="ferr warn" data-shared-port><Icon name="alert" /><span>Also used by {shared.map((v, i) => <span key={v.host + v.name}>{i > 0 ? (i === shared.length - 1 ? ' and ' : ', ') : ''}<span className="mono">{v.name}</span> on {v.host}</span>)}. You can save it, but only one of them can run at a time.</span></span>
+              <span className="ferr warn" data-shared-port><Icon name="alert" /><span>{tr('host_tunnels.also_used_by_p_you', { p: shared.map((v, i) => <span key={v.host + v.name}>{i > 0 ? (i === shared.length - 1 ? t('common.list_and') : t('common.list_sep')) : ''}{tr('host_tunnels.name_on_host', { name: <span className="mono">{v.name}</span>, host: v.host })}</span>) })}</span></span>
             )}
           </div>
-          <div className="field"><span className="flabel">On {host} <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· the destination, as the server sees it</span></span>
+          <div className="field"><span className="flabel">{tr('host_tunnels.on_host_span', { host, span: <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>{t('host_tunnels.the_destination_as_the_server')}</span> })}</span>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 110px', gap: 'var(--sp-3)' }}>
-              <div className={'input' + (err?.field === 'dest' ? ' err' : '')}><input {...plainText} className="mono" placeholder="localhost" aria-label="Destination host" value={destHost} onChange={(e) => setDestHost(e.target.value)} autoComplete="off" /></div>
-              <div className={'input' + (err?.field === 'dest' ? ' err' : '')}><input {...plainText} className="mono" inputMode="numeric" aria-label="Destination port" placeholder={local || 'port'} value={destPort} onChange={(e) => setDestPort(e.target.value.replace(/\D/g, ''))} /></div>
+              <div className={'input' + (err?.field === 'dest' ? ' err' : '')}><input {...plainText} className="mono" placeholder="localhost" aria-label={t('host_tunnels.destination_host')} value={destHost} onChange={(e) => setDestHost(e.target.value)} autoComplete="off" /></div>
+              <div className={'input' + (err?.field === 'dest' ? ' err' : '')}><input {...plainText} className="mono" inputMode="numeric" aria-label={t('host_tunnels.destination_port')} placeholder={local || 'port'} value={destPort} onChange={(e) => setDestPort(e.target.value.replace(/\D/g, ''))} /></div>
             </div>
             {ferr('dest')}
-            <span className="hint" style={{ lineHeight: 1.45 }}><span className="mono">localhost</span> is {host} itself. An address on its network, like <span className="mono">10.0.0.5</span>, reaches another machine through it.</span>
+            <span className="hint" style={{ lineHeight: 1.45 }}>{tr('host_tunnels.span_is_host_itself_an', { span: <span className="mono">localhost</span>, host, span2: <span className="mono">10.0.0.5</span> })}</span>
           </div>
           <label className="opt"><input type="checkbox" checked={open} onChange={(e) => setOpen(e.target.checked)} />
-            <span className="opt-t"><span className="opt-l">Open when I connect</span><span className="hint">Starts with the session; the toolbar's Tunnels menu toggles it.</span></span></label>
+            <span className="opt-t"><span className="opt-l">{t('host_tunnels.open_when_i_connect')}</span><span className="hint">{t('host_tunnels.starts_with_the_session_the')}</span></span></label>
           {ferr('form')}
         </div>
         <div className="modal-f">
           <span className="grow" />
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel<Key>esc</Key></button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>{tunnel ? 'Save tunnel' : 'Add tunnel'}<span className="kbd-in">{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</span></button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>{t('common.cancel')}<Key>esc</Key></button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>{tunnel ? t('host_tunnels.save_tunnel') : t('host_tunnels.add_tunnel')}<span className="kbd-in">{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</span></button>
         </div>
       </form>
     </Modal>

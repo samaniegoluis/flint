@@ -7,6 +7,7 @@ import { chordLabel, type Action } from '../lib/keymap';
 import { LAYOUTS, LAYOUT_TITLES, MAX_PANES, type Layout } from '../lib/layout';
 import { runAction } from '../shell/actions';
 import type { Tab } from './store';
+import { t } from '../i18n';
 
 // The layout's picture: the same grid, drawn small.
 export function LayoutIcon({ layout, small }: { layout: Layout; small?: boolean }) {
@@ -33,14 +34,14 @@ export function SplitMenu({ tab, onClose }: { tab: Tab; onClose: () => void }) {
   const { os } = useApp();
   const ref = useRef<HTMLDivElement>(null);
   const n = tab.panes.length;
-  const full = n >= MAX_PANES ? `A tab holds up to ${MAX_PANES} panes` : undefined;
-  const single = n < 2 ? 'Split the tab first' : undefined;
+  const full = n >= MAX_PANES ? t('split_menu.tab_holds_up_to', { max: MAX_PANES }) : undefined;
+  const single = n < 2 ? t('split_menu.split_first') : undefined;
   const items: Item[] = [
-    { key: 'right', label: 'Split right', action: 'splitRight', disabled: full },
-    { key: 'down', label: 'Split down', action: 'splitDown', disabled: full },
-    ...LAYOUTS.map((l, i): Item => ({ key: l, label: LAYOUT_TITLES[l], action: ('layout' + (i + 1)) as Action, layout: l, disabled: single, sep: i === 0, heading: i === 0 ? `Layouts · up to ${MAX_PANES} panes` : undefined })),
-    { key: 'next', label: 'Focus next pane', action: 'focusNextPane', disabled: single, sep: true },
-    { key: 'close', label: n > 1 ? 'Close pane' : 'Close tab', action: 'closeTab' },
+    { key: 'right', label: t('split_menu.split_right'), action: 'splitRight', disabled: full },
+    { key: 'down', label: t('split_menu.split_down'), action: 'splitDown', disabled: full },
+    ...LAYOUTS.map((l, i): Item => ({ key: l, label: t(LAYOUT_TITLES[l]), action: ('layout' + (i + 1)) as Action, layout: l, disabled: single, sep: i === 0, heading: i === 0 ? t('split_menu.layouts_up_to_max_panes', { MAX_PANES }) : undefined })),
+    { key: 'next', label: t('split_menu.focus_next_pane'), action: 'focusNextPane', disabled: single, sep: true },
+    { key: 'close', label: n > 1 ? t('split_menu.close_pane') : t('split_menu.close_tab'), action: 'closeTab' },
   ];
   const [hot, setHot] = useState(0);
   useEffect(() => { ref.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]')[hot]?.focus(); }, [hot]);
@@ -59,7 +60,7 @@ export function SplitMenu({ tab, onClose }: { tab: Tab; onClose: () => void }) {
     runAction(it.action);
   };
   return (
-    <div ref={ref} className="menu" role="menu" aria-label="Split" data-split-menu
+    <div ref={ref} className="menu" role="menu" aria-label={t('split_menu.split')} data-split-menu
       style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 290, zIndex: 20 }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); document.querySelector<HTMLElement>('[data-split-button]')?.focus(); }
