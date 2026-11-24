@@ -258,6 +258,14 @@ JSON
       pid="$(pgrep -n -f "^build/gui/Flint\$|/build/gui/Flint\$" || true)"
       [[ -n "$pid" ]] && { echo "diag: stacks of the app (pid $pid) 240 s in:"; gdb -p "$pid" -batch -ex "thread apply all bt 30" 2>&1 | grep -E '^Thread|^#|ptrace|ermission|not permitted' ; } > "$4.stack" ) &
     stack_pid=$!
+  elif [[ "$(uname -s)" == Darwin ]] && command -v sample >/dev/null; then
+    # macOS (rule 9, the rdp run's hang of milestones 68 and 69): always on, since a hang
+    # is rare and costs nothing to watch. 225 s in, before the page's own 240 s cap ends
+    # the app, `sample` writes every thread's stack after the log.
+    ( sleep 225
+      pid="$(pgrep -n -f "build/gui/Flint.app/Contents/MacOS/Flint\$" || true)"
+      [[ -n "$pid" ]] && { echo "diag: stacks of the app (pid $pid) 225 s in:"; sample "$pid" 3 2>&1 | grep -vE '^ *$' | head -400; } > "$4.stack" ) &
+    stack_pid=$!
   fi
   env ${cli_env[@]+"${cli_env[@]}"} FLINT_CONFIG_DIR="$3" FLINT_KEYCHAIN=off FLINT_GUI_E2E="$2" FLINT_GUI_E2E_TIMEOUT_MS="${5:-}" \
     FLINT_GUI_E2E_VISIBLE="$visible" \

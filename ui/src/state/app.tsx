@@ -255,11 +255,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // gui-e2e (milestone 69): the language switched as the Settings row does, and a
   // rejected RPC rendered as the page renders a core message.
   useEffect(() => {
-    const e2e = (window as unknown as { __flintE2E?: Record<string, unknown> }).__flintE2E;
-    if (!e2e) return;
+    if (!info?.e2e) return;
+    const w = window as unknown as { __flintE2E?: Record<string, unknown> };
+    const e2e = (w.__flintE2E ??= {});
     e2e.setLanguage = (language: Settings['language']) => saveSettings({ ...settings, language });
     e2e.coreText = (err: unknown) => coreText(toFlintError(err));
-  }, [settings, saveSettings]);
+  }, [info, settings, saveSettings]);
 
   // Theme, accent and density live on <html> so every token follows.
   useEffect(() => {

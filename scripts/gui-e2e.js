@@ -63,7 +63,8 @@
   const MASTER = 'e2e-master-password-42';
   const HOST_PW_MARKER = 'gui-host-pw-marker';
 
-  window.__flintE2E = { terms: {} };
+  // Kept, not replaced: the page may have put its hooks in it first (milestone 69).
+  window.__flintE2E = Object.assign(window.__flintE2E ?? {}, { terms: {} });
   const log = (m) => window.backend.e2e_log({ name: String(m) });
   // The headless window is hidden, and WebKit throttles a hidden page's timers to
   // a crawl (CF-050). MessageChannel posts are not throttled, so waits spin on them.
