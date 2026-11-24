@@ -4,6 +4,16 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.33.1 — 2026-11-24
+
+A tunnel now says listening only while its port really answers: Flint checks with the system when it starts the tunnel and every few seconds after, and a port that went away reads "not listening" with the reason instead. A tunnel's error or warning is no longer cut off: it wraps to as many lines as it needs, and hovering it shows the whole text.
+
+### Fixed
+
+- **tunnels:** A tunnel reads listening only while the system lists its port
+- **tunnels:** A tunnel's error wraps and reads whole; "not listening" in the app
+
+
 ## 0.33.0 — 2026-11-24
 
 Flint now speaks Spanish. Choose System, English or Español in Settings → Appearance or from the command palette, and the window follows at once: its text, dates and numbers, the extra monitors' windows, and Touch ID's reason, with the tray and the Mac's menu bar from the next start. The reasons for a failed connection, a refused unlock or a remote desktop that did not open are translated too. The `flint` command stays in English, and its `--json` errors now name each message with a stable `id` and its `params`.
@@ -21,6 +31,7 @@ Flint now speaks Spanish. Choose System, English or Español in Settings → App
 - **gui:** The unlock screen reaches a remote vault and keeps its menu inside the window
 - **i18n:** Sentences with an element stay one line of text, and the keychain sentence in Spanish
 - **gui:** The palette's theme and language rows are found by their value in either language
+- **release:** The Windows package accepts the Restart Manager's DLL
 
 
 ## 0.32.0 — 2026-11-23
