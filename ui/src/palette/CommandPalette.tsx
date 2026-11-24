@@ -350,7 +350,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           <div className="row" role="tablist" aria-label={t('command_palette.result_groups')} style={{ gap: 'var(--sp-1)', padding: 'var(--sp-2) var(--sp-3)', borderBottom: '1px solid var(--border-subtle)' }}>
             {(['all', 'hosts', 'actions', 'vaults'] as Group[]).map((g) => (
               <button key={g} className={'btn btn-sm ' + (group === g ? 'btn-secondary' : 'btn-ghost')} role="tab" aria-selected={group === g} tabIndex={-1} onClick={() => { setGroup(g); setHot(0); }}>
-                {g[0].toUpperCase() + g.slice(1)} <span className="faint">{g === 'all' ? items.length : counts[g]}</span>
+                {t(`command_palette.group.${g}`)} <span className="faint">{g === 'all' ? items.length : counts[g]}</span>
               </button>
             ))}
             <span className="grow" /><span className="hint row" style={{ gap: 6 }}><Key>tab</Key>{t('command_palette.next_group')}</span>
@@ -363,7 +363,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
             lastGroup = it.group;
             return (
               <div key={it.key} style={{ display: 'contents' }}>
-                {header && <div className="menu-label"><span className="label">{it.group[0].toUpperCase() + it.group.slice(1)}</span></div>}
+                {header && <div className="menu-label"><span className="label">{t(`command_palette.group.${it.group}`)}</span></div>}
                 <button id={'pi-' + it.key} className={'mi' + (it === current ? ' hot' : '') + (it.disabled ? ' is-disabled' : '')} role="option" aria-selected={it === current} aria-disabled={!!it.disabled} tabIndex={-1}
                   title={it.disabled} data-palette-disabled={it.disabled ? '' : undefined}
                   style={{ minHeight: 38 }} onMouseMove={() => setHot(i)} onClick={(e) => { if (it.disabled) return; const m = os === 'mac' ? e.metaKey : e.ctrlKey; finish(() => it.run(m && e.shiftKey ? 'pane' : m ? 'tab' : 'open')); }}>

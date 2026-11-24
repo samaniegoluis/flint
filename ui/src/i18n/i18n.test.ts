@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import en from './en.json';
+import es from './es.json';
 import { availableLanguages, fmtDate, fmtNumber, hasKey, language, resolveLanguage, setCatalogForTest, setLanguage, t } from './index';
 
 const EN = {
@@ -16,7 +17,7 @@ const ES = {
 
 afterEach(() => {
   setCatalogForTest('en', en);
-  setCatalogForTest('es', null);
+  setCatalogForTest('es', es);
   setLanguage('en');
 });
 
@@ -53,6 +54,7 @@ describe('t', () => {
 describe('languages', () => {
   it('offers only the languages with a catalog, and resolves system and unknown ones', () => {
     setCatalogForTest('en', EN);
+    setCatalogForTest('es', null);
     expect(availableLanguages()).toEqual(['en']);
     expect(resolveLanguage('system', 'es')).toBe('en');
     setCatalogForTest('es', ES);

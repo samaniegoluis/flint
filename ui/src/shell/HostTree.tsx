@@ -202,7 +202,7 @@ export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer
                 <HostTypeIcon type={r.host.type} />
                 <span className="host-name grow trunc">{r.alias}</span>
                 <TunnelMark host={r.alias} />
-                {n > 0 && <span className="sess" aria-label={t('host_tree.n_open_sessionp', { n, p: n > 1 ? 's' : '' })}><Icon name="term" />{n}</span>}
+                {n > 0 && <span className="sess" aria-label={t('host_tree.n_open_sessions', { count: n })}><Icon name="term" />{n}</span>}
               </button>
             );
           })}

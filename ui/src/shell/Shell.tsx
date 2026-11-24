@@ -534,7 +534,7 @@ export function Shell() {
         )}
         {(grantCount > 0 || (waiting > 0 && !focused)) && (
           <button className="sb-btn sb-agents" data-grants onClick={() => { setSection('access'); setView('settings'); }}
-            aria-label={t('shell.agents_grantcount_active_grantpp2_open', { grantCount, p: grantCount === 1 ? '' : 's', p2: waiting > 0 && !focused ? `, ${waiting} waiting` : '' })}>
+            aria-label={waiting > 0 && !focused ? t('shell.agents_aria_waiting', { count: grantCount, waiting }) : t('shell.agents_aria', { count: grantCount })}>
             <Icon name="agent" />{t('shell.agents')}{' '}{grantCount}
             {waiting > 0 && !focused && <span className="sb-pending" data-agents-waiting>{tr('shell.waiting_waiting', { waiting })}</span>}
           </button>

@@ -121,6 +121,10 @@ export function leaks(paths: string[]): Leak[] {
     const visit = (node: ts.Node) => {
       // An element marked `data-i18n-skip` holds sample content (a terminal preview).
       if ((ts.isJsxElement(node) && node.openingElement.attributes.properties.some((a) => ts.isJsxAttribute(a) && a.name.getText(src) === 'data-i18n-skip'))) return;
+      // A value shown capitalised (`d[0].toUpperCase() + d.slice(1)`) is an English word.
+      if (ts.isJsxExpression(node) && node.parent && ts.isJsxElement(node.parent) && /\[0\]\.toUpperCase\(\)\s*\+/.test(node.getText(src))) {
+        out.push({ file, line: src.getLineAndCharacterOfPosition(node.getStart()).line + 1, text: node.getText(src) });
+      }
       if (ts.isJsxText(node)) report(node, node.text, true);
       else if (ts.isJsxExpression(node) && node.parent && (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent))) report(node, literalText(node.expression), true);
       else if (ts.isJsxAttribute(node) && VISIBLE.has(node.name.getText(src))) report(node, literalText(node.initializer));

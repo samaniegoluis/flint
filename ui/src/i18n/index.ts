@@ -9,12 +9,13 @@
 // throws in tests and shows the key itself in the app.
 
 import en from './en.json';
+import es from './es.json';
 
 export type Lang = 'en' | 'es';
 export type Params = Record<string, string | number | null | undefined>;
 type Catalog = Record<string, string>;
 
-const CATALOGS: Partial<Record<Lang, Catalog>> = { en };
+const CATALOGS: Partial<Record<Lang, Catalog>> = { en, es };
 
 const STRICT = import.meta.env?.MODE === 'test';
 

@@ -127,6 +127,9 @@ const CORNER_LABEL: Record<ToastCorner, string> = {
 };
 const CORNER_CLASS: Record<ToastCorner, string> = { 'bottom-right': 'br', 'bottom-left': 'bl', 'top-right': 'tr', 'top-left': 'tl' };
 
+// Each language by its own name, the same in every language (D-141).
+const LANGUAGE_NAME = { en: 'English', es: 'Español' } as const;
+
 function Appearance() {
   const [s, set] = useSetting();
   return (
@@ -137,6 +140,15 @@ function Appearance() {
           <ThemeCard value="dark" label={t('settings_page.dark')} current={s.theme} onPick={() => set({ theme: 'dark' })} />
           <ThemeCard value="light" label={t('settings_page.light')} current={s.theme} onPick={() => set({ theme: 'light' })} />
           <ThemeCard value="system" label={t('settings_page.match_system')} current={s.theme} onPick={() => set({ theme: 'system' })} />
+        </div>
+      </Row>
+      <Row title={t('settings_page.language')} desc={t('settings_page.language_desc')}>
+        <div className="seg" role="radiogroup" aria-label={t('settings_page.language')}>
+          {(['system', 'en', 'es'] as const).map((l) => (
+            <button key={l} type="button" role="radio" aria-checked={s.language === l} data-language={l} onClick={() => set({ language: l })}>
+              {l === 'system' ? t('settings_page.language.system') : LANGUAGE_NAME[l]}
+            </button>
+          ))}
         </div>
       </Row>
       <Row title={t('settings_page.accent')} desc={t('settings_page.focus_active_tab_primary_buttons')}>
@@ -150,7 +162,7 @@ function Appearance() {
         <div className="row" style={{ gap: 'var(--sp-3)' }}>
           <div className="seg" role="group" aria-label={t('settings_page.density')}>
             {(['compact', 'default', 'comfortable'] as const).map((d) => (
-              <button key={d} type="button" aria-pressed={s.density === d} onClick={() => set({ density: d })}>{d[0].toUpperCase() + d.slice(1)}</button>
+              <button key={d} type="button" aria-pressed={s.density === d} onClick={() => set({ density: d })}>{t(`settings_page.density.${d}`)}</button>
             ))}
           </div>
           <span className="hint">{t('settings_page.22_26_30_px_rows')}</span>
@@ -242,7 +254,7 @@ function TerminalSettings() {
         <div className="row" style={{ gap: 'var(--sp-4)' }}>
           <div className="seg" role="group" aria-label={t('settings_page.cursor_style')}>
             {(['block', 'bar', 'underline'] as const).map((c) => (
-              <button key={c} type="button" aria-pressed={s.term_cursor === c} onClick={() => set({ term_cursor: c })}>{c[0].toUpperCase() + c.slice(1)}</button>
+              <button key={c} type="button" aria-pressed={s.term_cursor === c} onClick={() => set({ term_cursor: c })}>{t(`settings_page.cursor.${c}`)}</button>
             ))}
           </div>
           <Toggle on={s.term_cursor_blink} onChange={(v) => set({ term_cursor_blink: v })} label={t('settings_page.blink')} />

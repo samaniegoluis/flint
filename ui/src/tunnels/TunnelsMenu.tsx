@@ -30,7 +30,7 @@ export function TunnelsButton({ host, onManage }: { host: string; onManage: (ali
   return (
     <span ref={ref} style={{ position: 'relative', display: 'flex' }}>
       <button className={'tbtn' + (open ? ' on' : '')} aria-haspopup="menu" aria-expanded={open} data-toolbar-tunnels
-        title={up > 0 ? t('tunnels_menu.up_tunnelp_up_on_host', { up, p: up === 1 ? '' : 's', host }) : t('tunnels_menu.tunnels_on_host', { host })} onClick={() => setOpen((o) => !o)}>
+        title={up > 0 ? t('tunnels_menu.up_on_host', { count: up, host }) : t('tunnels_menu.tunnels_on_host', { host })} onClick={() => setOpen((o) => !o)}>
         <Icon name="tunnel" size="sm" /><span className="tb-l">{t('tunnels_menu.tunnels')}</span>
         {up > 0 && <span className="tcount" aria-label={`${up} up`}>{up}</span>}
       </button>
