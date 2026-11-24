@@ -9,7 +9,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useApp, vaultInitial, vaultMarkClass, shortPath } from '../state/app';
 import { folderDisplay, highlight, hostFields, search, type SearchMatch } from '../lib/search';
-import { ACTION_TITLES, chordLabel, type Action } from '../lib/keymap';
+import { actionTitle, chordLabel, type Action } from '../lib/keymap';
 import { colorStyle } from '../lib/colors';
 import { HostTypeIcon, Icon, type IconName } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
@@ -277,7 +277,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       for (const a of PALETTE_ACTIONS) {
         // The sync's commands follow the vault's server (milestone 44).
         if (!syncShows(a.action, sync)) continue;
-        const title = ACTION_TITLES[a.action];
+        const title = actionTitle(a.action);
         const m = search(q, [{ name: 'title', text: title, primary: true }]);
         if (!m) continue;
         out.push({

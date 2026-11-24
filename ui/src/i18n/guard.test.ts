@@ -1,7 +1,8 @@
-// Every visible string of the page comes from the catalog (milestone 66, D-140): this
-// walks the migrated folders and fails on text written in place: JSX text, a literal in
-// a visible attribute or prop, a literal `label`/`text`/`title`/`desc` field, and a
-// literal given to notify(). Milestone 67 extends it to all of ui/src.
+// Every visible string of the page comes from the catalog (milestones 66-67, D-140,
+// D-141): this walks all of ui/src and fails on text written in place: JSX text, a
+// literal in a visible attribute or prop, a literal `label`/`text`/`title`/`body`/…
+// field, a literal given to notify(), and a capitalised sentence in a module-level
+// table; and on a key the code names that en.json lacks.
 
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -13,8 +14,8 @@ const SOURCES: Record<string, string> = Object.fromEntries(
     .map(([k, v]) => [k.replace(/^\.\.\//, ''), v]),
 );
 
-/** The folders and files already in the catalog. */
-export const MIGRATED = ['ui', 'update', 'screens', 'palette', 'shell', 'pages', 'App.tsx', 'i18n', 'access', 'sync', 'sessions', 'tunnels', 'files', 'editors', 'lib/sync.ts', 'lib/layout.ts'];
+/** What the guard reads: all of ui/src ('' is the root). */
+export const SCOPE = [''];
 
 /** Attributes and props whose value a person reads. */
 const VISIBLE = new Set([
@@ -47,7 +48,7 @@ function readable(text: string, prose = false): boolean {
 }
 
 function files(path: string): string[] {
-  return Object.keys(SOURCES).filter((f) => (f === path || f.startsWith(path + '/'))
+  return Object.keys(SOURCES).filter((f) => (path === '' || f === path || f.startsWith(path + '/'))
     && !/\.test\.tsx?$/.test(f) && !f.includes('fixture'));
 }
 
@@ -125,8 +126,10 @@ export function leaks(paths: string[]): Leak[] {
       else if (ts.isJsxAttribute(node) && VISIBLE.has(node.name.getText(src))) report(node, literalText(node.initializer));
       else if (ts.isPropertyAssignment(node) && VISIBLE.has(node.name.getText(src).replace(/['"]/g, ''))) report(node, literalText(node.initializer));
       else if (ts.isCallExpression(node) && /(^|\.)(notify|fail|show)$/.test(node.expression.getText(src))) report(node, literalText(node.arguments[0]));
-      // A sentence or a capitalised word kept in a module-level table (a label map).
+      // A sentence or a capitalised word kept in a module-level table (a label map); a
+      // KeyboardEvent `code` ('Comma') is a name, not text.
       else if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && !insideFunction(node)
+        && !(ts.isPropertyAssignment(node.parent) && node.parent.name.getText(src) === 'code')
         && !ts.isImportDeclaration(node.parent) && !ts.isLiteralTypeNode(node.parent) && !ts.isExportDeclaration(node.parent)
         && /^[A-Z][a-z]*([ ,.?!]|$)/.test(node.text) && /[a-z]{2}/.test(node.text)) report(node, node.text);
       ts.forEachChild(node, visit);
@@ -137,12 +140,12 @@ export function leaks(paths: string[]): Leak[] {
 }
 
 describe('the catalog guard', () => {
-  it('finds every key the migrated folders name in en.json', () => {
-    expect(missingKeys(MIGRATED)).toEqual([]);
+  it('finds every key ui/src names in en.json', () => {
+    expect(missingKeys(SCOPE)).toEqual([]);
   });
 
-  it('finds no text written in place in the migrated folders', () => {
-    const found = leaks(MIGRATED).map((l) => `${l.file}:${l.line}  ${l.text}`);
+  it('finds no text written in place in ui/src', () => {
+    const found = leaks(SCOPE).map((l) => `${l.file}:${l.line}  ${l.text}`);
     expect(found).toEqual([]);
   });
 });

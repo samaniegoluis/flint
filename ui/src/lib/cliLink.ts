@@ -3,6 +3,7 @@
 // without React.
 
 import type { CliLinkSpot, CliLinkStatus } from '../api/types';
+import { t } from '../i18n';
 
 const tilde = (path: string) => path.replace(/^\/(Users|home)\/[^/]+\//, '~/');
 /** A Windows folder as Windows writes it. */
@@ -18,52 +19,51 @@ export function cliOffer(st: CliLinkStatus): { text: string; label: string; path
     // Windows (milestone 50): one spot, the package's bin folder.
     const spot = st.spots[0];
     if (!spot) return null;
-    if (st.offer === 'install' && spot.state === 'missing') return { text: 'Use Flint from a terminal: add flint to your PATH', label: 'Add to PATH', path: spot.path };
+    if (st.offer === 'install' && spot.state === 'missing') return { text: t('cli.offer.add_to_path'), label: t('cli.add_to_path'), path: spot.path };
     if (st.offer === 'fix' && (spot.state === 'broken' || spot.state === 'other-copy')) {
-      const why = spot.state === 'broken' ? 'a copy of Flint that was moved or deleted' : 'another copy of Flint';
-      return { text: `flint on your PATH runs ${why}`, label: 'Use this copy', path: spot.path };
+      return { text: spot.state === 'broken' ? t('cli.offer.path_runs_moved') : t('cli.offer.path_runs_other'), label: t('cli.use_this_copy'), path: spot.path };
     }
     return null;
   }
   if (st.offer === 'install') {
     const spot = st.spots.find((s) => s.state === 'missing');
     if (!spot) return null;
-    return { text: 'Use Flint from a terminal: install the flint command', label: 'Install', path: spot.path };
+    return { text: t('cli.offer.install'), label: t('cli.install'), path: spot.path };
   }
   if (st.offer === 'fix') {
     const spot = st.spots.find((s) => s.state === 'other-copy' || s.state === 'broken');
     if (!spot) return null;
-    const why = spot.state === 'broken' ? 'a copy of Flint that was moved or deleted' : 'another copy of Flint';
-    return { text: `The flint command in ${tilde(spot.path)} runs ${why}`, label: 'Use this copy', path: spot.path };
+    const where = tilde(spot.path);
+    return { text: spot.state === 'broken' ? t('cli.offer.command_runs_moved', { where }) : t('cli.offer.command_runs_other', { where }), label: t('cli.use_this_copy'), path: spot.path };
   }
   return null;
 }
 
 /** The toast after linking: ~/.local/bin works only when the person put it on the PATH. */
 export function cliInstalledText(path: string, kind: CliLinkStatus['kind'] = 'link'): string {
-  if (kind === 'path') return `Added ${winPath(path)} to your PATH: open a new terminal and run flint`;
+  if (kind === 'path') return t('cli.installed.path', { path: winPath(path) });
   const where = tilde(path);
-  if (where.startsWith('~/')) return `Installed ${where}. Make sure ${where.slice(0, -'/flint'.length)} is on your PATH`;
-  return `Installed ${where}: open a new terminal and run flint`;
+  if (where.startsWith('~/')) return t('cli.installed.check_path', { where, dir: where.slice(0, -'/flint'.length) });
+  return t('cli.installed.link', { where });
 }
 
 /** About's line for one place. */
 export function cliSpotText(spot: CliLinkSpot, kind: CliLinkStatus['kind'] = 'link'): string {
   if (kind === 'path') {
     switch (spot.state) {
-      case 'installed': return 'On your PATH: flint runs this copy';
-      case 'missing': return 'Not on your PATH';
-      case 'other-copy': return `Your PATH runs another copy: ${winPath(spot.target)}`;
-      case 'broken': return `Your PATH names a copy that was moved or deleted: ${winPath(spot.target)}`;
-      case 'foreign': return 'Another flint is on your PATH';
+      case 'installed': return t('cli.spot.path.installed');
+      case 'missing': return t('cli.spot.path.missing');
+      case 'other-copy': return t('cli.spot.path.other_copy', { target: winPath(spot.target) });
+      case 'broken': return t('cli.spot.path.broken', { target: winPath(spot.target) });
+      case 'foreign': return t('cli.spot.path.foreign');
     }
   }
   switch (spot.state) {
-    case 'installed': return 'Runs this copy of Flint';
-    case 'missing': return spot.admin ? 'Not installed · asks for an administrator password' : 'Not installed';
-    case 'other-copy': return `Runs another copy: ${tilde(spot.target)}`;
-    case 'broken': return 'Runs a copy that was moved or deleted';
-    case 'foreign': return 'Another flint is here; Flint leaves it as it is';
+    case 'installed': return t('cli.spot.installed');
+    case 'missing': return spot.admin ? t('cli.spot.missing_admin') : t('cli.spot.missing');
+    case 'other-copy': return t('cli.spot.other_copy', { target: tilde(spot.target) });
+    case 'broken': return t('cli.spot.broken');
+    case 'foreign': return t('cli.spot.foreign');
   }
 }
 
@@ -80,7 +80,7 @@ export function cliSpotAction(spot: CliLinkSpot): 'install' | 'repoint' | 'remov
 
 /** About's button label for an action. */
 export function cliActionLabel(a: 'install' | 'repoint' | 'remove', kind: CliLinkStatus['kind'] = 'link'): string {
-  if (a === 'repoint') return 'Use this copy';
-  if (kind === 'path') return a === 'install' ? 'Add to PATH' : 'Remove from PATH';
-  return a === 'install' ? 'Install' : 'Remove';
+  if (a === 'repoint') return t('cli.use_this_copy');
+  if (kind === 'path') return a === 'install' ? t('cli.add_to_path') : t('cli.remove_from_path');
+  return a === 'install' ? t('cli.install') : t('cli.remove');
 }

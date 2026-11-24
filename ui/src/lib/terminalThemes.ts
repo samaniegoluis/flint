@@ -5,6 +5,7 @@
 // palette, read from the design tokens (--term-*, --ansi-*).
 
 import type { ITheme } from '@xterm/xterm';
+import { t } from '../i18n';
 
 export type TermThemeId = 'default' | 'catppuccin' | 'tokyo-night' | 'aura' | 'dracula' | 'nord';
 
@@ -15,11 +16,16 @@ export interface TermThemeDef {
   light: ITheme | null;
 }
 
+/** A theme's name as Settings shows it: the default's is in the catalog, the rest are names. */
+export function themeLabel(def: TermThemeDef): string {
+  return def.label || t('terminal_themes.default');
+}
+
 export const TERM_THEMES: TermThemeDef[] = [
-  { id: 'default', label: 'Default', dark: null, light: null },
+  { id: 'default', label: '', dark: null, light: null },
   // https://github.com/catppuccin/catppuccin (Mocha, Latte)
   {
-    id: 'catppuccin', label: 'Catppuccin',
+    id: 'catppuccin', label: 'Catppuccin', // i18n-ignore: a theme's name
     dark: {
       background: '#1e1e2e',
       foreground: '#cdd6f4',
@@ -69,7 +75,7 @@ export const TERM_THEMES: TermThemeDef[] = [
   },
   // https://github.com/enkia/tokyo-night-vscode-theme (Night, Day)
   {
-    id: 'tokyo-night', label: 'Tokyo Night',
+    id: 'tokyo-night', label: 'Tokyo Night', // i18n-ignore: a theme's name
     dark: {
       background: '#1a1b26',
       foreground: '#a9b1d6',
@@ -119,7 +125,7 @@ export const TERM_THEMES: TermThemeDef[] = [
   },
   // https://github.com/daltonmenezes/aura-theme (light: an approximation)
   {
-    id: 'aura', label: 'Aura',
+    id: 'aura', label: 'Aura', // i18n-ignore: a theme's name
     dark: {
       background: '#15141b',
       foreground: '#edecee',
@@ -169,7 +175,7 @@ export const TERM_THEMES: TermThemeDef[] = [
   },
   // https://github.com/dracula/dracula-theme (light: an approximation)
   {
-    id: 'dracula', label: 'Dracula',
+    id: 'dracula', label: 'Dracula', // i18n-ignore: a theme's name
     dark: {
       background: '#282a36',
       foreground: '#f8f8f2',
@@ -219,7 +225,7 @@ export const TERM_THEMES: TermThemeDef[] = [
   },
   // https://github.com/nordtheme/nord (light: derived from Snow Storm)
   {
-    id: 'nord', label: 'Nord',
+    id: 'nord', label: 'Nord', // i18n-ignore: a theme's name
     dark: {
       background: '#2e3440',
       foreground: '#d8dee9',

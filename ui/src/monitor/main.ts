@@ -20,6 +20,7 @@ import { createRenderer, type DeskRenderer } from '../lib/deskRenderer';
 import { parseFrameHeader, rdpButton, WheelAccumulator } from '../lib/rdpInput';
 import { cropPoint } from '../sessions/monitors';
 import type { DesktopRect } from '../api/types';
+import { t } from '../i18n';
 
 declare global {
   interface Window {
@@ -40,6 +41,7 @@ function post(msg: Record<string, unknown>) {
 
 const root = document.getElementById('mon')!;
 const cv = document.getElementById('desk') as HTMLCanvasElement;
+cv.setAttribute('aria-label', t('monitor.desk_aria'));
 let renderer: DeskRenderer | null = null;
 let crop: DesktopRect = { x: 0, y: 0, width: 0, height: 0 };
 let reading = 0;
@@ -66,14 +68,16 @@ function setState(state: string) {
     card.className = 'ext-card';
     card.setAttribute('role', 'status');
     card.dataset.monitorState = 'lost';
-    card.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-wifi-off"></use></svg><span>Connection lost — see the main screen</span>';
+    card.innerHTML = '<svg class="ic ic-sm" aria-hidden="true"><use href="#i-wifi-off"></use></svg><span></span>';
+    card.querySelector('span')!.textContent = t('monitor.connection_lost');
   } else if (state === 'rearranging') {
     card = document.createElement('div');
     card.className = 'ext-card';
     card.setAttribute('role', 'status');
     card.setAttribute('aria-busy', 'true');
     card.dataset.monitorState = 'rearranging';
-    card.innerHTML = '<span class="mini-spin" style="width: 12px; height: 12px"></span><span>Rearranging…</span>';
+    card.innerHTML = '<span class="mini-spin" style="width: 12px; height: 12px"></span><span></span>';
+    card.querySelectorAll('span')[1].textContent = t('monitor.rearranging');
   }
   if (card) root.appendChild(card);
 }

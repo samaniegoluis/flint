@@ -14,6 +14,7 @@
 
 import type { ActivityAddedEvent, ActivityFinishedEvent } from '../api/types';
 import type { ToastStore } from './toasts';
+import { t } from '../i18n';
 
 export const NOTICE_HIDE_MS = 10_000;
 /** A notice that keeps changing is read out at most this often (aria-live). */
@@ -48,18 +49,19 @@ export function entryHosts(hosts: string): string[] {
 /** "Claude Code ran a command on db1", "… ran 10 commands on db1, nas"; a root
  *  period's "… ran 3 commands as root on db1". */
 export function noticeText(program: string, count: number, hosts: string[], root = false): string {
-  const what = (count === 1 ? 'ran a command' : `ran ${count} commands`) + (root ? ' as root' : '');
-  return hosts.length ? `${program} ${what} on ${hosts.join(', ')}` : `${program} ${what}`;
+  const p = { program, count, hosts: hosts.join(', ') };
+  if (root) return hosts.length ? t('grant_notice.ran_root_on', p) : t('grant_notice.ran_root', p);
+  return hosts.length ? t('grant_notice.ran_on', p) : t('grant_notice.ran', p);
 }
 
 /** "3:41 left" for 221 s. */
 export function leftText(ms: number): string {
   const s = Math.max(0, Math.ceil(ms / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} left`;
+  return t('grant_notice.left', { clock: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` });
 }
 
 export function stopText(program: string, hosts: string[]): string {
-  return hosts.length ? `Stop this grant? ${program} can't run more on ${hosts.join(', ')}.` : `Stop this grant? ${program} can't run more.`;
+  return hosts.length ? t('grant_notice.stop_on', { program, hosts: hosts.join(', ') }) : t('grant_notice.stop', { program });
 }
 
 export class GrantNotices {
@@ -143,18 +145,18 @@ export class GrantNotices {
     if (g.confirming) return;
     const key = noticeKey(g.grant);
     const shown = this.toasts.hasKey(key);
-    const t = this.now();
+    const now = this.now();
     // Read out when it appears, and then at most every NOTICE_ANNOUNCE_MS.
-    const announce = !shown || (fresh && t - g.announced >= NOTICE_ANNOUNCE_MS);
-    if (announce) g.announced = t;
+    const announce = !shown || (fresh && now - g.announced >= NOTICE_ANNOUNCE_MS);
+    if (announce) g.announced = now;
     this.toasts.show({
       key, kind: g.root ? 'root' : 'info', announce,
       text: noticeText(g.program, g.count, g.hosts, g.root),
-      side: g.root ? leftText(g.ends - t) : undefined,
+      side: g.root ? leftText(g.ends - now) : undefined,
       duration: g.root || g.running.size > 0 ? 'sticky' : NOTICE_HIDE_MS,
       actions: [
-        { label: 'View', keepOpen: true, run: () => this.handlers.view(g.grant) },
-        { label: 'Stop', keepOpen: true, run: () => this.confirm(g.grant) },
+        { label: t('grant_notice.view'), keepOpen: true, run: () => this.handlers.view(g.grant) },
+        { label: t('grant_notice.stop_action'), keepOpen: true, run: () => this.confirm(g.grant) },
       ],
     });
   }
@@ -167,8 +169,8 @@ export class GrantNotices {
       key: noticeKey(grant), kind: 'info', duration: 'sticky',
       text: stopText(g.program, g.hosts),
       actions: [
-        { label: 'Cancel', keepOpen: true, run: () => this.cancel(grant) },
-        { label: 'Stop grant', run: () => this.stop(grant) },
+        { label: t('common.cancel'), keepOpen: true, run: () => this.cancel(grant) },
+        { label: t('grant_notice.stop_grant'), run: () => this.stop(grant) },
       ],
     });
   }

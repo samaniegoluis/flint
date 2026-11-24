@@ -3,6 +3,7 @@
 // the host (Principle 5).
 
 import type { RdpStats } from '../api/types';
+import { fmtNumber, t } from '../i18n';
 
 /** Frames the page drew and the bytes it read from the frame channel. */
 export class FrameMeter {
@@ -61,8 +62,8 @@ export function ratesBetween(a: StatsSample, b: StatsSample): StatsRates {
 
 /** The pipeline and codec as one label: "graphics pipeline · progressive", "bitmaps". */
 export function pipelineLabel(core: RdpStats): string {
-  if (core.pipeline === 'gfx') return core.codec ? `graphics pipeline · ${core.codec.split(',').join(', ')}` : 'graphics pipeline';
-  if (core.pipeline === 'bitmap') return 'bitmap updates';
+  if (core.pipeline === 'gfx') return core.codec ? t('rdp_stats.pipeline_codec', { codec: core.codec.split(',').join(', ') }) : t('rdp_stats.pipeline');
+  if (core.pipeline === 'bitmap') return t('rdp_stats.bitmap_updates');
   return '';
 }
 
@@ -72,8 +73,10 @@ export function pipelineLabel(core: RdpStats): string {
  */
 export function linkLabel(core: RdpStats): string {
   if (!core.link_kbps && !core.link_rtt_ms) return '';
-  const bw = core.link_kbps >= 1000 ? `${(core.link_kbps / 1000).toFixed(1)} Mbit/s` : `${core.link_kbps} kbit/s`;
-  return core.link_rtt_ms ? `${bw} · ${core.link_rtt_ms} ms` : bw;
+  const bw = core.link_kbps >= 1000
+    ? t('rdp_stats.mbits', { n: fmtNumber(core.link_kbps / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }) })
+    : t('rdp_stats.kbits', { n: core.link_kbps });
+  return core.link_rtt_ms ? t('rdp_stats.link_rtt', { bw, ms: core.link_rtt_ms }) : bw;
 }
 
 /**
@@ -83,15 +86,15 @@ export function linkLabel(core: RdpStats): string {
  */
 export function rereadLabel(core: RdpStats): string {
   if (!core.rereads) return '';
-  const stale = core.stale_px ? `${core.stale_px.toLocaleString('en-US')} stale px fixed` : 'nothing stale';
-  return `${core.rereads} re-read${core.rereads === 1 ? '' : 's'} · ${stale}`;
+  const stale = core.stale_px ? t('rdp_stats.stale_fixed', { n: fmtNumber(core.stale_px) }) : t('rdp_stats.nothing_stale');
+  return t('rdp_stats.rereads', { count: core.rereads, stale });
 }
 
-/** The graphics modes, as Settings and the RDP toolbar name them (milestone 35). */
+/** The graphics modes, as Settings and the RDP toolbar name them (milestone 35); `label` is a catalog key. */
 export const GRAPHICS_MODES = [
-  { id: 'auto', label: 'Automatic' },
-  { id: 'pipeline', label: 'Pipeline' },
-  { id: 'compatible', label: 'Compatible' },
+  { id: 'auto', label: 'rdp_stats.mode.auto' },
+  { id: 'pipeline', label: 'rdp_stats.mode.pipeline' },
+  { id: 'compatible', label: 'rdp_stats.mode.compatible' },
 ] as const;
 
 /**
@@ -100,10 +103,10 @@ export const GRAPHICS_MODES = [
  */
 export function graphicsChoiceLabel(mode: string, engine: string, rttMs: number, spanning = false): string {
   if (!engine) return '';
-  const runs = engine === 'compatible' ? 'bitmaps' : 'graphics pipeline';
-  if (mode !== 'auto') return engine === 'compatible' ? 'Compatible: bitmaps' : 'Pipeline: graphics pipeline';
+  const runs = engine === 'compatible' ? t('rdp_stats.bitmaps') : t('rdp_stats.pipeline');
+  if (mode !== 'auto') return engine === 'compatible' ? t('rdp_stats.choice.compatible') : t('rdp_stats.choice.pipeline');
   // Milestone 38, D-091: across monitors Automatic takes the pipeline whatever the link.
-  if (spanning && engine !== 'compatible') return 'Automatic: graphics pipeline · across monitors';
-  if (rttMs < 0) return `Automatic: ${runs} · link not measured`;
-  return `Automatic: ${runs} · ${engine === 'compatible' ? 'local network' : 'remote link'}, ${rttMs} ms`;
+  if (spanning && engine !== 'compatible') return t('rdp_stats.choice.auto_spanning');
+  if (rttMs < 0) return t('rdp_stats.choice.auto_unmeasured', { runs });
+  return engine === 'compatible' ? t('rdp_stats.choice.auto_local', { runs, ms: rttMs }) : t('rdp_stats.choice.auto_remote', { runs, ms: rttMs });
 }

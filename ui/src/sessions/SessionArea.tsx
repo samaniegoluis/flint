@@ -172,7 +172,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
               {GRAPHICS_MODES.map((g) => (
                 <button key={g.id} type="button" role="radio" aria-checked={tab.graphics === g.id} aria-pressed={tab.graphics === g.id} data-graphics={g.id}
                   disabled={tab.graphicsSwitching} onClick={() => sessions.setGraphics(tab.id, g.id)}>
-                  {g.label}
+                  {t(g.label)}
                 </button>
               ))}
             </div>

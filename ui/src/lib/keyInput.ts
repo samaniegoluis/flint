@@ -11,6 +11,7 @@
 // printable key. xterm.js drops a multi-character `key`, so the page pastes it.
 
 export const PRINTABLE_KEY_CODE_RE = /^(Key[A-Z]|Digit[0-9]|Space|Backquote|Minus|Equal|Bracket(Left|Right)|Backslash|Semicolon|Quote|Comma|Period|Slash|Intl(Backslash|Ro|Yen))$/;
+// i18n-ignore: KeyboardEvent.key values, never shown
 export const IME_SENTINEL_KEYS = new Set(['Dead', 'Unidentified', 'Process', 'AltGraph']);
 
 export interface KeyLike {

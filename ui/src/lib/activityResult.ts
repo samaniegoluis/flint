@@ -2,6 +2,7 @@
 // View's rows and the activity entry's detail. Pure, so tested without React.
 
 import type { ActivityEntry } from '../api/types';
+import { t } from '../i18n';
 
 export type ResultTone = 'ok' | 'danger' | 'warn' | 'info' | '';
 
@@ -15,9 +16,10 @@ export interface ResultView {
   refused: boolean;
 }
 
+/** Why a sudo was refused before it ran: catalog keys. */
 const REFUSALS: Record<string, string> = {
-  not_sudoer: 'not a sudoer',
-  sudo_password: 'sudo password refused',
+  not_sudoer: 'activity_result.not_sudoer',
+  sudo_password: 'activity_result.sudo_password',
 };
 
 /** "0.4 s", "4.2 s", "12 s", "3 min 05 s". */
@@ -31,13 +33,13 @@ export function durationText(ms: number): string {
 export function resultView(e: Pick<ActivityEntry, 'state' | 'exit' | 'duration_ms' | 'result'>, nowMs?: number, startedMs?: number): ResultView {
   if (e.state === 'running') {
     const meta = nowMs !== undefined && startedMs !== undefined ? durationText(nowMs - startedMs) : '';
-    return { badge: 'running…', tone: 'info', meta, refused: false };
+    return { badge: t('activity_result.running'), tone: 'info', meta, refused: false };
   }
   if (e.state !== 'ended') return { badge: '', tone: '', meta: '', refused: false };
-  if (REFUSALS[e.result]) return { badge: 'refused', tone: 'warn', meta: REFUSALS[e.result], refused: true };
+  if (REFUSALS[e.result]) return { badge: t('activity_result.refused'), tone: 'warn', meta: t(REFUSALS[e.result]), refused: true };
   // Flint stopped it (the network, a host key, a login): its error code says why.
   if (e.result) return { badge: e.result.replaceAll('_', ' '), tone: 'danger', meta: durationText(e.duration_ms), refused: false };
-  return { badge: `exit ${e.exit}`, tone: e.exit === 0 ? 'ok' : 'danger', meta: durationText(e.duration_ms), refused: false };
+  return { badge: t('activity_result.exit', { code: e.exit }), tone: e.exit === 0 ? 'ok' : 'danger', meta: durationText(e.duration_ms), refused: false };
 }
 
 /** The remote command of a logged `flint exec <host> [--sudo] -- …`, for a row; the whole text otherwise. */

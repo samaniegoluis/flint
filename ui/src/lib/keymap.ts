@@ -2,6 +2,8 @@
 // Ctrl+Shift on Linux, ⇧⌘ to Ctrl+Alt+Shift and ⌥⌘ to Ctrl+Alt, so plain Ctrl chords
 // always reach the terminal (Kitty keyboard protocol).
 
+import { t } from '../i18n';
+
 export type Os = 'mac' | 'linux' | 'windows';
 
 export type Action =
@@ -147,65 +149,18 @@ export function modLabel(key: string, os: Os): string {
   return os === 'mac' ? '⌘' + key : 'Ctrl+Shift+' + key;
 }
 
-export const ACTION_TITLES: Record<Action, string> = {
-  palette: 'Command palette',
-  gotoHost: 'Go to host',
-  switchVault: 'Switch vault',
-  openVault: 'Open vault file',
-  createVault: 'Create vault',
-  connectRemote: 'Connect to a remote vault',
-  newSession: 'New session',
-  closeTab: 'Close pane',
-  reconnect: 'Reconnect',
-  duplicate: 'Duplicate session',
-  splitRight: 'Split right',
-  splitDown: 'Split down',
-  focusNextPane: 'Focus next pane',
-  focusPrevPane: 'Focus previous pane',
-  layout1: 'Layout: side by side',
-  layout2: 'Layout: stacked',
-  layout3: 'Layout: grid 2 × 2',
-  layout4: 'Layout: one large + two small',
-  toggleSidebar: 'Toggle sidebar',
-  viewHosts: 'Hosts view',
-  viewFiles: 'Files view',
-  viewTunnels: 'Tunnels view',
-  viewKeys: 'SSH keys',
-  viewCredentials: 'Credentials',
-  settings: 'Settings',
-  newHost: 'New host…',
-  newSshHost: 'New SSH host',
-  newRdpHost: 'New RDP host',
-  editHost: 'Edit host',
-  collapseAll: 'Collapse all groups',
-  expandAll: 'Expand all groups',
-  fullscreen: 'Full screen',
-  fullscreenAll: 'Full screen on all monitors',
-  syncNow: 'Sync vault now',
-  connectServer: 'Connect vault to a server…',
-  disconnectServer: 'Disconnect vault from server…',
-  showLastMerge: 'Show last merge',
-  checkUpdates: 'Check for updates',
-  whatsNew: "What's new in Flint",
-  aboutFlint: 'About Flint',
-  lock: 'Lock vault',
-  quit: 'Quit Flint',
-  fontBigger: 'Bigger terminal font',
-  fontSmaller: 'Smaller terminal font',
-  fontReset: 'Reset terminal font',
-  nextRegion: 'Next region',
-  prevRegion: 'Previous region',
-  tab1: 'Go to tab 1', tab2: 'Go to tab 2', tab3: 'Go to tab 3', tab4: 'Go to tab 4',
-  tab5: 'Go to tab 5', tab6: 'Go to tab 6', tab7: 'Go to tab 7', tab8: 'Go to tab 8',
-  tab9: 'Go to tab 9',
-};
+/** An action's name, as the palette and Settings → Shortcuts show it. */
+export function actionTitle(a: Action): string {
+  return t(`keymap.action.${a}`);
+}
 
+/** Settings → Shortcuts' groups; `title` is a catalog key. */
 export const SHORTCUT_GROUPS: { title: string; actions: Action[] }[] = [
-  { title: 'General', actions: ['palette', 'gotoHost', 'settings', 'lock', 'quit', 'nextRegion', 'prevRegion'] },
-  { title: 'Vaults', actions: ['switchVault', 'openVault', 'createVault'] },
-  { title: 'Sessions', actions: ['newSession', 'closeTab', 'reconnect', 'duplicate', 'fullscreen', 'tab1', 'tab9'] },
-  { title: 'Panes', actions: ['splitRight', 'splitDown', 'focusNextPane', 'focusPrevPane', 'layout1', 'layout2', 'layout3', 'layout4'] },
-  { title: 'Views', actions: ['viewHosts', 'viewFiles', 'viewTunnels', 'viewKeys', 'viewCredentials', 'toggleSidebar'] },
-  { title: 'Hosts', actions: ['newHost', 'editHost'] },
-  { title: 'Terminal', actions: ['fontBigger', 'fontSmaller', 'fontReset'] },
+  { title: 'keymap.group.general', actions: ['palette', 'gotoHost', 'settings', 'lock', 'quit', 'nextRegion', 'prevRegion'] },
+  { title: 'keymap.group.vaults', actions: ['switchVault', 'openVault', 'createVault'] },
+  { title: 'keymap.group.sessions', actions: ['newSession', 'closeTab', 'reconnect', 'duplicate', 'fullscreen', 'tab1', 'tab9'] },
+  { title: 'keymap.group.panes', actions: ['splitRight', 'splitDown', 'focusNextPane', 'focusPrevPane', 'layout1', 'layout2', 'layout3', 'layout4'] },
+  { title: 'keymap.group.views', actions: ['viewHosts', 'viewFiles', 'viewTunnels', 'viewKeys', 'viewCredentials', 'toggleSidebar'] },
+  { title: 'keymap.group.hosts', actions: ['newHost', 'editHost'] },
+  { title: 'keymap.group.terminal', actions: ['fontBigger', 'fontSmaller', 'fontReset'] },
 ];

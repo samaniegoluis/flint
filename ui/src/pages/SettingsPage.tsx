@@ -8,14 +8,14 @@ import { api } from '../api/backend';
 import { PASTE_LIMITS, TOAST_CORNERS, type CliLinkSpot, type CliLinkStatus, type LockAfter, type Settings, type ToastCorner, type VaultStatus } from '../api/types';
 import { CLI_TOAST_KEY, cliActionLabel, cliSpotAction, cliSpotText, winPath } from '../lib/cliLink';
 import { installCli, shortPath, useApp, vaultInitial, vaultMarkClass } from '../state/app';
-import { ACTION_TITLES, chordLabel, SHORTCUT_GROUPS } from '../lib/keymap';
+import { actionTitle, chordLabel, SHORTCUT_GROUPS } from '../lib/keymap';
 import { Icon, type IconName } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { Picker } from '../ui/Picker';
 import type { Confirm } from './KeysPage';
 import { RenameVault } from '../shell/VaultSwitcher';
 import { ChangeMasterPassword } from './ChangeMasterPassword';
-import { paletteVars, TERM_THEMES, themePalette } from '../lib/terminalThemes';
+import { paletteVars, TERM_THEMES, themeLabel, themePalette } from '../lib/terminalThemes';
 import { MAC_MOD_KEYS, MOD_TARGETS, modMapOf, modMapText, type MacModKey, type ModTarget } from '../lib/rdpInput';
 import { NotificationsSettings } from './NotificationsSettings';
 import { AccessSettings } from '../access/AccessSettings';
@@ -216,7 +216,7 @@ function TerminalSettings() {
           {TERM_THEMES.map((t) => (
             <button key={t.id} type="button" role="radio" aria-checked={s.term_theme === t.id} aria-pressed={s.term_theme === t.id}
               onClick={() => set({ term_theme: t.id })} style={{ gap: 'var(--sp-2)' }}>
-              <ThemeSwatch vars={paletteVars(dark ? t.dark : t.light)} />{t.label}
+              <ThemeSwatch vars={paletteVars(dark ? t.dark : t.light)} />{themeLabel(t)}
             </button>
           ))}
         </div>
@@ -448,7 +448,7 @@ function RemoteDesktopSettings({ mac }: { mac: boolean }) {
           {GRAPHICS_MODES.map((g) => (
             <button key={g.id} type="button" role="radio" aria-checked={s.rdp_graphics === g.id} aria-pressed={s.rdp_graphics === g.id} data-graphics={g.id}
               onClick={() => set({ rdp_graphics: g.id })}>
-              {g.label}
+              {t(g.label)}
             </button>
           ))}
         </div>
@@ -513,9 +513,9 @@ function Shortcuts() {
       <table className="table compact">
         <thead><tr><th>{t('settings_page.action')}</th><th>macOS</th><th>{t('settings_page.linux_windows')}</th></tr></thead>
         <tbody>
-          {SHORTCUT_GROUPS.flatMap((g) => g.actions).filter((a) => match(ACTION_TITLES[a] + chordLabel(a, 'mac') + chordLabel(a, 'linux'))).map((a) => (
+          {SHORTCUT_GROUPS.flatMap((g) => g.actions).filter((a) => match(actionTitle(a) + chordLabel(a, 'mac') + chordLabel(a, 'linux'))).map((a) => (
             <tr key={a}>
-              <td className="primary">{a === 'tab9' ? t('settings_page.go_to_tab_9') : ACTION_TITLES[a]}</td>
+              <td className="primary">{a === 'tab9' ? t('settings_page.go_to_tab_9') : actionTitle(a)}</td>
               <td><span className="kbd">{chordLabel(a, 'mac')}</span></td>
               <td><span className="kbd">{chordLabel(a, 'linux')}</span></td>
             </tr>

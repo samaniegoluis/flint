@@ -3,6 +3,7 @@
 // (src/domain/stats.cf). Units are binary (1024), named GB, MB and KB as htop does.
 
 import type { ServerSample } from '../api/types';
+import { t } from '../i18n';
 
 export type Level = 'ok' | 'warn' | 'hot';
 
@@ -13,7 +14,10 @@ export function loadLevel(pct: number): Level {
   return 'hot';
 }
 
-export const LEVEL_NOTE = 'Green under 60 %, amber to 85 %, red above.';
+/** What the colours mean, under the popover's figures. */
+export function levelNote(): string {
+  return t('server_stats.level_note');
+}
 
 export function memPct(s: ServerSample): number {
   return s.mem_total > 0 ? (100 * s.mem_used) / s.mem_total : 0;
@@ -114,10 +118,10 @@ export function hasFields(s: ServerSample): boolean {
 /** What a screen reader hears for the bar: "CPU 23 percent, RAM 78 percent, …". */
 export function statsAria(s: ServerSample): string {
   const parts: string[] = [];
-  if (s.has_cpu) parts.push(`CPU ${Math.round(s.cpu_pct)} percent`);
-  if (s.has_mem) parts.push(`RAM ${Math.round(memPct(s))} percent`);
-  if (s.has_net) parts.push(`down ${rateLabel(s.rx_rate)}, up ${rateLabel(s.tx_rate)}`);
-  if (s.has_disk) parts.push(`disk ${diskPct(s)} percent`);
-  if (s.has_uptime) parts.push(`up ${uptimeLong(s.uptime_secs)}`);
-  return `Server resources: ${parts.join(', ')}`;
+  if (s.has_cpu) parts.push(t('server_stats.aria.cpu', { pct: Math.round(s.cpu_pct) }));
+  if (s.has_mem) parts.push(t('server_stats.aria.ram', { pct: Math.round(memPct(s)) }));
+  if (s.has_net) parts.push(t('server_stats.aria.net', { down: rateLabel(s.rx_rate), up: rateLabel(s.tx_rate) }));
+  if (s.has_disk) parts.push(t('server_stats.aria.disk', { pct: diskPct(s) }));
+  if (s.has_uptime) parts.push(t('server_stats.aria.uptime', { uptime: uptimeLong(s.uptime_secs) }));
+  return t('server_stats.aria.all', { parts: parts.join(', ') });
 }

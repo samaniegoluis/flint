@@ -2,6 +2,7 @@
 // menu at all (cfire turns it off whole), so Flint draws Cut, Copy, Paste and Select
 // all in a text field, and nothing anywhere else.
 import type { Os } from './keymap';
+import { t } from '../i18n';
 
 export type FieldAction = 'cut' | 'copy' | 'paste' | 'selectAll';
 
@@ -55,9 +56,9 @@ export function fieldItems(f: FieldState, os: Os): FieldItem[] {
   const mod = os === 'mac' ? '⌘' : 'Ctrl+';
   const canCopy = f.hasSelection && !f.password;
   return [
-    { action: 'cut', label: 'Cut', hint: `${mod}X`, enabled: canCopy && !f.readOnly },
-    { action: 'copy', label: 'Copy', hint: `${mod}C`, enabled: canCopy },
-    { action: 'paste', label: 'Paste', hint: `${mod}V`, enabled: !f.readOnly },
-    { action: 'selectAll', label: 'Select all', hint: `${mod}A`, enabled: !f.empty },
+    { action: 'cut', label: t('field_menu.cut'), hint: `${mod}X`, enabled: canCopy && !f.readOnly },
+    { action: 'copy', label: t('field_menu.copy'), hint: `${mod}C`, enabled: canCopy },
+    { action: 'paste', label: t('field_menu.paste'), hint: `${mod}V`, enabled: !f.readOnly },
+    { action: 'selectAll', label: t('field_menu.select_all'), hint: `${mod}A`, enabled: !f.empty },
   ];
 }

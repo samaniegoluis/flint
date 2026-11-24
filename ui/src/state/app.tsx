@@ -18,7 +18,7 @@ import type { AppInfo, Catalog, CliLinkStatus, LockReason, RecentView, Settings,
 import { CLI_TOAST_KEY, cliInstalledText, cliOffer } from '../lib/cliLink';
 import type { Os } from '../lib/keymap';
 import { ToastStore, type ToastKind, type ToastOptions } from '../lib/toasts';
-import { language, resolveLanguage, setLanguage } from '../i18n';
+import { language, resolveLanguage, setLanguage, t } from '../i18n';
 import { LanguageContext } from '../i18n/react';
 
 export type Phase = 'boot' | 'welcome' | 'create' | 'connect' | 'unlock' | 'main' | 'locked';
@@ -236,7 +236,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [unlock, vault, fail]);
 
   const openVaultFile = useCallback(async () => {
-    const { path } = await api.dialogOpen('Open a Flint vault');
+    const { path } = await api.dialogOpen(t('app.open_vault_dialog'));
     if (!path) return;
     const name = path.split('/').pop()?.replace(/\.flint$/, '') ?? path;
     await switchTo({ path, name, current: false, exists: true });

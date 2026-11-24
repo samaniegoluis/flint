@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ServerSample } from '../api/types';
 import type { StatsView } from '../sessions/serverStats';
 import {
-  diskDetail, diskPct, hostLine, LEVEL_NOTE, loadLabel, loadLevel, memDetail, memPct, pctLabel, rateLabel, statsAria,
+  diskDetail, diskPct, hostLine, levelNote, loadLabel, loadLevel, memDetail, memPct, pctLabel, rateLabel, statsAria,
   uptimeLong, uptimeShort, usedOfLabel, type Level,
 } from '../lib/serverStats';
 import { Icon } from '../ui/Icon';
@@ -154,7 +154,7 @@ function Detail({ alias, s, at, colour, onSettings }: { alias: string; s: Server
         <span className="grow">{tr('server_stats_item.last_sample_clock_every_2', { clock: clock(at) })}</span>
         <button className="link" style={{ background: 'none', border: 0, padding: 0, font: 'inherit', cursor: 'pointer' }} data-server-stats-settings onClick={onSettings}>{t('server_stats_item.settings')}</button>
       </div>
-      {colour && <span className="hint">{LEVEL_NOTE}</span>}
+      {colour && <span className="hint">{levelNote()}</span>}
     </div>
   );
 }
