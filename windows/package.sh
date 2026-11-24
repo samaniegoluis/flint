@@ -78,7 +78,7 @@ cp "$FLINT_WV2/LICENSE.txt" "$stage/licenses/WebView2Loader-LICENSE.txt"
 
 # Only system DLLs: a missing one would fail on a machine without MSYS2.
 for exe in "$stage/Flint.exe" "$stage/bin/flint.exe"; do
-  bad="$(objdump -p "$exe" | sed -n 's/^\s*DLL Name: //p' | grep -viE '^(api-ms-win-[a-z0-9-]+|kernel32|user32|gdi32|advapi32|shell32|ole32|oleaut32|comdlg32|comctl32|ws2_32|crypt32|secur32|bcrypt|ncrypt|iphlpapi|dnsapi|ntdll|shlwapi|userenv|version|winmm|winhttp|wldap32|normaliz|dwmapi|uxtheme|imm32|shcore|setupapi|rpcrt4|netapi32|dbghelp|psapi|winspool|cfgmgr32|mpr|credui|wtsapi32|powrprof|hid|msimg32|usp10|dxgi|d3d11|d3d9|opengl32|gdiplus|windowscodecs|propsys|oleacc|wininet|urlmon|mswsock|ucrtbase|msvcrt)\.(dll|drv)$' || true)"
+  bad="$(objdump -p "$exe" | sed -n 's/^\s*DLL Name: //p' | grep -viE '^(api-ms-win-[a-z0-9-]+|kernel32|user32|gdi32|advapi32|shell32|ole32|oleaut32|comdlg32|comctl32|ws2_32|crypt32|secur32|bcrypt|ncrypt|iphlpapi|dnsapi|ntdll|shlwapi|userenv|version|winmm|winhttp|wldap32|normaliz|dwmapi|uxtheme|imm32|shcore|setupapi|rpcrt4|netapi32|dbghelp|psapi|winspool|cfgmgr32|rstrtmgr|mpr|credui|wtsapi32|powrprof|hid|msimg32|usp10|dxgi|d3d11|d3d9|opengl32|gdiplus|windowscodecs|propsys|oleacc|wininet|urlmon|mswsock|ucrtbase|msvcrt)\.(dll|drv)$' || true)"
   [[ -z "$bad" ]] || { echo "package: $(basename "$exe") needs DLLs that are not Windows': $bad" >&2; exit 1; }
 done
 
