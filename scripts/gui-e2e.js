@@ -1923,14 +1923,17 @@
         const size = canvas().dataset.desktop;
         await click('[data-rdp-tab-graphics] button[data-graphics="compatible"]');
         await waitFor(() => seg()?.querySelector('[data-graphics="compatible"]')?.getAttribute('aria-pressed') === 'true' && !q('[data-rdp-graphics-busy]'), 'the tab in Compatible', 30000);
-        const after = await window.backend.rdp_stats({ tab: session() });
+        // The toolbar stops being busy when the desktop is back; the pipeline it took is
+        // known with its first update, a moment later (Docker, milestone 68: read as '').
+        const settled = () => waitForAsync(async () => { const x = await window.backend.rdp_stats({ tab: session() }); return x.pipeline ? x : null; }, 'the pipeline the reconnected desktop took', 10000);
+        const after = await settled();
         await check(after.mode === 'compatible' && after.pipeline === 'bitmap', `the desktop reconnected in Compatible (${after.mode}, ${after.pipeline})`);
         await check(!q('[data-rdp-graphics-note]') && q('[data-rdp-size]') && !q('[data-rdp-state]', activeRegion()) && canvas().dataset.desktop === size, 'the session stays up at its size after the switch');
         await check((await window.backend.settings_get({})).rdp_graphics === 'auto', 'Settings keeps Automatic as the default');
         await click('[data-rdp-tab-graphics] button[data-graphics="pipeline"]');
         await waitFor(() => seg()?.querySelector('[data-graphics="pipeline"]')?.getAttribute('aria-pressed') === 'true' && !q('[data-rdp-graphics-busy]'), 'the tab in Pipeline', 30000);
         {
-          const p = await window.backend.rdp_stats({ tab: session() });
+          const p = await settled();
           await check(p.mode === 'pipeline' && p.pipeline === 'bitmap', `Pipeline asks for the graphics pipeline; the sample server, without it, sends bitmaps (${p.mode}, ${p.pipeline})`);
         }
         await click('[data-rdp-tab-graphics] button[data-graphics="auto"]');
