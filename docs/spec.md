@@ -1,6 +1,6 @@
-# Flint — v16 Technical Specification: Hardening and polish
+# Flint — v17 Technical Specification: The app in English and Spanish
 
-**Scope of this document:** version 16 only. The versions it builds on are archived in
+**Scope of this document:** version 17 only. The versions it builds on are archived in
 [`spec-v1.md`](./spec-v1.md) (MVP), [`spec-v2.md`](./spec-v2.md) (daily driver),
 [`spec-v3.md`](./spec-v3.md) (Flint holds the vault), [`spec-v4.md`](./spec-v4.md) (Files),
 [`spec-v5.md`](./spec-v5.md) (Between servers), [`spec-v6.md`](./spec-v6.md) (Tunnels),
@@ -9,60 +9,60 @@
 [`spec-v10.md`](./spec-v10.md) (The desktop, finished), [`spec-v11.md`](./spec-v11.md)
 (Your vault on every machine), [`spec-v12.md`](./spec-v12.md) (Toasts),
 [`spec-v13.md`](./spec-v13.md) (Releases), [`spec-v14.md`](./spec-v14.md) (RDP for daily
-work, root for a while, server resources) and [`spec-v15.md`](./spec-v15.md) (Flint waits
-for you); everything beyond v16 lives in [`ROADMAP.md`](../ROADMAP.md). This file is
-static: a decision that changes goes into [`decisions.md`](./decisions.md), which
-supersedes the line here.
+work, root for a while, server resources), [`spec-v15.md`](./spec-v15.md) (Flint waits
+for you) and [`spec-v16.md`](./spec-v16.md) (Hardening and polish); everything beyond v17
+lives in [`ROADMAP.md`](../ROADMAP.md). This file is static: a decision that changes goes
+into [`decisions.md`](./decisions.md), which supersedes the line here.
 
 ## Problem
 
-v15 shipped (milestones 61-63, `v0.30.0`; `v0.30.1` fixed Windows' Relaunch). Before the
-larger work of the app in two languages (v17) and signing (v18), the owner wants the small
-rough edges that touch security or daily use closed (D-138):
+v16 shipped (milestones 64-65, `v0.31.0` and `v0.32.0`). The desktop app speaks only
+English, and the owner and the people around him work in Spanish. D-084 (2026-11-12)
+agreed how to translate it without translating the core; D-138 placed it here, before
+signing (v18). Today:
 
-- **The window behaves like a browser in places.** cfire `v0.12.2` already turns the web
-  inspector and the engine's right-click menu off in a release (`cfire build`), but all or
-  nothing: a text field lost *Copy* and *Paste* on right-click, nobody can open the
-  inspector on a release to diagnose it, and on Windows the browser's own keys (F5,
-  Ctrl+R, Ctrl+P) may still reload or print the page over open sessions.
-- **WebView2 keeps what is typed.** Its form autofill stores host names, users and domains
-  typed in the editors in its profile on disk, outside the vault and its encryption, and
-  offers them back. Flint never turned it off, and what it already stored is still there.
-- **✕ on a desktop with no tray hides Flint for good.** On Zorin the window disappears,
-  Flint keeps running with no icon, and only the palette's Quit gets out.
-- **The QR in Settings → Notifications opens a web page,** not the ntfy app; on Android a
-  `ntfy://` link would subscribe in one scan.
-- **A failed update swap names no program.** On Windows, a file held open in Flint's
-  folder stops the Relaunch with "a program has a file open", and the person has to guess
-  which.
+- **Every string is written inline** in ~11,700 lines of page components (68 `.tsx`
+  files, ~800-1,200 strings), and some formats pin `'en-US'` (`lib/rdpStats.ts`).
+- **The core's messages are English text only.** 841 `coded(...)` calls carry an error
+  category and a sentence; the page shows the sentence as it comes, so it cannot render
+  it in another language.
+- **Native text is fixed at start:** the tray's *Open Flint*, *Lock Vault* and *Quit
+  Flint*, the native file dialogs' titles and the reason Touch ID shows.
 
 ## Scope
 
-**In scope (v16):**
-- **A release is not a browser** (64): Flint's own Cut/Copy/Paste/Select all menu in text
-  fields, `FLINT_DEVTOOLS=1` to get the inspector and the engine's menu back on a release,
-  the browser's reload and print keys blocked, form autofill and password autosave off and
-  what WebView2 already stored removed, `autocomplete="off"` on every field.
-- **Close, alerts and updates** (65): ✕ quits on a Linux desktop with no tray, or asks
-  once, the answer kept in Settings; the QR with an iPhone / Android choice; the swap
-  names the programs that hold the folder (Windows Restart Manager).
+**In scope (v17), four milestones sized for one session each (D-140):**
+- **The catalog and the setting** (66): Flint's own `t()` helper, the language setting
+  (System / English / Español), `en.json`, and the strings of the shell, the palette,
+  Settings, the lock and unlock screens, the update toasts and the shared `ui/` components
+  moved into it. Nothing changes on screen.
+- **The rest of the page** (67): sessions, access, files, editors, sync, tunnels and the
+  text built in `lib/`, moved into the catalog, and a guard that fails on a string left
+  outside it. Nothing changes on screen.
+- **Spanish** (68): `es.json` complete (neutral Spanish, *tú*), a test that every `en` key
+  exists in `es`, the tray, the native dialogs' titles and Touch ID's reason in the chosen
+  language; the owner checks long strings on screen.
+- **The core's messages** (69): `{code, id, params, message}` (D-084), the ids in one place,
+  the page rendering an id from its catalog and falling back to `message`; the first
+  messages migrated (connection cards, the changed certificate, unlock, RDP) and a script
+  that lists ids with no translation.
 - Docs site, the landing and the CLI demo follow every user-visible change (CLAUDE.md rules
-  5 and 6), and a release closes each milestone with a `feat` or `fix` (rule 10).
+  5 and 6), and a release closes each milestone with a `feat` or `fix` (rule 10): 66 and 67
+  are refactors and make none.
 
 **Every system:** each milestone is verified on macOS and the Docker Linux check; the
-Windows parts on the Windows VM, the Linux tray parts on Zorin, as the milestone needs them.
+native text of 68 on the Windows VM and Zorin too.
 
-**Out of scope (v16), tracked in the roadmap:** the app in English and Spanish (**v17**,
-D-084); signing, the keychain by signed identity, installers and Touch ID (**v18**); a
-StatusNotifierItem tray icon on Linux (CF-082, cfire's); a tray menu that follows the state;
-the iPhone QR opening the ntfy app (waits for ntfy-ios#51); a native menu filtered item by
-item (cfire offers on or off only).
+**Out of scope (v17), tracked in the roadmap:** the CLI in any language other than English
+(never, D-084); the docs site and the landing in Spanish (later, Starlight's `/es/`
+routes); every one of the 841 core messages migrated (they move a few at a time after 69,
+the English fallback keeps the rest readable); languages other than English and Spanish;
+polkit's message (it comes from the `.policy` file, in English); signing and installers
+(**v18**).
 
 ## Stack
 
-v15's, unchanged. 64 uses cfire `v0.12.2`'s `app.set_devtools`, `app.set_context_menu` and
-`app.set_autofill`; 65 adds two small native shims inside `adapters/`, tagged as Principle 3
-asks: the X11 tray check on Linux and the Restart Manager (`rstrtmgr`) on Windows.
+v16's, plus the translation helper. No new dependency.
 
 | Layer | Choice | Why | Rejected |
 |---|---|---|---|
@@ -85,52 +85,50 @@ asks: the X11 tray check on Linux and the Restart Manager (`rstrtmgr`) on Window
 | Packages and updates | v13's: portable packages, `.deb`/`.rpm`, Flint's signed self-update (D-111, D-124) | Every v16 release reaches people on its own | — |
 | Docs | **Astro + Starlight** | Landing and Docs in one site | Docusaurus, VitePress |
 | Changelog | **git-cliff**, run locally | Reads the Conventional Commits already in use | release-please, semantic-release |
+| Translation | **Flint's own `t(key, params)`** over JSON catalogs (`ui/src/i18n/en.json`, `es.json`), `Intl.PluralRules` for plurals, `Intl.NumberFormat`/`DateTimeFormat` for numbers and dates (D-140) | A few dozen lines, no dependency to pin or update, the same choice as Flint's own toasts | i18next + react-i18next (two dependencies for what Flint uses of them) |
 
 ## Architecture
 
-Hexagonal, as in v15. v16 changes how the window is set up and adds two read-only native
-queries; no new port, no vault or socket format change.
+Hexagonal, as in v16. v17 adds a catalog to the page, one setting to the core, and an id
+and parameters to the core's messages; no new port, no vault or socket format change.
 
-- **The window's setup** (`drivers/gui`). At start the app calls `set_autofill(false)`
-  always, and `set_devtools(true)` with `set_context_menu(true)` only when `FLINT_DEVTOOLS=1`
-  (a debug build, `cfire run`, has both already). Before the window opens on Windows, it
-  removes the autofill data WebView2 already wrote in Flint's profile folder, once, recorded
-  in `ui-state.json` (the exact files settled at 64's plan from the VM).
-- **The field menu** (`ui/`). One handler for `contextmenu`: inside an `input` or a
-  `textarea` it opens Flint's context-menu component with Cut, Copy, Paste and Select all
-  (disabled where they do nothing: Cut and Copy with no selection, Cut and Paste in a
-  read-only field); elsewhere it does nothing, and the terminal, the tabs and the lists
-  keep their own menus. Paste reads the clipboard through the core, as the terminal's
-  paste does, never through a browser permission.
-- **The browser's keys.** The page cancels the engine's reload, print and save shortcuts
-  (F5, Ctrl/⌘+R, Ctrl/⌘+P, Ctrl/⌘+S) where nothing in Flint uses them. If WebView2 acts
-  on them before the page, 64 files a CF-NNN for `AreBrowserAcceleratorKeysEnabled`.
-- **Is there a tray?** (Linux, 65). A function in `adapters/uievents` answers whether an X11
-  tray manager owns `_NET_SYSTEM_TRAY_S0` on the window's display, and *no* on Wayland.
-  macOS and Windows always have one. With none, `window:close_requested` does not lock and
-  hide: the first time the page asks *Keep Flint running in the background? It serves the
-  flint command and your grants* (Quit / Keep running), and the answer is a setting of this
-  machine (Settings → General) that later closes follow. Kept running, a second launch of
-  Flint shows the window, as today.
-- **The QR's phone** (65). Settings → Notifications gets an iPhone / Android choice beside
-  the QR, kept per machine: iPhone shows `https://<server>/<topic>` with the "subscribe
-  with +" step, Android `ntfy://<host>/<topic>?display=Flint` with no step.
-- **Who holds the folder** (Windows, 65). When `flint update-apply` gives up on the rename,
-  it asks the Restart Manager (`RmStartSession`, `RmRegisterResources` with the files in the
-  folder, `RmGetList`) and names each program and pid in its error; the toast shows it. Any
-  failure of that query keeps today's message.
+- **The setting** (core). `Settings.language` is `system`, `en` or `es`, per machine like
+  the theme, saved through the settings use case. `system` reads the OS language once at
+  start: `es` when it starts with `es`, `en` otherwise. The page receives the resolved
+  language with the settings and re-renders when it changes; no restart.
+- **The catalog** (`ui/src/i18n/`). `en.json` and `es.json`, flat keys grouped by area
+  (`shell.*`, `access.*`, …). `t(key, params)` interpolates `{name}` parameters and picks
+  plural forms (`key.one`, `key.other`) through `Intl.PluralRules`; numbers, sizes and
+  dates go through `Intl` with the chosen language, never a pinned `'en-US'`. A missing
+  key renders the English entry, and in tests fails.
+- **Guards.** A vitest walks `ui/src` and fails on visible text written outside the catalog
+  (JSX text, `title`, `placeholder`, `aria-label`, toast and dialog text), with a short
+  allow-list (brand names, key names such as ⌘R). Another fails when a key of `en.json` is
+  missing from `es.json` or when `es` has a key `en` lacks.
+- **Native text** (`drivers/gui`). The tray's items, the native dialogs' titles and the
+  Touch ID reason come from a small table in the driver keyed by language, set at start and
+  again when the language changes. If cfire cannot relabel a tray item at run time, 68
+  files a CF-NNN and the tray follows the language from the next start.
+- **The core's messages** (69, D-084). A message is `{code, id, params, message}`: `code`
+  the error category as today, `id` a stable dotted name (`ssh.host_key_changed`), `params`
+  its values as strings, `message` the English sentence. The ids and their English text are
+  defined in one file of the core, which `coded(...)` call sites name; `message` is built
+  from that text and the params, so the CLI prints exactly what it prints today. RPC results
+  and `--json` carry `id` and `params` beside `message`. The page looks up `core.<id>` in
+  its catalog and falls back to `message`. A script lists the core's ids with no entry in
+  `en.json` or `es.json`.
 
-Contracts (v15's, plus):
-- **A release build opens no inspector** unless `FLINT_DEVTOOLS=1` is set in its
-  environment.
-- **The webview stores nothing typed into Flint's fields** (autofill and password autosave
-  off on every OS).
+Contracts (v16's, plus):
+- **The CLI's output does not change:** same text, same codes; `--json` gains `id` and
+  `params` only.
+- **A message is never blank:** a missing translation shows the English entry, a missing
+  core id shows the core's `message`.
 
 ## Principles
 
 Checkable rules. Every milestone is checked against them before it is closed. Rules marked
-**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v15's, with
-20 added (D-138).
+**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v16's, with
+21 added (D-140).
 
 1. The domain and application layers import no adapter and no I/O module (`ext:webui`,
    `ext:db/sqlite`, sockets, HTTP, keychain, files).
@@ -207,23 +205,32 @@ Checkable rules. Every milestone is checked against them before it is closed. Ru
     autofill unless `FLINT_DEVTOOLS=1` is set (autofill stays off even then), and nothing
     in the page reloads, prints or saves it.
 
+21. The core is never translated and the page holds every translation: text the page shows
+    comes from its catalog (`t()`), or from a core message's `message` when the catalog has
+    no entry for its id; a core message's `params` carry only what its English `message`
+    already shows (Principle 6 unchanged).
+
 ## Milestones
 
-Each milestone is built **whole** with `lean-build` and verified by the agent. Owner checks
+Each milestone is built **whole** with `lean-build` and verified by the agent, sized to fit
+one session; each commits per area so a cut session resumes from `git log`. Owner checks
 happen only where a human is required (see `CLAUDE.md`). Progress is recorded in
-`docs/build-log.md`, not here. Numbering continues from v15.
+`docs/build-log.md`, not here. Numbering continues from v16.
 
 | # | Milestone | Delivers |
 |---|---|---|
-| 64 | **A release is not a browser** | `set_autofill(false)` always; `FLINT_DEVTOOLS=1` turns the inspector and the engine's menu on in a release; Flint's own field menu (Cut, Copy, Paste, Select all, disabled where they do nothing, Paste through the core) in every `input` and `textarea`, nothing elsewhere; the reload, print and save keys cancelled (a CF-NNN if WebView2 ignores the page); `autoComplete="off"` in the shared `plainText` props; on Windows, WebView2's stored autofill data removed once before the window opens; CF-121 and CF-122 marked resolved at `v0.12.2`. Verified: vitest of the field menu's items and of the keys; gui-e2e of right-click in a field and outside one; a release build on the Mac, the Windows VM and Docker Linux with no inspector, and with it under `FLINT_DEVTOOLS=1`; on the VM, no autofill offer in the host editor after typing a host twice, and the old data gone; docs (desktop app: the field menu, build from source: `FLINT_DEVTOOLS`, the security model's line on the webview) |
-| 65 | **Close, alerts and updates** | The Linux tray check (X11 `_NET_SYSTEM_TRAY_S0`, none on Wayland) in `adapters/uievents`; with no tray, ✕ asks once *Keep Flint running in the background?* and the answer is a setting in Settings → General that later closes follow (Quit, or hide as today with a second launch showing the window); the QR's iPhone / Android choice (Android `ntfy://<host>/<topic>?display=Flint`, iPhone the `https` link and the + step); on Windows, `update-apply` naming the programs and pids that hold the folder (`RmGetList`) in its error and the toast. Verified: `cfire test` of the close decision (tray or none, each answer) and of the update error's text with a fake holder list; vitest of the QR's two links; gui-e2e of the close question and the setting; on Zorin, ✕ with no tray asks, then quits or hides as answered; on the VM, a file held open in the folder (a PowerShell in it) named by the Relaunch; the owner scans the Android QR on a real phone if one is at hand; docs (desktop app: closing the window, *Alerts on your phone*, updating) |
+| 66 | **The catalog and the setting** | `ui/src/i18n/` with `t(key, params)`, plurals through `Intl.PluralRules`, `Intl` formatters bound to the language; `Settings.language` (`system`, `en`, `es`) in the core with the OS language resolved at start; the Language row in Settings → Appearance (System / English / Español, Español hidden or marked until 68 fills `es.json`); `en.json` holding every string of `shell/`, `palette/`, `pages/`, `screens/`, `update/` and `ui/`, and `App.tsx`. Verified: vitest of `t()` (params, plurals, a missing key), `cfire test` of the setting and the resolution of `system`; gui-e2e and vitest unchanged (the same English on screen); docs (desktop app: the Language row) |
+| 67 | **The rest of the page** | Every string of `sessions/`, `access/`, `files/`, `editors/`, `sync/`, `tunnels/`, `state/` and the text built in `lib/` (`rdpStats.ts` and the rest) moved into `en.json`; the guard that fails on visible text outside the catalog, with its allow-list. Verified: the guard green over all of `ui/src`; gui-e2e every run and vitest unchanged; no docs (nothing changes on screen) |
+| 68 | **Spanish** | `es.json` complete in neutral Spanish with *tú*; the parity test (`en` ⇔ `es`); the language switch live, no restart; the tray's items, the native dialogs' titles and Touch ID's reason from the driver's table in the chosen language (a CF-NNN if the tray cannot relabel at run time); dates and numbers in Spanish format. Verified: the parity test; gui-e2e runs in Spanish for the vault, settings and a terminal tab; the tray and a native dialog in Spanish on the Mac, the Windows VM and Zorin; the owner reads the main screens in Spanish for text that overflows or reads wrong; docs (desktop app: changing the language; the landing names the two languages) |
+| 69 | **The core's messages** | `{code, id, params, message}` (D-084) with the ids and English text in one core file; RPC results and `--json` carrying `id` and `params`; the page's lookup of `core.<id>` with the `message` fallback; the first messages migrated: connection cards (dial, auth, host key unknown and changed), unlock (wrong password, locked, keychain), RDP (connect, credentials, certificate); `scripts/i18n-missing.sh` listing ids without an entry in `en.json` or `es.json`. Verified: `cfire test` that `message` is unchanged for every migrated call; cli-e2e unchanged (the same text and codes) with `--json` showing `id`; vitest of the fallback; gui-e2e of a failed connection and a wrong password in Spanish; docs (CLI reference: `id` and `params` in `--json`; the demo's JSON if it shows an error) |
 
 ## Open questions
 
-None open at the start. Settled with the owner on 2026-11-23 (D-138):
+Settled with the owner on 2026-11-23 (D-140): four milestones of one session each, Flint's
+own helper, the system language by default, neutral Spanish with *tú*, no Claude Design run
+(the Language row is a select like the theme's). Open, to settle at the milestone's plan:
 
-- **v16 is two milestones**, 64 then 65; the Restart Manager is in (65).
-- **The tray check** is the X11 tray selection, not the D-Bus StatusNotifierWatcher.
-- **The field menu** offers Cut, Copy, Paste and Select all; right-click elsewhere does
-  nothing in a release.
-- **Then:** v17 the app in English and Spanish (D-084), v18 signing and installers.
+- **Can cfire `v0.12.2` relabel a tray item at run time?** (68.) If not, a CF-NNN, and the
+  tray follows the language from the next start.
+- **Where `system` reads the OS language** on each OS (68 for Windows and Linux; macOS's
+  `NSLocale` at 66), and whether the webview's `navigator.language` is enough.
