@@ -1239,7 +1239,7 @@
   "remember_option.macos_keychain": "el Llavero de macOS",
   "remember_option.remember_on_this_computer": "Recordar en esta computadora",
   "remember_option.the_keyring": "el llavero",
-  "remember_option.the_vault_key_goes_into": "La clave de la bóveda va a {keychain}, así que Flint, la CLI {span} y los agentes que apruebes abren esta bóveda sin la contraseña maestra. Cualquiera que use esta computadora mientras esté desbloqueada también puede abrir Flint.",
+  "remember_option.the_vault_key_goes_into": "La clave de la bóveda se guarda en {keychain}, así que Flint, la CLI {span} y los agentes que apruebes abren esta bóveda sin la contraseña maestra. Cualquiera que use esta computadora mientras esté desbloqueada también puede abrir Flint.",
   "replace_token_modal.checking": "Comprobando…",
   "replace_token_modal.close_esc": "Cerrar (esc)",
   "replace_token_modal.replace": "Reemplazar",

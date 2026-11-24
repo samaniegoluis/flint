@@ -285,7 +285,7 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
                 saved={host?.has_password ? { kind: 'host', name: host.alias } : null}
                 placeholder={host?.has_password ? t('host_editor.saved_type_to_replace') : t('host_editor.password')} />
             )}
-            {mode === 'agent' && <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />{tr('host_editor.uses_the_keys_loaded_in', { span: <span className="mono">SSH_AUTH_SOCK</span> })}</span>}
+            {mode === 'agent' && <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" /><span>{tr('host_editor.uses_the_keys_loaded_in', { span: <span className="mono">SSH_AUTH_SOCK</span> })}</span></span>}
           </div>
           <div className="field" data-sudo-field style={{ padding: 'var(--sp-3)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', background: 'var(--surface-raised)' }}>
             <span className="flabel row" style={{ gap: 'var(--sp-2)' }}><Icon name="shield" size="sm" />{tr('host_editor.sudo_password_span', { span: <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>{t('host_editor.for_flint_exec_sudo')}</span> })}</span>
@@ -366,7 +366,7 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
                 : tr('host_editor.connection_works', { target: <span className="mono">{test.ev.target}</span>, ms: test.ev.duration_ms })}</span>
           )}
           {test.s === 'fail' && (
-            <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name={test.code === 'network' || test.code === 'timeout' ? 'wifi-off' : 'alert'} size="xs" />{tr('host_editor.test_failed_message', { message: test.message })}</span>
+            <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name={test.code === 'network' || test.code === 'timeout' ? 'wifi-off' : 'alert'} size="xs" /><span>{tr('host_editor.test_failed_message', { message: test.message })}</span></span>
           )}
           {error && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
         </div>

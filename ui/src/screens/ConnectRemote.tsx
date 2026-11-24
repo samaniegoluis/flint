@@ -123,7 +123,7 @@ export function ConnectRemote() {
                 </div>
               )}
               {errors.form && errors.form !== 'empty' && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{errors.form}</span>}
-              <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />{tr('connect_remote.no_server_yet', { page: <span className="strong">{t('connect_remote.self_host_a_remote_vault')}</span> })}</span>
+              <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" /><span>{tr('connect_remote.no_server_yet', { page: <span className="strong">{t('connect_remote.self_host_a_remote_vault')}</span> })}</span></span>
             </div>
           ) : (
             <div className="modal-b" style={{ gap: 'var(--sp-5)' }} data-connect-step="vault">
