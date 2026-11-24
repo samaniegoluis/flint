@@ -3486,3 +3486,22 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   change of language reaches the tray at the next start. The docs say so.
 - **Ideal:** `app.set_tray_item_title(event: str, title: str)` (or `clear_tray_items()`
   and `add_tray_item` again), applied on the UI thread on every platform.
+
+### CF-193 · wrong · `confirmed`: a cfire function named like a function of its `import cpp` header is called with the header's parameter types
+- **Found (milestone 69, D-144):** `install_app_menu(app_name: str, labels: []str)` in
+  `src/adapters/uievents/webui_sink.cf` wraps `flint_gui::install_app_menu` of the
+  header it imports. Called from another package, cfire cast the `[]str` argument to
+  `str` (`str(app_menu_labels(lang))`), and the generated declaration read
+  `slice '[a..b]'_ref<str> labels`; clang refused both. With one `str` parameter, as
+  before, the two signatures agreed and nothing showed.
+- **Repro** (cfire `v0.12.2`, macOS): `a/h.hpp` declares
+  `namespace hns { inline void greet(const std::string&, const std::vector<std::string>&); }`;
+  `a/a.cf` is `package a`, `import cpp "h.hpp"` (its folder on the include path through
+  a `.pc` file), and `fn greet(name: str, xs: []str) { cpp { std::vector<std::string> v(xs.begin(), xs.end()); hns::greet(name, v); } }`;
+  `main.cf` imports `./a` and calls `greet("hi", ["x", "y"])`. `cfire build` emits
+  `greet(str("hi"), str({"x", "y"}))` and fails with "no matching function for call
+  to 'greet'". Renaming the cfire function (`say_hi`) builds and prints `hi 2`.
+- **Workaround:** the cfire wrapper is `install_menu_bar`, a name the header does not
+  use. No native code.
+- **Ideal:** a cfire function shadows a header's name inside its package, and a header
+  function in a namespace (`hns::greet`) is never matched by an unqualified cfire call.

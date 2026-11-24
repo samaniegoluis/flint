@@ -2948,6 +2948,40 @@
       await fill('[aria-label="Command palette"] input', 'reconnect');
       await waitFor(() => q('[role="option"].hot')?.textContent.includes('Reconnect'), 'Reconnect hot');
       await check(!footer().includes('edit host') && !footer().includes('new tab'), 'the palette does not offer ⌘I or ⌘↵ on an action');
+      // D-144: the language and the theme from the palette, live as the Settings rows,
+      // found by their words in either language.
+      await fill('[aria-label="Command palette"] input', 'idioma');
+      await waitFor(() => q('[data-palette-setting="lang:es"]'), 'the language rows');
+      await check(qa('[data-palette-setting^="lang:"]').length === 3 && byText('[role="option"]', 'Language: Español') && q('[data-palette-setting="lang:system"]').closest('[role="option"]').textContent.includes('Current'),
+        'the palette offers Language: System / English / Español, System marked current');
+      q('[data-palette-setting="lang:es"]').closest('[role="option"]').click();
+      await waitFor(() => document.documentElement.lang === 'es' && !q('[aria-label="Command palette"]'), 'the page in Spanish from the palette');
+      await waitForAsync(async () => (await window.backend.settings_get({})).language === 'es', 'Español saved from the palette');
+      await check(true, 'Language: Español switches the window live and saves it');
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK', key: 'k', metaKey: mac, ctrlKey: !mac, shiftKey: !mac, bubbles: true, cancelable: true }));
+      const paletteEs = await waitFor(() => q('.palette input'), 'the palette in Spanish');
+      await fill('.palette input', 'language');
+      await waitFor(() => q('[data-palette-setting="lang:system"]'), 'the language rows in Spanish');
+      await check(byText('[role="option"]', 'Idioma: Sistema') && q('[data-palette-setting="lang:es"]').closest('[role="option"]').textContent.includes('Actual'),
+        'in Spanish the rows read Idioma: …, found by the English word too');
+      q('[data-palette-setting="lang:system"]').closest('[role="option"]').click();
+      await waitFor(() => document.documentElement.lang === 'en', 'the page in English again');
+      void paletteEs;
+      const themeBefore = (await window.backend.settings_get({})).theme;
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK', key: 'k', metaKey: mac, ctrlKey: !mac, shiftKey: !mac, bubbles: true, cancelable: true }));
+      await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
+      await fill('[aria-label="Command palette"] input', 'theme light');
+      await click('[data-palette-setting="theme:light"]');
+      await waitForAsync(async () => (await window.backend.settings_get({})).theme === 'light', 'the light theme saved');
+      await check(document.documentElement.dataset.theme === 'light', 'Theme: Light applies at once');
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK', key: 'k', metaKey: mac, ctrlKey: !mac, shiftKey: !mac, bubbles: true, cancelable: true }));
+      await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
+      await fill('[aria-label="Command palette"] input', 'theme');
+      await click(`[data-palette-setting="theme:${themeBefore}"]`);
+      await waitForAsync(async () => (await window.backend.settings_get({})).theme === themeBefore, 'the theme back');
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK', key: 'k', metaKey: mac, ctrlKey: !mac, shiftKey: !mac, bubbles: true, cancelable: true }));
+      await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
+      await fill('[aria-label="Command palette"] input', 'reconnect');
       q('[aria-label="Command palette"] input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await sleep(100);
 

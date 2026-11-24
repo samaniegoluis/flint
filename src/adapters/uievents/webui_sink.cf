@@ -28,11 +28,14 @@ fn new_webui_event_sink(app: webui.App) -> WebuiEventSink {
 
 // Installs Flint's macOS menu bar (Quit, Edit, Window) in place of webui's once the
 // run loop starts; a no-op on Linux, where GTK's text fields handle the clipboard
-// keys themselves.
-fn install_app_menu(app_name: str) {
+// keys themselves. `labels` are its texts in the window's language, in the order
+// flint_gui::install_app_menu names (D-144); like the tray's, they are set at start.
+// Named apart from that function: cfire calls a namesake with its types (CF-193).
+fn install_menu_bar(app_name: str, labels: []str) {
     // CFIRE-UPSTREAM: CF-073
     cpp {
-        flint_gui::install_app_menu(app_name);
+        std::vector<std::string> texts(labels.begin(), labels.end());
+        flint_gui::install_app_menu(app_name, texts);
     }
 }
 

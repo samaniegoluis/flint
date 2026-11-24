@@ -42,6 +42,15 @@ interface Item {
   disabled?: string;
 }
 
+// The language and the theme from the palette (D-144), live as the Settings rows.
+// Each language by its own name, as the Language row shows it (D-141).
+const LANGUAGE_NAME = { en: 'English', es: 'Español' } as const;
+const THEME_LABEL = { dark: 'settings_page.dark', light: 'settings_page.light', system: 'settings_page.match_system' } as const;
+// Words that find these rows in either language, so someone in the wrong one finds the
+// way back.
+const LANGUAGE_WORDS = 'language idioma lenguaje'; // i18n-ignore
+const THEME_WORDS = 'theme tema appearance apariencia'; // i18n-ignore
+
 // What an RDP tab cannot do (design 21d2): files, tunnels and panes are SSH's.
 const SSH_ONLY_ACTIONS: Action[] = ['viewFiles', 'viewTunnels', 'splitRight', 'splitDown', 'focusNextPane', 'layout1', 'layout2', 'layout3', 'layout4', 'duplicate'];
 
@@ -134,7 +143,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
   onEdit: (alias: string) => void;
   onAction: (a: Action) => void;
 }) {
-  const { catalog, recents, vault, os, switchTo, fail } = useApp();
+  const { catalog, recents, vault, os, switchTo, fail, settings, saveSettings } = useApp();
   const sync = useSyncMaybe();
   const update = useUpdate();
   const { tabs, panes, active } = useSessions();
@@ -287,6 +296,30 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? t('command_palette.ssh_hosts_only') : !rdpTab && (a.action === 'fullscreen' || a.action === 'fullscreenAll') ? t('command_palette.rdp_tabs_only') : a.action === 'fullscreenAll' && monitorsReason ? monitorsReason : undefined,
         });
       }
+      // Only while searching: the empty list keeps to the actions (D-144).
+      if (q.trim()) {
+        const choices = [
+          ...(['system', 'en', 'es'] as const).map((l) => ({
+            key: 'lang:' + l, words: LANGUAGE_WORDS, current: settings.language === l,
+            title: t('command_palette.language_item', { name: l === 'system' ? t('settings_page.language.system') : LANGUAGE_NAME[l] }),
+            apply: () => saveSettings({ ...settings, language: l }),
+          })),
+          ...(['dark', 'light', 'system'] as const).map((th) => ({
+            key: 'theme:' + th, words: THEME_WORDS, current: settings.theme === th,
+            title: t('command_palette.theme_item', { name: t(THEME_LABEL[th]) }),
+            apply: () => saveSettings({ ...settings, theme: th }),
+          })),
+        ];
+        for (const c of choices) {
+          const m = search(q, [{ name: 'title', text: c.title, primary: true }, { name: 'words', text: c.words }]);
+          if (!m) continue;
+          out.push({
+            group: 'actions', key: c.key, score: m.score + 1000,
+            render: () => (<><Icon name="settings" size="sm" /><span className="grow" data-palette-setting={c.key}><Hl text={c.title} positions={m.positions.title ?? []} /></span>{c.current && <span className="hint">{t('command_palette.current_setting')}</span>}</>),
+            run: () => { void c.apply(); },
+          });
+        }
+      }
       for (const r of recents) {
         if (r.path === vault?.path) continue;
         const m = search(q, [{ name: 'name', text: r.name, primary: true }]);
@@ -305,7 +338,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       }
     }
     return out;
-  }, [catalog.hosts, tabs, panes, tun.list, canSplit, rdpTab, monitorsReason, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail, sync, update]);
+  }, [catalog.hosts, tabs, panes, tun.list, canSplit, rdpTab, monitorsReason, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail, sync, update, settings, saveSettings]);
 
   const counts = { hosts: 0, actions: 0, vaults: 0 };
   for (const it of items) counts[it.group === 'tunnels' ? 'actions' : it.group]++;

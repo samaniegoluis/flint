@@ -40,6 +40,15 @@ fn tray_labels(lang: str) -> []str {
     return ["Open Flint", "Lock Vault", "Quit Flint"]
 }
 
+// The macOS menu bar's texts in the window's language (D-144), in the order
+// flint_gui::install_app_menu takes them. Set at start, like the tray's (CF-192).
+fn app_menu_labels(lang: str) -> []str {
+    if lang == "es" {
+        return ["Ocultar Flint", "Ocultar otros", "Mostrar todo", "Salir de Flint", "Edición", "Deshacer", "Rehacer", "Cortar", "Copiar", "Pegar", "Seleccionar todo", "Ventana", "Minimizar", "Zoom"]
+    }
+    return ["Hide Flint", "Hide Others", "Show All", "Quit Flint", "Edit", "Undo", "Redo", "Cut", "Copy", "Paste", "Select All", "Window", "Minimize", "Zoom"]
+}
+
 fn install_tray(mut app: webui.App, ui_dir: str, lang: str) {
     labels := tray_labels(lang)
     mut icon := ui_dir + "/tray.png"

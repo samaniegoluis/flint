@@ -376,6 +376,13 @@ a second row, **Connect without command**, opens it in a new tab with a plain sh
 `flint connect --no-command` does. Use it when that program is broken: the command
 stays saved, and **Reconnect** in that tab keeps skipping it.
 
+While you search, the palette also offers the [language](#language) and the theme:
+**Language: System**, **Language: English**, **Language: Español**, and **Theme: Dark**,
+**Theme: Light**, **Theme: Match system**. The current one is marked **Current**. Each
+applies at once, like the row in Settings → Appearance. The rows are found by the word in
+either language: `language` and `idioma` both work, so someone in the wrong language finds
+the way back.
+
 ## Vaults
 
 The vault button at the top of the sidebar (<kbd>⇧⌘O</kbd>) lists your recent vaults,
@@ -525,16 +532,18 @@ Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults 
 ### Language
 
 The window is in English or Spanish. **Settings → Appearance → Language** offers
-**System**, **English** and **Español**; System, the default, follows this computer's
-language (Spanish when it starts with `es`, English for anything else) and is set
-per machine, like the theme.
+**System**, **English** and **Español**, and so does the
+[command palette](#the-command-palette) (`language` or `idioma`). System, the default,
+follows this computer's language (Spanish when it starts with `es`, English for anything
+else) and is set per machine, like the theme.
 
 A change applies at once, with no restart: open tabs, their sessions and the windows of a
 desktop across monitors keep running and relabel themselves. Dates, times and numbers
 follow the language (`14:05`, `1,5 MB` in Spanish). Two things change differently:
 
-- The **tray** or menu bar icon's menu (*Open Flint*, *Lock Vault*, *Quit Flint*) follows
-  the language from the next start.
+- The **tray** or menu bar icon's menu (*Open Flint*, *Lock Vault*, *Quit Flint*) and, on
+  a Mac, the **menu bar** (*Quit Flint*, *Edit* with *Cut*, *Copy*, *Paste* and *Select
+  All*, *Window*) follow the language from the next start.
 - A [toast](#toasts) already on screen keeps the language it was shown in.
 
 On a Mac, the **Touch ID** or Mac password dialog names what it confirms in the chosen

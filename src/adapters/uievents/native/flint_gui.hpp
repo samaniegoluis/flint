@@ -273,9 +273,17 @@ namespace flint_gui {
 // webui's App.run() installs its own menu, which binds ⌘W to Close Window, and offers
 // no way to leave a key to the page (CF-073). So this menu is queued on the main
 // queue: it is set once the run loop starts, after webui's, and replaces it.
-inline void install_app_menu(const std::string& app_name) {
+// `labels` are the menu's texts in the window's language (D-144), in this order: Hide
+// <app>, Hide Others, Show All, Quit <app>, Edit, Undo, Redo, Cut, Copy, Paste, Select
+// All, Window, Minimize, Zoom. A short list keeps the English ones.
+inline void install_app_menu(const std::string& app_name, const std::vector<std::string>& labels) {
 #if defined(__APPLE__) && defined(__OBJC__)
     std::string title = app_name;
+    static const char* const english[] = { "Hide Flint", "Hide Others", "Show All", "Quit Flint", "Edit", "Undo", "Redo",
+        "Cut", "Copy", "Paste", "Select All", "Window", "Minimize", "Zoom" };
+    constexpr size_t count = sizeof(english) / sizeof(english[0]);
+    std::vector<std::string> texts(english, english + count);
+    if (labels.size() == count) texts = labels;
     [NSApplication sharedApplication];
     dispatch_async(dispatch_get_main_queue(), ^{ @autoreleasepool {
         NSString* name = [NSString stringWithUTF8String:title.c_str()];
@@ -294,27 +302,29 @@ inline void install_app_menu(const std::string& app_name) {
         };
         const auto cmd = NSEventModifierFlagCommand;
 
+        auto L = [&](size_t i) { return [NSString stringWithUTF8String:texts[i].c_str()]; };
+
         NSMenu* app = submenu(name);
-        add(app, [@"Hide " stringByAppendingString:name], @selector(hide:), @"h", cmd);
-        add(app, @"Hide Others", @selector(hideOtherApplications:), @"h", cmd | NSEventModifierFlagOption);
-        add(app, @"Show All", @selector(unhideAllApplications:), @"", 0);
+        add(app, L(0), @selector(hide:), @"h", cmd);
+        add(app, L(1), @selector(hideOtherApplications:), @"h", cmd | NSEventModifierFlagOption);
+        add(app, L(2), @selector(unhideAllApplications:), @"", 0);
         [app addItem:[NSMenuItem separatorItem]];
         // Quit stops the app: closing the window only hides it in the menu bar
         // (milestone 14), so `performClose:` would no longer quit.
-        add(app, [@"Quit " stringByAppendingString:name], @selector(stop:), @"q", cmd);
+        add(app, L(3), @selector(stop:), @"q", cmd);
 
-        NSMenu* edit = submenu(@"Edit");
-        add(edit, @"Undo", @selector(undo:), @"z", cmd);
-        add(edit, @"Redo", @selector(redo:), @"z", cmd | NSEventModifierFlagShift);
+        NSMenu* edit = submenu(L(4));
+        add(edit, L(5), @selector(undo:), @"z", cmd);
+        add(edit, L(6), @selector(redo:), @"z", cmd | NSEventModifierFlagShift);
         [edit addItem:[NSMenuItem separatorItem]];
-        add(edit, @"Cut", @selector(cut:), @"x", cmd);
-        add(edit, @"Copy", @selector(copy:), @"c", cmd);
-        add(edit, @"Paste", @selector(paste:), @"v", cmd);
-        add(edit, @"Select All", @selector(selectAll:), @"a", cmd);
+        add(edit, L(7), @selector(cut:), @"x", cmd);
+        add(edit, L(8), @selector(copy:), @"c", cmd);
+        add(edit, L(9), @selector(paste:), @"v", cmd);
+        add(edit, L(10), @selector(selectAll:), @"a", cmd);
 
-        NSMenu* window = submenu(@"Window");
-        add(window, @"Minimize", @selector(performMiniaturize:), @"m", cmd);
-        add(window, @"Zoom", @selector(performZoom:), @"", 0);
+        NSMenu* window = submenu(L(11));
+        add(window, L(12), @selector(performMiniaturize:), @"m", cmd);
+        add(window, L(13), @selector(performZoom:), @"", 0);
         [NSApp setWindowsMenu:window];
 
         [NSApp setMainMenu:bar];
@@ -325,6 +335,7 @@ inline void install_app_menu(const std::string& app_name) {
     }});
 #else
     (void)app_name;
+    (void)labels;
 #endif
 }
 

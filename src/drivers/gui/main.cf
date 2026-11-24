@@ -534,7 +534,7 @@ fn main() {
             mut a := timer_app
             run_lock_timer(mut s, timer_st, mut a)
         }
-        install_app_menu("Flint")
+        install_menu_bar("Flint", app_menu_labels(lang))
         // Full screen (milestone 37): the page hears every change as `window:fullscreen`.
         window_fullscreen_install(app)
         // The extra monitors' windows (milestone 38) load the same page folder.
