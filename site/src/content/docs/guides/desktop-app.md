@@ -28,9 +28,10 @@ window locked: opening it again asks for Touch ID, polkit or the master password
 ([the window's own lock](/guides/vaults/#the-windows-own-lock)). **Quit Flint** in the
 tray icon, ⌘Q or the command palette quits it.
 
-**On a Linux desktop with no tray** (GNOME without an XEmbed tray extension, which is
-Zorin's and Ubuntu's default, or any Wayland session), a hidden window would have no icon
-to come back from. There, the first ✕ asks **Keep Flint running in the background?**:
+**On a Linux desktop with no tray** (any Wayland session, which is the default on Zorin
+and Ubuntu, or GNOME on Xorg without a tray extension), a hidden window would have no icon
+to come back from. On Zorin's Xorg session the panel shows Flint's icon, and ✕ hides the
+window as on macOS and Windows. There, the first ✕ asks **Keep Flint running in the background?**:
 **Keep running** hides and locks the window as above (launch Flint again to show it),
 **Quit** quits. The answer is kept on this computer, and **Settings → Access → When you
 close the window** changes it (**Ask**, **Keep running**, **Quit**); that row only shows
