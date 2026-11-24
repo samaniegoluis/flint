@@ -11,6 +11,9 @@ TUNNEL_DEST_MAX: usize = 253
 TUNNEL_STOPPED: str = "stopped"
 TUNNEL_LISTENING: str = "listening"
 TUNNEL_LOST: str = "connection lost"
+// The session lives, but the system no longer lists the tunnel's port as listening
+// (milestone 70): its listener is closed, with why, until started again.
+TUNNEL_NOT_LISTENING: str = "not listening"
 
 type Tunnel struct {
     id: str
@@ -34,12 +37,15 @@ type TunnelLive struct {
     tunnel_id: str
     // False once the host's session was lost (the listener is closed then).
     up: bool
+    // The session lives but the listener is gone (milestone 70); `error` says why.
+    down: bool
     port: i64
     connections: i64
     // Connections accepted, and those whose channel the server refused.
     opened: i64
     failed: i64
-    // Why the session was lost, or the last channel the server refused ("" for none).
+    // Why the session was lost or the listener went down, or the last channel the
+    // server refused ("" for none).
     error: str
 }
 

@@ -7,7 +7,8 @@ package application
 // in as a connect does (host key, jump hosts, prompts) and hands the session to the
 // runner; stopping the last one hangs it up. A lost session leaves its tunnels
 // reported as `connection lost` until they are stopped or started again; nothing
-// redials on its own.
+// redials on its own. A listener the system no longer lists reads `not listening`
+// the same way (milestone 70).
 
 import "../domain"
 import "../ports"
@@ -50,6 +51,8 @@ fn tunnel_view(h: Host, t: Tunnel, live: []TunnelLive) -> TunnelView {
                 v.state = TUNNEL_LISTENING
                 v.listen = "127.0.0.1:{l.port}"
                 v.connections = l.connections
+            } else if l.down {
+                v.state = TUNNEL_NOT_LISTENING
             } else {
                 v.state = TUNNEL_LOST
             }

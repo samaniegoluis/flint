@@ -67,17 +67,24 @@ fn (mut self: FakeRunner) tunnel_listen(host_id: str, tunnel_id: str, local_port
     if self.tunnel_host_state(host_id) != 1 {
         return error(coded(ERR_NETWORK, "the host's tunnel session is not connected"))
     }
+    // A listener that went down is replaced, as the native registry does.
+    mut kept: []TunnelLive = []
     for l in self.live {
         if l.host_id == host_id && l.tunnel_id == tunnel_id {
-            return l.port
+            if !l.down {
+                return l.port
+            }
+        } else {
+            kept.push(l)
         }
     }
+    self.live = kept
     for p in self.busy {
         if p == local_port {
             return error(coded(ERR_PORT_IN_USE, "port {local_port} on 127.0.0.1 is already in use"))
         }
     }
-    self.live.push(TunnelLive{ host_id: host_id, tunnel_id: tunnel_id, up: true, port: local_port, connections: 0, opened: 0, failed: 0, error: "" })
+    self.live.push(TunnelLive{ host_id: host_id, tunnel_id: tunnel_id, up: true, down: false, port: local_port, connections: 0, opened: 0, failed: 0, error: "" })
     return local_port
 }
 
@@ -133,6 +140,18 @@ fn (mut self: FakeRunner) lose(host_id: str) {
         if l.host_id == host_id {
             self.live[j].up = false
             self.live[j].error = "the connection was closed"
+        }
+    }
+}
+
+// The system stopped listing one listener (milestone 70): the session lives on.
+fn (mut self: FakeRunner) drop_listener(host_id: str, tunnel_id: str) {
+    for j, l in self.live {
+        if l.host_id == host_id && l.tunnel_id == tunnel_id {
+            self.live[j].up = false
+            self.live[j].down = true
+            self.live[j].connections = 0
+            self.live[j].error = "the system no longer lists 127.0.0.1:{l.port} as listening"
         }
     }
 }
@@ -313,6 +332,32 @@ test "a lost session shows its tunnels lost until started again" {
     assert_eq(runner.released[0], web)
     // (The fake runner never receives the new session, so that start then fails.)
     assert_eq(error_code_of(got), ERR_NETWORK)
+}
+
+test "a tunnel the system stopped listing reads not listening, and starts again on the same session" {
+    crypto := FakeCrypto{ derive_calls: 0 }
+    mut store := new_fake_store()
+    s := ssh_fixture(crypto, mut store)
+    mut tun := tunnel_fake()
+    mut runner := new_fake_runner()
+    _ = try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
+    web := host_id_of(store, "web")
+    runner.adopt(web)
+    mut link := web_link()
+    _ = try start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts())
+    pg_id := runner.live[0].tunnel_id
+    runner.drop_listener(web, pg_id)
+    st := try tunnel_status(store, tun, mut runner, "web", "pg")
+    assert_eq(st.state, TUNNEL_NOT_LISTENING)
+    assert(st.error.contains("no longer lists"))
+    assert_eq(st.listen, "")
+    // It is offered again by a start of every tunnel, and listens on the live session.
+    names := try tunnels_to_start(store, tun, mut runner, "web", true)
+    assert_eq(names.len(), 1)
+    mut again := web_link()
+    v := try start_tunnel(crypto, mut store, tun, s, mut again, no_prompter(), mut runner, "web", "pg", accept_opts())
+    assert_eq(v.state, TUNNEL_LISTENING)
+    assert_eq(runner.released.len(), 0)
 }
 
 test "a login that fails hands nothing over" {

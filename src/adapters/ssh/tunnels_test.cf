@@ -201,3 +201,85 @@ test "a taken port is seen before any listen, and the gate takes turns" {
     runner.tunnel_gate_enter(host)
     runner.tunnel_gate_leave(host)
 }
+
+// Milestone 70: what the system lists, and how the worker's check is driven in tests.
+fn listening_here(port: i64) -> i64 {
+    mut r: i64 = 0
+    // CFIRE-UPSTREAM: CF-112
+    cpp {
+        r = flint_tunnel::listening_here(static_cast<int>(port));
+    }
+    return r
+}
+
+fn pretend_gone(port: i64, check_ms: i64) {
+    // CFIRE-UPSTREAM: CF-026
+    cpp {
+        flint_tunnel::test_gone_port().store(static_cast<int>(port));
+        flint_tunnel::check_ms().store(static_cast<int>(check_ms));
+    }
+}
+
+fn live_of(runner: NativeTunnels, host: str, id: str) -> TunnelLive {
+    for l in runner.tunnel_live() {
+        if l.host_id == host && l.tunnel_id == id {
+            return l
+        }
+    }
+    return TunnelLive{ host_id: "", tunnel_id: "", up: false, down: false, port: 0, connections: 0, opened: 0, failed: 0, error: "" }
+}
+
+test "a tunnel reads up only while the system lists its port, and says why when not" {
+    (port, key_path) := test_target()
+    if port == 0 {
+        println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
+        return
+    }
+    key := try fs.read_text(key_path)
+    host := "tunnel-truth-{time.now_ms()}"
+    mut runner := new_native_tunnels()
+    mut carrier := try tunnel_key_link(port, key)
+    try carrier.link_hand_over(host)
+    local := try runner.tunnel_listen(host, "t", 0, "127.0.0.1", inner_port())
+    // The system lists this process on it; not on the sshd's port, which another
+    // process holds.
+    assert_eq(listening_here(local), 1)
+    assert_eq(listening_here(i64(port)), 0)
+    assert(live_of(runner, host, "t").up)
+
+    // The worker's check finds it gone: down, with why, while the session lives on.
+    pretend_gone(local, 50)
+    mut l := live_of(runner, host, "t")
+    for _ in 0..100 {
+        l = live_of(runner, host, "t")
+        if l.down {
+            break
+        }
+        time.sleep_ms(20)
+    }
+    assert(l.down, "the listener reads down")
+    assert(!l.up)
+    assert(l.error.contains("no longer lists"), l.error)
+    assert_eq(runner.tunnel_host_state(host), 1)
+    // Its socket is closed: nothing answers there.
+    mut r := ""
+    bytes_through(local, key, 10) or err { r = "{err.message()}" }
+    assert(r.len() > 0)
+
+    // A bind the system does not list fails with why, instead of reading up.
+    r = ""
+    runner.tunnel_listen(host, "t", local, "127.0.0.1", inner_port()) or err { r = "{err.message()}" }
+    assert_eq(error_code_of(r), "io")
+    assert(r.contains("does not list"), r)
+
+    // Listed again, the same tunnel starts on the same session and streams.
+    pretend_gone(0, 5000)
+    again := try runner.tunnel_listen(host, "t", local, "127.0.0.1", inner_port())
+    assert_eq(again, local)
+    l = live_of(runner, host, "t")
+    assert(l.up && !l.down)
+    assert_eq(try bytes_through(local, key, 1000), 1000)
+    assert(runner.tunnel_unlisten(host, "t"))
+    assert_eq(listening_here(local), 0)
+    runner.tunnel_release(host)
+}

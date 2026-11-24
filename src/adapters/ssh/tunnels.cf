@@ -131,7 +131,7 @@ fn (self: NativeTunnels) tunnel_live() -> []TunnelLive {
             continue
         }
         list.push(TunnelLive{
-            host_id: f[0], tunnel_id: f[1], up: f[2] == "1",
+            host_id: f[0], tunnel_id: f[1], up: f[2] == "1", down: f[2] == "2",
             port: i64.parse(f[3]) or 0, connections: i64.parse(f[4]) or 0,
             opened: i64.parse(f[5]) or 0, failed: i64.parse(f[6]) or 0, error: f[7],
         })

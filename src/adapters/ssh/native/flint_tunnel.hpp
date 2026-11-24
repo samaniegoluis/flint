@@ -14,6 +14,11 @@
 //   every `keepalive_secs`; a session that cannot be written, or that hangs up, is
 //   *lost*: every listener and connection closes and the host stays in the registry,
 //   marked lost, until released. Nothing redials on its own (spec v6, settled at plan).
+// * A listener reads up only while the system lists this process as listening on its
+//   port (milestone 70): `listen` checks it once bound, and the worker checks it every
+//   `check_ms` and on an error from its socket. One that is gone is *down*: closed, with
+//   why, while the session lives on. The check asks the system's tables (what netstat
+//   shows); it never connects, which the worker would take as a connection to forward.
 // * Every libssh call takes the last hop's mutex (SshConn.lock), as everywhere else.
 //   Opening a channel blocks the worker for that one round trip, bounded by the
 //   session's timeout (SSH_OPTIONS_TIMEOUT, Principle 8).
@@ -86,7 +91,9 @@ struct Listener {
     std::atomic<long long> failed{0};
     std::atomic<bool> stop{false};
     std::atomic<bool> closed{false};
+    std::atomic<bool> down{false};      // closed by the worker: no longer listening
     std::string last_error;             // under Host::mtx
+    std::string down_why;               // under Host::mtx
 };
 
 struct Hop {
@@ -210,6 +217,99 @@ inline bool denied_error(int e) { return e == EACCES || e == EPERM; }
 inline bool in_use_error(int e) { return e == EADDRINUSE; }
 #endif
 
+// ---- Is this process listening? (milestone 70) -----------------------------------
+
+#if defined(_WIN32)
+// GetExtendedTcpTable, looked up at run time (see the includes above).
+using TcpTableFn = DWORD(WINAPI*)(PVOID, PDWORD, BOOL, ULONG, int, ULONG);
+inline TcpTableFn tcp_table_fn() {
+    static const TcpTableFn table = [] {
+        HMODULE m = ::LoadLibraryW(L"iphlpapi.dll");
+        return m ? reinterpret_cast<TcpTableFn>(reinterpret_cast<void*>(::GetProcAddress(m, "GetExtendedTcpTable"))) : nullptr;
+    }();
+    return table;
+}
+#endif
+
+// For tests: a port the check reports as not listening, and how often the worker checks.
+inline std::atomic<int>& test_gone_port() { static std::atomic<int> p{0}; return p; }
+inline std::atomic<int>& check_ms() { static std::atomic<int> ms{5000}; return ms; }
+
+// Whether the system lists this process as listening on 127.0.0.1:port, as netstat
+// shows it: 1 yes, 0 no, -1 when it cannot tell (taken as yes by the callers).
+inline int listening_here(int port) {
+    if (port <= 0 || port > 65535) return 0;
+    if (test_gone_port().load() == port) return 0;
+#if defined(_WIN32)
+    struct Row4 { DWORD state, local_addr, local_port, remote_addr, remote_port, pid; };
+    struct Table4 { DWORD count; Row4 rows[1]; };
+    constexpr int kOwnerPidListener = 3;   // TCP_TABLE_OWNER_PID_LISTENER (iprtrmib.h)
+    TcpTableFn table = tcp_table_fn();
+    if (!table) return -1;
+    DWORD size = 0;
+    if (table(nullptr, &size, FALSE, AF_INET, kOwnerPidListener, 0) != ERROR_INSUFFICIENT_BUFFER) return -1;
+    std::vector<unsigned char> buf(size + 1024);
+    size = static_cast<DWORD>(buf.size());
+    if (table(buf.data(), &size, FALSE, AF_INET, kOwnerPidListener, 0) != NO_ERROR) return -1;
+    auto* t = reinterpret_cast<Table4*>(buf.data());
+    DWORD me = ::GetCurrentProcessId();
+    for (DWORD i = 0; i < t->count; i++) {
+        const Row4& r = t->rows[i];
+        if (r.pid == me && ntohs(static_cast<u_short>(r.local_port)) == port && r.local_addr == htonl(INADDR_LOOPBACK)) return 1;
+    }
+    return 0;
+#elif defined(__APPLE__)
+    pid_t me = ::getpid();
+    int size = proc_pidinfo(me, PROC_PIDLISTFDS, 0, nullptr, 0);
+    if (size <= 0) return -1;
+    std::vector<proc_fdinfo> fds(static_cast<size_t>(size) / sizeof(proc_fdinfo) + 16);
+    size = proc_pidinfo(me, PROC_PIDLISTFDS, 0, fds.data(), static_cast<int>(fds.size() * sizeof(proc_fdinfo)));
+    if (size <= 0) return -1;
+    size_t k = static_cast<size_t>(size) / sizeof(proc_fdinfo);
+    for (size_t j = 0; j < k; j++) {
+        if (fds[j].proc_fdtype != PROX_FDTYPE_SOCKET) continue;
+        socket_fdinfo si{};
+        if (proc_pidfdinfo(me, fds[j].proc_fd, PROC_PIDFDSOCKETINFO, &si, sizeof si) != static_cast<int>(sizeof si)) continue;
+        if (si.psi.soi_kind != SOCKINFO_TCP) continue;
+        const auto& tcp = si.psi.soi_proto.pri_tcp;
+        if (tcp.tcpsi_state != TSI_S_LISTEN) continue;
+        if (ntohs(static_cast<uint16_t>(tcp.tcpsi_ini.insi_lport)) == port) return 1;
+    }
+    return 0;
+#else
+    // 127.0.0.1:port in LISTEN in /proc/net/tcp, by inode, held by one of our fds.
+    std::ifstream in("/proc/net/tcp");
+    if (!in) return -1;
+    std::set<std::string> wanted;
+    std::string line;
+    std::getline(in, line);   // the header
+    while (std::getline(in, line)) {
+        std::istringstream f(line);
+        std::string sl, local, remote, st, queues, timer, retr, uid, timeout, inode;
+        if (!(f >> sl >> local >> remote >> st >> queues >> timer >> retr >> uid >> timeout >> inode)) continue;
+        if (st != "0A") continue;   // TCP_LISTEN
+        auto colon = local.rfind(':');
+        if (colon == std::string::npos || local.substr(0, colon) != "0100007F") continue;
+        if (std::strtol(local.c_str() + colon + 1, nullptr, 16) != port) continue;
+        if (inode != "0") wanted.insert("socket:[" + inode + "]");
+    }
+    if (wanted.empty()) return 0;
+    DIR* fds = ::opendir("/proc/self/fd");
+    if (!fds) return -1;
+    int found = 0;
+    while (dirent* d = ::readdir(fds)) {
+        if (d->d_name[0] == '.') continue;
+        char target[256];
+        ssize_t len = ::readlink((std::string("/proc/self/fd/") + d->d_name).c_str(), target, sizeof target - 1);
+        if (len <= 0) continue;
+        target[len] = '\0';
+        if (wanted.count(target)) { found = 1; break; }
+    }
+    ::closedir(fds);
+    return found;
+#endif
+}
+
 // ---- The worker -----------------------------------------------------------------
 
 inline void close_conn(Host* h, Conn& c) {
@@ -234,6 +334,25 @@ inline void close_listener(Host* h, Listener& l) {
         l.fd = -1;
     }
     l.closed.store(true);
+}
+
+// Closes a listener the system no longer lists, or whose socket failed: it reads down
+// with `why` until it is stopped or started again.
+inline void drop_listener(Host* h, Listener& l, const std::string& why) {
+    {
+        std::lock_guard<std::mutex> g(h->mtx);
+        l.down_why = why;
+    }
+    l.down.store(true);
+    close_listener(h, l);
+}
+
+// The error pending on a socket, as text ("" for none).
+inline std::string pending_error(int fd) {
+    int so = 0;
+    flint_sock::socklen len = sizeof so;
+    if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so), &len) != 0 || so == 0) return "";
+    return flint_sock::error_text(so);
 }
 
 // Writes what it can of `c.out` without blocking. False when the socket is gone.
@@ -340,6 +459,7 @@ inline void run(Host* h) {
     }
     using clock = std::chrono::steady_clock;
     auto last_keepalive = clock::now();
+    auto last_check = clock::now();
     while (!h->stop.load() && !h->lost.load()) {
         std::vector<std::shared_ptr<Listener>> ls;
         {
@@ -385,6 +505,11 @@ inline void run(Host* h) {
                 }
             }
             l->conns = std::move(keep);
+            if (lrev & (POLLERR | POLLNVAL)) {
+                std::string why = pending_error(l->fd);
+                drop_listener(h, *l, "its socket failed" + (why.empty() ? std::string() : ": " + why));
+                continue;
+            }
             if (lrev & POLLIN) {
                 for (;;) {
                     int fd = accept_fd(l->fd);
@@ -411,6 +536,15 @@ inline void run(Host* h) {
             break;
         }
         auto now = clock::now();
+        if (now - last_check >= std::chrono::milliseconds(check_ms().load())) {
+            for (auto& l : ls) {
+                if (l->closed.load()) continue;
+                if (listening_here(l->port) == 0) {
+                    drop_listener(h, *l, "the system no longer lists 127.0.0.1:" + std::to_string(l->port) + " as listening");
+                }
+            }
+            last_check = now;
+        }
         if (now - last_keepalive >= std::chrono::seconds(h->keepalive_secs)) {
             int rc = 0;
             std::string why;
@@ -572,6 +706,11 @@ inline int listen(const std::string& key, const std::string& id, int port, const
     int fd = -1;
     int rc = bind_loopback(port, fd, bound, err);
     if (rc != OK) return rc;
+    if (listening_here(bound) == 0) {
+        flint_sock::close(fd);
+        err = "bound, but the system does not list it as listening";
+        return FAILED;
+    }
     auto l = std::make_shared<Listener>();
     l->id = id;
     l->fd = fd;
@@ -677,8 +816,9 @@ inline int host_state(const std::string& key) {
     return h->lost.load() ? 2 : 1;
 }
 
-// One line per tunnel of every host: key \t id \t up(1)|lost(0) \t port \t live \t
-// opened \t failed \t error. Tabs and newlines in an error become spaces.
+// One line per tunnel of every host: key \t id \t up(1)|lost(0)|down(2) \t port \t
+// live \t opened \t failed \t error. A listener being stopped is left out (it leaves
+// the list in a moment). Tabs and newlines in an error become spaces.
 inline std::string states() {
     std::vector<std::shared_ptr<Host>> hs;
     {
@@ -695,9 +835,12 @@ inline std::string states() {
         std::lock_guard<std::mutex> g(h->mtx);
         bool lost = h->lost.load();
         for (auto& l : h->listeners) {
-            std::string err = lost ? h->lost_why : l->last_error;
-            out += h->key + "\t" + l->id + "\t" + (lost ? "0" : "1") + "\t" + std::to_string(l->port) + "\t" +
-                   std::to_string(lost ? 0 : l->live.load()) + "\t" + std::to_string(l->opened.load()) + "\t" +
+            bool down = !lost && l->down.load();
+            if (!lost && !down && l->closed.load()) continue;
+            std::string err = lost ? h->lost_why : down ? l->down_why : l->last_error;
+            const char* state = lost ? "0" : down ? "2" : "1";
+            out += h->key + "\t" + l->id + "\t" + state + "\t" + std::to_string(l->port) + "\t" +
+                   std::to_string(lost || down ? 0 : l->live.load()) + "\t" + std::to_string(l->opened.load()) + "\t" +
                    std::to_string(l->failed.load()) + "\t" + clean(err) + "\n";
         }
     }
@@ -748,12 +891,8 @@ inline bool port_owner(int port, std::string& name, int& pid) {
     struct Row6 { UCHAR local_addr[16]; DWORD local_scope, local_port; UCHAR remote_addr[16]; DWORD remote_scope, remote_port, state, pid; };
     struct Table4 { DWORD count; Row4 rows[1]; };
     struct Table6 { DWORD count; Row6 rows[1]; };
-    using TableFn = DWORD(WINAPI*)(PVOID, PDWORD, BOOL, ULONG, int, ULONG);
     constexpr int kOwnerPidListener = 3;   // TCP_TABLE_OWNER_PID_LISTENER (iprtrmib.h)
-    static const TableFn table = [] {
-        HMODULE m = ::LoadLibraryW(L"iphlpapi.dll");
-        return m ? reinterpret_cast<TableFn>(reinterpret_cast<void*>(::GetProcAddress(m, "GetExtendedTcpTable"))) : nullptr;
-    }();
+    TcpTableFn table = tcp_table_fn();
     if (!table) return false;
     for (ULONG family : {static_cast<ULONG>(AF_INET), static_cast<ULONG>(AF_INET6)}) {
         DWORD size = 0;
