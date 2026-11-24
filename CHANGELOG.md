@@ -4,6 +4,20 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.34.0 — 2026-11-24
+
+Flint no longer keeps sending a token the server refused. After a 401 the app stops syncing that vault on its own and the status bar reads Token refused, with Sync now and Replace token at hand, so a few machines with an old token can't lock every machine behind the same router out. A 429 now says how long the server asks to wait. The vault server gains flint-vault-server delete, logs the cause of a 500, and keeps serving when one vault's record is damaged; the self-host guide explains how the server counts clients behind NAT, Docker Swarm and proxies. On the Mac, opening an RDP session can no longer hang on reading the keyboard layout.
+
+### Added
+
+- **sync:** A refused token pauses the app's sync until the person acts
+- **vault-server:** Delete a vault, a 500's cause in the log, a damaged head skipped
+
+### Fixed
+
+- **rdp:** Reading the Mac keyboard layout never blocks an open
+
+
 ## 0.33.1 — 2026-11-24
 
 A tunnel now says listening only while its port really answers: Flint checks with the system when it starts the tunnel and every few seconds after, and a port that went away reads "not listening" with the reason instead. A tunnel's error or warning is no longer cut off: it wraps to as many lines as it needs, and hovering it shows the whole text.
