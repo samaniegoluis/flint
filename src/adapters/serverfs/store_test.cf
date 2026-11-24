@@ -197,6 +197,47 @@ test "vaults are kept apart, each with its own versions, and listed by id" {
     assert_eq(code, ERR_INVALID)
 }
 
+test "a damaged head leaves its vault out of the listing, not the whole store" {
+    dir := temp_store_dir("damaged")
+    defer {
+        _ = fs.remove(dir)
+    }
+    mut s := try new_file_blob_store(dir)
+    try s.blob_write(VID, 1, "one", 10)
+    try s.blob_write(VID2, 1, "two", 20)
+    try fs.write_text(dir + "/vaults/" + VID + "/head.json", "{not json")
+    all := try s.blob_vaults()
+    assert_eq(all.len(), usize(1))
+    assert_eq(all[0].id, VID2)
+}
+
+test "delete removes a vault's folder, under its lock, and refuses one not kept" {
+    dir := temp_store_dir("delete")
+    defer {
+        _ = fs.remove(dir)
+    }
+    mut s := try new_file_blob_store(dir)
+    try s.blob_write(VID, 1, "one", 10)
+    try s.blob_write(VID, 2, "one-2", 11)
+    try s.blob_set_label(VID, "Work")
+    try s.blob_write(VID2, 1, "two", 20)
+    try s.blob_delete(VID)
+    assert(!fs.exists(dir + "/vaults/" + VID))
+    assert(!fs.exists(dir + "/vaults/.deleting-" + VID))
+    all := try s.blob_vaults()
+    assert_eq(all.len(), usize(1))
+    assert_eq(all[0].id, VID2)
+    mut code := ""
+    s.blob_delete(VID) or err { code = error_code_of(err.message()) }
+    assert_eq(code, ERR_NOT_FOUND)
+    // A vault held by a writer is not deleted.
+    try fs.mkdir_all(dir + "/vaults/" + VID2 + "/.lock")
+    code = ""
+    s.blob_delete(VID2) or err { code = error_code_of(err.message()) }
+    assert_eq(code, ERR_CONFLICT)
+    assert(fs.exists(dir + "/vaults/" + VID2 + "/head.json"))
+}
+
 test "a label is kept beside its vault, cleared with an empty one, and checked" {
     dir := temp_store_dir("label")
     defer {

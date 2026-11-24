@@ -11,6 +11,7 @@ package main
 //   flint-vault-server versions [<id>] [--json]  a vault's kept versions, newest first
 //   flint-vault-server restore [<id>] <n> [--json]  make a kept version the newest again
 //   flint-vault-server label <id> [<label>]      set a vault's label, or clear it
+//   flint-vault-server delete [<id>] [--yes]     remove a vault and every version kept
 //   flint-vault-server --version
 //
 // <id> is a vault's id or a unique prefix of it (4 characters or more), and may be left
@@ -32,7 +33,7 @@ import "../version"
 DEFAULT_LISTEN: str = "0.0.0.0:8787"
 DEFAULT_DATA: str = "./flint-vault-data"
 
-USAGE: str = "usage: flint-vault-server [serve | token [--json] | vaults [--json] | versions [<id>] [--json] | restore [<id>] <version> [--json] | label <id> [<label>] | --version]"
+USAGE: str = "usage: flint-vault-server [serve | token [--json] | vaults [--json] | versions [<id>] [--json] | restore [<id>] <version> [--json] | label <id> [<label>] | delete [<id>] [--yes] | --version]"
 
 fn log_line(s: str) {
     eprintln("flint-vault-server: {s}")
@@ -182,6 +183,40 @@ fn cmd_label(wanted: str, label: str) -> void! {
     println("vault {target.id} is labelled '{label}'")
 }
 
+// Asks on the terminal (or reads a line piped in) whether to go on; only y or yes does.
+fn confirmed(question: str) -> bool {
+    eprint("{question} [y/N] ")
+    mut input := os.stdin()
+    line := input.read_line() or ""
+    answer := line.trim().to_lower()
+    return answer == "y" || answer == "yes"
+}
+
+// `delete [<id>]` (milestone 71): names the vault and what goes with it, asks, then
+// removes its folder. `--yes` skips the question, for scripts.
+fn cmd_delete(wanted: str, yes: bool, as_json: bool) -> void! {
+    mut store := try data_store()
+    target := try server_vault_named(mut store, wanted)
+    kept := try list_vault_versions(mut store, target.id)
+    if !yes {
+        mut named := target.id
+        if target.label.len() > 0 {
+            named = "{target.id} ('{target.label}')"
+        }
+        eprintln("vault {named}: version {target.version}, {kept.len()} versions kept, {target.size} bytes")
+        eprintln("A machine still connected to it uploads its copy again at its next sync: disconnect them first.")
+        if !confirmed("Delete it and every version kept?") {
+            return error(coded(ERR_DENIED, "nothing was deleted"))
+        }
+    }
+    try delete_server_vault(mut store, target.id)
+    if as_json {
+        println(json.stringify(target))
+        return
+    }
+    println("vault {target.id} deleted, with its {kept.len()} versions kept")
+}
+
 fn main() {
     all := os.args()
     mut args: []str = []
@@ -189,10 +224,13 @@ fn main() {
         args.push(all[i])
     }
     mut as_json := false
+    mut yes := false
     mut words: []str = []
     for a in args {
         if a == "--json" {
             as_json = true
+        } else if a == "--yes" || a == "-y" {
+            yes = true
         } else {
             words.push(a)
         }
@@ -255,6 +293,16 @@ fn main() {
             label = words[2]
         }
         cmd_label(words[1], label) or err {
+            fail(err.message())
+        }
+        return
+    }
+    if cmd == "delete" && words.len() <= 2 {
+        mut wanted := ""
+        if words.len() == 2 {
+            wanted = words[1]
+        }
+        cmd_delete(wanted, yes, as_json) or err {
             fail(err.message())
         }
         return

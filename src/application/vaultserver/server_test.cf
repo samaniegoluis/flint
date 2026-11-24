@@ -149,6 +149,22 @@ fn (self: MemStore) blob_versions(vault_id: str) -> []BlobVersion! {
     return newest
 }
 
+fn (mut self: MemStore) blob_delete(vault_id: str) -> void! {
+    mut versions: []BlobVersion = []
+    mut datas: []str = []
+    for i in 0..self.versions.len() {
+        if self.versions[i].vault_id != vault_id {
+            versions.push(self.versions[i])
+            datas.push(self.datas[i])
+        }
+    }
+    if versions.len() == self.versions.len() {
+        return error(coded(ERR_NOT_FOUND, "no vault {vault_id}"))
+    }
+    self.versions = versions
+    self.datas = datas
+}
+
 fn (mut self: MemStore) blob_set_label(vault_id: str, label: str) -> void! {
     head := try self.blob_head(vault_id)
     if head.version == 0 {
@@ -396,6 +412,24 @@ test "a store that fails answers 500 without its reason" {
     reply := serve_vault_request(crypto, mut store, mut gate, cfg, rq("GET", "", ""), 1, 1)
     assert_eq(reply.status, i32(500))
     assert(!reply.body.contains("disk gone"))
+    // The cause goes to the log's note (milestone 71), never the client.
+    assert_eq(reply.note, "io: disk gone")
+}
+
+test "delete removes a vault and every version, and says when there is none" {
+    mut store := new_mem_store()
+    try store.blob_write(VID, 1, "a", 1)
+    try store.blob_write(VID, 2, "b", 2)
+    try store.blob_write(VID2, 1, "c", 3)
+    v := try server_vault_named(mut store, VID[..6])
+    try delete_server_vault(mut store, v.id)
+    left := try list_server_vaults(mut store)
+    assert_eq(left.len(), usize(1))
+    assert_eq(left[0].id, VID2)
+    assert_eq((try store.blob_versions(VID)).len(), usize(0))
+    mut code := ""
+    delete_server_vault(mut store, VID) or err { code = error_code_of(err.message()) }
+    assert_eq(code, ERR_NOT_FOUND)
 }
 
 test "restore makes a kept version the newest as a new version" {

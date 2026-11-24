@@ -93,7 +93,7 @@ start() {
 in_server() {
   local name="$1"; shift
   if [[ -n "$image" ]]; then
-    docker exec "flint-server-e2e-$name-$$" flint-vault-server "$@"
+    docker exec -i "flint-server-e2e-$name-$$" flint-vault-server "$@"
   else
     FLINT_VAULT_DATA="$tmp/$name/data" "$bin" "$@"
   fi
@@ -291,6 +291,30 @@ in_server many label ffee "Personal" >/dev/null
 check "label sets a vault's label on the server" "Personal" "$(in_server many vaults --json | python3 -I -c 'import json,sys; print([v["label"] for v in json.load(sys.stdin) if v["id"].startswith("ffee")][0])')"
 in_server many restore 0011 1 >"$tmp/restore-many.out"
 check "restore names the vault by prefix and touches no other" '"3" "1"' "$(header ETag "${auth[@]}" "$base/$vid") $(header ETag "${auth[@]}" "$base/$vid2")"
+
+# --- a damaged head, a 500's cause, and delete (milestone 71) ---------------------------------
+if [[ -z "$image" ]]; then
+  cp "$tmp/many/data/vaults/$vid/head.json" "$tmp/head.good"
+  printf '{not json' >"$tmp/many/data/vaults/$vid/head.json"
+  check "a damaged head leaves its vault out of the list, not the whole list" "ffee" "$(curl -s -m 20 "${auth[@]}" "$base" | python3 -I -c 'import json,sys; print(" ".join(x["id"][:4] for x in json.load(sys.stdin)["vaults"]))')"
+  check "the log names the vault skipped" "1" "$([[ $(grep -c "skipped vault $vid" "$tmp/many/log") -ge 1 ]] && echo 1)"
+  check "that vault answers 500" "500" "$(status "${auth[@]}" "$base/$vid")"
+  check "the 500's cause is in the log" "1" "$(grep -c "GET /v1/vaults/$vid 500 .*io: .*head.json is not a version record" "$tmp/many/log")"
+  check "and not in the reply" "0" "$(curl -s -m 20 "${auth[@]}" "$base/$vid" | grep -c 'head.json' || true)"
+  cp "$tmp/head.good" "$tmp/many/data/vaults/$vid/head.json"
+fi
+set +e
+printf 'n\n' | in_server many delete ffee >/dev/null 2>"$tmp/delete-no.err"; rc=$?
+set -e
+check "delete asks first, and a no deletes nothing" "1 2" "$([[ $rc -ne 0 ]] && grep -c 'nothing was deleted' "$tmp/delete-no.err") $(in_server many vaults --json | python3 -I -c 'import json,sys; print(len(json.load(sys.stdin)))')"
+check "the question names the vault and its label" "1" "$(grep -c "vault $vid2 ('Personal')" "$tmp/delete-no.err")"
+printf 'y\n' | in_server many delete ffee >"$tmp/delete.out" 2>/dev/null
+check "a yes deletes it" "1" "$(grep -c "vault $vid2 deleted" "$tmp/delete.out")"
+check "the deleted vault is 404" "404" "$(status "${auth[@]}" "$base/$vid2")"
+check "the other one is untouched" '"3"' "$(header ETag "${auth[@]}" "$base/$vid")"
+check "with one vault left the old path serves it again" "200" "$(status "${auth[@]}" "http://127.0.0.1:$port/v1/vault")"
+check "delete --yes asks nothing" "$vid" "$(in_server many delete 0011 --yes --json </dev/null | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
+check "the server is empty" '{"vaults":[]}' "$(curl -s -m 20 "${auth[@]}" "$base")"
 stop_server many
 
 # --- a data folder from before milestone 45 moves into a folder per vault --------------------

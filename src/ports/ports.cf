@@ -516,7 +516,9 @@ type DesktopSink interface {
 
 // The remote vault server's vaults (adapters/serverfs, milestones 42 and 45, D-097,
 // D-103): each vault under its id, each upload stored whole and as it came,
-// encrypted, next to its version; the newest SERVER_VERSIONS_KEPT kept per vault.
+// encrypted, next to its version; the newest SERVER_VERSIONS_KEPT kept per vault. A
+// vault whose head cannot be read is left out of `blob_vaults` (and logged by the
+// adapter) rather than failing the whole listing (milestone 71).
 // Version 0 means the vault is not stored. Errors carry `not_found`, `io` or
 // `conflict` (a vault held by another writer).
 type BlobStore interface {
@@ -532,6 +534,9 @@ type BlobStore interface {
     blob_versions(vault_id: str) -> []BlobVersion!
     // "" clears it. The vault must be stored.
     mut blob_set_label(vault_id: str, label: str) -> void!
+    // Removes the vault and everything kept of it (milestone 71); `not_found` when
+    // the store does not keep it.
+    mut blob_delete(vault_id: str) -> void!
 }
 
 // The update feed (milestone 52, adapters/update over libcurl): one GET of a file of
