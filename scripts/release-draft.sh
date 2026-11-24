@@ -19,9 +19,17 @@
 #                                                scripts/sign-manifest.sh), when
 #                                                FLINT_UPDATE_SIGNING_KEY is set; without
 #                                                it the release is never offered as an update
+#   scripts/release-draft.sh publish <tag>       checks the draft as it is on GitHub, then
+#                                                publishes it (D-147): every file against
+#                                                SHA256SUMS, and for a release the
+#                                                manifest's signature against the committed
+#                                                public key and its size and SHA-256 per
+#                                                package; any failure leaves it a draft. A
+#                                                release becomes Latest; an -rc stays a
+#                                                pre-release
 #
-# `draft` needs the GitHub CLI (`gh`) signed in, or GH_TOKEN (the workflow's own token);
-# it never publishes: the owner looks at the draft and publishes it. GH (default `gh`)
+# `draft` and `publish` need the GitHub CLI (`gh`) signed in, or GH_TOKEN (the workflow's
+# own token). `draft` never publishes; `publish` publishes only what it checked. GH (default `gh`)
 # names another program, for the tests. FLINT_RELEASE_MAIN (default origin/main) names
 # the branch the guard checks against.
 set -euo pipefail
@@ -32,7 +40,7 @@ cd "$root"
 die() { echo "release-draft: $*" >&2; exit 1; }
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{print $1}'; }
 cmd="${1:-}"; tag="${2:-}"
-[[ -n "$cmd" && -n "$tag" ]] || die "usage: release-draft.sh guard|notes <tag> | draft <tag> <dir>"
+[[ -n "$cmd" && -n "$tag" ]] || die "usage: release-draft.sh guard|notes|publish <tag> | draft <tag> <dir>"
 [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-rc\.[0-9]+)?$ ]] || die "'$tag' is not vX.Y.Z or vX.Y.Z-rc.N"
 version="${tag#v}"
 base="${BASH_REMATCH[1]}"
@@ -118,5 +126,41 @@ case "$cmd" in
     fi
     cat "$dir/SHA256SUMS"
     ;;
-  *) die "unknown step '$cmd' (guard, notes, draft)" ;;
+  publish)
+    gh="${GH:-gh}"
+    state="$("$gh" release view "$tag" --json isDraft -q .isDraft 2>/dev/null)" || die "no release $tag on GitHub: run draft first"
+    if [[ "$state" != true ]]; then
+      echo "release-draft: $tag is already published"
+      exit 0
+    fi
+    work="$(mktemp -d)"
+    trap 'rm -rf "$work"' EXIT
+    "$gh" release download "$tag" --dir "$work" >/dev/null || die "could not download $tag's files"
+    [[ -f "$work/SHA256SUMS" ]] || die "$tag has no SHA256SUMS: left a draft"
+    # Every file but SHA256SUMS and the manifest is in SHA256SUMS, and every line checks.
+    listed="$(awk '{print $2}' "$work/SHA256SUMS" | sort)"
+    present="$(cd "$work" && find . -maxdepth 1 -type f ! -name SHA256SUMS ! -name 'manifest.json*' | sed 's|^\./||' | sort)"
+    [[ -n "$listed" && "$listed" == "$present" ]] || die "$tag's files and SHA256SUMS do not match: left a draft"
+    while read -r want name; do
+      [[ "$(sha256 "$work/$name")" == "$want" ]] || die "$name does not match SHA256SUMS: left a draft"
+    done < "$work/SHA256SUMS"
+    flags=(--draft=false)
+    if [[ -z "$pre" ]]; then
+      # A release is what Flint updates to: its manifest must verify and name these files.
+      [[ -f "$work/manifest.json" && -f "$work/manifest.json.sig" ]] || die "$tag has no signed manifest (FLINT_UPDATE_SIGNING_KEY unset?): left a draft"
+      scripts/sign-manifest.sh verify "$work/manifest.json" >/dev/null || die "$tag's manifest signature does not verify: left a draft"
+      [[ "$(jq -r .version "$work/manifest.json")" == "$version" ]] || die "$tag's manifest is not for $version: left a draft"
+      n_assets="$(jq '.assets | length' "$work/manifest.json")"
+      [[ "$n_assets" -gt 0 ]] || die "$tag's manifest names no package: left a draft"
+      while IFS=$'\t' read -r name size sha; do
+        [[ -f "$work/$name" ]] || die "the manifest names $name, which $tag lacks: left a draft"
+        [[ "$(sha256 "$work/$name")" == "$sha" ]] || die "$name does not match the manifest: left a draft"
+        [[ "$(wc -c < "$work/$name" | tr -d ' ')" == "$size" ]] || die "$name's size does not match the manifest: left a draft"
+      done < <(jq -r '.assets[] | [.name, (.size|tostring), .sha256] | @tsv' "$work/manifest.json")
+      flags+=(--latest)
+    fi
+    "$gh" release edit "$tag" "${flags[@]}" >/dev/null
+    echo "release-draft: $tag checked and published"
+    ;;
+  *) die "unknown step '$cmd' (guard, notes, draft, publish)" ;;
 esac

@@ -332,13 +332,16 @@ The workflow holds no logic of its own: each step is a script you can run the sa
 | guard | `scripts/release-draft.sh guard <tag>` | Fails unless the tag is `vX.Y.Z` or `vX.Y.Z-rc.N` and its commit is on `main` |
 | macos | `scripts/install-cfire.sh`, `scripts/package.sh macos` | Installs cfire's pinned release (its SHA-256 is kept in the script) and builds the macOS zip on an Apple silicon runner. The built libraries are cached while `scripts/deps-macos.sh` stays the same |
 | linux | `scripts/package.sh linux`, `scripts/linux/package-test.sh` | Builds the `.deb` and the `.rpm` in their containers on an x86_64 runner, then installs, runs and removes each in clean ones |
-| draft | `scripts/release-draft.sh draft <tag> <dir>` | Writes `SHA256SUMS` and makes a **draft** release with every package; a `-rc` tag makes a pre-release |
+| draft | `scripts/release-draft.sh draft <tag> <dir>` | Writes `SHA256SUMS` and the signed update manifest, and makes a **draft** release with every package; a `-rc` tag makes a pre-release |
+| publish | `scripts/release-draft.sh publish <tag>` | Downloads the draft from GitHub, checks every file against `SHA256SUMS`, and for a release the manifest's signature against the public key in the repository and each package's size and SHA-256; then publishes it as the latest release. Any failure leaves it a draft and fails the run |
 
 The notes are the version's section of `CHANGELOG.md` (`scripts/release-draft.sh notes
-<tag>` prints them); an `-rc` tag, which has none, gets its tag's message. Nothing is
-published on its own: open the draft on GitHub, check it, and publish it. Only then does
-the site's [Releases](/releases/) page offer it, since it asks GitHub for the latest
-published release. A draft that already exists is updated, never a published release.
+<tag>` prints them); an `-rc` tag, which has none, gets its tag's message, and is
+published as a pre-release, never the latest. A release is published only once its files
+check, and from then the site's [Releases](/releases/) page offers it, since it asks
+GitHub for the latest published release, and Flint offers it as an update. A draft that
+already exists is updated, never a published release; a draft left by a failed check can
+be published by running `publish` again once its files are fixed.
 
 When a runner fails, run the same script on your machine, then upload the file by hand:
 

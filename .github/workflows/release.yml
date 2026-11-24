@@ -1,12 +1,14 @@
-# Builds Flint's release packages for a tag and puts them in a draft GitHub release
-# (milestone 51, D-107, D-113). Run by hand only, until the self-update is trusted:
+# Builds Flint's release packages for a tag, puts them in a draft GitHub release, checks
+# that draft and publishes it (milestone 51, D-107, D-113, D-147). Run by hand only:
 #
 #   gh workflow run release.yml -f tag=v0.16.0      (or Actions → Release → Run workflow)
 #
 # The workflow holds no logic of its own (Principle 16): each step calls a script a
 # person runs the same way on the Mac, Zorin or the Windows VM. guard checks the tag's
 # commit is on main; a job per system builds its packages; draft makes the release a
-# draft with SHA256SUMS and the version's notes, which the owner looks at and publishes.
+# draft with SHA256SUMS, the signed manifest and the version's notes; publish downloads
+# that draft, checks every file against SHA256SUMS and the manifest's signature, and
+# publishes it (Latest), or leaves it a draft and fails.
 name: Release
 
 on:
@@ -147,3 +149,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FLINT_UPDATE_SIGNING_KEY: ${{ secrets.FLINT_UPDATE_SIGNING_KEY }}
         run: scripts/release-draft.sh draft "$TAG" packages
+      - name: Check and publish
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/release-draft.sh publish "$TAG"

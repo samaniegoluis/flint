@@ -121,13 +121,18 @@ draft notes v1.2.0
 check "a release not in the changelog is refused" '[[ $rc == 1 && "$out" == *"no section for 1.2.0"* ]]'
 
 # A stand-in for gh: logs its arguments; FAKE_GH_DRAFT says whether the release exists
-# (true: a draft, false: published, unset: none).
+# (true: a draft, false: published, unset: none); `release download` copies the files
+# of FAKE_GH_ASSETS into its --dir.
 cat > fake-gh <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$FAKE_GH_LOG"
 if [[ "$1 $2" == "release view" ]]; then
   [[ -n "${FAKE_GH_DRAFT:-}" ]] || exit 1
   echo "$FAKE_GH_DRAFT"
+fi
+if [[ "$1 $2" == "release download" ]]; then
+  dir=""; while [[ $# -gt 0 ]]; do [[ "$1" == --dir ]] && dir="$2"; shift; done
+  cp "$FAKE_GH_ASSETS"/* "$dir"/
 fi
 exit 0
 EOF
@@ -174,7 +179,44 @@ check "no key: a warning and no manifest" '[[ $rc == 0 && "$out" == *"no update 
 : > gh.log
 FLINT_UPDATE_SIGNING_KEY="$(cat keys/flint-update-signing.key)" draft draft v1.1.0-rc.1 pkgs
 check "a pre-release never gets a manifest" '[[ $rc == 0 && ! -f pkgs/manifest.json && "$(cat gh.log)" != *manifest* ]]'
-unset FLINT_UPDATE_PUBLIC_KEY_HEX
+
+# publish (D-147): the draft as it is on GitHub is checked, then published; any failure
+# leaves it a draft.
+FLINT_UPDATE_SIGNING_KEY="$(cat keys/flint-update-signing.key)" draft draft v1.0.0 rel
+export FAKE_GH_ASSETS="$PWD/rel" FAKE_GH_DRAFT=true
+: > gh.log
+draft publish v1.0.0
+check "a checked release is published as Latest" '[[ $rc == 0 && "$out" == *"checked and published"* && "$(cat gh.log)" == *"release edit v1.0.0 --draft=false --latest"* ]]'
+cp -R rel bad; export FAKE_GH_ASSETS="$PWD/bad"
+printf 'x' >> bad/flint_1.0.0_amd64.deb
+: > gh.log
+draft publish v1.0.0
+check "a package that does not match SHA256SUMS is left a draft" '[[ $rc == 1 && "$out" == *"does not match SHA256SUMS"* && "$(cat gh.log)" != *"release edit"* ]]'
+rm -rf bad; cp -R rel bad
+printf ' ' >> bad/manifest.json
+: > gh.log
+draft publish v1.0.0
+check "a manifest whose signature fails is left a draft" '[[ $rc == 1 && "$out" == *"does not verify"* && "$(cat gh.log)" != *"release edit"* ]]'
+rm -rf bad; cp -R rel bad; rm bad/manifest.json bad/manifest.json.sig
+: > gh.log
+draft publish v1.0.0
+check "a release with no signed manifest is left a draft" '[[ $rc == 1 && "$out" == *"no signed manifest"* && "$(cat gh.log)" != *"release edit"* ]]'
+rm -rf bad; cp -R rel bad; printf 'extra' > bad/extra.txt
+draft publish v1.0.0
+check "a file not in SHA256SUMS is left a draft" '[[ $rc == 1 && "$out" == *"do not match"* ]]'
+rm -rf bad
+export FAKE_GH_ASSETS="$PWD/pkgs"
+: > gh.log
+draft publish v1.1.0-rc.1
+check "a pre-release is published as a pre-release, never Latest, with no manifest" '[[ $rc == 0 && "$(cat gh.log)" == *"release edit v1.1.0-rc.1 --draft=false"* && "$(cat gh.log)" != *"--latest"* ]]'
+export FAKE_GH_DRAFT=false
+: > gh.log
+draft publish v1.0.0
+check "a published release is left as it is" '[[ $rc == 0 && "$out" == *"already published"* && "$(cat gh.log)" != *"release edit"* ]]'
+unset FAKE_GH_DRAFT
+draft publish v1.0.0
+check "publish with no release is refused" '[[ $rc == 1 && "$out" == *"run draft first"* ]]'
+unset FAKE_GH_ASSETS FLINT_UPDATE_PUBLIC_KEY_HEX
 
 mkdir -p testpkgs
 echo deb > testpkgs/flint-testfeed_1.0.0_amd64.deb
