@@ -4,6 +4,25 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.33.0 — 2026-11-24
+
+Flint now speaks Spanish. Choose System, English or Español in Settings → Appearance or from the command palette, and the window follows at once: its text, dates and numbers, the extra monitors' windows, and Touch ID's reason, with the tray and the Mac's menu bar from the next start. The reasons for a failed connection, a refused unlock or a remote desktop that did not open are translated too. The `flint` command stays in English, and its `--json` errors now name each message with a stable `id` and its `params`.
+
+### Added
+
+- **i18n:** The app in Spanish, and the Language row in Settings → Appearance
+- **i18n:** Dates, numbers and the extra monitors' windows in the chosen language
+- **i18n:** The tray and the OS presence dialog in the chosen language
+- **i18n:** The core's messages carry an id, and the app shows them in Spanish
+- **gui:** The language and the theme from the palette, and the macOS menu bar in the chosen language
+
+### Fixed
+
+- **gui:** The unlock screen reaches a remote vault and keeps its menu inside the window
+- **i18n:** Sentences with an element stay one line of text, and the keychain sentence in Spanish
+- **gui:** The palette's theme and language rows are found by their value in either language
+
+
 ## 0.32.0 — 2026-11-23
 
 Closing Flint's window on a Linux desktop with no tray now asks once whether to keep Flint running in the background or quit, and remembers the answer (Settings → Access). Settings → Notifications has an iPhone / Android choice: on Android the QR subscribes the ntfy app in one scan. On Windows, an update that cannot replace Flint's folder names the programs holding it.
