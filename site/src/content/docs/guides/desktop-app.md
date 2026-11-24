@@ -540,9 +540,14 @@ follow the language (`14:05`, `1,5 MB` in Spanish). Two things change differentl
 On a Mac, the **Touch ID** or Mac password dialog names what it confirms in the chosen
 language; the words macOS puts around it follow the system's. On Linux, polkit's dialog
 reads its message from Flint's policy file, in English. The
-`flint` command, its output and its errors are always English, and so are some messages
-the app passes on from the core (a failed connection's reason, for example) until they are
-translated.
+`flint` command, its output and its errors are always English.
+
+The reasons the app shows for a failed connection, a refused unlock or a remote desktop
+that did not open are in the chosen language too: why a server could not be reached, a
+login that was refused, an unknown or changed host key or certificate, a wrong password, a
+locked vault, the keychain. A detail that comes from the SSH or RDP engine itself, such as
+`ERRCONNECT_LOGON_FAILURE` or *Connection refused*, stays as the engine wrote it. Other
+messages from the core are still English and are translated over time.
 
 ## Layout on this machine
 

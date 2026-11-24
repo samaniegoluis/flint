@@ -20,6 +20,7 @@ import type { Os } from '../lib/keymap';
 import { ToastStore, type ToastKind, type ToastOptions } from '../lib/toasts';
 import { language, resolveLanguage, setLanguage, t } from '../i18n';
 import { LanguageContext } from '../i18n/react';
+import { coreText, setCoreMessages } from '../i18n/core';
 
 export type Phase = 'boot' | 'welcome' | 'create' | 'connect' | 'unlock' | 'main' | 'locked';
 
@@ -132,7 +133,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const fail = useCallback((err: unknown) => {
     const e = toFlintError(err);
-    notify(e.message, 'error');
+    notify(coreText(e), 'error');
     return e;
   }, [notify]);
 
@@ -250,6 +251,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fail(err);
     }
   }, [fail]);
+
+  // gui-e2e (milestone 69): the language switched as the Settings row does, and a
+  // rejected RPC rendered as the page renders a core message.
+  useEffect(() => {
+    const e2e = (window as unknown as { __flintE2E?: Record<string, unknown> }).__flintE2E;
+    if (!e2e) return;
+    e2e.setLanguage = (language: Settings['language']) => saveSettings({ ...settings, language });
+    e2e.coreText = (err: unknown) => coreText(toFlintError(err));
+  }, [settings, saveSettings]);
 
   // Theme, accent and density live on <html> so every token follows.
   useEffect(() => {
@@ -370,6 +380,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const i = await api.appInfo();
+        setCoreMessages(i.messages);
         setInfo(i);
         // A page reloaded behind a locked window comes back locked.
         const w = await api.windowState().catch(() => null);

@@ -1,7 +1,7 @@
 // The simulated `flint` command. Each handler mirrors src/drivers/clicmd/*.cf: the same
 // flags, messages, JSON shapes, error codes and exit codes. A command that needs the
 // person (a password, a host key answer) yields an Ask and resumes with the answer.
-import { FlintError, exitCodeFor, fail } from './errors.ts';
+import { FlintError, exitCodeFor, fail, failWith } from './errors.ts';
 import { ParsedArgs, parseFlintArgs, parsePort, parseSeconds, wantsJson } from './args.ts';
 import { dash, fields, hostTarget, json, table, yesNo } from './format.ts';
 import { RemoteShell } from './remote.ts';
@@ -191,7 +191,7 @@ export function* runFlint(args: string[], world: World, io: Io): Run {
 		return yield* dispatch(args, world, io, asJson);
 	} catch (e) {
 		if (!(e instanceof FlintError)) throw e;
-		if (asJson) io.err(json({ error: { code: e.code, message: e.message } }));
+		if (asJson) io.err(json({ error: e.id ? { code: e.code, message: e.message, id: e.id, params: e.params } : { code: e.code, message: e.message } }));
 		else io.err('flint: ' + e.message);
 		return { code: exitCodeFor(e.code) };
 	}
@@ -305,7 +305,7 @@ class Cmd {
 			return v;
 		}
 		const pw = yield { label: `Master password for '${v.name}': `, secret: true };
-		if (pw.length === 0) fail('wrong_password', 'the password is wrong or the file is not a Flint vault');
+		if (pw.length === 0) failWith('wrong_password', 'vault.wrong_password', [], 'the password is wrong or the file is not a Flint vault');
 		return v;
 	}
 
@@ -432,7 +432,7 @@ class Cmd {
 					fail('conflict', `Flint has vault '${v.name}' unlocked; change its master password there (Settings → Vault), or lock it in Flint first`);
 				}
 				const current = yield* this.secret(`Current master password for '${v.name}'`);
-				if (current.length === 0) fail('wrong_password', 'the password is wrong or the file is not a Flint vault');
+				if (current.length === 0) failWith('wrong_password', 'vault.wrong_password', [], 'the password is wrong or the file is not a Flint vault');
 				const next = yield* this.secret('new master password');
 				const again = yield* this.secret('Repeat the new master password');
 				if (next !== again) fail('invalid', 'the two entries do not match');
@@ -451,7 +451,7 @@ class Cmd {
 				const arg = p.positional(2);
 				const path = arg.startsWith('/') ? arg : LOCAL_CWD + '/' + arg.replace(/^\.\//, '');
 				const pw = yield { label: `Master password for '${v.name}': `, secret: true };
-				if (pw.length === 0) fail('wrong_password', 'the password is wrong or the file is not a Flint vault');
+				if (pw.length === 0) failWith('wrong_password', 'vault.wrong_password', [], 'the password is wrong or the file is not a Flint vault');
 				if (path === v.path) fail('invalid', `${path} is the vault itself; name the conflict copy to merge into it`);
 				const copy = v.conflictCopy;
 				if (!copy || copy.path !== path) fail('not_found', `no vault file at ${path}`);
@@ -1137,7 +1137,7 @@ class Cmd {
 				};
 				trusted = ['yes', 'y', 'YES', 'Yes', 'Y'].includes(answer.trim());
 			}
-			if (!trusted) fail('host_key', `the host key of '${h.alias}' was not trusted`);
+			if (!trusted) failWith('host_key', 'ssh.host_key_not_trusted', [h.alias], `the host key of '${h.alias}' was not trusted`);
 			const d = this.io.now();
 			const pad = (n: number) => String(n).padStart(2, '0');
 			ops.v.knownHosts.push({
@@ -1147,11 +1147,11 @@ class Cmd {
 		}
 		const hasStored = h.hasPassword || !!h.key || !!cred?.key || !!cred?.hasPassword;
 		if (!hasStored && testOnly) {
-			fail('auth', `${user}@${h.alias}: no auth method was accepted (tried: SSH agent)`);
+			failWith('auth', 'ssh.no_auth_accepted', [user, h.alias, 'SSH agent'], `${user}@${h.alias}: no auth method was accepted (tried: SSH agent)`);
 		}
 		if (!hasStored) {
 			const typed = yield { label: `${user}@${h.alias}'s password: `, secret: true };
-			if (typed.length === 0) fail('auth', `${user}@${h.alias}: no auth method was accepted (tried: SSH agent, typed password)`);
+			if (typed.length === 0) failWith('auth', 'ssh.no_auth_accepted', [user, h.alias, 'SSH agent, typed password'], `${user}@${h.alias}: no auth method was accepted (tried: SSH agent, typed password)`);
 		}
 		return user;
 	}

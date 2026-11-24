@@ -122,6 +122,9 @@ type SessionState struct {
     state:     str `json:"state"`
     code:      str `json:"code"`
     message:   str `json:"message"`
+    // The core's message id and params when the core names it (milestone 69).
+    id:        str   `json:"id"`
+    params:    []str `json:"params"`
     exit_code: i64 `json:"exit_code"`
 }
 
@@ -154,8 +157,18 @@ type SessionPrompt struct {
     host_key: HostKeyPayload  `json:"host_key"`
 }
 
+// The core's message for an event's `code` and `message`: an empty id when there is no
+// error or the core does not name it.
+fn event_message(code: str, message: str) -> CoreMessage {
+    if code.len() == 0 {
+        return CoreMessage{ code: "", id: "", params: [], message: message }
+    }
+    return core_message_of(coded(code, message))
+}
+
 fn emit_session_state(mut app: webui.App, session_id: str, state: str, code: str, message: str, exit_code: i64) {
-    app.emit("session:state", SessionState{ session: session_id, state: state, code: code, message: message, exit_code: exit_code })
+    m := event_message(code, message)
+    app.emit("session:state", SessionState{ session: session_id, state: state, code: code, message: message, id: m.id, params: m.params, exit_code: exit_code })
 }
 
 fn empty_host_key_question() -> HostKeyQuestion {

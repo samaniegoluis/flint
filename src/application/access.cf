@@ -95,7 +95,7 @@ fn confirm_window_unlock[C: Crypto, S: VaultStore, P: Presence](crypto: C, store
     if password.len() > 0 || presence.presence_method() == "password" {
         ok := try verify_master_password(crypto, store, session, password)
         if !ok {
-            return error(coded(ERR_WRONG_PASSWORD, "that is not the master password of this vault"))
+            return error(core_msg(MSG_WINDOW_WRONG_PASSWORD, []))
         }
         return
     }

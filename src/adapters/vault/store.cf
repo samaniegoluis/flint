@@ -149,7 +149,7 @@ fn (mut self: SqlVaultStore) vault_detach() {
 
 fn (self: SqlVaultStore) require_open() -> void! {
     if !self.conn().is_open() {
-        return error(coded(ERR_LOCKED, "no vault is unlocked"))
+        return error(core_msg(MSG_VAULT_NOT_UNLOCKED, []))
     }
 }
 

@@ -18,6 +18,7 @@ import { serverErrorField, TokenField } from '../sync/TokenField';
 import { plainText } from '../ui/plainText';
 import { fmtNumber, t } from '../i18n';
 import { tr } from '../i18n/react';
+import { coreText } from '../i18n/core';
 
 type Errors = { url?: string; token?: string; pw?: string; path?: string; form?: string };
 
@@ -86,7 +87,7 @@ export function ConnectRemote() {
       if (fe.code === 'wrong_password') setErrors({ pw: t('connect_remote.wrong_server_password') });
       else if (fe.code === 'exists') setErrors({ path: t('connect_remote.file_exists') });
       else if (fe.code === 'invalid' && /Strong/.test(fe.message)) setErrors({ pw: fe.message.replace(/ Change it first with `flint vault passwd`$/, ' ' + t('connect_remote.change_it_elsewhere_first')) });
-      else setErrors({ form: fe.message });
+      else setErrors({ form: coreText(fe) });
       setBusy(false);
     }
   };

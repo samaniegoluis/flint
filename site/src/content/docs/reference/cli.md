@@ -258,6 +258,20 @@ A failing command prints nothing to stdout and exits with the code of its error.
 {"error":{"code":"not_found","message":"no host 'web-02'"}}
 ```
 
+Some messages also carry an `id`, a stable name for the message, and `params`, its values
+in the order the message shows them. The desktop app uses them to show the message in its
+own language. The CLI always prints the English `message`. An `id` changes only when the
+meaning of the message changes, so a script can match on it as it does on `code`:
+
+```json
+{"error":{"code":"auth","message":"root@web-01: no auth method was accepted (tried: agent)","id":"ssh.no_auth_accepted","params":["root","web-01","agent"]}}
+```
+
+The connection messages (dialing, authentication, an unknown or changed host key), the
+unlock messages (a wrong password, a locked vault, the keychain) and the remote desktop
+messages have an id so far. Others gain one over time. An error with no id has no `id` or
+`params` field.
+
 | Exit code | Error code | Meaning |
 |---|---|---|
 | 0 | | Success |

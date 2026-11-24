@@ -86,7 +86,7 @@ class PairStore {
       if (!p) return;
       if (ev.state === 'connecting') this.patch(p.tabId, { status: 'connecting', end: null, prompt: null });
       else if (ev.state === 'ready') this.patch(p.tabId, { status: 'ready', prompt: null });
-      else this.patch(p.tabId, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: ev.exit_code } });
+      else this.patch(p.tabId, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: ev.exit_code, id: ev.id, params: ev.params } });
     });
     on<SessionPromptEvent>('session:prompt', (ev) => {
       const p = this.bySession(ev.session);

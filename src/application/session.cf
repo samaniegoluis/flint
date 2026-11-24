@@ -196,10 +196,10 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
         // that refused (the person denied it) says so (milestone 61).
         (cached_key, refused) := load_cached_key(keychain, account)
         if refused {
-            return error(coded(ERR_LOCKED, "{KEYCHAIN_REFUSED_TEXT}; the master password is needed"))
+            return error(core_msg(MSG_VAULT_KEYCHAIN_REFUSED, []))
         }
         if cached_key.len() != VAULT_KEY_LEN {
-            return error(coded(ERR_LOCKED, "the vault at {path} is locked; the master password is needed"))
+            return error(core_msg(MSG_VAULT_LOCKED, [path]))
         }
         master = cached_key
         crypto.wipe(cached_key)
@@ -216,7 +216,7 @@ fn unlock_vault[C: Crypto, S: VaultStore, K: Keychain, R: RecentStore](crypto: C
         if from_cache && error_code_of(msg) == ERR_WRONG_PASSWORD {
             // The cached key is stale (the file was replaced): drop it and ask.
             _ = keychain.keychain_forget(account)
-            return error(coded(ERR_LOCKED, "the cached key no longer opens {path}; the master password is needed"))
+            return error(core_msg(MSG_VAULT_CACHED_KEY_STALE, [path]))
         }
         return error(msg)
     }

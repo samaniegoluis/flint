@@ -13,6 +13,7 @@ import { rdpEndKind, sessions, type Pane } from './store';
 import { plainText } from '../ui/plainText';
 import { fmtDate, t } from '../i18n';
 import { tr } from '../i18n/react';
+import { coreText } from '../i18n/core';
 
 /** "4f:a2:…" as the design groups it: upper-case bytes split by spaces. */
 export function groupedFingerprint(fp: string): string {
@@ -143,7 +144,7 @@ export function RdpCard({ pane, active, onEditHost, onKnownHosts }: {
       <div className="prompt-h"><span className="prompt-ic danger"><Icon name={text.icon} /></span>
         <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{text.title}</h2>
           <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{text.body}</p></div></div>
-      {pane.end?.message && <span className="mono muted" style={{ fontSize: 'var(--fs-xs)' }}>{pane.end.message}</span>}
+      {pane.end?.message && <span className="mono muted" style={{ fontSize: 'var(--fs-xs)' }}>{coreText(pane.end)}</span>}
       {text.hint && <span className="hint">{text.hint}</span>}
       <div className="row" style={{ gap: 'var(--sp-2)' }}>
         <button className="btn btn-ghost" onClick={() => onEditHost(pane.alias)}>{t('rdp_cards.edit_host')}</button>
@@ -159,7 +160,7 @@ const GRAPHICS_LABEL: Record<string, string> = { auto: 'rdp_cards.graphics.auto'
 
 /** "the connection was lost (ERRCONNECT_…) · 10:21": why, and when (design 22c7). */
 export function lostReason(pane: Pane): string {
-  const msg = pane.end?.message ?? '';
+  const msg = pane.end ? coreText(pane.end) : '';
   if (!pane.endedAt) return msg;
   const at = fmtDate(pane.endedAt, { hour: '2-digit', minute: '2-digit' });
   return msg ? `${msg} · ${at}` : at;

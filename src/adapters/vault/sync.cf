@@ -202,7 +202,7 @@ fn (self: SqlVaultStore) vault_blob_records(data: []byte, page_key: []byte, salt
         s = self.open_salt
     }
     if key.len() == 0 {
-        return error(coded(ERR_LOCKED, "no vault is unlocked"))
+        return error(core_msg(MSG_VAULT_NOT_UNLOCKED, []))
     }
     dir := try self.scratch_dir()
     fs.mkdir_all(dir) or err {

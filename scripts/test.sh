@@ -206,5 +206,7 @@ done
 # The release script and cliff.toml (milestone 32), with the whole run only.
 if [[ $# -eq 0 ]]; then
   "$root/scripts/release-test.sh" || status=1
+  # The core's message ids against the page's catalogs (milestone 69).
+  "$root/scripts/i18n-missing.sh" || status=1
 fi
 exit "$status"

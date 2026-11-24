@@ -1,6 +1,8 @@
 // Shapes of the GUI driver's RPC replies (src/drivers/gui/rpc.cf). Secrets never
 // appear here: hosts and credentials carry only `has_password`.
 
+import type { CoreMessageDef } from '../i18n/core';
+
 export interface AppInfo {
   version: string;
   os: 'mac' | 'linux' | 'windows';
@@ -13,6 +15,8 @@ export interface AppInfo {
   tray: boolean;
   /** Milestone 66: the OS's language as an app language ('en' or 'es'). */
   system_language: string;
+  /** Milestone 69: the core's message ids and English templates (D-084). */
+  messages?: CoreMessageDef[];
 }
 
 export interface RecentView {
@@ -459,6 +463,9 @@ export interface RdpStateEvent {
   state: 'connecting' | 'ended';
   code: string;
   message: string;
+  /** Milestone 69: the core's message id and params, when the core names it. */
+  id?: string;
+  params?: string[];
 }
 
 /** A pointer event for a remote desktop, in desktop pixels. */
@@ -475,6 +482,9 @@ export interface SessionStateEvent {
   state: 'connecting' | 'ready' | 'ended';
   code: string;
   message: string;
+  /** Milestone 69: the core's message id and params, when the core names it. */
+  id?: string;
+  params?: string[];
   exit_code: number;
 }
 
@@ -492,6 +502,9 @@ export interface HostTestEvent {
   session: string;
   code: string;
   message: string;
+  /** Milestone 69: the core's message id and params, when the core names it. */
+  id?: string;
+  params?: string[];
   host: string;
   target: string;
   hops: number;

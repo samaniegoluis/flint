@@ -14,6 +14,7 @@ import { Icon, Logo } from '../ui/Icon';
 import { plainText } from '../ui/plainText';
 import { t } from '../i18n';
 import { tr } from '../i18n/react';
+import { coreText } from '../i18n/core';
 
 export function WindowLock() {
   const { windowLock, openWindow, os, info } = useApp();
@@ -36,7 +37,7 @@ export function WindowLock() {
       await openWindow(password);
     } catch (err) {
       const fe = toFlintError(err);
-      setError(fe.code === 'wrong_password' ? t('window_lock.wrong_password') : fe.code === 'denied' ? t('window_lock.not_confirmed') : fe.message);
+      setError(fe.code === 'wrong_password' ? t('window_lock.wrong_password') : fe.code === 'denied' ? t('window_lock.not_confirmed') : coreText(fe));
       setBusy('');
       setTimeout(() => { input.current?.focus(); input.current?.select(); }, 0);
     }

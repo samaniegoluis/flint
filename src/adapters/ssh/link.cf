@@ -67,7 +67,7 @@ fn (mut self: SshLink) link_dial(hostname: str, port: i64, user: str, timeout_se
         }
     }
     if fd < 0 {
-        return error(coded(ERR_NETWORK, "the jump host could not reach {hostname}:{port}: {msg}"))
+        return error(core_msg(MSG_SSH_JUMP_DIAL_FAILED, [hostname, "{port}", msg]))
     }
     self.hops.push(try ssh_dial_over(hostname, i32(port), user, timeout_secs, fd, host_key_algos))
 }
@@ -88,10 +88,10 @@ fn (self: SshLink) link_server_key() -> ServerKey! {
         }
     }
     if rc != 0 || key_type.len() == 0 {
-        return error(coded(ERR_NETWORK, "cannot read the server host key"))
+        return error(core_msg(MSG_SSH_HOST_KEY_UNREADABLE, []))
     }
     fp := conn.host_key_sha256() or err {
-        return error(coded(ERR_NETWORK, "cannot read the server host key"))
+        return error(core_msg(MSG_SSH_HOST_KEY_UNREADABLE, []))
     }
     return ServerKey{ key_type: key_type, fingerprint: fp }
 }
@@ -101,12 +101,12 @@ fn auth_result(rc: i32, method: str, conn: SshConn) -> void! {
         return
     }
     if rc == 3 {
-        return error(coded(ERR_AUTH, "no SSH agent is running (SSH_AUTH_SOCK is not set)"))
+        return error(core_msg(MSG_SSH_NO_AGENT, []))
     }
     if rc == 1 {
-        return error(coded(ERR_AUTH, "{method} authentication was rejected"))
+        return error(core_msg(MSG_SSH_AUTH_REJECTED, [method]))
     }
-    return error(coded(ERR_NETWORK, "{method} authentication failed: {conn.last_error()}"))
+    return error(core_msg(MSG_SSH_AUTH_FAILED, [method, conn.last_error()]))
 }
 
 fn (mut self: SshLink) link_auth_key(private_key: str, passphrase: str) -> void! {
@@ -119,7 +119,7 @@ fn (mut self: SshLink) link_auth_key(private_key: str, passphrase: str) -> void!
         rc = flint_ssh::auth_key(conn.session, private_key, passphrase, unreadable);
     }
     if unreadable {
-        return error(coded(ERR_AUTH, "a stored private key could not be read"))
+        return error(core_msg(MSG_SSH_KEY_UNREADABLE, []))
     }
     try auth_result(rc, "public-key", conn)
 }
@@ -203,7 +203,7 @@ fn (mut self: SshLink) link_channel_eof() -> void! {
         rc = conn.channel ? ssh_channel_send_eof(conn.channel) : -1;
     }
     if rc != 0 {
-        return error(coded(ERR_NETWORK, "the connection was lost"))
+        return error(core_msg(MSG_SSH_CONNECTION_LOST, []))
     }
 }
 
@@ -227,7 +227,7 @@ fn (mut self: SshLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
         }
     }
     if !ok {
-        return error(coded(ERR_NETWORK, "the connection was lost: {conn.last_error()}"))
+        return error(core_msg(MSG_SSH_CONNECTION_LOST_REASON, [conn.last_error()]))
     }
     return ExecChunk{ stdout: out_text, stderr: err_text, done: done, exit_code: exit_code, signal: signal }
 }
@@ -235,7 +235,7 @@ fn (mut self: SshLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
 fn (mut self: SshLink) link_channel_write(data: str) -> void! {
     conn := try self.last_hop()
     conn.write(data) or err {
-        return error(coded(ERR_NETWORK, "the connection was lost"))
+        return error(core_msg(MSG_SSH_CONNECTION_LOST, []))
     }
 }
 
@@ -258,7 +258,7 @@ fn (mut self: SshLink) link_keepalive() -> void! {
         rc = conn.session ? flint_ssh::send_keepalive(conn.session) : -1;
     }
     if rc != 0 {
-        return error(coded(ERR_NETWORK, "the connection was lost: {conn.last_error()}"))
+        return error(core_msg(MSG_SSH_CONNECTION_LOST_REASON, [conn.last_error()]))
     }
 }
 

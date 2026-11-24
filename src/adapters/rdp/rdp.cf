@@ -24,45 +24,45 @@ fn new_freerdp_desktop() -> FreeRdpDesktop {
 // The shim's result codes as the core's stable error codes.
 fn rdp_error(code: i64, detail: str) -> str {
     if code == 1 {
-        return coded(ERR_AUTH, "the server refused the user or password ({detail})")
+        return core_msg(MSG_RDP_AUTH, [detail])
     }
     if code == 2 {
-        return coded(ERR_NETWORK, "could not reach the server ({detail})")
+        return core_msg(MSG_RDP_UNREACHABLE, [detail])
     }
     if code == 3 {
-        return coded(ERR_TIMEOUT, "the server did not answer in time")
+        return core_msg(MSG_RDP_TIMEOUT, [])
     }
     if code == 4 {
-        return coded(ERR_REFUSED, "the server refused the connection ({detail})")
+        return core_msg(MSG_RDP_REFUSED, [detail])
     }
     if code == 5 {
-        return coded(ERR_NETWORK, "the secure connection failed ({detail})")
+        return core_msg(MSG_RDP_TLS_FAILED, [detail])
     }
     if code == 7 {
-        return coded(ERR_NETWORK, "the session is closed")
+        return core_msg(MSG_RDP_SESSION_CLOSED, [])
     }
     if code == 8 {
-        return coded(ERR_HOST_KEY, "the server's certificate is not the trusted one")
+        return core_msg(MSG_RDP_CERT_MISMATCH, [])
     }
     if code == 9 {
-        return coded(ERR_REFUSED, "nothing answers on the Remote Desktop port: Remote Desktop may be off, or a firewall blocks it")
+        return core_msg(MSG_RDP_PORT_CLOSED, [])
     }
     if code == 10 {
-        return coded(ERR_NETWORK, "the connection was lost ({detail})")
+        return core_msg(MSG_RDP_LOST, [detail])
     }
     if code == 11 {
-        return coded(ERR_REFUSED, "the server ended the session: {detail}")
+        return core_msg(MSG_RDP_ENDED, [detail])
     }
     if code == 12 {
         return coded(ERR_INVALID, "unknown key '{detail}'")
     }
     if code == 13 {
-        return coded(ERR_REFUSED, "the server offers only Standard RDP Security, where no certificate protects the password; Flint refuses it. Set the server to require SSL (TLS) or Network Level Authentication")
+        return core_msg(MSG_RDP_STANDARD_SECURITY, [])
     }
     if code == 14 {
-        return coded(ERR_REFUSED, "{RDP_SERVER_CLOSED_SETUP} ({detail})")
+        return core_msg(MSG_RDP_SETUP_CLOSED, [detail])
     }
-    return coded(ERR_INTERNAL, "RDP failed ({detail})")
+    return core_msg(MSG_RDP_FAILED, [detail])
 }
 
 fn (self: FreeRdpDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> RdpDesktop! {

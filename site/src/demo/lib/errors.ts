@@ -33,15 +33,25 @@ export function exitCodeFor(code: ErrorCode): number {
 	return ERROR_CODES.indexOf(code) + 1;
 }
 
-/** An error the simulated CLI reports, with the real CLI's code and message. */
+/** An error the simulated CLI reports, with the real CLI's code and message, and the
+ * core's message id and params when the core names it (src/domain/messages.cf). */
 export class FlintError extends Error {
 	readonly code: ErrorCode;
-	constructor(code: ErrorCode, message: string) {
+	readonly id: string;
+	readonly params: string[];
+	constructor(code: ErrorCode, message: string, id = '', params: string[] = []) {
 		super(message);
 		this.code = code;
+		this.id = id;
+		this.params = params;
 	}
 }
 
 export function fail(code: ErrorCode, message: string): never {
 	throw new FlintError(code, message);
+}
+
+/** A failure the core names: `--json` shows its id and params beside the message. */
+export function failWith(code: ErrorCode, id: string, params: string[], message: string): never {
+	throw new FlintError(code, message, id, params);
 }

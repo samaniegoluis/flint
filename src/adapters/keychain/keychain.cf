@@ -32,16 +32,18 @@ fn new_os_keychain(enabled: bool) -> OsKeychain {
     return OsKeychain{ enabled: enabled }
 }
 
-fn keychain_status_error(rc: i32, action: str) -> str {
+// `unavailable` and `refused` are the message ids for the action (store, read,
+// remove the vault key).
+fn keychain_status_error(rc: i32, unavailable: str, refused: str) -> str {
     if rc == 2 {
-        return coded(ERR_KEYCHAIN, "the OS keychain is not available ({action})")
+        return core_msg(unavailable, [])
     }
-    return coded(ERR_KEYCHAIN, "the OS keychain refused to {action}")
+    return core_msg(refused, [])
 }
 
 fn (self: OsKeychain) keychain_save(account: str, secret: []byte) -> void! {
     if !self.enabled {
-        return error(coded(ERR_KEYCHAIN, "the keychain is turned off (FLINT_KEYCHAIN=off)"))
+        return error(core_msg(MSG_KEYCHAIN_OFF, []))
     }
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-008
@@ -49,7 +51,7 @@ fn (self: OsKeychain) keychain_save(account: str, secret: []byte) -> void! {
         rc = flint_kc::save(keychain_service(), account, secret);
     }
     if rc != 0 {
-        return error(keychain_status_error(rc, "store the vault key"))
+        return error(keychain_status_error(rc, MSG_KEYCHAIN_UNAVAILABLE_STORE, MSG_KEYCHAIN_REFUSED_STORE))
     }
 }
 
@@ -67,7 +69,7 @@ fn (self: OsKeychain) keychain_load(account: str) -> []byte! {
         return []
     }
     if rc != 0 {
-        return error(keychain_status_error(rc, "read the vault key"))
+        return error(keychain_status_error(rc, MSG_KEYCHAIN_UNAVAILABLE_READ, MSG_KEYCHAIN_REFUSED_READ))
     }
     return found
 }
@@ -84,6 +86,6 @@ fn (self: OsKeychain) keychain_forget(account: str) -> void! {
     // 1: no entry. 2: no keychain to reach, so no cached key Flint could use either
     // (unlock treats an unreachable keychain the same way).
     if rc != 0 && rc != 1 && rc != 2 {
-        return error(keychain_status_error(rc, "remove the vault key"))
+        return error(keychain_status_error(rc, MSG_KEYCHAIN_UNAVAILABLE_REMOVE, MSG_KEYCHAIN_REFUSED_REMOVE))
     }
 }

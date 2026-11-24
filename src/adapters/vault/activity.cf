@@ -73,7 +73,7 @@ fn (self: SqlVaultStore) act() -> CipherDb {
 
 fn (self: SqlVaultStore) require_activity() -> void! {
     if !self.act().is_open() {
-        return error(coded(ERR_LOCKED, "no vault is unlocked"))
+        return error(core_msg(MSG_VAULT_NOT_UNLOCKED, []))
     }
 }
 

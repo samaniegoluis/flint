@@ -23,6 +23,7 @@ import { TypeBadge } from './TypeBadge';
 import { plainText } from '../ui/plainText';
 import { t } from '../i18n';
 import { tr } from '../i18n/react';
+import { coreText } from '../i18n/core';
 
 type TestState =
   | { s: 'idle' }
@@ -168,7 +169,7 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
     const offEnd = on<HostTestEvent>('host:test', (ev) => {
       if (ev.session !== testId.current) return;
       testId.current = '';
-      if (ev.code) { failRef.current(ev.code, ev.message); return; }
+      if (ev.code) { failRef.current(ev.code, coreText(ev)); return; }
       setTest({ s: 'ok', ev });
       notify({ text: testOkText(testWho.current.alias, ev.target, ev.duration_ms, ev.hops), key: testWho.current.key });
       refreshCatalog();
@@ -196,7 +197,7 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
     } catch (err) {
       testId.current = '';
       const e = toFlintError(err);
-      failTest(e.code, e.message);
+      failTest(e.code, coreText(e));
     }
   };
   const answerKey = (ok: boolean) => {

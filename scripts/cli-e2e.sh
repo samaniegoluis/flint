@@ -131,6 +131,7 @@ expect 2 "missing hostname is a usage error" "$MI" -- host add nohost "${M[@]}"
 expect 2 "unknown flag is a usage error" "" -- host list --bogus
 expect 3 "unknown host is not_found" "$MI" -- --json host show nope "${M[@]}"
 check "JSON error on stderr with a code" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "not_found" ]]'
+check "a message the core names no id for has no id field (milestone 69)" '[[ "$(echo "$err" | json_get "sorted(d[\"error\"])")" == "['"'"'code'"'"', '"'"'message'"'"']" ]]'
 check "nothing on stdout for an error" '[[ -z "$out" ]]'
 expect 7 "a jump loop is refused" "$MI" -- host edit bastion --jump web-01 "${M[@]}"
 expect 0 "host edit" "$MI" -- --json host edit web-01 --port 22 --no-password --tag only "${M[@]}"
@@ -166,6 +167,9 @@ echo "== lock, unlock, wrong password"
 expect 0 "vault lock" "" -- vault lock
 expect 5 "a locked vault with no terminal fails with locked" "" -- host list
 expect 6 "a wrong master password fails with wrong_password" "wrong password here"$'\n' -- host list --master-stdin
+check "its text is the one it always was (milestone 69)" '[[ "$err" == "flint: the password is wrong or the file is not a Flint vault" ]]'
+expect 6 "the same with --json" "wrong password here"$'\n' -- --json host list --master-stdin
+check "--json names the message: vault.wrong_password, no params" '[[ "$(echo "$err" | json_get "d[\"error\"][\"id\"], d[\"error\"][\"params\"], d[\"error\"][\"message\"]")" == "('"'"'vault.wrong_password'"'"', [], '"'"'the password is wrong or the file is not a Flint vault'"'"')" ]]'
 expect 0 "the master password on stdin opens it for one command" "$MASTER"$'\n' -- --json host list --master-stdin
 expect 5 "and nothing is cached: the next command is locked again" "" -- host list
 check "the CLI never caches the key (D-042)" '[[ "$cached" == "False" ]]'
@@ -297,6 +301,7 @@ expect 0 "host add inner behind local" "$SMI" -- host add inner --hostname 127.0
 expect 11 "an unknown host key with no terminal fails with host_key" "$SMI" -- --json exec local "${SM[@]}" -- echo hi
 check "the host_key error is JSON with its code" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "host_key" ]]'
 check "the host_key error shows the fingerprint" '[[ "$err" == *"SHA256:"* ]]'
+check "the host_key error names its id and params (milestone 69)" '[[ "$(echo "$err" | json_get "d[\"error\"][\"id\"]")" == "ssh.host_key_unknown" && "$(echo "$err" | json_get "d[\"error\"][\"params\"][0]")" == "local" && "$(echo "$err" | json_get "d[\"error\"][\"params\"][3]")" == SHA256:* ]]'
 expect 0 "exec with --accept-new-host-key" "$SMI" -- exec local --accept-new-host-key "${SM[@]}" -- echo e2e-exec-ok
 check "exec streams stdout" '[[ "$out" == "e2e-exec-ok" ]]'
 expect 3 "exec exits with the remote status" "$SMI" -- exec local "${SM[@]}" -- exit 3

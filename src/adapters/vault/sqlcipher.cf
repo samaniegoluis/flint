@@ -126,7 +126,7 @@ fn open_cipher_db(path: str, key: []byte, salt: []byte, create: bool) -> CipherD
         msg := db.last_error()
         db.close_db()
         if rc == SQLITE_NOTADB_CODE {
-            return error("wrong_password: the password is wrong or the file is not a Flint vault")
+            return error(core_msg(MSG_VAULT_WRONG_PASSWORD, []))
         }
         return error("io: cannot open the vault file: " + msg)
     }

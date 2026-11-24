@@ -64,7 +64,7 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
             sock = flint_ssh::dial_tcp(host, static_cast<int>(port), static_cast<long>(timeout_secs), dial_err);
         }
         if sock < 0 {
-            return error(coded(ERR_NETWORK, "connect to {host}:{port} failed: {dial_err}"))
+            return error(core_msg(MSG_SSH_DIAL_FAILED, [host, "{port}", dial_err]))
         }
     }
     // CF-079: no `if` expression.
@@ -134,7 +134,7 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
     if rc != 0 {
         msg := conn.last_error()
         conn.disconnect()
-        return error(coded(ERR_NETWORK, "connect to {host}:{port} failed: {msg}"))
+        return error(core_msg(MSG_SSH_DIAL_FAILED, [host, "{port}", msg]))
     }
     return conn
 }

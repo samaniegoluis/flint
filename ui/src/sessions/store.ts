@@ -26,6 +26,9 @@ export interface SessionEnd {
   code: string;
   message: string;
   exit_code: number;
+  /** Milestone 69: the core's message id and params, when the core names it. */
+  id?: string;
+  params?: string[];
 }
 
 /** A remote desktop that is up: its size and where its frames are read (D-071). */
@@ -181,7 +184,7 @@ class SessionStore {
       if (ev.state === 'connecting') this.patch(t.id, { status: 'connecting', end: null, prompt: null });
       else if (ev.state === 'ready') this.patch(t.id, { status: 'ready', prompt: null, connectedAt: Date.now() });
       else {
-        this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: ev.exit_code } });
+        this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: ev.exit_code, id: ev.id, params: ev.params } });
         this.bySession.delete(ev.session);
         this.inputs.drop(ev.session);
       }
@@ -199,7 +202,7 @@ class SessionStore {
       if (!t || t.session !== ev.tab) return;
       if (ev.state === 'connecting') this.patch(t.id, { status: 'connecting', end: null, prompt: null });
       else {
-        this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: 0 }, endedAt: Date.now(), graphicsSwitching: false });
+        this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: 0, id: ev.id, params: ev.params }, endedAt: Date.now(), graphicsSwitching: false });
         // Milestone 38: the extra monitors say the connection was lost (22f3b).
         monitors.lost(t.id);
         this.bySession.delete(ev.tab);

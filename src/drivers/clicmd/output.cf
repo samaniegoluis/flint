@@ -17,6 +17,28 @@ type ErrorEnvelope struct {
     err_body: ErrorBody `json:"error"`
 }
 
+// A message the core names (milestone 69, D-084): its id and params beside the code
+// and the English text the CLI prints.
+type ErrorBodyWithId struct {
+    code:    str   `json:"code"`
+    message: str   `json:"message"`
+    id:      str   `json:"id"`
+    params:  []str `json:"params"`
+}
+
+type ErrorEnvelopeWithId struct {
+    err_body: ErrorBodyWithId `json:"error"`
+}
+
+// The JSON for an error on stderr: `id` and `params` only when the core names it.
+fn error_json(msg: str) -> str {
+    m := core_message_of(msg)
+    if m.id.len() == 0 {
+        return json.stringify(ErrorEnvelope{ err_body: ErrorBody{ code: m.code, message: m.message } })
+    }
+    return json.stringify(ErrorEnvelopeWithId{ err_body: ErrorBodyWithId{ code: m.code, message: m.message, id: m.id, params: m.params } })
+}
+
 type RemovedNote struct {
     removed: str `json:"removed"`
     name:    str `json:"name"`
@@ -31,7 +53,7 @@ fn report_error(msg: str, as_json: bool) -> i32 {
     code := error_code_of(msg)
     text := error_text_of(msg)
     if as_json {
-        write_stderr(json.stringify(ErrorEnvelope{ err_body: ErrorBody{ code: code, message: text } }) + "\n")
+        write_stderr(error_json(msg) + "\n")
     } else {
         write_stderr("flint: " + text + "\n")
     }

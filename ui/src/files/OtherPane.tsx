@@ -22,6 +22,7 @@ import { PathField } from './PathField';
 import { plainText } from '../ui/plainText';
 import { t } from '../i18n';
 import { tr } from '../i18n/react';
+import { coreText } from '../i18n/core';
 
 // ---- 14d1: the server picker -----------------------------------------------------------
 
@@ -331,7 +332,7 @@ function PaneState({ tabId, pair, onEditHost }: { tabId: string; pair: Pair; onE
       <div className="prompt-h"><span className={'prompt-ic danger'}><Icon name={auth ? 'lock' : changed ? 'shield' : 'wifi-off'} /></span>
         <div className="col grow" style={{ gap: 2 }}><h2 className="prompt-t" style={{ fontSize: 'var(--fs-md)' }}>{auth ? t('other_pane.authentication_failed') : changed ? t('other_pane.the_host_key_has_changed') : t('other_pane.not_connected_to_alias', { alias: pair.alias })}</h2>
           <span className="hint">{changed ? t('other_pane.nothing_was_sent_open_a') : auth ? <>{tr('other_pane.span_refused_the_login', { span: <span className="mono">{pair.alias}</span> })}</> : t('other_pane.the_pane_has_no_session')}</span></div></div>
-      {end?.message && <span className="mono hint" style={{ overflowWrap: 'anywhere' }}>{end.message}</span>}
+      {end?.message && <span className="mono hint" style={{ overflowWrap: 'anywhere' }}>{coreText(end)}</span>}
       <div className="row" style={{ gap: 'var(--sp-2)' }}>
         {auth && <button className="btn btn-ghost btn-sm" onClick={() => onEditHost(pair.alias)}>{t('other_pane.edit_host')}</button>}
         <span className="grow" />

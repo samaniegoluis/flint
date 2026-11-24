@@ -13,6 +13,7 @@ import { sessions, type Pane } from './store';
 import { plainText } from '../ui/plainText';
 import { t } from '../i18n';
 import { tr } from '../i18n/react';
+import { coreText } from '../i18n/core';
 
 function hostLine(h: HostView | undefined, alias: string): string {
   if (!h) return alias;
@@ -89,7 +90,7 @@ export function SessionCard({ tab, active, split, onEditHost }: {
         <div className="card prompt" role="alertdialog" aria-label={t('session_cards.authentication_failed')} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sessions.reconnect(tab.id); } if (e.key === 'Escape') { e.preventDefault(); sessions.close(tab.id); } }}>
           <div className="prompt-h"><span className="prompt-ic danger"><Icon name="lock" /></span>
             <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{t('session_cards.authentication_failed')}</h2>
-              <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{tab.end.message}</p></div></div>
+              <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{coreText(tab.end)}</p></div></div>
           <span className="hint">{t('session_cards.if_a_password_changed_recently')}</span>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
             <button className="btn btn-ghost" onClick={() => onEditHost(tab.alias)}>{t('session_cards.edit_host')}<Kbd action="editHost" /></button>
@@ -107,7 +108,7 @@ export function SessionCard({ tab, active, split, onEditHost }: {
         <div className="card prompt" role="alert" style={{ width: 460 }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sessions.reconnect(tab.id); } if (e.key === 'Escape') { e.preventDefault(); sessions.close(tab.id); } }}>
           <div className="prompt-h"><span className="prompt-ic danger"><Icon name={tab.end.code === 'host_key' ? 'shield' : 'wifi-off'} /></span>
             <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{lost ? t('session_cards.connection_lost') : t('session_cards.could_not_connect_to_alias', { alias: tab.alias })}</h2>
-              <span className="mono muted" style={{ fontSize: 'var(--fs-xs)' }}>{tab.end.message}</span></div></div>
+              <span className="mono muted" style={{ fontSize: 'var(--fs-xs)' }}>{coreText(tab.end)}</span></div></div>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
             <button className="btn btn-ghost" onClick={() => sessions.close(tab.id)}>{split ? t('session_cards.close_pane') : t('session_cards.close_tab')}<Kbd action="closeTab" /></button>
             <span className="grow" />

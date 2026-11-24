@@ -1,0 +1,107 @@
+package domain
+
+// Params that try to confuse the matcher: the literal text around them, a colon,
+// parentheses and an empty value.
+fn tricky_params(n: usize) -> []str {
+    samples := ["web (prod): db", "x) y", "", "a: b", "SHA256:abc/def+g", "22"]
+    mut out: []str = []
+    for i in 0..n {
+        out.push(samples[i % samples.len()])
+    }
+    return out
+}
+
+test "every message id is unique and its template is well formed" {
+    defs := message_defs()
+    for i, d in defs {
+        for j, other in defs {
+            if i != j {
+                assert(d.id != other.id)
+            }
+        }
+        t := parse_message_template(d.text)
+        assert_eq(t.lits.len(), t.names.len() + 1)
+        // Adjacent params cannot be told apart.
+        for k in 1..t.names.len() {
+            assert(t.lits[k].len() > 0)
+        }
+        assert(known_error_codes().len() > 0)
+        assert(exit_code_for(d.code) >= 1)
+        assert(!d.text.contains("{}"))
+    }
+}
+
+test "every message matches back to its own id and params" {
+    for d in message_defs() {
+        order := msg_param_order(parse_message_template(d.text).names)
+        params := tricky_params(order.len())
+        got := core_message_of(core_msg(d.id, params))
+        assert_eq(got.id, d.id)
+        assert_eq(got.code, d.code)
+        assert_eq(got.message, message_text(d.id, params))
+        // A param holding the text after it can make a message ambiguous: any split
+        // the matcher picks must give the same sentence back.
+        assert_eq(got.params.len(), params.len())
+        assert_eq(message_text(d.id, got.params), got.message)
+    }
+}
+
+test "plain params match back too" {
+    for d in message_defs() {
+        order := msg_param_order(parse_message_template(d.text).names)
+        mut params: []str = []
+        for name in order {
+            params.push("v-" + name)
+        }
+        got := core_message_of(core_msg(d.id, params))
+        assert_eq(got.id, d.id)
+        assert_eq(got.params.len(), params.len())
+        for i, p in params {
+            assert_eq(got.params[i], p)
+        }
+    }
+}
+
+test "a migrated message keeps the text it had" {
+    assert_eq(core_msg(MSG_SSH_DIAL_FAILED, ["10.0.0.5", "22", "connection refused"]), "network: connect to 10.0.0.5:22 failed: connection refused")
+    assert_eq(core_msg(MSG_SSH_AUTH_REJECTED, ["public-key"]), "auth: public-key authentication was rejected")
+    assert_eq(core_msg(MSG_SSH_NO_AUTH_ACCEPTED, ["root", "web", "agent, typed password"]), "auth: root@web: no auth method was accepted (tried: agent, typed password)")
+    assert_eq(core_msg(MSG_SSH_HOST_KEY_CHANGED, ["web", "web.lan", "ssh-ed25519", "SHA256:x"]), "host_key: the host key of 'web' (web.lan) has CHANGED; it is now ssh-ed25519 SHA256:x. Someone may be intercepting the connection. If the server was reinstalled, run `flint known-host rm web` and connect again")
+    assert_eq(core_msg(MSG_SSH_HOST_KEY_UNKNOWN, ["web", "[web.lan]:2222", "ssh-ed25519", "SHA256:x"]), "host_key: 'web' ([web.lan]:2222) is not a known host and there is no terminal to confirm its key (ssh-ed25519 SHA256:x); connect once from a terminal, or pass --accept-new-host-key")
+    assert_eq(core_msg(MSG_VAULT_WRONG_PASSWORD, []), "wrong_password: the password is wrong or the file is not a Flint vault")
+    assert_eq(core_msg(MSG_VAULT_NOT_UNLOCKED, []), "locked: no vault is unlocked")
+    assert_eq(core_msg(MSG_VAULT_KEYCHAIN_REFUSED, []), "locked: the OS keychain refused to give Flint the remembered key; the master password is needed")
+    assert_eq(core_msg(MSG_KEYCHAIN_REFUSED_READ, []), "keychain: the OS keychain refused to read the vault key")
+    assert_eq(core_msg(MSG_RDP_AUTH, ["ERRCONNECT_LOGON_FAILURE"]), "auth: the server refused the user or password (ERRCONNECT_LOGON_FAILURE)")
+    assert_eq(core_msg(MSG_RDP_SETUP_CLOSED, ["x"]), "refused: the server closed the connection during setup (x)")
+    assert_eq(core_msg(MSG_RDP_CERT_CHANGED, ["desk", "desk.lan:3389", "AB:CD"]), "host_key: the certificate of 'desk' (desk.lan:3389) has CHANGED; it is now AB:CD. Someone may be intercepting the connection. If the server was reinstalled, forget the old one in Settings → Known hosts (or `flint known-host rm desk`) and connect again")
+}
+
+test "a name used twice must match the same text" {
+    text := "the host key of 'web' (web.lan) has CHANGED; it is now ssh-ed25519 SHA256:x. Someone may be intercepting the connection. If the server was reinstalled, run `flint known-host rm other` and connect again"
+    got := core_message_of(coded(ERR_HOST_KEY, text))
+    assert_eq(got.id, "")
+    assert_eq(got.message, text)
+}
+
+test "a message with no id keeps its code and text" {
+    got := core_message_of(coded(ERR_NOT_FOUND, "host 'web'"))
+    assert_eq(got.code, ERR_NOT_FOUND)
+    assert_eq(got.id, "")
+    assert_eq(got.params.len(), 0)
+    assert_eq(got.message, "host 'web'")
+    // The code is part of the match: the same text under another code has no id.
+    other := core_message_of(coded(ERR_IO, "no vault is unlocked"))
+    assert_eq(other.id, "")
+    plain := core_message_of("something broke")
+    assert_eq(plain.code, ERR_INTERNAL)
+    assert_eq(plain.id, "")
+}
+
+test "similar messages keep their own ids" {
+    assert_eq(core_message_of(core_msg(MSG_SSH_CONNECTION_LOST, [])).id, MSG_SSH_CONNECTION_LOST)
+    assert_eq(core_message_of(core_msg(MSG_SSH_CONNECTION_LOST_REASON, ["eof"])).id, MSG_SSH_CONNECTION_LOST_REASON)
+    assert_eq(core_message_of(core_msg(MSG_RDP_LOST, ["eof"])).id, MSG_RDP_LOST)
+    assert_eq(core_message_of(core_msg(MSG_RDP_REFUSED, ["x"])).id, MSG_RDP_REFUSED)
+    assert_eq(core_message_of(core_msg(MSG_RDP_SETUP_CLOSED, ["x"])).id, MSG_RDP_SETUP_CLOSED)
+}

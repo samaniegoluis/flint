@@ -96,10 +96,14 @@ type RdpState struct {
     state:   str `json:"state"`
     code:    str `json:"code"`
     message: str `json:"message"`
+    // The core's message id and params when the core names it (milestone 69).
+    id:      str   `json:"id"`
+    params:  []str `json:"params"`
 }
 
 fn emit_rdp_state(mut app: webui.App, tab: str, state: str, code: str, message: str) {
-    app.emit("rdp:state", RdpState{ tab: tab, state: state, code: code, message: message })
+    m := event_message(code, message)
+    app.emit("rdp:state", RdpState{ tab: tab, state: state, code: code, message: message, id: m.id, params: m.params })
 }
 
 // Checks a request and opens the tab's mailbox. The caller spawns the worker.

@@ -1,0 +1,292 @@
+package domain
+
+// The core's messages (milestone 69, D-084). A message is `{code, id, params,
+// message}`: `code` the error category, `id` a stable dotted name, `params` its values
+// as strings, in the order its text names them, and `message` the English sentence.
+// Every id and its English text live here; a call site names the id and passes the
+// params (`core_msg`), so the text the CLI prints stays what it was.
+//
+// cfire errors carry only text, so an id never travels inside the error: a driver
+// that shows a message (`--json`, an event to the page) finds its id again by
+// matching the text against these templates (`core_message_of`), and the page does
+// the same for an RPC that failed, from the templates `app_info` sends it.
+//
+// Principle 21: the core is never translated; the page renders `core.<id>` from its
+// catalog and falls back to `message`. A param carries only what the English text
+// already shows, never a secret (Principle 6).
+
+type MessageDef struct {
+    id:   str `json:"id"`
+    code: str `json:"code"`
+    text: str `json:"text"`
+}
+
+type CoreMessage struct {
+    code:    str
+    id:      str
+    params:  []str
+    message: str
+}
+
+// SSH: dialing, authenticating, the host key and the link (connection cards).
+MSG_SSH_DIAL_FAILED: str = "ssh.dial_failed"
+MSG_SSH_JUMP_DIAL_FAILED: str = "ssh.jump_dial_failed"
+MSG_SSH_HOST_KEY_UNREADABLE: str = "ssh.host_key_unreadable"
+MSG_SSH_NO_AGENT: str = "ssh.no_agent"
+MSG_SSH_AUTH_REJECTED: str = "ssh.auth_rejected"
+MSG_SSH_AUTH_FAILED: str = "ssh.auth_failed"
+MSG_SSH_KEY_UNREADABLE: str = "ssh.key_unreadable"
+MSG_SSH_NO_AUTH_ACCEPTED: str = "ssh.no_auth_accepted"
+MSG_SSH_HOST_KEY_CHANGED: str = "ssh.host_key_changed"
+MSG_SSH_HOST_KEY_UNKNOWN: str = "ssh.host_key_unknown"
+MSG_SSH_HOST_KEY_NOT_TRUSTED: str = "ssh.host_key_not_trusted"
+MSG_SSH_CONNECTION_LOST: str = "ssh.connection_lost"
+MSG_SSH_CONNECTION_LOST_REASON: str = "ssh.connection_lost_reason"
+// Unlocking: the vault, the window and the keychain.
+MSG_VAULT_WRONG_PASSWORD: str = "vault.wrong_password"
+MSG_VAULT_NOT_UNLOCKED: str = "vault.not_unlocked"
+MSG_VAULT_LOCKED: str = "vault.locked"
+MSG_VAULT_KEYCHAIN_REFUSED: str = "vault.keychain_refused"
+MSG_VAULT_CACHED_KEY_STALE: str = "vault.cached_key_stale"
+MSG_VAULT_RELOCKED: str = "vault.relocked"
+MSG_WINDOW_LOCKED: str = "window.locked"
+MSG_WINDOW_WRONG_PASSWORD: str = "window.wrong_password"
+MSG_KEYCHAIN_OFF: str = "keychain.off"
+MSG_KEYCHAIN_UNAVAILABLE_STORE: str = "keychain.unavailable_store"
+MSG_KEYCHAIN_UNAVAILABLE_READ: str = "keychain.unavailable_read"
+MSG_KEYCHAIN_UNAVAILABLE_REMOVE: str = "keychain.unavailable_remove"
+MSG_KEYCHAIN_REFUSED_STORE: str = "keychain.refused_store"
+MSG_KEYCHAIN_REFUSED_READ: str = "keychain.refused_read"
+MSG_KEYCHAIN_REFUSED_REMOVE: str = "keychain.refused_remove"
+// RDP: connecting, credentials and the certificate.
+MSG_RDP_AUTH: str = "rdp.auth"
+MSG_RDP_UNREACHABLE: str = "rdp.unreachable"
+MSG_RDP_TIMEOUT: str = "rdp.timeout"
+MSG_RDP_REFUSED: str = "rdp.refused"
+MSG_RDP_TLS_FAILED: str = "rdp.tls_failed"
+MSG_RDP_SESSION_CLOSED: str = "rdp.session_closed"
+MSG_RDP_CERT_MISMATCH: str = "rdp.cert_mismatch"
+MSG_RDP_PORT_CLOSED: str = "rdp.port_closed"
+MSG_RDP_LOST: str = "rdp.lost"
+MSG_RDP_ENDED: str = "rdp.ended"
+MSG_RDP_STANDARD_SECURITY: str = "rdp.standard_security"
+MSG_RDP_SETUP_CLOSED: str = "rdp.setup_closed"
+MSG_RDP_FAILED: str = "rdp.failed"
+MSG_RDP_NO_SAVED_PASSWORD: str = "rdp.no_saved_password"
+MSG_RDP_NO_PASSWORD_GIVEN: str = "rdp.no_password_given"
+MSG_RDP_CERT_CHANGED: str = "rdp.cert_changed"
+MSG_RDP_CERT_UNKNOWN: str = "rdp.cert_unknown"
+MSG_RDP_CERT_NOT_TRUSTED: str = "rdp.cert_not_trusted"
+
+// Every message with an id: its code and English text. `\{name}` is a param; the
+// call site passes them in the order each name first appears, and a name used twice
+// takes the same value. Adjacent params must have text between them.
+// An id changes only when the meaning does (D-084).
+fn message_defs() -> []MessageDef {
+    return [
+        MessageDef{ id: MSG_SSH_DIAL_FAILED, code: ERR_NETWORK, text: "connect to \{host}:\{port} failed: \{reason}" },
+        MessageDef{ id: MSG_SSH_JUMP_DIAL_FAILED, code: ERR_NETWORK, text: "the jump host could not reach \{host}:\{port}: \{reason}" },
+        MessageDef{ id: MSG_SSH_HOST_KEY_UNREADABLE, code: ERR_NETWORK, text: "cannot read the server host key" },
+        MessageDef{ id: MSG_SSH_NO_AGENT, code: ERR_AUTH, text: "no SSH agent is running (SSH_AUTH_SOCK is not set)" },
+        MessageDef{ id: MSG_SSH_AUTH_REJECTED, code: ERR_AUTH, text: "\{method} authentication was rejected" },
+        MessageDef{ id: MSG_SSH_AUTH_FAILED, code: ERR_NETWORK, text: "\{method} authentication failed: \{reason}" },
+        MessageDef{ id: MSG_SSH_KEY_UNREADABLE, code: ERR_AUTH, text: "a stored private key could not be read" },
+        MessageDef{ id: MSG_SSH_NO_AUTH_ACCEPTED, code: ERR_AUTH, text: "\{user}@\{alias}: no auth method was accepted (tried: \{tried})" },
+        MessageDef{ id: MSG_SSH_HOST_KEY_CHANGED, code: ERR_HOST_KEY, text: "the host key of '\{alias}' (\{addr}) has CHANGED; it is now \{key_type} \{fingerprint}. Someone may be intercepting the connection. If the server was reinstalled, run `flint known-host rm \{alias}` and connect again" },
+        MessageDef{ id: MSG_SSH_HOST_KEY_UNKNOWN, code: ERR_HOST_KEY, text: "'\{alias}' (\{addr}) is not a known host and there is no terminal to confirm its key (\{key_type} \{fingerprint}); connect once from a terminal, or pass --accept-new-host-key" },
+        MessageDef{ id: MSG_SSH_HOST_KEY_NOT_TRUSTED, code: ERR_HOST_KEY, text: "the host key of '\{alias}' was not trusted" },
+        MessageDef{ id: MSG_SSH_CONNECTION_LOST, code: ERR_NETWORK, text: "the connection was lost" },
+        MessageDef{ id: MSG_SSH_CONNECTION_LOST_REASON, code: ERR_NETWORK, text: "the connection was lost: \{reason}" },
+        MessageDef{ id: MSG_VAULT_WRONG_PASSWORD, code: ERR_WRONG_PASSWORD, text: "the password is wrong or the file is not a Flint vault" },
+        MessageDef{ id: MSG_VAULT_NOT_UNLOCKED, code: ERR_LOCKED, text: "no vault is unlocked" },
+        MessageDef{ id: MSG_VAULT_LOCKED, code: ERR_LOCKED, text: "the vault at \{path} is locked; the master password is needed" },
+        MessageDef{ id: MSG_VAULT_KEYCHAIN_REFUSED, code: ERR_LOCKED, text: KEYCHAIN_REFUSED_TEXT + "; the master password is needed" },
+        MessageDef{ id: MSG_VAULT_CACHED_KEY_STALE, code: ERR_LOCKED, text: "the cached key no longer opens \{path}; the master password is needed" },
+        MessageDef{ id: MSG_VAULT_RELOCKED, code: ERR_LOCKED, text: "the vault was locked; its master password is needed" },
+        MessageDef{ id: MSG_WINDOW_LOCKED, code: ERR_LOCKED, text: "the window is locked; open it with the master password" },
+        MessageDef{ id: MSG_WINDOW_WRONG_PASSWORD, code: ERR_WRONG_PASSWORD, text: "that is not the master password of this vault" },
+        MessageDef{ id: MSG_KEYCHAIN_OFF, code: ERR_KEYCHAIN, text: "the keychain is turned off (FLINT_KEYCHAIN=off)" },
+        MessageDef{ id: MSG_KEYCHAIN_UNAVAILABLE_STORE, code: ERR_KEYCHAIN, text: "the OS keychain is not available (store the vault key)" },
+        MessageDef{ id: MSG_KEYCHAIN_UNAVAILABLE_READ, code: ERR_KEYCHAIN, text: "the OS keychain is not available (read the vault key)" },
+        MessageDef{ id: MSG_KEYCHAIN_UNAVAILABLE_REMOVE, code: ERR_KEYCHAIN, text: "the OS keychain is not available (remove the vault key)" },
+        MessageDef{ id: MSG_KEYCHAIN_REFUSED_STORE, code: ERR_KEYCHAIN, text: "the OS keychain refused to store the vault key" },
+        MessageDef{ id: MSG_KEYCHAIN_REFUSED_READ, code: ERR_KEYCHAIN, text: "the OS keychain refused to read the vault key" },
+        MessageDef{ id: MSG_KEYCHAIN_REFUSED_REMOVE, code: ERR_KEYCHAIN, text: "the OS keychain refused to remove the vault key" },
+        MessageDef{ id: MSG_RDP_AUTH, code: ERR_AUTH, text: "the server refused the user or password (\{detail})" },
+        MessageDef{ id: MSG_RDP_UNREACHABLE, code: ERR_NETWORK, text: "could not reach the server (\{detail})" },
+        MessageDef{ id: MSG_RDP_TIMEOUT, code: ERR_TIMEOUT, text: "the server did not answer in time" },
+        MessageDef{ id: MSG_RDP_REFUSED, code: ERR_REFUSED, text: "the server refused the connection (\{detail})" },
+        MessageDef{ id: MSG_RDP_TLS_FAILED, code: ERR_NETWORK, text: "the secure connection failed (\{detail})" },
+        MessageDef{ id: MSG_RDP_SESSION_CLOSED, code: ERR_NETWORK, text: "the session is closed" },
+        MessageDef{ id: MSG_RDP_CERT_MISMATCH, code: ERR_HOST_KEY, text: "the server's certificate is not the trusted one" },
+        MessageDef{ id: MSG_RDP_PORT_CLOSED, code: ERR_REFUSED, text: "nothing answers on the Remote Desktop port: Remote Desktop may be off, or a firewall blocks it" },
+        MessageDef{ id: MSG_RDP_LOST, code: ERR_NETWORK, text: "the connection was lost (\{detail})" },
+        MessageDef{ id: MSG_RDP_ENDED, code: ERR_REFUSED, text: "the server ended the session: \{detail}" },
+        MessageDef{ id: MSG_RDP_STANDARD_SECURITY, code: ERR_REFUSED, text: "the server offers only Standard RDP Security, where no certificate protects the password; Flint refuses it. Set the server to require SSL (TLS) or Network Level Authentication" },
+        MessageDef{ id: MSG_RDP_SETUP_CLOSED, code: ERR_REFUSED, text: RDP_SERVER_CLOSED_SETUP + " (\{detail})" },
+        MessageDef{ id: MSG_RDP_FAILED, code: ERR_INTERNAL, text: "RDP failed (\{detail})" },
+        MessageDef{ id: MSG_RDP_NO_SAVED_PASSWORD, code: ERR_AUTH, text: "'\{alias}' has no saved password" },
+        MessageDef{ id: MSG_RDP_NO_PASSWORD_GIVEN, code: ERR_AUTH, text: "no password was given for '\{alias}'" },
+        MessageDef{ id: MSG_RDP_CERT_CHANGED, code: ERR_HOST_KEY, text: "the certificate of '\{alias}' (\{addr}) has CHANGED; it is now \{fingerprint}. Someone may be intercepting the connection. If the server was reinstalled, forget the old one in Settings → Known hosts (or `flint known-host rm \{alias}`) and connect again" },
+        MessageDef{ id: MSG_RDP_CERT_UNKNOWN, code: ERR_HOST_KEY, text: "the certificate of '\{alias}' is not trusted yet and nobody can confirm it" },
+        MessageDef{ id: MSG_RDP_CERT_NOT_TRUSTED, code: ERR_HOST_KEY, text: "the certificate of '\{alias}' was not trusted" },
+    ]
+}
+
+// A template cut into its literal text and its params: `lits` has one more entry
+// than `names`, and the text is lits[0] names[0] lits[1] ... lits[n].
+type MessageTemplate struct {
+    lits:  []str
+    names: []str
+}
+
+fn parse_message_template(text: str) -> MessageTemplate {
+    mut lits: []str = []
+    mut names: []str = []
+    mut start: usize = 0
+    mut pos: usize = 0
+    for pos < text.len() {
+        open := text.index_of("{", pos) or { break }
+        close := text.index_of("}", open) or { break }
+        lits.push(text[start..open])
+        names.push(text[open + 1..close])
+        start = close + 1
+        pos = close + 1
+    }
+    lits.push(text[start..])
+    return MessageTemplate{ lits: lits, names: names }
+}
+
+fn message_def(id: str) -> MessageDef? {
+    for d in message_defs() {
+        if d.id == id {
+            return d
+        }
+    }
+    return none
+}
+
+// The English text of `id` with `params` in place, in order. A missing param is
+// left empty; an unknown id gives the id itself (a test keeps every call site's id
+// in the table).
+fn message_text(id: str, params: []str) -> str {
+    d := message_def(id) or { return id }
+    t := parse_message_template(d.text)
+    order := msg_param_order(t.names)
+    mut out := t.lits[0]
+    for i, name in t.names {
+        at := msg_param_slot(order, name)
+        if at < params.len() {
+            out += params[at]
+        }
+        out += t.lits[i + 1]
+    }
+    return out
+}
+
+// The names of a template's params, each once, in the order they first appear: the
+// order its params are passed and returned in.
+fn msg_param_order(names: []str) -> []str {
+    mut out: []str = []
+    for n in names {
+        if msg_param_slot(out, n) == out.len() {
+            out.push(n)
+        }
+    }
+    return out
+}
+
+// Where `name` is in `names`, or `names.len()` when it is not there.
+fn msg_param_slot(names: []str, name: str) -> usize {
+    for i, n in names {
+        if n == name {
+            return i
+        }
+    }
+    return names.len()
+}
+
+// The core's error for `id`: "code: text", as `coded` builds it.
+fn core_msg(id: str, params: []str) -> str {
+    d := message_def(id) or { return coded(ERR_INTERNAL, id) }
+    return coded(d.code, message_text(id, params))
+}
+
+// Matches `text` from byte `pos`, right after lits[k], against the rest of the
+// template, pushing each param into `out`. Tries every place the next literal occurs,
+// so a param that contains the literal after it still matches.
+fn match_template_from(text: str, t: MessageTemplate, k: usize, pos: usize, mut out: []str) -> bool {
+    n := t.names.len()
+    if k == n {
+        return pos == text.len()
+    }
+    next := t.lits[k + 1]
+    if k + 1 == n {
+        if text.len() < pos + next.len() || !text.ends_with(next) {
+            return false
+        }
+        out.push(text[pos..text.len() - next.len()])
+        return true
+    }
+    if next.len() == 0 {
+        return false
+    }
+    mut from := pos
+    for from <= text.len() {
+        at := text.index_of(next, from) or { return false }
+        out.push(text[pos..at])
+        if match_template_from(text, t, k + 1, at + next.len(), mut out) {
+            return true
+        }
+        _ = out.pop()
+        from = at + 1
+    }
+    return false
+}
+
+// The params of `text` under `template`, or none when it does not match.
+fn match_message_template(template: str, text: str) -> []str? {
+    t := parse_message_template(template)
+    if !text.starts_with(t.lits[0]) {
+        return none
+    }
+    mut values: []str = []
+    if !match_template_from(text, t, 0, t.lits[0].len(), mut values) {
+        return none
+    }
+    // A name used twice must have matched the same text both times.
+    order := msg_param_order(t.names)
+    mut out: []str = []
+    for name in order {
+        mut first := ""
+        mut seen := false
+        for i, n in t.names {
+            if n != name {
+                continue
+            }
+            if !seen {
+                first = values[i]
+                seen = true
+            } else if values[i] != first {
+                return none
+            }
+        }
+        out.push(first)
+    }
+    return out
+}
+
+// `err` ("code: text") as a core message: its id and params when its code and text
+// match a template here, and an empty id with no params when none does.
+fn core_message_of(err: str) -> CoreMessage {
+    code := error_code_of(err)
+    text := error_text_of(err)
+    for d in message_defs() {
+        if d.code != code {
+            continue
+        }
+        params := match_message_template(d.text, text) or { continue }
+        return CoreMessage{ code: code, id: d.id, params: params, message: text }
+    }
+    return CoreMessage{ code: code, id: "", params: [], message: text }
+}

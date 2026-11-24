@@ -27,6 +27,7 @@ import { colorStyle } from '../lib/colors';
 import { plainText } from '../ui/plainText';
 import { fmtNumber, t } from '../i18n';
 import { tr } from '../i18n/react';
+import { coreText } from '../i18n/core';
 
 type ScopeKind = 'host' | 'group' | 'all';
 
@@ -395,7 +396,7 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
       const e = toFlintError(err);
       if (e.code === 'not_found') { onDone(null); return; }
       if (e.code === 'wrong_password') { setWrongPassword(true); setError(t('approval_dialog.wrong_master_password')); }
-      else setError(e.message);
+      else setError(coreText(e));
       setBusy(false);
       setConfirming(false);
     }

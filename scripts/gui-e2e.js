@@ -2740,6 +2740,17 @@
         .filter((el) => !el.classList.contains('leaving') && /^(Test of probe failed|Connection to probe works)/.test(el.querySelector('.t-text')?.textContent ?? ''));
       await waitFor(() => testToasts().length === 1, 'the failed test toast');
       await check(testToasts()[0].dataset.kind === 'error', `the failure is an error toast too (${testToasts()[0].querySelector('.t-text').textContent})`);
+      // Milestone 69: the core's reason in the page's language. English shows the core's
+      // own text; Spanish renders its id (ssh.dial_failed) with the engine's detail as it
+      // came, from the event's id and params.
+      await check(hasText('Test failed: connect to 127.0.0.1:1 failed'), `in English the reason is the core's own message (${q('.modal [role="alert"]')?.textContent})`);
+      await window.__flintE2E.setLanguage('es');
+      await waitFor(() => document.documentElement.lang === 'es', 'the page in Spanish');
+      await click('.modal button', 'Probar conexión');
+      await waitFor(() => hasText('La prueba falló:'), 'the failed test in Spanish', 30000);
+      await check(hasText('La prueba falló: no se pudo conectar a 127.0.0.1:1: '), `in Spanish a failed connection reads the core message's Spanish (${q('.modal [role="alert"]')?.textContent})`);
+      await window.__flintE2E.setLanguage('system');
+      await waitFor(() => document.documentElement.lang === 'en', 'the page in English again');
       await fill('#hp', PORT2);
       await click('.modal button', 'Test connection');
       await waitFor(() => q('.modal [role="alertdialog"]'), 'the host key card in the editor', 30000);
@@ -3550,6 +3561,23 @@
         refused = '';
         try { await window.backend.vault_unlock({ path: vaultPath, password: '' }); } catch (e) { refused = String(e?.message ?? e); }
         await check(refused.startsWith('locked'), 'a vault locked in this run never reopens without its master password');
+        // Milestone 69: the unlock screen's refusals in Spanish, through the templates
+        // app_info sent (a rejection carries only "code: text").
+        let wrong = null;
+        try { await window.backend.vault_unlock({ path: vaultPath, password: 'wrong-password' }); } catch (e) { wrong = e; }
+        await window.__flintE2E.setLanguage('es');
+        await waitFor(() => document.documentElement.lang === 'es', 'the unlock screen in Spanish');
+        let notOpen = null;
+        try { await window.backend.catalog({}); } catch (e) { notOpen = e; }
+        await check(window.__flintE2E.coreText(notOpen) === 'no hay ninguna bóveda desbloqueada' && window.__flintE2E.coreText(wrong) === 'la contraseña es incorrecta o el archivo no es una bóveda de Flint',
+          `a locked vault and a wrong password read in Spanish (${window.__flintE2E.coreText(notOpen)} / ${window.__flintE2E.coreText(wrong)})`);
+        await fill('#pw', 'wrong-password');
+        await click('button[type="submit"]', 'Desbloquear');
+        await waitFor(() => hasText('Contraseña incorrecta.'), 'the wrong password message in Spanish', 30000);
+        await check(true, 'a wrong master password is refused in Spanish on the unlock screen');
+        await window.__flintE2E.setLanguage('system');
+        await waitFor(() => document.documentElement.lang === 'en', 'the unlock screen in English again');
+        await fill('#pw', '');
       }
       await fill('#pw', 'wrong-password');
       await click('button[type="submit"]', 'Unlock');

@@ -14,6 +14,7 @@ import type { LockReason, RemoteStatus } from '../api/types';
 import { plainText } from '../ui/plainText';
 import { t } from '../i18n';
 import { tr } from '../i18n/react';
+import { coreText } from '../i18n/core';
 
 const LOCK_REASONS: Record<LockReason, string> = {
   manual: 'unlock.reason.manual',
@@ -87,7 +88,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
       const fe = toFlintError(err);
       setError(fe.code === 'wrong_password'
         ? (caps ? t('unlock.wrong_password_caps') : t('unlock.wrong_password'))
-        : fe.message);
+        : coreText(fe));
       setBusy(false);
       // The field keeps the attempt, selected, so retyping replaces it (design 03b).
       // A timeout, not requestAnimationFrame: the field is enabled again only after

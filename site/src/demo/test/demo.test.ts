@@ -132,6 +132,9 @@ test('host test walks the jump chain, never asks for a password, and prints the 
 	const bare = flint(w, 'host test bare --accept-new-host-key');
 	assert.deepEqual([bare.code, bare.asks], [12, []]);
 	assert.deepEqual(bare.err, ['flint: me@bare: no auth method was accepted (tried: SSH agent)']);
+	// Milestone 69: a message the core names carries its id and params in --json.
+	const bareJson = flint(w, 'host test bare --accept-new-host-key --json');
+	assert.deepEqual(bareJson.err, ['{"error":{"code":"auth","message":"me@bare: no auth method was accepted (tried: SSH agent)","id":"ssh.no_auth_accepted","params":["me","bare","SSH agent"]}}']);
 	assert.equal(flint(w, 'host test db -- true').code, 2);
 });
 
