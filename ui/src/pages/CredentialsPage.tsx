@@ -31,8 +31,8 @@ export function CredentialsPage({ editing, setEditing, onConfirm }: {
 
   const remove = (c: CredView) => onConfirm({
     title: t('credentials_page.delete_credential_name', { name: c.name }),
-    body: usedBy.get(c.name) ? `${usedBy.get(c.name)} hosts use it; Flint refuses while it is in use.` : 'Its user and secret are removed from the vault.',
-    action: 'Delete credential',
+    body: usedBy.get(c.name) ? t('credentials_page.delete_in_use', { count: usedBy.get(c.name) }) : t('credentials_page.delete_body'),
+    action: t('credentials_page.delete_credential'),
     run: async () => { await api.credRm(c.name); await refreshCatalog(); notify(t('credentials_page.deleted_name', { name: c.name })); setEditing(undefined); },
   });
 

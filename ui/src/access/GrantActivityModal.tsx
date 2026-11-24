@@ -13,30 +13,31 @@ import { resultView, rowCommand } from '../lib/activityResult';
 import { Icon } from '../ui/Icon';
 import { Modal } from '../ui/Modal';
 import { useApp } from '../state/app';
+import { fmtDate, t } from '../i18n';
 
 function hhmmss(secs: number): string {
-  return new Date(secs * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  return fmtDate(secs * 1000, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
 function hhmm(ms: number): string {
-  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  return fmtDate(ms, { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 /** "1 hour, approved 13:40 · 38 min left", from the grant as Settings → Access lists it. */
 export function grantSpan(g: GrantView, skew: number, now: number): string {
-  const approved = `approved ${hhmm(g.created_ms + skew)}`;
-  if (!g.expires_ms) return `until the vault locks, ${approved}`;
+  const at = hhmm(g.created_ms + skew);
+  if (!g.expires_ms) return t('grant_activity_modal.span_until_locked', { at });
   const mins = Math.round((g.expires_ms - g.created_ms) / 60000);
-  const len = mins === 15 ? '15 min' : mins === 60 ? '1 hour' : mins === 240 ? '4 hours' : `${mins} min`;
+  const len = mins === 60 ? t('grant_activity_modal.one_hour') : mins === 240 ? t('grant_activity_modal.four_hours') : t('grant_activity_modal.n_min', { min: mins });
   // A root period lasts minutes: its time left to the second, as its notice shows it.
-  if (g.root) return `${len}, ${approved} · ${leftText(g.expires_ms + skew - now)}`;
+  if (g.root) return t('grant_activity_modal.span_left', { len, at, left: leftText(g.expires_ms + skew - now) });
   const left = Math.max(0, Math.round((g.expires_ms + skew - now) / 60000));
-  return `${len}, ${approved} · ${left} min left`;
+  return t('grant_activity_modal.span_min_left', { len, at, min: left });
 }
 
 function actionsText(g: GrantView): string {
-  if (g.root) return 'Root';
-  return [g.read && 'Read', g.exec && 'Run', g.write && 'Change'].filter(Boolean).join(', ');
+  if (g.root) return t('grant_activity_modal.root');
+  return [g.read && t('grant_activity_modal.read'), g.exec && t('grant_activity_modal.run'), g.write && t('grant_activity_modal.change')].filter(Boolean).join(', ');
 }
 
 function Row({ e, now }: { e: ActivityEntry; now: number }) {
@@ -60,7 +61,7 @@ function Row({ e, now }: { e: ActivityEntry; now: number }) {
           <div className="row" style={{ gap: 'var(--sp-3)' }}>
             <span className="hint grow">{[r.badge, r.meta].filter(Boolean).join(' · ')}</span>
             <button type="button" className="btn btn-secondary btn-sm" onClick={copy}>
-              <Icon name={copied ? 'check' : 'clip'} size="sm" className={copied ? 'ok-t' : undefined} />{copied ? 'Copied' : 'Copy'}
+              <Icon name={copied ? 'check' : 'clip'} size="sm" className={copied ? 'ok-t' : undefined} />{copied ? t('grant_activity_modal.copied') : t('common.copy')}
             </button>
           </div>
         </div>
@@ -97,7 +98,7 @@ export function GrantActivityModal({ grant, program, view, skew, onStop, onLog, 
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, [running]);
-  const title = `${program} · what this grant ran`;
+  const title = t('grant_activity_modal.title', { program });
   return (
     <Modal label={title} onClose={onClose} width={760} top={50} layer={2} className="grant-activity">
       <div data-grant-activity={grant} className="col" style={{ minHeight: 0 }}>
@@ -107,24 +108,24 @@ export function GrantActivityModal({ grant, program, view, skew, onStop, onLog, 
             <h2>{title}</h2>
             {view && (
               <span className="hint">{actionsText(view)}{view.hosts.length > 0 && <> · {view.hosts.map((h, i) => <span key={h}>{i > 0 && ', '}<span className="mono">{h}</span></span>)}</>}
-                {view.all && ' · the whole vault'} · {grantSpan(view, skew, now)}</span>
+                {view.all && t('grant_activity_modal.the_whole_vault')} · {grantSpan(view, skew, now)}</span>
             )}
-            {!view && <span className="hint">This grant has ended.</span>}
+            {!view && <span className="hint">{t('grant_activity_modal.this_grant_has_ended')}</span>}
           </div>
           <span className="live" role="status" data-grant-activity-count={entries.length}>
-            {view && <span className="live-dot" aria-hidden="true" />}{view ? 'Live · ' : ''}{entries.length} command{entries.length === 1 ? '' : 's'}
+            {view && <span className="live-dot" aria-hidden="true" />}{view ? t('grant_activity_modal.live') : ''}{entries.length}{' '}{t('grant_activity_modal.command')}{entries.length === 1 ? '' : 's'}
           </span>
-          <button type="button" className="icon-btn" aria-label="Close (esc)" onClick={onClose}><Icon name="x" size="sm" /></button>
+          <button type="button" className="icon-btn" aria-label={t('grant_activity_modal.close_esc')} onClick={onClose}><Icon name="x" size="sm" /></button>
         </div>
         <div className="modal-b" style={{ gap: 'var(--sp-1)', paddingTop: 'var(--sp-3)', minHeight: 0, overflow: 'auto', maxHeight: 460 }}>
-          {entries.length > 1 && <div className="hint" style={{ alignSelf: 'center' }}>Newest first</div>}
+          {entries.length > 1 && <div className="hint" style={{ alignSelf: 'center' }}>{t('grant_activity_modal.newest_first')}</div>}
           {entries.map((e) => <Row key={e.id} e={e} now={now} />)}
         </div>
         <div className="modal-f">
-          <button type="button" className="link" style={{ fontSize: 'var(--fs-sm)' }} data-grant-activity-log onClick={onLog}>Full log in Settings → Access</button>
+          <button type="button" className="link" style={{ fontSize: 'var(--fs-sm)' }} data-grant-activity-log onClick={onLog}>{t('grant_activity_modal.full_log_in_settings_access')}</button>
           <span className="grow" />
-          {view && <button type="button" className="btn btn-danger-ghost" data-grant-activity-stop onClick={onStop}>Stop grant</button>}
-          <button type="button" className="btn btn-primary" data-autofocus onClick={onClose}>Close<span className="kbd-in">esc</span></button>
+          {view && <button type="button" className="btn btn-danger-ghost" data-grant-activity-stop onClick={onStop}>{t('grant_activity_modal.stop_grant')}</button>}
+          <button type="button" className="btn btn-primary" data-autofocus onClick={onClose}>{t('common.close')}<span className="kbd-in">esc</span></button>
         </div>
       </div>
     </Modal>

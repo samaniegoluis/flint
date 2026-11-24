@@ -36,17 +36,17 @@ export function UpdateStatusItem() {
   const ready = updateReady(st);
   const downloading = updateDownloading(st);
   const label = updateBarLabel(st, up.received);
-  const title = !st || !avail ? `Flint ${info.version}` : ready ? `Flint ${st.version} is ready` : downloading ? `Downloading Flint ${st.version}` : `Flint ${st.version} is available`;
+  const title = !st || !avail ? `Flint ${info.version}` : ready ? t('update_status_item.is_ready', { version: st.version }) : downloading ? t('update_status_item.downloading', { version: st.version }) : t('update_status_item.is_available', { version: st.version });
   return (
     <span ref={box} className="sb-update">
       {label && (
         <button className="sb-update-act" data-sb-update={ready ? 'relaunch' : downloading ? 'downloading' : st?.action} disabled={downloading} onClick={() => up.act()}
-          title={downloading ? title : `${title}: ${updateActionLabel(st!)}`} aria-label={downloading ? `${title}, ${label}` : `${title}. ${updateActionLabel(st!)}`}>
+          title={downloading ? title : t('update_status_item.title_action', { title, action: updateActionLabel(st!) })} aria-label={downloading ? t('update_status_item.title_progress', { title, label }) : t('update_status_item.title_action_aria', { title, action: updateActionLabel(st!) })}>
           {label}
         </button>
       )}
       <button className={'sb-btn sb-version' + (avail ? ' has-dot' : '') + (open ? ' is-open' : '')} data-sb-version
-        aria-expanded={open} aria-label={`Flint ${info.version}${avail ? ', update available' : ''}`} title={t('update_status_item.about_flint')}
+        aria-expanded={open} aria-label={avail ? t('update_status_item.version_update_available', { version: info.version }) : `Flint ${info.version}`} title={t('update_status_item.about_flint')}
         onClick={() => setOpen(!open)}>
         v{info.version}
       </button>

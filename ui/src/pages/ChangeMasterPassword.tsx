@@ -68,7 +68,7 @@ export function ChangeMasterPassword({ onClose }: { onClose: () => void }) {
       onClose();
     } catch (err) {
       const fe = toFlintError(err);
-      setError(fe.code === 'wrong_password' ? 'The current master password is wrong.' : fe.message);
+      setError(fe.code === 'wrong_password' ? t('change_master_password.current_wrong') : fe.message);
       setBusy(false);
     }
   };

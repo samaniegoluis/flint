@@ -12,7 +12,7 @@ import { t } from '../i18n';
 
 export const REVEAL_MS = 10000;
 
-export function PasswordField({ value, onChange, saved, placeholder, label = 'Password' }: {
+export function PasswordField({ value, onChange, saved, placeholder, label }: {
   value: string;
   onChange: (v: string) => void;
   /** The owner of a saved password, when there is one; enables reveal and copy. */
@@ -58,7 +58,7 @@ export function PasswordField({ value, onChange, saved, placeholder, label = 'Pa
 
   return (
     <div className="input"><Icon name="lock" size="sm" className="faint" />
-      <input {...plainText} type={shown ? 'text' : 'password'} className={shown ? 'mono' : 'pw'} aria-label={label} autoComplete="off"
+      <input {...plainText} type={shown ? 'text' : 'password'} className={shown ? 'mono' : 'pw'} aria-label={label ?? t('password_field.password')} autoComplete="off"
         value={revealed ?? value} readOnly={revealed !== null} placeholder={placeholder}
         onChange={(e) => { if (revealed === null) onChange(e.target.value); }}
         onKeyDown={(e) => { if (revealed !== null && e.key.length === 1) { hide(); } }} />

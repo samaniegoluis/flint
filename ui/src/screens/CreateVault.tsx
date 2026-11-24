@@ -38,7 +38,7 @@ export function CreateVault() {
 
   const choose = async () => {
     const fileName = (name.trim() || 'vault').toLowerCase().replace(/[^a-z0-9._-]+/g, '-') + '.flint';
-    const { path: p } = await api.dialogSave('Create a Flint vault', fileName);
+    const { path: p } = await api.dialogSave(t('create_vault.dialog_title'), fileName);
     if (p) setPath(p.endsWith('.flint') ? p : p + '.flint');
   };
 

@@ -47,8 +47,8 @@ export function KeysPage({ adding, setAdding, onConfirm }: { adding: boolean; se
 
   const remove = (name: string) => onConfirm({
     title: t('keys_page.delete_key_name', { name }),
-    body: usedBy.get(name) ? `It is linked to ${usedBy.get(name)} hosts or credentials; Flint refuses while it is in use.` : 'The private key is removed from the vault. This cannot be undone.',
-    action: 'Delete key',
+    body: usedBy.get(name) ? t('keys_page.delete_in_use', { count: usedBy.get(name) }) : t('keys_page.delete_body'),
+    action: t('keys_page.delete_key'),
     run: async () => { await api.keyRm(name); await refreshCatalog(); notify(t('keys_page.deleted_name', { name })); },
   });
 
@@ -141,7 +141,7 @@ function AddKeyDrawer({ onClose }: { onClose: () => void }) {
   const encrypted = /ENCRYPTED|aes\d+-ctr|bcrypt/.test(text) || (text.includes('OPENSSH PRIVATE KEY') && /YmNyeXB0/.test(text));
 
   const pick = async () => {
-    const { path } = await api.dialogOpen('Choose a private key');
+    const { path } = await api.dialogOpen(t('keys_page.choose_a_private_key'));
     if (!path) return;
     setFile(path);
     if (!name) setName(path.split('/').pop()!.replace(/\.(pem|key)$/, ''));

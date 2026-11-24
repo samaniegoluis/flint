@@ -145,7 +145,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
   const rdpTab = panes.find((p) => p.id === activeTab?.focus)?.kind === 'rdp';
   // Milestone 38: why "Full screen on all monitors" is greyed here, if it is (22f1c).
   const monitorsView = useMonitors().view;
-  const monitorsReason = monitorsView ? monitorsView.reason : 'Only one monitor connected';
+  const monitorsReason = monitorsView ? monitorsView.reason : t('command_palette.only_one_monitor');
   const canSplit = !!activeTab && activeTab.panes.length < MAX_PANES && !rdpTab;
   const paneNo = activeTab ? activeTab.panes.indexOf(activeTab.focus) + 1 : 0;
   const [q, setQ] = useState('');
@@ -215,7 +215,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
         if (!m) continue;
         const byAction = !!m.positions.action;
         hostsWith.set(v.host, Math.max(hostsWith.get(v.host) ?? 0, m.score));
-        const conns = v.connections === 0 ? 'no connections' : v.connections === 1 ? '1 connection' : `${v.connections} connections`;
+        const conns = v.connections === 0 ? t('command_palette.no_connections') : t('command_palette.n_connections', { count: v.connections });
         out.push({
           // Asked for by its action ("start web"): above the host's Connect with tunnels.
           group: 'tunnels', key: 't:' + v.host + ':' + v.name, score: m.score + (byAction ? 1900 : 1800),
@@ -284,7 +284,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           group: 'actions', key: 'a:' + a.action, score: m.score + 1000,
           render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m.positions.title ?? []} /></span>{a.action === 'newSshHost' && <HostTypeIcon type="ssh" size="md" />}{a.action === 'newRdpHost' && <HostTypeIcon type="rdp" size="md" />}{a.action === 'checkUpdates' && update.status && <span className="hint" data-palette-update>{updatePaletteHint(update.status, update.now)}</span>}{a.action === 'whatsNew' && update.status?.current && <span className="hint">{update.status.current}</span>}{a.action === 'aboutFlint' && update.status?.current && <span className="hint">v{update.status.current}</span>}{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
           run: () => onAction(a.action),
-          disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? 'SSH hosts only' : !rdpTab && (a.action === 'fullscreen' || a.action === 'fullscreenAll') ? 'RDP tabs only' : a.action === 'fullscreenAll' && monitorsReason ? monitorsReason : undefined,
+          disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? t('command_palette.ssh_hosts_only') : !rdpTab && (a.action === 'fullscreen' || a.action === 'fullscreenAll') ? t('command_palette.rdp_tabs_only') : a.action === 'fullscreenAll' && monitorsReason ? monitorsReason : undefined,
         });
       }
       for (const r of recents) {

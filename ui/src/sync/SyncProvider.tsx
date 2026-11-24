@@ -12,6 +12,7 @@ import { hasChanges, mergeSummary, NO_LIVE, syncState, type SyncLive, type SyncS
 import { ACTION_DURATION_MS } from '../lib/toasts';
 import { MergeDetails } from './MergeDetails';
 import { NewPasswordModal } from './NewPasswordModal';
+import { t } from '../i18n';
 
 /** A sync that ends sooner than this never shows "Syncing…" (a quiet 304 every minute). */
 const SYNCING_SHOWS_AFTER_MS = 400;
@@ -106,7 +107,7 @@ export function SyncProvider({ children, onOpenServerSettings }: { children: Rea
       setLastError('');
       if (merged) {
         setLastMerge(e.report);
-        notify({ text: `Changes from another machine: ${mergeSummary(e.report)}`, kind: 'info', key: 'sync-merge', duration: ACTION_DURATION_MS, actions: [{ label: 'Details', run: () => setDetails(e.report) }] });
+        notify({ text: t('sync_provider.changes_from_another_machine_mergesummary', { mergeSummary: mergeSummary(e.report) }), kind: 'info', key: 'sync-merge', duration: ACTION_DURATION_MS, actions: [{ label: t('sync_provider.details'), run: () => setDetails(e.report) }] });
       }
     }
     refresh().catch(() => {});

@@ -22,12 +22,13 @@ const catalog = JSON.parse(readFileSync(CATALOG, 'utf8'));
 
 const VISIBLE = new Set([
   'title', 'placeholder', 'aria-label', 'alt', 'label', 'desc', 'hint', 'text', 'note',
-  'heading', 'confirmLabel', 'cancelLabel', 'okLabel', 'message', 'detail', 'subtitle', 'tooltip', 'empty',
+  'heading', 'confirmLabel', 'cancelLabel', 'okLabel', 'message', 'detail', 'subtitle', 'tooltip', 'empty', 'body', 'action', 'reason',
 ]);
 const SAME = new Set([
   'Flint', 'SSH', 'RDP', 'SFTP', 'CLI', 'ntfy', 'ntfy.sh', 'Tether', 'GitHub', 'macOS', 'Linux', 'Windows',
   'Esc', 'Tab', 'Enter', 'Return', 'Ctrl', 'Alt', 'Shift', 'Space', 'Del', 'Backspace', 'Home', 'End',
   'PgUp', 'PgDn', 'esc', 'tab', 'English', 'Español', 'libssh', 'libsodium', 'SQLCipher', 'FreeRDP', 'OK',
+  'root', 'sudo', 'sudo --', 'exec', 'pid',
 ]);
 const COMMON = new Set(['Cancel', 'Save', 'Close', 'Delete', 'Copy', 'Done', 'Back', 'Continue', 'Remove',
   'Edit', 'Add', 'Open', 'Rename', 'Retry', 'Connect', 'Disconnect', 'Paste', 'Unlock', 'Lock', 'Create', 'Quit']);
@@ -39,6 +40,8 @@ function readable(s, prose = false) {
   if (SAME.has(s)) return false;
   if (/^flint( |$)/.test(s)) return false;
   if (!prose && /^[a-z0-9_.:\-/#%()]+$/.test(s)) return false;
+  // An identifier in camelCase: an action's or a field's name.
+  if (!prose && /^[a-z][A-Za-z0-9]*$/.test(s)) return false;
   if (/^([⌘⇧⌥⌃]|Ctrl\+|Alt\+|Shift\+|Cmd\+)*([A-Z0-9]{1,3}|↵|Tab|Space|Esc)$/.test(s)) return false;
   return true;
 }
@@ -185,28 +188,24 @@ function processFile(file) {
     return f;
   };
 
-  // Mixed JSX children: text plus small elements/expressions with no text of their own.
-  const tryMixed = (el) => {
-    const kids = el.children.filter((c) => !(ts.isJsxText(c) && jsxText(c.text).trim() === '' && /\n/.test(c.text)));
-    const texts = kids.filter((c) => ts.isJsxText(c));
-    if (texts.length === 0 || !texts.some((c) => readable(jsxText(c.text), true))) return false;
-    if (kids.length === 1) return false;
-    // One text before or after decorations only (a label and its <Kbd>): the text alone.
-    const at = kids.findIndex((c) => ts.isJsxText(c));
-    if (texts.length === 1 && (at === 0 || at === kids.length - 1)
-      && kids.every((c) => ts.isJsxText(c) || !ts.isJsxExpression(c))) return false;
-    const others = kids.filter((c) => !ts.isJsxText(c));
-    if (others.some((c) => hasReadable(c, src))) return false;
-    if (others.some((c) => ts.isJsxExpression(c) && c.expression && (ts.isConditionalExpression(c.expression) || ts.isBinaryExpression(c.expression)))) return false;
-    const used = new Set();
+  // A `mono` element is a token (a command, a path): a placeholder, whatever it holds.
+  const isMono = (c) => ts.isJsxElement(c) && /className="[^"]*\bmono\b/.test(c.openingElement.getText(src));
+  const isCond = (c) => ts.isJsxExpression(c) && c.expression && (ts.isConditionalExpression(c.expression) || ts.isBinaryExpression(c.expression));
+  const meaningful = (children) => children.filter((c) => !(ts.isJsxText(c) && jsxText(c.text).trim() === '' && /\n/.test(c.text)) && !(ts.isJsxExpression(c) && !c.expression));
+
+  // The message of a run of children: text, `{name}` for an expression or an element; an
+  // element that holds text of its own (a <strong> lead) gets a key of its own, nested.
+  // Null when a child cannot be part of one sentence (a conditional, a list).
+  const build = (children, used) => {
     let msg = '';
-    const nodes = [], params = [];
-    for (const c of el.children) {
+    const nodes = [];
+    for (const c of children) {
       if (ts.isJsxText(c)) { msg += jsxText(c.text); continue; }
       if (ts.isJsxExpression(c) && !c.expression) continue;
       if (ts.isJsxExpression(c)) {
         const e = c.expression;
         if (ts.isStringLiteral(e)) { msg += e.text; continue; }
+        if (isCond(c)) return null;
         const name = placeholderName(e, used);
         msg += `{${name}}`;
         const s0 = e.getText(src);
@@ -216,21 +215,50 @@ function processFile(file) {
       const tag = ts.isJsxElement(c) ? c.openingElement.tagName.getText(src) : ts.isJsxSelfClosingElement(c) ? c.tagName.getText(src) : 'el';
       const name = placeholderName(ts.factory.createIdentifier(tag.replace(/\W/g, '').toLowerCase()), used);
       msg += `{${name}}`;
-      nodes.push(`${name}: ${c.getText(src)}`);
+      if (ts.isJsxElement(c) && !isMono(c) && hasReadable(c, src)) {
+        const inner = build(meaningful(c.children), new Set());
+        if (!inner) return null;
+        const im = inner.msg.replace(/\s+/g, ' ').trim();
+        const ik = keyFor(prefix, im);
+        const call = inner.nodes.length ? `tr(${q(ik)}, { ${inner.nodes.join(', ')} })` : `t(${q(ik)})`;
+        if (inner.nodes.length) usesTr = true; else usesT = true;
+        nodes.push(`${name}: ${c.openingElement.getText(src)}{${call}}${c.closingElement.getText(src)}`);
+      } else nodes.push(`${name}: ${c.getText(src)}`);
     }
-    msg = msg.replace(/\s+/g, ' ').trim();
+    return { msg, nodes };
+  };
+
+  // Mixed JSX children: text plus small elements/expressions. Leading and trailing
+  // elements with no text (an icon, a <Kbd>) stay outside the sentence.
+  const tryMixed = (el) => {
+    let kids = meaningful(el.children);
+    const texts = kids.filter((c) => ts.isJsxText(c));
+    if (texts.length === 0 || !texts.some((c) => readable(jsxText(c.text), true))) return false;
+    const hasExpr = (n) => { let f = false; const v = (x) => { if (ts.isJsxExpression(x) && x.expression) f = true; else ts.forEachChild(x, v); }; ts.forEachChild(n, v); return f; };
+    const deco = (c) => ts.isJsxSelfClosingElement(c) || (ts.isJsxElement(c) && !hasReadable(c, src) && !isMono(c) && !hasExpr(c));
+    let lo = 0, hi = kids.length;
+    while (lo < hi && deco(kids[lo])) lo++;
+    while (hi > lo && deco(kids[hi - 1])) hi--;
+    const core = kids.slice(lo, hi);
+    if (core.length <= 1) return false;
+    const r = build(core, new Set());
+    if (!r) return false;
+    const msg = r.msg.replace(/\s+/g, ' ').trim();
     const key = keyFor(prefix, msg);
-    const first = el.children[0], last = el.children[el.children.length - 1];
-    edits.push({ start: first.getFullStart(), end: last.getEnd(), text: `{tr(${q(key)}, { ${nodes.join(', ')} })}` });
-    usesTr = true;
+    const call = r.nodes.length ? `{tr(${q(key)}, { ${r.nodes.join(', ')} })}` : `{t(${q(key)})}`;
+    if (r.nodes.length) usesTr = true; else usesT = true;
+    edits.push({ start: core[0].getStart(src), end: core[core.length - 1].getEnd(), text: call });
     el.children.forEach((c) => done.add(c));
-    void params;
+    // Leading/trailing decorations still get a pass for their attributes.
+    kids.slice(0, lo).concat(kids.slice(hi)).forEach((c) => ts.forEachChild(c, visit));
     return true;
   };
 
   const visit = (node) => {
     if (done.has(node)) return;
     if (ts.isJsxElement(node) && node.openingElement.attributes.properties.some((a) => ts.isJsxAttribute(a) && a.name.getText(src) === 'data-i18n-skip')) return;
+    // Text in a `mono` element is a token: only its attributes get a pass.
+    if (isMono(node)) { ts.forEachChild(node.openingElement, visit); return; }
     if (ts.isJsxElement(node) || ts.isJsxFragment(node)) {
       if (inFunction(node) && tryMixed(node)) {
         // Attributes still need a pass.

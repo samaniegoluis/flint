@@ -25,44 +25,47 @@ import { Icon } from '../ui/Icon';
 import { CommandModal, MoreRow, moreText } from './CommandModal';
 import { colorStyle } from '../lib/colors';
 import { plainText } from '../ui/plainText';
+import { fmtNumber, t } from '../i18n';
+import { tr } from '../i18n/react';
 
 type ScopeKind = 'host' | 'group' | 'all';
 
 /** Root periods (milestone 57, 25e4): offered only with *Allow sudo for a while* on. */
 export const ROOT_PERIODS: { value: RootPeriod; label: string; min: number }[] = [
-  { value: '', label: 'Each command', min: 0 },
-  { value: '2m', label: '2 min', min: 2 },
-  { value: '5m', label: '5 min', min: 5 },
-  { value: '15m', label: '15 min', min: 15 },
+  { value: '', label: 'approval_dialog.period.each', min: 0 },
+  { value: '2m', label: 'approval_dialog.period.2m', min: 2 },
+  { value: '5m', label: 'approval_dialog.period.5m', min: 5 },
+  { value: '15m', label: 'approval_dialog.period.15m', min: 15 },
 ];
 
 /** 25e5's warning, shown every time a period is picked (D-117 (2)). */
 export function rootPeriodWarning(label: string, host: string, min: number): string {
-  return `${label.replace(/^.*?, started by /, '')} and everything it starts can run commands as root on ${host} for ${min} min without asking you.`;
+  return t('approval_dialog.root_period_warning', { caller: label.replace(/^.*?, started by /, ''), host, min });
 }
 
 const DURATIONS: { value: GrantDuration; label: string }[] = [
-  { value: '15m', label: '15 min' },
-  { value: '1h', label: '1 hour' },
-  { value: '4h', label: '4 hours' },
-  { value: 'lock', label: 'Until locked' },
+  { value: '15m', label: 'approval_dialog.duration.15m' },
+  { value: '1h', label: 'approval_dialog.duration.1h' },
+  { value: '4h', label: 'approval_dialog.duration.4h' },
+  { value: 'lock', label: 'approval_dialog.duration.lock' },
 ];
 
 const TTL_LABELS: Record<string, string> = {
-  '15m': '15 minutes', '1h': '1 hour', '4h': '4 hours', '1d': '1 day', '7d': '7 days', '30d': '30 days', '90d': '90 days',
+  '15m': 'approval_dialog.ttl.15m', '1h': 'approval_dialog.ttl.1h', '4h': 'approval_dialog.ttl.4h', '1d': 'approval_dialog.ttl.1d',
+  '7d': 'approval_dialog.ttl.7d', '30d': 'approval_dialog.ttl.30d', '90d': 'approval_dialog.ttl.90d',
 };
 
 const ACTIONS: { value: AccessAction; label: string; hint: string }[] = [
-  { value: 'read', label: 'Read', hint: 'List and show hosts, groups, keys and credentials. Never a secret' },
-  { value: 'exec', label: 'Run commands', hint: 'exec, connect and host test on the hosts in scope' },
-  { value: 'write', label: 'Change the vault', hint: 'Add, edit and remove anything' },
+  { value: 'read', label: 'approval_dialog.action.read', hint: 'approval_dialog.action.read_hint' },
+  { value: 'exec', label: 'approval_dialog.action.exec', hint: 'approval_dialog.action.exec_hint' },
+  { value: 'write', label: 'approval_dialog.action.write', hint: 'approval_dialog.action.write_hint' },
 ];
 
 export function presenceLabel(m: PresenceMethod): string {
   if (m === 'touchid') return 'Touch ID';
-  if (m === 'device') return 'your Mac password';
-  if (m === 'polkit') return 'your login password';
-  return 'the master password';
+  if (m === 'device') return t('approval_dialog.presence.device');
+  if (m === 'polkit') return t('approval_dialog.presence.polkit');
+  return t('approval_dialog.presence.password');
 }
 
 /** The core's times (deadlines, expiries) are on its own clock: this offset turns
@@ -104,15 +107,12 @@ function hostsIn(catalog: Catalog, groups: string[]): number {
   return catalog.hosts.filter((h) => groups.some((g) => h.group === g || h.group.startsWith(g + '/'))).length;
 }
 
-function plural(n: number, one: string): string {
-  return `${n} ${one}${n === 1 ? '' : 's'}`;
-}
 
 /** "flint, started by Claude Code": the program in mono, the caller in the info tone. */
 export function CallerLabel({ label }: { label: string }) {
   const m = /^(.*?), started by (.*)$/.exec(label);
   if (!m) return <>{label}</>;
-  return <><span className="mono">{m[1]}</span>, started by <span className="info-t">{m[2]}</span></>;
+  return <>{tr('approval_dialog.span_started_by_span2', { span: <span className="mono">{m[1]}</span>, span2: <span className="info-t">{m[2]}</span> })}</>;
 }
 
 /** What kind of request an approval is, for the queue strip. */
@@ -160,24 +160,24 @@ function RelayBlock({ copy, catalog }: { copy: CopyAsk; catalog: Catalog }) {
   const dst = copyTarget(copy.to_path ?? '', copy.remote);
   const row = { gridTemplateColumns: '40px 118px minmax(0, 1fr)' };
   return (
-    <div className="cp" data-copy-ask data-direction="relay" data-copy-host={copy.host} data-copy-to-host={to} aria-label={`Copy between servers: from ${copy.host} to ${to}`}>
+    <div className="cp" data-copy-ask data-direction="relay" data-copy-host={copy.host} data-copy-to-host={to} aria-label={t('approval_dialog.copy_between_servers_from_host', { host: copy.host, to })}>
       <div className="cp-dir">
         <span className="grow row" style={{ gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
-          <HostEnd catalog={catalog} alias={copy.host} />{ARROW}<span className="hint" style={{ whiteSpace: 'nowrap' }}>via Flint</span>{ARROW}<HostEnd catalog={catalog} alias={to} />
+          <HostEnd catalog={catalog} alias={copy.host} />{ARROW}<span className="hint" style={{ whiteSpace: 'nowrap' }}>{t('approval_dialog.via_flint')}</span>{ARROW}<HostEnd catalog={catalog} alias={to} />
         </span>
-        <span className="badge info">Server to server</span>
+        <span className="badge info">{t('approval_dialog.server_to_server')}</span>
       </div>
-      <div className="cp-row" style={row}><span className="role" style={{ paddingTop: 3 }}>From</span><HostWho catalog={catalog} alias={copy.host} /><SlashPath path={copy.remote} data="data-copy-from" /></div>
-      <div className="cp-row" style={row}><span className="role" style={{ paddingTop: 3 }}>To</span><HostWho catalog={catalog} alias={to} /><SlashPath path={dst} data="data-copy-to" /></div>
+      <div className="cp-row" style={row}><span className="role" style={{ paddingTop: 3 }}>{t('approval_dialog.from')}</span><HostWho catalog={catalog} alias={copy.host} /><SlashPath path={copy.remote} data="data-copy-from" /></div>
+      <div className="cp-row" style={row}><span className="role" style={{ paddingTop: 3 }}>{t('approval_dialog.to')}</span><HostWho catalog={catalog} alias={to} /><SlashPath path={dst} data="data-copy-to" /></div>
       {(copy.recursive || copy.force) && (
         <div className="cp-notes" style={{ flexDirection: 'row', gap: 'var(--sp-2)' }}>
-          {copy.recursive && <span className="chip" style={{ fontFamily: 'var(--font-ui)' }} data-copy-recursive><Icon name="folder" size="xs" />&nbsp;folder (-r)</span>}
-          {copy.force && <span className="badge warn"><Icon name="alert" />overwrite (--force)</span>}
+          {copy.recursive && <span className="chip" style={{ fontFamily: 'var(--font-ui)' }} data-copy-recursive><Icon name="folder" size="xs" />{t('approval_dialog.folder_r')}</span>}
+          {copy.force && <span className="badge warn"><Icon name="alert" />{t('approval_dialog.overwrite_force')}</span>}
         </div>
       )}
       {copy.force && (
         <div className="cp-force" role="note" data-copy-force><Icon name="alert" size="sm" className="warn-t" />
-          <span><strong>Replaces files that are already there.</strong> With <span className="mono">--force</span>, anything with the same name in the destination on <span className="mono">{to}</span> is overwritten without asking.</span>
+          <span>{tr('approval_dialog.force_note', { strong: <strong>{t('approval_dialog.replaces_files_that_are_already')}</strong>, flag: <span className="mono">--force</span>, where: <span className="mono">{to}</span> })}</span>
         </div>
       )}
     </div>
@@ -190,39 +190,39 @@ function RelayBlock({ copy, catalog }: { copy: CopyAsk; catalog: Catalog }) {
  * for how long, or that the new grant adds it. `left` is in seconds, -1 = until locked.
  */
 export function relayTag(allowed: boolean, left: number, otherAllowed: boolean): string {
-  if (!allowed) return otherAllowed ? 'new — this grant adds it' : '';
-  if (left < 0) return 'already allowed · until locked';
+  if (!allowed) return otherAllowed ? t('approval_dialog.relay.new') : '';
+  if (left < 0) return t('approval_dialog.relay.until_locked');
   const min = Math.ceil(left / 60);
-  if (min < 60) return `already allowed · ${min} min left`;
-  return `already allowed · ${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''} left`;
+  if (min < 60) return t('approval_dialog.relay.min_left', { min });
+  return min % 60 ? t('approval_dialog.relay.h_min_left', { h: Math.floor(min / 60), min: min % 60 }) : t('approval_dialog.relay.h_left', { h: Math.floor(min / 60) });
 }
 
 /** `flint cp`'s transfer block (design 16f1-16f3): direction, both paths, -r and --force. */
 function CopyBlock({ copy, catalog }: { copy: CopyAsk; catalog: Catalog }) {
   if (copy.direction === 'relay') return <RelayBlock copy={copy} catalog={catalog} />;
   const up = copy.direction === 'upload';
-  const here = <><Icon name="monitor" />This computer</>;
+  const here = <><Icon name="monitor" />{t('approval_dialog.this_computer')}</>;
   const host = <><Icon name="hosts" /><span className="mono">{copy.host}</span></>;
   const src = up ? copy.local : copy.remote;
   const dst = copyTarget(up ? copy.remote : copy.local, src);
   return (
-    <div className="cp" data-copy-ask data-direction={copy.direction} data-copy-host={copy.host} aria-label={`${up ? 'Upload' : 'Download'}: copy direction and paths`}>
+    <div className="cp" data-copy-ask data-direction={copy.direction} data-copy-host={copy.host} aria-label={up ? t('approval_dialog.upload_copy_direction_and_paths') : t('approval_dialog.download_copy_direction_and_paths')}>
       <div className="cp-dir">
         <span className="grow row" style={{ gap: 'var(--sp-2)' }}>
           <span className="cp-end">{up ? here : host}</span>
           <svg className="cp-arrow" viewBox="0 0 28 14" aria-hidden="true" style={{ fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }}><path d="M2 7h23M19 2l6 5-6 5" /></svg>
           <span className="cp-end">{up ? host : here}</span>
         </span>
-        <span className="badge info">{up ? 'Upload' : 'Download'}</span>
+        <span className="badge info">{up ? t('approval_dialog.upload') : t('approval_dialog.download')}</span>
       </div>
-      <div className="cp-row"><span className="who"><span className="role">From</span>{up ? 'This computer' : <span className="mono">{copy.host}</span>}</span><SlashPath path={src} data="data-copy-from" /></div>
-      <div className="cp-row"><span className="who"><span className="role">To</span>{up ? <span className="mono">{copy.host}</span> : 'This computer'}</span><SlashPath path={dst} data="data-copy-to" /></div>
+      <div className="cp-row"><span className="who"><span className="role">{t('approval_dialog.from')}</span>{up ? t('approval_dialog.this_computer') : <span className="mono">{copy.host}</span>}</span><SlashPath path={src} data="data-copy-from" /></div>
+      <div className="cp-row"><span className="who"><span className="role">{t('approval_dialog.to')}</span>{up ? <span className="mono">{copy.host}</span> : t('approval_dialog.this_computer')}</span><SlashPath path={dst} data="data-copy-to" /></div>
       {copy.recursive && (
-        <div className="cp-notes"><span className="cp-note" data-copy-recursive><Icon name="folder" className="info-t" />A folder, with everything in it <span className="mono faint">-r</span></span></div>
+        <div className="cp-notes"><span className="cp-note" data-copy-recursive><Icon name="folder" className="info-t" />{tr('approval_dialog.a_folder_with_everything_in', { span: <span className="mono faint">-r</span> })}</span></div>
       )}
       {copy.force && (
         <div className="cp-force" role="note" data-copy-force><Icon name="alert" size="sm" className="warn-t" />
-          <span><strong>Replaces files that are already there.</strong> With <span className="mono">--force</span>, anything with the same name in the destination on {up ? <span className="mono">{copy.host}</span> : 'this computer'} is overwritten without asking.</span>
+          <span>{tr('approval_dialog.force_note', { strong: <strong>{t('approval_dialog.replaces_files_that_are_already')}</strong>, flag: <span className="mono">--force</span>, where: up ? <span className="mono">{copy.host}</span> : t('approval_dialog.this_computer_lower') })}</span>
         </div>
       )}
     </div>
@@ -240,36 +240,36 @@ function TunnelBlock({ tunnel, catalog, os }: { tunnel: TunnelAsk; catalog: Cata
   const listen = `127.0.0.1:${tunnel.local_port}`;
   const h = findHost(catalog, tunnel.host);
   const c = colorStyle(h?.color ?? '');
-  const here = os === 'mac' ? 'this Mac' : 'this computer';
+  const here = os === 'mac' ? t('approval_dialog.this_mac') : t('approval_dialog.this_computer_lower');
   const taken = up && !!tunnel.port_in_use;
   const where = h ? `${h.user ? h.user + '@' : ''}${h.hostname}${h.jump ? ' · via ' + h.jump : ''}` : '';
   return (
     <div className="tn" data-tunnel-ask data-verb={tunnel.verb} data-tunnel-host={tunnel.host} data-tunnel-local={listen} data-tunnel-dest={tunnel.destination} data-port-in-use={taken || undefined}
-      aria-label={`${up ? 'Open' : 'Stop'} tunnel ${tunnel.name}: ${listen} to ${tunnel.destination} through ${tunnel.host}`}>
+      aria-label={t(up ? 'approval_dialog.open_tunnel_aria' : 'approval_dialog.stop_tunnel_aria', { name: tunnel.name, listen, destination: tunnel.destination, host: tunnel.host })}>
       <div className="cp-dir">
         <span className="grow row" style={{ gap: 'var(--sp-2)', minWidth: 0 }}>
           <span className="cp-end"><span className={'sp-dot ' + c.className} style={c.style} /><span className="mono">{tunnel.host}</span></span>
           {where && <span className="faint mono trunc" style={{ fontSize: 'var(--fs-xs)', fontWeight: 'var(--fw-regular)' }}>{where}</span>}
         </span>
-        <span className="badge info"><Icon name="tunnel" />{up ? 'Tunnel' : 'Stop tunnel'} <span className="mono" data-tunnel-name>{tunnel.name}</span></span>
+        <span className="badge info"><Icon name="tunnel" />{up ? t('approval_dialog.tunnel') : t('approval_dialog.stop_tunnel')} <span className="mono" data-tunnel-name>{tunnel.name}</span></span>
       </div>
       <div className="tn-ends">
-        <div className="tn-end"><span className="where"><Icon name="monitor" />On {here}{taken && <> · <span className="danger-t">in use</span></>}</span><span className="addr" style={taken ? { color: 'var(--warning)' } : undefined}>{listen}</span></div>
+        <div className="tn-end"><span className="where"><Icon name="monitor" />{t('approval_dialog.on_host', { host: here })}{taken && <> · <span className="danger-t">{t('approval_dialog.in_use')}</span></>}</span><span className="addr" style={taken ? { color: 'var(--warning)' } : undefined}>{listen}</span></div>
         {ARROW}
-        <div className="tn-end"><span className="where"><Icon name="hosts" />On {tunnel.host}</span><span className="addr">{tunnel.destination}</span></div>
+        <div className="tn-end"><span className="where"><Icon name="hosts" />{t('approval_dialog.on_host', { host: tunnel.host })}</span><span className="addr">{tunnel.destination}</span></div>
       </div>
       {up && (
         <div className="cp-notes">
-          <span className="cp-note"><Icon name="shield" className="info-t" />Only {here} can connect: <span className="mono">127.0.0.1</span>, never your network</span>
-          <span className="cp-note"><Icon name="tunnel" className="info-t" />Runs in its own session, with no terminal; stays up until stopped or Flint quits</span>
+          <span className="cp-note"><Icon name="shield" className="info-t" />{tr('approval_dialog.only_here_can_connect_span', { here, span: <span className="mono">127.0.0.1</span> })}</span>
+          <span className="cp-note"><Icon name="tunnel" className="info-t" />{t('approval_dialog.runs_in_its_own_session')}</span>
         </div>
       )}
       {taken && (
         <div className="cp-force" role="alert" data-tunnel-port-in-use style={{ background: 'var(--danger-subtle)', borderTopColor: 'var(--danger-border)' }}>
           <Icon name="alert" size="sm" className="danger-t" />
           {tunnel.port_owner
-            ? <span><span className="strong">Port {tunnel.local_port} is already in use on {here}</span>, by <span className="mono" data-port-owner>{tunnel.port_owner}</span> (pid {tunnel.port_owner_pid}). This tunnel can't open, so there is nothing to allow. Stop that program, or give the tunnel another local port (<span className="mono">flint tunnel edit {tunnel.host}:{tunnel.name} --local …</span>).</span>
-            : <span><span className="strong">Port {tunnel.local_port} is already in use on {here}.</span> This tunnel can't open, so there is nothing to allow. Stop what uses it, or give the tunnel another local port (<span className="mono">flint tunnel edit {tunnel.host}:{tunnel.name} --local …</span>).</span>}
+            ? <span>{tr('approval_dialog.port_in_use_by', { strong: <span className="strong">{t('approval_dialog.port_in_use_on', { port: tunnel.local_port, here })}</span>, owner: <span className="mono" data-port-owner>{tunnel.port_owner}</span>, pid: tunnel.port_owner_pid, cmd: <span className="mono">flint tunnel edit {tunnel.host}:{tunnel.name} --local …</span> })}</span>
+            : <span>{tr('approval_dialog.port_in_use', { strong: <span className="strong">{t('approval_dialog.port_in_use_on', { port: tunnel.local_port, here })}.</span>, cmd: <span className="mono">flint tunnel edit {tunnel.host}:{tunnel.name} --local …</span> })}</span>}
         </div>
       )}
     </div>
@@ -280,7 +280,9 @@ function kindOf(ap: Approval): 'sudo' | 'token' | 'copy' | 'tunnel' | 'grant' {
   return ap.sudo?.host ? 'sudo' : ap.token?.name ? 'token' : ap.copy?.direction ? 'copy' : ap.tunnel?.verb ? 'tunnel' : 'grant';
 }
 
-const KIND_LABEL = { sudo: 'Run as root', token: 'Token request', copy: 'Copy files', tunnel: 'Tunnel', grant: 'Grant request' };
+const KIND_LABEL = {
+  sudo: 'approval_dialog.kind.sudo', token: 'approval_dialog.kind.token', copy: 'approval_dialog.kind.copy', tunnel: 'approval_dialog.kind.tunnel', grant: 'approval_dialog.kind.grant',
+};
 
 export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalog, skew, onDone }: {
   ap: Approval;
@@ -392,14 +394,15 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
     } catch (err) {
       const e = toFlintError(err);
       if (e.code === 'not_found') { onDone(null); return; }
-      if (e.code === 'wrong_password') { setWrongPassword(true); setError('That is not the master password. Nothing was allowed.'); }
+      if (e.code === 'wrong_password') { setWrongPassword(true); setError(t('approval_dialog.wrong_master_password')); }
       else setError(e.message);
       setBusy(false);
       setConfirming(false);
     }
   };
   const covers = token !== null || sudo !== null || ((actions[ap.need.action as AccessAction]) && (ap.need.action !== 'write' || scope === 'all'));
-  const needLabel = ACTIONS.find((a) => a.value === ap.need.action)?.label ?? ap.need.action;
+  const needKey = ACTIONS.find((a) => a.value === ap.need.action)?.label;
+  const needLabel = needKey ? t(needKey) : ap.need.action;
   // A tunnel whose port is taken cannot open: nothing to allow (design 16h2).
   const portTaken = !!tunnel && tunnel.verb === 'up' && !!tunnel.port_in_use;
   const canAllow = !busy && !portTaken && !(presence === 'password' && !password);
@@ -415,7 +418,7 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
   const focusOn: 'sudo' | 'master' | 'deny' = askSudo ? 'sudo' : presence === 'password' ? 'master' : 'deny';
   const allowKey = os === 'mac' ? '⌘↵' : 'Ctrl+↵';
   // The presence check this system would offer (Windows Hello is not wired yet).
-  const noPresence = os === 'windows' ? 'No Windows Hello' : 'No Touch ID or polkit agent';
+  const noPresence = os === 'windows' ? t('approval_dialog.no_windows_hello') : t('approval_dialog.no_touch_id_or_polkit');
   const next = queue[1];
   const argCount = sudo?.argv.length ?? 0;
   const more = ap.command ? moreText(ap.request, ap.command.text) : '';
@@ -424,20 +427,22 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
   const periodMin = periods ? ROOT_PERIODS.find((p) => p.value === period)?.min ?? 0 : 0;
 
   return (
-    <Modal label={sudo ? 'Run a command as root' : 'Allow access to the vault'} onClose={() => { if (!busy) answer(false); }} width={580} top={46}
+    <Modal label={sudo ? t('approval_dialog.run_a_command_as_root') : t('approval_dialog.allow_access_to_the_vault')} onClose={() => { if (!busy) answer(false); }} width={580} top={46}
       className={sudo ? 'approval root' : 'approval'} scrimCloses={false}>
       <form ref={formRef} data-approval={ap.id} data-kind={kind} onKeyDown={onKeyDown} onSubmit={(e) => { e.preventDefault(); if (canAllow) answer(true); }}>
         <div className="modal-h" style={{ alignItems: 'flex-start', paddingBottom: 'var(--sp-3)' }}>
           <span className={sudo ? 'prompt-ic danger' : 'prompt-ic info'}><Icon name={sudo ? 'shield' : 'agent'} /></span>
           <div className="col grow" style={{ gap: 6, minWidth: 0 }}>
             <h2 style={{ lineHeight: 'var(--lh-tight)' }}>
-              <CallerLabel label={ap.label} />
-              {sudo ? <> wants to run a command as <span className="danger-t">root</span> on <span className="mono">{sudo.host}</span></>
-                : token ? ' wants to create a token'
-                : copy && copy.direction === 'relay' ? ' wants to copy files between two servers'
-                : copy ? <> wants to copy files {copy.direction === 'upload' ? 'to' : 'from'} <span className="mono">{copy.host}</span></>
-                : tunnel ? <> wants to {tunnel.verb === 'up' ? 'open' : 'stop'} a tunnel through <span className="mono">{tunnel.host}</span></>
-                : ' wants to use this vault'}
+              {(() => {
+                const caller = <CallerLabel label={ap.label} />;
+                if (sudo) return tr('approval_dialog.heading.sudo', { caller, root: <span className="danger-t">root</span>, host: <span className="mono">{sudo.host}</span> });
+                if (token) return tr('approval_dialog.heading.token', { caller });
+                if (copy && copy.direction === 'relay') return tr('approval_dialog.heading.relay', { caller });
+                if (copy) return tr(copy.direction === 'upload' ? 'approval_dialog.heading.upload' : 'approval_dialog.heading.download', { caller, host: <span className="mono">{copy.host}</span> });
+                if (tunnel) return tr(tunnel.verb === 'up' ? 'approval_dialog.heading.tunnel_up' : 'approval_dialog.heading.tunnel_down', { caller, host: <span className="mono">{tunnel.host}</span> });
+                return tr('approval_dialog.heading.grant', { caller });
+              })()}
             </h2>
             <span className="chain" title={ap.chain.map((p) => `${p.pid} ${p.exe}`).join('\n')}>
               {chain.map((p, i) => (
@@ -449,44 +454,44 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
               <span style={{ marginLeft: 'var(--sp-2)' }}>pid {ap.chain[0]?.pid ?? '?'}</span>
             </span>
           </div>
-          {queue.length > 1 && <span className="queue" data-approval-queue aria-label={`Request 1 of ${queue.length} waiting`}><b>1</b> of {queue.length} waiting</span>}
+          {queue.length > 1 && <span className="queue" data-approval-queue aria-label={t('approval_dialog.queue_waiting_aria', { count: queue.length })}>{tr('approval_dialog.queue_waiting', { first: <b>1</b>, count: queue.length })}</span>}
         </div>
         <div className="modal-b" style={{ gap: 'var(--sp-4)', paddingTop: 'var(--sp-4)' }}>
           {sudo ? (
             <>
-              {periodMin === 0 && <div className="callout danger" style={{ alignItems: 'center' }} data-sudo-once><Icon name="alert" /><span><strong>Runs as root, once.</strong> Nothing else is allowed by this.</span></div>}
+              {periodMin === 0 && <div className="callout danger" style={{ alignItems: 'center' }} data-sudo-once><Icon name="alert" /><span>{tr('approval_dialog.strong_nothing_else_is_allowed', { strong: <strong>{t('approval_dialog.runs_as_root_once')}</strong> })}</span></div>}
               <dl className="kv" data-sudo-ask style={{ margin: 0, gridTemplateColumns: '72px minmax(0, 1fr)' }}>
-                <dt>Where</dt>
+                <dt>{t('approval_dialog.where')}</dt>
                 <dd>
                   <span className="mono strong" data-sudo-host>{sudo.host}</span>
                   {sudoHost && <span className="faint"> · {[sudoHost.label, sudoHost.hostname].filter((x) => x && x !== sudo.host).join(' · ')}</span>}
                 </dd>
-                <dt>As</dt><dd><span className="mono">{sudo.user}</span> <span className="faint">→</span> <span className="mono danger-t strong">root</span> <span className="faint">(sudo)</span></dd>
+                <dt>{t('approval_dialog.as')}</dt><dd><span className="mono">{sudo.user}</span> <span className="faint">→</span> <span className="mono danger-t strong">root</span> <span className="faint">{t('approval_dialog.sudo')}</span></dd>
               </dl>
               <div className="col" style={{ gap: 6 }}>
                 <div className="row">
-                  <span className="label grow">Command</span>
-                  <span className="hint">{plural(argCount, 'argument')} · <span className="danger-t">sudo --</span> added by Flint</span>
+                  <span className="label grow">{t('approval_dialog.command')}</span>
+                  <span className="hint">{tr('approval_dialog.arguments_added_by_flint', { count: argCount, n: fmtNumber(argCount), sudo: <span className="danger-t">sudo --</span> })}</span>
                 </div>
-                <div className={argCount > 8 ? 'argv scroll' : 'argv'} role="list" aria-label="Arguments" data-sudo-argv>
-                  <span className="arg added" role="listitem" title="Added by Flint: sudo -S -k -p <prompt> --. Flint types the password; sudo keeps no cached ticket.">sudo</span>
-                  <span className="arg added" role="listitem" title="Added by Flint: what follows is the command, never an option of sudo">--</span>
+                <div className={argCount > 8 ? 'argv scroll' : 'argv'} role="list" aria-label={t('approval_dialog.arguments')} data-sudo-argv>
+                  <span className="arg added" role="listitem" title={t('approval_dialog.added_by_flint_sudo_s')}>sudo</span>
+                  <span className="arg added" role="listitem" title={t('approval_dialog.added_by_flint_what_follows')}>--</span>
                   {sudo.argv.map((a, i) => <span key={i} className={a.includes('\n') ? 'arg script' : 'arg'} role="listitem" data-arg={i}>{a}</span>)}
                 </div>
               </div>
               {periods && (
                 <>
                   <div className="row" style={{ gap: 'var(--sp-3)' }}>
-                    <span className="label" style={{ width: 72 }}>Allow for</span>
-                    <div className="seg" role="radiogroup" aria-label="Allow for" data-root-periods>
-                      {ROOT_PERIODS.map((p) => <button type="button" role="radio" key={p.value || 'each'} data-root-period={p.value || 'each'} aria-checked={period === p.value} aria-pressed={period === p.value} onClick={() => setPeriod(p.value)}>{p.label}</button>)}
+                    <span className="label" style={{ width: 72 }}>{t('approval_dialog.allow_for')}</span>
+                    <div className="seg" role="radiogroup" aria-label={t('approval_dialog.allow_for')} data-root-periods>
+                      {ROOT_PERIODS.map((p) => <button type="button" role="radio" key={p.value || 'each'} data-root-period={p.value || 'each'} aria-checked={period === p.value} aria-pressed={period === p.value} onClick={() => setPeriod(p.value)}>{t(p.label)}</button>)}
                     </div>
                   </div>
                   {periodMin > 0 && (
                     <>
                       <div className="callout danger" role="alert" style={{ fontSize: 'var(--fs-sm)' }} data-root-warning><Icon name="alert" size="sm" /><span><strong>{rootPeriodWarning(ap.label, sudo.host, periodMin)}</strong></span></div>
                       <label className="opt notify-opt is-disabled"><input type="checkbox" checked disabled data-root-notify />
-                        <span className="opt-t"><span className="opt-l row" style={{ gap: 6 }}><Icon name="bell" size="sm" />Notify me of each command</span><span className="hint">Always on for root.</span></span>
+                        <span className="opt-t"><span className="opt-l row" style={{ gap: 6 }}><Icon name="bell" size="sm" />{t('approval_dialog.notify_me_of_each_command')}</span><span className="hint">{t('approval_dialog.always_on_for_root')}</span></span>
                       </label>
                     </>
                   )}
@@ -494,16 +499,16 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
               )}
               {sudo.has_password ? (
                 <div className="row" style={{ gap: 'var(--sp-2)', fontSize: 'var(--fs-sm)' }}>
-                  <Icon name="key" /><span className="grow">Flint types the sudo password it holds for <span className="mono">{sudo.host}</span>, only if sudo asks. The program never sees it.</span>
+                  <Icon name="key" /><span className="grow">{tr('approval_dialog.flint_types_the_sudo_password', { span: <span className="mono">{sudo.host}</span> })}</span>
                 </div>
               ) : (
                 <div className="field">
-                  <label className="flabel" htmlFor="approval-sudo-pw">Sudo password for <span className="mono strong">{sudo.user}</span> on <span className="mono strong">{sudo.host}</span></label>
+                  <label className="flabel" htmlFor="approval-sudo-pw">{tr('approval_dialog.sudo_password_for_span_on', { span: <span className="mono strong">{sudo.user}</span>, span2: <span className="mono strong">{sudo.host}</span> })}</label>
                   <div className="input"><input {...plainText} id="approval-sudo-pw" type="password" className="pw" autoComplete="off" value={sudoPassword}
                     onChange={(e) => setSudoPassword(e.target.value)} data-sudo-password {...(focusOn === 'sudo' ? { 'data-autofocus': true } : {})} /></div>
                   <label className="opt"><input type="checkbox" checked={saveSudo} onChange={(e) => setSaveSudo(e.target.checked)} data-sudo-save />
-                    <span className="opt-t"><span className="opt-l">Save it for {sudo.host}</span><span className="hint">{periodMin > 0 && !saveSudo
-                      ? `Not saved, Flint keeps it in memory for these ${periodMin} min only.` : 'Kept in the vault. Flint types it only when sudo asks.'}</span></span>
+                    <span className="opt-t"><span className="opt-l">{tr('approval_dialog.save_it_for_host', { host: sudo.host })}</span><span className="hint">{periodMin > 0 && !saveSudo
+                      ? t('approval_dialog.not_saved_flint_keeps_it', { periodMin }) : t('approval_dialog.kept_in_the_vault_flint')}</span></span>
                   </label>
                 </div>
               )}
@@ -512,10 +517,10 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
             <>
               <div className="col" style={{ gap: 6 }}>
                 {copy?.direction === 'relay'
-                  ? <div className="row"><span className="label grow">Request</span><span className="hint row" style={{ gap: 4 }} data-copy-relay><Icon name="shield-ok" size="xs" className="info-t" />Bytes pass through Flint — no key or password goes on a server</span></div>
-                  : <span className="label">Request</span>}
+                  ? <div className="row"><span className="label grow">{t('approval_dialog.request')}</span><span className="hint row" style={{ gap: 4 }} data-copy-relay><Icon name="shield-ok" size="xs" className="info-t" />{t('approval_dialog.bytes_pass_through_flint_no')}</span></div>
+                  : <span className="label">{t('approval_dialog.request')}</span>}
                 <div className={more ? 'fp req-summary' : 'fp'} data-approval-request style={{ padding: '6px var(--sp-3)', wordBreak: 'break-all' }}
-                  title={more ? 'Summary — open the full command to read all of it' : undefined}>{ap.request}</div>
+                  title={more ? t('approval_dialog.summary_open_the_full_command') : undefined}>{ap.request}</div>
                 {more && <MoreRow more={more} data="approval" onShow={() => setShowCommand(true)} />}
               </div>
               {copy && <CopyBlock copy={copy} catalog={catalog} />}
@@ -523,22 +528,22 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
               {token ? (
                 <>
                   <dl className="kv" data-token-ask style={{ margin: 0, gridTemplateColumns: '88px minmax(0, 1fr)' }}>
-                    <dt>Name</dt><dd className="mono" data-token-name>{token.name}</dd>
-                    <dt>Allows</dt><dd>{token.allows.split(',').map((a) => ACTIONS.find((x) => x.value === a)?.label ?? a).join(', ')}</dd>
-                    <dt>Reaches</dt><dd>{token.reaches}</dd>
-                    <dt>Expires</dt><dd>in {TTL_LABELS[token.ttl] ?? token.ttl}</dd>
+                    <dt>{t('approval_dialog.name')}</dt><dd className="mono" data-token-name>{token.name}</dd>
+                    <dt>{t('approval_dialog.allows')}</dt><dd>{token.allows.split(',').map((a) => { const k = ACTIONS.find((x) => x.value === a)?.label; return k ? t(k) : a; }).join(', ')}</dd>
+                    <dt>{t('approval_dialog.reaches')}</dt><dd>{token.reaches}</dd>
+                    <dt>{t('approval_dialog.expires')}</dt><dd>{t('approval_dialog.expires_in', { ttl: TTL_LABELS[token.ttl] ? t(TTL_LABELS[token.ttl]) : token.ttl })}</dd>
                   </dl>
-                  <div className="callout warn"><Icon name="alert" /><span>Whoever holds the token can do this without asking, until it expires or you revoke it in Settings → Access.</span></div>
+                  <div className="callout warn"><Icon name="alert" /><span>{t('approval_dialog.whoever_holds_the_token_can')}</span></div>
                 </>
               ) : (
                 <>
                   <div className="choice-row">
-                    <span className="flabel">Hosts</span>
-                    <div className="opt-list" role="radiogroup" aria-label="Hosts">
+                    <span className="flabel">{t('approval_dialog.hosts')}</span>
+                    <div className="opt-list" role="radiogroup" aria-label={t('approval_dialog.hosts')}>
                       {hostsKnown && (
                         <label className="opt"><input type="radio" name="approval-scope" data-scope-host checked={scope === 'host'} onChange={() => setScope('host')} />
                           {host2
-                            ? <span className="opt-t"><span className="opt-l" data-scope-hosts>These two hosts</span>
+                            ? <span className="opt-t"><span className="opt-l" data-scope-hosts>{t('approval_dialog.these_two_hosts')}</span>
                               <span className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 3 }}>
                                 {relayEnds.map((e) => (
                                   <Fragment key={e.alias}>
@@ -547,18 +552,18 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
                                   </Fragment>
                                 ))}
                               </span></span>
-                            : <span className="opt-t"><span className="opt-l">This host <span className="mono muted">{host}</span></span></span>}</label>
+                            : <span className="opt-t"><span className="opt-l">{tr('approval_dialog.this_host_span', { span: <span className="mono muted">{host}</span> })}</span></span>}</label>
                       )}
                       {groups.length > 0 && (
                         <label className="opt"><input type="radio" name="approval-scope" data-scope-group checked={scope === 'group'} onChange={() => setScope('group')} />
-                          <span className="opt-t"><span className="opt-l">{host2 ? (groups.length > 1 ? 'Their groups' : 'Their group') : 'Its group'} <span className="path muted" title={groups.join(', ')}>{groups.join(', ')}</span></span><span className="hint">{plural(hostsIn(catalog, groups), 'host')}</span></span></label>
+                          <span className="opt-t"><span className="opt-l">{host2 ? (groups.length > 1 ? t('approval_dialog.their_groups') : t('approval_dialog.their_group')) : t('approval_dialog.its_group')} <span className="path muted" title={groups.join(', ')}>{groups.join(', ')}</span></span><span className="hint">{t('approval_dialog.n_hosts', { count: hostsIn(catalog, groups) })}</span></span></label>
                       )}
                       <label className="opt"><input type="radio" name="approval-scope" data-scope-all checked={scope === 'all'} onChange={() => setScope('all')} />
-                        <span className="opt-t"><span className="opt-l">Whole vault</span><span className="hint">{plural(catalog.hosts.length, 'host')}</span></span></label>
+                        <span className="opt-t"><span className="opt-l">{t('approval_dialog.whole_vault')}</span><span className="hint">{t('approval_dialog.n_hosts', { count: catalog.hosts.length })}</span></span></label>
                     </div>
                   </div>
                   <div className="choice-row">
-                    <span className="flabel">Actions</span>
+                    <span className="flabel">{t('approval_dialog.actions')}</span>
                     <div className="opt-list">
                       {ACTIONS.map((a) => {
                         const off = a.value === 'write' && scope !== 'all';
@@ -567,10 +572,10 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
                             <input type="checkbox" data-action={a.value} checked={actions[a.value]} disabled={off}
                               onChange={(e) => setActions({ ...actions, [a.value]: e.target.checked })} />
                             <span className="opt-t">
-                              <span className="opt-l">{tunnel && a.value === 'exec' ? 'Run commands and open tunnels' : a.label}{ap.need.action === a.value && <span className="need">needed</span>}</span>
-                              <span className="hint">{off ? 'Needs Whole vault' : tunnel && a.value === 'exec'
-                                ? <>A tunnel needs this host's exec scope, so <span className="strong" style={{ color: 'var(--text-primary)' }}>the program could also run commands on {tunnel.host}</span> while the grant lasts.</>
-                                : a.hint}</span>
+                              <span className="opt-l">{tunnel && a.value === 'exec' ? t('approval_dialog.run_commands_and_open_tunnels') : t(a.label)}{ap.need.action === a.value && <span className="need">{t('approval_dialog.needed')}</span>}</span>
+                              <span className="hint">{off ? t('approval_dialog.needs_whole_vault') : tunnel && a.value === 'exec'
+                                ? <>{tr('approval_dialog.a_tunnel_needs_this_host', { span: <span className="strong" style={{ color: 'var(--text-primary)' }}>{tr('approval_dialog.the_program_could_also_run', { host: tunnel.host })}</span> })}</>
+                                : t(a.hint)}</span>
                             </span>
                           </label>
                         );
@@ -578,20 +583,20 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
                     </div>
                   </div>
                   <div className="choice-row">
-                    <span className="flabel">Duration</span>
-                    <div className="seg" role="radiogroup" aria-label="Duration">
-                      {DURATIONS.map((d) => <button type="button" role="radio" key={d.value} data-duration={d.value} aria-checked={duration === d.value} aria-pressed={duration === d.value} onClick={() => setDuration(d.value)}>{d.label}</button>)}
+                    <span className="flabel">{t('approval_dialog.duration')}</span>
+                    <div className="seg" role="radiogroup" aria-label={t('approval_dialog.duration')}>
+                      {DURATIONS.map((d) => <button type="button" role="radio" key={d.value} data-duration={d.value} aria-checked={duration === d.value} aria-pressed={duration === d.value} onClick={() => setDuration(d.value)}>{t(d.label)}</button>)}
                     </div>
                   </div>
                   <label className="opt notify-opt"><input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} data-grant-notify />
                     <span className="opt-t">
-                      <span className="opt-l row" style={{ gap: 6 }}><Icon name="bell" size="sm" />Notify me of each command</span>
-                      <span className="hint">A notice names the program and the host, never the command. Default from Settings → Access.</span>
+                      <span className="opt-l row" style={{ gap: 6 }}><Icon name="bell" size="sm" />{t('approval_dialog.notify_me_of_each_command')}</span>
+                      <span className="hint">{t('approval_dialog.a_notice_names_the_program')}</span>
                     </span>
                   </label>
                   {!covers && (
                     <div className="callout warn" role="status"><Icon name="alert" />
-                      <span>This doesn't cover the request: <span className="mono strong">{ap.request.split(' ').slice(0, 2).join(' ')}</span> needs <span className="strong">{needLabel}</span>{ap.need.action === 'write' ? ' on the whole vault' : ''}. You can still allow it, but this request will be refused.</span>
+                      <span>{tr(ap.need.action === 'write' ? 'approval_dialog.not_covered_write' : 'approval_dialog.not_covered', { cmd: <span className="mono strong">{ap.request.split(' ').slice(0, 2).join(' ')}</span>, need: <span className="strong">{needLabel}</span> })}</span>
                     </div>
                   )}
                 </>
@@ -600,13 +605,13 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
           )}
           {presence === 'password' && (
             <div className={sudo ? 'field' : 'choice-row'}>
-              <label className="flabel" htmlFor="approval-pw">{sudo ? (periodMin > 0 ? `Master password: confirms root for ${periodMin} min` : 'Master password: confirms this one command') : 'Confirm'}</label>
+              <label className="flabel" htmlFor="approval-pw">{sudo ? (periodMin > 0 ? t('approval_dialog.master_password_confirms_root_for', { periodMin }) : t('approval_dialog.master_password_confirms_this_one')) : t('approval_dialog.confirm')}</label>
               <div className="field">
                 <div className={wrongPassword ? 'input err' : 'input'}>
                   <input {...plainText} id="approval-pw" type="password" className="pw" autoComplete="off" value={password} aria-invalid={wrongPassword || undefined}
                     onChange={(e) => { setPassword(e.target.value); setWrongPassword(false); }} {...(focusOn === 'master' ? { 'data-autofocus': true } : {})} />
                 </div>
-                {!wrongPassword && <span className="hint">{sudo ? `${noPresence} here. This is the vault's password, not the host's sudo password.` : `Master password for this vault. ${noPresence} is available here.`}</span>}
+                {!wrongPassword && <span className="hint">{sudo ? t('approval_dialog.nopresence_here_this_is_the', { noPresence }) : t('approval_dialog.master_password_for_this_vault', { noPresence })}</span>}
                 {wrongPassword && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
               </div>
             </div>
@@ -615,30 +620,30 @@ export function ApprovalDialog({ ap, queue, presence, periods: periodsOn, catalo
         </div>
         <div className="modal-f">
           <div className="countdown" role="timer" aria-live="off" style={{ width: 190 }}>
-            <span className="hint" data-approval-countdown>Denied automatically in <span className="mono strong">{clock}</span></span>
+            <span className="hint" data-approval-countdown>{tr('approval_dialog.denied_automatically_in_span', { span: <span className="mono strong">{clock}</span> })}</span>
             <div className="progress"><i style={{ width: `${Math.min(100, (left / total) * 100)}%` }} /></div>
           </div>
           <span className="grow" />
           <button type="button" className="btn btn-secondary" data-approval-deny data-default-focus disabled={busy} onClick={() => answer(false)}
-            {...(focusOn === 'deny' ? { 'data-autofocus': true } : {})}>Deny<Key>esc</Key></button>
+            {...(focusOn === 'deny' ? { 'data-autofocus': true } : {})}>{t('approval_dialog.deny')}<Key>esc</Key></button>
           <button type="submit" className={confirming ? 'btn btn-primary is-active' : 'btn btn-primary'} data-approval-allow disabled={!canAllow} aria-disabled={busy || undefined}
-            title={portTaken && tunnel ? `The tunnel can't open: port ${tunnel.local_port} is in use` : undefined}>
+            title={portTaken && tunnel ? t('approval_dialog.the_tunnel_can_t_open', { local_port: tunnel.local_port }) : undefined}>
             {confirming && presence !== 'password'
-              ? <>{presence === 'touchid' && <Icon name="fingerprint" />}Confirm with {presenceLabel(presence)}…</>
-              : <>{sudo ? (periodMin > 0 ? `Allow root for ${periodMin} min` : 'Run as root') : 'Allow'}<span className="kbd-in">{allowKey}</span></>}
+              ? <>{presence === 'touchid' && <Icon name="fingerprint" />}{t('approval_dialog.confirm_with', { presence: presenceLabel(presence) })}</>
+              : <>{sudo ? (periodMin > 0 ? t('approval_dialog.allow_root_for_periodmin_min', { periodMin }) : t('approval_dialog.run_as_root')) : t('approval_dialog.allow')}<span className="kbd-in">{allowKey}</span></>}
           </button>
         </div>
         {next && (
           <div className="row approval-next" data-approval-next>
-            <span className="label">Next</span>
+            <span className="label">{t('approval_dialog.next')}</span>
             <Icon name={kindOf(next) === 'sudo' ? 'shield' : 'agent'} />
-            <span className="grow trunc">{KIND_LABEL[kindOf(next)]} · {next.label.replace(/^.*?, started by /, '')} · <span className="mono">{next.request}</span></span>
-            <span className="hint">opens after this one</span>
+            <span className="grow trunc">{t(KIND_LABEL[kindOf(next)])} · {next.label.replace(/^.*?, started by /, '')} · <span className="mono">{next.request}</span></span>
+            <span className="hint">{t('approval_dialog.opens_after_this_one')}</span>
           </div>
         )}
       </form>
-      {showCommand && <CommandModal title="Full command" command={ap.command.text} cut={ap.command.cut} onClose={() => setShowCommand(false)}
-        footer={<><span className="waiting-tag" data-command-waiting><Icon name="clock" size="xs" />Approval still waiting · {clock}</span><span className="hint">Esc returns to it</span></>} />}
+      {showCommand && <CommandModal title={t('approval_dialog.full_command')} command={ap.command.text} cut={ap.command.cut} onClose={() => setShowCommand(false)}
+        footer={<><span className="waiting-tag" data-command-waiting><Icon name="clock" size="xs" />{tr('approval_dialog.approval_still_waiting_clock', { clock })}</span><span className="hint">{t('approval_dialog.esc_returns_to_it')}</span></>} />}
     </Modal>
   );
 }

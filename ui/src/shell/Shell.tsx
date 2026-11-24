@@ -226,10 +226,10 @@ export function Shell() {
       prevStatus.current.set(p.id, p.status);
       if (p.status !== 'prompt' || before === 'prompt') continue;
       const i = tabs.findIndex((t) => t.id === p.tab);
-      const t = tabs[i];
-      if (!t || (t.id === active && t.focus === p.id)) continue;
-      const text = t.id === active ? `${p.alias} needs your input in pane ${t.panes.indexOf(p.id) + 1}`
-        : `${p.alias} needs your input${i < 9 ? ' ' + chordLabel(('tab' + (i + 1)) as Action, os) : ''}`;
+      const tab = tabs[i];
+      if (!tab || (tab.id === active && tab.focus === p.id)) continue;
+      const text = tab.id === active ? t('shell.needs_input_in_pane', { alias: p.alias, pane: tab.panes.indexOf(p.id) + 1 })
+        : i < 9 ? t('shell.needs_input_chord', { alias: p.alias, chord: chordLabel(('tab' + (i + 1)) as Action, os) }) : t('shell.needs_input', { alias: p.alias });
       notify({ text, kind: 'info', key: `prompt:${p.id}` });
     }
   }, [panes, tabs, active, os, notify]);
@@ -296,13 +296,13 @@ export function Shell() {
 
   const deleteHost = useCallback((alias: string) => setConfirm({
     title: t('shell.delete_host_alias', { alias }),
-    body: 'The host and its saved password are removed from the vault. Open sessions keep running.',
-    action: 'Delete host',
+    body: t('shell.delete_host_body'),
+    action: t('shell.delete_host_action'),
     run: async () => { await api.hostRm(alias); await refreshCatalog(); setEditor(null); notify(t('shell.deleted_alias', { alias })); },
   }), [refreshCatalog, notify]);
 
   const newGroup = useCallback((parent: string) => setAsk({
-    title: parent ? t('shell.new_group_in_parent', { parent }) : t('shell.new_group'), label: t('shell.name'), value: '', action: 'Create group',
+    title: parent ? t('shell.new_group_in_parent', { parent }) : t('shell.new_group'), label: t('shell.name'), value: '', action: t('shell.create_group'),
     hint: t('shell.use_to_nest_e_g'),
     run: async (v) => { await api.groupAdd(parent ? parent + '/' + v : v); await refreshCatalog(); },
   }), [refreshCatalog]);
@@ -377,8 +377,8 @@ export function Shell() {
       case 'connectServer': openServerSettings(); break;
       case 'disconnectServer': setConfirm({
         title: t('shell.disconnect_this_vault_from_its'),
-        body: 'This machine stops syncing it. The local copy stays as it is and keeps working, the server keeps its copy, and nothing is deleted.',
-        action: 'Disconnect',
+        body: t('shell.disconnect_body'),
+        action: t('common.disconnect'),
         run: async () => { syncActions.current?.disconnect(); },
       }); break;
       case 'newHost':
@@ -424,13 +424,13 @@ export function Shell() {
     return () => { window.removeEventListener('keydown', onKey); setActionHandler(null); };
   }, [run, os, phase, windowLock]);
 
-  const unlockedLabel = 'Unlocked' + (vault?.cached ? (os === 'mac' ? ' · Keychain' : ' · Keyring') : '');
+  const unlockedLabel = vault?.cached ? (os === 'mac' ? t('shell.unlocked_keychain') : t('shell.unlocked_keyring')) : t('shell.unlocked');
   const anyOverlay = palette || editor || confirm || ask || manage;
   const sessionsOpen = panes.filter((t) => t.status !== 'ended').length;
   const crumb = tab ? <><span>{vault?.name}</span><span className="faint">/</span><span className="mono muted">{tab.alias}</span></> : <span>{vault?.name}</span>;
   const railBtn = (v: View, icon: 'hosts' | 'files' | 'tunnel' | 'key' | 'cred' | 'settings', label: string, action: Action, badge?: React.ReactNode) => (
     <button className={'rail-btn' + (view === v ? (SIDE_VIEWS.includes(v) && collapsed ? ' is-collapsed is-on' : ' is-on') : '')} data-item={v}
-      aria-pressed={view === v} title={`${label} (${chordLabel(action, os)})`} onClick={() => showView(v)}>
+      aria-pressed={view === v} title={t('shell.rail.title', { label, chord: chordLabel(action, os) })} onClick={() => showView(v)}>
       <Icon name={icon} />{label}{badge}
     </button>
   );
@@ -454,15 +454,15 @@ export function Shell() {
         const i = btns.indexOf(document.activeElement as HTMLElement);
         btns[(i + (e.key === 'ArrowDown' ? 1 : btns.length - 1)) % btns.length]?.focus();
       }}>
-        {railBtn('hosts', 'hosts', 'Hosts', 'viewHosts')}
-        {railBtn('files', 'files', 'Files', 'viewFiles')}
-        {railBtn('tunnels', 'tunnel', 'Tunnels', 'viewTunnels', tunnelsUp > 0
-          ? <span className="rail-badge tun-count" aria-label={t('shell.tunnelsup_tunnelp_running', { tunnelsUp, p: tunnelsUp === 1 ? '' : 's' })} data-tunnels-badge>{tunnelsUp}</span> : null)}
+        {railBtn('hosts', 'hosts', t('shell.rail.hosts'), 'viewHosts')}
+        {railBtn('files', 'files', t('shell.rail.files'), 'viewFiles')}
+        {railBtn('tunnels', 'tunnel', t('shell.rail.tunnels'), 'viewTunnels', tunnelsUp > 0
+          ? <span className="rail-badge tun-count" aria-label={t('shell.tunnels_running', { count: tunnelsUp })} data-tunnels-badge>{tunnelsUp}</span> : null)}
         <span className="rail-sep" role="separator" />
-        {railBtn('keys', 'key', 'Keys', 'viewKeys')}
-        {railBtn('credentials', 'cred', 'Credentials', 'viewCredentials')}
+        {railBtn('keys', 'key', t('shell.rail.keys'), 'viewKeys')}
+        {railBtn('credentials', 'cred', t('shell.rail.credentials'), 'viewCredentials')}
         <span className="rail-spacer" />
-        {railBtn('settings', 'settings', 'Settings', 'settings')}
+        {railBtn('settings', 'settings', t('shell.rail.settings'), 'settings')}
       </nav>
 
       {showSidebar && narrow && <div style={{ position: 'absolute', inset: 'var(--titlebar-h) 0 var(--statusbar-h) var(--rail-w)', zIndex: 4 }} onMouseDown={() => setCollapsed(true)} />}
@@ -492,7 +492,7 @@ export function Shell() {
             deleteHost,
             newGroup,
             renameGroup: (path) => setAsk({
-              title: t('shell.rename_path', { path }), label: t('shell.new_name'), value: path.split('/').pop() ?? '', action: 'Rename',
+              title: t('shell.rename_path', { path }), label: t('shell.new_name'), value: path.split('/').pop() ?? '', action: t('shell.rename'),
               run: async (v) => {
                 const g = await api.groupRename(path, v);
                 // Keep the renamed group, and the groups under it, collapsed.
@@ -503,7 +503,7 @@ export function Shell() {
               },
             }),
             deleteGroup: (path) => setConfirm({
-              title: t('shell.delete_group_path', { path }), body: 'Only an empty group can be deleted; move or delete its hosts first.', action: 'Delete group',
+              title: t('shell.delete_group_path', { path }), body: t('shell.delete_group_body'), action: t('shell.delete_group_action'),
               run: async () => { await api.groupRm(path); await refreshCatalog(); },
             }),
             openSwitcher: () => setSwitcher(true),

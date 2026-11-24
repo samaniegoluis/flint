@@ -11,7 +11,7 @@ export function RememberOption({ checked, onChange, os, disabled = false }: {
   os: Os;
   disabled?: boolean;
 }) {
-  const keychain = os === 'mac' ? 'macOS Keychain' : 'the keyring';
+  const keychain = os === 'mac' ? t('remember_option.macos_keychain') : t('remember_option.the_keyring');
   return (
     <label className={'opt' + (disabled ? ' is-disabled' : '')} data-remember>
       <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />

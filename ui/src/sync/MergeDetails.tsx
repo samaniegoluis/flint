@@ -7,6 +7,7 @@ import { groupChanges, kindLabel, noteText } from '../lib/sync';
 import { Icon } from '../ui/Icon';
 import { Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
+import { t } from '../i18n';
 
 const CHANGE_CLASS: Record<string, string> = { added: 'add', updated: 'upd', removed: 'rem' };
 
@@ -14,10 +15,10 @@ export function MergeDetails({ report, onClose }: { report: MergeReport; onClose
   const { vault } = useApp();
   const groups = groupChanges(report.changes);
   return (
-    <Modal label="Changes from another machine" onClose={onClose} width={520}>
-      <div className="modal-h"><Icon name="cloud" size="sm" className="accent-t" /><h2 className="grow">Changes from another machine</h2></div>
+    <Modal label={t('merge_details.changes_from_another_machine')} onClose={onClose} width={520}>
+      <div className="modal-h"><Icon name="cloud" size="sm" className="accent-t" /><h2 className="grow">{t('merge_details.changes_from_another_machine')}</h2></div>
       <div className="modal-b" style={{ gap: 'var(--sp-4)' }} data-merge-details>
-        <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Merged into {vault?.name ?? 'the vault'}. Labels only; nothing secret is listed.</span>
+        <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{t('merge_details.merged_into_name', { name: vault?.name ?? t('merge_details.the_vault') })}</span>
         {groups.map((g) => (
           <div className="chg-group" key={g.kind}>
             <span className="label">{kindLabel(g.kind, 2).replace(/^./, (c) => c.toUpperCase())}</span>
@@ -28,7 +29,7 @@ export function MergeDetails({ report, onClose }: { report: MergeReport; onClose
         ))}
         {report.notes.length > 0 && (
           <div className="col" style={{ gap: 'var(--sp-2)' }}>
-            <span className="label">What the merge did</span>
+            <span className="label">{t('merge_details.what_the_merge_did')}</span>
             {report.notes.map((n, i) => (
               <span key={i} className="row" style={{ gap: 'var(--sp-2)', alignItems: 'flex-start', fontSize: 'var(--fs-sm)', lineHeight: 1.45 }}>
                 <Icon name="info" size="xs" className="accent-t" /><span>{noteText(n)}.</span>
@@ -37,7 +38,7 @@ export function MergeDetails({ report, onClose }: { report: MergeReport; onClose
           </div>
         )}
       </div>
-      <div className="modal-f"><span className="grow" /><button className="btn btn-primary" onClick={onClose} autoFocus>Close<Key>esc</Key></button></div>
+      <div className="modal-f"><span className="grow" /><button className="btn btn-primary" onClick={onClose} autoFocus>{t('common.close')}<Key>esc</Key></button></div>
     </Modal>
   );
 }

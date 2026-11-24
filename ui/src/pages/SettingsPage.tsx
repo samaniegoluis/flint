@@ -23,11 +23,11 @@ import { GRAPHICS_MODES } from '../lib/rdpStats';
 import { useSync } from '../sync/SyncProvider';
 import { ConnectServerModal } from '../sync/ConnectServerModal';
 import { ReplaceTokenModal } from '../sync/ReplaceTokenModal';
-import { agoLabel, SYNC_LABEL } from '../lib/sync';
+import { agoLabel, syncLabel } from '../lib/sync';
 import { useUpdate, useUpdateOnScreen } from '../update/UpdateProvider';
 import { updateActionLabel, updateAvailable, updateDownloadFailure, updateDownloading, updateHowText, updatePercent, updateReady, updateReadyHint, updateRelaunchFailure, updateStateLine } from '../lib/update';
 import { plainText } from '../ui/plainText';
-import { t } from '../i18n';
+import { fmtNumber, t } from '../i18n';
 import { tr } from '../i18n/react';
 
 export type SettingsSection = 'appearance' | 'terminal' | 'remote' | 'shortcuts' | 'vault' | 'access' | 'notifications' | 'about';
@@ -224,7 +224,7 @@ function TerminalSettings() {
       <Row title={t('settings_page.font')} desc={t('settings_page.monospaced_fonts_installed_on_this')}>
         <div style={{ maxWidth: 360 }}>
           <Picker label={t('settings_page.terminal_font')} value={s.term_font} onChange={(v) => set({ term_font: v })} placeholder={t('settings_page.jetbrains_mono')}
-            options={[{ value: '', label: t('settings_page.jetbrains_mono'), text: t('settings_page.jetbrains_mono'), meta: 'bundled' },
+            options={[{ value: '', label: t('settings_page.jetbrains_mono'), text: t('settings_page.jetbrains_mono'), meta: t('settings_page.bundled') },
               ...fonts.map((f) => ({ value: f, label: <span style={{ fontFamily: `"${f}"` }}>{f}</span>, text: f, meta: nerd(f) ? 'Nerd' : undefined }))]} />
         </div>
         <span className="hint">{tr('settings_page.length_installed_monospaced_fonts', { length: fonts.length })}</span>
@@ -600,8 +600,8 @@ function ServerRow({ onConfirm, onChangePassword }: { onConfirm: (c: Confirm) =>
         </div>
         <div className="row" style={{ gap: 'var(--sp-2)', fontSize: 'var(--fs-sm)' }} data-sync-state={state}>
           <Icon name={state === 'offline' ? 'cloud-off' : 'cloud'} size="sm" className={tone} />
-          <span className={tone === 'muted' ? '' : tone}>{SYNC_LABEL[state]} · {agoLabel(st.last_sync, sync.now)}</span>
-          <span className="faint mono" style={{ fontSize: 'var(--fs-xs)' }}>{tr('settings_page.version_p', { p: st.version.toLocaleString('en-US') })}</span>
+          <span className={tone === 'muted' ? '' : tone}>{syncLabel(state)} · {agoLabel(st.last_sync, sync.now)}</span>
+          <span className="faint mono" style={{ fontSize: 'var(--fs-xs)' }}>{t('settings_page.version_p', { p: fmtNumber(st.version) })}</span>
           {state === 'password' && <button className="btn btn-ghost btn-sm" onClick={sync.askPassword}>{t('settings_page.type_the_new_password')}</button>}
         </div>
         {(state === 'attention' || state === 'offline') && sync.lastError && <span className="hint">{sync.lastError.replace(/^[a-z_]+: /, '')}</span>}
@@ -620,8 +620,8 @@ function ServerRow({ onConfirm, onChangePassword }: { onConfirm: (c: Confirm) =>
           <button className="btn btn-ghost btn-sm" data-replace-token onClick={() => setReplacing(true)}>{t('settings_page.replace_token')}</button>
           <button className="btn btn-ghost btn-sm" data-disconnect-server onClick={() => onConfirm({
             title: t('settings_page.disconnect_this_vault_from_its'),
-            body: 'This machine stops syncing it. The local copy stays as it is and keeps working, the server keeps its copy, and nothing is deleted.',
-            action: 'Disconnect',
+            body: t('shell.disconnect_body'),
+            action: t('common.disconnect'),
             run: async () => { await api.remoteDisconnect(); notify(t('settings_page.this_machine_no_longer_syncs')); await sync.refresh(); },
           })}>{t('settings_page.disconnect')}</button>
         </div>
@@ -644,7 +644,7 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
   useEffect(() => { refreshCatalog().catch(() => {}); }, [refreshCatalog]);
   useEffect(() => { api.status().then(setSt).catch(() => {}); }, [catalog, changed]);
   if (!vault) return null;
-  const keychain = os === 'mac' ? 'macOS Keychain' : os === 'windows' ? 'Windows Credential Manager' : 'the Secret Service keyring';
+  const keychain = os === 'mac' ? t('settings_page.macos_keychain') : os === 'windows' ? t('settings_page.windows_credential_manager') : t('settings_page.secret_service_keyring');
   return (
     <>
       <h1 style={{ fontSize: 'var(--fs-xl)', fontWeight: 'var(--fw-semibold)', paddingBottom: 'var(--sp-3)' }}>{t('settings_page.vault')}</h1>
@@ -666,8 +666,8 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
           <span className={'badge ' + (st?.cached ? 'ok' : '')}>{st?.cached ? t('settings_page.remembered') : t('settings_page.not_remembered')}</span>
           {st?.cached && <button className="btn btn-secondary btn-sm" onClick={() => onConfirm({
             title: t('settings_page.forget_the_key_on_this'),
-            body: 'Every session closes, and opening this vault will ask for its master password.',
-            action: 'Forget key',
+            body: t('settings_page.forget_key_body'),
+            action: t('settings_page.forget_key'),
             run: async () => { await api.forgetKey(vault.path); notify(t('settings_page.this_machine_no_longer_remembers')); await closeVault(); },
           })}>{t('settings_page.forget_on_this_device')}</button>}
         </div>
@@ -689,8 +689,8 @@ function VaultSettings({ onLock, onConfirm }: { onLock: () => void; onConfirm: (
                   <td className="mono trunc" style={{ fontSize: 'var(--fs-xs)', maxWidth: 260 }} title={k.fingerprint}>{k.key_type} {k.fingerprint}</td>
                   <td style={{ textAlign: 'right' }}><button className="btn btn-ghost btn-sm" onClick={() => onConfirm({
                     title: t('settings_page.forget_the_key_of_addr', { addr: k.addr }),
-                    body: 'The next connection asks you to verify the server again.',
-                    action: 'Forget',
+                    body: t('settings_page.forget_known_host_body'),
+                    action: t('settings_page.forget'),
                     run: async () => { await api.knownHostRm(k.addr); await refreshCatalog(); },
                   })}>{t('settings_page.forget')}</button></td>
                 </tr>

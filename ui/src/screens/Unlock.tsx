@@ -86,7 +86,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
     } catch (err) {
       const fe = toFlintError(err);
       setError(fe.code === 'wrong_password'
-        ? 'Wrong password.' + (caps ? ' Caps Lock is on — check it and your keyboard layout.' : '')
+        ? (caps ? t('unlock.wrong_password_caps') : t('unlock.wrong_password'))
         : fe.message);
       setBusy(false);
       // The field keeps the attempt, selected, so retyping replaces it (design 03b).

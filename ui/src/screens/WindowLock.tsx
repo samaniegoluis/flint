@@ -36,7 +36,7 @@ export function WindowLock() {
       await openWindow(password);
     } catch (err) {
       const fe = toFlintError(err);
-      setError(fe.code === 'wrong_password' ? 'Wrong password.' : fe.code === 'denied' ? 'Not confirmed. The window stays locked.' : fe.message);
+      setError(fe.code === 'wrong_password' ? t('window_lock.wrong_password') : fe.code === 'denied' ? t('window_lock.not_confirmed') : fe.message);
       setBusy('');
       setTimeout(() => { input.current?.focus(); input.current?.select(); }, 0);
     }
@@ -48,7 +48,7 @@ export function WindowLock() {
     open(pw).catch(() => {});
   };
 
-  const where = os === 'mac' ? 'the menu bar' : 'the system tray';
+  const where = os === 'mac' ? t('window_lock.the_menu_bar') : t('window_lock.the_system_tray');
   return (
     <div className="lock-screen" role="dialog" aria-modal="true" aria-label={t('window_lock.window_locked')} data-window-lock
       style={{ position: 'absolute', inset: 0, zIndex: 1100, background: 'var(--surface-sunken)' }}>

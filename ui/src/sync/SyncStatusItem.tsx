@@ -4,9 +4,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../state/app';
-import { agoLabel, SYNC_DETAIL, SYNC_LABEL, type SyncState } from '../lib/sync';
+import { agoLabel, syncDetail, syncLabel, type SyncState } from '../lib/sync';
 import { Icon } from '../ui/Icon';
 import { useSync } from './SyncProvider';
+import { fmtDate, fmtNumber, t } from '../i18n';
 
 const TONE: Record<SyncState, string> = {
   syncing: 'syncing', merged: 'info', password: 'warn', attention: 'warn', offline: '', waiting: '', in_step: '',
@@ -35,10 +36,10 @@ export function SyncStatusItem() {
   const st = sync.status;
   const state = sync.state;
   if (!st || !state) return null;
-  const tip = state === 'in_step' ? `Synced ${agoLabel(st.last_sync, sync.now)}`
-    : state === 'offline' ? 'The server cannot be reached; changes sync when it is back'
-    : state === 'merged' ? 'Changes from another machine · click for details'
-    : SYNC_DETAIL[state];
+  const tip = state === 'in_step' ? t('sync_status_item.synced_ago', { ago: agoLabel(st.last_sync, sync.now) })
+    : state === 'offline' ? t('sync_status_item.offline_tip')
+    : state === 'merged' ? t('sync_status_item.merged_tip')
+    : syncDetail(state);
   const click = () => {
     if (state === 'merged' && sync.lastMerge) { sync.showDetails(); return; }
     if (state === 'password') { sync.askPassword(); return; }
@@ -48,28 +49,28 @@ export function SyncStatusItem() {
   const syncNow = async () => { setBusy(true); await sync.syncNow(); setBusy(false); };
   return (
     <span ref={box} style={{ position: 'relative', display: 'inline-flex' }}>
-      <button className={'sb-sync ' + TONE[state] + (open ? ' is-open' : '')} data-sync-item={state} aria-label={`Vault sync: ${SYNC_LABEL[state]}`} title={tip}
+      <button className={'sb-sync ' + TONE[state] + (open ? ' is-open' : '')} data-sync-item={state} aria-label={t('sync_status_item.vault_sync_state', { state: syncLabel(state) })} title={tip}
         aria-expanded={open} onClick={click}>
         <Icon name={state === 'offline' ? 'cloud-off' : 'cloud'} />
-        {SYNC_LABEL[state]}
+        {syncLabel(state)}
         {state === 'waiting' && <span className="dot" aria-hidden="true" />}
       </button>
       {open && (
-        <div className="sync-pop" role="dialog" aria-label="Vault sync" style={{ left: -8, bottom: 'calc(100% + 8px)' }}>
+        <div className="sync-pop" role="dialog" aria-label={t('sync_status_item.vault_sync')} style={{ left: -8, bottom: 'calc(100% + 8px)' }}>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
             <Icon name={state === 'offline' ? 'cloud-off' : 'cloud'} size="sm" />
-            <span className="strong">{SYNC_LABEL[state]}</span><span className="grow" /><span className="hint">{vault?.name}</span>
+            <span className="strong">{syncLabel(state)}</span><span className="grow" /><span className="hint">{vault?.name}</span>
           </div>
-          <span className="muted" style={{ lineHeight: 1.45 }}>{SYNC_DETAIL[state]}</span>
+          <span className="muted" style={{ lineHeight: 1.45 }}>{syncDetail(state)}</span>
           <dl className="kv">
-            <dt>Last sync</dt><dd>{agoLabel(st.last_sync, sync.now)}{st.last_sync > 0 ? ' · ' + new Date(st.last_sync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</dd>
-            <dt>Server</dt><dd className="mono trunc" title={st.url}>{st.url}</dd>
-            <dt>Version</dt><dd className="mono faint">{st.version.toLocaleString('en-US')}</dd>
+            <dt>{t('sync_status_item.last_sync')}</dt><dd>{agoLabel(st.last_sync, sync.now)}{st.last_sync > 0 ? ' · ' + fmtDate(st.last_sync, { hour: '2-digit', minute: '2-digit' }) : ''}</dd>
+            <dt>{t('sync_status_item.server')}</dt><dd className="mono trunc" title={st.url}>{st.url}</dd>
+            <dt>{t('sync_status_item.version')}</dt><dd className="mono faint">{fmtNumber(st.version)}</dd>
           </dl>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
-            <button className="btn btn-secondary btn-sm" data-pop-sync-now onClick={() => syncNow().catch(() => {})} disabled={busy}><Icon name="reconnect" size="sm" />{busy ? 'Syncing…' : 'Sync now'}</button>
+            <button className="btn btn-secondary btn-sm" data-pop-sync-now onClick={() => syncNow().catch(() => {})} disabled={busy}><Icon name="reconnect" size="sm" />{busy ? t('sync_status_item.syncing') : t('sync_status_item.sync_now')}</button>
             <span className="grow" />
-            <button className="btn btn-ghost btn-sm" onClick={() => { setOpen(false); sync.openServerSettings(); }}>Server settings…</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setOpen(false); sync.openServerSettings(); }}>{t('sync_status_item.server_settings')}</button>
           </div>
         </div>
       )}

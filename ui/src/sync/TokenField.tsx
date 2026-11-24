@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { useApp } from '../state/app';
 import { Icon } from '../ui/Icon';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
 
 export function TokenField({ id, value, onChange, error, disabled, autoFocus }: {
   id: string;
@@ -24,22 +25,22 @@ export function TokenField({ id, value, onChange, error, disabled, autoFocus }: 
     } catch { /* WebKit may refuse: the field takes ⌘V */ }
     ref.current?.focus();
   };
-  const keychain = os === 'mac' ? 'the macOS Keychain' : 'the system keyring';
+  const keychain = os === 'mac' ? t('token_field.macos_keychain') : t('token_field.system_keyring');
   return (
     <div className="field">
-      <label className="flabel" htmlFor={id}>Token</label>
+      <label className="flabel" htmlFor={id}>{t('token_field.token')}</label>
       <div className="row" style={{ gap: 'var(--sp-2)' }}>
         <div className={'input grow' + (error ? ' err' : '')}>
           <input {...plainText} ref={ref} id={id} type={show ? 'text' : 'password'} className={'mono' + (show ? '' : ' pw')} value={value}
             onChange={(e) => onChange(e.target.value)} autoComplete="off" disabled={disabled} autoFocus={autoFocus}
             aria-describedby={error ? id + '-e' : undefined} />
-          <button type="button" className="icon-btn" aria-label={show ? 'Hide token' : 'Show token'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
+          <button type="button" className="icon-btn" aria-label={show ? t('token_field.hide_token') : t('token_field.show_token')} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
         </div>
-        <button type="button" className="btn btn-secondary" style={{ height: 'var(--control-h)' }} onClick={() => paste().catch(() => {})} disabled={disabled}><Icon name="paste" size="sm" />Paste</button>
+        <button type="button" className="btn btn-secondary" style={{ height: 'var(--control-h)' }} onClick={() => paste().catch(() => {})} disabled={disabled}><Icon name="paste" size="sm" />{t('common.paste')}</button>
       </div>
       {error
         ? <span id={id + '-e'} className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>
-        : <span className="hint">The long random string the server printed when it started. Saved in {keychain}, never shown again.</span>}
+        : <span className="hint">{t('token_field.the_long_random_string_the', { keychain })}</span>}
     </div>
   );
 }

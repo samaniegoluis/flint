@@ -14,12 +14,12 @@ const SOURCES: Record<string, string> = Object.fromEntries(
 );
 
 /** The folders and files already in the catalog. */
-export const MIGRATED = ['ui', 'update', 'screens', 'palette', 'shell', 'pages', 'App.tsx', 'i18n'];
+export const MIGRATED = ['ui', 'update', 'screens', 'palette', 'shell', 'pages', 'App.tsx', 'i18n', 'access', 'sync', 'lib/sync.ts'];
 
 /** Attributes and props whose value a person reads. */
 const VISIBLE = new Set([
   'title', 'placeholder', 'aria-label', 'alt', 'label', 'desc', 'hint', 'text', 'note',
-  'heading', 'confirmLabel', 'cancelLabel', 'okLabel', 'message', 'detail', 'subtitle', 'tooltip', 'empty',
+  'heading', 'confirmLabel', 'cancelLabel', 'okLabel', 'message', 'detail', 'subtitle', 'tooltip', 'empty', 'body', 'action', 'reason',
 ]);
 
 /** Literals that read the same in every language: names, keys, symbols. */
@@ -27,6 +27,7 @@ const SAME_IN_EVERY_LANGUAGE = new Set([
   'Flint', 'SSH', 'RDP', 'SFTP', 'CLI', 'ntfy', 'ntfy.sh', 'Tether', 'GitHub', 'macOS', 'Linux', 'Windows',
   'Esc', 'Tab', 'Enter', 'Return', 'Ctrl', 'Alt', 'Shift', 'Space', 'Del', 'Backspace', 'Home', 'End',
   'PgUp', 'PgDn', 'esc', 'tab', 'English', 'Español', 'libssh', 'libsodium', 'SQLCipher', 'FreeRDP', 'OK',
+  'root', 'sudo', 'sudo --', 'exec', 'pid',
 ]);
 
 // `prose`: JSX text, where a lone lowercase word is still a word.
@@ -38,6 +39,8 @@ function readable(text: string, prose = false): boolean {
   if (/^flint( |$)/.test(s)) return false;
   // A CSS value, a class list, an id or a key: no space and not capitalised prose.
   if (!prose && /^[a-z0-9_.:\-/#%()]+$/.test(s)) return false;
+  // An identifier in camelCase: an action's or a field's name.
+  if (!prose && /^[a-z][A-Za-z0-9]*$/.test(s)) return false;
   // A shortcut such as ⌘R, Ctrl+Shift+P, F5.
   if (/^([⌘⇧⌥⌃]|Ctrl\+|Alt\+|Shift\+|Cmd\+)*([A-Z0-9]{1,3}|↵|Tab|Space|Esc)$/.test(s)) return false;
   return true;

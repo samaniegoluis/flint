@@ -14,7 +14,7 @@ export function WhatsNewModal({ versions, current, since, onClose }: { versions:
   const { fail } = useApp();
   const top = versions[0];
   const title = top ? `Flint ${top.version}` : `Flint ${current}`;
-  const sub = top ? [longDate(top.date), since ? `since your ${since}` : ''].filter(Boolean).join(' · ') : '';
+  const sub = top ? [longDate(top.date), since ? t('whats_new_modal.since_your', { since }) : ''].filter(Boolean).join(' · ') : '';
   return (
     <Modal label={t('whats_new_modal.what_s_new_in_title', { title })} onClose={onClose} width={700} top={96} className="wn">
       <div className="modal-h" style={{ alignItems: 'flex-start' }}>

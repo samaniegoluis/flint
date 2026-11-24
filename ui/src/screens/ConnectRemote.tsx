@@ -64,13 +64,13 @@ export function ConnectRemote() {
     } catch (err) {
       const fe = toFlintError(err);
       const field = serverErrorField(fe.code);
-      setErrors({ [field]: fe.code === 'invalid' && /did not answer/.test(fe.message) ? "This address does not answer as a Flint vault server." : fe.message });
+      setErrors({ [field]: fe.code === 'invalid' && /did not answer/.test(fe.message) ? t('connect_remote.not_a_vault_server') : fe.message });
     }
     setBusy(false);
   };
 
   const choose = async () => {
-    const { path: p } = await api.dialogSave('Keep the local copy in', copyName(found?.vaults.find((v) => v.id === chosen)));
+    const { path: p } = await api.dialogSave(t('connect_remote.keep_the_local_copy_in'), copyName(found?.vaults.find((v) => v.id === chosen)));
     if (p) setPath(p.endsWith('.flint') ? p : p + '.flint');
   };
 
@@ -83,9 +83,9 @@ export function ConnectRemote() {
       setPw('');
     } catch (err) {
       const fe = toFlintError(err);
-      if (fe.code === 'wrong_password') setErrors({ pw: "The vault on the server does not open with that master password." });
-      else if (fe.code === 'exists') setErrors({ path: 'A file already exists there. Flint never overwrites one: choose another name.' });
-      else if (fe.code === 'invalid' && /Strong/.test(fe.message)) setErrors({ pw: fe.message.replace(/ Change it first with `flint vault passwd`$/, ' Change it on a machine that has the vault first.') });
+      if (fe.code === 'wrong_password') setErrors({ pw: t('connect_remote.wrong_server_password') });
+      else if (fe.code === 'exists') setErrors({ path: t('connect_remote.file_exists') });
+      else if (fe.code === 'invalid' && /Strong/.test(fe.message)) setErrors({ pw: fe.message.replace(/ Change it first with `flint vault passwd`$/, ' ' + t('connect_remote.change_it_elsewhere_first')) });
       else setErrors({ form: fe.message });
       setBusy(false);
     }
