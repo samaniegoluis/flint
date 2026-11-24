@@ -1850,6 +1850,8 @@
   "tunnels.state.listening.one": "listening · {n} connection",
   "tunnels.state.listening.other": "listening · {n} connections",
   "tunnels.state.listening_idle": "listening · no connections",
+  "tunnels.state.not_listening": "not listening",
+  "tunnels.state.not_listening_why": "not listening · {why}",
   "tunnels.state.login_failed": "not started · login failed",
   "tunnels.state.not_started": "not started · {why}",
   "tunnels.state.port_in_use": "port {port} in use · by another program",

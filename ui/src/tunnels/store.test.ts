@@ -23,6 +23,12 @@ describe('a tunnel state line (design 20a)', () => {
     expect(switchedOn(v, { starts: {} })).toBe(false);
   });
 
+  it('says a tunnel whose port the system stopped listing, with why, and its switch is off', () => {
+    const v = t('db', 'pg', { state: 'not listening', error: 'the system no longer lists 127.0.0.1:5432 as listening' });
+    expect(stateLine(v, { list: [v], starts: {}, failed: {} })).toEqual({ kind: 'danger', text: 'not listening · the system no longer lists 127.0.0.1:5432 as listening' });
+    expect(switchedOn(v, { starts: {} })).toBe(false);
+  });
+
   it('names who holds a port in use, or another program', () => {
     const pg = t('db', 'pg', { state: 'listening' });
     const stg = t('stg', 'pg-stg');

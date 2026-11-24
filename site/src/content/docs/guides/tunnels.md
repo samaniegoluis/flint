@@ -31,7 +31,9 @@ time.
 
 **Start and stop.** The **Tunnels** view in the rail (`⇧⌘T`, `Ctrl+Alt+Shift+T` on
 Linux) lists every tunnel by host, each with a switch and its state: `listening · 2
-connections`, `stopped`, `starting…`, `port 5432 in use`, `connection lost`. The first
+connections`, `stopped`, `starting…`, `port 5432 in use`, `connection lost`, `not
+listening`. A state that says why wraps to as many lines as it needs, and hovering it
+shows it whole. The first
 switch you flip on a host logs in, without a terminal: a password or an unknown host key
 is asked right there, in the host's group. A login that fails says why, with *Retry* and
 *Edit host*. The view's filter matches a name, a host or a port.
@@ -111,6 +113,11 @@ Linux, and fails with `permission_denied`.
 - **A lost connection** stops the host's tunnels: `status` and the Tunnels view say
   `connection lost` with the reason, and nothing reconnects on its own, since a login may
   need you. Flipping its switch, or `flint tunnel up`, starts it again.
+- **`listening` is checked, not assumed.** A tunnel reads `listening` only while the
+  system lists Flint as listening on its port, which is what `netstat` shows. Flint checks
+  when it starts the tunnel and every few seconds after, without connecting to it. A port
+  that went away reads `not listening` with the reason, while the host's session stays
+  up: flip its switch, or run `flint tunnel up`, to listen again.
 - **One login at a time per host.** Two starts on one host (the app's *Open when I
   connect*, a `flint tunnel up`) take turns: the second rides the first one's session.
 - **Locking the vault** leaves running tunnels up, as it leaves open terminals: they hold

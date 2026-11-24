@@ -583,7 +583,7 @@ export interface TunnelView {
   local_port: number;
   destination: string;
   open_on_connect: boolean;
-  /** "stopped", "listening" or "connection lost". */
+  /** "stopped", "listening", "connection lost" or "not listening" (the session lives, the port is gone). */
   state: string;
   /** `127.0.0.1:<port>` while it listens. */
   listen: string;

@@ -132,7 +132,7 @@ function TunnelRow({ v }: { v: TunnelView }) {
   const snap = useTunnels();
   const on = switchedOn(v, snap);
   const st = stateLine(v, snap);
-  const icon = st.kind === 'danger' ? (v.state === 'connection lost' ? 'wifi-off' : 'lock') : st.kind === 'warn' ? 'alert' : null;
+  const icon = st.kind === 'danger' ? (v.state === 'connection lost' ? 'wifi-off' : v.state === 'not listening' ? 'alert' : 'lock') : st.kind === 'warn' ? 'alert' : null;
   return (
     <div className="tun" role="listitem" data-tunnel={v.name} data-state={st.kind}>
       <button className="toggle" role="switch" aria-checked={on} aria-label={t('tunnels_view.tunnel_name', { name: v.name })} data-tunnel-switch={v.name}
@@ -141,7 +141,7 @@ function TunnelRow({ v }: { v: TunnelView }) {
       <span className="tun-map" title={`127.0.0.1:${v.local_port} → ${v.destination}`}>127.0.0.1:{v.local_port}<span className="arr">→</span>{v.destination}</span>
       <span className={'tun-st ' + (st.kind === 'idle' ? '' : st.kind)} data-tunnel-state>
         {st.kind === 'wait' ? <span className="mini-spin" /> : icon ? <Icon name={icon} size="xs" /> : <span className={'dot ' + (st.kind === 'ok' ? 'ok' : 'idle')} />}
-        <span>{st.text}</span>
+        <span title={st.text}>{st.text}</span>
       </span>
     </div>
   );

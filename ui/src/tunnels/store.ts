@@ -56,6 +56,8 @@ export function stateLine(v: TunnelView, s: Pick<Snapshot, 'list' | 'starts' | '
   const st = s.starts[v.host];
   if (st && inStart(st, v)) return { kind: 'wait', text: st.status === 'prompt' ? t('tunnels.state.waiting_for_you') : t('tunnels.state.starting') };
   if (v.state === 'connection lost') return { kind: 'danger', text: v.error ? t('tunnels.state.connection_lost_why', { why: v.error }) : t('tunnels.state.connection_lost') };
+  // The session lives, but the system stopped listing the port (milestone 70).
+  if (v.state === 'not listening') return { kind: 'danger', text: v.error ? t('tunnels.state.not_listening_why', { why: v.error }) : t('tunnels.state.not_listening') };
   const f = s.failed[key(v.host, v.name)];
   if (f?.code === 'port_in_use') {
     const holder = s.list.find((o) => o.local_port === v.local_port && o.state === 'listening' && key(o.host, o.name) !== key(v.host, v.name));

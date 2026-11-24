@@ -49,7 +49,7 @@ export function TunnelsButton({ host, onManage }: { host: string; onManage: (ali
           {list.map((v) => {
             const on = switchedOn(v, snap);
             const st = stateLine(v, snap);
-            const icon = st.kind === 'danger' ? (v.state === 'connection lost' ? 'wifi-off' : 'lock') : st.kind === 'warn' ? 'alert' : null;
+            const icon = st.kind === 'danger' ? (v.state === 'connection lost' ? 'wifi-off' : v.state === 'not listening' ? 'alert' : 'lock') : st.kind === 'warn' ? 'alert' : null;
             return (
               <button key={v.name} className="mi" role="menuitemcheckbox" aria-checked={on} data-tunnels-menu-item={v.name}
                 style={{ minHeight: 44, alignItems: 'flex-start', paddingTop: 6, paddingBottom: 6 }} onClick={() => { void tunnels.toggle(v); }}>
@@ -59,7 +59,7 @@ export function TunnelsButton({ host, onManage }: { host: string; onManage: (ali
                     <span className="tun-map" style={{ fontSize: 'var(--fs-xs)' }}>127.0.0.1:{v.local_port}<span className="arr">→</span>{v.destination}</span></span>
                   <span className={'tun-st ' + (st.kind === 'idle' ? '' : st.kind)}>
                     {st.kind === 'wait' ? <span className="mini-spin" /> : icon ? <Icon name={icon} size="xs" /> : <span className={'dot ' + (st.kind === 'ok' ? 'ok' : 'idle')} />}
-                    <span>{st.text}</span>
+                    <span title={st.text}>{st.text}</span>
                   </span>
                 </span>
               </button>

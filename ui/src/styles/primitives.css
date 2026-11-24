@@ -620,6 +620,11 @@ button.picker-row:not(.off) { cursor: pointer; }
 .tun-map .arr, .tun-row .arr { color: var(--text-tertiary); padding: 0 2px; }
 .tun-st { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-xs); color: var(--text-tertiary); }
 .tun-st > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* An error or a warning says why, so it wraps instead of cutting the reason off
+   (milestone 70); the icon stays by its first line. */
+.tun-st.danger, .tun-st.warn { align-items: flex-start; }
+.tun-st.danger > span:last-child, .tun-st.warn > span:last-child { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+.tun-st.danger > :first-child, .tun-st.warn > :first-child { margin-top: 2px; flex: none; }
 .tun-st.ok { color: var(--text-secondary); } .tun-st.warn { color: var(--warning); } .tun-st.danger { color: var(--danger); } .tun-st.wait { color: var(--info); }
 .tun-st .dot { width: 7px; height: 7px; }
 .mini-spin { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--border-strong); border-top-color: var(--info); animation: flint-spin 900ms linear infinite; flex: none; }

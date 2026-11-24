@@ -2644,6 +2644,22 @@
       await click('[data-tunnel-switch="busy"]');
       await waitFor(() => tunState('busy') === 'warn', 'busy refused', 30000);
       await check(/^port \d+ in use · by another program$/.test(tunText('busy')), 'a port in use shows as such: ' + tunText('busy'));
+      {
+        // Milestone 70: in a narrow pane a warning wraps and is read whole, never cut
+        // off with an ellipsis, and the whole text is its title.
+        const view = tunView();
+        const was = view.style.width;
+        view.style.width = '200px';
+        await sleep(150);
+        const line = q('[data-tunnel="busy"] [data-tunnel-state] > span:last-child');
+        const cs = getComputedStyle(line);
+        const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3;
+        await check(cs.whiteSpace === 'normal' && line.scrollWidth <= line.clientWidth + 1 && line.getBoundingClientRect().height > lh * 1.5,
+          `a long warning wraps in a narrow pane (white-space ${cs.whiteSpace}, ${line.scrollWidth}/${line.clientWidth} px, ${Math.round(line.getBoundingClientRect().height)} px high)`);
+        await check(line.title === line.textContent, 'the state carries its whole text as its title');
+        view.style.width = was;
+        await sleep(50);
+      }
 
       // A host whose address is the tunnel: its shell proves bytes go through.
       await click('.rail-btn', 'Hosts');

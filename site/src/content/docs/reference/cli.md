@@ -182,7 +182,8 @@ they fail with `locked`, and never ask for the master password. `up` takes `--ti
 `--accept-new-host-key` as `exec` does; through Flint, `up` and `down` need a grant that
 runs commands on the host. A port already in use fails with `port_in_use`. With `--json`,
 a tunnel is `{host, name, local_port, destination, open_on_connect, state, listen,
-connections, error}`, where `state` is `stopped`, `listening` or `connection lost` (empty
+connections, error}`, where `state` is `stopped`, `listening`, `connection lost` or `not
+listening` (the session lives, but the system stopped listing the port; `error` says why) (empty
 from `ls` when Flint does not run it) and `listen` is `127.0.0.1:<port>` while it listens;
 `ls` and `status` print an array, `rm` prints `{removed, name}`. See
 [Tunnels](/guides/tunnels/).

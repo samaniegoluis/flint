@@ -1850,6 +1850,8 @@
   "tunnels.state.listening.one": "escuchando · {n} conexión",
   "tunnels.state.listening.other": "escuchando · {n} conexiones",
   "tunnels.state.listening_idle": "escuchando · sin conexiones",
+  "tunnels.state.not_listening": "sin escuchar",
+  "tunnels.state.not_listening_why": "sin escuchar · {why}",
   "tunnels.state.login_failed": "no iniciado · falló el inicio de sesión",
   "tunnels.state.not_started": "no iniciado · {why}",
   "tunnels.state.port_in_use": "puerto {port} en uso · por otro programa",
