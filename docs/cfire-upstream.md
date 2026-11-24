@@ -3472,3 +3472,17 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `src/adapters/uievents/language.cf` (tagged `// CFIRE-UPSTREAM: CF-191`) reads
   `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG`.
 - **Ideal:** `os.preferred_languages() -> []str` (BCP 47 tags, the person's order).
+
+### CF-192 · missing · `confirmed`: a tray item cannot be relabelled after `run()`
+- **Needed (milestone 68, D-140):** the tray's *Open Flint*, *Lock Vault* and *Quit
+  Flint* follow the language chosen in Settings → Appearance, which changes while Flint
+  runs.
+- **Gap:** `webui.App` has `add_tray_item(title, event)` only, which appends to the
+  menu spec before `run()`. macOS (`macos_ios.hpp`) and Linux (`linux_gtk.hpp`) build the
+  `NSMenu` / `GtkMenu` from that spec once, when the app starts; Windows builds its popup
+  from `tray_items` each time, but nothing outside the runtime can change them.
+- **Workaround:** none in native code (D-137): the GUI driver labels the items from a
+  table in the start-up language (`tray_labels` in `src/drivers/gui/window.cf`), so a
+  change of language reaches the tray at the next start. The docs say so.
+- **Ideal:** `app.set_tray_item_title(event: str, title: str)` (or `clear_tray_items()`
+  and `add_tray_item` again), applied on the UI thread on every platform.

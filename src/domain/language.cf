@@ -39,3 +39,16 @@ fn locale_of_env(language: str, lc_all: str, lc_messages: str, lang: str) -> str
     }
     return ""
 }
+
+// The language the window uses (milestone 68): the setting's, or the OS's for
+// "system"; English for anything without a catalog.
+fn app_language(setting: str, system: str) -> str {
+    mut want := setting
+    if setting == "system" {
+        want = system
+    }
+    if one_of(want, APP_LANGUAGES) {
+        return want
+    }
+    return "en"
+}

@@ -1,0 +1,14 @@
+package domain
+
+// The English of every presence reason is the sentence the OS dialog showed before
+// milestone 68 gave it an id.
+test "presence reasons keep their English text" {
+    assert_eq(window_open_reason("Work").text, "open the Flint window for the vault Work")
+    assert_eq(sudo_command_reason("apt update", "db1").text, "run \"apt update\" as root on db1")
+    assert_eq(sudo_period_reason("claude", "db1", "5").text, "let \"claude\" run commands as root on db1 for 5 minutes")
+    assert_eq(token_create_reason("ci", "Work").text, "create the token \"ci\" in the vault Work")
+    assert_eq(grant_allow_reason("claude", "Work").text, "let \"claude\" use the vault Work")
+    assert_eq(rdp_type_password_reason("win1").text, "type the password of win1 into its remote desktop")
+    assert_eq(sudo_period_reason("claude", "db1", "5").params.len(), 3)
+    assert_eq(grant_allow_reason("claude", "Work").id, "grant.allow")
+}

@@ -32,7 +32,7 @@ fn (self: FakePresence) presence_method() -> str {
     return self.method
 }
 
-fn (self: FakePresence) presence_confirm(reason: str) -> bool! {
+fn (self: FakePresence) presence_confirm(reason: PresenceReason) -> bool! {
     return self.answer
 }
 
@@ -40,13 +40,13 @@ test "presence is the OS's check, or the master password where it has none" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/p.flint", "", "correct horse", false)
-    try confirm_presence(crypto, store, FakePresence{ method: "password", answer: false }, s, "correct horse", "r")
+    try confirm_presence(crypto, store, FakePresence{ method: "password", answer: false }, s, "correct horse", window_open_reason("r"))
     mut wrong := ""
-    confirm_presence(crypto, store, FakePresence{ method: "password", answer: true }, s, "nope", "r") or err { wrong = "{err.message()}" }
+    confirm_presence(crypto, store, FakePresence{ method: "password", answer: true }, s, "nope", window_open_reason("r")) or err { wrong = "{err.message()}" }
     assert_eq(error_code_of("{wrong}"), ERR_WRONG_PASSWORD)
-    try confirm_presence(crypto, store, FakePresence{ method: "touchid", answer: true }, s, "", "r")
+    try confirm_presence(crypto, store, FakePresence{ method: "touchid", answer: true }, s, "", window_open_reason("r"))
     mut no := ""
-    confirm_presence(crypto, store, FakePresence{ method: "touchid", answer: false }, s, "correct horse", "r") or err { no = "{err.message()}" }
+    confirm_presence(crypto, store, FakePresence{ method: "touchid", answer: false }, s, "correct horse", window_open_reason("r")) or err { no = "{err.message()}" }
     assert_eq(error_code_of("{no}"), ERR_DENIED)
 }
 

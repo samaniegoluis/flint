@@ -13,6 +13,7 @@ package uievents
 import cpp "flint_presence.hpp"
 
 import "core:os"
+import "core:sync"
 import "../../domain"
 
 PRESENCE_TOUCH_ID: str = "touchid"
@@ -22,10 +23,45 @@ PRESENCE_PASSWORD: str = "password"
 
 type OsPresence struct {
     force_password: bool
+    // The window's language ("en" or "es"), for the reason the OS dialog shows
+    // (milestone 68). Copies share it: the GUI sets it at start and on a change.
+    lang: sync.Mutex[str]
 }
 
 fn new_os_presence() -> OsPresence {
-    return OsPresence{ force_password: os.getenv("FLINT_PRESENCE") == "password" }
+    return OsPresence{ force_password: os.getenv("FLINT_PRESENCE") == "password", lang: make(sync.Mutex[str], "en") }
+}
+
+fn (self: OsPresence) set_language(lang: str) {
+    self.lang.set(lang)
+}
+
+// The reason in `lang`: Spanish from this table, English as the core wrote it
+// (Principle 21: the core never translates). A reason the table lacks reads English.
+fn presence_text(lang: str, reason: PresenceReason) -> str {
+    if lang != "es" {
+        return reason.text
+    }
+    p := reason.params
+    if reason.id == PRESENCE_WINDOW_OPEN && p.len() == 1 {
+        return "abrir la ventana de Flint de la bóveda {p[0]}"
+    }
+    if reason.id == PRESENCE_SUDO_COMMAND && p.len() == 2 {
+        return "ejecutar \"{p[0]}\" como root en {p[1]}"
+    }
+    if reason.id == PRESENCE_SUDO_PERIOD && p.len() == 3 {
+        return "permitir que \"{p[0]}\" ejecute comandos como root en {p[1]} durante {p[2]} minutos"
+    }
+    if reason.id == PRESENCE_TOKEN_CREATE && p.len() == 2 {
+        return "crear el token \"{p[0]}\" en la bóveda {p[1]}"
+    }
+    if reason.id == PRESENCE_GRANT_ALLOW && p.len() == 2 {
+        return "permitir que \"{p[0]}\" use la bóveda {p[1]}"
+    }
+    if reason.id == PRESENCE_RDP_TYPE_PASSWORD && p.len() == 1 {
+        return "escribir la contraseña de {p[0]} en su escritorio remoto"
+    }
+    return reason.text
 }
 
 // How the window confirms the owner is there: touchid, device, polkit or password.
@@ -47,7 +83,8 @@ fn (self: OsPresence) presence_method() -> str {
 // Asks the OS to confirm the person is there, showing `reason`. Blocks until they
 // answer (at most two minutes): call it from a worker. False when they cancel or
 // fail; an error when the OS could not ask.
-fn (self: OsPresence) presence_confirm(reason: str) -> bool! {
+fn (self: OsPresence) presence_confirm(reason: PresenceReason) -> bool! {
+    text := presence_text(self.lang.get(), reason)
     if self.presence_method() == PRESENCE_PASSWORD {
         return error(coded(ERR_UNSUPPORTED, "no presence check from the OS here; the master password is used"))
     }
@@ -56,7 +93,7 @@ fn (self: OsPresence) presence_confirm(reason: str) -> bool! {
     // CFIRE-UPSTREAM: CF-093
     cpp {
         std::string err;
-        rc = flint_presence::confirm(reason, err);
+        rc = flint_presence::confirm(text, err);
         why = err;
     }
     if rc < 0 {

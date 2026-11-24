@@ -462,7 +462,8 @@ while](/guides/ai-agents/#root-for-a-while).
 
 Settings belong to this machine, not to the vault, and save as you change them.
 
-- **Appearance**: dark, light or matching the system; the accent colour; row density;
+- **Appearance**: dark, light or matching the system; the [language](#language); the
+  accent colour; row density;
   the corner [toasts](#toasts) appear in (any of the four; bottom corners sit
   above the status bar, top corners under the tab bar); whether to follow the system's
   reduce-motion setting; reopening the last vault.
@@ -520,6 +521,28 @@ Settings belong to this machine, not to the vault, and save as you change them.
 
 They are kept in `settings.json` in Flint's config folder (`~/Library/Application
 Support/Flint` on macOS, `~/.config/flint` on Linux), next to the recent-vaults list.
+
+### Language
+
+The window is in English or Spanish. **Settings → Appearance → Language** offers
+**System**, **English** and **Español**; System, the default, follows this computer's
+language (Spanish when it starts with `es`, English for anything else) and is set
+per machine, like the theme.
+
+A change applies at once, with no restart: open tabs, their sessions and the windows of a
+desktop across monitors keep running and relabel themselves. Dates, times and numbers
+follow the language (`14:05`, `1,5 MB` in Spanish). Two things change differently:
+
+- The **tray** or menu bar icon's menu (*Open Flint*, *Lock Vault*, *Quit Flint*) follows
+  the language from the next start.
+- A [toast](#toasts) already on screen keeps the language it was shown in.
+
+On a Mac, the **Touch ID** or Mac password dialog names what it confirms in the chosen
+language; the words macOS puts around it follow the system's. On Linux, polkit's dialog
+reads its message from Flint's policy file, in English. The
+`flint` command, its output and its errors are always English, and so are some messages
+the app passes on from the core (a failed connection's reason, for example) until they are
+translated.
 
 ## Layout on this machine
 

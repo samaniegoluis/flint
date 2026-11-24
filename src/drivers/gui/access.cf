@@ -111,9 +111,9 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
             }
             period = try root_period_from_approval(ap, held_catalog(st, store), hex.encode(c.random_bytes(8)), req.period, time.now_ms())
         }
-        mut reason := "run \"{ap.sudo.argv.join(" ")}\" as root on {ap.sudo.host}"
+        mut reason := sudo_command_reason(ap.sudo.argv.join(" "), ap.sudo.host)
         if p := period {
-            reason = "let \"{ap.label}\" run commands as root on {ap.sudo.host} for {period_minutes(p.duration)} minutes"
+            reason = sudo_period_reason(ap.label, ap.sudo.host, "{period_minutes(p.duration)}")
         }
         try confirm_presence(c, store, presence, st.vault_session(), req.password, reason)
         if req.save_sudo_password && req.sudo_password.len() > 0 {
@@ -159,7 +159,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
     }
     if ap.token.name.len() > 0 {
         // `token create`: allowed for this one request, never as a grant.
-        try confirm_presence(c, store, presence, st.vault_session(), req.password, "create the token \"{ap.token.name}\" in the vault {st.vault_session().name}")
+        try confirm_presence(c, store, presence, st.vault_session(), req.password, token_create_reason(ap.token.name, st.vault_session().name))
         st.holder.access_hold()
         mut tbook := st.holder.access_book()
         if !set_approval_state(mut tbook, req.id, APPROVAL_ALLOWED) {
@@ -174,7 +174,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
     // Checked before presence, so a bad form never shows the OS dialog.
     scope := try access_scope_from_names(held_catalog(st, store), req.scope)
     _ = try grant_from_approval(ap, "check", scope, req.read, req.exec, req.write, req.duration, time.now_ms())
-    try confirm_presence(c, store, presence, st.vault_session(), req.password, "let \"{ap.label}\" use the vault {st.vault_session().name}")
+    try confirm_presence(c, store, presence, st.vault_session(), req.password, grant_allow_reason(ap.label, st.vault_session().name))
     st.holder.access_hold()
     mut book := st.holder.access_book()
     still := find_approval(book, req.id) or ap

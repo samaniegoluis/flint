@@ -310,7 +310,7 @@ type Clipboard interface {
 // core checks itself). `presence_confirm` asks the OS and blocks until answered.
 type Presence interface {
     presence_method() -> str
-    presence_confirm(reason: str) -> bool!
+    presence_confirm(reason: PresenceReason) -> bool!
 }
 
 // The desktop app's layout state (adapters/config, ui-state.json, D-030).

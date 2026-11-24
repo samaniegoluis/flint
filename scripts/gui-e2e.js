@@ -181,7 +181,7 @@
     await enter();
     await waitFor(() => termText().includes(marker), `"${marker}" in the terminal`, 20000);
   }
-  const toolbarIs = (status) => !!q(`.toolbar .st[aria-label="${status}"]`);
+  const toolbarIs = (status) => !!q(`.toolbar .st[data-status="${status}"]`);
 
   try {
     if (!RUNS.includes(RUN)) throw new Error(`unknown run "${RUN}"`);
@@ -1743,6 +1743,46 @@
       await click('button[type="submit"]', 'Trust and connect');
       await waitFor(() => toolbarIs('ready'), 'moved, new key', 30000);
       await check(true, 'replacing the key forgets the old one and asks again');
+
+      // Milestone 68: a live terminal tab through a switch to Spanish and back: the
+      // session keeps running, the chrome around it changes language, no English left.
+      await setStep('a terminal tab in Spanish');
+      {
+        const cats = window.__flintE2E.catalogs;
+        const esValues = Object.values(cats.es);
+        const pieces = [...new Set(Object.entries(cats.en).flatMap(([k, v]) => v.split(/\{\w+\}/)
+          .map((p) => p.trim()).filter((p) => /[A-Za-z]{2,}\W+[A-Za-z]{2,}/.test(p) && p.length >= 10 && cats.es[k] !== v && !esValues.some((e) => e.includes(p)))))];
+        // The terminal's own text is the remote's, in whatever language it speaks.
+        const chrome = () => { const c = q('.app').cloneNode(true); c.querySelectorAll('.xterm').forEach((x) => x.remove()); return c.innerText; };
+        const tabEl = q('.tab.on');
+        await type('echo before-es-$((40+2))');
+        await enter();
+        await waitFor(() => termText().includes('before-es-42'), 'the marker before the switch');
+        await click('.rail-btn', 'Settings');
+        await click('.nav-i', 'Appearance');
+        await click('[data-language="es"]');
+        await waitFor(() => document.documentElement.lang === 'es', 'the page in Spanish');
+        await click('.rail-btn', 'Hosts');
+        await waitFor(() => toolbarIs('ready'), 'the terminal tab in Spanish');
+        await check(tabEl.isConnected && termText().includes('before-es-42'), 'the tab and its terminal are the same through the switch');
+        await type('echo after-es-$((40+3))');
+        await enter();
+        await waitFor(() => termText().includes('after-es-43'), 'the session still answers in Spanish');
+        await check(!!q('[title^="Dividir"]') && !!q('[title^="Archivos"]') && hasText('Hosts'), "the tab's toolbar reads Dividir and Archivos");
+        // A toast keeps the language it was shown in: clear the ones from before.
+        window.__flintE2E.toasts?.clear();
+        await sleep(300);
+        const left = pieces.filter((p) => chrome().includes(p));
+        if (left.length) await log('diag: English left around the terminal: ' + JSON.stringify(left));
+        await check(left.length === 0, `the window around a terminal tab is in Spanish (${left.length} English texts left)`);
+        await click('.rail-btn', 'Ajustes');
+        await click('.nav-i', 'Apariencia');
+        await click('[data-language="system"]');
+        await waitFor(() => document.documentElement.lang === 'en', 'the page in English again');
+        await click('.rail-btn', 'Hosts');
+        await waitFor(() => toolbarIs('ready'), 'the terminal tab in English again');
+        await check(true, 'back to System: English again');
+      }
     }
 
 
@@ -3034,6 +3074,8 @@
       for (let i = 0; i < 10 && !q('[data-toasts]')?.contains(document.activeElement); i++) {
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', code: 'F6', bubbles: true, cancelable: true }));
         await sleep(60);
+        const ae = document.activeElement;
+        await log(`diag: F6 ${i}: ${ae?.tagName}.${String(ae?.className).slice(0, 40)} toasts=${!!q('[data-toasts]')} shown=${shown().length}`);
       }
       await check(q('[data-toasts]').contains(document.activeElement), 'F6 reaches the toast stack like any other region');
       const fromEl = q('.nav-i.on') ?? q('.nav-i');
@@ -3086,6 +3128,45 @@
       await waitForAsync(async () => (await window.backend.settings_get({})).toast_corner === 'bottom-right', 'the default corner again');
       await check(true, 'the corner goes back to bottom right');
       await check(!!q('[role="radiogroup"][aria-label="Toast corner"]') && [...qa('.set-row .set-l .t')].some((e) => e.textContent === 'Toasts'), "Appearance names the corner picker's row Toasts (27c)");
+
+      // Milestone 68: the window in Spanish, switched live from the Language row, with
+      // no English left on any Settings section, the shell around it, or the palette.
+      await setStep('Spanish, live');
+      {
+        const cats = window.__flintE2E.catalogs;
+        const esValues = Object.values(cats.es);
+        // The literal pieces of each English text that a Spanish window must not show:
+        // two words or more, and not a piece the Spanish catalog itself uses.
+        const englishPieces = [...new Set(Object.entries(cats.en).flatMap(([k, v]) => v.split(/\{\w+\}/)
+          .map((p) => p.trim()).filter((p) => /[A-Za-z]{2,}\W+[A-Za-z]{2,}/.test(p) && p.length >= 10 && cats.es[k] !== v && !esValues.some((e) => e.includes(p)))))];
+        const englishLeft = () => { const now = text(); return englishPieces.filter((p) => now.includes(p)); };
+        const row = await waitFor(() => q('[role="radiogroup"][aria-label="Language"]'), 'the Language row');
+        await check(row.querySelector('[aria-checked="true"]')?.getAttribute('data-language') === 'system' && document.documentElement.lang === 'en',
+          'the Language row shows, on System by default, and the window is in English');
+        const termBefore = q('[data-tab]');
+        await click('[data-language="es"]');
+        await waitForAsync(async () => (await window.backend.settings_get({})).language === 'es', 'Español to be saved');
+        await waitFor(() => document.documentElement.lang === 'es' && q('h1')?.textContent === 'Apariencia', 'the page in Spanish');
+        await check(!!q('[role="radiogroup"][aria-label="Idioma"]') && byText('.nav-i', 'Atajos de teclado') && byText('.nav-i', 'Bóveda'),
+          'the switch is live: Appearance reads Apariencia, the sections Bóveda and Atajos de teclado, with no restart');
+        await check(!termBefore || termBefore.isConnected, 'an open terminal tab is kept through the switch');
+        const leaks = [];
+        for (const nav of qa('.nav-i')) {
+          nav.click();
+          await sleep(250);
+          for (const p of englishLeft()) leaks.push(`${nav.textContent.trim()}: ${p}`);
+        }
+        if (leaks.length) await log('diag: English left in Spanish: ' + JSON.stringify(leaks));
+        await check(leaks.length === 0, `every Settings section, and the shell around it, is in Spanish (${leaks.length} English texts left)`);
+        await check(hasText('Ajustes') && qa('.nav-i').length >= 6, 'the rail and the status bar are in Spanish too');
+        await click('.nav-i', 'Apariencia');
+        await click('[data-language="en"]');
+        await waitFor(() => document.documentElement.lang === 'en' && q('h1')?.textContent === 'Appearance', 'the page in English again');
+        await check(englishLeft().length > 0 && byText('.nav-i', 'Keyboard shortcuts'), 'English comes back live, too');
+        await click('[data-language="system"]');
+        await waitForAsync(async () => (await window.backend.settings_get({})).language === 'system', 'System to be saved');
+        await check(true, 'the setting goes back to System');
+      }
 
       // Milestone 63 (27a*): Settings → Notifications, the approval wait and phone alerts.
       // The server is pointed at a closed port on this machine: nothing leaves the run.

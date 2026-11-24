@@ -115,6 +115,13 @@ fn main() {
     }
     mut st := new_gui_state()
     first_settings := load_settings(settings_store) or default_settings()
+    // The window's language (milestone 68): the tray's items and the reason an OS
+    // presence check shows. The page follows its own setting live; the tray, at start.
+    sys_lang := system_language(e2e)
+    lang := app_language(first_settings.language, sys_lang)
+    write_stderr("flint-gui: language: the system reads \"{os_language_tag()}\" ({sys_lang}); setting {first_settings.language} → {lang}\n")
+    presence := new_os_presence()
+    presence.set_language(lang)
     st.holder.set_lock_after(first_settings.lock_after)
     st.holder.set_notify_grants(first_settings.notify_grants)
     st.holder.set_sudo_periods(first_settings.sudo_periods)
@@ -149,7 +156,7 @@ fn main() {
     // Milestone 58: the lock keys and the Type menu (design 25c).
     app.bind_raw("rdp_locks") |params| { return rpc_rdp_locks(params, st) }
     app.bind_raw("rdp_text") |params| { return rpc_rdp_text(params, st) }
-    app.bind_raw("rdp_type_info") |params| { return rpc_rdp_type_info(params, store, mut clipboard, new_os_presence(), st) }
+    app.bind_raw("rdp_type_info") |params| { return rpc_rdp_type_info(params, store, mut clipboard, presence, st) }
     app.bind_raw("window_theme") |params| { return rpc_window_theme(params, mut app) }
     app.bind_raw("dialog_open") |params| { return rpc_dialog_open(params, app) }
     app.bind_raw("dialog_save") |params| { return rpc_dialog_save(params, app) }
@@ -159,7 +166,7 @@ fn main() {
     app.bind_raw("alerts_status") |params| { return rpc_alerts_status(st) }
     app.bind_raw("alerts_test") |params| { return rpc_alerts_test(st) }
     app.bind_raw("alerts_new_topic") |params| { return rpc_alerts_new_topic(c, mut settings_store, st) }
-    app.bind_raw("settings_set") |params| { return rpc_settings_set(params, c, mut settings_store, st, mut app) }
+    app.bind_raw("settings_set") |params| { return rpc_settings_set(params, c, mut settings_store, st, presence, sys_lang, mut app) }
     // Milestone 48: the flint command from a packaged app.
     app.bind_raw("cli_status") |params| { return rpc_cli_status(params, mut settings_store) }
     // The update notice (update.cf, milestone 52).
@@ -221,7 +228,6 @@ fn main() {
     app.bind_raw("activity") |params| { return rpc_activity(st) }
     app.bind_raw("unlock_request") |params| { return rpc_unlock_request(st, recents) }
     app.bind_raw("unlock_request_dismiss") |params| { return rpc_unlock_request_dismiss(st) }
-    presence := new_os_presence()
     app.bind_raw("access_state") |params| { return rpc_access_state(st, store, presence) }
     app.bind_raw("access_revoke") |params| { return rpc_access_revoke(params, st, store, presence, mut app) }
     app.bind_raw("access_notify") |params| { return rpc_access_notify(params, st, store, presence, mut app) }
@@ -425,7 +431,7 @@ fn main() {
             worker_store := store
             vs := st.vault_session()
             board := clipboard
-            pres := new_os_presence()
+            pres := presence
             scope.spawn || {
                 mut a := worker_app
                 run_gui_rdp_type(mut a, c, worker_store, vs, board, pres, r)
@@ -536,7 +542,7 @@ fn main() {
         // The tray (milestone 14): closing the window keeps Flint serving, with the
         // window locked. The headless end-to-end run keeps the old close.
         if !e2e {
-            install_tray(mut app, ui_dir)
+            install_tray(mut app, ui_dir, lang)
         }
         app.on("window:close_requested") |data| {
             mut a := app

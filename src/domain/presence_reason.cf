@@ -1,0 +1,42 @@
+package domain
+
+// What an OS presence check (Touch ID, the Mac's password, Windows Hello) says it is
+// for (milestone 68). `text` is the English sentence, as before; `id` and `params`
+// let the adapter show it in the window's language (Principle 21: the core stays
+// English). `params` carry only what `text` already shows, never a secret.
+type PresenceReason struct {
+    id: str
+    params: []str
+    text: str
+}
+
+PRESENCE_WINDOW_OPEN: str = "window.open"
+PRESENCE_SUDO_COMMAND: str = "sudo.command"
+PRESENCE_SUDO_PERIOD: str = "sudo.period"
+PRESENCE_TOKEN_CREATE: str = "token.create"
+PRESENCE_GRANT_ALLOW: str = "grant.allow"
+PRESENCE_RDP_TYPE_PASSWORD: str = "rdp.type_password"
+
+fn window_open_reason(vault: str) -> PresenceReason {
+    return PresenceReason{ id: PRESENCE_WINDOW_OPEN, params: [vault], text: "open the Flint window for the vault {vault}" }
+}
+
+fn sudo_command_reason(command: str, host: str) -> PresenceReason {
+    return PresenceReason{ id: PRESENCE_SUDO_COMMAND, params: [command, host], text: "run \"{command}\" as root on {host}" }
+}
+
+fn sudo_period_reason(label: str, host: str, minutes: str) -> PresenceReason {
+    return PresenceReason{ id: PRESENCE_SUDO_PERIOD, params: [label, host, minutes], text: "let \"{label}\" run commands as root on {host} for {minutes} minutes" }
+}
+
+fn token_create_reason(token: str, vault: str) -> PresenceReason {
+    return PresenceReason{ id: PRESENCE_TOKEN_CREATE, params: [token, vault], text: "create the token \"{token}\" in the vault {vault}" }
+}
+
+fn grant_allow_reason(label: str, vault: str) -> PresenceReason {
+    return PresenceReason{ id: PRESENCE_GRANT_ALLOW, params: [label, vault], text: "let \"{label}\" use the vault {vault}" }
+}
+
+fn rdp_type_password_reason(alias: str) -> PresenceReason {
+    return PresenceReason{ id: PRESENCE_RDP_TYPE_PASSWORD, params: [alias], text: "type the password of {alias} into its remote desktop" }
+}

@@ -32,3 +32,12 @@ test "the language setting is system, en or es; older files read system" {
     s.language = "fr"
     assert(!settings_valid(s))
 }
+
+test "the window's language follows the setting, or the OS's for system" {
+    assert_eq(app_language("system", "es"), "es")
+    assert_eq(app_language("system", "en"), "en")
+    assert_eq(app_language("es", "en"), "es")
+    assert_eq(app_language("en", "es"), "en")
+    assert_eq(app_language("fr", "es"), "en")
+    assert_eq(app_language("system", ""), "en")
+}

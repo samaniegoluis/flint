@@ -520,7 +520,7 @@ fn type_host_password_into_desktop[C: Crypto, S: VaultStore, R: RemoteDesktop, P
         return error(coded(ERR_NOT_FOUND, "'{h.alias}' has no saved password"))
     }
     // Each time: typed anywhere, a password can be read there (owner, milestone 58).
-    try confirm_presence_for(crypto, store, presence, session, master, "type the password of {h.alias} into its remote desktop", "nothing was typed")
+    try confirm_presence_for(crypto, store, presence, session, master, rdp_type_password_reason(h.alias), "nothing was typed")
     password := try rdp_saved_password(crypto, session, cat, h)
     defer crypto.wipe_text(password)
     if password.len() == 0 {

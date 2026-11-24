@@ -30,7 +30,18 @@ type WindowLocked struct {
 // The tray icon and its menu. macOS takes a template image the system tints; the
 // Linux tray gets a light glyph for its dark panel; Windows, whose taskbar is light or
 // dark and tints nothing, the app icon in colour (owner, 2026-11-19).
-fn install_tray(mut app: webui.App, ui_dir: str) {
+// The tray's items in the window's language (milestone 68). cfire builds the tray's
+// menu once, at start, and cannot relabel an item (CF-192): a change of language
+// reaches the tray at the next start.
+fn tray_labels(lang: str) -> []str {
+    if lang == "es" {
+        return ["Abrir Flint", "Bloquear bóveda", "Salir de Flint"]
+    }
+    return ["Open Flint", "Lock Vault", "Quit Flint"]
+}
+
+fn install_tray(mut app: webui.App, ui_dir: str, lang: str) {
+    labels := tray_labels(lang)
     mut icon := ui_dir + "/tray.png"
     if os_name() == "mac" {
         icon = ui_dir + "/tray-template.png"
@@ -38,10 +49,10 @@ fn install_tray(mut app: webui.App, ui_dir: str) {
         icon = ui_dir + "/tray-color.png"
     }
     app.set_tray(icon, "Flint")
-    app.add_tray_item("Open Flint", TRAY_OPEN)
-    app.add_tray_item("Lock Vault", TRAY_LOCK)
+    app.add_tray_item(labels[0], TRAY_OPEN)
+    app.add_tray_item(labels[1], TRAY_LOCK)
     app.add_tray_item("-", "")
-    app.add_tray_item("Quit Flint", TRAY_QUIT)
+    app.add_tray_item(labels[2], TRAY_QUIT)
     app.set_hide_on_close(true)
 }
 

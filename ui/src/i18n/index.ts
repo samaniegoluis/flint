@@ -43,6 +43,11 @@ export function language(): Lang {
   return current;
 }
 
+/** For gui-e2e's scan of a Spanish window for English left in it (milestone 68). */
+export function catalogsForE2E(): Partial<Record<Lang, Catalog>> {
+  return CATALOGS;
+}
+
 /** For tests: put a catalog in place of a language's (null removes it). */
 export function setCatalogForTest(lang: Lang, catalog: Catalog | null): void {
   if (catalog) CATALOGS[lang] = catalog; else delete CATALOGS[lang];

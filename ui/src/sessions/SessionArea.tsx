@@ -136,7 +136,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
               onClick={() => sessions.activate(tabItem.id)}
               onContextMenu={(e) => { e.preventDefault(); sessions.activate(tabItem.id); setTabMenu({ tab: tabItem.id, x: e.clientX, y: e.clientY }); }}
               onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); sessions.closeTab(tabItem.id); } }}>
-              <span className={'st ' + st.dot} role="img" aria-label={fp.status} />
+              <span className={'st ' + st.dot} role="img" aria-label={t(`sessions.status_aria.${fp.status}`)} data-status={fp.status} />
               <HostTypeIcon type={fp.kind} />
               {fp.alias}
               <TunnelMark host={fp.alias} />
@@ -152,7 +152,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
       </div>
       {tab && s && activeTab && tab.kind === 'rdp' && (
         <div className="toolbar" data-rdp-toolbar>
-          <span className={'st ' + s.dot} role="img" aria-label={tab.status} />
+          <span className={'st ' + s.dot} role="img" aria-label={t(`sessions.status_aria.${tab.status}`)} data-status={tab.status} />
           <span className="mono strong">{tab.alias}</span>
           {host?.user && <><span className="dotsep">·</span><span className="mono">{host.domain && !host.user.includes('\\') && !host.user.includes('@') ? `${host.domain}\\${host.user}` : host.user}</span></>}
           <span className="dotsep">·</span>
@@ -191,7 +191,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
       )}
       {tab && s && activeTab && tab.kind !== 'rdp' && (
         <div className="toolbar">
-          <span className={'st ' + s.dot} role="img" aria-label={tab.status} />
+          <span className={'st ' + s.dot} role="img" aria-label={t(`sessions.status_aria.${tab.status}`)} data-status={tab.status} />
           <span className="mono strong">{tab.alias}</span>
           {host?.user && <><span className="dotsep">·</span><span className="mono">{host.user}</span></>}
           {!ready && s.meta && <><span className="dotsep">·</span><span className={s.metaClass}>{s.meta}</span></>}

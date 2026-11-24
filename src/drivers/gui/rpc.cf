@@ -431,7 +431,7 @@ fn rpc_settings_get(store: JsonSettingsStore) -> str! {
     return json.stringify(try load_settings(store))
 }
 
-fn rpc_settings_set(params: str, c: Sodium, mut store: JsonSettingsStore, st: GuiState, mut app: webui.App) -> str! {
+fn rpc_settings_set(params: str, c: Sodium, mut store: JsonSettingsStore, st: GuiState, presence: OsPresence, sys_lang: str, mut app: webui.App) -> str! {
     try st.require_open_window()
     req := try parse_req[Settings](params)
     mut saved := try save_settings(mut store, req)
@@ -441,6 +441,8 @@ fn rpc_settings_set(params: str, c: Sodium, mut store: JsonSettingsStore, st: Gu
     }
     st.holder.set_alerts(alert_target(saved))
     st.holder.set_lock_after(saved.lock_after)
+    // The OS presence dialog's reason follows a change of language at once.
+    presence.set_language(app_language(saved.language, sys_lang))
     st.holder.set_notify_grants(saved.notify_grants)
     st.holder.set_sudo_periods(saved.sudo_periods)
     st.holder.set_approval_wait(approval_wait_ms(saved.approval_wait, approval_wait_override_ms()))
