@@ -1,7 +1,7 @@
 // Tests of the Releases page's Download buttons (milestone 51). Run with `npm test`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SIGNING, detectSystem, downloadsFor, othersFor, versionOf, type Release } from './download.ts';
+import { SIGNING, compareVersions, detectSystem, downloadsFor, markFor, othersFor, versionOf, type Release } from './download.ts';
 
 const GH = 'https://github.com/samaniegoluis/flint/releases/download/v0.16.0/';
 const release = (names: string[], extra: Partial<Release> = {}): Release => ({
@@ -75,4 +75,20 @@ test('the unsigned note fits each system', () => {
 	assert.match(SIGNING.linux.text, /apt or dnf/);
 	// No repository yet: apt and dnf never see a new version on their own.
 	assert.doesNotMatch(SIGNING.linux.text, /also update/);
+});
+
+test('versions compare by number, not as text', () => {
+	assert.equal(compareVersions('0.33.1', '0.33.0'), 1);
+	assert.equal(compareVersions('0.9.0', '0.10.0'), -1);
+	assert.equal(compareVersions('1.0.0', '1.0.0'), 0);
+});
+
+test('the list marks the version GitHub offers, a newer one still publishing, and one never published', () => {
+	const published = ['0.33.1', '0.33.0', '0.31.0'];
+	assert.equal(markFor('0.33.1', '0.33.1', published), 'latest');
+	assert.equal(markFor('0.34.0', '0.33.1', published), 'soon');
+	assert.equal(markFor('0.33.0', '0.33.1', published), '');
+	assert.equal(markFor('0.32.0', '0.33.1', published), 'none');
+	// With no list of published releases, an older version is left as it is.
+	assert.equal(markFor('0.32.0', '0.33.1', null), '');
 });

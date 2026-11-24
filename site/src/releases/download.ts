@@ -89,3 +89,26 @@ export function othersFor(release: Release, system: System | null): { system: Sy
 
 /** "v0.16.0" → "0.16.0". */
 export const versionOf = (tag: string) => tag.replace(/^v/, '');
+
+/** -1, 0 or 1 for two X.Y.Z versions (anything after the patch is ignored). */
+export function compareVersions(a: string, b: string): number {
+	const pa = a.split(/[.-]/).slice(0, 3).map((n) => parseInt(n, 10) || 0);
+	const pb = b.split(/[.-]/).slice(0, 3).map((n) => parseInt(n, 10) || 0);
+	for (let i = 0; i < 3; i++) {
+		if (pa[i] !== pb[i]) return pa[i] < pb[i] ? -1 : 1;
+	}
+	return 0;
+}
+
+/** What the list says beside a version (D-147): `latest` for the one GitHub offers,
+ * `soon` for a newer one whose packages are not published yet (the Release workflow is
+ * still running), `none` for an older one that was never published, '' otherwise.
+ * `published` lists the versions with a published release, when known. */
+export type Mark = 'latest' | 'soon' | 'none' | '';
+export function markFor(version: string, latest: string, published: string[] | null): Mark {
+	const c = compareVersions(version, latest);
+	if (c === 0) return 'latest';
+	if (c > 0) return 'soon';
+	if (published && !published.includes(version)) return 'none';
+	return '';
+}

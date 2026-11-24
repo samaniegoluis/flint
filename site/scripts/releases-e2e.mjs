@@ -44,6 +44,7 @@ const base = `http://127.0.0.1:${server.address().port}/`;
 const browser = await chromium.launch({ executablePath: findChromium() });
 
 const API = 'https://api.github.com/repos/samaniegoluis/flint/releases/latest';
+const LIST = 'https://api.github.com/repos/samaniegoluis/flint/releases?per_page=100';
 const UA = {
 	macos: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36',
 	windows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36',
@@ -59,13 +60,16 @@ const latest = (names) => ({
 });
 
 // Every page gets the stand-in, never the real API: 404 (nothing published) unless a
-// release is given.
-async function open(viewport, theme, { release = null, ua } = {}) {
+// release is given; the list of releases is `list`, or the release alone.
+async function open(viewport, theme, { release = null, ua, list = null } = {}) {
 	const ctx = await browser.newContext({ viewport, colorScheme: theme, ...(ua ? { userAgent: ua } : {}) });
 	await ctx.route(API, (route) =>
 		release
 			? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(release) })
 			: route.fulfill({ status: 404, contentType: 'application/json', body: '{"message":"Not Found"}' }),
+	);
+	await ctx.route(LIST, (route) =>
+		route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(list ?? (release ? [release] : [])) }),
 	);
 	const page = await ctx.newPage();
 	const errors = [];
@@ -98,7 +102,11 @@ try {
 		check(!(await page.locator('.flint-releases__get-download').isVisible()), `${theme} desktop: with nothing published, no Download button`);
 		const summary = await page.locator('.flint-release__summary').first().innerText();
 		check(summary.length > 40, `${theme} desktop: the newest release shows its summary`);
-		check(/^added/i.test(await page.locator('.flint-release__group h3').first().innerText()), `${theme} desktop: its lists start with Added`);
+		// Added comes before Fixed in every version that has both (a fixes-only release,
+		// as 0.33.1, has no Added at all).
+		const order = await page.locator('.flint-release').evaluateAll((els) =>
+			els.map((el) => [...el.querySelectorAll('.flint-release__group')].map((g) => g.dataset.group)));
+		check(order.every((g) => !g.includes('added') || !g.includes('fixed') || g.indexOf('added') < g.indexOf('fixed')), `${theme} desktop: Added comes before Fixed in every version`);
 		check(!/\*\*|`/.test(await page.locator('.flint-releases__list').innerText()), `${theme} desktop: no raw Markdown on the page`);
 		const navPos = await page.locator('.flint-releases__nav').evaluate((n) => getComputedStyle(n).position);
 		check((await page.locator('.pagination-links a').count()) === 0, `${theme} desktop: no previous/next page links under the releases`);
@@ -221,6 +229,29 @@ try {
 		const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 		check(overflow <= 0, `phone: no horizontal scroll with the Download button (overflow ${overflow}px)`);
 		if (shots) await page.screenshot({ path: join(shots, 'releases-download-phone.png') });
+		await ctx.close();
+	}
+
+	// The list's marks follow what is published (D-147): the newest in the changelog not
+	// yet published reads Publishing…, the published latest reads Latest, an older one
+	// never published reads No packages.
+	if (versions.length >= 4) {
+		const rel = (v) => ({ ...latest(ALL), tag_name: `v${v}`, html_url: `https://github.com/samaniegoluis/flint/releases/tag/v${v}` });
+		const { ctx, page, errors } = await open({ width: 1280, height: 900 }, 'dark', {
+			release: rel(versions[1]), ua: UA.macos, list: [rel(versions[1]), rel(versions[3])],
+		});
+		await page.goto(base + 'releases/');
+		await page.locator('[data-release-mark][data-mark="soon"]').first().waitFor({ timeout: 5000 });
+		const markOf = async (v) => {
+			const b = page.locator(`article[data-release-version="${v}"] [data-release-mark]`);
+			return (await b.isVisible()) ? await b.innerText() : '';
+		};
+		const got = [await markOf(versions[0]), await markOf(versions[1]), await markOf(versions[2]), await markOf(versions[3])];
+		check(JSON.stringify(got.map((x) => x.toLowerCase())) === JSON.stringify(['publishing…', 'latest', 'no packages', '']),
+			`the marks follow what is published: ${JSON.stringify(got)}`);
+		const nav = await page.locator(`.flint-releases__nav [data-release-version="${versions[1]}"] [data-release-mark]`).innerText();
+		check(nav.toLowerCase() === 'latest', 'the list to jump to marks the published latest too');
+		check(errors.length === 0, 'no page errors with the marks');
 		await ctx.close();
 	}
 

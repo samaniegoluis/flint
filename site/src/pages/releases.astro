@@ -5,6 +5,9 @@
 // Above the list, Download buttons for the visitor's system from the latest published
 // release on GitHub, asked from the browser (milestone 51, src/releases/download.ts);
 // Build from source when there is none, no package for the system, or no script.
+// The list's marks follow what GitHub has published, not only the changelog (D-147):
+// Latest on the version the buttons offer, Publishing… on a newer one, No packages on
+// an older one never published. With no answer from GitHub, the newest is marked Latest.
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 import { LinkButton } from '@astrojs/starlight/components';
 import { repoUrl } from '../repo';
@@ -83,10 +86,10 @@ function item(text: string): { scope: string | null; html: string } {
 				<ol>
 					{
 						releases.map((r, i) => (
-							<li>
+							<li data-release-version={r.version}>
 								<a href={`#${r.id}`}>
 									<span class="v">{r.version}</span>
-									{i === 0 && <span class="flint-releases__latest">Latest</span>}
+									<span class="flint-releases__latest" data-release-mark hidden={i !== 0}>Latest</span>
 									<span class="d">{r.date}</span>
 								</a>
 							</li>
@@ -98,12 +101,12 @@ function item(text: string): { scope: string | null; html: string } {
 			<div class="flint-releases__list">
 				{
 					releases.map((r, i) => (
-						<article class="flint-release" id={r.id} aria-labelledby={`${r.id}-title`}>
+						<article class="flint-release" id={r.id} aria-labelledby={`${r.id}-title`} data-release-version={r.version}>
 							<header>
 								<h2 id={`${r.id}-title`}>
 									<a href={`#${r.id}`}>{r.version}</a>
 								</h2>
-								{i === 0 && <span class="flint-releases__latest">Latest</span>}
+								<span class="flint-releases__latest" data-release-mark hidden={i !== 0}>Latest</span>
 								<time datetime={r.date}>{fmtDate(r.date)}</time>
 							</header>
 							{r.summary && <p class="flint-release__summary" set:html={inline(r.summary)} />}
@@ -144,7 +147,43 @@ function item(text: string): { scope: string | null; html: string } {
 </StarlightPage>
 
 <script>
-	import { NEEDS, SIGNING, SYSTEM_NAME, detectSystem, downloadsFor, othersFor, versionOf, type Release } from '../releases/download.ts';
+	import { NEEDS, SIGNING, SYSTEM_NAME, detectSystem, downloadsFor, markFor, othersFor, versionOf, type Mark, type Release } from '../releases/download.ts';
+
+	const MARK_TEXT: Record<Exclude<Mark, ''>, string> = { latest: 'Latest', soon: 'Publishing…', none: 'No packages' };
+	const MARK_TITLE: Record<Exclude<Mark, ''>, string> = {
+		latest: 'The version the Download buttons offer',
+		soon: 'Its packages are being built and published; the Download buttons offer the latest published version until then',
+		none: 'This version was never published with packages',
+	};
+
+	/** The list's marks from what GitHub has published (D-147): the build marks the
+	 * changelog's newest version Latest, which is only true once it is published. */
+	async function markReleases(latest: string) {
+		let published: string[] | null = null;
+		try {
+			const ctl = new AbortController();
+			const timer = setTimeout(() => ctl.abort(), 8000);
+			const res = await fetch(LIST, { headers: { Accept: 'application/vnd.github+json' }, signal: ctl.signal });
+			clearTimeout(timer);
+			if (res.ok) {
+				const all = (await res.json()) as Release[];
+				published = all.filter((r) => !r.draft && !r.prerelease).map((r) => versionOf(r.tag_name));
+			}
+		} catch {
+			published = null;
+		}
+		for (const el of document.querySelectorAll<HTMLElement>('[data-release-version]')) {
+			const badge = el.querySelector<HTMLElement>('[data-release-mark]');
+			if (!badge) continue;
+			const mark = markFor(el.dataset.releaseVersion!, latest, published);
+			badge.hidden = mark === '';
+			if (mark !== '') {
+				badge.textContent = MARK_TEXT[mark];
+				badge.title = MARK_TITLE[mark];
+				badge.dataset.mark = mark;
+			}
+		}
+	}
 
 	/** "Also for Windows (zip) · Linux (.deb, .rpm)": each package a direct link. */
 	function showOthers(box: HTMLElement, release: Release, system: ReturnType<typeof detectSystem>, lead: string) {
@@ -169,6 +208,7 @@ function item(text: string): { scope: string | null; html: string } {
 	}
 
 	const API = 'https://api.github.com/repos/samaniegoluis/flint/releases/latest';
+	const LIST = 'https://api.github.com/repos/samaniegoluis/flint/releases?per_page=100';
 
 	async function offer() {
 		const box = document.querySelector<HTMLElement>('.flint-releases__get');
@@ -187,6 +227,7 @@ function item(text: string): { scope: string | null; html: string } {
 			return;
 		}
 		const version = versionOf(release.tag_name);
+		void markReleases(version);
 		const downloads = system ? downloadsFor(release, system) : [];
 		if (!system || downloads.length === 0) {
 			// A release exists, but nothing for this system yet.
@@ -373,6 +414,15 @@ function item(text: string): { scope: string | null; html: string } {
 		color: var(--sl-color-accent-high);
 		background: var(--sl-color-accent-low);
 		border: 1px solid color-mix(in srgb, var(--sl-color-accent) 35%, transparent);
+	}
+	.flint-releases__latest[hidden] {
+		display: none;
+	}
+	.flint-releases__latest[data-mark='soon'],
+	.flint-releases__latest[data-mark='none'] {
+		color: var(--sl-color-gray-2);
+		background: transparent;
+		border-color: var(--flint-border);
 	}
 
 	/* ---- One release ---- */
