@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon, type IconName } from './Icon';
 import { plainText } from './plainText';
+import { t } from '../i18n';
 
 export interface PickerOption {
   value: string;
@@ -66,7 +67,7 @@ export function Picker({ value, options, onChange, icon, placeholder, label, sea
           {search && (
             <label className="search" style={{ margin: 'var(--sp-1)' }}>
               <Icon name="search" size="sm" />
-              <input {...plainText} autoFocus aria-label={'Search ' + label} placeholder="Search" value={q} onChange={(e) => { setQ(e.target.value); setHot(0); }} />
+              <input {...plainText} autoFocus aria-label={t('picker.search_label', { label })} placeholder={t('picker.search')} value={q} onChange={(e) => { setQ(e.target.value); setHot(0); }} />
             </label>
           )}
           {shown.map((o, i) => (
@@ -79,7 +80,7 @@ export function Picker({ value, options, onChange, icon, placeholder, label, sea
               {o.value === value && <Icon name="check" size="sm" className="accent-t" />}
             </button>
           ))}
-          {shown.length === 0 && <span className="faint" style={{ padding: 'var(--sp-2)', fontSize: 'var(--fs-sm)' }}>No match</span>}
+          {shown.length === 0 && <span className="faint" style={{ padding: 'var(--sp-2)', fontSize: 'var(--fs-sm)' }}>{t('picker.no_match')}</span>}
           {footer && (
             <>
               <div className="menu-sep" />

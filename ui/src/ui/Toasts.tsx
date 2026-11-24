@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import type { ToastCorner } from '../api/types';
 import type { ToastItem, ToastStore } from '../lib/toasts';
 import { Icon } from './Icon';
+import { t } from '../i18n';
 
 const CORNER_ATTR: Record<ToastCorner, string> = {
   'bottom-right': 'br', 'bottom-left': 'bl', 'top-right': 'tr', 'top-left': 'tl',
@@ -60,14 +61,14 @@ export function Toasts({ store, corner }: { store: ToastStore; corner: ToastCorn
             const back = other?.querySelector<HTMLElement>('[data-toast-close]') ?? before.current;
             if (back?.isConnected) back.focus();
           }}>
-          {ordered.map((t) => <ToastView key={t.id} t={t} store={store} />)}
+          {ordered.map((t) => <ToastView key={t.id} toast={t} store={store} />)}
         </div>
       )}
     </>
   );
 }
 
-function ToastView({ t, store }: { t: ToastItem; store: ToastStore }) {
+function ToastView({ toast, store }: { toast: ToastItem; store: ToastStore }) {
   const text = useRef<HTMLSpanElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [clamped, setClamped] = useState(false);
@@ -77,32 +78,32 @@ function ToastView({ t, store }: { t: ToastItem; store: ToastStore }) {
     const el = text.current;
     if (!el || expanded) return;
     setClamped(el.scrollHeight > el.clientHeight + 1);
-  }, [t.text, expanded]);
+  }, [toast.text, expanded]);
 
-  const cls = ['toast', expanded ? 'expanded' : '', t.leaving ? 'leaving' : ''].filter(Boolean).join(' ');
+  const cls = ['toast', expanded ? 'expanded' : '', toast.leaving ? 'leaving' : ''].filter(Boolean).join(' ');
   return (
-    <div className={cls} data-kind={t.kind} data-toast={t.id} data-toast-kind={t.kind}>
-      {t.kind === 'error'
+    <div className={cls} data-kind={toast.kind} data-toast={toast.id} data-toast-kind={toast.kind}>
+      {toast.kind === 'error'
         ? <Icon name="alert" className="t-mark" />
-        : t.kind === 'root' ? <Icon name="shield" className="t-mark" />
+        : toast.kind === 'root' ? <Icon name="shield" className="t-mark" />
         : <span className="t-mark" aria-hidden="true" />}
       <span className="t-body">
-        <span className="t-text" ref={text}>{t.text}</span>
+        <span className="t-text" ref={text}>{toast.text}</span>
         {(clamped || expanded) && (
           <button type="button" className="t-more" aria-expanded={expanded} data-toast-more
-            onClick={() => setExpanded((x) => !x)}>{expanded ? 'Less' : 'More'}</button>
+            onClick={() => setExpanded((x) => !x)}>{expanded ? t('toasts.less') : t('toasts.more')}</button>
         )}
       </span>
-      {t.progress !== undefined && (
-        <span className="t-prog" aria-label={`${Math.round(t.progress)}% done`}>{Math.round(t.progress)}%</span>
+      {toast.progress !== undefined && (
+        <span className="t-prog" aria-label={t('toasts.p_done', { p: Math.round(toast.progress) })}>{Math.round(toast.progress)}%</span>
       )}
-      {t.side !== undefined && <span className="t-prog wide" aria-label="time left" data-toast-side>{t.side}</span>}
-      {t.actions.map((a, i) => (
+      {toast.side !== undefined && <span className="t-prog wide" aria-label={t('toasts.time_left')} data-toast-side>{toast.side}</span>}
+      {toast.actions.map((a, i) => (
         <button key={a.label} type="button" className={'btn btn-sm ' + (a.primary ? 'btn-primary' : 'btn-secondary')} data-toast-action={i}
-          onClick={() => store.act(t.id, i)}>{a.label}</button>
+          onClick={() => store.act(toast.id, i)}>{a.label}</button>
       ))}
-      <button type="button" className="t-x" aria-label="Dismiss" data-toast-close
-        onClick={() => store.dismiss(t.id)}><Icon name="x" size="sm" /></button>
+      <button type="button" className="t-x" aria-label={t('toasts.dismiss')} data-toast-close
+        onClick={() => store.dismiss(toast.id)}><Icon name="x" size="sm" /></button>
     </div>
   );
 }

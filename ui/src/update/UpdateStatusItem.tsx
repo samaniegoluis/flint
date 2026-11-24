@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../state/app';
 import { updateActionLabel, updateBarLabel, updateDownloading, updatePending, updatePopoverDetail, updateReady, updateStateLine } from '../lib/update';
 import { useUpdate, useUpdateOnScreen } from './UpdateProvider';
+import { t } from '../i18n';
 
 export function UpdateStatusItem() {
   const { info } = useApp();
@@ -45,16 +46,16 @@ export function UpdateStatusItem() {
         </button>
       )}
       <button className={'sb-btn sb-version' + (avail ? ' has-dot' : '') + (open ? ' is-open' : '')} data-sb-version
-        aria-expanded={open} aria-label={`Flint ${info.version}${avail ? ', update available' : ''}`} title="About Flint"
+        aria-expanded={open} aria-label={`Flint ${info.version}${avail ? ', update available' : ''}`} title={t('update_status_item.about_flint')}
         onClick={() => setOpen(!open)}>
         v{info.version}
       </button>
       {open && (
-        <div className="sync-pop" role="dialog" aria-label="Flint update" data-update-pop={st?.state ?? 'idle'} style={{ right: -8, bottom: 'calc(100% + 8px)' }}>
+        <div className="sync-pop" role="dialog" aria-label={t('update_status_item.flint_update')} data-update-pop={st?.state ?? 'idle'} style={{ right: -8, bottom: 'calc(100% + 8px)' }}>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
             {avail && <span className="t-mark" style={{ background: 'var(--accent)' }} />}
             <span className="strong grow">{avail ? title : `Flint ${info.version}`}</span>
-            {ready && <span className="badge ok" data-pop-verified>Verified</span>}
+            {ready && <span className="badge ok" data-pop-verified>{t('update_status_item.verified')}</span>}
           </div>
           <span className="muted" style={{ lineHeight: 1.45 }}>
             {avail ? updatePopoverDetail(st!) : updateStateLine(st, up.now)}
@@ -65,11 +66,11 @@ export function UpdateStatusItem() {
               ? <button className="btn btn-primary btn-sm" data-pop-update-act onClick={() => { setOpen(false); up.act(); }}>{updateActionLabel(st!)}</button>
               : avail ? null
               : <button className="btn btn-secondary btn-sm" data-pop-check disabled={up.status?.state === 'checking'} onClick={() => up.checkNow()}>
-                  {up.status?.state === 'checking' ? 'Checking…' : 'Check now'}
+                  {up.status?.state === 'checking' ? t('update_status_item.checking') : t('update_status_item.check_now')}
                 </button>}
-            <button className="btn btn-ghost btn-sm" onClick={() => { setOpen(false); up.showWhatsNew(); }}>What's new</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setOpen(false); up.showWhatsNew(); }}>{t('update_status_item.what_s_new')}</button>
             <span className="grow" />
-            <button className="link" style={{ fontSize: 'var(--fs-xs)' }} onClick={() => { setOpen(false); up.openAbout(); }}>About Flint</button>
+            <button className="link" style={{ fontSize: 'var(--fs-xs)' }} onClick={() => { setOpen(false); up.openAbout(); }}>{t('update_status_item.about_flint')}</button>
           </div>
         </div>
       )}

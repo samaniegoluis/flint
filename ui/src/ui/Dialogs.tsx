@@ -5,6 +5,7 @@ import { Key } from './Kbd';
 import { Modal } from './Modal';
 import type { Confirm } from '../pages/KeysPage';
 import { plainText } from './plainText';
+import { t } from '../i18n';
 
 export function ConfirmDialog({ c, onClose }: { c: Confirm; onClose: () => void }) {
   const [error, setError] = useState('');
@@ -26,7 +27,7 @@ export function ConfirmDialog({ c, onClose }: { c: Confirm; onClose: () => void 
           <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{c.title}</h2><p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{c.body}</p></div></div>
         {error && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
         <div className="row" style={{ justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
-          <button className="btn btn-ghost" onClick={onClose} data-autofocus>Cancel<Key>esc</Key></button>
+          <button className="btn btn-ghost" onClick={onClose} data-autofocus>{t('common.cancel')}<Key>esc</Key></button>
           <button className="btn btn-danger" onClick={run} disabled={busy}>{c.action}</button>
         </div>
       </div>
@@ -65,7 +66,7 @@ export function TextDialog({ ask, onClose }: { ask: TextAsk; onClose: () => void
             {error ? <span className="hint err">{error}</span> : ask.hint && <span className="hint">{ask.hint}</span>}</div>
         </div>
         <div className="modal-f"><span className="grow" />
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel<Key>esc</Key></button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>{t('common.cancel')}<Key>esc</Key></button>
           <button type="submit" className="btn btn-primary" disabled={!v.trim()}>{ask.action}<span className="kbd-in">↵</span></button>
         </div>
       </form>

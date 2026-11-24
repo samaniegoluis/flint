@@ -12,13 +12,15 @@ import { RememberOption } from '../ui/RememberOption';
 import { sessions, useSessions } from '../sessions/store';
 import type { LockReason, RemoteStatus } from '../api/types';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 const LOCK_REASONS: Record<LockReason, string> = {
-  manual: 'Locked.',
-  idle: 'Locked after being idle.',
-  screen: 'Locked when the screen locked.',
-  sleep: 'Locked before the computer went to sleep.',
-  cli: 'Locked by flint vault lock.',
+  manual: 'unlock.reason.manual',
+  idle: 'unlock.reason.idle',
+  screen: 'unlock.reason.screen',
+  sleep: 'unlock.reason.sleep',
+  cli: 'unlock.reason.cli',
 };
 
 // `locked`: the vault was locked in this window. The screen covers the main window,
@@ -120,16 +122,16 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
         <div className="tb-brand"><Logo />Flint</div>
       </header>
       <main style={{ position: 'absolute', inset: '38px 0 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingBottom: 'var(--sp-16)', background: 'var(--surface-sunken)' }}>
-        <form aria-label={locked ? 'Vault locked' : 'Unlock vault'} className="col" style={{ width: request ? 500 : 460, gap: request ? 'var(--sp-5)' : 'var(--sp-6)' }} onSubmit={submit}>
+        <form aria-label={locked ? t('unlock.vault_locked') : t('unlock.unlock_vault')} className="col" style={{ width: request ? 500 : 460, gap: request ? 'var(--sp-5)' : 'var(--sp-6)' }} onSubmit={submit}>
           {request && (
-            <section className="panel col" role="status" aria-label="A command is waiting" data-unlock-request style={{ padding: 'var(--sp-4)', gap: 'var(--sp-3)', borderColor: 'var(--info-border)' }}>
+            <section className="panel col" role="status" aria-label={t('unlock.a_command_is_waiting')} data-unlock-request style={{ padding: 'var(--sp-4)', gap: 'var(--sp-3)', borderColor: 'var(--info-border)' }}>
               <div className="row" style={{ gap: 'var(--sp-3)', alignItems: 'flex-start' }}>
                 <span className="prompt-ic info" style={{ width: 28, height: 28 }}><Icon name="agent" /></span>
                 <p className="grow" style={{ fontSize: 'var(--fs-md)', margin: 0, minWidth: 0, wordBreak: 'break-word' }}>
                   <span className={more ? 'mono strong req-summary' : 'mono strong'} style={more ? { display: 'block' } : undefined}
-                    title={more ? 'Summary — open the full command to read all of it' : undefined}>{request.caller}</span>{more ? '' : ' '}wants to use {request.path === target.path ? 'this vault' : <>vault <span className="strong">{request.name}</span></>}
+                    title={more ? t('unlock.summary_open_the_full_command') : undefined}>{request.caller}</span>{more ? '' : ' '}{request.path === target.path ? t('unlock.wants_this_vault') : tr('unlock.wants_vault', { name: <span className="strong">{request.name}</span> })}
                 </p>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={dismissUnlockRequest}>Dismiss</button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={dismissUnlockRequest}>{t('unlock.dismiss')}</button>
               </div>
               {more && (
                 <div style={{ marginLeft: 40, marginTop: 'calc(var(--sp-2) * -1)' }}>
@@ -140,20 +142,20 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
                 <>
                   <label className="opt" data-unlock-allow style={{ marginLeft: 40 }}>
                     <input type="checkbox" checked={allowCaller} onChange={(e) => setAllowCaller(e.target.checked)} />
-                    <span className="opt-t"><span className="opt-l" style={{ maxWidth: 'none', display: 'inline' }}>Allow <CallerLabel label={request.label} /> for 1 hour</span></span>
+                    <span className="opt-t"><span className="opt-l" style={{ maxWidth: 'none', display: 'inline' }}>{tr('unlock.allow_callerlabel_for_1_hour', { callerlabel: <CallerLabel label={request.label} /> })}</span></span>
                   </label>
                   <p className="hint" style={{ marginLeft: 64, lineHeight: 1.5 }}>
-                    What this command needs, on {request.caller.startsWith('flint exec') || request.caller.startsWith('flint connect') || request.caller.startsWith('flint host test') ? 'its host' : 'this vault'}. The master password you type confirms it. Change or revoke it in Settings → Access.
+                    {request.caller.startsWith('flint exec') || request.caller.startsWith('flint connect') || request.caller.startsWith('flint host test') ? t('unlock.needs_on_host') : t('unlock.needs_on_vault')}
                   </p>
                 </>
               ) : (
                 <p className="hint" style={{ marginLeft: 40, lineHeight: 1.5 }}>{request.path === target.path
-                  ? 'Unlock it to let the command run again; nothing runs until you do.'
-                  : 'Close this vault to unlock that one; the sessions here end.'}</p>
+                  ? t('unlock.unlock_it_to_let_the')
+                  : t('unlock.close_this_vault_to_unlock')}</p>
               )}
               {request.path !== target.path && (
                 <div className="row" style={{ marginLeft: 40 }}>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => switchToRequested().catch(fail)}>Unlock {request.name} instead</button>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => switchToRequested().catch(fail)}>{tr('unlock.unlock_name_instead', { name: request.name })}</button>
                 </div>
               )}
             </section>
@@ -162,11 +164,11 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
             {locked ? <Icon name="lock" size="lg" className="accent-t" /> : <Logo size={40} label="Flint" />}
             <h1 style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-semibold)', letterSpacing: '-0.01em' }}>{target.name}</h1>
             <span className="mono muted" style={{ fontSize: 'var(--fs-sm)' }}>{shortPath(target.path)}</span>
-            {remote && <span className="faint row" style={{ fontSize: 'var(--fs-xs)', gap: 6 }} data-unlock-remote><Icon name="cloud" size="xs" />Kept in step with <span className="mono">{remote.url}</span></span>}
-            {locked && <span className="muted" data-lock-reason={lockReason ?? 'manual'} style={{ fontSize: 'var(--fs-sm)' }}>{LOCK_REASONS[lockReason ?? 'manual']}{live > 0 ? ` ${live === 1 ? 'One session keeps' : `${live} sessions keep`} running.` : ''}</span>}
+            {remote && <span className="faint row" style={{ fontSize: 'var(--fs-xs)', gap: 6 }} data-unlock-remote>{tr('unlock.iconkept_in_step_with_span', { icon: <Icon name="cloud" size="xs" />, span: <span className="mono">{remote.url}</span> })}</span>}
+            {locked && <span className="muted" data-lock-reason={lockReason ?? 'manual'} style={{ fontSize: 'var(--fs-sm)' }}>{t(LOCK_REASONS[lockReason ?? 'manual'])}{live > 0 ? ' ' + t('unlock.sessions_keep_running', { count: live }) : ''}</span>}
           </div>
           <div className="field">
-            <label className="flabel" htmlFor="pw">Master password</label>
+            <label className="flabel" htmlFor="pw">{t('unlock.master_password')}</label>
             <div className={'input lg mono' + (error ? ' err' : '')} style={{ paddingLeft: 'var(--sp-4)', gap: 'var(--sp-3)' }}>
               <span className="accent-t" aria-hidden="true">❯</span>
               <input {...plainText} id="pw" ref={input} type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw}
@@ -174,34 +176,32 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
                 onKeyDown={(e) => setCaps(e.getModifierState?.('CapsLock') ?? false)}
                 onKeyUp={(e) => setCaps(e.getModifierState?.('CapsLock') ?? false)}
                 aria-describedby={error ? 'pwe' : undefined} aria-invalid={!!error} style={{ fontSize: 'var(--fs-lg)' }} disabled={busy} />
-              {caps && <span className="badge warn" style={{ fontFamily: 'var(--font-ui)' }}>⇪ Caps Lock</span>}
-              <button type="button" className="icon-btn" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
-              <button type="submit" className="btn btn-primary btn-sm" style={{ fontFamily: 'var(--font-ui)' }} disabled={!pw || busy}>{busy ? 'Unlocking…' : 'Unlock'}<span className="kbd-in">↵</span></button>
+              {caps && <span className="badge warn" style={{ fontFamily: 'var(--font-ui)' }}>{t('unlock.caps_lock')}</span>}
+              <button type="button" className="icon-btn" aria-label={show ? t('unlock.hide_password') : t('unlock.show_password')} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
+              <button type="submit" className="btn btn-primary btn-sm" style={{ fontFamily: 'var(--font-ui)' }} disabled={!pw || busy}>{busy ? t('unlock.unlocking') : t('common.unlock')}<span className="kbd-in">↵</span></button>
             </div>
             {error && <span id="pwe" className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
-            {remote?.pending && <span className="hint row" style={{ gap: 6 }} data-unlock-waiting><Icon name="cloud" size="xs" />Changes from this machine will sync after unlocking.</span>}
+            {remote?.pending && <span className="hint row" style={{ gap: 6 }} data-unlock-waiting><Icon name="cloud" size="xs" />{t('unlock.changes_from_this_machine_will')}</span>}
           </div>
           <RememberOption checked={remember} onChange={setRemember} os={os} disabled={busy} />
-          {locked && <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />The vault key left memory when it locked. Until you unlock, the flint CLI and new sessions cannot use this vault.</span>}
+          {locked && <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />{t('unlock.the_vault_key_left_memory')}</span>}
           <div className="row" style={{ justifyContent: 'center', gap: 'var(--sp-5)', paddingTop: 'var(--sp-5)', borderTop: '1px solid var(--border-subtle)', position: 'relative' }}>
             {locked
-              ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => closeLocked().catch(fail)}>Close vault{live > 0 ? ' and end its sessions' : ''}</button>
+              ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => closeLocked().catch(fail)}>{live > 0 ? t('unlock.close_vault_end_sessions') : t('unlock.close_vault')}</button>
               : <>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSwitcher(true)}>Switch vault<Kbd action="switchVault" /></button>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => openVaultFile().catch(fail)}>Open file…<Kbd action="openVault" /></button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSwitcher(true)}>{t('unlock.switch_vault')}<Kbd action="switchVault" /></button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => openVaultFile().catch(fail)}>{t('unlock.open_file')}<Kbd action="openVault" /></button>
               </>}
             {switcher && <VaultMenu onClose={() => setSwitcher(false)} style={{ top: 48, left: '50%', marginLeft: -170 }} />}
           </div>
         </form>
-        {showCommand && request && <CommandModal title="Full command" command={request.command.text} cut={request.command.cut} onClose={() => setShowCommand(false)}
-          footer={<span className="hint">Esc returns to the unlock screen</span>} />}
+        {showCommand && request && <CommandModal title={t('unlock.full_command')} command={request.command.text} cut={request.command.cut} onClose={() => setShowCommand(false)}
+          footer={<span className="hint">{t('unlock.esc_returns_to_the_unlock')}</span>} />}
       </main>
-      <footer className="mono faint" style={{ position: 'absolute', left: 0, right: 0, bottom: 'var(--sp-4)', textAlign: 'center', fontSize: 'var(--fs-xs)' }}>
-        Flint {info?.version} · vault format v1 · Argon2id + SQLCipher + XChaCha20-Poly1305
-      </footer>
+      <footer className="mono faint" style={{ position: 'absolute', left: 0, right: 0, bottom: 'var(--sp-4)', textAlign: 'center', fontSize: 'var(--fs-xs)' }}>{tr('unlock.flint_version_vault_format_v1', { version: info?.version })}</footer>
     </>
   );
   if (!locked) return body;
   // Over the main window, which stays mounted underneath.
-  return <div className="lock-screen" role="dialog" aria-modal="true" aria-label="Vault locked" style={{ position: 'absolute', inset: 0, zIndex: 1000, background: 'var(--surface-sunken)' }}>{body}</div>;
+  return <div className="lock-screen" role="dialog" aria-modal="true" aria-label={t('unlock.vault_locked')} style={{ position: 'absolute', inset: 0, zIndex: 1000, background: 'var(--surface-sunken)' }}>{body}</div>;
 }

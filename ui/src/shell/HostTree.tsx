@@ -14,6 +14,8 @@ import { useSessions } from '../sessions/store';
 import { chordLabel } from '../lib/keymap';
 import { TunnelMark } from '../tunnels/TunnelsMenu';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 export interface TreeHandlers {
   connect: (alias: string, newTab: boolean) => void;
@@ -109,28 +111,28 @@ export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer
     if (host?.type === 'rdp') {
       const addr = host.port === 3389 ? host.hostname : `${host.hostname}:${host.port}`;
       setMenu({ x: e.clientX, y: e.clientY, items: [
-        { label: 'Connect', icon: 'rdp', run: () => h.connect(alias, false) },
-        { label: 'Edit host…', icon: 'edit', hint: chordLabel('editHost', os), run: () => h.editHost(alias) },
-        { label: 'Copy address', icon: 'clip', run: () => { navigator.clipboard?.writeText(addr).catch(() => {}); } },
-        { label: 'Delete host', icon: 'trash', danger: true, sep: true, run: () => h.deleteHost(alias) },
+        { label: t('common.connect'), icon: 'rdp', run: () => h.connect(alias, false) },
+        { label: t('host_tree.edit_host'), icon: 'edit', hint: chordLabel('editHost', os), run: () => h.editHost(alias) },
+        { label: t('host_tree.copy_address'), icon: 'clip', run: () => { navigator.clipboard?.writeText(addr).catch(() => {}); } },
+        { label: t('host_tree.delete_host'), icon: 'trash', danger: true, sep: true, run: () => h.deleteHost(alias) },
       ] });
       return;
     }
     setMenu({ x: e.clientX, y: e.clientY, items: [
-      { label: 'Connect', icon: 'term', run: () => h.connect(alias, false) },
-      { label: 'Connect in new tab', icon: 'plus', run: () => h.connect(alias, true) },
-      { label: 'Edit host', icon: 'edit', hint: chordLabel('editHost', os), run: () => h.editHost(alias) },
-      { label: 'Delete host', icon: 'trash', danger: true, run: () => h.deleteHost(alias) },
+      { label: t('common.connect'), icon: 'term', run: () => h.connect(alias, false) },
+      { label: t('host_tree.connect_in_new_tab'), icon: 'plus', run: () => h.connect(alias, true) },
+      { label: t('host_tree.edit_host_2'), icon: 'edit', hint: chordLabel('editHost', os), run: () => h.editHost(alias) },
+      { label: t('host_tree.delete_host'), icon: 'trash', danger: true, run: () => h.deleteHost(alias) },
     ] });
   };
 
   const groupMenu = (path: string, e: React.MouseEvent) => {
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY, items: [
-      { label: 'New host here', icon: 'plus', run: () => h.newHost(path) },
-      { label: 'New subgroup', icon: 'folder', run: () => h.newGroup(path) },
-      { label: 'Rename group', icon: 'edit', run: () => h.renameGroup(path) },
-      { label: 'Delete group', icon: 'trash', danger: true, run: () => h.deleteGroup(path) },
+      { label: t('host_tree.new_host_here'), icon: 'plus', run: () => h.newHost(path) },
+      { label: t('host_tree.new_subgroup'), icon: 'folder', run: () => h.newGroup(path) },
+      { label: t('host_tree.rename_group'), icon: 'edit', run: () => h.renameGroup(path) },
+      { label: t('host_tree.delete_group'), icon: 'trash', danger: true, run: () => h.deleteGroup(path) },
     ] });
   };
 
@@ -138,8 +140,8 @@ export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer
   const allCollapsed = catalog.groups.length > 0 && catalog.groups.every((g) => collapsed.has(g.path));
 
   return (
-    <aside className="sidebar" data-for="hosts" aria-label="Hosts" style={{ display: 'flex' }}>
-      <button className="vault-btn" aria-label={`Switch vault — ${vault?.name} (${chordLabel('switchVault', os)})`} onClick={h.openSwitcher}>
+    <aside className="sidebar" data-for="hosts" aria-label={t('host_tree.hosts')} style={{ display: 'flex' }}>
+      <button className="vault-btn" aria-label={t('host_tree.switch_vault_name_chordlabel', { name: vault?.name, chordLabel: chordLabel('switchVault', os) })} onClick={h.openSwitcher}>
         <span className={'vault-mark ' + vaultMarkClass(vault?.path ?? '')}>{vaultInitial(vault?.name ?? '')}</span>
         <span className="col grow" style={{ gap: 1, minWidth: 0 }}>
           <span className="vault-name trunc">{vault?.name}</span>
@@ -149,7 +151,7 @@ export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer
       </button>
       <label className="search side-search">
         <Icon name="search" size="sm" />
-        <input {...plainText} ref={filterRef} aria-label="Filter hosts" placeholder="Filter hosts" value={filter} onChange={(e) => setFilter(e.target.value)}
+        <input {...plainText} ref={filterRef} aria-label={t('host_tree.filter_hosts')} placeholder={t('host_tree.filter_hosts')} value={filter} onChange={(e) => setFilter(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Escape') { setFilter(''); (e.target as HTMLInputElement).blur(); }
             if (e.key === 'ArrowDown') { e.preventDefault(); move(0); treeRef.current?.querySelector<HTMLElement>('[tabindex="0"]')?.focus(); }
@@ -161,21 +163,21 @@ export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer
         <Kbd action="gotoHost" />
       </label>
       <div className="side-head">
-        <span className="label">Hosts <span className="count-all">· {catalog.hosts.length}</span></span>
+        <span className="label">{t('host_tree.hosts')}{' '}<span className="count-all">· {catalog.hosts.length}</span></span>
         {catalog.groups.length > 0 && (allCollapsed
-          ? <button className="icon-btn" aria-label="Expand all groups" title="Expand all" onClick={() => setCollapsed(new Set())}><Icon name="chev" size="sm" /></button>
-          : <button className="icon-btn" aria-label="Collapse all groups" title="Collapse all" onClick={() => setCollapsed(new Set(catalog.groups.map((g) => g.path)))}><Icon name="chev-r" size="sm" /></button>)}
-        <button className="icon-btn" aria-label="New group" title="New group" onClick={() => h.newGroup('')}><Icon name="folder" size="sm" /></button>
-        <button className="icon-btn" aria-label={`New host (${chordLabel('newHost', os)})`} title="New host" onClick={() => h.newHost('')}><Icon name="plus" size="sm" /></button>
+          ? <button className="icon-btn" aria-label={t('host_tree.expand_all_groups')} title={t('host_tree.expand_all')} onClick={() => setCollapsed(new Set())}><Icon name="chev" size="sm" /></button>
+          : <button className="icon-btn" aria-label={t('host_tree.collapse_all_groups')} title={t('host_tree.collapse_all')} onClick={() => setCollapsed(new Set(catalog.groups.map((g) => g.path)))}><Icon name="chev-r" size="sm" /></button>)}
+        <button className="icon-btn" aria-label={t('host_tree.new_group')} title={t('host_tree.new_group')} onClick={() => h.newGroup('')}><Icon name="folder" size="sm" /></button>
+        <button className="icon-btn" aria-label={t('host_tree.new_host_chordlabel', { chordLabel: chordLabel('newHost', os) })} title={t('host_tree.new_host')} onClick={() => h.newHost('')}><Icon name="plus" size="sm" /></button>
       </div>
       {catalog.hosts.length === 0 && catalog.groups.length === 0 ? (
         <div className="tree-empty" style={{ display: 'flex' }}>
-          <span>This vault has no hosts yet.</span>
-          <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => h.newHost('')}><Icon name="plus" size="sm" />New host<Kbd action="newHost" inline /></button>
+          <span>{t('host_tree.this_vault_has_no_hosts')}</span>
+          <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => h.newHost('')}>{tr('host_tree.iconnew_hostkbd', { icon: <Icon name="plus" size="sm" />, kbd: <Kbd action="newHost" inline /> })}</button>
         </div>
       ) : (
-        <div ref={treeRef} className="tree scroll" role="tree" aria-label={`Hosts in ${vault?.name}`} onKeyDown={onKey}>
-          {rows.length === 0 && <span className="faint" style={{ padding: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>No host matches “{filter}”.</span>}
+        <div ref={treeRef} className="tree scroll" role="tree" aria-label={t('host_tree.hosts_in_name', { name: vault?.name })} onKeyDown={onKey}>
+          {rows.length === 0 && <span className="faint" style={{ padding: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>{tr('host_tree.no_host_matches_filter', { filter })}</span>}
           {rows.map((r) => {
             const tab = r === current ? 0 : -1;
             if (r.kind === 'group') {
@@ -200,7 +202,7 @@ export function HostTree({ selected, filterRef, collapsed, setCollapsed, resizer
                 <HostTypeIcon type={r.host.type} />
                 <span className="host-name grow trunc">{r.alias}</span>
                 <TunnelMark host={r.alias} />
-                {n > 0 && <span className="sess" aria-label={`${n} open session${n > 1 ? 's' : ''}`}><Icon name="term" />{n}</span>}
+                {n > 0 && <span className="sess" aria-label={t('host_tree.n_open_sessionp', { n, p: n > 1 ? 's' : '' })}><Icon name="term" />{n}</span>}
               </button>
             );
           })}

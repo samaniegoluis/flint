@@ -12,6 +12,8 @@ import {
   uptimeLong, uptimeShort, usedOfLabel, type Level,
 } from '../lib/serverStats';
 import { Icon } from '../ui/Icon';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 interface Props {
   alias: string;
@@ -52,13 +54,13 @@ export function ServerStatsItem({ alias, view, colour, compact, onSettings }: Pr
   if (view.state === 'waiting') {
     const dots = <span className="v">··</span>;
     return (
-      <button className="res loading" data-server-stats="waiting" aria-label="Server resources, first sample on its way" aria-busy="true" tabIndex={-1}>
+      <button className="res loading" data-server-stats="waiting" aria-label={t('server_stats_item.server_resources_first_sample_on')} aria-busy="true" tabIndex={-1}>
         <span className="res-i"><span className="k">CPU</span>{dots}</span>
         <span className="res-i"><span className="k">RAM</span>{dots}</span>
         {!compact && <>
           <span className="res-i"><span className="k">↓</span>{dots}<span className="k">↑</span>{dots}</span>
-          <span className="res-i"><span className="k">Disk</span>{dots}</span>
-          <span className="res-i"><span className="k">up</span>{dots}</span>
+          <span className="res-i"><span className="k">{t('server_stats_item.disk')}</span>{dots}</span>
+          <span className="res-i"><span className="k">{t('server_stats_item.up')}</span>{dots}</span>
         </>}
       </button>
     );
@@ -92,8 +94,8 @@ function Fields({ s, lvl }: { s: ServerSample; lvl: (pct: number) => string }) {
     {s.has_cpu && <span className="res-i" data-res="cpu"><span className="k">CPU</span><span className={'v' + lvl(s.cpu_pct)}>{pctLabel(s.cpu_pct)}</span></span>}
     {s.has_mem && <span className="res-i" data-res="ram"><span className="k">RAM</span><span className={'v' + lvl(memPct(s))}>{usedOfLabel(s.mem_used, s.mem_total)}</span></span>}
     {s.has_net && <span className="res-i" data-res="net"><span className="k">↓</span><span className="v">{rateLabel(s.rx_rate)}</span><span className="k">↑</span><span className="v">{rateLabel(s.tx_rate)}</span></span>}
-    {s.has_disk && <span className="res-i" data-res="disk"><span className="k">Disk</span><span className={'v' + lvl(diskPct(s))}>{pctLabel(diskPct(s))}</span></span>}
-    {s.has_uptime && <span className="res-i" data-res="up"><span className="k">up</span><span className="v">{uptimeShort(s.uptime_secs)}</span></span>}
+    {s.has_disk && <span className="res-i" data-res="disk"><span className="k">{t('server_stats_item.disk')}</span><span className={'v' + lvl(diskPct(s))}>{pctLabel(diskPct(s))}</span></span>}
+    {s.has_uptime && <span className="res-i" data-res="up"><span className="k">{t('server_stats_item.up')}</span><span className="v">{uptimeShort(s.uptime_secs)}</span></span>}
   </>;
 }
 
@@ -119,7 +121,7 @@ function Detail({ alias, s, at, colour, onSettings }: { alias: string; s: Server
   const lvl = (pct: number) => (colour ? ' ' + loadLevel(pct) : '');
   const line = hostLine(s);
   return (
-    <div className="sync-pop res-pop" role="dialog" aria-label={`Server resources, ${alias}`} data-server-stats-detail style={{ left: -8, bottom: 'calc(100% + 8px)', width: 360 }}>
+    <div className="sync-pop res-pop" role="dialog" aria-label={t('server_stats_item.server_resources_alias', { alias })} data-server-stats-detail style={{ left: -8, bottom: 'calc(100% + 8px)', width: 360 }}>
       <div className="row" style={{ gap: 'var(--sp-2)' }}>
         <span className="st st-on" />
         <span className="mono strong grow trunc">{alias}</span>
@@ -131,26 +133,26 @@ function Detail({ alias, s, at, colour, onSettings }: { alias: string; s: Server
           <span className="sub">{s.has_load ? loadLabel(s) : ''}</span>
         </>}
         {s.has_mem && <>
-          <span className="k">Memory</span><Bar wide pct={memPct(s)} level={loadLevel(memPct(s))} colour={colour} /><span className={'v' + lvl(memPct(s))}>{pctLabel(memPct(s))}</span>
+          <span className="k">{t('server_stats_item.memory')}</span><Bar wide pct={memPct(s)} level={loadLevel(memPct(s))} colour={colour} /><span className={'v' + lvl(memPct(s))}>{pctLabel(memPct(s))}</span>
           <span className="sub">{memDetail(s)}</span>
         </>}
         {s.has_disk && <>
-          <span className="k">Disk /</span><Bar wide pct={diskPct(s)} level={loadLevel(diskPct(s))} colour={colour} /><span className={'v' + lvl(diskPct(s))}>{pctLabel(diskPct(s))}</span>
+          <span className="k">{t('server_stats_item.disk_2')}</span><Bar wide pct={diskPct(s)} level={loadLevel(diskPct(s))} colour={colour} /><span className={'v' + lvl(diskPct(s))}>{pctLabel(diskPct(s))}</span>
           <span className="sub">{diskDetail(s)}</span>
         </>}
         {s.has_net && <>
-          <span className="k">Network</span><span className="mono" style={{ gridColumn: 'span 2', fontSize: 'var(--fs-xs)' }}>↓ {rateLabel(s.rx_rate, true)} · ↑ {rateLabel(s.tx_rate, true)}</span>
+          <span className="k">{t('server_stats_item.network')}</span><span className="mono" style={{ gridColumn: 'span 2', fontSize: 'var(--fs-xs)' }}>↓ {rateLabel(s.rx_rate, true)} · ↑ {rateLabel(s.tx_rate, true)}</span>
           <span className="sub">{s.interfaces.join(', ')}</span>
         </>}
         {s.has_uptime && <>
-          <span className="k">Uptime</span><span className="mono" style={{ gridColumn: 'span 2', fontSize: 'var(--fs-xs)' }}>{uptimeLong(s.uptime_secs)}</span>
+          <span className="k">{t('server_stats_item.uptime')}</span><span className="mono" style={{ gridColumn: 'span 2', fontSize: 'var(--fs-xs)' }}>{uptimeLong(s.uptime_secs)}</span>
           <span className="sub" />
         </>}
       </div>
       <div className="row hint" style={{ gap: 6 }}>
         <Icon name="clock" size="xs" />
-        <span className="grow">Last sample {clock(at)} · every 2 s</span>
-        <button className="link" style={{ background: 'none', border: 0, padding: 0, font: 'inherit', cursor: 'pointer' }} data-server-stats-settings onClick={onSettings}>Settings…</button>
+        <span className="grow">{tr('server_stats_item.last_sample_clock_every_2', { clock: clock(at) })}</span>
+        <button className="link" style={{ background: 'none', border: 0, padding: 0, font: 'inherit', cursor: 'pointer' }} data-server-stats-settings onClick={onSettings}>{t('server_stats_item.settings')}</button>
       </div>
       {colour && <span className="hint">{LEVEL_NOTE}</span>}
     </div>

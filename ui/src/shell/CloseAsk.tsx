@@ -8,6 +8,8 @@ import { api, on, toFlintError } from '../api/backend';
 import { useApp } from '../state/app';
 import { Modal } from '../ui/Modal';
 import type { Settings } from '../api/types';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 export function CloseAsk() {
   const { settings, saveSettings, fail } = useApp();
@@ -22,16 +24,16 @@ export function CloseAsk() {
     } catch (e) { fail(toFlintError(e)); }
   };
   return (
-    <Modal label="Keep Flint running in the background?" onClose={() => setOpen(false)} width={440} top={200} scrimCloses={false}>
-      <div className="modal-h"><h2 className="grow">Keep Flint running in the background?</h2></div>
+    <Modal label={t('close_ask.keep_flint_running_in_the')} onClose={() => setOpen(false)} width={440} top={200} scrimCloses={false}>
+      <div className="modal-h"><h2 className="grow">{t('close_ask.keep_flint_running_in_the')}</h2></div>
       <div className="modal-b" data-close-ask style={{ gap: 'var(--sp-3)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
-        <span>It serves the <span className="mono">flint</span> command and your grants. This desktop has no tray icon to bring the window back: open Flint again to show it.</span>
-        <span className="hint">You can change this in Settings → Access.</span>
+        <span>{tr('close_ask.it_serves_the_span_command', { span: <span className="mono">flint</span> })}</span>
+        <span className="hint">{t('close_ask.you_can_change_this_in')}</span>
       </div>
       <div className="modal-f">
         <span className="grow" />
-        <button className="btn btn-secondary" data-close-ask-quit onClick={() => answer('quit')}>Quit</button>
-        <button className="btn btn-primary" data-autofocus data-close-ask-keep onClick={() => answer('background')}>Keep running</button>
+        <button className="btn btn-secondary" data-close-ask-quit onClick={() => answer('quit')}>{t('common.quit')}</button>
+        <button className="btn btn-primary" data-autofocus data-close-ask-keep onClick={() => answer('background')}>{t('close_ask.keep_running')}</button>
       </div>
     </Modal>
   );

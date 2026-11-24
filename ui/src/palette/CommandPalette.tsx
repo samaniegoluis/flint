@@ -22,6 +22,8 @@ import { useSyncMaybe } from '../sync/SyncProvider';
 import { useUpdate } from '../update/UpdateProvider';
 import { updatePaletteHint } from '../lib/update';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 type Group = 'all' | 'hosts' | 'actions' | 'vaults';
 
@@ -170,8 +172,8 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
             <span className={'hmark ' + c.className} style={c.style} />
             <HostTypeIcon type={h.type} size="md" />
             <span className="mono" style={{ width: 160, flex: 'none' }}><Hl text={h.alias} positions={aliasAt} /></span>
-            <span className="grow faint trunc" style={{ fontSize: 'var(--fs-xs)' }}><HostWhere h={h} m={q ? m : null} />{tabIdx >= 0 ? ` · open in tab ${tabIdx + 1}` : ''}</span>
-            <span className="hint">{newSession ? 'New tab' : tabIdx >= 0 ? 'Switch to tab' : 'Connect'}</span>
+            <span className="grow faint trunc" style={{ fontSize: 'var(--fs-xs)' }}><HostWhere h={h} m={q ? m : null} />{tabIdx >= 0 ? t('command_palette.open_in_tab_p', { p: tabIdx + 1 }) : ''}</span>
+            <span className="hint">{newSession ? t('command_palette.new_tab') : tabIdx >= 0 ? t('command_palette.switch_to_tab') : t('common.connect')}</span>
           </>
         ),
         run: (mode) => (pickToEdit ? onManageTunnels(h.alias) : mode === 'pane' && canSplit && !rdp ? onSplit(h.alias) : onConnect(h.alias, mode === 'tab' || newSession)),
@@ -188,8 +190,8 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
             <>
               <span className={'hmark ' + c.className} style={c.style} />
               <span className="mono" style={{ width: 160, flex: 'none' }}><Hl text={h.alias} positions={aliasAt} /></span>
-              <span className="grow faint trunc" style={{ fontSize: 'var(--fs-xs)' }}>without <span className="mono">{h.command}</span></span>
-              <span className="hint">Connect without command</span>
+              <span className="grow faint trunc" style={{ fontSize: 'var(--fs-xs)' }}>{tr('command_palette.without_command', { command: <span className="mono">{h.command}</span> })}</span>
+              <span className="hint">{t('command_palette.connect_without_command')}</span>
             </>
           ),
           run: (mode) => (mode === 'pane' && canSplit ? onSplit(h.alias, true) : onConnect(h.alias, true, true)),
@@ -208,7 +210,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           { name: 'name', text: v.name, primary: true },
           { name: 'host', text: v.host },
           { name: 'port', text: String(v.local_port) },
-          { name: 'action', text: `${up ? 'stop' : 'start'} tunnel on` },
+          { name: 'action', text: t('command_palette.p_tunnel_on', { p: up ? 'stop' : 'start' }) },
         ]);
         if (!m) continue;
         const byAction = !!m.positions.action;
@@ -220,7 +222,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           render: () => (
             <>
               <Icon name="tunnel" size="sm" />
-              <span className="grow trunc">{up ? 'Stop' : 'Start'} tunnel <span className="strong">{v.name}</span> on <span className="mono">{v.host}</span></span>
+              <span className="grow trunc">{tr(up ? 'command_palette.stop_tunnel' : 'command_palette.start_tunnel', { name: <span className="strong">{v.name}</span>, host: <span className="mono">{v.host}</span> })}</span>
               <span className="hint mono">{up ? conns : `127.0.0.1:${v.local_port}`}</span>
             </>
           ),
@@ -235,8 +237,8 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
             render: () => (
               <>
                 <Icon name="term" size="sm" />
-                <span className="grow trunc">Connect to <span className="mono">{host}</span> with tunnels</span>
-                <span className="hint trunc">opens a tab · starts {names.join(', ')}</span>
+                <span className="grow trunc">{tr('command_palette.connect_to_span_with_tunnels', { span: <span className="mono">{host}</span> })}</span>
+                <span className="hint trunc">{tr('command_palette.opens_a_tab_starts_p', { p: names.join(', ') })}</span>
               </>
             ),
             run: () => onConnectWithTunnels(host),
@@ -244,7 +246,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
         }
         out.push({
           group: 'tunnels', key: 'tm:' + host, score: score + 1700,
-          render: () => (<><Icon name="edit" size="sm" /><span className="grow trunc">Manage tunnels of <span className="mono">{host}</span>…</span></>),
+          render: () => (<><Icon name="edit" size="sm" /><span className="grow trunc">{tr('command_palette.manage_tunnels_of_span', { span: <span className="mono">{host}</span> })}</span></>),
           run: () => onManageTunnels(host),
         });
       }
@@ -263,8 +265,8 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           render: () => (
             <>
               <Icon name="split" size="sm" />
-              <span className="grow trunc">Open <span className="mono"><Hl text={h.alias} positions={m!.positions.alias ?? []} /></span> in a new pane</span>
-              {i === 0 && <span className="hint">splits pane {paneNo} · {activeTab!.panes.length + 1} of {MAX_PANES}</span>}
+              <span className="grow trunc">{tr('command_palette.open_span_in_a_new', { span: <span className="mono"><Hl text={h.alias} positions={m!.positions.alias ?? []} /></span> })}</span>
+              {i === 0 && <span className="hint">{t('command_palette.splits_pane_of', { pane: paneNo, n: activeTab!.panes.length + 1, max: MAX_PANES })}</span>}
             </>
           ),
           run: () => onSplit(h.alias),
@@ -295,7 +297,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
             <>
               <span className={'vault-mark ' + vaultMarkClass(r.path)} style={{ width: 18, height: 18, fontSize: 'var(--fs-2xs)' }}>{vaultInitial(r.name)}</span>
               <span className="grow trunc"><Hl text={r.name} positions={m.positions.name ?? []} /> <span className="mono faint" style={{ fontSize: 'var(--fs-xs)' }}>{shortPath(r.path)}</span></span>
-              <span className="hint">Switch vault</span>
+              <span className="hint">{t('command_palette.switch_vault')}</span>
             </>
           ),
           run: () => switchTo(r).catch(fail),
@@ -334,28 +336,28 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
 
   let lastGroup = '';
   return (
-    <Modal label="Command palette" onClose={onClose} width={640} top={84} className="palette">
+    <Modal label={t('command_palette.command_palette')} onClose={onClose} width={640} top={84} className="palette">
       <div onKeyDown={onKey} style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
         <label className="row" style={{ height: 52, padding: '0 var(--sp-4)', gap: 'var(--sp-3)', borderBottom: '1px solid var(--border-subtle)' }}>
           <Icon name="search" className="faint" />
-          <input {...plainText} aria-label={pickToEdit ? 'Add a tunnel to' : newSession ? 'New session on' : hostsOnly ? 'Go to host' : 'Search hosts, actions and vaults'} placeholder={pickToEdit ? 'Add a tunnel to…' : newSession ? 'New session on…' : hostsOnly ? 'Go to host…' : 'Hosts, actions, vaults…'}
+          <input {...plainText} aria-label={pickToEdit ? t('command_palette.add_a_tunnel_to') : newSession ? t('command_palette.new_session_on') : hostsOnly ? t('command_palette.go_to_host') : t('command_palette.search_hosts_actions_and_vaults')} placeholder={pickToEdit ? t('command_palette.add_a_tunnel_to_2') : newSession ? t('command_palette.new_session_on_2') : hostsOnly ? t('command_palette.go_to_host_2') : t('command_palette.hosts_actions_vaults')}
             value={q} onChange={(e) => { setQ(e.target.value); setHot(0); }} className="grow" data-autofocus autoFocus autoComplete="off"
             role="combobox" aria-expanded="true" aria-controls="palette-results" aria-activedescendant={current ? 'pi-' + current.key : undefined}
             style={{ background: 'none', border: 0, outline: 'none', fontSize: 'var(--fs-lg)', color: 'var(--text-primary)' }} />
           <Key>esc</Key>
         </label>
         {!hostsOnly && (
-          <div className="row" role="tablist" aria-label="Result groups" style={{ gap: 'var(--sp-1)', padding: 'var(--sp-2) var(--sp-3)', borderBottom: '1px solid var(--border-subtle)' }}>
+          <div className="row" role="tablist" aria-label={t('command_palette.result_groups')} style={{ gap: 'var(--sp-1)', padding: 'var(--sp-2) var(--sp-3)', borderBottom: '1px solid var(--border-subtle)' }}>
             {(['all', 'hosts', 'actions', 'vaults'] as Group[]).map((g) => (
               <button key={g} className={'btn btn-sm ' + (group === g ? 'btn-secondary' : 'btn-ghost')} role="tab" aria-selected={group === g} tabIndex={-1} onClick={() => { setGroup(g); setHot(0); }}>
                 {g[0].toUpperCase() + g.slice(1)} <span className="faint">{g === 'all' ? items.length : counts[g]}</span>
               </button>
             ))}
-            <span className="grow" /><span className="hint row" style={{ gap: 6 }}><Key>tab</Key>next group</span>
+            <span className="grow" /><span className="hint row" style={{ gap: 6 }}><Key>tab</Key>{t('command_palette.next_group')}</span>
           </div>
         )}
-        <div ref={list} id="palette-results" className="col scroll" role="listbox" aria-label="Results" style={{ padding: 'var(--sp-1) var(--sp-2) var(--sp-2)', gap: 1, maxHeight: 420 }}>
-          {shown.length === 0 && <span className="faint" style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>{catalog.hosts.length === 0 && hostsOnly ? 'This vault has no hosts yet.' : 'No results.'}</span>}
+        <div ref={list} id="palette-results" className="col scroll" role="listbox" aria-label={t('command_palette.results')} style={{ padding: 'var(--sp-1) var(--sp-2) var(--sp-2)', gap: 1, maxHeight: 420 }}>
+          {shown.length === 0 && <span className="faint" style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>{catalog.hosts.length === 0 && hostsOnly ? t('command_palette.this_vault_has_no_hosts') : t('command_palette.no_results')}</span>}
           {shown.map((it, i) => {
             const header = it.group !== lastGroup;
             lastGroup = it.group;
@@ -374,13 +376,13 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           })}
         </div>
         <div className="row faint" data-palette-hints style={{ height: 36, padding: '0 var(--sp-4)', gap: 'var(--sp-4)', borderTop: '1px solid var(--border-subtle)', background: 'var(--surface-raised)', fontSize: 'var(--fs-xs)', flex: 'none' }}>
-          <span className="row" style={{ gap: 6 }}><Key>↑↓</Key>move</span>
-          <span className="row" style={{ gap: 6 }}><Key>↵</Key>{newSession ? 'open in new tab' : 'open'}</span>
+          <span className="row" style={{ gap: 6 }}><Key>↑↓</Key>{t('command_palette.move')}</span>
+          <span className="row" style={{ gap: 6 }}><Key>↵</Key>{newSession ? t('command_palette.open_in_new_tab') : t('command_palette.open')}</span>
           {/* ⌘↵ and ⌘I only act on a host, so they are offered only while one is hot. */}
           {current?.group === 'hosts' && <>
-            {!newSession && <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</Key>open in new tab</span>}
-            {canSplit && current.host && <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⇧⌘↵' : 'Ctrl+Shift+↵'}</Key>open in a new pane</span>}
-            <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘I' : 'Ctrl+I'}</Key>edit host</span>
+            {!newSession && <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</Key>{t('command_palette.open_in_new_tab')}</span>}
+            {canSplit && current.host && <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⇧⌘↵' : 'Ctrl+Shift+↵'}</Key>{t('command_palette.open_in_a_new_pane')}</span>}
+            <span className="row" style={{ gap: 6 }}><Key>{os === 'mac' ? '⌘I' : 'Ctrl+I'}</Key>{t('command_palette.edit_host')}</span>
           </>}
         </div>
       </div>

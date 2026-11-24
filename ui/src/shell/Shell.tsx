@@ -42,6 +42,8 @@ import { UpdateStatusItem } from '../update/UpdateStatusItem';
 import { serverStats } from '../sessions/serverStats';
 import { ServerStatsItem } from './ServerStatsItem';
 import { useUpdate } from '../update/UpdateProvider';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 type View = 'hosts' | 'files' | 'tunnels' | 'keys' | 'credentials' | 'settings';
 // The views that keep the sessions on screen beside a sidebar.
@@ -282,10 +284,10 @@ export function Shell() {
     // A remote desktop opens in a tab of its own, and its tab takes no other pane.
     if (alias && isRdp(alias)) { connect(alias, true); return; }
     setView((v) => (SIDE_VIEWS.includes(v) ? v : 'hosts'));
-    const t = sessions.tab(sessions.get().active);
-    if (!t) { if (alias) sessions.open(alias, noCommand); return; }
-    if (sessions.pane(t.focus)?.kind === 'rdp') { notify({ text: 'A remote desktop tab has no split panes', kind: 'info', key: 'split:rdp' }); return; }
-    if (t.panes.length >= MAX_PANES) { notify({ text: `A tab holds up to ${MAX_PANES} panes`, kind: 'info', key: 'split:max' }); return; }
+    const cur = sessions.tab(sessions.get().active);
+    if (!cur) { if (alias) sessions.open(alias, noCommand); return; }
+    if (sessions.pane(cur.focus)?.kind === 'rdp') { notify({ text: t('shell.a_remote_desktop_tab_has'), kind: 'info', key: 'split:rdp' }); return; }
+    if (cur.panes.length >= MAX_PANES) { notify({ text: t('shell.a_tab_holds_up_to', { MAX_PANES }), kind: 'info', key: 'split:max' }); return; }
     sessions.split(dir, alias, noCommand);
   }, [notify, isRdp, connect]);
 
@@ -293,15 +295,15 @@ export function Shell() {
   const lock = app.lock;
 
   const deleteHost = useCallback((alias: string) => setConfirm({
-    title: `Delete host ${alias}?`,
+    title: t('shell.delete_host_alias', { alias }),
     body: 'The host and its saved password are removed from the vault. Open sessions keep running.',
     action: 'Delete host',
-    run: async () => { await api.hostRm(alias); await refreshCatalog(); setEditor(null); notify(`Deleted ${alias}`); },
+    run: async () => { await api.hostRm(alias); await refreshCatalog(); setEditor(null); notify(t('shell.deleted_alias', { alias })); },
   }), [refreshCatalog, notify]);
 
   const newGroup = useCallback((parent: string) => setAsk({
-    title: parent ? `New group in ${parent}` : 'New group', label: 'Name', value: '', action: 'Create group',
-    hint: 'Use / to nest, e.g. homelab/proxmox.',
+    title: parent ? t('shell.new_group_in_parent', { parent }) : t('shell.new_group'), label: t('shell.name'), value: '', action: 'Create group',
+    hint: t('shell.use_to_nest_e_g'),
     run: async (v) => { await api.groupAdd(parent ? parent + '/' + v : v); await refreshCatalog(); },
   }), [refreshCatalog]);
 
@@ -374,7 +376,7 @@ export function Shell() {
       case 'showLastMerge': syncActions.current?.showLastMerge(); break;
       case 'connectServer': openServerSettings(); break;
       case 'disconnectServer': setConfirm({
-        title: 'Disconnect this vault from its server?',
+        title: t('shell.disconnect_this_vault_from_its'),
         body: 'This machine stops syncing it. The local copy stays as it is and keeps working, the server keeps its copy, and nothing is deleted.',
         action: 'Disconnect',
         run: async () => { syncActions.current?.disconnect(); },
@@ -440,12 +442,12 @@ export function Shell() {
       <header className="titlebar">
         <div className="tb-brand"><Logo />Flint</div>
         <div className="tb-title">{crumb}</div>
-        <button className="palette-btn" aria-label={`Command palette (${chordLabel('palette', os)})`} onClick={() => setPalette({ hostsOnly: false })}>
-          <Icon name="search" size="sm" /><span className="grow" style={{ textAlign: 'left' }}>Hosts, actions, vaults…</span><Kbd action="palette" />
+        <button className="palette-btn" aria-label={t('shell.command_palette_chordlabel', { chordLabel: chordLabel('palette', os) })} onClick={() => setPalette({ hostsOnly: false })}>
+          <Icon name="search" size="sm" /><span className="grow" style={{ textAlign: 'left' }}>{t('shell.hosts_actions_vaults')}</span><Kbd action="palette" />
         </button>
       </header>
 
-      <nav className="rail" aria-label="Activity bar" onKeyDown={(e) => {
+      <nav className="rail" aria-label={t('shell.activity_bar')} onKeyDown={(e) => {
         if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
         e.preventDefault();
         const btns = [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('.rail-btn')];
@@ -455,7 +457,7 @@ export function Shell() {
         {railBtn('hosts', 'hosts', 'Hosts', 'viewHosts')}
         {railBtn('files', 'files', 'Files', 'viewFiles')}
         {railBtn('tunnels', 'tunnel', 'Tunnels', 'viewTunnels', tunnelsUp > 0
-          ? <span className="rail-badge tun-count" aria-label={`${tunnelsUp} tunnel${tunnelsUp === 1 ? '' : 's'} running`} data-tunnels-badge>{tunnelsUp}</span> : null)}
+          ? <span className="rail-badge tun-count" aria-label={t('shell.tunnelsup_tunnelp_running', { tunnelsUp, p: tunnelsUp === 1 ? '' : 's' })} data-tunnels-badge>{tunnelsUp}</span> : null)}
         <span className="rail-sep" role="separator" />
         {railBtn('keys', 'key', 'Keys', 'viewKeys')}
         {railBtn('credentials', 'cred', 'Credentials', 'viewCredentials')}
@@ -468,7 +470,7 @@ export function Shell() {
         <div onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
           <FilesView tab={tab} onReconnect={(id) => sessions.reconnect(id)} onGoToHost={() => setPalette({ hostsOnly: true })} onConfirm={setConfirm} onAsk={setAsk}
             onEditHost={(alias) => setEditor({ alias, group: '' })}
-            resizer={narrow ? null : <SidebarResizer width={filesWidth} min={FILES_MIN} max={FILES_MAX} reset={FILES_DEFAULT} clamp={clampFiles} label="Resize the Files sidebar"
+            resizer={narrow ? null : <SidebarResizer width={filesWidth} min={FILES_MIN} max={FILES_MAX} reset={FILES_DEFAULT} clamp={clampFiles} label={t('shell.resize_the_files_sidebar')}
               onLive={(w) => document.documentElement.style.setProperty('--sidebar-files-w', w + 'px')} onDone={(w) => updateUi({ files_width: w })} />} />
         </div>
       )}
@@ -476,13 +478,13 @@ export function Shell() {
         <div onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
           <TunnelsView onEditHost={(alias) => setEditor({ alias, group: '', tunnels: true })} onConnect={(alias) => connect(alias, true)}
             onPickHost={() => setPalette({ hostsOnly: true, editHost: true })}
-            resizer={narrow ? null : <SidebarResizer width={sidebarWidth} min={SIDEBAR_MIN} max={SIDEBAR_MAX} reset={SIDEBAR_DEFAULT} clamp={clampSidebar} label="Resize the Tunnels sidebar" onLive={(w) => document.documentElement.style.setProperty('--sidebar-w', w + 'px')} onDone={(w) => updateUi({ sidebar_width: w })} />} />
+            resizer={narrow ? null : <SidebarResizer width={sidebarWidth} min={SIDEBAR_MIN} max={SIDEBAR_MAX} reset={SIDEBAR_DEFAULT} clamp={clampSidebar} label={t('shell.resize_the_tunnels_sidebar')} onLive={(w) => document.documentElement.style.setProperty('--sidebar-w', w + 'px')} onDone={(w) => updateUi({ sidebar_width: w })} />} />
         </div>
       )}
       {showSidebar && view === 'hosts' && (
         <div onKeyDown={(e) => { if (narrow && e.key === 'Escape') setCollapsed(true); }}>
           <HostTree selected={selected} filterRef={filterRef} collapsed={collapsedGroups} setCollapsed={setCollapsedGroups}
-            resizer={narrow ? null : <SidebarResizer width={sidebarWidth} min={SIDEBAR_MIN} max={SIDEBAR_MAX} reset={SIDEBAR_DEFAULT} clamp={clampSidebar} label="Resize the sidebar" onLive={(w) => document.documentElement.style.setProperty('--sidebar-w', w + 'px')} onDone={(w) => updateUi({ sidebar_width: w })} />}
+            resizer={narrow ? null : <SidebarResizer width={sidebarWidth} min={SIDEBAR_MIN} max={SIDEBAR_MAX} reset={SIDEBAR_DEFAULT} clamp={clampSidebar} label={t('shell.resize_the_sidebar')} onLive={(w) => document.documentElement.style.setProperty('--sidebar-w', w + 'px')} onDone={(w) => updateUi({ sidebar_width: w })} />}
             h={{
             connect, select: setSelected,
             editHost: (alias) => setEditor({ alias, group: '' }),
@@ -490,7 +492,7 @@ export function Shell() {
             deleteHost,
             newGroup,
             renameGroup: (path) => setAsk({
-              title: `Rename ${path}`, label: 'New name', value: path.split('/').pop() ?? '', action: 'Rename',
+              title: t('shell.rename_path', { path }), label: t('shell.new_name'), value: path.split('/').pop() ?? '', action: 'Rename',
               run: async (v) => {
                 const g = await api.groupRename(path, v);
                 // Keep the renamed group, and the groups under it, collapsed.
@@ -501,7 +503,7 @@ export function Shell() {
               },
             }),
             deleteGroup: (path) => setConfirm({
-              title: `Delete group ${path}?`, body: 'Only an empty group can be deleted; move or delete its hosts first.', action: 'Delete group',
+              title: t('shell.delete_group_path', { path }), body: 'Only an empty group can be deleted; move or delete its hosts first.', action: 'Delete group',
               run: async () => { await api.groupRm(path); await refreshCatalog(); },
             }),
             openSwitcher: () => setSwitcher(true),
@@ -517,9 +519,9 @@ export function Shell() {
 
       <footer className="statusbar" data-compact={narrow || undefined}>
         <span className="sb-item" title={unlockedLabel}><Icon name="unlock" /><span className="sb-lock-label">{unlockedLabel}</span></span>
-        <button className="sb-btn" data-sb-lock onClick={() => lock().catch(fail)}>Lock<Kbd action="lock" /></button>
+        <button className="sb-btn" data-sb-lock onClick={() => lock().catch(fail)}>{t('common.lock')}<Kbd action="lock" /></button>
         <SyncStatusItem />
-        <span className="sb-item" data-sb-sessions>{sessionsOpen === 0 ? 'No sessions' : `${sessionsOpen} session${sessionsOpen === 1 ? '' : 's'}`}</span>
+        <span className="sb-item" data-sb-sessions>{sessionsOpen === 0 ? t('shell.no_sessions') : t('shell.sessions_open', { count: sessionsOpen })}</span>
         {tab && <span className="sb-item mono sb-host">{tab.alias}</span>}
         {tab?.kind === 'ssh' && settings.server_stats && (
           <ServerStatsItem alias={tab.alias} view={stats.get(tab.session) ?? null} colour={settings.server_stats_colour} compact={narrow}
@@ -527,20 +529,20 @@ export function Shell() {
         )}
         {tunnelsUp > 0 && (
           <button className="sb-btn" data-tunnels-status onClick={() => run('viewTunnels')}>
-            <Icon name="tunnel" />{tunnelsUp} tunnel{tunnelsUp === 1 ? '' : 's'} up
+            <Icon name="tunnel" />{t('shell.tunnels_up', { count: tunnelsUp })}
           </button>
         )}
         {(grantCount > 0 || (waiting > 0 && !focused)) && (
           <button className="sb-btn sb-agents" data-grants onClick={() => { setSection('access'); setView('settings'); }}
-            aria-label={`Agents: ${grantCount} active grant${grantCount === 1 ? '' : 's'}${waiting > 0 && !focused ? `, ${waiting} waiting` : ''}. Open Settings, Access`}>
-            <Icon name="agent" />Agents: {grantCount}
-            {waiting > 0 && !focused && <span className="sb-pending" data-agents-waiting>{waiting} waiting</span>}
+            aria-label={t('shell.agents_grantcount_active_grantpp2_open', { grantCount, p: grantCount === 1 ? '' : 's', p2: waiting > 0 && !focused ? `, ${waiting} waiting` : '' })}>
+            <Icon name="agent" />{t('shell.agents')}{' '}{grantCount}
+            {waiting > 0 && !focused && <span className="sb-pending" data-agents-waiting>{tr('shell.waiting_waiting', { waiting })}</span>}
           </button>
         )}
         <span className="grow" />
-        {zoom !== 0 && <button className="sb-btn" data-sb-zoom onClick={() => setZoom(0)} title="Reset terminal font size">{fontSize} px</button>}
+        {zoom !== 0 && <button className="sb-btn" data-sb-zoom onClick={() => setZoom(0)} title={t('shell.reset_terminal_font_size')}>{tr('shell.fontsize_px', { fontSize })}</button>}
         <UpdateStatusItem />
-        <span className="sb-item"><Kbd action="palette" /><span className="sb-cmd-label">Commands</span></span>
+        <span className="sb-item"><Kbd action="palette" /><span className="sb-cmd-label">{t('shell.commands')}</span></span>
       </footer>
 
       {palette && (
@@ -584,7 +586,7 @@ function SyncActions({ register }: { register: (h: SyncHandle | null) => void })
     register({
       syncNow: () => { sync.syncNow().catch(() => {}); },
       showLastMerge: sync.showDetails,
-      disconnect: () => { api.remoteDisconnect().then(() => { notify('This machine no longer syncs the vault'); return sync.refresh(); }).catch(fail); },
+      disconnect: () => { api.remoteDisconnect().then(() => { notify(t('shell.this_machine_no_longer_syncs')); return sync.refresh(); }).catch(fail); },
     });
     return () => register(null);
   }, [sync, register, notify, fail]);
@@ -601,7 +603,7 @@ function SidebarResizer({ width, min, max, reset, clamp, label, onLive, onDone }
   const [dragging, setDragging] = useState(false);
   return (
     <div className={'sidebar-resize' + (dragging ? ' is-hover' : '')} role="separator" aria-orientation="vertical" aria-label={label}
-      aria-valuemin={min} aria-valuemax={max} aria-valuenow={width} tabIndex={0} title="Drag to resize · double-click to reset"
+      aria-valuemin={min} aria-valuemax={max} aria-valuenow={width} tabIndex={0} title={t('shell.drag_to_resize_double_click')}
       onPointerDown={(e) => {
         e.preventDefault();
         const el = e.currentTarget;
@@ -634,19 +636,19 @@ function SidebarResizer({ width, min, max, reset, clamp, label, onLive, onDone }
 
 function EmptyVault({ onNewHost, onAddKey, onCreds }: { onNewHost: () => void; onAddKey: () => void; onCreds: () => void }) {
   return (
-    <section className="main page" aria-label="Get started" style={{ alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+    <section className="main page" aria-label={t('shell.get_started')} style={{ alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
       <div className="empty" style={{ width: 480, gap: 'var(--sp-4)' }}>
         <span className="empty-ic"><Icon name="hosts" size="lg" /></span>
-        <h2>Add your first host</h2>
-        <p style={{ fontSize: 'var(--fs-md)', lineHeight: 1.6 }}>Group hosts in folders. Connect with a saved credential, a key from this vault, a password, or your SSH agent.</p>
+        <h2>{t('shell.add_your_first_host')}</h2>
+        <p style={{ fontSize: 'var(--fs-md)', lineHeight: 1.6 }}>{t('shell.group_hosts_in_folders_connect')}</p>
         <div className="row" style={{ gap: 'var(--sp-2)', paddingTop: 'var(--sp-2)' }}>
-          <button className="btn btn-primary btn-lg" onClick={onNewHost} autoFocus><Icon name="plus" size="sm" />New host<Kbd action="newHost" inline /></button>
-          <button className="btn btn-secondary btn-lg" onClick={onAddKey}><Icon name="key" size="sm" />Add an SSH key<Kbd action="viewKeys" inline /></button>
+          <button className="btn btn-primary btn-lg" onClick={onNewHost} autoFocus>{tr('shell.iconnew_hostkbd', { icon: <Icon name="plus" size="sm" />, kbd: <Kbd action="newHost" inline /> })}</button>
+          <button className="btn btn-secondary btn-lg" onClick={onAddKey}>{tr('shell.iconadd_an_ssh_keykbd', { icon: <Icon name="key" size="sm" />, kbd: <Kbd action="viewKeys" inline /> })}</button>
         </div>
         <div className="panel col" style={{ width: '100%', marginTop: 'var(--sp-6)', padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-2)', textAlign: 'left' }}>
-          <span className="label">Tips</span>
-          <button className="row" style={{ fontSize: 'var(--fs-sm)', gap: 'var(--sp-2)' }} onClick={onCreds}><Icon name="cred" size="sm" /><span className="grow">Create a credential once, reuse it on every host</span><Kbd action="viewCredentials" /></button>
-          <span className="row" style={{ fontSize: 'var(--fs-sm)', gap: 'var(--sp-2)' }}><Icon name="term" size="sm" /><span className="grow">From the CLI: <span className="mono muted">flint host add web --hostname 10.0.4.21</span></span></span>
+          <span className="label">{t('shell.tips')}</span>
+          <button className="row" style={{ fontSize: 'var(--fs-sm)', gap: 'var(--sp-2)' }} onClick={onCreds}><Icon name="cred" size="sm" /><span className="grow">{t('shell.create_a_credential_once_reuse')}</span><Kbd action="viewCredentials" /></button>
+          <span className="row" style={{ fontSize: 'var(--fs-sm)', gap: 'var(--sp-2)' }}><Icon name="term" size="sm" /><span className="grow">{t('shell.from_the_cli')}{' '}<span className="mono muted">flint host add web --hostname 10.0.4.21</span></span></span>
         </div>
       </div>
     </section>

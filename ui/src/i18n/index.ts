@@ -11,7 +11,7 @@
 import en from './en.json';
 
 export type Lang = 'en' | 'es';
-export type Params = Record<string, string | number>;
+export type Params = Record<string, string | number | null | undefined>;
 type Catalog = Record<string, string>;
 
 const CATALOGS: Partial<Record<Lang, Catalog>> = { en };
@@ -78,7 +78,7 @@ export function interpolate(text: string, params?: Params): string {
   if (!params) return text;
   return text.replace(/\{(\w+)\}/g, (whole, name: string) => {
     const v = params[name];
-    return v === undefined ? whole : String(v);
+    return v === undefined && !(name in params) ? whole : String(v);
   });
 }
 

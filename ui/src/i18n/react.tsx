@@ -21,6 +21,6 @@ export function tr(key: string, nodes: Record<string, ReactNode>, params?: Param
     if (i % 2 === 0) return p === '' ? null : <Fragment key={i}>{p}</Fragment>;
     if (p in nodes) return <Fragment key={i}>{nodes[p]}</Fragment>;
     const v = params?.[p];
-    return <Fragment key={i}>{v === undefined ? `{${p}}` : String(v)}</Fragment>;
+    return <Fragment key={i}>{v === undefined && !(params && p in params) ? `{${p}}` : String(v)}</Fragment>;
   });
 }

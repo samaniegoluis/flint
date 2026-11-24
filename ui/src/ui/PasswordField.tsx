@@ -8,6 +8,7 @@ import { api, toFlintError } from '../api/backend';
 import { useApp } from '../state/app';
 import { Icon } from './Icon';
 import { plainText } from './plainText';
+import { t } from '../i18n';
 
 export const REVEAL_MS = 10000;
 
@@ -49,7 +50,7 @@ export function PasswordField({ value, onChange, saved, placeholder, label = 'Pa
   const copy = async () => {
     try {
       await api.secretCopy(saved!.kind, saved!.name);
-      notify({ text: 'Password copied · the clipboard clears in 30 s', key: 'copied:password' });
+      notify({ text: t('password_field.password_copied_the_clipboard_clears'), key: 'copied:password' });
     } catch (err) {
       fail(toFlintError(err));
     }
@@ -62,12 +63,12 @@ export function PasswordField({ value, onChange, saved, placeholder, label = 'Pa
         onChange={(e) => { if (revealed === null) onChange(e.target.value); }}
         onKeyDown={(e) => { if (revealed !== null && e.key.length === 1) { hide(); } }} />
       {(value || saved) && (
-        <button type="button" className="icon-btn" aria-label={shown ? 'Hide password' : 'Show password'} aria-pressed={shown} title={shown ? 'Hide' : 'Show'} onClick={toggle}>
+        <button type="button" className="icon-btn" aria-label={shown ? t('password_field.hide_password') : t('password_field.show_password')} aria-pressed={shown} title={shown ? t('password_field.hide') : t('password_field.show')} onClick={toggle}>
           <Icon name="eye" size="sm" />
         </button>
       )}
       {showSaved && (
-        <button type="button" className="icon-btn" aria-label="Copy saved password" title="Copy · clears in 30 s" onClick={copy}><Icon name="clip" size="sm" /></button>
+        <button type="button" className="icon-btn" aria-label={t('password_field.copy_saved_password')} title={t('password_field.copy_clears_in_30_s')} onClick={copy}><Icon name="clip" size="sm" /></button>
       )}
     </div>
   );

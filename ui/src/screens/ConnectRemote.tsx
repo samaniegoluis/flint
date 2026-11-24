@@ -16,11 +16,13 @@ import { RememberOption } from '../ui/RememberOption';
 import { ServerAddress } from '../sync/ConnectServerModal';
 import { serverErrorField, TokenField } from '../sync/TokenField';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 type Errors = { url?: string; token?: string; pw?: string; path?: string; form?: string };
 
 function VaultFacts({ v, now }: { v: ServerVault; now: number }) {
-  return <>{sizeLabel(v.size)} · version {v.version.toLocaleString('en-US')} · updated {agoLabel(v.updated_at, now)}</>;
+  return <>{tr('connect_remote.sizelabel_version_p_updated_agolabel', { sizeLabel: sizeLabel(v.size), p: v.version.toLocaleString('en-US'), agoLabel: agoLabel(v.updated_at, now) })}</>;
 }
 
 export function ConnectRemote() {
@@ -104,12 +106,12 @@ export function ConnectRemote() {
     <>
       <header className="titlebar" style={{ background: 'var(--surface-base)', borderBottomColor: 'transparent' }}>
         <div className="tb-brand"><Logo />Flint</div>
-        <div className="tb-title">Remote vault</div>
+        <div className="tb-title">{t('connect_remote.remote_vault')}</div>
       </header>
       <main style={{ position: 'absolute', inset: '38px 0 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <form className="card" aria-label="Connect to a remote vault" style={{ width: 520, display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-1)' }} onSubmit={submit}>
-          <div className="modal-h"><Icon name="server" size="sm" /><h2 className="grow">Connect to a remote vault</h2>
-            <div className="steps"><span className={step2 ? '' : 'on'}>1 Server</span><i /><span className={step2 ? 'on' : ''}>2 Vault</span></div></div>
+        <form className="card" aria-label={t('connect_remote.connect_to_a_remote_vault')} style={{ width: 520, display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-1)' }} onSubmit={submit}>
+          <div className="modal-h"><Icon name="server" size="sm" /><h2 className="grow">{t('connect_remote.connect_to_a_remote_vault')}</h2>
+            <div className="steps"><span className={step2 ? '' : 'on'}>{t('connect_remote.1_server')}</span><i /><span className={step2 ? 'on' : ''}>{t('connect_remote.2_vault')}</span></div></div>
           {!step2 ? (
             <div className="modal-b" style={{ gap: 'var(--sp-5)' }} data-connect-step="server">
               <ServerAddress id="sa" value={url} onChange={setUrl} error={errors.url} disabled={busy} autoFocus />
@@ -117,11 +119,11 @@ export function ConnectRemote() {
               {errors.form === 'empty' && (
                 <div className="callout info row" role="status" style={{ gap: 'var(--sp-2)', alignItems: 'flex-start' }} data-server-empty>
                   <Icon name="info" size="sm" className="accent-t" />
-                  <span style={{ fontSize: 'var(--fs-sm)', lineHeight: 1.45 }}>This server is empty. Connect it from a machine that already has the vault: Settings → Vault → Connect to a server.</span>
+                  <span style={{ fontSize: 'var(--fs-sm)', lineHeight: 1.45 }}>{t('connect_remote.this_server_is_empty_connect')}</span>
                 </div>
               )}
               {errors.form && errors.form !== 'empty' && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{errors.form}</span>}
-              <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />No server yet? Self-host one in a few minutes: see <span className="strong">Self-host a remote vault</span> in Flint's docs.</span>
+              <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />{tr('connect_remote.no_server_yet', { page: <span className="strong">{t('connect_remote.self_host_a_remote_vault')}</span> })}</span>
             </div>
           ) : (
             <div className="modal-b" style={{ gap: 'var(--sp-5)' }} data-connect-step="vault">
@@ -129,57 +131,57 @@ export function ConnectRemote() {
                 <div className="found" data-server-vault={only.id}>
                   <Icon name="lock" size="lg" className="accent-t" />
                   <div className="col grow" style={{ gap: 2 }}>
-                    <span className="strong">{only.label ? <>A vault was found: {only.label}</> : 'A vault was found'}</span>
-                    <span className="hint"><VaultFacts v={only} now={now} /> · on <span className="mono">{urlHost(found.url)}</span>. Its name appears once it opens.</span>
+                    <span className="strong">{only.label ? <>{tr('connect_remote.a_vault_was_found_label', { label: only.label })}</> : t('connect_remote.a_vault_was_found')}</span>
+                    <span className="hint">{tr('connect_remote.vaultfacts_on_span_its_name', { vaultfacts: <VaultFacts v={only} now={now} />, span: <span className="mono">{urlHost(found.url)}</span> })}</span>
                   </div>
-                  <span className="badge ok"><Icon name="shield" size="xs" />encrypted</span>
+                  <span className="badge ok"><Icon name="shield" size="xs" />{t('connect_remote.encrypted')}</span>
                 </div>
               ) : (
                 <div className="field" data-server-vaults={found.vaults.length}>
-                  <span className="flabel">This server keeps {found.vaults.length} vaults</span>
-                  <div className="opt-list" role="radiogroup" aria-label="Vaults on the server" style={{ maxHeight: 210, overflowY: 'auto' }}>
+                  <span className="flabel">{tr('connect_remote.this_server_keeps_length_vaults', { length: found.vaults.length })}</span>
+                  <div className="opt-list" role="radiogroup" aria-label={t('connect_remote.vaults_on_the_server')} style={{ maxHeight: 210, overflowY: 'auto' }}>
                     {found.vaults.map((v) => (
                       <label key={v.id} className="opt" data-server-vault={v.id}>
                         <input type="radio" name="server-vault" checked={chosen === v.id} onChange={() => setChosen(v.id)} disabled={busy} />
                         <span className="opt-t">
-                          <span className="opt-l">{v.label || <span className="muted">No label</span>} <span className="mono faint" title={v.id}>{v.id.slice(0, 8)}</span></span>
+                          <span className="opt-l">{v.label || <span className="muted">{t('connect_remote.no_label')}</span>} <span className="mono faint" title={v.id}>{v.id.slice(0, 8)}</span></span>
                           <span className="hint"><VaultFacts v={v} now={now} /></span>
                         </span>
                       </label>
                     ))}
                   </div>
-                  <span className="hint row" style={{ gap: 6 }}><Icon name="shield" size="xs" />Each is encrypted: the server shows only the label it was given when connected. Its name appears once it opens.</span>
+                  <span className="hint row" style={{ gap: 6 }}><Icon name="shield" size="xs" />{t('connect_remote.each_is_encrypted_the_server')}</span>
                 </div>
               )}
               <div className="field">
-                <label className="flabel" htmlFor="vp">Master password of that vault</label>
+                <label className="flabel" htmlFor="vp">{t('connect_remote.master_password_of_that_vault')}</label>
                 <div className={'input' + (errors.pw ? ' err' : '')}>
                   <input {...plainText} id="vp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" autoFocus={!!only} disabled={busy} />
-                  <button type="button" className="icon-btn" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
+                  <button type="button" className="icon-btn" aria-label={show ? t('connect_remote.hide_password') : t('connect_remote.show_password')} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
                 </div>
                 {errors.pw && <span className="hint err" role="alert">{errors.pw}</span>}
               </div>
               <div className="field">
-                <span className="flabel">Keep the local copy in</span>
+                <span className="flabel">{t('connect_remote.keep_the_local_copy_in')}</span>
                 <div className="row" style={{ gap: 'var(--sp-2)' }}>
                   <div className={'input grow' + (errors.path ? ' err' : '')}><Icon name="folder" size="sm" className="faint" />
-                    <input {...plainText} className="mono" aria-label="Local copy path" value={path} onChange={(e) => setPath(e.target.value)} placeholder="Choose where to keep it" style={{ fontSize: 'var(--fs-sm)' }} disabled={busy} /></div>
-                  <button type="button" className="btn btn-secondary" style={{ height: 'var(--control-h)' }} onClick={() => choose().catch(() => {})} disabled={busy}>Choose…</button>
+                    <input {...plainText} className="mono" aria-label={t('connect_remote.local_copy_path')} value={path} onChange={(e) => setPath(e.target.value)} placeholder={t('connect_remote.choose_where_to_keep_it')} style={{ fontSize: 'var(--fs-sm)' }} disabled={busy} /></div>
+                  <button type="button" className="btn btn-secondary" style={{ height: 'var(--control-h)' }} onClick={() => choose().catch(() => {})} disabled={busy}>{t('connect_remote.choose')}</button>
                 </div>
                 {errors.path
                   ? <span className="hint err" role="alert">{errors.path}</span>
-                  : <span className="hint">Every machine keeps its own full copy and works offline.</span>}
+                  : <span className="hint">{t('connect_remote.every_machine_keeps_its_own')}</span>}
               </div>
               <RememberOption checked={remember} onChange={setRemember} os={os} disabled={busy} />
-              {busy && <span className="hint row" role="status" style={{ gap: 6 }} data-downloading><Icon name="download" size="xs" />Downloading and opening the vault…</span>}
+              {busy && <span className="hint row" role="status" style={{ gap: 6 }} data-downloading><Icon name="download" size="xs" />{t('connect_remote.downloading_and_opening_the_vault')}</span>}
               {errors.form && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{errors.form}</span>}
             </div>
           )}
           <div className="modal-f">
-            <button type="button" className="btn btn-ghost" onClick={back} disabled={busy}>Back<Key>esc</Key></button>
+            <button type="button" className="btn btn-ghost" onClick={back} disabled={busy}>{t('common.back')}<Key>esc</Key></button>
             <span className="grow" />
             <button type="submit" className="btn btn-primary" disabled={!ready}>
-              {step2 ? (busy ? 'Downloading…' : 'Download and open') : (busy ? 'Checking…' : 'Continue')}<span className="kbd-in">↵</span>
+              {step2 ? (busy ? t('connect_remote.downloading') : t('connect_remote.download_and_open')) : (busy ? t('connect_remote.checking') : t('common.continue'))}<span className="kbd-in">↵</span>
             </button>
           </div>
         </form>

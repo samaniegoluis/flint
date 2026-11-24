@@ -12,6 +12,8 @@ import { presenceLabel } from '../access/ApprovalDialog';
 import type { PresenceMethod } from '../api/types';
 import { Icon, Logo } from '../ui/Icon';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 export function WindowLock() {
   const { windowLock, openWindow, os, info } = useApp();
@@ -48,45 +50,43 @@ export function WindowLock() {
 
   const where = os === 'mac' ? 'the menu bar' : 'the system tray';
   return (
-    <div className="lock-screen" role="dialog" aria-modal="true" aria-label="Window locked" data-window-lock
+    <div className="lock-screen" role="dialog" aria-modal="true" aria-label={t('window_lock.window_locked')} data-window-lock
       style={{ position: 'absolute', inset: 0, zIndex: 1100, background: 'var(--surface-sunken)' }}>
       <header className="titlebar" style={{ background: 'transparent', borderBottomColor: 'transparent' }}>
         <div className="tb-brand"><Logo />Flint</div>
       </header>
       <main style={{ position: 'absolute', inset: '38px 0 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingBottom: 'var(--sp-16)' }}>
-        <form aria-label="Open the window" className="col" style={{ width: 460, gap: 'var(--sp-6)' }} onSubmit={submit}>
+        <form aria-label={t('window_lock.open_the_window')} className="col" style={{ width: 460, gap: 'var(--sp-6)' }} onSubmit={submit}>
           <div className="col" style={{ alignItems: 'center', gap: 'var(--sp-3)', textAlign: 'center' }}>
             <Icon name="lock" size="lg" className="accent-t" />
             <h1 style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-semibold)', letterSpacing: '-0.01em' }}>{windowLock.vault}</h1>
-            <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>
-              The window was closed to {where}. The vault is still unlocked for the agents you approved.
-            </span>
+            <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{tr('window_lock.the_window_was_closed_to', { where })}</span>
           </div>
           {windowLock.waiting > 0 && (
             <section className="panel row" role="status" data-window-waiting style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-3)', borderColor: 'var(--info-border)' }}>
               <span className="prompt-ic info" style={{ width: 28, height: 28 }}><Icon name="agent" /></span>
-              <span className="grow">{windowLock.waiting === 1 ? 'A command is' : `${windowLock.waiting} commands are`} waiting for your answer. Open the window to see {windowLock.waiting === 1 ? 'it' : 'them'}.</span>
+              <span className="grow">{t('window_lock.commands_waiting', { count: windowLock.waiting })}</span>
             </section>
           )}
           {hasPresence && (
             <button type="button" className="btn btn-primary" data-window-presence disabled={!!busy} onClick={() => open('').catch(() => {})} style={{ alignSelf: 'center' }}>
               {presence === 'touchid' && <Icon name="fingerprint" />}
-              {busy === 'presence' ? 'Waiting for confirmation…' : `Open with ${presenceLabel(presence)}`}
+              {busy === 'presence' ? t('window_lock.waiting_for_confirmation') : t('window_lock.open_with_presencelabel', { presenceLabel: presenceLabel(presence) })}
             </button>
           )}
           <div className="field">
-            <label className="flabel" htmlFor="wpw">{hasPresence ? 'Or the master password' : 'Master password'}</label>
+            <label className="flabel" htmlFor="wpw">{hasPresence ? t('window_lock.or_the_master_password') : t('window_lock.master_password')}</label>
             <div className={'input lg mono' + (error ? ' err' : '')} style={{ paddingLeft: 'var(--sp-4)', gap: 'var(--sp-3)' }}>
               <span className="accent-t" aria-hidden="true">❯</span>
               <input {...plainText} id="wpw" ref={input} type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pw}
                 onChange={(e) => setPw(e.target.value)} aria-invalid={!!error} aria-describedby={error ? 'wpwe' : undefined}
                 style={{ fontSize: 'var(--fs-lg)' }} disabled={!!busy} />
-              <button type="button" className="icon-btn" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
-              <button type="submit" className={'btn btn-sm ' + (hasPresence ? 'btn-secondary' : 'btn-primary')} style={{ fontFamily: 'var(--font-ui)' }} disabled={!pw || !!busy}>{busy === 'password' ? 'Opening…' : 'Open'}<span className="kbd-in">↵</span></button>
+              <button type="button" className="icon-btn" aria-label={show ? t('window_lock.hide_password') : t('window_lock.show_password')} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button>
+              <button type="submit" className={'btn btn-sm ' + (hasPresence ? 'btn-secondary' : 'btn-primary')} style={{ fontFamily: 'var(--font-ui)' }} disabled={!pw || !!busy}>{busy === 'password' ? t('window_lock.opening') : t('common.open')}<span className="kbd-in">↵</span></button>
             </div>
             {error && <span id="wpwe" className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
           </div>
-          <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />Open sessions keep running behind this screen. Lock the vault from the {os === 'mac' ? 'menu bar icon' : 'tray icon'} to end every grant.</span>
+          <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />{os === 'mac' ? t('window_lock.sessions_note_mac') : t('window_lock.sessions_note_tray')}</span>
         </form>
       </main>
       <footer className="mono faint" style={{ position: 'absolute', left: 0, right: 0, bottom: 'var(--sp-4)', textAlign: 'center', fontSize: 'var(--fs-xs)' }}>

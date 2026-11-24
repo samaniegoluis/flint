@@ -6,6 +6,8 @@ import { Icon } from '../ui/Icon';
 import { Kbd, Key } from '../ui/Kbd';
 import { Modal } from '../ui/Modal';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 // The vault switcher popover (⇧⌘O): recent vaults, then Open, Create and Manage.
 export function VaultMenu({ onClose, onManage, style }: { onClose: () => void; onManage?: () => void; style?: CSSProperties }) {
@@ -53,28 +55,28 @@ export function VaultMenu({ onClose, onManage, style }: { onClose: () => void; o
   };
 
   return (
-    <div ref={ref} className="menu" role="dialog" aria-label="Switch vault" style={{ position: 'absolute', width: 340, zIndex: 'var(--z-popover)' as unknown as number, ...style }} onKeyDown={onKey}>
-      <div className="menu-label"><span className="label">Vaults</span><Kbd action="switchVault" /></div>
+    <div ref={ref} className="menu" role="dialog" aria-label={t('vault_switcher.switch_vault')} style={{ position: 'absolute', width: 340, zIndex: 'var(--z-popover)' as unknown as number, ...style }} onKeyDown={onKey}>
+      <div className="menu-label"><span className="label">{t('vault_switcher.vaults')}</span><Kbd action="switchVault" /></div>
       {recents.map((r) => (
         <button {...mi(r.path)} style={{ minHeight: 48 }}>
           <span className={'vault-mark ' + vaultMarkClass(r.path)}>{vaultInitial(r.name)}</span>
           <span className="col grow" style={{ gap: 1, minWidth: 0 }}>
-            <span className="strong row" style={{ gap: 6 }}>{r.name}{servers[r.path] && <span title={`Kept in step with ${servers[r.path]}`} data-cloud-mark style={{ display: 'inline-flex' }}><Icon name="cloud" className="cloud-mark" label={`Kept in step with ${servers[r.path]}`} /></span>}{!r.exists && <span className="badge warn">not found</span>}</span>
+            <span className="strong row" style={{ gap: 6 }}>{r.name}{servers[r.path] && <span title={t('vault_switcher.kept_in_step_with_p', { p: servers[r.path] })} data-cloud-mark style={{ display: 'inline-flex' }}><Icon name="cloud" className="cloud-mark" label={t('vault_switcher.kept_in_step_with_p', { p: servers[r.path] })} /></span>}{!r.exists && <span className="badge warn">{t('vault_switcher.not_found')}</span>}</span>
             <span className="vault-path trunc">{shortPath(r.path)}</span>
           </span>
-          {r.path === vault?.path && <Icon name="check" size="sm" className="accent-t" label="Current vault" />}
+          {r.path === vault?.path && <Icon name="check" size="sm" className="accent-t" label={t('vault_switcher.current_vault')} />}
         </button>
       ))}
       {recents.length > 0 && <div className="menu-sep" />}
-      <button {...mi('open')}><Icon name="folder" size="sm" />Open vault…<Kbd action="openVault" /></button>
-      <button {...mi('create')}><Icon name="plus" size="sm" />Create vault…<Kbd action="createVault" /></button>
-      <button {...mi('connect')}><Icon name="server" size="sm" />Connect to a remote vault…<Kbd action="connectRemote" /></button>
-      {onManage && <button {...mi('manage')}><Icon name="settings" size="sm" />Manage vaults…</button>}
+      <button {...mi('open')}>{tr('vault_switcher.iconopen_vault_kbd', { icon: <Icon name="folder" size="sm" />, kbd: <Kbd action="openVault" /> })}</button>
+      <button {...mi('create')}>{tr('vault_switcher.iconcreate_vault_kbd', { icon: <Icon name="plus" size="sm" />, kbd: <Kbd action="createVault" /> })}</button>
+      <button {...mi('connect')}>{tr('vault_switcher.iconconnect_to_a_remote_vault', { icon: <Icon name="server" size="sm" />, kbd: <Kbd action="connectRemote" /> })}</button>
+      {onManage && <button {...mi('manage')}><Icon name="settings" size="sm" />{t('vault_switcher.manage_vaults')}</button>}
       <div className="menu-sep" />
       <div className="row faint" style={{ padding: 'var(--sp-1) var(--sp-2) var(--sp-2)', fontSize: 'var(--fs-xs)', gap: 'var(--sp-3)' }}>
-        <span className="row" style={{ gap: 4 }}><Key>↑↓</Key>move</span>
-        <span className="row" style={{ gap: 4 }}><Key>↵</Key>switch</span>
-        <span className="row" style={{ gap: 4 }}><Key>esc</Key>close</span>
+        <span className="row" style={{ gap: 4 }}><Key>↑↓</Key>{t('vault_switcher.move')}</span>
+        <span className="row" style={{ gap: 4 }}><Key>↵</Key>{t('vault_switcher.switch')}</span>
+        <span className="row" style={{ gap: 4 }}><Key>esc</Key>{t('vault_switcher.close')}</span>
       </div>
     </div>
   );
@@ -93,7 +95,7 @@ export function RenameVault({ onDone }: { onDone: () => void }) {
     try {
       const old = vault?.name;
       await renameVault(v);
-      notify(`Renamed ${old} to ${v}`);
+      notify(t('vault_switcher.renamed_old_to_v', { old, v }));
       onDone();
     } catch (err) {
       fail(err);
@@ -105,10 +107,10 @@ export function RenameVault({ onDone }: { onDone: () => void }) {
     <form className="row" style={{ gap: 'var(--sp-2)' }} onSubmit={(e) => { e.preventDefault(); save(); }}
       onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onDone(); } }}>
       <div className="input" style={{ minWidth: 180 }}>
-        <input {...plainText} aria-label="Vault name" value={name} maxLength={64} autoFocus data-autofocus onChange={(e) => setName(e.target.value)} />
+        <input {...plainText} aria-label={t('vault_switcher.vault_name')} value={name} maxLength={64} autoFocus data-autofocus onChange={(e) => setName(e.target.value)} />
       </div>
-      <button className="btn btn-primary btn-sm" type="submit" disabled={busy || !name.trim()}>Save</button>
-      <button className="btn btn-ghost btn-sm" type="button" onClick={onDone}>Cancel</button>
+      <button className="btn btn-primary btn-sm" type="submit" disabled={busy || !name.trim()}>{t('common.save')}</button>
+      <button className="btn btn-ghost btn-sm" type="button" onClick={onDone}>{t('common.cancel')}</button>
     </form>
   );
 }
@@ -130,7 +132,7 @@ export function ManageVaults({ onClose }: { onClose: () => void }) {
       const wasCurrent = r.path === vault?.path;
       if (kind === 'key') await api.forgetKey(r.path);
       else await api.forget(r.path);
-      notify(kind === 'key' ? `This machine no longer remembers the key of ${r.name}` : `${r.name} removed from the list`);
+      notify(kind === 'key' ? t('vault_switcher.this_machine_no_longer_remembers', { name: r.name }) : t('vault_switcher.name_removed_from_the_list', { name: r.name }));
       if (wasCurrent) {
         onClose();
         await closeVault();
@@ -143,37 +145,37 @@ export function ManageVaults({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Modal label="Manage vaults" onClose={onClose} width={720}>
-      <div className="modal-h"><h2 className="grow">Manage vaults</h2><button className="icon-btn" aria-label="Close (esc)" onClick={onClose}><Icon name="x" size="sm" /></button></div>
+    <Modal label={t('vault_switcher.manage_vaults_2')} onClose={onClose} width={720}>
+      <div className="modal-h"><h2 className="grow">{t('vault_switcher.manage_vaults_2')}</h2><button className="icon-btn" aria-label={t('vault_switcher.close_esc')} onClick={onClose}><Icon name="x" size="sm" /></button></div>
       <div className="modal-b scroll" style={{ gap: 'var(--sp-3)' }}>
-        <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Vaults this machine has opened. The files themselves are never deleted here.</p>
+        <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{t('vault_switcher.vaults_this_machine_has_opened')}</p>
         <table className="table compact">
-          <thead><tr><th>Vault</th><th>File</th><th /></tr></thead>
+          <thead><tr><th>{t('vault_switcher.vault')}</th><th>{t('vault_switcher.file')}</th><th /></tr></thead>
           <tbody>
             {recents.map((r) => (
               <tr key={r.path}>
                 <td className="primary">{renaming && r.path === vault?.path
                   ? <RenameVault onDone={() => setRenaming(false)} />
-                  : <div className="row"><span className={'vault-mark ' + vaultMarkClass(r.path)}>{vaultInitial(r.name)}</span>{r.name}{r.path === vault?.path && <span className="badge accent">open</span>}{!r.exists && <span className="badge warn">not found</span>}</div>}</td>
+                  : <div className="row"><span className={'vault-mark ' + vaultMarkClass(r.path)}>{vaultInitial(r.name)}</span>{r.name}{r.path === vault?.path && <span className="badge accent">{t('vault_switcher.open')}</span>}{!r.exists && <span className="badge warn">{t('vault_switcher.not_found')}</span>}</div>}</td>
                 <td className="mono trunc" style={{ maxWidth: 300, fontSize: 'var(--fs-xs)' }} title={r.path}>{shortPath(r.path)}</td>
                 <td style={{ textAlign: 'right' }}>
-                  {r.path === vault?.path && !renaming && <button className="btn btn-ghost btn-sm" onClick={() => setRenaming(true)}>Rename</button>}
-                  <button className="btn btn-ghost btn-sm" onClick={() => setConfirm({ r, kind: 'key' })}>Forget key</button>
-                  <button className="btn btn-danger-ghost btn-sm" onClick={() => setConfirm({ r, kind: 'list' })}>Remove</button>
+                  {r.path === vault?.path && !renaming && <button className="btn btn-ghost btn-sm" onClick={() => setRenaming(true)}>{t('common.rename')}</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={() => setConfirm({ r, kind: 'key' })}>{t('vault_switcher.forget_key')}</button>
+                  <button className="btn btn-danger-ghost btn-sm" onClick={() => setConfirm({ r, kind: 'list' })}>{t('common.remove')}</button>
                 </td>
               </tr>
             ))}
-            {recents.length === 0 && <tr><td colSpan={3} className="faint">No vaults yet.</td></tr>}
+            {recents.length === 0 && <tr><td colSpan={3} className="faint">{t('vault_switcher.no_vaults_yet')}</td></tr>}
           </tbody>
         </table>
         {confirm && (
-          <div className="callout warn" role="alertdialog" aria-label="Confirm">
+          <div className="callout warn" role="alertdialog" aria-label={t('vault_switcher.confirm')}>
             <Icon name="alert" size="sm" className="warn-t" />
             <div className="col grow" style={{ gap: 'var(--sp-2)' }}>
               <span>{confirm.kind === 'key'
-                ? <>Forget the saved key of <strong>{confirm.r.name}</strong>? This machine will ask for its master password next time.</>
-                : <>Remove <strong>{confirm.r.name}</strong> from the list and forget its key? The file stays where it is.</>}</span>
-              <div className="row"><button className="btn btn-secondary btn-sm" onClick={() => setConfirm(null)} data-autofocus>Cancel</button><button className="btn btn-danger btn-sm" onClick={() => run()}>{confirm.kind === 'key' ? 'Forget key' : 'Remove'}</button></div>
+                ? <>{tr('vault_switcher.forget_the_saved_key_of', { strong: <strong>{confirm.r.name}</strong> })}</>
+                : <>{tr('vault_switcher.remove_strong_from_the_list', { strong: <strong>{confirm.r.name}</strong> })}</>}</span>
+              <div className="row"><button className="btn btn-secondary btn-sm" onClick={() => setConfirm(null)} data-autofocus>{t('common.cancel')}</button><button className="btn btn-danger btn-sm" onClick={() => run()}>{confirm.kind === 'key' ? t('vault_switcher.forget_key') : t('common.remove')}</button></div>
             </div>
           </div>
         )}

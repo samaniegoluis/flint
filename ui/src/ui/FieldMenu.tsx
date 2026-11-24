@@ -4,6 +4,7 @@ import { useApp } from '../state/app';
 import { fieldItems, fieldStateOf, textFieldOf, type FieldAction, type TextField } from '../lib/fieldMenu';
 import { guardBrowserKey } from '../lib/browserKeys';
 import { ContextMenu } from './ContextMenu';
+import { t } from '../i18n';
 
 interface Open {
   x: number;
@@ -65,7 +66,7 @@ export function FieldMenu() {
       case 'paste':
         api.fieldClipboardRead().then((r) => {
           if (r.secret) {
-            notify({ text: `Press ${os === 'mac' ? '⌘V' : 'Ctrl+V'} to paste the password Flint copied`, kind: 'info', key: 'field-paste' });
+            notify({ text: t('field_menu.press_p_to_paste_the', { p: os === 'mac' ? '⌘V' : 'Ctrl+V' }), kind: 'info', key: 'field-paste' });
             restore();
             return;
           }

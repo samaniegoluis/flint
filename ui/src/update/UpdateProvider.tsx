@@ -18,6 +18,7 @@ import { sessions } from '../sessions/store';
 import { tunnels } from '../tunnels/store';
 import { RelaunchConfirm } from './RelaunchConfirm';
 import { WhatsNewModal } from './WhatsNewModal';
+import { t } from '../i18n';
 
 interface UpdateApi {
   status: UpdateStatus | null;
@@ -124,7 +125,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     if (st.state === 'ready' && before?.state === 'downloading') {
       notify({
         text: updateReadyText(st), kind: 'ok', key: UPDATE_TOAST_KEY, duration: 'sticky',
-        actions: [{ label: 'Relaunch', primary: true, run: () => relaunch() }],
+        actions: [{ label: t('update_provider.relaunch'), primary: true, run: () => relaunch() }],
       });
       return;
     }
@@ -134,7 +135,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       const f = updateRelaunchFailure(st);
       notify({
         text: f.text, kind: 'error', key: UPDATE_TOAST_KEY,
-        actions: [f.kept ? { label: 'Relaunch', primary: true, run: () => relaunch() } : { label: 'Details', run: () => openAbout() }],
+        actions: [f.kept ? { label: t('update_provider.relaunch'), primary: true, run: () => relaunch() } : { label: t('update_provider.details'), run: () => openAbout() }],
       });
       return;
     }
@@ -143,7 +144,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       const f = updateDownloadFailure(st);
       notify({
         text: f.text, kind: 'error', key: UPDATE_TOAST_KEY,
-        actions: [f.retry ? { label: 'Retry', run: () => download() } : { label: 'Details', run: () => openAbout() }],
+        actions: [f.retry ? { label: t('common.retry'), run: () => download() } : { label: t('update_provider.details'), run: () => openAbout() }],
       });
       return;
     }

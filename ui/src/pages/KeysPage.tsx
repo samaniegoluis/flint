@@ -11,6 +11,8 @@ import { useTrapFocus } from '../ui/Modal';
 import { ContextMenu, type MenuItem } from '../ui/ContextMenu';
 import { useRef } from 'react';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 export function KeysPage({ adding, setAdding, onConfirm }: { adding: boolean; setAdding: (v: boolean) => void; onConfirm: (c: Confirm) => void }) {
   const { catalog, notify, fail, refreshCatalog } = useApp();
@@ -29,7 +31,7 @@ export function KeysPage({ adding, setAdding, onConfirm }: { adding: boolean; se
   const keys = catalog.keys.filter((k) => !q || (k.name + ' ' + k.fingerprint).toLowerCase().includes(q.toLowerCase()));
 
   const copy = (name: string, pub: string) => {
-    navigator.clipboard?.writeText(pub).then(() => notify({ text: `Public key of ${name} copied`, key: 'copied:pubkey' })).catch(() => notify('Copy failed', 'error'));
+    navigator.clipboard?.writeText(pub).then(() => notify({ text: t('keys_page.public_key_of_name_copied', { name }), key: 'copied:pubkey' })).catch(() => notify(t('keys_page.copy_failed'), 'error'));
   };
 
   const rename = async () => {
@@ -44,31 +46,31 @@ export function KeysPage({ adding, setAdding, onConfirm }: { adding: boolean; se
   };
 
   const remove = (name: string) => onConfirm({
-    title: `Delete key ${name}?`,
+    title: t('keys_page.delete_key_name', { name }),
     body: usedBy.get(name) ? `It is linked to ${usedBy.get(name)} hosts or credentials; Flint refuses while it is in use.` : 'The private key is removed from the vault. This cannot be undone.',
     action: 'Delete key',
-    run: async () => { await api.keyRm(name); await refreshCatalog(); notify(`Deleted ${name}`); },
+    run: async () => { await api.keyRm(name); await refreshCatalog(); notify(t('keys_page.deleted_name', { name })); },
   });
 
   return (
-    <section className="main page" aria-label="SSH keys">
+    <section className="main page" aria-label={t('keys_page.ssh_keys')}>
       <div className="page-h">
-        <h1>SSH keys</h1><span className="badge">{catalog.keys.length}</span>
+        <h1>{t('keys_page.ssh_keys')}</h1><span className="badge">{catalog.keys.length}</span>
         <span className="grow" />
-        <label className="search" style={{ width: 240 }}><Icon name="search" size="sm" /><input {...plainText} aria-label="Filter keys" placeholder="Filter by name or fingerprint" value={q} onChange={(e) => setQ(e.target.value)} /></label>
-        <button className="btn btn-primary" onClick={() => setAdding(true)}><Icon name="plus" size="sm" />Add key<Kbd action="newHost" inline /></button>
+        <label className="search" style={{ width: 240 }}><Icon name="search" size="sm" /><input {...plainText} aria-label={t('keys_page.filter_keys')} placeholder={t('keys_page.filter_by_name_or_fingerprint')} value={q} onChange={(e) => setQ(e.target.value)} /></label>
+        <button className="btn btn-primary" onClick={() => setAdding(true)}>{tr('keys_page.iconadd_keykbd', { icon: <Icon name="plus" size="sm" />, kbd: <Kbd action="newHost" inline /> })}</button>
       </div>
       <div className="scroll" style={{ padding: '0 var(--sp-6) var(--sp-6)' }}>
         {catalog.keys.length === 0 ? (
           <div className="empty" style={{ paddingTop: 'var(--sp-12)' }}>
             <span className="empty-ic"><Icon name="key" size="lg" /></span>
-            <h2>No SSH keys yet</h2>
-            <p style={{ maxWidth: 420 }}>Paste a private key or import one from a file. It is stored encrypted inside the vault, so it travels with it.</p>
-            <button className="btn btn-primary" onClick={() => setAdding(true)}><Icon name="plus" size="sm" />Add key</button>
+            <h2>{t('keys_page.no_ssh_keys_yet')}</h2>
+            <p style={{ maxWidth: 420 }}>{t('keys_page.paste_a_private_key_or')}</p>
+            <button className="btn btn-primary" onClick={() => setAdding(true)}><Icon name="plus" size="sm" />{t('keys_page.add_key')}</button>
           </div>
         ) : (
           <table className="table">
-            <thead><tr><th>Name</th><th>Type</th><th>Fingerprint</th><th>Used by</th><th style={{ textAlign: 'right' }}>Public key</th></tr></thead>
+            <thead><tr><th>{t('keys_page.name')}</th><th>{t('keys_page.type')}</th><th>{t('keys_page.fingerprint')}</th><th>{t('keys_page.used_by')}</th><th style={{ textAlign: 'right' }}>{t('keys_page.public_key')}</th></tr></thead>
             <tbody>
               {keys.map((k) => (
                 <tr key={k.name} className={sel === k.name ? 'sel' : ''} onClick={() => setSel(k.name)}
@@ -76,31 +78,31 @@ export function KeysPage({ adding, setAdding, onConfirm }: { adding: boolean; se
                     e.preventDefault();
                     setSel(k.name);
                     setMenu({ x: e.clientX, y: e.clientY, items: [
-                      { label: 'Copy public key', icon: 'clip', run: () => copy(k.name, k.public_key) },
-                      { label: 'Rename', icon: 'edit', run: () => setRenaming({ name: k.name, value: k.name }) },
-                      { label: 'Delete key', icon: 'trash', danger: true, run: () => remove(k.name) },
+                      { label: t('keys_page.copy_public_key'), icon: 'clip', run: () => copy(k.name, k.public_key) },
+                      { label: t('common.rename'), icon: 'edit', run: () => setRenaming({ name: k.name, value: k.name }) },
+                      { label: t('keys_page.delete_key'), icon: 'trash', danger: true, run: () => remove(k.name) },
                     ] });
                   }}>
                   <td className="primary"><div className="row">
                     <Icon name="key" size="sm" className={sel === k.name ? 'info-t' : 'faint'} />
                     {renaming?.name === k.name ? (
-                      <div className="input" style={{ height: 26 }}><input {...plainText} className="mono" autoFocus value={renaming.value} aria-label="New key name"
+                      <div className="input" style={{ height: 26 }}><input {...plainText} className="mono" autoFocus value={renaming.value} aria-label={t('keys_page.new_key_name')}
                         onChange={(e) => setRenaming({ ...renaming, value: e.target.value })}
                         onKeyDown={(e) => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') setRenaming(null); }} onBlur={() => setRenaming(null)} /></div>
                     ) : <span className="mono">{k.name}</span>}
-                    {k.has_passphrase && <Icon name="lock" size="xs" className="faint" label="Has passphrase" />}
+                    {k.has_passphrase && <Icon name="lock" size="xs" className="faint" label={t('keys_page.has_passphrase')} />}
                   </div></td>
                   <td><span className="chip">{k.type.toUpperCase().replace('SSH-', '')}</span></td>
                   <td className="mono" style={{ fontSize: 'var(--fs-xs)' }} title={k.fingerprint}>{k.fingerprint}</td>
-                  <td className={usedBy.get(k.name) ? '' : 'faint'}>{usedBy.get(k.name) ? `${usedBy.get(k.name)} uses` : 'Unused'}</td>
+                  <td className={usedBy.get(k.name) ? '' : 'faint'}>{usedBy.get(k.name) ? t('keys_page.used_by', { n: usedBy.get(k.name) }) : t('keys_page.unused')}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); copy(k.name, k.public_key); }}><Icon name="clip" size="sm" />Copy</button>
-                    <button className="btn btn-ghost btn-sm btn-icon" aria-label={`More actions for ${k.name}`} onClick={(e) => {
+                    <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); copy(k.name, k.public_key); }}><Icon name="clip" size="sm" />{t('common.copy')}</button>
+                    <button className="btn btn-ghost btn-sm btn-icon" aria-label={t('keys_page.more_actions_for_name', { name: k.name })} onClick={(e) => {
                       e.stopPropagation();
                       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                       setMenu({ x: r.left - 180, y: r.bottom + 4, items: [
-                        { label: 'Rename', icon: 'edit', run: () => setRenaming({ name: k.name, value: k.name }) },
-                        { label: 'Delete key', icon: 'trash', danger: true, run: () => remove(k.name) },
+                        { label: t('common.rename'), icon: 'edit', run: () => setRenaming({ name: k.name, value: k.name }) },
+                        { label: t('keys_page.delete_key'), icon: 'trash', danger: true, run: () => remove(k.name) },
                       ] });
                     }}><Icon name="more" size="sm" /></button>
                   </td>
@@ -152,7 +154,7 @@ function AddKeyDrawer({ onClose }: { onClose: () => void }) {
     try {
       const k = await api.keyAdd(name.trim(), source === 'paste' ? text : '', source === 'file' ? file : '', pass);
       await refreshCatalog();
-      notify(`Added key ${k.name}`);
+      notify(t('keys_page.added_key_name', { name: k.name }));
       onClose();
     } catch (err) {
       setError(toFlintError(err).message);
@@ -162,37 +164,37 @@ function AddKeyDrawer({ onClose }: { onClose: () => void }) {
 
   const ready = name.trim() && (source === 'paste' ? text.trim() : file) && !busy;
   return (
-    <aside ref={ref} className="drawer" role="dialog" aria-label="Add SSH key">
+    <aside ref={ref} className="drawer" role="dialog" aria-label={t('keys_page.add_ssh_key')}>
       <form style={{ display: 'flex', flexDirection: 'column', height: '100%' }} onSubmit={submit}
         onKeyDown={(e) => { if (e.key === 'Enter' && (os === 'mac' ? e.metaKey : e.ctrlKey) && ready) submit(); }}>
-        <div className="modal-h"><h2 className="grow">Add SSH key</h2><button type="button" className="icon-btn" aria-label="Close (esc)" onClick={onClose}><Icon name="x" size="sm" /></button></div>
+        <div className="modal-h"><h2 className="grow">{t('keys_page.add_ssh_key')}</h2><button type="button" className="icon-btn" aria-label={t('keys_page.close_esc')} onClick={onClose}><Icon name="x" size="sm" /></button></div>
         <div className="modal-b scroll" style={{ flex: 1 }}>
-          <div className="seg full" role="group" aria-label="Source">
-            <button type="button" aria-pressed={source === 'paste'} onClick={() => setSource('paste')}><Icon name="clip" size="sm" />Paste</button>
-            <button type="button" aria-pressed={source === 'file'} onClick={() => { setSource('file'); if (!file) pick().catch(() => {}); }}><Icon name="file" size="sm" />From file…</button>
+          <div className="seg full" role="group" aria-label={t('keys_page.source')}>
+            <button type="button" aria-pressed={source === 'paste'} onClick={() => setSource('paste')}><Icon name="clip" size="sm" />{t('common.paste')}</button>
+            <button type="button" aria-pressed={source === 'file'} onClick={() => { setSource('file'); if (!file) pick().catch(() => {}); }}><Icon name="file" size="sm" />{t('keys_page.from_file')}</button>
           </div>
           {source === 'paste' ? (
-            <div className="field"><label className="flabel" htmlFor="pk">Private key</label>
-              <div className="input area"><textarea {...plainText} id="pk" rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" data-autofocus /></div></div>
+            <div className="field"><label className="flabel" htmlFor="pk">{t('keys_page.private_key')}</label>
+              <div className="input area"><textarea {...plainText} id="pk" rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder={t('keys_page.begin_openssh_private_key')} data-autofocus /></div></div>
           ) : (
-            <div className="field"><span className="flabel">Key file</span>
+            <div className="field"><span className="flabel">{t('keys_page.key_file')}</span>
               <div className="row" style={{ gap: 'var(--sp-2)' }}>
-                <div className="input grow"><Icon name="file" size="sm" className="faint" /><input {...plainText} className="mono" aria-label="Key file" value={file} onChange={(e) => setFile(e.target.value)} style={{ fontSize: 'var(--fs-sm)' }} /></div>
-                <button type="button" className="btn btn-secondary" style={{ height: 'var(--control-h)' }} onClick={() => pick().catch(() => {})}>Choose…</button>
+                <div className="input grow"><Icon name="file" size="sm" className="faint" /><input {...plainText} className="mono" aria-label={t('keys_page.key_file')} value={file} onChange={(e) => setFile(e.target.value)} style={{ fontSize: 'var(--fs-sm)' }} /></div>
+                <button type="button" className="btn btn-secondary" style={{ height: 'var(--control-h)' }} onClick={() => pick().catch(() => {})}>{t('keys_page.choose')}</button>
               </div>
-              <span className="hint">The file's content is copied into the vault; the file itself is not needed afterwards.</span></div>
+              <span className="hint">{t('keys_page.the_file_s_content_is')}</span></div>
           )}
-          <div className="field"><label className="flabel" htmlFor="kn">Name</label>
+          <div className="field"><label className="flabel" htmlFor="kn">{t('keys_page.name')}</label>
             <div className="input"><input {...plainText} id="kn" className="mono" value={name} onChange={(e) => setName(e.target.value)} placeholder="deploy-2026" /></div></div>
-          <div className="field"><label className="flabel" htmlFor="kp">Passphrase <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· {encrypted ? 'this key is encrypted' : 'only if the key is encrypted'}</span></label>
+          <div className="field"><label className="flabel" htmlFor="kp">{t('keys_page.passphrase')}{' '}<span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· {encrypted ? t('keys_page.this_key_is_encrypted') : t('keys_page.only_if_the_key_is')}</span></label>
             <div className="input"><input {...plainText} id="kp" type={show ? 'text' : 'password'} className={show ? '' : 'pw'} value={pass} onChange={(e) => setPass(e.target.value)} autoComplete="off" />
-              <button type="button" className="icon-btn" aria-label={show ? 'Hide passphrase' : 'Show passphrase'} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button></div>
-            <span className="hint">Stored in the vault, sealed like the key, so connections never ask for it.</span></div>
+              <button type="button" className="icon-btn" aria-label={show ? t('keys_page.hide_passphrase') : t('keys_page.show_passphrase')} onClick={() => setShow(!show)}><Icon name="eye" size="sm" /></button></div>
+            <span className="hint">{t('keys_page.stored_in_the_vault_sealed')}</span></div>
           {error && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
         </div>
         <div className="modal-f"><span className="grow" />
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel<Key>esc</Key></button>
-          <button type="submit" className="btn btn-primary" disabled={!ready}>{busy ? 'Adding…' : 'Add key'}<span className="kbd-in">{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</span></button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>{t('common.cancel')}<Key>esc</Key></button>
+          <button type="submit" className="btn btn-primary" disabled={!ready}>{busy ? t('keys_page.adding') : t('keys_page.add_key')}<span className="kbd-in">{os === 'mac' ? '⌘↵' : t('keys_page.ctrl')}</span></button>
         </div>
       </form>
     </aside>

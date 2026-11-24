@@ -1,6 +1,7 @@
 // Icons come from the design's in-house sprite (docs/design/icons.svg), inlined once
 // into the page so <use href="#i-…"> resolves without a network request.
 import sprite from '../../../docs/design/icons.svg?raw';
+import { t } from '../i18n';
 
 let injected = false;
 
@@ -44,10 +45,10 @@ export function Logo({ size = 16, label }: { size?: number; label?: string }) {
 // A host's type glyph (design 21c): a prompt for SSH, a window for RDP. Neutral, after
 // the colour mark. `md` in the palette and menus, `lg` in the editor.
 export function HostTypeIcon({ type, size }: { type: string; size?: 'md' | 'lg' }) {
-  const t = type === 'rdp' ? 'rdp' : 'ssh';
+  const kind = type === 'rdp' ? 'rdp' : 'ssh';
   return (
-    <svg className={['ic', 'htype', t, size].filter(Boolean).join(' ')} role="img" aria-label={t === 'rdp' ? 'RDP host' : 'SSH host'} data-htype={t}>
-      <use href={'#i-' + t} />
+    <svg className={['ic', 'htype', kind, size].filter(Boolean).join(' ')} role="img" aria-label={kind === 'rdp' ? t('icon.rdp_host') : t('icon.ssh_host')} data-htype={kind}>
+      <use href={'#i-' + kind} />
     </svg>
   );
 }
