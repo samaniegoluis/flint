@@ -98,6 +98,12 @@ export function t(key: string, params?: Params): string {
   return interpolate(text, params);
 }
 
+/** The text of `key` in every language with a catalog, for a search that should find
+ * it in either (the palette's language and theme rows, D-144). */
+export function textInEveryLanguage(key: string): string[] {
+  return availableLanguages().map((l) => lookup(l, key)).filter((v): v is string => v !== undefined);
+}
+
 /** Whether the catalog has `key` (plain or with plural forms). */
 export function hasKey(key: string): boolean {
   return lookup('en', key) !== undefined || lookup('en', `${key}.other`) !== undefined;

@@ -2971,6 +2971,10 @@
       const themeBefore = (await window.backend.settings_get({})).theme;
       window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK', key: 'k', metaKey: mac, ctrlKey: !mac, shiftKey: !mac, bubbles: true, cancelable: true }));
       await waitFor(() => q('[aria-label="Command palette"]'), 'the palette');
+      // A value's name in the other language finds its row too (owner, 2026-11-24).
+      await fill('[aria-label="Command palette"] input', 'claro');
+      await waitFor(() => q('[data-palette-setting="theme:light"]'), 'Theme: Light found by "claro" in English');
+      await check(qa('[data-palette-setting]').length === 1, 'in English, "claro" finds Theme: Light and nothing else');
       await fill('[aria-label="Command palette"] input', 'theme light');
       await click('[data-palette-setting="theme:light"]');
       await waitForAsync(async () => (await window.backend.settings_get({})).theme === 'light', 'the light theme saved');

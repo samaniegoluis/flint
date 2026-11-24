@@ -379,9 +379,10 @@ stays saved, and **Reconnect** in that tab keeps skipping it.
 While you search, the palette also offers the [language](#language) and the theme:
 **Language: System**, **Language: English**, **Language: Español**, and **Theme: Dark**,
 **Theme: Light**, **Theme: Match system**. The current one is marked **Current**. Each
-applies at once, like the row in Settings → Appearance. The rows are found by the word in
-either language: `language` and `idioma` both work, so someone in the wrong language finds
-the way back.
+applies at once, like the row in Settings → Appearance. The rows are found by their words
+in either language, `language` or `idioma`, `light` or `claro`, so someone in the wrong
+language finds the way back. A row always reads in the window's language. The palette's
+other rows, hosts and actions, match the window's language only.
 
 ## Vaults
 

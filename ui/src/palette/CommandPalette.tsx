@@ -22,7 +22,7 @@ import { useSyncMaybe } from '../sync/SyncProvider';
 import { useUpdate } from '../update/UpdateProvider';
 import { updatePaletteHint } from '../lib/update';
 import { plainText } from '../ui/plainText';
-import { t } from '../i18n';
+import { t, textInEveryLanguage } from '../i18n';
 import { tr } from '../i18n/react';
 
 type Group = 'all' | 'hosts' | 'actions' | 'vaults';
@@ -47,7 +47,7 @@ interface Item {
 const LANGUAGE_NAME = { en: 'English', es: 'Español' } as const;
 const THEME_LABEL = { dark: 'settings_page.dark', light: 'settings_page.light', system: 'settings_page.match_system' } as const;
 // Words that find these rows in either language, so someone in the wrong one finds the
-// way back.
+// way back; each row adds its value's name in every language (claro, light).
 const LANGUAGE_WORDS = 'language idioma lenguaje'; // i18n-ignore
 const THEME_WORDS = 'theme tema appearance apariencia'; // i18n-ignore
 
@@ -300,12 +300,12 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       if (q.trim()) {
         const choices = [
           ...(['system', 'en', 'es'] as const).map((l) => ({
-            key: 'lang:' + l, words: LANGUAGE_WORDS, current: settings.language === l,
+            key: 'lang:' + l, words: [LANGUAGE_WORDS, ...(l === 'system' ? textInEveryLanguage('settings_page.language.system') : [])].join(' '), current: settings.language === l,
             title: t('command_palette.language_item', { name: l === 'system' ? t('settings_page.language.system') : LANGUAGE_NAME[l] }),
             apply: () => saveSettings({ ...settings, language: l }),
           })),
           ...(['dark', 'light', 'system'] as const).map((th) => ({
-            key: 'theme:' + th, words: THEME_WORDS, current: settings.theme === th,
+            key: 'theme:' + th, words: [THEME_WORDS, ...textInEveryLanguage(THEME_LABEL[th])].join(' '), current: settings.theme === th,
             title: t('command_palette.theme_item', { name: t(THEME_LABEL[th]) }),
             apply: () => saveSettings({ ...settings, theme: th }),
           })),
