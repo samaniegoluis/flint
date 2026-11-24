@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toFlintError } from '../api/backend';
 import { files } from './store';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
 
 const editors = new Map<string, (seed?: string) => void>();
 
@@ -74,8 +75,8 @@ export function PathField({ fkey, path, os, pane, disabled, onError, onDone, chi
   if (editing) {
     const name = pane ? { 'data-files-pane-path-input': '' } : { 'data-files-path-input': '' };
     return (
-      <input {...plainText} ref={input} className={'crumbs-input grow' + (bad ? ' is-bad' : '')} {...name} aria-label="Go to folder" aria-invalid={bad || undefined}
-        value={draft} readOnly={busy} autoComplete="off" placeholder="/path, ~ or a folder here"
+      <input {...plainText} ref={input} className={'crumbs-input grow' + (bad ? ' is-bad' : '')} {...name} aria-label={t('path_field.go_to_folder')} aria-invalid={bad || undefined}
+        value={draft} readOnly={busy} autoComplete="off" placeholder={t('path_field.path_or_a_folder_here')}
         onChange={(e) => { setDraft(e.target.value); setBad(false); }}
         onBlur={() => { if (!busy) close(false); }}
         onKeyDown={(e) => {
@@ -94,8 +95,8 @@ export function PathField({ fkey, path, os, pane, disabled, onError, onDone, chi
     setDraft(path);
   };
   return (
-    <nav className={'crumbs grow' + (disabled ? '' : ' can-edit')} aria-label="Path" {...name} onClick={onClick}
-      title={disabled ? undefined : `Click to type or paste a path (${goToFolderKeys(os)})`}>
+    <nav className={'crumbs grow' + (disabled ? '' : ' can-edit')} aria-label={t('path_field.path')} {...name} onClick={onClick}
+      title={disabled ? undefined : t('path_field.click_to_type_or_paste', { goToFolderKeys: goToFolderKeys(os) })}>
       {children}
     </nav>
   );

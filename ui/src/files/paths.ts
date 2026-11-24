@@ -2,6 +2,7 @@
 // and times read in the list.
 
 import type { FileEntry } from '../api/types';
+import { fmtNumber, t } from '../i18n';
 
 /**
  * The folder an OSC 7 report names: `file://host/path`, percent-encoded. Hosts are
@@ -63,31 +64,30 @@ export function sortEntries(entries: FileEntry[]): FileEntry[] {
 
 /** "412 B", "2.1 KB", "48.2 MB" (powers of 1024, as the CLI prints them). */
 export function humanSize(n: number): string {
-  if (n < 1024) return `${n} B`;
+  if (n < 1024) return t('files.size', { n: fmtNumber(n), unit: 'B' });
   const units = ['KB', 'MB', 'GB', 'TB'];
   let v = n / 1024;
   let u = 0;
   while (v >= 1024 && u < units.length - 1) { v /= 1024; u++; }
-  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[u]}`;
+  return t('files.size', { n: v < 10 ? fmtNumber(v, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : fmtNumber(Math.round(v)), unit: units[u] });
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
  * When a file changed, as the design shows it: "21:40" today, "2 h ago" in the
  * last hours, "12 Oct" this year, "12 Oct 2024" before.
  */
 export function humanTime(mtimeSecs: number, nowMs = Date.now()): string {
-  const t = new Date(mtimeSecs * 1000);
+  const d = new Date(mtimeSecs * 1000);
   const now = new Date(nowMs);
-  const ageMin = (nowMs - t.getTime()) / 60000;
-  if (ageMin >= 0 && ageMin < 1) return 'just now';
-  if (ageMin >= 0 && ageMin < 60) return `${Math.floor(ageMin)} min ago`;
-  if (ageMin >= 0 && ageMin < 6 * 60) return `${Math.floor(ageMin / 60)} h ago`;
-  const sameDay = t.toDateString() === now.toDateString();
-  if (sameDay) return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
-  const day = `${t.getDate()} ${MONTHS[t.getMonth()]}`;
-  return t.getFullYear() === now.getFullYear() ? day : `${day} ${t.getFullYear()}`;
+  const ageMin = (nowMs - d.getTime()) / 60000;
+  if (ageMin >= 0 && ageMin < 1) return t('files.time.just_now');
+  if (ageMin >= 0 && ageMin < 60) return t('files.time.min_ago', { min: Math.floor(ageMin) });
+  if (ageMin >= 0 && ageMin < 6 * 60) return t('files.time.h_ago', { h: Math.floor(ageMin / 60) });
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const month = t(`files.month.${d.getMonth()}`);
+  return d.getFullYear() === now.getFullYear() ? t('files.time.day_month', { day: d.getDate(), month }) : t('files.time.day_month_year', { day: d.getDate(), month, year: d.getFullYear() });
 }
 
 /**

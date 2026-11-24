@@ -21,6 +21,8 @@ import { HostTunnels } from '../tunnels/HostTunnels';
 import { RdpHostEditor } from './RdpHostEditor';
 import { TypeBadge } from './TypeBadge';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 type TestState =
   | { s: 'idle' }
@@ -116,8 +118,8 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
   // The form as a patch against the saved host (all fields for a new one), or an error.
   const buildPatch = (): HostPatch | string => {
     const port = Number(f.port);
-    if (!f.alias.trim() || !f.hostname.trim()) return 'Alias and hostname are required.';
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return 'The port must be 1 to 65535.';
+    if (!f.alias.trim() || !f.hostname.trim()) return t('host_editor.alias_hostname_required');
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return t('host_editor.port_range');
     const p = emptyHostPatch();
     const field = <K extends 'alias' | 'label' | 'hostname' | 'user' | 'group' | 'color' | 'notes' | 'jump'>(k: K, v: string) => {
       if (!host || (host[k] as string) !== v) { p[k] = v; p[`set_${k}` as `set_${K}`] = true as never; }
@@ -213,7 +215,7 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
     try {
       const saved = host ? await api.hostEdit(host.alias, p) : await api.hostAdd(p);
       await refreshCatalog();
-      notify(host ? `Saved ${saved.alias}` : `Added ${saved.alias}`);
+      notify(host ? t('host_editor.saved_alias', { alias: saved.alias }) : t('host_editor.added_alias', { alias: saved.alias }));
       onClose();
     } catch (err) {
       setError(toFlintError(err).message);
@@ -223,157 +225,159 @@ function SshHostEditor({ alias, group, showTunnels = false, onClose, onDelete, o
 
   const c = colorStyle(f.color);
   const modes: { m: Mode; icon: 'cred' | 'key' | 'lock' | 'link'; label: string }[] = [
-    { m: 'credential', icon: 'cred', label: 'Credential' },
-    { m: 'key', icon: 'key', label: 'Key' },
-    { m: 'password', icon: 'lock', label: 'Password' },
-    { m: 'agent', icon: 'link', label: 'Agent' },
+    { m: 'credential', icon: 'cred', label: t('host_editor.credential') },
+    { m: 'key', icon: 'key', label: t('host_editor.key') },
+    { m: 'password', icon: 'lock', label: t('host_editor.password') },
+    { m: 'agent', icon: 'link', label: t('host_editor.agent') },
   ];
   // Where "Same as the login password" takes its password from, or that there is none
   // (then the approval window asks for one each time).
   const cred = catalog.credentials.find((c) => c.name === f.credential);
-  const loginSource = mode === 'credential' && cred?.has_password ? `From credential “${cred.name}”`
-    : mode === 'password' && (f.password || host?.has_password) ? "This host's login password"
-    : 'No login password here: the approval window asks for one each time.';
+  const loginSource = mode === 'credential' && cred?.has_password ? t('host_editor.login_from_credential', { name: cred.name })
+    : mode === 'password' && (f.password || host?.has_password) ? t('host_editor.login_own_password')
+    : t('host_editor.login_none');
 
   return (
-    <Modal label={host ? `Edit host ${host.alias}` : 'New host'} onClose={onClose} width={680} top={52}>
+    <Modal label={host ? t('host_editor.edit_host_alias', { alias: host.alias }) : t('host_editor.new_host')} onClose={onClose} width={680} top={52}>
       <form onSubmit={save} onKeyDown={(e) => { if (e.key === 'Enter' && (os === 'mac' ? e.metaKey : e.ctrlKey)) save(); }} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div className="modal-h">
           {f.color && <span className={'hmark ' + c.className} style={{ height: 20, ...c.style }} />}
-          <h2 className="grow">{host ? <>Edit host <span className="mono muted" style={{ fontWeight: 'var(--fw-regular)' }}>{host.alias}</span></> : 'New host'}</h2>
+          <h2 className="grow">{host ? <>{tr('host_editor.edit_host_span', { span: <span className="mono muted" style={{ fontWeight: 'var(--fw-regular)' }}>{host.alias}</span> })}</> : t('host_editor.new_host')}</h2>
           <TypeBadge type="ssh" />
           {host && <Kbd action="editHost" />}
-          <button type="button" className="icon-btn" aria-label="Close (esc)" onClick={onClose}><Icon name="x" size="sm" /></button>
+          <button type="button" className="icon-btn" aria-label={t('host_editor.close_esc')} onClick={onClose}><Icon name="x" size="sm" /></button>
         </div>
         <div className="modal-b scroll" style={{ gap: 'var(--sp-4)', paddingBottom: 'var(--sp-4)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--sp-4)' }}>
-            <div className="field"><label className="flabel" htmlFor="ha">Alias</label>
+            <div className="field"><label className="flabel" htmlFor="ha">{t('host_editor.alias')}</label>
               <div className="input"><input {...plainText} id="ha" className="mono" value={f.alias} onChange={(e) => set('alias', e.target.value)} placeholder="prod-api-01" data-autofocus={!showTunnels || undefined} autoFocus={!showTunnels} /></div>
-              <span className="hint">What you type in <span className="mono">flint connect</span>.</span></div>
-            <div className="field"><label className="flabel" htmlFor="hl">Label <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></label>
-              <div className="input"><input {...plainText} id="hl" value={f.label} onChange={(e) => set('label', e.target.value)} placeholder="e.g. Home server" /></div></div>
+              <span className="hint">{tr('host_editor.what_you_type_in_span', { span: <span className="mono">flint connect</span> })}</span></div>
+            <div className="field"><label className="flabel" htmlFor="hl">{tr('host_editor.label_span', { span: <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>{t('host_editor.optional')}</span> })}</label>
+              <div className="input"><input {...plainText} id="hl" value={f.label} onChange={(e) => set('label', e.target.value)} placeholder={t('host_editor.e_g_home_server')} /></div></div>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 96px', gap: 'var(--sp-4)' }}>
-              <div className="field"><label className="flabel" htmlFor="hh">Hostname</label>
+              <div className="field"><label className="flabel" htmlFor="hh">{t('host_editor.hostname')}</label>
                 <div className="input"><input {...plainText} id="hh" className="mono" value={f.hostname} onChange={(e) => set('hostname', e.target.value)} placeholder="10.0.4.21" /></div></div>
-              <div className="field"><label className="flabel" htmlFor="hp">Port</label>
+              <div className="field"><label className="flabel" htmlFor="hp">{t('host_editor.port')}</label>
                 <div className="input"><input {...plainText} id="hp" className="mono" inputMode="numeric" value={f.port} onChange={(e) => set('port', e.target.value.replace(/\D/g, ''))} /></div></div>
             </div>
-            <div className="field"><span className="flabel">Folder</span>
-              <Picker label="Folder" value={f.group} onChange={(v) => set('group', v)} icon="folder" placeholder="No folder"
-                options={[{ value: '', label: 'No folder', text: '' }, ...groupPaths(catalog.groups).map((g) => ({ value: g, label: g.split('/').join(' / '), text: g }))]} /></div>
+            <div className="field"><span className="flabel">{t('host_editor.folder')}</span>
+              <Picker label={t('host_editor.folder')} value={f.group} onChange={(v) => set('group', v)} icon="folder" placeholder={t('host_editor.no_folder')}
+                options={[{ value: '', label: t('host_editor.no_folder'), text: '' }, ...groupPaths(catalog.groups).map((g) => ({ value: g, label: g.split('/').join(' / '), text: g }))]} /></div>
           </div>
           <div className="field">
-            <span className="flabel">Authentication</span>
-            <div className="seg full" role="group" aria-label="Authentication method">
+            <span className="flabel">{t('host_editor.authentication')}</span>
+            <div className="seg full" role="group" aria-label={t('host_editor.authentication_method')}>
               {modes.map((x) => (
                 <button key={x.m} type="button" aria-pressed={mode === x.m} onClick={() => { setMode(x.m); setModeChanged(true); }}><Icon name={x.icon} size="sm" />{x.label}</button>
               ))}
             </div>
             {mode === 'credential' && (
-              <Picker label="Credential" value={f.credential} onChange={(v) => set('credential', v)} icon="cred" placeholder="Choose a credential"
+              <Picker label={t('host_editor.credential')} value={f.credential} onChange={(v) => set('credential', v)} icon="cred" placeholder={t('host_editor.choose_a_credential')}
                 options={catalog.credentials.map((cr) => ({ value: cr.name, text: cr.name + ' ' + cr.user, label: <>{cr.name} <span className="faint mono">· {cr.user} · {cr.key ? 'key ' + cr.key : cr.has_password ? 'password' : 'agent'}</span></>, meta: `${usage.get(cr.name) ?? 0} hosts` }))}
-                footer={{ label: 'New credential…', run: onNewCredential }} />
+                footer={{ label: t('host_editor.new_credential'), run: onNewCredential }} />
             )}
             {mode === 'key' && (
-              <Picker label="SSH key" value={f.key} onChange={(v) => set('key', v)} icon="key" placeholder={catalog.keys.length ? 'Choose a key' : 'No keys in this vault yet'}
+              <Picker label={t('host_editor.ssh_key')} value={f.key} onChange={(v) => set('key', v)} icon="key" placeholder={catalog.keys.length ? t('host_editor.choose_a_key') : t('host_editor.no_keys_in_this_vault')}
                 options={catalog.keys.map((k) => ({ value: k.name, text: k.name, label: <>{k.name} <span className="faint mono">· {k.type}</span></> }))} />
             )}
             {mode === 'password' && (
               <PasswordField value={f.password} onChange={(v) => set('password', v)}
                 saved={host?.has_password ? { kind: 'host', name: host.alias } : null}
-                placeholder={host?.has_password ? 'Saved — type to replace' : 'Password'} />
+                placeholder={host?.has_password ? t('host_editor.saved_type_to_replace') : t('host_editor.password')} />
             )}
-            {mode === 'agent' && <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />Uses the keys loaded in your SSH agent (<span className="mono">SSH_AUTH_SOCK</span>).</span>}
+            {mode === 'agent' && <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />{tr('host_editor.uses_the_keys_loaded_in', { span: <span className="mono">SSH_AUTH_SOCK</span> })}</span>}
           </div>
           <div className="field" data-sudo-field style={{ padding: 'var(--sp-3)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', background: 'var(--surface-raised)' }}>
-            <span className="flabel row" style={{ gap: 'var(--sp-2)' }}><Icon name="shield" size="sm" />Sudo password <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· for flint exec --sudo</span></span>
-            <div className="opt-list" role="radiogroup" aria-label="Sudo password">
+            <span className="flabel row" style={{ gap: 'var(--sp-2)' }}><Icon name="shield" size="sm" />{tr('host_editor.sudo_password_span', { span: <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>{t('host_editor.for_flint_exec_sudo')}</span> })}</span>
+            <div className="opt-list" role="radiogroup" aria-label={t('host_editor.sudo_password')}>
               <label className="opt"><input type="radio" name="sudo-mode" data-sudo-mode="login" checked={!sudoOwn} onChange={() => setSudoOwn(false)} />
-                <span className="opt-t"><span className="opt-l">Same as the login password</span><span className="hint">{loginSource}</span></span></label>
+                <span className="opt-t"><span className="opt-l">{t('host_editor.same_as_the_login_password')}</span><span className="hint">{loginSource}</span></span></label>
               <label className="opt"><input type="radio" name="sudo-mode" data-sudo-mode="own" checked={sudoOwn} onChange={() => setSudoOwn(true)} />
-                <span className="opt-t"><span className="opt-l">Its own password</span></span></label>
+                <span className="opt-t"><span className="opt-l">{t('host_editor.its_own_password')}</span></span></label>
             </div>
             {sudoOwn && host?.has_sudo_password && !sudoChange ? (
               <div className="row" data-sudo-saved style={{ marginLeft: 24, gap: 'var(--sp-2)', fontSize: 'var(--fs-sm)' }}>
-                <span className="badge ok"><Icon name="check" />Saved</span><span className="mono faint">••••••••••</span><span className="grow" />
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSudoChange(true)}>Change</button>
-                <button type="button" className="btn btn-danger-ghost btn-sm" onClick={() => setSudoOwn(false)}>Remove</button>
+                <span className="badge ok"><Icon name="check" />{t('host_editor.saved')}</span><span className="mono faint">••••••••••</span><span className="grow" />
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSudoChange(true)}>{t('host_editor.change')}</button>
+                <button type="button" className="btn btn-danger-ghost btn-sm" onClick={() => setSudoOwn(false)}>{t('common.remove')}</button>
               </div>
             ) : sudoOwn && (
               <div style={{ marginLeft: 24 }}>
-                <PasswordField value={f.sudo_password} onChange={(v) => set('sudo_password', v)} saved={null} label="Sudo password"
-                  placeholder={host?.has_sudo_password ? 'Type the new one' : 'Sudo password'} />
+                <PasswordField value={f.sudo_password} onChange={(v) => set('sudo_password', v)} saved={null} label={t('host_editor.sudo_password')}
+                  placeholder={host?.has_sudo_password ? t('host_editor.type_the_new_one') : t('host_editor.sudo_password')} />
               </div>
             )}
-            <span className="hint">Flint types it only when sudo asks, and only for a command you approved in its window.</span>
+            <span className="hint">{t('host_editor.flint_types_it_only_when')}</span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'var(--sp-4)' }}>
-            <div className="field"><label className="flabel" htmlFor="hu">User {mode === 'credential' && <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· overrides the credential's</span>}</label>
-              <div className="input"><input {...plainText} id="hu" className="mono" value={f.user} onChange={(e) => set('user', e.target.value)} placeholder={mode === 'credential' ? 'from the credential' : 'root'} /></div></div>
-            <div className="field"><span className="flabel">Jump host <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></span>
-              <Picker label="Jump host" value={f.jump} onChange={(v) => set('jump', v)} icon="jump" placeholder="None"
-                options={[{ value: '', label: 'None', text: '' }, ...catalog.hosts.filter((h) => h.alias !== host?.alias && h.type !== 'rdp').map((h) => ({ value: h.alias, text: h.alias, label: <span className="mono">{h.alias}</span>, meta: h.group }))]} /></div>
+            <div className="field"><label className="flabel" htmlFor="hu">{t('host_editor.user')}{' '}{mode === 'credential' && <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>{t('host_editor.overrides_the_credential_s')}</span>}</label>
+              <div className="input"><input {...plainText} id="hu" className="mono" value={f.user} onChange={(e) => set('user', e.target.value)} placeholder={mode === 'credential' ? t('host_editor.from_the_credential') : 'root'} /></div></div>
+            <div className="field"><span className="flabel">{tr('host_editor.jump_host_span', { span: <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>{t('host_editor.optional')}</span> })}</span>
+              <Picker label={t('host_editor.jump_host')} value={f.jump} onChange={(v) => set('jump', v)} icon="jump" placeholder={t('host_editor.none')}
+                options={[{ value: '', label: t('host_editor.none'), text: '' }, ...catalog.hosts.filter((h) => h.alias !== host?.alias && h.type !== 'rdp').map((h) => ({ value: h.alias, text: h.alias, label: <span className="mono">{h.alias}</span>, meta: h.group }))]} /></div>
           </div>
-          <div className="field"><label className="flabel" htmlFor="hc">On connect <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>· optional</span></label>
-            <div className="input"><Icon name="term" size="sm" className="faint" /><input {...plainText} id="hc" className="mono" value={f.command} onChange={(e) => set('command', e.target.value)} placeholder="e.g. herdr or tmux new -A -s main" autoComplete="off" /></div>
+          <div className="field"><label className="flabel" htmlFor="hc">{tr('host_editor.on_connect_span', { span: <span className="faint" style={{ fontWeight: 'var(--fw-regular)' }}>{t('host_editor.optional')}</span> })}</label>
+            <div className="input"><Icon name="term" size="sm" className="faint" /><input {...plainText} id="hc" className="mono" value={f.command} onChange={(e) => set('command', e.target.value)} placeholder={t('host_editor.e_g_herdr_or_tmux')} autoComplete="off" /></div>
             {f.command.trim() ? (
               <label className="check" style={{ fontSize: 'var(--fs-sm)' }}><input type="checkbox" checked={f.keep_shell} onChange={(e) => set('keep_shell', e.target.checked)} />
-                <span>Return to a shell when it exits <span className="faint">· otherwise the session ends with it</span></span></label>
-            ) : <span className="hint">Runs in your login shell every time a session opens, like typing it yourself.</span>}
+                <span>{tr('host_editor.return_to_a_shell_when', { span: <span className="faint">{t('host_editor.otherwise_the_session_ends_with')}</span> })}</span></label>
+            ) : <span className="hint">{t('host_editor.runs_in_your_login_shell')}</span>}
           </div>
           <HostTunnels host={host?.alias ?? null} focus={showTunnels} />
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', gap: 'var(--sp-4)' }}>
-            <div className="field"><span className="flabel">Tags</span>
+            <div className="field"><span className="flabel">{t('host_editor.tags')}</span>
               <div className="tags">
-                {f.tags.map((t) => <span key={t} className="tag">{t}<button type="button" aria-label={`Remove tag ${t}`} onClick={() => set('tags', f.tags.filter((x) => x !== t))}><Icon name="x" size="xs" /></button></span>)}
-                <input {...plainText} aria-label="Add tag" placeholder="Add tag…" value={tagInput} onChange={(e) => setTagInput(e.target.value)}
+                {f.tags.map((tagItem) => <span key={tagItem} className="tag">{tagItem}<button type="button" aria-label={t('host_editor.remove_tag_t', { tagItem })} onClick={() => set('tags', f.tags.filter((x) => x !== tagItem))}><Icon name="x" size="xs" /></button></span>)}
+                <input {...plainText} aria-label={t('host_editor.add_tag')} placeholder={t('host_editor.add_tag_2')} value={tagInput} onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTag(tagInput); }
                     if (e.key === 'Backspace' && !tagInput && f.tags.length) set('tags', f.tags.slice(0, -1));
                   }} onBlur={() => tagInput && addTag(tagInput)} />
               </div></div>
-            <div className="field"><span className="flabel">Colour</span>
-              <div className="swatches" role="radiogroup" aria-label="Host colour" style={{ height: 'var(--control-h)' }}>
-                <button type="button" className="sw none" role="radio" aria-checked={!f.color} aria-label="None" onClick={() => set('color', '')} />
+            <div className="field"><span className="flabel">{t('host_editor.colour')}</span>
+              <div className="swatches" role="radiogroup" aria-label={t('host_editor.host_colour')} style={{ height: 'var(--control-h)' }}>
+                <button type="button" className="sw none" role="radio" aria-checked={!f.color} aria-label={t('host_editor.none')} onClick={() => set('color', '')} />
                 {TAG_COLORS.map((n) => (
                   <button key={n} type="button" className={'sw c-' + n} role="radio" aria-checked={colorName(f.color) === n} aria-label={n} onClick={() => set('color', colorHex(n))} />
                 ))}
               </div></div>
           </div>
-          <div className="field"><label className="flabel" htmlFor="hn">Notes</label>
+          <div className="field"><label className="flabel" htmlFor="hn">{t('host_editor.notes')}</label>
             <div className="input area"><textarea data-prose id="hn" rows={2} value={f.notes} onChange={(e) => set('notes', e.target.value)} /></div></div>
           {test.s === 'host_key' && (
-            <div className="card prompt" role="alertdialog" aria-label={`Verify ${test.key.alias}`} style={{ boxShadow: 'none' }}
+            <div className="card prompt" role="alertdialog" aria-label={t('host_editor.verify_alias', { alias: test.key.alias })} style={{ boxShadow: 'none' }}
               onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); answerKey(false); } }}>
               <div className="prompt-h"><span className="prompt-ic warn"><Icon name="shield" /></span>
-                <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">Verify <span className="mono">{test.key.addr}</span></h2>
-                  <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>Flint hasn't seen this server before. Compare the fingerprint with one you got from its admin or console.</p></div></div>
-              <dl className="kv" style={{ margin: 0 }}><dt>Key type</dt><dd className="mono">{test.key.key_type}</dd></dl>
+                <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{tr('host_editor.verify_span', { span: <span className="mono">{test.key.addr}</span> })}</h2>
+                  <p className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{t('host_editor.flint_hasn_t_seen_this')}</p></div></div>
+              <dl className="kv" style={{ margin: 0 }}><dt>{t('host_editor.key_type')}</dt><dd className="mono">{test.key.key_type}</dd></dl>
               <div className="fp">{test.key.fingerprint}</div>
               <div className="row" style={{ gap: 'var(--sp-2)' }}>
-                <button type="button" className="btn btn-ghost" onClick={() => answerKey(false)}>Cancel test<Key>esc</Key></button>
+                <button type="button" className="btn btn-ghost" onClick={() => answerKey(false)}>{t('host_editor.cancel_test')}<Key>esc</Key></button>
                 <span className="grow" />
-                <button type="button" className="btn btn-primary" data-autofocus autoFocus onClick={() => answerKey(true)}>Trust and continue</button>
+                <button type="button" className="btn btn-primary" data-autofocus autoFocus onClick={() => answerKey(true)}>{t('host_editor.trust_and_continue')}</button>
               </div>
             </div>
           )}
           {test.s === 'ok' && (
             <span className="hint row" role="status" style={{ gap: 6, color: 'var(--success)' }}><Icon name="shield-ok" size="xs" />
-              Connection works · <span className="mono">{test.ev.target}</span> · host key verified, logged in ({test.ev.duration_ms} ms{test.ev.hops > 1 ? `, through ${test.ev.hops - 1} jump host${test.ev.hops > 2 ? 's' : ''}` : ''})</span>
+              {test.ev.hops > 1
+                ? tr('host_editor.connection_works_jumps', { target: <span className="mono">{test.ev.target}</span>, ms: test.ev.duration_ms, count: test.ev.hops - 1 })
+                : tr('host_editor.connection_works', { target: <span className="mono">{test.ev.target}</span>, ms: test.ev.duration_ms })}</span>
           )}
           {test.s === 'fail' && (
-            <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name={test.code === 'network' || test.code === 'timeout' ? 'wifi-off' : 'alert'} size="xs" />Test failed: {test.message}</span>
+            <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name={test.code === 'network' || test.code === 'timeout' ? 'wifi-off' : 'alert'} size="xs" />{tr('host_editor.test_failed_message', { message: test.message })}</span>
           )}
           {error && <span className="hint err row" role="alert" style={{ gap: 6 }}><Icon name="alert" size="xs" />{error}</span>}
         </div>
         <div className="modal-f">
-          {host && <button type="button" className="btn btn-danger-ghost" onClick={() => onDelete(host.alias)}><Icon name="trash" size="sm" />Delete host</button>}
+          {host && <button type="button" className="btn btn-danger-ghost" onClick={() => onDelete(host.alias)}><Icon name="trash" size="sm" />{t('host_editor.delete_host')}</button>}
           <button type="button" className="btn btn-secondary" onClick={runTest} disabled={test.s === 'running' || test.s === 'host_key'}>
-            {test.s === 'running' ? <><span className="spinner" style={{ width: 12, height: 12, borderWidth: 1.5 }} />Testing…</> : <><Icon name="link" size="sm" />Test connection</>}
+            {test.s === 'running' ? <><span className="spinner" style={{ width: 12, height: 12, borderWidth: 1.5 }} />{t('host_editor.testing')}</> : <><Icon name="link" size="sm" />{t('host_editor.test_connection')}</>}
           </button>
           <span className="grow" />
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel<Key>esc</Key></button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>{host ? 'Save' : 'Add host'}<span className="kbd-in">{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</span></button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>{t('common.cancel')}<Key>esc</Key></button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>{host ? t('common.save') : t('host_editor.add_host')}<span className="kbd-in">{os === 'mac' ? '⌘↵' : 'Ctrl+↵'}</span></button>
         </div>
       </form>
     </Modal>

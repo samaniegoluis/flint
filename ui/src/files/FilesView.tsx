@@ -26,6 +26,8 @@ import { livePair, pairs, paneKey, usePairs } from './pair';
 import { dropFolderAt, FileList, folderLabel, paneDrag, setPaneDrag } from './FileList';
 import { OtherPane, ServerPicker } from './OtherPane';
 import { PathField } from './PathField';
+import { fmtNumber, t } from '../i18n';
+import { tr } from '../i18n/react';
 
 interface Props {
   tab: Pane | undefined;
@@ -75,34 +77,34 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
 
   const pairButton = tab && ready && tab.kind !== 'rdp' && (pair ? (
     <button className={'btn btn-sm ' + (pair.hidden ? 'btn-secondary' : 'btn-ghost')} data-files-pair-chip aria-pressed={!pair.hidden}
-      title={pair.hidden ? `Show the ${pair.alias} pane` : `Hide the ${pair.alias} pane (Esc)`}
+      title={pair.hidden ? t('files_view.show_the_alias_pane', { alias: pair.alias }) : t('files_view.hide_the_alias_pane_esc', { alias: pair.alias })}
       onClick={() => pairs.setHidden(tab.id, !pair.hidden)}>
-      <span aria-hidden="true">⇄</span><span className="mono trunc" style={{ maxWidth: 120 }}>{pair.alias}</span>{copying > 0 && <span className="faint">· {copying} copying</span>}
+      <span aria-hidden="true">⇄</span><span className="mono trunc" style={{ maxWidth: 120 }}>{pair.alias}</span>{copying > 0 && <span className="faint">{tr('files_view.copying_copying', { copying })}</span>}
     </button>
   ) : (
     <button className="btn btn-secondary btn-sm" data-files-pick aria-haspopup="dialog" aria-expanded={picking} onClick={() => setPicking((p) => !p)}
-      title="Copy to another server: a second file pane, host to host through Flint">
-      <Icon name="arrow-r" size="sm" />Copy to another server…
+      title={t('files_view.copy_to_another_server_a')}>
+      <Icon name="arrow-r" size="sm" />{t('files_view.copy_to_another_server')}
     </button>
   ));
 
   const title = (
     <div className="side-title">
-      <span className="strong grow trunc" style={{ fontSize: 'var(--fs-sm)' }}>Files{tab && <> · {paneNo > 0 && <><span className="sp-num files-pane-no" data-files-pane-no title={`Pane ${paneNo}`}>{paneNo}</span> </>}<span className="mono" data-files-host>{tab.alias}</span></>}</span>
+      <span className="strong grow trunc" style={{ fontSize: 'var(--fs-sm)' }}>{t('files_view.files')}{tab && <> · {paneNo > 0 && <><span className="sp-num files-pane-no" data-files-pane-no title={t('files_view.pane_paneno', { paneNo })}>{paneNo}</span> </>}<span className="mono" data-files-host>{tab.alias}</span></>}</span>
       {pairButton}
-      {ready && <button className="icon-btn" aria-label="Refresh" title="Refresh" data-files-refresh onClick={() => tab && files.refresh(tab.id)}><Icon name="reconnect" size="sm" /></button>}
+      {ready && <button className="icon-btn" aria-label={t('files_view.refresh')} title={t('files_view.refresh')} data-files-refresh onClick={() => tab && files.refresh(tab.id)}><Icon name="reconnect" size="sm" /></button>}
     </div>
   );
 
   // A remote desktop has no files to browse (spec v8: SSH hosts only).
   if (tab?.kind === 'rdp') {
     return (
-      <aside className="sidebar" data-for="files" aria-label="Files" data-files-empty data-files-rdp>
+      <aside className="sidebar" data-for="files" aria-label={t('files_view.files')} data-files-empty data-files-rdp>
         {title}
         <div className="empty grow" style={{ justifyContent: 'center', padding: 'var(--sp-6)' }}>
           <span className="empty-ic"><Icon name="files" size="xl" /></span>
-          <span className="strong">Files is for SSH hosts</span>
-          <span style={{ fontSize: 'var(--fs-sm)' }}><span className="mono">{tab.alias}</span> is a remote desktop. Files follows the active tab: switch to an SSH tab to browse its files.</span>
+          <span className="strong">{t('files_view.files_is_for_ssh_hosts')}</span>
+          <span style={{ fontSize: 'var(--fs-sm)' }}>{tr('files_view.span_is_a_remote_desktop', { span: <span className="mono">{tab.alias}</span> })}</span>
         </div>
       </aside>
     );
@@ -110,21 +112,21 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
 
   if (!tab || !ready) {
     return (
-      <aside className="sidebar" data-for="files" aria-label="Files" data-files-empty>
+      <aside className="sidebar" data-for="files" aria-label={t('files_view.files')} data-files-empty>
         {title}
         <div className="empty grow" style={{ justifyContent: 'center', padding: 'var(--sp-6)' }}>
           <span className="empty-ic"><Icon name="files" size="xl" /></span>
           {tab?.status === 'connecting' || tab?.status === 'prompt'
-            ? <><span className="strong">Connecting to {tab.alias}…</span><span style={{ fontSize: 'var(--fs-sm)' }}>Files opens on the session once it is connected.</span></>
+            ? <><span className="strong">{tr('files_view.connecting_to_alias', { alias: tab.alias })}</span><span style={{ fontSize: 'var(--fs-sm)' }}>{t('files_view.files_opens_on_the_session')}</span></>
             : <>
-              <span className="strong">Open a session to browse its files</span>
-              <span style={{ fontSize: 'var(--fs-sm)' }}>{tab ? <><span className="mono">{tab.alias}</span> is disconnected. </> : null}Files follows the active tab.</span>
+              <span className="strong">{t('files_view.open_a_session_to_browse')}</span>
+              <span style={{ fontSize: 'var(--fs-sm)' }}>{tab ? <>{tr('files_view.span_is_disconnected', { span: <span className="mono">{tab.alias}</span> })}</> : null}{t('files_view.files_follows_the_active_tab')}</span>
             </>}
           <div className="col" style={{ gap: 'var(--sp-2)', width: '100%', paddingTop: 'var(--sp-2)' }}>
             {tab && tab.status === 'ended' && (
-              <button className="btn btn-primary" data-files-reconnect onClick={() => onReconnect(tab.id)}><Icon name="reconnect" size="sm" />Reconnect {tab.alias}<Kbd action="reconnect" inline /></button>
+              <button className="btn btn-primary" data-files-reconnect onClick={() => onReconnect(tab.id)}><Icon name="reconnect" size="sm" />{tr('files_view.reconnect_alias', { alias: tab.alias })}<Kbd action="reconnect" inline /></button>
             )}
-            <button className="btn btn-ghost" onClick={onGoToHost}>Go to host…<Kbd action="gotoHost" /></button>
+            <button className="btn btn-ghost" onClick={onGoToHost}>{t('files_view.go_to_host')}<Kbd action="gotoHost" /></button>
           </div>
         </div>
         {resizer}
@@ -145,56 +147,56 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
     if (other.hidden) pairs.setHidden(tabId, false);
   };
   const rename = (e: FileEntry) => onAsk({
-    title: `Rename ${e.name}`, label: 'New name', value: e.name, action: 'Rename',
+    title: t('files_view.rename_name', { name: e.name }), label: t('files_view.new_name'), value: e.name, action: t('common.rename'),
     run: async (v) => {
-      if (!validName(v)) throw new Error('A name cannot be empty, ".", ".." or contain "/".');
+      if (!validName(v)) throw new Error(t('files.invalid_name'));
       if (v === e.name) return;
       await files.rename(tabId, e, v);
     },
   });
   const newFolder = () => onAsk({
-    title: 'New folder', label: 'Name', value: '', action: 'Create folder', hint: `In ${path}`,
+    title: t('files_view.new_folder'), label: t('files_view.name'), value: '', action: t('files_view.create_folder'), hint: t('files_view.in_path', { path }),
     run: async (v) => {
-      if (!validName(v)) throw new Error('A name cannot be empty, ".", ".." or contain "/".');
+      if (!validName(v)) throw new Error(t('files.invalid_name'));
       await files.mkdir(tabId, v);
     },
   });
   const remove = (e: FileEntry) => onConfirm({
-    title: `Delete ${e.name}?`,
+    title: t('files_view.delete_name', { name: e.name }),
     body: e.kind === 'dir'
-      ? `The folder ${e.path} and everything in it are deleted on ${tab.alias}. This cannot be undone.`
-      : `${e.path} is deleted on ${tab.alias}. This cannot be undone.`,
-    action: e.kind === 'dir' ? 'Delete folder' : 'Delete file',
-    run: async () => { await files.remove(tabId, e); notify(`Deleted ${e.name}`); },
+      ? t('files_view.the_folder_path_and_everything', { path: e.path, alias: tab.alias })
+      : t('files_view.path_is_deleted_on_alias', { path: e.path, alias: tab.alias }),
+    action: e.kind === 'dir' ? t('files_view.delete_folder') : t('files_view.delete_file'),
+    run: async () => { await files.remove(tabId, e); notify(t('files_view.deleted_name', { name: e.name })); },
   });
   const download = async (e: FileEntry) => {
     try {
-      const { path: local } = await api.dialogSave(`Download ${e.name}`, e.name);
+      const { path: local } = await api.dialogSave(t('files_view.download_title', { name: e.name }), e.name);
       if (local) files.download(tabId, tab.session, tab.alias, e, local);
     } catch (err) { fail(err); }
   };
   const upload = async () => {
     try {
-      const { path: local } = await api.dialogOpen(`Upload to ${tab.alias}:${path}`);
+      const { path: local } = await api.dialogOpen(t('files_view.upload_title', { alias: tab.alias, path }));
       if (local) files.upload(tabId, tab.session, tab.alias, [local], path);
     } catch (err) { fail(err); }
   };
   const copyPath = (p: string) => {
     const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(p)));
-    api.terminalClipboard('c;' + b64).then(() => notify({ text: 'Copied the path', key: 'copied:path' })).catch(fail);
+    api.terminalClipboard('c;' + b64).then(() => notify({ text: t('files_view.copied_the_path'), key: 'copied:path' })).catch(fail);
   };
 
   const menuItems = (e: FileEntry | null): MenuItem[] => {
-    if (!e) return [{ label: 'New folder…', icon: 'folder', run: newFolder }, { label: 'Upload…', icon: 'upload', run: upload }];
+    if (!e) return [{ label: t('files_view.new_folder_2'), icon: 'folder', run: newFolder }, { label: t('files_view.upload'), icon: 'upload', run: upload }];
     const items: MenuItem[] = [];
-    if (other) items.push({ label: `Copy to ${other.alias}`, icon: 'arrow-r', hint: os === 'mac' ? '⌘→' : 'Ctrl+Shift+→', run: () => copyToOther(e) });
+    if (other) items.push({ label: t('files_view.copy_to_alias', { alias: other.alias }), icon: 'arrow-r', hint: os === 'mac' ? '⌘→' : t('files_view.ctrl_shift'), run: () => copyToOther(e) });
     return [
       ...items,
-      { label: 'Download…', icon: 'download', hint: os === 'mac' ? '⌘↓' : 'Ctrl+Shift+↓', run: () => download(e) },
-      { label: 'Rename', icon: 'edit', hint: e.kind === 'dir' ? undefined : '↵', run: () => rename(e) },
-      { label: 'Copy path', icon: 'clip', run: () => copyPath(e.path) },
-      { label: 'New folder…', icon: 'folder', run: newFolder },
-      { label: 'Delete…', icon: 'trash', danger: true, sep: true, hint: os === 'mac' ? '⌘⌫' : 'Ctrl+Shift+⌫', run: () => remove(e) },
+      { label: t('files_view.download'), icon: 'download', hint: os === 'mac' ? '⌘↓' : t('files_view.ctrl_shift_2'), run: () => download(e) },
+      { label: t('common.rename'), icon: 'edit', hint: e.kind === 'dir' ? undefined : '↵', run: () => rename(e) },
+      { label: t('files_view.copy_path'), icon: 'clip', run: () => copyPath(e.path) },
+      { label: t('files_view.new_folder_2'), icon: 'folder', run: newFolder },
+      { label: t('files_view.delete'), icon: 'trash', danger: true, sep: true, hint: os === 'mac' ? '⌘⌫' : t('files_view.ctrl_shift_3'), run: () => remove(e) },
     ];
   };
 
@@ -227,7 +229,7 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
   };
 
   return (
-    <aside className="sidebar" data-for="files" aria-label={`Files · ${tab.alias}`} data-files-path={path} data-files-session={tab.session}
+    <aside className="sidebar" data-for="files" aria-label={t('files_view.files_alias', { alias: tab.alias })} data-files-path={path} data-files-session={tab.session}
       onDragEnter={(e) => { if (inFloat(e)) return; if (hasFiles(e) && !paneDrag()) { e.preventDefault(); setDragging((n) => n + 1); } }}
       onDragOver={(e) => {
         if (inFloat(e)) return;
@@ -249,23 +251,23 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
       {picking && !pair && <ServerPicker current={tab.alias} onClose={() => setPicking(false)} onPick={(alias) => { setPicking(false); pairs.open(tabId, alias, tabs); }} />}
       <div className={'col grow' + (drop ? ' fpane target' : '')} style={{ minHeight: 0, borderRight: 0 }}>
         <div className="row" style={{ height: 36, flex: 'none', padding: '0 var(--sp-2)', gap: 'var(--sp-1)', borderBottom: '1px solid var(--border-subtle)' }}>
-          <button className="icon-btn" aria-label={`Up one folder (${os === 'mac' ? '⌘↑' : 'Ctrl+Shift+↑'})`} title={`Up one folder (${os === 'mac' ? '⌘↑' : 'Ctrl+Shift+↑'})`}
+          <button className="icon-btn" aria-label={t('files_view.up_one_folder_p', { p: os === 'mac' ? '⌘↑' : 'Ctrl+Shift+↑' })} title={t('files_view.up_one_folder_p', { p: os === 'mac' ? '⌘↑' : 'Ctrl+Shift+↑' })}
             data-files-up disabled={!path || path === '/'} onClick={() => files.up(tabId)}><Icon name="up" size="sm" /></button>
           <PathField fkey={tabId} path={path} os={os} onError={(m) => notify(m, 'error')} onDone={() => listRef.current?.focus()}>
             <Crumbs path={path} onGo={(p) => files.go(tabId, p)} />
           </PathField>
           <button className={'icon-btn' + (tab.cwd ? '' : ' is-disabled')} data-files-goto-cwd aria-disabled={!tab.cwd}
-            aria-label={tab.cwd ? `Go to the terminal's current folder (${tab.cwd})` : "Go to the terminal's folder: the shell does not report it (OSC 7)"}
-            title={tab.cwd ? `Go to the terminal's current folder (${tab.cwd})` : "The shell does not report its folder. Turn on OSC 7 in the shell to use this: see Docs › The Files view"}
+            aria-label={tab.cwd ? t('files_view.go_to_the_terminal_s', { cwd: tab.cwd }) : t('files_view.go_to_the_terminal_s_2')}
+            title={tab.cwd ? t('files_view.go_to_the_terminal_s', { cwd: tab.cwd }) : t('files_view.the_shell_does_not_report')}
             onClick={() => { if (tab.cwd) files.go(tabId, tab.cwd); }}>
             <Icon name="target" size="sm" className={synced ? 'accent-t' : tab.cwd ? '' : 'faint'} />
           </button>
         </div>
         <div className="row" style={{ flex: 'none', padding: 'var(--sp-2) var(--sp-3)', gap: 'var(--sp-2)' }}>
-          <button className="btn btn-secondary btn-sm" data-files-upload onClick={upload}><Icon name="upload" size="sm" />Upload</button>
-          <button className="btn btn-ghost btn-sm" data-files-mkdir onClick={newFolder}><Icon name="folder" size="sm" />New folder</button>
+          <button className="btn btn-secondary btn-sm" data-files-upload onClick={upload}><Icon name="upload" size="sm" />{t('files_view.upload_2')}</button>
+          <button className="btn btn-ghost btn-sm" data-files-mkdir onClick={newFolder}><Icon name="folder" size="sm" />{t('files_view.new_folder')}</button>
           <span className="grow" />
-          <span className="hint" data-files-count>{folder?.loading && entries.length === 0 ? 'Loading…' : synced ? 'Synced with terminal' : `${entries.length} item${entries.length === 1 ? '' : 's'}`}</span>
+          <span className="hint" data-files-count>{folder?.loading && entries.length === 0 ? t('files_view.loading') : synced ? t('files_view.synced_with_terminal') : t('files_view.n_items', { count: entries.length, n: fmtNumber(entries.length) })}</span>
         </div>
         <FileList fkey={tabId} folder={folder} os={os} listRef={listRef} dropPath={drop?.row ?? null}
           onOpenFile={download} onMenu={(x, y, entry) => setMenu({ x, y, entry })} onRename={rename} onRemove={remove}
@@ -275,14 +277,14 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
       {dragging > 0 && (
         <div className="dropzone" aria-live="polite" data-files-dropzone>
           <span className="prompt-ic accent" style={{ width: 44, height: 44 }}><Icon name="upload" size="lg" /></span>
-          <span className="strong">Drop to upload</span>
+          <span className="strong">{t('files_view.drop_to_upload')}</span>
           <span className="mono accent-t" style={{ fontSize: 'var(--fs-xs)' }}>→ {tab.alias}:{path}</span>
-          <span className="hint">Existing files ask before they're replaced</span>
+          <span className="hint">{t('files_view.existing_files_ask_before_they')}</span>
         </div>
       )}
       {drop && (
         <div className="drag-ghost" style={{ position: 'fixed', left: drop.x + 14, top: drop.y + 10 }} data-files-drag-label>
-          <span className="tooltip"><Icon name="arrow-r" size="sm" />Copy to {tab.alias} · {folderLabel(drop.path)}</span>
+          <span className="tooltip"><Icon name="arrow-r" size="sm" />{tr('files_view.copy_to_alias_folderlabel', { alias: tab.alias, folderLabel: folderLabel(drop.path) })}</span>
         </div>
       )}
       {resizer}
@@ -314,12 +316,13 @@ function Crumbs({ path, onGo }: { path: string; onGo: (p: string) => void }) {
   );
 }
 
-function rateLine(t: Transfer): string {
-  if (t.state === 'staging') return 'Reading the dropped files…';
-  if (t.rate <= 0) return t.state === 'running' ? 'Starting…' : '';
-  const left = t.total > 0 ? Math.max(0, (t.total - t.bytes) / t.rate) : -1;
-  const eta = left < 0 ? '' : left < 60 ? ` · ${Math.ceil(left)} s left` : ` · ${Math.ceil(left / 60)} min left`;
-  return `${humanSize(Math.round(t.rate))}/s${eta}`;
+function rateLine(x: Transfer): string {
+  if (x.state === 'staging') return t('files_view.reading_dropped');
+  if (x.rate <= 0) return x.state === 'running' ? t('files_view.starting') : '';
+  const left = x.total > 0 ? Math.max(0, (x.total - x.bytes) / x.rate) : -1;
+  const rate = humanSize(Math.round(x.rate));
+  if (left < 0) return t('files_view.rate', { rate });
+  return left < 60 ? t('files_view.rate_s_left', { rate, s: Math.ceil(left) }) : t('files_view.rate_min_left', { rate, min: Math.ceil(left / 60) });
 }
 
 function TransferQueue({ transfers, tabId }: { transfers: Transfer[]; tabId: string }) {
@@ -329,9 +332,9 @@ function TransferQueue({ transfers, tabId }: { transfers: Transfer[]; tabId: str
   return (
     <div className="col" data-files-queue style={{ flex: 'none', borderTop: '1px solid var(--border-default)', background: 'var(--surface-raised)', maxHeight: '40%', minHeight: 0 }}>
       <div className="row" style={{ height: 32, padding: '0 var(--sp-2) 0 var(--sp-3)', flex: 'none' }}>
-        <span className="label grow">Transfers · {transfers.length}</span>
-        {relay && <span className="hint" style={{ marginRight: 'var(--sp-2)' }}>bytes pass through Flint</span>}
-        <button className="btn btn-ghost btn-sm" data-files-clear disabled={doneCount === 0} onClick={() => files.clearDone(tabId)}>Clear done</button>
+        <span className="label grow">{tr('files_view.transfers_length', { length: transfers.length })}</span>
+        {relay && <span className="hint" style={{ marginRight: 'var(--sp-2)' }}>{t('files_view.bytes_pass_through_flint')}</span>}
+        <button className="btn btn-ghost btn-sm" data-files-clear disabled={doneCount === 0} onClick={() => files.clearDone(tabId)}>{t('files_view.clear_done')}</button>
       </div>
       <div className="col" style={{ overflowY: 'auto', paddingBottom: 'var(--sp-1)' }}>
         {transfers.map((t) => <TransferRow key={t.id} t={t} others={conflicts - 1} />)}
@@ -340,83 +343,88 @@ function TransferQueue({ transfers, tabId }: { transfers: Transfer[]; tabId: str
   );
 }
 
-const VERBS = { upload: ['upload', 'Uploaded'], download: ['download', 'Downloaded'], relay: ['copy', 'Copied'] } as const;
+/** Each direction's Cancel label and the word a finished transfer shows: catalog keys. */
+const VERBS = {
+  upload: ['files_view.cancel_upload', 'files_view.uploaded'], download: ['files_view.cancel_download', 'files_view.downloaded'], relay: ['files_view.cancel_copy', 'files_view.copied'],
+} as const;
 
-function TransferRow({ t, others }: { t: Transfer; others: number }) {
-  const [verb, doneVerb] = VERBS[t.direction];
-  const pct = t.total > 0 ? Math.min(100, Math.round((t.bytes / t.total) * 100)) : 0;
-  const size = t.total > 0 ? `${humanSize(t.bytes)}/${humanSize(t.total)}` : humanSize(t.bytes);
+function TransferRow({ t: transferItem, others }: { t: Transfer; others: number }) {
+  const [cancelKey, doneKey] = VERBS[transferItem.direction];
+  const pct = transferItem.total > 0 ? Math.min(100, Math.round((transferItem.bytes / transferItem.total) * 100)) : 0;
+  const size = transferItem.total > 0 ? `${humanSize(transferItem.bytes)}/${humanSize(transferItem.total)}` : humanSize(transferItem.bytes);
   const [all, setAll] = useState(false);
-  let icon = <Icon name={t.direction === 'upload' ? 'upload' : t.direction === 'download' ? 'download' : 'arrow-r'} size="sm" className="accent-t" />;
+  let icon = <Icon name={transferItem.direction === 'upload' ? 'upload' : transferItem.direction === 'download' ? 'download' : 'arrow-r'} size="sm" className="accent-t" />;
   let status: ReactNode = <span className="mono faint" style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}>{size}</span>;
-  let action: ReactNode = <button className="icon-btn" aria-label={`Cancel ${verb}`} title={`Cancel ${verb}`} data-transfer-cancel onClick={() => files.cancel(t.id)}><Icon name="x" size="xs" /></button>;
-  if (t.state === 'queued') {
+  let action: ReactNode = <button className="icon-btn" aria-label={t(cancelKey)} title={t(cancelKey)} data-transfer-cancel onClick={() => files.cancel(transferItem.id)}><Icon name="x" size="xs" /></button>;
+  if (transferItem.state === 'queued') {
     icon = <Icon name="clock" size="sm" className="faint" />;
-    status = <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>Queued</span>;
-    action = <button className="icon-btn" aria-label="Remove from queue" title="Remove from queue" data-transfer-cancel onClick={() => files.cancel(t.id)}><Icon name="x" size="xs" /></button>;
-  } else if (t.state === 'done') {
+    status = <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>{t('files_view.queued')}</span>;
+    action = <button className="icon-btn" aria-label={t('files_view.remove_from_queue')} title={t('files_view.remove_from_queue')} data-transfer-cancel onClick={() => files.cancel(transferItem.id)}><Icon name="x" size="xs" /></button>;
+  } else if (transferItem.state === 'done') {
     icon = <Icon name="check" size="sm" className="ok-t" />;
-    status = <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>{doneVerb} · {t.recursive ? `${t.filesDone} file${t.filesDone === 1 ? '' : 's'} · ` : ''}{humanSize(t.bytes)}</span>;
+    status = <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>{transferItem.recursive
+      ? t('files_view.done_files', { done: t(doneKey), count: transferItem.filesDone, size: humanSize(transferItem.bytes) })
+      : t('files_view.done_size', { done: t(doneKey), size: humanSize(transferItem.bytes) })}</span>;
     action = null;
-  } else if (t.state === 'cancelled') {
+  } else if (transferItem.state === 'cancelled') {
     icon = <Icon name="x" size="sm" className="faint" />;
-    status = <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>{t.skipped ? 'Skipped' : 'Cancelled'}</span>;
-    action = <button className="icon-btn" aria-label="Dismiss" title="Dismiss" onClick={() => files.dismiss(t.id)}><Icon name="x" size="xs" /></button>;
-  } else if (t.state === 'failed') {
+    status = <span className="faint" style={{ fontSize: 'var(--fs-xs)' }}>{transferItem.skipped ? t('files_view.skipped') : t('files_view.cancelled')}</span>;
+    action = <button className="icon-btn" aria-label={t('files_view.dismiss')} title={t('files_view.dismiss')} onClick={() => files.dismiss(transferItem.id)}><Icon name="x" size="xs" /></button>;
+  } else if (transferItem.state === 'failed') {
     icon = <Icon name="alert" size="sm" className="danger-t" />;
-    status = <span className="danger-t trunc" style={{ fontSize: 'var(--fs-xs)', maxWidth: 140 }} title={t.error?.message}>{failureLabel(t)}</span>;
+    status = <span className="danger-t trunc" style={{ fontSize: 'var(--fs-xs)', maxWidth: 140 }} title={transferItem.error?.message}>{failureLabel(transferItem)}</span>;
     action = <>
-      {t.local && <button className="btn btn-ghost btn-sm" data-transfer-retry onClick={() => files.retry(t.id)}>Retry</button>}
-      <button className="icon-btn" aria-label="Dismiss" title="Dismiss" onClick={() => files.dismiss(t.id)}><Icon name="x" size="xs" /></button>
+      {transferItem.local && <button className="btn btn-ghost btn-sm" data-transfer-retry onClick={() => files.retry(transferItem.id)}>{t('common.retry')}</button>}
+      <button className="icon-btn" aria-label={t('files_view.dismiss')} title={t('files_view.dismiss')} onClick={() => files.dismiss(transferItem.id)}><Icon name="x" size="xs" /></button>
     </>;
   }
-  const active = t.state === 'running' || t.state === 'staging';
-  const where = t.direction === 'upload' ? `${t.local} → ${t.alias}:${t.remote}` : t.direction === 'download' ? `${t.alias}:${t.remote} → ${t.local}` : `${t.alias}:${t.remote} → ${t.toAlias}:${t.local}`;
+  const active = transferItem.state === 'running' || transferItem.state === 'staging';
+  const where = transferItem.direction === 'upload' ? `${transferItem.local} → ${transferItem.alias}:${transferItem.remote}` : transferItem.direction === 'download' ? `${transferItem.alias}:${transferItem.remote} → ${transferItem.local}` : `${transferItem.alias}:${transferItem.remote} → ${transferItem.toAlias}:${transferItem.local}`;
   // 14d4: a name clash asks in a strip, and may answer the other clashes too.
-  if (t.state === 'conflict') {
-    const target = t.direction === 'upload' ? t.alias : t.direction === 'relay' ? t.toAlias : 'this computer';
-    const replace = () => (all ? files.resolveAll(t.tabId, true) : files.retry(t.id, true));
-    const skip = () => (all ? files.resolveAll(t.tabId, false) : files.skip(t.id));
+  if (transferItem.state === 'conflict') {
+    const target = transferItem.direction === 'upload' ? transferItem.alias : transferItem.direction === 'relay' ? transferItem.toAlias : t('files_view.this_computer');
+    const replace = () => (all ? files.resolveAll(transferItem.tabId, true) : files.retry(transferItem.id, true));
+    const skip = () => (all ? files.resolveAll(transferItem.tabId, false) : files.skip(transferItem.id));
     return (
-      <div className="conflict" role="alert" data-transfer={t.name} data-state={t.state} data-direction={t.direction} title={where}>
+      <div className="conflict" role="alert" data-transfer={transferItem.name} data-state={transferItem.state} data-direction={transferItem.direction} title={where}>
         <div className="row" style={{ fontSize: 'var(--fs-sm)', gap: 'var(--sp-2)' }}>
           <Icon name="alert" size="sm" className="warn-t" />
-          <span className="grow" style={{ overflowWrap: 'anywhere' }}><span className="mono strong">{t.name}</span> already exists on <span className="mono">{target}</span>{t.folder ? <> in {folderLabel(t.folder)}</> : null}</span>
+          <span className="grow" style={{ overflowWrap: 'anywhere' }}>{tr(transferItem.folder ? 'files_view.exists_on_in' : 'files_view.exists_on', { name: <span className="mono strong">{transferItem.name}</span>, target: <span className="mono">{target}</span>, folder: transferItem.folder ? folderLabel(transferItem.folder) : '' })}</span>
         </div>
         <div className="row" style={{ gap: 'var(--sp-2)' }}>
           {others > 0 && (
             <label className="opt"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} data-transfer-all />
-              <span className="opt-t"><span className="opt-l" style={{ fontSize: 'var(--fs-xs)' }}>Do this for the other {others} conflict{others === 1 ? '' : 's'}</span></span></label>
+              <span className="opt-t"><span className="opt-l" style={{ fontSize: 'var(--fs-xs)' }}>{t('files_view.do_this_for_others', { count: others })}</span></span></label>
           )}
           <span className="grow" />
-          <button className="btn btn-ghost btn-sm" data-transfer-skip onClick={skip}>Skip</button>
-          <button className="btn btn-secondary btn-sm" data-transfer-replace onClick={replace}>Replace</button>
+          <button className="btn btn-ghost btn-sm" data-transfer-skip onClick={skip}>{t('files_view.skip')}</button>
+          <button className="btn btn-secondary btn-sm" data-transfer-replace onClick={replace}>{t('files_view.replace')}</button>
         </div>
       </div>
     );
   }
   return (
-    <div className="xfer" data-transfer={t.name} data-state={t.state} data-direction={t.direction}>
+    <div className="xfer" data-transfer={transferItem.name} data-state={transferItem.state} data-direction={transferItem.direction}>
       <div className="row" style={{ fontSize: 'var(--fs-sm)', gap: 'var(--sp-2)' }}>
-        {icon}<span className="mono grow trunc" title={where}>{t.name}</span>{status}{action}
+        {icon}<span className="mono grow trunc" title={where}>{transferItem.name}</span>{status}{action}
       </div>
-      {t.direction === 'relay' && (
-        <span className="chain" style={{ paddingLeft: 22 }} data-transfer-route title={where}><span className="node">{t.alias}</span><Icon name="chain" size="xs" /><span className="node caller">{t.toAlias}</span></span>
+      {transferItem.direction === 'relay' && (
+        <span className="chain" style={{ paddingLeft: 22 }} data-transfer-route title={where}><span className="node">{transferItem.alias}</span><Icon name="chain" size="xs" /><span className="node caller">{transferItem.toAlias}</span></span>
       )}
-      {active && <div className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><i style={{ width: t.total > 0 ? pct + '%' : '30%' }} className={t.total > 0 ? '' : 'indeterminate'} /></div>}
-      {active && <span className="hint mono">{t.recursive && t.file ? `${t.filesDone} done · ` : ''}{rateLine(t)}</span>}
+      {active && <div className="progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><i style={{ width: transferItem.total > 0 ? pct + '%' : '30%' }} className={transferItem.total > 0 ? '' : 'indeterminate'} /></div>}
+      {active && <span className="hint mono">{transferItem.recursive && transferItem.file ? t('files_view.n_done', { n: transferItem.filesDone }) : ''}{rateLine(transferItem)}</span>}
     </div>
   );
 }
 
-function failureLabel(t: Transfer): string {
-  switch (t.error?.code) {
-    case 'permission_denied': return 'Permission denied';
-    case 'not_found': return 'Not found';
-    case 'not_a_directory': return 'Not a folder';
-    case 'network': return 'Connection lost';
-    case 'exists': return 'Already there';
-    default: return t.error?.message ?? 'Failed';
+function failureLabel(x: Transfer): string {
+  switch (x.error?.code) {
+    case 'permission_denied': return t('files_view.fail.permission_denied');
+    case 'not_found': return t('files_view.fail.not_found');
+    case 'not_a_directory': return t('files_view.fail.not_a_folder');
+    case 'network': return t('files_view.fail.connection_lost');
+    case 'exists': return t('files_view.fail.already_there');
+    default: return x.error?.message ?? t('files_view.fail.failed');
   }
 }
 

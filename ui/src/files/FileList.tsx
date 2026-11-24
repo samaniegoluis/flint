@@ -8,6 +8,7 @@ import { Icon } from '../ui/Icon';
 import { humanSize, humanTime } from './paths';
 import { files, type FolderState } from './store';
 import { editPath } from './PathField';
+import { t } from '../i18n';
 
 /** The row being dragged between panes: set on dragstart, cleared on dragend. */
 export interface PaneDrag {
@@ -85,8 +86,8 @@ export function FileList({ fkey, folder, os, listRef, dropPath, onOpenFile, onMe
   };
 
   return (
-    <div className="col grow" role="grid" aria-label="Folder contents" aria-busy={folder?.loading} style={{ minHeight: 0 }}>
-      <div className="frow head" role="row"><span role="columnheader">Name</span><span className="num" role="columnheader">Size</span><span className="num" role="columnheader">Modified</span></div>
+    <div className="col grow" role="grid" aria-label={t('file_list.folder_contents')} aria-busy={folder?.loading} style={{ minHeight: 0 }}>
+      <div className="frow head" role="row"><span role="columnheader">{t('file_list.name')}</span><span className="num" role="columnheader">{t('file_list.size')}</span><span className="num" role="columnheader">{t('file_list.modified')}</span></div>
       <div ref={listRef} className="col grow files-list" tabIndex={0} data-files-list style={{ minHeight: 0, overflowY: 'auto' }}
         onScroll={(e) => files.setScroll(fkey, e.currentTarget.scrollTop)}
         onKeyDown={onKey}
@@ -94,7 +95,7 @@ export function FileList({ fkey, folder, os, listRef, dropPath, onOpenFile, onMe
         {folder?.error ? (
           <div className="empty" style={{ padding: 'var(--sp-4)', gap: 'var(--sp-2)' }} data-files-error>
             <span className="danger-t" style={{ fontSize: 'var(--fs-sm)' }}>{folder.error.message}</span>
-            <button className="btn btn-secondary btn-sm" onClick={() => files.refresh(fkey)}>Try again</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => files.refresh(fkey)}>{t('file_list.try_again')}</button>
           </div>
         ) : (
           <>
@@ -119,13 +120,13 @@ export function FileList({ fkey, folder, os, listRef, dropPath, onOpenFile, onMe
                 onClick={() => files.select(fkey, e.path)}
                 onDoubleClick={() => (e.kind === 'dir' || e.kind === 'link' ? open(e) : onOpenFile(e))}
                 onContextMenu={(ev) => { ev.preventDefault(); ev.stopPropagation(); files.select(fkey, e.path); onMenu(ev.clientX, ev.clientY, e); }}
-                title={e.kind === 'link' ? `${e.name} (a link)` : e.name}>
+                title={e.kind === 'link' ? t('file_list.name_a_link', { name: e.name }) : e.name}>
                 <span className="fname"><Icon name={e.kind === 'dir' ? 'folder' : e.kind === 'link' ? 'link' : 'file'} size="sm" className={e.kind === 'dir' ? 'dir' : ''} /><span className="trunc">{e.name}</span></span>
                 <span className="num">{e.kind === 'dir' ? '—' : humanSize(e.size)}</span>
                 <span className="num" title={new Date(e.mtime * 1000).toLocaleString()}>{humanTime(e.mtime)}</span>
               </div>
             ))}
-            {!folder?.loading && entries.length === 0 && <div className="hint" style={{ padding: 'var(--sp-3)' }} data-files-folder-empty>This folder is empty.</div>}
+            {!folder?.loading && entries.length === 0 && <div className="hint" style={{ padding: 'var(--sp-3)' }} data-files-folder-empty>{t('file_list.this_folder_is_empty')}</div>}
           </>
         )}
       </div>

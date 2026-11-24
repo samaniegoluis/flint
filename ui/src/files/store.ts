@@ -16,6 +16,7 @@ import { useSyncExternalStore } from 'react';
 import { api, on, toFlintError, type FlintError } from '../api/backend';
 import type { FileEntry, TransferEvent } from '../api/types';
 import { baseName, joinPath, parentPath, resolveTypedPath, sortEntries } from './paths';
+import { t } from '../i18n';
 
 export interface FolderState {
   /** The session this listing came from: a reconnect lists again. */
@@ -238,7 +239,7 @@ class FilesStore {
     const session = f.session;
     const home = typed.trim().replace(/^["']/, '').startsWith('~') ? (await api.filesHome(session)).path : '';
     const target = resolveTypedPath(typed, f.path, home);
-    if (!target) throw new Error('Type a folder: an absolute path, ~ or a name inside this one.');
+    if (!target) throw new Error(t('files.type_a_folder'));
     let res;
     let selected: string | null = null;
     try {
@@ -472,11 +473,11 @@ class FilesStore {
 
   /** A failed transfer goes back in the queue. */
   retry(id: string, force = false) {
-    const t = this.transfer(id);
-    if (!t || (t.state !== 'failed' && t.state !== 'conflict')) return;
-    if (!t.local) { this.onError(`${t.name}: drop it again to retry`); return; }
-    this.patchTransfer(id, { state: 'queued', error: null, force: force || t.force, bytes: 0 });
-    this.pump(t.session);
+    const x = this.transfer(id);
+    if (!x || (x.state !== 'failed' && x.state !== 'conflict')) return;
+    if (!x.local) { this.onError(t('files.drop_again', { name: x.name })); return; }
+    this.patchTransfer(id, { state: 'queued', error: null, force: force || x.force, bytes: 0 });
+    this.pump(x.session);
   }
 
   /** Answers every conflict in `tabId`'s queue at once (14d4: "Do this for the other N conflicts"). */

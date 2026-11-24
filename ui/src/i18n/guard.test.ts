@@ -14,7 +14,7 @@ const SOURCES: Record<string, string> = Object.fromEntries(
 );
 
 /** The folders and files already in the catalog. */
-export const MIGRATED = ['ui', 'update', 'screens', 'palette', 'shell', 'pages', 'App.tsx', 'i18n', 'access', 'sync', 'sessions', 'tunnels', 'lib/sync.ts', 'lib/layout.ts'];
+export const MIGRATED = ['ui', 'update', 'screens', 'palette', 'shell', 'pages', 'App.tsx', 'i18n', 'access', 'sync', 'sessions', 'tunnels', 'files', 'editors', 'lib/sync.ts', 'lib/layout.ts'];
 
 /** Attributes and props whose value a person reads. */
 const VISIBLE = new Set([

@@ -14,6 +14,7 @@ import { api, on } from '../api/backend';
 import type { HostKeyPayload, SessionPromptEvent, SessionStateEvent } from '../api/types';
 import type { SessionEnd, Pane, PaneStatus } from '../sessions/store';
 import { files } from './store';
+import { t } from '../i18n';
 
 export interface Pair {
   /** The tab whose Files view this pane belongs to (pane 1). */
@@ -45,10 +46,10 @@ const mint = () => `f-${Date.now().toString(36)}-${++seq}`;
  */
 export function livePair(p: Pair, tabs: Pane[]): Pair {
   if (p.own) return p;
-  const t = tabs.find((x) => x.id === p.otherTab);
-  if (!t) return { ...p, status: 'ended', end: { code: 'network', message: `The tab for ${p.alias} was closed.`, exit_code: -1 } };
-  if (t.status !== 'ready') return { ...p, status: 'ended', end: { code: 'network', message: `The tab for ${p.alias} is not connected.`, exit_code: -1 } };
-  return { ...p, session: t.session, status: 'ready', end: null };
+  const item = tabs.find((x) => x.id === p.otherTab);
+  if (!item) return { ...p, status: 'ended', end: { code: 'network', message: t('pair.the_tab_for_alias_was', { alias: p.alias }), exit_code: -1 } };
+  if (item.status !== 'ready') return { ...p, status: 'ended', end: { code: 'network', message: t('pair.the_tab_for_alias_is', { alias: p.alias }), exit_code: -1 } };
+  return { ...p, session: item.session, status: 'ready', end: null };
 }
 
 class PairStore {

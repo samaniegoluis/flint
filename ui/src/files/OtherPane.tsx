@@ -20,6 +20,8 @@ import { pairs, paneKey, type Pair } from './pair';
 import { dropFolderAt, FileList, folderLabel, paneDrag, setPaneDrag } from './FileList';
 import { PathField } from './PathField';
 import { plainText } from '../ui/plainText';
+import { t } from '../i18n';
+import { tr } from '../i18n/react';
 
 // ---- 14d1: the server picker -----------------------------------------------------------
 
@@ -40,7 +42,7 @@ export function ServerPicker({ current, onPick, onClose }: { current: string; on
   useEffect(() => { setHot(0); }, [filter]);
 
   return (
-    <div ref={ref} className="menu" role="dialog" aria-label="Copy to another server" data-files-picker
+    <div ref={ref} className="menu" role="dialog" aria-label={t('other_pane.copy_to_another_server')} data-files-picker
       style={{ position: 'absolute', left: 'var(--sp-3)', right: 'var(--sp-3)', top: 40, maxWidth: 320, maxHeight: 'calc(100% - 60px)', zIndex: 20 }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
@@ -48,10 +50,10 @@ export function ServerPicker({ current, onPick, onClose }: { current: string; on
         if (e.key === 'ArrowUp') { e.preventDefault(); setHot((h) => Math.max(0, h - 1)); }
         if (e.key === 'Enter' && hotAlias) { e.preventDefault(); onPick(hotAlias); }
       }}>
-      <div className="menu-label"><span className="label">Copy to another server</span></div>
+      <div className="menu-label"><span className="label">{t('other_pane.copy_to_another_server')}</span></div>
       <label className="search" style={{ margin: '0 var(--sp-1) var(--sp-1)' }}>
         <Icon name="search" size="sm" />
-        <input {...plainText} aria-label="Filter hosts" placeholder="Filter hosts" value={filter} autoFocus onChange={(e) => setFilter(e.target.value)} data-files-picker-filter />
+        <input {...plainText} aria-label={t('other_pane.filter_hosts')} placeholder={t('other_pane.filter_hosts')} value={filter} autoFocus onChange={(e) => setFilter(e.target.value)} data-files-picker-filter />
       </label>
       <div className="col" style={{ overflowY: 'auto', minHeight: 0, gap: 1 }}>
         {rows.map((r) => {
@@ -63,7 +65,7 @@ export function ServerPicker({ current, onPick, onClose }: { current: string; on
           if (r.alias === current) {
             return (
               <button key={r.key} className="picker-row off" style={{ paddingLeft: pad + 16 }} aria-disabled="true" tabIndex={-1}>
-                <span className={'hmark ' + c.className} style={c.style} /><span className="mono grow trunc">{r.alias}</span><span className="hint">this tab</span>
+                <span className={'hmark ' + c.className} style={c.style} /><span className="mono grow trunc">{r.alias}</span><span className="hint">{t('other_pane.this_tab')}</span>
               </button>
             );
           }
@@ -75,10 +77,10 @@ export function ServerPicker({ current, onPick, onClose }: { current: string; on
             </button>
           );
         })}
-        {pickable.length === 0 && <span className="hint" style={{ padding: 'var(--sp-2)' }}>{filter ? 'No host matches.' : 'This vault has no other host.'}</span>}
+        {pickable.length === 0 && <span className="hint" style={{ padding: 'var(--sp-2)' }}>{filter ? t('other_pane.no_host_matches') : t('other_pane.this_vault_has_no_other')}</span>}
       </div>
       <div className="menu-sep" />
-      <span className="hint" style={{ padding: 'var(--sp-1) var(--sp-2) var(--sp-2)' }}>Opens a second file pane. Flint logs in without a terminal when the host has no open tab.</span>
+      <span className="hint" style={{ padding: 'var(--sp-1) var(--sp-2) var(--sp-2)' }}>{t('other_pane.opens_a_second_file_pane')}</span>
     </div>
   );
 }
@@ -137,35 +139,35 @@ export function OtherPane({ tabId, session, alias, pair, onConfirm, onAsk, onEdi
     files.relay(tabId, { session: pair.session, alias: pair.alias }, e, { key: tabId, session, alias, folder: dest.path });
   };
   const rename = (e: FileEntry) => onAsk({
-    title: `Rename ${e.name}`, label: 'New name', value: e.name, action: 'Rename',
+    title: t('other_pane.rename_name', { name: e.name }), label: t('other_pane.new_name'), value: e.name, action: t('common.rename'),
     run: async (v) => {
-      if (!validName(v)) throw new Error('A name cannot be empty, ".", ".." or contain "/".');
+      if (!validName(v)) throw new Error(t('files.invalid_name'));
       if (v === e.name) return;
       await files.rename(key, e, v);
     },
   });
   const newFolder = () => onAsk({
-    title: 'New folder', label: 'Name', value: '', action: 'Create folder', hint: `In ${pair.alias}:${path}`,
+    title: t('other_pane.new_folder'), label: t('other_pane.name'), value: '', action: t('other_pane.create_folder'), hint: t('other_pane.in_alias_path', { alias: pair.alias, path }),
     run: async (v) => {
-      if (!validName(v)) throw new Error('A name cannot be empty, ".", ".." or contain "/".');
+      if (!validName(v)) throw new Error(t('files.invalid_name'));
       await files.mkdir(key, v);
     },
   });
   const remove = (e: FileEntry) => onConfirm({
-    title: `Delete ${e.name}?`,
+    title: t('other_pane.delete_name', { name: e.name }),
     body: e.kind === 'dir'
-      ? `The folder ${e.path} and everything in it are deleted on ${pair.alias}. This cannot be undone.`
-      : `${e.path} is deleted on ${pair.alias}. This cannot be undone.`,
-    action: e.kind === 'dir' ? 'Delete folder' : 'Delete file',
-    run: async () => { await files.remove(key, e); notify(`Deleted ${e.name}`); },
+      ? t('other_pane.the_folder_path_and_everything', { path: e.path, alias: pair.alias })
+      : t('other_pane.path_is_deleted_on_alias', { path: e.path, alias: pair.alias }),
+    action: e.kind === 'dir' ? t('other_pane.delete_folder') : t('other_pane.delete_file'),
+    run: async () => { await files.remove(key, e); notify(t('other_pane.deleted_name', { name: e.name })); },
   });
   const menuItems = (e: FileEntry | null): MenuItem[] => {
-    if (!e) return [{ label: 'New folder…', icon: 'folder', run: newFolder }];
+    if (!e) return [{ label: t('other_pane.new_folder_2'), icon: 'folder', run: newFolder }];
     return [
-      { label: `Copy to ${alias}`, icon: 'arrow-r', hint: mod + '←', run: () => copyBack(e) },
-      { label: 'Rename', icon: 'edit', hint: e.kind === 'dir' ? undefined : '↵', run: () => rename(e) },
-      { label: 'New folder…', icon: 'folder', run: newFolder },
-      { label: 'Delete…', icon: 'trash', danger: true, sep: true, hint: os === 'mac' ? '⌘⌫' : 'Ctrl+Shift+⌫', run: () => remove(e) },
+      { label: t('other_pane.copy_to_alias', { alias }), icon: 'arrow-r', hint: mod + '←', run: () => copyBack(e) },
+      { label: t('common.rename'), icon: 'edit', hint: e.kind === 'dir' ? undefined : '↵', run: () => rename(e) },
+      { label: t('other_pane.new_folder_2'), icon: 'folder', run: newFolder },
+      { label: t('other_pane.delete'), icon: 'trash', danger: true, sep: true, hint: os === 'mac' ? '⌘⌫' : t('other_pane.ctrl_shift'), run: () => remove(e) },
     ];
   };
 
@@ -192,8 +194,8 @@ export function OtherPane({ tabId, session, alias, pair, onConfirm, onAsk, onEdi
   };
 
   const hide = () => pairs.setHidden(tabId, true);
-  const roleHint = pair.own ? 'Flint-only session' : 'its tab’s session';
-  const roleTitle = pair.own ? `${pair.alias} has no open tab: Flint logged in without a terminal, for this pane only` : `The pane uses ${pair.alias}'s open tab`;
+  const roleHint = pair.own ? t('other_pane.own_session') : t('other_pane.tab_session');
+  const roleTitle = pair.own ? t('other_pane.own_session_title', { alias: pair.alias }) : t('other_pane.tab_session_title', { alias: pair.alias });
   const st = pair.status === 'ready' ? 'st-on' : pair.status === 'ended' ? 'st-fail' : 'st-wait';
 
   return (
@@ -209,19 +211,19 @@ export function OtherPane({ tabId, session, alias, pair, onConfirm, onAsk, onEdi
         <div className="row" style={{ gap: 6 }}>
           <span className={'sp-dot ' + color.className} style={color.style} />
           <span className="mono strong trunc" data-files-pane-host>{pair.alias}</span>
-          <span className="role-tag other">Other server</span>
+          <span className="role-tag other">{t('other_pane.other_server')}</span>
           <span className="grow" />
           <span className={'st ' + st} role="img" aria-label={pair.status} />
-          <button className="icon-btn" aria-label="Hide this pane (Esc). Copies carry on" title="Hide this pane (Esc). Copies carry on" data-files-pane-hide onClick={hide}><Icon name="chev-r" size="sm" className="flip-x" /></button>
-          <button className="btn btn-ghost btn-sm" data-files-one-pane title="Back to one pane: ends this pane's session" onClick={() => pairs.close(tabId)}><Icon name="sidebar" size="sm" />One pane</button>
+          <button className="icon-btn" aria-label={t('other_pane.hide_this_pane_esc_copies')} title={t('other_pane.hide_this_pane_esc_copies')} data-files-pane-hide onClick={hide}><Icon name="chev-r" size="sm" className="flip-x" /></button>
+          <button className="btn btn-ghost btn-sm" data-files-one-pane title={t('other_pane.back_to_one_pane_ends')} onClick={() => pairs.close(tabId)}><Icon name="sidebar" size="sm" />{t('other_pane.one_pane')}</button>
         </div>
         <span className="hint trunc" title={roleTitle} data-files-pane-role>{roleHint}</span>
         <div className="row" style={{ gap: 2 }}>
-          <button className="icon-btn" aria-label="Up one folder" disabled={!ready || !path || path === '/'} onClick={() => files.up(key)}><Icon name="up" size="sm" /></button>
+          <button className="icon-btn" aria-label={t('other_pane.up_one_folder')} disabled={!ready || !path || path === '/'} onClick={() => files.up(key)}><Icon name="up" size="sm" /></button>
           <PathField fkey={key} path={path} os={os} pane disabled={!ready || !path} onError={(m) => notify(m, 'error')} onDone={() => listRef.current?.focus()}>
             {ready && path ? <PaneCrumbs path={path} onGo={(p) => files.go(key, p)} /> : <span className="cur-c">…</span>}
           </PathField>
-          <button className="icon-btn" aria-label="Refresh" disabled={!ready} onClick={() => files.refresh(key)}><Icon name="reconnect" size="sm" /></button>
+          <button className="icon-btn" aria-label={t('other_pane.refresh')} disabled={!ready} onClick={() => files.refresh(key)}><Icon name="reconnect" size="sm" /></button>
         </div>
       </div>
       {ready ? (
@@ -235,7 +237,7 @@ export function OtherPane({ tabId, session, alias, pair, onConfirm, onAsk, onEdi
       )}
       {drop && (
         <div className="drag-ghost" style={{ position: 'fixed', left: drop.x + 14, top: drop.y + 10 }} data-files-drag-label>
-          <span className="tooltip"><Icon name="arrow-r" size="sm" />Copy to {pair.alias} · {folderLabel(drop.path)}</span>
+          <span className="tooltip"><Icon name="arrow-r" size="sm" />{tr('other_pane.copy_to_alias_folderlabel', { alias: pair.alias, folderLabel: folderLabel(drop.path) })}</span>
         </div>
       )}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.entry)} onClose={() => { setMenu(null); listRef.current?.focus(); }} />}
@@ -277,28 +279,28 @@ function PaneState({ tabId, pair, onEditHost }: { tabId: string; pair: Pair; onE
         <div className="row" style={{ gap: 'var(--sp-3)' }}>
           <span className="spinner" aria-hidden="true" />
           <div className="col" style={{ minWidth: 0 }}>
-            <span className="strong">Connecting to <span className="mono">{pair.alias}</span></span>
-            <span className="hint mono trunc">{host ? `${host.user ? host.user + '@' : ''}${host.hostname}` : pair.alias}{host?.jump ? ` · via ${host.jump}` : ''} · no terminal</span>
+            <span className="strong">{tr('other_pane.connecting_to_span', { span: <span className="mono">{pair.alias}</span> })}</span>
+            <span className="hint mono trunc">{host ? `${host.user ? host.user + '@' : ''}${host.hostname}` : pair.alias}{host?.jump ? t('other_pane.via_jump', { jump: host.jump }) : ''}{t('other_pane.no_terminal')}</span>
           </div>
         </div>
         <button className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start' }} data-autofocus onClick={() => pairs.close(tabId)}
-          onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); pairs.close(tabId); } }}>Cancel<Key>esc</Key></button>
+          onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); pairs.close(tabId); } }}>{t('common.cancel')}<Key>esc</Key></button>
       </div>
     );
   }
   if (pair.status === 'prompt' && pair.prompt?.kind === 'password') {
     const p = pair.prompt;
     return (
-      <form className="card prompt" style={{ width: 320, padding: 'var(--sp-4)', gap: 'var(--sp-3)' }} aria-label={`Password for ${p.user}@${p.alias}`} data-files-pane-password
+      <form className="card prompt" style={{ width: 320, padding: 'var(--sp-4)', gap: 'var(--sp-3)' }} aria-label={t('other_pane.password_for_user_alias', { user: p.user, alias: p.alias })} data-files-pane-password
         onSubmit={(e) => { e.preventDefault(); pairs.answer(tabId, true, pw); setPw(''); }}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); pairs.answer(tabId, false, ''); } }}>
         <div className="prompt-h"><span className="prompt-ic accent"><Icon name="lock" /></span>
-          <div className="col grow" style={{ gap: 2 }}><h2 className="prompt-t" style={{ fontSize: 'var(--fs-md)' }}>Password for <span className="mono">{p.user}@{p.alias}</span></h2>
-            <span className="hint">No saved login was accepted.</span></div></div>
-        <div className="input"><input {...plainText} type="password" className="pw" aria-label="Password" value={pw} onChange={(e) => setPw(e.target.value)} data-autofocus autoComplete="off" /></div>
+          <div className="col grow" style={{ gap: 2 }}><h2 className="prompt-t" style={{ fontSize: 'var(--fs-md)' }}>{tr('other_pane.password_for_span', { span: <span className="mono">{p.user}@{p.alias}</span> })}</h2>
+            <span className="hint">{t('other_pane.no_saved_login_was_accepted')}</span></div></div>
+        <div className="input"><input {...plainText} type="password" className="pw" aria-label={t('other_pane.password')} value={pw} onChange={(e) => setPw(e.target.value)} data-autofocus autoComplete="off" /></div>
         <div className="row" style={{ justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => pairs.answer(tabId, false, '')}>Cancel</button>
-          <button type="submit" className="btn btn-primary btn-sm" disabled={!pw}>Connect<span className="kbd-in">↵</span></button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => pairs.answer(tabId, false, '')}>{t('common.cancel')}</button>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={!pw}>{t('common.connect')}<span className="kbd-in">↵</span></button>
         </div>
       </form>
     );
@@ -306,17 +308,17 @@ function PaneState({ tabId, pair, onEditHost }: { tabId: string; pair: Pair; onE
   if (pair.status === 'prompt' && pair.prompt?.kind === 'host_key') {
     const k = pair.prompt.host_key;
     return (
-      <form className="card prompt" style={{ width: 330, padding: 'var(--sp-4)', gap: 'var(--sp-3)' }} aria-label={`Verify ${k.alias}`} data-files-pane-hostkey
+      <form className="card prompt" style={{ width: 330, padding: 'var(--sp-4)', gap: 'var(--sp-3)' }} aria-label={t('other_pane.verify_alias', { alias: k.alias })} data-files-pane-hostkey
         onSubmit={(e) => { e.preventDefault(); pairs.answer(tabId, true, ''); }}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); pairs.answer(tabId, false, ''); } }}>
         <div className="prompt-h"><span className="prompt-ic warn"><Icon name="shield" /></span>
-          <div className="col grow" style={{ gap: 2 }}><h2 className="prompt-t" style={{ fontSize: 'var(--fs-md)' }}>Verify <span className="mono">{k.alias}</span></h2>
-            <span className="hint">First connection. Compare the fingerprint.</span></div></div>
+          <div className="col grow" style={{ gap: 2 }}><h2 className="prompt-t" style={{ fontSize: 'var(--fs-md)' }}>{tr('other_pane.verify_span', { span: <span className="mono">{k.alias}</span> })}</h2>
+            <span className="hint">{t('other_pane.first_connection_compare_the_fingerprint')}</span></div></div>
         <div className="fp" style={{ fontSize: 'var(--fs-xs)' }}>{k.key_type} · {k.fingerprint}</div>
         <div className="row" style={{ gap: 'var(--sp-2)' }}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => pairs.answer(tabId, false, '')}>Cancel</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => pairs.answer(tabId, false, '')}>{t('common.cancel')}</button>
           <span className="grow" />
-          <button type="submit" className="btn btn-primary btn-sm" data-autofocus>Trust<span className="kbd-in">↵</span></button>
+          <button type="submit" className="btn btn-primary btn-sm" data-autofocus>{t('other_pane.trust')}<span className="kbd-in">↵</span></button>
         </div>
       </form>
     );
@@ -327,14 +329,14 @@ function PaneState({ tabId, pair, onEditHost }: { tabId: string; pair: Pair; onE
   return (
     <div className="card prompt" role="alert" style={{ width: 320, padding: 'var(--sp-4)', gap: 'var(--sp-3)' }} data-files-pane-ended={end?.code || 'closed'}>
       <div className="prompt-h"><span className={'prompt-ic danger'}><Icon name={auth ? 'lock' : changed ? 'shield' : 'wifi-off'} /></span>
-        <div className="col grow" style={{ gap: 2 }}><h2 className="prompt-t" style={{ fontSize: 'var(--fs-md)' }}>{auth ? 'Authentication failed' : changed ? 'The host key has changed' : `Not connected to ${pair.alias}`}</h2>
-          <span className="hint">{changed ? 'Nothing was sent. Open a tab on this host to review the key.' : auth ? <><span className="mono">{pair.alias}</span> refused the login.</> : 'The pane has no session.'}</span></div></div>
+        <div className="col grow" style={{ gap: 2 }}><h2 className="prompt-t" style={{ fontSize: 'var(--fs-md)' }}>{auth ? t('other_pane.authentication_failed') : changed ? t('other_pane.the_host_key_has_changed') : t('other_pane.not_connected_to_alias', { alias: pair.alias })}</h2>
+          <span className="hint">{changed ? t('other_pane.nothing_was_sent_open_a') : auth ? <>{tr('other_pane.span_refused_the_login', { span: <span className="mono">{pair.alias}</span> })}</> : t('other_pane.the_pane_has_no_session')}</span></div></div>
       {end?.message && <span className="mono hint" style={{ overflowWrap: 'anywhere' }}>{end.message}</span>}
       <div className="row" style={{ gap: 'var(--sp-2)' }}>
-        {auth && <button className="btn btn-ghost btn-sm" onClick={() => onEditHost(pair.alias)}>Edit host</button>}
+        {auth && <button className="btn btn-ghost btn-sm" onClick={() => onEditHost(pair.alias)}>{t('other_pane.edit_host')}</button>}
         <span className="grow" />
-        <button className="btn btn-ghost btn-sm" onClick={() => pairs.close(tabId)}>Close pane</button>
-        {!changed && <button className="btn btn-primary btn-sm" data-autofocus data-files-pane-retry onClick={() => pairs.retry(tabId)}>Retry</button>}
+        <button className="btn btn-ghost btn-sm" onClick={() => pairs.close(tabId)}>{t('other_pane.close_pane')}</button>
+        {!changed && <button className="btn btn-primary btn-sm" data-autofocus data-files-pane-retry onClick={() => pairs.retry(tabId)}>{t('common.retry')}</button>}
       </div>
     </div>
   );
