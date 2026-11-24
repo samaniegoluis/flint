@@ -42,3 +42,12 @@ test "a presence reason reads in the window's language" {
     p.set_language("es")
     assert_eq(q.lang.get(), "es")
 }
+
+// Milestone 68: what this machine reports as its language (printed, for the check on
+// each OS), and the app language it stands for.
+test "the OS reports a language the app can use" {
+    tag := os_language_tag()
+    lang := os_language()
+    println("os language: \"{tag}\" -> {lang}")
+    assert(lang == "en" || lang == "es")
+}
