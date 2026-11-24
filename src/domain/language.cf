@@ -1,0 +1,41 @@
+package domain
+
+// The desktop app's language (milestone 66, D-140). The core stays English
+// (Principle 21): this only names which of the page's catalogs to use.
+
+// The languages the page has a catalog for, besides "system" (LANGUAGES).
+APP_LANGUAGES: []str = ["en", "es"]
+
+// The app language an OS locale or language tag stands for: its primary subtag when
+// the page has a catalog for it ("es_MX.UTF-8", "es-419", "ES" → "es"), English
+// otherwise, and for "C", "POSIX" or nothing.
+fn language_of_locale(tag: str) -> str {
+    lower := tag.to_lower()
+    mut n := 0
+    for c in lower.bytes() {
+        if c < 'a' || c > 'z' {
+            break
+        }
+        n += 1
+    }
+    primary := str(lower[0..n])
+    if one_of(primary, APP_LANGUAGES) {
+        return primary
+    }
+    return "en"
+}
+
+// The first locale set in a Linux environment, by precedence: LANGUAGE's first entry
+// (a colon list), LC_ALL, LC_MESSAGES, LANG. Empty values are skipped.
+fn locale_of_env(language: str, lc_all: str, lc_messages: str, lang: str) -> str {
+    first := language.split(":")
+    if first.len() > 0 && first[0].len() > 0 {
+        return first[0]
+    }
+    for v in [lc_all, lc_messages, lang] {
+        if v.len() > 0 {
+            return v
+        }
+    }
+    return ""
+}

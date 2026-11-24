@@ -3460,3 +3460,15 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `-lrstrtmgr` added to the Windows `flint-native.pc`.
 - **Ideal:** `os.file_holders(paths: []str) -> []ProcessInfo!` (Restart Manager on
   Windows; `lsof`-like `proc_pidinfo` / `/proc/*/fd` elsewhere).
+
+### CF-191 · missing · `confirmed`: nothing in `core:os` says the OS's preferred language
+- **Needed (milestone 66, D-140):** the desktop app follows the OS's language when
+  `Settings.language` is `system`. A macOS app's environment has no `LANG`, and the
+  webview's `navigator.language` follows the app bundle's localizations, not the person's.
+- **Workaround:** `flint_language::preferred()` in
+  `src/adapters/uievents/native/flint_language.hpp`: CoreFoundation's
+  `CFLocaleCopyPreferredLanguages` on macOS, `GetUserDefaultUILanguage` and
+  `LCIDToLocaleName` on Windows, nothing on Linux, where `os_language` in
+  `src/adapters/uievents/language.cf` (tagged `// CFIRE-UPSTREAM: CF-191`) reads
+  `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG`.
+- **Ideal:** `os.preferred_languages() -> []str` (BCP 47 tags, the person's order).

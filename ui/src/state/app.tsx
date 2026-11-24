@@ -18,6 +18,8 @@ import type { AppInfo, Catalog, CliLinkStatus, LockReason, RecentView, Settings,
 import { CLI_TOAST_KEY, cliInstalledText, cliOffer } from '../lib/cliLink';
 import type { Os } from '../lib/keymap';
 import { ToastStore, type ToastKind, type ToastOptions } from '../lib/toasts';
+import { language, resolveLanguage, setLanguage } from '../i18n';
+import { LanguageContext } from '../i18n/react';
 
 export type Phase = 'boot' | 'welcome' | 'create' | 'connect' | 'unlock' | 'main' | 'locked';
 
@@ -42,7 +44,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lock_after: '1h', paste_limit_mb: 20, rdp_mac_keys: 'mac', rdp_mac_custom: '', rdp_graphics: 'auto',
   sync_interval: 60, toast_corner: 'bottom-right', update_check: true, server_stats: true, server_stats_colour: true,
   notify_grants: true, sudo_periods: false, approval_wait: 2,
-  ntfy_on: false, ntfy_server: 'https://ntfy.sh', ntfy_topic: '', ntfy_phone: 'iphone', close_action: '',
+  ntfy_on: false, ntfy_server: 'https://ntfy.sh', ntfy_topic: '', ntfy_phone: 'iphone', close_action: '', language: 'system',
 };
 
 // How often the page tells the core someone is using the window.
@@ -118,6 +120,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const os: Os = info?.os ?? (/mac/i.test(navigator.platform) ? 'mac' : 'linux');
   const dark = settings.theme === 'system' ? sysDark : settings.theme === 'dark';
+  // Milestone 66: the catalog in use, set before the children render with it.
+  const lang = resolveLanguage(settings.language, info?.system_language);
+  if (lang !== language()) setLanguage(lang);
 
   const notify = useCallback(((a: string | ToastOptions, kind?: ToastKind, action?: ToastActionArg) => {
     if (typeof a !== 'string') return toasts.show(a);
@@ -426,7 +431,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     lockReason, unlockRequest, dismissUnlockRequest, lock, windowLock, openWindow, refreshRecents,
     unlock, create, download, closeVault, openVaultFile, switchTo, renameVault, refreshCatalog, saveSettings, notify, dismissToast, fail]);
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={value}><LanguageContext.Provider value={lang}>{children}</LanguageContext.Provider></Ctx.Provider>;
 }
 
 // The first letter of a vault's name, for its mark.

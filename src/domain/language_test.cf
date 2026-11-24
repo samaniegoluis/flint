@@ -1,0 +1,34 @@
+package domain
+
+test "an OS locale names the app language, English when the page has no catalog for it" {
+    assert_eq(language_of_locale("es_MX.UTF-8"), "es")
+    assert_eq(language_of_locale("es-419"), "es")
+    assert_eq(language_of_locale("ES"), "es")
+    assert_eq(language_of_locale("es"), "es")
+    assert_eq(language_of_locale("en-US"), "en")
+    assert_eq(language_of_locale("fr_FR.UTF-8"), "en")
+    assert_eq(language_of_locale("C"), "en")
+    assert_eq(language_of_locale("POSIX"), "en")
+    assert_eq(language_of_locale(""), "en")
+    // "est" (Estonian's three-letter form) is not Spanish.
+    assert_eq(language_of_locale("est"), "en")
+}
+
+test "the Linux environment's locale follows LANGUAGE, LC_ALL, LC_MESSAGES, then LANG" {
+    assert_eq(locale_of_env("es_MX:en", "en_US.UTF-8", "", "en_US.UTF-8"), "es_MX")
+    assert_eq(locale_of_env("", "es_ES.UTF-8", "en_US", "en_US"), "es_ES.UTF-8")
+    assert_eq(locale_of_env("", "", "es_AR.UTF-8", "en_US"), "es_AR.UTF-8")
+    assert_eq(locale_of_env("", "", "", "es_CL.UTF-8"), "es_CL.UTF-8")
+    assert_eq(locale_of_env("", "", "", ""), "")
+}
+
+test "the language setting is system, en or es; older files read system" {
+    mut s := default_settings()
+    assert_eq(s.language, "system")
+    for l in ["en", "es"] {
+        s.language = l
+        assert(settings_valid(s))
+    }
+    s.language = "fr"
+    assert(!settings_valid(s))
+}

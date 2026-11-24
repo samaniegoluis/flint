@@ -241,6 +241,9 @@ type AppInfo struct {
     // Milestone 65: whether a tray shows Flint's icon, so ✕ hides it there; with none
     // Settings → Access offers what ✕ does.
     tray:      bool `json:"tray"`
+    // Milestone 66 (D-140): the OS's language as an app language ("en" or "es"), for
+    // Settings.language == "system". The headless runs set it with FLINT_E2E_LANGUAGE.
+    system_language: str `json:"system_language"`
 }
 
 type Ok struct {
@@ -392,7 +395,14 @@ fn close_current(mut store: LockedVaultStore, mut st: GuiState) {
 // ---- App and window -------------------------------------------------------------------
 
 fn rpc_app_info(e2e: bool) -> str! {
-    return json.stringify(AppInfo{ version: version.FLINT_VERSION, os: os_name(), libssh: libssh_version(), libsodium: sodium_version(), sqlite: sqlcipher_version(), freerdp: freerdp_version(), e2e: e2e, tray: window_has_tray(e2e) })
+    return json.stringify(AppInfo{ version: version.FLINT_VERSION, os: os_name(), libssh: libssh_version(), libsodium: sodium_version(), sqlite: sqlcipher_version(), freerdp: freerdp_version(), e2e: e2e, tray: window_has_tray(e2e), system_language: system_language(e2e) })
+}
+
+fn system_language(e2e: bool) -> str {
+    if e2e && os.getenv("FLINT_E2E_LANGUAGE").len() > 0 {
+        return language_of_locale(os.getenv("FLINT_E2E_LANGUAGE"))
+    }
+    return os_language()
 }
 
 fn rpc_window_theme(params: str, mut app: webui.App) -> str! {

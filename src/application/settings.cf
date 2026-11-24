@@ -37,6 +37,9 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     if one_of(s.close_action, CLOSE_ACTIONS) {
         fixed.close_action = s.close_action
     }
+    if one_of(s.language, LANGUAGES) {
+        fixed.language = s.language
+    }
     mut probe := d
     probe.ntfy_server = s.ntfy_server
     if settings_valid(probe) {

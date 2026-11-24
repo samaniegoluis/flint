@@ -77,6 +77,20 @@ test "settings are validated on save and repaired field by field on load" {
     cornered.toast_corner = "top-left"
     store.saved = cornered
     assert_eq((try load_settings(store)).toast_corner, "top-left")
+
+    // A language no Flint writes falls back to the system's and keeps the rest
+    // (milestone 66); a valid one is kept through a file with another bad field.
+    mut spoken := default_settings()
+    spoken.language = "klingon"
+    spoken.term_theme = "nord"
+    store.saved = spoken
+    respoken := try load_settings(store)
+    assert_eq(respoken.language, "system")
+    assert_eq(respoken.term_theme, "nord")
+    spoken.language = "es"
+    spoken.toast_corner = "middle"
+    store.saved = spoken
+    assert_eq((try load_settings(store)).language, "es")
 }
 
 test "installed mono fonts are deduplicated and sorted" {

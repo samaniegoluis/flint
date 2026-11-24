@@ -91,6 +91,10 @@ type Settings struct {
     // serving as a tray would. A desktop with a tray always hides. Older files read
     // the default.
     close_action:       str  `json:"close_action" default:""`
+    // Milestone 66 (D-140): the language of the desktop app (LANGUAGES). "system" follows
+    // the OS's language, read at start (os_language); the page holds every translation
+    // and the core stays English (Principle 21). Older files read the default.
+    language:           str  `json:"language" default:"system"`
 }
 
 RDP_MAC_KEYS: []str = ["mac", "windows", "custom"]
@@ -98,6 +102,7 @@ RDP_GRAPHICS: []str = ["auto", "pipeline", "compatible"]
 TOAST_CORNERS: []str = ["bottom-right", "bottom-left", "top-right", "top-left"]
 NTFY_PHONES: []str = ["iphone", "android"]
 CLOSE_ACTIONS: []str = ["", "quit", "background"]
+LANGUAGES: []str = ["system", "en", "es"]
 // The six modifier keys of a Mac keyboard, by their W3C `code`.
 RDP_MAC_KEY_CODES: []str = ["ControlLeft", "ControlRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight"]
 // What each can send: a PC keyboard's Ctrl, Alt, AltGr (right Alt), Windows key, or nothing.
@@ -122,7 +127,7 @@ TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
 fn default_settings() -> Settings {
-    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, webview_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false, update_check: true, update_toast_version: "", last_seen_version: "", server_stats: true, server_stats_colour: true, notify_grants: true, sudo_periods: false, approval_wait: APPROVAL_WAIT_DEFAULT, ntfy_on: false, ntfy_server: NTFY_SERVER_DEFAULT, ntfy_topic: "", ntfy_phone: "iphone", close_action: "" }
+    return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, webview_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false, update_check: true, update_toast_version: "", last_seen_version: "", server_stats: true, server_stats_colour: true, notify_grants: true, sudo_periods: false, approval_wait: APPROVAL_WAIT_DEFAULT, ntfy_on: false, ntfy_server: NTFY_SERVER_DEFAULT, ntfy_topic: "", ntfy_phone: "iphone", close_action: "", language: "system" }
 }
 
 fn one_of(value: str, allowed: []str) -> bool {
@@ -193,6 +198,9 @@ fn check_settings(s: Settings) -> void! {
     }
     if !one_of(s.close_action, CLOSE_ACTIONS) {
         return error(coded(ERR_INVALID, "closing the window must be ask (empty), quit or background"))
+    }
+    if !one_of(s.language, LANGUAGES) {
+        return error(coded(ERR_INVALID, "language must be system, en or es"))
     }
     if s.ntfy_topic.len() > 0 && !ntfy_topic_valid(s.ntfy_topic) {
         return error(coded(ERR_INVALID, "the ntfy topic must be letters, digits, '-' or '_', at most {NTFY_TOPIC_MAX}"))

@@ -1,0 +1,24 @@
+package uievents
+
+// The OS's language, as the app language it stands for (milestone 66, D-140): "es"
+// or "en". Read once at start for Settings.language == "system". macOS and Windows
+// ask the OS through a native shim (native/flint_language.hpp, CF-191); Linux reads
+// LANGUAGE, LC_ALL, LC_MESSAGES and LANG.
+
+import "core:os"
+import "../../domain"
+
+// CFIRE-UPSTREAM: CF-191
+import cpp "flint_language.hpp"
+
+fn os_language() -> str {
+    mut tag := ""
+    // CFIRE-UPSTREAM: CF-191
+    cpp {
+        tag = flint_language::preferred();
+    }
+    if tag.len() == 0 {
+        tag = locale_of_env(os.getenv("LANGUAGE"), os.getenv("LC_ALL"), os.getenv("LC_MESSAGES"), os.getenv("LANG"))
+    }
+    return language_of_locale(tag)
+}

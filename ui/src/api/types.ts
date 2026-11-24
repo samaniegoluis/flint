@@ -11,6 +11,8 @@ export interface AppInfo {
   e2e: boolean;
   /** Milestone 65: a tray shows Flint's icon (always on macOS and Windows). */
   tray: boolean;
+  /** Milestone 66: the OS's language as an app language ('en' or 'es'). */
+  system_language: string;
 }
 
 export interface RecentView {
@@ -243,6 +245,8 @@ export interface Settings {
   ntfy_phone: 'iphone' | 'android';
   /** Milestone 65: what ✕ does with no tray: '' asks, 'quit', 'background'. */
   close_action: '' | 'quit' | 'background';
+  /** Milestone 66: the app's language; 'system' follows AppInfo.system_language. */
+  language: 'system' | 'en' | 'es';
 }
 
 /** Milestone 63: what the last phone alert did (`alerts:status`, `alerts_status`). */
