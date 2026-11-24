@@ -80,7 +80,7 @@ expect() {
 # check <description> <shell condition>
 check() {
   checks=$((checks + 1))
-  if eval "$2"; then echo "ok    $1"; else failures=$((failures + 1)); echo "FAIL  $1"; fi
+  if eval "$2"; then echo "ok    $1"; else failures=$((failures + 1)); echo "FAIL  $1"; echo "      last stderr: $err"; fi
 }
 
 json_get() { python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(eval(sys.argv[1], {"d": d}))' "$1"; }
@@ -167,9 +167,10 @@ echo "== lock, unlock, wrong password"
 expect 0 "vault lock" "" -- vault lock
 expect 5 "a locked vault with no terminal fails with locked" "" -- host list
 expect 6 "a wrong master password fails with wrong_password" "wrong password here"$'\n' -- host list --master-stdin
-check "its text is the one it always was (milestone 69)" '[[ "$err" == "flint: the password is wrong or the file is not a Flint vault" ]]'
+# The last line: Linux's SQLCipher logs its own "hmac check failed" lines before it.
+check "its text is the one it always was (milestone 69)" '[[ "${err##*$'"'"'\n'"'"'}" == "flint: the password is wrong or the file is not a Flint vault" ]]'
 expect 6 "the same with --json" "wrong password here"$'\n' -- --json host list --master-stdin
-check "--json names the message: vault.wrong_password, no params" '[[ "$(echo "$err" | json_get "d[\"error\"][\"id\"], d[\"error\"][\"params\"], d[\"error\"][\"message\"]")" == "('"'"'vault.wrong_password'"'"', [], '"'"'the password is wrong or the file is not a Flint vault'"'"')" ]]'
+check "--json names the message: vault.wrong_password, no params" '[[ "$(echo "${err##*$'"'"'\n'"'"'}" | json_get "d[\"error\"][\"id\"], d[\"error\"][\"params\"], d[\"error\"][\"message\"]")" == "('"'"'vault.wrong_password'"'"', [], '"'"'the password is wrong or the file is not a Flint vault'"'"')" ]]'
 expect 0 "the master password on stdin opens it for one command" "$MASTER"$'\n' -- --json host list --master-stdin
 expect 5 "and nothing is cached: the next command is locked again" "" -- host list
 check "the CLI never caches the key (D-042)" '[[ "$cached" == "False" ]]'
