@@ -1,6 +1,6 @@
-# Flint — v17 Technical Specification: The app in English and Spanish
+# Flint — v18 Technical Specification: Tunnels and the remote vault, in daily use
 
-**Scope of this document:** version 17 only. The versions it builds on are archived in
+**Scope of this document:** version 18 only. The versions it builds on are archived in
 [`spec-v1.md`](./spec-v1.md) (MVP), [`spec-v2.md`](./spec-v2.md) (daily driver),
 [`spec-v3.md`](./spec-v3.md) (Flint holds the vault), [`spec-v4.md`](./spec-v4.md) (Files),
 [`spec-v5.md`](./spec-v5.md) (Between servers), [`spec-v6.md`](./spec-v6.md) (Tunnels),
@@ -10,59 +10,63 @@
 (Your vault on every machine), [`spec-v12.md`](./spec-v12.md) (Toasts),
 [`spec-v13.md`](./spec-v13.md) (Releases), [`spec-v14.md`](./spec-v14.md) (RDP for daily
 work, root for a while, server resources), [`spec-v15.md`](./spec-v15.md) (Flint waits
-for you) and [`spec-v16.md`](./spec-v16.md) (Hardening and polish); everything beyond v17
+for you), [`spec-v16.md`](./spec-v16.md) (Hardening and polish) and
+[`spec-v17.md`](./spec-v17.md) (The app in English and Spanish); everything beyond v18
 lives in [`ROADMAP.md`](../ROADMAP.md). This file is static: a decision that changes goes
 into [`decisions.md`](./decisions.md), which supersedes the line here.
 
 ## Problem
 
-v16 shipped (milestones 64-65, `v0.31.0` and `v0.32.0`). The desktop app speaks only
-English, and the owner and the people around him work in Spanish. D-084 (2026-11-12)
-agreed how to translate it without translating the core; D-138 placed it here, before
-signing (v18). Today:
+v17 shipped (milestones 66-69, `v0.33.0`). The owner's daily use on 2026-11-24, a tunnel
+to a database at work and the remote vault behind his homelab's proxy, found two places
+where Flint says something that is not true and leaves the person guessing (D-146):
 
-- **Every string is written inline** in ~11,700 lines of page components (68 `.tsx`
-  files, ~800-1,200 strings), and some formats pin `'en-US'` (`lib/rdpStats.ts`).
-- **The core's messages are English text only.** 841 `coded(...)` calls carry an error
-  category and a sentence; the page shows the sentence as it comes, so it cannot render
-  it in another language.
-- **Native text is fixed at start:** the tray's *Open Flint*, *Lock Vault* and *Quit
-  Flint*, the native file dialogs' titles and the reason Touch ID shows.
+- **A tunnel read `listening · no connections` with nothing on its port.** On the office
+  Windows, after a first connect that timed out and a Retry, `netstat` showed no listener on
+  `127.0.0.1:5433` and DataGrip was refused; switching the tunnel off and on opened it.
+  `states()` (`src/adapters/ssh/native/flint_tunnel.hpp`) reports every listener in a host's
+  list as up, and nothing checks that the port answers. The tunnel's error, when there is
+  one, is cut to one line with an ellipsis and cannot be read whole.
+- **A refused server token reads as a 15-minute lockout, and keeps being sent.** Every 401
+  says "a wrong token, or too many wrong ones from here: wait 15 minutes"; a real lockout
+  answers 429, which says "try again in a minute". After a 401 the app's sync loop retries
+  with a back-off (30 s doubling to 15 min): about five attempts in the first ten minutes
+  per machine. Behind NAT
+  every machine of a home or an office reaches the server as one public address (the
+  owner's server logs `187.145.116.27` for all of his), so a few machines holding an old
+  token lock every one of them out (10 wrong tokens in 10 minutes). The self-host guide
+  does not explain this, nor Docker Swarm's ingress mesh (Dokploy), which makes every
+  client `10.0.0.2` unless `FLINT_VAULT_TRUST_PROXY=1`.
+
+Signing and installers wait for outside steps (the Apple Developer membership, SignPath's
+approval), so they move to v19 and this version goes first.
 
 ## Scope
 
-**In scope (v17), four milestones sized for one session each (D-140):**
-- **The catalog and the setting** (66): Flint's own `t()` helper, the language setting
-  (System / English / Español), `en.json`, and the strings of the shell, the palette,
-  Settings, the lock and unlock screens, the update toasts and the shared `ui/` components
-  moved into it. Nothing changes on screen.
-- **The rest of the page** (67): sessions, access, files, editors, sync, tunnels and the
-  text built in `lib/`, moved into the catalog, and a guard that fails on a string left
-  outside it. Nothing changes on screen.
-- **Spanish** (68): `es.json` complete (neutral Spanish, *tú*), a test that every `en` key
-  exists in `es`, the tray, the native dialogs' titles and Touch ID's reason in the chosen
-  language; the owner checks long strings on screen.
-- **The core's messages** (69): `{code, id, params, message}` (D-084), the ids in one place,
-  the page rendering an id from its catalog and falling back to `message`; the first
-  messages migrated (connection cards, the changed certificate, unlock, RDP) and a script
-  that lists ids with no translation.
+**In scope (v18), two milestones sized for one session each:**
+- **A tunnel that says what it is** (70): a tunnel reads *listening* only while its port
+  answers, a listener that did not open or was lost shows its error, and a tunnel's error
+  or warning wraps to as many lines as it needs, with the whole text on hover.
+- **A remote vault that stops on a refused token** (71): a 401 pauses automatic sync for
+  that vault, with honest 401 and 429 messages; the self-host guide on how clients are
+  counted; and the server's small debts: the cause of a `500` in its log, one damaged
+  `head.json` no longer failing the listing, `flint-vault-server delete <id>`, and the hint
+  of *Connect to a remote vault* on one line.
 - Docs site, the landing and the CLI demo follow every user-visible change (CLAUDE.md rules
-  5 and 6), and a release closes each milestone with a `feat` or `fix` (rule 10): 66 and 67
-  are refactors and make none.
+  5 and 6), and a release closes each milestone with a `feat` or `fix` (rule 10).
 
-**Every system:** each milestone is verified on macOS and the Docker Linux check; the
-native text of 68 on the Windows VM and Zorin too.
+**Every system:** each milestone is verified on macOS and the Docker Linux check; 70's
+tunnel on the Windows VM too, where it was seen.
 
-**Out of scope (v17), tracked in the roadmap:** the CLI in any language other than English
-(never, D-084); the docs site and the landing in Spanish (later, Starlight's `/es/`
-routes); every one of the 841 core messages migrated (they move a few at a time after 69,
-the English fallback keeps the rest readable); languages other than English and Spanish;
-polkit's message (it comes from the `.policy` file, in English); signing and installers
-(**v18**).
+**Out of scope (v18), tracked in the roadmap:** a trusted-proxy count for chained proxies
+(`FLINT_VAULT_TRUST_PROXY=2`, until someone needs it); retrying a refused token on its own
+(owner, 2026-11-24: a paused vault resumes by hand); tunnels that listen on `::1` (`localhost`
+reaches `127.0.0.1` from the clients tried); remote and dynamic forwards; signing and
+installers (**v19**).
 
 ## Stack
 
-v16's, plus the translation helper. No new dependency.
+v17's. No new dependency.
 
 | Layer | Choice | Why | Rejected |
 |---|---|---|---|
@@ -89,46 +93,45 @@ v16's, plus the translation helper. No new dependency.
 
 ## Architecture
 
-Hexagonal, as in v16. v17 adds a catalog to the page, one setting to the core, and an id
-and parameters to the core's messages; no new port, no vault or socket format change.
+Hexagonal, as in v17. v18 changes what two existing parts report; no new port, no vault,
+socket or server API format change.
 
-- **The setting** (core). `Settings.language` is `system`, `en` or `es`, per machine like
-  the theme, saved through the settings use case. `system` reads the OS language once at
-  start: `es` when it starts with `es`, `en` otherwise. The page receives the resolved
-  language with the settings and re-renders when it changes; no restart.
-- **The catalog** (`ui/src/i18n/`). `en.json` and `es.json`, flat keys grouped by area
-  (`shell.*`, `access.*`, …). `t(key, params)` interpolates `{name}` parameters and picks
-  plural forms (`key.one`, `key.other`) through `Intl.PluralRules`; numbers, sizes and
-  dates go through `Intl` with the chosen language, never a pinned `'en-US'`. A missing
-  key renders the English entry, and in tests fails.
-- **Guards.** A vitest walks `ui/src` and fails on visible text written outside the catalog
-  (JSX text, `title`, `placeholder`, `aria-label`, toast and dialog text), with a short
-  allow-list (brand names, key names such as ⌘R). Another fails when a key of `en.json` is
-  missing from `es.json` or when `es` has a key `en` lacks.
-- **Native text** (`drivers/gui`). The tray's items, the native dialogs' titles and the
-  Touch ID reason come from a small table in the driver keyed by language, set at start and
-  again when the language changes. If cfire cannot relabel a tray item at run time, 68
-  files a CF-NNN and the tray follows the language from the next start.
-- **The core's messages** (69, D-084). A message is `{code, id, params, message}`: `code`
-  the error category as today, `id` a stable dotted name (`ssh.host_key_changed`), `params`
-  its values as strings, `message` the English sentence. The ids and their English text are
-  defined in one file of the core, which `coded(...)` call sites name; `message` is built
-  from that text and the params, so the CLI prints exactly what it prints today. RPC results
-  and `--json` carry `id` and `params` beside `message`. The page looks up `core.<id>` in
-  its catalog and falls back to `message`. A script lists the core's ids with no entry in
-  `en.json` or `es.json`.
+- **A tunnel's state** (`adapters/ssh`, 70). A listener is *up* only while it is open: not
+  `closed`, holding a socket, and its host session not lost. `listen()` checks once it is
+  bound that `127.0.0.1:<port>` answers (`port_answers`, already in the adapter) and returns
+  a failure with its reason otherwise, so the use case reports *not started · <why>* instead
+  of *listening*. Whether a check while the tunnel is on is needed is decided at 70's plan,
+  from what the Windows reproduction shows. The page's row (`TunnelsView.tsx`,
+  `TunnelsMenu.tsx`) wraps a `danger` or `warn` state and carries the whole text as `title`.
+- **A paused vault** (71). The sync clock (`domain/sync.cf`) learns one more state beside
+  its failures: *refused*, set when a sync ends in `ERR_AUTH` from the server. While a vault
+  is refused, `sync_due` returns false for every automatic reason (unlock of the same vault
+  included, the interval, focus, a pending change, the back-off); it syncs only on the
+  person's *Sync now*, a new token saved for that vault (*Replace token*), or a new start of
+  the app. The CLI keeps no state between commands and is paced by a person: a command
+  that changes a vault still tries once after it and warns, and `flint vault sync` tries
+  and says the token was refused. The page shows the vault as refused with *Sync now* and
+  *Replace token* at hand. Nothing about the refusal is kept on disk: a restart tries once.
+- **The refusal's message** (`adapters/vaultremote`). 401: the server refused the token.
+  429: the server asks to wait, with the wait from its `Retry-After` (a lockout says up to
+  15 minutes, a rate limit about a minute). Both through the core's message ids (D-145),
+  with entries in `en.json` and `es.json`.
+- **The server** (`flint-vault-server`). A `500`'s cause (an I/O error naming paths under
+  the data folder, never a token or a byte of a vault) goes into the reply's `note`, which
+  reaches the log only. `blob_vaults` skips a vault whose `head.json` cannot be read and
+  logs its id. `delete <id>` removes one vault's folder after asking, taking the id or a
+  unique prefix as `versions`, `restore` and `label` do.
 
-Contracts (v16's, plus):
-- **The CLI's output does not change:** same text, same codes; `--json` gains `id` and
-  `params` only.
-- **A message is never blank:** a missing translation shows the English entry, a missing
-  core id shows the core's `message`.
+Contracts (v17's, plus):
+- **A tunnel never reads *listening* while its port refuses a connection.**
+- **One refused token makes one attempt per machine until the person acts** in the app (a
+  restart, a *Sync now*, a new token); the CLI tries once per command that changes it.
+- **The server's API does not change:** same routes, same codes; only its log says more.
 
 ## Principles
 
 Checkable rules. Every milestone is checked against them before it is closed. Rules marked
-**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v16's, with
-21 added (D-140).
+**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v17's, unchanged.
 
 1. The domain and application layers import no adapter and no I/O module (`ext:webui`,
    `ext:db/sqlite`, sockets, HTTP, keychain, files).
@@ -215,22 +218,21 @@ Checkable rules. Every milestone is checked against them before it is closed. Ru
 Each milestone is built **whole** with `lean-build` and verified by the agent, sized to fit
 one session; each commits per area so a cut session resumes from `git log`. Owner checks
 happen only where a human is required (see `CLAUDE.md`). Progress is recorded in
-`docs/build-log.md`, not here. Numbering continues from v16.
+`docs/build-log.md`, not here. Numbering continues from v17.
 
 | # | Milestone | Delivers |
 |---|---|---|
-| 66 | **The catalog and the setting** | `ui/src/i18n/` with `t(key, params)`, plurals through `Intl.PluralRules`, `Intl` formatters bound to the language; `Settings.language` (`system`, `en`, `es`) in the core with the OS language resolved at start; the Language row in Settings → Appearance (System / English / Español, Español hidden or marked until 68 fills `es.json`); `en.json` holding every string of `shell/`, `palette/`, `pages/`, `screens/`, `update/` and `ui/`, and `App.tsx`. Verified: vitest of `t()` (params, plurals, a missing key), `cfire test` of the setting and the resolution of `system`; gui-e2e and vitest unchanged (the same English on screen); docs (desktop app: the Language row) |
-| 67 | **The rest of the page** | Every string of `sessions/`, `access/`, `files/`, `editors/`, `sync/`, `tunnels/`, `state/` and the text built in `lib/` (`rdpStats.ts` and the rest) moved into `en.json`; the guard that fails on visible text outside the catalog, with its allow-list. Verified: the guard green over all of `ui/src`; gui-e2e every run and vitest unchanged; no docs (nothing changes on screen) |
-| 68 | **Spanish** | `es.json` complete in neutral Spanish with *tú*; the parity test (`en` ⇔ `es`); the language switch live, no restart; the tray's items, the native dialogs' titles and Touch ID's reason from the driver's table in the chosen language (a CF-NNN if the tray cannot relabel at run time); dates and numbers in Spanish format. Verified: the parity test; gui-e2e runs in Spanish for the vault, settings and a terminal tab; the tray and a native dialog in Spanish on the Mac, the Windows VM and Zorin; the owner reads the main screens in Spanish for text that overflows or reads wrong; docs (desktop app: changing the language; the landing names the two languages) |
-| 69 | **The core's messages** | `{code, id, params, message}` (D-084) with the ids and English text in one core file; RPC results and `--json` carrying `id` and `params`; the page's lookup of `core.<id>` with the `message` fallback; the first messages migrated: connection cards (dial, auth, host key unknown and changed), unlock (wrong password, locked, keychain), RDP (connect, credentials, certificate); `scripts/i18n-missing.sh` listing ids without an entry in `en.json` or `es.json`. Verified: `cfire test` that `message` is unchanged for every migrated call; cli-e2e unchanged (the same text and codes) with `--json` showing `id`; vitest of the fallback; gui-e2e of a failed connection and a wrong password in Spanish; docs (CLI reference: `id` and `params` in `--json`; the demo's JSON if it shows an error) |
+| 70 | **A tunnel that says what it is** | First the reproduction on `Windows11-Flint-SSH` (a host whose first connect times out, then Retry, then `netstat`), with `diag:` lines if it does not show at once (CLAUDE.md rule 9); `states()` reports a listener that is closed, has no socket or whose session is lost as down; `listen()` checks that its port answers once bound and fails with the reason otherwise; the cause found by the reproduction fixed; `danger` and `warn` states wrap (`white-space: normal`, `overflow-wrap: anywhere`, the icon at the first line) and carry `title` in the Tunnels view and the toolbar's menu. Verified: `cfire test` of the adapter (a listener closed under it reads down; a bind that does not answer fails); the reproduction on the Windows VM passes after the fix, `netstat` showing the port whenever the row says *listening*; gui-e2e of a long tunnel error read whole in a narrow pane; docs (Tunnels: what *listening* means, a tunnel that did not start) |
+| 71 | **A remote vault that stops on a refused token** | The sync clock's *refused* state and `sync_due` honouring it; the app not syncing a refused vault on its own, *Sync now*, *Replace token* and a restart trying again (the CLI unchanged: one attempt per command that changes the vault); the vault's status in the page saying it is refused, with its two actions; the 401 and 429 messages through core ids in both catalogs; the self-host guide: how the server counts a client (a public address: a home, an office or a VPN with masquerade is one client), Docker Swarm's ingress mesh and `FLINT_VAULT_TRUST_PROXY=1` behind a proxy, the path through a proxy to a published port (Nginx Proxy Manager → Dokploy), reading the client in the server's log, a published port open on the LAN (the token in plain HTTP, a forgeable `X-Forwarded-For`: publish it to the proxy alone where the host allows it), and a local DNS name so machines on the LAN count apart; a `500`'s cause in the server's log; a damaged `head.json` skipped and logged; `flint-vault-server delete <id>` asking first; the *Connect to a remote vault* hint in one span. Verified: `cfire test` of `sync_due` (refused: no automatic reason syncs, *now* does) and of the server (a 500's note, a damaged head skipped, delete); sync-e2e: a wrong token makes one request and then none for several intervals, *Sync now* makes one more, a new token resumes; server-e2e of `delete`; cli-e2e of the messages; docs (Self-host a remote vault; the CLI reference of `delete`; the remote vault page: a refused vault; the CLI demo if it shows a refusal) |
 
 ## Open questions
 
-Settled with the owner on 2026-11-23 (D-140): four milestones of one session each, Flint's
-own helper, the system language by default, neutral Spanish with *tú*, no Claude Design run
-(the Language row is a select like the theme's). Open, to settle at the milestone's plan:
+Settled with the owner on 2026-11-24 (D-146): two milestones of one session each, before
+signing; a refused vault resumes by hand or at a restart, never on a timer. Open, to settle
+at each milestone's plan:
 
-- **Can cfire `v0.12.2` relabel a tray item at run time?** (68.) If not, a CF-NNN, and the
-  tray follows the language from the next start.
-- **Where `system` reads the OS language** on each OS (68 for Windows and Linux; macOS's
-  `NSLocale` at 66), and whether the webview's `navigator.language` is enough.
+- **What left the tunnel without its port** (70): a stale listener after the Retry, a bind
+  that failed silently, or something else; the reproduction decides whether a periodic
+  check while it is on earns its place.
+- **What counts as "refused"** (71): only a 401 from the server, or also a 429 during a
+  lockout (likely not: a 429 says to wait, and the back-off already does).
