@@ -8,7 +8,7 @@ import { Icon } from '../ui/Icon';
 import { humanSize, humanTime } from './paths';
 import { files, type FolderState } from './store';
 import { editPath } from './PathField';
-import { t } from '../i18n';
+import { fmtDate, t } from '../i18n';
 
 /** The row being dragged between panes: set on dragstart, cleared on dragend. */
 export interface PaneDrag {
@@ -123,7 +123,7 @@ export function FileList({ fkey, folder, os, listRef, dropPath, onOpenFile, onMe
                 title={e.kind === 'link' ? t('file_list.name_a_link', { name: e.name }) : e.name}>
                 <span className="fname"><Icon name={e.kind === 'dir' ? 'folder' : e.kind === 'link' ? 'link' : 'file'} size="sm" className={e.kind === 'dir' ? 'dir' : ''} /><span className="trunc">{e.name}</span></span>
                 <span className="num">{e.kind === 'dir' ? '—' : humanSize(e.size)}</span>
-                <span className="num" title={new Date(e.mtime * 1000).toLocaleString()}>{humanTime(e.mtime)}</span>
+                <span className="num" title={fmtDate(e.mtime * 1000, { dateStyle: 'medium', timeStyle: 'short' })}>{humanTime(e.mtime)}</span>
               </div>
             ))}
             {!folder?.loading && entries.length === 0 && <div className="hint" style={{ padding: 'var(--sp-3)' }} data-files-folder-empty>{t('file_list.this_folder_is_empty')}</div>}

@@ -16,7 +16,7 @@
 import { useSyncExternalStore } from 'react';
 import { api } from '../api/backend';
 import type { DesktopRect, DesktopSpan, LocalMonitor, MonitorPick, MonitorsView, RdpPointer } from '../api/types';
-import { t } from '../i18n';
+import { language, t } from '../i18n';
 
 export type MonitorsPhase = 'off' | 'opening' | 'arranging' | 'on';
 
@@ -86,6 +86,12 @@ export class MonitorsStore {
   private set(next: Partial<MonitorsSnapshot>) {
     this.snap = { ...this.snap, ...next };
     for (const fn of this.listeners) fn();
+  }
+
+  /** The language changed: the open extra windows relabel their text (milestone 68). */
+  relabel() {
+    if (this.snap.phase === 'off') return;
+    for (const id of this.snap.picks.slice(1)) this.backend.send(id, { type: 'lang' }).catch(() => {});
   }
 
   /** Reads what the system offers now (the menu and the popover show it). */
@@ -305,7 +311,8 @@ export const monitors = new MonitorsStore({
   list: () => api.monitorsList(),
   open: (ids) => api.monitorsOpen(ids),
   close: () => api.monitorsClose(),
-  send: (id, data) => api.monitorsSend(id, data),
+  // Every message carries the page's language, so the window's own text follows it.
+  send: (id, data) => api.monitorsSend(id, { ...(data as Record<string, unknown>), lang: language() }),
   span: (session, picks) => api.rdpSpan(session, picks),
   resize: (session, w, h) => api.rdpResize(session, w, h),
 });

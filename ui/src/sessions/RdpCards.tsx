@@ -11,7 +11,7 @@ import { Kbd, Key } from '../ui/Kbd';
 import { RDP_CONNECT_TIMEOUT_S } from '../lib/rdpInput';
 import { rdpEndKind, sessions, type Pane } from './store';
 import { plainText } from '../ui/plainText';
-import { t } from '../i18n';
+import { fmtDate, t } from '../i18n';
 import { tr } from '../i18n/react';
 
 /** "4f:a2:…" as the design groups it: upper-case bytes split by spaces. */
@@ -161,7 +161,7 @@ const GRAPHICS_LABEL: Record<string, string> = { auto: 'rdp_cards.graphics.auto'
 export function lostReason(pane: Pane): string {
   const msg = pane.end?.message ?? '';
   if (!pane.endedAt) return msg;
-  const at = new Date(pane.endedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const at = fmtDate(pane.endedAt, { hour: '2-digit', minute: '2-digit' });
   return msg ? `${msg} · ${at}` : at;
 }
 

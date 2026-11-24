@@ -4,7 +4,7 @@
 
 import { GrantNoticesHost } from '../access/GrantNoticesHost';
 import { keyTab, pairs } from '../files/pair';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api, on } from '../api/backend';
 import { toasts, useApp } from '../state/app';
 import { actionFor, chordLabel, type Action } from '../lib/keymap';
@@ -43,7 +43,7 @@ import { serverStats } from '../sessions/serverStats';
 import { ServerStatsItem } from './ServerStatsItem';
 import { useUpdate } from '../update/UpdateProvider';
 import { t } from '../i18n';
-import { tr } from '../i18n/react';
+import { LanguageContext, tr } from '../i18n/react';
 
 type View = 'hosts' | 'files' | 'tunnels' | 'keys' | 'credentials' | 'settings';
 // The views that keep the sessions on screen beside a sidebar.
@@ -199,6 +199,9 @@ export function Shell() {
   useEffect(() => on<{ id: string; data: string }>('monitor:message', (e) => monitors.message(e.id, e.data)), []);
   useEffect(() => on<{ id: string }>('monitor:closed', (e) => monitors.windowGone(e.id)), []);
   useEffect(() => on('monitors:changed', () => { void monitors.screensChanged(); }), []);
+  // The extra monitors' windows follow a change of language at once (milestone 68).
+  const lang = useContext(LanguageContext);
+  useEffect(() => monitors.relabel(), [lang]);
   useEffect(() => {
     void monitors.refresh();
     // gui-e2e's multimon run reads the monitors' store; its vault run drives the toasts', its paste run records them.

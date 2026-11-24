@@ -20,7 +20,7 @@ import { createRenderer, type DeskRenderer } from '../lib/deskRenderer';
 import { parseFrameHeader, rdpButton, WheelAccumulator } from '../lib/rdpInput';
 import { cropPoint } from '../sessions/monitors';
 import type { DesktopRect } from '../api/types';
-import { t } from '../i18n';
+import { language, setLanguage, t, type Lang } from '../i18n';
 
 declare global {
   interface Window {
@@ -42,6 +42,7 @@ function post(msg: Record<string, unknown>) {
 const root = document.getElementById('mon')!;
 const cv = document.getElementById('desk') as HTMLCanvasElement;
 cv.setAttribute('aria-label', t('monitor.desk_aria'));
+let shownState = '';
 let renderer: DeskRenderer | null = null;
 let crop: DesktopRect = { x: 0, y: 0, width: 0, height: 0 };
 let reading = 0;
@@ -60,6 +61,7 @@ function layout() {
 }
 
 function setState(state: string) {
+  shownState = state;
   card?.remove();
   card = null;
   root.classList.toggle('dim', state === 'lost' || state === 'rearranging');
@@ -104,7 +106,17 @@ async function read(port: number, token: string, view: number, run: number) {
   }
 }
 
+// The main page names its language in every message (milestone 68): the canvas's label
+// and a shown card follow it.
+function followLanguage(lang: unknown) {
+  if ((lang !== 'en' && lang !== 'es') || lang === language()) return;
+  setLanguage(lang as Lang);
+  cv.setAttribute('aria-label', t('monitor.desk_aria'));
+  if (card) setState(shownState);
+}
+
 window.__flint_monitor = (msg) => {
+  followLanguage(msg.lang);
   if (msg.type === 'show') {
     crop = msg.crop as DesktopRect;
     layout();

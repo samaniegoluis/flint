@@ -63,6 +63,17 @@ describe('a desktop across monitors', () => {
     expect(store.spanning('p1')).toBe(true);
   });
 
+  it('tells the open extra windows when the language changes, and nobody once off', async () => {
+    const { store, sent } = fake();
+    store.relabel();
+    expect(sent).toEqual([]);
+    await store.enter('p1', 's1', { width: 2560, height: 1440 }, DESK);
+    store.message('2', JSON.stringify({ type: 'ready', width: 1080, height: 1920 }));
+    await tick();
+    store.relabel();
+    expect(sent[sent.length - 1]).toEqual({ id: '2', data: { type: 'lang' } });
+  });
+
   it('greys the entry with the reason, and does nothing', async () => {
     const { store, calls } = fake({ reason: 'Not supported on this system yet' });
     await store.enter('p1', 's1', { width: 800, height: 600 }, DESK);

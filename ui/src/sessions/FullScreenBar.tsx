@@ -11,7 +11,7 @@ import type { Pane } from './store';
 import { useMonitors } from './monitors';
 import { TypeMenuButton } from './RdpTypeMenu';
 import { MonitorsButton } from './MonitorsUi';
-import { t } from '../i18n';
+import { fmtDate, t } from '../i18n';
 import { tr } from '../i18n/react';
 
 /** How long the bar stays after the pointer leaves it. */
@@ -70,7 +70,7 @@ export function FullScreenBar({ pane, top, noteSeen, onNoteSeen, monitorsNoteSee
   const kept = pinned || lost || popover || busy;
   const pinOn = pinned || lost;
   const d = pane.desktop;
-  const at = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const at = (ms: number) => fmtDate(ms, { hour: '2-digit', minute: '2-digit' });
   const meta = lost
     ? `disconnected ${pane.endedAt ? at(pane.endedAt) : ''}`.trim()
     : d ? `${spanning && mon.span ? `${mon.span.monitors.length} monitors · ${mon.span.width} × ${mon.span.height}` : `${d.width} × ${d.height}`}${d.rttMs >= 0 ? ` · ${d.rttMs} ms` : ''}` : 'connecting';

@@ -16,13 +16,13 @@ import { RememberOption } from '../ui/RememberOption';
 import { ServerAddress } from '../sync/ConnectServerModal';
 import { serverErrorField, TokenField } from '../sync/TokenField';
 import { plainText } from '../ui/plainText';
-import { t } from '../i18n';
+import { fmtNumber, t } from '../i18n';
 import { tr } from '../i18n/react';
 
 type Errors = { url?: string; token?: string; pw?: string; path?: string; form?: string };
 
 function VaultFacts({ v, now }: { v: ServerVault; now: number }) {
-  return <>{tr('connect_remote.sizelabel_version_p_updated_agolabel', { sizeLabel: sizeLabel(v.size), p: v.version.toLocaleString('en-US'), agoLabel: agoLabel(v.updated_at, now) })}</>;
+  return <>{tr('connect_remote.sizelabel_version_p_updated_agolabel', { sizeLabel: sizeLabel(v.size), p: fmtNumber(v.version), agoLabel: agoLabel(v.updated_at, now) })}</>;
 }
 
 export function ConnectRemote() {
