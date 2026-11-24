@@ -1341,25 +1341,53 @@ struct MacKeyboard {
     bool iso = false;
 };
 
+inline void read_mac_keyboard_into(MacKeyboard& k) {
+    TISInputSourceRef src = TISCopyCurrentKeyboardLayoutInputSource();
+    if (src) {
+        auto sid = static_cast<CFStringRef>(TISGetInputSourceProperty(src, kTISPropertyInputSourceID));
+        char buf[256] = {0};
+        if (sid && CFStringGetCString(sid, buf, sizeof buf, kCFStringEncodingUTF8)) k.klid = klid_for_input_source(buf);
+        CFRelease(src);
+    }
+    k.iso = KBGetLayoutType(LMGetKbdType()) == kKeyboardISO;
+}
+
+// How long an RDP open waits for the main thread to read the layout (milestone 71).
+constexpr std::int64_t MAC_KEYBOARD_WAIT_MS = 1000;
+
 inline MacKeyboard read_mac_keyboard() {
-    MacKeyboard k;
-    auto read = [&k] {
-        TISInputSourceRef src = TISCopyCurrentKeyboardLayoutInputSource();
-        if (src) {
-            auto sid = static_cast<CFStringRef>(TISGetInputSourceProperty(src, kTISPropertyInputSourceID));
-            char buf[256] = {0};
-            if (sid && CFStringGetCString(sid, buf, sizeof buf, kCFStringEncodingUTF8)) k.klid = klid_for_input_source(buf);
-            CFRelease(src);
-        }
-        k.iso = KBGetLayoutType(LMGetKbdType()) == kKeyboardISO;
-    };
     // Text Input Sources are main-thread only.
     if (pthread_main_np()) {
-        read();
-    } else {
-        dispatch_sync(dispatch_get_main_queue(), ^{ read(); });
+        MacKeyboard k;
+        read_mac_keyboard_into(k);
+        return k;
     }
-    return k;
+    // Asked of the main queue with a bounded wait (milestone 71, Principle 8): a
+    // dispatch_sync here once waited for good when the main queue was not drained
+    // (gui-e2e rdp on macOS, ROADMAP §9), so the open never reached its own timeout
+    // and the app deadlocked on quit. Late, the read lands in shared state and the
+    // open goes on with the layout FreeRDP detects (klid 0, ANSI).
+    struct Shared {
+        std::mutex mu;
+        std::condition_variable cv;
+        bool done = false;
+        MacKeyboard k;
+    };
+    auto shared = std::make_shared<Shared>();
+    dispatch_async(dispatch_get_main_queue(), ^{
+        MacKeyboard k;
+        read_mac_keyboard_into(k);
+        std::lock_guard<std::mutex> lock(shared->mu);
+        shared->k = k;
+        shared->done = true;
+        shared->cv.notify_all();
+    });
+    std::unique_lock<std::mutex> lock(shared->mu);
+    if (!shared->cv.wait_for(lock, std::chrono::milliseconds(MAC_KEYBOARD_WAIT_MS), [&] { return shared->done; })) {
+        std::fprintf(stderr, "flint-gui: rdp: the keyboard layout was not read within %lld ms; FreeRDP's own detection is used\n", static_cast<long long>(MAC_KEYBOARD_WAIT_MS));
+        return MacKeyboard{};
+    }
+    return shared->k;
 }
 
 inline MacKeyboard& mac_keyboard() {
