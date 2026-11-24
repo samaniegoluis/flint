@@ -3666,6 +3666,53 @@
       await sleep(500);
       await check(!q('[data-close-action-row]'), 'with a tray the row is not offered');
       await click('.rail-btn', 'Hosts');
+
+      // Milestone 68 (ROADMAP §9): the unlock screen of a closed vault offers a remote
+      // vault, and its Switch vault menu stays inside a short window. The headless
+      // window cannot be resized (CF-111), so the page is told how tall it is.
+      await setStep('the unlock screen in a short window');
+      await click('.statusbar .sb-btn', 'Lock');
+      await waitFor(() => q('.lock-screen [data-lock-reason="manual"]'), 'the lock screen');
+      await click('.lock-screen button', 'Close vault');
+      await waitFor(() => !q('.lock-screen') && q('form[aria-label="Unlock vault"]'), 'the unlock screen of the closed vault', 15000);
+      {
+        const height = Object.getOwnPropertyDescriptor(window, 'innerHeight');
+        const setHeight = (h) => {
+          if (h) Object.defineProperty(window, 'innerHeight', { configurable: true, get: () => h });
+          else if (height) Object.defineProperty(window, 'innerHeight', height);
+          else delete window.innerHeight;
+          window.dispatchEvent(new Event('resize'));
+        };
+        const menu = () => q('.menu[role="dialog"]');
+        try {
+          const footer = byText('form[aria-label="Unlock vault"] button', 'Switch vault').getBoundingClientRect();
+          const short = Math.round(footer.bottom + 60);
+          setHeight(short);
+          await click('form[aria-label="Unlock vault"] button', 'Switch vault');
+          const m = await waitFor(() => menu(), 'the Switch vault menu');
+          await sleep(100);
+          const r = m.getBoundingClientRect();
+          const connect = byText('.menu .mi', 'Connect to a remote vault').getBoundingClientRect();
+          log(`diag: short window ${short} px, menu ${Math.round(r.top)}..${Math.round(r.bottom)}, connect item bottom ${Math.round(connect.bottom)}`);
+          await check(r.top >= 0 && r.bottom <= short && connect.bottom <= short, `in a short window the Switch vault menu stays inside it (${Math.round(r.top)}..${Math.round(r.bottom)} of ${short})`);
+          setHeight(160);
+          await waitFor(() => m.getBoundingClientRect().bottom <= 160, 'the menu inside a 160 px window', 5000);
+          await check(m.getBoundingClientRect().top >= 0 && m.scrollHeight > m.clientHeight, 'a window shorter than the menu scrolls it, inside the window');
+          m.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+          await waitFor(() => !menu(), 'the menu to close on Esc', 5000);
+        } finally {
+          setHeight(null);
+        }
+      }
+      await click('[data-unlock-connect]', 'Remote vault');
+      await waitFor(() => q('form[aria-label="Connect to a remote vault"]'), 'the connect screen from the unlock screen', 10000);
+      await check(true, 'the unlock screen opens Connect to a remote vault');
+      await click('form[aria-label="Connect to a remote vault"] button', 'Back');
+      await waitFor(() => q('form[aria-label="Unlock vault"]'), 'the unlock screen again', 10000);
+      await fill('#pw', MASTER);
+      await click('button[type="submit"]', 'Unlock');
+      await waitFor(() => byText('.tree .ti', 'local') || grpRow(), 'the unlocked tree', 30000);
+      await check(true, 'and the vault unlocks from it');
     }
 
     await log(`${passed} checks passed`);

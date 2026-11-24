@@ -1890,6 +1890,8 @@
   "unlock.reason.manual": "Locked.",
   "unlock.reason.screen": "Locked when the screen locked.",
   "unlock.reason.sleep": "Locked before the computer went to sleep.",
+  "unlock.remote_vault": "Remote vault…",
+  "unlock.remote_vault_title": "Connect to a remote vault",
   "unlock.sessions_keep_running.one": "One session keeps running.",
   "unlock.sessions_keep_running.other": "{count} sessions keep running.",
   "unlock.show_password": "Show password",

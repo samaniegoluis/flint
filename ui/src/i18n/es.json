@@ -1890,6 +1890,8 @@
   "unlock.reason.manual": "Bloqueada.",
   "unlock.reason.screen": "Bloqueada al bloquearse la pantalla.",
   "unlock.reason.sleep": "Bloqueada antes de que la computadora se suspendiera.",
+  "unlock.remote_vault": "Bóveda remota…",
+  "unlock.remote_vault_title": "Conectarse a una bóveda remota",
   "unlock.sessions_keep_running.one": "Una sesión sigue en ejecución.",
   "unlock.sessions_keep_running.other": "{count} sesiones siguen en ejecución.",
   "unlock.show_password": "Mostrar contraseña",

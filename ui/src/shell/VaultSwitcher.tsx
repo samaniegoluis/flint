@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { api } from '../api/backend';
 import type { RecentView } from '../api/types';
 import { shortPath, useApp, vaultInitial, vaultMarkClass } from '../state/app';
@@ -30,6 +30,31 @@ export function VaultMenu({ onClose, onManage, style }: { onClose: () => void; o
     { key: 'connect', run: () => { onClose(); go('connect'); } },
     ...(onManage ? [{ key: 'manage', run: () => { onClose(); onManage(); } }] : []),
   ];
+
+  // The menu stays inside the window: one that would run past the bottom edge moves up
+  // (over whatever opened it), and one taller than the window scrolls. The unlock
+  // screen's footer sits low, and with a few vaults its menu hid the last items.
+  const fit = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.transform = '';
+    el.style.maxHeight = '';
+    el.style.overflowY = '';
+    const margin = 8;
+    const r = el.getBoundingClientRect();
+    const room = window.innerHeight - 2 * margin;
+    if (r.height > room) {
+      el.style.maxHeight = room + 'px';
+      el.style.overflowY = 'auto';
+    }
+    const over = r.top + Math.min(r.height, room) - (window.innerHeight - margin);
+    if (over > 0) el.style.transform = `translateY(${-Math.min(over, r.top - margin)}px)`;
+  }, []);
+  useLayoutEffect(fit, [fit, recents.length, servers, onManage]);
+  useEffect(() => {
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [fit]);
 
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>('[data-hot="true"]')?.focus();

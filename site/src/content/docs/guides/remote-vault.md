@@ -59,9 +59,9 @@ connect it from the app, or lock it there first.
 
 ## Add another machine
 
-**In the app:** on the Welcome screen (or from the vault switcher, ⇧⌘O), choose
-**Connect to a remote vault** (⌥⌘O). Type the server's address and paste the token;
-**Continue** checks them with the server. The server cannot read a vault, so all it shows
+**In the app:** on the Welcome screen (or from the vault switcher, ⇧⌘O, or **Remote
+vault…** at the foot of the unlock screen), choose **Connect to a remote vault** (⌥⌘O).
+Type the server's address and paste the token; **Continue** checks them with the server. The server cannot read a vault, so all it shows
 is its label (if it was given one), its size, its version and when it last changed; a
 server that keeps several lists them, and you pick one. Type that vault's master
 password, choose where to keep the local copy, and **Download and open**. The vault

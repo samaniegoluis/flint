@@ -185,12 +185,13 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
           </div>
           <RememberOption checked={remember} onChange={setRemember} os={os} disabled={busy} />
           {locked && <span className="hint row" style={{ gap: 6 }}><Icon name="info" size="xs" />{t('unlock.the_vault_key_left_memory')}</span>}
-          <div className="row" style={{ justifyContent: 'center', gap: 'var(--sp-5)', paddingTop: 'var(--sp-5)', borderTop: '1px solid var(--border-subtle)', position: 'relative' }}>
+          <div className="row" style={{ justifyContent: 'center', flexWrap: 'wrap', gap: 'var(--sp-2) var(--sp-4)', paddingTop: 'var(--sp-5)', borderTop: '1px solid var(--border-subtle)', position: 'relative' }}>
             {locked
               ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => closeLocked().catch(fail)}>{live > 0 ? t('unlock.close_vault_end_sessions') : t('unlock.close_vault')}</button>
               : <>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSwitcher(true)}>{t('unlock.switch_vault')}<Kbd action="switchVault" /></button>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => openVaultFile().catch(fail)}>{t('unlock.open_file')}<Kbd action="openVault" /></button>
+                <button type="button" className="btn btn-ghost btn-sm" data-unlock-connect title={t('unlock.remote_vault_title')} onClick={() => go('connect')}>{t('unlock.remote_vault')}<Kbd action="connectRemote" /></button>
               </>}
             {switcher && <VaultMenu onClose={() => setSwitcher(false)} style={{ top: 48, left: '50%', marginLeft: -170 }} />}
           </div>
