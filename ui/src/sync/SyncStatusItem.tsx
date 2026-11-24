@@ -1,16 +1,19 @@
 // The sync's state in the status bar (design 23c): a cloud and a word, quiet by
-// default; colour only for Merged (news) and the two states that need the person.
-// A vault not connected shows nothing. A click opens the popover (23c2).
+// default; colour only for Merged (news) and the states that need the person.
+// A vault not connected shows nothing. A click opens the popover (23c2); a refused
+// token's popover offers Sync now and Replace token (milestone 71).
 
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../state/app';
-import { agoLabel, syncDetail, syncLabel, type SyncState } from '../lib/sync';
+import { agoLabel, failureMessage, lastFailure, syncDetail, syncLabel, type SyncState } from '../lib/sync';
 import { Icon } from '../ui/Icon';
 import { useSync } from './SyncProvider';
+import { ReplaceTokenModal } from './ReplaceTokenModal';
+import { coreText } from '../i18n/core';
 import { fmtDate, fmtNumber, t } from '../i18n';
 
 const TONE: Record<SyncState, string> = {
-  syncing: 'syncing', merged: 'info', password: 'warn', attention: 'warn', offline: '', waiting: '', in_step: '',
+  syncing: 'syncing', merged: 'info', password: 'warn', refused: 'warn', attention: 'warn', offline: '', waiting: '', in_step: '',
 };
 
 export function SyncStatusItem() {
@@ -18,6 +21,7 @@ export function SyncStatusItem() {
   const sync = useSync();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -39,14 +43,19 @@ export function SyncStatusItem() {
   const tip = state === 'in_step' ? t('sync_status_item.synced_ago', { ago: agoLabel(st.last_sync, sync.now) })
     : state === 'offline' ? t('sync_status_item.offline_tip')
     : state === 'merged' ? t('sync_status_item.merged_tip')
+    : state === 'refused' ? t('sync_status_item.refused_tip')
     : syncDetail(state);
   const click = () => {
     if (state === 'merged' && sync.lastMerge) { sync.showDetails(); return; }
     if (state === 'password') { sync.askPassword(); return; }
     if (state === 'attention') { sync.openServerSettings(); return; }
+    // 'refused' opens the popover: Sync now and Replace token are there.
     setOpen(!open);
   };
   const syncNow = async () => { setBusy(true); await sync.syncNow(); setBusy(false); };
+  // What the server said, in the page's language (the core's own text in English).
+  const failed = lastFailure(st, sync.lastError);
+  const said = failed ? coreText(failureMessage(failed)) : '';
   return (
     <span ref={box} style={{ position: 'relative', display: 'inline-flex' }}>
       <button className={'sb-sync ' + TONE[state] + (open ? ' is-open' : '')} data-sync-item={state} aria-label={t('sync_status_item.vault_sync_state', { state: syncLabel(state) })} title={tip}
@@ -62,6 +71,7 @@ export function SyncStatusItem() {
             <span className="strong">{syncLabel(state)}</span><span className="grow" /><span className="hint">{vault?.name}</span>
           </div>
           <span className="muted" style={{ lineHeight: 1.45 }}>{syncDetail(state)}</span>
+          {(state === 'refused' || state === 'attention') && said && <span className="hint" data-pop-sync-error style={{ lineHeight: 1.45, overflowWrap: 'anywhere' }}>{said}</span>}
           <dl className="kv">
             <dt>{t('sync_status_item.last_sync')}</dt><dd>{agoLabel(st.last_sync, sync.now)}{st.last_sync > 0 ? ' · ' + fmtDate(st.last_sync, { hour: '2-digit', minute: '2-digit' }) : ''}</dd>
             <dt>{t('sync_status_item.server')}</dt><dd className="mono trunc" title={st.url}>{st.url}</dd>
@@ -70,10 +80,14 @@ export function SyncStatusItem() {
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
             <button className="btn btn-secondary btn-sm" data-pop-sync-now onClick={() => syncNow().catch(() => {})} disabled={busy}><Icon name="reconnect" size="sm" />{busy ? t('sync_status_item.syncing') : t('sync_status_item.sync_now')}</button>
             <span className="grow" />
-            <button className="btn btn-ghost btn-sm" onClick={() => { setOpen(false); sync.openServerSettings(); }}>{t('sync_status_item.server_settings')}</button>
+            {state === 'refused'
+              ? <button className="btn btn-ghost btn-sm" data-pop-replace-token onClick={() => { setOpen(false); setReplacing(true); }}>{t('sync_status_item.replace_token')}</button>
+              : <button className="btn btn-ghost btn-sm" onClick={() => { setOpen(false); sync.openServerSettings(); }}>{t('sync_status_item.server_settings')}</button>}
           </div>
         </div>
       )}
+      {/* The loop syncs at once with a new token (milestone 71): no Sync now here. */}
+      {replacing && <ReplaceTokenModal url={st.url} onClose={() => setReplacing(false)} onReplaced={() => {}} />}
     </span>
   );
 }

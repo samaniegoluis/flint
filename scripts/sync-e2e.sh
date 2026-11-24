@@ -5,7 +5,8 @@
 # end with every change; an alias taken on both is renamed; a master password
 # changed on one is taken by the other; a second vault goes to the same server beside
 # the first, with a label, and B downloads it by a prefix of its id (milestone 45);
-# the token never shows anywhere.
+# a token the server stops accepting pauses the app's sync until Sync now or a new
+# token (milestone 71); the token never shows anywhere.
 #
 #   scripts/sync-e2e.sh
 #
@@ -31,6 +32,9 @@ checks=0
 port="$(python3 -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
 url="http://127.0.0.1:$port"
 TOKEN="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+# The server's token after its rotation (milestone 71): the app's old one is refused.
+TOKEN2="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+server_token="$TOKEN"
 PW="lantern-orbit-quiet-mosaic-97"
 NEW_PW="harbour-violet-engine-cobalt-42"
 VA="$tmp/va/Lab.flint"
@@ -38,7 +42,7 @@ VB="$tmp/vb/Lab.flint"
 server_pid=""
 
 start_server() {
-  FLINT_VAULT_TOKEN="$TOKEN" FLINT_VAULT_DATA="$tmp/data" FLINT_VAULT_LISTEN="127.0.0.1:$port" "$server" >>"$tmp/server.log" 2>&1 &
+  FLINT_VAULT_TOKEN="$server_token" FLINT_VAULT_DATA="$tmp/data" FLINT_VAULT_LISTEN="127.0.0.1:$port" "$server" >>"$tmp/server.log" 2>&1 &
   server_pid=$!
   for _ in $(seq 1 50); do (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && return; sleep 0.1; done
   echo "sync-e2e: the server did not start" >&2; cat "$tmp/server.log" >&2; exit 1
@@ -134,6 +138,7 @@ check "it points to vault passwd" '[[ "$err" == *"flint vault passwd"* ]]'
 on a 7 "plain http beyond this machine" "$PW"$'\n'"$TOKEN"$'\n' -- --vault "$VA" vault connect http://vault.example.com --master-stdin --token-stdin
 on a 6 "the wrong master password" "not-the-password-at-all-17"$'\n'"$TOKEN"$'\n' -- --vault "$VA" vault connect "$url" --master-stdin --token-stdin
 on a 12 "a wrong token" "$PW"$'\n'"wrong-token-wrong-token-wrong-token-1"$'\n' -- --json --vault "$VA" vault connect "$url" --master-stdin --token-stdin
+check "a 401 says the token was refused, with its id, and no lockout" '[[ "$out$err" == *"refused the token"* && "$out$err" == *"remote.token_refused"* && "$out$err" != *"15 minutes"* ]]'
 check "--json error says auth" '[[ "$(echo "$err" | json_get "d[\"error\"][\"code\"]")" == "auth" ]]'
 check "nothing remembered after a refusal" '[[ ! -f "$tmp/a/remotes.json" ]] || ! grep -q "$VA" "$tmp/a/remotes.json"'
 FLINT_KEYCHAIN=off on a 9 "no keychain to keep the token" "$PW"$'\n'"$TOKEN"$'\n' -- --vault "$VA" vault connect "$url" --master-stdin --token-stdin
@@ -346,8 +351,11 @@ check "the file stays" '[[ -f "$VB" ]]'
 
 echo "== the app connects on its own (milestone 44: Welcome, Settings, the status bar)"
 # A third machine, C, with an empty config folder: the app downloads the vault through
-# Connect to a remote vault, syncs B's change from the status bar, replaces its token,
-# disconnects and connects again from Settings, driving the page as a person would.
+# Connect to a remote vault, syncs B's change from the status bar; the server's token is
+# rotated, so the app's loop is refused once and then pauses (milestone 71): no other
+# request while focus hints and the back-off would have synced, one more on Sync now,
+# and the new token resumes it at once. Then it disconnects and connects again from
+# Settings, driving the page as a person would.
 # The token is saved by the app itself, so macOS asks nothing (D-099): it runs on both.
 on a 0 "A disconnects, so the app's keychain item is its own" "" -- --vault "$VA" vault disconnect
 on b 0 "B connects again" "$PW"$'\n'"$TOKEN"$'\n' -- --vault "$VB" vault connect "$url" --master-stdin --token-stdin
@@ -428,19 +436,55 @@ cat > "$tmp/app-c.js" <<JS
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(300);
     if (q('[data-merge-details]')) byText(q('.modal'), 'Close').click();
+    // The server's token is rotated (the script restarts it with TOKEN2): the loop's
+    // next sync is refused, and the vault pauses (milestone 71).
+    await log('ready-for-rotate');
+    await sleep(1500);
+    {
+      const t1 = Date.now();
+      while (!q('[data-sync-item="refused"]')) {
+        if (Date.now() - t1 > 90000) throw new Error('not refused after 90 s: ' + (q('[data-sync-item]') || {}).dataset?.syncItem);
+        await window.backend.vault_sync_hint({ reason: 'focus' });
+        await sleep(1000);
+      }
+    }
+    await log('refused');
+    // 40 s of focus hints (each would sync after 15 s) and the first back-off (30 s).
+    {
+      const t2 = Date.now();
+      while (Date.now() - t2 < 40000) {
+        await window.backend.vault_sync_hint({ reason: 'focus' });
+        await sleep(1000);
+      }
+    }
+    if (!q('[data-sync-item="refused"]')) throw new Error('the pause did not hold: ' + q('[data-sync-item]').dataset.syncItem);
+    await log('paused-done');
+    // The script counts the server's refusals now; only the paused loop could add one.
+    await sleep(3000);
+    click('[data-sync-item="refused"]');
+    await waitFor(() => q('[data-pop-sync-error]') && q('[data-pop-sync-error]').textContent.includes('refused the token'), 'the server\'s words in the popover');
+    if (q('[data-pop-sync-error]').textContent.includes('15 minutes')) throw new Error('a 401 still reads as a lockout');
+    click('[data-pop-sync-now]');
+    await sleep(300);
+    await waitFor(() => q('[data-pop-sync-now]:not([disabled])'), 'Sync now done');
+    if (!q('[data-sync-item="refused"]')) throw new Error('Sync now with the old token did not stay refused');
+    await log('sync-now-refused');
+    click('[data-pop-replace-token]');
+    await waitFor(() => q('#rtk'), 'Replace token from the popover');
+    type('#rtk', 'wrong-token-wrong-token-wrong-token-4');
+    await submit('form[aria-label="Replace token"]');
+    await waitFor(() => q('#rtk-e'), 'a refused token kept the old one');
+    type('#rtk', '$TOKEN2');
+    await submit('form[aria-label="Replace token"]');
+    await waitFor(() => !q('#rtk'), 'token replaced');
+    // In step, or Merged while to-c's merge is under a minute old: no longer refused.
+    await waitFor(() => q('[data-sync-item="in_step"], [data-sync-item="merged"]'), 'synced with the new token, without Sync now', 15000);
+    await log('resumed');
     // Settings → Vault → Server.
     click('[data-item="settings"]');
     await waitFor(() => byText(document, 'Vault'), 'Settings');
     byText(document, 'Vault').click();
     await waitFor(() => q('[data-server="on"]'), 'Server, connected');
-    click('[data-replace-token]');
-    await waitFor(() => q('#rtk'), 'Replace token');
-    type('#rtk', 'wrong-token-wrong-token-wrong-token-4');
-    await submit('form[aria-label="Replace token"]');
-    await waitFor(() => q('#rtk-e'), 'a refused token kept the old one');
-    type('#rtk', '$TOKEN');
-    await submit('form[aria-label="Replace token"]');
-    await waitFor(() => !q('#rtk'), 'token replaced');
     click('[data-disconnect-server]');
     await waitFor(() => byText(q('.modal'), 'Disconnect'), 'the disconnect confirm');
     byText(q('.modal'), 'Disconnect').click();
@@ -448,7 +492,7 @@ cat > "$tmp/app-c.js" <<JS
     if (q('[data-sync-item]')) throw new Error('the status bar still shows a sync item');
     click('[data-connect-server]');
     await waitFor(() => q('#csa'), 'Connect to a server');
-    type('#csa', '$url'); type('#cst', '$TOKEN'); type('#csl', 'Lab at home'); type('#cmp', '$PW');
+    type('#csa', '$url'); type('#cst', '$TOKEN2'); type('#csl', 'Lab at home'); type('#cmp', '$PW');
     await submit('form[aria-label="Connect to a server"]');
     await waitFor(() => q('[data-connect-outcome]'), 'connected again', 30000);
     await log('connect outcome: ' + q('[data-connect-outcome]').dataset.connectOutcome);
@@ -458,6 +502,9 @@ cat > "$tmp/app-c.js" <<JS
   } catch (e) {
     const m = q('.modal');
     if (m) await log('diag: open modal: ' + m.textContent.replace(/\s+/g, ' ').slice(0, 300));
+    const si = q('[data-sync-item]');
+    await log('diag: sync item: ' + (si ? si.dataset.syncItem + ' (' + si.title + ')' : 'none'));
+    await log('diag: remote status: ' + JSON.stringify(await window.backend.vault_remote_status({ path: '$(npath "$VC")' }).catch((x) => String(x))));
     await log('diag: page: ' + document.body.textContent.replace(/\s+/g, ' ').slice(0, 400));
     await window.backend.e2e_report({ ok: false, detail: String(e && e.message || e) });
   }
@@ -468,21 +515,37 @@ FLINT_CONFIG_DIR="$short_c" FLINT_GUI_E2E="$tmp/app-c.js" "${app[@]}" >"$tmp/app
 app_pid=$!
 for _ in $(seq 1 90); do grep -q "ready-for-b" "$tmp/app-c.log" && break; sleep 1; done
 on b 0 "B adds a host for C" "$PW"$'\n' -- --vault "$VB" host add to-c --hostname 10.0.5.5 --master-stdin
+# The token's rotation (milestone 71): the server comes back with TOKEN2.
+for _ in $(seq 1 120); do grep -q "ready-for-rotate" "$tmp/app-c.log" && break; kill -0 "$app_pid" 2>/dev/null || break; sleep 1; done
+stop_server
+server_token="$TOKEN2"
+start_server
+# 401s since the restart (the server's log after its last "listening" line).
+refusals() { awk '/listening on/ { n = 0 } / 401 / { n++ } END { print n + 0 }' "$tmp/server.log"; }
+for _ in $(seq 1 750); do grep -q "paused-done" "$tmp/app-c.log" && break; kill -0 "$app_pid" 2>/dev/null || break; sleep 0.2; done
+paused_401s="$(refusals)"
 wait "$app_pid"; app_pid=""
-check "the app downloaded, synced, replaced the token, disconnected and connected again" 'grep -q "^e2e: pass" "$tmp/app-c.log"'
+# After the restart: the loop's one, Sync now's one, and the wrong token typed into
+# Replace token; nothing after the new token.
+all_401s="$(refusals)"
+check "a refused token made one request, then none for 40 s of focus and back-off" '[[ "$paused_401s" == 1 ]]'
+check "Sync now made one more, and nothing was refused after the new token" '[[ "$all_401s" == 3 ]]'
+check "the new token resumed the loop at once" 'grep -q "resumed" "$tmp/app-c.log"'
+check "the app's log says the vault paused" 'grep -q "paused until Sync now" "$tmp/app-c.log"' 
+check "the app downloaded, synced, paused on a refused token, replaced it, disconnected and connected again" 'grep -q "^e2e: pass" "$tmp/app-c.log"'
 check "it reconnected by merging with the server's copy" 'grep -q "connect outcome: merged" "$tmp/app-c.log"'
 check "it chose Lab from the server's list of two" 'grep -q "chose Lab from the list of two" "$tmp/app-c.log"'
-check "the label it gave is in the server's list" '[[ "$(printf "%s\n" "$TOKEN" | FLINT_CONFIG_DIR="$tmp/b" no_tty "$flint" --json vault connect "$url" --list --token-stdin | json_get "[v[\"label\"] for v in d[\"vaults\"] if v[\"id\"] == \"$lab_id\"][0]")" == "Lab at home" ]]'
-check "the token is not in the app's log" '! grep -q "$TOKEN" "$tmp/app-c.log"'
+check "the label it gave is in the server's list" '[[ "$(printf "%s\n" "$TOKEN2" | FLINT_CONFIG_DIR="$tmp/b" no_tty "$flint" --json vault connect "$url" --list --token-stdin | json_get "[v[\"label\"] for v in d[\"vaults\"] if v[\"id\"] == \"$lab_id\"][0]")" == "Lab at home" ]]'
+check "the token is not in the app's log" '! grep -q -e "$TOKEN" -e "$TOKEN2" "$tmp/app-c.log"'
 check_0600 "C's file is 0600" "$VC"
 grep -q "^e2e: pass" "$tmp/app-c.log" || { echo "---- app log"; grep -v '^\s*$' "$tmp/app-c.log" | tail -30; echo "---- server log"; tail -15 "$tmp/server.log"; }
 rm -rf "$short_c"
 on b 0 "B disconnects again" "" -- --vault "$VB" vault disconnect
 
 echo "== the token never shows"
-check "not in any output" '! grep -q "$TOKEN" "$all_out"'
-check "not in either config folder" '! grep -rq "$TOKEN" "$tmp/a" "$tmp/b"'
-check "not in the server log" '! grep -q "$TOKEN" "$tmp/server.log"'
+check "not in any output" '! grep -q -e "$TOKEN" -e "$TOKEN2" "$all_out"'
+check "not in either config folder" '! grep -rq -e "$TOKEN" -e "$TOKEN2" "$tmp/a" "$tmp/b"'
+check "not in the server log" '! grep -q -e "$TOKEN" -e "$TOKEN2" "$tmp/server.log"'
 check "no host name in remotes.json" '! grep -q -e web -e 10.0.0 "$tmp/a/remotes.json"'
 
 echo

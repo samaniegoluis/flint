@@ -77,6 +77,11 @@ MSG_RDP_NO_PASSWORD_GIVEN: str = "rdp.no_password_given"
 MSG_RDP_CERT_CHANGED: str = "rdp.cert_changed"
 MSG_RDP_CERT_UNKNOWN: str = "rdp.cert_unknown"
 MSG_RDP_CERT_NOT_TRUSTED: str = "rdp.cert_not_trusted"
+// The remote vault's server: a refused token, and its gate asking to wait (milestone 71).
+MSG_REMOTE_TOKEN_REFUSED: str = "remote.token_refused"
+MSG_REMOTE_WAIT_SECONDS: str = "remote.wait_seconds"
+MSG_REMOTE_WAIT_MINUTES: str = "remote.wait_minutes"
+MSG_REMOTE_SLOW_DOWN: str = "remote.slow_down"
 
 // Every message with an id: its code and English text. `\{name}` is a param; the
 // call site passes them in the order each name first appears, and a name used twice
@@ -130,6 +135,10 @@ fn message_defs() -> []MessageDef {
         MessageDef{ id: MSG_RDP_CERT_CHANGED, code: ERR_HOST_KEY, text: "the certificate of '\{alias}' (\{addr}) has CHANGED; it is now \{fingerprint}. Someone may be intercepting the connection. If the server was reinstalled, forget the old one in Settings → Known hosts (or `flint known-host rm \{alias}`) and connect again" },
         MessageDef{ id: MSG_RDP_CERT_UNKNOWN, code: ERR_HOST_KEY, text: "the certificate of '\{alias}' is not trusted yet and nobody can confirm it" },
         MessageDef{ id: MSG_RDP_CERT_NOT_TRUSTED, code: ERR_HOST_KEY, text: "the certificate of '\{alias}' was not trusted" },
+        MessageDef{ id: MSG_REMOTE_TOKEN_REFUSED, code: ERR_AUTH, text: "the vault's server at \{host} refused the token" },
+        MessageDef{ id: MSG_REMOTE_WAIT_SECONDS, code: ERR_REFUSED, text: "the vault's server at \{host} asks this address to wait \{seconds} s (too many requests, or too many wrong tokens)" },
+        MessageDef{ id: MSG_REMOTE_WAIT_MINUTES, code: ERR_REFUSED, text: "the vault's server at \{host} asks this address to wait \{minutes} min (too many requests, or too many wrong tokens)" },
+        MessageDef{ id: MSG_REMOTE_SLOW_DOWN, code: ERR_REFUSED, text: "the vault's server at \{host} asks this address to slow down; try again in a minute" },
     ]
 }
 

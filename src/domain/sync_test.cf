@@ -58,13 +58,13 @@ test "sync intervals" {
 test "the app syncs at unlock, on demand, after a change settles, on focus and by interval" {
     mut c := new_sync_clock()
     assert(sync_due(mut c, "/v", 1000, false, 60, ""), "first unlock")
-    sync_checked(mut c, "/v", 1000, true)
+    sync_checked(mut c, "/v", 1000, "")
     assert(!sync_due(mut c, "/v", 2000, false, 60, ""))
     // A change waits for the batch.
     assert(!sync_due(mut c, "/v", 3000, true, 60, ""))
     assert(!sync_due(mut c, "/v", 5000, true, 60, ""))
     assert(sync_due(mut c, "/v", 6000, true, 60, ""))
-    sync_checked(mut c, "/v", 6000, true)
+    sync_checked(mut c, "/v", 6000, "")
     // Focus soon after a check does nothing; later it syncs.
     assert(!sync_due(mut c, "/v", 10000, false, 60, SYNC_HINT_FOCUS))
     assert(sync_due(mut c, "/v", 21000, false, 60, SYNC_HINT_FOCUS))
@@ -78,18 +78,58 @@ test "the app syncs at unlock, on demand, after a change settles, on focus and b
 
 test "failures back off, doubling to a cap; asking still syncs" {
     mut c := new_sync_clock()
-    sync_checked(mut c, "/v", 0, false)
+    sync_checked(mut c, "/v", 0, ERR_NETWORK)
     assert(!sync_due(mut c, "/v", 29000, true, 60, ""))
     assert(sync_due(mut c, "/v", 31000, true, 60, ""))
-    sync_checked(mut c, "/v", 31000, false)
+    sync_checked(mut c, "/v", 31000, ERR_NETWORK)
     assert(!sync_due(mut c, "/v", 31000 + 59000, true, 60, ""))
     assert(sync_due(mut c, "/v", 31000 + 61000, true, 60, ""))
     for i in 0..10 {
-        sync_checked(mut c, "/v", 0, false)
+        sync_checked(mut c, "/v", 0, ERR_NETWORK)
     }
     assert(!sync_due(mut c, "/v", 899000, true, 60, ""))
     assert(sync_due(mut c, "/v", 901000, true, 60, ""))
     assert(sync_due(mut c, "/v", 1, true, 60, SYNC_HINT_NOW))
-    sync_checked(mut c, "/v", 2, true)
+    sync_checked(mut c, "/v", 2, "")
     assert_eq(c.failures, 0)
+}
+
+test "a refused token pauses the vault until the person acts" {
+    mut c := new_sync_clock()
+    assert(sync_due(mut c, "/v", 1000, false, 60, ""))
+    sync_checked(mut c, "/v", 1000, ERR_AUTH)
+    assert(sync_refused(c, "/v"))
+    // No automatic reason syncs it: interval, focus, a pending change, the back-off.
+    assert(!sync_due(mut c, "/v", 10000000, false, 60, ""))
+    assert(!sync_due(mut c, "/v", 10000000, true, 60, ""))
+    assert(!sync_due(mut c, "/v", 10000000, false, 60, SYNC_HINT_FOCUS))
+    // Locked and unlocked again (the loop forgets the path): still paused.
+    c.path = ""
+    assert(!sync_due(mut c, "/v", 10000001, false, 60, ""))
+    // Another vault is not paused.
+    assert(sync_due(mut c, "/w", 10000002, false, 60, ""))
+    sync_checked(mut c, "/w", 10000002, "")
+    assert(!sync_due(mut c, "/v", 20000000, false, 60, ""))
+    // Sync now goes through; refused again, it stays paused.
+    assert(sync_due(mut c, "/v", 20000001, false, 60, SYNC_HINT_NOW))
+    sync_checked(mut c, "/v", 20000001, ERR_AUTH)
+    assert(!sync_due(mut c, "/v", 30000000, false, 60, ""))
+    // The person acted (a new token): automatic syncs again, no back-off left.
+    sync_resume(mut c, "/v")
+    assert(!sync_refused(c, "/v"))
+    assert_eq(c.failures, 0)
+    assert(sync_due(mut c, "/v", 30000000, false, 60, ""))
+    // A sync that worked clears it too.
+    sync_checked(mut c, "/v", 30000001, ERR_AUTH)
+    sync_checked(mut c, "/v", 30000002, "")
+    assert(!sync_refused(c, "/v"))
+    // A Sync now the person ran was refused: paused as well.
+    sync_pause(mut c, "/v")
+    sync_pause(mut c, "/v")
+    assert_eq(c.refused.len(), 1)
+    assert(!sync_due(mut c, "/v", 40000000, false, 60, ""))
+    sync_resume(mut c, "/v")
+    // A 429 or an unreachable server only backs off.
+    sync_checked(mut c, "/v", 30000003, ERR_REFUSED)
+    assert(!sync_refused(c, "/v"))
 }

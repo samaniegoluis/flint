@@ -36,6 +36,8 @@ struct Sink {
 struct Heads {
     std::string etag;
     std::string vault_id;
+    // The seconds a 429 asks to wait (milestone 71), as the server wrote them.
+    std::string retry_after;
 };
 
 inline std::size_t on_body(char* data, std::size_t size, std::size_t n, void* user) {
@@ -68,6 +70,7 @@ inline std::size_t on_header(char* data, std::size_t size, std::size_t n, void* 
         std::string value = trim(line.substr(colon + 1));
         if (name == "etag") h->etag = value;
         else if (name == "x-flint-vault-id") h->vault_id = value;
+        else if (name == "retry-after") h->retry_after = value;
     }
     return len;
 }
@@ -77,11 +80,12 @@ inline void global_init() {
     std::call_once(once, [] { curl_global_init(CURL_GLOBAL_DEFAULT); });
 }
 
-inline int request(const std::string& method, const std::string& url, const std::string& headers,
-                   std::span<const std::uint8_t> body, std::int64_t connect_ms, std::int64_t total_ms,
-                   std::int64_t max_bytes, std::int64_t& status, std::string& etag, std::string& vault_id,
-                   std::vector<std::uint8_t>& out, std::string& err) {
+inline int request_full(const std::string& method, const std::string& url, const std::string& headers,
+                        std::span<const std::uint8_t> body, std::int64_t connect_ms, std::int64_t total_ms,
+                        std::int64_t max_bytes, std::int64_t& status, std::string& etag, std::string& vault_id,
+                        std::string& retry_after, std::vector<std::uint8_t>& out, std::string& err) {
     global_init();
+    retry_after.clear();
     status = 0;
     out.clear();
     CURL* curl = curl_easy_init();
@@ -141,6 +145,7 @@ inline int request(const std::string& method, const std::string& url, const std:
     status = code;
     etag = heads.etag;
     vault_id = heads.vault_id;
+    retry_after = heads.retry_after;
     if (rc == CURLE_OK) return 0;
     if (sink.over) {
         err = "the server sent more than the size a vault may have";
@@ -169,6 +174,16 @@ inline int request(const std::string& method, const std::string& url, const std:
         default:
             return 6;
     }
+}
+
+// `request_full` for callers that need no `Retry-After` (ntfy).
+inline int request(const std::string& method, const std::string& url, const std::string& headers,
+                   std::span<const std::uint8_t> body, std::int64_t connect_ms, std::int64_t total_ms,
+                   std::int64_t max_bytes, std::int64_t& status, std::string& etag, std::string& vault_id,
+                   std::vector<std::uint8_t>& out, std::string& err) {
+    std::string retry_after;
+    return request_full(method, url, headers, body, connect_ms, total_ms, max_bytes, status, etag, vault_id,
+                        retry_after, out, err);
 }
 
 // One GET that follows redirects, HTTPS only past the first request (milestone 52: a

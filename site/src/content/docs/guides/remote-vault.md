@@ -174,7 +174,8 @@ leaves the status bar saying *Needs the new password* until you click it.
 | Offline | The server cannot be reached; changes wait here and go up when it is back |
 | Merged | Another machine's changes just came in; click for the details |
 | Needs the new password | The master password was changed on another machine; click to type it |
-| Needs attention | The server refused this machine (a wrong token, or a server older than this Flint); click for Settings |
+| Token refused | The server refused this machine's token; the app stops syncing this vault on its own ([below](#a-refused-token)); click for **Sync now** and **Replace token…** |
+| Needs attention | The server answered without syncing (it asks this address to wait, or refused the request); click for Settings, where its message is shown |
 
 Clicking it shows the last sync, the server, the version, **Sync now** and **Server
 settings…**. A vault that is not connected shows nothing there. The vault switcher marks
@@ -198,6 +199,31 @@ waiting    nothing
 A failed attempt shows as `last attempt`, with its error. With `--json` it is the
 `remote` object: `connected`, `url`, `version`, `last_sync` and `last_attempt` (Unix
 milliseconds), `last_error`, `pending`.
+
+## A refused token
+
+When the server answers that the token is wrong (HTTP 401), the app stops syncing that
+vault on its own: no retry on a timer, at unlock, when the window comes back or after a
+change. Every wrong token counts against the server's lockout, and behind a home or
+office router every machine reaches the server as one address, so a few machines still
+holding an old token would lock all of them out (see
+[how the server counts clients](/guides/vault-server/#how-the-server-counts-clients)).
+
+It syncs again when you act:
+
+- **Sync now** (status bar, Settings, or the palette) tries once more; refused again, it
+  stays paused.
+- **Replace token…** with the right one: the app checks it with the server, keeps it and
+  syncs at once.
+- **A restart** of the app tries once. Nothing about the pause is kept on disk.
+
+Changes made meanwhile stay on this machine and go up with the next sync that works. The
+CLI keeps no state between commands: a command that changes the vault still tries once
+after it, and `flint vault sync` says the token was refused.
+
+When the server asks this address to wait (HTTP 429: too many requests, or too many
+wrong tokens in a short time), the message says for how long (*asks this address to
+wait 14 min*), and the app tries again after a pause that doubles up to 15 minutes.
 
 ## Replace the token
 

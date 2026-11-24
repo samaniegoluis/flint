@@ -23,7 +23,8 @@ import { GRAPHICS_MODES } from '../lib/rdpStats';
 import { useSync } from '../sync/SyncProvider';
 import { ConnectServerModal } from '../sync/ConnectServerModal';
 import { ReplaceTokenModal } from '../sync/ReplaceTokenModal';
-import { agoLabel, syncLabel } from '../lib/sync';
+import { agoLabel, failureMessage, lastFailure, syncLabel } from '../lib/sync';
+import { coreText } from '../i18n/core';
 import { useUpdate, useUpdateOnScreen } from '../update/UpdateProvider';
 import { updateActionLabel, updateAvailable, updateDownloadFailure, updateDownloading, updateHowText, updatePercent, updateReady, updateReadyHint, updateRelaunchFailure, updateStateLine } from '../lib/update';
 import { plainText } from '../ui/plainText';
@@ -601,7 +602,8 @@ function ServerRow({ onConfirm, onChangePassword }: { onConfirm: (c: Confirm) =>
     );
   }
   const state = sync.state ?? 'in_step';
-  const tone = state === 'merged' ? 'accent-t' : state === 'password' || state === 'attention' ? 'warn-t' : 'muted';
+  const tone = state === 'merged' ? 'accent-t' : state === 'password' || state === 'refused' || state === 'attention' ? 'warn-t' : 'muted';
+  const failed = lastFailure(st, sync.lastError);
   return (
     <Row title={t('settings_page.server')} desc={t('settings_page.the_server_stores_the_encrypted')}>
       <div className="col grow" style={{ gap: 'var(--sp-3)', minWidth: 0 }} data-server="on">
@@ -616,7 +618,8 @@ function ServerRow({ onConfirm, onChangePassword }: { onConfirm: (c: Confirm) =>
           <span className="faint mono" style={{ fontSize: 'var(--fs-xs)' }}>{t('settings_page.version_p', { p: fmtNumber(st.version) })}</span>
           {state === 'password' && <button className="btn btn-ghost btn-sm" onClick={sync.askPassword}>{t('settings_page.type_the_new_password')}</button>}
         </div>
-        {(state === 'attention' || state === 'offline') && sync.lastError && <span className="hint">{sync.lastError.replace(/^[a-z_]+: /, '')}</span>}
+        {(state === 'refused' || state === 'attention' || state === 'offline') && failed && <span className="hint" data-sync-error style={{ overflowWrap: 'anywhere' }}>{coreText(failureMessage(failed))}</span>}
+        {state === 'refused' && <span className="hint" data-sync-paused>{t('sync.detail.refused')}</span>}
         <div className="row" style={{ gap: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
           <span style={{ whiteSpace: 'nowrap' }}>{t('settings_page.check_every')}</span>
           <div className="seg" role="radiogroup" aria-label={t('settings_page.check_every')}>
@@ -639,7 +642,8 @@ function ServerRow({ onConfirm, onChangePassword }: { onConfirm: (c: Confirm) =>
         </div>
       </div>
       {connectModal}
-      {replacing && <ReplaceTokenModal url={st.url} onClose={() => setReplacing(false)} onReplaced={() => { sync.syncNow().catch(() => {}); }} />}
+      {/* The app's loop syncs at once with a new token (milestone 71). */}
+      {replacing && <ReplaceTokenModal url={st.url} onClose={() => setReplacing(false)} onReplaced={() => {}} />}
     </Row>
   );
 }

@@ -23,6 +23,36 @@ import "../../domain"
 
 SYNC_TICK_MS: i64 = 2000
 
+// What a Sync now or a new token tells the loop about a vault, as `<hint>:<path>`
+// (milestone 71, D-146): a Sync now that worked (`resume`: the pause ends), one the
+// server refused (`refused`: paused), a token replaced (`token`: the pause ends and
+// the loop syncs at once, so the status reads the new token's outcome).
+SYNC_HINT_RESUME: str = "resume"
+SYNC_HINT_REFUSED: str = "refused"
+SYNC_HINT_TOKEN: str = "token"
+
+// Applies a `<hint>:<path>` to the clock and returns the hint the tick goes on with
+// (`now` after a new token, "" after the others); any other hint comes back as it is.
+fn apply_sync_hint(mut clock: SyncClock, hint: str) -> str {
+    colon := hint.index_of(":") or { return hint }
+    what := str(hint[..colon])
+    about := str(hint[colon + 1..])
+    if what == SYNC_HINT_REFUSED {
+        sync_pause(mut clock, about)
+    } else if what == SYNC_HINT_RESUME {
+        sync_resume(mut clock, about)
+    } else if what == SYNC_HINT_TOKEN {
+        sync_resume(mut clock, about)
+        return SYNC_HINT_NOW
+    }
+    return ""
+}
+
+// Tells the loop what the person's own action learned about the vault at `path`.
+fn tell_sync_loop(st: GuiState, hint: str, path: str) {
+    st.sync_hints.send(hint + ":" + path)
+}
+
 // What the page hears as a sync starts; it shows Syncing only if it lasts.
 SYNC_STATE_SYNCING: str = "syncing"
 
@@ -43,6 +73,7 @@ type SyncHintReq struct {
 }
 
 // The page tells the loop to look (`focus` when the window came back, `now`).
+// The `<what>:<path>` hints below come from the core itself, never from the page.
 fn rpc_vault_sync_hint(params: str, st: GuiState) -> str! {
     req := try parse_req[SyncHintReq](params)
     if req.reason == SYNC_HINT_FOCUS || req.reason == SYNC_HINT_NOW {
@@ -59,7 +90,8 @@ fn run_sync_loop(c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, setting
     // the vault's file path, already in the recents list; nothing from inside it).
     diag := os.getenv("FLINT_SYNC_DIAG") == "1"
     for !st.holder.quitting() {
-        hint := st.sync_hints.recv_timeout(SYNC_TICK_MS) or ""
+        received := st.sync_hints.recv_timeout(SYNC_TICK_MS) or ""
+        hint := apply_sync_hint(mut clock, received)
         if !st.unlocked() {
             clock.path = ""
             continue
@@ -77,7 +109,7 @@ fn run_sync_loop(c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, setting
         now := time.now_ms()
         due := sync_due(mut clock, session.path, now, pending, interval, hint)
         if diag {
-            write_stderr("flint-gui: diag: sync tick at {now}: pending {pending} hint '{hint}' due {due}\n")
+            write_stderr("flint-gui: diag: sync tick at {now}: pending {pending} hint '{hint}' refused {sync_refused(clock, session.path)} due {due}\n")
         }
         if !due {
             continue
@@ -86,12 +118,17 @@ fn run_sync_loop(c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, setting
         mut s := session
         got := sync_vault(c, mut store, links, remote, kc, kc, mut s, "", time.unix_seconds() * 1000) or err {
             msg := "{err.message()}"
-            sync_checked(mut clock, session.path, time.now_ms(), false)
-            write_stderr("flint-gui: sync failed ({error_code_of(msg)})\n")
+            code := error_code_of(msg)
+            sync_checked(mut clock, session.path, time.now_ms(), code)
+            if code == ERR_AUTH {
+                write_stderr("flint-gui: sync failed (auth): paused until Sync now, a new token or a restart\n")
+            } else {
+                write_stderr("flint-gui: sync failed ({code})\n")
+            }
             app.emit("vault:sync", SyncEvent{ path: session.path, state: "error", version: 0, report: empty_merge_report(), code: error_code_of(msg), message: msg })
             continue
         }
-        sync_checked(mut clock, session.path, time.now_ms(), true)
+        sync_checked(mut clock, session.path, time.now_ms(), "")
         if got.result != SYNC_IN_STEP {
             write_stderr("flint-gui: synced ({got.result}, version {got.version})\n")
         }

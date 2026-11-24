@@ -19,7 +19,10 @@ describe('syncState', () => {
     expect(syncState(st(), { ...NO_LIVE, errorCode: 'network' }, 2000)).toBe('offline');
     expect(syncState(st(), { ...NO_LIVE, errorCode: 'timeout' }, 2000)).toBe('offline');
     expect(syncState(st(), { ...NO_LIVE, errorCode: 'wrong_password' }, 2000)).toBe('password');
-    expect(syncState(st(), { ...NO_LIVE, errorCode: 'auth' }, 2000)).toBe('attention');
+    expect(syncState(st(), { ...NO_LIVE, errorCode: 'auth' }, 2000)).toBe('refused');
+    expect(syncState(st({ last_attempt: 1500, last_error: "auth: the vault's server at h refused the token" }), NO_LIVE, 2000)).toBe('refused');
+    // A 429 asks to wait: the server answered, so it is not offline.
+    expect(syncState(st(), { ...NO_LIVE, errorCode: 'refused' }, 2000)).toBe('attention');
     expect(syncState(st(), { ...NO_LIVE, errorCode: 'conflict' }, 2000)).toBe('attention');
     expect(syncState(st({ last_attempt: 1500, last_error: 'network: cannot reach' }), NO_LIVE, 2000)).toBe('offline');
     expect(syncState(st({ last_attempt: 900, last_error: 'network: cannot reach' }), NO_LIVE, 2000)).toBe('in_step');

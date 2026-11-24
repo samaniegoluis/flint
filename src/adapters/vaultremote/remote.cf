@@ -31,6 +31,8 @@ type RemoteReply struct {
     status:   i64
     etag:     str
     vault_id: str
+    // A 429's `Retry-After`, in seconds as the server sent it ("" when absent).
+    retry_after: str
     body:     []byte
 }
 
@@ -58,6 +60,7 @@ fn (self: HttpVaultRemote) send(method: str, url: str, headers: str, body: []byt
     mut status: i64 = 0
     mut etag := ""
     mut vault_id := ""
+    mut retry_after := ""
     mut got: []byte = []
     mut reason := ""
     connect_ms := self.connect_ms
@@ -65,7 +68,7 @@ fn (self: HttpVaultRemote) send(method: str, url: str, headers: str, body: []byt
     max := REMOTE_MAX_BYTES
     // CFIRE-UPSTREAM: CF-146
     cpp {
-        rc = flint_remote::request(method, url, headers, body, connect_ms, request_ms, max, status, etag, vault_id, got, reason);
+        rc = flint_remote::request_full(method, url, headers, body, connect_ms, request_ms, max, status, etag, vault_id, retry_after, got, reason);
     }
     host := url_host(url)
     if rc == 2 {
@@ -83,7 +86,7 @@ fn (self: HttpVaultRemote) send(method: str, url: str, headers: str, body: []byt
     if rc != 0 {
         return error(coded(ERR_NETWORK, "the request to the vault's server at {host} failed: {reason}"))
     }
-    return RemoteReply{ status: status, etag: etag, vault_id: vault_id, body: got }
+    return RemoteReply{ status: status, etag: etag, vault_id: vault_id, retry_after: retry_after, body: got }
 }
 
 // The host part of a URL, for messages (never a path or a query).
@@ -102,6 +105,19 @@ fn auth_header(token: str) -> str {
     return "Authorization: Bearer " + token + "\n"
 }
 
+// A 429: the server's gate asks this address to wait (its rate limit, or a lockout
+// after too many wrong tokens), for the seconds of its `Retry-After` when it sent one.
+fn wait_refusal(host: str, retry_after: str) -> str {
+    secs := parse_version_tag(retry_after.trim())
+    if secs < 1 {
+        return core_msg(MSG_REMOTE_SLOW_DOWN, [host])
+    }
+    if secs < 60 {
+        return core_msg(MSG_REMOTE_WAIT_SECONDS, [host, "{secs}"])
+    }
+    return core_msg(MSG_REMOTE_WAIT_MINUTES, [host, "{(secs + 59) / 60}"])
+}
+
 // The error a refusal maps to, with the server's own message when it sent one.
 fn refusal(r: RemoteReply, host: str) -> str {
     mut why := ""
@@ -111,13 +127,13 @@ fn refusal(r: RemoteReply, host: str) -> str {
         why = ": " + parsed.message
     }
     if r.status == 401 {
-        return coded(ERR_AUTH, "the vault's server at {host} refused the token (a wrong token, or too many wrong ones from here: wait 15 minutes)")
+        return core_msg(MSG_REMOTE_TOKEN_REFUSED, [host])
     }
     if r.status == 412 {
         return coded(ERR_CONFLICT, "the vault's server at {host} holds another vault")
     }
     if r.status == 429 {
-        return coded(ERR_REFUSED, "the vault's server at {host} asks to slow down; try again in a minute")
+        return wait_refusal(host, r.retry_after)
     }
     if r.status == 413 {
         return coded(ERR_REFUSED, "the vault is over the server's size cap (FLINT_VAULT_MAX_BYTES at {host})")

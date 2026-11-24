@@ -229,16 +229,53 @@ type SyncClock struct {
     pending_since: i64
     // Failed attempts in a row.
     failures: i64
+    // The vaults whose server refused the token (milestone 71, D-146): none of them
+    // syncs on its own until the person acts (`now`, `resume`) or the app starts
+    // again. Kept while the vault is locked, never on disk.
+    refused: []str
 }
 
 fn new_sync_clock() -> SyncClock {
-    return SyncClock{ path: "", last_check: 0, pending_since: 0, failures: 0 }
+    return SyncClock{ path: "", last_check: 0, pending_since: 0, failures: 0, refused: [] }
+}
+
+// Whether the server refused the token of the vault at `path`.
+fn sync_refused(clock: SyncClock, path: str) -> bool {
+    for p in clock.refused {
+        if p == path {
+            return true
+        }
+    }
+    return false
+}
+
+// The server refused the vault at `path` outside the clock's own attempts (a Sync now
+// the person ran): it pauses as after one of the loop's.
+fn sync_pause(mut clock: SyncClock, path: str) {
+    if !sync_refused(clock, path) {
+        clock.refused.push(path)
+    }
+}
+
+// The person acted on the vault at `path` (a Sync now that worked, a new token): it
+// syncs on its own again, with no back-off left from before.
+fn sync_resume(mut clock: SyncClock, path: str) {
+    mut kept: []str = []
+    for p in clock.refused {
+        if p != path {
+            kept.push(p)
+        }
+    }
+    clock.refused = kept
+    if clock.path == path {
+        clock.failures = 0
+    }
 }
 
 // Whether the app syncs now: at unlock, on demand, when the window comes back after a
 // while, once a change has settled, or when the interval has passed. After failures,
-// once the back-off has passed and never sooner, unless asked. Updates
-// `pending_since`.
+// once the back-off has passed and never sooner, unless asked. A refused vault syncs
+// only when asked. Updates `pending_since`.
 fn sync_due(mut clock: SyncClock, path: str, now: i64, pending: bool, interval_s: i64, hint: str) -> bool {
     if pending {
         if clock.pending_since == 0 {
@@ -249,6 +286,9 @@ fn sync_due(mut clock: SyncClock, path: str, now: i64, pending: bool, interval_s
     }
     if hint == SYNC_HINT_NOW {
         return true
+    }
+    if sync_refused(clock, path) {
+        return false
     }
     if path != clock.path {
         return true
@@ -275,14 +315,21 @@ fn sync_due(mut clock: SyncClock, path: str, now: i64, pending: bool, interval_s
     return interval_s > 0 && now - clock.last_check >= interval_s * 1000
 }
 
-// Records a sync's outcome on the clock.
-fn sync_checked(mut clock: SyncClock, path: str, now: i64, ok: bool) {
+// Records a sync's outcome on the clock: `code` is the failure's error code ("" when
+// it worked). ERR_AUTH (the server refused the token, or this machine holds none)
+// pauses the vault: neither mends itself, and every attempt counts against the
+// server's lockout for everyone behind the same address.
+fn sync_checked(mut clock: SyncClock, path: str, now: i64, code: str) {
     clock.path = path
     clock.last_check = now
-    if ok {
+    if code.len() == 0 {
         clock.failures = 0
         clock.pending_since = 0
-    } else {
-        clock.failures += 1
+        sync_resume(mut clock, path)
+        return
+    }
+    clock.failures += 1
+    if code == ERR_AUTH {
+        sync_pause(mut clock, path)
     }
 }

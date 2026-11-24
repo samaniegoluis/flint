@@ -5,7 +5,7 @@
 import type { MergeChange, MergeReport, RemoteStatus } from '../api/types';
 import { fmtNumber, t } from '../i18n';
 
-export type SyncState = 'syncing' | 'merged' | 'password' | 'attention' | 'offline' | 'waiting' | 'in_step';
+export type SyncState = 'syncing' | 'merged' | 'password' | 'refused' | 'attention' | 'offline' | 'waiting' | 'in_step';
 
 /** How long "Merged" stays in the status bar after a merge brought changes. */
 export const MERGED_FOR_MS = 60_000;
@@ -27,13 +27,28 @@ export function errorCodeOf(text: string): string {
   return m ? m[1] : text ? 'internal' : '';
 }
 
-/** What a failed sync means to the person: a password to type, something to look
- *  at, or a server out of reach (calm: offline is normal). */
+/** What a failed sync means to the person: a password to type, a token the server
+ *  refused (the app stops syncing the vault on its own until the person acts,
+ *  milestone 71), something to look at (the server answered and asked to wait, or
+ *  refused the request), or a server out of reach (calm: offline is normal). */
 export function failureState(code: string): SyncState | null {
   if (!code) return null;
   if (code === 'wrong_password') return 'password';
-  if (code === 'network' || code === 'timeout' || code === 'refused') return 'offline';
+  if (code === 'auth') return 'refused';
+  if (code === 'network' || code === 'timeout') return 'offline';
   return 'attention';
+}
+
+/** The last failure's "code: message" text: the one the page heard, or the one this
+ *  machine remembers from an attempt after the last sync (a restart). */
+export function lastFailure(st: RemoteStatus, lastError: string): string {
+  if (lastError) return lastError;
+  return st.last_attempt > st.last_sync ? st.last_error : '';
+}
+
+/** A failure's text as the core message `coreText` renders: its code and its text. */
+export function failureMessage(text: string): { code: string; message: string } {
+  return { code: errorCodeOf(text), message: text.replace(/^[a-z_]+: /, '') };
 }
 
 export function syncState(st: RemoteStatus, live: SyncLive, now: number): SyncState {
