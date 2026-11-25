@@ -1649,7 +1649,7 @@
   "shell.from_the_cli": "Desde la CLI:",
   "shell.get_started": "Primeros pasos",
   "shell.group_hosts_in_folders_connect": "Agrupa hosts en carpetas. Conéctate con una credencial guardada, una clave de esta bóveda, una contraseña o tu agente SSH.",
-  "shell.hosts_actions_vaults": "Hosts, acciones, bóvedas…",
+  "shell.search": "Buscar…",
   "shell.iconadd_an_ssh_keykbd": "{icon}Agregar una clave SSH{kbd}",
   "shell.iconnew_hostkbd": "{icon}Nuevo host{kbd}",
   "shell.name": "Nombre",

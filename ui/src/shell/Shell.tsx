@@ -446,7 +446,7 @@ export function Shell() {
         <div className="tb-brand"><Logo />Flint</div>
         <div className="tb-title">{crumb}</div>
         <button className="palette-btn" aria-label={t('shell.command_palette_chordlabel', { chordLabel: chordLabel('palette', os) })} onClick={() => setPalette({ hostsOnly: false })}>
-          <Icon name="search" size="sm" /><span className="grow" style={{ textAlign: 'left' }}>{t('shell.hosts_actions_vaults')}</span><Kbd action="palette" />
+          <Icon name="search" size="sm" /><span className="grow" style={{ textAlign: 'left' }}>{t('shell.search')}</span><Kbd action="palette" />
         </button>
       </header>
 

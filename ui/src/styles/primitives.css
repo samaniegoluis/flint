@@ -52,6 +52,9 @@ body { margin: 0; background: var(--surface-desk); }
 .app[data-os="linux"] .traffic { display: none; }
 .app[data-os="linux"] .tb-brand, .app[data-os="linux"] .wc { display: flex; }
 .palette-btn { margin-left: auto; width: 260px; height: 26px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-2); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--text-tertiary); font-size: var(--fs-sm); }
+/* One line whatever the language and the chord's width (Spanish with Ctrl+Shift+K wrapped on Windows). */
+.palette-btn > .grow { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.palette-btn > .kbd { flex-shrink: 0; }
 .palette-btn:hover { border-color: var(--border-strong); color: var(--text-secondary); }
 
 /* Rail */

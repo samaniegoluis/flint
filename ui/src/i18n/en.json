@@ -1649,7 +1649,7 @@
   "shell.from_the_cli": "From the CLI:",
   "shell.get_started": "Get started",
   "shell.group_hosts_in_folders_connect": "Group hosts in folders. Connect with a saved credential, a key from this vault, a password, or your SSH agent.",
-  "shell.hosts_actions_vaults": "Hosts, actions, vaults…",
+  "shell.search": "Search…",
   "shell.iconadd_an_ssh_keykbd": "{icon}Add an SSH key{kbd}",
   "shell.iconnew_hostkbd": "{icon}New host{kbd}",
   "shell.name": "Name",
