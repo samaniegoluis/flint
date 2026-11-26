@@ -25,6 +25,7 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
     fixed.last_seen_version = s.last_seen_version
     fixed.server_stats = s.server_stats
     fixed.server_stats_colour = s.server_stats_colour
+    fixed.dim_unfocused = s.dim_unfocused
     fixed.notify_grants = s.notify_grants
     fixed.sudo_periods = s.sudo_periods
     if approval_wait_valid(s.approval_wait) {

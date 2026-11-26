@@ -233,6 +233,8 @@ export interface Settings {
   server_stats: boolean;
   /** Milestone 55: colour CPU, memory and disk by load (green, amber, red). */
   server_stats_colour: boolean;
+  /** Milestone 72 (D-150): dim the split panes without the focus, and every pane while the window has none. */
+  dim_unfocused: boolean;
   /** Milestone 56 (26d1): new grants notify each command they allow. */
   notify_grants: boolean;
   /** Milestone 57 (25e1/25e2): *Allow sudo for a while*; off by default. */

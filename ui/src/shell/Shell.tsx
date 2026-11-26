@@ -21,7 +21,7 @@ import { SessionArea } from '../sessions/SessionArea';
 import { clampFiles, clampSidebar, FILES_DEFAULT, FILES_MAX, FILES_MIN, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN, useUiState } from '../state/uiState';
 import { FilesView } from '../files/FilesView';
 import { files as filesStore } from '../files/store';
-import { sessions, useSessions } from '../sessions/store';
+import { isLive, sessions, useSessions } from '../sessions/store';
 import { fullScreen, useFullScreen } from '../sessions/fullscreen';
 import { monitors } from '../sessions/monitors';
 import { LAYOUTS, MAX_PANES, type SplitDir } from '../lib/layout';
@@ -152,6 +152,8 @@ export function Shell() {
   const fontSize = Math.max(8, Math.min(32, settings.term_font_size + zoom));
   // The active tab's focused pane: the Files view, the title and the status bar follow it.
   const tab = panes.find((p) => p.id === tabs.find((t) => t.id === active)?.focus);
+  // A split's pane number, for an empty pane's status bar item ("Pane 2 · empty", 28a1).
+  const paneNo = (tabs.find((t) => t.id === active)?.panes.indexOf(tab?.id ?? '') ?? -1) + 1;
   // Live server resources (milestone 55): a watch per open terminal shell while the
   // setting is on; the status bar shows the focused pane's (split panes follow it, 25a8a).
   const statsStore = serverStats();
@@ -177,6 +179,16 @@ export function Shell() {
     root.dataset.narrow = String(narrow);
     return () => { delete root.dataset.view; delete root.dataset.collapsed; delete root.dataset.narrow; };
   }, [view, collapsed, narrow]);
+
+  // What does not take the keys is dimmed (milestone 72, D-150): every pane while the
+  // window has no focus (.app[data-inactive]), unless Settings turns it off.
+  useEffect(() => {
+    const root = document.querySelector<HTMLElement>('.app');
+    if (!root) return;
+    root.dataset.inactive = String(!focused);
+    root.dataset.dim = settings.dim_unfocused ? 'on' : 'off';
+    return () => { delete root.dataset.inactive; delete root.dataset.dim; };
+  }, [focused, settings.dim_unfocused]);
 
   // Immersive: the design's .app[data-fullscreen] hides every piece of Flint's chrome.
   useEffect(() => {
@@ -249,7 +261,7 @@ export function Shell() {
       if (own.length > 0) tunnels.startTunnels(want.alias, own.map((v) => v.name));
     }
     // The last pane of a host closed while its tunnels run: they stay up (design 20d2).
-    const now = new Set(panes.filter((p) => p.status !== 'ended').map((p) => p.alias));
+    const now = new Set(panes.filter(isLive).map((p) => p.alias));
     for (const alias of openHosts.current) {
       if (now.has(alias) || panes.some((p) => p.alias === alias)) continue;
       const up = upOn(tunnels.get().list, alias);
@@ -347,7 +359,7 @@ export function Shell() {
       // ⌘W closes the focused pane; the last one closes its tab.
       case 'closeTab': if (tab) sessions.close(tab.id); break;
       case 'reconnect': if (tab) sessions.reconnect(tab.id); break;
-      case 'duplicate': if (tab) connect(tab.alias, true); break;
+      case 'duplicate': if (tab?.alias) connect(tab.alias, true); break;
       case 'splitRight': split('right'); break;
       case 'splitDown': split('down'); break;
       case 'focusNextPane': sessions.cycleFocus(1); break;
@@ -394,7 +406,7 @@ export function Shell() {
         setEditor({ alias: null, group: catalog.hosts.find((h) => h.alias === selected)?.group ?? '', type: a === 'newRdpHost' ? 'rdp' : 'ssh' });
         break;
       case 'editHost': {
-        const alias = view === 'hosts' && tab && document.activeElement?.closest('.pane') ? tab.alias : selected ?? tab?.alias;
+        const alias = view === 'hosts' && tab?.alias && document.activeElement?.closest('.pane') ? tab.alias : selected ?? (tab?.alias || null);
         if (alias) setEditor({ alias, group: '' });
         break;
       }
@@ -429,8 +441,8 @@ export function Shell() {
 
   const unlockedLabel = vault?.cached ? (os === 'mac' ? t('shell.unlocked_keychain') : t('shell.unlocked_keyring')) : t('shell.unlocked');
   const anyOverlay = palette || editor || confirm || ask || manage;
-  const sessionsOpen = panes.filter((t) => t.status !== 'ended').length;
-  const crumb = tab ? <><span>{vault?.name}</span><span className="faint">/</span><span className="mono muted">{tab.alias}</span></> : <span>{vault?.name}</span>;
+  const sessionsOpen = panes.filter(isLive).length;
+  const crumb = tab?.alias ? <><span>{vault?.name}</span><span className="faint">/</span><span className="mono muted">{tab.alias}</span></> : <span>{vault?.name}</span>;
   const railBtn = (v: View, icon: 'hosts' | 'files' | 'tunnel' | 'key' | 'cred' | 'settings', label: string, action: Action, badge?: React.ReactNode) => (
     <button className={'rail-btn' + (view === v ? (SIDE_VIEWS.includes(v) && collapsed ? ' is-collapsed is-on' : ' is-on') : '')} data-item={v}
       aria-pressed={view === v} title={t('shell.rail.title', { label, chord: chordLabel(action, os) })} onClick={() => showView(v)}>
@@ -525,8 +537,8 @@ export function Shell() {
         <button className="sb-btn" data-sb-lock onClick={() => lock().catch(fail)}>{t('common.lock')}<Kbd action="lock" /></button>
         <SyncStatusItem />
         <span className="sb-item" data-sb-sessions>{sessionsOpen === 0 ? t('shell.no_sessions') : t('shell.sessions_open', { count: sessionsOpen })}</span>
-        {tab && <span className="sb-item mono sb-host">{tab.alias}</span>}
-        {tab?.kind === 'ssh' && settings.server_stats && (
+        {tab && <span className="sb-item mono sb-host">{tab.alias || t('shell.pane_empty', { n: paneNo })}</span>}
+        {tab?.kind === 'ssh' && tab.alias && settings.server_stats && (
           <ServerStatsItem alias={tab.alias} view={stats.get(tab.session) ?? null} colour={settings.server_stats_colour} compact={narrow}
             onSettings={() => { setSection('terminal'); setView('settings'); }} />
         )}

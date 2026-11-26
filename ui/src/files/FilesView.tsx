@@ -120,7 +120,7 @@ export function FilesView({ tab, resizer, onReconnect, onGoToHost, onConfirm, on
             ? <><span className="strong">{tr('files_view.connecting_to_alias', { alias: tab.alias })}</span><span style={{ fontSize: 'var(--fs-sm)' }}>{t('files_view.files_opens_on_the_session')}</span></>
             : <>
               <span className="strong">{t('files_view.open_a_session_to_browse')}</span>
-              <span style={{ fontSize: 'var(--fs-sm)' }}>{tab ? <>{tr('files_view.span_is_disconnected', { span: <span className="mono">{tab.alias}</span> })}</> : null}{t('files_view.files_follows_the_active_tab')}</span>
+              <span style={{ fontSize: 'var(--fs-sm)' }}>{tab && tab.status !== 'empty' ? <>{tr('files_view.span_is_disconnected', { span: <span className="mono">{tab.alias}</span> })}</> : null}{t('files_view.files_follows_the_active_tab')}</span>
             </>}
           <div className="col" style={{ gap: 'var(--sp-2)', width: '100%', paddingTop: 'var(--sp-2)' }}>
             {tab && tab.status === 'ended' && (

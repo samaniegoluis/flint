@@ -233,31 +233,52 @@ See [Tunnels](/guides/tunnels/#in-the-app).
 ### Split panes
 
 A tab holds up to four panes, each its own SSH session with its own login, scrollback,
-prompts and **Reconnect**. One pane losing its connection leaves the others alone.
+prompts and **Reconnect**, and each on the host you pick. One pane losing its connection
+leaves the others alone.
 
-- **Split right** (<kbd>⌘D</kbd>) and **Split down** (<kbd>⇧⌘D</kbd>) open a new pane on
-  the focused pane's host, beside it. On Linux they are <kbd>Ctrl+Shift+D</kbd> and
+- **Split right** (<kbd>⌘D</kbd>) and **Split down** (<kbd>⇧⌘D</kbd>) open an **empty
+  pane** beside the focused one. On Linux they are <kbd>Ctrl+Shift+D</kbd> and
   <kbd>Ctrl+Alt+Shift+D</kbd>. The session toolbar's **Split** button has the same
   actions, the layouts and **Close pane**.
-- To open *another* host in a new pane, search for it in the command palette and press
-  <kbd>⇧⌘↵</kbd>, or pick **Open <host> in a new pane**.
+- An empty pane asks for its host: a search field with the focused pane's host first and
+  already chosen (**same as pane 1**), then the hosts you connected to since Flint
+  started, then the rest. <kbd>↵</kbd> connects the chosen one, so <kbd>⌘D</kbd> then
+  <kbd>↵</kbd> opens the same host again; type to find another, as in the command
+  palette. <kbd>Esc</kbd> or <kbd>⌘W</kbd> closes the empty pane. Until you pick a host
+  it opens no connection. An empty pane without the focus shows **Connect to a host**.
+- Remote desktops are not in the picker: a remote desktop always has a tab of its own,
+  so open it from the command palette (<kbd>⌘K</kbd>).
+- To open *another* host in a new pane straight away, search for it in the command
+  palette and press <kbd>⇧⌘↵</kbd>, or pick **Open <host> in a new pane**.
+  **Duplicate** (<kbd>⌥⌘D</kbd>) still opens the same host in a new tab.
 - Two panes sit side by side or stacked, as you split them; three become one large and
   two small, four a 2 × 2 grid. Change the layout from the **Split** menu or with
   <kbd>⌥⌘1</kbd> to <kbd>⌥⌘4</kbd> (<kbd>Ctrl+Alt+1</kbd> to <kbd>4</kbd> on Linux):
-  side by side, stacked, grid, one large + two small.
+  side by side, stacked, grid, one large + two small. A layout with more places than the
+  tab has panes fills them with empty panes: **Grid 2 × 2** on one pane gives you three
+  more to connect, one by one.
 - Drag the line between two panes to resize them; double-click it to even them out, or
   focus it with <kbd>Tab</kbd> and use the arrow keys. New panes and new layouts start
   even.
 
-The **focused pane** has an ember border and a tinted header, and the others' output is
-dimmed. Click a pane to focus it, or press <kbd>⌘]</kbd> and <kbd>⌘[</kbd> for the next
-and previous one (<kbd>Ctrl+Shift+]</kbd> and <kbd>[</kbd> on Linux). The tab's title,
-the session toolbar (with **pane 2 of 4**), **Reconnect**, the title bar and the
+The **focused pane** has an ember border and a tinted header. Click a pane to focus it, or
+press <kbd>⌘]</kbd> and <kbd>⌘[</kbd> for the next and previous one
+(<kbd>Ctrl+Shift+]</kbd> and <kbd>[</kbd> on Linux). The tab's title, the session toolbar
+(with **pane 2 of 4**), **Reconnect**, the title bar and the
 [Files view](/guides/files-view/) follow the focused pane.
 
 <kbd>⌘W</kbd> closes the focused pane and hangs up its session; the last pane closes the
 tab. The tab's **×** closes the tab and every pane in it. A prompt that opens in a pane
 without the focus shows a note naming its pane. Layouts are not kept when Flint quits.
+
+#### What does not take the keys is dimmed
+
+One rule: what is drawn at full contrast receives what you type. In a split, every pane
+but the focused one is dimmed, and while Flint's window is in the background every pane
+is, with the tab bar, toolbar and sidebar a little quieter too. The dim only lowers the
+contrast, so a log you watch from another window stays readable. A remote desktop is never
+dimmed, since it may be playing video. Turn it off in **Settings → Terminal → Dim what
+does not have focus**.
 
 ### The terminal
 
@@ -479,8 +500,9 @@ Settings belong to this machine, not to the vault, and save as you change them.
   in a dark and a light variant that follows the app's theme), the font (any monospaced
   font installed on this machine, or the bundled JetBrains Mono), size, line height,
   cursor, the **largest file to paste** (10, 20, 50 or 100 MB; see
-  [The terminal](#the-terminal)), and **Show server resources** (on) with **Colour values
-  by load** (on; see [Server resources](#server-resources)).
+  [The terminal](#the-terminal)), **Dim what does not have focus** (on; see
+  [Split panes](#what-does-not-take-the-keys-is-dimmed)), and **Show server resources**
+  (on) with **Colour values by load** (on; see [Server resources](#server-resources)).
 - **Remote desktop**: the **Graphics** a new remote desktop tab uses, **Automatic**,
   **Pipeline** or **Compatible**, which each tab's toolbar can switch while connected (see
   [Graphics](/guides/remote-desktop/#graphics)), and on macOS what

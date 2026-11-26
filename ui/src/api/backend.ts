@@ -42,6 +42,10 @@ export function toFlintError(err: unknown): FlintError {
 }
 
 export async function call<T>(method: string, params: unknown = {}): Promise<T> {
+  // gui-e2e counts the calls of one method by setting __flintE2E.rpcLog (milestone 72: an
+  // empty pane makes no session_open); window.backend is a proxy it cannot wrap.
+  const log = (window as unknown as { __flintE2E?: { rpcLog?: string[] } }).__flintE2E?.rpcLog;
+  if (log) log.push(method);
   try {
     return (await window.backend[method](params)) as T;
   } catch (err) {

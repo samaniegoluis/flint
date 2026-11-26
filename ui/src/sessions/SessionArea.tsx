@@ -124,8 +124,10 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
       <div className="tabbar" role="tablist" aria-label={t('session_area.open_sessions')} ref={tablist} onKeyDown={onTabKey}>
         {tabs.map((tabItem, i) => {
           // A tab is titled by its focused pane; a prompt in another pane shows too.
-          const fp = panes.find((p) => p.id === tabItem.focus);
-          if (!fp) return null;
+          const focusedPane = panes.find((p) => p.id === tabItem.focus);
+          if (!focusedPane) return null;
+          // An empty pane names no host: the tab keeps its first connected pane's (28a1).
+          const fp = focusedPane.status === 'empty' ? (panes.find((p) => p.tab === tabItem.id && p.status !== 'empty') ?? focusedPane) : focusedPane;
           const waiting = panes.find((p) => p.tab === tabItem.id && p.id !== tabItem.focus && p.status === 'prompt');
           const st = waiting && fp.status === 'ready' ? statusLabel(waiting) : statusLabel(fp);
           const on = tabItem.id === active;
@@ -138,8 +140,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
               onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); sessions.closeTab(tabItem.id); } }}>
               <span className={'st ' + st.dot} role="img" aria-label={t(`sessions.status_aria.${fp.status}`)} data-status={fp.status} />
               <HostTypeIcon type={fp.kind} />
-              {fp.alias}
-              <TunnelMark host={fp.alias} />
+              {fp.alias || t('split_view.empty_pane')}
+              {fp.alias && <TunnelMark host={fp.alias} />}
               {n > 1 && <span className="tab-split" title={`${n} panes`}><LayoutIcon layout={tabItem.layout} small />{n}</span>}
               {st.meta && <span className={'tab-meta ' + st.metaClass}>{st.meta}</span>}
               {on ? (
@@ -189,7 +191,22 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
             : <button className="tbtn" title={t('session_area.close_tab')} onClick={() => sessions.closeTab(activeTab.id)}><Icon name="x" size="sm" /><span className="tb-l">{t('session_area.close_tab')}</span></button>}
         </div>
       )}
-      {tab && s && activeTab && tab.kind !== 'rdp' && (
+      {tab && activeTab && tab.status === 'empty' && (
+        <div className="toolbar" data-empty-toolbar>
+          <span className="st st-off" role="img" aria-label={t('sessions.status_aria.empty')} data-status="empty" />
+          <span className="faint">{t('session_area.pane_no_host_yet', { n: paneNo })}</span>
+          {paneCount > 1 && <span className="badge accent" data-pane-badge style={{ marginLeft: 'var(--sp-2)' }}>{tr('session_area.pane_paneno_of_panecount', { paneNo, paneCount })}</span>}
+          <span className="grow" />
+          <span className="sep" />
+          <span style={{ position: 'relative', display: 'flex' }}>
+            <button className={'tbtn' + (menu ? ' on' : '')} data-split-button aria-haspopup="menu" aria-expanded={menu}
+              title={paneCount >= MAX_PANES ? t('session_area.split_this_tab_has_max', { MAX_PANES }) : t('session_area.split_chordlabel', { chordLabel: chordLabel('splitRight', os) })}
+              onClick={() => setMenu((m) => !m)}><Icon name="split" size="sm" /><span className="tb-l">{t('session_area.split')}</span></button>
+            {menu && <SplitMenu tab={activeTab} onClose={() => setMenu(false)} />}
+          </span>
+        </div>
+      )}
+      {tab && s && activeTab && tab.kind !== 'rdp' && tab.status !== 'empty' && (
         <div className="toolbar">
           <span className={'st ' + s.dot} role="img" aria-label={t(`sessions.status_aria.${tab.status}`)} data-status={tab.status} />
           <span className="mono strong">{tab.alias}</span>
@@ -232,7 +249,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
       </div>
       {tabMenu && (() => {
         const t = tabs.find((x) => x.id === tabMenu.tab);
-        const fp = t && panes.find((p) => p.id === t.focus);
+        const focusedPane = t && panes.find((p) => p.id === t.focus);
+        const fp = focusedPane?.status === 'empty' ? (panes.find((p) => p.tab === t!.id && p.status !== 'empty') ?? focusedPane) : focusedPane;
         if (!t || !fp) return null;
         return <TabMenu tab={t} pane={fp} x={tabMenu.x} y={tabMenu.y} onClose={() => setTabMenu(null)}
           onEditHost={() => onEditHost(fp.alias)} onFullScreen={() => fullScreen.enter(t.id)}

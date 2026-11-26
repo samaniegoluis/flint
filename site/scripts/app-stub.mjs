@@ -125,7 +125,7 @@ export function stub({ catalog, recents, screens, theme, listing, homes, tunnelL
 		theme, accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
 		term_font: '', term_font_size: video?.termFontSize ?? 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: false, term_theme: 'default', lock_after: '1h',
 		toast_corner: 'bottom-right', update_check: false,
-		server_stats: true, server_stats_colour: true,
+		server_stats: true, server_stats_colour: true, dim_unfocused: true,
 	};
 	const uiState = { sidebar_open: true, sidebar_width: 264, files_width: 340, collapsed: [] };
 	const current = recents.find((r) => r.current);

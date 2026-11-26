@@ -1,5 +1,6 @@
 // The session toolbar's Split menu (design 18a1): split right or down, the four
-// layouts, focus next pane and close pane. Arrow keys move, ↵ runs, esc closes.
+// layouts, focus next pane and close pane. A split or a layout's new places open
+// empty panes, each asking for its host (milestone 72). Arrow keys move, ↵ runs, esc closes.
 
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../state/app';
@@ -37,9 +38,10 @@ export function SplitMenu({ tab, onClose }: { tab: Tab; onClose: () => void }) {
   const full = n >= MAX_PANES ? t('split_menu.tab_holds_up_to', { max: MAX_PANES }) : undefined;
   const single = n < 2 ? t('split_menu.split_first') : undefined;
   const items: Item[] = [
-    { key: 'right', label: t('split_menu.split_right'), action: 'splitRight', disabled: full },
+    { key: 'right', label: t('split_menu.split_right'), action: 'splitRight', disabled: full, heading: t('split_menu.new_panes_pick_a_host') },
     { key: 'down', label: t('split_menu.split_down'), action: 'splitDown', disabled: full },
-    ...LAYOUTS.map((l, i): Item => ({ key: l, label: t(LAYOUT_TITLES[l]), action: ('layout' + (i + 1)) as Action, layout: l, disabled: single, sep: i === 0, heading: i === 0 ? t('split_menu.layouts_up_to_max_panes', { MAX_PANES }) : undefined })),
+    // A layout with more places than the tab has panes adds empty ones (milestone 72).
+    ...LAYOUTS.map((l, i): Item => ({ key: l, label: t(LAYOUT_TITLES[l]), action: ('layout' + (i + 1)) as Action, layout: l, sep: i === 0, heading: i === 0 ? t('split_menu.layouts_up_to_max_panes', { MAX_PANES }) : undefined })),
     { key: 'next', label: t('split_menu.focus_next_pane'), action: 'focusNextPane', disabled: single, sep: true },
     { key: 'close', label: n > 1 ? t('split_menu.close_pane') : t('split_menu.close_tab'), action: 'closeTab' },
   ];

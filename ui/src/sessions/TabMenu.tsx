@@ -35,11 +35,13 @@ export function TabMenu({ tab, pane, x, y, onClose, onEditHost, onFullScreen, on
   const ref = useRef<HTMLDivElement>(null);
   const rdp = pane.kind === 'rdp';
   const ready = pane.status === 'ready';
+  // A tab of empty panes only (milestone 72) has no host to reconnect or edit.
+  const empty = pane.status === 'empty';
   const items: Item[] = [
     ...(rdp && ready ? [{ key: 'fullscreen', label: t('tab_menu.full_screen'), chord: 'fullscreen' as Action, run: onFullScreen }] : []),
     ...(rdp && ready ? [{ key: 'fullscreenAll', label: t('tab_menu.full_screen_on_all_monitors'), reason: allMonitorsReason(monitorsView), run: onAllMonitors }] : []),
-    ...(!rdp ? [{ key: 'reconnect', label: t('tab_menu.reconnect'), chord: 'reconnect' as Action, run: () => sessions.reconnect(pane.id) }] : []),
-    { key: 'edit', label: t('tab_menu.edit_host'), chord: 'editHost', run: onEditHost },
+    ...(!rdp && !empty ? [{ key: 'reconnect', label: t('tab_menu.reconnect'), chord: 'reconnect' as Action, run: () => sessions.reconnect(pane.id) }] : []),
+    ...(!empty ? [{ key: 'edit', label: t('tab_menu.edit_host'), chord: 'editHost' as Action, run: onEditHost }] : []),
     ...(rdp && ready ? [{ key: 'disconnect', label: t('common.disconnect'), run: () => sessions.disconnect(pane.id) }] : []),
     { key: 'close', label: t('tab_menu.close_tab'), chord: 'closeTab', sep: true, run: () => sessions.closeTab(tab.id) },
   ];

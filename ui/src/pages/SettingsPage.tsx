@@ -268,6 +268,15 @@ function TerminalSettings() {
           ))}
         </div>
       </Row>
+      <Row title={t('settings_page.dim_what_does_not_have_focus')} desc={t('settings_page.full_contrast_means_it_receives')}>
+        <label className="row" style={{ gap: 'var(--sp-3)', alignItems: 'flex-start', cursor: 'pointer' }}>
+          <button type="button" className="toggle" role="switch" aria-checked={s.dim_unfocused} aria-label={t('settings_page.dim_what_does_not_have_focus')} data-setting="dim_unfocused" onClick={() => set({ dim_unfocused: !s.dim_unfocused })} />
+          <span className="col" style={{ gap: 3 }}>
+            <span>{t('settings_page.dim_what_does_not_have_focus')}</span>
+            <span className="hint" style={{ lineHeight: 1.45, maxWidth: 440 }}>{t('settings_page.dims_split_panes_other_than')}</span>
+          </span>
+        </label>
+      </Row>
       <Row title={t('settings_page.server_resources')} desc={t('settings_page.cpu_memory_network_disk_and')}>
         <label className="row" style={{ gap: 'var(--sp-3)', alignItems: 'flex-start', cursor: 'pointer' }}>
           <button type="button" className="toggle" role="switch" aria-checked={s.server_stats} aria-label={t('settings_page.show_server_resources')} data-setting="server_stats" onClick={() => set({ server_stats: !s.server_stats })} />

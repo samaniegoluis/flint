@@ -117,6 +117,8 @@
   --success: #7BC98F; --success-subtle: #16261B; --success-border: #2B5236;
   --warning: #F2C46D; --warning-subtle: #2A2414; --warning-border: #5C4A1E;
   --danger: #EE7A66;  --danger-hover: #F38F7D;   --danger-subtle: #2C1714; --danger-border: #5E2A22;
+  /* Dim what does not take the keys (v19 · 28e): lower contrast, never an overlay. (--pane-dim is the scrim behind in-pane cards.) */
+  --dim-opacity: 0.74; --dim-saturate: 0.85; --dim-chrome-opacity: 0.86;
 
   --focus-ring: 0 0 0 2px var(--surface-base), 0 0 0 4px rgba(242, 154, 82, 0.75);
   --focus-glow: 0 0 0 3px rgba(242, 154, 82, 0.16);
@@ -198,6 +200,7 @@ html[data-theme="light"], [data-theme="light"] {
   --success: #296F3F; --success-subtle: #E2F1E6; --success-border: #A3D0B0;
   --warning: #8F6508; --warning-subtle: #FBF0D4; --warning-border: #E3C77E;
   --danger: #B5392A;  --danger-hover: #A03224;   --danger-subtle: #FBE4DF; --danger-border: #EBA99C;
+  --dim-opacity: 0.70; --dim-saturate: 0.65; --dim-chrome-opacity: 0.84;
 
   --focus-ring: 0 0 0 2px var(--surface-base), 0 0 0 4px rgba(212, 115, 40, 0.80);
   --focus-glow: 0 0 0 3px rgba(232, 133, 58, 0.20);

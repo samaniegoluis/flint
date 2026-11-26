@@ -90,8 +90,11 @@ async function record(cut, theme) {
 	await hold(250);
 	await press('Enter', '↵');
 	await hold(1500);
-	// Split the tab: a second pane on web-01, then close both.
+	// Split the tab: an empty pane offers web-01 first (milestone 72), ↵ connects it; then close both.
 	await press('Meta+d', '⌘D');
+	await hold(1100);
+	await press('Enter', '↵');
+	await page.locator('.spane[data-status="empty"]').waitFor({ state: 'detached', timeout: 5000 });
 	await hold(1300);
 	await type(page, 'uptime');
 	await hold(250);

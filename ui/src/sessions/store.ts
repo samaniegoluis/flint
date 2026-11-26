@@ -13,14 +13,18 @@ import { useSyncExternalStore } from 'react';
 import { monitors } from './monitors';
 import { api, on } from '../api/backend';
 import { InputQueue } from '../lib/inputQueue';
-import { defaultTracks, layoutAfterClose, layoutForSplit, MAX_PANES, type Layout, type SplitDir } from '../lib/layout';
+import { defaultTracks, layoutAfterClose, layoutForSplit, layoutPlaces, MAX_PANES, type Layout, type SplitDir } from '../lib/layout';
 import type { DesktopReadyEvent, HostKeyPayload, HostType, RdpGraphicsEvent, RdpStateEvent, SessionPromptEvent, SessionStateEvent } from '../api/types';
 import { t } from '../i18n';
 
 /** The core's RDP_AUTO_LAN_RTT_MS (domain/rdp.cf): a round trip this short is a local network. */
 const RDP_AUTO_LAN_RTT_MS = 5;
 
-export type PaneStatus = 'connecting' | 'prompt' | 'ready' | 'ended';
+/**
+ * `empty` (milestone 72, D-149 (2)): a place in the tab waiting for a host. It holds no
+ * session and no terminal until one is picked (`fill`).
+ */
+export type PaneStatus = 'empty' | 'connecting' | 'prompt' | 'ready' | 'ended';
 
 export interface SessionEnd {
   code: string;
@@ -74,6 +78,12 @@ export interface Pane {
   graphics: string;
   /** A switch is reconnecting the desktop. */
   graphicsSwitching: boolean;
+  /**
+   * An empty pane's picker offers this host first (milestone 72): the host of the pane it
+   * was split from, '' when there was none. `from` is that pane's id.
+   */
+  suggest: string;
+  from: string;
   /** Why the last switch did not happen, '' when it did. */
   graphicsNote: string;
 }
@@ -283,7 +293,9 @@ class SessionStore {
 
   private connect(paneId: string) {
     const t = this.pane(paneId);
-    if (!t) return;
+    // An empty pane opens no session until a host is picked (spec v19's contract).
+    if (!t || !t.alias) return;
+    this.remember(t.alias);
     if (t.kind === 'rdp') { this.connectDesktop(paneId); return; }
     const session = mint('s');
     this.bySession.set(session, paneId);
@@ -297,7 +309,21 @@ class SessionStore {
   }
 
   private newPane(tabId: string, alias: string, noCommand: boolean, kind: HostType = 'ssh'): Pane {
-    return { id: mint('p'), kind, desktop: null, tab: tabId, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, endedAt: 0, noCommand, cwd: '', graphics: '', graphicsSwitching: false, graphicsNote: '' };
+    return { id: mint('p'), kind, desktop: null, tab: tabId, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, endedAt: 0, noCommand, cwd: '', graphics: '', graphicsSwitching: false, graphicsNote: '', suggest: '', from: '' };
+  }
+
+  // A place waiting for a host (milestone 72): no session until `fill`.
+  private emptyPane(tabId: string, from: Pane | undefined): Pane {
+    const p = this.newPane(tabId, '', from?.noCommand ?? false);
+    return { ...p, status: 'empty', suggest: from && from.status !== 'empty' ? from.alias : from?.suggest ?? '', from: from && from.status !== 'empty' ? from.id : from?.from ?? '' };
+  }
+
+  // Hosts connected in this run, the newest first: an empty pane's "Recent" (milestone
+  // 72). Kept in memory only, never written anywhere.
+  private recent: string[] = [];
+  recentHosts(): string[] { return this.recent; }
+  private remember(alias: string) {
+    this.recent = [alias, ...this.recent.filter((a) => a !== alias)].slice(0, 12);
   }
 
   /** Opens `alias` in a new tab; returns the new pane's id. An RDP host's tab is a remote desktop. */
@@ -311,9 +337,11 @@ class SessionStore {
   }
 
   /**
-   * Splits the active tab: a new pane on `alias` (by default the focused pane's host)
-   * right after the focused one, which takes the focus. Returns its id, or null when
-   * there is no tab or it already holds MAX_PANES.
+   * Splits the active tab right after the focused pane, which the new pane takes the
+   * focus from. With `alias` (the palette's ⇧⌘↵) the new pane connects that host; without
+   * it (⌘D, ⇧⌘D, the Split menu; milestone 72) the pane is empty, its picker offering the
+   * focused pane's host first. Returns its id, or null when there is no tab, it already
+   * holds MAX_PANES or it is a remote desktop's.
    */
   split(dir: SplitDir, alias?: string, noCommand = false): string | null {
     const tab = this.tab(this.snap.active);
@@ -321,9 +349,7 @@ class SessionStore {
     const from = this.pane(tab.focus);
     // A remote desktop is alone in its tab (spec v8: no split panes).
     if (from?.kind === 'rdp') return null;
-    const host = alias ?? from?.alias;
-    if (!host) return null;
-    const pane = this.newPane(tab.id, host, alias ? noCommand : (from?.noCommand ?? false));
+    const pane = alias ? this.newPane(tab.id, alias, noCommand) : this.emptyPane(tab.id, from);
     const at = Math.max(0, tab.panes.indexOf(tab.focus)) + 1;
     const panes = [...tab.panes.slice(0, at), pane.id, ...tab.panes.slice(at)];
     const layout = layoutForSplit(panes.length, dir);
@@ -338,10 +364,41 @@ class SessionStore {
     return pane.id;
   }
 
+  /**
+   * Lays the active tab out as `layout`. A tab with fewer panes than the layout's places
+   * gets empty panes for the rest (milestone 72), and the first of them takes the focus.
+   */
   setLayout(layout: Layout) {
     const tab = this.tab(this.snap.active);
-    if (!tab || tab.panes.length < 2) return;
-    this.patchTab(tab.id, { layout, ...defaultTracks(layout, tab.panes.length) });
+    if (!tab) return;
+    const from = this.pane(tab.focus);
+    if (from?.kind === 'rdp') return;
+    const want = Math.min(MAX_PANES, layoutPlaces(layout));
+    if (tab.panes.length >= want) {
+      if (tab.panes.length < 2) return;
+      this.patchTab(tab.id, { layout, ...defaultTracks(layout, tab.panes.length) });
+      return;
+    }
+    const added: Pane[] = [];
+    for (let i = tab.panes.length; i < want; i++) added.push(this.emptyPane(tab.id, from));
+    const panes = [...tab.panes, ...added.map((p) => p.id)];
+    this.set({
+      panes: [...this.snap.panes, ...added],
+      tabs: this.snap.tabs.map((t) => (t.id === tab.id ? { ...t, panes, layout, focus: added[0].id, ...defaultTracks(layout, panes.length) } : t)),
+    });
+  }
+
+  /**
+   * Connects an empty pane to `alias` (milestone 72): it becomes that host's session,
+   * with the same prompts as any connect. The suggested host keeps the no-command choice
+   * of the pane it came from; another host runs its own command.
+   */
+  fill(paneId: string, alias: string) {
+    const p = this.pane(paneId);
+    if (!p || p.status !== 'empty' || !alias) return;
+    const noCommand = alias === p.suggest ? p.noCommand : false;
+    this.patch(paneId, { alias, noCommand, status: 'connecting', suggest: '', from: '' });
+    this.connect(paneId);
   }
 
   /** A divider was dragged (or reset). */
@@ -367,7 +424,7 @@ class SessionStore {
 
   reconnect(paneId: string) {
     const t = this.pane(paneId);
-    if (!t) return;
+    if (!t || t.status === 'empty') return;
     if (t.status !== 'ended' && t.session) this.endSession(t);
     if (t.session) this.bySession.delete(t.session);
     if (t.kind === 'ssh') this.writers.get(paneId)?.(new TextEncoder().encode('\r\n'));
@@ -555,7 +612,13 @@ export function useSessions(): Snapshot {
   return useSyncExternalStore(sessions.subscribe, sessions.get);
 }
 
+/** A pane that holds a session (connecting, asking or up): not ended, not empty. */
+export function isLive(p: Pane): boolean {
+  return p.status !== 'ended' && p.status !== 'empty';
+}
+
 export function statusLabel(pane: Pane): { dot: string; meta: string; metaClass: string } {
+  if (pane.status === 'empty') return { dot: 'st-off', meta: '', metaClass: '' };
   if (pane.status === 'ready') return { dot: 'st-on', meta: '', metaClass: '' };
   if (pane.status === 'prompt') {
     const verify = pane.kind === 'rdp' ? t('sessions.status.verify_certificate') : t('sessions.status.verify_host');

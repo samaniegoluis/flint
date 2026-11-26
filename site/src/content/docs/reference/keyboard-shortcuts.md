@@ -21,7 +21,7 @@ speaks the Kitty keyboard protocol.
 | Reconnect | ⌘R | Ctrl+Shift+R |
 | Full screen (an RDP tab) | ⌃⌘F | Ctrl+Alt+Enter |
 | Duplicate session (a new tab on the same host) | ⌥⌘D | Ctrl+Alt+D |
-| Split right · split down | ⌘D · ⇧⌘D | Ctrl+Shift+D · Ctrl+Alt+Shift+D |
+| Split right · split down (an empty pane that asks for its host) | ⌘D · ⇧⌘D | Ctrl+Shift+D · Ctrl+Alt+Shift+D |
 | Focus the next · previous pane | ⌘] · ⌘[ | Ctrl+Shift+] · Ctrl+Shift+[ |
 | Layout: side by side · stacked · grid · one large + two small | ⌥⌘1 … ⌥⌘4 | Ctrl+Alt+1 … 4 |
 | Toggle the sidebar | ⌘B | Ctrl+Shift+B |
@@ -67,6 +67,7 @@ as on an SSH tab. See [Remote desktop](/guides/remote-desktop/#keyboard-and-mous
 | Files list | ↑ ↓ move · ↵ open a folder, rename a file · ⌘↑ up one folder · ⇧⌘G (or `/`, `~`) type a path · ⌘↓ download · ⌘⌫ delete · context-menu key for the menu |
 | Files with two servers | ⌘→ copy to the second pane's server · ⌘← (in the second pane) copy back to the first · esc hide the second pane |
 | Command palette | ↑ ↓ move · ↵ open · ⌘↵ new tab · ⇧⌘↵ new pane · ⌘I edit host · Tab next group · esc close |
+| Empty pane's host picker | type to search · ↑ ↓ move · ↵ connect · esc close the pane |
 | Divider between panes | ← → or ↑ ↓ resize · double-click to even out |
 | Prompts over a session | ↵ the primary action · esc cancel. A changed host key has no ↵ action |
 | Editors | ⌘↵ save · esc cancel |

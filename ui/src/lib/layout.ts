@@ -21,6 +21,14 @@ export const LAYOUT_TITLES: Record<Layout, string> = {
 };
 
 /**
+ * How many places `layout` draws at the least (milestone 72): choosing it on a tab with
+ * fewer panes fills the rest with empty panes.
+ */
+export function layoutPlaces(layout: Layout): number {
+  return layout === 'grid' ? 4 : layout === 'large' ? 3 : 2;
+}
+
+/**
  * The layout once a split leaves `count` panes: two panes follow the direction
  * (right: side by side, down: stacked), three are one large + two small, four a grid.
  */

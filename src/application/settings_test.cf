@@ -91,6 +91,15 @@ test "settings are validated on save and repaired field by field on load" {
     spoken.toast_corner = "middle"
     store.saved = spoken
     assert_eq((try load_settings(store)).language, "es")
+
+    // Dimming what does not have the focus (milestone 72) is on by default, and turned
+    // off it stays off through a file with another bad field.
+    assert(default_settings().dim_unfocused)
+    mut undimmed := default_settings()
+    undimmed.dim_unfocused = false
+    undimmed.toast_corner = "middle"
+    store.saved = undimmed
+    assert(!(try load_settings(store)).dim_unfocused)
 }
 
 test "installed mono fonts are deduplicated and sorted" {

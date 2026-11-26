@@ -460,7 +460,7 @@ svg.t-mark { width: 14px; height: 14px; border-radius: 0; background: none; colo
 .queue { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 var(--sp-2); border-radius: var(--radius-full); background: var(--surface-active); font-size: var(--fs-xs); color: var(--text-secondary); }
 .queue b { color: var(--text-primary); font-weight: var(--fw-semibold); }
 .app[data-inactive="true"] .traffic i { background: var(--border-strong); }
-.app[data-inactive="true"] .tb-title { opacity: 0.6; }
+.app[data-inactive="true"] .tb-title { opacity: var(--dim-chrome-opacity); }
 .secret { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); background: var(--surface-sunken); border: 1px solid var(--accent-border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--fs-sm); word-break: break-all; }
 
 /* Run as root (v3 · M13) */
@@ -565,14 +565,13 @@ button.picker-row:not(.off) { cursor: pointer; }
 
 /* v5 · Split panes (design 18*, milestone 20). One tab's panes in a grid; a single
    pane fills the area with no frame, as before. The focused pane has an ember border
-   and a tinted header, the others' output is dimmed to 60 % (design README). */
+   and a tinted header; the others are dimmed (milestone 72, below). */
 .splits { position: absolute; inset: 0; display: grid; }
 .splits.multi { gap: 4px; padding: 4px; background: var(--surface-chrome); }
 .spane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--term-bg); }
 .splits.multi .spane { border: 1px solid var(--border-default); border-radius: var(--radius-sm); overflow: hidden; }
 .splits.multi .spane.focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .sp-body { position: relative; flex: 1; min-height: 0; }
-.splits.multi .spane:not(.focus) .sp-body > [data-tab] { opacity: 0.6; }
 .splits.multi .sp-body > [data-tab] { padding: var(--sp-2) var(--sp-3); }
 .sp-h { height: 26px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 6px; background: var(--surface-raised); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-xs); color: var(--text-secondary); user-select: none; }
 .spane.focus .sp-h { background: var(--accent-subtle); color: var(--text-primary); }
@@ -850,3 +849,46 @@ button.link { background: none; border: 0; padding: 0; font: inherit; cursor: po
   .nt-grid > div { margin-bottom: var(--sp-3); }
   .nt-k { padding-top: 0; font-weight: var(--fw-medium); color: var(--text-primary); }
 }
+
+/* v19 · Empty panes and their host picker (design 28a*, milestone 72) */
+.spane.is-empty { background: var(--surface-sunken); text-align: left; }
+.spane.is-empty .sp-h .sp-empty { color: var(--text-tertiary); }
+.sp-body-center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: var(--sp-3); }
+.hp { width: min(420px, calc(100% - 24px)); max-height: 100%; display: flex; flex-direction: column; background: var(--surface-overlay); border: 1px solid var(--border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-popover); overflow: hidden; text-align: left; }
+.hp-search { height: 40px; flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3); border-bottom: 1px solid var(--border-subtle); box-shadow: inset 0 -2px 0 var(--accent); }
+.hp-search input { flex: 1; min-width: 0; background: none; border: 0; outline: none; font-size: var(--fs-md); color: var(--text-primary); font-family: var(--font-ui); }
+.hp-list { display: flex; flex-direction: column; gap: 1px; padding: var(--sp-1); overflow-y: auto; min-height: 0; }
+.hp-row { display: grid; grid-template-columns: 3px minmax(0, 1fr) auto; gap: var(--sp-2); align-items: center; min-height: 40px; padding: 4px var(--sp-2); border-radius: var(--radius-sm); text-align: left; width: 100%; }
+.hp-row.hot { background: var(--surface-active); }
+.hp-row .hp-a { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.hp-row .hp-alias { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hp-row .hp-addr { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hp-row .hp-g { font-size: var(--fs-xs); color: var(--text-tertiary); white-space: nowrap; }
+.hp-row .hp-same { font-size: var(--fs-2xs); color: var(--accent-text); margin-left: 6px; font-family: var(--font-ui); }
+.hp-row .match { color: var(--accent-text); font-weight: var(--fw-semibold); }
+.hp-k { display: flex; flex: none; align-items: center; gap: var(--sp-3); height: 32px; padding: 0 var(--sp-3); border-top: 1px solid var(--border-subtle); background: var(--surface-raised); font-size: var(--fs-xs); color: var(--text-tertiary); }
+.hp-k > span { display: inline-flex; align-items: center; gap: 6px; }
+.hp-note { display: flex; align-items: center; gap: 6px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-xs); color: var(--text-secondary); border-bottom: 1px solid var(--border-subtle); background: var(--surface-raised); }
+.hp-list > .hp-note { border: 0; background: none; color: var(--text-tertiary); }
+.hp.sm .hp-row { grid-template-columns: 3px minmax(0, 1fr); min-height: 34px; }
+.hp.sm .hp-row .hp-g { display: none; }
+.hp.sm .hp-search { height: 34px; }
+.hp.sm .hp-k { height: 28px; gap: var(--sp-2); }
+.ep-quiet { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); }
+
+/* v19 · Dim what does not take the keys (design 28e*, milestone 72, D-150): what is drawn
+   at full contrast receives what you type. Lower contrast on the pane's container, never
+   an overlay and never xterm.js's renderer. Settings → Terminal turns it off
+   (.app[data-dim="off"]); a remote desktop is never dimmed (28e5): it is not in .splits. */
+.app:not([data-dim="off"]) .splits.multi .spane:not(.focus) .sp-body > [data-tab],
+.app:not([data-dim="off"]) .splits.multi .spane.is-empty:not(.focus) .ep-quiet,
+.app:not([data-dim="off"])[data-inactive="true"] .splits .sp-body > [data-tab],
+.app:not([data-dim="off"])[data-inactive="true"] .spane.is-empty :is(.ep-quiet, .hp) { opacity: var(--dim-opacity); filter: saturate(var(--dim-saturate)); }
+/* The inactive window's chrome: quieter than the terminals, its accents neutral (28e2). */
+.app:not([data-dim="off"])[data-inactive="true"] :is(.tabbar, .toolbar, .statusbar, .side-title, .tree, .vault-btn, .side-search, .side-head) > *,
+.app:not([data-dim="off"])[data-inactive="true"] .rail > * { opacity: var(--dim-chrome-opacity); }
+.app:not([data-dim="off"])[data-inactive="true"] .tab.on { box-shadow: inset 0 2px 0 var(--border-strong); }
+.app:not([data-dim="off"])[data-inactive="true"] .splits.multi .spane.focus { border-color: var(--border-strong); box-shadow: none; }
+.app:not([data-dim="off"])[data-inactive="true"] .spane.focus .sp-h { background: var(--surface-raised); color: var(--text-secondary); }
+.app:not([data-dim="off"])[data-inactive="true"] .spane.focus .sp-num { background: var(--surface-active); color: var(--text-secondary); }
+.app:not([data-dim="off"])[data-inactive="true"] .badge.accent { background: var(--surface-active); color: var(--text-secondary); }

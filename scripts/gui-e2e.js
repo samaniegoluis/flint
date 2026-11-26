@@ -1621,6 +1621,13 @@
         await check(q('.tab.on')?.textContent.includes('local'), 'Duplicate moved to ⌥⌘D (Ctrl+Alt+D) and opens a new tab of the host');
         await check(q('[data-split-button]') && !q('[data-split-button]').getAttribute('aria-disabled'), "the toolbar's Split button is on");
 
+        // Milestone 72: a split opens an empty pane; no session until a host is picked.
+        window.__flintE2E.rpcLog = [];
+        const opens = { get n() { return window.__flintE2E.rpcLog.filter((m) => m === 'session_open').length; } };
+        const picker = () => activePane()?.querySelector('[data-host-picker]');
+        const pickerKey = (key) => picker().querySelector('input').dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true }));
+        const dimmed = (el) => { const cs = getComputedStyle(el); return Number(cs.opacity) < 1 && cs.filter.includes('saturate'); };
+        const full = (el) => { const cs = getComputedStyle(el); return Number(cs.opacity) === 1 && !cs.filter.includes('saturate'); };
         activePane().querySelector('textarea').focus();
         send('KeyD');
         await waitFor(() => panes().length === 2, 'a second pane');
@@ -1628,18 +1635,47 @@
           '⌘D (Ctrl+Shift+D) splits the tab right, in the same tab');
         await check(panes()[1].classList.contains('focus') && q('[data-pane-badge]')?.textContent === 'pane 2 of 2' && /2/.test(q('.tab.on .tab-split')?.textContent ?? ''),
           'the new pane has the focus, the toolbar says "pane 2 of 2" and the tab shows two panes');
+        await waitFor(() => picker() && document.activeElement === picker().querySelector('input'), "the empty pane's picker takes the keys");
+        await sleep(300);
+        await check(panes()[1].dataset.status === 'empty' && opens.n === 0 && sessionCount() === sessionsBefore + 1 && q('[data-empty-toolbar]'),
+          `the new pane is empty and opens no session (${opens.n} session_open)`);
+        const same = picker().querySelector('.hp-row.hot');
+        await check(same?.dataset.pickerHost === 'local' && same.textContent.includes('same as pane 1'), 'the picker offers the same host first, preselected ("same as pane 1")');
+        pickerKey('Enter');
+        await waitFor(() => panes()[1].dataset.status !== 'empty', 'the pane picks its host');
         await waitFor(() => toolbarIs('ready'), 'the second pane connected', 30000);
+        await check(q('.toolbar .mono.strong')?.textContent === 'local' && opens.n === 1, `⌘D then ↵ connects the same host, as the old split did (${opens.n} session_open)`);
         await runInTerminal('echo pane-two-$$-$((6*7))', 'pane-two-');
         const pid = await waitFor(() => (termText().match(/pane-two-(\d+)-42/) ?? [])[1], "pane two's shell pid");
         await check(!termOf(panes()[0]).includes('pane-two-'), 'each pane is its own session with its own scrollback');
-        await check(getComputedStyle(panes()[0].querySelector('[data-tab]')).opacity === '0.6' && getComputedStyle(panes()[1].querySelector('[data-tab]')).opacity === '1',
-          "the other pane's output is dimmed to 60 %");
+        // The window may not have the system's focus while the run drives it: say it has.
+        const wasInactive = q('.app').dataset.inactive;
+        window.dispatchEvent(new Event('focus'));
+        await waitFor(() => q('.app').dataset.inactive === 'false', 'the window reads as active');
+        await check(dimmed(panes()[0].querySelector('[data-tab]')) && full(panes()[1].querySelector('[data-tab]')),
+          `the pane without the focus is dimmed, the focused one at full contrast (${getComputedStyle(panes()[0].querySelector('[data-tab]')).opacity} / ${getComputedStyle(panes()[1].querySelector('[data-tab]')).opacity}; inactive was ${wasInactive})`);
         await check(sessionCount() === sessionsBefore + 2, 'the status bar counts each pane as a session');
 
+        // The window loses the focus: every pane is dimmed; back, the focused one is not.
+        window.dispatchEvent(new Event('blur'));
+        await waitFor(() => q('.app').dataset.inactive === 'true', 'the window reads as inactive');
+        await check(dimmed(panes()[1].querySelector('[data-tab]')) && dimmed(panes()[0].querySelector('[data-tab]')), 'with the window in the background every pane is dimmed');
+        window.dispatchEvent(new Event('focus'));
+        await waitFor(() => q('.app').dataset.inactive === 'false', 'the window active again');
+        await check(full(panes()[1].querySelector('[data-tab]')), 'back in front, the focused pane is at full contrast again');
+
+        // ⇧⌘D, then another host typed into the picker.
+        activePane().querySelector('textarea').focus();
         send('KeyD', 'shift');
         await waitFor(() => panes().length === 3, 'a third pane');
         await check(panes()[0].style.gridRow.includes('span 2'), '⇧⌘D with three panes makes one large + two small');
-        await waitFor(() => toolbarIs('ready'), 'the third pane connected', 30000);
+        await waitFor(() => picker(), 'the third pane asks for its host');
+        setValue(picker().querySelector('input'), 'inner');
+        await waitFor(() => picker().querySelector('.hp-row.hot')?.dataset.pickerHost === 'inner', 'inner matched');
+        await check(picker().querySelector('.hp-row.hot .match'), 'what is typed is highlighted in the match');
+        pickerKey('Enter');
+        await waitFor(() => toolbarIs('ready') && q('.toolbar .mono.strong')?.textContent === 'inner', 'inner connected in the third pane', 30000);
+        await check(panes()[2].textContent.includes('inner'), '⌘D then a typed host connects another host in the new pane');
 
         // The palette's ⇧⌘↵ opens a host in a new pane (18e).
         send('KeyK');
@@ -1707,6 +1743,65 @@
         await click('.tab.on .tx');
         await waitFor(() => qa('.tab').length === tabsBefore, 'the split tab closed');
         await check(sessionCount() === sessionsBefore, "closing the tab hangs up every pane's session");
+        await click('.tab', 'local');
+        await waitFor(() => toolbarIs('ready'), 'back on the local tab');
+
+        // A layout on one pane fills its places with empty panes (28a2), connected one by one.
+        activePane().querySelector('textarea').focus();
+        send('KeyD', 'alt');
+        await waitFor(() => qa('.tab').length === tabsBefore + 1 && toolbarIs('ready'), 'a new tab for the layout', 30000);
+        const opensBefore = opens.n;
+        activePane().querySelector('textarea').focus();
+        send('Digit3', 'alt');
+        await waitFor(() => panes().length === 4, 'a 2 × 2 of one pane and three empty ones');
+        await check(panes().slice(1).every((p) => p.dataset.status === 'empty') && panes()[1].classList.contains('focus') && opens.n === opensBefore,
+          '⌥⌘3 on one pane adds three empty panes, the first focused, and opens no session');
+        await check(panes()[2].querySelector('[data-empty-connect]') && dimmed(panes()[2].querySelector('.ep-quiet')), 'the empty panes without the focus stay quiet and dimmed (28e4)');
+        for (const [i, host] of [[1, 'inner'], [2, 'local'], [3, 'inner']]) {
+          if (i > 1) panes()[i].querySelector('[data-empty-connect]').click();
+          await waitFor(() => panes()[i].classList.contains('focus') && picker(), `pane ${i + 1} asks for its host`);
+          setValue(picker().querySelector('input'), host);
+          await waitFor(() => picker().querySelector('.hp-row.hot')?.dataset.pickerHost === host, host + ' matched');
+          pickerKey('Enter');
+          await waitFor(() => panes()[i].dataset.status === 'ready', `pane ${i + 1} connected to ${host}`, 30000);
+        }
+        await check(sessionCount() === sessionsBefore + 4 && panes().map((p) => p.querySelector('.sp-h .mono')?.textContent).join(',') === 'local,inner,local,inner',
+          'a 2 × 2 from one pane is connected place by place, each to the host picked');
+
+        // Esc closes an empty pane and leaves the others.
+        panes()[3].querySelector('.sp-x').click();
+        await waitFor(() => panes().length === 3, 'three panes');
+        activePane().querySelector('textarea').focus();
+        send('KeyD');
+        await waitFor(() => panes().length === 4 && picker(), 'an empty fourth pane');
+        pickerKey('Escape');
+        await waitFor(() => panes().length === 3, 'the empty pane closed');
+        await check(panes().every((p) => p.dataset.status === 'ready') && sessionCount() === sessionsBefore + 3, 'Esc closes an empty pane and leaves the others connected');
+
+        // Settings → Terminal → Dim what does not have focus, off: nothing is dimmed.
+        await click('.rail-btn', 'Settings');
+        await click('.nav-i', 'Terminal');
+        await waitFor(() => q('[data-setting="dim_unfocused"]'), 'the dim setting');
+        await check(q('[data-setting="dim_unfocused"]').getAttribute('aria-checked') === 'true', 'Dim what does not have focus is on by default');
+        q('[data-setting="dim_unfocused"]').click();
+        await waitFor(() => q('.app').dataset.dim === 'off', 'the dim turned off');
+        await click('.rail-btn', 'Hosts');
+        await waitFor(() => activeTerm(), 'the terminal again');
+        const unfocused = panes().find((p) => !p.classList.contains('focus'));
+        window.dispatchEvent(new Event('blur'));
+        await waitFor(() => q('.app').dataset.inactive === 'true', 'the window reads as inactive');
+        await check(full(unfocused.querySelector('[data-tab]')) && full(activePane().querySelector('[data-tab]')), 'with the setting off no pane is dimmed, even with the window in the background');
+        window.dispatchEvent(new Event('focus'));
+        await click('.rail-btn', 'Settings');
+        await waitFor(() => q('[data-setting="dim_unfocused"]'), 'the dim setting');
+        q('[data-setting="dim_unfocused"]').click();
+        await waitFor(() => q('.app').dataset.dim === 'on', 'the dim on again');
+        await click('.rail-btn', 'Hosts');
+        await waitFor(() => dimmed(unfocused.querySelector('[data-tab]')), 'dimmed again');
+        await check(true, 'turned on again, the pane without the focus is dimmed again');
+        await click('.tab.on .tx');
+        await waitFor(() => qa('.tab').length === tabsBefore, 'the layout tab closed');
+        delete window.__flintE2E.rpcLog;
         await click('.tab', 'local');
         await waitFor(() => toolbarIs('ready'), 'back on the local tab');
       }

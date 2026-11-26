@@ -43,7 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system', accent: 'ember', density: 'default', follow_motion: true, reopen_last_vault: true,
   term_font: '', term_font_size: 13, term_line_height: 100, term_cursor: 'block', term_cursor_blink: true, term_theme: 'default',
   lock_after: '1h', paste_limit_mb: 20, rdp_mac_keys: 'mac', rdp_mac_custom: '', rdp_graphics: 'auto',
-  sync_interval: 60, toast_corner: 'bottom-right', update_check: true, server_stats: true, server_stats_colour: true,
+  sync_interval: 60, toast_corner: 'bottom-right', update_check: true, server_stats: true, server_stats_colour: true, dim_unfocused: true,
   notify_grants: true, sudo_periods: false, approval_wait: 2,
   ntfy_on: false, ntfy_server: 'https://ntfy.sh', ntfy_topic: '', ntfy_phone: 'iphone', close_action: '', language: 'system',
 };

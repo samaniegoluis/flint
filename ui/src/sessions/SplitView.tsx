@@ -15,6 +15,7 @@ import { Icon } from '../ui/Icon';
 import { sessions, statusLabel, type Pane, type Tab } from './store';
 import { TerminalView } from './TerminalView';
 import { SessionCard } from './SessionCards';
+import { EmptyPane } from './EmptyPane';
 import { t } from '../i18n';
 
 const GAP = 4;
@@ -77,24 +78,35 @@ export function SplitView({ tab, panes, shown, active, fontSize, onEditHost }: {
         const host = catalog.hosts.find((h) => h.alias === p.alias);
         const c = colorStyle(host?.color ?? '');
         const st = statusLabel(p);
+        const empty = p.status === 'empty';
+        const fromNo = empty && p.from ? tab.panes.indexOf(p.from) + 1 : 0;
+        const label = empty
+          ? t(focused && multi ? 'split_view.pane_empty_focused' : 'split_view.pane_empty', { n: i + 1 })
+          : multi ? t(focused ? 'split_view.pane_focused' : 'split_view.pane', { n: i + 1, alias: p.alias }) : t('split_view.terminal_alias', { alias: p.alias });
         return (
-          <section key={id} className={'spane' + (multi && focused ? ' focus' : '')} style={placement(tab.layout, n, i)}
-            role="region" aria-label={multi ? t(focused ? 'split_view.pane_focused' : 'split_view.pane', { n: i + 1, alias: p.alias }) : t('split_view.terminal_alias', { alias: p.alias })}
-            data-pane={id} onMouseDownCapture={() => { if (!focused) sessions.focusPane(id); }}>
+          <section key={id} className={'spane' + (multi && focused ? ' focus' : '') + (empty ? ' is-empty' : '')} style={placement(tab.layout, n, i)}
+            role="region" aria-label={label}
+            data-pane={id} data-status={p.status} onMouseDownCapture={() => { if (!focused) sessions.focusPane(id); }}>
             {multi && (
               <div className="sp-h">
                 <span className="sp-num">{i + 1}</span>
-                <span className={'sp-dot ' + c.className} style={c.style} />
-                <span className="mono grow trunc" style={{ color: 'inherit' }}>{p.alias}</span>
-                {st.meta && <span className={st.metaClass} style={{ fontSize: 'var(--fs-2xs)' }}>{st.meta}</span>}
-                <span className={'st ' + st.dot} role="img" aria-label={p.status} />
+                {empty ? <span className="grow sp-empty">{t('split_view.empty_pane')}</span> : <>
+                  <span className={'sp-dot ' + c.className} style={c.style} />
+                  <span className="mono grow trunc" style={{ color: 'inherit' }}>{p.alias}</span>
+                  {st.meta && <span className={st.metaClass} style={{ fontSize: 'var(--fs-2xs)' }}>{st.meta}</span>}
+                  <span className={'st ' + st.dot} role="img" aria-label={p.status} />
+                </>}
                 <button className="sp-x" aria-label={focused ? t('split_view.close_pane_chord', { n: i + 1, chord: chordLabel('closeTab', os) }) : t('split_view.close_pane', { n: i + 1 })}
                   onMouseDown={(e) => e.stopPropagation()} onClick={() => sessions.close(id)}><Icon name="x" size="xs" /></button>
               </div>
             )}
             <div className="sp-body">
-              <TerminalView tabId={id} active={shown && active} focus={shown && active && focused && p.status === 'ready'} fontSize={fontSize} />
-              <SessionCard tab={p} active={active && focused} split={multi} onEditHost={onEditHost} />
+              {empty
+                ? <EmptyPane pane={p} focused={focused || !multi} live={shown && active} fromNo={fromNo} />
+                : <>
+                  <TerminalView tabId={id} active={shown && active} focus={shown && active && focused && p.status === 'ready'} fontSize={fontSize} />
+                  <SessionCard tab={p} active={active && focused} split={multi} onEditHost={onEditHost} />
+                </>}
             </div>
           </section>
         );

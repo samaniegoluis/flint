@@ -71,6 +71,8 @@ try {
 		await page.screenshot({ path: tunnelsShot });
 		console.log(`wrote ${tunnelsShot}`);
 		await page.keyboard.press('Meta+Shift+h');
+		// ⇧⌘H focuses the hosts filter once the sidebar is in: let it, before the next keys.
+		await page.locator('input[aria-label="Filter hosts"]:focus').waitFor({ timeout: 3000 }).catch(() => {});
 		// FLINT_SHOTS_EXTRA=<dir>: more screens for a visual check, not used by the landing.
 		const extra = process.env.FLINT_SHOTS_EXTRA;
 		if (extra) {
@@ -78,6 +80,11 @@ try {
 			// Split panes (milestone 20): two side by side, the Split menu, three, four,
 			// and four at 900 × 600 (18f).
 			await page.keyboard.press('Meta+d');
+			await page.waitForTimeout(400);
+			// Milestone 72: the new pane is empty, its picker open (28a1); ↵ connects web-01.
+			await page.screenshot({ path: join(extra, `split-empty-${theme}.png`) });
+			await page.keyboard.press('Enter');
+			await page.locator('.spane[data-status="empty"]').waitFor({ state: 'detached', timeout: 5000 });
 			await page.waitForTimeout(400);
 			await page.screenshot({ path: join(extra, `split-2-${theme}.png`) });
 			await page.locator('[data-split-button]').click();
@@ -92,6 +99,9 @@ try {
 			await page.waitForTimeout(400);
 			await page.screenshot({ path: join(extra, `split-3-${theme}.png`) });
 			await page.keyboard.press('Meta+Shift+d');
+			await page.waitForTimeout(400);
+			await page.keyboard.press('Enter');
+			await page.locator('.spane[data-status="empty"]').waitFor({ state: 'detached', timeout: 5000 });
 			await page.waitForTimeout(400);
 			await page.screenshot({ path: join(extra, `split-4-${theme}.png`) });
 			await page.setViewportSize({ width: 900, height: 600 });

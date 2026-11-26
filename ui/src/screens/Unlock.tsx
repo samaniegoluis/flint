@@ -9,7 +9,7 @@ import { Kbd } from '../ui/Kbd';
 import { actionFor } from '../lib/keymap';
 import { VaultMenu } from '../shell/VaultSwitcher';
 import { RememberOption } from '../ui/RememberOption';
-import { sessions, useSessions } from '../sessions/store';
+import { isLive, sessions, useSessions } from '../sessions/store';
 import type { LockReason, RemoteStatus } from '../api/types';
 import { plainText } from '../ui/plainText';
 import { t } from '../i18n';
@@ -97,7 +97,7 @@ export function Unlock({ locked = false }: { locked?: boolean }) {
     }
   };
 
-  const live = tabs.filter((t) => t.status !== 'ended').length;
+  const live = tabs.filter(isLive).length;
   const request = unlockRequest && unlockRequest.path ? unlockRequest : null;
   const more = request?.command ? moreText(request.caller, request.command.text) : '';
   // Leaves the locked vault for another one: its sessions end.

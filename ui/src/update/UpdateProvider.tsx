@@ -14,7 +14,7 @@ import { api, on } from '../api/backend';
 import type { ChangeVersion, UpdateStatus } from '../api/types';
 import { toasts, useApp } from '../state/app';
 import { UPDATE_TOAST_KEY, UPDATES_DOCS_URL, relaunchClosesText, updateActionLabel, updateDownloadFailure, updateDownloadingText, updatePercent, updateReadyText, updateRelaunchFailure, updateToastText } from '../lib/update';
-import { sessions } from '../sessions/store';
+import { isLive, sessions } from '../sessions/store';
 import { tunnels } from '../tunnels/store';
 import { RelaunchConfirm } from './RelaunchConfirm';
 import { WhatsNewModal } from './WhatsNewModal';
@@ -75,7 +75,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const relaunch = useCallback(async () => {
     const st = statusRef.current;
     if (!st || st.state !== 'ready') return;
-    const open = sessions.get().panes.filter((p) => p.status !== 'ended').length;
+    const open = sessions.get().panes.filter(isLive).length;
     const up = tunnels.get().list.filter((t) => t.state === 'listening').length;
     const commands = (await api.cliRunning().catch(() => ({ count: 0 }))).count;
     const closes = relaunchClosesText(open, up, commands);

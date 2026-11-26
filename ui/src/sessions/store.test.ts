@@ -28,29 +28,93 @@ describe('tabs of panes', () => {
     expect(opened).toHaveLength(1);
   });
 
-  it('splits after the focused pane, on its host, up to four', () => {
+  it('splits after the focused pane, empty or on a host named, up to four', () => {
     const a = sessions.open('web');
     const b = sessions.split('right')!;
     expect(tab().panes).toEqual([a, b]);
     expect(tab().layout).toBe('cols');
     expect(tab().focus).toBe(b);
-    expect(sessions.pane(b)?.alias).toBe('web');
-    expect(opened).toHaveLength(2);
-    expect(new Set(opened).size).toBe(2);
+    // Milestone 72: a split opens an empty pane that suggests the focused pane's host.
+    expect(sessions.pane(b)).toMatchObject({ status: 'empty', alias: '', session: '', suggest: 'web', from: a });
+    expect(opened).toHaveLength(1);
     sessions.focusPane(a);
     const c = sessions.split('down', 'db')!;
     expect(tab().panes).toEqual([a, c, b]);
     expect(tab().layout).toBe('large');
-    expect(sessions.pane(c)?.alias).toBe('db');
+    expect(sessions.pane(c)).toMatchObject({ alias: 'db', status: 'connecting' });
+    expect(opened).toHaveLength(2);
     sessions.split('down');
     expect(tab().layout).toBe('grid');
     expect(sessions.split('right')).toBeNull();
     expect(tab().panes).toHaveLength(4);
   });
 
+  it('an empty pane opens no session until a host is picked, then becomes its session', () => {
+    sessions.open('web', true);
+    const b = sessions.split('right')!;
+    expect(opened).toHaveLength(1);
+    sessions.reconnect(b);
+    expect(opened).toHaveLength(1);
+    sessions.fill(b, 'web');
+    expect(opened).toHaveLength(2);
+    // The suggested host keeps the no-command choice of the pane it came from.
+    expect(sessions.pane(b)).toMatchObject({ alias: 'web', status: 'connecting', noCommand: true, suggest: '' });
+    expect(sessions.pane(b)!.session).toBe(opened[1]);
+    const c = sessions.split('down')!;
+    sessions.fill(c, 'db');
+    expect(sessions.pane(c)).toMatchObject({ alias: 'db', noCommand: false });
+    // Filling a pane that is not empty does nothing.
+    sessions.fill(c, 'other');
+    expect(sessions.pane(c)!.alias).toBe('db');
+    expect(opened).toHaveLength(3);
+  });
+
+  it('a split from an empty pane suggests the host that pane suggested', () => {
+    const a = sessions.open('web');
+    sessions.split('right');
+    const c = sessions.split('down')!;
+    expect(sessions.pane(c)).toMatchObject({ suggest: 'web', from: a });
+  });
+
+  it('a layout with more places than panes adds empty ones and focuses the first', () => {
+    const a = sessions.open('web');
+    sessions.setLayout('grid');
+    const t = tab();
+    expect(t.layout).toBe('grid');
+    expect(t.panes).toHaveLength(4);
+    expect(t.panes[0]).toBe(a);
+    expect(t.focus).toBe(t.panes[1]);
+    expect(t.panes.slice(1).map((id) => sessions.pane(id)!.status)).toEqual(['empty', 'empty', 'empty']);
+    expect(opened).toHaveLength(1);
+    expect(t).toMatchObject({ cols: [1, 1], rows: [1, 1] });
+    // Fewer places than panes only lays them out again.
+    sessions.setLayout('cols');
+    expect(tab().panes).toHaveLength(4);
+    expect(tab().layout).toBe('cols');
+  });
+
+  it('closing an empty pane leaves the others and opens or closes no session', () => {
+    const a = sessions.open('web');
+    const b = sessions.split('right')!;
+    const c = sessions.split('right', 'db')!;
+    closed.length = 0;
+    sessions.close(b);
+    expect(closed).toEqual([]);
+    expect(tab().panes).toEqual([a, c]);
+    expect(sessions.pane(a)!.status).toBe('connecting');
+    expect(sessions.pane(c)!.status).toBe('connecting');
+  });
+
+  it('remembers the hosts connected in this run, newest first', () => {
+    sessions.open('web');
+    sessions.open('db');
+    sessions.open('web');
+    expect(sessions.recentHosts().slice(0, 2)).toEqual(['web', 'db']);
+  });
+
   it('closes one pane and hangs up only its session', () => {
     const a = sessions.open('web');
-    const b = sessions.split('down')!;
+    const b = sessions.split('down', 'web')!;
     const sb = sessions.pane(b)!.session;
     sessions.close(b);
     expect(closed).toEqual([sb]);
@@ -76,8 +140,8 @@ describe('tabs of panes', () => {
     sessions.close(a);
     expect(sessions.get().tabs).toHaveLength(0);
     sessions.open('web');
-    sessions.split('right');
-    sessions.split('right');
+    sessions.split('right', 'web');
+    sessions.split('right', 'db');
     const ids = sessions.get().panes.map((p) => p.session);
     closed.length = 0;
     sessions.closeTab(tab().id);
@@ -99,10 +163,8 @@ describe('tabs of panes', () => {
     expect(sessions.focused()?.id).toBe(a);
   });
 
-  it('changes the layout only with two panes or more, resetting the tracks', () => {
+  it('changes the layout, resetting the tracks', () => {
     sessions.open('web');
-    sessions.setLayout('rows');
-    expect(tab().layout).toBe('cols');
     sessions.split('right');
     sessions.setTracks(tab().id, 'cols', [0.7, 0.3]);
     sessions.setLayout('rows');
